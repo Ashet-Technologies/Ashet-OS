@@ -1,0 +1,28 @@
+                _       _            __   __ 
+  __  __  __ _ ( ) ___ | |_  _   _  / _| / _|
+  \ \/ / / _` ||/ / __|| __|| | | || |_ | |_
+   >  < | (_| |   \__ \| |_ | |_| ||  _||  _|
+  /_/\_\ \__, |   |___/ \__| \__,_||_|  |_|  
+            |_|                              
+Welcome to my gemlog! I'm trying to build a small blog here
+where i talk about projects and have some ramblings and
+thoughts shared.
+
+## About me
+
+I'm Felix "xq" Queissner, demoscener and coder from Germany.
+I discovered computers way too early in my life and spent too
+much time on them.
+
+Interests are in speeding up things and make software with
+less cruft.
+
+## Projects
+
+This is a list of projects i maintain or work on. Not every
+project is listed, but these are the ones i can show off
+without feeling bad for either project state or quality:
+
+- Ashet Home Computer
+- Kristall Small-Internet Browser
+- The LoLa Programming Language
