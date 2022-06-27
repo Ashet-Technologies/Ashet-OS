@@ -14,5 +14,5 @@ pub fn initialize() void {
 
 pub const memory = struct {
     pub const flash = ashet.memory.Section{ .offset = 0x2000_000, .length = 0x200_0000 };
-    pub const ram = ashet.memory.Section{ .offset = 0x8000_000, .length = 0x100_0000 };
+    pub const ram = ashet.memory.Section{ .offset = 0x8000_0000, .length = 0x100_0000 };
 };
