@@ -1,14 +1,5 @@
 const std = @import("std");
 
-pub const pico_rv32 = std.Target.Cpu.Model{
-    .name = "pico_rv32",
-    .llvm_name = null,
-    .features = std.Target.riscv.featureSet(&[_]std.Target.riscv.Feature{
-        .c,
-        .m,
-    }),
-};
-
 pub fn build(b: *std.build.Builder) void {
     const target = std.zig.CrossTarget{
         .cpu_arch = .riscv32,

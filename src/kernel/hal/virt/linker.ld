@@ -6,28 +6,52 @@ MEMORY
 
 ENTRY(_start)
 SECTIONS {
+    . = ORIGIN(flash);
+
+    __kernel_flash_start = .;
 
     .text : {
+
         *(.text)
         *(.text.*)
     } > flash
 
     .rodata : {
+        . = ALIGN(4);
         *(.rodata)
         *(.rodata.*)
     } > flash
 
-    .data : {
-        *(.data)
-        *(.data.*)
+    . = ALIGN(4);
+
+   __kernel_flash_end = . ;
+
+    .stack (NOLOAD) : {
+        . = ALIGN(4096);
+        . += 4096; /* 4k kernel stack */
+        kernel_stack = .;
     } > dram
 
-    .bss : {
+    .data : AT (__kernel_flash_end){
+        __kernel_data_start = .;
+
+        *(.data)
+        *(.data.*)
+
+        . = ALIGN(4);
+        __kernel_data_end = .;
+    } > dram
+
+    .bss (NOLOAD) : {
+        __kernel_bss_start = .;
+
         *(.bss)
         *(.bss.*)
         *(.sbss)
         *(.sbss.*)
+
+        . = ALIGN(4);
+        __kernel_bss_end = .;
     } > dram
 
-    __kernel_end = .;
 }
