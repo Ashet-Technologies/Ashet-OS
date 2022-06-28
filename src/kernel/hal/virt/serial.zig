@@ -15,6 +15,6 @@ pub fn isOnline(port: Port) bool {
 pub fn write(port: Port, string: []const u8) void {
     _ = port;
     for (string) |char| {
-        @intToPtr(*volatile u8, hal.registers.VPBA_UART_BASE).* = char;
+        @intToPtr(*volatile u8, @import("regs.zig").VPBA_UART_BASE).* = char;
     }
 }

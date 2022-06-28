@@ -12,10 +12,16 @@ export fn ashet_kernelMain() void {
 
     hal.serial.write(.COM1, &runtime_string);
 
+    // var rng = std.rand.DefaultPrng.init(0x1337);
     // while (true) {
-    //     const pages = memory.allocPages(7) catch break;
-    //     std.log.info("allocated some pages: {}+4", .{pages});
-    //     memory.freePages(pages, 7); // leaky boi
+    //     const num = rng.random().intRangeLessThan(u32, 1, 32);
+    //     const pages = memory.allocPages(num) catch {
+    //         std.log.info("out of memory when allocating {} pages", .{num});
+
+    //         break;
+    //     };
+    //     std.log.info("allocated some pages: {}+{}", .{ pages, num });
+    //     memory.freePages(pages, rng.random().intRangeAtMost(u32, 0, num)); // leaky boi
     // }
 
     // memory.debug.dumpPageMap();
@@ -117,6 +123,11 @@ pub const memory = struct {
         std.log.info("free ram: {:.2} ({}/{} pages)", .{ std.fmt.fmtIntSizeBin(free_memory), free_memory / page_size, page_count });
     }
 
+    /// Returns the number of pages required for a given number of `bytes`.
+    pub fn getRequiredPages(size: usize) usize {
+        return std.mem.alignForward(size, page_size) / page_size;
+    }
+
     /// Allocates `count` physical pages and returns the page index.
     /// Use `pageToPtr` to obtain a physical pointer to it.
     /// Returned memory must be freed with `freePages` using the same `count` as in the `allocPages` call.
@@ -162,7 +173,7 @@ pub const memory = struct {
         }
     }
 
-    fn ptrToPage(ptr: anytype) ?u32 {
+    pub fn ptrToPage(ptr: anytype) ?u32 {
         const offset = @ptrToInt(ptr);
         if (offset < hal.memory.ram.offset)
             return null;
@@ -171,10 +182,10 @@ pub const memory = struct {
         return (offset - hal.memory.ram.offset) / page_size;
     }
 
-    fn pageToPtr(page: u32) ?*anyopaque {
+    pub fn pageToPtr(page: u32) ?*align(page_size) anyopaque {
         if (page >= page_count)
             return null;
-        return @intToPtr(*anyopaque, hal.memory.ram.offset + page_size * page);
+        return @intToPtr(*align(page_size) anyopaque, hal.memory.ram.offset + page_size * page);
     }
 
     pub const debug = struct {
