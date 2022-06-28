@@ -34,12 +34,14 @@ export fn ashet_kernelMain() void {
     console.clear();
 
     inline for ("Hello, World!") |c, i| {
-        console.set(i, 0, c, 0xD5);
+        console.set(51 + i, 31, c, 0xD5);
     }
 
-    video.memory[128] = 'H';
-    video.memory[130] = 'i';
-    video.memory[132] = '!';
+    console.write("The line printer\r\nprints two lines.\r\n");
+
+    for ("Very long string in which we print some") |char, i| {
+        console.writer().print("{d:0>2}: {c}\r\n", .{ i, char }) catch unreachable;
+    }
 
     if (video.is_present_required) {
         // start "present" kernel loop
