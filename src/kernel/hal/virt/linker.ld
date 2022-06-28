@@ -38,6 +38,9 @@ SECTIONS {
         *(.data)
         *(.data.*)
 
+        *(.sdata)
+        *(.sdata.*)
+
         . = ALIGN(4);
         __kernel_data_end = .;
     } > dram

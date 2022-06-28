@@ -33,12 +33,93 @@ pub fn initialize() void {
         }
     }
 
-    gpu.showTestPattern();
+    video.present(); // force the gpu to show the splash screen
 }
 
 pub const memory = struct {
     pub const flash = ashet.memory.Section{ .offset = 0x2000_000, .length = 0x200_0000 };
     pub const ram = ashet.memory.Section{ .offset = 0x8000_0000, .length = 0x100_0000 };
+};
+
+pub const video = struct {
+    var backing_buffer: [32768]u8 align(ashet.memory.page_size) = ashet.video.defaults.splash_screen;
+    var backing_palette: [256]u16 = ashet.video.defaults.palette;
+
+    pub const memory: []align(ashet.memory.page_size) u8 = &backing_buffer;
+    pub const palette: *[256]u16 = &backing_palette;
+
+    var video_mode: ashet.video.Mode = .graphics;
+    var border_color: u8 = ashet.video.defaults.border;
+
+    pub fn setMode(m: ashet.video.Mode) void {
+        video_mode = m;
+    }
+
+    pub fn setBorder(b: u8) void {
+        border_color = b;
+    }
+
+    fn pal(index: u8) u32 {
+        return ashet.video.Color.fromU16(backing_palette[index]).toRgb32();
+    }
+
+    pub fn present() void {
+        std.mem.set(u32, gpu.fb_mem, pal(border_color));
+
+        switch (video_mode) {
+            .text => {
+                const font = ashet.video.defaults.font;
+
+                const w = 64;
+                const h = 32;
+
+                const gw = 6;
+                const gh = 8;
+
+                const dx = (gpu.fb_width - gw * w) / 2;
+                const dy = (gpu.fb_height - gh * h) / 2;
+
+                var i: usize = 0;
+                while (i < w * h) : (i += 1) {
+                    const cx = i % w;
+                    const cy = i / w;
+
+                    const char = video.memory[2 * i + 0];
+                    const attr = ashet.video.CharAttributes.fromByte(video.memory[2 * i + 1]);
+
+                    const glyph = font[char];
+
+                    var x: usize = 0;
+                    while (x < gw) : (x += 1) {
+                        var bits = glyph[x];
+
+                        comptime var y: usize = 0;
+                        inline while (y < gh) : (y += 1) {
+                            const index = if ((bits & (1 << y)) != 0)
+                                attr.fg
+                            else
+                                attr.bg;
+                            gpu.fb_mem[gpu.fb_width * (dy + gh * cy + y) + (dx + gw * cx + x)] = pal(index);
+                        }
+                    }
+                }
+            },
+
+            .graphics => {
+                const dx = (gpu.fb_width - 256) / 2;
+                const dy = (gpu.fb_height - 128) / 2;
+
+                for (video.memory[0..32768]) |index, i| {
+                    const x = dx + i % 256;
+                    const y = dy + i / 256;
+
+                    gpu.fb_mem[gpu.fb_width * y + x] = pal(index);
+                }
+            },
+        }
+
+        gpu.flushFramebuffer(0, 0, 0, 0);
+    }
 };
 
 const gpu = struct {
@@ -114,7 +195,7 @@ const gpu = struct {
         std.log.info("gpu ready with {}x{} @ {*}", .{ fb_width, fb_height, fb_mem });
     }
 
-    pub fn isInitialized() bool {
+    fn isInitialized() bool {
         return (fb_width != 0);
     }
 
@@ -225,7 +306,7 @@ const gpu = struct {
     }
 
     fn setupFramebuffer(scanout: Scanout, res_id: ResourceId, width: u32, height: u32) ![]u32 {
-        try create2dResource(res_id, virtio.gpu.Format.b8g8r8x8_unorm, width, height);
+        try create2dResource(res_id, virtio.gpu.Format.r8g8b8x8_unorm, width, height);
 
         const stride = calcStride(width, 32);
         const required_pages = ashet.memory.getRequiredPages(height * stride);
@@ -239,7 +320,7 @@ const gpu = struct {
         return std.mem.bytesAsSlice(u32, @ptrCast([*]align(4096) u8, ashet.memory.pageToPtr(first_page))[0 .. height * stride]);
     }
 
-    fn flushFramebuffer(x: u32, y: u32, req_width: u32, req_height: u32) !void {
+    fn flushFramebuffer(x: u32, y: u32, req_width: u32, req_height: u32) void {
         const width =
             if (req_width <= 0) fb_width else req_width;
 

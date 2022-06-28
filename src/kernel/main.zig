@@ -1,6 +1,9 @@
 const std = @import("std");
 const hal = @import("hal");
 
+pub const video = @import("components/video.zig");
+pub const console = @import("components/console.zig");
+
 export fn ashet_kernelMain() void {
     // Populate RAM with the right sections
     memory.initialize();
@@ -10,7 +13,8 @@ export fn ashet_kernelMain() void {
 
     hal.serial.write(.COM1, "Hello, World!\r\n");
 
-    hal.serial.write(.COM1, &runtime_string);
+    hal.serial.write(.COM1, &runtime_data_string);
+    hal.serial.write(.COM1, &runtime_sdata_string);
 
     // var rng = std.rand.DefaultPrng.init(0x1337);
     // while (true) {
@@ -26,12 +30,29 @@ export fn ashet_kernelMain() void {
 
     // memory.debug.dumpPageMap();
 
+    video.setMode(.text);
+    console.clear();
+
+    inline for ("Hello, World!") |c, i| {
+        console.set(i, 0, c, 0xD5);
+    }
+
+    video.memory[128] = 'H';
+    video.memory[130] = 'i';
+    video.memory[132] = '!';
+
+    if (video.is_present_required) {
+        // start "present" kernel loop
+        video.present(); // fire at least once for now…
+    }
+
     while (true) {
         //
     }
 }
 
-var runtime_string = "Hello, well initialized RAM!\r\n".*;
+var runtime_data_string = "Hello, well initialized .data!\r\n".*;
+var runtime_sdata_string = "Hello, well initialized .sdata!\r\n".*;
 
 extern fn hang() callconv(.C) noreturn;
 
