@@ -14,17 +14,22 @@ pub fn build(b: *std.build.Builder) void {
 
     const mode = b.standardReleaseOptions();
 
-    const exe = b.addExecutable("ashet-os", "src/kernel/main.zig");
-    exe.setTarget(target);
-    exe.setBuildMode(mode);
-    exe.addPackage(.{
+    const kernel_exe = b.addExecutable("ashet-os", "src/kernel/main.zig");
+    kernel_exe.single_threaded = true;
+    if (mode == .Debug) {
+        // we always want frame pointers in debug build!
+        kernel_exe.omit_frame_pointer = false;
+    }
+    kernel_exe.setTarget(target);
+    kernel_exe.setBuildMode(mode);
+    kernel_exe.addPackage(.{
         .name = "hal",
         .source = .{ .path = "src/kernel/hal/virt/hal.zig" },
     });
-    exe.setLinkerScriptPath(.{ .path = "src/kernel/hal/virt/linker.ld" });
-    exe.install();
+    kernel_exe.setLinkerScriptPath(.{ .path = "src/kernel/hal/virt/linker.ld" });
+    kernel_exe.install();
 
-    const raw_step = exe.installRaw("ashet-os.bin", .{
+    const raw_step = kernel_exe.installRaw("ashet-os.bin", .{
         .format = .bin,
         .pad_to_size = 0x200_0000,
     });

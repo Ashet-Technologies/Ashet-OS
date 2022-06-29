@@ -33,9 +33,7 @@ pub fn initialize() void {
         }
     }
 
-    video.present(); // force the gpu to show the splash screen
-
-    // initialize block devices here:
+    video.flush(); // force the gpu to show the splash screen
 
     storage.initialize();
 }
@@ -86,7 +84,7 @@ pub const video = struct {
         return ashet.video.Color.fromU16(backing_palette[index]).toRgb32();
     }
 
-    pub fn present() void {
+    pub fn flush() void {
         std.mem.set(u32, gpu.fb_mem, pal(border_color));
 
         switch (video_mode) {

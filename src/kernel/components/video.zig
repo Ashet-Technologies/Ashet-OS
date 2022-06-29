@@ -161,9 +161,9 @@ pub const defaults = struct {
     pub const border: u8 = splash_screen[0]; // we just use the top-left pixel of the splash. smort!
 };
 
-/// If this is `true`, the kernel will repeatedly call `present()` to
+/// If this is `true`, the kernel will repeatedly call `flush()` to
 /// ensure the display is up-to-date.
-pub const is_present_required = @hasDecl(hal.video, "present");
+pub const is_flush_required = @hasDecl(hal.video, "flush");
 
 /// Changes the current video mode.
 pub fn setMode(mode: Mode) void {
@@ -178,8 +178,8 @@ pub fn setBorder(b: u8) void {
 
 /// Potentially synchronizes the video storage with the screen.
 /// Without calling this
-pub fn present() void {
-    hal.video.present();
+pub fn flush() void {
+    hal.video.flush();
 }
 
 /// Computes the character attributes and selects both foreground and background color.

@@ -6,12 +6,18 @@ pub const console = @import("components/console.zig");
 pub const drivers = @import("drivers/drivers.zig");
 pub const storage = @import("components/storage.zig");
 pub const memory = @import("components/memory.zig");
+pub const serial = @import("components/serial.zig");
+pub const scheduler = @import("components/scheduler.zig");
 
 export fn ashet_kernelMain() void {
-    // Populate RAM with the right sections
+    // Populate RAM with the right sections, and compute how much dynamic memory we have available
     memory.initialize();
 
-    // Initialize all devices into a well-defined state
+    // Initialize scheduler before HAL as it doesn't require anything except memory pages for thread
+    // storage, queues and stacks.
+    scheduler.initialize();
+
+    // Initialize the hardware into a well-defined state. After this, we can safely perform I/O ops.
     hal.initialize();
 
     hal.serial.write(.COM1, "Hello, World!\r\n");
@@ -33,23 +39,18 @@ export fn ashet_kernelMain() void {
 
     // memory.debug.dumpPageMap();
 
-    video.setMode(.text);
-    console.clear();
+    // video.setMode(.text);
+    // console.clear();
 
-    inline for ("Hello, World!") |c, i| {
-        console.set(51 + i, 31, c, 0xD5);
-    }
+    // inline for ("Hello, World!") |c, i| {
+    //     console.set(51 + i, 31, c, 0xD5);
+    // }
 
-    console.write("The line printer\r\nprints two lines.\r\n");
+    // console.write("The line printer\r\nprints two lines.\r\n");
 
-    for ("Very long string in which we print some") |char, i| {
-        console.writer().print("{d:0>2}: {c}\r\n", .{ i, char }) catch unreachable;
-    }
-
-    if (video.is_present_required) {
-        // start "present" kernel loop
-        video.present(); // fire at least once for now…
-    }
+    // for ("Very long string in which we print some") |char, i| {
+    //     console.writer().print("{d:0>2}: {c}\r\n", .{ i, char }) catch unreachable;
+    // }
 
     // test flash chip via CFI
     {
@@ -81,9 +82,52 @@ export fn ashet_kernelMain() void {
         }
     }
 
-    while (true) {
-        //
+    if (video.is_flush_required) {
+        // if the HAL requires regular flushing of the screen,
+        // we start a thread here that will do this.
+        const thread = scheduler.Thread.spawn(periodicScreenFlush, null, null) catch @panic("could not create screen updater thread.");
+        thread.start() catch @panic("failed to start screen updater thread.");
+        thread.detach();
     }
+
+    {
+        var i: usize = 1;
+        while (i <= 5) : (i += 1) {
+            const thread = scheduler.Thread.spawn(demoLooper, @intToPtr(?*anyopaque, i), null) catch @panic("could not create demo thread.");
+            thread.start() catch @panic("failed to start demo thread.");
+            thread.detach();
+        }
+    }
+
+    scheduler.start();
+
+    // All tasks stopped, what should we do now?
+    std.log.warn("All threads stopped. System is now halting.", .{});
+}
+
+fn demoLooper(arg: ?*anyopaque) callconv(.C) u32 {
+    const limit = @ptrToInt(arg);
+    std.log.info("{*}: limit = {}", .{ scheduler.Thread.current(), limit });
+    var i: usize = 0;
+    while (i < limit) : (i += 1) {
+        scheduler.yield();
+        std.log.info("{*}: thread loop: {}", .{ scheduler.Thread.current(), i });
+    }
+    return 0;
+}
+
+fn periodicScreenFlush(_: ?*anyopaque) callconv(.C) u32 {
+    std.log.info("hi there", .{});
+    var i: usize = 0;
+    while (i < 30) : (i += 1) {
+        video.flush();
+
+        // TODO: replace with actual waiting code instead of burning up all CPU
+        scheduler.yield();
+    }
+    std.log.info("bye there", .{});
+
+    return 0;
 }
 
 var runtime_data_string = "Hello, well initialized .data!\r\n".*;
@@ -147,6 +191,12 @@ pub fn panic(message: []const u8, maybe_stack_trace: ?*std.builtin.StackTrace) n
     writer.writeAll("\r\n") catch {};
     writer.writeAll("=========================================================================\r\n") catch {};
     writer.writeAll("\r\n") catch {};
+
+    writer.print("return address: 0x{X:0>8}\r\n", .{@returnAddress()}) catch {};
+
+    if (maybe_stack_trace) |stack_trace| {
+        writer.print("{}\r\n", .{stack_trace}) catch {};
+    }
 
     hang();
 }
