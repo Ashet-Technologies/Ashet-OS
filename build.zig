@@ -31,6 +31,14 @@ pub fn build(b: *std.build.Builder) void {
 
     b.getInstallStep().dependOn(&raw_step.step);
 
+    // Makes sure zig-out/disk.img exists, but doesn't touch the data at all
+    const setup_disk_cmd = b.addSystemCommand(&.{
+        "fallocate",
+        "-l",
+        "32M",
+        "zig-out/disk.img",
+    });
+
     const run_cmd = b.addSystemCommand(&.{"qemu-system-riscv32"});
     run_cmd.addArgs(&.{
         "-M",      "virt",
@@ -39,8 +47,9 @@ pub fn build(b: *std.build.Builder) void {
         "-d",      "guest_errors",
         "-bios",   "none",
         "-drive",  "if=pflash,index=0,file=zig-out/bin/ashet-os.bin,format=raw",
+        "-drive",  "if=pflash,index=1,file=zig-out/disk.img,format=raw",
     });
-
+    run_cmd.step.dependOn(&setup_disk_cmd.step);
     run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| {
         run_cmd.addArgs(args);

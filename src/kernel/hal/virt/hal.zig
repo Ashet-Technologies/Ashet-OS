@@ -34,7 +34,30 @@ pub fn initialize() void {
     }
 
     video.present(); // force the gpu to show the splash screen
+
+    // initialize block devices here:
+
+    storage.initialize();
 }
+
+pub const storage = struct {
+    const BlockDevice = ashet.storage.BlockDevice;
+
+    var pflash1: ashet.drivers.block_device.CFI = undefined;
+
+    var devices_backing = std.BoundedArray(ashet.storage.BlockDevice, 8){};
+    pub var devices: []ashet.storage.BlockDevice = undefined;
+
+    pub fn initialize() void {
+        pflash1 = ashet.drivers.block_device.CFI.init(0x2200_0000, 0x0200_0000) catch @panic("pflash1 not present!");
+
+        devices_backing.append(.{
+            .name = "PF0",
+            .interface = pflash1.interface(),
+        }) catch unreachable;
+        devices = devices_backing.slice();
+    }
+};
 
 pub const memory = struct {
     pub const flash = ashet.memory.Section{ .offset = 0x2000_000, .length = 0x200_0000 };
