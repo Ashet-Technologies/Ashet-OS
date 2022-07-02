@@ -27,13 +27,8 @@ const std = @import("std");
 const logger = std.log.scoped(.@"scheduler");
 const ashet = @import("../main.zig");
 
-pub const ThreadFunction = fn (?*anyopaque) callconv(.C) u32;
-
-pub const ExitCode = struct {
-    pub const success = 0;
-    pub const failure = 1;
-    pub const killed = ~@as(u32, 0);
-};
+pub const ExitCode = ashet.abi.ExitCode;
+pub const ThreadFunction = ashet.abi.ThreadFunction;
 
 /// Thread management structure.
 /// Is allocated in such a way that is is stored at the end of the last page of thread stack.
@@ -74,7 +69,7 @@ pub const Thread = struct {
         const first_page = try ashet.memory.allocPages(stack_page_count);
         errdefer ashet.memory.freePages(first_page, stack_page_count);
 
-        // std.log.info("allocated {}+{} pages", .{ first_page, stack_page_count });
+        // std.log.ingpfo("allocated {}+{} pages", .{ first_page, stack_page_count });
 
         const stack_bottom = ashet.memory.pageToPtr(first_page);
         const thread = @intToPtr(*Thread, @ptrToInt(stack_bottom) + ashet.memory.page_size * stack_page_count - @sizeOf(Thread));
@@ -87,7 +82,7 @@ pub const Thread = struct {
         };
 
         thread.push(0x0000_0000); //      x3  ; gp Global pointer
-        thread.push(0x0000_0000); //      x4  ; tp Thread pointer
+        thread.push(@ptrToInt(ashet.syscalls.getInterfacePointer())); //      x4  ; tp Thread pointer
         thread.push(0x0000_0000); //      x8  ; s0
         thread.push(0x0000_0000); //      x9  ; s1
         thread.push(@ptrToInt(func)); // x18  ; s2

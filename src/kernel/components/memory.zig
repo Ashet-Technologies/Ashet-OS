@@ -120,6 +120,18 @@ pub fn freePages(first_page: usize, count: usize) void {
     }
 }
 
+pub fn isFree(page: usize) bool {
+    return free_pages.isSet(page);
+}
+
+pub fn markFree(page: usize) void {
+    free_pages.set(page);
+}
+
+pub fn markUsed(page: usize) void {
+    free_pages.unset(page);
+}
+
 pub fn ptrToPage(ptr: anytype) ?u32 {
     const offset = @ptrToInt(ptr);
     if (offset < hal.memory.ram.offset)

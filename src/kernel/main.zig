@@ -1,6 +1,7 @@
 const std = @import("std");
 const hal = @import("hal");
 
+pub const abi = @import("ashet-abi");
 pub const video = @import("components/video.zig");
 pub const console = @import("components/console.zig");
 pub const drivers = @import("drivers/drivers.zig");
@@ -8,6 +9,7 @@ pub const storage = @import("components/storage.zig");
 pub const memory = @import("components/memory.zig");
 pub const serial = @import("components/serial.zig");
 pub const scheduler = @import("components/scheduler.zig");
+pub const syscalls = @import("components/syscalls.zig");
 
 export fn ashet_kernelMain() void {
     // Populate RAM with the right sections, and compute how much dynamic memory we have available
@@ -52,7 +54,6 @@ export fn ashet_kernelMain() void {
     //     console.writer().print("{d:0>2}: {c}\r\n", .{ i, char }) catch unreachable;
     // }
 
-    // test flash chip via CFI
     {
         var devices = storage.enumerate();
         while (devices.next()) |dev| {
@@ -62,23 +63,6 @@ export fn ashet_kernelMain() void {
                 dev.blockCount(),
                 std.fmt.fmtIntSizeBin(dev.byteSize()),
             });
-
-            if (dev.isPresent()) {
-                var block: [2048]u8 align(4) = undefined;
-                dev.readBlock(0, block[0..dev.blockSize()]) catch @panic("failed to read first block!");
-
-                var i: usize = 0;
-                while (i < dev.blockSize()) : (i += 32) {
-                    std.log.info("0x{X:0>4} | {}", .{
-                        i,
-                        std.fmt.fmtSliceHexUpper(block[i .. i + 32]),
-                    });
-                }
-
-                std.mem.copy(u8, &block, "Hello from Ashet OS!\r\n\x00");
-
-                dev.writeBlock(0, block[0..dev.blockSize()]) catch @panic("failed to write first block!");
-            }
         }
     }
 
@@ -90,14 +74,54 @@ export fn ashet_kernelMain() void {
         thread.detach();
     }
 
-    {
-        var i: usize = 1;
-        while (i <= 5) : (i += 1) {
-            const thread = scheduler.Thread.spawn(demoLooper, @intToPtr(?*anyopaque, i), null) catch @panic("could not create demo thread.");
-            thread.start() catch @panic("failed to start demo thread.");
-            thread.detach();
+    syscalls.initialize();
+
+    // TODO: Start "init" process here!
+
+    // Load the first some sectors of first disk into
+    blk: {
+        var primary_block_device = storage.enumerate().next() orelse break :blk;
+
+        if (primary_block_device.isPresent()) {
+            const dev = primary_block_device;
+
+            const process_memory = @as([]align(memory.page_size) u8, @intToPtr([*]align(memory.page_size) u8, 0x80800000)[0..memory.page_size]);
+
+            const app_pages = memory.ptrToPage(process_memory.ptr) orelse unreachable;
+            const proc_size = memory.getRequiredPages(process_memory.len);
+
+            {
+                var i: usize = 0;
+                while (i < proc_size) : (i += 1) {
+                    if (!memory.isFree(app_pages + i)) {
+                        @panic("app memory is not free");
+                    }
+                }
+                i = 0;
+                while (i < proc_size) : (i += 1) {
+                    memory.markUsed(app_pages + i);
+                }
+            }
+
+            {
+                var i: usize = 0;
+                while (i < process_memory.len) : (i += dev.blockSize()) {
+                    dev.readBlock(
+                        i / dev.blockSize(),
+                        process_memory[i .. i + dev.blockSize()],
+                    ) catch @panic("failed to read process data from disk");
+                }
+            }
+
+            const thread = scheduler.Thread.spawn(@ptrCast(scheduler.ThreadFunction, process_memory.ptr), null, null) catch @panic("failed to allocate thread");
+            errdefer thread.kill();
+
+            thread.start() catch unreachable;
         }
     }
+
+    console.clear();
+    video.setMode(.text);
 
     scheduler.start();
 
@@ -105,19 +129,7 @@ export fn ashet_kernelMain() void {
     std.log.warn("All threads stopped. System is now halting.", .{});
 }
 
-fn demoLooper(arg: ?*anyopaque) callconv(.C) u32 {
-    const limit = @ptrToInt(arg);
-    std.log.info("{*}: limit = {}", .{ scheduler.Thread.current(), limit });
-    var i: usize = 0;
-    while (i < limit) : (i += 1) {
-        scheduler.yield();
-        std.log.info("{*}: thread loop: {}", .{ scheduler.Thread.current(), i });
-    }
-    return 0;
-}
-
 fn periodicScreenFlush(_: ?*anyopaque) callconv(.C) u32 {
-    std.log.info("hi there", .{});
     var i: usize = 0;
     while (i < 30) : (i += 1) {
         video.flush();
@@ -125,7 +137,6 @@ fn periodicScreenFlush(_: ?*anyopaque) callconv(.C) u32 {
         // TODO: replace with actual waiting code instead of burning up all CPU
         scheduler.yield();
     }
-    std.log.info("bye there", .{});
 
     return 0;
 }
