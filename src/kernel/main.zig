@@ -1,5 +1,6 @@
 const std = @import("std");
 const hal = @import("hal");
+const fatfs = @import("fatfs");
 
 pub const abi = @import("ashet-abi");
 pub const video = @import("components/video.zig");
@@ -10,6 +11,10 @@ pub const memory = @import("components/memory.zig");
 pub const serial = @import("components/serial.zig");
 pub const scheduler = @import("components/scheduler.zig");
 pub const syscalls = @import("components/syscalls.zig");
+
+var filesystem: fatfs.FileSystem = undefined;
+
+var root_disk: Disk = .{};
 
 export fn ashet_kernelMain() void {
     // Populate RAM with the right sections, and compute how much dynamic memory we have available
@@ -22,6 +27,13 @@ export fn ashet_kernelMain() void {
     // Initialize the hardware into a well-defined state. After this, we can safely perform I/O ops.
     hal.initialize();
 
+    main() catch |err| {
+        std.log.err("main() failed with {}", .{err});
+        @panic("system failure");
+    };
+}
+
+fn main() !void {
     hal.serial.write(.COM1, "Hello, World!\r\n");
 
     hal.serial.write(.COM1, &runtime_data_string);
@@ -63,65 +75,93 @@ export fn ashet_kernelMain() void {
                 dev.blockCount(),
                 std.fmt.fmtIntSizeBin(dev.byteSize()),
             });
+
+            if (root_disk.blockdev == null) {
+                root_disk.blockdev = dev;
+                fatfs.disks[0] = &root_disk.interface;
+            }
         }
     }
+
+    if (root_disk.blockdev == null) {
+        @panic("no root file system");
+    }
+
+    try filesystem.mount("0:", true);
+    defer fatfs.FileSystem.unmount("0:") catch |e| std.log.err("failed to unmount filesystem: {s}", .{@errorName(e)});
 
     if (video.is_flush_required) {
         // if the HAL requires regular flushing of the screen,
         // we start a thread here that will do this.
         const thread = scheduler.Thread.spawn(periodicScreenFlush, null, null) catch @panic("could not create screen updater thread.");
-        thread.start() catch @panic("failed to start screen updater thread.");
+        try thread.start();
         thread.detach();
     }
 
     syscalls.initialize();
 
-    // TODO: Start "init" process here!
+    console.clear();
+    video.setMode(.text);
 
-    // Load the first some sectors of first disk into
-    blk: {
-        var primary_block_device = storage.enumerate().next() orelse break :blk;
+    {
+        try console.writer().writeAll("Available apps:\r\n");
 
-        if (primary_block_device.isPresent()) {
-            const dev = primary_block_device;
+        var dir = try fatfs.Dir.open("/apps");
+        defer dir.close();
 
-            const process_memory = @as([]align(memory.page_size) u8, @intToPtr([*]align(memory.page_size) u8, 0x80800000)[0..memory.page_size]);
-
-            const app_pages = memory.ptrToPage(process_memory.ptr) orelse unreachable;
-            const proc_size = memory.getRequiredPages(process_memory.len);
-
-            {
-                var i: usize = 0;
-                while (i < proc_size) : (i += 1) {
-                    if (!memory.isFree(app_pages + i)) {
-                        @panic("app memory is not free");
-                    }
-                }
-                i = 0;
-                while (i < proc_size) : (i += 1) {
-                    memory.markUsed(app_pages + i);
-                }
-            }
-
-            {
-                var i: usize = 0;
-                while (i < process_memory.len) : (i += dev.blockSize()) {
-                    dev.readBlock(
-                        i / dev.blockSize(),
-                        process_memory[i .. i + dev.blockSize()],
-                    ) catch @panic("failed to read process data from disk");
-                }
-            }
-
-            const thread = scheduler.Thread.spawn(@ptrCast(scheduler.ThreadFunction, process_memory.ptr), null, null) catch @panic("failed to allocate thread");
-            errdefer thread.kill();
-
-            thread.start() catch unreachable;
+        while (try dir.next()) |ent| {
+            const name = std.fmt.fmtSliceEscapeUpper(std.mem.sliceTo(&ent.fname, 0));
+            std.log.info("entry: {{ fsize={}, fdate={}, ftime={}, fattrib={}, altname='{}', fname='{}' }}", .{
+                ent.fsize,
+                ent.fdate,
+                ent.ftime,
+                ent.fattrib,
+                std.fmt.fmtSliceEscapeUpper(std.mem.sliceTo(&ent.altname, 0)),
+                name,
+            });
+            try console.writer().print("- {s}\r\n", .{name});
         }
     }
 
-    console.clear();
-    video.setMode(.text);
+    try console.writer().writeAll("Starting app \"shell\"...\r\n");
+
+    // Start "init" process
+    {
+        const app_file = "0:/apps/shell/code";
+        const stat = try fatfs.stat(app_file);
+
+        const proc_byte_size = stat.fsize;
+
+        const process_memory = @as([]align(memory.page_size) u8, @intToPtr([*]align(memory.page_size) u8, 0x80800000)[0..std.mem.alignForward(proc_byte_size, memory.page_size)]);
+
+        const app_pages = memory.ptrToPage(process_memory.ptr) orelse unreachable;
+        const proc_size = memory.getRequiredPages(process_memory.len);
+
+        {
+            var i: usize = 0;
+            while (i < proc_size) : (i += 1) {
+                if (!memory.isFree(app_pages + i)) {
+                    @panic("app memory is not free");
+                }
+            }
+            i = 0;
+            while (i < proc_size) : (i += 1) {
+                memory.markUsed(app_pages + i);
+            }
+        }
+
+        {
+            var file = try fatfs.File.openRead(app_file);
+            defer file.close();
+
+            try file.reader().readNoEof(process_memory[0..proc_byte_size]);
+        }
+
+        const thread = try scheduler.Thread.spawn(@ptrCast(scheduler.ThreadFunction, process_memory.ptr), null, null);
+        errdefer thread.kill();
+
+        try thread.start();
+    }
 
     scheduler.start();
 
@@ -148,7 +188,7 @@ extern fn hang() callconv(.C) noreturn;
 
 comptime {
     asm (
-        \\.section .text
+        \\.section .text._start
         \\.global _start
         \\_start:
         \\  la   sp, kernel_stack // defined in linker script 
@@ -211,3 +251,79 @@ pub fn panic(message: []const u8, maybe_stack_trace: ?*std.builtin.StackTrace) n
 
     hang();
 }
+
+pub const Disk = struct {
+    const logger = std.log.scoped(.disk);
+    const sector_size = 512;
+
+    interface: fatfs.Disk = fatfs.Disk{
+        .getStatusFn = getStatus,
+        .initializeFn = initialize,
+        .readFn = read,
+        .writeFn = write,
+        .ioctlFn = ioctl,
+    },
+    blockdev: ?storage.BlockDevice = null,
+
+    pub fn getStatus(interface: *fatfs.Disk) fatfs.Disk.Status {
+        const self = @fieldParentPtr(Disk, "interface", interface);
+        return fatfs.Disk.Status{
+            .initialized = (self.blockdev != null),
+            .disk_present = if (self.blockdev) |dev| dev.isPresent() else false,
+            .write_protected = false,
+        };
+    }
+
+    pub fn initialize(interface: *fatfs.Disk) fatfs.Disk.Error!fatfs.Disk.Status {
+        const self = @fieldParentPtr(Disk, "interface", interface);
+
+        return self.interface.getStatus();
+    }
+
+    pub fn read(interface: *fatfs.Disk, buff: [*]u8, sector: fatfs.LBA, count: c_uint) fatfs.Disk.Error!void {
+        const self = @fieldParentPtr(Disk, "interface", interface);
+
+        logger.info("read({*}, {}, {})", .{ buff, sector, count });
+
+        var dev = self.blockdev orelse return error.IoError;
+
+        var i: usize = 0;
+        while (i < count) : (i += 1) {
+            const off = i * sector_size;
+            const mem = @alignCast(4, buff[off .. off + sector_size]);
+            dev.readBlock(sector + i, mem) catch return error.IoError;
+        }
+    }
+
+    pub fn write(interface: *fatfs.Disk, buff: [*]const u8, sector: fatfs.LBA, count: c_uint) fatfs.Disk.Error!void {
+        const self = @fieldParentPtr(Disk, "interface", interface);
+
+        logger.info("write({*}, {}, {})", .{ buff, sector, count });
+
+        var dev = self.blockdev orelse return error.IoError;
+
+        var i: usize = 0;
+        while (i < count) : (i += 1) {
+            const off = (sector + i) * sector_size;
+            const mem = @alignCast(4, buff[off .. off + sector_size]);
+            dev.writeBlock(sector + i, mem) catch return error.IoError;
+        }
+    }
+
+    pub fn ioctl(interface: *fatfs.Disk, cmd: fatfs.IoCtl, buff: [*]u8) fatfs.Disk.Error!void {
+        const self = @fieldParentPtr(Disk, "interface", interface);
+        if (self.blockdev) |dev| {
+            _ = buff;
+            _ = dev;
+            switch (cmd) {
+                .sync => {
+                    //
+                },
+
+                else => return error.InvalidParameter,
+            }
+        } else {
+            return error.DiskNotReady;
+        }
+    }
+};

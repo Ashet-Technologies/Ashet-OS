@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const FatFS = @import("vendor/zfat/Sdk.zig");
+
 const pkgs = struct {
     pub const ashet = std.build.Pkg{
         .name = "ashet",
@@ -47,7 +49,23 @@ fn createAshetApp(b: *std.build.Builder, name: []const u8, source: []const u8) *
 }
 
 pub fn build(b: *std.build.Builder) void {
+    const fatfs_config = FatFS.Config{
+        .volumes = .{
+            // .named = &.{"CF0"},
+            .count = 8,
+        },
+        .rtc = .{
+            .static = .{ .year = 2022, .month = .jul, .day = 10 },
+        },
+    };
+
     const mode = b.standardReleaseOptions();
+
+    const experiment = b.addExecutable("experiment", "tools/fs-experiments.zig");
+    experiment.addPackage(FatFS.getPackage(b, "fatfs", fatfs_config));
+    FatFS.link(experiment, fatfs_config);
+    experiment.linkLibC();
+    experiment.install();
 
     const kernel_exe = b.addExecutable("ashet-os", "src/kernel/main.zig");
     kernel_exe.single_threaded = true;
@@ -59,8 +77,14 @@ pub fn build(b: *std.build.Builder) void {
     kernel_exe.setBuildMode(mode);
     kernel_exe.addPackage(pkgs.hal_virt);
     kernel_exe.addPackage(pkgs.abi);
+    kernel_exe.addPackage(FatFS.getPackage(b, "fatfs", fatfs_config));
     kernel_exe.setLinkerScriptPath(.{ .path = "src/kernel/hal/virt/linker.ld" });
     kernel_exe.install();
+
+    // kernel_exe.setLibCFile(std.build.FileSource{ .path = "vendor/libc/libc.txt" });
+    kernel_exe.addSystemIncludePath("vendor/libc/include");
+
+    FatFS.link(kernel_exe, fatfs_config);
 
     const raw_step = kernel_exe.installRaw("ashet-os.bin", .{
         .format = .bin,
@@ -68,6 +92,12 @@ pub fn build(b: *std.build.Builder) void {
     });
 
     b.getInstallStep().dependOn(&raw_step.step);
+
+    // dd if=/dev/zero of=zig-out/disk.img bs=512 count=65536
+    // mkfs.vfat -n ASHET -S 512 zig-out/disk.img
+    // mformat -i zig-out/disk.img -v ASHET
+    // ls -hal zig-out/disk.img
+    // file zig-out/disk.img
 
     // Makes sure zig-out/disk.img exists, but doesn't touch the data at all
     const setup_disk_cmd = b.addSystemCommand(&.{

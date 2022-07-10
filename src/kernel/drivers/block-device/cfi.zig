@@ -126,7 +126,7 @@ pub const CFI = union(enum) {
                 const self = @fieldParentPtr(Impl, "block_device", intf);
 
                 const block_items = self.block_device.block_size / @sizeOf(InterfaceWidth);
-                const block_start = std.math.cast(InterfaceWidth, block_items * block) orelse return error.InvalidBlock;
+                const block_start = std.math.cast(usize, block_items * block) orelse return error.InvalidBlock;
                 const block_end = block_start + block_items;
 
                 self.enterMode(.array_read);

@@ -11,7 +11,7 @@ SECTIONS {
     __kernel_flash_start = .;
 
     .text : {
-
+        *(.text._start)
         *(.text)
         *(.text.*)
     } > flash
