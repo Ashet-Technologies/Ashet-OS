@@ -1,5 +1,7 @@
 #!/bin/bash
 
+ROOT="$(realpath "$(dirname "$(realpath "$0")")"/../)"
+
 set -e
 
 DISK="$1"
@@ -21,14 +23,18 @@ echo "create directory structure..."
 mmd -i "${DISK}" ::/bin
 mmd -i "${DISK}" ::/apps
 
+for path in ${ROOT}/zig-out/apps/*.bin; do 
+  fname="$(basename "${path}")"
+  app_name="${fname%.*}"
+  
+  echo "installing app: ${app_name}..."
 
-echo "installing app: shell..."
-
-mmd -i "${DISK}" ::/apps/shell
-mcopy -i "${DISK}" zig-out/bin/shell.bin ::/apps/shell/code
+  mmd -i "${DISK}" "::/apps/${app_name}"
+  mcopy -i "${DISK}" "${path}" "::/apps/${app_name}/code"
+done
 
 echo "showing root dir"
 
-mdir -i "${DISK}" ::/apps/shell
+mdir -i "${DISK}" ::/apps/
 
 echo "done."

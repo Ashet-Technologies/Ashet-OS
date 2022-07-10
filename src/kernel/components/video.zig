@@ -16,48 +16,9 @@ comptime {
 /// the displayed picture.
 pub const palette: *[256]u16 = hal.video.palette;
 
-pub const Mode = enum {
-    text,
-    graphics,
-};
+pub const Mode = ashet.abi.VideoMode;
 
-/// A 16 bpp color value using RGB565 encoding.
-pub const Color = packed struct {
-    r: u5,
-    g: u6,
-    b: u5,
-
-    pub fn toU16(c: Color) u16 {
-        return @bitCast(u16, c);
-    }
-
-    pub fn fromU16(u: u16) Color {
-        return @bitCast(Color, u);
-    }
-
-    pub fn fromRgb888(r: u8, g: u8, b: u8) Color {
-        return Color{
-            .r = @truncate(u5, r >> 3),
-            .g = @truncate(u6, g >> 2),
-            .b = @truncate(u5, b >> 3),
-        };
-    }
-
-    pub fn toRgb32(color: Color) u32 {
-        const src_r: u32 = color.r;
-        const src_g: u32 = color.g;
-        const src_b: u32 = color.b;
-
-        // expand bits to form a linear range between 0…255
-        const exp_r = (src_r << 3) | (src_r >> 2);
-        const exp_g = (src_g << 2) | (src_g >> 4);
-        const exp_b = (src_b << 3) | (src_b >> 2);
-
-        return exp_r << 0 |
-            exp_g << 8 |
-            exp_b << 16;
-    }
-};
+pub const Color = ashet.abi.Color;
 
 /// Contains initialization defaults for the system
 pub const defaults = struct {

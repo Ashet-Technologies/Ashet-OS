@@ -45,6 +45,16 @@ fn createAshetApp(b: *std.build.Builder, name: []const u8, source: []const u8) *
     exe.setLinkerScriptPath(.{ .path = "src/abi/application.ld" });
     exe.single_threaded = true;
 
+    const raw_install_step = exe.installRaw(
+        b.fmt("{s}.bin", .{name}),
+        .{
+            .format = .bin,
+            .dest_dir = .{ .custom = "apps" },
+        },
+    );
+
+    b.getInstallStep().dependOn(&raw_install_step.step);
+
     return exe;
 }
 
@@ -123,15 +133,22 @@ pub fn build(b: *std.build.Builder) void {
         run_cmd.addArgs(args);
     }
 
-    const shell = createAshetApp(b, "shell", "src/apps/shell.zig");
-    shell.setBuildMode(.ReleaseFast);
-    shell.install();
+    {
+        const app_shell = createAshetApp(b, "shell", "src/apps/shell.zig");
+        app_shell.setBuildMode(mode);
 
-    const raw_shell_step = shell.installRaw("shell.bin", .{
-        .format = .bin,
-    });
+        const app_commander = createAshetApp(b, "commander", "src/apps/dummy.zig");
+        app_commander.setBuildMode(mode);
 
-    b.getInstallStep().dependOn(&raw_shell_step.step);
+        const app_editor = createAshetApp(b, "editor", "src/apps/dummy.zig");
+        app_editor.setBuildMode(mode);
+
+        const app_browser = createAshetApp(b, "browser", "src/apps/dummy.zig");
+        app_browser.setBuildMode(mode);
+
+        const app_music = createAshetApp(b, "music", "src/apps/dummy.zig");
+        app_music.setBuildMode(mode);
+    }
 
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);

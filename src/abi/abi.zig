@@ -23,9 +23,22 @@ pub const SysCallInterface = extern struct {
     magic: u32 = 0x9a9d5a1b, // chosen by a fair dice roll
 
     console: Console,
+    video: Video,
+    process: Process,
 
     pub const Console = extern struct {
         print: fn ([*]const u8, usize) callconv(.C) void,
+    };
+
+    pub const Video = extern struct {
+        setMode: fn (VideoMode) callconv(.C) void,
+        setBorder: fn (ColorIndex) callconv(.C) void,
+        getVideoMemory: fn () callconv(.C) [*]ColorIndex,
+        getPaletteMemory: fn () callconv(.C) *[palette_size]u16,
+    };
+
+    pub const Process = extern struct {
+        exit: fn (u32) callconv(.C) noreturn,
     };
 };
 
@@ -37,3 +50,50 @@ pub const ExitCode = struct {
 };
 
 pub const ThreadFunction = fn (?*anyopaque) callconv(.C) u32;
+
+pub const VideoMode = enum(u32) {
+    text = 0,
+    graphics = 1,
+};
+
+pub const ColorIndex = u8;
+
+pub const palette_size = std.math.maxInt(ColorIndex) + 1;
+
+/// A 16 bpp color value using RGB565 encoding.
+pub const Color = packed struct {
+    r: u5,
+    g: u6,
+    b: u5,
+
+    pub fn toU16(c: Color) u16 {
+        return @bitCast(u16, c);
+    }
+
+    pub fn fromU16(u: u16) Color {
+        return @bitCast(Color, u);
+    }
+
+    pub fn fromRgb888(r: u8, g: u8, b: u8) Color {
+        return Color{
+            .r = @truncate(u5, r >> 3),
+            .g = @truncate(u6, g >> 2),
+            .b = @truncate(u5, b >> 3),
+        };
+    }
+
+    pub fn toRgb32(color: Color) u32 {
+        const src_r: u32 = color.r;
+        const src_g: u32 = color.g;
+        const src_b: u32 = color.b;
+
+        // expand bits to form a linear range between 0…255
+        const exp_r = (src_r << 3) | (src_r >> 2);
+        const exp_g = (src_g << 2) | (src_g >> 4);
+        const exp_b = (src_b << 3) | (src_b >> 2);
+
+        return exp_r << 0 |
+            exp_g << 8 |
+            exp_b << 16;
+    }
+};
