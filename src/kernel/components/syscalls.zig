@@ -35,6 +35,11 @@ const ashet_syscall_interface: abi.SysCallInterface align(16) = .{
         .nextFile = @"fs.nextFile",
         .closeDir = @"fs.closeDir",
     },
+    .input = .{
+        .getEvent = @"input.getEvent",
+        .getKeyboardEvent = @"input.getKeyboardEvent",
+        .getMouseEvent = @"input.getMouseEvent",
+    },
 };
 
 pub fn initialize() void {
@@ -99,46 +104,69 @@ fn @"fs.rename"(old_path_ptr: [*]const u8, old_path_len: usize, new_path_ptr: [*
     return false;
 }
 
-fn @"fs.stat"(path_ptr: [*]const u8, path_len: usize, info: *ashet.abi.FileInfo) callconv(.C) bool {
+fn @"fs.stat"(path_ptr: [*]const u8, path_len: usize, info: *abi.FileInfo) callconv(.C) bool {
     info.* = ashet.filesystem.stat(path_ptr[0..path_len]) catch return false;
     return true;
 }
 
-fn @"fs.openFile"(path_ptr: [*]const u8, path_len: usize, access: ashet.abi.FileAccess, mode: ashet.abi.FileMode) callconv(.C) ashet.abi.FileHandle {
+fn @"fs.openFile"(path_ptr: [*]const u8, path_len: usize, access: abi.FileAccess, mode: abi.FileMode) callconv(.C) abi.FileHandle {
     return ashet.filesystem.open(path_ptr[0..path_len], access, mode) catch .invalid;
 }
 
-fn @"fs.read"(handle: ashet.abi.FileHandle, ptr: [*]u8, len: usize) callconv(.C) usize {
+fn @"fs.read"(handle: abi.FileHandle, ptr: [*]u8, len: usize) callconv(.C) usize {
     return ashet.filesystem.read(handle, ptr[0..len]) catch 0;
 }
-fn @"fs.write"(handle: ashet.abi.FileHandle, ptr: [*]const u8, len: usize) callconv(.C) usize {
+fn @"fs.write"(handle: abi.FileHandle, ptr: [*]const u8, len: usize) callconv(.C) usize {
     return ashet.filesystem.write(handle, ptr[0..len]) catch 0;
 }
 
-fn @"fs.seekTo"(handle: ashet.abi.FileHandle, offset: u64) callconv(.C) bool {
+fn @"fs.seekTo"(handle: abi.FileHandle, offset: u64) callconv(.C) bool {
     ashet.filesystem.seekTo(handle, offset) catch return false;
     return true;
 }
 
-fn @"fs.flush"(handle: ashet.abi.FileHandle) callconv(.C) bool {
+fn @"fs.flush"(handle: abi.FileHandle) callconv(.C) bool {
     ashet.filesystem.flush(handle) catch return false;
     return true;
 }
-fn @"fs.close"(handle: ashet.abi.FileHandle) callconv(.C) void {
+fn @"fs.close"(handle: abi.FileHandle) callconv(.C) void {
     ashet.filesystem.close(handle);
 }
 
-fn @"fs.openDir"(path_ptr: [*]const u8, path_len: usize) callconv(.C) ashet.abi.DirectoryHandle {
-    //
-    _ = path_ptr;
-    _ = path_len;
-    return .invalid;
+fn @"fs.openDir"(path_ptr: [*]const u8, path_len: usize) callconv(.C) abi.DirectoryHandle {
+    return ashet.filesystem.openDir(path_ptr[0..path_len]) catch .invalid;
 }
-fn @"fs.nextFile"(handle: ashet.abi.DirectoryHandle, info: *ashet.abi.FileInfo) callconv(.C) bool {
-    _ = handle;
-    _ = info;
-    return false;
+fn @"fs.nextFile"(handle: abi.DirectoryHandle, info: *abi.FileInfo) callconv(.C) bool {
+    if (ashet.filesystem.next(handle) catch return false) |file| {
+        info.* = file;
+        return true;
+    } else {
+        info.* = undefined;
+        return false;
+    }
 }
-fn @"fs.closeDir"(handle: ashet.abi.DirectoryHandle) callconv(.C) void {
-    _ = handle;
+fn @"fs.closeDir"(handle: abi.DirectoryHandle) callconv(.C) void {
+    ashet.filesystem.closeDir(handle);
+}
+
+fn @"input.getEvent"(event: *abi.InputEvent) callconv(.C) abi.InputEventType {
+    const evt = ashet.input.getEvent() orelse return .none;
+    switch (evt) {
+        .keyboard => |data| {
+            event.* = .{ .keyboard = data };
+            return .keyboard;
+        },
+        .mouse => |data| {
+            event.* = .{ .mouse = data };
+            return .mouse;
+        },
+    }
+}
+fn @"input.getKeyboardEvent"(event: *abi.KeyboardEvent) callconv(.C) bool {
+    event.* = ashet.input.getKeyboardEvent() orelse return false;
+    return true;
+}
+fn @"input.getMouseEvent"(event: *abi.MouseEvent) callconv(.C) bool {
+    event.* = ashet.input.getMouseEvent() orelse return false;
+    return true;
 }

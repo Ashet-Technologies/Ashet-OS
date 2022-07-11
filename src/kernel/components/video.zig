@@ -2,6 +2,9 @@ const std = @import("std");
 const hal = @import("hal");
 const ashet = @import("../main.zig");
 
+pub const max_res_x = 400;
+pub const max_res_y = 300;
+
 /// The raw exposed video memory. Writing to this will change the content
 /// on the screen.
 /// Memory is interpreted with the current video mode to produce an image.

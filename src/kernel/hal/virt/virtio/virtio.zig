@@ -5,6 +5,7 @@ const page_size = ashet.memory.page_size;
 
 pub const queue = @import("queue.zig");
 pub const gpu = @import("gpu.zig");
+pub const input = @import("input.zig");
 
 pub const ControlRegs = extern struct {
     pub const magic = @bitCast(u32, @as([4]u8, "virt".*));
@@ -54,7 +55,7 @@ pub const ControlRegs = extern struct {
     pub const DeviceInfo = extern union {
         padding: [0xf00]u8,
         gpu: gpu.Config,
-        // struct VirtIOInputConfig input;
+        input: input.Config,
     };
 
     pub fn negotiateFeatures(regs: *volatile ControlRegs, requested_features: u64) !u64 {

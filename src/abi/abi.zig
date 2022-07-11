@@ -26,6 +26,7 @@ pub const SysCallInterface = extern struct {
     video: Video,
     process: Process,
     fs: FileSystem,
+    input: Input,
 
     pub const Console = extern struct {
         clear: fn () callconv(.C) void,
@@ -66,6 +67,12 @@ pub const SysCallInterface = extern struct {
         openDir: fn (path_ptr: [*]const u8, path_len: usize) callconv(.C) DirectoryHandle,
         nextFile: fn (DirectoryHandle, *FileInfo) callconv(.C) bool,
         closeDir: fn (DirectoryHandle) callconv(.C) void,
+    };
+
+    pub const Input = extern struct {
+        getEvent: fn (*InputEvent) callconv(.C) InputEventType,
+        getKeyboardEvent: fn (*KeyboardEvent) callconv(.C) bool,
+        getMouseEvent: fn (*MouseEvent) callconv(.C) bool,
     };
 };
 
@@ -169,4 +176,53 @@ pub const FileMode = enum(u8) {
     create_always = 2,
     open_always = 3,
     open_append = 4,
+};
+
+pub const InputEventType = enum(u8) {
+    none = 0,
+    mouse = 1,
+    keyboard = 2,
+};
+
+pub const InputEvent = extern union {
+    mouse: MouseEvent,
+    keyboard: KeyboardEvent,
+};
+
+pub const MouseEvent = extern struct {
+    type: Type,
+    x: u16,
+    y: u16,
+    dx: i16,
+    dy: i16,
+    button: MouseButton,
+
+    pub const Type = enum(u8) {
+        motion,
+        button_press,
+        button_release,
+    };
+};
+
+pub const KeyboardEvent = extern struct {
+    scancode: u32,
+    key: KeyCode,
+    pressed: bool,
+};
+
+pub const KeyCode = enum(u16) {
+    escape = 1,
+    unknown = 0xFFFF,
+    _,
+};
+
+pub const MouseButton = enum(u8) {
+    none = 0,
+    left = 1,
+    right = 2,
+    middle = 3,
+    nav_previous = 4,
+    nav_next = 5,
+    wheel_down = 6,
+    wheel_up = 7,
 };

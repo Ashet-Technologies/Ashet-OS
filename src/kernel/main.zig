@@ -11,6 +11,7 @@ pub const serial = @import("components/serial.zig");
 pub const scheduler = @import("components/scheduler.zig");
 pub const syscalls = @import("components/syscalls.zig");
 pub const filesystem = @import("components/filesystem.zig");
+pub const input = @import("components/input.zig");
 
 export fn ashet_kernelMain() void {
     // Populate RAM with the right sections, and compute how much dynamic memory we have available
@@ -31,6 +32,8 @@ export fn ashet_kernelMain() void {
 
 fn main() !void {
     filesystem.initialize();
+
+    input.initialize();
 
     // hal.serial.write(.COM1, "Hello, World!\r\n");
 
@@ -67,7 +70,7 @@ fn main() !void {
     if (video.is_flush_required) {
         // if the HAL requires regular flushing of the screen,
         // we start a thread here that will do this.
-        const thread = scheduler.Thread.spawn(periodicScreenFlush, null, null) catch @panic("could not create screen updater thread.");
+        const thread = try scheduler.Thread.spawn(periodicScreenFlush, null, null);
         try thread.start();
         thread.detach();
     }
@@ -143,14 +146,12 @@ fn main() !void {
 }
 
 fn periodicScreenFlush(_: ?*anyopaque) callconv(.C) u32 {
-    var i: usize = 0;
-    while (i < 30) : (i += 1) {
+    while (true) {
         video.flush();
 
         // TODO: replace with actual waiting code instead of burning up all CPU
         scheduler.yield();
     }
-
     return 0;
 }
 

@@ -122,6 +122,8 @@ pub fn build(b: *std.build.Builder) void {
         "-M", "virt",
         "-m",      "32M", // we have *some* overhead on the virt platform
         "-device", "virtio-gpu-device,xres=400,yres=300",
+        "-device", "virtio-keyboard-device",
+        "-device", "virtio-mouse-device",
         "-d",      "guest_errors",
         "-bios",   "none",
         "-drive",  "if=pflash,index=0,file=zig-out/bin/ashet-os.bin,format=raw",

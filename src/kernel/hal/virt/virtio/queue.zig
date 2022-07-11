@@ -123,10 +123,10 @@ pub fn VirtQ(comptime queue_size: comptime_int) type {
             return next;
         }
 
-        pub fn singlePollUsed(vq: *Queue) u16 {
+        pub fn singlePollUsed(vq: *Queue) ?u16 {
             const next = vq.used_i;
             if (volatileRead(&vq.used.idx) == vq.used_i) {
-                return -1;
+                return null;
             }
             vq.used_i += 1;
             return next;

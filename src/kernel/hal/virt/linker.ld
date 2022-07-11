@@ -28,7 +28,7 @@ SECTIONS {
 
     .stack (NOLOAD) : {
         . = ALIGN(4096);
-        . += 8192; /* 4k kernel stack */
+        . += 0x8000; 
         kernel_stack = .;
     } > dram
 
