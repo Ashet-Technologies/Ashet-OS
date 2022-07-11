@@ -63,7 +63,10 @@ pub const memory = struct {
 };
 
 pub const video = struct {
-    var backing_buffer: [32768]u8 align(ashet.memory.page_size) = ashet.video.defaults.splash_screen;
+    const max_width = 400;
+    const max_height = 300;
+
+    var backing_buffer: [max_width * max_height]u8 align(ashet.memory.page_size) = ashet.video.defaults.splash_screen ++ ([1]u8{0} ** (max_width * max_height - ashet.video.defaults.splash_screen.len));
     var backing_palette: [256]u16 = ashet.video.defaults.palette;
 
     pub const memory: []align(ashet.memory.page_size) u8 = &backing_buffer;
@@ -72,12 +75,20 @@ pub const video = struct {
     var video_mode: ashet.video.Mode = .graphics;
     var border_color: u8 = ashet.video.defaults.border;
 
+    var graphics_width: u16 = 256;
+    var graphics_height: u16 = 128;
+
     pub fn setMode(m: ashet.video.Mode) void {
         video_mode = m;
     }
 
     pub fn setBorder(b: u8) void {
         border_color = b;
+    }
+
+    pub fn setResolution(width: u16, height: u16) void {
+        graphics_width = width;
+        graphics_height = height;
     }
 
     fn pal(index: u8) u32 {
@@ -127,12 +138,12 @@ pub const video = struct {
             },
 
             .graphics => {
-                const dx = (gpu.fb_width - 256) / 2;
-                const dy = (gpu.fb_height - 128) / 2;
+                const dx = (gpu.fb_width - graphics_width) / 2;
+                const dy = (gpu.fb_height - graphics_height) / 2;
 
                 for (video.memory[0..32768]) |index, i| {
-                    const x = dx + i % 256;
-                    const y = dy + i / 256;
+                    const x = dx + i % graphics_width;
+                    const y = dy + i / graphics_width;
 
                     gpu.fb_mem[gpu.fb_width * y + x] = pal(index);
                 }

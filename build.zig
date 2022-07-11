@@ -119,8 +119,8 @@ pub fn build(b: *std.build.Builder) void {
 
     const run_cmd = b.addSystemCommand(&.{"qemu-system-riscv32"});
     run_cmd.addArgs(&.{
-        "-M",      "virt",
-        "-m",      "16M",
+        "-M", "virt",
+        "-m",      "32M", // we have *some* overhead on the virt platform
         "-device", "virtio-gpu-device,xres=400,yres=300",
         "-d",      "guest_errors",
         "-bios",   "none",
@@ -137,7 +137,7 @@ pub fn build(b: *std.build.Builder) void {
         const app_shell = createAshetApp(b, "shell", "src/apps/shell.zig");
         app_shell.setBuildMode(mode);
 
-        const app_commander = createAshetApp(b, "commander", "src/apps/dummy.zig");
+        const app_commander = createAshetApp(b, "commander", "src/apps/commander.zig");
         app_commander.setBuildMode(mode);
 
         const app_editor = createAshetApp(b, "editor", "src/apps/dummy.zig");
@@ -146,7 +146,7 @@ pub fn build(b: *std.build.Builder) void {
         const app_browser = createAshetApp(b, "browser", "src/apps/dummy.zig");
         app_browser.setBuildMode(mode);
 
-        const app_music = createAshetApp(b, "music", "src/apps/dummy.zig");
+        const app_music = createAshetApp(b, "music", "src/apps/music.zig");
         app_music.setBuildMode(mode);
     }
 

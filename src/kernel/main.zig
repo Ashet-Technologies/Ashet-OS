@@ -76,32 +76,29 @@ fn main() !void {
 
     console.clear();
     video.setMode(.text);
+    //  video.setResolution(400, 300);
 
-    // {
-    //     try console.writer().writeAll("Available apps:\r\n");
+    {
+        try console.writer().writeAll("Listing available apps:\r\n");
 
-    //     var dir = try fatfs.Dir.open("/apps");
-    //     defer dir.close();
+        var dir = try filesystem.openDir("PF0:/apps");
+        defer filesystem.closeDir(dir);
 
-    //     while (try dir.next()) |ent| {
-    //         const name = std.fmt.fmtSliceEscapeUpper(std.mem.sliceTo(&ent.fname, 0));
-    //         std.log.info("entry: {{ fsize={}, fdate={}, ftime={}, fattrib={}, altname='{}', fname='{}' }}", .{
-    //             ent.fsize,
-    //             ent.fdate,
-    //             ent.ftime,
-    //             ent.fattrib,
-    //             std.fmt.fmtSliceEscapeUpper(std.mem.sliceTo(&ent.altname, 0)),
-    //             name,
-    //         });
-    //         try console.writer().print("- {s}\r\n", .{name});
-    //     }
-    // }
+        while (try filesystem.next(dir)) |ent| {
+            std.log.info("file: size={}, attribs={}, name='{}'", .{
+                ent.size,
+                ent.attributes,
+                std.fmt.fmtSliceEscapeUpper(ent.getName()),
+            });
+            try console.writer().print("- {s}\r\n", .{ent.getName()});
+        }
+    }
 
-    try console.writer().writeAll("Starting app \"shell\"...\r\n");
+    try console.writer().writeAll("\r\nStarting default app...\r\n");
 
     // Start "init" process
     {
-        const app_file = "PF0:/apps/shell/code";
+        const app_file = "PF0:/apps/music/code";
         const stat = try filesystem.stat(app_file);
 
         const proc_byte_size = stat.size;

@@ -28,17 +28,20 @@ pub const SysCallInterface = extern struct {
     fs: FileSystem,
 
     pub const Console = extern struct {
+        clear: fn () callconv(.C) void,
         print: fn ([*]const u8, usize) callconv(.C) void,
     };
 
     pub const Video = extern struct {
         setMode: fn (VideoMode) callconv(.C) void,
         setBorder: fn (ColorIndex) callconv(.C) void,
+        setResolution: fn (u16, u16) callconv(.C) void,
         getVideoMemory: fn () callconv(.C) [*]ColorIndex,
         getPaletteMemory: fn () callconv(.C) *[palette_size]u16,
     };
 
     pub const Process = extern struct {
+        yield: fn () callconv(.C) void,
         exit: fn (u32) callconv(.C) noreturn,
     };
 
@@ -134,6 +137,10 @@ pub const FileInfo = extern struct {
     // WORD	fdate;			/* Modified date */
     // WORD	ftime;			/* Modified time */
     // BYTE	fattrib;		/* File attribute */
+
+    pub fn getName(self: *const FileInfo) []const u8 {
+        return std.mem.sliceTo(&self.name, 0);
+    }
 };
 
 pub const FileAttributes = packed struct {

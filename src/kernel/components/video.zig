@@ -143,6 +143,16 @@ pub fn flush() void {
     hal.video.flush();
 }
 
+/// Sets the screen resolution of the video mode.
+/// This will make it simpler to create smaller applications that are
+/// centered on the screen by reducing the logical resolution of the screen.
+/// This only applies to graphics mode.
+pub fn setResolution(width: u16, height: u16) void {
+    std.debug.assert(width > 0 and height > 0);
+    std.debug.assert(width <= 400 and height <= 300);
+    hal.video.setResolution(width, height);
+}
+
 /// Computes the character attributes and selects both foreground and background color.
 pub fn charAttributes(foreground: u4, background: u4) u8 {
     return (CharAttributes{ .fg = foreground, .bg = background }).toByte();

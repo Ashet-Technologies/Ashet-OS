@@ -72,23 +72,18 @@ fn translatePath(target_buffer: []u8, path: []const u8) error{ PathTooLong, Inva
     return error.InvalidDevice;
 }
 
-pub fn stat(path: []const u8) !ashet.abi.FileInfo {
-    var path_buffer: [max_path]u8 = undefined;
-    const fatfs_path = try translatePath(&path_buffer, path);
-
-    const src_stat = try fatfs.stat(fatfs_path);
-
+fn translateFileInfo(src: fatfs.FileInfo) ashet.abi.FileInfo {
     var info = ashet.abi.FileInfo{
         .name = undefined,
-        .size = src_stat.fsize,
+        .size = src.fsize,
         .attributes = .{
-            .directory = (src_stat.fattrib & fatfs.Attributes.directory) != 0,
-            .read_only = (src_stat.fattrib & fatfs.Attributes.read_only) != 0,
-            .hidden = (src_stat.fattrib & fatfs.Attributes.hidden) != 0,
+            .directory = (src.fattrib & fatfs.Attributes.directory) != 0,
+            .read_only = (src.fattrib & fatfs.Attributes.read_only) != 0,
+            .hidden = (src.fattrib & fatfs.Attributes.hidden) != 0,
         },
     };
 
-    const src_name = std.mem.sliceTo(&src_stat.fname, 0);
+    const src_name = std.mem.sliceTo(&src.fname, 0);
 
     if (src_name.len > max_path)
         @panic("source file name too long!");
@@ -97,12 +92,21 @@ pub fn stat(path: []const u8) !ashet.abi.FileInfo {
     std.mem.copy(u8, &info.name, src_name);
 
     return info;
-    //
+}
+
+pub fn stat(path: []const u8) !ashet.abi.FileInfo {
+    var path_buffer: [max_path]u8 = undefined;
+    const fatfs_path = try translatePath(&path_buffer, path);
+
+    const src_stat = try fatfs.stat(fatfs_path);
+
+    return translateFileInfo(src_stat);
 }
 
 pub fn open(path: []const u8, access: ashet.abi.FileAccess, mode: ashet.abi.FileMode) !ashet.abi.FileHandle {
-    const handle = try allocFileHandle();
-    const index = handleToIndexUnsafe(handle);
+    const handle = try file_handles.alloc();
+    errdefer file_handles.free(handle);
+    const index = file_handles.handleToIndexUnsafe(handle);
 
     const fatfs_access = switch (access) {
         .read_only => fatfs.File.Access.read_only,
@@ -120,110 +124,151 @@ pub fn open(path: []const u8, access: ashet.abi.FileAccess, mode: ashet.abi.File
     var path_buffer: [max_path]u8 = undefined;
     const fatfs_path = try translatePath(&path_buffer, path);
 
-    file_handle_backing[index] = try fatfs.File.open(fatfs_path, .{
+    file_handles.backings[index] = try fatfs.File.open(fatfs_path, .{
         .mode = fatfs_mode,
         .access = fatfs_access,
     });
-    errdefer file_handle_backing[index].close();
+    errdefer file_handles.backings[index].close();
 
     return handle;
 }
 
 pub fn flush(handle: ashet.abi.FileHandle) !void {
-    const index = try resolveHandle(handle);
-    try file_handle_backing[index].sync();
+    const index = try file_handles.resolve(handle);
+    try file_handles.backings[index].sync();
 }
 
 pub fn read(handle: ashet.abi.FileHandle, buffer: []u8) !usize {
-    const index = try resolveHandle(handle);
-    return try file_handle_backing[index].read(buffer);
+    const index = try file_handles.resolve(handle);
+    return try file_handles.backings[index].read(buffer);
 }
 
 pub fn write(handle: ashet.abi.FileHandle, buffer: []const u8) !usize {
-    const index = try resolveHandle(handle);
-    return try file_handle_backing[index].write(buffer);
+    const index = try file_handles.resolve(handle);
+    return try file_handles.backings[index].write(buffer);
 }
 
 pub fn seekTo(handle: ashet.abi.FileHandle, offset: u64) !void {
-    const index = try resolveHandle(handle);
+    const index = try file_handles.resolve(handle);
     const offset32 = std.math.cast(fatfs.FileSize, offset) orelse return error.OutOfBounds;
-    try file_handle_backing[index].seekTo(offset32);
+    try file_handles.backings[index].seekTo(offset32);
 }
 
 pub fn close(handle: ashet.abi.FileHandle) void {
-    const index = resolveHandle(handle) catch {
+    const index = file_handles.resolve(handle) catch {
         logger.info("close request for invalid file handle {}", .{handle});
         return;
     };
-    file_handle_backing[index].close();
-    freeFileHandle(handle);
+    file_handles.backings[index].close();
+    file_handles.free(handle);
 }
 
-const FileHandleType = std.meta.Tag(ashet.abi.FileHandle);
-const FileHandleSet = std.bit_set.ArrayBitSet(u32, max_open_files);
+pub fn openDir(path: []const u8) !ashet.abi.DirectoryHandle {
+    const handle = try directory_handles.alloc();
+    errdefer directory_handles.free(handle);
+    const index = directory_handles.handleToIndexUnsafe(handle);
 
-comptime {
-    if (!std.math.isPowerOfTwo(max_open_files))
-        @compileError("max_open_files must be a power of two!");
+    var path_buffer: [max_path]u8 = undefined;
+    const fatfs_path = try translatePath(&path_buffer, path);
+
+    directory_handles.backings[index] = try fatfs.Dir.open(fatfs_path);
+    errdefer directory_handles.backings[index].close();
+
+    return handle;
 }
 
-const file_handle_index_mask = max_open_files - 1;
+pub fn next(handle: ashet.abi.DirectoryHandle) !?ashet.abi.FileInfo {
+    const index = try directory_handles.resolve(handle);
 
-var file_handle_generations = std.mem.zeroes([max_open_files]FileHandleType);
-var active_file_handles = FileHandleSet.initFull();
-var file_handle_backing: [max_open_files]fatfs.File = undefined;
+    const raw_info = try directory_handles.backings[index].next();
 
-fn allocFileHandle() error{SystemFdQuotaExceeded}!ashet.abi.FileHandle {
-    if (active_file_handles.toggleFirstSet()) |index| {
-        while (true) {
-            const generation = file_handle_generations[index];
-            const numeric = generation *% max_open_files + index;
+    return if (raw_info) |raw|
+        translateFileInfo(raw)
+    else
+        null;
+}
 
-            const handle = @intToEnum(ashet.abi.FileHandle, numeric);
-            if (handle == .invalid) {
-                file_handle_generations[index] += 1;
-                continue;
-            }
-            return handle;
+pub fn closeDir(handle: ashet.abi.DirectoryHandle) void {
+    const index = directory_handles.resolve(handle) catch {
+        logger.info("close request for invalid directory handle {}", .{handle});
+        return;
+    };
+    directory_handles.backings[index].close();
+    directory_handles.free(handle);
+}
+
+const file_handles = HandleAllocator(ashet.abi.FileHandle, fatfs.File);
+const directory_handles = HandleAllocator(ashet.abi.DirectoryHandle, fatfs.Dir);
+
+fn HandleAllocator(comptime Handle: type, comptime Backing: type) type {
+    return struct {
+        const HandleType = std.meta.Tag(Handle);
+        const HandleSet = std.bit_set.ArrayBitSet(u32, max_open_files);
+
+        comptime {
+            if (!std.math.isPowerOfTwo(max_open_files))
+                @compileError("max_open_files must be a power of two!");
         }
-    } else {
-        return error.SystemFdQuotaExceeded;
-    }
-}
 
-fn resolveHandle(handle: ashet.abi.FileHandle) !usize {
-    const numeric = @enumToInt(handle);
+        const handle_index_mask = max_open_files - 1;
 
-    const index = numeric & file_handle_index_mask;
-    const generation = numeric / max_open_files;
+        var generations = std.mem.zeroes([max_open_files]HandleType);
+        var active_handles = HandleSet.initFull();
+        var backings: [max_open_files]Backing = undefined;
 
-    if (file_handle_generations[index] != generation)
-        return error.InvalidFileHandle;
+        fn alloc() error{SystemFdQuotaExceeded}!Handle {
+            if (active_handles.toggleFirstSet()) |index| {
+                while (true) {
+                    const generation = generations[index];
+                    const numeric = generation *% max_open_files + index;
 
-    return index;
-}
+                    const handle = @intToEnum(Handle, numeric);
+                    if (handle == .invalid) {
+                        generations[index] += 1;
+                        continue;
+                    }
+                    return handle;
+                }
+            } else {
+                return error.SystemFdQuotaExceeded;
+            }
+        }
 
-fn handleToIndexUnsafe(handle: ashet.abi.FileHandle) usize {
-    const numeric = @enumToInt(handle);
-    return @as(usize, numeric & file_handle_index_mask);
-}
+        fn resolve(handle: Handle) !usize {
+            const numeric = @enumToInt(handle);
 
-fn freeFileHandle(handle: ashet.abi.FileHandle) void {
-    const numeric = @enumToInt(handle);
+            const index = numeric & handle_index_mask;
+            const generation = numeric / max_open_files;
 
-    const index = numeric & file_handle_index_mask;
-    const generation = numeric / max_open_files;
+            if (generations[index] != generation)
+                return error.InvalidFileHandle;
 
-    if (file_handle_generations[index] != generation) {
-        logger.err("freeFileHandle received invalid file handle: {}(index:{}, gen:{})", .{
-            numeric,
-            index,
-            generation,
-        });
-    } else {
-        active_file_handles.set(index);
-        file_handle_generations[index] += 1;
-    }
+            return index;
+        }
+
+        fn handleToIndexUnsafe(handle: Handle) usize {
+            const numeric = @enumToInt(handle);
+            return @as(usize, numeric & handle_index_mask);
+        }
+
+        fn free(handle: Handle) void {
+            const numeric = @enumToInt(handle);
+
+            const index = numeric & handle_index_mask;
+            const generation = numeric / max_open_files;
+
+            if (generations[index] != generation) {
+                logger.err("freeFileHandle received invalid file handle: {}(index:{}, gen:{})", .{
+                    numeric,
+                    index,
+                    generation,
+                });
+            } else {
+                active_handles.set(index);
+                generations[index] += 1;
+            }
+        }
+    };
 }
 
 const Disk = struct {
