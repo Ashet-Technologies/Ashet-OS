@@ -25,6 +25,7 @@ pub const SysCallInterface = extern struct {
     console: Console,
     video: Video,
     process: Process,
+    fs: FileSystem,
 
     pub const Console = extern struct {
         print: fn ([*]const u8, usize) callconv(.C) void,
@@ -39,6 +40,29 @@ pub const SysCallInterface = extern struct {
 
     pub const Process = extern struct {
         exit: fn (u32) callconv(.C) noreturn,
+    };
+
+    pub const FileSystem = extern struct {
+        delete: fn (path_ptr: [*]const u8, path_len: usize) callconv(.C) bool,
+        mkdir: fn (path_ptr: [*]const u8, path_len: usize) callconv(.C) bool,
+        rename: fn (old_path_ptr: [*]const u8, old_path_len: usize, new_path_ptr: [*]const u8, new_path_len: usize) callconv(.C) bool,
+        stat: fn (path_ptr: [*]const u8, path_len: usize, *FileInfo) callconv(.C) bool,
+
+        openFile: fn (path_ptr: [*]const u8, path_len: usize, FileAccess, FileMode) callconv(.C) FileHandle,
+
+        read: fn (FileHandle, ptr: [*]u8, len: usize) callconv(.C) usize,
+        write: fn (FileHandle, ptr: [*]const u8, len: usize) callconv(.C) usize,
+
+        seekTo: fn (FileHandle, offset: u64) callconv(.C) bool,
+        // seekBy: fn (FileHandle, offset: i64) callconv(.C) usize,
+        // seekFromEnd: fn (FileHandle, offset: u64) callconv(.C) usize,
+
+        flush: fn (FileHandle) callconv(.C) bool,
+        close: fn (FileHandle) callconv(.C) void,
+
+        openDir: fn (path_ptr: [*]const u8, path_len: usize) callconv(.C) DirectoryHandle,
+        nextFile: fn (DirectoryHandle, *FileInfo) callconv(.C) bool,
+        closeDir: fn (DirectoryHandle) callconv(.C) void,
     };
 };
 
@@ -96,4 +120,46 @@ pub const Color = packed struct {
             exp_g << 8 |
             exp_b << 16;
     }
+};
+
+pub const max_path = 256;
+
+pub const FileHandle = enum(u32) { invalid, _ };
+pub const DirectoryHandle = enum(u32) { invalid, _ };
+
+pub const FileInfo = extern struct {
+    name: [max_path]u8,
+    size: usize,
+    attributes: FileAttributes,
+    // WORD	fdate;			/* Modified date */
+    // WORD	ftime;			/* Modified time */
+    // BYTE	fattrib;		/* File attribute */
+};
+
+pub const FileAttributes = packed struct {
+    directory: bool,
+    read_only: bool,
+    hidden: bool,
+    // system: bool,
+    // archive: bool,
+    padding0: u5 = 0,
+    padding1: u8 = 0,
+};
+
+comptime {
+    std.debug.assert(@sizeOf(FileAttributes) == 2);
+}
+
+pub const FileAccess = enum(u8) {
+    read_only = 0,
+    write_only = 1,
+    read_write = 2,
+};
+
+pub const FileMode = enum(u8) {
+    open_existing = 0,
+    create_new = 1,
+    create_always = 2,
+    open_always = 3,
+    open_append = 4,
 };
