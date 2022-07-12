@@ -8,6 +8,9 @@ const ashet_syscall_interface: abi.SysCallInterface align(16) = .{
     .console = .{
         .clear = @"console.clear",
         .print = @"console.print",
+        .output = @"console.output",
+        .setCursor = @"input.setCursor",
+        .readLine = @"input.readLine",
     },
     .video = .{
         .setMode = @"video.setMode",
@@ -56,6 +59,11 @@ fn @"console.clear"() callconv(.C) void {
 
 fn @"console.print"(ptr: [*]const u8, len: usize) callconv(.C) void {
     ashet.console.write(ptr[0..len]);
+}
+fn @"console.output"(ptr: [*]const u8, len: usize) callconv(.C) void {
+    for (ptr[0..len]) |c| {
+        ashet.console.putRaw(c);
+    }
 }
 
 fn @"video.setMode"(mode: abi.VideoMode) callconv(.C) void {
@@ -169,4 +177,21 @@ fn @"input.getKeyboardEvent"(event: *abi.KeyboardEvent) callconv(.C) bool {
 fn @"input.getMouseEvent"(event: *abi.MouseEvent) callconv(.C) bool {
     event.* = ashet.input.getMouseEvent() orelse return false;
     return true;
+}
+
+fn @"input.setCursor"(x: u8, y: u8) callconv(.C) void {
+    ashet.console.cursor.x = std.math.clamp(x, 0, ashet.console.width - 1);
+    ashet.console.cursor.y = std.math.clamp(y, 0, ashet.console.height - 1);
+}
+
+fn @"input.readLine"(params: *abi.ReadLineParams) callconv(.C) abi.ReadLineResult {
+    const res = ashet.console.readLine(params.buffer[0..params.buffer_len], params.width) catch |e| return switch (e) {
+        error.Cancelled => .cancelled,
+        else => return .failed,
+    };
+
+    std.debug.assert(res.len <= params.buffer_len);
+    params.buffer_len = res.len;
+
+    return .ok;
 }

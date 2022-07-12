@@ -22,6 +22,7 @@ echo "create directory structure..."
 
 mmd -i "${DISK}" ::/bin
 mmd -i "${DISK}" ::/apps
+mmd -i "${DISK}" ::/etc
 
 for path in ${ROOT}/zig-out/apps/*.bin; do 
   fname="$(basename "${path}")"
@@ -32,6 +33,11 @@ for path in ${ROOT}/zig-out/apps/*.bin; do
   mmd -i "${DISK}" "::/apps/${app_name}"
   mcopy -i "${DISK}" "${path}" "::/apps/${app_name}/code"
 done
+
+echo "populate aux files"
+
+unix2dos "${ROOT}/files/readme" 
+mcopy -i "${DISK}" "${ROOT}/files/readme" "::/etc/readme"
 
 echo "showing root dir"
 

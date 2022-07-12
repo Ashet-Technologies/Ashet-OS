@@ -113,14 +113,13 @@ fn fetchOrSpace(str: []const u8, index: usize) u8 {
 
 pub fn readLine(buffer: []u8, limit: usize) error{ NoSpaceLeft, Cancelled, OutOfMemory, InvalidUtf8 }![]u8 {
     const max_len = std.math.min(buffer.len, width - cursor.x);
-    std.log.info("{} < {}", .{ max_len, buffer.len });
     if (max_len < limit)
         return error.NoSpaceLeft;
 
     var fba = std.heap.FixedBufferAllocator.init(buffer);
 
     var editor = try TextEditor.init(fba.allocator(), "");
-    // defer editor.deinit(); // NOT NEEDED,
+    defer editor.deinit();
 
     const display_range = video.memory[charOffset(cursor.x, cursor.y)..][0 .. 2 * limit];
     errdefer {
@@ -183,8 +182,10 @@ pub fn readLine(buffer: []u8, limit: usize) error{ NoSpaceLeft, Cancelled, OutOf
             }
         }
 
-        // ashet.scheduler.yield();
         ashet.video.flush();
+        if (ashet.scheduler.Thread.current() != null) {
+            ashet.scheduler.yield();
+        }
     }
 
     {
@@ -197,5 +198,16 @@ pub fn readLine(buffer: []u8, limit: usize) error{ NoSpaceLeft, Cancelled, OutOf
         ashet.video.flush();
     }
 
-    return editor.bytes.items;
+    const res_buf = editor.bytes.toOwnedSlice();
+
+    if (res_buf.len == 0) {
+        return buffer[0..0];
+    } else {
+
+        // we want this to actually be true.
+        // Let's just hope that the FixedBufferAllocator does it's job
+        std.debug.assert(res_buf.ptr == buffer.ptr);
+
+        return res_buf;
+    }
 }

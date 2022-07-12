@@ -31,6 +31,9 @@ pub const SysCallInterface = extern struct {
     pub const Console = extern struct {
         clear: fn () callconv(.C) void,
         print: fn ([*]const u8, usize) callconv(.C) void,
+        output: fn ([*]const u8, usize) callconv(.C) void,
+        setCursor: fn (x: u8, y: u8) callconv(.C) void,
+        readLine: fn (params: *ReadLineParams) callconv(.C) ReadLineResult,
     };
 
     pub const Video = extern struct {
@@ -355,3 +358,16 @@ comptime {
     if (@sizeOf(KeyboardModifiers) != 2)
         @compileError("KeyboardModifiers must be 2 byte large");
 }
+
+pub const ReadLineParams = extern struct {
+    buffer: [*]u8,
+    buffer_len: usize,
+
+    width: u16,
+};
+
+pub const ReadLineResult = enum(u8) {
+    ok = 0,
+    cancelled = 1,
+    failed = 2,
+};

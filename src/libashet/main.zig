@@ -95,6 +95,10 @@ pub const console = struct {
         syscalls().console.clear();
     }
 
+    pub fn output(string: []const u8) void {
+        syscalls().console.output(string.ptr, string.len);
+    }
+
     fn writeRaw(_: void, buffer: []const u8) WriteError!usize {
         syscalls().console.print(buffer.ptr, buffer.len);
         return buffer.len;
@@ -112,6 +116,20 @@ pub const console = struct {
 
     pub fn print(comptime fmt: []const u8, args: anytype) void {
         writer().print(fmt, args) catch unreachable;
+    }
+
+    pub fn readLine(buffer: []u8, width: u16) error{Failure}!?[]u8 {
+        var params = abi.ReadLineParams{
+            .buffer = buffer.ptr,
+            .buffer_len = buffer.len,
+            .width = width,
+        };
+
+        return switch (syscalls().console.readLine(&params)) {
+            .ok => buffer[0..params.buffer_len],
+            .cancelled => null,
+            .failed => error.Failure,
+        };
     }
 };
 
