@@ -23,6 +23,22 @@ const pkgs = struct {
         .name = "hal",
         .source = .{ .path = "src/kernel/hal/ashet/hal.zig" },
     };
+
+    pub const text_editor = std.build.Pkg{
+        .name = "text-editor",
+        .source = .{ .path = "vendor/text-editor/src/TextEditor.zig" },
+        .dependencies = &.{ ziglyph, zigstr },
+    };
+
+    const ziglyph = std.build.Pkg{
+        .name = "ziglyph",
+        .source = .{ .path = "vendor/text-editor/vendor/ziglyph/src/ziglyph.zig" },
+    };
+    const zigstr = std.build.Pkg{
+        .name = "zigstr",
+        .source = .{ .path = "vendor/text-editor/vendor/zigstr/src/Zigstr.zig" },
+        .dependencies = &.{ziglyph},
+    };
 };
 
 const target = std.zig.CrossTarget{
@@ -87,6 +103,7 @@ pub fn build(b: *std.build.Builder) void {
     kernel_exe.setBuildMode(mode);
     kernel_exe.addPackage(pkgs.hal_virt);
     kernel_exe.addPackage(pkgs.abi);
+    kernel_exe.addPackage(pkgs.text_editor);
     kernel_exe.addPackage(FatFS.getPackage(b, "fatfs", fatfs_config));
     kernel_exe.setLinkerScriptPath(.{ .path = "src/kernel/hal/virt/linker.ld" });
     kernel_exe.install();

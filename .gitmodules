@@ -1,3 +1,6 @@
 [submodule "vendor/zfat"]
 	path = vendor/zfat
 	url = https://github.com/ZigEmbeddedGroup/zfat
+[submodule "vendor/text-editor"]
+	path = vendor/text-editor
+	url = https://github.com/MasterQ32/TextEditor

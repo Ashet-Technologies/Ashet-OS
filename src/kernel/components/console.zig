@@ -1,5 +1,6 @@
 const std = @import("std");
 const ashet = @import("../main.zig");
+const TextEditor = @import("text-editor");
 
 const video = ashet.video;
 
@@ -101,4 +102,100 @@ pub const Writer = std.io.Writer(void, Error, writeForWriter);
 
 pub fn writer() Writer {
     return Writer{ .context = {} };
+}
+
+fn fetchOrSpace(str: []const u8, index: usize) u8 {
+    return if (index < str.len)
+        str[index]
+    else
+        ' ';
+}
+
+pub fn readLine(buffer: []u8, limit: usize) error{ NoSpaceLeft, Cancelled, OutOfMemory, InvalidUtf8 }![]u8 {
+    const max_len = std.math.min(buffer.len, width - cursor.x);
+    std.log.info("{} < {}", .{ max_len, buffer.len });
+    if (max_len < limit)
+        return error.NoSpaceLeft;
+
+    var fba = std.heap.FixedBufferAllocator.init(buffer);
+
+    var editor = try TextEditor.init(fba.allocator(), "");
+    // defer editor.deinit(); // NOT NEEDED,
+
+    const display_range = video.memory[charOffset(cursor.x, cursor.y)..][0 .. 2 * limit];
+    errdefer {
+        for (display_range) |*c, i| {
+            c.* = if (i % 2 == 0)
+                ' '
+            else
+                @as(u8, 0x0F);
+        }
+        ashet.video.flush();
+    }
+
+    main_loop: while (true) {
+        for (display_range) |*c, i| {
+            c.* = if (i % 2 == 0)
+                fetchOrSpace(editor.getText(), i / 2)
+            else if (i / 2 == editor.cursor)
+                @as(u8, 0xF0)
+            else
+                @as(u8, 0xF2);
+        }
+
+        while (ashet.input.getKeyboardEvent()) |event| {
+            if (!event.pressed)
+                continue;
+            switch (event.key) {
+                // we can safely return the text pointer here as we
+                // use a fixed buffer allocator to receive the contents
+                .@"return" => break :main_loop,
+
+                .escape => return error.Cancelled,
+
+                .left => if (event.modifiers.ctrl)
+                    editor.moveCursor(.left, .word)
+                else
+                    editor.moveCursor(.left, .letter),
+
+                .right => if (event.modifiers.ctrl)
+                    editor.moveCursor(.right, .word)
+                else
+                    editor.moveCursor(.right, .letter),
+
+                .home => editor.moveCursor(.left, .line),
+                .end => editor.moveCursor(.right, .line),
+
+                .backspace => if (event.modifiers.ctrl)
+                    editor.delete(.left, .word)
+                else
+                    editor.delete(.left, .letter),
+
+                .delete => if (event.modifiers.ctrl)
+                    editor.delete(.right, .word)
+                else
+                    editor.delete(.right, .letter),
+
+                else => if (event.text) |text_ptr| {
+                    const text = std.mem.sliceTo(text_ptr, 0);
+                    try editor.insertText(text);
+                },
+            }
+        }
+
+        // ashet.scheduler.yield();
+        ashet.video.flush();
+    }
+
+    {
+        for (display_range) |*c, i| {
+            c.* = if (i % 2 == 0)
+                fetchOrSpace(editor.getText(), i / 2)
+            else
+                @as(u8, 0x0F);
+        }
+        ashet.video.flush();
+    }
+
+    return editor.bytes.items;
 }

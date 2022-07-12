@@ -97,47 +97,55 @@ fn main() !void {
         }
     }
 
-    try console.writer().writeAll("\r\nStarting default app...\r\n");
+    try console.writer().writeAll("\r\nEnter your name: ");
 
-    // Start "init" process
-    {
-        const app_file = "PF0:/apps/music/code";
-        const stat = try filesystem.stat(app_file);
+    var name_buf: [64]u8 = undefined;
+    const name = try console.readLine(&name_buf, 32);
+    try console.writer().print("\r\nOkay, your name is '{s}'!", .{name});
 
-        const proc_byte_size = stat.size;
+    // //
 
-        const process_memory = @as([]align(memory.page_size) u8, @intToPtr([*]align(memory.page_size) u8, 0x80800000)[0..std.mem.alignForward(proc_byte_size, memory.page_size)]);
+    // try console.writer().writeAll("\r\nStarting default app...\r\n");
 
-        const app_pages = memory.ptrToPage(process_memory.ptr) orelse unreachable;
-        const proc_size = memory.getRequiredPages(process_memory.len);
+    // // Start "init" process
+    // {
+    //     const app_file = "PF0:/apps/music/code";
+    //     const stat = try filesystem.stat(app_file);
 
-        {
-            var i: usize = 0;
-            while (i < proc_size) : (i += 1) {
-                if (!memory.isFree(app_pages + i)) {
-                    @panic("app memory is not free");
-                }
-            }
-            i = 0;
-            while (i < proc_size) : (i += 1) {
-                memory.markUsed(app_pages + i);
-            }
-        }
+    //     const proc_byte_size = stat.size;
 
-        {
-            var file = try filesystem.open(app_file, .read_only, .open_existing);
-            defer filesystem.close(file);
+    //     const process_memory = @as([]align(memory.page_size) u8, @intToPtr([*]align(memory.page_size) u8, 0x80800000)[0..std.mem.alignForward(proc_byte_size, memory.page_size)]);
 
-            const len = try filesystem.read(file, process_memory[0..proc_byte_size]);
-            if (len != proc_byte_size)
-                @panic("could not read all bytes on one go!");
-        }
+    //     const app_pages = memory.ptrToPage(process_memory.ptr) orelse unreachable;
+    //     const proc_size = memory.getRequiredPages(process_memory.len);
 
-        const thread = try scheduler.Thread.spawn(@ptrCast(scheduler.ThreadFunction, process_memory.ptr), null, null);
-        errdefer thread.kill();
+    //     {
+    //         var i: usize = 0;
+    //         while (i < proc_size) : (i += 1) {
+    //             if (!memory.isFree(app_pages + i)) {
+    //                 @panic("app memory is not free");
+    //             }
+    //         }
+    //         i = 0;
+    //         while (i < proc_size) : (i += 1) {
+    //             memory.markUsed(app_pages + i);
+    //         }
+    //     }
 
-        try thread.start();
-    }
+    //     {
+    //         var file = try filesystem.open(app_file, .read_only, .open_existing);
+    //         defer filesystem.close(file);
+
+    //         const len = try filesystem.read(file, process_memory[0..proc_byte_size]);
+    //         if (len != proc_byte_size)
+    //             @panic("could not read all bytes on one go!");
+    //     }
+
+    //     const thread = try scheduler.Thread.spawn(@ptrCast(scheduler.ThreadFunction, process_memory.ptr), null, null);
+    //     errdefer thread.kill();
+
+    //     try thread.start();
+    // }
 
     scheduler.start();
 
