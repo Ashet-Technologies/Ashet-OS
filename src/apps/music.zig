@@ -1,45 +1,36 @@
 const std = @import("std");
 const ashet = @import("ashet");
 
-comptime {
-    _ = ashet;
-}
+pub usingnamespace ashet.core;
 
 pub fn main() void {
-    ashet.syscalls().video.setResolution(256, 128);
-    ashet.syscalls().video.setMode(.graphics);
-    ashet.syscalls().video.setBorder(2);
+    ashet.video.setResolution(256, 128);
+    ashet.video.setMode(.graphics);
+    ashet.video.setBorder(2);
 
     std.mem.copy(
         u8,
-        ashet.syscalls().video.getVideoMemory()[0..32768],
+        ashet.video.getVideoMemory()[0..32768],
         @embedFile("mediaplayer.raw"),
     );
 
     while (true) {
-        var evt: ashet.abi.InputEvent = undefined;
-        switch (ashet.syscalls().input.getEvent(&evt)) {
-            .none => {},
-            .keyboard => {
-                print("mouse => {}\r\n", .{evt.keyboard});
-            },
-            .mouse => {
-                print("keyboard => {}\r\n", .{evt.mouse});
-            },
+        if (ashet.input.getEvent()) |event| {
+            switch (event) {
+                .mouse => |data| std.log.info("mouse => {}", .{data}),
+                .keyboard => |data| std.log.info("keyboard: pressed={}, alt={}, shift={}, ctrl={}, altgr={}, scancode={d: >3}, key={s: <10}, text='{s}'", .{
+                    @boolToInt(data.pressed),
+                    @boolToInt(data.modifiers.alt),
+                    @boolToInt(data.modifiers.shift),
+                    @boolToInt(data.modifiers.ctrl),
+                    @boolToInt(data.modifiers.alt_graph),
+                    data.scancode,
+                    @tagName(data.key),
+                    data.text,
+                }),
+            }
         }
 
-        ashet.syscalls().process.yield();
+        ashet.process.yield();
     }
-}
-
-fn print(comptime fmt: []const u8, args: anytype) void {
-    std.fmt.format(std.io.Writer(void, E, writeString){ .context = {} }, fmt, args) catch unreachable;
-}
-
-const E = error{};
-fn writeString(_: void, buf: []const u8) E!usize {
-    for (buf) |char| {
-        @intToPtr(*volatile u8, 0x1000_0000).* = char;
-    }
-    return buf.len;
 }

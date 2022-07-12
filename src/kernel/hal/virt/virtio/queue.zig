@@ -88,7 +88,7 @@ pub fn VirtQ(comptime queue_size: comptime_int) type {
         }
 
         pub fn pushDescriptorRaw(vq: *Queue, ptr: *anyopaque, length: usize, write: bool, first: bool, last: bool) void {
-            const next_i = vq.desc_i + 1;
+            const next_i = vq.desc_i +% 1;
 
             const desc_i = vq.desc_i % queue_size;
 
@@ -101,7 +101,7 @@ pub fn VirtQ(comptime queue_size: comptime_int) type {
 
             if (first) {
                 vq.avail.ring[vq.avail_i % queue_size] = desc_i;
-                vq.avail_i += 1;
+                vq.avail_i +%= 1;
             }
 
             vq.desc_i = next_i;

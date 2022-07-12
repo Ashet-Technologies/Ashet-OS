@@ -1,9 +1,7 @@
 const std = @import("std");
 const ashet = @import("ashet");
 
-comptime {
-    _ = ashet;
-}
+pub usingnamespace ashet.core;
 
 pub fn main() void {
     ashet.syscalls().video.setMode(.text);

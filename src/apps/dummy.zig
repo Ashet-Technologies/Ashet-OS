@@ -1,8 +1,8 @@
 const std = @import("std");
 const ashet = @import("ashet");
 
-comptime {
-    _ = ashet;
-}
+pub usingnamespace ashet.core;
 
-pub fn main() void {}
+pub fn main() void {
+    std.log.info("Hello, World!", .{});
+}
