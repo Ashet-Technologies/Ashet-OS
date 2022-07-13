@@ -9,6 +9,8 @@ const max_path = ashet.abi.max_path;
 const max_drives = fatfs.volume_count; // CF0, USB0 … USB3, ???
 const max_open_files = 64;
 
+var sys_disk_index: u32 = 0; // system disk index for disk named SYS:
+
 var disks = [1]Disk{Disk{}} ** max_drives;
 var filesystems: [max_drives]fatfs.FileSystem = undefined;
 
@@ -54,18 +56,24 @@ fn initFileSystem(index: usize) !void {
     logger.info("disk {s}: ready.", .{disks[index].blockdev.?.name});
 }
 
+fn translatePathForDev(target_buffer: []u8, path: []const u8, index: usize) error{PathTooLong}![:0]u8 {
+    return std.fmt.bufPrintZ(target_buffer, "{d}:{s}", .{ index, path }) catch return error.PathTooLong;
+}
+
 /// Translates a path in the form of `CF0:/dir/file` into the form
 /// `0:/dir/file` and maps the drive names to indices.
 fn translatePath(target_buffer: []u8, path: []const u8) error{ PathTooLong, InvalidDevice }![:0]u8 {
+    if (std.ascii.startsWithIgnoreCase(path, "SYS:")) {
+        return translatePathForDev(target_buffer, path[4..], sys_disk_index);
+    }
+
     for (disks) |disk, index| {
         if (disk.blockdev) |dev| {
             var named_prefix_buf: [16]u8 = undefined;
             const named_prefix = std.fmt.bufPrint(&named_prefix_buf, "{s}:", .{dev.name}) catch @panic("disk prefix too long!");
 
             if (std.ascii.startsWithIgnoreCase(path, named_prefix)) {
-                return std.fmt.bufPrintZ(target_buffer, "{d}:{s}", .{
-                    index, path[named_prefix.len..],
-                }) catch return error.PathTooLong;
+                return translatePathForDev(target_buffer, path[named_prefix.len..], index);
             }
         }
     }
@@ -138,14 +146,26 @@ pub fn flush(handle: ashet.abi.FileHandle) !void {
     try file_handles.backings[index].sync();
 }
 
-pub fn read(handle: ashet.abi.FileHandle, buffer: []u8) !usize {
+pub const ReadError = error{InvalidFileHandle} || fatfs.File.ReadError;
+pub fn read(handle: ashet.abi.FileHandle, buffer: []u8) ReadError!usize {
     const index = try file_handles.resolve(handle);
     return try file_handles.backings[index].read(buffer);
 }
 
+pub const Reader = std.io.Reader(ashet.abi.FileHandle, ReadError, read);
+pub fn fileReader(handle: ashet.abi.FileHandle) Reader {
+    return Reader{ .context = handle };
+}
+
+pub const WriteError = error{InvalidFileHandle} || fatfs.File.WriteError;
 pub fn write(handle: ashet.abi.FileHandle, buffer: []const u8) !usize {
     const index = try file_handles.resolve(handle);
     return try file_handles.backings[index].write(buffer);
+}
+
+pub const Writer = std.io.Writer(ashet.abi.FileHandle, WriteError, write);
+pub fn fileWriter(handle: ashet.abi.FileHandle) Writer {
+    return Writer{ .context = handle };
 }
 
 pub fn seekTo(handle: ashet.abi.FileHandle, offset: u64) !void {
@@ -308,7 +328,7 @@ const Disk = struct {
         var i: usize = 0;
         while (i < count) : (i += 1) {
             const off = i * sector_size;
-            const mem = @alignCast(4, buff[off .. off + sector_size]);
+            const mem = buff[off .. off + sector_size];
             dev.readBlock(sector + i, mem) catch return error.IoError;
         }
     }
@@ -323,7 +343,7 @@ const Disk = struct {
         var i: usize = 0;
         while (i < count) : (i += 1) {
             const off = (sector + i) * sector_size;
-            const mem = @alignCast(4, buff[off .. off + sector_size]);
+            const mem = buff[off .. off + sector_size];
             dev.writeBlock(sector + i, mem) catch return error.IoError;
         }
     }

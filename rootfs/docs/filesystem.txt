@@ -1,0 +1,28 @@
+SYS:/
+  |- apps
+  |  |- ${app_name}
+  |  |  |- code
+  |  |  |- icon
+  |  '- ${app_name}
+  |     |- code
+  |     |- icon
+  |- bin
+  |  |- cat
+  |  |- font
+  |  '- ...
+  |- etc
+  |  '- readme
+  '- docs
+     '- filesystem.txt
+
+
+SYS:/apps/${app_name}/code
+  A binary that will be loaded to the application load address, then will be executed.
+  Contains the code of the application.
+
+SYS:/apps/${app_name}/icon
+  A 64x64 pixel sized icon with a 15 entry-palette. The file is structured like this:
+  extern struct {
+    bitmap: [64*64]u8,
+    palette: [15]u16,
+  }

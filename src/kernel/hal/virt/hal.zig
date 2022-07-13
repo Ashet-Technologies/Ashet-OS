@@ -142,7 +142,9 @@ pub const video = struct {
                 const dx = (gpu.fb_width - graphics_width) / 2;
                 const dy = (gpu.fb_height - graphics_height) / 2;
 
-                for (video.memory[0..32768]) |index, i| {
+                const pixel_count = @as(usize, graphics_width) * @as(usize, graphics_height);
+
+                for (video.memory[0..pixel_count]) |index, i| {
                     const x = dx + i % graphics_width;
                     const y = dy + i / graphics_width;
 

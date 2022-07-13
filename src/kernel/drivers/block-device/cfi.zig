@@ -122,22 +122,19 @@ pub const CFI = union(enum) {
                 return true;
             }
 
-            fn read(intf: *Interface, block: u64, data: []align(4) u8) ashet.storage.BlockDevice.ReadError!void {
+            fn read(intf: *Interface, block: u64, data: []u8) ashet.storage.BlockDevice.ReadError!void {
                 const self = @fieldParentPtr(Impl, "block_device", intf);
 
                 const block_items = self.block_device.block_size / @sizeOf(InterfaceWidth);
                 const block_start = std.math.cast(usize, block_items * block) orelse return error.InvalidBlock;
-                const block_end = block_start + block_items;
 
                 self.enterMode(.array_read);
-                std.mem.copy(
-                    InterfaceWidth,
-                    std.mem.bytesAsSlice(InterfaceWidth, data),
-                    self.base[block_start..block_end],
-                );
+                for (std.mem.bytesAsSlice(InterfaceWidth, data)) |*dest, i| {
+                    dest.* = self.base[block_start + i];
+                }
             }
 
-            fn write(intf: *Interface, block: u64, data: []align(4) const u8) ashet.storage.BlockDevice.WriteError!void {
+            fn write(intf: *Interface, block: u64, data: []const u8) ashet.storage.BlockDevice.WriteError!void {
                 const self = @fieldParentPtr(Impl, "block_device", intf);
 
                 // we cannot write 256 byte blocks on 8 bit address bus
@@ -164,11 +161,9 @@ pub const CFI = union(enum) {
                 if ((self.base[0x55] & prog_error) != 0)
                     return error.Fault;
 
-                std.mem.copy(
-                    InterfaceWidth,
-                    self.base[block_start..block_end],
-                    std.mem.bytesAsSlice(InterfaceWidth, data),
-                );
+                for (self.base[block_start..block_end]) |*dest, i| {
+                    dest.* = std.mem.bytesAsSlice(InterfaceWidth, data)[i];
+                }
 
                 if ((self.base[0x55] & prog_error) != 0)
                     return error.Fault;

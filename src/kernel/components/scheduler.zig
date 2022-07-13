@@ -33,6 +33,11 @@ pub const ThreadFunction = ashet.abi.ThreadFunction;
 /// Thread management structure.
 /// Is allocated in such a way that is is stored at the end of the last page of thread stack.
 pub const Thread = struct {
+    pub const DebugInfo = if (@import("builtin").mode == .Debug) struct {
+        entry_point: usize = 0,
+        name: [32]u8 = [1]u8{0} ** 32,
+    } else struct {};
+
     pub const default_stack_size = 8192;
 
     const f_started = (1 << 0);
@@ -52,6 +57,8 @@ pub const Thread = struct {
 
     /// The number of memory pages allocated for this thread. Is required to free all thread memory later on.
     num_pages: usize,
+
+    debug_info: DebugInfo = .{},
 
     /// Returns a pointer to the current thread.
     pub fn current() ?*Thread {
@@ -80,6 +87,10 @@ pub const Thread = struct {
             .exit_code = 0,
             .num_pages = stack_page_count,
         };
+
+        if (@import("builtin").mode == .Debug) {
+            thread.debug_info.entry_point = @ptrToInt(func);
+        }
 
         thread.push(0x0000_0000); //      x3  ; gp Global pointer
         thread.push(@ptrToInt(ashet.syscalls.getInterfacePointer())); //      x4  ; tp Thread pointer
@@ -137,9 +148,7 @@ pub const Thread = struct {
             return error.AlreadyStarted;
 
         thread.flags |= f_started;
-
-        thread.queue = &wait_queue;
-        wait_queue.append(&thread.node);
+        enqueueThread(&wait_queue, thread);
     }
 
     pub fn detach(thread: *Thread) void {
@@ -169,6 +178,11 @@ pub const Thread = struct {
         internalDestroy(thread);
     }
 
+    /// Returns the pointer to the "stack top"
+    pub fn getBasePointer(thread: *Thread) ?*anyopaque {
+        return @intToPtr(?*anyopaque, @ptrToInt(thread) + @sizeOf(Thread));
+    }
+
     fn internalDestroy(thread: *Thread) void {
         if (thread.queue) |queue| {
             // when the thread is still queued,
@@ -178,7 +192,7 @@ pub const Thread = struct {
             queue.remove(&thread.node);
         }
 
-        const stack_top = @intToPtr(?*anyopaque, @ptrToInt(thread) + @sizeOf(Thread));
+        const stack_top = thread.getBasePointer();
 
         const first_page = ashet.memory.ptrToPage(stack_top).? - thread.num_pages;
         // std.log.info("releasing {}+{} pages", .{ first_page, thread.num_pages });
@@ -194,6 +208,36 @@ pub const Thread = struct {
         const val = @intToPtr(*u32, thread.sp).*;
         thread.sp += 4;
         return val;
+    }
+
+    pub fn format(self: *const Thread, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        if (@import("builtin").mode == .Debug) {
+            try writer.print("Thread(0x{X:0>8}, name={s}, ep=0x{X:0>8})", .{
+                @ptrToInt(self),
+                std.mem.sliceTo(&self.debug_info.name, 0),
+                self.debug_info.entry_point,
+            });
+        } else {
+            try writer.print("Thread(0x{X:0>8})", .{@ptrToInt(self)});
+        }
+    }
+};
+
+pub const ThreadIterator = struct {
+    pub const Group = enum { waiting };
+
+    current: ?*ThreadQueue.Node,
+
+    pub fn init() ThreadIterator {
+        return ThreadIterator{ .current = wait_queue.first };
+    }
+
+    pub fn next(self: *ThreadIterator) ?*Thread {
+        const node = self.current orelse return null;
+        self.current = node.next;
+        return nodeToThread(node);
     }
 };
 

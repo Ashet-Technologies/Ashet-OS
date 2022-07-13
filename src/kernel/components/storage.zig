@@ -15,8 +15,8 @@ pub const BlockDevice = struct {
         num_blocks: u64, // number
 
         presentFn: fn (*Interface) bool,
-        readFn: fn (*Interface, block: u64, []align(4) u8) ReadError!void,
-        writeFn: fn (*Interface, block: u64, []align(4) const u8) WriteError!void,
+        readFn: fn (*Interface, block: u64, []u8) ReadError!void,
+        writeFn: fn (*Interface, block: u64, []const u8) WriteError!void,
     };
 
     pub fn isPresent(dev: BlockDevice) bool {
@@ -35,12 +35,12 @@ pub const BlockDevice = struct {
         return dev.interface.num_blocks * dev.interface.block_size;
     }
 
-    pub fn writeBlock(dev: BlockDevice, block_num: u32, buffer: []align(4) const u8) WriteError!void {
+    pub fn writeBlock(dev: BlockDevice, block_num: u32, buffer: []const u8) WriteError!void {
         std.debug.assert(buffer.len == dev.interface.block_size);
         return dev.interface.writeFn(dev.interface, block_num, buffer);
     }
 
-    pub fn readBlock(dev: BlockDevice, block_num: u32, buffer: []align(4) u8) ReadError!void {
+    pub fn readBlock(dev: BlockDevice, block_num: u32, buffer: []u8) ReadError!void {
         std.debug.assert(buffer.len == dev.interface.block_size);
         return dev.interface.readFn(dev.interface, block_num, buffer);
     }

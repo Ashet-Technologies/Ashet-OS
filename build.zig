@@ -39,6 +39,11 @@ const pkgs = struct {
         .source = .{ .path = "vendor/text-editor/vendor/zigstr/src/Zigstr.zig" },
         .dependencies = &.{ziglyph},
     };
+
+    pub const zigimg = std.build.Pkg{
+        .name = "zigimg",
+        .source = .{ .path = "vendor/zigimg/zigimg.zig" },
+    };
 };
 
 const target = std.zig.CrossTarget{
@@ -53,26 +58,42 @@ const target = std.zig.CrossTarget{
     }),
 };
 
-fn createAshetApp(b: *std.build.Builder, name: []const u8, source: []const u8) *std.build.LibExeObjStep {
-    const exe = b.addExecutable(name, source);
+const AshetContext = struct {
+    b: *std.build.Builder,
+    mkicon: *std.build.LibExeObjStep,
 
-    exe.setTarget(target);
-    exe.addPackage(pkgs.ashet);
-    exe.setLinkerScriptPath(.{ .path = "src/abi/application.ld" });
-    exe.single_threaded = true;
+    fn createAshetApp(ctx: AshetContext, name: []const u8, source: []const u8, maybe_icon: ?[]const u8) *std.build.LibExeObjStep {
+        const exe = ctx.b.addExecutable(name, source);
 
-    const raw_install_step = exe.installRaw(
-        b.fmt("{s}.bin", .{name}),
-        .{
-            .format = .bin,
-            .dest_dir = .{ .custom = "apps" },
-        },
-    );
+        exe.setTarget(target);
+        exe.addPackage(pkgs.ashet);
+        exe.setLinkerScriptPath(.{ .path = "src/abi/application.ld" });
+        exe.omit_frame_pointer = false;
+        exe.single_threaded = true;
 
-    b.getInstallStep().dependOn(&raw_install_step.step);
+        const raw_install_step = exe.installRaw(
+            ctx.b.fmt("{s}.bin", .{name}),
+            .{
+                .format = .bin,
+                .dest_dir = .{ .custom = "apps" },
+            },
+        );
 
-    return exe;
-}
+        ctx.b.getInstallStep().dependOn(&raw_install_step.step);
+
+        if (maybe_icon) |src_icon| {
+            const mkicon = ctx.mkicon.run();
+
+            mkicon.addArg(src_icon);
+
+            mkicon.addArg(ctx.b.fmt("zig-out/apps/{s}.icon", .{name}));
+
+            ctx.b.getInstallStep().dependOn(&mkicon.step);
+        }
+
+        return exe;
+    }
+};
 
 pub fn build(b: *std.build.Builder) void {
     const fatfs_config = FatFS.Config{
@@ -87,6 +108,10 @@ pub fn build(b: *std.build.Builder) void {
 
     const mode = b.standardReleaseOptions();
 
+    const tool_mkicon = b.addExecutable("tool_mkicon", "tools/mkicon.zig");
+    tool_mkicon.addPackage(pkgs.zigimg);
+    tool_mkicon.install();
+
     const experiment = b.addExecutable("experiment", "tools/fs-experiments.zig");
     experiment.addPackage(FatFS.getPackage(b, "fatfs", fatfs_config));
     FatFS.link(experiment, fatfs_config);
@@ -95,6 +120,7 @@ pub fn build(b: *std.build.Builder) void {
 
     const kernel_exe = b.addExecutable("ashet-os", "src/kernel/main.zig");
     kernel_exe.single_threaded = true;
+    kernel_exe.omit_frame_pointer = false;
     if (mode == .Debug) {
         // we always want frame pointers in debug build!
         kernel_exe.omit_frame_pointer = false;
@@ -112,6 +138,11 @@ pub fn build(b: *std.build.Builder) void {
     kernel_exe.addSystemIncludePath("vendor/libc/include");
 
     FatFS.link(kernel_exe, fatfs_config);
+
+    const generate_stub_icon = tool_mkicon.run();
+    generate_stub_icon.addArg("design/apps/generic.png");
+    generate_stub_icon.addArg("src/kernel/data/generic-app.icon");
+    kernel_exe.step.dependOn(&generate_stub_icon.step);
 
     const raw_step = kernel_exe.installRaw("ashet-os.bin", .{
         .format = .bin,
@@ -152,20 +183,25 @@ pub fn build(b: *std.build.Builder) void {
         run_cmd.addArgs(args);
     }
 
+    var ctx = AshetContext{
+        .b = b,
+        .mkicon = tool_mkicon,
+    };
+
     {
-        const app_shell = createAshetApp(b, "shell", "src/apps/shell.zig");
+        const app_shell = ctx.createAshetApp("shell", "src/apps/shell.zig", "design/apps/shell.png");
         app_shell.setBuildMode(mode);
 
-        const app_commander = createAshetApp(b, "commander", "src/apps/commander.zig");
+        const app_commander = ctx.createAshetApp("commander", "src/apps/commander.zig", "design/apps/commander.png");
         app_commander.setBuildMode(mode);
 
-        const app_editor = createAshetApp(b, "editor", "src/apps/dummy.zig");
+        const app_editor = ctx.createAshetApp("editor", "src/apps/dummy.zig", "design/apps/text-editor.png");
         app_editor.setBuildMode(mode);
 
-        const app_browser = createAshetApp(b, "browser", "src/apps/dummy.zig");
+        const app_browser = ctx.createAshetApp("browser", "src/apps/dummy.zig", null);
         app_browser.setBuildMode(mode);
 
-        const app_music = createAshetApp(b, "music", "src/apps/music.zig");
+        const app_music = ctx.createAshetApp("music", "src/apps/music.zig", null);
         app_music.setBuildMode(mode);
     }
 

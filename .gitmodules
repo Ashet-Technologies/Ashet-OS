@@ -4,3 +4,6 @@
 [submodule "vendor/text-editor"]
 	path = vendor/text-editor
 	url = https://github.com/MasterQ32/TextEditor
+[submodule "vendor/zigimg"]
+	path = vendor/zigimg
+	url = https://github.com/zigimg/zigimg/
