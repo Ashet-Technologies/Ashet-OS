@@ -57,8 +57,14 @@ const SplashScreen = struct {
     task: *ashet.multi_tasking.Task,
     apps: std.BoundedArray(App, 15) = .{},
 
+    current_app: usize = 0,
+    layout: Layout,
+
     fn run(task: *ashet.multi_tasking.Task) !void {
-        var screen = SplashScreen{ .task = task };
+        var screen = SplashScreen{
+            .task = task,
+            .layout = undefined,
+        };
 
         logger.info("starting splash screen for screen {}", .{task.screen_id});
 
@@ -91,9 +97,11 @@ const SplashScreen = struct {
             }
         }
 
-        for (screen.apps.slice()) |app, index| {
-            logger.info("app[{}]: {s}", .{ index, std.mem.sliceTo(&app.name, 0) });
-        }
+        // for (screen.apps.slice()) |app, index| {
+        //     logger.info("app[{}]: {s}", .{ index, std.mem.sliceTo(&app.name, 0) });
+        // }
+
+        screen.layout = Layout.get(screen.apps.len);
 
         ashet.video.setMode(.graphics);
         ashet.video.setResolution(400, 300);
@@ -101,66 +109,97 @@ const SplashScreen = struct {
         screen.fullPaint();
 
         while (true) {
+            while (ashet.input.getKeyboardEvent()) |event| {
+                if (!event.pressed)
+                    continue;
+                var previous_app = screen.current_app;
+                switch (event.key) {
+                    .left => if (screen.current_app > 0) {
+                        screen.current_app -= 1;
+                    },
+
+                    .right => if (screen.current_app + 1 < screen.apps.len) {
+                        screen.current_app += 1;
+                    },
+
+                    .up => if (screen.current_app >= screen.layout.cols) {
+                        screen.current_app -= screen.layout.cols;
+                    },
+
+                    .down => if (screen.current_app + screen.layout.cols < screen.apps.len) {
+                        screen.current_app += screen.layout.cols;
+                    },
+
+                    else => {},
+                }
+                if (previous_app != screen.current_app) {
+                    screen.paintSelection(previous_app, 0x0F);
+                    screen.paintSelection(screen.current_app, 0x09);
+                }
+            }
+
             // if (true)
             //     @panic("pre");
             ashet.scheduler.yield();
         }
     }
 
+    fn pixelIndex(x: usize, y: usize) usize {
+        return 400 * y + x;
+    }
+
+    fn paintSelection(screen: SplashScreen, index: usize, color: u8) void {
+        const vmem = ashet.video.memory[0 .. 400 * 300];
+
+        const target_pos = screen.layout.pos(index);
+
+        const x = target_pos.x;
+        const y = target_pos.y;
+        const h = Icon.height - 1;
+        const w = Icon.width - 1;
+
+        var i: usize = 0;
+        while (i < 64) : (i += 1) {
+            vmem[pixelIndex(x + i, y - 4)] = color; // top
+            vmem[pixelIndex(x + i, y + h + 4)] = color; // bottom
+            vmem[pixelIndex(x - 4, y + i)] = color; // left
+            vmem[pixelIndex(x + w + 4, y + i)] = color; // right
+        }
+
+        i = 1; // 1...3
+        while (i < 4) : (i += 1) {
+            const j = 4 - i; // 3...1
+
+            // top left
+            vmem[pixelIndex(x - j, y - i)] = color;
+            vmem[pixelIndex(x - j, y - i)] = color;
+            vmem[pixelIndex(x - j, y - i)] = color;
+
+            // top right
+            vmem[pixelIndex(x + w + j, y - i)] = color;
+            vmem[pixelIndex(x + w + j, y - i)] = color;
+            vmem[pixelIndex(x + w + j, y - i)] = color;
+
+            // bottom left
+            vmem[pixelIndex(x - j, y + h + i)] = color;
+            vmem[pixelIndex(x - j, y + h + i)] = color;
+            vmem[pixelIndex(x - j, y + h + i)] = color;
+
+            // bottom right
+            vmem[pixelIndex(x + w + j, y + h + i)] = color;
+            vmem[pixelIndex(x + w + j, y + h + i)] = color;
+            vmem[pixelIndex(x + w + j, y + h + i)] = color;
+        }
+    }
+
     fn fullPaint(screen: SplashScreen) void {
-        const Layout = struct {
-            const Pos = struct { row: usize, col: usize };
-            const Point = struct { x: usize, y: usize };
-            pub const padding_h = 8;
-            pub const padding_v = 8;
-
-            rows: u16, // 1 ... 3
-            cols: u16, // 1 ... 5
-
-            fn slot(src: @This(), index: usize) Pos {
-                return Pos{
-                    .col = @truncate(u16, index % src.cols),
-                    .row = @truncate(u16, index / src.cols),
-                };
-            }
-
-            // l,r,t,b
-            fn pos(src: @This(), index: usize) Point {
-                const logical_pos = src.slot(index);
-
-                const offset_x = (400 - Icon.width * src.cols - padding_h * (src.cols - 1)) / 2;
-                const offset_y = (300 - Icon.height * src.rows - padding_v * (src.rows - 1)) / 2;
-
-                const dx = offset_x + (Icon.width + padding_h) * logical_pos.col;
-                const dy = offset_y + (Icon.height + padding_v) * logical_pos.row;
-
-                return Point{
-                    .x = dx,
-                    .y = dy,
-                };
-            }
-        };
-
-        const layout: Layout = switch (screen.apps.len) {
-            0, 1 => Layout{ .rows = 1, .cols = 1 },
-            2 => Layout{ .rows = 1, .cols = 2 },
-            3 => Layout{ .rows = 1, .cols = 3 },
-            4 => Layout{ .rows = 1, .cols = 4 },
-            5, 6 => Layout{ .rows = 2, .cols = 3 },
-            7, 8 => Layout{ .rows = 2, .cols = 4 },
-            9 => Layout{ .rows = 3, .cols = 3 },
-            10, 11, 12 => Layout{ .rows = 3, .cols = 4 },
-            13, 14, 15 => Layout{ .rows = 3, .cols = 5 },
-            else => @panic("too many apps, implement scrolling!"),
-        };
-
         const vmem = ashet.video.memory[0 .. 400 * 300];
         const palette = ashet.video.palette;
 
         std.mem.set(u8, vmem, 15);
 
         for (screen.apps.slice()) |app, index| {
-            const target_pos = layout.pos(index);
+            const target_pos = screen.layout.pos(index);
 
             const palette_base = @truncate(u8, 16 * (index + 1));
             for (app.icon.palette) |color, offset| {
@@ -172,14 +211,64 @@ const SplashScreen = struct {
                 var x: usize = 0;
                 while (x < Icon.width) : (x += 1) {
                     const src = app.icon.bitmap[Icon.width * y + x];
-                    const idx = 400 * (target_pos.y + y) + target_pos.x + x;
+                    const idx = pixelIndex(target_pos.x + x, target_pos.y + y);
                     if (src != 0) {
                         vmem[idx] = palette_base + src;
                     }
                 }
             }
         }
+
+        screen.paintSelection(screen.current_app, 0x09);
     }
+
+    const Layout = struct {
+        const Pos = struct { row: usize, col: usize };
+        const Point = struct { x: usize, y: usize };
+        pub const padding_h = 8;
+        pub const padding_v = 8;
+
+        rows: u16, // 1 ... 3
+        cols: u16, // 1 ... 5
+
+        fn slot(src: @This(), index: usize) Pos {
+            return Pos{
+                .col = @truncate(u16, index % src.cols),
+                .row = @truncate(u16, index / src.cols),
+            };
+        }
+
+        // l,r,t,b
+        fn pos(src: @This(), index: usize) Point {
+            const logical_pos = src.slot(index);
+
+            const offset_x = (400 - Icon.width * src.cols - padding_h * (src.cols - 1)) / 2;
+            const offset_y = (300 - Icon.height * src.rows - padding_v * (src.rows - 1)) / 2;
+
+            const dx = offset_x + (Icon.width + padding_h) * logical_pos.col;
+            const dy = offset_y + (Icon.height + padding_v) * logical_pos.row;
+
+            return Point{
+                .x = dx,
+                .y = dy,
+            };
+        }
+
+        fn get(count: usize) Layout {
+            return switch (count) {
+                0, 1 => Layout{ .rows = 1, .cols = 1 },
+                2 => Layout{ .rows = 1, .cols = 2 },
+                3 => Layout{ .rows = 1, .cols = 3 },
+                4 => Layout{ .rows = 1, .cols = 4 },
+                5, 6 => Layout{ .rows = 2, .cols = 3 },
+                7, 8 => Layout{ .rows = 2, .cols = 4 },
+                9 => Layout{ .rows = 3, .cols = 3 },
+                10, 11, 12 => Layout{ .rows = 3, .cols = 4 },
+                13, 14, 15 => Layout{ .rows = 3, .cols = 5 },
+                else => @panic("too many apps, implement scrolling!"),
+            };
+        }
+    };
 };
 
 pub fn startApp(app_name: []const u8) !void {

@@ -71,7 +71,6 @@ pub fn main() !void {
     }
 
     // std.log.info("palette quality: {}", .{computePaletteQuality(palette, raw_image)});
-
     // for (palette32) |pal, i| {
     //     std.log.info("0x{X} => #{X:0>2}{X:0>2}{X:0>2}", .{
     //         i, pal.r, pal.g, pal.b,
