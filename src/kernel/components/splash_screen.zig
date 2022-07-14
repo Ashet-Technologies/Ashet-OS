@@ -21,9 +21,20 @@ const Icon = extern struct {
 };
 
 const default_icon = blk: {
+    @setEvalBranchQuota(10_000);
+
     const data = @embedFile("../data/generic-app.icon");
-    var fbs = std.io.fixedBufferStream(&data);
-    break :blk Icon.load(fbs.reader()) catch unreachable;
+    _ = data;
+
+    const pal_src = data[64 * 64 ..];
+
+    var icon = Icon{ .bitmap = undefined, .palette = undefined };
+    std.mem.copy(u8, &icon.bitmap, data[0 .. 64 * 64]);
+    for (icon.palette) |*pal, i| {
+        pal.* = @as(u16, pal_src[2 * i + 0]) << 0 |
+            @as(u16, pal_src[2 * i + 1]) << 8;
+    }
+    break :blk icon;
 };
 
 const App = struct {
@@ -76,7 +87,7 @@ const SplashScreen = struct {
                 app.icon = try Icon.load(ashet.filesystem.fileReader(icon_handle));
             } else |_| {
                 std.log.warn("Application {s} does not have an icon. Using default.", .{ent.getName()});
-                app.icon.bitmap = undefined;
+                app.icon = default_icon;
             }
         }
 
@@ -152,7 +163,6 @@ const SplashScreen = struct {
             const target_pos = layout.pos(index);
 
             const palette_base = @truncate(u8, 16 * (index + 1));
-
             for (app.icon.palette) |color, offset| {
                 palette[palette_base + offset + 1] = color;
             }

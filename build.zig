@@ -110,6 +110,7 @@ pub fn build(b: *std.build.Builder) void {
 
     const tool_mkicon = b.addExecutable("tool_mkicon", "tools/mkicon.zig");
     tool_mkicon.addPackage(pkgs.zigimg);
+    tool_mkicon.addPackage(pkgs.abi);
     tool_mkicon.install();
 
     const experiment = b.addExecutable("experiment", "tools/fs-experiments.zig");
@@ -198,10 +199,10 @@ pub fn build(b: *std.build.Builder) void {
         const app_editor = ctx.createAshetApp("editor", "src/apps/dummy.zig", "design/apps/text-editor.png");
         app_editor.setBuildMode(mode);
 
-        const app_browser = ctx.createAshetApp("browser", "src/apps/dummy.zig", null);
+        const app_browser = ctx.createAshetApp("browser", "src/apps/dummy.zig", "design/apps/browser.png");
         app_browser.setBuildMode(mode);
 
-        const app_music = ctx.createAshetApp("music", "src/apps/music.zig", null);
+        const app_music = ctx.createAshetApp("music", "src/apps/music.zig", "design/apps/music.png");
         app_music.setBuildMode(mode);
     }
 
