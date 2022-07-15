@@ -35,31 +35,39 @@ pub fn getEvent() ?Event {
 }
 
 pub fn getKeyboardEvent() ?ashet.abi.KeyboardEvent {
-    const src_event = hal.input.getKeyboardEvent() orelse return null;
-    const key_code = keyboard.model.scancodeToKeycode(src_event.key) orelse .unknown;
+    while (true) {
+        const src_event = hal.input.getKeyboardEvent() orelse return null;
+        const key_code = keyboard.model.scancodeToKeycode(src_event.key) orelse .unknown;
 
-    switch (key_code) {
-        .shift_left => shift_left_state = src_event.down,
-        .shift_right => shift_right_state = src_event.down,
-        .ctrl_left => ctrl_left_state = src_event.down,
-        .ctrl_right => ctrl_right_state = src_event.down,
-        .alt => alt_state = src_event.down,
-        .alt_graph => alt_graph_state = src_event.down,
+        switch (key_code) {
+            .shift_left => shift_left_state = src_event.down,
+            .shift_right => shift_right_state = src_event.down,
+            .ctrl_left => ctrl_left_state = src_event.down,
+            .ctrl_right => ctrl_right_state = src_event.down,
+            .alt => alt_state = src_event.down,
+            .alt_graph => alt_graph_state = src_event.down,
 
-        else => {},
+            else => {},
+        }
+
+        const modifiers = getKeyboardModifiers();
+
+        const text_ptr = keyboard.layout.translate(key_code, modifiers.shift, modifiers.alt_graph);
+
+        var event = ashet.abi.KeyboardEvent{
+            .scancode = src_event.key,
+            .key = key_code,
+            .text = text_ptr,
+            .modifiers = modifiers,
+            .pressed = src_event.down,
+        };
+
+        // We swallow the event if the global hotkey system consumes it
+        if (ashet.global_hotkeys.handle(event))
+            continue;
+
+        return event;
     }
-
-    const modifiers = getKeyboardModifiers();
-
-    const text_ptr = keyboard.layout.translate(key_code, modifiers.shift, modifiers.alt_graph);
-
-    return ashet.abi.KeyboardEvent{
-        .scancode = src_event.key,
-        .key = key_code,
-        .text = text_ptr,
-        .modifiers = modifiers,
-        .pressed = src_event.down,
-    };
 }
 
 pub fn getKeyboardModifiers() ashet.abi.KeyboardModifiers {

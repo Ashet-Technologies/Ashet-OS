@@ -40,10 +40,22 @@ const default_icon = blk: {
 const App = struct {
     name: [32]u8,
     icon: Icon,
+
+    pub fn getName(app: *const App) []const u8 {
+        return std.mem.sliceTo(&app.name, 0);
+    }
 };
 
-pub fn run(task_ptr: ?*anyopaque) callconv(.C) u32 {
-    const task = @ptrCast(*ashet.multi_tasking.Task, @alignCast(@alignOf(ashet.multi_tasking.Task), task_ptr orelse @panic("splash_screen.run requires a pointer to a task as an argument.")));
+pub fn run(_: ?*anyopaque) callconv(.C) u32 {
+    const thread = ashet.scheduler.Thread.current() orelse {
+        std.log.err("splash screen must be run in a thread.", .{});
+        return 1;
+    };
+
+    const task = thread.process orelse {
+        std.log.err("splash screen requires thread to be associated with a process.", .{});
+        return 1;
+    };
 
     SplashScreen.run(task) catch |err| {
         std.log.err("splash screen failed with {}", .{err});
@@ -54,19 +66,19 @@ pub fn run(task_ptr: ?*anyopaque) callconv(.C) u32 {
 }
 
 const SplashScreen = struct {
-    task: *ashet.multi_tasking.Task,
+    task: *ashet.multi_tasking.Process,
     apps: std.BoundedArray(App, 15) = .{},
 
     current_app: usize = 0,
     layout: Layout,
 
-    fn run(task: *ashet.multi_tasking.Task) !void {
+    fn run(task: *ashet.multi_tasking.Process) !void {
         var screen = SplashScreen{
             .task = task,
             .layout = undefined,
         };
 
-        logger.info("starting splash screen for screen {}", .{task.screen_id});
+        logger.info("starting splash screen for process {*}", .{task});
 
         var dir = try ashet.filesystem.openDir("SYS:/apps");
         defer ashet.filesystem.closeDir(dir);
@@ -98,7 +110,7 @@ const SplashScreen = struct {
         }
 
         // for (screen.apps.slice()) |app, index| {
-        //     logger.info("app[{}]: {s}", .{ index, std.mem.sliceTo(&app.name, 0) });
+        //     logger.info("app[{}]: {s}", .{ index, app.getName() });
         // }
 
         screen.layout = Layout.get(screen.apps.len);
@@ -130,6 +142,16 @@ const SplashScreen = struct {
                         screen.current_app += screen.layout.cols;
                     },
 
+                    .@"return", .kp_enter => {
+                        // clear screen
+                        const vmem = ashet.video.memory[0 .. 400 * 300];
+                        std.mem.set(u8, vmem, 15);
+
+                        // start application
+                        try screen.startApp(screen.apps.slice()[screen.current_app]);
+                        return;
+                    },
+
                     else => {},
                 }
                 if (previous_app != screen.current_app) {
@@ -142,6 +164,51 @@ const SplashScreen = struct {
             //     @panic("pre");
             ashet.scheduler.yield();
         }
+    }
+
+    pub fn startApp(screen: SplashScreen, app: App) !void {
+        _ = screen;
+
+        var path_buffer: [ashet.abi.max_path]u8 = undefined;
+        const app_path = try std.fmt.bufPrint(&path_buffer, "SYS:/apps/{s}/code", .{app.getName()});
+
+        const stat = try ashet.filesystem.stat(app_path);
+
+        const proc_byte_size = stat.size;
+
+        const process_memory = @as([]align(ashet.memory.page_size) u8, @intToPtr([*]align(ashet.memory.page_size) u8, 0x80800000)[0..std.mem.alignForward(proc_byte_size, ashet.memory.page_size)]);
+
+        const app_pages = ashet.memory.ptrToPage(process_memory.ptr) orelse unreachable;
+        const proc_size = ashet.memory.getRequiredPages(process_memory.len);
+
+        {
+            var i: usize = 0;
+            while (i < proc_size) : (i += 1) {
+                if (!ashet.memory.isFree(app_pages + i)) {
+                    @panic("app memory is not free");
+                }
+            }
+            i = 0;
+            while (i < proc_size) : (i += 1) {
+                ashet.memory.markUsed(app_pages + i);
+            }
+        }
+
+        {
+            var file = try ashet.filesystem.open(app_path, .read_only, .open_existing);
+            defer ashet.filesystem.close(file);
+
+            const len = try ashet.filesystem.read(file, process_memory[0..proc_byte_size]);
+            if (len != proc_byte_size)
+                @panic("could not read all bytes on one go!");
+        }
+
+        const thread = try ashet.scheduler.Thread.spawn(@ptrCast(ashet.scheduler.ThreadFunction, process_memory.ptr), null, .{
+            .process = screen.task,
+        });
+        errdefer thread.kill();
+
+        try thread.start();
     }
 
     fn pixelIndex(x: usize, y: usize) usize {
@@ -270,47 +337,3 @@ const SplashScreen = struct {
         }
     };
 };
-
-pub fn startApp(app_name: []const u8) !void {
-    _ = app_name;
-
-    // Start "init" process
-    {
-        const app_file = "PF0:/apps/shell/code";
-        const stat = try ashet.filesystem.stat(app_file);
-
-        const proc_byte_size = stat.size;
-
-        const process_memory = @as([]align(ashet.memory.page_size) u8, @intToPtr([*]align(ashet.memory.page_size) u8, 0x80800000)[0..std.mem.alignForward(proc_byte_size, ashet.memory.page_size)]);
-
-        const app_pages = ashet.memory.ptrToPage(process_memory.ptr) orelse unreachable;
-        const proc_size = ashet.memory.getRequiredPages(process_memory.len);
-
-        {
-            var i: usize = 0;
-            while (i < proc_size) : (i += 1) {
-                if (!ashet.memory.isFree(app_pages + i)) {
-                    @panic("app memory is not free");
-                }
-            }
-            i = 0;
-            while (i < proc_size) : (i += 1) {
-                ashet.memory.markUsed(app_pages + i);
-            }
-        }
-
-        {
-            var file = try ashet.filesystem.open(app_file, .read_only, .open_existing);
-            defer ashet.filesystem.close(file);
-
-            const len = try ashet.filesystem.read(file, process_memory[0..proc_byte_size]);
-            if (len != proc_byte_size)
-                @panic("could not read all bytes on one go!");
-        }
-
-        const thread = try ashet.scheduler.Thread.spawn(@ptrCast(ashet.scheduler.ThreadFunction, process_memory.ptr), null, null);
-        errdefer thread.kill();
-
-        try thread.start();
-    }
-}

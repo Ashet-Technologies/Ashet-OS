@@ -4,6 +4,9 @@ const ashet = @import("ashet");
 pub usingnamespace ashet.core;
 
 pub fn main() !void {
+    ashet.video.setMode(.text);
+    ashet.console.clear();
+
     const prompt = "#> ";
     while (true) {
         ashet.console.write(prompt);

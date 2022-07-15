@@ -60,18 +60,24 @@ pub const Thread = struct {
 
     debug_info: DebugInfo = .{},
 
+    process: ?*ashet.multi_tasking.Process,
+
     /// Returns a pointer to the current thread.
     pub fn current() ?*Thread {
         return current_thread;
     }
 
+    pub const ThreadSpawnOptions = struct {
+        stack_size: usize = Thread.default_stack_size,
+        process: ?*ashet.multi_tasking.Process = null,
+    };
+
     /// Creates a new thread which isn't started yet.
     ///
     /// **NOTE:** When choosing `stack_size`, one should remember that it will also include the management structures
     /// for the thread
-    pub fn spawn(func: ThreadFunction, arg: ?*anyopaque, stack_size: ?usize) error{OutOfMemory}!*Thread {
-        const actual_stack_size = if (stack_size) |s| std.mem.alignForward(s, ashet.memory.page_count) else Thread.default_stack_size;
-        const stack_page_count = ashet.memory.getRequiredPages(actual_stack_size);
+    pub fn spawn(func: ThreadFunction, arg: ?*anyopaque, options: ThreadSpawnOptions) error{OutOfMemory}!*Thread {
+        const stack_page_count = ashet.memory.getRequiredPages(options.stack_size);
 
         const first_page = try ashet.memory.allocPages(stack_page_count);
         errdefer ashet.memory.freePages(first_page, stack_page_count);
@@ -80,12 +86,14 @@ pub const Thread = struct {
 
         const stack_bottom = ashet.memory.pageToPtr(first_page);
         const thread = @intToPtr(*Thread, @ptrToInt(stack_bottom) + ashet.memory.page_size * stack_page_count - @sizeOf(Thread));
+        const thread_proc = options.process orelse ashet.multi_tasking.getForegroundProcess(.current);
 
         thread.* = Thread{
             .sp = @ptrToInt(thread),
             .ip = @ptrToInt(ashet_scheduler_threadTrampoline),
             .exit_code = 0,
             .num_pages = stack_page_count,
+            .process = thread_proc,
         };
 
         if (@import("builtin").mode == .Debug) {

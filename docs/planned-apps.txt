@@ -1,0 +1,17 @@
+Applications:
+  - Media Player
+  - Ashet Commander
+  - Chat
+    - IRC
+  - Browser
+    - Gemini
+    - HTTP
+    - Gopher
+  - Notes / Notebook
+  - Shell
+  - Code Editor
+  - Services
+    - Assembly Compiler Service
+    - C Compiler Service
+    - Zig Compiler Service
+    - LoLa Compiler Service

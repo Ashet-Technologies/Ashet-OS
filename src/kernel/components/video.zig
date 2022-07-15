@@ -5,6 +5,15 @@ const ashet = @import("../main.zig");
 pub const max_res_x = 400;
 pub const max_res_y = 300;
 
+pub const Resolution = struct {
+    width: u16,
+    height: u16,
+
+    pub fn size(res: Resolution) usize {
+        return @as(usize, res.width) * @as(usize, res.height);
+    }
+};
+
 /// The raw exposed video memory. Writing to this will change the content
 /// on the screen.
 /// Memory is interpreted with the current video mode to produce an image.
@@ -144,6 +153,19 @@ pub fn setBorder(b: u8) void {
 /// Without calling this
 pub fn flush() void {
     hal.video.flush();
+}
+
+/// Returns the current screen resolution
+pub fn getResolution() Resolution {
+    return hal.video.getResolution();
+}
+
+pub fn getMode() Mode {
+    return hal.video.getMode();
+}
+
+pub fn getBorder() u8 {
+    return hal.video.getBorder();
 }
 
 /// Sets the screen resolution of the video mode.

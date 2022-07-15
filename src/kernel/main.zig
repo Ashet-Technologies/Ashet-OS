@@ -15,10 +15,6 @@ pub const input = @import("components/input.zig");
 pub const splash_screen = @import("components/splash_screen.zig");
 pub const multi_tasking = @import("components/multi_tasking.zig");
 
-var main_screen: multi_tasking.Task = .{
-    .screen_id = 0,
-};
-
 export fn ashet_kernelMain() void {
     // Populate RAM with the right sections, and compute how much dynamic memory we have available
     memory.initialize();
@@ -44,7 +40,7 @@ fn main() !void {
     if (video.is_flush_required) {
         // if the HAL requires regular flushing of the screen,
         // we start a thread here that will do this.
-        const thread = try scheduler.Thread.spawn(periodicScreenFlush, null, null);
+        const thread = try scheduler.Thread.spawn(periodicScreenFlush, null, .{});
         std.mem.copy(u8, &thread.debug_info.name, "video.flush");
         try thread.start();
         thread.detach();
@@ -52,18 +48,35 @@ fn main() !void {
 
     syscalls.initialize();
 
-    {
-        const thread = try scheduler.Thread.spawn(splash_screen.run, &main_screen, 256 * 1024);
-        std.mem.copy(u8, &thread.debug_info.name, "main screen");
-        try thread.start();
-        thread.detach();
-    }
+    // This will start the splash screen for screen 1,
+    // all other screens will not be initialized until required.
+    try multi_tasking.selectScreen(.@"1");
 
     scheduler.start();
 
     // All tasks stopped, what should we do now?
     std.log.warn("All threads stopped. System is now halting.", .{});
 }
+
+pub const global_hotkeys = struct {
+    pub fn handle(event: abi.KeyboardEvent) bool {
+        //
+        if (event.modifiers.alt) {
+            switch (event.key) {
+                .f1 => {
+                    multi_tasking.selectScreen(.@"1") catch |err| std.log.err("failed to switch to screen 1: {s}", .{@errorName(err)});
+                    return true;
+                },
+                .f2 => {
+                    multi_tasking.selectScreen(.@"2") catch |err| std.log.err("failed to switch to screen 2: {s}", .{@errorName(err)});
+                    return true;
+                },
+                else => {},
+            }
+        }
+        return false;
+    }
+};
 
 fn periodicScreenFlush(_: ?*anyopaque) callconv(.C) u32 {
     while (true) {

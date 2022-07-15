@@ -79,6 +79,19 @@ pub const video = struct {
     var graphics_width: u16 = 256;
     var graphics_height: u16 = 128;
 
+    pub fn getResolution() ashet.video.Resolution {
+        return ashet.video.Resolution{
+            .width = graphics_width,
+            .height = graphics_height,
+        };
+    }
+    pub fn getMode() ashet.video.Mode {
+        return video_mode;
+    }
+    pub fn getBorder() u8 {
+        return border_color;
+    }
+
     pub fn setMode(m: ashet.video.Mode) void {
         video_mode = m;
     }
