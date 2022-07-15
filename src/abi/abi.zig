@@ -1,10 +1,5 @@
 const std = @import("std");
 
-/// The offset in memory where an application will be loaded to.
-/// The entry point of an application is also at this address,
-/// but `libashet` a tiny load stub that jumps to `_start`.
-pub const application_load_address = 0x80800000;
-
 /// A structure containing all system calls Ashet OS provides.
 ///
 /// As Ashet OS is single-threaded by design and supports no thread local

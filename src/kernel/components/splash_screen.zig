@@ -185,24 +185,15 @@ const SplashScreen = struct {
         const stat = try ashet.filesystem.stat(app_path);
 
         const proc_byte_size = stat.size;
+        const proc_page_size = std.mem.alignForward(proc_byte_size, ashet.memory.page_size);
+        const proc_page_count = ashet.memory.getRequiredPages(proc_page_size);
 
-        const process_memory = @as([]align(ashet.memory.page_size) u8, @intToPtr([*]align(ashet.memory.page_size) u8, 0x80800000)[0..std.mem.alignForward(proc_byte_size, ashet.memory.page_size)]);
+        const app_pages = try ashet.memory.allocPages(proc_page_count);
+        errdefer ashet.memory.freePages(app_pages, proc_page_count);
 
-        const app_pages = ashet.memory.ptrToPage(process_memory.ptr) orelse unreachable;
-        const proc_size = ashet.memory.getRequiredPages(process_memory.len);
+        const process_memory = @ptrCast([*]u8, ashet.memory.pageToPtr(app_pages))[0..proc_page_size];
 
-        {
-            var i: usize = 0;
-            while (i < proc_size) : (i += 1) {
-                if (!ashet.memory.isFree(app_pages + i)) {
-                    @panic("app memory is not free");
-                }
-            }
-            i = 0;
-            while (i < proc_size) : (i += 1) {
-                ashet.memory.markUsed(app_pages + i);
-            }
-        }
+        logger.info("process {s} will be loaded at {*}", .{ app.getName(), process_memory });
 
         {
             var file = try ashet.filesystem.open(app_path, .read_only, .open_existing);
@@ -221,6 +212,8 @@ const SplashScreen = struct {
         try thread.setName(app.getName());
 
         try thread.start();
+
+        thread.detach();
     }
 
     fn pixelIndex(x: usize, y: usize) usize {

@@ -15,6 +15,7 @@ pub const splash_screen = @import("components/splash_screen.zig");
 pub const multi_tasking = @import("components/multi_tasking.zig");
 
 export fn ashet_kernelMain() void {
+
     // Populate RAM with the right sections, and compute how much dynamic memory we have available
     memory.initialize();
 
@@ -40,7 +41,7 @@ fn main() !void {
         // if the HAL requires regular flushing of the screen,
         // we start a thread here that will do this.
         const thread = try scheduler.Thread.spawn(periodicScreenFlush, null, .{});
-        std.mem.copy(u8, &thread.debug_info.name, "video.flush");
+        try thread.setName("video.flush");
         try thread.start();
         thread.detach();
     }
@@ -140,6 +141,11 @@ pub fn log(
     comptime format: []const u8,
     args: anytype,
 ) void {
+    switch (scope) {
+        .fatfs, .filesystem => return,
+        else => {},
+    }
+
     const level_txt = comptime message_level.asText();
     const prefix2 = if (scope == .default) ": " else "(" ++ @tagName(scope) ++ "): ";
     Debug.writer().print(level_txt ++ prefix2 ++ format ++ "\n", args) catch return;

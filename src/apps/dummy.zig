@@ -4,5 +4,6 @@ const ashet = @import("ashet");
 pub usingnamespace ashet.core;
 
 pub fn main() void {
-    std.log.info("Hello, World!", .{});
+    ashet.debug.write("Hello from App!\r\n");
+    ashet.video.setBorder(0x01);
 }

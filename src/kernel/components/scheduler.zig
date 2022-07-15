@@ -155,6 +155,8 @@ pub const Thread = struct {
         if (thread.isStarted())
             return error.AlreadyStarted;
 
+        logger.info("enqueuing {}", .{thread});
+
         thread.flags |= f_started;
         enqueueThread(&wait_queue, thread);
     }
@@ -199,6 +201,8 @@ pub const Thread = struct {
             // thread even if it is already dead.
             queue.remove(&thread.node);
         }
+
+        logger.info("killing thread {}", .{thread});
 
         const stack_top = thread.getBasePointer();
 

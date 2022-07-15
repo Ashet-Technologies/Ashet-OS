@@ -38,7 +38,7 @@ pub fn main() void {
     }
 
     while (true) {
-        ashet.syscalls().process.yield();
+        ashet.process.yield();
     }
 }
 

@@ -9,7 +9,7 @@ comptime {
         @export(_start, .{
             .linkage = .Strong,
             .name = "_start",
-            .section = ".entry_point",
+            .section = ".text._start",
         });
     }
 }

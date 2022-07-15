@@ -67,17 +67,26 @@ const AshetContext = struct {
 
         exe.setTarget(target);
         exe.addPackage(pkgs.ashet);
-        exe.setLinkerScriptPath(.{ .path = "src/abi/application.ld" });
+        exe.setLinkerScriptPath(.{ .path = "src/libashet/application.ld" });
         exe.omit_frame_pointer = false;
         exe.single_threaded = true;
+        exe.force_pic = true;
+        exe.install();
 
-        const raw_install_step = exe.installRaw(
-            ctx.b.fmt("{s}.bin", .{name}),
-            .{
-                .format = .bin,
-                .dest_dir = .{ .custom = "apps" },
-            },
-        );
+        // const raw_install_step = exe.installRaw(
+        //     ctx.b.fmt("{s}.bin", .{name}),
+        //     .{
+        //         .format = .bin,
+        //         .dest_dir = .{ .custom = "apps" },
+        //     },
+        // );
+        const raw_install_step = ctx.b.addSystemCommand(&.{
+            "llvm-objcopy",
+            "-O",
+            "binary",
+        });
+        raw_install_step.addArtifactArg(exe);
+        raw_install_step.addArg(ctx.b.fmt("zig-out/apps/{s}.bin", .{name}));
 
         ctx.b.getInstallStep().dependOn(&raw_install_step.step);
 
@@ -194,20 +203,25 @@ pub fn build(b: *std.build.Builder) void {
     };
 
     {
-        const app_shell = ctx.createAshetApp("shell", "src/apps/shell.zig", "design/apps/shell.png");
-        app_shell.setBuildMode(mode);
+        // const app_shell
+        _ = ctx.createAshetApp("shell", "src/apps/shell.zig", "design/apps/shell.png");
+        // app_shell.setBuildMode(mode);
 
-        const app_commander = ctx.createAshetApp("commander", "src/apps/commander.zig", "design/apps/commander.png");
-        app_commander.setBuildMode(mode);
+        // const app_commander
+        _ = ctx.createAshetApp("commander", "src/apps/commander.zig", "design/apps/commander.png");
+        // app_commander.setBuildMode(mode);
 
-        const app_editor = ctx.createAshetApp("editor", "src/apps/dummy.zig", "design/apps/text-editor.png");
-        app_editor.setBuildMode(mode);
+        // const app_editor
+        _ = ctx.createAshetApp("editor", "src/apps/dummy.zig", "design/apps/text-editor.png");
+        // app_editor.setBuildMode(mode);
 
-        const app_browser = ctx.createAshetApp("browser", "src/apps/dummy.zig", "design/apps/browser.png");
-        app_browser.setBuildMode(mode);
+        // const app_browser
+        _ = ctx.createAshetApp("browser", "src/apps/dummy.zig", "design/apps/browser.png");
+        // app_browser.setBuildMode(mode);
 
-        const app_music = ctx.createAshetApp("music", "src/apps/music.zig", "design/apps/music.png");
-        app_music.setBuildMode(mode);
+        // const app_music
+        _ = ctx.createAshetApp("music", "src/apps/music.zig", "design/apps/music.png");
+        // app_music.setBuildMode(mode);
     }
 
     const run_step = b.step("run", "Run the app");
