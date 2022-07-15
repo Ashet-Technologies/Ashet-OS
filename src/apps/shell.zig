@@ -12,20 +12,22 @@ pub fn main() !void {
         ashet.console.write(prompt);
 
         var buffer: [128]u8 = undefined;
-        const maybe_result = ashet.console.readLine(&buffer, 64 - prompt.len) catch |err| {
-            ashet.console.print("\r\nerror: {s}\r\n", .{@errorName(err)});
-            continue;
+        const result = ashet.console.readLine(&buffer, 64 - prompt.len) catch |err| switch (err) {
+            error.Cancelled => {
+                // cancelled
+                ashet.console.write("\r");
+                continue;
+            },
+            else => {
+                ashet.console.print("\r\nerror: {s}\r\n", .{@errorName(err)});
+                continue;
+            },
         };
-        if (maybe_result) |result| {
-            ashet.console.write("\r\n");
-            if (result.len > 0) {
-                execute(result) catch |err| {
-                    ashet.console.print("error: {s}\r\n", .{@errorName(err)});
-                };
-            }
-        } else {
-            // cancelled
-            ashet.console.write("\r");
+        ashet.console.write("\r\n");
+        if (result.len > 0) {
+            execute(result) catch |err| {
+                ashet.console.print("error: {s}\r\n", .{@errorName(err)});
+            };
         }
     }
 }

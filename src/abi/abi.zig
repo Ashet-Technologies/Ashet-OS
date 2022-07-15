@@ -22,7 +22,7 @@ pub const SysCallInterface = extern struct {
 
     magic: u32 = 0x9a9d5a1b, // chosen by a fair dice roll
 
-    console: Console,
+    // console: Console,
     video: Video,
     process: Process,
     fs: FileSystem,
@@ -40,7 +40,7 @@ pub const SysCallInterface = extern struct {
         setMode: fn (VideoMode) callconv(.C) void,
         setBorder: fn (ColorIndex) callconv(.C) void,
         setResolution: fn (u16, u16) callconv(.C) void,
-        getVideoMemory: fn () callconv(.C) [*]ColorIndex,
+        getVideoMemory: fn () callconv(.C) [*]align(4) ColorIndex,
         getPaletteMemory: fn () callconv(.C) *[palette_size]u16,
     };
 
@@ -370,4 +370,22 @@ pub const ReadLineResult = enum(u8) {
     ok = 0,
     cancelled = 1,
     failed = 2,
+};
+
+/// Computes the character attributes and selects both foreground and background color.
+pub fn charAttributes(foreground: u4, background: u4) u8 {
+    return (CharAttributes{ .fg = foreground, .bg = background }).toByte();
+}
+
+pub const CharAttributes = packed struct {
+    bg: u4, // lo nibble
+    fg: u4, // hi nibble
+
+    pub fn fromByte(val: u8) CharAttributes {
+        return @bitCast(CharAttributes, val);
+    }
+
+    pub fn toByte(attr: CharAttributes) u8 {
+        return @bitCast(u8, attr);
+    }
 };

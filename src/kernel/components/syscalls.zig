@@ -1,3 +1,7 @@
+//!
+//! This file implements or forwards all syscalls
+//! that are available to applications.
+//!
 const std = @import("std");
 const hal = @import("hal");
 const ashet = @import("../main.zig");
@@ -5,13 +9,13 @@ const ashet = @import("../main.zig");
 const abi = ashet.abi;
 
 const ashet_syscall_interface: abi.SysCallInterface align(16) = .{
-    .console = .{
-        .clear = @"console.clear",
-        .print = @"console.print",
-        .output = @"console.output",
-        .setCursor = @"input.setCursor",
-        .readLine = @"input.readLine",
-    },
+    // .console = .{
+    //     .clear = @"console.clear",
+    //     .print = @"console.print",
+    //     .output = @"console.output",
+    //     .setCursor = @"input.setCursor",
+    //     .readLine = @"input.readLine",
+    // },
     .video = .{
         .setMode = @"video.setMode",
         .setBorder = @"video.setBorder",
@@ -45,6 +49,21 @@ const ashet_syscall_interface: abi.SysCallInterface align(16) = .{
     },
 };
 
+/// Returns a non-null value if the current process isn't the
+/// foreground process.
+/// This is required for redirecting input and video syscalls
+fn getBackgroundProcess() ?*ashet.multi_tasking.Process {
+    const thread = ashet.scheduler.Thread.current() orelse return null;
+    const process = thread.process orelse return null;
+
+    const fg_process = ashet.multi_tasking.getForegroundProcess(.current) orelse return null;
+
+    return if (process != fg_process)
+        process
+    else
+        null;
+}
+
 pub fn initialize() void {
     //
 }
@@ -53,35 +72,58 @@ pub fn getInterfacePointer() *align(16) const abi.SysCallInterface {
     return &ashet_syscall_interface;
 }
 
-fn @"console.clear"() callconv(.C) void {
-    ashet.console.clear();
-}
+// fn @"console.clear"() callconv(.C) void {
+//     ashet.console.clear();
+// }
 
-fn @"console.print"(ptr: [*]const u8, len: usize) callconv(.C) void {
-    ashet.console.write(ptr[0..len]);
-}
-fn @"console.output"(ptr: [*]const u8, len: usize) callconv(.C) void {
-    for (ptr[0..len]) |c| {
-        ashet.console.putRaw(c);
-    }
-}
+// fn @"console.print"(ptr: [*]const u8, len: usize) callconv(.C) void {
+//     ashet.console.write(ptr[0..len]);
+// }
+// fn @"console.output"(ptr: [*]const u8, len: usize) callconv(.C) void {
+//     for (ptr[0..len]) |c| {
+//         ashet.console.putRaw(c);
+//     }
+// }
 
 fn @"video.setMode"(mode: abi.VideoMode) callconv(.C) void {
-    ashet.video.setMode(mode);
+    if (getBackgroundProcess()) |proc| {
+        proc.video_mode = mode;
+    } else {
+        ashet.video.setMode(mode);
+    }
 }
 fn @"video.setBorder"(color: abi.ColorIndex) callconv(.C) void {
-    ashet.video.setBorder(color);
+    if (getBackgroundProcess()) |proc| {
+        proc.border_color = color;
+    } else {
+        ashet.video.setBorder(color);
+    }
 }
-fn @"video.getVideoMemory"() callconv(.C) [*]abi.ColorIndex {
-    return ashet.video.memory.ptr;
+fn @"video.getVideoMemory"() callconv(.C) [*]align(4) abi.ColorIndex {
+    if (getBackgroundProcess()) |proc| {
+        return &proc.video_buffer;
+    } else {
+        return ashet.video.memory.ptr;
+    }
 }
 fn @"video.getPaletteMemory"() callconv(.C) *[abi.palette_size]u16 {
-    return ashet.video.palette;
+    if (getBackgroundProcess()) |proc| {
+        return &proc.palette_buffer;
+    } else {
+        return ashet.video.palette;
+    }
 }
 fn @"video.setResolution"(w: u16, h: u16) callconv(.C) void {
     if (w == 0 or h == 0 or w > 400 or h > 300)
         return;
-    ashet.video.setResolution(w, h);
+    if (getBackgroundProcess()) |proc| {
+        proc.resolution = .{
+            .width = w,
+            .height = h,
+        };
+    } else {
+        ashet.video.setResolution(w, h);
+    }
 }
 
 fn @"process.exit"(exit_code: u32) callconv(.C) noreturn {
@@ -158,6 +200,9 @@ fn @"fs.closeDir"(handle: abi.DirectoryHandle) callconv(.C) void {
 }
 
 fn @"input.getEvent"(event: *abi.InputEvent) callconv(.C) abi.InputEventType {
+    if (getBackgroundProcess() != null)
+        return .none;
+
     const evt = ashet.input.getEvent() orelse return .none;
     switch (evt) {
         .keyboard => |data| {
@@ -170,11 +215,19 @@ fn @"input.getEvent"(event: *abi.InputEvent) callconv(.C) abi.InputEventType {
         },
     }
 }
+
 fn @"input.getKeyboardEvent"(event: *abi.KeyboardEvent) callconv(.C) bool {
+    if (getBackgroundProcess() != null)
+        return false;
+
     event.* = ashet.input.getKeyboardEvent() orelse return false;
     return true;
 }
+
 fn @"input.getMouseEvent"(event: *abi.MouseEvent) callconv(.C) bool {
+    if (getBackgroundProcess() != null)
+        return false;
+
     event.* = ashet.input.getMouseEvent() orelse return false;
     return true;
 }

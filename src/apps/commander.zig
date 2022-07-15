@@ -4,8 +4,8 @@ const ashet = @import("ashet");
 pub usingnamespace ashet.core;
 
 pub fn main() void {
-    ashet.syscalls().video.setMode(.text);
-    ashet.syscalls().console.clear();
+    ashet.video.setMode(.text);
+    ashet.console.clear();
 
     const vmem = ashet.syscalls().video.getVideoMemory();
     for (fake_screenshot) |char, i| {

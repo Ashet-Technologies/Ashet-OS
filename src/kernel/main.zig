@@ -3,7 +3,6 @@ const hal = @import("hal");
 
 pub const abi = @import("ashet-abi");
 pub const video = @import("components/video.zig");
-pub const console = @import("components/console.zig");
 pub const drivers = @import("drivers/drivers.zig");
 pub const storage = @import("components/storage.zig");
 pub const memory = @import("components/memory.zig");
@@ -60,18 +59,28 @@ fn main() !void {
 
 pub const global_hotkeys = struct {
     pub fn handle(event: abi.KeyboardEvent) bool {
-        //
+        if (!event.pressed)
+            return false;
         if (event.modifiers.alt) {
-            switch (event.key) {
-                .f1 => {
-                    multi_tasking.selectScreen(.@"1") catch |err| std.log.err("failed to switch to screen 1: {s}", .{@errorName(err)});
+            const SwitchGroup = struct { key: abi.KeyCode, screen: multi_tasking.Screen };
+            const switch_groups = [10]SwitchGroup{
+                .{ .key = .f1, .screen = .@"1" },
+                .{ .key = .f2, .screen = .@"2" },
+                .{ .key = .f3, .screen = .@"3" },
+                .{ .key = .f4, .screen = .@"4" },
+                .{ .key = .f5, .screen = .@"5" },
+                .{ .key = .f6, .screen = .@"6" },
+                .{ .key = .f7, .screen = .@"7" },
+                .{ .key = .f8, .screen = .@"8" },
+                .{ .key = .f9, .screen = .@"9" },
+                .{ .key = .f10, .screen = .@"10" },
+            };
+
+            for (switch_groups) |grp| {
+                if (event.key == grp.key) {
+                    multi_tasking.selectScreen(grp.screen) catch |err| std.log.err("failed to switch to screen {s}: {s}", .{ @tagName(grp.screen), @errorName(err) });
                     return true;
-                },
-                .f2 => {
-                    multi_tasking.selectScreen(.@"2") catch |err| std.log.err("failed to switch to screen 2: {s}", .{@errorName(err)});
-                    return true;
-                },
-                else => {},
+                }
             }
         }
         return false;

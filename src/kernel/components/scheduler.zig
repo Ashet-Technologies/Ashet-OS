@@ -218,6 +218,23 @@ pub const Thread = struct {
         return val;
     }
 
+    pub fn setName(thread: *Thread, name: []const u8) !void {
+        if (@import("builtin").mode == .Debug) {
+            if (name.len > thread.debug_info.name.len)
+                return error.Overflow;
+            std.mem.set(u8, &thread.debug_info.name, 0);
+            std.mem.copy(u8, &thread.debug_info.name, name);
+        }
+    }
+
+    pub fn getName(thread: *const Thread) []const u8 {
+        if (@import("builtin").mode == .Debug) {
+            return std.mem.sliceTo(&thread.debug_info.name, 0);
+        } else {
+            return "<optimized out>";
+        }
+    }
+
     pub fn format(self: *const Thread, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
         _ = fmt;
         _ = options;

@@ -6,7 +6,7 @@ const pkgs = struct {
     pub const ashet = std.build.Pkg{
         .name = "ashet",
         .source = .{ .path = "src/libashet/main.zig" },
-        .dependencies = &.{abi},
+        .dependencies = &.{ abi, text_editor },
     };
 
     pub const abi = std.build.Pkg{
@@ -130,7 +130,11 @@ pub fn build(b: *std.build.Builder) void {
     kernel_exe.setBuildMode(mode);
     kernel_exe.addPackage(pkgs.hal_virt);
     kernel_exe.addPackage(pkgs.abi);
-    kernel_exe.addPackage(pkgs.text_editor);
+    kernel_exe.addPackage(std.build.Pkg{
+        .name = "libashet",
+        .source = .{ .path = "src/libashet/main.zig" },
+        .dependencies = &.{ pkgs.abi, pkgs.text_editor },
+    });
     kernel_exe.addPackage(FatFS.getPackage(b, "fatfs", fatfs_config));
     kernel_exe.setLinkerScriptPath(.{ .path = "src/kernel/hal/virt/linker.ld" });
     kernel_exe.install();

@@ -4,7 +4,17 @@ pub const abi = @import("ashet-abi");
 
 pub const syscalls = abi.SysCallInterface.get;
 
-export fn _start() linksection(".entry_point") callconv(.C) u32 {
+comptime {
+    if (@hasDecl(@import("root"), "main")) {
+        @export(_start, .{
+            .linkage = .Strong,
+            .name = "_start",
+            .section = ".entry_point",
+        });
+    }
+}
+
+fn _start() callconv(.C) u32 {
     const res = @import("root").main();
     const Res = @TypeOf(res);
 
@@ -88,50 +98,7 @@ pub const input = struct {
     }
 };
 
-pub const console = struct {
-    pub const WriteError = error{};
-
-    pub fn clear() void {
-        syscalls().console.clear();
-    }
-
-    pub fn output(string: []const u8) void {
-        syscalls().console.output(string.ptr, string.len);
-    }
-
-    fn writeRaw(_: void, buffer: []const u8) WriteError!usize {
-        syscalls().console.print(buffer.ptr, buffer.len);
-        return buffer.len;
-    }
-
-    pub const Writer = std.io.Writer(void, WriteError, writeRaw);
-
-    pub fn writer() Writer {
-        return Writer{ .context = {} };
-    }
-
-    pub fn write(buffer: []const u8) void {
-        writer().writeAll(buffer) catch unreachable;
-    }
-
-    pub fn print(comptime fmt: []const u8, args: anytype) void {
-        writer().print(fmt, args) catch unreachable;
-    }
-
-    pub fn readLine(buffer: []u8, width: u16) error{Failure}!?[]u8 {
-        var params = abi.ReadLineParams{
-            .buffer = buffer.ptr,
-            .buffer_len = buffer.len,
-            .width = width,
-        };
-
-        return switch (syscalls().console.readLine(&params)) {
-            .ok => buffer[0..params.buffer_len],
-            .cancelled => null,
-            .failed => error.Failure,
-        };
-    }
-};
+pub const console = @import("console.zig");
 
 pub const debug = struct {
     pub fn write(buffer: []const u8) void {
@@ -170,7 +137,7 @@ pub const video = struct {
         syscalls().video.setResolution(width, height);
     }
 
-    pub fn getVideoMemory() [*]abi.ColorIndex {
+    pub fn getVideoMemory() [*]align(4) abi.ColorIndex {
         return syscalls().video.getVideoMemory();
     }
 

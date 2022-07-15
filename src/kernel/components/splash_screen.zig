@@ -1,7 +1,19 @@
+//!
+//! This file implements the splash screen application.
+//! This application has more "rights" than a normal application,
+//! as it can directly access any kernel state, but we still have
+//! to use the system calls to access input and output, as the kernel
+//! functions don't perform process filtering.
+//!
+//! Thus, for video memory and input events, we have to go through
+//! libashet.
+//!
+
 const std = @import("std");
 const hal = @import("hal");
 const ashet = @import("../main.zig");
 const logger = std.log.scoped(.@"splash screen");
+const libashet = @import("libashet");
 
 const Icon = extern struct {
     pub const width = 64;
@@ -115,13 +127,13 @@ const SplashScreen = struct {
 
         screen.layout = Layout.get(screen.apps.len);
 
-        ashet.video.setMode(.graphics);
-        ashet.video.setResolution(400, 300);
+        libashet.video.setMode(.graphics);
+        libashet.video.setResolution(400, 300);
 
         screen.fullPaint();
 
         while (true) {
-            while (ashet.input.getKeyboardEvent()) |event| {
+            while (libashet.input.getKeyboardEvent()) |event| {
                 if (!event.pressed)
                     continue;
                 var previous_app = screen.current_app;
@@ -144,7 +156,7 @@ const SplashScreen = struct {
 
                     .@"return", .kp_enter => {
                         // clear screen
-                        const vmem = ashet.video.memory[0 .. 400 * 300];
+                        const vmem = libashet.video.getVideoMemory()[0 .. 400 * 300];
                         std.mem.set(u8, vmem, 15);
 
                         // start application
@@ -167,8 +179,6 @@ const SplashScreen = struct {
     }
 
     pub fn startApp(screen: SplashScreen, app: App) !void {
-        _ = screen;
-
         var path_buffer: [ashet.abi.max_path]u8 = undefined;
         const app_path = try std.fmt.bufPrint(&path_buffer, "SYS:/apps/{s}/code", .{app.getName()});
 
@@ -208,6 +218,8 @@ const SplashScreen = struct {
         });
         errdefer thread.kill();
 
+        try thread.setName(app.getName());
+
         try thread.start();
     }
 
@@ -216,7 +228,7 @@ const SplashScreen = struct {
     }
 
     fn paintSelection(screen: SplashScreen, index: usize, color: u8) void {
-        const vmem = ashet.video.memory[0 .. 400 * 300];
+        const vmem = libashet.video.getVideoMemory()[0 .. 400 * 300];
 
         const target_pos = screen.layout.pos(index);
 
@@ -260,8 +272,8 @@ const SplashScreen = struct {
     }
 
     fn fullPaint(screen: SplashScreen) void {
-        const vmem = ashet.video.memory[0 .. 400 * 300];
-        const palette = ashet.video.palette;
+        const vmem = libashet.video.getVideoMemory()[0 .. 400 * 300];
+        const palette = libashet.video.getPaletteMemory();
 
         std.mem.set(u8, vmem, 15);
 

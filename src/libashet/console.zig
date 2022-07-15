@@ -1,8 +1,6 @@
 const std = @import("std");
-const ashet = @import("../main.zig");
+const ashet = @import("main.zig");
 const TextEditor = @import("text-editor");
-
-const video = ashet.video;
 
 pub const Location = struct {
     x: u8,
@@ -23,19 +21,23 @@ pub var bg: u4 = 0x0F; // white
 
 pub var cursor: Location = .{ .x = 0, .y = 0 };
 
-pub const attributes = video.charAttributes;
+pub const attributes = ashet.abi.charAttributes;
+
+fn memory() []align(4) u8 {
+    return ashet.video.getVideoMemory()[0 .. width * height * 2];
+}
 
 /// Sets a single character on the screen.
 pub fn set(x: u8, y: u8, char: u8, attrs: u8) void {
-    video.memory[charOffset(x, y)] = char;
-    video.memory[attrOffset(x, y)] = attrs;
+    memory()[charOffset(x, y)] = char;
+    memory()[attrOffset(x, y)] = attrs;
 }
 
 pub fn clear() void {
     cursor = .{ .x = 0, .y = 0 };
     std.mem.set(
         u16,
-        std.mem.bytesAsSlice(u16, video.memory[0 .. 2 * width * height]),
+        std.mem.bytesAsSlice(u16, memory()),
         ' ' | (@as(u16, attributes(fg, bg)) << 8),
     );
 }
@@ -55,8 +57,8 @@ pub fn put(char: u8) void {
 }
 
 pub fn putRaw(char: u8) void {
-    video.memory[charOffset(cursor.x, cursor.y)] = char;
-    video.memory[attrOffset(cursor.x, cursor.y)] = attributes(fg, bg);
+    memory()[charOffset(cursor.x, cursor.y)] = char;
+    memory()[attrOffset(cursor.x, cursor.y)] = attributes(fg, bg);
 
     cursor.x += 1;
     if (cursor.x >= width) {
@@ -72,12 +74,12 @@ fn newline() void {
 
         std.mem.copy(
             u8,
-            video.memory[0..],
-            video.memory[charOffset(0, 1)..charOffset(0, height)],
+            memory()[0..],
+            memory()[charOffset(0, 1)..charOffset(0, height)],
         );
         std.mem.set(
             u16,
-            std.mem.bytesAsSlice(u16, video.memory[charOffset(0, height - 1)..charOffset(0, height)]),
+            std.mem.bytesAsSlice(u16, memory()[charOffset(0, height - 1)..charOffset(0, height)]),
             ' ' | (@as(u16, attributes(fg, bg)) << 8),
         );
     }
@@ -91,18 +93,42 @@ fn attrOffset(x: u8, y: u8) usize {
     return charOffset(x, y) + 1;
 }
 
-fn writeForWriter(_: void, string: []const u8) Error!usize {
+fn writeForWriter(_: void, string: []const u8) WriteError!usize {
     write(string);
     return string.len;
 }
 
-const Error = error{};
+const WriteError = error{};
 
-pub const Writer = std.io.Writer(void, Error, writeForWriter);
+pub const Writer = std.io.Writer(void, WriteError, writeForWriter);
 
 pub fn writer() Writer {
     return Writer{ .context = {} };
 }
+
+pub fn output(string: []const u8) void {
+    for (string) |c| {
+        putRaw(c);
+    }
+}
+
+pub fn print(comptime fmt: []const u8, args: anytype) void {
+    writer().print(fmt, args) catch unreachable;
+}
+
+// pub fn readLine(buffer: []u8, width: u16) error{Failure}!?[]u8 {
+//     var params = abi.ReadLineParams{
+//         .buffer = buffer.ptr,
+//         .buffer_len = buffer.len,
+//         .width = width,
+//     };
+
+//     return switch (syscalls().console.readLine(&params)) {
+//         .ok => buffer[0..params.buffer_len],
+//         .cancelled => null,
+//         .failed => error.Failure,
+//     };
+// }
 
 fn fetchOrSpace(str: []const u8, index: usize) u8 {
     return if (index < str.len)
@@ -121,7 +147,7 @@ pub fn readLine(buffer: []u8, limit: usize) error{ NoSpaceLeft, Cancelled, OutOf
     var editor = try TextEditor.init(fba.allocator(), "");
     defer editor.deinit();
 
-    const display_range = video.memory[charOffset(cursor.x, cursor.y)..][0 .. 2 * limit];
+    const display_range = memory()[charOffset(cursor.x, cursor.y)..][0 .. 2 * limit];
     errdefer {
         for (display_range) |*c, i| {
             c.* = if (i % 2 == 0)
@@ -129,7 +155,6 @@ pub fn readLine(buffer: []u8, limit: usize) error{ NoSpaceLeft, Cancelled, OutOf
             else
                 @as(u8, 0x0F);
         }
-        ashet.video.flush();
     }
 
     main_loop: while (true) {
@@ -182,20 +207,14 @@ pub fn readLine(buffer: []u8, limit: usize) error{ NoSpaceLeft, Cancelled, OutOf
             }
         }
 
-        ashet.video.flush();
-        if (ashet.scheduler.Thread.current() != null) {
-            ashet.scheduler.yield();
-        }
+        ashet.process.yield();
     }
 
-    {
-        for (display_range) |*c, i| {
-            c.* = if (i % 2 == 0)
-                fetchOrSpace(editor.getText(), i / 2)
-            else
-                @as(u8, 0x0F);
-        }
-        ashet.video.flush();
+    for (display_range) |*c, i| {
+        c.* = if (i % 2 == 0)
+            fetchOrSpace(editor.getText(), i / 2)
+        else
+            @as(u8, 0x0F);
     }
 
     const res_buf = editor.bytes.toOwnedSlice();

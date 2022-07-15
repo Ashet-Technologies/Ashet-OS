@@ -63,9 +63,7 @@ pub fn selectScreen(screen: Screen) !void {
     }
     initialized = true;
 
-    var entry = &foreground_processes[new_screen_idx];
-
-    const new_proc: *Process = entry.* orelse blk: {
+    const new_proc: *Process = foreground_processes[new_screen_idx] orelse blk: {
         // Start new process with splash screen when we didn't have any process here yet
 
         const req_pages = ashet.memory.getRequiredPages(@sizeOf(Process));
@@ -86,12 +84,14 @@ pub fn selectScreen(screen: Screen) !void {
         errdefer process.master_thread.kill();
 
         // just format the name directly into the debug_info of the thread
-        _ = try std.fmt.bufPrintZ(&process.master_thread.debug_info.name, "main screen {d}", .{new_screen_idx});
+        var name_buf: [64]u8 = undefined;
+        const name = try std.fmt.bufPrint(&name_buf, "main screen {d}", .{new_screen_idx});
+        try process.master_thread.setName(name);
 
         try process.master_thread.start();
         process.master_thread.detach();
 
-        entry.* = process;
+        foreground_processes[new_screen_idx] = process;
 
         break :blk process;
     };
@@ -112,7 +112,7 @@ pub const Process = struct {
     master_thread: *ashet.scheduler.Thread,
 
     // buffers for background storage
-    video_buffer: [400 * 300]u8 = ashet.video.defaults.splash_screen ++ [1]u8{0x0F} ** (400 * 300 - 256 * 128),
+    video_buffer: [400 * 300]u8 align(4) = ashet.video.defaults.splash_screen ++ [1]u8{0x0F} ** (400 * 300 - 256 * 128),
     palette_buffer: [ashet.abi.palette_size]u16 = ashet.video.defaults.palette,
     video_mode: ashet.video.Mode = .graphics,
     resolution: ashet.video.Resolution = .{ .width = 256, .height = 128 },

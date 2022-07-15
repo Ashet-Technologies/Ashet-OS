@@ -177,21 +177,3 @@ pub fn setResolution(width: u16, height: u16) void {
     std.debug.assert(width <= 400 and height <= 300);
     hal.video.setResolution(width, height);
 }
-
-/// Computes the character attributes and selects both foreground and background color.
-pub fn charAttributes(foreground: u4, background: u4) u8 {
-    return (CharAttributes{ .fg = foreground, .bg = background }).toByte();
-}
-
-pub const CharAttributes = packed struct {
-    bg: u4, // lo nibble
-    fg: u4, // hi nibble
-
-    pub fn fromByte(val: u8) CharAttributes {
-        return @bitCast(CharAttributes, val);
-    }
-
-    pub fn toByte(attr: CharAttributes) u8 {
-        return @bitCast(u8, attr);
-    }
-};

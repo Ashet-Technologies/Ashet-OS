@@ -131,7 +131,7 @@ pub const video = struct {
                     const cy = i / w;
 
                     const char = video.memory[2 * i + 0];
-                    const attr = ashet.video.CharAttributes.fromByte(video.memory[2 * i + 1]);
+                    const attr = ashet.abi.CharAttributes.fromByte(video.memory[2 * i + 1]);
 
                     const glyph = font[char];
 
