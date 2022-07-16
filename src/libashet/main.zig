@@ -9,7 +9,6 @@ comptime {
         @export(_start, .{
             .linkage = .Strong,
             .name = "_start",
-            .section = ".text._start",
         });
     }
 }
@@ -46,8 +45,12 @@ fn _start() callconv(.C) u32 {
 
 pub const core = struct {
     pub fn panic(msg: []const u8, maybe_stack_trace: ?*std.builtin.StackTrace) noreturn {
-        std.log.err("PANIC: {s}", .{msg});
         _ = maybe_stack_trace;
+
+        debug.write("PANIC: ");
+        debug.write(msg);
+        debug.write("\r\n");
+
         syscalls().process.exit(1);
     }
 
@@ -62,7 +65,7 @@ pub const core = struct {
 
         var writer = std.io.Writer(void, debug.WriteError, debug.writeString){ .context = {} };
 
-        writer.print(level_txt ++ prefix2 ++ format ++ "\n", args) catch unreachable;
+        writer.print(level_txt ++ prefix2 ++ format ++ "\r\n", args) catch unreachable;
     }
 };
 

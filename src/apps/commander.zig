@@ -7,12 +7,34 @@ pub fn main() void {
     ashet.video.setMode(.text);
     ashet.console.clear();
 
+    var active_right = false;
+
+    paint(active_right);
+
+    while (true) {
+        while (ashet.input.getKeyboardEvent()) |event| {
+            if (!event.pressed)
+                continue;
+            switch (event.key) {
+                .tab => {
+                    active_right = !active_right;
+                    paint(active_right);
+                },
+                else => {},
+            }
+        }
+
+        ashet.process.yield();
+    }
+}
+
+fn paint(active_right: bool) void {
     const vmem = ashet.syscalls().video.getVideoMemory();
     for (fake_screenshot) |char, i| {
         const x = i % 64;
         const y = i / 64;
 
-        const lh = x < 32;
+        const lh = (x < 32) != active_right;
 
         const attribs = if (y == 0)
             @as(u8, 0xF0) // menu bar
@@ -35,10 +57,6 @@ pub fn main() void {
 
         vmem[2 * i + 0] = char;
         vmem[2 * i + 1] = attribs;
-    }
-
-    while (true) {
-        ashet.process.yield();
     }
 }
 

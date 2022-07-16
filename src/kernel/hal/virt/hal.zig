@@ -110,10 +110,10 @@ pub const video = struct {
     }
 
     pub fn flush() void {
-        std.mem.set(u32, gpu.fb_mem, pal(border_color));
-
         switch (video_mode) {
             .text => {
+                std.mem.set(u32, gpu.fb_mem, pal(border_color));
+
                 const font = ashet.video.defaults.font;
 
                 const w = 64;
@@ -154,6 +154,17 @@ pub const video = struct {
             .graphics => {
                 const dx = (gpu.fb_width - graphics_width) / 2;
                 const dy = (gpu.fb_height - graphics_height) / 2;
+                {
+                    var i: usize = 0;
+                    while (i < gpu.fb_width * gpu.fb_height) : (i += 1) {
+                        const x = i % gpu.fb_width;
+                        const y = i / gpu.fb_width;
+
+                        if (x < dx or x >= dx + graphics_width or y < dy or y >= dy + graphics_height) {
+                            gpu.fb_mem[i] = pal(border_color);
+                        }
+                    }
+                }
 
                 const pixel_count = @as(usize, graphics_width) * @as(usize, graphics_height);
 
