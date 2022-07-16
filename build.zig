@@ -63,32 +63,22 @@ const AshetContext = struct {
     mkicon: *std.build.LibExeObjStep,
 
     fn createAshetApp(ctx: AshetContext, name: []const u8, source: []const u8, maybe_icon: ?[]const u8) *std.build.LibExeObjStep {
-        const exe = ctx.b.addExecutable(name, source);
+        const exe = ctx.b.addExecutable(ctx.b.fmt("{s}.app", .{name}), source);
 
         exe.setTarget(target);
         exe.addPackage(pkgs.ashet);
         exe.setLinkerScriptPath(.{ .path = "src/libashet/application.ld" });
         exe.omit_frame_pointer = false;
         exe.single_threaded = true;
-        exe.force_pic = true;
+        // exe.force_pic = true;
+        // exe.pie = false;
+        exe.linkage = .static;
+        // exe.setBuildMode(.ReleaseSmall);
         exe.install();
 
-        // const raw_install_step = exe.installRaw(
-        //     ctx.b.fmt("{s}.bin", .{name}),
-        //     .{
-        //         .format = .bin,
-        //         .dest_dir = .{ .custom = "apps" },
-        //     },
-        // );
-        const raw_install_step = ctx.b.addSystemCommand(&.{
-            "llvm-objcopy",
-            "-O",
-            "binary",
-        });
-        raw_install_step.addArtifactArg(exe);
-        raw_install_step.addArg(ctx.b.fmt("zig-out/apps/{s}.bin", .{name}));
-
-        ctx.b.getInstallStep().dependOn(&raw_install_step.step);
+        const install_step = ctx.b.addInstallArtifact(exe);
+        install_step.dest_dir = .{ .custom = "apps" };
+        ctx.b.getInstallStep().dependOn(&install_step.step);
 
         if (maybe_icon) |src_icon| {
             const mkicon = ctx.mkicon.run();

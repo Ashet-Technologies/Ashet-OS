@@ -1,7 +1,10 @@
 ENTRY(_start)
 SECTIONS {
+
+    . = 0x80800000;
+
     .text : {
-        *(.text._start) /* moves _start to the load address, must be the first section */
+        /* *(.text._start)  moves _start to the load address, must be the first section */
         *(.text)
         *(.text.*)
     }

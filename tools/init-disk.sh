@@ -32,7 +32,7 @@ unix2dos "${ROOT}/rootfs/docs/filesystem.txt"
 
 mcopy -i "${DISK}" "${ROOT}/rootfs/"* "::/"
 
-for path in ${ROOT}/zig-out/apps/*.bin; do 
+for path in ${ROOT}/zig-out/apps/*.app; do 
   fname="$(basename "${path}")"
   app_name="${fname%.*}"
   

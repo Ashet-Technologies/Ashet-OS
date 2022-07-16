@@ -145,3 +145,74 @@ pub const video = struct {
         return syscalls().video.getPaletteMemory();
     }
 };
+
+pub const fs = struct {
+    pub const File = struct {
+        pub const ReadError = error{};
+        pub const WriteError = error{};
+        pub const SeekError = error{Failed};
+        pub const GetPosError = error{};
+
+        pub const Reader = std.io.Reader(*File, ReadError, read);
+        pub const Writer = std.io.Writer(*File, WriteError, write);
+        pub const SeekableStream = std.io.SeekableStream(*File, SeekError, GetPosError, seekTo, seekBy, getPos, getEndPos);
+
+        handle: abi.FileHandle,
+        offset: u64,
+
+        pub fn open(path: []const u8, access: abi.FileAccess, mode: abi.FileMode) !File {
+            const handle = syscalls().fs.openFile(path.ptr, path.len, access, mode);
+            if (handle == .invalid)
+                return error.InvalidFile;
+            return File{
+                .handle = handle,
+                .offset = 0,
+            };
+        }
+
+        pub fn close(file: *File) void {
+            syscalls().fs.close(file.handle);
+            file.* = undefined;
+        }
+
+        pub fn read(file: *File, buffer: []u8) ReadError!usize {
+            return syscalls().fs.read(file.handle, buffer.ptr, buffer.len);
+        }
+
+        pub fn write(file: *File, buffer: []const u8) WriteError!usize {
+            return syscalls().fs.write(file.handle, buffer.ptr, buffer.len);
+        }
+
+        pub fn seekTo(file: *File, pos: u64) SeekError!void {
+            if (!syscalls().fs.seekTo(file.handle, pos))
+                return error.Failed;
+            file.offset = pos;
+        }
+
+        pub fn seekBy(file: *File, delta: i64) SeekError!void {
+            _ = file;
+            _ = delta;
+            @panic("not implemented yet");
+        }
+
+        pub fn getPos(file: *File) GetPosError!u64 {
+            return file.offset;
+        }
+        pub fn getEndPos(file: *File) GetPosError!u64 {
+            _ = file;
+            @panic("not implemented");
+        }
+
+        pub fn reader(self: *File) Reader {
+            return Reader{ .context = self };
+        }
+
+        pub fn writer(self: *File) Writer {
+            return Writer{ .context = self };
+        }
+
+        pub fn seekableStream(self: *File) SeekableStream {
+            return SeekableStream{ .context = self };
+        }
+    };
+};

@@ -179,6 +179,98 @@ const SplashScreen = struct {
     }
 
     pub fn startApp(screen: SplashScreen, app: App) !void {
+        return startAppElf(screen, app);
+    }
+
+    pub fn startAppElf(screen: SplashScreen, app: App) !void {
+        const elf = std.elf;
+
+        var path_buffer: [ashet.abi.max_path]u8 = undefined;
+        const app_path = try std.fmt.bufPrint(&path_buffer, "SYS:/apps/{s}/code", .{app.getName()});
+
+        var file = try libashet.fs.File.open(app_path, .read_only, .open_existing);
+        defer file.close();
+
+        var header = try elf.Header.read(&file);
+
+        if (header.endian != .Little)
+            return error.InvalidEndian;
+        if (header.machine != .RISCV)
+            return error.InvalidMachine;
+        if (header.is_64 == true)
+            return error.InvalidBitSize;
+        if (header.phnum == 0)
+            return error.NoCode;
+
+        logger.info("elf header: {}", .{header});
+
+        // Verify that we can load the executable
+        {
+            var pheaders = header.program_header_iterator(&file);
+            while (try pheaders.next()) |phdr| {
+                if (phdr.p_type != elf.PT_LOAD)
+                    continue;
+
+                logger.info("verifying read={} write={} exec={} offset=0x{X:0>8} vaddr=0x{X:0>8} paddr=0x{X:0>8} memlen={} bytes={} align={}", .{
+                    @boolToInt((phdr.p_flags & elf.PF_R) != 0),
+                    @boolToInt((phdr.p_flags & elf.PF_W) != 0),
+                    @boolToInt((phdr.p_flags & elf.PF_X) != 0),
+                    phdr.p_offset, // file offset
+                    phdr.p_vaddr, // virtual load address
+                    phdr.p_paddr, // physical load address
+                    phdr.p_memsz, // memory size
+                    phdr.p_filesz, // bytes in file
+                    phdr.p_align, // alignment
+                });
+
+                // check if memory is available
+                var i: usize = 0;
+                while (i < phdr.p_memsz) : (i += ashet.memory.page_size) {
+                    const page_index = ashet.memory.ptrToPage(@intToPtr(?*anyopaque, @intCast(usize, phdr.p_vaddr + i))) orelse return error.NonRamSection;
+
+                    if (!ashet.memory.isFree(page_index))
+                        return error.MemoryAlreadyUsed;
+                }
+            }
+        }
+
+        // Actually load the exe
+        {
+            var pheaders = header.program_header_iterator(&file);
+            while (try pheaders.next()) |phdr| {
+                if (phdr.p_type != elf.PT_LOAD)
+                    continue;
+
+                logger.info("loading read={} write={} exec={} offset=0x{X:0>8} vaddr=0x{X:0>8} paddr=0x{X:0>8} memlen={} bytes={} align={}", .{
+                    @boolToInt((phdr.p_flags & elf.PF_R) != 0),
+                    @boolToInt((phdr.p_flags & elf.PF_W) != 0),
+                    @boolToInt((phdr.p_flags & elf.PF_X) != 0),
+                    phdr.p_offset, // file offset
+                    phdr.p_vaddr, // virtual load address
+                    phdr.p_paddr, // physical load address
+                    phdr.p_memsz, // memory size
+                    phdr.p_filesz, // bytes in file
+                    phdr.p_align, // alignment
+                });
+
+                const memory_section = @intToPtr([*]u8, @intCast(usize, phdr.p_vaddr))[0..@intCast(usize, phdr.p_memsz)];
+
+                // mark memory as used
+                var i: usize = 0;
+                while (i < phdr.p_memsz) : (i += ashet.memory.page_size) {
+                    const page_index = ashet.memory.ptrToPage(&memory_section[i]) orelse return error.NonRamSection;
+                    ashet.memory.markUsed(page_index);
+                }
+
+                try file.seekTo(phdr.p_offset);
+                try file.reader().readNoEof(memory_section[0..@intCast(usize, phdr.p_filesz)]);
+            }
+        }
+
+        try screen.spawnApp(app, @intCast(usize, header.entry));
+    }
+
+    pub fn startAppBinary(screen: SplashScreen, app: App) !void {
         var path_buffer: [ashet.abi.max_path]u8 = undefined;
         const app_path = try std.fmt.bufPrint(&path_buffer, "SYS:/apps/{s}/code", .{app.getName()});
 
@@ -193,7 +285,13 @@ const SplashScreen = struct {
 
         const process_memory = @ptrCast([*]u8, ashet.memory.pageToPtr(app_pages))[0..proc_page_size];
 
-        logger.info("process {s} will be loaded at {*}", .{ app.getName(), process_memory });
+        logger.info("process {s} will be loaded at {*} with {d} bytes size ({d} pages at {d})", .{
+            app.getName(),
+            process_memory,
+            proc_page_size,
+            proc_page_count,
+            app_pages,
+        });
 
         {
             var file = try ashet.filesystem.open(app_path, .read_only, .open_existing);
@@ -204,8 +302,13 @@ const SplashScreen = struct {
                 @panic("could not read all bytes on one go!");
         }
 
-        const thread = try ashet.scheduler.Thread.spawn(@ptrCast(ashet.scheduler.ThreadFunction, process_memory.ptr), null, .{
+        try screen.spawnApp(app, @ptrToInt(process_memory.ptr));
+    }
+
+    fn spawnApp(screen: SplashScreen, app: App, entry_point: usize) !void {
+        const thread = try ashet.scheduler.Thread.spawn(@intToPtr(ashet.scheduler.ThreadFunction, entry_point), null, .{
             .process = screen.task,
+            .stack_size = 128 * 1024, // 128k
         });
         errdefer thread.kill();
 
