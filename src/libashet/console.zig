@@ -147,8 +147,8 @@ pub fn readLine(buffer: []u8, limit: usize) error{ NoSpaceLeft, Cancelled, OutOf
     var editor = try TextEditor.init(fba.allocator(), "");
     defer editor.deinit();
 
-    const display_range = memory()[charOffset(cursor.x, cursor.y)..][0 .. 2 * limit];
     errdefer {
+        const display_range = memory()[charOffset(cursor.x, cursor.y)..][0 .. 2 * limit];
         for (display_range) |*c, i| {
             c.* = if (i % 2 == 0)
                 ' '
@@ -158,6 +158,7 @@ pub fn readLine(buffer: []u8, limit: usize) error{ NoSpaceLeft, Cancelled, OutOf
     }
 
     main_loop: while (true) {
+        const display_range = memory()[charOffset(cursor.x, cursor.y)..][0 .. 2 * limit];
         for (display_range) |*c, i| {
             c.* = if (i % 2 == 0)
                 fetchOrSpace(editor.getText(), i / 2)
@@ -210,11 +211,14 @@ pub fn readLine(buffer: []u8, limit: usize) error{ NoSpaceLeft, Cancelled, OutOf
         ashet.process.yield();
     }
 
-    for (display_range) |*c, i| {
-        c.* = if (i % 2 == 0)
-            fetchOrSpace(editor.getText(), i / 2)
-        else
-            @as(u8, 0x0F);
+    {
+        const display_range = memory()[charOffset(cursor.x, cursor.y)..][0 .. 2 * limit];
+        for (display_range) |*c, i| {
+            c.* = if (i % 2 == 0)
+                fetchOrSpace(editor.getText(), i / 2)
+            else
+                @as(u8, 0x0F);
+        }
     }
 
     const res_buf = editor.bytes.toOwnedSlice();

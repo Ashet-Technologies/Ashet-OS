@@ -65,15 +65,15 @@ const AshetContext = struct {
     fn createAshetApp(ctx: AshetContext, name: []const u8, source: []const u8, maybe_icon: ?[]const u8) *std.build.LibExeObjStep {
         const exe = ctx.b.addExecutable(ctx.b.fmt("{s}.app", .{name}), source);
 
+        exe.omit_frame_pointer = false; // this is useful for debugging
+        exe.single_threaded = true; // AshetOS doesn't support multithreading in a modern sensegs
+        exe.pie = true; // AshetOS requires PIE executables
+        exe.force_pic = true; // which need PIC code
+        exe.linkage = .static; // but everything is statically linked, we don't support shared objects
+
+        exe.setLinkerScriptPath(.{ .path = "src/libashet/application.ld" });
         exe.setTarget(target);
         exe.addPackage(pkgs.ashet);
-        exe.setLinkerScriptPath(.{ .path = "src/libashet/application.ld" });
-        exe.omit_frame_pointer = false;
-        exe.single_threaded = true;
-        // exe.force_pic = true;
-        // exe.pie = false;
-        exe.linkage = .static;
-        // exe.setBuildMode(.ReleaseSmall);
         exe.install();
 
         const install_step = ctx.b.addInstallArtifact(exe);
@@ -193,25 +193,20 @@ pub fn build(b: *std.build.Builder) void {
     };
 
     {
-        // const app_shell
-        _ = ctx.createAshetApp("shell", "src/apps/shell.zig", "design/apps/shell.png");
-        // app_shell.setBuildMode(mode);
+        const app_shell = ctx.createAshetApp("shell", "src/apps/shell.zig", "design/apps/shell.png");
+        app_shell.setBuildMode(mode);
 
-        // const app_commander
-        _ = ctx.createAshetApp("commander", "src/apps/commander.zig", "design/apps/commander.png");
-        // app_commander.setBuildMode(mode);
+        const app_commander = ctx.createAshetApp("commander", "src/apps/commander.zig", "design/apps/commander.png");
+        app_commander.setBuildMode(mode);
 
-        // const app_editor
-        _ = ctx.createAshetApp("editor", "src/apps/dummy.zig", "design/apps/text-editor.png");
-        // app_editor.setBuildMode(mode);
+        const app_editor = ctx.createAshetApp("editor", "src/apps/dummy.zig", "design/apps/text-editor.png");
+        app_editor.setBuildMode(mode);
 
-        // const app_browser
-        _ = ctx.createAshetApp("browser", "src/apps/dummy.zig", "design/apps/browser.png");
-        // app_browser.setBuildMode(mode);
+        const app_browser = ctx.createAshetApp("browser", "src/apps/dummy.zig", "design/apps/browser.png");
+        app_browser.setBuildMode(mode);
 
-        // const app_music
-        _ = ctx.createAshetApp("music", "src/apps/music.zig", "design/apps/music.png");
-        // app_music.setBuildMode(mode);
+        const app_music = ctx.createAshetApp("music", "src/apps/music.zig", "design/apps/music.png");
+        app_music.setBuildMode(mode);
     }
 
     const run_step = b.step("run", "Run the app");

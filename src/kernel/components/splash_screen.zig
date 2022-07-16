@@ -183,6 +183,15 @@ const SplashScreen = struct {
     }
 
     pub fn startAppElf(screen: SplashScreen, app: App) !void {
+        // https://github.com/riscv-non-isa/riscv-elf-psabi-doc/blob/master/riscv-elf.adoc
+        // A - Addend field in the relocation entry associated with the symbol
+        // B - Base address of a shared object loaded into memory
+
+        // const R_RISCV_NONE = 0;
+        // const R_RISCV_32 = 1;
+        // const R_RISCV_64 = 2;
+        const R_RISCV_RELATIVE = 3; // B + A Relocation against a local symbol in a shared object
+
         const elf = std.elf;
 
         var path_buffer: [ashet.abi.max_path]u8 = undefined;
@@ -205,7 +214,10 @@ const SplashScreen = struct {
         logger.info("elf header: {}", .{header});
 
         // Verify that we can load the executable
-        {
+        const required_pages: usize = blk: {
+            var lo_addr: usize = 0;
+            var hi_addr: usize = 0;
+
             var pheaders = header.program_header_iterator(&file);
             while (try pheaders.next()) |phdr| {
                 if (phdr.p_type != elf.PT_LOAD)
@@ -223,18 +235,35 @@ const SplashScreen = struct {
                     phdr.p_align, // alignment
                 });
 
-                // check if memory is available
-                var i: usize = 0;
-                while (i < phdr.p_memsz) : (i += ashet.memory.page_size) {
-                    const page_index = ashet.memory.ptrToPage(@intToPtr(?*anyopaque, @intCast(usize, phdr.p_vaddr + i))) orelse return error.NonRamSection;
+                // // check if memory is available
+                // var i: usize = 0;
+                // while (i < phdr.p_memsz) : (i += ashet.memory.page_size) {
+                //     const page_index = ashet.memory.ptrToPage(@intToPtr(?*anyopaque, @intCast(usize, phdr.p_vaddr + i))) orelse return error.NonRamSection;
 
-                    if (!ashet.memory.isFree(page_index))
-                        return error.MemoryAlreadyUsed;
-                }
+                //     if (!ashet.memory.isFree(page_index))
+                //         return error.MemoryAlreadyUsed;
+                // }
+
+                lo_addr = std.math.min(lo_addr, @intCast(usize, phdr.p_vaddr));
+                hi_addr = std.math.max(hi_addr, @intCast(usize, phdr.p_vaddr + phdr.p_memsz));
             }
-        }
 
-        // Actually load the exe
+            const byte_count = hi_addr - lo_addr;
+
+            logger.info("{s} requires {} bytes of RAM", .{ app.getName(), byte_count });
+
+            break :blk ashet.memory.getRequiredPages(byte_count);
+        };
+
+        const required_bytes = ashet.memory.page_count * required_pages;
+
+        const base_page = try ashet.memory.allocPages(required_pages);
+        errdefer ashet.memory.freePages(base_page, required_pages);
+
+        const process_memory = @ptrCast([*]u8, ashet.memory.pageToPtr(base_page).?)[0..required_bytes];
+        const process_base = @ptrToInt(process_memory.ptr);
+
+        // Actually load the exe into memory
         {
             var pheaders = header.program_header_iterator(&file);
             while (try pheaders.next()) |phdr| {
@@ -253,21 +282,83 @@ const SplashScreen = struct {
                     phdr.p_align, // alignment
                 });
 
-                const memory_section = @intToPtr([*]u8, @intCast(usize, phdr.p_vaddr))[0..@intCast(usize, phdr.p_memsz)];
-
-                // mark memory as used
-                var i: usize = 0;
-                while (i < phdr.p_memsz) : (i += ashet.memory.page_size) {
-                    const page_index = ashet.memory.ptrToPage(&memory_section[i]) orelse return error.NonRamSection;
-                    ashet.memory.markUsed(page_index);
-                }
+                const section = process_memory[@intCast(usize, phdr.p_vaddr)..][0..@intCast(usize, phdr.p_memsz)];
 
                 try file.seekTo(phdr.p_offset);
-                try file.reader().readNoEof(memory_section[0..@intCast(usize, phdr.p_filesz)]);
+                try file.reader().readNoEof(section[0..@intCast(usize, phdr.p_filesz)]);
             }
         }
 
-        try screen.spawnApp(app, @intCast(usize, header.entry));
+        {
+            var sheaders = header.section_header_iterator(&file);
+            while (try sheaders.next()) |shdr| {
+                switch (shdr.sh_type) {
+                    elf.SHT_RELA => {
+                        // Shdr{
+                        //   .sh_flags = 2,
+                        //   .sh_addr = 2155892500,
+                        //   .sh_offset = 24340,
+                        //   .sh_size = 2520,
+                        //   .sh_link = 2,
+                        //   .sh_info = 0,
+                        //   .sh_addralign = 4,
+                        //   .sh_entsize = 12,
+                        // }
+
+                        try file.seekTo(shdr.sh_offset);
+                        var i: usize = 0;
+                        while (i < shdr.sh_size / shdr.sh_entsize) : (i += 1) {
+                            var entry: elf.Elf32_Rela = undefined;
+                            try file.reader().readNoEof(std.mem.asBytes(&entry));
+
+                            switch (entry.r_info) {
+                                R_RISCV_RELATIVE => {
+                                    logger.err("apply rela: offset={x:0>8} addend={x}", .{ entry.r_offset, entry.r_addend });
+
+                                    std.mem.writeIntLittle(
+                                        usize,
+                                        process_memory[@intCast(usize, entry.r_offset)..][0..@sizeOf(usize)],
+                                        process_base +% @bitCast(u32, entry.r_addend), // abusing the fact that a u32 and i32 are interchangible when doing wraparound addition
+                                    );
+                                },
+                                else => logger.err("unhandled rela: info={} offset={x:0>8} addend={x}", .{
+                                    entry.r_info,
+                                    entry.r_offset,
+                                    entry.r_addend,
+                                }),
+                            }
+                        }
+                    },
+                    elf.SHT_REL => {
+                        // Shdr{
+                        //   .sh_flags = 3,
+                        //   .sh_addr = 2155930568,
+                        //   .sh_offset = 62408,
+                        //   .sh_size = 112,
+                        //   .sh_link = 5,
+                        //   .sh_info = 0,
+                        //   .sh_addralign = 4,
+                        //   .sh_entsize = 8,
+                        // };
+                    },
+                    elf.SHT_DYNAMIC => {
+                        //
+                    },
+
+                    else => {}, // logger.info("unhandled section = {}", .{shdr}),
+                }
+            }
+        }
+
+        const entry_point = process_base + @intCast(usize, header.entry);
+
+        logger.info("loaded {s} to address 0x{X:0>8}, entry point is 0x{X:0>8}", .{
+            app.getName(),
+            process_base,
+            entry_point,
+        });
+
+        try screen.spawnApp(app, entry_point);
     }
 
     pub fn startAppBinary(screen: SplashScreen, app: App) !void {

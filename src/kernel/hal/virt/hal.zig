@@ -154,6 +154,7 @@ pub const video = struct {
             .graphics => {
                 const dx = (gpu.fb_width - graphics_width) / 2;
                 const dy = (gpu.fb_height - graphics_height) / 2;
+                
                 {
                     var i: usize = 0;
                     while (i < gpu.fb_width * gpu.fb_height) : (i += 1) {
