@@ -14,14 +14,24 @@ const pkgs = struct {
         .source = .{ .path = "src/abi/abi.zig" },
     };
 
-    pub const hal_virt = std.build.Pkg{
+    pub const hal_virt_riscv32 = std.build.Pkg{
         .name = "hal",
-        .source = .{ .path = "src/kernel/hal/virt/hal.zig" },
+        .source = .{ .path = "src/kernel/hal/virt-riscv32/hal.zig" },
+    };
+
+    pub const hal_virt_arm = std.build.Pkg{
+        .name = "hal",
+        .source = .{ .path = "src/kernel/hal/virt-arm/hal.zig" },
     };
 
     pub const hal_ashet = std.build.Pkg{
         .name = "hal",
         .source = .{ .path = "src/kernel/hal/ashet/hal.zig" },
+    };
+
+    pub const hal_microvm = std.build.Pkg{
+        .name = "hal",
+        .source = .{ .path = "src/kernel/hal/microvm/hal.zig" },
     };
 
     pub const text_editor = std.build.Pkg{
@@ -46,21 +56,97 @@ const pkgs = struct {
     };
 };
 
-const target = std.zig.CrossTarget{
-    .cpu_arch = .riscv32,
-    .os_tag = .freestanding,
-    .abi = .eabi,
-    .cpu_model = .{ .explicit = &std.Target.riscv.cpu.generic_rv32 },
-    .cpu_features_add = std.Target.riscv.featureSet(&[_]std.Target.riscv.Feature{
-        .c,
-        .m,
-        .reserve_x4, // Don't allow LLVM to use the "tp" register. We want that for our own purposes
-    }),
+const PlatformConfig = struct {
+    target: std.zig.CrossTarget,
+    hal: std.build.Pkg,
+    linkerscript: std.build.FileSource,
+};
+
+pub const Target = union(enum) {
+    riscv32: RiscvPlatform,
+    arm: ArmPlatform,
+    x86: X86Platform,
+
+    pub fn resolve(target: Target) PlatformConfig {
+        switch (target) {
+            .riscv32 => |platform| {
+                const cpu = std.zig.CrossTarget{
+                    .cpu_arch = .riscv32,
+                    .os_tag = .freestanding,
+                    .abi = .eabi,
+                    .cpu_model = .{ .explicit = &std.Target.riscv.cpu.generic_rv32 },
+                    .cpu_features_add = std.Target.riscv.featureSet(&[_]std.Target.riscv.Feature{
+                        .c,
+                        .m,
+                        .reserve_x4, // Don't allow LLVM to use the "tp" register. We want that for our own purposes
+                    }),
+                };
+                return switch (platform) {
+                    .virt => PlatformConfig{
+                        .target = cpu,
+                        .hal = pkgs.hal_virt_riscv32,
+                        .linkerscript = .{ .path = "src/kernel/hal/virt-riscv32/linker.ld" },
+                    },
+                    .ashet => PlatformConfig{
+                        .target = cpu,
+                        .hal = pkgs.hal_ashet,
+                        .linkerscript = .{ .path = "" },
+                    },
+                };
+            },
+            .arm => |platform| {
+                const cpu = std.zig.CrossTarget{
+                    .cpu_arch = .arm,
+                    .os_tag = .freestanding,
+                    .abi = .eabi,
+                    .cpu_model = .{ .explicit = &std.Target.arm.cpu.generic },
+                };
+                return switch (platform) {
+                    .virt => PlatformConfig{
+                        .target = cpu,
+                        .hal = pkgs.hal_virt_arm,
+                        .linkerscript = .{ .path = "" },
+                    },
+                };
+            },
+            .x86 => |platform| {
+                const cpu = std.zig.CrossTarget{
+                    .cpu_arch = .i386,
+                    .os_tag = .freestanding,
+                    .abi = .eabi,
+                    .cpu_model = .{ .explicit = &std.Target.x86.cpu.@"i686" },
+                };
+                return switch (platform) {
+                    .microvm => PlatformConfig{
+                        .target = cpu,
+                        .hal = pkgs.hal_microvm,
+                        .linkerscript = .{ .path = "" },
+                    },
+                };
+            },
+        }
+    }
+};
+
+pub const TargetId = std.meta.Tag(Target);
+
+pub const RiscvPlatform = enum {
+    virt,
+    ashet,
+};
+
+pub const ArmPlatform = enum {
+    virt,
+};
+
+pub const X86Platform = enum {
+    microvm,
 };
 
 const AshetContext = struct {
     b: *std.build.Builder,
     mkicon: *std.build.LibExeObjStep,
+    target: std.zig.CrossTarget,
 
     fn createAshetApp(ctx: AshetContext, name: []const u8, source: []const u8, maybe_icon: ?[]const u8) *std.build.LibExeObjStep {
         const exe = ctx.b.addExecutable(ctx.b.fmt("{s}.app", .{name}), source);
@@ -72,7 +158,7 @@ const AshetContext = struct {
         exe.linkage = .static; // but everything is statically linked, we don't support shared objects
 
         exe.setLinkerScriptPath(.{ .path = "src/libashet/application.ld" });
-        exe.setTarget(target);
+        exe.setTarget(ctx.target);
         exe.addPackage(pkgs.ashet);
         exe.install();
 
@@ -107,6 +193,20 @@ pub fn build(b: *std.build.Builder) void {
 
     const mode = b.standardReleaseOptions();
 
+    const target_id = b.option(TargetId, "cpu", "The target cpu architecture") orelse .riscv32;
+    const system_target: Target = switch (target_id) {
+        .riscv32 => Target{
+            .riscv32 = b.option(RiscvPlatform, "platform", "The target machine for the os") orelse .virt,
+        },
+        .arm => Target{
+            .arm = b.option(ArmPlatform, "platform", "The target machine for the os") orelse .virt,
+        },
+        .x86 => Target{
+            .x86 = b.option(X86Platform, "platform", "The target machine for the os") orelse .microvm,
+        },
+    };
+    const system_platform = system_target.resolve();
+
     const tool_mkicon = b.addExecutable("tool_mkicon", "tools/mkicon.zig");
     tool_mkicon.addPackage(pkgs.zigimg);
     tool_mkicon.addPackage(pkgs.abi);
@@ -125,9 +225,9 @@ pub fn build(b: *std.build.Builder) void {
         // we always want frame pointers in debug build!
         kernel_exe.omit_frame_pointer = false;
     }
-    kernel_exe.setTarget(target);
+    kernel_exe.setTarget(system_platform.target);
     kernel_exe.setBuildMode(mode);
-    kernel_exe.addPackage(pkgs.hal_virt);
+    kernel_exe.addPackage(system_platform.hal);
     kernel_exe.addPackage(pkgs.abi);
     kernel_exe.addPackage(std.build.Pkg{
         .name = "libashet",
@@ -135,7 +235,7 @@ pub fn build(b: *std.build.Builder) void {
         .dependencies = &.{ pkgs.abi, pkgs.text_editor },
     });
     kernel_exe.addPackage(FatFS.getPackage(b, "fatfs", fatfs_config));
-    kernel_exe.setLinkerScriptPath(.{ .path = "src/kernel/hal/virt/linker.ld" });
+    kernel_exe.setLinkerScriptPath(system_platform.linkerscript);
     kernel_exe.install();
 
     // kernel_exe.setLibCFile(std.build.FileSource{ .path = "vendor/libc/libc.txt" });
@@ -190,6 +290,7 @@ pub fn build(b: *std.build.Builder) void {
     var ctx = AshetContext{
         .b = b,
         .mkicon = tool_mkicon,
+        .target = system_platform.target,
     };
 
     {
@@ -213,7 +314,7 @@ pub fn build(b: *std.build.Builder) void {
     run_step.dependOn(&run_cmd.step);
 
     const exe_tests = b.addTest("src/main.zig");
-    exe_tests.setTarget(target);
+    exe_tests.setTarget(system_platform.target);
     exe_tests.setBuildMode(mode);
 
     const test_step = b.step("test", "Run unit tests");

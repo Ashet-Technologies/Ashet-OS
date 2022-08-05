@@ -18,7 +18,7 @@ pub fn main() void {
         if (ashet.input.getEvent()) |event| {
             switch (event) {
                 .mouse => |data| std.log.info("mouse => {}", .{data}),
-                .keyboard => |data| std.log.info("keyboard: pressed={}, alt={}, shift={}, ctrl={}, altgr={}, scancode={d: >3}, key={s: <10}, text='{s}'", .{
+                .keyboard => |data| std.log.info("keyboard: pressed={}, alt={}, shift={}, ctrl={}, altgr={}, scancode={d: >3}, key={s: <10}, text='{?s}'", .{
                     @boolToInt(data.pressed),
                     @boolToInt(data.modifiers.alt),
                     @boolToInt(data.modifiers.shift),

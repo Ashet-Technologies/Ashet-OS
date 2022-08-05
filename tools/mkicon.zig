@@ -46,13 +46,13 @@ pub fn main() !void {
     if (quantizeOctree(arena.allocator(), raw_image)) |octree_palette| {
         try palettes.append(octree_palette);
     } else |err| {
-        std.log.err("failed to generate octree palette: {s}", .{err});
+        std.log.err("failed to generate octree palette: {}", .{err});
     }
 
     if (quantizeCountColors(arena.allocator(), raw_image)) |fixed_set_palette| {
         try palettes.append(fixed_set_palette);
     } else |err| {
-        std.log.err("failed to generate fixed set palette: {s}", .{err});
+        std.log.err("failed to generate fixed set palette: {}", .{err});
     }
 
     const available_palettes = palettes.slice();
