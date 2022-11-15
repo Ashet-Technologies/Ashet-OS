@@ -78,7 +78,7 @@ pub fn selectScreen(screen: Screen) !void {
         };
 
         process.master_thread = try ashet.scheduler.Thread.spawn(ashet.splash_screen.run, null, .{
-            .stack_size = 256 * 1024,
+            .stack_size = 512 * 1024,
             .process = process,
         });
         errdefer process.master_thread.kill();

@@ -307,7 +307,6 @@ fn fetchThread(queue: *ThreadQueue) ?*Thread {
 
 fn enqueueThread(queue: *ThreadQueue, thread: *Thread) void {
     std.debug.assert(thread.queue == null);
-
     thread.queue = queue;
     queue.append(&thread.node);
 }
