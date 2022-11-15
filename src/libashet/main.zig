@@ -129,8 +129,12 @@ pub const process = struct {
 };
 
 pub const video = struct {
-    pub fn setMode(mode: abi.VideoMode) void {
-        syscalls().video.setMode(mode);
+    pub fn aquire() bool {
+        return syscalls().video.aquire();
+    }
+
+    pub fn release() void {
+        syscalls().video.release();
     }
 
     pub fn setBorder(color: abi.ColorIndex) void {

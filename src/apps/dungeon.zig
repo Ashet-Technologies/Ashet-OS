@@ -4,8 +4,11 @@ const ashet = @import("ashet");
 pub usingnamespace ashet.core;
 
 pub fn main() void {
+    if (!ashet.video.aquire()) {
+        ashet.process.exit(1);
+    }
+
     ashet.video.setResolution(400, 300);
-    ashet.video.setMode(.graphics);
     ashet.video.setBorder(2);
 
     render();

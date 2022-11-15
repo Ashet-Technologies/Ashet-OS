@@ -173,3 +173,66 @@ pub const debug = struct {
         writer.print("free ram: {:.2} ({}/{} pages)\n", .{ std.fmt.fmtIntSizeBin(free_memory), free_memory / page_size, page_count }) catch {};
     }
 };
+
+pub const allocator = general_purpose_allocator_instance.allocator();
+pub const page_allocator = std.mem.Allocator{
+    .ptr = undefined,
+    .vtable = &PageAllocator.vtable,
+};
+
+var general_purpose_allocator_instance = std.heap.ArenaAllocator.init(page_allocator);
+var page_allocator_instance: PageAllocator = .{};
+
+const PageAllocator = struct {
+    const vtable = std.mem.Allocator.VTable{
+        .alloc = alloc,
+        .resize = resize,
+        .free = free,
+    };
+
+    fn alloc(_: *anyopaque, n: usize, alignment: u29, len_align: u29, ra: usize) error{OutOfMemory}![]u8 {
+        _ = ra;
+        std.debug.assert(n > 0);
+        if (n > std.math.maxInt(usize) - (page_size - 1)) {
+            return error.OutOfMemory;
+        }
+
+        std.debug.assert(alignment <= page_size);
+
+        const aligned_len = std.mem.alignForward(n, page_size);
+
+        const alloc_page_count = getRequiredPages(aligned_len);
+
+        const first_page = try allocPages(alloc_page_count);
+
+        const first_byte = @ptrCast([*]align(page_size) u8, pageToPtr(first_page));
+
+        return first_byte[0..std.heap.alignPageAllocLen(aligned_len, n, len_align)];
+    }
+
+    fn resize(
+        _: *anyopaque,
+        buf_unaligned: []u8,
+        buf_align: u29,
+        new_size: usize,
+        len_align: u29,
+        return_address: usize,
+    ) ?usize {
+        _ = buf_unaligned;
+        _ = buf_align;
+        _ = new_size;
+        _ = len_align;
+        _ = return_address;
+        return null;
+    }
+
+    fn free(_: *anyopaque, buf_unaligned: []u8, buf_align: u29, return_address: usize) void {
+        _ = buf_align;
+        _ = return_address;
+
+        const buf_aligned_len = std.mem.alignForward(buf_unaligned.len, page_size);
+        const ptr = @alignCast(page_size, buf_unaligned.ptr);
+
+        freePages(ptrToPage(ptr) orelse @panic("invalid address in free!"), @divExact(buf_aligned_len, page_size));
+    }
+};

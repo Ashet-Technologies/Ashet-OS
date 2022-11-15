@@ -143,7 +143,7 @@ const AshetContext = struct {
     mkicon: *std.build.LibExeObjStep,
     target: std.zig.CrossTarget,
 
-    fn createAshetApp(ctx: AshetContext, name: []const u8, source: []const u8, maybe_icon: ?[]const u8) *std.build.LibExeObjStep {
+    fn createAshetApp(ctx: AshetContext, name: []const u8, source: []const u8, maybe_icon: ?[]const u8, mode: std.builtin.Mode) *std.build.LibExeObjStep {
         const exe = ctx.b.addExecutable(ctx.b.fmt("{s}.app", .{name}), source);
 
         exe.omit_frame_pointer = false; // this is useful for debugging
@@ -155,6 +155,7 @@ const AshetContext = struct {
 
         exe.setLinkerScriptPath(.{ .path = "src/libashet/application.ld" });
         exe.setTarget(ctx.target);
+        exe.setBuildMode(mode);
         exe.addPackage(pkgs.libashet);
         exe.install();
 
@@ -287,23 +288,12 @@ pub fn build(b: *std.build.Builder) void {
     };
 
     {
-        const app_shell = ctx.createAshetApp("shell", "src/apps/shell.zig", "design/apps/shell.png");
-        app_shell.setBuildMode(mode);
-
-        const app_commander = ctx.createAshetApp("commander", "src/apps/commander.zig", "design/apps/commander.png");
-        app_commander.setBuildMode(mode);
-
-        const app_editor = ctx.createAshetApp("editor", "src/apps/dummy.zig", "design/apps/text-editor.png");
-        app_editor.setBuildMode(mode);
-
-        const app_browser = ctx.createAshetApp("browser", "src/apps/dummy.zig", "design/apps/browser.png");
-        app_browser.setBuildMode(mode);
-
-        const app_music = ctx.createAshetApp("music", "src/apps/music.zig", "design/apps/music.png");
-        app_music.setBuildMode(mode);
-
-        const app_dungeon = ctx.createAshetApp("dungeon", "src/apps/dungeon.zig", "design/apps/dungeon.png");
-        app_dungeon.setBuildMode(mode);
+        _ = ctx.createAshetApp("shell", "src/apps/dummy.zig", "design/apps/shell.png", mode);
+        _ = ctx.createAshetApp("commander", "src/apps/dummy.zig", "design/apps/commander.png", mode);
+        _ = ctx.createAshetApp("editor", "src/apps/dummy.zig", "design/apps/text-editor.png", mode);
+        _ = ctx.createAshetApp("browser", "src/apps/dummy.zig", "design/apps/browser.png", mode);
+        _ = ctx.createAshetApp("music", "src/apps/dummy.zig", "design/apps/music.png", mode);
+        _ = ctx.createAshetApp("dungeon", "src/apps/dungeon.zig", "design/apps/dungeon.png", mode);
     }
 
     const run_step = b.step("run", "Run the app");

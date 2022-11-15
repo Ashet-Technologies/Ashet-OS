@@ -73,7 +73,6 @@ pub const video = struct {
     pub const memory: []align(ashet.memory.page_size) u8 = &backing_buffer;
     pub const palette: *[256]u16 = &backing_palette;
 
-    var video_mode: ashet.video.Mode = .graphics;
     var border_color: u8 = ashet.video.defaults.border;
 
     var graphics_width: u16 = 256;
@@ -85,15 +84,8 @@ pub const video = struct {
             .height = graphics_height,
         };
     }
-    pub fn getMode() ashet.video.Mode {
-        return video_mode;
-    }
     pub fn getBorder() u8 {
         return border_color;
-    }
-
-    pub fn setMode(m: ashet.video.Mode) void {
-        video_mode = m;
     }
 
     pub fn setBorder(b: u8) void {
@@ -110,72 +102,28 @@ pub const video = struct {
     }
 
     pub fn flush() void {
-        switch (video_mode) {
-            .text => {
-                std.mem.set(u32, gpu.fb_mem, pal(border_color));
+        const dx = (gpu.fb_width - graphics_width) / 2;
+        const dy = (gpu.fb_height - graphics_height) / 2;
 
-                const font = ashet.video.defaults.font;
+        {
+            var i: usize = 0;
+            while (i < gpu.fb_width * gpu.fb_height) : (i += 1) {
+                const x = i % gpu.fb_width;
+                const y = i / gpu.fb_width;
 
-                const w = 64;
-                const h = 32;
-
-                const gw = 6;
-                const gh = 8;
-
-                const dx = (gpu.fb_width - gw * w) / 2;
-                const dy = (gpu.fb_height - gh * h) / 2;
-
-                var i: usize = 0;
-                while (i < w * h) : (i += 1) {
-                    const cx = i % w;
-                    const cy = i / w;
-
-                    const char = video.memory[2 * i + 0];
-                    const attr = ashet.abi.CharAttributes.fromByte(video.memory[2 * i + 1]);
-
-                    const glyph = font[char];
-
-                    var x: usize = 0;
-                    while (x < gw) : (x += 1) {
-                        var bits = glyph[x];
-
-                        comptime var y: usize = 0;
-                        inline while (y < gh) : (y += 1) {
-                            const index = if ((bits & (1 << y)) != 0)
-                                attr.fg
-                            else
-                                attr.bg;
-                            gpu.fb_mem[gpu.fb_width * (dy + gh * cy + y) + (dx + gw * cx + x)] = pal(index);
-                        }
-                    }
+                if (x < dx or x >= dx + graphics_width or y < dy or y >= dy + graphics_height) {
+                    gpu.fb_mem[i] = pal(border_color);
                 }
-            },
+            }
+        }
 
-            .graphics => {
-                const dx = (gpu.fb_width - graphics_width) / 2;
-                const dy = (gpu.fb_height - graphics_height) / 2;
+        const pixel_count = @as(usize, graphics_width) * @as(usize, graphics_height);
 
-                {
-                    var i: usize = 0;
-                    while (i < gpu.fb_width * gpu.fb_height) : (i += 1) {
-                        const x = i % gpu.fb_width;
-                        const y = i / gpu.fb_width;
+        for (video.memory[0..pixel_count]) |index, i| {
+            const x = dx + i % graphics_width;
+            const y = dy + i / graphics_width;
 
-                        if (x < dx or x >= dx + graphics_width or y < dy or y >= dy + graphics_height) {
-                            gpu.fb_mem[i] = pal(border_color);
-                        }
-                    }
-                }
-
-                const pixel_count = @as(usize, graphics_width) * @as(usize, graphics_height);
-
-                for (video.memory[0..pixel_count]) |index, i| {
-                    const x = dx + i % graphics_width;
-                    const y = dy + i / graphics_width;
-
-                    gpu.fb_mem[gpu.fb_width * y + x] = pal(index);
-                }
-            },
+            gpu.fb_mem[gpu.fb_width * y + x] = pal(index);
         }
 
         gpu.flushFramebuffer(0, 0, 0, 0);

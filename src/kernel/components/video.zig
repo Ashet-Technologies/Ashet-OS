@@ -28,8 +28,6 @@ comptime {
 /// the displayed picture.
 pub const palette: *[256]u16 = hal.video.palette;
 
-pub const Mode = ashet.abi.VideoMode;
-
 pub const Color = ashet.abi.Color;
 
 /// Contains initialization defaults for the system
@@ -138,11 +136,6 @@ pub const defaults = struct {
 /// ensure the display is up-to-date.
 pub const is_flush_required = @hasDecl(hal.video, "flush");
 
-/// Changes the current video mode.
-pub fn setMode(mode: Mode) void {
-    hal.video.setMode(mode);
-}
-
 /// Sets the border color of the screen. This color fills all unreachable pixels.
 /// *C64 feeling intensifies.*
 pub fn setBorder(b: u8) void {
@@ -160,10 +153,6 @@ pub fn getResolution() Resolution {
     return hal.video.getResolution();
 }
 
-pub fn getMode() Mode {
-    return hal.video.getMode();
-}
-
 pub fn getBorder() u8 {
     return hal.video.getBorder();
 }
@@ -177,3 +166,44 @@ pub fn setResolution(width: u16, height: u16) void {
     std.debug.assert(width <= 400 and height <= 300);
     hal.video.setResolution(width, height);
 }
+
+// Render text mode:
+// {
+//     std.mem.set(u32, gpu.fb_mem, pal(border_color));
+
+//     const font = ashet.video.defaults.font;
+
+//     const w = 64;
+//     const h = 32;
+
+//     const gw = 6;
+//     const gh = 8;
+
+//     const dx = (gpu.fb_width - gw * w) / 2;
+//     const dy = (gpu.fb_height - gh * h) / 2;
+
+//     var i: usize = 0;
+//     while (i < w * h) : (i += 1) {
+//         const cx = i % w;
+//         const cy = i / w;
+
+//         const char = video.memory[2 * i + 0];
+//         const attr = ashet.abi.CharAttributes.fromByte(video.memory[2 * i + 1]);
+
+//         const glyph = font[char];
+
+//         var x: usize = 0;
+//         while (x < gw) : (x += 1) {
+//             var bits = glyph[x];
+
+//             comptime var y: usize = 0;
+//             inline while (y < gh) : (y += 1) {
+//                 const index = if ((bits & (1 << y)) != 0)
+//                     attr.fg
+//                 else
+//                     attr.bg;
+//                 gpu.fb_mem[gpu.fb_width * (dy + gh * cy + y) + (dx + gw * cx + x)] = pal(index);
+//             }
+//         }
+//     }
+// }

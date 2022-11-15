@@ -23,26 +23,46 @@ pub const SysCallInterface = extern struct {
 
     magic: u32 = 0x9a9d5a1b, // chosen by a fair dice roll
 
-    // console: Console,
     video: Video,
     process: Process,
     fs: FileSystem,
     input: Input,
-
-    // pub const Console = extern struct {
-    //     clear: std.meta.FnPtr(fn () callconv(.C) void),
-    //     print: std.meta.FnPtr(fn ([*]const u8, usize) callconv(.C) void),
-    //     output: std.meta.FnPtr(fn ([*]const u8, usize) callconv(.C) void),
-    //     setCursor: std.meta.FnPtr(fn (x: u8, y: u8) callconv(.C) void),
-    //     readLine: std.meta.FnPtr(fn (params: *ReadLineParams) callconv(.C) ReadLineResult),
-    // };
+    ui: UserInterface,
 
     pub const Video = extern struct {
-        setMode: std.meta.FnPtr(fn (VideoMode) callconv(.C) void),
+        /// Aquires direct access to the screen. When `true` is returned,
+        /// this process has the sole access to the screen buffers.
+        aquire: std.meta.FnPtr(fn () callconv(.C) bool),
+
+        /// Releases the access to the video and returns to desktop mode.
+        release: std.meta.FnPtr(fn () callconv(.C) void),
+
+        /// Changes the border color of the screen. Parameter is an index into
+        /// the palette.
         setBorder: std.meta.FnPtr(fn (ColorIndex) callconv(.C) void),
+
+        /// Sets the screen resolution. Legal values are between 1×1 and 400×300.
+        /// Everything out of bounds will be clamped into that range.
         setResolution: std.meta.FnPtr(fn (u16, u16) callconv(.C) void),
+
+        /// Returns a pointer to linear video memory, row-major.
+        /// Pixels rows will have a stride of the current video buffer width.
+        /// The first pixel in the memory is the top-left pixel.
         getVideoMemory: std.meta.FnPtr(fn () callconv(.C) [*]align(4) ColorIndex),
+
+        /// Returns a pointer to the current palette. Changing this palette
+        /// will directly change the associated colors on the screen.
         getPaletteMemory: std.meta.FnPtr(fn () callconv(.C) *[palette_size]u16),
+    };
+
+    pub const UserInterface = extern struct {
+        createWindow: std.meta.FnPtr(fn (title: [*:0]const u8, min: Size, max: Size, flags: CreateWindowFlags) ?*const Window),
+        destroyWindow: std.meta.FnPtr(fn (*const Window) void),
+        moveWindow: std.meta.FnPtr(fn (*const Window, x: i16, y: i16) void),
+        resizeWindow: std.meta.FnPtr(fn (*const Window, x: u16, y: u16) void),
+        setWindowTitle: std.meta.FnPtr(fn (*const Window, title: [*:0]const u8) void),
+        getEvent: std.meta.FnPtr(fn (*const Window, *UiEvent) UiEventType),
+        invalidate: std.meta.FnPtr(fn (*const Window, rect: Rectangle) void),
     };
 
     pub const Process = extern struct {
@@ -88,11 +108,6 @@ pub const ExitCode = struct {
 };
 
 pub const ThreadFunction = std.meta.FnPtr(fn (?*anyopaque) callconv(.C) u32);
-
-pub const VideoMode = enum(u32) {
-    text = 0,
-    graphics = 1,
-};
 
 pub const ColorIndex = u8;
 
@@ -389,4 +404,105 @@ pub const CharAttributes = packed struct { // (u8)
     pub fn toByte(attr: CharAttributes) u8 {
         return @bitCast(u8, attr);
     }
+};
+
+pub const Size = extern struct {
+    width: u16,
+    height: u16,
+
+    pub fn init(w: u16, h: u16) Size {
+        return Size{ .width = w, .height = h };
+    }
+};
+
+pub const Point = extern struct {
+    x: i16,
+    y: i16,
+
+    pub fn init(x: i16, y: i16) Size {
+        return Size{ .x = x, .y = y };
+    }
+};
+
+pub const Rectangle = extern struct {
+    x: i16,
+    y: i16,
+    width: u16,
+    height: u16,
+
+    pub fn position(rect: Rectangle) Point {
+        return Point{ .x = rect.x, .y = rect.y };
+    }
+
+    pub fn size(rect: Rectangle) Size {
+        return Point{ .width = rect.width, .height = rect.height };
+    }
+};
+
+pub const UiEvent = extern union {
+    mouse: MouseEvent,
+    keyboard: KeyboardEvent,
+};
+
+pub const UiEventType = enum(u16) {
+    none,
+    mouse,
+
+    /// A keyboard event happened while the window had focus.
+    keyboard,
+
+    /// The user requested the window to be closed.
+    window_close,
+
+    /// The window was minimized and is not visible anymore.
+    window_minimize,
+
+    /// The window was restored from minimized state.
+    window_restore,
+
+    /// The window was moved on the screen. Query `window.bounds` to get the new position.
+    window_moved,
+
+    /// The window size changed. Query `window.bounds` to get the new size.
+    window_resized,
+};
+
+pub const Window = extern struct {
+    /// Pointer to a linear buffer of pixels. These pixels define the content of the window.
+    /// The data is layed out row-major, with `stride` bytes between each row.
+    pixels: [*]u8,
+
+    /// The number of bytes in each row in `pixels`.
+    stride: u32,
+
+    /// The current position of the window on the screen. Will not contain the decorators, but only
+    /// the position of the framebuffer.
+    client_rectangle: Rectangle,
+
+    /// The minimum size of this window. The window can never be smaller than this.
+    min_size: Size,
+
+    /// The maximum size of this window. The window can never be bigger than this.
+    max_size: Size,
+
+    /// A pointer to the NUL terminated window title.
+    title: [*:0]const u8,
+
+    /// A collection of informative flags.
+    flags: Flags,
+
+    pub const Flags = packed struct(u8) {
+        /// The window is currently minimized.
+        minimized: bool,
+
+        /// The window currently has keyboard focus.
+        focus: bool,
+
+        padding: u6 = 0,
+    };
+};
+
+pub const CreateWindowFlags = packed struct(u32) {
+    can_minimize: bool,
+    padding: u31 = 0,
 };

@@ -86,7 +86,7 @@ pub const Thread = struct {
 
         const stack_bottom = ashet.memory.pageToPtr(first_page);
         const thread = @intToPtr(*Thread, @ptrToInt(stack_bottom) + ashet.memory.page_size * stack_page_count - @sizeOf(Thread));
-        const thread_proc = options.process orelse ashet.multi_tasking.getForegroundProcess(.current);
+        const thread_proc = options.process;
 
         thread.* = Thread{
             .sp = @ptrToInt(thread),

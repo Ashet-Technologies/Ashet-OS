@@ -13,6 +13,7 @@ pub const filesystem = @import("components/filesystem.zig");
 pub const input = @import("components/input.zig");
 pub const splash_screen = @import("components/splash_screen.zig");
 pub const multi_tasking = @import("components/multi_tasking.zig");
+pub const ui = @import("components/ui.zig");
 
 export fn ashet_kernelMain() void {
     if (@import("builtin").target.os.tag != .freestanding)
@@ -50,9 +51,13 @@ fn main() !void {
 
     syscalls.initialize();
 
-    // This will start the splash screen for screen 1,
-    // all other screens will not be initialized until required.
-    try multi_tasking.selectScreen(.@"1");
+    // spawn the UI system
+    {
+        const thread = try scheduler.Thread.spawn(ui.run, null, .{});
+        try thread.setName("ui.run");
+        try thread.start();
+        thread.detach();
+    }
 
     scheduler.start();
 
@@ -65,26 +70,26 @@ pub const global_hotkeys = struct {
         if (!event.pressed)
             return false;
         if (event.modifiers.alt) {
-            const SwitchGroup = struct { key: abi.KeyCode, screen: multi_tasking.Screen };
-            const switch_groups = [10]SwitchGroup{
-                .{ .key = .f1, .screen = .@"1" },
-                .{ .key = .f2, .screen = .@"2" },
-                .{ .key = .f3, .screen = .@"3" },
-                .{ .key = .f4, .screen = .@"4" },
-                .{ .key = .f5, .screen = .@"5" },
-                .{ .key = .f6, .screen = .@"6" },
-                .{ .key = .f7, .screen = .@"7" },
-                .{ .key = .f8, .screen = .@"8" },
-                .{ .key = .f9, .screen = .@"9" },
-                .{ .key = .f10, .screen = .@"10" },
-            };
+            // const SwitchGroup = struct { key: abi.KeyCode, screen: multi_tasking.Screen };
+            // const switch_groups = [10]SwitchGroup{
+            //     .{ .key = .f1, .screen = .@"1" },
+            //     .{ .key = .f2, .screen = .@"2" },
+            //     .{ .key = .f3, .screen = .@"3" },
+            //     .{ .key = .f4, .screen = .@"4" },
+            //     .{ .key = .f5, .screen = .@"5" },
+            //     .{ .key = .f6, .screen = .@"6" },
+            //     .{ .key = .f7, .screen = .@"7" },
+            //     .{ .key = .f8, .screen = .@"8" },
+            //     .{ .key = .f9, .screen = .@"9" },
+            //     .{ .key = .f10, .screen = .@"10" },
+            // };
 
-            for (switch_groups) |grp| {
-                if (event.key == grp.key) {
-                    multi_tasking.selectScreen(grp.screen) catch |err| std.log.err("failed to switch to screen {s}: {s}", .{ @tagName(grp.screen), @errorName(err) });
-                    return true;
-                }
-            }
+            // for (switch_groups) |grp| {
+            //     if (event.key == grp.key) {
+            //         multi_tasking.selectScreen(grp.screen) catch |err| std.log.err("failed to switch to screen {s}: {s}", .{ @tagName(grp.screen), @errorName(err) });
+            //         return true;
+            //     }
+            // }
         }
         return false;
     }

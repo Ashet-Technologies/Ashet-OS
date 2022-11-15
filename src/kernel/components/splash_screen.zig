@@ -126,7 +126,6 @@ const SplashScreen = struct {
 
         screen.layout = Layout.get(screen.apps.len);
 
-        libashet.video.setMode(.graphics);
         libashet.video.setResolution(400, 300);
 
         screen.fullPaint();

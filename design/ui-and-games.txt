@@ -1,0 +1,39 @@
+====== Graphics System API ======
+
+===== Considerations =====
+
+- Exclusive access to video and input is only required for certain kind of apps (demo, game, video player)
+- Most applications will use windows/ui api, so provide main input via this. If an app has full screen access, that app can also access the input module
+
+===== API Design =====
+
+```zig
+// input modulE:
+
+// video module:
+fn aquire() bool
+fn release() void
+fn setMode(VideoMode) void
+fn setBorder(ColorIndex) void
+fn setResolution(u16, u16) void
+fn getVideoMemory() [*]align(4) ColorIndex
+fn getPaletteMemory() *[palette_size]u16
+
+// ui module
+struct Size { x: u16, y: u16 }
+struct Point { x: i16, y: i16 }
+struct Rectangle {x: i16, y: i16, width: u16, height: u16 }
+union UiEvent { … }
+enum UiEventType { none, mouse, keyboard, window }
+struct Window { pixels: [*]u8, stride: u32, bounds: Rectangle, min_size: Size, max_size: Size, title: [*:0]const u8 }
+
+fn createWindow(title: []const u8, min: Size, max: Size) ?*Window
+fn destroyWindow(*Window) void
+fn moveWindow(*Window, x: i16, y: i16) void
+fn resizeWindow(*Window, x: u16, y: u16) void
+fn setWindowTitle(*Window, title: []const u8) void
+fn getEvent(*Window, *UiEvent) UiEventType
+fn invalidate(*Window, rect: Rectangle) void
+
+// 
+```
