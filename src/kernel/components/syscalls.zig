@@ -72,19 +72,6 @@ pub fn getInterfacePointer() *align(16) const abi.SysCallInterface {
     return &ashet_syscall_interface;
 }
 
-// fn @"console.clear"() callconv(.C) void {
-//     ashet.console.clear();
-// }
-
-// fn @"console.print"(ptr: [*]const u8, len: usize) callconv(.C) void {
-//     ashet.console.write(ptr[0..len]);
-// }
-// fn @"console.output"(ptr: [*]const u8, len: usize) callconv(.C) void {
-//     for (ptr[0..len]) |c| {
-//         ashet.console.putRaw(c);
-//     }
-// }
-
 fn @"video.setMode"(mode: abi.VideoMode) callconv(.C) void {
     if (getBackgroundProcess()) |proc| {
         proc.video_mode = mode;

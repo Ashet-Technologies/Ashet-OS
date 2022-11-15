@@ -114,9 +114,9 @@ pub const defaults = struct {
 
             var tups = std.mem.tokenize(u8, trimmed, " ");
 
-            const r = std.fmt.parseInt(u8, tups.next().?, 10) catch unreachable;
-            const g = std.fmt.parseInt(u8, tups.next().?, 10) catch unreachable;
-            const b = std.fmt.parseInt(u8, tups.next().?, 10) catch unreachable;
+            const r = std.fmt.parseInt(u8, tups.next().?, 10) catch @compileError("failed to parse color tuple");
+            const g = std.fmt.parseInt(u8, tups.next().?, 10) catch @compileError("failed to parse color tuple");
+            const b = std.fmt.parseInt(u8, tups.next().?, 10) catch @compileError("failed to parse color tuple");
 
             colors[index] = Color.fromRgb888(r, g, b);
             index += 1;

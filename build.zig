@@ -1,12 +1,20 @@
 const std = @import("std");
+const zpm = @import("zpm.zig");
 
 const FatFS = @import("vendor/zfat/Sdk.zig");
 
 const pkgs = struct {
-    pub const ashet = std.build.Pkg{
+    pub usingnamespace zpm.pkgs;
+
+    pub const libashet = std.build.Pkg{
         .name = "ashet",
         .source = .{ .path = "src/libashet/main.zig" },
-        .dependencies = &.{ abi, text_editor },
+        .dependencies = &.{ abi, pkgs.@"text-editor" },
+    };
+
+    pub const virtio = std.build.Pkg{
+        .name = "virtio",
+        .source = .{ .path = "vendor/libvirtio/src/virtio.zig" },
     };
 
     pub const abi = std.build.Pkg{
@@ -17,11 +25,13 @@ const pkgs = struct {
     pub const hal_virt_riscv32 = std.build.Pkg{
         .name = "hal",
         .source = .{ .path = "src/kernel/hal/virt-riscv32/hal.zig" },
+        .dependencies = &.{virtio},
     };
 
     pub const hal_virt_arm = std.build.Pkg{
         .name = "hal",
         .source = .{ .path = "src/kernel/hal/virt-arm/hal.zig" },
+        .dependencies = &.{virtio},
     };
 
     pub const hal_ashet = std.build.Pkg{
@@ -32,22 +42,7 @@ const pkgs = struct {
     pub const hal_microvm = std.build.Pkg{
         .name = "hal",
         .source = .{ .path = "src/kernel/hal/microvm/hal.zig" },
-    };
-
-    pub const text_editor = std.build.Pkg{
-        .name = "text-editor",
-        .source = .{ .path = "vendor/text-editor/src/TextEditor.zig" },
-        .dependencies = &.{ ziglyph, zigstr },
-    };
-
-    const ziglyph = std.build.Pkg{
-        .name = "ziglyph",
-        .source = .{ .path = "vendor/text-editor/vendor/ziglyph/src/ziglyph.zig" },
-    };
-    const zigstr = std.build.Pkg{
-        .name = "zigstr",
-        .source = .{ .path = "vendor/text-editor/vendor/zigstr/src/Zigstr.zig" },
-        .dependencies = &.{ziglyph},
+        .dependencies = &.{virtio},
     };
 
     pub const zigimg = std.build.Pkg{
@@ -111,7 +106,7 @@ pub const Target = union(enum) {
             },
             .x86 => |platform| {
                 const cpu = std.zig.CrossTarget{
-                    .cpu_arch = .i386,
+                    .cpu_arch = .x86,
                     .os_tag = .freestanding,
                     .abi = .eabi,
                     .cpu_model = .{ .explicit = &std.Target.x86.cpu.@"i686" },
@@ -120,7 +115,7 @@ pub const Target = union(enum) {
                     .microvm => PlatformConfig{
                         .target = cpu,
                         .hal = pkgs.hal_microvm,
-                        .linkerscript = .{ .path = "" },
+                        .linkerscript = .{ .path = "src/kernel/hal/microvm/linker.ld" },
                     },
                 };
             },
@@ -152,14 +147,15 @@ const AshetContext = struct {
         const exe = ctx.b.addExecutable(ctx.b.fmt("{s}.app", .{name}), source);
 
         exe.omit_frame_pointer = false; // this is useful for debugging
-        exe.single_threaded = true; // AshetOS doesn't support multithreading in a modern sensegs
+        exe.single_threaded = true; // AshetOS doesn't support multithreading in a modern sense
         exe.pie = true; // AshetOS requires PIE executables
         exe.force_pic = true; // which need PIC code
         exe.linkage = .static; // but everything is statically linked, we don't support shared objects
+        exe.strip = false; // never strip debug info
 
         exe.setLinkerScriptPath(.{ .path = "src/libashet/application.ld" });
         exe.setTarget(ctx.target);
-        exe.addPackage(pkgs.ashet);
+        exe.addPackage(pkgs.libashet);
         exe.install();
 
         const install_step = ctx.b.addInstallArtifact(exe);
@@ -221,6 +217,7 @@ pub fn build(b: *std.build.Builder) void {
     const kernel_exe = b.addExecutable("ashet-os", "src/kernel/main.zig");
     kernel_exe.single_threaded = true;
     kernel_exe.omit_frame_pointer = false;
+    kernel_exe.strip = false; // never strip debug info
     if (mode == .Debug) {
         // we always want frame pointers in debug build!
         kernel_exe.omit_frame_pointer = false;
@@ -229,11 +226,7 @@ pub fn build(b: *std.build.Builder) void {
     kernel_exe.setBuildMode(mode);
     kernel_exe.addPackage(system_platform.hal);
     kernel_exe.addPackage(pkgs.abi);
-    kernel_exe.addPackage(std.build.Pkg{
-        .name = "libashet",
-        .source = .{ .path = "src/libashet/main.zig" },
-        .dependencies = &.{ pkgs.abi, pkgs.text_editor },
-    });
+    kernel_exe.addPackage(pkgs.libashet);
     kernel_exe.addPackage(FatFS.getPackage(b, "fatfs", fatfs_config));
     kernel_exe.setLinkerScriptPath(system_platform.linkerscript);
     kernel_exe.install();
@@ -308,6 +301,9 @@ pub fn build(b: *std.build.Builder) void {
 
         const app_music = ctx.createAshetApp("music", "src/apps/music.zig", "design/apps/music.png");
         app_music.setBuildMode(mode);
+
+        const app_dungeon = ctx.createAshetApp("dungeon", "src/apps/dungeon.zig", "design/apps/dungeon.png");
+        app_dungeon.setBuildMode(mode);
     }
 
     const run_step = b.step("run", "Run the app");
@@ -319,4 +315,29 @@ pub fn build(b: *std.build.Builder) void {
 
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&exe_tests.step);
+
+    const simu_step = b.step("sim", "Runs the PC simulator");
+
+    const sdl_sdk = zpm.sdks.sdl.init(b);
+
+    const sim = b.addExecutable("ashet-os-sim", "src/simulator/sim.zig");
+    sim.setBuildMode(mode);
+    sim.setTarget(.{});
+    sim.addPackage(sdl_sdk.getNativePackage("sdl2"));
+    sim.addPackage(pkgs.abi);
+    sim.addPackage(std.build.Pkg{
+        .name = "ashet",
+        .source = .{ .path = "src/kernel/sim_pkg.zig" },
+        .dependencies = &.{ pkgs.abi, std.build.Pkg{
+            .name = "hal",
+            .source = .{ .path = "src/simulator/loopback.zig" },
+        } },
+    });
+    sim.install();
+
+    sdl_sdk.link(sim, .dynamic);
+
+    const run_sim = sim.run();
+
+    simu_step.dependOn(&run_sim.step);
 }

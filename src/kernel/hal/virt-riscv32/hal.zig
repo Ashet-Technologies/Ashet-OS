@@ -2,7 +2,7 @@ const std = @import("std");
 const ashet = @import("root");
 const logger = std.log.scoped(.@"platform-virt");
 
-const virtio = @import("virtio/virtio.zig");
+const virtio = @import("virtio");
 
 pub const serial = @import("serial.zig");
 
@@ -50,10 +50,10 @@ pub const storage = struct {
     pub fn initialize() void {
         pflash1 = ashet.drivers.block_device.CFI.init(0x2200_0000, 0x0200_0000) catch @panic("pflash1 not present!");
 
-        devices_backing.append(.{
+        devices_backing.appendAssumeCapacity(.{
             .name = "PF0",
             .interface = pflash1.interface(),
-        }) catch unreachable;
+        });
         devices = devices_backing.slice();
     }
 };
@@ -154,7 +154,7 @@ pub const video = struct {
             .graphics => {
                 const dx = (gpu.fb_width - graphics_width) / 2;
                 const dy = (gpu.fb_height - graphics_height) / 2;
-                
+
                 {
                     var i: usize = 0;
                     while (i < gpu.fb_width * gpu.fb_height) : (i += 1) {
@@ -214,7 +214,8 @@ const gpu = struct {
 
         _ = try regs.negotiateFeatures(virtio.FeatureFlags.any_layout | virtio.FeatureFlags.version_1);
 
-        if (regs.device.gpu.num_scanouts < 1) {
+        const num_scanouts = &regs.device.gpu.num_scanouts;
+        if (num_scanouts.* < 1) {
             logger.err("gpu does not provide any scanouts!", .{});
             return;
         }
@@ -237,7 +238,7 @@ const gpu = struct {
             return;
         };
 
-        for (di.pmodes[0..regs.device.gpu.num_scanouts]) |mode, i| {
+        for (di.pmodes[0..num_scanouts.*]) |mode, i| {
             logger.info("Scanout({}{s}): {}x{}:{}x{}", .{
                 i,            "",
                 mode.r.x,     mode.r.y,
@@ -536,7 +537,9 @@ pub const input = struct {
         _ = try regs.negotiateFeatures(virtio.FeatureFlags.any_layout | virtio.FeatureFlags.version_1);
 
         selectConfig(regs, .id_name, .unset);
-        logger.info("input: {s}", .{@ptrCast([]u8, std.mem.sliceTo(&input_dev.data.string, 0))});
+
+        var copy = input_dev.data.string;
+        logger.info("input: {s}", .{@as([]const u8, std.mem.sliceTo(&copy, 0))});
 
         selectConfig(regs, .ev_bits, .cess_key);
         var keys: u32 = 0;

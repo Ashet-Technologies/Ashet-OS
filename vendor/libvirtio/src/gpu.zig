@@ -4,7 +4,7 @@ const virtio = @import("virtio.zig");
 
 const page_size = ashet.memory.page_size;
 
-pub const Config = packed struct {
+pub const Config = extern struct {
     events_read: u32,
     events_clear: u32,
     num_scanouts: u32,
@@ -58,21 +58,21 @@ pub const Format = enum(u32) {
     _,
 };
 
-pub const Rect = packed struct {
+pub const Rect = extern struct {
     x: u32,
     y: u32,
     width: u32,
     height: u32,
 };
 
-pub const CursorPos = packed struct {
+pub const CursorPos = extern struct {
     scanout_id: u32,
     x: u32,
     y: u32,
     padding: u32 = 0,
 };
 
-pub const CtrlHdr = packed struct {
+pub const CtrlHdr = extern struct {
     type: u32,
     flags: u32 = 0,
     fence_id: u64 = 0,
@@ -80,7 +80,7 @@ pub const CtrlHdr = packed struct {
     padding: u32 = 0,
 };
 
-pub const ResourceCreate2D = packed struct {
+pub const ResourceCreate2D = extern struct {
     hdr: CtrlHdr = .{ .type = cmd.resource_create_2d },
     resource_id: u32,
     format: Format,
@@ -88,13 +88,13 @@ pub const ResourceCreate2D = packed struct {
     height: u32,
 };
 
-pub const MemEntry = packed struct {
+pub const MemEntry = extern struct {
     addr: u64,
     length: u32,
     padding: u32 = 0,
 };
 
-pub const ResourceAttachBacking = packed struct {
+pub const ResourceAttachBacking = extern struct {
     hdr: CtrlHdr = .{ .type = cmd.resource_attach_backing },
     resource_id: u32,
     nr_entries: u32,
@@ -105,7 +105,7 @@ pub const ResourceAttachBacking = packed struct {
     }
 };
 
-pub const SetScanout = packed struct {
+pub const SetScanout = extern struct {
     hdr: CtrlHdr = .{ .type = cmd.set_scanout },
     r: Rect,
     scanout_id: u32,
@@ -133,7 +133,7 @@ const PMode = extern struct {
     flags: u32,
 };
 
-pub const DisplayInfo = packed struct {
+pub const DisplayInfo = extern struct {
     hdr: CtrlHdr,
     pmodes: [16]PMode,
 };
@@ -147,7 +147,7 @@ pub const GPUCommand = extern union {
     transfer_to_host_2d: TransferToHost2D,
 };
 
-pub const CursorCommand = packed struct {
+pub const CursorCommand = extern struct {
     hdr: CtrlHdr,
     pos: CursorPos,
     resource_id: u32,

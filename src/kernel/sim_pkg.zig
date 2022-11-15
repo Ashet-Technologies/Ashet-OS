@@ -1,0 +1,11 @@
+pub const video = @import("components/video.zig");
+pub const drivers = @import("drivers/drivers.zig");
+pub const storage = @import("components/storage.zig");
+pub const memory = @import("components/memory.zig");
+pub const serial = @import("components/serial.zig");
+pub const scheduler = @import("components/scheduler.zig");
+pub const syscalls = @import("components/syscalls.zig");
+pub const filesystem = @import("components/filesystem.zig");
+pub const input = @import("components/input.zig");
+pub const splash_screen = @import("components/splash_screen.zig");
+pub const multi_tasking = @import("components/multi_tasking.zig");

@@ -7,3 +7,9 @@
 [submodule "vendor/zigimg"]
 	path = vendor/zigimg
 	url = https://github.com/zigimg/zigimg/
+[submodule "vendor/sdl"]
+	path = vendor/sdl
+	url = https://github.com/MasterQ32/SDL.zig
+[submodule "vendor/ziglyph"]
+	path = vendor/ziglyph
+	url = https://github.com/jecolon/ziglyph

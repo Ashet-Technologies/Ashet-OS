@@ -10,9 +10,15 @@ const std = @import("std");
 /// - A syscall is just an indirect call with the minimum number of only two instructions
 pub const SysCallInterface = extern struct {
     pub inline fn get() *align(16) const SysCallInterface {
-        return asm (""
-            : [ptr] "={tp}" (-> *align(16) SysCallInterface),
-        );
+        const target = @import("builtin").target.cpu.arch;
+        return switch (target) {
+            .riscv32 => asm (""
+                : [ptr] "={tp}" (-> *align(16) SysCallInterface),
+            ),
+            .x86 => @panic("no syscalls on x86 yet"),
+            .arm => @panic("no syscalls on arm yet"),
+            else => unreachable,
+        };
     }
 
     magic: u32 = 0x9a9d5a1b, // chosen by a fair dice roll
@@ -23,54 +29,54 @@ pub const SysCallInterface = extern struct {
     fs: FileSystem,
     input: Input,
 
-    pub const Console = extern struct {
-        clear: fn () callconv(.C) void,
-        print: fn ([*]const u8, usize) callconv(.C) void,
-        output: fn ([*]const u8, usize) callconv(.C) void,
-        setCursor: fn (x: u8, y: u8) callconv(.C) void,
-        readLine: fn (params: *ReadLineParams) callconv(.C) ReadLineResult,
-    };
+    // pub const Console = extern struct {
+    //     clear: std.meta.FnPtr(fn () callconv(.C) void),
+    //     print: std.meta.FnPtr(fn ([*]const u8, usize) callconv(.C) void),
+    //     output: std.meta.FnPtr(fn ([*]const u8, usize) callconv(.C) void),
+    //     setCursor: std.meta.FnPtr(fn (x: u8, y: u8) callconv(.C) void),
+    //     readLine: std.meta.FnPtr(fn (params: *ReadLineParams) callconv(.C) ReadLineResult),
+    // };
 
     pub const Video = extern struct {
-        setMode: fn (VideoMode) callconv(.C) void,
-        setBorder: fn (ColorIndex) callconv(.C) void,
-        setResolution: fn (u16, u16) callconv(.C) void,
-        getVideoMemory: fn () callconv(.C) [*]align(4) ColorIndex,
-        getPaletteMemory: fn () callconv(.C) *[palette_size]u16,
+        setMode: std.meta.FnPtr(fn (VideoMode) callconv(.C) void),
+        setBorder: std.meta.FnPtr(fn (ColorIndex) callconv(.C) void),
+        setResolution: std.meta.FnPtr(fn (u16, u16) callconv(.C) void),
+        getVideoMemory: std.meta.FnPtr(fn () callconv(.C) [*]align(4) ColorIndex),
+        getPaletteMemory: std.meta.FnPtr(fn () callconv(.C) *[palette_size]u16),
     };
 
     pub const Process = extern struct {
-        yield: fn () callconv(.C) void,
-        exit: fn (u32) callconv(.C) noreturn,
+        yield: std.meta.FnPtr(fn () callconv(.C) void),
+        exit: std.meta.FnPtr(fn (u32) callconv(.C) noreturn),
     };
 
     pub const FileSystem = extern struct {
-        delete: fn (path_ptr: [*]const u8, path_len: usize) callconv(.C) bool,
-        mkdir: fn (path_ptr: [*]const u8, path_len: usize) callconv(.C) bool,
-        rename: fn (old_path_ptr: [*]const u8, old_path_len: usize, new_path_ptr: [*]const u8, new_path_len: usize) callconv(.C) bool,
-        stat: fn (path_ptr: [*]const u8, path_len: usize, *FileInfo) callconv(.C) bool,
+        delete: std.meta.FnPtr(fn (path_ptr: [*]const u8, path_len: usize) callconv(.C) bool),
+        mkdir: std.meta.FnPtr(fn (path_ptr: [*]const u8, path_len: usize) callconv(.C) bool),
+        rename: std.meta.FnPtr(fn (old_path_ptr: [*]const u8, old_path_len: usize, new_path_ptr: [*]const u8, new_path_len: usize) callconv(.C) bool),
+        stat: std.meta.FnPtr(fn (path_ptr: [*]const u8, path_len: usize, *FileInfo) callconv(.C) bool),
 
-        openFile: fn (path_ptr: [*]const u8, path_len: usize, FileAccess, FileMode) callconv(.C) FileHandle,
+        openFile: std.meta.FnPtr(fn (path_ptr: [*]const u8, path_len: usize, FileAccess, FileMode) callconv(.C) FileHandle),
 
-        read: fn (FileHandle, ptr: [*]u8, len: usize) callconv(.C) usize,
-        write: fn (FileHandle, ptr: [*]const u8, len: usize) callconv(.C) usize,
+        read: std.meta.FnPtr(fn (FileHandle, ptr: [*]u8, len: usize) callconv(.C) usize),
+        write: std.meta.FnPtr(fn (FileHandle, ptr: [*]const u8, len: usize) callconv(.C) usize),
 
-        seekTo: fn (FileHandle, offset: u64) callconv(.C) bool,
+        seekTo: std.meta.FnPtr(fn (FileHandle, offset: u64) callconv(.C) bool),
         // seekBy: fn (FileHandle, offset: i64) callconv(.C) usize,
         // seekFromEnd: fn (FileHandle, offset: u64) callconv(.C) usize,
 
-        flush: fn (FileHandle) callconv(.C) bool,
-        close: fn (FileHandle) callconv(.C) void,
+        flush: std.meta.FnPtr(fn (FileHandle) callconv(.C) bool),
+        close: std.meta.FnPtr(fn (FileHandle) callconv(.C) void),
 
-        openDir: fn (path_ptr: [*]const u8, path_len: usize) callconv(.C) DirectoryHandle,
-        nextFile: fn (DirectoryHandle, *FileInfo) callconv(.C) bool,
-        closeDir: fn (DirectoryHandle) callconv(.C) void,
+        openDir: std.meta.FnPtr(fn (path_ptr: [*]const u8, path_len: usize) callconv(.C) DirectoryHandle),
+        nextFile: std.meta.FnPtr(fn (DirectoryHandle, *FileInfo) callconv(.C) bool),
+        closeDir: std.meta.FnPtr(fn (DirectoryHandle) callconv(.C) void),
     };
 
     pub const Input = extern struct {
-        getEvent: fn (*InputEvent) callconv(.C) InputEventType,
-        getKeyboardEvent: fn (*KeyboardEvent) callconv(.C) bool,
-        getMouseEvent: fn (*MouseEvent) callconv(.C) bool,
+        getEvent: std.meta.FnPtr(fn (*InputEvent) callconv(.C) InputEventType),
+        getKeyboardEvent: std.meta.FnPtr(fn (*KeyboardEvent) callconv(.C) bool),
+        getMouseEvent: std.meta.FnPtr(fn (*MouseEvent) callconv(.C) bool),
     };
 };
 
@@ -81,7 +87,7 @@ pub const ExitCode = struct {
     pub const killed = ~@as(u32, 0);
 };
 
-pub const ThreadFunction = fn (?*anyopaque) callconv(.C) u32;
+pub const ThreadFunction = std.meta.FnPtr(fn (?*anyopaque) callconv(.C) u32);
 
 pub const VideoMode = enum(u32) {
     text = 0,
@@ -93,7 +99,7 @@ pub const ColorIndex = u8;
 pub const palette_size = std.math.maxInt(ColorIndex) + 1;
 
 /// A 16 bpp color value using RGB565 encoding.
-pub const Color = packed struct {
+pub const Color = packed struct { //(u16)
     r: u5,
     g: u6,
     b: u5,
@@ -148,7 +154,7 @@ pub const FileInfo = extern struct {
     }
 };
 
-pub const FileAttributes = packed struct {
+pub const FileAttributes = packed struct { // (u16)
     directory: bool,
     read_only: bool,
     hidden: bool,
@@ -337,7 +343,7 @@ pub const MouseButton = enum(u8) {
     wheel_up = 7,
 };
 
-pub const KeyboardModifiers = packed struct {
+pub const KeyboardModifiers = packed struct { // (u16)
     shift: bool,
     alt: bool,
     ctrl: bool,
@@ -372,7 +378,7 @@ pub fn charAttributes(foreground: u4, background: u4) u8 {
     return (CharAttributes{ .fg = foreground, .bg = background }).toByte();
 }
 
-pub const CharAttributes = packed struct {
+pub const CharAttributes = packed struct { // (u8)
     bg: u4, // lo nibble
     fg: u4, // hi nibble
 

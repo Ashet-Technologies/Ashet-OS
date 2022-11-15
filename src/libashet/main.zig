@@ -44,8 +44,9 @@ fn _start() callconv(.C) u32 {
 }
 
 pub const core = struct {
-    pub fn panic(msg: []const u8, maybe_stack_trace: ?*std.builtin.StackTrace) noreturn {
-        _ = maybe_stack_trace;
+    pub fn panic(msg: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, maybe_return_address: ?usize) noreturn {
+        _ = maybe_error_trace;
+        _ = maybe_return_address;
 
         debug.write("PANIC: ");
         debug.write(msg);

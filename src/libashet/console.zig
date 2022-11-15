@@ -77,11 +77,9 @@ fn newline() void {
             memory()[0..],
             memory()[charOffset(0, 1)..charOffset(0, height)],
         );
-        std.mem.set(
-            u16,
-            std.mem.bytesAsSlice(u16, memory()[charOffset(0, height - 1)..charOffset(0, height)]),
-            ' ' | (@as(u16, attributes(fg, bg)) << 8),
-        );
+        for (std.mem.bytesAsSlice(u16, memory()[charOffset(0, height - 1)..charOffset(0, height)])) |*c| {
+            c.* = ' ' | (@as(u16, attributes(fg, bg)) << 8);
+        }
     }
 }
 

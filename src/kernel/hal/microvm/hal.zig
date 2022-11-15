@@ -10,7 +10,7 @@ pub fn initialize() void {
 
     // Initialize all virtio devices:
     {
-        const virtio_base = @intToPtr([*]align(4096) volatile virtio.ControlRegs, @import("regs.zig").VPBA_VIRTIO_BASE);
+        const virtio_base = @intToPtr([*]align(4096) volatile virtio.ControlRegs, 0xfeb00000);
 
         if (virtio_base[0].magic != virtio.ControlRegs.magic) {
             @panic("not virt platform!");
@@ -36,27 +36,27 @@ pub fn initialize() void {
 
     video.flush(); // force the gpu to show the splash screen
 
-    storage.initialize();
+    // storage.initialize();
 }
 
-pub const storage = struct {
-    const BlockDevice = ashet.storage.BlockDevice;
+// pub const storage = struct {
+//     const BlockDevice = ashet.storage.BlockDevice;
 
-    var pflash1: ashet.drivers.block_device.CFI = undefined;
+//     var pflash1: ashet.drivers.block_device.CFI = undefined;
 
-    var devices_backing = std.BoundedArray(ashet.storage.BlockDevice, 8){};
-    pub var devices: []ashet.storage.BlockDevice = undefined;
+//     var devices_backing = std.BoundedArray(ashet.storage.BlockDevice, 8){};
+//     pub var devices: []ashet.storage.BlockDevice = undefined;
 
-    pub fn initialize() void {
-        pflash1 = ashet.drivers.block_device.CFI.init(0x2200_0000, 0x0200_0000) catch @panic("pflash1 not present!");
+//     pub fn initialize() void {
+//         pflash1 = ashet.drivers.block_device.CFI.init(0x2200_0000, 0x0200_0000) catch @panic("pflash1 not present!");
 
-        devices_backing.append(.{
-            .name = "PF0",
-            .interface = pflash1.interface(),
-        }) catch unreachable;
-        devices = devices_backing.slice();
-    }
-};
+//         devices_backing.append(.{
+//             .name = "PF0",
+//             .interface = pflash1.interface(),
+//         }) catch unreachable;
+//         devices = devices_backing.slice();
+//     }
+// };
 
 pub const memory = struct {
     pub const flash = ashet.memory.Section{ .offset = 0x2000_000, .length = 0x200_0000 };
@@ -154,7 +154,7 @@ pub const video = struct {
             .graphics => {
                 const dx = (gpu.fb_width - graphics_width) / 2;
                 const dy = (gpu.fb_height - graphics_height) / 2;
-                
+
                 {
                     var i: usize = 0;
                     while (i < gpu.fb_width * gpu.fb_height) : (i += 1) {

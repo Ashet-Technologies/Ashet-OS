@@ -13,7 +13,7 @@ const std = @import("std");
 const hal = @import("hal");
 const ashet = @import("../main.zig");
 const logger = std.log.scoped(.@"splash screen");
-const libashet = @import("libashet");
+const libashet = @import("ashet");
 
 const Icon = extern struct {
     pub const width = 64;
@@ -36,7 +36,6 @@ const default_icon = blk: {
     @setEvalBranchQuota(10_000);
 
     const data = @embedFile("../data/generic-app.icon");
-    _ = data;
 
     const pal_src = data[64 * 64 ..];
 

@@ -50,10 +50,10 @@ pub const storage = struct {
     pub fn initialize() void {
         pflash1 = ashet.drivers.block_device.CFI.init(0x2200_0000, 0x0200_0000) catch @panic("pflash1 not present!");
 
-        devices_backing.append(.{
+        devices_backing.appendAssumeCapacity(.{
             .name = "PF0",
             .interface = pflash1.interface(),
-        }) catch unreachable;
+        });
         devices = devices_backing.slice();
     }
 };
@@ -154,7 +154,7 @@ pub const video = struct {
             .graphics => {
                 const dx = (gpu.fb_width - graphics_width) / 2;
                 const dy = (gpu.fb_height - graphics_height) / 2;
-                
+
                 {
                     var i: usize = 0;
                     while (i < gpu.fb_width * gpu.fb_height) : (i += 1) {

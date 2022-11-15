@@ -15,6 +15,8 @@ pub const splash_screen = @import("components/splash_screen.zig");
 pub const multi_tasking = @import("components/multi_tasking.zig");
 
 export fn ashet_kernelMain() void {
+    if (@import("builtin").target.os.tag != .freestanding)
+        return; // don't include this on an OS!
 
     // Populate RAM with the right sections, and compute how much dynamic memory we have available
     memory.initialize();
@@ -102,23 +104,52 @@ var runtime_sdata_string = "Hello, well initialized .sdata!\r\n".*;
 
 extern fn hang() callconv(.C) noreturn;
 
+export fn handleTrap() callconv(.C) noreturn {
+    @panic("unhandled trap");
+}
+
 comptime {
-    asm (
-        \\.section .text._start
-        \\.global _start
-        \\_start:
-        \\  la   sp, kernel_stack // defined in linker script 
-        \\
-        \\  call ashet_kernelMain
-        \\
-        \\  li      t0, 0x38 
-        \\  csrc    mstatus, t0
-        \\
-        \\hang:
-        \\wfi
-        \\  j hang
-        \\
-    );
+    if (@import("builtin").target.os.tag == .freestanding) {
+        // don't include this on an OS!
+        const target = @import("builtin").target.cpu.arch;
+        switch (target) {
+            .riscv32 => asm (
+                \\.section .text._start
+                \\.global _start
+                \\_start:
+                \\  la   sp, kernel_stack // defined in linker script 
+                \\
+                \\  la     t0, handleTrap
+                \\  csrw   mtvec, t0
+                \\
+                \\  call ashet_kernelMain
+                \\
+                \\  li      t0, 0x38 
+                \\  csrc    mstatus, t0
+                \\
+                \\hang:
+                \\  wfi
+                \\  j hang
+                \\
+            ),
+
+            .x86 => asm (
+                \\.section .text._start
+                \\.global _start
+                \\_start:
+                \\  mov kernel_stack, %esp // defined in linker script 
+                \\
+                \\  call ashet_kernelMain
+                \\
+                \\hang:
+                \\  cli
+                \\  jmp hang
+                \\
+            ),
+
+            else => @compileError(std.fmt.comptimePrint("{s} is not a supported platform", .{@tagName(target)})),
+        }
+    }
 }
 
 pub const Debug = struct {
@@ -154,9 +185,10 @@ pub fn log(
 extern var kernel_stack: anyopaque;
 extern var kernel_stack_start: anyopaque;
 
-pub fn panic(message: []const u8, maybe_stack_trace: ?*std.builtin.StackTrace) noreturn {
+pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, maybe_return_address: ?usize) noreturn {
     @setCold(true);
-    _ = maybe_stack_trace;
+    _ = maybe_return_address;
+    _ = maybe_error_trace;
 
     const sp = asm (""
         : [sp] "={sp}" (-> usize),

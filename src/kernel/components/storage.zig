@@ -14,9 +14,9 @@ pub const BlockDevice = struct {
         block_size: u32, // typically 512
         num_blocks: u64, // number
 
-        presentFn: fn (*Interface) bool,
-        readFn: fn (*Interface, block: u64, []u8) ReadError!void,
-        writeFn: fn (*Interface, block: u64, []const u8) WriteError!void,
+        presentFn: std.meta.FnPtr(fn (*Interface) bool),
+        readFn: std.meta.FnPtr(fn (*Interface, block: u64, []u8) ReadError!void),
+        writeFn: std.meta.FnPtr(fn (*Interface, block: u64, []const u8) WriteError!void),
     };
 
     pub fn isPresent(dev: BlockDevice) bool {
