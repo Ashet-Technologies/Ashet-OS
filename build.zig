@@ -240,7 +240,7 @@ pub fn build(b: *std.build.Builder) void {
 
         {
             const convert_wallpaper = tool_mkicon.run();
-            convert_wallpaper.addArg("artwork/os/wallpaper.png");
+            convert_wallpaper.addArg("artwork/os/wallpaper-chances.png");
             convert_wallpaper.addArg("src/kernel/data/ui/wallpaper.img");
             convert_wallpaper.addArg("400x300");
             kernel_exe.step.dependOn(&convert_wallpaper.step);

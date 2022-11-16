@@ -23,9 +23,11 @@ pub const Theme = struct {
     };
     active_window: WindowStyle,
     inactive_window: WindowStyle,
+    dark: ColorIndex,
 };
 
 var current_theme = Theme{
+    .dark = ColorIndex.get(0x3), // dark gray
     .active_window = Theme.WindowStyle{
         .border = ColorIndex.get(0x2), // dark blue
         .font = ColorIndex.get(0xF), // white
@@ -53,6 +55,15 @@ var mouse_cursor_pos: Point = .{
     .y = framebuffer.height / 2,
 };
 
+const DragAction = struct { window: *Window, start: Point };
+const MouseAction = union(enum) {
+    default,
+    drag_window: DragAction,
+    resize_window: DragAction,
+};
+
+var mouse_action: MouseAction = .default;
+
 pub fn run(_: ?*anyopaque) callconv(.C) u32 {
     _ = createWindow("Bottom", Size.new(0, 0), Size.new(200, 100), Size.new(200, 100)) catch @panic("oom");
     _ = createWindow("Middle", Size.new(0, 0), Size.new(400, 300), Size.new(160, 80)) catch @panic("oom");
@@ -72,40 +83,91 @@ pub fn run(_: ?*anyopaque) callconv(.C) u32 {
         // Enforce a full repaint of the user interface, so we have it "online"
         repaint();
 
+        // Reset the state
+        mouse_action = .default;
+
         while (ashet.multi_tasking.exclusive_video_controller == null) {
             var force_repaint = false;
-            while (ashet.input.getEvent()) |input_event| {
+            event_loop: while (ashet.input.getEvent()) |input_event| {
                 switch (input_event) {
                     .keyboard => |event| {
                         _ = event;
                     },
                     .mouse => |event| {
+                        const mouse_point = Point.new(@intCast(i16, event.x), @intCast(i16, event.y));
                         mouse_cursor_pos.x = std.math.clamp(@intCast(i16, event.x), 0, framebuffer.width - 1);
                         mouse_cursor_pos.y = std.math.clamp(@intCast(i16, event.y), 0, framebuffer.height - 1);
                         if (event.type == .motion) {
                             force_repaint = true;
                         }
+                        switch (mouse_action) {
+                            .default => {
+                                if (event.type == .button_press and event.button == .left) {
+                                    logger.info("click on ({},{})", .{ event.x, event.y });
+                                    const maybe_clicked_window = windowFromCursor(mouse_point);
+                                    if (maybe_clicked_window) |surface| {
+                                        WindowIterator.moveToTop(surface.window);
+                                        force_repaint = true;
 
-                        if (event.type == .button_press and event.button == .left) {
-                            logger.info("click on ({},{})", .{ event.x, event.y });
-                            const maybe_clicked_window = windowFromCursor(Point.new(@intCast(i16, event.x), @intCast(i16, event.y)));
-                            if (maybe_clicked_window) |surface| {
-                                WindowIterator.moveToTop(surface.window);
-                                force_repaint = true;
+                                        switch (surface.part) {
+                                            .title_bar => {
+                                                mouse_action = MouseAction{
+                                                    .drag_window = DragAction{
+                                                        .window = surface.window,
+                                                        .start = mouse_point,
+                                                    },
+                                                };
+                                                continue :event_loop;
+                                            },
+                                            .button => |button| switch (button) {
+                                                .minimize => surface.window.user_facing.flags.minimized = true,
+                                                .maximize => surface.window.user_facing.client_rectangle = Rectangle.new(Point.new(1, 11), max_window_content_size),
+                                                .close => {}, // TODO: Forward event to app
+                                                .resize => {
+                                                    mouse_action = MouseAction{
+                                                        .resize_window = DragAction{
+                                                            .window = surface.window,
+                                                            .start = mouse_point,
+                                                        },
+                                                    };
+                                                    continue :event_loop;
+                                                },
+                                            },
+                                            .content => {}, // TODO: Forward event to app
+                                        }
 
-                                switch (surface.part) {
-                                    .title_bar => {}, // TODO: Initiaze dragging with moving
-                                    .button => |button| switch (button) {
-                                        .minimize => surface.window.user_facing.flags.minimized = true,
-                                        .maximize => surface.window.user_facing.client_rectangle = Rectangle.new(Point.new(1, 11), max_window_content_size),
-                                        .close => {}, // TODO: Forward event to app
-                                        .resize => {}, // TODO: Initiaze dragging with resizing
-                                    },
-                                    .content => {}, // TODO: Forward event to app
+                                        logger.info("User clicked on window '{s}': {}", .{ surface.window.title.items, surface.part });
+                                    }
                                 }
+                            },
+                            .drag_window => |*action| {
+                                defer action.start = mouse_point;
+                                const dx = @intCast(i15, mouse_point.x - action.start.x);
+                                const dy = @intCast(i15, mouse_point.y - action.start.y);
 
-                                logger.info("User clicked on window '{s}': {}", .{ surface.window.title.items, surface.part });
-                            }
+                                action.window.user_facing.client_rectangle.x += dx;
+                                action.window.user_facing.client_rectangle.y += dy;
+
+                                if (event.button == .left and event.type == .button_release) {
+                                    mouse_action = .default;
+                                }
+                            },
+                            .resize_window => |*action| {
+                                defer action.start = mouse_point;
+                                const dx = @intCast(i15, mouse_point.x - action.start.x);
+                                const dy = @intCast(i15, mouse_point.y - action.start.y);
+
+                                const rect = &action.window.user_facing.client_rectangle;
+                                const min = action.window.user_facing.min_size;
+                                const max = action.window.user_facing.max_size;
+
+                                rect.width = @intCast(u16, std.math.clamp(@as(i17, rect.width) + dx, min.width, max.width));
+                                rect.height = @intCast(u16, std.math.clamp(@as(i17, rect.height) + dy, min.height, max.height));
+
+                                if (event.button == .left and event.type == .button_release) {
+                                    mouse_action = .default;
+                                }
+                            },
                         }
                     },
                 }
@@ -174,8 +236,7 @@ fn initializeGraphics() void {
 }
 
 fn repaint() void {
-    // framebuffer.clear(ColorIndex.get(0));
-
+    // Copy the wallpaper to the framebuffer
     for (wallpaper.pixels) |c, i| {
         framebuffer.fb[i] = c.shift(framebuffer_wallpaper_shift - 1);
     }
@@ -224,11 +285,15 @@ fn repaint() void {
 
         for (buttons.slice()) |button| {
             const bounds = button.bounds;
+            const bg = if (button.bounds.y == window_rectangle.y)
+                style.title
+            else
+                current_theme.dark;
             framebuffer.horizontalLine(bounds.x, bounds.y, bounds.width, style.border);
             framebuffer.horizontalLine(bounds.x, bounds.y + @intCast(u15, bounds.width) - 1, bounds.width, style.border);
             framebuffer.verticalLine(bounds.x, bounds.y, bounds.height, style.border);
             framebuffer.verticalLine(bounds.x + @intCast(u15, bounds.width) - 1, bounds.y, bounds.height, style.border);
-            framebuffer.rectangle(bounds.x + 1, bounds.y + 1, bounds.width - 2, bounds.height - 2, style.title);
+            framebuffer.rectangle(bounds.x + 1, bounds.y + 1, bounds.width - 2, bounds.height - 2, bg);
             switch (button.event) {
                 inline else => |tag| framebuffer.icon(bounds.x + 1, bounds.y + 1, @field(icons, @tagName(tag))),
             }
@@ -258,6 +323,11 @@ const WindowIterator = struct {
         window.user_facing.flags.minimized = false;
         list.remove(&window.node);
         list.append(&window.node);
+
+        var iter = init(all, .top_to_bottom);
+        while (iter.next()) |win| {
+            win.user_facing.flags.focus = (window == win);
+        }
     }
 
     pub fn init(filter: Filter, direction: Direction) WindowIterator {
