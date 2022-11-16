@@ -65,7 +65,7 @@ const MouseAction = union(enum) {
 var mouse_action: MouseAction = .default;
 
 pub fn run(_: ?*anyopaque) callconv(.C) u32 {
-    _ = createWindow("Bottom", Size.new(0, 0), Size.new(200, 100), Size.new(200, 100)) catch @panic("oom");
+    _ = createWindow("Dragon Craft - src/main.zig", Size.new(0, 0), Size.new(200, 100), Size.new(200, 100)) catch @panic("oom");
     _ = createWindow("Middle", Size.new(0, 0), Size.new(400, 300), Size.new(160, 80)) catch @panic("oom");
     const top = createWindow("Top", Size.new(47, 47), Size.new(47, 47), Size.new(47, 47)) catch @panic("oom");
     top.user_facing.flags.focus = true;
@@ -85,6 +85,9 @@ pub fn run(_: ?*anyopaque) callconv(.C) u32 {
 
         // Reset the state
         mouse_action = .default;
+
+        // Mark the top window focused
+        WindowIterator.updateFocus();
 
         while (ashet.multi_tasking.exclusive_video_controller == null) {
             var force_repaint = false;
@@ -120,7 +123,10 @@ pub fn run(_: ?*anyopaque) callconv(.C) u32 {
                                                 continue :event_loop;
                                             },
                                             .button => |button| switch (button) {
-                                                .minimize => surface.window.user_facing.flags.minimized = true,
+                                                .minimize => {
+                                                    surface.window.user_facing.flags.minimized = true;
+                                                    WindowIterator.updateFocus();
+                                                },
                                                 .maximize => surface.window.user_facing.client_rectangle = Rectangle.new(Point.new(1, 11), max_window_content_size),
                                                 .close => {}, // TODO: Forward event to app
                                                 .resize => {
@@ -241,61 +247,97 @@ fn repaint() void {
         framebuffer.fb[i] = c.shift(framebuffer_wallpaper_shift - 1);
     }
 
-    var iter = WindowIterator.init(WindowIterator.regular, .bottom_to_top);
-    while (iter.next()) |window| {
-        const client_rectangle = window.user_facing.client_rectangle;
-        const window_rectangle = expandClientRectangle(client_rectangle);
+    {
+        var dx: i16 = 4;
+        var dy: i16 = framebuffer.height - 11 - 4;
 
-        const style = if (window.user_facing.flags.focus)
-            current_theme.active_window
-        else
-            current_theme.inactive_window;
-
-        const buttons = window.getButtons();
-
-        const title_width = @intCast(u15, window_rectangle.width - 2);
-
-        framebuffer.horizontalLine(window_rectangle.x, window_rectangle.y, window_rectangle.width, style.border);
-        framebuffer.verticalLine(window_rectangle.x, window_rectangle.y + 1, window_rectangle.height - 1, style.border);
-
-        framebuffer.horizontalLine(window_rectangle.x, window_rectangle.y + @intCast(i16, window_rectangle.height) - 1, window_rectangle.width, style.border);
-        framebuffer.verticalLine(window_rectangle.x + @intCast(i16, window_rectangle.width) - 1, window_rectangle.y + 1, window_rectangle.height - 1, style.border);
-
-        framebuffer.horizontalLine(window_rectangle.x + 1, window_rectangle.y + 10, window_rectangle.width - 2, style.border);
-
-        framebuffer.rectangle(window_rectangle.x + 1, window_rectangle.y + 1, title_width, 9, style.title);
-
-        framebuffer.text(
-            window_rectangle.x + 2,
-            window_rectangle.y + 2,
-            std.mem.sliceTo(window.title.items, 0),
-            title_width - 2,
-            style.font,
-        );
-
-        var dy: u15 = 0;
-        var row_ptr = window.user_facing.pixels;
-        while (dy < client_rectangle.height) : (dy += 1) {
-            var dx: u15 = 0;
-            while (dx < client_rectangle.width) : (dx += 1) {
-                framebuffer.setPixel(client_rectangle.x + dx, client_rectangle.y + dy, ColorIndex.get(row_ptr[dx]));
-            }
-            row_ptr += window.user_facing.stride;
-        }
-
-        for (buttons.slice()) |button| {
-            const bounds = button.bounds;
-            const bg = if (button.bounds.y == window_rectangle.y)
-                style.title
+        var iter = WindowIterator.init(WindowIterator.minimized, .bottom_to_top);
+        while (iter.next()) |window| {
+            const style = if (window.user_facing.flags.focus)
+                current_theme.active_window
             else
-                current_theme.dark;
-            framebuffer.horizontalLine(bounds.x, bounds.y, bounds.width, style.border);
-            framebuffer.horizontalLine(bounds.x, bounds.y + @intCast(u15, bounds.width) - 1, bounds.width, style.border);
-            framebuffer.verticalLine(bounds.x, bounds.y, bounds.height, style.border);
-            framebuffer.verticalLine(bounds.x + @intCast(u15, bounds.width) - 1, bounds.y, bounds.height, style.border);
-            framebuffer.rectangle(bounds.x + 1, bounds.y + 1, bounds.width - 2, bounds.height - 2, bg);
-            switch (button.event) {
-                inline else => |tag| framebuffer.icon(bounds.x + 1, bounds.y + 1, @field(icons, @tagName(tag))),
+                current_theme.inactive_window;
+
+            const title = std.mem.sliceTo(window.title.items, 0);
+
+            const width = @intCast(u15, std.math.min(6 * title.len + 2 + 11 + 10, 75));
+
+            framebuffer.horizontalLine(dx, dy, width, style.border);
+            framebuffer.horizontalLine(dx, dy + 10, width, style.border);
+            framebuffer.verticalLine(dx, dy + 1, 9, style.border);
+            framebuffer.verticalLine(dx + width - 1, dy + 1, 9, style.border);
+            framebuffer.rectangle(dx + 1, dy + 1, width - 2, 9, style.title);
+
+            framebuffer.text(dx + 2, dy + 2, title, width - 2, style.font);
+
+            framebuffer.verticalLine(dx + width - 11, dy + 1, 9, style.border);
+            framebuffer.verticalLine(dx + width - 21, dy + 1, 9, style.border);
+
+            framebuffer.rectangle(dx + width - 20, dy + 1, 9, 9, style.title);
+            framebuffer.icon(dx + width - 20, dy + 1, icons.restore);
+            framebuffer.rectangle(dx + width - 10, dy + 1, 9, 9, style.title);
+            framebuffer.icon(dx + width - 10, dy + 1, icons.close);
+
+            dx += (width + 4);
+        }
+    }
+    {
+        var iter = WindowIterator.init(WindowIterator.regular, .bottom_to_top);
+        while (iter.next()) |window| {
+            const client_rectangle = window.user_facing.client_rectangle;
+            const window_rectangle = expandClientRectangle(client_rectangle);
+
+            const style = if (window.user_facing.flags.focus)
+                current_theme.active_window
+            else
+                current_theme.inactive_window;
+
+            const buttons = window.getButtons();
+
+            const title_width = @intCast(u15, window_rectangle.width - 2);
+
+            framebuffer.horizontalLine(window_rectangle.x, window_rectangle.y, window_rectangle.width, style.border);
+            framebuffer.verticalLine(window_rectangle.x, window_rectangle.y + 1, window_rectangle.height - 1, style.border);
+
+            framebuffer.horizontalLine(window_rectangle.x, window_rectangle.y + @intCast(i16, window_rectangle.height) - 1, window_rectangle.width, style.border);
+            framebuffer.verticalLine(window_rectangle.x + @intCast(i16, window_rectangle.width) - 1, window_rectangle.y + 1, window_rectangle.height - 1, style.border);
+
+            framebuffer.horizontalLine(window_rectangle.x + 1, window_rectangle.y + 10, window_rectangle.width - 2, style.border);
+
+            framebuffer.rectangle(window_rectangle.x + 1, window_rectangle.y + 1, title_width, 9, style.title);
+
+            framebuffer.text(
+                window_rectangle.x + 2,
+                window_rectangle.y + 2,
+                std.mem.sliceTo(window.title.items, 0),
+                title_width - 2,
+                style.font,
+            );
+
+            var dy: u15 = 0;
+            var row_ptr = window.user_facing.pixels;
+            while (dy < client_rectangle.height) : (dy += 1) {
+                var dx: u15 = 0;
+                while (dx < client_rectangle.width) : (dx += 1) {
+                    framebuffer.setPixel(client_rectangle.x + dx, client_rectangle.y + dy, ColorIndex.get(row_ptr[dx]));
+                }
+                row_ptr += window.user_facing.stride;
+            }
+
+            for (buttons.slice()) |button| {
+                const bounds = button.bounds;
+                const bg = if (button.bounds.y == window_rectangle.y)
+                    style.title
+                else
+                    current_theme.dark;
+                framebuffer.horizontalLine(bounds.x, bounds.y, bounds.width, style.border);
+                framebuffer.horizontalLine(bounds.x, bounds.y + @intCast(u15, bounds.width) - 1, bounds.width, style.border);
+                framebuffer.verticalLine(bounds.x, bounds.y, bounds.height, style.border);
+                framebuffer.verticalLine(bounds.x + @intCast(u15, bounds.width) - 1, bounds.y, bounds.height, style.border);
+                framebuffer.rectangle(bounds.x + 1, bounds.y + 1, bounds.width - 2, bounds.height - 2, bg);
+                switch (button.event) {
+                    inline else => |tag| framebuffer.icon(bounds.x + 1, bounds.y + 1, @field(icons, @tagName(tag))),
+                }
             }
         }
     }
@@ -323,10 +365,19 @@ const WindowIterator = struct {
         window.user_facing.flags.minimized = false;
         list.remove(&window.node);
         list.append(&window.node);
+        updateFocus();
+    }
 
+    /// Updates which windows has the focus bit set.
+    pub fn updateFocus() void {
         var iter = init(all, .top_to_bottom);
         while (iter.next()) |win| {
-            win.user_facing.flags.focus = (window == win);
+            win.user_facing.flags.focus = false;
+        }
+
+        iter = init(regular, .top_to_bottom);
+        if (iter.next()) |top| {
+            top.user_facing.flags.focus = true;
         }
     }
 
@@ -684,6 +735,18 @@ pub const icons = struct {
         \\.........
         \\.........
         \\..FFFFF..
+        \\.........
+    );
+
+    pub const restore = parse(
+        \\.........
+        \\..FFFFF..
+        \\.........
+        \\.........
+        \\.........
+        \\.........
+        \\.........
+        \\.........
         \\.........
     );
 
