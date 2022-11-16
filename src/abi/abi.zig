@@ -420,21 +420,21 @@ pub const CharAttributes = packed struct { // (u8)
     }
 };
 
-pub const Size = extern struct {
-    width: u16,
-    height: u16,
-
-    pub fn init(w: u16, h: u16) Size {
-        return Size{ .width = w, .height = h };
-    }
-};
-
 pub const Point = extern struct {
     x: i16,
     y: i16,
 
-    pub fn init(x: i16, y: i16) Size {
-        return Size{ .x = x, .y = y };
+    pub fn new(x: i16, y: i16) Point {
+        return Point{ .x = x, .y = y };
+    }
+};
+
+pub const Size = extern struct {
+    width: u16,
+    height: u16,
+
+    pub fn new(w: u16, h: u16) Size {
+        return Size{ .width = w, .height = h };
     }
 };
 
@@ -444,12 +444,28 @@ pub const Rectangle = extern struct {
     width: u16,
     height: u16,
 
+    pub fn new(pos: Point, siz: Size) Rectangle {
+        return Rectangle{
+            .x = pos.x,
+            .y = pos.y,
+            .width = siz.width,
+            .height = siz.height,
+        };
+    }
+
     pub fn position(rect: Rectangle) Point {
         return Point{ .x = rect.x, .y = rect.y };
     }
 
     pub fn size(rect: Rectangle) Size {
         return Point{ .width = rect.width, .height = rect.height };
+    }
+
+    pub fn contains(rect: Rectangle, pt: Point) bool {
+        return (pt.x >= rect.x) and
+            (pt.x < rect.x + @intCast(u15, rect.width)) and
+            (pt.y >= rect.y) and
+            (pt.y < rect.y + @intCast(u15, rect.height));
     }
 };
 
