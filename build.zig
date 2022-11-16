@@ -216,31 +216,42 @@ pub fn build(b: *std.build.Builder) void {
     experiment.install();
 
     const kernel_exe = b.addExecutable("ashet-os", "src/kernel/main.zig");
-    kernel_exe.single_threaded = true;
-    kernel_exe.omit_frame_pointer = false;
-    kernel_exe.strip = false; // never strip debug info
-    if (mode == .Debug) {
-        // we always want frame pointers in debug build!
+    {
+        kernel_exe.single_threaded = true;
         kernel_exe.omit_frame_pointer = false;
+        kernel_exe.strip = false; // never strip debug info
+        if (mode == .Debug) {
+            // we always want frame pointers in debug build!
+            kernel_exe.omit_frame_pointer = false;
+        }
+        kernel_exe.setTarget(system_platform.target);
+        kernel_exe.setBuildMode(mode);
+        kernel_exe.addPackage(system_platform.hal);
+        kernel_exe.addPackage(pkgs.abi);
+        kernel_exe.addPackage(pkgs.libashet);
+        kernel_exe.addPackage(FatFS.getPackage(b, "fatfs", fatfs_config));
+        kernel_exe.setLinkerScriptPath(system_platform.linkerscript);
+        kernel_exe.install();
+
+        // kernel_exe.setLibCFile(std.build.FileSource{ .path = "vendor/libc/libc.txt" });
+        kernel_exe.addSystemIncludePath("vendor/libc/include");
+
+        FatFS.link(kernel_exe, fatfs_config);
+
+        {
+            const convert_wallpaper = tool_mkicon.run();
+            convert_wallpaper.addArg("artwork/os/wallpaper.png");
+            convert_wallpaper.addArg("src/kernel/data/ui/wallpaper.img");
+            convert_wallpaper.addArg("400x300");
+            kernel_exe.step.dependOn(&convert_wallpaper.step);
+        }
+        {
+            const generate_stub_icon = tool_mkicon.run();
+            generate_stub_icon.addArg("design/apps/generic.png");
+            generate_stub_icon.addArg("src/kernel/data/generic-app.icon");
+            kernel_exe.step.dependOn(&generate_stub_icon.step);
+        }
     }
-    kernel_exe.setTarget(system_platform.target);
-    kernel_exe.setBuildMode(mode);
-    kernel_exe.addPackage(system_platform.hal);
-    kernel_exe.addPackage(pkgs.abi);
-    kernel_exe.addPackage(pkgs.libashet);
-    kernel_exe.addPackage(FatFS.getPackage(b, "fatfs", fatfs_config));
-    kernel_exe.setLinkerScriptPath(system_platform.linkerscript);
-    kernel_exe.install();
-
-    // kernel_exe.setLibCFile(std.build.FileSource{ .path = "vendor/libc/libc.txt" });
-    kernel_exe.addSystemIncludePath("vendor/libc/include");
-
-    FatFS.link(kernel_exe, fatfs_config);
-
-    const generate_stub_icon = tool_mkicon.run();
-    generate_stub_icon.addArg("design/apps/generic.png");
-    generate_stub_icon.addArg("src/kernel/data/generic-app.icon");
-    kernel_exe.step.dependOn(&generate_stub_icon.step);
 
     const raw_step = kernel_exe.installRaw("ashet-os.bin", .{
         .format = .bin,

@@ -100,7 +100,7 @@ fn @"video.getVideoMemory"() callconv(.C) [*]align(4) abi.ColorIndex {
     }
     return ashet.video.memory.ptr;
 }
-fn @"video.getPaletteMemory"() callconv(.C) *[abi.palette_size]u16 {
+fn @"video.getPaletteMemory"() callconv(.C) *[abi.palette_size]abi.Color {
     if (!getCurrentProcess().isExclusiveVideoController()) {
         videoExclusiveWarning();
     }

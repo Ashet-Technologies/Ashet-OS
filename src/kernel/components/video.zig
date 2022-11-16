@@ -29,7 +29,7 @@ comptime {
 
 /// The currently used palette. Modifying values here changes the appearance of
 /// the displayed picture.
-pub const palette: *[256]u16 = hal.video.palette;
+pub const palette: *[256]Color = hal.video.palette;
 
 /// Contains initialization defaults for the system
 pub const defaults = struct {
@@ -86,7 +86,7 @@ pub const defaults = struct {
 
     /// The standard Ashet OS palette.
     /// This is loaded from `src/kernel/data/palette.gpl`.
-    pub const palette: [256]u16 = blk: {
+    pub const palette: [256]Color = blk: {
         @setEvalBranchQuota(10_000);
 
         var colors: [256]Color = undefined;
@@ -121,7 +121,7 @@ pub const defaults = struct {
             index += 1;
         }
 
-        break :blk @bitCast([256]u16, colors);
+        break :blk colors;
     };
 
     /// The splash screen that should be shown until the operating system

@@ -5,6 +5,7 @@ const Size = ashet.abi.Size;
 const Point = ashet.abi.Point;
 const Rectangle = ashet.abi.Rectangle;
 const ColorIndex = ashet.abi.ColorIndex;
+const Color = ashet.abi.Color;
 
 pub const Theme = struct {
     pub const WindowStyle = struct {
@@ -89,13 +90,25 @@ pub fn run(_: ?*anyopaque) callconv(.C) u32 {
     }
 }
 
+const framebuffer_wallpaper_shift = 240;
+
 fn initializeGraphics() void {
     ashet.video.setBorder(ColorIndex.get(0));
     ashet.video.setResolution(framebuffer.width, framebuffer.height);
+
+    ashet.video.palette.* = ashet.video.defaults.palette;
+
+    // use the last 15 colors for the wallpaper
+
+    std.mem.copy(Color, ashet.video.palette[framebuffer_wallpaper_shift..], &wallpaper.palette);
 }
 
 fn repaint() void {
-    framebuffer.clear(ColorIndex.get(0));
+    // framebuffer.clear(ColorIndex.get(0));
+
+    for (wallpaper.pixels) |c, i| {
+        framebuffer.fb[i] = c.shift(framebuffer_wallpaper_shift - 1);
+    }
 
     var iter = WindowIterator.init();
     while (iter.next()) |window| {
@@ -482,4 +495,11 @@ pub const icons = struct {
         \\.....2....2F8
         \\...........2.
     );
+};
+
+const wallpaper = struct {
+    const raw = @embedFile("../data/ui/wallpaper.img");
+
+    const pixels = @bitCast([400 * 300]ColorIndex, raw[0 .. 400 * 300].*);
+    const palette = @bitCast([15]Color, @as([]const u8, raw)[400 * 300 .. 400 * 300 + 15 * @sizeOf(Color)].*);
 };

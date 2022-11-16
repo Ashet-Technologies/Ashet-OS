@@ -16,15 +16,24 @@ pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 
     const args = try std.process.argsAlloc(arena.allocator());
-    if (args.len != 3) {
+    if (args.len < 3 or args.len > 4) {
         @panic("requires 2 args!");
     }
+
+    const size: [2]usize = if (args.len >= 4) blk: {
+        const spec = args[3];
+        var it = std.mem.split(u8, spec, "x");
+        const w = try std.fmt.parseInt(usize, it.next().?, 10);
+        const h = try std.fmt.parseInt(usize, it.next().?, 10);
+        break :blk .{ w, h };
+    } else .{ 64, 64 };
 
     std.log.info("processing {s}", .{args[1]});
 
     var raw_image = try zigimg.Image.fromFilePath(arena.allocator(), args[1]);
-    if (raw_image.width != 64 or raw_image.height != 64)
-        @panic("image must be 64x64");
+    if (raw_image.width != size[0] or raw_image.height != size[1]) {
+        std.debug.panic("image must be {}x{}", .{ size[0], size[1] });
+    }
 
     // compute palette
     var quantizer = zigimg.OctTreeQuantizer.init(arena.allocator());
@@ -78,7 +87,7 @@ pub fn main() !void {
     // }
 
     // map colors
-    var bitmap: [64 * 64]u8 = undefined;
+    var bitmap: []u8 = try arena.allocator().alloc(u8, raw_image.width * raw_image.height);
     {
         var i: usize = 0;
         var src_pixels = raw_image.iterator();
@@ -98,7 +107,7 @@ pub fn main() !void {
     var buffered_writer = std.io.bufferedWriter(out_file.writer());
     var writer = buffered_writer.writer();
 
-    try writer.writeAll(&bitmap);
+    try writer.writeAll(bitmap);
 
     for (palette) |color| {
         const rgb565 = zigimg.color.Rgb565.fromU32Rgba(color.toU32Rgba());

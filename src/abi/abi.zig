@@ -52,7 +52,7 @@ pub const SysCallInterface = extern struct {
 
         /// Returns a pointer to the current palette. Changing this palette
         /// will directly change the associated colors on the screen.
-        getPaletteMemory: std.meta.FnPtr(fn () callconv(.C) *[palette_size]u16),
+        getPaletteMemory: std.meta.FnPtr(fn () callconv(.C) *[palette_size]Color),
     };
 
     pub const UserInterface = extern struct {
@@ -118,6 +118,10 @@ pub const ColorIndex = enum(u8) {
 
     pub fn index(c: ColorIndex) @typeInfo(ColorIndex).Enum.tag_type {
         return @enumToInt(c);
+    }
+
+    pub fn shift(c: ColorIndex, offset: u8) ColorIndex {
+        return get(index(c) +% offset);
     }
 };
 
