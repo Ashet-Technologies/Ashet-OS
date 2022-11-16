@@ -110,6 +110,14 @@ fn repaint() void {
 
         framebuffer.rectangle(window_rectangle.x + 1, window_rectangle.y + 1, title_width, 9, style.title);
 
+        framebuffer.text(
+            window_rectangle.x + 2,
+            window_rectangle.y + 2,
+            std.mem.sliceTo(window.title.items, 0),
+            title_width - 2,
+            style.font,
+        );
+
         {
             var x: i16 = window_rectangle.x + 1 + title_width;
             for (boxes.slice()) |box| {
@@ -328,41 +336,32 @@ const framebuffer = struct {
     }
 
     fn text(x: i16, y: i16, string: []const u8, max_width: u16, color: ColorIndex) void {
-        _ = x;
-        _ = y;
-        _ = string;
-        _ = max_width;
-        _ = color;
-        // const gw = 6;
-        // const gh = 8;
-        // const font = ashet.video.defaults.font;
+        const gw = 6;
+        const gh = 8;
+        const font = ashet.video.defaults.font;
 
-        // var dx: i16 = x;
-        // var dy: i16 = y;
-        // for (string) |char| {
-        //     if (dx + gw > max_width) {
-        //         break;
-        //     }
-        //     const glyph = font[char];
+        var dx: i16 = x;
+        var dy: i16 = y;
+        for (string) |char| {
+            if (dx + gw > x + @intCast(u15, max_width)) {
+                break;
+            }
+            const glyph = font[char];
 
-        //     var gx: u15 = 0;
-        //     while (gx < gw) : (gx += 1) {
-        //         var bits = glyph[x];
+            var gx: u15 = 0;
+            while (gx < gw) : (gx += 1) {
+                var bits = glyph[gx];
 
-        //         _ = bits;
-        //         _ = dy;
-        //         _ = color;
-        //         _ = gh;
-        //         // var gy: u15 = 0;
-        //         // while (gy < gh) : (gy += 1) {
-        //         //     if ((bits & (1 << y)) != 0) {
-        //         //         setPixel(dx + gx, dy + gy, color);
-        //         //     }
-        //         // }
-        //     }
+                comptime var gy: u15 = 0;
+                inline while (gy < gh) : (gy += 1) {
+                    if ((bits & (1 << gy)) != 0) {
+                        setPixel(dx + gx, dy + gy, color);
+                    }
+                }
+            }
 
-        //     dx += gw;
-        // }
+            dx += gw;
+        }
     }
 
     fn clear(color: ColorIndex) void {
