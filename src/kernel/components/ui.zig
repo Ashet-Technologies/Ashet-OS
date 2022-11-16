@@ -4,37 +4,29 @@ const ashet = @import("../main.zig");
 const Size = ashet.abi.Size;
 const Point = ashet.abi.Point;
 const Rectangle = ashet.abi.Rectangle;
+const ColorIndex = ashet.abi.ColorIndex;
 
-const framebuffer = struct {
-    const width = ashet.video.max_res_x;
-    const height = ashet.video.max_res_y;
+pub const Theme = struct {
+    pub const WindowStyle = struct {
+        border: ColorIndex,
+        font: ColorIndex,
+        title: ColorIndex,
+    };
+    active_window: WindowStyle,
+    inactive_window: WindowStyle,
+};
 
-    const fb = ashet.video.memory[0 .. width * height];
-
-    inline fn setPixel(x: i16, y: i16, color: u8) void {
-        if (x < 0 or y < 0 or x >= width or y >= height) return;
-        const ux = @intCast(u16, x);
-        const uy = @intCast(u16, y);
-        fb[uy * width + ux] = color;
-    }
-
-    inline fn horizontalLine(x: i16, y: i16, w: u16, color: u8) void {
-        var i: u15 = 0;
-        while (i < w) : (i += 1) {
-            setPixel(x + i, y, color);
-        }
-    }
-
-    inline fn verticalLine(x: i16, y: i16, h: u16, color: u8) void {
-        var i: u15 = 0;
-        while (i < h) : (i += 1) {
-            setPixel(x, y + i, color);
-        }
-    }
-
-    fn clear(color: u8) void {
-        std.mem.set(u8, fb, color);
-    }
+var current_theme = Theme{
+    .active_window = Theme.WindowStyle{
+        .border = ColorIndex.get(0x2), // dark blue
+        .font = ColorIndex.get(0xF), // white
+        .title = ColorIndex.get(0x8), // bright blue
+    },
+    .inactive_window = Theme.WindowStyle{
+        .border = ColorIndex.get(0x1), // dark violet
+        .font = ColorIndex.get(0xA), // bright gray
+        .title = ColorIndex.get(0x3), // dim gray
+    },
 };
 
 const min_window_content_size = ashet.abi.Size{
@@ -48,9 +40,10 @@ const max_window_content_size = ashet.abi.Size{
 };
 
 pub fn run(_: ?*anyopaque) callconv(.C) u32 {
-    _ = createWindow("Bottom", Size.init(0, 0), Size.init(400, 300), Size.init(200, 100)) catch @panic("oom");
+    _ = createWindow("Bottom", Size.init(0, 0), Size.init(200, 100), Size.init(200, 100)) catch @panic("oom");
     _ = createWindow("Middle", Size.init(0, 0), Size.init(400, 300), Size.init(160, 80)) catch @panic("oom");
-    _ = createWindow("Top", Size.init(0, 0), Size.init(400, 300), Size.init(160, 80)) catch @panic("oom");
+    const top = createWindow("Top", Size.init(47, 47), Size.init(47, 47), Size.init(47, 47)) catch @panic("oom");
+    top.user_facing.flags.focus = true;
 
     while (true) {
         while (ashet.multi_tasking.exclusive_video_controller != null) {
@@ -75,37 +68,66 @@ pub fn run(_: ?*anyopaque) callconv(.C) u32 {
 }
 
 fn initializeGraphics() void {
-    ashet.video.setBorder(0);
+    ashet.video.setBorder(ColorIndex.get(0));
     ashet.video.setResolution(framebuffer.width, framebuffer.height);
 }
 
 fn repaint() void {
-    framebuffer.clear(0);
+    framebuffer.clear(ColorIndex.get(0));
 
     var iter = WindowIterator.init();
     while (iter.next()) |window| {
         const client_rectangle = window.user_facing.client_rectangle;
         const window_rectangle = expandClientRectangle(client_rectangle);
 
-        const border_color: u8 = if (window.user_facing.flags.focus)
-            14
+        const style = if (window.user_facing.flags.focus)
+            current_theme.active_window
         else
-            15;
+            current_theme.inactive_window;
 
-        framebuffer.horizontalLine(window_rectangle.x, window_rectangle.y, window_rectangle.width, border_color);
-        framebuffer.verticalLine(window_rectangle.x, window_rectangle.y + 1, window_rectangle.height - 1, border_color);
+        const BoxType = enum { minimize, maximize, close };
 
-        framebuffer.horizontalLine(window_rectangle.x, window_rectangle.y + @intCast(i16, window_rectangle.height) - 1, window_rectangle.width, border_color);
-        framebuffer.verticalLine(window_rectangle.x + @intCast(i16, window_rectangle.width) - 1, window_rectangle.y + 1, window_rectangle.height - 1, border_color);
+        var boxes = std.BoundedArray(BoxType, 3){};
+        {
+            if (window.canMinimize()) {
+                boxes.appendAssumeCapacity(.minimize);
+            }
+            if (window.canMaximize()) {
+                boxes.appendAssumeCapacity(.maximize);
+            }
+            boxes.appendAssumeCapacity(.close);
+        }
 
-        framebuffer.horizontalLine(window_rectangle.x + 1, window_rectangle.y + 10, window_rectangle.width - 2, border_color);
+        const title_width = @intCast(u15, window_rectangle.width - 10 * boxes.len - 2);
+
+        framebuffer.horizontalLine(window_rectangle.x, window_rectangle.y, window_rectangle.width, style.border);
+        framebuffer.verticalLine(window_rectangle.x, window_rectangle.y + 1, window_rectangle.height - 1, style.border);
+
+        framebuffer.horizontalLine(window_rectangle.x, window_rectangle.y + @intCast(i16, window_rectangle.height) - 1, window_rectangle.width, style.border);
+        framebuffer.verticalLine(window_rectangle.x + @intCast(i16, window_rectangle.width) - 1, window_rectangle.y + 1, window_rectangle.height - 1, style.border);
+
+        framebuffer.horizontalLine(window_rectangle.x + 1, window_rectangle.y + 10, window_rectangle.width - 2, style.border);
+
+        framebuffer.rectangle(window_rectangle.x + 1, window_rectangle.y + 1, title_width, 9, style.title);
+
+        {
+            var x: i16 = window_rectangle.x + 1 + title_width;
+            for (boxes.slice()) |box| {
+                framebuffer.verticalLine(x, window_rectangle.y + 1, 9, style.border);
+                framebuffer.rectangle(x + 1, window_rectangle.y + 1, 9, 9, style.title);
+                switch (box) {
+                    inline else => |tag| framebuffer.icon(x + 1, window_rectangle.y + 1, @field(icons, @tagName(tag))),
+                }
+                x += 10;
+            }
+        }
 
         var dy: u15 = 0;
         var row_ptr = window.user_facing.pixels;
         while (dy < client_rectangle.height) : (dy += 1) {
             var dx: u15 = 0;
             while (dx < client_rectangle.width) : (dx += 1) {
-                framebuffer.setPixel(client_rectangle.x + dx, client_rectangle.y + dy, row_ptr[dx]);
+                framebuffer.setPixel(client_rectangle.x + dx, client_rectangle.y + dy, ColorIndex.get(row_ptr[dx]));
             }
             row_ptr += window.user_facing.stride;
         }
@@ -138,9 +160,21 @@ const Window = struct {
     node: WindowQueue.Node,
     title: std.ArrayList(u8),
 
+    /// Windows can be resized if their minimum size and maximum size differ
     pub fn isResizable(window: Window) bool {
         return (window.user_facing.min_size.width != window.user_facing.max_size.width) or
             (window.user_facing.min_size.height != window.user_facing.max_size.height);
+    }
+
+    /// Windows can be maximized if their maximum size is the full screen size
+    pub fn canMaximize(window: Window) bool {
+        return (window.user_facing.max_size.width == max_window_content_size.width) and
+            (window.user_facing.max_size.height == max_window_content_size.height);
+    }
+
+    /// All windows except popups can be minimized.
+    pub fn canMinimize(window: Window) bool {
+        return !window.user_facing.flags.popup;
     }
 };
 
@@ -163,6 +197,7 @@ fn createWindow(title: []const u8, min: ashet.abi.Size, max: ashet.abi.Size, ini
             .flags = .{
                 .minimized = false,
                 .focus = false,
+                .popup = false,
             },
         },
         .node = .{ .data = {} },
@@ -177,7 +212,7 @@ fn createWindow(title: []const u8, min: ashet.abi.Size, max: ashet.abi.Size, ini
 
     const pixel_count = @as(usize, window.user_facing.max_size.height) * @as(usize, window.user_facing.stride);
     window.user_facing.pixels = (try allocator.alloc(u8, pixel_count)).ptr;
-    std.mem.set(u8, window.user_facing.pixels[0..pixel_count], 3);
+    std.mem.set(u8, window.user_facing.pixels[0..pixel_count], 4); // brown
 
     const clamped_initial_size = sizeMax(sizeMin(initial_size, window.user_facing.max_size), window.user_facing.min_size);
 
@@ -247,3 +282,167 @@ fn sizeMax(a: Size, b: Size) Size {
 fn nodeToWindow(node: *WindowQueue.Node) *Window {
     return @fieldParentPtr(Window, "node", node);
 }
+
+const framebuffer = struct {
+    const width = ashet.video.max_res_x;
+    const height = ashet.video.max_res_y;
+
+    const fb = ashet.video.memory[0 .. width * height];
+
+    fn setPixel(x: i16, y: i16, color: ColorIndex) void {
+        if (x < 0 or y < 0 or x >= width or y >= height) return;
+        const ux = @intCast(u16, x);
+        const uy = @intCast(u16, y);
+        fb[uy * width + ux] = color;
+    }
+
+    fn horizontalLine(x: i16, y: i16, w: u16, color: ColorIndex) void {
+        var i: u15 = 0;
+        while (i < w) : (i += 1) {
+            setPixel(x + i, y, color);
+        }
+    }
+
+    fn verticalLine(x: i16, y: i16, h: u16, color: ColorIndex) void {
+        var i: u15 = 0;
+        while (i < h) : (i += 1) {
+            setPixel(x, y + i, color);
+        }
+    }
+
+    fn rectangle(x: i16, y: i16, w: u16, h: u16, color: ColorIndex) void {
+        var i: i16 = y;
+        while (i < y + @intCast(u15, h)) : (i += 1) {
+            framebuffer.horizontalLine(x, i, w, color);
+        }
+    }
+
+    fn icon(x: i16, y: i16, sprite: anytype) void {
+        for (sprite) |row, dy| {
+            for (row) |pix, dx| {
+                if (pix) |c| {
+                    setPixel(x + @intCast(i16, dx), y + @intCast(i16, dy), c);
+                }
+            }
+        }
+    }
+
+    fn text(x: i16, y: i16, string: []const u8, max_width: u16, color: ColorIndex) void {
+        _ = x;
+        _ = y;
+        _ = string;
+        _ = max_width;
+        _ = color;
+        // const gw = 6;
+        // const gh = 8;
+        // const font = ashet.video.defaults.font;
+
+        // var dx: i16 = x;
+        // var dy: i16 = y;
+        // for (string) |char| {
+        //     if (dx + gw > max_width) {
+        //         break;
+        //     }
+        //     const glyph = font[char];
+
+        //     var gx: u15 = 0;
+        //     while (gx < gw) : (gx += 1) {
+        //         var bits = glyph[x];
+
+        //         _ = bits;
+        //         _ = dy;
+        //         _ = color;
+        //         _ = gh;
+        //         // var gy: u15 = 0;
+        //         // while (gy < gh) : (gy += 1) {
+        //         //     if ((bits & (1 << y)) != 0) {
+        //         //         setPixel(dx + gx, dy + gy, color);
+        //         //     }
+        //         // }
+        //     }
+
+        //     dx += gw;
+        // }
+    }
+
+    fn clear(color: ColorIndex) void {
+        std.mem.set(ColorIndex, fb, color);
+    }
+};
+
+pub const icons = struct {
+    fn parsedSpriteSize(comptime def: []const u8) Size {
+        var it = std.mem.split(u8, def, "\n");
+        var first = it.next().?;
+        const width = first.len;
+        var height = 1;
+        while (it.next()) |line| {
+            std.debug.assert(line.len == width);
+            height += 1;
+        }
+        return Size{ .width = width, .height = height };
+    }
+
+    fn ParseResult(comptime def: []const u8) type {
+        const size = parsedSpriteSize(def);
+        return [size.height][size.width]?ColorIndex;
+    }
+
+    fn parse(comptime def: []const u8) ParseResult(def) {
+        const size = parsedSpriteSize(def);
+        var icon: [size.height][size.width]?ColorIndex = [1][size.width]?ColorIndex{
+            [1]?ColorIndex{null} ** size.width,
+        } ** size.height;
+
+        var it = std.mem.split(u8, def, "\n");
+        var y: usize = 0;
+        while (it.next()) |line| : (y += 1) {
+            var x: usize = 0;
+            while (x < icon[0].len) : (x += 1) {
+                icon[y][x] = if (std.fmt.parseInt(u8, line[x .. x + 1], 16)) |index|
+                    ColorIndex.get(index)
+                else |_|
+                    null;
+            }
+        }
+        return icon;
+    }
+
+    pub const minimize = parse(
+        \\.........
+        \\.FFFFFFF.
+        \\.F.....F.
+        \\.FFFFFFF.
+        \\.F.....F.
+        \\.F.....F.
+        \\.F.....F.
+        \\.FFFFFFF.
+        \\.........
+    );
+
+    pub const maximize = parse(
+        \\.........
+        \\.........
+        \\.........
+        \\.........
+        \\.........
+        \\.........
+        \\.........
+        \\..FFFFF..
+        \\.........
+    );
+    pub const close = parse(
+        \\666666666
+        \\666666666
+        \\66F666F66
+        \\666F6F666
+        \\6666F6666
+        \\666F6F666
+        \\66F666F66
+        \\666666666
+        \\666666666
+    );
+    pub const cursor = parse(
+        \\
+    );
+};

@@ -3,13 +3,15 @@ const ashet = @import("ashet");
 
 pub usingnamespace ashet.core;
 
+const ColorIndex = ashet.abi.ColorIndex;
+
 pub fn main() void {
     if (!ashet.video.aquire()) {
         ashet.process.exit(1);
     }
 
     ashet.video.setResolution(400, 300);
-    ashet.video.setBorder(2);
+    ashet.video.setBorder(ColorIndex.get(2));
 
     render();
 
@@ -34,12 +36,12 @@ pub fn main() void {
     }
 }
 
-var clonebuffer: [400 * 300]u8 = undefined;
+var clonebuffer: [400 * 300]ColorIndex = undefined;
 
 fn render() void {
-    std.mem.set(u8, &clonebuffer, 0);
+    std.mem.set(ColorIndex, &clonebuffer, ColorIndex.get(0));
     //
 
     //
-    std.mem.copy(u8, ashet.video.getVideoMemory()[0..clonebuffer.len], &clonebuffer);
+    std.mem.copy(ColorIndex, ashet.video.getVideoMemory()[0..clonebuffer.len], &clonebuffer);
 }

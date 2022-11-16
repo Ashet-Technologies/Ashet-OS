@@ -306,28 +306,28 @@ pub fn build(b: *std.build.Builder) void {
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&exe_tests.step);
 
-    const simu_step = b.step("sim", "Runs the PC simulator");
+    // const simu_step = b.step("sim", "Runs the PC simulator");
 
-    const sdl_sdk = zpm.sdks.sdl.init(b);
+    // const sdl_sdk = zpm.sdks.sdl.init(b);
 
-    const sim = b.addExecutable("ashet-os-sim", "src/simulator/sim.zig");
-    sim.setBuildMode(mode);
-    sim.setTarget(.{});
-    sim.addPackage(sdl_sdk.getNativePackage("sdl2"));
-    sim.addPackage(pkgs.abi);
-    sim.addPackage(std.build.Pkg{
-        .name = "ashet",
-        .source = .{ .path = "src/kernel/sim_pkg.zig" },
-        .dependencies = &.{ pkgs.abi, std.build.Pkg{
-            .name = "hal",
-            .source = .{ .path = "src/simulator/loopback.zig" },
-        } },
-    });
-    sim.install();
+    // const sim = b.addExecutable("ashet-os-sim", "src/simulator/sim.zig");
+    // sim.setBuildMode(mode);
+    // sim.setTarget(.{});
+    // sim.addPackage(sdl_sdk.getNativePackage("sdl2"));
+    // sim.addPackage(pkgs.abi);
+    // sim.addPackage(std.build.Pkg{
+    //     .name = "ashet",
+    //     .source = .{ .path = "src/kernel/sim_pkg.zig" },
+    //     .dependencies = &.{ pkgs.abi, std.build.Pkg{
+    //         .name = "hal",
+    //         .source = .{ .path = "src/simulator/loopback.zig" },
+    //     } },
+    // });
+    // sim.install();
 
-    sdl_sdk.link(sim, .dynamic);
+    // sdl_sdk.link(sim, .dynamic);
 
-    const run_sim = sim.run();
+    // const run_sim = sim.run();
 
-    simu_step.dependOn(&run_sim.step);
+    // simu_step.dependOn(&run_sim.step);
 }

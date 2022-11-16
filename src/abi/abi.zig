@@ -109,9 +109,19 @@ pub const ExitCode = struct {
 
 pub const ThreadFunction = std.meta.FnPtr(fn (?*anyopaque) callconv(.C) u32);
 
-pub const ColorIndex = u8;
+pub const ColorIndex = enum(u8) {
+    _,
 
-pub const palette_size = std.math.maxInt(ColorIndex) + 1;
+    pub fn get(val: u8) ColorIndex {
+        return @intToEnum(ColorIndex, val);
+    }
+
+    pub fn index(c: ColorIndex) @typeInfo(ColorIndex).Enum.tag_type {
+        return @enumToInt(c);
+    }
+};
+
+pub const palette_size = std.math.maxInt(@typeInfo(ColorIndex).Enum.tag_type) + 1;
 
 /// A 16 bpp color value using RGB565 encoding.
 pub const Color = packed struct { //(u16)
@@ -498,7 +508,10 @@ pub const Window = extern struct {
         /// The window currently has keyboard focus.
         focus: bool,
 
-        padding: u6 = 0,
+        /// This window is a popup and cannot be minimized
+        popup: bool,
+
+        padding: u5 = 0,
     };
 };
 

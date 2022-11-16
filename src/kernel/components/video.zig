@@ -5,6 +5,9 @@ const ashet = @import("../main.zig");
 pub const max_res_x = 400;
 pub const max_res_y = 300;
 
+pub const Color = ashet.abi.Color;
+pub const ColorIndex = ashet.abi.ColorIndex;
+
 pub const Resolution = struct {
     width: u16,
     height: u16,
@@ -17,7 +20,7 @@ pub const Resolution = struct {
 /// The raw exposed video memory. Writing to this will change the content
 /// on the screen.
 /// Memory is interpreted with the current video mode to produce an image.
-pub const memory: []align(ashet.memory.page_size) u8 = hal.video.memory;
+pub const memory: []align(ashet.memory.page_size) ColorIndex = hal.video.memory;
 comptime {
     // Make sure we have at least the guaranteed amount of RAM
     // to store the largest possible image.
@@ -27,8 +30,6 @@ comptime {
 /// The currently used palette. Modifying values here changes the appearance of
 /// the displayed picture.
 pub const palette: *[256]u16 = hal.video.palette;
-
-pub const Color = ashet.abi.Color;
 
 /// Contains initialization defaults for the system
 pub const defaults = struct {
@@ -125,11 +126,11 @@ pub const defaults = struct {
 
     /// The splash screen that should be shown until the operating system
     /// has fully bootet. This has to be displayed in 256x128 8bpp video mode.
-    pub const splash_screen: [32768]u8 = @embedFile("../data/splash.raw").*;
+    pub const splash_screen: [32768]ColorIndex = @bitCast([32768]ColorIndex, @as([32768]u8, @embedFile("../data/splash.raw").*));
 
     /// The default border color.
     /// Must match the splash screen, otherwise it looks kinda weird.
-    pub const border: u8 = splash_screen[0]; // we just use the top-left pixel of the splash. smort!
+    pub const border: ColorIndex = splash_screen[0]; // we just use the top-left pixel of the splash. smort!
 };
 
 /// If this is `true`, the kernel will repeatedly call `flush()` to
@@ -138,7 +139,7 @@ pub const is_flush_required = @hasDecl(hal.video, "flush");
 
 /// Sets the border color of the screen. This color fills all unreachable pixels.
 /// *C64 feeling intensifies.*
-pub fn setBorder(b: u8) void {
+pub fn setBorder(b: ColorIndex) void {
     hal.video.setBorder(b);
 }
 
@@ -153,7 +154,7 @@ pub fn getResolution() Resolution {
     return hal.video.getResolution();
 }
 
-pub fn getBorder() u8 {
+pub fn getBorder() ColorIndex {
     return hal.video.getBorder();
 }
 

@@ -5,5 +5,4 @@ pub usingnamespace ashet.core;
 
 pub fn main() void {
     ashet.debug.write("Hello from App!\r\n");
-    ashet.video.setBorder(0x01);
 }

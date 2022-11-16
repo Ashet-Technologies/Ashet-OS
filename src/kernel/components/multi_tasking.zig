@@ -79,12 +79,6 @@ pub var exclusive_video_controller: ?*Process = null;
 pub const Process = struct {
     master_thread: *ashet.scheduler.Thread,
 
-    // buffers for background storage
-    video_buffer: [400 * 300]u8 align(4) = ashet.video.defaults.splash_screen ++ [1]u8{0x0F} ** (400 * 300 - 256 * 128),
-    palette_buffer: [ashet.abi.palette_size]u16 = ashet.video.defaults.palette,
-    resolution: ashet.video.Resolution = .{ .width = 256, .height = 128 },
-    border_color: u8 = 0x0F,
-
     pub fn kill(proc: *Process) void {
         if (exclusive_video_controller == proc) {
             exclusive_video_controller = null;
@@ -94,21 +88,11 @@ pub const Process = struct {
     }
 
     pub fn save(proc: *Process) void {
-        proc.resolution = ashet.video.getResolution();
-        proc.border_color = ashet.video.getBorder();
-
-        std.mem.copy(u8, &proc.video_buffer, ashet.video.memory[0..proc.resolution.size()]);
-        std.mem.copy(u16, &proc.palette_buffer, ashet.video.palette);
+        _ = proc;
     }
 
     pub fn restore(proc: *const Process) void {
-        ashet.video.setResolution(proc.resolution.width, proc.resolution.height);
-        ashet.video.setBorder(proc.border_color);
-
-        std.mem.copy(u8, ashet.video.memory, proc.video_buffer[0..proc.resolution.size()]);
-        std.mem.copy(u16, ashet.video.palette, &proc.palette_buffer);
-
-        ashet.video.flush();
+        _ = proc;
     }
 
     pub fn isExclusiveVideoController(proc: *Process) bool {

@@ -64,16 +64,18 @@ pub const memory = struct {
 };
 
 pub const video = struct {
+    const ColorIndex = ashet.abi.ColorIndex;
+
     const max_width = 400;
     const max_height = 300;
 
-    var backing_buffer: [max_width * max_height]u8 align(ashet.memory.page_size) = ashet.video.defaults.splash_screen ++ ([1]u8{0} ** (max_width * max_height - ashet.video.defaults.splash_screen.len));
+    var backing_buffer: [max_width * max_height]ColorIndex align(ashet.memory.page_size) = ashet.video.defaults.splash_screen ++ ([1]ColorIndex{ColorIndex.get(0)} ** (max_width * max_height - ashet.video.defaults.splash_screen.len));
     var backing_palette: [256]u16 = ashet.video.defaults.palette;
 
-    pub const memory: []align(ashet.memory.page_size) u8 = &backing_buffer;
+    pub const memory: []align(ashet.memory.page_size) ColorIndex = &backing_buffer;
     pub const palette: *[256]u16 = &backing_palette;
 
-    var border_color: u8 = ashet.video.defaults.border;
+    var border_color: ColorIndex = ashet.video.defaults.border;
 
     var graphics_width: u16 = 256;
     var graphics_height: u16 = 128;
@@ -84,11 +86,11 @@ pub const video = struct {
             .height = graphics_height,
         };
     }
-    pub fn getBorder() u8 {
+    pub fn getBorder() ColorIndex {
         return border_color;
     }
 
-    pub fn setBorder(b: u8) void {
+    pub fn setBorder(b: ColorIndex) void {
         border_color = b;
     }
 
@@ -97,8 +99,8 @@ pub const video = struct {
         graphics_height = height;
     }
 
-    fn pal(index: u8) u32 {
-        return ashet.video.Color.fromU16(backing_palette[index]).toRgb32();
+    fn pal(color: ColorIndex) u32 {
+        return ashet.video.Color.fromU16(backing_palette[color.index()]).toRgb32();
     }
 
     pub fn flush() void {
