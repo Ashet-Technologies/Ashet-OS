@@ -39,6 +39,11 @@ const max_window_content_size = ashet.abi.Size{
     .height = framebuffer.height - 12,
 };
 
+var mouse_cursor_pos: Point = .{
+    .x = framebuffer.width / 2,
+    .y = framebuffer.height / 2,
+};
+
 pub fn run(_: ?*anyopaque) callconv(.C) u32 {
     _ = createWindow("Bottom", Size.init(0, 0), Size.init(200, 100), Size.init(200, 100)) catch @panic("oom");
     _ = createWindow("Middle", Size.init(0, 0), Size.init(400, 300), Size.init(160, 80)) catch @panic("oom");
@@ -59,8 +64,25 @@ pub fn run(_: ?*anyopaque) callconv(.C) u32 {
         repaint();
 
         while (ashet.multi_tasking.exclusive_video_controller == null) {
+            var force_repaint = false;
+            while (ashet.input.getEvent()) |input_event| {
+                switch (input_event) {
+                    .keyboard => |event| {
+                        _ = event;
+                    },
+                    .mouse => |event| {
+                        mouse_cursor_pos.x = std.math.clamp(mouse_cursor_pos.x + event.dx, 0, framebuffer.width - 1);
+                        mouse_cursor_pos.y = std.math.clamp(mouse_cursor_pos.y + event.dy, 0, framebuffer.height - 1);
+                        if (event.dx != 0 or event.dy != 0) {
+                            force_repaint = true;
+                        }
+                    },
+                }
+            }
 
-            //
+            if (force_repaint) {
+                repaint();
+            }
 
             ashet.scheduler.yield();
         }
@@ -140,6 +162,8 @@ fn repaint() void {
             row_ptr += window.user_facing.stride;
         }
     }
+
+    framebuffer.icon(mouse_cursor_pos.x, mouse_cursor_pos.y, icons.cursor);
 }
 
 var windows = WindowQueue{};
@@ -299,8 +323,8 @@ const framebuffer = struct {
 
     fn setPixel(x: i16, y: i16, color: ColorIndex) void {
         if (x < 0 or y < 0 or x >= width or y >= height) return;
-        const ux = @intCast(u16, x);
-        const uy = @intCast(u16, y);
+        const ux = @intCast(usize, x);
+        const uy = @intCast(usize, y);
         fb[uy * width + ux] = color;
     }
 
@@ -388,6 +412,8 @@ pub const icons = struct {
     }
 
     fn parse(comptime def: []const u8) ParseResult(def) {
+        @setEvalBranchQuota(10_000);
+
         const size = parsedSpriteSize(def);
         var icon: [size.height][size.width]?ColorIndex = [1][size.width]?ColorIndex{
             [1]?ColorIndex{null} ** size.width,
@@ -442,6 +468,18 @@ pub const icons = struct {
         \\666666666
     );
     pub const cursor = parse(
-        \\
+        \\888..........
+        \\2FF88........
+        \\2FFFF88......
+        \\.2FFFFF88....
+        \\.2FFFFFFF88..
+        \\..2FFFFFFFF8.
+        \\..2FFFFFFF8..
+        \\...2FFFFF8...
+        \\...2FFFFF8...
+        \\....2FF22F8..
+        \\....2F2..2F8.
+        \\.....2....2F8
+        \\...........2.
     );
 };
