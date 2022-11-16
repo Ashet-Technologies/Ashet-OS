@@ -1,5 +1,12 @@
 const std = @import("std");
 
+fn FnPtr(comptime T: type) type {
+    var ti = @typeInfo(T);
+    ti.Fn.calling_convention = .C;
+    const T2 = @Type(ti);
+    return std.meta.FnPtr(T2);
+}
+
 /// A structure containing all system calls Ashet OS provides.
 ///
 /// As Ashet OS is single-threaded by design and supports no thread local
@@ -32,73 +39,139 @@ pub const SysCallInterface = extern struct {
     pub const Video = extern struct {
         /// Aquires direct access to the screen. When `true` is returned,
         /// this process has the sole access to the screen buffers.
-        aquire: std.meta.FnPtr(fn () callconv(.C) bool),
+        aquire: FnPtr(fn () bool),
 
         /// Releases the access to the video and returns to desktop mode.
-        release: std.meta.FnPtr(fn () callconv(.C) void),
+        release: FnPtr(fn () void),
 
         /// Changes the border color of the screen. Parameter is an index into
         /// the palette.
-        setBorder: std.meta.FnPtr(fn (ColorIndex) callconv(.C) void),
+        setBorder: FnPtr(fn (ColorIndex) void),
 
         /// Sets the screen resolution. Legal values are between 1×1 and 400×300.
         /// Everything out of bounds will be clamped into that range.
-        setResolution: std.meta.FnPtr(fn (u16, u16) callconv(.C) void),
+        setResolution: FnPtr(fn (u16, u16) void),
 
         /// Returns a pointer to linear video memory, row-major.
         /// Pixels rows will have a stride of the current video buffer width.
         /// The first pixel in the memory is the top-left pixel.
-        getVideoMemory: std.meta.FnPtr(fn () callconv(.C) [*]align(4) ColorIndex),
+        getVideoMemory: FnPtr(fn () [*]align(4) ColorIndex),
 
         /// Returns a pointer to the current palette. Changing this palette
         /// will directly change the associated colors on the screen.
-        getPaletteMemory: std.meta.FnPtr(fn () callconv(.C) *[palette_size]Color),
+        getPaletteMemory: FnPtr(fn () *[palette_size]Color),
     };
 
     pub const UserInterface = extern struct {
-        createWindow: std.meta.FnPtr(fn (title: [*:0]const u8, min: Size, max: Size, flags: CreateWindowFlags) ?*const Window),
-        destroyWindow: std.meta.FnPtr(fn (*const Window) void),
-        moveWindow: std.meta.FnPtr(fn (*const Window, x: i16, y: i16) void),
-        resizeWindow: std.meta.FnPtr(fn (*const Window, x: u16, y: u16) void),
-        setWindowTitle: std.meta.FnPtr(fn (*const Window, title: [*:0]const u8) void),
-        getEvent: std.meta.FnPtr(fn (*const Window, *UiEvent) UiEventType),
-        invalidate: std.meta.FnPtr(fn (*const Window, rect: Rectangle) void),
+        createWindow: FnPtr(fn (title: [*:0]const u8, min: Size, max: Size, flags: CreateWindowFlags) ?*const Window),
+        destroyWindow: FnPtr(fn (*const Window) void),
+        moveWindow: FnPtr(fn (*const Window, x: i16, y: i16) void),
+        resizeWindow: FnPtr(fn (*const Window, x: u16, y: u16) void),
+        setWindowTitle: FnPtr(fn (*const Window, title: [*:0]const u8) void),
+        getEvent: FnPtr(fn (*const Window, *UiEvent) UiEventType),
+        invalidate: FnPtr(fn (*const Window, rect: Rectangle) void),
     };
 
     pub const Process = extern struct {
-        yield: std.meta.FnPtr(fn () callconv(.C) void),
-        exit: std.meta.FnPtr(fn (u32) callconv(.C) noreturn),
+        yield: FnPtr(fn () void),
+        exit: FnPtr(fn (u32) noreturn),
     };
 
     pub const FileSystem = extern struct {
-        delete: std.meta.FnPtr(fn (path_ptr: [*]const u8, path_len: usize) callconv(.C) bool),
-        mkdir: std.meta.FnPtr(fn (path_ptr: [*]const u8, path_len: usize) callconv(.C) bool),
-        rename: std.meta.FnPtr(fn (old_path_ptr: [*]const u8, old_path_len: usize, new_path_ptr: [*]const u8, new_path_len: usize) callconv(.C) bool),
-        stat: std.meta.FnPtr(fn (path_ptr: [*]const u8, path_len: usize, *FileInfo) callconv(.C) bool),
+        delete: FnPtr(fn (path_ptr: [*]const u8, path_len: usize) bool),
+        mkdir: FnPtr(fn (path_ptr: [*]const u8, path_len: usize) bool),
+        rename: FnPtr(fn (old_path_ptr: [*]const u8, old_path_len: usize, new_path_ptr: [*]const u8, new_path_len: usize) callconv(.C) bool),
+        stat: FnPtr(fn (path_ptr: [*]const u8, path_len: usize, *FileInfo) bool),
 
-        openFile: std.meta.FnPtr(fn (path_ptr: [*]const u8, path_len: usize, FileAccess, FileMode) callconv(.C) FileHandle),
+        openFile: FnPtr(fn (path_ptr: [*]const u8, path_len: usize, FileAccess, FileMode) FileHandle),
 
-        read: std.meta.FnPtr(fn (FileHandle, ptr: [*]u8, len: usize) callconv(.C) usize),
-        write: std.meta.FnPtr(fn (FileHandle, ptr: [*]const u8, len: usize) callconv(.C) usize),
+        read: FnPtr(fn (FileHandle, ptr: [*]u8, len: usize) usize),
+        write: FnPtr(fn (FileHandle, ptr: [*]const u8, len: usize) usize),
 
-        seekTo: std.meta.FnPtr(fn (FileHandle, offset: u64) callconv(.C) bool),
-        // seekBy: fn (FileHandle, offset: i64) callconv(.C) usize,
-        // seekFromEnd: fn (FileHandle, offset: u64) callconv(.C) usize,
+        seekTo: FnPtr(fn (FileHandle, offset: u64) bool),
+        // seekBy: fn (FileHandle, offset: i64)  usize,
+        // seekFromEnd: fn (FileHandle, offset: u64)  usize,
 
-        flush: std.meta.FnPtr(fn (FileHandle) callconv(.C) bool),
-        close: std.meta.FnPtr(fn (FileHandle) callconv(.C) void),
+        flush: FnPtr(fn (FileHandle) bool),
+        close: FnPtr(fn (FileHandle) void),
 
-        openDir: std.meta.FnPtr(fn (path_ptr: [*]const u8, path_len: usize) callconv(.C) DirectoryHandle),
-        nextFile: std.meta.FnPtr(fn (DirectoryHandle, *FileInfo) callconv(.C) bool),
-        closeDir: std.meta.FnPtr(fn (DirectoryHandle) callconv(.C) void),
+        openDir: FnPtr(fn (path_ptr: [*]const u8, path_len: usize) DirectoryHandle),
+        nextFile: FnPtr(fn (DirectoryHandle, *FileInfo) bool),
+        closeDir: FnPtr(fn (DirectoryHandle) void),
     };
 
     pub const Input = extern struct {
-        getEvent: std.meta.FnPtr(fn (*InputEvent) callconv(.C) InputEventType),
-        getKeyboardEvent: std.meta.FnPtr(fn (*KeyboardEvent) callconv(.C) bool),
-        getMouseEvent: std.meta.FnPtr(fn (*MouseEvent) callconv(.C) bool),
+        getEvent: FnPtr(fn (*InputEvent) InputEventType),
+        getKeyboardEvent: FnPtr(fn (*KeyboardEvent) bool),
+        getMouseEvent: FnPtr(fn (*MouseEvent) bool),
+    };
+
+    pub const Network = extern struct {
+        getStatus: FnPtr(fn () NetworkStatus),
+        ping: FnPtr(fn ([*]Ping, usize) void),
+
+        dns: DNS,
+        udp: UDP,
+        tcp: TCP,
+
+        pub const DNS = extern struct {
+            /// resolves the dns entry `host` for the given `service`.
+            /// - `host` is a legal dns entry
+            /// - `port` is either a port number
+            /// - `buffer` and `limit` define a structure where all resolved IPs can be stored.
+            /// Function returns the number of host entries found or 0 if the host name could not be resolved.
+            resolve: FnPtr(fn (host: [*:0]const u8, port: u16, buffer: [*]EndPoint, limit: usize) usize),
+        };
+
+        pub const UDP = extern struct {
+            createSocket: FnPtr(fn () UdpSocket),
+            destroySocket: FnPtr(fn (UdpSocket) void),
+
+            bind: FnPtr(fn (UdpSocket, EndPoint) bool),
+
+            sendTo: FnPtr(fn (UdpSocket, receiver: EndPoint, data: [*]const u8, length: usize) usize),
+            receiveFrom: FnPtr(fn (UdpSocket, sender: *EndPoint, data: [*]u8, length: usize) usize),
+        };
+
+        pub const TCP = extern struct {
+            createSocket: FnPtr(fn () TcpSocket),
+            destroySocket: FnPtr(fn (TcpSocket) void),
+
+            bind: FnPtr(fn (TcpSocket, EndPoint) bool),
+            listen: FnPtr(fn (TcpSocket, EndPoint) bool),
+            connect: FnPtr(fn (TcpSocket, target: [*:0]const u8) bool),
+            write: FnPtr(fn (TcpSocket, data: [*]const u8, length: usize) usize),
+            read: FnPtr(fn (TcpSocket, data: [*]u8, length: usize) usize),
+        };
     };
 };
+
+pub const NetworkStatus = enum(u8) {
+    disconnected = 0, // no cable is plugged in
+    mac_available = 1, // cable is plugged in and connected, no DHCP or static IP performed yet
+    ip_available = 2, // interface got at least one IP assigned
+    gateway_available = 3, // the gateway, if any, is reachable
+};
+
+pub const IP = union(enum) {
+    v4: [4]u8,
+    v6: [16]u8,
+};
+
+pub const EndPoint = extern struct {
+    ip: IP,
+    port: u16,
+};
+
+pub const Ping = extern struct {
+    destination: IP, // who to ping
+    ttl: u16, // hops
+    timeout: u16, // ms, a minute timeout for ping is enough. if you have a higher ping, you have other problems
+    response: u16 = undefined, // response time in ms
+};
+
+pub const TcpSocket = enum(u32) { invalid = 0, _ };
+pub const UdpSocket = enum(u32) { invalid = 0, _ };
 
 pub const ExitCode = struct {
     pub const success = @as(u32, 0);
@@ -107,7 +180,7 @@ pub const ExitCode = struct {
     pub const killed = ~@as(u32, 0);
 };
 
-pub const ThreadFunction = std.meta.FnPtr(fn (?*anyopaque) callconv(.C) u32);
+pub const ThreadFunction = FnPtr(fn (?*anyopaque) u32);
 
 pub const ColorIndex = enum(u8) {
     _,
