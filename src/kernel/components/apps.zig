@@ -1,5 +1,6 @@
 const std = @import("std");
 const ashet = @import("../main.zig");
+const libashet = @import("ashet");
 const logger = std.log.scoped(.s);
 
 pub const AppID = struct {
@@ -190,10 +191,10 @@ pub fn startAppElf(app: AppID) !void {
         entry_point,
     });
 
-    try screen.spawnApp(app, entry_point);
+    try spawnApp(app, entry_point);
 }
 
-pub fn startAppBinary(screen: SplashScreen, app: AppID) !void {
+pub fn startAppBinary(app: AppID) !void {
     var path_buffer: [ashet.abi.max_path]u8 = undefined;
     const app_path = try std.fmt.bufPrint(&path_buffer, "SYS:/apps/{s}/code", .{app.getName()});
 
@@ -225,12 +226,12 @@ pub fn startAppBinary(screen: SplashScreen, app: AppID) !void {
             @panic("could not read all bytes on one go!");
     }
 
-    try screen.spawnApp(app, @ptrToInt(process_memory.ptr));
+    try spawnApp(app, @ptrToInt(process_memory.ptr));
 }
 
-fn spawnApp(screen: SplashScreen, app: AppID, entry_point: usize) !void {
+fn spawnApp(app: AppID, entry_point: usize) !void {
     const thread = try ashet.scheduler.Thread.spawn(@intToPtr(ashet.scheduler.ThreadFunction, entry_point), null, .{
-        .process = screen.task,
+        // .process = screen.task,
         .stack_size = 128 * 1024, // 128k
     });
     errdefer thread.kill();

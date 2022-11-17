@@ -14,6 +14,7 @@ pub const input = @import("components/input.zig");
 // pub const splash_screen = @import("components/splash_screen.zig");
 pub const multi_tasking = @import("components/multi_tasking.zig");
 pub const ui = @import("components/ui.zig");
+pub const apps = @import("components/apps.zig");
 
 export fn ashet_kernelMain() void {
     if (@import("builtin").target.os.tag != .freestanding)

@@ -1203,12 +1203,20 @@ pub const desktop = struct {
         } else if (selected_app) |app_index| {
             const app = &apps.buffer[app_index];
             if (last_click.manhattenDistance(point) < 2) {
-                logger.info("registered double click on app[{}]: {s}", .{ app_index, app.getName() });
+                // logger.info("registered double click on app[{}]: {s}", .{ app_index, app.getName() });
+
+                startApp(app.*) catch |err| logger.err("failed to start app {s}: {s}", .{ app.getName(), @errorName(err) });
             }
             last_click = point;
         }
 
         selected_app = selected;
+    }
+
+    fn startApp(app: App) !void {
+        try ashet.apps.startApp(.{
+            .name = app.getName(),
+        });
     }
 
     fn paint() void {
