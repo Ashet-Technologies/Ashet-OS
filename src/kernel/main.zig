@@ -11,7 +11,7 @@ pub const scheduler = @import("components/scheduler.zig");
 pub const syscalls = @import("components/syscalls.zig");
 pub const filesystem = @import("components/filesystem.zig");
 pub const input = @import("components/input.zig");
-pub const splash_screen = @import("components/splash_screen.zig");
+// pub const splash_screen = @import("components/splash_screen.zig");
 pub const multi_tasking = @import("components/multi_tasking.zig");
 pub const ui = @import("components/ui.zig");
 
@@ -51,13 +51,7 @@ fn main() !void {
 
     syscalls.initialize();
 
-    // spawn the UI system
-    {
-        const thread = try scheduler.Thread.spawn(ui.run, null, .{ .stack_size = 16384 });
-        try thread.setName("ui.run");
-        try thread.start();
-        thread.detach();
-    }
+    try ui.start();
 
     scheduler.start();
 

@@ -172,8 +172,8 @@ const AshetContext = struct {
             const mkicon = ctx.mkicon.run();
 
             mkicon.addArg(src_icon);
-
             mkicon.addArg(ctx.b.fmt("zig-out/apps/{s}.icon", .{name}));
+            mkicon.addArg("32x32");
 
             ctx.b.getInstallStep().dependOn(&mkicon.step);
         }
@@ -253,8 +253,9 @@ pub fn build(b: *std.build.Builder) void {
         }
         {
             const generate_stub_icon = tool_mkicon.run();
-            generate_stub_icon.addArg("design/apps/generic.png");
+            generate_stub_icon.addArg("artwork/os/default-app-icon.png");
             generate_stub_icon.addArg("src/kernel/data/generic-app.icon");
+            generate_stub_icon.addArg("32x32");
             kernel_exe.step.dependOn(&generate_stub_icon.step);
         }
     }
@@ -305,12 +306,12 @@ pub fn build(b: *std.build.Builder) void {
     };
 
     {
-        _ = ctx.createAshetApp("shell", "src/apps/dummy.zig", "design/apps/shell.png", mode);
-        _ = ctx.createAshetApp("commander", "src/apps/dummy.zig", "design/apps/commander.png", mode);
-        _ = ctx.createAshetApp("editor", "src/apps/dummy.zig", "design/apps/text-editor.png", mode);
-        _ = ctx.createAshetApp("browser", "src/apps/dummy.zig", "design/apps/browser.png", mode);
-        _ = ctx.createAshetApp("music", "src/apps/dummy.zig", "design/apps/music.png", mode);
-        _ = ctx.createAshetApp("dungeon", "src/apps/dungeon.zig", "design/apps/dungeon.png", mode);
+        _ = ctx.createAshetApp("shell", "src/apps/dummy.zig", "artwork/apps/shell.png", mode);
+        _ = ctx.createAshetApp("commander", "src/apps/dummy.zig", "artwork/apps/commander.png", mode);
+        _ = ctx.createAshetApp("editor", "src/apps/dummy.zig", "artwork/apps/text-editor.png", mode);
+        _ = ctx.createAshetApp("browser", "src/apps/dummy.zig", "artwork/apps/browser.png", mode);
+        _ = ctx.createAshetApp("music", "src/apps/dummy.zig", "artwork/apps/music.png", mode);
+        _ = ctx.createAshetApp("dungeon", "src/apps/dungeon.zig", "artwork/apps/dungeon.png", mode);
     }
 
     const run_step = b.step("run", "Run the app");

@@ -120,6 +120,9 @@ pub const defaults = struct {
             colors[index] = Color.fromRgb888(r, g, b);
             index += 1;
         }
+        while (index < colors.len) : (index += 1) {
+            colors[index] = Color.fromRgb888(0xFF, 0x00, 0xFF);
+        }
 
         break :blk colors;
     };

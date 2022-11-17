@@ -205,7 +205,7 @@ pub const ColorIndex = enum(u8) {
 pub const palette_size = std.math.maxInt(@typeInfo(ColorIndex).Enum.tag_type) + 1;
 
 /// A 16 bpp color value using RGB565 encoding.
-pub const Color = packed struct { //(u16)
+pub const Color = packed struct(u16) {
     r: u5,
     g: u6,
     b: u5,

@@ -3,6 +3,15 @@ const astd = @import("ashet-std");
 const logger = std.log.scoped(.ui);
 const ashet = @import("../main.zig");
 
+pub fn start() !void {
+    const thread = try ashet.scheduler.Thread.spawn(run, null, .{
+        .stack_size = 2 * 65536,
+    });
+    try thread.setName("ui.run");
+    try thread.start();
+    thread.detach();
+}
+
 const Size = ashet.abi.Size;
 const Point = ashet.abi.Point;
 const Rectangle = ashet.abi.Rectangle;
@@ -64,40 +73,42 @@ const MouseAction = union(enum) {
 
 var mouse_action: MouseAction = .default;
 
-const demo = struct {
-    var windows = std.BoundedArray(*Window, 5){};
+// const demo = struct {
+//     var windows = std.BoundedArray(*Window, 5){};
 
-    fn init() void {
-        const bot = Window.create("Dragon Craft - src/main.zig", Size.new(0, 0), Size.new(200, 100), Size.new(200, 100)) catch @panic("oom");
-        const mid = Window.create("Middle", Size.new(0, 0), Size.new(400, 300), Size.new(160, 80)) catch @panic("oom");
-        const top = Window.create("Top", Size.new(47, 47), Size.new(47, 47), Size.new(47, 47)) catch @panic("oom");
-        top.user_facing.flags.focus = true;
+//     fn init() void {
+//         const bot = Window.create(null, "Dragon Craft - src/main.zig", Size.new(0, 0), Size.new(200, 100), Size.new(200, 100)) catch @panic("oom");
+//         const mid = Window.create(null, "Middle", Size.new(0, 0), Size.new(400, 300), Size.new(160, 80)) catch @panic("oom");
+//         const top = Window.create(null, "Top", Size.new(47, 47), Size.new(47, 47), Size.new(47, 47)) catch @panic("oom");
+//         top.user_facing.flags.focus = true;
 
-        windows.appendAssumeCapacity(bot);
-        windows.appendAssumeCapacity(mid);
-        windows.appendAssumeCapacity(top);
-    }
+//         windows.appendAssumeCapacity(bot);
+//         windows.appendAssumeCapacity(mid);
+//         windows.appendAssumeCapacity(top);
+//     }
 
-    fn update() void {
-        var index: usize = 0;
-        loop: while (index < windows.len) {
-            const window = windows.buffer[index];
+//     fn update() void {
+//         var index: usize = 0;
+//         loop: while (index < windows.len) {
+//             const window = windows.buffer[index];
 
-            while (window.pullEvent()) |event| {
-                logger.info("event for '{s}': {}", .{ window.title(), event });
-                if (event == .window_close) {
-                    _ = windows.swapRemove(index);
-                    window.destroy();
-                    continue :loop;
-                }
-            }
-            index += 1;
-        }
-    }
-};
+//             while (window.pullEvent()) |event| {
+//                 logger.info("event for '{s}': {}", .{ window.title(), event });
+//                 if (event == .window_close) {
+//                     _ = windows.swapRemove(index);
+//                     window.destroy();
+//                     continue :loop;
+//                 }
+//             }
+//             index += 1;
+//         }
+//     }
+// };
 
-pub fn run(_: ?*anyopaque) callconv(.C) u32 {
-    demo.init();
+fn run(_: ?*anyopaque) callconv(.C) u32 {
+    desktop.init();
+
+    // demo.init();
 
     while (true) {
         while (ashet.multi_tasking.exclusive_video_controller != null) {
@@ -273,7 +284,7 @@ pub fn run(_: ?*anyopaque) callconv(.C) u32 {
                 repaint();
             }
 
-            demo.update();
+            // demo.update();
 
             ashet.scheduler.yield();
         }
@@ -321,7 +332,9 @@ fn windowFromCursor(point: Point) ?WindowSurface {
     return null;
 }
 
-const framebuffer_wallpaper_shift = 240;
+// offsets for well-known palette items
+const framebuffer_wallpaper_shift = 255 - 15;
+const framebuffer_default_icon_shift = framebuffer_wallpaper_shift - 15;
 
 fn initializeGraphics() void {
     ashet.video.setBorder(ColorIndex.get(0));
@@ -329,8 +342,11 @@ fn initializeGraphics() void {
 
     ashet.video.palette.* = ashet.video.defaults.palette;
 
-    // use the last 15 colors for the wallpaper
+    for (desktop.apps.slice()) |app| {
+        std.mem.copy(Color, ashet.video.palette[app.palette_base .. app.palette_base + 15], &app.icon.palette);
+    }
 
+    std.mem.copy(Color, ashet.video.palette[framebuffer_default_icon_shift..], &desktop.default_icon.palette);
     std.mem.copy(Color, ashet.video.palette[framebuffer_wallpaper_shift..], &wallpaper.palette);
 }
 
@@ -405,7 +421,7 @@ fn paintButton(bounds: Rectangle, style: Theme.WindowStyle, bg: ColorIndex, icon
     framebuffer.verticalLine(bounds.x, bounds.y, bounds.height, style.border);
     framebuffer.verticalLine(bounds.x + @intCast(u15, bounds.width) - 1, bounds.y, bounds.height, style.border);
     framebuffer.rectangle(bounds.x + 1, bounds.y + 1, bounds.width - 2, bounds.height - 2, bg);
-    framebuffer.icon(bounds.x + 1, bounds.y + 1, icon);
+    framebuffer.icon(bounds.x + 1, bounds.y + 1, &icon);
 }
 
 fn repaint() void {
@@ -413,6 +429,8 @@ fn repaint() void {
     for (wallpaper.pixels) |c, i| {
         framebuffer.fb[i] = c.shift(framebuffer_wallpaper_shift - 1);
     }
+
+    desktop.paint();
 
     {
         var iter = MinimizedIterator.init();
@@ -496,7 +514,7 @@ fn repaint() void {
         }
     }
 
-    framebuffer.icon(mouse_cursor_pos.x, mouse_cursor_pos.y, icons.cursor);
+    framebuffer.icon(mouse_cursor_pos.x, mouse_cursor_pos.y, &icons.cursor);
 }
 
 var focused_window: ?*Window = null;
@@ -593,15 +611,25 @@ const Event = union(ashet.abi.UiEventType) {
     window_resizing,
 };
 
+pub fn destroyAllWindowsForProcess(proc: *ashet.multi_tasking.Process) void {
+    var iter = WindowIterator.init(WindowIterator.all, .top_to_bottom);
+    while (iter.next()) |window| {
+        if (window.owner == proc) {
+            window.destroy();
+        }
+    }
+}
+
 const Window = struct {
     memory: std.heap.ArenaAllocator,
     user_facing: ashet.abi.Window,
     title_buffer: std.ArrayList(u8),
+    owner: ?*ashet.multi_tasking.Process,
 
     node: WindowQueue.Node = .{ .data = {} },
     event_queue: astd.RingBuffer(Event, 16) = .{}, // 16 events should be easily enough
 
-    fn create(caption: []const u8, min: ashet.abi.Size, max: ashet.abi.Size, initial_size: Size) !*Window {
+    fn create(owner: ?*ashet.multi_tasking.Process, caption: []const u8, min: ashet.abi.Size, max: ashet.abi.Size, initial_size: Size) !*Window {
         var temp_arena = std.heap.ArenaAllocator.init(ashet.memory.allocator);
         var window = temp_arena.allocator().create(Window) catch |err| {
             temp_arena.deinit();
@@ -609,6 +637,7 @@ const Window = struct {
         };
 
         window.* = Window{
+            .owner = owner,
             .memory = temp_arena,
             .user_facing = ashet.abi.Window{
                 .pixels = undefined,
@@ -853,9 +882,9 @@ const framebuffer = struct {
     fn icon(x: i16, y: i16, sprite: anytype) void {
         for (sprite) |row, dy| {
             for (row) |pix, dx| {
-                if (pix) |c| {
-                    setPixel(x + @intCast(i16, dx), y + @intCast(i16, dy), c);
-                }
+                const optpix: ?ColorIndex = pix; // allow both u8 and ?u8
+                const color = optpix orelse continue;
+                setPixel(x + @intCast(i16, dx), y + @intCast(i16, dy), color);
             }
         }
     }
@@ -1016,4 +1045,142 @@ const wallpaper = struct {
 
     const pixels = @bitCast([400 * 300]ColorIndex, raw[0 .. 400 * 300].*);
     const palette = @bitCast([15]Color, @as([]const u8, raw)[400 * 300 .. 400 * 300 + 15 * @sizeOf(Color)].*);
+};
+
+pub const desktop = struct {
+    const Icon = struct {
+        pub const width = 32;
+        pub const height = 32;
+
+        bitmap: [height][width]?ColorIndex,
+        palette: [15]Color,
+
+        pub fn load(stream: anytype, offset: u8) !Icon {
+            var icon: Icon = undefined;
+
+            var pixels: [height][width]u8 = undefined;
+
+            try stream.readNoEof(std.mem.sliceAsBytes(&pixels));
+            try stream.readNoEof(std.mem.sliceAsBytes(&icon.palette));
+
+            for (pixels) |row, y| {
+                for (row) |color, x| {
+                    icon.bitmap[y][x] = if (color == 0)
+                        null
+                    else
+                        ColorIndex.get(offset + color - 1);
+                }
+            }
+
+            for (icon.bitmap) |row| {
+                for (row) |c| {
+                    std.debug.assert(c == null or (c.?.index() >= offset and c.?.index() < offset + 15));
+                }
+            }
+
+            return icon;
+        }
+    };
+
+    const default_icon = blk: {
+        @setEvalBranchQuota(20_000);
+
+        const data = @embedFile("../data/generic-app.icon");
+
+        var stream = std.io.fixedBufferStream(data);
+
+        break :blk Icon.load(stream.reader(), framebuffer_default_icon_shift) catch @compileError("invalid icon format");
+
+        // var icon = Icon{ .bitmap = undefined, .palette = undefined };
+        // std.mem.copy(u8, std.mem.sliceAsBytes(&icon.bitmap), data[0 .. 64 * 64]);
+        // for (icon.palette) |*pal, i| {
+        //     pal.* = @as(u16, pal_src[2 * i + 0]) << 0 |
+        //         @as(u16, pal_src[2 * i + 1]) << 8;
+        // }
+        // break :blk icon;
+    };
+
+    const App = struct {
+        name: [32]u8,
+        icon: Icon,
+        palette_base: u8,
+
+        pub fn getName(app: *const App) []const u8 {
+            return std.mem.sliceTo(&app.name, 0);
+        }
+    };
+
+    const AppList = std.BoundedArray(App, 15);
+
+    var apps: AppList = .{};
+
+    fn init() void {
+        reload() catch |err| {
+            logger.err("failed to load desktop applications: {}", .{err});
+        };
+    }
+
+    fn paint() void {
+        const lower_limit = framebuffer.height - 11 - 8 - 4;
+        const padding = 8;
+        var x: i16 = 8;
+        var y: i16 = 8;
+        for (apps.slice()) |*app| {
+            const title = app.getName();
+
+            framebuffer.icon(x, y, &app.icon.bitmap);
+            framebuffer.text(x + Icon.width / 2 - @intCast(u15, 3 * title.len), y + Icon.height, title, @intCast(u16, 6 * title.len), ColorIndex.get(0x0));
+
+            y += (Icon.height + padding);
+            if (y >= lower_limit) {
+                y = 8;
+                x += (Icon.width + padding);
+            }
+        }
+    }
+
+    fn reload() !void {
+        var dir = try ashet.filesystem.openDir("SYS:/apps");
+        defer ashet.filesystem.closeDir(dir);
+
+        apps.len = 0;
+        var pal_off: u8 = framebuffer_default_icon_shift;
+
+        while (try ashet.filesystem.next(dir)) |ent| {
+            const app = apps.addOne() catch {
+                logger.warn("The system can only handle {} apps right now, but more are installed.", .{apps.len});
+                break;
+            };
+
+            pal_off -= 15;
+            app.* = App{
+                .name = undefined,
+                .icon = undefined,
+                .palette_base = pal_off,
+            };
+
+            {
+                const name = ent.getName();
+                std.mem.set(u8, &app.name, 0);
+                std.mem.copy(u8, &app.name, name[0..std.math.min(name.len, app.name.len)]);
+            }
+
+            var path_buffer: [ashet.abi.max_path]u8 = undefined;
+
+            const icon_path = try std.fmt.bufPrint(&path_buffer, "SYS:/apps/{s}/icon", .{ent.getName()});
+
+            if (ashet.filesystem.open(icon_path, .read_only, .open_existing)) |icon_handle| {
+                defer ashet.filesystem.close(icon_handle);
+                app.icon = try Icon.load(ashet.filesystem.fileReader(icon_handle), app.palette_base);
+            } else |_| {
+                std.log.warn("Application {s} does not have an icon. Using default.", .{ent.getName()});
+                app.icon = default_icon;
+            }
+        }
+
+        logger.info("loaded apps:", .{});
+        for (apps.slice()) |app, index| {
+            logger.info("app[{}]: {s}", .{ index, app.getName() });
+        }
+    }
 };

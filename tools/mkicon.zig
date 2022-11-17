@@ -93,11 +93,15 @@ pub fn main() !void {
         var src_pixels = raw_image.iterator();
         while (src_pixels.next()) |src_color| : (i += 1) {
             if (!isTransparent(src_color)) {
-                bitmap[i] = 0x01 + @truncate(u8, getBestMatch(palette, reduceTo565(src_color)));
+                bitmap[i] = 0x01 + @intCast(u8, getBestMatch(palette, reduceTo565(src_color)));
             } else {
                 bitmap[i] = 0x00; // transparent
             }
         }
+    }
+
+    for (bitmap) |c| {
+        if (c >= 16) @panic("color index out of range!");
     }
 
     // compute bitmap
