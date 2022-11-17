@@ -96,6 +96,10 @@ pub const Thread = struct {
             .process = thread_proc,
         };
 
+        if (thread.process) |proc| {
+            proc.thread_count += 1;
+        }
+
         if (@import("builtin").mode == .Debug) {
             thread.debug_info.entry_point = @ptrToInt(func);
         }
@@ -203,6 +207,13 @@ pub const Thread = struct {
         }
 
         logger.info("killing thread {}", .{thread});
+
+        if (thread.process) |proc| {
+            proc.thread_count -= 1;
+            if (proc.thread_count == 0) {
+                proc.kill();
+            }
+        }
 
         const stack_top = thread.getBasePointer();
 

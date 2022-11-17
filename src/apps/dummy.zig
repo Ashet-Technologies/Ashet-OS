@@ -10,10 +10,10 @@ pub fn main() void {
 
     const window = ui.createWindow(
         "Application",
+        ashet.abi.Size.new(0, 0),
+        ashet.abi.Size.new(400, 300),
         ashet.abi.Size.new(128, 128),
-        ashet.abi.Size.new(128, 128),
-        ashet.abi.Size.new(128, 128),
-        .{ .popup = true },
+        .{ .popup = false },
     ) orelse return;
     defer ui.destroyWindow(window);
 

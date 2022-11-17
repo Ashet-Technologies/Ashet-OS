@@ -78,6 +78,7 @@ pub var exclusive_video_controller: ?*Process = null;
 
 pub const Process = struct {
     master_thread: *ashet.scheduler.Thread,
+    thread_count: usize = 0,
 
     pub const SpawnOptions = struct {
         stack_size: usize = 128 * 1024, // 128k
@@ -116,7 +117,9 @@ pub const Process = struct {
             exclusive_video_controller = null;
         }
         ashet.ui.destroyAllWindowsForProcess(proc);
-        proc.master_thread.kill();
+        if (proc.thread_count > 0) {
+            proc.master_thread.kill();
+        }
         proc.* = undefined;
     }
 
