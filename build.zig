@@ -9,7 +9,12 @@ const pkgs = struct {
     pub const libashet = std.build.Pkg{
         .name = "ashet",
         .source = .{ .path = "src/libashet/main.zig" },
-        .dependencies = &.{ abi, pkgs.@"text-editor" },
+        .dependencies = &.{ abi, ashet_std, pkgs.@"text-editor" },
+    };
+
+    pub const ashet_std = std.build.Pkg{
+        .name = "ashet-std",
+        .source = .{ .path = "src/std/std.zig" },
     };
 
     pub const virtio = std.build.Pkg{
@@ -228,6 +233,7 @@ pub fn build(b: *std.build.Builder) void {
         kernel_exe.setBuildMode(mode);
         kernel_exe.addPackage(system_platform.hal);
         kernel_exe.addPackage(pkgs.abi);
+        kernel_exe.addPackage(pkgs.ashet_std);
         kernel_exe.addPackage(pkgs.libashet);
         kernel_exe.addPackage(FatFS.getPackage(b, "fatfs", fatfs_config));
         kernel_exe.setLinkerScriptPath(system_platform.linkerscript);
@@ -310,11 +316,11 @@ pub fn build(b: *std.build.Builder) void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
-    const exe_tests = b.addTest("src/main.zig");
-    exe_tests.setTarget(system_platform.target);
+    const exe_tests = b.addTest("src/std/std.zig");
+    exe_tests.setTarget(.{});
     exe_tests.setBuildMode(mode);
 
-    const test_step = b.step("test", "Run unit tests");
+    const test_step = b.step("test", "Run unit tests on the standard library");
     test_step.dependOn(&exe_tests.step);
 
     // const simu_step = b.step("sim", "Runs the PC simulator");

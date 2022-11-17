@@ -504,6 +504,10 @@ pub const Point = extern struct {
     pub fn new(x: i16, y: i16) Point {
         return Point{ .x = x, .y = y };
     }
+
+    pub fn eql(a: Point, b: Point) bool {
+        return (a.x == b.x) and (a.y == b.y);
+    }
 };
 
 pub const Size = extern struct {
@@ -512,6 +516,10 @@ pub const Size = extern struct {
 
     pub fn new(w: u16, h: u16) Size {
         return Size{ .width = w, .height = h };
+    }
+
+    pub fn eql(a: Size, b: Size) bool {
+        return (a.width == b.width) and (a.height == b.height);
     }
 };
 
@@ -535,7 +543,7 @@ pub const Rectangle = extern struct {
     }
 
     pub fn size(rect: Rectangle) Size {
-        return Point{ .width = rect.width, .height = rect.height };
+        return Size{ .width = rect.width, .height = rect.height };
     }
 
     pub fn contains(rect: Rectangle, pt: Point) bool {
@@ -543,6 +551,10 @@ pub const Rectangle = extern struct {
             (pt.x < rect.x + @intCast(u15, rect.width)) and
             (pt.y >= rect.y) and
             (pt.y < rect.y + @intCast(u15, rect.height));
+    }
+
+    pub fn eql(a: Rectangle, b: Rectangle) bool {
+        return a.size().eql(b.size()) and a.position().eql(b.position());
     }
 };
 
@@ -567,8 +579,14 @@ pub const UiEventType = enum(u16) {
     /// The window was restored from minimized state.
     window_restore,
 
+    /// The window is currently moving on the screen. Query `window.bounds` to get the new position.
+    window_moving,
+
     /// The window was moved on the screen. Query `window.bounds` to get the new position.
     window_moved,
+
+    /// The window size is currently changing. Query `window.bounds` to get the new size.
+    window_resizing,
 
     /// The window size changed. Query `window.bounds` to get the new size.
     window_resized,

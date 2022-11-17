@@ -53,7 +53,7 @@ fn main() !void {
 
     // spawn the UI system
     {
-        const thread = try scheduler.Thread.spawn(ui.run, null, .{});
+        const thread = try scheduler.Thread.spawn(ui.run, null, .{ .stack_size = 16384 });
         try thread.setName("ui.run");
         try thread.start();
         thread.detach();

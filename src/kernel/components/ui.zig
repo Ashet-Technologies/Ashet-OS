@@ -1,4 +1,5 @@
 const std = @import("std");
+const astd = @import("ashet-std");
 const logger = std.log.scoped(.ui);
 const ashet = @import("../main.zig");
 
@@ -8,10 +9,9 @@ const Rectangle = ashet.abi.Rectangle;
 const ColorIndex = ashet.abi.ColorIndex;
 const Color = ashet.abi.Color;
 
+const ButtonEvent = enum { minimize, maximize, close, resize };
 const WindowButton = struct {
-    const Event = enum { minimize, maximize, close, resize };
-
-    event: Event,
+    event: ButtonEvent,
     bounds: Rectangle,
 };
 
@@ -64,11 +64,40 @@ const MouseAction = union(enum) {
 
 var mouse_action: MouseAction = .default;
 
+const demo = struct {
+    var windows = std.BoundedArray(*Window, 5){};
+
+    fn init() void {
+        const bot = Window.create("Dragon Craft - src/main.zig", Size.new(0, 0), Size.new(200, 100), Size.new(200, 100)) catch @panic("oom");
+        const mid = Window.create("Middle", Size.new(0, 0), Size.new(400, 300), Size.new(160, 80)) catch @panic("oom");
+        const top = Window.create("Top", Size.new(47, 47), Size.new(47, 47), Size.new(47, 47)) catch @panic("oom");
+        top.user_facing.flags.focus = true;
+
+        windows.appendAssumeCapacity(bot);
+        windows.appendAssumeCapacity(mid);
+        windows.appendAssumeCapacity(top);
+    }
+
+    fn update() void {
+        var index: usize = 0;
+        loop: while (index < windows.len) {
+            const window = windows.buffer[index];
+
+            while (window.pullEvent()) |event| {
+                logger.info("event for '{s}': {}", .{ window.title(), event });
+                if (event == .window_close) {
+                    _ = windows.swapRemove(index);
+                    window.destroy();
+                    continue :loop;
+                }
+            }
+            index += 1;
+        }
+    }
+};
+
 pub fn run(_: ?*anyopaque) callconv(.C) u32 {
-    _ = createWindow("Dragon Craft - src/main.zig", Size.new(0, 0), Size.new(200, 100), Size.new(200, 100)) catch @panic("oom");
-    _ = createWindow("Middle", Size.new(0, 0), Size.new(400, 300), Size.new(160, 80)) catch @panic("oom");
-    const top = createWindow("Top", Size.new(47, 47), Size.new(47, 47), Size.new(47, 47)) catch @panic("oom");
-    top.user_facing.flags.focus = true;
+    demo.init();
 
     while (true) {
         while (ashet.multi_tasking.exclusive_video_controller != null) {
@@ -80,21 +109,25 @@ pub fn run(_: ?*anyopaque) callconv(.C) u32 {
         // everything about the graphics state.
         initializeGraphics();
 
-        // Enforce a full repaint of the user interface, so we have it "online"
-        repaint();
-
         // Reset the state
         mouse_action = .default;
 
-        // Mark the top window focused
-        WindowIterator.updateFocus();
+        // Mark the right window focused
+        _ = WindowIterator.updateFocus();
+
+        // Enforce a full repaint of the user interface, so we have it "online"
+        repaint();
 
         while (ashet.multi_tasking.exclusive_video_controller == null) {
             var force_repaint = false;
             event_loop: while (ashet.input.getEvent()) |input_event| {
                 switch (input_event) {
                     .keyboard => |event| {
-                        _ = event;
+                        if (focused_window) |window| {
+                            if (!window.user_facing.flags.minimized) {
+                                window.pushEvent(.{ .keyboard = event });
+                            }
+                        }
                     },
                     .mouse => |event| {
                         const mouse_point = Point.new(@intCast(i16, event.x), @intCast(i16, event.y));
@@ -105,82 +138,111 @@ pub fn run(_: ?*anyopaque) callconv(.C) u32 {
                         }
                         switch (mouse_action) {
                             .default => {
-                                if (event.type == .button_press and event.button == .left) {
-                                    logger.info("click on ({},{})", .{ event.x, event.y });
-                                    if (windowFromCursor(mouse_point)) |surface| {
-                                        WindowIterator.moveToTop(surface.window);
-                                        force_repaint = true;
+                                switch (event.type) {
+                                    .button_press => {
+                                        if (windowFromCursor(mouse_point)) |surface| {
+                                            if (event.button == .left) {
+                                                // TODO: If was moved to top, send activate event
+                                                WindowIterator.moveToTop(surface.window);
+                                                force_repaint = true;
 
-                                        switch (surface.part) {
-                                            .title_bar => {
-                                                mouse_action = MouseAction{
-                                                    .drag_window = DragAction{
-                                                        .window = surface.window,
-                                                        .start = mouse_point,
+                                                switch (surface.part) {
+                                                    .title_bar => {
+                                                        mouse_action = MouseAction{
+                                                            .drag_window = DragAction{
+                                                                .window = surface.window,
+                                                                .start = mouse_point,
+                                                            },
+                                                        };
+                                                        continue :event_loop;
                                                     },
-                                                };
-                                                continue :event_loop;
-                                            },
-                                            .button => |button| switch (button) {
-                                                .minimize => {
-                                                    surface.window.user_facing.flags.minimized = true;
-                                                    WindowIterator.updateFocus();
-                                                },
-                                                .maximize => surface.window.user_facing.client_rectangle = Rectangle.new(Point.new(1, 11), max_window_content_size),
-                                                .close => {}, // TODO: Forward event to app
-                                                .resize => {
-                                                    mouse_action = MouseAction{
-                                                        .resize_window = DragAction{
-                                                            .window = surface.window,
-                                                            .start = mouse_point,
+                                                    .button => |button| switch (button) {
+                                                        .minimize => surface.window.minimize(),
+                                                        .maximize => surface.window.maximize(),
+                                                        .close => {
+                                                            surface.window.pushEvent(.window_close);
+                                                            continue :event_loop;
                                                         },
-                                                    };
-                                                    continue :event_loop;
-                                                },
-                                            },
-                                            .content => {}, // TODO: Forward event to app
-                                        }
+                                                        .resize => {
+                                                            mouse_action = MouseAction{
+                                                                .resize_window = DragAction{
+                                                                    .window = surface.window,
+                                                                    .start = mouse_point,
+                                                                },
+                                                            };
+                                                            continue :event_loop;
+                                                        },
+                                                    },
+                                                    .content => {}, // ignore event here, just forward
+                                                }
+                                            }
 
-                                        logger.info("User clicked on window '{s}': {}", .{ surface.window.title.items, surface.part });
-                                    } else if (minimizedFromCursor(mouse_point)) |mini| {
-                                        force_repaint = true;
-                                        if (mini.restore_button.contains(mouse_point)) {
-                                            mini.window.user_facing.flags.minimized = false;
-                                            WindowIterator.updateFocus();
-                                        } else if (mini.close_button.contains(mouse_point)) {
-                                            // TODO: Forward event to app
+                                            if (surface.part == .content) {
+                                                surface.window.pushEvent(.{ .mouse = event });
+                                            }
+                                        } else if (minimizedFromCursor(mouse_point)) |mini| {
+                                            if (event.button == .left) {
+                                                force_repaint = true;
+                                                if (mini.restore_button.contains(mouse_point)) {
+                                                    mini.window.restore();
+                                                    WindowIterator.moveToTop(mini.window);
+                                                    force_repaint = true;
+                                                } else if (mini.close_button.contains(mouse_point)) {
+                                                    mini.window.pushEvent(.window_close);
+                                                } else {
+                                                    focused_window = mini.window;
+                                                }
+                                            }
                                         } else {
-                                            // TODO: Select minimized window
+                                            // user clicked desktop, handle desktop icons here
                                         }
+                                    },
+                                    .button_release, .motion => {
+                                        if (windowFromCursor(mouse_point)) |surface| {
+                                            if (surface.part == .content) {
+                                                surface.window.pushEvent(.{ .mouse = event });
+                                            }
+                                        }
+                                    },
+                                }
+                            },
+                            .drag_window => |*action| blk: {
+                                defer action.start = mouse_point;
+                                const dx = @intCast(i15, mouse_point.x - action.start.x);
+                                const dy = @intCast(i15, mouse_point.y - action.start.y);
+
+                                if (event.button == .left and event.type == .button_release) {
+                                    action.window.pushEvent(.window_moved);
+                                    mouse_action = .default; // must be last, we override the contents of action with this!
+                                    break :blk;
+                                } else if (dx != 0 or dy != 0) {
+                                    action.window.user_facing.client_rectangle.x += dx;
+                                    action.window.user_facing.client_rectangle.y += dy;
+                                    action.window.pushEvent(.window_moving);
+                                }
+                            },
+                            .resize_window => |*action| blk: {
+                                defer action.start = mouse_point;
+                                const dx = @intCast(i15, mouse_point.x - action.start.x);
+                                const dy = @intCast(i15, mouse_point.y - action.start.y);
+
+                                if (event.button == .left and event.type == .button_release) {
+                                    action.window.pushEvent(.window_resized);
+                                    mouse_action = .default; // must be last, we override the contents of action with this!
+                                    break :blk;
+                                } else if (dx != 0 or dy != 0) {
+                                    const rect = &action.window.user_facing.client_rectangle;
+                                    const min = action.window.user_facing.min_size;
+                                    const max = action.window.user_facing.max_size;
+
+                                    const previous = rect.size();
+
+                                    rect.width = @intCast(u16, std.math.clamp(@as(i17, rect.width) + dx, min.width, max.width));
+                                    rect.height = @intCast(u16, std.math.clamp(@as(i17, rect.height) + dy, min.height, max.height));
+
+                                    if (!rect.size().eql(previous)) {
+                                        action.window.pushEvent(.window_resizing);
                                     }
-                                }
-                            },
-                            .drag_window => |*action| {
-                                defer action.start = mouse_point;
-                                const dx = @intCast(i15, mouse_point.x - action.start.x);
-                                const dy = @intCast(i15, mouse_point.y - action.start.y);
-
-                                action.window.user_facing.client_rectangle.x += dx;
-                                action.window.user_facing.client_rectangle.y += dy;
-
-                                if (event.button == .left and event.type == .button_release) {
-                                    mouse_action = .default;
-                                }
-                            },
-                            .resize_window => |*action| {
-                                defer action.start = mouse_point;
-                                const dx = @intCast(i15, mouse_point.x - action.start.x);
-                                const dy = @intCast(i15, mouse_point.y - action.start.y);
-
-                                const rect = &action.window.user_facing.client_rectangle;
-                                const min = action.window.user_facing.min_size;
-                                const max = action.window.user_facing.max_size;
-
-                                rect.width = @intCast(u16, std.math.clamp(@as(i17, rect.width) + dx, min.width, max.width));
-                                rect.height = @intCast(u16, std.math.clamp(@as(i17, rect.height) + dy, min.height, max.height));
-
-                                if (event.button == .left and event.type == .button_release) {
-                                    mouse_action = .default;
                                 }
                             },
                         }
@@ -188,9 +250,15 @@ pub fn run(_: ?*anyopaque) callconv(.C) u32 {
                 }
             }
 
+            if (WindowIterator.updateFocus()) {
+                force_repaint = true;
+            }
+
             if (force_repaint) {
                 repaint();
             }
+
+            demo.update();
 
             ashet.scheduler.yield();
         }
@@ -200,7 +268,7 @@ pub fn run(_: ?*anyopaque) callconv(.C) u32 {
 const WindowSurface = struct {
     const Part = union(enum) {
         title_bar,
-        button: WindowButton.Event,
+        button: ButtonEvent,
         content,
     };
 
@@ -275,7 +343,7 @@ const MinimizedIterator = struct {
     fn next(iter: *MinimizedIterator) ?MinimizedWindow {
         const window = iter.inner.next() orelse return null;
 
-        const title = std.mem.sliceTo(window.title.items, 0);
+        const title = window.title();
         const width = @intCast(u15, std.math.min(6 * title.len + 2 + 11 + 10, 75));
         defer iter.dx += (width + 4);
 
@@ -385,7 +453,7 @@ fn repaint() void {
             framebuffer.text(
                 window_rectangle.x + 2,
                 window_rectangle.y + 2,
-                std.mem.sliceTo(window.title.items, 0),
+                window.title(),
                 title_width - 2,
                 style.font,
             );
@@ -416,6 +484,8 @@ fn repaint() void {
     framebuffer.icon(mouse_cursor_pos.x, mouse_cursor_pos.y, icons.cursor);
 }
 
+var focused_window: ?*Window = null;
+
 const WindowIterator = struct {
     const Filter = std.meta.FnPtr(fn (*Window) bool);
     const Direction = enum { top_to_bottom, bottom_to_top };
@@ -436,20 +506,21 @@ const WindowIterator = struct {
         window.user_facing.flags.minimized = false;
         list.remove(&window.node);
         list.append(&window.node);
-        updateFocus();
+        focused_window = window;
     }
 
     /// Updates which windows has the focus bit set.
-    pub fn updateFocus() void {
+    pub fn updateFocus() bool {
+        var changes = false;
         var iter = init(all, .top_to_bottom);
         while (iter.next()) |win| {
-            win.user_facing.flags.focus = false;
+            const has_focus = (focused_window == win);
+            if (win.user_facing.flags.focus != has_focus) {
+                changes = true;
+            }
+            win.user_facing.flags.focus = has_focus;
         }
-
-        iter = init(regular, .top_to_bottom);
-        if (iter.next()) |top| {
-            top.user_facing.flags.focus = true;
-        }
+        return true;
     }
 
     pub fn init(filter: Filter, direction: Direction) WindowIterator {
@@ -494,18 +565,150 @@ const WindowIterator = struct {
 
 const WindowQueue = std.TailQueue(void);
 
+const Event = union(ashet.abi.UiEventType) {
+    none,
+    mouse: ashet.abi.MouseEvent,
+    keyboard: ashet.abi.KeyboardEvent,
+    window_close,
+    window_minimize,
+    window_restore,
+    window_moving,
+    window_moved,
+    window_resized,
+    window_resizing,
+};
+
 const Window = struct {
     memory: std.heap.ArenaAllocator,
     user_facing: ashet.abi.Window,
-    node: WindowQueue.Node,
-    title: std.ArrayList(u8),
+    title_buffer: std.ArrayList(u8),
+
+    node: WindowQueue.Node = .{ .data = {} },
+    event_queue: astd.RingBuffer(Event, 16) = .{}, // 16 events should be easily enough
+
+    fn create(caption: []const u8, min: ashet.abi.Size, max: ashet.abi.Size, initial_size: Size) !*Window {
+        var temp_arena = std.heap.ArenaAllocator.init(ashet.memory.allocator);
+        var window = temp_arena.allocator().create(Window) catch |err| {
+            temp_arena.deinit();
+            return err;
+        };
+
+        window.* = Window{
+            .memory = temp_arena,
+            .user_facing = ashet.abi.Window{
+                .pixels = undefined,
+                .stride = max_window_content_size.width,
+                .client_rectangle = undefined,
+                .min_size = limitWindowSize(sizeMin(min, max)),
+                .max_size = limitWindowSize(sizeMax(min, max)),
+                .title = "",
+                .flags = .{
+                    .minimized = false,
+                    .focus = false,
+                    .popup = false,
+                },
+            },
+            .title_buffer = undefined,
+        };
+        errdefer window.memory.deinit();
+
+        const allocator = window.memory.allocator();
+
+        window.title_buffer = std.ArrayList(u8).init(allocator);
+        try window.title_buffer.ensureTotalCapacity(64);
+
+        const pixel_count = @as(usize, window.user_facing.max_size.height) * @as(usize, window.user_facing.stride);
+        window.user_facing.pixels = (try allocator.alloc(u8, pixel_count)).ptr;
+        std.mem.set(u8, window.user_facing.pixels[0..pixel_count], 4); // brown
+
+        const clamped_initial_size = sizeMax(sizeMin(initial_size, window.user_facing.max_size), window.user_facing.min_size);
+
+        window.user_facing.client_rectangle = Rectangle{
+            .x = 16,
+            .y = 16,
+            .width = clamped_initial_size.width,
+            .height = clamped_initial_size.height,
+        };
+
+        if (WindowIterator.topWindow()) |top_window| blk: {
+            var spawn_x = top_window.user_facing.client_rectangle.x + 16;
+            var spawn_y = top_window.user_facing.client_rectangle.y + 16;
+
+            if (spawn_x + @as(i17, top_window.user_facing.client_rectangle.width) >= framebuffer.width)
+                break :blk;
+            if (spawn_y + @as(i17, top_window.user_facing.client_rectangle.height) >= framebuffer.height)
+                break :blk;
+
+            window.user_facing.client_rectangle.x = spawn_x;
+            window.user_facing.client_rectangle.y = spawn_y;
+        }
+
+        try window.setTitle(caption);
+
+        WindowIterator.list.append(&window.node);
+        return window;
+    }
 
     pub fn destroy(window: *Window) void {
         WindowIterator.list.remove(&window.node);
+        if (focused_window == window) {
+            focused_window = null;
+        }
+
+        switch (mouse_action) {
+            .default => {},
+            .drag_window => |act| if (act.window == window) {
+                mouse_action = .default;
+            },
+            .resize_window => |act| if (act.window == window) {
+                mouse_action = .default;
+            },
+        }
 
         var clone = window.memory;
         window.* = undefined;
         clone.deinit();
+    }
+
+    pub fn title(window: Window) [:0]const u8 {
+        const str = window.title_buffer.items;
+        return str[0 .. str.len - 1 :0];
+    }
+
+    pub fn setTitle(window: *Window, text: []const u8) !void {
+        try window.title_buffer.resize(text.len + 1);
+        std.mem.copy(u8, window.title_buffer.items, text);
+        window.title_buffer.items[text.len] = 0;
+        window.user_facing.title = window.title().ptr;
+    }
+
+    pub fn pushEvent(window: *Window, event: Event) void {
+        // logger.info("push {} for {s}", .{ event, window.title() });
+        window.event_queue.push(event);
+    }
+
+    pub fn pullEvent(window: *Window) ?Event {
+        return window.event_queue.pull();
+    }
+
+    pub fn restore(window: *Window) void {
+        window.user_facing.flags.minimized = false;
+        window.pushEvent(.window_restore);
+    }
+
+    pub fn minimize(window: *Window) void {
+        if (!window.canMinimize())
+            return;
+        window.user_facing.flags.minimized = true;
+        window.pushEvent(.window_minimize);
+    }
+
+    pub fn maximize(window: *Window) void {
+        if (!window.canMaximize())
+            return;
+        window.user_facing.client_rectangle = Rectangle.new(Point.new(1, 11), max_window_content_size);
+        window.pushEvent(.window_moved);
+        window.pushEvent(.window_resized);
     }
 
     /// Windows can be resized if their minimum size and maximum size differ
@@ -525,7 +728,7 @@ const Window = struct {
         return !window.user_facing.flags.popup;
     }
 
-    const ButtonCollection = std.BoundedArray(WindowButton, std.enums.values(WindowButton.Event).len);
+    const ButtonCollection = std.BoundedArray(WindowButton, std.enums.values(ButtonEvent).len);
     pub fn getButtons(window: Window) ButtonCollection {
         const rectangle = expandClientRectangle(window.user_facing.client_rectangle);
         var buttons = ButtonCollection{};
@@ -563,75 +766,6 @@ const Window = struct {
         return buttons;
     }
 };
-
-fn createWindow(title: []const u8, min: ashet.abi.Size, max: ashet.abi.Size, initial_size: Size) !*Window {
-    var temp_arena = std.heap.ArenaAllocator.init(ashet.memory.allocator);
-    var window = temp_arena.allocator().create(Window) catch |err| {
-        temp_arena.deinit();
-        return err;
-    };
-
-    window.* = Window{
-        .memory = temp_arena,
-        .user_facing = ashet.abi.Window{
-            .pixels = undefined,
-            .stride = max_window_content_size.width,
-            .client_rectangle = undefined,
-            .min_size = limitWindowSize(sizeMin(min, max)),
-            .max_size = limitWindowSize(sizeMax(min, max)),
-            .title = "",
-            .flags = .{
-                .minimized = false,
-                .focus = false,
-                .popup = false,
-            },
-        },
-        .node = .{ .data = {} },
-        .title = undefined,
-    };
-    errdefer window.memory.deinit();
-
-    const allocator = window.memory.allocator();
-
-    window.title = std.ArrayList(u8).init(allocator);
-    try window.title.ensureTotalCapacity(64);
-
-    const pixel_count = @as(usize, window.user_facing.max_size.height) * @as(usize, window.user_facing.stride);
-    window.user_facing.pixels = (try allocator.alloc(u8, pixel_count)).ptr;
-    std.mem.set(u8, window.user_facing.pixels[0..pixel_count], 4); // brown
-
-    const clamped_initial_size = sizeMax(sizeMin(initial_size, window.user_facing.max_size), window.user_facing.min_size);
-
-    window.user_facing.client_rectangle = Rectangle{
-        .x = 16,
-        .y = 16,
-        .width = clamped_initial_size.width,
-        .height = clamped_initial_size.height,
-    };
-
-    if (WindowIterator.topWindow()) |top_window| blk: {
-        var spawn_x = top_window.user_facing.client_rectangle.x + 16;
-        var spawn_y = top_window.user_facing.client_rectangle.y + 16;
-
-        if (spawn_x + @as(i17, top_window.user_facing.client_rectangle.width) >= framebuffer.width)
-            break :blk;
-        if (spawn_y + @as(i17, top_window.user_facing.client_rectangle.height) >= framebuffer.height)
-            break :blk;
-
-        window.user_facing.client_rectangle.x = spawn_x;
-        window.user_facing.client_rectangle.y = spawn_y;
-    }
-
-    try window.title.appendSlice(title);
-    try window.title.append(0);
-
-    window.user_facing.title = window.title.items[0 .. window.title.items.len - 1 :0];
-
-    // TODO: Setup
-
-    WindowIterator.list.append(&window.node);
-    return window;
-}
 
 fn expandClientRectangle(rect: Rectangle) Rectangle {
     return Rectangle{
