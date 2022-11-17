@@ -110,6 +110,8 @@ pub const SysCallInterface = extern struct {
         getStatus: FnPtr(fn () NetworkStatus),
         ping: FnPtr(fn ([*]Ping, usize) void),
 
+        // TODO: Implement NIC-specific queries (mac, ips, names, ...)
+
         dns: DNS,
         udp: UDP,
         tcp: TCP,
@@ -152,6 +154,8 @@ pub const NetworkStatus = enum(u8) {
     ip_available = 2, // interface got at least one IP assigned
     gateway_available = 3, // the gateway, if any, is reachable
 };
+
+pub const MAC = [6]u8;
 
 pub const IP = union(enum) {
     v4: [4]u8,

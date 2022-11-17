@@ -107,8 +107,7 @@ pub fn run(_: ?*anyopaque) callconv(.C) u32 {
                             .default => {
                                 if (event.type == .button_press and event.button == .left) {
                                     logger.info("click on ({},{})", .{ event.x, event.y });
-                                    const maybe_clicked_window = windowFromCursor(mouse_point);
-                                    if (maybe_clicked_window) |surface| {
+                                    if (windowFromCursor(mouse_point)) |surface| {
                                         WindowIterator.moveToTop(surface.window);
                                         force_repaint = true;
 
@@ -143,6 +142,16 @@ pub fn run(_: ?*anyopaque) callconv(.C) u32 {
                                         }
 
                                         logger.info("User clicked on window '{s}': {}", .{ surface.window.title.items, surface.part });
+                                    } else if (minimizedFromCursor(mouse_point)) |mini| {
+                                        force_repaint = true;
+                                        if (mini.restore_button.contains(mouse_point)) {
+                                            mini.window.user_facing.flags.minimized = false;
+                                            WindowIterator.updateFocus();
+                                        } else if (mini.close_button.contains(mouse_point)) {
+                                            // TODO: Forward event to app
+                                        } else {
+                                            // TODO: Select minimized window
+                                        }
                                     }
                                 }
                             },
@@ -202,6 +211,7 @@ const WindowSurface = struct {
         return WindowSurface{ .window = window, .part = part };
     }
 };
+
 fn windowFromCursor(point: Point) ?WindowSurface {
     var iter = WindowIterator.init(WindowIterator.regular, .top_to_bottom);
     while (iter.next()) |window| {
@@ -241,6 +251,80 @@ fn initializeGraphics() void {
     std.mem.copy(Color, ashet.video.palette[framebuffer_wallpaper_shift..], &wallpaper.palette);
 }
 
+const MinimizedWindow = struct {
+    window: *Window,
+    bounds: Rectangle,
+    close_button: Rectangle,
+    restore_button: Rectangle,
+    title: []const u8,
+};
+
+const MinimizedIterator = struct {
+    dx: i16,
+    dy: i16,
+    inner: WindowIterator,
+
+    fn init() MinimizedIterator {
+        return MinimizedIterator{
+            .dx = 4,
+            .dy = framebuffer.height - 11 - 4,
+            .inner = WindowIterator.init(WindowIterator.minimized, .bottom_to_top),
+        };
+    }
+
+    fn next(iter: *MinimizedIterator) ?MinimizedWindow {
+        const window = iter.inner.next() orelse return null;
+
+        const title = std.mem.sliceTo(window.title.items, 0);
+        const width = @intCast(u15, std.math.min(6 * title.len + 2 + 11 + 10, 75));
+        defer iter.dx += (width + 4);
+
+        var mini = MinimizedWindow{
+            .window = window,
+            .bounds = Rectangle{
+                .x = iter.dx,
+                .y = iter.dy,
+                .width = width,
+                .height = 11,
+            },
+            .close_button = Rectangle{
+                .x = iter.dx + width - 11,
+                .y = iter.dy,
+                .width = 11,
+                .height = 11,
+            },
+            .restore_button = Rectangle{
+                .x = iter.dx + width - 21,
+                .y = iter.dy,
+                .width = 11,
+                .height = 11,
+            },
+            .title = title,
+        };
+
+        return mini;
+    }
+};
+
+fn minimizedFromCursor(pt: Point) ?MinimizedWindow {
+    var iter = MinimizedIterator.init();
+    while (iter.next()) |mini| {
+        if (mini.bounds.contains(pt)) {
+            return mini;
+        }
+    }
+    return null;
+}
+
+fn paintButton(bounds: Rectangle, style: Theme.WindowStyle, bg: ColorIndex, icon: anytype) void {
+    framebuffer.horizontalLine(bounds.x, bounds.y, bounds.width, style.border);
+    framebuffer.horizontalLine(bounds.x, bounds.y + @intCast(u15, bounds.width) - 1, bounds.width, style.border);
+    framebuffer.verticalLine(bounds.x, bounds.y, bounds.height, style.border);
+    framebuffer.verticalLine(bounds.x + @intCast(u15, bounds.width) - 1, bounds.y, bounds.height, style.border);
+    framebuffer.rectangle(bounds.x + 1, bounds.y + 1, bounds.width - 2, bounds.height - 2, bg);
+    framebuffer.icon(bounds.x + 1, bounds.y + 1, icon);
+}
+
 fn repaint() void {
     // Copy the wallpaper to the framebuffer
     for (wallpaper.pixels) |c, i| {
@@ -248,19 +332,18 @@ fn repaint() void {
     }
 
     {
-        var dx: i16 = 4;
-        var dy: i16 = framebuffer.height - 11 - 4;
+        var iter = MinimizedIterator.init();
+        while (iter.next()) |mini| {
+            const window = mini.window;
 
-        var iter = WindowIterator.init(WindowIterator.minimized, .bottom_to_top);
-        while (iter.next()) |window| {
             const style = if (window.user_facing.flags.focus)
                 current_theme.active_window
             else
                 current_theme.inactive_window;
 
-            const title = std.mem.sliceTo(window.title.items, 0);
-
-            const width = @intCast(u15, std.math.min(6 * title.len + 2 + 11 + 10, 75));
+            const dx = mini.bounds.x;
+            const dy = mini.bounds.y;
+            const width = @intCast(u15, mini.bounds.width);
 
             framebuffer.horizontalLine(dx, dy, width, style.border);
             framebuffer.horizontalLine(dx, dy + 10, width, style.border);
@@ -268,17 +351,10 @@ fn repaint() void {
             framebuffer.verticalLine(dx + width - 1, dy + 1, 9, style.border);
             framebuffer.rectangle(dx + 1, dy + 1, width - 2, 9, style.title);
 
-            framebuffer.text(dx + 2, dy + 2, title, width - 2, style.font);
+            framebuffer.text(dx + 2, dy + 2, mini.title, width - 2, style.font);
 
-            framebuffer.verticalLine(dx + width - 11, dy + 1, 9, style.border);
-            framebuffer.verticalLine(dx + width - 21, dy + 1, 9, style.border);
-
-            framebuffer.rectangle(dx + width - 20, dy + 1, 9, 9, style.title);
-            framebuffer.icon(dx + width - 20, dy + 1, icons.restore);
-            framebuffer.rectangle(dx + width - 10, dy + 1, 9, 9, style.title);
-            framebuffer.icon(dx + width - 10, dy + 1, icons.close);
-
-            dx += (width + 4);
+            paintButton(mini.restore_button, style, style.title, icons.restore);
+            paintButton(mini.close_button, style, style.title, icons.close);
         }
     }
     {
@@ -330,13 +406,8 @@ fn repaint() void {
                     style.title
                 else
                     current_theme.dark;
-                framebuffer.horizontalLine(bounds.x, bounds.y, bounds.width, style.border);
-                framebuffer.horizontalLine(bounds.x, bounds.y + @intCast(u15, bounds.width) - 1, bounds.width, style.border);
-                framebuffer.verticalLine(bounds.x, bounds.y, bounds.height, style.border);
-                framebuffer.verticalLine(bounds.x + @intCast(u15, bounds.width) - 1, bounds.y, bounds.height, style.border);
-                framebuffer.rectangle(bounds.x + 1, bounds.y + 1, bounds.width - 2, bounds.height - 2, bg);
                 switch (button.event) {
-                    inline else => |tag| framebuffer.icon(bounds.x + 1, bounds.y + 1, @field(icons, @tagName(tag))),
+                    inline else => |tag| paintButton(bounds, style, bg, @field(icons, @tagName(tag))),
                 }
             }
         }
