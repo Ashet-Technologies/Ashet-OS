@@ -508,6 +508,10 @@ pub const Point = extern struct {
     pub fn eql(a: Point, b: Point) bool {
         return (a.x == b.x) and (a.y == b.y);
     }
+
+    pub fn manhattenDistance(a: Point, b: Point) u16 {
+        return std.math.absCast(a.x - b.x) + std.math.absCast(a.y - b.y);
+    }
 };
 
 pub const Size = extern struct {
@@ -551,6 +555,11 @@ pub const Rectangle = extern struct {
             (pt.x < rect.x + @intCast(u15, rect.width)) and
             (pt.y >= rect.y) and
             (pt.y < rect.y + @intCast(u15, rect.height));
+    }
+
+    pub fn containsRectangle(boundary: Rectangle, region: Rectangle) bool {
+        return boundary.contains(region.position()) and
+            boundary.contains(Point.new(region.x + @intCast(u15, region.width) - 1, region.y + @intCast(u15, region.height) - 1));
     }
 
     pub fn eql(a: Rectangle, b: Rectangle) bool {

@@ -132,7 +132,6 @@ fn run(_: ?*anyopaque) callconv(.C) u32 {
         var meta_pressed = false;
 
         while (ashet.multi_tasking.exclusive_video_controller == null) {
-            var force_repaint = false;
             event_loop: while (ashet.input.getEvent()) |input_event| {
                 switch (input_event) {
                     .keyboard => |event| {
@@ -150,7 +149,7 @@ fn run(_: ?*anyopaque) callconv(.C) u32 {
                         mouse_cursor_pos.x = std.math.clamp(@intCast(i16, event.x), 0, framebuffer.width - 1);
                         mouse_cursor_pos.y = std.math.clamp(@intCast(i16, event.y), 0, framebuffer.height - 1);
                         if (event.type == .motion) {
-                            force_repaint = true;
+                            invalidateScreen();
                         }
                         switch (mouse_action) {
                             .default => {
@@ -160,7 +159,7 @@ fn run(_: ?*anyopaque) callconv(.C) u32 {
                                             if (event.button == .left) {
                                                 // TODO: If was moved to top, send activate event
                                                 WindowIterator.moveToTop(surface.window);
-                                                force_repaint = true;
+                                                invalidateScreen();
 
                                                 if (meta_pressed) {
                                                     mouse_action = MouseAction{
@@ -208,11 +207,10 @@ fn run(_: ?*anyopaque) callconv(.C) u32 {
                                             }
                                         } else if (minimizedFromCursor(mouse_point)) |mini| {
                                             if (event.button == .left) {
-                                                force_repaint = true;
+                                                invalidateScreen();
                                                 if (mini.restore_button.contains(mouse_point)) {
                                                     mini.window.restore();
                                                     WindowIterator.moveToTop(mini.window);
-                                                    force_repaint = true;
                                                 } else if (mini.close_button.contains(mouse_point)) {
                                                     mini.window.pushEvent(.window_close);
                                                 } else {
@@ -221,6 +219,7 @@ fn run(_: ?*anyopaque) callconv(.C) u32 {
                                             }
                                         } else {
                                             // user clicked desktop, handle desktop icons here
+                                            desktop.sendClick(mouse_point);
                                         }
                                     },
                                     .button_release, .motion => {
@@ -277,10 +276,11 @@ fn run(_: ?*anyopaque) callconv(.C) u32 {
             }
 
             if (WindowIterator.updateFocus()) {
-                force_repaint = true;
+                invalidateScreen();
             }
 
-            if (force_repaint) {
+            if (invalidation_areas.len > 0) {
+                invalidation_areas.len = 0;
                 repaint();
             }
 
@@ -289,6 +289,27 @@ fn run(_: ?*anyopaque) callconv(.C) u32 {
             ashet.scheduler.yield();
         }
     }
+}
+
+var invalidation_areas = std.BoundedArray(Rectangle, 8){};
+
+fn invalidateScreen() void {
+    invalidateRegion(framebuffer.bounds);
+}
+
+fn invalidateRegion(region: Rectangle) void {
+    // check if we already have this region invalidated
+    for (invalidation_areas.slice()) |rect| {
+        if (rect.containsRectangle(region))
+            return;
+    }
+    if (invalidation_areas.len == invalidation_areas.capacity()) {
+        invalidation_areas.len = 1;
+        invalidation_areas.buffer[0] = framebuffer.bounds;
+        return;
+    }
+
+    invalidation_areas.appendAssumeCapacity(region);
 }
 
 const WindowSurface = struct {
@@ -425,6 +446,8 @@ fn paintButton(bounds: Rectangle, style: Theme.WindowStyle, bg: ColorIndex, icon
 }
 
 fn repaint() void {
+    invalidation_areas.len = 0; // we've redrawn the whole screen, no need for painting at all
+
     // Copy the wallpaper to the framebuffer
     for (wallpaper.pixels) |c, i| {
         framebuffer.fb[i] = c.shift(framebuffer_wallpaper_shift - 1);
@@ -848,6 +871,7 @@ fn nodeToWindow(node: *WindowQueue.Node) *Window {
 const framebuffer = struct {
     const width = ashet.video.max_res_x;
     const height = ashet.video.max_res_y;
+    const bounds = Rectangle{ .x = 0, .y = 0, .width = framebuffer.width, .height = framebuffer.height };
 
     const fb = ashet.video.memory[0 .. width * height];
 
@@ -1113,6 +1137,52 @@ pub const desktop = struct {
     const AppList = std.BoundedArray(App, 15);
 
     var apps: AppList = .{};
+    var selected_app: ?usize = 0;
+    var last_click: Point = undefined;
+
+    const AppInfo = struct {
+        app: *App,
+        bounds: Rectangle,
+        index: usize,
+    };
+    const AppIterator = struct {
+        const lower_limit = framebuffer.height - 11 - 8 - 4;
+        const padding = 8;
+
+        index: usize = 0,
+        bounds: Rectangle,
+
+        pub fn init() AppIterator {
+            return AppIterator{
+                .bounds = Rectangle{
+                    .x = 8,
+                    .y = 8,
+                    .width = Icon.width,
+                    .height = Icon.height,
+                },
+            };
+        }
+
+        pub fn next(self: *AppIterator) ?AppInfo {
+            if (self.index >= apps.len)
+                return null;
+
+            const info = AppInfo{
+                .app = &apps.buffer[self.index],
+                .index = self.index,
+                .bounds = self.bounds,
+            };
+            self.index += 1;
+
+            self.bounds.y += (Icon.height + padding);
+            if (self.bounds.y >= lower_limit) {
+                self.bounds.y = 8;
+                self.bounds.x += (Icon.width + padding);
+            }
+
+            return info;
+        }
+    };
 
     fn init() void {
         reload() catch |err| {
@@ -1120,22 +1190,40 @@ pub const desktop = struct {
         };
     }
 
+    fn sendClick(point: Point) void {
+        var iter = AppIterator.init();
+        const selected = while (iter.next()) |info| {
+            if (info.bounds.contains(point))
+                break info.index;
+        } else null;
+
+        if (selected_app != selected) {
+            last_click = point;
+            invalidateScreen();
+        } else if (selected_app) |app_index| {
+            const app = &apps.buffer[app_index];
+            if (last_click.manhattenDistance(point) < 2) {
+                logger.info("registered double click on app[{}]: {s}", .{ app_index, app.getName() });
+            }
+            last_click = point;
+        }
+
+        selected_app = selected;
+    }
+
     fn paint() void {
-        const lower_limit = framebuffer.height - 11 - 8 - 4;
-        const padding = 8;
-        var x: i16 = 8;
-        var y: i16 = 8;
-        for (apps.slice()) |*app| {
+        var iter = AppIterator.init();
+        while (iter.next()) |info| {
+            const app = info.app;
+
             const title = app.getName();
 
-            framebuffer.icon(x, y, &app.icon.bitmap);
-            framebuffer.text(x + Icon.width / 2 - @intCast(u15, 3 * title.len), y + Icon.height, title, @intCast(u16, 6 * title.len), ColorIndex.get(0x0));
-
-            y += (Icon.height + padding);
-            if (y >= lower_limit) {
-                y = 8;
-                x += (Icon.width + padding);
+            if (selected_app == info.index) {
+                framebuffer.icon(info.bounds.x - 1, info.bounds.y - 1, &dither_grid);
             }
+
+            framebuffer.icon(info.bounds.x, info.bounds.y, &app.icon.bitmap);
+            framebuffer.text(info.bounds.x + Icon.width / 2 - @intCast(u15, 3 * title.len), info.bounds.y + Icon.height, title, @intCast(u16, 6 * title.len), ColorIndex.get(0x0));
         }
     }
 
@@ -1183,4 +1271,15 @@ pub const desktop = struct {
             logger.info("app[{}]: {s}", .{ index, app.getName() });
         }
     }
+
+    const dither_grid = blk: {
+        @setEvalBranchQuota(2048);
+        var buffer: [Icon.height + 2][Icon.width + 2]?ColorIndex = undefined;
+        for (buffer) |*row, y| {
+            for (row) |*c, x| {
+                c.* = if ((y + x) % 2 == 0) ColorIndex.get(0) else null;
+            }
+        }
+        break :blk buffer;
+    };
 };
