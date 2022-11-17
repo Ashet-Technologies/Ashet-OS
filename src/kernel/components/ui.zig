@@ -4,6 +4,13 @@ const logger = std.log.scoped(.ui);
 const ashet = @import("../main.zig");
 
 pub fn start() !void {
+    const T = struct {
+        var started = false;
+    };
+    if (T.started)
+        return error.AlreadyStarted;
+    T.started = true;
+
     const thread = try ashet.scheduler.Thread.spawn(run, null, .{
         .stack_size = 2 * 65536,
     });
@@ -293,11 +300,14 @@ fn run(_: ?*anyopaque) callconv(.C) u32 {
 
 var invalidation_areas = std.BoundedArray(Rectangle, 8){};
 
-fn invalidateScreen() void {
+pub fn invalidateScreen() void {
     invalidateRegion(framebuffer.bounds);
 }
 
-fn invalidateRegion(region: Rectangle) void {
+pub fn invalidateRegion(region: Rectangle) void {
+    if (region.empty())
+        return;
+
     // check if we already have this region invalidated
     for (invalidation_areas.slice()) |rect| {
         if (rect.containsRectangle(region))
@@ -643,7 +653,7 @@ pub fn destroyAllWindowsForProcess(proc: *ashet.multi_tasking.Process) void {
     }
 }
 
-const Window = struct {
+pub const Window = struct {
     memory: std.heap.ArenaAllocator,
     user_facing: ashet.abi.Window,
     title_buffer: std.ArrayList(u8),
@@ -652,7 +662,14 @@ const Window = struct {
     node: WindowQueue.Node = .{ .data = {} },
     event_queue: astd.RingBuffer(Event, 16) = .{}, // 16 events should be easily enough
 
-    fn create(owner: ?*ashet.multi_tasking.Process, caption: []const u8, min: ashet.abi.Size, max: ashet.abi.Size, initial_size: Size) !*Window {
+    pub fn create(
+        owner: ?*ashet.multi_tasking.Process,
+        caption: []const u8,
+        min: ashet.abi.Size,
+        max: ashet.abi.Size,
+        initial_size: Size,
+        flags: ashet.abi.CreateWindowFlags,
+    ) !*Window {
         var temp_arena = std.heap.ArenaAllocator.init(ashet.memory.allocator);
         var window = temp_arena.allocator().create(Window) catch |err| {
             temp_arena.deinit();
@@ -672,7 +689,7 @@ const Window = struct {
                 .flags = .{
                     .minimized = false,
                     .focus = false,
-                    .popup = false,
+                    .popup = flags.popup,
                 },
             },
             .title_buffer = undefined,
@@ -713,6 +730,9 @@ const Window = struct {
         try window.setTitle(caption);
 
         WindowIterator.list.append(&window.node);
+
+        WindowIterator.moveToTop(window);
+
         return window;
     }
 

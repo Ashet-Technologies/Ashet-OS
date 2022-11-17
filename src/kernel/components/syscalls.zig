@@ -18,7 +18,15 @@ const ashet_syscall_interface: abi.SysCallInterface align(16) = .{
         .getPaletteMemory = @"video.getPaletteMemory",
     },
 
-    .ui = undefined,
+    .ui = .{
+        .createWindow = @"ui.createWindow",
+        .destroyWindow = @"ui.destroyWindow",
+        .moveWindow = @"ui.moveWindow",
+        .resizeWindow = @"ui.resizeWindow",
+        .setWindowTitle = @"ui.setWindowTitle",
+        .getEvent = @"ui.getEvent",
+        .invalidate = @"ui.invalidate",
+    },
 
     .process = .{
         .yield = @"process.yield",
@@ -221,4 +229,68 @@ fn @"input.getMouseEvent"(event: *abi.MouseEvent) callconv(.C) bool {
     }
     event.* = ashet.input.getMouseEvent() orelse return false;
     return true;
+}
+
+fn @"ui.createWindow"(title: [*:0]const u8, min: abi.Size, max: abi.Size, startup: abi.Size, flags: abi.CreateWindowFlags) callconv(.C) ?*const abi.Window {
+    const window = ashet.ui.Window.create(getCurrentProcess(), std.mem.sliceTo(title, 0), min, max, startup, flags) catch return null;
+    return &window.user_facing;
+}
+
+fn getMutableWindow(win: *const abi.Window) *ashet.ui.Window {
+    const window = @fieldParentPtr(ashet.ui.Window, "user_facing", win);
+    return @intToPtr(*ashet.ui.Window, @ptrToInt(window));
+}
+
+fn @"ui.destroyWindow"(win: *const abi.Window) callconv(.C) void {
+    const window = getMutableWindow(win);
+    window.destroy();
+}
+
+fn @"ui.moveWindow"(win: *const abi.Window, x: i16, y: i16) callconv(.C) void {
+    const window = getMutableWindow(win);
+
+    window.user_facing.client_rectangle.x = x;
+    window.user_facing.client_rectangle.y = y;
+
+    window.pushEvent(.window_moved);
+}
+
+fn @"ui.resizeWindow"(win: *const abi.Window, x: u16, y: u16) callconv(.C) void {
+    const window = getMutableWindow(win);
+
+    window.user_facing.client_rectangle.width = x;
+    window.user_facing.client_rectangle.height = y;
+
+    window.pushEvent(.window_resized);
+}
+
+fn @"ui.setWindowTitle"(win: *const abi.Window, title: [*:0]const u8) callconv(.C) void {
+    const window = getMutableWindow(win);
+    window.setTitle(std.mem.sliceTo(title, 0)) catch std.log.err("setWindowTitle: out of memory!", .{});
+}
+
+fn @"ui.getEvent"(win: *const abi.Window, out: *abi.UiEvent) callconv(.C) abi.UiEventType {
+    const window = getMutableWindow(win);
+
+    const event = window.pullEvent() orelse return .none;
+    switch (event) {
+        .none => unreachable,
+        .mouse => |val| out.* = .{ .mouse = val },
+        .keyboard => |val| out.* = .{ .keyboard = val },
+        .window_close, .window_minimize, .window_restore, .window_moving, .window_moved, .window_resizing, .window_resized => {},
+    }
+    return event;
+}
+
+fn @"ui.invalidate"(win: *const abi.Window, rect: abi.Rectangle) callconv(.C) void {
+    const window = getMutableWindow(win);
+
+    var screen_rect = abi.Rectangle{
+        .x = window.user_facing.client_rectangle.x + rect.x,
+        .y = window.user_facing.client_rectangle.y + rect.y,
+        .width = @intCast(u16, std.math.clamp(rect.width, 0, @as(i17, window.user_facing.client_rectangle.width) - rect.x)),
+        .height = @intCast(u16, std.math.clamp(rect.height, 0, @as(i17, window.user_facing.client_rectangle.height) - rect.y)),
+    };
+
+    ashet.ui.invalidateRegion(screen_rect);
 }

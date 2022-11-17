@@ -230,15 +230,11 @@ pub fn startAppBinary(app: AppID) !void {
 }
 
 fn spawnApp(app: AppID, entry_point: usize) !void {
-    const thread = try ashet.scheduler.Thread.spawn(@intToPtr(ashet.scheduler.ThreadFunction, entry_point), null, .{
-        // .process = screen.task,
-        .stack_size = 128 * 1024, // 128k
-    });
-    errdefer thread.kill();
-
-    try thread.setName(app.getName());
-
-    try thread.start();
-
-    thread.detach();
+    const process = try ashet.multi_tasking.Process.spawn(
+        app.getName(),
+        @intToPtr(ashet.scheduler.ThreadFunction, entry_point),
+        null,
+        .{},
+    );
+    errdefer process.kill();
 }

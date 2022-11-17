@@ -63,7 +63,7 @@ pub const SysCallInterface = extern struct {
     };
 
     pub const UserInterface = extern struct {
-        createWindow: FnPtr(fn (title: [*:0]const u8, min: Size, max: Size, flags: CreateWindowFlags) ?*const Window),
+        createWindow: FnPtr(fn (title: [*:0]const u8, min: Size, max: Size, startup: Size, flags: CreateWindowFlags) ?*const Window),
         destroyWindow: FnPtr(fn (*const Window) void),
         moveWindow: FnPtr(fn (*const Window, x: i16, y: i16) void),
         resizeWindow: FnPtr(fn (*const Window, x: u16, y: u16) void),
@@ -550,6 +550,10 @@ pub const Rectangle = extern struct {
         return Size{ .width = rect.width, .height = rect.height };
     }
 
+    pub fn empty(rect: Rectangle) bool {
+        return (rect.width == 0) and (rect.height == 0);
+    }
+
     pub fn contains(rect: Rectangle, pt: Point) bool {
         return (pt.x >= rect.x) and
             (pt.x < rect.x + @intCast(u15, rect.width)) and
@@ -640,6 +644,6 @@ pub const Window = extern struct {
 };
 
 pub const CreateWindowFlags = packed struct(u32) {
-    can_minimize: bool,
+    popup: bool = false,
     padding: u31 = 0,
 };

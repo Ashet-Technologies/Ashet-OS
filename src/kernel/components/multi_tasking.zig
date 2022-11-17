@@ -79,6 +79,38 @@ pub var exclusive_video_controller: ?*Process = null;
 pub const Process = struct {
     master_thread: *ashet.scheduler.Thread,
 
+    pub const SpawnOptions = struct {
+        stack_size: usize = 128 * 1024, // 128k
+    };
+
+    pub fn spawn(name: []const u8, entry_point: ashet.abi.ThreadFunction, arg: ?*anyopaque, options: SpawnOptions) !*Process {
+        // Start new process with splash screen when we didn't have any process here yet
+
+        const req_pages = ashet.memory.getRequiredPages(@sizeOf(Process));
+
+        const base_page = try ashet.memory.allocPages(req_pages);
+        errdefer ashet.memory.freePages(base_page, req_pages);
+
+        const process: *Process = @ptrCast(*Process, ashet.memory.pageToPtr(base_page));
+
+        process.* = Process{
+            .master_thread = undefined,
+        };
+
+        process.master_thread = try ashet.scheduler.Thread.spawn(entry_point, arg, .{
+            .stack_size = options.stack_size,
+            .process = process,
+        });
+        errdefer process.master_thread.kill();
+
+        try process.master_thread.setName(name);
+
+        try process.master_thread.start();
+        process.master_thread.detach();
+
+        return process;
+    }
+
     pub fn kill(proc: *Process) void {
         if (exclusive_video_controller == proc) {
             exclusive_video_controller = null;
