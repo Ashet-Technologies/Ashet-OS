@@ -118,12 +118,17 @@ pub fn run(_: ?*anyopaque) callconv(.C) u32 {
         // Enforce a full repaint of the user interface, so we have it "online"
         repaint();
 
+        var meta_pressed = false;
+
         while (ashet.multi_tasking.exclusive_video_controller == null) {
             var force_repaint = false;
             event_loop: while (ashet.input.getEvent()) |input_event| {
                 switch (input_event) {
                     .keyboard => |event| {
-                        if (focused_window) |window| {
+                        if (event.key == .meta) {
+                            // swallow all access to meta into the UI. Windows never see the meta key!
+                            meta_pressed = event.pressed;
+                        } else if (focused_window) |window| {
                             if (!window.user_facing.flags.minimized) {
                                 window.pushEvent(.{ .keyboard = event });
                             }
@@ -145,6 +150,16 @@ pub fn run(_: ?*anyopaque) callconv(.C) u32 {
                                                 // TODO: If was moved to top, send activate event
                                                 WindowIterator.moveToTop(surface.window);
                                                 force_repaint = true;
+
+                                                if (meta_pressed) {
+                                                    mouse_action = MouseAction{
+                                                        .drag_window = DragAction{
+                                                            .window = surface.window,
+                                                            .start = mouse_point,
+                                                        },
+                                                    };
+                                                    continue :event_loop;
+                                                }
 
                                                 switch (surface.part) {
                                                     .title_bar => {
