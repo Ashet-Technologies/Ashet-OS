@@ -210,7 +210,7 @@ fn run(_: ?*anyopaque) callconv(.C) u32 {
                                             }
 
                                             if (surface.part == .content) {
-                                                surface.window.pushEvent(.{ .mouse = event });
+                                                surface.window.pushEvent(.{ .mouse = surface.window.makeMouseRelative(event) });
                                             }
                                         } else if (minimizedFromCursor(mouse_point)) |mini| {
                                             if (event.button == .left) {
@@ -232,7 +232,7 @@ fn run(_: ?*anyopaque) callconv(.C) u32 {
                                     .button_release, .motion => {
                                         if (windowFromCursor(mouse_point)) |surface| {
                                             if (surface.part == .content) {
-                                                surface.window.pushEvent(.{ .mouse = event });
+                                                surface.window.pushEvent(.{ .mouse = surface.window.makeMouseRelative(event) });
                                             }
                                         }
                                     },
@@ -776,6 +776,13 @@ pub const Window = struct {
 
     pub fn pullEvent(window: *Window) ?Event {
         return window.event_queue.pull();
+    }
+
+    pub fn makeMouseRelative(window: *Window, event: ashet.abi.MouseEvent) ashet.abi.MouseEvent {
+        var rel_event = event;
+        rel_event.x = @intCast(u16, @intCast(i16, rel_event.x) - window.user_facing.client_rectangle.x);
+        rel_event.y = @intCast(u16, @intCast(i16, rel_event.y) - window.user_facing.client_rectangle.y);
+        return rel_event;
     }
 
     pub fn restore(window: *Window) void {
