@@ -85,14 +85,8 @@ pub const Process = struct {
     };
 
     pub fn spawn(name: []const u8, entry_point: ashet.abi.ThreadFunction, arg: ?*anyopaque, options: SpawnOptions) !*Process {
-        // Start new process with splash screen when we didn't have any process here yet
-
-        const req_pages = ashet.memory.getRequiredPages(@sizeOf(Process));
-
-        const base_page = try ashet.memory.allocPages(req_pages);
-        errdefer ashet.memory.freePages(base_page, req_pages);
-
-        const process: *Process = @ptrCast(*Process, ashet.memory.pageToPtr(base_page));
+        const process: *Process = try ashet.memory.allocator.create(Process);
+        errdefer ashet.memory.allocator.destroy(process);
 
         process.* = Process{
             .master_thread = undefined,
@@ -120,7 +114,8 @@ pub const Process = struct {
         if (proc.thread_count > 0) {
             proc.master_thread.kill();
         }
-        proc.* = undefined;
+
+        ashet.memory.allocator.destroy(proc);
     }
 
     pub fn save(proc: *Process) void {

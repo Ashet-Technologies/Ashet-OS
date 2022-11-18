@@ -312,6 +312,7 @@ pub fn build(b: *std.build.Builder) void {
         _ = ctx.createAshetApp("browser", "src/apps/dummy.zig", "artwork/apps/browser.png", mode);
         _ = ctx.createAshetApp("music", "src/apps/dummy.zig", "artwork/apps/music.png", mode);
         _ = ctx.createAshetApp("dungeon", "src/apps/dungeon.zig", "artwork/apps/dungeon.png", mode);
+        _ = ctx.createAshetApp("clock", "src/apps/clock.zig", "artwork/apps/clock.png", mode);
     }
 
     const run_step = b.step("run", "Run the app");
