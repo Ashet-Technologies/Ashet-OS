@@ -24,7 +24,7 @@ const ashet_syscall_interface: abi.SysCallInterface align(16) = .{
         .moveWindow = @"ui.moveWindow",
         .resizeWindow = @"ui.resizeWindow",
         .setWindowTitle = @"ui.setWindowTitle",
-        .getEvent = @"ui.getEvent",
+        .pollEvent = @"ui.pollEvent",
         .invalidate = @"ui.invalidate",
     },
 
@@ -231,8 +231,8 @@ fn @"input.getMouseEvent"(event: *abi.MouseEvent) callconv(.C) bool {
     return true;
 }
 
-fn @"ui.createWindow"(title: [*:0]const u8, min: abi.Size, max: abi.Size, startup: abi.Size, flags: abi.CreateWindowFlags) callconv(.C) ?*const abi.Window {
-    const window = ashet.ui.Window.create(getCurrentProcess(), std.mem.sliceTo(title, 0), min, max, startup, flags) catch return null;
+fn @"ui.createWindow"(title: [*]const u8, title_len: usize, min: abi.Size, max: abi.Size, startup: abi.Size, flags: abi.CreateWindowFlags) callconv(.C) ?*const abi.Window {
+    const window = ashet.ui.Window.create(getCurrentProcess(), title[0..title_len], min, max, startup, flags) catch return null;
     return &window.user_facing;
 }
 
@@ -264,12 +264,12 @@ fn @"ui.resizeWindow"(win: *const abi.Window, x: u16, y: u16) callconv(.C) void 
     window.pushEvent(.window_resized);
 }
 
-fn @"ui.setWindowTitle"(win: *const abi.Window, title: [*:0]const u8) callconv(.C) void {
+fn @"ui.setWindowTitle"(win: *const abi.Window, title: [*]const u8, title_len: usize) callconv(.C) void {
     const window = getMutableWindow(win);
-    window.setTitle(std.mem.sliceTo(title, 0)) catch std.log.err("setWindowTitle: out of memory!", .{});
+    window.setTitle(title[0..title_len]) catch std.log.err("setWindowTitle: out of memory!", .{});
 }
 
-fn @"ui.getEvent"(win: *const abi.Window, out: *abi.UiEvent) callconv(.C) abi.UiEventType {
+fn @"ui.pollEvent"(win: *const abi.Window, out: *abi.UiEvent) callconv(.C) abi.UiEventType {
     const window = getMutableWindow(win);
 
     const event = window.pullEvent() orelse return .none;

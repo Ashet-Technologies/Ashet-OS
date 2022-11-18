@@ -529,7 +529,7 @@ fn repaint() void {
             while (dy < client_rectangle.height) : (dy += 1) {
                 var dx: u15 = 0;
                 while (dx < client_rectangle.width) : (dx += 1) {
-                    framebuffer.setPixel(client_rectangle.x + dx, client_rectangle.y + dy, ColorIndex.get(row_ptr[dx]));
+                    framebuffer.setPixel(client_rectangle.x + dx, client_rectangle.y + dy, row_ptr[dx]);
                 }
                 row_ptr += window.user_facing.stride;
             }
@@ -702,8 +702,8 @@ pub const Window = struct {
         try window.title_buffer.ensureTotalCapacity(64);
 
         const pixel_count = @as(usize, window.user_facing.max_size.height) * @as(usize, window.user_facing.stride);
-        window.user_facing.pixels = (try allocator.alloc(u8, pixel_count)).ptr;
-        std.mem.set(u8, window.user_facing.pixels[0..pixel_count], 4); // brown
+        window.user_facing.pixels = (try allocator.alloc(ColorIndex, pixel_count)).ptr;
+        std.mem.set(ColorIndex, window.user_facing.pixels[0..pixel_count], ColorIndex.get(4)); // brown
 
         const clamped_initial_size = sizeMax(sizeMin(initial_size, window.user_facing.max_size), window.user_facing.min_size);
 

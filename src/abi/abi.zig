@@ -63,12 +63,12 @@ pub const SysCallInterface = extern struct {
     };
 
     pub const UserInterface = extern struct {
-        createWindow: FnPtr(fn (title: [*:0]const u8, min: Size, max: Size, startup: Size, flags: CreateWindowFlags) ?*const Window),
+        createWindow: FnPtr(fn (title: [*]const u8, title_len: usize, min: Size, max: Size, startup: Size, flags: CreateWindowFlags) ?*const Window),
         destroyWindow: FnPtr(fn (*const Window) void),
         moveWindow: FnPtr(fn (*const Window, x: i16, y: i16) void),
         resizeWindow: FnPtr(fn (*const Window, x: u16, y: u16) void),
-        setWindowTitle: FnPtr(fn (*const Window, title: [*:0]const u8) void),
-        getEvent: FnPtr(fn (*const Window, *UiEvent) UiEventType),
+        setWindowTitle: FnPtr(fn (*const Window, title: [*]const u8, title_len: usize) void),
+        pollEvent: FnPtr(fn (*const Window, *UiEvent) UiEventType),
         invalidate: FnPtr(fn (*const Window, rect: Rectangle) void),
     };
 
@@ -608,7 +608,7 @@ pub const UiEventType = enum(u16) {
 pub const Window = extern struct {
     /// Pointer to a linear buffer of pixels. These pixels define the content of the window.
     /// The data is layed out row-major, with `stride` bytes between each row.
-    pixels: [*]u8,
+    pixels: [*]ColorIndex,
 
     /// The number of bytes in each row in `pixels`.
     stride: u32,

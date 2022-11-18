@@ -154,6 +154,67 @@ pub const video = struct {
     }
 };
 
+pub const ui = struct {
+    pub const Window = abi.Window;
+    pub const CreateWindowFlags = abi.CreateWindowFlags;
+    pub const Size = abi.Size;
+    pub const Point = abi.Point;
+    pub const Rectangle = abi.Rectangle;
+    pub const Color = abi.Color;
+    pub const ColorIndex = abi.ColorIndex;
+
+    pub fn createWindow(title: []const u8, min: Size, max: Size, startup: Size, flags: CreateWindowFlags) error{OutOfMemory}!*const Window {
+        return syscalls().ui.createWindow(title.ptr, title.len, min, max, startup, flags) orelse return error.OutOfMemory;
+    }
+    pub fn destroyWindow(win: *const Window) void {
+        syscalls().ui.destroyWindow(win);
+    }
+
+    pub fn moveWindow(win: *const Window, x: i16, y: i16) void {
+        syscalls().ui.moveWindow(win, x, y);
+    }
+
+    pub fn resizeWindow(win: *const Window, x: u16, y: u16) void {
+        syscalls().ui.resizeWindow(win, x, y);
+    }
+
+    pub fn setWindowTitle(win: *const Window, title: []const u8) void {
+        syscalls().ui.setWindowTitle(win, title.ptr, title.len);
+    }
+    pub fn pollEvent(win: *const Window) ?Event {
+        var data: abi.UiEvent = undefined;
+        const event_type = syscalls().ui.pollEvent(win, &data);
+        return switch (event_type) {
+            .none => null,
+            .mouse => .{ .mouse = data.mouse },
+            .keyboard => .{ .keyboard = data.keyboard },
+            .window_close => .window_close,
+            .window_minimize => .window_minimize,
+            .window_restore => .window_restore,
+            .window_moving => .window_moving,
+            .window_moved => .window_moved,
+            .window_resizing => .window_resizing,
+            .window_resized => .window_resized,
+        };
+    }
+    pub fn invalidate(win: *const Window, rect: Rectangle) void {
+        syscalls().ui.resizeWindow(win, rect);
+    }
+
+    pub const Event = union(abi.UiEventType) {
+        none,
+        mouse: abi.MouseEvent,
+        keyboard: abi.KeyboardEvent,
+        window_close,
+        window_minimize,
+        window_restore,
+        window_moving,
+        window_moved,
+        window_resizing,
+        window_resized,
+    };
+};
+
 pub const fs = struct {
     pub const File = struct {
         pub const ReadError = error{};
