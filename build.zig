@@ -12,6 +12,12 @@ const pkgs = struct {
         .dependencies = &.{ abi, ashet_std, pkgs.@"text-editor" },
     };
 
+    pub const libgui = std.build.Pkg{
+        .name = "ashet-gui",
+        .source = .{ .path = "src/libashet/main.zig" },
+        .dependencies = &.{ libashet, ashet_std, pkgs.@"text-editor" },
+    };
+
     pub const ashet_std = std.build.Pkg{
         .name = "ashet-std",
         .source = .{ .path = "src/std/std.zig" },
@@ -162,6 +168,7 @@ const AshetContext = struct {
         exe.setTarget(ctx.target);
         exe.setBuildMode(mode);
         exe.addPackage(pkgs.libashet);
+        exe.addPackage(pkgs.libgui); // just add GUI to all apps by default *shrug*
         exe.install();
 
         const install_step = ctx.b.addInstallArtifact(exe);
