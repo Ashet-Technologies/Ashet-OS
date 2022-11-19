@@ -8,7 +8,14 @@ pub usingnamespace ashet.core;
 
 var interface = gui.Interface{ .widgets = &widgets };
 var widgets = [_]gui.Widget{
-    gui.Button.new(16, 16, 48, "Hello"),
+    gui.Panel.new(5, 5, 172, 57),
+    gui.Panel.new(5, 65, 172, 57),
+    gui.Button.new(69, 42, null, "Cancel"),
+    gui.Button.new(135, 42, null, "Login"),
+    gui.TextBox.new(69, 14, 99, "xq"),
+    gui.TextBox.new(69, 28, 99, "********"),
+    gui.Label.new(15, 16, "Username"),
+    gui.Label.new(15, 30, "Password:"),
 };
 
 pub fn main() !void {

@@ -102,23 +102,95 @@ pub const Interface = struct {
 
     pub fn paint(gui: Interface, target: Framebuffer) void {
         for (gui.widgets) |widget| {
+            const b = .{
+                .x = widget.bounds.x,
+                .y = widget.bounds.y,
+                .width = @intCast(u15, widget.bounds.width),
+                .height = @intCast(u15, widget.bounds.height),
+            };
             switch (widget.control) {
                 .button => |ctrl| {
-                    _ = ctrl;
                     target.fillRectangle(widget.bounds.shrink(1), gui.theme.area);
-                    target.drawRectangle(widget.bounds, gui.theme.area_light);
+
+                    if (b.width > 2 and b.height > 2) {
+                        target.drawLine(
+                            Point.new(b.x + 1, b.y),
+                            Point.new(b.x + b.width - 2, b.y),
+                            gui.theme.area_light,
+                        );
+                        target.drawLine(
+                            Point.new(b.x + 1, b.y + b.height - 1),
+                            Point.new(b.x + b.width - 2, b.y + b.height - 1),
+                            gui.theme.area_shadow,
+                        );
+
+                        target.drawLine(
+                            Point.new(b.x, b.y + 1),
+                            Point.new(b.x, b.y + b.height - 2),
+                            gui.theme.area_shadow,
+                        );
+                        target.drawLine(
+                            Point.new(b.x + b.width - 1, b.y + 1),
+                            Point.new(b.x + b.width - 1, b.y + b.height - 2),
+                            gui.theme.area_light,
+                        );
+                    }
+
+                    _ = ctrl;
                 },
                 .label => |ctrl| {
                     _ = ctrl;
+                    // @panic("painting not label implemented yet!");
                 },
                 .text_box => |ctrl| {
                     _ = ctrl;
+                    target.fillRectangle(widget.bounds.shrink(1), gui.theme.area);
+
+                    if (b.width > 2 and b.height > 2) {
+                        target.drawLine(
+                            Point.new(b.x, b.y),
+                            Point.new(b.x + b.width - 1, b.y),
+                            gui.theme.area_shadow,
+                        );
+                        target.drawLine(
+                            Point.new(b.x + b.width - 1, b.y + 1),
+                            Point.new(b.x + b.width - 1, b.y + b.height - 1),
+                            gui.theme.area_shadow,
+                        );
+
+                        target.drawLine(
+                            Point.new(b.x, b.y + 1),
+                            Point.new(b.x, b.y + b.height - 1),
+                            gui.theme.area_light,
+                        );
+                        target.drawLine(
+                            Point.new(b.x + 1, b.y + b.height - 1),
+                            Point.new(b.x + b.width - 2, b.y + b.height - 1),
+                            gui.theme.area_light,
+                        );
+                    }
                 },
                 .panel => |ctrl| {
                     _ = ctrl;
+                    target.fillRectangle(widget.bounds.shrink(2), gui.theme.area);
+                    if (b.width > 3 and b.height > 3) {
+                        target.drawRectangle(Rectangle{
+                            .x = b.x + 1,
+                            .y = b.y,
+                            .width = b.width - 1,
+                            .height = b.height - 1,
+                        }, gui.theme.area_light);
+                        target.drawRectangle(Rectangle{
+                            .x = b.x,
+                            .y = b.y + 1,
+                            .width = b.width - 1,
+                            .height = b.height - 1,
+                        }, gui.theme.area_shadow);
+                    }
                 },
                 .picture => |ctrl| {
                     _ = ctrl;
+                    @panic("painting not picture implemented yet!");
                 },
             }
         }
@@ -161,30 +233,58 @@ pub const Button = struct {
 };
 
 pub const Label = struct {
+    text: []const u8,
+
     pub fn new(x: i16, y: i16, text: []const u8) Widget {
-        _ = x;
-        _ = y;
-        _ = text;
+        return Widget{
+            .bounds = Rectangle{
+                .x = x,
+                .y = y,
+                .width = @intCast(u15, 6 * text.len),
+                .height = 11,
+            },
+            .control = .{
+                .label = Label{
+                    .text = text,
+                },
+            },
+        };
     }
 };
 
 pub const TextBox = struct {
+    text: []const u8,
+
     pub fn new(x: i16, y: i16, width: u15, text: []const u8) Widget {
-        //
-        _ = x;
-        _ = y;
-        _ = width;
-        _ = text;
+        return Widget{
+            .bounds = Rectangle{
+                .x = x,
+                .y = y,
+                .width = width,
+                .height = 11,
+            },
+            .control = .{
+                .text_box = TextBox{
+                    .text = text,
+                },
+            },
+        };
     }
 };
 
 pub const Panel = struct {
     pub fn new(x: i16, y: i16, width: u15, height: u15) Widget {
-        //
-        _ = x;
-        _ = y;
-        _ = width;
-        _ = height;
+        return Widget{
+            .bounds = Rectangle{
+                .x = x,
+                .y = y,
+                .width = width,
+                .height = height,
+            },
+            .control = .{
+                .panel = Panel{},
+            },
+        };
     }
 };
 
@@ -197,3 +297,27 @@ pub const Picture = struct {
         _ = bitmap;
     }
 };
+
+test "smoke test 01" {
+    var widgets = [_]Widget{
+        Panel.new(5, 5, 172, 57),
+        Panel.new(5, 65, 172, 57),
+        Button.new(69, 42, null, "Cancel"),
+        Button.new(135, 42, null, "Login"),
+        TextBox.new(69, 14, 99, "xq"),
+        TextBox.new(69, 28, 99, "********"),
+        Label.new(15, 16, "Username"),
+        Label.new(15, 30, "Password:"),
+    };
+    var interface = Interface{ .widgets = &widgets };
+
+    var pixel_storage: [1][200]ColorIndex = undefined;
+    var fb = Framebuffer{
+        .pixels = @ptrCast([*]ColorIndex, &pixel_storage),
+        .stride = 0, // just overwrite the first line again
+        .width = 200,
+        .height = 150,
+    };
+
+    interface.paint(fb);
+}

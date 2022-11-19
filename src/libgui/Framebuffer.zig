@@ -64,7 +64,7 @@ fn clip(fb: Framebuffer, rect: Rectangle) ScreenRect {
 
     const result = ScreenRect{
         .dx = @intCast(u16, x - rect.x),
-        .dy = @intCast(u16, x - rect.y),
+        .dy = @intCast(u16, y - rect.y),
         .x = x,
         .y = y,
         .pixels = fb.pixels + @as(usize, y) * fb.stride + @as(usize, x),
@@ -123,6 +123,81 @@ pub fn drawRectangle(fb: Framebuffer, rect: Rectangle, color: ColorIndex) void {
     }
 }
 
+pub fn setPixel(fb: Framebuffer, x: i16, y: i16, color: ColorIndex) void {
+    if (x < 0 or x >= fb.width)
+        return;
+    if (y < 0 or y >= fb.height)
+        return;
+    fb.pixels[@intCast(usize, y) * fb.stride + @intCast(usize, x)] = color;
+}
+
+pub fn drawLine(fb: Framebuffer, from: Point, to: Point, color: ColorIndex) void {
+    if (from.y == to.y) {
+        if (from.y < 0 or from.y >= fb.height)
+            return;
+        // horizontal
+        const start = @intCast(usize, std.math.max(0, std.math.min(from.x, to.x))); // inclusive
+        const end = @intCast(usize, std.math.min(fb.width, std.math.max(from.x, to.x) + 1)); // exlusive
+        std.mem.set(ColorIndex, (fb.pixels + @intCast(usize, from.y) * fb.stride)[start..end], color);
+    } else if (from.x == to.x) {
+        // vertical
+        if (from.x < 0 or from.x >= fb.width)
+            return;
+
+        const start = @intCast(usize, std.math.max(0, std.math.min(from.y, to.y))); // inclusive
+        const end = @intCast(usize, std.math.min(fb.height, std.math.max(from.y, to.y) + 1)); // exlusive
+
+        var row = fb.pixels + @intCast(usize, from.x) + @intCast(usize, start) * fb.stride;
+        var y: usize = start;
+        while (y < end) : (y += 1) {
+            row[0] = color;
+            row += fb.stride;
+        }
+    } else {
+        // not an axis aligned line, use bresenham
+
+        const H = struct {
+            fn abs(a: i16) i16 {
+                return if (a < 0) -a else a;
+            }
+        };
+
+        var x0 = from.x;
+        var y0 = from.y;
+
+        var x1 = to.x;
+        var y1 = to.y;
+
+        // Implementation taken from
+        // https://de.wikipedia.org/wiki/Bresenham-Algorithmus#Kompakte_Variante
+        // That means that the following code block is licenced under CC-BY-SA
+        // which is compatible to the project licence.
+        {
+            var dx = H.abs(x1 - x0);
+            var sx: i2 = if (x0 < x1) 1 else -1;
+            var dy = -H.abs(y1 - y0);
+            var sy: i2 = if (y0 < y1) 1 else -1;
+            var err = dx + dy;
+            var e2: i16 = undefined;
+
+            while (true) {
+                fb.setPixel(x0, y0, color);
+                if (x0 == x1 and y0 == y1) break;
+                e2 = 2 * err;
+                if (e2 > dy) { // e_xy+e_x > 0
+                    err += dy;
+                    x0 += sx;
+                }
+                if (e2 < dx) { // e_xy+e_y < 0
+                    err += dx;
+                    y0 += sy;
+                }
+            }
+        }
+        // regular licence continues here
+    }
+}
+
 pub fn blit(fb: Framebuffer, point: Point, bitmap: Bitmap) void {
     const target = fb.clip(Rectangle{
         .x = point.x,
@@ -168,6 +243,4 @@ test "framebuffer basic draw" {
 
     fb.fillRectangle(Rectangle{ .x = 2, .y = 2, .width = 3, .height = 4 }, ColorIndex.get(1));
     fb.drawRectangle(Rectangle{ .x = 2, .y = 2, .width = 3, .height = 4 }, ColorIndex.get(1));
-
-    _ = fb.blit;
 }
