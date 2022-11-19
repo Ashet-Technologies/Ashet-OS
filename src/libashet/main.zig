@@ -48,11 +48,18 @@ fn _start() callconv(.C) u32 {
 pub const core = struct {
     pub fn panic(msg: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, maybe_return_address: ?usize) noreturn {
         _ = maybe_error_trace;
-        _ = maybe_return_address;
 
         debug.write("PANIC: ");
         debug.write(msg);
         debug.write("\r\n");
+
+        if (@import("builtin").mode == .Debug) {
+            var iter = std.debug.StackIterator.init(maybe_return_address, null);
+            while (iter.next()) |item| {
+                var buf: [64]u8 = undefined;
+                debug.write(std.fmt.bufPrint(&buf, "- 0x{X:0>8}\n", .{item}) catch "???");
+            }
+        }
 
         syscalls().process.exit(1);
     }

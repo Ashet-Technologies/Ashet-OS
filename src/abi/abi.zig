@@ -301,8 +301,8 @@ pub const InputEvent = extern union {
 
 pub const MouseEvent = extern struct {
     type: Type,
-    x: u16,
-    y: u16,
+    x: i16,
+    y: i16,
     dx: i16,
     dy: i16,
     button: MouseButton,
@@ -568,6 +568,28 @@ pub const Rectangle = extern struct {
 
     pub fn eql(a: Rectangle, b: Rectangle) bool {
         return a.size().eql(b.size()) and a.position().eql(b.position());
+    }
+
+    pub fn top(rect: Rectangle) i16 {
+        return rect.y;
+    }
+    pub fn bottom(rect: Rectangle) i16 {
+        return rect.y + @intCast(u15, rect.height);
+    }
+    pub fn left(rect: Rectangle) i16 {
+        return rect.x;
+    }
+    pub fn right(rect: Rectangle) i16 {
+        return rect.x + @intCast(u15, rect.width);
+    }
+
+    pub fn shrink(rect: Rectangle, amount: u15) Rectangle {
+        var copy = rect;
+        copy.x += amount / 2;
+        copy.y += amount / 2;
+        copy.width -|= amount;
+        copy.height -|= amount;
+        return copy;
     }
 };
 

@@ -14,7 +14,7 @@ const pkgs = struct {
 
     pub const libgui = std.build.Pkg{
         .name = "ashet-gui",
-        .source = .{ .path = "src/libashet/main.zig" },
+        .source = .{ .path = "src/libgui/gui.zig" },
         .dependencies = &.{ libashet, ashet_std, pkgs.@"text-editor" },
     };
 
@@ -321,6 +321,7 @@ pub fn build(b: *std.build.Builder) void {
         _ = ctx.createAshetApp("dungeon", "src/apps/dungeon.zig", "artwork/apps/dungeon.png", mode);
         _ = ctx.createAshetApp("clock", "src/apps/clock.zig", "artwork/apps/clock.png", mode);
         _ = ctx.createAshetApp("paint", "src/apps/paint.zig", "artwork/apps/paint.png", mode);
+        _ = ctx.createAshetApp("gui-demo", "src/apps/gui-demo.zig", null, mode);
     }
 
     const run_step = b.step("run", "Run the app");

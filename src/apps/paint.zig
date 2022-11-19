@@ -31,7 +31,7 @@ pub fn main() !void {
                             painting = false;
                         },
                         .motion => if (painting) {
-                            window.pixels[data.y * window.stride + data.x] = ashet.ui.ColorIndex.get(0xF);
+                            window.pixels[@intCast(usize, data.y) * window.stride + @intCast(usize, data.x)] = ashet.ui.ColorIndex.get(0xF);
                         },
                     }
                 },

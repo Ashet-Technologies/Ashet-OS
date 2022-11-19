@@ -3,9 +3,6 @@ const hal = @import("hal");
 const ashet = @import("../main.zig");
 const logger = std.log.scoped(.input);
 
-pub var cursor_x: u16 = 0;
-pub var cursor_y: u16 = 0;
-
 var shift_left_state: bool = false;
 var shift_right_state: bool = false;
 
@@ -84,6 +81,8 @@ pub fn getKeyboardModifiers() ashet.abi.KeyboardModifiers {
     };
 }
 
+pub var cursor: ashet.abi.Point = ashet.abi.Point.new(ashet.video.max_res_x / 2, ashet.video.max_res_y / 2);
+
 pub fn getMouseEvent() ?ashet.abi.MouseEvent {
     const src_event = hal.input.getMouseEvent() orelse return null;
 
@@ -92,15 +91,15 @@ pub fn getMouseEvent() ?ashet.abi.MouseEvent {
             const dx = @truncate(i16, std.math.clamp(data.dx, std.math.minInt(i16), std.math.maxInt(i16)));
             const dy = @truncate(i16, std.math.clamp(data.dy, std.math.minInt(i16), std.math.maxInt(i16)));
 
-            cursor_x = @intCast(u16, std.math.clamp(@as(i32, cursor_x) + dx, 0, ashet.video.max_res_x - 1));
-            cursor_y = @intCast(u16, std.math.clamp(@as(i32, cursor_y) + dy, 0, ashet.video.max_res_y - 1));
+            cursor.x = std.math.clamp(cursor.x + dx, 0, ashet.video.max_res_x - 1);
+            cursor.y = std.math.clamp(cursor.y + dy, 0, ashet.video.max_res_y - 1);
 
             return ashet.abi.MouseEvent{
                 .type = .motion,
                 .dx = dx,
                 .dy = dy,
-                .x = cursor_x,
-                .y = cursor_y,
+                .x = cursor.x,
+                .y = cursor.y,
                 .button = .none,
             };
         },
@@ -123,8 +122,8 @@ pub fn getMouseEvent() ?ashet.abi.MouseEvent {
                 .type = event_type,
                 .dx = 0,
                 .dy = 0,
-                .x = cursor_x,
-                .y = cursor_y,
+                .x = cursor.x,
+                .y = cursor.y,
                 .button = button,
             };
         },

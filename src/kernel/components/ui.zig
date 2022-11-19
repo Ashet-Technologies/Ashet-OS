@@ -780,8 +780,8 @@ pub const Window = struct {
 
     pub fn makeMouseRelative(window: *Window, event: ashet.abi.MouseEvent) ashet.abi.MouseEvent {
         var rel_event = event;
-        rel_event.x = @intCast(u16, @intCast(i16, rel_event.x) - window.user_facing.client_rectangle.x);
-        rel_event.y = @intCast(u16, @intCast(i16, rel_event.y) - window.user_facing.client_rectangle.y);
+        rel_event.x = rel_event.x - window.user_facing.client_rectangle.x;
+        rel_event.y = rel_event.y - window.user_facing.client_rectangle.y;
         return rel_event;
     }
 
