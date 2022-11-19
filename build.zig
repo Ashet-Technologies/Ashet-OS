@@ -326,12 +326,20 @@ pub fn build(b: *std.build.Builder) void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
-    const exe_tests = b.addTest("src/std/std.zig");
-    exe_tests.setTarget(.{});
-    exe_tests.setBuildMode(mode);
+    const std_tests = b.addTest("src/std/std.zig");
+    std_tests.setTarget(.{});
+    std_tests.setBuildMode(mode);
+
+    const gui_tests = b.addTest("src/libgui/gui.zig");
+    gui_tests.setTarget(.{});
+    gui_tests.setBuildMode(mode);
+    for (pkgs.libgui.dependencies.?) |dep| {
+        gui_tests.addPackage(dep);
+    }
 
     const test_step = b.step("test", "Run unit tests on the standard library");
-    test_step.dependOn(&exe_tests.step);
+    test_step.dependOn(&std_tests.step);
+    test_step.dependOn(&gui_tests.step);
 
     // const simu_step = b.step("sim", "Runs the PC simulator");
 

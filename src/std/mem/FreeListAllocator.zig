@@ -43,6 +43,7 @@ pub const FreeListAllocator = struct {
         _ = ret_addr;
         @panic("not implemented yet");
     }
+
     fn resize(fla: *FreeListAllocator, buf: []u8, buf_align: u29, new_len: usize, len_align: u29, ret_addr: usize) ?usize {
         _ = fla;
         _ = buf;
@@ -53,6 +54,7 @@ pub const FreeListAllocator = struct {
         _ = ret_addr;
         @panic("not implemented yet");
     }
+
     fn free(fla: *FreeListAllocator, buf: []u8, buf_align: u29, ret_addr: usize) void {
         _ = fla;
         _ = buf;
@@ -110,14 +112,14 @@ test "basic formatting" {
     _ = fla;
 }
 
-test "test suite" {
-    const base_region = try std.testing.allocator.alloc(u8, 256 * 1024);
-    defer std.testing.allocator.free(base_region);
+// test "test suite" {
+//     const base_region = try std.testing.allocator.alloc(u8, 256 * 1024);
+//     defer std.testing.allocator.free(base_region);
 
-    var fla = FreeListAllocator.init(base_region);
+//     var fla = FreeListAllocator.init(base_region);
 
-    runAllocatorTestSuite(fla);
-}
+//     try runAllocatorTestSuite(fla.allocator());
+// }
 
 fn runAllocatorTestSuite(subject_to_test: std.mem.Allocator) !void {
     var validator = std.mem.validationWrap(subject_to_test);

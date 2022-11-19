@@ -5,11 +5,13 @@ pub const abi = @import("ashet-abi");
 pub const syscalls = abi.SysCallInterface.get;
 
 comptime {
-    if (@hasDecl(@import("root"), "main")) {
-        @export(_start, .{
-            .linkage = .Strong,
-            .name = "_start",
-        });
+    if (!@import("builtin").is_test) {
+        if (@hasDecl(@import("root"), "main")) {
+            @export(_start, .{
+                .linkage = .Strong,
+                .name = "_start",
+            });
+        }
     }
 }
 
