@@ -315,10 +315,22 @@ pub const MouseEvent = extern struct {
 };
 
 pub const KeyboardEvent = extern struct {
+    /// The raw scancode for the key. Meaning depends on the layout,
+    /// represents kinda the physical position on the keyboard.
     scancode: u32,
+
+    /// The virtual key, independent of layout. Represents the logical
+    /// function of the key.
     key: KeyCode,
+
+    /// If set, the pressed key combination has a mapping that produces
+    /// text input. UTF-8 encoded.
     text: ?[*:0]const u8,
+
+    /// The key in this event was pressed or released
     pressed: bool,
+
+    /// The modifier keys currently active
     modifiers: KeyboardModifiers,
 };
 

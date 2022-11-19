@@ -1,6 +1,7 @@
 const std = @import("std");
 const ashet = @import("ashet");
 const TextEditor = @import("text-editor");
+const logger = std.log.scoped(.gui);
 
 const Point = ashet.abi.Point;
 const Size = ashet.abi.Size;
@@ -32,19 +33,27 @@ pub const Framebuffer = @import("Framebuffer.zig");
 pub const Bitmap = @import("Bitmap.zig");
 
 pub const Theme = struct {
-    area: ColorIndex, // filling for panels, buttons, text boxes, ...
+    window: ColorIndex, // filling for text-editable things like text boxes, ...
+
+    area: ColorIndex, // filling for panels, buttons, (read only) text boxes, ...
     area_light: ColorIndex, // a brighter version of `area`
     area_shadow: ColorIndex, // a darker version of `area`
 
     label: ColorIndex, // the text of a label
     text: ColorIndex, // the text of a button, text box, ...
 
+    focus: ColorIndex, // color of the dithered focus border
+    text_cursor: ColorIndex, // color of the text cursor
+
     pub const default = Theme{
+        .window = ColorIndex.get(15),
         .area = ColorIndex.get(7),
         .area_light = ColorIndex.get(10),
         .area_shadow = ColorIndex.get(3),
         .label = ColorIndex.get(15),
         .text = ColorIndex.get(0),
+        .focus = ColorIndex.get(1),
+        .text_cursor = ColorIndex.get(2),
     };
 };
 
@@ -52,14 +61,17 @@ pub const Interface = struct {
     /// List of widgets, bottom to top
     widgets: []Widget,
     theme: *const Theme = &Theme.default,
+    focus: ?usize = null,
 
-    pub fn widgetFromPoint(gui: *Interface, pt: Point) ?*Widget {
+    pub fn widgetFromPoint(gui: *Interface, pt: Point, index: ?*usize) ?*Widget {
         var i: usize = gui.widgets.len;
         while (i > 0) {
             i -= 1;
             const widget = &gui.widgets[i];
-            if (widget.bounds.contains(pt))
+            if (widget.bounds.contains(pt)) {
+                if (index) |dst| dst.* = i;
                 return widget;
+            }
         }
         return null;
     }
@@ -67,10 +79,17 @@ pub const Interface = struct {
     pub fn sendMouseEvent(gui: *Interface, event: ashet.abi.MouseEvent) ?Event {
         switch (event.type) {
             .button_press => if (event.button == .left) {
-                if (gui.widgetFromPoint(Point.new(event.x, event.y))) |widget| {
+                var index: usize = 0;
+                if (gui.widgetFromPoint(Point.new(event.x, event.y), &index)) |widget| {
+                    if (widget.control.canFocus()) {
+                        gui.focus = index;
+                    }
+
                     switch (widget.control) {
                         .button => |btn| return btn.clickEvent,
-                        .text_box => @panic("not implemented yet!"),
+                        .text_box => {
+                            // TODO: Set cursor position here
+                        },
                         .label, .panel, .picture => {},
                     }
                 }
@@ -82,14 +101,152 @@ pub const Interface = struct {
         return null;
     }
 
+    const FocusDir = enum { backward, forward };
+    fn moveFocus(gui: *Interface, dir: FocusDir) void {
+        const initial = gui.focus orelse return;
+
+        var index = initial;
+
+        switch (dir) {
+            .forward => while (true) {
+                index += 1;
+                if (index >= gui.widgets.len)
+                    index = 0;
+                if (index == initial)
+                    return; // nothing changed
+                if (gui.widgets[index].control.canFocus()) {
+                    gui.focus = index;
+                    return;
+                }
+            },
+            .backward => while (true) {
+                if (index > 0) {
+                    index -= 1;
+                } else {
+                    index = gui.widgets.len - 1;
+                }
+                if (index == initial)
+                    return; // nothing changed
+                if (gui.widgets[index].control.canFocus()) {
+                    gui.focus = index;
+                    return;
+                }
+            },
+        }
+    }
+
     pub fn sendKeyboardEvent(gui: *Interface, event: ashet.abi.KeyboardEvent) ?Event {
-        _ = gui;
-        _ = event;
+        const widget_index = gui.focus orelse return null;
+
+        const widget = &gui.widgets[widget_index];
+
+        switch (widget.control) {
+            .button => |*ctrl| {
+                if (!event.pressed)
+                    return null;
+
+                return switch (event.key) {
+                    .@"return", .space => ctrl.clickEvent,
+
+                    .tab => {
+                        gui.moveFocus(if (event.modifiers.shift) .backward else .forward);
+                        return null;
+                    },
+
+                    else => null,
+                };
+            },
+            .text_box => |*ctrl| {
+                if (event.pressed) {
+                    switch (event.key) {
+                        .@"return" => {
+                            // send event
+                        },
+
+                        .home => ctrl.editor.moveCursor(.left, .line),
+                        .end => ctrl.editor.moveCursor(.right, .line),
+
+                        .left => ctrl.editor.moveCursor(.left, if (event.modifiers.ctrl) .word else .letter),
+                        .right => ctrl.editor.moveCursor(.right, if (event.modifiers.ctrl) .word else .letter),
+
+                        .backspace => ctrl.editor.delete(.left, if (event.modifiers.ctrl) .word else .letter),
+                        .delete => ctrl.editor.delete(.right, if (event.modifiers.ctrl) .word else .letter),
+
+                        .tab => gui.moveFocus(if (event.modifiers.shift) .backward else .forward),
+
+                        else => {
+                            if (event.text) |text_ptr| {
+                                const text = std.mem.sliceTo(text_ptr, 0);
+
+                                ctrl.editor.insertText(text) catch |err| logger.err("failed to insert string: {s}", .{@errorName(err)});
+                            } else {
+                                std.log.info("handle key {} for text box", .{event});
+                            }
+                        },
+                    }
+                }
+            },
+
+            // these cannot be focused:
+            .label, .panel, .picture => unreachable,
+        }
+
         return null;
     }
 
+    fn paintFocusMarker(target: Framebuffer, rect: Rectangle, theme: Theme) void {
+        const H = struct {
+            fn dither(x: i16, y: i16) bool {
+                const rx = @bitCast(u16, x);
+                const ry = @bitCast(u16, y);
+                return ((rx ^ ry) & 1) == 0;
+            }
+        };
+
+        var dst = target.clip(rect);
+
+        var top = dst.pixels;
+        var bot = dst.pixels + (dst.height - 1) * target.stride;
+
+        var x: u15 = 0;
+        while (x < dst.width) : (x += 1) {
+            if (dst.dy == 0) {
+                if (H.dither(dst.x + x, rect.top())) {
+                    top[0] = theme.focus;
+                }
+            }
+            if (dst.y + dst.height == rect.bottom()) {
+                if (H.dither(dst.x + x, rect.bottom())) {
+                    bot[0] = theme.focus;
+                }
+            }
+            top += 1;
+            bot += 1;
+        }
+
+        var left = dst.pixels;
+        var right = dst.pixels + (dst.width - 1);
+
+        var y: u15 = 0;
+        while (y < dst.height) : (y += 1) {
+            if (dst.dx == 0) {
+                if (H.dither(rect.left(), dst.y + y)) {
+                    left[0] = theme.focus;
+                }
+            }
+            if (dst.x + dst.width == rect.right()) {
+                if (H.dither(rect.right(), dst.y + y)) {
+                    right[0] = theme.focus;
+                }
+            }
+
+            left += target.stride;
+            right += target.stride;
+        }
+    }
+
     pub fn paint(gui: Interface, target: Framebuffer) void {
-        for (gui.widgets) |widget| {
+        for (gui.widgets) |widget, index| {
             const b = .{
                 .x = widget.bounds.x,
                 .y = widget.bounds.y,
@@ -130,7 +287,10 @@ pub const Interface = struct {
                     target.drawString(b.x, b.y, ctrl.text, gui.theme.label, b.width);
                 },
                 .text_box => |ctrl| {
-                    target.fillRectangle(widget.bounds.shrink(1), gui.theme.area);
+                    target.fillRectangle(widget.bounds.shrink(1), if (ctrl.flags.read_only)
+                        gui.theme.area
+                    else
+                        gui.theme.window);
 
                     if (b.width > 2 and b.height > 2) {
                         target.drawLine(
@@ -162,6 +322,17 @@ pub const Interface = struct {
                     } else {
                         writer.writer().writeAll(ctrl.content()) catch {};
                     }
+
+                    if (gui.focus == index) {
+                        const cursor_x = 6 * ctrl.editor.cursor;
+                        if (cursor_x < b.width - 3) {
+                            target.drawLine(
+                                Point.new(b.x + 1 + @intCast(i16, cursor_x), b.y + 2),
+                                Point.new(b.x + 1 + @intCast(i16, cursor_x), b.y + 9),
+                                gui.theme.text_cursor,
+                            );
+                        }
+                    }
                 },
                 .panel => {
                     target.fillRectangle(widget.bounds.shrink(2), gui.theme.area);
@@ -185,6 +356,9 @@ pub const Interface = struct {
                     @panic("painting not picture implemented yet!");
                 },
             }
+            if (gui.focus == index) {
+                paintFocusMarker(target, widget.bounds.shrink(1), gui.theme.*);
+            }
         }
     }
 };
@@ -200,6 +374,17 @@ pub const Control = union(enum) {
     text_box: TextBox,
     panel: Panel,
     picture: Picture,
+
+    pub fn canFocus(ctrl: Control) bool {
+        return switch (ctrl) {
+            .button => true,
+            .text_box => true,
+
+            .label => false,
+            .panel => false,
+            .picture => false,
+        };
+    }
 };
 
 pub const Button = struct {

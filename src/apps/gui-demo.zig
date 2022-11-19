@@ -53,8 +53,16 @@ pub fn main() !void {
         while (ashet.ui.pollEvent(window)) |event| {
             switch (event) {
                 .none => {},
-                .mouse => |data| if (interface.sendMouseEvent(data)) |guievt| handleEvent(guievt),
-                .keyboard => |data| if (interface.sendKeyboardEvent(data)) |guievt| handleEvent(guievt),
+                .mouse => |data| {
+                    if (interface.sendMouseEvent(data)) |guievt|
+                        handleEvent(guievt);
+                    paint(window);
+                },
+                .keyboard => |data| {
+                    if (interface.sendKeyboardEvent(data)) |guievt|
+                        handleEvent(guievt);
+                    paint(window);
+                },
                 .window_close => break :app_loop,
                 .window_minimize => {},
                 .window_restore => {},

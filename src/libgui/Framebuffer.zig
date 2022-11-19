@@ -47,7 +47,7 @@ const ScreenRect = struct {
     height: u15,
 };
 
-fn clip(fb: Framebuffer, rect: Rectangle) ScreenRect {
+pub fn clip(fb: Framebuffer, rect: Rectangle) ScreenRect {
     var width: u16 = rect.width;
     var height: u16 = rect.height;
 
@@ -73,7 +73,7 @@ fn clip(fb: Framebuffer, rect: Rectangle) ScreenRect {
         .width = @intCast(u15, width),
         .height = @intCast(u15, height),
     };
-    std.log.debug("clip {} to {}", .{ rect, result });
+    // std.log.debug("clip {} to {}", .{ rect, result });
     return result;
 }
 
