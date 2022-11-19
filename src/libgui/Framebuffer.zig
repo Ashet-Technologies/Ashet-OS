@@ -200,42 +200,68 @@ pub fn drawLine(fb: Framebuffer, from: Point, to: Point, color: ColorIndex) void
     }
 }
 
-pub fn drawString(fb: Framebuffer, x: i16, y: i16, text: []const u8, color: ColorIndex, limit: ?u15) void {
-    const font = &Font.default;
+pub const ScreenWriter = struct {
+    pub const Error = error{};
+    pub const Writer = std.io.Writer(*ScreenWriter, Error, write);
 
-    const max_width = @intCast(u15, limit orelse std.math.max(0, (@intCast(i16, fb.width) - x)));
-    if (max_width == 0)
-        return;
+    fb: Framebuffer,
+    dx: i16,
+    dy: i16,
+    color: ColorIndex,
+    limit: u15, // only render till this column (exclusive)
 
-    const x_limit = std.math.min(fb.width, x + max_width);
+    pub fn writer(sw: *ScreenWriter) Writer {
+        return Writer{ .context = sw };
+    }
 
-    const gw = font.glyph_size.width;
-    const gh = font.glyph_size.height;
+    fn write(sw: *ScreenWriter, text: []const u8) Error!usize {
+        if (sw.limit == sw.fb.width)
+            return text.len;
+        const font = &Font.default;
 
-    var dx: i16 = x;
-    var dy: i16 = y;
-    for (text) |char| {
-        if (dx + gw > x_limit) {
-            break;
-        }
-        const glyph = font.getGlyph(char);
+        const gw = font.glyph_size.width;
+        const gh = font.glyph_size.height;
 
-        if (dx + gw >= 0) {
-            var gx: u15 = 0;
-            while (gx < gw) : (gx += 1) {
-                var bits = glyph.bits[gx];
+        render_loop: for (text) |char| {
+            if (sw.dx >= sw.limit) {
+                break;
+            }
+            const glyph = font.getGlyph(char);
 
-                var gy: u15 = 0;
-                while (gy < gh) : (gy += 1) {
-                    if ((bits & (@as(u8, 1) << @truncate(u3, gy))) != 0) {
-                        fb.setPixel(dx + gx, dy + gy, color);
+            if (sw.dx + gw >= 0) {
+                var gx: u15 = 0;
+                while (gx < gw) : (gx += 1) {
+                    if (sw.dx + gx > sw.limit) {
+                        break :render_loop;
+                    }
+
+                    var bits = glyph.bits[gx];
+
+                    var gy: u15 = 0;
+                    while (gy < gh) : (gy += 1) {
+                        if ((bits & (@as(u8, 1) << @truncate(u3, gy))) != 0) {
+                            sw.fb.setPixel(sw.dx + gx, sw.dy + gy, sw.color);
+                        }
                     }
                 }
             }
+
+            sw.dx += gw;
         }
 
-        dx += gw;
+        return text.len;
     }
+};
+
+pub fn screenWriter(fb: Framebuffer, x: i16, y: i16, color: ColorIndex, max_width: ?u15) ScreenWriter {
+    const limit = @intCast(u15, if (max_width) |mw| @intCast(u15, std.math.max(0, x + mw)) else fb.width);
+
+    return ScreenWriter{ .fb = fb, .dx = x, .dy = y, .color = color, .limit = limit };
+}
+
+pub fn drawString(fb: Framebuffer, x: i16, y: i16, text: []const u8, color: ColorIndex, limit: ?u15) void {
+    var sw = fb.screenWriter(x, y, color, limit);
+    sw.writer().writeAll(text) catch unreachable;
 }
 
 pub fn blit(fb: Framebuffer, point: Point, bitmap: Bitmap) void {

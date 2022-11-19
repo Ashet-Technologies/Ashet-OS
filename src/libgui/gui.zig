@@ -156,7 +156,12 @@ pub const Interface = struct {
                         );
                     }
 
-                    target.drawString(b.x + 2, b.y + 2, ctrl.text, gui.theme.text, b.width -| 2);
+                    var writer = target.screenWriter(b.x + 2, b.y + 2, gui.theme.text, b.width -| 2);
+                    if (ctrl.flags.password) {
+                        writer.writer().writeByteNTimes('*', ctrl.content().len) catch {};
+                    } else {
+                        writer.writer().writeAll(ctrl.content()) catch {};
+                    }
                 },
                 .panel => {
                     target.fillRectangle(widget.bounds.shrink(2), gui.theme.area);
@@ -240,9 +245,10 @@ pub const Label = struct {
 };
 
 pub const TextBox = struct {
-    text: []const u8,
+    editor: TextEditor,
+    flags: Flags = .{},
 
-    pub fn new(x: i16, y: i16, width: u15, text: []const u8) Widget {
+    pub fn new(x: i16, y: i16, width: u15, backing: []u8, text: []const u8) !Widget {
         return Widget{
             .bounds = Rectangle{
                 .x = x,
@@ -252,11 +258,29 @@ pub const TextBox = struct {
             },
             .control = .{
                 .text_box = TextBox{
-                    .text = text,
+                    .editor = try TextEditor.init(TextEditor.Buffer.initStatic(backing), text),
                 },
             },
         };
     }
+
+    pub fn content(tb: TextBox) []const u8 {
+        return tb.editor.getText();
+    }
+
+    pub fn setText(tb: *TextBox, string: []const u8) !void {
+        return tb.editor.setText(string);
+    }
+
+    pub const Flags = packed struct(u16) {
+        /// The text box is a password box and will hide all text behind "*".
+        password: bool = false,
+
+        /// The text box is not editable. The user can move the cursor, but not change the text.
+        read_only: bool = false,
+
+        unused: u14 = 0,
+    };
 };
 
 pub const Panel = struct {
@@ -286,13 +310,16 @@ pub const Picture = struct {
 };
 
 test "smoke test 01" {
+    var tb_user_backing: [64]u8 = undefined;
+    var tb_passwd_backing: [64]u8 = undefined;
+
     var widgets = [_]Widget{
         Panel.new(5, 5, 172, 57),
         Panel.new(5, 65, 172, 57),
         Button.new(69, 42, null, "Cancel"),
         Button.new(135, 42, null, "Login"),
-        TextBox.new(69, 14, 99, "xq"),
-        TextBox.new(69, 28, 99, "********"),
+        try TextBox.new(69, 14, 99, &tb_user_backing, "xq"),
+        try TextBox.new(69, 28, 99, &tb_passwd_backing, "********"),
         Label.new(15, 16, "Username:"),
         Label.new(15, 30, "Password:"),
     };

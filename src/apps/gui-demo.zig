@@ -11,17 +11,20 @@ const events = struct {
     pub const login = @intToEnum(gui.EventID, 2);
 };
 
+var tb_user_backing: [64]u8 = undefined;
+var tb_passwd_backing: [64]u8 = undefined;
+
 var interface = gui.Interface{ .widgets = &widgets };
 var widgets = blk: {
     var list = [_]gui.Widget{
-        gui.Panel.new(5, 5, 172, 57),
-        gui.Panel.new(5, 65, 172, 57),
-        gui.Button.new(69, 42, null, "Cancel"),
-        gui.Button.new(135, 42, null, "Login"),
-        gui.TextBox.new(69, 14, 99, "xq"),
-        gui.TextBox.new(69, 28, 99, "********"),
-        gui.Label.new(15, 16, "Username:"),
-        gui.Label.new(15, 30, "Password:"),
+        gui.Panel.new(5, 5, 172, 57), // 0
+        gui.Panel.new(5, 65, 172, 57), // 1
+        gui.Button.new(69, 42, null, "Cancel"), // 2
+        gui.Button.new(135, 42, null, "Login"), // 3
+        gui.TextBox.new(69, 14, 99, &tb_user_backing, "") catch unreachable, // 4
+        gui.TextBox.new(69, 28, 99, &tb_passwd_backing, "") catch unreachable, //  5
+        gui.Label.new(15, 16, "Username:"), // 6
+        gui.Label.new(15, 30, "Password:"), // 7
     };
 
     list[2].control.button.clickEvent = gui.Event.new(events.cancel);
@@ -39,6 +42,10 @@ pub fn main() !void {
         .{ .popup = false },
     );
     defer ashet.ui.destroyWindow(window);
+
+    try widgets[4].control.text_box.setText("xq");
+    try widgets[5].control.text_box.setText("password");
+    widgets[5].control.text_box.flags.password = true;
 
     paint(window);
 
