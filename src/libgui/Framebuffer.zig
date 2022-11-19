@@ -7,6 +7,8 @@ const Rectangle = ashet.abi.Rectangle;
 const ColorIndex = ashet.abi.ColorIndex;
 
 const Bitmap = @import("Bitmap.zig");
+pub const Font = @import("Font.zig");
+
 const Framebuffer = @This();
 
 width: u16, // width of the image
@@ -195,6 +197,44 @@ pub fn drawLine(fb: Framebuffer, from: Point, to: Point, color: ColorIndex) void
             }
         }
         // regular licence continues here
+    }
+}
+
+pub fn drawString(fb: Framebuffer, x: i16, y: i16, text: []const u8, color: ColorIndex, limit: ?u15) void {
+    const font = &Font.default;
+
+    const max_width = @intCast(u15, limit orelse std.math.max(0, (@intCast(i16, fb.width) - x)));
+    if (max_width == 0)
+        return;
+
+    const x_limit = std.math.min(fb.width, x + max_width);
+
+    const gw = font.glyph_size.width;
+    const gh = font.glyph_size.height;
+
+    var dx: i16 = x;
+    var dy: i16 = y;
+    for (text) |char| {
+        if (dx + gw > x_limit) {
+            break;
+        }
+        const glyph = font.getGlyph(char);
+
+        if (dx + gw >= 0) {
+            var gx: u15 = 0;
+            while (gx < gw) : (gx += 1) {
+                var bits = glyph.bits[gx];
+
+                var gy: u15 = 0;
+                while (gy < gh) : (gy += 1) {
+                    if ((bits & (@as(u8, 1) << @truncate(u3, gy))) != 0) {
+                        fb.setPixel(dx + gx, dy + gy, color);
+                    }
+                }
+            }
+        }
+
+        dx += gw;
     }
 }
 

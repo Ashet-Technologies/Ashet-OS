@@ -136,14 +136,12 @@ pub const Interface = struct {
                         );
                     }
 
-                    _ = ctrl;
+                    target.drawString(b.x + 2, b.y + 2, ctrl.text, gui.theme.text, b.width -| 2);
                 },
                 .label => |ctrl| {
-                    _ = ctrl;
-                    // @panic("painting not label implemented yet!");
+                    target.drawString(b.x, b.y, ctrl.text, gui.theme.label, b.width);
                 },
                 .text_box => |ctrl| {
-                    _ = ctrl;
                     target.fillRectangle(widget.bounds.shrink(1), gui.theme.area);
 
                     if (b.width > 2 and b.height > 2) {
@@ -169,9 +167,10 @@ pub const Interface = struct {
                             gui.theme.area_light,
                         );
                     }
+
+                    target.drawString(b.x + 2, b.y + 2, ctrl.text, gui.theme.text, b.width -| 2);
                 },
-                .panel => |ctrl| {
-                    _ = ctrl;
+                .panel => {
                     target.fillRectangle(widget.bounds.shrink(2), gui.theme.area);
                     if (b.width > 3 and b.height > 3) {
                         target.drawRectangle(Rectangle{
@@ -219,7 +218,7 @@ pub const Button = struct {
             .bounds = Rectangle{
                 .x = x,
                 .y = y,
-                .width = width orelse @intCast(u15, text.len * 6),
+                .width = width orelse (@intCast(u15, text.len * 6) + 3),
                 .height = 11,
             },
             .control = .{
@@ -306,7 +305,7 @@ test "smoke test 01" {
         Button.new(135, 42, null, "Login"),
         TextBox.new(69, 14, 99, "xq"),
         TextBox.new(69, 28, 99, "********"),
-        Label.new(15, 16, "Username"),
+        Label.new(15, 16, "Username:"),
         Label.new(15, 30, "Password:"),
     };
     var interface = Interface{ .widgets = &widgets };
