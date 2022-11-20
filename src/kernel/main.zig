@@ -16,6 +16,8 @@ pub const multi_tasking = @import("components/multi_tasking.zig");
 pub const ui = @import("components/ui.zig");
 pub const apps = @import("components/apps.zig");
 
+pub const log_level = if (@import("builtin").mode == .Debug) .debug else .info;
+
 export fn ashet_kernelMain() void {
     if (@import("builtin").target.os.tag != .freestanding)
         return; // don't include this on an OS!
@@ -65,26 +67,22 @@ pub const global_hotkeys = struct {
         if (!event.pressed)
             return false;
         if (event.modifiers.alt) {
-            // const SwitchGroup = struct { key: abi.KeyCode, screen: multi_tasking.Screen };
-            // const switch_groups = [10]SwitchGroup{
-            //     .{ .key = .f1, .screen = .@"1" },
-            //     .{ .key = .f2, .screen = .@"2" },
-            //     .{ .key = .f3, .screen = .@"3" },
-            //     .{ .key = .f4, .screen = .@"4" },
-            //     .{ .key = .f5, .screen = .@"5" },
-            //     .{ .key = .f6, .screen = .@"6" },
-            //     .{ .key = .f7, .screen = .@"7" },
-            //     .{ .key = .f8, .screen = .@"8" },
-            //     .{ .key = .f9, .screen = .@"9" },
-            //     .{ .key = .f10, .screen = .@"10" },
-            // };
+            switch (event.key) {
+                .f12 => {
+                    const total_pages = memory.page_count;
+                    const free_pages = memory.getFreePageCount();
 
-            // for (switch_groups) |grp| {
-            //     if (event.key == grp.key) {
-            //         multi_tasking.selectScreen(grp.screen) catch |err| std.log.err("failed to switch to screen {s}: {s}", .{ @tagName(grp.screen), @errorName(err) });
-            //         return true;
-            //     }
-            // }
+                    std.log.info("current memory usage: {}/{} pages free, {:.3}/{:.3} used, {}% used", .{
+                        free_pages,
+                        total_pages,
+                        std.fmt.fmtIntSizeBin(memory.page_size * (total_pages - free_pages)),
+                        std.fmt.fmtIntSizeBin(memory.page_size * memory.page_count),
+                        100 - (100 * free_pages) / total_pages,
+                    });
+                },
+
+                else => {},
+            }
         }
         return false;
     }

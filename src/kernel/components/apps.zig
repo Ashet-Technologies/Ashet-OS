@@ -44,7 +44,7 @@ pub fn startAppElf(app: AppID) !void {
     if (header.phnum == 0)
         return error.NoCode;
 
-    logger.info("elf header: {}", .{header});
+    // logger.info("elf header: {}", .{header});
 
     // Verify that we can load the executable
     const required_pages: usize = blk: {
@@ -56,17 +56,17 @@ pub fn startAppElf(app: AppID) !void {
             if (phdr.p_type != elf.PT_LOAD)
                 continue;
 
-            logger.info("verifying read={} write={} exec={} offset=0x{X:0>8} vaddr=0x{X:0>8} paddr=0x{X:0>8} memlen={} bytes={} align={}", .{
-                @boolToInt((phdr.p_flags & elf.PF_R) != 0),
-                @boolToInt((phdr.p_flags & elf.PF_W) != 0),
-                @boolToInt((phdr.p_flags & elf.PF_X) != 0),
-                phdr.p_offset, // file offset
-                phdr.p_vaddr, // virtual load address
-                phdr.p_paddr, // physical load address
-                phdr.p_memsz, // memory size
-                phdr.p_filesz, // bytes in file
-                phdr.p_align, // alignment
-            });
+            // logger.info("verifying read={} write={} exec={} offset=0x{X:0>8} vaddr=0x{X:0>8} paddr=0x{X:0>8} memlen={} bytes={} align={}", .{
+            //     @boolToInt((phdr.p_flags & elf.PF_R) != 0),
+            //     @boolToInt((phdr.p_flags & elf.PF_W) != 0),
+            //     @boolToInt((phdr.p_flags & elf.PF_X) != 0),
+            //     phdr.p_offset, // file offset
+            //     phdr.p_vaddr, // virtual load address
+            //     phdr.p_paddr, // physical load address
+            //     phdr.p_memsz, // memory size
+            //     phdr.p_filesz, // bytes in file
+            //     phdr.p_align, // alignment
+            // });
 
             // // check if memory is available
             // var i: usize = 0;
@@ -83,7 +83,7 @@ pub fn startAppElf(app: AppID) !void {
 
         const byte_count = hi_addr - lo_addr;
 
-        logger.info("{s} requires {} bytes of RAM", .{ app.getName(), byte_count });
+        // logger.info("{s} requires {} bytes of RAM", .{ app.getName(), byte_count });
 
         break :blk ashet.memory.getRequiredPages(byte_count);
     };
@@ -103,17 +103,17 @@ pub fn startAppElf(app: AppID) !void {
             if (phdr.p_type != elf.PT_LOAD)
                 continue;
 
-            logger.info("loading read={} write={} exec={} offset=0x{X:0>8} vaddr=0x{X:0>8} paddr=0x{X:0>8} memlen={} bytes={} align={}", .{
-                @boolToInt((phdr.p_flags & elf.PF_R) != 0),
-                @boolToInt((phdr.p_flags & elf.PF_W) != 0),
-                @boolToInt((phdr.p_flags & elf.PF_X) != 0),
-                phdr.p_offset, // file offset
-                phdr.p_vaddr, // virtual load address
-                phdr.p_paddr, // physical load address
-                phdr.p_memsz, // memory size
-                phdr.p_filesz, // bytes in file
-                phdr.p_align, // alignment
-            });
+            // logger.info("loading read={} write={} exec={} offset=0x{X:0>8} vaddr=0x{X:0>8} paddr=0x{X:0>8} memlen={} bytes={} align={}", .{
+            //     @boolToInt((phdr.p_flags & elf.PF_R) != 0),
+            //     @boolToInt((phdr.p_flags & elf.PF_W) != 0),
+            //     @boolToInt((phdr.p_flags & elf.PF_X) != 0),
+            //     phdr.p_offset, // file offset
+            //     phdr.p_vaddr, // virtual load address
+            //     phdr.p_paddr, // physical load address
+            //     phdr.p_memsz, // memory size
+            //     phdr.p_filesz, // bytes in file
+            //     phdr.p_align, // alignment
+            // });
 
             const section = process_memory[@intCast(usize, phdr.p_vaddr)..][0..@intCast(usize, phdr.p_memsz)];
 
@@ -146,7 +146,7 @@ pub fn startAppElf(app: AppID) !void {
 
                         switch (entry.r_info) {
                             R_RISCV_RELATIVE => {
-                                logger.err("apply rela: offset={x:0>8} addend={x}", .{ entry.r_offset, entry.r_addend });
+                                // logger.err("apply rela: offset={x:0>8} addend={x}", .{ entry.r_offset, entry.r_addend });
 
                                 std.mem.writeIntLittle(
                                     usize,

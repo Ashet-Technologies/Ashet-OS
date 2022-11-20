@@ -70,6 +70,10 @@ pub fn initialize() void {
     std.log.info("free ram: {:.2} ({}/{} pages)", .{ std.fmt.fmtIntSizeBin(free_memory), free_memory / page_size, page_count });
 }
 
+pub fn getFreePageCount() u32 {
+    return free_pages.count();
+}
+
 /// Returns the number of pages required for a given number of `bytes`.
 pub fn getRequiredPages(size: usize) usize {
     return std.mem.alignForward(size, page_size) / page_size;

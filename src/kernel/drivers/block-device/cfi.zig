@@ -11,7 +11,7 @@ pub const CFI = union(enum) {
 
     pub fn init(offset: usize, length: usize) error{InvalidDevice}!CFI {
         inline for ([_]type{ u8, u16, u32 }) |T| {
-            const flash_mem = @intToPtr([*]T, offset);
+            const flash_mem = @intToPtr([*]volatile T, offset);
 
             flash_mem[0x55] = 0x98; // enter CFI interface
             const seq = [3]u8{
@@ -41,10 +41,10 @@ pub const CFI = union(enum) {
             const Impl = @This();
 
             block_device: Interface,
-            base: [*]InterfaceWidth,
+            base: [*]volatile InterfaceWidth,
             byte_size: usize,
 
-            fn init(base: [*]InterfaceWidth, byte_size: usize) error{}!Impl {
+            fn init(base: [*]volatile InterfaceWidth, byte_size: usize) error{}!Impl {
                 var cfi = Impl{
                     .block_device = .{
                         .block_size = 512,
