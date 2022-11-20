@@ -37,6 +37,19 @@ pub fn toBitmap(fb: Framebuffer) Bitmap {
     };
 }
 
+/// Returns a view into the framebuffer. The returned framebuffer
+/// is an alias for the given `rect` inside the bigger framebuffer.
+/// This is useful to enable a clip rectangle or a local coordinate system.
+pub fn view(fb: Framebuffer, rect: Rectangle) Framebuffer {
+    const cliprect = fb.clip(rect);
+    return Framebuffer{
+        .pixels = cliprect.pixels,
+        .width = cliprect.width,
+        .height = cliprect.height,
+        .stride = fb.stride,
+    };
+}
+
 const ScreenRect = struct {
     dx: u16,
     dy: u16,
@@ -47,6 +60,7 @@ const ScreenRect = struct {
     height: u15,
 };
 
+/// Computes the actual portion of the given rectangle inside the framebuffer.
 pub fn clip(fb: Framebuffer, rect: Rectangle) ScreenRect {
     var width: u16 = rect.width;
     var height: u16 = rect.height;
@@ -215,7 +229,7 @@ pub const ScreenWriter = struct {
     }
 
     fn write(sw: *ScreenWriter, text: []const u8) Error!usize {
-        if (sw.limit == sw.fb.width)
+        if (sw.dx >= sw.limit)
             return text.len;
         const font = &Font.default;
 
@@ -254,7 +268,10 @@ pub const ScreenWriter = struct {
 };
 
 pub fn screenWriter(fb: Framebuffer, x: i16, y: i16, color: ColorIndex, max_width: ?u15) ScreenWriter {
-    const limit = @intCast(u15, if (max_width) |mw| @intCast(u15, std.math.max(0, x + mw)) else fb.width);
+    const limit = @intCast(u15, if (max_width) |mw|
+        @intCast(u15, std.math.max(0, x + mw))
+    else
+        fb.width);
 
     return ScreenWriter{ .fb = fb, .dx = x, .dy = y, .color = color, .limit = limit };
 }

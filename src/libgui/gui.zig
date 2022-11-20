@@ -94,8 +94,6 @@ pub const Interface = struct {
                             // left half of character is "cursor left of character", right half is "cursor right of character"
                             const text_index = std.math.min((offset +| 3) / 6, box.editor.graphemeCount());
 
-                            logger.info("set cursor: {}, {}", .{ offset, text_index });
-
                             box.editor.cursor = text_index;
                         },
                         .label, .panel, .picture => {},
@@ -191,6 +189,18 @@ pub const Interface = struct {
                                 std.log.info("handle key {} for text box", .{event});
                             }
                         },
+                    }
+
+                    // adjust scroll to cursor position
+                    const cursor_offset = @intCast(i16, 6 * ctrl.editor.cursor);
+                    const cursor_pos = (cursor_offset - ctrl.scroll);
+                    const limit = @intCast(u15, (widget.bounds.width -| 4));
+
+                    if (cursor_pos < 0) {
+                        ctrl.scroll -|= @intCast(u15, -cursor_pos) + limit / 4; // scroll to the left - 25% width
+                    }
+                    if (cursor_pos >= limit) {
+                        ctrl.scroll = @intCast(u15, (cursor_offset - limit) + limit / 4); // scroll to the right + 25% width
                     }
                 }
             },
@@ -324,7 +334,14 @@ pub const Interface = struct {
                         );
                     }
 
-                    var writer = target.screenWriter(b.x + 2, b.y + 2, gui.theme.text, b.width -| 2);
+                    var edit_view = target.view(Rectangle{
+                        .x = b.x + 1,
+                        .y = b.y + 1,
+                        .width = b.width - 2,
+                        .height = 9,
+                    });
+
+                    var writer = edit_view.screenWriter(1 - @as(i16, ctrl.scroll), 0, gui.theme.text, null);
                     if (ctrl.flags.password) {
                         writer.writer().writeByteNTimes('*', ctrl.content().len) catch {};
                     } else {
@@ -332,14 +349,12 @@ pub const Interface = struct {
                     }
 
                     if (gui.focus == index) {
-                        const cursor_x = 6 * ctrl.editor.cursor;
-                        if (cursor_x < b.width - 3) {
-                            target.drawLine(
-                                Point.new(b.x + 1 + @intCast(i16, cursor_x), b.y + 2),
-                                Point.new(b.x + 1 + @intCast(i16, cursor_x), b.y + 9),
-                                gui.theme.text_cursor,
-                            );
-                        }
+                        const cursor_x = 6 * ctrl.editor.cursor - ctrl.scroll;
+                        edit_view.drawLine(
+                            Point.new(1 + @intCast(i16, cursor_x), 1),
+                            Point.new(1 + @intCast(i16, cursor_x), 8),
+                            gui.theme.text_cursor,
+                        );
                     }
                 },
                 .panel => {
@@ -440,6 +455,7 @@ pub const Label = struct {
 pub const TextBox = struct {
     editor: TextEditor,
     flags: Flags = .{},
+    scroll: u15 = 0, // horizontal text scroll in pixels. value shifts the text to the left, so the cursor can stay in the text box
 
     pub fn new(x: i16, y: i16, width: u15, backing: []u8, text: []const u8) !Widget {
         return Widget{
