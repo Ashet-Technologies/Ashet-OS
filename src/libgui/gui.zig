@@ -87,8 +87,16 @@ pub const Interface = struct {
 
                     switch (widget.control) {
                         .button => |btn| return btn.clickEvent,
-                        .text_box => {
-                            // TODO: Set cursor position here
+                        .text_box => |*box| {
+                            const offset = @intCast(usize, event.x - widget.bounds.x) -| 2; // adjust to "left text edge"
+
+                            // compute the index:
+                            // left half of character is "cursor left of character", right half is "cursor right of character"
+                            const text_index = std.math.min((offset +| 3) / 6, box.editor.graphemeCount());
+
+                            logger.info("set cursor: {}, {}", .{ offset, text_index });
+
+                            box.editor.cursor = text_index;
                         },
                         .label, .panel, .picture => {},
                     }
