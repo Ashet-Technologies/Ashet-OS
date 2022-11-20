@@ -58,10 +58,27 @@ const ScreenRect = struct {
     pixels: [*]ColorIndex,
     width: u15,
     height: u15,
+
+    pub const empty = ScreenRect{
+        .dx = 0,
+        .dy = 0,
+        .x = 0,
+        .y = 0,
+        .pixels = undefined,
+        .width = 0,
+        .height = 0,
+    };
 };
 
 /// Computes the actual portion of the given rectangle inside the framebuffer.
 pub fn clip(fb: Framebuffer, rect: Rectangle) ScreenRect {
+    if (rect.x >= fb.width or rect.y >= fb.height) {
+        return ScreenRect.empty;
+    }
+    if (rect.x + @intCast(u15, rect.width) < 0 or rect.y + @intCast(u15, rect.height) < 0) {
+        return ScreenRect.empty;
+    }
+
     var width: u16 = rect.width;
     var height: u16 = rect.height;
 
@@ -72,10 +89,10 @@ pub fn clip(fb: Framebuffer, rect: Rectangle) ScreenRect {
     const y = @intCast(u15, std.math.max(0, rect.y));
 
     if (x + width > fb.width) {
-        width = (fb.width - x);
+        width = (fb.width -| x);
     }
     if (y + height > fb.height) {
-        height = (fb.height - y);
+        height = (fb.height -| y);
     }
 
     const result = ScreenRect{
@@ -290,7 +307,7 @@ pub fn blit(fb: Framebuffer, point: Point, bitmap: Bitmap) void {
     });
 
     var dst = target.pixels;
-    var src = bitmap.pixels + target.dy * bitmap.stride;
+    var src = bitmap.pixels + target.dy * @as(usize, bitmap.stride);
     if (bitmap.transparent) |transparent| {
         var y: usize = 0;
         while (y < target.height) : (y += 1) {
@@ -308,7 +325,7 @@ pub fn blit(fb: Framebuffer, point: Point, bitmap: Bitmap) void {
         // use optimized memcpy route when we don't have to consider transparency
         var y: usize = 0;
         while (y < target.height) : (y += 1) {
-            std.mem.copy(ColorIndex, dst[0..target.width], src[target.dx..target.width]);
+            std.mem.copy(ColorIndex, dst[0..target.width], src[target.dx..bitmap.width]);
             dst += fb.stride;
             src += bitmap.stride;
         }

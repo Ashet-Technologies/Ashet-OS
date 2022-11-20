@@ -16,6 +16,8 @@ transparent: ?ColorIndex = null, // if set, this color value is considered trans
 
 pub fn parse(comptime base: u8, comptime spec: []const u8) Bitmap {
     const bmp = comptime blk: {
+        @setEvalBranchQuota(100_000);
+
         std.debug.assert(base <= 256 - 16);
         var height = 0;
         var width = 0;
@@ -28,15 +30,21 @@ pub fn parse(comptime base: u8, comptime spec: []const u8) Bitmap {
                 if (line.len > width) width = line.len;
                 height += 1;
 
-                for (line) |_, x| {
+                for (line) |char, x| {
                     if (std.fmt.parseInt(u8, line[x .. x + 1], 16)) |value| {
                         used.unset(value);
-                    } else |_| {}
+                    } else |_| {
+                        if (char != '.' and char != ' ')
+                            @compileError(std.fmt.comptimePrint("Illegal character in bitmap: {c}", .{char}));
+                    }
                 }
             }
         }
 
-        const transparent = if (used.findFirstSet()) |first| ColorIndex.get(base + @intCast(u8, first)) else null;
+        const transparent: ?ColorIndex = if (used.findFirstSet()) |first|
+            ColorIndex.get(base + @intCast(u8, first))
+        else
+            null;
 
         var buffer = [1][width]ColorIndex{[1]ColorIndex{ColorIndex.get(0)} ** width} ** height;
         {
@@ -46,8 +54,7 @@ pub fn parse(comptime base: u8, comptime spec: []const u8) Bitmap {
                 for (line) |_, x| {
                     const value: ?u8 = std.fmt.parseInt(u8, line[x .. x + 1], 16) catch null;
 
-                    buffer[y][x] =
-                        if (value) |val|
+                    buffer[y][x] = if (value) |val|
                         ColorIndex.get(base + val)
                     else if (transparent) |val|
                         val

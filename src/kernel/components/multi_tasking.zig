@@ -79,17 +79,19 @@ pub var exclusive_video_controller: ?*Process = null;
 pub const Process = struct {
     master_thread: *ashet.scheduler.Thread,
     thread_count: usize = 0,
+    base_address: usize,
 
     pub const SpawnOptions = struct {
         stack_size: usize = 128 * 1024, // 128k
     };
 
-    pub fn spawn(name: []const u8, entry_point: ashet.abi.ThreadFunction, arg: ?*anyopaque, options: SpawnOptions) !*Process {
+    pub fn spawn(name: []const u8, base_address: usize, entry_point: ashet.abi.ThreadFunction, arg: ?*anyopaque, options: SpawnOptions) !*Process {
         const process: *Process = try ashet.memory.allocator.create(Process);
         errdefer ashet.memory.allocator.destroy(process);
 
         process.* = Process{
             .master_thread = undefined,
+            .base_address = base_address,
         };
 
         process.master_thread = try ashet.scheduler.Thread.spawn(entry_point, arg, .{

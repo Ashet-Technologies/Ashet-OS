@@ -375,8 +375,7 @@ pub const Interface = struct {
                     }
                 },
                 .picture => |ctrl| {
-                    _ = ctrl;
-                    @panic("painting not picture implemented yet!");
+                    target.blit(widget.bounds.position(), ctrl.bitmap);
                 },
             }
             if (gui.focus == index) {
@@ -510,17 +509,62 @@ pub const Panel = struct {
 
 pub const Picture = struct {
     bitmap: Bitmap,
+
     pub fn new(x: i16, y: i16, bitmap: Bitmap) Widget {
-        //
-        _ = x;
-        _ = y;
-        _ = bitmap;
+        return Widget{
+            .bounds = Rectangle{
+                .x = x,
+                .y = y,
+                .width = bitmap.width,
+                .height = bitmap.height,
+            },
+            .control = .{
+                .picture = Picture{
+                    .bitmap = bitmap,
+                },
+            },
+        };
     }
 };
 
 test "smoke test 01" {
     var tb_user_backing: [64]u8 = undefined;
     var tb_passwd_backing: [64]u8 = undefined;
+
+    const demo_bitmap =
+        \\................................
+        \\...........CCCCCCCCCCC..........
+        \\........CCCCCCCCCCCCCCCC........
+        \\.......CCCCCCCCCCCCCCCCCC.......
+        \\.....CCCCCCCCCCCCCCCCCCCCCC.....
+        \\....CCC5555CCCCCCCCCCCCCCCC.....
+        \\....C5555555CCCCCCCCC55555CC....
+        \\...C555555555CCCCCCC5555555CC...
+        \\..CC555555555CCCCCCC5555555CC...
+        \\..CC55555F555CCCCCCC5555555CCC..
+        \\..CC5555FFF5CCCCCCCC55F5555CCC..
+        \\.CCC55555F5CCCCCCCCC5FFF555CCC..
+        \\.CCCC55555CCCCCCCCCC55F555CCCC..
+        \\.CCCCCCCCCCCCCCCCCCCC5555CCCCC..
+        \\.CCCCCCCCCCCCCCCCCCCCCCCCCCCCCC.
+        \\.CCCCCCCCCCCCCCCCCCCCCCCCCCCCCC.
+        \\.CCCCCCCCCCCCCCCCCCCCCCCCCCCCCC.
+        \\.CCCCCCCCCCCCCCCCCCCCCCCCCCCCCC.
+        \\.CCCCCCCCCCCCCCCCCCCCCCCCCCCCC..
+        \\.CCCC666CCCCCCCCCCCCCC666CCCCC..
+        \\.CCC66666CCCCCCCCCCCC66666CCCC..
+        \\..CC666666CCCCCCCCC6666666CCCC..
+        \\..CC666666666CCCCC66666666CCC...
+        \\..CC6666666666666666666666CCC...
+        \\...CC66666666666666666666CCCC...
+        \\....CC66666666666666666CCCCC....
+        \\....CCCC6666666666666CCCCCC.....
+        \\......CCCCC666666666CCCCCC......
+        \\.......CCCCCCCCCCCCCCCCCC.......
+        \\.........CCCCCCCCCCCCC..........
+        \\................................
+        \\................................
+    ;
 
     var widgets = [_]Widget{
         Panel.new(5, 5, 172, 57),
@@ -531,15 +575,16 @@ test "smoke test 01" {
         try TextBox.new(69, 28, 99, &tb_passwd_backing, "********"),
         Label.new(15, 16, "Username:"),
         Label.new(15, 30, "Password:"),
+        Picture.new(17, 78, Bitmap.parse(0, demo_bitmap)),
     };
     var interface = Interface{ .widgets = &widgets };
 
-    var pixel_storage: [1][200]ColorIndex = undefined;
+    var pixel_storage: [1][182]ColorIndex = undefined;
     var fb = Framebuffer{
         .pixels = @ptrCast([*]ColorIndex, &pixel_storage),
         .stride = 0, // just overwrite the first line again
-        .width = 200,
-        .height = 150,
+        .width = 182,
+        .height = 127,
     };
 
     interface.paint(fb);

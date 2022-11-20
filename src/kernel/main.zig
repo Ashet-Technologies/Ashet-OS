@@ -104,7 +104,7 @@ var runtime_sdata_string = "Hello, well initialized .sdata!\r\n".*;
 
 extern fn hang() callconv(.C) noreturn;
 
-export fn handleTrap() callconv(.C) noreturn {
+export fn handleTrap() align(4) callconv(.C) noreturn {
     @panic("unhandled trap");
 }
 

@@ -191,7 +191,7 @@ pub fn startAppElf(app: AppID) !void {
         entry_point,
     });
 
-    try spawnApp(app, entry_point);
+    try spawnApp(app, process_base, entry_point);
 }
 
 pub fn startAppBinary(app: AppID) !void {
@@ -226,15 +226,16 @@ pub fn startAppBinary(app: AppID) !void {
             @panic("could not read all bytes on one go!");
     }
 
-    try spawnApp(app, @ptrToInt(process_memory.ptr));
+    try spawnApp(app, @ptrToInt(process_memory.ptr), @ptrToInt(process_memory.ptr));
 }
 
-fn spawnApp(app: AppID, entry_point: usize) !void {
+fn spawnApp(app: AppID, base_address: usize, entry_point: usize) !void {
     const process = try ashet.multi_tasking.Process.spawn(
         app.getName(),
+        base_address,
         @intToPtr(ashet.scheduler.ThreadFunction, entry_point),
         null,
-        .{},
+        .{ .stack_size = 512 * 1024 },
     );
     errdefer process.kill();
 }

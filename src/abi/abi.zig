@@ -75,6 +75,8 @@ pub const SysCallInterface = extern struct {
     pub const Process = extern struct {
         yield: FnPtr(fn () void),
         exit: FnPtr(fn (u32) noreturn),
+        getBaseAddress: FnPtr(fn () usize),
+        breakpoint: FnPtr(fn () void),
     };
 
     pub const FileSystem = extern struct {

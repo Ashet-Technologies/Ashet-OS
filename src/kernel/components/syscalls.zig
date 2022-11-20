@@ -31,6 +31,8 @@ const ashet_syscall_interface: abi.SysCallInterface align(16) = .{
     .process = .{
         .yield = @"process.yield",
         .exit = @"process.exit",
+        .getBaseAddress = @"process.getBaseAddress",
+        .breakpoint = @"process.breakpoint",
     },
     .fs = .{
         .delete = @"fs.delete",
@@ -130,6 +132,20 @@ fn @"process.exit"(exit_code: u32) callconv(.C) noreturn {
 
 fn @"process.yield"() callconv(.C) void {
     ashet.scheduler.yield();
+}
+
+fn @"process.getBaseAddress"() callconv(.C) usize {
+    return getCurrentProcess().base_address;
+}
+
+fn @"process.breakpoint"() callconv(.C) void {
+    const proc = getCurrentProcess();
+    std.log.info("breakpoint in process {s}.", .{proc.master_thread.getName()});
+
+    var cont: bool = false;
+    while (!cont) {
+        std.mem.doNotOptimizeAway(cont);
+    }
 }
 
 fn @"fs.delete"(path_ptr: [*]const u8, path_len: usize) callconv(.C) bool {

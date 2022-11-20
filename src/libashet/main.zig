@@ -47,18 +47,50 @@ fn _start() callconv(.C) u32 {
 
 pub const core = struct {
     pub fn panic(msg: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, maybe_return_address: ?usize) noreturn {
-        _ = maybe_error_trace;
-
         debug.write("PANIC: ");
         debug.write(msg);
         debug.write("\r\n");
 
+        const base_address = syscalls().process.getBaseAddress();
+
+        debug.writer().print("process base:  0x{X:0>8}\n", .{base_address}) catch {};
+
+        if (maybe_return_address) |return_address| {
+            var buf: [64]u8 = undefined;
+            debug.write(std.fmt.bufPrint(&buf, "return address: 0x{X:0>8}\n", .{return_address - base_address}) catch "return address: ???\n");
+        }
+
         if (@import("builtin").mode == .Debug) {
-            var iter = std.debug.StackIterator.init(maybe_return_address, null);
+            debug.write("stack trace:\n");
+            var iter = std.debug.StackIterator.init(null, null);
             while (iter.next()) |item| {
                 var buf: [64]u8 = undefined;
-                debug.write(std.fmt.bufPrint(&buf, "- 0x{X:0>8}\n", .{item}) catch "???");
+                debug.write(std.fmt.bufPrint(&buf, "- 0x{X:0>8}\n", .{item - base_address}) catch "- ???\n");
             }
+        }
+
+        if (maybe_error_trace) |stack_trace| {
+            debug.write("error trace:\n");
+            var frame_index: usize = 0;
+            var frames_left: usize = std.math.min(stack_trace.index, stack_trace.instruction_addresses.len);
+
+            while (frames_left != 0) : ({
+                frames_left -= 1;
+                frame_index = (frame_index + 1) % stack_trace.instruction_addresses.len;
+            }) {
+                const return_address = stack_trace.instruction_addresses[frame_index];
+                debug.writer().print("- 0x{X:0>8}\n", .{return_address - base_address}) catch {};
+            }
+
+            if (stack_trace.index > stack_trace.instruction_addresses.len) {
+                const dropped_frames = stack_trace.index - stack_trace.instruction_addresses.len;
+                debug.writer().print("({d} additional stack frames skipped...)\n", .{dropped_frames}) catch {};
+            }
+        }
+
+        if (@import("builtin").mode == .Debug) {
+            debug.write("breakpoint.\n");
+            syscalls().process.breakpoint();
         }
 
         syscalls().process.exit(1);
@@ -118,6 +150,11 @@ pub const debug = struct {
         for (buffer) |char| {
             @intToPtr(*volatile u8, 0x1000_0000).* = char;
         }
+    }
+
+    pub const Writer = std.io.Writer(void, WriteError, writeString);
+    pub fn writer() Writer {
+        return Writer{ .context = {} };
     }
 
     const WriteError = error{};
