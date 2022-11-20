@@ -83,10 +83,13 @@ pub const Interface = struct {
                 if (gui.widgetFromPoint(Point.new(event.x, event.y), &index)) |widget| {
                     if (widget.control.canFocus()) {
                         gui.focus = index;
+                    } else {
+                        gui.focus = null;
                     }
 
                     switch (widget.control) {
-                        .button => |btn| return btn.clickEvent,
+                        inline .button, .check_box, .radio_button => |*box| return box.click(),
+
                         .text_box => |*box| {
                             const offset = @intCast(usize, event.x - widget.bounds.x) -| 2; // adjust to "left text edge"
 
@@ -98,6 +101,8 @@ pub const Interface = struct {
                         },
                         .label, .panel, .picture => {},
                     }
+                } else {
+                    gui.focus = null;
                 }
             },
             .button_release => {},
@@ -109,7 +114,18 @@ pub const Interface = struct {
 
     const FocusDir = enum { backward, forward };
     fn moveFocus(gui: *Interface, dir: FocusDir) void {
-        const initial = gui.focus orelse return;
+        const initial = gui.focus orelse {
+            // nothing is focused right now, try focusing the first available widget
+
+            for (gui.widgets) |w, i| {
+                if (w.control.canFocus()) {
+                    gui.focus = i;
+                    return;
+                }
+            }
+
+            return;
+        };
 
         var index = initial;
 
@@ -142,26 +158,27 @@ pub const Interface = struct {
     }
 
     pub fn sendKeyboardEvent(gui: *Interface, event: ashet.abi.KeyboardEvent) ?Event {
+        if (event.pressed and event.key == .tab) {
+            gui.moveFocus(if (event.modifiers.shift) .backward else .forward);
+            return null;
+        }
+
         const widget_index = gui.focus orelse return null;
 
         const widget = &gui.widgets[widget_index];
 
         switch (widget.control) {
-            .button => |*ctrl| {
+            inline .button, .check_box, .radio_button => |*ctrl| {
                 if (!event.pressed)
                     return null;
 
                 return switch (event.key) {
-                    .@"return", .space => ctrl.clickEvent,
-
-                    .tab => {
-                        gui.moveFocus(if (event.modifiers.shift) .backward else .forward);
-                        return null;
-                    },
+                    .@"return", .space => return ctrl.click(),
 
                     else => null,
                 };
             },
+
             .text_box => |*ctrl| {
                 if (event.pressed) {
                     switch (event.key) {
@@ -177,8 +194,6 @@ pub const Interface = struct {
 
                         .backspace => ctrl.editor.delete(.left, if (event.modifiers.ctrl) .word else .letter),
                         .delete => ctrl.editor.delete(.right, if (event.modifiers.ctrl) .word else .letter),
-
-                        .tab => gui.moveFocus(if (event.modifiers.shift) .backward else .forward),
 
                         else => {
                             if (event.text) |text_ptr| {
@@ -377,6 +392,87 @@ pub const Interface = struct {
                 .picture => |ctrl| {
                     target.blit(widget.bounds.position(), ctrl.bitmap);
                 },
+                .check_box => |ctrl| {
+                    std.debug.assert(b.width == 7 and b.height == 7);
+                    target.fillRectangle(widget.bounds.shrink(1), gui.theme.window);
+                    target.drawLine(
+                        Point.new(b.x, b.y),
+                        Point.new(b.x + b.width - 1, b.y),
+                        gui.theme.area_shadow,
+                    );
+                    target.drawLine(
+                        Point.new(b.x + b.width - 1, b.y + 1),
+                        Point.new(b.x + b.width - 1, b.y + b.height - 1),
+                        gui.theme.area_shadow,
+                    );
+
+                    target.drawLine(
+                        Point.new(b.x, b.y + 1),
+                        Point.new(b.x, b.y + b.height - 1),
+                        gui.theme.area_light,
+                    );
+                    target.drawLine(
+                        Point.new(b.x + 1, b.y + b.height - 1),
+                        Point.new(b.x + b.width - 2, b.y + b.height - 1),
+                        gui.theme.area_light,
+                    );
+
+                    const checked_icon = Bitmap.parse(0,
+                        \\.....
+                        \\.0.0.
+                        \\..0..
+                        \\.0.0.
+                        \\.....
+                    );
+
+                    if (ctrl.checked) {
+                        target.blit(Point.new(b.x + 1, b.y + 1), checked_icon);
+                    }
+                },
+
+                .radio_button => |ctrl| {
+                    std.debug.assert(b.width == 7 and b.height == 7);
+                    target.fillRectangle(widget.bounds.shrink(1), gui.theme.window);
+
+                    target.drawLine(
+                        Point.new(b.x + 2, b.y),
+                        Point.new(b.x + b.width - 3, b.y),
+                        gui.theme.area_shadow,
+                    );
+                    target.drawLine(
+                        Point.new(b.x + b.width - 1, b.y + 2),
+                        Point.new(b.x + b.width - 1, b.y + b.height - 3),
+                        gui.theme.area_shadow,
+                    );
+
+                    target.drawLine(
+                        Point.new(b.x, b.y + 2),
+                        Point.new(b.x, b.y + b.height - 3),
+                        gui.theme.area_light,
+                    );
+                    target.drawLine(
+                        Point.new(b.x + 2, b.y + b.height - 1),
+                        Point.new(b.x + b.width - 3, b.y + b.height - 1),
+                        gui.theme.area_light,
+                    );
+
+                    target.setPixel(b.x + 1, b.y + 1, gui.theme.area_shadow);
+                    target.setPixel(b.x + b.width - 2, b.y + 1, gui.theme.area_shadow);
+                    target.setPixel(b.x + 1, b.y + b.height - 2, gui.theme.area_light);
+                    target.setPixel(b.x + b.width - 2, b.y + b.height - 2, gui.theme.area_shadow);
+
+                    const checked_icon = Bitmap.parse(0,
+                        \\.....
+                        \\.000.
+                        \\.000.
+                        \\.000.
+                        \\.....
+                    );
+
+                    if (ctrl.group.selected == ctrl.value) {
+                        target.blit(Point.new(b.x + 1, b.y + 1), checked_icon);
+                    }
+                },
             }
             if (gui.focus == index) {
                 paintFocusMarker(target, widget.bounds.shrink(1), gui.theme.*);
@@ -396,11 +492,15 @@ pub const Control = union(enum) {
     text_box: TextBox,
     panel: Panel,
     picture: Picture,
+    check_box: CheckBox,
+    radio_button: RadioButton,
 
     pub fn canFocus(ctrl: Control) bool {
         return switch (ctrl) {
             .button => true,
             .text_box => true,
+            .check_box => true,
+            .radio_button => true,
 
             .label => false,
             .panel => false,
@@ -428,6 +528,10 @@ pub const Button = struct {
                 },
             },
         };
+    }
+
+    pub fn click(button: *Button) ?Event {
+        return button.clickEvent;
     }
 };
 
@@ -527,6 +631,70 @@ pub const Picture = struct {
     }
 };
 
+pub const CheckBox = struct {
+    checked: bool,
+    checkedChanged: ?Event = null,
+
+    pub fn new(x: i16, y: i16, checked: bool) Widget {
+        return Widget{
+            .bounds = Rectangle{
+                .x = x,
+                .y = y,
+                .width = 7,
+                .height = 7,
+            },
+            .control = .{
+                .check_box = CheckBox{
+                    .checked = checked,
+                },
+            },
+        };
+    }
+
+    pub fn click(checkbox: *CheckBox) ?Event {
+        checkbox.checked = !checkbox.checked;
+        return checkbox.checkedChanged;
+    }
+};
+
+/// A group of radio buttons.
+/// Each radio button has a value that is transferred to `.selected` on click.
+/// If no button is selected, `RadioGroup.none` is set.
+pub const RadioGroup = struct {
+    pub const none = std.math.maxInt(u32);
+
+    selected: u32 = none,
+    selectionChanged: ?Event = null,
+};
+
+pub const RadioButton = struct {
+    group: *RadioGroup,
+    value: u32,
+
+    pub fn new(x: i16, y: i16, group: *RadioGroup, value: u32) Widget {
+        std.debug.assert(value != RadioGroup.none);
+        return Widget{
+            .bounds = Rectangle{
+                .x = x,
+                .y = y,
+                .width = 7,
+                .height = 7,
+            },
+            .control = .{
+                .radio_button = RadioButton{
+                    .value = value,
+                    .group = group,
+                },
+            },
+        };
+    }
+
+    pub fn click(radiobutton: *RadioButton) ?Event {
+        radiobutton.group.selected = radiobutton.value;
+        return radiobutton.group.selectionChanged;
+    }
+};
+
 test "smoke test 01" {
     var tb_user_backing: [64]u8 = undefined;
     var tb_passwd_backing: [64]u8 = undefined;
@@ -566,6 +734,8 @@ test "smoke test 01" {
         \\................................
     ;
 
+    var radio_group = RadioGroup{};
+
     var widgets = [_]Widget{
         Panel.new(5, 5, 172, 57),
         Panel.new(5, 65, 172, 57),
@@ -576,6 +746,20 @@ test "smoke test 01" {
         Label.new(15, 16, "Username:"),
         Label.new(15, 30, "Password:"),
         Picture.new(17, 78, Bitmap.parse(0, demo_bitmap)),
+
+        Label.new(80, 70, "Magic"),
+        Label.new(80, 80, "Turbo"),
+
+        CheckBox.new(70, 70, true),
+        CheckBox.new(70, 80, false),
+
+        Label.new(80, 90, "Tall"),
+        Label.new(80, 98, "Grande"),
+        Label.new(80, 106, "Venti"),
+
+        RadioButton.new(70, 90, &radio_group, 0),
+        RadioButton.new(70, 98, &radio_group, 1),
+        RadioButton.new(70, 106, &radio_group, 2),
     };
     var interface = Interface{ .widgets = &widgets };
 

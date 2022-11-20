@@ -50,6 +50,9 @@ const demo_bitmap =
 ;
 
 var interface = gui.Interface{ .widgets = &widgets };
+
+var radio_group = gui.RadioGroup{};
+
 var widgets = blk: {
     var list = [_]gui.Widget{
         gui.Panel.new(5, 5, 172, 57), // 0
@@ -61,6 +64,20 @@ var widgets = blk: {
         gui.Label.new(15, 16, "Username:"), // 6
         gui.Label.new(15, 30, "Password:"), // 7
         gui.Picture.new(17, 78, gui.Bitmap.parse(0, demo_bitmap)), // 8
+
+        gui.Label.new(80, 70, "Magic"),
+        gui.Label.new(80, 80, "Turbo"),
+
+        gui.CheckBox.new(70, 70, true),
+        gui.CheckBox.new(70, 80, false),
+
+        gui.Label.new(80, 90, "Tall"),
+        gui.Label.new(80, 98, "Grande"),
+        gui.Label.new(80, 106, "Venti"),
+
+        gui.RadioButton.new(70, 90, &radio_group, 0),
+        gui.RadioButton.new(70, 98, &radio_group, 1),
+        gui.RadioButton.new(70, 106, &radio_group, 2),
     };
 
     list[2].control.button.clickEvent = gui.Event.new(events.cancel);
