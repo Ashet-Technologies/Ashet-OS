@@ -13,3 +13,9 @@
 [submodule "vendor/ziglyph"]
 	path = vendor/ziglyph
 	url = https://github.com/jecolon/ziglyph
+[submodule "vendor/lwip"]
+	path = vendor/lwip
+	url = https://git.savannah.nongnu.org/git/lwip.git
+[submodule "vendor/ziglibc"]
+	path = vendor/ziglibc
+	url = https://github.com/MasterQ32/ziglibc
