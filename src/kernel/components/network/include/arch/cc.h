@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-// ashet apis:
+// ashet apis, implemented in src/main.zig:
 extern void ashet_lockInterrupts(bool *state);
 extern void ashet_unlockInterrupts(bool state);
 extern uint32_t ashet_rand(void);

@@ -11,6 +11,7 @@ pub const scheduler = @import("components/scheduler.zig");
 pub const syscalls = @import("components/syscalls.zig");
 pub const filesystem = @import("components/filesystem.zig");
 pub const input = @import("components/input.zig");
+pub const network = @import("components/network.zig");
 // pub const splash_screen = @import("components/splash_screen.zig");
 pub const multi_tasking = @import("components/multi_tasking.zig");
 pub const ui = @import("components/ui.zig");
@@ -52,9 +53,11 @@ fn main() !void {
         thread.detach();
     }
 
-    syscalls.initialize();
-
     try ui.start();
+
+    try network.start();
+
+    syscalls.initialize();
 
     scheduler.start();
 
@@ -304,4 +307,19 @@ test {
     // for ("Very long string in which we print some") |char, i| {
     //     console.writer().print("{d:0>2}: {c}\r\n", .{ i, char }) catch unreachable;
     // }
+}
+
+export fn ashet_lockInterrupts(were_enabled: *bool) void {
+    // TODO: Disable interrupts
+    were_enabled.* = false;
+}
+
+export fn ashet_unlockInterrupts(enable: bool) void {
+    // TODO: Disable interrupts
+    std.debug.assert(enable == false);
+}
+
+export fn ashet_rand() u32 {
+    // TODO: Improve this
+    return 4; // chose by a fair dice roll
 }

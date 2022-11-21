@@ -21,4 +21,7 @@
 #define LWIP_SOCKET 0
 #define LWIP_NETCONN 0
 
+// #define LWIP_ARP 1
+// #define LWIP_ETHERNET 1
+
 #endif // ASHET_OS_lwipopts_h

@@ -395,7 +395,7 @@ fn create_lwIP(b: *std.build.Builder, target: std.zig.CrossTarget, mode: std.bui
     lib.setTarget(target);
     lib.setBuildMode(mode);
 
-    const flags = [_][]const u8{"-std=c99"};
+    const flags = [_][]const u8{ "-std=c99", "-fno-sanitize=undefined" };
     const files = [_][]const u8{
         // Core files
         "vendor/lwip/src/core/init.c",
@@ -440,6 +440,12 @@ fn create_lwIP(b: *std.build.Builder, target: std.zig.CrossTarget, mode: std.bui
         "vendor/lwip/src/core/ipv6/ethip6.c",
         "vendor/lwip/src/core/ipv6/nd6.c",
 
+        // Interfaces:
+        "vendor/lwip/src/netif/bridgeif.c",
+        "vendor/lwip/src/netif/ethernet.c",
+        "vendor/lwip/src/netif/slipif.c",
+        "vendor/lwip/src/netif/bridgeif_fdb.c",
+
         // sequential APIs
         // "vendor/lwip/src/api/err.c",
         // "vendor/lwip/src/api/api_msg.c",
@@ -450,10 +456,6 @@ fn create_lwIP(b: *std.build.Builder, target: std.zig.CrossTarget, mode: std.bui
         // "vendor/lwip/src/api/tcpip.c",
         // "vendor/lwip/src/api/netdb.c",
         // "vendor/lwip/src/api/if_api.c",
-        // "vendor/lwip/src/netif/bridgeif.c",
-        // "vendor/lwip/src/netif/ethernet.c",
-        // "vendor/lwip/src/netif/slipif.c",
-        // "vendor/lwip/src/netif/bridgeif_fdb.c",
 
         // 6LoWPAN
         "vendor/lwip/src/netif/lowpan6.c",
