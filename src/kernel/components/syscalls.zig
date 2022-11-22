@@ -54,6 +54,20 @@ const ashet_syscall_interface: abi.SysCallInterface align(16) = .{
         .getKeyboardEvent = @"input.getKeyboardEvent",
         .getMouseEvent = @"input.getMouseEvent",
     },
+
+    .network = .{
+        .udp = .{
+            .createSocket = @"network.udp.createSocket",
+            .destroySocket = @"network.udp.destroySocket",
+            .bind = @"network.udp.bind",
+            .connect = @"network.udp.connect",
+            .disconnect = @"network.udp.disconnect",
+            .send = @"network.udp.send",
+            .sendTo = @"network.udp.sendTo",
+            .receive = @"network.udp.receive",
+            .receiveFrom = @"network.udp.receiveFrom",
+        },
+    },
 };
 
 fn getCurrentThread() *ashet.scheduler.Thread {
@@ -309,4 +323,35 @@ fn @"ui.invalidate"(win: *const abi.Window, rect: abi.Rectangle) callconv(.C) vo
     };
 
     ashet.ui.invalidateRegion(screen_rect);
+}
+
+fn @"network.udp.createSocket"() callconv(.C) abi.UdpSocket {
+    return ashet.network.udp.createSocket() catch return .invalid;
+}
+fn @"network.udp.destroySocket"(sock: abi.UdpSocket) callconv(.C) void {
+    ashet.network.udp.destroySocket(sock);
+}
+fn @"network.udp.bind"(sock: abi.UdpSocket, ep: abi.EndPoint) callconv(.C) bool {
+    ashet.network.udp.bind(sock, ep) catch return false;
+    return true;
+}
+fn @"network.udp.connect"(sock: abi.UdpSocket, ep: abi.EndPoint) callconv(.C) bool {
+    ashet.network.udp.connect(sock, ep) catch return false;
+    return true;
+}
+fn @"network.udp.disconnect"(sock: abi.UdpSocket) callconv(.C) bool {
+    ashet.network.udp.disconnect(sock) catch return false;
+    return true;
+}
+fn @"network.udp.send"(sock: abi.UdpSocket, data: [*]const u8, length: usize) callconv(.C) usize {
+    return ashet.network.udp.send(sock, data[0..length]) catch return 0;
+}
+fn @"network.udp.sendTo"(sock: abi.UdpSocket, receiver: abi.EndPoint, data: [*]const u8, length: usize) callconv(.C) usize {
+    return ashet.network.udp.sendTo(sock, receiver, data[0..length]) catch return 0;
+}
+fn @"network.udp.receive"(sock: abi.UdpSocket, data: [*]u8, length: usize) callconv(.C) usize {
+    return ashet.network.udp.receive(sock, data[0..length]) catch return 0;
+}
+fn @"network.udp.receiveFrom"(sock: abi.UdpSocket, sender: *abi.EndPoint, data: [*]u8, length: usize) callconv(.C) usize {
+    return ashet.network.udp.receiveFrom(sock, sender, data[0..length]) catch return 0;
 }

@@ -35,6 +35,7 @@ pub const SysCallInterface = extern struct {
     fs: FileSystem,
     input: Input,
     ui: UserInterface,
+    network: Network,
 
     pub const Video = extern struct {
         /// Aquires direct access to the screen. When `true` is returned,
@@ -109,14 +110,14 @@ pub const SysCallInterface = extern struct {
     };
 
     pub const Network = extern struct {
-        getStatus: FnPtr(fn () NetworkStatus),
-        ping: FnPtr(fn ([*]Ping, usize) void),
+        // getStatus: FnPtr(fn () NetworkStatus),
+        // ping: FnPtr(fn ([*]Ping, usize) void),
 
         // TODO: Implement NIC-specific queries (mac, ips, names, ...)
 
-        dns: DNS,
+        // dns: DNS,
         udp: UDP,
-        tcp: TCP,
+        // tcp: TCP,
 
         pub const DNS = extern struct {
             /// resolves the dns entry `host` for the given `service`.
@@ -132,8 +133,12 @@ pub const SysCallInterface = extern struct {
             destroySocket: FnPtr(fn (UdpSocket) void),
 
             bind: FnPtr(fn (UdpSocket, EndPoint) bool),
+            connect: FnPtr(fn (UdpSocket, EndPoint) bool),
+            disconnect: FnPtr(fn (UdpSocket) bool),
 
+            send: FnPtr(fn (UdpSocket, data: [*]const u8, length: usize) usize),
             sendTo: FnPtr(fn (UdpSocket, receiver: EndPoint, data: [*]const u8, length: usize) usize),
+            receive: FnPtr(fn (UdpSocket, data: [*]u8, length: usize) usize),
             receiveFrom: FnPtr(fn (UdpSocket, sender: *EndPoint, data: [*]u8, length: usize) usize),
         };
 
@@ -143,7 +148,7 @@ pub const SysCallInterface = extern struct {
 
             bind: FnPtr(fn (TcpSocket, EndPoint) bool),
             listen: FnPtr(fn (TcpSocket, EndPoint) bool),
-            connect: FnPtr(fn (TcpSocket, target: [*:0]const u8) bool),
+            connect: FnPtr(fn (TcpSocket, EndPoint) bool),
             write: FnPtr(fn (TcpSocket, data: [*]const u8, length: usize) usize),
             read: FnPtr(fn (TcpSocket, data: [*]u8, length: usize) usize),
         };
@@ -159,9 +164,30 @@ pub const NetworkStatus = enum(u8) {
 
 pub const MAC = [6]u8;
 
-pub const IP = union(enum) {
-    v4: [4]u8,
-    v6: [16]u8,
+pub const IP_Type = enum(u8) { ipv4, ipv6 };
+
+pub const IP = extern union {
+    type: IP_Type,
+    addr: extern union {
+        v4: IPv4,
+        v6: IPv6,
+    },
+
+    pub fn ipv4(addr: [4]u8) IP {
+        return IP{ .v4 = .{ .type = .ipv4, .addr = .{ .v4 = .{ .addr = addr } } } };
+    }
+    pub fn ipv6(addr: [16]u8, zone: u8) IP {
+        return IP{ .type = .ipv6, .addr = .{ .v6 = .{ .addr = addr, .zone = zone } } };
+    }
+};
+
+pub const IPv4 = extern struct {
+    addr: [4]u8 align(4),
+};
+
+pub const IPv6 = extern struct {
+    addr: [16]u8 align(4),
+    zone: u8,
 };
 
 pub const EndPoint = extern struct {
@@ -176,8 +202,8 @@ pub const Ping = extern struct {
     response: u16 = undefined, // response time in ms
 };
 
-pub const TcpSocket = enum(u32) { invalid = 0, _ };
-pub const UdpSocket = enum(u32) { invalid = 0, _ };
+pub const TcpSocket = enum(u32) { invalid = std.math.maxInt(u32), _ };
+pub const UdpSocket = enum(u32) { invalid = std.math.maxInt(u32), _ };
 
 pub const ExitCode = struct {
     pub const success = @as(u32, 0);

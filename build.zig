@@ -287,6 +287,11 @@ pub fn build(b: *std.build.Builder) void {
             generate_stub_icon.addArg("32x32");
             kernel_exe.step.dependOn(&generate_stub_icon.step);
         }
+
+        {
+            const kernel_step = b.step("kernel", "Only builds the OS kernel");
+            kernel_step.dependOn(&kernel_exe.step);
+        }
     }
 
     const raw_step = kernel_exe.installRaw("ashet-os.bin", .{

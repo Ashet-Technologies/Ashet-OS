@@ -1,6 +1,8 @@
 const std = @import("std");
 const hal = @import("hal");
+const abi = ashet.abi;
 const ashet = @import("../main.zig");
+const astd = @import("ashet-std");
 const logger = std.log.scoped(.network);
 
 const c = @cImport({
@@ -46,16 +48,16 @@ pub const MAC = struct {
     }
 };
 
+pub fn appendToPBUF(pbuf: *c.pbuf, data: []const u8) !void {
+    const len = std.math.cast(u16, data.len) orelse return error.OutOfMemory;
+    try lwipTry(c.pbuf_take(pbuf, data.ptr, len));
+}
+
 pub const IncomingPacket = struct {
     pbuf: *c.pbuf,
 
     pub fn append(packet: IncomingPacket, data: []const u8) !void {
-        var offset: usize = 0;
-        while (offset < data.len) {
-            const consumed = @intCast(u16, std.math.min(std.math.maxInt(u16), data.len - offset));
-            _ = c.pbuf_take(packet.pbuf, data.ptr + offset, consumed); // TODO: error handling
-            offset += consumed;
-        }
+        try appendToPBUF(packet.pbuf, data);
     }
 };
 
@@ -233,7 +235,6 @@ pub fn dumpStats() void {
 fn networkThread(_: ?*anyopaque) callconv(.C) u32 {
     while (true) {
         hal.network.fetchNicPackets();
-
         c.sys_check_timeouts();
         ashet.scheduler.yield();
     }
@@ -315,3 +316,128 @@ fn lwipTry(err: c.err_t) LwipError!void {
         else => LwipError.Unexpected,
     };
 }
+
+pub const EndPoint = abi.EndPoint;
+pub const IP = abi.IP;
+
+fn mapIP(ip: IP) c.ip_addr_t {
+    return switch (ip.type) {
+        .ipv4 => c.ip_addr_t{
+            .type = c.IPADDR_TYPE_V4,
+            .u_addr = .{ .ip4 = .{ .addr = @bitCast(u32, ip.addr.v4.addr) } },
+        },
+        .ipv6 => c.ip_addr_t{
+            .type = c.IPADDR_TYPE_V6,
+            .u_addr = .{ .ip6 = .{ .addr = @bitCast([4]u32, ip.addr.v6.addr), .zone = ip.addr.v6.zone } },
+        },
+    };
+}
+
+pub const udp = struct {
+    const max_sockets = @intCast(usize, c.MEMP_NUM_UDP_PCB);
+    const Socket = abi.UdpSocket;
+
+    var pool: astd.IndexPool(u32, max_sockets) = .{};
+    var sockets: [max_sockets]*c.udp_pcb = undefined;
+
+    fn unmap(sock: Socket) error{Invalid}!*c.udp_pcb {
+        if (sock == .invalid)
+            return error.Invalid;
+        const index = @enumToInt(sock);
+        if (index >= max_sockets)
+            return error.Invalid;
+        if (!pool.alive(index))
+            return error.Invalid;
+        return sockets[index];
+    }
+
+    pub fn createSocket() !Socket {
+        const index = pool.alloc() orelse return error.SystemResources;
+        errdefer pool.free(index);
+
+        const pcb = c.udp_new() orelse return error.SystemResources;
+        sockets[index] = pcb;
+
+        c.udp_recv(pcb, handleIncomingPacket, null);
+
+        return @intToEnum(Socket, index);
+    }
+
+    fn handleIncomingPacket(arg: ?*anyopaque, pcb_c: [*c]c.udp_pcb, pbuf_c: [*c]c.pbuf, addr_c: [*c]const c.ip_addr_t, port: u16) callconv(.C) void {
+        _ = arg;
+        _ = pcb_c;
+        _ = pbuf_c;
+        _ = addr_c;
+        _ = port;
+
+        logger.info("received some data via udp!", .{});
+    }
+
+    pub fn destroySocket(sock: Socket) void {
+        const pcb = unmap(sock) catch return;
+        const index = @enumToInt(sock);
+        c.udp_remove(pcb);
+        sockets[index] = undefined;
+        pool.free(index);
+    }
+
+    pub fn bind(sock: Socket, ep: EndPoint) !void {
+        const pcb = try unmap(sock);
+        try lwipTry(c.udp_bind(pcb, &mapIP(ep.ip), ep.port));
+    }
+
+    pub fn connect(sock: Socket, ep: EndPoint) !void {
+        const pcb = try unmap(sock);
+        try lwipTry(c.udp_connect(pcb, &mapIP(ep.ip), ep.port));
+    }
+
+    pub fn disconnect(sock: Socket) !void {
+        const pcb = try unmap(sock);
+        c.udp_disconnect(pcb);
+    }
+
+    pub fn send(sock: Socket, data: []const u8) !usize {
+        const pcb = try unmap(sock);
+
+        const stripped_len = std.math.cast(u16, data.len) orelse return error.OutOfMemory;
+
+        const pbuf = c.pbuf_alloc(c.PBUF_TRANSPORT, stripped_len, c.PBUF_POOL) orelse return error.OutOfMemory;
+        defer _ = c.pbuf_free(pbuf);
+
+        try appendToPBUF(pbuf, data);
+
+        try lwipTry(c.udp_send(pcb, pbuf));
+
+        return data.len;
+    }
+
+    pub fn sendTo(sock: Socket, receiver: EndPoint, data: []const u8) !usize {
+        const pcb = try unmap(sock);
+
+        const stripped_len = std.math.cast(u16, data.len) orelse return error.OutOfMemory;
+
+        const pbuf = c.pbuf_alloc(c.PBUF_TRANSPORT, stripped_len, c.PBUF_POOL) orelse return error.OutOfMemory;
+        defer _ = c.pbuf_free(pbuf);
+
+        try appendToPBUF(pbuf, data);
+
+        try lwipTry(c.udp_sendto(pcb, pbuf, &mapIP(receiver.ip), receiver.port));
+
+        return data.len;
+    }
+
+    pub fn receive(sock: Socket, data: []u8) !usize {
+        const pcb = try unmap(sock);
+        _ = pcb;
+        _ = data;
+        @panic("not implemented yet!");
+    }
+
+    pub fn receiveFrom(sock: Socket, sender: *EndPoint, data: []u8) !usize {
+        const pcb = try unmap(sock);
+        _ = pcb;
+        _ = sender;
+        _ = data;
+        @panic("not implemented yet!");
+    }
+};
