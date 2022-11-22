@@ -1,8 +1,7 @@
 const std = @import("std");
 const virtio = @import("virtio.zig");
-const ashet = @import("root");
 
-const page_size = ashet.memory.page_size;
+const page_size = std.mem.page_size;
 
 const VIRTIO_F_EVENT_IDX = 1;
 const VIRTQ_AVAIL_F_NO_INTERRUPT = 1;
@@ -38,14 +37,7 @@ pub fn VirtQ(comptime queue_size: comptime_int) type {
                 .used = std.mem.zeroes(Ring(UsedItem, queue_size)),
             };
 
-            var features: u64 = undefined;
-
-            regs.device_features_sel = 0;
-            features = @as(u64, regs.device_features) << 0;
-            regs.device_features_sel = 1;
-            features |= @as(u64, regs.device_features) << 32;
-
-            const legacy = (regs.version < 2) or ((features & virtio.FeatureFlags.version_1) == 0);
+            const legacy = regs.isLegacy();
 
             regs.queue_sel = queue_index;
 
@@ -79,15 +71,17 @@ pub fn VirtQ(comptime queue_size: comptime_int) type {
             }
         }
 
-        pub fn pushDescriptor(vq: *Queue, comptime T: type, ptr: *T, write: bool, first: bool, last: bool) void {
-            return vq.pushDescriptorRaw(@ptrCast(*anyopaque, ptr), @sizeOf(T), write, first, last);
+        pub const DescriptorAccess = enum { read, write };
+
+        pub fn pushDescriptor(vq: *Queue, comptime T: type, ptr: *T, access: DescriptorAccess, first: bool, last: bool) void {
+            return vq.pushDescriptorRaw(@ptrCast(*anyopaque, ptr), @sizeOf(T), access, first, last);
         }
 
         fn flagIf(value: bool, flag: u16) u16 {
             return @boolToInt(value) * flag;
         }
 
-        pub fn pushDescriptorRaw(vq: *Queue, ptr: *anyopaque, length: usize, write: bool, first: bool, last: bool) void {
+        pub fn pushDescriptorRaw(vq: *Queue, ptr: *anyopaque, length: usize, access: DescriptorAccess, first: bool, last: bool) void {
             const next_i = vq.desc_i +% 1;
 
             const desc_i = vq.desc_i % queue_size;
@@ -95,7 +89,7 @@ pub fn VirtQ(comptime queue_size: comptime_int) type {
             vq.descriptors[desc_i] = Descriptor{
                 .addr = @ptrToInt(ptr),
                 .len = length,
-                .flags = flagIf(!last, Descriptor.F_NEXT) | flagIf(write, Descriptor.F_WRITE),
+                .flags = flagIf(!last, Descriptor.F_NEXT) | flagIf((access == .write), Descriptor.F_WRITE),
                 .next = flagIf(!last, next_i % queue_size),
             };
 

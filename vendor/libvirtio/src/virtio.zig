@@ -1,11 +1,10 @@
 const std = @import("std");
 const ashet = @import("root");
 
-const page_size = ashet.memory.page_size;
-
 pub const queue = @import("queue.zig");
 pub const gpu = @import("gpu.zig");
 pub const input = @import("input.zig");
+pub const network = @import("network.zig");
 
 pub const ControlRegs = extern struct {
     pub const magic = @bitCast(u32, @as([4]u8, "virt".*));
@@ -56,7 +55,19 @@ pub const ControlRegs = extern struct {
         padding: [0xf00]u8,
         gpu: gpu.Config,
         input: input.Config,
+        network: network.Config,
     };
+
+    pub fn isLegacy(regs: *volatile ControlRegs) bool {
+        var features: u64 = undefined;
+
+        regs.device_features_sel = 0;
+        features = @as(u64, regs.device_features) << 0;
+        regs.device_features_sel = 1;
+        features |= @as(u64, regs.device_features) << 32;
+
+        return regs.version < 2 or (features & FeatureFlags.version_1) == 0;
+    }
 
     pub fn negotiateFeatures(regs: *volatile ControlRegs, requested_features: u64) !u64 {
         // this sequence must be done exactly like this:
@@ -73,7 +84,7 @@ pub const ControlRegs = extern struct {
 
         const selected_features = offered_features & requested_features;
 
-        const legacy = regs.version < 2 or (selected_features & FeatureFlags.version_1) == 0;
+        const legacy = regs.isLegacy();
 
         regs.driver_features_sel = 0;
         regs.driver_features = @truncate(u32, selected_features >> 0);
@@ -84,7 +95,7 @@ pub const ControlRegs = extern struct {
         }
 
         if (legacy) {
-            regs.legacy_guest_page_size = page_size;
+            regs.legacy_guest_page_size = std.mem.page_size;
         } else {
             regs.status |= DeviceStatus.features_ok;
 

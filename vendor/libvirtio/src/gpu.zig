@@ -1,8 +1,5 @@
 const std = @import("std");
-const ashet = @import("root");
 const virtio = @import("virtio.zig");
-
-const page_size = ashet.memory.page_size;
 
 pub const Config = extern struct {
     events_read: u32,

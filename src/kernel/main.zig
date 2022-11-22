@@ -71,6 +71,7 @@ pub const global_hotkeys = struct {
             return false;
         if (event.modifiers.alt) {
             switch (event.key) {
+                .f11 => network.dumpStats(),
                 .f12 => {
                     const total_pages = memory.page_count;
                     const free_pages = memory.getFreePageCount();

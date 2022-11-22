@@ -1,7 +1,27 @@
 #ifndef ASHET_OS_lwipopts_h
 #define ASHET_OS_lwipopts_h
 
-#define NO_SYS 1
+#define NO_SYS 1 // we don't have an OS, we're building it right now
+
+#define LWIP_IPV4 1 // modern system requires both
+#define LWIP_IPV6 1 // modern system requires both
+
+#define LWIP_DHCP 1 // we want auto-setup
+
+#define LWIP_SOCKET 0  // disable sequential APIs
+#define LWIP_NETCONN 0 // disable sequential APIs
+
+#define LWIP_IGMP LWIP_IPV4
+#define LWIP_ICMP LWIP_IPV4
+#define LWIP_DNS LWIP_UDP
+#define LWIP_MDNS_RESPONDER LWIP_UDP
+
+#define LINK_STATS 0
+
+#define LWIP_NETIF_LINK_CALLBACK 1
+#define LWIP_NETIF_STATUS_CALLBACK 1
+#define LWIP_NETIF_EXT_STATUS_CALLBACK 1
+
 #define LWIP_MPU_COMPATIBLE 0
 #define LWIP_TCPIP_CORE_LOCKING 0
 
@@ -16,10 +36,6 @@
 #define MEMP_NUM_TCP_PCB_LISTEN 64
 
 #define LWIP_STATS 0 // disable stats module
-
-// disable sequential APIs
-#define LWIP_SOCKET 0
-#define LWIP_NETCONN 0
 
 // #define LWIP_ARP 1
 // #define LWIP_ETHERNET 1
