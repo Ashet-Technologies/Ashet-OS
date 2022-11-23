@@ -331,3 +331,71 @@ pub const fs = struct {
         }
     };
 };
+
+pub const net = struct {
+    pub const EndPoint = abi.EndPoint;
+    pub const IP = abi.IP;
+    pub const IPv4 = abi.IPv4;
+    pub const IPv6 = abi.IPv6;
+
+    pub const Udp = struct {
+        const throw = abi.SysCallInterface.Network.UDP.Error.throw;
+
+        sock: abi.UdpSocket,
+
+        pub fn open() !Udp {
+            var sock: abi.UdpSocket = undefined;
+            try throw(syscalls().network.udp.createSocket(&sock));
+            return Udp{ .sock = sock };
+        }
+
+        pub fn close(udp: *Udp) void {
+            syscalls().network.udp.destroySocket(udp.sock);
+            udp.* = undefined;
+        }
+
+        pub fn bind(udp: Udp, ep: EndPoint) !void {
+            try throw(syscalls().network.udp.bind(udp.sock, ep));
+        }
+
+        pub fn connect(udp: Udp, ep: EndPoint) !void {
+            try throw(syscalls().network.udp.connect(udp.sock, ep));
+        }
+
+        pub fn disconnect(udp: Udp) !void {
+            try throw(syscalls().network.udp.disconnect(udp.sock));
+        }
+
+        pub fn send(udp: Udp, message: []const u8) !usize {
+            if (message.len == 0)
+                return 0;
+            var sent: usize = undefined;
+            try throw(syscalls().network.udp.send(udp.sock, message.ptr, message.len, &sent));
+            return sent;
+        }
+
+        pub fn sendTo(udp: Udp, target: EndPoint, message: []const u8) !usize {
+            if (message.len == 0)
+                return 0;
+            var sent: usize = undefined;
+            try throw(syscalls().network.udp.sendTo(udp.sock, target, message.ptr, message.len, &sent));
+            return sent;
+        }
+
+        pub fn receive(udp: Udp, data: []u8) !usize {
+            if (data.len == 0)
+                return 0;
+            var received: usize = undefined;
+            try throw(syscalls().network.udp.receive(udp.sock, data.ptr, data.len, &received));
+            return received;
+        }
+
+        pub fn receiveFrom(udp: Udp, sender: *EndPoint, data: []u8) !usize {
+            if (data.len == 0)
+                return 0;
+            var received: usize = undefined;
+            try throw(syscalls().network.udp.receiveFrom(udp.sock, sender, data.ptr, data.len, &received));
+            return received;
+        }
+    };
+};

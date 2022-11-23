@@ -129,17 +129,39 @@ pub const SysCallInterface = extern struct {
         };
 
         pub const UDP = extern struct {
-            createSocket: FnPtr(fn () UdpSocket),
+            pub const Error = ErrorSet(.{
+                .InvalidHandle = 1,
+                .SystemResources = 2,
+                .AddressInUse = 3,
+                .AlreadyConnected = 4,
+                .AlreadyConnecting = 5,
+                .BufferError = 6,
+                .ConnectionAborted = 7,
+                .ConnectionClosed = 8,
+                .ConnectionReset = 9,
+                .IllegalArgument = 10,
+                .IllegalValue = 11,
+                .InProgress = 12,
+                .LowlevelInterfaceError = 13,
+                .NotConnected = 14,
+                .OutOfMemory = 15,
+                .Routing = 16,
+                .Timeout = 17,
+                .WouldBlock = 18,
+                .Unexpected = 19,
+            });
+            createSocket: FnPtr(fn (result: *UdpSocket) Error.Enum),
+
             destroySocket: FnPtr(fn (UdpSocket) void),
 
-            bind: FnPtr(fn (UdpSocket, EndPoint) bool),
-            connect: FnPtr(fn (UdpSocket, EndPoint) bool),
-            disconnect: FnPtr(fn (UdpSocket) bool),
+            bind: FnPtr(fn (UdpSocket, EndPoint) Error.Enum),
+            connect: FnPtr(fn (UdpSocket, EndPoint) Error.Enum),
+            disconnect: FnPtr(fn (UdpSocket) Error.Enum),
 
-            send: FnPtr(fn (UdpSocket, data: [*]const u8, length: usize) usize),
-            sendTo: FnPtr(fn (UdpSocket, receiver: EndPoint, data: [*]const u8, length: usize) usize),
-            receive: FnPtr(fn (UdpSocket, data: [*]u8, length: usize) usize),
-            receiveFrom: FnPtr(fn (UdpSocket, sender: *EndPoint, data: [*]u8, length: usize) usize),
+            send: FnPtr(fn (UdpSocket, data: [*]const u8, length: usize, result: *usize) Error.Enum),
+            sendTo: FnPtr(fn (UdpSocket, receiver: EndPoint, data: [*]const u8, length: usize, result: *usize) Error.Enum),
+            receive: FnPtr(fn (UdpSocket, data: [*]u8, length: usize, result: *usize) Error.Enum),
+            receiveFrom: FnPtr(fn (UdpSocket, sender: *EndPoint, data: [*]u8, length: usize, result: *usize) Error.Enum),
         };
 
         pub const TCP = extern struct {
@@ -166,7 +188,7 @@ pub const MAC = [6]u8;
 
 pub const IP_Type = enum(u8) { ipv4, ipv6 };
 
-pub const IP = extern union {
+pub const IP = extern struct {
     type: IP_Type,
     addr: extern union {
         v4: IPv4,
@@ -174,8 +196,9 @@ pub const IP = extern union {
     },
 
     pub fn ipv4(addr: [4]u8) IP {
-        return IP{ .v4 = .{ .type = .ipv4, .addr = .{ .v4 = .{ .addr = addr } } } };
+        return IP{ .type = .ipv4, .addr = .{ .v4 = .{ .addr = addr } } };
     }
+
     pub fn ipv6(addr: [16]u8, zone: u8) IP {
         return IP{ .type = .ipv6, .addr = .{ .v6 = .{ .addr = addr, .zone = zone } } };
     }
@@ -193,6 +216,10 @@ pub const IPv6 = extern struct {
 pub const EndPoint = extern struct {
     ip: IP,
     port: u16,
+
+    pub fn new(ip: IP, port: u16) EndPoint {
+        return EndPoint{ .ip = ip, .port = port };
+    }
 };
 
 pub const Ping = extern struct {
@@ -709,3 +736,80 @@ pub const CreateWindowFlags = packed struct(u32) {
     popup: bool = false,
     padding: u31 = 0,
 };
+
+// Auxiliary helpers
+
+pub fn ErrorSet(comptime options: anytype) type {
+    const Int = u32;
+
+    comptime var error_fields: []const std.builtin.Type.Error = &.{};
+    inline for (@typeInfo(@TypeOf(options)).Struct.fields) |field| {
+        if (std.mem.eql(u8, field.name, "ok"))
+            @compileError("ErrorSet items cannot be called \"ok\"!");
+        error_fields = error_fields ++ [1]std.builtin.Type.Error{
+            .{ .name = field.name },
+        };
+    }
+
+    const error_type = @Type(std.builtin.Type{
+        .ErrorSet = error_fields,
+    });
+
+    comptime var enum_items: []const std.builtin.Type.EnumField = &.{};
+    inline for (@typeInfo(@TypeOf(options)).Struct.fields) |field| {
+        const value: Int = @field(options, field.name);
+        if (value == 0)
+            @compileError("ErrorSet items cannot have the reserved value 0!");
+        enum_items = enum_items ++ [1]std.builtin.Type.EnumField{
+            .{ .name = field.name, .value = value },
+        };
+    }
+
+    enum_items = enum_items ++ [1]std.builtin.Type.EnumField{
+        .{ .name = "ok", .value = 0 },
+    };
+
+    const enum_type = @Type(std.builtin.Type{
+        .Enum = .{
+            .layout = .Auto,
+            .tag_type = Int,
+            .fields = enum_items,
+            .decls = &.{},
+            .is_exhaustive = false, // this is important so the value passed is actually just a bare integer with all values legal
+        },
+    });
+
+    comptime var error_list: []const error_type = &.{};
+    comptime var enum_list: []const enum_type = &.{};
+    inline for (@typeInfo(@TypeOf(options)).Struct.fields) |field| {
+        error_list = error_list ++ [1]error_type{@field(error_type, field.name)};
+        enum_list = enum_list ++ [1]enum_type{@field(enum_type, field.name)};
+    }
+
+    return struct {
+        pub const Error = error_type;
+        pub const Enum = enum_type;
+
+        pub fn throw(val: Enum) (error{Unexpected} || Error)!void {
+            if (val == .ok)
+                return; // 0 is the success code
+            for (enum_list) |match, index| {
+                if (match == val)
+                    return error_list[index];
+            }
+            return error.Unexpected;
+        }
+
+        pub fn map(err_union: Error!void) Enum {
+            if (err_union) |_| {
+                return .ok;
+            } else |err| {
+                for (error_list) |match, index| {
+                    if (match == err)
+                        return enum_list[index];
+                }
+                unreachable;
+            }
+        }
+    };
+}

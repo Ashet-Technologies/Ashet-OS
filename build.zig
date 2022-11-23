@@ -349,6 +349,7 @@ pub fn build(b: *std.build.Builder) void {
         _ = ctx.createAshetApp("clock", "src/apps/clock.zig", "artwork/apps/clock.png", mode);
         _ = ctx.createAshetApp("paint", "src/apps/paint.zig", "artwork/apps/paint.png", mode);
         _ = ctx.createAshetApp("gui-demo", "src/apps/gui-demo.zig", null, mode);
+        _ = ctx.createAshetApp("net-demo", "src/apps/net-demo.zig", null, mode);
     }
 
     const run_step = b.step("run", "Run the app");

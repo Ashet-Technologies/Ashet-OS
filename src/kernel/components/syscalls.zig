@@ -325,33 +325,40 @@ fn @"ui.invalidate"(win: *const abi.Window, rect: abi.Rectangle) callconv(.C) vo
     ashet.ui.invalidateRegion(screen_rect);
 }
 
-fn @"network.udp.createSocket"() callconv(.C) abi.UdpSocket {
-    return ashet.network.udp.createSocket() catch return .invalid;
+const UdpError = abi.SysCallInterface.Network.UDP.Error;
+
+fn @"network.udp.createSocket"(out: *abi.UdpSocket) callconv(.C) UdpError.Enum {
+    out.* = ashet.network.udp.createSocket() catch |e| return abi.SysCallInterface.Network.UDP.Error.map(e);
+    return .ok;
 }
 fn @"network.udp.destroySocket"(sock: abi.UdpSocket) callconv(.C) void {
     ashet.network.udp.destroySocket(sock);
 }
-fn @"network.udp.bind"(sock: abi.UdpSocket, ep: abi.EndPoint) callconv(.C) bool {
-    ashet.network.udp.bind(sock, ep) catch return false;
-    return true;
+fn @"network.udp.bind"(sock: abi.UdpSocket, ep: abi.EndPoint) callconv(.C) UdpError.Enum {
+    ashet.network.udp.bind(sock, ep) catch |e| return UdpError.map(e);
+    return .ok;
 }
-fn @"network.udp.connect"(sock: abi.UdpSocket, ep: abi.EndPoint) callconv(.C) bool {
-    ashet.network.udp.connect(sock, ep) catch return false;
-    return true;
+fn @"network.udp.connect"(sock: abi.UdpSocket, ep: abi.EndPoint) callconv(.C) UdpError.Enum {
+    ashet.network.udp.connect(sock, ep) catch |e| return UdpError.map(e);
+    return .ok;
 }
-fn @"network.udp.disconnect"(sock: abi.UdpSocket) callconv(.C) bool {
-    ashet.network.udp.disconnect(sock) catch return false;
-    return true;
+fn @"network.udp.disconnect"(sock: abi.UdpSocket) callconv(.C) UdpError.Enum {
+    ashet.network.udp.disconnect(sock) catch |e| return UdpError.map(e);
+    return .ok;
 }
-fn @"network.udp.send"(sock: abi.UdpSocket, data: [*]const u8, length: usize) callconv(.C) usize {
-    return ashet.network.udp.send(sock, data[0..length]) catch return 0;
+fn @"network.udp.send"(sock: abi.UdpSocket, data: [*]const u8, length: usize, result: *usize) callconv(.C) UdpError.Enum {
+    result.* = ashet.network.udp.send(sock, data[0..length]) catch |e| return UdpError.map(e);
+    return .ok;
 }
-fn @"network.udp.sendTo"(sock: abi.UdpSocket, receiver: abi.EndPoint, data: [*]const u8, length: usize) callconv(.C) usize {
-    return ashet.network.udp.sendTo(sock, receiver, data[0..length]) catch return 0;
+fn @"network.udp.sendTo"(sock: abi.UdpSocket, receiver: abi.EndPoint, data: [*]const u8, length: usize, result: *usize) callconv(.C) UdpError.Enum {
+    result.* = ashet.network.udp.sendTo(sock, receiver, data[0..length]) catch |e| return UdpError.map(e);
+    return .ok;
 }
-fn @"network.udp.receive"(sock: abi.UdpSocket, data: [*]u8, length: usize) callconv(.C) usize {
-    return ashet.network.udp.receive(sock, data[0..length]) catch return 0;
+fn @"network.udp.receive"(sock: abi.UdpSocket, data: [*]u8, length: usize, result: *usize) callconv(.C) UdpError.Enum {
+    result.* = ashet.network.udp.receive(sock, data[0..length]) catch |e| return UdpError.map(e);
+    return .ok;
 }
-fn @"network.udp.receiveFrom"(sock: abi.UdpSocket, sender: *abi.EndPoint, data: [*]u8, length: usize) callconv(.C) usize {
-    return ashet.network.udp.receiveFrom(sock, sender, data[0..length]) catch return 0;
+fn @"network.udp.receiveFrom"(sock: abi.UdpSocket, sender: *abi.EndPoint, data: [*]u8, length: usize, result: *usize) callconv(.C) UdpError.Enum {
+    result.* = ashet.network.udp.receiveFrom(sock, sender, data[0..length]) catch |e| return UdpError.map(e);
+    return .ok;
 }

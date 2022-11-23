@@ -340,14 +340,14 @@ pub const udp = struct {
     var pool: astd.IndexPool(u32, max_sockets) = .{};
     var sockets: [max_sockets]*c.udp_pcb = undefined;
 
-    fn unmap(sock: Socket) error{Invalid}!*c.udp_pcb {
+    fn unmap(sock: Socket) error{InvalidHandle}!*c.udp_pcb {
         if (sock == .invalid)
-            return error.Invalid;
+            return error.InvalidHandle;
         const index = @enumToInt(sock);
         if (index >= max_sockets)
-            return error.Invalid;
+            return error.InvalidHandle;
         if (!pool.alive(index))
-            return error.Invalid;
+            return error.InvalidHandle;
         return sockets[index];
     }
 
