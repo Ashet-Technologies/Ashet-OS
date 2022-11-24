@@ -346,7 +346,7 @@ pub const DirectoryHandle = enum(u32) { invalid, _ };
 
 pub const FileInfo = extern struct {
     name: [max_path]u8,
-    size: usize,
+    size: u64,
     attributes: FileAttributes,
     // WORD	fdate;			/* Modified date */
     // WORD	ftime;			/* Modified time */

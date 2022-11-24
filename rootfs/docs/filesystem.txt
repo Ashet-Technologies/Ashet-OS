@@ -17,12 +17,13 @@ SYS:/
 
 
 SYS:/apps/${app_name}/code
-  A binary that will be loaded to the application load address, then will be executed.
+  ELF file that will be loaded at a relocatable address in memory.
   Contains the code of the application.
 
 SYS:/apps/${app_name}/icon
-  A 64x64 pixel sized icon with a 15 entry-palette. The file is structured like this:
+  A 32x32 pixel sized icon with a 15 entry-palette. The file is structured like this:
   extern struct {
-    bitmap: [64*64]u8,
+    bitmap: [32*32]u8,
     palette: [15]u16,
   }
+  color values are either 0 for transparent or 1...15 for the colors.

@@ -202,7 +202,10 @@ pub fn build(b: *std.build.Builder) void {
         .rtc = .{
             .static = .{ .year = 2022, .month = .jul, .day = 10 },
         },
+        .mkfs = true,
     };
+
+    const tools_step = b.step("tools", "Builds the build and debug tools");
 
     const mode = b.standardReleaseOptions();
 
@@ -224,12 +227,6 @@ pub fn build(b: *std.build.Builder) void {
     tool_mkicon.addPackage(pkgs.zigimg);
     tool_mkicon.addPackage(pkgs.abi);
     tool_mkicon.install();
-
-    const experiment = b.addExecutable("experiment", "tools/fs-experiments.zig");
-    experiment.addPackage(FatFS.getPackage(b, "fatfs", fatfs_config));
-    FatFS.link(experiment, fatfs_config);
-    experiment.linkLibC();
-    experiment.install();
 
     const kernel_exe = b.addExecutable("ashet-os", "src/kernel/main.zig");
     {
@@ -300,12 +297,6 @@ pub fn build(b: *std.build.Builder) void {
     });
 
     b.getInstallStep().dependOn(&raw_step.step);
-
-    // dd if=/dev/zero of=zig-out/disk.img bs=512 count=65536
-    // mkfs.vfat -n ASHET -S 512 zig-out/disk.img
-    // mformat -i zig-out/disk.img -v ASHET
-    // ls -hal zig-out/disk.img
-    // file zig-out/disk.img
 
     // Makes sure zig-out/disk.img exists, but doesn't touch the data at all
     const setup_disk_cmd = b.addSystemCommand(&.{
@@ -399,6 +390,18 @@ pub fn build(b: *std.build.Builder) void {
         const debug_filter = b.addExecutable("debug-filter", "tools/debug-filter.zig");
         debug_filter.linkLibC();
         debug_filter.install();
+
+        tools_step.dependOn(&debug_filter.install_step.?.step);
+    }
+
+    {
+        const init_disk = b.addExecutable("init-disk", "tools/init-disk.zig");
+        init_disk.linkLibC();
+        init_disk.addPackage(FatFS.getPackage(b, "fatfs", fatfs_config));
+        init_disk.install();
+        FatFS.link(init_disk, fatfs_config);
+
+        tools_step.dependOn(&init_disk.install_step.?.step);
     }
 }
 

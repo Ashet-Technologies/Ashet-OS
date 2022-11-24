@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 set -e
 
@@ -8,7 +8,7 @@ cd "${ROOT}"
 
 clear
 zig build install
-"${ROOT}/tools/init-disk.sh" "${ROOT}/zig-out/disk.img"
+"${ROOT}/zig-out/bin/init-disk" "${ROOT}/zig-out/disk.img"
 echo "----------------------"
 qemu-system-riscv32 \
         -display gtk,show-tabs=on \

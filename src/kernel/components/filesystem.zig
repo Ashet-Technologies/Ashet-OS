@@ -83,15 +83,15 @@ fn translatePath(target_buffer: []u8, path: []const u8) error{ PathTooLong, Inva
 fn translateFileInfo(src: fatfs.FileInfo) ashet.abi.FileInfo {
     var info = ashet.abi.FileInfo{
         .name = undefined,
-        .size = src.fsize,
+        .size = src.size,
         .attributes = .{
-            .directory = (src.fattrib & fatfs.Attributes.directory) != 0,
-            .read_only = (src.fattrib & fatfs.Attributes.read_only) != 0,
-            .hidden = (src.fattrib & fatfs.Attributes.hidden) != 0,
+            .directory = (src.kind == .Directory),
+            .read_only = src.attributes.read_only,
+            .hidden = src.attributes.hidden,
         },
     };
 
-    const src_name = std.mem.sliceTo(&src.fname, 0);
+    const src_name = src.name();
 
     if (src_name.len > max_path)
         @panic("source file name too long!");
