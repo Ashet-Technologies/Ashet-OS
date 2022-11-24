@@ -27,5 +27,6 @@ pub fn main() !void {
         if (len > 0) {
             std.log.info("received {s} from {}", .{ buf[0..len], ep });
         }
+        ashet.process.yield();
     }
 }

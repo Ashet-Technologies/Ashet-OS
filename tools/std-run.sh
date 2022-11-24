@@ -26,6 +26,6 @@ qemu-system-riscv32 \
         -drive if=pflash,index=1,file=zig-out/disk.img,format=raw \
         -serial stdio \
         -s "$@" \
-| "${ROOT}/tools/addr2line.lua"
+| "${ROOT}/zig-out/bin/debug-filter" "${ROOT}/zig-out/bin/ashet-os"
 
 tcpdump -r ashet-os.pcap 

@@ -333,6 +333,20 @@ fn mapIP(ip: IP) c.ip_addr_t {
     };
 }
 
+fn unmapIP(addr: c.ip_addr_t) IP {
+    return switch (addr.type) {
+        c.IPADDR_TYPE_V4 => IP{
+            .type = .ipv4,
+            .addr = .{ .v4 = .{ .addr = @bitCast([4]u8, addr.u_addr.ip4.addr) } },
+        },
+        c.IPADDR_TYPE_V6 => IP{
+            .type = .ipv6,
+            .addr = .{ .v6 = .{ .addr = @bitCast([16]u8, addr.u_addr.ip6.addr), .zone = addr.u_addr.ip6.zone } },
+        },
+        else => unreachable,
+    };
+}
+
 pub const udp = struct {
     const max_sockets = @intCast(usize, c.MEMP_NUM_UDP_PCB);
     const Socket = abi.UdpSocket;
@@ -366,11 +380,12 @@ pub const udp = struct {
     fn handleIncomingPacket(arg: ?*anyopaque, pcb_c: [*c]c.udp_pcb, pbuf_c: [*c]c.pbuf, addr_c: [*c]const c.ip_addr_t, port: u16) callconv(.C) void {
         _ = arg;
         _ = pcb_c;
-        _ = pbuf_c;
-        _ = addr_c;
-        _ = port;
 
-        logger.info("received some data via udp!", .{});
+        logger.info("received some data via udp: {} bytes from {}:{}", .{
+            pbuf_c.*.tot_len,
+            unmapIP(addr_c.*),
+            port,
+        });
     }
 
     pub fn destroySocket(sock: Socket) void {
@@ -430,7 +445,8 @@ pub const udp = struct {
         const pcb = try unmap(sock);
         _ = pcb;
         _ = data;
-        @panic("not implemented yet!");
+        // @panic("not implemented yet!");
+        return 0;
     }
 
     pub fn receiveFrom(sock: Socket, sender: *EndPoint, data: []u8) !usize {
@@ -438,6 +454,7 @@ pub const udp = struct {
         _ = pcb;
         _ = sender;
         _ = data;
-        @panic("not implemented yet!");
+        // @panic("not implemented yet!");
+        return 0;
     }
 };

@@ -122,7 +122,7 @@ pub const Target = union(enum) {
                     .cpu_arch = .x86,
                     .os_tag = .freestanding,
                     .abi = .eabi,
-                    .cpu_model = .{ .explicit = &std.Target.x86.cpu.@"i686" },
+                    .cpu_model = .{ .explicit = &std.Target.x86.cpu.i686 },
                 };
                 return switch (platform) {
                     .microvm => PlatformConfig{
@@ -394,6 +394,12 @@ pub fn build(b: *std.build.Builder) void {
     // const run_sim = sim.run();
 
     // simu_step.dependOn(&run_sim.step);
+
+    {
+        const debug_filter = b.addExecutable("debug-filter", "tools/debug-filter.zig");
+        debug_filter.linkLibC();
+        debug_filter.install();
+    }
 }
 
 fn create_lwIP(b: *std.build.Builder, target: std.zig.CrossTarget, mode: std.builtin.Mode) *std.build.LibExeObjStep {

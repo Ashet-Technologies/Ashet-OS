@@ -202,15 +202,57 @@ pub const IP = extern struct {
     pub fn ipv6(addr: [16]u8, zone: u8) IP {
         return IP{ .type = .ipv6, .addr = .{ .v6 = .{ .addr = addr, .zone = zone } } };
     }
+
+    pub fn format(ip: IP, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
+        switch (ip.type) {
+            .ipv4 => try ip.addr.v4.format(fmt, opt, writer),
+            .ipv6 => try ip.addr.v6.format(fmt, opt, writer),
+        }
+    }
 };
 
 pub const IPv4 = extern struct {
     addr: [4]u8 align(4),
+
+    pub fn format(ip: IPv4, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = opt;
+        try writer.print("{}.{}.{}.{}", .{
+            ip.addr[0],
+            ip.addr[1],
+            ip.addr[2],
+            ip.addr[3],
+        });
+    }
 };
 
 pub const IPv6 = extern struct {
     addr: [16]u8 align(4),
     zone: u8,
+
+    pub fn format(ip: IPv6, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = opt;
+        try writer.print("[{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}/{}]", .{
+            ip.addr[0],
+            ip.addr[1],
+            ip.addr[2],
+            ip.addr[3],
+            ip.addr[4],
+            ip.addr[5],
+            ip.addr[6],
+            ip.addr[7],
+            ip.addr[8],
+            ip.addr[9],
+            ip.addr[10],
+            ip.addr[11],
+            ip.addr[12],
+            ip.addr[13],
+            ip.addr[14],
+            ip.addr[15],
+            ip.zone,
+        });
+    }
 };
 
 pub const EndPoint = extern struct {
