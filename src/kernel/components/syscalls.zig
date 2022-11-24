@@ -68,6 +68,9 @@ const ashet_syscall_interface: abi.SysCallInterface align(16) = .{
             .receiveFrom = @"network.udp.receiveFrom",
         },
     },
+    .time = .{
+        .nanoTimestamp = @"time.nanoTimestamp",
+    },
 };
 
 fn getCurrentThread() *ashet.scheduler.Thread {
@@ -361,4 +364,8 @@ fn @"network.udp.receive"(sock: abi.UdpSocket, data: [*]u8, length: usize, resul
 fn @"network.udp.receiveFrom"(sock: abi.UdpSocket, sender: *abi.EndPoint, data: [*]u8, length: usize, result: *usize) callconv(.C) UdpError.Enum {
     result.* = ashet.network.udp.receiveFrom(sock, sender, data[0..length]) catch |e| return UdpError.map(e);
     return .ok;
+}
+
+fn @"time.nanoTimestamp"() callconv(.C) i128 {
+    return ashet.time.nanoTimestamp();
 }

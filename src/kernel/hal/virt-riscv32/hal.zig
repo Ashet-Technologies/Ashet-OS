@@ -38,7 +38,21 @@ pub fn initialize() void {
     video.flush(); // force the gpu to show the splash screen
 
     storage.initialize();
+
+    time.init();
 }
+
+pub const time = struct {
+    const goldfish_rtc = @intToPtr(*volatile ashet.drivers.rtc.Goldfish, 0x0101000);
+
+    fn init() void {
+        // already happy.
+    }
+
+    pub fn nanoTimestamp() i128 {
+        return goldfish_rtc.read();
+    }
+};
 
 pub const storage = struct {
     const BlockDevice = ashet.storage.BlockDevice;

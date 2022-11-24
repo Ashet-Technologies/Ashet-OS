@@ -36,6 +36,11 @@ pub const SysCallInterface = extern struct {
     input: Input,
     ui: UserInterface,
     network: Network,
+    time: Time,
+
+    pub const Time = extern struct {
+        nanoTimestamp: FnPtr(fn () i128),
+    };
 
     pub const Video = extern struct {
         /// Aquires direct access to the screen. When `true` is returned,

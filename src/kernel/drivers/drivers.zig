@@ -8,3 +8,7 @@ pub const block_device = struct {
 pub const serial = struct {
     pub const ns16c550 = @import("serial/ns16c550.zig");
 };
+
+pub const rtc = struct {
+    pub const Goldfish = @import("rtc/goldfish.zig").GoldfishRTC;
+};

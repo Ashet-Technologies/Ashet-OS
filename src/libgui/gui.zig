@@ -3,10 +3,10 @@ const ashet = @import("ashet");
 const TextEditor = @import("text-editor");
 const logger = std.log.scoped(.gui);
 
-const Point = ashet.abi.Point;
-const Size = ashet.abi.Size;
-const Rectangle = ashet.abi.Rectangle;
-const ColorIndex = ashet.abi.ColorIndex;
+pub const Point = ashet.abi.Point;
+pub const Size = ashet.abi.Size;
+pub const Rectangle = ashet.abi.Rectangle;
+pub const ColorIndex = ashet.abi.ColorIndex;
 
 /// An event that can be passed to widgets.
 /// Each event carries information about what happends (`id`) and

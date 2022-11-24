@@ -244,7 +244,7 @@ pub const ui = struct {
         };
     }
     pub fn invalidate(win: *const Window, rect: Rectangle) void {
-        syscalls().ui.resizeWindow(win, rect);
+        syscalls().ui.invalidate(win, rect);
     }
 
     pub const Event = union(abi.UiEventType) {
@@ -398,4 +398,10 @@ pub const net = struct {
             return received;
         }
     };
+};
+
+pub const time = struct {
+    pub fn nanoTimestamp() i128 {
+        return syscalls().time.nanoTimestamp();
+    }
 };

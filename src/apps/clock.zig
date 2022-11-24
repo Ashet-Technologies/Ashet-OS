@@ -17,7 +17,9 @@ pub fn main() !void {
         c.* = ashet.ui.ColorIndex.get(3);
     }
 
-    paint(window);
+    var epoch_secs = std.time.epoch.EpochSeconds{ .secs = @intCast(u64, std.math.max(0, @divTrunc(ashet.time.nanoTimestamp(), std.time.ns_per_s))) };
+
+    paint(window, epoch_secs);
 
     app_loop: while (true) {
         while (ashet.ui.pollEvent(window)) |event| {
@@ -34,34 +36,69 @@ pub fn main() !void {
                 .window_resized => {},
             }
         }
+
+        var next_step = std.time.epoch.EpochSeconds{ .secs = @intCast(u64, std.math.max(0, @divTrunc(ashet.time.nanoTimestamp(), std.time.ns_per_s))) };
+
+        if (next_step.secs != epoch_secs.secs) {
+            epoch_secs = next_step;
+            paint(window, epoch_secs);
+            ashet.ui.invalidate(window, ashet.ui.Rectangle.new(.{ .x = 0, .y = 0 }, window.client_rectangle.size()));
+        }
+
         ashet.process.yield();
     }
 }
 
-fn paint(window: *const ashet.ui.Window) void {
-    for (clock_face) |row, y| {
-        for (row) |pixel, x| {
-            if (pixel) |color| {
-                window.pixels[window.stride * (1 + y) + (1 + x)] = color;
-                window.pixels[window.stride * (45 - y) + (1 + x)] = color;
-                window.pixels[window.stride * (1 + y) + (45 - x)] = color;
-                window.pixels[window.stride * (45 - y) + (45 - x)] = color;
-            }
+const gui = @import("ashet-gui");
+
+fn paint(window: *const ashet.ui.Window, time: std.time.epoch.EpochSeconds) void {
+    var fb = gui.Framebuffer.forWindow(window);
+
+    for (clock_face.pixels[0 .. clock_face.width * clock_face.height]) |color, i| {
+        const x = @intCast(i16, i % clock_face.width);
+        const y = @intCast(i16, i / clock_face.width);
+        if (color != (comptime clock_face.transparent.?)) {
+            fb.setPixel(1 + x, 1 + y, color);
+            fb.setPixel(1 + x, 45 - y, color);
+            fb.setPixel(45 - x, 1 + y, color);
+            fb.setPixel(45 - x, 45 - y, color);
         }
     }
 
-    const digit = ashet.ui.ColorIndex.get(0);
-    const shadow = ashet.ui.ColorIndex.get(10);
-    const highlight = ashet.ui.ColorIndex.get(6);
+    const day_secs = time.getDaySeconds();
 
-    // TODO: Paint digits
+    const hour = day_secs.getHoursIntoDay();
+    const minute = day_secs.getMinutesIntoHour();
+    const seconds = day_secs.getSecondsIntoMinute();
 
-    _ = digit;
-    _ = shadow;
-    _ = highlight;
+    const H = struct {
+        const digit = ashet.ui.ColorIndex.get(0);
+        const shadow = ashet.ui.ColorIndex.get(10);
+        const highlight = ashet.ui.ColorIndex.get(6);
+
+        fn drawDigit(f: gui.Framebuffer, pos: u15, limit: u15, color: ashet.ui.ColorIndex, len: f32) void {
+            const cx = @intCast(i16, f.width / 2);
+            const cy = @intCast(i16, f.height / 2);
+
+            const angle = std.math.tau * @intToFloat(f32, pos) / @intToFloat(f32, limit);
+
+            const dx = @floatToInt(i16, len * @sin(angle));
+            const dy = -@floatToInt(i16, len * @cos(angle));
+
+            f.drawLine(
+                gui.Point.new(cx, cy),
+                gui.Point.new(cx + dx, cy + dy),
+                color,
+            );
+        }
+    };
+
+    H.drawDigit(fb, minute + 60 * (@as(u15, hour) % 12), 12 * 60, H.digit, 9);
+    H.drawDigit(fb, minute, 60, H.digit, 16);
+    H.drawDigit(fb, seconds, 60, H.highlight, 19);
 }
 
-pub const clock_face = parse(
+pub const clock_face = gui.Bitmap.parse(0,
     \\..................00000
     \\...............000FFFFF
     \\.............00FFFFFF00

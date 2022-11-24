@@ -16,6 +16,7 @@ pub const network = @import("components/network.zig");
 pub const multi_tasking = @import("components/multi_tasking.zig");
 pub const ui = @import("components/ui.zig");
 pub const apps = @import("components/apps.zig");
+pub const time = @import("components/time.zig");
 
 pub const log_level = if (@import("builtin").mode == .Debug) .debug else .info;
 
