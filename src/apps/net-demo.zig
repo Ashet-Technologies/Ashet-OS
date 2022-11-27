@@ -22,10 +22,14 @@ pub fn main() !void {
 
     while (true) {
         var buf: [256]u8 = undefined;
-        var ep: ashet.net.EndPoint = undefined;
-        const len = try socket.receiveFrom(&ep, &buf);
+        // var ep: ashet.net.EndPoint = undefined;
+        // const len = try socket.receiveFrom(&ep, &buf);
+        // if (len > 0) {
+        //     std.log.info("received {s} from {}", .{ buf[0..len], ep });
+        // }
+        const len = try socket.receive(&buf);
         if (len > 0) {
-            std.log.info("received {s} from {}", .{ buf[0..len], ep });
+            std.log.info("received {s} from <unkonwn>", .{buf[0..len]});
         }
         ashet.process.yield();
     }

@@ -782,6 +782,7 @@ pub const network = struct {
             .linkIsUp = linkIsUp,
             .allocPacket = allocPacket,
             .send = send,
+            .fetch = fetchNic,
         };
 
         receiveq: virtio.queue.VirtQ(queue_size),
@@ -843,6 +844,58 @@ pub const network = struct {
             dev.transmitq.exec();
 
             return true;
+        }
+
+        fn fetchNic(nic: *ashet.network.NIC) void {
+            const dev = getDevice(nic);
+
+            handleIncomingData(nic, dev) catch |err| {
+                logger.err("error while receiving packets from nic {s}: {s}", .{ nic.getName(), @errorName(err) });
+            };
+
+            handleOutgoingData(nic, dev) catch |err| {
+                logger.err("error while recycling packets from nic {s}: {s}", .{ nic.getName(), @errorName(err) });
+            };
+        }
+
+        pub fn handleOutgoingData(nic: *ashet.network.NIC, dev: *DeviceInfo) !void {
+            _ = nic;
+
+            var count: usize = 0;
+            while (dev.transmitq.singlePollUsed()) |ret| {
+                const buffer = @intToPtr(*DeviceInfo.Buffer, @truncate(usize, dev.transmitq.descriptors[ret % DeviceInfo.queue_size].addr));
+                dev.transmit_buffers.free(buffer);
+                count += 1;
+            }
+            if (count > 0) {
+                logger.info("recycled {} packets", .{count});
+            }
+        }
+
+        pub fn handleIncomingData(nic: *ashet.network.NIC, dev: *DeviceInfo) !void {
+            while (dev.receiveq.singlePollUsed()) |ret| {
+                const buffer = @intToPtr(*DeviceInfo.Buffer, @truncate(usize, dev.receiveq.descriptors[ret % DeviceInfo.queue_size].addr));
+
+                if (buffer.header.num_buffers != 1)
+                    @panic("large packets with more than one buffer not supported yet!");
+
+                const packet = try nic.allocPacket(buffer.data.len);
+                errdefer nic.freePacket(packet);
+
+                try packet.append(&buffer.data);
+
+                logger.info("received data on nic {s}", .{nic.getName()});
+
+                nic.receive(packet);
+
+                dev.receive_buffers.free(buffer);
+
+                // round and round we go
+                buffer.* = undefined;
+                dev.receiveq.pushDescriptor(DeviceInfo.Buffer, buffer, .write, true, true);
+
+                dev.receiveq.exec();
+            }
         }
     };
 
@@ -930,58 +983,5 @@ pub const network = struct {
             dev.receiveq.pushDescriptor(DeviceInfo.Buffer, buffer, .write, true, true);
         }
         dev.receiveq.exec();
-    }
-
-    pub fn fetchNicPackets() void {
-        for (nic_devs.slice()) |*dev, nic_index| {
-            const nic = &nics.buffer[nic_index];
-            handleIncomingData(nic, dev) catch |err| {
-                logger.err("error while receiving packets from nic {}: {s}", .{ nic_index, @errorName(err) });
-            };
-
-            handleOutgoingData(nic, dev) catch |err| {
-                logger.err("error while recycling packets from nic {}: {s}", .{ nic_index, @errorName(err) });
-            };
-        }
-    }
-
-    pub fn handleOutgoingData(nic: *ashet.network.NIC, dev: *DeviceInfo) !void {
-        _ = nic;
-
-        var count: usize = 0;
-        while (dev.transmitq.singlePollUsed()) |ret| {
-            const buffer = @intToPtr(*DeviceInfo.Buffer, @truncate(usize, dev.transmitq.descriptors[ret % DeviceInfo.queue_size].addr));
-            dev.transmit_buffers.free(buffer);
-            count += 1;
-        }
-        if (count > 0) {
-            logger.info("recycled {} packets", .{count});
-        }
-    }
-
-    pub fn handleIncomingData(nic: *ashet.network.NIC, dev: *DeviceInfo) !void {
-        while (dev.receiveq.singlePollUsed()) |ret| {
-            const buffer = @intToPtr(*DeviceInfo.Buffer, @truncate(usize, dev.receiveq.descriptors[ret % DeviceInfo.queue_size].addr));
-
-            if (buffer.header.num_buffers != 1)
-                @panic("large packets with more than one buffer not supported yet!");
-
-            const packet = try nic.allocPacket(buffer.data.len);
-            errdefer nic.freePacket(packet);
-
-            try packet.append(&buffer.data);
-
-            logger.info("received data on nic {s}", .{nic.netif.name});
-
-            nic.receive(packet);
-
-            dev.receive_buffers.free(buffer);
-
-            // round and round we go
-            buffer.* = undefined;
-            dev.receiveq.pushDescriptor(DeviceInfo.Buffer, buffer, .write, true, true);
-
-            dev.receiveq.exec();
-        }
     }
 };
