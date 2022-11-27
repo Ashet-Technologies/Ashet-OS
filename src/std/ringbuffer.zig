@@ -17,6 +17,27 @@ pub fn RingBuffer(comptime T: type, comptime cap: comptime_int) type {
         read: IndexType = 0,
         write: IndexType = 0,
 
+        /// Returns the maximum amount of items in the ring.
+        pub fn capacity(_: Self) usize {
+            return cap;
+        }
+
+        /// Returns true if no items in are in the ring.
+        pub fn empty(ring: Self) bool {
+            return (ring.read == ring.write);
+        }
+
+        /// Returns true if the ring is completly full.
+        pub fn full(ring: Self) bool {
+            return (ring.write >= cap) and (ring.read == ring.write - cap);
+        }
+
+        /// Returns the amount of items in the ring.
+        pub fn count(ring: Self) usize {
+            return ring.write - ring.read;
+        }
+
+        /// Pushes an item into the ring, removing the last item if the ring is full.
         pub fn push(buffer: *Self, value: T) void {
             buffer.items[buffer.write % cap] = value;
 
@@ -35,6 +56,7 @@ pub fn RingBuffer(comptime T: type, comptime cap: comptime_int) type {
             }
         }
 
+        /// Pulls an item from the ring if any.
         pub fn pull(buffer: *Self) ?T {
             if (buffer.read == buffer.write) {
                 return null;
@@ -49,6 +71,11 @@ pub fn RingBuffer(comptime T: type, comptime cap: comptime_int) type {
 test RingBuffer {
     var buffer = RingBuffer(u32, 4){};
 
+    try std.testing.expectEqual(true, buffer.empty());
+    try std.testing.expectEqual(false, buffer.full());
+    try std.testing.expectEqual(@as(usize, 0), buffer.count());
+    try std.testing.expectEqual(@as(usize, 4), buffer.capacity());
+
     // test empty by default, don't corrupt on consecutive pull
     try std.testing.expectEqual(@as(?u32, null), buffer.pull());
     try std.testing.expectEqual(@as(?u32, null), buffer.pull());
@@ -57,6 +84,7 @@ test RingBuffer {
 
     // test push single, pop single
     buffer.push(1);
+
     try std.testing.expectEqual(@as(?u32, 1), buffer.pull());
     try std.testing.expectEqual(@as(?u32, null), buffer.pull());
     try std.testing.expectEqual(@as(?u32, null), buffer.pull());
@@ -109,4 +137,33 @@ test RingBuffer {
     try std.testing.expectEqual(@as(?u32, 1000), buffer.pull());
     try std.testing.expectEqual(@as(?u32, null), buffer.pull());
     try std.testing.expectEqual(@as(?u32, null), buffer.pull());
+
+    // Test status functions
+
+    try std.testing.expectEqual(true, buffer.empty());
+    try std.testing.expectEqual(false, buffer.full());
+    try std.testing.expectEqual(@as(usize, 0), buffer.count());
+    try std.testing.expectEqual(@as(usize, 4), buffer.capacity());
+
+    buffer.push(0);
+
+    try std.testing.expectEqual(false, buffer.empty());
+    try std.testing.expectEqual(false, buffer.full());
+    try std.testing.expectEqual(@as(usize, 1), buffer.count());
+    try std.testing.expectEqual(@as(usize, 4), buffer.capacity());
+
+    buffer.push(0);
+
+    try std.testing.expectEqual(false, buffer.empty());
+    try std.testing.expectEqual(false, buffer.full());
+    try std.testing.expectEqual(@as(usize, 2), buffer.count());
+    try std.testing.expectEqual(@as(usize, 4), buffer.capacity());
+
+    buffer.push(0);
+    buffer.push(0);
+
+    try std.testing.expectEqual(false, buffer.empty());
+    try std.testing.expectEqual(true, buffer.full());
+    try std.testing.expectEqual(@as(usize, 4), buffer.count());
+    try std.testing.expectEqual(@as(usize, 4), buffer.capacity());
 }

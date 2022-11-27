@@ -375,9 +375,14 @@ pub const udp = struct {
     const max_sockets = @intCast(usize, c.MEMP_NUM_UDP_PCB);
     const Socket = abi.UdpSocket;
 
+    const InboundPacket = struct {
+        sender: EndPoint,
+        data: *c.pbuf,
+    };
+
     const Data = struct {
-        first: ?*c.pbuf = null,
-        last: ?*c.pbuf = null,
+        /// incoming packets
+        receive_queue: astd.RingBuffer(InboundPacket, 16) = .{},
     };
 
     var pool: astd.IndexPool(u32, max_sockets) = .{};
@@ -415,6 +420,12 @@ pub const udp = struct {
         var pbuf: *c.pbuf = pbuf_c;
         const addr: *const c.ip_addr_t = addr_c;
 
+        if (data.receive_queue.full()) {
+            logger.err("failed to queue received pbuf. dropping packet of {} bytes.", .{pbuf.tot_len});
+            _ = c.pbuf_free(pbuf);
+            return;
+        }
+
         _ = pcb;
 
         if (c.PBUF_NEEDS_COPY(pbuf) != 0) {
@@ -427,18 +438,13 @@ pub const udp = struct {
             pbuf = new;
         }
 
-        if (data.first == null)
-            data.first = pbuf;
-
-        if (data.last) |last| {
-            // append to the packet queue, at the end of a pbuf chain
-            var it = last;
-            while (it.next) |next| {
-                it = next;
-            }
-            it.next = pbuf;
-        }
-        data.last = pbuf;
+        data.receive_queue.push(InboundPacket{
+            .data = pbuf,
+            .sender = EndPoint{
+                .ip = unmapIP(addr.*),
+                .port = port,
+            },
+        });
 
         logger.info("received some data via udp: {} bytes from {}:{}", .{
             pbuf.tot_len,
@@ -451,7 +457,11 @@ pub const udp = struct {
         const pcb = unmap(sock) catch return;
         const index = @enumToInt(sock);
         c.udp_remove(pcb);
+        while (socket_meta[index].receive_queue.pull()) |packet| {
+            _ = c.pbuf_free(packet.data);
+        }
         sockets[index] = undefined;
+        socket_meta[index] = undefined;
         pool.free(index);
     }
 
@@ -501,51 +511,32 @@ pub const udp = struct {
     }
 
     pub fn receive(sock: Socket, buffer: []u8) !usize {
+        var dummy: EndPoint = undefined;
+        return receiveFrom(sock, &dummy, buffer);
+    }
+
+    pub fn receiveFrom(sock: Socket, sender: *EndPoint, buffer: []u8) !usize {
         const pcb = try unmap(sock);
         const data = &socket_meta[@enumToInt(sock)];
 
         _ = pcb;
 
-        if (data.first) |head| {
-            var last_chain = head;
-            var sum_len = head.len;
-            while (last_chain.next) |next| {
-                if (sum_len + next.*.len != head.tot_len)
-                    break;
-                sum_len += last_chain.len;
-                last_chain = next;
-            }
-            const maybe_new_head = last_chain.next;
-            last_chain.next = null;
-            data.first = maybe_new_head;
-            if (maybe_new_head == null) {
-                data.last = null;
-            }
+        const inbound = data.receive_queue.pull() orelse return 0;
 
-            const copied = std.math.min(buffer.len, head.tot_len);
+        const pbuf = inbound.data;
 
-            const len = c.pbuf_copy_partial(head, buffer.ptr, @intCast(u16, copied), 0);
+        sender.* = inbound.sender;
 
-            _ = c.pbuf_free(head);
+        const copied = std.math.min(buffer.len, pbuf.tot_len);
 
-            if (len == 0) {
-                logger.err("failed to extract data from udp packet! {} bytes expected, got none", .{copied});
-            }
+        const len = c.pbuf_copy_partial(pbuf, buffer.ptr, @intCast(u16, copied), 0);
 
-            return len;
-        } else {
-            std.debug.assert(data.last == null);
+        _ = c.pbuf_free(pbuf);
+
+        if (len == 0) {
+            logger.err("failed to extract data from udp packet! {} bytes expected, got none", .{copied});
         }
 
-        return 0;
-    }
-
-    pub fn receiveFrom(sock: Socket, sender: *EndPoint, data: []u8) !usize {
-        const pcb = try unmap(sock);
-        _ = pcb;
-        _ = sender;
-        _ = data;
-        // @panic("not implemented yet!");
-        return 0;
+        return len;
     }
 };

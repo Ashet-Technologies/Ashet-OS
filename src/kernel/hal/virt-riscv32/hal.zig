@@ -873,11 +873,23 @@ pub const network = struct {
         }
 
         pub fn handleIncomingData(nic: *ashet.network.NIC, dev: *DeviceInfo) !void {
+            defer dev.receiveq.exec();
             while (dev.receiveq.singlePollUsed()) |ret| {
                 const buffer = @intToPtr(*DeviceInfo.Buffer, @truncate(usize, dev.receiveq.descriptors[ret % DeviceInfo.queue_size].addr));
 
-                if (buffer.header.num_buffers != 1)
+                if (buffer.header.num_buffers != 1) {
                     @panic("large packets with more than one buffer not supported yet!");
+                }
+
+                // IMPORTANT:
+                // This code must run in ANY CASE!
+                // If the buffer isn't requeued, we're losing a receive buffer for this NIC,
+                // and if that happens too often, the network reception is killed.
+                defer {
+                    // round and round we go
+                    buffer.* = undefined;
+                    dev.receiveq.pushDescriptor(DeviceInfo.Buffer, buffer, .write, true, true);
+                }
 
                 const packet = try nic.allocPacket(buffer.data.len);
                 errdefer nic.freePacket(packet);
@@ -887,14 +899,6 @@ pub const network = struct {
                 logger.info("received data on nic {s}", .{nic.getName()});
 
                 nic.receive(packet);
-
-                dev.receive_buffers.free(buffer);
-
-                // round and round we go
-                buffer.* = undefined;
-                dev.receiveq.pushDescriptor(DeviceInfo.Buffer, buffer, .write, true, true);
-
-                dev.receiveq.exec();
             }
         }
     };

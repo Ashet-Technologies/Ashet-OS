@@ -28,4 +28,4 @@ qemu-system-riscv32 \
         -s "$@" \
 | "${ROOT}/zig-out/bin/debug-filter" "${ROOT}/zig-out/bin/ashet-os"
 
-tcpdump -r ashet-os.pcap 
+# tcpdump -r ashet-os.pcap 
