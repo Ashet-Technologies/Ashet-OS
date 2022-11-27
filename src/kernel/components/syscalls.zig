@@ -2,76 +2,28 @@
 //! This file implements or forwards all syscalls
 //! that are available to applications.
 //!
+//! Each syscall is just declared as a function in that file and
+//! will be collected by the `syscall_table` declaration.
+//!
+//! That declaration is then passed around for invoking the system.
+//!
 const std = @import("std");
 const hal = @import("hal");
 const ashet = @import("../main.zig");
 
 const abi = ashet.abi;
 
-const ashet_syscall_interface: abi.SysCallInterface align(16) = .{
-    .video = .{
-        .aquire = @"video.acquire",
-        .release = @"video.release",
-        .setBorder = @"video.setBorder",
-        .setResolution = @"video.setResolution",
-        .getVideoMemory = @"video.getVideoMemory",
-        .getPaletteMemory = @"video.getPaletteMemory",
-    },
-
-    .ui = .{
-        .createWindow = @"ui.createWindow",
-        .destroyWindow = @"ui.destroyWindow",
-        .moveWindow = @"ui.moveWindow",
-        .resizeWindow = @"ui.resizeWindow",
-        .setWindowTitle = @"ui.setWindowTitle",
-        .pollEvent = @"ui.pollEvent",
-        .invalidate = @"ui.invalidate",
-    },
-
-    .process = .{
-        .yield = @"process.yield",
-        .exit = @"process.exit",
-        .getBaseAddress = @"process.getBaseAddress",
-        .breakpoint = @"process.breakpoint",
-    },
-    .fs = .{
-        .delete = @"fs.delete",
-        .mkdir = @"fs.mkdir",
-        .rename = @"fs.rename",
-        .stat = @"fs.stat",
-        .openFile = @"fs.openFile",
-        .read = @"fs.read",
-        .write = @"fs.write",
-        .seekTo = @"fs.seekTo",
-        .flush = @"fs.flush",
-        .close = @"fs.close",
-        .openDir = @"fs.openDir",
-        .nextFile = @"fs.nextFile",
-        .closeDir = @"fs.closeDir",
-    },
-    .input = .{
-        .getEvent = @"input.getEvent",
-        .getKeyboardEvent = @"input.getKeyboardEvent",
-        .getMouseEvent = @"input.getMouseEvent",
-    },
-
-    .network = .{
-        .udp = .{
-            .createSocket = @"network.udp.createSocket",
-            .destroySocket = @"network.udp.destroySocket",
-            .bind = @"network.udp.bind",
-            .connect = @"network.udp.connect",
-            .disconnect = @"network.udp.disconnect",
-            .send = @"network.udp.send",
-            .sendTo = @"network.udp.sendTo",
-            .receive = @"network.udp.receive",
-            .receiveFrom = @"network.udp.receiveFrom",
-        },
-    },
-    .time = .{
-        .nanoTimestamp = @"time.nanoTimestamp",
-    },
+pub const syscall_table: abi.SysCallTable = blk: {
+    var table: abi.SysCallTable = undefined;
+    for (abi.syscall_definitions) |def| {
+        @field(table, def.name) = @as(def.signature, @field(@This(), def.name));
+    }
+    break :blk table;
 };
+
+pub fn initialize() void {
+    // might require some work in the future for arm/x86
+}
 
 fn getCurrentThread() *ashet.scheduler.Thread {
     return ashet.scheduler.Thread.current() orelse @panic("syscall only legal in a process");
@@ -79,14 +31,6 @@ fn getCurrentThread() *ashet.scheduler.Thread {
 
 fn getCurrentProcess() *ashet.multi_tasking.Process {
     return getCurrentThread().process orelse @panic("syscall only legal in a process");
-}
-
-pub fn initialize() void {
-    //
-}
-
-pub fn getInterfacePointer() *align(16) const abi.SysCallInterface {
-    return &ashet_syscall_interface;
 }
 
 fn @"video.acquire"() callconv(.C) bool {
@@ -165,66 +109,70 @@ fn @"process.breakpoint"() callconv(.C) void {
     }
 }
 
-fn @"fs.delete"(path_ptr: [*]const u8, path_len: usize) callconv(.C) bool {
+fn @"fs.delete"(path_ptr: [*]const u8, path_len: usize) callconv(.C) abi.FileSystemError.Enum {
     _ = path_len;
     _ = path_ptr;
-    return false;
+    std.log.err("fs.delete not implemented yet!", .{});
+    return .ok;
 }
 
-fn @"fs.mkdir"(path_ptr: [*]const u8, path_len: usize) callconv(.C) bool {
+fn @"fs.mkdir"(path_ptr: [*]const u8, path_len: usize) callconv(.C) abi.FileSystemError.Enum {
     _ = path_len;
     _ = path_ptr;
-    return false;
+    std.log.err("fs.mkdir not implemented yet!", .{});
+    return .ok;
 }
 
-fn @"fs.rename"(old_path_ptr: [*]const u8, old_path_len: usize, new_path_ptr: [*]const u8, new_path_len: usize) callconv(.C) bool {
+fn @"fs.rename"(old_path_ptr: [*]const u8, old_path_len: usize, new_path_ptr: [*]const u8, new_path_len: usize) callconv(.C) abi.FileSystemError.Enum {
     _ = old_path_len;
     _ = old_path_ptr;
     _ = new_path_len;
     _ = new_path_ptr;
-    return false;
+    std.log.err("fs.rename not implemented yet!", .{});
+    return .ok;
 }
 
-fn @"fs.stat"(path_ptr: [*]const u8, path_len: usize, info: *abi.FileInfo) callconv(.C) bool {
-    info.* = ashet.filesystem.stat(path_ptr[0..path_len]) catch return false;
-    return true;
+fn @"fs.stat"(path_ptr: [*]const u8, path_len: usize, info: *abi.FileInfo) callconv(.C) abi.FileSystemError.Enum {
+    info.* = ashet.filesystem.stat(path_ptr[0..path_len]) catch |e| return abi.FileSystemError.map(e);
+    return .ok;
 }
 
-fn @"fs.openFile"(path_ptr: [*]const u8, path_len: usize, access: abi.FileAccess, mode: abi.FileMode) callconv(.C) abi.FileHandle {
-    return ashet.filesystem.open(path_ptr[0..path_len], access, mode) catch .invalid;
+fn @"fs.openFile"(path_ptr: [*]const u8, path_len: usize, access: abi.FileAccess, mode: abi.FileMode, out: *abi.FileHandle) callconv(.C) abi.FileOpenError.Enum {
+    out.* = ashet.filesystem.open(path_ptr[0..path_len], access, mode) catch |e| return abi.FileOpenError.map(e);
+    return .ok;
 }
 
-fn @"fs.read"(handle: abi.FileHandle, ptr: [*]u8, len: usize) callconv(.C) usize {
-    return ashet.filesystem.read(handle, ptr[0..len]) catch 0;
+fn @"fs.read"(handle: abi.FileHandle, ptr: [*]u8, len: usize, out: *usize) callconv(.C) abi.FileReadError.Enum {
+    out.* = ashet.filesystem.read(handle, ptr[0..len]) catch |e| return abi.FileReadError.map(e);
+    return .ok;
 }
-fn @"fs.write"(handle: abi.FileHandle, ptr: [*]const u8, len: usize) callconv(.C) usize {
-    return ashet.filesystem.write(handle, ptr[0..len]) catch 0;
-}
-
-fn @"fs.seekTo"(handle: abi.FileHandle, offset: u64) callconv(.C) bool {
-    ashet.filesystem.seekTo(handle, offset) catch return false;
-    return true;
+fn @"fs.write"(handle: abi.FileHandle, ptr: [*]const u8, len: usize, out: *usize) callconv(.C) abi.FileWriteError.Enum {
+    out.* = ashet.filesystem.write(handle, ptr[0..len]) catch |e| return abi.FileWriteError.map(e);
+    return .ok;
 }
 
-fn @"fs.flush"(handle: abi.FileHandle) callconv(.C) bool {
-    ashet.filesystem.flush(handle) catch return false;
-    return true;
+fn @"fs.seekTo"(handle: abi.FileHandle, offset: u64) callconv(.C) abi.FileSeekError.Enum {
+    ashet.filesystem.seekTo(handle, offset) catch |e| return abi.FileSeekError.map(e);
+    return .ok;
+}
+
+fn @"fs.flush"(handle: abi.FileHandle) callconv(.C) abi.FileWriteError.Enum {
+    ashet.filesystem.flush(handle) catch |e| return abi.FileWriteError.map(e);
+    return .ok;
 }
 fn @"fs.close"(handle: abi.FileHandle) callconv(.C) void {
     ashet.filesystem.close(handle);
 }
 
-fn @"fs.openDir"(path_ptr: [*]const u8, path_len: usize) callconv(.C) abi.DirectoryHandle {
-    return ashet.filesystem.openDir(path_ptr[0..path_len]) catch .invalid;
+fn @"fs.openDir"(path_ptr: [*]const u8, path_len: usize, out: *abi.DirectoryHandle) callconv(.C) abi.DirOpenError.Enum {
+    out.* = ashet.filesystem.openDir(path_ptr[0..path_len]) catch |e| return abi.DirOpenError.map(e);
+    return .ok;
 }
-fn @"fs.nextFile"(handle: abi.DirectoryHandle, info: *abi.FileInfo) callconv(.C) bool {
-    if (ashet.filesystem.next(handle) catch return false) |file| {
-        info.* = file;
-        return true;
-    } else {
-        info.* = undefined;
-        return false;
-    }
+fn @"fs.nextFile"(handle: abi.DirectoryHandle, info: *abi.FileInfo, eof: *bool) callconv(.C) abi.DirNextError.Enum {
+    const entry_or_null = ashet.filesystem.next(handle) catch |e| return abi.DirNextError.map(e);
+    info.* = entry_or_null orelse undefined;
+    eof.* = (entry_or_null == null);
+    return .ok;
 }
 fn @"fs.closeDir"(handle: abi.DirectoryHandle) callconv(.C) void {
     ashet.filesystem.closeDir(handle);
@@ -328,10 +276,11 @@ fn @"ui.invalidate"(win: *const abi.Window, rect: abi.Rectangle) callconv(.C) vo
     ashet.ui.invalidateRegion(screen_rect);
 }
 
-const UdpError = abi.SysCallInterface.Network.UDP.Error;
+const UdpError = abi.UdpError;
+const TcpError = abi.TcpError;
 
 fn @"network.udp.createSocket"(out: *abi.UdpSocket) callconv(.C) UdpError.Enum {
-    out.* = ashet.network.udp.createSocket() catch |e| return abi.SysCallInterface.Network.UDP.Error.map(e);
+    out.* = ashet.network.udp.createSocket() catch |e| return abi.UdpError.map(e);
     return .ok;
 }
 fn @"network.udp.destroySocket"(sock: abi.UdpSocket) callconv(.C) void {

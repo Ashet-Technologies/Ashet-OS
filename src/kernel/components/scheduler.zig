@@ -24,7 +24,7 @@
 //! f28–31   ft8–11   FP temporaries                   Caller
 
 const std = @import("std");
-const logger = std.log.scoped(.@"scheduler");
+const logger = std.log.scoped(.scheduler);
 const ashet = @import("../main.zig");
 
 pub const ExitCode = ashet.abi.ExitCode;
@@ -105,7 +105,7 @@ pub const Thread = struct {
         }
 
         thread.push(0x0000_0000); //      x3  ; gp Global pointer
-        thread.push(@ptrToInt(ashet.syscalls.getInterfacePointer())); //      x4  ; tp Thread pointer
+        thread.push(@ptrToInt(&ashet.syscalls.syscall_table)); //      x4  ; tp Thread pointer
         thread.push(0x0000_0000); //      x8  ; s0
         thread.push(0x0000_0000); //      x9  ; s1
         thread.push(@ptrToInt(func)); // x18  ; s2

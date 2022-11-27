@@ -1,185 +1,232 @@
 const std = @import("std");
 
-fn FnPtr(comptime T: type) type {
-    var ti = @typeInfo(T);
+/// defines the syscall interface
+pub const system_magic: usize = 0x9a9d5a1b; // chosen by a fair dice roll
+
+pub const syscall_definitions = [_]SysCallDefinition{
+    defineSysCall("process.yield", fn () void, 0),
+    defineSysCall("process.exit", fn (u32) noreturn, 1),
+    defineSysCall("process.getBaseAddress", fn () usize, 2),
+    defineSysCall("process.breakpoint", fn () void, 3),
+
+    defineSysCall("time.nanoTimestamp", fn () i128, 4),
+
+    // Aquires direct access to the screen. When `true` is returned,
+    // this process has the sole access to the screen buffers.
+    defineSysCall("video.acquire", fn () bool, 5),
+
+    // Releases the access to the video and returns to desktop mode.
+    defineSysCall("video.release", fn () void, 6),
+
+    // Changes the border color of the screen. Parameter is an index into
+    // the palette.
+    defineSysCall("video.setBorder", fn (ColorIndex) void, 7),
+
+    // Sets the screen resolution. Legal values are between 1×1 and 400×300.
+    // Everything out of bounds will be clamped into that range.
+    defineSysCall("video.setResolution", fn (u16, u16) void, 8),
+
+    // Returns a pointer to linear video memory, row-major.
+    // Pixels rows will have a stride of the current video buffer width.
+    // The first pixel in the memory is the top-left pixel.
+    defineSysCall("video.getVideoMemory", fn () [*]align(4) ColorIndex, 9),
+
+    // Returns a pointer to the current palette. Changing this palette
+    // will directly change the associated colors on the screen.
+    defineSysCall("video.getPaletteMemory", fn () *[palette_size]Color, 10),
+
+    defineSysCall("input.getEvent", fn (*InputEvent) InputEventType, 11),
+    defineSysCall("input.getKeyboardEvent", fn (*KeyboardEvent) bool, 12),
+    defineSysCall("input.getMouseEvent", fn (*MouseEvent) bool, 13),
+
+    defineSysCall("ui.createWindow", fn (title: [*]const u8, title_len: usize, min: Size, max: Size, startup: Size, flags: CreateWindowFlags) ?*const Window, 14),
+    defineSysCall("ui.destroyWindow", fn (*const Window) void, 15),
+    defineSysCall("ui.moveWindow", fn (*const Window, x: i16, y: i16) void, 16),
+    defineSysCall("ui.resizeWindow", fn (*const Window, x: u16, y: u16) void, 17),
+    defineSysCall("ui.setWindowTitle", fn (*const Window, title: [*]const u8, title_len: usize) void, 18),
+    defineSysCall("ui.pollEvent", fn (*const Window, *UiEvent) UiEventType, 19),
+    defineSysCall("ui.invalidate", fn (*const Window, rect: Rectangle) void, 20),
+
+    defineSysCall("fs.delete", fn (path_ptr: [*]const u8, path_len: usize) FileSystemError.Enum, 21),
+    defineSysCall("fs.mkdir", fn (path_ptr: [*]const u8, path_len: usize) FileSystemError.Enum, 22),
+    defineSysCall("fs.rename", fn (old_path_ptr: [*]const u8, old_path_len: usize, new_path_ptr: [*]const u8, new_path_len: usize) callconv(.C) FileSystemError.Enum, 23),
+    defineSysCall("fs.stat", fn (path_ptr: [*]const u8, path_len: usize, *FileInfo) FileSystemError.Enum, 24),
+
+    defineSysCall("fs.openFile", fn (path_ptr: [*]const u8, path_len: usize, FileAccess, FileMode, out: *FileHandle) FileOpenError.Enum, 25),
+
+    defineSysCall("fs.read", fn (FileHandle, ptr: [*]u8, len: usize, out: *usize) FileReadError.Enum, 26),
+    defineSysCall("fs.write", fn (FileHandle, ptr: [*]const u8, len: usize, out: *usize) FileWriteError.Enum, 27),
+
+    defineSysCall("fs.seekTo", fn (FileHandle, offset: u64) FileSeekError.Enum, 28),
+    // seekBy: fn (FileHandle, offset: i64)  usize,
+    // seekFromEnd: fn (FileHandle, offset: u64)  usize,
+
+    defineSysCall("fs.flush", fn (FileHandle) FileWriteError.Enum, 29),
+    defineSysCall("fs.close", fn (FileHandle) void, 30),
+
+    defineSysCall("fs.openDir", fn (path_ptr: [*]const u8, path_len: usize, out: *DirectoryHandle) DirOpenError.Enum, 31),
+    defineSysCall("fs.nextFile", fn (DirectoryHandle, *FileInfo, eof: *bool) DirNextError.Enum, 32),
+    defineSysCall("fs.closeDir", fn (DirectoryHandle) void, 33),
+
+    // resolves the dns entry `host` for the given `service`.
+    // - `host` is a legal dns entry
+    // - `port` is either a port number
+    // - `buffer` and `limit` define a structure where all resolved IPs can be stored.
+    // Function returns the number of host entries found or 0 if the host name could not be resolved.
+    // defineSysCall("network.dns.resolve", fn (host: [*:0]const u8, port: u16, buffer: [*]EndPoint, limit: usize) usize, 34),
+
+    // getStatus: FnPtr(fn () NetworkStatus),
+    // ping: FnPtr(fn ([*]Ping, usize) void),
+    // TODO: Implement NIC-specific queries (mac, ips, names, ...)
+
+    defineSysCall("network.udp.createSocket", fn (result: *UdpSocket) UdpError.Enum, 35),
+    defineSysCall("network.udp.destroySocket", fn (UdpSocket) void, 36),
+    defineSysCall("network.udp.bind", fn (UdpSocket, EndPoint) UdpError.Enum, 37),
+    defineSysCall("network.udp.connect", fn (UdpSocket, EndPoint) UdpError.Enum, 38),
+    defineSysCall("network.udp.disconnect", fn (UdpSocket) UdpError.Enum, 39),
+    defineSysCall("network.udp.send", fn (UdpSocket, data: [*]const u8, length: usize, result: *usize) UdpError.Enum, 40),
+    defineSysCall("network.udp.sendTo", fn (UdpSocket, receiver: EndPoint, data: [*]const u8, length: usize, result: *usize) UdpError.Enum, 41),
+    defineSysCall("network.udp.receive", fn (UdpSocket, data: [*]u8, length: usize, result: *usize) UdpError.Enum, 42),
+    defineSysCall("network.udp.receiveFrom", fn (UdpSocket, sender: *EndPoint, data: [*]u8, length: usize, result: *usize) UdpError.Enum, 43),
+
+    // defineSysCall("network.tcp.createSocket", fn (out: *TcpSocket) TcpError.Enum, 44),
+    // defineSysCall("network.tcp.destroySocket", fn (TcpSocket) void, 45),
+    // defineSysCall("network.tcp.bind", fn (TcpSocket, EndPoint) TcpError.Enum, 46),
+    // defineSysCall("network.tcp.listen", fn (TcpSocket, EndPoint) TcpError.Enum, 47),
+    // defineSysCall("network.tcp.connect", fn (TcpSocket, EndPoint) TcpError.Enum, 48),
+    // defineSysCall("network.tcp.write", fn (TcpSocket, data: [*]const u8, length: usize, out: *usize) TcpError.Enum, 49),
+    // defineSysCall("network.tcp.read", fn (TcpSocket, data: [*]u8, length: usize, out: *usize) TcpError.Enum, 50),
+};
+
+const SysCallDefinition = struct {
+    name: []const u8,
+    signature: type,
+    index: u32,
+};
+
+fn defineSysCall(comptime name: []const u8, comptime Func: type, comptime index: u32) SysCallDefinition {
+    var ti = @typeInfo(Func);
     ti.Fn.calling_convention = .C;
     const T2 = @Type(ti);
-    return std.meta.FnPtr(T2);
+
+    return SysCallDefinition{
+        .name = name,
+        .signature = std.meta.FnPtr(T2),
+        .index = index,
+    };
 }
 
-/// A structure containing all system calls Ashet OS provides.
-///
-/// As Ashet OS is single-threaded by design and supports no thread local
-/// structures, we use the `tp` register to store a fast-path to the syscall
-/// interface.
-/// This allows several benefits:
-/// - Ashet OS can freely place this structure in RAM or ROM.
-/// - A syscall is just an indirect call with the minimum number of only two instructions
-pub const SysCallInterface = extern struct {
-    pub inline fn get() *align(16) const SysCallInterface {
-        const target = @import("builtin").target.cpu.arch;
-        return switch (target) {
-            .riscv32 => asm (""
-                : [ptr] "={tp}" (-> *align(16) SysCallInterface),
-            ),
-            .x86 => @panic("no syscalls on x86 yet"),
-            .arm => @panic("no syscalls on arm yet"),
-            else => unreachable,
+fn SysCallFunc(comptime call: SysCall) type {
+    for (syscall_definitions) |def| {
+        if (def.index == @enumToInt(call))
+            return def.signature;
+    }
+    unreachable;
+}
+
+pub fn syscall(comptime name: []const u8) SysCallFunc(@field(SysCall, name)) {
+    const target = @import("builtin").target.cpu.arch;
+    const table = switch (target) {
+        .riscv32 => asm (""
+            : [ptr] "={tp}" (-> *const SysCallTable),
+        ),
+        .x86 => @panic("no syscalls on x86 yet"),
+        .arm => @panic("no syscalls on arm yet"),
+        else => unreachable,
+    };
+    return @field(table, name);
+}
+
+pub const SysCall: type = blk: {
+    var fields: []const std.builtin.Type.EnumField = &.{};
+    for (syscall_definitions) |def| {
+        const field = std.builtin.Type.EnumField{
+            .name = def.name,
+            .value = def.index,
         };
+        fields = fields ++ [1]std.builtin.Type.EnumField{field};
     }
 
-    magic: u32 = 0x9a9d5a1b, // chosen by a fair dice roll
+    break :blk @Type(.{
+        .Enum = .{
+            .layout = .Auto,
+            .decls = &.{},
+            .fields = fields,
+            .tag_type = u32,
+            .is_exhaustive = false,
+        },
+    });
+};
 
-    video: Video,
-    process: Process,
-    fs: FileSystem,
-    input: Input,
-    ui: UserInterface,
-    network: Network,
-    time: Time,
+pub const SysCallTable: type = blk: {
+    @setEvalBranchQuota(100_000);
 
-    pub const Time = extern struct {
-        nanoTimestamp: FnPtr(fn () i128),
+    var fields: []const std.builtin.Type.StructField = &.{};
+
+    const default_padding: usize = 0;
+    const padding_field = std.builtin.Type.StructField{
+        .name = undefined,
+        .field_type = usize,
+        .default_value = &default_padding,
+        .is_comptime = false,
+        .alignment = @alignOf(usize),
     };
 
-    pub const Video = extern struct {
-        /// Aquires direct access to the screen. When `true` is returned,
-        /// this process has the sole access to the screen buffers.
-        aquire: FnPtr(fn () bool),
-
-        /// Releases the access to the video and returns to desktop mode.
-        release: FnPtr(fn () void),
-
-        /// Changes the border color of the screen. Parameter is an index into
-        /// the palette.
-        setBorder: FnPtr(fn (ColorIndex) void),
-
-        /// Sets the screen resolution. Legal values are between 1×1 and 400×300.
-        /// Everything out of bounds will be clamped into that range.
-        setResolution: FnPtr(fn (u16, u16) void),
-
-        /// Returns a pointer to linear video memory, row-major.
-        /// Pixels rows will have a stride of the current video buffer width.
-        /// The first pixel in the memory is the top-left pixel.
-        getVideoMemory: FnPtr(fn () [*]align(4) ColorIndex),
-
-        /// Returns a pointer to the current palette. Changing this palette
-        /// will directly change the associated colors on the screen.
-        getPaletteMemory: FnPtr(fn () *[palette_size]Color),
+    const magic_number_value: usize = system_magic;
+    const magic_number_field = std.builtin.Type.StructField{
+        .name = "magic_number",
+        .field_type = usize,
+        .default_value = &magic_number_value,
+        .is_comptime = false,
+        .alignment = @alignOf(usize),
     };
+    fields = fields ++ [1]std.builtin.Type.StructField{magic_number_field};
 
-    pub const UserInterface = extern struct {
-        createWindow: FnPtr(fn (title: [*]const u8, title_len: usize, min: Size, max: Size, startup: Size, flags: CreateWindowFlags) ?*const Window),
-        destroyWindow: FnPtr(fn (*const Window) void),
-        moveWindow: FnPtr(fn (*const Window, x: i16, y: i16) void),
-        resizeWindow: FnPtr(fn (*const Window, x: u16, y: u16) void),
-        setWindowTitle: FnPtr(fn (*const Window, title: [*]const u8, title_len: usize) void),
-        pollEvent: FnPtr(fn (*const Window, *UiEvent) UiEventType),
-        invalidate: FnPtr(fn (*const Window, rect: Rectangle) void),
-    };
+    var index: usize = 0;
+    var offset: usize = 0;
+    while (index < syscall_definitions.len) : (index += 1) {
+        const def = syscall_definitions[index];
+        std.debug.assert(def.index >= offset);
 
-    pub const Process = extern struct {
-        yield: FnPtr(fn () void),
-        exit: FnPtr(fn (u32) noreturn),
-        getBaseAddress: FnPtr(fn () usize),
-        breakpoint: FnPtr(fn () void),
-    };
+        while (offset < def.index) : (offset += 1) {
+            var clone = padding_field;
+            clone.name = std.fmt.comptimePrint("padding{d}", .{offset});
+            fields = fields ++ [1]std.builtin.Type.StructField{clone};
+        }
 
-    pub const FileSystem = extern struct {
-        delete: FnPtr(fn (path_ptr: [*]const u8, path_len: usize) bool),
-        mkdir: FnPtr(fn (path_ptr: [*]const u8, path_len: usize) bool),
-        rename: FnPtr(fn (old_path_ptr: [*]const u8, old_path_len: usize, new_path_ptr: [*]const u8, new_path_len: usize) callconv(.C) bool),
-        stat: FnPtr(fn (path_ptr: [*]const u8, path_len: usize, *FileInfo) bool),
-
-        openFile: FnPtr(fn (path_ptr: [*]const u8, path_len: usize, FileAccess, FileMode) FileHandle),
-
-        read: FnPtr(fn (FileHandle, ptr: [*]u8, len: usize) usize),
-        write: FnPtr(fn (FileHandle, ptr: [*]const u8, len: usize) usize),
-
-        seekTo: FnPtr(fn (FileHandle, offset: u64) bool),
-        // seekBy: fn (FileHandle, offset: i64)  usize,
-        // seekFromEnd: fn (FileHandle, offset: u64)  usize,
-
-        flush: FnPtr(fn (FileHandle) bool),
-        close: FnPtr(fn (FileHandle) void),
-
-        openDir: FnPtr(fn (path_ptr: [*]const u8, path_len: usize) DirectoryHandle),
-        nextFile: FnPtr(fn (DirectoryHandle, *FileInfo) bool),
-        closeDir: FnPtr(fn (DirectoryHandle) void),
-    };
-
-    pub const Input = extern struct {
-        getEvent: FnPtr(fn (*InputEvent) InputEventType),
-        getKeyboardEvent: FnPtr(fn (*KeyboardEvent) bool),
-        getMouseEvent: FnPtr(fn (*MouseEvent) bool),
-    };
-
-    pub const Network = extern struct {
-        // getStatus: FnPtr(fn () NetworkStatus),
-        // ping: FnPtr(fn ([*]Ping, usize) void),
-
-        // TODO: Implement NIC-specific queries (mac, ips, names, ...)
-
-        // dns: DNS,
-        udp: UDP,
-        // tcp: TCP,
-
-        pub const DNS = extern struct {
-            /// resolves the dns entry `host` for the given `service`.
-            /// - `host` is a legal dns entry
-            /// - `port` is either a port number
-            /// - `buffer` and `limit` define a structure where all resolved IPs can be stored.
-            /// Function returns the number of host entries found or 0 if the host name could not be resolved.
-            resolve: FnPtr(fn (host: [*:0]const u8, port: u16, buffer: [*]EndPoint, limit: usize) usize),
+        const field = std.builtin.Type.StructField{
+            .name = def.name,
+            .field_type = def.signature,
+            .default_value = null,
+            .is_comptime = false,
+            .alignment = @alignOf(usize),
         };
+        fields = fields ++ [1]std.builtin.Type.StructField{field};
+        offset += 1;
+    }
 
-        pub const UDP = extern struct {
-            pub const Error = ErrorSet(.{
-                .InvalidHandle = 1,
-                .SystemResources = 2,
-                .AddressInUse = 3,
-                .AlreadyConnected = 4,
-                .AlreadyConnecting = 5,
-                .BufferError = 6,
-                .ConnectionAborted = 7,
-                .ConnectionClosed = 8,
-                .ConnectionReset = 9,
-                .IllegalArgument = 10,
-                .IllegalValue = 11,
-                .InProgress = 12,
-                .LowlevelInterfaceError = 13,
-                .NotConnected = 14,
-                .OutOfMemory = 15,
-                .Routing = 16,
-                .Timeout = 17,
-                .WouldBlock = 18,
-                .Unexpected = 19,
-            });
-            createSocket: FnPtr(fn (result: *UdpSocket) Error.Enum),
+    if (fields.len != syscall_table_size)
+        @compileError("Mismatch in table size vs. index");
 
-            destroySocket: FnPtr(fn (UdpSocket) void),
+    break :blk @Type(.{
+        .Struct = .{
+            .layout = .Extern,
+            .backing_integer = null,
+            .fields = fields,
+            .decls = &.{},
+            .is_tuple = false,
+        },
+    });
+};
 
-            bind: FnPtr(fn (UdpSocket, EndPoint) Error.Enum),
-            connect: FnPtr(fn (UdpSocket, EndPoint) Error.Enum),
-            disconnect: FnPtr(fn (UdpSocket) Error.Enum),
-
-            send: FnPtr(fn (UdpSocket, data: [*]const u8, length: usize, result: *usize) Error.Enum),
-            sendTo: FnPtr(fn (UdpSocket, receiver: EndPoint, data: [*]const u8, length: usize, result: *usize) Error.Enum),
-            receive: FnPtr(fn (UdpSocket, data: [*]u8, length: usize, result: *usize) Error.Enum),
-            receiveFrom: FnPtr(fn (UdpSocket, sender: *EndPoint, data: [*]u8, length: usize, result: *usize) Error.Enum),
-        };
-
-        pub const TCP = extern struct {
-            createSocket: FnPtr(fn () TcpSocket),
-            destroySocket: FnPtr(fn (TcpSocket) void),
-
-            bind: FnPtr(fn (TcpSocket, EndPoint) bool),
-            listen: FnPtr(fn (TcpSocket, EndPoint) bool),
-            connect: FnPtr(fn (TcpSocket, EndPoint) bool),
-            write: FnPtr(fn (TcpSocket, data: [*]const u8, length: usize) usize),
-            read: FnPtr(fn (TcpSocket, data: [*]u8, length: usize) usize),
-        };
-    };
+/// The total size of the syscall table. Each entry is one `usize` large.
+pub const syscall_table_size: u32 = blk: {
+    var limit: u32 = 0;
+    for (syscall_definitions) |def| {
+        if (def.index > limit)
+            limit = def.index;
+    }
+    break :blk limit + 2; // off-by-one + magic number
 };
 
 pub const NetworkStatus = enum(u8) {
@@ -286,7 +333,7 @@ pub const ExitCode = struct {
     pub const killed = ~@as(u32, 0);
 };
 
-pub const ThreadFunction = FnPtr(fn (?*anyopaque) u32);
+pub const ThreadFunction = std.meta.FnPtr(fn (?*anyopaque) callconv(.C) u32);
 
 pub const ColorIndex = enum(u8) {
     _,
@@ -860,3 +907,209 @@ pub fn ErrorSet(comptime options: anytype) type {
         }
     };
 }
+
+pub const UdpError = ErrorSet(.{
+    .InvalidHandle = 1,
+    .SystemResources = 2,
+    .AddressInUse = 3,
+    .AlreadyConnected = 4,
+    .AlreadyConnecting = 5,
+    .BufferError = 6,
+    .ConnectionAborted = 7,
+    .ConnectionClosed = 8,
+    .ConnectionReset = 9,
+    .IllegalArgument = 10,
+    .IllegalValue = 11,
+    .InProgress = 12,
+    .LowlevelInterfaceError = 13,
+    .NotConnected = 14,
+    .OutOfMemory = 15,
+    .Routing = 16,
+    .Timeout = 17,
+    .WouldBlock = 18,
+    .Unexpected = 19,
+});
+
+pub const TcpError = ErrorSet(.{
+    //
+});
+
+pub const FileSystemError = ErrorSet(.{
+    .Denied = 1,
+    .DiskErr = 2,
+    .Exist = 3,
+    .IntErr = 4,
+    .InvalidDrive = 5,
+    .InvalidName = 6,
+    .InvalidObject = 7,
+    .InvalidParameter = 8,
+    .Locked = 9,
+    .MkfsAborted = 10,
+    .NoFile = 11,
+    .NoFilesystem = 12,
+    .NoPath = 13,
+    .NotEnabled = 14,
+    .NotEnoughCore = 15,
+    .NotReady = 16,
+    .Overflow = 17,
+    .Timeout = 18,
+    .TooManyOpenFiles = 19,
+    .WriteProtected = 20,
+    .InvalidFileHandle = 21,
+    .InvalidDevice = 22,
+    .PathTooLong = 23,
+});
+
+pub const FileOpenError = ErrorSet(.{
+    .Denied = 1,
+    .DiskErr = 2,
+    .Exist = 3,
+    .IntErr = 4,
+    .InvalidDrive = 5,
+    .InvalidName = 6,
+    .InvalidObject = 7,
+    .InvalidParameter = 8,
+    .Locked = 9,
+    .MkfsAborted = 10,
+    .NoFile = 11,
+    .NoFilesystem = 12,
+    .NoPath = 13,
+    .NotEnabled = 14,
+    .NotEnoughCore = 15,
+    .NotReady = 16,
+    .Overflow = 17,
+    .Timeout = 18,
+    .TooManyOpenFiles = 19,
+    .WriteProtected = 20,
+    .InvalidFileHandle = 21,
+    .InvalidDevice = 22,
+    .PathTooLong = 23,
+    .SystemFdQuotaExceeded = 24,
+});
+
+pub const FileReadError = ErrorSet(.{
+    .Denied = 1,
+    .DiskErr = 2,
+    .Exist = 3,
+    .IntErr = 4,
+    .InvalidDrive = 5,
+    .InvalidName = 6,
+    .InvalidObject = 7,
+    .InvalidParameter = 8,
+    .Locked = 9,
+    .MkfsAborted = 10,
+    .NoFile = 11,
+    .NoFilesystem = 12,
+    .NoPath = 13,
+    .NotEnabled = 14,
+    .NotEnoughCore = 15,
+    .NotReady = 16,
+    .Overflow = 17,
+    .Timeout = 18,
+    .TooManyOpenFiles = 19,
+    .WriteProtected = 20,
+    .InvalidFileHandle = 21,
+    .InvalidDevice = 22,
+    .PathTooLong = 23,
+});
+
+pub const FileWriteError = ErrorSet(.{
+    .Denied = 1,
+    .DiskErr = 2,
+    .Exist = 3,
+    .IntErr = 4,
+    .InvalidDrive = 5,
+    .InvalidName = 6,
+    .InvalidObject = 7,
+    .InvalidParameter = 8,
+    .Locked = 9,
+    .MkfsAborted = 10,
+    .NoFile = 11,
+    .NoFilesystem = 12,
+    .NoPath = 13,
+    .NotEnabled = 14,
+    .NotEnoughCore = 15,
+    .NotReady = 16,
+    .Overflow = 17,
+    .Timeout = 18,
+    .TooManyOpenFiles = 19,
+    .WriteProtected = 20,
+    .InvalidFileHandle = 21,
+    .InvalidDevice = 22,
+    .PathTooLong = 23,
+});
+
+pub const FileSeekError = ErrorSet(.{
+    .Denied = 1,
+    .DiskErr = 2,
+    .Exist = 3,
+    .IntErr = 4,
+    .InvalidDrive = 5,
+    .InvalidName = 6,
+    .InvalidObject = 7,
+    .InvalidParameter = 8,
+    .Locked = 9,
+    .MkfsAborted = 10,
+    .NoFile = 11,
+    .NoFilesystem = 12,
+    .NoPath = 13,
+    .NotEnabled = 14,
+    .NotEnoughCore = 15,
+    .NotReady = 16,
+    .Overflow = 17,
+    .Timeout = 18,
+    .TooManyOpenFiles = 19,
+    .WriteProtected = 20,
+    .InvalidFileHandle = 21,
+    .InvalidDevice = 22,
+    .PathTooLong = 23,
+    .OutOfBounds = 24,
+});
+
+pub const DirOpenError = ErrorSet(.{
+    .SystemFdQuotaExceeded = 1,
+    .InvalidDevice = 2,
+    .PathTooLong = 3,
+    .Denied = 4,
+    .DiskErr = 5,
+    .Exist = 6,
+    .IntErr = 7,
+    .InvalidDrive = 8,
+    .InvalidName = 9,
+    .InvalidObject = 10,
+    .InvalidParameter = 11,
+    .Locked = 12,
+    .MkfsAborted = 13,
+    .NoFile = 14,
+    .NoFilesystem = 15,
+    .NoPath = 16,
+    .NotEnabled = 17,
+    .NotEnoughCore = 18,
+    .NotReady = 19,
+    .Timeout = 20,
+    .TooManyOpenFiles = 21,
+    .WriteProtected = 22,
+});
+
+pub const DirNextError = ErrorSet(.{
+    .InvalidFileHandle = 1,
+    .Denied = 2,
+    .DiskErr = 3,
+    .Exist = 4,
+    .IntErr = 5,
+    .InvalidDrive = 6,
+    .InvalidName = 7,
+    .InvalidObject = 8,
+    .InvalidParameter = 9,
+    .Locked = 10,
+    .MkfsAborted = 11,
+    .NoFile = 12,
+    .NoFilesystem = 13,
+    .NoPath = 14,
+    .NotEnabled = 15,
+    .NotEnoughCore = 16,
+    .NotReady = 17,
+    .Timeout = 18,
+    .TooManyOpenFiles = 19,
+    .WriteProtected = 20,
+});

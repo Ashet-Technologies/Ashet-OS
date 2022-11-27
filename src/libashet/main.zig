@@ -2,7 +2,7 @@ const std = @import("std");
 
 pub const abi = @import("ashet-abi");
 
-pub const syscalls = abi.SysCallInterface.get;
+pub const syscall = abi.syscall;
 
 comptime {
     if (!@import("builtin").is_test) {
@@ -51,7 +51,7 @@ pub const core = struct {
         debug.write(msg);
         debug.write("\r\n");
 
-        const base_address = syscalls().process.getBaseAddress();
+        const base_address = syscall("process.getBaseAddress")();
 
         debug.writer().print("process base:  0x{X:0>8}\n", .{base_address}) catch {};
 
@@ -90,10 +90,10 @@ pub const core = struct {
 
         if (@import("builtin").mode == .Debug) {
             debug.write("breakpoint.\n");
-            syscalls().process.breakpoint();
+            syscall("process.breakpoint")();
         }
 
-        syscalls().process.exit(1);
+        syscall("process.exit")(1);
     }
 
     pub fn log(
@@ -119,7 +119,7 @@ pub const input = struct {
 
     pub fn getEvent() ?Event {
         var evt: abi.InputEvent = undefined;
-        return switch (syscalls().input.getEvent(&evt)) {
+        return switch (syscall("input.getEvent")(&evt)) {
             .none => null,
             .keyboard => Event{ .keyboard = evt.keyboard },
             .mouse => Event{ .mouse = evt.mouse },
@@ -128,7 +128,7 @@ pub const input = struct {
 
     pub fn getMouseEvent() ?abi.MouseEvent {
         var evt: abi.MouseEvent = undefined;
-        return if (syscalls().input.getMouseEvent(&evt))
+        return if (syscall("input.getMouseEvent")(&evt))
             evt
         else
             null;
@@ -136,7 +136,7 @@ pub const input = struct {
 
     pub fn getKeyboardEvent() ?abi.KeyboardEvent {
         var evt: abi.KeyboardEvent = undefined;
-        return if (syscalls().input.getKeyboardEvent(&evt))
+        return if (syscall("input.getKeyboardEvent")(&evt))
             evt
         else
             null;
@@ -166,37 +166,37 @@ pub const debug = struct {
 
 pub const process = struct {
     pub fn yield() void {
-        syscalls().process.yield();
+        syscall("process.yield")();
     }
 
     pub fn exit(code: u32) noreturn {
-        syscalls().process.exit(code);
+        syscall("process.exit")(code);
     }
 };
 
 pub const video = struct {
-    pub fn aquire() bool {
-        return syscalls().video.aquire();
+    pub fn acquire() bool {
+        return syscall("video.acquire")();
     }
 
     pub fn release() void {
-        syscalls().video.release();
+        syscall("video.release")();
     }
 
     pub fn setBorder(color: abi.ColorIndex) void {
-        syscalls().video.setBorder(color);
+        syscall("video.setBorder")(color);
     }
 
     pub fn setResolution(width: u16, height: u16) void {
-        syscalls().video.setResolution(width, height);
+        syscall("video.setResolution")(width, height);
     }
 
     pub fn getVideoMemory() [*]align(4) abi.ColorIndex {
-        return syscalls().video.getVideoMemory();
+        return syscall("video.getVideoMemory")();
     }
 
     pub fn getPaletteMemory() *[abi.palette_size]u16 {
-        return syscalls().video.getPaletteMemory();
+        return syscall("video.getPaletteMemory")();
     }
 };
 
@@ -210,26 +210,26 @@ pub const ui = struct {
     pub const ColorIndex = abi.ColorIndex;
 
     pub fn createWindow(title: []const u8, min: Size, max: Size, startup: Size, flags: CreateWindowFlags) error{OutOfMemory}!*const Window {
-        return syscalls().ui.createWindow(title.ptr, title.len, min, max, startup, flags) orelse return error.OutOfMemory;
+        return syscall("ui.createWindow")(title.ptr, title.len, min, max, startup, flags) orelse return error.OutOfMemory;
     }
     pub fn destroyWindow(win: *const Window) void {
-        syscalls().ui.destroyWindow(win);
+        syscall("ui.destroyWindow")(win);
     }
 
     pub fn moveWindow(win: *const Window, x: i16, y: i16) void {
-        syscalls().ui.moveWindow(win, x, y);
+        syscall("ui.moveWindow")(win, x, y);
     }
 
     pub fn resizeWindow(win: *const Window, x: u16, y: u16) void {
-        syscalls().ui.resizeWindow(win, x, y);
+        syscall("ui.resizeWindow")(win, x, y);
     }
 
     pub fn setWindowTitle(win: *const Window, title: []const u8) void {
-        syscalls().ui.setWindowTitle(win, title.ptr, title.len);
+        syscall("ui.setWindowTitle")(win, title.ptr, title.len);
     }
     pub fn pollEvent(win: *const Window) ?Event {
         var data: abi.UiEvent = undefined;
-        const event_type = syscalls().ui.pollEvent(win, &data);
+        const event_type = syscall("ui.pollEvent")(win, &data);
         return switch (event_type) {
             .none => null,
             .mouse => .{ .mouse = data.mouse },
@@ -244,7 +244,7 @@ pub const ui = struct {
         };
     }
     pub fn invalidate(win: *const Window, rect: Rectangle) void {
-        syscalls().ui.invalidate(win, rect);
+        syscall("ui.invalidate")(win, rect);
     }
 
     pub const Event = union(abi.UiEventType) {
@@ -263,9 +263,9 @@ pub const ui = struct {
 
 pub const fs = struct {
     pub const File = struct {
-        pub const ReadError = error{};
-        pub const WriteError = error{};
-        pub const SeekError = error{Failed};
+        pub const ReadError = abi.FileReadError.Error || error{Unexpected};
+        pub const WriteError = abi.FileWriteError.Error || error{Unexpected};
+        pub const SeekError = abi.FileSeekError.Error || error{Unexpected};
         pub const GetPosError = error{};
 
         pub const Reader = std.io.Reader(*File, ReadError, read);
@@ -276,7 +276,8 @@ pub const fs = struct {
         offset: u64,
 
         pub fn open(path: []const u8, access: abi.FileAccess, mode: abi.FileMode) !File {
-            const handle = syscalls().fs.openFile(path.ptr, path.len, access, mode);
+            var handle: abi.FileHandle = undefined;
+            try abi.FileOpenError.throw(syscall("fs.openFile")(path.ptr, path.len, access, mode, &handle));
             if (handle == .invalid)
                 return error.InvalidFile;
             return File{
@@ -286,25 +287,28 @@ pub const fs = struct {
         }
 
         pub fn close(file: *File) void {
-            syscalls().fs.close(file.handle);
+            syscall("fs.close")(file.handle);
             file.* = undefined;
         }
 
-        pub fn read(file: *File, buffer: []u8) ReadError!usize {
-            return syscalls().fs.read(file.handle, buffer.ptr, buffer.len);
+        pub fn read(file: *File, buffer: []u8) !usize {
+            var cnt: usize = 0;
+            try abi.FileReadError.throw(syscall("fs.read")(file.handle, buffer.ptr, buffer.len, &cnt));
+            return cnt;
         }
 
-        pub fn write(file: *File, buffer: []const u8) WriteError!usize {
-            return syscalls().fs.write(file.handle, buffer.ptr, buffer.len);
+        pub fn write(file: *File, buffer: []const u8) !usize {
+            var cnt: usize = 0;
+            try abi.FileWriteError.throw(syscall("fs.write")(file.handle, buffer.ptr, buffer.len, &cnt));
+            return cnt;
         }
 
-        pub fn seekTo(file: *File, pos: u64) SeekError!void {
-            if (!syscalls().fs.seekTo(file.handle, pos))
-                return error.Failed;
+        pub fn seekTo(file: *File, pos: u64) !void {
+            try abi.FileSeekError.throw(syscall("fs.seekTo")(file.handle, pos));
             file.offset = pos;
         }
 
-        pub fn seekBy(file: *File, delta: i64) SeekError!void {
+        pub fn seekBy(file: *File, delta: i64) !void {
             _ = file;
             _ = delta;
             @panic("not implemented yet");
@@ -339,38 +343,38 @@ pub const net = struct {
     pub const IPv6 = abi.IPv6;
 
     pub const Udp = struct {
-        const throw = abi.SysCallInterface.Network.UDP.Error.throw;
+        const throw = abi.UdpError.throw;
 
         sock: abi.UdpSocket,
 
         pub fn open() !Udp {
             var sock: abi.UdpSocket = undefined;
-            try throw(syscalls().network.udp.createSocket(&sock));
+            try throw(syscall("network.udp.createSocket")(&sock));
             return Udp{ .sock = sock };
         }
 
         pub fn close(udp: *Udp) void {
-            syscalls().network.udp.destroySocket(udp.sock);
+            syscall("network.udp.destroySocket")(udp.sock);
             udp.* = undefined;
         }
 
         pub fn bind(udp: Udp, ep: EndPoint) !void {
-            try throw(syscalls().network.udp.bind(udp.sock, ep));
+            try throw(syscall("network.udp.bind")(udp.sock, ep));
         }
 
         pub fn connect(udp: Udp, ep: EndPoint) !void {
-            try throw(syscalls().network.udp.connect(udp.sock, ep));
+            try throw(syscall("network.udp.connect")(udp.sock, ep));
         }
 
         pub fn disconnect(udp: Udp) !void {
-            try throw(syscalls().network.udp.disconnect(udp.sock));
+            try throw(syscall("network.udp.disconnect")(udp.sock));
         }
 
         pub fn send(udp: Udp, message: []const u8) !usize {
             if (message.len == 0)
                 return 0;
             var sent: usize = undefined;
-            try throw(syscalls().network.udp.send(udp.sock, message.ptr, message.len, &sent));
+            try throw(syscall("network.udp.send")(udp.sock, message.ptr, message.len, &sent));
             return sent;
         }
 
@@ -378,7 +382,7 @@ pub const net = struct {
             if (message.len == 0)
                 return 0;
             var sent: usize = undefined;
-            try throw(syscalls().network.udp.sendTo(udp.sock, target, message.ptr, message.len, &sent));
+            try throw(syscall("network.udp.sendTo")(udp.sock, target, message.ptr, message.len, &sent));
             return sent;
         }
 
@@ -386,7 +390,7 @@ pub const net = struct {
             if (data.len == 0)
                 return 0;
             var received: usize = undefined;
-            try throw(syscalls().network.udp.receive(udp.sock, data.ptr, data.len, &received));
+            try throw(syscall("network.udp.receive")(udp.sock, data.ptr, data.len, &received));
             return received;
         }
 
@@ -394,7 +398,7 @@ pub const net = struct {
             if (data.len == 0)
                 return 0;
             var received: usize = undefined;
-            try throw(syscalls().network.udp.receiveFrom(udp.sock, sender, data.ptr, data.len, &received));
+            try throw(syscall("network.udp.receiveFrom")(udp.sock, sender, data.ptr, data.len, &received));
             return received;
         }
     };
@@ -402,6 +406,6 @@ pub const net = struct {
 
 pub const time = struct {
     pub fn nanoTimestamp() i128 {
-        return syscalls().time.nanoTimestamp();
+        return syscall("time.nanoTimestamp")();
     }
 };

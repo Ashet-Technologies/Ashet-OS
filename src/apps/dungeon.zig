@@ -6,7 +6,7 @@ pub usingnamespace ashet.core;
 const ColorIndex = ashet.abi.ColorIndex;
 
 pub fn main() void {
-    if (!ashet.video.aquire()) {
+    if (!ashet.video.acquire()) {
         ashet.process.exit(1);
     }
 
