@@ -1,0 +1,19 @@
+
+
+
+
+TCP Client:
+  create()
+  bind()
+  connect()
+  write(block|nonblock)
+  read(block|nonblock)
+  close()
+
+Async I/O:
+  - Poll Style API
+  - Callbacks
+  - "Writeback"/DMA API (declare: i want that data here, gimme a sign when done)
+  - Blocking + Threads
+  - Ringbuffer API
+  
