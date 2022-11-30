@@ -534,177 +534,210 @@ pub const udp = struct {
     }
 };
 
-// pub const tcp = struct {
-//     const max_sockets = @intCast(usize, c.MEMP_NUM_TCP_PCB);
-//     const Socket = abi.TcpSocket;
+pub const tcp = struct {
+    const max_sockets = @intCast(usize, c.MEMP_NUM_TCP_PCB);
+    const Socket = abi.TcpSocket;
 
-//     const InboundPacket = struct {
-//         sender: EndPoint,
-//         data: *c.pbuf,
-//     };
+    const InboundPacket = struct {
+        sender: EndPoint,
+        data: *c.pbuf,
+    };
 
-//     const Data = struct {
-//         /// incoming packets
-//         receive_queue: astd.RingBuffer(InboundPacket, 16) = .{},
-//     };
+    const Data = struct {
+        connected: bool = false, // true when the connection has been established
+        closed: bool = false, // true when the connection has been closed
+    };
 
-//     var pool: astd.IndexPool(u32, max_sockets) = .{};
-//     var sockets: [max_sockets]*c.tcp_pcb = undefined;
-//     var socket_meta: [max_sockets]Data = undefined;
+    var pool: astd.IndexPool(u32, max_sockets) = .{};
+    var sockets: [max_sockets]*c.tcp_pcb = undefined;
+    var socket_meta: [max_sockets]Data = undefined;
 
-//     fn unmap(sock: Socket) error{InvalidHandle}!*c.tcp_pcb {
-//         if (sock == .invalid)
-//             return error.InvalidHandle;
-//         const index = @enumToInt(sock);
-//         if (index >= max_sockets)
-//             return error.InvalidHandle;
-//         if (!pool.alive(index))
-//             return error.InvalidHandle;
-//         return sockets[index];
-//     }
-
-//     fn createSocket() !Socket {
-//         const index = pool.alloc() orelse return error.SystemResources;
-//         errdefer pool.free(index);
-
-//         const pcb = c.tcp_new() orelse return error.SystemResources;
-//         sockets[index] = pcb;
-
-//         socket_meta[index] = Data{};
-
-//         c.tcp_arg(pcb, &socket_meta[index]);
-
-//         // c.tcp_recv(pcb, tcp_recv_fn);
-//         // c.tcp_sent(pcb, tcp_sent_fn);
-//         // c.tcp_err(pcb, tcp_err_fn);
-//         // c.tcp_accept(pcb, tcp_accept_fn);
-
-//         return @intToEnum(Socket, index);
-//     }
-
-//     fn destroySocket(sock: Socket) void {
-//         const pcb = unmap(sock) catch return;
-//         const index = @enumToInt(sock);
-//         c.tcp_remove(pcb);
-//         while (socket_meta[index].receive_queue.pull()) |packet| {
-//             _ = c.pbuf_free(packet.data);
-//         }
-//         sockets[index] = undefined;
-//         socket_meta[index] = undefined;
-//         pool.free(index);
-//     }
-
-//     fn bind(sock: Socket, EndPoint) !void {
-//         //
-//     }
-
-//     fn listen(sock: Socket, EndPoint) !void {
-//         //
-//     }
-
-//     fn connect(sock: Socket, EndPoint) !void {
-//         //
-//     }
-
-//     fn write(sock: Socket, data: [*]const u8, length: usize) !usize {
-//         //
-//     }
-
-//     fn read(sock: Socket, data: [*]u8, length: usize) !usize {
-//         //
-//     }
-// };
-
-const TcpState = struct {
-    connected: bool = false, // true when the connection has been established
-    closed: bool = false, // true when the connection has been closed
-
-    fn fromArg(arg: ?*anyopaque) *TcpState {
-        return @ptrCast(*TcpState, @alignCast(@alignOf(TcpState), arg orelse @panic("received null arg!")));
+    fn unmap(sock: Socket) error{InvalidHandle}!*c.tcp_pcb {
+        if (sock == .invalid)
+            return error.InvalidHandle;
+        const index = @enumToInt(sock);
+        if (index >= max_sockets)
+            return error.InvalidHandle;
+        if (!pool.alive(index))
+            return error.InvalidHandle;
+        return sockets[index];
     }
+
+    pub fn createSocket() !Socket {
+        const index = pool.alloc() orelse return error.SystemResources;
+        errdefer pool.free(index);
+
+        const pcb = c.tcp_new() orelse return error.SystemResources;
+        sockets[index] = pcb;
+
+        socket_meta[index] = Data{};
+
+        c.tcp_arg(pcb, &socket_meta[index]);
+
+        // c.tcp_recv(pcb, tcp_recv_fn);
+        // c.tcp_sent(pcb, tcp_sent_fn);
+        // c.tcp_err(pcb, tcp_err_fn);
+        // c.tcp_accept(pcb, tcp_accept_fn);
+
+        return @intToEnum(Socket, index);
+    }
+
+    pub fn destroySocket(sock: Socket) void {
+        const pcb = unmap(sock) catch return;
+        const index = @enumToInt(sock);
+
+        if (c.tcp_close(pcb) != c.ERR_OK) {
+            c.tcp_abort(pcb);
+        }
+
+        // while (socket_meta[index].receive_queue.pull()) |packet| {
+        //     _ = c.pbuf_free(packet.data);
+        // }
+        sockets[index] = undefined;
+        socket_meta[index] = undefined;
+        pool.free(index);
+    }
+
+    pub fn bind(ev: *abi.tcp.BindEvent) void {
+        const pcb = unmap(ev.socket) catch |err| {
+            ev.@"error" = abi.tcp.BindError.map(err);
+            ashet.io.finalize(&ev.base);
+            return;
+        };
+        ev.@"error" = abi.tcp.BindError.map(
+            lwipTry(c.tcp_bind(pcb, &mapIP(ev.bind_point.ip), ev.bind_point.port)) catch |err| switch (err) {
+                error.BufferError,
+                error.ConnectionAborted,
+                error.ConnectionClosed,
+                error.ConnectionReset,
+                error.InProgress,
+                error.LowlevelInterfaceError,
+                error.NotConnected,
+                error.Routing,
+                error.Timeout,
+                error.WouldBlock,
+                error.AlreadyConnected,
+                error.AlreadyConnecting,
+                error.IllegalArgument,
+                error.OutOfMemory,
+                => error.Unexpected,
+                else => |e| e,
+            },
+        );
+        ev.bind_point = EndPoint{
+            .ip = unmapIP(pcb.local_ip),
+            .port = pcb.local_port,
+        };
+        ashet.io.finalize(&ev.base);
+    }
+
+    // pub fn tcpTest(arg: ?*anyopaque) callconv(.C) u32 {
+    //     _ = arg;
+
+    //     const pcb = c.tcp_new() orelse @panic("oom");
+
+    //     var state = TcpState{};
+
+    //     c.tcp_arg(pcb, &state);
+    //     c.tcp_recv(pcb, tcpRecvCallback);
+    //     c.tcp_sent(pcb, tcpSentCallback);
+    //     c.tcp_err(pcb, tcpErrCallback);
+
+    //     lwipTry(c.tcp_connect(pcb, &mapIP(IP.ipv4(.{ 10, 0, 2, 2 })), 4567, tcpConnectedCallback)) catch |e| @panic(@errorName(e));
+
+    //     while (!state.connected) {
+    //         ashet.scheduler.yield();
+    //     }
+
+    //     std.log.info("sndbuf={}", .{c.tcp_sndbuf(pcb)});
+
+    //     lwipTry(c.tcp_write(pcb, "Hello, World!\n", 14, 0)) catch |e| @panic(@errorName(e));
+
+    //     while (!state.closed) {
+    //         ashet.scheduler.yield();
+    //     }
+
+    //     std.log.info("ded.", .{});
+
+    //     if (c.tcp_close(pcb) != c.ERR_OK) {
+    //         c.tcp_abort(pcb);
+    //     }
+
+    //     return 0;
+    // }
+
+    // fn tcpConnectedCallback(arg: ?*anyopaque, pcb_c: [*c]c.tcp_pcb, err: c.err_t) callconv(.C) c.err_t {
+    //     const pcb: *c.tcp_pcb = pcb_c;
+    //     const state = TcpState.fromArg(arg);
+
+    //     state.connected = true;
+    //     logger.info("tcp: connected(arg={}, pcb={*}, err={!})", .{ state, pcb, lwipTry(err) });
+
+    //     return c.ERR_OK;
+    // }
+
+    // // Sets the callback function that will be called when new data arrives. The callback function will be passed a NULL pbuf to indicate that the remote host has closed the connection.
+    // // If the callback function returns ERR_OK or ERR_ABRT it must have freed the pbuf, otherwise it must not have freed it.
+    // fn tcpRecvCallback(arg: ?*anyopaque, pcb_c: [*c]c.tcp_pcb, pbuf_c: [*c]c.pbuf, err: c.err_t) callconv(.C) c.err_t {
+    //     const pcb: *c.tcp_pcb = pcb_c;
+    //     const state = TcpState.fromArg(arg);
+
+    //     if (err != c.ERR_OK) {
+    //         logger.info("tcp: recv(arg={}, pcb={*}, tot_len=<nil>, err={!})", .{ state, pcb, lwipTry(err) });
+    //         return c.ERR_OK;
+    //     }
+
+    //     if (pbuf_c == null) {
+    //         state.closed = true;
+    //         logger.info("tcp: recv(arg={}, pcb={*}, tot_len=<nil>, err=end of stream)", .{ state, pcb });
+    //         return c.ERR_OK;
+    //     }
+
+    //     const pbuf: *c.pbuf = pbuf_c;
+
+    //     // const T = struct {
+    //     //     var a: u32 = 0;
+    //     // };
+    //     // defer T.a += 1;
+
+    //     // if (T.a < 10) {
+    //     //     logger.info("tcp: wouldblock now", .{});
+    //     //     return c.ERR_MEM;
+    //     // }
+    //     // T.a = 0;
+
+    //     var char: u8 = undefined;
+
+    //     _ = c.pbuf_copy_partial(pbuf, &char, 1, 0);
+
+    //     logger.info("tcp: recv(arg={}, pcb={X:0>8}, char={c} tot_len={})", .{ state, @ptrToInt(pcb), char, pbuf.tot_len });
+
+    //     c.tcp_recved(pcb, 1);
+
+    //     if (pbuf.tot_len == 1) {
+    //         _ = c.pbuf_free(pbuf);
+    //         return c.ERR_OK;
+    //     } else {
+    //         return c.ERR_WOULDBLOCK;
+    //     }
+    // }
+
+    // fn tcpSentCallback(arg: ?*anyopaque, pcb_c: [*c]c.tcp_pcb, sent: u16) callconv(.C) c.err_t {
+    //     const pcb: *c.tcp_pcb = pcb_c;
+    //     const state = TcpState.fromArg(arg);
+
+    //     logger.info("tcp: sent(arg={}, pcb={*}, len={})", .{ state, pcb, sent });
+
+    //     return c.ERR_OK;
+    // }
+
+    // fn tcpErrCallback(arg: ?*anyopaque, err: c.err_t) callconv(.C) void {
+    //     const state = TcpState.fromArg(arg);
+    //     logger.info("tcp: err(arg={}, err={!})", .{ state, lwipTry(err) });
+    // }
+
+    // // fn tcpAcceptCallback() callconv(.C) void {
+    // //     //
+    // // }
+
 };
-
-pub fn tcpTest(arg: ?*anyopaque) callconv(.C) u32 {
-    _ = arg;
-
-    const pcb = c.tcp_new() orelse @panic("oom");
-
-    var state = TcpState{};
-
-    c.tcp_arg(pcb, &state);
-    c.tcp_recv(pcb, tcpRecvCallback);
-    c.tcp_sent(pcb, tcpSentCallback);
-    c.tcp_err(pcb, tcpErrCallback);
-
-    lwipTry(c.tcp_connect(pcb, &mapIP(IP.ipv4(.{ 10, 0, 2, 2 })), 1234, tcpConnectedCallback)) catch |e| @panic(@errorName(e));
-
-    while (!state.connected) {
-        ashet.scheduler.yield();
-    }
-
-    std.log.info("sndbuf={}", .{c.tcp_sndbuf(pcb)});
-
-    lwipTry(c.tcp_write(pcb, "Hello, World!\n", 14, 0)) catch |e| @panic(@errorName(e));
-
-    while (!state.closed) {
-        ashet.scheduler.yield();
-    }
-
-    std.log.info("ded.", .{});
-
-    if (c.tcp_close(pcb) != c.ERR_OK) {
-        c.tcp_abort(pcb);
-    }
-
-    return 0;
-}
-
-fn tcpConnectedCallback(arg: ?*anyopaque, pcb_c: [*c]c.tcp_pcb, err: c.err_t) callconv(.C) c.err_t {
-    const pcb: *c.tcp_pcb = pcb_c;
-    const state = TcpState.fromArg(arg);
-
-    state.connected = true;
-    logger.info("tcp: connected(arg={}, pcb={*}, err={!})", .{ state, pcb, lwipTry(err) });
-
-    return c.ERR_OK;
-}
-
-fn tcpRecvCallback(arg: ?*anyopaque, pcb_c: [*c]c.tcp_pcb, pbuf_c: [*c]c.pbuf, err: c.err_t) callconv(.C) c.err_t {
-    const pcb: *c.tcp_pcb = pcb_c;
-    const state = TcpState.fromArg(arg);
-
-    if (err != c.ERR_OK) {
-        logger.info("tcp: recv(arg={}, pcb={*}, tot_len=<nil>, err={!})", .{ state, pcb, lwipTry(err) });
-        return c.ERR_OK;
-    }
-
-    if (pbuf_c == null) {
-        state.closed = true;
-        logger.info("tcp: recv(arg={}, pcb={*}, tot_len=<nil>, err=end of stream)", .{ state, pcb });
-        return c.ERR_OK;
-    }
-
-    const pbuf: *c.pbuf = pbuf_c;
-
-    logger.info("tcp: recv(arg={}, pcb={*}, tot_len={})", .{ state, pcb, pbuf.tot_len });
-
-    return c.ERR_OK;
-}
-
-fn tcpSentCallback(arg: ?*anyopaque, pcb_c: [*c]c.tcp_pcb, sent: u16) callconv(.C) c.err_t {
-    const pcb: *c.tcp_pcb = pcb_c;
-    const state = TcpState.fromArg(arg);
-
-    logger.info("tcp: sent(arg={}, pcb={*}, len={})", .{ state, pcb, sent });
-
-    return c.ERR_OK;
-}
-
-fn tcpErrCallback(arg: ?*anyopaque, err: c.err_t) callconv(.C) void {
-    const state = TcpState.fromArg(arg);
-    logger.info("tcp: err(arg={}, err={!})", .{ state, lwipTry(err) });
-}
-
-// fn tcpAcceptCallback() callconv(.C) void {
-//     //
-// }

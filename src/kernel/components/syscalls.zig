@@ -318,3 +318,20 @@ fn @"network.udp.receiveFrom"(sock: abi.UdpSocket, sender: *abi.EndPoint, data: 
 fn @"time.nanoTimestamp"() callconv(.C) i128 {
     return ashet.time.nanoTimestamp();
 }
+
+fn @"network.tcp.createSocket"(out: *abi.TcpSocket) callconv(.C) abi.tcp.CreateError.Enum {
+    out.* = ashet.network.tcp.createSocket() catch |e| return abi.tcp.CreateError.map(e);
+    return .ok;
+}
+
+fn @"network.tcp.destroySocket"(sock: abi.TcpSocket) callconv(.C) void {
+    ashet.network.tcp.destroySocket(sock);
+}
+
+fn @"io.scheduleAndAwait"(start_queue: ?*abi.Event, wait: abi.WaitIO) callconv(.C) ?*abi.Event {
+    return ashet.io.scheduleAndAwait(start_queue, wait);
+}
+
+fn @"io.cancel"(event: *abi.Event) callconv(.C) void {
+    return ashet.io.cancel(event);
+}

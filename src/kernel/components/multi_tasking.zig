@@ -80,6 +80,7 @@ pub const Process = struct {
     master_thread: *ashet.scheduler.Thread,
     thread_count: usize = 0,
     base_address: usize,
+    io_context: ashet.io.Context = .{},
 
     pub const SpawnOptions = struct {
         stack_size: usize = 128 * 1024, // 128k

@@ -4,6 +4,23 @@ const ashet = @import("ashet");
 pub usingnamespace ashet.core;
 
 pub fn main() !void {
+    // try udp_demo();
+    try tcp_demo();
+}
+
+fn tcp_demo() !void {
+    var socket = try ashet.net.Tcp.open();
+    defer socket.close();
+
+    const actual = try socket.bind(ashet.net.EndPoint.new(
+        ashet.net.IP.ipv4(.{ 0, 0, 0, 0 }),
+        0,
+    ));
+
+    try ashet.debug.writer().print("bound socket to: {}\n", .{actual});
+}
+
+fn udp_demo() !void {
     var socket = try ashet.net.Udp.open();
     defer socket.close();
 

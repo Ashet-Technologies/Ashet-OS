@@ -111,6 +111,18 @@ pub const core = struct {
     }
 };
 
+pub const io = struct {
+    pub const Event = abi.Event;
+    pub const WaitIO = abi.WaitIO;
+
+    pub fn scheduleAndAwait(start_queue: ?*Event, wait: WaitIO) ?*Event {
+        return syscall("io.scheduleAndAwait")(start_queue, wait);
+    }
+    pub fn cancel(event: *Event) void {
+        return syscall("io.cancel")(event);
+    }
+};
+
 pub const input = struct {
     pub const Event = union(enum) {
         keyboard: abi.KeyboardEvent,
@@ -341,6 +353,36 @@ pub const net = struct {
     pub const IP = abi.IP;
     pub const IPv4 = abi.IPv4;
     pub const IPv6 = abi.IPv6;
+
+    pub const Tcp = struct {
+        sock: abi.TcpSocket,
+
+        pub fn open() !Tcp {
+            var sock: abi.TcpSocket = undefined;
+            try abi.tcp.CreateError.throw(syscall("network.tcp.createSocket")(&sock));
+            return Tcp{ .sock = sock };
+        }
+
+        pub fn close(tcp: *Tcp) void {
+            syscall("network.tcp.destroySocket")(tcp.sock);
+            tcp.* = undefined;
+        }
+
+        pub fn bind(tcp: *Tcp, endpoint: EndPoint) !EndPoint {
+            var event = abi.Event.new(abi.tcp.BindEvent, .{
+                .socket = tcp.sock,
+                .bind_point = endpoint,
+            });
+
+            const result = io.scheduleAndAwait(&event.base, .wait_all);
+            std.debug.assert(result != null);
+            std.debug.assert(result.? == &event.base);
+
+            try abi.tcp.BindError.throw(event.@"error");
+
+            return event.bind_point;
+        }
+    };
 
     pub const Udp = struct {
         const throw = abi.UdpError.throw;

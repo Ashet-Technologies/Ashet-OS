@@ -89,34 +89,21 @@ pub const syscall_definitions = [_]SysCallDefinition{
     defineSysCall("network.udp.receive", fn (UdpSocket, data: [*]u8, length: usize, result: *usize) UdpError.Enum, 42),
     defineSysCall("network.udp.receiveFrom", fn (UdpSocket, sender: *EndPoint, data: [*]u8, length: usize, result: *usize) UdpError.Enum, 43),
 
-    // defineSysCall("network.tcp.createSocket", fn (out: *TcpSocket) TcpError.Enum, ???),
-    // defineSysCall("network.tcp.destroySocket", fn (TcpSocket) void, ???),
-    // defineSysCall("network.tcp.bind", fn (TcpSocket, EndPoint) TcpError.Enum, ???),
-    // defineSysCall("network.tcp.listen", fn (TcpSocket, EndPoint) TcpError.Enum, ???),
-    // defineSysCall("network.tcp.accept", fn(TcpSocket, EndPoint, out: *TcpSocket) TcpError.Enum, ???),
-    // defineSysCall("network.tcp.isListening", fn (TcpSocket) bool, ???),
+    defineSysCall("network.tcp.createSocket", fn (out: *tcp.Socket) tcp.CreateError.Enum, 44),
+    defineSysCall("network.tcp.destroySocket", fn (tcp.Socket) void, 45),
 
-    // defineSysCall("network.tcp.connect", fn (TcpSocket, EndPoint, TcpConnectFlags) TcpError.Enum, ???),
-    // defineSysCall("network.tcp.isConnected", fn (TcpSocket) bool, ???),
-    // defineSysCall("network.tcp.write", fn (TcpSocket, data: [*]const u8, length: usize, flags: TcpWriteFlags, out: *usize) TcpError.Enum, ???),
-    // defineSysCall("network.tcp.read", fn (TcpSocket, data: [*]u8, length: usize, flags: TcpReadFlags, out: *usize) TcpError.Enum, ???),
-};
+    // Starts new I/O operations and returns completed ones.
+    //
+    // If `start_queue` is given, the kernel will schedule the events in the kernel.
+    // All events in this queue must not be freed until they are returned by this function
+    // at a later point.
+    //
+    // The function will optionally block based on the `wait` parameter.
+    //
+    // The return value is the HEAD element of a linked list of completed I/O events.
+    defineSysCall("io.scheduleAndAwait", fn (?*Event, WaitIO) ?*Event, 50),
 
-pub const TcpConnectFlags = packed struct(u32) {
-    non_blocing: bool = false,
-    padding: u31 = 0,
-};
-
-pub const TcpWriteFlags = packed struct(u32) {
-    non_blocking: bool = false,
-    write_all: bool = false,
-    padding0: u30 = 0,
-};
-
-pub const TcpReadFlags = packed struct(u32) {
-    non_blocking: bool = true,
-    read_all: bool = false,
-    padding0: u30 = 0,
+    defineSysCall("io.cancel", fn (*Event) void, 51),
 };
 
 const SysCallDefinition = struct {
@@ -203,10 +190,22 @@ pub const SysCallTable: type = blk: {
     };
     fields = fields ++ [1]std.builtin.Type.StructField{magic_number_field};
 
+    var used_slots = [1]?[]const u8{null} ** syscall_table_size;
+
     var index: usize = 0;
     var offset: usize = 0;
     while (index < syscall_definitions.len) : (index += 1) {
         const def = syscall_definitions[index];
+
+        if (used_slots[def.index]) |other| {
+            @compileError(std.fmt.comptimePrint("The syscall {s} uses slot {}, which is already occupied by syscall {s}.", .{
+                def.name,
+                def.index,
+                other,
+            }));
+        }
+        used_slots[def.index] = def.name;
+
         std.debug.assert(def.index >= offset);
 
         while (offset < def.index) : (offset += 1) {
@@ -1134,3 +1133,166 @@ pub const DirNextError = ErrorSet(.{
     .TooManyOpenFiles = 19,
     .WriteProtected = 20,
 });
+
+// API EXPERIMENTS:
+
+pub const Event = extern struct {
+    type: Type,
+    next: ?*Event,
+    tag: usize, // user specified data
+
+    kernel_data: [7]usize = undefined, // internal data used by the kernel to store
+
+    pub const Type = enum(u32) {
+        tcp_connect,
+        tcp_bind,
+        tcp_send,
+        tcp_receive,
+    };
+
+    pub fn new(comptime T: type, fields: anytype) T {
+        var value = std.mem.zeroInit(T, fields);
+        value.base = .{
+            .type = switch (T) {
+                tcp.BindEvent => .tcp_bind,
+                tcp.ConnectEvent => .tcp_connect,
+                tcp.SendEvent => .tcp_send,
+                tcp.ReceiveEvent => .tcp_receive,
+                else => @compileError(@typeName(T) ++ "is not a supported event type."),
+            },
+            .next = null,
+            .tag = 0,
+        };
+        return value;
+    }
+};
+
+pub const WaitIO = enum(u32) {
+    /// Don't wait for any I/O to complete.
+    dont_block,
+
+    /// Wait for at least one I/O to complete operation.
+    wait_one,
+
+    /// Wait until all scheduled I/O operations have completed.
+    wait_all,
+};
+
+pub const tcp = struct {
+    const Socket = TcpSocket;
+
+    pub const CreateError = ErrorSet(.{
+        .SystemResources = 1,
+    });
+
+    pub const BindError = ErrorSet(.{
+        .InvalidHandle = 1,
+        .SystemResources = 2,
+        .AddressInUse = 3,
+        .IllegalValue = 4,
+        .Unexpected = 5,
+    });
+    pub const ConnectError = ErrorSet(.{
+        .InvalidHandle = 1,
+        .SystemResources = 2,
+        .AlreadyConnected = 4,
+        .AlreadyConnecting = 5,
+        .BufferError = 6,
+        .ConnectionAborted = 7,
+        .ConnectionClosed = 8,
+        .ConnectionReset = 9,
+        .IllegalArgument = 10,
+        .IllegalValue = 11,
+        .InProgress = 12,
+        .LowlevelInterfaceError = 13,
+        .NotConnected = 14,
+        .OutOfMemory = 15,
+        .Routing = 16,
+        .Timeout = 17,
+        .Unexpected = 19,
+    });
+    pub const SendError = ErrorSet(.{
+        .InvalidHandle = 1,
+        .SystemResources = 2,
+        .BufferError = 3,
+        .ConnectionAborted = 4,
+        .ConnectionClosed = 5,
+        .ConnectionReset = 6,
+        .IllegalArgument = 7,
+        .IllegalValue = 8,
+        .InProgress = 9,
+        .LowlevelInterfaceError = 10,
+        .NotConnected = 11,
+        .OutOfMemory = 12,
+        .Routing = 13,
+        .Timeout = 14,
+        .Unexpected = 15,
+    });
+    pub const ReceiveError = ErrorSet(.{
+        .InvalidHandle = 1,
+        .SystemResources = 2,
+        .AlreadyConnected = 3,
+        .AlreadyConnecting = 4,
+        .BufferError = 5,
+        .ConnectionAborted = 6,
+        .ConnectionClosed = 7,
+        .ConnectionReset = 8,
+        .IllegalArgument = 9,
+        .IllegalValue = 10,
+        .InProgress = 11,
+        .LowlevelInterfaceError = 12,
+        .NotConnected = 13,
+        .OutOfMemory = 14,
+        .Routing = 15,
+        .Timeout = 16,
+        .Unexpected = 17,
+    });
+
+    pub const BindEvent = extern struct {
+        base: Event,
+
+        // input:
+        socket: Socket,
+
+        // inout:
+        bind_point: EndPoint,
+
+        // outputs:
+        @"error": BindError.Enum = undefined,
+    };
+
+    pub const ConnectEvent = extern struct {
+        base: Event,
+
+        // input:
+        socket: Socket,
+        target: EndPoint,
+
+        // outputs:
+        @"error": ConnectError.Enum = undefined,
+    };
+
+    pub const SendEvent = extern struct {
+        base: Event,
+
+        // input:
+        socket: Socket,
+        data: []const u8,
+
+        // outputs:
+        bytes_sent: usize = undefined,
+        @"error": SendError.Enum = undefined,
+    };
+
+    pub const ReceiveEvent = extern struct {
+        base: Event,
+
+        // input:
+        socket: Socket,
+        buffer: []u8,
+
+        // outputs:
+        bytes_received: usize = undefined,
+        @"error": ReceiveError.Enum = undefined,
+    };
+};

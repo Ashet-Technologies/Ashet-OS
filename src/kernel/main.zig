@@ -17,6 +17,7 @@ pub const multi_tasking = @import("components/multi_tasking.zig");
 pub const ui = @import("components/ui.zig");
 pub const apps = @import("components/apps.zig");
 pub const time = @import("components/time.zig");
+pub const io = @import("components/io.zig");
 
 pub const log_level = if (@import("builtin").mode == .Debug) .debug else .info;
 
@@ -72,13 +73,6 @@ pub const global_hotkeys = struct {
             return false;
         if (event.modifiers.alt) {
             switch (event.key) {
-                .f10 => {
-                    const thread = scheduler.Thread.spawn(network.tcpTest, null, .{}) catch return false;
-                    thread.setName("network.tcpTest") catch @panic("failed to modify thread");
-                    thread.start() catch @panic("failed to modify thread");
-                    thread.detach();
-                },
-
                 .f11 => network.dumpStats(),
                 .f12 => {
                     const total_pages = memory.page_count;
