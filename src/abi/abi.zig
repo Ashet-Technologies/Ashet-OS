@@ -89,13 +89,34 @@ pub const syscall_definitions = [_]SysCallDefinition{
     defineSysCall("network.udp.receive", fn (UdpSocket, data: [*]u8, length: usize, result: *usize) UdpError.Enum, 42),
     defineSysCall("network.udp.receiveFrom", fn (UdpSocket, sender: *EndPoint, data: [*]u8, length: usize, result: *usize) UdpError.Enum, 43),
 
-    // defineSysCall("network.tcp.createSocket", fn (out: *TcpSocket) TcpError.Enum, 44),
-    // defineSysCall("network.tcp.destroySocket", fn (TcpSocket) void, 45),
-    // defineSysCall("network.tcp.bind", fn (TcpSocket, EndPoint) TcpError.Enum, 46),
-    // defineSysCall("network.tcp.listen", fn (TcpSocket, EndPoint) TcpError.Enum, 47),
-    // defineSysCall("network.tcp.connect", fn (TcpSocket, EndPoint) TcpError.Enum, 48),
-    // defineSysCall("network.tcp.write", fn (TcpSocket, data: [*]const u8, length: usize, out: *usize) TcpError.Enum, 49),
-    // defineSysCall("network.tcp.read", fn (TcpSocket, data: [*]u8, length: usize, out: *usize) TcpError.Enum, 50),
+    // defineSysCall("network.tcp.createSocket", fn (out: *TcpSocket) TcpError.Enum, ???),
+    // defineSysCall("network.tcp.destroySocket", fn (TcpSocket) void, ???),
+    // defineSysCall("network.tcp.bind", fn (TcpSocket, EndPoint) TcpError.Enum, ???),
+    // defineSysCall("network.tcp.listen", fn (TcpSocket, EndPoint) TcpError.Enum, ???),
+    // defineSysCall("network.tcp.accept", fn(TcpSocket, EndPoint, out: *TcpSocket) TcpError.Enum, ???),
+    // defineSysCall("network.tcp.isListening", fn (TcpSocket) bool, ???),
+
+    // defineSysCall("network.tcp.connect", fn (TcpSocket, EndPoint, TcpConnectFlags) TcpError.Enum, ???),
+    // defineSysCall("network.tcp.isConnected", fn (TcpSocket) bool, ???),
+    // defineSysCall("network.tcp.write", fn (TcpSocket, data: [*]const u8, length: usize, flags: TcpWriteFlags, out: *usize) TcpError.Enum, ???),
+    // defineSysCall("network.tcp.read", fn (TcpSocket, data: [*]u8, length: usize, flags: TcpReadFlags, out: *usize) TcpError.Enum, ???),
+};
+
+pub const TcpConnectFlags = packed struct(u32) {
+    non_blocing: bool = false,
+    padding: u31 = 0,
+};
+
+pub const TcpWriteFlags = packed struct(u32) {
+    non_blocking: bool = false,
+    write_all: bool = false,
+    padding0: u30 = 0,
+};
+
+pub const TcpReadFlags = packed struct(u32) {
+    non_blocking: bool = true,
+    read_all: bool = false,
+    padding0: u30 = 0,
 };
 
 const SysCallDefinition = struct {

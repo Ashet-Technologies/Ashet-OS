@@ -10,6 +10,8 @@ const c = @cImport({
     @cInclude("lwip/tcpip.h");
     @cInclude("lwip/netif.h");
     @cInclude("lwip/dhcp.h");
+    @cInclude("lwip/tcp.h");
+    @cInclude("lwip/udp.h");
     @cInclude("lwip/etharp.h");
     @cInclude("lwip/ethip6.h");
     @cInclude("lwip/timeouts.h");
@@ -268,16 +270,7 @@ fn networkThread(_: ?*anyopaque) callconv(.C) u32 {
 // Don't care for wraparound, this is only used for time diffs. Not implementing this function means
 // you cannot use some modules (e.g. TCP timestamps, internal timeouts for NO_SYS==1).
 export fn sys_now() u32 {
-    // TODO: Implement system timer/rtc
-
-    const T = struct {
-        var oh_god_no: u64 = 0;
-    };
-
-    T.oh_god_no += 1;
-    const time = @truncate(u32, T.oh_god_no << 4);
-    // std.log.info("time = {}", .{time});
-    return time;
+    return @truncate(u32, @bitCast(u64, ashet.time.milliTimestamp()));
 }
 
 const LwipError = error{
@@ -540,3 +533,178 @@ pub const udp = struct {
         return len;
     }
 };
+
+// pub const tcp = struct {
+//     const max_sockets = @intCast(usize, c.MEMP_NUM_TCP_PCB);
+//     const Socket = abi.TcpSocket;
+
+//     const InboundPacket = struct {
+//         sender: EndPoint,
+//         data: *c.pbuf,
+//     };
+
+//     const Data = struct {
+//         /// incoming packets
+//         receive_queue: astd.RingBuffer(InboundPacket, 16) = .{},
+//     };
+
+//     var pool: astd.IndexPool(u32, max_sockets) = .{};
+//     var sockets: [max_sockets]*c.tcp_pcb = undefined;
+//     var socket_meta: [max_sockets]Data = undefined;
+
+//     fn unmap(sock: Socket) error{InvalidHandle}!*c.tcp_pcb {
+//         if (sock == .invalid)
+//             return error.InvalidHandle;
+//         const index = @enumToInt(sock);
+//         if (index >= max_sockets)
+//             return error.InvalidHandle;
+//         if (!pool.alive(index))
+//             return error.InvalidHandle;
+//         return sockets[index];
+//     }
+
+//     fn createSocket() !Socket {
+//         const index = pool.alloc() orelse return error.SystemResources;
+//         errdefer pool.free(index);
+
+//         const pcb = c.tcp_new() orelse return error.SystemResources;
+//         sockets[index] = pcb;
+
+//         socket_meta[index] = Data{};
+
+//         c.tcp_arg(pcb, &socket_meta[index]);
+
+//         // c.tcp_recv(pcb, tcp_recv_fn);
+//         // c.tcp_sent(pcb, tcp_sent_fn);
+//         // c.tcp_err(pcb, tcp_err_fn);
+//         // c.tcp_accept(pcb, tcp_accept_fn);
+
+//         return @intToEnum(Socket, index);
+//     }
+
+//     fn destroySocket(sock: Socket) void {
+//         const pcb = unmap(sock) catch return;
+//         const index = @enumToInt(sock);
+//         c.tcp_remove(pcb);
+//         while (socket_meta[index].receive_queue.pull()) |packet| {
+//             _ = c.pbuf_free(packet.data);
+//         }
+//         sockets[index] = undefined;
+//         socket_meta[index] = undefined;
+//         pool.free(index);
+//     }
+
+//     fn bind(sock: Socket, EndPoint) !void {
+//         //
+//     }
+
+//     fn listen(sock: Socket, EndPoint) !void {
+//         //
+//     }
+
+//     fn connect(sock: Socket, EndPoint) !void {
+//         //
+//     }
+
+//     fn write(sock: Socket, data: [*]const u8, length: usize) !usize {
+//         //
+//     }
+
+//     fn read(sock: Socket, data: [*]u8, length: usize) !usize {
+//         //
+//     }
+// };
+
+const TcpState = struct {
+    connected: bool = false, // true when the connection has been established
+    closed: bool = false, // true when the connection has been closed
+
+    fn fromArg(arg: ?*anyopaque) *TcpState {
+        return @ptrCast(*TcpState, @alignCast(@alignOf(TcpState), arg orelse @panic("received null arg!")));
+    }
+};
+
+pub fn tcpTest(arg: ?*anyopaque) callconv(.C) u32 {
+    _ = arg;
+
+    const pcb = c.tcp_new() orelse @panic("oom");
+
+    var state = TcpState{};
+
+    c.tcp_arg(pcb, &state);
+    c.tcp_recv(pcb, tcpRecvCallback);
+    c.tcp_sent(pcb, tcpSentCallback);
+    c.tcp_err(pcb, tcpErrCallback);
+
+    lwipTry(c.tcp_connect(pcb, &mapIP(IP.ipv4(.{ 10, 0, 2, 2 })), 1234, tcpConnectedCallback)) catch |e| @panic(@errorName(e));
+
+    while (!state.connected) {
+        ashet.scheduler.yield();
+    }
+
+    std.log.info("sndbuf={}", .{c.tcp_sndbuf(pcb)});
+
+    lwipTry(c.tcp_write(pcb, "Hello, World!\n", 14, 0)) catch |e| @panic(@errorName(e));
+
+    while (!state.closed) {
+        ashet.scheduler.yield();
+    }
+
+    std.log.info("ded.", .{});
+
+    if (c.tcp_close(pcb) != c.ERR_OK) {
+        c.tcp_abort(pcb);
+    }
+
+    return 0;
+}
+
+fn tcpConnectedCallback(arg: ?*anyopaque, pcb_c: [*c]c.tcp_pcb, err: c.err_t) callconv(.C) c.err_t {
+    const pcb: *c.tcp_pcb = pcb_c;
+    const state = TcpState.fromArg(arg);
+
+    state.connected = true;
+    logger.info("tcp: connected(arg={}, pcb={*}, err={!})", .{ state, pcb, lwipTry(err) });
+
+    return c.ERR_OK;
+}
+
+fn tcpRecvCallback(arg: ?*anyopaque, pcb_c: [*c]c.tcp_pcb, pbuf_c: [*c]c.pbuf, err: c.err_t) callconv(.C) c.err_t {
+    const pcb: *c.tcp_pcb = pcb_c;
+    const state = TcpState.fromArg(arg);
+
+    if (err != c.ERR_OK) {
+        logger.info("tcp: recv(arg={}, pcb={*}, tot_len=<nil>, err={!})", .{ state, pcb, lwipTry(err) });
+        return c.ERR_OK;
+    }
+
+    if (pbuf_c == null) {
+        state.closed = true;
+        logger.info("tcp: recv(arg={}, pcb={*}, tot_len=<nil>, err=end of stream)", .{ state, pcb });
+        return c.ERR_OK;
+    }
+
+    const pbuf: *c.pbuf = pbuf_c;
+
+    logger.info("tcp: recv(arg={}, pcb={*}, tot_len={})", .{ state, pcb, pbuf.tot_len });
+
+    return c.ERR_OK;
+}
+
+fn tcpSentCallback(arg: ?*anyopaque, pcb_c: [*c]c.tcp_pcb, sent: u16) callconv(.C) c.err_t {
+    const pcb: *c.tcp_pcb = pcb_c;
+    const state = TcpState.fromArg(arg);
+
+    logger.info("tcp: sent(arg={}, pcb={*}, len={})", .{ state, pcb, sent });
+
+    return c.ERR_OK;
+}
+
+fn tcpErrCallback(arg: ?*anyopaque, err: c.err_t) callconv(.C) void {
+    const state = TcpState.fromArg(arg);
+    logger.info("tcp: err(arg={}, err={!})", .{ state, lwipTry(err) });
+}
+
+// fn tcpAcceptCallback() callconv(.C) void {
+//     //
+// }

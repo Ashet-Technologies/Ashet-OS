@@ -72,6 +72,13 @@ pub const global_hotkeys = struct {
             return false;
         if (event.modifiers.alt) {
             switch (event.key) {
+                .f10 => {
+                    const thread = scheduler.Thread.spawn(network.tcpTest, null, .{}) catch return false;
+                    thread.setName("network.tcpTest") catch @panic("failed to modify thread");
+                    thread.start() catch @panic("failed to modify thread");
+                    thread.detach();
+                },
+
                 .f11 => network.dumpStats(),
                 .f12 => {
                     const total_pages = memory.page_count;

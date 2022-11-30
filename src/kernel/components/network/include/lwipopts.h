@@ -3,6 +3,9 @@
 
 #define NO_SYS 1 // we don't have an OS, we're building it right now
 
+#define LWIP_UDP 1
+#define LWIP_TCP 1
+
 #define LWIP_IPV4 1 // modern system requires both
 #define LWIP_IPV6 1 // modern system requires both
 
