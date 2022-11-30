@@ -52,6 +52,15 @@ pub const fs = struct {
         @"error": ?FileReadError,
     };
 
+    pub const OpenEvent = struct {
+        base: Event,
+        size_bytes: usize,
+        created: DateTime,
+        modified: DateTime,
+    };
+
+    pub fn open(path: []const u8, event: *OpenEvent) !void;
+
     pub fn write(handle: FileHandle, event: *WriteEvent, data: []const u8) !void;
     pub fn read(handle: FileHandle, event: *ReadEvent, data: []u8) !void;
 };
