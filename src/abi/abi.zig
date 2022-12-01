@@ -950,10 +950,6 @@ pub const UdpError = ErrorSet(.{
     .Unexpected = 19,
 });
 
-pub const TcpError = ErrorSet(.{
-    //
-});
-
 pub const FileSystemError = ErrorSet(.{
     .Denied = 1,
     .DiskErr = 2,
@@ -1205,7 +1201,6 @@ pub const tcp = struct {
         .IllegalValue = 11,
         .InProgress = 12,
         .LowlevelInterfaceError = 13,
-        .NotConnected = 14,
         .OutOfMemory = 15,
         .Routing = 16,
         .Timeout = 17,
@@ -1277,7 +1272,8 @@ pub const tcp = struct {
 
         // input:
         socket: Socket,
-        data: []const u8,
+        data_ptr: [*]const u8,
+        data_len: usize,
 
         // outputs:
         bytes_sent: usize = undefined,
@@ -1289,7 +1285,8 @@ pub const tcp = struct {
 
         // input:
         socket: Socket,
-        buffer: []u8,
+        buffer_ptr: [*]u8,
+        buffer_len: usize,
 
         // outputs:
         bytes_received: usize = undefined,

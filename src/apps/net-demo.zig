@@ -17,7 +17,18 @@ fn tcp_demo() !void {
         0,
     ));
 
-    try ashet.debug.writer().print("bound socket to: {}\n", .{actual});
+    try ashet.debug.writer().print("bound socket to: {}\r\n", .{actual});
+
+    try socket.connect(ashet.net.EndPoint.new(
+        ashet.net.IP.ipv4(.{ 10, 0, 2, 2 }),
+        4567,
+    ));
+
+    ashet.debug.write("Connected.\r\n");
+
+    const len = try socket.write("Hello, World!\n");
+
+    try ashet.debug.writer().print("sent {} bytes", .{len});
 }
 
 fn udp_demo() !void {

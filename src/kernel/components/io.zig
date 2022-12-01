@@ -61,12 +61,8 @@ pub fn scheduleAndAwait(start_queue: ?*Event, wait: WaitIO) ?*Event {
         context.pending += 1;
         switch (event.type) {
             .tcp_bind => ashet.network.tcp.bind(@fieldParentPtr(abi.tcp.BindEvent, "base", event)),
-            .tcp_connect => {
-                // TODO: Implement event dispatching
-            },
-            .tcp_send => {
-                // TODO: Implement event dispatching
-            },
+            .tcp_connect => ashet.network.tcp.connect(@fieldParentPtr(abi.tcp.ConnectEvent, "base", event)),
+            .tcp_send => ashet.network.tcp.send(@fieldParentPtr(abi.tcp.SendEvent, "base", event)),
             .tcp_receive => {
                 // TODO: Implement event dispatching
             },
@@ -87,7 +83,7 @@ pub fn scheduleAndAwait(start_queue: ?*Event, wait: WaitIO) ?*Event {
 }
 
 pub fn cancel(event: *ashet.abi.Event) void {
-    logger.warn("cancel event of type {}", .{event.type});
+    logger.warn("cancel event of tyype {}", .{event.type});
 }
 
 pub fn destroy(context: *Context) void {

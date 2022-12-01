@@ -311,6 +311,13 @@ const LwipError = error{
     Unexpected,
 };
 
+fn lwipErr(err: c.err_t) LwipError {
+    if (lwipTry(err)) |_|
+        unreachable
+    else |e|
+        return e;
+}
+
 fn lwipTry(err: c.err_t) LwipError!void {
     return switch (err) {
         c.ERR_OK => {},
@@ -362,6 +369,11 @@ fn unmapIP(addr: c.ip_addr_t) IP {
         },
         else => unreachable,
     };
+}
+
+fn limitLength(val: usize) u16 {
+    @setRuntimeSafety(false);
+    return @intCast(u16, std.math.min(val, std.math.maxInt(u16)));
 }
 
 pub const udp = struct {
@@ -534,6 +546,13 @@ pub const udp = struct {
     }
 };
 
+fn mapErrSet(comptime T: type, err_or_ok: anyerror!void) T.Enum {
+    return if (err_or_ok) |_|
+        .ok
+    else |err|
+        T.map(astd.mapToUnexpected(T.Error, err));
+}
+
 pub const tcp = struct {
     const max_sockets = @intCast(usize, c.MEMP_NUM_TCP_PCB);
     const Socket = abi.TcpSocket;
@@ -543,9 +562,20 @@ pub const tcp = struct {
         data: *c.pbuf,
     };
 
+    const Op = union(enum) {
+        connect: *abi.tcp.ConnectEvent,
+        receive: *abi.tcp.ReceiveEvent,
+        send: *abi.tcp.SendEvent,
+    };
+
     const Data = struct {
         connected: bool = false, // true when the connection has been established
         closed: bool = false, // true when the connection has been closed
+        op: ?Op = null,
+
+        pub fn fromArg(arg: ?*anyopaque) *Data {
+            return @ptrCast(*Data, @alignCast(@alignOf(Data), arg.?));
+        }
     };
 
     var pool: astd.IndexPool(u32, max_sockets) = .{};
@@ -574,9 +604,9 @@ pub const tcp = struct {
 
         c.tcp_arg(pcb, &socket_meta[index]);
 
+        c.tcp_err(pcb, tcpErrCallback);
         // c.tcp_recv(pcb, tcp_recv_fn);
-        // c.tcp_sent(pcb, tcp_sent_fn);
-        // c.tcp_err(pcb, tcp_err_fn);
+        c.tcp_sent(pcb, tcpSentCallback);
         // c.tcp_accept(pcb, tcp_accept_fn);
 
         return @intToEnum(Socket, index);
@@ -598,37 +628,122 @@ pub const tcp = struct {
         pool.free(index);
     }
 
+    fn tcpErrCallback(arg: ?*anyopaque, err: c.err_t) callconv(.C) void {
+        const state = Data.fromArg(arg);
+
+        logger.err("tcp: err(arg={*}, err={!})", .{ arg, lwipTry(err) });
+
+        if (state.op) |*op| {
+            const event = switch (op.*) {
+                .connect => |ev| blk: {
+                    ev.@"error" = mapErrSet(ashet.abi.tcp.ConnectError, lwipTry(err));
+                    break :blk &ev.base;
+                },
+                .receive => |ev| blk: {
+                    ev.@"error" = mapErrSet(ashet.abi.tcp.ReceiveError, lwipTry(err));
+                    break :blk &ev.base;
+                },
+                .send => |ev| blk: {
+                    ev.@"error" = mapErrSet(ashet.abi.tcp.SendError, lwipTry(err));
+                    break :blk &ev.base;
+                },
+            };
+
+            ashet.io.finalize(event);
+        }
+    }
+
     pub fn bind(ev: *abi.tcp.BindEvent) void {
         const pcb = unmap(ev.socket) catch |err| {
             ev.@"error" = abi.tcp.BindError.map(err);
             ashet.io.finalize(&ev.base);
             return;
         };
-        ev.@"error" = abi.tcp.BindError.map(
-            lwipTry(c.tcp_bind(pcb, &mapIP(ev.bind_point.ip), ev.bind_point.port)) catch |err| switch (err) {
-                error.BufferError,
-                error.ConnectionAborted,
-                error.ConnectionClosed,
-                error.ConnectionReset,
-                error.InProgress,
-                error.LowlevelInterfaceError,
-                error.NotConnected,
-                error.Routing,
-                error.Timeout,
-                error.WouldBlock,
-                error.AlreadyConnected,
-                error.AlreadyConnecting,
-                error.IllegalArgument,
-                error.OutOfMemory,
-                => error.Unexpected,
-                else => |e| e,
-            },
+        ev.@"error" = mapErrSet(
+            abi.tcp.BindError,
+            lwipTry(c.tcp_bind(pcb, &mapIP(ev.bind_point.ip), ev.bind_point.port)),
         );
         ev.bind_point = EndPoint{
             .ip = unmapIP(pcb.local_ip),
             .port = pcb.local_port,
         };
         ashet.io.finalize(&ev.base);
+    }
+
+    pub fn connect(ev: *abi.tcp.ConnectEvent) void {
+        const pcb = unmap(ev.socket) catch |err| {
+            ev.@"error" = abi.tcp.ConnectError.map(err);
+            ashet.io.finalize(&ev.base);
+            return;
+        };
+        const data = &socket_meta[@enumToInt(ev.socket)];
+        if (data.op != null) {
+            ev.@"error" = .InProgress;
+            ashet.io.finalize(&ev.base);
+            return;
+        }
+        data.op = .{ .connect = ev };
+
+        ev.@"error" = mapErrSet(
+            abi.tcp.ConnectError,
+            lwipTry(c.tcp_connect(pcb, &mapIP(ev.target.ip), ev.target.port, tcpConnectedCallback)),
+        );
+        if (ev.@"error" != .ok) {
+            data.op = null;
+            ashet.io.finalize(&ev.base);
+        }
+    }
+
+    fn tcpConnectedCallback(arg: ?*anyopaque, pcb_c: [*c]c.tcp_pcb, err: c.err_t) callconv(.C) c.err_t {
+        const pcb: *c.tcp_pcb = pcb_c;
+        const state = Data.fromArg(arg);
+        const event = state.op.?.connect;
+
+        // err: An unused error code, always ERR_OK currently ;-)
+        std.debug.assert(err == c.ERR_OK);
+
+        logger.info("tcp: connected(arg={}, pcb={*}, err={!})", .{ state, pcb, lwipTry(err) });
+
+        state.connected = true;
+        state.op = null;
+        ashet.io.finalize(&event.base);
+
+        return c.ERR_OK;
+    }
+
+    pub fn send(ev: *abi.tcp.SendEvent) void {
+        const pcb = unmap(ev.socket) catch |err| {
+            ev.@"error" = abi.tcp.SendError.map(err);
+            ashet.io.finalize(&ev.base);
+            return;
+        };
+        const data = &socket_meta[@enumToInt(ev.socket)];
+        if (data.op != null) {
+            ev.@"error" = .InProgress;
+            ashet.io.finalize(&ev.base);
+            return;
+        }
+        data.op = .{ .send = ev };
+
+        ev.@"error" = mapErrSet(
+            abi.tcp.SendError,
+            lwipTry(c.tcp_write(pcb, ev.data_ptr, limitLength(ev.data_len), 0)),
+        );
+        if (ev.@"error" != .ok) {
+            data.op = null;
+            ashet.io.finalize(&ev.base);
+        }
+    }
+
+    fn tcpSentCallback(arg: ?*anyopaque, pcb_c: [*c]c.tcp_pcb, sent: u16) callconv(.C) c.err_t {
+        const pcb: *c.tcp_pcb = pcb_c;
+        const state = Data.fromArg(arg);
+
+        logger.info("tcp: sent(arg={}, pcb={*}, len={})", .{ state, pcb, sent });
+
+        // info(network): tcp: sent(arg=Data{ .connected = true, .closed = false, .op = Op{ .send = abi.tcp.SendEvent{ .base = abi.Event{ ... }, .socket = abi.TcpSocket(0), .data_ptr = u8@8019326d, .data_len = 13, .bytes_sent = 2863311530, .error = abi.ErrorSet.enum_type.ok } } }, pcb=tcp_pcb@800e91c8, len=13)
+
+        return c.ERR_OK;
     }
 
     // pub fn tcpTest(arg: ?*anyopaque) callconv(.C) u32 {
@@ -664,16 +779,6 @@ pub const tcp = struct {
     //     }
 
     //     return 0;
-    // }
-
-    // fn tcpConnectedCallback(arg: ?*anyopaque, pcb_c: [*c]c.tcp_pcb, err: c.err_t) callconv(.C) c.err_t {
-    //     const pcb: *c.tcp_pcb = pcb_c;
-    //     const state = TcpState.fromArg(arg);
-
-    //     state.connected = true;
-    //     logger.info("tcp: connected(arg={}, pcb={*}, err={!})", .{ state, pcb, lwipTry(err) });
-
-    //     return c.ERR_OK;
     // }
 
     // // Sets the callback function that will be called when new data arrives. The callback function will be passed a NULL pbuf to indicate that the remote host has closed the connection.
@@ -720,20 +825,6 @@ pub const tcp = struct {
     //     } else {
     //         return c.ERR_WOULDBLOCK;
     //     }
-    // }
-
-    // fn tcpSentCallback(arg: ?*anyopaque, pcb_c: [*c]c.tcp_pcb, sent: u16) callconv(.C) c.err_t {
-    //     const pcb: *c.tcp_pcb = pcb_c;
-    //     const state = TcpState.fromArg(arg);
-
-    //     logger.info("tcp: sent(arg={}, pcb={*}, len={})", .{ state, pcb, sent });
-
-    //     return c.ERR_OK;
-    // }
-
-    // fn tcpErrCallback(arg: ?*anyopaque, err: c.err_t) callconv(.C) void {
-    //     const state = TcpState.fromArg(arg);
-    //     logger.info("tcp: err(arg={}, err={!})", .{ state, lwipTry(err) });
     // }
 
     // // fn tcpAcceptCallback() callconv(.C) void {

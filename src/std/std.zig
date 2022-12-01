@@ -1,7 +1,18 @@
+const std = @import("std");
+
 pub const RingBuffer = @import("ringbuffer.zig").RingBuffer;
 pub const IndexPool = @import("indexpool.zig").IndexPool;
 pub const FreeListAllocator = @import("mem/FreeListAllocator.zig").FreeListAllocator;
 
 test {
     @import("std").testing.refAllDecls(@This());
+}
+
+pub fn mapToUnexpected(comptime E: type, err: anyerror) E {
+    inline for (@typeInfo(E).ErrorSet.?) |err_desc| {
+        if (err == @field(E, err_desc.name))
+            return @field(E, err_desc.name);
+    }
+    std.log.warn("Unexpected error {s}. Mapping to error.Unexpected!", .{@errorName(err)});
+    return error.Unexpected;
 }

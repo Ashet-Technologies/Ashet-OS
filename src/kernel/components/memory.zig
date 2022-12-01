@@ -194,48 +194,45 @@ const PageAllocator = struct {
         .free = free,
     };
 
-    fn alloc(_: *anyopaque, n: usize, alignment: u29, len_align: u29, ra: usize) error{OutOfMemory}![]u8 {
-        _ = ra;
-        std.debug.assert(n > 0);
-        if (n > std.math.maxInt(usize) - (page_size - 1)) {
-            return error.OutOfMemory;
+    fn alloc(_: *anyopaque, len: usize, ptr_align: u8, ret_addr: usize) ?[*]u8 {
+        _ = ret_addr;
+
+        std.debug.assert(len > 0);
+        if (len > std.math.maxInt(usize) - (page_size - 1)) {
+            return null;
         }
 
-        std.debug.assert(alignment <= page_size);
+        std.debug.assert(ptr_align <= page_size);
 
-        const aligned_len = std.mem.alignForward(n, page_size);
+        const aligned_len = std.mem.alignForward(len, page_size);
 
         const alloc_page_count = getRequiredPages(aligned_len);
 
-        const first_page = try allocPages(alloc_page_count);
+        const first_page = allocPages(alloc_page_count) catch return null;
 
-        const first_byte = @ptrCast([*]align(page_size) u8, pageToPtr(first_page));
-
-        return first_byte[0..std.heap.alignPageAllocLen(aligned_len, n, len_align)];
+        return @ptrCast([*]align(page_size) u8, pageToPtr(first_page));
     }
 
     fn resize(
         _: *anyopaque,
-        buf_unaligned: []u8,
-        buf_align: u29,
-        new_size: usize,
-        len_align: u29,
-        return_address: usize,
-    ) ?usize {
-        _ = buf_unaligned;
+        buf: []u8,
+        buf_align: u8,
+        new_len: usize,
+        ret_addr: usize,
+    ) bool {
+        _ = buf;
         _ = buf_align;
-        _ = new_size;
-        _ = len_align;
-        _ = return_address;
-        return null;
+        _ = new_len;
+        _ = ret_addr;
+        return false;
     }
 
-    fn free(_: *anyopaque, buf_unaligned: []u8, buf_align: u29, return_address: usize) void {
+    fn free(_: *anyopaque, buf: []u8, buf_align: u8, ret_addr: usize) void {
         _ = buf_align;
-        _ = return_address;
+        _ = ret_addr;
 
-        const buf_aligned_len = std.mem.alignForward(buf_unaligned.len, page_size);
-        const ptr = @alignCast(page_size, buf_unaligned.ptr);
+        const buf_aligned_len = std.mem.alignForward(buf.len, page_size);
+        const ptr = @alignCast(page_size, buf.ptr);
 
         freePages(ptrToPage(ptr) orelse @panic("invalid address in free!"), @divExact(buf_aligned_len, page_size));
     }

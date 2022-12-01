@@ -118,8 +118,15 @@ pub const io = struct {
     pub fn scheduleAndAwait(start_queue: ?*Event, wait: WaitIO) ?*Event {
         return syscall("io.scheduleAndAwait")(start_queue, wait);
     }
+
     pub fn cancel(event: *Event) void {
         return syscall("io.cancel")(event);
+    }
+
+    pub fn singleShot(event: *Event) void {
+        const result = io.scheduleAndAwait(event, .wait_all);
+        std.debug.assert(result != null);
+        std.debug.assert(result.? == event);
     }
 };
 
@@ -239,6 +246,7 @@ pub const ui = struct {
     pub fn setWindowTitle(win: *const Window, title: []const u8) void {
         syscall("ui.setWindowTitle")(win, title.ptr, title.len);
     }
+
     pub fn pollEvent(win: *const Window) ?Event {
         var data: abi.UiEvent = undefined;
         const event_type = syscall("ui.pollEvent")(win, &data);
@@ -374,13 +382,39 @@ pub const net = struct {
                 .bind_point = endpoint,
             });
 
-            const result = io.scheduleAndAwait(&event.base, .wait_all);
-            std.debug.assert(result != null);
-            std.debug.assert(result.? == &event.base);
+            io.singleShot(&event.base);
 
             try abi.tcp.BindError.throw(event.@"error");
 
             return event.bind_point;
+        }
+
+        pub fn connect(tcp: *Tcp, endpoint: EndPoint) !void {
+            var event = abi.Event.new(abi.tcp.ConnectEvent, .{
+                .socket = tcp.sock,
+                .target = endpoint,
+            });
+            io.singleShot(&event.base);
+            try abi.tcp.ConnectError.throw(event.@"error");
+        }
+
+        pub fn write(tcp: *Tcp, data: []const u8) abi.tcp.SendError.Error!usize {
+            var event = abi.Event.new(abi.tcp.SendEvent, .{
+                .socket = tcp.sock,
+                .data_ptr = data.ptr,
+                .data_len = data.len,
+            });
+
+            io.singleShot(&event.base);
+
+            try abi.tcp.SendError.throw(event.@"error");
+
+            return event.bytes_sent;
+        }
+
+        pub const Writer = std.io.Writer(*Tcp, abi.tcp.SendError.Error, write);
+        pub fn writer(tcp: *Tcp) Writer {
+            return Writer{ .context = tcp };
         }
     };
 
