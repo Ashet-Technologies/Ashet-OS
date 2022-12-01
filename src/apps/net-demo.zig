@@ -26,10 +26,18 @@ fn tcp_demo() !void {
 
     ashet.debug.write("Connected.\r\n");
 
-    const len = try socket.write("Hello, World!\n");
+    var writer = socket.writer();
 
-    try ashet.debug.writer().print("sent {} bytes", .{len});
+    // try writer.writeAll("Welcome to the Ashet Interactive Remote Shell (AIRS). Enter your request:\n");
+
+    try writer.writeAll(&lolwtfbiggy);
+
+    while (true) {
+        ashet.process.yield();
+    }
 }
+
+const lolwtfbiggy = [1]u8{'?'} ** 128_000;
 
 fn udp_demo() !void {
     var socket = try ashet.net.Udp.open();

@@ -890,7 +890,7 @@ pub const network = struct {
                     buffer.* = undefined;
                     dev.receiveq.pushDescriptor(DeviceInfo.Buffer, buffer, .write, true, true);
                 }
- 
+
                 const packet = try nic.allocPacket(buffer.data.len);
                 errdefer nic.freePacket(packet);
 

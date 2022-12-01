@@ -565,7 +565,14 @@ pub const tcp = struct {
     const Op = union(enum) {
         connect: *abi.tcp.ConnectEvent,
         receive: *abi.tcp.ReceiveEvent,
-        send: *abi.tcp.SendEvent,
+        send: SendOp,
+    };
+
+    const SendOp = struct {
+        event: *abi.tcp.SendEvent,
+        total_sent: usize = 0, // total bytes transferred for `event`.
+        chunk_size: usize = 0, // passsed bytes for the current chunk (invocation of op.total_sent
+        chunk_sent: usize = 0, // transferred bytes for the current chunk (invocation of op.total_sent)
     };
 
     const Data = struct {
@@ -643,9 +650,9 @@ pub const tcp = struct {
                     ev.@"error" = mapErrSet(ashet.abi.tcp.ReceiveError, lwipTry(err));
                     break :blk &ev.base;
                 },
-                .send => |ev| blk: {
-                    ev.@"error" = mapErrSet(ashet.abi.tcp.SendError, lwipTry(err));
-                    break :blk &ev.base;
+                .send => |*dat| blk: {
+                    dat.event.@"error" = mapErrSet(ashet.abi.tcp.SendError, lwipTry(err));
+                    break :blk &dat.event.base;
                 },
             };
 
@@ -723,25 +730,64 @@ pub const tcp = struct {
             ashet.io.finalize(&ev.base);
             return;
         }
-        data.op = .{ .send = ev };
 
-        ev.@"error" = mapErrSet(
-            abi.tcp.SendError,
-            lwipTry(c.tcp_write(pcb, ev.data_ptr, limitLength(ev.data_len), 0)),
-        );
-        if (ev.@"error" != .ok) {
+        data.op = .{ .send = .{ .event = ev } };
+        const op = &data.op.?.send;
+
+        transferNextChunk(pcb, data, op);
+    }
+
+    fn transferNextChunk(pcb: *c.tcp_pcb, data: *Data, op: *SendOp) void {
+        const event = op.event;
+
+        if (op.total_sent == event.data_len) {
+            event.@"error" = .ok;
+            event.bytes_sent = op.total_sent;
+            ashet.io.finalize(&event.base);
             data.op = null;
-            ashet.io.finalize(&ev.base);
+            return;
         }
+
+        const rest_len = event.data_len - op.total_sent;
+        const rest_limited = std.math.min(c.tcp_sndbuf(pcb), limitLength(rest_len));
+
+        const last = true; // (op.total_sent + rest_limited == event.data_len);
+        event.@"error" = mapErrSet(
+            abi.tcp.SendError,
+            lwipTry(c.tcp_write(pcb, event.data_ptr + op.total_sent, rest_limited, if (!last) c.TCP_WRITE_FLAG_MORE else 0)),
+        );
+        if (event.@"error" == .ok) {
+            op.chunk_sent = 0;
+            op.chunk_size = rest_limited;
+            return;
+        }
+
+        if (event.@"error" == .OutOfMemory) {
+            @panic("not handled yet: reschedule the transfer at a later point again");
+        }
+
+        std.log.err("failed to send: {}", .{event.@"error"});
+        data.op = null;
+        ashet.io.finalize(&event.base);
     }
 
     fn tcpSentCallback(arg: ?*anyopaque, pcb_c: [*c]c.tcp_pcb, sent: u16) callconv(.C) c.err_t {
         const pcb: *c.tcp_pcb = pcb_c;
         const state = Data.fromArg(arg);
 
-        logger.info("tcp: sent(arg={}, pcb={*}, len={})", .{ state, pcb, sent });
+        const op = &state.op.?.send;
 
-        // info(network): tcp: sent(arg=Data{ .connected = true, .closed = false, .op = Op{ .send = abi.tcp.SendEvent{ .base = abi.Event{ ... }, .socket = abi.TcpSocket(0), .data_ptr = u8@8019326d, .data_len = 13, .bytes_sent = 2863311530, .error = abi.ErrorSet.enum_type.ok } } }, pcb=tcp_pcb@800e91c8, len=13)
+        op.total_sent += sent;
+        op.chunk_sent += sent;
+        std.debug.assert(op.total_sent <= op.event.data_len);
+
+        if (op.chunk_sent == op.chunk_size) {
+            logger.info("tcp: full transfer(sent {} bytes, now {} bytes. sending next chunk)", .{ sent, op.chunk_size });
+            transferNextChunk(pcb, state, op);
+        } else {
+            // Just happily idle until our current chunk is fully transferred
+            logger.info("tcp: partial transfer(sent {} bytes, now {} of {} bytes)", .{ sent, op.chunk_sent, op.chunk_size });
+        }
 
         return c.ERR_OK;
     }
