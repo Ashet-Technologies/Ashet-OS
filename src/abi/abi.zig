@@ -81,13 +81,6 @@ pub const syscall_definitions = [_]SysCallDefinition{
 
     defineSysCall("network.udp.createSocket", fn (result: *UdpSocket) UdpError.Enum, 35),
     defineSysCall("network.udp.destroySocket", fn (UdpSocket) void, 36),
-    defineSysCall("network.udp.bind", fn (UdpSocket, EndPoint) UdpError.Enum, 37),
-    defineSysCall("network.udp.connect", fn (UdpSocket, EndPoint) UdpError.Enum, 38),
-    defineSysCall("network.udp.disconnect", fn (UdpSocket) UdpError.Enum, 39),
-    defineSysCall("network.udp.send", fn (UdpSocket, data: [*]const u8, length: usize, result: *usize) UdpError.Enum, 40),
-    defineSysCall("network.udp.sendTo", fn (UdpSocket, receiver: EndPoint, data: [*]const u8, length: usize, result: *usize) UdpError.Enum, 41),
-    defineSysCall("network.udp.receive", fn (UdpSocket, data: [*]u8, length: usize, result: *usize) UdpError.Enum, 42),
-    defineSysCall("network.udp.receiveFrom", fn (UdpSocket, sender: *EndPoint, data: [*]u8, length: usize, result: *usize) UdpError.Enum, 43),
 
     defineSysCall("network.tcp.createSocket", fn (out: *tcp.Socket) tcp.CreateError.Enum, 44),
     defineSysCall("network.tcp.destroySocket", fn (tcp.Socket) void, 45),
@@ -928,28 +921,6 @@ pub fn ErrorSet(comptime options: anytype) type {
     };
 }
 
-pub const UdpError = ErrorSet(.{
-    .InvalidHandle = 1,
-    .SystemResources = 2,
-    .AddressInUse = 3,
-    .AlreadyConnected = 4,
-    .AlreadyConnecting = 5,
-    .BufferError = 6,
-    .ConnectionAborted = 7,
-    .ConnectionClosed = 8,
-    .ConnectionReset = 9,
-    .IllegalArgument = 10,
-    .IllegalValue = 11,
-    .InProgress = 12,
-    .LowlevelInterfaceError = 13,
-    .NotConnected = 14,
-    .OutOfMemory = 15,
-    .Routing = 16,
-    .Timeout = 17,
-    .WouldBlock = 18,
-    .Unexpected = 19,
-});
-
 pub const FileSystemError = ErrorSet(.{
     .Denied = 1,
     .DiskErr = 2,
@@ -1174,8 +1145,8 @@ pub const WaitIO = enum(u32) {
     wait_all,
 };
 
-pub const tcp = struct {
-    const Socket = TcpSocket;
+pub const udp = struct {
+    const Socket = UdpSocket;
 
     pub const CreateError = ErrorSet(.{
         .SystemResources = 1,
@@ -1188,6 +1159,7 @@ pub const tcp = struct {
         .IllegalValue = 4,
         .Unexpected = 5,
     });
+
     pub const ConnectError = ErrorSet(.{
         .InvalidHandle = 1,
         .SystemResources = 2,
@@ -1206,6 +1178,206 @@ pub const tcp = struct {
         .Timeout = 17,
         .Unexpected = 19,
     });
+
+    pub const DisconnectError = ErrorSet(.{
+        .InvalidHandle = 1,
+        .SystemResources = 2,
+        .NotConnected = 3,
+        .Unexpected = 4,
+    });
+
+    pub const SendError = ErrorSet(.{
+        .InvalidHandle = 1,
+        .SystemResources = 2,
+        .AddressInUse = 3,
+        .AlreadyConnected = 4,
+        .AlreadyConnecting = 5,
+        .BufferError = 6,
+        .ConnectionAborted = 7,
+        .ConnectionClosed = 8,
+        .ConnectionReset = 9,
+        .IllegalArgument = 10,
+        .IllegalValue = 11,
+        .InProgress = 12,
+        .LowlevelInterfaceError = 13,
+        .NotConnected = 14,
+        .OutOfMemory = 15,
+        .Routing = 16,
+        .Timeout = 17,
+        .Unexpected = 19,
+    });
+
+    pub const SendToError = ErrorSet(.{
+        .InvalidHandle = 1,
+        .SystemResources = 2,
+        .AddressInUse = 3,
+        .AlreadyConnected = 4,
+        .AlreadyConnecting = 5,
+        .BufferError = 6,
+        .ConnectionAborted = 7,
+        .ConnectionClosed = 8,
+        .ConnectionReset = 9,
+        .IllegalArgument = 10,
+        .IllegalValue = 11,
+        .InProgress = 12,
+        .LowlevelInterfaceError = 13,
+        .NotConnected = 14,
+        .OutOfMemory = 15,
+        .Routing = 16,
+        .Timeout = 17,
+        .Unexpected = 19,
+    });
+
+    pub const ReceiveError = ErrorSet(.{
+        .InvalidHandle = 1,
+        .SystemResources = 2,
+        .AddressInUse = 3,
+        .AlreadyConnected = 4,
+        .AlreadyConnecting = 5,
+        .BufferError = 6,
+        .ConnectionAborted = 7,
+        .ConnectionClosed = 8,
+        .ConnectionReset = 9,
+        .IllegalArgument = 10,
+        .IllegalValue = 11,
+        .InProgress = 12,
+        .LowlevelInterfaceError = 13,
+        .NotConnected = 14,
+        .OutOfMemory = 15,
+        .Routing = 16,
+        .Timeout = 17,
+        .Unexpected = 19,
+    });
+
+    pub const ReceiveFromError = ErrorSet(.{
+        .InvalidHandle = 1,
+        .SystemResources = 2,
+        .AddressInUse = 3,
+        .AlreadyConnected = 4,
+        .AlreadyConnecting = 5,
+        .BufferError = 6,
+        .ConnectionAborted = 7,
+        .ConnectionClosed = 8,
+        .ConnectionReset = 9,
+        .IllegalArgument = 10,
+        .IllegalValue = 11,
+        .InProgress = 12,
+        .LowlevelInterfaceError = 13,
+        .NotConnected = 14,
+        .OutOfMemory = 15,
+        .Routing = 16,
+        .Timeout = 17,
+        .Unexpected = 19,
+    });
+
+    pub const BindEvent = struct {
+        base: Event,
+
+        // inputs:
+        socket: UdpSocket,
+        address: EndPoint,
+
+        // outputs:
+        @"error": BindError = undefined,
+    };
+
+    pub const ConnectEvent = struct {
+        base: Event,
+
+        // inputs:
+        socket: UdpSocket,
+        target: EndPoint,
+
+        // outputs:
+        @"error": ConnectError = undefined,
+    };
+
+    pub const DisconnectEvent = struct {
+        base: Event,
+
+        // inputs:
+        socket: UdpSocket,
+
+        // outputs:
+        @"error": DisconnectError = undefined,
+    };
+
+    pub const SendEvent = struct {
+        base: Event,
+
+        // inputs:
+        socket: UdpSocket,
+        data_ptr: [*]const u8,
+        data_len: usize,
+
+        // outputs:
+        @"error": SendError = undefined,
+        bytes_sent: usize = undefined,
+    };
+
+    pub const SendToEvent = struct {
+        base: Event,
+
+        // inputs:
+        socket: UdpSocket,
+        receiver: EndPoint,
+        data_ptr: [*]const u8,
+        data_len: usize,
+
+        // outputs:
+        @"error": SendError = undefined,
+        bytes_sent: usize = undefined,
+    };
+
+    pub const ReceiveFromEvent = struct {
+        base: Event,
+
+        // inputs:
+        socket: UdpSocket,
+        buffer_ptr: [*]u8,
+        buffer_len: usize,
+
+        // outputs:
+        @"error": ReceiveFromError = undefined,
+        bytes_received: usize = undefined,
+        sender: EndPoint = undefined,
+    };
+};
+
+pub const tcp = struct {
+    const Socket = TcpSocket;
+
+    pub const CreateError = ErrorSet(.{
+        .SystemResources = 1,
+    });
+
+    pub const BindError = ErrorSet(.{
+        .InvalidHandle = 1,
+        .SystemResources = 2,
+        .AddressInUse = 3,
+        .IllegalValue = 4,
+        .Unexpected = 5,
+    });
+
+    pub const ConnectError = ErrorSet(.{
+        .InvalidHandle = 1,
+        .SystemResources = 2,
+        .AlreadyConnected = 4,
+        .AlreadyConnecting = 5,
+        .BufferError = 6,
+        .ConnectionAborted = 7,
+        .ConnectionClosed = 8,
+        .ConnectionReset = 9,
+        .IllegalArgument = 10,
+        .IllegalValue = 11,
+        .InProgress = 12,
+        .LowlevelInterfaceError = 13,
+        .OutOfMemory = 15,
+        .Routing = 16,
+        .Timeout = 17,
+        .Unexpected = 19,
+    });
+
     pub const SendError = ErrorSet(.{
         .InvalidHandle = 1,
         .SystemResources = 2,
@@ -1223,6 +1395,7 @@ pub const tcp = struct {
         .Timeout = 14,
         .Unexpected = 15,
     });
+
     pub const ReceiveError = ErrorSet(.{
         .InvalidHandle = 1,
         .SystemResources = 2,

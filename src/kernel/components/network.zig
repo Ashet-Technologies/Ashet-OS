@@ -561,6 +561,23 @@ pub const tcp = struct {
         connect: *abi.tcp.ConnectEvent,
         receive: ReceiveOp,
         send: SendOp,
+
+        pub fn event(op: *Op) *ashet.abi.Event {
+            return switch (op.*) {
+                .connect => |dat| &dat.base,
+                .receive => |*dat| &dat.event.base,
+                .send => |*dat| &dat.event.base,
+            };
+        }
+
+        pub fn finalize(op: *Op, err: anyerror!void) void {
+            switch (op.*) {
+                .connect => |ev| ev.@"error" = mapErrSet(ashet.abi.tcp.ConnectError, err),
+                .receive => |dat| dat.event.@"error" = mapErrSet(ashet.abi.tcp.ReceiveError, err),
+                .send => |*dat| dat.event.@"error" = mapErrSet(ashet.abi.tcp.SendError, err),
+            }
+            ashet.io.finalize(op.event());
+        }
     };
 
     const SendOp = struct {
@@ -645,22 +662,7 @@ pub const tcp = struct {
         logger.err("tcp: err(arg={*}, err={!})", .{ arg, lwipTry(err) });
 
         if (state.op) |*op| {
-            const event = switch (op.*) {
-                .connect => |ev| blk: {
-                    ev.@"error" = mapErrSet(ashet.abi.tcp.ConnectError, lwipTry(err));
-                    break :blk &ev.base;
-                },
-                .receive => |dat| blk: {
-                    dat.event.@"error" = mapErrSet(ashet.abi.tcp.ReceiveError, lwipTry(err));
-                    break :blk &dat.event.base;
-                },
-                .send => |*dat| blk: {
-                    dat.event.@"error" = mapErrSet(ashet.abi.tcp.SendError, lwipTry(err));
-                    break :blk &dat.event.base;
-                },
-            };
-
-            ashet.io.finalize(event);
+            op.finalize(lwipTry(err));
         }
     }
 
@@ -731,6 +733,18 @@ pub const tcp = struct {
         const data = &socket_meta[@enumToInt(ev.socket)];
         if (data.op != null) {
             ev.@"error" = .InProgress;
+            ashet.io.finalize(&ev.base);
+            return;
+        }
+
+        if (!data.connected) {
+            ev.@"error" = .NotConnected;
+            ashet.io.finalize(&ev.base);
+            return;
+        }
+        if (data.closed) {
+            ev.@"error" = .ok;
+            ev.bytes_sent = 0;
             ashet.io.finalize(&ev.base);
             return;
         }
@@ -809,6 +823,18 @@ pub const tcp = struct {
             return;
         }
 
+        if (!data.connected) {
+            ev.@"error" = .NotConnected;
+            ashet.io.finalize(&ev.base);
+            return;
+        }
+        if (data.closed) {
+            ev.@"error" = .ok;
+            ev.bytes_received = 0;
+            ashet.io.finalize(&ev.base);
+            return;
+        }
+
         _ = pcb;
 
         // for receiption, we just set up the buffer and wait until it's completed
@@ -825,16 +851,19 @@ pub const tcp = struct {
         const data = Data.fromArg(arg);
 
         if (err != c.ERR_OK) {
-            logger.info("tcp: recv(arg={}, pcb={*}, tot_len=<nil>, err={!})", .{ data, pcb, lwipTry(err) });
+            logger.info("tcp: recv(arg={}, tot_len=<nil>, err={!})", .{ data, lwipTry(err) });
             return c.ERR_OK;
         }
 
         if (pbuf_c == null) {
             data.closed = true;
+            logger.debug("tcp: recv(arg={},  tot_len=<nil>, err=end of stream)", .{data});
 
-            // TODO: Close read command
+            if (data.op) |*op| {
+                op.finalize({});
+                data.op = null;
+            }
 
-            logger.info("tcp: recv(arg={}, pcb={*}, tot_len=<nil>, err=end of stream)", .{ data, pcb });
             return c.ERR_OK;
         }
 

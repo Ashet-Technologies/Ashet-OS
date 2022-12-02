@@ -176,14 +176,27 @@ pub fn log(
     comptime format: []const u8,
     args: anytype,
 ) void {
+    const ansi = true;
+
     switch (scope) {
         .fatfs, .filesystem => return,
         else => {},
     }
 
+    const prefix = if (ansi)
+        switch (message_level) {
+            .err => "\x1B[91m", // red
+            .warn => "\x1B[93m", // yellow
+            .info => "\x1B[97m", // white
+            .debug => "\x1B[90m", // gray
+        }
+    else
+        "";
+    const postfix = if (ansi) "\x1B[0m" else ""; // reset terminal properties
+
     const level_txt = comptime message_level.asText();
     const prefix2 = if (scope == .default) ": " else "(" ++ @tagName(scope) ++ "): ";
-    Debug.writer().print(level_txt ++ prefix2 ++ format ++ "\n", args) catch return;
+    Debug.writer().print(prefix ++ level_txt ++ prefix2 ++ format ++ postfix ++ "\n", args) catch return;
 }
 
 extern var kernel_stack: anyopaque;

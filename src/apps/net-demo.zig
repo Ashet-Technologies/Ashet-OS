@@ -4,8 +4,8 @@ const ashet = @import("ashet");
 pub usingnamespace ashet.core;
 
 pub fn main() !void {
-    // try udp_demo();
-    try tcp_demo();
+    try udp_demo();
+    // try tcp_demo();
 }
 
 fn tcp_demo() !void {
@@ -44,6 +44,8 @@ fn tcp_demo() !void {
 
         ashet.process.yield();
     }
+
+    ashet.debug.write("the server has closed the connection\n");
 }
 
 const lolwtfbiggy = [1]u8{'?'} ** 128_000;
@@ -60,7 +62,7 @@ fn udp_demo() !void {
     _ = try socket.sendTo(
         ashet.net.EndPoint.new(
             ashet.net.IP.ipv4(.{ 10, 0, 2, 2 }),
-            5555,
+            4567,
         ),
         "Hello, World!\n",
     );
