@@ -557,14 +557,9 @@ pub const tcp = struct {
     const max_sockets = @intCast(usize, c.MEMP_NUM_TCP_PCB);
     const Socket = abi.TcpSocket;
 
-    const InboundPacket = struct {
-        sender: EndPoint,
-        data: *c.pbuf,
-    };
-
     const Op = union(enum) {
         connect: *abi.tcp.ConnectEvent,
-        receive: *abi.tcp.ReceiveEvent,
+        receive: ReceiveOp,
         send: SendOp,
     };
 
@@ -575,10 +570,19 @@ pub const tcp = struct {
         chunk_sent: usize = 0, // transferred bytes for the current chunk (invocation of op.total_sent)
     };
 
+    const ReceiveOp = struct {
+        event: *abi.tcp.ReceiveEvent,
+        write_offset: usize = 0,
+    };
+
     const Data = struct {
         connected: bool = false, // true when the connection has been established
         closed: bool = false, // true when the connection has been closed
         op: ?Op = null,
+
+        /// offset in the currently queued pbuf provided in the tcpRecvCallback.
+        /// When all bytes in that pbuf are received, we can free it and accept more data.
+        recv_offset: u16 = 0,
 
         pub fn fromArg(arg: ?*anyopaque) *Data {
             return @ptrCast(*Data, @alignCast(@alignOf(Data), arg.?));
@@ -612,7 +616,7 @@ pub const tcp = struct {
         c.tcp_arg(pcb, &socket_meta[index]);
 
         c.tcp_err(pcb, tcpErrCallback);
-        // c.tcp_recv(pcb, tcp_recv_fn);
+        c.tcp_recv(pcb, tcpRecvCallback);
         c.tcp_sent(pcb, tcpSentCallback);
         // c.tcp_accept(pcb, tcp_accept_fn);
 
@@ -646,9 +650,9 @@ pub const tcp = struct {
                     ev.@"error" = mapErrSet(ashet.abi.tcp.ConnectError, lwipTry(err));
                     break :blk &ev.base;
                 },
-                .receive => |ev| blk: {
-                    ev.@"error" = mapErrSet(ashet.abi.tcp.ReceiveError, lwipTry(err));
-                    break :blk &ev.base;
+                .receive => |dat| blk: {
+                    dat.event.@"error" = mapErrSet(ashet.abi.tcp.ReceiveError, lwipTry(err));
+                    break :blk &dat.event.base;
                 },
                 .send => |*dat| blk: {
                     dat.event.@"error" = mapErrSet(ashet.abi.tcp.SendError, lwipTry(err));
@@ -792,89 +796,90 @@ pub const tcp = struct {
         return c.ERR_OK;
     }
 
-    // pub fn tcpTest(arg: ?*anyopaque) callconv(.C) u32 {
-    //     _ = arg;
+    pub fn receive(ev: *abi.tcp.ReceiveEvent) void {
+        const pcb = unmap(ev.socket) catch |err| {
+            ev.@"error" = abi.tcp.ReceiveError.map(err);
+            ashet.io.finalize(&ev.base);
+            return;
+        };
+        const data = &socket_meta[@enumToInt(ev.socket)];
+        if (data.op != null) {
+            ev.@"error" = .InProgress;
+            ashet.io.finalize(&ev.base);
+            return;
+        }
 
-    //     const pcb = c.tcp_new() orelse @panic("oom");
+        _ = pcb;
 
-    //     var state = TcpState{};
+        // for receiption, we just set up the buffer and wait until it's completed
+        data.op = .{ .receive = .{ .event = ev } };
 
-    //     c.tcp_arg(pcb, &state);
-    //     c.tcp_recv(pcb, tcpRecvCallback);
-    //     c.tcp_sent(pcb, tcpSentCallback);
-    //     c.tcp_err(pcb, tcpErrCallback);
+        ev.bytes_received = 0;
+        ev.@"error" = .ok;
+    }
 
-    //     lwipTry(c.tcp_connect(pcb, &mapIP(IP.ipv4(.{ 10, 0, 2, 2 })), 4567, tcpConnectedCallback)) catch |e| @panic(@errorName(e));
+    // Sets the callback function that will be called when new data arrives. The callback function will be passed a NULL pbuf to indicate that the remote host has closed the connection.
+    // If the callback function returns ERR_OK or ERR_ABRT it must have freed the pbuf, otherwise it must not have freed it.
+    fn tcpRecvCallback(arg: ?*anyopaque, pcb_c: [*c]c.tcp_pcb, pbuf_c: [*c]c.pbuf, err: c.err_t) callconv(.C) c.err_t {
+        const pcb: *c.tcp_pcb = pcb_c;
+        const data = Data.fromArg(arg);
 
-    //     while (!state.connected) {
-    //         ashet.scheduler.yield();
-    //     }
+        if (err != c.ERR_OK) {
+            logger.info("tcp: recv(arg={}, pcb={*}, tot_len=<nil>, err={!})", .{ data, pcb, lwipTry(err) });
+            return c.ERR_OK;
+        }
 
-    //     std.log.info("sndbuf={}", .{c.tcp_sndbuf(pcb)});
+        if (pbuf_c == null) {
+            data.closed = true;
+            logger.info("tcp: recv(arg={}, pcb={*}, tot_len=<nil>, err=end of stream)", .{ data, pcb });
+            return c.ERR_OK;
+        }
 
-    //     lwipTry(c.tcp_write(pcb, "Hello, World!\n", 14, 0)) catch |e| @panic(@errorName(e));
+        if (data.op == null) {
+            return c.ERR_WOULDBLOCK; // we can't receive anything right now
+        }
 
-    //     while (!state.closed) {
-    //         ashet.scheduler.yield();
-    //     }
+        const op: *ReceiveOp = switch (data.op.?) {
+            .receive => |*op| op,
+            else => return c.ERR_WOULDBLOCK, // we can't receive anything right now
+        };
 
-    //     std.log.info("ded.", .{});
+        const pbuf: *c.pbuf = pbuf_c;
 
-    //     if (c.tcp_close(pcb) != c.ERR_OK) {
-    //         c.tcp_abort(pcb);
-    //     }
+        std.debug.assert(pbuf.tot_len > data.recv_offset);
+        const available_src = pbuf.tot_len - data.recv_offset;
+        const available_dst = op.event.buffer_len;
 
-    //     return 0;
-    // }
+        const copy_len = std.math.min(available_dst, available_src);
 
-    // // Sets the callback function that will be called when new data arrives. The callback function will be passed a NULL pbuf to indicate that the remote host has closed the connection.
-    // // If the callback function returns ERR_OK or ERR_ABRT it must have freed the pbuf, otherwise it must not have freed it.
-    // fn tcpRecvCallback(arg: ?*anyopaque, pcb_c: [*c]c.tcp_pcb, pbuf_c: [*c]c.pbuf, err: c.err_t) callconv(.C) c.err_t {
-    //     const pcb: *c.tcp_pcb = pcb_c;
-    //     const state = TcpState.fromArg(arg);
+        const copied_len = c.pbuf_copy_partial(pbuf, op.event.buffer_ptr, copy_len, data.recv_offset);
 
-    //     if (err != c.ERR_OK) {
-    //         logger.info("tcp: recv(arg={}, pcb={*}, tot_len=<nil>, err={!})", .{ state, pcb, lwipTry(err) });
-    //         return c.ERR_OK;
-    //     }
+        if (copied_len == 0) {
+            logger.err("failed to copy data from recv callback into async receive event", .{});
+        }
 
-    //     if (pbuf_c == null) {
-    //         state.closed = true;
-    //         logger.info("tcp: recv(arg={}, pcb={*}, tot_len=<nil>, err=end of stream)", .{ state, pcb });
-    //         return c.ERR_OK;
-    //     }
+        data.recv_offset += copied_len;
+        op.write_offset += copied_len;
 
-    //     const pbuf: *c.pbuf = pbuf_c;
+        c.tcp_recved(pcb, copied_len);
 
-    //     // const T = struct {
-    //     //     var a: u32 = 0;
-    //     // };
-    //     // defer T.a += 1;
+        if (op.write_offset == op.event.buffer_len) {
+            // op completed
 
-    //     // if (T.a < 10) {
-    //     //     logger.info("tcp: wouldblock now", .{});
-    //     //     return c.ERR_MEM;
-    //     // }
-    //     // T.a = 0;
+            op.event.bytes_received = op.event.buffer_len;
+            op.event.@"error" = .ok;
+            ashet.io.finalize(&op.event.base);
 
-    //     var char: u8 = undefined;
+            data.op = null;
+        }
 
-    //     _ = c.pbuf_copy_partial(pbuf, &char, 1, 0);
-
-    //     logger.info("tcp: recv(arg={}, pcb={X:0>8}, char={c} tot_len={})", .{ state, @ptrToInt(pcb), char, pbuf.tot_len });
-
-    //     c.tcp_recved(pcb, 1);
-
-    //     if (pbuf.tot_len == 1) {
-    //         _ = c.pbuf_free(pbuf);
-    //         return c.ERR_OK;
-    //     } else {
-    //         return c.ERR_WOULDBLOCK;
-    //     }
-    // }
-
-    // // fn tcpAcceptCallback() callconv(.C) void {
-    // //     //
-    // // }
-
+        if (data.recv_offset == pbuf.tot_len) {
+            // we consumed all of this buffer, notify stack that we're done now.
+            data.recv_offset = 0;
+            _ = c.pbuf_free(pbuf);
+            return c.ERR_OK;
+        } else {
+            return c.ERR_WOULDBLOCK;
+        }
+    }
 };

@@ -412,9 +412,28 @@ pub const net = struct {
             return event.bytes_sent;
         }
 
+        pub fn read(tcp: *Tcp, buffer: []u8) abi.tcp.ReceiveError.Error!usize {
+            var event = abi.Event.new(abi.tcp.ReceiveEvent, .{
+                .socket = tcp.sock,
+                .buffer_ptr = buffer.ptr,
+                .buffer_len = buffer.len,
+            });
+
+            io.singleShot(&event.base);
+
+            try abi.tcp.ReceiveError.throw(event.@"error");
+
+            return event.bytes_received;
+        }
+
         pub const Writer = std.io.Writer(*Tcp, abi.tcp.SendError.Error, write);
         pub fn writer(tcp: *Tcp) Writer {
             return Writer{ .context = tcp };
+        }
+
+        pub const Reader = std.io.Reader(*Tcp, abi.tcp.ReceiveError.Error, read);
+        pub fn reader(tcp: *Tcp) Reader {
+            return Reader{ .context = tcp };
         }
     };
 

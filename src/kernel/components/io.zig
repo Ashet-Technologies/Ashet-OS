@@ -63,9 +63,7 @@ pub fn scheduleAndAwait(start_queue: ?*Event, wait: WaitIO) ?*Event {
             .tcp_bind => ashet.network.tcp.bind(@fieldParentPtr(abi.tcp.BindEvent, "base", event)),
             .tcp_connect => ashet.network.tcp.connect(@fieldParentPtr(abi.tcp.ConnectEvent, "base", event)),
             .tcp_send => ashet.network.tcp.send(@fieldParentPtr(abi.tcp.SendEvent, "base", event)),
-            .tcp_receive => {
-                // TODO: Implement event dispatching
-            },
+            .tcp_receive => ashet.network.tcp.receive(@fieldParentPtr(abi.tcp.ReceiveEvent, "base", event)),
         }
     }
 

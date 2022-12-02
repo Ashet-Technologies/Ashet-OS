@@ -26,13 +26,20 @@ fn tcp_demo() !void {
 
     ashet.debug.write("Connected.\r\n");
 
-    var writer = socket.writer();
+    const writer = socket.writer();
+    const reader = socket.reader();
 
-    // try writer.writeAll("Welcome to the Ashet Interactive Remote Shell (AIRS). Enter your request:\n");
+    try writer.writeAll("Welcome to the Ashet Interactive Remote Shell (AIRS). Enter your request:\n");
 
-    try writer.writeAll(&lolwtfbiggy);
+    // try writer.writeAll(&lolwtfbiggy);
 
     while (true) {
+        var line_buf: [512]u8 = undefined;
+
+        const line = (try reader.readUntilDelimiterOrEof(&line_buf, '\n')) orelse break;
+
+        try writer.print("You said: {s}\n", .{line});
+
         ashet.process.yield();
     }
 }
