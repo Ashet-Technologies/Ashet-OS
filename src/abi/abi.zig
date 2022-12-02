@@ -1287,6 +1287,7 @@ pub const tcp = struct {
         socket: Socket,
         buffer_ptr: [*]u8,
         buffer_len: usize,
+        read_all: bool, // if true, will read until `buffer_len` bytes arrived. otherwise will read until the end of a single packet
 
         // outputs:
         bytes_received: usize = undefined,

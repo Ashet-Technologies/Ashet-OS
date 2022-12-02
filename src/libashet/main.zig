@@ -417,6 +417,7 @@ pub const net = struct {
                 .socket = tcp.sock,
                 .buffer_ptr = buffer.ptr,
                 .buffer_len = buffer.len,
+                .read_all = false, // emulate classic read
             });
 
             io.singleShot(&event.base);

@@ -831,6 +831,9 @@ pub const tcp = struct {
 
         if (pbuf_c == null) {
             data.closed = true;
+
+            // TODO: Close read command
+
             logger.info("tcp: recv(arg={}, pcb={*}, tot_len=<nil>, err=end of stream)", .{ data, pcb });
             return c.ERR_OK;
         }
@@ -863,10 +866,10 @@ pub const tcp = struct {
 
         c.tcp_recved(pcb, copied_len);
 
-        if (op.write_offset == op.event.buffer_len) {
+        if (op.write_offset == op.event.buffer_len or !op.event.read_all) {
             // op completed
 
-            op.event.bytes_received = op.event.buffer_len;
+            op.event.bytes_received = op.write_offset;
             op.event.@"error" = .ok;
             ashet.io.finalize(&op.event.base);
 

@@ -31,12 +31,14 @@ fn tcp_demo() !void {
 
     try writer.writeAll("Welcome to the Ashet Interactive Remote Shell (AIRS). Enter your request:\n");
 
+    var buffered_reader = std.io.bufferedReader(reader);
+
     // try writer.writeAll(&lolwtfbiggy);
 
     while (true) {
         var line_buf: [512]u8 = undefined;
 
-        const line = (try reader.readUntilDelimiterOrEof(&line_buf, '\n')) orelse break;
+        const line = (try buffered_reader.reader().readUntilDelimiterOrEof(&line_buf, '\n')) orelse break;
 
         try writer.print("You said: {s}\n", .{line});
 
