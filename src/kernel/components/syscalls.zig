@@ -276,11 +276,10 @@ fn @"ui.invalidate"(win: *const abi.Window, rect: abi.Rectangle) callconv(.C) vo
     ashet.ui.invalidateRegion(screen_rect);
 }
 
-const UdpError = abi.UdpError;
-const TcpError = abi.TcpError;
+const UdpError = abi.udp.SendError;
 
-fn @"network.udp.createSocket"(out: *abi.UdpSocket) callconv(.C) UdpError.Enum {
-    out.* = ashet.network.udp.createSocket() catch |e| return abi.UdpError.map(e);
+fn @"network.udp.createSocket"(out: *abi.UdpSocket) callconv(.C) abi.udp.CreateError.Enum {
+    out.* = ashet.network.udp.createSocket() catch |e| return abi.udp.CreateError.map(e);
     return .ok;
 }
 fn @"network.udp.destroySocket"(sock: abi.UdpSocket) callconv(.C) void {
@@ -328,10 +327,10 @@ fn @"network.tcp.destroySocket"(sock: abi.TcpSocket) callconv(.C) void {
     ashet.network.tcp.destroySocket(sock);
 }
 
-fn @"io.scheduleAndAwait"(start_queue: ?*abi.Event, wait: abi.WaitIO) callconv(.C) ?*abi.Event {
+fn @"io.scheduleAndAwait"(start_queue: ?*abi.IOP, wait: abi.WaitIO) callconv(.C) ?*abi.IOP {
     return ashet.io.scheduleAndAwait(start_queue, wait);
 }
 
-fn @"io.cancel"(event: *abi.Event) callconv(.C) void {
+fn @"io.cancel"(event: *abi.IOP) callconv(.C) void {
     return ashet.io.cancel(event);
 }

@@ -79,7 +79,7 @@ pub const syscall_definitions = [_]SysCallDefinition{
     // ping: FnPtr(fn ([*]Ping, usize) void),
     // TODO: Implement NIC-specific queries (mac, ips, names, ...)
 
-    defineSysCall("network.udp.createSocket", fn (result: *UdpSocket) UdpError.Enum, 35),
+    defineSysCall("network.udp.createSocket", fn (result: *UdpSocket) udp.CreateError.Enum, 35),
     defineSysCall("network.udp.destroySocket", fn (UdpSocket) void, 36),
 
     defineSysCall("network.tcp.createSocket", fn (out: *tcp.Socket) tcp.CreateError.Enum, 44),
@@ -94,9 +94,9 @@ pub const syscall_definitions = [_]SysCallDefinition{
     // The function will optionally block based on the `wait` parameter.
     //
     // The return value is the HEAD element of a linked list of completed I/O events.
-    defineSysCall("io.scheduleAndAwait", fn (?*Event, WaitIO) ?*Event, 50),
+    defineSysCall("io.scheduleAndAwait", fn (?*IOP, WaitIO) ?*IOP, 50),
 
-    defineSysCall("io.cancel", fn (*Event) void, 51),
+    defineSysCall("io.cancel", fn (*IOP) void, 51),
 };
 
 const SysCallDefinition = struct {
@@ -846,6 +846,8 @@ pub const CreateWindowFlags = packed struct(u32) {
 
 // Auxiliary helpers
 
+const ErrorSetTag = opaque {};
+
 pub fn ErrorSet(comptime options: anytype) type {
     const Int = u32;
 
@@ -894,6 +896,8 @@ pub fn ErrorSet(comptime options: anytype) type {
     }
 
     return struct {
+        const error_set_marker = ErrorSetTag;
+
         pub const Error = error_type;
         pub const Enum = enum_type;
 
@@ -1101,36 +1105,130 @@ pub const DirNextError = ErrorSet(.{
     .WriteProtected = 20,
 });
 
-// API EXPERIMENTS:
+///////////////////////////////////////////////////////////////////////////////
 
-pub const Event = extern struct {
+// I/O Operation
+pub const IOP = extern struct {
     type: Type,
-    next: ?*Event,
+    next: ?*IOP,
     tag: usize, // user specified data
 
     kernel_data: [7]usize = undefined, // internal data used by the kernel to store
 
     pub const Type = enum(u32) {
+        // TCP IOPs:
         tcp_connect,
         tcp_bind,
         tcp_send,
         tcp_receive,
+
+        // UDP IOPs:
+        udp_bind,
+        udp_connect,
+        udp_disconnect,
+        udp_send,
+        udp_send_to,
+        udp_receive_from,
     };
 
-    pub fn new(comptime T: type, fields: anytype) T {
-        var value = std.mem.zeroInit(T, fields);
-        value.base = .{
-            .type = switch (T) {
-                tcp.BindEvent => .tcp_bind,
-                tcp.ConnectEvent => .tcp_connect,
-                tcp.SendEvent => .tcp_send,
-                tcp.ReceiveEvent => .tcp_receive,
-                else => @compileError(@typeName(T) ++ "is not a supported event type."),
+    pub const Definition = struct {
+        type: Type,
+        @"error": type,
+        outputs: type = struct {},
+        inputs: type = struct {},
+    };
+
+    pub fn define(comptime def: Definition) type {
+        if (!@hasDecl(def.@"error", "error_set_marker") or (def.@"error".error_set_marker != ErrorSetTag)) {
+            @compileError("IOP.define expects .error to be a type created by ErrorSet()!");
+        }
+
+        const inputs = @typeInfo(def.inputs).Struct.fields;
+        const outputs = @typeInfo(def.outputs).Struct.fields;
+
+        const inputs_augmented = @Type(.{
+            .Struct = .{
+                .layout = .Extern,
+                .fields = inputs,
+                .decls = &.{},
+                .is_tuple = false,
             },
-            .next = null,
-            .tag = 0,
+        });
+
+        var output_fields = outputs[0..outputs.len].*;
+
+        for (output_fields) |*fld| {
+            if (fld.default_value != null) {
+                @compileError(std.fmt.comptimePrint("IOP outputs are not allowed to have default values. {s}/{s} has one.", .{
+                    @tagName(def.type),
+                    fld.name,
+                }));
+            }
+            fld.default_value = undefinedDefaultFor(fld.field_type);
+        }
+
+        const outputs_augmented = @Type(.{
+            .Struct = .{
+                .layout = .Extern,
+                .fields = &output_fields,
+                .decls = &.{},
+                .is_tuple = false,
+            },
+        });
+
+        return extern struct {
+            const Self = @This();
+
+            /// Marker used to recognize types as I/O ops.
+            /// This marker cannot be accessed outside this file, so *all* IOPs must be
+            /// defined in this file.
+            /// This allows a certain safety against programming mistakes, as a foreign type cannot be accidently marked as an IOP.
+            const iop_marker = IOP_Tag;
+
+            pub const iop_type = def.type;
+
+            iop: IOP = .{
+                .type = def.type,
+                .next = null,
+                .tag = 0,
+                .kernel_data = undefined,
+            },
+            @"error": def.@"error".Enum = undefined,
+            inputs: inputs_augmented,
+            outputs: outputs_augmented = undefined,
+
+            pub fn new(input: inputs_augmented) Self {
+                return Self{ .inputs = input };
+            }
+
+            pub fn check(val: Self) def.@"error".Error!void {
+                return def.@"error".throw(val.@"error");
+            }
+
+            pub fn setOk(val: *Self) void {
+                val.@"error" = .ok;
+            }
+
+            pub fn setError(val: *Self, err: def.@"error".Error) def.@"error".Error!void {
+                val.@"error" = def.@"error".map(err);
+            }
         };
-        return value;
+    }
+
+    const IOP_Tag = opaque {};
+    pub fn isIOP(comptime T: type) bool {
+        return @hasDecl(T, "iop_marker") and (T.iop_marker == IOP_Tag);
+    }
+
+    pub fn cast(comptime T: type, iop: *IOP) *T {
+        if (comptime !isIOP(T)) @compileError("Only a type created by IOP.define can be passed to cast!");
+        std.debug.assert(iop.type == T.iop_type);
+        return @fieldParentPtr(T, "iop", iop);
+    }
+
+    fn undefinedDefaultFor(comptime T: type) *T {
+        comptime var value: T = undefined;
+        return &value;
     }
 };
 
@@ -1147,6 +1245,73 @@ pub const WaitIO = enum(u32) {
 
 pub const udp = struct {
     const Socket = UdpSocket;
+
+    pub const Bind = IOP.define(.{
+        .type = .udp_bind,
+        .@"error" = BindError,
+        .inputs = struct {
+            socket: UdpSocket,
+            address: EndPoint,
+        },
+    });
+
+    pub const Connect = IOP.define(.{
+        .type = .udp_connect,
+        .@"error" = ConnectError,
+        .inputs = struct {
+            socket: UdpSocket,
+            target: EndPoint,
+        },
+    });
+
+    pub const Disconnect = IOP.define(.{
+        .type = .udp_disconnect,
+        .@"error" = DisconnectError,
+        .inputs = struct {
+            socket: UdpSocket,
+        },
+    });
+
+    pub const Send = IOP.define(.{
+        .type = .udp_send,
+        .@"error" = SendError,
+        .inputs = struct {
+            socket: UdpSocket,
+            data_ptr: [*]const u8,
+            data_len: usize,
+        },
+        .outputs = struct {
+            bytes_sent: usize,
+        },
+    });
+
+    pub const SendTo = IOP.define(.{
+        .type = .udp_send_to,
+        .@"error" = SendError,
+        .inputs = struct {
+            socket: UdpSocket,
+            receiver: EndPoint,
+            data_ptr: [*]const u8,
+            data_len: usize,
+        },
+        .outputs = struct {
+            bytes_sent: usize,
+        },
+    });
+
+    pub const ReceiveFrom = IOP.define(.{
+        .type = .udp_receive_from,
+        .@"error" = ReceiveFromError,
+        .inputs = struct {
+            socket: UdpSocket,
+            buffer_ptr: [*]u8,
+            buffer_len: usize,
+        },
+        .outputs = struct {
+            bytes_received: usize,
+            sender: EndPoint,
+        },
+    });
 
     pub const CreateError = ErrorSet(.{
         .SystemResources = 1,
@@ -1269,83 +1434,58 @@ pub const udp = struct {
         .Timeout = 17,
         .Unexpected = 19,
     });
-
-    pub const BindEvent = struct {
-        base: Event,
-
-        // inputs:
-        socket: UdpSocket,
-        address: EndPoint,
-
-        // outputs:
-        @"error": BindError = undefined,
-    };
-
-    pub const ConnectEvent = struct {
-        base: Event,
-
-        // inputs:
-        socket: UdpSocket,
-        target: EndPoint,
-
-        // outputs:
-        @"error": ConnectError = undefined,
-    };
-
-    pub const DisconnectEvent = struct {
-        base: Event,
-
-        // inputs:
-        socket: UdpSocket,
-
-        // outputs:
-        @"error": DisconnectError = undefined,
-    };
-
-    pub const SendEvent = struct {
-        base: Event,
-
-        // inputs:
-        socket: UdpSocket,
-        data_ptr: [*]const u8,
-        data_len: usize,
-
-        // outputs:
-        @"error": SendError = undefined,
-        bytes_sent: usize = undefined,
-    };
-
-    pub const SendToEvent = struct {
-        base: Event,
-
-        // inputs:
-        socket: UdpSocket,
-        receiver: EndPoint,
-        data_ptr: [*]const u8,
-        data_len: usize,
-
-        // outputs:
-        @"error": SendError = undefined,
-        bytes_sent: usize = undefined,
-    };
-
-    pub const ReceiveFromEvent = struct {
-        base: Event,
-
-        // inputs:
-        socket: UdpSocket,
-        buffer_ptr: [*]u8,
-        buffer_len: usize,
-
-        // outputs:
-        @"error": ReceiveFromError = undefined,
-        bytes_received: usize = undefined,
-        sender: EndPoint = undefined,
-    };
 };
 
 pub const tcp = struct {
     const Socket = TcpSocket;
+
+    pub const Bind = IOP.define(.{
+        .type = .tcp_bind,
+        .@"error" = BindError,
+        .inputs = struct {
+            socket: Socket,
+            bind_point: EndPoint,
+        },
+        .outputs = struct {
+            bind_point: EndPoint,
+        },
+    });
+
+    pub const Connect = IOP.define(.{
+        .type = .tcp_connect,
+        .@"error" = ConnectError,
+        .inputs = struct {
+            socket: Socket,
+            target: EndPoint,
+        },
+    });
+
+    pub const Send = IOP.define(.{
+        .type = .tcp_send,
+        .@"error" = SendError,
+        .inputs = struct {
+            socket: Socket,
+            data_ptr: [*]const u8,
+            data_len: usize,
+        },
+        .outputs = struct {
+            bytes_sent: usize,
+        },
+    });
+
+    pub const Receive = IOP.define(.{
+        .type = .tcp_receive,
+        .@"error" = ReceiveError,
+        .inputs = struct {
+            socket: Socket,
+            buffer_ptr: [*]u8,
+            buffer_len: usize,
+            read_all: bool, // if true, will read until `buffer_len` bytes arrived. otherwise will read until the end of a single packet
+        },
+        .outputs = struct {
+            bytes_received: usize,
+        },
+    });
 
     pub const CreateError = ErrorSet(.{
         .SystemResources = 1,
@@ -1415,55 +1555,4 @@ pub const tcp = struct {
         .Timeout = 16,
         .Unexpected = 17,
     });
-
-    pub const BindEvent = extern struct {
-        base: Event,
-
-        // input:
-        socket: Socket,
-
-        // inout:
-        bind_point: EndPoint,
-
-        // outputs:
-        @"error": BindError.Enum = undefined,
-    };
-
-    pub const ConnectEvent = extern struct {
-        base: Event,
-
-        // input:
-        socket: Socket,
-        target: EndPoint,
-
-        // outputs:
-        @"error": ConnectError.Enum = undefined,
-    };
-
-    pub const SendEvent = extern struct {
-        base: Event,
-
-        // input:
-        socket: Socket,
-        data_ptr: [*]const u8,
-        data_len: usize,
-
-        // outputs:
-        bytes_sent: usize = undefined,
-        @"error": SendError.Enum = undefined,
-    };
-
-    pub const ReceiveEvent = extern struct {
-        base: Event,
-
-        // input:
-        socket: Socket,
-        buffer_ptr: [*]u8,
-        buffer_len: usize,
-        read_all: bool, // if true, will read until `buffer_len` bytes arrived. otherwise will read until the end of a single packet
-
-        // outputs:
-        bytes_received: usize = undefined,
-        @"error": ReceiveError.Enum = undefined,
-    };
 };

@@ -112,21 +112,29 @@ pub const core = struct {
 };
 
 pub const io = struct {
-    pub const Event = abi.Event;
+    pub const IOP = abi.IOP;
     pub const WaitIO = abi.WaitIO;
 
-    pub fn scheduleAndAwait(start_queue: ?*Event, wait: WaitIO) ?*Event {
+    pub fn scheduleAndAwait(start_queue: ?*IOP, wait: WaitIO) ?*IOP {
         return syscall("io.scheduleAndAwait")(start_queue, wait);
     }
 
-    pub fn cancel(event: *Event) void {
+    pub fn cancel(event: *IOP) void {
         return syscall("io.cancel")(event);
     }
 
-    pub fn singleShot(event: *Event) void {
+    pub fn singleShot(op: anytype) !void {
+        const Type = @TypeOf(op);
+        const ti = @typeInfo(Type);
+        if (comptime (ti != .Pointer or ti.Pointer.size != .One or !IOP.isIOP(ti.Pointer.child)))
+            @compileError("singleShot expects a pointer to an IOP instance");
+        const event: *IOP = &op.iop;
+
         const result = io.scheduleAndAwait(event, .wait_all);
         std.debug.assert(result != null);
         std.debug.assert(result.? == event);
+
+        try op.check();
     }
 };
 
@@ -377,54 +385,47 @@ pub const net = struct {
         }
 
         pub fn bind(tcp: *Tcp, endpoint: EndPoint) !EndPoint {
-            var event = abi.Event.new(abi.tcp.BindEvent, .{
+            var event = abi.tcp.Bind.new(.{
                 .socket = tcp.sock,
                 .bind_point = endpoint,
             });
 
-            io.singleShot(&event.base);
+            try io.singleShot(&event);
 
-            try abi.tcp.BindError.throw(event.@"error");
-
-            return event.bind_point;
+            return event.outputs.bind_point;
         }
 
         pub fn connect(tcp: *Tcp, endpoint: EndPoint) !void {
-            var event = abi.Event.new(abi.tcp.ConnectEvent, .{
+            var event = abi.tcp.Connect.new(.{
                 .socket = tcp.sock,
                 .target = endpoint,
             });
-            io.singleShot(&event.base);
-            try abi.tcp.ConnectError.throw(event.@"error");
+            try io.singleShot(&event);
         }
 
         pub fn write(tcp: *Tcp, data: []const u8) abi.tcp.SendError.Error!usize {
-            var event = abi.Event.new(abi.tcp.SendEvent, .{
+            var event = abi.tcp.Send.new(.{
                 .socket = tcp.sock,
                 .data_ptr = data.ptr,
                 .data_len = data.len,
             });
 
-            io.singleShot(&event.base);
+            try io.singleShot(&event);
 
-            try abi.tcp.SendError.throw(event.@"error");
-
-            return event.bytes_sent;
+            return event.outputs.bytes_sent;
         }
 
         pub fn read(tcp: *Tcp, buffer: []u8) abi.tcp.ReceiveError.Error!usize {
-            var event = abi.Event.new(abi.tcp.ReceiveEvent, .{
+            var event = abi.tcp.Receive.new(.{
                 .socket = tcp.sock,
                 .buffer_ptr = buffer.ptr,
                 .buffer_len = buffer.len,
                 .read_all = false, // emulate classic read
             });
 
-            io.singleShot(&event.base);
+            try io.singleShot(&event);
 
-            try abi.tcp.ReceiveError.throw(event.@"error");
-
-            return event.bytes_received;
+            return event.outputs.bytes_received;
         }
 
         pub const Writer = std.io.Writer(*Tcp, abi.tcp.SendError.Error, write);
@@ -439,13 +440,13 @@ pub const net = struct {
     };
 
     pub const Udp = struct {
-        const throw = abi.UdpError.throw;
+        const throw = abi.udp.BindError.throw;
 
         sock: abi.UdpSocket,
 
         pub fn open() !Udp {
             var sock: abi.UdpSocket = undefined;
-            try throw(syscall("network.udp.createSocket")(&sock));
+            try abi.udp.CreateError.throw(syscall("network.udp.createSocket")(&sock));
             return Udp{ .sock = sock };
         }
 
@@ -455,22 +456,22 @@ pub const net = struct {
         }
 
         pub fn bind(udp: Udp, ep: EndPoint) !void {
-            try throw(syscall("network.udp.bind")(udp.sock, ep));
+            try abi.udp.BindError.throw(syscall("network.udp.bind")(udp.sock, ep));
         }
 
         pub fn connect(udp: Udp, ep: EndPoint) !void {
-            try throw(syscall("network.udp.connect")(udp.sock, ep));
+            try abi.udp.ConnectError.throw(syscall("network.udp.connect")(udp.sock, ep));
         }
 
         pub fn disconnect(udp: Udp) !void {
-            try throw(syscall("network.udp.disconnect")(udp.sock));
+            try abi.udp.DisconnectError.throw(syscall("network.udp.disconnect")(udp.sock));
         }
 
         pub fn send(udp: Udp, message: []const u8) !usize {
             if (message.len == 0)
                 return 0;
             var sent: usize = undefined;
-            try throw(syscall("network.udp.send")(udp.sock, message.ptr, message.len, &sent));
+            try abi.udp.SendError.throw(syscall("network.udp.send")(udp.sock, message.ptr, message.len, &sent));
             return sent;
         }
 
@@ -478,23 +479,20 @@ pub const net = struct {
             if (message.len == 0)
                 return 0;
             var sent: usize = undefined;
-            try throw(syscall("network.udp.sendTo")(udp.sock, target, message.ptr, message.len, &sent));
+            try abi.udp.SendToError.throw(syscall("network.udp.sendTo")(udp.sock, target, message.ptr, message.len, &sent));
             return sent;
         }
 
         pub fn receive(udp: Udp, data: []u8) !usize {
-            if (data.len == 0)
-                return 0;
-            var received: usize = undefined;
-            try throw(syscall("network.udp.receive")(udp.sock, data.ptr, data.len, &received));
-            return received;
+            var dummy: EndPoint = undefined;
+            return try udp.receiveFrom(&dummy, data);
         }
 
         pub fn receiveFrom(udp: Udp, sender: *EndPoint, data: []u8) !usize {
             if (data.len == 0)
                 return 0;
             var received: usize = undefined;
-            try throw(syscall("network.udp.receiveFrom")(udp.sock, sender, data.ptr, data.len, &received));
+            try abi.udp.ReceiveFromError.throw(syscall("network.udp.receiveFrom")(udp.sock, sender, data.ptr, data.len, &received));
             return received;
         }
     };
