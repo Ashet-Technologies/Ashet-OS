@@ -38,11 +38,15 @@ pub const Thread = struct {
         name: [32]u8 = [1]u8{0} ** 32,
     } else struct {};
 
-    pub const default_stack_size = 8192;
+    pub const Flags = packed struct(u32) {
+        suspended: bool = false,
+        started: bool = false,
+        finished: bool = false,
+        detached: bool = false,
+        padding: u28 = 0,
+    };
 
-    const f_started = (1 << 0);
-    const f_finished = (1 << 1);
-    const f_detached = (1 << 2);
+    pub const default_stack_size = 8192;
 
     ip: usize,
     sp: usize,
@@ -53,7 +57,7 @@ pub const Thread = struct {
     /// The queue node we use to enqueue/dequeue the thread between different queues.
     node: ThreadQueue.Node = .{ .data = {} },
 
-    flags: u32 = 0,
+    flags: Flags = .{},
 
     /// The number of memory pages allocated for this thread. Is required to free all thread memory later on.
     num_pages: usize,
@@ -135,18 +139,18 @@ pub const Thread = struct {
 
     /// Returns true if the thread was detached and must not be killed.
     pub fn isDetached(thread: *Thread) bool {
-        return (thread.flags & f_detached) != 0;
+        return thread.flags.detached;
     }
 
     /// Returns true if the thread was already started.
     pub fn isStarted(thread: *Thread) bool {
-        return (thread.flags & f_started) != 0;
+        return thread.flags.started;
     }
 
     /// Returns true when the thread was started and has
     /// exited already.
     pub fn isFinished(thread: *Thread) bool {
-        return (thread.flags & f_finished) != 0;
+        return thread.flags.finished;
     }
 
     /// Returns true when the thread is currently running.
@@ -161,17 +165,34 @@ pub const Thread = struct {
 
         logger.info("enqueuing {}", .{thread});
 
-        thread.flags |= f_started;
+        thread.flags.started = true;
         enqueueThread(&wait_queue, thread);
     }
 
     pub fn detach(thread: *Thread) void {
         if (thread.isRunning()) {
-            thread.flags |= f_detached;
+            thread.flags.detached = true;
         } else {
             // thread is already done or not started yet, so we can kill it safely
             internalDestroy(thread);
         }
+    }
+
+    /// Removes the thread from the scheduling queue.
+    pub fn @"suspend"(thread: *Thread) void {
+        if (thread.flags.suspended)
+            return;
+    }
+
+    /// Moves the stack back into the scheduling queue.
+    pub fn @"resume"(thread: *Thread) void {
+        if (!thread.flags.suspended)
+            return;
+
+        if (thread.isCurrent())
+            return false; // lol that doesn't make sense at all!
+
+        thread.flags.suspended = false;
     }
 
     /// Kills the thread and releases all of its resources.
@@ -367,7 +388,7 @@ export fn ashet_scheduler_threadExit(code: u32) callconv(.C) noreturn {
     const old_thread = current_thread orelse @panic("called scheduler.exit() from outside a thread!");
     std.debug.assert(old_thread.queue == null); // thread must not be in a queue right now
     old_thread.exit_code = code;
-    old_thread.flags |= Thread.f_finished;
+    old_thread.flags.finished = true;
 
     const new_thread = fetchThread(&wait_queue) orelse getKernelThread(); // we can either schedule the next thread or we return control to the kernel
     std.debug.assert(new_thread.queue == null); // thread must not be in a queue right now
