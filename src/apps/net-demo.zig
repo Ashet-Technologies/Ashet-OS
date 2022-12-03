@@ -4,7 +4,8 @@ const ashet = @import("ashet");
 pub usingnamespace ashet.core;
 
 pub fn main() !void {
-    // try udp_demo();
+    try udp_demo();
+
     try tcp_demo();
 }
 
@@ -50,30 +51,30 @@ fn tcp_demo() !void {
 
 const lolwtfbiggy = [1]u8{'?'} ** 128_000;
 
-// fn udp_demo() !void {
-//     var socket = try ashet.net.Udp.open();
-//     defer socket.close();
+fn udp_demo() !void {
+    var socket = try ashet.net.Udp.open();
+    defer socket.close();
 
-//     try socket.bind(ashet.net.EndPoint.new(
-//         ashet.net.IP.ipv4(.{ 0, 0, 0, 0 }),
-//         8000,
-//     ));
+    _ = try socket.bind(ashet.net.EndPoint.new(
+        ashet.net.IP.ipv4(.{ 0, 0, 0, 0 }),
+        8000,
+    ));
 
-//     _ = try socket.sendTo(
-//         ashet.net.EndPoint.new(
-//             ashet.net.IP.ipv4(.{ 10, 0, 2, 2 }),
-//             4567,
-//         ),
-//         "Hello, World!\n",
-//     );
+    _ = try socket.sendTo(
+        ashet.net.EndPoint.new(
+            ashet.net.IP.ipv4(.{ 10, 0, 2, 2 }),
+            4567,
+        ),
+        "Hello, World!\n",
+    );
 
-//     while (true) {
-//         var buf: [256]u8 = undefined;
-//         var ep: ashet.net.EndPoint = undefined;
-//         const len = try socket.receiveFrom(&ep, &buf);
-//         if (len > 0) {
-//             std.log.info("received {s} from {}", .{ buf[0..len], ep });
-//         }
-//         ashet.process.yield();
-//     }
-// }
+    while (true) {
+        var buf: [256]u8 = undefined;
+        var ep: ashet.net.EndPoint = undefined;
+        const len = try socket.receiveFrom(&ep, &buf);
+        if (len > 0) {
+            std.log.info("received {s} from {}", .{ buf[0..len], ep });
+        }
+        ashet.process.yield();
+    }
+}

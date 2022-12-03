@@ -1187,30 +1187,35 @@ pub const IOP = extern struct {
 
             pub const iop_type = def.type;
 
+            pub const Inputs = inputs_augmented;
+            pub const Outputs = outputs_augmented;
+            pub const ErrorSet = def.@"error";
+            pub const Error = Self.ErrorSet.Error;
+
             iop: IOP = .{
                 .type = def.type,
                 .next = null,
                 .tag = 0,
                 .kernel_data = undefined,
             },
-            @"error": def.@"error".Enum = undefined,
-            inputs: inputs_augmented,
-            outputs: outputs_augmented = undefined,
+            @"error": Self.ErrorSet.Enum = undefined,
+            inputs: Inputs,
+            outputs: Outputs = undefined,
 
-            pub fn new(input: inputs_augmented) Self {
+            pub fn new(input: Inputs) Self {
                 return Self{ .inputs = input };
             }
 
-            pub fn check(val: Self) def.@"error".Error!void {
-                return def.@"error".throw(val.@"error");
+            pub fn check(val: Self) Error!void {
+                return Self.ErrorSet.throw(val.@"error");
             }
 
             pub fn setOk(val: *Self) void {
                 val.@"error" = .ok;
             }
 
-            pub fn setError(val: *Self, err: def.@"error".Error) def.@"error".Error!void {
-                val.@"error" = def.@"error".map(err);
+            pub fn setError(val: *Self, err: Error) void {
+                val.@"error" = Self.ErrorSet.map(err);
             }
         };
     }
@@ -1251,7 +1256,10 @@ pub const udp = struct {
         .@"error" = BindError,
         .inputs = struct {
             socket: UdpSocket,
-            address: EndPoint,
+            bind_point: EndPoint,
+        },
+        .outputs = struct {
+            bind_point: EndPoint,
         },
     });
 
@@ -1331,9 +1339,6 @@ pub const udp = struct {
         .AlreadyConnected = 4,
         .AlreadyConnecting = 5,
         .BufferError = 6,
-        .ConnectionAborted = 7,
-        .ConnectionClosed = 8,
-        .ConnectionReset = 9,
         .IllegalArgument = 10,
         .IllegalValue = 11,
         .InProgress = 12,
@@ -1354,13 +1359,7 @@ pub const udp = struct {
     pub const SendError = ErrorSet(.{
         .InvalidHandle = 1,
         .SystemResources = 2,
-        .AddressInUse = 3,
-        .AlreadyConnected = 4,
-        .AlreadyConnecting = 5,
         .BufferError = 6,
-        .ConnectionAborted = 7,
-        .ConnectionClosed = 8,
-        .ConnectionReset = 9,
         .IllegalArgument = 10,
         .IllegalValue = 11,
         .InProgress = 12,
@@ -1375,39 +1374,11 @@ pub const udp = struct {
     pub const SendToError = ErrorSet(.{
         .InvalidHandle = 1,
         .SystemResources = 2,
-        .AddressInUse = 3,
-        .AlreadyConnected = 4,
-        .AlreadyConnecting = 5,
         .BufferError = 6,
-        .ConnectionAborted = 7,
-        .ConnectionClosed = 8,
-        .ConnectionReset = 9,
         .IllegalArgument = 10,
         .IllegalValue = 11,
         .InProgress = 12,
         .LowlevelInterfaceError = 13,
-        .NotConnected = 14,
-        .OutOfMemory = 15,
-        .Routing = 16,
-        .Timeout = 17,
-        .Unexpected = 19,
-    });
-
-    pub const ReceiveError = ErrorSet(.{
-        .InvalidHandle = 1,
-        .SystemResources = 2,
-        .AddressInUse = 3,
-        .AlreadyConnected = 4,
-        .AlreadyConnecting = 5,
-        .BufferError = 6,
-        .ConnectionAborted = 7,
-        .ConnectionClosed = 8,
-        .ConnectionReset = 9,
-        .IllegalArgument = 10,
-        .IllegalValue = 11,
-        .InProgress = 12,
-        .LowlevelInterfaceError = 13,
-        .NotConnected = 14,
         .OutOfMemory = 15,
         .Routing = 16,
         .Timeout = 17,
@@ -1417,18 +1388,11 @@ pub const udp = struct {
     pub const ReceiveFromError = ErrorSet(.{
         .InvalidHandle = 1,
         .SystemResources = 2,
-        .AddressInUse = 3,
-        .AlreadyConnected = 4,
-        .AlreadyConnecting = 5,
         .BufferError = 6,
-        .ConnectionAborted = 7,
-        .ConnectionClosed = 8,
-        .ConnectionReset = 9,
         .IllegalArgument = 10,
         .IllegalValue = 11,
         .InProgress = 12,
         .LowlevelInterfaceError = 13,
-        .NotConnected = 14,
         .OutOfMemory = 15,
         .Routing = 16,
         .Timeout = 17,

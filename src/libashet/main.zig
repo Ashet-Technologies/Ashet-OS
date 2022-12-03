@@ -136,6 +136,12 @@ pub const io = struct {
 
         try op.check();
     }
+
+    pub fn performOne(comptime T: type, inputs: T.Inputs) T.Error!T.Outputs {
+        var value = T.new(inputs);
+        try singleShot(&value);
+        return value.outputs;
+    }
 };
 
 pub const input = struct {
@@ -385,55 +391,45 @@ pub const net = struct {
         }
 
         pub fn bind(tcp: *Tcp, endpoint: EndPoint) !EndPoint {
-            var event = abi.tcp.Bind.new(.{
+            const out = try io.performOne(abi.tcp.Bind, .{
                 .socket = tcp.sock,
                 .bind_point = endpoint,
             });
-
-            try io.singleShot(&event);
-
-            return event.outputs.bind_point;
+            return out.bind_point;
         }
 
         pub fn connect(tcp: *Tcp, endpoint: EndPoint) !void {
-            var event = abi.tcp.Connect.new(.{
+            _ = try io.performOne(abi.tcp.Connect, .{
                 .socket = tcp.sock,
                 .target = endpoint,
             });
-            try io.singleShot(&event);
         }
 
-        pub fn write(tcp: *Tcp, data: []const u8) abi.tcp.SendError.Error!usize {
-            var event = abi.tcp.Send.new(.{
+        pub fn write(tcp: *Tcp, data: []const u8) abi.tcp.Send.Error!usize {
+            const out = try io.performOne(abi.tcp.Send, .{
                 .socket = tcp.sock,
                 .data_ptr = data.ptr,
                 .data_len = data.len,
             });
-
-            try io.singleShot(&event);
-
-            return event.outputs.bytes_sent;
+            return out.bytes_sent;
         }
 
-        pub fn read(tcp: *Tcp, buffer: []u8) abi.tcp.ReceiveError.Error!usize {
-            var event = abi.tcp.Receive.new(.{
+        pub fn read(tcp: *Tcp, buffer: []u8) abi.tcp.Receive.Error!usize {
+            const out = try io.performOne(abi.tcp.Receive, .{
                 .socket = tcp.sock,
                 .buffer_ptr = buffer.ptr,
                 .buffer_len = buffer.len,
                 .read_all = false, // emulate classic read
             });
-
-            try io.singleShot(&event);
-
-            return event.outputs.bytes_received;
+            return out.bytes_received;
         }
 
-        pub const Writer = std.io.Writer(*Tcp, abi.tcp.SendError.Error, write);
+        pub const Writer = std.io.Writer(*Tcp, abi.tcp.Send.Error, write);
         pub fn writer(tcp: *Tcp) Writer {
             return Writer{ .context = tcp };
         }
 
-        pub const Reader = std.io.Reader(*Tcp, abi.tcp.ReceiveError.Error, read);
+        pub const Reader = std.io.Reader(*Tcp, abi.tcp.Receive.Error, read);
         pub fn reader(tcp: *Tcp) Reader {
             return Reader{ .context = tcp };
         }
@@ -455,32 +451,48 @@ pub const net = struct {
             udp.* = undefined;
         }
 
-        pub fn bind(udp: Udp, ep: EndPoint) !void {
-            try abi.udp.BindError.throw(syscall("network.udp.bind")(udp.sock, ep));
+        pub fn bind(udp: Udp, ep: EndPoint) !EndPoint {
+            const out = try io.performOne(abi.udp.Bind, .{
+                .socket = udp.sock,
+                .bind_point = ep,
+            });
+            return out.bind_point;
         }
 
         pub fn connect(udp: Udp, ep: EndPoint) !void {
-            try abi.udp.ConnectError.throw(syscall("network.udp.connect")(udp.sock, ep));
+            _ = try io.performOne(abi.udp.Connect, .{
+                .socket = udp.sock,
+                .target = ep,
+            });
         }
 
         pub fn disconnect(udp: Udp) !void {
-            try abi.udp.DisconnectError.throw(syscall("network.udp.disconnect")(udp.sock));
+            _ = try io.performOne(abi.udp.Disconnect, .{
+                .socket = udp.sock,
+            });
         }
 
         pub fn send(udp: Udp, message: []const u8) !usize {
             if (message.len == 0)
                 return 0;
-            var sent: usize = undefined;
-            try abi.udp.SendError.throw(syscall("network.udp.send")(udp.sock, message.ptr, message.len, &sent));
-            return sent;
+            const out = try io.performOne(abi.udp.Send, .{
+                .socket = udp.sock,
+                .data_ptr = message.ptr,
+                .data_len = message.len,
+            });
+            return out.bytes_sent;
         }
 
         pub fn sendTo(udp: Udp, target: EndPoint, message: []const u8) !usize {
             if (message.len == 0)
                 return 0;
-            var sent: usize = undefined;
-            try abi.udp.SendToError.throw(syscall("network.udp.sendTo")(udp.sock, target, message.ptr, message.len, &sent));
-            return sent;
+            const out = try io.performOne(abi.udp.SendTo, .{
+                .socket = udp.sock,
+                .receiver = target,
+                .data_ptr = message.ptr,
+                .data_len = message.len,
+            });
+            return out.bytes_sent;
         }
 
         pub fn receive(udp: Udp, data: []u8) !usize {
@@ -491,9 +503,14 @@ pub const net = struct {
         pub fn receiveFrom(udp: Udp, sender: *EndPoint, data: []u8) !usize {
             if (data.len == 0)
                 return 0;
-            var received: usize = undefined;
-            try abi.udp.ReceiveFromError.throw(syscall("network.udp.receiveFrom")(udp.sock, sender, data.ptr, data.len, &received));
-            return received;
+
+            const out = try io.performOne(abi.udp.ReceiveFrom, .{
+                .socket = udp.sock,
+                .buffer_ptr = data.ptr,
+                .buffer_len = data.len,
+            });
+            sender.* = out.sender;
+            return out.bytes_received;
         }
     };
 };
