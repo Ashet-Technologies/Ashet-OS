@@ -39,6 +39,21 @@ pub fn finalize(event: *IOP) void {
     data.context.pending -= 1;
 }
 
+pub fn finalizeWithError(generic: anytype, err: anyerror) void {
+    if (!comptime IOP.isIOP(@TypeOf(generic.*)))
+        @compileError("finalizeWithError requires an IOP instance!");
+    generic.setError(astd.mapToUnexpected(@TypeOf(generic.*).Error, err));
+    finalize(&generic.iop);
+}
+
+pub fn finalizeWithResult(generic: anytype, outputs: @TypeOf(generic.*).Outputs) void {
+    if (!comptime IOP.isIOP(@TypeOf(generic.*)))
+        @compileError("finalizeWithError requires an IOP instance!");
+    generic.outputs = outputs;
+    generic.setOk();
+    finalize(&generic.iop);
+}
+
 pub fn scheduleAndAwait(start_queue: ?*IOP, wait: WaitIO) ?*IOP {
     const thread = ashet.scheduler.Thread.current() orelse @panic("scheduleAndAwait called in a non-thread context!");
     const process = thread.process orelse @panic("scheduleAndAwait called in a non-process context!");
@@ -65,12 +80,12 @@ pub fn scheduleAndAwait(start_queue: ?*IOP, wait: WaitIO) ?*IOP {
             .tcp_send => ashet.network.tcp.send(ashet.abi.IOP.cast(abi.tcp.Send, event)),
             .tcp_receive => ashet.network.tcp.receive(ashet.abi.IOP.cast(abi.tcp.Receive, event)),
 
-            .udp_bind => unreachable,
-            .udp_connect => unreachable,
-            .udp_disconnect => unreachable,
-            .udp_send => unreachable,
-            .udp_send_to => unreachable,
-            .udp_receive_from => unreachable,
+            .udp_bind => ashet.network.udp.bind(ashet.abi.IOP.cast(abi.udp.Bind, event)),
+            .udp_connect => ashet.network.udp.connect(ashet.abi.IOP.cast(abi.udp.Connect, event)),
+            .udp_disconnect => ashet.network.udp.disconnect(ashet.abi.IOP.cast(abi.udp.Disconnect, event)),
+            .udp_send => ashet.network.udp.send(ashet.abi.IOP.cast(abi.udp.Send, event)),
+            .udp_send_to => ashet.network.udp.sendTo(ashet.abi.IOP.cast(abi.udp.SendTo, event)),
+            .udp_receive_from => ashet.network.udp.receiveFrom(ashet.abi.IOP.cast(abi.udp.ReceiveFrom, event)),
         }
     }
 

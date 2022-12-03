@@ -380,14 +380,8 @@ pub const udp = struct {
     const max_sockets = @intCast(usize, c.MEMP_NUM_UDP_PCB);
     const Socket = abi.UdpSocket;
 
-    const InboundPacket = struct {
-        sender: EndPoint,
-        data: *c.pbuf,
-    };
-
     const Data = struct {
-        /// incoming packets
-        receive_queue: astd.RingBuffer(InboundPacket, 16) = .{},
+        receive_iop: ?*abi.udp.ReceiveFrom = null,
     };
 
     var pool: astd.IndexPool(u32, max_sockets) = .{};
@@ -425,36 +419,28 @@ pub const udp = struct {
         var pbuf: *c.pbuf = pbuf_c;
         const addr: *const c.ip_addr_t = addr_c;
 
-        if (data.receive_queue.full()) {
+        _ = pcb;
+
+        const iop = data.receive_iop orelse {
             logger.err("failed to queue received pbuf. dropping packet of {} bytes.", .{pbuf.tot_len});
             _ = c.pbuf_free(pbuf);
             return;
-        }
+        };
 
-        _ = pcb;
+        const limited_len = @truncate(u16, std.math.min(pbuf.tot_len, iop.inputs.buffer_len));
 
-        if (c.PBUF_NEEDS_COPY(pbuf) != 0) {
-            std.log.err("pbuf needs copy!", .{});
-            const new = c.pbuf_clone(c.PBUF_TRANSPORT, c.PBUF_RAM, pbuf) orelse {
-                logger.err("failed to clone received pbuf. dropping packet of {} bytes.", .{pbuf.tot_len});
-                _ = c.pbuf_free(pbuf);
-                return;
-            };
-            pbuf = new;
-        }
+        const copied = c.pbuf_copy_partial(pbuf, iop.inputs.buffer_ptr, limited_len, 0);
+        std.debug.assert(limited_len == copied);
+        _ = c.pbuf_free(pbuf);
 
-        data.receive_queue.push(InboundPacket{
-            .data = pbuf,
-            .sender = EndPoint{
-                .ip = unmapIP(addr.*),
-                .port = port,
-            },
-        });
+        const sender = EndPoint.new(unmapIP(addr.*), port);
 
-        logger.info("received some data via udp: {} bytes from {}:{}", .{
-            pbuf.tot_len,
-            unmapIP(addr.*),
-            port,
+        logger.info("received some data via udp: {} bytes from {}", .{ limited_len, sender });
+
+        data.receive_iop = null;
+        ashet.io.finalizeWithResult(iop, .{
+            .bytes_received = limited_len,
+            .sender = sender,
         });
     }
 
@@ -462,87 +448,68 @@ pub const udp = struct {
         const pcb = unmap(sock) catch return;
         const index = @enumToInt(sock);
         c.udp_remove(pcb);
-        while (socket_meta[index].receive_queue.pull()) |packet| {
-            _ = c.pbuf_free(packet.data);
-        }
         sockets[index] = undefined;
         socket_meta[index] = undefined;
         pool.free(index);
     }
 
-    pub fn bind(sock: Socket, ep: EndPoint) !void {
-        const pcb = try unmap(sock);
-        try lwipTry(c.udp_bind(pcb, &mapIP(ep.ip), ep.port));
+    pub fn bind(data: *abi.udp.Bind) void {
+        const pcb = unmap(data.inputs.socket) catch |err| return ashet.io.finalizeWithError(data, err);
+        lwipTry(c.udp_bind(pcb, &mapIP(data.inputs.bind_point.ip), data.inputs.bind_point.port)) catch |err| return ashet.io.finalizeWithError(data, err);
+        ashet.io.finalizeWithResult(data, .{});
     }
 
-    pub fn connect(sock: Socket, ep: EndPoint) !void {
-        const pcb = try unmap(sock);
-        try lwipTry(c.udp_connect(pcb, &mapIP(ep.ip), ep.port));
+    pub fn connect(data: *abi.udp.Connect) void {
+        const pcb = unmap(data.inputs.socket) catch |err| return ashet.io.finalizeWithError(data, err);
+        lwipTry(c.udp_connect(pcb, &mapIP(data.inputs.target.ip), data.inputs.target.port)) catch |err| return ashet.io.finalizeWithError(data, err);
+        ashet.io.finalizeWithResult(data, .{});
     }
 
-    pub fn disconnect(sock: Socket) !void {
-        const pcb = try unmap(sock);
+    pub fn disconnect(data: *abi.udp.Disconnect) void {
+        const pcb = unmap(data.inputs.socket) catch |err| return ashet.io.finalizeWithError(data, err);
         c.udp_disconnect(pcb);
+        ashet.io.finalizeWithResult(data, .{});
     }
 
-    pub fn send(sock: Socket, data: []const u8) !usize {
-        const pcb = try unmap(sock);
+    pub fn send(data: *abi.udp.Send) void {
+        const pcb = unmap(data.inputs.socket) catch |err| return ashet.io.finalizeWithError(data, err);
 
-        const stripped_len = std.math.cast(u16, data.len) orelse return error.OutOfMemory;
+        const stripped_len = std.math.cast(u16, data.inputs.data_len) orelse return ashet.io.finalizeWithError(data, error.OutOfMemory);
 
-        const pbuf = c.pbuf_alloc(c.PBUF_TRANSPORT, stripped_len, c.PBUF_POOL) orelse return error.OutOfMemory;
+        const pbuf = c.pbuf_alloc(c.PBUF_TRANSPORT, stripped_len, c.PBUF_POOL) orelse return ashet.io.finalizeWithError(data, error.OutOfMemory);
         defer _ = c.pbuf_free(pbuf);
 
-        try appendToPBUF(pbuf, data);
+        appendToPBUF(pbuf, data.inputs.data_ptr[0..stripped_len]) catch |err| return ashet.io.finalizeWithError(data, err);
 
-        try lwipTry(c.udp_send(pcb, pbuf));
+        lwipTry(c.udp_send(pcb, pbuf)) catch |err| return ashet.io.finalizeWithError(data, err);
 
-        return data.len;
+        ashet.io.finalizeWithResult(data, .{ .bytes_sent = stripped_len });
     }
 
-    pub fn sendTo(sock: Socket, receiver: EndPoint, data: []const u8) !usize {
-        const pcb = try unmap(sock);
+    pub fn sendTo(data: *abi.udp.SendTo) void {
+        const pcb = unmap(data.inputs.socket) catch |err| return ashet.io.finalizeWithError(data, err);
 
-        const stripped_len = std.math.cast(u16, data.len) orelse return error.OutOfMemory;
+        const stripped_len = std.math.cast(u16, data.inputs.data_len) orelse return ashet.io.finalizeWithError(data, error.OutOfMemory);
 
-        const pbuf = c.pbuf_alloc(c.PBUF_TRANSPORT, stripped_len, c.PBUF_POOL) orelse return error.OutOfMemory;
+        const pbuf = c.pbuf_alloc(c.PBUF_TRANSPORT, stripped_len, c.PBUF_POOL) orelse return ashet.io.finalizeWithError(data, error.OutOfMemory);
         defer _ = c.pbuf_free(pbuf);
 
-        try appendToPBUF(pbuf, data);
+        appendToPBUF(pbuf, data.inputs.data_ptr[0..stripped_len]) catch |err| return ashet.io.finalizeWithError(data, err);
 
-        try lwipTry(c.udp_sendto(pcb, pbuf, &mapIP(receiver.ip), receiver.port));
+        lwipTry(c.udp_sendto(pcb, pbuf, &mapIP(data.inputs.receiver.ip), data.inputs.receiver.port)) catch |err| return ashet.io.finalizeWithError(data, err);
 
-        return data.len;
+        ashet.io.finalizeWithResult(data, .{ .bytes_sent = stripped_len });
     }
 
-    pub fn receive(sock: Socket, buffer: []u8) !usize {
-        var dummy: EndPoint = undefined;
-        return receiveFrom(sock, &dummy, buffer);
-    }
-
-    pub fn receiveFrom(sock: Socket, sender: *EndPoint, buffer: []u8) !usize {
-        const pcb = try unmap(sock);
-        const data = &socket_meta[@enumToInt(sock)];
+    pub fn receiveFrom(data: *abi.udp.ReceiveFrom) void {
+        const pcb = unmap(data.inputs.socket) catch |err| return ashet.io.finalizeWithError(data, err);
+        const context = &socket_meta[@enumToInt(data.inputs.socket)];
 
         _ = pcb;
-
-        const inbound = data.receive_queue.pull() orelse return 0;
-
-        const pbuf = inbound.data;
-
-        sender.* = inbound.sender;
-
-        const copied = std.math.min(buffer.len, pbuf.tot_len);
-
-        const len = c.pbuf_copy_partial(pbuf, buffer.ptr, @intCast(u16, copied), 0);
-
-        _ = c.pbuf_free(pbuf);
-
-        if (len == 0) {
-            logger.err("failed to extract data from udp packet! {} bytes expected, got none", .{copied});
+        if (context.receive_iop != null) {
+            return ashet.io.finalizeWithError(data, error.InProgress);
         }
-
-        return len;
+        context.receive_iop = data;
     }
 };
 
