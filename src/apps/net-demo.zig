@@ -4,9 +4,8 @@ const ashet = @import("ashet");
 pub usingnamespace ashet.core;
 
 pub fn main() !void {
-    try udp_demo();
-
     try tcp_demo();
+    try udp_demo();
 }
 
 fn tcp_demo() !void {

@@ -27,13 +27,36 @@ const std = @import("std");
 const logger = std.log.scoped(.scheduler);
 const ashet = @import("../main.zig");
 
+const debug_mode = @import("builtin").mode == .Debug;
+
+pub fn dumpStats() void {
+    logger.info("stat dump:", .{});
+    if (current_thread) |thread| {
+        if (debug_mode) {
+            logger.info("  current thread: ip=0x{X:0>8}, ep=0x{X:0>8}, name={s}", .{ thread.ip, thread.debug_info.entry_point, thread.getName() });
+        } else {
+            logger.info("  current thread: ip=0x{X:0>8}", .{thread.ip});
+        }
+    }
+    logger.info("  total:     {}", .{stats.total_count});
+    logger.info("  waiting:   {}", .{wait_queue.len});
+    logger.info("  suspended: {}", .{stats.suspended_count});
+    logger.info("  running:   {}", .{stats.running_count});
+}
+
+pub const stats = struct {
+    var total_count: usize = 0;
+    var suspended_count: usize = 0;
+    var running_count: usize = 0;
+};
+
 pub const ExitCode = ashet.abi.ExitCode;
 pub const ThreadFunction = ashet.abi.ThreadFunction;
 
 /// Thread management structure.
 /// Is allocated in such a way that is is stored at the end of the last page of thread stack.
 pub const Thread = struct {
-    pub const DebugInfo = if (@import("builtin").mode == .Debug) struct {
+    pub const DebugInfo = if (debug_mode) struct {
         entry_point: usize = 0,
         name: [32]u8 = [1]u8{0} ** 32,
     } else struct {};
@@ -123,6 +146,8 @@ pub const Thread = struct {
         thread.push(0x0000_0000); //     x26
         thread.push(0x0000_0000); //     x27
 
+        stats.total_count += 1;
+
         return thread;
     }
 
@@ -167,6 +192,8 @@ pub const Thread = struct {
 
         thread.flags.started = true;
         enqueueThread(&wait_queue, thread);
+
+        stats.running_count += 1;
     }
 
     pub fn detach(thread: *Thread) void {
@@ -178,21 +205,41 @@ pub const Thread = struct {
         }
     }
 
-    /// Removes the thread from the scheduling queue.
+    /// Removes the thread from the scheduling queue and halts it until `resume` is called.
     pub fn @"suspend"(thread: *Thread) void {
-        if (thread.flags.suspended)
+        if (!thread.flags.started or thread.flags.finished or thread.flags.suspended)
             return;
+
+        thread.flags.suspended = true;
+        stats.suspended_count += 1;
+
+        if (thread.isCurrent()) {
+            // current thread will be yielded, and because it's suspended, we won't
+            // requeue it into the wait queue.
+            yield();
+        } else {
+            // non-current thread is still in the queue, so we have to dequeue it:
+            std.debug.assert(thread.queue == &wait_queue);
+            thread.queue = null;
+            wait_queue.remove(&thread.node);
+        }
     }
 
-    /// Moves the stack back into the scheduling queue.
+    /// Moves the thread back into the scheduling queue. Must be called after `suspend` to
+    /// resume code execution.
     pub fn @"resume"(thread: *Thread) void {
+        if (!thread.flags.started or thread.flags.finished)
+            return;
         if (!thread.flags.suspended)
             return;
 
         if (thread.isCurrent())
-            return false; // lol that doesn't make sense at all!
+            return; // lol that doesn't make sense at all!
 
+        std.debug.assert(thread.queue == null);
+        enqueueThread(&wait_queue, thread);
         thread.flags.suspended = false;
+        stats.suspended_count -= 1;
     }
 
     /// Kills the thread and releases all of its resources.
@@ -225,6 +272,8 @@ pub const Thread = struct {
             // otherwise we would accidently requeue the
             // thread even if it is already dead.
             queue.remove(&thread.node);
+
+            stats.running_count -= 1;
         }
 
         logger.info("killing thread {}", .{thread});
@@ -241,6 +290,8 @@ pub const Thread = struct {
         const first_page = ashet.memory.ptrToPage(stack_top).? - thread.num_pages;
         // std.log.info("releasing {}+{} pages", .{ first_page, thread.num_pages });
         ashet.memory.freePages(first_page, thread.num_pages);
+
+        stats.total_count -= 1;
     }
 
     fn push(thread: *Thread, value: u32) void {
@@ -371,8 +422,12 @@ pub fn yield() void {
     const old_thread = current_thread orelse @panic("called scheduler.exit() from outside a thread!");
     std.debug.assert(old_thread.queue == null); // thread must not be in a queue right now
 
-    // we must enqueue old thread again before popping new_thread, so we can execute a single thread as well:
-    enqueueThread(&wait_queue, old_thread);
+    if (!old_thread.flags.suspended) {
+        // we must enqueue old thread again before popping new_thread, so we can execute a single thread as well:
+        enqueueThread(&wait_queue, old_thread);
+    } else if (wait_queue.len == 0) {
+        @panic("kernel panic: no thread active anymore, we can't resume. this is a critical failure!");
+    }
 
     const new_thread = fetchThread(&wait_queue) orelse unreachable; // we can be sure that we have a thread as we enqueue one a moment before
     std.debug.assert(new_thread.queue == null); // thread must not be in a queue right now

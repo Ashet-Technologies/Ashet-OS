@@ -10,10 +10,17 @@ const WaitIO = ashet.abi.WaitIO;
 
 const KernelData = extern struct {
     context: *Context,
+    thread: *ashet.scheduler.Thread,
     data: Data,
+    flags: Flags,
 
     const Data = extern union {
-        padding: [6]usize,
+        padding: [4]usize,
+    };
+
+    const Flags = packed struct(usize) {
+        resume_on_completed: bool,
+        padding: @Type(.{ .Int = .{ .bits = @bitSizeOf(usize) - 1, .signedness = .unsigned } }) = 0,
     };
 
     pub fn get(ptr: *IOP) *KernelData {
@@ -37,6 +44,11 @@ pub fn finalize(event: *IOP) void {
     const data = KernelData.get(event);
     data.context.completed.enqueue(event);
     data.context.pending -= 1;
+
+    // We finished an event, resume the thread if its waiting for I/O:
+    if (data.flags.resume_on_completed) {
+        data.thread.@"resume"();
+    }
 }
 
 pub fn finalizeWithError(generic: anytype, err: anyerror) void {
@@ -68,6 +80,10 @@ pub fn scheduleAndAwait(start_queue: ?*IOP, wait: WaitIO) ?*IOP {
         const data = KernelData.get(event);
         data.* = KernelData{
             .context = context,
+            .thread = thread,
+            .flags = .{
+                .resume_on_completed = (wait != .dont_block),
+            },
             .data = undefined,
         };
 
@@ -92,10 +108,10 @@ pub fn scheduleAndAwait(start_queue: ?*IOP, wait: WaitIO) ?*IOP {
     switch (wait) {
         .dont_block => {}, // just do nothing here :)
         .wait_one => while (context.completed.len == 0) {
-            ashet.scheduler.yield();
+            thread.@"suspend"(); // we're waiting for completion, so we can remove ourselves from scheduling
         },
         .wait_all => while (context.pending > 0) {
-            ashet.scheduler.yield();
+            thread.@"suspend"(); // we're waiting for completion, so we can remove ourselves from scheduling
         },
     }
 
