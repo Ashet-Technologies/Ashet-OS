@@ -74,6 +74,7 @@ pub const global_hotkeys = struct {
             return false;
         if (event.modifiers.alt) {
             switch (event.key) {
+                .f1 => @panic("F1 induced kernel panic"),
                 .f10 => scheduler.dumpStats(),
                 .f11 => network.dumpStats(),
                 .f12 => {
