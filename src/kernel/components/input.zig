@@ -17,8 +17,12 @@ var alt_graph_state: bool = false;
 /// ensure the display is up-to-date.
 pub const is_poll_required = @hasDecl(hal.input, "poll");
 
+pub var cursor: ashet.abi.Point = undefined;
+
 pub fn initialize() void {
-    //
+    const res = ashet.video.getResolution();
+
+    cursor = ashet.abi.Point.new(@intCast(i16, res.width / 2), @intCast(i16, res.height / 2));
 }
 
 pub fn poll() void {
@@ -114,8 +118,10 @@ pub fn getEvent() ?Event {
                 const dx = @truncate(i16, std.math.clamp(data.dx, std.math.minInt(i16), std.math.maxInt(i16)));
                 const dy = @truncate(i16, std.math.clamp(data.dy, std.math.minInt(i16), std.math.maxInt(i16)));
 
-                cursor.x = std.math.clamp(cursor.x + dx, 0, ashet.video.max_res_x - 1);
-                cursor.y = std.math.clamp(cursor.y + dy, 0, ashet.video.max_res_y - 1);
+                const max_size = ashet.video.getMaxResolution();
+
+                cursor.x = std.math.clamp(cursor.x + dx, 0, max_size.width - 1);
+                cursor.y = std.math.clamp(cursor.y + dy, 0, max_size.height - 1);
 
                 return Event{ .mouse = .{
                     .type = .motion,
@@ -199,8 +205,6 @@ pub fn getKeyboardModifiers() ashet.abi.KeyboardModifiers {
         .ctrl_right = ctrl_right_state,
     };
 }
-
-pub var cursor: ashet.abi.Point = ashet.abi.Point.new(ashet.video.max_res_x / 2, ashet.video.max_res_y / 2);
 
 pub const keyboard = struct {
     pub const Key = ashet.abi.KeyCode;

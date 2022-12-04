@@ -81,10 +81,21 @@ fn @"video.setResolution"(w: u16, h: u16) callconv(.C) void {
     if (!getCurrentProcess().isExclusiveVideoController()) {
         videoExclusiveWarning();
     }
+    if (w == 0 or h == 0)
+        return;
+
     ashet.video.setResolution(
-        std.math.min(w, 400),
-        std.math.min(h, 300),
+        @intCast(u15, std.math.min(std.math.maxInt(u15), w)),
+        @intCast(u15, std.math.min(std.math.maxInt(u15), h)),
     );
+}
+
+fn @"video.getMaxResolution"() callconv(.C) abi.Size {
+    return ashet.video.getMaxResolution();
+}
+
+fn @"video.getResolution"() callconv(.C) abi.Size {
+    return ashet.video.getResolution();
 }
 
 fn @"process.exit"(exit_code: u32) callconv(.C) noreturn {

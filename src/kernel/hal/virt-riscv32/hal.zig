@@ -82,11 +82,11 @@ pub const video = struct {
     const ColorIndex = ashet.abi.ColorIndex;
     const Color = ashet.abi.Color;
 
-    const max_width = 400;
-    const max_height = 300;
+    const max_width = 1920;
+    const max_height = 1050;
 
-    var backing_buffer: [max_width * max_height]ColorIndex align(ashet.memory.page_size) = ashet.video.defaults.splash_screen ++ ([1]ColorIndex{ColorIndex.get(0)} ** (max_width * max_height - ashet.video.defaults.splash_screen.len));
-    var backing_palette: [256]Color = ashet.video.defaults.palette;
+    var backing_buffer: [max_width * max_height]ColorIndex align(ashet.memory.page_size) linksection(".platform") = ashet.video.defaults.splash_screen ++ ([1]ColorIndex{ColorIndex.get(0)} ** (max_width * max_height - ashet.video.defaults.splash_screen.len));
+    var backing_palette: [256]Color linksection(".platform") = ashet.video.defaults.palette;
 
     pub const memory: []align(ashet.memory.page_size) ColorIndex = &backing_buffer;
     pub const palette: *[256]Color = &backing_palette;
@@ -102,6 +102,14 @@ pub const video = struct {
             .height = graphics_height,
         };
     }
+
+    pub fn getMaxResolution() ashet.video.Resolution {
+        return ashet.video.Resolution{
+            .width = @intCast(u16, std.math.min(max_width, gpu.fb_width)),
+            .height = @intCast(u16, std.math.min(max_height, gpu.fb_height)),
+        };
+    }
+
     pub fn getBorder() ColorIndex {
         return border_color;
     }
@@ -110,9 +118,9 @@ pub const video = struct {
         border_color = b;
     }
 
-    pub fn setResolution(width: u16, height: u16) void {
-        graphics_width = width;
-        graphics_height = height;
+    pub fn setResolution(width: u15, height: u15) void {
+        graphics_width = std.math.min(max_width, width);
+        graphics_height = std.math.min(max_height, height);
     }
 
     fn pal(color: ColorIndex) u32 {
@@ -125,12 +133,24 @@ pub const video = struct {
 
         {
             var i: usize = 0;
+            var x: usize = 0;
+            var y: usize = 0;
             while (i < gpu.fb_width * gpu.fb_height) : (i += 1) {
-                const x = i % gpu.fb_width;
-                const y = i / gpu.fb_width;
-
-                if (x < dx or x >= dx + graphics_width or y < dy or y >= dy + graphics_height) {
+                if (x == dx) {
+                    x += graphics_width;
+                    i += graphics_width - 1;
+                } else if (x < dx or x >= dx + graphics_width or y < dy or y >= dy + graphics_height) {
                     gpu.fb_mem[i] = pal(border_color);
+                }
+
+                x += 1;
+                if (x == gpu.fb_width) {
+                    x = 0;
+                    y += 1;
+                    if (y == dy) {
+                        y += graphics_height;
+                        i += (graphics_height * gpu.fb_width) - 1;
+                    }
                 }
             }
         }

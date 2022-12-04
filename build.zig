@@ -243,6 +243,7 @@ pub fn build(b: *std.build.Builder) void {
         kernel_exe.addPackage(pkgs.abi);
         kernel_exe.addPackage(pkgs.ashet_std);
         kernel_exe.addPackage(pkgs.libashet);
+        kernel_exe.addPackage(pkgs.libgui);
         kernel_exe.addPackage(FatFS.getPackage(b, "fatfs", fatfs_config));
         kernel_exe.setLinkerScriptPath(system_platform.linkerscript);
         kernel_exe.install();

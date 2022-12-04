@@ -11,8 +11,8 @@ pub const Font = @import("Font.zig");
 
 const Framebuffer = @This();
 
-width: u16, // width of the image
-height: u16, // height of the image
+width: u15, // width of the image
+height: u15, // height of the image
 stride: u32, // row length in pixels
 pixels: [*]ColorIndex, // height * stride pixels
 
@@ -20,8 +20,8 @@ pixels: [*]ColorIndex, // height * stride pixels
 /// Drawing into the framebuffer will draw to the window surface.
 pub fn forWindow(window: *const ashet.abi.Window) Framebuffer {
     return Framebuffer{
-        .width = window.client_rectangle.width,
-        .height = window.client_rectangle.height,
+        .width = @intCast(u15, window.client_rectangle.width),
+        .height = @intCast(u15, window.client_rectangle.height),
         .stride = window.stride,
         .pixels = window.pixels,
     };
@@ -330,6 +330,24 @@ pub fn blit(fb: Framebuffer, point: Point, bitmap: Bitmap) void {
             src += bitmap.stride;
         }
     }
+}
+
+pub fn horizontalLine(fb: Framebuffer, x: i16, y: i16, w: u16, color: ColorIndex) void {
+    var i: u15 = 0;
+    while (i < w) : (i += 1) {
+        fb.setPixel(x + i, y, color);
+    }
+}
+
+pub fn verticalLine(fb: Framebuffer, x: i16, y: i16, h: u16, color: ColorIndex) void {
+    var i: u15 = 0;
+    while (i < h) : (i += 1) {
+        fb.setPixel(x, y + i, color);
+    }
+}
+
+pub fn size(fb: Framebuffer) Size {
+    return Size.new(fb.width, fb.height);
 }
 
 test "framebuffer basic draw" {

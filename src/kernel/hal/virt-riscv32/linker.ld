@@ -1,7 +1,8 @@
 MEMORY
 {
-     flash  (RX) : ORIGIN = 0x20000000, LENGTH = 32M
-      dram (RWX) : ORIGIN = 0x80000000, LENGTH = 16M
+           flash  (RX) : ORIGIN = 0x20000000, LENGTH = 32M
+            dram (RWX) : ORIGIN = 0x80000000, LENGTH = 16M
+    platform_ram (RWX) : ORIGIN = 0x81000000, LENGTH = 16M
 }
 
 ENTRY(_start)
@@ -57,5 +58,10 @@ SECTIONS {
         . = ALIGN(4);
         __kernel_bss_end = .;
     } > dram
+
+    .platform (NOLOAD) : {
+        *(.platform)
+        *(.platform.*)
+    } > platform_ram
 
 }

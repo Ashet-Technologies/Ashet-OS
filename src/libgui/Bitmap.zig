@@ -8,8 +8,8 @@ const ColorIndex = ashet.abi.ColorIndex;
 
 const Bitmap = @This();
 
-width: u16,
-height: u16,
+width: u15,
+height: u15,
 stride: u16,
 pixels: [*]const ColorIndex,
 transparent: ?ColorIndex = null, // if set, this color value is considered transparent and can be skipped

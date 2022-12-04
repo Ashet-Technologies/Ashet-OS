@@ -22,7 +22,8 @@ pub const syscall_definitions = [_]SysCallDefinition{
     // the palette.
     defineSysCall("video.setBorder", fn (ColorIndex) void, 7),
 
-    // Sets the screen resolution. Legal values are between 1×1 and 400×300.
+    // Sets the screen resolution. Legal values are between 1×1 and the platform specific
+    // maximum resolution returned by `video.getMaxResolution()`.
     // Everything out of bounds will be clamped into that range.
     defineSysCall("video.setResolution", fn (u16, u16) void, 8),
 
@@ -92,6 +93,12 @@ pub const syscall_definitions = [_]SysCallDefinition{
     defineSysCall("io.scheduleAndAwait", fn (?*IOP, WaitIO) ?*IOP, 50),
 
     defineSysCall("io.cancel", fn (*IOP) void, 51),
+
+    // Returns the maximum possible screen resolution.
+    defineSysCall("video.getMaxResolution", fn () Size, 52),
+
+    // Returns the current resolution
+    defineSysCall("video.getResolution", fn () Size, 53),
 };
 
 const SysCallDefinition = struct {
@@ -666,6 +673,8 @@ pub const CharAttributes = packed struct { // (u8)
 };
 
 pub const Point = extern struct {
+    pub const zero = new(0, 0);
+
     x: i16,
     y: i16,
 
@@ -683,6 +692,8 @@ pub const Point = extern struct {
 };
 
 pub const Size = extern struct {
+    pub const empty = new(0, 0);
+
     width: u16,
     height: u16,
 

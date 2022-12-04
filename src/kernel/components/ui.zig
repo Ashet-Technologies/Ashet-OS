@@ -1,5 +1,6 @@
 const std = @import("std");
 const astd = @import("ashet-std");
+const gui = @import("ashet-gui");
 const logger = std.log.scoped(.ui);
 const ashet = @import("../main.zig");
 
@@ -24,6 +25,8 @@ const Point = ashet.abi.Point;
 const Rectangle = ashet.abi.Rectangle;
 const ColorIndex = ashet.abi.ColorIndex;
 const Color = ashet.abi.Color;
+const Bitmap = gui.Bitmap;
+const Framebuffer = gui.Framebuffer;
 
 const ButtonEvent = enum { minimize, maximize, close, resize };
 const WindowButton = struct {
@@ -56,20 +59,11 @@ var current_theme = Theme{
     },
 };
 
-const min_window_content_size = ashet.abi.Size{
-    .width = 39,
-    .height = 9,
-};
+var framebuffer: gui.Framebuffer = undefined;
 
-const max_window_content_size = ashet.abi.Size{
-    .width = framebuffer.width - 2,
-    .height = framebuffer.height - 12,
-};
+var min_window_content_size: ashet.abi.Size = undefined;
 
-var mouse_cursor_pos: Point = .{
-    .x = framebuffer.width / 2,
-    .y = framebuffer.height / 2,
-};
+var max_window_content_size: ashet.abi.Size = undefined;
 
 const DragAction = struct { window: *Window, start: Point };
 const MouseAction = union(enum) {
@@ -79,38 +73,6 @@ const MouseAction = union(enum) {
 };
 
 var mouse_action: MouseAction = .default;
-
-// const demo = struct {
-//     var windows = std.BoundedArray(*Window, 5){};
-
-//     fn init() void {
-//         const bot = Window.create(null, "Dragon Craft - src/main.zig", Size.new(0, 0), Size.new(200, 100), Size.new(200, 100)) catch @panic("oom");
-//         const mid = Window.create(null, "Middle", Size.new(0, 0), Size.new(400, 300), Size.new(160, 80)) catch @panic("oom");
-//         const top = Window.create(null, "Top", Size.new(47, 47), Size.new(47, 47), Size.new(47, 47)) catch @panic("oom");
-//         top.user_facing.flags.focus = true;
-
-//         windows.appendAssumeCapacity(bot);
-//         windows.appendAssumeCapacity(mid);
-//         windows.appendAssumeCapacity(top);
-//     }
-
-//     fn update() void {
-//         var index: usize = 0;
-//         loop: while (index < windows.len) {
-//             const window = windows.buffer[index];
-
-//             while (window.pullEvent()) |event| {
-//                 logger.info("event for '{s}': {}", .{ window.title(), event });
-//                 if (event == .window_close) {
-//                     _ = windows.swapRemove(index);
-//                     window.destroy();
-//                     continue :loop;
-//                 }
-//             }
-//             index += 1;
-//         }
-//     }
-// };
 
 fn run(_: ?*anyopaque) callconv(.C) u32 {
     desktop.init();
@@ -153,8 +115,6 @@ fn run(_: ?*anyopaque) callconv(.C) u32 {
                     },
                     .mouse => |event| {
                         const mouse_point = Point.new(@intCast(i16, event.x), @intCast(i16, event.y));
-                        mouse_cursor_pos.x = std.math.clamp(@intCast(i16, event.x), 0, framebuffer.width - 1);
-                        mouse_cursor_pos.y = std.math.clamp(@intCast(i16, event.y), 0, framebuffer.height - 1);
                         if (event.type == .motion) {
                             invalidateScreen();
                         }
@@ -300,8 +260,12 @@ fn run(_: ?*anyopaque) callconv(.C) u32 {
 
 var invalidation_areas = std.BoundedArray(Rectangle, 8){};
 
+fn framebufferBounds() Rectangle {
+    return Rectangle.new(Point.zero, framebuffer.size());
+}
+
 pub fn invalidateScreen() void {
-    invalidateRegion(framebuffer.bounds);
+    invalidateRegion(framebufferBounds());
 }
 
 pub fn invalidateRegion(region: Rectangle) void {
@@ -315,7 +279,7 @@ pub fn invalidateRegion(region: Rectangle) void {
     }
     if (invalidation_areas.len == invalidation_areas.capacity()) {
         invalidation_areas.len = 1;
-        invalidation_areas.buffer[0] = framebuffer.bounds;
+        invalidation_areas.buffer[0] = framebufferBounds();
         return;
     }
 
@@ -368,8 +332,26 @@ const framebuffer_wallpaper_shift = 255 - 15;
 const framebuffer_default_icon_shift = framebuffer_wallpaper_shift - 15;
 
 fn initializeGraphics() void {
+    const max_res = ashet.video.getMaxResolution();
     ashet.video.setBorder(ColorIndex.get(0));
-    ashet.video.setResolution(framebuffer.width, framebuffer.height);
+    ashet.video.setResolution(@truncate(u15, max_res.width), @truncate(u15, max_res.height));
+    const resolution = ashet.video.getResolution();
+
+    framebuffer = gui.Framebuffer{
+        .width = @intCast(u15, resolution.width),
+        .height = @intCast(u15, resolution.height),
+        .stride = @intCast(u15, resolution.width),
+        .pixels = ashet.video.memory.ptr,
+    };
+
+    min_window_content_size = .{
+        .width = 39,
+        .height = 9,
+    };
+    max_window_content_size = .{
+        .width = framebuffer.width - 2,
+        .height = framebuffer.height - 12,
+    };
 
     ashet.video.palette.* = ashet.video.defaults.palette;
 
@@ -397,7 +379,7 @@ const MinimizedIterator = struct {
     fn init() MinimizedIterator {
         return MinimizedIterator{
             .dx = 4,
-            .dy = framebuffer.height - 11 - 4,
+            .dy = @intCast(i16, framebuffer.height - 11 - 4),
             .inner = WindowIterator.init(WindowIterator.minimized, .bottom_to_top),
         };
     }
@@ -446,22 +428,26 @@ fn minimizedFromCursor(pt: Point) ?MinimizedWindow {
     return null;
 }
 
-fn paintButton(bounds: Rectangle, style: Theme.WindowStyle, bg: ColorIndex, icon: anytype) void {
+fn paintButton(bounds: Rectangle, style: Theme.WindowStyle, bg: ColorIndex, icon: Bitmap) void {
     framebuffer.horizontalLine(bounds.x, bounds.y, bounds.width, style.border);
     framebuffer.horizontalLine(bounds.x, bounds.y + @intCast(u15, bounds.width) - 1, bounds.width, style.border);
     framebuffer.verticalLine(bounds.x, bounds.y, bounds.height, style.border);
     framebuffer.verticalLine(bounds.x + @intCast(u15, bounds.width) - 1, bounds.y, bounds.height, style.border);
-    framebuffer.rectangle(bounds.x + 1, bounds.y + 1, bounds.width - 2, bounds.height - 2, bg);
-    framebuffer.icon(bounds.x + 1, bounds.y + 1, &icon);
+    framebuffer.fillRectangle(bounds.shrink(1), bg);
+    framebuffer.blit(Point.new(bounds.x + 1, bounds.y + 1), icon);
 }
 
 fn repaint() void {
     invalidation_areas.len = 0; // we've redrawn the whole screen, no need for painting at all
 
     // Copy the wallpaper to the framebuffer
-    for (wallpaper.pixels) |c, i| {
-        framebuffer.fb[i] = c.shift(framebuffer_wallpaper_shift - 1);
-    }
+    // for (wallpaper.pixels) |c, i| {
+    //     framebuffer.fb[i] = c.shift(framebuffer_wallpaper_shift - 1);
+    // }
+
+    // framebuffer.blit(Point.zero, wallpaper.bitmap);
+
+    framebuffer.clear(ColorIndex.get(7));
 
     desktop.paint();
 
@@ -483,9 +469,9 @@ fn repaint() void {
             framebuffer.horizontalLine(dx, dy + 10, width, style.border);
             framebuffer.verticalLine(dx, dy + 1, 9, style.border);
             framebuffer.verticalLine(dx + width - 1, dy + 1, 9, style.border);
-            framebuffer.rectangle(dx + 1, dy + 1, width - 2, 9, style.title);
+            framebuffer.fillRectangle(Rectangle{ .x = dx + 1, .y = dy + 1, .width = width - 2, .height = 9 }, style.title);
 
-            framebuffer.text(dx + 2, dy + 2, mini.title, width - 2, style.font);
+            framebuffer.drawString(dx + 2, dy + 2, mini.title, style.font, width - 2);
 
             paintButton(mini.restore_button, style, style.title, icons.restore);
             paintButton(mini.close_button, style, style.title, icons.close);
@@ -514,14 +500,14 @@ fn repaint() void {
 
             framebuffer.horizontalLine(window_rectangle.x + 1, window_rectangle.y + 10, window_rectangle.width - 2, style.border);
 
-            framebuffer.rectangle(window_rectangle.x + 1, window_rectangle.y + 1, title_width, 9, style.title);
+            framebuffer.fillRectangle(Rectangle{ .x = window_rectangle.x + 1, .y = window_rectangle.y + 1, .width = title_width, .height = 9 }, style.title);
 
-            framebuffer.text(
+            framebuffer.drawString(
                 window_rectangle.x + 2,
                 window_rectangle.y + 2,
                 window.title(),
-                title_width - 2,
                 style.font,
+                title_width - 2,
             );
 
             var dy: u15 = 0;
@@ -547,7 +533,7 @@ fn repaint() void {
         }
     }
 
-    framebuffer.icon(mouse_cursor_pos.x, mouse_cursor_pos.y, &icons.cursor);
+    framebuffer.blit(ashet.input.cursor, icons.cursor);
 }
 
 var focused_window: ?*Window = null;
@@ -933,84 +919,70 @@ fn nodeToWindow(node: *WindowQueue.Node) *Window {
     return @fieldParentPtr(Window, "node", node);
 }
 
-const framebuffer = struct {
-    const width = ashet.video.max_res_x;
-    const height = ashet.video.max_res_y;
-    const bounds = Rectangle{ .x = 0, .y = 0, .width = framebuffer.width, .height = framebuffer.height };
+// const framebuffer = struct {
+//     const width = ashet.video.max_res_x;
+//     const height = ashet.video.max_res_y;
+//     const bounds = Rectangle{ .x = 0, .y = 0, .width = framebuffer.width, .height = framebuffer.height };
 
-    const fb = ashet.video.memory[0 .. width * height];
+//     const fb = ashet.video.memory[0 .. width * height];
 
-    fn setPixel(x: i16, y: i16, color: ColorIndex) void {
-        if (x < 0 or y < 0 or x >= width or y >= height) return;
-        const ux = @intCast(usize, x);
-        const uy = @intCast(usize, y);
-        fb[uy * width + ux] = color;
-    }
+//     fn setPixel(x: i16, y: i16, color: ColorIndex) void {
+//         if (x < 0 or y < 0 or x >= width or y >= height) return;
+//         const ux = @intCast(usize, x);
+//         const uy = @intCast(usize, y);
+//         fb[uy * width + ux] = color;
+//     }
 
-    fn horizontalLine(x: i16, y: i16, w: u16, color: ColorIndex) void {
-        var i: u15 = 0;
-        while (i < w) : (i += 1) {
-            setPixel(x + i, y, color);
-        }
-    }
+//     fn rectangle(x: i16, y: i16, w: u16, h: u16, color: ColorIndex) void {
+//         var i: i16 = y;
+//         while (i < y + @intCast(u15, h)) : (i += 1) {
+//             framebuffer.horizontalLine(x, i, w, color);
+//         }
+//     }
 
-    fn verticalLine(x: i16, y: i16, h: u16, color: ColorIndex) void {
-        var i: u15 = 0;
-        while (i < h) : (i += 1) {
-            setPixel(x, y + i, color);
-        }
-    }
+//     fn icon(x: i16, y: i16, sprite: anytype) void {
+//         for (sprite) |row, dy| {
+//             for (row) |pix, dx| {
+//                 const optpix: ?ColorIndex = pix; // allow both u8 and ?u8
+//                 const color = optpix orelse continue;
+//                 setPixel(x + @intCast(i16, dx), y + @intCast(i16, dy), color);
+//             }
+//         }
+//     }
 
-    fn rectangle(x: i16, y: i16, w: u16, h: u16, color: ColorIndex) void {
-        var i: i16 = y;
-        while (i < y + @intCast(u15, h)) : (i += 1) {
-            framebuffer.horizontalLine(x, i, w, color);
-        }
-    }
+//     fn text(x: i16, y: i16, string: []const u8, max_width: u16, color: ColorIndex) void {
+//         const gw = 6;
+//         const gh = 8;
+//         const font = ashet.video.defaults.font;
 
-    fn icon(x: i16, y: i16, sprite: anytype) void {
-        for (sprite) |row, dy| {
-            for (row) |pix, dx| {
-                const optpix: ?ColorIndex = pix; // allow both u8 and ?u8
-                const color = optpix orelse continue;
-                setPixel(x + @intCast(i16, dx), y + @intCast(i16, dy), color);
-            }
-        }
-    }
+//         var dx: i16 = x;
+//         var dy: i16 = y;
+//         for (string) |char| {
+//             if (dx + gw > x + @intCast(u15, max_width)) {
+//                 break;
+//             }
+//             const glyph = font[char];
 
-    fn text(x: i16, y: i16, string: []const u8, max_width: u16, color: ColorIndex) void {
-        const gw = 6;
-        const gh = 8;
-        const font = ashet.video.defaults.font;
+//             var gx: u15 = 0;
+//             while (gx < gw) : (gx += 1) {
+//                 var bits = glyph[gx];
 
-        var dx: i16 = x;
-        var dy: i16 = y;
-        for (string) |char| {
-            if (dx + gw > x + @intCast(u15, max_width)) {
-                break;
-            }
-            const glyph = font[char];
+//                 comptime var gy: u15 = 0;
+//                 inline while (gy < gh) : (gy += 1) {
+//                     if ((bits & (1 << gy)) != 0) {
+//                         setPixel(dx + gx, dy + gy, color);
+//                     }
+//                 }
+//             }
 
-            var gx: u15 = 0;
-            while (gx < gw) : (gx += 1) {
-                var bits = glyph[gx];
+//             dx += gw;
+//         }
+//     }
 
-                comptime var gy: u15 = 0;
-                inline while (gy < gh) : (gy += 1) {
-                    if ((bits & (1 << gy)) != 0) {
-                        setPixel(dx + gx, dy + gy, color);
-                    }
-                }
-            }
-
-            dx += gw;
-        }
-    }
-
-    fn clear(color: ColorIndex) void {
-        std.mem.set(ColorIndex, fb, color);
-    }
-};
+//     fn clear(color: ColorIndex) void {
+//         std.mem.set(ColorIndex, fb, color);
+//     }
+// };
 
 pub const icons = struct {
     fn parsedSpriteSize(comptime def: []const u8) Size {
@@ -1052,7 +1024,7 @@ pub const icons = struct {
         return icon;
     }
 
-    pub const maximize = parse(
+    pub const maximize = Bitmap.parse(0,
         \\.........
         \\.FFFFFFF.
         \\.F.....F.
@@ -1064,7 +1036,7 @@ pub const icons = struct {
         \\.........
     );
 
-    pub const minimize = parse(
+    pub const minimize = Bitmap.parse(0,
         \\.........
         \\.........
         \\.........
@@ -1076,7 +1048,7 @@ pub const icons = struct {
         \\.........
     );
 
-    pub const restore = parse(
+    pub const restore = Bitmap.parse(0,
         \\.........
         \\..FFFFF..
         \\.........
@@ -1088,7 +1060,7 @@ pub const icons = struct {
         \\.........
     );
 
-    pub const close = parse(
+    pub const close = Bitmap.parse(0,
         \\666666666
         \\666666666
         \\66F666F66
@@ -1100,7 +1072,7 @@ pub const icons = struct {
         \\666666666
     );
 
-    pub const resize = parse(
+    pub const resize = Bitmap.parse(0,
         \\.........
         \\.FFF.....
         \\.F.F.....
@@ -1112,7 +1084,7 @@ pub const icons = struct {
         \\.........
     );
 
-    pub const cursor = parse(
+    pub const cursor = Bitmap.parse(0,
         \\888..........
         \\2FF88........
         \\2FFFF88......
@@ -1132,8 +1104,26 @@ pub const icons = struct {
 const wallpaper = struct {
     const raw = @embedFile("../data/ui/wallpaper.img");
 
-    const pixels = @bitCast([400 * 300]ColorIndex, raw[0 .. 400 * 300].*);
+    const pixels = blk: {
+        @setEvalBranchQuota(4 * 400 * 300);
+
+        var data = @bitCast([400 * 300]ColorIndex, raw[0 .. 400 * 300].*);
+
+        for (data) |*c| {
+            c.* = c.shift(framebuffer_wallpaper_shift - 1);
+        }
+
+        break :blk data;
+    };
     const palette = @bitCast([15]Color, @as([]const u8, raw)[400 * 300 .. 400 * 300 + 15 * @sizeOf(Color)].*);
+
+    const bitmap = Bitmap{
+        .width = 400,
+        .height = 300,
+        .stride = 400,
+        .pixels = &pixels,
+        .transparent = null,
+    };
 };
 
 pub const desktop = struct {
@@ -1141,8 +1131,18 @@ pub const desktop = struct {
         pub const width = 32;
         pub const height = 32;
 
-        bitmap: [height][width]?ColorIndex,
+        pixels: [height][width]ColorIndex, // 0 is transparent, 1…15 are indices into `palette`
         palette: [15]Color,
+
+        pub fn bitmap(icon: *const Icon) Bitmap {
+            return Bitmap{
+                .width = width,
+                .height = height,
+                .stride = width,
+                .pixels = @ptrCast([*]const ColorIndex, &icon.pixels),
+                .transparent = ColorIndex.get(0),
+            };
+        }
 
         pub fn load(stream: anytype, offset: u8) !Icon {
             var icon: Icon = undefined;
@@ -1154,16 +1154,16 @@ pub const desktop = struct {
 
             for (pixels) |row, y| {
                 for (row) |color, x| {
-                    icon.bitmap[y][x] = if (color == 0)
-                        null
+                    icon.pixels[y][x] = if (color == 0)
+                        ColorIndex.get(0)
                     else
                         ColorIndex.get(offset + color - 1);
                 }
             }
 
-            for (icon.bitmap) |row| {
+            for (icon.pixels) |row| {
                 for (row) |c| {
-                    std.debug.assert(c == null or (c.?.index() >= offset and c.?.index() < offset + 15));
+                    std.debug.assert(c == ColorIndex.get(0) or (c.index() >= offset and c.index() < offset + 15));
                 }
             }
 
@@ -1211,7 +1211,6 @@ pub const desktop = struct {
         index: usize,
     };
     const AppIterator = struct {
-        const lower_limit = framebuffer.height - 11 - 8 - 4;
         const padding = 8;
 
         index: usize = 0,
@@ -1229,6 +1228,8 @@ pub const desktop = struct {
         }
 
         pub fn next(self: *AppIterator) ?AppInfo {
+            const lower_limit = framebuffer.height - 11 - 8 - 4;
+
             if (self.index >= apps.len)
                 return null;
 
@@ -1292,11 +1293,17 @@ pub const desktop = struct {
             const title = app.getName();
 
             if (selected_app == info.index) {
-                framebuffer.icon(info.bounds.x - 1, info.bounds.y - 1, &dither_grid);
+                framebuffer.blit(Point.new(info.bounds.x - 1, info.bounds.y - 1), dither_grid);
             }
 
-            framebuffer.icon(info.bounds.x, info.bounds.y, &app.icon.bitmap);
-            framebuffer.text(info.bounds.x + Icon.width / 2 - @intCast(u15, 3 * title.len), info.bounds.y + Icon.height, title, @intCast(u16, 6 * title.len), ColorIndex.get(0x0));
+            framebuffer.blit(info.bounds.position(), app.icon.bitmap());
+            framebuffer.drawString(
+                info.bounds.x + Icon.width / 2 - @intCast(u15, 3 * title.len),
+                info.bounds.y + Icon.height,
+                title,
+                ColorIndex.get(0x0),
+                @intCast(u15, 6 * title.len),
+            );
         }
     }
 
@@ -1346,13 +1353,19 @@ pub const desktop = struct {
     }
 
     const dither_grid = blk: {
-        @setEvalBranchQuota(2048);
-        var buffer: [Icon.height + 2][Icon.width + 2]?ColorIndex = undefined;
+        @setEvalBranchQuota(4096);
+        var buffer: [Icon.height + 2][Icon.width + 2]ColorIndex = undefined;
         for (buffer) |*row, y| {
             for (row) |*c, x| {
-                c.* = if ((y + x) % 2 == 0) ColorIndex.get(0) else null;
+                c.* = if ((y + x) % 2 == 0) ColorIndex.get(0) else ColorIndex.get(1);
             }
         }
-        break :blk buffer;
+        break :blk Bitmap{
+            .width = Icon.width,
+            .height = Icon.height,
+            .stride = Icon.width,
+            .pixels = @ptrCast([*]ColorIndex, &buffer),
+            .transparent = ColorIndex.get(1),
+        };
     };
 };

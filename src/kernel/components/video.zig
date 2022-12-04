@@ -2,20 +2,10 @@ const std = @import("std");
 const hal = @import("hal");
 const ashet = @import("../main.zig");
 
-pub const max_res_x = 400;
-pub const max_res_y = 300;
-
 pub const Color = ashet.abi.Color;
 pub const ColorIndex = ashet.abi.ColorIndex;
 
-pub const Resolution = struct {
-    width: u16,
-    height: u16,
-
-    pub fn size(res: Resolution) usize {
-        return @as(usize, res.width) * @as(usize, res.height);
-    }
-};
+pub const Resolution = ashet.abi.Size;
 
 /// The raw exposed video memory. Writing to this will change the content
 /// on the screen.
@@ -157,6 +147,10 @@ pub fn getResolution() Resolution {
     return hal.video.getResolution();
 }
 
+pub fn getMaxResolution() Resolution {
+    return hal.video.getMaxResolution();
+}
+
 pub fn getBorder() ColorIndex {
     return hal.video.getBorder();
 }
@@ -165,9 +159,8 @@ pub fn getBorder() ColorIndex {
 /// This will make it simpler to create smaller applications that are
 /// centered on the screen by reducing the logical resolution of the screen.
 /// This only applies to graphics mode.
-pub fn setResolution(width: u16, height: u16) void {
+pub fn setResolution(width: u15, height: u15) void {
     std.debug.assert(width > 0 and height > 0);
-    std.debug.assert(width <= 400 and height <= 300);
     hal.video.setResolution(width, height);
 }
 
