@@ -745,6 +745,13 @@ pub const Rectangle = extern struct {
             boundary.contains(Point.new(region.x + @intCast(u15, region.width) - 1, region.y + @intCast(u15, region.height) - 1));
     }
 
+    pub fn intersects(a: Rectangle, b: Rectangle) bool {
+        return a.x + @intCast(u15, a.width) >= b.x and
+            a.y + @intCast(u15, a.height) >= b.y and
+            a.x <= b.x + @intCast(u15, b.width) and
+            a.y <= b.y + @intCast(u15, b.height);
+    }
+
     pub fn eql(a: Rectangle, b: Rectangle) bool {
         return a.size().eql(b.size()) and a.position().eql(b.position());
     }

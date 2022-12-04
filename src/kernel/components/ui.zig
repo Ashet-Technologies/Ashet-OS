@@ -96,11 +96,14 @@ fn run(_: ?*anyopaque) callconv(.C) u32 {
         _ = WindowIterator.updateFocus();
 
         // Enforce a full repaint of the user interface, so we have it "online"
+        invalidateScreen();
         repaint();
 
         var meta_pressed = false;
 
         while (ashet.multi_tasking.exclusive_video_controller == null) {
+            const prev_cursor_pos = ashet.input.cursor;
+
             event_loop: while (ashet.input.getEvent()) |input_event| {
                 switch (input_event) {
                     .keyboard => |event| {
@@ -115,9 +118,9 @@ fn run(_: ?*anyopaque) callconv(.C) u32 {
                     },
                     .mouse => |event| {
                         const mouse_point = Point.new(@intCast(i16, event.x), @intCast(i16, event.y));
-                        if (event.type == .motion) {
-                            invalidateScreen();
-                        }
+                        // if (event.type == .motion) {
+                        //     invalidateScreen();
+                        // }
                         switch (mouse_action) {
                             .default => {
                                 switch (event.type) {
@@ -126,7 +129,11 @@ fn run(_: ?*anyopaque) callconv(.C) u32 {
                                             if (event.button == .left) {
                                                 // TODO: If was moved to top, send activate event
                                                 WindowIterator.moveToTop(surface.window);
-                                                invalidateScreen();
+
+                                                if (WindowIterator.topWindow()) |top_win| {
+                                                    invalidateRegion(top_win.screenRectangle());
+                                                }
+                                                invalidateRegion(surface.window.screenRectangle());
 
                                                 if (meta_pressed) {
                                                     mouse_action = MouseAction{
@@ -174,13 +181,18 @@ fn run(_: ?*anyopaque) callconv(.C) u32 {
                                             }
                                         } else if (minimizedFromCursor(mouse_point)) |mini| {
                                             if (event.button == .left) {
-                                                invalidateScreen();
                                                 if (mini.restore_button.contains(mouse_point)) {
                                                     mini.window.restore();
                                                     WindowIterator.moveToTop(mini.window);
+                                                    invalidateRegion(mini.window.screenRectangle());
+                                                    var list = MinimizedIterator.init();
+                                                    while (list.next()) |minmin| {
+                                                        invalidateRegion(minmin.bounds);
+                                                    }
                                                 } else if (mini.close_button.contains(mouse_point)) {
                                                     mini.window.pushEvent(.window_close);
                                                 } else {
+                                                    invalidateRegion(mini.bounds);
                                                     focused_window = mini.window;
                                                 }
                                             }
@@ -208,9 +220,11 @@ fn run(_: ?*anyopaque) callconv(.C) u32 {
                                     mouse_action = .default; // must be last, we override the contents of action with this!
                                     break :blk;
                                 } else if (dx != 0 or dy != 0) {
+                                    invalidateRegion(action.window.screenRectangle());
                                     action.window.user_facing.client_rectangle.x += dx;
                                     action.window.user_facing.client_rectangle.y += dy;
                                     action.window.pushEvent(.window_moving);
+                                    invalidateRegion(action.window.screenRectangle());
                                 }
                             },
                             .resize_window => |*action| blk: {
@@ -227,12 +241,15 @@ fn run(_: ?*anyopaque) callconv(.C) u32 {
                                     const min = action.window.user_facing.min_size;
                                     const max = action.window.user_facing.max_size;
 
+                                    const prev_screen_rect = action.window.screenRectangle();
                                     const previous = rect.size();
 
                                     rect.width = @intCast(u16, std.math.clamp(@as(i17, rect.width) + dx, min.width, max.width));
                                     rect.height = @intCast(u16, std.math.clamp(@as(i17, rect.height) + dy, min.height, max.height));
 
                                     if (!rect.size().eql(previous)) {
+                                        invalidateRegion(prev_screen_rect);
+                                        invalidateRegion(action.window.screenRectangle());
                                         action.window.pushEvent(.window_resizing);
                                     }
                                 }
@@ -242,12 +259,33 @@ fn run(_: ?*anyopaque) callconv(.C) u32 {
                 }
             }
 
+            const mouse_moved = !prev_cursor_pos.eql(ashet.input.cursor);
+
+            if (mouse_moved) {
+                invalidateRegion(Rectangle{
+                    .x = prev_cursor_pos.x,
+                    .y = prev_cursor_pos.y,
+                    .width = icons.cursor.width,
+                    .height = icons.cursor.height,
+                });
+                invalidateRegion(Rectangle{
+                    .x = ashet.input.cursor.x,
+                    .y = ashet.input.cursor.y,
+                    .width = icons.cursor.width,
+                    .height = icons.cursor.height,
+                });
+            }
+
+            const previous_focus = focused_window;
             if (WindowIterator.updateFocus()) {
-                invalidateScreen();
+                if (previous_focus != focused_window) {
+                    if (previous_focus) |win| invalidateRegion(win.screenRectangle());
+                    if (focused_window) |win| invalidateRegion(win.screenRectangle());
+                }
             }
 
             if (invalidation_areas.len > 0) {
-                invalidation_areas.len = 0;
+                logger.info("repaint", .{});
                 repaint();
             }
 
@@ -277,6 +315,9 @@ pub fn invalidateRegion(region: Rectangle) void {
         if (rect.containsRectangle(region))
             return;
     }
+
+    logger.debug("invalidate {}", .{region});
+
     if (invalidation_areas.len == invalidation_areas.capacity()) {
         invalidation_areas.len = 1;
         invalidation_areas.buffer[0] = framebufferBounds();
@@ -305,7 +346,7 @@ fn windowFromCursor(point: Point) ?WindowSurface {
     var iter = WindowIterator.init(WindowIterator.regular, .top_to_bottom);
     while (iter.next()) |window| {
         const client_rectangle = window.user_facing.client_rectangle;
-        const window_rectangle = expandClientRectangle(client_rectangle);
+        const window_rectangle = window.screenRectangle();
 
         if (window_rectangle.contains(point)) {
             var buttons = window.getButtons();
@@ -437,8 +478,16 @@ fn paintButton(bounds: Rectangle, style: Theme.WindowStyle, bg: ColorIndex, icon
     framebuffer.blit(Point.new(bounds.x + 1, bounds.y + 1), icon);
 }
 
+fn isTainted(rect: Rectangle) bool {
+    for (invalidation_areas.slice()) |r| {
+        if (r.intersects(rect))
+            return true;
+    }
+    return false;
+}
+
 fn repaint() void {
-    invalidation_areas.len = 0; // we've redrawn the whole screen, no need for painting at all
+    defer invalidation_areas.len = 0; // we've redrawn the whole screen, no need for painting at all
 
     // Copy the wallpaper to the framebuffer
     // for (wallpaper.pixels) |c, i| {
@@ -447,7 +496,11 @@ fn repaint() void {
 
     // framebuffer.blit(Point.zero, wallpaper.bitmap);
 
-    framebuffer.clear(ColorIndex.get(7));
+    // framebuffer.clear(ColorIndex.get(7));
+
+    for (invalidation_areas.slice()) |rect| {
+        framebuffer.fillRectangle(rect, ColorIndex.get(7));
+    }
 
     desktop.paint();
 
@@ -455,6 +508,9 @@ fn repaint() void {
         var iter = MinimizedIterator.init();
         while (iter.next()) |mini| {
             const window = mini.window;
+
+            if (!isTainted(mini.bounds))
+                continue;
 
             const style = if (window.user_facing.flags.focus)
                 current_theme.active_window
@@ -481,7 +537,7 @@ fn repaint() void {
         var iter = WindowIterator.init(WindowIterator.regular, .bottom_to_top);
         while (iter.next()) |window| {
             const client_rectangle = window.user_facing.client_rectangle;
-            const window_rectangle = expandClientRectangle(client_rectangle);
+            const window_rectangle = window.screenRectangle();
 
             const style = if (window.user_facing.flags.focus)
                 current_theme.active_window
@@ -751,6 +807,8 @@ pub const Window = struct {
 
         WindowIterator.moveToTop(window);
 
+        invalidateRegion(window.screenRectangle());
+
         return window;
     }
 
@@ -759,6 +817,8 @@ pub const Window = struct {
         if (focused_window == window) {
             focused_window = null;
         }
+
+        invalidateRegion(window.screenRectangle());
 
         switch (mouse_action) {
             .default => {},
@@ -773,6 +833,16 @@ pub const Window = struct {
         var clone = window.memory;
         window.* = undefined;
         clone.deinit();
+    }
+
+    pub fn screenRectangle(window: Window) Rectangle {
+        const rect = window.user_facing.client_rectangle;
+        return Rectangle{
+            .x = rect.x - 1,
+            .y = rect.y - 11,
+            .width = rect.width + 2,
+            .height = rect.height + 12,
+        };
     }
 
     pub fn title(window: Window) [:0]const u8 {
@@ -819,6 +889,11 @@ pub const Window = struct {
             return;
         window.user_facing.flags.minimized = true;
         window.pushEvent(.window_minimize);
+
+        var list = MinimizedIterator.init();
+        while (list.next()) |minmin| {
+            invalidateRegion(minmin.bounds);
+        }
     }
 
     pub fn maximize(window: *Window) void {
@@ -827,6 +902,8 @@ pub const Window = struct {
         window.user_facing.client_rectangle = Rectangle.new(Point.new(1, 11), max_window_content_size);
         window.pushEvent(.window_moved);
         window.pushEvent(.window_resized);
+
+        invalidateScreen();
     }
 
     /// Windows can be resized if their minimum size and maximum size differ
@@ -848,7 +925,7 @@ pub const Window = struct {
 
     const ButtonCollection = std.BoundedArray(WindowButton, std.enums.values(ButtonEvent).len);
     pub fn getButtons(window: Window) ButtonCollection {
-        const rectangle = expandClientRectangle(window.user_facing.client_rectangle);
+        const rectangle = window.screenRectangle();
         var buttons = ButtonCollection{};
 
         var top_row = Rectangle{
@@ -884,15 +961,6 @@ pub const Window = struct {
         return buttons;
     }
 };
-
-fn expandClientRectangle(rect: Rectangle) Rectangle {
-    return Rectangle{
-        .x = rect.x - 1,
-        .y = rect.y - 11,
-        .width = rect.width + 2,
-        .height = rect.height + 12,
-    };
-}
 
 fn limitWindowSize(size: Size) Size {
     return Size{
@@ -1202,7 +1270,7 @@ pub const desktop = struct {
     const AppList = std.BoundedArray(App, 15);
 
     var apps: AppList = .{};
-    var selected_app: ?usize = 0;
+    var selected_app: ?AppInfo = null;
     var last_click: Point = undefined;
 
     const AppInfo = struct {
@@ -1256,18 +1324,23 @@ pub const desktop = struct {
         };
     }
 
+    fn idOrNull(ai: ?AppInfo) ?usize {
+        return if (ai) |a| a.index else null;
+    }
+
     fn sendClick(point: Point) void {
         var iter = AppIterator.init();
         const selected = while (iter.next()) |info| {
             if (info.bounds.contains(point))
-                break info.index;
+                break info;
         } else null;
 
-        if (selected_app != selected) {
+        if (idOrNull(selected_app) != idOrNull(selected)) {
             last_click = point;
-            invalidateScreen();
-        } else if (selected_app) |app_index| {
-            const app = &apps.buffer[app_index];
+            if (selected_app) |ai| invalidateRegion(ai.bounds);
+            if (selected) |ai| invalidateRegion(ai.bounds);
+        } else if (selected_app) |app_info| {
+            const app = &apps.buffer[app_info.index];
             if (last_click.manhattenDistance(point) < 2) {
                 // logger.info("registered double click on app[{}]: {s}", .{ app_index, app.getName() });
 
@@ -1292,7 +1365,12 @@ pub const desktop = struct {
 
             const title = app.getName();
 
-            if (selected_app == info.index) {
+            var total_bounds = info.bounds;
+            total_bounds.height += 8; // TODO: font size
+            if (!isTainted(total_bounds))
+                continue;
+
+            if (idOrNull(selected_app) == info.index) {
                 framebuffer.blit(Point.new(info.bounds.x - 1, info.bounds.y - 1), dither_grid);
             }
 
