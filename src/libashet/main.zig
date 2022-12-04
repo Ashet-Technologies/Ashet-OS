@@ -150,29 +150,22 @@ pub const input = struct {
         mouse: abi.MouseEvent,
     };
 
-    pub fn getEvent() ?Event {
-        var evt: abi.InputEvent = undefined;
-        return switch (syscall("input.getEvent")(&evt)) {
-            .none => null,
-            .keyboard => Event{ .keyboard = evt.keyboard },
-            .mouse => Event{ .mouse = evt.mouse },
+    pub fn getEvent() !Event {
+        const out = try io.performOne(abi.input.GetEvent, .{});
+        return switch (out.event_type) {
+            .keyboard => Event{ .keyboard = out.event.keyboard },
+            .mouse => Event{ .mouse = out.event.mouse },
         };
     }
 
-    pub fn getMouseEvent() ?abi.MouseEvent {
-        var evt: abi.MouseEvent = undefined;
-        return if (syscall("input.getMouseEvent")(&evt))
-            evt
-        else
-            null;
+    pub fn getMouseEvent() abi.MouseEvent {
+        const out = try io.performOne(abi.input.GetMouseEvent, .{});
+        return out.event;
     }
 
-    pub fn getKeyboardEvent() ?abi.KeyboardEvent {
-        var evt: abi.KeyboardEvent = undefined;
-        return if (syscall("input.getKeyboardEvent")(&evt))
-            evt
-        else
-            null;
+    pub fn getKeyboardEvent() abi.KeyboardEvent {
+        const out = try io.performOne(abi.input.GetKeyboardEvent, .{});
+        return out.event;
     }
 };
 
@@ -261,13 +254,12 @@ pub const ui = struct {
         syscall("ui.setWindowTitle")(win, title.ptr, title.len);
     }
 
-    pub fn pollEvent(win: *const Window) ?Event {
-        var data: abi.UiEvent = undefined;
-        const event_type = syscall("ui.pollEvent")(win, &data);
-        return switch (event_type) {
-            .none => null,
-            .mouse => .{ .mouse = data.mouse },
-            .keyboard => .{ .keyboard = data.keyboard },
+    pub fn getEvent(win: *const Window) Event {
+        const out = io.performOne(abi.ui.GetEvent, .{ .window = win }) catch unreachable;
+
+        return switch (out.event_type) {
+            .mouse => .{ .mouse = out.event.mouse },
+            .keyboard => .{ .keyboard = out.event.keyboard },
             .window_close => .window_close,
             .window_minimize => .window_minimize,
             .window_restore => .window_restore,
@@ -282,7 +274,6 @@ pub const ui = struct {
     }
 
     pub const Event = union(abi.UiEventType) {
-        none,
         mouse: abi.MouseEvent,
         keyboard: abi.KeyboardEvent,
         window_close,

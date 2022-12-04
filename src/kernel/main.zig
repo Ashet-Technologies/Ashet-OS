@@ -41,16 +41,17 @@ export fn ashet_kernelMain() void {
     };
 }
 
+pub const hal_requires_polling = video.is_flush_required or input.is_poll_required;
+
 fn main() !void {
     filesystem.initialize();
 
     input.initialize();
 
-    if (video.is_flush_required) {
-        // if the HAL requires regular flushing of the screen,
-        // we start a thread here that will do this.
-        const thread = try scheduler.Thread.spawn(periodicScreenFlush, null, .{});
-        try thread.setName("video.flush");
+    if (hal_requires_polling) {
+        // if the HAL requires regular polling, we'll do so:
+        const thread = try scheduler.Thread.spawn(pollHAL, null, .{});
+        try thread.setName("hal.poll");
         try thread.start();
         thread.detach();
     }
@@ -95,9 +96,15 @@ pub const global_hotkeys = struct {
     }
 };
 
-fn periodicScreenFlush(_: ?*anyopaque) callconv(.C) u32 {
+fn pollHAL(_: ?*anyopaque) callconv(.C) u32 {
     while (true) {
-        video.flush();
+        if (input.is_poll_required) {
+            input.poll();
+        }
+
+        if (video.is_flush_required) {
+            video.flush();
+        }
 
         // TODO: replace with actual waiting code instead of burning up all CPU
         scheduler.yield();

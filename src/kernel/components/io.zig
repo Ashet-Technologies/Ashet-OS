@@ -90,18 +90,23 @@ pub fn scheduleAndAwait(start_queue: ?*IOP, wait: WaitIO) ?*IOP {
         logger.debug("dispatching i/o: {s}", .{@tagName(event.type)});
 
         context.pending += 1;
-        switch (event.type) {
-            .tcp_bind => ashet.network.tcp.bind(ashet.abi.IOP.cast(abi.tcp.Bind, event)),
-            .tcp_connect => ashet.network.tcp.connect(ashet.abi.IOP.cast(abi.tcp.Connect, event)),
-            .tcp_send => ashet.network.tcp.send(ashet.abi.IOP.cast(abi.tcp.Send, event)),
-            .tcp_receive => ashet.network.tcp.receive(ashet.abi.IOP.cast(abi.tcp.Receive, event)),
 
-            .udp_bind => ashet.network.udp.bind(ashet.abi.IOP.cast(abi.udp.Bind, event)),
-            .udp_connect => ashet.network.udp.connect(ashet.abi.IOP.cast(abi.udp.Connect, event)),
-            .udp_disconnect => ashet.network.udp.disconnect(ashet.abi.IOP.cast(abi.udp.Disconnect, event)),
-            .udp_send => ashet.network.udp.send(ashet.abi.IOP.cast(abi.udp.Send, event)),
-            .udp_send_to => ashet.network.udp.sendTo(ashet.abi.IOP.cast(abi.udp.SendTo, event)),
-            .udp_receive_from => ashet.network.udp.receiveFrom(ashet.abi.IOP.cast(abi.udp.ReceiveFrom, event)),
+        switch (event.type) {
+            .tcp_bind => ashet.network.tcp.bind(IOP.cast(abi.tcp.Bind, event)),
+            .tcp_connect => ashet.network.tcp.connect(IOP.cast(abi.tcp.Connect, event)),
+            .tcp_send => ashet.network.tcp.send(IOP.cast(abi.tcp.Send, event)),
+            .tcp_receive => ashet.network.tcp.receive(IOP.cast(abi.tcp.Receive, event)),
+
+            .udp_bind => ashet.network.udp.bind(IOP.cast(abi.udp.Bind, event)),
+            .udp_connect => ashet.network.udp.connect(IOP.cast(abi.udp.Connect, event)),
+            .udp_disconnect => ashet.network.udp.disconnect(IOP.cast(abi.udp.Disconnect, event)),
+            .udp_send => ashet.network.udp.send(IOP.cast(abi.udp.Send, event)),
+            .udp_send_to => ashet.network.udp.sendTo(IOP.cast(abi.udp.SendTo, event)),
+            .udp_receive_from => ashet.network.udp.receiveFrom(IOP.cast(abi.udp.ReceiveFrom, event)),
+
+            .input_get_event => ashet.input.getEventIOP(IOP.cast(abi.input.GetEvent, event)),
+
+            .ui_get_event => ashet.ui.getEvent(IOP.cast(abi.ui.GetEvent, event)),
         }
     }
 

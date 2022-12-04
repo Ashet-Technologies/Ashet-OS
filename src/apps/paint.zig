@@ -21,37 +21,34 @@ pub fn main() !void {
     var mouse_x_prev: i16 = undefined;
     var mouse_y_prev: i16 = undefined;
     app_loop: while (true) {
-        while (ashet.ui.pollEvent(window)) |event| {
-            switch (event) {
-                .none => {},
-                .mouse => |data| {
-                    switch (data.type) {
-                        .button_press => if (data.button == .left) {
-                            painting = true;
-                            mouse_x_prev = data.x;
-                            mouse_y_prev = data.y;
-                        },
-                        .button_release => if (data.button == .left) {
-                            painting = false;
-                        },
-                        .motion => if (painting) {
-                            drawBresenhamLine(mouse_x_prev, mouse_y_prev, data.x, data.y, window);
-                            mouse_x_prev = data.x;
-                            mouse_y_prev = data.y;
-                        },
-                    }
-                },
-                .keyboard => {},
-                .window_close => break :app_loop,
-                .window_minimize => {},
-                .window_restore => {},
-                .window_moving => {},
-                .window_moved => {},
-                .window_resizing => {},
-                .window_resized => {},
-            }
+        const event = ashet.ui.getEvent(window);
+        switch (event) {
+            .mouse => |data| {
+                switch (data.type) {
+                    .button_press => if (data.button == .left) {
+                        painting = true;
+                        mouse_x_prev = data.x;
+                        mouse_y_prev = data.y;
+                    },
+                    .button_release => if (data.button == .left) {
+                        painting = false;
+                    },
+                    .motion => if (painting) {
+                        drawBresenhamLine(mouse_x_prev, mouse_y_prev, data.x, data.y, window);
+                        mouse_x_prev = data.x;
+                        mouse_y_prev = data.y;
+                    },
+                }
+            },
+            .keyboard => {},
+            .window_close => break :app_loop,
+            .window_minimize => {},
+            .window_restore => {},
+            .window_moving => {},
+            .window_moved => {},
+            .window_resizing => {},
+            .window_resized => {},
         }
-        ashet.process.yield();
     }
 }
 

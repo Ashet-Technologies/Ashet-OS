@@ -31,21 +31,18 @@ pub fn main() !void {
     }
 
     app_loop: while (true) {
-        while (ashet.ui.pollEvent(window)) |event| {
-            switch (event) {
-                .none => {},
-                .mouse => {},
-                .keyboard => {},
-                .window_close => break :app_loop,
-                .window_minimize => {},
-                .window_restore => {},
-                .window_moving => {},
-                .window_moved => {},
-                .window_resizing => {},
-                .window_resized => {},
-            }
+        const event = ashet.ui.getEvent(window);
+        switch (event) {
+            .mouse => {},
+            .keyboard => {},
+            .window_close => break :app_loop,
+            .window_minimize => {},
+            .window_restore => {},
+            .window_moving => {},
+            .window_moved => {},
+            .window_resizing => {},
+            .window_resized => {},
         }
-        ashet.process.yield();
     }
 }
 

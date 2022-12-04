@@ -35,16 +35,11 @@ pub const syscall_definitions = [_]SysCallDefinition{
     // will directly change the associated colors on the screen.
     defineSysCall("video.getPaletteMemory", fn () *[palette_size]Color, 10),
 
-    defineSysCall("input.getEvent", fn (*InputEvent) InputEventType, 11),
-    defineSysCall("input.getKeyboardEvent", fn (*KeyboardEvent) bool, 12),
-    defineSysCall("input.getMouseEvent", fn (*MouseEvent) bool, 13),
-
     defineSysCall("ui.createWindow", fn (title: [*]const u8, title_len: usize, min: Size, max: Size, startup: Size, flags: CreateWindowFlags) ?*const Window, 14),
     defineSysCall("ui.destroyWindow", fn (*const Window) void, 15),
     defineSysCall("ui.moveWindow", fn (*const Window, x: i16, y: i16) void, 16),
     defineSysCall("ui.resizeWindow", fn (*const Window, x: u16, y: u16) void, 17),
     defineSysCall("ui.setWindowTitle", fn (*const Window, title: [*]const u8, title_len: usize) void, 18),
-    defineSysCall("ui.pollEvent", fn (*const Window, *UiEvent) UiEventType, 19),
     defineSysCall("ui.invalidate", fn (*const Window, rect: Rectangle) void, 20),
 
     defineSysCall("fs.delete", fn (path_ptr: [*]const u8, path_len: usize) FileSystemError.Enum, 21),
@@ -451,7 +446,6 @@ pub const FileMode = enum(u8) {
 };
 
 pub const InputEventType = enum(u8) {
-    none = 0,
     mouse = 1,
     keyboard = 2,
 };
@@ -640,18 +634,18 @@ comptime {
         @compileError("KeyboardModifiers must be 2 byte large");
 }
 
-pub const ReadLineParams = extern struct {
-    buffer: [*]u8,
-    buffer_len: usize,
+// pub const ReadLineParams = extern struct {
+//     buffer: [*]u8,
+//     buffer_len: usize,
 
-    width: u16,
-};
+//     width: u16,
+// };
 
-pub const ReadLineResult = enum(u8) {
-    ok = 0,
-    cancelled = 1,
-    failed = 2,
-};
+// pub const ReadLineResult = enum(u8) {
+//     ok = 0,
+//     cancelled = 1,
+//     failed = 2,
+// };
 
 /// Computes the character attributes and selects both foreground and background color.
 pub fn charAttributes(foreground: u4, background: u4) u8 {
@@ -773,7 +767,6 @@ pub const UiEvent = extern union {
 };
 
 pub const UiEventType = enum(u16) {
-    none,
     mouse,
 
     /// A keyboard event happened while the window had focus.
@@ -1129,6 +1122,12 @@ pub const IOP = extern struct {
         udp_send,
         udp_send_to,
         udp_receive_from,
+
+        // Input IOPS:
+        input_get_event,
+
+        // UI IOPS:
+        ui_get_event,
     };
 
     pub const Definition = struct {
@@ -1202,8 +1201,8 @@ pub const IOP = extern struct {
             inputs: Inputs,
             outputs: Outputs = undefined,
 
-            pub fn new(input: Inputs) Self {
-                return Self{ .inputs = input };
+            pub fn new(inputs_: Inputs) Self {
+                return Self{ .inputs = inputs_ };
             }
 
             pub fn check(val: Self) Error!void {
@@ -1518,5 +1517,39 @@ pub const tcp = struct {
         .Routing = 15,
         .Timeout = 16,
         .Unexpected = 17,
+    });
+};
+
+pub const input = struct {
+    const Error = ErrorSet(.{
+        .NonExclusiveAccess = 1,
+        .InProgress = 2,
+        .Unexpected = 3,
+    });
+
+    pub const GetEvent = IOP.define(.{
+        .type = .input_get_event,
+        .@"error" = Error,
+        .outputs = struct {
+            event_type: InputEventType,
+            event: InputEvent,
+        },
+    });
+};
+
+pub const ui = struct {
+    const Error = ErrorSet(.{
+        .Unexpected = 1,
+        .InProgress = 2,
+    });
+
+    pub const GetEvent = IOP.define(.{
+        .type = .ui_get_event,
+        .@"error" = Error,
+        .inputs = struct { window: *const Window },
+        .outputs = struct {
+            event_type: UiEventType,
+            event: UiEvent,
+        },
     });
 };

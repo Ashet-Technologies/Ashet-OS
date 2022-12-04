@@ -25,11 +25,11 @@ pub fn initialize() void {
     // might require some work in the future for arm/x86
 }
 
-fn getCurrentThread() *ashet.scheduler.Thread {
+pub fn getCurrentThread() *ashet.scheduler.Thread {
     return ashet.scheduler.Thread.current() orelse @panic("syscall only legal in a process");
 }
 
-fn getCurrentProcess() *ashet.multi_tasking.Process {
+pub fn getCurrentProcess() *ashet.multi_tasking.Process {
     return getCurrentThread().process orelse @panic("syscall only legal in a process");
 }
 
@@ -178,57 +178,18 @@ fn @"fs.closeDir"(handle: abi.DirectoryHandle) callconv(.C) void {
     ashet.filesystem.closeDir(handle);
 }
 
-fn @"input.getEvent"(event: *abi.InputEvent) callconv(.C) abi.InputEventType {
-    if (!getCurrentProcess().isExclusiveVideoController()) {
-        return videoExclusiveWarning();
-    }
-
-    const evt = ashet.input.getEvent() orelse return .none;
-    switch (evt) {
-        .keyboard => |data| {
-            event.* = .{ .keyboard = data };
-            return .keyboard;
-        },
-        .mouse => |data| {
-            event.* = .{ .mouse = data };
-            return .mouse;
-        },
-    }
-}
-
-fn @"input.getKeyboardEvent"(event: *abi.KeyboardEvent) callconv(.C) bool {
-    if (!getCurrentProcess().isExclusiveVideoController()) {
-        return videoExclusiveWarning();
-    }
-    event.* = ashet.input.getKeyboardEvent() orelse return false;
-    return true;
-}
-
-fn @"input.getMouseEvent"(event: *abi.MouseEvent) callconv(.C) bool {
-    if (!getCurrentProcess().isExclusiveVideoController()) {
-        return videoExclusiveWarning();
-    }
-    event.* = ashet.input.getMouseEvent() orelse return false;
-    return true;
-}
-
 fn @"ui.createWindow"(title: [*]const u8, title_len: usize, min: abi.Size, max: abi.Size, startup: abi.Size, flags: abi.CreateWindowFlags) callconv(.C) ?*const abi.Window {
     const window = ashet.ui.Window.create(getCurrentProcess(), title[0..title_len], min, max, startup, flags) catch return null;
     return &window.user_facing;
 }
 
-fn getMutableWindow(win: *const abi.Window) *ashet.ui.Window {
-    const window = @fieldParentPtr(ashet.ui.Window, "user_facing", win);
-    return @intToPtr(*ashet.ui.Window, @ptrToInt(window));
-}
-
 fn @"ui.destroyWindow"(win: *const abi.Window) callconv(.C) void {
-    const window = getMutableWindow(win);
+    const window = ashet.ui.Window.getFromABI(win);
     window.destroy();
 }
 
 fn @"ui.moveWindow"(win: *const abi.Window, x: i16, y: i16) callconv(.C) void {
-    const window = getMutableWindow(win);
+    const window = ashet.ui.Window.getFromABI(win);
 
     window.user_facing.client_rectangle.x = x;
     window.user_facing.client_rectangle.y = y;
@@ -237,7 +198,7 @@ fn @"ui.moveWindow"(win: *const abi.Window, x: i16, y: i16) callconv(.C) void {
 }
 
 fn @"ui.resizeWindow"(win: *const abi.Window, x: u16, y: u16) callconv(.C) void {
-    const window = getMutableWindow(win);
+    const window = ashet.ui.Window.getFromABI(win);
 
     window.user_facing.client_rectangle.width = x;
     window.user_facing.client_rectangle.height = y;
@@ -246,25 +207,12 @@ fn @"ui.resizeWindow"(win: *const abi.Window, x: u16, y: u16) callconv(.C) void 
 }
 
 fn @"ui.setWindowTitle"(win: *const abi.Window, title: [*]const u8, title_len: usize) callconv(.C) void {
-    const window = getMutableWindow(win);
+    const window = ashet.ui.Window.getFromABI(win);
     window.setTitle(title[0..title_len]) catch std.log.err("setWindowTitle: out of memory!", .{});
 }
 
-fn @"ui.pollEvent"(win: *const abi.Window, out: *abi.UiEvent) callconv(.C) abi.UiEventType {
-    const window = getMutableWindow(win);
-
-    const event = window.pullEvent() orelse return .none;
-    switch (event) {
-        .none => unreachable,
-        .mouse => |val| out.* = .{ .mouse = val },
-        .keyboard => |val| out.* = .{ .keyboard = val },
-        .window_close, .window_minimize, .window_restore, .window_moving, .window_moved, .window_resizing, .window_resized => {},
-    }
-    return event;
-}
-
 fn @"ui.invalidate"(win: *const abi.Window, rect: abi.Rectangle) callconv(.C) void {
-    const window = getMutableWindow(win);
+    const window = ashet.ui.Window.getFromABI(win);
 
     var screen_rect = abi.Rectangle{
         .x = window.user_facing.client_rectangle.x + rect.x,

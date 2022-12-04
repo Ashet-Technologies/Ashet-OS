@@ -632,7 +632,6 @@ const WindowIterator = struct {
 const WindowQueue = std.TailQueue(void);
 
 const Event = union(ashet.abi.UiEventType) {
-    none,
     mouse: ashet.abi.MouseEvent,
     keyboard: ashet.abi.KeyboardEvent,
     window_close,
@@ -653,6 +652,32 @@ pub fn destroyAllWindowsForProcess(proc: *ashet.multi_tasking.Process) void {
     }
 }
 
+fn eventToIOP(event: Event) ashet.abi.ui.GetEvent.Outputs {
+    var iop = ashet.abi.ui.GetEvent.Outputs{
+        .event_type = event,
+        .event = undefined,
+    };
+    switch (event) {
+        .mouse => |val| iop.event = .{ .mouse = val },
+        .keyboard => |val| iop.event = .{ .keyboard = val },
+        .window_close, .window_minimize, .window_restore, .window_moving, .window_moved, .window_resizing, .window_resized => {},
+    }
+    return iop;
+}
+
+pub fn getEvent(data: *ashet.abi.ui.GetEvent) void {
+    const window: *Window = Window.getFromABI(data.inputs.window);
+    if (window.event_awaiter != null)
+        return ashet.io.finalizeWithError(data, error.InProgress);
+
+    data.@"error" = .ok; // otherwise always ok, just might take time
+    if (window.pullEvent()) |event| {
+        ashet.io.finalizeWithResult(data, eventToIOP(event));
+    } else {
+        window.event_awaiter = data;
+    }
+}
+
 pub const Window = struct {
     memory: std.heap.ArenaAllocator,
     user_facing: ashet.abi.Window,
@@ -661,6 +686,13 @@ pub const Window = struct {
 
     node: WindowQueue.Node = .{ .data = {} },
     event_queue: astd.RingBuffer(Event, 16) = .{}, // 16 events should be easily enough
+
+    event_awaiter: ?*ashet.abi.ui.GetEvent = null,
+
+    pub fn getFromABI(win: *const ashet.abi.Window) *Window {
+        const window = @fieldParentPtr(Window, "user_facing", win);
+        return @intToPtr(*Window, @ptrToInt(window));
+    }
 
     pub fn create(
         owner: ?*ashet.multi_tasking.Process,
@@ -771,7 +803,13 @@ pub const Window = struct {
 
     pub fn pushEvent(window: *Window, event: Event) void {
         // logger.info("push {} for {s}", .{ event, window.title() });
-        window.event_queue.push(event);
+
+        if (window.event_awaiter) |awaiter| {
+            ashet.io.finalizeWithResult(awaiter, eventToIOP(event));
+            window.event_awaiter = null;
+        } else {
+            window.event_queue.push(event);
+        }
     }
 
     pub fn pullEvent(window: *Window) ?Event {

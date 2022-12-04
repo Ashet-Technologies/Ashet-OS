@@ -68,29 +68,26 @@ pub fn main() !void {
     paint(window);
 
     app_loop: while (true) {
-        while (ashet.ui.pollEvent(window)) |event| {
-            switch (event) {
-                .none => {},
-                .mouse => |data| {
-                    if (interface.sendMouseEvent(data)) |guievt|
-                        handleEvent(guievt);
-                    paint(window);
-                },
-                .keyboard => |data| {
-                    if (interface.sendKeyboardEvent(data)) |guievt|
-                        handleEvent(guievt);
-                    paint(window);
-                },
-                .window_close => break :app_loop,
-                .window_minimize => {},
-                .window_restore => {},
-                .window_moving => {},
-                .window_moved => {},
-                .window_resizing => {},
-                .window_resized => {},
-            }
+        const event = ashet.ui.getEvent(window);
+        switch (event) {
+            .mouse => |data| {
+                if (interface.sendMouseEvent(data)) |guievt|
+                    handleEvent(guievt);
+                paint(window);
+            },
+            .keyboard => |data| {
+                if (interface.sendKeyboardEvent(data)) |guievt|
+                    handleEvent(guievt);
+                paint(window);
+            },
+            .window_close => break :app_loop,
+            .window_minimize => {},
+            .window_restore => {},
+            .window_moving => {},
+            .window_moved => {},
+            .window_resizing => {},
+            .window_resized => {},
         }
-        ashet.process.yield();
     }
 }
 

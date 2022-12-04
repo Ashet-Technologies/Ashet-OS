@@ -5,7 +5,7 @@ pub usingnamespace ashet.core;
 
 const ColorIndex = ashet.abi.ColorIndex;
 
-pub fn main() void {
+pub fn main() !void {
     if (!ashet.video.acquire()) {
         ashet.process.exit(1);
     }
@@ -16,27 +16,24 @@ pub fn main() void {
     render();
 
     while (true) {
-        if (ashet.input.getEvent()) |event| {
-            switch (event) {
-                .mouse => |data| std.log.info("mouse => {}", .{data}),
-                .keyboard => |data| {
-                    if (data.pressed and data.key == .escape)
-                        return;
-                    std.log.info("keyboard: pressed={}, alt={}, shift={}, ctrl={}, altgr={}, scancode={d: >3}, key={s: <10}, text='{?s}'", .{
-                        @boolToInt(data.pressed),
-                        @boolToInt(data.modifiers.alt),
-                        @boolToInt(data.modifiers.shift),
-                        @boolToInt(data.modifiers.ctrl),
-                        @boolToInt(data.modifiers.alt_graph),
-                        data.scancode,
-                        @tagName(data.key),
-                        data.text,
-                    });
-                },
-            }
+        const event = try ashet.input.getEvent();
+        switch (event) {
+            .mouse => |data| std.log.info("mouse => {}", .{data}),
+            .keyboard => |data| {
+                if (data.pressed and data.key == .escape)
+                    return;
+                std.log.info("keyboard: pressed={}, alt={}, shift={}, ctrl={}, altgr={}, scancode={d: >3}, key={s: <10}, text='{?s}'", .{
+                    @boolToInt(data.pressed),
+                    @boolToInt(data.modifiers.alt),
+                    @boolToInt(data.modifiers.shift),
+                    @boolToInt(data.modifiers.ctrl),
+                    @boolToInt(data.modifiers.alt_graph),
+                    data.scancode,
+                    @tagName(data.key),
+                    data.text,
+                });
+            },
         }
-
-        ashet.process.yield();
     }
 }
 

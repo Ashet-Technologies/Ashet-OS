@@ -659,92 +659,65 @@ pub const input = struct {
         return evt;
     }
 
-    const KeyEvent = struct {
-        key: u16,
-        down: bool,
-    };
-
-    pub fn getKeyboardEvent() ?KeyEvent {
-        for (devices.slice()) |*device| {
-            if (device.kind != .keyboard)
-                continue;
-
-            device_fetch: while (true) {
-                const evt = getDeviceEvent(device) orelse break :device_fetch;
-
-                if (evt.type != @enumToInt(virtio.input.ConfigEvSubSel.cess_key)) {
-                    continue;
-                }
-
-                return KeyEvent{
-                    .key = evt.code,
-                    .down = evt.value != 0,
-                };
-            }
-        }
-
-        return null;
+    fn mapToMouseButton(val: u16) ?ashet.abi.MouseButton {
+        return switch (val) {
+            272 => .left,
+            273 => .right,
+            274 => .middle,
+            275 => .nav_previous,
+            276 => .nav_next,
+            337 => .wheel_up,
+            336 => .wheel_down,
+            else => null,
+        };
     }
 
-    pub const MouseEvent = union(enum) {
-        motion: Motion,
-        button: Button,
-
-        pub const Motion = struct {
-            dx: i32,
-            dy: i32,
-        };
-        pub const Button = struct {
-            button: MouseButton,
-            down: bool,
-        };
-    };
-
-    pub const MouseButton = enum(u16) {
-        left = 272,
-        right = 273,
-        middle = 274,
-        nav_previous = 275,
-        nav_next = 276,
-        wheel_up = 337,
-        wheel_down = 336,
-        _,
-    };
-
-    pub fn getMouseEvent() ?MouseEvent {
+    pub fn poll() void {
         for (devices.slice()) |*device| {
-            if (device.kind != .mouse)
-                continue;
-
             device_fetch: while (true) {
                 const evt = getDeviceEvent(device) orelse break :device_fetch;
+                const event_type = @intToEnum(virtio.input.ConfigEvSubSel, evt.type);
 
-                switch (@intToEnum(virtio.input.ConfigEvSubSel, evt.type)) {
-                    .cess_key => {
-                        return MouseEvent{ .button = MouseEvent.Button{
-                            .button = @intToEnum(MouseButton, evt.code),
-                            .down = evt.value != 0,
-                        } };
-                    },
-                    .cess_rel => {
-                        if (evt.code == 0) {
-                            return MouseEvent{ .motion = MouseEvent.Motion{
-                                .dx = @bitCast(i32, evt.value),
-                                .dy = 0,
-                            } };
-                        } else if (evt.code == 1) {
-                            return MouseEvent{ .motion = MouseEvent.Motion{
-                                .dx = 0,
-                                .dy = @bitCast(i32, evt.value),
-                            } };
+                switch (device.kind) {
+                    .keyboard => {
+                        switch (event_type) {
+                            .unset => {},
+                            .cess_key => ashet.input.pushRawEvent(.{ .keyboard = .{
+                                .scancode = evt.code,
+                                .down = evt.value != 0,
+                            } }),
+                            else => logger.warn("unhandled keyboard event: {}", .{event_type}),
                         }
                     },
-                    else => continue,
+                    .mouse => {
+                        switch (event_type) {
+                            .unset => {},
+                            .cess_key => {
+                                ashet.input.pushRawEvent(.{ .mouse_button = .{
+                                    .button = mapToMouseButton(evt.code) orelse continue,
+                                    .down = (evt.value != 0),
+                                } });
+                            },
+                            .cess_rel => {
+                                if (evt.code == 0) {
+                                    ashet.input.pushRawEvent(.{ .mouse_motion = .{
+                                        .dx = @bitCast(i32, evt.value),
+                                        .dy = 0,
+                                    } });
+                                } else if (evt.code == 1) {
+                                    ashet.input.pushRawEvent(.{ .mouse_motion = .{
+                                        .dx = 0,
+                                        .dy = @bitCast(i32, evt.value),
+                                    } });
+                                }
+                            },
+                            else => logger.warn("unhandled mouse event: {}", .{event_type}),
+                        }
+                    },
+                    else => logger.warn("unhandled event for {s} device: {}", .{ @tagName(device.kind), event_type }),
                 }
             }
         }
-
-        return null;
     }
 };
 

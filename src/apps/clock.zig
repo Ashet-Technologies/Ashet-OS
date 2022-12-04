@@ -22,19 +22,18 @@ pub fn main() !void {
     paint(window, epoch_secs);
 
     app_loop: while (true) {
-        while (ashet.ui.pollEvent(window)) |event| {
-            switch (event) {
-                .none => {},
-                .mouse => {},
-                .keyboard => {},
-                .window_close => break :app_loop,
-                .window_minimize => {},
-                .window_restore => {},
-                .window_moving => {},
-                .window_moved => {},
-                .window_resizing => {},
-                .window_resized => {},
-            }
+        const event = ashet.ui.getEvent(window);
+
+        switch (event) {
+            .mouse => {},
+            .keyboard => {},
+            .window_close => break :app_loop,
+            .window_minimize => {},
+            .window_restore => {},
+            .window_moving => {},
+            .window_moved => {},
+            .window_resizing => {},
+            .window_resized => {},
         }
 
         var next_step = std.time.epoch.EpochSeconds{ .secs = @intCast(u64, std.math.max(0, @divTrunc(ashet.time.nanoTimestamp(), std.time.ns_per_s))) };
