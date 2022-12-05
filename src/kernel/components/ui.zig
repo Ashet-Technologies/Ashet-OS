@@ -1215,15 +1215,34 @@ pub const desktop = struct {
 
             var pixels: [height][width]u8 = undefined;
 
+            const magic = try stream.readIntLittle(u32);
+            if (magic != 0x48198b74)
+                return error.InvalidFormat;
+
+            const s_width = try stream.readIntLittle(u16);
+            const s_height = try stream.readIntLittle(u16);
+            if ((s_width != width) or (s_height != height))
+                return error.InvalidDimension;
+
+            const s_flags = try stream.readIntLittle(u16);
+            const transparent = ((s_flags & 1) != 0);
+
+            var palette_size: usize = try stream.readIntLittle(u8);
+            if (palette_size == 0)
+                palette_size = 256;
+            if (palette_size >= 16)
+                return error.PaletteTooLarge;
+            const transparency_key = try stream.readIntLittle(u8);
+
             try stream.readNoEof(std.mem.sliceAsBytes(&pixels));
-            try stream.readNoEof(std.mem.sliceAsBytes(&icon.palette));
+            try stream.readNoEof(std.mem.sliceAsBytes(icon.palette[0..palette_size]));
 
             for (pixels) |row, y| {
                 for (row) |color, x| {
-                    icon.pixels[y][x] = if (color == 0)
+                    icon.pixels[y][x] = if (transparent and color == transparency_key)
                         ColorIndex.get(0)
                     else
-                        ColorIndex.get(offset + color - 1);
+                        ColorIndex.get(offset + color);
                 }
             }
 
@@ -1240,7 +1259,7 @@ pub const desktop = struct {
     const default_icon = blk: {
         @setEvalBranchQuota(20_000);
 
-        const data = @embedFile("../data/generic-app.icon");
+        const data = @embedFile("../data/generic-app-icon.abm");
 
         var stream = std.io.fixedBufferStream(data);
 

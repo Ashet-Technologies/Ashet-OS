@@ -92,17 +92,24 @@ pub fn main() !void {
         var i: usize = 0;
         var src_pixels = raw_image.iterator();
         while (src_pixels.next()) |src_color| : (i += 1) {
-            if (!isTransparent(src_color)) {
-                bitmap[i] = 0x01 + @intCast(u8, getBestMatch(palette, reduceTo565(src_color)));
+            if (isTransparent(src_color)) {
+                bitmap[i] = 0xFF; // transparent
             } else {
-                bitmap[i] = 0x00; // transparent
+                bitmap[i] = @intCast(u8, getBestMatch(palette, reduceTo565(src_color)));
             }
         }
     }
 
+    var limit: u8 = 0;
+    var transparency = false;
     for (bitmap) |c| {
-        if (c >= 16) @panic("color index out of range!");
+        if (c >= 16 and c != 0xFF) @panic("color index out of range!");
+        if (c != 0xFF)
+            limit = std.math.max(limit, c);
+        if (c == 0xFF)
+            transparency = true;
     }
+    limit += 1; // compute palette size
 
     // compute bitmap
     var out_file = try std.fs.cwd().createFile(args[2], .{});
@@ -110,6 +117,13 @@ pub fn main() !void {
 
     var buffered_writer = std.io.bufferedWriter(out_file.writer());
     var writer = buffered_writer.writer();
+
+    try writer.writeIntLittle(u32, 0x48198b74);
+    try writer.writeIntLittle(u16, @intCast(u16, raw_image.width));
+    try writer.writeIntLittle(u16, @intCast(u16, raw_image.height));
+    try writer.writeIntLittle(u16, if (transparency) @as(u16, 0x0001) else 0x0000); // flags, enable transparency
+    try writer.writeIntLittle(u8, limit); // palette size
+    try writer.writeIntLittle(u8, 0xFF); // transparent
 
     try writer.writeAll(bitmap);
 

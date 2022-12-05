@@ -274,14 +274,14 @@ pub fn build(b: *std.build.Builder) void {
         {
             const convert_wallpaper = tool_mkicon.run();
             convert_wallpaper.addArg("artwork/os/wallpaper-chances.png");
-            convert_wallpaper.addArg("src/kernel/data/ui/wallpaper.img");
+            convert_wallpaper.addArg("src/kernel/data/ui/wallpaper.abm");
             convert_wallpaper.addArg("400x300");
             kernel_exe.step.dependOn(&convert_wallpaper.step);
         }
         {
             const generate_stub_icon = tool_mkicon.run();
             generate_stub_icon.addArg("artwork/os/default-app-icon.png");
-            generate_stub_icon.addArg("src/kernel/data/generic-app.icon");
+            generate_stub_icon.addArg("src/kernel/data/generic-app-icon.abm");
             generate_stub_icon.addArg("32x32");
             kernel_exe.step.dependOn(&generate_stub_icon.step);
         }

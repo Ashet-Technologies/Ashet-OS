@@ -1,6 +1,7 @@
 const std = @import("std");
 const ashet = @import("ashet");
 const gui = @import("ashet-gui");
+const Vec2 = @import("Vector2.zig");
 
 pub usingnamespace ashet.core;
 
@@ -39,12 +40,15 @@ pub fn main() !void {
                 if (data.pressed) {
                     moved = true;
 
-                    switch (data.key) {
-                        .up => raycaster.camera_position.x += 0.1,
-                        .down => raycaster.camera_position.x -= 0.1,
+                    const fwd = Vec2.unitX.rotate(raycaster.camera_rotation).scale(0.1);
+                    const right = Vec2.unitY.rotate(raycaster.camera_rotation).scale(0.1);
 
-                        .left => raycaster.camera_position.y -= 0.1,
-                        .right => raycaster.camera_position.y += 0.1,
+                    switch (data.key) {
+                        .up => raycaster.camera_position = raycaster.camera_position.add(fwd),
+                        .down => raycaster.camera_position = raycaster.camera_position.sub(fwd),
+
+                        .left => raycaster.camera_position = raycaster.camera_position.sub(right),
+                        .right => raycaster.camera_position = raycaster.camera_position.add(right),
 
                         .page_up => raycaster.camera_rotation -= 0.1,
                         .page_down => raycaster.camera_rotation += 0.1,
@@ -81,13 +85,36 @@ fn render() void {
     std.mem.copy(ColorIndex, ashet.video.getVideoMemory()[0..clonebuffer.len], &clonebuffer);
 }
 
+const Texture = struct {
+    const width = 32;
+    const height = 32;
+
+    pixels: [width][height]ColorIndex,
+    palette: [16]ashet.abi.Color,
+
+    pub fn embed(comptime path: []const u8) Texture {
+        _ = path;
+    }
+};
+
+const textures = [_]Texture{
+    Texture.embed("floor.tex"), //       16
+    Texture.embed("wall-cobweb.tex"), // 32
+    Texture.embed("wall-door.tex"), //   48
+    Texture.embed("wall-paper.tex"), //  64
+    Texture.embed("wall-plain.tex"), //  80
+    Texture.embed("wall-post-l.tex"), // 96
+    Texture.embed("wall-post-r.tex"), // 112
+    Texture.embed("wall-vines.tex"), //  128
+};
+
 const Raycaster = struct {
     const width = screen_width;
     const height = screen_height;
     const aspect = @intToFloat(f32, screen_width) / @intToFloat(f32, screen_height);
 
     const floor_color = ashet.abi.ColorIndex.get(3); // dim gray
-    const ceiling_color = ashet.abi.ColorIndex.get(7); // bright gray
+    const ceiling_color = ashet.abi.ColorIndex.get(8); // light blue
 
     const walls = [_]Wall{
         Wall{
@@ -122,8 +149,6 @@ const Raycaster = struct {
         }
         break :blk rays;
     };
-
-    const Vec2 = @import("Vector2.zig");
 
     const Wall = struct {
         texture_id: u16,
