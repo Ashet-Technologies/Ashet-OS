@@ -26,6 +26,8 @@ pub fn main() !void {
 
         const line = line_or_null orelse break;
 
+        errdefer |e| std.log.err("failed to parse line {s}: {s}", .{ line, @errorName(e) });
+
         // process line
         var out_line_buffer = std.io.bufferedWriter(stdout.writer());
         const writer = out_line_buffer.writer();
@@ -33,7 +35,7 @@ pub fn main() !void {
             var index: usize = 0;
             walk: while (index < line.len) {
                 // search for "0x????????" in the output stream
-                if (std.mem.indexOfPos(u8, line, index, "0x")) |start| {
+                if (std.mem.indexOfPos(u8, line, index, "0x")) |start| outer_scan: {
                     scan: {
 
                         // basic bounds check
@@ -49,7 +51,7 @@ pub fn main() !void {
                         try writer.writeAll(line[index .. start + 10]);
                         index = start + 10;
 
-                        var symbol_info = getSymbolFromDwarf(u32, allocator, address, &debug_info) catch break :scan;
+                        var symbol_info = getSymbolFromDwarf(u32, allocator, address, &debug_info) catch break :outer_scan;
                         defer symbol_info.deinit(allocator);
 
                         if (symbol_info.line_info) |line_info| {

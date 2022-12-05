@@ -46,7 +46,17 @@ fn _start() callconv(.C) u32 {
 }
 
 pub const core = struct {
+    var double_panic = false;
+
     pub fn panic(msg: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, maybe_return_address: ?usize) noreturn {
+        if (double_panic) {
+            debug.write("DOUBLE PANIC: ");
+            debug.write(msg);
+            debug.write("\r\n");
+            syscall("process.exit")(1);
+        }
+        double_panic = true;
+
         debug.write("PANIC: ");
         debug.write(msg);
         debug.write("\r\n");

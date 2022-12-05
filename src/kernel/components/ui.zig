@@ -289,8 +289,6 @@ fn run(_: ?*anyopaque) callconv(.C) u32 {
                 repaint();
             }
 
-            // demo.update();
-
             ashet.scheduler.yield();
         }
     }

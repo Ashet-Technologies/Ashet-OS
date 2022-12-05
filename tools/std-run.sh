@@ -1,10 +1,18 @@
 #!/bin/sh
 
+# env:
+# - ZARG (passed to `zig build)`
+# - APP  (used for the debug filter instead of the OS)
+
 set -e
 
 ROOT="$(realpath "$(dirname "$(realpath "$0")")"/../)"
 
 cd "${ROOT}"
+
+if [ -z "$APP" ]; then
+    APP="${ROOT}/zig-out/bin/ashet-os"
+fi
 
 clear
 zig build install $ZARG
@@ -26,6 +34,6 @@ qemu-system-riscv32 \
         -drive if=pflash,index=1,file=zig-out/disk.img,format=raw \
         -serial stdio \
         -s "$@" \
-| "${ROOT}/zig-out/bin/debug-filter" "${ROOT}/zig-out/bin/ashet-os"
+| "${ROOT}/zig-out/bin/debug-filter" "${APP}"
 
 # tcpdump -r ashet-os.pcap 
