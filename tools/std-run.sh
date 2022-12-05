@@ -7,7 +7,7 @@ ROOT="$(realpath "$(dirname "$(realpath "$0")")"/../)"
 cd "${ROOT}"
 
 clear
-zig build install
+zig build install $ZARG
 "${ROOT}/zig-out/bin/init-disk" "${ROOT}/zig-out/disk.img"
 echo "----------------------"
 qemu-system-riscv32 \

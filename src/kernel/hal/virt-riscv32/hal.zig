@@ -6,6 +6,23 @@ const virtio = @import("virtio");
 
 pub const serial = @import("serial.zig");
 
+noinline fn readHwCounter() u64 {
+    var res: u64 = undefined;
+    asm volatile (
+        \\read_hwcnt_loop:
+        \\  rdcycleh t0 // hi
+        \\  rdcycle  t1 // lo
+        \\  rdcycleh t2 // check
+        \\  bne t0, t2, read_hwcnt_loop
+        \\  sw t0, 4(%[ptr])
+        \\  sw t1, 0(%[ptr])
+        :
+        : [ptr] "r" (&res),
+        : "{t0}", "{t1}", "{t2}"
+    );
+    return res;
+}
+
 pub fn initialize() void {
 
     // Initialize all virtio devices:
@@ -93,6 +110,7 @@ pub const video = struct {
 
     var border_color: ColorIndex = ashet.video.defaults.border;
 
+    var graphics_resized = true;
     var graphics_width: u16 = 256;
     var graphics_height: u16 = 128;
 
@@ -119,52 +137,87 @@ pub const video = struct {
     }
 
     pub fn setResolution(width: u15, height: u15) void {
+        graphics_resized = true;
         graphics_width = std.math.min(max_width, width);
         graphics_height = std.math.min(max_height, height);
     }
 
-    fn pal(color: ColorIndex) u32 {
+    inline fn pal(color: ColorIndex) u32 {
+        @setRuntimeSafety(false);
         return backing_palette[color.index()].toRgb32();
     }
 
+    // var flush_limit: u64 = 0;
+    // var flush_count: u64 = 0;
+
+    /// baseline,Debug:  debug(platform-virt): frame flush time: 132914953 cycles, avg 158259348 cycles
+    /// inline,Debug:    debug(platform-virt): frame flush time: 119970714 cycles, avg 102176562 cycles
+    /// noclear,Debug:   debug(platform-virt): frame flush time:  50613156 cycles, avg  56891973 cycles
+    /// opticlear,Debug: debug(platform-virt): frame flush time:  48036765 cycles, avg  53044756 cycles
+    /// correct,Debug:   debug(platform-virt): frame flush time:  50813279 cycles, avg  51812661 cycles
+    /// no_mul,Debug:    debug(platform-virt): frame flush time:  38071785 cycles, avg  41297847 cycles
+    /// no_runsaf,Debug: debug(platform-virt): frame flush time:  36532901 cycles, avg  41069180 cycles
+    /// no safety,Debug: debug(platform-virt): frame flush time:  35441413 cycles, avg  35434932 cycles
     pub fn flush() void {
+        @setRuntimeSafety(false);
+        // const flush_time_start = readHwCounter();
+
         const dx = (gpu.fb_width - graphics_width) / 2;
         const dy = (gpu.fb_height - graphics_height) / 2;
 
-        {
-            var i: usize = 0;
-            var x: usize = 0;
-            var y: usize = 0;
-            while (i < gpu.fb_width * gpu.fb_height) : (i += 1) {
-                if (x == dx) {
-                    x += graphics_width;
-                    i += graphics_width - 1;
-                } else if (x < dx or x >= dx + graphics_width or y < dy or y >= dy + graphics_height) {
-                    gpu.fb_mem[i] = pal(border_color);
-                }
+        if (graphics_resized) {
+            graphics_resized = false;
 
-                x += 1;
-                if (x == gpu.fb_width) {
-                    x = 0;
-                    y += 1;
-                    if (y == dy) {
-                        y += graphics_height;
-                        i += (graphics_height * gpu.fb_width) - 1;
-                    }
-                }
+            const border_value = pal(border_color);
+
+            const limit = gpu.fb_width * gpu.fb_height;
+
+            var row_addr = gpu.fb_mem.ptr;
+
+            std.mem.set(u32, row_addr[0 .. gpu.fb_width * dy], border_value);
+            std.mem.set(u32, row_addr[gpu.fb_width * (dy + graphics_height) .. limit], border_value);
+
+            var y: usize = 0;
+            row_addr += gpu.fb_width * dy;
+            while (y < graphics_height) : (y += 1) {
+                std.mem.set(u32, row_addr[0..dx], border_value);
+                std.mem.set(u32, row_addr[dx + graphics_width .. gpu.fb_width], border_value);
+                row_addr += gpu.fb_width;
             }
         }
 
         const pixel_count = @as(usize, graphics_width) * @as(usize, graphics_height);
 
-        for (video.memory[0..pixel_count]) |index, i| {
-            const x = dx + i % graphics_width;
-            const y = dy + i / graphics_width;
+        {
+            var row = gpu.fb_mem.ptr + gpu.fb_width * dy + dx;
+            var ind: usize = 0;
 
-            gpu.fb_mem[gpu.fb_width * y + x] = pal(index);
+            var x: usize = 0;
+            var y: usize = 0;
+
+            for (video.memory[0..pixel_count]) |color| {
+                row[ind] = pal(color);
+                ind += 1;
+
+                x += 1;
+                if (x == graphics_width) {
+                    x = 0;
+                    ind = 0;
+                    row += gpu.fb_width;
+                    y += 1;
+                }
+            }
         }
 
         gpu.flushFramebuffer(0, 0, 0, 0);
+
+        // const flush_time_end = readHwCounter();
+        // const flush_time = flush_time_end -| flush_time_start;
+
+        // flush_limit += flush_time;
+        // flush_count += 1;
+
+        // logger.debug("frame flush time: {} cycles, avg {} cycles", .{ flush_time, flush_limit / flush_count });
     }
 };
 
@@ -368,9 +421,7 @@ const gpu = struct {
     }
 
     fn flushFramebuffer(x: u32, y: u32, req_width: u32, req_height: u32) void {
-        const width =
-            if (req_width <= 0) fb_width else req_width;
-
+        const width = if (req_width <= 0) fb_width else req_width;
         const height = if (req_height <= 0) fb_height else req_height;
 
         vq.waitSettled();

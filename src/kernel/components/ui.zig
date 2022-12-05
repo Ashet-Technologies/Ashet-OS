@@ -285,7 +285,7 @@ fn run(_: ?*anyopaque) callconv(.C) u32 {
             }
 
             if (invalidation_areas.len > 0) {
-                logger.info("repaint", .{});
+                logger.debug("repaint", .{});
                 repaint();
             }
 
