@@ -231,7 +231,7 @@ pub const video = struct {
         return syscall("video.getVideoMemory")();
     }
 
-    pub fn getPaletteMemory() *[abi.palette_size]u16 {
+    pub fn getPaletteMemory() *[abi.palette_size]abi.Color {
         return syscall("video.getPaletteMemory")();
     }
 };

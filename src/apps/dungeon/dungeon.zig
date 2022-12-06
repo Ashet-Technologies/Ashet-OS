@@ -82,6 +82,7 @@ fn render() void {
     raycaster.drawWalls(fb);
 
     // double buffering:
+    std.mem.copy(ashet.abi.Color, ashet.video.getPaletteMemory(), &palette);
     std.mem.copy(ColorIndex, ashet.video.getVideoMemory()[0..clonebuffer.len], &clonebuffer);
 }
 
@@ -92,20 +93,51 @@ const Texture = struct {
     pixels: [width][height]ColorIndex,
     palette: [16]ashet.abi.Color,
 
-    pub fn embed(comptime path: []const u8) Texture {
-        _ = path;
+    pub inline fn sample(tex: Texture, x: i32, y: i32) ColorIndex {
+        @setRuntimeSafety(false);
+        const u = @bitCast(u32, x) & (width - 1);
+        const v = @bitCast(u32, y) & (height - 1);
+        return tex.pixels[v][u];
+    }
+
+    pub fn load(bmp_src: gui.Bitmap.EmbeddedBitmap) Texture {
+        const bmp = bmp_src.bitmap;
+        if (bmp.width != width or bmp.height != height)
+            @panic("invalid bitmap");
+        if (bmp_src.palette.len > 16)
+            @panic("palette too large");
+        if (bmp.transparent != null)
+            @panic("transparent texture");
+        var tex = Texture{
+            .pixels = @bitCast([width][height]ColorIndex, bmp.pixels[0 .. width * height].*),
+            .palette = undefined,
+        };
+        std.mem.copy(ashet.abi.Color, &tex.palette, bmp_src.palette);
+        return tex;
     }
 };
 
 const textures = [_]Texture{
-    Texture.embed("floor.tex"), //       16
-    Texture.embed("wall-cobweb.tex"), // 32
-    Texture.embed("wall-door.tex"), //   48
-    Texture.embed("wall-paper.tex"), //  64
-    Texture.embed("wall-plain.tex"), //  80
-    Texture.embed("wall-post-l.tex"), // 96
-    Texture.embed("wall-post-r.tex"), // 112
-    Texture.embed("wall-vines.tex"), //  128
+    Texture.load(gui.Bitmap.embed(@embedFile("data/floor.abm"))),
+    Texture.load(gui.Bitmap.embed(@embedFile("data/wall-plain.abm"))),
+    Texture.load(gui.Bitmap.embed(@embedFile("data/wall-cobweb.abm"))),
+    Texture.load(gui.Bitmap.embed(@embedFile("data/wall-paper.abm"))),
+    Texture.load(gui.Bitmap.embed(@embedFile("data/wall-vines.abm"))),
+    Texture.load(gui.Bitmap.embed(@embedFile("data/wall-door.abm"))),
+    Texture.load(gui.Bitmap.embed(@embedFile("data/wall-post-l.abm"))),
+    Texture.load(gui.Bitmap.embed(@embedFile("data/wall-post-r.abm"))),
+};
+
+const palette = blk: {
+    var pal: [256]ashet.abi.Color = undefined;
+    for (textures) |tex, i| {
+        std.mem.copy(
+            ashet.abi.Color,
+            pal[16 * i ..],
+            &tex.palette,
+        );
+    }
+    break :blk pal;
 };
 
 const Raycaster = struct {
@@ -118,9 +150,39 @@ const Raycaster = struct {
 
     const walls = [_]Wall{
         Wall{
-            .texture_id = 0,
-            .points = .{ Vec2.new(1, -0.5), Vec2.new(1, 0.5) },
+            .texture_id = 1,
+            .points = .{ Vec2.new(2, -0.5), Vec2.new(-2, -0.5) },
+            .u_offset = .{ 0, 4 },
+        },
+
+        Wall{
+            .texture_id = 1,
+            .points = .{ Vec2.new(2, -0.5), Vec2.new(2, 0.5) },
             .u_offset = .{ 0, 1 },
+        },
+
+        Wall{
+            .texture_id = 5,
+            .points = .{ Vec2.new(2, 0.5), Vec2.new(2, 1.5) },
+            .u_offset = .{ 0, 1 },
+        },
+
+        Wall{
+            .texture_id = 1,
+            .points = .{ Vec2.new(2, 1.5), Vec2.new(2, 2.5) },
+            .u_offset = .{ 0, 1 },
+        },
+
+        Wall{
+            .texture_id = 1,
+            .points = .{ Vec2.new(2, 2.5), Vec2.new(-2, 2.5) },
+            .u_offset = .{ 0, 4 },
+        },
+
+        Wall{
+            .texture_id = 1,
+            .points = .{ Vec2.new(-2, -0.5), Vec2.new(-2, 2.5) },
+            .u_offset = .{ 0, 3 },
         },
     };
 
@@ -177,7 +239,6 @@ const Raycaster = struct {
             var maybe_hit = castRay(rc.camera_position, dir);
 
             var wallHeight: u32 = 0;
-            var texture_index: u16 = 0;
             rc.zbuffer[x] = if (maybe_hit) |result| blk: {
                 // std.log.info("hit {}", .{result});
                 if (result.distance < 0.01) {
@@ -190,7 +251,6 @@ const Raycaster = struct {
                 // adjust the zbuffer
                 wallHeight = @floatToInt(u32, height / @fabs(result.distance) + 0.5);
                 // std.log.info("x={} => d={d} => {}", .{ x, result.distance, wallHeight });
-                texture_index = result.wall.texture_id;
                 break :blk result.distance;
             } else std.math.inf(f32); // no hit means infinite distance
 
@@ -236,17 +296,20 @@ const Raycaster = struct {
             //   auto const walltex = wall_textures[texture_index];
 
             if (maybe_hit) |result| {
-                _ = result; // used for texture query
+                const tex_id = result.wall.texture_id;
+                const walltex = &textures[tex_id];
 
-                //   const  u = (walltex->width) - 1) * @fract(result.u);
+                const index_shift = @intCast(u8, 16 * tex_id);
+
+                const u = @floatToInt(i32, @intToFloat(f32, Texture.width - 1) * (result.u - @floor(result.u)));
 
                 const maxy = std.math.min(height, wallBottom);
 
                 var y: u15 = @truncate(u15, std.math.clamp(wallTop, 0, height));
                 while (y < maxy) : (y += 1) {
-                    // const v = walltex.height * (y - wallTop) / wallHeight;
-                    // setPixel(x, y, walltex.sample(u, v));
-                    fb.setPixel(x, y, gui.ColorIndex.get(4)); // blue
+                    // TODO: Fix y computation
+                    const v = @intCast(i32, Texture.height * (y - wallTop) / wallHeight);
+                    fb.setPixel(x, y, walltex.sample(u, v).shift(index_shift));
                 }
             }
 
@@ -293,7 +356,7 @@ const Raycaster = struct {
     fn castRay(pos: Vec2, dir: Vec2) ?RaycastResult {
         var nearest: ?RaycastResult = null;
 
-        for (walls) |wall| {
+        for (walls) |*wall| {
             var t: f32 = undefined;
             var u: f32 = undefined;
             if (!intersect(pos, dir, wall.points[0], wall.points[1].sub(wall.points[0]), &t, &u))
@@ -304,7 +367,7 @@ const Raycaster = struct {
             if ((nearest == null) or (nearest.?.distance > t)) {
                 nearest = RaycastResult{
                     .distance = t,
-                    .wall = &wall,
+                    .wall = wall,
                     .u = wall.u_offset[0] + u * (wall.u_offset[1] - wall.u_offset[0]),
                 };
             }

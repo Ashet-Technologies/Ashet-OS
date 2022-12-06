@@ -193,6 +193,14 @@ const AshetContext = struct {
 
 const ziglibc_file = std.build.FileSource{ .path = "vendor/libc/ziglibc.txt" };
 
+fn addBitmap(target: *std.build.LibExeObjStep, mkicon: *std.build.LibExeObjStep, src: []const u8, dst: []const u8, size: []const u8) void {
+    const gen = mkicon.run();
+    gen.addArg(src);
+    gen.addArg(dst);
+    gen.addArg(size);
+    target.step.dependOn(&gen.step);
+}
+
 pub fn build(b: *std.build.Builder) void {
     const fatfs_config = FatFS.Config{
         .volumes = .{
@@ -337,11 +345,23 @@ pub fn build(b: *std.build.Builder) void {
         _ = ctx.createAshetApp("editor", "src/apps/dummy.zig", "artwork/apps/text-editor.png", mode);
         _ = ctx.createAshetApp("browser", "src/apps/dummy.zig", "artwork/apps/browser.png", mode);
         _ = ctx.createAshetApp("music", "src/apps/dummy.zig", "artwork/apps/music.png", mode);
-        _ = ctx.createAshetApp("dungeon", "src/apps/dungeon/dungeon.zig", "artwork/apps/dungeon.png", mode);
         _ = ctx.createAshetApp("clock", "src/apps/clock.zig", "artwork/apps/clock.png", mode);
         _ = ctx.createAshetApp("paint", "src/apps/paint.zig", "artwork/apps/paint.png", mode);
         _ = ctx.createAshetApp("gui-demo", "src/apps/gui-demo.zig", null, mode);
         _ = ctx.createAshetApp("net-demo", "src/apps/net-demo.zig", null, mode);
+
+        {
+            const dungeon = ctx.createAshetApp("dungeon", "src/apps/dungeon/dungeon.zig", "artwork/apps/dungeon.png", mode);
+
+            addBitmap(dungeon, tool_mkicon, "artwork/dungeon/floor.png", "src/apps/dungeon/data/floor.abm", "32x32");
+            addBitmap(dungeon, tool_mkicon, "artwork/dungeon/wall-plain.png", "src/apps/dungeon/data/wall-plain.abm", "32x32");
+            addBitmap(dungeon, tool_mkicon, "artwork/dungeon/wall-cobweb.png", "src/apps/dungeon/data/wall-cobweb.abm", "32x32");
+            addBitmap(dungeon, tool_mkicon, "artwork/dungeon/wall-paper.png", "src/apps/dungeon/data/wall-paper.abm", "32x32");
+            addBitmap(dungeon, tool_mkicon, "artwork/dungeon/wall-vines.png", "src/apps/dungeon/data/wall-vines.abm", "32x32");
+            addBitmap(dungeon, tool_mkicon, "artwork/dungeon/wall-door.png", "src/apps/dungeon/data/wall-door.abm", "32x32");
+            addBitmap(dungeon, tool_mkicon, "artwork/dungeon/wall-post-l.png", "src/apps/dungeon/data/wall-post-l.abm", "32x32");
+            addBitmap(dungeon, tool_mkicon, "artwork/dungeon/wall-post-r.png", "src/apps/dungeon/data/wall-post-r.abm", "32x32");
+        }
     }
 
     const run_step = b.step("run", "Run the app");
