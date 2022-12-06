@@ -13,6 +13,44 @@ var sprites = [_]Sprite{
     .{ .texture_id = 8, .position = Vec2.new(1.5, 0.5) },
 };
 
+const walls = [_]Wall{
+    Wall{
+        .texture_id = 1,
+        .points = .{ Vec2.new(2, -0.5), Vec2.new(-2, -0.5) },
+        .u_offset = .{ 0, 4 },
+    },
+
+    Wall{
+        .texture_id = 1,
+        .points = .{ Vec2.new(2, -0.5), Vec2.new(2, 0.5) },
+        .u_offset = .{ 0, 1 },
+    },
+
+    Wall{
+        .texture_id = 5,
+        .points = .{ Vec2.new(2, 0.5), Vec2.new(2, 1.5) },
+        .u_offset = .{ 0, 1 },
+    },
+
+    Wall{
+        .texture_id = 1,
+        .points = .{ Vec2.new(2, 1.5), Vec2.new(2, 2.5) },
+        .u_offset = .{ 0, 1 },
+    },
+
+    Wall{
+        .texture_id = 1,
+        .points = .{ Vec2.new(2, 2.5), Vec2.new(-2, 2.5) },
+        .u_offset = .{ 0, 4 },
+    },
+
+    Wall{
+        .texture_id = 1,
+        .points = .{ Vec2.new(-2, -0.5), Vec2.new(-2, 2.5) },
+        .u_offset = .{ 0, 3 },
+    },
+};
+
 pub fn main() !void {
     if (!ashet.video.acquire()) {
         ashet.process.exit(1);
@@ -99,10 +137,17 @@ fn loadTexture(comptime path: []const u8) Texture {
     return gui.Bitmap.embed(@embedFile(path));
 }
 
+inline fn branchClamp(x: i32, limit: u16) u32 {
+    return if (limit & (limit - 1) == 0)
+        @bitCast(u32, x) & (limit - 1)
+    else
+        @bitCast(u32, x) % limit;
+}
+
 pub inline fn sampleTexture(tex: *const Texture, x: i32, y: i32) ColorIndex {
     @setRuntimeSafety(false);
-    const u = @bitCast(u32, x) % tex.bitmap.width;
-    const v = @bitCast(u32, y) % tex.bitmap.height;
+    const u = branchClamp(x, tex.bitmap.width);
+    const v = branchClamp(y, tex.bitmap.height);
     return tex.bitmap.pixels[v * tex.bitmap.stride + u];
 }
 
@@ -136,6 +181,12 @@ const Sprite = struct {
     position: Vec2,
 };
 
+const Wall = struct {
+    texture_id: u16,
+    points: [2]Vec2,
+    u_offset: [2]f32,
+};
+
 const Raycaster = struct {
     const BackgroundPattern = union(enum) {
         background_texture: usize,
@@ -149,44 +200,6 @@ const Raycaster = struct {
 
     const floor_texture: BackgroundPattern = .{ .perspective_texture = 0 };
     const ceiling_texture: BackgroundPattern = .{ .flat_color = ColorIndex.get(255) };
-
-    const walls = [_]Wall{
-        Wall{
-            .texture_id = 1,
-            .points = .{ Vec2.new(2, -0.5), Vec2.new(-2, -0.5) },
-            .u_offset = .{ 0, 4 },
-        },
-
-        Wall{
-            .texture_id = 1,
-            .points = .{ Vec2.new(2, -0.5), Vec2.new(2, 0.5) },
-            .u_offset = .{ 0, 1 },
-        },
-
-        Wall{
-            .texture_id = 5,
-            .points = .{ Vec2.new(2, 0.5), Vec2.new(2, 1.5) },
-            .u_offset = .{ 0, 1 },
-        },
-
-        Wall{
-            .texture_id = 1,
-            .points = .{ Vec2.new(2, 1.5), Vec2.new(2, 2.5) },
-            .u_offset = .{ 0, 1 },
-        },
-
-        Wall{
-            .texture_id = 1,
-            .points = .{ Vec2.new(2, 2.5), Vec2.new(-2, 2.5) },
-            .u_offset = .{ 0, 4 },
-        },
-
-        Wall{
-            .texture_id = 1,
-            .points = .{ Vec2.new(-2, -0.5), Vec2.new(-2, 2.5) },
-            .u_offset = .{ 0, 3 },
-        },
-    };
 
     camera_rotation: f32 = 0,
     camera_position: Vec2 = Vec2.zero,
@@ -213,12 +226,6 @@ const Raycaster = struct {
         }
 
         break :blk rays;
-    };
-
-    const Wall = struct {
-        texture_id: u16,
-        points: [2]Vec2,
-        u_offset: [2]f32,
     };
 
     const RaycastResult = struct {
@@ -285,6 +292,7 @@ const Raycaster = struct {
             const wallTop = @intCast(i32, height / 2) - @intCast(i32, wallHeight / 2);
             const wallBottom = @intCast(i32, height / 2) + @intCast(i32, wallHeight / 2);
 
+            // Draw ceiling
             switch (ceiling_texture) {
                 .background_texture => unreachable,
                 .flat_color => |color| {
@@ -297,24 +305,24 @@ const Raycaster = struct {
                     const index_shift = 16 * texture_id;
                     const texture = &textures[texture_id];
 
+                    const u_scale = @intToFloat(f32, texture.bitmap.width - 1);
+                    const v_scale = @intToFloat(f32, texture.bitmap.height - 1);
+
                     var y: u15 = 0;
                     while (y < wallTop) : (y += 1) {
                         const d = perspective_factor[y];
 
                         const pos = rc.camera_position.add(dir.scale(d));
 
-                        const u = @floatToInt(i32, @intToFloat(f32, texture.bitmap.width - 1) * fract(pos.x));
-                        const v = @floatToInt(i32, @intToFloat(f32, texture.bitmap.height - 1) * fract(pos.y));
+                        const u = @floatToInt(i32, u_scale * fract(pos.x));
+                        const v = @floatToInt(i32, v_scale * fract(pos.y));
 
                         fb.setPixel(x, y, sampleTexture(texture, u, v).shift(index_shift));
                     }
                 },
             }
 
-            //   // draw the wall
-
-            //   auto const walltex = wall_textures[texture_index];
-
+            // Draw the wall
             if (maybe_hit) |result| {
                 const tex_id = result.wall.texture_id;
                 const texture = &textures[tex_id];
@@ -332,6 +340,7 @@ const Raycaster = struct {
                 }
             }
 
+            // Draw floor
             switch (floor_texture) {
                 .background_texture => unreachable,
                 .flat_color => |color| {
@@ -344,14 +353,17 @@ const Raycaster = struct {
                     const index_shift = 16 * texture_id;
                     const texture = &textures[texture_id];
 
+                    const u_scale = @intToFloat(f32, texture.bitmap.width - 1);
+                    const v_scale = @intToFloat(f32, texture.bitmap.height - 1);
+
                     var y: u15 = @intCast(u15, std.math.min(height, wallBottom));
                     while (y < height) : (y += 1) {
                         const d = perspective_factor[y];
 
                         const pos = rc.camera_position.add(dir.scale(d));
 
-                        const u = @floatToInt(i32, @intToFloat(f32, texture.bitmap.width - 1) * fract(pos.x));
-                        const v = @floatToInt(i32, @intToFloat(f32, texture.bitmap.height - 1) * fract(pos.y));
+                        const u = @floatToInt(i32, u_scale * fract(pos.x));
+                        const v = @floatToInt(i32, v_scale * fract(pos.y));
 
                         fb.setPixel(x, y, sampleTexture(texture, u, v).shift(index_shift));
                     }
