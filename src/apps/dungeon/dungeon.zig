@@ -137,16 +137,23 @@ const palette = blk: {
             &tex.palette,
         );
     }
+    pal[255] = ashet.abi.Color.fromRgb888(0x80, 0xCC, 0xFF);
     break :blk pal;
 };
 
 const Raycaster = struct {
+    const BackgroundPattern = union(enum) {
+        background_texture: *const Texture,
+        perspective_texture: *const Texture,
+        flat_color: ColorIndex,
+    };
+
     const width = screen_width;
     const height = screen_height;
     const aspect = @intToFloat(f32, screen_width) / @intToFloat(f32, screen_height);
 
-    const floor_color = ashet.abi.ColorIndex.get(3); // dim gray
-    const ceiling_color = ashet.abi.ColorIndex.get(8); // light blue
+    const floor_texture: BackgroundPattern = .{ .perspective_texture = &textures[0] };
+    const ceiling_texture: BackgroundPattern = .{ .flat_color = ColorIndex.get(255) };
 
     const walls = [_]Wall{
         Wall{
@@ -224,6 +231,30 @@ const Raycaster = struct {
         u: f32,
     };
 
+    const perspective_factor: [height]f32 = blk: {
+        var val: [height]f32 = undefined;
+        for (val) |*v, y| {
+            if (y < height / 2) {
+                const scale = 2.0 / @intToFloat(f32, height - 1);
+                const fy = 1.0 - scale * @intToFloat(f32, y);
+
+                if (fy == 0)
+                    continue;
+
+                v.* = 1.0 / fy;
+            } else {
+                const fy = (1.0 / @intToFloat(f32, height / 2)) * @intToFloat(f32, y - (height / 2) + 1);
+
+                if (fy == 0)
+                    continue;
+
+                v.* = 1.0 / fy;
+            }
+        }
+
+        break :blk val;
+    };
+
     fn drawWalls(rc: *Raycaster, fb: gui.Framebuffer) void {
         std.debug.assert(fb.width == width);
         std.debug.assert(fb.height == height);
@@ -255,40 +286,30 @@ const Raycaster = struct {
             } else std.math.inf(f32); // no hit means infinite distance
 
             // calculate screen boundaries of the wall
-            const wallTop = (height / 2) -| (wallHeight / 2);
-            const wallBottom = (height / 2) +| (wallHeight / 2);
+            const wallTop = @intCast(i32, height / 2) - @intCast(i32, wallHeight / 2);
+            const wallBottom = @intCast(i32, height / 2) + @intCast(i32, wallHeight / 2);
 
-            //   // draw the ceiling with either texture or color
-            //   if constexpr (not ceiling_color) {
-            //     real constexpr factor = real(2.0 / (height - 1));
-            //     real fy = real(1.0);
+            switch (ceiling_texture) {
+                .background_texture => unreachable,
+                .flat_color => |color| {
+                    var y: u15 = 0;
+                    while (y < wallTop) : (y += 1) {
+                        fb.setPixel(x, y, color);
+                    }
+                },
+                .perspective_texture => |texture| {
+                    var y: u15 = 0;
+                    while (y < wallTop) : (y += 1) {
+                        const d = perspective_factor[y];
 
-            //     for (int y = 0; y < wallTop; y++, fy -= factor) {
-            //       // real const fy = real(1.0) - factor * real(y);
+                        const pos = rc.camera_position.add(dir.scale(d));
 
-            //       if (fy == real(0))
-            //         continue;
+                        const u = @floatToInt(i32, @intToFloat(f32, Texture.width - 1) * fract(pos.x));
+                        const v = @floatToInt(i32, @intToFloat(f32, Texture.height - 1) * fract(pos.y));
 
-            //       real const d = real(1.0) / fy;
-
-            //       vec2_t const pos(CameraPosition + dir * d);
-
-            //       int const u(int(real(int(indoor_ceiling.width)) * fract(pos.x)));
-            //       int const v(int(real(int(indoor_ceiling.height)) * fract(pos.y)));
-
-            //       setPixel(x, y, indoor_ceiling(u, v));
-            //       if (y < wallTop - 1) {
-            //         setPixel(x, y, indoor_ceiling(u + 1, v + 1));
-            //         y++;
-            //         fy -= factor;
-            //       }
-            //     }
-            //   } else
-            {
-                var y: u15 = 0;
-                while (y < wallTop) : (y += 1) {
-                    fb.setPixel(x, y, ceiling_color);
-                }
+                        fb.setPixel(x, y, texture.sample(u, v));
+                    }
+                },
             }
 
             //   // draw the wall
@@ -301,43 +322,44 @@ const Raycaster = struct {
 
                 const index_shift = @intCast(u8, 16 * tex_id);
 
-                const u = @floatToInt(i32, @intToFloat(f32, Texture.width - 1) * (result.u - @floor(result.u)));
+                const u = @floatToInt(i32, @intToFloat(f32, Texture.width - 1) * fract(result.u));
 
                 const maxy = std.math.min(height, wallBottom);
 
-                var y: u15 = @truncate(u15, std.math.clamp(wallTop, 0, height));
+                var y: u15 = @intCast(u15, std.math.clamp(wallTop, 0, height));
                 while (y < maxy) : (y += 1) {
-                    // TODO: Fix y computation
-                    const v = @intCast(i32, Texture.height * (y - wallTop) / wallHeight);
+                    const v = @intCast(i32, @divTrunc(Texture.height * (y - wallTop), @intCast(i32, wallHeight)));
                     fb.setPixel(x, y, walltex.sample(u, v).shift(index_shift));
                 }
             }
 
-            //   if constexpr (not floor_color) {
-            //     for (int y = wallBottom; y < height; y++) {
-            //       real const fy =
-            //           real(1.0 / (height / 2)) * real(y - int(height / 2) + 1);
+            switch (floor_texture) {
+                .background_texture => unreachable,
+                .flat_color => |color| {
+                    var y: u15 = @intCast(u15, std.math.min(height, wallBottom));
+                    while (y < height) : (y += 1) {
+                        fb.setPixel(x, y, color);
+                    }
+                },
+                .perspective_texture => |texture| {
+                    var y: u15 = @intCast(u15, std.math.min(height, wallBottom));
+                    while (y < height) : (y += 1) {
+                        const d = perspective_factor[y];
 
-            //       if (fy == real(0))
-            //         continue;
+                        const pos = rc.camera_position.add(dir.scale(d));
 
-            //       real const d = real(1.0) / fy;
+                        const u = @floatToInt(i32, @intToFloat(f32, Texture.width - 1) * fract(pos.x));
+                        const v = @floatToInt(i32, @intToFloat(f32, Texture.height - 1) * fract(pos.y));
 
-            //       vec2_t const pos(CameraPosition + dir * d);
-
-            //       int const u(int(real(int(dirt.width) - 1) * fract(pos.x)));
-            //       int const v(int(real(int(dirt.height) - 1) * fract(pos.y)));
-
-            //       setPixel(x, y, dirt(u, v));
-            //     }
-            //   } else {
-            {
-                var y: u15 = @truncate(u15, std.math.min(height, wallBottom));
-                while (y < height) : (y += 1) {
-                    fb.setPixel(x, y, floor_color);
-                }
+                        fb.setPixel(x, y, texture.sample(u, v));
+                    }
+                },
             }
         }
+    }
+
+    inline fn fract(v: f32) f32 {
+        return v - @floor(v);
     }
 
     fn intersect(ray_pos: Vec2, ray_dir: Vec2, line_start: Vec2, line_offset: Vec2, t: *f32, u: *f32) bool {
