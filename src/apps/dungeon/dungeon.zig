@@ -86,46 +86,28 @@ fn render() void {
     std.mem.copy(ColorIndex, ashet.video.getVideoMemory()[0..clonebuffer.len], &clonebuffer);
 }
 
-const Texture = struct {
-    const width = 32;
-    const height = 32;
+const Texture = gui.Bitmap.EmbeddedBitmap;
 
-    pixels: [width][height]ColorIndex,
-    palette: [16]ashet.abi.Color,
+fn loadTexture(comptime path: []const u8) Texture {
+    return gui.Bitmap.embed(@embedFile(path));
+}
 
-    pub inline fn sample(tex: Texture, x: i32, y: i32) ColorIndex {
-        @setRuntimeSafety(false);
-        const u = @bitCast(u32, x) & (width - 1);
-        const v = @bitCast(u32, y) & (height - 1);
-        return tex.pixels[v][u];
-    }
-
-    pub fn load(bmp_src: gui.Bitmap.EmbeddedBitmap) Texture {
-        const bmp = bmp_src.bitmap;
-        if (bmp.width != width or bmp.height != height)
-            @panic("invalid bitmap");
-        if (bmp_src.palette.len > 16)
-            @panic("palette too large");
-        if (bmp.transparent != null)
-            @panic("transparent texture");
-        var tex = Texture{
-            .pixels = @bitCast([width][height]ColorIndex, bmp.pixels[0 .. width * height].*),
-            .palette = undefined,
-        };
-        std.mem.copy(ashet.abi.Color, &tex.palette, bmp_src.palette);
-        return tex;
-    }
-};
+pub inline fn sampleTexture(tex: *const Texture, x: i32, y: i32) ColorIndex {
+    @setRuntimeSafety(false);
+    const u = @bitCast(u32, x) & (tex.bitmap.width - 1);
+    const v = @bitCast(u32, y) & (tex.bitmap.height - 1);
+    return tex.bitmap.pixels[v * tex.bitmap.width + u];
+}
 
 const textures = [_]Texture{
-    Texture.load(gui.Bitmap.embed(@embedFile("data/floor.abm"))),
-    Texture.load(gui.Bitmap.embed(@embedFile("data/wall-plain.abm"))),
-    Texture.load(gui.Bitmap.embed(@embedFile("data/wall-cobweb.abm"))),
-    Texture.load(gui.Bitmap.embed(@embedFile("data/wall-paper.abm"))),
-    Texture.load(gui.Bitmap.embed(@embedFile("data/wall-vines.abm"))),
-    Texture.load(gui.Bitmap.embed(@embedFile("data/wall-door.abm"))),
-    Texture.load(gui.Bitmap.embed(@embedFile("data/wall-post-l.abm"))),
-    Texture.load(gui.Bitmap.embed(@embedFile("data/wall-post-r.abm"))),
+    loadTexture("data/floor.abm"),
+    loadTexture("data/wall-plain.abm"),
+    loadTexture("data/wall-cobweb.abm"),
+    loadTexture("data/wall-paper.abm"),
+    loadTexture("data/wall-vines.abm"),
+    loadTexture("data/wall-door.abm"),
+    loadTexture("data/wall-post-l.abm"),
+    loadTexture("data/wall-post-r.abm"),
 };
 
 const palette = blk: {
@@ -134,7 +116,7 @@ const palette = blk: {
         std.mem.copy(
             ashet.abi.Color,
             pal[16 * i ..],
-            &tex.palette,
+            tex.palette,
         );
     }
     pal[255] = ashet.abi.Color.fromRgb888(0x80, 0xCC, 0xFF);
@@ -143,8 +125,8 @@ const palette = blk: {
 
 const Raycaster = struct {
     const BackgroundPattern = union(enum) {
-        background_texture: *const Texture,
-        perspective_texture: *const Texture,
+        background_texture: usize,
+        perspective_texture: usize,
         flat_color: ColorIndex,
     };
 
@@ -152,7 +134,7 @@ const Raycaster = struct {
     const height = screen_height;
     const aspect = @intToFloat(f32, screen_width) / @intToFloat(f32, screen_height);
 
-    const floor_texture: BackgroundPattern = .{ .perspective_texture = &textures[0] };
+    const floor_texture: BackgroundPattern = .{ .perspective_texture = 0 };
     const ceiling_texture: BackgroundPattern = .{ .flat_color = ColorIndex.get(255) };
 
     const walls = [_]Wall{
@@ -199,13 +181,13 @@ const Raycaster = struct {
 
     /// returns the direction a ray has when going through a specifc column
     fn getRayDirection(rc: Raycaster, column: usize) Vec2 {
-        return protorays[column].rotate(rc.camera_rotation);
+        return Vec2.new(1.0, protorays[column]).rotate(rc.camera_rotation);
     }
 
     const protorays = blk: {
         @setEvalBranchQuota(10_000);
 
-        var rays: [width]Vec2 = undefined;
+        var rays: [width]f32 = undefined;
         for (rays) |*dir, x| {
             const fx = aspect * (2.0 * (@intToFloat(f32, x) / (width - 1)) - 1.0);
 
@@ -214,8 +196,9 @@ const Raycaster = struct {
             const raw_dir = Vec2.unitX.rotate(deltaAngle);
 
             // set length of x to 1 for early correct perspective correction
-            dir.* = raw_dir.scale(1.0 / raw_dir.x);
+            dir.* = raw_dir.scale(1.0 / raw_dir.x).y; // .x  is always 1.0 after this scaling. Thus, we don't need to store it.
         }
+
         break :blk rays;
     };
 
@@ -297,17 +280,20 @@ const Raycaster = struct {
                         fb.setPixel(x, y, color);
                     }
                 },
-                .perspective_texture => |texture| {
+                .perspective_texture => |texture_id| {
+                    const index_shift = 16 * texture_id;
+                    const texture = &textures[texture_id];
+
                     var y: u15 = 0;
                     while (y < wallTop) : (y += 1) {
                         const d = perspective_factor[y];
 
                         const pos = rc.camera_position.add(dir.scale(d));
 
-                        const u = @floatToInt(i32, @intToFloat(f32, Texture.width - 1) * fract(pos.x));
-                        const v = @floatToInt(i32, @intToFloat(f32, Texture.height - 1) * fract(pos.y));
+                        const u = @floatToInt(i32, @intToFloat(f32, texture.bitmap.width - 1) * fract(pos.x));
+                        const v = @floatToInt(i32, @intToFloat(f32, texture.bitmap.height - 1) * fract(pos.y));
 
-                        fb.setPixel(x, y, texture.sample(u, v));
+                        fb.setPixel(x, y, sampleTexture(texture, u, v).shift(index_shift));
                     }
                 },
             }
@@ -318,18 +304,18 @@ const Raycaster = struct {
 
             if (maybe_hit) |result| {
                 const tex_id = result.wall.texture_id;
-                const walltex = &textures[tex_id];
+                const texture = &textures[tex_id];
 
                 const index_shift = @intCast(u8, 16 * tex_id);
 
-                const u = @floatToInt(i32, @intToFloat(f32, Texture.width - 1) * fract(result.u));
+                const u = @floatToInt(i32, @intToFloat(f32, texture.bitmap.width - 1) * fract(result.u));
 
                 const maxy = std.math.min(height, wallBottom);
 
                 var y: u15 = @intCast(u15, std.math.clamp(wallTop, 0, height));
                 while (y < maxy) : (y += 1) {
-                    const v = @intCast(i32, @divTrunc(Texture.height * (y - wallTop), @intCast(i32, wallHeight)));
-                    fb.setPixel(x, y, walltex.sample(u, v).shift(index_shift));
+                    const v = @intCast(i32, @divTrunc(texture.bitmap.height * (y - wallTop), @intCast(i32, wallHeight)));
+                    fb.setPixel(x, y, sampleTexture(texture, u, v).shift(index_shift));
                 }
             }
 
@@ -341,17 +327,20 @@ const Raycaster = struct {
                         fb.setPixel(x, y, color);
                     }
                 },
-                .perspective_texture => |texture| {
+                .perspective_texture => |texture_id| {
+                    const index_shift = 16 * texture_id;
+                    const texture = &textures[texture_id];
+
                     var y: u15 = @intCast(u15, std.math.min(height, wallBottom));
                     while (y < height) : (y += 1) {
                         const d = perspective_factor[y];
 
                         const pos = rc.camera_position.add(dir.scale(d));
 
-                        const u = @floatToInt(i32, @intToFloat(f32, Texture.width - 1) * fract(pos.x));
-                        const v = @floatToInt(i32, @intToFloat(f32, Texture.height - 1) * fract(pos.y));
+                        const u = @floatToInt(i32, @intToFloat(f32, texture.bitmap.width - 1) * fract(pos.x));
+                        const v = @floatToInt(i32, @intToFloat(f32, texture.bitmap.height - 1) * fract(pos.y));
 
-                        fb.setPixel(x, y, texture.sample(u, v));
+                        fb.setPixel(x, y, sampleTexture(texture, u, v).shift(index_shift));
                     }
                 },
             }
