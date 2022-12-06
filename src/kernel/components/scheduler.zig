@@ -419,6 +419,8 @@ fn performSwitch(from: *Thread, to: *Thread) void {
 }
 
 pub fn yield() void {
+    ashet.stackCheck(); // check if we're doing a sane yield or if we violated the stack boundary
+
     const old_thread = current_thread orelse @panic("called scheduler.exit() from outside a thread!");
     std.debug.assert(old_thread.queue == null); // thread must not be in a queue right now
 

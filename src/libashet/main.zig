@@ -126,7 +126,10 @@ pub const io = struct {
     pub const WaitIO = abi.WaitIO;
 
     pub fn scheduleAndAwait(start_queue: ?*IOP, wait: WaitIO) ?*IOP {
-        return syscall("io.scheduleAndAwait")(start_queue, wait);
+        const result = syscall("io.scheduleAndAwait")(start_queue, wait);
+        if (wait == .schedule_only)
+            std.debug.assert(result == null);
+        return result;
     }
 
     pub fn cancel(event: *IOP) void {
@@ -266,10 +269,13 @@ pub const ui = struct {
 
     pub fn getEvent(win: *const Window) Event {
         const out = io.performOne(abi.ui.GetEvent, .{ .window = win }) catch unreachable;
+        return constructEvent(out.event_type, out.event);
+    }
 
-        return switch (out.event_type) {
-            .mouse => .{ .mouse = out.event.mouse },
-            .keyboard => .{ .keyboard = out.event.keyboard },
+    pub fn constructEvent(event_type: abi.UiEventType, event_data: abi.UiEvent) Event {
+        return switch (event_type) {
+            .mouse => .{ .mouse = event_data.mouse },
+            .keyboard => .{ .keyboard = event_data.keyboard },
             .window_close => .window_close,
             .window_minimize => .window_minimize,
             .window_restore => .window_restore,
@@ -279,6 +285,7 @@ pub const ui = struct {
             .window_resized => .window_resized,
         };
     }
+
     pub fn invalidate(win: *const Window, rect: Rectangle) void {
         syscall("ui.invalidate")(win, rect);
     }

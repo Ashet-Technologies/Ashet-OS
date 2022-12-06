@@ -352,7 +352,6 @@ pub fn build(b: *std.build.Builder) void {
 
         {
             const dungeon = ctx.createAshetApp("dungeon", "src/apps/dungeon/dungeon.zig", "artwork/apps/dungeon.png", mode);
-
             addBitmap(dungeon, tool_mkicon, "artwork/dungeon/floor.png", "src/apps/dungeon/data/floor.abm", "32x32");
             addBitmap(dungeon, tool_mkicon, "artwork/dungeon/wall-plain.png", "src/apps/dungeon/data/wall-plain.abm", "32x32");
             addBitmap(dungeon, tool_mkicon, "artwork/dungeon/wall-cobweb.png", "src/apps/dungeon/data/wall-cobweb.abm", "32x32");

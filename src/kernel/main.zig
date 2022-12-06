@@ -48,13 +48,10 @@ fn main() !void {
 
     input.initialize();
 
-    if (hal_requires_polling) {
-        // if the HAL requires regular polling, we'll do so:
-        const thread = try scheduler.Thread.spawn(pollHAL, null, .{});
-        try thread.setName("hal.poll");
-        try thread.start();
-        thread.detach();
-    }
+    const thread = try scheduler.Thread.spawn(tickSystem, null, .{});
+    try thread.setName("os.tick");
+    try thread.start();
+    thread.detach();
 
     try ui.start();
 
@@ -97,7 +94,7 @@ pub const global_hotkeys = struct {
     }
 };
 
-fn pollHAL(_: ?*anyopaque) callconv(.C) u32 {
+fn tickSystem(_: ?*anyopaque) callconv(.C) u32 {
     while (true) {
         if (input.is_poll_required) {
             input.poll();
@@ -107,7 +104,8 @@ fn pollHAL(_: ?*anyopaque) callconv(.C) u32 {
             video.flush();
         }
 
-        // TODO: replace with actual waiting code instead of burning up all CPU
+        time.progressTimers();
+
         scheduler.yield();
     }
 }
@@ -210,6 +208,30 @@ pub fn log(
 
 extern var kernel_stack: anyopaque;
 extern var kernel_stack_start: anyopaque;
+
+pub fn stackCheck() void {
+    const sp = asm (""
+        : [sp] "={sp}" (-> usize),
+    );
+
+    var stack_end: usize = @ptrToInt(&kernel_stack);
+    var stack_start: usize = @ptrToInt(&kernel_stack_start);
+
+    if (scheduler.Thread.current()) |thread| {
+        stack_end = @ptrToInt(thread.getBasePointer());
+        stack_start = stack_end - memory.page_size * thread.num_pages;
+    }
+
+    if (sp > stack_end) {
+        // stack underflow
+        @panic("STACK UNDERFLOW");
+    } else if (sp <= stack_start) {
+        // stack overflow
+        @panic("STACK OVERFLOW");
+    } else {
+        // stack nominal
+    }
+}
 
 pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, maybe_return_address: ?usize) noreturn {
     @setCold(true);

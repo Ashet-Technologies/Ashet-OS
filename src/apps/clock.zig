@@ -3,6 +3,11 @@ const ashet = @import("ashet");
 
 pub usingnamespace ashet.core;
 
+fn nextFullSecond() i128 {
+    const ns_per_s = std.time.ns_per_s;
+    return ns_per_s * @divFloor(ashet.time.nanoTimestamp(), std.time.ns_per_s) + ns_per_s;
+}
+
 pub fn main() !void {
     const window = try ashet.ui.createWindow(
         "Clock",
@@ -17,40 +22,54 @@ pub fn main() !void {
         c.* = ashet.ui.ColorIndex.get(3);
     }
 
-    var epoch_secs = std.time.epoch.EpochSeconds{ .secs = @intCast(u64, std.math.max(0, @divTrunc(ashet.time.nanoTimestamp(), std.time.ns_per_s))) };
+    paint(window);
 
-    paint(window, epoch_secs);
+    var timer_iop = ashet.abi.Timer.new(.{ .timeout = nextFullSecond() });
+    _ = ashet.io.scheduleAndAwait(&timer_iop.iop, .schedule_only);
+
+    var get_event_iop = ashet.abi.ui.GetEvent.new(.{ .window = window });
+    _ = ashet.io.scheduleAndAwait(&get_event_iop.iop, .schedule_only);
 
     app_loop: while (true) {
-        const event = ashet.ui.getEvent(window);
+        var it = ashet.io.scheduleAndAwait(null, .wait_one);
+        while (it) |result| {
+            it = result.next;
+            result.next = null; // unchain from linked list, so we can schedule them again as single events
 
-        switch (event) {
-            .mouse => {},
-            .keyboard => {},
-            .window_close => break :app_loop,
-            .window_minimize => {},
-            .window_restore => {},
-            .window_moving => {},
-            .window_moved => {},
-            .window_resizing => {},
-            .window_resized => {},
+            if (result == &timer_iop.iop) {
+                paint(window);
+                ashet.ui.invalidate(window, ashet.ui.Rectangle.new(.{ .x = 0, .y = 0 }, window.client_rectangle.size()));
+
+                timer_iop.inputs.timeout = nextFullSecond();
+                _ = ashet.io.scheduleAndAwait(&timer_iop.iop, .schedule_only);
+            } else if (result == &get_event_iop.iop) {
+                const event = ashet.ui.constructEvent(get_event_iop.outputs.event_type, get_event_iop.outputs.event);
+                switch (event) {
+                    .mouse => {},
+                    .keyboard => {},
+                    .window_close => break :app_loop,
+                    .window_minimize => {},
+                    .window_restore => {},
+                    .window_moving => {},
+                    .window_moved => {},
+                    .window_resizing => {},
+                    .window_resized => {},
+                }
+
+                // reschedule the IOP
+                _ = ashet.io.scheduleAndAwait(&get_event_iop.iop, .schedule_only);
+            } else {
+                unreachable;
+            }
         }
-
-        var next_step = std.time.epoch.EpochSeconds{ .secs = @intCast(u64, std.math.max(0, @divTrunc(ashet.time.nanoTimestamp(), std.time.ns_per_s))) };
-
-        if (next_step.secs != epoch_secs.secs) {
-            epoch_secs = next_step;
-            paint(window, epoch_secs);
-            ashet.ui.invalidate(window, ashet.ui.Rectangle.new(.{ .x = 0, .y = 0 }, window.client_rectangle.size()));
-        }
-
-        ashet.process.yield();
     }
 }
 
 const gui = @import("ashet-gui");
 
-fn paint(window: *const ashet.ui.Window, time: std.time.epoch.EpochSeconds) void {
+fn paint(window: *const ashet.ui.Window) void {
+    const time = std.time.epoch.EpochSeconds{ .secs = @intCast(u64, std.math.max(0, @divTrunc(ashet.time.nanoTimestamp(), std.time.ns_per_s))) };
+
     var fb = gui.Framebuffer.forWindow(window);
 
     for (clock_face.pixels[0 .. clock_face.width * clock_face.height]) |color, i| {

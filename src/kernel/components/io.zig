@@ -67,15 +67,20 @@ pub fn finalizeWithResult(generic: anytype, outputs: @TypeOf(generic.*).Outputs)
 }
 
 pub fn scheduleAndAwait(start_queue: ?*IOP, wait: WaitIO) ?*IOP {
+    ashet.stackCheck();
+
     const thread = ashet.scheduler.Thread.current() orelse @panic("scheduleAndAwait called in a non-thread context!");
     const process = thread.process orelse @panic("scheduleAndAwait called in a non-process context!");
     const context: *Context = &process.io_context;
+
+    // TODO: verify that start_queue has no loops
 
     var queue = start_queue;
     while (queue) |event| {
         // advance the queue as the first step, so we can now destroy and
         // restructeventure the linked list properties of our current event
         queue = event.next;
+        std.debug.assert(queue != start_queue); // very basic sanity check
 
         const data = KernelData.get(event);
         data.* = KernelData{
@@ -89,9 +94,13 @@ pub fn scheduleAndAwait(start_queue: ?*IOP, wait: WaitIO) ?*IOP {
 
         logger.debug("dispatching i/o: {s}", .{@tagName(event.type)});
 
+        // unhinge from queue, so we're able to finish the IOP immediatly.
+        event.next = null;
         context.pending += 1;
 
         switch (event.type) {
+            .timer => ashet.time.scheduleTimer(IOP.cast(abi.Timer, event)),
+
             .tcp_bind => ashet.network.tcp.bind(IOP.cast(abi.tcp.Bind, event)),
             .tcp_connect => ashet.network.tcp.connect(IOP.cast(abi.tcp.Connect, event)),
             .tcp_send => ashet.network.tcp.send(IOP.cast(abi.tcp.Send, event)),
@@ -111,6 +120,7 @@ pub fn scheduleAndAwait(start_queue: ?*IOP, wait: WaitIO) ?*IOP {
     }
 
     switch (wait) {
+        .schedule_only => return null, // do nothing, and also don't flush the completed queue
         .dont_block => {}, // just do nothing here :)
         .wait_one => while (context.completed.len == 0) {
             thread.@"suspend"(); // we're waiting for completion, so we can remove ourselves from scheduling

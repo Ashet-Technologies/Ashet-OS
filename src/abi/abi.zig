@@ -1127,6 +1127,9 @@ pub const IOP = extern struct {
     kernel_data: [7]usize = undefined, // internal data used by the kernel to store
 
     pub const Type = enum(u32) {
+        // Timer
+        timer,
+
         // TCP IOPs:
         tcp_connect,
         tcp_bind,
@@ -1223,6 +1226,27 @@ pub const IOP = extern struct {
                 return Self{ .inputs = inputs_ };
             }
 
+            pub fn chain(self: *Self, next: anytype) void {
+                const Next = @TypeOf(next.*);
+                if (comptime !isIOP(Next))
+                    @compileError("next must be a pointer to IOP!");
+                const next_ptr: *Next = next;
+                const next_iop: *IOP = &next_ptr.iop;
+
+                var it: ?*IOP = &self.iop;
+                while (it) |p| : (it = p.next) {
+                    if (p == &next_iop) // already in the chain
+                        return;
+
+                    if (p.next == null) {
+                        p.next = &next_iop;
+                        return;
+                    }
+                }
+
+                unreachable;
+            }
+
             pub fn check(val: Self) Error!void {
                 return Self.ErrorSet.throw(val.@"error");
             }
@@ -1258,12 +1282,34 @@ pub const WaitIO = enum(u32) {
     /// Don't wait for any I/O to complete.
     dont_block,
 
+    /// Doesn't block the call, and guarantees that no event is returned by `scheduleAndAwait`.
+    /// This can be used to enqueue new IOPs outside of the event loop.
+    schedule_only,
+
     /// Wait for at least one I/O to complete operation.
     wait_one,
 
     /// Wait until all scheduled I/O operations have completed.
     wait_all,
+
+    /// Returns whether the operation is blocking or not.
+    pub fn isBlocking(wait: WaitIO) bool {
+        return switch (wait) {
+            .dont_block => false,
+            .schedule_only => false,
+            .wait_one => true,
+            .wait_all => true,
+        };
+    }
 };
+
+pub const Timer = IOP.define(.{
+    .type = .timer,
+    .@"error" = ErrorSet(.{ .Unexpected = 1 }),
+    .inputs = struct {
+        timeout: i128,
+    },
+});
 
 pub const udp = struct {
     const Socket = UdpSocket;
