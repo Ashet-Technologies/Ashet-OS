@@ -361,6 +361,7 @@ pub fn build(b: *std.build.Builder) void {
             addBitmap(dungeon, tool_mkicon, "artwork/dungeon/wall-door.png", "src/apps/dungeon/data/wall-door.abm", "32x32");
             addBitmap(dungeon, tool_mkicon, "artwork/dungeon/wall-post-l.png", "src/apps/dungeon/data/wall-post-l.abm", "32x32");
             addBitmap(dungeon, tool_mkicon, "artwork/dungeon/wall-post-r.png", "src/apps/dungeon/data/wall-post-r.abm", "32x32");
+            addBitmap(dungeon, tool_mkicon, "artwork/dungeon/enforcer.png", "src/apps/dungeon/data/enforcer.abm", "32x60");
         }
     }
 

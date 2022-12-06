@@ -9,6 +9,10 @@ const ColorIndex = ashet.abi.ColorIndex;
 
 var raycaster: Raycaster = .{};
 
+var sprites = [_]Sprite{
+    .{ .texture_id = 8, .position = Vec2.new(1.5, 0.5) },
+};
+
 pub fn main() !void {
     if (!ashet.video.acquire()) {
         ashet.process.exit(1);
@@ -81,6 +85,9 @@ fn render() void {
 
     raycaster.drawWalls(fb);
 
+    raycaster.sortSprites(&sprites);
+    raycaster.drawSprites(fb, &sprites);
+
     // double buffering:
     std.mem.copy(ashet.abi.Color, ashet.video.getPaletteMemory(), &palette);
     std.mem.copy(ColorIndex, ashet.video.getVideoMemory()[0..clonebuffer.len], &clonebuffer);
@@ -94,20 +101,21 @@ fn loadTexture(comptime path: []const u8) Texture {
 
 pub inline fn sampleTexture(tex: *const Texture, x: i32, y: i32) ColorIndex {
     @setRuntimeSafety(false);
-    const u = @bitCast(u32, x) & (tex.bitmap.width - 1);
-    const v = @bitCast(u32, y) & (tex.bitmap.height - 1);
-    return tex.bitmap.pixels[v * tex.bitmap.width + u];
+    const u = @bitCast(u32, x) % tex.bitmap.width;
+    const v = @bitCast(u32, y) % tex.bitmap.height;
+    return tex.bitmap.pixels[v * tex.bitmap.stride + u];
 }
 
 const textures = [_]Texture{
-    loadTexture("data/floor.abm"),
-    loadTexture("data/wall-plain.abm"),
-    loadTexture("data/wall-cobweb.abm"),
-    loadTexture("data/wall-paper.abm"),
-    loadTexture("data/wall-vines.abm"),
-    loadTexture("data/wall-door.abm"),
-    loadTexture("data/wall-post-l.abm"),
-    loadTexture("data/wall-post-r.abm"),
+    loadTexture("data/floor.abm"), // 0
+    loadTexture("data/wall-plain.abm"), // 1
+    loadTexture("data/wall-cobweb.abm"), // 2
+    loadTexture("data/wall-paper.abm"), // 3
+    loadTexture("data/wall-vines.abm"), // 4
+    loadTexture("data/wall-door.abm"), // 5
+    loadTexture("data/wall-post-l.abm"), // 6
+    loadTexture("data/wall-post-r.abm"), // 7
+    loadTexture("data/enforcer.abm"), // 8
 };
 
 const palette = blk: {
@@ -121,6 +129,11 @@ const palette = blk: {
     }
     pal[255] = ashet.abi.Color.fromRgb888(0x80, 0xCC, 0xFF);
     break :blk pal;
+};
+
+const Sprite = struct {
+    texture_id: u16,
+    position: Vec2,
 };
 
 const Raycaster = struct {
@@ -343,6 +356,102 @@ const Raycaster = struct {
                         fb.setPixel(x, y, sampleTexture(texture, u, v).shift(index_shift));
                     }
                 },
+            }
+        }
+    }
+
+    fn sortSprites(rc: *const Raycaster, spriteset: []Sprite) void {
+        std.sort.sort(Sprite, spriteset, rc, struct {
+            fn lt(this: *const Raycaster, lhs: Sprite, rhs: Sprite) bool {
+                // "a < b"
+                return Vec2.distance2(lhs.position, this.camera_position) < Vec2.distance2(rhs.position, this.camera_position);
+            }
+        }.lt);
+    }
+
+    fn drawSprites(rc: Raycaster, fb: gui.Framebuffer, spriteset: []const Sprite) void {
+        for (spriteset) |sprite| {
+            rc.drawSprite(fb, sprite);
+        }
+    }
+
+    fn ang(a: f32) f32 {
+        return @mod((a + std.math.pi), std.math.tau) - std.math.pi;
+    }
+
+    fn angdiff(lhs: f32, rhs: f32) f32 {
+        return ang(lhs - rhs);
+    }
+
+    fn drawSprite(rc: Raycaster, fb: gui.Framebuffer, sprite: Sprite) void {
+        const delta = sprite.position.sub(rc.camera_position);
+        const angle = angdiff(std.math.atan2(f32, delta.y, delta.x), rc.camera_rotation);
+
+        if (@fabs(angle) > std.math.pi / 2.0)
+            return;
+
+        const distance2 = delta.length2();
+        if (distance2 < 0.0025) // 0.05²
+            return; // discard early
+
+        const distance = @sqrt(distance2);
+
+        // if(distance > 100)
+        //  return; // discard far objects
+
+        const fx = 2.0 * @tan(angle) / aspect;
+
+        const cx = @floatToInt(i32, (width - 1) * (0.5 + 0.5 * fx));
+
+        const texture = &textures[sprite.texture_id];
+
+        // calculate perspective correction
+        const correction = @sqrt(0.5 * fx * fx + 1);
+
+        // calculate on-screen size
+        const spriteHeight = @floatToInt(u31, correction * height / distance);
+        const spriteWidth = (texture.bitmap.width * spriteHeight) / texture.bitmap.height;
+
+        // discard the sprite when out of screen
+        if ((cx + spriteWidth) < 0)
+            return;
+        if ((cx - spriteWidth) >= width)
+            return;
+
+        // calculate screen positions and boundaries
+        const wallTop = (height / 2) - @as(i32, spriteHeight / 2);
+        const wallBottom = wallTop + spriteHeight;
+
+        const left = cx - spriteWidth / 2;
+
+        const minx = std.math.max(0, left);
+        const maxx = std.math.min(width - 1, cx + spriteWidth / 2);
+
+        const miny = std.math.max(0, wallTop);
+        const maxy = std.math.min(height, wallBottom);
+
+        const texture_shift = @intCast(u8, 16 * sprite.texture_id);
+
+        // render the sprite also column major
+        var x: u15 = @intCast(u15, std.math.clamp(minx, 0, width));
+        while (x < maxx) : (x += 1) {
+            // Test if we are occluded by a sprite
+            if (rc.zbuffer[x] < distance)
+                continue;
+
+            const u = @divTrunc((texture.bitmap.width - 1) * (x - left), spriteWidth - 1);
+
+            var y: u15 = @intCast(u15, std.math.clamp(miny, 0, height));
+            while (y < maxy) : (y += 1) {
+                const v = @floatToInt(i32, @intToFloat(f32, (texture.bitmap.height - 1) * (y - wallTop)) / @intToFloat(f32, spriteHeight - 1));
+
+                const c = sampleTexture(texture, u, v);
+
+                // alpha testing
+                if (texture.bitmap.transparent != null and c == texture.bitmap.transparent.?)
+                    continue;
+
+                fb.setPixel(x, y, c.shift(texture_shift));
             }
         }
     }
