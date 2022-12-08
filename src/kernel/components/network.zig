@@ -1,5 +1,4 @@
 const std = @import("std");
-const hal = @import("hal");
 const abi = ashet.abi;
 const ashet = @import("../main.zig");
 const astd = @import("ashet-std");
@@ -199,7 +198,8 @@ fn netif_output(netif_c: [*c]c.netif, pbuf_c: [*c]c.pbuf) callconv(.C) c.err_t {
 var nics: []NIC = undefined;
 
 pub fn start() !void {
-    nics = hal.network.getNICs();
+    // TODO: Reimplement the NIC fetching
+    // nics = hal.network.getNICs();
 
     c.lwip_init();
 
@@ -243,7 +243,7 @@ pub fn start() !void {
 }
 
 pub fn dumpStats() void {
-    for (hal.network.getNICs()) |*nic| {
+    for (nics) |*nic| {
         logger.info("nic {s}: up={} link={} ip={} netmask={} gateway={} dhcp={}", .{
             nic.netif.name,
             (nic.netif.flags & c.NETIF_FLAG_UP) != 0,

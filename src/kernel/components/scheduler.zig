@@ -83,7 +83,7 @@ pub const Thread = struct {
     flags: Flags = .{},
 
     /// The number of memory pages allocated for this thread. Is required to free all thread memory later on.
-    num_pages: usize,
+    stack_size: usize,
 
     debug_info: DebugInfo = .{},
 
@@ -104,22 +104,19 @@ pub const Thread = struct {
     /// **NOTE:** When choosing `stack_size`, one should remember that it will also include the management structures
     /// for the thread
     pub fn spawn(func: ThreadFunction, arg: ?*anyopaque, options: ThreadSpawnOptions) error{OutOfMemory}!*Thread {
-        const stack_page_count = ashet.memory.getRequiredPages(options.stack_size);
+        const stack_size = std.mem.alignForward(options.stack_size, ashet.memory.page_size);
 
-        const first_page = try ashet.memory.allocPages(stack_page_count);
-        errdefer ashet.memory.freePages(first_page, stack_page_count);
+        const stack_bottom = try ashet.memory.page_allocator.allocWithOptions(u8, stack_size, ashet.memory.page_size, null);
+        errdefer ashet.memory.page_allocator.free(stack_bottom);
 
-        // std.log.ingpfo("allocated {}+{} pages", .{ first_page, stack_page_count });
-
-        const stack_bottom = ashet.memory.pageToPtr(first_page);
-        const thread = @intToPtr(*Thread, @ptrToInt(stack_bottom) + ashet.memory.page_size * stack_page_count - @sizeOf(Thread));
+        const thread = @intToPtr(*Thread, @ptrToInt(stack_bottom.ptr) + stack_size - @sizeOf(Thread));
         const thread_proc = options.process;
 
         thread.* = Thread{
             .sp = @ptrToInt(thread),
             .ip = @ptrToInt(&ashet_scheduler_threadTrampoline),
             .exit_code = 0,
-            .num_pages = stack_page_count,
+            .stack_size = stack_size,
             .process = thread_proc,
         };
 
@@ -261,8 +258,8 @@ pub const Thread = struct {
     }
 
     /// Returns the pointer to the "stack top"
-    pub fn getBasePointer(thread: *Thread) ?*anyopaque {
-        return @intToPtr(?*anyopaque, @ptrToInt(thread) + @sizeOf(Thread));
+    pub fn getBasePointer(thread: *Thread) [*]u8 {
+        return @intToPtr([*]u8, @ptrToInt(thread) + @sizeOf(Thread));
     }
 
     fn internalDestroy(thread: *Thread) void {
@@ -287,10 +284,9 @@ pub const Thread = struct {
 
         const stack_top = thread.getBasePointer();
 
-        const first_page = ashet.memory.ptrToPage(stack_top).? - thread.num_pages;
-        // std.log.info("releasing {}+{} pages", .{ first_page, thread.num_pages });
-        ashet.memory.freePages(first_page, thread.num_pages);
+        const stack_bottom = stack_top - thread.stack_size;
 
+        ashet.memory.page_allocator.free(stack_bottom[0..thread.stack_size]);
         stats.total_count -= 1;
     }
 

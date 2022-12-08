@@ -57,7 +57,13 @@ SECTIONS {
 
         . = ALIGN(4);
         __kernel_bss_end = .;
+
+        . = ALIGN(4096);
+
+        __machine_linmem_start = .;
     } > dram
+
+    __machine_linmem_end = ORIGIN(dram) + LENGTH(dram);
 
     .platform (NOLOAD) : {
         *(.platform)

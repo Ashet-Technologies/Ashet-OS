@@ -1,0 +1,36 @@
+# Ashet OS - Multiplatform Architecture
+
+## Terms
+
+Platform: CPU architecture (risc-v, arm, x86)
+Machine:  A specialized (or generic) implementation for a certain platform (Ashet Home Computer, qemu-riscv/virt, qemu-arm/virt, qemu-x86/microvm)
+Driver:   Implementation of a certain device (or kind of device)
+
+## Components
+
+  core:
+    - Implements all functionality for the operating system
+    - Provides driver implementations
+    - Handles drivers
+
+  driver:
+    - Implements a behaviour for a system component or device
+    - Might be platform or machine specific
+
+  machine:
+    - defines the platform
+    - initializes machine and provides a memory map
+    - initializes drivers
+  
+  platform:
+    - contains implementations for the support for the cpu architecture
+    - contains implementation of the scheduler switchTasks function
+      - is highly platform specific, but not machine specific
+
+## Code Structure
+
+Just one huge source tree, and a comptime option "machine" which is 
+used to select everything else from the source tree. This allows to
+have a simple code structure that just switches on things instead of
+having to orchestrate a lot of packages into dependency loops.
+

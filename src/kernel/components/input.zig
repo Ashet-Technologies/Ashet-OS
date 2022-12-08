@@ -1,5 +1,4 @@
 const std = @import("std");
-const hal = @import("hal");
 const ashet = @import("../main.zig");
 const logger = std.log.scoped(.input);
 const astd = @import("ashet-std");
@@ -13,22 +12,12 @@ var ctrl_right_state: bool = false;
 var alt_state: bool = false;
 var alt_graph_state: bool = false;
 
-/// If this is `true`, the kernel will repeatedly call `poll()` to
-/// ensure the display is up-to-date.
-pub const is_poll_required = @hasDecl(hal.input, "poll");
-
 pub var cursor: ashet.abi.Point = undefined;
 
 pub fn initialize() void {
     const res = ashet.video.getResolution();
 
     cursor = ashet.abi.Point.new(@intCast(i16, res.width / 2), @intCast(i16, res.height / 2));
-}
-
-pub fn poll() void {
-    if (!is_poll_required)
-        @compileError("");
-    hal.input.poll();
 }
 
 pub const raw = struct {

@@ -1,5 +1,4 @@
 const std = @import("std");
-const hal = @import("hal");
 const ashet = @import("../main.zig");
 
 pub const Color = ashet.abi.Color;
@@ -7,19 +6,26 @@ pub const ColorIndex = ashet.abi.ColorIndex;
 
 pub const Resolution = ashet.abi.Size;
 
+/// If true, the kernel will automatically flush the screen in a background process.
+pub var auto_flush: bool = true;
+
+var vmem_backing: [1]ColorIndex align(4096) = undefined;
+
 /// The raw exposed video memory. Writing to this will change the content
 /// on the screen.
 /// Memory is interpreted with the current video mode to produce an image.
-pub const memory: []align(ashet.memory.page_size) ColorIndex = hal.video.memory;
+pub const memory: []align(ashet.memory.page_size) ColorIndex = &vmem_backing; // hal.video.memory; TODO: Initialize from a fitting driver
 comptime {
     // Make sure we have at least the guaranteed amount of RAM
     // to store the largest possible image.
-    std.debug.assert(memory.len >= 32768);
+    // std.debug.assert(memory.len >= 32768);
 }
+
+var palette_backing: [256]Color = undefined;
 
 /// The currently used palette. Modifying values here changes the appearance of
 /// the displayed picture.
-pub const palette: *[256]Color = hal.video.palette;
+pub const palette: *[256]Color = &palette_backing; // TODO: Initialize from a fitting driver hal.video.palette;
 
 /// Contains initialization defaults for the system
 pub const defaults = struct {
@@ -126,33 +132,35 @@ pub const defaults = struct {
     pub const border: ColorIndex = splash_screen[0]; // we just use the top-left pixel of the splash. smort!
 };
 
-/// If this is `true`, the kernel will repeatedly call `flush()` to
-/// ensure the display is up-to-date.
-pub const is_flush_required = @hasDecl(hal.video, "flush");
+var video_driver: *ashet.drivers.VideoDevice = undefined;
+
+pub fn initialize() void {
+    video_driver = ashet.drivers.first(.video) orelse @panic("no video device found!");
+}
 
 /// Sets the border color of the screen. This color fills all unreachable pixels.
 /// *C64 feeling intensifies.*
 pub fn setBorder(b: ColorIndex) void {
-    hal.video.setBorder(b);
+    video_driver.setBorder(b);
 }
 
 /// Potentially synchronizes the video storage with the screen.
-/// Without calling this
+/// Without calling this, the screen might not be refreshed at all.
 pub fn flush() void {
-    hal.video.flush();
+    video_driver.flush();
 }
 
 /// Returns the current screen resolution
 pub fn getResolution() Resolution {
-    return hal.video.getResolution();
+    return video_driver.getResolution();
 }
 
 pub fn getMaxResolution() Resolution {
-    return hal.video.getMaxResolution();
+    return video_driver.getMaxResolution();
 }
 
 pub fn getBorder() ColorIndex {
-    return hal.video.getBorder();
+    return video_driver.getBorder();
 }
 
 /// Sets the screen resolution of the video mode.
@@ -161,7 +169,7 @@ pub fn getBorder() ColorIndex {
 /// This only applies to graphics mode.
 pub fn setResolution(width: u15, height: u15) void {
     std.debug.assert(width > 0 and height > 0);
-    hal.video.setResolution(width, height);
+    video_driver.setResolution(width, height);
 }
 
 // Render text mode:

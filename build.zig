@@ -35,120 +35,10 @@ const pkgs = struct {
         .source = .{ .path = "src/abi/abi.zig" },
     };
 
-    pub const hal_virt_riscv32 = std.build.Pkg{
-        .name = "hal",
-        .source = .{ .path = "src/kernel/hal/virt-riscv32/hal.zig" },
-        .dependencies = &.{virtio},
-    };
-
-    pub const hal_virt_arm = std.build.Pkg{
-        .name = "hal",
-        .source = .{ .path = "src/kernel/hal/virt-arm/hal.zig" },
-        .dependencies = &.{virtio},
-    };
-
-    pub const hal_ashet = std.build.Pkg{
-        .name = "hal",
-        .source = .{ .path = "src/kernel/hal/ashet/hal.zig" },
-    };
-
-    pub const hal_microvm = std.build.Pkg{
-        .name = "hal",
-        .source = .{ .path = "src/kernel/hal/microvm/hal.zig" },
-        .dependencies = &.{virtio},
-    };
-
     pub const zigimg = std.build.Pkg{
         .name = "zigimg",
         .source = .{ .path = "vendor/zigimg/zigimg.zig" },
     };
-};
-
-const PlatformConfig = struct {
-    target: std.zig.CrossTarget,
-    hal: std.build.Pkg,
-    linkerscript: std.build.FileSource,
-};
-
-pub const Target = union(enum) {
-    riscv32: RiscvPlatform,
-    arm: ArmPlatform,
-    x86: X86Platform,
-
-    pub fn resolve(target: Target) PlatformConfig {
-        switch (target) {
-            .riscv32 => |platform| {
-                const cpu = std.zig.CrossTarget{
-                    .cpu_arch = .riscv32,
-                    .os_tag = .freestanding,
-                    .abi = .eabi,
-                    .cpu_model = .{ .explicit = &std.Target.riscv.cpu.generic_rv32 },
-                    .cpu_features_add = std.Target.riscv.featureSet(&[_]std.Target.riscv.Feature{
-                        .c,
-                        .m,
-                        .reserve_x4, // Don't allow LLVM to use the "tp" register. We want that for our own purposes
-                    }),
-                };
-                return switch (platform) {
-                    .virt => PlatformConfig{
-                        .target = cpu,
-                        .hal = pkgs.hal_virt_riscv32,
-                        .linkerscript = .{ .path = "src/kernel/hal/virt-riscv32/linker.ld" },
-                    },
-                    .ashet => PlatformConfig{
-                        .target = cpu,
-                        .hal = pkgs.hal_ashet,
-                        .linkerscript = .{ .path = "" },
-                    },
-                };
-            },
-            .arm => |platform| {
-                const cpu = std.zig.CrossTarget{
-                    .cpu_arch = .arm,
-                    .os_tag = .freestanding,
-                    .abi = .eabi,
-                    .cpu_model = .{ .explicit = &std.Target.arm.cpu.generic },
-                };
-                return switch (platform) {
-                    .virt => PlatformConfig{
-                        .target = cpu,
-                        .hal = pkgs.hal_virt_arm,
-                        .linkerscript = .{ .path = "" },
-                    },
-                };
-            },
-            .x86 => |platform| {
-                const cpu = std.zig.CrossTarget{
-                    .cpu_arch = .x86,
-                    .os_tag = .freestanding,
-                    .abi = .eabi,
-                    .cpu_model = .{ .explicit = &std.Target.x86.cpu.i686 },
-                };
-                return switch (platform) {
-                    .microvm => PlatformConfig{
-                        .target = cpu,
-                        .hal = pkgs.hal_microvm,
-                        .linkerscript = .{ .path = "src/kernel/hal/microvm/linker.ld" },
-                    },
-                };
-            },
-        }
-    }
-};
-
-pub const TargetId = std.meta.Tag(Target);
-
-pub const RiscvPlatform = enum {
-    virt,
-    ashet,
-};
-
-pub const ArmPlatform = enum {
-    virt,
-};
-
-pub const X86Platform = enum {
-    microvm,
 };
 
 const AshetContext = struct {
@@ -201,7 +91,22 @@ fn addBitmap(target: *std.build.LibExeObjStep, mkicon: *std.build.LibExeObjStep,
     target.step.dependOn(&gen.step);
 }
 
-pub fn build(b: *std.build.Builder) void {
+const machines = @import("src/kernel/machine/all.zig");
+const platforms = @import("src/kernel/platform/all.zig");
+
+const MachineID = std.meta.DeclEnum(machines.specs);
+const MachineSpec = machines.MachineSpec;
+
+fn resolveMachine(id: MachineID) MachineSpec {
+    inline for (comptime std.meta.declarations(machines.specs)) |decl| {
+        if (id == @field(MachineID, decl.name)) {
+            return @field(machines.specs, decl.name);
+        }
+    }
+    unreachable;
+}
+
+pub fn build(b: *std.build.Builder) !void {
     const fatfs_config = FatFS.Config{
         .volumes = .{
             // .named = &.{"CF0"},
@@ -217,24 +122,50 @@ pub fn build(b: *std.build.Builder) void {
 
     const mode = b.standardReleaseOptions();
 
-    const target_id = b.option(TargetId, "cpu", "The target cpu architecture") orelse .riscv32;
-    const system_target: Target = switch (target_id) {
-        .riscv32 => Target{
-            .riscv32 = b.option(RiscvPlatform, "platform", "The target machine for the os") orelse .virt,
-        },
-        .arm => Target{
-            .arm = b.option(ArmPlatform, "platform", "The target machine for the os") orelse .virt,
-        },
-        .x86 => Target{
-            .x86 = b.option(X86Platform, "platform", "The target machine for the os") orelse .microvm,
-        },
+    const machine_id = b.option(MachineID, "machine", "Defines the machine Ashet OS should be built for.") orelse {
+        var stderr = std.io.getStdErr();
+
+        var writer = stderr.writer();
+        try writer.writeAll("No machine selected. Use one of the following options:\n");
+
+        inline for (comptime std.meta.declarations(machines.all)) |decl| {
+            try writer.print("- {s}\n", .{decl.name});
+        }
+
+        std.os.exit(1);
     };
-    const system_platform = system_target.resolve();
+
+    const machine_spec = resolveMachine(machine_id);
 
     const tool_mkicon = b.addExecutable("tool_mkicon", "tools/mkicon.zig");
     tool_mkicon.addPackage(pkgs.zigimg);
     tool_mkicon.addPackage(pkgs.abi);
     tool_mkicon.install();
+
+    const machine_pkg = b.addWriteFile("machine.zig", blk: {
+        var stream = std.ArrayList(u8).init(b.allocator);
+        defer stream.deinit();
+
+        var writer = stream.writer();
+
+        try writer.writeAll("//! This is a machine-generated description of the Ashet OS target machine.\n\n");
+
+        try writer.print("pub const machine = @import(\"root\").machines.all.{};\n", .{
+            std.zig.fmtId(machine_spec.machine_id),
+        });
+        try writer.print("pub const platform = @import(\"root\").platforms.all.{};\n", .{
+            std.zig.fmtId(machine_spec.platform.platform_id),
+        });
+
+        try writer.print("pub const machine_name = \"{}\";\n", .{
+            std.zig.fmtEscapes(machine_spec.name),
+        });
+        try writer.print("pub const platform_name = \"{}\";\n", .{
+            std.zig.fmtEscapes(machine_spec.platform.name),
+        });
+
+        break :blk try stream.toOwnedSlice();
+    });
 
     const kernel_exe = b.addExecutable("ashet-os", "src/kernel/main.zig");
     {
@@ -245,15 +176,19 @@ pub fn build(b: *std.build.Builder) void {
             // we always want frame pointers in debug build!
             kernel_exe.omit_frame_pointer = false;
         }
-        kernel_exe.setTarget(system_platform.target);
+        kernel_exe.setTarget(machine_spec.platform.target);
         kernel_exe.setBuildMode(mode);
-        kernel_exe.addPackage(system_platform.hal);
         kernel_exe.addPackage(pkgs.abi);
         kernel_exe.addPackage(pkgs.ashet_std);
         kernel_exe.addPackage(pkgs.libashet);
         kernel_exe.addPackage(pkgs.libgui);
+        kernel_exe.addPackage(pkgs.virtio);
+        kernel_exe.addPackage(.{
+            .name = "machine",
+            .source = machine_pkg.getFileSource("machine.zig").?,
+        });
         kernel_exe.addPackage(FatFS.getPackage(b, "fatfs", fatfs_config));
-        kernel_exe.setLinkerScriptPath(system_platform.linkerscript);
+        kernel_exe.setLinkerScriptPath(.{ .path = machine_spec.linker_script });
         kernel_exe.install();
 
         kernel_exe.addSystemIncludePath("vendor/ziglibc/inc/libc");
@@ -336,7 +271,7 @@ pub fn build(b: *std.build.Builder) void {
     var ctx = AshetContext{
         .b = b,
         .mkicon = tool_mkicon,
-        .target = system_platform.target,
+        .target = machine_spec.platform.target,
     };
 
     {

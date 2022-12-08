@@ -1,5 +1,4 @@
 const std = @import("std");
-const hal = @import("hal");
 const ashet = @import("../main.zig");
 
 pub const BlockDevice = struct {
@@ -54,11 +53,14 @@ pub const BlockDeviceEnumerator = struct {
     index: usize = 0,
 
     pub fn next(self: *BlockDeviceEnumerator) ?BlockDevice {
-        const list = hal.storage.devices;
-        if (self.index >= list.len)
-            return null;
-        const item = list[self.index];
-        self.index += 1;
-        return item;
+        // TODO: Fetch from block drivers
+        _ = self;
+        return null;
+        // const list = hal.storage.devices;
+        // if (self.index >= list.len)
+        //     return null;
+        // const item = list[self.index];
+        // self.index += 1;
+        // return item;
     }
 };

@@ -47,7 +47,7 @@ pub fn startAppElf(app: AppID) !void {
     // logger.info("elf header: {}", .{header});
 
     // Verify that we can load the executable
-    const required_pages: usize = blk: {
+    const required_bytes: usize = blk: {
         var lo_addr: usize = 0;
         var hi_addr: usize = 0;
 
@@ -81,19 +81,12 @@ pub fn startAppElf(app: AppID) !void {
             hi_addr = std.math.max(hi_addr, @intCast(usize, phdr.p_vaddr + phdr.p_memsz));
         }
 
-        const byte_count = hi_addr - lo_addr;
-
-        // logger.info("{s} requires {} bytes of RAM", .{ app.getName(), byte_count });
-
-        break :blk ashet.memory.getRequiredPages(byte_count);
+        break :blk hi_addr - lo_addr;
     };
 
-    const required_bytes = ashet.memory.page_count * required_pages;
+    const process_memory = try ashet.memory.page_allocator.alignedAlloc(u8, ashet.memory.page_size, required_bytes);
+    errdefer ashet.memory.page_allocator.free(process_memory);
 
-    const base_page = try ashet.memory.allocPages(required_pages);
-    errdefer ashet.memory.freePages(base_page, required_pages);
-
-    const process_memory = @ptrCast([*]u8, ashet.memory.pageToPtr(base_page).?)[0..required_bytes];
     const process_base = @ptrToInt(process_memory.ptr);
 
     // Actually load the exe into memory

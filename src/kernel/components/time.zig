@@ -1,13 +1,14 @@
 const std = @import("std");
 const ashet = @import("../main.zig");
-const hal = @import("hal");
 
 pub const tz = "Europe/Berlin";
 
 pub const tz_offset = 1 * std.time.ns_per_hour;
 
 pub fn nanoTimestamp() i128 {
-    return hal.time.nanoTimestamp() + tz_offset;
+    const rtc = ashet.drivers.first(.rtc) orelse @panic("no rtc driver found!");
+
+    return rtc.nanoTimestamp() + tz_offset;
 }
 
 pub fn microTimestamp() i64 {

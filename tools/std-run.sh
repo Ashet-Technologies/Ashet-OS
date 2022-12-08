@@ -14,8 +14,12 @@ if [ -z "$APP" ]; then
     APP="${ROOT}/zig-out/bin/ashet-os"
 fi
 
+if [ -z "$MACHINE" ]; then 
+    MACHINE="rv32_virt"
+fi
+
 clear
-zig build install $ZARG
+zig build install -Dmachine=$MACHINE $ZARG
 "${ROOT}/zig-out/bin/init-disk" "${ROOT}/zig-out/disk.img"
 echo "----------------------"
 qemu-system-riscv32 \

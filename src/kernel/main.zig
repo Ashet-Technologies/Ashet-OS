@@ -1,39 +1,52 @@
 const std = @import("std");
-const hal = @import("hal");
 
 pub const abi = @import("ashet-abi");
-pub const video = @import("components/video.zig");
+pub const apps = @import("components/apps.zig");
 pub const drivers = @import("drivers/drivers.zig");
-pub const storage = @import("components/storage.zig");
-pub const memory = @import("components/memory.zig");
-pub const serial = @import("components/serial.zig");
-pub const scheduler = @import("components/scheduler.zig");
-pub const syscalls = @import("components/syscalls.zig");
 pub const filesystem = @import("components/filesystem.zig");
 pub const input = @import("components/input.zig");
-pub const network = @import("components/network.zig");
-// pub const splash_screen = @import("components/splash_screen.zig");
-pub const multi_tasking = @import("components/multi_tasking.zig");
-pub const ui = @import("components/ui.zig");
-pub const apps = @import("components/apps.zig");
-pub const time = @import("components/time.zig");
 pub const io = @import("components/io.zig");
+pub const memory = @import("components/memory.zig");
+pub const multi_tasking = @import("components/multi_tasking.zig");
+pub const network = @import("components/network.zig");
+pub const scheduler = @import("components/scheduler.zig");
+pub const serial = @import("components/serial.zig");
+pub const storage = @import("components/storage.zig");
+pub const syscalls = @import("components/syscalls.zig");
+pub const time = @import("components/time.zig");
+pub const ui = @import("components/ui.zig");
+pub const video = @import("components/video.zig");
+
+pub const platforms = @import("platform/all.zig");
+pub const machines = @import("machine/all.zig");
+
+pub const machine = @import("machine").machine;
+pub const platform = @import("machine").platform;
+
+comptime {
+    // force instantiation of the machine and platform elements
+    _ = machine;
+    _ = platform;
+    _ = platform.start; // explicitly refer to the entry point implementation
+}
 
 pub const log_level = if (@import("builtin").mode == .Debug) .debug else .info;
 
 export fn ashet_kernelMain() void {
-    if (@import("builtin").target.os.tag != .freestanding)
-        return; // don't include this on an OS!
+    memory.loadKernelMemory();
+
+    if (@hasDecl(machine, "earlyInitialize")) {
+        // If required, initialize the machine basics first,
+        // set up linear memory or detect how much memory is available.
+        machine.earlyInitialize();
+    }
 
     // Populate RAM with the right sections, and compute how much dynamic memory we have available
-    memory.initialize();
+    memory.initializeLinearMemory();
 
     // Initialize scheduler before HAL as it doesn't require anything except memory pages for thread
     // storage, queues and stacks.
     scheduler.initialize();
-
-    // Initialize the hardware into a well-defined state. After this, we can safely perform I/O ops.
-    hal.initialize();
 
     main() catch |err| {
         std.log.err("main() failed with {}", .{err});
@@ -41,9 +54,13 @@ export fn ashet_kernelMain() void {
     };
 }
 
-pub const hal_requires_polling = video.is_flush_required or input.is_poll_required;
-
 fn main() !void {
+    // Initialize the hardware into a well-defined state. After this, we can safely perform I/O ops.
+    // This will install all relevant drivers, set up interrupts if necessary and so on.
+    try machine.initialize();
+
+    video.initialize();
+
     filesystem.initialize();
 
     input.initialize();
@@ -75,14 +92,14 @@ pub const global_hotkeys = struct {
                 .f10 => scheduler.dumpStats(),
                 .f11 => network.dumpStats(),
                 .f12 => {
-                    const total_pages = memory.page_count;
-                    const free_pages = memory.getFreePageCount();
+                    const total_pages = memory.debug.getPageCount();
+                    const free_pages = memory.debug.getFreePageCount();
 
                     std.log.info("current memory usage: {}/{} pages free, {:.3}/{:.3} used, {}% used", .{
                         free_pages,
                         total_pages,
                         std.fmt.fmtIntSizeBin(memory.page_size * (total_pages - free_pages)),
-                        std.fmt.fmtIntSizeBin(memory.page_size * memory.page_count),
+                        std.fmt.fmtIntSizeBin(memory.page_size * total_pages),
                         100 - (100 * free_pages) / total_pages,
                     });
                 },
@@ -96,11 +113,7 @@ pub const global_hotkeys = struct {
 
 fn tickSystem(_: ?*anyopaque) callconv(.C) u32 {
     while (true) {
-        if (input.is_poll_required) {
-            input.poll();
-        }
-
-        if (video.is_flush_required) {
+        if (video.auto_flush) {
             video.flush();
         }
 
@@ -115,65 +128,17 @@ var runtime_sdata_string = "Hello, well initialized .sdata!\r\n".*;
 
 extern fn hang() callconv(.C) noreturn;
 
-export fn handleTrap() align(4) callconv(.C) noreturn {
-    @panic("unhandled trap");
-}
-
-comptime {
-    if (@import("builtin").target.os.tag == .freestanding) {
-        // don't include this on an OS!
-        const target = @import("builtin").target.cpu.arch;
-        switch (target) {
-            .riscv32 => asm (
-                \\.section .text._start
-                \\.global _start
-                \\_start:
-                \\  la   sp, kernel_stack // defined in linker script 
-                \\
-                \\  la     t0, handleTrap
-                \\  csrw   mtvec, t0
-                \\
-                \\  call ashet_kernelMain
-                \\
-                \\  li      t0, 0x38 
-                \\  csrc    mstatus, t0
-                \\
-                \\hang:
-                \\  wfi
-                \\  j hang
-                \\
-            ),
-
-            .x86 => asm (
-                \\.section .text._start
-                \\.global _start
-                \\_start:
-                \\  mov kernel_stack, %esp // defined in linker script 
-                \\
-                \\  call ashet_kernelMain
-                \\
-                \\hang:
-                \\  cli
-                \\  jmp hang
-                \\
-            ),
-
-            else => @compileError(std.fmt.comptimePrint("{s} is not a supported platform", .{@tagName(target)})),
-        }
-    }
-}
-
 pub const Debug = struct {
     const Error = error{};
-    fn write(port: hal.serial.Port, bytes: []const u8) Error!usize {
-        hal.serial.write(port, bytes);
+    fn write(_: void, bytes: []const u8) Error!usize {
+        machine.debugWrite(bytes);
         return bytes.len;
     }
 
-    const Writer = std.io.Writer(hal.serial.Port, Error, write);
+    const Writer = std.io.Writer(void, Error, write);
 
     pub fn writer() Writer {
-        return Writer{ .context = .COM1 };
+        return Writer{ .context = {} };
     }
 };
 
@@ -210,16 +175,14 @@ extern var kernel_stack: anyopaque;
 extern var kernel_stack_start: anyopaque;
 
 pub fn stackCheck() void {
-    const sp = asm (""
-        : [sp] "={sp}" (-> usize),
-    );
+    const sp = platform.getStackPointer();
 
     var stack_end: usize = @ptrToInt(&kernel_stack);
     var stack_start: usize = @ptrToInt(&kernel_stack_start);
 
     if (scheduler.Thread.current()) |thread| {
         stack_end = @ptrToInt(thread.getBasePointer());
-        stack_start = stack_end - memory.page_size * thread.num_pages;
+        stack_start = stack_end - thread.stack_size;
     }
 
     if (sp > stack_end) {
@@ -238,9 +201,7 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
     _ = maybe_return_address;
     _ = maybe_error_trace;
 
-    const sp = asm (""
-        : [sp] "={sp}" (-> usize),
-    );
+    const sp = platform.getStackPointer();
 
     var writer = Debug.writer();
 
@@ -260,7 +221,7 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
 
         if (scheduler.Thread.current()) |thread| {
             stack_end = @ptrToInt(thread.getBasePointer());
-            stack_start = stack_end - memory.page_size * thread.num_pages;
+            stack_start = stack_end - thread.stack_size;
         }
 
         std.debug.assert(stack_end > stack_start);
@@ -320,40 +281,6 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
     writer.writeAll("\r\n") catch {};
 
     hang();
-}
-
-test {
-    // hal.serial.write(.COM1, "Hello, World!\r\n");
-
-    // hal.serial.write(.COM1, &runtime_data_string);
-    // hal.serial.write(.COM1, &runtime_sdata_string);
-
-    // var rng = std.rand.DefaultPrng.init(0x1337);
-    // while (true) {
-    //     const num = rng.random().intRangeLessThan(u32, 1, 32);
-    //     const pages = memory.allocPages(num) catch {
-    //         std.log.info("out of memory when allocating {} pages", .{num});
-
-    //         break;
-    //     };
-    //     std.log.info("allocated some pages: {}+{}", .{ pages, num });
-    //     memory.freePages(pages, rng.random().intRangeAtMost(u32, 0, num)); // leaky boi
-    // }
-
-    // memory.debug.dumpPageMap();
-
-    // video.setMode(.text);
-    // console.clear();
-
-    // inline for ("Hello, World!") |c, i| {
-    //     console.set(51 + i, 31, c, 0xD5);
-    // }
-
-    // console.write("The line printer\r\nprints two lines.\r\n");
-
-    // for ("Very long string in which we print some") |char, i| {
-    //     console.writer().print("{d:0>2}: {c}\r\n", .{ i, char }) catch unreachable;
-    // }
 }
 
 export fn ashet_lockInterrupts(were_enabled: *bool) void {
