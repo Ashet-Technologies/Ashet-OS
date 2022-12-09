@@ -10,9 +10,9 @@ pub const BlockDevice = struct {
     block_size: u32, // typically 512
     num_blocks: u64 align(4), // number
 
-    presentFn: std.meta.FnPtr(fn (*ashet.drivers.Driver) bool),
-    readFn: std.meta.FnPtr(fn (*ashet.drivers.Driver, block: u64, []u8) ReadError!void),
-    writeFn: std.meta.FnPtr(fn (*ashet.drivers.Driver, block: u64, []const u8) WriteError!void),
+    presentFn: *const fn (*ashet.drivers.Driver) bool,
+    readFn: *const fn (*ashet.drivers.Driver, block: u64, []u8) ReadError!void,
+    writeFn: *const fn (*ashet.drivers.Driver, block: u64, []const u8) WriteError!void,
 
     pub fn isPresent(dev: *BlockDevice) bool {
         return dev.presentFn(ashet.drivers.resolveDriver(.block, dev));

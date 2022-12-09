@@ -114,7 +114,7 @@ fn defineSysCall(comptime name: []const u8, comptime Func: type, comptime index:
 
     return SysCallDefinition{
         .name = name,
-        .signature = std.meta.FnPtr(T2),
+        .signature = *const T2,
         .index = index,
     };
 }
@@ -348,7 +348,7 @@ pub const ExitCode = struct {
     pub const killed = ~@as(u32, 0);
 };
 
-pub const ThreadFunction = std.meta.FnPtr(fn (?*anyopaque) callconv(.C) u32);
+pub const ThreadFunction = *const fn (?*anyopaque) callconv(.C) u32;
 
 pub const ColorIndex = enum(u8) {
     _,

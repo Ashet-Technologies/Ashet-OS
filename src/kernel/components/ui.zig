@@ -594,7 +594,7 @@ fn repaint() void {
 var focused_window: ?*Window = null;
 
 const WindowIterator = struct {
-    const Filter = std.meta.FnPtr(fn (*Window) bool);
+    const Filter = *const fn (*Window) bool;
     const Direction = enum { top_to_bottom, bottom_to_top };
 
     var list = WindowQueue{};
