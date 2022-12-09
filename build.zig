@@ -209,6 +209,7 @@ pub fn build(b: *std.build.Builder) !void {
         {
             const lwip = create_lwIP(b, kernel_exe.target, .ReleaseSafe);
             lwip.is_linking_libc = false;
+            lwip.strip = false;
             lwip.addSystemIncludePath("vendor/ziglibc/inc/libc");
             kernel_exe.linkLibrary(lwip);
             setup_lwIP(kernel_exe);

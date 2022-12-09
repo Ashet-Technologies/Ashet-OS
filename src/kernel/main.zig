@@ -70,7 +70,7 @@ fn main() !void {
     try thread.start();
     thread.detach();
 
-    try ui.start();
+    // try ui.start();
 
     try network.start();
 
@@ -196,14 +196,22 @@ pub fn stackCheck() void {
     }
 }
 
+var double_panic = false;
 pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, maybe_return_address: ?usize) noreturn {
     @setCold(true);
+    const sp = platform.getStackPointer();
+
     _ = maybe_return_address;
     _ = maybe_error_trace;
 
-    const sp = platform.getStackPointer();
-
     var writer = Debug.writer();
+    if (double_panic) {
+        writer.writeAll("\r\nDOUBLE PANIC: ") catch {};
+        writer.writeAll(message) catch {};
+        writer.writeAll("\r\n") catch {};
+        hang();
+    }
+    double_panic = true;
 
     writer.writeAll("\r\n") catch {};
     writer.writeAll("=========================================================================\r\n") catch {};
@@ -279,6 +287,9 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
     }
 
     writer.writeAll("\r\n") catch {};
+
+    writer.writeAll("Memory map:\r\n") catch {};
+    memory.debug.dumpPageMap();
 
     hang();
 }

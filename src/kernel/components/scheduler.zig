@@ -69,7 +69,7 @@ pub const Thread = struct {
         padding: u28 = 0,
     };
 
-    pub const default_stack_size = 8192;
+    pub const default_stack_size = 32768;
 
     ip: usize,
     sp: usize,
@@ -185,7 +185,7 @@ pub const Thread = struct {
         if (thread.isStarted())
             return error.AlreadyStarted;
 
-        logger.info("enqueuing {}", .{thread});
+        logger.info("enqueuing {} with stack size {}", .{ thread, thread.stack_size });
 
         thread.flags.started = true;
         enqueueThread(&wait_queue, thread);

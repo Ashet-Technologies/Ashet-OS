@@ -9,8 +9,8 @@ const Color = ashet.abi.Color;
 const Resolution = ashet.abi.Size;
 const Driver = ashet.drivers.Driver;
 
-const max_width = 1920;
-const max_height = 1050;
+const max_width = 800;
+const max_height = 600;
 
 backing_buffer: [max_width * max_height]ColorIndex align(ashet.memory.page_size) = ashet.video.defaults.splash_screen ++ ([1]ColorIndex{ColorIndex.get(0)} ** (max_width * max_height - ashet.video.defaults.splash_screen.len)),
 backing_palette: [256]Color = ashet.video.defaults.palette,
@@ -47,6 +47,8 @@ pub fn init(allocator: std.mem.Allocator, regs: *volatile virtio.ControlRegs) !*
     };
 
     try vd.gpu.initialize(allocator, regs);
+
+    vd.driver.class.video.flush();
 
     return vd;
 }

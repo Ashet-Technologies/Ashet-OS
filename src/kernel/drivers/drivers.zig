@@ -20,6 +20,11 @@ pub const video = struct {
     pub const Virtio_GPU_Device = @import("video/Virtio_GPU_Device.zig");
 };
 
+pub const network = struct {
+    /// Memory mapped virtio network device
+    pub const Virtio_Net_Device = @import("network/Virtio_Net_Device.zig");
+};
+
 var driver_lists = std.EnumArray(DriverClass, ?*Driver).initFill(null);
 
 /// Adds a driver to the system.
@@ -37,6 +42,31 @@ pub fn first(comptime class: DriverClass) ?*ResolvedDriverInterface(class) {
     const head = driver_lists.get(class) orelse return null;
     std.debug.assert(head.class == class);
     return &@field(head.class, @tagName(class));
+}
+
+/// Returns an iterator that will return all devices currently registered for that `class`.
+pub fn enumerate(comptime class: DriverClass) DriverIterator(class) {
+    return DriverIterator(class).init();
+}
+
+/// An iterator type that will return all devices currently registered for that `class`.
+pub fn DriverIterator(comptime class: DriverClass) type {
+    return struct {
+        const Iterator = @This();
+
+        next_item: ?*Driver,
+
+        pub fn init() Iterator {
+            return Iterator{ .next_item = driver_lists.get(class) };
+        }
+
+        pub fn next(iter: *Iterator) ?*ResolvedDriverInterface(class) {
+            const item = iter.next_item orelse return null;
+            iter.next_item = item.next;
+            std.debug.assert(item.class == class);
+            return &@field(item.class, @tagName(class));
+        }
+    };
 }
 
 fn ResolvedDriverInterface(comptime class: DriverClass) type {
@@ -58,7 +88,7 @@ pub const DriverClass = enum {
     sound,
     input,
     serial,
-    nic,
+    network,
 };
 
 pub const DriverInterface = union(DriverClass) {
@@ -68,10 +98,10 @@ pub const DriverInterface = union(DriverClass) {
     sound: SoundDevice,
     input: InputDevice,
     serial: SerialPort,
-    nic: NetworkInterface,
+    network: NetworkInterface,
 };
 
-fn resolveDriver(comptime class: DriverClass, ptr: *ResolvedDriverInterface(class)) *Driver {
+pub fn resolveDriver(comptime class: DriverClass, ptr: *ResolvedDriverInterface(class)) *Driver {
     const container = @ptrCast(*DriverInterface, ptr);
     std.debug.assert(@ptrToInt(container) == @ptrToInt(&@field(container, @tagName(class))));
     return @fieldParentPtr(Driver, "class", container);
@@ -152,10 +182,7 @@ pub const SerialPort = struct {
     dummy: u8,
 };
 
-pub const NetworkInterface = struct {
-    //
-    dummy: u8,
-};
+pub const NetworkInterface = ashet.network.NetworkInterface;
 
 const virtio = @import("virtio");
 
@@ -180,7 +207,7 @@ pub fn scanVirtioDevices(allocator: std.mem.Allocator, base_address: usize, max_
             .reserved => continue,
             .gpu => installVirtioDriver(video.Virtio_GPU_Device, allocator, regs) catch |err| @panic(@errorName(err)),
             // .input => installVirtioDriver(regs) catch |err| @panic(@errorName(err)),
-            // .network => installVirtioDriver(regs) catch |err| @panic(@errorName(err)),
+            .network => installVirtioDriver(network.Virtio_Net_Device, allocator, regs) catch |err| @panic(@errorName(err)),
             else => logger.warn("Found unsupported virtio device: {s}", .{@tagName(regs.device_id)}),
         }
     }

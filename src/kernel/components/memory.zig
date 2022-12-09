@@ -120,7 +120,10 @@ pub const debug = struct {
         var i: usize = 0;
         while (i < page_manager.pageCount()) : (i += 1) {
             if (i % items_per_line == 0) {
-                writer.print("]\n0x{X:0>4}: [", .{i}) catch {};
+                if (i > 0) {
+                    writer.writeAll("]") catch {};
+                }
+                writer.print("\n0x{X:0>8}: [", .{page_manager.region.offset + i * page_size}) catch {};
             }
             if (page_manager.isFree(@intToEnum(Page, i))) {
                 free_memory += page_size;
@@ -131,6 +134,10 @@ pub const debug = struct {
         }
 
         writer.writeAll("]\n") catch {};
+
+        for (page_manager.bitmap()) |item, index| {
+            writer.print("{X:0>4}: {b:0>32}\r\n", .{ index, item }) catch {};
+        }
 
         writer.print("free ram: {:.2} ({}/{} pages)\n", .{ std.fmt.fmtIntSizeBin(free_memory), free_memory / page_size, page_manager.pageCount() }) catch {};
     }
@@ -369,6 +376,8 @@ const RawPageStorageManager = struct {
         const bmp = pm.bitmap();
 
         logger.debug("allocate {} pages", .{count});
+
+        // if (count > 100) @panic("wtf");
         // defer debug.dumpPageMap();
 
         var first_page = search_loop: for (bmp) |val, pi| {
@@ -431,26 +440,28 @@ const RawPageStorageManager = struct {
 
     /// Returns whether the `page` is currently available for allocation or
     /// not.
-    pub fn isFree(pm: *RawPageStorageManager, page: Page) bool {
+    fn isFree(pm: *RawPageStorageManager, page: Page) bool {
         const bmp = pm.bitmap();
         return bitMarkedFree(bmp[page.wordIndex()], page.bitIndex());
     }
 
     /// Marks the `page` as "free" (sets the bit).
-    pub fn markFree(pm: *RawPageStorageManager, page: Page) void {
+    fn markFree(pm: *RawPageStorageManager, page: Page) void {
+        logger.debug("markFree({})", .{page});
         const bmp = pm.bitmap();
         markBitFree(&bmp[page.wordIndex()], page.bitIndex());
     }
 
     /// Marks the `page` as "used" (clears the bit).
-    pub fn markUsed(pm: *RawPageStorageManager, page: Page) void {
+    fn markUsed(pm: *RawPageStorageManager, page: Page) void {
+        logger.debug("markUsed({})", .{page});
         const bmp = pm.bitmap();
         markBitUsed(&bmp[page.wordIndex()], page.bitIndex());
     }
 
     /// Checks if the given `ptr` is in the range managed by `pm` and
     /// returns the page index into `pm` if so.
-    pub fn ptrToPage(pm: *RawPageStorageManager, ptr: anytype) ?Page {
+    fn ptrToPage(pm: *RawPageStorageManager, ptr: anytype) ?Page {
         const offset = @ptrToInt(ptr);
         if (offset < pm.region.offset)
             return null;
@@ -460,7 +471,7 @@ const RawPageStorageManager = struct {
     }
 
     /// Converts a given `page` index for `pm` into a physical memory address.
-    pub fn pageToPtr(pm: *RawPageStorageManager, page: Page) ?*align(page_size) anyopaque {
+    fn pageToPtr(pm: *RawPageStorageManager, page: Page) ?*align(page_size) anyopaque {
         const num = @enumToInt(page);
         if (num >= pm.pageCount())
             return null;
