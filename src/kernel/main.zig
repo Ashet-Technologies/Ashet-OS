@@ -23,6 +23,8 @@ pub const machines = @import("machine/all.zig");
 pub const machine = @import("machine").machine;
 pub const platform = @import("machine").platform;
 
+pub const machine_config: machines.MachineConfig = machine.machine_config;
+
 comptime {
     // force instantiation of the machine and platform elements
     _ = machine;
@@ -33,7 +35,9 @@ comptime {
 pub const log_level = if (@import("builtin").mode == .Debug) .debug else .info;
 
 export fn ashet_kernelMain() void {
-    memory.loadKernelMemory();
+    if (machine_config.uninitialized_memory) {
+        memory.loadKernelMemory();
+    }
 
     if (@hasDecl(machine, "earlyInitialize")) {
         // If required, initialize the machine basics first,

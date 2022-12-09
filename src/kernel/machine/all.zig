@@ -9,6 +9,11 @@ pub const MachineSpec = struct {
     linker_script: []const u8,
 };
 
+pub const MachineConfig = struct {
+    /// If this is set, the kernel will initialize the `.data` and `.bss` sections.
+    uninitialized_memory: bool,
+};
+
 pub const all = struct {
     pub const ashet_home_computer = @import("ashet_home_computer/ashet_home_computer.zig");
     pub const rv32_virt = @import("rv32_virt/rv32_virt.zig");

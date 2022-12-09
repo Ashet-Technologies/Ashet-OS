@@ -26,6 +26,29 @@
 //!     f18–27   | fs2–11   | FP saved registers               Callee
 //!     f28–31   | ft8–11   | FP temporaries                   Caller
 //!
+//! x86 ABI:
+//!
+//!     Saved on stack:
+//!     - EAX
+//!     - EBX
+//!     - ECX
+//!     - EDX
+//!     - EBP
+//!     - ESI
+//!     - EDI
+//!     - EFLAGS
+//!     Externally saved:
+//!     - ESP
+//!     - EIP
+//!
+//!
+//!
+//!
+//!
+//!
+//!
+//!
+//!
 
 const std = @import("std");
 const logger = std.log.scoped(.scheduler);
@@ -134,21 +157,39 @@ pub const Thread = struct {
         if (@import("builtin").mode == .Debug) {
             thread.debug_info.entry_point = @ptrToInt(func);
         }
+        switch (target) {
+            .riscv32 => {
+                thread.push(0x0000_0000); //      x3  ; gp Global pointer
+                thread.push(@ptrToInt(&ashet.syscalls.syscall_table)); //      x4  ; tp Thread pointer
+                thread.push(0x0000_0000); //      x8  ; s0
+                thread.push(0x0000_0000); //      x9  ; s1
+                thread.push(@ptrToInt(func)); // x18  ; s2
+                thread.push(@ptrToInt(arg)); //  x19  ; s3
+                thread.push(0x0000_0000); //     x20
+                thread.push(0x0000_0000); //     x21
+                thread.push(0x0000_0000); //     x22
+                thread.push(0x0000_0000); //     x23
+                thread.push(0x0000_0000); //     x24
+                thread.push(0x0000_0000); //     x25
+                thread.push(0x0000_0000); //     x26
+                thread.push(0x0000_0000); //     x27
+            },
+            .x86 => {
+                thread.push(@ptrToInt(&ashet_scheduler_threadTrampoline)); // return address
 
-        thread.push(0x0000_0000); //      x3  ; gp Global pointer
-        thread.push(@ptrToInt(&ashet.syscalls.syscall_table)); //      x4  ; tp Thread pointer
-        thread.push(0x0000_0000); //      x8  ; s0
-        thread.push(0x0000_0000); //      x9  ; s1
-        thread.push(@ptrToInt(func)); // x18  ; s2
-        thread.push(@ptrToInt(arg)); //  x19  ; s3
-        thread.push(0x0000_0000); //     x20
-        thread.push(0x0000_0000); //     x21
-        thread.push(0x0000_0000); //     x22
-        thread.push(0x0000_0000); //     x23
-        thread.push(0x0000_0000); //     x24
-        thread.push(0x0000_0000); //     x25
-        thread.push(0x0000_0000); //     x26
-        thread.push(0x0000_0000); //     x27
+                // thread.push(0x0000_0000); // EFLAGS
+                thread.push(0x0000_0000); // EDI
+                thread.push(0x0000_0000); // ESI
+                thread.push(0x0000_0000); // EBP
+                thread.push(0x0000_0000); // EDX
+                thread.push(0x0000_0000); // ECX
+                thread.push(@ptrToInt(arg)); // EBX
+                thread.push(@ptrToInt(func)); // EAX
+            },
+            .arm => @compileError("arm support not implemented yet!"),
+
+            else => @compileError(std.fmt.comptimePrint("{s} is not a supported platform", .{@tagName(target)})),
+        }
 
         stats.total_count += 1;
 
@@ -418,6 +459,11 @@ pub fn start() void {
 }
 
 fn performSwitch(from: *Thread, to: *Thread) void {
+    // logger.debug("switch thread from 0x{X:0>8} (esp=0x{X:0>8}) to 0x{X:0>8} (esp=0x{X:0>8})", .{
+    //     @ptrToInt(from), from.sp,
+    //     @ptrToInt(to),   to.sp,
+    // });
+
     std.debug.assert(current_thread.? == from);
     ashet_scheduler_save_thread = from;
     ashet_scheduler_restore_thread = to;
@@ -569,7 +615,65 @@ comptime {
                 \\  ret
         ),
 
-        .x86 => @compileError("x86 support not implemented yet!"),
+        .x86 => asm (preamble ++
+                \\
+                \\ashet_scheduler_threadTrampoline:
+                //
+                //  we just restored the thread state from scheduler.createThread,
+                //  so %ebx contains the argument,
+                \\  push %ebx
+                //
+                //  and %eax contains the function to be called.
+                \\  call *%eax
+                //
+                //  remove argument from the stack again:
+                \\  addl    $4, %esp
+                //
+                //  and push the result of the function into the exit code argument.
+                \\  push %eax
+                //
+                //  then kill the thread by jumping into the exit function.
+                //  There's no need to use call/jalr here, as the exit() call won't
+                //  ever return here in the first place.
+                \\  jmp ashet_scheduler_threadExit
+                \\
+                \\ashet_scheduler_switchTasks:
+                //
+                //  save all registers that are callee-saved to the stack
+                // \\  pushf
+                \\  push %edi
+                \\  push %esi
+                \\  push %ebp
+                \\  push %edx
+                \\  push %ecx
+                \\  push %ebx
+                \\  push %eax
+                //
+                //  backup the current state:
+                \\  mov ashet_scheduler_save_thread, %eax
+                \\  mov %esp, THREAD_SP_OFFSET(%eax)
+                // \\  movl    %eip, THREAD_IP_OFFSET(%eax) // is stored on the stack on x86
+                //
+                // restore the new state:
+                \\  mov ashet_scheduler_restore_thread, %eax
+                \\  mov THREAD_SP_OFFSET(%eax), %esp
+                // \\  movl THREAD_IP_OFFSET(%eax), %eip // lol nope
+                \\
+                //  then restore all registers from the stack
+                //  in the same order we saved them above
+                \\  pop %eax
+                \\  pop %ebx
+                \\  pop %ecx
+                \\  pop %edx
+                \\  pop %ebp
+                \\  pop %esi
+                \\  pop %edi
+                // \\  popf
+                //
+                //  and jump into the new thread function
+                \\  ret
+        ),
+
         .arm => @compileError("arm support not implemented yet!"),
 
         else => @compileError(std.fmt.comptimePrint("{s} is not a supported platform", .{@tagName(target)})),

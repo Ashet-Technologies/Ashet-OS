@@ -12,12 +12,14 @@ pub const serial = struct {
 };
 
 pub const rtc = struct {
+    pub const Dummy = @import("rtc/Dummy.zig");
     pub const Goldfish = @import("rtc/Goldfish.zig");
 };
 
 pub const video = struct {
     /// Memory mapped virtio GPU
     pub const Virtio_GPU_Device = @import("video/Virtio_GPU_Device.zig");
+    pub const VESA_BIOS_Extension = @import("video/VESA_BIOS_Extension.zig");
 };
 
 pub const network = struct {
