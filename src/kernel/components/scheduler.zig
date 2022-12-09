@@ -106,8 +106,10 @@ pub const Thread = struct {
     pub fn spawn(func: ThreadFunction, arg: ?*anyopaque, options: ThreadSpawnOptions) error{OutOfMemory}!*Thread {
         const stack_size = std.mem.alignForward(options.stack_size, ashet.memory.page_size);
 
-        const stack_bottom = try ashet.memory.page_allocator.allocWithOptions(u8, stack_size, ashet.memory.page_size, null);
-        errdefer ashet.memory.page_allocator.free(stack_bottom);
+        // Requires the use of `ThreadAllocator`.
+        // See `ashet_scheduler_threadExit` and `internalDestroy` for more explanation.
+        const stack_bottom = try ashet.memory.ThreadAllocator.alloc(stack_size);
+        errdefer ashet.memory.ThreadAllocator.free(stack_bottom);
 
         const thread = @intToPtr(*Thread, @ptrToInt(stack_bottom.ptr) + stack_size - @sizeOf(Thread));
         const thread_proc = options.process;
@@ -286,7 +288,12 @@ pub const Thread = struct {
 
         const stack_bottom = stack_top - thread.stack_size;
 
-        ashet.memory.page_allocator.free(stack_bottom[0..thread.stack_size]);
+        // we have to use the ThreadAlloactor that doesn't invalidate
+        // the memory.
+        // `ashet_scheduler_threadExit` relies on the assumption that the memory
+        // is not changed between the free and the `performSwitch` call.
+        ashet.memory.ThreadAllocator.free(stack_bottom[0..thread.stack_size]);
+
         stats.total_count -= 1;
     }
 

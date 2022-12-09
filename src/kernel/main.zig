@@ -294,13 +294,14 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
 }
 
 export fn ashet_lockInterrupts(were_enabled: *bool) void {
-    // TODO: Disable interrupts
-    were_enabled.* = false;
+    were_enabled.* = platform.areInterruptsEnabled();
+    platform.disableInterrupts();
 }
 
 export fn ashet_unlockInterrupts(enable: bool) void {
-    // TODO: Disable interrupts
-    std.debug.assert(enable == false);
+    if (enable) {
+        platform.enableInterrupts();
+    }
 }
 
 export fn ashet_rand() u32 {

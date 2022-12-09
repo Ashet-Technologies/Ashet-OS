@@ -24,7 +24,7 @@ pub const start = struct {
             \\
             \\  call ashet_kernelMain
             \\
-            \\  li      t0, 0x38 
+            \\  li      t0, 0x38
             \\  csrc    mstatus, t0
             \\
             \\hang:
@@ -57,3 +57,9 @@ noinline fn readHwCounter() u64 {
     );
     return res;
 }
+
+pub fn areInterruptsEnabled() bool {
+    return false;
+}
+pub fn disableInterrupts() void {}
+pub fn enableInterrupts() void {}

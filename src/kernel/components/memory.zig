@@ -167,7 +167,7 @@ const PageAllocator = struct {
             return null;
         }
 
-        std.debug.assert(ptr_align <= page_size);
+        std.debug.assert(ptr_align <= std.math.log2(page_size));
 
         const aligned_len = std.mem.alignForward(len, page_size);
 
@@ -203,6 +203,21 @@ const PageAllocator = struct {
             .page = page_manager.ptrToPage(ptr) orelse @panic("invalid address in free!"),
             .len = @divExact(buf_aligned_len, page_size),
         });
+    }
+};
+
+/// An allocator used for allocation/deletion of threads.
+/// **DO NOT USE THE ALLOCATOR FOR ANYTHING ELSE**.
+pub const ThreadAllocator = struct {
+    pub fn alloc(len: usize) error{OutOfMemory}![]u8 {
+        return if (ashet.memory.PageAllocator.alloc(undefined, len, 12, @returnAddress())) |ptr|
+            ptr[0..len]
+        else
+            error.OutOfMemory;
+    }
+
+    pub fn free(buf: []u8) void {
+        ashet.memory.PageAllocator.free(undefined, buf, 12, @returnAddress());
     }
 };
 
