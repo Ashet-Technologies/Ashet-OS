@@ -20,6 +20,14 @@ pub fn initialize() void {
     cursor = ashet.abi.Point.new(@intCast(i16, res.width / 2), @intCast(i16, res.height / 2));
 }
 
+/// Period subsystem update, will poll for input events
+pub fn tick() void {
+    var devices = ashet.drivers.enumerate(.input);
+    while (devices.next()) |device| {
+        device.poll();
+    }
+}
+
 pub const raw = struct {
     pub const Event = union(enum) {
         mouse_motion: MouseMotion,

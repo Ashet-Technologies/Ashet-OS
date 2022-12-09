@@ -117,7 +117,9 @@ fn tickSystem(_: ?*anyopaque) callconv(.C) u32 {
             video.flush();
         }
 
-        time.progressTimers();
+        input.tick();
+
+        time.tick();
 
         scheduler.yield();
     }

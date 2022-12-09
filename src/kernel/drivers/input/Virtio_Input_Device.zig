@@ -1,19 +1,31 @@
 const std = @import("std");
-const ashet = @import("root");
-const logger = std.log.scoped(.@"virtio-input-device");
+const ashet = @import("../../main.zig");
+const logger = std.log.scoped(.@"virtio-input");
 const virtio = @import("virtio");
 
-const queue_size = 8;
+const Virtio_Input_Device = @This();
+const Driver = ashet.drivers.Driver;
 
+const queue_size = 8;
 const eventq = 0;
 const statusq = 1;
 
-fn selectConfig(regs: *volatile virtio.ControlRegs, select: virtio.input.ConfigSelect, subsel: virtio.input.ConfigEvSubSel) void {
-    regs.device.input.select = select;
-    regs.device.input.subsel = subsel;
-}
+driver: Driver = .{
+    .name = "Virtio Input Device",
+    .class = .{
+        .input = .{
+            .pollFn = poll,
+        },
+    },
+},
 
-fn initialize(regs: *volatile virtio.ControlRegs) !void {
+regs: *volatile virtio.ControlRegs,
+kind: DeviceData,
+
+events: [queue_size]virtio.input.Event,
+vq: virtio.queue.VirtQ(queue_size),
+
+pub fn init(allocator: std.mem.Allocator, regs: *volatile virtio.ControlRegs) !*Virtio_Input_Device {
     logger.info("initializing input device {*}", .{regs});
 
     const input_dev = &regs.device.input;
@@ -74,28 +86,26 @@ fn initialize(regs: *volatile virtio.ControlRegs) !void {
     }
 
     if (axes == 0 and keys >= 80) {
-        try initDevice(regs, .keyboard);
+        return try initDevice(allocator, regs, .keyboard);
     } else if (mouse_axes) {
-        try initDevice(regs, .mouse);
+        return try initDevice(allocator, regs, .mouse);
     } else if (tablet_axes) {
-        try initDevice(regs, .tablet);
+        return try initDevice(allocator, regs, .tablet);
     } else {
         logger.warn("Ignoring this device, it has unknown metrics", .{});
+        return error.UnsupportedDevice;
     }
+}
+
+fn selectConfig(regs: *volatile virtio.ControlRegs, select: virtio.input.ConfigSelect, subsel: virtio.input.ConfigEvSubSel) void {
+    regs.device.input.select = select;
+    regs.device.input.subsel = subsel;
 }
 
 pub const DeviceType = enum {
     keyboard,
     mouse,
     tablet,
-};
-
-const Device = struct {
-    regs: *volatile virtio.ControlRegs,
-    kind: DeviceData,
-
-    events: [queue_size]virtio.input.Event,
-    vq: virtio.queue.VirtQ(queue_size),
 };
 
 const DeviceData = union(DeviceType) {
@@ -109,15 +119,13 @@ const Tablet = struct {
     axis_max: [3]u32,
 };
 
-var devices = std.BoundedArray(Device, 8){};
-
-fn initDevice(regs: *volatile virtio.ControlRegs, device_type: DeviceType) !void {
+fn initDevice(allocator: std.mem.Allocator, regs: *volatile virtio.ControlRegs, device_type: DeviceType) !*Virtio_Input_Device {
     logger.info("recognized 0x{X:0>8} as {s}", .{ @ptrToInt(regs), @tagName(device_type) });
 
-    const device = try devices.addOne();
-    errdefer _ = devices.pop();
+    const device = try allocator.create(Virtio_Input_Device);
+    errdefer allocator.destroy(device);
 
-    device.* = Device{
+    device.* = Virtio_Input_Device{
         .regs = regs,
         .kind = undefined,
         .events = std.mem.zeroes([queue_size]virtio.input.Event),
@@ -132,14 +140,17 @@ fn initDevice(regs: *volatile virtio.ControlRegs, device_type: DeviceType) !void
 
     switch (device_type) {
         .keyboard => {
+            device.driver.name = "Virtio Keyboard Device";
             device.kind = DeviceData{ .keyboard = {} };
         },
 
         .mouse => {
+            device.driver.name = "Virtio Mouse Device";
             device.kind = DeviceData{ .mouse = {} };
         },
 
         .tablet => {
+            device.driver.name = "Virtio Tablet Device";
             @panic("tablet not supported yet");
             // device.kind = DeviceData{
             //     .tablet = .{
@@ -165,9 +176,11 @@ fn initDevice(regs: *volatile virtio.ControlRegs, device_type: DeviceType) !void
     regs.status |= virtio.DeviceStatus.driver_ok;
 
     device.vq.exec();
+
+    return device;
 }
 
-fn getDeviceEvent(dev: *Device) ?virtio.input.Event {
+fn getDeviceEvent(dev: *Virtio_Input_Device) ?virtio.input.Event {
     const ret = dev.vq.singlePollUsed() orelse return null;
 
     const evt = dev.events[ret % queue_size];
@@ -190,50 +203,50 @@ fn mapToMouseButton(val: u16) ?ashet.abi.MouseButton {
     };
 }
 
-pub fn poll() void {
-    for (devices.slice()) |*device| {
-        device_fetch: while (true) {
-            const evt = getDeviceEvent(device) orelse break :device_fetch;
-            const event_type = @intToEnum(virtio.input.ConfigEvSubSel, evt.type);
+fn poll(driver: *Driver) void {
+    const device = @fieldParentPtr(Virtio_Input_Device, "driver", driver);
 
-            switch (device.kind) {
-                .keyboard => {
-                    switch (event_type) {
-                        .unset => {},
-                        .cess_key => ashet.input.pushRawEvent(.{ .keyboard = .{
-                            .scancode = evt.code,
-                            .down = evt.value != 0,
-                        } }),
-                        else => logger.warn("unhandled keyboard event: {}", .{event_type}),
-                    }
-                },
-                .mouse => {
-                    switch (event_type) {
-                        .unset => {},
-                        .cess_key => {
-                            ashet.input.pushRawEvent(.{ .mouse_button = .{
-                                .button = mapToMouseButton(evt.code) orelse continue,
-                                .down = (evt.value != 0),
+    device_fetch: while (true) {
+        const evt = getDeviceEvent(device) orelse break :device_fetch;
+        const event_type = @intToEnum(virtio.input.ConfigEvSubSel, evt.type);
+
+        switch (device.kind) {
+            .keyboard => {
+                switch (event_type) {
+                    .unset => {},
+                    .cess_key => ashet.input.pushRawEvent(.{ .keyboard = .{
+                        .scancode = evt.code,
+                        .down = evt.value != 0,
+                    } }),
+                    else => logger.warn("unhandled keyboard event: {}", .{event_type}),
+                }
+            },
+            .mouse => {
+                switch (event_type) {
+                    .unset => {},
+                    .cess_key => {
+                        ashet.input.pushRawEvent(.{ .mouse_button = .{
+                            .button = mapToMouseButton(evt.code) orelse continue,
+                            .down = (evt.value != 0),
+                        } });
+                    },
+                    .cess_rel => {
+                        if (evt.code == 0) {
+                            ashet.input.pushRawEvent(.{ .mouse_motion = .{
+                                .dx = @bitCast(i32, evt.value),
+                                .dy = 0,
                             } });
-                        },
-                        .cess_rel => {
-                            if (evt.code == 0) {
-                                ashet.input.pushRawEvent(.{ .mouse_motion = .{
-                                    .dx = @bitCast(i32, evt.value),
-                                    .dy = 0,
-                                } });
-                            } else if (evt.code == 1) {
-                                ashet.input.pushRawEvent(.{ .mouse_motion = .{
-                                    .dx = 0,
-                                    .dy = @bitCast(i32, evt.value),
-                                } });
-                            }
-                        },
-                        else => logger.warn("unhandled mouse event: {}", .{event_type}),
-                    }
-                },
-                else => logger.warn("unhandled event for {s} device: {}", .{ @tagName(device.kind), event_type }),
-            }
+                        } else if (evt.code == 1) {
+                            ashet.input.pushRawEvent(.{ .mouse_motion = .{
+                                .dx = 0,
+                                .dy = @bitCast(i32, evt.value),
+                            } });
+                        }
+                    },
+                    else => logger.warn("unhandled mouse event: {}", .{event_type}),
+                }
+            },
+            else => logger.warn("unhandled event for {s} device: {}", .{ @tagName(device.kind), event_type }),
         }
     }
 }

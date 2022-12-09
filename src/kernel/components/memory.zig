@@ -447,14 +447,14 @@ const RawPageStorageManager = struct {
 
     /// Marks the `page` as "free" (sets the bit).
     fn markFree(pm: *RawPageStorageManager, page: Page) void {
-        logger.debug("markFree({})", .{page});
+        // logger.debug("markFree({})", .{page});
         const bmp = pm.bitmap();
         markBitFree(&bmp[page.wordIndex()], page.bitIndex());
     }
 
     /// Marks the `page` as "used" (clears the bit).
     fn markUsed(pm: *RawPageStorageManager, page: Page) void {
-        logger.debug("markUsed({})", .{page});
+        // logger.debug("markUsed({})", .{page});
         const bmp = pm.bitmap();
         markBitUsed(&bmp[page.wordIndex()], page.bitIndex());
     }

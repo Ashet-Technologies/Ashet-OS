@@ -29,7 +29,9 @@ const Timer = ashet.abi.Timer;
 
 var global_timer_queue: ?*Timer = null;
 
-pub fn progressTimers() void {
+/// Period subsystem update, will finalize
+/// all finished timers.
+pub fn tick() void {
     const now = nanoTimestamp();
 
     while (global_timer_queue) |timer| {

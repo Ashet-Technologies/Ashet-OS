@@ -25,6 +25,11 @@ pub const network = struct {
     pub const Virtio_Net_Device = @import("network/Virtio_Net_Device.zig");
 };
 
+pub const input = struct {
+    /// Memory mapped virtio input device
+    pub const Virtio_Input_Device = @import("input/Virtio_Input_Device.zig");
+};
+
 var driver_lists = std.EnumArray(DriverClass, ?*Driver).initFill(null);
 
 /// Adds a driver to the system.
@@ -173,8 +178,11 @@ pub const SoundDevice = struct {
 };
 
 pub const InputDevice = struct {
-    //
-    dummy: u8,
+    pollFn: *const fn (*Driver) void,
+
+    pub fn poll(idev: *InputDevice) void {
+        idev.pollFn(resolveDriver(.input, idev));
+    }
 };
 
 pub const SerialPort = struct {
@@ -206,7 +214,7 @@ pub fn scanVirtioDevices(allocator: std.mem.Allocator, base_address: usize, max_
         switch (regs.device_id) {
             .reserved => continue,
             .gpu => installVirtioDriver(video.Virtio_GPU_Device, allocator, regs) catch |err| @panic(@errorName(err)),
-            // .input => installVirtioDriver(regs) catch |err| @panic(@errorName(err)),
+            .input => installVirtioDriver(input.Virtio_Input_Device, allocator, regs) catch |err| @panic(@errorName(err)),
             .network => installVirtioDriver(network.Virtio_Net_Device, allocator, regs) catch |err| @panic(@errorName(err)),
             else => logger.warn("Found unsupported virtio device: {s}", .{@tagName(regs.device_id)}),
         }
