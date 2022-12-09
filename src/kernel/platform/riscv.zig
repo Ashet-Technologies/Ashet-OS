@@ -40,3 +40,20 @@ pub inline fn getStackPointer() usize {
         : [sp] "={sp}" (-> usize),
     );
 }
+
+noinline fn readHwCounter() u64 {
+    var res: u64 = undefined;
+    asm volatile (
+        \\read_hwcnt_loop:
+        \\  rdcycleh t0 // hi
+        \\  rdcycle  t1 // lo
+        \\  rdcycleh t2 // check
+        \\  bne t0, t2, read_hwcnt_loop
+        \\  sw t0, 4(%[ptr])
+        \\  sw t1, 0(%[ptr])
+        :
+        : [ptr] "r" (&res),
+        : "{t0}", "{t1}", "{t2}"
+    );
+    return res;
+}

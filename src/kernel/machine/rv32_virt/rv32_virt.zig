@@ -6,16 +6,18 @@ const VPBA_VIRTIO_BASE = 0x10001000;
 
 const hw = struct {
     //! list of fixed hardware components
-
-    var rtc = ashet.drivers.rtc.Goldfish.init(0x0101000);
+    var rtc: ashet.drivers.rtc.Goldfish = undefined;
+    var cfi: ashet.drivers.block.CFI_NOR_Flash = undefined;
 };
 
 pub fn initialize() !void {
-    // TODO: Port over RV32/virt hal
+    hw.rtc = ashet.drivers.rtc.Goldfish.init(0x0101000);
+    hw.cfi = try ashet.drivers.block.CFI_NOR_Flash.init(0x2200_0000, 0x0200_0000);
 
     try ashet.drivers.scanVirtioDevices(ashet.memory.allocator, VPBA_VIRTIO_BASE, 8);
 
     ashet.drivers.install(&hw.rtc.driver);
+    ashet.drivers.install(&hw.cfi.driver);
 }
 
 pub fn debugWrite(msg: []const u8) void {

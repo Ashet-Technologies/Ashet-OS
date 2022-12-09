@@ -2,9 +2,9 @@ const std = @import("std");
 const ashet = @import("../main.zig");
 const logger = std.log.scoped(.drivers);
 
-pub const block_device = struct {
+pub const block = struct {
     // pub const ata = @import("block-device/ata.zig");
-    pub const CFI = @import("block/cfi.zig").CFI;
+    pub const CFI_NOR_Flash = @import("block/CFI_NOR_Flash.zig");
 };
 
 pub const serial = struct {
@@ -112,10 +112,7 @@ pub fn resolveDriver(comptime class: DriverClass, ptr: *ResolvedDriverInterface(
     return @fieldParentPtr(Driver, "class", container);
 }
 
-pub const BlockDevice = struct {
-    //
-    dummy: u8,
-};
+pub const BlockDevice = ashet.storage.BlockDevice;
 
 pub const RTC = struct {
     nanoTimestampFn: *const fn (driver: *Driver) i128,

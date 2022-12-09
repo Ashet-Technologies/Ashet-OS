@@ -301,7 +301,7 @@ const Disk = struct {
         .writeFn = writeDisk,
         .ioctlFn = ioctl,
     },
-    blockdev: ?storage.BlockDevice = null,
+    blockdev: ?*storage.BlockDevice = null,
 
     fn getStatus(interface: *fatfs.Disk) fatfs.Disk.Status {
         const self = @fieldParentPtr(Disk, "interface", interface);

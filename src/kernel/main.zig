@@ -116,11 +116,8 @@ fn tickSystem(_: ?*anyopaque) callconv(.C) u32 {
         if (video.auto_flush) {
             video.flush();
         }
-
         input.tick();
-
         time.tick();
-
         scheduler.yield();
     }
 }
