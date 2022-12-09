@@ -70,7 +70,7 @@ fn main() !void {
     try thread.start();
     thread.detach();
 
-    // try ui.start();
+    try ui.start();
 
     try network.start();
 

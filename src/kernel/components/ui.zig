@@ -380,7 +380,7 @@ fn initializeGraphics() void {
         .width = @intCast(u15, resolution.width),
         .height = @intCast(u15, resolution.height),
         .stride = @intCast(u15, resolution.width),
-        .pixels = ashet.video.memory.ptr,
+        .pixels = ashet.video.getVideoMemory().ptr,
     };
 
     min_window_content_size = .{
@@ -392,14 +392,15 @@ fn initializeGraphics() void {
         .height = framebuffer.height - 12,
     };
 
-    ashet.video.palette.* = ashet.video.defaults.palette;
+    const palette = ashet.video.getPaletteMemory();
+    palette.* = ashet.video.defaults.palette;
 
     for (desktop.apps.slice()) |app| {
-        std.mem.copy(Color, ashet.video.palette[app.palette_base .. app.palette_base + 15], &app.icon.palette);
+        std.mem.copy(Color, palette[app.palette_base .. app.palette_base + 15], &app.icon.palette);
     }
 
-    std.mem.copy(Color, ashet.video.palette[framebuffer_default_icon_shift..], &desktop.default_icon.palette);
-    std.mem.copy(Color, ashet.video.palette[framebuffer_wallpaper_shift..], &wallpaper.palette);
+    std.mem.copy(Color, palette[framebuffer_default_icon_shift..], &desktop.default_icon.palette);
+    std.mem.copy(Color, palette[framebuffer_wallpaper_shift..], &wallpaper.palette);
 }
 
 const MinimizedWindow = struct {
@@ -1337,6 +1338,7 @@ pub const desktop = struct {
 
     fn init() void {
         reload() catch |err| {
+            apps.len = 0;
             logger.err("failed to load desktop applications: {}", .{err});
         };
     }

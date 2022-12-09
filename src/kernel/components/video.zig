@@ -9,23 +9,18 @@ pub const Resolution = ashet.abi.Size;
 /// If true, the kernel will automatically flush the screen in a background process.
 pub var auto_flush: bool = true;
 
-var vmem_backing: [1]ColorIndex align(4096) = undefined;
-
 /// The raw exposed video memory. Writing to this will change the content
 /// on the screen.
 /// Memory is interpreted with the current video mode to produce an image.
-pub const memory: []align(ashet.memory.page_size) ColorIndex = &vmem_backing; // hal.video.memory; TODO: Initialize from a fitting driver
-comptime {
-    // Make sure we have at least the guaranteed amount of RAM
-    // to store the largest possible image.
-    // std.debug.assert(memory.len >= 32768);
+pub fn getVideoMemory() []align(ashet.memory.page_size) ColorIndex {
+    return video_driver.getVideoMemory();
 }
-
-var palette_backing: [256]Color = undefined;
 
 /// The currently used palette. Modifying values here changes the appearance of
 /// the displayed picture.
-pub const palette: *[256]Color = &palette_backing; // TODO: Initialize from a fitting driver hal.video.palette;
+pub fn getPaletteMemory() *[256]Color {
+    return video_driver.getPaletteMemory();
+}
 
 /// Contains initialization defaults for the system
 pub const defaults = struct {

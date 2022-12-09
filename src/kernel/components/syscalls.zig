@@ -69,13 +69,13 @@ fn @"video.getVideoMemory"() callconv(.C) [*]align(4) abi.ColorIndex {
     if (!getCurrentProcess().isExclusiveVideoController()) {
         videoExclusiveWarning();
     }
-    return ashet.video.memory.ptr;
+    return ashet.video.getVideoMemory().ptr;
 }
 fn @"video.getPaletteMemory"() callconv(.C) *[abi.palette_size]abi.Color {
     if (!getCurrentProcess().isExclusiveVideoController()) {
         videoExclusiveWarning();
     }
-    return ashet.video.palette;
+    return ashet.video.getPaletteMemory();
 }
 fn @"video.setResolution"(w: u16, h: u16) callconv(.C) void {
     if (!getCurrentProcess().isExclusiveVideoController()) {
