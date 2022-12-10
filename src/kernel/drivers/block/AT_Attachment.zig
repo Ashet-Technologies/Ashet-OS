@@ -65,7 +65,7 @@ fn read(driver: *Driver, block: u64, data: []u8) ashet.storage.BlockDevice.ReadE
 
     const lba = std.math.cast(u23, block) orelse return error.InvalidBlock;
 
-    logger.debug("ATA read({}, {})", .{ block, data.len });
+    // logger.debug("ATA read({}, {})", .{ block, data.len });
 
     try device.readBlocks(lba, data);
 }

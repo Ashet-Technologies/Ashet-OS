@@ -25,12 +25,11 @@ zig build install -Dmachine=$MACHINE $ZARG
 "${ROOT}/zig-out/bin/init-disk" "${DISK}"
 echo "----------------------"
 
+qemu_generic_flags="-d guest_errors,int,unimp -display gtk,show-tabs=on -serial stdio"
+
 case $MACHINE in
     rv32_virt)
-        qemu-system-riscv32 \
-                -d guest_errors,int,unimp \
-                -display gtk,show-tabs=on \
-                -serial stdio \
+        qemu-system-riscv32 ${qemu_generic_flags} \
                 -M virt \
                 -m 32M \
                 -netdev user,id=hostnet \
@@ -46,10 +45,7 @@ case $MACHINE in
         | "${ROOT}/zig-out/bin/debug-filter" "${APP}"
         ;;
     microvm)
-        qemu-system-i386 \
-            -d guest_errors,int,unimp \
-            -display gtk,show-tabs=on \
-            -serial stdio \
+        qemu-system-i386 ${qemu_generic_flags} \
             -M microvm \
             -m 32M \
             -netdev user,id=hostnet \
@@ -67,10 +63,9 @@ case $MACHINE in
 
         syslinux --install "${DISK}"
 
-        qemu-system-i386 \
+        qemu-system-i386 ${qemu_generic_flags} \
           -machine pc \
           -cpu 486 \
-          -serial stdio \
           -hda "${DISK}" \
           -vga none \
           -device bochs-display,xres=800,yres=600 \

@@ -13,6 +13,8 @@ pub const machine_config = ashet.machines.MachineConfig{
 const hw = struct {
     //! list of fixed hardware components
 
+    var kbc: ashet.drivers.input.PC_KBC = undefined;
+
     var vbe: ashet.drivers.video.VESA_BIOS_Extension = undefined;
     var dummy_rtc: ashet.drivers.rtc.Dummy = undefined;
 
@@ -39,6 +41,9 @@ pub fn initialize() !void {
         };
         ashet.drivers.install(&ata.driver);
     }
+
+    hw.kbc = try ashet.drivers.input.PC_KBC.init();
+    ashet.drivers.install(&hw.kbc.driver);
 }
 
 pub fn debugWrite(msg: []const u8) void {
