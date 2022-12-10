@@ -2,9 +2,9 @@ const std = @import("std");
 const ashet = @import("../main.zig");
 
 pub const BlockDevice = struct {
-    pub const DeviceError = error{InvalidBlock};
+    pub const DeviceError = error{ Fault, Timeout, InvalidBlock, DeviceNotPresent };
     pub const ReadError = DeviceError || error{};
-    pub const WriteError = DeviceError || error{ Fault, NotSupported };
+    pub const WriteError = DeviceError || error{NotSupported};
 
     name: []const u8,
     block_size: u32, // typically 512

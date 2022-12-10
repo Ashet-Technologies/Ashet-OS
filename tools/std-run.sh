@@ -62,11 +62,6 @@ case $MACHINE in
         | "${ROOT}/zig-out/bin/debug-filter" "${APP}"
         ;;
     generic_pc)
-        fallocate -l 1G "${DISK}"
-
-        mformat -i "${DISK}" ::
-
-        mcopy -i "${DISK}" rootfs/* ::
         mcopy -i "${DISK}" rootfs-x86/* ::
         mcopy -i "${DISK}" ./zig-out/bin/ashet-os ::/ashet-os
 

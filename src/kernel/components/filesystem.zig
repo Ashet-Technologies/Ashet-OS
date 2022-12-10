@@ -17,16 +17,19 @@ var filesystems: [max_drives]fatfs.FileSystem = undefined;
 pub fn initialize() void {
     var index: usize = 0;
     var devices = storage.enumerate();
-    while (devices.next()) |dev| : (index += 1) {
+    while (devices.next()) |dev| {
         if (index >= max_drives) {
             logger.err("detected more than {} potential drives!", .{max_drives});
             break;
         }
 
-        logger.info("device {d}: {s}, present={}, block count={}, size={}", .{
-            index,
+        if (!dev.isPresent()) {
+            logger.info("device {s} not present, skipping", .{dev.name});
+            continue;
+        }
+
+        logger.info("device {s}: block count={}, size={}", .{
             dev.name,
-            dev.isPresent(),
             dev.blockCount(),
             std.fmt.fmtIntSizeBin(dev.byteSize()),
         });
@@ -34,14 +37,19 @@ pub fn initialize() void {
         disks[index].blockdev = dev;
         fatfs.disks[0] = &disks[index].interface;
 
-        if (dev.isPresent()) {
-            initFileSystem(index) catch |err| {
-                logger.err("failed to initialize file system {}: {s}", .{
-                    index,
-                    @errorName(err),
-                });
-            };
+        initFileSystem(index) catch |err| {
+            logger.err("failed to initialize file system on disk {s}: {s}", .{
+                dev.name,
+                @errorName(err),
+            });
+            continue;
+        };
+
+        if (index == 0) {
+            logger.info("SYS: is mapped to {s}:", .{dev.name});
         }
+
+        index += 1;
     }
 
     // defer fatfs.FileSystem.unmount("0:") catch |e| std.log.err("failed to unmount filesystem: {s}", .{@errorName(e)});
@@ -77,6 +85,7 @@ fn translatePath(target_buffer: []u8, path: []const u8) error{ PathTooLong, Inva
             }
         }
     }
+
     return error.InvalidDevice;
 }
 
@@ -321,24 +330,26 @@ const Disk = struct {
     fn readDisk(interface: *fatfs.Disk, buff: [*]u8, sector: fatfs.LBA, count: c_uint) fatfs.Disk.Error!void {
         const self = @fieldParentPtr(Disk, "interface", interface);
 
-        logger.info("read({*}, {}, {})", .{ buff, sector, count });
+        // logger.info("read({*}, {}, {}, {?*})", .{ buff, sector, count, self.blockdev });
 
-        var dev = self.blockdev orelse return error.IoError;
+        var dev = self.blockdev orelse return error.DiskNotReady;
 
         var i: usize = 0;
         while (i < count) : (i += 1) {
             const off = i * sector_size;
             const mem = buff[off .. off + sector_size];
             dev.readBlock(sector + i, mem) catch return error.IoError;
+
+            // logger.debug("{}", .{std.fmt.fmtSliceHexUpper(mem)});
         }
     }
 
     fn writeDisk(interface: *fatfs.Disk, buff: [*]const u8, sector: fatfs.LBA, count: c_uint) fatfs.Disk.Error!void {
         const self = @fieldParentPtr(Disk, "interface", interface);
 
-        logger.info("write({*}, {}, {})", .{ buff, sector, count });
+        // logger.info("write({*}, {}, {}, {?*})", .{ buff, sector, count, self.blockdev });
 
-        var dev = self.blockdev orelse return error.IoError;
+        var dev = self.blockdev orelse return error.DiskNotReady;
 
         var i: usize = 0;
         while (i < count) : (i += 1) {

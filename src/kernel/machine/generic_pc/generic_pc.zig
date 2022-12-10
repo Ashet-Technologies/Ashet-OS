@@ -12,11 +12,11 @@ pub const machine_config = ashet.machines.MachineConfig{
 
 const hw = struct {
     //! list of fixed hardware components
-    // var rtc: ashet.drivers.rtc.Goldfish = undefined;
-    // var cfi: ashet.drivers.block.CFI_NOR_Flash = undefined;
 
     var vbe: ashet.drivers.video.VESA_BIOS_Extension = undefined;
     var dummy_rtc: ashet.drivers.rtc.Dummy = undefined;
+
+    var ata: [8]ashet.drivers.block.AT_Attachment = undefined;
 };
 
 pub fn initialize() !void {
@@ -27,8 +27,18 @@ pub fn initialize() !void {
     };
     ashet.drivers.install(&hw.vbe.driver);
 
+    // RTC must be instantiated already as the ATA driver needs a system clock
+    // for timeout measurement!
     hw.dummy_rtc = ashet.drivers.rtc.Dummy.init(1670610407 * std.time.ns_per_s);
     ashet.drivers.install(&hw.dummy_rtc.driver);
+
+    for (hw.ata) |*ata, index| {
+        // requires rtc to be initialized!
+        ata.* = ashet.drivers.block.AT_Attachment.init(@truncate(u3, index)) catch {
+            continue;
+        };
+        ashet.drivers.install(&ata.driver);
+    }
 }
 
 pub fn debugWrite(msg: []const u8) void {

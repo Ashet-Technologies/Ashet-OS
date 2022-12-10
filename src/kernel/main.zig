@@ -154,7 +154,7 @@ pub fn log(
     const ansi = true;
 
     switch (scope) {
-        .fatfs, .filesystem => return,
+        .fatfs => return,
         else => {},
     }
 

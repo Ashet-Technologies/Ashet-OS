@@ -306,9 +306,9 @@ const FramebufferConfig = struct {
 };
 
 const RGB = packed struct {
-    r: u8,
-    g: u8,
     b: u8,
+    g: u8,
+    r: u8,
     x: u8,
 };
 
