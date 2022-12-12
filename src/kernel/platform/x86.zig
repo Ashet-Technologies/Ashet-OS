@@ -72,6 +72,11 @@ pub const enableInterrupts = idt.enableExternalInterrupts;
 /// `type` must be one of `u8`, `u16`, `u32`, `port` is the
 /// port number and `value` will be sent to that port.
 pub inline fn out(comptime T: type, port: u16, value: T) void {
+    // if (port != 0x3F8 and port != 0x80) {
+    //     std.log.debug("out(0x{X:0>4}, {X:0>2})", .{
+    //         port, value,
+    //     });
+    // }
     switch (T) {
         u8 => asm volatile ("outb %[value], %[port]"
             :
@@ -111,4 +116,14 @@ pub inline fn in(comptime T: type, port: u16) T {
         ),
         else => @compileError("Only u8, u16 or u32 are allowed for port I/O!"),
     };
+}
+
+/// Perform a short I/O delay.
+pub fn waitIO() void {
+    // see:
+    // https://wiki.osdev.org/Inline_Assembly/Examples#IO_WAIT
+
+    // port 0x80 was wired to a hex display in the past and
+    // is now mostly unused. This should be a safe no-op.
+    out(u8, 0x80, 0);
 }

@@ -1,5 +1,7 @@
 const std = @import("std");
 const x86 = @import("../x86.zig");
+const logger = std.log.scoped(.idt);
+const PIC = @import("PIC.zig");
 
 pub const InterruptHandler = *const fn (*CpuState) *CpuState;
 
@@ -74,9 +76,9 @@ export fn handle_interrupt(_cpu: *CpuState) *CpuState {
             }
 
             if (cpu.interrupt >= 0x28) {
-                x86.out(u8, 0xA0, 0x20); // ACK secondary PIC
+                PIC.secondary.notifyEndOfInterrupt();
             }
-            x86.out(u8, 0x20, 0x20); // ACK primary PIC
+            PIC.primary.notifyEndOfInterrupt();
         },
         else => {
             std.log.err("Unhandled interrupt: {}", .{cpu});
@@ -102,17 +104,8 @@ pub fn init() void {
 
     asm volatile ("lidt idtp");
 
-    // Initialize primary PIC
-    x86.out(u8, 0x20, 0x11); // Initialization command
-    x86.out(u8, 0x21, 0x20); // First interrupt of the primary PIC, so: IRQ0
-    x86.out(u8, 0x21, 0x04); // Secondary pic is chained via IRQ2
-    x86.out(u8, 0x21, 0x01); // ICW 4
-
-    // Initialize secondary PIC
-    x86.out(u8, 0xa0, 0x11); // Initialization command
-    x86.out(u8, 0xa1, 0x28); // First interrupt of the secondary PIC, so: IRQ8
-    x86.out(u8, 0xa1, 0x02); // Secondary pic is chained via IRQ2
-    x86.out(u8, 0xa1, 0x01); // ICW 4
+    PIC.primary.initialize(0x20);
+    PIC.secondary.initialize(0x28);
 
     disableAllIRQs();
 }
@@ -124,38 +117,35 @@ pub fn fireInterrupt(comptime intr: u32) void {
     );
 }
 
-pub fn enableIRQ(irqNum: u4) void {
-    switch (irqNum) {
-        0...7 => {
-            x86.out(u8, 0x21, x86.in(u8, 0x21) & ~(@as(u8, 1) << @intCast(u3, irqNum)));
-        },
-        8...15 => {
-            x86.out(u8, 0x21, x86.in(u8, 0x21) & ~(@as(u8, 1) << @intCast(u3, irqNum - 8)));
-        },
+pub fn enableIRQ(index: u4) void {
+    logger.debug("enable irq {}", .{index});
+    switch (index) {
+        0...7 => PIC.primary.enable(@truncate(u3, index)),
+        8...15 => PIC.secondary.enable(@truncate(u3, index)),
     }
 }
 
-pub fn disableIRQ(irqNum: u4) void {
-    switch (irqNum) {
-        0...7 => {
-            x86.out(u8, 0x21, x86.in(u8, 0x21) | (@as(u8, 1) << @intCast(u3, irqNum)));
-        },
-        8...15 => {
-            x86.out(u8, 0x21, x86.in(u8, 0x21) | (@as(u8, 1) << @intCast(u3, irqNum - 8)));
-        },
+pub fn disableIRQ(index: u4) void {
+    logger.debug("disable irq {}", .{index});
+    switch (index) {
+        0...7 => PIC.primary.disable(@truncate(u3, index)),
+        8...15 => PIC.secondary.disable(@truncate(u3, index)),
     }
 }
 
 pub fn enableAllIRQs() void {
-    // Alle IRQs aktivieren (demaskieren)
-    x86.out(u8, 0x21, 0x0);
-    x86.out(u8, 0xa1, 0x0);
+    logger.debug("enable all irqs", .{});
+
+    PIC.primary.enableAll();
+    PIC.secondary.enableAll();
 }
 
 pub fn disableAllIRQs() void {
-    // Alle IRQs aktivieren (demaskieren)
-    x86.out(u8, 0x21, 0xFF);
-    x86.out(u8, 0xa1, 0xFF);
+    logger.debug("disable all irqs", .{});
+
+    PIC.primary.disableAll();
+    PIC.secondary.disableAll();
+    PIC.primary.enable(PIC.cascade_irq); // keep the cascade alive, otherwise it will make our head ache
 }
 
 pub fn enableExternalInterrupts() void {
