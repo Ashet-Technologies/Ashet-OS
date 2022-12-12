@@ -5,6 +5,7 @@ const x86 = ashet.platforms.all.x86;
 
 const PC_KBC = @This();
 const Driver = ashet.drivers.Driver;
+const CpuState = x86.idt.CpuState;
 
 driver: Driver = .{
     .name = "Keyboard Controller",
@@ -25,29 +26,53 @@ last_mouse: MouseState = MouseState{
     .y_overflow = false,
 },
 
-pub fn init() !PC_KBC {
+pub fn init() error{Timeout}!PC_KBC {
     var kbc = PC_KBC{};
+
+    x86.idt.set_IRQ_Handler(1, handleKeyboardInterrupt);
 
     kbc.flushData();
 
-    try kbc.writeCommand(.enable_mouse);
-    try kbc.writeCommand(.enable_keyboard);
+    // try kbc.writeCommand(.read_cmd_byte);
+    // var cmd_byte = @bitCast(CommandByte, try kbc.readData());
+    // cmd_byte.primary_irq_enabled = true;
+    // cmd_byte.secondary_irq_enabled = true;
+    // cmd_byte.ibm_compat_mode = false;
+    // cmd_byte.xlat_mode = false;
+    // try kbc.writeCommand(.write_cmd_byte);
 
-    try kbc.writeCommand(.read_cmd_byte);
-    var cmd_byte = @bitCast(CommandByte, try kbc.readData());
-    cmd_byte.primary_irq_enabled = true;
-    cmd_byte.secondary_irq_enabled = true;
-    cmd_byte.ibm_compat_mode = false;
-    cmd_byte.xlat_mode = false;
-    try kbc.writeCommand(.write_cmd_byte);
-    try kbc.writeData(@bitCast(u8, cmd_byte));
+    // try kbc.writeCommand(.enable_keyboard);
 
-    try kbc.writeMouseCommand(.set_defaults);
-    try kbc.writeMouseCommand(.enable_send_data);
+    // try kbc.writeCommand(.enable_mouse);
+    // try kbc.writeData(@bitCast(u8, cmd_byte));
 
+    // try kbc.writeMouseCommand(.set_defaults);
+    // try kbc.writeMouseCommand(.enable_send_data);
+
+    // try kbc.writeKeyboardCommand(.set_defaults);
     try kbc.writeKeyboardCommand(.enable);
 
+    x86.idt.enableIRQ(1);
+
     return kbc;
+}
+
+var key_decoder = KeyboardDecoder{};
+
+fn handleKeyboardInterrupt(state: *CpuState) *CpuState {
+    var kbc = PC_KBC{};
+
+    const data = kbc.readData() catch {
+        std.log.err("failed to fetch data from KBC!", .{});
+        key_decoder = KeyboardDecoder{};
+        return state;
+    };
+
+    if (key_decoder.feed(data)) |event| {
+        ashet.input.pushRawEventFromIRQ(.{ .keyboard = event });
+    }
+
+    return state;
 }
 
 fn poll(driver: *Driver) void {
@@ -257,4 +282,65 @@ const MouseState = packed struct(u8) {
     y_sign: bool,
     x_overflow: bool,
     y_overflow: bool,
+};
+
+const KeyboardDecoder = struct {
+    state: State = .default,
+
+    pub fn feed(decoder: *KeyboardDecoder, input: u8) ?ashet.input.raw.KeyEvent {
+        switch (decoder.state) {
+            .default => {
+                if (input == 0xE0) {
+                    decoder.state = .e0;
+                } else if (input == 0xE1) {
+                    decoder.state = .e1;
+                } else {
+                    const scancode = @truncate(u7, input);
+                    return ashet.input.raw.KeyEvent{
+                        .scancode = scancode,
+                        .down = (scancode == input), // if different, the upper bit is set
+                    };
+                }
+                return null;
+            },
+
+            .e0 => {
+                defer decoder.state = .default;
+
+                const scancode = @truncate(u7, input);
+
+                // Check for fake shifts and ignore them
+                if (scancode == 0x2A or scancode == 0x36)
+                    return null;
+                std.log.info("e0 code: 0x{X:0>2}", .{scancode});
+                return ashet.input.raw.KeyEvent{
+                    .scancode = @as(u8, 0x80) | scancode,
+                    .down = (scancode == input), // if different, the upper bit is set
+                };
+            },
+
+            .e1 => {
+                decoder.state = .{ .e1_stage2 = input };
+                return null;
+            },
+
+            .e1_stage2 => |low| {
+                const input7 = @truncate(u7, input);
+                const scancode = (@as(u16, input7) << 8) | low;
+
+                std.log.info("e1 code: 0x{X:0>4}", .{scancode});
+                return ashet.input.raw.KeyEvent{
+                    .scancode = scancode,
+                    .down = (input7 == input), // if different, the upper bit is set
+                };
+            },
+        }
+    }
+
+    const State = union(enum) {
+        default,
+        e0,
+        e1,
+        e1_stage2: u8,
+    };
 };

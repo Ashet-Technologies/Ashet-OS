@@ -2,6 +2,8 @@ const std = @import("std");
 const ashet = @import("../main.zig");
 
 pub const multiboot = @import("x86/multiboot.zig");
+pub const gdt = @import("x86/gdt.zig");
+pub const idt = @import("x86/idt.zig");
 
 pub const page_size = 4096;
 
@@ -53,17 +55,18 @@ pub inline fn getStackPointer() usize {
 }
 
 pub fn areInterruptsEnabled() bool {
-    // TODO: Implement this
-    return false;
+    const flags = asm (
+        \\pushfd
+        \\pop %[res]
+        : [res] "=r" (-> u32),
+        :
+        : "stack"
+    );
+    return ((flags & 0x0200) != 0); // 9th bit is "interrupts are enabled"
 }
 
-pub fn disableInterrupts() void {
-    // TODO: Implement this
-}
-
-pub fn enableInterrupts() void {
-    // TODO: Implement this
-}
+pub const disableInterrupts = idt.disableExternalInterrupts;
+pub const enableInterrupts = idt.enableExternalInterrupts;
 
 /// Implements the `out` instruction for an x86 processor.
 /// `type` must be one of `u8`, `u16`, `u32`, `port` is the

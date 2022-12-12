@@ -129,15 +129,23 @@ fn SysCallFunc(comptime call: SysCall) type {
 
 pub fn syscall(comptime name: []const u8) SysCallFunc(@field(SysCall, name)) {
     const target = @import("builtin").target.cpu.arch;
-    const table = switch (target) {
-        .riscv32 => asm (""
-            : [ptr] "={tp}" (-> *const SysCallTable),
-        ),
-        .x86 => @panic("no syscalls on x86 yet"),
+    switch (target) {
+        .riscv32 => {
+            const table = asm (""
+                : [ptr] "={tp}" (-> *const SysCallTable),
+            );
+            return @field(table, name);
+        },
+        .x86 => {
+            const offset: u32 = @offsetOf(SysCallTable, name);
+            return asm ("mov %fs:%[off], %[out]"
+                : [out] "=r" (-> SysCallFunc(@field(SysCall, name))),
+                : [off] "p" (offset),
+            );
+        },
         .arm => @panic("no syscalls on arm yet"),
         else => unreachable,
-    };
-    return @field(table, name);
+    }
 }
 
 pub const SysCall: type = blk: {

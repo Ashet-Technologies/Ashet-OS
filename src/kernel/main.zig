@@ -312,3 +312,18 @@ export fn ashet_rand() u32 {
     // TODO: Improve this
     return 4; // chose by a fair dice roll
 }
+
+pub const CriticalSection = struct {
+    restore: bool,
+
+    pub fn enter() CriticalSection {
+        var cs = CriticalSection{ .restore = undefined };
+        ashet_lockInterrupts(&cs.restore);
+        return cs;
+    }
+
+    pub fn leave(cs: *CriticalSection) void {
+        ashet_unlockInterrupts(cs.restore);
+        cs.* = undefined;
+    }
+};

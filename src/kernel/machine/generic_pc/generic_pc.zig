@@ -22,6 +22,11 @@ const hw = struct {
 };
 
 pub fn initialize() !void {
+    // x86 requires GDT and IDT, as a lot of x86 devices are only well usable with
+    // interrupts. We're also using the GDT for interrupts
+    x86.gdt.init();
+    x86.idt.init();
+
     const mbheader = x86.start.multiboot_info orelse @panic("Ashet OS must be bootet via a MultiBoot 1 compatible bootloader. Use syslinux or grub!");
 
     hw.vbe = ashet.drivers.video.VESA_BIOS_Extension.init(ashet.memory.allocator, mbheader) catch {
@@ -44,6 +49,8 @@ pub fn initialize() !void {
 
     hw.kbc = try ashet.drivers.input.PC_KBC.init();
     ashet.drivers.install(&hw.kbc.driver);
+
+    x86.enableInterrupts();
 }
 
 pub fn debugWrite(msg: []const u8) void {

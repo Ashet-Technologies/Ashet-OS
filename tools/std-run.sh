@@ -25,7 +25,7 @@ zig build install -Dmachine=$MACHINE $ZARG
 "${ROOT}/zig-out/bin/init-disk" "${DISK}"
 echo "----------------------"
 
-qemu_generic_flags="-d guest_errors,int,unimp -display gtk,show-tabs=on -serial stdio"
+qemu_generic_flags="-d guest_errors,unimp -display gtk,show-tabs=on -serial stdio -no-reboot -no-shutdown"
 
 case $MACHINE in
     rv32_virt)

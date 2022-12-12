@@ -2,6 +2,7 @@ const std = @import("std");
 const ashet = @import("../main.zig");
 const libashet = @import("ashet");
 const logger = std.log.scoped(.s);
+const system_arch = @import("builtin").target.cpu.arch;
 
 pub const AppID = struct {
     name: []const u8,
@@ -16,14 +17,142 @@ pub fn startApp(app: AppID) !void {
 }
 
 pub fn startAppElf(app: AppID) !void {
-    // https://github.com/riscv-non-isa/riscv-elf-psabi-doc/blob/master/riscv-elf.adoc
-    // A - Addend field in the relocation entry associated with the symbol
-    // B - Base address of a shared object loaded into memory
+    const expected_elf_machine: std.elf.EM = switch (system_arch) {
+        .riscv32 => .RISCV,
+        .x86 => .@"386",
+        else => @compileError("Unsupported machine type: " ++ @tagName(system_arch)),
+    };
 
-    // const R_RISCV_NONE = 0;
-    // const R_RISCV_32 = 1;
-    // const R_RISCV_64 = 2;
-    const R_RISCV_RELATIVE = 3; // B + A Relocation against a local symbol in a shared object
+    const Elf32_Addr = std.elf.Elf32_Addr;
+    const Elf32_Word = std.elf.Elf32_Word;
+    const Elf32_Sword = std.elf.Elf32_Sword;
+
+    const rela: type = switch (system_arch) {
+        .riscv32 => struct {
+            // https://github.com/riscv-non-isa/riscv-elf-psabi-doc/blob/master/riscv-elf.adoc
+            // A - Addend field in the relocation entry associated with the symbol
+            // B - Base address of a shared object loaded into memory
+            const R_RISCV_NONE = 0;
+            const R_RISCV_32 = 1;
+            const R_RISCV_64 = 2;
+            const R_RISCV_RELATIVE = 3; // B + A Relocation against a local symbol in a shared object,
+
+            pub fn apply(process_base: usize, process_memory: [*]u8, offset: Elf32_Addr, info: Elf32_Word, addend: ?Elf32_Sword) void {
+                switch (info) {
+                    R_RISCV_RELATIVE => {
+                        // logger.err("apply rela: offset={x:0>8} addend={x}", .{ entry.r_offset, entry.r_addend });
+
+                        const reloc_area = process_memory[@intCast(usize, offset)..][0..@sizeOf(usize)];
+
+                        const actual_added = addend orelse std.mem.readIntLittle(u32, reloc_area);
+                        std.mem.writeIntLittle(
+                            usize,
+                            reloc_area,
+                            process_base +% @bitCast(u32, actual_added), // abusing the fact that a u32 and i32 are interchangible when doing wraparound addition
+                        );
+                    },
+
+                    else => logger.err("unhandled rv32 rela: info={} offset={x:0>8} addend={?x:0>8}", .{
+                        info,
+                        offset,
+                        addend,
+                    }),
+                }
+            }
+        },
+        .x86 => struct {
+            //! https://docs.oracle.com/cd/E19683-01/817-3677/chapter6-26/index.html
+
+            const R_386_NONE = 0; //     None       None
+
+            const R_386_32 = 1; //       word32     S + A
+
+            const R_386_PC32 = 2; //     word32     S + A - P
+
+            /// Computes the distance from the base of the global offset table to the symbol's global offset table entry. It also instructs the link-editor to create a global offset table.
+            const R_386_GOT32 = 3; //    word32     G + A
+
+            /// Computes the address of the symbol's procedure linkage table entry and instructs the link-editor to create a procedure linkage table.
+            const R_386_PLT32 = 4; //    word32     L + A - P
+
+            /// Created by the link-editor for dynamic executables to preserve a read-only text segment.
+            /// Its offset member refers to a location in a writable segment. The symbol table index
+            /// specifies a symbol that should exist both in the current object file and in a shared object.
+            /// During execution, the runtime linker copies data associated with the shared object's symbol
+            /// to the location specified by the offset. See Copy Relocations.
+            const R_386_COPY = 5; //     None       None
+
+            /// Used to set a global offset table entry to the address of the specified symbol. The special
+            /// relocation type enable you to determine the correspondence between symbols and global offset table entries
+            const R_386_GLOB_DAT = 6; // word32     S
+
+            /// Created by the link-editor for dynamic objects to provide lazy binding. Its offset member
+            /// gives the location of a procedure linkage table entry. The runtime linker modifies the
+            /// procedure linkage table entry to transfer control to the designated symbol address
+            const R_386_JMP_SLOT = 7; // word32     S
+
+            /// Created by the link-editor for dynamic objects. Its offset member gives the location within
+            /// a shared object that contains a value representing a relative address. The runtime linker
+            /// computes the corresponding virtual address by adding the virtual address at which the shared
+            /// object is loaded to the relative address. Relocation entries for this type must specify 0 for
+            /// the symbol table index.
+            const R_386_RELATIVE = 8; // word32     B + A
+
+            /// Computes the difference between a symbol's value and the address of the global offset table. It also
+            /// instructs the link-editor to create the global offset table.
+            const R_386_GOTOFF = 9; //   word32     S + A - GOT
+
+            /// Resembles R_386_PC32, except that it uses the address of the global offset table in its calculation.
+            /// The symbol referenced in this relocation normally is _GLOBAL_OFFSET_TABLE_, which also instructs the
+            /// link-editor to create the global offset table.
+            const R_386_GOTPC = 10; //   word32     GOT + A - P
+
+            const R_386_32PLT = 11; //   word32     L + A
+
+            pub fn apply(process_base: usize, process_memory: []align(ashet.memory.page_size) u8, offset: Elf32_Addr, info: Elf32_Word, addend: ?Elf32_Sword) void {
+                switch (info) {
+                    // rela.R_RISCV_RELATIVE => {
+                    //     // logger.err("apply rela: offset={x:0>8} addend={x}", .{ entry.r_offset, entry.r_addend });
+
+                    //     std.mem.writeIntLittle(
+                    //         usize,
+                    //         process_memory[@intCast(usize, entry.r_offset)..][0..@sizeOf(usize)],
+                    //         process_base +% @bitCast(u32, entry.r_addend), // abusing the fact that a u32 and i32 are interchangible when doing wraparound addition
+                    //     );
+                    // },
+
+                    R_386_NONE => @panic("Implement R_386_NONE relocation"),
+                    R_386_32 => @panic("Implement R_386_32 relocation"),
+                    R_386_PC32 => @panic("Implement R_386_PC32 relocation"),
+                    R_386_GOT32 => @panic("Implement R_386_GOT32 relocation"),
+                    R_386_PLT32 => @panic("Implement R_386_PLT32 relocation"),
+                    R_386_COPY => @panic("Implement R_386_COPY relocation"),
+                    R_386_GLOB_DAT => @panic("Implement R_386_GLOB_DAT relocation"),
+                    R_386_JMP_SLOT => @panic("Implement R_386_JMP_SLOT relocation"),
+                    R_386_RELATIVE => {
+                        const reloc_area = process_memory[@intCast(usize, offset)..][0..@sizeOf(usize)];
+
+                        const actual_added = addend orelse std.mem.readIntLittle(i32, reloc_area);
+                        std.mem.writeIntLittle(
+                            usize,
+                            reloc_area,
+                            process_base +% @bitCast(u32, actual_added), // abusing the fact that a u32 and i32 are interchangible when doing wraparound addition
+                        );
+                    },
+                    R_386_GOTOFF => @panic("Implement R_386_GOTOFF relocation"),
+                    R_386_GOTPC => @panic("Implement R_386_GOTPC relocation"),
+                    R_386_32PLT => @panic("Implement R_386_32PLT relocation"),
+
+                    else => logger.err("unhandled rv32 rela: info={} offset={x:0>8} addend={?x:0>8}", .{
+                        info,
+                        offset,
+                        addend,
+                    }),
+                }
+            }
+        },
+        else => @compileError("Unsupported machine type: " ++ @tagName(system_arch)),
+    };
 
     const elf = std.elf;
 
@@ -37,7 +166,7 @@ pub fn startAppElf(app: AppID) !void {
 
     if (header.endian != .Little)
         return error.InvalidEndian;
-    if (header.machine != .RISCV)
+    if (header.machine != expected_elf_machine)
         return error.InvalidMachine;
     if (header.is_64 == true)
         return error.InvalidBitSize;
@@ -136,23 +265,7 @@ pub fn startAppElf(app: AppID) !void {
                     while (i < shdr.sh_size / shdr.sh_entsize) : (i += 1) {
                         var entry: elf.Elf32_Rela = undefined;
                         try file.reader().readNoEof(std.mem.asBytes(&entry));
-
-                        switch (entry.r_info) {
-                            R_RISCV_RELATIVE => {
-                                // logger.err("apply rela: offset={x:0>8} addend={x}", .{ entry.r_offset, entry.r_addend });
-
-                                std.mem.writeIntLittle(
-                                    usize,
-                                    process_memory[@intCast(usize, entry.r_offset)..][0..@sizeOf(usize)],
-                                    process_base +% @bitCast(u32, entry.r_addend), // abusing the fact that a u32 and i32 are interchangible when doing wraparound addition
-                                );
-                            },
-                            else => logger.err("unhandled rela: info={} offset={x:0>8} addend={x}", .{
-                                entry.r_info,
-                                entry.r_offset,
-                                entry.r_addend,
-                            }),
-                        }
+                        rela.apply(process_base, process_memory, entry.r_offset, entry.r_info, entry.r_addend);
                     }
                 },
                 elf.SHT_REL => {
@@ -166,12 +279,46 @@ pub fn startAppElf(app: AppID) !void {
                     //   .sh_addralign = 4,
                     //   .sh_entsize = 8,
                     // };
+
+                    try file.seekTo(shdr.sh_offset);
+                    var i: usize = 0;
+                    while (i < shdr.sh_size / shdr.sh_entsize) : (i += 1) {
+                        var entry: elf.Elf32_Rel = undefined;
+                        try file.reader().readNoEof(std.mem.asBytes(&entry));
+                        rela.apply(process_base, process_memory, entry.r_offset, entry.r_info, null);
+                    }
                 },
                 elf.SHT_DYNAMIC => {
+                    std.log.info("DYNAMIC shdr {}", .{shdr});
                     //
                 },
 
-                else => {}, // logger.info("unhandled section = {}", .{shdr}),
+                else => logger.info("unhandled section header: {s}", .{switch (shdr.sh_type) {
+                    std.elf.SHT_NULL => "SHT_NULL",
+                    std.elf.SHT_PROGBITS => "SHT_PROGBITS",
+                    std.elf.SHT_SYMTAB => "SHT_SYMTAB",
+                    std.elf.SHT_STRTAB => "SHT_STRTAB",
+                    std.elf.SHT_RELA => "SHT_RELA",
+                    std.elf.SHT_HASH => "SHT_HASH",
+                    std.elf.SHT_DYNAMIC => "SHT_DYNAMIC",
+                    std.elf.SHT_NOTE => "SHT_NOTE",
+                    std.elf.SHT_NOBITS => "SHT_NOBITS",
+                    std.elf.SHT_REL => "SHT_REL",
+                    std.elf.SHT_SHLIB => "SHT_SHLIB",
+                    std.elf.SHT_DYNSYM => "SHT_DYNSYM",
+                    std.elf.SHT_INIT_ARRAY => "SHT_INIT_ARRAY",
+                    std.elf.SHT_FINI_ARRAY => "SHT_FINI_ARRAY",
+                    std.elf.SHT_PREINIT_ARRAY => "SHT_PREINIT_ARRAY",
+                    std.elf.SHT_GROUP => "SHT_GROUP",
+                    std.elf.SHT_SYMTAB_SHNDX => "SHT_SYMTAB_SHNDX",
+                    std.elf.SHT_LOOS => "SHT_LOOS",
+                    std.elf.SHT_HIOS => "SHT_HIOS",
+                    std.elf.SHT_LOPROC => "SHT_LOPROC",
+                    std.elf.SHT_HIPROC => "SHT_HIPROC",
+                    std.elf.SHT_LOUSER => "SHT_LOUSER",
+                    std.elf.SHT_HIUSER => "SHT_HIUSER",
+                    else => "unknown",
+                }}),
             }
         }
     }

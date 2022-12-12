@@ -26,6 +26,15 @@ pub fn tick() void {
     while (devices.next()) |device| {
         device.poll();
     }
+
+    {
+        var cs = ashet.CriticalSection.enter();
+        defer cs.leave();
+
+        while (async_queue.pull()) |evt| {
+            pushRawEvent(evt);
+        }
+    }
 }
 
 pub const raw = struct {
@@ -60,6 +69,15 @@ pub const Event = union(enum) {
 var event_queue: astd.RingBuffer(raw.Event, 32) = .{};
 
 var event_awaiter: ?*ashet.abi.input.GetEvent = null;
+
+var async_queue: astd.RingBuffer(raw.Event, 16) = .{};
+
+pub fn pushRawEventFromIRQ(raw_event: raw.Event) void {
+    if (async_queue.full()) {
+        logger.warn("dropping {s} event", .{@tagName(event_queue.pull().?)});
+    }
+    async_queue.push(raw_event);
+}
 
 pub fn pushRawEvent(raw_event: raw.Event) void {
     if (event_queue.full()) {

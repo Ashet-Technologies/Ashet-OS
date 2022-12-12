@@ -157,7 +157,7 @@ fn waitForErrOrReady(device: AT_Attachment, timeout: usize) BlockDevice.DeviceEr
     const end = ashet.time.milliTimestamp() + timeout;
     while (ashet.time.milliTimestamp() < end) {
         const stat = device.status();
-        logger.debug("{}", .{stat});
+        // logger.debug("{}", .{stat}); // BUG: This is a horrible hack to delay the status polling
         if (stat.has_error or stat.drive_fault)
             return error.Fault;
         if (stat.ready)
@@ -178,6 +178,13 @@ fn setupParameters(device: AT_Attachment, lba: u24, blockCount: u8) void {
     x86.out(u8, device.ports.lba_low, @truncate(u8, lba));
     x86.out(u8, device.ports.lba_mid, @truncate(u8, lba >> 8));
     x86.out(u8, device.ports.lba_high, @truncate(u8, lba >> 16));
+}
+
+fn readData(device: AT_Attachment) u16 {
+    while (device.status().busy) {
+        asm volatile ("" ::: "memory");
+    }
+    return x86.in(u16, device.ports.data);
 }
 
 fn readBlocks(device: AT_Attachment, lba: u24, buffer: []u8) BlockDevice.ReadError!void {
@@ -208,15 +215,10 @@ fn readBlocks(device: AT_Attachment, lba: u24, buffer: []u8) BlockDevice.ReadErr
 
         var i: usize = 0;
         while (i < block_size) : (i += 2) {
-            const value = x86.in(u16, ports.data);
+            const value = device.readData();
 
             std.mem.writeIntNative(u16, current_block[0..2], value);
             current_block += 2;
-
-            asm volatile ("nop");
-            asm volatile ("nop");
-            asm volatile ("nop");
-            asm volatile ("nop");
         }
     }
 }
