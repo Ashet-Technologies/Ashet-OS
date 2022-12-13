@@ -67,10 +67,10 @@ case $MACHINE in
           -machine pc \
           -cpu 486 \
           -hda "${DISK}" \
-          -vga none \
-          -device bochs-display,xres=800,yres=600 \
+          -vga std \
           -s "$@"
          ;;
+          # -device bochs-display,xres=800,yres=600 \
     *)
         echo "Cannot start machine $MACHINE yet."
         exit 1

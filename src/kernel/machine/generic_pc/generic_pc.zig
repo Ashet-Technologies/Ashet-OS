@@ -6,6 +6,8 @@ const std = @import("std");
 const ashet = @import("root");
 const x86 = ashet.platforms.all.x86;
 
+const VgaTerminal = @import("VgaTerminal.zig");
+
 pub const machine_config = ashet.machines.MachineConfig{
     .uninitialized_memory = false, // we assume the bootloader has already done a good job
 };
@@ -13,13 +15,18 @@ pub const machine_config = ashet.machines.MachineConfig{
 const hw = struct {
     //! list of fixed hardware components
 
+    var terminal = VgaTerminal{};
+
     var kbc: ashet.drivers.input.PC_KBC = undefined;
 
     var vbe: ashet.drivers.video.VESA_BIOS_Extension = undefined;
+    var vga: ashet.drivers.video.VGA = undefined;
     var dummy_rtc: ashet.drivers.rtc.Dummy = undefined;
 
     var ata: [8]ashet.drivers.block.AT_Attachment = undefined;
 };
+
+var graphics_enabled: bool = false;
 
 pub fn initialize() !void {
     // x86 requires GDT and IDT, as a lot of x86 devices are only well usable with
@@ -27,12 +34,16 @@ pub fn initialize() !void {
     x86.gdt.init();
     x86.idt.init();
 
-    const mbheader = x86.start.multiboot_info orelse @panic("Ashet OS must be bootet via a MultiBoot 1 compatible bootloader. Use syslinux or grub!");
+    // const mbheader = x86.start.multiboot_info orelse @panic("Ashet OS must be bootet via a MultiBoot 1 compatible bootloader. Use syslinux or grub!");
 
-    hw.vbe = ashet.drivers.video.VESA_BIOS_Extension.init(ashet.memory.allocator, mbheader) catch {
-        @panic("Ashet OS does not support computers without VBE 2.0. Please use a graphics card that supports VBE.");
-    };
-    ashet.drivers.install(&hw.vbe.driver);
+    // hw.vbe = ashet.drivers.video.VESA_BIOS_Extension.init(ashet.memory.allocator, mbheader) catch {
+    //     @panic("Ashet OS does not support computers without VBE 2.0. Please use a graphics card that supports VBE.");
+    // };
+    // ashet.drivers.install(&hw.vbe.driver);
+    try hw.vga.init();
+    graphics_enabled = true;
+
+    ashet.drivers.install(&hw.vga.driver);
 
     // RTC must be instantiated already as the ATA driver needs a system clock
     // for timeout measurement!
@@ -57,6 +68,10 @@ pub fn debugWrite(msg: []const u8) void {
     for (msg) |char| {
         x86.out(u8, 0x3F8, char);
     }
+
+    // if (!graphics_enabled) {
+    //     hw.terminal.write(msg);
+    // }
 }
 
 // pub const flash = ashet.memory.Section{ .offset = 0x2000_000, .length = 0x200_0000 };
@@ -74,7 +89,7 @@ export const multiboot_header linksection(".multiboot") = x86.multiboot.Header.w
     .flags = .{
         .req_modules_align_4k = false,
         .req_mem_info = true,
-        .req_video_mode = true,
+        .req_video_mode = false,
         .hint_use_embedded_offsets = false,
     },
 
@@ -87,5 +102,5 @@ export const multiboot_header linksection(".multiboot") = x86.multiboot.Header.w
     .mode_type = .linear_fb,
     .width = 800,
     .height = 600,
-    .depth = 8,
+    .depth = 32,
 });

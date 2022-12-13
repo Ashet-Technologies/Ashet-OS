@@ -21,6 +21,7 @@ pub const video = struct {
     /// Memory mapped virtio GPU
     pub const Virtio_GPU_Device = @import("video/Virtio_GPU_Device.zig");
     pub const VESA_BIOS_Extension = @import("video/VESA_BIOS_Extension.zig");
+    pub const VGA = @import("video/VGA.zig");
 };
 
 pub const network = struct {

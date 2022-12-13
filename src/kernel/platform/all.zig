@@ -51,7 +51,7 @@ pub const specs = struct {
         .target = std.zig.CrossTarget{
             .cpu_arch = .x86,
             .os_tag = .freestanding,
-            .abi = .eabi,
+            .abi = .musleabi,
             .cpu_model = .{ .explicit = &std.Target.x86.cpu.i486 },
         },
     };
