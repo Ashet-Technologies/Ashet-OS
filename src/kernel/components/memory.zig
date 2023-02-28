@@ -85,7 +85,7 @@ pub fn initializeLinearMemory() void {
         Section{ .offset = data_start, .length = data_end - data_start },
         Section{ .offset = bss_start, .length = bss_end - bss_start },
     };
-    for (kernel_regions) |region, region_id| {
+    for (kernel_regions, 0..) |region, region_id| {
         logger.debug("disable region {}", .{region_id});
         var base_ptr = @intToPtr([*]u8, region.offset);
         var i: usize = 0;
@@ -135,7 +135,7 @@ pub const debug = struct {
 
         writer.writeAll("]\n") catch {};
 
-        for (page_manager.bitmap()) |item, index| {
+        for (page_manager.bitmap(), 0..) |item, index| {
             writer.print("{X:0>4}: {b:0>32}\r\n", .{ index, item }) catch {};
         }
 
@@ -395,7 +395,7 @@ const RawPageStorageManager = struct {
         // if (count > 100) @panic("wtf");
         // defer debug.dumpPageMap();
 
-        var first_page = search_loop: for (bmp) |val, pi| {
+        var first_page = search_loop: for (bmp, 0..) |val, pi| {
             // logger.debug("elaborate group {} [{b:0>32}]", .{ pi, val });
             if (val == all_bits_free)
                 break @bitSizeOf(usize) * pi;

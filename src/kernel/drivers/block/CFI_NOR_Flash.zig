@@ -71,7 +71,7 @@ pub fn CfiDeviceImpl(comptime InterfaceWidth: type) type {
 
             const regions = readRegister(base, u8, regs.num_erase_block_regions);
             logger.info("num_erase_block_regions = {d}", .{regions});
-            for (@as([*]void, undefined)[0..regions]) |_, i| {
+            for (@as([*]void, undefined)[0..regions], 0..) |_, i| {
                 logger.info("  region[{}].block count = {d}", .{ i, translateBlockRegionBlockCount(readRegister(base, u16, regs.blockRegionNumBlocks(@truncate(u16, i)))) });
                 logger.info("  region[{}].block_size  = {d}", .{ i, std.fmt.fmtIntSizeBin(translateBlockRegionBlockSize(readRegister(base, u16, regs.blockRegionBlockSize(@truncate(u16, i))))) });
             }
@@ -95,7 +95,7 @@ pub fn CfiDeviceImpl(comptime InterfaceWidth: type) type {
 
         pub fn readRegister(base: [*]volatile InterfaceWidth, comptime T: type, reg: u16) T {
             var bytes: [@sizeOf(T)]u8 = undefined;
-            for (bytes) |*b, i| {
+            for (&bytes, 0..) |*b, i| {
                 b.* = @truncate(u8, base[reg + i]);
             }
             return std.mem.readIntLittle(T, &bytes);
@@ -116,7 +116,7 @@ pub fn CfiDeviceImpl(comptime InterfaceWidth: type) type {
             const block_start = std.math.cast(usize, block_items * block) orelse return error.InvalidBlock;
 
             enterMode(base, .array_read);
-            for (std.mem.bytesAsSlice(InterfaceWidth, data)) |*dest, i| {
+            for (std.mem.bytesAsSlice(InterfaceWidth, data), 0..) |*dest, i| {
                 dest.* = base[block_start + i];
             }
         }
@@ -149,7 +149,7 @@ pub fn CfiDeviceImpl(comptime InterfaceWidth: type) type {
             if ((base[0x55] & prog_error) != 0)
                 return error.Fault;
 
-            for (base[block_start..block_end]) |*dest, i| {
+            for (base[block_start..block_end], 0..) |*dest, i| {
                 dest.* = std.mem.bytesAsSlice(InterfaceWidth, data)[i];
             }
 

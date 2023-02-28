@@ -134,7 +134,7 @@ fn initDevice(allocator: std.mem.Allocator, regs: *volatile virtio.ControlRegs, 
 
     try device.vq.init(eventq, regs);
 
-    for (device.events) |*event| {
+    for (&device.events) |*event| {
         device.vq.pushDescriptor(virtio.input.Event, event, .write, true, true);
     }
 

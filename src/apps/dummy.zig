@@ -22,8 +22,8 @@ pub fn main() !void {
     const cx = (window.max_size.width - dummy_logo[0].len) / 2;
     const cy = (window.max_size.height - dummy_logo.len) / 2;
 
-    for (dummy_logo) |row, y| {
-        for (row) |pixel, x| {
+    for (dummy_logo, 0..) |row, y| {
+        for (row, 0..) |pixel, x| {
             if (pixel) |color| {
                 window.pixels[window.stride * (cy + y) + (cx + x)] = color;
             }

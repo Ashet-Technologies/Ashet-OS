@@ -1,0 +1,15 @@
+.{
+    .name = "ashet-os",
+    .version = "0.1.0",
+
+    .dependencies = .{
+        .@"text-editor" = .{
+            .url = "https://github.com/MasterQ32/TextEditor/archive/30e89438a33f0cfd3a81a9d096f70276e7f8fa5b.tar.gz",
+            .hash = "1220c04c8f79044f66c935bf7695143e653b79957c2fad655dfdd76532a2f7be0f9c",
+        },
+        .zigimg = .{
+            .url = "https://github.com/zigimg/zigimg/archive/729dfd8dfb64252863e0a23803106e1fa6d009f9.tar.gz",
+            .hash = "12207ca0eb7f3d50ceb178953644c9294c063e59e8fe2e49a4a4bc7c27311cf5e344",
+        },
+    },
+}

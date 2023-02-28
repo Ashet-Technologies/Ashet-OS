@@ -1,18 +1,6 @@
 [submodule "vendor/zfat"]
 	path = vendor/zfat
 	url = https://github.com/ZigEmbeddedGroup/zfat
-[submodule "vendor/text-editor"]
-	path = vendor/text-editor
-	url = https://github.com/MasterQ32/TextEditor
-[submodule "vendor/zigimg"]
-	path = vendor/zigimg
-	url = https://github.com/zigimg/zigimg/
-[submodule "vendor/sdl"]
-	path = vendor/sdl
-	url = https://github.com/MasterQ32/SDL.zig
-[submodule "vendor/ziglyph"]
-	path = vendor/ziglyph
-	url = https://github.com/jecolon/ziglyph
 [submodule "vendor/lwip"]
 	path = vendor/lwip
 	url = https://git.savannah.nongnu.org/git/lwip.git

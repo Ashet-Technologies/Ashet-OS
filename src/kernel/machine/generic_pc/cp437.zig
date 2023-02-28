@@ -68,7 +68,7 @@ pub fn codepageFromUnicode(cp: u21) ?u8 {
                 return @truncate(u8, cp - range.unicode + range.codepage);
         }
     }
-    inline for (mapping) |unicode, codepage| {
+    inline for (mapping, 0..) |unicode, codepage| {
         const is_in_range = comptime for (ranges) |range| {
             if (unicode >= range.unicode and unicode < range.unicode + range.len)
                 break true;

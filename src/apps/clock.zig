@@ -72,7 +72,7 @@ fn paint(window: *const ashet.ui.Window) void {
 
     var fb = gui.Framebuffer.forWindow(window);
 
-    for (clock_face.pixels[0 .. clock_face.width * clock_face.height]) |color, i| {
+    for (clock_face.pixels[0 .. clock_face.width * clock_face.height], 0..) |color, i| {
         const x = @intCast(i16, i % clock_face.width);
         const y = @intCast(i16, i / clock_face.width);
         if (color != (comptime clock_face.transparent.?)) {

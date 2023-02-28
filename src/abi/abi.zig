@@ -160,7 +160,6 @@ pub const SysCall: type = blk: {
 
     break :blk @Type(.{
         .Enum = .{
-            .layout = .Auto,
             .decls = &.{},
             .fields = fields,
             .tag_type = u32,
@@ -177,7 +176,7 @@ pub const SysCallTable: type = blk: {
     const default_padding: usize = 0;
     const padding_field = std.builtin.Type.StructField{
         .name = undefined,
-        .field_type = usize,
+        .type = usize,
         .default_value = &default_padding,
         .is_comptime = false,
         .alignment = @alignOf(usize),
@@ -186,7 +185,7 @@ pub const SysCallTable: type = blk: {
     const magic_number_value: usize = system_magic;
     const magic_number_field = std.builtin.Type.StructField{
         .name = "magic_number",
-        .field_type = usize,
+        .type = usize,
         .default_value = &magic_number_value,
         .is_comptime = false,
         .alignment = @alignOf(usize),
@@ -219,7 +218,7 @@ pub const SysCallTable: type = blk: {
 
         const field = std.builtin.Type.StructField{
             .name = def.name,
-            .field_type = def.signature,
+            .type = def.signature,
             .default_value = null,
             .is_comptime = false,
             .alignment = @alignOf(usize),
@@ -899,7 +898,6 @@ pub fn ErrorSet(comptime options: anytype) type {
 
     const enum_type = @Type(std.builtin.Type{
         .Enum = .{
-            .layout = .Auto,
             .tag_type = Int,
             .fields = enum_items,
             .decls = &.{},
@@ -923,7 +921,7 @@ pub fn ErrorSet(comptime options: anytype) type {
         pub fn throw(val: Enum) (error{Unexpected} || Error)!void {
             if (val == .ok)
                 return; // 0 is the success code
-            for (enum_list) |match, index| {
+            for (enum_list, 0..) |match, index| {
                 if (match == val)
                     return error_list[index];
             }
@@ -934,7 +932,7 @@ pub fn ErrorSet(comptime options: anytype) type {
             if (err_union) |_| {
                 return .ok;
             } else |err| {
-                for (error_list) |match, index| {
+                for (error_list, 0..) |match, index| {
                     if (match == err)
                         return enum_list[index];
                 }
@@ -1185,14 +1183,14 @@ pub const IOP = extern struct {
 
         var output_fields = outputs[0..outputs.len].*;
 
-        for (output_fields) |*fld| {
+        for (&output_fields) |*fld| {
             if (fld.default_value != null) {
                 @compileError(std.fmt.comptimePrint("IOP outputs are not allowed to have default values. {s}/{s} has one.", .{
                     @tagName(def.type),
                     fld.name,
                 }));
             }
-            fld.default_value = undefinedDefaultFor(fld.field_type);
+            fld.default_value = undefinedDefaultFor(fld.type);
         }
 
         const outputs_augmented = @Type(.{

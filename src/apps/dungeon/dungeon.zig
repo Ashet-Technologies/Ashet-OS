@@ -165,7 +165,7 @@ const textures = [_]Texture{
 
 const palette = blk: {
     var pal: [256]ashet.abi.Color = undefined;
-    for (textures) |tex, i| {
+    for (textures, 0..) |tex, i| {
         std.mem.copy(
             ashet.abi.Color,
             pal[16 * i ..],
@@ -214,7 +214,7 @@ const Raycaster = struct {
         @setEvalBranchQuota(10_000);
 
         var rays: [width]f32 = undefined;
-        for (rays) |*dir, x| {
+        for (&rays, 0..) |*dir, x| {
             const fx = aspect * (2.0 * (@intToFloat(f32, x) / (width - 1)) - 1.0);
 
             const deltaAngle = std.math.atan(0.5 * fx);
@@ -236,7 +236,7 @@ const Raycaster = struct {
 
     const perspective_factor: [height]f32 = blk: {
         var val: [height]f32 = undefined;
-        for (val) |*v, y| {
+        for (&val, 0..) |*v, y| {
             if (y < height / 2) {
                 const scale = 2.0 / @intToFloat(f32, height - 1);
                 const fy = 1.0 - scale * @intToFloat(f32, y);
@@ -488,7 +488,7 @@ const Raycaster = struct {
     fn castRay(pos: Vec2, dir: Vec2) ?RaycastResult {
         var nearest: ?RaycastResult = null;
 
-        for (walls) |*wall| {
+        for (&walls) |*wall| {
             var t: f32 = undefined;
             var u: f32 = undefined;
             if (!intersect(pos, dir, wall.points[0], wall.points[1].sub(wall.points[0]), &t, &u))

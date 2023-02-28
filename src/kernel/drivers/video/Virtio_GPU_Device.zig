@@ -226,7 +226,7 @@ const GPU = struct {
             return;
         };
 
-        for (di.pmodes[0..num_scanouts.*]) |mode, i| {
+        for (di.pmodes[0..num_scanouts.*], 0..) |mode, i| {
             logger.info("Scanout({}{s}): {}x{}:{}x{}", .{
                 i,            "",
                 mode.r.x,     mode.r.y,
@@ -247,7 +247,7 @@ const GPU = struct {
     }
 
     fn showTestPattern(gpu: *GPU) void {
-        for (gpu.fb_mem) |*item, i| {
+        for (gpu.fb_mem, 0..) |*item, i| {
             const x = i % gpu.fb_width;
             const y = i / gpu.fb_width;
 

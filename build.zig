@@ -1,53 +1,21 @@
 const std = @import("std");
-const zpm = @import("zpm.zig");
 
 const ziglibc = @import("vendor/ziglibc/ziglibcbuild.zig");
 
 const FatFS = @import("vendor/zfat/Sdk.zig");
-
-const pkgs = struct {
-    pub usingnamespace zpm.pkgs;
-
-    pub const libashet = std.build.Pkg{
-        .name = "ashet",
-        .source = .{ .path = "src/libashet/main.zig" },
-        .dependencies = &.{ abi, ashet_std, pkgs.@"text-editor" },
-    };
-
-    pub const libgui = std.build.Pkg{
-        .name = "ashet-gui",
-        .source = .{ .path = "src/libgui/gui.zig" },
-        .dependencies = &.{ libashet, ashet_std, pkgs.@"text-editor" },
-    };
-
-    pub const ashet_std = std.build.Pkg{
-        .name = "ashet-std",
-        .source = .{ .path = "src/std/std.zig" },
-    };
-
-    pub const virtio = std.build.Pkg{
-        .name = "virtio",
-        .source = .{ .path = "vendor/libvirtio/src/virtio.zig" },
-    };
-
-    pub const abi = std.build.Pkg{
-        .name = "ashet-abi",
-        .source = .{ .path = "src/abi/abi.zig" },
-    };
-
-    pub const zigimg = std.build.Pkg{
-        .name = "zigimg",
-        .source = .{ .path = "vendor/zigimg/zigimg.zig" },
-    };
-};
 
 const AshetContext = struct {
     b: *std.build.Builder,
     mkicon: *std.build.LibExeObjStep,
     target: std.zig.CrossTarget,
 
-    fn createAshetApp(ctx: AshetContext, name: []const u8, source: []const u8, maybe_icon: ?[]const u8, mode: std.builtin.Mode) *std.build.LibExeObjStep {
-        const exe = ctx.b.addExecutable(ctx.b.fmt("{s}.app", .{name}), source);
+    fn createAshetApp(ctx: AshetContext, name: []const u8, source: []const u8, maybe_icon: ?[]const u8, optimize: std.builtin.OptimizeMode) *std.build.LibExeObjStep {
+        const exe = ctx.b.addExecutable(.{
+            .name = ctx.b.fmt("{s}.app", .{name}),
+            .root_source_file = .{ .path = source },
+            .optimize = optimize,
+            .target = ctx.target,
+        });
 
         exe.omit_frame_pointer = false; // this is useful for debugging
         exe.single_threaded = true; // AshetOS doesn't support multithreading in a modern sense
@@ -57,10 +25,8 @@ const AshetContext = struct {
         exe.strip = false; // never strip debug info
 
         exe.setLinkerScriptPath(.{ .path = "src/libashet/application.ld" });
-        exe.setTarget(ctx.target);
-        exe.setBuildMode(mode);
-        exe.addPackage(pkgs.libashet);
-        exe.addPackage(pkgs.libgui); // just add GUI to all apps by default *shrug*
+        exe.addModule("ashet", ctx.b.modules.get("ashet").?);
+        exe.addModule("ashet-gui", ctx.b.modules.get("ashet-gui").?); // just add GUI to all apps by default *shrug*
         exe.install();
 
         const install_step = ctx.b.addInstallArtifact(exe);
@@ -118,9 +84,48 @@ pub fn build(b: *std.build.Builder) !void {
         .mkfs = true,
     };
 
+    b.addModule(.{
+        .name = "ashet-std",
+        .source_file = .{ .path = "src/std/std.zig" },
+    });
+
+    b.addModule(.{
+        .name = "virtio",
+        .source_file = .{ .path = "vendor/libvirtio/src/virtio.zig" },
+    });
+
+    b.addModule(.{
+        .name = "ashet-abi",
+        .source_file = .{ .path = "src/abi/abi.zig" },
+    });
+
+    const zigimg = b.dependency("zigimg", .{}).module("zigimg");
+
+    const text_editor_module = b.dependency("text-editor", .{}).module("text-editor");
+
+    b.addModule(.{
+        .name = "ashet",
+        .source_file = .{ .path = "src/libashet/main.zig" },
+        .dependencies = &.{
+            .{ .name = "ashet-abi", .module = b.modules.get("ashet-abi").? },
+            .{ .name = "ashet-std", .module = b.modules.get("ashet-std").? },
+            .{ .name = "text-editor", .module = text_editor_module },
+        },
+    });
+
+    b.addModule(.{
+        .name = "ashet-gui",
+        .source_file = .{ .path = "src/libgui/gui.zig" },
+        .dependencies = &.{
+            .{ .name = "ashet", .module = b.modules.get("ashet").? },
+            .{ .name = "ashet-std", .module = b.modules.get("ashet-std").? },
+            .{ .name = "text-editor", .module = text_editor_module },
+        },
+    });
+
     const tools_step = b.step("tools", "Builds the build and debug tools");
 
-    const mode = b.standardReleaseOptions();
+    const optimize = b.standardOptimizeOption(.{});
 
     const machine_id = b.option(MachineID, "machine", "Defines the machine Ashet OS should be built for.") orelse {
         var stderr = std.io.getStdErr();
@@ -137,9 +142,9 @@ pub fn build(b: *std.build.Builder) !void {
 
     const machine_spec = resolveMachine(machine_id);
 
-    const tool_mkicon = b.addExecutable("tool_mkicon", "tools/mkicon.zig");
-    tool_mkicon.addPackage(pkgs.zigimg);
-    tool_mkicon.addPackage(pkgs.abi);
+    const tool_mkicon = b.addExecutable(.{ .name = "tool_mkicon", .root_source_file = .{ .path = "tools/mkicon.zig" } });
+    tool_mkicon.addModule("zigimg", zigimg);
+    tool_mkicon.addModule("ashet-abi", b.modules.get("ashet-abi").?);
     tool_mkicon.install();
 
     const machine_pkg = b.addWriteFile("machine.zig", blk: {
@@ -167,27 +172,32 @@ pub fn build(b: *std.build.Builder) !void {
         break :blk try stream.toOwnedSlice();
     });
 
-    const kernel_exe = b.addExecutable("ashet-os", "src/kernel/main.zig");
+    const fatfs_module = FatFS.createModule(b, fatfs_config);
+
+    const kernel_exe = b.addExecutable(.{
+        .name = "ashet-os",
+        .root_source_file = .{ .path = "src/kernel/main.zig" },
+        .target = machine_spec.platform.target,
+        .optimize = optimize,
+    });
+
     {
         kernel_exe.single_threaded = true;
         kernel_exe.omit_frame_pointer = false;
         kernel_exe.strip = false; // never strip debug info
-        if (mode == .Debug) {
+        if (optimize == .Debug) {
             // we always want frame pointers in debug build!
             kernel_exe.omit_frame_pointer = false;
         }
-        kernel_exe.setTarget(machine_spec.platform.target);
-        kernel_exe.setBuildMode(mode);
-        kernel_exe.addPackage(pkgs.abi);
-        kernel_exe.addPackage(pkgs.ashet_std);
-        kernel_exe.addPackage(pkgs.libashet);
-        kernel_exe.addPackage(pkgs.libgui);
-        kernel_exe.addPackage(pkgs.virtio);
-        kernel_exe.addPackage(.{
-            .name = "machine",
-            .source = machine_pkg.getFileSource("machine.zig").?,
+        kernel_exe.addModule("ashet-abi", b.modules.get("ashet-abi").?);
+        kernel_exe.addModule("ashet-std", b.modules.get("ashet-std").?);
+        kernel_exe.addModule("ashet", b.modules.get("ashet").?);
+        kernel_exe.addModule("ashet-gui", b.modules.get("ashet-gui").?);
+        kernel_exe.addModule("virtio", b.modules.get("virtio").?);
+        kernel_exe.addAnonymousModule("machine", .{
+            .source_file = machine_pkg.getFileSource("machine.zig").?,
         });
-        kernel_exe.addPackage(FatFS.getPackage(b, "fatfs", fatfs_config));
+        kernel_exe.addModule("fatfs", fatfs_module);
         kernel_exe.setLinkerScriptPath(.{ .path = machine_spec.linker_script });
         kernel_exe.install();
 
@@ -196,11 +206,12 @@ pub fn build(b: *std.build.Builder) !void {
         FatFS.link(kernel_exe, fatfs_config);
 
         const kernel_libc = ziglibc.addLibc(b, .{
-            .variant = .only_std,
+            .variant = .freestanding,
             .link = .static,
             .start = .ziglibc,
             .trace = false,
             .target = kernel_exe.target,
+            .optimize = .ReleaseSafe,
         });
         kernel_libc.install();
 
@@ -238,7 +249,7 @@ pub fn build(b: *std.build.Builder) !void {
 
     const raw_step = kernel_exe.installRaw("ashet-os.bin", .{
         .format = .bin,
-        .pad_to_size = 0x200_0000,
+        // .pad_to_size = 0x200_0000,
     });
 
     b.getInstallStep().dependOn(&raw_step.step);
@@ -276,18 +287,18 @@ pub fn build(b: *std.build.Builder) !void {
     };
 
     {
-        _ = ctx.createAshetApp("shell", "src/apps/dummy.zig", "artwork/apps/shell.png", mode);
-        _ = ctx.createAshetApp("commander", "src/apps/dummy.zig", "artwork/apps/commander.png", mode);
-        _ = ctx.createAshetApp("editor", "src/apps/dummy.zig", "artwork/apps/text-editor.png", mode);
-        _ = ctx.createAshetApp("browser", "src/apps/dummy.zig", "artwork/apps/browser.png", mode);
-        _ = ctx.createAshetApp("music", "src/apps/dummy.zig", "artwork/apps/music.png", mode);
-        _ = ctx.createAshetApp("clock", "src/apps/clock.zig", "artwork/apps/clock.png", mode);
-        _ = ctx.createAshetApp("paint", "src/apps/paint.zig", "artwork/apps/paint.png", mode);
-        _ = ctx.createAshetApp("gui-demo", "src/apps/gui-demo.zig", null, mode);
-        _ = ctx.createAshetApp("net-demo", "src/apps/net-demo.zig", null, mode);
+        _ = ctx.createAshetApp("shell", "src/apps/dummy.zig", "artwork/apps/shell.png", optimize);
+        _ = ctx.createAshetApp("commander", "src/apps/dummy.zig", "artwork/apps/commander.png", optimize);
+        _ = ctx.createAshetApp("editor", "src/apps/dummy.zig", "artwork/apps/text-editor.png", optimize);
+        _ = ctx.createAshetApp("browser", "src/apps/dummy.zig", "artwork/apps/browser.png", optimize);
+        _ = ctx.createAshetApp("music", "src/apps/dummy.zig", "artwork/apps/music.png", optimize);
+        _ = ctx.createAshetApp("clock", "src/apps/clock.zig", "artwork/apps/clock.png", optimize);
+        _ = ctx.createAshetApp("paint", "src/apps/paint.zig", "artwork/apps/paint.png", optimize);
+        _ = ctx.createAshetApp("gui-demo", "src/apps/gui-demo.zig", null, optimize);
+        _ = ctx.createAshetApp("net-demo", "src/apps/net-demo.zig", null, optimize);
 
         {
-            const dungeon = ctx.createAshetApp("dungeon", "src/apps/dungeon/dungeon.zig", "artwork/apps/dungeon.png", mode);
+            const dungeon = ctx.createAshetApp("dungeon", "src/apps/dungeon/dungeon.zig", "artwork/apps/dungeon.png", optimize);
             addBitmap(dungeon, tool_mkicon, "artwork/dungeon/floor.png", "src/apps/dungeon/data/floor.abm", "32x32");
             addBitmap(dungeon, tool_mkicon, "artwork/dungeon/wall-plain.png", "src/apps/dungeon/data/wall-plain.abm", "32x32");
             addBitmap(dungeon, tool_mkicon, "artwork/dungeon/wall-cobweb.png", "src/apps/dungeon/data/wall-cobweb.abm", "32x32");
@@ -303,48 +314,24 @@ pub fn build(b: *std.build.Builder) !void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
-    const std_tests = b.addTest("src/std/std.zig");
-    std_tests.setTarget(.{});
-    std_tests.setBuildMode(mode);
+    const std_tests = b.addTest(.{ .root_source_file = .{ .path = "src/std/std.zig" }, .target = .{}, .optimize = optimize });
 
-    const gui_tests = b.addTest("src/libgui/gui.zig");
-    gui_tests.setTarget(.{});
-    gui_tests.setBuildMode(mode);
-    for (pkgs.libgui.dependencies.?) |dep| {
-        gui_tests.addPackage(dep);
+    const gui_tests = b.addTest(.{ .root_source_file = .{ .path = "src/libgui/gui.zig" }, .target = .{}, .optimize = optimize });
+    {
+        var iter = b.modules.get("ashet-gui").?.dependencies.iterator();
+        while (iter.next()) |kv| {
+            gui_tests.addModule(kv.key_ptr.*, kv.value_ptr.*);
+        }
     }
 
     const test_step = b.step("test", "Run unit tests on the standard library");
     test_step.dependOn(&std_tests.step);
     test_step.dependOn(&gui_tests.step);
-
-    // const simu_step = b.step("sim", "Runs the PC simulator");
-
-    // const sdl_sdk = zpm.sdks.sdl.init(b);
-
-    // const sim = b.addExecutable("ashet-os-sim", "src/simulator/sim.zig");
-    // sim.setBuildMode(mode);
-    // sim.setTarget(.{});
-    // sim.addPackage(sdl_sdk.getNativePackage("sdl2"));
-    // sim.addPackage(pkgs.abi);
-    // sim.addPackage(std.build.Pkg{
-    //     .name = "ashet",
-    //     .source = .{ .path = "src/kernel/sim_pkg.zig" },
-    //     .dependencies = &.{ pkgs.abi, std.build.Pkg{
-    //         .name = "hal",
-    //         .source = .{ .path = "src/simulator/loopback.zig" },
-    //     } },
-    // });
-    // sim.install();
-
-    // sdl_sdk.link(sim, .dynamic);
-
-    // const run_sim = sim.run();
-
-    // simu_step.dependOn(&run_sim.step);
-
     {
-        const debug_filter = b.addExecutable("debug-filter", "tools/debug-filter.zig");
+        const debug_filter = b.addExecutable(.{
+            .name = "debug-filter",
+            .root_source_file = .{ .path = "tools/debug-filter.zig" },
+        });
         debug_filter.linkLibC();
         debug_filter.install();
 
@@ -352,9 +339,12 @@ pub fn build(b: *std.build.Builder) !void {
     }
 
     {
-        const init_disk = b.addExecutable("init-disk", "tools/init-disk.zig");
+        const init_disk = b.addExecutable(.{
+            .name = "init-disk",
+            .root_source_file = .{ .path = "tools/init-disk.zig" },
+        });
         init_disk.linkLibC();
-        init_disk.addPackage(FatFS.getPackage(b, "fatfs", fatfs_config));
+        init_disk.addModule("fatfs", fatfs_module);
         init_disk.install();
         FatFS.link(init_disk, fatfs_config);
 
@@ -362,10 +352,12 @@ pub fn build(b: *std.build.Builder) !void {
     }
 }
 
-fn create_lwIP(b: *std.build.Builder, target: std.zig.CrossTarget, mode: std.builtin.Mode) *std.build.LibExeObjStep {
-    const lib = b.addStaticLibrary("lwip", null);
-    lib.setTarget(target);
-    lib.setBuildMode(mode);
+fn create_lwIP(b: *std.build.Builder, target: std.zig.CrossTarget, optimize: std.builtin.OptimizeMode) *std.build.LibExeObjStep {
+    const lib = b.addStaticLibrary(.{
+        .name = "lwip",
+        .target = target,
+        .optimize = optimize,
+    });
 
     const flags = [_][]const u8{ "-std=c99", "-fno-sanitize=undefined" };
     const files = [_][]const u8{

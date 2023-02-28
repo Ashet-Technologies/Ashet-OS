@@ -42,7 +42,6 @@ pub fn initialize() !void {
     // ashet.drivers.install(&hw.vbe.driver);
     try hw.vga.init();
     graphics_enabled = true;
-
     ashet.drivers.install(&hw.vga.driver);
 
     // RTC must be instantiated already as the ATA driver needs a system clock
@@ -50,7 +49,7 @@ pub fn initialize() !void {
     hw.dummy_rtc = ashet.drivers.rtc.Dummy.init(1670610407 * std.time.ns_per_s);
     ashet.drivers.install(&hw.dummy_rtc.driver);
 
-    for (hw.ata) |*ata, index| {
+    for (hw.ata, 0..) |*ata, index| {
         // requires rtc to be initialized!
         ata.* = ashet.drivers.block.AT_Attachment.init(@truncate(u3, index)) catch {
             continue;

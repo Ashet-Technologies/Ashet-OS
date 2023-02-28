@@ -154,11 +154,11 @@ const SplashScreen = struct {
 
         std.mem.set(u8, vmem, 15);
 
-        for (screen.apps.slice()) |app, index| {
+        for (screen.apps.slice(), 0..) |app, index| {
             const target_pos = screen.layout.pos(index);
 
             const palette_base = @truncate(u8, 16 * (index + 1));
-            for (app.icon.palette) |color, offset| {
+            for (app.icon.palette, 0..) |color, offset| {
                 palette[palette_base + offset + 1] = color;
             }
 

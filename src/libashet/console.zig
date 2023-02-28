@@ -147,7 +147,7 @@ pub fn readLine(buffer: []u8, limit: usize) error{ NoSpaceLeft, Cancelled, OutOf
 
     errdefer {
         const display_range = memory()[charOffset(cursor.x, cursor.y)..][0 .. 2 * limit];
-        for (display_range) |*c, i| {
+        for (display_range, 0..) |*c, i| {
             c.* = if (i % 2 == 0)
                 ' '
             else
@@ -157,7 +157,7 @@ pub fn readLine(buffer: []u8, limit: usize) error{ NoSpaceLeft, Cancelled, OutOf
 
     main_loop: while (true) {
         const display_range = memory()[charOffset(cursor.x, cursor.y)..][0 .. 2 * limit];
-        for (display_range) |*c, i| {
+        for (display_range, 0..) |*c, i| {
             c.* = if (i % 2 == 0)
                 fetchOrSpace(editor.getText(), i / 2)
             else if (i / 2 == editor.cursor)
@@ -211,7 +211,7 @@ pub fn readLine(buffer: []u8, limit: usize) error{ NoSpaceLeft, Cancelled, OutOf
 
     {
         const display_range = memory()[charOffset(cursor.x, cursor.y)..][0 .. 2 * limit];
-        for (display_range) |*c, i| {
+        for (display_range, 0..) |*c, i| {
             c.* = if (i % 2 == 0)
                 fetchOrSpace(editor.getText(), i / 2)
             else

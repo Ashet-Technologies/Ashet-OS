@@ -48,6 +48,22 @@ fn _start() callconv(.C) u32 {
 pub const core = struct {
     var double_panic = false;
 
+    pub const std_options = struct {
+        pub fn logFn(
+            comptime message_level: std.log.Level,
+            comptime scope: @Type(.EnumLiteral),
+            comptime format: []const u8,
+            args: anytype,
+        ) void {
+            const level_txt = comptime message_level.asText();
+            const prefix2 = if (scope == .default) ": " else "(" ++ @tagName(scope) ++ "): ";
+
+            var writer = std.io.Writer(void, debug.WriteError, debug.writeString){ .context = {} };
+
+            writer.print(level_txt ++ prefix2 ++ format ++ "\r\n", args) catch unreachable;
+        }
+    };
+
     pub fn panic(msg: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, maybe_return_address: ?usize) noreturn {
         if (double_panic) {
             debug.write("DOUBLE PANIC: ");
@@ -104,20 +120,6 @@ pub const core = struct {
         }
 
         syscall("process.exit")(1);
-    }
-
-    pub fn log(
-        comptime message_level: std.log.Level,
-        comptime scope: @Type(.EnumLiteral),
-        comptime format: []const u8,
-        args: anytype,
-    ) void {
-        const level_txt = comptime message_level.asText();
-        const prefix2 = if (scope == .default) ": " else "(" ++ @tagName(scope) ++ "): ";
-
-        var writer = std.io.Writer(void, debug.WriteError, debug.writeString){ .context = {} };
-
-        writer.print(level_txt ++ prefix2 ++ format ++ "\r\n", args) catch unreachable;
     }
 };
 

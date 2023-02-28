@@ -32,8 +32,6 @@ comptime {
     _ = platform.start; // explicitly refer to the entry point implementation
 }
 
-pub const log_level = if (@import("builtin").mode == .Debug) .debug else .info;
-
 export fn ashet_kernelMain() void {
     if (machine_config.uninitialized_memory) {
         memory.loadKernelMemory();
@@ -145,35 +143,6 @@ pub const Debug = struct {
     }
 };
 
-pub fn log(
-    comptime message_level: std.log.Level,
-    comptime scope: @Type(.EnumLiteral),
-    comptime format: []const u8,
-    args: anytype,
-) void {
-    const ansi = true;
-
-    switch (scope) {
-        .fatfs => return,
-        else => {},
-    }
-
-    const prefix = if (ansi)
-        switch (message_level) {
-            .err => "\x1B[91m", // red
-            .warn => "\x1B[93m", // yellow
-            .info => "\x1B[97m", // white
-            .debug => "\x1B[90m", // gray
-        }
-    else
-        "";
-    const postfix = if (ansi) "\x1B[0m" else ""; // reset terminal properties
-
-    const level_txt = comptime message_level.asText();
-    const prefix2 = if (scope == .default) ": " else "(" ++ @tagName(scope) ++ "): ";
-    Debug.writer().print(prefix ++ level_txt ++ prefix2 ++ format ++ postfix ++ "\n", args) catch return;
-}
-
 extern var kernel_stack: anyopaque;
 extern var kernel_stack_start: anyopaque;
 
@@ -200,6 +169,40 @@ pub fn stackCheck() void {
 }
 
 var double_panic = false;
+
+pub const std_options = struct {
+    pub const log_level = if (@import("builtin").mode == .Debug) .debug else .info;
+
+    pub fn logFn(
+        comptime message_level: std.log.Level,
+        comptime scope: @Type(.EnumLiteral),
+        comptime format: []const u8,
+        args: anytype,
+    ) void {
+        const ansi = true;
+
+        switch (scope) {
+            .fatfs => return,
+            else => {},
+        }
+
+        const prefix = if (ansi)
+            switch (message_level) {
+                .err => "\x1B[91m", // red
+                .warn => "\x1B[93m", // yellow
+                .info => "\x1B[97m", // white
+                .debug => "\x1B[90m", // gray
+            }
+        else
+            "";
+        const postfix = if (ansi) "\x1B[0m" else ""; // reset terminal properties
+
+        const level_txt = comptime message_level.asText();
+        const prefix2 = if (scope == .default) ": " else "(" ++ @tagName(scope) ++ "): ";
+        Debug.writer().print(prefix ++ level_txt ++ prefix2 ++ format ++ postfix ++ "\n", args) catch return;
+    }
+};
+
 pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, maybe_return_address: ?usize) noreturn {
     @setCold(true);
     const sp = platform.getStackPointer();

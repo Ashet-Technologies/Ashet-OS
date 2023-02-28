@@ -75,7 +75,7 @@ fn translatePath(target_buffer: []u8, path: []const u8) error{ PathTooLong, Inva
         return translatePathForDev(target_buffer, path[4..], sys_disk_index);
     }
 
-    for (disks) |disk, index| {
+    for (disks, 0..) |disk, index| {
         if (disk.blockdev) |dev| {
             var named_prefix_buf: [16]u8 = undefined;
             const named_prefix = std.fmt.bufPrint(&named_prefix_buf, "{s}:", .{dev.name}) catch @panic("disk prefix too long!");

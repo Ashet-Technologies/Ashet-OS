@@ -33,7 +33,7 @@ pub fn put(term: *VgaTerminal, c: u8) void {
 
 fn scroll(term: *VgaTerminal) void {
     _ = term;
-    for (vga.text_base[1..vga.text_height]) |line, y| {
+    for (vga.text_base[1..vga.text_height], 0..) |line, y| {
         vga.text_base[y] = line;
     }
     for (vga.text_base[vga.text_height - 1]) |*c| {

@@ -217,7 +217,7 @@ fn colorDist(a: Rgba32, b: Rgba32) u32 {
 fn getBestMatch(pal: Palette, col: Rgba32) usize {
     var best: usize = 0;
     var threshold: u32 = colorDist(pal[0], col);
-    for (pal[1..]) |color, index| {
+    for (pal[1..], 0..) |color, index| {
         var dist = colorDist(color, col);
         if (dist < threshold) {
             threshold = dist;

@@ -18,11 +18,16 @@ if [ -z "$MACHINE" ]; then
     MACHINE="rv32_virt"
 fi
 
+BOOTROM="${ROOT}/zig-out/bin/ashet-os.bin"
 DISK="${ROOT}/zig-out/disk.img"
 
 clear
 zig build install -Dmachine=$MACHINE $ZARG
 "${ROOT}/zig-out/bin/init-disk" "${DISK}"
+
+fallocate -l 33554432 "${BOOTROM}"
+fallocate -l 33554432 "${DISK}"
+
 echo "----------------------"
 
 qemu_generic_flags="-d guest_errors,unimp -display gtk,show-tabs=on -serial stdio -no-reboot -no-shutdown"
@@ -39,8 +44,8 @@ case $MACHINE in
                 -device virtio-mouse-device \
                 -device virtio-net-device,netdev=hostnet,mac=52:54:00:12:34:56 \
                 -bios none \
-                -drive if=pflash,index=0,file=zig-out/bin/ashet-os.bin,format=raw \
-                -drive if=pflash,index=1,file=zig-out/disk.img,format=raw \
+                -drive "if=pflash,index=0,file=${BOOTROM},format=raw" \
+                -drive "if=pflash,index=1,file=${DISK},format=raw" \
                 -s "$@" \
         | "${ROOT}/zig-out/bin/debug-filter" "${APP}"
         ;;

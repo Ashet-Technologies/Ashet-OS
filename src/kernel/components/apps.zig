@@ -37,18 +37,18 @@ pub fn startAppElf(app: AppID) !void {
             const R_RISCV_64 = 2;
             const R_RISCV_RELATIVE = 3; // B + A Relocation against a local symbol in a shared object,
 
-            pub fn apply(process_base: usize, process_memory: [*]u8, offset: Elf32_Addr, info: Elf32_Word, addend: ?Elf32_Sword) void {
+            pub fn apply(process_base: usize, process_memory: []align(ashet.memory.page_size) u8, offset: Elf32_Addr, info: Elf32_Word, addend: ?Elf32_Sword) void {
                 switch (info) {
                     R_RISCV_RELATIVE => {
                         // logger.err("apply rela: offset={x:0>8} addend={x}", .{ entry.r_offset, entry.r_addend });
 
                         const reloc_area = process_memory[@intCast(usize, offset)..][0..@sizeOf(usize)];
 
-                        const actual_added = addend orelse std.mem.readIntLittle(u32, reloc_area);
+                        const actual_added = @bitCast(u32, addend orelse std.mem.readIntLittle(i32, reloc_area)); // abusing the fact that a u32 and i32 are interchangible when doing wraparound addition
                         std.mem.writeIntLittle(
                             usize,
                             reloc_area,
-                            process_base +% @bitCast(u32, actual_added), // abusing the fact that a u32 and i32 are interchangible when doing wraparound addition
+                            process_base +% actual_added,
                         );
                     },
 

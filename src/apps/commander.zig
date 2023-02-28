@@ -30,7 +30,7 @@ pub fn main() void {
 
 fn paint(active_right: bool) void {
     const vmem = ashet.syscalls().video.getVideoMemory();
-    for (fake_screenshot) |char, i| {
+    for (fake_screenshot, 0..) |char, i| {
         const x = i % 64;
         const y = i / 64;
 

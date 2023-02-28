@@ -169,7 +169,7 @@ pub const video = struct {
 
                 const pixel_count = @as(usize, graphics_width) * @as(usize, graphics_height);
 
-                for (video.memory[0..pixel_count]) |index, i| {
+                for (video.memory[0..pixel_count], 0..) |index, i| {
                     const x = dx + i % graphics_width;
                     const y = dy + i / graphics_width;
 
@@ -237,7 +237,7 @@ const gpu = struct {
             return;
         };
 
-        for (di.pmodes[0..regs.device.gpu.num_scanouts]) |mode, i| {
+        for (di.pmodes[0..regs.device.gpu.num_scanouts], 0..) |mode, i| {
             logger.info("Scanout({}{s}): {}x{}:{}x{}", .{
                 i,            "",
                 mode.r.x,     mode.r.y,
@@ -261,7 +261,7 @@ const gpu = struct {
 
     fn showTestPattern() void {
         std.debug.assert(isInitialized());
-        for (fb_mem) |*item, i| {
+        for (fb_mem, 0..) |*item, i| {
             const x = i % fb_width;
             const y = i / fb_width;
 

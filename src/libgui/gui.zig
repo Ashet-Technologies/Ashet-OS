@@ -117,7 +117,7 @@ pub const Interface = struct {
         const initial = gui.focus orelse {
             // nothing is focused right now, try focusing the first available widget
 
-            for (gui.widgets) |w, i| {
+            for (gui.widgets, 0..) |w, i| {
                 if (w.control.canFocus()) {
                     gui.focus = i;
                     return;
@@ -279,7 +279,7 @@ pub const Interface = struct {
     }
 
     pub fn paint(gui: Interface, target: Framebuffer) void {
-        for (gui.widgets) |widget, index| {
+        for (gui.widgets, 0..) |widget, index| {
             const b = .{
                 .x = widget.bounds.x,
                 .y = widget.bounds.y,

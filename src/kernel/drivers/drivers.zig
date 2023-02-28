@@ -82,7 +82,7 @@ pub fn DriverIterator(comptime class: DriverClass) type {
 }
 
 fn ResolvedDriverInterface(comptime class: DriverClass) type {
-    return std.meta.fields(DriverInterface)[std.meta.fieldIndex(DriverInterface, @tagName(class)).?].field_type;
+    return std.meta.fields(DriverInterface)[std.meta.fieldIndex(DriverInterface, @tagName(class)).?].type;
 }
 
 /// Generic driver interface, used to chain drivers together.

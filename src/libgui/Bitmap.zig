@@ -75,7 +75,7 @@ pub fn parse(comptime base: u8, comptime spec: []const u8) Bitmap {
                 if (line.len > width) width = line.len;
                 height += 1;
 
-                for (line) |char, x| {
+                for (line, 0..) |char, x| {
                     if (std.fmt.parseInt(u8, line[x .. x + 1], 16)) |value| {
                         used.unset(value);
                     } else |_| {
@@ -96,7 +96,7 @@ pub fn parse(comptime base: u8, comptime spec: []const u8) Bitmap {
             var it = std.mem.split(u8, spec, "\n");
             var y = 0;
             while (it.next()) |line| : (y += 1) {
-                for (line) |_, x| {
+                for (line, 0..) |_, x| {
                     const value: ?u8 = std.fmt.parseInt(u8, line[x .. x + 1], 16) catch null;
 
                     buffer[y][x] = if (value) |val|

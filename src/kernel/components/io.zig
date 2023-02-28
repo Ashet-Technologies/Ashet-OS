@@ -30,7 +30,7 @@ const KernelData = extern struct {
 
 comptime {
     // assert that KernelData can alias to the erased data structure
-    const ErasedData = std.meta.fieldInfo(IOP, .kernel_data).field_type;
+    const ErasedData = std.meta.fieldInfo(IOP, .kernel_data).type;
     std.debug.assert(@sizeOf(KernelData) == @sizeOf(ErasedData));
     std.debug.assert(@alignOf(KernelData) <= @alignOf(ErasedData));
 }

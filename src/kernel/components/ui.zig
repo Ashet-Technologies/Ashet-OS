@@ -1238,8 +1238,8 @@ pub const desktop = struct {
             try stream.readNoEof(std.mem.sliceAsBytes(&pixels));
             try stream.readNoEof(std.mem.sliceAsBytes(icon.palette[0..palette_size]));
 
-            for (pixels) |row, y| {
-                for (row) |color, x| {
+            for (pixels, 0..) |row, y| {
+                for (row, 0..) |color, x| {
                     icon.pixels[y][x] = if (transparent and color == transparency_key)
                         ColorIndex.get(0)
                     else
@@ -1444,7 +1444,7 @@ pub const desktop = struct {
         }
 
         logger.info("loaded apps:", .{});
-        for (apps.slice()) |app, index| {
+        for (apps.slice(), 0..) |app, index| {
             logger.info("app[{}]: {s}", .{ index, app.getName() });
         }
     }
@@ -1452,8 +1452,8 @@ pub const desktop = struct {
     const dither_grid = blk: {
         @setEvalBranchQuota(4096);
         var buffer: [Icon.height + 2][Icon.width + 2]ColorIndex = undefined;
-        for (buffer) |*row, y| {
-            for (row) |*c, x| {
+        for (&buffer, 0..) |*row, y| {
+            for (row, 0..) |*c, x| {
                 c.* = if ((y + x) % 2 == 0) ColorIndex.get(0) else ColorIndex.get(1);
             }
         }
