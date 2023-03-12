@@ -227,6 +227,6 @@ pub fn scanVirtioDevices(allocator: std.mem.Allocator, base_address: usize, max_
 }
 
 fn installVirtioDriver(comptime T: type, allocator: std.mem.Allocator, regs: *volatile virtio.ControlRegs) !void {
-    const device = try T.init(allocator, regs);
+    const device: *T = try T.init(allocator, regs);
     install(&device.driver);
 }

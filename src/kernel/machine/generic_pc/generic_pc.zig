@@ -21,7 +21,6 @@ const hw = struct {
 
     var vbe: ashet.drivers.video.VESA_BIOS_Extension = undefined;
     var vga: ashet.drivers.video.VGA = undefined;
-    // var dummy_rtc: ashet.drivers.rtc.Dummy = undefined;
 
     var ata: [8]ashet.drivers.block.AT_Attachment = undefined;
 
@@ -54,9 +53,6 @@ pub fn initialize() !void {
 
     hw.rtc = ashet.drivers.rtc.CMOS.init();
     ashet.drivers.install(&hw.rtc.driver);
-
-    // hw.dummy_rtc = ashet.drivers.rtc.Dummy.init(1670610407 * std.time.ns_per_s);
-    // ashet.drivers.install(&hw.dummy_rtc.driver);
 
     for (&hw.ata, 0..) |*ata, index| {
         // requires rtc to be initialized!

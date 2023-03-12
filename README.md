@@ -1,6 +1,36 @@
 # Ashet Operating System
 
-A tiny RISC-V operating system, focused on hackability.
+A tiny cross-platform operating system, focused on hackability.
+
+Supported platforms are:
+
+- 🔧 RISC-V (wip)
+- 🔧 x86 (wip)
+- ⌛ Arm (planned)
+
+The OS is designed to run primarily on 32 bit hardware with "low" memory (measured in 10s of MB). It can
+obviously also use more memory if available, but it doesn't require more than 16 MB to run stable and
+fully usable.
+
+## Platforms
+
+The following list contains devices for which there is a planned port of Ashet OS.
+
+### RISC-V
+
+- 🔧 [QEMU virt](https://www.qemu.org/docs/master/system/riscv/virt.html)
+- ⌛ [Ox64](https://wiki.pine64.org/wiki/Ox64)
+- ⌛ [Ashet Home Computer](https://ashet.computer/product/ashet.htm)
+
+### x86
+
+- 🔧 Generic PC platform (486 and newer)
+- ⌛ [QEMU microvm](https://www.qemu.org/docs/master/system/i386/microvm.html)
+
+### Arm
+
+- ⌛ [RaspberryPi 400](https://www.raspberrypi.com/products/raspberry-pi-400/)
+- ⌛ [RaspberryPi 3 B+](https://www.raspberrypi.com/products/raspberry-pi-3-model-b-plus/)
 
 ## Project Goals
 
@@ -8,8 +38,59 @@ A tiny RISC-V operating system, focused on hackability.
   - `qemu` virt platform
   - Ashet Home Computer
 - Cooperative multitasking
-- Graphical and text mode
-  - 64×32 characters text mode, with 16 colors foreground/background
-  - 256×128 pixels graphical mode, with 8bpp palettized colors
-- Basic file system support
-  - Potentially only FAT32
+- Desktop OS
+  - Open several window-based applications
+  - Play games
+
+## Driver/Device Support
+
+- block device
+  - ATA (PIO)
+  - Common Flash Interface (NOR flash)
+- input
+  - VirtIO Input (MMIO)
+  - PC KBC
+- network
+  - VirtIO Net (MMIO)
+- rtc
+  - PC CMOS
+  - Goldfish RTC
+  - Dummy
+- video
+  - VGA
+  - Vesa BIOS Extension
+  - VirtIO GPU (MMIO)
+
+## Planned Applications
+
+### Applications
+
+- Media Player (Grammophone)
+- Ashet Commander (Shepard)
+- Chat (Telegraph)
+  - IRC
+- Browser (Gateway)
+  - Gemini
+  - HTTP
+  - Gopher
+- Hyperlink Document Viewer + Editor (Hyper Wiki)
+  - Interactive help
+  - Notes / Notebook
+- Terminal (Connex)
+  - Console Services
+  - Serial Ports
+  - Netcat/TCP Monitor
+- Code Editor (Craftworks)
+- Paint (Dragon Craft)
+- Direct I/O Access (I/O)
+- System Management + Update (SysAdvance)
+- Lola Scripting Env (LoLa Run!)
+- Dungeon Crawler Game (Dungeon)
+- Spreadsheet Software (Calc)
+
+### Daemons
+
+- Psi Compiler (Psi)
+- LoLa Compiler (LoLa)
+- Asm Compiler (Asm)
+- Shell Service (Shell)
