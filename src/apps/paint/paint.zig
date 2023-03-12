@@ -7,7 +7,7 @@ pub fn main() !void {
     const window = try ashet.ui.createWindow(
         "Dragon Craft",
         ashet.abi.Size.new(64, 64),
-        ashet.abi.Size.new(400, 300),
+        ashet.abi.Size.max,
         ashet.abi.Size.new(200, 150),
         .{},
     );

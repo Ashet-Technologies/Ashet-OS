@@ -39,12 +39,13 @@ const AshetContext = struct {
                 ctx.b.fmt("{s}.icon", .{name}),
                 .{
                     .geometry = .{ 32, 32 },
-                    .palette = .{ .predefined = "src/kernel/data/palette.gpl" },
+                    .palette = .{ .predefined = "artwork/apps/palette.gpl" },
+                    // .palette = .{ .sized = 15 },
                 },
             );
-            // mkicon.addArg(ctx.b.fmt("zig-out/apps/{s}.icon", .{name}));
 
-            icon_file.addStepDependencies(ctx.b.getInstallStep());
+            const install_file_step = ctx.b.addInstallFile(icon_file, ctx.b.fmt("apps/{s}.icon", .{name}));
+            ctx.b.getInstallStep().dependOn(&install_file_step.step);
         }
 
         return exe;
@@ -166,6 +167,23 @@ pub fn build(b: *std.build.Builder) !void {
 
     const bmpconv = BitmapConverter.init(b);
 
+    const system_icons = AssetBundleStep.create(b);
+    {
+        const icon_conv_options: BitmapConverter.Options = .{
+            .geometry = .{ 16, 16 },
+            .palette = .{
+                .predefined = "src/kernel/data/palette.gpl",
+            },
+        };
+        system_icons.add("back.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/56.png" }, "back.abm", icon_conv_options));
+        system_icons.add("forward.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/57.png" }, "forward.abm", icon_conv_options));
+        system_icons.add("reload.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/76.png" }, "reload.abm", icon_conv_options));
+        system_icons.add("home.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/17.png" }, "home.abm", icon_conv_options));
+        system_icons.add("go.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/38.png" }, "go.abm", icon_conv_options));
+        system_icons.add("stop.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/33.png" }, "stop.abm", icon_conv_options));
+        system_icons.add("menu.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/2.png" }, "menu.abm", icon_conv_options));
+    }
+
     const kernel_exe = b.addExecutable(.{
         .name = "ashet-os",
         .root_source_file = .{ .path = "src/kernel/main.zig" },
@@ -252,7 +270,9 @@ pub fn build(b: *std.build.Builder) !void {
         // . pad_to = 0x200_0000,
     });
 
-    b.getInstallStep().dependOn(&raw_step.step);
+    const install_raw_step = b.addInstallFile(raw_step.getOutputSource(), "rom/ashet-os.bin");
+
+    b.getInstallStep().dependOn(&install_raw_step.step);
 
     // Makes sure zig-out/disk.img exists, but doesn't touch the data at all
     const setup_disk_cmd = b.addSystemCommand(&.{
@@ -287,7 +307,19 @@ pub fn build(b: *std.build.Builder) !void {
     };
 
     {
-        _ = ctx.createAshetApp("browser", "src/apps/browser/browser.zig", "artwork/apps/browser/browser.png", optimize);
+        {
+            const browser_assets = AssetBundleStep.create(b);
+
+            const browser = ctx.createAshetApp("browser", "src/apps/browser/browser.zig", "artwork/apps/browser/browser.png", optimize);
+            browser.addAnonymousModule("assets", .{
+                .source_file = browser_assets.getOutput(),
+                .dependencies = &.{},
+            });
+            browser.addAnonymousModule("system-assets", .{
+                .source_file = system_icons.getOutput(),
+                .dependencies = &.{},
+            });
+        }
         _ = ctx.createAshetApp("clock", "src/apps/clock/clock.zig", "artwork/apps/clock/clock.png", optimize);
         _ = ctx.createAshetApp("commander", "src/apps/commander/commander.zig", "artwork/apps/commander/commander.png", optimize);
         _ = ctx.createAshetApp("editor", "src/apps/editor/editor.zig", "artwork/apps/editor/text-editor.png", optimize);
@@ -509,7 +541,7 @@ const BitmapConverter = struct {
         switch (options.palette) {
             .predefined => |palette| {
                 mkicon.addArg("--palette");
-                mkicon.addArg(palette);
+                mkicon.addFileSourceArg(.{ .path = palette });
             },
             .sized => |size| {
                 mkicon.addArg("--color-count");
@@ -525,5 +557,76 @@ const BitmapConverter = struct {
         const result = mkicon.addOutputFileArg(basename);
 
         return result;
+    }
+};
+
+const AssetBundleStep = struct {
+    step: std.Build.Step,
+    builder: *std.build.Builder,
+    files: std.StringHashMap(std.Build.FileSource),
+    output_file: std.Build.GeneratedFile,
+
+    pub fn create(builder: *std.Build) *AssetBundleStep {
+        const bundle = builder.allocator.create(AssetBundleStep) catch @panic("oom");
+        errdefer builder.allocator.destroy(bundle);
+
+        bundle.* = AssetBundleStep{
+            .step = std.Build.Step.init(.custom, "bundle assets", builder.allocator, make),
+            .builder = builder,
+            .files = std.StringHashMap(std.Build.FileSource).init(builder.allocator),
+            .output_file = .{ .step = &bundle.step },
+        };
+
+        return bundle;
+    }
+
+    pub fn add(bundle: *AssetBundleStep, path: []const u8, item: std.Build.FileSource) void {
+        bundle.files.putNoClobber(
+            bundle.builder.dupe(path),
+            item,
+        ) catch @panic("oom");
+        item.addStepDependencies(&bundle.step);
+    }
+
+    pub fn getOutput(bundle: *AssetBundleStep) std.Build.FileSource {
+        return std.Build.FileSource{
+            .generated = &bundle.output_file,
+        };
+    }
+
+    fn make(step: *std.build.Step) !void {
+        const bundle = @fieldParentPtr(AssetBundleStep, "step", step);
+
+        var write_step = std.Build.WriteFileStep.init(bundle.builder);
+
+        var embed_file = std.ArrayList(u8).init(bundle.builder.allocator);
+        defer embed_file.deinit();
+
+        const writer = embed_file.writer();
+
+        try writer.writeAll(
+            \\//! AUTOGENERATED CODE
+            \\
+        );
+
+        {
+            var it = bundle.files.iterator();
+            while (it.next()) |kv| {
+                write_step.addCopyFile(
+                    kv.value_ptr.*,
+                    bundle.builder.fmt("blobs/{s}", .{kv.key_ptr.*}),
+                );
+                try writer.print("pub const {} = @embedFile(\"blobs/{}\");\n", .{
+                    std.zig.fmtId(kv.key_ptr.*),
+                    std.zig.fmtEscapes(kv.key_ptr.*),
+                });
+            }
+        }
+
+        write_step.add("bundle.zig", try embed_file.toOwnedSlice());
+
+        try write_step.step.makeFn(&write_step.step);
+
+        bundle.output_file.path = write_step.getFileSource("bundle.zig").?.getPath(bundle.builder);
     }
 };

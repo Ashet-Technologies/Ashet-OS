@@ -37,10 +37,12 @@ pub const EventID = enum(usize) {
     pub fn from(comptime tag: anytype) EventID {
         if (@typeInfo(@TypeOf(tag)) != .EnumLiteral)
             @compileError("tag must be a enum literal!");
-        const T = struct {
-            var x: u8 = undefined;
-        };
-        return @intToEnum(EventID, @ptrToInt(&T.x));
+        return @intToEnum(EventID, @errorToInt(@field(anyerror, @tagName(tag))));
+
+        // const T = struct {
+        //     var x: u8 = undefined;
+        // };
+        // return @intToEnum(EventID, @ptrToInt(&T.x));
     }
 };
 
@@ -103,7 +105,7 @@ pub const Interface = struct {
                     }
 
                     switch (widget.control) {
-                        inline .button, .check_box, .radio_button => |*box| return box.click(),
+                        inline .button, .tool_button, .check_box, .radio_button => |*box| return box.click(),
 
                         .text_box => |*box| {
                             const offset = @intCast(usize, event.x - widget.bounds.x) -| 2; // adjust to "left text edge"
@@ -186,7 +188,7 @@ pub const Interface = struct {
         const widget = &gui.widgets[widget_index];
 
         switch (widget.control) {
-            inline .button, .check_box, .radio_button => |*ctrl| {
+            inline .button, .tool_button, .check_box, .radio_button => |*ctrl| {
                 if (!event.pressed)
                     return null;
 
@@ -307,7 +309,7 @@ pub const Interface = struct {
                 .height = @intCast(u15, widget.bounds.height),
             };
             switch (widget.control) {
-                .button => |ctrl| {
+                inline .tool_button, .button => |ctrl| {
                     target.fillRectangle(widget.bounds.shrink(1), gui.theme.area);
 
                     if (b.width > 2 and b.height > 2) {
@@ -334,7 +336,20 @@ pub const Interface = struct {
                         );
                     }
 
-                    target.drawString(b.x + 2, b.y + 2, ctrl.text, gui.theme.text, b.width -| 2);
+                    if (@hasField(@TypeOf(ctrl), "text")) {
+                        target.drawString(b.x + 2, b.y + 2, ctrl.text, gui.theme.text, b.width -| 2);
+                    }
+                    if (@hasField(@TypeOf(ctrl), "icon")) {
+                        const icon: Bitmap = ctrl.icon;
+
+                        target.blit(
+                            Point.new(
+                                b.x + (b.width -| icon.width) / 2,
+                                b.y + (b.height -| icon.height) / 2,
+                            ),
+                            icon,
+                        );
+                    }
                 },
                 .label => |ctrl| {
                     target.drawString(b.x, b.y, ctrl.text, gui.theme.label, b.width);
@@ -495,7 +510,7 @@ pub const Interface = struct {
                 },
 
                 .scroll_bar => {
-                    @panic("scroll bar not implemented yet");
+                    target.fillRectangle(widget.bounds.shrink(1), gui.theme.area);
                 },
             }
             if (gui.focus == index) {
@@ -519,6 +534,7 @@ pub const Control = union(enum) {
     check_box: CheckBox,
     radio_button: RadioButton,
     scroll_bar: ScrollBar,
+    tool_button: ToolButton,
 
     pub fn canFocus(ctrl: Control) bool {
         return switch (ctrl) {
@@ -527,6 +543,7 @@ pub const Control = union(enum) {
             .check_box => true,
             .radio_button => true,
             .scroll_bar => true,
+            .tool_button => true,
 
             .label => false,
             .panel => false,
@@ -574,7 +591,7 @@ pub const ToolButton = struct {
                 .height = icon.height + 4,
             },
             .control = .{
-                .tool_button = Button{
+                .tool_button = ToolButton{
                     .clickEvent = null,
                     .icon = icon,
                 },
@@ -582,7 +599,7 @@ pub const ToolButton = struct {
         };
     }
 
-    pub fn click(button: *Button) ?Event {
+    pub fn click(button: *ToolButton) ?Event {
         return button.clickEvent;
     }
 };
@@ -771,8 +788,8 @@ pub const ScrollBar = struct {
                 },
             },
             .control = .{
-                .scroll_bar = Button{
-                    .clickEvent = null,
+                .scroll_bar = ScrollBar{
+                    .changedEvent = null,
                     .level = 0,
                     .range = range,
                 },

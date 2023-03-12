@@ -700,6 +700,7 @@ pub const Point = extern struct {
 
 pub const Size = extern struct {
     pub const empty = new(0, 0);
+    pub const max = new(std.math.maxInt(u16), std.math.maxInt(u16));
 
     width: u16,
     height: u16,

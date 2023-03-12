@@ -1404,6 +1404,46 @@ pub const desktop = struct {
         }
     }
 
+    fn addApp(ent: ashet.abi.FileInfo, pal_offset: *u8) !void {
+        const app = apps.addOne() catch {
+            logger.warn("The system can only handle {} apps right now, but more are installed.", .{apps.len});
+            return;
+        };
+        errdefer _ = apps.pop();
+
+        pal_offset.* -= 15;
+        errdefer pal_offset.* += 15;
+        app.* = App{
+            .name = undefined,
+            .icon = undefined,
+            .palette_base = pal_offset.*,
+        };
+
+        {
+            const name = ent.getName();
+            std.mem.set(u8, &app.name, 0);
+            std.mem.copy(u8, &app.name, name[0..std.math.min(name.len, app.name.len)]);
+        }
+
+        var path_buffer: [ashet.abi.max_path]u8 = undefined;
+
+        const icon_path = try std.fmt.bufPrint(&path_buffer, "SYS:/apps/{s}/icon", .{ent.getName()});
+
+        if (ashet.filesystem.open(icon_path, .read_only, .open_existing)) |icon_handle| {
+            defer ashet.filesystem.close(icon_handle);
+            app.icon = Icon.load(ashet.filesystem.fileReader(icon_handle), app.palette_base) catch |err| blk: {
+                std.log.warn("Failed to load icon for application {s}: {s}", .{
+                    ent.getName(),
+                    @errorName(err),
+                });
+                break :blk default_icon;
+            };
+        } else |_| {
+            std.log.warn("Application {s} does not have an icon. Using default.", .{ent.getName()});
+            app.icon = default_icon;
+        }
+    }
+
     fn reload() !void {
         var dir = try ashet.filesystem.openDir("SYS:/apps");
         defer ashet.filesystem.closeDir(dir);
@@ -1412,35 +1452,12 @@ pub const desktop = struct {
         var pal_off: u8 = framebuffer_default_icon_shift;
 
         while (try ashet.filesystem.next(dir)) |ent| {
-            const app = apps.addOne() catch {
-                logger.warn("The system can only handle {} apps right now, but more are installed.", .{apps.len});
-                break;
+            addApp(ent, &pal_off) catch |err| {
+                logger.err("failed to load application {s}: {s}", .{
+                    ent.getName(),
+                    @errorName(err),
+                });
             };
-
-            pal_off -= 15;
-            app.* = App{
-                .name = undefined,
-                .icon = undefined,
-                .palette_base = pal_off,
-            };
-
-            {
-                const name = ent.getName();
-                std.mem.set(u8, &app.name, 0);
-                std.mem.copy(u8, &app.name, name[0..std.math.min(name.len, app.name.len)]);
-            }
-
-            var path_buffer: [ashet.abi.max_path]u8 = undefined;
-
-            const icon_path = try std.fmt.bufPrint(&path_buffer, "SYS:/apps/{s}/icon", .{ent.getName()});
-
-            if (ashet.filesystem.open(icon_path, .read_only, .open_existing)) |icon_handle| {
-                defer ashet.filesystem.close(icon_handle);
-                app.icon = try Icon.load(ashet.filesystem.fileReader(icon_handle), app.palette_base);
-            } else |_| {
-                std.log.warn("Application {s} does not have an icon. Using default.", .{ent.getName()});
-                app.icon = default_icon;
-            }
         }
 
         logger.info("loaded apps:", .{});

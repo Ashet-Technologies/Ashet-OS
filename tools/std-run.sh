@@ -18,7 +18,7 @@ if [ -z "$MACHINE" ]; then
     MACHINE="rv32_virt"
 fi
 
-BOOTROM="${ROOT}/zig-out/bin/ashet-os.bin"
+BOOTROM="${ROOT}/zig-out/rom/ashet-os.bin"
 DISK="${ROOT}/zig-out/disk.img"
 
 clear

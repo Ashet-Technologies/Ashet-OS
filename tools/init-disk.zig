@@ -9,6 +9,13 @@ var image_disk: Disk = .{};
 
 pub const log_level = .info;
 
+pub const std_options = struct {
+    pub const log_scope_levels = &.{
+        std.log.ScopeLevel{ .scope = .fatfs, .level = .warn },
+        std.log.ScopeLevel{ .scope = .disk, .level = .warn },
+    };
+};
+
 pub fn main() !u8 {
     const args = try std.process.argsAlloc(std.heap.c_allocator);
     defer std.process.argsFree(std.heap.c_allocator, args);
@@ -202,6 +209,7 @@ fn copyDirFileTo(src_dir: std.fs.Dir, source: []const u8, dest: []const u8, unix
 
 pub const Disk = struct {
     const sector_size = 512;
+    const logger = std.log.scoped(.disk);
 
     interface: fatfs.Disk = fatfs.Disk{
         .getStatusFn = getStatus,
@@ -260,7 +268,7 @@ pub const Disk = struct {
     pub fn read(interface: *fatfs.Disk, buff: [*]u8, sector: fatfs.LBA, count: c_uint) fatfs.Disk.Error!void {
         const self = @fieldParentPtr(Disk, "interface", interface);
 
-        std.log.debug("read({*}, {}, {})", .{ buff, sector, count });
+        logger.debug("read({*}, {}, {})", .{ buff, sector, count });
 
         var file = self.backing_file orelse return error.DiskNotReady;
         file.seekTo(sector * sector_size) catch return error.IoError;
@@ -270,7 +278,7 @@ pub const Disk = struct {
     pub fn write(interface: *fatfs.Disk, buff: [*]const u8, sector: fatfs.LBA, count: c_uint) fatfs.Disk.Error!void {
         const self = @fieldParentPtr(Disk, "interface", interface);
 
-        std.log.debug("write({*}, {}, {})", .{ buff, sector, count });
+        logger.debug("write({*}, {}, {})", .{ buff, sector, count });
 
         var file = self.backing_file orelse return error.DiskNotReady;
         file.seekTo(sector * sector_size) catch return error.IoError;
