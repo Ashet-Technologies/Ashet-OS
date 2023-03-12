@@ -7,7 +7,7 @@ SECTIONS
     __kernel_flash_start = .;
 
     .text : {
-		    KEEP(*(.multiboot))
+	    KEEP(*(.multiboot))
         *(.text)
         *(.text.*)
     }

@@ -64,7 +64,6 @@ pub fn init(allocator: std.mem.Allocator, mbinfo: *multiboot.Info) !VESA_BIOS_Ex
         var modes = vbe_control.mode_ptr.get();
         while (modes[0] != 0xFFFF) {
             std.log.info("    - {X:0>4}", .{modes[0]});
-            // }
             modes += 1;
         }
     }
@@ -123,6 +122,7 @@ fn getVideoMemory(driver: *Driver) []align(ashet.memory.page_size) ColorIndex {
     const vd = @fieldParentPtr(VESA_BIOS_Extension, "driver", driver);
     return vd.backing_buffer;
 }
+
 fn getPaletteMemory(driver: *Driver) *[256]Color {
     const vd = @fieldParentPtr(VESA_BIOS_Extension, "driver", driver);
     return &vd.backing_palette;

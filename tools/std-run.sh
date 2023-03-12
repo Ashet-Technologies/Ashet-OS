@@ -75,7 +75,8 @@ case $MACHINE in
           -vga std \
           -s "$@"
          ;;
-          # -device bochs-display,xres=800,yres=600 \
+        # -device bochs-display,xres=800,yres=600 \
+        # -device VGA,xres=800,yres=600,xmax=800,ymax=600 \
     *)
         echo "Cannot start machine $MACHINE yet."
         exit 1

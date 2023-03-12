@@ -4,6 +4,7 @@ const ashet = @import("../main.zig");
 pub const multiboot = @import("x86/multiboot.zig");
 pub const gdt = @import("x86/gdt.zig");
 pub const idt = @import("x86/idt.zig");
+pub const cmos = @import("x86/cmos.zig");
 
 pub const page_size = 4096;
 

@@ -142,7 +142,7 @@ fn initialize(device: *AT_Attachment) error{NoAtaController}!bool {
     // Read 256 16-bit values, and store them.
 
     var ataData: [256]u16 = undefined;
-    for (ataData) |*w| {
+    for (&ataData) |*w| {
         w.* = x86.in(u16, ports.data);
     }
 

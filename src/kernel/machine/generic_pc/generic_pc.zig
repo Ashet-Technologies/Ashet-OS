@@ -21,9 +21,11 @@ const hw = struct {
 
     var vbe: ashet.drivers.video.VESA_BIOS_Extension = undefined;
     var vga: ashet.drivers.video.VGA = undefined;
-    var dummy_rtc: ashet.drivers.rtc.Dummy = undefined;
+    // var dummy_rtc: ashet.drivers.rtc.Dummy = undefined;
 
     var ata: [8]ashet.drivers.block.AT_Attachment = undefined;
+
+    var rtc: ashet.drivers.rtc.CMOS = undefined;
 };
 
 var graphics_enabled: bool = false;
@@ -34,22 +36,29 @@ pub fn initialize() !void {
     x86.gdt.init();
     x86.idt.init();
 
-    // const mbheader = x86.start.multiboot_info orelse @panic("Ashet OS must be bootet via a MultiBoot 1 compatible bootloader. Use syslinux or grub!");
+    const mbheader = x86.start.multiboot_info orelse @panic("Ashet OS must be bootet via a MultiBoot 1 compatible bootloader. Use syslinux or grub!");
 
-    // hw.vbe = ashet.drivers.video.VESA_BIOS_Extension.init(ashet.memory.allocator, mbheader) catch {
-    //     @panic("Ashet OS does not support computers without VBE 2.0. Please use a graphics card that supports VBE.");
-    // };
-    // ashet.drivers.install(&hw.vbe.driver);
-    try hw.vga.init();
+    if (mbheader.flags.vbe) {
+        hw.vbe = ashet.drivers.video.VESA_BIOS_Extension.init(ashet.memory.allocator, mbheader) catch {
+            @panic("Ashet OS does not support computers without VBE 2.0. Please use a graphics card that supports VBE.");
+        };
+        ashet.drivers.install(&hw.vbe.driver);
+    } else {
+        try hw.vga.init();
+        ashet.drivers.install(&hw.vga.driver);
+    }
     graphics_enabled = true;
-    ashet.drivers.install(&hw.vga.driver);
 
     // RTC must be instantiated already as the ATA driver needs a system clock
     // for timeout measurement!
-    hw.dummy_rtc = ashet.drivers.rtc.Dummy.init(1670610407 * std.time.ns_per_s);
-    ashet.drivers.install(&hw.dummy_rtc.driver);
 
-    for (hw.ata, 0..) |*ata, index| {
+    hw.rtc = ashet.drivers.rtc.CMOS.init();
+    ashet.drivers.install(&hw.rtc.driver);
+
+    // hw.dummy_rtc = ashet.drivers.rtc.Dummy.init(1670610407 * std.time.ns_per_s);
+    // ashet.drivers.install(&hw.dummy_rtc.driver);
+
+    for (&hw.ata, 0..) |*ata, index| {
         // requires rtc to be initialized!
         ata.* = ashet.drivers.block.AT_Attachment.init(@truncate(u3, index)) catch {
             continue;
@@ -88,7 +97,7 @@ export const multiboot_header linksection(".multiboot") = x86.multiboot.Header.w
     .flags = .{
         .req_modules_align_4k = false,
         .req_mem_info = true,
-        .req_video_mode = false,
+        .req_video_mode = false, // TODO: Set to true for better video
         .hint_use_embedded_offsets = false,
     },
 

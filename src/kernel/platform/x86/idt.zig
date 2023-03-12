@@ -44,7 +44,14 @@ export fn handle_interrupt(_cpu: *CpuState) *CpuState {
             })});
             std.log.err("{}", .{cpu});
 
+            if (cpu.interrupt == 0x0D) {
+                // GPF
+                std.log.err("Offending address: 0x{X:0>8}", .{cpu.eip});
+                std.log.err("Error code:        0x{X:0>8}", .{cpu.errorcode});
+            }
+
             if (cpu.interrupt == 0x0E) {
+                // PF
                 const cr2 = asm volatile ("mov %%cr2, %[cr]"
                     : [cr] "=r" (-> usize),
                 );
@@ -60,12 +67,14 @@ export fn handle_interrupt(_cpu: *CpuState) *CpuState {
                 });
             }
 
-            while (true) {
-                asm volatile (
-                    \\ cli
-                    \\ hlt
-                );
-            }
+            @panic("Unhandled exception!");
+
+            // while (true) {
+            //     asm volatile (
+            //         \\ cli
+            //         \\ hlt
+            //     );
+            // }
         },
         0x20...0x2F => {
             // IRQ
@@ -82,12 +91,14 @@ export fn handle_interrupt(_cpu: *CpuState) *CpuState {
         },
         else => {
             std.log.err("Unhandled interrupt: {}", .{cpu});
-            while (true) {
-                asm volatile (
-                    \\ cli
-                    \\ hlt
-                );
-            }
+
+            @panic("Unhandled exception!");
+            // while (true) {
+            //     asm volatile (
+            //         \\ cli
+            //         \\ hlt
+            //     );
+            // }
         },
     }
 

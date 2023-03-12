@@ -14,6 +14,7 @@ pub const serial = struct {
 
 pub const rtc = struct {
     pub const Dummy = @import("rtc/Dummy.zig");
+    pub const CMOS = @import("rtc/CMOS.zig");
     pub const Goldfish = @import("rtc/Goldfish.zig");
 };
 
