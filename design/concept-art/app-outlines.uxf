@@ -1,0 +1,2929 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<diagram program="umlet" version="14.3.0">
+  <help_text>// Uncomment the following line to change the fontsize and font:
+// fontsize=14
+// fontfamily=SansSerif //possible: SansSerif,Serif,Monospaced
+
+fontsize=10
+
+//////////////////////////////////////////////////////////////////////////////////////////////
+// Welcome to UMLet!
+//
+// Double-click on elements to add them to the diagram, or to copy them
+// Edit elements by modifying the text in this panel
+// Hold Ctrl to select multiple elements
+// Use Ctrl+mouse to select via lasso
+//
+// Use +/- or Ctrl+mouse wheel to zoom
+// Drag a whole relation at its central square icon
+//
+// Press Ctrl+C to copy the whole diagram to the system clipboard (then just paste it to, eg, Word)
+// Edit the files in the "palettes" directory to create your own element palettes
+//
+// Select "Custom Elements &gt; New..." to create new element types
+//////////////////////////////////////////////////////////////////////////////////////////////
+
+
+// This text will be stored with each diagram;  use it for notes.</help_text>
+  <zoom_level>13</zoom_level>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>390</x>
+      <y>312</y>
+      <w>793</w>
+      <h>52</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=gray
+fg=black
+layer=-1</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>390</x>
+      <y>312</y>
+      <w>793</w>
+      <h>624</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=white
+fg=black
+layer=-2</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1157</x>
+      <y>364</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=white
+fg=black
+valign=center
+halign=center
+▴</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1157</x>
+      <y>390</y>
+      <w>26</w>
+      <h>494</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=gray
+fg=black</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>403</x>
+      <y>325</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+valign=center
+halign=center
+←</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1144</x>
+      <y>325</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+valign=center
+halign=center
+☰</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>559</x>
+      <y>325</y>
+      <w>533</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=white
+fg=black
+halign=left
+gemini://gemini.circumlunar.space</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>442</x>
+      <y>325</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+valign=center
+halign=center
+→</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>481</x>
+      <y>325</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+valign=center
+halign=center
+↺</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>520</x>
+      <y>325</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+valign=center
+halign=center
+⌂</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1105</x>
+      <y>325</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+valign=center
+halign=center
+▸</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1157</x>
+      <y>884</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=white
+fg=black
+valign=center
+halign=center
+▾</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1157</x>
+      <y>403</y>
+      <w>26</w>
+      <h>52</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=white
+fg=black
+layer=1
+valign=center
+halign=center
+☰</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>403</x>
+      <y>403</y>
+      <w>650</w>
+      <h>130</h>
+    </coordinates>
+    <panel_attributes>valign=top
+halign=left
+lw=0
+Gemini is a new internet protocol which:
+
+- Is heavier than gopher
+- Is lighter than the web
+- Will not replace either
+- Strives for maximum power to weight ratio
+- Takes user privacy very seriously</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>403</x>
+      <y>377</y>
+      <w>741</w>
+      <h>39</h>
+    </coordinates>
+    <panel_attributes>valign=top
+halign=left
+lw=0
+fontsize=15
+Overview</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>403</x>
+      <y>533</y>
+      <w>741</w>
+      <h>39</h>
+    </coordinates>
+    <panel_attributes>valign=top
+halign=left
+lw=0
+fontsize=15
+Resources</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>403</x>
+      <y>559</y>
+      <w>650</w>
+      <h>130</h>
+    </coordinates>
+    <panel_attributes>valign=top
+halign=left
+lw=0
+fg=blue
+Official Project Gemini news
+Gemini documentation
+Gemini software
+Known Gemini servers
+Gemini mailing list (down due to hardware failure)
+Gemini client torture test</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>403</x>
+      <y>663</y>
+      <w>741</w>
+      <h>52</h>
+    </coordinates>
+    <panel_attributes>valign=top
+halign=left
+lw=0
+fontsize=15
+Web proxies</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>403</x>
+      <y>689</y>
+      <w>650</w>
+      <h>39</h>
+    </coordinates>
+    <panel_attributes>valign=top
+halign=left
+lw=0
+fg=blue
+Gemini-to-web proxy service
+Another Gemini-to-web proxy service</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>403</x>
+      <y>728</y>
+      <w>741</w>
+      <h>39</h>
+    </coordinates>
+    <panel_attributes>valign=top
+halign=left
+lw=0
+fontsize=15
+Search engine</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>403</x>
+      <y>754</y>
+      <w>650</w>
+      <h>39</h>
+    </coordinates>
+    <panel_attributes>valign=top
+halign=left
+lw=0
+fg=blue
+geminispace.info
+
+</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1313</x>
+      <y>312</y>
+      <w>793</w>
+      <h>624</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=white
+fg=black
+layer=-2</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLPackage</id>
+    <coordinates>
+      <x>351</x>
+      <y>247</y>
+      <w>871</w>
+      <h>728</h>
+    </coordinates>
+    <panel_attributes>Browser Example Window
+--
+bg=orange
+transparency=0
+layer=-10</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLPackage</id>
+    <coordinates>
+      <x>1274</x>
+      <y>247</y>
+      <w>871</w>
+      <h>728</h>
+    </coordinates>
+    <panel_attributes>Text Editor Example Window
+--
+bg=orange
+transparency=0
+layer=-10</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2080</x>
+      <y>390</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=white
+fg=black
+valign=center
+halign=center
+▴</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2080</x>
+      <y>416</y>
+      <w>26</w>
+      <h>468</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=gray
+fg=black</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2080</x>
+      <y>416</y>
+      <w>26</w>
+      <h>52</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=white
+fg=black
+layer=1
+valign=center
+halign=center
+☰</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2080</x>
+      <y>884</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=white
+fg=black
+valign=center
+halign=center
+▾</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1313</x>
+      <y>312</y>
+      <w>793</w>
+      <h>78</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=gray
+fg=black
+layer=-1</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1430</x>
+      <y>364</y>
+      <w>117</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=white
+fg=black
+halign=left
+dummy.zig</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1313</x>
+      <y>364</y>
+      <w>117</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=left
+app.zig</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1547</x>
+      <y>364</y>
+      <w>117</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=left
+system.ini</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1664</x>
+      <y>364</y>
+      <w>117</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=left
+data.ash</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1326</x>
+      <y>325</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+valign=center
+halign=center
+N</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1365</x>
+      <y>325</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+valign=center
+halign=center
+O</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1404</x>
+      <y>325</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+valign=center
+halign=center
+S</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2067</x>
+      <y>325</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+valign=center
+halign=center
+☰</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1716</x>
+      <y>364</y>
+      <w>390</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=gray
+fg=black
+halign=left
+</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>1430</x>
+      <y>299</y>
+      <w>39</w>
+      <h>91</h>
+    </coordinates>
+    <panel_attributes>lt=-
+</panel_attributes>
+    <additional_attributes>10.0;10.0;10.0;50.0</additional_attributes>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1456</x>
+      <y>325</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+valign=center
+halign=center
+C</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1495</x>
+      <y>325</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+valign=center
+halign=center
+C</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1534</x>
+      <y>325</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+valign=center
+halign=center
+P</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>1560</x>
+      <y>299</y>
+      <w>39</w>
+      <h>91</h>
+    </coordinates>
+    <panel_attributes>lt=-
+</panel_attributes>
+    <additional_attributes>10.0;10.0;10.0;50.0</additional_attributes>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1313</x>
+      <y>910</y>
+      <w>767</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=left
+PF0:/apps/ashet/dummy/src/dummy.zig</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1963</x>
+      <y>910</y>
+      <w>117</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=left
+lw=0
+layer=1
+L   16 C  10</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1352</x>
+      <y>390</y>
+      <w>741</w>
+      <h>520</h>
+    </coordinates>
+    <panel_attributes>valign=top
+halign=left
+lw=0
+const std = @import("std");
+const ashet = @import("ashet");
+
+pub usingnamespace ashet.core;
+
+pub fn main() !void {
+    ashet.debug.write("Hello from App!\r\n");
+
+    const window = try ashet.ui.createWindow(
+        "Application",
+        ashet.abi.Size.new(96, 48),
+        ashet.abi.Size.new(96, 48),
+        ashet.abi.Size.new(96, 48),
+        .{ .popup = true },
+    );
+    defer ashet.ui.destroyWindow(window);
+
+    for (window.pixels[0 .. window.stride * window.max_size.height]) |*c| {
+        c.* = ashet.ui.ColorIndex.get(0);
+    }
+
+    const cx = (window.max_size.width - dummy_logo[0].len) / 2;
+    const cy = (window.max_size.height - dummy_logo.len) / 2;
+
+    for (dummy_logo, 0..) |row, y| {
+        for (row, 0..) |pixel, x| {
+            if (pixel) |color| {
+                window.pixels[window.stride * (cy + y) + (cx + x)] = color;
+            }
+        }
+    }
+
+    app_loop: while (true) {
+        const event = ashet.ui.getEvent(window);
+        switch (event) {
+            .mouse =&gt; {},
+            .keyboard =&gt; {},
+            .window_close =&gt; break :app_loop,
+            .window_minimize =&gt; {},
+            .window_restore =&gt; {},
+            .window_moving =&gt; {},
+            .window_moved =&gt; {},
+            .window_resizing =&gt; {},
+            .window_resized =&gt; {},
+        }
+    }
+}
+
+pub const dummy_logo = parse(
+    \\                  FFFF                                           
+    \\                  F   F                                          
+    \\                  F   F F   F FFFF  FFFF  F   F                  
+    \\                  F   F F   F F F F F F F F   F                  
+    \\                  F   F F   F F F F F F F F   F                  
+    \\                  F   F F   F F F F F F F F   F                  
+    \\                  F   F F   F F   F F   F F   F                  
+    \\                  FFFF   FFFF F   F F   F  FFFF                  
+    \\                                              F                  
+    \\                                              F                  
+    \\                                          FFFF                   
+    \\                                                                 
+    \\ FFF               F      F                F      F              
+    \\F   F              F                       F                     
+    \\F   F FFFF  FFFF   F     FF    FFFF  FFF  FFF    FF    FFF  FFFF 
+    \\F   F F   F F   F  F      F   F         F  F      F   F   F F   F
+    \\FFFFF F   F F   F  F      F   F      FFFF  F      F   F   F F   F
+    \\F   F F   F F   F  F      F   F     F   F  F      F   F   F F   F
+    \\F   F F   F F   F  F      F   F     F   F  F      F   F   F F   F
+    \\F   F FFFF  FFFF    FF    FF   FFFF  FFFF   FF    FF   FFF  F   F
+    \\      F     F                                                    
+    \\      F     F                                                    
+    \\      F     F                                                    
+);
+
+fn parsedSpriteSize(comptime def: []const u8) ashet.ui.Size {
+    @setEvalBranchQuota(100_000);
+    var it = std.mem.split(u8, def, "\n");
+    var first = it.next().?;
+    const width = first.len;
+    var height = 1;
+    while (it.next()) |line| {
+        std.debug.assert(line.len == width);
+        height += 1;
+    }
+    return .{ .width = width, .height = height };
+}
+
+fn ParseResult(comptime def: []const u8) type {
+    @setEvalBranchQuota(100_000);
+    const size = parsedSpriteSize(def);
+    return [size.height][size.width]?ashet.ui.ColorIndex;
+}
+
+fn parse(comptime def: []const u8) ParseResult(def) {
+    @setEvalBranchQuota(100_000);
+
+    const size = parsedSpriteSize(def);
+    var icon: [size.height][size.width]?ashet.ui.ColorIndex = [1][size.width]?ashet.ui.ColorIndex{
+        [1]?ashet.ui.ColorIndex{null} ** size.width,
+    } ** size.height;
+
+    var it = std.mem.split(u8, def, "\n");
+    var y: usize = 0;
+    while (it.next()) |line| : (y += 1) {
+        var x: usize = 0;
+        while (x &lt; icon[0].len) : (x += 1) {
+            icon[y][x] = if (std.fmt.parseInt(u8, line[x .. x + 1], 16)) |index|
+                ashet.ui.ColorIndex.get(index)
+            else |_|
+                null;
+        }
+    }
+    return icon;
+}
+</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1313</x>
+      <y>390</y>
+      <w>39</w>
+      <h>520</h>
+    </coordinates>
+    <panel_attributes>valign=top
+halign=right
+bg=#CCCCCC
+lw=0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13
+14
+15
+16
+17
+18
+19
+20
+21
+22
+23
+24
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35
+36
+37
+38
+39
+40</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>1417</x>
+      <y>624</y>
+      <w>39</w>
+      <h>52</h>
+    </coordinates>
+    <panel_attributes>lt=-
+lw=2</panel_attributes>
+    <additional_attributes>10.0;10.0;10.0;20.0</additional_attributes>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1846</x>
+      <y>910</y>
+      <w>117</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=left
+lw=0
+layer=1
+Zig</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2080</x>
+      <y>910</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+valign=center
+halign=center
+fontsize=20
+⧉</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1157</x>
+      <y>910</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+valign=center
+halign=center
+fontsize=20
+⧉</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1404</x>
+      <y>364</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>valign=center
+halign=center
+fg=red
+layer=3
+lw=0
+×</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1521</x>
+      <y>364</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>valign=center
+halign=center
+fg=red
+layer=3
+lw=0
+×</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1638</x>
+      <y>364</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>valign=center
+halign=center
+fg=red
+layer=3
+lw=0
+×</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>1755</x>
+      <y>364</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>valign=center
+halign=center
+fg=red
+layer=3
+lw=0
+×</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2210</x>
+      <y>390</y>
+      <w>650</w>
+      <h>494</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=white
+fg=black
+layer=-10</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3562</x>
+      <y>0</y>
+      <w>52</w>
+      <h>52</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=white
+fg=black
+halign=center
+valign=center</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2990</x>
+      <y>390</y>
+      <w>650</w>
+      <h>52</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=gray
+fg=black
+halign=center
+valign=center
+layer=-1</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3718</x>
+      <y>0</y>
+      <w>52</w>
+      <h>52</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2210</x>
+      <y>390</y>
+      <w>650</w>
+      <h>52</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=gray
+fg=black
+halign=center
+valign=center
+layer=-1</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2821</x>
+      <y>403</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+☰</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2210</x>
+      <y>429</y>
+      <w>91</w>
+      <h>377</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=gray
+fg=black
+halign=center
+valign=center
+layer=-1</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2223</x>
+      <y>455</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+S</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2262</x>
+      <y>455</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+S</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2223</x>
+      <y>494</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+E</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2262</x>
+      <y>494</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+F</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2223</x>
+      <y>533</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+P</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2262</x>
+      <y>533</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+B</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2223</x>
+      <y>572</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=white
+fg=black
+halign=center
+valign=center
+P</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2262</x>
+      <y>572</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+T</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2223</x>
+      <y>403</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+fontsize=13
+&#128459;</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2262</x>
+      <y>403</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+fontsize=13
+&#128194;</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2301</x>
+      <y>403</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+fontsize=13
+&#128190;</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>2327</x>
+      <y>377</y>
+      <w>39</w>
+      <h>91</h>
+    </coordinates>
+    <panel_attributes>lt=-</panel_attributes>
+    <additional_attributes>10.0;50.0;10.0;10.0</additional_attributes>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2301</x>
+      <y>806</y>
+      <w>559</w>
+      <h>78</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=gray
+fg=black
+halign=center
+valign=center
+layer=-1</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2210</x>
+      <y>806</y>
+      <w>91</w>
+      <h>78</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=gray
+fg=black
+halign=center
+valign=center
+layer=-1</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2223</x>
+      <y>819</y>
+      <w>39</w>
+      <h>39</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#0000FF
+fg=black
+halign=center
+valign=center
+layer=2</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2249</x>
+      <y>832</y>
+      <w>39</w>
+      <h>39</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#008888
+fg=black
+halign=center
+valign=center
+layer=1</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2314</x>
+      <y>819</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=black
+fg=#888888
+halign=center
+valign=center</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2314</x>
+      <y>845</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=white
+fg=#888888
+halign=center
+valign=center</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2340</x>
+      <y>819</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#444444
+fg=#888888
+halign=center
+valign=center</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2340</x>
+      <y>845</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=#888888
+halign=center
+valign=center</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2366</x>
+      <y>819</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#880000
+fg=#888888
+halign=center
+valign=center</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2366</x>
+      <y>845</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#FF0000
+fg=#888888
+halign=center
+valign=center</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2392</x>
+      <y>845</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#00FF00
+fg=#888888
+halign=center
+valign=center</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2392</x>
+      <y>819</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#008800
+fg=#888888
+halign=center
+valign=center</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2418</x>
+      <y>845</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#0000FF
+fg=#888888
+halign=center
+valign=center</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2418</x>
+      <y>819</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#000088
+fg=#888888
+halign=center
+valign=center</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2444</x>
+      <y>819</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#888800
+fg=#888888
+halign=center
+valign=center</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2444</x>
+      <y>845</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#FFFF00
+fg=#888888
+halign=center
+valign=center</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2470</x>
+      <y>819</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#008888
+fg=#888888
+halign=center
+valign=center</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2470</x>
+      <y>845</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#00FFFF
+fg=#888888
+halign=center
+valign=center</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2496</x>
+      <y>819</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#880088
+fg=#888888
+halign=center
+valign=center</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2496</x>
+      <y>845</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#FF00FF
+fg=#888888
+halign=center
+valign=center</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2223</x>
+      <y>611</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+L</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2262</x>
+      <y>611</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+B</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2223</x>
+      <y>650</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+R</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2262</x>
+      <y>650</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+P</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2223</x>
+      <y>689</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+E</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2262</x>
+      <y>689</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+R</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2353</x>
+      <y>403</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+✀</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2392</x>
+      <y>403</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+fontsize=15
+⎘</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2431</x>
+      <y>403</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+&#128203;</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>2457</x>
+      <y>377</y>
+      <w>39</w>
+      <h>91</h>
+    </coordinates>
+    <panel_attributes>lt=-</panel_attributes>
+    <additional_attributes>10.0;50.0;10.0;10.0</additional_attributes>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2301</x>
+      <y>780</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+layer=-1
+◂</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2808</x>
+      <y>780</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+layer=-1
+▸</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2834</x>
+      <y>754</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+layer=-1
+▾</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2834</x>
+      <y>442</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+layer=-1
+▴</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2327</x>
+      <y>780</y>
+      <w>494</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=gray
+fg=black
+halign=center
+valign=center
+layer=-1</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2834</x>
+      <y>468</y>
+      <w>26</w>
+      <h>286</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=gray
+fg=black
+halign=center
+valign=center
+layer=-1</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2834</x>
+      <y>481</y>
+      <w>26</w>
+      <h>143</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+layer=2
+☰</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2340</x>
+      <y>780</y>
+      <w>91</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+layer=2
+⦀</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLActor</id>
+    <coordinates>
+      <x>2405</x>
+      <y>572</y>
+      <w>78</w>
+      <h>130</h>
+    </coordinates>
+    <panel_attributes>Actor</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLActor</id>
+    <coordinates>
+      <x>2496</x>
+      <y>546</y>
+      <w>78</w>
+      <h>130</h>
+    </coordinates>
+    <panel_attributes>Actor</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2834</x>
+      <y>858</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=gray
+fg=black
+halign=center
+valign=center
+⧉</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2990</x>
+      <y>390</y>
+      <w>650</w>
+      <h>494</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=white
+fg=black
+layer=-10</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLPackage</id>
+    <coordinates>
+      <x>2964</x>
+      <y>338</y>
+      <w>702</w>
+      <h>572</h>
+    </coordinates>
+    <panel_attributes>bg=orange
+layer=-20
+Commander</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLPackage</id>
+    <coordinates>
+      <x>2184</x>
+      <y>338</y>
+      <w>702</w>
+      <h>572</h>
+    </coordinates>
+    <panel_attributes>bg=orange
+layer=-20
+Paint</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3640</x>
+      <y>0</y>
+      <w>52</w>
+      <h>52</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=gray
+fg=black
+halign=center
+valign=center
+layer=-1</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3601</x>
+      <y>403</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+☰</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>3302</x>
+      <y>429</y>
+      <w>39</w>
+      <h>481</h>
+    </coordinates>
+    <panel_attributes>lt=-
+lw=2</panel_attributes>
+    <additional_attributes>10.0;10.0;10.0;350.0</additional_attributes>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2990</x>
+      <y>442</y>
+      <w>299</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=left
+valign=center
+PF0:/personal/documents</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3289</x>
+      <y>442</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+&#128194;</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3315</x>
+      <y>442</y>
+      <w>299</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=left
+valign=center
+USB1:/projects</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3614</x>
+      <y>442</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+&#128194;</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2990</x>
+      <y>468</y>
+      <w>169</w>
+      <h>416</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+halign=left
+valign=top
+lw=0
+&#128193; .
+&#128193; ..
+&#128193; contracts
+&#128193; invoices
+&#128196; todo.txt
+&#128196; passwords.kbdx</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3315</x>
+      <y>468</y>
+      <w>156</w>
+      <h>416</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+halign=left
+valign=top
+lw=0
+&#128193; .
+&#128193; ..
+&#128193; ashet-os
+&#128193; ashet-pl
+&#128193; lola
+&#128193; kristall
+&#128196; ideas.txt</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3159</x>
+      <y>468</y>
+      <w>156</w>
+      <h>416</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+halign=right
+valign=top
+lw=0
+
+
+
+
+1.43K
+837K
+</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3484</x>
+      <y>468</y>
+      <w>156</w>
+      <h>416</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+halign=right
+valign=top
+lw=0
+
+
+
+
+
+
+2.33M
+
+</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3172</x>
+      <y>403</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+⇔</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3263</x>
+      <y>403</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+&#128230;</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3302</x>
+      <y>403</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+&#128165;</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3588</x>
+      <y>442</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+lw=0
+layer=2
+▾</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3783</x>
+      <y>13</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3003</x>
+      <y>403</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+✀</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3042</x>
+      <y>403</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+fontsize=15
+⎘</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3081</x>
+      <y>403</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+&#128203;</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>3146</x>
+      <y>377</y>
+      <w>39</w>
+      <h>91</h>
+    </coordinates>
+    <panel_attributes>lt=-</panel_attributes>
+    <additional_attributes>10.0;50.0;10.0;10.0</additional_attributes>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3120</x>
+      <y>403</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+&#128465;️</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3211</x>
+      <y>403</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+
+⇒
+⇐</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>3237</x>
+      <y>377</y>
+      <w>39</w>
+      <h>91</h>
+    </coordinates>
+    <panel_attributes>lt=-</panel_attributes>
+    <additional_attributes>10.0;50.0;10.0;10.0</additional_attributes>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>2990</x>
+      <y>533</y>
+      <w>325</w>
+      <h>39</h>
+    </coordinates>
+    <panel_attributes>transparency=80
+lw=0
+layer=10
+customelement=
+
+drawRectangle(0,7,250,15) bg=#88FF00
+</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3263</x>
+      <y>442</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+lw=0
+layer=2
+▾</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3744</x>
+      <y>390</y>
+      <w>650</w>
+      <h>494</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=white
+fg=black
+layer=-10</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLPackage</id>
+    <coordinates>
+      <x>3718</x>
+      <y>338</y>
+      <w>702</w>
+      <h>572</h>
+    </coordinates>
+    <panel_attributes>bg=orange
+layer=-20
+Shell</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3744</x>
+      <y>390</y>
+      <w>650</w>
+      <h>52</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=gray
+fg=black
+halign=center
+valign=center
+layer=-1</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3809</x>
+      <y>403</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+✀</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3848</x>
+      <y>403</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+fontsize=15
+⎘</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3887</x>
+      <y>403</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+&#128203;</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>3913</x>
+      <y>377</y>
+      <w>39</w>
+      <h>91</h>
+    </coordinates>
+    <panel_attributes>lt=-</panel_attributes>
+    <additional_attributes>10.0;50.0;10.0;10.0</additional_attributes>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>4355</x>
+      <y>403</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+☰</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>3783</x>
+      <y>377</y>
+      <w>39</w>
+      <h>91</h>
+    </coordinates>
+    <panel_attributes>lt=-</panel_attributes>
+    <additional_attributes>10.0;50.0;10.0;10.0</additional_attributes>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3757</x>
+      <y>403</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+➕</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3744</x>
+      <y>442</y>
+      <w>650</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=gray
+fg=black
+halign=center
+valign=center
+layer=-1</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3809</x>
+      <y>442</y>
+      <w>65</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=left
+valign=center
+less</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3744</x>
+      <y>442</y>
+      <w>65</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=white
+fg=black
+halign=left
+valign=center
+htop</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3874</x>
+      <y>442</y>
+      <w>65</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=left
+valign=center
+sh</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>3744</x>
+      <y>468</y>
+      <w>650</w>
+      <h>416</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+lw=0
+bg=#222222
+fg=white
+halign=left
+valign=top
+&gt; # Now start recording                                                          
+&gt; asciinema rec                                                                  
+asciinema: recording asciicast to /tmp/u52erylk-ascii.cast                       
+asciinema: press &lt;ctrl-d&gt; or type "exit" when you're done                        
+bash-3.2$ # I am in a new shell instance which is being recorded now             
+bash-3.2$ sha1sum /etc/f* | tail -n 10 | lolcat -F 0.3                           
+da39a3ee5e6b4b0d3255bfef95601890afd80709  /etc/find.codes                        
+88dd3ea7ffcbb910fbd1d921811817d935310b34  /etc/fstab.hd                          
+442a5bc4174a8f4d6ef8d5ae5da9251ebb6ab455  /etc/ftpd.conf                         
+442a5bc4174a8f4d6ef8d5ae5da9251ebb6ab455  /etc/ftpd.conf.default                 
+d3e5fb0c582645e60f8a13802be0c909a3f9e4d7  /etc/ftpusers                          
+bash-3.2$ # To finish recording just exit the shell                              
+bash-3.2$ exit                                                                   
+exit                                                                             
+asciinema: recording finished                                                    
+asciinema: press &lt;enter&gt; to upload to asciinema.org, &lt;ctrl-c&gt; to save locally    
+                                                                                 
+https://asciinema.org/a/17648                                                    
+&gt; # Open the above URL to view the recording                                     
+&gt; # Now ins                                                                      
+</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>4550</x>
+      <y>390</y>
+      <w>312</w>
+      <h>429</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#000088
+fg=black
+layer=-10</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>4550</x>
+      <y>390</y>
+      <w>312</w>
+      <h>52</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=gray
+fg=black
+halign=center
+valign=center
+layer=-1</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLPackage</id>
+    <coordinates>
+      <x>4524</x>
+      <y>338</y>
+      <w>364</w>
+      <h>507</h>
+    </coordinates>
+    <panel_attributes>bg=orange
+layer=-20
+Music</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>4823</x>
+      <y>403</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+☰</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>4615</x>
+      <y>455</y>
+      <w>182</w>
+      <h>182</h>
+    </coordinates>
+    <panel_attributes>fg=black
+bg=white
+transparency=0
+layer=2</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLActor</id>
+    <coordinates>
+      <x>4641</x>
+      <y>481</y>
+      <w>117</w>
+      <h>143</h>
+    </coordinates>
+    <panel_attributes>fg=black
+Masters of
+the Universe
+layer=3</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>4563</x>
+      <y>741</y>
+      <w>286</w>
+      <h>39</h>
+    </coordinates>
+    <panel_attributes>layer=1
+halign=center
+valign=top
+fontsize=12
+fg=white
+lw=0
+Masters of the Universe</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>4563</x>
+      <y>715</y>
+      <w>286</w>
+      <h>39</h>
+    </coordinates>
+    <panel_attributes>layer=1
+halign=center
+valign=top
+fontsize=14
+fg=white
+lw=0
+Power of Metal</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>4563</x>
+      <y>767</y>
+      <w>286</w>
+      <h>39</h>
+    </coordinates>
+    <panel_attributes>layer=1
+halign=center
+valign=top
+fontsize=10
+fg=white
+lw=0
+Metal Masters</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>4628</x>
+      <y>663</y>
+      <w>39</w>
+      <h>39</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+fontsize=16
+⏮</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>4680</x>
+      <y>663</y>
+      <w>39</w>
+      <h>39</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+fontsize=16
+⏯</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>4732</x>
+      <y>663</y>
+      <w>39</w>
+      <h>39</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+fontsize=16
+⏭</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>4602</x>
+      <y>637</y>
+      <w>221</w>
+      <h>39</h>
+    </coordinates>
+    <panel_attributes>lt=-
+lw=5
+fg=white</panel_attributes>
+    <additional_attributes>10.0;10.0;150.0;10.0</additional_attributes>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>4602</x>
+      <y>403</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+&#128191;</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>4563</x>
+      <y>403</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+valign=center
+&#128194;</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>UMLClass</id>
+    <coordinates>
+      <x>4641</x>
+      <y>403</y>
+      <w>26</w>
+      <h>26</h>
+    </coordinates>
+    <panel_attributes>transparency=0
+bg=#CCCCCC
+fg=black
+halign=center
+&#127760;</panel_attributes>
+    <additional_attributes/>
+  </element>
+  <element>
+    <id>Relation</id>
+    <coordinates>
+      <x>4693</x>
+      <y>637</y>
+      <w>130</w>
+      <h>39</h>
+    </coordinates>
+    <panel_attributes>lt=&lt;&lt;&lt;&lt;&lt;-
+lw=5
+fg=white</panel_attributes>
+    <additional_attributes>10.0;10.0;80.0;10.0</additional_attributes>
+  </element>
+</diagram>

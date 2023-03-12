@@ -6,7 +6,7 @@ const FatFS = @import("vendor/zfat/Sdk.zig");
 
 const AshetContext = struct {
     b: *std.build.Builder,
-    mkicon: *std.build.LibExeObjStep,
+    bmpconv: BitmapConverter,
     target: std.zig.CrossTarget,
 
     fn createAshetApp(ctx: AshetContext, name: []const u8, source: []const u8, maybe_icon: ?[]const u8, optimize: std.builtin.OptimizeMode) *std.build.LibExeObjStep {
@@ -34,13 +34,17 @@ const AshetContext = struct {
         ctx.b.getInstallStep().dependOn(&install_step.step);
 
         if (maybe_icon) |src_icon| {
-            const mkicon = ctx.mkicon.run();
+            const icon_file = ctx.bmpconv.convert(
+                .{ .path = src_icon },
+                ctx.b.fmt("{s}.icon", .{name}),
+                .{
+                    .geometry = .{ 32, 32 },
+                    .palette = .{ .predefined = "src/kernel/data/palette.gpl" },
+                },
+            );
+            // mkicon.addArg(ctx.b.fmt("zig-out/apps/{s}.icon", .{name}));
 
-            mkicon.addArg(src_icon);
-            mkicon.addArg(ctx.b.fmt("zig-out/apps/{s}.icon", .{name}));
-            mkicon.addArg("32x32");
-
-            ctx.b.getInstallStep().dependOn(&mkicon.step);
+            icon_file.addStepDependencies(ctx.b.getInstallStep());
         }
 
         return exe;
@@ -49,12 +53,10 @@ const AshetContext = struct {
 
 const ziglibc_file = std.build.FileSource{ .path = "vendor/libc/ziglibc.txt" };
 
-fn addBitmap(target: *std.build.LibExeObjStep, mkicon: *std.build.LibExeObjStep, src: []const u8, dst: []const u8, size: []const u8) void {
-    const gen = mkicon.run();
-    gen.addArg(src);
-    gen.addArg(dst);
-    gen.addArg(size);
-    target.step.dependOn(&gen.step);
+fn addBitmap(target: *std.build.LibExeObjStep, bmpconv: BitmapConverter, src: []const u8, dst: []const u8, size: [2]u32) void {
+    const file = bmpconv.convert(.{ .path = src }, std.fs.path.basename(dst), .{ .geometry = size });
+
+    file.addStepDependencies(&target.step);
 }
 
 const machines = @import("src/kernel/machine/all.zig");
@@ -84,27 +86,21 @@ pub fn build(b: *std.build.Builder) !void {
         .mkfs = true,
     };
 
-    b.addModule(.{
-        .name = "ashet-std",
+    _ = b.addModule("ashet-std", .{
         .source_file = .{ .path = "src/std/std.zig" },
     });
 
-    b.addModule(.{
-        .name = "virtio",
+    _ = b.addModule("virtio", .{
         .source_file = .{ .path = "vendor/libvirtio/src/virtio.zig" },
     });
 
-    b.addModule(.{
-        .name = "ashet-abi",
+    _ = b.addModule("ashet-abi", .{
         .source_file = .{ .path = "src/abi/abi.zig" },
     });
 
-    const zigimg = b.dependency("zigimg", .{}).module("zigimg");
-
     const text_editor_module = b.dependency("text-editor", .{}).module("text-editor");
 
-    b.addModule(.{
-        .name = "ashet",
+    _ = b.addModule("ashet", .{
         .source_file = .{ .path = "src/libashet/main.zig" },
         .dependencies = &.{
             .{ .name = "ashet-abi", .module = b.modules.get("ashet-abi").? },
@@ -113,8 +109,7 @@ pub fn build(b: *std.build.Builder) !void {
         },
     });
 
-    b.addModule(.{
-        .name = "ashet-gui",
+    _ = b.addModule("ashet-gui", .{
         .source_file = .{ .path = "src/libgui/gui.zig" },
         .dependencies = &.{
             .{ .name = "ashet", .module = b.modules.get("ashet").? },
@@ -142,11 +137,6 @@ pub fn build(b: *std.build.Builder) !void {
 
     const machine_spec = resolveMachine(machine_id);
 
-    const tool_mkicon = b.addExecutable(.{ .name = "tool_mkicon", .root_source_file = .{ .path = "tools/mkicon.zig" } });
-    tool_mkicon.addModule("zigimg", zigimg);
-    tool_mkicon.addModule("ashet-abi", b.modules.get("ashet-abi").?);
-    tool_mkicon.install();
-
     const machine_pkg = b.addWriteFile("machine.zig", blk: {
         var stream = std.ArrayList(u8).init(b.allocator);
         defer stream.deinit();
@@ -173,6 +163,8 @@ pub fn build(b: *std.build.Builder) !void {
     });
 
     const fatfs_module = FatFS.createModule(b, fatfs_config);
+
+    const bmpconv = BitmapConverter.init(b);
 
     const kernel_exe = b.addExecutable(.{
         .name = "ashet-os",
@@ -226,19 +218,24 @@ pub fn build(b: *std.build.Builder) !void {
             setup_lwIP(kernel_exe);
         }
 
+        // {
+        //     const convert_wallpaper = tool_mkicon.run();
+        //     convert_wallpaper.addArg("artwork/os/wallpaper-chances.png");
+        //     convert_wallpaper.addArg("src/kernel/data/ui/wallpaper.abm");
+        //     convert_wallpaper.addArg("400x300");
+        //     kernel_exe.step.dependOn(&convert_wallpaper.step);
+        // }
+
         {
-            const convert_wallpaper = tool_mkicon.run();
-            convert_wallpaper.addArg("artwork/os/wallpaper-chances.png");
-            convert_wallpaper.addArg("src/kernel/data/ui/wallpaper.abm");
-            convert_wallpaper.addArg("400x300");
-            kernel_exe.step.dependOn(&convert_wallpaper.step);
-        }
-        {
-            const generate_stub_icon = tool_mkicon.run();
-            generate_stub_icon.addArg("artwork/os/default-app-icon.png");
-            generate_stub_icon.addArg("src/kernel/data/generic-app-icon.abm");
-            generate_stub_icon.addArg("32x32");
-            kernel_exe.step.dependOn(&generate_stub_icon.step);
+            const converted_icon = bmpconv.convert(
+                .{ .path = "artwork/os/default-app-icon.png" },
+                "generic-app-icon.abm",
+                .{
+                    .geometry = .{ 32, 32 },
+                    .palette = .{ .predefined = "src/kernel/data/palette.gpl" },
+                },
+            );
+            converted_icon.addStepDependencies(&kernel_exe.step);
         }
 
         {
@@ -247,9 +244,11 @@ pub fn build(b: *std.build.Builder) !void {
         }
     }
 
-    const raw_step = kernel_exe.installRaw("ashet-os.bin", .{
+    const raw_step = b.addObjCopy(kernel_exe.getOutputSource(), .{
+        .basename = "ashet-os.bin",
         .format = .bin,
-        // .pad_to_size = 0x200_0000,
+        // .only_section
+        // . pad_to = 0x200_0000,
     });
 
     b.getInstallStep().dependOn(&raw_step.step);
@@ -282,32 +281,32 @@ pub fn build(b: *std.build.Builder) !void {
 
     var ctx = AshetContext{
         .b = b,
-        .mkicon = tool_mkicon,
+        .bmpconv = bmpconv,
         .target = machine_spec.platform.target,
     };
 
     {
-        _ = ctx.createAshetApp("shell", "src/apps/dummy.zig", "artwork/apps/shell.png", optimize);
-        _ = ctx.createAshetApp("commander", "src/apps/dummy.zig", "artwork/apps/commander.png", optimize);
-        _ = ctx.createAshetApp("editor", "src/apps/dummy.zig", "artwork/apps/text-editor.png", optimize);
-        _ = ctx.createAshetApp("browser", "src/apps/dummy.zig", "artwork/apps/browser.png", optimize);
-        _ = ctx.createAshetApp("music", "src/apps/dummy.zig", "artwork/apps/music.png", optimize);
-        _ = ctx.createAshetApp("clock", "src/apps/clock.zig", "artwork/apps/clock.png", optimize);
-        _ = ctx.createAshetApp("paint", "src/apps/paint.zig", "artwork/apps/paint.png", optimize);
+        _ = ctx.createAshetApp("browser", "src/apps/browser/browser.zig", "artwork/apps/browser/browser.png", optimize);
+        _ = ctx.createAshetApp("clock", "src/apps/clock/clock.zig", "artwork/apps/clock/clock.png", optimize);
+        _ = ctx.createAshetApp("commander", "src/apps/commander/commander.zig", "artwork/apps/commander/commander.png", optimize);
+        _ = ctx.createAshetApp("editor", "src/apps/editor/editor.zig", "artwork/apps/editor/text-editor.png", optimize);
+        _ = ctx.createAshetApp("music", "src/apps/music/music.zig", "artwork/apps/music/music.png", optimize);
+        _ = ctx.createAshetApp("paint", "src/apps/paint/paint.zig", "artwork/apps/paint/paint.png", optimize);
+        _ = ctx.createAshetApp("terminal", "src/apps/terminal/terminal.zig", "artwork/apps/terminal/terminal.png", optimize);
         _ = ctx.createAshetApp("gui-demo", "src/apps/gui-demo.zig", null, optimize);
         _ = ctx.createAshetApp("net-demo", "src/apps/net-demo.zig", null, optimize);
 
         {
-            const dungeon = ctx.createAshetApp("dungeon", "src/apps/dungeon/dungeon.zig", "artwork/apps/dungeon.png", optimize);
-            addBitmap(dungeon, tool_mkicon, "artwork/dungeon/floor.png", "src/apps/dungeon/data/floor.abm", "32x32");
-            addBitmap(dungeon, tool_mkicon, "artwork/dungeon/wall-plain.png", "src/apps/dungeon/data/wall-plain.abm", "32x32");
-            addBitmap(dungeon, tool_mkicon, "artwork/dungeon/wall-cobweb.png", "src/apps/dungeon/data/wall-cobweb.abm", "32x32");
-            addBitmap(dungeon, tool_mkicon, "artwork/dungeon/wall-paper.png", "src/apps/dungeon/data/wall-paper.abm", "32x32");
-            addBitmap(dungeon, tool_mkicon, "artwork/dungeon/wall-vines.png", "src/apps/dungeon/data/wall-vines.abm", "32x32");
-            addBitmap(dungeon, tool_mkicon, "artwork/dungeon/wall-door.png", "src/apps/dungeon/data/wall-door.abm", "32x32");
-            addBitmap(dungeon, tool_mkicon, "artwork/dungeon/wall-post-l.png", "src/apps/dungeon/data/wall-post-l.abm", "32x32");
-            addBitmap(dungeon, tool_mkicon, "artwork/dungeon/wall-post-r.png", "src/apps/dungeon/data/wall-post-r.abm", "32x32");
-            addBitmap(dungeon, tool_mkicon, "artwork/dungeon/enforcer.png", "src/apps/dungeon/data/enforcer.abm", "32x60");
+            const dungeon = ctx.createAshetApp("dungeon", "src/apps/dungeon/dungeon.zig", "artwork/apps/dungeon/dungeon.png", optimize);
+            addBitmap(dungeon, bmpconv, "artwork/dungeon/floor.png", "src/apps/dungeon/data/floor.abm", .{ 32, 32 });
+            addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-plain.png", "src/apps/dungeon/data/wall-plain.abm", .{ 32, 32 });
+            addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-cobweb.png", "src/apps/dungeon/data/wall-cobweb.abm", .{ 32, 32 });
+            addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-paper.png", "src/apps/dungeon/data/wall-paper.abm", .{ 32, 32 });
+            addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-vines.png", "src/apps/dungeon/data/wall-vines.abm", .{ 32, 32 });
+            addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-door.png", "src/apps/dungeon/data/wall-door.abm", .{ 32, 32 });
+            addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-post-l.png", "src/apps/dungeon/data/wall-post-l.abm", .{ 32, 32 });
+            addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-post-r.png", "src/apps/dungeon/data/wall-post-r.abm", .{ 32, 32 });
+            addBitmap(dungeon, bmpconv, "artwork/dungeon/enforcer.png", "src/apps/dungeon/data/enforcer.abm", .{ 32, 60 });
         }
     }
 
@@ -471,3 +470,59 @@ fn setup_lwIP(dst: *std.build.LibExeObjStep) void {
     dst.addIncludePath("vendor/lwip/src/include");
     dst.addIncludePath("src/kernel/components/network/include");
 }
+
+const BitmapConverter = struct {
+    builder: *std.Build,
+    converter: *std.Build.CompileStep,
+
+    pub fn init(builder: *std.Build) BitmapConverter {
+        const zig_args_module = builder.dependency("args", .{}).module("args");
+        const zigimg = builder.dependency("zigimg", .{}).module("zigimg");
+
+        const tool_mkicon = builder.addExecutable(.{ .name = "tool_mkicon", .root_source_file = .{ .path = "tools/mkicon.zig" } });
+        tool_mkicon.addModule("zigimg", zigimg);
+        tool_mkicon.addModule("ashet-abi", builder.modules.get("ashet-abi").?);
+        tool_mkicon.addModule("args", zig_args_module);
+
+        return BitmapConverter{
+            .builder = builder,
+            .converter = tool_mkicon,
+        };
+    }
+
+    pub const Options = struct {
+        palette: Palette = .{ .sized = 15 },
+        geometry: ?[2]u32 = null,
+
+        const Palette = union(enum) {
+            predefined: []const u8,
+            sized: u8,
+        };
+    };
+
+    pub fn convert(conv: BitmapConverter, source: std.Build.FileSource, basename: []const u8, options: Options) std.Build.FileSource {
+        const mkicon = conv.converter.run();
+
+        mkicon.addFileSourceArg(source);
+
+        switch (options.palette) {
+            .predefined => |palette| {
+                mkicon.addArg("--palette");
+                mkicon.addArg(palette);
+            },
+            .sized => |size| {
+                mkicon.addArg("--color-count");
+                mkicon.addArg(conv.builder.fmt("{d}", .{size}));
+            },
+        }
+        if (options.geometry) |geometry| {
+            mkicon.addArg("--geometry");
+            mkicon.addArg(conv.builder.fmt("{}x{}", .{ geometry[0], geometry[1] }));
+        }
+
+        mkicon.addArg("-o");
+        const result = mkicon.addOutputFileArg(basename);
+
+        return result;
+    }
+};

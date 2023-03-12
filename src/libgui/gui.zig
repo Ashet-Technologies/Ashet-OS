@@ -27,6 +27,21 @@ pub const Event = struct {
 /// A unique event id.
 pub const EventID = enum(usize) {
     _,
+
+    pub fn fromNumber(id: usize) EventID {
+        return @intToEnum(EventID, id);
+    }
+
+    /// Constructs a new EventID from the given enum literal.
+    /// This basically makes this enum a distributed enum that can create ad-hoc values.
+    pub fn from(comptime tag: anytype) EventID {
+        if (@typeInfo(@TypeOf(tag)) != .EnumLiteral)
+            @compileError("tag must be a enum literal!");
+        const T = struct {
+            var x: u8 = undefined;
+        };
+        return @intToEnum(EventID, @ptrToInt(&T.x));
+    }
 };
 
 pub const Framebuffer = @import("Framebuffer.zig");
@@ -99,7 +114,10 @@ pub const Interface = struct {
 
                             box.editor.cursor = text_index;
                         },
+
                         .label, .panel, .picture => {},
+
+                        .scroll_bar => @panic("scrollbar not implemented yet!"),
                     }
                 } else {
                     gui.focus = null;
@@ -219,6 +237,8 @@ pub const Interface = struct {
                     }
                 }
             },
+
+            .scroll_bar => @panic("scroll bar not implemented yet!"),
 
             // these cannot be focused:
             .label, .panel, .picture => unreachable,
@@ -473,6 +493,10 @@ pub const Interface = struct {
                         target.blit(Point.new(b.x + 1, b.y + 1), checked_icon);
                     }
                 },
+
+                .scroll_bar => {
+                    @panic("scroll bar not implemented yet");
+                },
             }
             if (gui.focus == index) {
                 paintFocusMarker(target, widget.bounds.shrink(1), gui.theme.*);
@@ -494,6 +518,7 @@ pub const Control = union(enum) {
     picture: Picture,
     check_box: CheckBox,
     radio_button: RadioButton,
+    scroll_bar: ScrollBar,
 
     pub fn canFocus(ctrl: Control) bool {
         return switch (ctrl) {
@@ -501,6 +526,7 @@ pub const Control = union(enum) {
             .text_box => true,
             .check_box => true,
             .radio_button => true,
+            .scroll_bar => true,
 
             .label => false,
             .panel => false,
@@ -525,6 +551,32 @@ pub const Button = struct {
                 .button = Button{
                     .clickEvent = null,
                     .text = text,
+                },
+            },
+        };
+    }
+
+    pub fn click(button: *Button) ?Event {
+        return button.clickEvent;
+    }
+};
+
+pub const ToolButton = struct {
+    clickEvent: ?Event = null,
+    icon: Bitmap,
+
+    pub fn new(x: i16, y: i16, icon: Bitmap) Widget {
+        return Widget{
+            .bounds = Rectangle{
+                .x = x,
+                .y = y,
+                .width = icon.width + 4,
+                .height = icon.height + 4,
+            },
+            .control = .{
+                .tool_button = Button{
+                    .clickEvent = null,
+                    .icon = icon,
                 },
             },
         };
@@ -692,6 +744,40 @@ pub const RadioButton = struct {
     pub fn click(radiobutton: *RadioButton) ?Event {
         radiobutton.group.selected = radiobutton.value;
         return radiobutton.group.selectionChanged;
+    }
+};
+
+pub const ScrollBar = struct {
+    pub const Direction = enum { vertical, horizontal };
+
+    range: u15,
+    level: u15 = 0,
+
+    changedEvent: ?Event = null,
+
+    pub fn new(x: i16, y: i16, direction: Direction, length: u15, range: u15) Widget {
+        std.debug.assert(length > 33);
+        return Widget{
+            .bounds = Rectangle{
+                .x = x,
+                .y = y,
+                .width = switch (direction) {
+                    .vertical => 11,
+                    .horizontal => length,
+                },
+                .height = switch (direction) {
+                    .vertical => length,
+                    .horizontal => 11,
+                },
+            },
+            .control = .{
+                .scroll_bar = Button{
+                    .clickEvent = null,
+                    .level = 0,
+                    .range = range,
+                },
+            },
+        };
     }
 };
 

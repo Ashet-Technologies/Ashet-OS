@@ -1,83 +1,114 @@
 const std = @import("std");
 const zigimg = @import("zigimg");
 const abi = @import("ashet-abi");
+const args_parser = @import("args");
 
 const Rgba32 = zigimg.color.Rgba32;
 
-const Palette = [15]Rgba32;
+const Palette = []Rgba32;
 
 fn isTransparent(c: zigimg.color.Colorf32) bool {
     return c.a < 0.5;
 }
 
-const palette_template: Palette = [1]Rgba32{.{ .r = 0xFF, .g = 0x00, .b = 0xFF, .a = 0xFF }} ** 15;
+const CliOptions = struct {
+    palette: ?[]const u8 = null,
+    geometry: ?[]const u8 = null,
+    output: ?[]const u8 = null,
+    @"color-count": ?u8 = null,
 
-pub fn main() !void {
+    pub const shorthands = .{
+        .p = "palette",
+        .g = "geometry",
+        .o = "output",
+        .c = "color-count",
+    };
+};
+
+pub fn main() !u8 {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 
-    const args = try std.process.argsAlloc(arena.allocator());
-    if (args.len < 3 or args.len > 4) {
-        @panic("requires 2 args!");
+    var cli = args_parser.parseForCurrentProcess(CliOptions, arena.allocator(), .print) catch return 1;
+    defer cli.deinit();
+
+    if (cli.positionals.len != 1) {
+        @panic("requires a single positional argument!");
     }
 
-    const size: [2]usize = if (args.len >= 4) blk: {
-        const spec = args[3];
+    const input_file_name = cli.positionals[0];
+    const output_file_name = cli.options.output orelse @panic("requires output file name");
+
+    if ((cli.options.palette != null) == (cli.options.@"color-count" != null)) {
+        @panic("Either palette or size must be set!");
+    }
+
+    const size: [2]usize = if (cli.options.geometry) |spec| blk: {
         var it = std.mem.split(u8, spec, "x");
         const w = try std.fmt.parseInt(usize, it.next().?, 10);
         const h = try std.fmt.parseInt(usize, it.next().?, 10);
         break :blk .{ w, h };
     } else .{ 64, 64 };
 
-    std.log.info("processing {s}", .{args[1]});
+    std.log.info("processing {s}", .{input_file_name});
 
-    var raw_image = try zigimg.Image.fromFilePath(arena.allocator(), args[1]);
+    var raw_image = try zigimg.Image.fromFilePath(arena.allocator(), input_file_name);
     if (raw_image.width != size[0] or raw_image.height != size[1]) {
         std.debug.panic("image must be {}x{}", .{ size[0], size[1] });
     }
 
-    // compute palette
-    var quantizer = zigimg.OctTreeQuantizer.init(arena.allocator());
-    {
-        var src_pixels = raw_image.iterator();
-        while (src_pixels.next()) |src_color| {
-            if (!isTransparent(src_color)) {
-                try quantizer.addColor(reduceTo565(src_color));
-            } else {
-                // don't count transparent pixels into the palette
-                // everything transparent is considered index=0 by definition,
-                // so we don't need to use these colors
+    const palette = if (cli.options.palette) |palette_file|
+        try loadPaletteFile(arena.allocator(), palette_file)
+    else blk: {
+        const color_count = cli.options.@"color-count" orelse {
+            @panic("if no palette is specified, --color-count <num> must be passed.");
+        };
+
+        // compute palette
+        // var quantizer = zigimg.OctTreeQuantizer.init(arena.allocator());
+        // {
+        //     var src_pixels = raw_image.iterator();
+        //     while (src_pixels.next()) |src_color| {
+        //         if (!isTransparent(src_color)) {
+        //             try quantizer.addColor(reduceTo565(src_color));
+        //         } else {
+        //             // don't count transparent pixels into the palette
+        //             // everything transparent is considered index=0 by definition,
+        //             // so we don't need to use these colors
+        //         }
+        //     }
+        // }
+
+        var palettes = std.BoundedArray(Palette, 8){};
+
+        if (quantizeOctree(arena.allocator(), color_count, raw_image)) |octree_palette| {
+            try palettes.append(octree_palette);
+        } else |err| {
+            std.log.err("failed to generate octree palette: {}", .{err});
+        }
+
+        if (quantizeCountColors(arena.allocator(), color_count, raw_image)) |fixed_set_palette| {
+            try palettes.append(fixed_set_palette);
+        } else |err| {
+            std.log.err("failed to generate fixed set palette: {}", .{err});
+        }
+
+        const available_palettes = palettes.slice();
+        if (available_palettes.len == 0)
+            @panic("failed to generate any fitting palette!");
+
+        var min_quality = computePaletteQuality(available_palettes[0], raw_image);
+        var palette = available_palettes[0];
+
+        for (available_palettes[1..]) |pal| {
+            var quality = computePaletteQuality(pal, raw_image);
+            if (quality < min_quality) {
+                quality = min_quality;
+                palette = pal;
             }
         }
-    }
 
-    var palettes = std.BoundedArray(Palette, 8){};
-
-    if (quantizeOctree(arena.allocator(), raw_image)) |octree_palette| {
-        try palettes.append(octree_palette);
-    } else |err| {
-        std.log.err("failed to generate octree palette: {}", .{err});
-    }
-
-    if (quantizeCountColors(arena.allocator(), raw_image)) |fixed_set_palette| {
-        try palettes.append(fixed_set_palette);
-    } else |err| {
-        std.log.err("failed to generate fixed set palette: {}", .{err});
-    }
-
-    const available_palettes = palettes.slice();
-    if (available_palettes.len == 0)
-        @panic("failed to generate any fitting palette!");
-
-    var min_quality = computePaletteQuality(available_palettes[0], raw_image);
-    var palette = available_palettes[0];
-
-    for (available_palettes[1..]) |pal| {
-        var quality = computePaletteQuality(pal, raw_image);
-        if (quality < min_quality) {
-            quality = min_quality;
-            palette = pal;
-        }
-    }
+        break :blk palette;
+    };
 
     // std.log.info("palette quality: {}", .{computePaletteQuality(palette, raw_image)});
     // for (palette32) |pal, i| {
@@ -103,7 +134,7 @@ pub fn main() !void {
     var limit: u8 = 0;
     var transparency = false;
     for (bitmap) |c| {
-        if (c >= 16 and c != 0xFF) @panic("color index out of range!");
+        if (c >= (palette.len + 1) and c != 0xFF) @panic("color index out of range!");
         if (c != 0xFF)
             limit = std.math.max(limit, c);
         if (c == 0xFF)
@@ -112,7 +143,7 @@ pub fn main() !void {
     limit += 1; // compute palette size
 
     // compute bitmap
-    var out_file = try std.fs.cwd().createFile(args[2], .{});
+    var out_file = try std.fs.cwd().createFile(output_file_name, .{});
     defer out_file.close();
 
     var buffered_writer = std.io.bufferedWriter(out_file.writer());
@@ -138,9 +169,11 @@ pub fn main() !void {
     }
 
     try buffered_writer.flush();
+
+    return 0;
 }
 
-fn quantizeCountColors(allocator: std.mem.Allocator, image: zigimg.Image) !Palette {
+fn quantizeCountColors(allocator: std.mem.Allocator, palette_size: usize, image: zigimg.Image) !Palette {
     var color_map = std.AutoArrayHashMap(Rgba32, void).init(allocator);
     defer color_map.deinit();
 
@@ -155,15 +188,15 @@ fn quantizeCountColors(allocator: std.mem.Allocator, image: zigimg.Image) !Palet
         }
     }
 
-    if (color_map.keys().len > 15)
+    if (color_map.keys().len > palette_size)
         return error.TooManyColors;
 
-    var palette = palette_template;
-    std.mem.copy(Rgba32, &palette, color_map.keys());
+    var palette = try allocator.alloc(Rgba32, palette_size);
+    std.mem.copy(Rgba32, palette, color_map.keys());
     return palette;
 }
 
-fn quantizeOctree(allocator: std.mem.Allocator, image: zigimg.Image) !Palette {
+fn quantizeOctree(allocator: std.mem.Allocator, palette_size: usize, image: zigimg.Image) !Palette {
     var quantizer = zigimg.OctTreeQuantizer.init(allocator);
     defer quantizer.deinit();
 
@@ -178,12 +211,14 @@ fn quantizeOctree(allocator: std.mem.Allocator, image: zigimg.Image) !Palette {
         }
     }
 
-    var octree_palette_buffer = palette_template;
-    const octree_palette = try quantizer.makePalette(15, &octree_palette_buffer);
+    const palette_buffer = try allocator.alloc(Rgba32, palette_size);
+    errdefer allocator.free(palette_buffer);
 
-    var palette = palette_template;
-    std.mem.copy(Rgba32, &palette, octree_palette);
-    return palette;
+    const octree_palette = try quantizer.makePalette(palette_size, palette_buffer);
+
+    std.debug.assert(palette_buffer.ptr == octree_palette.ptr);
+
+    return palette_buffer[0..octree_palette.len];
 }
 
 /// Computes the palette quality. Lower is better.
@@ -243,3 +278,45 @@ fn getBestMatch(pal: Palette, col: Rgba32) usize {
 
 //     color_counts:
 // };
+
+fn loadPaletteFile(allocator: std.mem.Allocator, path: []const u8) !Palette {
+    const palette_string = try std.fs.cwd().readFileAlloc(allocator, path, 1 << 20);
+    defer allocator.free(palette_string);
+
+    var palette = std.ArrayList(Rgba32).init(allocator);
+    defer palette.deinit();
+
+    try palette.ensureTotalCapacity(256);
+
+    var literator = std.mem.tokenize(u8, palette_string, "\r\n");
+
+    const file_header = literator.next() orelse return error.InvalidFile;
+
+    if (!std.mem.eql(u8, file_header, "GIMP Palette")) {
+        return error.InvalidFile;
+    }
+
+    while (literator.next()) |line| {
+        var trimmed = std.mem.trim(u8, line, " \t"); // remove leading/trailing whitespace
+        if (std.mem.indexOfScalar(u8, trimmed, '\t')) |tab_index| { // remove the color name
+            trimmed = std.mem.trim(u8, trimmed[0..tab_index], " ");
+        }
+
+        if (std.mem.startsWith(u8, trimmed, "#"))
+            continue;
+
+        if (palette.items.len > 256) {
+            return error.PaletteTooLarge;
+        }
+
+        var tups = std.mem.tokenize(u8, trimmed, " ");
+
+        const r = try std.fmt.parseInt(u8, tups.next() orelse return error.InvalidFile, 10);
+        const g = try std.fmt.parseInt(u8, tups.next() orelse return error.InvalidFile, 10);
+        const b = try std.fmt.parseInt(u8, tups.next() orelse return error.InvalidFile, 10);
+
+        palette.appendAssumeCapacity(Rgba32.initRgb(r, g, b));
+    }
+
+    return try palette.toOwnedSlice();
+}

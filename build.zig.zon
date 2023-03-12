@@ -4,12 +4,16 @@
 
     .dependencies = .{
         .@"text-editor" = .{
-            .url = "https://github.com/MasterQ32/TextEditor/archive/30e89438a33f0cfd3a81a9d096f70276e7f8fa5b.tar.gz",
-            .hash = "1220c04c8f79044f66c935bf7695143e653b79957c2fad655dfdd76532a2f7be0f9c",
+            .url = "https://github.com/MasterQ32/TextEditor/archive/c51bf94c87ac7e0faced817144abce0226b86653.tar.gz",
+            .hash = "1220d5a0c8550e317ff28c54cbcc2ebc2b86bbcd25c17a36cf53d620ed079d1be6e7",
         },
         .zigimg = .{
-            .url = "https://github.com/zigimg/zigimg/archive/729dfd8dfb64252863e0a23803106e1fa6d009f9.tar.gz",
-            .hash = "12207ca0eb7f3d50ceb178953644c9294c063e59e8fe2e49a4a4bc7c27311cf5e344",
+            .url = "https://github.com/MasterQ32/zigimg/archive/ef927c296f0073b3d95e9a12a58e55d5e9baa1d6.tar.gz",
+            .hash = "1220c3baeab3e5eb3e46c6252e9789fa84910004de42ac4f18b27b48f34daa111425",
+        },
+        .args = .{
+            .url = "https://github.com/MasterQ32/zig-args/archive/c84f9709405b31ef3e72ab26b20ba3c37826f8ec.tar.gz",
+            .hash = "1220e4ae687b355b164d986c6400eef6cfc2b1020718eaa72914865d344b2f192141",
         },
     },
 }
