@@ -1261,7 +1261,7 @@ pub const desktop = struct {
                 .height = height,
                 .stride = width,
                 .pixels = @ptrCast([*]const ColorIndex, &icon.pixels),
-                .transparent = ColorIndex.get(0),
+                .transparent = ColorIndex.get(0xFF),
             };
         }
 
@@ -1283,9 +1283,8 @@ pub const desktop = struct {
             const transparent = ((s_flags & 1) != 0);
 
             var palette_size: usize = try stream.readIntLittle(u8);
-            _ = palette_size;
-            // if (palette_size == 0)
-            //     palette_size = 256;
+            if (palette_size == 0)
+                palette_size = 256;
             // if (palette_size >= 16)
             //     return error.PaletteTooLarge;
             const transparency_key = try stream.readIntLittle(u8);
@@ -1296,7 +1295,7 @@ pub const desktop = struct {
             for (pixels, 0..) |row, y| {
                 for (row, 0..) |color, x| {
                     icon.pixels[y][x] = if (transparent and color == transparency_key)
-                        ColorIndex.get(0)
+                        ColorIndex.get(0xFF)
                     else
                         ColorIndex.get(offset + color);
                 }
@@ -1526,7 +1525,7 @@ pub const desktop = struct {
         var buffer: [Icon.height + 2][Icon.width + 2]ColorIndex = undefined;
         for (&buffer, 0..) |*row, y| {
             for (row, 0..) |*c, x| {
-                c.* = if ((y + x) % 2 == 0) ColorIndex.get(0) else ColorIndex.get(1);
+                c.* = if ((y + x) % 2 == 0) ColorIndex.get(0x01) else ColorIndex.get(0x00);
             }
         }
         break :blk Bitmap{
@@ -1534,7 +1533,7 @@ pub const desktop = struct {
             .height = Icon.height + 2,
             .stride = Icon.width + 2,
             .pixels = @ptrCast([*]ColorIndex, &buffer),
-            .transparent = ColorIndex.get(1),
+            .transparent = ColorIndex.get(0x01),
         };
     };
 };
