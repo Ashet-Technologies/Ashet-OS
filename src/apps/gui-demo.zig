@@ -109,6 +109,8 @@ fn paint(window: *const ashet.ui.Window) void {
     fb.clear(ColorIndex.get(0));
 
     interface.paint(fb);
+
+    ashet.ui.invalidate(window, .{ .x = 0, .y = 0, .width = window.client_rectangle.width, .height = window.client_rectangle.height });
 }
 
 const demo_bitmap = gui.Bitmap{

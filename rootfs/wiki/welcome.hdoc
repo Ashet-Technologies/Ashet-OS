@@ -1,0 +1,57 @@
+hdoc "1.0"
+
+h1 "" "Ashet System Wiki"
+
+h2 "welcome" "Welcome!"
+
+p {
+  span "You have successfully opened the Wiki of Ashet OS."
+}
+
+p {
+  span "The Ashet Operating System comes with a builtin wiki software that provides documentation for the OS, "
+  span "its applications. It also contains tutorials on how to create your own applications, both cross-compiled "
+  span "as well as self-hosted on your own machine."
+}
+
+p {
+  span "But this wiki is not only for documenting Ashet OS!\n"
+  span "You can also use it for your own notes and plans. The wiki is not write-protected in any case, so feel free "
+  span "to add your own comments to the official documentation."
+}
+
+h2 "index" "Starting points"
+
+h3 "generic" "Generic"
+itemize {
+  p { link "wiki:/ashet/os"              "Ashet OS Documentation" }
+}
+
+h3 "apps" "Applications"
+itemize {
+  p { link "wiki:/apps/music.hdoc"       "Grammophone"  }
+  p { link "wiki:/apps/commander.hdoc"   "Shepard"      }
+  p { link "wiki:/apps/chat.hdoc"        "Telegraph"    }
+  p { link "wiki:/apps/browser.hdoc"     "Gateway"      }
+  p { link "wiki:/apps/wiki.hdoc"        "Hyper Wiki"   }
+  p { link "wiki:/apps/terminal.hdoc"    "Connex"       }
+  p { link "wiki:/apps/editor.hdoc"      "Craftworks"   }
+  p { link "wiki:/apps/paint.hdoc"       "Dragon Craft" }
+  p { link "wiki:/apps/io.hdoc"          "I/O"          }
+  p { link "wiki:/apps/settings.hdoc"    "SysAdvance"   }
+  p { link "wiki:/apps/lola.hdoc-run"    "LoLa Run!"    }
+  p { link "wiki:/apps/spreadsheet.hdoc" "Calc"         }
+}
+
+h3 "games" "Games"
+itemize {
+  p { link "wiki:/apps/dungeon.hdoc"     "Dungeon"      }
+}
+
+h3 "daemons" "Daemons"
+itemize {
+  p { link "wiki:/daemon/psi.hdoc"    "Psi Language Server"       }
+  p { link "wiki:/daemon/lola.hdoc"   "LoLa Language Server"      }
+  p { link "wiki:/daemon/asm.hdoc"    "Assembly Language Server"  }
+  p { link "wiki:/daemon/shell.hdoc"  "Shell Server"              }
+}

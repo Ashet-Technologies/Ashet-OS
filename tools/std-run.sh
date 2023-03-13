@@ -23,6 +23,11 @@ DISK="${ROOT}/zig-out/disk.img"
 
 clear
 zig build install -Dmachine=$MACHINE $ZARG
+
+# validate wiki integrity
+find rootfs/wiki -name "*.hdoc" -exec hyperdoc '{}' > /dev/null ';'
+
+# compile root disk image
 "${ROOT}/zig-out/bin/init-disk" "${DISK}"
 
 fallocate -l 33554432 "${BOOTROM}"
