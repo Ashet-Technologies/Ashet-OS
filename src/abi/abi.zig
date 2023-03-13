@@ -1168,6 +1168,25 @@ pub const IOP = extern struct {
 
         // UI IOPS:
         ui_get_event,
+
+        // FS IOPS:
+        fs_delete,
+        fs_mkdir,
+        fs_rename,
+        fs_stat,
+
+        // file api
+        fs_openFile,
+        fs_read,
+        fs_write,
+        fs_seekTo,
+        fs_flush,
+        fs_close,
+
+        // dir api:
+        fs_openDir,
+        fs_nextFile,
+        fs_closeDir,
     };
 
     pub const Definition = struct {
@@ -1635,4 +1654,136 @@ pub const ui = struct {
             event: UiEvent,
         },
     });
+};
+
+pub const fs = struct {
+    const BasicError = ErrorSet(.{
+        .Unexpected = 1,
+        .InProgress = 2,
+    });
+
+    pub const Delete = IOP.define(.{
+        .type = .fs_delete,
+        .@"error" = FileSystemError,
+        .inputs = struct {
+            path_ptr: [*]const u8,
+            path_len: usize,
+        },
+    });
+
+    pub const Mkdir = IOP.define(.{
+        .type = .fs_mkdir,
+        .@"error" = FileSystemError,
+        .inputs = struct {
+            path_ptr: [*]const u8,
+            path_len: usize,
+        },
+    });
+
+    pub const Rename = IOP.define(.{
+        .type = .fs_rename,
+        .@"error" = FileSystemError,
+        .inputs = struct {
+            old_path_ptr: [*]const u8,
+            old_path_len: usize,
+            new_path_ptr: [*]const u8,
+            new_path_len: usize,
+        },
+    });
+
+    pub const Stat = IOP.define(.{
+        .type = .fs_stat,
+        .@"error" = FileSystemError,
+        .inputs = struct {
+            path_ptr: [*]const u8,
+            path_len: usize,
+        },
+        .outputs = struct { info: FileInfo },
+    });
+
+    pub const file = struct {
+        pub const openFile = IOP.define(.{
+            .type = .fs_openFile,
+            .@"error" = FileOpenError,
+            .inputs = struct {
+                path_ptr: [*]const u8,
+                path_len: usize,
+                access: FileAccess,
+                mode: FileMode,
+            },
+            .outputs = struct { file: FileHandle },
+        });
+
+        pub const read = IOP.define(.{
+            .type = .fs_read,
+            .@"error" = FileReadError,
+            .inputs = struct {
+                file: FileHandle,
+                ptr: [*]u8,
+                len: usize,
+            },
+            .outputs = struct { count: usize },
+        });
+
+        pub const write = IOP.define(.{
+            .type = .fs_write,
+            .@"error" = FileWriteError,
+            .inputs = struct {
+                file: FileHandle,
+                ptr: [*]const u8,
+                len: usize,
+            },
+            .outputs = struct { count: usize },
+        });
+
+        pub const seekTo = IOP.define(.{
+            .type = .fs_seekTo,
+            .@"error" = FileSeekError,
+            .inputs = struct {
+                file: FileHandle,
+                offset: u64,
+            },
+        });
+
+        pub const flush = IOP.define(.{
+            .type = .fs_flush,
+            .@"error" = FileWriteError,
+            .inputs = struct { file: FileHandle },
+        });
+
+        pub const close = IOP.define(.{
+            // fs.close", fn (FileHandle) void
+            .type = .fs_close,
+            .@"error" = BasicError,
+            .inputs = struct { file: FileHandle },
+        });
+    };
+
+    pub const dir = struct {
+        pub const Open = IOP.define(.{
+            .type = .fs_openDir,
+            .@"error" = DirOpenError,
+            .inputs = struct {
+                path_ptr: [*]const u8,
+                path_len: usize,
+            },
+            .outputs = struct { handle: DirectoryHandle },
+        });
+
+        pub const Next = IOP.define(.{
+            .type = .fs_nextFile,
+            .@"error" = DirNextError,
+            .inputs = struct { handle: DirectoryHandle },
+            .outputs = struct {
+                eof: bool,
+                info: FileInfo,
+            },
+        });
+
+        pub const Close = IOP.define(.{
+            .type = .fs_closeDir,
+            .@"error" = BasicError,
+            .inputs = struct { handle: DirectoryHandle },
+        });
+    };
 };

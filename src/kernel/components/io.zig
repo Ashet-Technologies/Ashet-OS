@@ -116,6 +116,25 @@ pub fn scheduleAndAwait(start_queue: ?*IOP, wait: WaitIO) ?*IOP {
             .input_get_event => ashet.input.getEventIOP(IOP.cast(abi.input.GetEvent, event)),
 
             .ui_get_event => ashet.ui.getEvent(IOP.cast(abi.ui.GetEvent, event)),
+
+            // fs api
+            .fs_delete => @panic("fs_delete not implemented yet"),
+            .fs_mkdir => @panic("fs_mkdir not implemented yet"),
+            .fs_rename => @panic("fs_rename not implemented yet"),
+            .fs_stat => @panic("fs_stat not implemented yet"),
+
+            // file api
+            .fs_openFile => @panic("fs_openFile not implemented yet!"),
+            .fs_read => @panic("fs_read not implemented yet!"),
+            .fs_write => @panic("fs_write not implemented yet!"),
+            .fs_seekTo => @panic("fs_seekTo not implemented yet!"),
+            .fs_flush => @panic("fs_flush not implemented yet!"),
+            .fs_close => @panic("fs_close not implemented yet!"),
+
+            // dir api:
+            .fs_openDir => @panic("fs_openDir not implemented yet!"),
+            .fs_nextFile => @panic("fs_nextFile not implemented yet!"),
+            .fs_closeDir => @panic("fs_closeDir not implemented yet!"),
         }
     }
 
