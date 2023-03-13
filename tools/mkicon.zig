@@ -49,7 +49,7 @@ pub fn main() !u8 {
         break :blk .{ w, h };
     } else .{ 64, 64 };
 
-    std.log.info("processing {s}", .{input_file_name});
+    // std.log.info("processing {s}", .{input_file_name});
 
     var raw_image = try zigimg.Image.fromFilePath(arena.allocator(), input_file_name);
     if (raw_image.width != size[0] or raw_image.height != size[1]) {
@@ -242,11 +242,37 @@ fn reduceTo565(col: zigimg.color.Colorf32) Rgba32 {
 }
 
 fn colorDist(a: Rgba32, b: Rgba32) u32 {
+    // implemented after
+    // https://en.wikipedia.org/wiki/Color_difference#sRGB
+    //
+
+    const Variants = enum {
+        euclidean,
+        redmean_digital,
+        redmean_smooth,
+    };
+
+    const variant = Variants.redmean_smooth;
+
     const dr = @as(i32, a.r) - @as(i32, b.r);
     const dg = @as(i32, a.g) - @as(i32, b.g);
     const db = @as(i32, a.b) - @as(i32, b.b);
 
-    return @intCast(u32, dr * dr + dg * dg + db * db);
+    switch (variant) {
+        .euclidean => return @intCast(u32, 2 * dr * dr + 4 * dg * dg + 3 * db * db),
+        .redmean_digital => if ((@as(u32, a.r) + b.r) / 2 < 128) {
+            return @intCast(u32, 2 * dr * dr + 4 * dg * dg + 3 * db * db);
+        } else {
+            return @intCast(u32, 3 * dr * dr + 4 * dg * dg + 2 * db * db);
+        },
+        .redmean_smooth => {
+            const dhalf = @intToFloat(f32, (@as(u32, a.r) + b.r) / 2);
+            const r2 = (2.0 + dhalf / 256) * @intToFloat(f32, dr * dr);
+            const g2 = 4.0 * @intToFloat(f32, dg * dg);
+            const b2 = (2.0 + (255.0 - dhalf) / 256) * @intToFloat(f32, db * db);
+            return @floatToInt(u32, 10.0 * (r2 + g2 + b2));
+        },
+    }
 }
 
 fn getBestMatch(pal: Palette, col: Rgba32) usize {
@@ -298,9 +324,9 @@ fn loadPaletteFile(allocator: std.mem.Allocator, path: []const u8) !Palette {
 
     while (literator.next()) |line| {
         var trimmed = std.mem.trim(u8, line, " \t"); // remove leading/trailing whitespace
-        if (std.mem.indexOfScalar(u8, trimmed, '\t')) |tab_index| { // remove the color name
-            trimmed = std.mem.trim(u8, trimmed[0..tab_index], " ");
-        }
+        // if (std.mem.indexOfScalar(u8, trimmed, '\t')) |tab_index| { // remove the color name
+        //     trimmed = std.mem.trim(u8, trimmed[0..tab_index], " ");
+        // }
 
         if (std.mem.startsWith(u8, trimmed, "#"))
             continue;
@@ -309,7 +335,8 @@ fn loadPaletteFile(allocator: std.mem.Allocator, path: []const u8) !Palette {
             return error.PaletteTooLarge;
         }
 
-        var tups = std.mem.tokenize(u8, trimmed, " ");
+        var tups = std.mem.tokenize(u8, trimmed, " \t");
+        errdefer std.log.err("detected invalid line: '{}'\n", .{std.zig.fmtEscapes(trimmed)});
 
         const r = try std.fmt.parseInt(u8, tups.next() orelse return error.InvalidFile, 10);
         const g = try std.fmt.parseInt(u8, tups.next() orelse return error.InvalidFile, 10);

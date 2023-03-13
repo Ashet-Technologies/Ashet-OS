@@ -39,7 +39,7 @@ const AshetContext = struct {
                 ctx.b.fmt("{s}.icon", .{name}),
                 .{
                     .geometry = .{ 32, 32 },
-                    .palette = .{ .predefined = "artwork/apps/palette.gpl" },
+                    .palette = .{ .predefined = "src/kernel/data/palette.gpl" },
                     // .palette = .{ .sized = 15 },
                 },
             );
@@ -166,22 +166,42 @@ pub fn build(b: *std.build.Builder) !void {
     const fatfs_module = FatFS.createModule(b, fatfs_config);
 
     const bmpconv = BitmapConverter.init(b);
+    bmpconv.converter.install();
+    {
+        const zig_args_module = b.dependency("args", .{}).module("args");
+        const zigimg = b.dependency("zigimg", .{}).module("zigimg");
+
+        const tool_extract_icon = b.addExecutable(.{ .name = "tool_extract_icon", .root_source_file = .{ .path = "tools/extract-icon.zig" } });
+        tool_extract_icon.addModule("zigimg", zigimg);
+        tool_extract_icon.addModule("ashet-abi", b.modules.get("ashet-abi").?);
+        tool_extract_icon.addModule("args", zig_args_module);
+        tool_extract_icon.install();
+    }
 
     const system_icons = AssetBundleStep.create(b);
     {
-        const icon_conv_options: BitmapConverter.Options = .{
+        const desktop_icon_conv_options: BitmapConverter.Options = .{
+            .geometry = .{ 32, 32 },
+            .palette = .{
+                .predefined = "src/kernel/data/palette.gpl",
+            },
+        };
+
+        const tool_icon_conv_options: BitmapConverter.Options = .{
             .geometry = .{ 16, 16 },
             .palette = .{
                 .predefined = "src/kernel/data/palette.gpl",
             },
         };
-        system_icons.add("back.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/56.png" }, "back.abm", icon_conv_options));
-        system_icons.add("forward.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/57.png" }, "forward.abm", icon_conv_options));
-        system_icons.add("reload.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/76.png" }, "reload.abm", icon_conv_options));
-        system_icons.add("home.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/17.png" }, "home.abm", icon_conv_options));
-        system_icons.add("go.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/38.png" }, "go.abm", icon_conv_options));
-        system_icons.add("stop.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/33.png" }, "stop.abm", icon_conv_options));
-        system_icons.add("menu.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/2.png" }, "menu.abm", icon_conv_options));
+        system_icons.add("back.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/56.png" }, "back.abm", tool_icon_conv_options));
+        system_icons.add("forward.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/57.png" }, "forward.abm", tool_icon_conv_options));
+        system_icons.add("reload.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/76.png" }, "reload.abm", tool_icon_conv_options));
+        system_icons.add("home.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/17.png" }, "home.abm", tool_icon_conv_options));
+        system_icons.add("go.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/38.png" }, "go.abm", tool_icon_conv_options));
+        system_icons.add("stop.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/33.png" }, "stop.abm", tool_icon_conv_options));
+        system_icons.add("menu.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/2.png" }, "menu.abm", tool_icon_conv_options));
+
+        system_icons.add("default-app-icon.abm", bmpconv.convert(.{ .path = "artwork/os/default-app-icon.png" }, "menu.abm", desktop_icon_conv_options));
     }
 
     const kernel_exe = b.addExecutable(.{
@@ -200,6 +220,11 @@ pub fn build(b: *std.build.Builder) !void {
             // we always want frame pointers in debug build!
             kernel_exe.omit_frame_pointer = false;
         }
+
+        kernel_exe.addAnonymousModule("system-assets", .{
+            .source_file = system_icons.getOutput(),
+            .dependencies = &.{},
+        });
         kernel_exe.addModule("ashet-abi", b.modules.get("ashet-abi").?);
         kernel_exe.addModule("ashet-std", b.modules.get("ashet-std").?);
         kernel_exe.addModule("ashet", b.modules.get("ashet").?);
@@ -235,26 +260,6 @@ pub fn build(b: *std.build.Builder) !void {
             lwip.addSystemIncludePath("vendor/ziglibc/inc/libc");
             kernel_exe.linkLibrary(lwip);
             setup_lwIP(kernel_exe);
-        }
-
-        // {
-        //     const convert_wallpaper = tool_mkicon.run();
-        //     convert_wallpaper.addArg("artwork/os/wallpaper-chances.png");
-        //     convert_wallpaper.addArg("src/kernel/data/ui/wallpaper.abm");
-        //     convert_wallpaper.addArg("400x300");
-        //     kernel_exe.step.dependOn(&convert_wallpaper.step);
-        // }
-
-        {
-            const converted_icon = bmpconv.convert(
-                .{ .path = "artwork/os/default-app-icon.png" },
-                "generic-app-icon.abm",
-                .{
-                    .geometry = .{ 32, 32 },
-                    .palette = .{ .predefined = "src/kernel/data/palette.gpl" },
-                },
-            );
-            converted_icon.addStepDependencies(&kernel_exe.step);
         }
 
         {

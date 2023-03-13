@@ -50,6 +50,7 @@ var widgets = [_]gui.Widget{
     gui.ToolButton.new(69, 42, icons.go), // 6: coolbar: go
     gui.ToolButton.new(69, 42, icons.menu), // 7: coolbar: app menu
     gui.ScrollBar.new(0, 0, .vertical, 100, 1000), // 8: scrollbar
+    gui.ScrollBar.new(0, 0, .horizontal, 100, 1000), // 8: scrollbar
 };
 
 fn initWidgets() !void {
@@ -144,13 +145,23 @@ fn layout(window: *const ashet.ui.Window) void {
 
     widgets[5].bounds = newRect(83, 6, @intCast(u15, widgets[6].bounds.x - 86), widgets[5].bounds.height); // 5: coolbar: address
 
-    widgets[8].bounds = newRect(@intCast(i15, size.width - widgets[8].bounds.width), @intCast(i15, widgets[0].bounds.height), widgets[8].bounds.width, size.height - widgets[0].bounds.height - 10); // 8: scrollbar
+    widgets[8].bounds = newRect(@intCast(i15, size.width - widgets[8].bounds.width + 1), @intCast(i15, widgets[0].bounds.height), widgets[8].bounds.width, size.height - widgets[0].bounds.height - 10); // 8: scrollbar
+    widgets[9].bounds = newRect(0, @intCast(i15, size.height - widgets[9].bounds.height + 1), size.width - 10, widgets[9].bounds.height); // 9: scrollbar
 }
 
 fn paint(window: *const ashet.ui.Window) void {
     var fb = gui.Framebuffer.forWindow(window);
 
     fb.clear(ColorIndex.get(0));
+
+    fb.fillRectangle(
+        newRect(@intCast(i15, window.client_rectangle.width - 10), 0, 10, window.client_rectangle.height),
+        ashet.abi.ColorIndex.get(2),
+    );
+    fb.fillRectangle(
+        newRect(0, @intCast(i15, window.client_rectangle.height - 10), window.client_rectangle.width - 10, 10),
+        ashet.abi.ColorIndex.get(2),
+    );
 
     interface.paint(fb);
 

@@ -36,6 +36,9 @@ pub const syscall_definitions = [_]SysCallDefinition{
     // will directly change the associated colors on the screen.
     defineSysCall("video.getPaletteMemory", fn () *[palette_size]Color, 10),
 
+    // Fetches a copy of the current system pallete.
+    defineSysCall("video.getPalette", fn (*[palette_size]Color) void, 11),
+
     defineSysCall("ui.createWindow", fn (title: [*]const u8, title_len: usize, min: Size, max: Size, startup: Size, flags: CreateWindowFlags) ?*const Window, 14),
     defineSysCall("ui.destroyWindow", fn (*const Window) void, 15),
     defineSysCall("ui.moveWindow", fn (*const Window, x: i16, y: i16) void, 16),

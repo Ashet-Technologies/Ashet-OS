@@ -77,6 +77,10 @@ fn @"video.getPaletteMemory"() callconv(.C) *[abi.palette_size]abi.Color {
     }
     return ashet.video.getPaletteMemory();
 }
+fn @"video.getPalette"(outpal: *[abi.palette_size]abi.Color) callconv(.C) void {
+    const palmem = ashet.video.getPaletteMemory();
+    outpal.* = palmem.*;
+}
 fn @"video.setResolution"(w: u16, h: u16) callconv(.C) void {
     if (!getCurrentProcess().isExclusiveVideoController()) {
         videoExclusiveWarning();

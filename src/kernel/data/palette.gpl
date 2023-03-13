@@ -1,19 +1,69 @@
 GIMP Palette
-#
- 20  12  28	black
- 68  36  52	dark violet
- 48  52 109	dark blue
- 78  74  78	dark gray
-133  76  48	brown
- 52 101  36	dark green
-208  70  72	red
-117 113  97	mid gray
- 89 125 206	blue
-210 125  44	orange
-133 149 161	bright gray
-109 170  44	green
-210 170 153	beige
-109 194 202	cyan
-218 212  94	yellow
-222 238 214	white
-179 117  87	light brown
+#Palette Name: The Perfect Palette 2.0
+#Description: If you are searching a 64 color palette, there's 94% chance this is the one for you. How can I be so sure? I'm not, but at the same time we'll never get the actual statistics, so I can as well be right until further investigations. Anyway seriously, do download this palette, it's the only thing I am proud of since the day I was born.
+#Colors: 64
+# R     G     B      Hex  Name          Index
+  0     0     0   000000  black             0
+ 45    26   113   2d1a71  dark_blue         1
+ 62    50   213   3e32d5  blue              2
+175    16    46   af102e  dark_red          3
+228    22    43   e4162b  red               4
+ 14    62    18   0e3e12  dark_green        5
+ 56   116    26   38741a  green             6
+141    65    49   8d4131  brown             7
+255   255    64   ffff40  yellow            8
+ 80    93   109   505d6d  dark_gray         9
+123   149   160   7b95a0  gray              A
+166   207   208   a6cfd0  bright_gray       B
+180    76   239   b44cef  violet            C
+228    68   195   e444c3  pink              D
+  0   188   159   00bc9f  teal              E
+255   255   255   ffffff  white             F
+175   227    86   afe356  bright_green     10
+ 47    49    67   2f3143  dim_gray         11
+251   200     0   fbc800  gold             12
+108   179    40   6cb328
+ 12    16    27   0c101b
+ 13    56    76   0d384c
+ 20    14    30   140e1e
+ 23   117   120   177578
+ 25    12    18   190c12
+ 50    87   190   3257be
+ 53    50    52   353234
+ 64   157   239   409def
+ 72    14    85   480e55
+ 73    29    30   491d1e
+ 73    41    23   492917
+ 85    14    43   550e2b
+101    43   188   652bbc
+102    93    91   665d5b
+107   236   189   6becbd
+110   106   255   6e6aff
+112   219   255   70dbff
+148    24   135   941887
+151    83    15   97530f
+153   141   134   998d86
+156    43    59   9c2b3b
+166   173   255   a6adff
+170    44    30   aa2c1e
+191   255   255   bfffff
+201   252   204   c9fccc
+203   115    77   cb734d
+205   191   179   cdbfb3
+216   224   255   d8e0ff
+221   140     0   dd8c00
+223   234   228   dfeae4  
+228    87    97   e45761
+228   252   162   e4fca2
+234   230   218   eae6da
+236   140   255   ec8cff
+239   175   121   efaf79
+246   109    30   f66d1e
+255    66    79   ff424f
+255   145   226   ff91e2
+255   151   146   ff9792
+255   174   104   ffae68
+255   205   255   ffcdff
+255   213   207   ffd5cf
+255   225   181   ffe1b5
+255   246   153   fff699

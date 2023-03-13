@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const ashet = @import("../main.zig");
 
 pub const Color = ashet.abi.Color;
@@ -76,47 +77,15 @@ pub const defaults = struct {
     };
 
     /// The standard Ashet OS palette.
-    /// This is loaded from `src/kernel/data/palette.gpl`.
-    pub const palette: [256]Color = blk: {
-        @setEvalBranchQuota(10_000);
+    ///
+    /// INFO: This is loaded from `src/kernel/data/palette.gpl`.
+    pub const palette: [256]Color = system_palette_info.palette;
 
-        var colors: [256]Color = undefined;
-
-        const gpl_palette = @embedFile("../data/palette.gpl");
-
-        var literator = std.mem.tokenize(u8, gpl_palette, "\r\n");
-
-        if (!std.mem.eql(u8, literator.next() orelse @compileError("Not a GIMP palette file!"), "GIMP Palette"))
-            @compileError("Not a GIMP palette file!");
-
-        var index: usize = 0;
-        while (literator.next()) |line| {
-            if (index >= colors.len)
-                @compileError(std.fmt.comptimePrint("palette.gpl contains more than {} colors!", .{colors.len}));
-
-            var trimmed = std.mem.trim(u8, line, " \t"); // remove leading/trailing whitespace
-            if (std.mem.indexOfScalar(u8, trimmed, '\t')) |tab_index| { // remove the color name
-                trimmed = std.mem.trim(u8, trimmed[0..tab_index], " ");
-            }
-
-            if (std.mem.startsWith(u8, trimmed, "#"))
-                continue;
-
-            var tups = std.mem.tokenize(u8, trimmed, " ");
-
-            const r = std.fmt.parseInt(u8, tups.next().?, 10) catch @compileError("failed to parse color tuple");
-            const g = std.fmt.parseInt(u8, tups.next().?, 10) catch @compileError("failed to parse color tuple");
-            const b = std.fmt.parseInt(u8, tups.next().?, 10) catch @compileError("failed to parse color tuple");
-
-            colors[index] = Color.fromRgb888(r, g, b);
-            index += 1;
-        }
-        while (index < colors.len) : (index += 1) {
-            colors[index] = Color.fromRgb888(0xFF, 0x00, 0xFF);
-        }
-
-        break :blk colors;
-    };
+    /// The standard palette exports some named colors.
+    /// Those colors can be accessed via `known_colors.<name>`.
+    ///
+    /// INFO: This is loaded from `src/kernel/data/palette.gpl`.
+    pub const known_colors: system_palette_info.KnownColors = .{};
 
     /// The splash screen that should be shown until the operating system
     /// has fully bootet. This has to be displayed in 256x128 8bpp video mode.
@@ -125,6 +94,73 @@ pub const defaults = struct {
     /// The default border color.
     /// Must match the splash screen, otherwise it looks kinda weird.
     pub const border: ColorIndex = splash_screen[0]; // we just use the top-left pixel of the splash. smort!
+};
+
+const system_palette_info = blk: {
+    @setEvalBranchQuota(100_000);
+
+    var colors: [256]Color = undefined;
+
+    const gpl_palette = @embedFile("../data/palette.gpl");
+
+    var literator = std.mem.tokenize(u8, gpl_palette, "\r\n");
+
+    if (!std.mem.eql(u8, literator.next() orelse @compileError("Not a GIMP palette file!"), "GIMP Palette"))
+        @compileError("Not a GIMP palette file!");
+
+    var fields: []const std.builtin.Type.StructField = &.{};
+
+    var index: usize = 0;
+    while (literator.next()) |line| {
+        if (index >= colors.len)
+            @compileError(std.fmt.comptimePrint("palette.gpl contains more than {} colors!", .{colors.len}));
+
+        var trimmed = std.mem.trim(u8, line, " \t"); // remove leading/trailing whitespace
+
+        if (std.mem.startsWith(u8, trimmed, "#"))
+            continue;
+
+        var tups = std.mem.tokenize(u8, trimmed, "\t ");
+
+        const r = std.fmt.parseInt(u8, tups.next().?, 10) catch @compileError("failed to parse color tuple");
+        const g = std.fmt.parseInt(u8, tups.next().?, 10) catch @compileError("failed to parse color tuple");
+        const b = std.fmt.parseInt(u8, tups.next().?, 10) catch @compileError("failed to parse color tuple");
+
+        _ = tups.next(); // ignore RRGGBB
+
+        if (tups.next()) |name| {
+            // color name
+
+            const new_field = std.builtin.Type.StructField{
+                .name = name,
+                .type = ashet.abi.ColorIndex,
+                .default_value = &ashet.abi.ColorIndex.get(@intCast(u8, index)),
+                .is_comptime = true,
+                .alignment = 1,
+            };
+
+            fields = fields ++ &[1]std.builtin.Type.StructField{new_field};
+        }
+
+        colors[index] = Color.fromRgb888(r, g, b);
+        index += 1;
+    }
+    while (index < colors.len) : (index += 1) {
+        colors[index] = Color.fromRgb888(0xFF, 0x00, 0xFF);
+    }
+
+    break :blk .{
+        .palette = colors,
+        .KnownColors = @Type(.{
+            .Struct = .{
+                .layout = .Auto,
+                .backing_integer = null,
+                .fields = fields,
+                .decls = &.{},
+                .is_tuple = false,
+            },
+        }),
+    };
 };
 
 var video_driver: *ashet.drivers.VideoDevice = undefined;

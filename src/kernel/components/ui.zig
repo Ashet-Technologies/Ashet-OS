@@ -3,6 +3,7 @@ const astd = @import("ashet-std");
 const gui = @import("ashet-gui");
 const logger = std.log.scoped(.ui);
 const ashet = @import("../main.zig");
+const system_assets = @import("system-assets");
 
 pub fn start() !void {
     const T = struct {
@@ -43,20 +44,24 @@ pub const Theme = struct {
     active_window: WindowStyle,
     inactive_window: WindowStyle,
     dark: ColorIndex,
+    desktop_color: ColorIndex,
+    window_fill: ColorIndex,
 };
 
 var current_theme = Theme{
-    .dark = ColorIndex.get(0x3), // dark gray
+    .dark = ashet.video.defaults.known_colors.dark_gray,
     .active_window = Theme.WindowStyle{
-        .border = ColorIndex.get(0x2), // dark blue
-        .font = ColorIndex.get(0xF), // white
-        .title = ColorIndex.get(0x8), // bright blue
+        .border = ashet.video.defaults.known_colors.dark_blue,
+        .font = ashet.video.defaults.known_colors.white,
+        .title = ashet.video.defaults.known_colors.blue,
     },
     .inactive_window = Theme.WindowStyle{
-        .border = ColorIndex.get(0x1), // dark violet
-        .font = ColorIndex.get(0xA), // bright gray
-        .title = ColorIndex.get(0x3), // dim gray
+        .border = ashet.video.defaults.known_colors.dim_gray,
+        .font = ashet.video.defaults.known_colors.bright_gray,
+        .title = ashet.video.defaults.known_colors.dark_gray,
     },
+    .desktop_color = ashet.video.defaults.known_colors.teal,
+    .window_fill = ashet.video.defaults.known_colors.gray,
 };
 
 var framebuffer: gui.Framebuffer = undefined;
@@ -368,7 +373,7 @@ fn windowFromCursor(point: Point) ?WindowSurface {
 
 // offsets for well-known palette items
 const framebuffer_wallpaper_shift = 255 - 15;
-const framebuffer_default_icon_shift = framebuffer_wallpaper_shift - 15;
+const framebuffer_default_icon_shift = 0; // framebuffer_wallpaper_shift - 15;
 
 fn initializeGraphics() void {
     const max_res = ashet.video.getMaxResolution();
@@ -395,11 +400,11 @@ fn initializeGraphics() void {
     const palette = ashet.video.getPaletteMemory();
     palette.* = ashet.video.defaults.palette;
 
-    for (desktop.apps.slice()) |app| {
-        std.mem.copy(Color, palette[app.palette_base .. app.palette_base + 15], &app.icon.palette);
-    }
+    // for (desktop.apps.slice()) |app| {
+    //     std.mem.copy(Color, palette[app.palette_base .. app.palette_base + 15], &app.icon.palette);
+    // }
 
-    std.mem.copy(Color, palette[framebuffer_default_icon_shift..], &desktop.default_icon.palette);
+    // std.mem.copy(Color, palette[framebuffer_default_icon_shift..], &desktop.default_icon.palette);
     std.mem.copy(Color, palette[framebuffer_wallpaper_shift..], &wallpaper.palette);
 }
 
@@ -498,7 +503,7 @@ fn repaint() void {
     // framebuffer.clear(ColorIndex.get(7));
 
     for (invalidation_areas.slice()) |rect| {
-        framebuffer.fillRectangle(rect, ColorIndex.get(7));
+        framebuffer.fillRectangle(rect, current_theme.desktop_color);
     }
 
     desktop.paint();
@@ -776,7 +781,7 @@ pub const Window = struct {
 
         const pixel_count = @as(usize, window.user_facing.max_size.height) * @as(usize, window.user_facing.stride);
         window.user_facing.pixels = (try allocator.alloc(ColorIndex, pixel_count)).ptr;
-        std.mem.set(ColorIndex, window.user_facing.pixels[0..pixel_count], ColorIndex.get(4)); // brown
+        std.mem.set(ColorIndex, window.user_facing.pixels[0..pixel_count], current_theme.window_fill);
 
         const clamped_initial_size = sizeMax(sizeMin(initial_size, window.user_facing.max_size), window.user_facing.min_size);
 
@@ -1128,15 +1133,15 @@ pub const icons = struct {
     );
 
     pub const close = Bitmap.parse(0,
-        \\666666666
-        \\666666666
-        \\66F666F66
-        \\666F6F666
-        \\6666F6666
-        \\666F6F666
-        \\66F666F66
-        \\666666666
-        \\666666666
+        \\444444444
+        \\444444444
+        \\44F444F44
+        \\444F4F444
+        \\4444F4444
+        \\444F4F444
+        \\44F444F44
+        \\444444444
+        \\444444444
     );
 
     pub const resize = Bitmap.parse(0,
@@ -1152,19 +1157,19 @@ pub const icons = struct {
     );
 
     pub const cursor = Bitmap.parse(0,
-        \\888..........
-        \\2FF88........
-        \\2FFFF88......
-        \\.2FFFFF88....
-        \\.2FFFFFFF88..
-        \\..2FFFFFFFF8.
-        \\..2FFFFFFF8..
-        \\...2FFFFF8...
-        \\...2FFFFF8...
-        \\....2FF22F8..
-        \\....2F2..2F8.
-        \\.....2....2F8
-        \\...........2.
+        \\BBB..........
+        \\9FFBB........
+        \\9FFFFBB......
+        \\.9FFFFFBB....
+        \\.9FFFFFFFBB..
+        \\..9FFFFFFFFB.
+        \\..9FFFFFFFB..
+        \\...9FFFFFB...
+        \\...9FFFFFB...
+        \\....9FF99FB..
+        \\....9F9..9FB.
+        \\.....9....9FB
+        \\...........9.
     );
 };
 
@@ -1229,14 +1234,15 @@ pub const desktop = struct {
             const transparent = ((s_flags & 1) != 0);
 
             var palette_size: usize = try stream.readIntLittle(u8);
-            if (palette_size == 0)
-                palette_size = 256;
-            if (palette_size >= 16)
-                return error.PaletteTooLarge;
+            _ = palette_size;
+            // if (palette_size == 0)
+            //     palette_size = 256;
+            // if (palette_size >= 16)
+            //     return error.PaletteTooLarge;
             const transparency_key = try stream.readIntLittle(u8);
 
             try stream.readNoEof(std.mem.sliceAsBytes(&pixels));
-            try stream.readNoEof(std.mem.sliceAsBytes(icon.palette[0..palette_size]));
+            // try stream.readNoEof(std.mem.sliceAsBytes(icon.palette[0..palette_size]));
 
             for (pixels, 0..) |row, y| {
                 for (row, 0..) |color, x| {
@@ -1247,11 +1253,11 @@ pub const desktop = struct {
                 }
             }
 
-            for (icon.pixels) |row| {
-                for (row) |c| {
-                    std.debug.assert(c == ColorIndex.get(0) or (c.index() >= offset and c.index() < offset + 15));
-                }
-            }
+            // for (icon.pixels) |row| {
+            //     for (row) |c| {
+            //         std.debug.assert(c == ColorIndex.get(0) or (c.index() >= offset and c.index() < offset + 15));
+            //     }
+            // }
 
             return icon;
         }
@@ -1260,7 +1266,7 @@ pub const desktop = struct {
     const default_icon = blk: {
         @setEvalBranchQuota(20_000);
 
-        const data = @embedFile("../data/generic-app-icon.abm");
+        const data = system_assets.@"default-app-icon.abm";
 
         var stream = std.io.fixedBufferStream(data);
 
@@ -1411,8 +1417,8 @@ pub const desktop = struct {
         };
         errdefer _ = apps.pop();
 
-        pal_offset.* -= 15;
-        errdefer pal_offset.* += 15;
+        // pal_offset.* -= 15;
+        // errdefer pal_offset.* += 15;
         app.* = App{
             .name = undefined,
             .icon = undefined,

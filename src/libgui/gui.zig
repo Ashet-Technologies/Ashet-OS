@@ -63,14 +63,14 @@ pub const Theme = struct {
     text_cursor: ColorIndex, // color of the text cursor
 
     pub const default = Theme{
-        .window = ColorIndex.get(15),
-        .area = ColorIndex.get(7),
-        .area_light = ColorIndex.get(10),
-        .area_shadow = ColorIndex.get(3),
-        .label = ColorIndex.get(15),
-        .text = ColorIndex.get(0),
-        .focus = ColorIndex.get(1),
-        .text_cursor = ColorIndex.get(2),
+        .text = ColorIndex.get(0x0), // black
+        .window = ColorIndex.get(0xF), // white
+        .area_shadow = ColorIndex.get(0x9), // dark gray
+        .area = ColorIndex.get(0xA), // gray
+        .area_light = ColorIndex.get(0xB), // bright gray
+        .label = ColorIndex.get(0xF), // white
+        .focus = ColorIndex.get(0xC), // violet
+        .text_cursor = ColorIndex.get(0x11), // dim gray
     };
 };
 
@@ -300,6 +300,101 @@ pub const Interface = struct {
         }
     }
 
+    const ElementStyle = enum {
+        sunken, //
+        raised, // button, ...
+        groove, // ???
+        ridge, // panel
+    };
+    const ElementBackground = enum {
+        window_enabled,
+        window_disabled,
+        area,
+    };
+    fn drawRectangle(gui: Interface, target: Framebuffer, rect: Rectangle, style: ElementStyle, background: ElementBackground) void {
+        const b = .{
+            .x = rect.x,
+            .y = rect.y,
+            .width = @intCast(u15, rect.width),
+            .height = @intCast(u15, rect.height),
+        };
+
+        target.fillRectangle(rect.shrink(1), switch (background) {
+            .area, .window_disabled => gui.theme.area,
+            .window_enabled => gui.theme.window,
+        });
+
+        switch (style) {
+            .raised => {
+                if (b.width > 2 and b.height > 2) {
+                    target.drawLine(
+                        Point.new(b.x + 1, b.y),
+                        Point.new(b.x + b.width - 2, b.y),
+                        gui.theme.area_light,
+                    );
+                    target.drawLine(
+                        Point.new(b.x + 1, b.y + b.height - 1),
+                        Point.new(b.x + b.width - 2, b.y + b.height - 1),
+                        gui.theme.area_shadow,
+                    );
+
+                    target.drawLine(
+                        Point.new(b.x, b.y + 1),
+                        Point.new(b.x, b.y + b.height - 2),
+                        gui.theme.area_shadow,
+                    );
+                    target.drawLine(
+                        Point.new(b.x + b.width - 1, b.y + 1),
+                        Point.new(b.x + b.width - 1, b.y + b.height - 2),
+                        gui.theme.area_light,
+                    );
+                }
+            },
+            .sunken => {
+                if (b.width > 2 and b.height > 2) {
+                    target.drawLine(
+                        Point.new(b.x, b.y),
+                        Point.new(b.x + b.width - 1, b.y),
+                        gui.theme.area_shadow,
+                    );
+                    target.drawLine(
+                        Point.new(b.x + b.width - 1, b.y + 1),
+                        Point.new(b.x + b.width - 1, b.y + b.height - 1),
+                        gui.theme.area_shadow,
+                    );
+
+                    target.drawLine(
+                        Point.new(b.x, b.y + 1),
+                        Point.new(b.x, b.y + b.height - 1),
+                        gui.theme.area_light,
+                    );
+                    target.drawLine(
+                        Point.new(b.x + 1, b.y + b.height - 1),
+                        Point.new(b.x + b.width - 2, b.y + b.height - 1),
+                        gui.theme.area_light,
+                    );
+                }
+            },
+            .ridge => {
+                if (b.width > 3 and b.height > 3) {
+                    target.drawRectangle(Rectangle{
+                        .x = b.x + 1,
+                        .y = b.y,
+                        .width = b.width - 1,
+                        .height = b.height - 1,
+                    }, gui.theme.area_light);
+                    target.drawRectangle(Rectangle{
+                        .x = b.x,
+                        .y = b.y + 1,
+                        .width = b.width - 1,
+                        .height = b.height - 1,
+                    }, gui.theme.area_shadow);
+                }
+            },
+            .groove => @panic("crease border not implemented yet!"),
+        }
+    }
+
     pub fn paint(gui: Interface, target: Framebuffer) void {
         for (gui.widgets, 0..) |widget, index| {
             const b = .{
@@ -310,38 +405,13 @@ pub const Interface = struct {
             };
             switch (widget.control) {
                 inline .tool_button, .button => |ctrl| {
-                    target.fillRectangle(widget.bounds.shrink(1), gui.theme.area);
-
-                    if (b.width > 2 and b.height > 2) {
-                        target.drawLine(
-                            Point.new(b.x + 1, b.y),
-                            Point.new(b.x + b.width - 2, b.y),
-                            gui.theme.area_light,
-                        );
-                        target.drawLine(
-                            Point.new(b.x + 1, b.y + b.height - 1),
-                            Point.new(b.x + b.width - 2, b.y + b.height - 1),
-                            gui.theme.area_shadow,
-                        );
-
-                        target.drawLine(
-                            Point.new(b.x, b.y + 1),
-                            Point.new(b.x, b.y + b.height - 2),
-                            gui.theme.area_shadow,
-                        );
-                        target.drawLine(
-                            Point.new(b.x + b.width - 1, b.y + 1),
-                            Point.new(b.x + b.width - 1, b.y + b.height - 2),
-                            gui.theme.area_light,
-                        );
-                    }
+                    gui.drawRectangle(target, widget.bounds, .raised, .area);
 
                     if (@hasField(@TypeOf(ctrl), "text")) {
                         target.drawString(b.x + 2, b.y + 2, ctrl.text, gui.theme.text, b.width -| 2);
                     }
                     if (@hasField(@TypeOf(ctrl), "icon")) {
                         const icon: Bitmap = ctrl.icon;
-
                         target.blit(
                             Point.new(
                                 b.x + (b.width -| icon.width) / 2,
@@ -355,34 +425,7 @@ pub const Interface = struct {
                     target.drawString(b.x, b.y, ctrl.text, gui.theme.label, b.width);
                 },
                 .text_box => |ctrl| {
-                    target.fillRectangle(widget.bounds.shrink(1), if (ctrl.flags.read_only)
-                        gui.theme.area
-                    else
-                        gui.theme.window);
-
-                    if (b.width > 2 and b.height > 2) {
-                        target.drawLine(
-                            Point.new(b.x, b.y),
-                            Point.new(b.x + b.width - 1, b.y),
-                            gui.theme.area_shadow,
-                        );
-                        target.drawLine(
-                            Point.new(b.x + b.width - 1, b.y + 1),
-                            Point.new(b.x + b.width - 1, b.y + b.height - 1),
-                            gui.theme.area_shadow,
-                        );
-
-                        target.drawLine(
-                            Point.new(b.x, b.y + 1),
-                            Point.new(b.x, b.y + b.height - 1),
-                            gui.theme.area_light,
-                        );
-                        target.drawLine(
-                            Point.new(b.x + 1, b.y + b.height - 1),
-                            Point.new(b.x + b.width - 2, b.y + b.height - 1),
-                            gui.theme.area_light,
-                        );
-                    }
+                    gui.drawRectangle(target, widget.bounds, .sunken, if (ctrl.flags.read_only) .window_disabled else .window_enabled);
 
                     var edit_view = target.view(Rectangle{
                         .x = b.x + 1,
@@ -408,21 +451,7 @@ pub const Interface = struct {
                     }
                 },
                 .panel => {
-                    target.fillRectangle(widget.bounds.shrink(2), gui.theme.area);
-                    if (b.width > 3 and b.height > 3) {
-                        target.drawRectangle(Rectangle{
-                            .x = b.x + 1,
-                            .y = b.y,
-                            .width = b.width - 1,
-                            .height = b.height - 1,
-                        }, gui.theme.area_light);
-                        target.drawRectangle(Rectangle{
-                            .x = b.x,
-                            .y = b.y + 1,
-                            .width = b.width - 1,
-                            .height = b.height - 1,
-                        }, gui.theme.area_shadow);
-                    }
+                    gui.drawRectangle(target, widget.bounds, .ridge, .area);
                 },
                 .picture => |ctrl| {
                     target.blit(widget.bounds.position(), ctrl.bitmap);
@@ -452,16 +481,8 @@ pub const Interface = struct {
                         gui.theme.area_light,
                     );
 
-                    const checked_icon = Bitmap.parse(0,
-                        \\.....
-                        \\.0.0.
-                        \\..0..
-                        \\.0.0.
-                        \\.....
-                    );
-
                     if (ctrl.checked) {
-                        target.blit(Point.new(b.x + 1, b.y + 1), checked_icon);
+                        target.blit(Point.new(b.x + 1, b.y + 1), CheckBox.checked_icon);
                     }
                 },
 
@@ -496,21 +517,104 @@ pub const Interface = struct {
                     target.setPixel(b.x + 1, b.y + b.height - 2, gui.theme.area_light);
                     target.setPixel(b.x + b.width - 2, b.y + b.height - 2, gui.theme.area_shadow);
 
-                    const checked_icon = Bitmap.parse(0,
-                        \\.....
-                        \\.000.
-                        \\.000.
-                        \\.000.
-                        \\.....
-                    );
-
                     if (ctrl.group.selected == ctrl.value) {
-                        target.blit(Point.new(b.x + 1, b.y + 1), checked_icon);
+                        target.blit(Point.new(b.x + 1, b.y + 1), RadioButton.checked_icon);
                     }
                 },
 
-                .scroll_bar => {
-                    target.fillRectangle(widget.bounds.shrink(1), gui.theme.area);
+                .scroll_bar => |bar| widget: {
+                    switch (bar.direction) {
+                        .vertical => {
+                            const bsize = b.width;
+                            const height = b.height;
+
+                            if (height < 3 * bsize)
+                                break :widget;
+
+                            const decrease_button = .{
+                                .x = b.x,
+                                .y = b.y,
+                                .width = bsize,
+                                .height = bsize,
+                            };
+                            const scroll_area = .{
+                                .x = b.x,
+                                .y = b.y + bsize,
+                                .width = b.width,
+                                .height = height - 2 * bsize,
+                            };
+                            const increase_button = .{
+                                .x = b.x,
+                                .y = b.y + height - bsize,
+                                .width = bsize,
+                                .height = bsize,
+                            };
+
+                            gui.drawRectangle(target, decrease_button, .raised, .area);
+                            gui.drawRectangle(target, scroll_area, .sunken, .area);
+                            gui.drawRectangle(target, increase_button, .raised, .area);
+
+                            target.blit(
+                                Point.new(
+                                    decrease_button.x + (decrease_button.width -| ScrollBar.arrow_up.width) / 2,
+                                    decrease_button.y + (decrease_button.height -| ScrollBar.arrow_up.height) / 2,
+                                ),
+                                ScrollBar.arrow_up,
+                            );
+                            target.blit(
+                                Point.new(
+                                    increase_button.x + (increase_button.width -| ScrollBar.arrow_up.width) / 2,
+                                    increase_button.y + (increase_button.height -| ScrollBar.arrow_up.height) / 2,
+                                ),
+                                ScrollBar.arrow_down,
+                            );
+                        },
+                        .horizontal => {
+                            const width = b.width;
+                            const bsize = b.height;
+
+                            if (width < 3 * bsize)
+                                break :widget;
+
+                            const decrease_button = .{
+                                .x = b.x,
+                                .y = b.y,
+                                .width = bsize,
+                                .height = bsize,
+                            };
+                            const scroll_area = .{
+                                .x = b.x + bsize,
+                                .y = b.y,
+                                .width = width - 2 * bsize,
+                                .height = b.height,
+                            };
+                            const increase_button = .{
+                                .x = b.x + width - bsize,
+                                .y = b.y,
+                                .width = bsize,
+                                .height = bsize,
+                            };
+
+                            gui.drawRectangle(target, decrease_button, .raised, .area);
+                            gui.drawRectangle(target, scroll_area, .sunken, .area);
+                            gui.drawRectangle(target, increase_button, .raised, .area);
+
+                            target.blit(
+                                Point.new(
+                                    decrease_button.x + (decrease_button.width -| ScrollBar.arrow_up.width) / 2,
+                                    decrease_button.y + (decrease_button.height -| ScrollBar.arrow_up.height) / 2,
+                                ),
+                                ScrollBar.arrow_left,
+                            );
+                            target.blit(
+                                Point.new(
+                                    increase_button.x + (increase_button.width -| ScrollBar.arrow_up.width) / 2,
+                                    increase_button.y + (increase_button.height -| ScrollBar.arrow_up.height) / 2,
+                                ),
+                                ScrollBar.arrow_right,
+                            );
+                        },
+                    }
                 },
             }
             if (gui.focus == index) {
@@ -701,6 +805,14 @@ pub const Picture = struct {
 };
 
 pub const CheckBox = struct {
+    const checked_icon = Bitmap.parse(0,
+        \\.....
+        \\.0.0.
+        \\..0..
+        \\.0.0.
+        \\.....
+    );
+
     checked: bool,
     checkedChanged: ?Event = null,
 
@@ -737,6 +849,14 @@ pub const RadioGroup = struct {
 };
 
 pub const RadioButton = struct {
+    const checked_icon = Bitmap.parse(0,
+        \\.....
+        \\.000.
+        \\.000.
+        \\.000.
+        \\.....
+    );
+
     group: *RadioGroup,
     value: u32,
 
@@ -767,8 +887,64 @@ pub const RadioButton = struct {
 pub const ScrollBar = struct {
     pub const Direction = enum { vertical, horizontal };
 
+    const arrow_up = Bitmap.parse(0,
+        \\.......
+        \\.......
+        \\...0...
+        \\..0.0..
+        \\.0...0.
+        \\.......
+        \\.......
+    );
+    const arrow_down = Bitmap.parse(0,
+        \\.......
+        \\.......
+        \\.0...0.
+        \\..0.0..
+        \\...0...
+        \\.......
+        \\.......
+    );
+    const arrow_left = Bitmap.parse(0,
+        \\.......
+        \\....0..
+        \\...0...
+        \\..0....
+        \\...0...
+        \\....0..
+        \\.......
+    );
+    const arrow_right = Bitmap.parse(0,
+        \\.......
+        \\..0....
+        \\...0...
+        \\....0..
+        \\...0...
+        \\..0....
+        \\.......
+    );
+    const handle_vert = Bitmap.parse(0,
+        \\.......
+        \\..0....
+        \\...0...
+        \\....0..
+        \\...0...
+        \\..0....
+        \\.......
+    );
+    const handle_horiz = Bitmap.parse(0,
+        \\.......
+        \\..0....
+        \\...0...
+        \\....0..
+        \\...0...
+        \\..0....
+        \\.......
+    );
+
     range: u15,
     level: u15 = 0,
+    direction: Direction,
 
     changedEvent: ?Event = null,
 
@@ -792,6 +968,7 @@ pub const ScrollBar = struct {
                     .changedEvent = null,
                     .level = 0,
                     .range = range,
+                    .direction = direction,
                 },
             },
         };
