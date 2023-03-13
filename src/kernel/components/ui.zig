@@ -29,7 +29,7 @@ const Color = ashet.abi.Color;
 const Bitmap = gui.Bitmap;
 const Framebuffer = gui.Framebuffer;
 
-const ButtonEvent = enum { minimize, maximize, close, resize };
+const ButtonEvent = enum { minimize, maximize, restore, close, resize };
 const WindowButton = struct {
     event: ButtonEvent,
     bounds: Rectangle,
@@ -69,6 +69,8 @@ var framebuffer: gui.Framebuffer = undefined;
 var min_window_content_size: ashet.abi.Size = undefined;
 
 var max_window_content_size: ashet.abi.Size = undefined;
+
+var maximized_window_rect: ashet.abi.Rectangle = undefined;
 
 const DragAction = struct { window: *Window, start: Point };
 const MouseAction = union(enum) {
@@ -140,7 +142,7 @@ fn run(_: ?*anyopaque) callconv(.C) u32 {
                                                 }
                                                 invalidateRegion(surface.window.screenRectangle());
 
-                                                if (meta_pressed) {
+                                                if (meta_pressed and !surface.window.isMaximized()) {
                                                     mouse_action = MouseAction{
                                                         .drag_window = DragAction{
                                                             .window = surface.window,
@@ -152,17 +154,20 @@ fn run(_: ?*anyopaque) callconv(.C) u32 {
 
                                                 switch (surface.part) {
                                                     .title_bar => {
-                                                        mouse_action = MouseAction{
-                                                            .drag_window = DragAction{
-                                                                .window = surface.window,
-                                                                .start = mouse_point,
-                                                            },
-                                                        };
+                                                        if (!surface.window.isMaximized()) {
+                                                            mouse_action = MouseAction{
+                                                                .drag_window = DragAction{
+                                                                    .window = surface.window,
+                                                                    .start = mouse_point,
+                                                                },
+                                                            };
+                                                        }
                                                         continue :event_loop;
                                                     },
                                                     .button => |button| switch (button) {
                                                         .minimize => surface.window.minimize(),
                                                         .maximize => surface.window.maximize(),
+                                                        .restore => surface.window.restore(),
                                                         .close => {
                                                             surface.window.pushEvent(.window_close);
                                                             continue :event_loop;
@@ -396,6 +401,7 @@ fn initializeGraphics() void {
         .width = framebuffer.width - 2,
         .height = framebuffer.height - 12,
     };
+    maximized_window_rect = Rectangle.new(Point.new(1, 11), max_window_content_size);
 
     const palette = ashet.video.getPaletteMemory();
     palette.* = ashet.video.defaults.palette;
@@ -533,7 +539,7 @@ fn repaint() void {
 
             framebuffer.drawString(dx + 2, dy + 2, mini.title, style.font, width - 2);
 
-            paintButton(mini.restore_button, style, style.title, icons.restore);
+            paintButton(mini.restore_button, style, style.title, icons.restore_from_tray);
             paintButton(mini.close_button, style, style.title, icons.close);
         }
     }
@@ -730,6 +736,8 @@ pub const Window = struct {
     title_buffer: std.ArrayList(u8),
     owner: ?*ashet.multi_tasking.Process,
 
+    saved_restore_size: Rectangle = undefined,
+
     node: WindowQueue.Node = .{ .data = {} },
     event_queue: astd.RingBuffer(Event, 16) = .{}, // 16 events should be easily enough
 
@@ -891,6 +899,8 @@ pub const Window = struct {
             invalidateRegion(minmin.bounds);
         }
 
+        window.user_facing.client_rectangle = window.saved_restore_size;
+
         // then maximize the window. The invalidation will ensure
         // the now maximized window will be undrawn
         window.user_facing.flags.minimized = false;
@@ -900,9 +910,14 @@ pub const Window = struct {
     pub fn minimize(window: *Window) void {
         if (!window.canMinimize())
             return;
+
+        if (!window.user_facing.flags.minimized) {
+            window.saved_restore_size = window.user_facing.client_rectangle;
+        }
+
         window.user_facing.flags.minimized = true;
         window.pushEvent(.window_minimize);
-    
+
         var list = MinimizedIterator.init();
         while (list.next()) |minmin| {
             invalidateRegion(minmin.bounds);
@@ -912,7 +927,12 @@ pub const Window = struct {
     pub fn maximize(window: *Window) void {
         if (!window.canMaximize())
             return;
-        window.user_facing.client_rectangle = Rectangle.new(Point.new(1, 11), max_window_content_size);
+
+        if (!window.isMaximized()) {
+            window.saved_restore_size = window.user_facing.client_rectangle;
+        }
+
+        window.user_facing.client_rectangle = maximized_window_rect;
         window.pushEvent(.window_moved);
         window.pushEvent(.window_resized);
 
@@ -923,6 +943,10 @@ pub const Window = struct {
     pub fn isResizable(window: Window) bool {
         return (window.user_facing.min_size.width != window.user_facing.max_size.width) or
             (window.user_facing.min_size.height != window.user_facing.max_size.height);
+    }
+
+    pub fn isMaximized(window: Window) bool {
+        return std.meta.eql(window.user_facing.client_rectangle, maximized_window_rect);
     }
 
     /// Windows can be maximized if their maximum size is the full screen size
@@ -952,14 +976,18 @@ pub const Window = struct {
 
         if (window.canMaximize()) {
             top_row.x -= 10;
-            buttons.appendAssumeCapacity(WindowButton{ .bounds = top_row, .event = .maximize });
+            if (window.isMaximized()) {
+                buttons.appendAssumeCapacity(WindowButton{ .bounds = top_row, .event = .restore });
+            } else {
+                buttons.appendAssumeCapacity(WindowButton{ .bounds = top_row, .event = .maximize });
+            }
         }
         if (window.canMinimize()) {
             top_row.x -= 10;
             buttons.appendAssumeCapacity(WindowButton{ .bounds = top_row, .event = .minimize });
         }
 
-        if (window.isResizable()) {
+        if (window.isResizable() and !window.isMaximized()) {
             buttons.appendAssumeCapacity(WindowButton{
                 .bounds = Rectangle{
                     .x = rectangle.x + @intCast(u15, rectangle.width) - 11,
@@ -1130,6 +1158,18 @@ pub const icons = struct {
     );
 
     pub const restore = Bitmap.parse(0,
+        \\.........
+        \\...FFFFF.
+        \\...F...F.
+        \\.FFFFF.F.
+        \\.FFFFF.F.
+        \\.F...FFF.
+        \\.F...F...
+        \\.FFFFF...
+        \\.........
+    );
+
+    pub const restore_from_tray = Bitmap.parse(0,
         \\.........
         \\..FFFFF..
         \\.........
