@@ -782,10 +782,19 @@ pub const Rectangle = extern struct {
 
     pub fn shrink(rect: Rectangle, amount: u15) Rectangle {
         var copy = rect;
-        copy.x += amount;
-        copy.y += amount;
+        copy.x +|= amount;
+        copy.y +|= amount;
         copy.width -|= 2 * amount;
         copy.height -|= 2 * amount;
+        return copy;
+    }
+
+    pub fn grow(rect: Rectangle, amount: u15) Rectangle {
+        var copy = rect;
+        copy.x -|= amount;
+        copy.y -|= amount;
+        copy.width +|= 2 * amount;
+        copy.height +|= 2 * amount;
         return copy;
     }
 };

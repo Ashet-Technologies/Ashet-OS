@@ -884,6 +884,15 @@ pub const Window = struct {
     }
 
     pub fn restore(window: *Window) void {
+
+        // first, invalidate all regions
+        var list = MinimizedIterator.init();
+        while (list.next()) |minmin| {
+            invalidateRegion(minmin.bounds);
+        }
+
+        // then maximize the window. The invalidation will ensure
+        // the now maximized window will be undrawn
         window.user_facing.flags.minimized = false;
         window.pushEvent(.window_restore);
     }
@@ -893,7 +902,7 @@ pub const Window = struct {
             return;
         window.user_facing.flags.minimized = true;
         window.pushEvent(.window_minimize);
-
+    
         var list = MinimizedIterator.init();
         while (list.next()) |minmin| {
             invalidateRegion(minmin.bounds);
@@ -1320,7 +1329,7 @@ pub const desktop = struct {
         }
 
         pub fn next(self: *AppIterator) ?AppInfo {
-            const lower_limit = framebuffer.height - 11 - 8 - 4;
+            const lower_limit = framebuffer.height - self.bounds.height - 8 - 4 - 11;
 
             if (self.index >= apps.len)
                 return null;
@@ -1362,8 +1371,8 @@ pub const desktop = struct {
 
         if (idOrNull(selected_app) != idOrNull(selected)) {
             last_click = point;
-            if (selected_app) |ai| invalidateRegion(ai.bounds);
-            if (selected) |ai| invalidateRegion(ai.bounds);
+            if (selected_app) |ai| invalidateRegion(ai.bounds.grow(1));
+            if (selected) |ai| invalidateRegion(ai.bounds.grow(1));
         } else if (selected_app) |app_info| {
             const app = &apps.buffer[app_info.index];
             if (last_click.manhattenDistance(point) < 2) {
@@ -1481,9 +1490,9 @@ pub const desktop = struct {
             }
         }
         break :blk Bitmap{
-            .width = Icon.width,
-            .height = Icon.height,
-            .stride = Icon.width,
+            .width = Icon.width + 2,
+            .height = Icon.height + 2,
+            .stride = Icon.width + 2,
             .pixels = @ptrCast([*]ColorIndex, &buffer),
             .transparent = ColorIndex.get(1),
         };
