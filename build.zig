@@ -315,7 +315,7 @@ pub fn build(b: *std.build.Builder) !void {
         {
             const browser_assets = AssetBundleStep.create(b);
 
-            const browser = ctx.createAshetApp("browser", "src/apps/browser/browser.zig", "artwork/apps/browser/browser.png", optimize);
+            const browser = ctx.createAshetApp("browser", "src/apps/browser/browser.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Search online.png", optimize);
             browser.addAnonymousModule("assets", .{
                 .source_file = browser_assets.getOutput(),
                 .dependencies = &.{},
@@ -325,14 +325,15 @@ pub fn build(b: *std.build.Builder) !void {
                 .dependencies = &.{},
             });
         }
-        _ = ctx.createAshetApp("clock", "src/apps/clock/clock.zig", "artwork/apps/clock/clock.png", optimize);
-        _ = ctx.createAshetApp("commander", "src/apps/commander/commander.zig", "artwork/apps/commander/commander.png", optimize);
-        _ = ctx.createAshetApp("editor", "src/apps/editor/editor.zig", "artwork/apps/editor/text-editor.png", optimize);
-        _ = ctx.createAshetApp("music", "src/apps/music/music.zig", "artwork/apps/music/music.png", optimize);
-        _ = ctx.createAshetApp("paint", "src/apps/paint/paint.zig", "artwork/apps/paint/paint.png", optimize);
-        _ = ctx.createAshetApp("terminal", "src/apps/terminal/terminal.zig", "artwork/apps/terminal/terminal.png", optimize);
+        _ = ctx.createAshetApp("clock", "src/apps/clock/clock.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Time.png", optimize);
+        _ = ctx.createAshetApp("commander", "src/apps/commander/commander.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Folder.png", optimize);
+        _ = ctx.createAshetApp("editor", "src/apps/editor/editor.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Edit page.png", optimize);
+        _ = ctx.createAshetApp("music", "src/apps/music/music.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Play.png", optimize);
+        _ = ctx.createAshetApp("paint", "src/apps/paint/paint.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Painter.png", optimize);
+        _ = ctx.createAshetApp("terminal", "src/apps/terminal/terminal.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Tools.png", optimize);
         _ = ctx.createAshetApp("gui-demo", "src/apps/gui-demo.zig", null, optimize);
         _ = ctx.createAshetApp("net-demo", "src/apps/net-demo.zig", null, optimize);
+        _ = ctx.createAshetApp("wiki", "src/apps/wiki/wiki.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Help book.png", optimize);
 
         {
             const dungeon = ctx.createAshetApp("dungeon", "src/apps/dungeon/dungeon.zig", "artwork/apps/dungeon/dungeon.png", optimize);
