@@ -120,17 +120,22 @@ pub fn stat(path: []const u8) !ashet.abi.FileInfo {
     return translateFileInfo(src_stat);
 }
 
-pub fn open(path: []const u8, access: ashet.abi.FileAccess, mode: ashet.abi.FileMode) !ashet.abi.FileHandle {
-    const handle = try file_handles.alloc();
-    errdefer file_handles.free(handle);
+pub fn open(iop: *ashet.abi.fs.file.Open) void {
+    const path = iop.inputs.path_ptr[0..iop.inputs.path_len];
+
+    const handle = file_handles.alloc() catch |err| {
+        ashet.io.finalizeWithError(iop, err);
+        return;
+    };
+
     const index = file_handles.handleToIndexUnsafe(handle);
 
-    const fatfs_access = switch (access) {
+    const fatfs_access = switch (iop.inputs.access) {
         .read_only => fatfs.File.Access.read_only,
         .write_only => fatfs.File.Access.write_only,
         .read_write => fatfs.File.Access.read_write,
     };
-    const fatfs_mode = switch (mode) {
+    const fatfs_mode = switch (iop.inputs.mode) {
         .open_existing => fatfs.File.Mode.open_existing,
         .create_new => fatfs.File.Mode.create_new,
         .create_always => fatfs.File.Mode.create_always,
@@ -139,91 +144,155 @@ pub fn open(path: []const u8, access: ashet.abi.FileAccess, mode: ashet.abi.File
     };
 
     var path_buffer: [max_path]u8 = undefined;
-    const fatfs_path = try translatePath(&path_buffer, path);
+    const fatfs_path = translatePath(&path_buffer, path) catch |err| {
+        file_handles.free(handle);
+        ashet.io.finalizeWithError(iop, err);
+        return;
+    };
 
-    file_handles.backings[index] = try fatfs.File.open(fatfs_path, .{
+    file_handles.backings[index] = fatfs.File.open(fatfs_path, .{
         .mode = fatfs_mode,
         .access = fatfs_access,
-    });
-    errdefer file_handles.backings[index].close();
+    }) catch |err| {
+        file_handles.free(handle);
+        ashet.io.finalizeWithError(iop, err);
+        return;
+    };
+    // errdefer file_handles.backings[index].close();
 
-    return handle;
+    ashet.io.finalizeWithResult(iop, .{ .file = handle });
 }
 
-pub fn flush(handle: ashet.abi.FileHandle) !void {
-    const index = try file_handles.resolve(handle);
-    try file_handles.backings[index].sync();
+pub fn flush(iop: *ashet.abi.fs.file.Flush) void {
+    const index = file_handles.resolve(iop.inputs.file) catch |err| {
+        ashet.io.finalizeWithError(iop, err);
+        return;
+    };
+    file_handles.backings[index].sync() catch |err| {
+        ashet.io.finalizeWithError(iop, err);
+        return;
+    };
+
+    ashet.io.finalizeWithResult(iop, .{});
 }
 
 pub const ReadError = error{InvalidFileHandle} || fatfs.File.ReadError;
-pub fn read(handle: ashet.abi.FileHandle, buffer: []u8) ReadError!usize {
-    const index = try file_handles.resolve(handle);
-    return try file_handles.backings[index].read(buffer);
-}
-
-pub const Reader = std.io.Reader(ashet.abi.FileHandle, ReadError, read);
-pub fn fileReader(handle: ashet.abi.FileHandle) Reader {
-    return Reader{ .context = handle };
+pub fn read(iop: *ashet.abi.fs.file.Read) void {
+    const index = file_handles.resolve(iop.inputs.file) catch |err| {
+        ashet.io.finalizeWithError(iop, err);
+        return;
+    };
+    const count = file_handles.backings[index].read(iop.inputs.ptr[0..iop.inputs.len]) catch |err| {
+        ashet.io.finalizeWithError(iop, err);
+        return;
+    };
+    ashet.io.finalizeWithResult(iop, .{ .count = count });
 }
 
 pub const WriteError = error{InvalidFileHandle} || fatfs.File.WriteError;
-pub fn write(handle: ashet.abi.FileHandle, buffer: []const u8) !usize {
-    const index = try file_handles.resolve(handle);
-    return try file_handles.backings[index].write(buffer);
-}
-
-pub const Writer = std.io.Writer(ashet.abi.FileHandle, WriteError, write);
-pub fn fileWriter(handle: ashet.abi.FileHandle) Writer {
-    return Writer{ .context = handle };
-}
-
-pub fn seekTo(handle: ashet.abi.FileHandle, offset: u64) !void {
-    const index = try file_handles.resolve(handle);
-    const offset32 = std.math.cast(fatfs.FileSize, offset) orelse return error.OutOfBounds;
-    try file_handles.backings[index].seekTo(offset32);
-}
-
-pub fn close(handle: ashet.abi.FileHandle) void {
-    const index = file_handles.resolve(handle) catch {
-        logger.info("close request for invalid file handle {}", .{handle});
+pub fn write(iop: *ashet.abi.fs.file.Write) void {
+    const index = file_handles.resolve(iop.inputs.file) catch |err| {
+        ashet.io.finalizeWithError(iop, err);
         return;
     };
-    file_handles.backings[index].close();
-    file_handles.free(handle);
+    const count = file_handles.backings[index].write(iop.inputs.ptr[0..iop.inputs.len]) catch |err| {
+        ashet.io.finalizeWithError(iop, err);
+        return;
+    };
+    ashet.io.finalizeWithResult(iop, .{ .count = count });
 }
 
-pub fn openDir(path: []const u8) !ashet.abi.DirectoryHandle {
-    const handle = try directory_handles.alloc();
-    errdefer directory_handles.free(handle);
+pub fn seekTo(iop: *ashet.abi.fs.file.SeekTo) void {
+    const index = file_handles.resolve(iop.inputs.file) catch |err| {
+        ashet.io.finalizeWithError(iop, err);
+        return;
+    };
+
+    const offset32 = std.math.cast(fatfs.FileSize, iop.inputs.offset) orelse {
+        ashet.io.finalizeWithError(iop, error.OutOfBounds);
+        return;
+    };
+    file_handles.backings[index].seekTo(offset32) catch |err| {
+        ashet.io.finalizeWithError(iop, err);
+        return;
+    };
+
+    ashet.io.finalizeWithResult(iop, .{});
+}
+
+pub fn close(iop: *ashet.abi.fs.file.Close) void {
+    const index = file_handles.resolve(iop.inputs.file) catch |err| {
+        logger.info("close request for invalid file handle {}: {s}", .{ iop.inputs.file, @errorName(err) });
+        ashet.io.finalizeWithError(iop, err);
+        return;
+    };
+
+    file_handles.backings[index].close();
+    file_handles.free(iop.inputs.file);
+
+    ashet.io.finalizeWithResult(iop, .{});
+}
+
+pub fn openDir(iop: *ashet.abi.fs.dir.Open) void {
+    const path: []const u8 = iop.inputs.path_ptr[0..iop.inputs.path_len];
+
+    const handle = directory_handles.alloc() catch |err| {
+        ashet.io.finalizeWithError(iop, err);
+        return;
+    };
+
     const index = directory_handles.handleToIndexUnsafe(handle);
 
     var path_buffer: [max_path]u8 = undefined;
-    const fatfs_path = try translatePath(&path_buffer, path);
+    const fatfs_path = translatePath(&path_buffer, path) catch |err| {
+        directory_handles.free(handle);
+        ashet.io.finalizeWithError(iop, err);
+        return;
+    };
 
-    directory_handles.backings[index] = try fatfs.Dir.open(fatfs_path);
-    errdefer directory_handles.backings[index].close();
+    directory_handles.backings[index] = fatfs.Dir.open(fatfs_path) catch |err| {
+        directory_handles.free(handle);
+        ashet.io.finalizeWithError(iop, err);
+        return;
+    };
 
-    return handle;
+    // errdefer directory_handles.backings[index].close();
+
+    ashet.io.finalizeWithResult(iop, .{
+        .dir = handle,
+    });
 }
 
-pub fn next(handle: ashet.abi.DirectoryHandle) !?ashet.abi.FileInfo {
-    const index = try directory_handles.resolve(handle);
+pub fn next(iop: *ashet.abi.fs.dir.Next) void {
+    const index = directory_handles.resolve(iop.inputs.dir) catch |err| {
+        ashet.io.finalizeWithError(iop, err);
+        return;
+    };
 
-    const raw_info = try directory_handles.backings[index].next();
+    const raw_info = directory_handles.backings[index].next() catch |err| {
+        ashet.io.finalizeWithError(iop, err);
+        return;
+    };
 
-    return if (raw_info) |raw|
-        translateFileInfo(raw)
-    else
-        null;
+    ashet.io.finalizeWithResult(iop, .{
+        .eof = (raw_info == null),
+        .info = if (raw_info) |raw|
+            translateFileInfo(raw)
+        else
+            undefined,
+    });
 }
 
-pub fn closeDir(handle: ashet.abi.DirectoryHandle) void {
-    const index = directory_handles.resolve(handle) catch {
-        logger.info("close request for invalid directory handle {}", .{handle});
+pub fn closeDir(iop: *ashet.abi.fs.dir.Close) void {
+    const index = directory_handles.resolve(iop.inputs.dir) catch |err| {
+        logger.info("close request for invalid directory handle {}", .{iop.inputs.dir});
+        ashet.io.finalizeWithError(iop, err);
         return;
     };
     directory_handles.backings[index].close();
-    directory_handles.free(handle);
+    directory_handles.free(iop.inputs.dir);
+
+    ashet.io.finalizeWithResult(iop, .{});
 }
 
 const file_handles = HandleAllocator(ashet.abi.FileHandle, fatfs.File);
@@ -376,3 +445,32 @@ const Disk = struct {
         }
     }
 };
+
+// const syscalls = struct {
+//     fn @"fs.delete"(path_ptr: [*]const u8, path_len: usize) callconv(.C) abi.FileSystemError.Enum {
+//         _ = path_len;
+//         _ = path_ptr;
+//         std.log.err("fs.delete not implemented yet!", .{});
+//         return .ok;
+//     }
+
+//     fn @"fs.mkdir"(path_ptr: [*]const u8, path_len: usize) callconv(.C) abi.FileSystemError.Enum {
+//         _ = path_len;
+//         _ = path_ptr;
+//         std.log.err("fs.mkdir not implemented yet!", .{});
+//         return .ok;
+//     }
+
+//     fn @"fs.rename"(old_path_ptr: [*]const u8, old_path_len: usize, new_path_ptr: [*]const u8, new_path_len: usize) callconv(.C) abi.FileSystemError.Enum {
+//         _ = old_path_len;
+//         _ = old_path_ptr;
+//         _ = new_path_len;
+//         _ = new_path_ptr;
+//         std.log.err("fs.rename not implemented yet!", .{});
+//         return .ok;
+//     }
+
+//     fn @"fs.stat"(path_ptr: [*]const u8, path_len: usize, info: *abi.FileInfo) callconv(.C) abi.FileSystemError.Enum {
+//         info.* = ashet.filesystem.stat(path_ptr[0..path_len]) catch |e| return abi.FileSystemError.map(e);
+//         return .ok;
+//     }

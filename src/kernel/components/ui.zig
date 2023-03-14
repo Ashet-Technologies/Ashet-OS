@@ -4,6 +4,7 @@ const gui = @import("ashet-gui");
 const logger = std.log.scoped(.ui);
 const ashet = @import("../main.zig");
 const system_assets = @import("system-assets");
+const libashet = @import("ashet");
 
 pub fn start() !void {
     const T = struct {
@@ -1483,9 +1484,11 @@ pub const desktop = struct {
 
         const icon_path = try std.fmt.bufPrint(&path_buffer, "SYS:/apps/{s}/icon", .{ent.getName()});
 
-        if (ashet.filesystem.open(icon_path, .read_only, .open_existing)) |icon_handle| {
-            defer ashet.filesystem.close(icon_handle);
-            app.icon = Icon.load(ashet.filesystem.fileReader(icon_handle), app.palette_base) catch |err| blk: {
+        if (libashet.fs.File.open(icon_path, .read_only, .open_existing)) |const_icon_file| {
+            var icon_file = const_icon_file;
+            defer icon_file.close();
+
+            app.icon = Icon.load(icon_file.reader(), app.palette_base) catch |err| blk: {
                 std.log.warn("Failed to load icon for application {s}: {s}", .{
                     ent.getName(),
                     @errorName(err),
@@ -1499,13 +1502,13 @@ pub const desktop = struct {
     }
 
     fn reload() !void {
-        var dir = try ashet.filesystem.openDir("SYS:/apps");
-        defer ashet.filesystem.closeDir(dir);
+        var dir = try libashet.fs.Directory.open("SYS:/apps");
+        defer dir.close();
 
         apps.len = 0;
         var pal_off: u8 = framebuffer_default_icon_shift;
 
-        while (try ashet.filesystem.next(dir)) |ent| {
+        while (try dir.next()) |ent| {
             addApp(ent, &pal_off) catch |err| {
                 logger.err("failed to load application {s}: {s}", .{
                     ent.getName(),

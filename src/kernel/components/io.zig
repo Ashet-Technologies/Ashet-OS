@@ -54,6 +54,7 @@ pub fn finalize(event: *IOP) void {
 pub fn finalizeWithError(generic: anytype, err: anyerror) void {
     if (!comptime IOP.isIOP(@TypeOf(generic.*)))
         @compileError("finalizeWithError requires an IOP instance!");
+    generic.outputs = undefined; // explicitly kill the content here in debug kernels
     generic.setError(astd.mapToUnexpected(@TypeOf(generic.*).Error, err));
     finalize(&generic.iop);
 }
@@ -66,12 +67,17 @@ pub fn finalizeWithResult(generic: anytype, outputs: @TypeOf(generic.*).Outputs)
     finalize(&generic.iop);
 }
 
+var kernel_context: Context = .{};
+
 pub fn scheduleAndAwait(start_queue: ?*IOP, wait: WaitIO) ?*IOP {
     ashet.stackCheck();
 
     const thread = ashet.scheduler.Thread.current() orelse @panic("scheduleAndAwait called in a non-thread context!");
-    const process = thread.process orelse @panic("scheduleAndAwait called in a non-process context!");
-    const context: *Context = &process.io_context;
+    const context: *Context = if (thread.process) |process|
+        &process.io_context
+    else
+        &kernel_context; // kernel can also schedule I/Os
+    // const process = thread.process orelse @panic("scheduleAndAwait called in a non-process context!");
 
     // TODO: verify that start_queue has no loops
 
@@ -124,17 +130,17 @@ pub fn scheduleAndAwait(start_queue: ?*IOP, wait: WaitIO) ?*IOP {
             .fs_stat => @panic("fs_stat not implemented yet"),
 
             // file api
-            .fs_openFile => @panic("fs_openFile not implemented yet!"),
-            .fs_read => @panic("fs_read not implemented yet!"),
-            .fs_write => @panic("fs_write not implemented yet!"),
-            .fs_seekTo => @panic("fs_seekTo not implemented yet!"),
-            .fs_flush => @panic("fs_flush not implemented yet!"),
-            .fs_close => @panic("fs_close not implemented yet!"),
+            .fs_openFile => ashet.filesystem.open(IOP.cast(abi.fs.file.Open, event)),
+            .fs_read => ashet.filesystem.read(IOP.cast(abi.fs.file.Read, event)),
+            .fs_write => ashet.filesystem.write(IOP.cast(abi.fs.file.Write, event)),
+            .fs_seekTo => ashet.filesystem.seekTo(IOP.cast(abi.fs.file.SeekTo, event)),
+            .fs_flush => ashet.filesystem.flush(IOP.cast(abi.fs.file.Flush, event)),
+            .fs_close => ashet.filesystem.close(IOP.cast(abi.fs.file.Close, event)),
 
             // dir api:
-            .fs_openDir => @panic("fs_openDir not implemented yet!"),
-            .fs_nextFile => @panic("fs_nextFile not implemented yet!"),
-            .fs_closeDir => @panic("fs_closeDir not implemented yet!"),
+            .fs_openDir => ashet.filesystem.openDir(IOP.cast(abi.fs.dir.Open, event)),
+            .fs_nextFile => ashet.filesystem.next(IOP.cast(abi.fs.dir.Next, event)),
+            .fs_closeDir => ashet.filesystem.closeDir(IOP.cast(abi.fs.dir.Close, event)),
         }
     }
 

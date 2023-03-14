@@ -320,35 +320,54 @@ pub const fs = struct {
         offset: u64,
 
         pub fn open(path: []const u8, access: abi.FileAccess, mode: abi.FileMode) !File {
-            var handle: abi.FileHandle = undefined;
-            try abi.FileOpenError.throw(syscall("fs.openFile")(path.ptr, path.len, access, mode, &handle));
-            if (handle == .invalid)
-                return error.InvalidFile;
+            const out = try io.performOne(abi.fs.file.Open, .{
+                .path_ptr = path.ptr,
+                .path_len = path.len,
+                .access = access,
+                .mode = mode,
+            });
+            std.debug.assert(out.file != .invalid);
             return File{
-                .handle = handle,
+                .handle = out.file,
                 .offset = 0,
             };
         }
 
         pub fn close(file: *File) void {
-            syscall("fs.close")(file.handle);
+            _ = io.performOne(abi.fs.file.Close, .{ .file = file.handle }) catch |err| {
+                std.log.scoped(.filesystem).err("failed to close file handle {}: {s}", .{ file.handle, @errorName(err) });
+                return;
+            };
             file.* = undefined;
         }
 
+        pub fn flush(file: *File) !void {
+            _ = try io.performOne(abi.fs.file.Flush, .{ .file = file.handle });
+        }
+
         pub fn read(file: *File, buffer: []u8) !usize {
-            var cnt: usize = 0;
-            try abi.FileReadError.throw(syscall("fs.read")(file.handle, buffer.ptr, buffer.len, &cnt));
-            return cnt;
+            const out = try io.performOne(abi.fs.file.Read, .{
+                .file = file.handle,
+                .ptr = buffer.ptr,
+                .len = buffer.len,
+            });
+            return out.count;
         }
 
         pub fn write(file: *File, buffer: []const u8) !usize {
-            var cnt: usize = 0;
-            try abi.FileWriteError.throw(syscall("fs.write")(file.handle, buffer.ptr, buffer.len, &cnt));
-            return cnt;
+            const out = try io.performOne(abi.fs.file.Write, .{
+                .file = file.handle,
+                .ptr = buffer.ptr,
+                .len = buffer.len,
+            });
+            return out.count;
         }
 
         pub fn seekTo(file: *File, pos: u64) !void {
-            try abi.FileSeekError.throw(syscall("fs.seekTo")(file.handle, pos));
+            _ = try io.performOne(abi.fs.file.SeekTo, .{
+                .file = file.handle,
+                .offset = pos,
+            });
             file.offset = pos;
         }
 
@@ -361,6 +380,7 @@ pub const fs = struct {
         pub fn getPos(file: *File) GetPosError!u64 {
             return file.offset;
         }
+
         pub fn getEndPos(file: *File) GetPosError!u64 {
             _ = file;
             @panic("not implemented");
@@ -376,6 +396,42 @@ pub const fs = struct {
 
         pub fn seekableStream(self: *File) SeekableStream {
             return SeekableStream{ .context = self };
+        }
+    };
+
+    pub const Directory = struct {
+        pub const OpenError = abi.DirOpenError.Error;
+        pub const NextError = abi.DirNextError.Error;
+
+        handle: abi.DirectoryHandle,
+
+        pub fn open(path: []const u8) OpenError!Directory {
+            const out = try io.performOne(abi.fs.dir.Open, .{
+                .path_ptr = path.ptr,
+                .path_len = path.len,
+            });
+            std.debug.assert(out.dir != .invalid);
+            return Directory{
+                .handle = out.dir,
+            };
+        }
+
+        pub fn close(dir: *Directory) void {
+            _ = io.performOne(abi.fs.dir.Close, .{ .dir = dir.handle }) catch |err| {
+                std.log.scoped(.filesystem).err("failed to close directory handle {}: {s}", .{ dir.handle, @errorName(err) });
+                return;
+            };
+
+            dir.* = undefined;
+        }
+
+        pub fn next(dir: *Directory) !?abi.FileInfo {
+            const out = try io.performOne(abi.fs.dir.Next, .{ .dir = dir.handle });
+
+            return if (out.eof)
+                null
+            else
+                out.info;
         }
     };
 };

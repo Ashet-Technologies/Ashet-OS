@@ -46,26 +46,26 @@ pub const syscall_definitions = [_]SysCallDefinition{
     defineSysCall("ui.setWindowTitle", fn (*const Window, title: [*]const u8, title_len: usize) void, 18),
     defineSysCall("ui.invalidate", fn (*const Window, rect: Rectangle) void, 20),
 
-    defineSysCall("fs.delete", fn (path_ptr: [*]const u8, path_len: usize) FileSystemError.Enum, 21),
-    defineSysCall("fs.mkdir", fn (path_ptr: [*]const u8, path_len: usize) FileSystemError.Enum, 22),
-    defineSysCall("fs.rename", fn (old_path_ptr: [*]const u8, old_path_len: usize, new_path_ptr: [*]const u8, new_path_len: usize) callconv(.C) FileSystemError.Enum, 23),
-    defineSysCall("fs.stat", fn (path_ptr: [*]const u8, path_len: usize, *FileInfo) FileSystemError.Enum, 24),
+    // defineSysCall("fs.delete", fn (path_ptr: [*]const u8, path_len: usize) FileSystemError.Enum, 21),
+    // defineSysCall("fs.mkdir", fn (path_ptr: [*]const u8, path_len: usize) FileSystemError.Enum, 22),
+    // defineSysCall("fs.rename", fn (old_path_ptr: [*]const u8, old_path_len: usize, new_path_ptr: [*]const u8, new_path_len: usize) callconv(.C) FileSystemError.Enum, 23),
+    // defineSysCall("fs.stat", fn (path_ptr: [*]const u8, path_len: usize, *FileInfo) FileSystemError.Enum, 24),
 
-    defineSysCall("fs.openFile", fn (path_ptr: [*]const u8, path_len: usize, FileAccess, FileMode, out: *FileHandle) FileOpenError.Enum, 25),
+    // defineSysCall("fs.openFile", fn (path_ptr: [*]const u8, path_len: usize, FileAccess, FileMode, out: *FileHandle) FileOpenError.Enum, 25),
 
-    defineSysCall("fs.read", fn (FileHandle, ptr: [*]u8, len: usize, out: *usize) FileReadError.Enum, 26),
-    defineSysCall("fs.write", fn (FileHandle, ptr: [*]const u8, len: usize, out: *usize) FileWriteError.Enum, 27),
+    // defineSysCall("fs.read", fn (FileHandle, ptr: [*]u8, len: usize, out: *usize) FileReadError.Enum, 26),
+    // defineSysCall("fs.write", fn (FileHandle, ptr: [*]const u8, len: usize, out: *usize) FileWriteError.Enum, 27),
 
-    defineSysCall("fs.seekTo", fn (FileHandle, offset: u64) FileSeekError.Enum, 28),
+    // defineSysCall("fs.seekTo", fn (FileHandle, offset: u64) FileSeekError.Enum, 28),
     // seekBy: fn (FileHandle, offset: i64)  usize,
     // seekFromEnd: fn (FileHandle, offset: u64)  usize,
 
-    defineSysCall("fs.flush", fn (FileHandle) FileWriteError.Enum, 29),
-    defineSysCall("fs.close", fn (FileHandle) void, 30),
+    // defineSysCall("fs.flush", fn (FileHandle) FileWriteError.Enum, 29),
+    // defineSysCall("fs.close", fn (FileHandle) void, 30),
 
-    defineSysCall("fs.openDir", fn (path_ptr: [*]const u8, path_len: usize, out: *DirectoryHandle) DirOpenError.Enum, 31),
-    defineSysCall("fs.nextFile", fn (DirectoryHandle, *FileInfo, eof: *bool) DirNextError.Enum, 32),
-    defineSysCall("fs.closeDir", fn (DirectoryHandle) void, 33),
+    // defineSysCall("fs.openDir", fn (path_ptr: [*]const u8, path_len: usize, out: *DirectoryHandle) DirOpenError.Enum, 31),
+    // defineSysCall("fs.nextFile", fn (DirectoryHandle, *FileInfo, eof: *bool) DirNextError.Enum, 32),
+    // defineSysCall("fs.closeDir", fn (DirectoryHandle) void, 33),
 
     // resolves the dns entry `host` for the given `service`.
     // - `host` is a legal dns entry
@@ -956,164 +956,7 @@ pub fn ErrorSet(comptime options: anytype) type {
 }
 
 pub const FileSystemError = ErrorSet(.{
-    .Denied = 1,
-    .DiskErr = 2,
-    .Exist = 3,
-    .IntErr = 4,
-    .InvalidDrive = 5,
-    .InvalidName = 6,
-    .InvalidObject = 7,
-    .InvalidParameter = 8,
-    .Locked = 9,
-    .MkfsAborted = 10,
-    .NoFile = 11,
-    .NoFilesystem = 12,
-    .NoPath = 13,
-    .NotEnabled = 14,
-    .NotEnoughCore = 15,
-    .NotReady = 16,
-    .Overflow = 17,
-    .Timeout = 18,
-    .TooManyOpenFiles = 19,
-    .WriteProtected = 20,
-    .InvalidFileHandle = 21,
-    .InvalidDevice = 22,
-    .PathTooLong = 23,
-});
-
-pub const FileOpenError = ErrorSet(.{
-    .Denied = 1,
-    .DiskErr = 2,
-    .Exist = 3,
-    .IntErr = 4,
-    .InvalidDrive = 5,
-    .InvalidName = 6,
-    .InvalidObject = 7,
-    .InvalidParameter = 8,
-    .Locked = 9,
-    .MkfsAborted = 10,
-    .NoFile = 11,
-    .NoFilesystem = 12,
-    .NoPath = 13,
-    .NotEnabled = 14,
-    .NotEnoughCore = 15,
-    .NotReady = 16,
-    .Overflow = 17,
-    .Timeout = 18,
-    .TooManyOpenFiles = 19,
-    .WriteProtected = 20,
-    .InvalidFileHandle = 21,
-    .InvalidDevice = 22,
-    .PathTooLong = 23,
-    .SystemFdQuotaExceeded = 24,
-});
-
-pub const FileReadError = ErrorSet(.{
-    .Denied = 1,
-    .DiskErr = 2,
-    .Exist = 3,
-    .IntErr = 4,
-    .InvalidDrive = 5,
-    .InvalidName = 6,
-    .InvalidObject = 7,
-    .InvalidParameter = 8,
-    .Locked = 9,
-    .MkfsAborted = 10,
-    .NoFile = 11,
-    .NoFilesystem = 12,
-    .NoPath = 13,
-    .NotEnabled = 14,
-    .NotEnoughCore = 15,
-    .NotReady = 16,
-    .Overflow = 17,
-    .Timeout = 18,
-    .TooManyOpenFiles = 19,
-    .WriteProtected = 20,
-    .InvalidFileHandle = 21,
-    .InvalidDevice = 22,
-    .PathTooLong = 23,
-});
-
-pub const FileWriteError = ErrorSet(.{
-    .Denied = 1,
-    .DiskErr = 2,
-    .Exist = 3,
-    .IntErr = 4,
-    .InvalidDrive = 5,
-    .InvalidName = 6,
-    .InvalidObject = 7,
-    .InvalidParameter = 8,
-    .Locked = 9,
-    .MkfsAborted = 10,
-    .NoFile = 11,
-    .NoFilesystem = 12,
-    .NoPath = 13,
-    .NotEnabled = 14,
-    .NotEnoughCore = 15,
-    .NotReady = 16,
-    .Overflow = 17,
-    .Timeout = 18,
-    .TooManyOpenFiles = 19,
-    .WriteProtected = 20,
-    .InvalidFileHandle = 21,
-    .InvalidDevice = 22,
-    .PathTooLong = 23,
-});
-
-pub const FileSeekError = ErrorSet(.{
-    .Denied = 1,
-    .DiskErr = 2,
-    .Exist = 3,
-    .IntErr = 4,
-    .InvalidDrive = 5,
-    .InvalidName = 6,
-    .InvalidObject = 7,
-    .InvalidParameter = 8,
-    .Locked = 9,
-    .MkfsAborted = 10,
-    .NoFile = 11,
-    .NoFilesystem = 12,
-    .NoPath = 13,
-    .NotEnabled = 14,
-    .NotEnoughCore = 15,
-    .NotReady = 16,
-    .Overflow = 17,
-    .Timeout = 18,
-    .TooManyOpenFiles = 19,
-    .WriteProtected = 20,
-    .InvalidFileHandle = 21,
-    .InvalidDevice = 22,
-    .PathTooLong = 23,
-    .OutOfBounds = 24,
-});
-
-pub const DirOpenError = ErrorSet(.{
-    .SystemFdQuotaExceeded = 1,
-    .InvalidDevice = 2,
-    .PathTooLong = 3,
-    .Denied = 4,
-    .DiskErr = 5,
-    .Exist = 6,
-    .IntErr = 7,
-    .InvalidDrive = 8,
-    .InvalidName = 9,
-    .InvalidObject = 10,
-    .InvalidParameter = 11,
-    .Locked = 12,
-    .MkfsAborted = 13,
-    .NoFile = 14,
-    .NoFilesystem = 15,
-    .NoPath = 16,
-    .NotEnabled = 17,
-    .NotEnoughCore = 18,
-    .NotReady = 19,
-    .Timeout = 20,
-    .TooManyOpenFiles = 21,
-    .WriteProtected = 22,
-});
-
-pub const DirNextError = ErrorSet(.{
-    .InvalidFileHandle = 1,
+    .Unexpected = 1,
     .Denied = 2,
     .DiskErr = 3,
     .Exist = 4,
@@ -1130,9 +973,173 @@ pub const DirNextError = ErrorSet(.{
     .NotEnabled = 15,
     .NotEnoughCore = 16,
     .NotReady = 17,
-    .Timeout = 18,
-    .TooManyOpenFiles = 19,
-    .WriteProtected = 20,
+    .Overflow = 18,
+    .Timeout = 19,
+    .TooManyOpenFiles = 20,
+    .WriteProtected = 21,
+    .InvalidFileHandle = 22,
+    .InvalidDevice = 23,
+    .PathTooLong = 24,
+});
+
+pub const FileOpenError = ErrorSet(.{
+    .Unexpected = 1,
+    .Denied = 2,
+    .DiskErr = 3,
+    .Exist = 4,
+    .IntErr = 5,
+    .InvalidDrive = 6,
+    .InvalidName = 7,
+    .InvalidObject = 8,
+    .InvalidParameter = 9,
+    .Locked = 10,
+    .MkfsAborted = 11,
+    .NoFile = 12,
+    .NoFilesystem = 13,
+    .NoPath = 14,
+    .NotEnabled = 15,
+    .NotEnoughCore = 16,
+    .NotReady = 17,
+    .Overflow = 18,
+    .Timeout = 19,
+    .TooManyOpenFiles = 20,
+    .WriteProtected = 21,
+    .InvalidFileHandle = 22,
+    .InvalidDevice = 23,
+    .PathTooLong = 24,
+    .SystemFdQuotaExceeded = 25,
+});
+
+pub const FileReadError = ErrorSet(.{
+    .Unexpected = 1,
+    .Denied = 2,
+    .DiskErr = 3,
+    .Exist = 4,
+    .IntErr = 5,
+    .InvalidDrive = 6,
+    .InvalidName = 7,
+    .InvalidObject = 8,
+    .InvalidParameter = 9,
+    .Locked = 10,
+    .MkfsAborted = 11,
+    .NoFile = 12,
+    .NoFilesystem = 13,
+    .NoPath = 14,
+    .NotEnabled = 15,
+    .NotEnoughCore = 16,
+    .NotReady = 17,
+    .Overflow = 18,
+    .Timeout = 19,
+    .TooManyOpenFiles = 20,
+    .WriteProtected = 21,
+    .InvalidFileHandle = 22,
+    .InvalidDevice = 23,
+    .PathTooLong = 24,
+});
+
+pub const FileWriteError = ErrorSet(.{
+    .Unexpected = 1,
+    .Denied = 2,
+    .DiskErr = 3,
+    .Exist = 4,
+    .IntErr = 5,
+    .InvalidDrive = 6,
+    .InvalidName = 7,
+    .InvalidObject = 8,
+    .InvalidParameter = 9,
+    .Locked = 10,
+    .MkfsAborted = 11,
+    .NoFile = 12,
+    .NoFilesystem = 13,
+    .NoPath = 14,
+    .NotEnabled = 15,
+    .NotEnoughCore = 16,
+    .NotReady = 17,
+    .Overflow = 18,
+    .Timeout = 19,
+    .TooManyOpenFiles = 20,
+    .WriteProtected = 21,
+    .InvalidFileHandle = 22,
+    .InvalidDevice = 23,
+    .PathTooLong = 24,
+});
+
+pub const FileSeekError = ErrorSet(.{
+    .Unexpected = 1,
+    .Denied = 2,
+    .DiskErr = 3,
+    .Exist = 4,
+    .IntErr = 5,
+    .InvalidDrive = 6,
+    .InvalidName = 7,
+    .InvalidObject = 8,
+    .InvalidParameter = 9,
+    .Locked = 10,
+    .MkfsAborted = 11,
+    .NoFile = 12,
+    .NoFilesystem = 13,
+    .NoPath = 14,
+    .NotEnabled = 15,
+    .NotEnoughCore = 16,
+    .NotReady = 17,
+    .Overflow = 18,
+    .Timeout = 19,
+    .TooManyOpenFiles = 20,
+    .WriteProtected = 21,
+    .InvalidFileHandle = 22,
+    .InvalidDevice = 23,
+    .PathTooLong = 24,
+    .OutOfBounds = 25,
+});
+
+pub const DirOpenError = ErrorSet(.{
+    .Unexpected = 1,
+    .SystemFdQuotaExceeded = 2,
+    .InvalidDevice = 3,
+    .PathTooLong = 4,
+    .Denied = 5,
+    .DiskErr = 6,
+    .Exist = 7,
+    .IntErr = 8,
+    .InvalidDrive = 9,
+    .InvalidName = 10,
+    .InvalidObject = 11,
+    .InvalidParameter = 12,
+    .Locked = 13,
+    .MkfsAborted = 14,
+    .NoFile = 15,
+    .NoFilesystem = 16,
+    .NoPath = 17,
+    .NotEnabled = 18,
+    .NotEnoughCore = 19,
+    .NotReady = 20,
+    .Timeout = 21,
+    .TooManyOpenFiles = 22,
+    .WriteProtected = 23,
+});
+
+pub const DirNextError = ErrorSet(.{
+    .Unexpected = 1,
+    .InvalidFileHandle = 2,
+    .Denied = 3,
+    .DiskErr = 4,
+    .Exist = 5,
+    .IntErr = 6,
+    .InvalidDrive = 7,
+    .InvalidName = 8,
+    .InvalidObject = 9,
+    .InvalidParameter = 10,
+    .Locked = 11,
+    .MkfsAborted = 12,
+    .NoFile = 13,
+    .NoFilesystem = 14,
+    .NoPath = 15,
+    .NotEnabled = 16,
+    .NotEnoughCore = 17,
+    .NotReady = 18,
+    .Timeout = 19,
+    .TooManyOpenFiles = 20,
+    .WriteProtected = 21,
 });
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1702,7 +1709,7 @@ pub const fs = struct {
     });
 
     pub const file = struct {
-        pub const openFile = IOP.define(.{
+        pub const Open = IOP.define(.{
             .type = .fs_openFile,
             .@"error" = FileOpenError,
             .inputs = struct {
@@ -1714,7 +1721,20 @@ pub const fs = struct {
             .outputs = struct { file: FileHandle },
         });
 
-        pub const read = IOP.define(.{
+        pub const Close = IOP.define(.{
+            // fs.close", fn (FileHandle) void
+            .type = .fs_close,
+            .@"error" = BasicError,
+            .inputs = struct { file: FileHandle },
+        });
+
+        pub const Flush = IOP.define(.{
+            .type = .fs_flush,
+            .@"error" = FileWriteError,
+            .inputs = struct { file: FileHandle },
+        });
+
+        pub const Read = IOP.define(.{
             .type = .fs_read,
             .@"error" = FileReadError,
             .inputs = struct {
@@ -1725,7 +1745,7 @@ pub const fs = struct {
             .outputs = struct { count: usize },
         });
 
-        pub const write = IOP.define(.{
+        pub const Write = IOP.define(.{
             .type = .fs_write,
             .@"error" = FileWriteError,
             .inputs = struct {
@@ -1736,26 +1756,13 @@ pub const fs = struct {
             .outputs = struct { count: usize },
         });
 
-        pub const seekTo = IOP.define(.{
+        pub const SeekTo = IOP.define(.{
             .type = .fs_seekTo,
             .@"error" = FileSeekError,
             .inputs = struct {
                 file: FileHandle,
                 offset: u64,
             },
-        });
-
-        pub const flush = IOP.define(.{
-            .type = .fs_flush,
-            .@"error" = FileWriteError,
-            .inputs = struct { file: FileHandle },
-        });
-
-        pub const close = IOP.define(.{
-            // fs.close", fn (FileHandle) void
-            .type = .fs_close,
-            .@"error" = BasicError,
-            .inputs = struct { file: FileHandle },
         });
     };
 
@@ -1767,13 +1774,13 @@ pub const fs = struct {
                 path_ptr: [*]const u8,
                 path_len: usize,
             },
-            .outputs = struct { handle: DirectoryHandle },
+            .outputs = struct { dir: DirectoryHandle },
         });
 
         pub const Next = IOP.define(.{
             .type = .fs_nextFile,
             .@"error" = DirNextError,
-            .inputs = struct { handle: DirectoryHandle },
+            .inputs = struct { dir: DirectoryHandle },
             .outputs = struct {
                 eof: bool,
                 info: FileInfo,
@@ -1783,7 +1790,7 @@ pub const fs = struct {
         pub const Close = IOP.define(.{
             .type = .fs_closeDir,
             .@"error" = BasicError,
-            .inputs = struct { handle: DirectoryHandle },
+            .inputs = struct { dir: DirectoryHandle },
         });
     };
 };
