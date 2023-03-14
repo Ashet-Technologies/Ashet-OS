@@ -87,35 +87,48 @@ pub fn build(b: *std.build.Builder) !void {
         .mkfs = true,
     };
 
-    _ = b.addModule("ashet-std", .{
+    const text_editor_module = b.dependency("text-editor", .{}).module("text-editor");
+    const mod_hyperdoc = b.dependency("hyperdoc", .{}).module("hyperdoc");
+
+    const mod_args = b.dependency("args", .{}).module("args");
+    const mod_zigimg = b.dependency("zigimg", .{}).module("zigimg");
+
+    const mod_ashet_std = b.addModule("ashet-std", .{
         .source_file = .{ .path = "src/std/std.zig" },
     });
 
-    _ = b.addModule("virtio", .{
+    const mod_virtio = b.addModule("virtio", .{
         .source_file = .{ .path = "vendor/libvirtio/src/virtio.zig" },
     });
 
-    _ = b.addModule("ashet-abi", .{
+    const mod_ashet_abi = b.addModule("ashet-abi", .{
         .source_file = .{ .path = "src/abi/abi.zig" },
     });
 
-    const text_editor_module = b.dependency("text-editor", .{}).module("text-editor");
-
-    _ = b.addModule("ashet", .{
+    const mod_libashet = b.addModule("ashet", .{
         .source_file = .{ .path = "src/libashet/main.zig" },
         .dependencies = &.{
-            .{ .name = "ashet-abi", .module = b.modules.get("ashet-abi").? },
-            .{ .name = "ashet-std", .module = b.modules.get("ashet-std").? },
+            .{ .name = "ashet-abi", .module = mod_ashet_abi },
+            .{ .name = "ashet-std", .module = mod_ashet_std },
+            // .{ .name = "text-editor", .module = text_editor_module },
+        },
+    });
+
+    const mod_ashet_gui = b.addModule("ashet-gui", .{
+        .source_file = .{ .path = "src/libgui/gui.zig" },
+        .dependencies = &.{
+            .{ .name = "ashet", .module = mod_libashet },
+            .{ .name = "ashet-std", .module = mod_ashet_std },
             .{ .name = "text-editor", .module = text_editor_module },
         },
     });
 
-    _ = b.addModule("ashet-gui", .{
-        .source_file = .{ .path = "src/libgui/gui.zig" },
+    const mod_libhypertext = b.addModule("hypertext", .{
+        .source_file = .{ .path = "src/libhypertext/hypertext.zig" },
         .dependencies = &.{
-            .{ .name = "ashet", .module = b.modules.get("ashet").? },
-            .{ .name = "ashet-std", .module = b.modules.get("ashet-std").? },
-            .{ .name = "text-editor", .module = text_editor_module },
+            .{ .name = "ashet", .module = mod_libashet },
+            .{ .name = "ashet-gui", .module = mod_ashet_gui },
+            .{ .name = "hyperdoc", .module = mod_hyperdoc },
         },
     });
 
@@ -168,13 +181,10 @@ pub fn build(b: *std.build.Builder) !void {
     const bmpconv = BitmapConverter.init(b);
     bmpconv.converter.install();
     {
-        const zig_args_module = b.dependency("args", .{}).module("args");
-        const zigimg = b.dependency("zigimg", .{}).module("zigimg");
-
         const tool_extract_icon = b.addExecutable(.{ .name = "tool_extract_icon", .root_source_file = .{ .path = "tools/extract-icon.zig" } });
-        tool_extract_icon.addModule("zigimg", zigimg);
-        tool_extract_icon.addModule("ashet-abi", b.modules.get("ashet-abi").?);
-        tool_extract_icon.addModule("args", zig_args_module);
+        tool_extract_icon.addModule("zigimg", mod_zigimg);
+        tool_extract_icon.addModule("ashet-abi", mod_ashet_abi);
+        tool_extract_icon.addModule("args", mod_args);
         tool_extract_icon.install();
     }
 
@@ -225,11 +235,11 @@ pub fn build(b: *std.build.Builder) !void {
             .source_file = system_icons.getOutput(),
             .dependencies = &.{},
         });
-        kernel_exe.addModule("ashet-abi", b.modules.get("ashet-abi").?);
-        kernel_exe.addModule("ashet-std", b.modules.get("ashet-std").?);
-        kernel_exe.addModule("ashet", b.modules.get("ashet").?);
-        kernel_exe.addModule("ashet-gui", b.modules.get("ashet-gui").?);
-        kernel_exe.addModule("virtio", b.modules.get("virtio").?);
+        kernel_exe.addModule("ashet-abi", mod_ashet_abi);
+        kernel_exe.addModule("ashet-std", mod_ashet_std);
+        kernel_exe.addModule("ashet", mod_libashet);
+        kernel_exe.addModule("ashet-gui", mod_ashet_gui);
+        kernel_exe.addModule("virtio", mod_virtio);
         kernel_exe.addAnonymousModule("machine", .{
             .source_file = machine_pkg.getFileSource("machine.zig").?,
         });
@@ -324,7 +334,9 @@ pub fn build(b: *std.build.Builder) !void {
                 .source_file = system_icons.getOutput(),
                 .dependencies = &.{},
             });
+            browser.addModule("hypertext", mod_libhypertext);
         }
+
         _ = ctx.createAshetApp("clock", "src/apps/clock/clock.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Time.png", optimize);
         _ = ctx.createAshetApp("commander", "src/apps/commander/commander.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Folder.png", optimize);
         _ = ctx.createAshetApp("editor", "src/apps/editor/editor.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Edit page.png", optimize);
@@ -333,7 +345,12 @@ pub fn build(b: *std.build.Builder) !void {
         _ = ctx.createAshetApp("terminal", "src/apps/terminal/terminal.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Tools.png", optimize);
         _ = ctx.createAshetApp("gui-demo", "src/apps/gui-demo.zig", null, optimize);
         _ = ctx.createAshetApp("net-demo", "src/apps/net-demo.zig", null, optimize);
-        _ = ctx.createAshetApp("wiki", "src/apps/wiki/wiki.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Help book.png", optimize);
+
+        {
+            const wiki = ctx.createAshetApp("wiki", "src/apps/wiki/wiki.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Help book.png", optimize);
+            wiki.addModule("hypertext", mod_libhypertext);
+            wiki.addModule("hyperdoc", mod_hyperdoc);
+        }
 
         {
             const dungeon = ctx.createAshetApp("dungeon", "src/apps/dungeon/dungeon.zig", "artwork/apps/dungeon/dungeon.png", optimize);
@@ -347,6 +364,22 @@ pub fn build(b: *std.build.Builder) !void {
             addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-post-r.png", "src/apps/dungeon/data/wall-post-r.abm", .{ 32, 32 });
             addBitmap(dungeon, bmpconv, "artwork/dungeon/enforcer.png", "src/apps/dungeon/data/enforcer.abm", .{ 32, 60 });
         }
+    }
+
+    {
+        const wikitool = b.addExecutable(.{
+            .name = "wikitool",
+            .root_source_file = .{ .path = "tools/wikitool.zig" },
+        });
+
+        wikitool.addModule("hypertext", mod_libhypertext);
+        wikitool.addModule("hyperdoc", mod_hyperdoc);
+        wikitool.addModule("args", mod_args);
+        wikitool.addModule("zigimg", mod_zigimg);
+        wikitool.addModule("ashet", mod_libashet);
+        wikitool.addModule("ashet-gui", mod_ashet_gui);
+
+        wikitool.install();
     }
 
     const run_step = b.step("run", "Run the app");

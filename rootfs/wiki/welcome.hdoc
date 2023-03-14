@@ -4,7 +4,7 @@ h1 "" "Ashet System Wiki"
 
 h2 "welcome" "Welcome!"
 
-p {
+quote {
   span "You have successfully opened the Wiki of Ashet OS."
 }
 

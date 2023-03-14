@@ -5,7 +5,8 @@ pub const abi = @import("ashet-abi");
 pub const syscall = abi.syscall;
 
 comptime {
-    if (!@import("builtin").is_test) {
+    const builtin = @import("builtin");
+    if (!builtin.is_test and builtin.target.os.tag == .freestanding) {
         if (@hasDecl(@import("root"), "main")) {
             @export(_start, .{
                 .linkage = .Strong,
