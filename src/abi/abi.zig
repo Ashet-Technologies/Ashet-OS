@@ -46,27 +46,6 @@ pub const syscall_definitions = [_]SysCallDefinition{
     defineSysCall("ui.setWindowTitle", fn (*const Window, title: [*]const u8, title_len: usize) void, 18),
     defineSysCall("ui.invalidate", fn (*const Window, rect: Rectangle) void, 20),
 
-    // defineSysCall("fs.delete", fn (path_ptr: [*]const u8, path_len: usize) FileSystemError.Enum, 21),
-    // defineSysCall("fs.mkdir", fn (path_ptr: [*]const u8, path_len: usize) FileSystemError.Enum, 22),
-    // defineSysCall("fs.rename", fn (old_path_ptr: [*]const u8, old_path_len: usize, new_path_ptr: [*]const u8, new_path_len: usize) callconv(.C) FileSystemError.Enum, 23),
-    // defineSysCall("fs.stat", fn (path_ptr: [*]const u8, path_len: usize, *FileInfo) FileSystemError.Enum, 24),
-
-    // defineSysCall("fs.openFile", fn (path_ptr: [*]const u8, path_len: usize, FileAccess, FileMode, out: *FileHandle) FileOpenError.Enum, 25),
-
-    // defineSysCall("fs.read", fn (FileHandle, ptr: [*]u8, len: usize, out: *usize) FileReadError.Enum, 26),
-    // defineSysCall("fs.write", fn (FileHandle, ptr: [*]const u8, len: usize, out: *usize) FileWriteError.Enum, 27),
-
-    // defineSysCall("fs.seekTo", fn (FileHandle, offset: u64) FileSeekError.Enum, 28),
-    // seekBy: fn (FileHandle, offset: i64)  usize,
-    // seekFromEnd: fn (FileHandle, offset: u64)  usize,
-
-    // defineSysCall("fs.flush", fn (FileHandle) FileWriteError.Enum, 29),
-    // defineSysCall("fs.close", fn (FileHandle) void, 30),
-
-    // defineSysCall("fs.openDir", fn (path_ptr: [*]const u8, path_len: usize, out: *DirectoryHandle) DirOpenError.Enum, 31),
-    // defineSysCall("fs.nextFile", fn (DirectoryHandle, *FileInfo, eof: *bool) DirNextError.Enum, 32),
-    // defineSysCall("fs.closeDir", fn (DirectoryHandle) void, 33),
-
     // resolves the dns entry `host` for the given `service`.
     // - `host` is a legal dns entry
     // - `port` is either a port number
@@ -980,6 +959,7 @@ pub const FileSystemError = ErrorSet(.{
     .InvalidFileHandle = 22,
     .InvalidDevice = 23,
     .PathTooLong = 24,
+    .Unimplemented = 25,
 });
 
 pub const FileOpenError = ErrorSet(.{
@@ -1678,7 +1658,7 @@ pub const fs = struct {
         },
     });
 
-    pub const Mkdir = IOP.define(.{
+    pub const MkDir = IOP.define(.{
         .type = .fs_mkdir,
         .@"error" = FileSystemError,
         .inputs = struct {

@@ -111,13 +111,36 @@ fn translateFileInfo(src: fatfs.FileInfo) ashet.abi.FileInfo {
     return info;
 }
 
-pub fn stat(path: []const u8) !ashet.abi.FileInfo {
+pub fn delete(iop: *ashet.abi.fs.Delete) void {
+    std.log.err("fs.delete not implemented yet!", .{});
+    ashet.io.finalizeWithError(iop, error.Unimplemented);
+}
+
+pub fn mkdir(iop: *ashet.abi.fs.MkDir) void {
+    std.log.err("fs.mkdir not implemented yet!", .{});
+    ashet.io.finalizeWithError(iop, error.Unimplemented);
+}
+
+pub fn rename(iop: *ashet.abi.fs.Rename) void {
+    std.log.err("fs.rename not implemented yet!", .{});
+    ashet.io.finalizeWithError(iop, error.Unimplemented);
+}
+
+pub fn stat(iop: *ashet.abi.fs.Stat) void {
+    const path = iop.inputs.path_ptr[0..iop.inputs.path_len];
+
     var path_buffer: [max_path]u8 = undefined;
-    const fatfs_path = try translatePath(&path_buffer, path);
+    const fatfs_path = translatePath(&path_buffer, path) catch |err| {
+        ashet.io.finalizeWithError(iop, err);
+        return;
+    };
 
-    const src_stat = try fatfs.stat(fatfs_path);
+    const src_stat = fatfs.stat(fatfs_path) catch |err| {
+        ashet.io.finalizeWithError(iop, err);
+        return;
+    };
 
-    return translateFileInfo(src_stat);
+    ashet.io.finalizeWithResult(iop, .{ .info = translateFileInfo(src_stat) });
 }
 
 pub fn open(iop: *ashet.abi.fs.file.Open) void {
@@ -445,32 +468,3 @@ const Disk = struct {
         }
     }
 };
-
-// const syscalls = struct {
-//     fn @"fs.delete"(path_ptr: [*]const u8, path_len: usize) callconv(.C) abi.FileSystemError.Enum {
-//         _ = path_len;
-//         _ = path_ptr;
-//         std.log.err("fs.delete not implemented yet!", .{});
-//         return .ok;
-//     }
-
-//     fn @"fs.mkdir"(path_ptr: [*]const u8, path_len: usize) callconv(.C) abi.FileSystemError.Enum {
-//         _ = path_len;
-//         _ = path_ptr;
-//         std.log.err("fs.mkdir not implemented yet!", .{});
-//         return .ok;
-//     }
-
-//     fn @"fs.rename"(old_path_ptr: [*]const u8, old_path_len: usize, new_path_ptr: [*]const u8, new_path_len: usize) callconv(.C) abi.FileSystemError.Enum {
-//         _ = old_path_len;
-//         _ = old_path_ptr;
-//         _ = new_path_len;
-//         _ = new_path_ptr;
-//         std.log.err("fs.rename not implemented yet!", .{});
-//         return .ok;
-//     }
-
-//     fn @"fs.stat"(path_ptr: [*]const u8, path_len: usize, info: *abi.FileInfo) callconv(.C) abi.FileSystemError.Enum {
-//         info.* = ashet.filesystem.stat(path_ptr[0..path_len]) catch |e| return abi.FileSystemError.map(e);
-//         return .ok;
-//     }

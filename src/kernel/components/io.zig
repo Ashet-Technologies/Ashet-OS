@@ -124,10 +124,10 @@ pub fn scheduleAndAwait(start_queue: ?*IOP, wait: WaitIO) ?*IOP {
             .ui_get_event => ashet.ui.getEvent(IOP.cast(abi.ui.GetEvent, event)),
 
             // fs api
-            .fs_delete => @panic("fs_delete not implemented yet"),
-            .fs_mkdir => @panic("fs_mkdir not implemented yet"),
-            .fs_rename => @panic("fs_rename not implemented yet"),
-            .fs_stat => @panic("fs_stat not implemented yet"),
+            .fs_delete => ashet.filesystem.delete(IOP.cast(abi.fs.Delete, event)),
+            .fs_mkdir => ashet.filesystem.mkdir(IOP.cast(abi.fs.MkDir, event)),
+            .fs_rename => ashet.filesystem.rename(IOP.cast(abi.fs.Rename, event)),
+            .fs_stat => ashet.filesystem.stat(IOP.cast(abi.fs.Stat, event)),
 
             // file api
             .fs_openFile => ashet.filesystem.open(IOP.cast(abi.fs.file.Open, event)),
