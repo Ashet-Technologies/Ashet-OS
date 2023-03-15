@@ -33,12 +33,22 @@ const loadPaletteFile = @import("lib/palette.zig").loadPaletteFile;
 const CliOptions = struct {
     output: ?[]const u8 = null,
     palette: ?[]const u8 = null,
+    scroll: u15 = 0,
 
     pub const shorthands = .{
         .o = "output",
         .p = "palette",
+        .s = "scroll",
     };
 };
+
+fn emitSensitiveRectangle(fb: *gui.Framebuffer, rect: ashet.abi.Rectangle, link: hyperdoc.Link) void {
+    std.log.info("Rectangle: {} => '{s}'", .{
+        rect,
+        link.href,
+    });
+    fb.drawRectangle(rect.grow(1), ColorIndex.get(0x0E));
+}
 
 pub fn main() !u8 {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -84,7 +94,9 @@ pub fn main() !u8 {
             fb,
             document,
             wikitheme,
-            0,
+            cli.options.scroll,
+            &fb,
+            emitSensitiveRectangle,
         );
 
         // TODO: Render data here

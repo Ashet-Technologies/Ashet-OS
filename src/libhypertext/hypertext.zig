@@ -29,14 +29,26 @@ pub fn renderDocument(
     document: hdoc.Document,
     theme: Theme,
     scroll_offset: u15,
+    context: anytype,
+    comptime linkCallback: fn (@TypeOf(context), ashet.abi.Rectangle, hdoc.Link) void,
 ) void {
+    const T = struct {
+        const Ctx = @TypeOf(context);
+        const alignment = if (@alignOf(Ctx) == 0) 1 else @alignOf(Ctx);
+
+        fn erasedLinkCallback(ctx: *const anyopaque, rect: ashet.abi.Rectangle, link: hdoc.Link) void {
+            linkCallback(
+                @ptrCast(*const Ctx, @alignCast(alignment, ctx)).*,
+                rect,
+                link,
+            );
+        }
+    };
+
     var renderer = Renderer{
-        .framebuffer = framebuffer.view((Rectangle{
-            .x = 0,
-            .y = 0,
-            .width = framebuffer.width,
-            .height = framebuffer.height,
-        }).shrink(theme.padding)),
+        .context = @ptrCast(*const anyopaque, &context),
+        .linkCallback = T.erasedLinkCallback,
+        .framebuffer = framebuffer,
         .document = document,
         .theme = theme,
         .block_top = -@as(i16, scroll_offset),
@@ -45,6 +57,9 @@ pub fn renderDocument(
 }
 
 const Renderer = struct {
+    context: *const anyopaque,
+    linkCallback: *const fn (*const anyopaque, ashet.abi.Rectangle, hdoc.Link) void,
+
     framebuffer: gui.Framebuffer,
     document: hdoc.Document,
     theme: Theme,
@@ -53,27 +68,47 @@ const Renderer = struct {
     const font_height = 8;
 
     fn run(ren: *Renderer) void {
-        ren.renderBlocks(ren.document.contents, 0);
+        const target_rect = Rectangle{
+            .x = 0,
+            .y = ren.block_top,
+            .width = ren.framebuffer.width,
+            .height = ren.framebuffer.height,
+        };
+
+        ren.renderBlocks(ren.framebuffer.view(target_rect.shrink(ren.theme.padding)), ren.document.contents);
     }
 
-    fn renderBlocks(ren: *Renderer, blocks: []const hdoc.Block, indent: u15) void {
+    fn renderBlocks(ren: *Renderer, fb: gui.Framebuffer, blocks: []const hdoc.Block) void {
+        var mut_fb = fb;
         for (blocks, 0..) |block, i| {
             if (i > 0) {
-                ren.block_top += ren.theme.block_spacing;
+                mut_fb = mut_fb.view(Rectangle{
+                    .x = 0,
+                    .y = ren.theme.block_spacing,
+                    .width = fb.width,
+                    .height = fb.height -| ren.theme.block_spacing,
+                });
             }
-            const height = ren.renderBlock(block, indent);
-            ren.block_top += height;
+            const height = ren.renderBlock(block, mut_fb);
+            mut_fb = mut_fb.view(Rectangle{
+                .x = 0,
+                .y = height,
+                .width = fb.width,
+                .height = fb.height -| height,
+            });
         }
     }
 
-    fn renderBlock(ren: *Renderer, block: hdoc.Block, indent: u15) u15 {
-        const fb = ren.framebuffer.view(.{
+    fn indentFramebuffer(ren: *Renderer, fb: gui.Framebuffer, indent: u15, scroll: u15) gui.Framebuffer {
+        return fb.view(.{
             .x = indent,
-            .y = ren.block_top,
+            .y = scroll,
             .width = ren.framebuffer.width -| indent,
-            .height = @intCast(u15, std.math.max(0, ren.framebuffer.height -| ren.block_top)),
+            .height = ren.framebuffer.height -| scroll,
         });
+    }
 
+    fn renderBlock(ren: *Renderer, block: hdoc.Block, fb: gui.Framebuffer) u15 {
         switch (block) {
             .table_of_contents => {
                 // TODO: Implement TOC
@@ -96,7 +131,7 @@ const Renderer = struct {
                     .document => {
                         fb.drawLine(
                             Point.new(0, font_height),
-                            Point.new(fb.width - 1, font_height),
+                            Point.new(fb.width -| 1, font_height),
                             ren.theme.h1_color,
                         );
                         return font_height + 2;
@@ -142,8 +177,8 @@ const Renderer = struct {
                 const digits = std.math.log10(if (ol.len == 0) 1 else ol.len) + 1;
                 const padding = @intCast(u15, 6 * (digits + 2));
 
+                var mut_fb = fb;
                 var offset_y: u15 = 0;
-
                 for (ol, 0..) |inner_block, i| {
                     if (i > 0) {
                         offset_y += ren.theme.block_spacing;
@@ -156,10 +191,9 @@ const Renderer = struct {
                         .digits = digits,
                     }) catch unreachable;
 
-                    fb.drawString(0, offset_y, numstr, ren.theme.text_color, padding);
+                    mut_fb.drawString(0, offset_y, numstr, ren.theme.text_color, padding);
 
-                    ren.block_top = backup + offset_y;
-                    const height = ren.renderBlock(inner_block, indent + padding);
+                    const height = ren.renderBlock(inner_block, ren.indentFramebuffer(mut_fb, padding, offset_y));
 
                     offset_y += height;
                 }
@@ -185,8 +219,7 @@ const Renderer = struct {
                         .height = 3,
                     }, ren.theme.text_color);
 
-                    ren.block_top = backup + offset_y;
-                    const height = ren.renderBlock(inner_block, indent + 12);
+                    const height = ren.renderBlock(inner_block, ren.indentFramebuffer(fb, 12, offset_y));
 
                     offset_y += height;
                 }
@@ -205,6 +238,28 @@ const Renderer = struct {
     fn measureString(ren: *Renderer, str: []const u8) u15 {
         _ = ren;
         return @intCast(u15, str.len * 6);
+    }
+
+    fn emitSpanRectangle(ren: *Renderer, fb: gui.Framebuffer, rect: Rectangle, span: hdoc.Span) void {
+        if (span != .link) return;
+        if (rect.width == 0) return;
+
+        const global_offset = @ptrToInt(fb.pixels) -| @ptrToInt(ren.framebuffer.pixels);
+
+        // reconstruct the original position
+        const dx = @intCast(u15, global_offset % ren.framebuffer.stride);
+        const dy = @intCast(u15, global_offset / ren.framebuffer.stride);
+
+        ren.linkCallback(
+            ren.context,
+            .{
+                .x = dx + rect.x,
+                .y = dy + rect.y,
+                .width = rect.width,
+                .height = rect.height,
+            },
+            span.link,
+        );
     }
 
     fn renderSpans(ren: *Renderer, fb: gui.Framebuffer, spans: []const hdoc.Span) u15 {
@@ -234,27 +289,52 @@ const Renderer = struct {
                 }
                 first_line = false;
 
+                var span_rectangle = Rectangle{
+                    .x = offset_x,
+                    .y = offset_y,
+                    .width = 0,
+                    .height = font_height,
+                };
+
+                var fist_word = true;
                 var words = std.mem.tokenize(u8, line, " \t\r");
                 while (words.next()) |word| {
                     const width = ren.measureString(word);
 
-                    if (offset_x > 0 and offset_x + width > fb.width) {
+                    if (offset_x > 0 and offset_x + width + 4 > fb.width) {
                         // line break condition
                         offset_y += font_height + ren.theme.line_spacing;
                         offset_x = 0;
+
+                        ren.emitSpanRectangle(fb, span_rectangle, span);
+                        span_rectangle = Rectangle{
+                            .x = offset_x,
+                            .y = offset_y,
+                            .width = 0,
+                            .height = font_height,
+                        };
+                    } else if (!fist_word) {
+                        offset_x += 4; // space width
+                        span_rectangle.width += 4;
                     }
+                    fist_word = false;
 
                     fb.drawString(offset_x, offset_y, word, color, fb.width -| offset_x);
 
                     offset_x += width;
-                    offset_x += 4; // space width
+                    span_rectangle.width += width;
                 }
+
+                ren.emitSpanRectangle(fb, span_rectangle, span);
             }
         }
         return offset_y + font_height;
     }
 
     fn renderPreformattedSpans(ren: *Renderer, fb: gui.Framebuffer, spans: []const hdoc.Span) u15 {
+
+        // TODO: Fix preformatted rendering with multiple spans on the same line
+
         var offset_y: u15 = 0;
         for (spans) |span| {
             const string = switch (span) {
