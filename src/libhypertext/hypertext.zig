@@ -132,12 +132,39 @@ const Renderer = struct {
             },
 
             .preformatted => |pre| {
-                return ren.renderSpans(fb, pre.contents);
+                return ren.renderPreformattedSpans(fb, pre.contents);
             },
 
             .ordered_list => |ol| {
-                _ = ol;
-                return font_height;
+                const backup = ren.block_top;
+                defer ren.block_top = backup;
+
+                const digits = std.math.log10(if (ol.len == 0) 1 else ol.len) + 1;
+                const padding = @intCast(u15, 6 * (digits + 2));
+
+                var offset_y: u15 = 0;
+
+                for (ol, 0..) |inner_block, i| {
+                    if (i > 0) {
+                        offset_y += ren.theme.block_spacing;
+                    }
+
+                    var numbuf: [16]u8 = undefined;
+
+                    const numstr = std.fmt.bufPrint(&numbuf, "{[number]d: >[digits]}. ", .{
+                        .number = i + 1,
+                        .digits = digits,
+                    }) catch unreachable;
+
+                    fb.drawString(0, offset_y, numstr, ren.theme.text_color, padding);
+
+                    ren.block_top = backup + offset_y;
+                    const height = ren.renderBlock(inner_block, indent + padding);
+
+                    offset_y += height;
+                }
+
+                return offset_y;
             },
 
             .unordered_list => |ul| {
@@ -159,7 +186,7 @@ const Renderer = struct {
                     }, ren.theme.text_color);
 
                     ren.block_top = backup + offset_y;
-                    const height = ren.renderBlock(inner_block, indent + 6);
+                    const height = ren.renderBlock(inner_block, indent + 12);
 
                     offset_y += height;
                 }
@@ -168,6 +195,7 @@ const Renderer = struct {
             },
 
             .image => |img| {
+                fb.drawString(0, 0, "<IMAGE PLACEHOLDER>", ren.theme.text_color, null);
                 _ = img;
                 return font_height;
             },
@@ -192,7 +220,7 @@ const Renderer = struct {
             const color = switch (span) {
                 .text => ren.theme.text_color,
                 .emphasis => ren.theme.emphasis_color,
-                .monospace => ren.theme.text_color,
+                .monospace => ren.theme.monospace_color,
                 .link => ren.theme.link_color,
             };
 
@@ -221,6 +249,37 @@ const Renderer = struct {
                     offset_x += width;
                     offset_x += 4; // space width
                 }
+            }
+        }
+        return offset_y + font_height;
+    }
+
+    fn renderPreformattedSpans(ren: *Renderer, fb: gui.Framebuffer, spans: []const hdoc.Span) u15 {
+        var offset_y: u15 = 0;
+        for (spans) |span| {
+            const string = switch (span) {
+                .text => |str| str,
+                .emphasis => |str| str,
+                .monospace => |str| str,
+                .link => |link| link.text,
+            };
+            const color = switch (span) {
+                .text => ren.theme.text_color,
+                .emphasis => ren.theme.emphasis_color,
+                .monospace => ren.theme.monospace_color,
+                .link => ren.theme.link_color,
+            };
+
+            var first_line = true;
+            var lines = std.mem.split(u8, string, "\n");
+            while (lines.next()) |line| {
+                if (!first_line) {
+                    // line break condition
+                    offset_y += font_height + ren.theme.line_spacing;
+                }
+                first_line = false;
+
+                fb.drawString(0, offset_y, line, color, fb.width);
             }
         }
         return offset_y + font_height;
