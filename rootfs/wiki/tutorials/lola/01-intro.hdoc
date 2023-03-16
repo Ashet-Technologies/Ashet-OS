@@ -1,0 +1,12 @@
+hdoc "1.0"
+
+h1 "" "Introduction to the LoLa Programming Language"
+
+pre "lola" {
+  emph "while" span "(" emph "true" span ") {\n"
+  span "  " emph "var" span " input " span "= WaitForKey();\n"
+  span "  " emph "if" span "(input == \" \") {\n"
+  span "    Print(\"Space was pressed!\");\n"
+  span "  }\n"
+  span "}\n"
+}

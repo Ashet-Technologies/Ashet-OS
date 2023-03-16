@@ -29,29 +29,29 @@ itemize {
 
 h3 "apps" "Applications"
 itemize {
-  p { link "wiki:/apps/music.hdoc"       "Grammophone"  }
-  p { link "wiki:/apps/commander.hdoc"   "Shepard"      }
-  p { link "wiki:/apps/chat.hdoc"        "Telegraph"    }
-  p { link "wiki:/apps/browser.hdoc"     "Gateway"      }
-  p { link "wiki:/apps/wiki.hdoc"        "Hyper Wiki"   }
-  p { link "wiki:/apps/terminal.hdoc"    "Connex"       }
-  p { link "wiki:/apps/editor.hdoc"      "Craftworks"   }
-  p { link "wiki:/apps/paint.hdoc"       "Dragon Craft" }
-  p { link "wiki:/apps/io.hdoc"          "I/O"          }
-  p { link "wiki:/apps/settings.hdoc"    "SysAdvance"   }
-  p { link "wiki:/apps/lola.hdoc-run"    "LoLa Run!"    }
-  p { link "wiki:/apps/spreadsheet.hdoc" "Calc"         }
+  p { link "wiki:/ashet/apps/music.hdoc"       "Grammophone"  }
+  p { link "wiki:/ashet/apps/commander.hdoc"   "Shepard"      }
+  p { link "wiki:/ashet/apps/chat.hdoc"        "Telegraph"    }
+  p { link "wiki:/ashet/apps/browser.hdoc"     "Gateway"      }
+  p { link "wiki:/ashet/apps/wiki.hdoc"        "Hyper Wiki"   }
+  p { link "wiki:/ashet/apps/terminal.hdoc"    "Connex"       }
+  p { link "wiki:/ashet/apps/editor.hdoc"      "Craftworks"   }
+  p { link "wiki:/ashet/apps/paint.hdoc"       "Dragon Craft" }
+  p { link "wiki:/ashet/apps/io.hdoc"          "I/O"          }
+  p { link "wiki:/ashet/apps/settings.hdoc"    "SysAdvance"   }
+  p { link "wiki:/ashet/apps/lola.hdoc-run"    "LoLa Run!"    }
+  p { link "wiki:/ashet/apps/spreadsheet.hdoc" "Calc"         }
 }
 
 h3 "games" "Games"
 itemize {
-  p { link "wiki:/apps/dungeon.hdoc"     "Dungeon"      }
+  p { link "wiki:/ashet/apps/dungeon.hdoc"     "Dungeon"      }
 }
 
 h3 "daemons" "Daemons"
 itemize {
-  p { link "wiki:/daemon/psi.hdoc"    "Psi Language Server"       }
-  p { link "wiki:/daemon/lola.hdoc"   "LoLa Language Server"      }
-  p { link "wiki:/daemon/asm.hdoc"    "Assembly Language Server"  }
-  p { link "wiki:/daemon/shell.hdoc"  "Shell Server"              }
+  p { link "wiki:/ashet/daemon/psi.hdoc"    "Psi Language Server"       }
+  p { link "wiki:/ashet/daemon/lola.hdoc"   "LoLa Language Server"      }
+  p { link "wiki:/ashet/daemon/asm.hdoc"    "Assembly Language Server"  }
+  p { link "wiki:/ashet/daemon/shell.hdoc"  "Shell Server"              }
 }

@@ -1,0 +1,8 @@
+{
+  "build_options": [
+    {
+      "name": "machine",
+      "value": "rv32_virt"
+    }
+  ]
+}

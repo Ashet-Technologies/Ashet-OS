@@ -333,9 +333,10 @@ const Renderer = struct {
 
     fn renderPreformattedSpans(ren: *Renderer, fb: gui.Framebuffer, spans: []const hdoc.Span) u15 {
 
-        // TODO: Fix preformatted rendering with multiple spans on the same line
+        // TODO: Implement basic syntax highlighters
 
         var offset_y: u15 = 0;
+        var offset_x: u15 = 0;
         for (spans) |span| {
             const string = switch (span) {
                 .text => |str| str,
@@ -356,10 +357,39 @@ const Renderer = struct {
                 if (!first_line) {
                     // line break condition
                     offset_y += font_height + ren.theme.line_spacing;
+                    offset_x = 0;
                 }
                 first_line = false;
 
-                fb.drawString(0, offset_y, line, color, fb.width);
+                var span_rectangle = Rectangle{
+                    .x = offset_x,
+                    .y = offset_y,
+                    .width = 0,
+                    .height = font_height,
+                };
+
+                const width = ren.measureString(line);
+
+                if (offset_x > 0 and offset_x + width + 4 > fb.width) {
+                    // line break condition
+                    offset_y += font_height + ren.theme.line_spacing;
+                    offset_x = 0;
+
+                    ren.emitSpanRectangle(fb, span_rectangle, span);
+                    span_rectangle = Rectangle{
+                        .x = offset_x,
+                        .y = offset_y,
+                        .width = 0,
+                        .height = font_height,
+                    };
+                }
+
+                fb.drawString(offset_x, offset_y, line, color, fb.width -| offset_x);
+
+                offset_x += width;
+                span_rectangle.width += width;
+
+                ren.emitSpanRectangle(fb, span_rectangle, span);
             }
         }
         return offset_y + font_height;
