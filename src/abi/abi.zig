@@ -413,7 +413,7 @@ pub const FileInfo = extern struct {
     }
 };
 
-pub const FileAttributes = packed struct { // (u16)
+pub const FileAttributes = packed struct(u16) {
     directory: bool,
     read_only: bool,
     hidden: bool,
