@@ -228,3 +228,10 @@ fn @"io.scheduleAndAwait"(start_queue: ?*abi.IOP, wait: abi.WaitIO) callconv(.C)
 fn @"io.cancel"(event: *abi.IOP) callconv(.C) void {
     return ashet.io.cancel(event);
 }
+
+fn @"fs.findFilesystem"(name_ptr: [*]const u8, name_len: usize) callconv(.C) abi.FileSystemId {
+    //
+    _ = name_ptr;
+    _ = name_len;
+    return .invalid;
+}

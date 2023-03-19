@@ -81,6 +81,9 @@ pub const syscall_definitions = [_]SysCallDefinition{
 
     // Returns the current resolution
     defineSysCall("video.getResolution", fn () Size, 53),
+
+    // Finds a file system by name
+    defineSysCall("fs.findFilesystem", fn (name_ptr: [*]const u8, name_len: usize) FileSystemId, 60),
 };
 
 const SysCallDefinition = struct {
@@ -393,52 +396,6 @@ pub const Color = packed struct(u16) {
             exp_g << 8 |
             exp_b << 16;
     }
-};
-
-pub const max_path = 256;
-
-pub const FileHandle = enum(u32) { invalid, _ };
-pub const DirectoryHandle = enum(u32) { invalid, _ };
-
-pub const FileInfo = extern struct {
-    name: [max_path]u8,
-    size: u64,
-    attributes: FileAttributes,
-    // WORD	fdate;			/* Modified date */
-    // WORD	ftime;			/* Modified time */
-    // BYTE	fattrib;		/* File attribute */
-
-    pub fn getName(self: *const FileInfo) []const u8 {
-        return std.mem.sliceTo(&self.name, 0);
-    }
-};
-
-pub const FileAttributes = packed struct(u16) {
-    directory: bool,
-    read_only: bool,
-    hidden: bool,
-    // system: bool,
-    // archive: bool,
-    padding0: u5 = 0,
-    padding1: u8 = 0,
-};
-
-comptime {
-    std.debug.assert(@sizeOf(FileAttributes) == 2);
-}
-
-pub const FileAccess = enum(u8) {
-    read_only = 0,
-    write_only = 1,
-    read_write = 2,
-};
-
-pub const FileMode = enum(u8) {
-    open_existing = 0,
-    create_new = 1,
-    create_always = 2,
-    open_always = 3,
-    open_append = 4,
 };
 
 pub const InputEventType = enum(u8) {
@@ -916,192 +873,8 @@ pub fn ErrorSet(comptime options: anytype) type {
     };
 }
 
-pub const FileSystemError = ErrorSet(.{
+pub const DefaultError = ErrorSet(.{
     .Unexpected = 1,
-    .Denied = 2,
-    .DiskErr = 3,
-    .Exist = 4,
-    .IntErr = 5,
-    .InvalidDrive = 6,
-    .InvalidName = 7,
-    .InvalidObject = 8,
-    .InvalidParameter = 9,
-    .Locked = 10,
-    .MkfsAborted = 11,
-    .NoFile = 12,
-    .NoFilesystem = 13,
-    .NoPath = 14,
-    .NotEnabled = 15,
-    .NotEnoughCore = 16,
-    .NotReady = 17,
-    .Overflow = 18,
-    .Timeout = 19,
-    .TooManyOpenFiles = 20,
-    .WriteProtected = 21,
-    .InvalidFileHandle = 22,
-    .InvalidDevice = 23,
-    .PathTooLong = 24,
-    .Unimplemented = 25,
-});
-
-pub const FileOpenError = ErrorSet(.{
-    .Unexpected = 1,
-    .Denied = 2,
-    .DiskErr = 3,
-    .Exist = 4,
-    .IntErr = 5,
-    .InvalidDrive = 6,
-    .InvalidName = 7,
-    .InvalidObject = 8,
-    .InvalidParameter = 9,
-    .Locked = 10,
-    .MkfsAborted = 11,
-    .NoFile = 12,
-    .NoFilesystem = 13,
-    .NoPath = 14,
-    .NotEnabled = 15,
-    .NotEnoughCore = 16,
-    .NotReady = 17,
-    .Overflow = 18,
-    .Timeout = 19,
-    .TooManyOpenFiles = 20,
-    .WriteProtected = 21,
-    .InvalidFileHandle = 22,
-    .InvalidDevice = 23,
-    .PathTooLong = 24,
-    .SystemFdQuotaExceeded = 25,
-});
-
-pub const FileReadError = ErrorSet(.{
-    .Unexpected = 1,
-    .Denied = 2,
-    .DiskErr = 3,
-    .Exist = 4,
-    .IntErr = 5,
-    .InvalidDrive = 6,
-    .InvalidName = 7,
-    .InvalidObject = 8,
-    .InvalidParameter = 9,
-    .Locked = 10,
-    .MkfsAborted = 11,
-    .NoFile = 12,
-    .NoFilesystem = 13,
-    .NoPath = 14,
-    .NotEnabled = 15,
-    .NotEnoughCore = 16,
-    .NotReady = 17,
-    .Overflow = 18,
-    .Timeout = 19,
-    .TooManyOpenFiles = 20,
-    .WriteProtected = 21,
-    .InvalidFileHandle = 22,
-    .InvalidDevice = 23,
-    .PathTooLong = 24,
-});
-
-pub const FileWriteError = ErrorSet(.{
-    .Unexpected = 1,
-    .Denied = 2,
-    .DiskErr = 3,
-    .Exist = 4,
-    .IntErr = 5,
-    .InvalidDrive = 6,
-    .InvalidName = 7,
-    .InvalidObject = 8,
-    .InvalidParameter = 9,
-    .Locked = 10,
-    .MkfsAborted = 11,
-    .NoFile = 12,
-    .NoFilesystem = 13,
-    .NoPath = 14,
-    .NotEnabled = 15,
-    .NotEnoughCore = 16,
-    .NotReady = 17,
-    .Overflow = 18,
-    .Timeout = 19,
-    .TooManyOpenFiles = 20,
-    .WriteProtected = 21,
-    .InvalidFileHandle = 22,
-    .InvalidDevice = 23,
-    .PathTooLong = 24,
-});
-
-pub const FileSeekError = ErrorSet(.{
-    .Unexpected = 1,
-    .Denied = 2,
-    .DiskErr = 3,
-    .Exist = 4,
-    .IntErr = 5,
-    .InvalidDrive = 6,
-    .InvalidName = 7,
-    .InvalidObject = 8,
-    .InvalidParameter = 9,
-    .Locked = 10,
-    .MkfsAborted = 11,
-    .NoFile = 12,
-    .NoFilesystem = 13,
-    .NoPath = 14,
-    .NotEnabled = 15,
-    .NotEnoughCore = 16,
-    .NotReady = 17,
-    .Overflow = 18,
-    .Timeout = 19,
-    .TooManyOpenFiles = 20,
-    .WriteProtected = 21,
-    .InvalidFileHandle = 22,
-    .InvalidDevice = 23,
-    .PathTooLong = 24,
-    .OutOfBounds = 25,
-});
-
-pub const DirOpenError = ErrorSet(.{
-    .Unexpected = 1,
-    .SystemFdQuotaExceeded = 2,
-    .InvalidDevice = 3,
-    .PathTooLong = 4,
-    .Denied = 5,
-    .DiskErr = 6,
-    .Exist = 7,
-    .IntErr = 8,
-    .InvalidDrive = 9,
-    .InvalidName = 10,
-    .InvalidObject = 11,
-    .InvalidParameter = 12,
-    .Locked = 13,
-    .MkfsAborted = 14,
-    .NoFile = 15,
-    .NoFilesystem = 16,
-    .NoPath = 17,
-    .NotEnabled = 18,
-    .NotEnoughCore = 19,
-    .NotReady = 20,
-    .Timeout = 21,
-    .TooManyOpenFiles = 22,
-    .WriteProtected = 23,
-});
-
-pub const DirNextError = ErrorSet(.{
-    .Unexpected = 1,
-    .InvalidFileHandle = 2,
-    .Denied = 3,
-    .DiskErr = 4,
-    .Exist = 5,
-    .IntErr = 6,
-    .InvalidDrive = 7,
-    .InvalidName = 8,
-    .InvalidObject = 9,
-    .InvalidParameter = 10,
-    .Locked = 11,
-    .MkfsAborted = 12,
-    .NoFile = 13,
-    .NoFilesystem = 14,
-    .NoPath = 15,
-    .NotEnabled = 16,
-    .NotEnoughCore = 17,
-    .NotReady = 18,
-    .Timeout = 19,
-    .TooManyOpenFiles = 20,
-    .WriteProtected = 21,
 });
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1139,23 +912,26 @@ pub const IOP = extern struct {
         ui_get_event,
 
         // FS IOPS:
+        fs_sync,
+        fs_get_filesystem_info,
+        fs_open_drive,
+        fs_open_dir,
+        fs_close_dir,
+        fs_reset_dir_enumeration,
+        fs_enumerate_dir,
         fs_delete,
         fs_mkdir,
-        fs_rename,
-        fs_stat,
-
-        // file api
-        fs_openFile,
+        fs_stat_entry,
+        fs_near_move,
+        fs_far_move,
+        fs_copy,
+        fs_open_file,
+        fs_close_file,
+        fs_flush_file,
         fs_read,
         fs_write,
-        fs_seekTo,
-        fs_flush,
-        fs_close,
-
-        // dir api:
-        fs_openDir,
-        fs_nextFile,
-        fs_closeDir,
+        fs_stat_file,
+        fs_resize,
     };
 
     pub const Definition = struct {
@@ -1625,134 +1401,469 @@ pub const ui = struct {
     });
 };
 
+// A file or directory on Ashet OS can be named with any legal UTF-8 sequence
+// that does not contain `/` and `:`. It is recommended to only create file names
+// that are actually typeable on the operating system tho.
+//
+// There are some special file names:
+// - `.` is the "current directory" selector and does not add to the path.
+// - `..` is the "parent directory" selector and navigates up in the directory hierarchy if possible.
+// - Any sequence of upper case ASCII letters and digits (`A-Z`, `0-9`) that ends with `:` is a file system name. This name specifies
+//   the root directory of a certain file system.
+//
+// Paths are either a relative or absolute addyessing of a file system entity.
+// Paths are composed of a sequence of names, each name separated by `/`.
+// A file system name is only legal as the first element of a path sequence, making the path an absolute path.
+//
+// There is a limit on how long a file/directory name can be, but there's no limit on how long a total
+// path can be.
+//
+// Here are some examples for valid paths:
+// - `example.txt`
+// - `docs/wiki.txt`
+// - `SYS:/apps/editor/code`
+// - `USB0:/foo/../bar` (which is equivalent to `USB0:/bar`)
+//
+// The filesystem that is used to boot the OS from has an alias `SYS:` that is always a legal way to address this file system.
+
+/// The maximum number of bytes in a file system identifier name.
+/// This is chosen to be a power of two, and long enough to accommodate
+/// typical file system names:
+/// - `SYS`
+/// - `USB0`
+/// - `USB10`
+/// - `PF0`
+/// - `CF7`
+pub const max_fs_name_len = 8;
+
+/// The maximum number of bytes in a file system type name.
+/// Chosen to be a power of two, and long enough to accomodate typical names:
+/// - `FAT16`
+/// - `FAT32`
+/// - `exFAT`
+/// - `NTFS`
+/// - `ReiserFS`
+/// - `ISO 9660`
+/// - `btrfs`
+/// - `AFFS`
+pub const max_fs_type_len = 16;
+
+/// The maximum number of bytes in a file name.
+/// This is chosen to be a power of two, and reasonably long.
+/// As some programs use sha256 checksums and 64 bytes are enough to store
+/// a hex-encoded 256 bit sequence:
+/// - `114ac2caf8fefad1116dbfb1bd68429f68e9e088b577c9b3f5a3ff0fe77ec886`
+/// This should also enough for most reasonable file names in the wild.
+pub const max_file_name_len = 64;
+
+/// Unix timestamp in milliseconds
+pub const DateTime = i64;
+
+pub const FileSystemId = enum(u32) {
+    /// This is the file system which the os has bootet from.
+    system = 0,
+
+    /// the filesystem isn't valid.
+    invalid = ~@as(u32, 0),
+
+    /// All other ids are unique file systems.
+    _,
+};
+
+pub const FileHandle = enum(u32) { invalid, _ };
+pub const DirectoryHandle = enum(u32) { invalid, _ };
+
+pub const FileSystemInfo = extern struct {
+    id: FileSystemId, // system-unique id of this file system
+    flags: Flags, // binary infos about the file system
+    name: [max_fs_name_len]u8, // user addressable file system identifier ("USB0", ...)
+    filesystem: [max_fs_type_len]u8, // string identifier of a file system driver ("FAT32", ...)
+
+    pub const Flags = packed struct(u16) {
+        system: bool, // is the system boot disk
+        removable: bool, // the file system can be removed by the user
+        read_only: bool, // the file system is mounted as read-only
+        reserved: u13 = 0,
+    };
+
+    pub fn getName(fi: *const FileInfo) []const u8 {
+        return std.mem.sliceTo(&fi.name, 0);
+    }
+
+    pub fn getFileSystem(fi: *const FileInfo) []const u8 {
+        return std.mem.sliceTo(&fi.filesystem, 0);
+    }
+};
+
+pub const FileInfo = extern struct {
+    name: [max_file_name_len]u8,
+    size: u64,
+    attributes: FileAttributes,
+    creation_date: DateTime,
+    modified_date: DateTime,
+
+    pub fn getName(fi: *const FileInfo) []const u8 {
+        return std.mem.sliceTo(&fi.name, 0);
+    }
+};
+
+pub const FileAttributes = packed struct(u16) {
+    directory: bool,
+    read_only: bool,
+    hidden: bool,
+    reserved: u13 = 0,
+};
+
+pub const FileAccess = enum(u8) {
+    read_only = 0,
+    write_only = 1,
+    read_write = 2,
+};
+
+pub const FileMode = enum(u8) {
+    open_existing = 0, // opens file when it exists on disk
+    open_always = 1, // creates file when it does not exist, or opens the file without truncation.
+    create_new = 2, // creates file when there is no file with that name
+    create_always = 3, // creates file when it does not exist, or opens the file and truncates it to zero length
+};
+
 pub const fs = struct {
-    const BasicError = ErrorSet(.{
+    pub const FileSystemError = ErrorSet(.{
         .Unexpected = 1,
-        .InProgress = 2,
+        .Denied = 2,
+        .DiskErr = 3,
+        .Exist = 4,
+        .IntErr = 5,
+        .InvalidDrive = 6,
+        .InvalidName = 7,
+        .InvalidObject = 8,
+        .InvalidParameter = 9,
+        .Locked = 10,
+        .MkfsAborted = 11,
+        .NoFile = 12,
+        .NoFilesystem = 13,
+        .NoPath = 14,
+        .Overflow = 18,
+        .Timeout = 19,
+        .TooManyOpenFiles = 20,
+        .WriteProtected = 21,
+        .InvalidFileHandle = 22,
+        .InvalidDevice = 23,
+        .PathTooLong = 24,
+        .Unimplemented = 25,
     });
 
+    pub const SyncError = ErrorSet(.{
+        .Unexpected = 1,
+        .DiskError = 2,
+    });
+    pub const GetFilesystemInfoError = ErrorSet(.{
+        .Unexpected = 1,
+        .DiskError = 2,
+        .InvalidFileSystem = 3,
+    });
+    pub const OpenDriveError = ErrorSet(.{
+        .Unexpected = 1,
+        .DiskError = 2,
+        .InvalidFileSystem = 3,
+        .FileNotFound = 4,
+        .NotADir = 5,
+        .InvalidPath = 6,
+    });
+    pub const OpenDirError = ErrorSet(.{
+        .Unexpected = 1,
+        .DiskError = 2,
+        .InvalidHandle = 3,
+        .FileNotFound = 4,
+        .NotADir = 5,
+        .InvalidPath = 6,
+    });
+    pub const EnumerateDirError = ErrorSet(.{
+        .Unexpected = 1,
+        .DiskError = 2,
+        .InvalidHandle = 3,
+    });
+    pub const DeleteFileError = ErrorSet(.{
+        .Unexpected = 1,
+        .DiskError = 2,
+        .InvalidHandle = 3,
+        .FileNotFound = 4,
+        .InvalidPath = 5,
+    });
+    pub const MkDirError = ErrorSet(.{
+        .Unexpected = 1,
+        .DiskError = 2,
+        .InvalidHandle = 3,
+        .Exists = 4,
+        .InvalidPath = 5,
+    });
+    pub const StatEntryError = ErrorSet(.{
+        .Unexpected = 1,
+        .DiskError = 2,
+        .InvalidHandle = 3,
+        .FileNotFound = 4,
+        .InvalidPath = 5,
+    });
+    pub const NearMoveError = ErrorSet(.{
+        .Unexpected = 1,
+        .DiskError = 2,
+        .InvalidHandle = 3,
+        .FileNotFound = 4,
+        .InvalidPath = 5,
+        .Exists = 6,
+    });
+    pub const FarMoveError = ErrorSet(.{
+        .Unexpected = 1,
+        .DiskError = 2,
+        .InvalidHandle = 3,
+        .FileNotFound = 4,
+        .InvalidPath = 5,
+        .Exists = 6,
+        .NoSpaceLeft = 7,
+    });
+    pub const CopyFileError = ErrorSet(.{
+        .Unexpected = 1,
+        .DiskError = 2,
+        .InvalidHandle = 3,
+        .FileNotFound = 4,
+        .InvalidPath = 5,
+        .Exists = 6,
+        .NoSpaceLeft = 7,
+    });
+    pub const OpenFileError = ErrorSet(.{
+        .Unexpected = 1,
+        .DiskError = 2,
+        .InvalidHandle = 3,
+        .FileNotFound = 4,
+        .InvalidPath = 5,
+        .Exists = 6,
+        .NoSpaceLeft = 7,
+    });
+    pub const FlushFileError = ErrorSet(.{
+        .Unexpected = 1,
+        .DiskError = 2,
+        .InvalidHandle = 3,
+    });
+    pub const ReadError = ErrorSet(.{
+        .Unexpected = 1,
+        .DiskError = 2,
+        .InvalidHandle = 3,
+    });
+    pub const WriteError = ErrorSet(.{
+        .Unexpected = 1,
+        .DiskError = 2,
+        .InvalidHandle = 3,
+        .NoSpaceLeft = 4,
+    });
+    pub const StatFileError = ErrorSet(.{
+        .Unexpected = 1,
+        .DiskError = 2,
+        .InvalidHandle = 3,
+    });
+    pub const ResizeFileError = ErrorSet(.{
+        .Unexpected = 1,
+        .DiskError = 2,
+        .InvalidHandle = 3,
+        .NoSpaceLeft = 4,
+    });
+
+    /// Flushes all open files to disk.
+    pub const Sync = IOP.define(.{
+        .type = .fs_sync,
+        .@"error" = SyncError,
+        .inputs = struct {},
+    });
+
+    /// Gets information about a file system.
+    /// Also returns a `next` id that can be used to iterate over all filesystems.
+    /// The `system` filesystem is guaranteed to be the first one.
+    pub const GetFilesystemInfo = IOP.define(.{
+        .type = .fs_get_filesystem_info,
+        .@"error" = GetFilesystemInfoError,
+        .inputs = struct { fs: FileSystemId },
+        .outputs = struct { info: FileSystemInfo, next: FileSystemId },
+    });
+
+    /// opens a directory on a filesystem
+    pub const OpenDrive = IOP.define(.{
+        .type = .fs_open_drive,
+        .@"error" = OpenDriveError,
+        .inputs = struct { fs: FileSystemId, path_ptr: [*]const u8, path_len: usize },
+        .outputs = struct { dir: DirectoryHandle },
+    });
+
+    /// opens a directory relative to the given dir handle.
+    pub const OpenDir = IOP.define(.{
+        .type = .fs_open_dir,
+        .@"error" = OpenDirError,
+        .inputs = struct { dir: DirectoryHandle, path_ptr: [*]const u8, path_len: usize },
+        .outputs = struct { dir: DirectoryHandle },
+    });
+
+    /// closes the directory handle
+    pub const CloseDir = IOP.define(.{
+        .type = .fs_close_dir,
+        .@"error" = DefaultError,
+        .inputs = struct { dir: DirectoryHandle },
+        .outputs = struct {},
+    });
+
+    /// resets the directory iterator to the starting point
+    pub const ResetDirEnumeration = IOP.define(.{
+        .type = .fs_reset_dir_enumeration,
+        .@"error" = DefaultError,
+        .inputs = struct { dir: DirectoryHandle },
+    });
+
+    /// returns the info for the current file or "eof", and advances the iterator to the next entry if possible
+    pub const EnumerateDir = IOP.define(.{
+        .type = .fs_enumerate_dir,
+        .@"error" = EnumerateDirError,
+        .inputs = struct { dir: DirectoryHandle },
+        .outputs = struct { eof: bool, info: FileInfo },
+    });
+
+    /// deletes a file or directory by the given path.
     pub const Delete = IOP.define(.{
         .type = .fs_delete,
-        .@"error" = FileSystemError,
-        .inputs = struct {
-            path_ptr: [*]const u8,
-            path_len: usize,
-        },
+        .@"error" = DeleteFileError,
+        .inputs = struct { dir: DirectoryHandle, path_ptr: [*]const u8, path_len: usize, recurse: bool },
     });
 
+    /// creates a new directory relative to dir. If `path` contains subdirectories, all
+    /// directories are created.
     pub const MkDir = IOP.define(.{
         .type = .fs_mkdir,
-        .@"error" = FileSystemError,
-        .inputs = struct {
-            path_ptr: [*]const u8,
-            path_len: usize,
-        },
+        .@"error" = MkDirError,
+        .inputs = struct { dir: DirectoryHandle, path_ptr: [*]const u8, path_len: usize },
+        .outputs = struct { DirectoryHandle },
     });
 
-    pub const Rename = IOP.define(.{
-        .type = .fs_rename,
-        .@"error" = FileSystemError,
+    /// returns the type of the file/dir at path, also adds size and modification dates
+    pub const StatEntry = IOP.define(.{
+        .type = .fs_stat_entry,
+        .@"error" = StatEntryError,
         .inputs = struct {
-            old_path_ptr: [*]const u8,
-            old_path_len: usize,
-            new_path_ptr: [*]const u8,
-            new_path_len: usize,
-        },
-    });
-
-    pub const Stat = IOP.define(.{
-        .type = .fs_stat,
-        .@"error" = FileSystemError,
-        .inputs = struct {
+            dir: DirectoryHandle,
             path_ptr: [*]const u8,
             path_len: usize,
         },
         .outputs = struct { info: FileInfo },
     });
 
-    pub const file = struct {
-        pub const Open = IOP.define(.{
-            .type = .fs_openFile,
-            .@"error" = FileOpenError,
-            .inputs = struct {
-                path_ptr: [*]const u8,
-                path_len: usize,
-                access: FileAccess,
-                mode: FileMode,
-            },
-            .outputs = struct { file: FileHandle },
-        });
+    /// renames a file inside the same file system.
+    /// NOTE: This is a cheap operation and does not require the copying of data.
+    pub const NearMove = IOP.define(.{
+        .type = .fs_near_move,
+        .@"error" = NearMoveError,
+        .inputs = struct {
+            src_dir: DirectoryHandle,
+            src_path_ptr: [*]const u8,
+            src_path_len: usize,
+            dst_path_ptr: [*]const u8,
+            dst_path_len: usize,
+        },
+    });
 
-        pub const Close = IOP.define(.{
-            // fs.close", fn (FileHandle) void
-            .type = .fs_close,
-            .@"error" = BasicError,
-            .inputs = struct { file: FileHandle },
-        });
+    // GROUP: modification
 
-        pub const Flush = IOP.define(.{
-            .type = .fs_flush,
-            .@"error" = FileWriteError,
-            .inputs = struct { file: FileHandle },
-        });
+    /// moves a file or directory between two unrelated directories. Can also move between different file systems.
+    /// NOTE: This syscall might copy the data.
+    pub const FarMove = IOP.define(.{
+        .type = .fs_far_move,
+        .@"error" = FarMoveError,
+        .inputs = struct {
+            src_dir: DirectoryHandle,
+            src_path_ptr: [*]const u8,
+            src_path_len: usize,
+            dst_dir: DirectoryHandle,
+            dst_path_ptr: [*]const u8,
+            dst_path_len: usize,
+        },
+    });
 
-        pub const Read = IOP.define(.{
-            .type = .fs_read,
-            .@"error" = FileReadError,
-            .inputs = struct {
-                file: FileHandle,
-                ptr: [*]u8,
-                len: usize,
-            },
-            .outputs = struct { count: usize },
-        });
+    /// copies a file or directory between two unrelated directories. Can also move between different file systems.
+    pub const Copy = IOP.define(.{
+        .type = .fs_copy,
+        .@"error" = CopyFileError,
+        .inputs = struct {
+            src_dir: DirectoryHandle,
+            src_path_ptr: [*]const u8,
+            src_path_len: usize,
+            dst_dir: DirectoryHandle,
+            dst_path_ptr: [*]const u8,
+            dst_path_len: usize,
+        },
+    });
 
-        pub const Write = IOP.define(.{
-            .type = .fs_write,
-            .@"error" = FileWriteError,
-            .inputs = struct {
-                file: FileHandle,
-                ptr: [*]const u8,
-                len: usize,
-            },
-            .outputs = struct { count: usize },
-        });
+    // // GROUP: file handling
 
-        pub const SeekTo = IOP.define(.{
-            .type = .fs_seekTo,
-            .@"error" = FileSeekError,
-            .inputs = struct {
-                file: FileHandle,
-                offset: u64,
-            },
-        });
-    };
+    /// opens a file from the given directory.
+    pub const OpenFile = IOP.define(.{
+        .type = .fs_open_file,
+        .@"error" = OpenFileError,
+        .inputs = struct {
+            dir: DirectoryHandle,
+            path_ptr: [*]const u8,
+            path_len: usize,
+            access: FileAccess,
+            mode: FileMode,
+        },
+        .outputs = struct { handle: FileHandle },
+    });
 
-    pub const dir = struct {
-        pub const Open = IOP.define(.{
-            .type = .fs_openDir,
-            .@"error" = DirOpenError,
-            .inputs = struct {
-                path_ptr: [*]const u8,
-                path_len: usize,
-            },
-            .outputs = struct { dir: DirectoryHandle },
-        });
+    /// closes the handle and flushes the file.
+    pub const CloseFile = IOP.define(.{
+        .type = .fs_close_file,
+        .@"error" = DefaultError,
+        .inputs = struct { file: FileHandle },
+    });
 
-        pub const Next = IOP.define(.{
-            .type = .fs_nextFile,
-            .@"error" = DirNextError,
-            .inputs = struct { dir: DirectoryHandle },
-            .outputs = struct {
-                eof: bool,
-                info: FileInfo,
-            },
-        });
+    /// makes sure this file is safely stored to mass storage device
+    pub const FlushFile = IOP.define(.{
+        .type = .fs_flush_file,
+        .@"error" = FlushFileError,
+        .inputs = struct { file: FileHandle },
+    });
 
-        pub const Close = IOP.define(.{
-            .type = .fs_closeDir,
-            .@"error" = BasicError,
-            .inputs = struct { dir: DirectoryHandle },
-        });
-    };
+    /// directly reads data from a given offset into the file. no streaming API to the kernel
+    pub const Read = IOP.define(.{
+        .type = .fs_read,
+        .@"error" = ReadError,
+        .inputs = struct {
+            file: FileHandle,
+            offset: u64,
+            buffer_ptr: [*]u8,
+            buffer_len: usize,
+        },
+        .outputs = struct { count: usize },
+    });
+
+    /// directly writes data to a given offset into the file. no streaming API to the kernel
+    pub const Write = IOP.define(.{
+        .type = .fs_write,
+        .@"error" = WriteError,
+        .inputs = struct {
+            file: FileHandle,
+            offset: u64,
+            buffer_ptr: [*]const u8,
+            buffer_len: usize,
+        },
+        .outputs = struct { count: usize },
+    });
+
+    /// allows us to get the current size of the file, modification dates, and so on
+    pub const StatFile = IOP.define(.{
+        .type = .fs_stat_file,
+        .@"error" = StatFileError,
+        .inputs = struct { file: FileHandle },
+        .outputs = struct { info: FileInfo },
+    });
+
+    /// Resizes the file to the given length in bytes. Can be also used to truncate a file to zero length.
+    pub const Resize = IOP.define(.{
+        .type = .fs_resize,
+        .@"error" = ResizeFileError,
+        .inputs = struct { file: FileHandle, length: u64 },
+    });
 };

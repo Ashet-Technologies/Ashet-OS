@@ -156,10 +156,13 @@ pub fn startAppElf(app: AppID) !void {
 
     const elf = std.elf;
 
-    var path_buffer: [ashet.abi.max_path]u8 = undefined;
-    const app_path = try std.fmt.bufPrint(&path_buffer, "SYS:/apps/{s}/code", .{app.getName()});
+    var root_dir = try libashet.fs.Directory.openDrive(.system, "apps");
+    defer root_dir.close();
 
-    var file = try libashet.fs.File.open(app_path, .read_only, .open_existing);
+    var app_dir = try root_dir.openDir(app.getName());
+    defer app_dir.close();
+
+    var file = try app_dir.openFile("code", .read_only, .open_existing);
     defer file.close();
 
     var header = try elf.Header.read(&file);

@@ -1459,7 +1459,7 @@ pub const desktop = struct {
         }
     }
 
-    fn addApp(ent: ashet.abi.FileInfo, pal_offset: *u8) !void {
+    fn addApp(dir: libashet.fs.Directory, ent: ashet.abi.FileInfo, pal_offset: *u8) !void {
         const app = apps.addOne() catch {
             logger.warn("The system can only handle {} apps right now, but more are installed.", .{apps.len});
             return;
@@ -1480,11 +1480,7 @@ pub const desktop = struct {
             std.mem.copy(u8, &app.name, name[0..std.math.min(name.len, app.name.len)]);
         }
 
-        var path_buffer: [ashet.abi.max_path]u8 = undefined;
-
-        const icon_path = try std.fmt.bufPrint(&path_buffer, "SYS:/apps/{s}/icon", .{ent.getName()});
-
-        if (libashet.fs.File.open(icon_path, .read_only, .open_existing)) |const_icon_file| {
+        if (dir.openFile("icon", .read_only, .open_existing)) |const_icon_file| {
             var icon_file = const_icon_file;
             defer icon_file.close();
 
@@ -1502,14 +1498,20 @@ pub const desktop = struct {
     }
 
     fn reload() !void {
-        var dir = try libashet.fs.Directory.open("SYS:/apps");
-        defer dir.close();
+        var apps_dir = try libashet.fs.Directory.openDrive(.system, "apps");
+        defer apps_dir.close();
 
         apps.len = 0;
         var pal_off: u8 = framebuffer_default_icon_shift;
 
-        while (try dir.next()) |ent| {
-            addApp(ent, &pal_off) catch |err| {
+        while (try apps_dir.next()) |ent| {
+            if (!ent.attributes.directory)
+                continue;
+
+            var app_dir = try apps_dir.openDir(ent.getName());
+            defer app_dir.close();
+
+            addApp(app_dir, ent, &pal_off) catch |err| {
                 logger.err("failed to load application {s}: {s}", .{
                     ent.getName(),
                     @errorName(err),

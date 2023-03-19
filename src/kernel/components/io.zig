@@ -124,23 +124,45 @@ pub fn scheduleAndAwait(start_queue: ?*IOP, wait: WaitIO) ?*IOP {
             .ui_get_event => ashet.ui.getEvent(IOP.cast(abi.ui.GetEvent, event)),
 
             // fs api
-            .fs_delete => ashet.filesystem.delete(IOP.cast(abi.fs.Delete, event)),
-            .fs_mkdir => ashet.filesystem.mkdir(IOP.cast(abi.fs.MkDir, event)),
-            .fs_rename => ashet.filesystem.rename(IOP.cast(abi.fs.Rename, event)),
-            .fs_stat => ashet.filesystem.stat(IOP.cast(abi.fs.Stat, event)),
 
-            // file api
-            .fs_openFile => ashet.filesystem.open(IOP.cast(abi.fs.file.Open, event)),
-            .fs_read => ashet.filesystem.read(IOP.cast(abi.fs.file.Read, event)),
-            .fs_write => ashet.filesystem.write(IOP.cast(abi.fs.file.Write, event)),
-            .fs_seekTo => ashet.filesystem.seekTo(IOP.cast(abi.fs.file.SeekTo, event)),
-            .fs_flush => ashet.filesystem.flush(IOP.cast(abi.fs.file.Flush, event)),
-            .fs_close => ashet.filesystem.close(IOP.cast(abi.fs.file.Close, event)),
+            .fs_sync => @panic("fs_sync not implemented yet!"),
+            .fs_get_filesystem_info => @panic("fs_get_filesystem_info not implemented yet!"),
+            .fs_open_drive => @panic("fs_open_drive not implemented yet!"),
+            .fs_open_dir => @panic("fs_open_dir not implemented yet!"),
+            .fs_close_dir => @panic("fs_close_dir not implemented yet!"),
+            .fs_reset_dir_enumeration => @panic("fs_reset_dir_enumeration not implemented yet!"),
+            .fs_enumerate_dir => @panic("fs_enumerate_dir not implemented yet!"),
+            .fs_delete => @panic("fs_delete not implemented yet!"),
+            .fs_mkdir => @panic("fs_mkdir not implemented yet!"),
+            .fs_stat_entry => @panic("fs_stat_entry not implemented yet!"),
+            .fs_near_move => @panic("fs_near_move not implemented yet!"),
+            .fs_far_move => @panic("fs_far_move not implemented yet!"),
+            .fs_copy => @panic("fs_copy not implemented yet!"),
+            .fs_open_file => @panic("fs_open_file not implemented yet!"),
+            .fs_close_file => @panic("fs_close_file not implemented yet!"),
+            .fs_flush_file => @panic("fs_flush_file not implemented yet!"),
+            .fs_read => @panic("fs_read not implemented yet!"),
+            .fs_write => @panic("fs_write not implemented yet!"),
+            .fs_stat_file => @panic("fs_stat_file not implemented yet!"),
+            .fs_resize => @panic("fs_resize not implemented yet!"),
 
-            // dir api:
-            .fs_openDir => ashet.filesystem.openDir(IOP.cast(abi.fs.dir.Open, event)),
-            .fs_nextFile => ashet.filesystem.next(IOP.cast(abi.fs.dir.Next, event)),
-            .fs_closeDir => ashet.filesystem.closeDir(IOP.cast(abi.fs.dir.Close, event)),
+            // .fs_delete => ashet.filesystem.delete(IOP.cast(abi.fs.Delete, event)),
+            // .fs_mkdir => ashet.filesystem.mkdir(IOP.cast(abi.fs.MkDir, event)),
+            // .fs_rename => ashet.filesystem.rename(IOP.cast(abi.fs.Rename, event)),
+            // .fs_stat => ashet.filesystem.stat(IOP.cast(abi.fs.Stat, event)),
+
+            // // file api
+            // .fs_openFile => ashet.filesystem.open(IOP.cast(abi.fs.file.Open, event)),
+            // .fs_read => ashet.filesystem.read(IOP.cast(abi.fs.file.Read, event)),
+            // .fs_write => ashet.filesystem.write(IOP.cast(abi.fs.file.Write, event)),
+            // .fs_seekTo => ashet.filesystem.seekTo(IOP.cast(abi.fs.file.SeekTo, event)),
+            // .fs_flush => ashet.filesystem.flush(IOP.cast(abi.fs.file.Flush, event)),
+            // .fs_close => ashet.filesystem.close(IOP.cast(abi.fs.file.Close, event)),
+
+            // // dir api:
+            // .fs_openDir => ashet.filesystem.openDir(IOP.cast(abi.fs.dir.Open, event)),
+            // .fs_nextFile => ashet.filesystem.next(IOP.cast(abi.fs.dir.Next, event)),
+            // .fs_closeDir => ashet.filesystem.closeDir(IOP.cast(abi.fs.dir.Close, event)),
         }
     }
 

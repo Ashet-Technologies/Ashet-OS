@@ -308,34 +308,19 @@ pub const ui = struct {
 
 pub const fs = struct {
     pub const File = struct {
-        pub const ReadError = abi.FileReadError.Error || error{Unexpected};
-        pub const WriteError = abi.FileWriteError.Error || error{Unexpected};
-        pub const SeekError = abi.FileSeekError.Error || error{Unexpected};
-        pub const GetPosError = error{};
+        pub const ReadError = abi.fs.ReadError.Error;
+        pub const WriteError = abi.fs.WriteError.Error;
+        pub const EmptyError = error{};
 
-        pub const Reader = std.io.Reader(*File, ReadError, read);
-        pub const Writer = std.io.Writer(*File, WriteError, write);
-        pub const SeekableStream = std.io.SeekableStream(*File, SeekError, GetPosError, seekTo, seekBy, getPos, getEndPos);
+        pub const Reader = std.io.Reader(*File, ReadError, streamRead);
+        pub const Writer = std.io.Writer(*File, WriteError, streamWrite);
+        pub const SeekableStream = std.io.SeekableStream(*File, EmptyError, EmptyError, seekTo, seekBy, getPos, getEndPos);
 
         handle: abi.FileHandle,
         offset: u64,
 
-        pub fn open(path: []const u8, access: abi.FileAccess, mode: abi.FileMode) !File {
-            const out = try io.performOne(abi.fs.file.Open, .{
-                .path_ptr = path.ptr,
-                .path_len = path.len,
-                .access = access,
-                .mode = mode,
-            });
-            std.debug.assert(out.file != .invalid);
-            return File{
-                .handle = out.file,
-                .offset = 0,
-            };
-        }
-
         pub fn close(file: *File) void {
-            _ = io.performOne(abi.fs.file.Close, .{ .file = file.handle }) catch |err| {
+            _ = io.performOne(abi.fs.CloseFile, .{ .file = file.handle }) catch |err| {
                 std.log.scoped(.filesystem).err("failed to close file handle {}: {s}", .{ file.handle, @errorName(err) });
                 return;
             };
@@ -346,29 +331,39 @@ pub const fs = struct {
             _ = try io.performOne(abi.fs.file.Flush, .{ .file = file.handle });
         }
 
-        pub fn read(file: *File, buffer: []u8) !usize {
-            const out = try io.performOne(abi.fs.file.Read, .{
+        fn streamRead(file: *File, buffer: []u8) ReadError!usize {
+            const count = try file.read(file.offset, buffer);
+            file.offset += count;
+            return count;
+        }
+
+        fn streamWrite(file: *File, buffer: []const u8) WriteError!usize {
+            const count = try file.write(file.offset, buffer);
+            file.offset += count;
+            return count;
+        }
+
+        pub fn read(file: File, offset: u64, buffer: []u8) ReadError!usize {
+            const out = try io.performOne(abi.fs.Read, .{
                 .file = file.handle,
-                .ptr = buffer.ptr,
-                .len = buffer.len,
+                .offset = offset,
+                .buffer_ptr = buffer.ptr,
+                .buffer_len = buffer.len,
             });
             return out.count;
         }
 
-        pub fn write(file: *File, buffer: []const u8) !usize {
-            const out = try io.performOne(abi.fs.file.Write, .{
+        pub fn write(file: File, offset: u64, buffer: []const u8) WriteError!usize {
+            const out = try io.performOne(abi.fs.Write, .{
                 .file = file.handle,
-                .ptr = buffer.ptr,
-                .len = buffer.len,
+                .offset = offset,
+                .buffer_ptr = buffer.ptr,
+                .buffer_len = buffer.len,
             });
             return out.count;
         }
 
         pub fn seekTo(file: *File, pos: u64) !void {
-            _ = try io.performOne(abi.fs.file.SeekTo, .{
-                .file = file.handle,
-                .offset = pos,
-            });
             file.offset = pos;
         }
 
@@ -378,11 +373,11 @@ pub const fs = struct {
             @panic("not implemented yet");
         }
 
-        pub fn getPos(file: *File) GetPosError!u64 {
+        pub fn getPos(file: *File) EmptyError!u64 {
             return file.offset;
         }
 
-        pub fn getEndPos(file: *File) GetPosError!u64 {
+        pub fn getEndPos(file: *File) EmptyError!u64 {
             _ = file;
             @panic("not implemented");
         }
@@ -401,13 +396,26 @@ pub const fs = struct {
     };
 
     pub const Directory = struct {
-        pub const OpenError = abi.DirOpenError.Error;
-        pub const NextError = abi.DirNextError.Error;
+        pub const OpenError = abi.fs.OpenDirError.Error;
+        pub const OpenDriveError = abi.fs.OpenDriveError.Error;
 
         handle: abi.DirectoryHandle,
 
-        pub fn open(path: []const u8) OpenError!Directory {
-            const out = try io.performOne(abi.fs.dir.Open, .{
+        pub fn openDrive(filesystem: abi.FileSystemId, path: []const u8) OpenDriveError!Directory {
+            const out = try io.performOne(abi.fs.OpenDrive, .{
+                .fs = filesystem,
+                .path_ptr = path.ptr,
+                .path_len = path.len,
+            });
+            std.debug.assert(out.dir != .invalid);
+            return Directory{
+                .handle = out.dir,
+            };
+        }
+
+        pub fn openDir(dir: Directory, path: []const u8) OpenError!Directory {
+            const out = try io.performOne(abi.fs.OpenDir, .{
+                .dir = dir.handle,
                 .path_ptr = path.ptr,
                 .path_len = path.len,
             });
@@ -418,7 +426,7 @@ pub const fs = struct {
         }
 
         pub fn close(dir: *Directory) void {
-            _ = io.performOne(abi.fs.dir.Close, .{ .dir = dir.handle }) catch |err| {
+            _ = io.performOne(abi.fs.CloseDir, .{ .dir = dir.handle }) catch |err| {
                 std.log.scoped(.filesystem).err("failed to close directory handle {}: {s}", .{ dir.handle, @errorName(err) });
                 return;
             };
@@ -426,13 +434,30 @@ pub const fs = struct {
             dir.* = undefined;
         }
 
-        pub fn next(dir: *Directory) !?abi.FileInfo {
-            const out = try io.performOne(abi.fs.dir.Next, .{ .dir = dir.handle });
+        pub const NextError = abi.fs.EnumerateDirError.Error;
+        pub fn next(dir: *Directory) NextError!?abi.FileInfo {
+            const out = try io.performOne(abi.fs.EnumerateDir, .{ .dir = dir.handle });
 
             return if (out.eof)
                 null
             else
                 out.info;
+        }
+
+        pub const OpenFileError = abi.fs.OpenFileError.Error;
+        pub fn openFile(dir: Directory, path: []const u8, access: abi.FileAccess, mode: abi.FileMode) OpenFileError!File {
+            const out = try io.performOne(abi.fs.OpenFile, .{
+                .dir = dir.handle,
+                .path_ptr = path.ptr,
+                .path_len = path.len,
+                .access = access,
+                .mode = mode,
+            });
+            std.debug.assert(out.handle != .invalid);
+            return File{
+                .handle = out.handle,
+                .offset = 0,
+            };
         }
     };
 };
