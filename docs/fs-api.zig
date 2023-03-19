@@ -1,5 +1,30 @@
 // New API (Zig Style):
 
+// A file or directory on Ashet OS can be named with any legal UTF-8 sequence
+// that does not contain `/` and `:`. It is recommended to only create file names
+// that are actually typeable on the operating system tho.
+//
+// There are some special file names:
+// - `.` is the "current directory" selector and does not add to the path.
+// - `..` is the "parent directory" selector and navigates up in the directory hierarchy if possible.
+// - Any sequence of upper case ASCII letters and digits (`A-Z`, `0-9`) that ends with `:` is a file system name. This name specifies
+//   the root directory of a certain file system.
+//
+// Paths are either a relative or absolute addressing of a file system entity.
+// Paths are composed of a sequence of names, each name separated by `/`.
+// A file system name is only legal as the first element of a path sequence, making the path an absolute path.
+//
+// There is a limit on how long a file/directory name can be, but there's no limit on how long a total
+// path can be.
+//
+// Here are some examples for valid paths:
+// - `example.txt`
+// - `docs/wiki.txt`
+// - `SYS:/apps/editor/code`
+// - `USB0:/foo/../bar` (which is equivalent to `USB0:/bar`)
+//
+// The filesystem that is used to boot the OS from has an alias `SYS:` that is always a legal way to address this file system.
+
 // GROUP: Types
 
 /// The maximum number of bytes in a file system identifier name.
@@ -59,7 +84,7 @@ pub const FileSystemInfo = extern struct {
         system: bool, // is the system boot disk
         removable: bool, // the file system can be removed by the user
         read_only: bool, // the file system is mounted as read-only
-        padding: u13,
+        reserved: u13 = 0,
     };
 };
 
@@ -75,10 +100,7 @@ pub const FileAttributes = packed struct(16) {
     directory: bool,
     read_only: bool,
     hidden: bool,
-    // system: bool,
-    // archive: bool,
-    padding0: u5 = 0,
-    padding1: u8 = 0,
+    reserved: u13 = 0,
 };
 
 pub const FileAccess = enum(u8) {
@@ -107,7 +129,7 @@ fn @"fs.FindFilesystem"(name: []const u8) struct { id: FileSystemId };
 /// Gets information about a file system.
 /// Also returns a `next` id that can be used to iterate over all filesystems.
 /// The `system` filesystem is guaranteed to be the first one.
-fn @"fs.GetFilesystemInfo"(fs: FileSystemId) struct { info: FileSystemId, next: FileSystemId };
+fn @"fs.GetFilesystemInfo"(fs: FileSystemId) struct { info: FileSystemInfo, next: FileSystemId };
 
 // GROUP: dir handling
 
@@ -133,11 +155,12 @@ fn @"fs.dir.Next"(dir: DirectoryHandle) struct { eof: bool, info: FileInfo };
 /// deletes a file or directory by the given path.
 fn @"fs.dir.Delete"(dir: DirectoryHandle, path: []const u8, recurse: bool) struct {};
 
-/// creates a new directory relative to dir
+/// creates a new directory relative to dir. If `path` contains subdirectories, all
+/// directories are created.
 fn @"fs.dir.MkDir"(dir: DirectoryHandle, path: []const u8) struct { DirectoryHandle };
 
 /// returns the type of the file/dir at path, also adds size and modification dates
-fn @"fs.dir.Stat"(dir: DirectoryHandle, path: []const u8) struct { info: FileInfo };
+fn @"fs.dir.Info"(dir: DirectoryHandle, path: []const u8) struct { info: FileInfo };
 
 /// renames a file inside the same file system.
 /// NOTE: This is a cheap operation and does not require the copying of data.
@@ -147,10 +170,10 @@ fn @"fs.dir.NearMove"(src_dir: DirectoryHandle, src_path: []const u8, new_name: 
 
 /// moves a file or directory between two unrelated directories. Can also move between different file systems.
 /// NOTE: This syscall might copy the data.
-fn @"fs.dir.FarMove"(src_dir: DirectoryHandle, src_path: []const u8, dst_dir: DirectoryHandle, new_path: []const u8, allow_cross_fs_dir: bool) struct {};
+fn @"fs.dir.FarMove"(src_dir: DirectoryHandle, src_path: []const u8, dst_dir: DirectoryHandle, new_path: []const u8) struct {};
 
 /// copies a file or directory between two unrelated directories. Can also move between different file systems.
-fn @"fs.dir.Copy"(src_dir: DirectoryHandle, src_path: []const u8, dst_dir: DirectoryHandle, new_path: []const u8, allow_cross_fs_dir: bool) struct {};
+fn @"fs.dir.Copy"(src_dir: DirectoryHandle, src_path: []const u8, dst_dir: DirectoryHandle, new_path: []const u8) struct {};
 
 // // GROUP: file handling
 
@@ -170,7 +193,7 @@ fn @"fs.file.Read"(file: FileHandle, offset: u64, buffer: []u8) struct { count: 
 fn @"fs.file.Write"(file: FileHandle, offset: u64, buffer: []const u8) struct { count: usize };
 
 /// allows us to get the current size of the file, modification dates, and so on
-fn @"fs.file.Stat"(file: FileHandle) struct { FileInfo };
+fn @"fs.file.Info"(file: FileHandle) struct { FileInfo };
 
 /// Resizes the file to the given length in bytes. Can be also used to truncate a file to zero length.
 fn @"fs.file.Resize"(file: FileHandle, length: u64) struct {};

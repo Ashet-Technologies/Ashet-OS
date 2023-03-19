@@ -8,46 +8,46 @@ pub const Point = ashet.abi.Point;
 pub const Size = ashet.abi.Size;
 pub const Rectangle = ashet.abi.Rectangle;
 
-pub const Index = struct {
-    arena: std.heap.ArenaAllocator,
-    entries: []Entry,
+// pub const Index = struct {
+//     arena: std.heap.ArenaAllocator,
+//     entries: []Entry,
 
-    pub fn build(allocator: std.mem.Allocator, root_path: []const u8) !Index {
-        var arena = std.heap.ArenaAllocator.init(allocator);
-        errdefer arena.deinit();
+//     pub fn build(allocator: std.mem.Allocator, root_path: []const u8) !Index {
+//         var arena = std.heap.ArenaAllocator.init(allocator);
+//         errdefer arena.deinit();
 
-        const entries = try scanDir(arena.allocator(), root_path);
+//         const entries = try scanDir(arena.allocator(), root_path);
 
-        return Index{
-            .arena = arena,
-            .entries = entries,
-        };
-    }
+//         return Index{
+//             .arena = arena,
+//             .entries = entries,
+//         };
+//     }
 
-    fn scanDir(allocator: std.mem.Allocator, path: []const u8) ![]Entry {
-        var list = std.ArrayList(Entry).init(allocator);
-        defer list.deinit();
+//     fn scanDir(allocator: std.mem.Allocator, path: []const u8) ![]Entry {
+//         var list = std.ArrayList(Entry).init(allocator);
+//         defer list.deinit();
 
-        var dir = try ashet.fs.Directory.open(path);
-        defer dir.close();
+//         var dir = try ashet.fs.Directory.open(path);
+//         defer dir.close();
 
-        while (try dir.next()) |entry| {
-            //
-        }
+//         while (try dir.next()) |entry| {
+//             //
+//         }
 
-        return try list.toOwnedSlice();
-    }
+//         return try list.toOwnedSlice();
+//     }
 
-    pub const Entry = struct {
-        title: []const u8,
-        data: Data,
+//     pub const Entry = struct {
+//         title: []const u8,
+//         data: Data,
 
-        pub const Data = union(enum) {
-            file: []const u8,
-            folder: []Entry,
-        };
-    };
-};
+//         pub const Data = union(enum) {
+//             file: []const u8,
+//             folder: []Entry,
+//         };
+//     };
+// };
 
 pub const Theme = struct {
     text_color: Color,

@@ -613,7 +613,7 @@ pub const MouseButton = enum(u8) {
     wheel_up = 7,
 };
 
-pub const KeyboardModifiers = packed struct { // (u16)
+pub const KeyboardModifiers = packed struct(u16) {
     shift: bool,
     alt: bool,
     ctrl: bool,
@@ -624,24 +624,6 @@ pub const KeyboardModifiers = packed struct { // (u16)
     alt_graph: bool,
     padding: u8 = 0,
 };
-
-comptime {
-    if (@sizeOf(KeyboardModifiers) != 2)
-        @compileError("KeyboardModifiers must be 2 byte large");
-}
-
-// pub const ReadLineParams = extern struct {
-//     buffer: [*]u8,
-//     buffer_len: usize,
-
-//     width: u16,
-// };
-
-// pub const ReadLineResult = enum(u8) {
-//     ok = 0,
-//     cancelled = 1,
-//     failed = 2,
-// };
 
 /// Computes the character attributes and selects both foreground and background color.
 pub fn charAttributes(foreground: u4, background: u4) u8 {

@@ -9,8 +9,8 @@ quote {
 }
 
 p {
-  span "The Ashet Operating System comes with a builtin wiki software that provides documentation for the OS, "
-  span "its applications. It also contains tutorials on how to create your own applications, both cross-compiled "
+  span "The Ashet Operating System comes with a builtin wiki software that provides documentation for the OS "
+  span "and its applications. It also contains tutorials on how to create your own applications, both cross-compiled "
   span "as well as self-hosted on your own machine."
 }
 
