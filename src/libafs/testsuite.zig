@@ -11,6 +11,7 @@ const BlockDevice = struct {
 };
 
 test {
+    _ = afs;
     // var blockdev = BlockDevice{};
 
     // afs.format(blockdev.interface());

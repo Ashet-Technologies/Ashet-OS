@@ -31,12 +31,16 @@ pub const BlockDevice = struct {
 
     /// Starts a write operation on the underlying block device. When done, will call `callback` with `callback_ctx` as the first argument, and
     /// an optional error state.
+    /// NOTE: When the block device is non-blocking, `callback` is already invoked in this function! Design your code in a way that this won't
+    /// affect your control flow.
     pub fn beginWriteBlock(bd: BlockDevice, offset: u32, block: *const Block, callback: *const CompletedCallback, callback_ctx: *anyopaque) void {
         bd.vtable.beginWriteBlockFn(bd.object, offset, block, callback, callback_ctx);
     }
 
     /// Starts a read operation on the underlying block device. When done, will call `callback` with `callback_ctx` as the first argument, and
     /// an optional error state.
+    /// NOTE: When the block device is non-blocking, `callback` is already invoked in this function! Design your code in a way that this won't
+    /// affect your control flow.
     pub fn beginReadBlock(bd: BlockDevice, offset: u32, block: *Block, callback: *const CompletedCallback, callback_ctx: *anyopaque) void {
         bd.vtable.beginReadBlockFn(bd.object, offset, block, callback, callback_ctx);
     }
@@ -45,27 +49,49 @@ pub const BlockDevice = struct {
 pub const Formatter = struct {
     const Error = BlockDevice.IoError;
 
-    completed: bool = false,
-    async_error: ?IoError = null,
-
     buffer: Block,
+    completed: bool = false,
+    async_error: ?Error = null,
 
     fn setBuffer(fmt: *Formatter, data: anytype) void {
         if (@sizeOf(@TypeOf(data)) != @sizeOf(Block))
             @compileError("");
+        std.mem.copy(u8, &fmt.buffer, &std.mem.asBytes(&data));
     }
 
-    pub fn format(fmt: *Formatter, bd: BlockDevice) Formatter {
-        _ = fmt;
-        _ = bd;
-
+    pub fn startFormat(fmt: *Formatter, bd: BlockDevice) Formatter {
         const len = bd.getBlockCount();
+
+        _ = len;
 
         bd.beginWriteBlock(0, &fmt.buffer, formatBitmap, fmt);
     }
 
-    fn formatBitmap(ctx: *anyopaque, err: ?IoError) void {
-        //
+    pub fn isCompleted(fmt: *const Formatter) bool {
+        return fmt.completed;
+    }
+
+    pub fn endFormat(fmt: *Formatter) Error!void {
+        if (fmt.async_error) |err|
+            return err;
+    }
+
+    fn fromCtx(ctx: *anyopaque, err: ?Error) ?*Formatter {
+        const fmt = @ptrCast(*Formatter, @alignCast(@alignOf(Formatter), ctx));
+        if (err) |e| {
+            fmt.async_error = e;
+            fmt.completed = true;
+            return null;
+        }
+        return fmt;
+    }
+
+    // format sequence
+
+    fn formatBitmap(ctx: *anyopaque, err: ?Error) void {
+        const fmt = fromCtx(ctx, err) orelse return;
+
+        _ = fmt;
     }
 };
 
@@ -82,10 +108,10 @@ const RootBlock = extern struct {
 
 const ObjectBlock = extern struct {
     size: u32, // size of this object in bytes. for directories, this means the directory contains `size/sizeof(Entry)` elements.
-    create_time: i128, // stores the date when this object was created, unix timestamp in nano seconds
-    modify_time: i128, // stores the date when this object was last modified, unix timestamp in nano seconds
+    create_time: i128 align(4), // stores the date when this object was created, unix timestamp in nano seconds
+    modify_time: i128 align(4), // stores the date when this object was last modified, unix timestamp in nano seconds
     flags: u32, // type-dependent bit field (file: bit 0 = read only; directory: none; all other bits are reserved=0)
-    refs: [120]u32, // pointer to a type-dependent data block (FileDataBlock, DirectoryDataBlock)
+    refs: [117]u32, // pointer to a type-dependent data block (FileDataBlock, DirectoryDataBlock)
     next: u32, // link to a RefListBlock to continue the refs listing. 0 is "end of chain"
 };
 
@@ -99,13 +125,13 @@ const FileDataBlock = extern struct {
 };
 
 const DirectoryDataBlock = extern struct {
-    entries: [2]DirectoryEntry, // two entries in the directory.
+    entries: [4]DirectoryEntry, // two entries in the directory.
 };
 
 const DirectoryEntry = extern struct {
-    name: [120]u8, // zero-padded file name
     type: u32, // the kind of this entry. 0 = directory, 1 = file, all other values are illegal
     ref: u32, // link to the associated ObjectBlock. if 0, the entry is deleted. this allows a panic recovery for accidentially deleted files.
+    name: [120]u8, // zero-padded file name
 };
 
 comptime {
@@ -115,9 +141,8 @@ comptime {
         RefListBlock,
         FileDataBlock,
         DirectoryDataBlock,
-        DirectoryEntry,
     };
     for (block_types) |t| {
-        std.debug.assert(@sizeOf(t) == 512);
+        if (@sizeOf(t) != 512) @compileError(@typeName(t) ++ " is not 512 bytes large!");
     }
 }

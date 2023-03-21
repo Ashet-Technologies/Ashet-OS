@@ -65,10 +65,10 @@ Each object block encodes either a file or a directory (stored as external means
 ```rs
 struct ObjectBlock {
   size: u32,          // size of this object in bytes. for directories, this means the directory contains `size/sizeof(Entry)` elements.
-  create_time: i128,  // stores the date when this object was created, unix timestamp in nano seconds
-  modify_time: i128,  // stores the date when this object was last modified, unix timestamp in nano seconds
+  create_time: i128 align(4),  // stores the date when this object was created, unix timestamp in nano seconds
+  modify_time: i128 align(4),  // stores the date when this object was last modified, unix timestamp in nano seconds
   flags: u32,         // type-dependent bit field (file: bit 0 = read only; directory: none; all other bits are reserved=0)
-  refs: [???]u32,     // pointer to a type-dependent data block (FileDataBlock, DirectoryDataBlock)
+  refs: [117]u32,     // pointer to a type-dependent data block (FileDataBlock, DirectoryDataBlock)
   next: u32,          // link to a RefListBlock to continue the refs listing. 0 is "end of chain"
 }
 
@@ -82,7 +82,7 @@ struct FileDataBlock {
 }
 
 struct DirectoryDataBlock {
-  entries: [2]Entry,  // two entries in the directory.
+  entries: [4]Entry,  // entries in a directory block fill up to 512 byte.
 }
 
 struct Entry {
