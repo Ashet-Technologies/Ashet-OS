@@ -363,21 +363,21 @@ pub const fs = struct {
             return out.count;
         }
 
-        pub fn seekTo(file: *File, pos: u64) !void {
+        fn seekTo(file: *File, pos: u64) !void {
             file.offset = pos;
         }
 
-        pub fn seekBy(file: *File, delta: i64) !void {
+        fn seekBy(file: *File, delta: i64) !void {
             _ = file;
             _ = delta;
             @panic("not implemented yet");
         }
 
-        pub fn getPos(file: *File) EmptyError!u64 {
+        fn getPos(file: *File) EmptyError!u64 {
             return file.offset;
         }
 
-        pub fn getEndPos(file: *File) EmptyError!u64 {
+        fn getEndPos(file: *File) EmptyError!u64 {
             _ = file;
             @panic("not implemented");
         }

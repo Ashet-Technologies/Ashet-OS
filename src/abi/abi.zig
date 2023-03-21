@@ -1446,7 +1446,7 @@ pub const max_fs_name_len = 8;
 /// - `ISO 9660`
 /// - `btrfs`
 /// - `AFFS`
-pub const max_fs_type_len = 16;
+pub const max_fs_type_len = 32;
 
 /// The maximum number of bytes in a file name.
 /// This is chosen to be a power of two, and reasonably long.

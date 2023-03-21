@@ -132,11 +132,16 @@ pub fn build(b: *std.build.Builder) !void {
         },
     });
 
+    const mod_libashetfs = b.addModule("ashet-fs", .{
+        .source_file = .{ .path = "src/libafs/afs.zig" },
+        .dependencies = &.{},
+    });
+
     const tools_step = b.step("tools", "Builds the build and debug tools");
 
     const optimize = b.standardOptimizeOption(.{});
 
-    const machine_id = b.option(MachineID, "machine", "Defines the machine Ashet OS should be built for.") orelse {
+    const machine_id = b.option(MachineID, "machine", "Defines the machine Ashet OS should be built for.") orelse blk: {
         var stderr = std.io.getStdErr();
 
         var writer = stderr.writer();
@@ -146,7 +151,9 @@ pub fn build(b: *std.build.Builder) !void {
             try writer.print("- {s}\n", .{decl.name});
         }
 
-        std.os.exit(1);
+        try writer.writeAll("Falling back to rv32_virt\n");
+
+        break :blk .rv32_virt;
     };
 
     const machine_spec = resolveMachine(machine_id);
@@ -240,6 +247,7 @@ pub fn build(b: *std.build.Builder) !void {
         kernel_exe.addModule("ashet", mod_libashet);
         kernel_exe.addModule("ashet-gui", mod_ashet_gui);
         kernel_exe.addModule("virtio", mod_virtio);
+        kernel_exe.addModule("ashet-fs", mod_libashetfs);
         kernel_exe.addAnonymousModule("machine", .{
             .source_file = machine_pkg.getFileSource("machine.zig").?,
         });
@@ -387,6 +395,8 @@ pub fn build(b: *std.build.Builder) !void {
 
     const std_tests = b.addTest(.{ .root_source_file = .{ .path = "src/std/std.zig" }, .target = .{}, .optimize = optimize });
 
+    const fs_tests = b.addTest(.{ .root_source_file = .{ .path = "src/libafs/testsuite.zig" }, .target = .{}, .optimize = optimize });
+
     const gui_tests = b.addTest(.{ .root_source_file = .{ .path = "src/libgui/gui.zig" }, .target = .{}, .optimize = optimize });
     {
         var iter = b.modules.get("ashet-gui").?.dependencies.iterator();
@@ -398,6 +408,7 @@ pub fn build(b: *std.build.Builder) !void {
     const test_step = b.step("test", "Run unit tests on the standard library");
     test_step.dependOn(&std_tests.step);
     test_step.dependOn(&gui_tests.step);
+    test_step.dependOn(&fs_tests.step);
     {
         const debug_filter = b.addExecutable(.{
             .name = "debug-filter",
@@ -610,7 +621,14 @@ const AssetBundleStep = struct {
         errdefer builder.allocator.destroy(bundle);
 
         bundle.* = AssetBundleStep{
-            .step = std.Build.Step.init(.custom, "bundle assets", builder.allocator, make),
+            .step = std.Build.Step.init(.{
+                .id = .custom,
+                .name = "bundle assets",
+                .owner = builder,
+                .makeFn = make,
+                .first_ret_addr = null,
+                .max_rss = 0,
+            }),
             .builder = builder,
             .files = std.StringHashMap(std.Build.FileSource).init(builder.allocator),
             .output_file = .{ .step = &bundle.step },
@@ -633,10 +651,10 @@ const AssetBundleStep = struct {
         };
     }
 
-    fn make(step: *std.build.Step) !void {
+    fn make(step: *std.build.Step, node: *std.Progress.Node) !void {
         const bundle = @fieldParentPtr(AssetBundleStep, "step", step);
 
-        var write_step = std.Build.WriteFileStep.init(bundle.builder);
+        var write_step = std.Build.WriteFileStep.create(bundle.builder);
 
         var embed_file = std.ArrayList(u8).init(bundle.builder.allocator);
         defer embed_file.deinit();
@@ -664,7 +682,7 @@ const AssetBundleStep = struct {
 
         write_step.add("bundle.zig", try embed_file.toOwnedSlice());
 
-        try write_step.step.makeFn(&write_step.step);
+        try write_step.step.makeFn(&write_step.step, node);
 
         bundle.output_file.path = write_step.getFileSource("bundle.zig").?.getPath(bundle.builder);
     }

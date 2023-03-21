@@ -86,6 +86,18 @@ fn ResolvedDriverInterface(comptime class: DriverClass) type {
     return std.meta.fields(DriverInterface)[std.meta.fieldIndex(DriverInterface, @tagName(class)).?].type;
 }
 
+pub fn getDriverName(comptime class: DriverClass, intf: *ResolvedDriverInterface(class)) []const u8 {
+    // if (@offsetOf(DriverInterface, @tagName(class)) != 0) @compileError("oh no!");
+
+    std.debug.assert(@intToPtr(*DriverInterface, 0x1000) == @ptrCast(*DriverInterface, &@field(@intToPtr(*DriverInterface, 0x1000), @tagName(class))));
+
+    const di: *DriverInterface = @ptrCast(*DriverInterface, intf);
+
+    const dri: *Driver = @fieldParentPtr(Driver, "class", di);
+
+    return dri.name;
+}
+
 /// Generic driver interface, used to chain drivers together.
 /// Drivers provide hardware interfaces.
 pub const Driver = struct {

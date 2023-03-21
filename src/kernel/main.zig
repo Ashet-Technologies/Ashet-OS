@@ -297,6 +297,15 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
     writer.writeAll("Memory map:\r\n") catch {};
     memory.debug.dumpPageMap();
 
+    // print the kernel message again so we have a wraparound
+    writer.writeAll("\r\n") catch {};
+    writer.writeAll("=========================================================================\r\n") catch {};
+    writer.writeAll("Kernel Panic: ") catch {};
+    writer.writeAll(message) catch {};
+    writer.writeAll("\r\n") catch {};
+    writer.writeAll("=========================================================================\r\n") catch {};
+    writer.writeAll("\r\n") catch {};
+
     hang();
 }
 

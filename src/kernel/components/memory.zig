@@ -135,9 +135,9 @@ pub const debug = struct {
 
         writer.writeAll("]\n") catch {};
 
-        for (page_manager.bitmap(), 0..) |item, index| {
-            writer.print("{X:0>4}: {b:0>32}\r\n", .{ index, item }) catch {};
-        }
+        // for (page_manager.bitmap(), 0..) |item, index| {
+        //     writer.print("{X:0>4}: {b:0>32}\r\n", .{ index, item }) catch {};
+        // }
 
         writer.print("free ram: {:.2} ({}/{} pages)\n", .{ std.fmt.fmtIntSizeBin(free_memory), free_memory / page_size, page_manager.pageCount() }) catch {};
     }

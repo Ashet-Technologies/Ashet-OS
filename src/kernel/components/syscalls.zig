@@ -230,8 +230,10 @@ fn @"io.cancel"(event: *abi.IOP) callconv(.C) void {
 }
 
 fn @"fs.findFilesystem"(name_ptr: [*]const u8, name_len: usize) callconv(.C) abi.FileSystemId {
-    //
-    _ = name_ptr;
-    _ = name_len;
-    return .invalid;
+    if (ashet.filesystem.findFilesystem(name_ptr[0..name_len])) |fs| {
+        std.debug.assert(fs != .invalid);
+        return fs;
+    } else {
+        return .invalid;
+    }
 }

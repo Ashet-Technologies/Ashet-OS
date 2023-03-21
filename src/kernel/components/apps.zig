@@ -242,7 +242,7 @@ pub fn startAppElf(app: AppID) !void {
 
             const section = process_memory[@intCast(usize, phdr.p_vaddr)..][0..@intCast(usize, phdr.p_memsz)];
 
-            try file.seekTo(phdr.p_offset);
+            try file.seekableStream().seekTo(phdr.p_offset);
             try file.reader().readNoEof(section[0..@intCast(usize, phdr.p_filesz)]);
         }
     }
@@ -263,7 +263,7 @@ pub fn startAppElf(app: AppID) !void {
                     //   .sh_entsize = 12,
                     // }
 
-                    try file.seekTo(shdr.sh_offset);
+                    try file.seekableStream().seekTo(shdr.sh_offset);
                     var i: usize = 0;
                     while (i < shdr.sh_size / shdr.sh_entsize) : (i += 1) {
                         var entry: elf.Elf32_Rela = undefined;
@@ -283,7 +283,7 @@ pub fn startAppElf(app: AppID) !void {
                     //   .sh_entsize = 8,
                     // };
 
-                    try file.seekTo(shdr.sh_offset);
+                    try file.seekableStream().seekTo(shdr.sh_offset);
                     var i: usize = 0;
                     while (i < shdr.sh_size / shdr.sh_entsize) : (i += 1) {
                         var entry: elf.Elf32_Rel = undefined;
