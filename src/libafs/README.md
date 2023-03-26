@@ -3,7 +3,7 @@
 ## Features
 
 - Simple
-- Address up to 2 TB storage
+- Address up to 8 ZiB storage
 - Files and Directories
 - Hierarchical
 - 64 byte file names
@@ -28,9 +28,9 @@ struct RootBlock {
     0xb5, 0xac, 0x9d, 0x13, 0x76, 0xa4, 0x54, 0x69, 0xfc, 0x57, 0x29, 0xa8, 0xc9, 0x3b, 0xef, 0x62,
   },
   version: u32 = 1, // must be 1
-  size: u32,        // number of managed blocks
+  size: u64 align(4), // number of managed blocks
 
-  padding: [472]u8, // fill up to 512
+  padding: [468]u8, // fill up to 512
 }
 ```
 

@@ -393,11 +393,23 @@ pub fn build(b: *std.build.Builder) !void {
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
-    const std_tests = b.addTest(.{ .root_source_file = .{ .path = "src/std/std.zig" }, .target = .{}, .optimize = optimize });
+    const std_tests = b.addTest(.{
+        .root_source_file = .{ .path = "src/std/std.zig" },
+        .target = .{},
+        .optimize = optimize,
+    });
 
-    const fs_tests = b.addTest(.{ .root_source_file = .{ .path = "src/libafs/testsuite.zig" }, .target = .{}, .optimize = optimize });
+    const fs_tests = b.addTest(.{
+        .root_source_file = .{ .path = "src/libafs/testsuite.zig" },
+        .target = .{},
+        .optimize = optimize,
+    });
 
-    const gui_tests = b.addTest(.{ .root_source_file = .{ .path = "src/libgui/gui.zig" }, .target = .{}, .optimize = optimize });
+    const gui_tests = b.addTest(.{
+        .root_source_file = .{ .path = "src/libgui/gui.zig" },
+        .target = .{},
+        .optimize = optimize,
+    });
     {
         var iter = b.modules.get("ashet-gui").?.dependencies.iterator();
         while (iter.next()) |kv| {
@@ -406,9 +418,9 @@ pub fn build(b: *std.build.Builder) !void {
     }
 
     const test_step = b.step("test", "Run unit tests on the standard library");
-    test_step.dependOn(&std_tests.step);
-    test_step.dependOn(&gui_tests.step);
-    test_step.dependOn(&fs_tests.step);
+    test_step.dependOn(&std_tests.run().step);
+    test_step.dependOn(&gui_tests.run().step);
+    test_step.dependOn(&fs_tests.run().step);
     {
         const debug_filter = b.addExecutable(.{
             .name = "debug-filter",

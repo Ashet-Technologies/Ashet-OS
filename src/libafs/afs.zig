@@ -3,6 +3,12 @@
 //!
 
 const std = @import("std");
+const logger = std.log.scoped(.ashet_fs);
+
+pub const magic_number: [32]u8 = .{
+    0x2c, 0xcd, 0xbe, 0xe2, 0xca, 0xd9, 0x99, 0xa7, 0x65, 0xe7, 0x57, 0x31, 0x6b, 0x1c, 0xe1, 0x2b,
+    0xb5, 0xac, 0x9d, 0x13, 0x76, 0xa4, 0x54, 0x69, 0xfc, 0x57, 0x29, 0xa8, 0xc9, 0x3b, 0xef, 0x62,
+};
 
 pub const Block = [512]u8;
 
@@ -15,9 +21,9 @@ pub const BlockDevice = struct {
     pub const CompletedCallback = fn (*anyopaque, ?IoError) void;
 
     pub const VTable = struct {
-        getBlockCountFn: *const fn (*anyopaque) u32,
-        beginWriteBlockFn: *const fn (*anyopaque, offset: u32, block: *const Block, callback: *const CompletedCallback, callback_ctx: *anyopaque) void,
-        beginReadBlockFn: *const fn (*anyopaque, offset: u32, block: *Block, callback: *const CompletedCallback, callback_ctx: *anyopaque) void,
+        getBlockCountFn: *const fn (*anyopaque) u64,
+        writeBlockFn: *const fn (*anyopaque, offset: u64, block: *const Block) IoError!void,
+        readBlockFn: *const fn (*anyopaque, offset: u64, block: *Block) IoError!void,
     };
 
     object: *anyopaque,
@@ -25,7 +31,7 @@ pub const BlockDevice = struct {
 
     /// Returns the number of blocks in this block device.
     /// Support a maximum of 2 TB storage.
-    pub fn getBlockCount(bd: BlockDevice) u32 {
+    pub fn getBlockCount(bd: BlockDevice) u64 {
         return bd.vtable.getBlockCountFn(bd.object);
     }
 
@@ -33,85 +39,215 @@ pub const BlockDevice = struct {
     /// an optional error state.
     /// NOTE: When the block device is non-blocking, `callback` is already invoked in this function! Design your code in a way that this won't
     /// affect your control flow.
-    pub fn beginWriteBlock(bd: BlockDevice, offset: u32, block: *const Block, callback: *const CompletedCallback, callback_ctx: *anyopaque) void {
-        bd.vtable.beginWriteBlockFn(bd.object, offset, block, callback, callback_ctx);
+    pub fn writeBlock(bd: BlockDevice, offset: u64, block: *const Block) IoError!void {
+        try bd.vtable.writeBlockFn(bd.object, offset, block);
     }
 
     /// Starts a read operation on the underlying block device. When done, will call `callback` with `callback_ctx` as the first argument, and
     /// an optional error state.
     /// NOTE: When the block device is non-blocking, `callback` is already invoked in this function! Design your code in a way that this won't
     /// affect your control flow.
-    pub fn beginReadBlock(bd: BlockDevice, offset: u32, block: *Block, callback: *const CompletedCallback, callback_ctx: *anyopaque) void {
-        bd.vtable.beginReadBlockFn(bd.object, offset, block, callback, callback_ctx);
+    pub fn readBlock(bd: BlockDevice, offset: u64, block: *Block) IoError!void {
+        try bd.vtable.readBlockFn(bd.object, offset, block);
     }
 };
 
-pub const Formatter = struct {
-    const Error = BlockDevice.IoError;
+/// The AshetFS filesystem driver. Implements all supported operations on the file
+/// system over a block device.
+/// It's recommended to use a caching block device so not every small change will
+/// create disk activity.
+pub const FileSystem = struct {
+    device: BlockDevice,
 
-    buffer: Block,
-    completed: bool = false,
-    async_error: ?Error = null,
+    version: u32,
+    size: u64,
 
-    fn setBuffer(fmt: *Formatter, data: anytype) void {
-        if (@sizeOf(@TypeOf(data)) != @sizeOf(Block))
-            @compileError("");
-        std.mem.copy(u8, &fmt.buffer, &std.mem.asBytes(&data));
+    root_directory: DirectoryHandle,
+
+    pub fn init(bd: BlockDevice) !FileSystem {
+        var fs = FileSystem{
+            .device = bd,
+            .version = undefined,
+            .size = undefined,
+            .root_directory = undefined,
+        };
+
+        var block: Block = undefined;
+
+        try bd.readBlock(0, &block);
+
+        // TODO: Initialize file system
+
+        return fs;
     }
 
-    pub fn startFormat(fmt: *Formatter, bd: BlockDevice) Formatter {
-        const len = bd.getBlockCount();
-
-        _ = len;
-
-        bd.beginWriteBlock(0, &fmt.buffer, formatBitmap, fmt);
+    pub fn getRootDir(fs: FileSystem) DirectoryHandle {
+        return fs.root_directory;
     }
 
-    pub fn isCompleted(fmt: *const Formatter) bool {
-        return fmt.completed;
+    pub fn iterate(fs: *FileSystem, dir: DirectoryHandle) !void {
+        _ = fs;
+        _ = dir;
+    }
+    pub fn readMetaData(fs: *FileSystem, object: ObjectHandle) !void {
+        _ = fs;
+        _ = object;
+    }
+    pub fn updateMetaData(fs: *FileSystem, object: ObjectHandle) !void {
+        _ = fs;
+        _ = object;
+    }
+    pub fn createFile(fs: *FileSystem, dir: DirectoryHandle, name: []const u8) !FileHandle {
+        _ = fs;
+        _ = dir;
+        _ = name;
+    }
+    pub fn resizeFile(fs: *FileSystem, file: FileHandle, new_size: u64) !void {
+        _ = fs;
+        _ = file;
+        _ = new_size;
+    }
+    pub fn writeData(fs: *FileSystem, file: FileHandle, offset: u64, data: []const u8) !usize {
+        _ = fs;
+        _ = file;
+        _ = offset;
+        _ = data;
+    }
+    pub fn readData(fs: *FileSystem, file: FileHandle, offset: u64, data: []u8) !usize {
+        _ = fs;
+        _ = file;
+        _ = offset;
+        _ = data;
+    }
+    pub fn createDirectory(fs: *FileSystem, dir: DirectoryHandle, name: []const u8) !DirectoryHandle {
+        _ = fs;
+        _ = dir;
+        _ = name;
+    }
+    pub fn renameEntry(fs: *FileSystem, dir: DirectoryHandle, current_name: []const u8, new_name: []const u8) !void {
+        _ = fs;
+        _ = dir;
+        _ = current_name;
+        _ = new_name;
+    }
+    pub fn moveEntry(fs: *FileSystem, src_dir: DirectoryHandle, src_name: []const u8, dst_dir: DirectoryHandle, dst_name: []const u8) !void {
+        _ = fs;
+        _ = src_dir;
+        _ = src_name;
+        _ = dst_dir;
+        _ = dst_name;
+    }
+    pub fn deleteEntry(fs: *FileSystem, dir: DirectoryHandle, name: []const u8) !void {
+        _ = fs;
+        _ = dir;
+        _ = name;
+    }
+};
+
+pub const FileHandle = enum(u32) {
+    _,
+    pub fn object(h: FileHandle) ObjectHandle {
+        return @bitCast(ObjectHandle, h);
+    }
+};
+
+pub const DirectoryHandle = enum(u32) {
+    _,
+    pub fn object(h: DirectoryHandle) ObjectHandle {
+        return @bitCast(ObjectHandle, h);
+    }
+};
+pub const ObjectHandle = enum(u32) { _ };
+
+const BitmapLocation = struct {
+    block: u32,
+    byte_offset: u9,
+    bit_offset: u3,
+};
+
+fn blockToBitPos(block_num: usize) BitmapLocation {
+    const page = 1 + (block_num / 4096);
+    const bit = block_num % 4096;
+    const word_index = bit / 8;
+    const word_bit = bit % 8;
+
+    return BitmapLocation{
+        .block = @intCast(u32, page),
+        .byte_offset = @intCast(u9, word_index),
+        .bit_offset = @intCast(u3, word_bit),
+    };
+}
+
+fn setBuffer(block: *Block, data: anytype) void {
+    if (@sizeOf(@TypeOf(data)) != @sizeOf(Block))
+        @compileError("Invalid size: " ++ @typeName(@TypeOf(data)) ++ " is not 512 byte large!");
+    std.mem.copy(u8, block, std.mem.asBytes(&data));
+}
+
+pub fn format(device: BlockDevice, init_time: i128) !void {
+    const block_count = device.getBlockCount();
+    logger.debug("start formatting with {} blocks", .{block_count});
+
+    if (block_count < 32) {
+        return error.DeviceTooSmall;
     }
 
-    pub fn endFormat(fmt: *Formatter) Error!void {
-        if (fmt.async_error) |err|
-            return err;
-    }
+    var block: Block = undefined;
 
-    fn fromCtx(ctx: *anyopaque, err: ?Error) ?*Formatter {
-        const fmt = @ptrCast(*Formatter, @alignCast(@alignOf(Formatter), ctx));
-        if (err) |e| {
-            fmt.async_error = e;
-            fmt.completed = true;
-            return null;
+    setBuffer(&block, RootBlock{
+        .size = block_count,
+    });
+    try device.writeBlock(0, &block);
+
+    const bitmap_block_count = ((block_count + 4095) / 4096);
+
+    for (1..bitmap_block_count + 2) |index| {
+        std.mem.set(u8, &block, 0);
+
+        if (index == 1) {
+            block[0] |= 0x01; // mark "root block" as allocated
         }
-        return fmt;
+
+        // we have to mark all bits in the bitmap *and* the root directory
+        // thus, we're counting from [1;bitmap_block_count+1] inclusive.
+        for (1..bitmap_block_count + 2) |block_num| {
+            const pos = blockToBitPos(block_num);
+            if (pos.block == index) {
+                block[pos.byte_offset] |= (@as(u8, 1) << pos.bit_offset);
+            }
+            if (pos.block > index)
+                break;
+        }
+
+        try device.writeBlock(index, &block);
     }
 
-    // format sequence
+    setBuffer(&block, ObjectBlock{
+        .size = 0, // empty directory
+        .create_time = init_time,
+        .modify_time = init_time,
+        .flags = 0,
+        .refs = std.mem.zeroes([116]u32),
+        .next = 0,
+    });
 
-    fn formatBitmap(ctx: *anyopaque, err: ?Error) void {
-        const fmt = fromCtx(ctx, err) orelse return;
-
-        _ = fmt;
-    }
-};
+    try device.writeBlock(bitmap_block_count + 1, &block);
+}
 
 const RootBlock = extern struct {
-    magic_identification_number: [32]u8 = .{
-        0x2c, 0xcd, 0xbe, 0xe2, 0xca, 0xd9, 0x99, 0xa7, 0x65, 0xe7, 0x57, 0x31, 0x6b, 0x1c, 0xe1, 0x2b,
-        0xb5, 0xac, 0x9d, 0x13, 0x76, 0xa4, 0x54, 0x69, 0xfc, 0x57, 0x29, 0xa8, 0xc9, 0x3b, 0xef, 0x62,
-    },
+    magic_identification_number: [32]u8 = magic_number,
     version: u32 = 1, // must be 1
-    size: u32, // number of managed blocks including this
+    size: u64 align(4), // number of managed blocks including this
 
-    padding: [472]u8, // fill up to 512
+    padding: [468]u8 = std.mem.zeroes([468]u8), // fill up to 512
 };
 
 const ObjectBlock = extern struct {
-    size: u32, // size of this object in bytes. for directories, this means the directory contains `size/sizeof(Entry)` elements.
+    size: u64, // size of this object in bytes. for directories, this means the directory contains `size/sizeof(Entry)` elements.
     create_time: i128 align(4), // stores the date when this object was created, unix timestamp in nano seconds
     modify_time: i128 align(4), // stores the date when this object was last modified, unix timestamp in nano seconds
     flags: u32, // type-dependent bit field (file: bit 0 = read only; directory: none; all other bits are reserved=0)
-    refs: [117]u32, // pointer to a type-dependent data block (FileDataBlock, DirectoryDataBlock)
+    refs: [116]u32, // pointer to a type-dependent data block (FileDataBlock, DirectoryDataBlock)
     next: u32, // link to a RefListBlock to continue the refs listing. 0 is "end of chain"
 };
 
