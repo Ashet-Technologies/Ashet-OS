@@ -28,9 +28,9 @@ struct RootBlock {
     0xb5, 0xac, 0x9d, 0x13, 0x76, 0xa4, 0x54, 0x69, 0xfc, 0x57, 0x29, 0xa8, 0xc9, 0x3b, 0xef, 0x62,
   },
   version: u32 = 1, // must be 1
-  size: u64 align(4), // number of managed blocks
+  size: u32, // number of managed blocks
 
-  padding: [468]u8, // fill up to 512
+  padding: [472]u8, // fill up to 512
 }
 ```
 
@@ -64,17 +64,17 @@ Each object block encodes either a file or a directory (stored as external means
 
 ```rs
 struct ObjectBlock {
-  size: u64,          // size of this object in bytes. for directories, this means the directory contains `size/sizeof(Entry)` elements.
+  size: u32,          // size of this object in bytes. for directories, this means the directory contains `size/sizeof(Entry)` elements.
   create_time: i128 align(4),  // stores the date when this object was created, unix timestamp in nano seconds
   modify_time: i128 align(4),  // stores the date when this object was last modified, unix timestamp in nano seconds
   flags: u32,         // type-dependent bit field (file: bit 0 = read only; directory: none; all other bits are reserved=0)
-  refs: [115]u32,     // pointer to a type-dependent data block (FileDataBlock, DirectoryDataBlock)
-  next: u64,          // link to a RefListBlock to continue the refs listing. 0 is "end of chain"
+  refs: [117]u32,     // pointer to a type-dependent data block (FileDataBlock, DirectoryDataBlock)
+  next: u32,          // link to a RefListBlock to continue the refs listing. 0 is "end of chain"
 }
 
 struct RefListBlock {
-  refs: [126]u32,     // pointers to data blocks to list the entries
-  next: u64,          // pointer to the next RefListBlock or 0
+  refs: [127]u32,     // pointers to data blocks to list the entries
+  next: u32,          // pointer to the next RefListBlock or 0
 }
 
 struct FileDataBlock {

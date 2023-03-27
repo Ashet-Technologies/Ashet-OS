@@ -24,12 +24,24 @@ pub fn BlockDevice(comptime block_count: u32) type {
             return @ptrCast(*BD, @alignCast(@alignOf(BD), ctx));
         }
 
-        fn getBlockCount(ctx: *anyopaque) u64 {
+        fn getBlockCount(ctx: *anyopaque) u32 {
             return fromCtx(ctx).blocks.len;
         }
-        fn writeBlock(ctx: *anyopaque, offset: u64, block: *const Block) !void {
+        fn writeBlock(ctx: *anyopaque, offset: u32, block: *const Block) !void {
             std.debug.print("write block {}:\n", .{offset});
+            dumpBlock(block);
+            const bd = fromCtx(ctx);
+            bd.blocks[offset] = block.*;
+        }
 
+        fn readBlock(ctx: *anyopaque, offset: u32, block: *Block) !void {
+            std.debug.print("read block {}\n", .{offset});
+            const bd = fromCtx(ctx);
+            block.* = bd.blocks[offset];
+            dumpBlock(block);
+        }
+
+        fn dumpBlock(block: *const Block) void {
             // const rowlen = 16;
             // for (@bitCast([512 / rowlen][rowlen]u8, block.*), 0..) |row, i| {
             //     std.debug.print("{X:0>3}:", .{rowlen * i});
@@ -44,15 +56,7 @@ pub fn BlockDevice(comptime block_count: u32) type {
             //     }
             //     std.debug.print("|\n", .{});
             // }
-
-            const bd = fromCtx(ctx);
-            bd.blocks[offset] = block.*;
-        }
-
-        fn readBlock(ctx: *anyopaque, offset: u64, block: *Block) !void {
-            std.debug.print("read block {}\n", .{offset});
-            const bd = fromCtx(ctx);
-            block.* = bd.blocks[offset];
+            _ = block;
         }
 
         const vtable = afs.BlockDevice.VTable{
@@ -99,9 +103,9 @@ test "format smol file system" {
     {
         const block = blockdev.blocks[2];
 
-        try std.testing.expectEqual(@as(u64, 0), std.mem.readIntLittle(u64, block[0..8])); // empty size
-        try std.testing.expectEqual(@as(i128, create_time), std.mem.readIntLittle(i128, block[8..24])); // same time stamp
-        try std.testing.expectEqual(@as(i128, create_time), std.mem.readIntLittle(i128, block[24..40])); // same time stamp
+        try std.testing.expectEqual(@as(u32, 0), std.mem.readIntLittle(u32, block[0..4])); // empty size
+        try std.testing.expectEqual(@as(i128, create_time), std.mem.readIntLittle(i128, block[4..20])); // same time stamp
+        try std.testing.expectEqual(@as(i128, create_time), std.mem.readIntLittle(i128, block[20..36])); // same time stamp
         try std.testing.expectEqual(@as(u32, 0), std.mem.readIntLittle(u32, block[508..512])); // empty size
     }
 }
@@ -193,5 +197,30 @@ test "modify metadata" {
         try std.testing.expectEqual(@as(i128, -10), meta.modify_time);
         try std.testing.expectEqual(@as(u64, 0), meta.size);
         try std.testing.expectEqual(@as(u32, 0xAABBCCDD), meta.flags);
+    }
+}
+
+test "create single new file" {
+    var bd = makeEmptyFs();
+    var fs = try FileSystem.init(bd.interface());
+
+    const root = fs.getRootDir();
+
+    _ = try fs.createFile(root, "system.dat", 1337);
+}
+
+test "create a lot of new files" {
+    var bd = makeEmptyFs();
+    var fs = try FileSystem.init(bd.interface());
+
+    const root = fs.getRootDir();
+
+    var name_buf: [32]u8 = undefined;
+
+    for (0..1024) |index| {
+        const name = try std.fmt.bufPrint(&name_buf, "file-{}.dat", .{index});
+        errdefer std.debug.print("Failed to create file {s}!\n", .{name});
+
+        _ = try fs.createFile(root, name, 1337);
     }
 }
