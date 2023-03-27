@@ -5,6 +5,8 @@
 const std = @import("std");
 const logger = std.log.scoped(.ashet_fs);
 
+const asBytes = std.mem.asBytes;
+
 pub const magic_number: [32]u8 = .{
     0x2c, 0xcd, 0xbe, 0xe2, 0xca, 0xd9, 0x99, 0xa7, 0x65, 0xe7, 0x57, 0x31, 0x6b, 0x1c, 0xe1, 0x2b,
     0xb5, 0xac, 0x9d, 0x13, 0x76, 0xa4, 0x54, 0x69, 0xfc, 0x57, 0x29, 0xa8, 0xc9, 0x3b, 0xef, 0x62,
@@ -72,11 +74,23 @@ pub const FileSystem = struct {
             .root_directory = undefined,
         };
 
-        var block: Block = undefined;
+        var root_block: RootBlock = undefined;
+        try bd.readBlock(0, asBytes(&root_block));
 
-        try bd.readBlock(0, &block);
+        if (!std.mem.eql(u8, &root_block.magic_identification_number, &magic_number))
+            return error.NoFilesystem;
 
-        // TODO: Initialize file system
+        if (root_block.size > bd.getBlockCount())
+            return error.CorruptFileSystem;
+
+        if (root_block.version != 1)
+            return error.UnsupportedVersion;
+
+        const bitmap_block_count = ((root_block.size + 4095) / 4096);
+
+        fs.version = root_block.version;
+        fs.size = root_block.size;
+        fs.root_directory = @intToEnum(DirectoryHandle, bitmap_block_count + 1);
 
         return fs;
     }
@@ -85,18 +99,51 @@ pub const FileSystem = struct {
         return fs.root_directory;
     }
 
-    pub fn iterate(fs: *FileSystem, dir: DirectoryHandle) !void {
-        _ = fs;
-        _ = dir;
+    pub fn iterate(fs: *FileSystem, dir: DirectoryHandle) !Iterator {
+        var iter = Iterator{
+            .device = fs.device,
+            .current_index = 0,
+            .total_count = 0,
+            .reflist = undefined,
+        };
+
+        try fs.device.readBlock(dir.blockNumber(), asBytes(&iter.reflist));
+
+        const blocklist = @ptrCast(*align(4) ObjectBlock, &iter.reflist);
+
+        // off by the initial offset as we alias the ObjectBlock into a RefListBlock,
+        // using the equivalent part of the refs array.
+        iter.current_index = iter.reflist.refs.len - blocklist.refs.len;
+        iter.total_count = iter.current_index + blocklist.size / @sizeOf(Entry);
+
+        return iter;
     }
-    pub fn readMetaData(fs: *FileSystem, object: ObjectHandle) !void {
-        _ = fs;
-        _ = object;
+
+    pub fn readMetaData(fs: *FileSystem, object: ObjectHandle) !MetaData {
+        var block: ObjectBlock = undefined;
+
+        try fs.device.readBlock(object.blockNumber(), asBytes(&block));
+
+        return MetaData{
+            .create_time = block.create_time,
+            .modify_time = block.modify_time,
+            .size = block.size,
+            .flags = block.flags,
+        };
     }
-    pub fn updateMetaData(fs: *FileSystem, object: ObjectHandle) !void {
-        _ = fs;
-        _ = object;
+
+    pub fn updateMetaData(fs: *FileSystem, object: ObjectHandle, changeset: MetaDataChangeSet) !void {
+        var block: ObjectBlock = undefined;
+
+        try fs.device.readBlock(object.blockNumber(), asBytes(&block));
+
+        if (changeset.create_time) |new_value| block.create_time = new_value;
+        if (changeset.modify_time) |new_value| block.modify_time = new_value;
+        if (changeset.flags) |new_value| block.flags = new_value;
+
+        try fs.device.writeBlock(object.blockNumber(), asBytes(&block));
     }
+
     pub fn createFile(fs: *FileSystem, dir: DirectoryHandle, name: []const u8) !FileHandle {
         _ = fs;
         _ = dir;
@@ -142,22 +189,68 @@ pub const FileSystem = struct {
         _ = dir;
         _ = name;
     }
+
+    pub const Iterator = struct {
+        device: BlockDevice,
+        current_index: u64,
+        total_count: u64,
+        reflist: RefListBlock,
+
+        pub fn next(iter: *Iterator) !?Entry {
+            _ = iter;
+            return null;
+        }
+    };
 };
 
-pub const FileHandle = enum(u32) {
+pub const Entry = struct {
+    name_buffer: [120]u8,
+    handle: union(enum) {
+        file: FileHandle,
+        directory: DirectoryHandle,
+    },
+};
+
+pub const MetaData = struct {
+    create_time: i128,
+    modify_time: i128,
+    size: u64,
+    flags: u32,
+};
+
+pub const MetaDataChangeSet = struct {
+    create_time: ?i128 = null,
+    modify_time: ?i128 = null,
+    flags: ?u32 = null,
+};
+
+pub const FileHandle = enum(u64) {
     _,
     pub fn object(h: FileHandle) ObjectHandle {
-        return @bitCast(ObjectHandle, h);
+        return @intToEnum(ObjectHandle, @enumToInt(h));
+    }
+
+    pub fn blockNumber(h: FileHandle) u64 {
+        return @enumToInt(h);
     }
 };
 
-pub const DirectoryHandle = enum(u32) {
+pub const DirectoryHandle = enum(u64) {
     _,
     pub fn object(h: DirectoryHandle) ObjectHandle {
-        return @bitCast(ObjectHandle, h);
+        return @intToEnum(ObjectHandle, @enumToInt(h));
+    }
+
+    pub fn blockNumber(h: DirectoryHandle) u64 {
+        return @enumToInt(h);
     }
 };
-pub const ObjectHandle = enum(u32) { _ };
+pub const ObjectHandle = enum(u64) {
+    _,
+    pub fn blockNumber(h: ObjectHandle) u64 {
+        return @enumToInt(h);
+    }
+};
 
 const BitmapLocation = struct {
     block: u32,
@@ -181,7 +274,7 @@ fn blockToBitPos(block_num: usize) BitmapLocation {
 fn setBuffer(block: *Block, data: anytype) void {
     if (@sizeOf(@TypeOf(data)) != @sizeOf(Block))
         @compileError("Invalid size: " ++ @typeName(@TypeOf(data)) ++ " is not 512 byte large!");
-    std.mem.copy(u8, block, std.mem.asBytes(&data));
+    std.mem.copy(u8, block, asBytes(&data));
 }
 
 pub fn format(device: BlockDevice, init_time: i128) !void {
@@ -227,7 +320,7 @@ pub fn format(device: BlockDevice, init_time: i128) !void {
         .create_time = init_time,
         .modify_time = init_time,
         .flags = 0,
-        .refs = std.mem.zeroes([116]u32),
+        .refs = std.mem.zeroes([115]u32),
         .next = 0,
     });
 
@@ -243,17 +336,17 @@ const RootBlock = extern struct {
 };
 
 const ObjectBlock = extern struct {
-    size: u64, // size of this object in bytes. for directories, this means the directory contains `size/sizeof(Entry)` elements.
+    size: u64 align(4), // size of this object in bytes. for directories, this means the directory contains `size/sizeof(Entry)` elements.
     create_time: i128 align(4), // stores the date when this object was created, unix timestamp in nano seconds
     modify_time: i128 align(4), // stores the date when this object was last modified, unix timestamp in nano seconds
     flags: u32, // type-dependent bit field (file: bit 0 = read only; directory: none; all other bits are reserved=0)
-    refs: [116]u32, // pointer to a type-dependent data block (FileDataBlock, DirectoryDataBlock)
-    next: u32, // link to a RefListBlock to continue the refs listing. 0 is "end of chain"
+    refs: [115]u32, // pointer to a type-dependent data block (FileDataBlock, DirectoryDataBlock)
+    next: u64 align(4), // link to a RefListBlock to continue the refs listing. 0 is "end of chain"
 };
 
 const RefListBlock = extern struct {
-    refs: [127]u32, // pointers to data blocks to list the entries
-    next: u32, // pointer to the next RefListBlock or 0
+    refs: [126]u32, // pointers to data blocks to list the entries
+    next: u64 align(4), // pointer to the next RefListBlock or 0
 };
 
 const FileDataBlock = extern struct {

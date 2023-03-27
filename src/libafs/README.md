@@ -68,13 +68,13 @@ struct ObjectBlock {
   create_time: i128 align(4),  // stores the date when this object was created, unix timestamp in nano seconds
   modify_time: i128 align(4),  // stores the date when this object was last modified, unix timestamp in nano seconds
   flags: u32,         // type-dependent bit field (file: bit 0 = read only; directory: none; all other bits are reserved=0)
-  refs: [116]u32,     // pointer to a type-dependent data block (FileDataBlock, DirectoryDataBlock)
-  next: u32,          // link to a RefListBlock to continue the refs listing. 0 is "end of chain"
+  refs: [115]u32,     // pointer to a type-dependent data block (FileDataBlock, DirectoryDataBlock)
+  next: u64,          // link to a RefListBlock to continue the refs listing. 0 is "end of chain"
 }
 
 struct RefListBlock {
-  refs: [127]u32,     // pointers to data blocks to list the entries
-  next: u32,          // pointer to the next RefListBlock or 0
+  refs: [126]u32,     // pointers to data blocks to list the entries
+  next: u64,          // pointer to the next RefListBlock or 0
 }
 
 struct FileDataBlock {

@@ -30,20 +30,20 @@ pub fn BlockDevice(comptime block_count: u32) type {
         fn writeBlock(ctx: *anyopaque, offset: u64, block: *const Block) !void {
             std.debug.print("write block {}:\n", .{offset});
 
-            const rowlen = 16;
-            for (@bitCast([512 / rowlen][rowlen]u8, block.*), 0..) |row, i| {
-                std.debug.print("{X:0>3}:", .{rowlen * i});
-                for (row, 0..) |c, j| {
-                    if ((j % 4) == 0 and j != 0)
-                        std.debug.print(" ", .{});
-                    std.debug.print(" {X:0>2}", .{c});
-                }
-                std.debug.print(" |", .{});
-                for (row) |c| {
-                    std.debug.print("{c}", .{if (std.ascii.isPrint(c)) c else '.'});
-                }
-                std.debug.print("|\n", .{});
-            }
+            // const rowlen = 16;
+            // for (@bitCast([512 / rowlen][rowlen]u8, block.*), 0..) |row, i| {
+            //     std.debug.print("{X:0>3}:", .{rowlen * i});
+            //     for (row, 0..) |c, j| {
+            //         if ((j % 4) == 0 and j != 0)
+            //             std.debug.print(" ", .{});
+            //         std.debug.print(" {X:0>2}", .{c});
+            //     }
+            //     std.debug.print(" |", .{});
+            //     for (row) |c| {
+            //         std.debug.print("{c}", .{if (std.ascii.isPrint(c)) c else '.'});
+            //     }
+            //     std.debug.print("|\n", .{});
+            // }
 
             const bd = fromCtx(ctx);
             bd.blocks[offset] = block.*;
@@ -106,11 +106,92 @@ test "format smol file system" {
     }
 }
 
-// test "init fs driver" {
-//     var bd = makeEmptyFs();
+test "init fs driver" {
+    var bd = makeEmptyFs();
 
-//     var fs = try FileSystem.init(bd.interface());
+    var fs = try FileSystem.init(bd.interface());
 
-//     try std.testing.expectEqual(@as(u64, bd.blocks.len), fs.size);
-//     try std.testing.expectEqual(@as(u32, bd.blocks.len), fs.version);
-// }
+    try std.testing.expectEqual(@as(u64, bd.blocks.len), fs.size);
+    try std.testing.expectEqual(@as(u32, 1), fs.version);
+}
+
+test "iterate root directory" {
+    var bd = makeEmptyFs();
+    var fs = try FileSystem.init(bd.interface());
+
+    const root = fs.getRootDir();
+
+    var iter = try fs.iterate(root);
+    while (try iter.next()) |entry| {
+        std.debug.print("- {}\n", .{entry});
+    }
+}
+
+test "read metadata" {
+    var bd = makeEmptyFs();
+    var fs = try FileSystem.init(bd.interface());
+
+    const root = fs.getRootDir();
+
+    var meta = try fs.readMetaData(root.object());
+    try std.testing.expectEqual(@as(i128, 1337), meta.create_time);
+    try std.testing.expectEqual(@as(i128, 1337), meta.modify_time);
+    try std.testing.expectEqual(@as(u64, 0), meta.size);
+    try std.testing.expectEqual(@as(u32, 0), meta.flags);
+}
+
+test "modify metadata" {
+    var bd = makeEmptyFs();
+    var fs = try FileSystem.init(bd.interface());
+
+    const root = fs.getRootDir();
+
+    try fs.updateMetaData(root.object(), .{});
+    {
+        var meta = try fs.readMetaData(root.object());
+        try std.testing.expectEqual(@as(i128, 1337), meta.create_time);
+        try std.testing.expectEqual(@as(i128, 1337), meta.modify_time);
+        try std.testing.expectEqual(@as(u64, 0), meta.size);
+        try std.testing.expectEqual(@as(u32, 0), meta.flags);
+    }
+
+    try fs.updateMetaData(root.object(), .{ .create_time = 424242 });
+    {
+        var meta = try fs.readMetaData(root.object());
+        try std.testing.expectEqual(@as(i128, 424242), meta.create_time);
+        try std.testing.expectEqual(@as(i128, 1337), meta.modify_time);
+        try std.testing.expectEqual(@as(u64, 0), meta.size);
+        try std.testing.expectEqual(@as(u32, 0), meta.flags);
+    }
+
+    try fs.updateMetaData(root.object(), .{ .modify_time = 112233 });
+    {
+        var meta = try fs.readMetaData(root.object());
+        try std.testing.expectEqual(@as(i128, 424242), meta.create_time);
+        try std.testing.expectEqual(@as(i128, 112233), meta.modify_time);
+        try std.testing.expectEqual(@as(u64, 0), meta.size);
+        try std.testing.expectEqual(@as(u32, 0), meta.flags);
+    }
+
+    try fs.updateMetaData(root.object(), .{ .flags = 0xBEEFBABE });
+    {
+        var meta = try fs.readMetaData(root.object());
+        try std.testing.expectEqual(@as(i128, 424242), meta.create_time);
+        try std.testing.expectEqual(@as(i128, 112233), meta.modify_time);
+        try std.testing.expectEqual(@as(u64, 0), meta.size);
+        try std.testing.expectEqual(@as(u32, 0xBEEFBABE), meta.flags);
+    }
+
+    try fs.updateMetaData(root.object(), .{
+        .create_time = 100,
+        .modify_time = -10,
+        .flags = 0xAABBCCDD,
+    });
+    {
+        var meta = try fs.readMetaData(root.object());
+        try std.testing.expectEqual(@as(i128, 100), meta.create_time);
+        try std.testing.expectEqual(@as(i128, -10), meta.modify_time);
+        try std.testing.expectEqual(@as(u64, 0), meta.size);
+        try std.testing.expectEqual(@as(u32, 0xAABBCCDD), meta.flags);
+    }
+}
