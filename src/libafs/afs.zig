@@ -109,19 +109,18 @@ pub const FileSystem = struct {
     pub fn iterate(fs: *FileSystem, dir: DirectoryHandle) !Iterator {
         var iter = Iterator{
             .device = fs.device,
-            .current_index = 0,
-            .total_count = 0,
-            .reflist = undefined,
+            .total_count = undefined,
+            .ref_storage = undefined,
+            .refs = undefined,
+            .entry_index = 0,
         };
 
-        try fs.device.readBlock(dir.blockNumber(), asBytes(&iter.reflist));
+        try fs.device.readBlock(dir.blockNumber(), asBytes(&iter.ref_storage));
 
-        const blocklist = @ptrCast(*align(4) ObjectBlock, &iter.reflist);
+        const blocklist = @ptrCast(*align(4) ObjectBlock, &iter.ref_storage);
 
-        // off by the initial offset as we alias the ObjectBlock into a RefListBlock,
-        // using the equivalent part of the refs array.
-        iter.current_index = iter.reflist.refs.len - blocklist.refs.len;
-        iter.total_count = iter.current_index + blocklist.size / @sizeOf(Entry);
+        iter.refs = &blocklist.refs;
+        iter.total_count = blocklist.size / @sizeOf(Entry);
 
         return iter;
     }
@@ -185,11 +184,11 @@ pub const FileSystem = struct {
                 };
             } else continue;
 
-            std.debug.print("alloc block: {}.{}.{}\n", .{
-                current_bitmap_block,
-                bit.offset,
-                bit.bit,
-            });
+            // std.debug.print("alloc block: {}.{}.{}\n", .{
+            //     current_bitmap_block,
+            //     bit.offset,
+            //     bit.bit,
+            // });
 
             buf_slice[bit.offset] |= (@as(u32, 1) << bit.bit);
 
@@ -287,11 +286,11 @@ pub const FileSystem = struct {
             }
         }
 
-        std.debug.print("valid_slot     = {?}\n", .{valid_slot});
-        std.debug.print("refs           = {any}\n", .{refs});
-        std.debug.print("ref_count      = {}\n", .{ref_count});
-        std.debug.print("next_ref_block = {}\n", .{next_ref_block});
-        std.debug.print("entry_count    = {}\n", .{entry_count});
+        // std.debug.print("valid_slot     = {?}\n", .{valid_slot});
+        // std.debug.print("refs           = {any}\n", .{refs});
+        // std.debug.print("ref_count      = {}\n", .{ref_count});
+        // std.debug.print("next_ref_block = {}\n", .{next_ref_block});
+        // std.debug.print("entry_count    = {}\n", .{entry_count});
 
         const storage_slot = if (valid_slot) |slot| slot else blk: {
             // no free entry blocks are in the block ref chain,
@@ -368,7 +367,7 @@ pub const FileSystem = struct {
             break :blk slot;
         };
 
-        std.debug.print("storage_slot   = {}\n", .{storage_slot});
+        // std.debug.print("storage_slot   = {}\n", .{storage_slot});
 
         // Prepare new object block for the created file
         const object_block = try fs.allocBlock();
@@ -385,7 +384,7 @@ pub const FileSystem = struct {
             try fs.device.writeBlock(object_block, &list_buf);
         }
 
-        std.debug.print("object_block   = {}\n", .{object_block});
+        // std.debug.print("object_block   = {}\n", .{object_block});
 
         // Read-modify-write our entry for the new file:
         {
@@ -475,13 +474,51 @@ pub const FileSystem = struct {
 
     pub const Iterator = struct {
         device: BlockDevice,
-        current_index: u64,
         total_count: u64,
-        reflist: RefListBlock,
+        ref_storage: RefListBlock,
+        refs: []const u32,
+        entry_index: u2 = 0,
 
         pub fn next(iter: *Iterator) !?Entry {
-            _ = iter;
+            while (try iter.nextRaw()) |raw| {
+                if (raw.handle.object() != @intToEnum(ObjectHandle, 0))
+                    return raw;
+            }
             return null;
+        }
+
+        fn nextRaw(iter: *Iterator) !?Entry {
+            if (iter.total_count == 0)
+                return null;
+
+            var entry_list: DirectoryDataBlock = undefined;
+            try iter.device.readBlock(iter.refs[0], asBytes(&entry_list));
+
+            const raw_entry = entry_list.entries[iter.entry_index];
+
+            const entry = Entry{
+                .name_buffer = raw_entry.name,
+                .handle = switch (raw_entry.type) {
+                    0 => .{ .directory = @intToEnum(DirectoryHandle, raw_entry.ref) },
+                    1 => .{ .file = @intToEnum(FileHandle, raw_entry.ref) },
+                    else => return error.CorruptFilesystem,
+                },
+            };
+
+            iter.entry_index +%= 1;
+            iter.total_count -= 1;
+
+            if (iter.total_count > 0 and iter.entry_index == 0) {
+                if (iter.refs.len == 0) {
+                    if (iter.ref_storage.next == 0)
+                        return error.CorruptFilesystem;
+                    try iter.device.readBlock(iter.ref_storage.next, asBytes(&iter.ref_storage));
+                    iter.refs = &iter.ref_storage.refs;
+                }
+                iter.refs = iter.refs[1..];
+            }
+
+            return entry;
         }
     };
 };
@@ -491,7 +528,17 @@ pub const Entry = struct {
     handle: union(Type) {
         file: FileHandle,
         directory: DirectoryHandle,
+
+        fn object(val: @This()) ObjectHandle {
+            return switch (val) {
+                inline else => |x| x.object(),
+            };
+        }
     },
+
+    pub fn name(entry: *const Entry) []const u8 {
+        return std.mem.sliceTo(&entry.name_buffer, 0);
+    }
 
     pub const Type = enum { file, directory };
 };

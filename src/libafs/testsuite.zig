@@ -28,14 +28,14 @@ pub fn BlockDevice(comptime block_count: u32) type {
             return fromCtx(ctx).blocks.len;
         }
         fn writeBlock(ctx: *anyopaque, offset: u32, block: *const Block) !void {
-            std.debug.print("write block {}:\n", .{offset});
+            // std.debug.print("write block {}:\n", .{offset});
             dumpBlock(block);
             const bd = fromCtx(ctx);
             bd.blocks[offset] = block.*;
         }
 
         fn readBlock(ctx: *anyopaque, offset: u32, block: *Block) !void {
-            std.debug.print("read block {}\n", .{offset});
+            // std.debug.print("read block {}\n", .{offset});
             const bd = fromCtx(ctx);
             block.* = bd.blocks[offset];
             dumpBlock(block);
@@ -119,16 +119,14 @@ test "init fs driver" {
     try std.testing.expectEqual(@as(u32, 1), fs.version);
 }
 
-test "iterate root directory" {
+test "iterate empty root directory" {
     var bd = makeEmptyFs();
     var fs = try FileSystem.init(bd.interface());
 
     const root = fs.getRootDir();
 
     var iter = try fs.iterate(root);
-    while (try iter.next()) |entry| {
-        std.debug.print("- {}\n", .{entry});
-    }
+    try std.testing.expectEqual(@as(?afs.Entry, null), try iter.next());
 }
 
 test "read metadata" {
@@ -223,4 +221,67 @@ test "create a lot of new files" {
 
         _ = try fs.createFile(root, name, 1337);
     }
+}
+
+test "iterate root directory with a single file" {
+    var bd = makeEmptyFs();
+    var fs = try FileSystem.init(bd.interface());
+
+    const root = fs.getRootDir();
+
+    _ = try fs.createFile(root, "system.dat", 1337);
+
+    var iter = try fs.iterate(root);
+
+    const first = (try iter.next()) orelse return error.MissingEntry;
+
+    try std.testing.expectEqualStrings("system.dat", first.name());
+    try std.testing.expectEqual(afs.Entry.Type.file, first.handle);
+
+    try std.testing.expectEqual(@as(?afs.Entry, null), try iter.next());
+}
+
+test "create duplicate file check" {
+    var bd = makeEmptyFs();
+    var fs = try FileSystem.init(bd.interface());
+
+    const root = fs.getRootDir();
+
+    _ = try fs.createFile(root, "system.dat", 1337);
+    _ = try fs.createFile(root, "magic.dat", 1337);
+    try std.testing.expectError(error.FileAlreadyExists, fs.createDirectory(root, "system.dat", 1337));
+    try std.testing.expectError(error.FileAlreadyExists, fs.createFile(root, "system.dat", 1337));
+}
+
+test "iterate root directory with several files" {
+    var bd = makeEmptyFs();
+    var fs = try FileSystem.init(bd.interface());
+
+    const root = fs.getRootDir();
+
+    _ = try fs.createFile(root, "system.dat", 1337);
+    _ = try fs.createDirectory(root, "bin", 1337);
+    _ = try fs.createFile(root, "kernel.exe", 1337);
+
+    var iter = try fs.iterate(root);
+
+    // HACK: abuse implicit property: the order of elements will be the creation order
+
+    {
+        const entry = (try iter.next()) orelse return error.MissingEntry;
+        try std.testing.expectEqualStrings("system.dat", entry.name());
+        try std.testing.expectEqual(afs.Entry.Type.file, entry.handle);
+    }
+    {
+        const entry = (try iter.next()) orelse return error.MissingEntry;
+        try std.testing.expectEqualStrings("bin", entry.name());
+        try std.testing.expectEqual(afs.Entry.Type.directory, entry.handle);
+    }
+    {
+        const entry = (try iter.next()) orelse return error.MissingEntry;
+        try std.testing.expectEqualStrings("kernel.exe", entry.name());
+        try std.testing.expectEqual(afs.Entry.Type.file, entry.handle);
+    }
+
+    try std.testing.expectEqual(@as(?afs.Entry, null), try iter.next());
 }
