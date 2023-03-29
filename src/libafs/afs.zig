@@ -508,13 +508,13 @@ pub const FileSystem = struct {
                 iter.total_count -= 1;
 
                 if (iter.total_count > 0 and iter.entry_index == 0) {
+                    iter.ref_index += 1;
                     if (iter.ref_index == iter.ref_storage.refs.len) {
                         if (iter.ref_storage.next == 0)
                             return error.CorruptFilesystem;
                         try iter.device.readBlock(iter.ref_storage.next, asBytes(&iter.ref_storage));
                         iter.ref_index = 0;
                     }
-                    iter.ref_index += 1;
                 }
 
                 if (raw_entry.ref == 0) // entry was deleted

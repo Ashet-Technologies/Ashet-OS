@@ -251,6 +251,8 @@ test "create duplicate file check" {
     _ = try fs.createFile(root, "magic.dat", 1337);
     try std.testing.expectError(error.FileAlreadyExists, fs.createDirectory(root, "system.dat", 1337));
     try std.testing.expectError(error.FileAlreadyExists, fs.createFile(root, "system.dat", 1337));
+    try std.testing.expectError(error.FileAlreadyExists, fs.createDirectory(root, "magic.dat", 1337));
+    try std.testing.expectError(error.FileAlreadyExists, fs.createFile(root, "magic.dat", 1337));
 }
 
 test "iterate root directory with several files" {
@@ -284,4 +286,31 @@ test "iterate root directory with several files" {
     }
 
     try std.testing.expectEqual(@as(?afs.Entry, null), try iter.next());
+}
+
+test "iterate over a lot of new files" {
+    var bd = makeEmptyFs();
+    var fs = try FileSystem.init(bd.interface());
+
+    const root = fs.getRootDir();
+
+    var name_buf: [32]u8 = undefined;
+
+    for (0..1024) |index| {
+        const name = try std.fmt.bufPrint(&name_buf, "file-{}.dat", .{index});
+        errdefer std.debug.print("Failed to create file {s}!\n", .{name});
+
+        _ = try fs.createFile(root, name, 1337);
+    }
+
+    var iter = try fs.iterate(root);
+    var count: usize = 0;
+    while (try iter.next()) |entry| {
+        try std.testing.expect(std.mem.startsWith(u8, entry.name(), "file-"));
+        try std.testing.expect(std.mem.endsWith(u8, entry.name(), ".dat"));
+        try std.testing.expectEqual(afs.Entry.Type.file, entry.handle);
+        count += 1;
+    }
+
+    try std.testing.expectEqual(@as(usize, 1024), count);
 }
