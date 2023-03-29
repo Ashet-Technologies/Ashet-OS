@@ -103,9 +103,9 @@ test "format smol file system" {
     {
         const block = blockdev.blocks[2];
 
-        try std.testing.expectEqual(@as(u32, 0), std.mem.readIntLittle(u32, block[0..4])); // empty size
-        try std.testing.expectEqual(@as(i128, create_time), std.mem.readIntLittle(i128, block[4..20])); // same time stamp
-        try std.testing.expectEqual(@as(i128, create_time), std.mem.readIntLittle(i128, block[20..36])); // same time stamp
+        try std.testing.expectEqual(@as(u64, 0), std.mem.readIntLittle(u64, block[0..8])); // empty size
+        try std.testing.expectEqual(@as(i128, create_time), std.mem.readIntLittle(i128, block[8..24])); // same time stamp
+        try std.testing.expectEqual(@as(i128, create_time), std.mem.readIntLittle(i128, block[24..40])); // same time stamp
         try std.testing.expectEqual(@as(u32, 0), std.mem.readIntLittle(u32, block[508..512])); // empty size
     }
 }
@@ -313,4 +313,22 @@ test "iterate over a lot of new files" {
     }
 
     try std.testing.expectEqual(@as(usize, 1024), count);
+}
+
+test "increase file size several times" {
+    var bd = makeEmptyFs();
+    var fs = try FileSystem.init(bd.interface());
+
+    const root = fs.getRootDir();
+
+    const file = try fs.createFile(root, "system.dat", 1337);
+
+    try fs.resizeFile(file, 0); // NO-OP
+    try fs.resizeFile(file, 100); // Allocate single block
+    try fs.resizeFile(file, 512); // Still keep the single block active
+    try fs.resizeFile(file, 513); // Resize to two blocks
+    try fs.resizeFile(file, 117 * 512); // Resize to "all refs in ObjectBlock used"
+    try fs.resizeFile(file, 117 * 512 + 1); // Resize to "all refs in ObjectBlock used" and another block
+    try fs.resizeFile(file, (117 + 127) * 512); // Resize to "all refs of ObjectBlock and first RefListBlock" used
+    try fs.resizeFile(file, (117 + 127) * 512 + 1); // Resize to "all refs of ObjectBlock and first RefListBlock, second RefListBlock has one entry used."
 }

@@ -230,7 +230,7 @@ pub const FileSystem = struct {
 
             const object_block: *ObjectBlock = bytesAsValue(ObjectBlock, &list_buf);
 
-            entry_count = object_block.size / @sizeOf(Entry);
+            entry_count = std.math.cast(u32, object_block.size / @sizeOf(Entry)) orelse return error.CorruptFilesystem;
 
             ref_count = (entry_count + entries_per_block - 1) / entries_per_block;
             refs = &object_block.refs;
@@ -377,7 +377,7 @@ pub const FileSystem = struct {
                 .create_time = time_stamp,
                 .modify_time = time_stamp,
                 .flags = 0,
-                .refs = std.mem.zeroes([117]u32),
+                .refs = std.mem.zeroes([116]u32),
                 .next = 0,
             };
             try fs.device.writeBlock(object_block, &list_buf);
@@ -425,9 +425,25 @@ pub const FileSystem = struct {
     }
 
     pub fn resizeFile(fs: *FileSystem, file: FileHandle, new_size: u64) !void {
-        _ = fs;
-        _ = file;
-        _ = new_size;
+        var object: ObjectBlock = undefined;
+        try fs.device.readBlock(file.blockNumber(), asBytes(&object));
+
+        const old_block_count = std.math.cast(u32, (object.size + @sizeOf(Block) - 1) / @sizeOf(Block)) orelse return error.CorruptFilesystem;
+        const new_block_count = std.math.cast(u32, (new_size + @sizeOf(Block) - 1) / @sizeOf(Block)) orelse return error.FileSize;
+
+        object.size = new_size;
+        try fs.device.writeBlock(file.blockNumber(), asBytes(&object));
+
+        // check if we still have the same number of blocks (small bump/shrink),
+        // as no work is to be done here.
+        if (old_block_count == new_block_count)
+            return;
+
+        if (old_block_count < new_block_count) {
+            @panic("growing files not implemented yet!");
+        } else {
+            @panic("shrinking files not implemented yet!");
+        }
     }
 
     pub fn writeData(fs: *FileSystem, file: FileHandle, offset: u64, data: []const u8) !usize {
@@ -548,7 +564,7 @@ pub const Entry = struct {
 pub const MetaData = struct {
     create_time: i128,
     modify_time: i128,
-    size: u32,
+    size: u64,
     flags: u32,
 };
 
@@ -662,7 +678,7 @@ pub fn format(device: BlockDevice, init_time: i128) !void {
         .create_time = init_time,
         .modify_time = init_time,
         .flags = 0,
-        .refs = std.mem.zeroes([117]u32),
+        .refs = std.mem.zeroes([116]u32),
         .next = 0,
     });
 
@@ -678,11 +694,11 @@ const RootBlock = extern struct {
 };
 
 const ObjectBlock = extern struct {
-    size: u32 align(4), // size of this object in bytes. for directories, this means the directory contains `size/sizeof(Entry)` elements.
+    size: u64 align(4), // size of this object in bytes. for directories, this means the directory contains `size/sizeof(Entry)` elements.
     create_time: i128 align(4), // stores the date when this object was created, unix timestamp in nano seconds
     modify_time: i128 align(4), // stores the date when this object was last modified, unix timestamp in nano seconds
     flags: u32, // type-dependent bit field (file: bit 0 = read only; directory: none; all other bits are reserved=0)
-    refs: [117]u32, // pointer to a type-dependent data block (FileDataBlock, DirectoryDataBlock)
+    refs: [116]u32, // pointer to a type-dependent data block (FileDataBlock, DirectoryDataBlock)
     next: u32 align(4), // link to a RefListBlock to continue the refs listing. 0 is "end of chain"
 };
 
