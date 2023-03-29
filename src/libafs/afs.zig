@@ -111,7 +111,7 @@ pub const FileSystem = struct {
             .device = fs.device,
             .total_count = undefined,
             .ref_storage = undefined,
-            .refs = undefined,
+            .ref_index = @offsetOf(ObjectBlock, "refs") / @sizeOf(u32),
             .entry_index = 0,
         };
 
@@ -119,7 +119,6 @@ pub const FileSystem = struct {
 
         const blocklist = @ptrCast(*align(4) ObjectBlock, &iter.ref_storage);
 
-        iter.refs = &blocklist.refs;
         iter.total_count = blocklist.size / @sizeOf(Entry);
 
         return iter;
@@ -446,7 +445,7 @@ pub const FileSystem = struct {
     }
 
     pub fn createDirectory(fs: *FileSystem, dir: DirectoryHandle, name: []const u8, create_time: i128) !DirectoryHandle {
-        const dir_handle = try fs.createEntryInDir(dir, name, .file, create_time);
+        const dir_handle = try fs.createEntryInDir(dir, name, .directory, create_time);
         // directory is already fully initialized with an empty object
         return dir_handle.toDirectoryHandle();
     }
@@ -476,49 +475,52 @@ pub const FileSystem = struct {
         device: BlockDevice,
         total_count: u64,
         ref_storage: RefListBlock,
-        refs: []const u32,
+        ref_index: u8,
         entry_index: u2 = 0,
 
         pub fn next(iter: *Iterator) !?Entry {
-            while (try iter.nextRaw()) |raw| {
-                if (raw.handle.object() != @intToEnum(ObjectHandle, 0))
-                    return raw;
-            }
-            return null;
-        }
+            while (true) {
+                if (iter.total_count == 0)
+                    return null;
 
-        fn nextRaw(iter: *Iterator) !?Entry {
-            if (iter.total_count == 0)
-                return null;
+                // std.debug.print("total_count = {}\n", .{iter.total_count});
+                // std.debug.print("ref_index   = {}\n", .{iter.ref_index});
+                // std.debug.print("entry_index = {}\n", .{iter.entry_index});
+                // std.debug.print("next        = {}\n", .{iter.ref_storage.next});
 
-            var entry_list: DirectoryDataBlock = undefined;
-            try iter.device.readBlock(iter.refs[0], asBytes(&entry_list));
+                var entry_list: DirectoryDataBlock = undefined;
+                try iter.device.readBlock(iter.ref_storage.refs[iter.ref_index], asBytes(&entry_list));
 
-            const raw_entry = entry_list.entries[iter.entry_index];
+                const raw_entry = entry_list.entries[iter.entry_index];
 
-            const entry = Entry{
-                .name_buffer = raw_entry.name,
-                .handle = switch (raw_entry.type) {
-                    0 => .{ .directory = @intToEnum(DirectoryHandle, raw_entry.ref) },
-                    1 => .{ .file = @intToEnum(FileHandle, raw_entry.ref) },
-                    else => return error.CorruptFilesystem,
-                },
-            };
+                const entry = Entry{
+                    .name_buffer = raw_entry.name,
+                    .handle = switch (raw_entry.type) {
+                        0 => .{ .directory = @intToEnum(DirectoryHandle, raw_entry.ref) },
+                        1 => .{ .file = @intToEnum(FileHandle, raw_entry.ref) },
+                        else => return error.CorruptFilesystem,
+                    },
+                };
 
-            iter.entry_index +%= 1;
-            iter.total_count -= 1;
+                // std.debug.print("result: {}\n", .{entry});
 
-            if (iter.total_count > 0 and iter.entry_index == 0) {
-                if (iter.refs.len == 0) {
-                    if (iter.ref_storage.next == 0)
-                        return error.CorruptFilesystem;
-                    try iter.device.readBlock(iter.ref_storage.next, asBytes(&iter.ref_storage));
-                    iter.refs = &iter.ref_storage.refs;
+                iter.entry_index +%= 1;
+                iter.total_count -= 1;
+
+                if (iter.total_count > 0 and iter.entry_index == 0) {
+                    if (iter.ref_index == iter.ref_storage.refs.len) {
+                        if (iter.ref_storage.next == 0)
+                            return error.CorruptFilesystem;
+                        try iter.device.readBlock(iter.ref_storage.next, asBytes(&iter.ref_storage));
+                        iter.ref_index = 0;
+                    }
+                    iter.ref_index += 1;
                 }
-                iter.refs = iter.refs[1..];
-            }
 
-            return entry;
+                if (raw_entry.ref == 0) // entry was deleted
+                    continue;
+                return entry;
+            }
         }
     };
 };
