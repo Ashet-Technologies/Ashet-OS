@@ -21,6 +21,9 @@ pub const magic_number: [32]u8 = .{
 
 pub const Block = [512]u8;
 
+/// A global block that provides 512 empty bytes. Required to clear freshly allocated blocks
+const zero_block = std.mem.zeroes(Block);
+
 pub const BlockDevice = struct {
     pub const IoError = error{
         WriteProtected,
@@ -425,22 +428,77 @@ pub const FileSystem = struct {
     }
 
     pub fn resizeFile(fs: *FileSystem, file: FileHandle, new_size: u64) !void {
-        var object: ObjectBlock = undefined;
-        try fs.device.readBlock(file.blockNumber(), asBytes(&object));
+        var storage_blob: Block align(16) = undefined;
 
+        try fs.device.readBlock(file.blockNumber(), &storage_blob);
+
+        const object: *ObjectBlock = bytesAsValue(ObjectBlock, &storage_blob);
         const old_block_count = std.math.cast(u32, (object.size + @sizeOf(Block) - 1) / @sizeOf(Block)) orelse return error.CorruptFilesystem;
         const new_block_count = std.math.cast(u32, (new_size + @sizeOf(Block) - 1) / @sizeOf(Block)) orelse return error.FileSize;
 
         object.size = new_size;
-        try fs.device.writeBlock(file.blockNumber(), asBytes(&object));
+        try fs.device.writeBlock(file.blockNumber(), &storage_blob);
 
         // check if we still have the same number of blocks (small bump/shrink),
         // as no work is to be done here.
         if (old_block_count == new_block_count)
             return;
 
+        std.debug.print("resize from {} to {} blocks\n", .{ old_block_count, new_block_count });
+
         if (old_block_count < new_block_count) {
-            @panic("growing files not implemented yet!");
+            var refs: []u32 = &object.refs;
+            var refs_used: u64 = old_block_count;
+            var current_block: u32 = file.blockNumber();
+
+            const skip_forward_count = if (old_block_count > ObjectBlock.ref_count)
+                // compute number of blocks we gotta skip.
+                ((old_block_count -| ObjectBlock.ref_count) + RefListBlock.ref_count - 1) / RefListBlock.ref_count
+            else
+                // no blocks to skip, we're still on the first block
+                0;
+
+            std.debug.print("  => skip {} blocks\n", .{skip_forward_count});
+
+            for (0..skip_forward_count) |_| {
+                const next_list = std.mem.readIntLittle(u32, storage_blob[508..512]);
+                if (next_list == 0)
+                    return error.CorruptFilesystem;
+                try fs.device.readBlock(next_list, &storage_blob);
+                current_block = next_list;
+
+                std.debug.print("  consume {} refs => {}\n", .{ refs.len, refs_used });
+                refs_used -= refs.len;
+                refs = &bytesAsValue(RefListBlock, &storage_blob).refs;
+            }
+            std.debug.print("  refs used: {} / {}\n", .{ refs_used, refs.len });
+            std.debug.assert(refs_used <= refs.len);
+            refs = refs[refs_used..];
+
+            std.debug.print("  refs used: {}\n", .{refs_used});
+            std.debug.print("  total ref len: {}\n", .{refs.len});
+
+            const blocks_to_fill = new_block_count - old_block_count;
+
+            for (0..blocks_to_fill) |_| {
+                if (refs.len == 0) {
+                    const next_ref_block = try fs.allocBlock();
+
+                    try fs.device.writeBlock(next_ref_block, &zero_block);
+                    std.mem.writeIntLittle(u32, storage_blob[508..512], next_ref_block);
+                    try fs.device.writeBlock(current_block, &storage_blob);
+
+                    current_block = next_ref_block;
+
+                    refs = &bytesAsValue(RefListBlock, &storage_blob).refs;
+                }
+                refs[0] = try fs.allocBlock();
+                try fs.device.writeBlock(refs[0], &zero_block);
+
+                refs = refs[1..];
+            }
+
+            try fs.device.writeBlock(current_block, &storage_blob);
         } else {
             @panic("shrinking files not implemented yet!");
         }
@@ -694,16 +752,20 @@ const RootBlock = extern struct {
 };
 
 const ObjectBlock = extern struct {
+    pub const ref_count = 116;
+
     size: u64 align(4), // size of this object in bytes. for directories, this means the directory contains `size/sizeof(Entry)` elements.
     create_time: i128 align(4), // stores the date when this object was created, unix timestamp in nano seconds
     modify_time: i128 align(4), // stores the date when this object was last modified, unix timestamp in nano seconds
     flags: u32, // type-dependent bit field (file: bit 0 = read only; directory: none; all other bits are reserved=0)
-    refs: [116]u32, // pointer to a type-dependent data block (FileDataBlock, DirectoryDataBlock)
+    refs: [ref_count]u32, // pointer to a type-dependent data block (FileDataBlock, DirectoryDataBlock)
     next: u32 align(4), // link to a RefListBlock to continue the refs listing. 0 is "end of chain"
 };
 
 const RefListBlock = extern struct {
-    refs: [127]u32, // pointers to data blocks to list the entries
+    pub const ref_count = 127;
+
+    refs: [ref_count]u32, // pointers to data blocks to list the entries
     next: u32 align(4), // pointer to the next RefListBlock or 0
 };
 

@@ -331,4 +331,5 @@ test "increase file size several times" {
     try fs.resizeFile(file, 117 * 512 + 1); // Resize to "all refs in ObjectBlock used" and another block
     try fs.resizeFile(file, (117 + 127) * 512); // Resize to "all refs of ObjectBlock and first RefListBlock" used
     try fs.resizeFile(file, (117 + 127) * 512 + 1); // Resize to "all refs of ObjectBlock and first RefListBlock, second RefListBlock has one entry used."
+    try fs.resizeFile(file, 1 << 19); // Just resize to a realistic, but large size (512k)
 }
