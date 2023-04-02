@@ -6,7 +6,10 @@ const std = @import("std");
 const logger = std.log.scoped(.ashet_fs);
 
 const asBytes = std.mem.asBytes;
-const bytesAsValue = std.mem.bytesAsValue;
+
+fn bytesAsValue(comptime T: type, bytes: *align(@alignOf(T)) [@sizeOf(T)]u8) *T {
+    return @ptrCast(*T, bytes);
+}
 
 fn makeZeroPaddedString(str: []const u8, comptime len: comptime_int) [len]u8 {
     var buf = std.mem.zeroes([len]u8);
@@ -231,7 +234,7 @@ pub const FileSystem = struct {
             list_block_num = dir.blockNumber();
             try fs.device.readBlock(list_block_num, &list_buf);
 
-            const object_block: *ObjectBlock = bytesAsValue(ObjectBlock, &list_buf);
+            const object_block = bytesAsValue(ObjectBlock, &list_buf);
 
             entry_count = std.math.cast(u32, object_block.size / @sizeOf(Entry)) orelse return error.CorruptFilesystem;
 
@@ -444,7 +447,7 @@ pub const FileSystem = struct {
         if (old_block_count == new_block_count)
             return;
 
-        std.debug.print("resize from {} to {} blocks\n", .{ old_block_count, new_block_count });
+        // std.debug.print("resize from {} to {} blocks\n", .{ old_block_count, new_block_count });
 
         if (old_block_count < new_block_count) {
             var refs: []u32 = &object.refs;
@@ -458,7 +461,7 @@ pub const FileSystem = struct {
                 // no blocks to skip, we're still on the first block
                 0;
 
-            std.debug.print("  => skip {} blocks\n", .{skip_forward_count});
+            // std.debug.print("  => skip {} blocks\n", .{skip_forward_count});
 
             for (0..skip_forward_count) |_| {
                 const next_list = std.mem.readIntLittle(u32, storage_blob[508..512]);
@@ -467,16 +470,16 @@ pub const FileSystem = struct {
                 try fs.device.readBlock(next_list, &storage_blob);
                 current_block = next_list;
 
-                std.debug.print("  consume {} refs => {}\n", .{ refs.len, refs_used });
+                // std.debug.print("  consume {} refs => {}\n", .{ refs.len, refs_used });
                 refs_used -= refs.len;
                 refs = &bytesAsValue(RefListBlock, &storage_blob).refs;
             }
-            std.debug.print("  refs used: {} / {}\n", .{ refs_used, refs.len });
+            // std.debug.print("  refs used: {} / {}\n", .{ refs_used, refs.len });
             std.debug.assert(refs_used <= refs.len);
             refs = refs[refs_used..];
 
-            std.debug.print("  refs used: {}\n", .{refs_used});
-            std.debug.print("  total ref len: {}\n", .{refs.len});
+            // std.debug.print("  refs used: {}\n", .{refs_used});
+            // std.debug.print("  total ref len: {}\n", .{refs.len});
 
             const blocks_to_fill = new_block_count - old_block_count;
 
@@ -504,18 +507,132 @@ pub const FileSystem = struct {
         }
     }
 
-    pub fn writeData(fs: *FileSystem, file: FileHandle, offset: u64, data: []const u8) !usize {
-        _ = fs;
-        _ = file;
-        _ = offset;
-        _ = data;
+    const FileDataOffset = struct {
+        refblock_index: u32,
+        ref_index: u7,
+        byte_offset: u9,
+    };
+
+    fn computeFileDataOffset(byte_addr: u64) FileDataOffset {
+        const block_number = byte_addr / @sizeOf(Block);
+        const byte_offset = @truncate(u9, byte_addr);
+
+        return if (block_number < ObjectBlock.ref_count)
+            FileDataOffset{
+                .refblock_index = 0, // object block
+                .ref_index = @truncate(u7, block_number),
+                .byte_offset = byte_offset,
+            }
+        else
+            FileDataOffset{
+                .refblock_index = @intCast(u32, 1 + (block_number - ObjectBlock.ref_count) / RefListBlock.ref_count),
+                .ref_index = @intCast(u7, (block_number - ObjectBlock.ref_count) % RefListBlock.ref_count),
+                .byte_offset = byte_offset,
+            };
     }
 
-    pub fn readData(fs: *FileSystem, file: FileHandle, offset: u64, data: []u8) !usize {
-        _ = fs;
-        _ = file;
-        _ = offset;
-        _ = data;
+    fn accessData(
+        fs: *FileSystem,
+        file: FileHandle,
+        position: u64,
+        comptime Accessor: type,
+        data: Accessor.Slice,
+    ) !usize {
+        var storage_blob: Block align(16) = undefined;
+
+        try fs.device.readBlock(file.blockNumber(), &storage_blob);
+
+        const object = bytesAsValue(ObjectBlock, &storage_blob);
+
+        const object_size = object.size;
+
+        const actual_len = std.math.min(data.len, object_size -| position);
+
+        var data_position = computeFileDataOffset(position);
+
+        var refs: []const u32 = &object.refs;
+        var next_block = object.next;
+
+        {
+            var i: usize = 0;
+            while (i < data_position.refblock_index) {
+                try fs.device.readBlock(next_block, &storage_blob);
+                const refblock = bytesAsValue(RefListBlock, &storage_blob);
+                next_block = refblock.next;
+                refs = &refblock.refs;
+            }
+        }
+
+        var offset: usize = 0;
+        while (offset < actual_len) {
+            const max_chunk_size = std.math.min(@sizeOf(Block), actual_len - offset);
+            const chunk_size = if (max_chunk_size == @sizeOf(Block) and data_position.byte_offset == 0) blk: {
+                try Accessor.accessFull(fs.device, refs[data_position.ref_index], data[offset..][0..@sizeOf(Block)]);
+                data_position.ref_index += 1;
+                break :blk max_chunk_size;
+            } else blk: {
+                const chunk_size = max_chunk_size -| data_position.byte_offset;
+
+                try Accessor.accessPartial(
+                    fs.device,
+                    refs[data_position.ref_index],
+                    data_position.byte_offset,
+                    data[offset .. offset + chunk_size],
+                );
+
+                data_position.ref_index += 1;
+                data_position.byte_offset = 0;
+
+                break :blk chunk_size;
+            };
+
+            offset += chunk_size;
+
+            if (data_position.ref_index == refs.len and offset != actual_len) {
+                // end of the current ref section, reload the storage_blob and refresh the refs
+                data_position.ref_index = 0;
+                data_position.refblock_index += 1;
+
+                try fs.device.readBlock(data_position.refblock_index, &storage_blob);
+                const refblock = bytesAsValue(RefListBlock, &storage_blob);
+                refs = &refblock.refs;
+            }
+        }
+
+        return actual_len;
+    }
+
+    const WriteAccessor = struct {
+        const Slice = []const u8;
+        fn accessPartial(device: BlockDevice, block_address: u32, byte_offset: usize, slice: []const u8) !void {
+            var buffer_block: Block = undefined;
+            try device.readBlock(block_address, &buffer_block);
+            std.mem.copy(u8, buffer_block[byte_offset..], slice);
+            try device.writeBlock(block_address, &buffer_block);
+        }
+        fn accessFull(device: BlockDevice, block_address: u32, block: *const [512]u8) !void {
+            try device.writeBlock(block_address, block);
+        }
+    };
+
+    pub fn writeData(fs: *FileSystem, file: FileHandle, position: u64, data: []const u8) !usize {
+        return fs.accessData(file, position, WriteAccessor, data);
+    }
+
+    const ReadAccessor = struct {
+        const Slice = []u8;
+        fn accessPartial(device: BlockDevice, block_address: u32, byte_offset: usize, slice: []u8) !void {
+            var buffer_block: Block = undefined;
+            try device.readBlock(block_address, &buffer_block);
+            std.mem.copy(u8, slice, buffer_block[byte_offset..][0..slice.len]);
+        }
+        fn accessFull(device: BlockDevice, block_address: u32, block: *[512]u8) !void {
+            try device.readBlock(block_address, block);
+        }
+    };
+
+    pub fn readData(fs: *FileSystem, file: FileHandle, position: u64, data: []u8) !usize {
+        return fs.accessData(file, position, ReadAccessor, data);
     }
 
     pub fn createDirectory(fs: *FileSystem, dir: DirectoryHandle, name: []const u8, create_time: i128) !DirectoryHandle {

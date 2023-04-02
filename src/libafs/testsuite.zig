@@ -333,3 +333,79 @@ test "increase file size several times" {
     try fs.resizeFile(file, (117 + 127) * 512 + 1); // Resize to "all refs of ObjectBlock and first RefListBlock, second RefListBlock has one entry used."
     try fs.resizeFile(file, 1 << 19); // Just resize to a realistic, but large size (512k)
 }
+
+test "write basic data (no verify)" {
+    var bd = makeEmptyFs();
+    var fs = try FileSystem.init(bd.interface());
+
+    const root = fs.getRootDir();
+
+    const file = try fs.createFile(root, "system.dat", 1337);
+
+    try std.testing.expectEqual(@as(usize, 0), try fs.writeData(file, 0, "Hello, World!"));
+
+    try fs.resizeFile(file, 10);
+
+    try std.testing.expectEqual(@as(usize, 10), try fs.writeData(file, 0, "Hello, World!"));
+
+    try std.testing.expectEqual(@as(usize, 5), try fs.writeData(file, 5, "Hello, World!"));
+
+    try fs.resizeFile(file, 10_000);
+
+    try std.testing.expectEqual(@as(usize, 13), try fs.writeData(file, 0, "Hello, World!"));
+    try std.testing.expectEqual(@as(usize, 13), try fs.writeData(file, 100, "Hello, World!"));
+    try std.testing.expectEqual(@as(usize, 13), try fs.writeData(file, 1000, "Hello, World!"));
+    try std.testing.expectEqual(@as(usize, 13), try fs.writeData(file, 512, "Hello, World!"));
+    try std.testing.expectEqual(@as(usize, 13), try fs.writeData(file, 2048, "Hello, World!"));
+    try std.testing.expectEqual(@as(usize, 10), try fs.writeData(file, 9990, "Hello, World!"));
+}
+
+test "write-read basic data" {
+    var bd = makeEmptyFs();
+    var fs = try FileSystem.init(bd.interface());
+
+    var buffer: [32]u8 = undefined;
+
+    const root = fs.getRootDir();
+
+    const file = try fs.createFile(root, "system.dat", 1337);
+
+    try std.testing.expectEqual(@as(usize, 0), try fs.writeData(file, 0, "Hello, World!"));
+    try std.testing.expectEqual(@as(usize, 0), try fs.readData(file, 0, &buffer));
+
+    try fs.resizeFile(file, 10);
+
+    try std.testing.expectEqual(@as(usize, 10), try fs.writeData(file, 0, "Hello, World!"));
+    try std.testing.expectEqual(@as(usize, 10), try fs.readData(file, 0, &buffer));
+    try std.testing.expectEqualStrings("Hello, Wor", buffer[0..10]);
+
+    try std.testing.expectEqual(@as(usize, 5), try fs.writeData(file, 5, "Hello, World!"));
+    try std.testing.expectEqual(@as(usize, 5), try fs.readData(file, 5, &buffer));
+    try std.testing.expectEqualStrings("Hello", buffer[0..5]);
+
+    try fs.resizeFile(file, 10_000);
+
+    try std.testing.expectEqual(@as(usize, 13), try fs.writeData(file, 0, "Hello, World!"));
+    try std.testing.expectEqual(@as(usize, 13), try fs.readData(file, 0, buffer[0..13]));
+    try std.testing.expectEqualStrings("Hello, World!", buffer[0..13]);
+
+    try std.testing.expectEqual(@as(usize, 13), try fs.writeData(file, 100, "Hello, World!"));
+    try std.testing.expectEqual(@as(usize, 13), try fs.readData(file, 100, buffer[0..13]));
+    try std.testing.expectEqualStrings("Hello, World!", buffer[0..13]);
+
+    try std.testing.expectEqual(@as(usize, 13), try fs.writeData(file, 1000, "Hello, World!"));
+    try std.testing.expectEqual(@as(usize, 13), try fs.readData(file, 1000, buffer[0..13]));
+    try std.testing.expectEqualStrings("Hello, World!", buffer[0..13]);
+
+    try std.testing.expectEqual(@as(usize, 13), try fs.writeData(file, 512, "Hello, World!"));
+    try std.testing.expectEqual(@as(usize, 13), try fs.readData(file, 512, buffer[0..13]));
+    try std.testing.expectEqualStrings("Hello, World!", buffer[0..13]);
+
+    try std.testing.expectEqual(@as(usize, 13), try fs.writeData(file, 2048, "Hello, World!"));
+    try std.testing.expectEqual(@as(usize, 13), try fs.readData(file, 2048, buffer[0..13]));
+    try std.testing.expectEqualStrings("Hello, World!", buffer[0..13]);
+
+    try std.testing.expectEqual(@as(usize, 10), try fs.writeData(file, 9990, "Hello, World!"));
+    try std.testing.expectEqual(@as(usize, 10), try fs.readData(file, 9990, buffer[0..13]));
+    try std.testing.expectEqualStrings("Hello, Wor", buffer[0..10]);
+}
