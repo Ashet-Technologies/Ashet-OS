@@ -606,11 +606,11 @@ pub const FileSystem = struct {
             if (data_position.ref_index == refs.len and offset != actual_len) {
                 // end of the current ref section, reload the storage_blob and refresh the refs
                 data_position.ref_index = 0;
-                data_position.refblock_index += 1;
 
-                try fs.device.readBlock(data_position.refblock_index, &storage_blob);
+                try fs.device.readBlock(next_block, &storage_blob);
                 const refblock = bytesAsValue(RefListBlock, &storage_blob);
                 refs = &refblock.refs;
+                next_block = refblock.next;
             }
         }
 

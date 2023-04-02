@@ -463,3 +463,28 @@ test "overwrite portions of data" {
     try std.testing.expectEqual(@as(usize, 30), try fs.readData(file, (1 << 18) + 300, buffer[0..30]));
     try std.testing.expectEqualStrings("0123456789abcdefghij0123456789", buffer[0..30]);
 }
+
+test "huge sequential data" {
+    const large_buffer = try std.testing.allocator.alloc(u8, 1 << 19);
+    defer std.testing.allocator.free(large_buffer);
+
+    const validate_buffer = try std.testing.allocator.alloc(u8, large_buffer.len);
+    defer std.testing.allocator.free(validate_buffer);
+
+    var rng = std.rand.DefaultPrng.init(1337);
+    rng.random().bytes(large_buffer);
+
+    var bd = makeEmptyFs();
+    var fs = try FileSystem.init(bd.interface());
+
+    const root = fs.getRootDir();
+
+    const file = try fs.createFile(root, "system.dat", 1337);
+
+    try fs.resizeFile(file, large_buffer.len);
+    try std.testing.expectEqual(@as(usize, large_buffer.len), try fs.writeData(file, 0, large_buffer));
+
+    scrambleData(validate_buffer);
+    try std.testing.expectEqual(@as(usize, validate_buffer.len), try fs.readData(file, 0, validate_buffer));
+    try std.testing.expectEqualSlices(u8, large_buffer, validate_buffer);
+}
