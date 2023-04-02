@@ -360,6 +360,10 @@ test "write basic data (no verify)" {
     try std.testing.expectEqual(@as(usize, 10), try fs.writeData(file, 9990, "Hello, World!"));
 }
 
+fn scrambleData(buf: []u8) void {
+    std.mem.set(u8, buf, 0xAA);
+}
+
 test "write-read basic data" {
     var bd = makeEmptyFs();
     var fs = try FileSystem.init(bd.interface());
@@ -370,42 +374,92 @@ test "write-read basic data" {
 
     const file = try fs.createFile(root, "system.dat", 1337);
 
+    scrambleData(&buffer);
     try std.testing.expectEqual(@as(usize, 0), try fs.writeData(file, 0, "Hello, World!"));
     try std.testing.expectEqual(@as(usize, 0), try fs.readData(file, 0, &buffer));
 
     try fs.resizeFile(file, 10);
 
+    scrambleData(&buffer);
     try std.testing.expectEqual(@as(usize, 10), try fs.writeData(file, 0, "Hello, World!"));
     try std.testing.expectEqual(@as(usize, 10), try fs.readData(file, 0, &buffer));
     try std.testing.expectEqualStrings("Hello, Wor", buffer[0..10]);
 
+    scrambleData(&buffer);
     try std.testing.expectEqual(@as(usize, 5), try fs.writeData(file, 5, "Hello, World!"));
     try std.testing.expectEqual(@as(usize, 5), try fs.readData(file, 5, &buffer));
     try std.testing.expectEqualStrings("Hello", buffer[0..5]);
 
     try fs.resizeFile(file, 10_000);
 
+    scrambleData(&buffer);
     try std.testing.expectEqual(@as(usize, 13), try fs.writeData(file, 0, "Hello, World!"));
     try std.testing.expectEqual(@as(usize, 13), try fs.readData(file, 0, buffer[0..13]));
     try std.testing.expectEqualStrings("Hello, World!", buffer[0..13]);
 
+    scrambleData(&buffer);
     try std.testing.expectEqual(@as(usize, 13), try fs.writeData(file, 100, "Hello, World!"));
     try std.testing.expectEqual(@as(usize, 13), try fs.readData(file, 100, buffer[0..13]));
     try std.testing.expectEqualStrings("Hello, World!", buffer[0..13]);
 
+    scrambleData(&buffer);
     try std.testing.expectEqual(@as(usize, 13), try fs.writeData(file, 1000, "Hello, World!"));
     try std.testing.expectEqual(@as(usize, 13), try fs.readData(file, 1000, buffer[0..13]));
     try std.testing.expectEqualStrings("Hello, World!", buffer[0..13]);
 
+    scrambleData(&buffer);
     try std.testing.expectEqual(@as(usize, 13), try fs.writeData(file, 512, "Hello, World!"));
     try std.testing.expectEqual(@as(usize, 13), try fs.readData(file, 512, buffer[0..13]));
     try std.testing.expectEqualStrings("Hello, World!", buffer[0..13]);
 
+    scrambleData(&buffer);
     try std.testing.expectEqual(@as(usize, 13), try fs.writeData(file, 2048, "Hello, World!"));
     try std.testing.expectEqual(@as(usize, 13), try fs.readData(file, 2048, buffer[0..13]));
     try std.testing.expectEqualStrings("Hello, World!", buffer[0..13]);
 
+    scrambleData(&buffer);
     try std.testing.expectEqual(@as(usize, 10), try fs.writeData(file, 9990, "Hello, World!"));
     try std.testing.expectEqual(@as(usize, 10), try fs.readData(file, 9990, buffer[0..13]));
     try std.testing.expectEqualStrings("Hello, Wor", buffer[0..10]);
+}
+
+test "overwrite portions of data" {
+    var bd = makeEmptyFs();
+    var fs = try FileSystem.init(bd.interface());
+
+    var buffer: [30]u8 = undefined;
+
+    const root = fs.getRootDir();
+
+    const file = try fs.createFile(root, "system.dat", 1337);
+
+    // std.debug.print("resize...\n", .{});
+    try fs.resizeFile(file, 1 << 19); // make it big enough
+
+    // std.debug.print("write 300:\n", .{});
+    try std.testing.expectEqual(@as(usize, 30), try fs.writeData(file, 300, "012345678901234567890123456789"));
+    try std.testing.expectEqual(@as(usize, 10), try fs.writeData(file, 310, "abcdefghij"));
+
+    // std.debug.print("write (1 << 16):\n", .{});
+    try std.testing.expectEqual(@as(usize, 30), try fs.writeData(file, (1 << 16) + 300, "012345678901234567890123456789"));
+    try std.testing.expectEqual(@as(usize, 10), try fs.writeData(file, (1 << 16) + 310, "abcdefghij"));
+
+    // std.debug.print("write (1 << 18):\n", .{});
+    try std.testing.expectEqual(@as(usize, 30), try fs.writeData(file, (1 << 18) + 300, "012345678901234567890123456789"));
+    try std.testing.expectEqual(@as(usize, 10), try fs.writeData(file, (1 << 18) + 310, "abcdefghij"));
+
+    // std.debug.print("verify 300:\n", .{});
+    scrambleData(&buffer);
+    try std.testing.expectEqual(@as(usize, 30), try fs.readData(file, 300, buffer[0..30]));
+    try std.testing.expectEqualStrings("0123456789abcdefghij0123456789", buffer[0..30]);
+
+    // std.debug.print("verify (1 << 16):\n", .{});
+    scrambleData(&buffer);
+    try std.testing.expectEqual(@as(usize, 30), try fs.readData(file, (1 << 16) + 300, buffer[0..30]));
+    try std.testing.expectEqualStrings("0123456789abcdefghij0123456789", buffer[0..30]);
+
+    // std.debug.print("verify (1 << 18):\n", .{});
+    scrambleData(&buffer);
+    try std.testing.expectEqual(@as(usize, 30), try fs.readData(file, (1 << 18) + 300, buffer[0..30]));
+    try std.testing.expectEqualStrings("0123456789abcdefghij0123456789", buffer[0..30]);
 }

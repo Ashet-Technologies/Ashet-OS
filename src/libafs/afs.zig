@@ -546,16 +546,21 @@ pub const FileSystem = struct {
 
         const object_size = object.size;
 
+        if (object_size == 0)
+            return 0; // short-cut, we don't need to access any data at all
+
         const actual_len = std.math.min(data.len, object_size -| position);
 
         var data_position = computeFileDataOffset(position);
+
+        // std.debug.print("\ndata position: {}\n", .{data_position});
 
         var refs: []const u32 = &object.refs;
         var next_block = object.next;
 
         {
             var i: usize = 0;
-            while (i < data_position.refblock_index) {
+            while (i < data_position.refblock_index) : (i += 1) {
                 try fs.device.readBlock(next_block, &storage_blob);
                 const refblock = bytesAsValue(RefListBlock, &storage_blob);
                 next_block = refblock.next;
@@ -566,12 +571,21 @@ pub const FileSystem = struct {
         var offset: usize = 0;
         while (offset < actual_len) {
             const max_chunk_size = std.math.min(@sizeOf(Block), actual_len - offset);
+            std.debug.assert(max_chunk_size > 0);
+
+            // std.debug.print("try reading {} bytes at ram={}/disk={} from block {}, max len {}...\n", .{
+            //     max_chunk_size,
+            //     offset,
+            //     data_position.byte_offset,
+            //     refs[data_position.ref_index],
+            //     actual_len,
+            // });
             const chunk_size = if (max_chunk_size == @sizeOf(Block) and data_position.byte_offset == 0) blk: {
                 try Accessor.accessFull(fs.device, refs[data_position.ref_index], data[offset..][0..@sizeOf(Block)]);
                 data_position.ref_index += 1;
-                break :blk max_chunk_size;
+                break :blk @sizeOf(Block);
             } else blk: {
-                const chunk_size = max_chunk_size -| data_position.byte_offset;
+                const chunk_size = std.math.min(max_chunk_size, @as(usize, @sizeOf(Block)) - data_position.byte_offset);
 
                 try Accessor.accessPartial(
                     fs.device,
@@ -585,6 +599,7 @@ pub const FileSystem = struct {
 
                 break :blk chunk_size;
             };
+            std.debug.assert(chunk_size > 0);
 
             offset += chunk_size;
 
