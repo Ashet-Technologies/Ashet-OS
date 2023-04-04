@@ -678,6 +678,15 @@ pub const FileSystem = struct {
         _ = name;
     }
 
+    pub fn getEntry(fs: *FileSystem, dir: DirectoryHandle, name: []const u8) !Entry {
+        var iter = try fs.iterate(dir);
+        while (try iter.next()) |entry| {
+            if (std.mem.eql(u8, name, entry.name()))
+                return entry;
+        }
+        return error.FileNotFound;
+    }
+
     pub const Iterator = struct {
         device: BlockDevice,
         total_count: u64,
@@ -734,22 +743,24 @@ pub const FileSystem = struct {
 
 pub const Entry = struct {
     name_buffer: [120]u8,
-    handle: union(Type) {
-        file: FileHandle,
-        directory: DirectoryHandle,
-
-        fn object(val: @This()) ObjectHandle {
-            return switch (val) {
-                inline else => |x| x.object(),
-            };
-        }
-    },
+    handle: Handle,
 
     pub fn name(entry: *const Entry) []const u8 {
         return std.mem.sliceTo(&entry.name_buffer, 0);
     }
 
     pub const Type = enum { file, directory };
+
+    pub const Handle = union(Type) {
+        file: FileHandle,
+        directory: DirectoryHandle,
+
+        pub fn object(val: Handle) ObjectHandle {
+            return switch (val) {
+                inline else => |x| x.object(),
+            };
+        }
+    };
 };
 
 pub const MetaData = struct {

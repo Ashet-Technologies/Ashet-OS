@@ -87,11 +87,69 @@ pub fn main() !u8 {
         return 1;
     };
 
+    var stdout = std.io.getStdOut();
+
     switch (verb) {
-        .ls => @panic("ls not implemented yet!"),
+        .ls => |opt| {
+            const dir = if (cli.positionals.len == 1)
+                try resolvePath(&fs, cli.positionals[0], .directory)
+            else
+                fs.root_directory;
+
+            if (opt.list) {
+                try stdout.writer().print("{s: <10} | {s: <19} | {s: <19} | {s: <10} | {s}\n", .{
+                    "flags",
+                    "cdate",
+                    "mdate",
+                    "size",
+                    "name",
+                });
+            }
+
+            var first = true;
+            var iter = try fs.iterate(dir);
+            while (try iter.next()) |entry| {
+                if (opt.list) {
+                    var buffer: [130]u8 = undefined;
+                    const name = switch (entry.handle) {
+                        .directory => try std.fmt.bufPrint(&buffer, "{s}/", .{entry.name()}),
+                        .file => entry.name(),
+                    };
+                    const meta = try fs.readMetaData(entry.handle.object());
+
+                    var sizeBuf: [64]u8 = undefined;
+                    const size_str = if (opt.human)
+                        try std.fmt.bufPrint(&sizeBuf, "{d:5.2}", .{std.fmt.fmtIntSizeBin(meta.size)})
+                    else
+                        try std.fmt.bufPrint(&sizeBuf, "{d}", .{meta.size});
+
+                    try stdout.writer().print("0x{X:0>8} | {} | {} | {s: >10} | {s}\n", .{
+                        meta.flags,
+                        DateTime{ .ts = meta.create_time },
+                        DateTime{ .ts = meta.modify_time },
+                        size_str,
+                        name,
+                    });
+                } else {
+                    if (!first) {
+                        try stdout.writeAll(" ");
+                    }
+                    first = false;
+
+                    try stdout.writeAll(entry.name());
+
+                    if (entry.handle == .directory) {
+                        try stdout.writeAll("/");
+                    }
+                }
+            }
+            if (!opt.list) {
+                try stdout.writeAll("\n");
+            }
+        },
         .tree => |opt| {
             const dir = if (cli.positionals.len == 1)
-                try resolvePath(&fs, cli.positionals[0])
+                try resolvePath(&fs, cli.positionals[0], .directory)
             else
                 fs.root_directory;
 
@@ -108,10 +166,94 @@ pub fn main() !u8 {
     return 0;
 }
 
-fn resolvePath(fs: *FileSystem, path: []const u8) !afs.DirectoryHandle {
-    _ = fs;
-    _ = path;
-    return error.NotImplementedYet;
+const DateTime = struct {
+    ts: i128,
+
+    pub fn format(dt: DateTime, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+
+        const epoch = std.time.epoch;
+
+        const esecs = epoch.EpochSeconds{ .secs = @intCast(u64, @divTrunc(dt.ts, std.time.ns_per_s)) };
+
+        const eday = esecs.getEpochDay();
+        const dsecs = esecs.getDaySeconds();
+
+        const yday = eday.calculateYearDay();
+
+        const mday = yday.calculateMonthDay();
+
+        try writer.print("{d:0>4}-{d:0>2}-{d:0>2} {d:0>2}:{d:0>2}:{d:0>2}", .{
+            yday.year,
+            mday.month.numeric(),
+            mday.day_index + 1,
+            dsecs.getHoursIntoDay(),
+            dsecs.getMinutesIntoHour(),
+            dsecs.getSecondsIntoMinute(),
+        });
+    }
+};
+
+const EntryType = enum {
+    object,
+    directory,
+    file,
+
+    pub fn ResultType(comptime et: EntryType) type {
+        return switch (et) {
+            .object => afs.Entry.Handle,
+            .directory => afs.DirectoryHandle,
+            .file => afs.FileHandle,
+        };
+    }
+
+    pub fn map(comptime et: EntryType, value: afs.Entry.Handle) error{InvalidObject}!et.ResultType() {
+        return switch (et) {
+            .object => value,
+            .directory => switch (value) {
+                .directory => |d| d,
+                else => return error.InvalidObject,
+            },
+            .file => switch (value) {
+                .file => |f| f,
+                else => return error.InvalidObject,
+            },
+        };
+    }
+};
+
+fn resolvePath(fs: *FileSystem, path: []const u8, comptime expected: EntryType) !expected.ResultType() {
+    const is_rooted = std.mem.startsWith(u8, path, "/");
+    if (!is_rooted)
+        return error.ExpectsAbsolutePath;
+
+    var current_dir = fs.root_directory;
+
+    var splitter = std.mem.tokenize(u8, path, "/");
+
+    if (splitter.next()) |first_element| {
+        var next_element: ?[]const u8 = first_element;
+        while (next_element) |current_element| {
+            next_element = splitter.next();
+
+            const entry = try fs.getEntry(current_dir, current_element);
+
+            if (next_element != null) {
+                // subdir
+                if (entry.handle != .directory)
+                    return error.FileNotFound; // maybe a better error here?
+
+                current_dir = entry.handle.directory;
+            } else {
+                // terminal element
+                return try expected.map(entry.handle);
+            }
+        }
+        unreachable;
+    } else {
+        return expected.map(.{ .directory = current_dir });
+    }
 }
 
 fn printTreeListingRecursive(fs: *FileSystem, dir: afs.DirectoryHandle, depth: usize, limit: usize) !void {
@@ -145,7 +287,7 @@ const CliOptions = struct {
     image: ?[]const u8 = null,
 
     pub const shorthands = .{
-        .h = "help",
+        // .h = "help",
         .i = "image",
         .v = "verbose",
     };
