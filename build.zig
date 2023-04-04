@@ -137,6 +137,15 @@ pub fn build(b: *std.build.Builder) !void {
         .dependencies = &.{},
     });
 
+    {
+        const afs_tool = b.addExecutable(.{
+            .name = "afs-tool",
+            .root_source_file = .{ .path = "src/libafs/afs-tool.zig" },
+        });
+        afs_tool.addModule("args", mod_args);
+        afs_tool.install();
+    }
+
     const tools_step = b.step("tools", "Builds the build and debug tools");
 
     const optimize = b.standardOptimizeOption(.{});

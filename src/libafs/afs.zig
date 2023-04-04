@@ -31,6 +31,7 @@ pub const BlockDevice = struct {
     pub const IoError = error{
         WriteProtected,
         OperationTimeout,
+        DeviceError,
     };
 
     pub const CompletedCallback = fn (*anyopaque, ?IoError) void;
