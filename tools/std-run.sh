@@ -28,7 +28,12 @@ zig build install -Dmachine=$MACHINE $ZARG
 find rootfs/wiki -name "*.hdoc" -exec hyperdoc '{}' > /dev/null ';'
 
 # compile root disk image
-"${ROOT}/zig-out/bin/init-disk" "${DISK}"
+
+# copy system root
+"${ROOT}/zig-out/bin/afs-tool" format --verbose --image "${DISK}" "${ROOT}/rootfs"
+
+# install applications
+"${ROOT}/zig-out/bin/afs-tool" put --verbose --image "${DISK}" --recursive "${ROOT}/zig-out/apps" "/apps"
 
 fallocate -l 33554432 "${BOOTROM}"
 fallocate -l 33554432 "${DISK}"

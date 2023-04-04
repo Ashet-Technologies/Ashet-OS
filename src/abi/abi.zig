@@ -1454,7 +1454,7 @@ pub const max_fs_type_len = 32;
 /// a hex-encoded 256 bit sequence:
 /// - `114ac2caf8fefad1116dbfb1bd68429f68e9e088b577c9b3f5a3ff0fe77ec886`
 /// This should also enough for most reasonable file names in the wild.
-pub const max_file_name_len = 64;
+pub const max_file_name_len = 120;
 
 /// Unix timestamp in milliseconds
 pub const DateTime = i64;
@@ -1509,9 +1509,7 @@ pub const FileInfo = extern struct {
 
 pub const FileAttributes = packed struct(u16) {
     directory: bool,
-    read_only: bool,
-    hidden: bool,
-    reserved: u13 = 0,
+    reserved: u15 = 0,
 };
 
 pub const FileAccess = enum(u8) {
@@ -1569,6 +1567,7 @@ pub const fs = struct {
         .FileNotFound = 4,
         .NotADir = 5,
         .InvalidPath = 6,
+        .SystemFdQuotaExceeded = 7,
     });
     pub const OpenDirError = ErrorSet(.{
         .Unexpected = 1,
@@ -1577,6 +1576,15 @@ pub const fs = struct {
         .FileNotFound = 4,
         .NotADir = 5,
         .InvalidPath = 6,
+        .SystemFdQuotaExceeded = 7,
+    });
+    pub const CloseDirError = ErrorSet(.{
+        .Unexpected = 1,
+        .InvalidHandle = 2,
+    });
+    pub const ResetDirEnumerationError = ErrorSet(.{
+        .Unexpected = 1,
+        .InvalidHandle = 2,
     });
     pub const EnumerateDirError = ErrorSet(.{
         .Unexpected = 1,
@@ -1638,6 +1646,7 @@ pub const fs = struct {
         .InvalidPath = 5,
         .Exists = 6,
         .NoSpaceLeft = 7,
+        .SystemFdQuotaExceeded = 8,
     });
     pub const FlushFileError = ErrorSet(.{
         .Unexpected = 1,
@@ -1665,6 +1674,11 @@ pub const fs = struct {
         .DiskError = 2,
         .InvalidHandle = 3,
         .NoSpaceLeft = 4,
+    });
+    pub const CloseFileError = ErrorSet(.{
+        .Unexpected = 1,
+        .DiskError = 2,
+        .InvalidHandle = 3,
     });
 
     /// Flushes all open files to disk.
@@ -1703,7 +1717,7 @@ pub const fs = struct {
     /// closes the directory handle
     pub const CloseDir = IOP.define(.{
         .type = .fs_close_dir,
-        .@"error" = DefaultError,
+        .@"error" = CloseDirError,
         .inputs = struct { dir: DirectoryHandle },
         .outputs = struct {},
     });
@@ -1815,7 +1829,7 @@ pub const fs = struct {
     /// closes the handle and flushes the file.
     pub const CloseFile = IOP.define(.{
         .type = .fs_close_file,
-        .@"error" = DefaultError,
+        .@"error" = CloseFileError,
         .inputs = struct { file: FileHandle },
     });
 

@@ -2,7 +2,7 @@ const std = @import("std");
 
 const ziglibc = @import("vendor/ziglibc/ziglibcbuild.zig");
 
-const FatFS = @import("vendor/zfat/Sdk.zig");
+// const FatFS = @import("vendor/zfat/Sdk.zig");
 
 const AshetContext = struct {
     b: *std.build.Builder,
@@ -29,9 +29,8 @@ const AshetContext = struct {
         exe.addModule("ashet-gui", ctx.b.modules.get("ashet-gui").?); // just add GUI to all apps by default *shrug*
         exe.install();
 
-        const install_step = ctx.b.addInstallArtifact(exe);
-        install_step.dest_dir = .{ .custom = "apps" };
-        ctx.b.getInstallStep().dependOn(&install_step.step);
+        const install_app_code_step = ctx.b.addInstallFile(exe.getOutputSource(), ctx.b.fmt("apps/{s}/code", .{name}));
+        ctx.b.getInstallStep().dependOn(&install_app_code_step.step);
 
         if (maybe_icon) |src_icon| {
             const icon_file = ctx.bmpconv.convert(
@@ -44,8 +43,8 @@ const AshetContext = struct {
                 },
             );
 
-            const install_file_step = ctx.b.addInstallFile(icon_file, ctx.b.fmt("apps/{s}.icon", .{name}));
-            ctx.b.getInstallStep().dependOn(&install_file_step.step);
+            const install_app_icon_step = ctx.b.addInstallFile(icon_file, ctx.b.fmt("apps/{s}/icon", .{name}));
+            ctx.b.getInstallStep().dependOn(&install_app_icon_step.step);
         }
 
         return exe;
@@ -76,16 +75,16 @@ fn resolveMachine(id: MachineID) MachineSpec {
 }
 
 pub fn build(b: *std.build.Builder) !void {
-    const fatfs_config = FatFS.Config{
-        .volumes = .{
-            // .named = &.{"CF0"},
-            .count = 8,
-        },
-        .rtc = .{
-            .static = .{ .year = 2022, .month = .jul, .day = 10 },
-        },
-        .mkfs = true,
-    };
+    // const fatfs_config = FatFS.Config{
+    //     .volumes = .{
+    //         // .named = &.{"CF0"},
+    //         .count = 8,
+    //     },
+    //     .rtc = .{
+    //         .static = .{ .year = 2022, .month = .jul, .day = 10 },
+    //     },
+    //     .mkfs = true,
+    // };
 
     const text_editor_module = b.dependency("text-editor", .{}).module("text-editor");
     const mod_hyperdoc = b.dependency("hyperdoc", .{}).module("hyperdoc");
@@ -137,14 +136,12 @@ pub fn build(b: *std.build.Builder) !void {
         .dependencies = &.{},
     });
 
-    {
-        const afs_tool = b.addExecutable(.{
-            .name = "afs-tool",
-            .root_source_file = .{ .path = "src/libafs/afs-tool.zig" },
-        });
-        afs_tool.addModule("args", mod_args);
-        afs_tool.install();
-    }
+    const afs_tool = b.addExecutable(.{
+        .name = "afs-tool",
+        .root_source_file = .{ .path = "src/libafs/afs-tool.zig" },
+    });
+    afs_tool.addModule("args", mod_args);
+    afs_tool.install();
 
     const tools_step = b.step("tools", "Builds the build and debug tools");
 
@@ -192,7 +189,7 @@ pub fn build(b: *std.build.Builder) !void {
         break :blk try stream.toOwnedSlice();
     });
 
-    const fatfs_module = FatFS.createModule(b, fatfs_config);
+    // const fatfs_module = FatFS.createModule(b, fatfs_config);
 
     const bmpconv = BitmapConverter.init(b);
     bmpconv.converter.install();
@@ -260,13 +257,13 @@ pub fn build(b: *std.build.Builder) !void {
         kernel_exe.addAnonymousModule("machine", .{
             .source_file = machine_pkg.getFileSource("machine.zig").?,
         });
-        kernel_exe.addModule("fatfs", fatfs_module);
+        // kernel_exe.addModule("fatfs", fatfs_module);
         kernel_exe.setLinkerScriptPath(.{ .path = machine_spec.linker_script });
         kernel_exe.install();
 
         kernel_exe.addSystemIncludePath("vendor/ziglibc/inc/libc");
 
-        FatFS.link(kernel_exe, fatfs_config);
+        // FatFS.link(kernel_exe, fatfs_config);
 
         const kernel_libc = ziglibc.addLibc(b, .{
             .variant = .freestanding,
@@ -441,18 +438,18 @@ pub fn build(b: *std.build.Builder) !void {
         tools_step.dependOn(&debug_filter.install_step.?.step);
     }
 
-    {
-        const init_disk = b.addExecutable(.{
-            .name = "init-disk",
-            .root_source_file = .{ .path = "tools/init-disk.zig" },
-        });
-        init_disk.linkLibC();
-        init_disk.addModule("fatfs", fatfs_module);
-        init_disk.install();
-        FatFS.link(init_disk, fatfs_config);
+    // {
+    //     const init_disk = b.addExecutable(.{
+    //         .name = "init-disk",
+    //         .root_source_file = .{ .path = "tools/init-disk.zig" },
+    //     });
+    //     init_disk.linkLibC();
+    //     init_disk.addModule("fatfs", fatfs_module);
+    //     init_disk.install();
+    //     FatFS.link(init_disk, fatfs_config);
 
-        tools_step.dependOn(&init_disk.install_step.?.step);
-    }
+    //     tools_step.dependOn(&init_disk.install_step.?.step);
+    // }
 }
 
 fn create_lwIP(b: *std.build.Builder, target: std.zig.CrossTarget, optimize: std.builtin.OptimizeMode) *std.build.LibExeObjStep {

@@ -1,6 +1,35 @@
 hdoc "1.0"
 
-h1 "" "Filesystem Hierarchy"
+h1 "" "Ashet File System"
+
+h2 "paths" "Paths"
+
+p {
+  span "Ashet OS utilizes UNIX-like file paths in combination with a DOS-style drive identifier. "
+  span "For example, " mono "SYS:wiki/ashet/os/filesystem.hdoc" span " would be the path of this file."
+}
+
+p {
+  span "As you can see, paths start with an uppercase drive name separated by a " mono ":" span " from the "
+  span "first folder name. Folders are separated by a " mono "/" span " character. The last element of the path "
+  span "is either a file or a directory name. All previous elements must be folder names."
+}
+
+p {
+  span "There are some restrictions on the format of paths:"
+}
+
+ul {
+  p { span "A path must not be empty." }
+  p { span "A path must be encoded in valid UTF-8." }
+  p { span "A file or folder name must not be longer than 120 characters." }
+  p { span "A file or folder name must not contain any ASCII control characters." }
+  p { span "A file or folder name must not contain the " mono "\\" span "character, to prevent confusion with Windows or DOS paths." }
+  p { span "There must be no leading " mono "/" span " before the first folder." }
+  p { span "There must be no double-" mono "/" span " in any component." }
+}
+
+h2 "hierarchy" "Filesystem Hierarchy"
 
 pre "" {
   span "SYS:/\n"

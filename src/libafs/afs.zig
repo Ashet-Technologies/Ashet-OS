@@ -5,7 +5,17 @@
 const std = @import("std");
 const logger = std.log.scoped(.ashet_fs);
 
-const asBytes = std.mem.asBytes;
+fn asBytes(ptr: anytype) *[512]u8 {
+    const T = @TypeOf(ptr.*);
+    if (@sizeOf(T) != 512) @compileError("Invalid object size");
+    return @ptrCast(*[512]u8, ptr);
+}
+
+fn asConstBytes(ptr: anytype) *const [512]u8 {
+    const T = @TypeOf(ptr.*);
+    if (@sizeOf(T) != 512) @compileError("Invalid object size");
+    return @ptrCast(*const [512]u8, ptr);
+}
 
 fn bytesAsValue(comptime T: type, bytes: *align(@alignOf(T)) [@sizeOf(T)]u8) *T {
     return @ptrCast(*T, bytes);
@@ -153,7 +163,7 @@ pub const FileSystem = struct {
         if (changeset.modify_time) |new_value| block.modify_time = new_value;
         if (changeset.flags) |new_value| block.flags = new_value;
 
-        try fs.device.writeBlock(object.blockNumber(), asBytes(&block));
+        try fs.device.writeBlock(object.blockNumber(), asConstBytes(&block));
     }
 
     fn stringsEqualZ(lhs: []const u8, rhs: []const u8) bool {
@@ -834,7 +844,7 @@ fn blockToBitPos(block_num: usize) BitmapLocation {
 fn setBuffer(block: *Block, data: anytype) void {
     if (@sizeOf(@TypeOf(data)) != @sizeOf(Block))
         @compileError("Invalid size: " ++ @typeName(@TypeOf(data)) ++ " is not 512 byte large!");
-    std.mem.copy(u8, block, asBytes(&data));
+    std.mem.copy(u8, block, asConstBytes(&data));
 }
 
 pub fn format(device: BlockDevice, init_time: i128) !void {

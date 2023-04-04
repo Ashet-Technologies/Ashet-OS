@@ -91,6 +91,10 @@ pub fn main() !u8 {
 
     switch (verb) {
         .ls => |opt| {
+            if (cli.positionals.len > 1) {
+                return usageError("ls accepts only none or one argument");
+            }
+
             const dir = if (cli.positionals.len == 1)
                 try resolvePath(&fs, cli.positionals[0], .directory)
             else
@@ -148,6 +152,10 @@ pub fn main() !u8 {
             }
         },
         .tree => |opt| {
+            if (cli.positionals.len > 1) {
+                return usageError("ls accepts only none or one argument");
+            }
+
             const dir = if (cli.positionals.len == 1)
                 try resolvePath(&fs, cli.positionals[0], .directory)
             else
@@ -157,7 +165,44 @@ pub fn main() !u8 {
         },
         .mv => @panic("mv not implemented yet!"),
         .rm => @panic("rm not implemented yet!"),
-        .put => @panic("put not implemented yet!"),
+        .put => |opt| {
+            // TODO: MUCH IMPROVE THIS
+            if (cli.positionals.len != 2) {
+                return usageError("put requires two positional arguments!");
+            }
+
+            const source_path = cli.positionals[0];
+            const dest_path = cli.positionals[1];
+
+            const source_stat = try std.fs.cwd().statFile(source_path);
+
+            const is_dir = switch (source_stat.kind) {
+                .File => false,
+                .Directory => true,
+                else => @panic("unsupported file kind!"),
+            };
+
+            if (is_dir and !opt.recursive)
+                return usageError("Directories must be copied recursive!");
+
+            if (is_dir) {
+                const target_dir = try resolvePath(&fs, dest_path, .directory);
+
+                var dir = try std.fs.cwd().openIterableDir(source_path, .{});
+                defer dir.close();
+
+                try copyDirectoryToDisk(&fs, dir, target_dir);
+            } else {
+                const target_dir = try resolvePath(&fs, std.fs.path.dirname(dest_path) orelse "/", .directory);
+
+                const dest_name = std.fs.path.basename(dest_path);
+
+                var src_file = try std.fs.cwd().openFile(source_path, .{});
+                defer src_file.close();
+
+                try copyFileToDirectory(&fs, target_dir, src_file, dest_name);
+            }
+        },
         .get => @panic("get not implemented yet!"),
         .fsck => @panic("fsck not implemented yet!"),
         .format => unreachable,
@@ -477,7 +522,10 @@ fn copyDirectoryToDisk(fs: *FileSystem, src_dir: std.fs.IterableDir, target_dir:
                 var src_child_dir = try src_dir.dir.openIterableDir(entry.name, .{});
                 defer src_child_dir.close();
 
-                var dst_child_dir = try fs.createDirectory(target_dir, entry.name, std.time.nanoTimestamp());
+                var dst_child_dir = fs.createDirectory(target_dir, entry.name, std.time.nanoTimestamp()) catch |err| switch (err) {
+                    error.FileAlreadyExists => (try fs.getEntry(target_dir, entry.name)).handle.directory,
+                    else => |e| return e,
+                };
 
                 try copyDirectoryToDisk(fs, src_child_dir, dst_child_dir);
             },
@@ -485,21 +533,7 @@ fn copyDirectoryToDisk(fs: *FileSystem, src_dir: std.fs.IterableDir, target_dir:
                 var src_file = try src_dir.dir.openFile(entry.name, .{});
                 defer src_file.close();
 
-                var stat = try src_file.stat();
-
-                var dst_file = try fs.createFile(target_dir, entry.name, std.time.nanoTimestamp());
-                try fs.resizeFile(dst_file, stat.size);
-
-                var block_data: [8192]u8 = undefined;
-                var i: u64 = 0;
-                while (i < stat.size) {
-                    const len = try src_file.readAll(&block_data);
-                    if (len == 0)
-                        return error.UnexpectedEndOfFile;
-                    const len2 = try fs.writeData(dst_file, i, block_data[0..len]);
-                    std.debug.assert(len == len2); // we should always have enough size for this
-                    i += len;
-                }
+                try copyFileToDirectory(fs, target_dir, src_file, entry.name);
             },
 
             else => std.log.err("cannot copy {s}: {s} is not a supported file type!", .{
@@ -507,5 +541,23 @@ fn copyDirectoryToDisk(fs: *FileSystem, src_dir: std.fs.IterableDir, target_dir:
                 @tagName(entry.kind),
             }),
         }
+    }
+}
+
+fn copyFileToDirectory(fs: *FileSystem, target_dir: afs.DirectoryHandle, src: std.fs.File, dst_name: []const u8) !void {
+    var stat = try src.stat();
+
+    var dst_file = try fs.createFile(target_dir, dst_name, std.time.nanoTimestamp());
+    try fs.resizeFile(dst_file, stat.size);
+
+    var block_data: [8192]u8 = undefined;
+    var i: u64 = 0;
+    while (i < stat.size) {
+        const len = try src.readAll(&block_data);
+        if (len == 0)
+            return error.UnexpectedEndOfFile;
+        const len2 = try fs.writeData(dst_file, i, block_data[0..len]);
+        std.debug.assert(len == len2); // we should always have enough size for this
+        i += len;
     }
 }
