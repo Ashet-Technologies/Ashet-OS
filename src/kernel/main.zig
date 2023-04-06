@@ -170,6 +170,22 @@ pub fn stackCheck() void {
 
 var double_panic = false;
 
+pub const LogLevel = std.log.Level;
+
+pub const log_levels = struct {
+    pub var io: LogLevel = .info;
+    pub var ui: LogLevel = .info;
+    pub var network: LogLevel = .info;
+    pub var filesystem: LogLevel = .debug;
+    pub var memory: LogLevel = .info;
+    pub var drivers: LogLevel = .info;
+
+    // drivers:
+    pub var @"virtio-net": LogLevel = .info;
+    pub var @"virtio-gpu": LogLevel = .info;
+    pub var @"virtio-input": LogLevel = .info;
+};
+
 pub const std_options = struct {
     pub const log_level = if (@import("builtin").mode == .Debug) .debug else .info;
 
@@ -181,9 +197,11 @@ pub const std_options = struct {
     ) void {
         const ansi = true;
 
-        switch (scope) {
-            .fatfs => return,
-            else => {},
+        const scope_name = @tagName(scope);
+
+        if (@hasDecl(log_levels, scope_name)) {
+            if (@enumToInt(message_level) > @enumToInt(@field(log_levels, scope_name)))
+                return;
         }
 
         const prefix = if (ansi)
