@@ -111,7 +111,7 @@ fn @"process.yield"() callconv(.C) void {
 }
 
 fn @"process.getBaseAddress"() callconv(.C) usize {
-    return getCurrentProcess().base_address;
+    return @ptrToInt(getCurrentProcess().process_memory.ptr);
 }
 
 fn @"process.breakpoint"() callconv(.C) void {
@@ -236,4 +236,23 @@ fn @"fs.findFilesystem"(name_ptr: [*]const u8, name_len: usize) callconv(.C) abi
     } else {
         return .invalid;
     }
+}
+
+fn @"process.memory.allocate"(size: usize, ptr_align: u8) callconv(.C) ?[*]u8 {
+    const process = getCurrentProcess();
+    return process.memory_arena.allocator().rawAlloc(
+        size,
+        ptr_align,
+        @returnAddress(),
+    );
+}
+
+fn @"process.memory.release"(ptr: [*]u8, size: usize, ptr_align: u8) callconv(.C) void {
+    const process = getCurrentProcess();
+    const slice = ptr[0..size];
+    process.memory_arena.allocator().rawFree(
+        slice,
+        ptr_align,
+        @returnAddress(),
+    );
 }

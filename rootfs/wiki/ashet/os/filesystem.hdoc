@@ -19,7 +19,7 @@ p {
   span "There are some restrictions on the format of paths:"
 }
 
-ul {
+itemize {
   p { span "A path must not be empty." }
   p { span "A path must be encoded in valid UTF-8." }
   p { span "A file or folder name must not be longer than 120 characters." }

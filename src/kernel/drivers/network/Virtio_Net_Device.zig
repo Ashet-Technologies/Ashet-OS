@@ -210,7 +210,7 @@ pub fn handleIncomingData(device: *Virtio_Net_Device) !void {
 
         try packet.append(&buffer.data);
 
-        logger.info("received data on nic {s}", .{nic.getName()});
+        logger.debug("received data on nic {s}", .{nic.getName()});
 
         nic.receive(packet);
     }

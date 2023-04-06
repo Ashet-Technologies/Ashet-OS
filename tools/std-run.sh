@@ -25,7 +25,9 @@ clear
 zig build install -Dmachine=$MACHINE $ZARG
 
 # validate wiki integrity
-find rootfs/wiki -name "*.hdoc" -exec hyperdoc '{}' > /dev/null ';'
+for file in $(find rootfs/wiki -name "*.hdoc"); do 
+    hyperdoc "$file" > /dev/null
+done
 
 # compile root disk image
 

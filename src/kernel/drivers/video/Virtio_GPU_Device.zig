@@ -243,7 +243,7 @@ const GPU = struct {
         gpu.fb_width = di.pmodes[0].r.width;
         gpu.fb_height = di.pmodes[0].r.height;
 
-        std.log.info("gpu ready with {}x{} @ {*}", .{ gpu.fb_width, gpu.fb_height, gpu.fb_mem });
+        logger.info("gpu ready with {}x{} @ {*}", .{ gpu.fb_width, gpu.fb_height, gpu.fb_mem });
     }
 
     fn showTestPattern(gpu: *GPU) void {

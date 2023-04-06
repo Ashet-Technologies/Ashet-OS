@@ -84,6 +84,10 @@ pub const syscall_definitions = [_]SysCallDefinition{
 
     // Finds a file system by name
     defineSysCall("fs.findFilesystem", fn (name_ptr: [*]const u8, name_len: usize) FileSystemId, 60),
+
+    // Allocates memory pages from the system.
+    defineSysCall("process.memory.allocate", fn (size: usize, ptr_align: u8) ?[*]u8, 70),
+    defineSysCall("process.memory.release", fn (ptr: [*]u8, size: usize, ptr_align: u8) void, 71),
 };
 
 const SysCallDefinition = struct {
@@ -617,6 +621,14 @@ pub const Point = extern struct {
     pub fn manhattenDistance(a: Point, b: Point) u16 {
         return std.math.absCast(a.x - b.x) + std.math.absCast(a.y - b.y);
     }
+
+    pub fn format(point: Point, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        try writer.print("Point({},{})", .{
+            point.x, point.y,
+        });
+    }
 };
 
 pub const Size = extern struct {
@@ -632,6 +644,15 @@ pub const Size = extern struct {
 
     pub fn eql(a: Size, b: Size) bool {
         return (a.width == b.width) and (a.height == b.height);
+    }
+
+    pub fn format(size: Size, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        try writer.print("Size({}x{})", .{
+            size.width,
+            size.height,
+        });
     }
 };
 
@@ -714,6 +735,17 @@ pub const Rectangle = extern struct {
         copy.width +|= 2 * amount;
         copy.height +|= 2 * amount;
         return copy;
+    }
+
+    pub fn format(rect: Rectangle, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        try writer.print("Rectangle({},{},{}x{})", .{
+            rect.x,
+            rect.y,
+            rect.width,
+            rect.height,
+        });
     }
 };
 
@@ -1584,7 +1616,8 @@ pub const fs = struct {
     });
     pub const ResetDirEnumerationError = ErrorSet(.{
         .Unexpected = 1,
-        .InvalidHandle = 2,
+        .DiskError = 2,
+        .InvalidHandle = 3,
     });
     pub const EnumerateDirError = ErrorSet(.{
         .Unexpected = 1,
@@ -1725,7 +1758,7 @@ pub const fs = struct {
     /// resets the directory iterator to the starting point
     pub const ResetDirEnumeration = IOP.define(.{
         .type = .fs_reset_dir_enumeration,
-        .@"error" = DefaultError,
+        .@"error" = ResetDirEnumerationError,
         .inputs = struct { dir: DirectoryHandle },
     });
 

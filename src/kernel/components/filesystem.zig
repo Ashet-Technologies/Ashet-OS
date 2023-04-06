@@ -340,6 +340,10 @@ fn resolvePath(fs: *afs.FileSystem, root_dir: afs.DirectoryHandle, path: []const
     }
 }
 
+fn dateTimeFromTimestamp(ts: i128) ashet.abi.DateTime {
+    return @intCast(i64, @divTrunc(ts, std.time.ns_per_ms));
+}
+
 const iop_handlers = struct {
     fn fs_sync(iop: *ashet.abi.fs.Sync) ashet.abi.fs.Sync.Error!ashet.abi.fs.Sync.Outputs {
         _ = iop;
@@ -402,8 +406,11 @@ const iop_handlers = struct {
     }
 
     fn fs_reset_dir_enumeration(iop: *ashet.abi.fs.ResetDirEnumeration) ashet.abi.fs.ResetDirEnumeration.Error!ashet.abi.fs.ResetDirEnumeration.Outputs {
-        _ = iop;
-        @panic("reset_dir_enumeration not implemented yet!");
+        const ctx: *Directory = try directory_handles.resolve(iop.inputs.dir);
+
+        ctx.iter = ctx.fs.fs.iterate(ctx.handle) catch |err| return try mapFileSystemError(err);
+
+        return .{};
     }
 
     fn fs_enumerate_dir(iop: *ashet.abi.fs.EnumerateDir) ashet.abi.fs.EnumerateDir.Error!ashet.abi.fs.EnumerateDir.Outputs {
@@ -422,8 +429,8 @@ const iop_handlers = struct {
                     .attributes = .{
                         .directory = (info.handle == .directory),
                     },
-                    .creation_date = @intCast(i64, @divTrunc(stat.create_time, std.time.ns_per_ms)),
-                    .modified_date = @intCast(i64, @divTrunc(stat.modify_time, std.time.ns_per_ms)),
+                    .creation_date = dateTimeFromTimestamp(stat.create_time),
+                    .modified_date = dateTimeFromTimestamp(stat.modify_time),
                 },
             };
         } else {
@@ -516,8 +523,19 @@ const iop_handlers = struct {
     }
 
     fn fs_stat_file(iop: *ashet.abi.fs.StatFile) ashet.abi.fs.StatFile.Error!ashet.abi.fs.StatFile.Outputs {
-        _ = iop;
-        @panic("stat_file not implemented yet!");
+        const ctx: *File = try file_handles.resolve(iop.inputs.file);
+
+        const meta = ctx.fs.fs.readMetaData(ctx.handle.object()) catch |err| return try mapFileSystemError(err);
+
+        var info = ashet.abi.FileInfo{
+            .name = std.mem.zeroes([120]u8),
+            .size = meta.size,
+            .attributes = .{ .directory = false },
+            .creation_date = dateTimeFromTimestamp(meta.create_time),
+            .modified_date = dateTimeFromTimestamp(meta.modify_time),
+        };
+
+        return .{ .info = info };
     }
 
     fn fs_resize(iop: *ashet.abi.fs.Resize) ashet.abi.fs.Resize.Error!ashet.abi.fs.Resize.Outputs {

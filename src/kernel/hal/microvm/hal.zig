@@ -252,7 +252,7 @@ const gpu = struct {
         fb_width = di.pmodes[0].r.width;
         fb_height = di.pmodes[0].r.height;
 
-        std.log.info("gpu ready with {}x{} @ {*}", .{ fb_width, fb_height, fb_mem });
+        logger.info("gpu ready with {}x{} @ {*}", .{ fb_width, fb_height, fb_mem });
     }
 
     fn isInitialized() bool {

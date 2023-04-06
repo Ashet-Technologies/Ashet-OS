@@ -183,7 +183,7 @@ fn netif_output(netif_c: [*c]c.netif, pbuf_c: [*c]c.pbuf) callconv(.C) c.err_t {
 
     // TODO: lock_interrupts();
 
-    logger.info("sending {} bytes via {s}...", .{ pbuf.tot_len, netif.name });
+    logger.debug("sending {} bytes via {s}...", .{ pbuf.tot_len, netif.name });
 
     if (nic.allocOutgoingPacket(pbuf.tot_len)) |packet| {
         // TODO: Handle length here
@@ -213,7 +213,7 @@ pub fn start() !void {
     var index: usize = 0;
     var nics = ashet.drivers.enumerate(.network);
     while (nics.next()) |nic| : (index += 1) {
-        std.log.info("initializing NetworkInterface '{c}{d}' (MAC={})...", .{ nic.interface.prefix(), index, nic.address });
+        logger.info("initializing NetworkInterface '{c}{d}' (MAC={})...", .{ nic.interface.prefix(), index, nic.address });
 
         const netif = &nic.netif;
 
@@ -451,7 +451,7 @@ pub const udp = struct {
 
         const sender = EndPoint.new(unmapIP(addr.*), port);
 
-        logger.info("received some data via udp: {} bytes from {}", .{ limited_len, sender });
+        logger.debug("received some data via udp: {} bytes from {}", .{ limited_len, sender });
 
         data.receive_iop = null;
         ashet.io.finalizeWithResult(iop, .{
@@ -698,7 +698,7 @@ pub const tcp = struct {
         // err: An unused error code, always ERR_OK currently ;-)
         std.debug.assert(err == c.ERR_OK);
 
-        logger.info("tcp: connected(arg={}, pcb={*}, err={!})", .{ state, pcb, lwipTry(err) });
+        logger.debug("tcp: connected(arg={}, pcb={*}, err={!})", .{ state, pcb, lwipTry(err) });
 
         state.connected = true;
         state.op = null;
@@ -767,7 +767,7 @@ pub const tcp = struct {
             @panic("not handled yet: reschedule the transfer at a later point again");
         }
 
-        std.log.err("failed to send: {}", .{event.@"error"});
+        logger.err("failed to send: {}", .{event.@"error"});
         data.op = null;
         ashet.io.finalize(&event.iop);
     }
@@ -783,11 +783,11 @@ pub const tcp = struct {
         std.debug.assert(op.total_sent <= op.event.inputs.data_len);
 
         if (op.chunk_sent == op.chunk_size) {
-            logger.info("tcp: full transfer(sent {} bytes, now {} bytes. sending next chunk)", .{ sent, op.chunk_size });
+            logger.debug("tcp: full transfer(sent {} bytes, now {} bytes. sending next chunk)", .{ sent, op.chunk_size });
             transferNextChunk(pcb, state, op);
         } else {
             // Just happily idle until our current chunk is fully transferred
-            logger.info("tcp: partial transfer(sent {} bytes, now {} of {} bytes)", .{ sent, op.chunk_sent, op.chunk_size });
+            logger.debug("tcp: partial transfer(sent {} bytes, now {} of {} bytes)", .{ sent, op.chunk_sent, op.chunk_size });
         }
 
         return c.ERR_OK;
@@ -834,7 +834,7 @@ pub const tcp = struct {
         const data = Data.fromArg(arg);
 
         if (err != c.ERR_OK) {
-            logger.info("tcp: recv(arg={}, tot_len=<nil>, err={!})", .{ data, lwipTry(err) });
+            logger.debug("tcp: recv(arg={}, tot_len=<nil>, err={!})", .{ data, lwipTry(err) });
             return c.ERR_OK;
         }
 

@@ -214,6 +214,72 @@ pub const process = struct {
     pub fn exit(code: u32) noreturn {
         syscall("process.exit")(code);
     }
+
+    pub fn allocator() std.mem.Allocator {
+        return .{
+            .ptr = undefined,
+            .vtable = &allocator_vtable,
+        };
+    }
+
+    const allocator_vtable = std.mem.Allocator.VTable{
+        .alloc = globalAlloc,
+        .resize = globalResize,
+        .free = globalFree,
+    };
+
+    /// Attempt to allocate exactly `len` bytes aligned to `1 << ptr_align`.
+    ///
+    /// `ret_addr` is optionally provided as the first return address of the
+    /// allocation call stack. If the value is `0` it means no return address
+    /// has been provided.
+    fn globalAlloc(ctx: *anyopaque, len: usize, ptr_align: u8, ret_addr: usize) ?[*]u8 {
+        _ = ctx;
+        _ = ret_addr;
+        return syscall("process.memory.allocate")(len, ptr_align);
+    }
+
+    /// Attempt to expand or shrink memory in place. `buf.len` must equal the
+    /// length requested from the most recent successful call to `alloc` or
+    /// `resize`. `buf_align` must equal the same value that was passed as the
+    /// `ptr_align` parameter to the original `alloc` call.
+    ///
+    /// A result of `true` indicates the resize was successful and the
+    /// allocation now has the same address but a size of `new_len`. `false`
+    /// indicates the resize could not be completed without moving the
+    /// allocation to a different address.
+    ///
+    /// `new_len` must be greater than zero.
+    ///
+    /// `ret_addr` is optionally provided as the first return address of the
+    /// allocation call stack. If the value is `0` it means no return address
+    /// has been provided.
+    fn globalResize(ctx: *anyopaque, buf: []u8, buf_align: u8, new_len: usize, ret_addr: usize) bool {
+        _ = ctx;
+        _ = buf;
+        _ = buf_align;
+        _ = new_len;
+        _ = ret_addr;
+        // TODO: Introduce process.memory.resize syscall
+        return false;
+    }
+
+    /// Free and invalidate a buffer.
+    ///
+    /// `buf.len` must equal the most recent length returned by `alloc` or
+    /// given to a successful `resize` call.
+    ///
+    /// `buf_align` must equal the same value that was passed as the
+    /// `ptr_align` parameter to the original `alloc` call.
+    ///
+    /// `ret_addr` is optionally provided as the first return address of the
+    /// allocation call stack. If the value is `0` it means no return address
+    /// has been provided.
+    fn globalFree(ctx: *anyopaque, buf: []u8, buf_align: u8, ret_addr: usize) void {
+        _ = ctx;
+        _ = ret_addr;
+        return syscall("process.memory.release")(buf.ptr, buf.len, buf_align);
+    }
 };
 
 pub const video = struct {
@@ -310,6 +376,7 @@ pub const fs = struct {
     pub const File = struct {
         pub const ReadError = abi.fs.ReadError.Error;
         pub const WriteError = abi.fs.WriteError.Error;
+        pub const StatError = abi.fs.StatFileError.Error;
         pub const EmptyError = error{};
 
         pub const Reader = std.io.Reader(*File, ReadError, streamRead);
@@ -361,6 +428,13 @@ pub const fs = struct {
                 .buffer_len = buffer.len,
             });
             return out.count;
+        }
+
+        pub fn stat(file: File) StatError!abi.FileInfo {
+            const out = try io.performOne(abi.fs.StatFile, .{
+                .file = file.handle,
+            });
+            return out.info;
         }
 
         fn seekTo(file: *File, pos: u64) !void {
@@ -432,6 +506,11 @@ pub const fs = struct {
             };
 
             dir.* = undefined;
+        }
+
+        pub const ResetError = abi.fs.ResetDirEnumerationError.Error;
+        pub fn reset(dir: *Directory) ResetError!void {
+            _ = try io.performOne(abi.fs.ResetDirEnumeration, .{ .dir = dir.handle });
         }
 
         pub const NextError = abi.fs.EnumerateDirError.Error;

@@ -334,7 +334,7 @@ pub fn startAppElf(app: AppID) !void {
         entry_point,
     });
 
-    try spawnApp(app, process_base, entry_point);
+    try spawnApp(app, process_memory, entry_point);
 }
 
 pub fn startAppBinary(app: AppID) !void {
@@ -350,7 +350,7 @@ pub fn startAppBinary(app: AppID) !void {
     const app_pages = try ashet.memory.allocPages(proc_page_count);
     errdefer ashet.memory.freePages(app_pages, proc_page_count);
 
-    const process_memory = @ptrCast([*]u8, ashet.memory.pageToPtr(app_pages))[0..proc_page_size];
+    const process_memory = @ptrCast([*]align(ashet.memory.page_size) u8, ashet.memory.pageToPtr(app_pages))[0..proc_page_size];
 
     logger.info("process {s} will be loaded at {*} with {d} bytes size ({d} pages at {d})", .{
         app.getName(),
@@ -369,13 +369,13 @@ pub fn startAppBinary(app: AppID) !void {
             @panic("could not read all bytes on one go!");
     }
 
-    try spawnApp(app, @ptrToInt(process_memory.ptr), @ptrToInt(process_memory.ptr));
+    try spawnApp(app, process_memory, @ptrToInt(process_memory.ptr));
 }
 
-fn spawnApp(app: AppID, base_address: usize, entry_point: usize) !void {
+fn spawnApp(app: AppID, process_memory: []align(ashet.memory.page_size) u8, entry_point: usize) !void {
     const process = try ashet.multi_tasking.Process.spawn(
         app.getName(),
-        base_address,
+        process_memory,
         @intToPtr(ashet.scheduler.ThreadFunction, entry_point),
         null,
         .{ .stack_size = 512 * 1024 },

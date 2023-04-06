@@ -48,7 +48,7 @@ pub fn install(driver: *Driver) void {
     driver.next = head.*;
     head.* = driver;
 
-    logger.debug("installed driver '{s}'", .{driver.name});
+    logger.info("installed driver '{s}'", .{driver.name});
 }
 
 pub fn first(comptime class: DriverClass) ?*ResolvedDriverInterface(class) {
