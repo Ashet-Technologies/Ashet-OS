@@ -345,7 +345,7 @@ const Document = struct {
     };
 };
 
-const LeafMap = std.StringHashMap(*Index.Leaf);
+const LeafMap = std.StringHashMap(*const Index.Leaf);
 
 const Index = struct {
     arena: std.heap.ArenaAllocator,
@@ -381,10 +381,12 @@ fn loadIndex(root: *ashet.fs.Directory, allocator: std.mem.Allocator) !Index {
     var path_buffer = std.ArrayList(u8).init(arena.allocator());
     defer path_buffer.deinit();
 
+    var root_node = try loadIndexFolder(root, arena.allocator(), &path_buffer);
+
     var map = LeafMap.init(arena.allocator());
     errdefer map.deinit();
 
-    var root_node = try loadIndexFolder(root, arena.allocator(), &map, &path_buffer);
+    try populateLeafMap(&map, root_node.nodes);
 
     return Index{
         .arena = arena,
@@ -393,7 +395,20 @@ fn loadIndex(root: *ashet.fs.Directory, allocator: std.mem.Allocator) !Index {
     };
 }
 
-fn loadIndexFolder(dir: *ashet.fs.Directory, arena: std.mem.Allocator, leaf_map: *LeafMap, path_buffer: *std.ArrayList(u8)) !Index.List {
+fn populateLeafMap(leaf_map: *LeafMap, nodes: []const Index.Node) !void {
+    for (nodes) |*node| {
+        switch (node.content) {
+            .list => |*list| {
+                try populateLeafMap(leaf_map, list.nodes);
+            },
+            .leaf => |*leaf| {
+                try leaf_map.putNoClobber(leaf.file_name, leaf);
+            },
+        }
+    }
+}
+
+fn loadIndexFolder(dir: *ashet.fs.Directory, arena: std.mem.Allocator, path_buffer: *std.ArrayList(u8)) !Index.List {
     const reset_size = path_buffer.items.len;
     defer path_buffer.shrinkRetainingCapacity(reset_size);
 
@@ -425,7 +440,7 @@ fn loadIndexFolder(dir: *ashet.fs.Directory, arena: std.mem.Allocator, leaf_map:
             }
             try path_buffer.appendSlice(name);
 
-            node.content.list = try loadIndexFolder(&subdir, arena, leaf_map, path_buffer);
+            node.content.list = try loadIndexFolder(&subdir, arena, path_buffer);
         } else if (std.mem.endsWith(u8, name, ".hdoc")) {
             const node = try list.addOne();
             errdefer _ = list.pop();
@@ -450,8 +465,6 @@ fn loadIndexFolder(dir: *ashet.fs.Directory, arena: std.mem.Allocator, leaf_map:
 
             node.title = std.fs.path.basename(node.content.leaf.file_name);
             node.title = node.title[0 .. node.title.len - 5];
-
-            try leaf_map.putNoClobber(node.content.leaf.file_name, &node.content.leaf);
         }
     }
 
