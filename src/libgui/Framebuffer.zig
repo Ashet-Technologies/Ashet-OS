@@ -177,11 +177,14 @@ pub fn drawLine(fb: Framebuffer, from: Point, to: Point, color: ColorIndex) void
         if (from.x < 0 or from.x >= fb.width)
             return;
 
-        const start = @intCast(usize, std.math.max(0, std.math.min(from.y, to.y))); // inclusive
-        const end = @intCast(usize, std.math.min(fb.height, std.math.max(from.y, to.y) + 1)); // exlusive
+        const start = std.math.max(0, std.math.min(from.y, to.y)); // inclusive
+        const end = std.math.min(fb.height, std.math.max(from.y, to.y) + 1); // exlusive
+
+        if (end < start)
+            return;
 
         var row = fb.pixels + @intCast(usize, from.x) + @intCast(usize, start) * fb.stride;
-        var y: usize = start;
+        var y: usize = @intCast(usize, start);
         while (y < end) : (y += 1) {
             row[0] = color;
             row += fb.stride;

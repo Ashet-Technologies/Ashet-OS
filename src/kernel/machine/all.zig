@@ -17,7 +17,8 @@ pub const MachineConfig = struct {
 pub const all = struct {
     pub const ashet_home_computer = @import("ashet_home_computer/ashet_home_computer.zig");
     pub const rv32_virt = @import("rv32_virt/rv32_virt.zig");
-    pub const generic_pc = @import("generic_pc/generic_pc.zig");
+    pub const bios_pc = @import("bios_pc/bios_pc.zig");
+    pub const efi_pc = @import("efi_pc/efi_pc.zig");
     pub const microvm = @import("microvm/microvm.zig");
     pub const arm_virt = @import("arm_virt/arm_virt.zig");
 };
@@ -40,12 +41,20 @@ pub const specs = struct {
     };
 
     // x86 machines:
-    pub const generic_pc = MachineSpec{
-        .name = "Generic PC",
-        .machine_id = "generic_pc",
+    pub const bios_pc = MachineSpec{
+        .name = "Generic PC (BIOS)",
+        .machine_id = "bios_pc",
         .platform = platforms.specs.x86,
-        .machine_code = "src/kernel/machine/generic_pc/machine.zig",
-        .linker_script = "src/kernel/machine/generic_pc/linker.ld",
+        .machine_code = "src/kernel/machine/bios_pc/machine.zig",
+        .linker_script = "src/kernel/machine/bios_pc/linker.ld",
+    };
+
+    pub const efi_pc = MachineSpec{
+        .name = "Generic PC (EFI)",
+        .machine_id = "efi_pc",
+        .platform = platforms.specs.x86,
+        .machine_code = "src/kernel/machine/efi_pc/machine.zig",
+        .linker_script = "src/kernel/machine/efi_pc/linker.ld",
     };
 
     pub const microvm = MachineSpec{

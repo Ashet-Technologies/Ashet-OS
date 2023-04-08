@@ -4,9 +4,20 @@ const htext = @import("hypertext");
 const hdoc = @import("hyperdoc");
 const gui = @import("ashet-gui");
 
+const main_window = @import("ui-layout");
+
 pub usingnamespace ashet.core;
 
 const Window = ashet.ui.Window;
+
+fn newRect(x: i15, y: i15, w: u16, h: u16) ashet.abi.Rectangle {
+    return ashet.abi.Rectangle{
+        .x = x,
+        .y = y,
+        .width = w,
+        .height = h,
+    };
+}
 
 pub fn main() !void {
     const window = try ashet.ui.createWindow(
@@ -255,6 +266,9 @@ fn paintApp(window: *const Window, index: *const Index, maybe_page: *?Document) 
             linkCallback,
         );
     }
+
+    main_window.layout(window);
+    main_window.interface.paint(fb);
 
     ashet.ui.invalidate(window, .{
         .x = 0,

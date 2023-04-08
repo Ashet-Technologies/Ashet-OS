@@ -27,7 +27,6 @@ const AshetContext = struct {
         exe.setLinkerScriptPath(.{ .path = "src/libashet/application.ld" });
         exe.addModule("ashet", ctx.b.modules.get("ashet").?);
         exe.addModule("ashet-gui", ctx.b.modules.get("ashet-gui").?); // just add GUI to all apps by default *shrug*
-        exe.install();
 
         const install_app_code_step = ctx.b.addInstallFile(exe.getOutputSource(), ctx.b.fmt("apps/{s}/code", .{name}));
         ctx.b.getInstallStep().dependOn(&install_app_code_step.step);
@@ -74,17 +73,41 @@ fn resolveMachine(id: MachineID) MachineSpec {
     unreachable;
 }
 
-pub fn build(b: *std.build.Builder) !void {
-    // const fatfs_config = FatFS.Config{
-    //     .volumes = .{
-    //         // .named = &.{"CF0"},
-    //         .count = 8,
-    //     },
-    //     .rtc = .{
-    //         .static = .{ .year = 2022, .month = .jul, .day = 10 },
-    //     },
-    //     .mkfs = true,
-    // };
+const UiGenerator = struct {
+    builder: *std.Build,
+    lua: *std.Build.CompileStep,
+    mod_ashet_gui: *std.Build.Module,
+    mod_ashet: *std.Build.Module,
+    mod_system_assets: *std.Build.Module,
+
+    pub fn render(gen: @This(), input: std.Build.FileSource) *std.Build.Module {
+        const runner = gen.lua.run();
+        runner.cwd = gen.builder.pathFromRoot(".");
+        runner.addFileSourceArg(.{ .path = gen.builder.pathFromRoot("tools/ui-layouter.lua") });
+        runner.addFileSourceArg(input);
+        const out_file = runner.addOutputFileArg("ui-layout.zig");
+
+        return gen.builder.createModule(.{
+            .source_file = out_file,
+            .dependencies = &.{
+                .{ .name = "ashet", .module = gen.mod_ashet },
+                .{ .name = "ashet-gui", .module = gen.mod_ashet_gui },
+                .{ .name = "system-assets", .module = gen.mod_system_assets },
+            },
+        });
+    }
+};
+
+pub fn build(b: *std.Build) !void {
+    const lua_dep = b.dependency("lua", .{
+        .interpreter = true,
+        .compiler = false,
+        .@"shared-lib" = false,
+        .@"static-lib" = false,
+        .headers = false,
+    });
+
+    const lua_exe = lua_dep.artifact("lua");
 
     const text_editor_module = b.dependency("text-editor", .{}).module("text-editor");
     const mod_hyperdoc = b.dependency("hyperdoc", .{}).module("hyperdoc");
@@ -227,6 +250,17 @@ pub fn build(b: *std.build.Builder) !void {
         system_icons.add("default-app-icon.abm", bmpconv.convert(.{ .path = "artwork/os/default-app-icon.png" }, "menu.abm", desktop_icon_conv_options));
     }
 
+    var ui_gen = UiGenerator{
+        .builder = b,
+        .lua = lua_exe,
+        .mod_ashet = mod_libashet,
+        .mod_ashet_gui = mod_ashet_gui,
+        .mod_system_assets = b.createModule(.{
+            .source_file = system_icons.getOutput(),
+            .dependencies = &.{},
+        }),
+    };
+
     const kernel_exe = b.addExecutable(.{
         .name = "ashet-os",
         .root_source_file = .{ .path = "src/kernel/main.zig" },
@@ -244,10 +278,7 @@ pub fn build(b: *std.build.Builder) !void {
             kernel_exe.omit_frame_pointer = false;
         }
 
-        kernel_exe.addAnonymousModule("system-assets", .{
-            .source_file = system_icons.getOutput(),
-            .dependencies = &.{},
-        });
+        kernel_exe.addModule("system-assets", ui_gen.mod_system_assets);
         kernel_exe.addModule("ashet-abi", mod_ashet_abi);
         kernel_exe.addModule("ashet-std", mod_ashet_std);
         kernel_exe.addModule("ashet", mod_libashet);
@@ -364,6 +395,8 @@ pub fn build(b: *std.build.Builder) !void {
             const wiki = ctx.createAshetApp("wiki", "src/apps/wiki/wiki.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Help book.png", optimize);
             wiki.addModule("hypertext", mod_libhypertext);
             wiki.addModule("hyperdoc", mod_hyperdoc);
+
+            wiki.addModule("ui-layout", ui_gen.render(.{ .path = b.pathFromRoot("src/apps/wiki/ui.lua") }));
         }
 
         {
@@ -394,6 +427,21 @@ pub fn build(b: *std.build.Builder) !void {
         wikitool.addModule("ashet-gui", mod_ashet_gui);
 
         wikitool.install();
+    }
+
+    if (b.option([]const u8, "test-ui", "If set to a file, will compile the ui-layout-tester tool based on the file passed")) |file_name| {
+        const ui_tester = b.addExecutable(.{
+            .name = "ui-layout-tester",
+            .root_source_file = .{ .path = "tools/ui-layout-tester.zig" },
+        });
+
+        ui_tester.addModule("ashet", mod_libashet);
+        ui_tester.addModule("ashet-gui", mod_ashet_gui);
+        ui_tester.addModule("ui-layout", ui_gen.render(.{ .path = b.pathFromRoot(file_name) }));
+
+        ui_tester.linkSystemLibrary("sdl2");
+        ui_tester.install();
+        ui_tester.linkLibC();
     }
 
     const run_step = b.step("run", "Run the app");

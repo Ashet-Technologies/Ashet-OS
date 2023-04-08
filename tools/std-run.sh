@@ -31,14 +31,22 @@ done
 
 # compile root disk image
 
+disk_size=33554432
+
+# if [ "${MACHINE}" = "efi_pc" ] ; then
+#     disk_size=536870912
+# fi
+# if [ "${MACHINE}" = "bios_pc" ] ; then
+#     disk_size=536870912
+# fi
+
+fallocate -l "${disk_size}" "${DISK}"
+
 # copy system root
 "${ROOT}/zig-out/bin/afs-tool" format --verbose --image "${DISK}" "${ROOT}/rootfs"
 
 # install applications
 "${ROOT}/zig-out/bin/afs-tool" put --verbose --image "${DISK}" --recursive "${ROOT}/zig-out/apps" "/apps"
-
-fallocate -l 33554432 "${BOOTROM}"
-fallocate -l 33554432 "${DISK}"
 
 echo "----------------------"
 
@@ -46,6 +54,7 @@ qemu_generic_flags="-d guest_errors,unimp -display gtk,show-tabs=on -serial stdi
 
 case $MACHINE in
     rv32_virt)
+        fallocate -l 33554432 "${BOOTROM}"
         qemu-system-riscv32 ${qemu_generic_flags} \
                 -M virt \
                 -m 32M \
@@ -74,10 +83,11 @@ case $MACHINE in
             -s "$@" \
         | "${ROOT}/zig-out/bin/debug-filter" "${APP}"
         ;;
-    generic_pc)
+    bios_pc)
+        # Install syslinux and kernel:
         mcopy -i "${DISK}" rootfs-x86/* ::
         mcopy -i "${DISK}" ./zig-out/bin/ashet-os ::/ashet-os
-
+            
         syslinux --install "${DISK}"
 
         qemu-system-i386 ${qemu_generic_flags} \
@@ -86,9 +96,16 @@ case $MACHINE in
           -hda "${DISK}" \
           -vga std \
           -s "$@"
-         ;;
+        ;;
         # -device bochs-display,xres=800,yres=600 \
         # -device VGA,xres=800,yres=600,xmax=800,ymax=600 \
+    efi_pc)
+        qemu-system-x86_64 ${qemu_generic_flags} \
+            -cpu qemu64 \
+            -drive if=pflash,format=raw,unit=0,file=/usr/share/qemu/edk2-x86_64-code.fd,readonly=on \
+            -drive if=ide,format=raw,unit=0,file="${DISK}" \
+            -s "$@"
+        ;;
     *)
         echo "Cannot start machine $MACHINE yet."
         exit 1
