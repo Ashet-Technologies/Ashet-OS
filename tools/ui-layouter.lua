@@ -430,6 +430,12 @@ do
   f:write("};\n")
 
   f:write("\n")
+  for key, obj in pairs(named_objects) do
+
+    f:write("pub const ", key, " = &widgets[", obj.number, "];\n")
+  end
+
+  f:write("\n")
 
   local delayed_property_assignments = {}
 

@@ -58,10 +58,19 @@ pub fn main() !void {
         const event = ashet.ui.getEvent(window);
         switch (event) {
             .mouse => |data| {
+                if (main_window.interface.sendMouseEvent(data)) |guievt|
+                    handleEvent(guievt);
+                repaint_request = true;
+
                 if (data.type == .button_press) {
-                    if (data.x < side_panel_width) {
+                    var point = Point.new(data.x, data.y);
+
+                    const tree_view_bounds = main_window.tree_view.bounds.shrink(3);
+                    const doc_view_bounds = main_window.doc_view.bounds.shrink(3);
+
+                    if (tree_view_bounds.contains(point)) {
                         // sidepanel click
-                        if (getClickedLeaf(&current_index, Point.new(data.x, data.y))) |leaf| {
+                        if (getClickedLeaf(&current_index, Point.new(data.x - tree_view_bounds.x, data.y - tree_view_bounds.y))) |leaf| {
                             std.log.info("load document: {s}", .{leaf.file_name});
 
                             if (loadDocument(&wiki_root_folder, leaf)) |doc| {
@@ -78,11 +87,11 @@ pub fn main() !void {
                                 });
                             }
                         }
-                    } else {
+                    } else if (doc_view_bounds.contains(point)) {
                         // wikitext click
 
                         if (current_document) |*current_doc| {
-                            const test_point = Point.new(data.x - side_panel_width - 1, data.y);
+                            const test_point = Point.new(data.x - doc_view_bounds.x, data.y - doc_view_bounds.y);
 
                             std.log.info("document has {} links:", .{current_doc.links.items.len});
                             const maybe_link = for (current_doc.links.items) |link| {
@@ -109,7 +118,9 @@ pub fn main() !void {
                 }
             },
             .keyboard => |data| {
-                _ = data;
+                if (main_window.interface.sendKeyboardEvent(data)) |guievt|
+                    handleEvent(guievt);
+                repaint_request = true;
             },
             .window_close => break :app_loop,
             .window_minimize => {},
@@ -122,6 +133,11 @@ pub fn main() !void {
             },
         }
     }
+}
+
+fn handleEvent(evt: gui.Event) void {
+    //
+    std.log.info("unhandled event: {}", .{evt});
 }
 
 fn loadDocumentFromUri(dir: *ashet.fs.Directory, index: *const Index, url_string: []const u8) !Document {
@@ -185,14 +201,10 @@ const Rectangle = ashet.ui.Rectangle;
 const ColorIndex = ashet.ui.ColorIndex;
 
 const theme = struct {
-    const sidepanel_bg = ColorIndex.get(0x11); // dim gray
     const sidepanel_sel = ColorIndex.get(0x12); // gold
-    const sidepanel_document_unsel = ColorIndex.get(0xF); // white
+    const sidepanel_document_unsel = ColorIndex.get(0x0); // white
     const sidepanel_document_sel = ColorIndex.get(0x0); // black
-    const sidepanel_folder = ColorIndex.get(0xB); // bright gray
-    const sidepanel_border = ColorIndex.get(0x0); // black
-
-    const doc_background = ColorIndex.get(0xF); // white
+    const sidepanel_folder = ColorIndex.get(0x9); // bright gray
 
     const wiki = htext.Theme{
         .text_color = ColorIndex.get(0x00), // black
@@ -213,26 +225,17 @@ const theme = struct {
     };
 };
 
-const side_panel_width: u15 = 100;
-
 fn paintApp(window: *const Window, index: *const Index, maybe_page: *?Document) void {
     var fb = gui.Framebuffer.forWindow(window);
 
-    fb.fillRectangle(.{
-        .x = 0,
-        .y = 0,
-        .width = side_panel_width,
-        .height = fb.height,
-    }, theme.sidepanel_bg);
+    main_window.layout(window);
+
+    main_window.interface.paint(fb);
+
     {
         var offset_y: i16 = 1;
         renderSidePanel(
-            fb.view(.{
-                .x = 0,
-                .y = 0,
-                .width = side_panel_width,
-                .height = fb.height,
-            }),
+            fb.view(main_window.tree_view.bounds.shrink(3)),
             &index.root,
             if (maybe_page.*) |page| page.leaf else null,
             1,
@@ -240,20 +243,8 @@ fn paintApp(window: *const Window, index: *const Index, maybe_page: *?Document) 
         );
     }
 
-    fb.drawLine(
-        Point.new(side_panel_width, 0),
-        Point.new(side_panel_width, fb.height),
-        theme.sidepanel_border,
-    );
-
     if (maybe_page.*) |*page| {
-        var doc_fb = fb.view(.{
-            .x = side_panel_width + 1,
-            .y = 0,
-            .width = fb.width -| side_panel_width -| 1,
-            .height = fb.height,
-        });
-        doc_fb.clear(theme.doc_background);
+        var doc_fb = fb.view(main_window.doc_view.bounds.shrink(3));
 
         page.links.shrinkRetainingCapacity(0);
 
@@ -266,9 +257,6 @@ fn paintApp(window: *const Window, index: *const Index, maybe_page: *?Document) 
             linkCallback,
         );
     }
-
-    main_window.layout(window);
-    main_window.interface.paint(fb);
 
     ashet.ui.invalidate(window, .{
         .x = 0,
@@ -327,7 +315,7 @@ fn getClickedLeafInner(list: *const Index.List, testpoint: Point, x: i16, y: *i1
                     return leaf;
             },
             .leaf => |*leaf| {
-                const rect = Rectangle{ .x = 0, .y = y.*, .width = side_panel_width, .height = 8 };
+                const rect = Rectangle{ .x = 0, .y = y.*, .width = 10000, .height = 8 };
                 if (rect.contains(testpoint))
                     return leaf;
                 y.* += 8;

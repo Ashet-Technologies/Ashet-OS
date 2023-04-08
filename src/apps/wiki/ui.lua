@@ -27,9 +27,9 @@ doc_view.right = doc_v_scrollbar.left
 doc_view.bottom = doc_h_scrollbar.top
 
 nav_backward.top = coolbar.top + coolbar_padding
-nav_forward.top = nav_backward.top + nav_backward.height / 2 -- coolbar.top + coolbar_padding
-nav_home.top = nav_forward.top + nav_forward.height / 3 -- coolbar.top + coolbar_padding
-app_menu.top = (nav_home.top + nav_home.bottom) / 2 -- coolbar.top + coolbar_padding
+nav_forward.top = coolbar.top + coolbar_padding
+nav_home.top = coolbar.top + coolbar_padding
+app_menu.top = coolbar.top + coolbar_padding
 
 nav_backward.left = coolbar.left + coolbar_padding
 nav_forward.left = nav_backward.right + coolbar_padding
