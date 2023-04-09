@@ -8,45 +8,73 @@ const AshetContext = struct {
     b: *std.build.Builder,
     bmpconv: BitmapConverter,
     target: std.zig.CrossTarget,
+    hosted_build: bool,
 
-    fn createAshetApp(ctx: AshetContext, name: []const u8, source: []const u8, maybe_icon: ?[]const u8, optimize: std.builtin.OptimizeMode) *std.build.LibExeObjStep {
+    fn createAshetApp(ctx: AshetContext, name: []const u8, source: []const u8, maybe_icon: ?[]const u8, optimize: std.builtin.OptimizeMode, dependencies: []const std.Build.ModuleDependency) void {
         const exe = ctx.b.addExecutable(.{
             .name = ctx.b.fmt("{s}.app", .{name}),
-            .root_source_file = .{ .path = source },
+            .root_source_file = if (ctx.hosted_build)
+                .{ .path = "src/libuserland/main.zig" }
+            else
+                .{ .path = source },
             .optimize = optimize,
             .target = ctx.target,
         });
 
         exe.omit_frame_pointer = false; // this is useful for debugging
-        exe.single_threaded = true; // AshetOS doesn't support multithreading in a modern sense
-        exe.pie = true; // AshetOS requires PIE executables
-        exe.force_pic = true; // which need PIC code
-        exe.linkage = .static; // but everything is statically linked, we don't support shared objects
-        exe.strip = false; // never strip debug info
 
-        exe.setLinkerScriptPath(.{ .path = "src/libashet/application.ld" });
-        exe.addModule("ashet", ctx.b.modules.get("ashet").?);
-        exe.addModule("ashet-gui", ctx.b.modules.get("ashet-gui").?); // just add GUI to all apps by default *shrug*
+        if (ctx.hosted_build) {
+            exe.addModule("ashet-std", ctx.b.modules.get("ashet-std").?);
+            exe.addModule("ashet-abi", ctx.b.modules.get("ashet-abi").?);
+            exe.addAnonymousModule("app", .{
+                .source_file = .{ .path = source },
+                .dependencies = std.mem.concat(ctx.b.allocator, std.Build.ModuleDependency, &.{
+                    &.{
+                        .{ .name = "ashet", .module = ctx.b.modules.get("ashet").? },
+                        .{ .name = "ashet-gui", .module = ctx.b.modules.get("ashet-gui").? },
+                    },
+                    dependencies,
+                }) catch @panic("oom"),
+            });
 
-        const install_app_code_step = ctx.b.addInstallFile(exe.getOutputSource(), ctx.b.fmt("apps/{s}/code", .{name}));
-        ctx.b.getInstallStep().dependOn(&install_app_code_step.step);
+            exe.linkSystemLibrary("sdl2");
+            exe.linkLibC();
+            exe.install();
+        } else {
+            exe.addModule("ashet", ctx.b.modules.get("ashet").?);
+            exe.addModule("ashet-gui", ctx.b.modules.get("ashet-gui").?); // just add GUI to all apps by default *shrug*
+            for (dependencies) |dep| {
+                exe.addModule(dep.name, dep.module);
+            }
 
-        if (maybe_icon) |src_icon| {
-            const icon_file = ctx.bmpconv.convert(
-                .{ .path = src_icon },
-                ctx.b.fmt("{s}.icon", .{name}),
-                .{
-                    .geometry = .{ 32, 32 },
-                    .palette = .{ .predefined = "src/kernel/data/palette.gpl" },
-                    // .palette = .{ .sized = 15 },
-                },
-            );
+            exe.single_threaded = true; // AshetOS doesn't support multithreading in a modern sense
+            exe.pie = true; // AshetOS requires PIE executables
+            exe.force_pic = true; // which need PIC code
+            exe.linkage = .static; // but everything is statically linked, we don't support shared objects
+            exe.strip = false; // never strip debug info
 
-            const install_app_icon_step = ctx.b.addInstallFile(icon_file, ctx.b.fmt("apps/{s}/icon", .{name}));
-            ctx.b.getInstallStep().dependOn(&install_app_icon_step.step);
+            exe.setLinkerScriptPath(.{ .path = "src/libashet/application.ld" });
+
+            const install_app_code_step = ctx.b.addInstallFile(exe.getOutputSource(), ctx.b.fmt("apps/{s}/code", .{name}));
+            ctx.b.getInstallStep().dependOn(&install_app_code_step.step);
+
+            if (maybe_icon) |src_icon| {
+                const icon_file = ctx.bmpconv.convert(
+                    .{ .path = src_icon },
+                    ctx.b.fmt("{s}.icon", .{name}),
+                    .{
+                        .geometry = .{ 32, 32 },
+                        .palette = .{ .predefined = "src/kernel/data/palette.gpl" },
+                        // .palette = .{ .sized = 15 },
+                    },
+                );
+
+                const install_app_icon_step = ctx.b.addInstallFile(icon_file, ctx.b.fmt("apps/{s}/icon", .{name}));
+                ctx.b.getInstallStep().dependOn(&install_app_icon_step.step);
+            }
         }
 
-        return exe;
+        // return exe;
     }
 };
 
@@ -99,6 +127,8 @@ const UiGenerator = struct {
 };
 
 pub fn build(b: *std.Build) !void {
+    const hosted_build = b.option(bool, "hosted", "Builds the applications hosted for the current system") orelse false;
+
     const lua_dep = b.dependency("lua", .{
         .interpreter = true,
         .compiler = false,
@@ -170,48 +200,6 @@ pub fn build(b: *std.Build) !void {
 
     const optimize = b.standardOptimizeOption(.{});
 
-    const machine_id = b.option(MachineID, "machine", "Defines the machine Ashet OS should be built for.") orelse blk: {
-        var stderr = std.io.getStdErr();
-
-        var writer = stderr.writer();
-        try writer.writeAll("No machine selected. Use one of the following options:\n");
-
-        inline for (comptime std.meta.declarations(machines.all)) |decl| {
-            try writer.print("- {s}\n", .{decl.name});
-        }
-
-        try writer.writeAll("Falling back to rv32_virt\n");
-
-        break :blk .rv32_virt;
-    };
-
-    const machine_spec = resolveMachine(machine_id);
-
-    const machine_pkg = b.addWriteFile("machine.zig", blk: {
-        var stream = std.ArrayList(u8).init(b.allocator);
-        defer stream.deinit();
-
-        var writer = stream.writer();
-
-        try writer.writeAll("//! This is a machine-generated description of the Ashet OS target machine.\n\n");
-
-        try writer.print("pub const machine = @import(\"root\").machines.all.{};\n", .{
-            std.zig.fmtId(machine_spec.machine_id),
-        });
-        try writer.print("pub const platform = @import(\"root\").platforms.all.{};\n", .{
-            std.zig.fmtId(machine_spec.platform.platform_id),
-        });
-
-        try writer.print("pub const machine_name = \"{}\";\n", .{
-            std.zig.fmtEscapes(machine_spec.name),
-        });
-        try writer.print("pub const platform_name = \"{}\";\n", .{
-            std.zig.fmtEscapes(machine_spec.platform.name),
-        });
-
-        break :blk try stream.toOwnedSlice();
-    });
-
     // const fatfs_module = FatFS.createModule(b, fatfs_config);
 
     const bmpconv = BitmapConverter.init(b);
@@ -261,155 +249,214 @@ pub fn build(b: *std.Build) !void {
         }),
     };
 
-    const kernel_exe = b.addExecutable(.{
-        .name = "ashet-os",
-        .root_source_file = .{ .path = "src/kernel/main.zig" },
-        .target = machine_spec.platform.target,
-        .optimize = optimize,
-    });
+    const target = if (hosted_build)
+        b.standardTargetOptions(.{})
+    else machine_target: {
+        const machine_id = b.option(MachineID, "machine", "Defines the machine Ashet OS should be built for.") orelse blk: {
+            var stderr = std.io.getStdErr();
 
-    {
-        kernel_exe.rdynamic = true; // Prevent the compiler from garbage collecting exported symbols
-        kernel_exe.single_threaded = true;
-        kernel_exe.omit_frame_pointer = false;
-        kernel_exe.strip = false; // never strip debug info
-        if (optimize == .Debug) {
-            // we always want frame pointers in debug build!
+            var writer = stderr.writer();
+            try writer.writeAll("No machine selected. Use one of the following options:\n");
+
+            inline for (comptime std.meta.declarations(machines.all)) |decl| {
+                try writer.print("- {s}\n", .{decl.name});
+            }
+
+            try writer.writeAll("Falling back to rv32_virt\n");
+
+            break :blk .rv32_virt;
+        };
+
+        const machine_spec = resolveMachine(machine_id);
+
+        const machine_pkg = b.addWriteFile("machine.zig", blk: {
+            var stream = std.ArrayList(u8).init(b.allocator);
+            defer stream.deinit();
+
+            var writer = stream.writer();
+
+            try writer.writeAll("//! This is a machine-generated description of the Ashet OS target machine.\n\n");
+
+            try writer.print("pub const machine = @import(\"root\").machines.all.{};\n", .{
+                std.zig.fmtId(machine_spec.machine_id),
+            });
+            try writer.print("pub const platform = @import(\"root\").platforms.all.{};\n", .{
+                std.zig.fmtId(machine_spec.platform.platform_id),
+            });
+
+            try writer.print("pub const machine_name = \"{}\";\n", .{
+                std.zig.fmtEscapes(machine_spec.name),
+            });
+            try writer.print("pub const platform_name = \"{}\";\n", .{
+                std.zig.fmtEscapes(machine_spec.platform.name),
+            });
+
+            break :blk try stream.toOwnedSlice();
+        });
+
+        const kernel_exe = b.addExecutable(.{
+            .name = "ashet-os",
+            .root_source_file = .{ .path = "src/kernel/main.zig" },
+            .target = machine_spec.platform.target,
+            .optimize = optimize,
+        });
+
+        {
+            kernel_exe.rdynamic = true; // Prevent the compiler from garbage collecting exported symbols
+            kernel_exe.single_threaded = true;
             kernel_exe.omit_frame_pointer = false;
+            kernel_exe.strip = false; // never strip debug info
+            if (optimize == .Debug) {
+                // we always want frame pointers in debug build!
+                kernel_exe.omit_frame_pointer = false;
+            }
+
+            kernel_exe.addModule("system-assets", ui_gen.mod_system_assets);
+            kernel_exe.addModule("ashet-abi", mod_ashet_abi);
+            kernel_exe.addModule("ashet-std", mod_ashet_std);
+            kernel_exe.addModule("ashet", mod_libashet);
+            kernel_exe.addModule("ashet-gui", mod_ashet_gui);
+            kernel_exe.addModule("virtio", mod_virtio);
+            kernel_exe.addModule("ashet-fs", mod_libashetfs);
+            kernel_exe.addAnonymousModule("machine", .{
+                .source_file = machine_pkg.getFileSource("machine.zig").?,
+            });
+            // kernel_exe.addModule("fatfs", fatfs_module);
+            kernel_exe.setLinkerScriptPath(.{ .path = machine_spec.linker_script });
+            kernel_exe.install();
+
+            kernel_exe.addSystemIncludePath("vendor/ziglibc/inc/libc");
+
+            // FatFS.link(kernel_exe, fatfs_config);
+
+            const kernel_libc = ziglibc.addLibc(b, .{
+                .variant = .freestanding,
+                .link = .static,
+                .start = .ziglibc,
+                .trace = false,
+                .target = kernel_exe.target,
+                .optimize = .ReleaseSafe,
+            });
+            kernel_libc.install();
+
+            kernel_exe.linkLibrary(kernel_libc);
+
+            {
+                const lwip = create_lwIP(b, kernel_exe.target, .ReleaseSafe);
+                lwip.is_linking_libc = false;
+                lwip.strip = false;
+                lwip.addSystemIncludePath("vendor/ziglibc/inc/libc");
+                kernel_exe.linkLibrary(lwip);
+                setup_lwIP(kernel_exe);
+            }
+
+            {
+                const kernel_step = b.step("kernel", "Only builds the OS kernel");
+                kernel_step.dependOn(&kernel_exe.step);
+            }
         }
 
-        kernel_exe.addModule("system-assets", ui_gen.mod_system_assets);
-        kernel_exe.addModule("ashet-abi", mod_ashet_abi);
-        kernel_exe.addModule("ashet-std", mod_ashet_std);
-        kernel_exe.addModule("ashet", mod_libashet);
-        kernel_exe.addModule("ashet-gui", mod_ashet_gui);
-        kernel_exe.addModule("virtio", mod_virtio);
-        kernel_exe.addModule("ashet-fs", mod_libashetfs);
-        kernel_exe.addAnonymousModule("machine", .{
-            .source_file = machine_pkg.getFileSource("machine.zig").?,
+        const raw_step = b.addObjCopy(kernel_exe.getOutputSource(), .{
+            .basename = "ashet-os.bin",
+            .format = .bin,
+            // .only_section
+            // . pad_to = 0x200_0000,
         });
-        // kernel_exe.addModule("fatfs", fatfs_module);
-        kernel_exe.setLinkerScriptPath(.{ .path = machine_spec.linker_script });
-        kernel_exe.install();
 
-        kernel_exe.addSystemIncludePath("vendor/ziglibc/inc/libc");
+        const install_raw_step = b.addInstallFile(raw_step.getOutputSource(), "rom/ashet-os.bin");
 
-        // FatFS.link(kernel_exe, fatfs_config);
+        b.getInstallStep().dependOn(&install_raw_step.step);
 
-        const kernel_libc = ziglibc.addLibc(b, .{
-            .variant = .freestanding,
-            .link = .static,
-            .start = .ziglibc,
-            .trace = false,
-            .target = kernel_exe.target,
-            .optimize = .ReleaseSafe,
+        // Makes sure zig-out/disk.img exists, but doesn't touch the data at all
+        const setup_disk_cmd = b.addSystemCommand(&.{
+            "fallocate",
+            "-l",
+            "32M",
+            "zig-out/disk.img",
         });
-        kernel_libc.install();
 
-        kernel_exe.linkLibrary(kernel_libc);
-
-        {
-            const lwip = create_lwIP(b, kernel_exe.target, .ReleaseSafe);
-            lwip.is_linking_libc = false;
-            lwip.strip = false;
-            lwip.addSystemIncludePath("vendor/ziglibc/inc/libc");
-            kernel_exe.linkLibrary(lwip);
-            setup_lwIP(kernel_exe);
+        const run_cmd = b.addSystemCommand(&.{"qemu-system-riscv32"});
+        run_cmd.addArgs(&.{
+            "-M", "virt",
+            "-m",      "32M", // we have *some* overhead on the virt platform
+            "-device", "virtio-gpu-device,xres=400,yres=300",
+            "-device", "virtio-keyboard-device",
+            "-device", "virtio-mouse-device",
+            "-d",      "guest_errors",
+            "-bios",   "none",
+            "-drive",  "if=pflash,index=0,file=zig-out/bin/ashet-os.bin,format=raw",
+            "-drive",  "if=pflash,index=1,file=zig-out/disk.img,format=raw",
+        });
+        run_cmd.step.dependOn(&setup_disk_cmd.step);
+        run_cmd.step.dependOn(b.getInstallStep());
+        if (b.args) |args| {
+            run_cmd.addArgs(args);
         }
 
-        {
-            const kernel_step = b.step("kernel", "Only builds the OS kernel");
-            kernel_step.dependOn(&kernel_exe.step);
-        }
-    }
+        const run_step = b.step("run", "Run the app");
+        run_step.dependOn(&run_cmd.step);
 
-    const raw_step = b.addObjCopy(kernel_exe.getOutputSource(), .{
-        .basename = "ashet-os.bin",
-        .format = .bin,
-        // .only_section
-        // . pad_to = 0x200_0000,
-    });
-
-    const install_raw_step = b.addInstallFile(raw_step.getOutputSource(), "rom/ashet-os.bin");
-
-    b.getInstallStep().dependOn(&install_raw_step.step);
-
-    // Makes sure zig-out/disk.img exists, but doesn't touch the data at all
-    const setup_disk_cmd = b.addSystemCommand(&.{
-        "fallocate",
-        "-l",
-        "32M",
-        "zig-out/disk.img",
-    });
-
-    const run_cmd = b.addSystemCommand(&.{"qemu-system-riscv32"});
-    run_cmd.addArgs(&.{
-        "-M", "virt",
-        "-m",      "32M", // we have *some* overhead on the virt platform
-        "-device", "virtio-gpu-device,xres=400,yres=300",
-        "-device", "virtio-keyboard-device",
-        "-device", "virtio-mouse-device",
-        "-d",      "guest_errors",
-        "-bios",   "none",
-        "-drive",  "if=pflash,index=0,file=zig-out/bin/ashet-os.bin,format=raw",
-        "-drive",  "if=pflash,index=1,file=zig-out/disk.img,format=raw",
-    });
-    run_cmd.step.dependOn(&setup_disk_cmd.step);
-    run_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
-    }
+        break :machine_target machine_spec.platform.target;
+    };
 
     var ctx = AshetContext{
         .b = b,
         .bmpconv = bmpconv,
-        .target = machine_spec.platform.target,
+        .target = target,
+        .hosted_build = hosted_build,
     };
 
     {
         {
             const browser_assets = AssetBundleStep.create(b);
 
-            const browser = ctx.createAshetApp("browser", "src/apps/browser/browser.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Search online.png", optimize);
-            browser.addAnonymousModule("assets", .{
-                .source_file = browser_assets.getOutput(),
-                .dependencies = &.{},
+            ctx.createAshetApp("browser", "src/apps/browser/browser.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Search online.png", optimize, &.{
+                .{
+                    .name = "assets",
+                    .module = b.createModule(.{
+                        .source_file = browser_assets.getOutput(),
+                        .dependencies = &.{},
+                    }),
+                },
+                .{
+                    .name = "system-assets",
+                    .module = b.createModule(.{
+                        .source_file = system_icons.getOutput(),
+                        .dependencies = &.{},
+                    }),
+                },
+                .{ .name = "hypertext", .module = mod_libhypertext },
             });
-            browser.addAnonymousModule("system-assets", .{
-                .source_file = system_icons.getOutput(),
-                .dependencies = &.{},
-            });
-            browser.addModule("hypertext", mod_libhypertext);
         }
 
-        _ = ctx.createAshetApp("clock", "src/apps/clock/clock.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Time.png", optimize);
-        _ = ctx.createAshetApp("commander", "src/apps/commander/commander.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Folder.png", optimize);
-        _ = ctx.createAshetApp("editor", "src/apps/editor/editor.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Edit page.png", optimize);
-        _ = ctx.createAshetApp("music", "src/apps/music/music.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Play.png", optimize);
-        _ = ctx.createAshetApp("paint", "src/apps/paint/paint.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Painter.png", optimize);
-        _ = ctx.createAshetApp("terminal", "src/apps/terminal/terminal.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Tools.png", optimize);
-        _ = ctx.createAshetApp("gui-demo", "src/apps/gui-demo.zig", null, optimize);
-        _ = ctx.createAshetApp("net-demo", "src/apps/net-demo.zig", null, optimize);
+        ctx.createAshetApp("clock", "src/apps/clock/clock.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Time.png", optimize, &.{});
+        ctx.createAshetApp("commander", "src/apps/commander/commander.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Folder.png", optimize, &.{});
+        ctx.createAshetApp("editor", "src/apps/editor/editor.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Edit page.png", optimize, &.{});
+        ctx.createAshetApp("music", "src/apps/music/music.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Play.png", optimize, &.{});
+        ctx.createAshetApp("paint", "src/apps/paint/paint.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Painter.png", optimize, &.{});
+        ctx.createAshetApp("terminal", "src/apps/terminal/terminal.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Tools.png", optimize, &.{});
+        ctx.createAshetApp("gui-demo", "src/apps/gui-demo.zig", null, optimize, &.{});
+        ctx.createAshetApp("net-demo", "src/apps/net-demo.zig", null, optimize, &.{});
 
         {
-            const wiki = ctx.createAshetApp("wiki", "src/apps/wiki/wiki.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Help book.png", optimize);
-            wiki.addModule("hypertext", mod_libhypertext);
-            wiki.addModule("hyperdoc", mod_hyperdoc);
-
-            wiki.addModule("ui-layout", ui_gen.render(.{ .path = b.pathFromRoot("src/apps/wiki/ui.lua") }));
+            ctx.createAshetApp("wiki", "src/apps/wiki/wiki.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Help book.png", optimize, &.{
+                .{ .name = "hypertext", .module = mod_libhypertext },
+                .{ .name = "hyperdoc", .module = mod_hyperdoc },
+                .{ .name = "ui-layout", .module = ui_gen.render(.{ .path = b.pathFromRoot("src/apps/wiki/ui.lua") }) },
+            });
         }
 
         {
-            const dungeon = ctx.createAshetApp("dungeon", "src/apps/dungeon/dungeon.zig", "artwork/apps/dungeon/dungeon.png", optimize);
-            addBitmap(dungeon, bmpconv, "artwork/dungeon/floor.png", "src/apps/dungeon/data/floor.abm", .{ 32, 32 });
-            addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-plain.png", "src/apps/dungeon/data/wall-plain.abm", .{ 32, 32 });
-            addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-cobweb.png", "src/apps/dungeon/data/wall-cobweb.abm", .{ 32, 32 });
-            addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-paper.png", "src/apps/dungeon/data/wall-paper.abm", .{ 32, 32 });
-            addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-vines.png", "src/apps/dungeon/data/wall-vines.abm", .{ 32, 32 });
-            addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-door.png", "src/apps/dungeon/data/wall-door.abm", .{ 32, 32 });
-            addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-post-l.png", "src/apps/dungeon/data/wall-post-l.abm", .{ 32, 32 });
-            addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-post-r.png", "src/apps/dungeon/data/wall-post-r.abm", .{ 32, 32 });
-            addBitmap(dungeon, bmpconv, "artwork/dungeon/enforcer.png", "src/apps/dungeon/data/enforcer.abm", .{ 32, 60 });
+            ctx.createAshetApp("dungeon", "src/apps/dungeon/dungeon.zig", "artwork/apps/dungeon/dungeon.png", optimize, &.{});
+            // addBitmap(dungeon, bmpconv, "artwork/dungeon/floor.png", "src/apps/dungeon/data/floor.abm", .{ 32, 32 });
+            // addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-plain.png", "src/apps/dungeon/data/wall-plain.abm", .{ 32, 32 });
+            // addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-cobweb.png", "src/apps/dungeon/data/wall-cobweb.abm", .{ 32, 32 });
+            // addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-paper.png", "src/apps/dungeon/data/wall-paper.abm", .{ 32, 32 });
+            // addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-vines.png", "src/apps/dungeon/data/wall-vines.abm", .{ 32, 32 });
+            // addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-door.png", "src/apps/dungeon/data/wall-door.abm", .{ 32, 32 });
+            // addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-post-l.png", "src/apps/dungeon/data/wall-post-l.abm", .{ 32, 32 });
+            // addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-post-r.png", "src/apps/dungeon/data/wall-post-r.abm", .{ 32, 32 });
+            // addBitmap(dungeon, bmpconv, "artwork/dungeon/enforcer.png", "src/apps/dungeon/data/enforcer.abm", .{ 32, 60 });
         }
     }
 
@@ -443,9 +490,6 @@ pub fn build(b: *std.Build) !void {
         ui_tester.install();
         ui_tester.linkLibC();
     }
-
-    const run_step = b.step("run", "Run the app");
-    run_step.dependOn(&run_cmd.step);
 
     const std_tests = b.addTest(.{
         .root_source_file = .{ .path = "src/std/std.zig" },

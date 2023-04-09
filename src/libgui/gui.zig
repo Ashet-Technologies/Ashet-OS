@@ -97,7 +97,8 @@ pub const Interface = struct {
         switch (event.type) {
             .button_press => if (event.button == .left) {
                 var index: usize = 0;
-                if (gui.widgetFromPoint(Point.new(event.x, event.y), &index)) |widget| {
+                const click_point = Point.new(event.x, event.y);
+                if (gui.widgetFromPoint(click_point, &index)) |widget| {
                     if (widget.control.canFocus()) {
                         gui.focus = index;
                     } else {
@@ -119,7 +120,53 @@ pub const Interface = struct {
 
                         .label, .panel, .picture => {},
 
-                        .scroll_bar => @panic("scrollbar not implemented yet!"),
+                        .scroll_bar => |*bar| {
+                            const rects: ScrollBar.Boxes = bar.computeRectangles(widget.bounds) orelse return null;
+
+                            const step_size = std.math.max(1, bar.range / 10);
+                            const prev = bar.level;
+                            if (rects.decrease_button.contains(click_point)) {
+                                bar.level -|= step_size;
+                            } else if (rects.increase_button.contains(click_point)) {
+                                bar.level +|= step_size;
+                            } else if (rects.scroll_area.contains(click_point)) {
+                                const size = switch (bar.direction) {
+                                    .vertical => @intCast(i16, rects.scroll_area.height),
+                                    .horizontal => @intCast(i16, rects.scroll_area.width),
+                                };
+                                const pos = switch (bar.direction) {
+                                    .vertical => click_point.y - rects.knob_button.y,
+                                    .horizontal => click_point.x - rects.knob_button.x,
+                                };
+                                const rel_pos = @divTrunc(100 * pos, size);
+                                const abs_jump = std.math.absCast(rel_pos);
+
+                                const var_step_size: u15 = if (abs_jump > 50)
+                                    30
+                                else if (abs_jump > 25)
+                                    25
+                                else if (abs_jump > 10)
+                                    10
+                                else
+                                    5;
+
+                                // std.log.info("clickrel {} {} {} {}\n", .{ pos, rel_pos, abs_jump, var_step_size });
+
+                                const delta = @intCast(u15, std.math.max(1, (var_step_size * @as(u32, bar.range)) / 100));
+                                if (pos < 0) {
+                                    bar.level -|= delta;
+                                } else {
+                                    bar.level +|= delta;
+                                }
+                            }
+
+                            if (bar.level > bar.range)
+                                bar.level = bar.range;
+
+                            if (bar.level != prev) {
+                                return bar.changedEvent;
+                            }
+                        },
                     }
                 } else {
                     gui.focus = null;
@@ -311,6 +358,7 @@ pub const Interface = struct {
         window_disabled,
         area,
     };
+
     fn drawRectangle(gui: Interface, target: Framebuffer, rect: Rectangle, style: ElementStyle, background: ElementBackground) void {
         const b = .{
             .x = rect.x,
@@ -523,98 +571,36 @@ pub const Interface = struct {
                 },
 
                 .scroll_bar => |bar| widget: {
-                    switch (bar.direction) {
-                        .vertical => {
-                            const bsize = b.width;
-                            const height = b.height;
+                    const positions = bar.computeRectangles(b) orelse {
+                        // TODO: Filler
+                        break :widget;
+                    };
 
-                            if (height < 3 * bsize)
-                                break :widget;
+                    gui.drawRectangle(target, positions.decrease_button, .raised, .area);
+                    gui.drawRectangle(target, positions.scroll_area, .sunken, .area);
+                    gui.drawRectangle(target, positions.increase_button, .raised, .area);
+                    gui.drawRectangle(target, positions.knob_button, .raised, .area);
 
-                            const decrease_button = .{
-                                .x = b.x,
-                                .y = b.y,
-                                .width = bsize,
-                                .height = bsize,
-                            };
-                            const scroll_area = .{
-                                .x = b.x,
-                                .y = b.y + bsize,
-                                .width = b.width,
-                                .height = height - 2 * bsize,
-                            };
-                            const increase_button = .{
-                                .x = b.x,
-                                .y = b.y + height - bsize,
-                                .width = bsize,
-                                .height = bsize,
-                            };
-
-                            gui.drawRectangle(target, decrease_button, .raised, .area);
-                            gui.drawRectangle(target, scroll_area, .sunken, .area);
-                            gui.drawRectangle(target, increase_button, .raised, .area);
-
-                            target.blit(
-                                Point.new(
-                                    decrease_button.x + (decrease_button.width -| ScrollBar.arrow_up.width) / 2,
-                                    decrease_button.y + (decrease_button.height -| ScrollBar.arrow_up.height) / 2,
-                                ),
-                                ScrollBar.arrow_up,
-                            );
-                            target.blit(
-                                Point.new(
-                                    increase_button.x + (increase_button.width -| ScrollBar.arrow_up.width) / 2,
-                                    increase_button.y + (increase_button.height -| ScrollBar.arrow_up.height) / 2,
-                                ),
-                                ScrollBar.arrow_down,
-                            );
+                    target.blit(
+                        Point.new(
+                            positions.decrease_button.x + @intCast(u15, positions.decrease_button.width -| ScrollBar.arrow_up.width) / 2,
+                            positions.decrease_button.y + @intCast(u15, positions.decrease_button.height -| ScrollBar.arrow_up.height) / 2,
+                        ),
+                        switch (bar.direction) {
+                            .vertical => ScrollBar.arrow_up,
+                            .horizontal => ScrollBar.arrow_left,
                         },
-                        .horizontal => {
-                            const width = b.width;
-                            const bsize = b.height;
-
-                            if (width < 3 * bsize)
-                                break :widget;
-
-                            const decrease_button = .{
-                                .x = b.x,
-                                .y = b.y,
-                                .width = bsize,
-                                .height = bsize,
-                            };
-                            const scroll_area = .{
-                                .x = b.x + bsize,
-                                .y = b.y,
-                                .width = width - 2 * bsize,
-                                .height = b.height,
-                            };
-                            const increase_button = .{
-                                .x = b.x + width - bsize,
-                                .y = b.y,
-                                .width = bsize,
-                                .height = bsize,
-                            };
-
-                            gui.drawRectangle(target, decrease_button, .raised, .area);
-                            gui.drawRectangle(target, scroll_area, .sunken, .area);
-                            gui.drawRectangle(target, increase_button, .raised, .area);
-
-                            target.blit(
-                                Point.new(
-                                    decrease_button.x + (decrease_button.width -| ScrollBar.arrow_up.width) / 2,
-                                    decrease_button.y + (decrease_button.height -| ScrollBar.arrow_up.height) / 2,
-                                ),
-                                ScrollBar.arrow_left,
-                            );
-                            target.blit(
-                                Point.new(
-                                    increase_button.x + (increase_button.width -| ScrollBar.arrow_up.width) / 2,
-                                    increase_button.y + (increase_button.height -| ScrollBar.arrow_up.height) / 2,
-                                ),
-                                ScrollBar.arrow_right,
-                            );
+                    );
+                    target.blit(
+                        Point.new(
+                            positions.increase_button.x + @intCast(u15, positions.increase_button.width -| ScrollBar.arrow_up.width) / 2,
+                            positions.increase_button.y + @intCast(u15, positions.increase_button.height -| ScrollBar.arrow_up.height) / 2,
+                        ),
+                        switch (bar.direction) {
+                            .vertical => ScrollBar.arrow_down,
+                            .horizontal => ScrollBar.arrow_right,
                         },
-                    }
+                    );
                 },
             }
             if (gui.focus == index) {
@@ -942,6 +928,13 @@ pub const ScrollBar = struct {
         \\.......
     );
 
+    pub fn handleSize(bar: ScrollBar, available_space: u16) u16 {
+        return std.math.max(
+            std.math.min(std.math.max(available_space / 22, 5), 30),
+            available_space -| bar.range,
+        );
+    }
+
     range: u15,
     level: u15 = 0,
     direction: Direction,
@@ -973,6 +966,98 @@ pub const ScrollBar = struct {
             },
         };
     }
+
+    fn computeRectangles(bar: ScrollBar, b: Rectangle) ?Boxes {
+        switch (bar.direction) {
+            .vertical => {
+                const bsize = @intCast(u15, b.width);
+                const height = @intCast(u15, b.height);
+
+                if (height < 3 * bsize)
+                    return null;
+
+                const decrease_button = Rectangle{
+                    .x = b.x,
+                    .y = b.y,
+                    .width = bsize,
+                    .height = bsize,
+                };
+                const scroll_area = Rectangle{
+                    .x = b.x,
+                    .y = b.y + bsize,
+                    .width = b.width,
+                    .height = height - 2 * bsize,
+                };
+                const increase_button = Rectangle{
+                    .x = b.x,
+                    .y = b.y + height - bsize,
+                    .width = bsize,
+                    .height = bsize,
+                };
+
+                const scroll_range = scroll_area.shrink(2);
+
+                var knob_button = scroll_area.shrink(2);
+                knob_button.height = bar.handleSize(scroll_range.height);
+                if (bar.range > 0)
+                    knob_button.y += @intCast(u15, (@as(u32, scroll_range.height -| knob_button.height -| 1) * bar.level) / bar.range);
+
+                return Boxes{
+                    .decrease_button = decrease_button,
+                    .scroll_area = scroll_area,
+                    .increase_button = increase_button,
+                    .knob_button = knob_button,
+                };
+            },
+
+            .horizontal => {
+                const width = @intCast(u15, b.width);
+                const bsize = @intCast(u15, b.height);
+
+                if (width < 3 * bsize)
+                    return null;
+
+                const decrease_button = Rectangle{
+                    .x = b.x,
+                    .y = b.y,
+                    .width = bsize,
+                    .height = bsize,
+                };
+                const scroll_area = Rectangle{
+                    .x = b.x + bsize,
+                    .y = b.y,
+                    .width = width - 2 * bsize,
+                    .height = b.height,
+                };
+                const increase_button = Rectangle{
+                    .x = b.x + width - bsize,
+                    .y = b.y,
+                    .width = bsize,
+                    .height = bsize,
+                };
+                const scroll_range = scroll_area.shrink(2);
+
+                var knob_button = scroll_area.shrink(2);
+                knob_button.width = bar.handleSize(scroll_range.width);
+                if (bar.range > 0)
+                    knob_button.x += @intCast(u15, (@as(u32, scroll_range.width -| knob_button.width -| 1) * bar.level) / bar.range);
+
+                return Boxes{
+                    .decrease_button = decrease_button,
+                    .scroll_area = scroll_area,
+                    .increase_button = increase_button,
+                    .knob_button = knob_button,
+                };
+            },
+        }
+    }
+
+    const Boxes = struct {
+        decrease_button: Rectangle,
+        scroll_area: Rectangle,
+        increase_button: Rectangle,
+        knob_button: Rectangle,
+    };
 };
 
 test "smoke test 01" {

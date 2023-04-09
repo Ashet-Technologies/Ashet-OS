@@ -60,8 +60,8 @@ pub const syscall_definitions = [_]SysCallDefinition{
     defineSysCall("network.udp.createSocket", fn (result: *UdpSocket) udp.CreateError.Enum, 35),
     defineSysCall("network.udp.destroySocket", fn (UdpSocket) void, 36),
 
-    defineSysCall("network.tcp.createSocket", fn (out: *tcp.Socket) tcp.CreateError.Enum, 44),
-    defineSysCall("network.tcp.destroySocket", fn (tcp.Socket) void, 45),
+    defineSysCall("network.tcp.createSocket", fn (out: *TcpSocket) tcp.CreateError.Enum, 44),
+    defineSysCall("network.tcp.destroySocket", fn (TcpSocket) void, 45),
 
     // Starts new I/O operations and returns completed ones.
     //
@@ -117,23 +117,30 @@ fn SysCallFunc(comptime call: SysCall) type {
 }
 
 pub fn syscall(comptime name: []const u8) SysCallFunc(@field(SysCall, name)) {
-    const target = @import("builtin").target.cpu.arch;
-    switch (target) {
-        .riscv32 => {
-            const table = asm (""
-                : [ptr] "={tp}" (-> *const SysCallTable),
-            );
-            return @field(table, name);
+    const target = @import("builtin").target;
+
+    switch (target.os.tag) {
+        .linux, .windows => {
+            return @field(@import("root").syscall_table, name);
         },
-        .x86 => {
-            const offset: u32 = @offsetOf(SysCallTable, name);
-            return asm ("mov %fs:%[off], %[out]"
-                : [out] "=r" (-> SysCallFunc(@field(SysCall, name))),
-                : [off] "p" (offset),
-            );
+        .freestanding => switch (target.cpu.arch) {
+            .riscv32 => {
+                const table = asm (""
+                    : [ptr] "={tp}" (-> *const SysCallTable),
+                );
+                return @field(table, name);
+            },
+            .x86 => {
+                const offset: u32 = @offsetOf(SysCallTable, name);
+                return asm ("mov %fs:%[off], %[out]"
+                    : [out] "=r" (-> SysCallFunc(@field(SysCall, name))),
+                    : [off] "p" (offset),
+                );
+            },
+            .arm => @panic("no syscalls on arm yet"),
+            else => @compileError("unsupported platform"),
         },
-        .arm => @panic("no syscalls on arm yet"),
-        else => unreachable,
+        else => @compileError("unsupported os"),
     }
 }
 

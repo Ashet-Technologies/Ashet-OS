@@ -74,6 +74,34 @@ const default_palette = [_][]const u8{
     "fff699",
 };
 
+var event_id_counter: usize = 0;
+var event_slots: [1024][]const u8 = undefined;
+
+fn getNextEventID(name: []const u8) gui.Event {
+    defer event_id_counter += 1;
+    event_slots[event_id_counter] = name;
+    return .{
+        .id = gui.EventID.fromNumber(event_id_counter),
+        .tag = null,
+    };
+}
+
+fn logUiEvent(evt: ?gui.Event) void {
+    const event = evt orelse return;
+    std.log.info("ui event: {s}", .{event_slots[@enumToInt(event.id)]});
+}
+
+fn mapMouseButton(in: c_int) ?ashet.abi.MouseButton {
+    return switch (in) {
+        sdl.SDL_BUTTON_LEFT => .left,
+        sdl.SDL_BUTTON_RIGHT => .right,
+        sdl.SDL_BUTTON_MIDDLE => .middle,
+        sdl.SDL_BUTTON_X1 => .nav_previous,
+        sdl.SDL_BUTTON_X2 => .nav_next,
+        else => null,
+    };
+}
+
 pub fn main() !void {
     if (sdl.SDL_Init(sdl.SDL_INIT_EVERYTHING) != 0)
         @panic("sdl error");
@@ -119,11 +147,95 @@ pub fn main() !void {
         break :blk pal;
     };
 
+    for (&ui_layout.widgets) |*_widget| {
+        const widget: *gui.Widget = _widget;
+        switch (widget.control) {
+            .button => |*button| {
+                button.clickEvent = getNextEventID("clickEvent");
+            },
+            .label => {},
+            .text_box => {},
+            .panel => {},
+            .picture => {},
+            .check_box => |*check_box| {
+                check_box.checkedChanged = getNextEventID("checkedChanged");
+            },
+            .radio_button => |*radio_button| {
+                //
+                _ = radio_button;
+            },
+            .scroll_bar => |*scroll_bar| {
+                scroll_bar.changedEvent = getNextEventID("changedEvent");
+            },
+            .tool_button => |*tool_button| {
+                tool_button.clickEvent = getNextEventID("clickEvent");
+            },
+        }
+    }
+
     var event: sdl.SDL_Event = undefined;
     main_loop: while (true) {
         while (sdl.SDL_PollEvent(&event) != 0) {
             if (event.type == sdl.SDL_QUIT)
                 break :main_loop;
+            switch (event.type) {
+                sdl.SDL_MOUSEBUTTONDOWN => {
+                    logUiEvent(ui_layout.interface.sendMouseEvent(.{
+                        .type = .button_press,
+                        .x = @intCast(i16, event.button.x),
+                        .y = @intCast(i16, event.button.y),
+                        .dx = 0,
+                        .dy = 0,
+                        .button = mapMouseButton(event.button.button) orelse continue,
+                    }));
+                },
+                sdl.SDL_MOUSEBUTTONUP => {
+                    logUiEvent(ui_layout.interface.sendMouseEvent(.{
+                        .type = .button_release,
+                        .x = @intCast(i16, event.button.x),
+                        .y = @intCast(i16, event.button.y),
+                        .dx = 0,
+                        .dy = 0,
+                        .button = mapMouseButton(event.button.button) orelse continue,
+                    }));
+                },
+                sdl.SDL_MOUSEWHEEL => {
+                    if (event.wheel.y < 0) {
+                        logUiEvent(ui_layout.interface.sendMouseEvent(.{
+                            .type = .button_release,
+                            .x = @intCast(i16, event.wheel.x),
+                            .y = @intCast(i16, event.wheel.y),
+                            .dx = 0,
+                            .dy = 0,
+                            .button = .wheel_down,
+                        }));
+                    }
+                    if (event.wheel.y > 0) {
+                        logUiEvent(ui_layout.interface.sendMouseEvent(.{
+                            .type = .button_release,
+                            .x = @intCast(i16, event.wheel.x),
+                            .y = @intCast(i16, event.wheel.y),
+                            .dx = 0,
+                            .dy = 0,
+                            .button = .wheel_up,
+                        }));
+                    }
+                },
+                sdl.SDL_MOUSEMOTION => {
+                    if (event.wheel.y > 0) {
+                        logUiEvent(ui_layout.interface.sendMouseEvent(.{
+                            .type = .motion,
+                            .x = @intCast(i16, event.motion.x),
+                            .y = @intCast(i16, event.motion.y),
+                            .dx = @intCast(i16, event.motion.xrel),
+                            .dy = @intCast(i16, event.motion.yrel),
+                            .button = .none,
+                        }));
+                    }
+                },
+
+                else => {},
+            }
         }
 
         const old_width = width;
@@ -144,6 +256,8 @@ pub fn main() !void {
                 width,
                 height,
             ) orelse @panic("oof");
+
+            std.debug.print("new size: {}x{}\n", .{ width, height });
 
             const size = @intCast(usize, width * height);
 

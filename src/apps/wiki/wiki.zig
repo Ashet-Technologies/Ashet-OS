@@ -6,6 +6,10 @@ const gui = @import("ashet-gui");
 
 const main_window = @import("ui-layout");
 
+const tree_scrollbar = main_window.tree_scrollbar;
+const doc_h_scrollbar = main_window.doc_h_scrollbar;
+const doc_v_scrollbar = main_window.doc_v_scrollbar;
+
 pub usingnamespace ashet.core;
 
 const Window = ashet.ui.Window;
@@ -19,10 +23,13 @@ fn newRect(x: i15, y: i15, w: u16, h: u16) ashet.abi.Rectangle {
     };
 }
 
+var repaint_request = true;
+var relayout_request = true;
+
 pub fn main() !void {
     const window = try ashet.ui.createWindow(
         "Hyper Wiki",
-        ashet.abi.Size.new(64, 64),
+        ashet.abi.Size.new(160, 80),
         ashet.abi.Size.max,
         ashet.abi.Size.new(200, 150),
         .{},
@@ -47,9 +54,14 @@ pub fn main() !void {
         cdoc.deinit();
     };
 
-    var repaint_request = true;
+    tree_scrollbar.control.scroll_bar.changedEvent = .{ .id = gui.EventID.from(.treeview_scrolled), .tag = null };
 
     app_loop: while (true) {
+        if (relayout_request) {
+            doLayout(window, &current_index);
+            repaint_request = true;
+            relayout_request = false;
+        }
         if (repaint_request) {
             paintApp(window, &current_index, &current_document);
             repaint_request = false;
@@ -127,17 +139,18 @@ pub fn main() !void {
             .window_restore => {},
             .window_moving => {},
             .window_moved => {},
-            .window_resizing => {},
-            .window_resized => {
-                repaint_request = true;
-            },
+            .window_resizing => relayout_request = true,
+            .window_resized => relayout_request = true,
         }
     }
 }
 
 fn handleEvent(evt: gui.Event) void {
-    //
-    std.log.info("unhandled event: {}", .{evt});
+    if (evt.id == gui.EventID.from(.treeview_scrolled)) {
+        relayout_request = true;
+    } else {
+        std.log.info("unhandled event: {}", .{evt});
+    }
 }
 
 fn loadDocumentFromUri(dir: *ashet.fs.Directory, index: *const Index, url_string: []const u8) !Document {
@@ -225,15 +238,33 @@ const theme = struct {
     };
 };
 
+fn doLayout(window: *const Window, index: *const Index) void {
+    main_window.layout(window);
+
+    var treeview_height: i16 = 1;
+    _ = getClickedLeafInner(
+        &index.root,
+        Point.new(-1000, -1000),
+        1,
+        &treeview_height,
+    );
+
+    tree_scrollbar.control.scroll_bar.range = @intCast(u15, @intCast(u16, treeview_height) -| (main_window.tree_view.bounds.height -| 6));
+
+    // tree_scrollbar
+
+    // doc_h_scrollbar
+
+    // doc_v_scrollbar
+}
+
 fn paintApp(window: *const Window, index: *const Index, maybe_page: *?Document) void {
     var fb = gui.Framebuffer.forWindow(window);
-
-    main_window.layout(window);
 
     main_window.interface.paint(fb);
 
     {
-        var offset_y: i16 = 1;
+        var offset_y: i16 = 1 - tree_scrollbar.control.scroll_bar.level;
         renderSidePanel(
             fb.view(main_window.tree_view.bounds.shrink(3)),
             &index.root,
