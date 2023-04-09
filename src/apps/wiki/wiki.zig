@@ -264,7 +264,7 @@ fn paintApp(window: *const Window, index: *const Index, maybe_page: *?Document) 
     main_window.interface.paint(fb);
 
     {
-        var offset_y: i16 = 1 - tree_scrollbar.control.scroll_bar.level;
+        var offset_y: i16 = 1 - @as(i16, tree_scrollbar.control.scroll_bar.level);
         renderSidePanel(
             fb.view(main_window.tree_view.bounds.shrink(3)),
             &index.root,

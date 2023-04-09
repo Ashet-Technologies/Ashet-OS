@@ -46,7 +46,25 @@ pub fn main() !void {
     var thread = try std.Thread.spawn(.{}, appThread, .{});
     thread.detach();
 
+    var next_dump = std.time.nanoTimestamp() + std.time.ns_per_s;
+
     while (true) {
+        if (std.time.nanoTimestamp() > next_dump) {
+            next_dump += std.time.ns_per_s;
+
+            iop_schedule_queue.mutex.lock();
+            defer iop_schedule_queue.mutex.unlock();
+
+            var it = iop_schedule_queue.head;
+            while (it) |node| : (it = node.next) {
+                std.log.info("waiting iop: {}", .{node.type});
+            }
+
+            std.log.info("waiting iops: {}", .{@atomicLoad(u32, &iops_waiting, .SeqCst)});
+        }
+
+        var deferred_iops_start: ?*abi.IOP = null;
+        var deferred_iops_end: ?*abi.IOP = null;
         while (iop_schedule_queue.popItem()) |raw_iop| {
             const type_map = .{
                 // Timer
@@ -105,12 +123,31 @@ pub fn main() !void {
                     if (err_or_result) |result| {
                         finalizeWithResult(iop, result);
                     } else |err| {
-                        if (err == error.WouldBlock)
+                        if (err == error.WouldBlock) {
+                            // std.log.info("blocking on {}...", .{raw_iop.type});
+                            raw_iop.next = null;
+                            if (deferred_iops_start == null) {
+                                deferred_iops_start = raw_iop;
+                                deferred_iops_end = raw_iop;
+                            } else {
+                                deferred_iops_end.?.next = raw_iop;
+                                deferred_iops_end = raw_iop;
+                            }
                             continue;
+                        } else {
+                            std.log.err("iop {s} failed: {s}", .{
+                                @tagName(raw_iop.type),
+                                @errorName(err),
+                            });
+                        }
                         finalizeWithError(iop, err);
                     }
                 },
             }
+        }
+
+        if (deferred_iops_start) |start| {
+            iop_schedule_queue.appendList(start, false);
         }
 
         {
@@ -122,16 +159,99 @@ pub fn main() !void {
                 if (event.type == sdl.SDL_QUIT) {
                     std.os.exit(0);
                 }
-                // TODO: Handle windowing events
+                switch (event.type) {
+                    sdl.SDL_QUIT => unreachable,
+
+                    sdl.SDL_MOUSEBUTTONDOWN => {
+                        const window = windowFromSdl(event.button.windowID);
+
+                        window.pushEvent(.{ .mouse = .{
+                            .type = .button_press,
+                            .x = @intCast(i16, event.button.x),
+                            .y = @intCast(i16, event.button.y),
+                            .dx = 0,
+                            .dy = 0,
+                            .button = mapMouseButton(event.button.button) orelse continue,
+                        } });
+                    },
+                    sdl.SDL_MOUSEBUTTONUP => {
+                        const window = windowFromSdl(event.button.windowID);
+                        window.pushEvent(.{ .mouse = .{
+                            .type = .button_release,
+                            .x = @intCast(i16, event.button.x),
+                            .y = @intCast(i16, event.button.y),
+                            .dx = 0,
+                            .dy = 0,
+                            .button = mapMouseButton(event.button.button) orelse continue,
+                        } });
+                    },
+                    sdl.SDL_MOUSEWHEEL => {
+                        const window = windowFromSdl(event.wheel.windowID);
+                        if (event.wheel.y < 0) {
+                            window.pushEvent(.{ .mouse = .{
+                                .type = .button_release,
+                                .x = @intCast(i16, event.wheel.x),
+                                .y = @intCast(i16, event.wheel.y),
+                                .dx = 0,
+                                .dy = 0,
+                                .button = .wheel_down,
+                            } });
+                        }
+                        if (event.wheel.y > 0) {
+                            window.pushEvent(.{ .mouse = .{
+                                .type = .button_release,
+                                .x = @intCast(i16, event.wheel.x),
+                                .y = @intCast(i16, event.wheel.y),
+                                .dx = 0,
+                                .dy = 0,
+                                .button = .wheel_up,
+                            } });
+                        }
+                    },
+                    sdl.SDL_MOUSEMOTION => {
+                        const window = windowFromSdl(event.motion.windowID);
+                        if (event.wheel.y > 0) {
+                            window.pushEvent(.{ .mouse = .{
+                                .type = .motion,
+                                .x = @intCast(i16, event.motion.x),
+                                .y = @intCast(i16, event.motion.y),
+                                .dx = @intCast(i16, event.motion.xrel),
+                                .dy = @intCast(i16, event.motion.yrel),
+                                .button = .none,
+                            } });
+                        }
+                    },
+
+                    sdl.SDL_WINDOWEVENT => {
+                        const window = windowFromSdl(event.window.windowID);
+
+                        var w: c_int = 0;
+                        var h: c_int = 0;
+                        sdl.SDL_GetWindowSize(window.sdl_window, &w, &h);
+                        window.abi_window.client_rectangle.width = @intCast(u16, w);
+                        window.abi_window.client_rectangle.height = @intCast(u16, h);
+
+                        switch (event.window.event) {
+                            sdl.SDL_WINDOWEVENT_MOVED => window.pushEvent(.window_moved),
+                            sdl.SDL_WINDOWEVENT_RESIZED, sdl.SDL_WINDOWEVENT_SIZE_CHANGED => {
+                                window.pushEvent(.window_resizing);
+                                window.pushEvent(.window_resized);
+                            },
+                            sdl.SDL_WINDOWEVENT_CLOSE => window.pushEvent(.window_close),
+
+                            else => {},
+                        }
+
+                        //
+                    },
+
+                    else => {},
+                }
             }
 
             var iter = Window.all_windows.first;
             while (iter) |window_node| : (iter = window_node.next) {
                 const window: *Window = &window_node.data;
-
-                for (window.rgba_storage, window.index_storage) |*color, index| {
-                    color.* = palette[@enumToInt(index)];
-                }
 
                 _ = sdl.SDL_UpdateTexture(
                     window.sdl_texture,
@@ -158,6 +278,26 @@ pub fn main() !void {
     }
 }
 
+fn windowFromSdl(id: u32) *Window {
+    var iter = Window.all_windows.first;
+    while (iter) |window_node| : (iter = window_node.next) {
+        const window: *Window = &window_node.data;
+        if (sdl.SDL_GetWindowID(window.sdl_window) == id)
+            return window;
+    }
+    unreachable;
+}
+fn mapMouseButton(in: c_int) ?abi.MouseButton {
+    return switch (in) {
+        sdl.SDL_BUTTON_LEFT => .left,
+        sdl.SDL_BUTTON_RIGHT => .right,
+        sdl.SDL_BUTTON_MIDDLE => .middle,
+        sdl.SDL_BUTTON_X1 => .nav_previous,
+        sdl.SDL_BUTTON_X2 => .nav_next,
+        else => null,
+    };
+}
+
 var iops_waiting: u32 = 0;
 
 const iop_schedule_queue = struct {
@@ -165,7 +305,7 @@ const iop_schedule_queue = struct {
     var head: ?*abi.IOP = null;
     var tail: ?*abi.IOP = null;
 
-    pub fn appendList(list: ?*abi.IOP) void {
+    pub fn appendList(list: ?*abi.IOP, increment: bool) void {
         mutex.lock();
         defer mutex.unlock();
 
@@ -180,7 +320,9 @@ const iop_schedule_queue = struct {
                 tail.?.next = item;
                 tail = item;
             }
-            _ = @atomicRmw(u32, &iops_waiting, .Add, 1, .SeqCst);
+
+            if (increment)
+                _ = @atomicRmw(u32, &iops_waiting, .Add, 1, .SeqCst);
         }
     }
 
@@ -190,7 +332,7 @@ const iop_schedule_queue = struct {
 
         const h = head orelse return null;
         head = h.next;
-        if (tail == h) {
+        if (head == null) {
             tail = null;
         }
         h.next = null;
@@ -345,9 +487,15 @@ const iop_handlers = struct {
 
     pub fn ui_get_event(iop: *abi.ui.GetEvent) IopReturnType(abi.ui.GetEvent) {
         const window = Window.fromAbi(iop.inputs.window);
+        const event = window.popEvent() orelse return error.WouldBlock;
 
         return .{
-            .event = window.popEvent() orelse return error.WouldBlock,
+            .event_type = event,
+            .event = switch (event) {
+                .mouse => |data| .{ .mouse = data },
+                .keyboard => |data| .{ .keyboard = data },
+                else => undefined,
+            },
         };
     }
 
@@ -717,6 +865,18 @@ fn video_getPalette(pal: *[256]abi.Color) callconv(.C) void {
     pal.* = palette;
 }
 
+const UiEvent = union(abi.UiEventType) {
+    mouse: abi.MouseEvent,
+    keyboard: abi.KeyboardEvent,
+    window_close,
+    window_minimize,
+    window_restore,
+    window_moving,
+    window_moved,
+    window_resizing,
+    window_resized,
+};
+
 const Window = struct {
     var all_windows = std.TailQueue(Window){};
     var queue_lock: std.Thread.Mutex = .{};
@@ -733,24 +893,25 @@ const Window = struct {
     index_storage: []abi.ColorIndex,
 
     mutex: std.Thread.Mutex = .{},
-    events: std.TailQueue(abi.UiEvent) = .{},
-    pool: std.heap.MemoryPool(std.TailQueue(abi.UiEvent).Node),
+    events: std.TailQueue(UiEvent) = .{},
+    pool: std.heap.MemoryPool(std.TailQueue(UiEvent).Node),
 
     fn fromAbi(win: *const abi.Window) *Window {
         const ptr = @fieldParentPtr(Window, "abi_window", win);
         return @constCast(ptr);
     }
 
-    pub fn pushEvent(window: *Window, evt: abi.UiEvent) void {
+    pub fn pushEvent(window: *Window, evt: UiEvent) void {
         window.mutex.lock();
         defer window.mutex.unlock();
 
         const node = window.pool.create() catch return;
         node.* = .{ .data = evt };
         window.events.append(node);
+        // std.log.info("queue size up to {}", .{window.events.len});
     }
 
-    pub fn popEvent(window: *Window) ?abi.UiEvent {
+    pub fn popEvent(window: *Window) ?UiEvent {
         window.mutex.lock();
         defer window.mutex.unlock();
 
@@ -759,6 +920,8 @@ const Window = struct {
         const evt = node.data;
 
         window.pool.destroy(node);
+
+        // std.log.info("queue size down to {}", .{window.events.len});
 
         return evt;
     }
@@ -794,7 +957,7 @@ const Window = struct {
             .sdl_texture = undefined,
             .rgba_storage = undefined,
             .index_storage = undefined,
-            .pool = std.heap.MemoryPool(std.TailQueue(abi.UiEvent).Node).init(allocator),
+            .pool = std.heap.MemoryPool(std.TailQueue(UiEvent).Node).init(allocator),
         };
         errdefer window.pool.deinit();
 
@@ -892,11 +1055,14 @@ fn ui_setWindowTitle(window: *const abi.Window, title: [*]const u8, title_len: u
     @panic("ui_setWindowTitle not implemented yet!");
 }
 
-fn ui_invalidate(window: *const abi.Window, rect: abi.Rectangle) callconv(.C) void {
-    _ = window;
+fn ui_invalidate(abi_window: *const abi.Window, rect: abi.Rectangle) callconv(.C) void {
     _ = rect;
-    // @panic("ui_invalidate not implemented yet!");
 
+    const window = Window.fromAbi(abi_window);
+
+    for (window.rgba_storage, window.index_storage) |*color, index| {
+        color.* = palette[@enumToInt(index)];
+    }
 }
 
 fn network_udp_createSocket(result: *abi.UdpSocket) callconv(.C) abi.udp.CreateError.Enum {
@@ -920,7 +1086,7 @@ fn network_tcp_destroySocket(sock: abi.TcpSocket) callconv(.C) void {
 }
 
 fn io_scheduleAndAwait(new_tasks: ?*abi.IOP, wait: abi.WaitIO) callconv(.C) ?*abi.IOP {
-    iop_schedule_queue.appendList(new_tasks);
+    iop_schedule_queue.appendList(new_tasks, true);
 
     switch (wait) {
         .dont_block => {
