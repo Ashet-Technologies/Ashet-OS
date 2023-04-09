@@ -249,7 +249,7 @@ fn doLayout(window: *const Window, index: *const Index) void {
         &treeview_height,
     );
 
-    tree_scrollbar.control.scroll_bar.range = @intCast(u15, @intCast(u16, treeview_height) -| (main_window.tree_view.bounds.height -| 6));
+    tree_scrollbar.control.scroll_bar.setRange(@intCast(u15, @intCast(u16, treeview_height) -| (main_window.tree_view.bounds.height -| 6)));
 
     // tree_scrollbar
 
@@ -328,7 +328,7 @@ fn renderSidePanel(fb: gui.Framebuffer, list: *const Index.List, leaf: ?*const I
 }
 
 fn getClickedLeaf(index: *const Index, testpoint: Point) ?*const Index.Leaf {
-    var offset_y: i16 = 1;
+    var offset_y: i16 = @as(i16, 1) -| tree_scrollbar.control.scroll_bar.level;
     return getClickedLeafInner(
         &index.root,
         testpoint,

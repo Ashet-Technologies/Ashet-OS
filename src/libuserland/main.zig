@@ -821,7 +821,7 @@ pub const syscall_table: abi.SysCallTable = .{
 };
 
 fn process_yield() callconv(.C) void {
-    // this is a nop on a preemptive os
+    std.Thread.yield() catch {};
 }
 
 fn process_exit(exit_code: u32) callconv(.C) noreturn {
@@ -902,12 +902,18 @@ const Window = struct {
     }
 
     pub fn pushEvent(window: *Window, evt: UiEvent) void {
-        window.mutex.lock();
-        defer window.mutex.unlock();
+        {
+            window.mutex.lock();
+            defer window.mutex.unlock();
 
-        const node = window.pool.create() catch return;
-        node.* = .{ .data = evt };
-        window.events.append(node);
+            const node = window.pool.create() catch return;
+            node.* = .{ .data = evt };
+            window.events.append(node);
+        }
+
+        if (window.events.len > 32)
+            _ = window.popEvent(); // discard events that have started piling up
+
         // std.log.info("queue size up to {}", .{window.events.len});
     }
 

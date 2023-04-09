@@ -1052,6 +1052,11 @@ pub const ScrollBar = struct {
         }
     }
 
+    pub fn setRange(bar: *ScrollBar, range: u15) void {
+        bar.range = range;
+        bar.level = std.math.clamp(bar.level, 0, bar.range);
+    }
+
     const Boxes = struct {
         decrease_button: Rectangle,
         scroll_area: Rectangle,
