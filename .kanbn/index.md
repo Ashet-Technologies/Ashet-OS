@@ -10,12 +10,12 @@ completedColumns:
 ## Todo
 
 - [create-new-fat32-driver](tasks/create-new-fat32-driver.md)
-- [port-file-system-apis-to-iop](tasks/port-file-system-apis-to-iop.md)
 - [port-ashet-os-to-arm](tasks/port-ashet-os-to-arm.md)
 
 ## In Progress
 
 - [port-ashet-os-to-x86-i486](tasks/port-ashet-os-to-x86-i486.md)
+- [port-file-system-apis-to-iop](tasks/port-file-system-apis-to-iop.md)
 
 ## Done
 

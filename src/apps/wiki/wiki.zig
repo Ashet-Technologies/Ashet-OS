@@ -169,6 +169,8 @@ const WikiSoftware = struct {
 
             doc_h_scrollbar.control.scroll_bar.setRange(@intCast(u15, @intCast(u16, doc_size.width) -| bounds.width));
             doc_v_scrollbar.control.scroll_bar.setRange(@intCast(u15, @intCast(u16, doc_size.height) -| bounds.height));
+
+            doc_v_scrollbar.control.scroll_bar.setRange(500);
         } else {
             doc_h_scrollbar.control.scroll_bar.setRange(0);
             doc_v_scrollbar.control.scroll_bar.setRange(0);
@@ -203,7 +205,7 @@ const WikiSoftware = struct {
                 doc_fb,
                 page.hyperdoc,
                 theme.wiki,
-                0,
+                doc_v_scrollbar.control.scroll_bar.level,
                 page,
                 linkCallback,
             );

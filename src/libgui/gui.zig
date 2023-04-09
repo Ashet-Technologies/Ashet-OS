@@ -478,7 +478,7 @@ pub const Interface = struct {
                     var edit_view = target.view(Rectangle{
                         .x = b.x + 1,
                         .y = b.y + 1,
-                        .width = b.width - 2,
+                        .width = b.width -| 2,
                         .height = 9,
                     });
 

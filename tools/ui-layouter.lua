@@ -260,6 +260,8 @@ end
 
 all_icons = {}
 
+local additional_code_lines = {}
+
 do
   local function appendIcon(path)
     local name = path:match("[%w-_]+")
@@ -276,6 +278,25 @@ do
 
   function ToolButton(props)
     props.class_init = string.format("gui.ToolButton.new(69, 42, icons.%s)", appendIcon(props.icon))
+    return LayoutObject({ width = 12, height = 12 }, props)
+  end
+
+  function TextBox(props)
+    local initial = props.initial or ""
+    local buffer_id = #additional_code_lines
+
+    local buffer_len = props.max_len or 100
+
+    if #initial > buffer_len then
+      error("initial textbox buffer too long!")
+    end
+
+    local buffer_name = string.format("textbox_buffer_%d", buffer_id);
+
+    table.insert(additional_code_lines, string.format("var %s: [%d]u8 = undefined;", buffer_name, buffer_len))
+
+    props.class_init =
+      string.format("gui.TextBox.new(69, 42, 100, &%s, \"%s\") catch unreachable", buffer_name, initial)
     return LayoutObject({ width = 12, height = 12 }, props)
   end
 
@@ -428,6 +449,13 @@ do
   end
 
   f:write("};\n")
+
+  if #additional_code_lines > 0 then
+    f:write("\n")
+    for i = 1, #additional_code_lines do
+      f:write(additional_code_lines[i], "\n")
+    end
+  end
 
   f:write("\n")
   for key, obj in pairs(named_objects) do

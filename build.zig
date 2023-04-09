@@ -418,14 +418,8 @@ pub fn build(b: *std.Build) !void {
                         .dependencies = &.{},
                     }),
                 },
-                .{
-                    .name = "system-assets",
-                    .module = b.createModule(.{
-                        .source_file = system_icons.getOutput(),
-                        .dependencies = &.{},
-                    }),
-                },
                 .{ .name = "hypertext", .module = mod_libhypertext },
+                .{ .name = "main_window_layout", .module = ui_gen.render(.{ .path = b.pathFromRoot("src/apps/browser/main_window.lua") }) },
             });
         }
 

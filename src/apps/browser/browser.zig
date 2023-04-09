@@ -18,49 +18,50 @@ const std = @import("std");
 const ashet = @import("ashet");
 const gui = @import("ashet-gui");
 const system_assets = @import("system-assets");
+const main_window = @import("main_window_layout");
 
 const ColorIndex = ashet.abi.ColorIndex;
 
 pub usingnamespace ashet.core;
 
-var tb_url_field_backing: [64]u8 = undefined;
-var tb_passwd_backing: [64]u8 = undefined;
+// var tb_url_field_backing: [64]u8 = undefined;
+// var tb_passwd_backing: [64]u8 = undefined;
 
-var interface = gui.Interface{ .widgets = &widgets };
+// var interface = gui.Interface{ .widgets = &widgets };
 
-const icons = struct {
-    const back = gui.Bitmap.embed(system_assets.@"back.abm").bitmap;
-    const forward = gui.Bitmap.embed(system_assets.@"forward.abm").bitmap;
-    const reload = gui.Bitmap.embed(system_assets.@"reload.abm").bitmap;
-    const home = gui.Bitmap.embed(system_assets.@"home.abm").bitmap;
-    const go = gui.Bitmap.embed(system_assets.@"go.abm").bitmap;
-    const stop = gui.Bitmap.embed(system_assets.@"stop.abm").bitmap;
-    const menu = gui.Bitmap.embed(system_assets.@"menu.abm").bitmap;
-};
+// const icons = struct {
+//     const back = gui.Bitmap.embed(system_assets.@"back.abm").bitmap;
+//     const forward = gui.Bitmap.embed(system_assets.@"forward.abm").bitmap;
+//     const reload = gui.Bitmap.embed(system_assets.@"reload.abm").bitmap;
+//     const home = gui.Bitmap.embed(system_assets.@"home.abm").bitmap;
+//     const go = gui.Bitmap.embed(system_assets.@"go.abm").bitmap;
+//     const stop = gui.Bitmap.embed(system_assets.@"stop.abm").bitmap;
+//     const menu = gui.Bitmap.embed(system_assets.@"menu.abm").bitmap;
+// };
 
-var address_bar_buffer: [1024]u8 = undefined;
+// var address_bar_buffer: [1024]u8 = undefined;
 
-var widgets = [_]gui.Widget{
-    gui.Panel.new(5, 5, 172, 57), // 0: coolbar
-    gui.ToolButton.new(69, 42, icons.back), // 1: coolbar: backward
-    gui.ToolButton.new(69, 42, icons.forward), // 2: coolbar: forward
-    gui.ToolButton.new(69, 42, icons.reload), // 3: coolbar: reload
-    gui.ToolButton.new(69, 42, icons.home), // 4: coolbar: home
-    gui.TextBox.new(69, 42, 100, &address_bar_buffer, "") catch unreachable, // 5: coolbar: address
-    gui.ToolButton.new(69, 42, icons.go), // 6: coolbar: go
-    gui.ToolButton.new(69, 42, icons.menu), // 7: coolbar: app menu
-    gui.ScrollBar.new(0, 0, .vertical, 100, 1000), // 8: scrollbar
-    gui.ScrollBar.new(0, 0, .horizontal, 100, 1000), // 8: scrollbar
-};
+// var widgets = [_]gui.Widget{
+//     gui.Panel.new(5, 5, 172, 57), // 0: coolbar
+//     gui.ToolButton.new(69, 42, icons.back), // 1: coolbar: backward
+//     gui.ToolButton.new(69, 42, icons.forward), // 2: coolbar: forward
+//     gui.ToolButton.new(69, 42, icons.reload), // 3: coolbar: reload
+//     gui.ToolButton.new(69, 42, icons.home), // 4: coolbar: home
+//     gui.TextBox.new(69, 42, 100, &address_bar_buffer, "") catch unreachable, // 5: coolbar: address
+//     gui.ToolButton.new(69, 42, icons.go), // 6: coolbar: go
+//     gui.ToolButton.new(69, 42, icons.menu), // 7: coolbar: app menu
+//     gui.ScrollBar.new(0, 0, .vertical, 100, 1000), // 8: scrollbar
+//     gui.ScrollBar.new(0, 0, .horizontal, 100, 1000), // 8: scrollbar
+// };
 
 fn initWidgets() !void {
-    widgets[1].control.tool_button.clickEvent = gui.Event.new(gui.EventID.from(.coolbar_backward));
-    widgets[2].control.tool_button.clickEvent = gui.Event.new(gui.EventID.from(.coolbar_forward));
-    widgets[3].control.tool_button.clickEvent = gui.Event.new(gui.EventID.from(.coolbar_reload));
-    widgets[4].control.tool_button.clickEvent = gui.Event.new(gui.EventID.from(.coolbar_home));
-    // widgets[5].control.text_box.clickEvent = gui.Event.new(gui.EventID.from(.coolbar_address));
-    widgets[6].control.tool_button.clickEvent = gui.Event.new(gui.EventID.from(.coolbar_go));
-    widgets[7].control.tool_button.clickEvent = gui.Event.new(gui.EventID.from(.coolbar_app_menu));
+    main_window.coolbar_backward.control.tool_button.clickEvent = gui.Event.new(gui.EventID.from(.coolbar_backward));
+    main_window.coolbar_forward.control.tool_button.clickEvent = gui.Event.new(gui.EventID.from(.coolbar_forward));
+    main_window.coolbar_reload.control.tool_button.clickEvent = gui.Event.new(gui.EventID.from(.coolbar_reload));
+    main_window.coolbar_home.control.tool_button.clickEvent = gui.Event.new(gui.EventID.from(.coolbar_home));
+    // main_window.coolbar_address.control.text_box.clickEvent = gui.Event.new(gui.EventID.from(.coolbar_address));
+    main_window.coolbar_go.control.tool_button.clickEvent = gui.Event.new(gui.EventID.from(.coolbar_go));
+    main_window.coolbar_app_menu.control.tool_button.clickEvent = gui.Event.new(gui.EventID.from(.coolbar_app_menu));
 }
 
 pub fn main() !void {
@@ -75,7 +76,7 @@ pub fn main() !void {
     );
     defer ashet.ui.destroyWindow(window);
 
-    layout(window);
+    main_window.layout(window);
 
     paint(window);
 
@@ -83,12 +84,12 @@ pub fn main() !void {
         const event = ashet.ui.getEvent(window);
         switch (event) {
             .mouse => |data| {
-                if (interface.sendMouseEvent(data)) |guievt|
+                if (main_window.interface.sendMouseEvent(data)) |guievt|
                     handleEvent(guievt);
                 paint(window);
             },
             .keyboard => |data| {
-                if (interface.sendKeyboardEvent(data)) |guievt|
+                if (main_window.interface.sendKeyboardEvent(data)) |guievt|
                     handleEvent(guievt);
                 paint(window);
             },
@@ -98,11 +99,11 @@ pub fn main() !void {
             .window_moving => {},
             .window_moved => {},
             .window_resizing => {
-                layout(window);
+                main_window.layout(window);
                 paint(window);
             },
             .window_resized => {
-                layout(window);
+                main_window.layout(window);
                 paint(window);
             },
         }
@@ -130,25 +131,6 @@ fn newRect(x: i15, y: i15, w: u16, h: u16) ashet.abi.Rectangle {
     };
 }
 
-fn layout(window: *const ashet.ui.Window) void {
-    const size = window.client_rectangle.size();
-
-    widgets[0].bounds = newRect(0, 0, size.width, 24);
-
-    widgets[1].bounds = newRect(3, 3, 18, 18); // 1: coolbar: backward
-    widgets[2].bounds = newRect(23, 3, 18, 18); // 2: coolbar: forward
-    widgets[3].bounds = newRect(43, 3, 18, 18); // 3: coolbar: reload
-    widgets[4].bounds = newRect(63, 3, 18, 18); // 4: coolbar: home
-
-    widgets[6].bounds = newRect(@intCast(u14, size.width) - 38 - 3, 3, 18, 18); // 6: coolbar: go
-    widgets[7].bounds = newRect(@intCast(u14, size.width) - 18 - 3, 3, 18, 18); // 7: coolbar: app menu
-
-    widgets[5].bounds = newRect(83, 6, @intCast(u15, widgets[6].bounds.x - 86), widgets[5].bounds.height); // 5: coolbar: address
-
-    widgets[8].bounds = newRect(@intCast(i15, size.width - widgets[8].bounds.width + 1), @intCast(i15, widgets[0].bounds.height), widgets[8].bounds.width, size.height - widgets[0].bounds.height - 10); // 8: scrollbar
-    widgets[9].bounds = newRect(0, @intCast(i15, size.height - widgets[9].bounds.height + 1), size.width - 10, widgets[9].bounds.height); // 9: scrollbar
-}
-
 fn paint(window: *const ashet.ui.Window) void {
     var fb = gui.Framebuffer.forWindow(window);
 
@@ -163,7 +145,7 @@ fn paint(window: *const ashet.ui.Window) void {
         ashet.abi.ColorIndex.get(2),
     );
 
-    interface.paint(fb);
+    main_window.interface.paint(fb);
 
     ashet.ui.invalidate(window, newRect(0, 0, window.client_rectangle.width, window.client_rectangle.height));
 }
