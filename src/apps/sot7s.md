@@ -13,7 +13,9 @@ You can play as a terran or roamer that just got hold of their first ship.
 - You can own more than one ship
 - 4X-style game
 - Fly your own ship
-- Inspiration source is X²
+- Inspiration sources
+    - X²
+    - Elite
 - Different ship classes
 - Only play humans
 - Use AI generated content
