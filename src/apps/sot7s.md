@@ -9,6 +9,7 @@ You can play as a terran or roamer that just got hold of their first ship.
 ## Brainstorming
 
 - 2D graphics
+    - Fake 3D space view with sprites at projected positions
 - You can own more than one ship
 - 4X-style game
 - Fly your own ship
