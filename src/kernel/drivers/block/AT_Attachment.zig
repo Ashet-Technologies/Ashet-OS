@@ -205,7 +205,7 @@ fn readBlocks(device: AT_Attachment, lba: u24, buffer: []u8) BlockDevice.ReadErr
     device.setupParameters(lba, blockCount);
     x86.out(u8, ports.cmd, 0x20);
 
-    @memset(buffer.ptr, undefined, buffer.len);
+    @memset(buffer, undefined);
 
     var current_block = buffer.ptr;
 

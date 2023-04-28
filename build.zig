@@ -39,7 +39,7 @@ const AshetContext = struct {
 
             exe.linkSystemLibrary("sdl2");
             exe.linkLibC();
-            exe.install();
+            ctx.b.installArtifact(exe);
         } else {
             exe.addModule("ashet", ctx.b.modules.get("ashet").?);
             exe.addModule("ashet-gui", ctx.b.modules.get("ashet-gui").?); // just add GUI to all apps by default *shrug*
@@ -109,7 +109,7 @@ const UiGenerator = struct {
     mod_system_assets: *std.Build.Module,
 
     pub fn render(gen: @This(), input: std.Build.FileSource) *std.Build.Module {
-        const runner = gen.lua.run();
+        const runner = gen.builder.addRunArtifact(gen.lua);
         runner.cwd = gen.builder.pathFromRoot(".");
         runner.addFileSourceArg(.{ .path = gen.builder.pathFromRoot("tools/ui-layouter.lua") });
         runner.addFileSourceArg(input);
@@ -194,7 +194,7 @@ pub fn build(b: *std.Build) !void {
         .root_source_file = .{ .path = "src/libafs/afs-tool.zig" },
     });
     afs_tool.addModule("args", mod_args);
-    afs_tool.install();
+    b.installArtifact(afs_tool);
 
     const tools_step = b.step("tools", "Builds the build and debug tools");
 
@@ -203,13 +203,13 @@ pub fn build(b: *std.Build) !void {
     // const fatfs_module = FatFS.createModule(b, fatfs_config);
 
     const bmpconv = BitmapConverter.init(b);
-    bmpconv.converter.install();
+    b.installArtifact(bmpconv.converter);
     {
         const tool_extract_icon = b.addExecutable(.{ .name = "tool_extract_icon", .root_source_file = .{ .path = "tools/extract-icon.zig" } });
         tool_extract_icon.addModule("zigimg", mod_zigimg);
         tool_extract_icon.addModule("ashet-abi", mod_ashet_abi);
         tool_extract_icon.addModule("args", mod_args);
-        tool_extract_icon.install();
+        b.installArtifact(tool_extract_icon);
     }
 
     const system_icons = AssetBundleStep.create(b);
@@ -323,7 +323,7 @@ pub fn build(b: *std.Build) !void {
             });
             // kernel_exe.addModule("fatfs", fatfs_module);
             kernel_exe.setLinkerScriptPath(.{ .path = machine_spec.linker_script });
-            kernel_exe.install();
+            b.installArtifact(kernel_exe);
 
             kernel_exe.addSystemIncludePath("vendor/ziglibc/inc/libc");
 
@@ -337,7 +337,7 @@ pub fn build(b: *std.Build) !void {
                 .target = kernel_exe.target,
                 .optimize = .ReleaseSafe,
             });
-            kernel_libc.install();
+            b.installArtifact(kernel_libc);
 
             kernel_exe.linkLibrary(kernel_libc);
 
@@ -467,7 +467,7 @@ pub fn build(b: *std.Build) !void {
         wikitool.addModule("ashet", mod_libashet);
         wikitool.addModule("ashet-gui", mod_ashet_gui);
 
-        wikitool.install();
+        b.installArtifact(wikitool);
     }
 
     if (b.option([]const u8, "test-ui", "If set to a file, will compile the ui-layout-tester tool based on the file passed")) |file_name| {
@@ -481,7 +481,7 @@ pub fn build(b: *std.Build) !void {
         ui_tester.addModule("ui-layout", ui_gen.render(.{ .path = b.pathFromRoot(file_name) }));
 
         ui_tester.linkSystemLibrary("sdl2");
-        ui_tester.install();
+        b.installArtifact(ui_tester);
         ui_tester.linkLibC();
     }
 
@@ -510,18 +510,20 @@ pub fn build(b: *std.Build) !void {
     }
 
     const test_step = b.step("test", "Run unit tests on the standard library");
-    test_step.dependOn(&std_tests.run().step);
-    test_step.dependOn(&gui_tests.run().step);
-    test_step.dependOn(&fs_tests.run().step);
+    test_step.dependOn(&b.addRunArtifact(std_tests).step);
+    test_step.dependOn(&b.addRunArtifact(gui_tests).step);
+    test_step.dependOn(&b.addRunArtifact(fs_tests).step);
     {
         const debug_filter = b.addExecutable(.{
             .name = "debug-filter",
             .root_source_file = .{ .path = "tools/debug-filter.zig" },
         });
         debug_filter.linkLibC();
-        debug_filter.install();
+        const install_step = b.addInstallArtifact(debug_filter);
 
-        tools_step.dependOn(&debug_filter.install_step.?.step);
+        b.getInstallStep().dependOn(&install_step.step);
+
+        tools_step.dependOn(&install_step.step);
     }
 
     // {
@@ -688,7 +690,7 @@ const BitmapConverter = struct {
     };
 
     pub fn convert(conv: BitmapConverter, source: std.Build.FileSource, basename: []const u8, options: Options) std.Build.FileSource {
-        const mkicon = conv.converter.run();
+        const mkicon = conv.builder.addRunArtifact(conv.converter);
 
         mkicon.addFileSourceArg(source);
 

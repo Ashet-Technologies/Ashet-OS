@@ -20,8 +20,8 @@
             .hash = "122027ac1660eefed1637451e780c785c093484c88a7c9d8c7b8e1fd2d7e35567ef5",
         },
         .lua = .{
-            .url = "https://github.com/MasterQ32/lua/archive/e3a9698a282cce60a887df51444165dd31adae5b.tar.gz",
-            .hash = "12208d05da7f32d6f370833c3547793ca054cc00a0e7cd0086d233bacdd5b63722c6",
+            .url = "https://github.com/MasterQ32/lua/archive/f4961d6655d0ea0e849ec5ac007747f725d17804.tar.gz",
+            .hash = "122062883cd056cfd1f06a106dd742b63bf355f3b8e07e8a74befbda20b1ae0d616f",
         },
     },
 }
