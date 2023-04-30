@@ -42,11 +42,36 @@ disk_size=33554432
 
 fallocate -l "${disk_size}" "${DISK}"
 
-# copy system root
-"${ROOT}/zig-out/bin/afs-tool" format --verbose --image "${DISK}" "${ROOT}/rootfs"
+rootfs="ashet-fs"
+case $MACHINE in
+    *_pc)
+        rootfs="fat32"
+        ;;
+esac
 
-# install applications
-"${ROOT}/zig-out/bin/afs-tool" put --verbose --image "${DISK}" --recursive "${ROOT}/zig-out/apps" "/apps"
+echo "rootfs = ${rootfs}"
+
+case $rootfs in
+    afs)
+        # copy system root
+        "${ROOT}/zig-out/bin/afs-tool" format --verbose --image "${DISK}" "${ROOT}/rootfs"
+
+        # install applications
+        "${ROOT}/zig-out/bin/afs-tool" put --verbose --image "${DISK}" --recursive "${ROOT}/zig-out/apps" "/apps"
+
+        ;;
+    
+    fat32)
+        ./zig-out/bin/init-disk "${DISK}"
+        mcopy -i "${DISK}" "${ROOT}/zig-out/apps" ::
+        mcopy -i "${DISK}" "${ROOT}/zig-out/apps/"* ::/apps
+        ;;
+    
+    *)
+        echo "Unsupported filesystem $rootfs"
+        exit 1
+        ;;
+esac
 
 echo "----------------------"
 
@@ -87,7 +112,7 @@ case $MACHINE in
         # Install syslinux and kernel:
         mcopy -i "${DISK}" rootfs-x86/* ::
         mcopy -i "${DISK}" ./zig-out/bin/ashet-os ::/ashet-os
-            
+        
         syslinux --install "${DISK}"
 
         qemu-system-i386 ${qemu_generic_flags} \
@@ -95,7 +120,8 @@ case $MACHINE in
           -cpu 486 \
           -hda "${DISK}" \
           -vga std \
-          -s "$@"
+          -s "$@" \
+        | llvm-addr2line -e "${APP}"
         ;;
         # -device bochs-display,xres=800,yres=600 \
         # -device VGA,xres=800,yres=600,xmax=800,ymax=600 \

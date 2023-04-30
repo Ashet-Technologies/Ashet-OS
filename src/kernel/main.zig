@@ -57,6 +57,10 @@ export fn ashet_kernelMain() void {
 }
 
 fn main() !void {
+    // Before we initialize the hardware, we already add hardware independent drivers
+    // for stuff like file systems, virtual block devices and so on...
+    drivers.installBuiltinDrivers();
+
     // Initialize the hardware into a well-defined state. After this, we can safely perform I/O ops.
     // This will install all relevant drivers, set up interrupts if necessary and so on.
     try machine.initialize();

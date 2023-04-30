@@ -12,6 +12,11 @@ pub const serial = struct {
     pub const ns16c550 = @import("serial/ns16c550.zig");
 };
 
+pub const filesystem = struct {
+    pub const AshetFS = @import("filesystem/AshetFS.zig");
+    pub const VFAT = @import("filesystem/VFAT.zig");
+};
+
 pub const rtc = struct {
     pub const Dummy = @import("rtc/Dummy.zig");
     pub const CMOS = @import("rtc/CMOS.zig");
@@ -114,6 +119,7 @@ pub const DriverClass = enum {
     input,
     serial,
     network,
+    filesystem,
 };
 
 pub const DriverInterface = union(DriverClass) {
@@ -124,6 +130,7 @@ pub const DriverInterface = union(DriverClass) {
     input: InputDevice,
     serial: SerialPort,
     network: NetworkInterface,
+    filesystem: FileSystemDriver,
 };
 
 pub fn resolveDriver(comptime class: DriverClass, ptr: *ResolvedDriverInterface(class)) *Driver {
@@ -202,6 +209,150 @@ pub const InputDevice = struct {
     }
 };
 
+pub const FileSystemDriver = struct {
+    pub const CreateError = error{
+        /// Returned when the filesystem cannot be identified,
+        NoFilesystem,
+
+        /// Returned when the driver assumes that the device has the
+        /// correct filesystem, but it is corrupt.
+        CorruptFileSystem,
+
+        /// The underlying block device failed,
+        DeviceError,
+
+        /// An allocation failed
+        OutOfMemory,
+    };
+
+    createInstanceFn: *const fn (*Driver, std.mem.Allocator, *BlockDevice) CreateError!*Instance,
+    destroyInstanceFn: *const fn (*Driver, std.mem.Allocator, *Instance) void,
+
+    pub fn createInstance(dri: *FileSystemDriver, allocator: std.mem.Allocator, block_device: *BlockDevice) CreateError!*Instance {
+        return dri.createInstanceFn(resolveDriver(.filesystem, dri), allocator, block_device);
+    }
+
+    pub fn destroyInstance(dri: *FileSystemDriver, allocator: std.mem.Allocator, instance: *Instance) void {
+        dri.destroyInstanceFn(resolveDriver(.filesystem, dri), allocator, instance);
+    }
+
+    pub const FileHandle = enum(u32) { _ };
+    pub const DirectoryHandle = enum(u32) { _ };
+
+    pub const BaseError = error{SystemResources};
+
+    pub const AccessError = BaseError || error{DiskError};
+
+    pub const ReadError = AccessError || error{};
+    pub const WriteError = AccessError || error{};
+    pub const StatFileError = AccessError || error{};
+    pub const ResizeError = AccessError || error{};
+    pub const OpenDirError = AccessError || error{ FileNotFound, InvalidPath };
+    pub const OpenFileError = AccessError || error{ FileNotFound, InvalidPath };
+    pub const FlushFileError = AccessError || error{};
+    pub const CreateEnumeratorError = AccessError;
+    pub const ResetEnumeratorError = AccessError;
+    pub const EnumerateError = AccessError;
+
+    pub const Instance = struct {
+        driver: *Driver,
+        vtable: *const VTable,
+
+        pub fn openDirFromRoot(instance: *Instance, path: []const u8) !DirectoryHandle {
+            return instance.vtable.openDirFromRootFn(instance, path);
+        }
+        pub fn openDirRelative(instance: *Instance, base_dir: DirectoryHandle, path: []const u8) !DirectoryHandle {
+            return instance.vtable.openDirRelativeFn(instance, base_dir, path);
+        }
+        pub fn closeDir(instance: *Instance, handle: DirectoryHandle) void {
+            return instance.vtable.closeDirFn(instance, handle);
+        }
+        pub fn createEnumerator(instance: *Instance, handle: DirectoryHandle) CreateEnumeratorError!*Enumerator {
+            return instance.vtable.createEnumeratorFn(instance, handle);
+        }
+        pub fn destroyEnumerator(instance: *Instance, enumerator: *Enumerator) void {
+            return instance.vtable.destroyEnumeratorFn(instance, enumerator);
+        }
+        pub fn delete(instance: *Instance) !void {
+            return instance.vtable.deleteFn(instance);
+        }
+        pub fn mkdir(instance: *Instance) !void {
+            return instance.vtable.mkdirFn(instance);
+        }
+        pub fn statEntry(instance: *Instance) !void {
+            return instance.vtable.statEntryFn(instance);
+        }
+        pub fn nearMove(instance: *Instance) !void {
+            return instance.vtable.nearMoveFn(instance);
+        }
+        pub fn farMove(instance: *Instance) !void {
+            return instance.vtable.farMoveFn(instance);
+        }
+        pub fn copy(instance: *Instance) !void {
+            return instance.vtable.copyFn(instance);
+        }
+        pub fn openFile(instance: *Instance, dir: DirectoryHandle, path: []const u8, access: ashet.abi.FileAccess, mode: ashet.abi.FileMode) !FileHandle {
+            return instance.vtable.openFileFn(instance, dir, path, access, mode);
+        }
+        pub fn closeFile(instance: *Instance, handle: FileHandle) void {
+            return instance.vtable.closeFileFn(instance, handle);
+        }
+        pub fn flushFile(instance: *Instance, handle: FileHandle) !void {
+            return instance.vtable.flushFileFn(instance, handle);
+        }
+        pub fn read(instance: *Instance, handle: FileHandle, offset: u64, buffer: []u8) !usize {
+            return instance.vtable.readFn(instance, handle, offset, buffer);
+        }
+        pub fn write(instance: *Instance, handle: FileHandle, offset: u64, buffer: []const u8) !usize {
+            return instance.vtable.writeFn(instance, handle, offset, buffer);
+        }
+        pub fn statFile(instance: *Instance, handle: FileHandle) !ashet.abi.FileInfo {
+            return instance.vtable.statFileFn(instance, handle);
+        }
+        pub fn resize(instance: *Instance, handle: FileHandle, length: u64) !void {
+            return instance.vtable.resizeFn(instance, handle, length);
+        }
+
+        pub const VTable = struct {
+            openDirFromRootFn: *const fn (*Instance, []const u8) OpenDirError!DirectoryHandle,
+            openDirRelativeFn: *const fn (*Instance, DirectoryHandle, []const u8) OpenDirError!DirectoryHandle,
+            closeDirFn: *const fn (*Instance, DirectoryHandle) void,
+            createEnumeratorFn: *const fn (*Instance, DirectoryHandle) CreateEnumeratorError!*Enumerator,
+            destroyEnumeratorFn: *const fn (*Instance, *Enumerator) void,
+            deleteFn: *const fn (*Instance) void,
+            mkdirFn: *const fn (*Instance) void,
+            statEntryFn: *const fn (*Instance) void,
+            nearMoveFn: *const fn (*Instance) void,
+            farMoveFn: *const fn (*Instance) void,
+            copyFn: *const fn (*Instance) void,
+            openFileFn: *const fn (*Instance, DirectoryHandle, []const u8, ashet.abi.FileAccess, ashet.abi.FileMode) OpenFileError!FileHandle,
+            closeFileFn: *const fn (*Instance, FileHandle) void,
+            flushFileFn: *const fn (*Instance, FileHandle) FlushFileError!void,
+            readFn: *const fn (*Instance, FileHandle, offset: u64, buffer: []u8) ReadError!usize,
+            writeFn: *const fn (*Instance, FileHandle, offset: u64, buffer: []const u8) WriteError!usize,
+            statFileFn: *const fn (*Instance, FileHandle) StatFileError!ashet.abi.FileInfo,
+            resizeFn: *const fn (*Instance, FileHandle, u64) ResizeError!void,
+        };
+    };
+
+    pub const Enumerator = struct {
+        instance: *Instance,
+        vtable: *const VTable,
+
+        pub fn reset(inst: *Enumerator) ResetEnumeratorError!void {
+            return inst.vtable.resetFn(inst);
+        }
+        pub fn next(inst: *Enumerator) EnumerateError!?ashet.abi.FileInfo {
+            return inst.vtable.nextFn(inst);
+        }
+
+        pub const VTable = struct {
+            resetFn: *const fn (*Enumerator) ResetEnumeratorError!void,
+            nextFn: *const fn (*Enumerator) EnumerateError!?ashet.abi.FileInfo,
+        };
+    };
+};
+
 pub const SerialPort = struct {
     //
     dummy: u8,
@@ -241,4 +392,9 @@ pub fn scanVirtioDevices(allocator: std.mem.Allocator, base_address: usize, max_
 fn installVirtioDriver(comptime T: type, allocator: std.mem.Allocator, regs: *volatile virtio.ControlRegs) !void {
     const device: *T = try T.init(allocator, regs);
     install(&device.driver);
+}
+
+pub fn installBuiltinDrivers() void {
+    install(&filesystem.AshetFS.driver);
+    install(&filesystem.VFAT.driver);
 }

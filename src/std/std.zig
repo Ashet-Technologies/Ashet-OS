@@ -1,6 +1,7 @@
 const std = @import("std");
 
 pub const RingBuffer = @import("ringbuffer.zig").RingBuffer;
+pub const HandleAllocator = @import("handle-allocator.zig").HandleAllocator;
 pub const IndexPool = @import("indexpool.zig").IndexPool;
 pub const FreeListAllocator = @import("mem/FreeListAllocator.zig").FreeListAllocator;
 

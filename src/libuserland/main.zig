@@ -167,8 +167,8 @@ pub fn main() !void {
 
                         window.pushEvent(.{ .mouse = .{
                             .type = .button_press,
-                            .x = @intCast(i16, event.button.x),
-                            .y = @intCast(i16, event.button.y),
+                            .x = @divTrunc(@intCast(i16, event.button.x), 2),
+                            .y = @divTrunc(@intCast(i16, event.button.y), 2),
                             .dx = 0,
                             .dy = 0,
                             .button = mapMouseButton(event.button.button) orelse continue,
@@ -178,8 +178,8 @@ pub fn main() !void {
                         const window = windowFromSdl(event.button.windowID);
                         window.pushEvent(.{ .mouse = .{
                             .type = .button_release,
-                            .x = @intCast(i16, event.button.x),
-                            .y = @intCast(i16, event.button.y),
+                            .x = @divTrunc(@intCast(i16, event.button.x), 2),
+                            .y = @divTrunc(@intCast(i16, event.button.y), 2),
                             .dx = 0,
                             .dy = 0,
                             .button = mapMouseButton(event.button.button) orelse continue,
@@ -190,8 +190,8 @@ pub fn main() !void {
                         if (event.wheel.y < 0) {
                             window.pushEvent(.{ .mouse = .{
                                 .type = .button_release,
-                                .x = @intCast(i16, event.wheel.x),
-                                .y = @intCast(i16, event.wheel.y),
+                                .x = @divTrunc(@intCast(i16, event.wheel.x), 2),
+                                .y = @divTrunc(@intCast(i16, event.wheel.y), 2),
                                 .dx = 0,
                                 .dy = 0,
                                 .button = .wheel_down,
@@ -200,8 +200,8 @@ pub fn main() !void {
                         if (event.wheel.y > 0) {
                             window.pushEvent(.{ .mouse = .{
                                 .type = .button_release,
-                                .x = @intCast(i16, event.wheel.x),
-                                .y = @intCast(i16, event.wheel.y),
+                                .x = @divTrunc(@intCast(i16, event.wheel.x), 2),
+                                .y = @divTrunc(@intCast(i16, event.wheel.y), 2),
                                 .dx = 0,
                                 .dy = 0,
                                 .button = .wheel_up,
@@ -213,10 +213,10 @@ pub fn main() !void {
                         if (event.wheel.y > 0) {
                             window.pushEvent(.{ .mouse = .{
                                 .type = .motion,
-                                .x = @intCast(i16, event.motion.x),
-                                .y = @intCast(i16, event.motion.y),
-                                .dx = @intCast(i16, event.motion.xrel),
-                                .dy = @intCast(i16, event.motion.yrel),
+                                .x = @divTrunc(@intCast(i16, event.motion.x), 2),
+                                .y = @divTrunc(@intCast(i16, event.motion.y), 2),
+                                .dx = @divTrunc(@intCast(i16, event.motion.xrel), 2),
+                                .dy = @divTrunc(@intCast(i16, event.motion.yrel), 2),
                                 .button = .none,
                             } });
                         }
@@ -228,8 +228,8 @@ pub fn main() !void {
                         var w: c_int = 0;
                         var h: c_int = 0;
                         sdl.SDL_GetWindowSize(window.sdl_window, &w, &h);
-                        window.abi_window.client_rectangle.width = @intCast(u16, w);
-                        window.abi_window.client_rectangle.height = @intCast(u16, h);
+                        window.abi_window.client_rectangle.width = @intCast(u16, w) / 2;
+                        window.abi_window.client_rectangle.height = @intCast(u16, h) / 2;
 
                         switch (event.window.event) {
                             sdl.SDL_WINDOWEVENT_MOVED => window.pushEvent(.window_moved),
@@ -974,14 +974,14 @@ const Window = struct {
             window.title0.ptr,
             sdl.SDL_WINDOWPOS_CENTERED,
             sdl.SDL_WINDOWPOS_CENTERED,
-            init_size.width,
-            init_size.height,
+            2 * init_size.width,
+            2 * init_size.height,
             @intCast(u32, sdl.SDL_WINDOW_SHOWN | sdl.SDL_WINDOW_RESIZABLE | if (flags.popup) sdl.SDL_WINDOW_UTILITY else 0),
         ) orelse @panic("err");
         errdefer sdl.SDL_DestroyWindow(window.sdl_window);
 
-        sdl.SDL_SetWindowMinimumSize(window.sdl_window, min_size.width, min_size.height);
-        sdl.SDL_SetWindowMaximumSize(window.sdl_window, max_size.width, max_size.height);
+        sdl.SDL_SetWindowMinimumSize(window.sdl_window, 2 * min_size.width, 2 * min_size.height);
+        sdl.SDL_SetWindowMaximumSize(window.sdl_window, 2 * max_size.width, 2 * max_size.height);
 
         window.sdl_renderer = sdl.SDL_CreateRenderer(
             window.sdl_window,

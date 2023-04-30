@@ -1607,6 +1607,7 @@ pub const fs = struct {
         .NotADir = 5,
         .InvalidPath = 6,
         .SystemFdQuotaExceeded = 7,
+        .SystemResources = 8,
     });
     pub const OpenDirError = ErrorSet(.{
         .Unexpected = 1,
@@ -1616,6 +1617,7 @@ pub const fs = struct {
         .NotADir = 5,
         .InvalidPath = 6,
         .SystemFdQuotaExceeded = 7,
+        .SystemResources = 8,
     });
     pub const CloseDirError = ErrorSet(.{
         .Unexpected = 1,
@@ -1625,11 +1627,13 @@ pub const fs = struct {
         .Unexpected = 1,
         .DiskError = 2,
         .InvalidHandle = 3,
+        .SystemResources = 4,
     });
     pub const EnumerateDirError = ErrorSet(.{
         .Unexpected = 1,
         .DiskError = 2,
         .InvalidHandle = 3,
+        .SystemResources = 4,
     });
     pub const DeleteFileError = ErrorSet(.{
         .Unexpected = 1,
@@ -1687,38 +1691,45 @@ pub const fs = struct {
         .Exists = 6,
         .NoSpaceLeft = 7,
         .SystemFdQuotaExceeded = 8,
+        .SystemResources = 9,
     });
     pub const FlushFileError = ErrorSet(.{
         .Unexpected = 1,
         .DiskError = 2,
         .InvalidHandle = 3,
+        .SystemResources = 4,
     });
     pub const ReadError = ErrorSet(.{
         .Unexpected = 1,
         .DiskError = 2,
         .InvalidHandle = 3,
+        .SystemResources = 4,
     });
     pub const WriteError = ErrorSet(.{
         .Unexpected = 1,
         .DiskError = 2,
         .InvalidHandle = 3,
         .NoSpaceLeft = 4,
+        .SystemResources = 5,
     });
     pub const StatFileError = ErrorSet(.{
         .Unexpected = 1,
         .DiskError = 2,
         .InvalidHandle = 3,
+        .SystemResources = 4,
     });
     pub const ResizeFileError = ErrorSet(.{
         .Unexpected = 1,
         .DiskError = 2,
         .InvalidHandle = 3,
         .NoSpaceLeft = 4,
+        .SystemResources = 5,
     });
     pub const CloseFileError = ErrorSet(.{
         .Unexpected = 1,
         .DiskError = 2,
         .InvalidHandle = 3,
+        .SystemResources = 4,
     });
 
     /// Flushes all open files to disk.

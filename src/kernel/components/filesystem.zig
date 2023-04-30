@@ -1,7 +1,7 @@
 const std = @import("std");
 const ashet = @import("../main.zig");
-const afs = @import("ashet-fs");
 const logger = std.log.scoped(.filesystem);
+const astd = @import("ashet-std");
 
 const storage = ashet.storage;
 
@@ -12,156 +12,28 @@ const max_fs_type_len = ashet.abi.max_fs_type_len;
 const max_drives = 8;
 const max_open_files = 64;
 
-fn HandleAllocator(comptime Handle: type, comptime Backing: type) type {
-    return struct {
-        const HandleType = std.meta.Tag(Handle);
-        const HandleSet = std.bit_set.ArrayBitSet(u32, max_open_files);
-
-        comptime {
-            if (!std.math.isPowerOfTwo(max_open_files))
-                @compileError("max_open_files must be a power of two!");
-        }
-
-        const handle_index_mask = max_open_files - 1;
-
-        var generations = std.mem.zeroes([max_open_files]HandleType);
-        var active_handles = HandleSet.initFull();
-        var backings: [max_open_files]Backing = undefined;
-
-        fn alloc() error{SystemFdQuotaExceeded}!Handle {
-            if (active_handles.toggleFirstSet()) |index| {
-                while (true) {
-                    const generation = generations[index];
-                    const numeric = generation *% max_open_files + index;
-
-                    const handle = @intToEnum(Handle, numeric);
-                    if (handle == .invalid) {
-                        generations[index] += 1;
-                        continue;
-                    }
-                    return handle;
-                }
-            } else {
-                return error.SystemFdQuotaExceeded;
-            }
-        }
-
-        fn resolve(handle: Handle) !*Backing {
-            const index = try resolveIndex(handle);
-            return &backings[index];
-        }
-
-        fn resolveIndex(handle: Handle) !usize {
-            const numeric = @enumToInt(handle);
-
-            const index = numeric & handle_index_mask;
-            const generation = numeric / max_open_files;
-
-            if (generations[index] != generation)
-                return error.InvalidHandle;
-
-            return index;
-        }
-
-        fn handleToBackingUnsafe(handle: Handle) *Backing {
-            return &backings[handleToIndexUnsafe(handle)];
-        }
-
-        fn handleToIndexUnsafe(handle: Handle) usize {
-            const numeric = @enumToInt(handle);
-            return @as(usize, numeric & handle_index_mask);
-        }
-
-        fn free(handle: Handle) void {
-            const numeric = @enumToInt(handle);
-
-            const index = numeric & handle_index_mask;
-            const generation = numeric / max_open_files;
-
-            if (generations[index] != generation) {
-                logger.err("freeFileHandle received invalid file handle: {}(index:{}, gen:{})", .{
-                    numeric,
-                    index,
-                    generation,
-                });
-            } else {
-                active_handles.set(index);
-                generations[index] += 1;
-            }
-        }
-    };
-}
-
-const Block = afs.Block;
-
-const BlockDevice = struct {
-    const BD = @This();
-
-    backing: *ashet.storage.BlockDevice,
-
-    pub fn interface(bd: *BD) afs.BlockDevice {
-        return afs.BlockDevice{
-            .object = bd,
-            .vtable = &vtable,
-        };
-    }
-
-    fn fromCtx(ctx: *anyopaque) *BD {
-        return @ptrCast(*BD, @alignCast(@alignOf(BD), ctx));
-    }
-
-    fn getBlockCount(ctx: *anyopaque) u32 {
-        // We can "safely" truncate here to 2TB storage for now.
-        return std.math.cast(u32, fromCtx(ctx).backing.blockCount()) orelse std.math.maxInt(u32);
-    }
-
-    fn writeBlock(ctx: *anyopaque, offset: u32, block: *const Block) afs.BlockDevice.IoError!void {
-        fromCtx(ctx).backing.writeBlock(offset, block) catch |err| switch (err) {
-            error.Fault, error.DeviceNotPresent => return error.DeviceError,
-            error.Timeout => return error.OperationTimeout,
-            error.NotSupported => return error.WriteProtected,
-            error.InvalidBlock => @panic("bug in filesystem driver!"),
-        };
-    }
-
-    fn readBlock(ctx: *anyopaque, offset: u32, block: *Block) afs.BlockDevice.IoError!void {
-        fromCtx(ctx).backing.readBlock(offset, block) catch |err| switch (err) {
-            error.Fault, error.DeviceNotPresent => return error.DeviceError,
-            error.Timeout => return error.OperationTimeout,
-            error.InvalidBlock => @panic("bug in filesystem driver!"),
-        };
-    }
-
-    const vtable = afs.BlockDevice.VTable{
-        .getBlockCountFn = getBlockCount,
-        .writeBlockFn = writeBlock,
-        .readBlockFn = readBlock,
-    };
-};
-
 const File = struct {
     fs: *FileSystem,
-    handle: afs.FileHandle,
+    handle: ashet.drivers.FileSystemDriver.FileHandle,
 };
 
 const Directory = struct {
     fs: *FileSystem,
-    handle: afs.DirectoryHandle,
-    iter: afs.FileSystem.Iterator,
+    handle: ashet.drivers.FileSystemDriver.DirectoryHandle,
+    iter: ?*ashet.drivers.FileSystemDriver.Enumerator = null,
 };
 
-const file_handles = HandleAllocator(ashet.abi.FileHandle, File);
-const directory_handles = HandleAllocator(ashet.abi.DirectoryHandle, Directory);
+var file_handles = astd.HandleAllocator(ashet.abi.FileHandle, File, max_open_files){};
+var directory_handles = astd.HandleAllocator(ashet.abi.DirectoryHandle, Directory, max_open_files){};
 
 var sys_disk_index: u32 = 0; // system disk index for disk named SYS:
 
 const FileSystem = struct {
     enabled: bool,
     id: ashet.abi.FileSystemId,
-    device: BlockDevice,
-    fs: afs.FileSystem,
     name: [ashet.abi.max_fs_name_len]u8,
-    driver: [ashet.abi.max_fs_type_len]u8,
+    driver: *ashet.drivers.FileSystemDriver.Instance,
+    block_device: *ashet.drivers.BlockDevice,
 };
 
 var filesystems: [max_drives]FileSystem = undefined;
@@ -241,17 +113,13 @@ pub fn initialize() void {
         fs.* = FileSystem{
             .enabled = true,
             .id = @intToEnum(ashet.abi.FileSystemId, index + 1),
-            .device = BlockDevice{ .backing = dev },
-            .fs = undefined, // will be set up by initFileSystem
+            .block_device = dev,
             .name = undefined,
             .driver = undefined,
         };
 
         std.mem.set(u8, &fs.name, 0);
         std.mem.copy(u8, &fs.name, dev.name);
-
-        std.mem.set(u8, &fs.driver, 0);
-        std.mem.copy(u8, &fs.driver, driver_name);
 
         initFileSystem(index) catch |err| {
             logger.err("failed to initialize file system on disk {s}: {s}", .{
@@ -281,69 +149,6 @@ pub fn initialize() void {
     driver_thread.@"suspend"();
 }
 
-const EntryType = enum {
-    object,
-    directory,
-    file,
-
-    pub fn ResultType(comptime et: EntryType) type {
-        return switch (et) {
-            .object => afs.Entry.Handle,
-            .directory => afs.DirectoryHandle,
-            .file => afs.FileHandle,
-        };
-    }
-
-    pub fn map(comptime et: EntryType, value: afs.Entry.Handle) error{InvalidObject}!et.ResultType() {
-        return switch (et) {
-            .object => value,
-            .directory => switch (value) {
-                .directory => |d| d,
-                else => return error.InvalidObject,
-            },
-            .file => switch (value) {
-                .file => |f| f,
-                else => return error.InvalidObject,
-            },
-        };
-    }
-};
-
-fn resolvePath(fs: *afs.FileSystem, root_dir: afs.DirectoryHandle, path: []const u8, comptime expected: EntryType) !expected.ResultType() {
-    try validatePath(path);
-
-    var current_dir = root_dir;
-
-    var splitter = std.mem.tokenize(u8, path, "/");
-
-    if (splitter.next()) |first_element| {
-        var next_element: ?[]const u8 = first_element;
-        while (next_element) |current_element| {
-            next_element = splitter.next();
-
-            const entry = try fs.getEntry(current_dir, current_element);
-
-            if (next_element != null) {
-                // subdir
-                if (entry.handle != .directory)
-                    return error.FileNotFound; // maybe a better error here?
-
-                current_dir = entry.handle.directory;
-            } else {
-                // terminal element
-                return try expected.map(entry.handle);
-            }
-        }
-        unreachable;
-    } else {
-        return expected.map(.{ .directory = current_dir });
-    }
-}
-
-fn dateTimeFromTimestamp(ts: i128) ashet.abi.DateTime {
-    return @intCast(i64, @divTrunc(ts, std.time.ns_per_ms));
-}
-
 const iop_handlers = struct {
     fn fs_sync(iop: *ashet.abi.fs.Sync) ashet.abi.fs.Sync.Error!ashet.abi.fs.Sync.Outputs {
         _ = iop;
@@ -362,7 +167,8 @@ const iop_handlers = struct {
 
         const ctx = &filesystems[disk_id];
 
-        var dir = resolvePath(&ctx.fs, ctx.fs.root_directory, iop.inputs.path_ptr[0..iop.inputs.path_len], .directory) catch |err| return try mapFileSystemError(err);
+        const dri_dir = try ctx.driver.openDirFromRoot(iop.inputs.path_ptr[0..iop.inputs.path_len]);
+        errdefer ctx.driver.closeDir(dri_dir);
 
         const handle = try directory_handles.alloc();
         errdefer directory_handles.free(handle);
@@ -371,8 +177,8 @@ const iop_handlers = struct {
 
         backing.* = Directory{
             .fs = ctx,
-            .handle = dir,
-            .iter = ctx.fs.iterate(dir) catch |err| return try mapFileSystemError(err),
+            .handle = dri_dir,
+            // .iter = ctx.fs.iterate(dir) catch |err| return try mapFileSystemError(err),
         };
 
         return .{ .dir = handle };
@@ -381,7 +187,8 @@ const iop_handlers = struct {
     fn fs_open_dir(iop: *ashet.abi.fs.OpenDir) ashet.abi.fs.OpenDir.Error!ashet.abi.fs.OpenDir.Outputs {
         const ctx: *Directory = try directory_handles.resolve(iop.inputs.dir);
 
-        var dir = resolvePath(&ctx.fs.fs, ctx.handle, iop.inputs.path_ptr[0..iop.inputs.path_len], .directory) catch |err| return try mapFileSystemError(err);
+        const dri_dir = try ctx.fs.driver.openDirRelative(ctx.handle, iop.inputs.path_ptr[0..iop.inputs.path_len]);
+        errdefer ctx.fs.driver.closeDir(dri_dir);
 
         const handle = try directory_handles.alloc();
         errdefer directory_handles.free(handle);
@@ -390,8 +197,7 @@ const iop_handlers = struct {
 
         backing.* = Directory{
             .fs = ctx.fs,
-            .handle = dir,
-            .iter = ctx.fs.fs.iterate(dir) catch |err| return try mapFileSystemError(err),
+            .handle = dri_dir,
         };
 
         return .{ .dir = handle };
@@ -399,16 +205,21 @@ const iop_handlers = struct {
 
     fn fs_close_dir(iop: *ashet.abi.fs.CloseDir) ashet.abi.fs.CloseDir.Error!ashet.abi.fs.CloseDir.Outputs {
         const ctx: *Directory = try directory_handles.resolve(iop.inputs.dir);
-        _ = ctx;
+        if (ctx.iter) |iter| {
+            ctx.fs.driver.destroyEnumerator(iter);
+        }
+        ctx.fs.driver.closeDir(ctx.handle);
         directory_handles.free(iop.inputs.dir);
-
         return .{};
     }
 
     fn fs_reset_dir_enumeration(iop: *ashet.abi.fs.ResetDirEnumeration) ashet.abi.fs.ResetDirEnumeration.Error!ashet.abi.fs.ResetDirEnumeration.Outputs {
         const ctx: *Directory = try directory_handles.resolve(iop.inputs.dir);
 
-        ctx.iter = ctx.fs.fs.iterate(ctx.handle) catch |err| return try mapFileSystemError(err);
+        // Only reset an iterator if there was already one created. We don't need to reset a freshly created iterator.
+        if (ctx.iter) |iter| {
+            try iter.reset();
+        }
 
         return .{};
     }
@@ -416,23 +227,14 @@ const iop_handlers = struct {
     fn fs_enumerate_dir(iop: *ashet.abi.fs.EnumerateDir) ashet.abi.fs.EnumerateDir.Error!ashet.abi.fs.EnumerateDir.Outputs {
         const ctx: *Directory = try directory_handles.resolve(iop.inputs.dir);
 
-        const next_or_null = ctx.iter.next() catch |err| return try mapFileSystemError(err);
+        if (ctx.iter == null) {
+            ctx.iter = try ctx.fs.driver.createEnumerator(ctx.handle);
+        }
 
-        if (next_or_null) |info| {
-            const stat = ctx.fs.fs.readMetaData(info.handle.object()) catch |err| return try mapFileSystemError(err);
+        const iter = ctx.iter orelse unreachable;
 
-            return .{
-                .eof = false,
-                .info = .{
-                    .name = info.name_buffer,
-                    .size = stat.size,
-                    .attributes = .{
-                        .directory = (info.handle == .directory),
-                    },
-                    .creation_date = dateTimeFromTimestamp(stat.create_time),
-                    .modified_date = dateTimeFromTimestamp(stat.modify_time),
-                },
-            };
+        if (try iter.next()) |info| {
+            return .{ .eof = false, .info = info };
         } else {
             return .{ .eof = true, .info = undefined };
         }
@@ -471,7 +273,13 @@ const iop_handlers = struct {
     fn fs_open_file(iop: *ashet.abi.fs.OpenFile) ashet.abi.fs.OpenFile.Error!ashet.abi.fs.OpenFile.Outputs {
         const ctx: *Directory = try directory_handles.resolve(iop.inputs.dir);
 
-        var file = resolvePath(&ctx.fs.fs, ctx.handle, iop.inputs.path_ptr[0..iop.inputs.path_len], .file) catch |err| return try mapFileSystemError(err);
+        const dri_file = try ctx.fs.driver.openFile(
+            ctx.handle,
+            iop.inputs.path_ptr[0..iop.inputs.path_len],
+            iop.inputs.access,
+            iop.inputs.mode,
+        );
+        errdefer ctx.fs.driver.closeFile(dri_file);
 
         const handle = try file_handles.alloc();
         errdefer file_handles.free(handle);
@@ -480,7 +288,7 @@ const iop_handlers = struct {
 
         backing.* = File{
             .fs = ctx.fs,
-            .handle = file,
+            .handle = dri_file,
         };
 
         return .{ .handle = handle };
@@ -488,80 +296,41 @@ const iop_handlers = struct {
 
     fn fs_close_file(iop: *ashet.abi.fs.CloseFile) ashet.abi.fs.CloseFile.Error!ashet.abi.fs.CloseFile.Outputs {
         const ctx: *File = try file_handles.resolve(iop.inputs.file);
-        _ = ctx;
+        ctx.fs.driver.closeFile(ctx.handle);
         file_handles.free(iop.inputs.file);
         return .{};
     }
 
     fn fs_flush_file(iop: *ashet.abi.fs.FlushFile) ashet.abi.fs.FlushFile.Error!ashet.abi.fs.FlushFile.Outputs {
-        _ = iop;
-        @panic("flush_file not implemented yet!");
+        const ctx: *File = try file_handles.resolve(iop.inputs.file);
+        try ctx.fs.driver.flushFile(ctx.handle);
+        return .{};
     }
 
     fn fs_read(iop: *ashet.abi.fs.Read) ashet.abi.fs.Read.Error!ashet.abi.fs.Read.Outputs {
         const ctx: *File = try file_handles.resolve(iop.inputs.file);
-
-        const len = ctx.fs.fs.readData(
-            ctx.handle,
-            iop.inputs.offset,
-            iop.inputs.buffer_ptr[0..iop.inputs.buffer_len],
-        ) catch |err| return try mapFileSystemError(err);
-
+        const len = try ctx.fs.driver.read(ctx.handle, iop.inputs.offset, iop.inputs.buffer_ptr[0..iop.inputs.buffer_len]);
         return .{ .count = len };
     }
 
     fn fs_write(iop: *ashet.abi.fs.Write) ashet.abi.fs.Write.Error!ashet.abi.fs.Write.Outputs {
         const ctx: *File = try file_handles.resolve(iop.inputs.file);
-
-        const len = ctx.fs.fs.writeData(
-            ctx.handle,
-            iop.inputs.offset,
-            iop.inputs.buffer_ptr[0..iop.inputs.buffer_len],
-        ) catch |err| return try mapFileSystemError(err);
-
+        const len = try ctx.fs.driver.write(ctx.handle, iop.inputs.offset, iop.inputs.buffer_ptr[0..iop.inputs.buffer_len]);
         return .{ .count = len };
     }
 
     fn fs_stat_file(iop: *ashet.abi.fs.StatFile) ashet.abi.fs.StatFile.Error!ashet.abi.fs.StatFile.Outputs {
         const ctx: *File = try file_handles.resolve(iop.inputs.file);
-
-        const meta = ctx.fs.fs.readMetaData(ctx.handle.object()) catch |err| return try mapFileSystemError(err);
-
-        var info = ashet.abi.FileInfo{
-            .name = std.mem.zeroes([120]u8),
-            .size = meta.size,
-            .attributes = .{ .directory = false },
-            .creation_date = dateTimeFromTimestamp(meta.create_time),
-            .modified_date = dateTimeFromTimestamp(meta.modify_time),
-        };
-
+        var info = try ctx.fs.driver.statFile(ctx.handle);
         return .{ .info = info };
     }
 
     fn fs_resize(iop: *ashet.abi.fs.Resize) ashet.abi.fs.Resize.Error!ashet.abi.fs.Resize.Outputs {
-        _ = iop;
-        @panic("resize not implemented yet!");
+        const ctx: *File = try file_handles.resolve(iop.inputs.file);
+        try ctx.fs.driver.resize(ctx.handle, iop.inputs.length);
+        return .{};
     }
 };
-
-fn mapFileSystemError(err: anytype) !noreturn {
-    const E = @TypeOf(err) || error{
-        InvalidObject,
-        DeviceError,
-        OperationTimeout,
-        WriteProtected,
-        CorruptFilesystem,
-    };
-
-    return switch (@as(E, err)) {
-        error.InvalidObject => return error.DiskError,
-        error.DeviceError => return error.DiskError,
-        error.OperationTimeout => return error.DiskError,
-        error.WriteProtected => return error.DiskError,
-        error.CorruptFilesystem => return error.DiskError,
-        else => |e| return e,
-    };
-}
 
 fn filesystemCoreLoop(_: ?*anyopaque) callconv(.C) noreturn {
     const IOP = ashet.abi.IOP;
@@ -637,11 +406,26 @@ fn filesystemCoreLoop(_: ?*anyopaque) callconv(.C) noreturn {
 }
 
 fn initFileSystem(index: usize) !void {
-    filesystems[index].fs = try afs.FileSystem.init(filesystems[index].device.interface());
-    logger.info("disk {s}: ready.", .{filesystems[index].device.backing.name});
+    var iter = ashet.drivers.enumerate(.filesystem);
+    while (iter.next()) |fs_driver| {
+        filesystems[index].driver = fs_driver.createInstance(
+            ashet.memory.allocator,
+            filesystems[index].block_device,
+        ) catch |err| {
+            logger.warn("failed to initialize file system {s}: {s}, trying next one...", .{
+                ashet.drivers.resolveDriver(.filesystem, fs_driver).name,
+                @errorName(err),
+            });
+            continue;
+        };
+        logger.info("disk {s}: ready.", .{filesystems[index].block_device.name});
+        return;
+    }
+
+    return error.UnknownOrNoFileSystem;
 }
 
-fn validatePath(path: []const u8) error{InvalidPath}!void {
+pub fn validatePath(path: []const u8) error{InvalidPath}!void {
     if (path.len == 0)
         return error.InvalidPath;
 
