@@ -93,7 +93,7 @@ export const multiboot_header linksection(".multiboot") = x86.multiboot.Header.w
     .flags = .{
         .req_modules_align_4k = false,
         .req_mem_info = true,
-        .req_video_mode = false, // TODO: Set to true for better video
+        .req_video_mode = true,
         .hint_use_embedded_offsets = false,
     },
 

@@ -245,12 +245,12 @@ pub const FileSystemDriver = struct {
 
     pub const ReadError = AccessError || error{InvalidHandle};
     pub const WriteError = AccessError || error{ InvalidHandle, WriteProtected };
-    pub const StatFileError = AccessError || error{};
-    pub const ResizeError = AccessError || error{};
+    pub const StatFileError = AccessError || error{InvalidHandle};
+    pub const ResizeError = AccessError || error{ InvalidHandle, NoSpaceLeft };
     pub const OpenDirAbsError = AccessError || error{ FileNotFound, InvalidPath };
     pub const OpenDirRelError = AccessError || error{ FileNotFound, InvalidPath, InvalidHandle };
     pub const OpenFileError = AccessError || error{ FileNotFound, InvalidPath, InvalidHandle, WriteProtected, FileAlreadyExists };
-    pub const FlushFileError = AccessError || error{};
+    pub const FlushFileError = AccessError || error{InvalidHandle};
     pub const CreateEnumeratorError = AccessError;
     pub const ResetEnumeratorError = AccessError;
     pub const EnumerateError = AccessError;

@@ -188,6 +188,9 @@ pub const log_levels = struct {
     pub var @"virtio-net": LogLevel = .info;
     pub var @"virtio-gpu": LogLevel = .info;
     pub var @"virtio-input": LogLevel = .info;
+
+    // system modules:
+    pub var fatfs: LogLevel = .info;
 };
 
 pub const std_options = struct {

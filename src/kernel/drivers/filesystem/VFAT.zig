@@ -388,20 +388,17 @@ const Instance = struct {
     fn statFile(generic: *GenericInstance, file_handle: FileHandle) FileSystemDriver.StatFileError!ashet.abi.FileInfo {
         const instance = getPtr(generic);
 
-        _ = file_handle;
-        _ = instance;
+        const file = try instance.file_handles.resolve(file_handle);
 
-        @panic("statFile");
-
-        // const meta = instance.fs.readMetaData(enumCast(afs.ObjectHandle, file_handle)) catch |err| return try mapFileSystemError(err);
-
-        // return ashet.abi.FileInfo{
-        //     .name = std.mem.zeroes([120]u8),
-        //     .size = meta.size,
-        //     .attributes = .{ .directory = false },
-        //     .creation_date = dateTimeFromTimestamp(meta.create_time),
-        //     .modified_date = dateTimeFromTimestamp(meta.modify_time),
-        // };
+        return .{
+            .name = nameToBuf(""),
+            .size = file.file.size(),
+            .attributes = .{
+                .directory = false,
+            },
+            .creation_date = 0, // TODO: Fill out dateTimeFromTimestamp(info.date, info.time),
+            .modified_date = 0, // TODO: Fill out dateTimeFromTimestamp(info.date, info.time),
+        };
     }
 
     fn createEnumerator(generic_instance: *GenericInstance, directory_handle: DirectoryHandle) FileSystemDriver.CreateEnumeratorError!*GenericEnumerator {
