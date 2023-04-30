@@ -139,25 +139,6 @@ const BlockDevice = struct {
     }
 };
 
-// error.Denied
-// error.DiskErr
-// error.Exist
-// error.IntErr
-// error.InvalidDrive
-// error.InvalidName
-// error.InvalidObject
-// error.InvalidParameter
-// error.Locked
-// error.MkfsAborted
-// error.NoFile
-// error.NoPath
-// error.NotEnabled
-// error.NotEnoughCore
-// error.NotReady
-// error.SystemResources
-// error.Timeout
-// error.TooManyOpenFiles
-
 fn createInstance(dri: *ashet.drivers.Driver, allocator: std.mem.Allocator, block_device: *ashet.drivers.BlockDevice) ashet.drivers.FileSystemDriver.CreateError!*GenericInstance {
     const instance = try allocator.create(Instance);
     errdefer allocator.destroy(instance);
@@ -234,27 +215,71 @@ const Instance = struct {
         instance.* = undefined;
     }
 
-    fn openDirFromRoot(generic: *GenericInstance, path: []const u8) FileSystemDriver.OpenDirError!DirectoryHandle {
-        const instance = getPtr(generic);
+    fn buildPath(instance: *Instance, root: []const u8, path: []const u8) error{ InvalidPath, SystemResources }!PathBuffer {
+        var buf = PathBuffer{ .buffer = undefined };
+        var stream = std.io.fixedBufferStream(buf.buffer[0 .. buf.buffer.len - 1]);
+        {
+            const writer = stream.writer();
 
-        _ = instance;
-        _ = path;
+            if (root.len > 0) {
+                const index = std.mem.indexOfScalar(u8, root, ':').?;
+                for (root[0..index]) |c| {
+                    std.debug.assert(c >= '0' or c <= '9');
+                }
+                writer.print("{s}/", .{root}) catch return error.SystemResources;
+            } else {
+                writer.print("{d}:", .{instance.disk_index}) catch return error.SystemResources;
+            }
 
-        @panic("crap.");
-
-        // return enumCast(DirectoryHandle, dir);
+            writer.writeAll(path) catch return error.SystemResources;
+        }
+        std.mem.set(u8, buf.buffer[stream.pos..], 0); // add NUL termination
+        return buf;
     }
 
-    fn openDirRelative(generic: *GenericInstance, base_dir: DirectoryHandle, path: []const u8) FileSystemDriver.OpenDirError!DirectoryHandle {
+    fn openDirInternal(generic: *GenericInstance, base_path: []const u8, path: []const u8) !DirectoryHandle {
         const instance = getPtr(generic);
 
-        _ = instance;
-        _ = base_dir;
-        _ = path;
+        const full_path = try instance.buildPath(base_path, path);
 
-        @panic("crap.");
+        const handle = try instance.dir_handles.alloc();
+        errdefer instance.dir_handles.free(handle);
 
-        // return enumCast(DirectoryHandle, dir);
+        var dir = fatfs.Dir.open(full_path.str()) catch |err| switch (err) {
+            error.DiskErr => return error.DiskError,
+            error.IntErr => @panic("unexpected error IntErr"),
+            error.InvalidDrive => @panic("unexpected error InvalidDrive"),
+            error.InvalidName => @panic("unexpected error InvalidName"),
+            error.InvalidObject => @panic("unexpected error InvalidObject"),
+            error.NoFilesystem => return error.FileNotFound,
+            error.NoPath => return error.FileNotFound,
+            error.NotEnabled => @panic("unexpected error NotEnabled"),
+            error.NotReady => @panic("unexpected error NotReady"),
+            error.OutOfMemory => return error.SystemResources,
+            error.Timeout => return error.DiskError,
+            error.TooManyOpenFiles => return error.SystemResources,
+        };
+        errdefer dir.close();
+
+        const backing = instance.dir_handles.handleToBackingUnsafe(handle);
+        backing.* = Directory{
+            .full_path = full_path,
+            .dir = dir,
+        };
+
+        return handle;
+    }
+
+    fn openDirFromRoot(generic: *GenericInstance, path: []const u8) FileSystemDriver.OpenDirAbsError!DirectoryHandle {
+        return openDirInternal(generic, "", path);
+    }
+
+    fn openDirRelative(generic: *GenericInstance, base_dir: DirectoryHandle, path: []const u8) FileSystemDriver.OpenDirRelError!DirectoryHandle {
+        const instance = getPtr(generic);
+
+        const ctx = instance.dir_handles.resolve(base_dir) catch return error.SystemResources;
+
+        return openDirInternal(generic, ctx.full_path.str(), path);
     }
 
     fn closeDir(generic: *GenericInstance, dir: DirectoryHandle) void {
@@ -268,17 +293,59 @@ const Instance = struct {
     fn openFile(generic: *GenericInstance, base_dir: DirectoryHandle, path: []const u8, access: ashet.abi.FileAccess, mode: ashet.abi.FileMode) FileSystemDriver.OpenFileError!FileHandle {
         const instance = getPtr(generic);
 
-        _ = access;
-        _ = mode;
-        _ = base_dir;
-        _ = path;
-        _ = instance;
+        const dir = try instance.dir_handles.resolve(base_dir);
 
-        @panic("nope");
+        const full_path = try instance.buildPath(dir.full_path.str(), path);
 
-        // var fs_file = resolvePath(&instance.fs, enumCast(afs.DirectoryHandle, base_dir), path, .file) catch |err| return try mapFileSystemError(err);
+        const handle = try instance.file_handles.alloc();
+        errdefer instance.file_handles.free(handle);
 
-        // return enumCast(FileHandle, fs_file);
+        const open_flags = fatfs.File.OpenFlags{
+            .access = switch (access) {
+                .read_only => .read_only,
+                .write_only => .write_only,
+                .read_write => .read_write,
+            },
+            .mode = switch (mode) {
+                .open_existing => .open_existing,
+                .open_always => .open_always,
+                .create_new => .create_new,
+                .create_always => .create_always,
+            },
+        };
+
+        var file = fatfs.File.open(full_path.str(), open_flags) catch |err| switch (err) {
+            error.DiskErr => return error.DiskError,
+            error.IntErr => return error.DiskError,
+            error.Timeout => return error.DiskError,
+
+            error.NoFilesystem => return error.FileNotFound,
+            error.NoPath => return error.FileNotFound,
+            error.NoFile => return error.FileNotFound,
+
+            error.OutOfMemory => return error.SystemResources,
+            error.TooManyOpenFiles => return error.SystemResources,
+
+            error.Exist => return error.FileAlreadyExists,
+
+            error.WriteProtected => return error.WriteProtected,
+
+            error.Denied => @panic("unexpected error.Denied"),
+            error.InvalidDrive => @panic("unexpected error.InvalidDrive"),
+            error.InvalidName => @panic("unexpected error.InvalidName"),
+            error.InvalidObject => @panic("unexpected error.InvalidObject"),
+            error.Locked => @panic("unexpected error.Locked"),
+            error.NotEnabled => @panic("unexpected error.NotEnabled"),
+            error.NotReady => @panic("unexpected error.NotReady"),
+        };
+        errdefer dir.close();
+
+        const backing = instance.file_handles.handleToBackingUnsafe(handle);
+        backing.* = File{
+            .file = file,
+        };
+
+        return handle;
     }
 
     fn closeFile(generic: *GenericInstance, dir: FileHandle) void {
@@ -291,13 +358,20 @@ const Instance = struct {
 
     fn read(generic: *GenericInstance, file_handle: FileHandle, offset: u64, buffer: []u8) FileSystemDriver.ReadError!usize {
         const instance = getPtr(generic);
-        _ = instance;
-        _ = file_handle;
-        _ = offset;
-        _ = buffer;
-        @panic("nah");
 
-        // return instance.fs.readData(enumCast(afs.FileHandle, file_handle), offset, buffer) catch |err| return try mapFileSystemError(err);
+        const file = try instance.file_handles.resolve(file_handle);
+
+        file.file.seekTo(std.math.cast(u32, offset) orelse return 0) catch |err| switch (err) {
+            error.DiskErr, error.IntErr, error.Timeout => return error.DiskError,
+            error.InvalidObject => @panic("unexpected error.InvalidObject"),
+        };
+
+        return file.file.read(buffer) catch |err| switch (err) {
+            error.DiskErr, error.IntErr, error.Timeout => return error.DiskError,
+            error.InvalidObject => @panic("unexpected error.InvalidObject"),
+            error.Denied => @panic("unexpected error.Denied"),
+            error.Overflow => return error.SystemResources,
+        };
     }
 
     fn write(generic: *GenericInstance, file_handle: FileHandle, offset: u64, buffer: []const u8) FileSystemDriver.WriteError!usize {
@@ -306,7 +380,7 @@ const Instance = struct {
         _ = file_handle;
         _ = offset;
         _ = buffer;
-        @panic("nah");
+        @panic("write");
 
         // return instance.fs.writeData(enumCast(afs.FileHandle, file_handle), offset, buffer) catch |err| return try mapFileSystemError(err);
     }
@@ -317,7 +391,7 @@ const Instance = struct {
         _ = file_handle;
         _ = instance;
 
-        @panic("nah");
+        @panic("statFile");
 
         // const meta = instance.fs.readMetaData(enumCast(afs.ObjectHandle, file_handle)) catch |err| return try mapFileSystemError(err);
 

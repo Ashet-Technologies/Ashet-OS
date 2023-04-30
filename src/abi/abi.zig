@@ -1692,6 +1692,8 @@ pub const fs = struct {
         .NoSpaceLeft = 7,
         .SystemFdQuotaExceeded = 8,
         .SystemResources = 9,
+        .WriteProtected = 10,
+        .FileAlreadyExists = 11,
     });
     pub const FlushFileError = ErrorSet(.{
         .Unexpected = 1,
@@ -1711,6 +1713,7 @@ pub const fs = struct {
         .InvalidHandle = 3,
         .NoSpaceLeft = 4,
         .SystemResources = 5,
+        .WriteProtected = 6,
     });
     pub const StatFileError = ErrorSet(.{
         .Unexpected = 1,

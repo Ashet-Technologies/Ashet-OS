@@ -121,7 +121,7 @@ const Instance = struct {
         instance.* = undefined;
     }
 
-    fn openDirFromRoot(generic: *GenericInstance, path: []const u8) FileSystemDriver.OpenDirError!DirectoryHandle {
+    fn openDirFromRoot(generic: *GenericInstance, path: []const u8) FileSystemDriver.OpenDirAbsError!DirectoryHandle {
         const instance = getPtr(generic);
 
         var dir = resolvePath(&instance.fs, instance.fs.root_directory, path, .directory) catch |err| return try mapFileSystemError(err);
@@ -129,7 +129,7 @@ const Instance = struct {
         return enumCast(DirectoryHandle, dir);
     }
 
-    fn openDirRelative(generic: *GenericInstance, base_dir: DirectoryHandle, path: []const u8) FileSystemDriver.OpenDirError!DirectoryHandle {
+    fn openDirRelative(generic: *GenericInstance, base_dir: DirectoryHandle, path: []const u8) FileSystemDriver.OpenDirRelError!DirectoryHandle {
         const instance = getPtr(generic);
 
         var dir = resolvePath(&instance.fs, enumCast(afs.DirectoryHandle, base_dir), path, .directory) catch |err| return try mapFileSystemError(err);

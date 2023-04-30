@@ -236,19 +236,20 @@ pub const FileSystemDriver = struct {
         dri.destroyInstanceFn(resolveDriver(.filesystem, dri), allocator, instance);
     }
 
-    pub const FileHandle = enum(u32) { _ };
-    pub const DirectoryHandle = enum(u32) { _ };
+    pub const FileHandle = enum(u32) { invalid = std.math.maxInt(u32), _ };
+    pub const DirectoryHandle = enum(u32) { invalid = std.math.maxInt(u32), _ };
 
     pub const BaseError = error{SystemResources};
 
     pub const AccessError = BaseError || error{DiskError};
 
-    pub const ReadError = AccessError || error{};
-    pub const WriteError = AccessError || error{};
+    pub const ReadError = AccessError || error{InvalidHandle};
+    pub const WriteError = AccessError || error{ InvalidHandle, WriteProtected };
     pub const StatFileError = AccessError || error{};
     pub const ResizeError = AccessError || error{};
-    pub const OpenDirError = AccessError || error{ FileNotFound, InvalidPath };
-    pub const OpenFileError = AccessError || error{ FileNotFound, InvalidPath };
+    pub const OpenDirAbsError = AccessError || error{ FileNotFound, InvalidPath };
+    pub const OpenDirRelError = AccessError || error{ FileNotFound, InvalidPath, InvalidHandle };
+    pub const OpenFileError = AccessError || error{ FileNotFound, InvalidPath, InvalidHandle, WriteProtected, FileAlreadyExists };
     pub const FlushFileError = AccessError || error{};
     pub const CreateEnumeratorError = AccessError;
     pub const ResetEnumeratorError = AccessError;
@@ -314,8 +315,8 @@ pub const FileSystemDriver = struct {
         }
 
         pub const VTable = struct {
-            openDirFromRootFn: *const fn (*Instance, []const u8) OpenDirError!DirectoryHandle,
-            openDirRelativeFn: *const fn (*Instance, DirectoryHandle, []const u8) OpenDirError!DirectoryHandle,
+            openDirFromRootFn: *const fn (*Instance, []const u8) OpenDirAbsError!DirectoryHandle,
+            openDirRelativeFn: *const fn (*Instance, DirectoryHandle, []const u8) OpenDirRelError!DirectoryHandle,
             closeDirFn: *const fn (*Instance, DirectoryHandle) void,
             createEnumeratorFn: *const fn (*Instance, DirectoryHandle) CreateEnumeratorError!*Enumerator,
             destroyEnumeratorFn: *const fn (*Instance, *Enumerator) void,
