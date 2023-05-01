@@ -302,6 +302,9 @@ pub fn startAppElf(app: AppID) !void {
                     //
                 },
 
+                // ignore these, we don't need them
+                std.elf.SHT_PROGBITS, std.elf.SHT_SYMTAB, std.elf.SHT_DYNSYM, std.elf.SHT_STRTAB => {},
+
                 else => logger.info("unhandled section header: {s}", .{switch (shdr.sh_type) {
                     std.elf.SHT_NULL => "SHT_NULL",
                     std.elf.SHT_PROGBITS => "SHT_PROGBITS",
