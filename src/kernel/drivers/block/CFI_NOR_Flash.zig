@@ -116,8 +116,8 @@ pub fn CfiDeviceImpl(comptime InterfaceWidth: type) type {
             const block_start = std.math.cast(usize, block_items * block) orelse return error.InvalidBlock;
 
             enterMode(base, .array_read);
-            for (std.mem.bytesAsSlice(InterfaceWidth, data), 0..) |*dest, i| {
-                dest.* = base[block_start + i];
+            for (std.mem.bytesAsSlice(InterfaceWidth, data), base[block_start .. block_start + 512]) |*dest, src| {
+                dest.* = src;
             }
         }
 
@@ -149,8 +149,8 @@ pub fn CfiDeviceImpl(comptime InterfaceWidth: type) type {
             if ((base[0x55] & prog_error) != 0)
                 return error.Fault;
 
-            for (base[block_start..block_end], 0..) |*dest, i| {
-                dest.* = std.mem.bytesAsSlice(InterfaceWidth, data)[i];
+            for (base[block_start..block_end], std.mem.bytesAsSlice(InterfaceWidth, data)) |*dest, src| {
+                dest.* = src;
             }
 
             if ((base[0x55] & prog_error) != 0)
