@@ -556,7 +556,7 @@ fn copyFileToDirectory(fs: *FileSystem, target_dir: afs.DirectoryHandle, src: st
         const len = try src.readAll(&block_data);
         if (len == 0)
             return error.UnexpectedEndOfFile;
-        const len2 = try fs.writeData(dst_file, i, block_data[0..len]);
+        const len2 = try fs.writeData(dst_file, i, block_data[0..len], null);
         std.debug.assert(len == len2); // we should always have enough size for this
         i += len;
     }

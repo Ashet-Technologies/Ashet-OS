@@ -31,11 +31,13 @@ pub const BlockDevice = struct {
     }
 
     pub fn writeBlock(dev: *BlockDevice, block_num: u32, buffer: []const u8) WriteError!void {
+        std.debug.assert(block_num < dev.num_blocks);
         std.debug.assert(buffer.len == dev.block_size);
         return dev.writeFn(ashet.drivers.resolveDriver(.block, dev), block_num, buffer);
     }
 
     pub fn readBlock(dev: *BlockDevice, block_num: u32, buffer: []u8) ReadError!void {
+        std.debug.assert(block_num < dev.num_blocks);
         std.debug.assert(buffer.len == dev.block_size);
         return dev.readFn(ashet.drivers.resolveDriver(.block, dev), block_num, buffer);
     }

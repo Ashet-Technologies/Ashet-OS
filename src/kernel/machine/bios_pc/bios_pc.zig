@@ -5,6 +5,7 @@
 const std = @import("std");
 const ashet = @import("root");
 const x86 = ashet.platforms.all.x86;
+const logger = std.log.scoped(.bios_pc);
 
 const VgaTerminal = @import("VgaTerminal.zig");
 
@@ -36,6 +37,41 @@ pub fn initialize() !void {
     x86.idt.init();
 
     const mbheader = x86.start.multiboot_info orelse @panic("Ashet OS must be bootet via a MultiBoot 1 compatible bootloader. Use syslinux or grub!");
+
+    if (mbheader.flags.boot_loader_name) {
+        logger.info("system bootloader: '{}'", .{
+            std.zig.fmtEscapes(std.mem.sliceTo(mbheader.boot_loader_name, 0)),
+        });
+    }
+
+    if (mbheader.flags.cmdline) {
+        logger.info("kernel commandline: '{}'", .{
+            std.zig.fmtEscapes(std.mem.sliceTo(mbheader.cmdline, 0)),
+        });
+    }
+
+    if (mbheader.flags.mods) {
+        logger.info("found additional boot modules:", .{});
+
+        const Module = extern struct {
+            module_lo: u32,
+            module_hi: u32,
+            cmdline: [*:0]const u8,
+            reserved: u32,
+        };
+
+        const modules = @intToPtr([*]const Module, mbheader.mods.mods_addr)[0..mbheader.mods.mods_count];
+        for (modules, 0..) |mod, index| {
+            logger.info("  [{}] = {{ lo=0x{X:0>8}, hi=0x{X:0>8}, cmdline='{}' }}", .{
+                index,
+                mod.module_lo,
+                mod.module_hi,
+                std.zig.fmtEscapes(std.mem.sliceTo(mod.cmdline, 0)),
+            });
+        }
+    }
+
+    logger.info("multiboot info: {}", .{mbheader});
 
     if (mbheader.flags.vbe) {
         hw.vbe = ashet.drivers.video.VESA_BIOS_Extension.init(ashet.memory.allocator, mbheader) catch {

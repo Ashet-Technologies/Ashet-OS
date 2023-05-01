@@ -52,7 +52,7 @@ esac
 echo "rootfs = ${rootfs}"
 
 case $rootfs in
-    afs)
+    ashet-fs)
         # copy system root
         "${ROOT}/zig-out/bin/afs-tool" format --verbose --image "${DISK}" "${ROOT}/rootfs"
 

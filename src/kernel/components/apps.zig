@@ -264,10 +264,13 @@ pub fn startAppElf(app: AppID) !void {
                     // }
 
                     try file.seekableStream().seekTo(shdr.sh_offset);
+
+                    var buffered_reader = std.io.bufferedReaderSize(412, file.reader());
+
                     var i: usize = 0;
                     while (i < shdr.sh_size / shdr.sh_entsize) : (i += 1) {
                         var entry: elf.Elf32_Rela = undefined;
-                        try file.reader().readNoEof(std.mem.asBytes(&entry));
+                        try buffered_reader.reader().readNoEof(std.mem.asBytes(&entry));
                         rela.apply(process_base, process_memory, entry.r_offset, entry.r_info, entry.r_addend);
                     }
                 },
@@ -284,10 +287,13 @@ pub fn startAppElf(app: AppID) !void {
                     // };
 
                     try file.seekableStream().seekTo(shdr.sh_offset);
+
+                    var buffered_reader = std.io.bufferedReaderSize(412, file.reader());
+
                     var i: usize = 0;
                     while (i < shdr.sh_size / shdr.sh_entsize) : (i += 1) {
                         var entry: elf.Elf32_Rel = undefined;
-                        try file.reader().readNoEof(std.mem.asBytes(&entry));
+                        try buffered_reader.reader().readNoEof(std.mem.asBytes(&entry));
                         rela.apply(process_base, process_memory, entry.r_offset, entry.r_info, null);
                     }
                 },

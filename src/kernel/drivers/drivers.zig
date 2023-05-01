@@ -6,6 +6,7 @@ pub const block = struct {
     // pub const ata = @import("block-device/ata.zig");
     pub const CFI_NOR_Flash = @import("block/CFI_NOR_Flash.zig");
     pub const AT_Attachment = @import("block/AT_Attachment.zig");
+    pub const RAM_Disk = @import("block/ram-disk.zig").RAM_Disk;
 };
 
 pub const serial = struct {

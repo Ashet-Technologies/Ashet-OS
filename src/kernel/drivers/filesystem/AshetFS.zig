@@ -111,6 +111,7 @@ const Instance = struct {
     block_device: BlockDevice,
     fs: afs.FileSystem,
     enumerator_pool: std.heap.MemoryPool(Enumerator),
+    cache: afs.FileDataCache = .{},
 
     fn init(instance: *Instance) !void {
         instance.fs = try afs.FileSystem.init(instance.block_device.interface());
@@ -165,13 +166,13 @@ const Instance = struct {
     fn read(generic: *GenericInstance, file_handle: FileHandle, offset: u64, buffer: []u8) FileSystemDriver.ReadError!usize {
         const instance = getPtr(generic);
 
-        return instance.fs.readData(enumCast(afs.FileHandle, file_handle), offset, buffer) catch |err| return try mapFileSystemError(err);
+        return instance.fs.readData(enumCast(afs.FileHandle, file_handle), offset, buffer, &instance.cache) catch |err| return try mapFileSystemError(err);
     }
 
     fn write(generic: *GenericInstance, file_handle: FileHandle, offset: u64, buffer: []const u8) FileSystemDriver.WriteError!usize {
         const instance = getPtr(generic);
 
-        return instance.fs.writeData(enumCast(afs.FileHandle, file_handle), offset, buffer) catch |err| return try mapFileSystemError(err);
+        return instance.fs.writeData(enumCast(afs.FileHandle, file_handle), offset, buffer, &instance.cache) catch |err| return try mapFileSystemError(err);
     }
 
     fn statFile(generic: *GenericInstance, file_handle: FileHandle) FileSystemDriver.StatFileError!ashet.abi.FileInfo {

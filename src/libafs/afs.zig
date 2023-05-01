@@ -78,6 +78,75 @@ pub const BlockDevice = struct {
     }
 };
 
+pub const FileDataCache = struct {
+    const CachedRefBlock = struct {
+        next: u32,
+        refs: []const u32,
+    };
+
+    const cache_size = 16;
+
+    entry_valid: std.StaticBitSet(cache_size) = std.StaticBitSet(cache_size).initEmpty(),
+    associated_file: [cache_size]FileHandle = undefined,
+    associated_index: [cache_size]u32 = undefined,
+    cached_refs: [cache_size][127]u32 = undefined,
+    cached_ref_lens: [cache_size]usize = undefined,
+    cached_nexts: [cache_size]u32 = undefined,
+
+    fn cacheIndex(file: FileHandle, block_index: u32) usize {
+        return (@enumToInt(file) + block_index) % cache_size;
+    }
+
+    fn isHit(cache: *const FileDataCache, file: FileHandle, block_index: u32) ?usize {
+        const index = cacheIndex(file, block_index);
+        if (!cache.entry_valid.isSet(index))
+            return null;
+        if (cache.associated_file[index] != file)
+            return null;
+        if (cache.associated_index[index] != block_index)
+            return null;
+        return index;
+    }
+
+    fn fetchRefBlock(cache: *const FileDataCache, file: FileHandle, block_index: u32) ?CachedRefBlock {
+        const index = cache.isHit(file, block_index) orelse {
+            logger.debug("cache miss for {}+{}", .{
+                @enumToInt(file),
+                block_index,
+            });
+            return null;
+        };
+
+        logger.debug("cache hit for {}+{}", .{
+            @enumToInt(file),
+            block_index,
+        });
+        return CachedRefBlock{
+            .next = cache.cached_nexts[index],
+            .refs = cache.cached_refs[index][0..cache.cached_ref_lens[index]],
+        };
+    }
+
+    fn putRefBlock(cache: *FileDataCache, file: FileHandle, block_index: u32, refs: []const u32, next_block: u32) void {
+        const index = cacheIndex(file, block_index);
+
+        cache.associated_file[index] = file;
+        cache.associated_index[index] = block_index;
+
+        std.mem.copy(u32, &cache.cached_refs[index], refs);
+        cache.cached_ref_lens[index] = refs.len;
+        cache.cached_nexts[index] = next_block;
+
+        cache.entry_valid.set(index);
+
+        logger.debug("set cache({}) to {}+{}", .{
+            index,
+            @enumToInt(file),
+            block_index,
+        });
+    }
+};
+
 /// The AshetFS filesystem driver. Implements all supported operations on the file
 /// system over a block device.
 /// It's recommended to use a caching block device so not every small change will
@@ -548,6 +617,7 @@ pub const FileSystem = struct {
         position: u64,
         comptime Accessor: type,
         data: Accessor.Slice,
+        opt_cache: ?*FileDataCache,
     ) !usize {
         var storage_blob: Block align(16) = undefined;
 
@@ -569,13 +639,25 @@ pub const FileSystem = struct {
         var refs: []const u32 = &object.refs;
         var next_block = object.next;
 
-        {
-            var i: usize = 0;
+        var cache_hit = false;
+        if (opt_cache) |cache| {
+            if (cache.fetchRefBlock(file, data_position.refblock_index)) |refblock| {
+                next_block = refblock.next;
+                refs = refblock.refs;
+                cache_hit = true;
+            }
+        }
+
+        if (!cache_hit) {
+            var i: u32 = 0;
             while (i < data_position.refblock_index) : (i += 1) {
                 try fs.device.readBlock(next_block, &storage_blob);
                 const refblock = bytesAsValue(RefListBlock, &storage_blob);
                 next_block = refblock.next;
                 refs = &refblock.refs;
+            }
+            if (opt_cache) |cache| {
+                cache.putRefBlock(file, i, refs, next_block);
             }
         }
 
@@ -617,11 +699,16 @@ pub const FileSystem = struct {
             if (data_position.ref_index == refs.len and offset != actual_len) {
                 // end of the current ref section, reload the storage_blob and refresh the refs
                 data_position.ref_index = 0;
+                data_position.refblock_index += 1;
 
                 try fs.device.readBlock(next_block, &storage_blob);
                 const refblock = bytesAsValue(RefListBlock, &storage_blob);
                 refs = &refblock.refs;
                 next_block = refblock.next;
+
+                if (opt_cache) |cache| {
+                    cache.putRefBlock(file, data_position.refblock_index, refs, next_block);
+                }
             }
         }
 
@@ -641,8 +728,8 @@ pub const FileSystem = struct {
         }
     };
 
-    pub fn writeData(fs: *FileSystem, file: FileHandle, position: u64, data: []const u8) !usize {
-        return fs.accessData(file, position, WriteAccessor, data);
+    pub fn writeData(fs: *FileSystem, file: FileHandle, position: u64, data: []const u8, cache: ?*FileDataCache) !usize {
+        return fs.accessData(file, position, WriteAccessor, data, cache);
     }
 
     const ReadAccessor = struct {
@@ -657,8 +744,8 @@ pub const FileSystem = struct {
         }
     };
 
-    pub fn readData(fs: *FileSystem, file: FileHandle, position: u64, data: []u8) !usize {
-        return fs.accessData(file, position, ReadAccessor, data);
+    pub fn readData(fs: *FileSystem, file: FileHandle, position: u64, data: []u8, cache: ?*FileDataCache) !usize {
+        return fs.accessData(file, position, ReadAccessor, data, cache);
     }
 
     pub fn createDirectory(fs: *FileSystem, dir: DirectoryHandle, name: []const u8, create_time: i128) !DirectoryHandle {
