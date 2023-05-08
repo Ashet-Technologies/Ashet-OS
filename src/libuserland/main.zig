@@ -572,7 +572,7 @@ const iop_handlers = struct {
             const stat = ctx.dir.dir.statFile(info.name) catch |err| return try mapFileSystemError(err);
 
             var namebuf = std.mem.zeroes([120]u8);
-            std.mem.copy(u8, &namebuf, info.name[0..std.math.min(info.name.len, namebuf.len)]);
+            std.mem.copyForwards(u8, &namebuf, info.name[0..std.math.min(info.name.len, namebuf.len)]);
 
             return .{
                 .eof = false,

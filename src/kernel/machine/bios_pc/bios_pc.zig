@@ -10,7 +10,7 @@ const logger = std.log.scoped(.bios_pc);
 const VgaTerminal = @import("VgaTerminal.zig");
 
 pub const machine_config = ashet.machines.MachineConfig{
-    .uninitialized_memory = false, // we assume the bootloader has already done a good job
+    .load_sections = .{ .data = false, .bss = false },
 };
 
 const hw = struct {
@@ -26,6 +26,9 @@ const hw = struct {
     var ata: [8]ashet.drivers.block.AT_Attachment = undefined;
 
     var rtc: ashet.drivers.rtc.CMOS = undefined;
+
+    // TODO: Add a higher precision timer to the OS for better timeouts
+    var pit: ashet.drivers.timer.Programmable_Interval_Timer = undefined;
 };
 
 var graphics_enabled: bool = false;
@@ -73,14 +76,19 @@ pub fn initialize() !void {
 
     logger.info("multiboot info: {}", .{mbheader});
 
-    if (mbheader.flags.vbe) {
-        hw.vbe = ashet.drivers.video.VESA_BIOS_Extension.init(ashet.memory.allocator, mbheader) catch {
-            @panic("Ashet OS does not support computers without VBE 2.0. Please use a graphics card that supports VBE.");
-        };
+    if (ashet.drivers.video.VESA_BIOS_Extension.init(ashet.memory.allocator, mbheader)) |vbe| {
+        hw.vbe = vbe;
         ashet.drivers.install(&hw.vbe.driver);
-    } else {
-        try hw.vga.init();
-        ashet.drivers.install(&hw.vga.driver);
+    } else |vbe_error| {
+        std.log.warn("VBE not available ({s}), falling back to classic VGA", .{@tagName(vbe_error)});
+
+        if (hw.vga.init()) |vga| {
+            hw.vga = vga;
+            ashet.drivers.install(&hw.vga.driver);
+        } else |vga_error| {
+            std.log.warn("VGA not available ({s}), panicking...", .{@tagName(vga_error)});
+            @panic("Ashet OS does requires a video card!");
+        }
     }
     graphics_enabled = true;
 
@@ -98,16 +106,63 @@ pub fn initialize() !void {
         ashet.drivers.install(&ata.driver);
     }
 
-    hw.kbc = try ashet.drivers.input.PC_KBC.init();
-    ashet.drivers.install(&hw.kbc.driver);
+    if (ashet.drivers.input.PC_KBC.init()) |kbc| {
+        hw.kbc = kbc;
+        ashet.drivers.install(&hw.kbc.driver);
+    } else |err| {
+        logger.err("failed to initialize KBC with error {s}, no keyboard input available!", .{@errorName(err)});
+    }
 
     x86.enableInterrupts();
+}
+
+fn busyLoop(cnt: u32) void {
+    var i: u32 = 0;
+    while (i < cnt) : (i += 1) {
+        asm volatile (""
+            :
+            : [x] "r" (i),
+        );
+    }
 }
 
 pub fn debugWrite(msg: []const u8) void {
     for (msg) |char| {
         x86.out(u8, 0x3F8, char);
     }
+    const Selector = packed struct(u8) {
+        data: u1,
+        clk: u1,
+        cs: u1,
+        padding: u5 = 0,
+
+        fn map(sel: @This()) u8 {
+            return @bitCast(u8, sel);
+        }
+    };
+
+    x86.out(u8, 0x378, Selector.map(.{ .data = 0, .clk = 0, .cs = 1 }));
+    busyLoop(2);
+
+    for (msg) |char| {
+        var b: u8 = char;
+        var m: u8 = 0x01;
+
+        while (m != 0) {
+            x86.out(u8, 0x378, Selector.map(.{ .data = @truncate(u1, (b & 0x80) >> 7), .clk = 1, .cs = 1 }));
+            busyLoop(1);
+
+            x86.out(u8, 0x378, Selector.map(.{ .data = @truncate(u1, (b & 0x80) >> 7), .clk = 0, .cs = 1 }));
+            busyLoop(1);
+
+            b <<= 1;
+            m <<= 1;
+        }
+    }
+    busyLoop(1);
+
+    x86.out(u8, 0x378, Selector.map(.{ .data = 0, .clk = 0, .cs = 0 }));
+    busyLoop(2);
 
     // if (!graphics_enabled) {
     //     hw.terminal.write(msg);

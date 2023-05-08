@@ -101,10 +101,16 @@ pub fn initialize() void {
 
         const driver_name = ashet.drivers.getDriverName(.block, dev);
 
+        // TODO: logger.info("device {s}: block count={}, size={}, driver={s}", .{
+        //     dev.name,
+        //     dev.blockCount(),
+        //     std.fmt.fmtIntSizeBin(dev.byteSize()),
+        //     driver_name,
+        // });
         logger.info("device {s}: block count={}, size={}, driver={s}", .{
             dev.name,
             dev.blockCount(),
-            std.fmt.fmtIntSizeBin(dev.byteSize()),
+            dev.byteSize(),
             driver_name,
         });
 
@@ -118,8 +124,8 @@ pub fn initialize() void {
             .driver = undefined,
         };
 
-        std.mem.set(u8, &fs.name, 0);
-        std.mem.copy(u8, &fs.name, dev.name);
+        @memset(&fs.name, 0);
+        std.mem.copyForwards(u8, &fs.name, dev.name);
 
         initFileSystem(index) catch |err| {
             logger.err("failed to initialize file system on disk {s}: {s}", .{

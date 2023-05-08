@@ -34,7 +34,7 @@ const PathBuffer = struct {
         if (string.len > max_path)
             return error.OutOfMemory;
         var buf = PathBuffer{ .buffer = undefined };
-        std.mem.copy(u8, &buf.buffer, string);
+        std.mem.copyForwards(u8, &buf.buffer, string);
         buf.buffer[string.len] = 0;
         return buf;
     }
@@ -233,7 +233,7 @@ const Instance = struct {
 
             writer.writeAll(path) catch return error.SystemResources;
         }
-        std.mem.set(u8, buf.buffer[stream.pos..], 0); // add NUL termination
+        @memset(buf.buffer[stream.pos..], 0); // add NUL termination
         return buf;
     }
 
@@ -529,7 +529,7 @@ const Enumerator = struct {
 
 fn nameToBuf(str: []const u8) [ashet.abi.max_file_name_len]u8 {
     var buf = std.mem.zeroes([ashet.abi.max_file_name_len]u8);
-    std.mem.copy(u8, &buf, str[0..std.math.min(buf.len, str.len)]);
+    std.mem.copyForwards(u8, &buf, str[0..std.math.min(buf.len, str.len)]);
     return buf;
 }
 

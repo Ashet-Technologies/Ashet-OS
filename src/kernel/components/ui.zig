@@ -408,11 +408,11 @@ fn initializeGraphics() void {
     palette.* = ashet.video.defaults.palette;
 
     // for (desktop.apps.slice()) |app| {
-    //     std.mem.copy(Color, palette[app.palette_base .. app.palette_base + 15], &app.icon.palette);
+    //     std.mem.copyForwards(Color, palette[app.palette_base .. app.palette_base + 15], &app.icon.palette);
     // }
 
-    // std.mem.copy(Color, palette[framebuffer_default_icon_shift..], &desktop.default_icon.palette);
-    std.mem.copy(Color, palette[framebuffer_wallpaper_shift..], &wallpaper.palette);
+    // std.mem.copyForwards(Color, palette[framebuffer_default_icon_shift..], &desktop.default_icon.palette);
+    std.mem.copyForwards(Color, palette[framebuffer_wallpaper_shift..], &wallpaper.palette);
 }
 
 const MinimizedWindow = struct {
@@ -790,7 +790,7 @@ pub const Window = struct {
 
         const pixel_count = @as(usize, window.user_facing.max_size.height) * @as(usize, window.user_facing.stride);
         window.user_facing.pixels = (try allocator.alloc(ColorIndex, pixel_count)).ptr;
-        std.mem.set(ColorIndex, window.user_facing.pixels[0..pixel_count], current_theme.window_fill);
+        @memset(window.user_facing.pixels[0..pixel_count], current_theme.window_fill);
 
         const clamped_initial_size = sizeMax(sizeMin(initial_size, window.user_facing.max_size), window.user_facing.min_size);
 
@@ -865,7 +865,7 @@ pub const Window = struct {
 
     pub fn setTitle(window: *Window, text: []const u8) !void {
         try window.title_buffer.resize(text.len + 1);
-        std.mem.copy(u8, window.title_buffer.items, text);
+        std.mem.copyForwards(u8, window.title_buffer.items, text);
         window.title_buffer.items[text.len] = 0;
         window.user_facing.title = window.title().ptr;
     }
@@ -1090,7 +1090,7 @@ fn nodeToWindow(node: *WindowQueue.Node) *Window {
 //     }
 
 //     fn clear(color: ColorIndex) void {
-//         std.mem.set(ColorIndex, fb, color);
+//         @memset( fb, color);
 //     }
 // };
 
@@ -1322,7 +1322,7 @@ pub const desktop = struct {
         break :blk Icon.load(stream.reader(), framebuffer_default_icon_shift) catch @compileError("invalid icon format");
 
         // var icon = Icon{ .bitmap = undefined, .palette = undefined };
-        // std.mem.copy(u8, std.mem.sliceAsBytes(&icon.bitmap), data[0 .. 64 * 64]);
+        // std.mem.copyForwards(u8, std.mem.sliceAsBytes(&icon.bitmap), data[0 .. 64 * 64]);
         // for (icon.palette) |*pal, i| {
         //     pal.* = @as(u16, pal_src[2 * i + 0]) << 0 |
         //         @as(u16, pal_src[2 * i + 1]) << 8;
@@ -1476,8 +1476,8 @@ pub const desktop = struct {
 
         {
             const name = ent.getName();
-            std.mem.set(u8, &app.name, 0);
-            std.mem.copy(u8, &app.name, name[0..std.math.min(name.len, app.name.len)]);
+            @memset(&app.name, 0);
+            std.mem.copyForwards(u8, &app.name, name[0..std.math.min(name.len, app.name.len)]);
         }
 
         if (dir.openFile("icon", .read_only, .open_existing)) |const_icon_file| {

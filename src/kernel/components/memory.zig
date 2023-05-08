@@ -18,37 +18,48 @@ extern const __kernel_data_end: anyopaque align(4);
 extern const __kernel_bss_start: anyopaque align(4);
 extern const __kernel_bss_end: anyopaque align(4);
 
+pub const MemorySections = struct {
+    data: bool,
+    bss: bool,
+};
+
 /// First stage in memory initialization:
 /// Copy the `.data` section into RAM, and zero out `.bss`.
 /// This is needed to have all globals have a well-defined state.
-pub fn loadKernelMemory() void {
+pub inline fn loadKernelMemory(comptime sections: MemorySections) void {
     // First, populate all RAM sections from flash
-    const flash_start = @ptrToInt(&__kernel_flash_start);
-    const flash_end = @ptrToInt(&__kernel_flash_end);
-    const data_start = @ptrToInt(&__kernel_data_start);
-    const data_end = @ptrToInt(&__kernel_data_end);
-    const bss_start = @ptrToInt(&__kernel_bss_start);
-    const bss_end = @ptrToInt(&__kernel_bss_end);
 
-    logger.debug("flash_start = 0x{X:0>8}", .{flash_start});
-    logger.debug("flash_end   = 0x{X:0>8}", .{flash_end});
-    logger.debug("data_start  = 0x{X:0>8}", .{data_start});
-    logger.debug("data_end    = 0x{X:0>8}", .{data_end});
-    logger.debug("bss_start   = 0x{X:0>8}", .{bss_start});
-    logger.debug("bss_end     = 0x{X:0>8}", .{bss_end});
+    if (sections.data) {
+        // const flash_start = @ptrToInt(&__kernel_flash_start);
+        const flash_end = @ptrToInt(&__kernel_flash_end);
+        const data_start = @ptrToInt(&__kernel_data_start);
+        const data_end = @ptrToInt(&__kernel_data_end);
 
-    const data_size = data_end - data_start;
-    const bss_size = bss_end - bss_start;
+        const data_size = data_end - data_start;
 
-    logger.debug("data_size   = 0x{X:0>8}", .{data_size});
-    logger.debug("bss_size    = 0x{X:0>8}", .{bss_size});
+        // logger.debug("flash_start = 0x{X:0>8}", .{flash_start});
+        // logger.debug("flash_end   = 0x{X:0>8}", .{flash_end});
+        // logger.debug("data_start  = 0x{X:0>8}", .{data_start});
+        // logger.debug("data_end    = 0x{X:0>8}", .{data_end});
+        // logger.debug("data_size   = 0x{X:0>8}", .{data_size});
 
-    std.mem.copy(
-        u32,
-        @intToPtr([*]u32, data_start)[0 .. data_size / 4],
-        @intToPtr([*]u32, flash_end)[0 .. data_size / 4],
-    );
-    std.mem.set(u32, @intToPtr([*]u32, bss_start)[0 .. bss_size / 4], 0);
+        @memcpy(
+            @intToPtr([*]u32, data_start)[0 .. data_size / 4],
+            @intToPtr([*]u32, flash_end)[0 .. data_size / 4],
+        );
+    }
+    if (sections.bss) {
+        const bss_start = @ptrToInt(&__kernel_bss_start);
+        const bss_end = @ptrToInt(&__kernel_bss_end);
+
+        const bss_size = bss_end - bss_start;
+
+        // logger.debug("bss_start   = 0x{X:0>8}", .{bss_start});
+        // logger.debug("bss_end     = 0x{X:0>8}", .{bss_end});
+        // logger.debug("bss_size    = 0x{X:0>8}", .{bss_size});
+
+        @memset(@intToPtr([*]u32, bss_start)[0 .. bss_size / 4], 0);
+    }
 }
 
 /// Initialize the linear system memory and allocators.
@@ -63,9 +74,14 @@ pub fn initializeLinearMemory() void {
     // compute and initialize the memory map
     const linear_memory_region: Section = ashet.machine.getLinearMemoryRegion();
 
-    logger.info("linear memory starts at 0x{X:0>8} and is {d:.3} ({} pages) large", .{
+    // logger.info("linear memory starts at 0x{X:0>8} and is {d:.3} ({} pages) large", .{
+    //     linear_memory_region.offset,
+    //     std.fmt.fmtIntSizeBin(linear_memory_region.length),
+    //     linear_memory_region.length / page_size,
+    // });
+    logger.info("linear memory starts at 0x{X:0>8} and is {} ({} pages) large", .{
         linear_memory_region.offset,
-        std.fmt.fmtIntSizeBin(linear_memory_region.length),
+        linear_memory_region.length,
         linear_memory_region.length / page_size,
     });
 
@@ -99,7 +115,8 @@ pub fn initializeLinearMemory() void {
 
     const free_memory = page_manager.getFreePageCount();
 
-    logger.info("free ram: {:.2} ({}/{} pages)", .{ std.fmt.fmtIntSizeBin(page_size * free_memory), free_memory, page_manager.pageCount() });
+    // TODO: logger.info("free ram: {:.2} ({}/{} pages)", .{ std.fmt.fmtIntSizeBin(page_size * free_memory), free_memory, page_manager.pageCount() });
+    logger.info("free ram: {} ({}/{} pages)", .{ page_size * free_memory, free_memory, page_manager.pageCount() });
 }
 
 pub const debug = struct {
@@ -139,7 +156,7 @@ pub const debug = struct {
         //     writer.print("{X:0>4}: {b:0>32}\r\n", .{ index, item }) catch {};
         // }
 
-        writer.print("free ram: {:.2} ({}/{} pages)\n", .{ std.fmt.fmtIntSizeBin(free_memory), free_memory / page_size, page_manager.pageCount() }) catch {};
+        writer.print("free ram: {} ({}/{} pages)\n", .{ free_memory, free_memory / page_size, page_manager.pageCount() }) catch {};
     }
 };
 
@@ -314,7 +331,7 @@ const RawPageStorageManager = struct {
         const bmp = pm.bitmap();
 
         // Initialize the memory to "all pages free"
-        std.mem.set(usize, bmp, all_bits_free);
+        @memset(bmp, all_bits_free);
 
         // compute the amount of pages we need to store the allocation state of pages.
         // we have to round up here, as we need to use all bits in the bitmap.

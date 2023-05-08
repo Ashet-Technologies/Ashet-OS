@@ -96,14 +96,14 @@ fn flush(driver: *Driver) void {
 
         var row_addr = vd.gpu.fb_mem.ptr;
 
-        std.mem.set(u32, row_addr[0 .. vd.gpu.fb_width * dy], border_value);
-        std.mem.set(u32, row_addr[vd.gpu.fb_width * (dy + vd.graphics_height) .. limit], border_value);
+        @memset(row_addr[0 .. vd.gpu.fb_width * dy], border_value);
+        @memset(row_addr[vd.gpu.fb_width * (dy + vd.graphics_height) .. limit], border_value);
 
         var y: usize = 0;
         row_addr += vd.gpu.fb_width * dy;
         while (y < vd.graphics_height) : (y += 1) {
-            std.mem.set(u32, row_addr[0..dx], border_value);
-            std.mem.set(u32, row_addr[dx + vd.graphics_width .. vd.gpu.fb_width], border_value);
+            @memset(row_addr[0..dx], border_value);
+            @memset(row_addr[dx + vd.graphics_width .. vd.gpu.fb_width], border_value);
             row_addr += vd.gpu.fb_width;
         }
     }

@@ -51,6 +51,11 @@ esac
 
 echo "rootfs = ${rootfs}"
 
+copyToFAT()
+{
+    mcopy -i "${DISK}@@1M" "$@"
+}
+
 case $rootfs in
     ashet-fs)
         # copy system root
@@ -62,9 +67,20 @@ case $rootfs in
         ;;
     
     fat32)
-        ./zig-out/bin/init-disk "${DISK}"
-        mcopy -i "${DISK}" "${ROOT}/zig-out/apps" ::
-        mcopy -i "${DISK}" "${ROOT}/zig-out/apps/"* ::/apps
+        ./zig-out/bin/init-disk "${DISK}" 2048
+
+        sfdisk "${DISK}" <<EOF
+label: dos
+label-id: 0xd917590e
+device: zig-out/disk.img
+unit: sectors
+sector-size: 512
+
+zig-out/disk.img1 : start=        2048, size=      260096, type=c, bootable
+EOF
+
+        copyToFAT "${ROOT}/zig-out/apps" ::
+        copyToFAT "${ROOT}/zig-out/apps/"* ::/apps
         ;;
     
     *)
@@ -110,14 +126,18 @@ case $MACHINE in
         ;;
     bios_pc)
         # Install syslinux and kernel:
-        mcopy -i "${DISK}" rootfs-x86/* ::
-        mcopy -i "${DISK}" ./zig-out/bin/ashet-os ::/ashet-os
+        copyToFAT rootfs-x86/* ::
+        copyToFAT ./zig-out/bin/ashet-os ::/ashet-os
+
+        # setup MBR:
+        dd bs=440 count=1 conv=notrunc if=/usr/lib/syslinux/mbr.bin "of=${DISK}" # TODO: Vendor mbr.bin
         
-        syslinux --install "${DISK}"
+        # install syslinux
+        syslinux --offset 1048576 --install "${DISK}"
 
         qemu-system-i386 ${qemu_generic_flags} \
           -machine pc \
-          -cpu 486 \
+          -cpu pentium2 \
           -hda "${DISK}" \
           -vga std \
           -s "$@" \

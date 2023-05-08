@@ -5,7 +5,7 @@ const VPBA_UART_BASE = 0x10000000;
 const VPBA_VIRTIO_BASE = 0x10001000;
 
 pub const machine_config = ashet.machines.MachineConfig{
-    .uninitialized_memory = true,
+    .load_sections = .{ .data = true, .bss = true },
 };
 
 const hw = struct {

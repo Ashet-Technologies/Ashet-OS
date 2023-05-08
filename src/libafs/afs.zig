@@ -23,7 +23,7 @@ fn bytesAsValue(comptime T: type, bytes: *align(@alignOf(T)) [@sizeOf(T)]u8) *T 
 
 fn makeZeroPaddedString(str: []const u8, comptime len: comptime_int) [len]u8 {
     var buf = std.mem.zeroes([len]u8);
-    std.mem.copy(u8, &buf, str);
+    std.mem.copyForwards(u8, &buf, str);
     return buf;
 }
 
@@ -133,7 +133,7 @@ pub const FileDataCache = struct {
         cache.associated_file[index] = file;
         cache.associated_index[index] = block_index;
 
-        std.mem.copy(u32, &cache.cached_refs[index], refs);
+        std.mem.copyForwards(u32, &cache.cached_refs[index], refs);
         cache.cached_ref_lens[index] = refs.len;
         cache.cached_nexts[index] = next_block;
 
@@ -720,7 +720,7 @@ pub const FileSystem = struct {
         fn accessPartial(device: BlockDevice, block_address: u32, byte_offset: usize, slice: []const u8) !void {
             var buffer_block: Block = undefined;
             try device.readBlock(block_address, &buffer_block);
-            std.mem.copy(u8, buffer_block[byte_offset..], slice);
+            std.mem.copyForwards(u8, buffer_block[byte_offset..], slice);
             try device.writeBlock(block_address, &buffer_block);
         }
         fn accessFull(device: BlockDevice, block_address: u32, block: *const [512]u8) !void {
@@ -737,7 +737,7 @@ pub const FileSystem = struct {
         fn accessPartial(device: BlockDevice, block_address: u32, byte_offset: usize, slice: []u8) !void {
             var buffer_block: Block = undefined;
             try device.readBlock(block_address, &buffer_block);
-            std.mem.copy(u8, slice, buffer_block[byte_offset..][0..slice.len]);
+            std.mem.copyForwards(u8, slice, buffer_block[byte_offset..][0..slice.len]);
         }
         fn accessFull(device: BlockDevice, block_address: u32, block: *[512]u8) !void {
             try device.readBlock(block_address, block);
@@ -931,7 +931,7 @@ fn blockToBitPos(block_num: usize) BitmapLocation {
 fn setBuffer(block: *Block, data: anytype) void {
     if (@sizeOf(@TypeOf(data)) != @sizeOf(Block))
         @compileError("Invalid size: " ++ @typeName(@TypeOf(data)) ++ " is not 512 byte large!");
-    std.mem.copy(u8, block, asConstBytes(&data));
+    std.mem.copyForwards(u8, block, asConstBytes(&data));
 }
 
 pub fn format(device: BlockDevice, init_time: i128) !void {
@@ -952,7 +952,7 @@ pub fn format(device: BlockDevice, init_time: i128) !void {
     const bitmap_block_count = ((block_count + 4095) / 4096);
 
     for (1..bitmap_block_count + 2) |index| {
-        std.mem.set(u8, &block, 0);
+        @memset(&block, 0);
 
         if (index == 1) {
             block[0] |= 0x01; // mark "root block" as allocated

@@ -9,7 +9,7 @@ const x86 = ashet.platforms.all.x86;
 const VgaTerminal = @import("VgaTerminal.zig");
 
 pub const machine_config = ashet.machines.MachineConfig{
-    .uninitialized_memory = false, // we assume the bootloader has already done a good job
+    .load_sections = .{ .data = true, .bss = true },
 };
 
 const hw = struct {

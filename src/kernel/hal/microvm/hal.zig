@@ -112,7 +112,7 @@ pub const video = struct {
     pub fn flush() void {
         switch (video_mode) {
             .text => {
-                std.mem.set(u32, gpu.fb_mem, pal(border_color));
+                @memset(gpu.fb_mem, pal(border_color));
 
                 const font = ashet.video.defaults.font;
 

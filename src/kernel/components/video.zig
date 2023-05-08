@@ -205,7 +205,7 @@ pub fn setResolution(width: u15, height: u15) void {
 
 // Render text mode:
 // {
-//     std.mem.set(u32, gpu.fb_mem, pal(border_color));
+//     @memset( gpu.fb_mem, pal(border_color));
 
 //     const font = ashet.video.defaults.font;
 

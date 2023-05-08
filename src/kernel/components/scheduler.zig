@@ -358,8 +358,8 @@ pub const Thread = struct {
         if (@import("builtin").mode == .Debug) {
             if (name.len > thread.debug_info.name.len)
                 return error.Overflow;
-            std.mem.set(u8, &thread.debug_info.name, 0);
-            std.mem.copy(u8, &thread.debug_info.name, name);
+            @memset(&thread.debug_info.name, 0);
+            std.mem.copyForwards(u8, &thread.debug_info.name, name);
         }
     }
 

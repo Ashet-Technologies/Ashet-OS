@@ -57,14 +57,14 @@ pub fn RAM_Disk(comptime access: Access) type {
             const disk = @fieldParentPtr(RDisk, "driver", dri);
 
             const offset = 512 * block_num;
-            std.mem.copy(u8, buffer, disk.slice[offset..][0..512]);
+            std.mem.copyForwards(u8, buffer, disk.slice[offset..][0..512]);
         }
 
         pub fn write(dri: *Driver, block_num: u32, buffer: []const u8) BlockDevice.WriteError!void {
             const disk = @fieldParentPtr(RDisk, "driver", dri);
 
             const offset = 512 * block_num;
-            std.mem.copy(u8, disk.slice[offset..][0..512], buffer);
+            std.mem.copyForwards(u8, disk.slice[offset..][0..512], buffer);
         }
     };
 }

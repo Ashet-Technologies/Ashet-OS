@@ -361,7 +361,7 @@ test "write basic data (no verify)" {
 }
 
 fn scrambleData(buf: []u8) void {
-    std.mem.set(u8, buf, 0xAA);
+    @memset(buf, 0xAA);
 }
 
 test "write-read basic data" {

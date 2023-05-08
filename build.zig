@@ -314,6 +314,7 @@ pub fn build(b: *std.Build) !void {
         });
 
         {
+            kernel_exe.bundle_compiler_rt = true;
             kernel_exe.rdynamic = true; // Prevent the compiler from garbage collecting exported symbols
             kernel_exe.single_threaded = true;
             kernel_exe.omit_frame_pointer = false;

@@ -53,6 +53,12 @@ pub const specs = struct {
             .os_tag = .freestanding,
             .abi = .musleabi,
             .cpu_model = .{ .explicit = &std.Target.x86.cpu.i486 },
+            .cpu_features_add = std.Target.x86.featureSet(&.{
+                .soft_float,
+            }),
+            .cpu_features_sub = std.Target.x86.featureSet(&.{
+                .x87,
+            }),
         },
     };
 };

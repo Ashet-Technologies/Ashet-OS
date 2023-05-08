@@ -73,7 +73,8 @@ pub fn CfiDeviceImpl(comptime InterfaceWidth: type) type {
             logger.info("num_erase_block_regions = {d}", .{regions});
             for (@as([*]void, undefined)[0..regions], 0..) |_, i| {
                 logger.info("  region[{}].block count = {d}", .{ i, translateBlockRegionBlockCount(readRegister(base, u16, regs.blockRegionNumBlocks(@truncate(u16, i)))) });
-                logger.info("  region[{}].block_size  = {d}", .{ i, std.fmt.fmtIntSizeBin(translateBlockRegionBlockSize(readRegister(base, u16, regs.blockRegionBlockSize(@truncate(u16, i))))) });
+                // TODO: logger.info("  region[{}].block_size  = {d}", .{ i, std.fmt.fmtIntSizeBin(translateBlockRegionBlockSize(readRegister(base, u16, regs.blockRegionBlockSize(@truncate(u16, i))))) });
+                logger.info("  region[{}].block_size  = {d}", .{ i, translateBlockRegionBlockSize(readRegister(base, u16, regs.blockRegionBlockSize(@truncate(u16, i)))) });
             }
 
             if (extended_query != 0) {

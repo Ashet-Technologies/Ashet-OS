@@ -194,7 +194,7 @@ fn quantizeCountColors(allocator: std.mem.Allocator, palette_size: usize, image:
         return error.TooManyColors;
 
     var palette = try allocator.alloc(Rgba32, palette_size);
-    std.mem.copy(Rgba32, palette, color_map.keys());
+    std.mem.copyForwards(Rgba32, palette, color_map.keys());
     return palette;
 }
 

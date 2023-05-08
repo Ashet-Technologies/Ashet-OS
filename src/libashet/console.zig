@@ -72,7 +72,7 @@ fn newline() void {
     if (cursor.y >= height) {
         cursor.y -= 1;
 
-        std.mem.copy(
+        std.mem.copyForwards(
             u8,
             memory()[0..],
             memory()[charOffset(0, 1)..charOffset(0, height)],

@@ -35,7 +35,7 @@ pub fn init(vga: *VGA) !void {
     writeVgaRegisters(modes.g_320x200x256);
 
     vga.loadPalette(vga.palette);
-    std.mem.set(ColorIndex, @intToPtr([*]align(ashet.memory.page_size) ColorIndex, 0xA0000)[0 .. 320 * 240], ColorIndex.get(0));
+    @memset(@intToPtr([*]align(ashet.memory.page_size) ColorIndex, 0xA0000)[0 .. 320 * 240], ColorIndex.get(0));
 }
 
 fn getVideoMemory(driver: *Driver) []align(ashet.memory.page_size) ColorIndex {
@@ -92,7 +92,7 @@ fn flush(driver: *Driver) void {
     vd.loadPalette(vd.palette);
 
     const target = @intToPtr([*]align(ashet.memory.page_size) ColorIndex, 0xA0000)[0 .. 320 * 240];
-    std.mem.copy(ColorIndex, target, &vd.backbuffer);
+    std.mem.copyForwards(ColorIndex, target, &vd.backbuffer);
 }
 
 fn writeVgaRegisters(regs: [61]u8) void {

@@ -20,12 +20,17 @@ pub fn main() !u8 {
     const args = try std.process.argsAlloc(std.heap.c_allocator);
     defer std.process.argsFree(std.heap.c_allocator, args);
 
-    if (args.len != 2) {
-        std.log.err("init-disk <image>!", .{});
+    if (args.len < 2 or args.len > 3) {
+        std.log.err("init-disk <image> [<offset>]!", .{});
         return 1;
     }
 
-    image_disk.create(args[1], 32 * 1024 * 1024) catch |e| {
+    const offset = if (args.len == 3)
+        try std.fmt.parseInt(u64, args[2], 0)
+    else
+        0x00;
+
+    image_disk.create(args[1], 128 * 1024 * 1024, offset) catch |e| {
         std.log.err("failed to open disk {s}: {s}", .{ args[1], @errorName(e) });
         return 1;
     };
@@ -37,7 +42,7 @@ pub fn main() !u8 {
     {
         var workspace: [8192]u8 = undefined;
         try fatfs.mkfs("0", .{
-            .filesystem = .any,
+            .filesystem = .fat32,
             .sector_align = 512,
         }, &workspace);
     }
@@ -219,18 +224,24 @@ pub const Disk = struct {
         .ioctlFn = ioctl,
     },
     backing_file: ?std.fs.File = null,
+    offset: u64 = 0,
 
     fn open(self: *Disk, path: []const u8) !void {
         self.close();
         self.backing_file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
     }
 
-    fn create(self: *Disk, path: []const u8, size: u64) !void {
+    fn create(self: *Disk, path: []const u8, size: u64, offset: u64) !void {
         self.close();
+
         var file = try std.fs.cwd().createFile(path, .{ .read = true });
+        errdefer file.close();
+
         try file.seekTo(size - 1);
         try file.writeAll(".");
+
         self.backing_file = file;
+        self.offset = offset;
     }
 
     fn close(self: *Disk) void {
@@ -271,7 +282,7 @@ pub const Disk = struct {
         logger.debug("read({*}, {}, {})", .{ buff, sector, count });
 
         var file = self.backing_file orelse return error.DiskNotReady;
-        file.seekTo(sector * sector_size) catch return error.IoError;
+        file.seekTo(sector * sector_size + self.offset * sector_size) catch return error.IoError;
         file.reader().readNoEof(buff[0 .. sector_size * count]) catch return error.IoError;
     }
 
@@ -281,7 +292,7 @@ pub const Disk = struct {
         logger.debug("write({*}, {}, {})", .{ buff, sector, count });
 
         var file = self.backing_file orelse return error.DiskNotReady;
-        file.seekTo(sector * sector_size) catch return error.IoError;
+        file.seekTo(sector * sector_size + self.offset * sector_size) catch return error.IoError;
         file.writer().writeAll(buff[0 .. sector_size * count]) catch return error.IoError;
     }
 
@@ -295,7 +306,7 @@ pub const Disk = struct {
 
                 .get_sector_count => {
                     const size = @ptrCast(*fatfs.LBA, @alignCast(@alignOf(fatfs.LBA), buff));
-                    const len = file.getEndPos() catch return error.IoError;
+                    const len = (file.getEndPos() catch return error.IoError) -| self.offset * sector_size;
                     size.* = @intCast(fatfs.LBA, len / 512);
                 },
                 .get_sector_size => {

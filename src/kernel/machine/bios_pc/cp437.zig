@@ -52,7 +52,7 @@ const ranges = blk: {
     }
 
     var result: [list.len]Range = undefined;
-    std.mem.copy(Range, &result, list);
+    std.mem.copyForwards(Range, &result, list);
     break :blk result;
 };
 

@@ -1,4 +1,5 @@
 const std = @import("std");
+const ashet = @import("../main.zig");
 const platforms = @import("../platform/all.zig");
 
 pub const MachineSpec = struct {
@@ -11,7 +12,7 @@ pub const MachineSpec = struct {
 
 pub const MachineConfig = struct {
     /// If this is set, the kernel will initialize the `.data` and `.bss` sections.
-    uninitialized_memory: bool,
+    load_sections: ashet.memory.MemorySections,
 };
 
 pub const all = struct {

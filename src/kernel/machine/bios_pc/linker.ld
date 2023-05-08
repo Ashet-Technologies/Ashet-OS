@@ -22,7 +22,7 @@ SECTIONS
     .data ALIGN(4096) : {
         . = ALIGN(4096);
         kernel_stack_start = .;
-        . += 0x8000; 
+        . += 0x8000;
         kernel_stack = .;
 
         __kernel_data_start = .;

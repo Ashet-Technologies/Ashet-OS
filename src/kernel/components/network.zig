@@ -161,7 +161,7 @@ fn netif_init(netif_c: [*c]c.netif) callconv(.C) c.err_t {
     netif.mtu = nic.mtu; // c.ETHERNET_MTU;
     netif.flags = c.NETIF_FLAG_BROADCAST | c.NETIF_FLAG_ETHARP | c.NETIF_FLAG_ETHERNET | c.NETIF_FLAG_IGMP | c.NETIF_FLAG_MLD6;
     // c.MIB2_INIT_NETIF(netif, c.snmp_ifType_ethernet_csmacd, 100000000);
-    std.mem.copy(u8, &netif.hwaddr, &nic.address.tuple);
+    std.mem.copyForwards(u8, &netif.hwaddr, &nic.address.tuple);
     netif.hwaddr_len = c.ETH_HWADDR_LEN;
     return c.ERR_OK;
 }

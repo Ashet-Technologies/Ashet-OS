@@ -107,7 +107,7 @@ pub fn init(allocator: std.mem.Allocator, mbinfo: *multiboot.Info) !VESA_BIOS_Ex
     const vmem = try allocator.alignedAlloc(ColorIndex, ashet.memory.page_size, std.math.max(ashet.video.defaults.splash_screen.len, framebuffer.stride * framebuffer.height));
     errdefer allocator.free(vmem);
 
-    std.mem.copy(ColorIndex, vmem, &ashet.video.defaults.splash_screen);
+    std.mem.copyForwards(ColorIndex, vmem, &ashet.video.defaults.splash_screen);
 
     return VESA_BIOS_Extension{
         .framebuffer = framebuffer,
@@ -181,14 +181,14 @@ fn flush(driver: *Driver) void {
 
     //     var row_addr = @ptrCast([*]u32, @alignCast(@alignOf(u32), vd.framebuffer.base));
 
-    //     std.mem.set(u32, row_addr[0 .. vd.framebuffer.stride * dy], border_value);
-    //     std.mem.set(u32, row_addr[vd.framebuffer.stride * (dy + vd.graphics_height) .. limit], border_value);
+    //     @memset( row_addr[0 .. vd.framebuffer.stride * dy], border_value);
+    //     @memset( row_addr[vd.framebuffer.stride * (dy + vd.graphics_height) .. limit], border_value);
 
     //     var y: usize = 0;
     //     row_addr += vd.framebuffer.stride * dy;
     //     while (y < vd.graphics_height) : (y += 1) {
-    //         std.mem.set(u32, row_addr[0..dx], border_value);
-    //         std.mem.set(u32, row_addr[dx + vd.graphics_width .. vd.framebuffer.width], border_value);
+    //         @memset( row_addr[0..dx], border_value);
+    //         @memset( row_addr[dx + vd.graphics_width .. vd.framebuffer.width], border_value);
     //         row_addr += vd.framebuffer.stride;
     //     }
     // }

@@ -114,7 +114,7 @@ pub fn clear(fb: Framebuffer, color: ColorIndex) void {
     var row = fb.pixels;
     var y: usize = 0;
     while (y < fb.height) : (y += 1) {
-        std.mem.set(ColorIndex, row[0..fb.width], color);
+        @memset(row[0..fb.width], color);
         row += fb.stride;
     }
 }
@@ -175,7 +175,7 @@ pub fn drawLine(fb: Framebuffer, from: Point, to: Point, color: ColorIndex) void
         if (end < start)
             return;
 
-        std.mem.set(ColorIndex, (fb.pixels + @intCast(usize, from.y) * fb.stride)[@intCast(usize, start)..@intCast(usize, end)], color);
+        @memset((fb.pixels + @intCast(usize, from.y) * fb.stride)[@intCast(usize, start)..@intCast(usize, end)], color);
     } else if (from.x == to.x) {
         // vertical
         if (from.x < 0 or from.x >= fb.width)
@@ -332,7 +332,7 @@ pub fn blit(fb: Framebuffer, point: Point, bitmap: Bitmap) void {
         // use optimized memcpy route when we don't have to consider transparency
         var y: usize = 0;
         while (y < target.height) : (y += 1) {
-            std.mem.copy(ColorIndex, dst[0..target.width], src[target.dx..bitmap.width]);
+            std.mem.copyForwards(ColorIndex, dst[0..target.width], src[target.dx..bitmap.width]);
             dst += fb.stride;
             src += bitmap.stride;
         }

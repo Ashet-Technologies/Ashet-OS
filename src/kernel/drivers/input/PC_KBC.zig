@@ -366,12 +366,23 @@ fn readData(kbc: PC_KBC) !u8 {
     return try readRawData();
 }
 
+fn busyLoop(cnt: u32) void {
+    var i: u32 = 0;
+    while (i < cnt) : (i += 1) {
+        asm volatile (""
+            :
+            : [x] "r" (i),
+        );
+    }
+}
+
 fn writeRawData(data: u8) error{Timeout}!void {
     var timeout: u8 = 255;
     while (readStatus().input_buffer == .full) {
         if (timeout == 0)
             return error.Timeout;
         timeout -= 1;
+        busyLoop(100);
     }
     x86.out(u8, ports.data, data);
 }
@@ -382,6 +393,7 @@ fn readRawData() error{Timeout}!u8 {
         if (timeout == 0)
             return error.Timeout;
         timeout -= 1;
+        busyLoop(100);
     }
     return x86.in(u8, ports.data);
 }
@@ -392,6 +404,7 @@ fn writeRawCommand(cmd: Command) error{Timeout}!void {
         if (timeout == 0)
             return error.Timeout;
         timeout -= 1;
+        busyLoop(100);
     }
     x86.out(u8, ports.command, @enumToInt(cmd));
 }
@@ -405,7 +418,7 @@ fn flushData() void {
         const item = x86.in(u8, ports.data);
         logger.debug("flush is discarding byte 0x{X:0>2}", .{item});
     }
-}
+}w
 
 const ports = struct {
     // Read port for output buffer, write port for input buffer

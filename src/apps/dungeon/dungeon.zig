@@ -112,7 +112,7 @@ const screen_height = 300;
 var clonebuffer: [screen_width * screen_height]ColorIndex = undefined;
 
 fn render() void {
-    std.mem.set(ColorIndex, &clonebuffer, ColorIndex.get(0));
+    @memset(&clonebuffer, ColorIndex.get(0));
 
     const fb = gui.Framebuffer{
         .width = screen_width,
@@ -127,8 +127,8 @@ fn render() void {
     raycaster.drawSprites(fb, &sprites);
 
     // double buffering:
-    std.mem.copy(ashet.abi.Color, ashet.video.getPaletteMemory(), &palette);
-    std.mem.copy(ColorIndex, ashet.video.getVideoMemory()[0..clonebuffer.len], &clonebuffer);
+    std.mem.copyForwards(ashet.abi.Color, ashet.video.getPaletteMemory(), &palette);
+    std.mem.copyForwards(ColorIndex, ashet.video.getVideoMemory()[0..clonebuffer.len], &clonebuffer);
 }
 
 const Texture = gui.Bitmap.EmbeddedBitmap;
@@ -166,7 +166,7 @@ const textures = [_]Texture{
 const palette = blk: {
     var pal: [256]ashet.abi.Color = undefined;
     for (textures, 0..) |tex, i| {
-        std.mem.copy(
+        std.mem.copyForwards(
             ashet.abi.Color,
             pal[16 * i ..],
             tex.palette,

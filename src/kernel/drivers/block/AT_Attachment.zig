@@ -247,7 +247,7 @@ fn writeBlocks(device: AT_Attachment, lba: u24, buffer: []const u8) BlockDevice.
 
         var words: [256]u16 = undefined;
 
-        std.mem.copy(u8, std.mem.sliceAsBytes(&words), buffer[block_size * block ..][0..block_size]);
+        std.mem.copyForwards(u8, std.mem.sliceAsBytes(&words), buffer[block_size * block ..][0..block_size]);
 
         for (words) |w| {
             x86.out(u16, ports.data, w);

@@ -79,7 +79,7 @@ const SplashScreen = struct {
                     .@"return", .kp_enter => {
                         // clear screen
                         const vmem = libashet.video.getVideoMemory()[0 .. 400 * 300];
-                        std.mem.set(u8, vmem, 15);
+                        @memset(vmem, 15);
 
                         // start application
                         try screen.startApp(screen.apps.slice()[screen.current_app]);
@@ -152,7 +152,7 @@ const SplashScreen = struct {
         const vmem = libashet.video.getVideoMemory()[0 .. 400 * 300];
         const palette = libashet.video.getPaletteMemory();
 
-        std.mem.set(u8, vmem, 15);
+        @memset(vmem, 15);
 
         for (screen.apps.slice(), 0..) |app, index| {
             const target_pos = screen.layout.pos(index);

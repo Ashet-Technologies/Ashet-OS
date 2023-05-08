@@ -33,9 +33,7 @@ comptime {
 }
 
 export fn ashet_kernelMain() void {
-    if (machine_config.uninitialized_memory) {
-        memory.loadKernelMemory();
-    }
+    memory.loadKernelMemory(machine_config.load_sections);
 
     if (@hasDecl(machine, "earlyInitialize")) {
         // If required, initialize the machine basics first,
@@ -272,7 +270,8 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
         writer.print("  low:     0x{X:0>8}\r\n", .{stack_start}) catch {};
         writer.print("  pointer: 0x{X:0>8}\r\n", .{sp}) catch {};
         writer.print("  high:    0x{X:0>8}\r\n", .{stack_end}) catch {};
-        writer.print("  size:    {d:.3}\r\n", .{std.fmt.fmtIntSizeBin(stack_size)}) catch {};
+        // writer.print("  size:    {d:.3}\r\n", .{std.fmt.fmtIntSizeBin(stack_size)}) catch {};
+        writer.print("  size:    {d}\r\n", .{stack_size}) catch {};
 
         if (sp > stack_end) {
             // stack underflow
