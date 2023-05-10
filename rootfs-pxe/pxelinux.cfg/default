@@ -1,0 +1,22 @@
+DEFAULT menu.c32
+
+MENU TITLE PXE Boot Services
+PROMPT 0
+TIMEOUT 15
+
+LABEL Ashet OS
+  COM32 mboot.c32
+  APPEND /ashet-os
+
+LABEL Hardware Detection Tool
+  COM32 hdt.c32
+
+label disk0
+  localboot 0
+  MENU LABEL Boot disk (0x80)
+  
+LABEL Reboot
+  COM32 reboot.c32
+
+LABEL Power off
+  COM32 poweroff.c32

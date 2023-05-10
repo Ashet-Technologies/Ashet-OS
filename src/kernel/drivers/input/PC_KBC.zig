@@ -136,9 +136,12 @@ pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleIni
         var iter = kbc.channels.iterator();
         while (iter.next()) |chan| {
             try chan.writeCommand(DeviceMessage.common(.reset));
-            var response = try chan.readData();
-
-            logger.debug("{s} reset response: 0x{X:0>2}", .{ @tagName(chan), response });
+            if (chan.readData()) |response| {
+                logger.debug("{s} reset response: 0x{X:0>2}", .{ @tagName(chan), response });
+            } else |err| {
+                logger.debug("{s} reset response: {!}", .{ @tagName(chan), err });
+                kbc.channels.remove(chan);
+            }
         }
     }
 
@@ -353,17 +356,21 @@ fn channel(kbc: PC_KBC, chan: Channel) Channel {
 
 fn writeCommand(kbc: PC_KBC, cmd: Command) !void {
     _ = kbc;
+    // logger.debug("writeCommand({})", .{cmd});
     try writeRawCommand(cmd);
 }
 
 fn writeData(kbc: PC_KBC, value: u8) !void {
     _ = kbc;
+    // logger.debug("writeData({})", .{value});
     try writeRawData(value);
 }
 
 fn readData(kbc: PC_KBC) !u8 {
     _ = kbc;
-    return try readRawData();
+    var result = readRawData();
+    // logger.debug("readData() => {!X:0>2}", .{result});
+    return try result;
 }
 
 fn busyLoop(cnt: u32) void {
@@ -376,35 +383,42 @@ fn busyLoop(cnt: u32) void {
     }
 }
 
+fn delayPortRead() void {
+    busyLoop(10_000);
+}
+
 fn writeRawData(data: u8) error{Timeout}!void {
+    errdefer logger.err("timeout while executing writeRawData({})", .{data});
     var timeout: u8 = 255;
     while (readStatus().input_buffer == .full) {
         if (timeout == 0)
             return error.Timeout;
         timeout -= 1;
-        busyLoop(100);
+        delayPortRead();
     }
     x86.out(u8, ports.data, data);
 }
 
 fn readRawData() error{Timeout}!u8 {
+    errdefer logger.err("timeout while executing readRawData()", .{});
     var timeout: u8 = 255;
     while (readStatus().output_buffer == .empty) {
         if (timeout == 0)
             return error.Timeout;
         timeout -= 1;
-        busyLoop(100);
+        delayPortRead();
     }
     return x86.in(u8, ports.data);
 }
 
 fn writeRawCommand(cmd: Command) error{Timeout}!void {
+    errdefer logger.err("timeout while executing writeRawCommand({})", .{cmd});
     var timeout: u8 = 255;
     while (readStatus().input_buffer == .full) {
         if (timeout == 0)
             return error.Timeout;
         timeout -= 1;
-        busyLoop(100);
+        delayPortRead();
     }
     x86.out(u8, ports.command, @enumToInt(cmd));
 }
@@ -418,7 +432,7 @@ fn flushData() void {
         const item = x86.in(u8, ports.data);
         logger.debug("flush is discarding byte 0x{X:0>2}", .{item});
     }
-}w
+}
 
 const ports = struct {
     // Read port for output buffer, write port for input buffer

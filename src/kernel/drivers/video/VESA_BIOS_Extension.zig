@@ -84,6 +84,7 @@ pub fn init(allocator: std.mem.Allocator, mbinfo: *multiboot.Info) !VESA_BIOS_Ex
     }
 
     std.log.info("video resolution: {}x{}", .{ vbe_mode.x_resolution, vbe_mode.y_resolution });
+    std.log.info("video memory:     {}K", .{64 * vbe_control.ram_size});
 
     const framebuffer_config = FramebufferConfig{
         .scanline0 = vbe_mode.phys_base_ptr,
@@ -245,8 +246,38 @@ const FramebufferConfig = struct {
     blue_shift: u32,
 
     pub fn instantiate(cfg: FramebufferConfig) error{Unsupported}!Framebuffer {
-        const channel_depth_8bit = (cfg.red_mask_size == 8 and cfg.red_mask_size == 8 and cfg.red_mask_size == 8);
+        errdefer logger.warn("unsupported framebuffer configuration: {}", .{cfg});
 
+        // special case for
+        if (cfg.red_mask_size == 0 and
+            cfg.green_mask_size == 0 and
+            cfg.blue_mask_size == 0 and
+            cfg.red_shift == 0 and
+            cfg.green_shift == 0 and
+            cfg.blue_shift == 0 and
+            cfg.bytes_per_scan_line == 0 and
+            cfg.bits_per_pixel == 32)
+        {
+            // Assume the following device:
+            // oemstring = 'S3 Incorporated. Twister BIOS'
+            // oem_vendor_name = 'S3 Incorporated.'
+            // oem_product_name = 'VBE 2.0'
+            // oem_product_rev = 'Rev 1.1'
+
+            return Framebuffer{
+                .writeFn = buildSpecializedWriteFunc8(u32, 0, 8, 16), // XBGR32
+
+                .base = cfg.scanline0,
+
+                .stride = 4 * cfg.width,
+                .width = cfg.width,
+                .height = cfg.height,
+
+                .byte_per_pixel = @divExact(cfg.bits_per_pixel, 8),
+            };
+        }
+
+        const channel_depth_8bit = (cfg.red_mask_size == 8 and cfg.green_mask_size == 8 and cfg.blue_mask_size == 8);
         if (!channel_depth_8bit)
             return error.Unsupported;
 
@@ -254,7 +285,7 @@ const FramebufferConfig = struct {
             32 => if (cfg.red_shift == 0 and cfg.green_shift == 8 and cfg.blue_shift == 16)
                 buildSpecializedWriteFunc8(u32, 0, 8, 16) // XBGR32
             else if (cfg.red_shift == 16 and cfg.green_shift == 8 and cfg.blue_shift == 0)
-                buildSpecializedWriteFunc8(u32, 0, 8, 16) // XRGB32
+                buildSpecializedWriteFunc8(u32, 16, 8, 0) // XRGB32
             else if (cfg.red_shift == 8 and cfg.green_shift == 16 and cfg.blue_shift == 24)
                 buildSpecializedWriteFunc8(u32, 8, 16, 24) // BGRX32
             else if (cfg.red_shift == 24 and cfg.green_shift == 16 and cfg.blue_shift == 8)

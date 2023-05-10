@@ -80,13 +80,12 @@ pub fn initialize() !void {
         hw.vbe = vbe;
         ashet.drivers.install(&hw.vbe.driver);
     } else |vbe_error| {
-        std.log.warn("VBE not available ({s}), falling back to classic VGA", .{@tagName(vbe_error)});
+        std.log.warn("VBE not available ({s}), falling back to classic VGA", .{@errorName(vbe_error)});
 
-        if (hw.vga.init()) |vga| {
-            hw.vga = vga;
+        if (hw.vga.init()) |_| {
             ashet.drivers.install(&hw.vga.driver);
         } else |vga_error| {
-            std.log.warn("VGA not available ({s}), panicking...", .{@tagName(vga_error)});
+            std.log.warn("VGA not available ({s}), panicking...", .{@errorName(vga_error)});
             @panic("Ashet OS does requires a video card!");
         }
     }
