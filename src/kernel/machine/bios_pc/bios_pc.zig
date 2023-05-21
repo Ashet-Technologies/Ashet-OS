@@ -125,10 +125,7 @@ fn busyLoop(cnt: u32) void {
     }
 }
 
-pub fn debugWrite(msg: []const u8) void {
-    for (msg) |char| {
-        x86.out(u8, 0x3F8, char);
-    }
+fn writeVirtualSPI(msg: []const u8) void {
     const Selector = packed struct(u8) {
         data: u1,
         clk: u1,
@@ -162,6 +159,33 @@ pub fn debugWrite(msg: []const u8) void {
 
     x86.out(u8, 0x378, Selector.map(.{ .data = 0, .clk = 0, .cs = 0 }));
     busyLoop(2);
+}
+
+pub fn debugWrite(msg: []const u8) void {
+    for (msg) |char| {
+        x86.out(u8, 0x3F8, char);
+    }
+
+    const DATA = 0x378;
+    const STATUS = 0x379;
+    const CONTROL = 0x37A;
+
+    for (msg) |char| {
+        while ((x86.in(u8, STATUS) & 0x80) == 0) {
+            busyLoop(10);
+        }
+
+        x86.out(u8, DATA, char);
+
+        const status = x86.in(u8, CONTROL);
+        x86.out(u8, CONTROL, status | 0x01);
+        busyLoop(10);
+        x86.out(u8, CONTROL, status & 0xFE);
+
+        while ((x86.in(u8, STATUS) & 0x80) == 0) {
+            busyLoop(10);
+        }
+    }
 
     // if (!graphics_enabled) {
     //     hw.terminal.write(msg);

@@ -20,13 +20,13 @@ p {
 }
 
 itemize {
-  p { span "A path must not be empty." }
-  p { span "A path must be encoded in valid UTF-8." }
-  p { span "A file or folder name must not be longer than 120 characters." }
-  p { span "A file or folder name must not contain any ASCII control characters." }
-  p { span "A file or folder name must not contain the " mono "\\" span "character, to prevent confusion with Windows or DOS paths." }
-  p { span "There must be no leading " mono "/" span " before the first folder." }
-  p { span "There must be no double-" mono "/" span " in any component." }
+  item { p { span "A path must not be empty." } }
+  item { p { span "A path must be encoded in valid UTF-8." } }
+  item { p { span "A file or folder name must not be longer than 120 characters." } }
+  item { p { span "A file or folder name must not contain any ASCII control characters." } }
+  item { p { span "A file or folder name must not contain the " mono "\\" span "character, to prevent confusion with Windows or DOS paths." } }
+  item { p { span "There must be no leading " mono "/" span " before the first folder." } }
+  item { p { span "There must be no double-" mono "/" span " in any component." } }
 }
 
 h2 "hierarchy" "Filesystem Hierarchy"

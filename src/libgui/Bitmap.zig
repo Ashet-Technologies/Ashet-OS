@@ -152,7 +152,7 @@ test "bitmap parse with offset" {
     }, icon.pixels[0..icon.width]);
 }
 
-test "bitmap parse with transparency" {
+test "bitmap parse with transparency 1" {
     const icon = Bitmap.parse(0,
         \\123456
     );
@@ -162,7 +162,7 @@ test "bitmap parse with transparency" {
     try std.testing.expectEqual(@as(?ColorIndex, ColorIndex.get(0)), icon.transparent);
 }
 
-test "bitmap parse with transparency" {
+test "bitmap parse with transparency 2" {
     const icon = Bitmap.parse(240,
         \\0123456
     );

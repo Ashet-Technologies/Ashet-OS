@@ -73,7 +73,7 @@ pub fn main() !u8 {
         var file_text = try std.fs.cwd().readFileAlloc(allocator, input_file_name, 10 << 20);
         defer allocator.free(file_text);
 
-        break :blk try hyperdoc.parse(allocator, file_text);
+        break :blk try hyperdoc.parse(allocator, file_text, null);
     };
     defer document.deinit();
 

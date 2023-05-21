@@ -286,7 +286,7 @@ const WikiSoftware = struct {
 
         std.debug.assert(len == list.items.len);
 
-        var doc = try hdoc.parse(ashet.process.allocator(), list.items);
+        var doc = try hdoc.parse(ashet.process.allocator(), list.items, null);
         errdefer doc.deinit();
 
         return Document{

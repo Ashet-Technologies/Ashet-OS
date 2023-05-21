@@ -265,7 +265,7 @@ const FramebufferConfig = struct {
             // oem_product_rev = 'Rev 1.1'
 
             return Framebuffer{
-                .writeFn = buildSpecializedWriteFunc8(u32, 0, 8, 16), // XBGR32
+                .writeFn = buildSpecializedWriteFunc8(u32, 16, 8, 0), // RGBX32
 
                 .base = cfg.scanline0,
 
@@ -296,7 +296,7 @@ const FramebufferConfig = struct {
             24 => if (cfg.red_shift == 0 and cfg.green_shift == 8 and cfg.blue_shift == 16)
                 buildSpecializedWriteFunc8(u24, 0, 8, 16) // BGR24
             else if (cfg.red_shift == 16 and cfg.green_shift == 8 and cfg.blue_shift == 0)
-                buildSpecializedWriteFunc8(u24, 0, 8, 16) // RGB24
+                buildSpecializedWriteFunc8(u24, 16, 8, 0) // RGB24
             else
                 return error.Unsupported,
 
@@ -337,9 +337,9 @@ const FramebufferConfig = struct {
 };
 
 const RGB = packed struct {
-    b: u8,
-    g: u8,
     r: u8,
+    g: u8,
+    b: u8,
     x: u8,
 };
 

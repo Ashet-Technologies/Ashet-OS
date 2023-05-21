@@ -32,15 +32,14 @@ done
 # compile root disk image
 
 disk_size=33554432
+if [ "${MACHINE}" = "efi_pc" ] ; then
+    disk_size=536870912
+fi
+if [ "${MACHINE}" = "bios_pc" ] ; then
+    disk_size=536870912
+fi
 
-# if [ "${MACHINE}" = "efi_pc" ] ; then
-#     disk_size=536870912
-# fi
-# if [ "${MACHINE}" = "bios_pc" ] ; then
-#     disk_size=536870912
-# fi
-
-fallocate -l "${disk_size}" "${DISK}"
+truncate -s "${disk_size}" "${DISK}"
 
 rootfs="ashet-fs"
 case $MACHINE in

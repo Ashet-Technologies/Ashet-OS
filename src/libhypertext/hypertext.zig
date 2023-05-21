@@ -179,7 +179,7 @@ const Renderer = struct {
 
                 var mut_fb = fb;
                 var offset_y: u15 = 0;
-                for (ol, 0..) |inner_block, i| {
+                for (ol, 0..) |item, i| {
                     if (i > 0) {
                         offset_y += ren.theme.block_spacing;
                     }
@@ -193,9 +193,10 @@ const Renderer = struct {
 
                     mut_fb.drawString(0, offset_y, numstr, ren.theme.text_color, padding);
 
-                    const height = ren.renderBlock(inner_block, ren.indentFramebuffer(mut_fb, padding, offset_y));
-
-                    offset_y += height;
+                    for (item.contents) |inner_block| {
+                        const height = ren.renderBlock(inner_block, ren.indentFramebuffer(mut_fb, padding, offset_y));
+                        offset_y += height;
+                    }
                 }
 
                 return offset_y;
@@ -207,7 +208,7 @@ const Renderer = struct {
 
                 var offset_y: u15 = 0;
 
-                for (ul, 0..) |inner_block, i| {
+                for (ul, 0..) |list_item, i| {
                     if (i > 0) {
                         offset_y += ren.theme.block_spacing;
                     }
@@ -219,9 +220,10 @@ const Renderer = struct {
                         .height = 3,
                     }, ren.theme.text_color);
 
-                    const height = ren.renderBlock(inner_block, ren.indentFramebuffer(fb, 12, offset_y));
-
-                    offset_y += height;
+                    for (list_item.contents) |inner_block| {
+                        const height = ren.renderBlock(inner_block, ren.indentFramebuffer(fb, 12, offset_y));
+                        offset_y += height;
+                    }
                 }
 
                 return offset_y;

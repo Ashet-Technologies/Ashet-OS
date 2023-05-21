@@ -1,5 +1,6 @@
 const std = @import("std");
 const fatfs = @import("fatfs");
+const args = @import("args");
 
 // requires pointer stability
 var global_fs: fatfs.FileSystem = undefined;
@@ -16,24 +17,33 @@ pub const std_options = struct {
     };
 };
 
-pub fn main() !u8 {
-    const args = try std.process.argsAlloc(std.heap.c_allocator);
-    defer std.process.argsFree(std.heap.c_allocator, args);
+const CliOptions = struct {
+    help: bool = false,
+    sector_offset: u64 = 0,
+    create: bool = false,
+    size: DiskSize = .{ .size = 128 * 1024 * 1024 }, // 128M by default
+};
 
-    if (args.len < 2 or args.len > 3) {
-        std.log.err("init-disk <image> [<offset>]!", .{});
+pub fn main() !u8 {
+    var cli = args.parseForCurrentProcess(CliOptions, std.heap.c_allocator, .print) catch return 1;
+    defer cli.deinit();
+
+    if (cli.positionals.len != 1) {
+        std.log.err("init-disk <image>", .{});
         return 1;
     }
 
-    const offset = if (args.len == 3)
-        try std.fmt.parseInt(u64, args[2], 0)
-    else
-        0x00;
-
-    image_disk.create(args[1], 128 * 1024 * 1024, offset) catch |e| {
-        std.log.err("failed to open disk {s}: {s}", .{ args[1], @errorName(e) });
-        return 1;
-    };
+    if (cli.options.create) {
+        image_disk.create(cli.positionals[0], cli.options.size.size, cli.options.sector_offset) catch |e| {
+            std.log.err("failed to create disk {s}: {s}", .{ cli.positionals[0], @errorName(e) });
+            return 1;
+        };
+    } else {
+        image_disk.open(cli.positionals[0], cli.options.sector_offset) catch |e| {
+            std.log.err("failed to open disk {s}: {s}", .{ cli.positionals[0], @errorName(e) });
+            return 1;
+        };
+    }
     defer image_disk.close();
 
     fatfs.disks[0] = &image_disk.interface;
@@ -226,9 +236,10 @@ pub const Disk = struct {
     backing_file: ?std.fs.File = null,
     offset: u64 = 0,
 
-    fn open(self: *Disk, path: []const u8) !void {
+    fn open(self: *Disk, path: []const u8, offset: u64) !void {
         self.close();
         self.backing_file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
+        self.offset = offset;
     }
 
     fn create(self: *Disk, path: []const u8, size: u64, offset: u64) !void {
@@ -323,5 +334,32 @@ pub const Disk = struct {
         } else {
             return error.DiskNotReady;
         }
+    }
+};
+
+const DiskSize = struct {
+    size: u64,
+
+    pub fn parse(str: []const u8) !DiskSize {
+        const endsWith = std.ascii.endsWithIgnoreCase;
+        const size_factor = if (endsWith(str, "k"))
+            @as(u64, 1024)
+        else if (endsWith(str, "m"))
+            @as(u64, 1024 * 1024)
+        else if (endsWith(str, "g"))
+            @as(u64, 1024 * 1024 * 1024)
+        else
+            @as(u64, 1);
+
+        const num_str = if (size_factor != 1)
+            str[0 .. str.len - 1]
+        else
+            str;
+
+        const size = try std.fmt.parseInt(u64, num_str, 0);
+
+        return DiskSize{
+            .size = size * size_factor,
+        };
     }
 };

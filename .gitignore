@@ -2,3 +2,4 @@ zig-cache/
 zig-out/
 *.pcap
 .vscode/
+rootfs-pxe/ashet-os

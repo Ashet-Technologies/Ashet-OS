@@ -24,34 +24,34 @@ h2 "index" "Starting points"
 
 h3 "generic" "Generic"
 itemize {
-  p { link "wiki:/ashet/os"              "Ashet OS Documentation" }
+  item { p { link "wiki:/ashet/os"              "Ashet OS Documentation" } }
 }
 
 h3 "apps" "Applications"
 itemize {
-  p { link "wiki:/ashet/apps/music.hdoc"       "Grammophone"  }
-  p { link "wiki:/ashet/apps/commander.hdoc"   "Shepard"      }
-  p { link "wiki:/ashet/apps/chat.hdoc"        "Telegraph"    }
-  p { link "wiki:/ashet/apps/browser.hdoc"     "Gateway"      }
-  p { link "wiki:/ashet/apps/wiki.hdoc"        "Hyper Wiki"   }
-  p { link "wiki:/ashet/apps/terminal.hdoc"    "Connex"       }
-  p { link "wiki:/ashet/apps/editor.hdoc"      "Craftworks"   }
-  p { link "wiki:/ashet/apps/paint.hdoc"       "Dragon Craft" }
-  p { link "wiki:/ashet/apps/io.hdoc"          "I/O"          }
-  p { link "wiki:/ashet/apps/settings.hdoc"    "SysAdvance"   }
-  p { link "wiki:/ashet/apps/lola.hdoc-run"    "LoLa Run!"    }
-  p { link "wiki:/ashet/apps/spreadsheet.hdoc" "Calc"         }
+  item { p { link "wiki:/ashet/apps/music.hdoc"       "Grammophone"  } }
+  item { p { link "wiki:/ashet/apps/commander.hdoc"   "Shepard"      } }
+  item { p { link "wiki:/ashet/apps/chat.hdoc"        "Telegraph"    } }
+  item { p { link "wiki:/ashet/apps/browser.hdoc"     "Gateway"      } }
+  item { p { link "wiki:/ashet/apps/wiki.hdoc"        "Hyper Wiki"   } }
+  item { p { link "wiki:/ashet/apps/terminal.hdoc"    "Connex"       } }
+  item { p { link "wiki:/ashet/apps/editor.hdoc"      "Craftworks"   } }
+  item { p { link "wiki:/ashet/apps/paint.hdoc"       "Dragon Craft" } }
+  item { p { link "wiki:/ashet/apps/io.hdoc"          "I/O"          } }
+  item { p { link "wiki:/ashet/apps/settings.hdoc"    "SysAdvance"   } }
+  item { p { link "wiki:/ashet/apps/lola.hdoc-run"    "LoLa Run!"    } }
+  item { p { link "wiki:/ashet/apps/spreadsheet.hdoc" "Calc"         } }
 }
 
 h3 "games" "Games"
 itemize {
-  p { link "wiki:/ashet/apps/dungeon.hdoc"     "Dungeon"      }
+  item { p { link "wiki:/ashet/apps/dungeon.hdoc"     "Dungeon"      } }
 }
 
 h3 "daemons" "Daemons"
 itemize {
-  p { link "wiki:/ashet/daemon/psi.hdoc"    "Psi Language Server"       }
-  p { link "wiki:/ashet/daemon/lola.hdoc"   "LoLa Language Server"      }
-  p { link "wiki:/ashet/daemon/asm.hdoc"    "Assembly Language Server"  }
-  p { link "wiki:/ashet/daemon/shell.hdoc"  "Shell Server"              }
+  item { p { link "wiki:/ashet/daemon/psi.hdoc"    "Psi Language Server"       } }
+  item { p { link "wiki:/ashet/daemon/lola.hdoc"   "LoLa Language Server"      } }
+  item { p { link "wiki:/ashet/daemon/asm.hdoc"    "Assembly Language Server"  } }
+  item { p { link "wiki:/ashet/daemon/shell.hdoc"  "Shell Server"              } }
 }

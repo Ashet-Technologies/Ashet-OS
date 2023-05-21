@@ -1,7 +1,0 @@
-label: dos
-label-id: 0xd917590e
-device: zig-out/disk.img
-unit: sectors
-sector-size: 512
-
-zig-out/disk.img1 : start=        2048, size=      260096, type=c, bootable

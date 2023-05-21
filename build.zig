@@ -546,6 +546,7 @@ pub fn build(b: *std.Build) !void {
         });
         init_disk.linkLibC();
         init_disk.addModule("fatfs", fatfs_module);
+        init_disk.addModule("args", mod_args);
         const install_step = b.addInstallArtifact(init_disk);
         FatFS.link(init_disk, fatfs_config);
 
