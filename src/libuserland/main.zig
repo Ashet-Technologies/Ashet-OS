@@ -262,13 +262,20 @@ pub fn main() !void {
 
                 _ = sdl.SDL_RenderClear(window.sdl_renderer);
 
-                var rect = sdl.SDL_Rect{
+                var src_rect = sdl.SDL_Rect{
                     .x = 0,
                     .y = 0,
                     .w = window.abi_window.client_rectangle.width,
                     .h = window.abi_window.client_rectangle.height,
                 };
-                _ = sdl.SDL_RenderCopy(window.sdl_renderer, window.sdl_texture, &rect, null);
+
+                var dst_rect = sdl.SDL_Rect{
+                    .x = 0,
+                    .y = 0,
+                    .w = 2 * window.abi_window.client_rectangle.width,
+                    .h = 2 * window.abi_window.client_rectangle.height,
+                };
+                _ = sdl.SDL_RenderCopy(window.sdl_renderer, window.sdl_texture, &src_rect, &dst_rect);
 
                 sdl.SDL_RenderPresent(window.sdl_renderer);
             }
@@ -1008,7 +1015,7 @@ const Window = struct {
         window.index_storage = try allocator.alloc(abi.ColorIndex, max_pixel_count);
         errdefer allocator.free(window.index_storage);
 
-        std.mem.set(abi.ColorIndex, window.index_storage, abi.ColorIndex.get(0));
+        @memset(window.index_storage, abi.ColorIndex.get(0));
 
         window.abi_window = abi.Window{
             .pixels = window.index_storage.ptr,

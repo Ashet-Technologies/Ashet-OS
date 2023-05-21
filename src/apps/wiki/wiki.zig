@@ -197,7 +197,7 @@ const WikiSoftware = struct {
         }
 
         if (wiki.document) |*page| {
-            var doc_fb = fb.view(main_window.doc_view.bounds.shrink(3));
+            var doc_fb = fb.view(main_window.doc_view.bounds.shrink(4));
 
             page.links.shrinkRetainingCapacity(0);
 
@@ -238,6 +238,9 @@ const WikiSoftware = struct {
         if (wiki.document) |*old| {
             old.deinit();
         }
+
+        main_window.doc_h_scrollbar.control.scroll_bar.level = 0;
+        main_window.doc_v_scrollbar.control.scroll_bar.level = 0;
         wiki.document = doc;
     }
 
@@ -347,8 +350,8 @@ const theme = struct {
 
     const wiki = htext.Theme{
         .text = .{ .color = ColorIndex.get(0x00) }, // black
-        .monospace = .{ .color = ColorIndex.get(0x0D) }, // pink
-        .emphasis = .{ .color = ColorIndex.get(0x03) }, // dark red
+        .monospace = .{ .color = ColorIndex.get(0x03) }, // dark red
+        .emphasis = .{ .color = ColorIndex.get(0x12) }, // gold
         .link = .{ .color = ColorIndex.get(0x02) }, // blue
 
         .h1 = .{ .color = ColorIndex.get(0x03) }, // dark red

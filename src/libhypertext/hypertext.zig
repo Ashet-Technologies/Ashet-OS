@@ -165,6 +165,9 @@ const Renderer = struct {
 
             .image => |img| {
                 _ = img;
+                ren.setRunningText(&.{
+                    Span{ .monospace = "<Image Placeholder>" },
+                }, null);
             },
 
             .heading => |h| {
@@ -269,6 +272,7 @@ const Renderer = struct {
                             .word_wrap = true,
                             .style = span_style,
                             .trim_spaces = true,
+                            .link = spanToLink(span),
                         },
                     );
                 }
@@ -280,6 +284,7 @@ const Renderer = struct {
                         .word_wrap = true,
                         .style = span_style,
                         .trim_spaces = true,
+                        .link = spanToLink(span),
                     },
                 );
             }
@@ -309,11 +314,21 @@ const Renderer = struct {
                     .word_wrap = false,
                     .style = span_style,
                     .trim_spaces = false,
+                    .link = spanToLink(span),
                 },
             );
         }
 
         setter.endCurrentLine();
+    }
+
+    fn spanToLink(span: Span) ?hdoc.Link {
+        return switch (span) {
+            .text => null,
+            .emphasis => null,
+            .monospace => null,
+            .link => |l| l,
+        };
     }
 
     fn spanToString(span: Span) []const u8 {
@@ -323,6 +338,10 @@ const Renderer = struct {
             .monospace => |s| s,
             .link => |l| l.text,
         };
+    }
+
+    fn emitLinkInfo(ren: Renderer, rect: Rectangle, link: hdoc.Link) void {
+        ren.linkCallback(ren.context, rect, link);
     }
 
     const TextSetter = struct {
@@ -344,6 +363,7 @@ const Renderer = struct {
             style: Style,
             word_wrap: bool,
             trim_spaces: bool,
+            link: ?hdoc.Link,
         };
         fn writeText(set: *TextSetter, string: []const u8, flags: WriteTextFlags) void {
             var pos: usize = 0;
@@ -353,10 +373,18 @@ const Renderer = struct {
 
                 const raw_line = string[pos..end_of_line];
 
+                const raw_width = @intCast(u15, 6 * raw_line.len);
+
+                if (flags.word_wrap and set.position.x + raw_width > set.line_limit) {
+                    set.newLine();
+                }
+
                 const line = if (flags.trim_spaces and set.isAtStartOfLine())
                     std.mem.trimLeft(u8, raw_line, whitespace)
                 else
                     raw_line;
+
+                const width = @intCast(u15, 6 * line.len);
 
                 set.renderer.framebuffer.drawString(
                     set.position.x,
@@ -365,6 +393,16 @@ const Renderer = struct {
                     flags.style.color,
                     null,
                 );
+
+                if (flags.link) |link| {
+                    set.renderer.emitLinkInfo(.{
+                        .x = set.position.x,
+                        .y = set.position.y,
+                        .width = width,
+                        .height = font_height,
+                    }, link);
+                }
+
                 set.position.x += @intCast(u15, 6 * line.len); // TODO: Replace with actual font measurement
 
                 pos = (next_line_sep orelse break) + 1;

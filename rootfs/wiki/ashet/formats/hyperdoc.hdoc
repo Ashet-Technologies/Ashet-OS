@@ -1,0 +1,43 @@
+hdoc "1.0"
+h1 "" "HyperDocument File Format"
+toc {}
+h2 "intro" "Introduction"
+p {
+  span "The HyperDocument file format is meant to descibe rich text files that link between each other. "
+}
+h2 "structure" "Structure"
+p {
+  span "The structure of HyperDocument files is pretty simple. Each file starts with a "
+  mono "hdoc \"1.0\""
+  span " sequence that will mark both \"magic number\" and format version. "
+}
+p {
+  span "After the header, an arbitrary number of block elements follows."
+  span "Each block can be considered similar to a paragraph in text documents, but isn't necessarily only a pure text element. "
+  span "The following blocks types are available:"
+}
+itemize {
+  item { p { mono "h1" span ", " mono "h2" span ", " mono "h3" span " - First, second and third level headings" } }
+  item { p { mono "toc" span " - A table of contents" } }
+  item { p { mono "p" span " - A regular, plain text paragraph" } }
+  item { p { mono "quote" span " - A block quote" } }
+  item { p { mono "enumerate" span " - An ordered list, using numbering" } }
+  item { p { mono "itemize" span " - An unordered list, using bullet points" } }
+  item { p { mono "pre" span " - A preformatted block of text, optionally with a language tag" } }
+  item { p { mono "image" span " - A picture that is inserted into the document." } }
+}
+p {
+  span "The " mono "p" span ", " mono "quote" span " and " mono "pre" span " blocks contain a sequence of non-nested spans. "
+  span "The following span types are available:"
+}
+itemize {
+  item { p { mono "span" span " - Regular, unformatted plain text" } }
+  item { p { mono "emph" span " - Emphasises text" } }
+  item { p { mono "mono" span " - Monospaced font" } }
+  item { p { mono "link" span " - Plain text with a hyperlink." } }
+}
+
+p {
+  span "The blocks " mono "enumerate" span " and " mono "itemize" span " contain elements of type " mono "item" span ".\n"
+  span "Each of those items contain a list of blocks."
+}
