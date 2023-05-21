@@ -1,0 +1,31 @@
+hdoc "1.0"
+
+toc {}
+
+h1 "" "Preface"
+
+h2 "" "About the author"
+h2 "" "Why this book exists"
+
+h1 "" "Introduction"
+
+h2 "" "Our main character"
+h2 "" "His best friends"
+
+h1 "" "Story Arc"
+
+h2 "" "The dark discovery"
+
+h3 "chocomilk" "Chocolate is made with milk"
+h3 "cowmilk" "Milk is from cows"
+
+h2 "creamy" "A creamy surprise"
+
+h3 "milkfat" "Cream is just milk with more fat"
+h3 "lactose" "Lactose is a bitch"
+
+h1 "" "Excurse"
+
+h1 "" "The Finale"
+
+h1 "" "Epilog"

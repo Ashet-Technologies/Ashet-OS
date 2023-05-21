@@ -205,7 +205,7 @@ const WikiSoftware = struct {
                 doc_fb,
                 page.hyperdoc,
                 theme.wiki,
-                doc_v_scrollbar.control.scroll_bar.level,
+                Point.new(0, -@as(i16, doc_v_scrollbar.control.scroll_bar.level)),
                 page,
                 linkCallback,
             );
@@ -346,14 +346,14 @@ const theme = struct {
     const sidepanel_folder = ColorIndex.get(0x9); // bright gray
 
     const wiki = htext.Theme{
-        .text_color = ColorIndex.get(0x00), // black
-        .monospace_color = ColorIndex.get(0x0D), // pink
-        .emphasis_color = ColorIndex.get(0x03), // dark red
-        .link_color = ColorIndex.get(0x02), // blue
+        .text = .{ .color = ColorIndex.get(0x00) }, // black
+        .monospace = .{ .color = ColorIndex.get(0x0D) }, // pink
+        .emphasis = .{ .color = ColorIndex.get(0x03) }, // dark red
+        .link = .{ .color = ColorIndex.get(0x02) }, // blue
 
-        .h1_color = ColorIndex.get(0x03), // dark red
-        .h2_color = ColorIndex.get(0x00), // black
-        .h3_color = ColorIndex.get(0x11), // dim gray
+        .h1 = .{ .color = ColorIndex.get(0x03) }, // dark red
+        .h2 = .{ .color = ColorIndex.get(0x00) }, // black
+        .h3 = .{ .color = ColorIndex.get(0x11) }, // dim gray
 
         .quote_mark_color = ColorIndex.get(0x05), // dark green
 

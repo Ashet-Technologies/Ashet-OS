@@ -8,14 +8,18 @@ pub const Point = ashet.abi.Point;
 pub const Size = ashet.abi.Size;
 pub const Rectangle = ashet.abi.Rectangle;
 
+pub const Style = struct {
+    color: Color,
+};
+
 pub const Theme = struct {
-    text_color: Color,
-    monospace_color: Color,
-    emphasis_color: Color,
-    link_color: Color,
-    h1_color: Color,
-    h2_color: Color,
-    h3_color: Color,
+    text: Style,
+    monospace: Style,
+    emphasis: Style,
+    link: Style,
+    h1: Style,
+    h2: Style,
+    h3: Style,
 
     quote_mark_color: Color,
 
@@ -24,11 +28,14 @@ pub const Theme = struct {
     block_spacing: u15,
 };
 
+const Block = hdoc.Block;
+const Span = hdoc.Span;
+
 pub fn renderDocument(
     framebuffer: gui.Framebuffer,
     document: hdoc.Document,
     theme: Theme,
-    scroll_offset: u15,
+    position: Point,
     context: anytype,
     comptime linkCallback: fn (@TypeOf(context), ashet.abi.Rectangle, hdoc.Link) void,
 ) void {
@@ -51,7 +58,7 @@ pub fn renderDocument(
         .framebuffer = framebuffer,
         .document = document,
         .theme = theme,
-        .block_top = -@as(i16, scroll_offset),
+        .position = position,
     };
     renderer.run();
 }
@@ -63,337 +70,330 @@ const Renderer = struct {
     framebuffer: gui.Framebuffer,
     document: hdoc.Document,
     theme: Theme,
-    block_top: i16,
+    position: Point,
+
+    enable_block_spacing: bool = true,
 
     const font_height = 8;
 
     fn run(ren: *Renderer) void {
-        const target_rect = Rectangle{
-            .x = 0,
-            .y = ren.block_top,
-            .width = ren.framebuffer.width,
-            .height = ren.framebuffer.height,
-        };
-
-        ren.renderBlocks(ren.framebuffer.view(target_rect.shrink(ren.theme.padding)), ren.document.contents);
+        ren.processBlocks(ren.document.contents);
     }
 
-    fn renderBlocks(ren: *Renderer, fb: gui.Framebuffer, blocks: []const hdoc.Block) void {
-        var mut_fb = fb;
+    fn processBlocks(ren: *Renderer, blocks: []const Block) void {
         for (blocks, 0..) |block, i| {
-            if (i > 0) {
-                mut_fb = mut_fb.view(Rectangle{
-                    .x = 0,
-                    .y = ren.theme.block_spacing,
-                    .width = fb.width,
-                    .height = fb.height -| ren.theme.block_spacing,
-                });
+            if (i > 0 and ren.enable_block_spacing) {
+                ren.position.y += ren.theme.block_spacing;
             }
-            const height = ren.renderBlock(block, mut_fb);
-            mut_fb = mut_fb.view(Rectangle{
-                .x = 0,
-                .y = height,
-                .width = fb.width,
-                .height = fb.height -| height,
-            });
+            ren.processBlock(block);
         }
     }
 
-    fn indentFramebuffer(ren: *Renderer, fb: gui.Framebuffer, indent: u15, scroll: u15) gui.Framebuffer {
-        return fb.view(.{
-            .x = indent,
-            .y = scroll,
-            .width = ren.framebuffer.width -| indent,
-            .height = ren.framebuffer.height -| scroll,
-        });
-    }
+    fn processBlock(ren: *Renderer, block: Block) void {
 
-    fn renderBlock(ren: *Renderer, block: hdoc.Block, fb: gui.Framebuffer) u15 {
+        // rendering a block doesn't change any indentation,
+        // but we might mutate it internally. Make sure we restore
+        // it properly again
+        const indent = ren.position.x;
+        defer ren.position.x = indent;
+
         switch (block) {
-            .table_of_contents => {
-                // TODO: Implement TOC
-
-                fb.drawString(0, 0, "Table of Contents", ren.theme.text_color, fb.width);
-
-                return font_height;
-            },
-
-            .heading => |h| {
-                const color = switch (h.level) {
-                    .document => ren.theme.h1_color,
-                    .chapter => ren.theme.h2_color,
-                    .section => ren.theme.h3_color,
-                };
-
-                fb.drawString(0, 0, h.title, color, fb.width);
-
-                switch (h.level) {
-                    .document => {
-                        fb.drawLine(
-                            Point.new(0, font_height),
-                            Point.new(fb.width -| 1, font_height),
-                            ren.theme.h1_color,
-                        );
-                        return font_height + 2;
-                    },
-                    .chapter => {
-                        var i: u15 = 0;
-                        while (i < fb.width) : (i += 2) {
-                            fb.setPixel(i, font_height, ren.theme.h2_color);
-                        }
-                        return font_height + 1;
-                    },
-                    .section => return font_height,
-                }
-            },
-
-            .paragraph => |p| return ren.renderSpans(fb, p.contents),
-
-            .quote => |q| {
-                const height = ren.renderSpans(fb.view(.{
-                    .x = 3,
-                    .y = 2,
-                    .width = fb.width -| 3,
-                    .height = fb.height -| 2,
-                }), q.contents);
-
-                fb.drawLine(
-                    Point.new(0, 0),
-                    Point.new(0, height + 3),
-                    ren.theme.quote_mark_color,
-                );
-
-                return height + 4;
-            },
-
-            .preformatted => |pre| {
-                return ren.renderPreformattedSpans(fb, pre.contents);
-            },
+            .paragraph => |p| ren.setRunningText(p.contents, null),
+            .preformatted => |pre| ren.setPreformattedText(pre.contents, pre.language),
 
             .ordered_list => |ol| {
-                const backup = ren.block_top;
-                defer ren.block_top = backup;
+                if (ol.len == 0) return;
+                const prev_block_spacing = ren.enable_block_spacing;
+                defer ren.enable_block_spacing = prev_block_spacing;
+                ren.enable_block_spacing = false;
 
-                const digits = std.math.log10(if (ol.len == 0) 1 else ol.len) + 1;
-                const padding = @intCast(u15, 6 * (digits + 2));
+                var string_width = std.math.log10_int(ol.len) + 2;
 
-                var mut_fb = fb;
-                var offset_y: u15 = 0;
-                for (ol, 0..) |item, i| {
-                    if (i > 0) {
-                        offset_y += ren.theme.block_spacing;
-                    }
+                ren.position.x += 6 * string_width;
 
-                    var numbuf: [16]u8 = undefined;
+                for (ol, 1..) |list_item, index| {
+                    var str_buffer: [16]u8 = undefined;
 
-                    const numstr = std.fmt.bufPrint(&numbuf, "{[number]d: >[digits]}. ", .{
-                        .number = i + 1,
-                        .digits = digits,
-                    }) catch unreachable;
+                    const number = std.fmt.bufPrint(&str_buffer, "{d}.", .{index}) catch unreachable;
 
-                    mut_fb.drawString(0, offset_y, numstr, ren.theme.text_color, padding);
+                    ren.framebuffer.drawString(
+                        ren.position.x - @intCast(i16, 6 * number.len),
+                        ren.position.y,
+                        number,
+                        ren.theme.text.color,
+                        null,
+                    );
 
-                    for (item.contents) |inner_block| {
-                        const height = ren.renderBlock(inner_block, ren.indentFramebuffer(mut_fb, padding, offset_y));
-                        offset_y += height;
-                    }
+                    ren.processBlocks(list_item.contents);
                 }
-
-                return offset_y;
             },
 
             .unordered_list => |ul| {
-                const backup = ren.block_top;
-                defer ren.block_top = backup;
+                if (ul.len == 0) return;
 
-                var offset_y: u15 = 0;
+                const prev_block_spacing = ren.enable_block_spacing;
+                defer ren.enable_block_spacing = prev_block_spacing;
+                ren.enable_block_spacing = false;
 
-                for (ul, 0..) |list_item, i| {
-                    if (i > 0) {
-                        offset_y += ren.theme.block_spacing;
-                    }
+                ren.position.x += 6;
 
-                    fb.fillRectangle(.{
-                        .x = 1,
-                        .y = offset_y + 2,
-                        .width = 3,
-                        .height = 3,
-                    }, ren.theme.text_color);
+                for (ul) |list_item| {
+                    ren.framebuffer.drawRectangle(.{
+                        .x = ren.position.x - 4,
+                        .y = ren.position.y + 3,
+                        .width = 2,
+                        .height = 2,
+                    }, ren.theme.text.color);
 
-                    for (list_item.contents) |inner_block| {
-                        const height = ren.renderBlock(inner_block, ren.indentFramebuffer(fb, 12, offset_y));
-                        offset_y += height;
-                    }
+                    ren.processBlocks(list_item.contents);
                 }
+            },
 
-                return offset_y;
+            .quote => |q| {
+                ren.position.x += 6;
+
+                const top = ren.position.y;
+                ren.setRunningText(q.contents, null);
+                const bottom = ren.position.y;
+
+                ren.framebuffer.drawLine(
+                    Point.new(ren.position.x - 3, top),
+                    Point.new(ren.position.x - 3, bottom),
+                    ren.theme.quote_mark_color,
+                );
             },
 
             .image => |img| {
-                fb.drawString(0, 0, "<IMAGE PLACEHOLDER>", ren.theme.text_color, null);
                 _ = img;
-                return font_height;
             },
-        }
-    }
 
-    fn measureString(ren: *Renderer, str: []const u8) u15 {
-        _ = ren;
-        return @intCast(u15, str.len * 6);
-    }
-
-    fn emitSpanRectangle(ren: *Renderer, fb: gui.Framebuffer, rect: Rectangle, span: hdoc.Span) void {
-        if (span != .link) return;
-        if (rect.width == 0) return;
-
-        const global_offset = @ptrToInt(fb.pixels) -| @ptrToInt(ren.framebuffer.pixels);
-
-        // reconstruct the original position
-        const dx = @intCast(u15, global_offset % ren.framebuffer.stride);
-        const dy = @intCast(u15, global_offset / ren.framebuffer.stride);
-
-        ren.linkCallback(
-            ren.context,
-            .{
-                .x = dx + rect.x,
-                .y = dy + rect.y,
-                .width = rect.width,
-                .height = rect.height,
-            },
-            span.link,
-        );
-    }
-
-    fn renderSpans(ren: *Renderer, fb: gui.Framebuffer, spans: []const hdoc.Span) u15 {
-        var offset_y: u15 = 0;
-        var offset_x: u15 = 0;
-        for (spans) |span| {
-            const string = switch (span) {
-                .text => |str| str,
-                .emphasis => |str| str,
-                .monospace => |str| str,
-                .link => |link| link.text,
-            };
-            const color = switch (span) {
-                .text => ren.theme.text_color,
-                .emphasis => ren.theme.emphasis_color,
-                .monospace => ren.theme.monospace_color,
-                .link => ren.theme.link_color,
-            };
-
-            var first_line = true;
-            var lines = std.mem.split(u8, string, "\n");
-            while (lines.next()) |line| {
-                if (!first_line) {
-                    // line break condition
-                    offset_y += font_height + ren.theme.line_spacing;
-                    offset_x = 0;
-                }
-                first_line = false;
-
-                var span_rectangle = Rectangle{
-                    .x = offset_x,
-                    .y = offset_y,
-                    .width = 0,
-                    .height = font_height,
+            .heading => |h| {
+                const heading_style = switch (h.level) {
+                    .document => ren.theme.h1,
+                    .chapter => ren.theme.h2,
+                    .section => ren.theme.h3,
                 };
 
-                var fist_word = true;
-                var words = std.mem.tokenize(u8, line, " \t\r");
-                while (words.next()) |word| {
-                    const width = ren.measureString(word);
+                ren.setRunningText(&.{
+                    Span{ .text = h.title },
+                }, heading_style);
 
-                    if (offset_x > 0 and offset_x + width + 4 > fb.width) {
-                        // line break condition
-                        offset_y += font_height + ren.theme.line_spacing;
-                        offset_x = 0;
+                if (h.level == .document) {
+                    ren.framebuffer.horizontalLine(
+                        ren.position.x,
+                        ren.position.y + 1,
+                        ren.framebuffer.width -| @intCast(u16, @max(0, ren.position.x)),
+                        heading_style.color,
+                    );
+                    ren.position.y += 3;
+                }
+            },
 
-                        ren.emitSpanRectangle(fb, span_rectangle, span);
-                        span_rectangle = Rectangle{
-                            .x = offset_x,
-                            .y = offset_y,
-                            .width = 0,
-                            .height = font_height,
-                        };
-                    } else if (!fist_word) {
-                        offset_x += 4; // space width
-                        span_rectangle.width += 4;
+            .table_of_contents => {
+                ren.processBlock(.{
+                    .heading = .{
+                        .level = .document,
+                        .title = "Table of Contents",
+                        .anchor = "",
+                    },
+                });
+
+                var levels = std.mem.zeroes([3]u32);
+
+                for (ren.document.contents) |top_level_block| {
+                    if (top_level_block != .heading)
+                        continue;
+                    const heading = top_level_block.heading;
+                    const level = @enumToInt(heading.level);
+
+                    levels[level] += 1;
+                    for (levels[level + 1 ..]) |*item| {
+                        item.* = 0;
                     }
-                    fist_word = false;
 
-                    fb.drawString(offset_x, offset_y, word, color, fb.width -| offset_x);
+                    var prefix_buffer: [32]u8 = undefined;
+                    var stream = std.io.fixedBufferStream(&prefix_buffer);
+                    const writer = stream.writer();
 
-                    offset_x += width;
-                    span_rectangle.width += width;
+                    writer.print("{}", .{levels[0]}) catch unreachable;
+
+                    for (levels[1 .. level + 1]) |item| {
+                        writer.print(".{}", .{item}) catch unreachable;
+                    }
+
+                    writer.writeAll(" ") catch unreachable;
+
+                    var href_buf: [128]u8 = undefined;
+
+                    const href = std.fmt.bufPrint(&href_buf, "#{s}", .{heading.anchor}) catch "";
+
+                    ren.setRunningText(&.{
+                        Span{ .text = stream.getWritten() },
+                        if (href.len > 1)
+                            Span{ .link = .{ .text = heading.title, .href = href } }
+                        else
+                            Span{ .text = heading.title },
+                    }, null);
                 }
-
-                ren.emitSpanRectangle(fb, span_rectangle, span);
-            }
+            },
         }
-        return offset_y + font_height;
     }
 
-    fn renderPreformattedSpans(ren: *Renderer, fb: gui.Framebuffer, spans: []const hdoc.Span) u15 {
+    fn setRunningText(ren: *Renderer, spans: []const Span, style_override: ?Style) void {
+        var setter = TextSetter.init(ren);
 
-        // TODO: Implement basic syntax highlighters
+        var leftover_whitespace = false;
 
-        var offset_y: u15 = 0;
-        var offset_x: u15 = 0;
         for (spans) |span| {
-            const string = switch (span) {
-                .text => |str| str,
-                .emphasis => |str| str,
-                .monospace => |str| str,
-                .link => |link| link.text,
-            };
-            const color = switch (span) {
-                .text => ren.theme.text_color,
-                .emphasis => ren.theme.emphasis_color,
-                .monospace => ren.theme.monospace_color,
-                .link => ren.theme.link_color,
+            const string = spanToString(span);
+            if (string.len == 0)
+                continue;
+
+            const span_style = style_override orelse switch (span) {
+                .text => ren.theme.text,
+                .emphasis => ren.theme.emphasis,
+                .monospace => ren.theme.monospace,
+                .link => ren.theme.link,
             };
 
-            var first_line = true;
-            var lines = std.mem.split(u8, string, "\n");
-            while (lines.next()) |line| {
-                if (!first_line) {
-                    // line break condition
-                    offset_y += font_height + ren.theme.line_spacing;
-                    offset_x = 0;
+            const starts_with_whitespace = isWhiteSpace(string[0..1]);
+            const ends_with_whitespace = isWhiteSpace(string[string.len - 1 ..]);
+
+            var insert_whitespace = (starts_with_whitespace or leftover_whitespace);
+            var words = std.mem.tokenize(u8, string, whitespace);
+            while (words.next()) |word| {
+                if (insert_whitespace) {
+                    setter.writeText(
+                        " ",
+                        .{
+                            .word_wrap = true,
+                            .style = span_style,
+                            .trim_spaces = true,
+                        },
+                    );
                 }
-                first_line = false;
+                insert_whitespace = true;
 
-                var span_rectangle = Rectangle{
-                    .x = offset_x,
-                    .y = offset_y,
-                    .width = 0,
-                    .height = font_height,
-                };
+                setter.writeText(
+                    word,
+                    .{
+                        .word_wrap = true,
+                        .style = span_style,
+                        .trim_spaces = true,
+                    },
+                );
+            }
 
-                const width = ren.measureString(line);
+            leftover_whitespace = ends_with_whitespace;
+        }
 
-                if (offset_x > 0 and offset_x + width + 4 > fb.width) {
-                    // line break condition
-                    offset_y += font_height + ren.theme.line_spacing;
-                    offset_x = 0;
+        setter.endCurrentLine();
+    }
 
-                    ren.emitSpanRectangle(fb, span_rectangle, span);
-                    span_rectangle = Rectangle{
-                        .x = offset_x,
-                        .y = offset_y,
-                        .width = 0,
-                        .height = font_height,
-                    };
-                }
+    fn setPreformattedText(ren: *Renderer, spans: []const Span, lang: ?[]const u8) void {
+        var setter = TextSetter.init(ren);
 
-                fb.drawString(offset_x, offset_y, line, color, fb.width -| offset_x);
+        _ = lang;
 
-                offset_x += width;
-                span_rectangle.width += width;
+        for (spans) |span| {
+            const span_style = switch (span) {
+                .text => ren.theme.text,
+                .emphasis => ren.theme.emphasis,
+                .monospace => ren.theme.monospace,
+                .link => ren.theme.link,
+            };
 
-                ren.emitSpanRectangle(fb, span_rectangle, span);
+            setter.writeText(
+                spanToString(span),
+                .{
+                    .word_wrap = false,
+                    .style = span_style,
+                    .trim_spaces = false,
+                },
+            );
+        }
+
+        setter.endCurrentLine();
+    }
+
+    fn spanToString(span: Span) []const u8 {
+        return switch (span) {
+            .text => |s| s,
+            .emphasis => |s| s,
+            .monospace => |s| s,
+            .link => |l| l.text,
+        };
+    }
+
+    const TextSetter = struct {
+        renderer: *Renderer,
+        position: *Point,
+        line_start: i16,
+        line_limit: i16,
+
+        fn init(renderer: *Renderer) TextSetter {
+            return TextSetter{
+                .renderer = renderer,
+                .position = &renderer.position,
+                .line_start = renderer.position.x,
+                .line_limit = renderer.framebuffer.width -| renderer.position.x,
+            };
+        }
+
+        const WriteTextFlags = struct {
+            style: Style,
+            word_wrap: bool,
+            trim_spaces: bool,
+        };
+        fn writeText(set: *TextSetter, string: []const u8, flags: WriteTextFlags) void {
+            var pos: usize = 0;
+            while (true) {
+                const next_line_sep = std.mem.indexOfScalarPos(u8, string, pos, '\n');
+                const end_of_line = next_line_sep orelse string.len;
+
+                const raw_line = string[pos..end_of_line];
+
+                const line = if (flags.trim_spaces and set.isAtStartOfLine())
+                    std.mem.trimLeft(u8, raw_line, whitespace)
+                else
+                    raw_line;
+
+                set.renderer.framebuffer.drawString(
+                    set.position.x,
+                    set.position.y,
+                    line,
+                    flags.style.color,
+                    null,
+                );
+                set.position.x += @intCast(u15, 6 * line.len); // TODO: Replace with actual font measurement
+
+                pos = (next_line_sep orelse break) + 1;
+                set.newLine();
             }
         }
-        return offset_y + font_height;
+
+        fn isAtStartOfLine(set: TextSetter) bool {
+            return (set.position.x == set.line_start);
+        }
+
+        fn endCurrentLine(set: *TextSetter) void {
+            if (!set.isAtStartOfLine()) {
+                set.newLine();
+            }
+        }
+
+        fn newLine(set: *TextSetter) void {
+            set.position.x = set.line_start;
+            set.position.y += font_height;
+        }
+    };
+
+    fn isWhiteSpace(str: []const u8) bool {
+        return for (str) |c| {
+            if (std.mem.indexOfScalar(u8, whitespace, c) == null)
+                break false;
+        } else true;
     }
+
+    const whitespace = " \t\r"; // line feed doesn't count as whitespace
 };

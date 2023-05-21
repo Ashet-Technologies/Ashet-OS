@@ -11,21 +11,21 @@ const color_black = ColorIndex.get(0x00);
 const color_white = ColorIndex.get(0x0F);
 
 const wikitheme = hypertext.Theme{
-    .text_color = ColorIndex.get(0x00), // black
-    .monospace_color = ColorIndex.get(0x0D), // pink
-    .emphasis_color = ColorIndex.get(0x03), // dark red
-    .link_color = ColorIndex.get(0x02), // blue
+    .text = .{ .color = ColorIndex.get(0x00) }, // black
+    .monospace = .{ .color = ColorIndex.get(0x0D) }, // pink
+    .emphasis = .{ .color = ColorIndex.get(0x03) }, // dark red
+    .link = .{ .color = ColorIndex.get(0x02) }, // blue
 
-    .h1_color = ColorIndex.get(0x03), // dark red
-    .h2_color = ColorIndex.get(0x00), // black
-    .h3_color = ColorIndex.get(0x11), // dim gray
+    .h1 = .{ .color = ColorIndex.get(0x03) }, // dark red
+    .h2 = .{ .color = ColorIndex.get(0x00) }, // black
+    .h3 = .{ .color = ColorIndex.get(0x11) }, // dim gray
 
     .quote_mark_color = ColorIndex.get(0x05), // dark green
 
     .padding = 4,
 
     .line_spacing = 2,
-    .block_spacing = 6,
+    .block_spacing = 4,
 };
 
 const loadPaletteFile = @import("lib/palette.zig").loadPaletteFile;
@@ -47,7 +47,8 @@ fn emitSensitiveRectangle(fb: *gui.Framebuffer, rect: ashet.abi.Rectangle, link:
         rect,
         link.href,
     });
-    fb.drawRectangle(rect.grow(1), ColorIndex.get(0x0E));
+    // fb.drawRectangle(rect.grow(1), ColorIndex.get(0x0E));
+    _ = fb;
 }
 
 pub fn main() !u8 {
@@ -73,7 +74,17 @@ pub fn main() !u8 {
         var file_text = try std.fs.cwd().readFileAlloc(allocator, input_file_name, 10 << 20);
         defer allocator.free(file_text);
 
-        break :blk try hyperdoc.parse(allocator, file_text, null);
+        var error_pos: hyperdoc.ErrorLocation = undefined;
+
+        break :blk hyperdoc.parse(allocator, file_text, &error_pos) catch |err| {
+            std.log.err("failed to parse {s}:{}:{}: {s}", .{
+                input_file_name,
+                error_pos.line,
+                error_pos.column,
+                @errorName(err),
+            });
+            return 1;
+        };
     };
     defer document.deinit();
 
@@ -94,7 +105,7 @@ pub fn main() !u8 {
             fb,
             document,
             wikitheme,
-            cli.options.scroll,
+            gui.Point.new(0, -@as(i16, cli.options.scroll)),
             &fb,
             emitSensitiveRectangle,
         );

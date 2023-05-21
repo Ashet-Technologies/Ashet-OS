@@ -1,0 +1,61 @@
+hdoc "1.0"
+
+p {
+  emph "|"
+  span "no" span "space" span "between" span "us"
+  emph "|"
+}
+
+p {
+  emph "|"
+  span "with " span "space" span " between" span " us"
+  emph "|"
+}
+
+p {
+  emph "|"
+  span "     with    collapsed    spaces   "
+  emph "|"
+}
+
+p {
+  emph "|"
+  span "collapse trailing   " span "   and  " span "   leading space"
+  emph "|"
+}
+
+p {
+  emph "|"
+  span "explicit\nline\nbreaks"
+  emph "|"
+}
+
+p {
+  emph "|"
+  span "explicit\n" span "line" span "\nbreaks"
+  emph "|"
+}
+
+p {
+  emph "|"
+  span "double\n\nline\n\nbreak"
+  emph "|"
+}
+
+p {
+  emph "|"
+  span "magic\n leading space\n  is a bad idea"
+  emph "|"
+}
+
+pre "" {
+  emph "|"
+  span "with  no  collapsed  spaces  !"
+  emph "|"
+}
+
+pre "" {
+  emph "|"
+  span "magic\n leading space\n  is a good idea"
+  emph "|"
+}

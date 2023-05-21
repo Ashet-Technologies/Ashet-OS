@@ -134,7 +134,7 @@ pub fn drawRectangle(fb: Framebuffer, rect: Rectangle, color: ColorIndex) void {
     var dst = fb.clip(rect);
 
     var top = dst.pixels;
-    var bot = dst.pixels + (dst.height - 1) * fb.stride;
+    var bot = dst.pixels + (dst.height -| 1) * fb.stride;
 
     var x: u16 = 0;
     while (x < dst.width) : (x += 1) {
@@ -145,7 +145,7 @@ pub fn drawRectangle(fb: Framebuffer, rect: Rectangle, color: ColorIndex) void {
     }
 
     var left = dst.pixels;
-    var right = dst.pixels + (dst.width - 1);
+    var right = dst.pixels + (dst.width -| 1);
 
     var y: u16 = 0;
     while (y < dst.height) : (y += 1) {

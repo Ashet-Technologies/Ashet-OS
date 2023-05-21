@@ -1,0 +1,187 @@
+hdoc "1.0"
+
+enumerate {
+  item { p { span "first" } } 
+  item { p { span "second" } } 
+  item { p { span "third" } } 
+}
+
+enumerate {
+  item { p { span "1" } } 
+  item { p { span "2" } } 
+  item { p { span "3" } } 
+  item { p { span "4" } } 
+  item { p { span "5" } } 
+  item { p { span "6" } } 
+  item { p { span "7" } } 
+  item { p { span "8" } } 
+  item { p { span "9" } } 
+}
+
+enumerate {
+  item { p { span "1" } } 
+  item { p { span "2" } } 
+  item { p { span "3" } } 
+  item { p { span "4" } } 
+  item { p { span "5" } } 
+  item { p { span "6" } } 
+  item { p { span "7" } } 
+  item { p { span "8" } } 
+  item { p { span "9" } } 
+  item { p { span "10" } } 
+}
+
+
+enumerate {
+  item { p { span "1" } } 
+  item { p { span "2" } } 
+  item { p { span "3" } } 
+  item { p { span "4" } } 
+  item { p { span "5" } } 
+  item { p { span "6" } } 
+  item { p { span "7" } } 
+  item { p { span "8" } } 
+  item { p { span "9" } }
+  item { p { span "10" } }
+  item { p { span "11" } } 
+  item { p { span "12" } } 
+  item { p { span "13" } } 
+  item { p { span "14" } } 
+  item { p { span "15" } } 
+  item { p { span "16" } } 
+  item { p { span "17" } } 
+  item { p { span "18" } } 
+  item { p { span "19" } } 
+}
+
+itemize {
+  item { p { span "first" } } 
+  item { p { span "second" } } 
+  item { p { span "third" } } 
+}
+
+enumerate {
+  item { p { span "first" } } 
+  item { p { span "second" } } 
+  item { p { span "third" } } 
+}
+
+p { span "ingredients:" }
+enumerate {
+  item {
+    p { span "sauce type" }
+    itemize {
+      item { p { span "alfredo" } } 
+      item { p { span "arrabiata" } } 
+      item { p { span "carbonara" } } 
+    }
+   } 
+  item { 
+    p { span "pasta types" }
+    itemize {
+      item { p { span "spaghetti" } } 
+      item { p { span "penne" } } 
+      item { p { span "farfalle" } } 
+    }
+   } 
+  item { 
+    p { span "cheese types" }
+    itemize {
+      item { p { span "grana padano" } } 
+      item { p { span "parmesano reggiano" } } 
+      item { p { span "pecorino" } } 
+    }
+   } 
+}
+
+
+p { span "going deeper:" }
+enumerate {
+  item {
+    p { span "level 1" }
+    itemize {
+      item {
+        p { span "level 2" }
+        itemize {
+          item { p { span "alfredo" } } 
+          item { p { span "arrabiata" } } 
+          item { p { span "carbonara" } } 
+        }
+      }
+      item {
+        p { span "level 2" }
+        enumerate {
+          item { p { span "alfredo" } } 
+          item { p { span "arrabiata" } } 
+          item { p { span "carbonara" } } 
+        }
+      }
+      item {
+        p { span "level 2" }
+        itemize {
+          item { p { span "alfredo" } } 
+          item { p { span "arrabiata" } } 
+          item { p { span "carbonara" } } 
+        }
+      }
+    }
+  }
+  item {
+    p { span "level 1" }
+    itemize {
+      item {
+        p { span "level 2" }
+        itemize {
+          item { p { span "alfredo" } } 
+          item { p { span "arrabiata" } } 
+          item { p { span "carbonara" } } 
+        }
+      }
+      item {
+        p { span "level 2" }
+        enumerate {
+          item { p { span "alfredo" } } 
+          item { p { span "arrabiata" } } 
+          item { p { span "carbonara" } } 
+        }
+      }
+      item {
+        p { span "level 2" }
+        itemize {
+          item { p { span "alfredo" } } 
+          item { p { span "arrabiata" } } 
+          item { p { span "carbonara" } } 
+        }
+      }
+    }
+  }
+  item {
+    p { span "level 1" }
+    itemize {
+      item {
+        p { span "level 2" }
+        itemize {
+          item { p { span "alfredo" } } 
+          item { p { span "arrabiata" } } 
+          item { p { span "carbonara" } } 
+        }
+      }
+      item {
+        p { span "level 2" }
+        enumerate {
+          item { p { span "alfredo" } } 
+          item { p { span "arrabiata" } } 
+          item { p { span "carbonara" } } 
+        }
+      }
+      item {
+        p { span "level 2" }
+        itemize {
+          item { p { span "alfredo" } } 
+          item { p { span "arrabiata" } } 
+          item { p { span "carbonara" } } 
+        }
+      }
+    }
+  }
+}
