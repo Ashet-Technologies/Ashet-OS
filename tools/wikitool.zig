@@ -10,15 +10,17 @@ const ColorIndex = ashet.abi.ColorIndex;
 const color_black = ColorIndex.get(0x00);
 const color_white = ColorIndex.get(0x0F);
 
-const wikitheme = hypertext.Theme{
-    .text = .{ .color = ColorIndex.get(0x00) }, // black
-    .monospace = .{ .color = ColorIndex.get(0x0D) }, // pink
-    .emphasis = .{ .color = ColorIndex.get(0x03) }, // dark red
-    .link = .{ .color = ColorIndex.get(0x02) }, // blue
+const font = &gui.Font.default;
 
-    .h1 = .{ .color = ColorIndex.get(0x03) }, // dark red
-    .h2 = .{ .color = ColorIndex.get(0x00) }, // black
-    .h3 = .{ .color = ColorIndex.get(0x11) }, // dim gray
+const wikitheme = hypertext.Theme{
+    .text = .{ .font = font, .color = ColorIndex.get(0x00) }, // black
+    .monospace = .{ .font = font, .color = ColorIndex.get(0x0D) }, // pink
+    .emphasis = .{ .font = font, .color = ColorIndex.get(0x03) }, // dark red
+    .link = .{ .font = font, .color = ColorIndex.get(0x02) }, // blue
+
+    .h1 = .{ .font = font, .color = ColorIndex.get(0x03) }, // dark red
+    .h2 = .{ .font = font, .color = ColorIndex.get(0x00) }, // black
+    .h3 = .{ .font = font, .color = ColorIndex.get(0x11) }, // dim gray
 
     .quote_mark_color = ColorIndex.get(0x05), // dark green
 

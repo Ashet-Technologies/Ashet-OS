@@ -538,7 +538,7 @@ fn repaint() void {
             framebuffer.verticalLine(dx + width - 1, dy + 1, 9, style.border);
             framebuffer.fillRectangle(Rectangle{ .x = dx + 1, .y = dy + 1, .width = width - 2, .height = 9 }, style.title);
 
-            framebuffer.drawString(dx + 2, dy + 2, mini.title, style.font, width - 2);
+            framebuffer.drawString(dx + 2, dy + 2, mini.title, &gui.Font.default, style.font, width - 2);
 
             paintButton(mini.restore_button, style, style.title, icons.restore_from_tray);
             paintButton(mini.close_button, style, style.title, icons.close);
@@ -573,6 +573,7 @@ fn repaint() void {
                 window_rectangle.x + 2,
                 window_rectangle.y + 2,
                 window.title(),
+                &gui.Font.default,
                 style.font,
                 title_width - 2,
             );
@@ -1449,12 +1450,18 @@ pub const desktop = struct {
             }
 
             framebuffer.blit(info.bounds.position(), app.icon.bitmap());
+
+            const font = &gui.Font.default;
+
+            const width = font.measureWidth(title);
+
             framebuffer.drawString(
-                info.bounds.x + Icon.width / 2 - @intCast(u15, 3 * title.len),
+                info.bounds.x + Icon.width / 2 - width / 2,
                 info.bounds.y + Icon.height,
                 title,
+                font,
                 ColorIndex.get(0x0),
-                @intCast(u15, 6 * title.len),
+                width,
             );
         }
     }

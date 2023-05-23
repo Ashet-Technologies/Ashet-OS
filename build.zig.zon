@@ -24,8 +24,8 @@
             .hash = "122062883cd056cfd1f06a106dd742b63bf355f3b8e07e8a74befbda20b1ae0d616f",
         },
         .turtlefont = .{
-            .url = "https://github.com/MasterQ32/turtlefont/archive/982e599e11f21ebd14588c47f1f06852e8fecdd6.tar.gz",
-            .hash = "1220021d46756f726010205aa4a22cc998b90575a491ee92640338b5308b7ad97e76",
+            .url = "https://github.com/MasterQ32/turtlefont/archive/2e7e60602ca305defec942a551842d716e90a3b7.tar.gz",
+            .hash = "1220ff1f7651506471e5a486a4fd4b19c3f294c49cffec9092458c4a1ad2c8835d4b",
         },
     },
 }

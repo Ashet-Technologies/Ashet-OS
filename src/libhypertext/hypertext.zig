@@ -8,8 +8,11 @@ pub const Point = ashet.abi.Point;
 pub const Size = ashet.abi.Size;
 pub const Rectangle = ashet.abi.Rectangle;
 
+pub const Font = gui.Font;
+
 pub const Style = struct {
     color: Color,
+    font: *const Font,
 };
 
 pub const Theme = struct {
@@ -74,8 +77,6 @@ const Renderer = struct {
 
     enable_block_spacing: bool = true,
 
-    const font_height = 8;
-
     fn run(ren: *Renderer) void {
         ren.processBlocks(ren.document.contents);
     }
@@ -120,6 +121,7 @@ const Renderer = struct {
                         ren.position.x - @intCast(i16, 6 * number.len),
                         ren.position.y,
                         number,
+                        ren.theme.text.font,
                         ren.theme.text.color,
                         null,
                     );
@@ -349,6 +351,7 @@ const Renderer = struct {
         position: *Point,
         line_start: i16,
         line_limit: i16,
+        font_height: u15 = 0,
 
         fn init(renderer: *Renderer) TextSetter {
             return TextSetter{
@@ -366,6 +369,8 @@ const Renderer = struct {
             link: ?hdoc.Link,
         };
         fn writeText(set: *TextSetter, string: []const u8, flags: WriteTextFlags) void {
+            const line_height = flags.style.font.lineHeight();
+
             var pos: usize = 0;
             while (true) {
                 const next_line_sep = std.mem.indexOfScalarPos(u8, string, pos, '\n');
@@ -373,7 +378,7 @@ const Renderer = struct {
 
                 const raw_line = string[pos..end_of_line];
 
-                const raw_width = @intCast(u15, 6 * raw_line.len);
+                const raw_width = flags.style.font.measureWidth(raw_line);
 
                 if (flags.word_wrap and set.position.x + raw_width > set.line_limit) {
                     set.newLine();
@@ -384,12 +389,14 @@ const Renderer = struct {
                 else
                     raw_line;
 
-                const width = @intCast(u15, 6 * line.len);
+                const width = flags.style.font.measureWidth(line);
 
+                set.font_height = @max(set.font_height, line_height);
                 set.renderer.framebuffer.drawString(
                     set.position.x,
-                    set.position.y,
+                    set.position.y + (set.font_height -| line_height),
                     line,
+                    flags.style.font,
                     flags.style.color,
                     null,
                 );
@@ -399,11 +406,11 @@ const Renderer = struct {
                         .x = set.position.x,
                         .y = set.position.y,
                         .width = width,
-                        .height = font_height,
+                        .height = line_height,
                     }, link);
                 }
 
-                set.position.x += @intCast(u15, 6 * line.len); // TODO: Replace with actual font measurement
+                set.position.x += width;
 
                 pos = (next_line_sep orelse break) + 1;
                 set.newLine();
@@ -422,7 +429,9 @@ const Renderer = struct {
 
         fn newLine(set: *TextSetter) void {
             set.position.x = set.line_start;
-            set.position.y += font_height;
+            set.position.y += set.font_height;
+
+            set.font_height = 0;
         }
     };
 

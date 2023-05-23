@@ -1,5 +1,6 @@
 const std = @import("std");
 const ashet = @import("ashet");
+const turtlefont = @import("turtlefont");
 
 const Point = ashet.abi.Point;
 const Size = ashet.abi.Size;
@@ -246,11 +247,14 @@ pub const ScreenWriter = struct {
     pub const Error = error{InvalidUtf8};
     pub const Writer = std.io.Writer(*ScreenWriter, Error, write);
 
+    const VectorRasterizer = turtlefont.Rasterizer(*ScreenWriter, ColorIndex, writeVectorPixel);
+
     fb: Framebuffer,
     dx: i16,
     dy: i16,
     color: ColorIndex,
     limit: u15, // only render till this column (exclusive)
+    font: *const Font,
 
     pub fn writer(sw: *ScreenWriter) Writer {
         return Writer{ .context = sw };
@@ -263,9 +267,7 @@ pub const ScreenWriter = struct {
         var utf8_view = try std.unicode.Utf8View.init(text);
         var codepoints = utf8_view.iterator();
 
-        const font: *const Font = &Font.default;
-
-        switch (font.*) {
+        switch (sw.font.*) {
             .bitmap => |bitmap_font| {
                 const fallback_glyph = bitmap_font.getGlyph('�') orelse bitmap_font.getGlyph('?');
 
@@ -303,25 +305,64 @@ pub const ScreenWriter = struct {
                     sw.dx += glyph.advance;
                 }
             },
-            .vector => @panic("implement vector font drawing"),
+            .vector => |vector_font| {
+                const fallback_glyph = vector_font.getGlyph('�') orelse vector_font.getGlyph('?');
+
+                const rast = VectorRasterizer.init(sw);
+
+                const options = vector_font.getTurtleOptions();
+
+                while (codepoints.nextCodepoint()) |char| {
+                    if (sw.dx >= sw.limit) {
+                        break;
+                    }
+                    const glyph: VectorFont.Glyph = vector_font.getGlyph(char) orelse fallback_glyph orelse continue;
+
+                    const advance = options.scaleX(glyph.advance);
+
+                    if (sw.dx + advance >= 0) {
+                        rast.renderGlyph(
+                            options,
+                            sw.dx,
+                            sw.dy + vector_font.size,
+                            sw.color,
+                            vector_font.turtle_font.getCode(glyph),
+                        );
+                    }
+
+                    sw.dx += advance;
+                    sw.dx += @boolToInt(vector_font.bold);
+                }
+            },
         }
 
         return text.len;
     }
+
+    fn writeVectorPixel(sw: *ScreenWriter, x: i16, y: i16, color: ColorIndex) void {
+        sw.fb.setPixel(x, y, color);
+    }
 };
 
-pub fn screenWriter(fb: Framebuffer, x: i16, y: i16, color: ColorIndex, max_width: ?u15) ScreenWriter {
+pub fn screenWriter(fb: Framebuffer, x: i16, y: i16, font: *const Font, color: ColorIndex, max_width: ?u15) ScreenWriter {
     const limit = @intCast(u15, if (max_width) |mw|
         @intCast(u15, std.math.max(0, x + mw))
     else
         fb.width);
 
-    return ScreenWriter{ .fb = fb, .dx = x, .dy = y, .color = color, .limit = limit };
+    return ScreenWriter{
+        .fb = fb,
+        .dx = x,
+        .dy = y,
+        .color = color,
+        .limit = limit,
+        .font = font,
+    };
 }
 
-pub fn drawString(fb: Framebuffer, x: i16, y: i16, text: []const u8, color: ColorIndex, limit: ?u15) void {
-    var sw = fb.screenWriter(x, y, color, limit);
-    sw.writer().writeAll(text) catch unreachable;
+pub fn drawString(fb: Framebuffer, x: i16, y: i16, text: []const u8, font: *const Font, color: ColorIndex, limit: ?u15) void {
+    var sw = fb.screenWriter(x, y, font, color, limit);
+    sw.writer().writeAll(text) catch {};
 }
 
 pub fn blit(fb: Framebuffer, point: Point, bitmap: Bitmap) void {

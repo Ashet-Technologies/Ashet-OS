@@ -7,14 +7,20 @@ const Size = ashet.abi.Size;
 const Rectangle = ashet.abi.Rectangle;
 const ColorIndex = ashet.abi.ColorIndex;
 
+pub const FontHint = struct {
+    size: ?u15 = null,
+    bold: bool = false,
+    italic: bool = false,
+};
+
 pub const Font = union(enum) {
     bitmap: BitmapFont,
     vector: VectorFont,
 
-    pub fn load(buffer: []const u8, size_hint: ?u15) error{InvalidFont}!Font {
+    pub fn load(buffer: []const u8, hints: FontHint) error{InvalidFont}!Font {
         if (BitmapFont.load(buffer)) |bmp| {
             return Font{ .bitmap = bmp };
-        } else |_| if (VectorFont.load(buffer, size_hint orelse 8)) |vec| {
+        } else |_| if (VectorFont.load(buffer, hints)) |vec| {
             return Font{ .vector = vec };
         } else |e| {
             return e;
@@ -23,14 +29,25 @@ pub const Font = union(enum) {
 
     pub fn lineHeight(font: Font) u15 {
         return switch (font) {
-            .bitmap => |bmp| bmp.lineHeight(),
-            .vector => |vec| vec.size,
+            inline else => |f| f.lineHeight(),
+        };
+    }
+
+    pub fn measureWidth(font: Font, string: []const u8) u15 {
+        return switch (font) {
+            inline else => |f| f.measureWidth(string),
         };
     }
 
     pub const default: Font = blk: {
         @setEvalBranchQuota(10_000);
-        break :blk Font.load(@embedFile("fonts/mono.font"), 8) catch |err| @compileError("failed to embed default font: " ++ @errorName(err));
+        // break :blk Font.load(@embedFile("fonts/mono.font"), .{}) catch |err| @compileError("failed to embed default font: " ++ @errorName(err));
+        break :blk Font.load(@embedFile("fonts/sans.font"), .{ .size = 8 }) catch |err| @compileError("failed to embed default font: " ++ @errorName(err));
+    };
+
+    pub const monospace: Font = blk: {
+        @setEvalBranchQuota(10_000);
+        break :blk Font.load(@embedFile("fonts/mono.font"), .{}) catch |err| @compileError("failed to embed default font: " ++ @errorName(err));
     };
 };
 
@@ -68,12 +85,12 @@ pub const BitmapFont = struct {
         advance: u8,
     };
 
-    fn glyphCount(bf: BitmapFont) u32 {
+    pub fn glyphCount(bf: BitmapFont) u32 {
         return std.mem.readIntLittle(u32, bf.data[8..12]);
     }
 
-    fn lineHeight(bf: BitmapFont) u32 {
-        return std.mem.readIntLittle(u32, bf.data[4..8]);
+    pub fn lineHeight(bf: BitmapFont) u15 {
+        return @intCast(u15, std.math.clamp(0, std.mem.readIntLittle(u32, bf.data[4..8]), std.math.maxInt(u15)));
     }
 
     fn getGlyphMeta(bf: BitmapFont, index: usize) PackedCodepointAdvance {
@@ -192,17 +209,69 @@ pub const BitmapFont = struct {
             .bits = encoded_glyph[4 .. 4 + size],
         };
     }
+
+    pub fn measureWidth(font: BitmapFont, string: []const u8) u15 {
+        var utf8 = std.unicode.Utf8View.initUnchecked(string);
+        var iter = utf8.iterator();
+
+        var width: u15 = 0;
+        while (iter.nextCodepoint()) |cp| {
+            var glyph = font.getGlyph(cp) orelse continue;
+
+            width += glyph.advance;
+        }
+
+        return width;
+    }
 };
 
 pub const VectorFont = struct {
+    pub const Glyph = turtlefont.Font.Glyph;
+
     turtle_font: turtlefont.Font,
     size: u15,
+    bold: bool,
+    italic: bool,
 
-    pub fn load(buffer: []const u8, size: u15) !VectorFont {
+    pub fn load(buffer: []const u8, hints: FontHint) !VectorFont {
         const font = try turtlefont.Font.load(buffer);
         return VectorFont{
             .turtle_font = font,
-            .size = size,
+            .size = hints.size orelse 8,
+            .bold = hints.bold,
+            .italic = hints.italic,
         };
+    }
+
+    pub fn getGlyph(font: VectorFont, codepoint: u21) ?Glyph {
+        return font.turtle_font.findGlyph(codepoint);
+    }
+
+    pub fn lineHeight(font: VectorFont) u15 {
+        return font.getTurtleOptions().lineHeight();
+    }
+
+    pub fn getTurtleOptions(font: VectorFont) turtlefont.RasterOptions {
+        return turtlefont.RasterOptions{
+            .font_size = font.size,
+            .dot_size = font.size / 16 + @boolToInt(font.bold),
+            .stroke_size = if (font.bold) @as(u15, 2) else @as(u15, 1),
+        };
+    }
+
+    pub fn measureWidth(font: VectorFont, string: []const u8) u15 {
+        var utf8 = std.unicode.Utf8View.initUnchecked(string);
+        var iter = utf8.iterator();
+        const opt = font.getTurtleOptions();
+
+        var width: u15 = 0;
+        while (iter.nextCodepoint()) |cp| {
+            var glyph = font.getGlyph(cp) orelse continue;
+
+            width += @intCast(u15, opt.scaleX(glyph.advance));
+            width += @boolToInt(font.bold);
+        }
+
+        return width;
     }
 };

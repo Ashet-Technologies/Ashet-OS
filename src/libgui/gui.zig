@@ -8,6 +8,7 @@ const fonts = @import("fonts.zig");
 pub const Font = fonts.Font;
 pub const BitmapFont = fonts.BitmapFont;
 pub const VectorFont = fonts.VectorFont;
+pub const FontHint = fonts.FontHint;
 
 pub const Point = ashet.abi.Point;
 pub const Size = ashet.abi.Size;
@@ -144,7 +145,7 @@ pub const Interface = struct {
                                     .vertical => click_point.y - rects.knob_button.y,
                                     .horizontal => click_point.x - rects.knob_button.x,
                                 };
-                                const rel_pos = @divTrunc(100 * pos, size);
+                                const rel_pos = @divTrunc(100 *| pos, size);
                                 const abs_jump = std.math.absCast(rel_pos);
 
                                 const var_step_size: u15 = if (abs_jump > 50)
@@ -462,7 +463,7 @@ pub const Interface = struct {
                     gui.drawRectangle(target, widget.bounds, .raised, .area);
 
                     if (@hasField(@TypeOf(ctrl), "text")) {
-                        target.drawString(b.x + 2, b.y + 2, ctrl.text, gui.theme.text, b.width -| 2);
+                        target.drawString(b.x + 2, b.y + 2, ctrl.text, &Font.default, gui.theme.text, b.width -| 2);
                     }
                     if (@hasField(@TypeOf(ctrl), "icon")) {
                         const icon: Bitmap = ctrl.icon;
@@ -476,7 +477,7 @@ pub const Interface = struct {
                     }
                 },
                 .label => |ctrl| {
-                    target.drawString(b.x, b.y, ctrl.text, gui.theme.label, b.width);
+                    target.drawString(b.x, b.y, ctrl.text, &Font.default, gui.theme.label, b.width);
                 },
                 .text_box => |ctrl| {
                     gui.drawRectangle(target, widget.bounds, .sunken, if (ctrl.flags.read_only) .window_disabled else .window_enabled);
@@ -488,7 +489,7 @@ pub const Interface = struct {
                         .height = 9,
                     });
 
-                    var writer = edit_view.screenWriter(1 - @as(i16, ctrl.scroll), 0, gui.theme.text, null);
+                    var writer = edit_view.screenWriter(1 - @as(i16, ctrl.scroll), 0, &Font.default, gui.theme.text, null);
                     if (ctrl.flags.password) {
                         writer.writer().writeByteNTimes('*', ctrl.content().len) catch {};
                     } else {

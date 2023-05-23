@@ -48,12 +48,24 @@ pub fn main() !void {
     };
 
     tree_scrollbar.control.scroll_bar.changedEvent = .{ .id = gui.EventID.from(.treeview_scrolled), .tag = null };
+    doc_h_scrollbar.control.scroll_bar.changedEvent = .{ .id = gui.EventID.from(.document_scrolled), .tag = null };
+    doc_v_scrollbar.control.scroll_bar.changedEvent = .{ .id = gui.EventID.from(.document_scrolled), .tag = null };
 
     wiki_software.loadDocumentFromUri("wiki:/welcome.hdoc") catch |err| {
         std.log.err("failed to load document wiki:/welcome.hdoc: {s}", .{@errorName(err)});
     };
 
+    var last_size = window.client_rectangle.size();
+
     app_loop: while (true) {
+        {
+            const new_size = window.client_rectangle.size();
+            if (!last_size.eql(new_size)) {
+                wiki_software.relayout_request = true;
+                last_size = new_size;
+            }
+        }
+
         if (wiki_software.relayout_request) {
             wiki_software.doLayout();
         }
@@ -66,7 +78,6 @@ pub fn main() !void {
             .mouse => |data| {
                 if (main_window.interface.sendMouseEvent(data)) |guievt|
                     wiki_software.handleEvent(guievt);
-                wiki_software.repaint_request = true;
 
                 if (data.type == .button_press) {
                     var point = Point.new(data.x, data.y);
@@ -242,6 +253,8 @@ const WikiSoftware = struct {
         main_window.doc_h_scrollbar.control.scroll_bar.level = 0;
         main_window.doc_v_scrollbar.control.scroll_bar.level = 0;
         wiki.document = doc;
+
+        wiki_software.relayout_request = true;
     }
 
     fn fetchDocumentFromUri(dir: *ashet.fs.Directory, index: *const Index, url_string: []const u8) !Document {
@@ -302,6 +315,8 @@ const WikiSoftware = struct {
     fn handleEvent(wiki: *WikiSoftware, evt: gui.Event) void {
         if (evt.id == gui.EventID.from(.treeview_scrolled)) {
             wiki.relayout_request = true;
+        } else if (evt.id == gui.EventID.from(.document_scrolled)) {
+            wiki_software.repaint_request = true;
         } else {
             std.log.info("unhandled event: {}", .{evt});
         }
@@ -318,18 +333,20 @@ const WikiSoftware = struct {
     }
 
     fn getClickedLeafInner(list: *const Index.List, testpoint: Point, x: i16, y: *i16) ?*const Index.Leaf {
+        const font = &gui.Font.default;
+        const line_height = font.lineHeight();
         for (list.nodes) |*node| {
             switch (node.content) {
                 .list => |*sublist| {
-                    y.* += 8;
+                    y.* += line_height;
                     if (getClickedLeafInner(sublist, testpoint, x, y)) |leaf|
                         return leaf;
                 },
                 .leaf => |*leaf| {
-                    const rect = Rectangle{ .x = 0, .y = y.*, .width = 10000, .height = 8 };
+                    const rect = Rectangle{ .x = 0, .y = y.*, .width = 10000, .height = line_height };
                     if (rect.contains(testpoint))
                         return leaf;
-                    y.* += 8;
+                    y.* += line_height;
                 },
             }
         }
@@ -348,15 +365,37 @@ const theme = struct {
     const sidepanel_document_sel = ColorIndex.get(0x0); // black
     const sidepanel_folder = ColorIndex.get(0x9); // bright gray
 
-    const wiki = htext.Theme{
-        .text = .{ .color = ColorIndex.get(0x00) }, // black
-        .monospace = .{ .color = ColorIndex.get(0x03) }, // dark red
-        .emphasis = .{ .color = ColorIndex.get(0x12) }, // gold
-        .link = .{ .color = ColorIndex.get(0x02) }, // blue
+    const font = &gui.Font.default;
+    const mono_font = &gui.Font.monospace;
 
-        .h1 = .{ .color = ColorIndex.get(0x03) }, // dark red
-        .h2 = .{ .color = ColorIndex.get(0x00) }, // black
-        .h3 = .{ .color = ColorIndex.get(0x11) }, // dim gray
+    const wiki = htext.Theme{
+        .text = .{ .font = font, .color = ColorIndex.get(0x00) }, // black
+        .monospace = .{ .font = mono_font, .color = ColorIndex.get(0x03) }, // dark red
+        .emphasis = .{ .font = blk: {
+            var clone = gui.Font.default;
+            clone.vector.bold = true;
+            break :blk &clone;
+        }, .color = ColorIndex.get(0x12) }, // gold
+        .link = .{ .font = font, .color = ColorIndex.get(0x02) }, // blue
+
+        .h1 = .{ .font = blk: {
+            var clone = gui.Font.default;
+            clone.vector.size = 12;
+            clone.vector.bold = true;
+            break :blk &clone;
+        }, .color = ColorIndex.get(0x03) }, // dark red
+        .h2 = .{ .font = blk: {
+            var clone = gui.Font.default;
+            clone.vector.size = 10;
+            clone.vector.bold = true;
+            break :blk &clone;
+        }, .color = ColorIndex.get(0x00) }, // black
+        .h3 = .{ .font = blk: {
+            var clone = gui.Font.default;
+            clone.vector.size = 9;
+            clone.vector.bold = true;
+            break :blk &clone;
+        }, .color = ColorIndex.get(0x11) }, // dim gray
 
         .quote_mark_color = ColorIndex.get(0x05), // dark green
 
@@ -368,17 +407,23 @@ const theme = struct {
 };
 
 fn renderSidePanel(fb: gui.Framebuffer, list: *const Index.List, leaf: ?*const Index.Leaf, x: i16, y: *i16) void {
+    const font = &gui.Font.default;
+
     for (list.nodes) |*node| {
+        const line_height = font.lineHeight();
+
         if (node.content == .leaf and leaf == &node.content.leaf) {
             fb.fillRectangle(
-                .{ .x = 0, .y = y.*, .width = fb.width, .height = 8 },
+                .{ .x = 0, .y = y.*, .width = fb.width, .height = line_height },
                 theme.sidepanel_sel,
             );
         }
+
         fb.drawString(
             x,
             y.*,
             node.title,
+            font,
             if (node.content == .leaf)
                 if (leaf == &node.content.leaf)
                     theme.sidepanel_document_sel
@@ -388,7 +433,7 @@ fn renderSidePanel(fb: gui.Framebuffer, list: *const Index.List, leaf: ?*const I
                 theme.sidepanel_folder,
             null,
         );
-        y.* += 8;
+        y.* += line_height;
         if (y.* >= fb.height)
             break;
         if (node.content == .list) {
