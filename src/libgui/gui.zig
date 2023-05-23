@@ -3,6 +3,12 @@ const ashet = @import("ashet");
 const TextEditor = @import("text-editor");
 const logger = std.log.scoped(.gui);
 
+const fonts = @import("fonts.zig");
+
+pub const Font = fonts.Font;
+pub const BitmapFont = fonts.BitmapFont;
+pub const VectorFont = fonts.VectorFont;
+
 pub const Point = ashet.abi.Point;
 pub const Size = ashet.abi.Size;
 pub const Rectangle = ashet.abi.Rectangle;

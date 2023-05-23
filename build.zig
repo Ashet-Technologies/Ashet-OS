@@ -151,6 +151,8 @@ pub fn build(b: *std.Build) !void {
 
     const lua_exe = lua_dep.artifact("lua");
 
+    const turtlefont_dep = b.dependency("turtlefont", .{});
+
     const text_editor_module = b.dependency("text-editor", .{}).module("text-editor");
     const mod_hyperdoc = b.dependency("hyperdoc", .{}).module("hyperdoc");
 
@@ -184,6 +186,7 @@ pub fn build(b: *std.Build) !void {
             .{ .name = "ashet", .module = mod_libashet },
             .{ .name = "ashet-std", .module = mod_ashet_std },
             .{ .name = "text-editor", .module = text_editor_module },
+            .{ .name = "turtlefont", .module = turtlefont_dep.module("turtlefont") },
         },
     });
 

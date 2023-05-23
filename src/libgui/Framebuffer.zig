@@ -6,8 +6,12 @@ const Size = ashet.abi.Size;
 const Rectangle = ashet.abi.Rectangle;
 const ColorIndex = ashet.abi.ColorIndex;
 
+const fonts = @import("fonts.zig");
+
 const Bitmap = @import("Bitmap.zig");
-pub const Font = @import("Font.zig");
+const Font = fonts.Font;
+const BitmapFont = fonts.BitmapFont;
+const VectorFont = fonts.VectorFont;
 
 const Framebuffer = @This();
 
@@ -239,7 +243,7 @@ pub fn drawLine(fb: Framebuffer, from: Point, to: Point, color: ColorIndex) void
 }
 
 pub const ScreenWriter = struct {
-    pub const Error = error{};
+    pub const Error = error{InvalidUtf8};
     pub const Writer = std.io.Writer(*ScreenWriter, Error, write);
 
     fb: Framebuffer,
@@ -255,36 +259,51 @@ pub const ScreenWriter = struct {
     fn write(sw: *ScreenWriter, text: []const u8) Error!usize {
         if (sw.dx >= sw.limit)
             return text.len;
-        const font = &Font.default;
 
-        const gw = font.glyph_size.width;
-        const gh = font.glyph_size.height;
+        var utf8_view = try std.unicode.Utf8View.init(text);
+        var codepoints = utf8_view.iterator();
 
-        render_loop: for (text) |char| {
-            if (sw.dx >= sw.limit) {
-                break;
-            }
-            const glyph = font.getGlyph(char);
+        const font: *const Font = &Font.default;
 
-            if (sw.dx + gw >= 0) {
-                var gx: u15 = 0;
-                while (gx < gw) : (gx += 1) {
-                    if (sw.dx + gx > sw.limit) {
-                        break :render_loop;
+        switch (font.*) {
+            .bitmap => |bitmap_font| {
+                const fallback_glyph = bitmap_font.getGlyph('�') orelse bitmap_font.getGlyph('?');
+
+                render_loop: while (codepoints.nextCodepoint()) |char| {
+                    if (sw.dx >= sw.limit) {
+                        break;
                     }
+                    const glyph: BitmapFont.Glyph = bitmap_font.getGlyph(char) orelse fallback_glyph orelse continue;
 
-                    var bits = glyph.bits[gx];
+                    if (sw.dx + glyph.advance >= 0) {
+                        var data_ptr = glyph.bits.ptr;
 
-                    var gy: u15 = 0;
-                    while (gy < gh) : (gy += 1) {
-                        if ((bits & (@as(u8, 1) << @truncate(u3, gy))) != 0) {
-                            sw.fb.setPixel(sw.dx + gx, sw.dy + gy, sw.color);
+                        var gx: u15 = 0;
+                        while (gx < glyph.width) : (gx += 1) {
+                            if (sw.dx + gx > sw.limit) {
+                                break :render_loop;
+                            }
+
+                            var bits: u8 = undefined;
+
+                            var gy: u15 = 0;
+                            while (gy < glyph.height) : (gy += 1) {
+                                if ((gy % 8) == 0) {
+                                    bits = data_ptr[0];
+                                    data_ptr += 1;
+                                }
+
+                                if ((bits & (@as(u8, 1) << @truncate(u3, gy))) != 0) {
+                                    sw.fb.setPixel(sw.dx + glyph.offset_x + gx, sw.dy + glyph.offset_y + gy, sw.color);
+                                }
+                            }
                         }
                     }
-                }
-            }
 
-            sw.dx += gw;
+                    sw.dx += glyph.advance;
+                }
+            },
+            .vector => @panic("implement vector font drawing"),
         }
 
         return text.len;
