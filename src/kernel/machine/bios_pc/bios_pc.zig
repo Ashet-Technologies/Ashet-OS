@@ -7,6 +7,8 @@ const ashet = @import("root");
 const x86 = ashet.platforms.all.x86;
 const logger = std.log.scoped(.bios_pc);
 
+const args = @import("args");
+
 const VgaTerminal = @import("VgaTerminal.zig");
 
 pub const machine_config = ashet.machines.MachineConfig{
@@ -33,6 +35,24 @@ const hw = struct {
 
 var graphics_enabled: bool = false;
 
+const DebugChannel = enum {
+    none,
+    parallel,
+    serial,
+};
+
+const KernelOptions = struct {
+    debug: DebugChannel = .serial,
+};
+
+var kernel_options: KernelOptions = .{};
+var cli_ok: bool = true;
+
+fn printCliError(err: args.Error) !void {
+    logger.err("invalid cli argument: {}", .{err});
+    cli_ok = false;
+}
+
 pub fn initialize() !void {
     // x86 requires GDT and IDT, as a lot of x86 devices are only well usable with
     // interrupts. We're also using the GDT for interrupts
@@ -47,11 +67,24 @@ pub fn initialize() !void {
         });
     }
 
-    if (mbheader.flags.cmdline) {
-        logger.info("kernel commandline: '{}'", .{
-            std.zig.fmtEscapes(std.mem.sliceTo(mbheader.cmdline, 0)),
-        });
-    }
+    kernel_options = if (mbheader.flags.cmdline) blk: {
+        const cli_string = std.mem.sliceTo(mbheader.cmdline, 0);
+        logger.info("kernel commandline: '{}'", .{std.zig.fmtEscapes(cli_string)});
+
+        var temp_buffer: [4096]u8 = undefined;
+
+        var iter = std.mem.tokenize(u8, cli_string, "\t\r\n ");
+        var fba = std.heap.FixedBufferAllocator.init(&temp_buffer);
+
+        const opt = args.parse(KernelOptions, &iter, fba.allocator(), .{ .forward = printCliError }) catch |err| {
+            logger.err("failed to parse kernel command line: {s}", .{@errorName(err)});
+            break :blk KernelOptions{};
+        };
+        if (!cli_ok) {
+            break :blk KernelOptions{};
+        }
+        break :blk opt.options;
+    } else KernelOptions{};
 
     if (mbheader.flags.mods) {
         logger.info("found additional boot modules:", .{});
@@ -162,28 +195,34 @@ fn writeVirtualSPI(msg: []const u8) void {
 }
 
 pub fn debugWrite(msg: []const u8) void {
-    for (msg) |char| {
-        x86.out(u8, 0x3F8, char);
-    }
+    switch (kernel_options.debug) {
+        .none => {},
+        .serial => {
+            for (msg) |char| {
+                x86.out(u8, 0x3F8, char);
+            }
+        },
+        .parallel => {
+            const DATA = 0x378;
+            // const STATUS = 0x379;
+            const CONTROL = 0x37A;
 
-    const DATA = 0x378;
-    // const STATUS = 0x379;
-    const CONTROL = 0x37A;
+            const DATA_PIN: u8 = (1 << 1);
 
-    const DATA_PIN: u8 = (1 << 1);
+            for (msg) |char| {
+                // while ((x86.in(u8, STATUS) & 0x80) == 0) {
+                //     busyLoop(10);
+                // }
 
-    for (msg) |char| {
-        // while ((x86.in(u8, STATUS) & 0x80) == 0) {
-        //     busyLoop(10);
-        // }
+                x86.out(u8, DATA, char);
 
-        x86.out(u8, DATA, char);
-
-        const status = x86.in(u8, CONTROL);
-        x86.out(u8, CONTROL, status | DATA_PIN);
-        busyLoop(150);
-        x86.out(u8, CONTROL, status & ~DATA_PIN);
-        busyLoop(15_000);
+                const status = x86.in(u8, CONTROL);
+                x86.out(u8, CONTROL, status | DATA_PIN);
+                busyLoop(150);
+                x86.out(u8, CONTROL, status & ~DATA_PIN);
+                busyLoop(15_000);
+            }
+        },
     }
 
     // if (!graphics_enabled) {

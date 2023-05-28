@@ -12,8 +12,8 @@
             .hash = "1220336370d55d863646a7c26dc8dfe6da77e1aac5243342f392960293dce7069026",
         },
         .args = .{
-            .url = "https://github.com/MasterQ32/zig-args/archive/c84f9709405b31ef3e72ab26b20ba3c37826f8ec.tar.gz",
-            .hash = "1220e4ae687b355b164d986c6400eef6cfc2b1020718eaa72914865d344b2f192141",
+            .url = "https://github.com/MasterQ32/zig-args/archive/53f9b53d7bebe9baad52ed4d505b480540344946.tar.gz",
+            .hash = "122032821c42293e5175112c2519d8820a351ce41a335d6352d563db0624c38349ce",
         },
         .hyperdoc = .{
             .url = "https://github.com/MasterQ32/hyperdoc/archive/3d52bf3981dfb40bf98a568573c75c901e9d2ab8.tar.gz",

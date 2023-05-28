@@ -52,15 +52,18 @@ pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleIni
     {
         try kbc.writeCommand(.selftest);
         const response = try kbc.readData();
-        if (response != 0x55)
+        if (response != 0x55) {
+            logger.warn("self test failed. expected 0x55, received 0x{X:0>2}", .{response});
             return error.SelfTestFailed;
+        }
     }
 
     // Step 6: Set the Controller Configuration Byte
     logger.debug("controller configuration...", .{});
     {
         try kbc.writeCommand(.read_cmd_byte);
-        var cmd_byte = @bitCast(CommandByte, try kbc.readData());
+        const conf_byte = try kbc.readData();
+        var cmd_byte = @bitCast(CommandByte, conf_byte);
         logger.debug("old config: {}", .{cmd_byte});
         cmd_byte.primary_irq_enabled = false;
         cmd_byte.secondary_irq_enabled = false;
@@ -86,6 +89,12 @@ pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleIni
 
         break :blk two_channels;
     };
+
+    if (has_secondary_channel) {
+        logger.debug("kbc has two channels", .{});
+    } else {
+        logger.debug("kbc has one channel", .{});
+    }
 
     logger.debug("detect ports...", .{});
     flushData();
@@ -142,6 +151,7 @@ pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleIni
                 logger.debug("{s} reset response: {!}", .{ @tagName(chan), err });
                 kbc.channels.remove(chan);
             }
+            flushData();
         }
     }
 
@@ -150,12 +160,13 @@ pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleIni
         var iter = kbc.channels.iterator();
         while (iter.next()) |chan| {
             logger.debug("detect {s} device type...", .{@tagName(chan)});
-            flushData();
 
             const device_type = try chan.detectDeviceType();
             kbc.devices.set(chan, device_type);
 
             logger.info("{s} device identification: {?s}", .{ @tagName(chan), if (device_type) |dt| @tagName(dt) else null });
+
+            flushData();
         }
     }
 
@@ -164,6 +175,10 @@ pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleIni
         var iter = kbc.channels.iterator();
         while (iter.next()) |chan| {
             if (kbc.devices.get(chan)) |device| {
+                logger.info("initialize {s} on {s} channel...", .{
+                    @tagName(device),
+                    @tagName(chan),
+                });
                 if (device.isKeyboard()) {
                     kbc.decoders.set(chan, Decoder{ .keyboard = .{} });
                     // TODO: Initialize keyboard
@@ -182,12 +197,12 @@ pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleIni
                     try chan.writeCommand(DeviceMessage.common(.set_defaults));
                     try chan.writeCommand(DeviceMessage.common(.enable_scanning));
 
-                    flushData();
                     x86.idt.enableIRQ(chan.irqNumber());
                 } else {
                     logger.err("unsupported device type {s}, removing device", .{@tagName(device)});
                     kbc.devices.set(chan, null);
                 }
+                flushData();
             }
         }
     }
@@ -198,8 +213,11 @@ pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleIni
         try kbc.writeCommand(.read_cmd_byte);
         var cmd_byte = @bitCast(CommandByte, try kbc.readData());
         logger.debug("old config: {}", .{cmd_byte});
+        cmd_byte.primary_clk_enable = .enabled;
         cmd_byte.primary_irq_enabled = (kbc.devices.get(.primary) != null);
+        cmd_byte.secondary_clk_enable = .enabled;
         cmd_byte.secondary_irq_enabled = (kbc.devices.get(.secondary) != null);
+        cmd_byte.scancode_translation_mode = false;
         logger.debug("new config: {}", .{cmd_byte});
         try kbc.writeCommand(.write_cmd_byte);
         try kbc.writeData(@bitCast(u8, cmd_byte));
@@ -396,6 +414,7 @@ fn writeRawData(data: u8) error{Timeout}!void {
         timeout -= 1;
         delayPortRead();
     }
+    // logger.debug("0x{X:0>2} => [DAT]", .{data});
     x86.out(u8, ports.data, data);
 }
 
@@ -408,7 +427,9 @@ fn readRawData() error{Timeout}!u8 {
         timeout -= 1;
         delayPortRead();
     }
-    return x86.in(u8, ports.data);
+    const value = x86.in(u8, ports.data);
+    // logger.debug("[DAT] => 0x{X:0>2}", .{value});
+    return value;
 }
 
 fn writeRawCommand(cmd: Command) error{Timeout}!void {
@@ -420,6 +441,7 @@ fn writeRawCommand(cmd: Command) error{Timeout}!void {
         timeout -= 1;
         delayPortRead();
     }
+    // logger.debug("0x{X:0>2} => [CMD]", .{@enumToInt(cmd)});
     x86.out(u8, ports.command, @enumToInt(cmd));
 }
 

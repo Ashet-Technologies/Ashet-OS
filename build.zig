@@ -334,6 +334,7 @@ pub fn build(b: *std.Build) !void {
             kernel_exe.addModule("ashet-gui", mod_ashet_gui);
             kernel_exe.addModule("virtio", mod_virtio);
             kernel_exe.addModule("ashet-fs", mod_libashetfs);
+            kernel_exe.addModule("args", mod_args);
             kernel_exe.addAnonymousModule("machine", .{
                 .source_file = machine_pkg.files.items[0].getFileSource(),
             });
