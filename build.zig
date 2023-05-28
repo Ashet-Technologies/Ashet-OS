@@ -353,7 +353,7 @@ pub fn build(b: *std.Build) !void {
                 .target = kernel_exe.target,
                 .optimize = .ReleaseSafe,
             });
-            b.installArtifact(kernel_libc);
+            // b.installArtifact(kernel_libc);
 
             kernel_exe.linkLibrary(kernel_libc);
 
@@ -370,6 +370,22 @@ pub fn build(b: *std.Build) !void {
                 const kernel_step = b.step("kernel", "Only builds the OS kernel");
                 kernel_step.dependOn(&kernel_exe.step);
             }
+        }
+
+        if (kernel_exe.target.getCpuArch() == .x86 or kernel_exe.target.getCpuArch() == .x86_64) {
+            // prepare PXE environment:
+
+            const install_pxe_kernel = b.addInstallArtifact(kernel_exe);
+            install_pxe_kernel.dest_dir = .{ .custom = "pxe" };
+
+            const install_pxe_root = b.addInstallDirectory(.{
+                .source_dir = "rootfs-pxe",
+                .install_dir = .{ .custom = "pxe" },
+                .install_subdir = ".",
+            });
+
+            b.getInstallStep().dependOn(&install_pxe_root.step);
+            b.getInstallStep().dependOn(&install_pxe_kernel.step);
         }
 
         const raw_step = b.addObjCopy(kernel_exe.getOutputSource(), .{
