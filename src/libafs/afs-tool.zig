@@ -177,8 +177,8 @@ pub fn main() !u8 {
             const source_stat = try std.fs.cwd().statFile(source_path);
 
             const is_dir = switch (source_stat.kind) {
-                .File => false,
-                .Directory => true,
+                .file => false,
+                .directory => true,
                 else => @panic("unsupported file kind!"),
             };
 
@@ -518,7 +518,7 @@ fn copyDirectoryToDisk(fs: *FileSystem, src_dir: std.fs.IterableDir, target_dir:
         }
 
         switch (entry.kind) {
-            .Directory => {
+            .directory => {
                 var src_child_dir = try src_dir.dir.openIterableDir(entry.name, .{});
                 defer src_child_dir.close();
 
@@ -529,7 +529,7 @@ fn copyDirectoryToDisk(fs: *FileSystem, src_dir: std.fs.IterableDir, target_dir:
 
                 try copyDirectoryToDisk(fs, src_child_dir, dst_child_dir);
             },
-            .File => {
+            .file => {
                 var src_file = try src_dir.dir.openFile(entry.name, .{});
                 defer src_file.close();
 

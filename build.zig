@@ -335,7 +335,7 @@ pub fn build(b: *std.Build) !void {
             kernel_exe.addModule("virtio", mod_virtio);
             kernel_exe.addModule("ashet-fs", mod_libashetfs);
             kernel_exe.addAnonymousModule("machine", .{
-                .source_file = machine_pkg.getFileSource("machine.zig").?,
+                .source_file = machine_pkg.files.items[0].getFileSource(),
             });
             kernel_exe.addModule("fatfs", fatfs_module);
             kernel_exe.setLinkerScriptPath(.{ .path = machine_spec.linker_script });
@@ -793,7 +793,7 @@ const AssetBundleStep = struct {
         {
             var it = bundle.files.iterator();
             while (it.next()) |kv| {
-                write_step.addCopyFile(
+                _ = write_step.addCopyFile(
                     kv.value_ptr.*,
                     bundle.builder.fmt("blobs/{s}", .{kv.key_ptr.*}),
                 );
@@ -804,10 +804,10 @@ const AssetBundleStep = struct {
             }
         }
 
-        write_step.add("bundle.zig", try embed_file.toOwnedSlice());
+        const bundle_file_source = write_step.add("bundle.zig", try embed_file.toOwnedSlice());
 
         try write_step.step.makeFn(&write_step.step, node);
 
-        bundle.output_file.path = write_step.getFileSource("bundle.zig").?.getPath(bundle.builder);
+        bundle.output_file.path = bundle_file_source.getPath(bundle.builder);
     }
 };

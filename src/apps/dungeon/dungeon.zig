@@ -373,7 +373,7 @@ const Raycaster = struct {
     }
 
     fn sortSprites(rc: *const Raycaster, spriteset: []Sprite) void {
-        std.sort.sort(Sprite, spriteset, rc, struct {
+        std.sort.block(Sprite, spriteset, rc, struct {
             fn lt(this: *const Raycaster, lhs: Sprite, rhs: Sprite) bool {
                 // "a < b"
                 return Vec2.distance2(lhs.position, this.camera_position) < Vec2.distance2(rhs.position, this.camera_position);

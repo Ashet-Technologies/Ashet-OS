@@ -66,7 +66,7 @@ case $rootfs in
         ;;
     
     fat32)
-        ./zig-out/bin/init-disk "${DISK}" 2048
+        ./zig-out/bin/init-disk "${DISK}" --create --sector_offset 2048
 
         sfdisk "${DISK}" <<EOF
 label: dos

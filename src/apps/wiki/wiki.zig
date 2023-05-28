@@ -587,7 +587,7 @@ fn loadIndexFolder(dir: *ashet.fs.Directory, arena: std.mem.Allocator, path_buff
         }
     }
 
-    std.sort.sort(
+    std.sort.block(
         Index.Node,
         list.items,
         {},

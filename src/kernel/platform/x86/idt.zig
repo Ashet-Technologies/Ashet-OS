@@ -13,10 +13,11 @@ pub fn set_IRQ_Handler(irq: u4, handler: ?InterruptHandler) void {
 
 export fn handle_interrupt(_cpu: *CpuState) *CpuState {
     var cpu = _cpu;
+    // logger.debug("int[0x{X:0>2}]", .{cpu.interrupt});
     switch (cpu.interrupt) {
         0x00...0x1F => {
             // Exception
-            std.log.err("Unhandled exception: {s}", .{@as([]const u8, switch (cpu.interrupt) {
+            logger.err("Unhandled exception: {s}", .{@as([]const u8, switch (cpu.interrupt) {
                 0x00 => "Divide By Zero",
                 0x01 => "Debug",
                 0x02 => "Non Maskable Interrupt",
@@ -42,12 +43,12 @@ export fn handle_interrupt(_cpu: *CpuState) *CpuState {
                 0x1F => "Reserved",
                 else => "Unknown",
             })});
-            std.log.err("{}", .{cpu});
+            logger.err("{}", .{cpu});
 
             if (cpu.interrupt == 0x0D) {
                 // GPF
-                std.log.err("Offending address: 0x{X:0>8}", .{cpu.eip});
-                std.log.err("Error code:        0x{X:0>8}", .{cpu.errorcode});
+                logger.err("Offending address: 0x{X:0>8}", .{cpu.eip});
+                logger.err("Error code:        0x{X:0>8}", .{cpu.errorcode});
             }
 
             if (cpu.interrupt == 0x0E) {
@@ -59,7 +60,7 @@ export fn handle_interrupt(_cpu: *CpuState) *CpuState {
                     : [cr] "=r" (-> usize),
                 );
                 _ = cr3;
-                std.log.err("Page Fault when {1s} address 0x{0X} from {3s}: {2s}", .{
+                logger.err("Page Fault when {1s} address 0x{0X} from {3s}: {2s}", .{
                     cr2,
                     if ((cpu.errorcode & 2) != 0) @as([]const u8, "writing") else @as([]const u8, "reading"),
                     if ((cpu.errorcode & 1) != 0) @as([]const u8, "access denied") else @as([]const u8, "page unmapped"),
@@ -81,7 +82,7 @@ export fn handle_interrupt(_cpu: *CpuState) *CpuState {
             if (irqHandlers[cpu.interrupt - 0x20]) |handler| {
                 cpu = handler(cpu);
             } else {
-                std.log.warn("Unhandled IRQ{}: {}", .{ cpu.interrupt - 0x20, cpu });
+                logger.warn("Unhandled IRQ{}: {}", .{ cpu.interrupt - 0x20, cpu });
             }
 
             if (cpu.interrupt >= 0x28) {
@@ -90,7 +91,7 @@ export fn handle_interrupt(_cpu: *CpuState) *CpuState {
             PIC.primary.notifyEndOfInterrupt();
         },
         else => {
-            std.log.err("Unhandled interrupt: {}", .{cpu});
+            logger.err("Unhandled interrupt: {}", .{cpu});
 
             @panic("Unhandled exception!");
             // while (true) {

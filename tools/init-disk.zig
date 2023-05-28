@@ -74,9 +74,9 @@ pub fn main() !u8 {
         defer walker.deinit();
 
         while (try walker.next()) |entry| {
-            if (entry.kind == .Directory) {
+            if (entry.kind == .directory) {
                 try makeDir(entry.path);
-            } else if (entry.kind == .File) {
+            } else if (entry.kind == .file) {
                 try copyDirFileTo(
                     entry.dir,
                     entry.basename,
@@ -97,7 +97,7 @@ pub fn main() !u8 {
         var iter = walker.iterate();
 
         while (try iter.next()) |entry| {
-            if (entry.kind != .File)
+            if (entry.kind != .file)
                 continue;
             const ext = std.fs.path.extension(entry.name);
             if (!std.mem.eql(u8, ext, ".app"))

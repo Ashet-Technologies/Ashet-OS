@@ -105,14 +105,14 @@ pub fn initialize() !void {
         ashet.drivers.install(&ata.driver);
     }
 
+    x86.enableInterrupts();
+
     if (ashet.drivers.input.PC_KBC.init()) |kbc| {
         hw.kbc = kbc;
         ashet.drivers.install(&hw.kbc.driver);
     } else |err| {
         logger.err("failed to initialize KBC with error {s}, no keyboard input available!", .{@errorName(err)});
     }
-
-    x86.enableInterrupts();
 }
 
 fn busyLoop(cnt: u32) void {
@@ -167,24 +167,23 @@ pub fn debugWrite(msg: []const u8) void {
     }
 
     const DATA = 0x378;
-    const STATUS = 0x379;
+    // const STATUS = 0x379;
     const CONTROL = 0x37A;
 
+    const DATA_PIN: u8 = (1 << 1);
+
     for (msg) |char| {
-        while ((x86.in(u8, STATUS) & 0x80) == 0) {
-            busyLoop(10);
-        }
+        // while ((x86.in(u8, STATUS) & 0x80) == 0) {
+        //     busyLoop(10);
+        // }
 
         x86.out(u8, DATA, char);
 
         const status = x86.in(u8, CONTROL);
-        x86.out(u8, CONTROL, status | 0x01);
-        busyLoop(10);
-        x86.out(u8, CONTROL, status & 0xFE);
-
-        while ((x86.in(u8, STATUS) & 0x80) == 0) {
-            busyLoop(10);
-        }
+        x86.out(u8, CONTROL, status | DATA_PIN);
+        busyLoop(150);
+        x86.out(u8, CONTROL, status & ~DATA_PIN);
+        busyLoop(15_000);
     }
 
     // if (!graphics_enabled) {
