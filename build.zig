@@ -51,7 +51,7 @@ const AshetContext = struct {
             exe.pie = true; // AshetOS requires PIE executables
             exe.force_pic = true; // which need PIC code
             exe.linkage = .static; // but everything is statically linked, we don't support shared objects
-            exe.strip = false; // never strip debug info
+            exe.strip = false;
 
             exe.setLinkerScriptPath(.{ .path = "src/libashet/application.ld" });
 

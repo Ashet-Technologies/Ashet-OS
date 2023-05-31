@@ -256,3 +256,16 @@ fn @"process.memory.release"(ptr: [*]u8, size: usize, ptr_align: u8) callconv(.C
         @returnAddress(),
     );
 }
+
+fn @"ui.getSystemFont"(font_name_ptr: [*]const u8, font_name_len: usize, font_data_ptr: *[*]const u8, font_data_len: *usize) callconv(.C) abi.GetSystemFontError.Enum {
+    const font_name = font_name_ptr[0..font_name_len];
+
+    const font_data = ashet.ui.getSystemFont(font_name) catch |err| {
+        return abi.GetSystemFontError.map(err);
+    };
+
+    font_data_ptr.* = font_data.ptr;
+    font_data_len.* = font_data.len;
+
+    return .ok;
+}

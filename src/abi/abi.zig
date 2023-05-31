@@ -46,6 +46,8 @@ pub const syscall_definitions = [_]SysCallDefinition{
     defineSysCall("ui.setWindowTitle", fn (*const Window, title: [*]const u8, title_len: usize) void, 18),
     defineSysCall("ui.invalidate", fn (*const Window, rect: Rectangle) void, 20),
 
+    defineSysCall("ui.getSystemFont", fn (font_name_ptr: [*]const u8, font_name_len: usize, font_data_ptr: *[*]const u8, font_data_len: *usize) GetSystemFontError.Enum, 21),
+
     // resolves the dns entry `host` for the given `service`.
     // - `host` is a legal dns entry
     // - `port` is either a port number
@@ -831,6 +833,13 @@ pub const CreateWindowFlags = packed struct(u32) {
     popup: bool = false,
     padding: u31 = 0,
 };
+
+pub const GetSystemFontError = ErrorSet(.{
+    .FileNotFound = 1,
+    .SystemResources = 2,
+    .OutOfMemory = 3,
+    .Unexpected = 4,
+});
 
 // Auxiliary helpers
 
