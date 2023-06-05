@@ -16,12 +16,16 @@ const Window = ashet.ui.Window;
 
 var wiki_software: WikiSoftware = undefined;
 
+var title_font: gui.Font = undefined;
+var sans_font: gui.Font = undefined;
+var mono_font: gui.Font = undefined;
+
 pub fn main() !void {
     try gui.init();
 
-    const title_font = try gui.Font.fromSystemFont("sans", .{});
-    const sans_font = try gui.Font.fromSystemFont("sans-6", .{});
-    const mono_font = try gui.Font.fromSystemFont("mono-6", .{});
+    title_font = try gui.Font.fromSystemFont("sans", .{});
+    sans_font = try gui.Font.fromSystemFont("sans-6", .{});
+    mono_font = try gui.Font.fromSystemFont("mono-6", .{});
 
     const h1_font = blk: {
         var clone = title_font;
@@ -366,7 +370,7 @@ const WikiSoftware = struct {
     }
 
     fn getClickedLeafInner(list: *const Index.List, testpoint: Point, x: i16, y: *i16) ?*const Index.Leaf {
-        const font = &gui.Font.default;
+        const font = &sans_font;
         const line_height = font.lineHeight();
         for (list.nodes) |*node| {
             switch (node.content) {
@@ -418,14 +422,14 @@ const theme = struct {
 };
 
 fn renderSidePanel(fb: gui.Framebuffer, list: *const Index.List, leaf: ?*const Index.Leaf, x: i16, y: *i16) void {
-    const font = &gui.Font.default;
+    const font = &sans_font;
 
     for (list.nodes) |*node| {
         const line_height = font.lineHeight();
 
         if (node.content == .leaf and leaf == &node.content.leaf) {
             fb.fillRectangle(
-                .{ .x = 0, .y = y.*, .width = fb.width, .height = line_height },
+                .{ .x = 0, .y = y.*, .width = fb.width, .height = line_height + 1 },
                 theme.sidepanel_sel,
             );
         }

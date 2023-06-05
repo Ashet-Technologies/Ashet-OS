@@ -39,7 +39,7 @@ itemize {
   item { p { link "wiki:/ashet/apps/paint.hdoc"       "Dragon Craft" } }
   item { p { link "wiki:/ashet/apps/io.hdoc"          "I/O"          } }
   item { p { link "wiki:/ashet/apps/settings.hdoc"    "SysAdvance"   } }
-  item { p { link "wiki:/ashet/apps/lola.hdoc-run"    "LoLa Run!"    } }
+  item { p { link "wiki:/ashet/apps/lola-run.hdoc"    "LoLa Run!"    } }
   item { p { link "wiki:/ashet/apps/spreadsheet.hdoc" "Calc"         } }
 }
 
