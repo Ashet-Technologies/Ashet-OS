@@ -52,6 +52,8 @@ var widgets = blk: {
 };
 
 pub fn main() !void {
+    try gui.init();
+
     const window = try ashet.ui.createWindow(
         "GUI Demo",
         ashet.abi.Size.new(182, 127),

@@ -88,7 +88,12 @@ pub fn getSystemFont(font_name: []const u8) error{FileNotFound}![]const u8 {
 
 fn run(_: ?*anyopaque) callconv(.C) u32 {
     system_fonts.load() catch |err| {
-        logger.err("failed to initialize systme fonts: {s}", .{@errorName(err)});
+        logger.err("failed to initialize system fonts: {s}", .{@errorName(err)});
+        return 1;
+    };
+
+    gui.init() catch |err| {
+        logger.err("failed to initialize gui: {s}", .{@errorName(err)});
         return 1;
     };
 
@@ -1569,7 +1574,7 @@ const system_fonts = struct {
         errdefer arena.deinit();
 
         fonts = std.StringArrayHashMap([]const u8).init(arena.allocator());
-        defer fonts.deinit();
+        errdefer fonts.deinit();
 
         var font_dir = try libashet.fs.Directory.openDrive(.system, "system/fonts");
         defer font_dir.close();

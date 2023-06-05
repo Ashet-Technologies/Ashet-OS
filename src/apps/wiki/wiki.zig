@@ -17,6 +17,39 @@ const Window = ashet.ui.Window;
 var wiki_software: WikiSoftware = undefined;
 
 pub fn main() !void {
+    try gui.init();
+
+    const title_font = try gui.Font.fromSystemFont("sans", .{});
+    const sans_font = try gui.Font.fromSystemFont("sans-6", .{});
+    const mono_font = try gui.Font.fromSystemFont("mono-6", .{});
+
+    const h1_font = blk: {
+        var clone = title_font;
+        clone.vector.size = 8;
+        clone.vector.bold = true;
+        break :blk clone;
+    };
+    const h2_font = blk: {
+        var clone = title_font;
+        clone.vector.size = 7;
+        clone.vector.bold = false;
+        break :blk clone;
+    };
+    const h3_font = blk: {
+        var clone = title_font;
+        clone.vector.size = 6;
+        clone.vector.bold = false;
+        break :blk clone;
+    };
+
+    theme.wiki.text.font = &sans_font;
+    theme.wiki.link.font = &sans_font;
+    theme.wiki.emphasis.font = &mono_font;
+    theme.wiki.monospace.font = &mono_font;
+    theme.wiki.h1.font = &h1_font;
+    theme.wiki.h2.font = &h2_font;
+    theme.wiki.h3.font = &h3_font;
+
     const window = try ashet.ui.createWindow(
         "Hyper Wiki",
         ashet.abi.Size.new(160, 80),
@@ -365,37 +398,15 @@ const theme = struct {
     const sidepanel_document_sel = ColorIndex.get(0x0); // black
     const sidepanel_folder = ColorIndex.get(0x9); // bright gray
 
-    const font = &gui.Font.default;
-    const mono_font = &gui.Font.monospace;
+    var wiki = htext.Theme{
+        .text = .{ .font = undefined, .color = ColorIndex.get(0x00) }, // black
+        .monospace = .{ .font = undefined, .color = ColorIndex.get(0x03) }, // dark red
+        .emphasis = .{ .font = undefined, .color = ColorIndex.get(0x12) }, // gold
+        .link = .{ .font = undefined, .color = ColorIndex.get(0x02) }, // blue
 
-    const wiki = htext.Theme{
-        .text = .{ .font = font, .color = ColorIndex.get(0x00) }, // black
-        .monospace = .{ .font = mono_font, .color = ColorIndex.get(0x03) }, // dark red
-        .emphasis = .{ .font = blk: {
-            var clone = gui.Font.default;
-            clone.vector.bold = true;
-            break :blk &clone;
-        }, .color = ColorIndex.get(0x12) }, // gold
-        .link = .{ .font = font, .color = ColorIndex.get(0x02) }, // blue
-
-        .h1 = .{ .font = blk: {
-            var clone = gui.Font.default;
-            clone.vector.size = 12;
-            clone.vector.bold = true;
-            break :blk &clone;
-        }, .color = ColorIndex.get(0x03) }, // dark red
-        .h2 = .{ .font = blk: {
-            var clone = gui.Font.default;
-            clone.vector.size = 10;
-            clone.vector.bold = true;
-            break :blk &clone;
-        }, .color = ColorIndex.get(0x00) }, // black
-        .h3 = .{ .font = blk: {
-            var clone = gui.Font.default;
-            clone.vector.size = 9;
-            clone.vector.bold = true;
-            break :blk &clone;
-        }, .color = ColorIndex.get(0x11) }, // dim gray
+        .h1 = .{ .font = undefined, .color = ColorIndex.get(0x03) }, // dark red
+        .h2 = .{ .font = undefined, .color = ColorIndex.get(0x00) }, // black
+        .h3 = .{ .font = undefined, .color = ColorIndex.get(0x11) }, // dim gray
 
         .quote_mark_color = ColorIndex.get(0x05), // dark green
 

@@ -15,6 +15,12 @@ pub const Size = ashet.abi.Size;
 pub const Rectangle = ashet.abi.Rectangle;
 pub const ColorIndex = ashet.abi.ColorIndex;
 
+/// Initializes the GUI system
+pub fn init() !void {
+    Font.default = try Font.load(try ashet.ui.getSystemFont("sans"), .{ .size = 8 });
+    Font.monospace = try Font.load(try ashet.ui.getSystemFont("mono-8"), .{});
+}
+
 /// An event that can be passed to widgets.
 /// Each event carries information about what happends (`id`) and
 /// potentially additional pointer information (`tag`).

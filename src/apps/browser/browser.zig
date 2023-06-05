@@ -65,6 +65,8 @@ fn initWidgets() !void {
 }
 
 pub fn main() !void {
+    try gui.init();
+
     try initWidgets();
 
     const window = try ashet.ui.createWindow(

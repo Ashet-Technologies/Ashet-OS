@@ -24,6 +24,7 @@ const AshetContext = struct {
         exe.omit_frame_pointer = false; // this is useful for debugging
 
         if (ctx.hosted_build) {
+            exe.addModule("ashet", ctx.b.modules.get("ashet").?);
             exe.addModule("ashet-std", ctx.b.modules.get("ashet-std").?);
             exe.addModule("ashet-abi", ctx.b.modules.get("ashet-abi").?);
             exe.addAnonymousModule("app", .{
@@ -463,6 +464,7 @@ pub fn build(b: *std.Build) !void {
         ctx.createAshetApp("paint", "src/apps/paint/paint.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Painter.png", optimize, &.{});
         ctx.createAshetApp("terminal", "src/apps/terminal/terminal.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Tools.png", optimize, &.{});
         ctx.createAshetApp("gui-demo", "src/apps/gui-demo.zig", null, optimize, &.{});
+        ctx.createAshetApp("font-demo", "src/apps/font-demo.zig", null, optimize, &.{});
         ctx.createAshetApp("net-demo", "src/apps/net-demo.zig", null, optimize, &.{});
 
         {

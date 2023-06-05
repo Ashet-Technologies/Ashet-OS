@@ -3,6 +3,7 @@ const std = @import("std");
 const abi = @import("ashet-abi");
 const astd = @import("ashet-std");
 const app = @import("app");
+const libashet = @import("ashet");
 
 const sdl = @cImport({
     @cInclude("SDL.h");
@@ -12,6 +13,8 @@ var gpa = std.heap.GeneralPurposeAllocator(.{}){};
 const allocator = gpa.allocator();
 
 fn appThread() !void {
+    try system_fonts.load();
+
     app.main() catch |err| {
         std.log.err("system failure: {s}", .{@errorName(err)});
         if (@errorReturnTrace()) |trace| {
@@ -587,7 +590,7 @@ const iop_handlers = struct {
                     .name = namebuf,
                     .size = stat.size,
                     .attributes = .{
-                        .directory = (info.kind == .Directory),
+                        .directory = (info.kind == .directory),
                     },
                     .creation_date = dateTimeFromTimestamp(stat.ctime),
                     .modified_date = dateTimeFromTimestamp(stat.mtime),
@@ -825,6 +828,7 @@ pub const syscall_table: abi.SysCallTable = .{
     .@"fs.findFilesystem" = fs_findFilesystem,
     .@"process.memory.allocate" = process_memory_allocate,
     .@"process.memory.release" = process_memory_release,
+    .@"ui.getSystemFont" = @"ui.getSystemFont",
 };
 
 fn process_yield() callconv(.C) void {
@@ -1321,3 +1325,79 @@ fn HandleAllocator(comptime Handle: type, comptime Backing: type) type {
         }
     };
 }
+
+fn @"ui.getSystemFont"(font_name_ptr: [*]const u8, font_name_len: usize, font_data_ptr: *[*]const u8, font_data_len: *usize) callconv(.C) abi.GetSystemFontError.Enum {
+    const font_name = font_name_ptr[0..font_name_len];
+
+    const font_data = system_fonts.get(font_name) catch |err| {
+        return abi.GetSystemFontError.map(err);
+    };
+
+    font_data_ptr.* = font_data.ptr;
+    font_data_len.* = font_data.len;
+
+    return .ok;
+}
+
+const system_fonts = struct {
+    var arena: std.heap.ArenaAllocator = undefined;
+
+    var fonts: std.StringArrayHashMap([]const u8) = undefined;
+
+    fn load() !void {
+        arena = std.heap.ArenaAllocator.init(allocator);
+        errdefer arena.deinit();
+
+        fonts = std.StringArrayHashMap([]const u8).init(arena.allocator());
+        errdefer fonts.deinit();
+
+        var font_dir = try libashet.fs.Directory.openDrive(.system, "system/fonts");
+        defer font_dir.close();
+
+        while (try font_dir.next()) |ent| {
+            if (ent.attributes.directory)
+                continue;
+            const file_name = ent.getName();
+            if (!std.mem.endsWith(u8, file_name, ".font") or file_name.len <= 5)
+                continue;
+
+            var file = try font_dir.openFile(file_name, .read_only, .open_existing);
+            defer file.close();
+
+            loadAndAddFont(&file, file_name[0 .. file_name.len - 5]) catch |err| {
+                std.log.err("failed to load font {s}: {s}", .{
+                    file_name,
+                    @errorName(err),
+                });
+            };
+        }
+
+        std.log.info("available system fonts:", .{});
+        for (fonts.keys()) |name| {
+            std.log.info("- {s}", .{name});
+        }
+    }
+
+    fn loadAndAddFont(file: *libashet.fs.File, name: []const u8) !void {
+        const name_dupe = try arena.allocator().dupe(u8, name);
+        errdefer arena.allocator().free(name_dupe);
+
+        const stat = try file.stat();
+
+        if (stat.size > 1_000_000) // hard limit: 1 MB
+            return error.OutOfMemory;
+
+        const buffer = try arena.allocator().alloc(u8, @intCast(u32, stat.size));
+        errdefer arena.allocator().free(buffer);
+
+        const len = try file.read(0, buffer);
+        if (len != buffer.len)
+            return error.UnexpectedEndOfFile;
+
+        try fonts.putNoClobber(name_dupe, buffer);
+    }
+
+    fn get(font_name: []const u8) error{FileNotFound}![]const u8 {
+        return fonts.get(font_name) orelse return error.FileNotFound;
+    }
+};

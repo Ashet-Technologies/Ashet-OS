@@ -359,6 +359,13 @@ pub const ui = struct {
         syscall("ui.invalidate")(win, rect);
     }
 
+    pub fn getSystemFont(font_name: []const u8) ![]const u8 {
+        var out_slice: []const u8 = undefined;
+        const err = syscall("ui.getSystemFont")(font_name.ptr, font_name.len, &out_slice.ptr, &out_slice.len);
+        try abi.GetSystemFontError.throw(err);
+        return out_slice;
+    }
+
     pub const Event = union(abi.UiEventType) {
         mouse: abi.MouseEvent,
         keyboard: abi.KeyboardEvent,

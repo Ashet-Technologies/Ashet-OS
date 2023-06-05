@@ -14,8 +14,18 @@ pub const FontHint = struct {
 };
 
 pub const Font = union(enum) {
+    pub var default: Font = undefined;
+    pub var monospace: Font = undefined;
+
     bitmap: BitmapFont,
     vector: VectorFont,
+
+    pub fn fromSystemFont(font_name: []const u8, hints: FontHint) error{ FileNotFound, InvalidFont, OutOfMemory, SystemResources, Unexpected }!Font {
+        return try load(
+            try ashet.ui.getSystemFont(font_name),
+            hints,
+        );
+    }
 
     pub fn load(buffer: []const u8, hints: FontHint) error{InvalidFont}!Font {
         if (BitmapFont.load(buffer)) |bmp| {
@@ -38,17 +48,6 @@ pub const Font = union(enum) {
             inline else => |f| f.measureWidth(string),
         };
     }
-
-    pub const default: Font = blk: {
-        @setEvalBranchQuota(10_000);
-        // break :blk Font.load(@embedFile("fonts/mono.font"), .{}) catch |err| @compileError("failed to embed default font: " ++ @errorName(err));
-        break :blk Font.load(@embedFile("fonts/sans.font"), .{ .size = 8 }) catch |err| @compileError("failed to embed default font: " ++ @errorName(err));
-    };
-
-    pub const monospace: Font = blk: {
-        @setEvalBranchQuota(10_000);
-        break :blk Font.load(@embedFile("fonts/mono.font"), .{}) catch |err| @compileError("failed to embed default font: " ++ @errorName(err));
-    };
 };
 
 pub const BitmapFont = struct {

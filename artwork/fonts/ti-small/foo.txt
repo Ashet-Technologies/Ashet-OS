@@ -1,0 +1,39 @@
+SlBrack	C1	"Left Bracket"	3px
+SxMean	CB	"X Mean"	4px
+SyMean	CC	"Y Mean"	4px
+Sper	D1	"Per"	4px
+Shyphen	D2	"Hyphen"	3px
+Sarea	D3	"Area"	4px
+Scube	D5	"Cube"	4px
+Senter	D6	"Enter"	Width: a
+SimagI	D7	"Imaginary I"	4px
+Sphat	D8	"P Hat"	4px
+SstatF	DA	"Stat F"	4px
+Stemp	D4	"Temperature"	4px
+Slne	DB	"Natural Logarithm E"	4px
+SlistL	DC	"List Capital L"	3px
+SfinanN	DD	"Finance Capital N"	3px
+S2_r_paren	DE	"Two Right Parentheses"	4px
+SnarrowCapE	DF	"Narrow Capital E"	3px
+SListLock	E0	"List Lock"	3px
+Sscatter1	E1	"Scatter 1"	6px
+Sscatter2	E2	"Scatter 2"	5px
+Sxyline1	E3	"xyLine 1"	6px
+Sxyline2	E4	"xyLine 2"	5px
+Sboxplot1	E5	"Boxplot 1"	6px
+Sboxplot2	E6	"Boxplot 2"	5px
+Shist1	E7	"Histogram 1"	6px
+Shist2	E8	"Histogram 2"	5px
+SmodBox1	E9	"ModBoxplot 1"	6px
+SmodBox2	EA	"ModBoxplot 2"	5px
+Snormal1	EB	"NormProbPlot 1"	6px
+Snormal2	EC	"NormProbPlot 2"	5px
+STwoSpaces	ED	"Two Spaces"	2px
+SThreeSpaces	EE	"Three Spaces"	3px
+SFiveSpaces	EF	"Five Spaces"	5px
+SSixSpaces	F0	"Six Spaces"	6px
+Sdollar	F2	"Dollar Sign"	6px
+SsqUp	F3	"Square Up"	5px
+SMPmixedFrac	F5	"MathPrint Mixed Fraction Separator"	4px
+SMPfracSlash	F6	"MathPrint Fraction Slash"	4px
+SMPentryBox	F7	"MathPrint Entry Box"	6px
