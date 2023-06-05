@@ -523,6 +523,8 @@ fn repaint() void {
 
     // framebuffer.clear(ColorIndex.get(7));
 
+    const title_font = gui.Font.fromSystemFont("mono-8", .{}) catch gui.Font.default;
+
     for (invalidation_areas.slice()) |rect| {
         framebuffer.fillRectangle(rect, current_theme.desktop_color);
     }
@@ -552,7 +554,7 @@ fn repaint() void {
             framebuffer.verticalLine(dx + width - 1, dy + 1, 9, style.border);
             framebuffer.fillRectangle(Rectangle{ .x = dx + 1, .y = dy + 1, .width = width - 2, .height = 9 }, style.title);
 
-            framebuffer.drawString(dx + 2, dy + 2, mini.title, &gui.Font.default, style.font, width - 2);
+            framebuffer.drawString(dx + 2, dy + 2, mini.title, &title_font, style.font, width - 2);
 
             paintButton(mini.restore_button, style, style.title, icons.restore_from_tray);
             paintButton(mini.close_button, style, style.title, icons.close);
@@ -587,7 +589,7 @@ fn repaint() void {
                 window_rectangle.x + 2,
                 window_rectangle.y + 2,
                 window.title(),
-                &gui.Font.default,
+                &title_font,
                 style.font,
                 title_width - 2,
             );
@@ -1448,6 +1450,8 @@ pub const desktop = struct {
     }
 
     fn paint() void {
+        const font = gui.Font.fromSystemFont("sans-6", .{}) catch gui.Font.default;
+
         var iter = AppIterator.init();
         while (iter.next()) |info| {
             const app = info.app;
@@ -1465,15 +1469,13 @@ pub const desktop = struct {
 
             framebuffer.blit(info.bounds.position(), app.icon.bitmap());
 
-            const font = &gui.Font.default;
-
             const width = font.measureWidth(title);
 
             framebuffer.drawString(
                 info.bounds.x + Icon.width / 2 - width / 2,
                 info.bounds.y + Icon.height,
                 title,
-                font,
+                &font,
                 ColorIndex.get(0x0),
                 width,
             );

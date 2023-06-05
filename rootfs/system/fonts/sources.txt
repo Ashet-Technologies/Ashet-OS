@@ -1,9 +1,17 @@
 
 
 
-mono-8: TI-83+ Large Font
-mono-6: PICO-8 Font
+mono-8: TI-83+ Large Font   http://tibasicdev.wikidot.com/83lgfont
+mono-6: PICO-8 Font         https://www.lexaloffle.com/bbs/?tid=3760
 
-sans-6: TI-83+ Small Font
+sans-6: TI-83+ Small Font   http://tibasicdev.wikidot.com/83smfont
 
 sans:   TurtleFont
+
+
+
+planned:
+  https://github.com/slavfox/Cozette
+  https://github.com/romeovs/creep
+  https://github.com/nerdypepper/scientifica
+  
