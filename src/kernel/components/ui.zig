@@ -1332,7 +1332,7 @@ pub const desktop = struct {
     const default_icon = blk: {
         @setEvalBranchQuota(20_000);
 
-        const data = system_assets.@"default-app-icon.abm";
+        const data = system_assets.@"system/icons/default-app-icon.abm";
 
         var stream = std.io.fixedBufferStream(data);
 

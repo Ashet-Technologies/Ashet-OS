@@ -41,6 +41,8 @@ fi
 
 truncate -s "${disk_size}" "${DISK}"
 
+
+rootfs_path="${ROOT}/zig-out/rootfs"
 rootfs="ashet-fs"
 case $MACHINE in
     *_pc)
@@ -58,15 +60,12 @@ copyToFAT()
 case $rootfs in
     ashet-fs)
         # copy system root
-        "${ROOT}/zig-out/bin/afs-tool" format --verbose --image "${DISK}" "${ROOT}/rootfs"
-
-        # install applications
-        "${ROOT}/zig-out/bin/afs-tool" put --verbose --image "${DISK}" --recursive "${ROOT}/zig-out/apps" "/apps"
+        "${ROOT}/zig-out/bin/afs-tool" format --verbose --image "${DISK}" "${rootfs_path}"
 
         ;;
     
     fat32)
-        ./zig-out/bin/init-disk "${DISK}" --create --sector_offset 2048
+        ./zig-out/bin/init-disk "${DISK}" --create --sector_offset 2048 --root "${rootfs_path}"
 
         sfdisk "${DISK}" <<EOF
 label: dos
@@ -77,9 +76,6 @@ sector-size: 512
 
 zig-out/disk.img1 : start=        2048, size=      260096, type=c, bootable
 EOF
-
-        copyToFAT "${ROOT}/zig-out/apps" ::
-        copyToFAT "${ROOT}/zig-out/apps/"* ::/apps
         ;;
     
     *)
@@ -110,6 +106,7 @@ case $MACHINE in
                 -s "$@" \
         | "${ROOT}/zig-out/bin/debug-filter" "${APP}"
         ;;
+
     microvm)
         qemu-system-i386 ${qemu_generic_flags} \
             -M microvm \
@@ -123,6 +120,7 @@ case $MACHINE in
             -s "$@" \
         | "${ROOT}/zig-out/bin/debug-filter" "${APP}"
         ;;
+
     bios_pc)
         # Install syslinux and kernel:
         copyToFAT rootfs-x86/* ::
@@ -142,6 +140,7 @@ case $MACHINE in
           -s "$@" \
         | llvm-addr2line -e "${APP}"
         ;;
+
         # -device bochs-display,xres=800,yres=600 \
         # -device VGA,xres=800,yres=600,xmax=800,ymax=600 \
     efi_pc)
@@ -151,6 +150,7 @@ case $MACHINE in
             -drive if=ide,format=raw,unit=0,file="${DISK}" \
             -s "$@"
         ;;
+        
     *)
         echo "Cannot start machine $MACHINE yet."
         exit 1

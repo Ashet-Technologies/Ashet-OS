@@ -1,12 +1,14 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 pub const abi = @import("ashet-abi");
 
 pub const syscall = abi.syscall;
 
+pub const is_hosted = builtin.is_test or (builtin.target.os.tag != .freestanding);
+
 comptime {
-    const builtin = @import("builtin");
-    if (!builtin.is_test and builtin.target.os.tag == .freestanding) {
+    if (!is_hosted) {
         if (@hasDecl(@import("root"), "main")) {
             @export(_start, .{
                 .linkage = .Strong,
@@ -189,8 +191,12 @@ pub const console = @import("console.zig");
 
 pub const debug = struct {
     pub fn write(buffer: []const u8) void {
-        for (buffer) |char| {
-            @intToPtr(*volatile u8, 0x1000_0000).* = char;
+        if (is_hosted) {
+            std.io.getStdErr().writeAll(buffer) catch {};
+        } else {
+            for (buffer) |char| {
+                @intToPtr(*volatile u8, 0x1000_0000).* = char;
+            }
         }
     }
 

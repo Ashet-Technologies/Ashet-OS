@@ -411,11 +411,11 @@ pub const keyboard = struct {
     };
 
     const ConfigFileIterator = struct {
-        iter: std.mem.TokenIterator(u8),
+        iter: std.mem.TokenIterator(u8, .any),
 
         pub fn init(str: []const u8) ConfigFileIterator {
             return .{
-                .iter = std.mem.tokenize(u8, str, "\r\n"),
+                .iter = std.mem.tokenizeAny(u8, str, "\r\n"),
             };
         }
 

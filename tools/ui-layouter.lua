@@ -266,7 +266,7 @@ do
   local function appendIcon(path)
     local name = path:match("[%w-_]+")
 
-    table.insert(all_icons, { name = name, file = path })
+    table.insert(all_icons, { name = name, file = "system/icons/" .. path })
 
     return name
   end

@@ -22,6 +22,7 @@ const CliOptions = struct {
     sector_offset: u64 = 0,
     create: bool = false,
     size: DiskSize = .{ .size = 128 * 1024 * 1024 }, // 128M by default
+    root: []const u8 = "rootfs",
 };
 
 pub fn main() !u8 {
@@ -67,7 +68,7 @@ pub fn main() !u8 {
 
     // populate root
     {
-        var rootfs = try std.fs.cwd().openIterableDir("rootfs", .{});
+        var rootfs = try std.fs.cwd().openIterableDir(cli.options.root, .{});
         defer rootfs.close();
 
         var walker = try rootfs.walk(std.heap.c_allocator);

@@ -1,8 +1,8 @@
 const std = @import("std");
 
-const ziglibc = @import("vendor/ziglibc/ziglibcbuild.zig");
-
 const FatFS = @import("vendor/zfat/Sdk.zig");
+
+const rootfs_dir = std.Build.InstallDir{ .custom = "rootfs" };
 
 const AshetContext = struct {
     b: *std.build.Builder,
@@ -57,6 +57,7 @@ const AshetContext = struct {
             exe.setLinkerScriptPath(.{ .path = "src/libashet/application.ld" });
 
             const install_app_code_step = ctx.b.addInstallFile(exe.getOutputSource(), ctx.b.fmt("apps/{s}/code", .{name}));
+            install_app_code_step.dir = rootfs_dir;
             ctx.b.getInstallStep().dependOn(&install_app_code_step.step);
 
             if (maybe_icon) |src_icon| {
@@ -71,6 +72,7 @@ const AshetContext = struct {
                 );
 
                 const install_app_icon_step = ctx.b.addInstallFile(icon_file, ctx.b.fmt("apps/{s}/icon", .{name}));
+                install_app_icon_step.dir = rootfs_dir;
                 ctx.b.getInstallStep().dependOn(&install_app_icon_step.step);
             }
         }
@@ -243,16 +245,27 @@ pub fn build(b: *std.Build) !void {
                 .predefined = "src/kernel/data/palette.gpl",
             },
         };
-        system_icons.add("back.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/56.png" }, "back.abm", tool_icon_conv_options));
-        system_icons.add("forward.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/57.png" }, "forward.abm", tool_icon_conv_options));
-        system_icons.add("reload.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/76.png" }, "reload.abm", tool_icon_conv_options));
-        system_icons.add("home.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/17.png" }, "home.abm", tool_icon_conv_options));
-        system_icons.add("go.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/38.png" }, "go.abm", tool_icon_conv_options));
-        system_icons.add("stop.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/33.png" }, "stop.abm", tool_icon_conv_options));
-        system_icons.add("menu.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/2.png" }, "menu.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/back.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Go back.png" }, "back.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/forward.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Go forward.png" }, "forward.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/reload.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Refresh.png" }, "reload.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/home.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Home.png" }, "home.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/go.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Go.png" }, "go.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/stop.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Stop sign.png" }, "stop.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/menu.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Tune.png" }, "menu.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/plus.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/13.png" }, "plus.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/delete.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Delete.png" }, "delete.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/copy.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Copy.png" }, "copy.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/cut.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Cut.png" }, "cut.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/paste.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Paste.png" }, "paste.abm", tool_icon_conv_options));
 
-        system_icons.add("default-app-icon.abm", bmpconv.convert(.{ .path = "artwork/os/default-app-icon.png" }, "menu.abm", desktop_icon_conv_options));
+        system_icons.add("system/icons/default-app-icon.abm", bmpconv.convert(.{ .path = "artwork/os/default-app-icon.png" }, "menu.abm", desktop_icon_conv_options));
     }
+
+    b.installDirectory(.{
+        .source_dir = "rootfs",
+        .install_dir = rootfs_dir,
+        .install_subdir = ".",
+    });
 
     var ui_gen = UiGenerator{
         .builder = b,
@@ -310,6 +323,26 @@ pub fn build(b: *std.Build) !void {
             break :blk try stream.toOwnedSlice();
         });
 
+        const cguana_dep = b.anonymousDependency("vendor/ziglibc", @import("vendor/ziglibc/build.zig"), .{
+            .target = machine_spec.platform.target,
+            .link = .static,
+            .start = .none,
+            .trace = false,
+            .optimize = .ReleaseSafe,
+            .variant = .only_std,
+        });
+
+        const ashet_libc = cguana_dep.artifact("cguana");
+
+        // const ashet_libc = cguana_dep.ziglibc.addLibc(b, .{
+        //     .variant = .freestanding,
+        //     .link = .static,
+        //     .start = .ziglibc,
+        //     .trace = false,
+        //     .target = machine_spec.platform.target,
+        //     .optimize = .ReleaseSafe,
+        // });
+
         const kernel_exe = b.addExecutable(.{
             .name = "ashet-os",
             .root_source_file = .{ .path = "src/kernel/main.zig" },
@@ -347,17 +380,7 @@ pub fn build(b: *std.Build) !void {
 
             FatFS.link(kernel_exe, fatfs_config);
 
-            const kernel_libc = ziglibc.addLibc(b, .{
-                .variant = .freestanding,
-                .link = .static,
-                .start = .ziglibc,
-                .trace = false,
-                .target = kernel_exe.target,
-                .optimize = .ReleaseSafe,
-            });
-            // b.installArtifact(kernel_libc);
-
-            kernel_exe.linkLibrary(kernel_libc);
+            kernel_exe.linkLibrary(ashet_libc);
 
             {
                 const lwip = create_lwIP(b, kernel_exe.target, .ReleaseSafe);
@@ -462,7 +485,9 @@ pub fn build(b: *std.Build) !void {
         ctx.createAshetApp("editor", "src/apps/editor/editor.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Edit page.png", optimize, &.{});
         ctx.createAshetApp("music", "src/apps/music/music.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Play.png", optimize, &.{});
         ctx.createAshetApp("paint", "src/apps/paint/paint.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Painter.png", optimize, &.{});
-        ctx.createAshetApp("terminal", "src/apps/terminal/terminal.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Tools.png", optimize, &.{});
+        ctx.createAshetApp("terminal", "src/apps/terminal/terminal.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Tools.png", optimize, &.{
+            .{ .name = "system-assets", .module = ui_gen.mod_system_assets },
+        });
         ctx.createAshetApp("gui-demo", "src/apps/gui-demo.zig", null, optimize, &.{});
         ctx.createAshetApp("font-demo", "src/apps/font-demo.zig", null, optimize, &.{});
         ctx.createAshetApp("net-demo", "src/apps/net-demo.zig", null, optimize, &.{});
@@ -786,6 +811,10 @@ const AssetBundleStep = struct {
             item,
         ) catch @panic("oom");
         item.addStepDependencies(&bundle.step);
+
+        const install_step = bundle.builder.addInstallFile(item, path);
+        install_step.dir = rootfs_dir;
+        bundle.builder.getInstallStep().dependOn(&install_step.step);
     }
 
     pub fn getOutput(bundle: *AssetBundleStep) std.Build.FileSource {
