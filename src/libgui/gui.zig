@@ -15,6 +15,15 @@ pub const Size = ashet.abi.Size;
 pub const Rectangle = ashet.abi.Rectangle;
 pub const ColorIndex = ashet.abi.ColorIndex;
 
+pub fn arrayToPointerArray(array: anytype) []const *Widget {
+    const len = @as([]Widget, array).len;
+    var buffer: [len]*Widget = undefined;
+    for (&buffer, array) |*ptr, *item| {
+        ptr.* = item;
+    }
+    return &buffer;
+}
+
 /// Initializes the GUI system
 pub fn init() !void {
     Font.default = try Font.load(try ashet.ui.getSystemFont("sans"), .{ .size = 8 });
@@ -89,7 +98,7 @@ pub const Theme = struct {
 
 pub const Interface = struct {
     /// List of widgets, bottom to top
-    widgets: []Widget,
+    widgets: []const *Widget,
     theme: *const Theme = &Theme.default,
     focus: ?usize = null,
 
@@ -97,7 +106,7 @@ pub const Interface = struct {
         var i: usize = gui.widgets.len;
         while (i > 0) {
             i -= 1;
-            const widget = &gui.widgets[i];
+            const widget = gui.widgets[i];
             if (widget.bounds.contains(pt)) {
                 if (index) |dst| dst.* = i;
                 return widget;
@@ -245,7 +254,7 @@ pub const Interface = struct {
 
         const widget_index = gui.focus orelse return null;
 
-        const widget = &gui.widgets[widget_index];
+        const widget = gui.widgets[widget_index];
 
         switch (widget.control) {
             inline .button, .tool_button, .check_box, .radio_button => |*ctrl| {

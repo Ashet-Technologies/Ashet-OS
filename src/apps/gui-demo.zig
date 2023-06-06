@@ -14,7 +14,7 @@ const events = struct {
 var tb_user_backing: [64]u8 = undefined;
 var tb_passwd_backing: [64]u8 = undefined;
 
-var interface = gui.Interface{ .widgets = &widgets };
+var interface = gui.Interface{ .widgets = gui.arrayToPointerArray(&widgets) };
 
 var radio_group = gui.RadioGroup{};
 

@@ -439,7 +439,7 @@ do
   end
   f:write("};\n");
   f:write("\n")
-  f:write("pub var interface = Interface{ .widgets = &widgets };\n")
+  f:write("pub var interface = Interface{ .widgets = gui.arrayToPointerArray(&widgets) };\n")
   f:write("\n")
   f:write(string.format("pub var widgets: [%d]Widget = .{\n", #all_objects))
 
