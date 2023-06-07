@@ -225,8 +225,10 @@ pub fn startAppElf(app: AppID) !void {
     {
         var pheaders = header.program_header_iterator(&file);
         while (try pheaders.next()) |phdr| {
-            if (phdr.p_type != elf.PT_LOAD)
+            if (phdr.p_type != elf.PT_LOAD) {
+                // logger.warn("skipping program header: {}", .{phdr});
                 continue;
+            }
 
             // logger.info("loading read={} write={} exec={} offset=0x{X:0>8} vaddr=0x{X:0>8} paddr=0x{X:0>8} memlen={} bytes={} align={}", .{
             //     @boolToInt((phdr.p_flags & elf.PF_R) != 0),
@@ -304,6 +306,13 @@ pub fn startAppElf(app: AppID) !void {
 
                 // ignore these, we don't need them
                 std.elf.SHT_PROGBITS, std.elf.SHT_SYMTAB, std.elf.SHT_DYNSYM, std.elf.SHT_STRTAB => {},
+
+                std.elf.SHT_NOBITS => {
+                    // initialize .bss section:
+                    const base = @intCast(usize, shdr.sh_addr);
+                    const size = @intCast(usize, shdr.sh_size);
+                    @memset(process_memory[base .. base + size], 0);
+                },
 
                 else => logger.info("unhandled section header: {s}", .{switch (shdr.sh_type) {
                     std.elf.SHT_NULL => "SHT_NULL",
