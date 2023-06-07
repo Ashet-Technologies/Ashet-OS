@@ -1,7 +1,6 @@
 .{
     .name = "ashet-os",
     .version = "0.1.0",
-
     .dependencies = .{
         .@"text-editor" = .{
             .url = "https://github.com/MasterQ32/TextEditor/archive/c51bf94c87ac7e0faced817144abce0226b86653.tar.gz",
@@ -26,6 +25,10 @@
         .turtlefont = .{
             .url = "https://github.com/MasterQ32/turtlefont/archive/2e7e60602ca305defec942a551842d716e90a3b7.tar.gz",
             .hash = "1220ff1f7651506471e5a486a4fd4b19c3f294c49cffec9092458c4a1ad2c8835d4b",
+        },
+        .fraxinus = .{
+            .url = "https://github.com/MasterQ32/fraxinus/archive/dac75f30046d2fb7eeed893d505722f5f781d832.tar.gz",
+            .hash = "1220b54f999bed8a965d0978cb3375083e9038286c5414cb06726318b4f3917a01d2",
         },
     },
 }

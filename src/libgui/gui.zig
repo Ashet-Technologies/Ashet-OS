@@ -121,7 +121,7 @@ pub const Interface = struct {
                 var index: usize = 0;
                 const click_point = Point.new(event.x, event.y);
                 if (gui.widgetFromPoint(click_point, &index)) |widget| {
-                    if (widget.control.canFocus()) {
+                    if (widget.canFocus()) {
                         gui.focus = index;
                     } else {
                         gui.focus = null;
@@ -207,7 +207,7 @@ pub const Interface = struct {
             // nothing is focused right now, try focusing the first available widget
 
             for (gui.widgets, 0..) |w, i| {
-                if (w.control.canFocus()) {
+                if (w.canFocus()) {
                     gui.focus = i;
                     return;
                 }
@@ -225,7 +225,7 @@ pub const Interface = struct {
                     index = 0;
                 if (index == initial)
                     return; // nothing changed
-                if (gui.widgets[index].control.canFocus()) {
+                if (gui.widgets[index].canFocus()) {
                     gui.focus = index;
                     return;
                 }
@@ -238,7 +238,7 @@ pub const Interface = struct {
                 }
                 if (index == initial)
                     return; // nothing changed
-                if (gui.widgets[index].control.canFocus()) {
+                if (gui.widgets[index].canFocus()) {
                     gui.focus = index;
                     return;
                 }
@@ -633,23 +633,18 @@ pub const Interface = struct {
 };
 
 pub const Widget = struct {
+    pub const Overrides = struct {
+        can_focus: ?bool = null,
+    };
+
     bounds: Rectangle,
     control: Control,
-};
+    overrides: Overrides = .{},
 
-pub const Control = union(enum) {
-    button: Button,
-    label: Label,
-    text_box: TextBox,
-    panel: Panel,
-    picture: Picture,
-    check_box: CheckBox,
-    radio_button: RadioButton,
-    scroll_bar: ScrollBar,
-    tool_button: ToolButton,
-
-    pub fn canFocus(ctrl: Control) bool {
-        return switch (ctrl) {
+    pub fn canFocus(widget: Widget) bool {
+        if (widget.overrides.can_focus) |can_focus|
+            return can_focus;
+        return switch (widget.control) {
             .button => true,
             .text_box => true,
             .check_box => true,
@@ -662,6 +657,18 @@ pub const Control = union(enum) {
             .picture => false,
         };
     }
+};
+
+pub const Control = union(enum) {
+    button: Button,
+    label: Label,
+    text_box: TextBox,
+    panel: Panel,
+    picture: Picture,
+    check_box: CheckBox,
+    radio_button: RadioButton,
+    scroll_bar: ScrollBar,
+    tool_button: ToolButton,
 };
 
 pub const Button = struct {

@@ -436,8 +436,10 @@ fn IopReturnType(comptime IOP: type) type {
 
 const iop_handlers = struct {
     pub fn timer(iop: *abi.Timer) IopReturnType(abi.Timer) {
-        _ = iop;
-        @panic("timer not implemented yet!");
+        if (iop.inputs.timeout > time_nanoTimestamp())
+            return error.WouldBlock;
+
+        return .{};
     }
 
     pub fn tcp_connect(iop: *abi.tcp.Connect) IopReturnType(abi.tcp.Connect) {

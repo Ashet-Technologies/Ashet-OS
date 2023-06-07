@@ -161,6 +161,7 @@ pub fn build(b: *std.Build) !void {
 
     const mod_args = b.dependency("args", .{}).module("args");
     const mod_zigimg = b.dependency("zigimg", .{}).module("zigimg");
+    const mod_fraxinus = b.dependency("fraxinus", .{}).module("fraxinus");
 
     const mod_ashet_std = b.addModule("ashet-std", .{
         .source_file = .{ .path = "src/std/std.zig" },
@@ -487,6 +488,7 @@ pub fn build(b: *std.Build) !void {
         ctx.createAshetApp("paint", "src/apps/paint/paint.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Painter.png", optimize, &.{});
         ctx.createAshetApp("terminal", "src/apps/terminal/terminal.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Tools.png", optimize, &.{
             .{ .name = "system-assets", .module = ui_gen.mod_system_assets },
+            .{ .name = "fraxinus", .module = mod_fraxinus },
         });
         ctx.createAshetApp("gui-demo", "src/apps/gui-demo.zig", null, optimize, &.{});
         ctx.createAshetApp("font-demo", "src/apps/font-demo.zig", null, optimize, &.{});

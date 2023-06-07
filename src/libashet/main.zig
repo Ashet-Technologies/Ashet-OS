@@ -49,7 +49,7 @@ fn _start() callconv(.C) u32 {
 }
 
 pub const core = struct {
-    var double_panic = false;
+    var nested_panic: bool = false;
 
     pub const std_options = struct {
         pub fn logFn(
@@ -68,13 +68,13 @@ pub const core = struct {
     };
 
     pub fn panic(msg: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, maybe_return_address: ?usize) noreturn {
-        if (double_panic) {
-            debug.write("DOUBLE PANIC: ");
+        if (nested_panic) {
+            debug.write("PANIC LOOP DETECTED: ");
             debug.write(msg);
             debug.write("\r\n");
             syscall("process.exit")(1);
         }
-        double_panic = true;
+        nested_panic = true;
 
         debug.write("PANIC: ");
         debug.write(msg);
@@ -129,6 +129,21 @@ pub const core = struct {
 pub const io = struct {
     pub const IOP = abi.IOP;
     pub const WaitIO = abi.WaitIO;
+
+    pub const Iterator = struct {
+        next_iop: ?*IOP,
+
+        pub fn next(iter: *Iterator) ?*IOP {
+            const iop = iter.next_iop orelse return null;
+            iter.next_iop = iop.next;
+            iop.next = null; // remove from list
+            return iop;
+        }
+    };
+
+    pub fn iterate(iop: ?*IOP) Iterator {
+        return .{ .next_iop = iop };
+    }
 
     pub fn scheduleAndAwait(start_queue: ?*IOP, wait: WaitIO) ?*IOP {
         const result = syscall("io.scheduleAndAwait")(start_queue, wait);
