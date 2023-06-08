@@ -250,13 +250,15 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
     writer.writeAll("=========================================================================\r\n") catch {};
     writer.writeAll("\r\n") catch {};
 
+    const current_thread = scheduler.Thread.current();
+
     writer.print("return address:\r\n      0x{X:0>8}\r\n\r\n", .{@returnAddress()}) catch {};
 
     {
         var stack_end: usize = @ptrToInt(&kernel_stack);
         var stack_start: usize = @ptrToInt(&kernel_stack_start);
 
-        if (scheduler.Thread.current()) |thread| {
+        if (current_thread) |thread| {
             stack_end = @ptrToInt(thread.getBasePointer());
             stack_start = stack_end - thread.stack_size;
         }
@@ -312,7 +314,19 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
         var index: usize = 0;
         var it = std.debug.StackIterator.init(@returnAddress(), null);
         while (it.next()) |addr| : (index += 1) {
-            writer.print("{d: >4}: 0x{X:0>8}\r\n", .{ index, addr }) catch {};
+            if (current_thread) |thread| {
+                if (thread.process) |proc| {
+                    const base = @ptrToInt(proc.process_memory.ptr);
+                    const top = base +| proc.process_memory.len;
+
+                    if (addr >= base and addr < top) {
+                        writer.print("{d: >4}: {s}:0x{X:0>8}\r\n", .{ index, proc.file_name, addr - base }) catch {};
+                        continue;
+                    }
+                }
+            }
+
+            writer.print("{d: >4}: kernel:0x{X:0>8}\r\n", .{ index, addr }) catch {};
         }
     }
 

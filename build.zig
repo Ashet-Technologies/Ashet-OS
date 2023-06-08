@@ -33,6 +33,7 @@ const AshetContext = struct {
                     &.{
                         .{ .name = "ashet", .module = ctx.b.modules.get("ashet").? },
                         .{ .name = "ashet-gui", .module = ctx.b.modules.get("ashet-gui").? },
+                        .{ .name = "ashet-std", .module = ctx.b.modules.get("ashet-std").? },
                     },
                     dependencies,
                 }) catch @panic("oom"),
@@ -43,6 +44,7 @@ const AshetContext = struct {
             ctx.b.installArtifact(exe);
         } else {
             exe.addModule("ashet", ctx.b.modules.get("ashet").?);
+            exe.addModule("ashet-std", ctx.b.modules.get("ashet-std").?);
             exe.addModule("ashet-gui", ctx.b.modules.get("ashet-gui").?); // just add GUI to all apps by default *shrug*
             for (dependencies) |dep| {
                 exe.addModule(dep.name, dep.module);
@@ -486,21 +488,21 @@ pub fn build(b: *std.Build) !void {
         ctx.createAshetApp("editor", "src/apps/editor/editor.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Edit page.png", optimize, &.{});
         ctx.createAshetApp("music", "src/apps/music/music.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Play.png", optimize, &.{});
         ctx.createAshetApp("paint", "src/apps/paint/paint.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Painter.png", optimize, &.{});
+
         ctx.createAshetApp("terminal", "src/apps/terminal/terminal.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Tools.png", optimize, &.{
             .{ .name = "system-assets", .module = ui_gen.mod_system_assets },
             .{ .name = "fraxinus", .module = mod_fraxinus },
         });
+
         ctx.createAshetApp("gui-demo", "src/apps/gui-demo.zig", null, optimize, &.{});
         ctx.createAshetApp("font-demo", "src/apps/font-demo.zig", null, optimize, &.{});
         ctx.createAshetApp("net-demo", "src/apps/net-demo.zig", null, optimize, &.{});
 
-        {
-            ctx.createAshetApp("wiki", "src/apps/wiki/wiki.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Help book.png", optimize, &.{
-                .{ .name = "hypertext", .module = mod_libhypertext },
-                .{ .name = "hyperdoc", .module = mod_hyperdoc },
-                .{ .name = "ui-layout", .module = ui_gen.render(.{ .path = b.pathFromRoot("src/apps/wiki/ui.lua") }) },
-            });
-        }
+        ctx.createAshetApp("wiki", "src/apps/wiki/wiki.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Help book.png", optimize, &.{
+            .{ .name = "hypertext", .module = mod_libhypertext },
+            .{ .name = "hyperdoc", .module = mod_hyperdoc },
+            .{ .name = "ui-layout", .module = ui_gen.render(.{ .path = b.pathFromRoot("src/apps/wiki/ui.lua") }) },
+        });
 
         {
             ctx.createAshetApp("dungeon", "src/apps/dungeon/dungeon.zig", "artwork/apps/dungeon/dungeon.png", optimize, &.{});

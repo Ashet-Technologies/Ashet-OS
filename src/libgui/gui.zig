@@ -98,17 +98,44 @@ pub const Theme = struct {
 
 pub const Interface = struct {
     /// List of widgets, bottom to top
-    widgets: []const *Widget,
+    widgets: WidgetList = .{},
     theme: *const Theme = &Theme.default,
-    focus: ?usize = null,
+    focus: ?*Widget = null,
 
-    pub fn widgetFromPoint(gui: *Interface, pt: Point, index: ?*usize) ?*Widget {
-        var i: usize = gui.widgets.len;
-        while (i > 0) {
-            i -= 1;
-            const widget = gui.widgets[i];
+    pub fn firstWidget(gui: Interface) ?*Widget {
+        return if (gui.widgets.first) |node|
+            @fieldParentPtr(Widget, "siblings", node)
+        else
+            null;
+    }
+
+    pub fn lastWidget(gui: Interface) ?*Widget {
+        return if (gui.widgets.last) |node|
+            @fieldParentPtr(Widget, "siblings", node)
+        else
+            null;
+    }
+
+    pub fn insertWidgetAfter(gui: *Interface, widget: *Widget, new_widget: *Widget) void {
+        gui.widgets.insertAfter(&widget.siblings, &new_widget.siblings);
+    }
+    pub fn insertWidgetBefore(gui: *Interface, widget: *Widget, new_widget: *Widget) void {
+        gui.widgets.insertBefore(&widget.siblings, &new_widget.siblings);
+    }
+    pub fn appendWidget(gui: *Interface, new_widget: *Widget) void {
+        gui.widgets.append(&new_widget.siblings);
+    }
+    pub fn prependWidget(gui: *Interface, new_widget: *Widget) void {
+        gui.widgets.prepend(&new_widget.siblings);
+    }
+    pub fn removeWidget(gui: *Interface, widget: *Widget) void {
+        gui.widgets.remove(&widget.siblings);
+    }
+
+    pub fn widgetFromPoint(gui: *Interface, pt: Point) ?*Widget {
+        var iter = WidgetIterator.topToBottom(gui.widgets);
+        while (iter.next()) |widget| {
             if (widget.bounds.contains(pt)) {
-                if (index) |dst| dst.* = i;
                 return widget;
             }
         }
@@ -118,11 +145,10 @@ pub const Interface = struct {
     pub fn sendMouseEvent(gui: *Interface, event: ashet.abi.MouseEvent) ?Event {
         switch (event.type) {
             .button_press => if (event.button == .left) {
-                var index: usize = 0;
                 const click_point = Point.new(event.x, event.y);
-                if (gui.widgetFromPoint(click_point, &index)) |widget| {
+                if (gui.widgetFromPoint(click_point)) |widget| {
                     if (widget.canFocus()) {
-                        gui.focus = index;
+                        gui.focus = widget;
                     } else {
                         gui.focus = null;
                     }
@@ -203,43 +229,36 @@ pub const Interface = struct {
 
     const FocusDir = enum { backward, forward };
     fn moveFocus(gui: *Interface, dir: FocusDir) void {
-        const initial = gui.focus orelse {
+        const initial: *Widget = gui.focus orelse {
             // nothing is focused right now, try focusing the first available widget
 
-            for (gui.widgets, 0..) |w, i| {
+            var iter = WidgetIterator.topToBottom(gui.widgets);
+
+            while (iter.next()) |w| {
                 if (w.canFocus()) {
-                    gui.focus = i;
-                    return;
+                    gui.focus = w;
+                    break;
                 }
             }
 
             return;
         };
 
-        var index = initial;
+        var current = initial;
+
+        const keys = .{
+            .forward = .{ .iterate = Widget.nextWidget, .wraparound = Interface.firstWidget },
+            .backward = .{ .iterate = Widget.previousWidget, .wraparound = Interface.lastWidget },
+        };
 
         switch (dir) {
-            .forward => while (true) {
-                index += 1;
-                if (index >= gui.widgets.len)
-                    index = 0;
-                if (index == initial)
+            inline else => |dir_info| while (true) {
+                const info = @field(keys, @tagName(dir_info));
+                current = info.iterate(current) orelse info.wraparound(gui.*).?;
+                if (current == initial)
                     return; // nothing changed
-                if (gui.widgets[index].canFocus()) {
-                    gui.focus = index;
-                    return;
-                }
-            },
-            .backward => while (true) {
-                if (index > 0) {
-                    index -= 1;
-                } else {
-                    index = gui.widgets.len - 1;
-                }
-                if (index == initial)
-                    return; // nothing changed
-                if (gui.widgets[index].canFocus()) {
-                    gui.focus = index;
+                if (current.canFocus()) {
+                    gui.focus = current;
                     return;
                 }
             },
@@ -252,9 +271,7 @@ pub const Interface = struct {
             return null;
         }
 
-        const widget_index = gui.focus orelse return null;
-
-        const widget = gui.widgets[widget_index];
+        const widget = gui.focus orelse return null;
 
         switch (widget.control) {
             inline .button, .tool_button, .check_box, .radio_button => |*ctrl| {
@@ -466,7 +483,9 @@ pub const Interface = struct {
     }
 
     pub fn paint(gui: Interface, target: Framebuffer) void {
-        for (gui.widgets, 0..) |widget, index| {
+        var iter = WidgetIterator.bottomToTop(gui.widgets);
+
+        while (iter.next()) |widget| {
             const b = .{
                 .x = widget.bounds.x,
                 .y = widget.bounds.y,
@@ -475,7 +494,11 @@ pub const Interface = struct {
             };
             switch (widget.control) {
                 inline .tool_button, .button => |ctrl| {
-                    gui.drawRectangle(target, widget.bounds, .raised, .area);
+                    if (@hasField(@TypeOf(ctrl), "toggle_active") and ctrl.toggle_active orelse false) {
+                        gui.drawRectangle(target, widget.bounds, .sunken, .area);
+                    } else {
+                        gui.drawRectangle(target, widget.bounds, .raised, .area);
+                    }
 
                     if (@hasField(@TypeOf(ctrl), "text")) {
                         target.drawString(b.x + 2, b.y + 2, ctrl.text, &Font.default, gui.theme.text, b.width -| 2);
@@ -511,7 +534,7 @@ pub const Interface = struct {
                         writer.writer().writeAll(ctrl.content()) catch {};
                     }
 
-                    if (gui.focus == index) {
+                    if (gui.focus == widget) {
                         const cursor_x = 6 * ctrl.editor.cursor - ctrl.scroll;
                         edit_view.drawLine(
                             Point.new(1 + @intCast(i16, cursor_x), 1),
@@ -625,14 +648,17 @@ pub const Interface = struct {
                     );
                 },
             }
-            if (gui.focus == index) {
+            if (gui.focus == widget) {
                 paintFocusMarker(target, widget.bounds.shrink(1), gui.theme.*);
             }
         }
     }
 };
 
+pub const WidgetList = std.TailQueue(Widget.Tag);
+
 pub const Widget = struct {
+    pub const Tag = struct {};
     pub const Overrides = struct {
         can_focus: ?bool = null,
     };
@@ -640,6 +666,21 @@ pub const Widget = struct {
     bounds: Rectangle,
     control: Control,
     overrides: Overrides = .{},
+    siblings: WidgetList.Node = .{ .data = Tag{} },
+
+    pub fn nextWidget(widget: *Widget) ?*Widget {
+        return if (widget.siblings.next) |node|
+            @fieldParentPtr(Widget, "siblings", node)
+        else
+            null;
+    }
+
+    pub fn previousWidget(widget: *Widget) ?*Widget {
+        return if (widget.siblings.prev) |node|
+            @fieldParentPtr(Widget, "siblings", node)
+        else
+            null;
+    }
 
     pub fn canFocus(widget: Widget) bool {
         if (widget.overrides.can_focus) |can_focus|
@@ -674,6 +715,7 @@ pub const Control = union(enum) {
 pub const Button = struct {
     clickEvent: ?Event = null,
     text: []const u8,
+    toggle_active: ?bool,
 
     pub fn new(x: i16, y: i16, width: ?u15, text: []const u8) Widget {
         return Widget{
@@ -687,12 +729,34 @@ pub const Button = struct {
                 .button = Button{
                     .clickEvent = null,
                     .text = text,
+                    .toggle_active = null,
+                },
+            },
+        };
+    }
+
+    pub fn newToggle(x: i16, y: i16, width: ?u15, text: []const u8) Widget {
+        return Widget{
+            .bounds = Rectangle{
+                .x = x,
+                .y = y,
+                .width = width orelse (@intCast(u15, text.len * 6) + 3),
+                .height = 11,
+            },
+            .control = .{
+                .button = Button{
+                    .clickEvent = null,
+                    .text = text,
+                    .toggle_active = false,
                 },
             },
         };
     }
 
     pub fn click(button: *Button) ?Event {
+        if (button.toggle_active) |*toggle| {
+            toggle.* = !toggle.*;
+        }
         return button.clickEvent;
     }
 };
@@ -1172,3 +1236,30 @@ test "smoke test 01" {
 
     interface.paint(fb);
 }
+
+pub const WidgetIterator = struct {
+    dir: enum { next, prev },
+    node: ?*WidgetList.Node,
+
+    pub fn topToBottom(list: WidgetList) WidgetIterator {
+        return WidgetIterator{
+            .node = list.last,
+            .dir = .prev,
+        };
+    }
+
+    pub fn bottomToTop(list: WidgetList) WidgetIterator {
+        return WidgetIterator{
+            .node = list.first,
+            .dir = .next,
+        };
+    }
+
+    pub fn next(wi: *WidgetIterator) ?*Widget {
+        const current = wi.node orelse return null;
+        switch (wi.dir) {
+            inline else => |dir| wi.node = @field(current, @tagName(dir)),
+        }
+        return @fieldParentPtr(Widget, "siblings", current);
+    }
+};

@@ -181,7 +181,25 @@ pub fn scheduleAndAwait(start_queue: ?*IOP, wait: WaitIO) ?*IOP {
 }
 
 pub fn cancel(event: *ashet.abi.IOP) void {
-    logger.warn("cancel event of tyype {}", .{event.type});
+    ashet.stackCheck();
+
+    const thread = ashet.scheduler.Thread.current() orelse @panic("scheduleAndAwait called in a non-thread context!");
+    const context: *Context = if (thread.process) |process|
+        &process.io_context
+    else
+        &kernel_context; // kernel can also schedule I/Os
+
+    if (context.completed.remove(event))
+        return;
+
+    switch (event.type) {
+        .ui_get_event => ashet.ui.cancelGetEvent(IOP.cast(abi.ui.GetEvent, event)),
+
+        else => {
+            logger.err("non-implemented cancel of type {}", .{event.type});
+            @panic("unimplemented cancel!");
+        },
+    }
 }
 
 pub fn destroy(context: *Context) void {
@@ -216,6 +234,35 @@ const EventQueue = struct {
         }
 
         return result;
+    }
+
+    pub fn remove(eq: *EventQueue, event: *IOP) bool {
+        if (eq.len == 0)
+            return false;
+
+        var iter = eq.head;
+        var prev: ?*IOP = null;
+
+        while (iter) |item| {
+            iter = item.next;
+            defer prev = item;
+
+            if (item != event)
+                continue;
+
+            if (item == eq.head)
+                eq.head = item.next;
+            if (item == eq.tail)
+                eq.tail = prev;
+
+            if (prev) |p|
+                p.next = item.next;
+            item.next = null;
+
+            eq.len -= 1;
+            return true;
+        }
+        return false;
     }
 
     pub fn flush(eq: *EventQueue) ?*IOP {

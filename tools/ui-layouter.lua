@@ -177,7 +177,7 @@ do
       assert(named_objects[properties.name] == nil, "An object with the name " .. properties.name .. " already exists!")
       o.name = properties.name
     else
-      o.name = string.format("Object[%d]", o.number)
+      o.name = string.format("untitled_widget_%d", o.number)
     end
 
     local mt = {
@@ -293,10 +293,11 @@ do
 
     local buffer_name = string.format("textbox_buffer_%d", buffer_id);
 
-    table.insert(additional_code_lines, string.format("var %s: [%d]u8 = undefined;", buffer_name, buffer_len))
+    table.insert(additional_code_lines, string.format("%s: [%d]u8 = undefined,", buffer_name, buffer_len))
 
-    props.class_init =
-      string.format("gui.TextBox.new(69, 42, 100, &%s, \"%s\") catch unreachable", buffer_name, initial)
+    props.class_init = string.format(
+                         "gui.TextBox.new(69, 42, 100, &self.%s, \"%s\") catch unreachable", buffer_name, initial
+                       )
     return LayoutObject({ width = 12, height = 12 }, props)
   end
 
@@ -428,9 +429,10 @@ do
   f:write("const ashet = @import(\"ashet\");\n")
   f:write("const gui = @import(\"ashet-gui\");\n")
   f:write("const system_assets = @import(\"system-assets\");\n")
-  f:write("const Window = ashet.abi.Window;\n");
   f:write("const Widget = gui.Widget;\n");
+  f:write("const Rectangle = gui.Rectangle;\n");
   f:write("const Interface = gui.Interface;\n");
+  f:write("const Layout = @This();\n");
   f:write("\n")
   f:write("const icons = struct {\n")
   for i = 1, #all_icons do
@@ -439,28 +441,19 @@ do
   end
   f:write("};\n");
   f:write("\n")
-  f:write("pub var interface = Interface{ .widgets = gui.arrayToPointerArray(&widgets) };\n")
+  f:write("interface: Interface=.{},\n")
   f:write("\n")
-  f:write(string.format("pub var widgets: [%d]Widget = .{\n", #all_objects))
 
   for i = 1, #all_objects do
     local lobj = all_objects[i]
-    f:write("    ", lobj.props.class_init, ", // ", tostring(i - 1), " ", lobj.name, "\n")
+    f:write(lobj.name, ": Widget = undefined,\n")
   end
-
-  f:write("};\n")
 
   if #additional_code_lines > 0 then
     f:write("\n")
     for i = 1, #additional_code_lines do
       f:write(additional_code_lines[i], "\n")
     end
-  end
-
-  f:write("\n")
-  for key, obj in pairs(named_objects) do
-
-    f:write("pub const ", key, " = &widgets[", obj.number, "];\n")
   end
 
   f:write("\n")
@@ -520,7 +513,7 @@ do
 
       local name_map = { left = "x", top = "y" }
 
-      local widget = "widgets[" .. tostring(value.owner.number) .. "].bounds"
+      local widget = "self." .. value.owner.name .. ".bounds"
 
       if name_map[value.name] then
         f:write(widget, ".", name_map[value.name])
@@ -604,9 +597,9 @@ do
           if val.name == "left" or val.name == "top" then
             f:write("0")
           elseif val.name == "right" then
-            f:write("@intCast(i16,window.client_rectangle.width)")
+            f:write("@intCast(i16,container_rectangle.width)")
           elseif val.name == "bottom" then
-            f:write("@intCast(i16,window.client_rectangle.height)")
+            f:write("@intCast(i16,container_rectangle.height)")
           else
             assert(false)
           end
@@ -668,7 +661,7 @@ do
 
   f:write("\n")
 
-  f:write("pub fn layout(window: *const Window) void {\n")
+  f:write("pub fn layout(self: *Layout, container_rectangle: Rectangle) void {\n")
 
   -- print("runtime resolvers:")
   for i = 1, #resolution_order do
@@ -678,6 +671,20 @@ do
     -- end
   end
   flushInitializers()
+
+  f:write("}\n")
+
+  f:write("pub fn linkAndInit(self: *Layout) void {")
+  f:write("    self.* = Layout{};\n")
+  for i = 1, #all_objects do
+    local lobj = all_objects[i]
+    f:write("    self." .. lobj.name, " = ", lobj.props.class_init, ";\n")
+  end
+
+  for i = 1, #all_objects do
+    local lobj = all_objects[i]
+    f:write("    self.interface.appendWidget(&self." .. lobj.name .. ");\n")
+  end
 
   f:write("}\n")
 

@@ -18,7 +18,9 @@ const std = @import("std");
 const ashet = @import("ashet");
 const gui = @import("ashet-gui");
 const system_assets = @import("system-assets");
-const main_window = @import("main_window_layout");
+const MainWindow = @import("main_window_layout");
+
+var main_window: MainWindow = undefined;
 
 const ColorIndex = ashet.abi.ColorIndex;
 
@@ -67,6 +69,7 @@ fn initWidgets() !void {
 pub fn main() !void {
     try gui.init();
 
+    main_window.linkAndInit();
     try initWidgets();
 
     const window = try ashet.ui.createWindow(
@@ -78,7 +81,7 @@ pub fn main() !void {
     );
     defer ashet.ui.destroyWindow(window);
 
-    main_window.layout(window);
+    main_window.layout(window.client_rectangle);
 
     paint(window);
 
@@ -101,11 +104,11 @@ pub fn main() !void {
             .window_moving => {},
             .window_moved => {},
             .window_resizing => {
-                main_window.layout(window);
+                main_window.layout(window.client_rectangle);
                 paint(window);
             },
             .window_resized => {
-                main_window.layout(window);
+                main_window.layout(window.client_rectangle);
                 paint(window);
             },
         }

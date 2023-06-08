@@ -4,6 +4,7 @@ const abi = @import("ashet-abi");
 const astd = @import("ashet-std");
 const app = @import("app");
 const libashet = @import("ashet");
+const logger = std.log.scoped(.userland);
 
 const sdl = @cImport({
     @cInclude("SDL.h");
@@ -166,7 +167,10 @@ pub fn main() !void {
                     sdl.SDL_QUIT => unreachable,
 
                     sdl.SDL_MOUSEBUTTONDOWN => {
-                        const window = windowFromSdl(event.button.windowID);
+                        const window = windowFromSdl(event.button.windowID) orelse {
+                            logger.warn("received event for dead window", .{});
+                            continue;
+                        };
 
                         window.pushEvent(.{ .mouse = .{
                             .type = .button_press,
@@ -178,7 +182,11 @@ pub fn main() !void {
                         } });
                     },
                     sdl.SDL_MOUSEBUTTONUP => {
-                        const window = windowFromSdl(event.button.windowID);
+                        const window = windowFromSdl(event.button.windowID) orelse {
+                            logger.warn("received event for dead window", .{});
+                            continue;
+                        };
+
                         window.pushEvent(.{ .mouse = .{
                             .type = .button_release,
                             .x = @divTrunc(@intCast(i16, event.button.x), 2),
@@ -189,7 +197,11 @@ pub fn main() !void {
                         } });
                     },
                     sdl.SDL_MOUSEWHEEL => {
-                        const window = windowFromSdl(event.wheel.windowID);
+                        const window = windowFromSdl(event.wheel.windowID) orelse {
+                            logger.warn("received event for dead window", .{});
+                            continue;
+                        };
+
                         if (event.wheel.y < 0) {
                             window.pushEvent(.{ .mouse = .{
                                 .type = .button_release,
@@ -212,7 +224,11 @@ pub fn main() !void {
                         }
                     },
                     sdl.SDL_MOUSEMOTION => {
-                        const window = windowFromSdl(event.motion.windowID);
+                        const window = windowFromSdl(event.motion.windowID) orelse {
+                            logger.warn("received event for dead window", .{});
+                            continue;
+                        };
+
                         if (event.wheel.y > 0) {
                             window.pushEvent(.{ .mouse = .{
                                 .type = .motion,
@@ -226,7 +242,10 @@ pub fn main() !void {
                     },
 
                     sdl.SDL_WINDOWEVENT => {
-                        const window = windowFromSdl(event.window.windowID);
+                        const window = windowFromSdl(event.window.windowID) orelse {
+                            logger.warn("received event for dead window", .{});
+                            continue;
+                        };
 
                         var w: c_int = 0;
                         var h: c_int = 0;
@@ -255,6 +274,10 @@ pub fn main() !void {
             var iter = Window.all_windows.first;
             while (iter) |window_node| : (iter = window_node.next) {
                 const window: *Window = &window_node.data;
+
+                if (!window.mutex.tryLock())
+                    continue;
+                defer window.mutex.unlock();
 
                 _ = sdl.SDL_UpdateTexture(
                     window.sdl_texture,
@@ -288,14 +311,14 @@ pub fn main() !void {
     }
 }
 
-fn windowFromSdl(id: u32) *Window {
+fn windowFromSdl(id: u32) ?*Window {
     var iter = Window.all_windows.first;
     while (iter) |window_node| : (iter = window_node.next) {
         const window: *Window = &window_node.data;
         if (sdl.SDL_GetWindowID(window.sdl_window) == id)
             return window;
     }
-    unreachable;
+    return null;
 }
 fn mapMouseButton(in: c_int) ?abi.MouseButton {
     return switch (in) {
@@ -336,6 +359,34 @@ const iop_schedule_queue = struct {
         }
     }
 
+    pub fn remove(iop: *abi.IOP) void {
+        mutex.lock();
+        defer mutex.unlock();
+
+        var prev: ?*abi.IOP = null;
+        var iter = head;
+        while (iter) |item| {
+            defer prev = item;
+            iter = item.next;
+
+            if (item != iop)
+                continue;
+
+            if (head == item)
+                head = item.next;
+            if (tail == item)
+                tail = prev;
+            if (prev) |p|
+                p.next = item.next;
+
+            item.next = null;
+
+            _ = @atomicRmw(u32, &iops_waiting, .Sub, 1, .SeqCst);
+
+            return;
+        }
+    }
+
     pub fn popItem() ?*abi.IOP {
         mutex.lock();
         defer mutex.unlock();
@@ -371,6 +422,34 @@ const iop_done_queue = struct {
                 tail = item;
             }
             _ = @atomicRmw(u32, &iops_waiting, .Sub, 1, .SeqCst);
+        }
+    }
+
+    pub fn remove(iop: *abi.IOP) void {
+        mutex.lock();
+        defer mutex.unlock();
+
+        var prev: ?*abi.IOP = null;
+        var iter = head;
+        while (iter) |item| {
+            defer prev = item;
+            iter = item.next;
+
+            if (item != iop)
+                continue;
+
+            if (head == item)
+                head = item.next;
+            if (tail == item)
+                tail = prev;
+            if (prev) |p|
+                p.next = item.next;
+
+            item.next = null;
+
+            _ = @atomicRmw(u32, &iops_waiting, .Sub, 1, .SeqCst);
+
+            return;
         }
     }
 
@@ -1041,6 +1120,32 @@ const Window = struct {
 
         return &window.abi_window;
     }
+
+    fn destroy(window: *Window) void {
+        window.mutex.lock();
+
+        const window_node = @fieldParentPtr(std.TailQueue(Window).Node, "data", window);
+        {
+            queue_lock.lock();
+            defer queue_lock.unlock();
+
+            all_windows.remove(window_node);
+        }
+
+        std.time.sleep(100 * std.time.ns_per_us);
+
+        sdl.SDL_DestroyTexture(window.sdl_texture);
+        sdl.SDL_DestroyRenderer(window.sdl_renderer);
+        sdl.SDL_DestroyWindow(window.sdl_window);
+
+        allocator.free(window.rgba_storage);
+        allocator.free(window.index_storage);
+
+        // allocator.free(window.title0);
+        window.pool.deinit();
+
+        allocator.destroy(window_node);
+    }
 };
 
 fn ui_createWindow(title_ptr: [*]const u8, title_len: usize, min_size: abi.Size, max_size: abi.Size, init_size: abi.Size, flags: abi.CreateWindowFlags) callconv(.C) ?*const abi.Window {
@@ -1048,9 +1153,9 @@ fn ui_createWindow(title_ptr: [*]const u8, title_len: usize, min_size: abi.Size,
     return Window.create(title, min_size, max_size, init_size, flags) catch null;
 }
 
-fn ui_destroyWindow(window: *const abi.Window) callconv(.C) void {
-    _ = window;
-    @panic("ui_destroyWindow not implemented yet!");
+fn ui_destroyWindow(abi_window: *const abi.Window) callconv(.C) void {
+    const window = Window.fromAbi(abi_window);
+    window.destroy();
 }
 
 fn ui_moveWindow(window: *const abi.Window, x: i16, y: i16) callconv(.C) void {
@@ -1131,8 +1236,8 @@ fn io_scheduleAndAwait(new_tasks: ?*abi.IOP, wait: abi.WaitIO) callconv(.C) ?*ab
 }
 
 fn io_cancel(iop: *abi.IOP) callconv(.C) void {
-    _ = iop;
-    @panic("io_cancel not implemented yet!");
+    iop_schedule_queue.remove(iop);
+    iop_done_queue.remove(iop);
 }
 
 fn video_getMaxResolution() callconv(.C) abi.Size {

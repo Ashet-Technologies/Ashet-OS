@@ -23,6 +23,8 @@ pub const Process = struct {
 
     memory_arena: std.heap.ArenaAllocator,
 
+    file_name: [:0]const u8,
+
     pub const SpawnOptions = struct {
         stack_size: usize = 128 * 1024, // 128k
     };
@@ -35,8 +37,11 @@ pub const Process = struct {
             .master_thread = undefined,
             .process_memory = process_memory,
             .memory_arena = std.heap.ArenaAllocator.init(ashet.memory.allocator),
+            .file_name = undefined,
         };
         errdefer process.memory_arena.deinit();
+
+        process.file_name = try process.memory_arena.allocator().dupeZ(u8, name);
 
         process.master_thread = try ashet.scheduler.Thread.spawn(entry_point, arg, .{
             .stack_size = options.stack_size,

@@ -748,6 +748,15 @@ pub fn getEvent(data: *ashet.abi.ui.GetEvent) void {
     }
 }
 
+pub fn cancelGetEvent(data: *ashet.abi.ui.GetEvent) void {
+    const window: *Window = Window.getFromABI(data.inputs.window);
+    if (window.event_awaiter == data) {
+        window.event_awaiter = null;
+    } else {
+        logger.warn("IOP({*}) is not scheduled right now!", .{data});
+    }
+}
+
 pub const Window = struct {
     memory: std.heap.ArenaAllocator,
     user_facing: ashet.abi.Window,

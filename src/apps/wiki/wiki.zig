@@ -4,11 +4,9 @@ const htext = @import("hypertext");
 const hdoc = @import("hyperdoc");
 const gui = @import("ashet-gui");
 
-const main_window = @import("ui-layout");
+const MainWindow = @import("ui-layout");
 
-const tree_scrollbar = main_window.tree_scrollbar;
-const doc_h_scrollbar = main_window.doc_h_scrollbar;
-const doc_v_scrollbar = main_window.doc_v_scrollbar;
+var main_window: MainWindow = undefined;
 
 pub usingnamespace ashet.core;
 
@@ -22,6 +20,8 @@ var mono_font: gui.Font = undefined;
 
 pub fn main() !void {
     try gui.init();
+
+    main_window.linkAndInit();
 
     title_font = try gui.Font.fromSystemFont("sans", .{});
     sans_font = try gui.Font.fromSystemFont("sans-6", .{});
@@ -84,9 +84,9 @@ pub fn main() !void {
         cdoc.deinit();
     };
 
-    tree_scrollbar.control.scroll_bar.changedEvent = .{ .id = gui.EventID.from(.treeview_scrolled), .tag = null };
-    doc_h_scrollbar.control.scroll_bar.changedEvent = .{ .id = gui.EventID.from(.document_scrolled), .tag = null };
-    doc_v_scrollbar.control.scroll_bar.changedEvent = .{ .id = gui.EventID.from(.document_scrolled), .tag = null };
+    main_window.tree_scrollbar.control.scroll_bar.changedEvent = .{ .id = gui.EventID.from(.treeview_scrolled), .tag = null };
+    main_window.doc_h_scrollbar.control.scroll_bar.changedEvent = .{ .id = gui.EventID.from(.document_scrolled), .tag = null };
+    main_window.doc_v_scrollbar.control.scroll_bar.changedEvent = .{ .id = gui.EventID.from(.document_scrolled), .tag = null };
 
     wiki_software.loadDocumentFromUri("wiki:/welcome.hdoc") catch |err| {
         std.log.err("failed to load document wiki:/welcome.hdoc: {s}", .{@errorName(err)});
@@ -195,7 +195,7 @@ const WikiSoftware = struct {
     document: ?Document = null,
 
     fn doLayout(wiki: *WikiSoftware) void {
-        main_window.layout(wiki.window);
+        main_window.layout(wiki.window.client_rectangle);
 
         {
             var treeview_height: i16 = 1;
@@ -206,7 +206,7 @@ const WikiSoftware = struct {
                 &treeview_height,
             );
 
-            tree_scrollbar.control.scroll_bar.setRange(@intCast(u15, @intCast(u16, treeview_height) -| (main_window.tree_view.bounds.height -| 6)));
+            main_window.tree_scrollbar.control.scroll_bar.setRange(@intCast(u15, @intCast(u16, treeview_height) -| (main_window.tree_view.bounds.height -| 6)));
         }
 
         if (wiki.document) |doc| {
@@ -215,13 +215,13 @@ const WikiSoftware = struct {
             const bounds = main_window.doc_view.bounds.shrink(3);
             const doc_size = bounds.size(); //  htext.measureDocument(bounds, doc.hyperdoc, theme.wiki);
 
-            doc_h_scrollbar.control.scroll_bar.setRange(@intCast(u15, @intCast(u16, doc_size.width) -| bounds.width));
-            doc_v_scrollbar.control.scroll_bar.setRange(@intCast(u15, @intCast(u16, doc_size.height) -| bounds.height));
+            main_window.doc_h_scrollbar.control.scroll_bar.setRange(@intCast(u15, @intCast(u16, doc_size.width) -| bounds.width));
+            main_window.doc_v_scrollbar.control.scroll_bar.setRange(@intCast(u15, @intCast(u16, doc_size.height) -| bounds.height));
 
-            doc_v_scrollbar.control.scroll_bar.setRange(500);
+            main_window.doc_v_scrollbar.control.scroll_bar.setRange(500);
         } else {
-            doc_h_scrollbar.control.scroll_bar.setRange(0);
-            doc_v_scrollbar.control.scroll_bar.setRange(0);
+            main_window.doc_h_scrollbar.control.scroll_bar.setRange(0);
+            main_window.doc_v_scrollbar.control.scroll_bar.setRange(0);
         }
 
         wiki.repaint_request = true;
@@ -234,7 +234,7 @@ const WikiSoftware = struct {
         main_window.interface.paint(fb);
 
         {
-            var offset_y: i16 = 1 - @as(i16, tree_scrollbar.control.scroll_bar.level);
+            var offset_y: i16 = 1 - @as(i16, main_window.tree_scrollbar.control.scroll_bar.level);
             renderSidePanel(
                 fb.view(main_window.tree_view.bounds.shrink(3)),
                 &wiki.index.root,
@@ -253,7 +253,7 @@ const WikiSoftware = struct {
                 doc_fb,
                 page.hyperdoc,
                 theme.wiki,
-                Point.new(0, -@as(i16, doc_v_scrollbar.control.scroll_bar.level)),
+                Point.new(0, -@as(i16, main_window.doc_v_scrollbar.control.scroll_bar.level)),
                 page,
                 linkCallback,
             );
@@ -360,7 +360,7 @@ const WikiSoftware = struct {
     }
 
     fn getClickedLeaf(wiki: *WikiSoftware, testpoint: Point) ?*const Index.Leaf {
-        var offset_y: i16 = @as(i16, 1) -| tree_scrollbar.control.scroll_bar.level;
+        var offset_y: i16 = @as(i16, 1) -| main_window.tree_scrollbar.control.scroll_bar.level;
         return getClickedLeafInner(
             &wiki.index.root,
             testpoint,

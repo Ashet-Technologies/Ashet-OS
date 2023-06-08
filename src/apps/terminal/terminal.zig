@@ -3,23 +3,92 @@ const ashet = @import("ashet");
 const fraxinus = @import("fraxinus");
 const gui = @import("ashet-gui");
 const system_assets = @import("system-assets");
+const astd = @import("ashet-std");
 
 pub usingnamespace ashet.core;
 
-const widgets = struct {
-    var new_tab_button: gui.Widget = gui.ToolButton.new(0, 0, gui.Bitmap.embed(system_assets.@"system/icons/plus.abm").bitmap);
-    var copy_button: gui.Widget = gui.ToolButton.new(0, 0, gui.Bitmap.embed(system_assets.@"system/icons/copy.abm").bitmap);
-    var cut_button: gui.Widget = gui.ToolButton.new(0, 0, gui.Bitmap.embed(system_assets.@"system/icons/cut.abm").bitmap);
-    var paste_button: gui.Widget = gui.ToolButton.new(0, 0, gui.Bitmap.embed(system_assets.@"system/icons/paste.abm").bitmap);
-    var menu_button: gui.Widget = gui.ToolButton.new(0, 0, gui.Bitmap.embed(system_assets.@"system/icons/menu.abm").bitmap);
+var widget_pool = astd.StaticPool(gui.Widget, 32){};
 
-    var coolbar_left: gui.Widget = gui.Panel.new(0, 0, 0, 0);
-    var coolbar_clip: gui.Widget = gui.Panel.new(0, 0, 0, 0);
-    var coolbar_right: gui.Widget = gui.Panel.new(0, 0, 0, 0);
+const MainWindow = struct {
+    interface: gui.Interface,
 
-    var tab_buttons: [16]gui.Widget = [1]gui.Widget{gui.Button.new(0, 28, 40, "")} ** 16;
+    new_tab_button: gui.Widget,
+    copy_button: gui.Widget,
+    cut_button: gui.Widget,
+    paste_button: gui.Widget,
+    menu_button: gui.Widget,
 
-    var shell_panel: gui.Widget = gui.Panel.new(0, 0, 200, 200);
+    coolbar_left: gui.Widget,
+    coolbar_clip: gui.Widget,
+    coolbar_right: gui.Widget,
+
+    shell_panel: gui.Widget,
+
+    pub fn create(mw: *MainWindow) error{OutOfMemory}!void {
+        mw.* = MainWindow{
+            .interface = gui.Interface{},
+            .new_tab_button = undefined,
+            .copy_button = undefined,
+            .cut_button = undefined,
+            .paste_button = undefined,
+            .menu_button = undefined,
+            .coolbar_left = undefined,
+            .coolbar_clip = undefined,
+            .coolbar_right = undefined,
+            .shell_panel = undefined,
+        };
+
+        mw.coolbar_left = gui.Panel.new(0, 0, 200, 200);
+        mw.interface.appendWidget(&mw.coolbar_left);
+
+        mw.coolbar_clip = gui.Panel.new(0, 0, 200, 200);
+        mw.interface.appendWidget(&mw.coolbar_clip);
+
+        mw.coolbar_right = gui.Panel.new(0, 0, 200, 200);
+        mw.interface.appendWidget(&mw.coolbar_right);
+
+        mw.shell_panel = gui.Panel.new(0, 0, 200, 200);
+        mw.interface.appendWidget(&mw.shell_panel);
+
+        mw.new_tab_button = gui.ToolButton.new(0, 0, comptime gui.Bitmap.embed(system_assets.@"system/icons/plus.abm").bitmap);
+        mw.interface.appendWidget(&mw.new_tab_button);
+
+        mw.copy_button = gui.ToolButton.new(0, 0, comptime gui.Bitmap.embed(system_assets.@"system/icons/copy.abm").bitmap);
+        mw.interface.appendWidget(&mw.copy_button);
+
+        mw.cut_button = gui.ToolButton.new(0, 0, comptime gui.Bitmap.embed(system_assets.@"system/icons/cut.abm").bitmap);
+        mw.interface.appendWidget(&mw.cut_button);
+
+        mw.paste_button = gui.ToolButton.new(0, 0, comptime gui.Bitmap.embed(system_assets.@"system/icons/paste.abm").bitmap);
+        mw.interface.appendWidget(&mw.paste_button);
+
+        mw.menu_button = gui.ToolButton.new(0, 0, comptime gui.Bitmap.embed(system_assets.@"system/icons/menu.abm").bitmap);
+        mw.interface.appendWidget(&mw.menu_button);
+
+        mw.shell_panel.overrides.can_focus = true;
+        mw.new_tab_button.control.tool_button.clickEvent = gui.Event.new(events.new_tab);
+        mw.copy_button.control.tool_button.clickEvent = gui.Event.new(events.clip_copy);
+        mw.cut_button.control.tool_button.clickEvent = gui.Event.new(events.clip_cut);
+        mw.paste_button.control.tool_button.clickEvent = gui.Event.new(events.clip_paste);
+        mw.menu_button.control.tool_button.clickEvent = gui.Event.new(events.open_menu);
+    }
+
+    pub fn destroy(mw: *MainWindow) error{OutOfMemory}!MainWindow {
+        widget_pool.destroy(mw.new_tab_button);
+        widget_pool.destroy(mw.copy_button);
+        widget_pool.destroy(mw.cut_button);
+        widget_pool.destroy(mw.paste_button);
+        widget_pool.destroy(mw.menu_button);
+        widget_pool.destroy(mw.coolbar_left);
+        widget_pool.destroy(mw.coolbar_clip);
+        widget_pool.destroy(mw.coolbar_right);
+        for (mw.tab_buttons) |tab| {
+            widget_pool.destroy(tab);
+        }
+        widget_pool.destroy(mw.shell_panel);
+
+        mw.* = undefined;
+    }
 };
 
 const events = struct {
@@ -31,88 +100,9 @@ const events = struct {
     const activate_tab = gui.EventID.fromNumber(6);
 };
 
-var gui_interface = gui.Interface{
-    .widgets = &.{
-        &widgets.shell_panel, // index 0
-        &widgets.coolbar_left,
-        &widgets.coolbar_clip,
-        &widgets.coolbar_right,
-        &widgets.new_tab_button,
-        &widgets.copy_button,
-        &widgets.cut_button,
-        &widgets.paste_button,
-        &widgets.menu_button,
-        &widgets.tab_buttons[0],
-        &widgets.tab_buttons[1],
-        &widgets.tab_buttons[2],
-        &widgets.tab_buttons[3],
-        &widgets.tab_buttons[4],
-        &widgets.tab_buttons[5],
-        &widgets.tab_buttons[6],
-        &widgets.tab_buttons[7],
-        &widgets.tab_buttons[8],
-        &widgets.tab_buttons[9],
-        &widgets.tab_buttons[10],
-        &widgets.tab_buttons[11],
-        &widgets.tab_buttons[12],
-        &widgets.tab_buttons[13],
-        &widgets.tab_buttons[14],
-        &widgets.tab_buttons[15],
-    },
-};
-
 fn coolbarWidth(count: usize) u15 {
     return @intCast(u15, 8 + 20 * count + 8 * (@max(1, count) - 1));
 }
-
-const Tab = struct {
-    allocator: std.mem.Allocator,
-    title: []const u8 = "",
-    terminal: fraxinus.VirtualTerminal = undefined,
-
-    pub fn init(allocator: std.mem.Allocator) !Tab {
-        return Tab{
-            .allocator = allocator,
-            .title = "",
-            .terminal = try fraxinus.VirtualTerminal.init(allocator, 80, 25),
-        };
-    }
-
-    pub fn deinit(tab: *Tab) void {
-        tab.terminal.deinit(tab.allocator);
-        tab.* = undefined;
-    }
-
-    pub fn feed(tab: *Tab, string: []const u8) void {
-        tab.terminal.write(string);
-    }
-};
-
-const tab_pool = struct {
-    const size = 16;
-
-    var tab_storage: [16]Tab = undefined;
-
-    var tab_alloc: std.bit_set.IntegerBitSet(size) = std.bit_set.IntegerBitSet(size).initFull();
-
-    pub fn create() error{OutOfMemory}!*Tab {
-        const index = tab_alloc.toggleFirstSet() orelse return error.OutOfMemory;
-        errdefer tab_alloc.set(index);
-
-        tab_storage[index] = try Tab.init(ashet.process.allocator());
-        errdefer tab_storage[index].deinit();
-
-        return &tab_storage[index];
-    }
-
-    pub fn destroy(tab: *Tab) void {
-        const index = @divExact(@ptrToInt(tab) - @ptrToInt(&tab_storage), @sizeOf(Tab));
-        std.debug.assert(index < tab_storage.len);
-        std.debug.assert(!tab_alloc.isSet(index));
-        tab_storage[index].deinit();
-        tab_alloc.unset(index);
-    }
-};
 
 const Palette = std.enums.EnumArray(fraxinus.Color, gui.ColorIndex);
 
@@ -129,9 +119,24 @@ const default_palette = blk: {
     break :blk pal;
 };
 
+const NewTabDialog = struct {
+    window: *const ashet.abi.Window,
+    event_iop: ashet.abi.ui.GetEvent,
+
+    pub fn close(dlg: *NewTabDialog) void {
+        ashet.io.cancel(&dlg.event_iop.iop);
+        ashet.ui.destroyWindow(dlg.window);
+        dlg.* = undefined;
+    }
+};
+
 const App = struct {
     window: *const ashet.abi.Window,
-    tabs: std.BoundedArray(*Tab, tab_pool.size) = .{},
+    widgets: MainWindow,
+
+    new_tab_dialog: ?NewTabDialog = null,
+
+    tabs: std.BoundedArray(*Tab, @TypeOf(tab_pool).capacity) = .{},
     palette: Palette = default_palette,
     active_tab: ?*Tab = null,
     cursor_blink_visible: bool = false,
@@ -139,7 +144,7 @@ const App = struct {
     pub fn paint(app: *App) void {
         var fb = gui.Framebuffer.forWindow(app.window);
 
-        gui_interface.paint(fb);
+        app.widgets.interface.paint(fb);
 
         app.paintTerminal();
 
@@ -149,12 +154,11 @@ const App = struct {
     }
 
     fn getTerminalSurface(app: App) gui.Rectangle {
-        _ = app;
         return gui.Rectangle{
-            .x = widgets.shell_panel.bounds.x + 2,
-            .y = widgets.shell_panel.bounds.y + 2,
-            .width = widgets.shell_panel.bounds.width -| 4,
-            .height = widgets.shell_panel.bounds.height -| 4,
+            .x = app.widgets.shell_panel.bounds.x + 2,
+            .y = app.widgets.shell_panel.bounds.y + 2,
+            .width = app.widgets.shell_panel.bounds.width -| 4,
+            .height = app.widgets.shell_panel.bounds.height -| 4,
         };
     }
 
@@ -234,44 +238,72 @@ const App = struct {
         ashet.ui.invalidate(app.window, cursor_rect);
     }
 
+    fn refreshTabs(app: *App) void {
+        for (app.tabs.slice()) |tab| {
+            tab.tab_button.control.button.toggle_active = (tab == app.active_tab);
+        }
+    }
+
     pub fn layout(app: *App) void {
         const container = app.window.client_rectangle;
 
-        widgets.coolbar_left.bounds = .{ .x = 0, .y = 0, .width = coolbarWidth(1), .height = 28 };
-        widgets.coolbar_clip.bounds = .{ .x = coolbarWidth(1), .y = 0, .width = coolbarWidth(3), .height = 28 };
-        widgets.coolbar_right.bounds = .{ .x = coolbarWidth(1) +| coolbarWidth(3), .y = 0, .width = container.width -| coolbarWidth(1) -| coolbarWidth(3), .height = 28 };
+        app.widgets.coolbar_left.bounds = .{ .x = 0, .y = 0, .width = coolbarWidth(1), .height = 28 };
+        app.widgets.coolbar_clip.bounds = .{ .x = coolbarWidth(1), .y = 0, .width = coolbarWidth(3), .height = 28 };
+        app.widgets.coolbar_right.bounds = .{ .x = coolbarWidth(1) +| coolbarWidth(3), .y = 0, .width = container.width -| coolbarWidth(1) -| coolbarWidth(3), .height = 28 };
 
-        widgets.new_tab_button.bounds = .{ .x = widgets.coolbar_left.bounds.x + 4, .y = 4, .width = 20, .height = 20 };
-        widgets.copy_button.bounds = .{ .x = widgets.coolbar_clip.bounds.x + 4, .y = 4, .width = 20, .height = 20 };
-        widgets.cut_button.bounds = .{ .x = widgets.coolbar_clip.bounds.x + 30, .y = 4, .width = 20, .height = 20 };
-        widgets.paste_button.bounds = .{ .x = widgets.coolbar_clip.bounds.x + 58, .y = 4, .width = 20, .height = 20 };
-        widgets.menu_button.bounds = .{ .x = widgets.coolbar_right.bounds.right() - 24, .y = 4, .width = 20, .height = 20 };
+        app.widgets.new_tab_button.bounds = .{ .x = app.widgets.coolbar_left.bounds.x + 4, .y = 4, .width = 20, .height = 20 };
+        app.widgets.copy_button.bounds = .{ .x = app.widgets.coolbar_clip.bounds.x + 4, .y = 4, .width = 20, .height = 20 };
+        app.widgets.cut_button.bounds = .{ .x = app.widgets.coolbar_clip.bounds.x + 30, .y = 4, .width = 20, .height = 20 };
+        app.widgets.paste_button.bounds = .{ .x = app.widgets.coolbar_clip.bounds.x + 58, .y = 4, .width = 20, .height = 20 };
+        app.widgets.menu_button.bounds = .{ .x = app.widgets.coolbar_right.bounds.right() - 24, .y = 4, .width = 20, .height = 20 };
 
         var left: i16 = 0;
-        for (app.tabs.slice(), widgets.tab_buttons[0..app.tabs.len]) |tab, *button| {
-            button.bounds.x = left;
-            left +|= @intCast(i16, button.bounds.width);
-
-            button.control.button.text = tab.title;
-        }
-        for (widgets.tab_buttons[app.tabs.len..]) |*button| {
-            button.bounds.x = -10_000;
-            button.control.button.text = "";
+        for (app.tabs.slice()) |tab| {
+            tab.tab_button.bounds.x = left;
+            left +|= @intCast(i16, tab.tab_button.bounds.width);
+            tab.tab_button.control.button.text = tab.title;
         }
 
-        widgets.shell_panel.bounds = .{
+        app.widgets.shell_panel.bounds = .{
             .x = 0,
             .y = 39,
             .width = container.width,
             .height = container.height -| 39,
         };
+
+        app.refreshTabs();
+    }
+
+    fn openNewTabDialog(app: *App) !void {
+        var window = try ashet.ui.createWindow(
+            "New Terminal",
+            gui.Size.new(100, 200),
+            gui.Size.new(100, 200),
+            gui.Size.new(100, 200),
+            .{ .popup = true },
+        );
+        errdefer ashet.ui.destroyWindow(window);
+
+        app.spawnTab() catch |err| {
+            std.log.err("failed to create tab: {s}", .{@errorName(err)});
+        };
+
+        app.new_tab_dialog = NewTabDialog{
+            .window = window,
+            .event_iop = ashet.abi.ui.GetEvent.new(.{ .window = window }),
+        };
+
+        _ = ashet.io.scheduleAndAwait(&app.new_tab_dialog.?.event_iop.iop, .schedule_only);
     }
 
     fn dispatchEvent(app: *App, event: gui.Event) void {
         switch (event.id) {
             events.new_tab => {
-                app.spawnTab() catch |err| {
-                    std.log.err("failed to create tab: {s}", .{@errorName(err)});
+                if (app.new_tab_dialog != null)
+                    return; // already open
+
+                app.openNewTabDialog() catch |err| {
+                    std.log.err("failed to open new tab dialog: {s}", .{@errorName(err)});
                 };
             },
             events.clip_copy => {
@@ -298,13 +330,10 @@ const App = struct {
             },
             events.open_menu => std.log.info("open_menu", .{}),
             events.activate_tab => {
-                const index = @ptrToInt(event.tag);
-                if (index < app.tabs.len) {
-                    app.active_tab = app.tabs.buffer[index];
-                    app.paintTerminal();
-                } else {
-                    std.log.warn("clicked invalid tab: {}", .{index});
-                }
+                const tab = @ptrCast(*Tab, @alignCast(@alignOf(Tab), event.tag));
+                app.active_tab = tab;
+                app.refreshTabs();
+                app.paint();
             },
 
             else => std.debug.panic("unexepceted event: {}", .{event.id}),
@@ -318,23 +347,28 @@ const App = struct {
         }
 
         const tab = try tab_pool.create();
-        errdefer tab_pool.destroy();
+        errdefer tab_pool.destroy(tab);
+
+        try tab.init(ashet.process.allocator());
+        errdefer tab.deinit();
 
         tab.title = "New Tab";
 
         app.tabs.appendAssumeCapacity(tab); // has the same size as the pool
         app.active_tab = tab;
+
+        app.widgets.interface.appendWidget(&tab.tab_button);
     }
 
-    fn handleUiEvent(app: *App, event: ashet.ui.Event) bool {
+    fn handleUiEvent(app: *App, window: *const ashet.abi.Window, event: ashet.ui.Event) bool {
         switch (event) {
             .mouse => |input| {
-                if (gui_interface.sendMouseEvent(input)) |gui_event| {
+                if (app.widgets.interface.sendMouseEvent(input)) |gui_event| {
                     app.dispatchEvent(gui_event);
                 }
             },
             .keyboard => |input| {
-                if ((gui_interface.focus orelse 1) == 0 and app.active_tab != null) {
+                if (app.widgets.interface.focus == &app.widgets.shell_panel and app.active_tab != null) {
                     if (input.text) |text_ptr| {
                         const text = std.mem.sliceTo(text_ptr, 0);
 
@@ -343,11 +377,17 @@ const App = struct {
                             app.paintTerminal();
                         }
                     }
-                } else if (gui_interface.sendKeyboardEvent(input)) |gui_event| {
+                } else if (app.widgets.interface.sendKeyboardEvent(input)) |gui_event| {
                     app.dispatchEvent(gui_event);
                 }
             },
-            .window_close => return false,
+            .window_close => {
+                if (app.new_tab_dialog != null and app.new_tab_dialog.?.window == window) {
+                    app.new_tab_dialog.?.close();
+                    app.new_tab_dialog = null;
+                }
+                return (window != app.window);
+            },
             .window_minimize => {},
             .window_restore => {},
             .window_moving => {},
@@ -371,22 +411,50 @@ const App = struct {
     }
 };
 
+var tab_pool = astd.StaticPool(Tab, 16){};
+
+const Tab = struct {
+    const Options = struct {
+        echo: bool = false,
+    };
+
+    allocator: std.mem.Allocator,
+    title: []const u8 = "",
+    terminal: fraxinus.VirtualTerminal = undefined,
+    backend: ComChannel = .none,
+    options: Options = .{},
+    tab_button: gui.Widget,
+
+    pub fn init(tab: *Tab, allocator: std.mem.Allocator) !void {
+        tab.* = Tab{
+            .allocator = allocator,
+            .title = "",
+            .terminal = try fraxinus.VirtualTerminal.init(allocator, 80, 25),
+            .tab_button = gui.Button.new(0, 28, 40, ""),
+        };
+        tab.tab_button.control.button.clickEvent = gui.Event.newTagged(events.activate_tab, tab);
+    }
+
+    pub fn deinit(tab: *Tab) void {
+        tab.backend.deinit();
+        tab.terminal.deinit(tab.allocator);
+        tab.* = undefined;
+    }
+
+    pub fn feed(tab: *Tab, string: []const u8) void {
+        if (tab.options.echo) {
+            tab.terminal.write(string);
+        }
+        tab.backend.send(string) catch |err| {
+            std.log.err("failed to send data to backend: {s}", .{@errorName(err)});
+        };
+    }
+};
+
 pub fn main() !void {
     try gui.init();
 
-    widgets.shell_panel.overrides.can_focus = true;
-
     gui.Font.default = try gui.Font.fromSystemFont("sans-6", .{});
-
-    widgets.new_tab_button.control.tool_button.clickEvent = gui.Event.new(events.new_tab);
-    widgets.copy_button.control.tool_button.clickEvent = gui.Event.new(events.clip_copy);
-    widgets.cut_button.control.tool_button.clickEvent = gui.Event.new(events.clip_cut);
-    widgets.paste_button.control.tool_button.clickEvent = gui.Event.new(events.clip_paste);
-    widgets.menu_button.control.tool_button.clickEvent = gui.Event.new(events.open_menu);
-
-    for (&widgets.tab_buttons, 0..) |*button, index| {
-        button.control.button.clickEvent = gui.Event.newTagged(events.activate_tab, @intToPtr(?*anyopaque, index));
-    }
 
     const window = try ashet.ui.createWindow(
         "Connex",
@@ -399,7 +467,15 @@ pub fn main() !void {
 
     var app = App{
         .window = window,
+        .widgets = undefined,
     };
+    try app.widgets.create();
+    errdefer {
+        app.widgets.destroy();
+        if (app.new_tab_dialog) |*dlg| {
+            dlg.close();
+        }
+    }
 
     const cursor_period = 600 * std.time.ns_per_ms;
 
@@ -435,14 +511,28 @@ pub fn main() !void {
                     const event = ashet.abi.IOP.cast(ashet.abi.ui.GetEvent, iop);
 
                     if (event == &main_window_event) {
-                        if (main_window_event.check()) |_| {
-                            if (!app.handleUiEvent(ashet.ui.constructEvent(main_window_event.outputs.event_type, main_window_event.outputs.event)))
+                        if (event.check()) |_| {
+                            const ui_event = ashet.ui.constructEvent(event.outputs.event_type, event.outputs.event);
+                            if (!app.handleUiEvent(event.inputs.window, ui_event))
                                 break :app_loop;
                         } else |err| {
                             std.log.err("failed to get app event: {s}", .{@errorName(err)});
                         }
 
                         _ = ashet.io.scheduleAndAwait(&main_window_event.iop, .schedule_only);
+                    } else if (app.new_tab_dialog != null and event == &app.new_tab_dialog.?.event_iop) {
+                        if (event.check()) |_| {
+                            const ui_event = ashet.ui.constructEvent(event.outputs.event_type, event.outputs.event);
+                            if (!app.handleUiEvent(event.inputs.window, ui_event))
+                                break :app_loop;
+                        } else |err| {
+                            std.log.err("failed to get dialog event: {s}", .{@errorName(err)});
+                        }
+
+                        if (app.new_tab_dialog != null) {
+                            // only run again when the window wasn't closed!
+                            _ = ashet.io.scheduleAndAwait(&event.iop, .schedule_only);
+                        }
                     } else {
                         @panic("unexpected iop!");
                     }
@@ -453,3 +543,16 @@ pub fn main() !void {
         }
     }
 }
+
+const ComChannel = union(enum) {
+    none,
+
+    pub fn deinit(chan: *ComChannel) void {
+        chan.* = undefined;
+    }
+
+    pub fn send(chan: *ComChannel, data: []const u8) !void {
+        _ = chan;
+        _ = data;
+    }
+};

@@ -76,6 +76,7 @@ pub const syscall_definitions = [_]SysCallDefinition{
     // The return value is the HEAD element of a linked list of completed I/O events.
     defineSysCall("io.scheduleAndAwait", fn (?*IOP, WaitIO) ?*IOP, 50),
 
+    // Cancels a single I/O operation.
     defineSysCall("io.cancel", fn (*IOP) void, 51),
 
     // Returns the maximum possible screen resolution.
@@ -937,7 +938,7 @@ pub const IOP = extern struct {
 
     pub const Type = enum(u32) {
         // Timer
-        timer,
+        timer = 1,
 
         // TCP IOPs:
         tcp_connect,
