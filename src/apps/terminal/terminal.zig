@@ -66,7 +66,7 @@ const MainWindow = struct {
         mw.interface.appendWidget(&mw.menu_button);
 
         mw.shell_panel.overrides.can_focus = true;
-        mw.new_tab_button.control.tool_button.clickEvent = gui.Event.new(events.new_tab);
+        mw.new_tab_button.control.tool_button.clickEvent = gui.Event.new(events.open_dialog);
         mw.copy_button.control.tool_button.clickEvent = gui.Event.new(events.clip_copy);
         mw.cut_button.control.tool_button.clickEvent = gui.Event.new(events.clip_cut);
         mw.paste_button.control.tool_button.clickEvent = gui.Event.new(events.clip_paste);
@@ -74,30 +74,85 @@ const MainWindow = struct {
     }
 
     pub fn destroy(mw: *MainWindow) error{OutOfMemory}!MainWindow {
-        widget_pool.destroy(mw.new_tab_button);
-        widget_pool.destroy(mw.copy_button);
-        widget_pool.destroy(mw.cut_button);
-        widget_pool.destroy(mw.paste_button);
-        widget_pool.destroy(mw.menu_button);
-        widget_pool.destroy(mw.coolbar_left);
-        widget_pool.destroy(mw.coolbar_clip);
-        widget_pool.destroy(mw.coolbar_right);
-        for (mw.tab_buttons) |tab| {
-            widget_pool.destroy(tab);
-        }
-        widget_pool.destroy(mw.shell_panel);
-
         mw.* = undefined;
     }
 };
 
+const NewTabWidgets = struct {
+    interface: gui.Interface,
+
+    ok_button: gui.Widget,
+    cancel_button: gui.Widget,
+
+    mode_select_field: gui.Widget,
+    next_mode_button: gui.Widget,
+    prev_mode_button: gui.Widget,
+
+    pub fn create(mw: *NewTabWidgets) error{OutOfMemory}!void {
+        mw.* = NewTabWidgets{
+            .interface = gui.Interface{},
+
+            .ok_button = undefined,
+            .cancel_button = undefined,
+
+            .mode_select_field = undefined,
+            .next_mode_button = undefined,
+            .prev_mode_button = undefined,
+        };
+
+        mw.ok_button = gui.Button.new(0, 0, null, "Ok");
+        mw.cancel_button = gui.Button.new(0, 0, null, "Cancel");
+
+        mw.prev_mode_button = gui.Button.new(0, 0, null, "<");
+        mw.mode_select_field = gui.Label.new(0, 0, "Echo");
+        mw.next_mode_button = gui.Button.new(0, 0, null, ">");
+
+        mw.ok_button.control.button.clickEvent = gui.Event.new(events.open_terminal);
+        mw.cancel_button.control.button.clickEvent = gui.Event.new(events.close_dialog);
+
+        mw.prev_mode_button.control.button.clickEvent = gui.Event.new(events.select_prev_mode);
+        mw.next_mode_button.control.button.clickEvent = gui.Event.new(events.select_next_mode);
+
+        mw.reset();
+    }
+
+    pub fn reset(mw: *NewTabWidgets) void {
+        mw.interface.widgets = .{};
+
+        mw.interface.appendWidget(&mw.prev_mode_button);
+        mw.interface.appendWidget(&mw.mode_select_field);
+        mw.interface.appendWidget(&mw.next_mode_button);
+
+        mw.interface.appendWidget(&mw.ok_button);
+        mw.interface.appendWidget(&mw.cancel_button);
+    }
+
+    pub fn destroy(mw: *NewTabWidgets) void {
+        mw.* = undefined;
+    }
+
+    pub fn layout(mw: *NewTabWidgets, rect: gui.Rectangle) void {
+        mw.ok_button.bounds = .{ .x = @intCast(i16, rect.width -| 4 -| 30), .y = @intCast(i16, rect.height -| 4 -| 11), .width = 30, .height = 11 };
+        mw.cancel_button.bounds = .{ .x = 4, .y = @intCast(i16, rect.height -| 4 -| 11), .width = 30, .height = 11 };
+
+        mw.prev_mode_button.bounds = .{ .x = 4, .y = 4, .width = 11, .height = 11 };
+        mw.mode_select_field.bounds = .{ .x = 4 + 11 + 4, .y = 4, .width = rect.width -| (4 * 4) -| (2 * 11), .height = 11 };
+        mw.next_mode_button.bounds = .{ .x = @intCast(i16, rect.width -| 4 -| 11), .y = 4, .width = 11, .height = 11 };
+    }
+};
+
 const events = struct {
-    const new_tab = gui.EventID.fromNumber(1);
+    const open_dialog = gui.EventID.fromNumber(1);
     const clip_copy = gui.EventID.fromNumber(2);
     const clip_cut = gui.EventID.fromNumber(3);
     const clip_paste = gui.EventID.fromNumber(4);
     const open_menu = gui.EventID.fromNumber(5);
     const activate_tab = gui.EventID.fromNumber(6);
+
+    const open_terminal = gui.EventID.fromNumber(7);
+    const close_dialog = gui.EventID.fromNumber(8);
+    const select_prev_mode = gui.EventID.fromNumber(9);
+    const select_next_mode = gui.EventID.fromNumber(10);
 };
 
 fn coolbarWidth(count: usize) u15 {
@@ -121,12 +176,28 @@ const default_palette = blk: {
 
 const NewTabDialog = struct {
     window: *const ashet.abi.Window,
+    widgets: NewTabWidgets,
     event_iop: ashet.abi.ui.GetEvent,
+
+    com_channel_config: ComChannelConfig = .echo,
 
     pub fn close(dlg: *NewTabDialog) void {
         ashet.io.cancel(&dlg.event_iop.iop);
         ashet.ui.destroyWindow(dlg.window);
         dlg.* = undefined;
+    }
+
+    pub fn paint(ntd: *NewTabDialog) void {
+        var fb = gui.Framebuffer.forWindow(ntd.window);
+
+        ntd.widgets.interface.paint(fb);
+
+        ashet.ui.invalidate(ntd.window, .{ .x = 0, .y = 0, .width = ntd.window.client_rectangle.width, .height = ntd.window.client_rectangle.height });
+    }
+
+    pub fn layout(ntd: *NewTabDialog) void {
+        const container = ntd.window.client_rectangle;
+        ntd.widgets.layout(container);
     }
 };
 
@@ -277,35 +348,30 @@ const App = struct {
     fn openNewTabDialog(app: *App) !void {
         var window = try ashet.ui.createWindow(
             "New Terminal",
-            gui.Size.new(100, 200),
-            gui.Size.new(100, 200),
-            gui.Size.new(100, 200),
+            gui.Size.new(100, 130),
+            gui.Size.new(100, 130),
+            gui.Size.new(100, 130),
             .{ .popup = true },
         );
         errdefer ashet.ui.destroyWindow(window);
 
-        app.spawnTab() catch |err| {
-            std.log.err("failed to create tab: {s}", .{@errorName(err)});
-        };
-
         app.new_tab_dialog = NewTabDialog{
             .window = window,
             .event_iop = ashet.abi.ui.GetEvent.new(.{ .window = window }),
+            .widgets = undefined,
         };
 
-        _ = ashet.io.scheduleAndAwait(&app.new_tab_dialog.?.event_iop.iop, .schedule_only);
+        const ntd = &app.new_tab_dialog.?;
+
+        try ntd.widgets.create();
+        ntd.layout();
+        ntd.paint();
+
+        _ = ashet.io.scheduleAndAwait(&ntd.event_iop.iop, .schedule_only);
     }
 
     fn dispatchEvent(app: *App, event: gui.Event) void {
         switch (event.id) {
-            events.new_tab => {
-                if (app.new_tab_dialog != null)
-                    return; // already open
-
-                app.openNewTabDialog() catch |err| {
-                    std.log.err("failed to open new tab dialog: {s}", .{@errorName(err)});
-                };
-            },
             events.clip_copy => {
                 std.log.info("clip_copy", .{});
                 if (app.active_tab) |tab| {
@@ -336,23 +402,48 @@ const App = struct {
                 app.paint();
             },
 
+            events.open_dialog => {
+                if (app.new_tab_dialog != null)
+                    return; // already open
+
+                app.openNewTabDialog() catch |err| {
+                    std.log.err("failed to open new tab dialog: {s}", .{@errorName(err)});
+                };
+            },
+            events.close_dialog => if (app.new_tab_dialog) |*ntd| {
+                ntd.close();
+                app.new_tab_dialog = null;
+            },
+
+            events.open_terminal => if (app.new_tab_dialog) |*ntd| {
+                ntd.close();
+                app.new_tab_dialog = null;
+
+                app.spawnTab(ntd.com_channel_config) catch |err| {
+                    std.log.err("failed to create tab: {s}", .{@errorName(err)});
+                };
+            },
+
+            events.select_prev_mode => std.log.info("select_prev_mode", .{}),
+            events.select_next_mode => std.log.info("select_next_mode", .{}),
+
             else => std.debug.panic("unexepceted event: {}", .{event.id}),
         }
     }
 
-    fn spawnTab(app: *App) !void {
+    fn spawnTab(app: *App, config: ComChannelConfig) !void {
         defer {
             app.layout();
             app.paint();
         }
 
-        const tab = try tab_pool.create();
+        const tab: *Tab = try tab_pool.create();
         errdefer tab_pool.destroy(tab);
 
         try tab.init(ashet.process.allocator());
         errdefer tab.deinit();
 
-        tab.title = "New Tab";
+        tab.title = try config.getName(tab.arena.allocator());
 
         app.tabs.appendAssumeCapacity(tab); // has the same size as the pool
         app.active_tab = tab;
@@ -363,8 +454,16 @@ const App = struct {
     fn handleUiEvent(app: *App, window: *const ashet.abi.Window, event: ashet.ui.Event) bool {
         switch (event) {
             .mouse => |input| {
-                if (app.widgets.interface.sendMouseEvent(input)) |gui_event| {
-                    app.dispatchEvent(gui_event);
+                if (window == app.window) {
+                    if (app.widgets.interface.sendMouseEvent(input)) |gui_event| {
+                        app.dispatchEvent(gui_event);
+                    }
+                } else if (app.new_tab_dialog) |*ntd| {
+                    if (ntd.window == window) {
+                        if (ntd.widgets.interface.sendMouseEvent(input)) |gui_event| {
+                            app.dispatchEvent(gui_event);
+                        }
+                    }
                 }
             },
             .keyboard => |input| {
@@ -377,8 +476,16 @@ const App = struct {
                             app.paintTerminal();
                         }
                     }
-                } else if (app.widgets.interface.sendKeyboardEvent(input)) |gui_event| {
-                    app.dispatchEvent(gui_event);
+                } else if (window == app.window) {
+                    if (app.widgets.interface.sendKeyboardEvent(input)) |gui_event| {
+                        app.dispatchEvent(gui_event);
+                    }
+                } else if (app.new_tab_dialog) |*ntd| {
+                    if (ntd.window == window) {
+                        if (ntd.widgets.interface.sendKeyboardEvent(input)) |gui_event| {
+                            app.dispatchEvent(gui_event);
+                        }
+                    }
                 }
             },
             .window_close => {
@@ -393,12 +500,26 @@ const App = struct {
             .window_moving => {},
             .window_moved => {},
             .window_resizing => {
-                app.layout();
-                app.paint();
+                if (app.window == window) {
+                    app.layout();
+                    app.paint();
+                } else if (app.new_tab_dialog) |*ntd| {
+                    if (ntd.window == window) {
+                        ntd.layout();
+                        ntd.paint();
+                    }
+                }
             },
             .window_resized => {
-                app.layout();
-                app.paint();
+                if (app.window == window) {
+                    app.layout();
+                    app.paint();
+                } else if (app.new_tab_dialog) |*ntd| {
+                    if (ntd.window == window) {
+                        ntd.layout();
+                        ntd.paint();
+                    }
+                }
             },
         }
         return true;
@@ -418,26 +539,33 @@ const Tab = struct {
         echo: bool = false,
     };
 
+    arena: std.heap.ArenaAllocator,
     allocator: std.mem.Allocator,
     title: []const u8 = "",
     terminal: fraxinus.VirtualTerminal = undefined,
-    backend: ComChannel = .none,
+    backend: ComChannel = undefined,
     options: Options = .{},
     tab_button: gui.Widget,
 
     pub fn init(tab: *Tab, allocator: std.mem.Allocator) !void {
         tab.* = Tab{
+            .arena = std.heap.ArenaAllocator.init(allocator),
             .allocator = allocator,
             .title = "",
-            .terminal = try fraxinus.VirtualTerminal.init(allocator, 80, 25),
+            .terminal = undefined,
             .tab_button = gui.Button.new(0, 28, 40, ""),
         };
+        errdefer tab.arena.deinit();
+
+        tab.terminal = try fraxinus.VirtualTerminal.init(tab.arena.allocator(), 80, 25);
+
         tab.tab_button.control.button.clickEvent = gui.Event.newTagged(events.activate_tab, tab);
     }
 
     pub fn deinit(tab: *Tab) void {
         tab.backend.deinit();
         tab.terminal.deinit(tab.allocator);
+        tab.arena.deinit();
         tab.* = undefined;
     }
 
@@ -544,8 +672,20 @@ pub fn main() !void {
     }
 }
 
-const ComChannel = union(enum) {
-    none,
+const ComChannelType = enum {
+    echo,
+    tcp_stream,
+    serial_port,
+    console_server,
+    ssh,
+};
+
+const ComChannel = union(ComChannelType) {
+    echo,
+    tcp_stream: noreturn,
+    serial_port: noreturn,
+    console_server: noreturn,
+    ssh: noreturn,
 
     pub fn deinit(chan: *ComChannel) void {
         chan.* = undefined;
@@ -554,5 +694,24 @@ const ComChannel = union(enum) {
     pub fn send(chan: *ComChannel, data: []const u8) !void {
         _ = chan;
         _ = data;
+    }
+};
+
+const ComChannelConfig = union(ComChannelType) {
+    echo,
+    tcp_stream,
+    serial_port,
+    console_server,
+    ssh,
+
+    pub fn getName(ccc: ComChannelConfig, allocator: std.mem.Allocator) ![]const u8 {
+        _ = allocator;
+        return switch (ccc) {
+            .echo => "Echo",
+            .tcp_stream => "TCP",
+            .serial_port => "Serial",
+            .console_server => "Console",
+            .ssh => "SSH",
+        };
     }
 };
