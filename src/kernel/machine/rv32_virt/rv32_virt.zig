@@ -26,7 +26,7 @@ pub fn initialize() !void {
 
 pub fn debugWrite(msg: []const u8) void {
     for (msg) |c| {
-        @intToPtr(*volatile u8, VPBA_UART_BASE).* = c;
+        @ptrFromInt(*volatile u8, VPBA_UART_BASE).* = c;
     }
 }
 
@@ -36,8 +36,8 @@ extern const __machine_linmem_start: anyopaque align(4);
 extern const __machine_linmem_end: anyopaque align(4);
 
 pub fn getLinearMemoryRegion() ashet.memory.Section {
-    const linmem_start = @ptrToInt(&__machine_linmem_start);
-    const linmem_end = @ptrToInt(&__machine_linmem_end);
+    const linmem_start = @intFromPtr(&__machine_linmem_start);
+    const linmem_end = @intFromPtr(&__machine_linmem_end);
     return ashet.memory.Section{ .offset = linmem_start, .length = linmem_end - linmem_start };
 }
 

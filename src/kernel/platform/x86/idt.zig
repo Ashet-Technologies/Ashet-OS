@@ -225,7 +225,7 @@ const Descriptor = packed struct(u64) {
     offset1: u16, // 48-63 Offset 16-31
 
     pub fn init(offset: ?*const fn () callconv(.Naked) void, selector: u16, _type: InterruptType, bits: InterruptBits, privilege: u2, enabled: bool) Descriptor {
-        const offset_val = @ptrToInt(offset);
+        const offset_val = @intFromPtr(offset);
         return Descriptor{
             .offset0 = @truncate(u16, offset_val & 0xFFFF),
             .offset1 = @truncate(u16, (offset_val >> 16) & 0xFFFF),

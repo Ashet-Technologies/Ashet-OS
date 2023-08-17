@@ -772,7 +772,7 @@ pub const Window = struct {
 
     pub fn getFromABI(win: *const ashet.abi.Window) *Window {
         const window = @fieldParentPtr(Window, "user_facing", win);
-        return @intToPtr(*Window, @ptrToInt(window));
+        return @ptrFromInt(*Window, @intFromPtr(window));
     }
 
     pub fn create(

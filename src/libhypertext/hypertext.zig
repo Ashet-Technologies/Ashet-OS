@@ -209,7 +209,7 @@ const Renderer = struct {
                     if (top_level_block != .heading)
                         continue;
                     const heading = top_level_block.heading;
-                    const level = @enumToInt(heading.level);
+                    const level = @intFromEnum(heading.level);
 
                     levels[level] += 1;
                     for (levels[level + 1 ..]) |*item| {

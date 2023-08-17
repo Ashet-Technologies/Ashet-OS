@@ -127,7 +127,7 @@ export const gdtp = DescriptorTable{
 };
 
 pub fn init() void {
-    gdt[3] = Descriptor.init(@ptrToInt(&ashet.syscalls.syscall_table), @sizeOf(ashet.abi.SysCallTable), Descriptor.Access.readOnlySegment(0), Descriptor.Flags{
+    gdt[3] = Descriptor.init(@intFromPtr(&ashet.syscalls.syscall_table), @sizeOf(ashet.abi.SysCallTable), Descriptor.Access.readOnlySegment(0), Descriptor.Flags{
         .granularity = .byte,
         .size = .bits32,
         .longmode = false,

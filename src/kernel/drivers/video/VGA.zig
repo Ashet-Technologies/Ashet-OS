@@ -35,7 +35,7 @@ pub fn init(vga: *VGA) !void {
     writeVgaRegisters(modes.g_320x200x256);
 
     vga.loadPalette(vga.palette);
-    @memset(@intToPtr([*]align(ashet.memory.page_size) ColorIndex, 0xA0000)[0 .. 320 * 240], ColorIndex.get(0));
+    @memset(@ptrFromInt([*]align(ashet.memory.page_size) ColorIndex, 0xA0000)[0 .. 320 * 240], ColorIndex.get(0));
 }
 
 fn getVideoMemory(driver: *Driver) []align(ashet.memory.page_size) ColorIndex {
@@ -91,7 +91,7 @@ fn flush(driver: *Driver) void {
 
     vd.loadPalette(vd.palette);
 
-    const target = @intToPtr([*]align(ashet.memory.page_size) ColorIndex, 0xA0000)[0 .. 320 * 240];
+    const target = @ptrFromInt([*]align(ashet.memory.page_size) ColorIndex, 0xA0000)[0 .. 320 * 240];
     std.mem.copyForwards(ColorIndex, target, &vd.backbuffer);
 }
 
@@ -164,7 +164,7 @@ pub fn setPlane(plane: u2) void {
 fn getFramebufferSegment() [*]volatile u8 {
     x86.out(u8, VGA_GC_INDEX, 6);
     const seg = (x86.in(u8, VGA_GC_DATA) >> 2) & 3;
-    return @intToPtr([*]volatile u8, switch (@truncate(u2, seg)) {
+    return @ptrFromInt([*]volatile u8, switch (@truncate(u2, seg)) {
         0, 1 => @as(u32, 0xA0000),
         2 => @as(u32, 0xB0000),
         3 => @as(u32, 0xB8000),

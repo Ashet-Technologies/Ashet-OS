@@ -47,7 +47,7 @@ pub fn init(allocator: std.mem.Allocator, mbinfo: *multiboot.Info) !VESA_BIOS_Ex
 
     const vbe_info = mbinfo.vbe;
 
-    const vbe_control = @intToPtr(*vbe.Control, vbe_info.control_info);
+    const vbe_control = @ptrFromInt(*vbe.Control, vbe_info.control_info);
 
     if (vbe_control.signature != vbe.Control.signature)
         @panic("invalid vbe signature!");
@@ -68,7 +68,7 @@ pub fn init(allocator: std.mem.Allocator, mbinfo: *multiboot.Info) !VESA_BIOS_Ex
         }
     }
 
-    const vbe_mode = @intToPtr(*vbe.ModeInfo, vbe_info.mode_info);
+    const vbe_mode = @ptrFromInt(*vbe.ModeInfo, vbe_info.mode_info);
 
     if (vbe_mode.memory_model != .direct_color) {
         std.log.err("mode_info = {}", .{vbe_mode});

@@ -307,7 +307,7 @@ const GPU = struct {
         gpu.vq.waitSettled();
 
         gpu.gpu_command.res_create_2d = .{
-            .resource_id = @enumToInt(id),
+            .resource_id = @intFromEnum(id),
             .format = format,
             .width = width,
             .height = height,
@@ -320,12 +320,12 @@ const GPU = struct {
         gpu.vq.waitSettled();
 
         gpu.gpu_command.res_attach_backing = .{
-            .resource_id = @enumToInt(id),
+            .resource_id = @intFromEnum(id),
             .nr_entries = 1,
         };
 
         gpu.gpu_command.res_attach_backing.entries()[0] = .{
-            .addr = @ptrToInt(address),
+            .addr = @intFromPtr(address),
             .length = length,
         };
 
@@ -341,8 +341,8 @@ const GPU = struct {
                 .width = width,
                 .height = height,
             },
-            .scanout_id = @enumToInt(scanout),
-            .resource_id = @enumToInt(res_id),
+            .scanout_id = @intFromEnum(scanout),
+            .resource_id = @intFromEnum(res_id),
         };
         try gpu.execCommand();
     }
@@ -380,7 +380,7 @@ const GPU = struct {
                 .height = height,
             },
             .offset = y * calcStride(gpu.fb_width, 32) + x * 4,
-            .resource_id = @enumToInt(ResourceId.framebuffer),
+            .resource_id = @intFromEnum(ResourceId.framebuffer),
         };
 
         gpu.gpu_command2.res_flush = .{
@@ -390,7 +390,7 @@ const GPU = struct {
                 .width = width,
                 .height = height,
             },
-            .resource_id = @enumToInt(ResourceId.framebuffer),
+            .resource_id = @intFromEnum(ResourceId.framebuffer),
         };
 
         gpu.vq.pushDescriptor(virtio.gpu.GPUCommand, &gpu.gpu_command, .read, true, false);

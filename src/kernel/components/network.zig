@@ -407,7 +407,7 @@ pub const udp = struct {
     fn unmap(sock: Socket) error{InvalidHandle}!*c.udp_pcb {
         if (sock == .invalid)
             return error.InvalidHandle;
-        const index = @enumToInt(sock);
+        const index = @intFromEnum(sock);
         if (index >= max_sockets)
             return error.InvalidHandle;
         if (!pool.alive(index))
@@ -426,7 +426,7 @@ pub const udp = struct {
 
         c.udp_recv(pcb, handleIncomingPacket, &socket_meta[index]);
 
-        return @intToEnum(Socket, index);
+        return @enumFromInt(Socket, index);
     }
 
     fn handleIncomingPacket(arg: ?*anyopaque, pcb_c: [*c]c.udp_pcb, pbuf_c: [*c]c.pbuf, addr_c: [*c]const c.ip_addr_t, port: u16) callconv(.C) void {
@@ -462,7 +462,7 @@ pub const udp = struct {
 
     pub fn destroySocket(sock: Socket) void {
         const pcb = unmap(sock) catch return;
-        const index = @enumToInt(sock);
+        const index = @intFromEnum(sock);
         c.udp_remove(pcb);
         sockets[index] = undefined;
         socket_meta[index] = undefined;
@@ -519,7 +519,7 @@ pub const udp = struct {
 
     pub fn receiveFrom(data: *abi.udp.ReceiveFrom) void {
         const pcb = unmap(data.inputs.socket) catch |err| return ashet.io.finalizeWithError(data, err);
-        const context = &socket_meta[@enumToInt(data.inputs.socket)];
+        const context = &socket_meta[@intFromEnum(data.inputs.socket)];
 
         _ = pcb;
         if (context.receive_iop != null) {
@@ -596,7 +596,7 @@ pub const tcp = struct {
     fn unmap(sock: Socket) error{InvalidHandle}!*c.tcp_pcb {
         if (sock == .invalid)
             return error.InvalidHandle;
-        const index = @enumToInt(sock);
+        const index = @intFromEnum(sock);
         if (index >= max_sockets)
             return error.InvalidHandle;
         if (!pool.alive(index))
@@ -620,12 +620,12 @@ pub const tcp = struct {
         c.tcp_sent(pcb, tcpSentCallback);
         // c.tcp_accept(pcb, tcp_accept_fn);
 
-        return @intToEnum(Socket, index);
+        return @enumFromInt(Socket, index);
     }
 
     pub fn destroySocket(sock: Socket) void {
         const pcb = unmap(sock) catch return;
-        const index = @enumToInt(sock);
+        const index = @intFromEnum(sock);
 
         if (c.tcp_close(pcb) != c.ERR_OK) {
             c.tcp_abort(pcb);
@@ -672,7 +672,7 @@ pub const tcp = struct {
             ashet.io.finalize(&ev.iop);
             return;
         };
-        const data = &socket_meta[@enumToInt(ev.inputs.socket)];
+        const data = &socket_meta[@intFromEnum(ev.inputs.socket)];
         if (data.op != null) {
             ev.@"error" = .InProgress;
             ashet.io.finalize(&ev.iop);
@@ -713,7 +713,7 @@ pub const tcp = struct {
             ashet.io.finalize(&ev.iop);
             return;
         };
-        const data = &socket_meta[@enumToInt(ev.inputs.socket)];
+        const data = &socket_meta[@intFromEnum(ev.inputs.socket)];
         if (data.op != null) {
             ev.@"error" = .InProgress;
             ashet.io.finalize(&ev.iop);
@@ -799,7 +799,7 @@ pub const tcp = struct {
             ashet.io.finalize(&ev.iop);
             return;
         };
-        const data = &socket_meta[@enumToInt(ev.inputs.socket)];
+        const data = &socket_meta[@intFromEnum(ev.inputs.socket)];
         if (data.op != null) {
             ev.@"error" = .InProgress;
             ashet.io.finalize(&ev.iop);

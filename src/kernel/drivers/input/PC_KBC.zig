@@ -102,7 +102,7 @@ pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleIni
     // Step 8: Perform Interface Tests
     {
         try kbc.writeCommand(.test_primary_port);
-        const primary_status = @intToEnum(PortTestResult, try kbc.readData());
+        const primary_status = @enumFromInt(PortTestResult, try kbc.readData());
         if (primary_status == .test_passed) {
             kbc.channels.insert(.primary);
         } else {
@@ -111,7 +111,7 @@ pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleIni
 
         if (has_secondary_channel) {
             try kbc.writeCommand(.test_secondary_port);
-            const secondary_status = @intToEnum(PortTestResult, try kbc.readData());
+            const secondary_status = @enumFromInt(PortTestResult, try kbc.readData());
             if (secondary_status == .test_passed) {
                 kbc.channels.insert(.secondary);
             } else {
@@ -363,7 +363,7 @@ const Channel = enum {
 
         const device_id = @bitCast(u16, [2]u8{ lo, hi });
 
-        return @intToEnum(DeviceType, device_id);
+        return @enumFromInt(DeviceType, device_id);
     }
 };
 
@@ -442,7 +442,7 @@ fn writeRawCommand(cmd: Command) error{Timeout}!void {
         delayPortRead();
     }
     // logger.debug("0x{X:0>2} => [CMD]", .{@enumToInt(cmd)});
-    x86.out(u8, ports.command, @enumToInt(cmd));
+    x86.out(u8, ports.command, @intFromEnum(cmd));
 }
 
 fn readStatus() Status {

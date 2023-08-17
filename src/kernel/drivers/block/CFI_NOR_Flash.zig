@@ -11,7 +11,7 @@ byte_size: usize,
 
 pub fn init(offset: usize, length: usize) error{InvalidDevice}!CFI_NOR_Flash {
     inline for ([_]type{ u8, u16, u32 }) |T| {
-        const flash_mem = @intToPtr([*]volatile T, offset);
+        const flash_mem = @ptrFromInt([*]volatile T, offset);
 
         flash_mem[0x55] = 0x98; // enter CFI interface
         const seq = [3]u8{
@@ -91,7 +91,7 @@ pub fn CfiDeviceImpl(comptime InterfaceWidth: type) type {
         }
 
         pub fn enterMode(base: [*]volatile InterfaceWidth, mode: Mode) void {
-            base[0x55] = @enumToInt(mode);
+            base[0x55] = @intFromEnum(mode);
         }
 
         pub fn readRegister(base: [*]volatile InterfaceWidth, comptime T: type, reg: u16) T {
@@ -104,14 +104,14 @@ pub fn CfiDeviceImpl(comptime InterfaceWidth: type) type {
 
         fn present(driver: *Driver) bool {
             const device = @fieldParentPtr(CFI_NOR_Flash, "driver", driver);
-            const base = @intToPtr([*]volatile InterfaceWidth, device.offset);
+            const base = @ptrFromInt([*]volatile InterfaceWidth, device.offset);
             _ = base;
             return true;
         }
 
         fn read(driver: *Driver, block: u64, data: []u8) ashet.storage.BlockDevice.ReadError!void {
             const device = @fieldParentPtr(CFI_NOR_Flash, "driver", driver);
-            const base = @intToPtr([*]volatile InterfaceWidth, device.offset);
+            const base = @ptrFromInt([*]volatile InterfaceWidth, device.offset);
 
             const block_items = device.driver.class.block.block_size / @sizeOf(InterfaceWidth);
             const block_start = std.math.cast(usize, block_items * block) orelse return error.InvalidBlock;
@@ -124,7 +124,7 @@ pub fn CfiDeviceImpl(comptime InterfaceWidth: type) type {
 
         fn write(driver: *Driver, block: u64, data: []const u8) ashet.storage.BlockDevice.WriteError!void {
             const device = @fieldParentPtr(CFI_NOR_Flash, "driver", driver);
-            const base = @intToPtr([*]volatile InterfaceWidth, device.offset);
+            const base = @ptrFromInt([*]volatile InterfaceWidth, device.offset);
 
             // we cannot write 256 byte blocks on 8 bit address bus
             if (@sizeOf(InterfaceWidth) == 1)

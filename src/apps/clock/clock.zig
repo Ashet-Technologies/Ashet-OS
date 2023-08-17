@@ -98,10 +98,10 @@ fn paint(window: *const ashet.ui.Window) void {
             const cx = @intCast(i16, f.width / 2);
             const cy = @intCast(i16, f.height / 2);
 
-            const angle = std.math.tau * @intToFloat(f32, pos) / @intToFloat(f32, limit);
+            const angle = std.math.tau * @floatFromInt(f32, pos) / @floatFromInt(f32, limit);
 
-            const dx = @floatToInt(i16, len * @sin(angle));
-            const dy = -@floatToInt(i16, len * @cos(angle));
+            const dx = @intFromFloat(i16, len * @sin(angle));
+            const dy = -@intFromFloat(i16, len * @cos(angle));
 
             f.drawLine(
                 gui.Point.new(cx, cy),

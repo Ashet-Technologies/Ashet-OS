@@ -196,7 +196,7 @@ const Raycaster = struct {
 
     const width = screen_width;
     const height = screen_height;
-    const aspect = @intToFloat(f32, screen_width) / @intToFloat(f32, screen_height);
+    const aspect = @floatFromInt(f32, screen_width) / @floatFromInt(f32, screen_height);
 
     const floor_texture: BackgroundPattern = .{ .perspective_texture = 0 };
     const ceiling_texture: BackgroundPattern = .{ .flat_color = ColorIndex.get(255) };
@@ -215,7 +215,7 @@ const Raycaster = struct {
 
         var rays: [width]f32 = undefined;
         for (&rays, 0..) |*dir, x| {
-            const fx = aspect * (2.0 * (@intToFloat(f32, x) / (width - 1)) - 1.0);
+            const fx = aspect * (2.0 * (@floatFromInt(f32, x) / (width - 1)) - 1.0);
 
             const deltaAngle = std.math.atan(0.5 * fx);
 
@@ -238,15 +238,15 @@ const Raycaster = struct {
         var val: [height]f32 = undefined;
         for (&val, 0..) |*v, y| {
             if (y < height / 2) {
-                const scale = 2.0 / @intToFloat(f32, height - 1);
-                const fy = 1.0 - scale * @intToFloat(f32, y);
+                const scale = 2.0 / @floatFromInt(f32, height - 1);
+                const fy = 1.0 - scale * @floatFromInt(f32, y);
 
                 if (fy == 0)
                     continue;
 
                 v.* = 1.0 / fy;
             } else {
-                const fy = (1.0 / @intToFloat(f32, height / 2)) * @intToFloat(f32, y - (height / 2) + 1);
+                const fy = (1.0 / @floatFromInt(f32, height / 2)) * @floatFromInt(f32, y - (height / 2) + 1);
 
                 if (fy == 0)
                     continue;
@@ -283,7 +283,7 @@ const Raycaster = struct {
 
                 // project the wall height onto the screen and
                 // adjust the zbuffer
-                wallHeight = @floatToInt(u32, height / @fabs(result.distance) + 0.5);
+                wallHeight = @intFromFloat(u32, height / @fabs(result.distance) + 0.5);
                 // std.log.info("x={} => d={d} => {}", .{ x, result.distance, wallHeight });
                 break :blk result.distance;
             } else std.math.inf(f32); // no hit means infinite distance
@@ -305,8 +305,8 @@ const Raycaster = struct {
                     const index_shift = 16 * texture_id;
                     const texture = &textures[texture_id];
 
-                    const u_scale = @intToFloat(f32, texture.bitmap.width - 1);
-                    const v_scale = @intToFloat(f32, texture.bitmap.height - 1);
+                    const u_scale = @floatFromInt(f32, texture.bitmap.width - 1);
+                    const v_scale = @floatFromInt(f32, texture.bitmap.height - 1);
 
                     var y: u15 = 0;
                     while (y < wallTop) : (y += 1) {
@@ -314,8 +314,8 @@ const Raycaster = struct {
 
                         const pos = rc.camera_position.add(dir.scale(d));
 
-                        const u = @floatToInt(i32, u_scale * fract(pos.x));
-                        const v = @floatToInt(i32, v_scale * fract(pos.y));
+                        const u = @intFromFloat(i32, u_scale * fract(pos.x));
+                        const v = @intFromFloat(i32, v_scale * fract(pos.y));
 
                         fb.setPixel(x, y, sampleTexture(texture, u, v).shift(index_shift));
                     }
@@ -329,7 +329,7 @@ const Raycaster = struct {
 
                 const index_shift = @intCast(u8, 16 * tex_id);
 
-                const u = @floatToInt(i32, @intToFloat(f32, texture.bitmap.width - 1) * fract(result.u));
+                const u = @intFromFloat(i32, @floatFromInt(f32, texture.bitmap.width - 1) * fract(result.u));
 
                 const maxy = std.math.min(height, wallBottom);
 
@@ -353,8 +353,8 @@ const Raycaster = struct {
                     const index_shift = 16 * texture_id;
                     const texture = &textures[texture_id];
 
-                    const u_scale = @intToFloat(f32, texture.bitmap.width - 1);
-                    const v_scale = @intToFloat(f32, texture.bitmap.height - 1);
+                    const u_scale = @floatFromInt(f32, texture.bitmap.width - 1);
+                    const v_scale = @floatFromInt(f32, texture.bitmap.height - 1);
 
                     var y: u15 = @intCast(u15, std.math.min(height, wallBottom));
                     while (y < height) : (y += 1) {
@@ -362,8 +362,8 @@ const Raycaster = struct {
 
                         const pos = rc.camera_position.add(dir.scale(d));
 
-                        const u = @floatToInt(i32, u_scale * fract(pos.x));
-                        const v = @floatToInt(i32, v_scale * fract(pos.y));
+                        const u = @intFromFloat(i32, u_scale * fract(pos.x));
+                        const v = @intFromFloat(i32, v_scale * fract(pos.y));
 
                         fb.setPixel(x, y, sampleTexture(texture, u, v).shift(index_shift));
                     }
@@ -413,7 +413,7 @@ const Raycaster = struct {
 
         const fx = 2.0 * @tan(angle) / aspect;
 
-        const cx = @floatToInt(i32, (width - 1) * (0.5 + 0.5 * fx));
+        const cx = @intFromFloat(i32, (width - 1) * (0.5 + 0.5 * fx));
 
         const texture = &textures[sprite.texture_id];
 
@@ -421,7 +421,7 @@ const Raycaster = struct {
         const correction = @sqrt(0.5 * fx * fx + 1);
 
         // calculate on-screen size
-        const spriteHeight = @floatToInt(u31, correction * height / distance);
+        const spriteHeight = @intFromFloat(u31, correction * height / distance);
         const spriteWidth = (texture.bitmap.width * spriteHeight) / texture.bitmap.height;
 
         // discard the sprite when out of screen
@@ -455,7 +455,7 @@ const Raycaster = struct {
 
             var y: u15 = @intCast(u15, std.math.clamp(miny, 0, height));
             while (y < maxy) : (y += 1) {
-                const v = @floatToInt(i32, @intToFloat(f32, (texture.bitmap.height - 1) * (y - wallTop)) / @intToFloat(f32, spriteHeight - 1));
+                const v = @intFromFloat(i32, @floatFromInt(f32, (texture.bitmap.height - 1) * (y - wallTop)) / @floatFromInt(f32, spriteHeight - 1));
 
                 const c = sampleTexture(texture, u, v);
 

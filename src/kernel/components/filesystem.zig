@@ -118,7 +118,7 @@ pub fn initialize() void {
 
         fs.* = FileSystem{
             .enabled = true,
-            .id = @intToEnum(ashet.abi.FileSystemId, index + 1),
+            .id = @enumFromInt(ashet.abi.FileSystemId, index + 1),
             .block_device = dev,
             .name = undefined,
             .driver = undefined,
@@ -165,7 +165,7 @@ const iop_handlers = struct {
         const disk_id = if (iop.inputs.fs == .system)
             sys_disk_index
         else
-            @enumToInt(iop.inputs.fs) - 1;
+            @intFromEnum(iop.inputs.fs) - 1;
 
         if (!filesystems[disk_id].enabled) {
             return error.InvalidFileSystem;
@@ -487,7 +487,7 @@ pub fn openDrive(iop: *ashet.abi.fs.OpenDrive) void {
     const disk_id = if (iop.inputs.fs == .system)
         sys_disk_index
     else
-        @enumToInt(iop.inputs.fs) - 1;
+        @intFromEnum(iop.inputs.fs) - 1;
 
     if (!filesystems[disk_id].enabled) {
         return ashet.io.finalizeWithError(iop, error.InvalidFileSystem);

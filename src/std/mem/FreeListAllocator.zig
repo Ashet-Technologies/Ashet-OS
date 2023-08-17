@@ -23,7 +23,7 @@ pub const FreeListAllocator = struct {
             .region = std.mem.alignInSlice(raw_region, base_align) orelse @panic("Pass enough memory to at least conform to basic alignment"),
             .root = undefined,
         };
-        std.debug.assert(std.mem.isAligned(@ptrToInt(allo.region.ptr), base_align));
+        std.debug.assert(std.mem.isAligned(@intFromPtr(allo.region.ptr), base_align));
         std.debug.assert(std.mem.isAligned(allo.region.len, base_align));
 
         allo.root = Chunk.format(allo.region);
@@ -87,7 +87,7 @@ pub const FreeListAllocator = struct {
         }
 
         pub fn fromUserRegion(region: []u8) *Chunk {
-            return @intToPtr(*Chunk, @ptrToInt(region.ptr) - @sizeOf(Chunk));
+            return @ptrFromInt(*Chunk, @intFromPtr(region.ptr) - @sizeOf(Chunk));
         }
 
         /// Returns the portion of memory in this chunk that is reserved for the user.

@@ -331,7 +331,7 @@ pub const ScreenWriter = struct {
                     }
 
                     sw.dx += advance;
-                    sw.dx += @boolToInt(vector_font.bold);
+                    sw.dx += @intFromBool(vector_font.bold);
                 }
             },
         }

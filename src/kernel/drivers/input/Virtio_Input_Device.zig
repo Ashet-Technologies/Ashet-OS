@@ -120,7 +120,7 @@ const Tablet = struct {
 };
 
 fn initDevice(allocator: std.mem.Allocator, regs: *volatile virtio.ControlRegs, device_type: DeviceType) !*Virtio_Input_Device {
-    logger.info("recognized 0x{X:0>8} as {s}", .{ @ptrToInt(regs), @tagName(device_type) });
+    logger.info("recognized 0x{X:0>8} as {s}", .{ @intFromPtr(regs), @tagName(device_type) });
 
     const device = try allocator.create(Virtio_Input_Device);
     errdefer allocator.destroy(device);
@@ -208,7 +208,7 @@ fn poll(driver: *Driver) void {
 
     device_fetch: while (true) {
         const evt = getDeviceEvent(device) orelse break :device_fetch;
-        const event_type = @intToEnum(virtio.input.ConfigEvSubSel, evt.type);
+        const event_type = @enumFromInt(virtio.input.ConfigEvSubSel, evt.type);
 
         switch (device.kind) {
             .keyboard => {

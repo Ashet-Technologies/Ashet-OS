@@ -24,11 +24,6 @@ DISK="${ROOT}/zig-out/disk.img"
 clear
 zig build install -Dmachine=$MACHINE $ZARG
 
-# validate wiki integrity
-for file in $(find rootfs/wiki -name "*.hdoc"); do 
-    hyperdoc "$file" > /dev/null
-done
-
 # compile root disk image
 
 disk_size=33554432
@@ -51,6 +46,11 @@ case $MACHINE in
 esac
 
 echo "rootfs = ${rootfs}"
+
+# validate wiki integrity
+for file in $(find "${rootfs_path}/wiki" -name "*.hdoc"); do 
+    hyperdoc "$file" > /dev/null
+done
 
 copyToFAT()
 {

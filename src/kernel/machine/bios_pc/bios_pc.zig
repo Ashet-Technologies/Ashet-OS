@@ -96,7 +96,7 @@ pub fn initialize() !void {
             reserved: u32,
         };
 
-        const modules = @intToPtr([*]const Module, mbheader.mods.mods_addr)[0..mbheader.mods.mods_count];
+        const modules = @ptrFromInt([*]const Module, mbheader.mods.mods_addr)[0..mbheader.mods.mods_count];
         for (modules, 0..) |mod, index| {
             logger.info("  [{}] = {{ lo=0x{X:0>8}, hi=0x{X:0>8}, cmdline='{}' }}", .{
                 index,
@@ -236,8 +236,8 @@ extern const __machine_linmem_start: anyopaque align(4);
 extern const __machine_linmem_end: anyopaque align(4);
 
 pub fn getLinearMemoryRegion() ashet.memory.Section {
-    const linmem_start = @ptrToInt(&__machine_linmem_start);
-    const linmem_end = @ptrToInt(&__machine_linmem_end);
+    const linmem_start = @intFromPtr(&__machine_linmem_start);
+    const linmem_end = @intFromPtr(&__machine_linmem_end);
     return ashet.memory.Section{ .offset = linmem_start, .length = linmem_end - linmem_start };
 }
 

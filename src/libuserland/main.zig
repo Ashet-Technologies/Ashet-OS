@@ -501,8 +501,8 @@ const file_handles = HandleAllocator(abi.FileHandle, File);
 const directory_handles = HandleAllocator(abi.DirectoryHandle, Directory);
 
 const filesystem_sys = abi.FileSystemId.system;
-const filesystem_host = @intToEnum(abi.FileSystemId, 1);
-const filesystem_cwd = @intToEnum(abi.FileSystemId, 2);
+const filesystem_host = @enumFromInt(abi.FileSystemId, 1);
+const filesystem_cwd = @enumFromInt(abi.FileSystemId, 2);
 
 fn dateTimeFromTimestamp(ts: i128) abi.DateTime {
     return @intCast(i64, @divTrunc(ts, std.time.ns_per_ms));
@@ -1185,7 +1185,7 @@ fn ui_invalidate(abi_window: *const abi.Window, rect: abi.Rectangle) callconv(.C
     const window = Window.fromAbi(abi_window);
 
     for (window.rgba_storage, window.index_storage) |*color, index| {
-        color.* = palette[@enumToInt(index)];
+        color.* = palette[@intFromEnum(index)];
     }
 }
 
@@ -1375,7 +1375,7 @@ fn HandleAllocator(comptime Handle: type, comptime Backing: type) type {
                     const generation = generations[index];
                     const numeric = generation *% max_open_files + index;
 
-                    const handle = @intToEnum(Handle, numeric);
+                    const handle = @enumFromInt(Handle, numeric);
                     if (handle == .invalid) {
                         generations[index] += 1;
                         continue;
@@ -1393,7 +1393,7 @@ fn HandleAllocator(comptime Handle: type, comptime Backing: type) type {
         }
 
         fn resolveIndex(handle: Handle) !usize {
-            const numeric = @enumToInt(handle);
+            const numeric = @intFromEnum(handle);
 
             const index = numeric & handle_index_mask;
             const generation = numeric / max_open_files;
@@ -1409,12 +1409,12 @@ fn HandleAllocator(comptime Handle: type, comptime Backing: type) type {
         }
 
         fn handleToIndexUnsafe(handle: Handle) usize {
-            const numeric = @enumToInt(handle);
+            const numeric = @intFromEnum(handle);
             return @as(usize, numeric & handle_index_mask);
         }
 
         fn free(handle: Handle) void {
-            const numeric = @enumToInt(handle);
+            const numeric = @intFromEnum(handle);
 
             const index = numeric & handle_index_mask;
             const generation = numeric / max_open_files;

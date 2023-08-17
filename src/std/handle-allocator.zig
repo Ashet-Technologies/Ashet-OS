@@ -24,7 +24,7 @@ pub fn HandleAllocator(comptime Handle: type, comptime Backing: type, comptime a
                     const generation = ha.generations[index];
                     const numeric = generation *% active_handle_limit + index;
 
-                    const handle = @intToEnum(Handle, numeric);
+                    const handle = @enumFromInt(Handle, numeric);
                     if (handle == .invalid) {
                         ha.generations[index] += 1;
                         continue;
@@ -42,7 +42,7 @@ pub fn HandleAllocator(comptime Handle: type, comptime Backing: type, comptime a
         }
 
         pub fn resolveIndex(ha: *HAlloc, handle: Handle) error{InvalidHandle}!usize {
-            const numeric = @enumToInt(handle);
+            const numeric = @intFromEnum(handle);
 
             const index = numeric & handle_index_mask;
             const generation = numeric / active_handle_limit;
@@ -58,12 +58,12 @@ pub fn HandleAllocator(comptime Handle: type, comptime Backing: type, comptime a
         }
 
         pub fn handleToIndexUnsafe(handle: Handle) usize {
-            const numeric = @enumToInt(handle);
+            const numeric = @intFromEnum(handle);
             return @as(usize, numeric & handle_index_mask);
         }
 
         pub fn free(ha: *HAlloc, handle: Handle) void {
-            const numeric = @enumToInt(handle);
+            const numeric = @intFromEnum(handle);
 
             const index = numeric & handle_index_mask;
             const generation = numeric / active_handle_limit;

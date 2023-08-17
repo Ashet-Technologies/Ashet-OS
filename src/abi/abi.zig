@@ -113,7 +113,7 @@ fn defineSysCall(comptime name: []const u8, comptime Func: type, comptime index:
 
 fn SysCallFunc(comptime call: SysCall) type {
     for (syscall_definitions) |def| {
-        if (def.index == @enumToInt(call))
+        if (def.index == @intFromEnum(call))
             return def.signature;
     }
     unreachable;
@@ -360,11 +360,11 @@ pub const ColorIndex = enum(u8) {
     _,
 
     pub fn get(val: u8) ColorIndex {
-        return @intToEnum(ColorIndex, val);
+        return @enumFromInt(ColorIndex, val);
     }
 
     pub fn index(c: ColorIndex) @typeInfo(ColorIndex).Enum.tag_type {
-        return @enumToInt(c);
+        return @intFromEnum(c);
     }
 
     pub fn shift(c: ColorIndex, offset: u8) ColorIndex {
@@ -726,7 +726,7 @@ pub const Rectangle = extern struct {
         return rect.x;
     }
     pub fn right(rect: Rectangle) i16 {
-        return rect.x + @intCast(u15, rect.width);
+        return rect.x +| @intCast(u15, rect.width);
     }
 
     pub fn shrink(rect: Rectangle, amount: u15) Rectangle {

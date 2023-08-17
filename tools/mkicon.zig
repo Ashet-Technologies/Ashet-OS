@@ -268,11 +268,11 @@ fn colorDist(a: Rgba32, b: Rgba32) u32 {
             return @intCast(u32, 3 * dr * dr + 4 * dg * dg + 2 * db * db);
         },
         .redmean_smooth => {
-            const dhalf = @intToFloat(f32, (@as(u32, a.r) + b.r) / 2);
-            const r2 = (2.0 + dhalf / 256) * @intToFloat(f32, dr * dr);
-            const g2 = 4.0 * @intToFloat(f32, dg * dg);
-            const b2 = (2.0 + (255.0 - dhalf) / 256) * @intToFloat(f32, db * db);
-            return @floatToInt(u32, 10.0 * (r2 + g2 + b2));
+            const dhalf = @floatFromInt(f32, (@as(u32, a.r) + b.r) / 2);
+            const r2 = (2.0 + dhalf / 256) * @floatFromInt(f32, dr * dr);
+            const g2 = 4.0 * @floatFromInt(f32, dg * dg);
+            const b2 = (2.0 + (255.0 - dhalf) / 256) * @floatFromInt(f32, db * db);
+            return @intFromFloat(u32, 10.0 * (r2 + g2 + b2));
         },
     }
 }

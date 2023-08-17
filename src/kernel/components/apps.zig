@@ -219,7 +219,7 @@ pub fn startAppElf(app: AppID) !void {
     const process_memory = try ashet.memory.page_allocator.alignedAlloc(u8, ashet.memory.page_size, required_bytes);
     errdefer ashet.memory.page_allocator.free(process_memory);
 
-    const process_base = @ptrToInt(process_memory.ptr);
+    const process_base = @intFromPtr(process_memory.ptr);
 
     // Actually load the exe into memory
     {
@@ -387,14 +387,14 @@ pub fn startAppBinary(app: AppID) !void {
             @panic("could not read all bytes on one go!");
     }
 
-    try spawnApp(app, process_memory, @ptrToInt(process_memory.ptr));
+    try spawnApp(app, process_memory, @intFromPtr(process_memory.ptr));
 }
 
 fn spawnApp(app: AppID, process_memory: []align(ashet.memory.page_size) u8, entry_point: usize) !void {
     const process = try ashet.multi_tasking.Process.spawn(
         app.getName(),
         process_memory,
-        @intToPtr(ashet.scheduler.ThreadFunction, entry_point),
+        @ptrFromInt(ashet.scheduler.ThreadFunction, entry_point),
         null,
         .{ .stack_size = 512 * 1024 },
     );

@@ -296,7 +296,7 @@ pub fn FarPtr(comptime T: type) type {
         segment: u16,
 
         pub fn get(fp: @This()) T {
-            return @intToPtr(T, (@as(usize, fp.segment) << 4) + @as(usize, fp.offset));
+            return @ptrFromInt(T, (@as(usize, fp.segment) << 4) + @as(usize, fp.offset));
         }
 
         pub fn format(fp: @This(), comptime fmt: []const u8, opts: std.fmt.FormatOptions, writer: anytype) !void {

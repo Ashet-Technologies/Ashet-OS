@@ -10,7 +10,7 @@ pub fn initialize() void {
 
     // Initialize all virtio devices:
     {
-        const virtio_base = @intToPtr([*]align(4096) volatile virtio.ControlRegs, 0xfeb00000);
+        const virtio_base = @ptrFromInt([*]align(4096) volatile virtio.ControlRegs, 0xfeb00000);
 
         if (virtio_base[0].magic != virtio.ControlRegs.magic) {
             @panic("not virt platform!");
@@ -321,7 +321,7 @@ const gpu = struct {
         vq.waitSettled();
 
         gpu_command.res_create_2d = .{
-            .resource_id = @enumToInt(id),
+            .resource_id = @intFromEnum(id),
             .format = format,
             .width = width,
             .height = height,
@@ -334,12 +334,12 @@ const gpu = struct {
         vq.waitSettled();
 
         gpu_command.res_attach_backing = .{
-            .resource_id = @enumToInt(id),
+            .resource_id = @intFromEnum(id),
             .nr_entries = 1,
         };
 
         gpu_command.res_attach_backing.entries()[0] = .{
-            .addr = @ptrToInt(address),
+            .addr = @intFromPtr(address),
             .length = length,
         };
 
@@ -355,8 +355,8 @@ const gpu = struct {
                 .width = width,
                 .height = height,
             },
-            .scanout_id = @enumToInt(scanout),
-            .resource_id = @enumToInt(res_id),
+            .scanout_id = @intFromEnum(scanout),
+            .resource_id = @intFromEnum(res_id),
         };
         try execCommand();
     }
@@ -396,7 +396,7 @@ const gpu = struct {
                 .height = height,
             },
             .offset = y * calcStride(fb_width, 32) + x * 4,
-            .resource_id = @enumToInt(ResourceId.framebuffer),
+            .resource_id = @intFromEnum(ResourceId.framebuffer),
         };
 
         gpu_command2.res_flush = .{
@@ -406,7 +406,7 @@ const gpu = struct {
                 .width = width,
                 .height = height,
             },
-            .resource_id = @enumToInt(ResourceId.framebuffer),
+            .resource_id = @intFromEnum(ResourceId.framebuffer),
         };
 
         vq.pushDescriptor(virtio.gpu.GPUCommand, &gpu_command, false, true, false);
@@ -625,7 +625,7 @@ pub const input = struct {
     var devices = std.BoundedArray(Device, 8){};
 
     fn initDevice(regs: *volatile virtio.ControlRegs, device_type: DeviceType) !void {
-        logger.info("recognized 0x{X:0>8} as {s}", .{ @ptrToInt(regs), @tagName(device_type) });
+        logger.info("recognized 0x{X:0>8} as {s}", .{ @intFromPtr(regs), @tagName(device_type) });
 
         const device = try devices.addOne();
         errdefer _ = devices.pop();
@@ -703,7 +703,7 @@ pub const input = struct {
             device_fetch: while (true) {
                 const evt = getDeviceEvent(device) orelse break :device_fetch;
 
-                if (evt.type != @enumToInt(virtio.input.ConfigEvSubSel.cess_key)) {
+                if (evt.type != @intFromEnum(virtio.input.ConfigEvSubSel.cess_key)) {
                     continue;
                 }
 
@@ -750,10 +750,10 @@ pub const input = struct {
             device_fetch: while (true) {
                 const evt = getDeviceEvent(device) orelse break :device_fetch;
 
-                switch (@intToEnum(virtio.input.ConfigEvSubSel, evt.type)) {
+                switch (@enumFromInt(virtio.input.ConfigEvSubSel, evt.type)) {
                     .cess_key => {
                         return MouseEvent{ .button = MouseEvent.Button{
-                            .button = @intToEnum(MouseButton, evt.code),
+                            .button = @enumFromInt(MouseButton, evt.code),
                             .down = evt.value != 0,
                         } };
                     },

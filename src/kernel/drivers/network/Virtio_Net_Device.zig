@@ -175,7 +175,7 @@ fn fetchNic(driver: *Driver) void {
 pub fn handleOutgoingData(device: *Virtio_Net_Device) !void {
     var count: usize = 0;
     while (device.transmitq.singlePollUsed()) |ret| {
-        const buffer = @intToPtr(*Buffer, @truncate(usize, device.transmitq.descriptors[ret % queue_size].addr));
+        const buffer = @ptrFromInt(*Buffer, @truncate(usize, device.transmitq.descriptors[ret % queue_size].addr));
         device.transmit_buffers.free(buffer);
         count += 1;
     }
@@ -189,7 +189,7 @@ pub fn handleIncomingData(device: *Virtio_Net_Device) !void {
 
     defer device.receiveq.exec();
     while (device.receiveq.singlePollUsed()) |ret| {
-        const buffer = @intToPtr(*Buffer, @truncate(usize, device.receiveq.descriptors[ret % queue_size].addr));
+        const buffer = @ptrFromInt(*Buffer, @truncate(usize, device.receiveq.descriptors[ret % queue_size].addr));
 
         if (buffer.header.num_buffers != 1) {
             @panic("large packets with more than one buffer not supported yet!");
@@ -235,7 +235,7 @@ fn FixedPool(comptime T: type, comptime size: usize) type {
         }
 
         pub fn free(pool: *Self, item: *T) void {
-            const index = @divExact((@ptrToInt(item) -% @ptrToInt(&pool.items[0])), @sizeOf(T));
+            const index = @divExact((@intFromPtr(item) -% @intFromPtr(&pool.items[0])), @sizeOf(T));
             std.debug.assert(index < size);
             pool.maps.set(index);
         }

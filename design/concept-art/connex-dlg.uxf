@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <diagram program="umlet" version="14.3.0">
-  <zoom_level>20</zoom_level>
+  <zoom_level>14</zoom_level>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>80</x>
-      <y>140</y>
-      <w>400</w>
-      <h>500</h>
+      <x>98</x>
+      <y>252</y>
+      <w>280</w>
+      <h>350</h>
     </coordinates>
     <panel_attributes>New Terminal
 group=2</panel_attributes>
@@ -16,10 +16,10 @@ group=2</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>80</x>
-      <y>200</y>
-      <w>400</w>
-      <h>440</h>
+      <x>98</x>
+      <y>294</y>
+      <w>280</w>
+      <h>308</h>
     </coordinates>
     <panel_attributes>
 group=2</panel_attributes>
@@ -28,10 +28,10 @@ group=2</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>320</x>
-      <y>560</y>
-      <w>140</w>
-      <h>60</h>
+      <x>266</x>
+      <y>546</y>
+      <w>98</w>
+      <h>42</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=center
@@ -43,10 +43,10 @@ group=2</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>100</x>
-      <y>560</y>
-      <w>140</w>
-      <h>60</h>
+      <x>112</x>
+      <y>546</y>
+      <w>98</w>
+      <h>42</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=center
@@ -58,10 +58,10 @@ group=2</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>840</x>
-      <y>220</y>
-      <w>40</w>
-      <h>40</h>
+      <x>630</x>
+      <y>308</y>
+      <w>28</w>
+      <h>28</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=left
@@ -73,10 +73,10 @@ group=1</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>520</x>
-      <y>220</y>
-      <w>360</w>
-      <h>40</h>
+      <x>406</x>
+      <y>308</y>
+      <w>252</w>
+      <h>28</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=left
@@ -88,10 +88,10 @@ group=1</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>500</x>
-      <y>140</y>
-      <w>400</w>
-      <h>500</h>
+      <x>392</x>
+      <y>252</y>
+      <w>280</w>
+      <h>350</h>
     </coordinates>
     <panel_attributes>New Terminal
 group=3</panel_attributes>
@@ -100,10 +100,10 @@ group=3</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>740</x>
-      <y>560</y>
-      <w>140</w>
-      <h>60</h>
+      <x>560</x>
+      <y>546</y>
+      <w>98</w>
+      <h>42</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=center
@@ -115,10 +115,10 @@ group=3</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>520</x>
-      <y>560</y>
-      <w>140</w>
-      <h>60</h>
+      <x>406</x>
+      <y>546</y>
+      <w>98</w>
+      <h>42</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=center
@@ -130,10 +130,10 @@ group=3</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>500</x>
-      <y>200</y>
-      <w>400</w>
-      <h>440</h>
+      <x>392</x>
+      <y>294</y>
+      <w>280</w>
+      <h>308</h>
     </coordinates>
     <panel_attributes>
 group=3</panel_attributes>
@@ -142,10 +142,10 @@ group=3</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>100</x>
-      <y>220</y>
-      <w>360</w>
-      <h>40</h>
+      <x>112</x>
+      <y>308</y>
+      <w>252</w>
+      <h>28</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=left
@@ -156,10 +156,10 @@ Echo</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>420</x>
-      <y>220</y>
-      <w>40</w>
-      <h>40</h>
+      <x>336</x>
+      <y>308</y>
+      <w>28</w>
+      <h>28</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=left
@@ -170,10 +170,10 @@ lw=2
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>660</x>
-      <y>280</y>
-      <w>220</w>
-      <h>40</h>
+      <x>504</x>
+      <y>350</y>
+      <w>154</w>
+      <h>28</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=left
@@ -183,10 +183,10 @@ halign=left
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>520</x>
-      <y>280</y>
-      <w>140</w>
-      <h>40</h>
+      <x>406</x>
+      <y>350</y>
+      <w>98</w>
+      <h>28</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=right
@@ -197,10 +197,10 @@ Host:</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>520</x>
-      <y>340</y>
-      <w>140</w>
-      <h>40</h>
+      <x>406</x>
+      <y>392</y>
+      <w>98</w>
+      <h>28</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=right
@@ -211,10 +211,10 @@ Port:</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>660</x>
-      <y>340</y>
-      <w>220</w>
-      <h>40</h>
+      <x>504</x>
+      <y>392</y>
+      <w>154</w>
+      <h>28</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=left
@@ -224,10 +224,10 @@ halign=left
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>520</x>
-      <y>400</y>
-      <w>140</w>
-      <h>40</h>
+      <x>406</x>
+      <y>434</y>
+      <w>98</w>
+      <h>28</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=right
@@ -238,10 +238,10 @@ Listen:</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>660</x>
-      <y>400</y>
-      <w>40</w>
-      <h>40</h>
+      <x>504</x>
+      <y>434</y>
+      <w>28</w>
+      <h>28</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=center
@@ -255,10 +255,10 @@ drawText("☒",1,17,left)</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>920</x>
-      <y>140</y>
-      <w>400</w>
-      <h>500</h>
+      <x>686</x>
+      <y>252</y>
+      <w>280</w>
+      <h>350</h>
     </coordinates>
     <panel_attributes>New Terminal
 group=4</panel_attributes>
@@ -267,10 +267,10 @@ group=4</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>1160</x>
-      <y>560</y>
-      <w>140</w>
-      <h>60</h>
+      <x>854</x>
+      <y>546</y>
+      <w>98</w>
+      <h>42</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=center
@@ -282,10 +282,10 @@ group=4</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>940</x>
-      <y>560</y>
-      <w>140</w>
-      <h>60</h>
+      <x>700</x>
+      <y>546</y>
+      <w>98</w>
+      <h>42</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=center
@@ -297,10 +297,10 @@ group=4</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>920</x>
-      <y>200</y>
-      <w>400</w>
-      <h>440</h>
+      <x>686</x>
+      <y>294</y>
+      <w>280</w>
+      <h>308</h>
     </coordinates>
     <panel_attributes>
 group=4</panel_attributes>
@@ -309,10 +309,10 @@ group=4</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>940</x>
-      <y>220</y>
-      <w>360</w>
-      <h>40</h>
+      <x>700</x>
+      <y>308</y>
+      <w>252</w>
+      <h>28</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=left
@@ -323,10 +323,10 @@ Serial</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>1260</x>
-      <y>220</y>
-      <w>40</w>
-      <h>40</h>
+      <x>924</x>
+      <y>308</y>
+      <w>28</w>
+      <h>28</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=left
@@ -337,10 +337,10 @@ lw=2
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>1100</x>
-      <y>280</y>
-      <w>200</w>
-      <h>40</h>
+      <x>812</x>
+      <y>350</y>
+      <w>140</w>
+      <h>28</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=left
@@ -351,10 +351,10 @@ COM1</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>1260</x>
-      <y>280</y>
-      <w>40</w>
-      <h>40</h>
+      <x>924</x>
+      <y>350</y>
+      <w>28</w>
+      <h>28</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=left
@@ -365,10 +365,10 @@ lw=2
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>940</x>
-      <y>280</y>
-      <w>140</w>
-      <h>40</h>
+      <x>700</x>
+      <y>350</y>
+      <w>98</w>
+      <h>28</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=right
@@ -379,10 +379,10 @@ Port:</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>940</x>
-      <y>340</y>
-      <w>140</w>
-      <h>40</h>
+      <x>700</x>
+      <y>392</y>
+      <w>98</w>
+      <h>28</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=right
@@ -393,10 +393,10 @@ Baud:</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>940</x>
-      <y>400</y>
-      <w>140</w>
-      <h>40</h>
+      <x>700</x>
+      <y>434</y>
+      <w>98</w>
+      <h>28</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=right
@@ -407,10 +407,10 @@ Config:</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>1100</x>
-      <y>340</y>
-      <w>200</w>
-      <h>40</h>
+      <x>812</x>
+      <y>392</y>
+      <w>140</w>
+      <h>28</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=left
@@ -421,10 +421,10 @@ lw=2
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>1100</x>
-      <y>400</y>
-      <w>200</w>
-      <h>40</h>
+      <x>812</x>
+      <y>434</y>
+      <w>140</w>
+      <h>28</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=left
@@ -435,10 +435,10 @@ lw=2
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>1680</x>
-      <y>220</y>
-      <w>40</w>
-      <h>40</h>
+      <x>1218</x>
+      <y>308</y>
+      <w>28</w>
+      <h>28</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=left
@@ -449,10 +449,10 @@ lw=2
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>1360</x>
-      <y>220</y>
-      <w>360</w>
-      <h>40</h>
+      <x>994</x>
+      <y>308</y>
+      <w>252</w>
+      <h>28</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=left
@@ -463,10 +463,10 @@ $Application</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>1580</x>
-      <y>560</y>
-      <w>140</w>
-      <h>60</h>
+      <x>1148</x>
+      <y>546</y>
+      <w>98</w>
+      <h>42</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=center
@@ -478,10 +478,10 @@ group=5</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>1360</x>
-      <y>560</y>
-      <w>140</w>
-      <h>60</h>
+      <x>994</x>
+      <y>546</y>
+      <w>98</w>
+      <h>42</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=center
@@ -493,10 +493,10 @@ group=5</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>1340</x>
-      <y>200</y>
-      <w>400</w>
-      <h>440</h>
+      <x>980</x>
+      <y>294</y>
+      <w>280</w>
+      <h>308</h>
     </coordinates>
     <panel_attributes>
 group=5</panel_attributes>
@@ -505,10 +505,10 @@ group=5</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>1340</x>
-      <y>140</y>
-      <w>400</w>
-      <h>500</h>
+      <x>980</x>
+      <y>252</y>
+      <w>280</w>
+      <h>350</h>
     </coordinates>
     <panel_attributes>New Terminal
 group=5</panel_attributes>
@@ -517,10 +517,10 @@ group=5</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>2000</x>
-      <y>560</y>
-      <w>140</w>
-      <h>60</h>
+      <x>1442</x>
+      <y>546</y>
+      <w>98</w>
+      <h>42</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=center
@@ -532,10 +532,10 @@ group=6</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>1780</x>
-      <y>560</y>
-      <w>140</w>
-      <h>60</h>
+      <x>1288</x>
+      <y>546</y>
+      <w>98</w>
+      <h>42</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=center
@@ -547,10 +547,10 @@ group=6</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>1760</x>
-      <y>200</y>
-      <w>400</w>
-      <h>440</h>
+      <x>1274</x>
+      <y>294</y>
+      <w>280</w>
+      <h>308</h>
     </coordinates>
     <panel_attributes>
 group=6</panel_attributes>
@@ -559,10 +559,10 @@ group=6</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>1760</x>
-      <y>140</y>
-      <w>400</w>
-      <h>500</h>
+      <x>1274</x>
+      <y>252</y>
+      <w>280</w>
+      <h>350</h>
     </coordinates>
     <panel_attributes>New Terminal
 group=6</panel_attributes>
@@ -571,10 +571,10 @@ group=6</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>1780</x>
-      <y>220</y>
-      <w>360</w>
-      <h>40</h>
+      <x>1288</x>
+      <y>308</y>
+      <w>252</w>
+      <h>28</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=left
@@ -585,10 +585,10 @@ $Application</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>2100</x>
-      <y>220</y>
-      <w>40</w>
-      <h>40</h>
+      <x>1512</x>
+      <y>308</y>
+      <w>28</w>
+      <h>28</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=left
@@ -599,10 +599,10 @@ lw=2
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>520</x>
-      <y>460</y>
-      <w>140</w>
-      <h>40</h>
+      <x>406</x>
+      <y>476</y>
+      <w>98</w>
+      <h>28</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=right
@@ -613,10 +613,10 @@ TLS:</panel_attributes>
   <element>
     <id>UMLClass</id>
     <coordinates>
-      <x>660</x>
-      <y>460</y>
-      <w>40</w>
-      <h>40</h>
+      <x>504</x>
+      <y>476</y>
+      <w>28</w>
+      <h>28</h>
     </coordinates>
     <panel_attributes>valign=center
 halign=center

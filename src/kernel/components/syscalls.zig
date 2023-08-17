@@ -111,7 +111,7 @@ fn @"process.yield"() callconv(.C) void {
 }
 
 fn @"process.getBaseAddress"() callconv(.C) usize {
-    return @ptrToInt(getCurrentProcess().process_memory.ptr);
+    return @intFromPtr(getCurrentProcess().process_memory.ptr);
 }
 
 fn @"process.breakpoint"() callconv(.C) void {

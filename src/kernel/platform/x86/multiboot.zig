@@ -269,7 +269,7 @@ pub const Info = extern struct {
                 if (this.current_pos >= this.end_pos) {
                     return null;
                 } else {
-                    var current = @intToPtr(*const Entry, this.current_pos);
+                    var current = @ptrFromInt(*const Entry, this.current_pos);
                     this.current_pos += (current.size + 0x04);
                     return current;
                 }

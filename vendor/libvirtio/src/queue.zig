@@ -55,17 +55,17 @@ pub fn VirtQ(comptime queue_size: comptime_int) type {
 
             if (legacy) {
                 regs.legacy_queue_align = page_size;
-                regs.legacy_queue_pfn = @ptrToInt(vq) / page_size;
+                regs.legacy_queue_pfn = @intFromPtr(vq) / page_size;
             } else {
-                const vq_desc = @as(u64, @ptrToInt(&vq.descriptors));
+                const vq_desc = @as(u64, @intFromPtr(&vq.descriptors));
                 regs.queue_desc_lo = @truncate(u32, (vq_desc >> 0));
                 regs.queue_desc_hi = @truncate(u32, (vq_desc >> 32));
 
-                const vq_avail = @as(u64, @ptrToInt(&vq.avail));
+                const vq_avail = @as(u64, @intFromPtr(&vq.avail));
                 regs.queue_avail_lo = @truncate(u32, (vq_avail >> 0));
                 regs.queue_avail_hi = @truncate(u32, (vq_avail >> 32));
 
-                const vq_used = @as(u64, @ptrToInt(&vq.used));
+                const vq_used = @as(u64, @intFromPtr(&vq.used));
                 regs.queue_used_lo = @truncate(u32, (vq_used >> 0));
                 regs.queue_used_hi = @truncate(u32, (vq_used >> 32));
             }
@@ -78,7 +78,7 @@ pub fn VirtQ(comptime queue_size: comptime_int) type {
         }
 
         fn flagIf(value: bool, flag: u16) u16 {
-            return @boolToInt(value) * flag;
+            return @intFromBool(value) * flag;
         }
 
         pub fn pushDescriptorRaw(vq: *Queue, ptr: *anyopaque, length: usize, access: DescriptorAccess, first: bool, last: bool) void {
@@ -87,7 +87,7 @@ pub fn VirtQ(comptime queue_size: comptime_int) type {
             const desc_i = vq.desc_i % queue_size;
 
             vq.descriptors[desc_i] = Descriptor{
-                .addr = @ptrToInt(ptr),
+                .addr = @intFromPtr(ptr),
                 .len = length,
                 .flags = flagIf(!last, Descriptor.F_NEXT) | flagIf((access == .write), Descriptor.F_WRITE),
                 .next = flagIf(!last, next_i % queue_size),

@@ -151,11 +151,11 @@ extern var kernel_stack_start: anyopaque;
 pub fn stackCheck() void {
     const sp = platform.getStackPointer();
 
-    var stack_end: usize = @ptrToInt(&kernel_stack);
-    var stack_start: usize = @ptrToInt(&kernel_stack_start);
+    var stack_end: usize = @intFromPtr(&kernel_stack);
+    var stack_start: usize = @intFromPtr(&kernel_stack_start);
 
     if (scheduler.Thread.current()) |thread| {
-        stack_end = @ptrToInt(thread.getBasePointer());
+        stack_end = @intFromPtr(thread.getBasePointer());
         stack_start = stack_end - thread.stack_size;
     }
 
@@ -205,7 +205,7 @@ pub const std_options = struct {
         const scope_name = @tagName(scope);
 
         if (@hasDecl(log_levels, scope_name)) {
-            if (@enumToInt(message_level) > @enumToInt(@field(log_levels, scope_name)))
+            if (@intFromEnum(message_level) > @intFromEnum(@field(log_levels, scope_name)))
                 return;
         }
 
@@ -255,11 +255,11 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
     writer.print("return address:\r\n      0x{X:0>8}\r\n\r\n", .{@returnAddress()}) catch {};
 
     {
-        var stack_end: usize = @ptrToInt(&kernel_stack);
-        var stack_start: usize = @ptrToInt(&kernel_stack_start);
+        var stack_end: usize = @intFromPtr(&kernel_stack);
+        var stack_start: usize = @intFromPtr(&kernel_stack_start);
 
         if (current_thread) |thread| {
-            stack_end = @ptrToInt(thread.getBasePointer());
+            stack_end = @intFromPtr(thread.getBasePointer());
             stack_start = stack_end - thread.stack_size;
         }
 
@@ -316,7 +316,7 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
         while (it.next()) |addr| : (index += 1) {
             if (current_thread) |thread| {
                 if (thread.process) |proc| {
-                    const base = @ptrToInt(proc.process_memory.ptr);
+                    const base = @intFromPtr(proc.process_memory.ptr);
                     const top = base +| proc.process_memory.len;
 
                     if (addr >= base and addr < top) {

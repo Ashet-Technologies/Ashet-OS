@@ -27,4 +27,4 @@ pub const Char = packed struct(u16) {
 
 pub const text_height = 80;
 pub const text_width = 25;
-pub const text_base = @intToPtr(*[text_height][text_width]Char, 0xB8000);
+pub const text_base = @ptrFromInt(*[text_height][text_width]Char, 0xB8000);

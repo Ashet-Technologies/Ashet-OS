@@ -15,7 +15,7 @@ pub fn StaticPool(comptime T: type, comptime max_size: comptime_int) type {
         }
 
         pub fn destroy(pool: *Pool, item: *T) void {
-            const offset = @ptrToInt(item) - @ptrToInt(&pool.storage);
+            const offset = @intFromPtr(item) - @intFromPtr(&pool.storage);
             const index = @divExact(offset, @sizeOf(T));
             std.debug.assert(index < pool.storage.len);
             pool.storage[index] = undefined;

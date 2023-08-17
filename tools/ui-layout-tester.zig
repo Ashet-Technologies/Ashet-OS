@@ -88,7 +88,7 @@ fn getNextEventID(name: []const u8) gui.Event {
 
 fn logUiEvent(evt: ?gui.Event) void {
     const event = evt orelse return;
-    std.log.info("ui event: {s}", .{event_slots[@enumToInt(event.id)]});
+    std.log.info("ui event: {s}", .{event_slots[@intFromEnum(event.id)]});
 }
 
 fn mapMouseButton(in: c_int) ?ashet.abi.MouseButton {
@@ -292,7 +292,7 @@ pub fn main() !void {
         ui_layout.interface.paint(fb);
 
         for (index_buf, rgba_buf) |index, *rgba| {
-            const i = @enumToInt(index);
+            const i = @intFromEnum(index);
             rgba.* = palette[i];
         }
 

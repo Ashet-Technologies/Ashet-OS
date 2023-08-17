@@ -94,7 +94,7 @@ pub const FileDataCache = struct {
     cached_nexts: [cache_size]u32 = undefined,
 
     fn cacheIndex(file: FileHandle, block_index: u32) usize {
-        return (@enumToInt(file) + block_index) % cache_size;
+        return (@intFromEnum(file) + block_index) % cache_size;
     }
 
     fn isHit(cache: *const FileDataCache, file: FileHandle, block_index: u32) ?usize {
@@ -111,14 +111,14 @@ pub const FileDataCache = struct {
     fn fetchRefBlock(cache: *const FileDataCache, file: FileHandle, block_index: u32) ?CachedRefBlock {
         const index = cache.isHit(file, block_index) orelse {
             logger.debug("cache miss for {}+{}", .{
-                @enumToInt(file),
+                @intFromEnum(file),
                 block_index,
             });
             return null;
         };
 
         logger.debug("cache hit for {}+{}", .{
-            @enumToInt(file),
+            @intFromEnum(file),
             block_index,
         });
         return CachedRefBlock{
@@ -141,7 +141,7 @@ pub const FileDataCache = struct {
 
         logger.debug("set cache({}) to {}+{}", .{
             index,
-            @enumToInt(file),
+            @intFromEnum(file),
             block_index,
         });
     }
@@ -183,7 +183,7 @@ pub const FileSystem = struct {
 
         fs.version = root_block.version;
         fs.size = root_block.size;
-        fs.root_directory = @intToEnum(DirectoryHandle, bitmap_block_count + 1);
+        fs.root_directory = @enumFromInt(DirectoryHandle, bitmap_block_count + 1);
 
         return fs;
     }
@@ -248,7 +248,7 @@ pub const FileSystem = struct {
 
         // the root directy is always directly after the bitmap, so as soon as our
         // cursor is hitting the root dir, we're out of memory.
-        while (current_bitmap_block != @enumToInt(fs.root_directory)) : (current_bitmap_block += 1) {
+        while (current_bitmap_block != @intFromEnum(fs.root_directory)) : (current_bitmap_block += 1) {
             var buf: Block align(4) = undefined;
             try fs.device.readBlock(current_bitmap_block, &buf);
 
@@ -501,7 +501,7 @@ pub const FileSystem = struct {
             try fs.device.writeBlock(dir.blockNumber(), &list_buf);
         }
 
-        return @intToEnum(ObjectHandle, object_block);
+        return @enumFromInt(ObjectHandle, object_block);
     }
 
     pub fn createFile(fs: *FileSystem, dir: DirectoryHandle, name: []const u8, create_time: i128) !FileHandle {
@@ -809,8 +809,8 @@ pub const FileSystem = struct {
                 const entry = Entry{
                     .name_buffer = raw_entry.name,
                     .handle = switch (raw_entry.type) {
-                        0 => .{ .directory = @intToEnum(DirectoryHandle, raw_entry.ref) },
-                        1 => .{ .file = @intToEnum(FileHandle, raw_entry.ref) },
+                        0 => .{ .directory = @enumFromInt(DirectoryHandle, raw_entry.ref) },
+                        1 => .{ .file = @enumFromInt(FileHandle, raw_entry.ref) },
                         else => return error.CorruptFilesystem,
                     },
                 };
@@ -876,36 +876,36 @@ pub const MetaDataChangeSet = struct {
 pub const FileHandle = enum(u32) {
     _,
     pub fn object(h: FileHandle) ObjectHandle {
-        return @intToEnum(ObjectHandle, @enumToInt(h));
+        return @enumFromInt(ObjectHandle, @intFromEnum(h));
     }
 
     pub fn blockNumber(h: FileHandle) u32 {
-        return @enumToInt(h);
+        return @intFromEnum(h);
     }
 };
 
 pub const DirectoryHandle = enum(u32) {
     _,
     pub fn object(h: DirectoryHandle) ObjectHandle {
-        return @intToEnum(ObjectHandle, @enumToInt(h));
+        return @enumFromInt(ObjectHandle, @intFromEnum(h));
     }
 
     pub fn blockNumber(h: DirectoryHandle) u32 {
-        return @enumToInt(h);
+        return @intFromEnum(h);
     }
 };
 pub const ObjectHandle = enum(u32) {
     _,
 
     pub fn toFileHandle(h: ObjectHandle) FileHandle {
-        return @intToEnum(FileHandle, @enumToInt(h));
+        return @enumFromInt(FileHandle, @intFromEnum(h));
     }
     pub fn toDirectoryHandle(h: ObjectHandle) DirectoryHandle {
-        return @intToEnum(DirectoryHandle, @enumToInt(h));
+        return @enumFromInt(DirectoryHandle, @intFromEnum(h));
     }
 
     pub fn blockNumber(h: ObjectHandle) u32 {
-        return @enumToInt(h);
+        return @intFromEnum(h);
     }
 };
 

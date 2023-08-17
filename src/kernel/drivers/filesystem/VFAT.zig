@@ -173,7 +173,7 @@ fn destroyInstance(dri: *ashet.drivers.Driver, allocator: std.mem.Allocator, gen
 }
 
 fn enumCast(comptime T: type, v: anytype) T {
-    return @intToEnum(T, @enumToInt(v));
+    return @enumFromInt(T, @intFromEnum(v));
 }
 
 const File = struct {

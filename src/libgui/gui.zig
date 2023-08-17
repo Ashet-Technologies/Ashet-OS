@@ -51,7 +51,7 @@ pub const EventID = enum(usize) {
     _,
 
     pub fn fromNumber(id: usize) EventID {
-        return @intToEnum(EventID, id);
+        return @enumFromInt(EventID, id);
     }
 
     /// Constructs a new EventID from the given enum literal.
@@ -59,7 +59,7 @@ pub const EventID = enum(usize) {
     pub fn from(comptime tag: anytype) EventID {
         if (@typeInfo(@TypeOf(tag)) != .EnumLiteral)
             @compileError("tag must be a enum literal!");
-        return @intToEnum(EventID, @errorToInt(@field(anyerror, @tagName(tag))));
+        return @enumFromInt(EventID, @intFromError(@field(anyerror, @tagName(tag))));
 
         // const T = struct {
         //     var x: u8 = undefined;

@@ -139,12 +139,12 @@ pub const Thread = struct {
         const stack_bottom = try ashet.memory.ThreadAllocator.alloc(stack_size);
         errdefer ashet.memory.ThreadAllocator.free(stack_bottom);
 
-        const thread = @intToPtr(*Thread, @ptrToInt(stack_bottom.ptr) + stack_size - @sizeOf(Thread));
+        const thread = @ptrFromInt(*Thread, @intFromPtr(stack_bottom.ptr) + stack_size - @sizeOf(Thread));
         const thread_proc = options.process;
 
         thread.* = Thread{
-            .sp = @ptrToInt(thread),
-            .ip = @ptrToInt(&ashet_scheduler_threadTrampoline),
+            .sp = @intFromPtr(thread),
+            .ip = @intFromPtr(&ashet_scheduler_threadTrampoline),
             .exit_code = 0,
             .stack_size = stack_size,
             .process = thread_proc,
@@ -155,16 +155,16 @@ pub const Thread = struct {
         }
 
         if (@import("builtin").mode == .Debug) {
-            thread.debug_info.entry_point = @ptrToInt(func);
+            thread.debug_info.entry_point = @intFromPtr(func);
         }
         switch (target) {
             .riscv32 => {
                 thread.push(0x0000_0000); //      x3  ; gp Global pointer
-                thread.push(@ptrToInt(&ashet.syscalls.syscall_table)); //      x4  ; tp Thread pointer
+                thread.push(@intFromPtr(&ashet.syscalls.syscall_table)); //      x4  ; tp Thread pointer
                 thread.push(0x0000_0000); //      x8  ; s0
                 thread.push(0x0000_0000); //      x9  ; s1
-                thread.push(@ptrToInt(func)); // x18  ; s2
-                thread.push(@ptrToInt(arg)); //  x19  ; s3
+                thread.push(@intFromPtr(func)); // x18  ; s2
+                thread.push(@intFromPtr(arg)); //  x19  ; s3
                 thread.push(0x0000_0000); //     x20
                 thread.push(0x0000_0000); //     x21
                 thread.push(0x0000_0000); //     x22
@@ -175,7 +175,7 @@ pub const Thread = struct {
                 thread.push(0x0000_0000); //     x27
             },
             .x86 => {
-                thread.push(@ptrToInt(&ashet_scheduler_threadTrampoline)); // return address
+                thread.push(@intFromPtr(&ashet_scheduler_threadTrampoline)); // return address
 
                 // thread.push(0x0000_0000); // EFLAGS
                 thread.push(0x0000_0000); // EDI
@@ -183,8 +183,8 @@ pub const Thread = struct {
                 thread.push(0x0000_0000); // EBP
                 thread.push(0x0000_0000); // EDX
                 thread.push(0x0000_0000); // ECX
-                thread.push(@ptrToInt(arg)); // EBX
-                thread.push(@ptrToInt(func)); // EAX
+                thread.push(@intFromPtr(arg)); // EBX
+                thread.push(@intFromPtr(func)); // EAX
             },
             .arm => @compileError("arm support not implemented yet!"),
 
@@ -307,7 +307,7 @@ pub const Thread = struct {
 
     /// Returns the pointer to the "stack top"
     pub fn getBasePointer(thread: *Thread) [*]u8 {
-        return @intToPtr([*]u8, @ptrToInt(thread) + @sizeOf(Thread));
+        return @ptrFromInt([*]u8, @intFromPtr(thread) + @sizeOf(Thread));
     }
 
     fn internalDestroy(thread: *Thread) void {
@@ -345,11 +345,11 @@ pub const Thread = struct {
 
     fn push(thread: *Thread, value: u32) void {
         thread.sp -= 4;
-        @intToPtr(*u32, thread.sp).* = value;
+        @ptrFromInt(*u32, thread.sp).* = value;
     }
 
     fn pop(thread: *Thread) u32 {
-        const val = @intToPtr(*u32, thread.sp).*;
+        const val = @ptrFromInt(*u32, thread.sp).*;
         thread.sp += 4;
         return val;
     }
@@ -376,12 +376,12 @@ pub const Thread = struct {
         _ = options;
         if (@import("builtin").mode == .Debug) {
             try writer.print("Thread(0x{X:0>8}, name={s}, ep=0x{X:0>8})", .{
-                @ptrToInt(self),
+                @intFromPtr(self),
                 std.mem.sliceTo(&self.debug_info.name, 0),
                 self.debug_info.entry_point,
             });
         } else {
-            try writer.print("Thread(0x{X:0>8})", .{@ptrToInt(self)});
+            try writer.print("Thread(0x{X:0>8})", .{@intFromPtr(self)});
         }
     }
 };
@@ -419,7 +419,7 @@ export var ashet_scheduler_restore_thread: *Thread = undefined;
 var kernel_thread_backup: [std.mem.alignForward(@sizeOf(Thread) + 56, 256)]u8 align(256) = undefined;
 
 pub fn getKernelThread() *Thread {
-    return @intToPtr(*Thread, @ptrToInt(&kernel_thread_backup) + kernel_thread_backup.len - @sizeOf(Thread));
+    return @ptrFromInt(*Thread, @intFromPtr(&kernel_thread_backup) + kernel_thread_backup.len - @sizeOf(Thread));
 }
 
 fn nodeToThread(node: *ThreadQueue.Node) *Thread {

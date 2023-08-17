@@ -33,8 +33,8 @@ const MainWindow = struct {
 };
 
 const events = struct {
-    pub const cancel = @intToEnum(gui.EventID, 1);
-    pub const login = @intToEnum(gui.EventID, 2);
+    pub const cancel = @enumFromInt(gui.EventID, 1);
+    pub const login = @enumFromInt(gui.EventID, 2);
 };
 
 var tb_user_backing: [64]u8 = undefined;

@@ -253,7 +253,7 @@ pub const VectorFont = struct {
     pub fn getTurtleOptions(font: VectorFont) turtlefont.RasterOptions {
         return turtlefont.RasterOptions{
             .font_size = font.size,
-            .dot_size = font.size / 16 + @boolToInt(font.bold),
+            .dot_size = font.size / 16 + @intFromBool(font.bold),
             .stroke_size = if (font.bold) @as(u15, 2) else @as(u15, 1),
         };
     }
@@ -268,7 +268,7 @@ pub const VectorFont = struct {
             var glyph = font.getGlyph(cp) orelse continue;
 
             width += @intCast(u15, opt.scaleX(glyph.advance));
-            width += @boolToInt(font.bold);
+            width += @intFromBool(font.bold);
         }
 
         return width;
