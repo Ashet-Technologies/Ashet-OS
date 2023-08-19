@@ -7,7 +7,7 @@ pub const input = @import("input.zig");
 pub const network = @import("network.zig");
 
 pub const ControlRegs = extern struct {
-    pub const magic = @bitCast(u32, @as([4]u8, "virt".*));
+    pub const magic: u32 = @bitCast(@as([4]u8, "virt".*));
 
     magic: u32, // "virt"
     version: u32,
@@ -87,11 +87,11 @@ pub const ControlRegs = extern struct {
         const legacy = regs.isLegacy();
 
         regs.driver_features_sel = 0;
-        regs.driver_features = @truncate(u32, selected_features >> 0);
+        regs.driver_features = @truncate(selected_features >> 0);
 
         if (!legacy) {
             regs.driver_features_sel = 1;
-            regs.driver_features = @truncate(u32, selected_features >> 32);
+            regs.driver_features = @as(u32, @truncate(selected_features >> 32));
         }
 
         if (legacy) {

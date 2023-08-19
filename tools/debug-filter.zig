@@ -102,7 +102,7 @@ pub fn readElfDebugInfo(allocator: std.mem.Allocator, elf_file: std.fs.File) !dw
     const elf = std.elf;
     nosuspend {
         const mapped_mem = try mapWholeFile(elf_file);
-        const hdr = @ptrCast(*const elf.Elf32_Ehdr, &mapped_mem[0]);
+        const hdr: *const elf.Elf32_Ehdr = @ptrCast(&mapped_mem[0]);
         if (!std.mem.eql(u8, hdr.e_ident[0..4], elf.MAGIC)) return error.InvalidElfMagic;
         if (hdr.e_ident[elf.EI_VERSION] != 1) return error.InvalidElfVersion;
 
@@ -115,15 +115,9 @@ pub fn readElfDebugInfo(allocator: std.mem.Allocator, elf_file: std.fs.File) !dw
 
         const shoff = hdr.e_shoff;
         const str_section_off = shoff + @as(u64, hdr.e_shentsize) * @as(u64, hdr.e_shstrndx);
-        const str_shdr = @ptrCast(
-            *const elf.Elf32_Shdr,
-            @alignCast(@alignOf(elf.Elf32_Shdr), &mapped_mem[std.math.cast(usize, str_section_off) orelse return error.Overflow]),
-        );
+        const str_shdr = @as(*const elf.Elf32_Shdr, @ptrCast(@alignCast(&mapped_mem[std.math.cast(usize, str_section_off) orelse return error.Overflow])));
         const header_strings = mapped_mem[str_shdr.sh_offset .. str_shdr.sh_offset + str_shdr.sh_size];
-        const shdrs = @ptrCast(
-            [*]const elf.Elf32_Shdr,
-            @alignCast(@alignOf(elf.Elf32_Shdr), &mapped_mem[shoff]),
-        )[0..hdr.e_shnum];
+        const shdrs = @as([*]const elf.Elf32_Shdr, @ptrCast(@alignCast(&mapped_mem[shoff])))[0..hdr.e_shnum];
 
         var opt_debug_info: ?[]const u8 = null;
         var opt_debug_abbrev: ?[]const u8 = null;

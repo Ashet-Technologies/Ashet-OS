@@ -98,7 +98,7 @@ pub const ResourceAttachBacking = extern struct {
     pub fn entries(self: anytype) @import("std").zig.c_translation.FlexibleArrayType(@TypeOf(self), MemEntry) {
         const Intermediate = @import("std").zig.c_translation.FlexibleArrayType(@TypeOf(self), u8);
         const ReturnType = @import("std").zig.c_translation.FlexibleArrayType(@TypeOf(self), MemEntry);
-        return @ptrCast(ReturnType, @alignCast(@alignOf(MemEntry), @ptrCast(Intermediate, self) + 32));
+        return @as(ReturnType, @ptrCast(@alignCast(@as(Intermediate, @ptrCast(self)) + 32)));
     }
 };
 

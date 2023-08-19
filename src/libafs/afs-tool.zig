@@ -462,7 +462,7 @@ const BlockDevice = struct {
     }
 
     fn fromCtx(ctx: *anyopaque) *BD {
-        return @as(*BD, @ptrCast(@alignCast(@alignOf(BD), ctx)));
+        return @as(*BD, @ptrCast(@alignCast(ctx)));
     }
 
     fn getBlockCount(ctx: *anyopaque) u32 {

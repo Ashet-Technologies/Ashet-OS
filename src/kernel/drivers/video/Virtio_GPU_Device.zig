@@ -153,16 +153,16 @@ fn getResolution(driver: *Driver) Resolution {
 fn getMaxResolution(driver: *Driver) Resolution {
     const vd = @fieldParentPtr(Virtio_GPU_Device, "driver", driver);
     return ashet.video.Resolution{
-        .width = @as(u16, @intCast(std.math.min(max_width, vd.gpu.fb_width))),
-        .height = @as(u16, @intCast(std.math.min(max_height, vd.gpu.fb_height))),
+        .width = @as(u16, @intCast(@min(max_width, vd.gpu.fb_width))),
+        .height = @as(u16, @intCast(@min(max_height, vd.gpu.fb_height))),
     };
 }
 
 fn setResolution(driver: *Driver, width: u15, height: u15) void {
     const vd = @fieldParentPtr(Virtio_GPU_Device, "driver", driver);
     vd.graphics_resized = true;
-    vd.graphics_width = std.math.min(max_width, width);
-    vd.graphics_height = std.math.min(max_height, height);
+    vd.graphics_width = @min(max_width, width);
+    vd.graphics_height = @min(max_height, height);
 }
 
 fn setBorder(driver: *Driver, b: ColorIndex) void {

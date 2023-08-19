@@ -80,8 +80,8 @@ pub fn debugWrite(msg: []const u8) void {
 
 // pub const flash = ashet.memory.Section{ .offset = 0x2000_000, .length = 0x200_0000 };
 
-extern const __machine_linmem_start: anyopaque align(4);
-extern const __machine_linmem_end: anyopaque align(4);
+extern const __machine_linmem_start: u8 align(4);
+extern const __machine_linmem_end: u8 align(4);
 
 pub fn getLinearMemoryRegion() ashet.memory.Section {
     const linmem_start = @intFromPtr(&__machine_linmem_start);

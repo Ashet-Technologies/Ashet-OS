@@ -135,8 +135,8 @@ pub fn getEvent() ?Event {
 
                 const max_size = ashet.video.getMaxResolution();
 
-                cursor.x = std.math.clamp(cursor.x + dx, 0, max_size.width - 1);
-                cursor.y = std.math.clamp(cursor.y + dy, 0, max_size.height - 1);
+                cursor.x = @intCast(std.math.clamp(cursor.x + dx, 0, @as(i17, max_size.width -| 1)));
+                cursor.y = @intCast(std.math.clamp(cursor.y + dy, 0, @as(i17, max_size.height -| 1)));
 
                 return Event{ .mouse = .{
                     .type = .motion,

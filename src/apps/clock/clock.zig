@@ -68,7 +68,7 @@ pub fn main() !void {
 const gui = @import("ashet-gui");
 
 fn paint(window: *const ashet.ui.Window) void {
-    const time = std.time.epoch.EpochSeconds{ .secs = @as(u64, @intCast(std.math.max(0, @divTrunc(ashet.time.nanoTimestamp(), std.time.ns_per_s)))) };
+    const time = std.time.epoch.EpochSeconds{ .secs = @as(u64, @intCast(@max(0, @divTrunc(ashet.time.nanoTimestamp(), std.time.ns_per_s)))) };
 
     var fb = gui.Framebuffer.forWindow(window);
 

@@ -1,6 +1,5 @@
 const std = @import("std");
-
-const FatFS = @import("vendor/zfat/build.zig");
+const FatFS = @import("zfat");
 
 const rootfs_dir = std.Build.InstallDir{ .custom = "rootfs" };
 
@@ -328,11 +327,17 @@ pub fn build(b: *std.Build) !void {
 
         const cguana_dep = b.anonymousDependency("vendor/ziglibc", @import("vendor/ziglibc/build.zig"), .{
             .target = machine_spec.platform.target,
-            .link = .static,
+            .optimize = .ReleaseSafe,
+
+            .static = true,
+            .dynamic = false,
             .start = .none,
             .trace = false,
-            .optimize = .ReleaseSafe,
-            .variant = .only_std,
+
+            .cstd = true,
+            .posix = false,
+            .gnu = false,
+            .linux = false,
         });
 
         const ashet_libc = cguana_dep.artifact("cguana");
@@ -864,3 +869,94 @@ const AssetBundleStep = struct {
         bundle.output_file.path = bundle_file_source.getPath(bundle.builder);
     }
 };
+
+// const DiskImageStep = struct {
+//     pub const Format = enum {
+//         adf,
+//         fat32,
+//     };
+
+//     pub const Options = struct {
+//         format: Format,
+//         disk_size: u64,
+//     };
+
+//     step: std.Build.Step,
+//     disk_file: std.Build.GeneratedFile,
+//     entries: std.ArrayList(Entry),
+
+//     format: Format,
+//     disk_size: u64,
+
+//     pub fn create(b: *std.Build, options: Options) *DiskImageStep {
+//         const dis = b.allocator.create(DiskImageStep) catch @panic("oom");
+//         dis.* = DiskImageStep{
+//             .step = std.Build.Step.init(.{
+//                 .id = .custom,
+//                 .name = "disk image",
+//                 .owner = b,
+//                 .makeFn = make,
+//                 .first_ret_addr = @returnAddress(),
+//             }),
+//             .disk_file = .{ .step = &dis.step },
+//             .entries = std.ArrayList(Entry).init(b.allocator),
+
+//             .format = options.format,
+//             .disk_size = options.disk_size,
+//         };
+//         return dis;
+//     }
+
+//     pub fn getDiskFile(dis: *DiskImageStep) std.Build.LazyPath {
+//         return .{ .generated = &dis.disk_file };
+//     }
+
+//     pub fn copyFile(dis: *DiskImageStep, source: std.Build.LazyPath, destination: []const u8) void {
+//         std.debug.assert(std.fs.path.isAbsolutePosix(destination));
+//         dis.entries.append(.{
+//             .copy_file = .{
+//                 .source = source.dupe(dis.step.owner),
+//                 .dest = dis.step.owner.dupe(destination),
+//             },
+//         }) catch @panic("oom");
+//         source.addStepDependencies(&dis.step);
+//     }
+
+//     pub fn copyDirectory(dis: *DiskImageStep, source: std.Build.LazyPath, destination: []const u8) void {
+//         std.debug.assert(std.fs.path.isAbsolutePosix(destination));
+//         dis.entries.append(.{
+//             .copy_directory = .{
+//                 .source = source.dupe(dis.step.owner),
+//                 .dest = dis.step.owner.dupe(destination),
+//             },
+//         }) catch @panic("oom");
+//         source.addStepDependencies(&dis.step);
+//     }
+
+//     pub fn makeDirectory(dis: *DiskImageStep, directory_path: []const u8) void {
+//         std.debug.assert(std.fs.path.isAbsolutePosix(directory_path));
+//         dis.entries.append(.{
+//             .directory = dis.step.owner.dupe(directory_path),
+//         }) catch @panic("oom");
+//     }
+
+//     const Entry = union(enum) {
+//         make_directory: []const u8,
+//         copy_file: struct {
+//             source: std.Build.LazyPath,
+//             destination: []const u8,
+//         },
+//         copy_directory: struct {
+//             source: std.Build.LazyPath,
+//             destination: []const u8,
+//         },
+//     };
+
+//     fn make(step: *std.Build.Step, prog_node: *std.Progress.Node) !void {
+//         _ = prog_node;
+
+//         const dis = @fieldParentPtr(DiskImageStep, "step", step);
+
+//         _ = dis;
+//     }
+// };

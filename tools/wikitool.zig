@@ -119,8 +119,10 @@ pub fn main() !u8 {
         var output_image = try zigimg.Image.create(allocator, width, height, .rgba32);
         defer output_image.deinit();
 
+        const target_buffer: *const [width * height]u8 = @ptrCast(&target_image_buffer);
+
         for (output_image.pixels.rgba32, 0..) |*dest, index| {
-            const color_id = @ptrCast(*const [width * height]u8, &target_image_buffer)[index];
+            const color_id = target_buffer[index];
             dest.* = palette[color_id];
         }
 

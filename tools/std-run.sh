@@ -127,7 +127,7 @@ case $MACHINE in
         copyToFAT ./zig-out/bin/ashet-os ::/ashet-os
 
         # setup MBR:
-        dd bs=440 count=1 conv=notrunc if=/usr/lib/syslinux/mbr.bin "of=${DISK}" # TODO: Vendor mbr.bin
+        dd bs=440 count=1 conv=notrunc "if=${ROOT}/vendor/syslinux/mbr.bin" "of=${DISK}" # TODO: Vendor mbr.bin
         
         # install syslinux
         syslinux --offset 1048576 --install "${DISK}"

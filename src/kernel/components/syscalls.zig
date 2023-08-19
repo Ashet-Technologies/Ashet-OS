@@ -89,8 +89,8 @@ fn @"video.setResolution"(w: u16, h: u16) callconv(.C) void {
         return;
 
     ashet.video.setResolution(
-        @as(u15, @intCast(std.math.min(std.math.maxInt(u15), w))),
-        @as(u15, @intCast(std.math.min(std.math.maxInt(u15), h))),
+        @as(u15, @intCast(@min(std.math.maxInt(u15), w))),
+        @as(u15, @intCast(@min(std.math.maxInt(u15), h))),
     );
 }
 
@@ -163,8 +163,8 @@ fn @"ui.invalidate"(win: *const abi.Window, rect: abi.Rectangle) callconv(.C) vo
     var screen_rect = abi.Rectangle{
         .x = window.user_facing.client_rectangle.x + rect.x,
         .y = window.user_facing.client_rectangle.y + rect.y,
-        .width = @as(u16, @intCast(std.math.clamp(rect.width, 0, @as(i17, window.user_facing.client_rectangle.width) - rect.x))),
-        .height = @as(u16, @intCast(std.math.clamp(rect.height, 0, @as(i17, window.user_facing.client_rectangle.height) - rect.y))),
+        .width = @intCast(std.math.clamp(rect.width, 0, @as(i17, window.user_facing.client_rectangle.width) - rect.x)),
+        .height = @intCast(std.math.clamp(rect.height, 0, @as(i17, window.user_facing.client_rectangle.height) - rect.y)),
     };
 
     ashet.ui.invalidateRegion(screen_rect);

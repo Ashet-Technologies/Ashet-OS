@@ -132,7 +132,7 @@ pub const Thread = struct {
     /// **NOTE:** When choosing `stack_size`, one should remember that it will also include the management structures
     /// for the thread
     pub fn spawn(func: ThreadFunction, arg: ?*anyopaque, options: ThreadSpawnOptions) error{OutOfMemory}!*Thread {
-        const stack_size = std.mem.alignForward(options.stack_size, ashet.memory.page_size);
+        const stack_size = std.mem.alignForward(usize, options.stack_size, ashet.memory.page_size);
 
         // Requires the use of `ThreadAllocator`.
         // See `ashet_scheduler_threadExit` and `internalDestroy` for more explanation.
@@ -416,7 +416,7 @@ export var ashet_scheduler_save_thread: *Thread = undefined;
 export var ashet_scheduler_restore_thread: *Thread = undefined;
 
 // Reserve enough storage to save the kernel thread backup from
-var kernel_thread_backup: [std.mem.alignForward(@sizeOf(Thread) + 56, 256)]u8 align(256) = undefined;
+var kernel_thread_backup: [std.mem.alignForward(usize, @sizeOf(Thread) + 56, 256)]u8 align(256) = undefined;
 
 pub fn getKernelThread() *Thread {
     return @as(*Thread, @ptrFromInt(@intFromPtr(&kernel_thread_backup) + kernel_thread_backup.len - @sizeOf(Thread)));

@@ -138,10 +138,10 @@ pub fn main() !void {
         var pal = std.mem.zeroes([256][4]u8);
 
         for (pal[0..default_palette.len], default_palette) |*dst, src| {
-            dst.* = @bitCast([4]u8, @byteSwap(try std.fmt.parseInt(u32, src, 16)));
+            dst.* = @as([4]u8, @bitCast(@byteSwap(try std.fmt.parseInt(u32, src, 16))));
         }
         for (pal[default_palette.len..], 0..) |*dst, index| {
-            dst.* = @bitCast([4]u8, std.hash.CityHash32.hash(std.mem.asBytes(&@intCast(u32, index))));
+            dst.* = @as([4]u8, @bitCast(std.hash.CityHash32.hash(std.mem.asBytes(&@as(u32, @intCast(index))))));
         }
 
         break :blk pal;
@@ -182,8 +182,8 @@ pub fn main() !void {
                 sdl.SDL_MOUSEBUTTONDOWN => {
                     logUiEvent(ui_layout.interface.sendMouseEvent(.{
                         .type = .button_press,
-                        .x = @intCast(i16, event.button.x),
-                        .y = @intCast(i16, event.button.y),
+                        .x = @as(i16, @intCast(event.button.x)),
+                        .y = @as(i16, @intCast(event.button.y)),
                         .dx = 0,
                         .dy = 0,
                         .button = mapMouseButton(event.button.button) orelse continue,
@@ -192,8 +192,8 @@ pub fn main() !void {
                 sdl.SDL_MOUSEBUTTONUP => {
                     logUiEvent(ui_layout.interface.sendMouseEvent(.{
                         .type = .button_release,
-                        .x = @intCast(i16, event.button.x),
-                        .y = @intCast(i16, event.button.y),
+                        .x = @as(i16, @intCast(event.button.x)),
+                        .y = @as(i16, @intCast(event.button.y)),
                         .dx = 0,
                         .dy = 0,
                         .button = mapMouseButton(event.button.button) orelse continue,
@@ -203,8 +203,8 @@ pub fn main() !void {
                     if (event.wheel.y < 0) {
                         logUiEvent(ui_layout.interface.sendMouseEvent(.{
                             .type = .button_release,
-                            .x = @intCast(i16, event.wheel.x),
-                            .y = @intCast(i16, event.wheel.y),
+                            .x = @as(i16, @intCast(event.wheel.x)),
+                            .y = @as(i16, @intCast(event.wheel.y)),
                             .dx = 0,
                             .dy = 0,
                             .button = .wheel_down,
@@ -213,8 +213,8 @@ pub fn main() !void {
                     if (event.wheel.y > 0) {
                         logUiEvent(ui_layout.interface.sendMouseEvent(.{
                             .type = .button_release,
-                            .x = @intCast(i16, event.wheel.x),
-                            .y = @intCast(i16, event.wheel.y),
+                            .x = @as(i16, @intCast(event.wheel.x)),
+                            .y = @as(i16, @intCast(event.wheel.y)),
                             .dx = 0,
                             .dy = 0,
                             .button = .wheel_up,
@@ -225,10 +225,10 @@ pub fn main() !void {
                     if (event.wheel.y > 0) {
                         logUiEvent(ui_layout.interface.sendMouseEvent(.{
                             .type = .motion,
-                            .x = @intCast(i16, event.motion.x),
-                            .y = @intCast(i16, event.motion.y),
-                            .dx = @intCast(i16, event.motion.xrel),
-                            .dy = @intCast(i16, event.motion.yrel),
+                            .x = @as(i16, @intCast(event.motion.x)),
+                            .y = @as(i16, @intCast(event.motion.y)),
+                            .dx = @as(i16, @intCast(event.motion.xrel)),
+                            .dy = @as(i16, @intCast(event.motion.yrel)),
                             .button = .none,
                         }));
                     }
@@ -259,16 +259,16 @@ pub fn main() !void {
 
             std.debug.print("new size: {}x{}\n", .{ width, height });
 
-            const size = @intCast(usize, width * height);
+            const size = @as(usize, @intCast(width * height));
 
             rgba_buf = try allocator.alloc([4]u8, size);
             index_buf = try allocator.alloc(ashet.abi.ColorIndex, size);
         }
 
         var fb = gui.Framebuffer{
-            .width = @intCast(u15, width),
-            .height = @intCast(u15, height),
-            .stride = @intCast(u15, width),
+            .width = @as(u15, @intCast(width)),
+            .height = @as(u15, @intCast(height)),
+            .stride = @as(u15, @intCast(width)),
             .pixels = index_buf.ptr,
         };
 
@@ -278,8 +278,8 @@ pub fn main() !void {
             .client_rectangle = .{
                 .x = 0,
                 .y = 0,
-                .width = @intCast(u16, width),
-                .height = @intCast(u16, height),
+                .width = @as(u16, @intCast(width)),
+                .height = @as(u16, @intCast(height)),
             },
             .min_size = undefined,
             .max_size = undefined,

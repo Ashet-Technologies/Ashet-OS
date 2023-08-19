@@ -105,7 +105,7 @@ pub fn init(allocator: std.mem.Allocator, mbinfo: *multiboot.Info) !VESA_BIOS_Ex
 
     const framebuffer = try framebuffer_config.instantiate();
 
-    const vmem = try allocator.alignedAlloc(ColorIndex, ashet.memory.page_size, std.math.max(ashet.video.defaults.splash_screen.len, framebuffer.stride * framebuffer.height));
+    const vmem = try allocator.alignedAlloc(ColorIndex, ashet.memory.page_size, @max(ashet.video.defaults.splash_screen.len, framebuffer.stride * framebuffer.height));
     errdefer allocator.free(vmem);
 
     std.mem.copyForwards(ColorIndex, vmem, &ashet.video.defaults.splash_screen);
@@ -147,8 +147,8 @@ fn getMaxResolution(driver: *Driver) Resolution {
 
 fn setResolution(driver: *Driver, width: u15, height: u15) void {
     const vd = @fieldParentPtr(VESA_BIOS_Extension, "driver", driver);
-    vd.graphics_width = std.math.min(vd.framebuffer.width, width);
-    vd.graphics_height = std.math.min(vd.framebuffer.height, height);
+    vd.graphics_width = @min(vd.framebuffer.width, width);
+    vd.graphics_height = @min(vd.framebuffer.height, height);
     vd.graphics_resized = true;
 }
 

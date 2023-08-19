@@ -161,7 +161,7 @@ pub const Interface = struct {
 
                             // compute the index:
                             // left half of character is "cursor left of character", right half is "cursor right of character"
-                            const text_index = std.math.min((offset +| 3) / 6, box.editor.graphemeCount());
+                            const text_index = @min((offset +| 3) / 6, box.editor.graphemeCount());
 
                             box.editor.cursor = text_index;
                         },
@@ -171,7 +171,7 @@ pub const Interface = struct {
                         .scroll_bar => |*bar| {
                             const rects: ScrollBar.Boxes = bar.computeRectangles(widget.bounds) orelse return null;
 
-                            const step_size = std.math.max(1, bar.range / 10);
+                            const step_size = @max(1, bar.range / 10);
                             const prev = bar.level;
                             if (rects.decrease_button.contains(click_point)) {
                                 bar.level -|= step_size;
@@ -200,7 +200,7 @@ pub const Interface = struct {
 
                                 // std.log.info("clickrel {} {} {} {}\n", .{ pos, rel_pos, abs_jump, var_step_size });
 
-                                const delta = @as(u15, @intCast(std.math.max(1, (var_step_size * @as(u32, bar.range)) / 100)));
+                                const delta = @as(u15, @intCast(@max(1, (var_step_size * @as(u32, bar.range)) / 100)));
                                 if (pos < 0) {
                                     bar.level -|= delta;
                                 } else {
@@ -1022,8 +1022,8 @@ pub const ScrollBar = struct {
     );
 
     pub fn handleSize(bar: ScrollBar, available_space: u16) u16 {
-        return std.math.max(
-            std.math.min(std.math.max(available_space / 22, 5), 30),
+        return @max(
+            @min(@max(available_space / 22, 5), 30),
             available_space -| bar.range,
         );
     }

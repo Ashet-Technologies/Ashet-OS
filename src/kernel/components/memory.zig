@@ -11,12 +11,12 @@ pub const page_size = ashet.platform.page_size;
 
 var page_manager: RawPageStorageManager = undefined;
 
-extern const __kernel_flash_start: anyopaque align(4);
-extern const __kernel_flash_end: anyopaque align(4);
-extern const __kernel_data_start: anyopaque align(4);
-extern const __kernel_data_end: anyopaque align(4);
-extern const __kernel_bss_start: anyopaque align(4);
-extern const __kernel_bss_end: anyopaque align(4);
+extern const __kernel_flash_start: u8 align(4);
+extern const __kernel_flash_end: u8 align(4);
+extern const __kernel_data_start: u8 align(4);
+extern const __kernel_data_end: u8 align(4);
+extern const __kernel_bss_start: u8 align(4);
+extern const __kernel_bss_end: u8 align(4);
 
 pub const MemorySections = struct {
     data: bool,
@@ -186,7 +186,7 @@ const PageAllocator = struct {
 
         std.debug.assert(ptr_align <= std.math.log2(page_size));
 
-        const aligned_len = std.mem.alignForward(len, page_size);
+        const aligned_len = std.mem.alignForward(usize, len, page_size);
 
         const alloc_page_count = page_manager.getRequiredPages(aligned_len);
 
@@ -213,8 +213,8 @@ const PageAllocator = struct {
         _ = buf_align;
         _ = ret_addr;
 
-        const buf_aligned_len = std.mem.alignForward(buf.len, page_size);
-        const ptr: *align(page_size) u8 = @alignCast(buf.ptr);
+        const buf_aligned_len = std.mem.alignForward(usize, buf.len, page_size);
+        const ptr: *align(page_size) u8 = @ptrCast(@alignCast(buf.ptr));
 
         page_manager.freePages(PageSlice{
             .page = page_manager.ptrToPage(ptr) orelse @panic("invalid address in free!"),
@@ -320,13 +320,13 @@ const RawPageStorageManager = struct {
         var pm = RawPageStorageManager{
             .region = Section{
                 // make sure that we've aligned our memory section forward to a page boundary.
-                .offset = std.mem.alignForward(section.offset, page_size),
+                .offset = std.mem.alignForward(usize, section.offset, page_size),
                 .length = undefined,
             },
         };
         // adjust the memory length to be a multiple of page_size, including our (potentially now) aligned
         // memory start.
-        pm.region.length = std.mem.alignBackward(section.length -| (pm.region.offset - section.offset), page_size);
+        pm.region.length = std.mem.alignBackward(usize, section.length -| (pm.region.offset - section.offset), page_size);
 
         const bmp = pm.bitmap();
 
@@ -395,7 +395,7 @@ const RawPageStorageManager = struct {
     /// Returns the number of pages required for a given number of `bytes`.
     pub fn getRequiredPages(pm: RawPageStorageManager, bytes: usize) u32 {
         _ = pm;
-        return @as(u32, @intCast(std.mem.alignForward(bytes, page_size) / page_size));
+        return @intCast(std.mem.alignForward(usize, bytes, page_size) / page_size);
     }
 
     /// Allocates `count` physical pages and returns a slice to the allocated pages.

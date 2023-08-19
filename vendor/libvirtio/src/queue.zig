@@ -58,23 +58,23 @@ pub fn VirtQ(comptime queue_size: comptime_int) type {
                 regs.legacy_queue_pfn = @intFromPtr(vq) / page_size;
             } else {
                 const vq_desc = @as(u64, @intFromPtr(&vq.descriptors));
-                regs.queue_desc_lo = @truncate(u32, (vq_desc >> 0));
-                regs.queue_desc_hi = @truncate(u32, (vq_desc >> 32));
+                regs.queue_desc_lo = @as(u32, @truncate((vq_desc >> 0)));
+                regs.queue_desc_hi = @as(u32, @truncate((vq_desc >> 32)));
 
                 const vq_avail = @as(u64, @intFromPtr(&vq.avail));
-                regs.queue_avail_lo = @truncate(u32, (vq_avail >> 0));
-                regs.queue_avail_hi = @truncate(u32, (vq_avail >> 32));
+                regs.queue_avail_lo = @as(u32, @truncate((vq_avail >> 0)));
+                regs.queue_avail_hi = @as(u32, @truncate((vq_avail >> 32)));
 
                 const vq_used = @as(u64, @intFromPtr(&vq.used));
-                regs.queue_used_lo = @truncate(u32, (vq_used >> 0));
-                regs.queue_used_hi = @truncate(u32, (vq_used >> 32));
+                regs.queue_used_lo = @as(u32, @truncate((vq_used >> 0)));
+                regs.queue_used_hi = @as(u32, @truncate((vq_used >> 32)));
             }
         }
 
         pub const DescriptorAccess = enum { read, write };
 
         pub fn pushDescriptor(vq: *Queue, comptime T: type, ptr: *T, access: DescriptorAccess, first: bool, last: bool) void {
-            return vq.pushDescriptorRaw(@ptrCast(*anyopaque, ptr), @sizeOf(T), access, first, last);
+            return vq.pushDescriptorRaw(@as(*anyopaque, @ptrCast(ptr)), @sizeOf(T), access, first, last);
         }
 
         fn flagIf(value: bool, flag: u16) u16 {

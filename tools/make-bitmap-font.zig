@@ -12,11 +12,11 @@ pub fn main() !void {
     try writer.writeIntLittle(u32, 256);
 
     for (0..256) |cp| {
-        try writer.writeIntLittle(u32, @intCast(u32, cp) | (6 << 24));
+        try writer.writeIntLittle(u32, @as(u32, @intCast(cp)) | (6 << 24));
     }
 
     for (0..256) |i| {
-        try writer.writeIntLittle(u32, @intCast(u32, 10 * i));
+        try writer.writeIntLittle(u32, @as(u32, @intCast(10 * i)));
     }
 
     const src_w = 7;
@@ -59,7 +59,7 @@ pub fn main() !void {
                 const pix = source_pixels[src_i];
 
                 if (pix != 0) {
-                    bits |= @as(u8, 1) << @intCast(u3, y);
+                    bits |= @as(u8, 1) << @as(u3, @intCast(y));
                 }
             }
 

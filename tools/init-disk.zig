@@ -92,7 +92,7 @@ pub fn main() !u8 {
 
     // install apps
     {
-        var walker = try std.fs.cwd().openIterableDir("zig-out/apps", .{});
+        var walker = try std.fs.cwd().openIterableDir("zig-out/rootfs/apps", .{});
         defer walker.close();
 
         var iter = walker.iterate();
@@ -317,16 +317,16 @@ pub const Disk = struct {
                 },
 
                 .get_sector_count => {
-                    const size = @ptrCast(*fatfs.LBA, @alignCast(@alignOf(fatfs.LBA), buff));
+                    const size: *fatfs.LBA = @ptrCast(@alignCast(buff));
                     const len = (file.getEndPos() catch return error.IoError) -| self.offset * sector_size;
-                    size.* = @intCast(fatfs.LBA, len / 512);
+                    size.* = @intCast(len / 512);
                 },
                 .get_sector_size => {
-                    const size = @ptrCast(*fatfs.WORD, @alignCast(@alignOf(fatfs.WORD), buff));
+                    const size: *fatfs.WORD = @ptrCast(@alignCast(buff));
                     size.* = 512;
                 },
                 .get_block_size => {
-                    const size = @ptrCast(*fatfs.DWORD, @alignCast(@alignOf(fatfs.DWORD), buff));
+                    const size: *fatfs.DWORD = @ptrCast(@alignCast(buff));
                     size.* = 1;
                 },
 

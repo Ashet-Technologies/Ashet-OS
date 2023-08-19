@@ -3,12 +3,12 @@
     .version = "0.1.0",
     .dependencies = .{
         .zfat = .{
-            .url = "https://github.com/ZigEmbeddedGroup/zfat/archive/efd459629f11b7081e6df62241b3e2befb4c6bca.tar.gz",
-            .hash = "1220a53af031f26031a55537e0a61d756ef462cb24427928685a0b166c6359859920",
+            .url = "https://github.com/ZigEmbeddedGroup/zfat/archive/c97bcca86b4e878023df070c9e0264a21c056622.tar.gz",
+            .hash = "1220a1f050f3a67785cbe68283b252f02f72885eea80d6a9e1856b02cd66deaf1492",
         },
         .@"text-editor" = .{
-            .url = "https://github.com/MasterQ32/TextEditor/archive/6791dff8e0f0cd22fe39a498165274bb3e999c8c.tar.gz",
-            .hash = "1220a847aea44b6c4c49e87796c7194cd226a6bb8656903436561d1254dfffd4812e",
+            .url = "https://github.com/MasterQ32/TextEditor/archive/cfa2d58f4870ef7f74b7f45b57e86c492001a6c9.tar.gz",
+            .hash = "12203149d62eb94d919582cfd2482a4abd14b7908a69928ec0fe2724969388a2ad01",
         },
         .zigimg = .{
             .url = "https://github.com/zigimg/zigimg/archive/40ddb16fd246174545b7327a12dce7f0889ada7a.tar.gz",

@@ -209,8 +209,8 @@ pub fn startAppElf(app: AppID) !void {
             //         return error.MemoryAlreadyUsed;
             // }
 
-            lo_addr = std.math.min(lo_addr, @as(usize, @intCast(phdr.p_vaddr)));
-            hi_addr = std.math.max(hi_addr, @as(usize, @intCast(phdr.p_vaddr + phdr.p_memsz)));
+            lo_addr = @min(lo_addr, @as(usize, @intCast(phdr.p_vaddr)));
+            hi_addr = @max(hi_addr, @as(usize, @intCast(phdr.p_vaddr + phdr.p_memsz)));
         }
 
         break :blk hi_addr - lo_addr;

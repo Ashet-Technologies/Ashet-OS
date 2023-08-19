@@ -331,7 +331,7 @@ const Raycaster = struct {
 
                 const u = @as(i32, @intFromFloat(@as(f32, @floatFromInt(texture.bitmap.width - 1)) * fract(result.u)));
 
-                const maxy = std.math.min(height, wallBottom);
+                const maxy = @min(height, wallBottom);
 
                 var y: u15 = @as(u15, @intCast(std.math.clamp(wallTop, 0, height)));
                 while (y < maxy) : (y += 1) {
@@ -344,7 +344,7 @@ const Raycaster = struct {
             switch (floor_texture) {
                 .background_texture => unreachable,
                 .flat_color => |color| {
-                    var y: u15 = @as(u15, @intCast(std.math.min(height, wallBottom)));
+                    var y: u15 = @as(u15, @intCast(@min(height, wallBottom)));
                     while (y < height) : (y += 1) {
                         fb.setPixel(x, y, color);
                     }
@@ -356,7 +356,7 @@ const Raycaster = struct {
                     const u_scale = @as(f32, @floatFromInt(texture.bitmap.width - 1));
                     const v_scale = @as(f32, @floatFromInt(texture.bitmap.height - 1));
 
-                    var y: u15 = @as(u15, @intCast(std.math.min(height, wallBottom)));
+                    var y: u15 = @as(u15, @intCast(@min(height, wallBottom)));
                     while (y < height) : (y += 1) {
                         const d = perspective_factor[y];
 
@@ -436,11 +436,11 @@ const Raycaster = struct {
 
         const left = cx - spriteWidth / 2;
 
-        const minx = std.math.max(0, left);
-        const maxx = std.math.min(width - 1, cx + spriteWidth / 2);
+        const minx = @max(0, left);
+        const maxx = @min(width - 1, cx + spriteWidth / 2);
 
-        const miny = std.math.max(0, wallTop);
-        const maxy = std.math.min(height, wallBottom);
+        const miny = @max(0, wallTop);
+        const maxy = @min(height, wallBottom);
 
         const texture_shift = @as(u8, @intCast(16 * sprite.texture_id));
 

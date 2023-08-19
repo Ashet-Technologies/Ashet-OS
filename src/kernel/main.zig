@@ -145,8 +145,8 @@ pub const Debug = struct {
     }
 };
 
-extern var kernel_stack: anyopaque;
-extern var kernel_stack_start: anyopaque;
+extern var kernel_stack: u8;
+extern var kernel_stack_start: u8;
 
 pub fn stackCheck() void {
     const sp = platform.getStackPointer();

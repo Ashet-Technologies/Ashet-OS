@@ -136,7 +136,7 @@ fn fetchOrSpace(str: []const u8, index: usize) u8 {
 }
 
 pub fn readLine(buffer: []u8, limit: usize) error{ NoSpaceLeft, Cancelled, OutOfMemory, InvalidUtf8 }![]u8 {
-    const max_len = std.math.min(buffer.len, width - cursor.x);
+    const max_len = @min(buffer.len, width - cursor.x);
     if (max_len < limit)
         return error.NoSpaceLeft;
 

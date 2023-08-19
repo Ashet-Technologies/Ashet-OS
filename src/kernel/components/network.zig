@@ -389,7 +389,7 @@ fn unmapIP(addr: c.ip_addr_t) IP {
 
 fn limitLength(val: usize) u16 {
     @setRuntimeSafety(false);
-    return @as(u16, @intCast(std.math.min(val, std.math.maxInt(u16))));
+    return @as(u16, @intCast(@min(val, std.math.maxInt(u16))));
 }
 
 pub const udp = struct {
@@ -443,7 +443,7 @@ pub const udp = struct {
             return;
         };
 
-        const limited_len = @as(u16, @truncate(std.math.min(pbuf.tot_len, iop.inputs.buffer_len)));
+        const limited_len = @as(u16, @truncate(@min(pbuf.tot_len, iop.inputs.buffer_len)));
 
         const copied = c.pbuf_copy_partial(pbuf, iop.inputs.buffer_ptr, limited_len, 0);
         std.debug.assert(limited_len == copied);
@@ -750,7 +750,7 @@ pub const tcp = struct {
         }
 
         const rest_len = event.inputs.data_len - op.total_sent;
-        const rest_limited = std.math.min(c.tcp_sndbuf(pcb), limitLength(rest_len));
+        const rest_limited = @min(c.tcp_sndbuf(pcb), limitLength(rest_len));
 
         const last = true; // (op.total_sent + rest_limited == event.data_len);
         event.@"error" = mapErrSet(
@@ -865,7 +865,7 @@ pub const tcp = struct {
         const available_src = pbuf.tot_len - data.recv_offset;
         const available_dst = op.event.inputs.buffer_len;
 
-        const copy_len = std.math.min(available_dst, available_src);
+        const copy_len = @min(available_dst, available_src);
 
         const copied_len = c.pbuf_copy_partial(pbuf, op.event.inputs.buffer_ptr, copy_len, data.recv_offset);
 

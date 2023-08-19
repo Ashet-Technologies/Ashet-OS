@@ -33,7 +33,7 @@ pub const Config = extern struct {
         ids: DevIDs,
 
         pub fn isBitSet(self: Data, bit: u16) bool {
-            return self.bitmap[bit / 8] & (@as(u8, 1) << @truncate(u3, bit % 8)) != 0;
+            return self.bitmap[bit / 8] & (@as(u8, 1) << @as(u3, @truncate(bit % 8))) != 0;
         }
     };
 };

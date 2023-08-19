@@ -101,7 +101,7 @@ pub const core = struct {
         if (maybe_error_trace) |stack_trace| {
             debug.write("error trace:\n");
             var frame_index: usize = 0;
-            var frames_left: usize = std.math.min(stack_trace.index, stack_trace.instruction_addresses.len);
+            var frames_left: usize = @min(stack_trace.index, stack_trace.instruction_addresses.len);
 
             while (frames_left != 0) : ({
                 frames_left -= 1;

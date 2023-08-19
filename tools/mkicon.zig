@@ -128,7 +128,7 @@ pub fn main() !u8 {
             if (isTransparent(src_color)) {
                 bitmap[i] = 0xFF; // transparent
             } else {
-                bitmap[i] = @intCast(u8, getBestMatch(palette, reduceTo565(src_color)));
+                bitmap[i] = @as(u8, @intCast(getBestMatch(palette, reduceTo565(src_color))));
             }
         }
     }
@@ -138,7 +138,7 @@ pub fn main() !u8 {
     for (bitmap) |c| {
         if (c >= (palette.len + 1) and c != 0xFF) @panic("color index out of range!");
         if (c != 0xFF)
-            limit = std.math.max(limit, c);
+            limit = @max(limit, c);
         if (c == 0xFF)
             transparency = true;
     }
@@ -152,8 +152,8 @@ pub fn main() !u8 {
     var writer = buffered_writer.writer();
 
     try writer.writeIntLittle(u32, 0x48198b74);
-    try writer.writeIntLittle(u16, @intCast(u16, raw_image.width));
-    try writer.writeIntLittle(u16, @intCast(u16, raw_image.height));
+    try writer.writeIntLittle(u16, @as(u16, @intCast(raw_image.width)));
+    try writer.writeIntLittle(u16, @as(u16, @intCast(raw_image.height)));
     try writer.writeIntLittle(u16, if (transparency) @as(u16, 0x0001) else 0x0000); // flags, enable transparency
     try writer.writeIntLittle(u8, limit); // palette size
     try writer.writeIntLittle(u8, 0xFF); // transparent
@@ -261,18 +261,18 @@ fn colorDist(a: Rgba32, b: Rgba32) u32 {
     const db = @as(i32, a.b) - @as(i32, b.b);
 
     switch (variant) {
-        .euclidean => return @intCast(u32, 2 * dr * dr + 4 * dg * dg + 3 * db * db),
+        .euclidean => return @as(u32, @intCast(2 * dr * dr + 4 * dg * dg + 3 * db * db)),
         .redmean_digital => if ((@as(u32, a.r) + b.r) / 2 < 128) {
-            return @intCast(u32, 2 * dr * dr + 4 * dg * dg + 3 * db * db);
+            return @as(u32, @intCast(2 * dr * dr + 4 * dg * dg + 3 * db * db));
         } else {
-            return @intCast(u32, 3 * dr * dr + 4 * dg * dg + 2 * db * db);
+            return @as(u32, @intCast(3 * dr * dr + 4 * dg * dg + 2 * db * db));
         },
         .redmean_smooth => {
-            const dhalf = @floatFromInt(f32, (@as(u32, a.r) + b.r) / 2);
-            const r2 = (2.0 + dhalf / 256) * @floatFromInt(f32, dr * dr);
-            const g2 = 4.0 * @floatFromInt(f32, dg * dg);
-            const b2 = (2.0 + (255.0 - dhalf) / 256) * @floatFromInt(f32, db * db);
-            return @intFromFloat(u32, 10.0 * (r2 + g2 + b2));
+            const dhalf = @as(f32, @floatFromInt((@as(u32, a.r) + b.r) / 2));
+            const r2 = (2.0 + dhalf / 256) * @as(f32, @floatFromInt(dr * dr));
+            const g2 = 4.0 * @as(f32, @floatFromInt(dg * dg));
+            const b2 = (2.0 + (255.0 - dhalf) / 256) * @as(f32, @floatFromInt(db * db));
+            return @as(u32, @intFromFloat(10.0 * (r2 + g2 + b2)));
         },
     }
 }

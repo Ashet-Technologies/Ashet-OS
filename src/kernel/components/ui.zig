@@ -269,8 +269,8 @@ fn run(_: ?*anyopaque) callconv(.C) u32 {
                                     const prev_screen_rect = action.window.screenRectangle();
                                     const previous = rect.size();
 
-                                    rect.width = @as(u16, @intCast(std.math.clamp(@as(i17, rect.width) + dx, min.width, max.width)));
-                                    rect.height = @as(u16, @intCast(std.math.clamp(@as(i17, rect.height) + dy, min.height, max.height)));
+                                    rect.width = @intCast(std.math.clamp(@as(i17, rect.width) + dx, min.width, max.width));
+                                    rect.height = @intCast(std.math.clamp(@as(i17, rect.height) + dy, min.height, max.height));
 
                                     if (!rect.size().eql(previous)) {
                                         invalidateRegion(prev_screen_rect);
@@ -454,7 +454,7 @@ const MinimizedIterator = struct {
         const window = iter.inner.next() orelse return null;
 
         const title = window.title();
-        const width = @as(u15, @intCast(std.math.min(6 * title.len + 2 + 11 + 10, 75)));
+        const width = @as(u15, @intCast(@min(6 * title.len + 2 + 11 + 10, 75)));
         defer iter.dx += (width + 4);
 
         var mini = MinimizedWindow{
@@ -1039,15 +1039,15 @@ fn limitWindowSize(size: Size) Size {
 
 fn sizeMin(a: Size, b: Size) Size {
     return Size{
-        .width = std.math.min(a.width, b.width),
-        .height = std.math.min(a.height, b.height),
+        .width = @min(a.width, b.width),
+        .height = @min(a.height, b.height),
     };
 }
 
 fn sizeMax(a: Size, b: Size) Size {
     return Size{
-        .width = std.math.max(a.width, b.width),
-        .height = std.math.max(a.height, b.height),
+        .width = @max(a.width, b.width),
+        .height = @max(a.height, b.height),
     };
 }
 
@@ -1509,7 +1509,7 @@ pub const desktop = struct {
         {
             const name = ent.getName();
             @memset(&app.name, 0);
-            std.mem.copyForwards(u8, &app.name, name[0..std.math.min(name.len, app.name.len)]);
+            std.mem.copyForwards(u8, &app.name, name[0..@min(name.len, app.name.len)]);
         }
 
         if (dir.openFile("icon", .read_only, .open_existing)) |const_icon_file| {

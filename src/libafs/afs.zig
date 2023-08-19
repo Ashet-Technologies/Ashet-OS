@@ -630,7 +630,7 @@ pub const FileSystem = struct {
         if (object_size == 0)
             return 0; // short-cut, we don't need to access any data at all
 
-        const actual_len = std.math.min(data.len, object_size -| position);
+        const actual_len = @min(data.len, object_size -| position);
 
         var data_position = computeFileDataOffset(position);
 
@@ -663,7 +663,7 @@ pub const FileSystem = struct {
 
         var offset: usize = 0;
         while (offset < actual_len) {
-            const max_chunk_size = std.math.min(@sizeOf(Block), actual_len - offset);
+            const max_chunk_size = @min(@sizeOf(Block), actual_len - offset);
             std.debug.assert(max_chunk_size > 0);
 
             // std.debug.print("try reading {} bytes at ram={}/disk={} from block {}, max len {}...\n", .{
@@ -678,7 +678,7 @@ pub const FileSystem = struct {
                 data_position.ref_index += 1;
                 break :blk @sizeOf(Block);
             } else blk: {
-                const chunk_size = std.math.min(max_chunk_size, @as(usize, @sizeOf(Block)) - data_position.byte_offset);
+                const chunk_size = @min(max_chunk_size, @as(usize, @sizeOf(Block)) - data_position.byte_offset);
 
                 try Accessor.accessPartial(
                     fs.device,

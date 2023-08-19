@@ -478,20 +478,20 @@ do
 
         if int.values.width or (int.defaults.width and not int.values.left) then
           -- compute x from width and right
-          f:write(widget, ".x = ", var, " - @intCast(i16, ", widget, ".width)")
+          f:write(widget, ".x = ", var, " - @as(i16,@intCast(", widget, ".width))")
         else
           -- compute height from x and right
-          f:write(widget, ".width = @intCast(u16, std.math.max(0, ", var, " - ", widget, ".x))")
+          f:write(widget, ".width = @intCast(@max(0, ", var, " - ", widget, ".x))")
         end
 
       elseif ass.tag == "bottom" then
 
         if int.values.height or (int.defaults.height and not int.values.top) then
           -- compute y from height and bottom
-          f:write(widget, ".y = ", var, " - @intCast(i16, ", widget, ".height)")
+          f:write(widget, ".y = ", var, " - @as(i16, @intCast(", widget, ".height))")
         else
           -- compute height from top and bottom
-          f:write(widget, ".height = @intCast(u16, std.math.max(0, ", var, " - ", widget, ".y))")
+          f:write(widget, ".height = @intCast(@max(0, ", var, " - ", widget, ".y))")
         end
 
       else
@@ -522,7 +522,7 @@ do
         if assignment then
           f:write(widget, ".", value.name)
         else
-          f:write("@intCast(i16, ", widget, ".", value.name, ")")
+          f:write("@as(i16, @intCast(", widget, ".", value.name, "))")
         end
 
       elseif value.name == "right" then
@@ -597,9 +597,9 @@ do
           if val.name == "left" or val.name == "top" then
             f:write("0")
           elseif val.name == "right" then
-            f:write("@intCast(i16,container_rectangle.width)")
+            f:write("@as(i16,@intCast(container_rectangle.width))")
           elseif val.name == "bottom" then
-            f:write("@intCast(i16,container_rectangle.height)")
+            f:write("@as(i16,@intCast(container_rectangle.height))")
           else
             assert(false)
           end

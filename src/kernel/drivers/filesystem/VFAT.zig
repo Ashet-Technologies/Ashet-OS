@@ -529,7 +529,7 @@ const Enumerator = struct {
 
 fn nameToBuf(str: []const u8) [ashet.abi.max_file_name_len]u8 {
     var buf = std.mem.zeroes([ashet.abi.max_file_name_len]u8);
-    std.mem.copyForwards(u8, &buf, str[0..std.math.min(buf.len, str.len)]);
+    std.mem.copyForwards(u8, &buf, str[0..@min(buf.len, str.len)]);
     return buf;
 }
 

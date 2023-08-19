@@ -483,7 +483,7 @@ const LineNumberProgram = struct {
             });
 
             return debug.LineInfo{
-                .line = if (self.prev_line >= 0) @intCast(u64, self.prev_line) else 0,
+                .line = if (self.prev_line >= 0) @as(u64, @intCast(self.prev_line)) else 0,
                 .column = self.prev_column,
                 .file_name = file_name,
             };
@@ -554,7 +554,7 @@ fn parseFormValueConstant(in_stream: anytype, signed: bool, endian: std.builtin.
                 -1 => blk: {
                     if (signed) {
                         const x = try nosuspend leb.readILEB128(i64, in_stream);
-                        break :blk @bitCast(u64, x);
+                        break :blk @as(u64, @bitCast(x));
                     } else {
                         const x = try nosuspend leb.readULEB128(u64, in_stream);
                         break :blk x;
@@ -1080,7 +1080,7 @@ pub const DwarfInfo = struct {
                 ),
             };
             if (attr.form_id == FORM.implicit_const) {
-                result.attrs.items[i].value.Const.payload = @bitCast(u64, attr.payload);
+                result.attrs.items[i].value.Const.payload = @as(u64, @bitCast(attr.payload));
             }
         }
         return result;

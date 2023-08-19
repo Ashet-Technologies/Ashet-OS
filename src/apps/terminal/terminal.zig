@@ -484,7 +484,7 @@ const App = struct {
             },
             events.open_menu => std.log.info("open_menu", .{}),
             events.activate_tab => {
-                const tab = @as(*Tab, @ptrCast(@alignCast(@alignOf(Tab), event.tag)));
+                const tab: *Tab = @ptrCast(@alignCast(event.tag));
                 app.active_tab = tab;
                 app.refreshTabs();
                 app.paint();
@@ -742,7 +742,7 @@ const IopHandler = struct {
     pub fn create(comptime Context: type, comptime IOP: type, context: Context, comptime handler: fn (context: Context, iop: *IOP) void) IopHandler {
         const Wrapper = struct {
             fn handle(inner_context: ?*anyopaque, iop: *ashet.abi.IOP) void {
-                handler(@as(Context, @ptrCast(@alignCast(@alignOf(@typeInfo(Context).Pointer.child), inner_context))), ashet.abi.IOP.cast(IOP, iop));
+                handler(@as(Context, @ptrCast(@alignCast(inner_context))), ashet.abi.IOP.cast(IOP, iop));
             }
         };
         return IopHandler{

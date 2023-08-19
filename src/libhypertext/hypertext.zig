@@ -48,7 +48,7 @@ pub fn renderDocument(
 
         fn erasedLinkCallback(ctx: *const anyopaque, rect: ashet.abi.Rectangle, link: hdoc.Link) void {
             linkCallback(
-                @as(*const Ctx, @ptrCast(@alignCast(alignment, ctx))).*,
+                @as(*const Ctx, @ptrCast(@alignCast(ctx))).*,
                 rect,
                 link,
             );

@@ -87,11 +87,11 @@ pub fn clip(fb: Framebuffer, rect: Rectangle) ScreenRect {
     var width: u16 = rect.width;
     var height: u16 = rect.height;
 
-    width -|= @as(u16, @intCast(std.math.max(0, -rect.x)));
-    height -|= @as(u16, @intCast(std.math.max(0, -rect.y)));
+    width -|= @as(u16, @intCast(@max(0, -rect.x)));
+    height -|= @as(u16, @intCast(@max(0, -rect.y)));
 
-    const x = @as(u15, @intCast(std.math.max(0, rect.x)));
-    const y = @as(u15, @intCast(std.math.max(0, rect.y)));
+    const x = @as(u15, @intCast(@max(0, rect.x)));
+    const y = @as(u15, @intCast(@max(0, rect.y)));
 
     if (x + width > fb.width) {
         width = (fb.width -| x);
@@ -174,8 +174,8 @@ pub fn drawLine(fb: Framebuffer, from: Point, to: Point, color: ColorIndex) void
         if (from.y < 0 or from.y >= fb.height)
             return;
         // horizontal
-        const start = std.math.max(0, std.math.min(from.x, to.x)); // inclusive
-        const end = std.math.min(fb.width, std.math.max(from.x, to.x) + 1); // exlusive
+        const start = @max(0, @min(from.x, to.x)); // inclusive
+        const end = @min(fb.width, @max(from.x, to.x) + 1); // exlusive
 
         if (end < start)
             return;
@@ -186,8 +186,8 @@ pub fn drawLine(fb: Framebuffer, from: Point, to: Point, color: ColorIndex) void
         if (from.x < 0 or from.x >= fb.width)
             return;
 
-        const start = std.math.max(0, std.math.min(from.y, to.y)); // inclusive
-        const end = std.math.min(fb.height, std.math.max(from.y, to.y) + 1); // exlusive
+        const start = @max(0, @min(from.y, to.y)); // inclusive
+        const end = @min(fb.height, @max(from.y, to.y) + 1); // exlusive
 
         if (end < start)
             return;
@@ -346,7 +346,7 @@ pub const ScreenWriter = struct {
 
 pub fn screenWriter(fb: Framebuffer, x: i16, y: i16, font: *const Font, color: ColorIndex, max_width: ?u15) ScreenWriter {
     const limit = @as(u15, @intCast(if (max_width) |mw|
-        @as(u15, @intCast(std.math.max(0, x + mw)))
+        @as(u15, @intCast(@max(0, x + mw)))
     else
         fb.width));
 
