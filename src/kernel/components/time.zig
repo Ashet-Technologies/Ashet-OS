@@ -12,11 +12,11 @@ pub fn nanoTimestamp() i128 {
 }
 
 pub fn microTimestamp() i64 {
-    return @intCast(i64, @divTrunc(nanoTimestamp(), std.time.ns_per_us));
+    return @as(i64, @intCast(@divTrunc(nanoTimestamp(), std.time.ns_per_us)));
 }
 
 pub fn milliTimestamp() i64 {
-    return @intCast(i64, @divTrunc(nanoTimestamp(), std.time.ns_per_ms));
+    return @as(i64, @intCast(@divTrunc(nanoTimestamp(), std.time.ns_per_ms)));
 }
 
 pub fn timestamp() i64 {

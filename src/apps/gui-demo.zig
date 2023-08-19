@@ -33,8 +33,8 @@ const MainWindow = struct {
 };
 
 const events = struct {
-    pub const cancel = @enumFromInt(gui.EventID, 1);
-    pub const login = @enumFromInt(gui.EventID, 2);
+    pub const cancel = @as(gui.EventID, @enumFromInt(1));
+    pub const login = @as(gui.EventID, @enumFromInt(2));
 };
 
 var tb_user_backing: [64]u8 = undefined;
@@ -146,7 +146,7 @@ const demo_bitmap = gui.Bitmap{
     .width = 32,
     .height = 32,
     .stride = 32,
-    .pixels = &@bitCast([32 * 32]ColorIndex, [_]u8{
+    .pixels = &@as([32 * 32]ColorIndex, @bitCast([_]u8{
         15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
         15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
         7,  10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
@@ -211,5 +211,5 @@ const demo_bitmap = gui.Bitmap{
         10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 15,
         7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,
         7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  7,  15,
-    }),
+    })),
 };

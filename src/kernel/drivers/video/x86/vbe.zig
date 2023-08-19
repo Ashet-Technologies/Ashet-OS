@@ -10,7 +10,7 @@ pub const VideoMode = packed struct(u16) {
 };
 
 pub const Control = extern struct {
-    pub const signature: u32 = @bitCast(u32, [4]u8{ 'V', 'E', 'S', 'A' });
+    pub const signature: u32 = @as(u32, @bitCast([4]u8{ 'V', 'E', 'S', 'A' }));
 
     // 0	Signatur	4	Hier sollte "VESA" stehen (=0x56455341)
     signature: u32,
@@ -284,7 +284,7 @@ pub fn BCD(comptime Backing: type) type {
             comptime var i = 2 * @sizeOf(Backing);
             inline while (i > 0) {
                 i -= 1;
-                try writer.print("{X:0>1}", .{@truncate(u4, bcd.raw_value >> 4 * i)});
+                try writer.print("{X:0>1}", .{@as(u4, @truncate(bcd.raw_value >> 4 * i))});
             }
         }
     };
@@ -296,7 +296,7 @@ pub fn FarPtr(comptime T: type) type {
         segment: u16,
 
         pub fn get(fp: @This()) T {
-            return @ptrFromInt(T, (@as(usize, fp.segment) << 4) + @as(usize, fp.offset));
+            return @as(T, @ptrFromInt((@as(usize, fp.segment) << 4) + @as(usize, fp.offset)));
         }
 
         pub fn format(fp: @This(), comptime fmt: []const u8, opts: std.fmt.FormatOptions, writer: anytype) !void {

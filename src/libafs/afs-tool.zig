@@ -220,7 +220,7 @@ const DateTime = struct {
 
         const epoch = std.time.epoch;
 
-        const esecs = epoch.EpochSeconds{ .secs = @intCast(u64, @divTrunc(dt.ts, std.time.ns_per_s)) };
+        const esecs = epoch.EpochSeconds{ .secs = @as(u64, @intCast(@divTrunc(dt.ts, std.time.ns_per_s))) };
 
         const eday = esecs.getEpochDay();
         const dsecs = esecs.getDaySeconds();
@@ -462,7 +462,7 @@ const BlockDevice = struct {
     }
 
     fn fromCtx(ctx: *anyopaque) *BD {
-        return @ptrCast(*BD, @alignCast(@alignOf(BD), ctx));
+        return @as(*BD, @ptrCast(@alignCast(@alignOf(BD), ctx)));
     }
 
     fn getBlockCount(ctx: *anyopaque) u32 {

@@ -142,11 +142,11 @@ fn paint(window: *const ashet.ui.Window) void {
     fb.clear(ColorIndex.get(0));
 
     fb.fillRectangle(
-        newRect(@intCast(i15, window.client_rectangle.width - 10), 0, 10, window.client_rectangle.height),
+        newRect(@as(i15, @intCast(window.client_rectangle.width - 10)), 0, 10, window.client_rectangle.height),
         ashet.abi.ColorIndex.get(2),
     );
     fb.fillRectangle(
-        newRect(0, @intCast(i15, window.client_rectangle.height - 10), window.client_rectangle.width - 10, 10),
+        newRect(0, @as(i15, @intCast(window.client_rectangle.height - 10)), window.client_rectangle.width - 10, 10),
         ashet.abi.ColorIndex.get(2),
     );
 

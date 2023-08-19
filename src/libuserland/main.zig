@@ -174,8 +174,8 @@ pub fn main() !void {
 
                         window.pushEvent(.{ .mouse = .{
                             .type = .button_press,
-                            .x = @divTrunc(@intCast(i16, event.button.x), 2),
-                            .y = @divTrunc(@intCast(i16, event.button.y), 2),
+                            .x = @divTrunc(@as(i16, @intCast(event.button.x)), 2),
+                            .y = @divTrunc(@as(i16, @intCast(event.button.y)), 2),
                             .dx = 0,
                             .dy = 0,
                             .button = mapMouseButton(event.button.button) orelse continue,
@@ -189,8 +189,8 @@ pub fn main() !void {
 
                         window.pushEvent(.{ .mouse = .{
                             .type = .button_release,
-                            .x = @divTrunc(@intCast(i16, event.button.x), 2),
-                            .y = @divTrunc(@intCast(i16, event.button.y), 2),
+                            .x = @divTrunc(@as(i16, @intCast(event.button.x)), 2),
+                            .y = @divTrunc(@as(i16, @intCast(event.button.y)), 2),
                             .dx = 0,
                             .dy = 0,
                             .button = mapMouseButton(event.button.button) orelse continue,
@@ -205,8 +205,8 @@ pub fn main() !void {
                         if (event.wheel.y < 0) {
                             window.pushEvent(.{ .mouse = .{
                                 .type = .button_release,
-                                .x = @divTrunc(@intCast(i16, event.wheel.x), 2),
-                                .y = @divTrunc(@intCast(i16, event.wheel.y), 2),
+                                .x = @divTrunc(@as(i16, @intCast(event.wheel.x)), 2),
+                                .y = @divTrunc(@as(i16, @intCast(event.wheel.y)), 2),
                                 .dx = 0,
                                 .dy = 0,
                                 .button = .wheel_down,
@@ -215,8 +215,8 @@ pub fn main() !void {
                         if (event.wheel.y > 0) {
                             window.pushEvent(.{ .mouse = .{
                                 .type = .button_release,
-                                .x = @divTrunc(@intCast(i16, event.wheel.x), 2),
-                                .y = @divTrunc(@intCast(i16, event.wheel.y), 2),
+                                .x = @divTrunc(@as(i16, @intCast(event.wheel.x)), 2),
+                                .y = @divTrunc(@as(i16, @intCast(event.wheel.y)), 2),
                                 .dx = 0,
                                 .dy = 0,
                                 .button = .wheel_up,
@@ -232,10 +232,10 @@ pub fn main() !void {
                         if (event.wheel.y > 0) {
                             window.pushEvent(.{ .mouse = .{
                                 .type = .motion,
-                                .x = @divTrunc(@intCast(i16, event.motion.x), 2),
-                                .y = @divTrunc(@intCast(i16, event.motion.y), 2),
-                                .dx = @divTrunc(@intCast(i16, event.motion.xrel), 2),
-                                .dy = @divTrunc(@intCast(i16, event.motion.yrel), 2),
+                                .x = @divTrunc(@as(i16, @intCast(event.motion.x)), 2),
+                                .y = @divTrunc(@as(i16, @intCast(event.motion.y)), 2),
+                                .dx = @divTrunc(@as(i16, @intCast(event.motion.xrel)), 2),
+                                .dy = @divTrunc(@as(i16, @intCast(event.motion.yrel)), 2),
                                 .button = .none,
                             } });
                         }
@@ -250,8 +250,8 @@ pub fn main() !void {
                         var w: c_int = 0;
                         var h: c_int = 0;
                         sdl.SDL_GetWindowSize(window.sdl_window, &w, &h);
-                        window.abi_window.client_rectangle.width = @intCast(u16, w) / 2;
-                        window.abi_window.client_rectangle.height = @intCast(u16, h) / 2;
+                        window.abi_window.client_rectangle.width = @as(u16, @intCast(w)) / 2;
+                        window.abi_window.client_rectangle.height = @as(u16, @intCast(h)) / 2;
 
                         switch (event.window.event) {
                             sdl.SDL_WINDOWEVENT_MOVED => window.pushEvent(.window_moved),
@@ -283,7 +283,7 @@ pub fn main() !void {
                     window.sdl_texture,
                     null,
                     window.rgba_storage.ptr,
-                    @intCast(c_int, 2 * window.abi_window.stride),
+                    @as(c_int, @intCast(2 * window.abi_window.stride)),
                 );
 
                 _ = sdl.SDL_RenderClear(window.sdl_renderer);
@@ -501,11 +501,11 @@ const file_handles = HandleAllocator(abi.FileHandle, File);
 const directory_handles = HandleAllocator(abi.DirectoryHandle, Directory);
 
 const filesystem_sys = abi.FileSystemId.system;
-const filesystem_host = @enumFromInt(abi.FileSystemId, 1);
-const filesystem_cwd = @enumFromInt(abi.FileSystemId, 2);
+const filesystem_host = @as(abi.FileSystemId, @enumFromInt(1));
+const filesystem_cwd = @as(abi.FileSystemId, @enumFromInt(2));
 
 fn dateTimeFromTimestamp(ts: i128) abi.DateTime {
-    return @intCast(i64, @divTrunc(ts, std.time.ns_per_ms));
+    return @as(i64, @intCast(@divTrunc(ts, std.time.ns_per_ms)));
 }
 
 fn IopReturnType(comptime IOP: type) type {
@@ -917,7 +917,7 @@ fn process_yield() callconv(.C) void {
 }
 
 fn process_exit(exit_code: u32) callconv(.C) noreturn {
-    std.os.exit(@truncate(u8, exit_code));
+    std.os.exit(@as(u8, @truncate(exit_code)));
 }
 
 fn process_getBaseAddress() callconv(.C) usize {
@@ -1068,7 +1068,7 @@ const Window = struct {
             sdl.SDL_WINDOWPOS_CENTERED,
             2 * init_size.width,
             2 * init_size.height,
-            @intCast(u32, sdl.SDL_WINDOW_SHOWN | sdl.SDL_WINDOW_RESIZABLE | if (flags.popup) sdl.SDL_WINDOW_UTILITY else 0),
+            @as(u32, @intCast(sdl.SDL_WINDOW_SHOWN | sdl.SDL_WINDOW_RESIZABLE | if (flags.popup) sdl.SDL_WINDOW_UTILITY else 0)),
         ) orelse @panic("err");
         errdefer sdl.SDL_DestroyWindow(window.sdl_window);
 
@@ -1104,7 +1104,7 @@ const Window = struct {
 
         window.abi_window = abi.Window{
             .pixels = window.index_storage.ptr,
-            .stride = @intCast(u32, stride),
+            .stride = @as(u32, @intCast(stride)),
             .client_rectangle = .{ .x = 0, .y = 0, .width = init_size.width, .height = init_size.height },
             .min_size = min_size,
             .max_size = max_size,
@@ -1267,7 +1267,7 @@ var palette: [256]abi.Color = blk: {
 
     var pal = std.mem.zeroes([256]abi.Color);
     for (pal[0..default_palette.len], default_palette) |*dst, src| {
-        const rgba = @bitCast([4]u8, std.fmt.parseInt(u32, src, 16) catch unreachable);
+        const rgba = @as([4]u8, @bitCast(std.fmt.parseInt(u32, src, 16) catch unreachable));
         dst.* = abi.Color.fromRgb888(
             rgba[0],
             rgba[1],
@@ -1275,7 +1275,7 @@ var palette: [256]abi.Color = blk: {
         );
     }
     for (pal[default_palette.len..], 0..) |*dst, index| {
-        dst.* = @bitCast(abi.Color, @truncate(u16, std.hash.CityHash32.hash(std.mem.asBytes(&@intCast(u32, index)))));
+        dst.* = @as(abi.Color, @bitCast(@as(u16, @truncate(std.hash.CityHash32.hash(std.mem.asBytes(&@as(u32, @intCast(index))))))));
     }
     break :blk pal;
 };
@@ -1375,7 +1375,7 @@ fn HandleAllocator(comptime Handle: type, comptime Backing: type) type {
                     const generation = generations[index];
                     const numeric = generation *% max_open_files + index;
 
-                    const handle = @enumFromInt(Handle, numeric);
+                    const handle = @as(Handle, @enumFromInt(numeric));
                     if (handle == .invalid) {
                         generations[index] += 1;
                         continue;
@@ -1494,7 +1494,7 @@ const system_fonts = struct {
         if (stat.size > 1_000_000) // hard limit: 1 MB
             return error.OutOfMemory;
 
-        const buffer = try arena.allocator().alloc(u8, @intCast(u32, stat.size));
+        const buffer = try arena.allocator().alloc(u8, @as(u32, @intCast(stat.size)));
         errdefer arena.allocator().free(buffer);
 
         const len = try file.read(0, buffer);

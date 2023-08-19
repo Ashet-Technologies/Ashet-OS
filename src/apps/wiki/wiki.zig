@@ -206,7 +206,7 @@ const WikiSoftware = struct {
                 &treeview_height,
             );
 
-            main_window.tree_scrollbar.control.scroll_bar.setRange(@intCast(u15, @intCast(u16, treeview_height) -| (main_window.tree_view.bounds.height -| 6)));
+            main_window.tree_scrollbar.control.scroll_bar.setRange(@as(u15, @intCast(@as(u16, @intCast(treeview_height)) -| (main_window.tree_view.bounds.height -| 6))));
         }
 
         if (wiki.document) |doc| {
@@ -215,8 +215,8 @@ const WikiSoftware = struct {
             const bounds = main_window.doc_view.bounds.shrink(3);
             const doc_size = bounds.size(); //  htext.measureDocument(bounds, doc.hyperdoc, theme.wiki);
 
-            main_window.doc_h_scrollbar.control.scroll_bar.setRange(@intCast(u15, @intCast(u16, doc_size.width) -| bounds.width));
-            main_window.doc_v_scrollbar.control.scroll_bar.setRange(@intCast(u15, @intCast(u16, doc_size.height) -| bounds.height));
+            main_window.doc_h_scrollbar.control.scroll_bar.setRange(@as(u15, @intCast(@as(u16, @intCast(doc_size.width)) -| bounds.width)));
+            main_window.doc_v_scrollbar.control.scroll_bar.setRange(@as(u15, @intCast(@as(u16, @intCast(doc_size.height)) -| bounds.height)));
 
             main_window.doc_v_scrollbar.control.scroll_bar.setRange(500);
         } else {

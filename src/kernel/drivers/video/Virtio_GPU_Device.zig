@@ -153,8 +153,8 @@ fn getResolution(driver: *Driver) Resolution {
 fn getMaxResolution(driver: *Driver) Resolution {
     const vd = @fieldParentPtr(Virtio_GPU_Device, "driver", driver);
     return ashet.video.Resolution{
-        .width = @intCast(u16, std.math.min(max_width, vd.gpu.fb_width)),
-        .height = @intCast(u16, std.math.min(max_height, vd.gpu.fb_height)),
+        .width = @as(u16, @intCast(std.math.min(max_width, vd.gpu.fb_width))),
+        .height = @as(u16, @intCast(std.math.min(max_height, vd.gpu.fb_height))),
     };
 }
 

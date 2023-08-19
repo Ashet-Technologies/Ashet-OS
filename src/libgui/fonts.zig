@@ -89,11 +89,11 @@ pub const BitmapFont = struct {
     }
 
     pub fn lineHeight(bf: BitmapFont) u15 {
-        return @intCast(u15, std.math.clamp(0, std.mem.readIntLittle(u32, bf.data[4..8]), std.math.maxInt(u15)));
+        return @as(u15, @intCast(std.math.clamp(0, std.mem.readIntLittle(u32, bf.data[4..8]), std.math.maxInt(u15))));
     }
 
     fn getGlyphMeta(bf: BitmapFont, index: usize) PackedCodepointAdvance {
-        return @bitCast(PackedCodepointAdvance, std.mem.readIntLittle(u32, bf.data[12 + 4 * index ..][0..4]));
+        return @as(PackedCodepointAdvance, @bitCast(std.mem.readIntLittle(u32, bf.data[12 + 4 * index ..][0..4])));
     }
 
     fn getGlyphOffset(bf: BitmapFont, index: usize) u32 {
@@ -267,7 +267,7 @@ pub const VectorFont = struct {
         while (iter.nextCodepoint()) |cp| {
             var glyph = font.getGlyph(cp) orelse continue;
 
-            width += @intCast(u15, opt.scaleX(glyph.advance));
+            width += @as(u15, @intCast(opt.scaleX(glyph.advance)));
             width += @intFromBool(font.bold);
         }
 

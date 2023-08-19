@@ -84,7 +84,7 @@ const BlockDevice = struct {
     pub fn read(intf: *fatfs.Disk, buff: [*]u8, sector: fatfs.LBA, count: c_uint) fatfs.Disk.Error!void {
         const self = @fieldParentPtr(BlockDevice, "disk", intf);
 
-        const block_ptr = @ptrCast([*][512]u8, buff);
+        const block_ptr = @as([*][512]u8, @ptrCast(buff));
 
         var i: usize = 0;
         while (i < count) : (i += 1) {
@@ -100,7 +100,7 @@ const BlockDevice = struct {
     pub fn write(intf: *fatfs.Disk, buff: [*]const u8, sector: fatfs.LBA, count: c_uint) fatfs.Disk.Error!void {
         const self = @fieldParentPtr(BlockDevice, "disk", intf);
 
-        const block_ptr = @ptrCast([*]const [512]u8, buff);
+        const block_ptr = @as([*]const [512]u8, @ptrCast(buff));
 
         var i: usize = 0;
         while (i < count) : (i += 1) {
@@ -122,15 +122,15 @@ const BlockDevice = struct {
             },
 
             .get_sector_count => {
-                const size = @ptrCast(*fatfs.LBA, @alignCast(@alignOf(fatfs.LBA), buff));
-                size.* = @intCast(fatfs.LBA, self.backing.blockCount());
+                const size: *fatfs.LBA = @ptrCast(@alignCast(buff));
+                size.* = @intCast(self.backing.blockCount());
             },
             .get_sector_size => {
-                const size = @ptrCast(*fatfs.WORD, @alignCast(@alignOf(fatfs.WORD), buff));
-                size.* = @intCast(u16, self.backing.blockSize());
+                const size: *fatfs.WORD = @ptrCast(@alignCast(buff));
+                size.* = @intCast(self.backing.blockSize());
             },
             .get_block_size => {
-                const size = @ptrCast(*fatfs.DWORD, @alignCast(@alignOf(fatfs.DWORD), buff));
+                const size: *fatfs.DWORD = @ptrCast(@alignCast(buff));
                 size.* = 1;
             },
 
@@ -173,7 +173,7 @@ fn destroyInstance(dri: *ashet.drivers.Driver, allocator: std.mem.Allocator, gen
 }
 
 fn enumCast(comptime T: type, v: anytype) T {
-    return @enumFromInt(T, @intFromEnum(v));
+    return @as(T, @enumFromInt(@intFromEnum(v)));
 }
 
 const File = struct {
@@ -199,7 +199,7 @@ const Instance = struct {
         instance.disk_index = for (&fatfs.disks, 0..) |*disk_ptr, disk_index| {
             if (disk_ptr.* == null) {
                 disk_ptr.* = instance.block_device.interface();
-                break @intCast(u8, disk_index);
+                break @as(u8, @intCast(disk_index));
             }
         } else return error.SystemResources;
 

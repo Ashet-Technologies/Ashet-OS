@@ -130,7 +130,7 @@ const NewTabWidgets = struct {
 
         mw.mode_select_field.control.label.text = @as(ComChannelType, current_layout).displayName();
 
-        var y: i16 = mw.prev_mode_button.bounds.y + @intCast(u15, mw.prev_mode_button.bounds.height);
+        var y: i16 = mw.prev_mode_button.bounds.y + @as(u15, @intCast(mw.prev_mode_button.bounds.height));
         switch (current_layout) {
             inline else => |active_node| {
                 const NodeType = @TypeOf(active_node);
@@ -164,7 +164,7 @@ const NewTabWidgets = struct {
                     mw.interface.appendWidget(label);
                     mw.interface.appendWidget(editor);
 
-                    y += @intCast(u15, label.bounds.height);
+                    y += @as(u15, @intCast(label.bounds.height));
                 }
                 //
             },
@@ -176,12 +176,12 @@ const NewTabWidgets = struct {
     }
 
     pub fn layout(mw: *NewTabWidgets, rect: gui.Rectangle) void {
-        mw.ok_button.bounds = .{ .x = @intCast(i16, rect.width -| 4 -| 30), .y = @intCast(i16, rect.height -| 4 -| 11), .width = 30, .height = 11 };
-        mw.cancel_button.bounds = .{ .x = 4, .y = @intCast(i16, rect.height -| 4 -| 11), .width = 30, .height = 11 };
+        mw.ok_button.bounds = .{ .x = @as(i16, @intCast(rect.width -| 4 -| 30)), .y = @as(i16, @intCast(rect.height -| 4 -| 11)), .width = 30, .height = 11 };
+        mw.cancel_button.bounds = .{ .x = 4, .y = @as(i16, @intCast(rect.height -| 4 -| 11)), .width = 30, .height = 11 };
 
         mw.prev_mode_button.bounds = .{ .x = 4, .y = 4, .width = 11, .height = 11 };
         mw.mode_select_field.bounds = .{ .x = 4 + 11 + 4, .y = 6, .width = rect.width -| (4 * 4) -| (2 * 11), .height = 11 };
-        mw.next_mode_button.bounds = .{ .x = @intCast(i16, rect.width -| 4 -| 11), .y = 4, .width = 11, .height = 11 };
+        mw.next_mode_button.bounds = .{ .x = @as(i16, @intCast(rect.width -| 4 -| 11)), .y = 4, .width = 11, .height = 11 };
     }
 };
 
@@ -200,7 +200,7 @@ const events = struct {
 };
 
 fn coolbarWidth(count: usize) u15 {
-    return @intCast(u15, 8 + 20 * count + 8 * (@max(1, count) - 1));
+    return @as(u15, @intCast(8 + 20 * count + 8 * (@max(1, count) - 1)));
 }
 
 const Palette = std.enums.EnumArray(fraxinus.Color, gui.ColorIndex);
@@ -376,8 +376,8 @@ const App = struct {
         var fb = gui.Framebuffer.forWindow(app.window).view(terminal_surface);
 
         var cursor_rect = gui.Rectangle{
-            .x = 2 + 6 * @intCast(i16, cursor_pos.column),
-            .y = 2 + 8 * @intCast(i16, cursor_pos.row),
+            .x = 2 + 6 * @as(i16, @intCast(cursor_pos.column)),
+            .y = 2 + 8 * @as(i16, @intCast(cursor_pos.row)),
             .width = 6,
             .height = 8,
         };
@@ -416,7 +416,7 @@ const App = struct {
         var left: i16 = 0;
         for (app.tabs.slice()) |tab| {
             tab.tab_button.bounds.x = left;
-            left +|= @intCast(i16, tab.tab_button.bounds.width);
+            left +|= @as(i16, @intCast(tab.tab_button.bounds.width));
             tab.tab_button.control.button.text = tab.title;
         }
 
@@ -484,7 +484,7 @@ const App = struct {
             },
             events.open_menu => std.log.info("open_menu", .{}),
             events.activate_tab => {
-                const tab = @ptrCast(*Tab, @alignCast(@alignOf(Tab), event.tag));
+                const tab = @as(*Tab, @ptrCast(@alignCast(@alignOf(Tab), event.tag)));
                 app.active_tab = tab;
                 app.refreshTabs();
                 app.paint();
@@ -730,7 +730,7 @@ fn createIopHandler(comptime Context: type, comptime IOP: type, context: Context
 }
 
 fn freeIopHandler(handle: usize) void {
-    const handler = @ptrFromInt(*IopHandler, handle);
+    const handler = @as(*IopHandler, @ptrFromInt(handle));
     handler.* = undefined;
     iop_handler_pool.destroy(handler);
 }
@@ -742,7 +742,7 @@ const IopHandler = struct {
     pub fn create(comptime Context: type, comptime IOP: type, context: Context, comptime handler: fn (context: Context, iop: *IOP) void) IopHandler {
         const Wrapper = struct {
             fn handle(inner_context: ?*anyopaque, iop: *ashet.abi.IOP) void {
-                handler(@ptrCast(Context, @alignCast(@alignOf(@typeInfo(Context).Pointer.child), inner_context)), ashet.abi.IOP.cast(IOP, iop));
+                handler(@as(Context, @ptrCast(@alignCast(@alignOf(@typeInfo(Context).Pointer.child), inner_context))), ashet.abi.IOP.cast(IOP, iop));
             }
         };
         return IopHandler{
@@ -752,7 +752,7 @@ const IopHandler = struct {
     }
 
     pub fn invoke(iop: *ashet.abi.IOP) void {
-        const iop_handler = @ptrFromInt(*IopHandler, iop.tag);
+        const iop_handler = @as(*IopHandler, @ptrFromInt(iop.tag));
         iop_handler.handler(iop_handler.context, iop);
     }
 

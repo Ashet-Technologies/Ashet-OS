@@ -56,7 +56,7 @@ fn paint(window: *const ashet.ui.Window) void {
 
     for (font_names) |font_name| {
         var font = gui.Font.fromSystemFont(font_name, .{ .size = 12 }) catch continue;
-        fb.drawString(4, y, demo_text, &font, @enumFromInt(gui.ColorIndex, 0), null);
+        fb.drawString(4, y, demo_text, &font, @as(gui.ColorIndex, @enumFromInt(0)), null);
         y += font.lineHeight();
         y += 2;
     }

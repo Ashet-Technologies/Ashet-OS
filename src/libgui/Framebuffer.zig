@@ -25,8 +25,8 @@ pixels: [*]ColorIndex, // height * stride pixels
 /// Drawing into the framebuffer will draw to the window surface.
 pub fn forWindow(window: *const ashet.abi.Window) Framebuffer {
     return Framebuffer{
-        .width = @intCast(u15, window.client_rectangle.width),
-        .height = @intCast(u15, window.client_rectangle.height),
+        .width = @as(u15, @intCast(window.client_rectangle.width)),
+        .height = @as(u15, @intCast(window.client_rectangle.height)),
         .stride = window.stride,
         .pixels = window.pixels,
     };
@@ -80,18 +80,18 @@ pub fn clip(fb: Framebuffer, rect: Rectangle) ScreenRect {
     if (rect.x >= fb.width or rect.y >= fb.height) {
         return ScreenRect.empty;
     }
-    if (rect.x + @intCast(u15, rect.width) < 0 or rect.y + @intCast(u15, rect.height) < 0) {
+    if (rect.x + @as(u15, @intCast(rect.width)) < 0 or rect.y + @as(u15, @intCast(rect.height)) < 0) {
         return ScreenRect.empty;
     }
 
     var width: u16 = rect.width;
     var height: u16 = rect.height;
 
-    width -|= @intCast(u16, std.math.max(0, -rect.x));
-    height -|= @intCast(u16, std.math.max(0, -rect.y));
+    width -|= @as(u16, @intCast(std.math.max(0, -rect.x)));
+    height -|= @as(u16, @intCast(std.math.max(0, -rect.y)));
 
-    const x = @intCast(u15, std.math.max(0, rect.x));
-    const y = @intCast(u15, std.math.max(0, rect.y));
+    const x = @as(u15, @intCast(std.math.max(0, rect.x)));
+    const y = @as(u15, @intCast(std.math.max(0, rect.y)));
 
     if (x + width > fb.width) {
         width = (fb.width -| x);
@@ -101,13 +101,13 @@ pub fn clip(fb: Framebuffer, rect: Rectangle) ScreenRect {
     }
 
     const result = ScreenRect{
-        .dx = @intCast(u16, x - rect.x),
-        .dy = @intCast(u16, y - rect.y),
+        .dx = @as(u16, @intCast(x - rect.x)),
+        .dy = @as(u16, @intCast(y - rect.y)),
         .x = x,
         .y = y,
         .pixels = fb.pixels + @as(usize, y) * fb.stride + @as(usize, x),
-        .width = @intCast(u15, width),
-        .height = @intCast(u15, height),
+        .width = @as(u15, @intCast(width)),
+        .height = @as(u15, @intCast(height)),
     };
     // std.log.debug("clip {} to {}", .{ rect, result });
     return result;
@@ -166,7 +166,7 @@ pub fn setPixel(fb: Framebuffer, x: i16, y: i16, color: ColorIndex) void {
         return;
     if (y < 0 or y >= fb.height)
         return;
-    fb.pixels[@intCast(usize, y) * fb.stride + @intCast(usize, x)] = color;
+    fb.pixels[@as(usize, @intCast(y)) * fb.stride + @as(usize, @intCast(x))] = color;
 }
 
 pub fn drawLine(fb: Framebuffer, from: Point, to: Point, color: ColorIndex) void {
@@ -180,7 +180,7 @@ pub fn drawLine(fb: Framebuffer, from: Point, to: Point, color: ColorIndex) void
         if (end < start)
             return;
 
-        @memset((fb.pixels + @intCast(usize, from.y) * fb.stride)[@intCast(usize, start)..@intCast(usize, end)], color);
+        @memset((fb.pixels + @as(usize, @intCast(from.y)) * fb.stride)[@as(usize, @intCast(start))..@as(usize, @intCast(end))], color);
     } else if (from.x == to.x) {
         // vertical
         if (from.x < 0 or from.x >= fb.width)
@@ -192,8 +192,8 @@ pub fn drawLine(fb: Framebuffer, from: Point, to: Point, color: ColorIndex) void
         if (end < start)
             return;
 
-        var row = fb.pixels + @intCast(usize, from.x) + @intCast(usize, start) * fb.stride;
-        var y: usize = @intCast(usize, start);
+        var row = fb.pixels + @as(usize, @intCast(from.x)) + @as(usize, @intCast(start)) * fb.stride;
+        var y: usize = @as(usize, @intCast(start));
         while (y < end) : (y += 1) {
             row[0] = color;
             row += fb.stride;
@@ -295,7 +295,7 @@ pub const ScreenWriter = struct {
                                     data_ptr += 1;
                                 }
 
-                                if ((bits & (@as(u8, 1) << @truncate(u3, gy))) != 0) {
+                                if ((bits & (@as(u8, 1) << @as(u3, @truncate(gy)))) != 0) {
                                     sw.fb.setPixel(sw.dx + glyph.offset_x + gx, sw.dy + glyph.offset_y + gy, sw.color);
                                 }
                             }
@@ -345,10 +345,10 @@ pub const ScreenWriter = struct {
 };
 
 pub fn screenWriter(fb: Framebuffer, x: i16, y: i16, font: *const Font, color: ColorIndex, max_width: ?u15) ScreenWriter {
-    const limit = @intCast(u15, if (max_width) |mw|
-        @intCast(u15, std.math.max(0, x + mw))
+    const limit = @as(u15, @intCast(if (max_width) |mw|
+        @as(u15, @intCast(std.math.max(0, x + mw)))
     else
-        fb.width);
+        fb.width));
 
     return ScreenWriter{
         .fb = fb,

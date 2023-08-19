@@ -68,13 +68,13 @@ pub fn main() !void {
 const gui = @import("ashet-gui");
 
 fn paint(window: *const ashet.ui.Window) void {
-    const time = std.time.epoch.EpochSeconds{ .secs = @intCast(u64, std.math.max(0, @divTrunc(ashet.time.nanoTimestamp(), std.time.ns_per_s))) };
+    const time = std.time.epoch.EpochSeconds{ .secs = @as(u64, @intCast(std.math.max(0, @divTrunc(ashet.time.nanoTimestamp(), std.time.ns_per_s)))) };
 
     var fb = gui.Framebuffer.forWindow(window);
 
     for (clock_face.pixels[0 .. clock_face.width * clock_face.height], 0..) |color, i| {
-        const x = @intCast(i16, i % clock_face.width);
-        const y = @intCast(i16, i / clock_face.width);
+        const x = @as(i16, @intCast(i % clock_face.width));
+        const y = @as(i16, @intCast(i / clock_face.width));
         if (color != (comptime clock_face.transparent.?)) {
             fb.setPixel(1 + x, 1 + y, color);
             fb.setPixel(1 + x, 45 - y, color);
@@ -95,13 +95,13 @@ fn paint(window: *const ashet.ui.Window) void {
         const highlight = ashet.ui.ColorIndex.get(6);
 
         fn drawDigit(f: gui.Framebuffer, pos: u15, limit: u15, color: ashet.ui.ColorIndex, len: f32) void {
-            const cx = @intCast(i16, f.width / 2);
-            const cy = @intCast(i16, f.height / 2);
+            const cx = @as(i16, @intCast(f.width / 2));
+            const cy = @as(i16, @intCast(f.height / 2));
 
-            const angle = std.math.tau * @floatFromInt(f32, pos) / @floatFromInt(f32, limit);
+            const angle = std.math.tau * @as(f32, @floatFromInt(pos)) / @as(f32, @floatFromInt(limit));
 
-            const dx = @intFromFloat(i16, len * @sin(angle));
-            const dy = -@intFromFloat(i16, len * @cos(angle));
+            const dx = @as(i16, @intFromFloat(len * @sin(angle)));
+            const dy = -@as(i16, @intFromFloat(len * @cos(angle)));
 
             f.drawLine(
                 gui.Point.new(cx, cy),

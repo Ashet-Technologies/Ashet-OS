@@ -64,7 +64,7 @@ pub const FreeListAllocator = struct {
     }
 
     fn next(fla: *FreeListAllocator, chunk: *Chunk) ?*Chunk {
-        const follower = @ptrCast(*Chunk, @ptrCast([*]u8, chunk) + chunk.len);
+        const follower = @as(*Chunk, @ptrCast(@as([*]u8, @ptrCast(chunk)) + chunk.len));
         if (follower >= fla.region.ptr + fla.region.len)
             return null;
         return follower;
@@ -77,7 +77,7 @@ pub const FreeListAllocator = struct {
         pub fn format(region: []align(base_align) u8) *Chunk {
             std.debug.assert(region.len >= @sizeOf(Chunk));
 
-            const chunk = @ptrCast(*Chunk, region.ptr);
+            const chunk = @as(*Chunk, @ptrCast(region.ptr));
             chunk.* = Chunk{
                 .len = region.len,
                 .flags = .{ .free = true },
@@ -87,12 +87,12 @@ pub const FreeListAllocator = struct {
         }
 
         pub fn fromUserRegion(region: []u8) *Chunk {
-            return @ptrFromInt(*Chunk, @intFromPtr(region.ptr) - @sizeOf(Chunk));
+            return @as(*Chunk, @ptrFromInt(@intFromPtr(region.ptr) - @sizeOf(Chunk)));
         }
 
         /// Returns the portion of memory in this chunk that is reserved for the user.
         pub fn userRegion(chunk: *Chunk) []u8 {
-            const mem = @ptrCast([*]align(4) u8, chunk);
+            const mem = @as([*]align(4) u8, @ptrCast(chunk));
             return mem[@sizeOf(Chunk)..chunk.len];
         }
     };

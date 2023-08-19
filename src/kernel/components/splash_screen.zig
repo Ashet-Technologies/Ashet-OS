@@ -157,7 +157,7 @@ const SplashScreen = struct {
         for (screen.apps.slice(), 0..) |app, index| {
             const target_pos = screen.layout.pos(index);
 
-            const palette_base = @truncate(u8, 16 * (index + 1));
+            const palette_base = @as(u8, @truncate(16 * (index + 1)));
             for (app.icon.palette, 0..) |color, offset| {
                 palette[palette_base + offset + 1] = color;
             }
@@ -189,8 +189,8 @@ const SplashScreen = struct {
 
         fn slot(src: @This(), index: usize) Pos {
             return Pos{
-                .col = @truncate(u16, index % src.cols),
-                .row = @truncate(u16, index / src.cols),
+                .col = @as(u16, @truncate(index % src.cols)),
+                .row = @as(u16, @truncate(index / src.cols)),
             };
         }
 

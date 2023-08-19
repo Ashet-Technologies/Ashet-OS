@@ -63,14 +63,14 @@ pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleIni
     {
         try kbc.writeCommand(.read_cmd_byte);
         const conf_byte = try kbc.readData();
-        var cmd_byte = @bitCast(CommandByte, conf_byte);
+        var cmd_byte = @as(CommandByte, @bitCast(conf_byte));
         logger.debug("old config: {}", .{cmd_byte});
         cmd_byte.primary_irq_enabled = false;
         cmd_byte.secondary_irq_enabled = false;
         cmd_byte.scancode_translation_mode = false;
         logger.debug("new config: {}", .{cmd_byte});
         try kbc.writeCommand(.write_cmd_byte);
-        try kbc.writeData(@bitCast(u8, cmd_byte));
+        try kbc.writeData(@as(u8, @bitCast(cmd_byte)));
     }
 
     logger.debug("test for secondary channel...", .{});
@@ -81,7 +81,7 @@ pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleIni
         try kbc.writeCommand(.enable_secondary_port);
 
         try kbc.writeCommand(.read_cmd_byte);
-        var cmd_byte = @bitCast(CommandByte, try kbc.readData());
+        var cmd_byte = @as(CommandByte, @bitCast(try kbc.readData()));
 
         var two_channels = (cmd_byte.secondary_clk_enable == .enabled);
 
@@ -102,7 +102,7 @@ pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleIni
     // Step 8: Perform Interface Tests
     {
         try kbc.writeCommand(.test_primary_port);
-        const primary_status = @enumFromInt(PortTestResult, try kbc.readData());
+        const primary_status = @as(PortTestResult, @enumFromInt(try kbc.readData()));
         if (primary_status == .test_passed) {
             kbc.channels.insert(.primary);
         } else {
@@ -111,7 +111,7 @@ pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleIni
 
         if (has_secondary_channel) {
             try kbc.writeCommand(.test_secondary_port);
-            const secondary_status = @enumFromInt(PortTestResult, try kbc.readData());
+            const secondary_status = @as(PortTestResult, @enumFromInt(try kbc.readData()));
             if (secondary_status == .test_passed) {
                 kbc.channels.insert(.secondary);
             } else {
@@ -211,7 +211,7 @@ pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleIni
     logger.debug("enable irq configuration...", .{});
     {
         try kbc.writeCommand(.read_cmd_byte);
-        var cmd_byte = @bitCast(CommandByte, try kbc.readData());
+        var cmd_byte = @as(CommandByte, @bitCast(try kbc.readData()));
         logger.debug("old config: {}", .{cmd_byte});
         cmd_byte.primary_clk_enable = .enabled;
         cmd_byte.primary_irq_enabled = (kbc.devices.get(.primary) != null);
@@ -220,7 +220,7 @@ pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleIni
         cmd_byte.scancode_translation_mode = false;
         logger.debug("new config: {}", .{cmd_byte});
         try kbc.writeCommand(.write_cmd_byte);
-        try kbc.writeData(@bitCast(u8, cmd_byte));
+        try kbc.writeData(@as(u8, @bitCast(cmd_byte)));
     }
 
     return kbc;
@@ -361,9 +361,9 @@ const Channel = enum {
         const lo = chan.readData() catch return null;
         const hi = chan.readData() catch 0x00;
 
-        const device_id = @bitCast(u16, [2]u8{ lo, hi });
+        const device_id = @as(u16, @bitCast([2]u8{ lo, hi }));
 
-        return @enumFromInt(DeviceType, device_id);
+        return @as(DeviceType, @enumFromInt(device_id));
     }
 };
 
@@ -446,7 +446,7 @@ fn writeRawCommand(cmd: Command) error{Timeout}!void {
 }
 
 fn readStatus() Status {
-    return @bitCast(Status, x86.in(u8, ports.status));
+    return @as(Status, @bitCast(x86.in(u8, ports.status)));
 }
 
 fn flushData() void {
@@ -635,7 +635,7 @@ const MouseDecoder = struct {
     pub fn feed(decoder: *MouseDecoder, input: u8) void {
         switch (decoder.state) {
             .default => {
-                const header = @bitCast(MouseHeader, input);
+                const header = @as(MouseHeader, @bitCast(input));
                 if (header.always_set) {
                     decoder.state = .fetch_x;
 
@@ -659,12 +659,12 @@ const MouseDecoder = struct {
             },
 
             .fetch_x => {
-                const dx = @bitCast(i8, input);
+                const dx = @as(i8, @bitCast(input));
                 decoder.state = .{ .fetch_y = dx };
             },
 
             .fetch_y => |dx| {
-                const dy = @bitCast(i8, input);
+                const dy = @as(i8, @bitCast(input));
 
                 if ((dx != 0 or dy != 0) and !decoder.current.x_overflow and !decoder.current.y_overflow) {
                     ashet.input.pushRawEvent(.{
@@ -707,7 +707,7 @@ const KeyboardDecoder = struct {
                 } else if (input == 0xE1) {
                     decoder.state = .e1;
                 } else {
-                    const scancode = @truncate(u7, input);
+                    const scancode = @as(u7, @truncate(input));
                     ashet.input.pushRawEventFromIRQ(.{
                         .keyboard = .{
                             .scancode = scancode,
@@ -720,7 +720,7 @@ const KeyboardDecoder = struct {
             .e0 => {
                 defer decoder.state = .default;
 
-                const scancode = @truncate(u7, input);
+                const scancode = @as(u7, @truncate(input));
 
                 // Check for fake shifts and ignore them
                 if (scancode == 0x2A or scancode == 0x36)
@@ -739,7 +739,7 @@ const KeyboardDecoder = struct {
             },
 
             .e1_stage2 => |low| {
-                const input7 = @truncate(u7, input);
+                const input7 = @as(u7, @truncate(input));
                 const scancode = (@as(u16, input7) << 8) | low;
 
                 std.log.debug("e1 code: 0x{X:0>4}", .{scancode});

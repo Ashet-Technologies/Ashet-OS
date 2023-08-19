@@ -141,7 +141,7 @@ const IPFormatter = struct {
     pub fn format(addr: IPFormatter, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
         _ = fmt;
         _ = opt;
-        try writer.writeAll(std.mem.sliceTo(c.ip4addr_ntoa(@ptrCast(*const c.ip4_addr_t, &addr.addr)), 0));
+        try writer.writeAll(std.mem.sliceTo(c.ip4addr_ntoa(@as(*const c.ip4_addr_t, @ptrCast(&addr.addr))), 0));
     }
 };
 
@@ -189,7 +189,7 @@ fn netif_output(netif_c: [*c]c.netif, pbuf_c: [*c]c.pbuf) callconv(.C) c.err_t {
         // TODO: Handle length here
         var off: usize = 0;
         while (off < pbuf.tot_len) {
-            const cnt = c.pbuf_copy_partial(pbuf, packet.ptr + off, @intCast(u15, pbuf.tot_len - off), @intCast(u15, off));
+            const cnt = c.pbuf_copy_partial(pbuf, packet.ptr + off, @as(u15, @intCast(pbuf.tot_len - off)), @as(u15, @intCast(off)));
             if (cnt == 0) {
                 logger.err("failed to copy network packet", .{});
                 return c.ERR_BUF;
@@ -219,9 +219,9 @@ pub fn start() !void {
 
         _ = c.netif_add(
             netif,
-            @ptrCast(*c.ip4_addr_t, c.IP4_ADDR_ANY), // ipaddr
-            @ptrCast(*c.ip4_addr_t, c.IP4_ADDR_ANY), // netmask
-            @ptrCast(*c.ip4_addr_t, c.IP4_ADDR_ANY), // gw
+            @as(*c.ip4_addr_t, @ptrCast(c.IP4_ADDR_ANY)), // ipaddr
+            @as(*c.ip4_addr_t, @ptrCast(c.IP4_ADDR_ANY)), // netmask
+            @as(*c.ip4_addr_t, @ptrCast(c.IP4_ADDR_ANY)), // gw
             null,
             netif_init,
             c.netif_input,
@@ -286,7 +286,7 @@ fn networkThread(_: ?*anyopaque) callconv(.C) u32 {
 // Don't care for wraparound, this is only used for time diffs. Not implementing this function means
 // you cannot use some modules (e.g. TCP timestamps, internal timeouts for NO_SYS==1).
 export fn sys_now() u32 {
-    return @truncate(u32, @bitCast(u64, ashet.time.milliTimestamp()));
+    return @as(u32, @truncate(@as(u64, @bitCast(ashet.time.milliTimestamp()))));
 }
 
 const LwipError = error{
@@ -364,11 +364,11 @@ fn mapIP(ip: IP) c.ip_addr_t {
     return switch (ip.type) {
         .ipv4 => c.ip_addr_t{
             .type = c.IPADDR_TYPE_V4,
-            .u_addr = .{ .ip4 = .{ .addr = @bitCast(u32, ip.addr.v4.addr) } },
+            .u_addr = .{ .ip4 = .{ .addr = @as(u32, @bitCast(ip.addr.v4.addr)) } },
         },
         .ipv6 => c.ip_addr_t{
             .type = c.IPADDR_TYPE_V6,
-            .u_addr = .{ .ip6 = .{ .addr = @bitCast([4]u32, ip.addr.v6.addr), .zone = ip.addr.v6.zone } },
+            .u_addr = .{ .ip6 = .{ .addr = @as([4]u32, @bitCast(ip.addr.v6.addr)), .zone = ip.addr.v6.zone } },
         },
     };
 }
@@ -377,11 +377,11 @@ fn unmapIP(addr: c.ip_addr_t) IP {
     return switch (addr.type) {
         c.IPADDR_TYPE_V4 => IP{
             .type = .ipv4,
-            .addr = .{ .v4 = .{ .addr = @bitCast([4]u8, addr.u_addr.ip4.addr) } },
+            .addr = .{ .v4 = .{ .addr = @as([4]u8, @bitCast(addr.u_addr.ip4.addr)) } },
         },
         c.IPADDR_TYPE_V6 => IP{
             .type = .ipv6,
-            .addr = .{ .v6 = .{ .addr = @bitCast([16]u8, addr.u_addr.ip6.addr), .zone = addr.u_addr.ip6.zone } },
+            .addr = .{ .v6 = .{ .addr = @as([16]u8, @bitCast(addr.u_addr.ip6.addr)), .zone = addr.u_addr.ip6.zone } },
         },
         else => unreachable,
     };
@@ -389,11 +389,11 @@ fn unmapIP(addr: c.ip_addr_t) IP {
 
 fn limitLength(val: usize) u16 {
     @setRuntimeSafety(false);
-    return @intCast(u16, std.math.min(val, std.math.maxInt(u16)));
+    return @as(u16, @intCast(std.math.min(val, std.math.maxInt(u16))));
 }
 
 pub const udp = struct {
-    const max_sockets = @intCast(usize, c.MEMP_NUM_UDP_PCB);
+    const max_sockets = @as(usize, @intCast(c.MEMP_NUM_UDP_PCB));
     const Socket = abi.UdpSocket;
 
     const Data = struct {
@@ -426,11 +426,11 @@ pub const udp = struct {
 
         c.udp_recv(pcb, handleIncomingPacket, &socket_meta[index]);
 
-        return @enumFromInt(Socket, index);
+        return @as(Socket, @enumFromInt(index));
     }
 
     fn handleIncomingPacket(arg: ?*anyopaque, pcb_c: [*c]c.udp_pcb, pbuf_c: [*c]c.pbuf, addr_c: [*c]const c.ip_addr_t, port: u16) callconv(.C) void {
-        const data = @ptrCast(*Data, @alignCast(@alignOf(Data), arg));
+        const data: *Data = @ptrCast(@alignCast(arg));
         const pcb: *c.udp_pcb = pcb_c;
         var pbuf: *c.pbuf = pbuf_c;
         const addr: *const c.ip_addr_t = addr_c;
@@ -443,7 +443,7 @@ pub const udp = struct {
             return;
         };
 
-        const limited_len = @truncate(u16, std.math.min(pbuf.tot_len, iop.inputs.buffer_len));
+        const limited_len = @as(u16, @truncate(std.math.min(pbuf.tot_len, iop.inputs.buffer_len)));
 
         const copied = c.pbuf_copy_partial(pbuf, iop.inputs.buffer_ptr, limited_len, 0);
         std.debug.assert(limited_len == copied);
@@ -537,7 +537,7 @@ fn mapErrSet(comptime T: type, err_or_ok: anyerror!void) T.Enum {
 }
 
 pub const tcp = struct {
-    const max_sockets = @intCast(usize, c.MEMP_NUM_TCP_PCB);
+    const max_sockets = @as(usize, @intCast(c.MEMP_NUM_TCP_PCB));
     const Socket = abi.TcpSocket;
 
     const Op = union(enum) {
@@ -585,7 +585,7 @@ pub const tcp = struct {
         recv_offset: u16 = 0,
 
         pub fn fromArg(arg: ?*anyopaque) *Data {
-            return @ptrCast(*Data, @alignCast(@alignOf(Data), arg.?));
+            return @ptrCast(@alignCast(arg.?));
         }
     };
 
@@ -620,7 +620,7 @@ pub const tcp = struct {
         c.tcp_sent(pcb, tcpSentCallback);
         // c.tcp_accept(pcb, tcp_accept_fn);
 
-        return @enumFromInt(Socket, index);
+        return @as(Socket, @enumFromInt(index));
     }
 
     pub fn destroySocket(sock: Socket) void {

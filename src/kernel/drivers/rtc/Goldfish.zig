@@ -15,7 +15,7 @@ regs: *volatile Registers,
 
 pub fn init(base: usize) Goldfish {
     return Goldfish{
-        .regs = @ptrFromInt(*volatile Registers, base),
+        .regs = @as(*volatile Registers, @ptrFromInt(base)),
     };
 }
 

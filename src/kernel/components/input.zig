@@ -17,7 +17,7 @@ pub var cursor: ashet.abi.Point = undefined;
 pub fn initialize() void {
     const res = ashet.video.getResolution();
 
-    cursor = ashet.abi.Point.new(@intCast(i16, res.width / 2), @intCast(i16, res.height / 2));
+    cursor = ashet.abi.Point.new(@as(i16, @intCast(res.width / 2)), @as(i16, @intCast(res.height / 2)));
 }
 
 /// Period subsystem update, will poll for input events
@@ -130,8 +130,8 @@ pub fn getEvent() ?Event {
         const raw_event = event_queue.pull() orelse return null;
         switch (raw_event) {
             .mouse_motion => |data| {
-                const dx = @truncate(i16, std.math.clamp(data.dx, std.math.minInt(i16), std.math.maxInt(i16)));
-                const dy = @truncate(i16, std.math.clamp(data.dy, std.math.minInt(i16), std.math.maxInt(i16)));
+                const dx = @as(i16, @truncate(std.math.clamp(data.dx, std.math.minInt(i16), std.math.maxInt(i16))));
+                const dy = @as(i16, @truncate(std.math.clamp(data.dy, std.math.minInt(i16), std.math.maxInt(i16))));
 
                 const max_size = ashet.video.getMaxResolution();
 

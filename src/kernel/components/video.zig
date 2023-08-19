@@ -89,7 +89,7 @@ pub const defaults = struct {
 
     /// The splash screen that should be shown until the operating system
     /// has fully bootet. This has to be displayed in 256x128 8bpp video mode.
-    pub const splash_screen: [32768]ColorIndex = @bitCast([32768]ColorIndex, @as([32768]u8, @embedFile("../data/splash.raw").*));
+    pub const splash_screen: [32768]ColorIndex = @as([32768]ColorIndex, @bitCast(@as([32768]u8, @embedFile("../data/splash.raw").*)));
 
     /// The default border color.
     /// Must match the splash screen, otherwise it looks kinda weird.
@@ -134,7 +134,7 @@ const system_palette_info = blk: {
             const new_field = std.builtin.Type.StructField{
                 .name = name,
                 .type = ashet.abi.ColorIndex,
-                .default_value = &ashet.abi.ColorIndex.get(@intCast(u8, index)),
+                .default_value = &ashet.abi.ColorIndex.get(@as(u8, @intCast(index))),
                 .is_comptime = true,
                 .alignment = 1,
             };

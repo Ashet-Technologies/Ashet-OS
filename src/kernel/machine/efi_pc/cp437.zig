@@ -60,12 +60,12 @@ pub fn codepageFromUnicode(cp: u21) ?u8 {
     if (comptime ranges.len > 3) {
         inline for (ranges) |range| {
             if (cp >= range.unicode and cp < range.unicode + range.len)
-                return @truncate(u8, cp - range.unicode + range.codepage);
+                return @as(u8, @truncate(cp - range.unicode + range.codepage));
         }
     } else {
         inline for (ranges) |range| {
             if (cp >= range.unicode and cp < range.unicode + range.len)
-                return @truncate(u8, cp - range.unicode + range.codepage);
+                return @as(u8, @truncate(cp - range.unicode + range.codepage));
         }
     }
     inline for (mapping, 0..) |unicode, codepage| {

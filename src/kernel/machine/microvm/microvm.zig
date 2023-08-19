@@ -60,7 +60,7 @@ pub fn initialize() !void {
 
 pub fn debugWrite(msg: []const u8) void {
     for (msg) |c| {
-        @ptrFromInt(*volatile u8, VPBA_UART_BASE).* = c;
+        @as(*volatile u8, @ptrFromInt(VPBA_UART_BASE)).* = c;
     }
 }
 

@@ -24,7 +24,7 @@ const KernelData = extern struct {
     };
 
     pub fn get(ptr: *IOP) *KernelData {
-        return @ptrCast(*KernelData, &ptr.kernel_data);
+        return @as(*KernelData, @ptrCast(&ptr.kernel_data));
     }
 };
 

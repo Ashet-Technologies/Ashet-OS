@@ -114,5 +114,5 @@ const RegisterID = std.meta.FieldEnum(Registers);
 pub fn readRegister(comptime reg: RegisterID, nmi_disabled: bool) std.meta.fieldInfo(Registers, reg).type {
     const reg_bit = @offsetOf(Registers, @tagName(reg)) | if (nmi_disabled) @as(u8, 0x80) else @as(u8, 0x00);
     x86.out(u8, control_port, reg_bit);
-    return @bitCast(std.meta.fieldInfo(Registers, reg).type, x86.in(u8, data_port));
+    return @as(std.meta.fieldInfo(Registers, reg).type, @bitCast(x86.in(u8, data_port)));
 }

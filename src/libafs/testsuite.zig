@@ -21,7 +21,7 @@ pub fn BlockDevice(comptime block_count: u32) type {
         }
 
         fn fromCtx(ctx: *anyopaque) *BD {
-            return @ptrCast(*BD, @alignCast(@alignOf(BD), ctx));
+            return @as(*BD, @ptrCast(@alignCast(@alignOf(BD), ctx)));
         }
 
         fn getBlockCount(ctx: *anyopaque) u32 {

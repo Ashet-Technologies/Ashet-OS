@@ -139,9 +139,9 @@ fn loadTexture(comptime path: []const u8) Texture {
 
 inline fn branchClamp(x: i32, limit: u16) u32 {
     return if (limit & (limit - 1) == 0)
-        @bitCast(u32, x) & (limit - 1)
+        @as(u32, @bitCast(x)) & (limit - 1)
     else
-        @bitCast(u32, x) % limit;
+        @as(u32, @bitCast(x)) % limit;
 }
 
 pub inline fn sampleTexture(tex: *const Texture, x: i32, y: i32) ColorIndex {
@@ -196,7 +196,7 @@ const Raycaster = struct {
 
     const width = screen_width;
     const height = screen_height;
-    const aspect = @floatFromInt(f32, screen_width) / @floatFromInt(f32, screen_height);
+    const aspect = @as(f32, @floatFromInt(screen_width)) / @as(f32, @floatFromInt(screen_height));
 
     const floor_texture: BackgroundPattern = .{ .perspective_texture = 0 };
     const ceiling_texture: BackgroundPattern = .{ .flat_color = ColorIndex.get(255) };
@@ -215,7 +215,7 @@ const Raycaster = struct {
 
         var rays: [width]f32 = undefined;
         for (&rays, 0..) |*dir, x| {
-            const fx = aspect * (2.0 * (@floatFromInt(f32, x) / (width - 1)) - 1.0);
+            const fx = aspect * (2.0 * (@as(f32, @floatFromInt(x)) / (width - 1)) - 1.0);
 
             const deltaAngle = std.math.atan(0.5 * fx);
 
@@ -238,15 +238,15 @@ const Raycaster = struct {
         var val: [height]f32 = undefined;
         for (&val, 0..) |*v, y| {
             if (y < height / 2) {
-                const scale = 2.0 / @floatFromInt(f32, height - 1);
-                const fy = 1.0 - scale * @floatFromInt(f32, y);
+                const scale = 2.0 / @as(f32, @floatFromInt(height - 1));
+                const fy = 1.0 - scale * @as(f32, @floatFromInt(y));
 
                 if (fy == 0)
                     continue;
 
                 v.* = 1.0 / fy;
             } else {
-                const fy = (1.0 / @floatFromInt(f32, height / 2)) * @floatFromInt(f32, y - (height / 2) + 1);
+                const fy = (1.0 / @as(f32, @floatFromInt(height / 2))) * @as(f32, @floatFromInt(y - (height / 2) + 1));
 
                 if (fy == 0)
                     continue;
@@ -283,14 +283,14 @@ const Raycaster = struct {
 
                 // project the wall height onto the screen and
                 // adjust the zbuffer
-                wallHeight = @intFromFloat(u32, height / @fabs(result.distance) + 0.5);
+                wallHeight = @as(u32, @intFromFloat(height / @fabs(result.distance) + 0.5));
                 // std.log.info("x={} => d={d} => {}", .{ x, result.distance, wallHeight });
                 break :blk result.distance;
             } else std.math.inf(f32); // no hit means infinite distance
 
             // calculate screen boundaries of the wall
-            const wallTop = @intCast(i32, height / 2) - @intCast(i32, wallHeight / 2);
-            const wallBottom = @intCast(i32, height / 2) + @intCast(i32, wallHeight / 2);
+            const wallTop = @as(i32, @intCast(height / 2)) - @as(i32, @intCast(wallHeight / 2));
+            const wallBottom = @as(i32, @intCast(height / 2)) + @as(i32, @intCast(wallHeight / 2));
 
             // Draw ceiling
             switch (ceiling_texture) {
@@ -305,8 +305,8 @@ const Raycaster = struct {
                     const index_shift = 16 * texture_id;
                     const texture = &textures[texture_id];
 
-                    const u_scale = @floatFromInt(f32, texture.bitmap.width - 1);
-                    const v_scale = @floatFromInt(f32, texture.bitmap.height - 1);
+                    const u_scale = @as(f32, @floatFromInt(texture.bitmap.width - 1));
+                    const v_scale = @as(f32, @floatFromInt(texture.bitmap.height - 1));
 
                     var y: u15 = 0;
                     while (y < wallTop) : (y += 1) {
@@ -314,8 +314,8 @@ const Raycaster = struct {
 
                         const pos = rc.camera_position.add(dir.scale(d));
 
-                        const u = @intFromFloat(i32, u_scale * fract(pos.x));
-                        const v = @intFromFloat(i32, v_scale * fract(pos.y));
+                        const u = @as(i32, @intFromFloat(u_scale * fract(pos.x)));
+                        const v = @as(i32, @intFromFloat(v_scale * fract(pos.y)));
 
                         fb.setPixel(x, y, sampleTexture(texture, u, v).shift(index_shift));
                     }
@@ -327,15 +327,15 @@ const Raycaster = struct {
                 const tex_id = result.wall.texture_id;
                 const texture = &textures[tex_id];
 
-                const index_shift = @intCast(u8, 16 * tex_id);
+                const index_shift = @as(u8, @intCast(16 * tex_id));
 
-                const u = @intFromFloat(i32, @floatFromInt(f32, texture.bitmap.width - 1) * fract(result.u));
+                const u = @as(i32, @intFromFloat(@as(f32, @floatFromInt(texture.bitmap.width - 1)) * fract(result.u)));
 
                 const maxy = std.math.min(height, wallBottom);
 
-                var y: u15 = @intCast(u15, std.math.clamp(wallTop, 0, height));
+                var y: u15 = @as(u15, @intCast(std.math.clamp(wallTop, 0, height)));
                 while (y < maxy) : (y += 1) {
-                    const v = @intCast(i32, @divTrunc(texture.bitmap.height * (y - wallTop), @intCast(i32, wallHeight)));
+                    const v = @as(i32, @intCast(@divTrunc(texture.bitmap.height * (y - wallTop), @as(i32, @intCast(wallHeight)))));
                     fb.setPixel(x, y, sampleTexture(texture, u, v).shift(index_shift));
                 }
             }
@@ -344,7 +344,7 @@ const Raycaster = struct {
             switch (floor_texture) {
                 .background_texture => unreachable,
                 .flat_color => |color| {
-                    var y: u15 = @intCast(u15, std.math.min(height, wallBottom));
+                    var y: u15 = @as(u15, @intCast(std.math.min(height, wallBottom)));
                     while (y < height) : (y += 1) {
                         fb.setPixel(x, y, color);
                     }
@@ -353,17 +353,17 @@ const Raycaster = struct {
                     const index_shift = 16 * texture_id;
                     const texture = &textures[texture_id];
 
-                    const u_scale = @floatFromInt(f32, texture.bitmap.width - 1);
-                    const v_scale = @floatFromInt(f32, texture.bitmap.height - 1);
+                    const u_scale = @as(f32, @floatFromInt(texture.bitmap.width - 1));
+                    const v_scale = @as(f32, @floatFromInt(texture.bitmap.height - 1));
 
-                    var y: u15 = @intCast(u15, std.math.min(height, wallBottom));
+                    var y: u15 = @as(u15, @intCast(std.math.min(height, wallBottom)));
                     while (y < height) : (y += 1) {
                         const d = perspective_factor[y];
 
                         const pos = rc.camera_position.add(dir.scale(d));
 
-                        const u = @intFromFloat(i32, u_scale * fract(pos.x));
-                        const v = @intFromFloat(i32, v_scale * fract(pos.y));
+                        const u = @as(i32, @intFromFloat(u_scale * fract(pos.x)));
+                        const v = @as(i32, @intFromFloat(v_scale * fract(pos.y)));
 
                         fb.setPixel(x, y, sampleTexture(texture, u, v).shift(index_shift));
                     }
@@ -413,7 +413,7 @@ const Raycaster = struct {
 
         const fx = 2.0 * @tan(angle) / aspect;
 
-        const cx = @intFromFloat(i32, (width - 1) * (0.5 + 0.5 * fx));
+        const cx = @as(i32, @intFromFloat((width - 1) * (0.5 + 0.5 * fx)));
 
         const texture = &textures[sprite.texture_id];
 
@@ -421,7 +421,7 @@ const Raycaster = struct {
         const correction = @sqrt(0.5 * fx * fx + 1);
 
         // calculate on-screen size
-        const spriteHeight = @intFromFloat(u31, correction * height / distance);
+        const spriteHeight = @as(u31, @intFromFloat(correction * height / distance));
         const spriteWidth = (texture.bitmap.width * spriteHeight) / texture.bitmap.height;
 
         // discard the sprite when out of screen
@@ -442,10 +442,10 @@ const Raycaster = struct {
         const miny = std.math.max(0, wallTop);
         const maxy = std.math.min(height, wallBottom);
 
-        const texture_shift = @intCast(u8, 16 * sprite.texture_id);
+        const texture_shift = @as(u8, @intCast(16 * sprite.texture_id));
 
         // render the sprite also column major
-        var x: u15 = @intCast(u15, std.math.clamp(minx, 0, width));
+        var x: u15 = @as(u15, @intCast(std.math.clamp(minx, 0, width)));
         while (x < maxx) : (x += 1) {
             // Test if we are occluded by a sprite
             if (rc.zbuffer[x] < distance)
@@ -453,9 +453,9 @@ const Raycaster = struct {
 
             const u = @divTrunc((texture.bitmap.width - 1) * (x - left), spriteWidth - 1);
 
-            var y: u15 = @intCast(u15, std.math.clamp(miny, 0, height));
+            var y: u15 = @as(u15, @intCast(std.math.clamp(miny, 0, height)));
             while (y < maxy) : (y += 1) {
-                const v = @intFromFloat(i32, @floatFromInt(f32, (texture.bitmap.height - 1) * (y - wallTop)) / @floatFromInt(f32, spriteHeight - 1));
+                const v = @as(i32, @intFromFloat(@as(f32, @floatFromInt((texture.bitmap.height - 1) * (y - wallTop))) / @as(f32, @floatFromInt(spriteHeight - 1))));
 
                 const c = sampleTexture(texture, u, v);
 

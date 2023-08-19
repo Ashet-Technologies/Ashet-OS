@@ -60,7 +60,7 @@ pub const Header = extern struct {
 
     pub fn withChecksum(mb: Header) Header {
         var copy = mb;
-        copy.checksum = 0 -% mb.magic -% @bitCast(u32, mb.flags);
+        copy.checksum = 0 -% mb.magic -% @as(u32, @bitCast(mb.flags));
         return copy;
     }
 };
@@ -269,7 +269,7 @@ pub const Info = extern struct {
                 if (this.current_pos >= this.end_pos) {
                     return null;
                 } else {
-                    var current = @ptrFromInt(*const Entry, this.current_pos);
+                    var current = @as(*const Entry, @ptrFromInt(this.current_pos));
                     this.current_pos += (current.size + 0x04);
                     return current;
                 }

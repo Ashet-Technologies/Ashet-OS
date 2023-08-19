@@ -68,7 +68,7 @@ pub fn drawBresenhamLine(
     var err = dx + dy;
 
     while (true) {
-        window.*.pixels[@intCast(usize, y) * window.stride + @intCast(usize, x)] = ashet.ui.ColorIndex.get(0xF);
+        window.*.pixels[@as(usize, @intCast(y)) * window.stride + @as(usize, @intCast(x))] = ashet.ui.ColorIndex.get(0xF);
 
         if (x0 == x1 and y0 == y1) break;
 

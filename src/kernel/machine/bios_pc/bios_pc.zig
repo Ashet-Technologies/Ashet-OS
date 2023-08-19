@@ -96,7 +96,7 @@ pub fn initialize() !void {
             reserved: u32,
         };
 
-        const modules = @ptrFromInt([*]const Module, mbheader.mods.mods_addr)[0..mbheader.mods.mods_count];
+        const modules = @as([*]const Module, @ptrFromInt(mbheader.mods.mods_addr))[0..mbheader.mods.mods_count];
         for (modules, 0..) |mod, index| {
             logger.info("  [{}] = {{ lo=0x{X:0>8}, hi=0x{X:0>8}, cmdline='{}' }}", .{
                 index,
@@ -132,7 +132,7 @@ pub fn initialize() !void {
 
     for (&hw.ata, 0..) |*ata, index| {
         // requires rtc to be initialized!
-        ata.* = ashet.drivers.block.AT_Attachment.init(@truncate(u3, index)) catch {
+        ata.* = ashet.drivers.block.AT_Attachment.init(@as(u3, @truncate(index))) catch {
             continue;
         };
         ashet.drivers.install(&ata.driver);
@@ -166,7 +166,7 @@ fn writeVirtualSPI(msg: []const u8) void {
         padding: u5 = 0,
 
         fn map(sel: @This()) u8 {
-            return @bitCast(u8, sel);
+            return @as(u8, @bitCast(sel));
         }
     };
 
@@ -178,10 +178,10 @@ fn writeVirtualSPI(msg: []const u8) void {
         var m: u8 = 0x01;
 
         while (m != 0) {
-            x86.out(u8, 0x378, Selector.map(.{ .data = @truncate(u1, (b & 0x80) >> 7), .clk = 1, .cs = 1 }));
+            x86.out(u8, 0x378, Selector.map(.{ .data = @as(u1, @truncate((b & 0x80) >> 7)), .clk = 1, .cs = 1 }));
             busyLoop(1);
 
-            x86.out(u8, 0x378, Selector.map(.{ .data = @truncate(u1, (b & 0x80) >> 7), .clk = 0, .cs = 1 }));
+            x86.out(u8, 0x378, Selector.map(.{ .data = @as(u1, @truncate((b & 0x80) >> 7)), .clk = 0, .cs = 1 }));
             busyLoop(1);
 
             b <<= 1;

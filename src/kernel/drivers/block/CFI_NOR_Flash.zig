@@ -11,13 +11,13 @@ byte_size: usize,
 
 pub fn init(offset: usize, length: usize) error{InvalidDevice}!CFI_NOR_Flash {
     inline for ([_]type{ u8, u16, u32 }) |T| {
-        const flash_mem = @ptrFromInt([*]volatile T, offset);
+        const flash_mem = @as([*]volatile T, @ptrFromInt(offset));
 
         flash_mem[0x55] = 0x98; // enter CFI interface
         const seq = [3]u8{
-            @truncate(u8, flash_mem[0x10]),
-            @truncate(u8, flash_mem[0x11]),
-            @truncate(u8, flash_mem[0x12]),
+            @as(u8, @truncate(flash_mem[0x10])),
+            @as(u8, @truncate(flash_mem[0x11])),
+            @as(u8, @truncate(flash_mem[0x12])),
         };
         flash_mem[0x55] = 0xFF; // return to read array mode
 
@@ -72,9 +72,9 @@ pub fn CfiDeviceImpl(comptime InterfaceWidth: type) type {
             const regions = readRegister(base, u8, regs.num_erase_block_regions);
             logger.info("num_erase_block_regions = {d}", .{regions});
             for (@as([*]void, undefined)[0..regions], 0..) |_, i| {
-                logger.info("  region[{}].block count = {d}", .{ i, translateBlockRegionBlockCount(readRegister(base, u16, regs.blockRegionNumBlocks(@truncate(u16, i)))) });
+                logger.info("  region[{}].block count = {d}", .{ i, translateBlockRegionBlockCount(readRegister(base, u16, regs.blockRegionNumBlocks(@as(u16, @truncate(i))))) });
                 // TODO: logger.info("  region[{}].block_size  = {d}", .{ i, std.fmt.fmtIntSizeBin(translateBlockRegionBlockSize(readRegister(base, u16, regs.blockRegionBlockSize(@truncate(u16, i))))) });
-                logger.info("  region[{}].block_size  = {d}", .{ i, translateBlockRegionBlockSize(readRegister(base, u16, regs.blockRegionBlockSize(@truncate(u16, i)))) });
+                logger.info("  region[{}].block_size  = {d}", .{ i, translateBlockRegionBlockSize(readRegister(base, u16, regs.blockRegionBlockSize(@as(u16, @truncate(i))))) });
             }
 
             if (extended_query != 0) {
@@ -97,21 +97,21 @@ pub fn CfiDeviceImpl(comptime InterfaceWidth: type) type {
         pub fn readRegister(base: [*]volatile InterfaceWidth, comptime T: type, reg: u16) T {
             var bytes: [@sizeOf(T)]u8 = undefined;
             for (&bytes, 0..) |*b, i| {
-                b.* = @truncate(u8, base[reg + i]);
+                b.* = @as(u8, @truncate(base[reg + i]));
             }
             return std.mem.readIntLittle(T, &bytes);
         }
 
         fn present(driver: *Driver) bool {
             const device = @fieldParentPtr(CFI_NOR_Flash, "driver", driver);
-            const base = @ptrFromInt([*]volatile InterfaceWidth, device.offset);
+            const base = @as([*]volatile InterfaceWidth, @ptrFromInt(device.offset));
             _ = base;
             return true;
         }
 
         fn read(driver: *Driver, block: u64, data: []u8) ashet.storage.BlockDevice.ReadError!void {
             const device = @fieldParentPtr(CFI_NOR_Flash, "driver", driver);
-            const base = @ptrFromInt([*]volatile InterfaceWidth, device.offset);
+            const base = @as([*]volatile InterfaceWidth, @ptrFromInt(device.offset));
 
             const block_items = device.driver.class.block.block_size / @sizeOf(InterfaceWidth);
             const block_start = std.math.cast(usize, block_items * block) orelse return error.InvalidBlock;
@@ -124,7 +124,7 @@ pub fn CfiDeviceImpl(comptime InterfaceWidth: type) type {
 
         fn write(driver: *Driver, block: u64, data: []const u8) ashet.storage.BlockDevice.WriteError!void {
             const device = @fieldParentPtr(CFI_NOR_Flash, "driver", driver);
-            const base = @ptrFromInt([*]volatile InterfaceWidth, device.offset);
+            const base = @as([*]volatile InterfaceWidth, @ptrFromInt(device.offset));
 
             // we cannot write 256 byte blocks on 8 bit address bus
             if (@sizeOf(InterfaceWidth) == 1)

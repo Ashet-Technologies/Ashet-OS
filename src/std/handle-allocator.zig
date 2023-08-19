@@ -24,7 +24,7 @@ pub fn HandleAllocator(comptime Handle: type, comptime Backing: type, comptime a
                     const generation = ha.generations[index];
                     const numeric = generation *% active_handle_limit + index;
 
-                    const handle = @enumFromInt(Handle, numeric);
+                    const handle = @as(Handle, @enumFromInt(numeric));
                     if (handle == .invalid) {
                         ha.generations[index] += 1;
                         continue;

@@ -47,7 +47,7 @@ pub fn init(allocator: std.mem.Allocator, mbinfo: *multiboot.Info) !VESA_BIOS_Ex
 
     const vbe_info = mbinfo.vbe;
 
-    const vbe_control = @ptrFromInt(*vbe.Control, vbe_info.control_info);
+    const vbe_control = @as(*vbe.Control, @ptrFromInt(vbe_info.control_info));
 
     if (vbe_control.signature != vbe.Control.signature)
         @panic("invalid vbe signature!");
@@ -68,7 +68,7 @@ pub fn init(allocator: std.mem.Allocator, mbinfo: *multiboot.Info) !VESA_BIOS_Ex
         }
     }
 
-    const vbe_mode = @ptrFromInt(*vbe.ModeInfo, vbe_info.mode_info);
+    const vbe_mode = @as(*vbe.ModeInfo, @ptrFromInt(vbe_info.mode_info));
 
     if (vbe_mode.memory_model != .direct_color) {
         std.log.err("mode_info = {}", .{vbe_mode});
@@ -140,8 +140,8 @@ fn getResolution(driver: *Driver) Resolution {
 fn getMaxResolution(driver: *Driver) Resolution {
     const vd = @fieldParentPtr(VESA_BIOS_Extension, "driver", driver);
     return Resolution{
-        .width = @intCast(u16, vd.framebuffer.width),
-        .height = @intCast(u16, vd.framebuffer.height),
+        .width = @as(u16, @intCast(vd.framebuffer.width)),
+        .height = @as(u16, @intCast(vd.framebuffer.height)),
     };
 }
 
@@ -226,7 +226,7 @@ fn flush(driver: *Driver) void {
 
 inline fn pal(vd: *VESA_BIOS_Extension, color: ColorIndex) RGB {
     @setRuntimeSafety(false);
-    return @bitCast(RGB, vd.backing_palette[color.index()].toRgb32());
+    return @as(RGB, @bitCast(vd.backing_palette[color.index()].toRgb32()));
 }
 
 const FramebufferConfig = struct {

@@ -48,7 +48,7 @@ pub fn renderDocument(
 
         fn erasedLinkCallback(ctx: *const anyopaque, rect: ashet.abi.Rectangle, link: hdoc.Link) void {
             linkCallback(
-                @ptrCast(*const Ctx, @alignCast(alignment, ctx)).*,
+                @as(*const Ctx, @ptrCast(@alignCast(alignment, ctx))).*,
                 rect,
                 link,
             );
@@ -56,7 +56,7 @@ pub fn renderDocument(
     };
 
     var renderer = Renderer{
-        .context = @ptrCast(*const anyopaque, &context),
+        .context = @as(*const anyopaque, @ptrCast(&context)),
         .linkCallback = T.erasedLinkCallback,
         .framebuffer = framebuffer,
         .document = document,
@@ -118,7 +118,7 @@ const Renderer = struct {
                     const number = std.fmt.bufPrint(&str_buffer, "{d}.", .{index}) catch unreachable;
 
                     ren.framebuffer.drawString(
-                        ren.position.x - @intCast(i16, 6 * number.len),
+                        ren.position.x - @as(i16, @intCast(6 * number.len)),
                         ren.position.y,
                         number,
                         ren.theme.text.font,
@@ -187,7 +187,7 @@ const Renderer = struct {
                     ren.framebuffer.horizontalLine(
                         ren.position.x,
                         ren.position.y + 1,
-                        ren.framebuffer.width -| @intCast(u16, @max(0, ren.position.x)),
+                        ren.framebuffer.width -| @as(u16, @intCast(@max(0, ren.position.x))),
                         heading_style.color,
                     );
                     ren.position.y += 3;

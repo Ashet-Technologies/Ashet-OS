@@ -51,7 +51,7 @@ pub const EventID = enum(usize) {
     _,
 
     pub fn fromNumber(id: usize) EventID {
-        return @enumFromInt(EventID, id);
+        return @as(EventID, @enumFromInt(id));
     }
 
     /// Constructs a new EventID from the given enum literal.
@@ -59,7 +59,7 @@ pub const EventID = enum(usize) {
     pub fn from(comptime tag: anytype) EventID {
         if (@typeInfo(@TypeOf(tag)) != .EnumLiteral)
             @compileError("tag must be a enum literal!");
-        return @enumFromInt(EventID, @intFromError(@field(anyerror, @tagName(tag))));
+        return @as(EventID, @enumFromInt(@intFromError(@field(anyerror, @tagName(tag)))));
 
         // const T = struct {
         //     var x: u8 = undefined;
@@ -157,7 +157,7 @@ pub const Interface = struct {
                         inline .button, .tool_button, .check_box, .radio_button => |*box| return box.click(),
 
                         .text_box => |*box| {
-                            const offset = @intCast(usize, event.x - widget.bounds.x) -| 2; // adjust to "left text edge"
+                            const offset = @as(usize, @intCast(event.x - widget.bounds.x)) -| 2; // adjust to "left text edge"
 
                             // compute the index:
                             // left half of character is "cursor left of character", right half is "cursor right of character"
@@ -179,8 +179,8 @@ pub const Interface = struct {
                                 bar.level +|= step_size;
                             } else if (rects.scroll_area.contains(click_point)) {
                                 const size = switch (bar.direction) {
-                                    .vertical => @intCast(i16, rects.scroll_area.height),
-                                    .horizontal => @intCast(i16, rects.scroll_area.width),
+                                    .vertical => @as(i16, @intCast(rects.scroll_area.height)),
+                                    .horizontal => @as(i16, @intCast(rects.scroll_area.width)),
                                 };
                                 const pos = switch (bar.direction) {
                                     .vertical => click_point.y - rects.knob_button.y,
@@ -200,7 +200,7 @@ pub const Interface = struct {
 
                                 // std.log.info("clickrel {} {} {} {}\n", .{ pos, rel_pos, abs_jump, var_step_size });
 
-                                const delta = @intCast(u15, std.math.max(1, (var_step_size * @as(u32, bar.range)) / 100));
+                                const delta = @as(u15, @intCast(std.math.max(1, (var_step_size * @as(u32, bar.range)) / 100)));
                                 if (pos < 0) {
                                     bar.level -|= delta;
                                 } else {
@@ -313,15 +313,15 @@ pub const Interface = struct {
                     }
 
                     // adjust scroll to cursor position
-                    const cursor_offset = @intCast(i16, 6 * ctrl.editor.cursor);
+                    const cursor_offset = @as(i16, @intCast(6 * ctrl.editor.cursor));
                     const cursor_pos = (cursor_offset - ctrl.scroll);
-                    const limit = @intCast(u15, (widget.bounds.width -| 4));
+                    const limit = @as(u15, @intCast((widget.bounds.width -| 4)));
 
                     if (cursor_pos < 0) {
-                        ctrl.scroll -|= @intCast(u15, -cursor_pos) + limit / 4; // scroll to the left - 25% width
+                        ctrl.scroll -|= @as(u15, @intCast(-cursor_pos)) + limit / 4; // scroll to the left - 25% width
                     }
                     if (cursor_pos >= limit) {
-                        ctrl.scroll = @intCast(u15, (cursor_offset - limit) + limit / 4); // scroll to the right + 25% width
+                        ctrl.scroll = @as(u15, @intCast((cursor_offset - limit) + limit / 4)); // scroll to the right + 25% width
                     }
                 }
             },
@@ -338,8 +338,8 @@ pub const Interface = struct {
     fn paintFocusMarker(target: Framebuffer, rect: Rectangle, theme: Theme) void {
         const H = struct {
             fn dither(x: i16, y: i16) bool {
-                const rx = @bitCast(u16, x);
-                const ry = @bitCast(u16, y);
+                const rx = @as(u16, @bitCast(x));
+                const ry = @as(u16, @bitCast(y));
                 return ((rx ^ ry) & 1) == 0;
             }
         };
@@ -402,8 +402,8 @@ pub const Interface = struct {
         const b = .{
             .x = rect.x,
             .y = rect.y,
-            .width = @intCast(u15, rect.width),
-            .height = @intCast(u15, rect.height),
+            .width = @as(u15, @intCast(rect.width)),
+            .height = @as(u15, @intCast(rect.height)),
         };
 
         target.fillRectangle(rect.shrink(1), switch (background) {
@@ -489,8 +489,8 @@ pub const Interface = struct {
             const b = .{
                 .x = widget.bounds.x,
                 .y = widget.bounds.y,
-                .width = @intCast(u15, widget.bounds.width),
-                .height = @intCast(u15, widget.bounds.height),
+                .width = @as(u15, @intCast(widget.bounds.width)),
+                .height = @as(u15, @intCast(widget.bounds.height)),
             };
             switch (widget.control) {
                 inline .tool_button, .button => |ctrl| {
@@ -537,8 +537,8 @@ pub const Interface = struct {
                     if (gui.focus == widget) {
                         const cursor_x = 6 * ctrl.editor.cursor - ctrl.scroll;
                         edit_view.drawLine(
-                            Point.new(1 + @intCast(i16, cursor_x), 1),
-                            Point.new(1 + @intCast(i16, cursor_x), 8),
+                            Point.new(1 + @as(i16, @intCast(cursor_x)), 1),
+                            Point.new(1 + @as(i16, @intCast(cursor_x)), 8),
                             gui.theme.text_cursor,
                         );
                     }
@@ -628,8 +628,8 @@ pub const Interface = struct {
 
                     target.blit(
                         Point.new(
-                            positions.decrease_button.x + @intCast(u15, positions.decrease_button.width -| ScrollBar.arrow_up.width) / 2,
-                            positions.decrease_button.y + @intCast(u15, positions.decrease_button.height -| ScrollBar.arrow_up.height) / 2,
+                            positions.decrease_button.x + @as(u15, @intCast(positions.decrease_button.width -| ScrollBar.arrow_up.width)) / 2,
+                            positions.decrease_button.y + @as(u15, @intCast(positions.decrease_button.height -| ScrollBar.arrow_up.height)) / 2,
                         ),
                         switch (bar.direction) {
                             .vertical => ScrollBar.arrow_up,
@@ -638,8 +638,8 @@ pub const Interface = struct {
                     );
                     target.blit(
                         Point.new(
-                            positions.increase_button.x + @intCast(u15, positions.increase_button.width -| ScrollBar.arrow_up.width) / 2,
-                            positions.increase_button.y + @intCast(u15, positions.increase_button.height -| ScrollBar.arrow_up.height) / 2,
+                            positions.increase_button.x + @as(u15, @intCast(positions.increase_button.width -| ScrollBar.arrow_up.width)) / 2,
+                            positions.increase_button.y + @as(u15, @intCast(positions.increase_button.height -| ScrollBar.arrow_up.height)) / 2,
                         ),
                         switch (bar.direction) {
                             .vertical => ScrollBar.arrow_down,
@@ -722,7 +722,7 @@ pub const Button = struct {
             .bounds = Rectangle{
                 .x = x,
                 .y = y,
-                .width = width orelse (@intCast(u15, text.len * 6) + 3),
+                .width = width orelse (@as(u15, @intCast(text.len * 6)) + 3),
                 .height = 11,
             },
             .control = .{
@@ -740,7 +740,7 @@ pub const Button = struct {
             .bounds = Rectangle{
                 .x = x,
                 .y = y,
-                .width = width orelse (@intCast(u15, text.len * 6) + 3),
+                .width = width orelse (@as(u15, @intCast(text.len * 6)) + 3),
                 .height = 11,
             },
             .control = .{
@@ -795,7 +795,7 @@ pub const Label = struct {
             .bounds = Rectangle{
                 .x = x,
                 .y = y,
-                .width = @intCast(u15, 6 * text.len),
+                .width = @as(u15, @intCast(6 * text.len)),
                 .height = 11,
             },
             .control = .{
@@ -1063,8 +1063,8 @@ pub const ScrollBar = struct {
     fn computeRectangles(bar: ScrollBar, b: Rectangle) ?Boxes {
         switch (bar.direction) {
             .vertical => {
-                const bsize = @intCast(u15, b.width);
-                const height = @intCast(u15, b.height);
+                const bsize = @as(u15, @intCast(b.width));
+                const height = @as(u15, @intCast(b.height));
 
                 if (height < 3 * bsize)
                     return null;
@@ -1093,7 +1093,7 @@ pub const ScrollBar = struct {
                 var knob_button = scroll_area.shrink(2);
                 knob_button.height = bar.handleSize(scroll_range.height);
                 if (bar.range > 0)
-                    knob_button.y += @intCast(u15, (@as(u32, scroll_range.height -| knob_button.height -| 1) * bar.level) / bar.range);
+                    knob_button.y += @as(u15, @intCast((@as(u32, scroll_range.height -| knob_button.height -| 1) * bar.level) / bar.range));
 
                 return Boxes{
                     .decrease_button = decrease_button,
@@ -1104,8 +1104,8 @@ pub const ScrollBar = struct {
             },
 
             .horizontal => {
-                const width = @intCast(u15, b.width);
-                const bsize = @intCast(u15, b.height);
+                const width = @as(u15, @intCast(b.width));
+                const bsize = @as(u15, @intCast(b.height));
 
                 if (width < 3 * bsize)
                     return null;
@@ -1133,7 +1133,7 @@ pub const ScrollBar = struct {
                 var knob_button = scroll_area.shrink(2);
                 knob_button.width = bar.handleSize(scroll_range.width);
                 if (bar.range > 0)
-                    knob_button.x += @intCast(u15, (@as(u32, scroll_range.width -| knob_button.width -| 1) * bar.level) / bar.range);
+                    knob_button.x += @as(u15, @intCast((@as(u32, scroll_range.width -| knob_button.width -| 1) * bar.level) / bar.range));
 
                 return Boxes{
                     .decrease_button = decrease_button,
@@ -1228,7 +1228,7 @@ test "smoke test 01" {
 
     var pixel_storage: [1][182]ColorIndex = undefined;
     var fb = Framebuffer{
-        .pixels = @ptrCast([*]ColorIndex, &pixel_storage),
+        .pixels = @as([*]ColorIndex, @ptrCast(&pixel_storage)),
         .stride = 0, // just overwrite the first line again
         .width = 182,
         .height = 127,

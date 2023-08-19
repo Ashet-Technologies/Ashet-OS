@@ -18,26 +18,26 @@ pub fn initialize(pic: PIC, vector_offset: u8) void {
     std.debug.assert(std.mem.isAligned(vector_offset, 8));
 
     const sequence = [4]u8{
-        @bitCast(u8, ICW1{
+        @as(u8, @bitCast(ICW1{
             .icw4 = true,
             .mode = .cascade,
             .trigger = .edge,
             .address_interval = .@"8",
-        }),
+        })),
 
         @as(ICW2, vector_offset),
 
-        @bitCast(u8, if (pic.control == primary.control)
+        @as(u8, @bitCast(if (pic.control == primary.control)
             ICW3{ .primary = .{ .mask = 1 << cascade_irq } }
         else
-            ICW3{ .secondary = .{ .id = cascade_irq } }),
+            ICW3{ .secondary = .{ .id = cascade_irq } })),
 
-        @bitCast(u8, ICW4{
+        @as(u8, @bitCast(ICW4{
             .mode = .@"8086",
             .auto_eoi = false,
             .buffer_mode = .unbuffered,
             .fully_nested = false,
-        }),
+        })),
     };
 
     x86.out(u8, pic.control, sequence[0]);

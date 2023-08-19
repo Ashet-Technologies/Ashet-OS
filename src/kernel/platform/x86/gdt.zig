@@ -84,10 +84,10 @@ const Descriptor = packed struct(u64) {
 
     pub fn init(base: u32, limit: u32, access: Access, flags: Flags) Descriptor {
         return Descriptor{
-            .limit0 = @truncate(u16, limit & 0xFFFF),
-            .limit1 = @truncate(u4, (limit >> 16) & 0xF),
-            .base0 = @truncate(u24, base & 0xFFFFFF),
-            .base1 = @truncate(u8, (base >> 24) & 0xFF),
+            .limit0 = @as(u16, @truncate(limit & 0xFFFF)),
+            .limit1 = @as(u4, @truncate((limit >> 16) & 0xF)),
+            .base0 = @as(u24, @truncate(base & 0xFFFFFF)),
+            .base1 = @as(u8, @truncate((base >> 24) & 0xFF)),
             .access = access,
             .flags = flags,
         };
@@ -96,7 +96,7 @@ const Descriptor = packed struct(u64) {
 
 var gdt: [4]Descriptor align(16) = [4]Descriptor{
     // 0, 0x00: null descriptor
-    @bitCast(Descriptor, @as(u64, 0)),
+    @as(Descriptor, @bitCast(@as(u64, 0))),
 
     // 1, 0x08: Kernel Code Segment
     Descriptor.init(0, 0xfffff, Descriptor.Access.codeSegment(0, true), Descriptor.Flags{

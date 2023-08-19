@@ -139,7 +139,7 @@ pub const Thread = struct {
         const stack_bottom = try ashet.memory.ThreadAllocator.alloc(stack_size);
         errdefer ashet.memory.ThreadAllocator.free(stack_bottom);
 
-        const thread = @ptrFromInt(*Thread, @intFromPtr(stack_bottom.ptr) + stack_size - @sizeOf(Thread));
+        const thread = @as(*Thread, @ptrFromInt(@intFromPtr(stack_bottom.ptr) + stack_size - @sizeOf(Thread)));
         const thread_proc = options.process;
 
         thread.* = Thread{
@@ -307,7 +307,7 @@ pub const Thread = struct {
 
     /// Returns the pointer to the "stack top"
     pub fn getBasePointer(thread: *Thread) [*]u8 {
-        return @ptrFromInt([*]u8, @intFromPtr(thread) + @sizeOf(Thread));
+        return @as([*]u8, @ptrFromInt(@intFromPtr(thread) + @sizeOf(Thread)));
     }
 
     fn internalDestroy(thread: *Thread) void {
@@ -345,11 +345,11 @@ pub const Thread = struct {
 
     fn push(thread: *Thread, value: u32) void {
         thread.sp -= 4;
-        @ptrFromInt(*u32, thread.sp).* = value;
+        @as(*u32, @ptrFromInt(thread.sp)).* = value;
     }
 
     fn pop(thread: *Thread) u32 {
-        const val = @ptrFromInt(*u32, thread.sp).*;
+        const val = @as(*u32, @ptrFromInt(thread.sp)).*;
         thread.sp += 4;
         return val;
     }
@@ -419,7 +419,7 @@ export var ashet_scheduler_restore_thread: *Thread = undefined;
 var kernel_thread_backup: [std.mem.alignForward(@sizeOf(Thread) + 56, 256)]u8 align(256) = undefined;
 
 pub fn getKernelThread() *Thread {
-    return @ptrFromInt(*Thread, @intFromPtr(&kernel_thread_backup) + kernel_thread_backup.len - @sizeOf(Thread));
+    return @as(*Thread, @ptrFromInt(@intFromPtr(&kernel_thread_backup) + kernel_thread_backup.len - @sizeOf(Thread)));
 }
 
 fn nodeToThread(node: *ThreadQueue.Node) *Thread {

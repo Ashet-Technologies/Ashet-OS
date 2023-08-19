@@ -139,7 +139,7 @@ fn run(_: ?*anyopaque) callconv(.C) u32 {
                         }
                     },
                     .mouse => |event| {
-                        const mouse_point = Point.new(@intCast(i16, event.x), @intCast(i16, event.y));
+                        const mouse_point = Point.new(@as(i16, @intCast(event.x)), @as(i16, @intCast(event.y)));
                         // if (event.type == .motion) {
                         //     invalidateScreen();
                         // }
@@ -237,8 +237,8 @@ fn run(_: ?*anyopaque) callconv(.C) u32 {
                             },
                             .drag_window => |*action| blk: {
                                 defer action.start = mouse_point;
-                                const dx = @intCast(i15, mouse_point.x - action.start.x);
-                                const dy = @intCast(i15, mouse_point.y - action.start.y);
+                                const dx = @as(i15, @intCast(mouse_point.x - action.start.x));
+                                const dy = @as(i15, @intCast(mouse_point.y - action.start.y));
 
                                 if (event.button == .left and event.type == .button_release) {
                                     action.window.pushEvent(.window_moved);
@@ -254,8 +254,8 @@ fn run(_: ?*anyopaque) callconv(.C) u32 {
                             },
                             .resize_window => |*action| blk: {
                                 defer action.start = mouse_point;
-                                const dx = @intCast(i15, mouse_point.x - action.start.x);
-                                const dy = @intCast(i15, mouse_point.y - action.start.y);
+                                const dx = @as(i15, @intCast(mouse_point.x - action.start.x));
+                                const dy = @as(i15, @intCast(mouse_point.y - action.start.y));
 
                                 if (event.button == .left and event.type == .button_release) {
                                     action.window.pushEvent(.window_resized);
@@ -269,8 +269,8 @@ fn run(_: ?*anyopaque) callconv(.C) u32 {
                                     const prev_screen_rect = action.window.screenRectangle();
                                     const previous = rect.size();
 
-                                    rect.width = @intCast(u16, std.math.clamp(@as(i17, rect.width) + dx, min.width, max.width));
-                                    rect.height = @intCast(u16, std.math.clamp(@as(i17, rect.height) + dy, min.height, max.height));
+                                    rect.width = @as(u16, @intCast(std.math.clamp(@as(i17, rect.width) + dx, min.width, max.width)));
+                                    rect.height = @as(u16, @intCast(std.math.clamp(@as(i17, rect.height) + dy, min.height, max.height)));
 
                                     if (!rect.size().eql(previous)) {
                                         invalidateRegion(prev_screen_rect);
@@ -398,13 +398,13 @@ const framebuffer_default_icon_shift = 0; // framebuffer_wallpaper_shift - 15;
 fn initializeGraphics() void {
     const max_res = ashet.video.getMaxResolution();
     ashet.video.setBorder(ColorIndex.get(0));
-    ashet.video.setResolution(@truncate(u15, max_res.width), @truncate(u15, max_res.height));
+    ashet.video.setResolution(@as(u15, @truncate(max_res.width)), @as(u15, @truncate(max_res.height)));
     const resolution = ashet.video.getResolution();
 
     framebuffer = gui.Framebuffer{
-        .width = @intCast(u15, resolution.width),
-        .height = @intCast(u15, resolution.height),
-        .stride = @intCast(u15, resolution.width),
+        .width = @as(u15, @intCast(resolution.width)),
+        .height = @as(u15, @intCast(resolution.height)),
+        .stride = @as(u15, @intCast(resolution.width)),
         .pixels = ashet.video.getVideoMemory().ptr,
     };
 
@@ -445,7 +445,7 @@ const MinimizedIterator = struct {
     fn init() MinimizedIterator {
         return MinimizedIterator{
             .dx = 4,
-            .dy = @intCast(i16, framebuffer.height - 11 - 4),
+            .dy = @as(i16, @intCast(framebuffer.height - 11 - 4)),
             .inner = WindowIterator.init(WindowIterator.minimized, .bottom_to_top),
         };
     }
@@ -454,7 +454,7 @@ const MinimizedIterator = struct {
         const window = iter.inner.next() orelse return null;
 
         const title = window.title();
-        const width = @intCast(u15, std.math.min(6 * title.len + 2 + 11 + 10, 75));
+        const width = @as(u15, @intCast(std.math.min(6 * title.len + 2 + 11 + 10, 75)));
         defer iter.dx += (width + 4);
 
         var mini = MinimizedWindow{
@@ -496,9 +496,9 @@ fn minimizedFromCursor(pt: Point) ?MinimizedWindow {
 
 fn paintButton(bounds: Rectangle, style: Theme.WindowStyle, bg: ColorIndex, icon: Bitmap) void {
     framebuffer.horizontalLine(bounds.x, bounds.y, bounds.width, style.border);
-    framebuffer.horizontalLine(bounds.x, bounds.y + @intCast(u15, bounds.width) - 1, bounds.width, style.border);
+    framebuffer.horizontalLine(bounds.x, bounds.y + @as(u15, @intCast(bounds.width)) - 1, bounds.width, style.border);
     framebuffer.verticalLine(bounds.x, bounds.y, bounds.height, style.border);
-    framebuffer.verticalLine(bounds.x + @intCast(u15, bounds.width) - 1, bounds.y, bounds.height, style.border);
+    framebuffer.verticalLine(bounds.x + @as(u15, @intCast(bounds.width)) - 1, bounds.y, bounds.height, style.border);
     framebuffer.fillRectangle(bounds.shrink(1), bg);
     framebuffer.blit(Point.new(bounds.x + 1, bounds.y + 1), icon);
 }
@@ -546,7 +546,7 @@ fn repaint() void {
 
             const dx = mini.bounds.x;
             const dy = mini.bounds.y;
-            const width = @intCast(u15, mini.bounds.width);
+            const width = @as(u15, @intCast(mini.bounds.width));
 
             framebuffer.horizontalLine(dx, dy, width, style.border);
             framebuffer.horizontalLine(dx, dy + 10, width, style.border);
@@ -573,13 +573,13 @@ fn repaint() void {
 
             const buttons = window.getButtons();
 
-            const title_width = @intCast(u15, window_rectangle.width - 2);
+            const title_width = @as(u15, @intCast(window_rectangle.width - 2));
 
             framebuffer.horizontalLine(window_rectangle.x, window_rectangle.y, window_rectangle.width, style.border);
             framebuffer.verticalLine(window_rectangle.x, window_rectangle.y + 1, window_rectangle.height - 1, style.border);
 
-            framebuffer.horizontalLine(window_rectangle.x, window_rectangle.y + @intCast(i16, window_rectangle.height) - 1, window_rectangle.width, style.border);
-            framebuffer.verticalLine(window_rectangle.x + @intCast(i16, window_rectangle.width) - 1, window_rectangle.y + 1, window_rectangle.height - 1, style.border);
+            framebuffer.horizontalLine(window_rectangle.x, window_rectangle.y + @as(i16, @intCast(window_rectangle.height)) - 1, window_rectangle.width, style.border);
+            framebuffer.verticalLine(window_rectangle.x + @as(i16, @intCast(window_rectangle.width)) - 1, window_rectangle.y + 1, window_rectangle.height - 1, style.border);
 
             framebuffer.horizontalLine(window_rectangle.x + 1, window_rectangle.y + 10, window_rectangle.width - 2, style.border);
 
@@ -772,7 +772,7 @@ pub const Window = struct {
 
     pub fn getFromABI(win: *const ashet.abi.Window) *Window {
         const window = @fieldParentPtr(Window, "user_facing", win);
-        return @ptrFromInt(*Window, @intFromPtr(window));
+        return @as(*Window, @ptrFromInt(@intFromPtr(window)));
     }
 
     pub fn create(
@@ -993,7 +993,7 @@ pub const Window = struct {
         var buttons = ButtonCollection{};
 
         var top_row = Rectangle{
-            .x = rectangle.x + @intCast(u15, rectangle.width) - 11,
+            .x = rectangle.x + @as(u15, @intCast(rectangle.width)) - 11,
             .y = rectangle.y,
             .width = 11,
             .height = 11,
@@ -1017,8 +1017,8 @@ pub const Window = struct {
         if (window.isResizable() and !window.isMaximized()) {
             buttons.appendAssumeCapacity(WindowButton{
                 .bounds = Rectangle{
-                    .x = rectangle.x + @intCast(u15, rectangle.width) - 11,
-                    .y = rectangle.y + @intCast(u15, rectangle.height) - 11,
+                    .x = rectangle.x + @as(u15, @intCast(rectangle.width)) - 11,
+                    .y = rectangle.y + @as(u15, @intCast(rectangle.height)) - 11,
                     .width = 11,
                     .height = 11,
                 },
@@ -1255,7 +1255,7 @@ const wallpaper = struct {
     const pixels = blk: {
         @setEvalBranchQuota(4 * 400 * 300);
 
-        var data = @bitCast([400 * 300]ColorIndex, raw[0 .. 400 * 300].*);
+        var data = @as([400 * 300]ColorIndex, @bitCast(raw[0 .. 400 * 300].*));
 
         for (data) |*c| {
             c.* = c.shift(framebuffer_wallpaper_shift - 1);
@@ -1263,7 +1263,7 @@ const wallpaper = struct {
 
         break :blk data;
     };
-    const palette = @bitCast([15]Color, @as([]const u8, raw)[400 * 300 .. 400 * 300 + 15 * @sizeOf(Color)].*);
+    const palette = @as([15]Color, @bitCast(@as([]const u8, raw)[400 * 300 .. 400 * 300 + 15 * @sizeOf(Color)].*));
 
     const bitmap = Bitmap{
         .width = 400,
@@ -1287,7 +1287,7 @@ pub const desktop = struct {
                 .width = width,
                 .height = height,
                 .stride = width,
-                .pixels = @ptrCast([*]const ColorIndex, &icon.pixels),
+                .pixels = @as([*]const ColorIndex, @ptrCast(&icon.pixels)),
                 .transparent = ColorIndex.get(0xFF),
             };
         }
@@ -1569,7 +1569,7 @@ pub const desktop = struct {
             .width = Icon.width + 2,
             .height = Icon.height + 2,
             .stride = Icon.width + 2,
-            .pixels = @ptrCast([*]ColorIndex, &buffer),
+            .pixels = @as([*]ColorIndex, @ptrCast(&buffer)),
             .transparent = ColorIndex.get(0x01),
         };
     };
@@ -1623,7 +1623,7 @@ const system_fonts = struct {
         if (stat.size > 1_000_000) // hard limit: 1 MB
             return error.OutOfMemory;
 
-        const buffer = try arena.allocator().alloc(u8, @intCast(u32, stat.size));
+        const buffer = try arena.allocator().alloc(u8, @as(u32, @intCast(stat.size)));
         errdefer arena.allocator().free(buffer);
 
         const len = try file.read(0, buffer);

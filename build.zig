@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const FatFS = @import("vendor/zfat/Sdk.zig");
+const FatFS = @import("vendor/zfat/build.zig");
 
 const rootfs_dir = std.Build.InstallDir{ .custom = "rootfs" };
 
@@ -265,7 +265,7 @@ pub fn build(b: *std.Build) !void {
     }
 
     b.installDirectory(.{
-        .source_dir = "rootfs",
+        .source_dir = .{ .path = "rootfs" },
         .install_dir = rootfs_dir,
         .install_subdir = ".",
     });
@@ -379,7 +379,7 @@ pub fn build(b: *std.Build) !void {
             kernel_exe.setLinkerScriptPath(.{ .path = machine_spec.linker_script });
             b.installArtifact(kernel_exe);
 
-            kernel_exe.addSystemIncludePath("vendor/ziglibc/inc/libc");
+            kernel_exe.addSystemIncludePath(.{ .path = "vendor/ziglibc/inc/libc" });
 
             FatFS.link(kernel_exe, fatfs_config);
 
@@ -389,7 +389,7 @@ pub fn build(b: *std.Build) !void {
                 const lwip = create_lwIP(b, kernel_exe.target, .ReleaseSafe);
                 lwip.is_linking_libc = false;
                 lwip.strip = false;
-                lwip.addSystemIncludePath("vendor/ziglibc/inc/libc");
+                lwip.addSystemIncludePath(.{ .path = "vendor/ziglibc/inc/libc" });
                 kernel_exe.linkLibrary(lwip);
                 setup_lwIP(kernel_exe);
             }
@@ -403,11 +403,12 @@ pub fn build(b: *std.Build) !void {
         if (kernel_exe.target.getCpuArch() == .x86 or kernel_exe.target.getCpuArch() == .x86_64) {
             // prepare PXE environment:
 
-            const install_pxe_kernel = b.addInstallArtifact(kernel_exe);
-            install_pxe_kernel.dest_dir = .{ .custom = "pxe" };
+            const install_pxe_kernel = b.addInstallArtifact(kernel_exe, .{
+                .dest_dir = .{ .override = .{ .custom = "pxe" } },
+            });
 
             const install_pxe_root = b.addInstallDirectory(.{
-                .source_dir = "rootfs-pxe",
+                .source_dir = .{ .path = "rootfs-pxe" },
                 .install_dir = .{ .custom = "pxe" },
                 .install_subdir = ".",
             });
@@ -583,7 +584,7 @@ pub fn build(b: *std.Build) !void {
             .root_source_file = .{ .path = "tools/debug-filter.zig" },
         });
         debug_filter.linkLibC();
-        const install_step = b.addInstallArtifact(debug_filter);
+        const install_step = b.addInstallArtifact(debug_filter, .{});
 
         b.getInstallStep().dependOn(&install_step.step);
 
@@ -598,7 +599,7 @@ pub fn build(b: *std.Build) !void {
         init_disk.linkLibC();
         init_disk.addModule("fatfs", fatfs_module);
         init_disk.addModule("args", mod_args);
-        const install_step = b.addInstallArtifact(init_disk);
+        const install_step = b.addInstallArtifact(init_disk, .{});
         FatFS.link(init_disk, fatfs_config);
 
         tools_step.dependOn(&install_step.step);
@@ -722,8 +723,8 @@ fn create_lwIP(b: *std.build.Builder, target: std.zig.CrossTarget, optimize: std
 }
 
 fn setup_lwIP(dst: *std.build.LibExeObjStep) void {
-    dst.addIncludePath("vendor/lwip/src/include");
-    dst.addIncludePath("src/kernel/components/network/include");
+    dst.addIncludePath(.{ .path = "vendor/lwip/src/include" });
+    dst.addIncludePath(.{ .path = "src/kernel/components/network/include" });
 }
 
 const BitmapConverter = struct {

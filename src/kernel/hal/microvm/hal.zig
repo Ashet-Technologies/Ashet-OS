@@ -10,7 +10,7 @@ pub fn initialize() void {
 
     // Initialize all virtio devices:
     {
-        const virtio_base = @ptrFromInt([*]align(4096) volatile virtio.ControlRegs, 0xfeb00000);
+        const virtio_base = @as([*]align(4096) volatile virtio.ControlRegs, @ptrFromInt(0xfeb00000));
 
         if (virtio_base[0].magic != virtio.ControlRegs.magic) {
             @panic("not virt platform!");
@@ -377,7 +377,7 @@ const gpu = struct {
 
         try setScanout(scanout, res_id, width, height);
 
-        return std.mem.bytesAsSlice(u32, @ptrCast([*]align(4096) u8, ashet.memory.pageToPtr(first_page))[0 .. height * stride]);
+        return std.mem.bytesAsSlice(u32, @as([*]align(4096) u8, @ptrCast(ashet.memory.pageToPtr(first_page)))[0 .. height * stride]);
     }
 
     fn flushFramebuffer(x: u32, y: u32, req_width: u32, req_height: u32) void {
@@ -536,7 +536,7 @@ pub const input = struct {
         _ = try regs.negotiateFeatures(virtio.FeatureFlags.any_layout | virtio.FeatureFlags.version_1);
 
         selectConfig(regs, .id_name, .unset);
-        logger.info("input: {s}", .{@ptrCast([]u8, std.mem.sliceTo(&input_dev.data.string, 0))});
+        logger.info("input: {s}", .{@as([]u8, @ptrCast(std.mem.sliceTo(&input_dev.data.string, 0)))});
 
         selectConfig(regs, .ev_bits, .cess_key);
         var keys: u32 = 0;
@@ -750,23 +750,23 @@ pub const input = struct {
             device_fetch: while (true) {
                 const evt = getDeviceEvent(device) orelse break :device_fetch;
 
-                switch (@enumFromInt(virtio.input.ConfigEvSubSel, evt.type)) {
+                switch (@as(virtio.input.ConfigEvSubSel, @enumFromInt(evt.type))) {
                     .cess_key => {
                         return MouseEvent{ .button = MouseEvent.Button{
-                            .button = @enumFromInt(MouseButton, evt.code),
+                            .button = @as(MouseButton, @enumFromInt(evt.code)),
                             .down = evt.value != 0,
                         } };
                     },
                     .cess_rel => {
                         if (evt.code == 0) {
                             return MouseEvent{ .motion = MouseEvent.Motion{
-                                .dx = @bitCast(i32, evt.value),
+                                .dx = @as(i32, @bitCast(evt.value)),
                                 .dy = 0,
                             } };
                         } else if (evt.code == 1) {
                             return MouseEvent{ .motion = MouseEvent.Motion{
                                 .dx = 0,
-                                .dy = @bitCast(i32, evt.value),
+                                .dy = @as(i32, @bitCast(evt.value)),
                             } };
                         }
                     },

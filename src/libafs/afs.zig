@@ -8,17 +8,17 @@ const logger = std.log.scoped(.ashet_fs);
 fn asBytes(ptr: anytype) *[512]u8 {
     const T = @TypeOf(ptr.*);
     if (@sizeOf(T) != 512) @compileError("Invalid object size");
-    return @ptrCast(*[512]u8, ptr);
+    return @as(*[512]u8, @ptrCast(ptr));
 }
 
 fn asConstBytes(ptr: anytype) *const [512]u8 {
     const T = @TypeOf(ptr.*);
     if (@sizeOf(T) != 512) @compileError("Invalid object size");
-    return @ptrCast(*const [512]u8, ptr);
+    return @as(*const [512]u8, @ptrCast(ptr));
 }
 
 fn bytesAsValue(comptime T: type, bytes: *align(@alignOf(T)) [@sizeOf(T)]u8) *T {
-    return @ptrCast(*T, bytes);
+    return @as(*T, @ptrCast(bytes));
 }
 
 fn makeZeroPaddedString(str: []const u8, comptime len: comptime_int) [len]u8 {
@@ -183,7 +183,7 @@ pub const FileSystem = struct {
 
         fs.version = root_block.version;
         fs.size = root_block.size;
-        fs.root_directory = @enumFromInt(DirectoryHandle, bitmap_block_count + 1);
+        fs.root_directory = @as(DirectoryHandle, @enumFromInt(bitmap_block_count + 1));
 
         return fs;
     }
@@ -203,7 +203,7 @@ pub const FileSystem = struct {
 
         try fs.device.readBlock(dir.blockNumber(), asBytes(&iter.ref_storage));
 
-        const blocklist = @ptrCast(*align(4) ObjectBlock, &iter.ref_storage);
+        const blocklist = @as(*align(4) ObjectBlock, @ptrCast(&iter.ref_storage));
 
         iter.total_count = blocklist.size / @sizeOf(Entry);
 
@@ -264,8 +264,8 @@ pub const FileSystem = struct {
                     continue;
 
                 break Bit{
-                    .offset = @intCast(u32, word_index),
-                    .bit = @intCast(u5, @ctz(~item.*)),
+                    .offset = @as(u32, @intCast(word_index)),
+                    .bit = @as(u5, @intCast(@ctz(~item.*))),
                 };
             } else continue;
 
@@ -359,7 +359,7 @@ pub const FileSystem = struct {
                 if ((entry_count == 0 or entry.ref == 0) and valid_slot == null) {
                     valid_slot = StorageTarget{
                         .block = current_data_block,
-                        .index = @intCast(u2, i),
+                        .index = @as(u2, @intCast(i)),
                     };
                     if (entry_count == 0)
                         break :search_loop;
@@ -501,7 +501,7 @@ pub const FileSystem = struct {
             try fs.device.writeBlock(dir.blockNumber(), &list_buf);
         }
 
-        return @enumFromInt(ObjectHandle, object_block);
+        return @as(ObjectHandle, @enumFromInt(object_block));
     }
 
     pub fn createFile(fs: *FileSystem, dir: DirectoryHandle, name: []const u8, create_time: i128) !FileHandle {
@@ -595,18 +595,18 @@ pub const FileSystem = struct {
 
     fn computeFileDataOffset(byte_addr: u64) FileDataOffset {
         const block_number = byte_addr / @sizeOf(Block);
-        const byte_offset = @truncate(u9, byte_addr);
+        const byte_offset = @as(u9, @truncate(byte_addr));
 
         return if (block_number < ObjectBlock.ref_count)
             FileDataOffset{
                 .refblock_index = 0, // object block
-                .ref_index = @truncate(u7, block_number),
+                .ref_index = @as(u7, @truncate(block_number)),
                 .byte_offset = byte_offset,
             }
         else
             FileDataOffset{
-                .refblock_index = @intCast(u32, 1 + (block_number - ObjectBlock.ref_count) / RefListBlock.ref_count),
-                .ref_index = @intCast(u7, (block_number - ObjectBlock.ref_count) % RefListBlock.ref_count),
+                .refblock_index = @as(u32, @intCast(1 + (block_number - ObjectBlock.ref_count) / RefListBlock.ref_count)),
+                .ref_index = @as(u7, @intCast((block_number - ObjectBlock.ref_count) % RefListBlock.ref_count)),
                 .byte_offset = byte_offset,
             };
     }
@@ -809,8 +809,8 @@ pub const FileSystem = struct {
                 const entry = Entry{
                     .name_buffer = raw_entry.name,
                     .handle = switch (raw_entry.type) {
-                        0 => .{ .directory = @enumFromInt(DirectoryHandle, raw_entry.ref) },
-                        1 => .{ .file = @enumFromInt(FileHandle, raw_entry.ref) },
+                        0 => .{ .directory = @as(DirectoryHandle, @enumFromInt(raw_entry.ref)) },
+                        1 => .{ .file = @as(FileHandle, @enumFromInt(raw_entry.ref)) },
                         else => return error.CorruptFilesystem,
                     },
                 };
@@ -876,7 +876,7 @@ pub const MetaDataChangeSet = struct {
 pub const FileHandle = enum(u32) {
     _,
     pub fn object(h: FileHandle) ObjectHandle {
-        return @enumFromInt(ObjectHandle, @intFromEnum(h));
+        return @as(ObjectHandle, @enumFromInt(@intFromEnum(h)));
     }
 
     pub fn blockNumber(h: FileHandle) u32 {
@@ -887,7 +887,7 @@ pub const FileHandle = enum(u32) {
 pub const DirectoryHandle = enum(u32) {
     _,
     pub fn object(h: DirectoryHandle) ObjectHandle {
-        return @enumFromInt(ObjectHandle, @intFromEnum(h));
+        return @as(ObjectHandle, @enumFromInt(@intFromEnum(h)));
     }
 
     pub fn blockNumber(h: DirectoryHandle) u32 {
@@ -898,10 +898,10 @@ pub const ObjectHandle = enum(u32) {
     _,
 
     pub fn toFileHandle(h: ObjectHandle) FileHandle {
-        return @enumFromInt(FileHandle, @intFromEnum(h));
+        return @as(FileHandle, @enumFromInt(@intFromEnum(h)));
     }
     pub fn toDirectoryHandle(h: ObjectHandle) DirectoryHandle {
-        return @enumFromInt(DirectoryHandle, @intFromEnum(h));
+        return @as(DirectoryHandle, @enumFromInt(@intFromEnum(h)));
     }
 
     pub fn blockNumber(h: ObjectHandle) u32 {
@@ -922,9 +922,9 @@ fn blockToBitPos(block_num: usize) BitmapLocation {
     const word_bit = bit % 8;
 
     return BitmapLocation{
-        .block = @intCast(u32, page),
-        .byte_offset = @intCast(u9, word_index),
-        .bit_offset = @intCast(u3, word_bit),
+        .block = @as(u32, @intCast(page)),
+        .byte_offset = @as(u9, @intCast(word_index)),
+        .bit_offset = @as(u3, @intCast(word_bit)),
     };
 }
 
@@ -969,7 +969,7 @@ pub fn format(device: BlockDevice, init_time: i128) !void {
                 break;
         }
 
-        try device.writeBlock(@intCast(u32, index), &block);
+        try device.writeBlock(@as(u32, @intCast(index)), &block);
     }
 
     setBuffer(&block, ObjectBlock{

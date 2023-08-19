@@ -80,7 +80,7 @@ fn write(driver: *Driver, block: u64, data: []const u8) ashet.storage.BlockDevic
 
 fn status(device: AT_Attachment) Status {
     wait400NS(device.ports.status);
-    return @bitCast(Status, x86.in(u8, device.ports.status));
+    return @as(Status, @bitCast(x86.in(u8, device.ports.status)));
 }
 
 fn isFloating(device: AT_Attachment) bool {
@@ -175,9 +175,9 @@ fn setupParameters(device: AT_Attachment, lba: u24, blockCount: u8) void {
         x86.out(u8, device.ports.device_select, 0xF0);
     }
     x86.out(u8, device.ports.sectors, blockCount);
-    x86.out(u8, device.ports.lba_low, @truncate(u8, lba));
-    x86.out(u8, device.ports.lba_mid, @truncate(u8, lba >> 8));
-    x86.out(u8, device.ports.lba_high, @truncate(u8, lba >> 16));
+    x86.out(u8, device.ports.lba_low, @as(u8, @truncate(lba)));
+    x86.out(u8, device.ports.lba_mid, @as(u8, @truncate(lba >> 8)));
+    x86.out(u8, device.ports.lba_high, @as(u8, @truncate(lba >> 16)));
 }
 
 fn readData(device: AT_Attachment) u16 {
@@ -197,7 +197,7 @@ fn readBlocks(device: AT_Attachment, lba: u24, buffer: []u8) BlockDevice.ReadErr
 
     const ports = device.ports;
 
-    const blockCount = @intCast(u8, buffer.len / block_size);
+    const blockCount = @as(u8, @intCast(buffer.len / block_size));
 
     if (lba + blockCount > device.driver.class.block.num_blocks)
         return error.InvalidBlock;
@@ -233,7 +233,7 @@ fn writeBlocks(device: AT_Attachment, lba: u24, buffer: []const u8) BlockDevice.
 
     const ports = device.ports;
 
-    const blockCount = @intCast(u8, buffer.len / block_size);
+    const blockCount = @as(u8, @intCast(buffer.len / block_size));
 
     if (lba + blockCount > device.driver.class.block.num_blocks)
         return error.InvalidBlock;

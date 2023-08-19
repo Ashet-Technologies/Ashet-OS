@@ -42,9 +42,9 @@ pub fn startAppElf(app: AppID) !void {
                     R_RISCV_RELATIVE => {
                         // logger.err("apply rela: offset={x:0>8} addend={x}", .{ entry.r_offset, entry.r_addend });
 
-                        const reloc_area = process_memory[@intCast(usize, offset)..][0..@sizeOf(usize)];
+                        const reloc_area = process_memory[@as(usize, @intCast(offset))..][0..@sizeOf(usize)];
 
-                        const actual_added = @bitCast(u32, addend orelse std.mem.readIntLittle(i32, reloc_area)); // abusing the fact that a u32 and i32 are interchangible when doing wraparound addition
+                        const actual_added = @as(u32, @bitCast(addend orelse std.mem.readIntLittle(i32, reloc_area))); // abusing the fact that a u32 and i32 are interchangible when doing wraparound addition
                         std.mem.writeIntLittle(
                             usize,
                             reloc_area,
@@ -130,13 +130,13 @@ pub fn startAppElf(app: AppID) !void {
                     R_386_GLOB_DAT => @panic("Implement R_386_GLOB_DAT relocation"),
                     R_386_JMP_SLOT => @panic("Implement R_386_JMP_SLOT relocation"),
                     R_386_RELATIVE => {
-                        const reloc_area = process_memory[@intCast(usize, offset)..][0..@sizeOf(usize)];
+                        const reloc_area = process_memory[@as(usize, @intCast(offset))..][0..@sizeOf(usize)];
 
                         const actual_added = addend orelse std.mem.readIntLittle(i32, reloc_area);
                         std.mem.writeIntLittle(
                             usize,
                             reloc_area,
-                            process_base +% @bitCast(u32, actual_added), // abusing the fact that a u32 and i32 are interchangible when doing wraparound addition
+                            process_base +% @as(u32, @bitCast(actual_added)), // abusing the fact that a u32 and i32 are interchangible when doing wraparound addition
                         );
                     },
                     R_386_GOTOFF => @panic("Implement R_386_GOTOFF relocation"),
@@ -209,8 +209,8 @@ pub fn startAppElf(app: AppID) !void {
             //         return error.MemoryAlreadyUsed;
             // }
 
-            lo_addr = std.math.min(lo_addr, @intCast(usize, phdr.p_vaddr));
-            hi_addr = std.math.max(hi_addr, @intCast(usize, phdr.p_vaddr + phdr.p_memsz));
+            lo_addr = std.math.min(lo_addr, @as(usize, @intCast(phdr.p_vaddr)));
+            hi_addr = std.math.max(hi_addr, @as(usize, @intCast(phdr.p_vaddr + phdr.p_memsz)));
         }
 
         break :blk hi_addr - lo_addr;
@@ -242,10 +242,10 @@ pub fn startAppElf(app: AppID) !void {
             //     phdr.p_align, // alignment
             // });
 
-            const section = process_memory[@intCast(usize, phdr.p_vaddr)..][0..@intCast(usize, phdr.p_memsz)];
+            const section = process_memory[@as(usize, @intCast(phdr.p_vaddr))..][0..@as(usize, @intCast(phdr.p_memsz))];
 
             try file.seekableStream().seekTo(phdr.p_offset);
-            try file.reader().readNoEof(section[0..@intCast(usize, phdr.p_filesz)]);
+            try file.reader().readNoEof(section[0..@as(usize, @intCast(phdr.p_filesz))]);
         }
     }
 
@@ -309,8 +309,8 @@ pub fn startAppElf(app: AppID) !void {
 
                 std.elf.SHT_NOBITS => {
                     // initialize .bss section:
-                    const base = @intCast(usize, shdr.sh_addr);
-                    const size = @intCast(usize, shdr.sh_size);
+                    const base = @as(usize, @intCast(shdr.sh_addr));
+                    const size = @as(usize, @intCast(shdr.sh_size));
                     @memset(process_memory[base .. base + size], 0);
                 },
 
@@ -344,7 +344,7 @@ pub fn startAppElf(app: AppID) !void {
         }
     }
 
-    const entry_point = process_base + @intCast(usize, header.entry);
+    const entry_point = process_base + @as(usize, @intCast(header.entry));
 
     logger.info("loaded {s} to address 0x{X:0>8}, entry point is 0x{X:0>8}", .{
         app.getName(),
@@ -368,7 +368,7 @@ pub fn startAppBinary(app: AppID) !void {
     const app_pages = try ashet.memory.allocPages(proc_page_count);
     errdefer ashet.memory.freePages(app_pages, proc_page_count);
 
-    const process_memory = @ptrCast([*]align(ashet.memory.page_size) u8, ashet.memory.pageToPtr(app_pages))[0..proc_page_size];
+    const process_memory = @as([*]align(ashet.memory.page_size) u8, @ptrCast(ashet.memory.pageToPtr(app_pages)))[0..proc_page_size];
 
     logger.info("process {s} will be loaded at {*} with {d} bytes size ({d} pages at {d})", .{
         app.getName(),
@@ -394,7 +394,7 @@ fn spawnApp(app: AppID, process_memory: []align(ashet.memory.page_size) u8, entr
     const process = try ashet.multi_tasking.Process.spawn(
         app.getName(),
         process_memory,
-        @ptrFromInt(ashet.scheduler.ThreadFunction, entry_point),
+        @as(ashet.scheduler.ThreadFunction, @ptrFromInt(entry_point)),
         null,
         .{ .stack_size = 512 * 1024 },
     );

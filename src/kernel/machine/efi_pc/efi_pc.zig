@@ -56,7 +56,7 @@ pub fn initialize() !void {
 
     for (&hw.ata, 0..) |*ata, index| {
         // requires rtc to be initialized!
-        ata.* = ashet.drivers.block.AT_Attachment.init(@truncate(u3, index)) catch {
+        ata.* = ashet.drivers.block.AT_Attachment.init(@as(u3, @truncate(index))) catch {
             continue;
         };
         ashet.drivers.install(&ata.driver);

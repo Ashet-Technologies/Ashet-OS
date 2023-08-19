@@ -360,7 +360,7 @@ pub const ColorIndex = enum(u8) {
     _,
 
     pub fn get(val: u8) ColorIndex {
-        return @enumFromInt(ColorIndex, val);
+        return @as(ColorIndex, @enumFromInt(val));
     }
 
     pub fn index(c: ColorIndex) @typeInfo(ColorIndex).Enum.tag_type {
@@ -381,18 +381,18 @@ pub const Color = packed struct(u16) {
     b: u5,
 
     pub fn toU16(c: Color) u16 {
-        return @bitCast(u16, c);
+        return @as(u16, @bitCast(c));
     }
 
     pub fn fromU16(u: u16) Color {
-        return @bitCast(Color, u);
+        return @as(Color, @bitCast(u));
     }
 
     pub fn fromRgb888(r: u8, g: u8, b: u8) Color {
         return Color{
-            .r = @truncate(u5, r >> 3),
-            .g = @truncate(u6, g >> 2),
-            .b = @truncate(u5, b >> 3),
+            .r = @as(u5, @truncate(r >> 3)),
+            .g = @as(u6, @truncate(g >> 2)),
+            .b = @as(u5, @truncate(b >> 3)),
         };
     }
 
@@ -606,11 +606,11 @@ pub const CharAttributes = packed struct { // (u8)
     fg: u4, // hi nibble
 
     pub fn fromByte(val: u8) CharAttributes {
-        return @bitCast(CharAttributes, val);
+        return @as(CharAttributes, @bitCast(val));
     }
 
     pub fn toByte(attr: CharAttributes) u8 {
-        return @bitCast(u8, attr);
+        return @as(u8, @bitCast(attr));
     }
 };
 
@@ -695,21 +695,21 @@ pub const Rectangle = extern struct {
 
     pub fn contains(rect: Rectangle, pt: Point) bool {
         return (pt.x >= rect.x) and
-            (pt.x < rect.x + @intCast(u15, rect.width)) and
+            (pt.x < rect.x + @as(u15, @intCast(rect.width))) and
             (pt.y >= rect.y) and
-            (pt.y < rect.y + @intCast(u15, rect.height));
+            (pt.y < rect.y + @as(u15, @intCast(rect.height)));
     }
 
     pub fn containsRectangle(boundary: Rectangle, region: Rectangle) bool {
         return boundary.contains(region.position()) and
-            boundary.contains(Point.new(region.x + @intCast(u15, region.width) - 1, region.y + @intCast(u15, region.height) - 1));
+            boundary.contains(Point.new(region.x + @as(u15, @intCast(region.width)) - 1, region.y + @as(u15, @intCast(region.height)) - 1));
     }
 
     pub fn intersects(a: Rectangle, b: Rectangle) bool {
-        return a.x + @intCast(u15, a.width) >= b.x and
-            a.y + @intCast(u15, a.height) >= b.y and
-            a.x <= b.x + @intCast(u15, b.width) and
-            a.y <= b.y + @intCast(u15, b.height);
+        return a.x + @as(u15, @intCast(a.width)) >= b.x and
+            a.y + @as(u15, @intCast(a.height)) >= b.y and
+            a.x <= b.x + @as(u15, @intCast(b.width)) and
+            a.y <= b.y + @as(u15, @intCast(b.height));
     }
 
     pub fn eql(a: Rectangle, b: Rectangle) bool {
@@ -720,13 +720,13 @@ pub const Rectangle = extern struct {
         return rect.y;
     }
     pub fn bottom(rect: Rectangle) i16 {
-        return rect.y + @intCast(u15, rect.height);
+        return rect.y + @as(u15, @intCast(rect.height));
     }
     pub fn left(rect: Rectangle) i16 {
         return rect.x;
     }
     pub fn right(rect: Rectangle) i16 {
-        return rect.x +| @intCast(u15, rect.width);
+        return rect.x +| @as(u15, @intCast(rect.width));
     }
 
     pub fn shrink(rect: Rectangle, amount: u15) Rectangle {

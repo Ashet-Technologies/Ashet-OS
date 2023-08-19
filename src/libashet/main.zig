@@ -210,7 +210,7 @@ pub const debug = struct {
             std.io.getStdErr().writeAll(buffer) catch {};
         } else {
             for (buffer) |char| {
-                @ptrFromInt(*volatile u8, 0x1000_0000).* = char;
+                @as(*volatile u8, @ptrFromInt(0x1000_0000)).* = char;
             }
         }
     }

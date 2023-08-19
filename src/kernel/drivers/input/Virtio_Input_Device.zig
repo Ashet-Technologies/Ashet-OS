@@ -208,7 +208,7 @@ fn poll(driver: *Driver) void {
 
     device_fetch: while (true) {
         const evt = getDeviceEvent(device) orelse break :device_fetch;
-        const event_type = @enumFromInt(virtio.input.ConfigEvSubSel, evt.type);
+        const event_type = @as(virtio.input.ConfigEvSubSel, @enumFromInt(evt.type));
 
         switch (device.kind) {
             .keyboard => {
@@ -233,13 +233,13 @@ fn poll(driver: *Driver) void {
                     .cess_rel => {
                         if (evt.code == 0) {
                             ashet.input.pushRawEvent(.{ .mouse_motion = .{
-                                .dx = @bitCast(i32, evt.value),
+                                .dx = @as(i32, @bitCast(evt.value)),
                                 .dy = 0,
                             } });
                         } else if (evt.code == 1) {
                             ashet.input.pushRawEvent(.{ .mouse_motion = .{
                                 .dx = 0,
-                                .dy = @bitCast(i32, evt.value),
+                                .dy = @as(i32, @bitCast(evt.value)),
                             } });
                         }
                     },

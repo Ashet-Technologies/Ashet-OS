@@ -118,7 +118,7 @@ pub fn initialize() void {
 
         fs.* = FileSystem{
             .enabled = true,
-            .id = @enumFromInt(ashet.abi.FileSystemId, index + 1),
+            .id = @as(ashet.abi.FileSystemId, @enumFromInt(index + 1)),
             .block_device = dev,
             .name = undefined,
             .driver = undefined,

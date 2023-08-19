@@ -95,9 +95,9 @@ fn ResolvedDriverInterface(comptime class: DriverClass) type {
 pub fn getDriverName(comptime class: DriverClass, intf: *ResolvedDriverInterface(class)) []const u8 {
     // if (@offsetOf(DriverInterface, @tagName(class)) != 0) @compileError("oh no!");
 
-    std.debug.assert(@ptrFromInt(*DriverInterface, 0x1000) == @ptrCast(*DriverInterface, &@field(@ptrFromInt(*DriverInterface, 0x1000), @tagName(class))));
+    std.debug.assert(@as(*DriverInterface, @ptrFromInt(0x1000)) == @as(*DriverInterface, @ptrCast(&@field(@as(*DriverInterface, @ptrFromInt(0x1000)), @tagName(class)))));
 
-    const di: *DriverInterface = @ptrCast(*DriverInterface, intf);
+    const di: *DriverInterface = @as(*DriverInterface, @ptrCast(intf));
 
     const dri: *Driver = @fieldParentPtr(Driver, "class", di);
 
@@ -135,7 +135,7 @@ pub const DriverInterface = union(DriverClass) {
 };
 
 pub fn resolveDriver(comptime class: DriverClass, ptr: *ResolvedDriverInterface(class)) *Driver {
-    const container = @ptrCast(*DriverInterface, ptr);
+    const container = @as(*DriverInterface, @ptrCast(ptr));
     std.debug.assert(@intFromPtr(container) == @intFromPtr(&@field(container, @tagName(class))));
     return @fieldParentPtr(Driver, "class", container);
 }
@@ -366,7 +366,7 @@ const virtio = @import("virtio");
 
 /// Scans a memory area for virtio devices and installs all found device drivers.
 pub fn scanVirtioDevices(allocator: std.mem.Allocator, base_address: usize, max_count: usize) !void {
-    const virtio_base = @ptrFromInt([*]align(4096) volatile virtio.ControlRegs, base_address);
+    const virtio_base = @as([*]align(4096) volatile virtio.ControlRegs, @ptrFromInt(base_address));
 
     if (virtio_base[0].magic != virtio.ControlRegs.magic) {
         @panic("not virt platform!");

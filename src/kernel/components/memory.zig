@@ -44,8 +44,8 @@ pub inline fn loadKernelMemory(comptime sections: MemorySections) void {
         // logger.debug("data_size   = 0x{X:0>8}", .{data_size});
 
         @memcpy(
-            @ptrFromInt([*]u32, data_start)[0 .. data_size / 4],
-            @ptrFromInt([*]u32, flash_end)[0 .. data_size / 4],
+            @as([*]u32, @ptrFromInt(data_start))[0 .. data_size / 4],
+            @as([*]u32, @ptrFromInt(flash_end))[0 .. data_size / 4],
         );
     }
     if (sections.bss) {
@@ -58,7 +58,7 @@ pub inline fn loadKernelMemory(comptime sections: MemorySections) void {
         // logger.debug("bss_end     = 0x{X:0>8}", .{bss_end});
         // logger.debug("bss_size    = 0x{X:0>8}", .{bss_size});
 
-        @memset(@ptrFromInt([*]u32, bss_start)[0 .. bss_size / 4], 0);
+        @memset(@as([*]u32, @ptrFromInt(bss_start))[0 .. bss_size / 4], 0);
     }
 }
 
@@ -103,7 +103,7 @@ pub fn initializeLinearMemory() void {
     };
     for (kernel_regions, 0..) |region, region_id| {
         logger.debug("disable region {}", .{region_id});
-        var base_ptr = @ptrFromInt([*]u8, region.offset);
+        var base_ptr = @as([*]u8, @ptrFromInt(region.offset));
         var i: usize = 0;
         while (i < region.length) : (i += page_size) {
             if (page_manager.ptrToPage(base_ptr + i)) |page| {
@@ -142,7 +142,7 @@ pub const debug = struct {
                 }
                 writer.print("\n0x{X:0>8}: [", .{page_manager.region.offset + i * page_size}) catch {};
             }
-            if (page_manager.isFree(@enumFromInt(Page, i))) {
+            if (page_manager.isFree(@as(Page, @enumFromInt(i)))) {
                 free_memory += page_size;
                 writer.writeAll(" ") catch {};
             } else {
@@ -192,7 +192,7 @@ const PageAllocator = struct {
 
         const page_slice = page_manager.allocPages(alloc_page_count) catch return null;
 
-        return @ptrCast([*]align(page_size) u8, page_manager.pageToPtr(page_slice.page));
+        return @as([*]align(page_size) u8, @ptrCast(page_manager.pageToPtr(page_slice.page)));
     }
 
     fn resize(
@@ -214,7 +214,7 @@ const PageAllocator = struct {
         _ = ret_addr;
 
         const buf_aligned_len = std.mem.alignForward(buf.len, page_size);
-        const ptr = @alignCast(page_size, buf.ptr);
+        const ptr: *align(page_size) u8 = @alignCast(buf.ptr);
 
         page_manager.freePages(PageSlice{
             .page = page_manager.ptrToPage(ptr) orelse @panic("invalid address in free!"),
@@ -257,7 +257,7 @@ const Page = enum(u32) {
 
     /// Returns the number of the bit inside the bitmap.
     fn bitIndex(page: Page) USizeIndex {
-        return @intCast(USizeIndex, @intFromEnum(page) % @bitSizeOf(usize));
+        return @as(USizeIndex, @intCast(@intFromEnum(page) % @bitSizeOf(usize)));
     }
 };
 
@@ -267,7 +267,7 @@ const PageSlice = struct {
     len: u32,
 };
 
-const USizeIndex = @Type(.{ .Int = .{ .bits = @intCast(comptime_int, std.math.log2_int_ceil(u32, @bitSizeOf(usize))), .signedness = .unsigned } });
+const USizeIndex = @Type(.{ .Int = .{ .bits = @as(comptime_int, @intCast(std.math.log2_int_ceil(u32, @bitSizeOf(usize)))), .signedness = .unsigned } });
 
 const RawPageStorageManager = struct {
     //! - `0` means the page is currently free.
@@ -342,7 +342,7 @@ const RawPageStorageManager = struct {
         { // mark each page used by the bitmap as "used"
             var i: usize = 0;
             while (i < bitmap_page_count) : (i += 1) {
-                pm.markUsed(@enumFromInt(Page, i));
+                pm.markUsed(@as(Page, @enumFromInt(i)));
             }
         }
 
@@ -371,7 +371,7 @@ const RawPageStorageManager = struct {
         // We put the bitmap at the start of our memory, as we know we have the place for it.
         // This is guaranteed as we store only one bit per page_size (often 4096) byte, so
         // the bitmap always fits.
-        return @ptrFromInt([*]usize, pm.region.offset)[0..bitmap_length];
+        return @as([*]usize, @ptrFromInt(pm.region.offset))[0..bitmap_length];
     }
 
     /// Returns the number of pages managed by `pm`.
@@ -395,7 +395,7 @@ const RawPageStorageManager = struct {
     /// Returns the number of pages required for a given number of `bytes`.
     pub fn getRequiredPages(pm: RawPageStorageManager, bytes: usize) u32 {
         _ = pm;
-        return @intCast(u32, std.mem.alignForward(bytes, page_size) / page_size);
+        return @as(u32, @intCast(std.mem.alignForward(bytes, page_size) / page_size));
     }
 
     /// Allocates `count` physical pages and returns a slice to the allocated pages.
@@ -431,7 +431,7 @@ const RawPageStorageManager = struct {
         // logger.debug("selected first page {}", .{first_page});
 
         if (count == 1) {
-            const page = @enumFromInt(Page, first_page);
+            const page = @as(Page, @enumFromInt(first_page));
             pm.markUsed(page);
             return PageSlice{ .page = page, .len = 1 };
         }
@@ -439,18 +439,18 @@ const RawPageStorageManager = struct {
         while (first_page < pm.pageCount() - count) {
             var i: usize = 1;
             const ok = while (i < count) : (i += 1) {
-                if (!pm.isFree(@enumFromInt(Page, first_page + i)))
+                if (!pm.isFree(@as(Page, @enumFromInt(first_page + i))))
                     break false;
             } else true;
 
             if (ok) {
                 i = 0;
                 while (i < count) : (i += 1) {
-                    const page = @enumFromInt(Page, first_page + i);
+                    const page = @as(Page, @enumFromInt(first_page + i));
                     std.debug.assert(pm.isFree(page));
                     pm.markUsed(page);
                 }
-                return PageSlice{ .page = @enumFromInt(Page, first_page), .len = count };
+                return PageSlice{ .page = @as(Page, @enumFromInt(first_page)), .len = count };
             } else {
                 // skip over all checked pages as well as the unset page
                 first_page += i;
@@ -466,7 +466,7 @@ const RawPageStorageManager = struct {
         std.debug.assert(first + slice.len <= pm.pageCount());
         var i: u32 = first;
         while (i < first +| slice.len) : (i += 1) {
-            pm.markFree(@enumFromInt(Page, i));
+            pm.markFree(@as(Page, @enumFromInt(i)));
         }
     }
 
@@ -499,7 +499,7 @@ const RawPageStorageManager = struct {
             return null;
         if (offset >= pm.region.offset + pm.region.length)
             return null;
-        return @enumFromInt(Page, @truncate(u32, (offset - pm.region.offset) / page_size));
+        return @as(Page, @enumFromInt(@as(u32, @truncate((offset - pm.region.offset) / page_size))));
     }
 
     /// Converts a given `page` index for `pm` into a physical memory address.
@@ -507,6 +507,6 @@ const RawPageStorageManager = struct {
         const num = @intFromEnum(page);
         if (num >= pm.pageCount())
             return null;
-        return @ptrFromInt(*align(page_size) anyopaque, pm.region.offset + page_size * num);
+        return @as(*align(page_size) anyopaque, @ptrFromInt(pm.region.offset + page_size * num));
     }
 };

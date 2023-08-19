@@ -35,7 +35,7 @@ const BlockDevice = struct {
     }
 
     fn fromCtx(ctx: *anyopaque) *BD {
-        return @ptrCast(*BD, @alignCast(@alignOf(BD), ctx));
+        return @ptrCast(@alignCast(ctx));
     }
 
     fn getBlockCount(ctx: *anyopaque) u32 {
@@ -103,7 +103,7 @@ fn destroyInstance(dri: *ashet.drivers.Driver, allocator: std.mem.Allocator, gen
 }
 
 fn enumCast(comptime T: type, v: anytype) T {
-    return @enumFromInt(T, @intFromEnum(v));
+    return @as(T, @enumFromInt(@intFromEnum(v)));
 }
 
 const Instance = struct {
@@ -373,5 +373,5 @@ fn mapFileSystemError(err: anytype) !noreturn {
 }
 
 fn dateTimeFromTimestamp(ts: i128) ashet.abi.DateTime {
-    return @intCast(i64, @divTrunc(ts, std.time.ns_per_ms));
+    return @as(i64, @intCast(@divTrunc(ts, std.time.ns_per_ms)));
 }

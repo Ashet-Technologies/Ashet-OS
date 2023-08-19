@@ -132,16 +132,16 @@ pub fn fireInterrupt(comptime intr: u32) void {
 pub fn enableIRQ(index: u4) void {
     logger.debug("enable irq {}", .{index});
     switch (index) {
-        0...7 => PIC.primary.enable(@truncate(u3, index)),
-        8...15 => PIC.secondary.enable(@truncate(u3, index)),
+        0...7 => PIC.primary.enable(@as(u3, @truncate(index))),
+        8...15 => PIC.secondary.enable(@as(u3, @truncate(index))),
     }
 }
 
 pub fn disableIRQ(index: u4) void {
     logger.debug("disable irq {}", .{index});
     switch (index) {
-        0...7 => PIC.primary.disable(@truncate(u3, index)),
-        8...15 => PIC.secondary.disable(@truncate(u3, index)),
+        0...7 => PIC.primary.disable(@as(u3, @truncate(index))),
+        8...15 => PIC.secondary.disable(@as(u3, @truncate(index))),
     }
 }
 
@@ -227,8 +227,8 @@ const Descriptor = packed struct(u64) {
     pub fn init(offset: ?*const fn () callconv(.Naked) void, selector: u16, _type: InterruptType, bits: InterruptBits, privilege: u2, enabled: bool) Descriptor {
         const offset_val = @intFromPtr(offset);
         return Descriptor{
-            .offset0 = @truncate(u16, offset_val & 0xFFFF),
-            .offset1 = @truncate(u16, (offset_val >> 16) & 0xFFFF),
+            .offset0 = @as(u16, @truncate(offset_val & 0xFFFF)),
+            .offset1 = @as(u16, @truncate((offset_val >> 16) & 0xFFFF)),
             .selector = selector,
             .type = _type,
             .bits = bits,

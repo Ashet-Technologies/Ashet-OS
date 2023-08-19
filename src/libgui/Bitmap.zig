@@ -33,15 +33,15 @@ pub fn embed(comptime bits: []const u8) EmbeddedBitmap {
             }
         };
 
-        const head = @bitCast(Header, bits[0..@sizeOf(Header)].*);
+        const head = @as(Header, @bitCast(bits[0..@sizeOf(Header)].*));
         if (head.magic != 0x48198b74)
             @compileError("Invalid file format. Bitmap.embed expects a Ashet Bitmap!");
 
         const pixel_count = head.width * head.height;
         const palette_size = head.paletteSize();
 
-        const pixels = @bitCast([pixel_count]ColorIndex, bits[@sizeOf(Header)..][0..pixel_count].*);
-        const palette = @bitCast([palette_size]ashet.abi.Color, bits[@sizeOf(Header) + pixel_count ..][0 .. 2 * palette_size].*);
+        const pixels = @as([pixel_count]ColorIndex, @bitCast(bits[@sizeOf(Header)..][0..pixel_count].*));
+        const palette = @as([palette_size]ashet.abi.Color, @bitCast(bits[@sizeOf(Header) + pixel_count ..][0 .. 2 * palette_size].*));
 
         return EmbeddedBitmap{
             .bitmap = Bitmap{
@@ -87,7 +87,7 @@ pub fn parse(comptime base: u8, comptime spec: []const u8) Bitmap {
         }
 
         const transparent: ?ColorIndex = if (used.findFirstSet()) |first|
-            ColorIndex.get(base + @intCast(u8, first))
+            ColorIndex.get(base + @as(u8, @intCast(first)))
         else
             null;
 
@@ -113,7 +113,7 @@ pub fn parse(comptime base: u8, comptime spec: []const u8) Bitmap {
             .width = width,
             .height = height,
             .stride = width,
-            .pixels = @ptrCast([*]ColorIndex, &buffer),
+            .pixels = @as([*]ColorIndex, @ptrCast(&buffer)),
             .transparent = transparent,
         };
     };
