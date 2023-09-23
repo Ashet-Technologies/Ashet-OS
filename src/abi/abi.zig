@@ -119,6 +119,8 @@ fn SysCallFunc(comptime call: SysCall) type {
     unreachable;
 }
 
+
+
 pub fn syscall(comptime name: []const u8) SysCallFunc(@field(SysCall, name)) {
     const target = @import("builtin").target;
 

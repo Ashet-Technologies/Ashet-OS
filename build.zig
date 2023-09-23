@@ -49,6 +49,7 @@ const AshetContext = struct {
                 exe.addModule(dep.name, dep.module);
             }
 
+            exe.code_model = .small;
             exe.single_threaded = true; // AshetOS doesn't support multithreading in a modern sense
             exe.pie = true; // AshetOS requires PIE executables
             exe.force_pic = true; // which need PIC code
@@ -359,6 +360,7 @@ pub fn build(b: *std.Build) !void {
         });
 
         {
+            kernel_exe.code_model = .small;
             kernel_exe.bundle_compiler_rt = true;
             kernel_exe.rdynamic = true; // Prevent the compiler from garbage collecting exported symbols
             kernel_exe.single_threaded = true;

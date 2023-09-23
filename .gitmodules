@@ -7,3 +7,6 @@
 [submodule "vendor/ziglibc"]
 	path = vendor/ziglibc
 	url = https://github.com/MasterQ32/ziglibc
+[submodule "vendor/disk-image-step"]
+	path = vendor/disk-image-step
+	url = git@github.com:zig-osdev/disk-image-step.git
