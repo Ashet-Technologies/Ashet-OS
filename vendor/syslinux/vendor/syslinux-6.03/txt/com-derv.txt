@@ -1,0 +1,11 @@
+
+// == DERIVATIVES ==
+
+The *Syslinux* suite contains several boot loader (core) derivatives (variants), currently based solely on the boot media:
+
+	*SYSLINUX* - Disk (floppy/hard disk) based
+	*PXELINUX* - PXE network booting
+	*ISOLINUX* - ISO9660 (CD/DVD; El Torito) based
+
+Prior to v4.00, *SYSLINUX* was only for FAT12/FAT16/FAT32 and another derivative, *EXTLINUX*, was for ext2/ext3 file systems, whose functionality has been merged into *SYSLINUX*.
+

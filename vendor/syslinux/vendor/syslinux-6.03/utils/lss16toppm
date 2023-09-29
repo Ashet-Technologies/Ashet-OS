@@ -1,0 +1,111 @@
+#!/usr/bin/perl
+## -----------------------------------------------------------------------
+##
+##   Copyright 2001-2008 H. Peter Anvin - All Rights Reserved
+##
+##   This program is free software; you can redistribute it and/or modify
+##   it under the terms of the GNU General Public License as published by
+##   the Free Software Foundation, Inc., 53 Temple Place Ste 330,
+##   Boston MA 02111-1307, USA; either version 2 of the License, or
+##   (at your option) any later version; incorporated herein by reference.
+##
+## -----------------------------------------------------------------------
+
+##
+## lss16toppm:
+## Convert an LSS-16 image to PPM
+##
+## Usage:
+##
+##	lss16toppm [-map] < file.lss > file.ppm
+##
+## The -map causes the color map to be output on stderr.
+##
+
+eval { use bytes; };
+eval { binmode STDIN; };
+eval { binmode STDOUT; };
+
+$map = 0;
+foreach $arg ( @ARGV ) {
+    if ( $arg eq '-map' ) {
+	$map = 1;
+    } else {
+	print STDERR "$0: Unknown option: $arg\n";
+	exit 127;
+    }
+}
+
+if ( read(STDIN, $header, 56) != 56 ) {
+    print STDERR "$0: Short file\n";
+    exit 1;
+}
+
+($magic, $xsize, $ysize, @colorset) = unpack("Vvvc48", $header);
+
+if ( $magic != 0x1413f33d ) {
+    print STDERR "$0: Invalid file format\n";
+    exit 1;
+}
+
+%color = ();
+for ( $i = 0 ; $i < 16 ; $i++ ) {
+    $r = int((shift @colorset) * 255 / 63 + 0.5);
+    $g = int((shift @colorset) * 255 / 63 + 0.5);
+    $b = int((shift @colorset) * 255 / 63 + 0.5);
+
+    $color{$i} = pack("ccc", $r, $g, $b);
+
+    if ( $map ) {
+	printf STDERR "#%02x%02x%02x=%d\n", $r, $g, $b, $i;
+    }
+}
+
+sub get_nybble() {
+    my($ch,$n);
+    if ( defined($nybble_buf) ) {
+	$n = $nybble_buf;
+	undef $nybble_buf;
+    } else {
+	if ( read(STDIN, $ch, 1) != 1 ) {
+	    print STDERR "$0: Short read on input (file corrupt)\n";
+	    exit 1;
+	}
+	$ch = ord($ch);
+	$nybble_buf = $ch >> 4;
+	$n = $ch & 0xF;
+    }
+    return $n;
+}
+
+print "P6\n";
+print "$xsize $ysize\n";
+print "255\n";
+
+for ( $y = 0 ; $y < $ysize ; $y++ ) {
+    $x = 0;
+    $last = 0;
+    undef $nybble_buf;		# Nybble buffer starts clear on each line
+    while ( $x < $xsize ) {
+	$n = get_nybble();
+
+	if ( $n != $last ) {
+	    print $color{$n};
+	    $last = $n;
+	    $x++;
+	} else {
+	    $c = get_nybble();
+	    if ( $c == 0 ) {
+		# Double-nybble run
+		$c = get_nybble();
+		$c += get_nybble() << 4;
+		$c += 16;
+	    }
+	    # Truncate overlong runs
+	    $c = $xsize-$x if ( $c > $xsize-$x );
+	    # Output run
+	    print $color{$n} x $c;
+	    $x += $c;
+	}
+    }
+}

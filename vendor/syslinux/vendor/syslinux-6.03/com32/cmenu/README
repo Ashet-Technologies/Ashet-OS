@@ -1,0 +1,95 @@
+          Text User Interface using comboot
+          ---------------------------------
+
+This is a menu system written by Murali Krishnan Ganapathy and ported
+from OpenWatcom to gcc by HPA. It is currently being maintained by the
+original author.
+
+To configure the menus, you need to set up a menu configuration file
+to have the menu items you desire, then build the menu system using
+make.  You can use either simple.c or complex.c as a starting point
+for your own menu configuration file; If your menu system is only going
+to have entries corresponding to things which can be executed directly,
+then you can create a file in ".menu" format instead of the C code.
+
+See MENU_FORMAT for the syntax of .menu files
+
+The resulting code is a 32-bit COMBOOT code, and hence can be executed
+only under syslinux. You can use tools like bochs to help debug your
+code.
+
+Menu Features currently supported are:
+* menu items,
+* submenus,
+* disabled items,
+* checkboxes,
+* invisible items (useful for dynamic menus), and
+* Radio menus,
+* Context sensitive help
+* Authenticated users
+* Editing commands associated with items
+
+The keys used are:
+
+* Arrow Keys, PgUp, PgDn, Home, End Keys
+* Space to switch state of a checkbox
+* Enter to choose the item
+* Escape to exit from it
+* Shortcut keys
+
+Features
+--------
+This is a general purpose menu system implemented using only BIOS calls,
+so it can be executed in a COMBOOT environment as well. It is highly
+customizable. Some features include:
+
+* Status line
+    Display any help information associated with each menu item.
+* Window
+    Specify a window within which the menu system draws all its menu's.
+    It is upto the user to ensure that the menu's fit within the window.
+* Positioning submenus
+    By default, each submenu is positioned just below the corresponding
+    entry of the parent menu. However, the user may position each menu
+    at a specific location of his choice. This is useful, when the menu's
+    have lots of options.
+* Registering handlers for each menu item
+    This is mainly used for checkboxes and radiomenu's, where a selection may
+    result in disabling other menu items/checkboxes
+* Global Screen Handler
+    This is called every time the menu is redrawn. The user can display
+    additional information (usually outside the window where the menu is
+    being displayed). See the complex.c for an example, where the global
+    handler is used to display the choices made so far.
+* Global Keys Handler
+    This is called every time the user presses a key which the menu
+    system does not understand. This can be used to display context
+    sensitive help. See complex.c for how to use this hook to implement
+    a context sensitive help system as well as "On the fly" editing
+    of commands associated with menus.
+* Shortcut Keys
+    With each item one can register a shortcut key from [A-Za-z0-9].
+    Pressing a key within that range, will take you to the next item
+    with that shortcut key (so you can have multiple items with the
+    same shortcut key). The default shortcut key for each item, is
+    the lower case version of the first char of the item in the range
+    [A-Za-z0-9].
+* Escape Keys
+    Each item entry can have a substring enclosed in < and >. This part
+    is highlighted. Can be used to highlight the shortcut keys. By default
+    if an item has a <, then the first char inside < and > in the range
+    [A-Za-z0-9] is converted to lower case and set as the shortcut key.
+* Ontimeout handler
+    The user can register an ontimeout handler, which gets called if
+    no key has been pressed for a user specific amount of time (default 5 min).
+    For an example see the complex.c file.
+
+Credits
+-------
+* The Watcom developers and Peter Anvin for figuring out an OS
+  independent startup code.
+* Thomas for porting the crypt function and removing all C library
+  dependencies
+* Peter Anvin for porting the code to GCC
+
+- Murali (gmurali+guicd@cs.uchicago.edu)

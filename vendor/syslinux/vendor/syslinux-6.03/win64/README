@@ -1,0 +1,10 @@
+Building the Win64 installer requires the MinGW-W64 compiler,
+available at:
+
+	http://mingw-w64.sourceforge.net/
+
+For prepackaged versions of the MinGW-W64 cross-compiler for the
+Fedora Linux distribution (and possibly other RPM-based
+distributions), see:
+
+	http://lists.fedoraproject.org/pipermail/mingw/2010-May/002589.html

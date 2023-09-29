@@ -1,0 +1,11 @@
+
+// == KNOWN BUGS ==
+
+Several known bugs/common problems are listed at
+http://www.syslinux.org/wiki/index.php/Common_Problems and known
+hardware compatibility issues are listed at
+http://www.syslinux.org/wiki/index.php/Hardware_Compatibility with
+filename translation difficulty and early PXE stacks being some of the
+most common.  Reporting of other encountered issues is welcome and
+appreciated.
+

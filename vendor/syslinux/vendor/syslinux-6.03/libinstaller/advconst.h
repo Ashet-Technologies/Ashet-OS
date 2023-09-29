@@ -1,0 +1,1 @@
+../com32/include/syslinux/advconst.h

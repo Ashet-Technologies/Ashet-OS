@@ -1,0 +1,60 @@
+# choose default title
+title = "A test of the test.menu file"
+top = 1
+left = 1
+bot = 23
+right = 78
+
+[testing]
+title = " Testing "
+
+item="Self Loop"
+info="Go to Testing"
+type=submenu
+data=testing
+
+item="Memory Test"
+info="Perform extensive memory testing"
+data="memtest"
+
+item="Exit this menu"
+info="Go one level up"
+type=exitmenu
+
+[rescue]
+title = " Rescue Options "
+row = 10
+col = 10
+
+item="Linux Rescue"
+data="linresc"
+
+item="Dos Rescue"
+data="dosresc"
+
+item="Windows Rescue"
+data="winresc"
+
+item="Exit this menu"
+info="Go one level up"
+type=exitmenu
+
+[main]
+title = " Main Menu "
+
+item="Prepare"
+data="prep"
+
+item="Rescue options..."
+info="Troubleshoot a system"
+type=submenu
+data="rescue"
+
+item="Testing..."
+info="Options to test hardware"
+type=submenu
+data="testing"
+
+item="Exit this menu"
+info="Go one level up"
+type=exitmenu

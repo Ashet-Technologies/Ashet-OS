@@ -1,0 +1,73 @@
+.TH extlinux "1" "18 December 2007" "SYSLINUX for ext2/ext3 filesystem"
+.SH NAME
+extlinux \- install the \s-1SYSLINUX\s+1 bootloader on a ext2/ext3 filesystem
+.SH SYNOPSIS
+.B extlinux
+[\fIoptions\fP] \fIdirectory\fP
+.SH DESCRIPTION
+\fBEXTLINUX\fP is a new syslinux derivative, which boots from a Linux ext2/ext3
+filesystem.  It works the same way as \fBSYSLINUX\fP, with a few slight modifications.
+It is intended to simplify first-time installation of Linux, and for creation of
+rescue and other special-purpose boot disks.
+.PP
+The installer is designed to be run on a mounted directory.  For example, if you have an
+ext2 or ext3 usb key mounted on /mnt, you can run the following command:
+.IP
+.B extlinux --install /mnt
+.SH OPTIONS
+.TP
+\fB\-H\fR, \fB\-\-heads\fR=#
+Force the number of heads.
+.TP
+\fB\-i\fR, \fB\-\-install\fR
+Install over the current bootsector.
+.TP
+\fB\-O\fR, \fB\-\-clear\-once\fR
+Clear the boot-once command.
+.TP
+\fB\-o\fR, \fB\-\-once\fR=\fIcommand\fR
+Execute a command once upon boot.
+.TP
+\fB\-M\fR, \fB\-\-menu\-save\fR=\fIlabel\fR
+Set the label to select as default on the next boot
+.TP
+\fB\-r\fR, \fB\-\-raid\fR
+Fall back to the next device on boot failure.
+.TP
+\fB\-\-reset\-adv\fR
+Reset auxiliary data.
+.TP
+\fB\-S\fR, \fB\-\-sectors\fR=\fI#\fR
+Force the number of sectors per track.
+.TP
+\fB\-U\fR, \fB\-\-update\fR
+Updates a previous \fBEXTLINUX\fP installation.
+.TP
+\fB\-z\fR, \fB\-\-zip\fR
+Force zipdrive geometry (-H 64 -S 32).
+.TP
+\fB\-\-device\fR=\fIdevicename\fR
+Override the automatic detection of device names.  This option is
+intended for special environments only and should not be used by
+normal users.  Misuse of this option can cause disk corruption and
+lost data.
+.SH FILES
+The extlinux configuration file needs to be named syslinux.cfg or
+extlinux.conf and needs to be stored in the extlinux installation
+directory. For more information about the contents of extlinux.conf,
+see syslinux(1) manpage, section files.
+.SH BUGS
+I would appreciate hearing of any problems you have with \s-1SYSLINUX\s+1.  I
+would also like to hear from you if you have successfully used \s-1SYSLINUX\s+1,
+especially if you are using it for a distribution.
+.PP
+If you are reporting problems, please include all possible information
+about your system and your BIOS; the vast majority of all problems
+reported turn out to be BIOS or hardware bugs, and I need as much
+information as possible in order to diagnose the problems.
+.PP
+There is a mailing list for discussion among \s-1SYSLINUX\s+1 users and for
+announcements of new and test versions. To join, send a message to
+majordomo@linux.kernel.org with the line:
+.SH SEE ALSO
+.BR syslinux (1)

@@ -1,0 +1,142 @@
+
+title=" COMBOOT Menu System "
+
+# location of help directory
+helpdir="/isolinux/help"
+pwdfile="/isolinux/password"
+
+# skip the menu if shift is pressed or Caps is on
+# if the menu is skipped run "skipcmd"
+# in our case we run the OS on the first harddisk
+skipcondn=shift-caps
+skipcmd="chain.c32 hd 0"
+
+# person with root privileges can exit menu
+# others just repeat
+exitcmd=".exit"
+onerrorcmd=".beep 2 % % .help hlp00025.txt % .exit"
+
+startfile="hlp00026.txt"
+
+timeoutcmd=".wait"
+totaltimeoutcmd="chain.c32 hd 0"
+
+[netmenu]
+title=" Init Network "
+
+item="<N>one"
+info="Dont start network"
+type=radioitem
+data="network=no"
+
+item="<d>hcp"
+info="Use DHCP"
+type=radioitem
+data="network=dhcp"
+
+[testing]
+title=" Testing "
+
+item="<M>emory Test"
+info="Perform extensive memory testing"
+data="memtest"
+helpid=25
+ipappend=3
+
+item="<I>nvisible"
+info="You dont see this"
+type=invisible
+
+item="<E>xit menu"
+info="Go one level up"
+type=exitmenu
+
+[rescue]
+title=" Rescue Options "
+
+item="<L>inux Rescue"
+info="Run linresc"
+data="linresc"
+
+item="<D>os Rescue"
+info="dosresc"
+data="dosresc"
+
+item="<W>indows Rescue"
+info="winresc"
+data="winresc"
+
+item="<E>xit this menu"
+info="Go one level up"
+type=exitmenu
+
+[prep]
+title=" Prep options "
+
+item="<b>aseurl by IP?"
+info="Specify gui baseurl by IP address"
+type=checkbox
+data="baseurl=http://192.168.0.1"
+
+item="<m>ountcd?"
+info="Mount the cdrom drive?"
+type=checkbox
+data="mountcd"
+
+item="Network Initialization"
+info="How to initialise network device?"
+type=radiomenu
+data="netmenu"
+
+type=sep
+
+item="Reinstall <w>indows"
+info="Re-install the windows side of a dual boot setup"
+type=checkbox
+data="repair=win"
+
+item="Reinstall <l>inux"
+info="Re-install the linux side of a dual boot setup"
+type=checkbox
+data="repair=lin"
+
+type=sep
+
+item="<R>un prep now"
+info="Execute prep with the above options"
+data="prep"
+argsmenu="prep"
+
+item="<E>xit this menu"
+info="Go up one level"
+type=exitmenu
+
+[main]
+
+title=" Main Menu "
+
+type=login
+
+item="<P>repare"
+info="prep"
+data="prep"
+
+item="<P>rep options..."
+info="Options for prep"
+type=submenu
+data="prep"
+
+item="<R>escue options..."
+info="Troubleshoot a system"
+type=submenu
+data="rescue"
+helpid=26
+
+item="<T>esting..."
+info="Options to test hardware"
+type=submenu
+data="testing"
+
+item="<E>xit to prompt"
+info="Exit the menu system"
+type=exitmenu

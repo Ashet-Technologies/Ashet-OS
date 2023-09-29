@@ -1,0 +1,219 @@
+= syslinux(1) =
+:doctype: manpage
+:revdate: 2013-06-12
+:author: H. Peter Anvin
+:author-email: hpa@zytor.com
+:editor1: Gene Cumm
+:editor1-email: gene.cumm@gmail.com
+:editor1-revlast: 2013-06-12
+
+
+== NAME ==
+syslinux - Install SYSLINUX to a file system
+
+
+== SYNOPSIS ==
+[verse]
+*syslinux* ['OPTIONS'] 'DEVICE'
+*extlinux* ['OPTIONS'] 'PATH'
+*syslinux* [-h | --help | -v | --version]
+*extlinux* [-h | --help | -v | --version]
+
+
+== DESCRIPTION ==
+Install *SYSLINUX* to the 'DEVICE'/'PATH', altering the boot sector and
+installing the 'ldlinux.sys' boot loader file.  For the Linux installer
+extlinux, 'PATH' is the desired path for the control files on a mounted,
+supported file system and sets the install-time working directory.  For
+all others, 'DEVICE' must specify a FAT12/FAT16/FAT32 file system.  For
+the Linux installers syslinux and syslinux-mtools, 'DEVICE' should be an
+unmounted file system.  For the DOS/Win32/Win64 installers, 'DEVICE'
+should be a drive like 'a:' (case insensitive).
+
+For versions ~4.00 and later, either -i/--install or -U/--update must be
+specified unless modifying the ADV of an existing install (options
+tagged with 'ADV') or requesting the help/usage or version info, .
+
+If, during boot, the Shift or Alt keys are held down, or the Caps or
+Scroll locks are set, *Syslinux* will display a *lilo*(8) -style "boot:"
+prompt. The user can then type a kernel file name followed by any kernel
+parameters. The *Syslinux* bootloader does not need to know about the
+kernel or config files in advance.
+
+*Syslinux* supports the loading of initial ramdisks (initrd) and the
+bzImage kernel format.
+
+Please note, the ldlinux.sys boot loader file is flagged as immutable
+(where applicable) and is modified after copying in to help ensure
+boot-time integrity.  File systems with a sufficiently large boot loader
+reserved area, like btrfs, will have ldlinux.sys installed there rather
+than as a normal file.  Prior to version 4.00, extlinux would install a
+file extlinux.sys which versions 4.00 and later installers will replace with ldlinux.sys.
+
+
+== OPTIONS ==
+// "See"/"See also" notes should reference long options.
+=== Standalone options ===
+*-i*, *--install*::
+(~4.00+) Install SYSLINUX, regardless of an existing install.
+
+*-U*, *--update*::
+(~4.00+) Update an existing SYSLINUX/EXTLINUX install.  If no Syslinux
+boot loader is present, return an error.
+
+*-h*, *--help*::
+Display help/usage information.
+
+*-v*, *--version*::
+Display version information and exit immediately.
+
+=== Regular Options ===
+// Sorted generally by short argument
+*-a*, *--active*::
+(DOS/Win32/Win64 ONLY) Mark the install target file system's partition
+active.
+
+*-d*, *--directory* 'subdirectory'::
+(Not necessary for extlinux as it is implied by 'PATH') Install the
+*SYSLINUX* control files in a subdirectory with the specified name
+(relative to the root directory on the device).
+
+*--device* 'DEVICE'::
+(extlinux ONLY; 4.06+) Force use of a specific block device (experts
+only).
+
+*-f*, *--force*::
+Force install even if it appears unsafe.  Before 4.00, -f was used for
+--offset in the Linux installers.
+
+*-H*, *--heads* 'head-count'::
+Override the detected number of heads for the geometry.  See also
+*--sector*.
+
+*-m*, *--mbr*:
+(DOS/Win32/Win64 ONLY) Install the regular Syslinux MBR code to the MBR.
+
+*-M*, *--menu-save*::
+(4.00+; ADV) Set the label to select as default on the next boot.
+
+*-o*, *--once* 'command'::
+(ADV) Declare a boot command to be tried on the first boot only.  The
+use of *-o* for the Linux installers syslinux or syslinux-mtools has
+been deprecated as of \~4.00 and is no longer valid as of ~4.02.
+
+*-O*, *--clear-once*::
+Clear the boot-once command.  See also *--once*.
+
+*-r*, *--raid*::
+(ADV) RAID mode.  If boot fails, tell the BIOS to boot the next device
+in the boot sequence (usually the next hard disk) instead of stopping
+with an error message.  This is useful for RAID-1 booting.
+
+*--reset-adv*::
+(ADV) Reset auxilliary data vector.
+
+*-S*, *--sectors* 'sector-count'::
+Override the detected number of sectors for the geometry.  See also
+*--head*.
+
+*-s*, *--stupid*::
+Install a "safe, slow and stupid" version of *SYSLINUX*. This version
+may work on some very buggy BIOSes on which *SYSLINUX* would otherwise
+fail. If you find a machine on which the -s option is required to make
+it boot reliably, please send as much info about your machine as you
+can, and include the failure mode.
+
+*-t*, *--offset* 'offset'::
+(Linux syslinux/syslinux-mtools ONLY) Indicates that the filesystem is
+at an offset from the base of the device or file.
+
+*-z*, *--zipdrive*
+Assume zipdrive geometry ('--heads 64 --sectors 32').  See also *--head*
+and *--sector*.
+
+
+== EXAMPLES ==
+=== Booting DOS ===
+For booting DOS and other similar operating systems, there is an easy
+and generally reliable solution to substitute in SYSLINUX as the primary
+boot loader.
+
+- Make a DOS-bootable disk;  The following are possible commands:
+
+	format a: /s
+	sys a:
+
+- Copy the DOS boot sector off using Linux or copybs.com:
+
+	dd if=/dev/fd0 of=dos.bss bs=512 count=1
+	copybs a: a:dos.bss
+
+- Install SYSLINUX using one of:
+
+	syslinux a:
+	syslinux /dev/fd0		(before 4.00)
+	syslinux -i /dev/fd0		(4.00+)
+
+- For Linux, mount the disk and copy the dos.bss to the disk:
+
+	mount -t msdos /dev/fd0 /mnt
+	cp dos.bss /mnt
+
+- Copy a Linux kernel image and initrd payload files:
+*Linux:*::
+	cp vmlinux /mnt
+	cp initrd.gz /mnt
+*DOS/Windows:*::
+	copy vmlinux a:
+	copy initrd.gz a:
+
+- For Linux, umount the disk (if applicable):
+
+	umount /mnt
+
+=== MBR ===
+In order to boot from a hard disk (or hard disk-like device) in BIOS
+mode, an appropriate MBR boot block must also be installed in the MBR
+(first sector or 512 bytes of the disk), occupying at most 440 bytes.
+
+*DOS/Windows:*::
+If using FDISK, FDISK or a similar application must also be used to mark
+the partition as active.
++
+	fdisk /mbr
+    OR
+	syslinux -ma c:
+
+*Linux:*::
++
+	dd bs=440 count=1 conv=notrunc if=mbr/mbr.bin of=/dev/sda
++
+For altmbr.bin, an easy way to overwrite the MBR boot block and specify
+the partion number is:
++
+  printf '\1' | cat altmbr.bin - | dd bs=440 count=1 \
+    iflag=fullblock conv=notrunc of=/dev/sda
++
+Note: using 'cat' for writing the MBR can under some circumstances cause
+data loss or overwritting.  For this reason, using 'dd' is recommended
+for all situations.
+
+//[FIXME]: any clean way to handle the above long command for manpage?
+
+
+== SEE ALSO ==
+*syslinux.cfg*(5), *syslinux-cli*(1), *lilo*(8), *keytab-lilo.pl*(8),
+*fdisk*(8), *mkfs*(8), *superformat*(1).
+
+
+== AUTHOR ==
+This AsciiDoc derived document is a modified version of the original
+*SYSLINUX* documentation by {author} <{author-email}>. The conversion to
+a manpage was made by Arthur Korn <arthur@korn.ch>.  The conversion to
+an AsciiDoc was made by {editor1} <{editor1-email}>
+
+
+== COPYRIGHT ==
+Copyright \(C) 1994-2012 {author}. Free use of this software is granted
+under the terms of the GNU General Public License (GPL), version 2
+(GPLv2) (or, at your option, any later version).

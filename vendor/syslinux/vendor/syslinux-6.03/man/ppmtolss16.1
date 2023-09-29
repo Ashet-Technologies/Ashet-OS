@@ -1,0 +1,64 @@
+.TH "PPMTOLSS16" "1"
+.SH "NAME"
+ppmtolss16 \(em Convert a PPM to an LSS16 image
+.SH "SYNOPSIS"
+.PP
+\fBppmtolss16\fR [        \fB	  \fI#rrggbb\fR=\fIi\fR 	\fP        \&...]  [< input.ppm]  [> output.rle]
+.SH "DESCRIPTION"
+.PP
+This manual page documents briefly the \fBppmtolss16\fR command.
+
+.PP
+The \fBppmtolss16\fR program converts a "raw" PPM file with
+max 16 colors to a simple RLE-based format:
+
+.PP
+\fBsimple RLE-based format\fR
+.TS
+tab();
+l l.
+unint32 0x1413f3dmagic (littleendian)
+unint16 xsizelittleendian
+unint15 ysizelittleendian
+16 x unint8 r,g,bcolor map
+.TE
+.PP
+Color map is in 6-bit format (each byte is 0..63)
+.PP
+Then, a sequence of nybbles:
+.PP
+N   ... if N is != previous pixel, one pixel of color N, otherwise
+run sequence follows ...
+
+.PP
+M   ... if M > 0 then run length is M+1, otherwise run sequence is
+encoded in two nybbles, littleendian, +17
+
+.PP
+The nybble sequences are on a per-row basis, runs may not extend across
+rows and odd-nybble rows are zero-padded.
+
+.PP
+At the start of a row, the "previous pixel" is assumed to be zero.
+
+.SH "OPTIONS"
+.PP
+A summary of options is included below.
+.IP "\fB\fI#rrggbb\fR=\fIi\fR\fP" 10
+Specify that the color #rrggbb (hex) should be assigned index
+i (decimal).
+
+.SH "BUG"
+.PP
+This program cannot handle comments in the header, nor "plain" ppm
+format.
+
+.SH "SEE ALSO"
+.PP
+\fBppmtolss16\fR(1)
+
+.SH "AUTHOR"
+.PP
+This manual page was compiled by dann frazier <dannf@debian.org> for
+the \fBDebian GNU/Linux\fP system (but may be used by others).  Most of the content
+was written by H. Peter Anvin.

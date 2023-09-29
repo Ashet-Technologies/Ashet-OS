@@ -8,6 +8,8 @@ pub const MachineSpec = struct {
     platform: platforms.PlatformSpec,
     machine_code: []const u8,
     linker_script: []const u8,
+
+    disk_formatter: []const u8, // defined in build.zig
 };
 
 pub const MachineConfig = struct {
@@ -32,13 +34,18 @@ pub const specs = struct {
         .platform = platforms.specs.riscv,
         .machine_code = "src/kernel/machine/ashet_home_computer/machine.zig",
         .linker_script = "src/kernel/machine/ashet_home_computer/linker.ld",
+
+        .disk_formatter = "ahc",
     };
+
     pub const rv32_virt = MachineSpec{
         .name = "RISC-V virt",
         .machine_id = "rv32_virt",
         .platform = platforms.specs.riscv,
         .machine_code = "src/kernel/machine/rv32_virt/machine.zig",
         .linker_script = "src/kernel/machine/rv32_virt/linker.ld",
+
+        .disk_formatter = "rv32_virt",
     };
 
     // x86 machines:
@@ -48,6 +55,8 @@ pub const specs = struct {
         .platform = platforms.specs.x86,
         .machine_code = "src/kernel/machine/bios_pc/machine.zig",
         .linker_script = "src/kernel/machine/bios_pc/linker.ld",
+
+        .disk_formatter = "bios_pc",
     };
 
     pub const efi_pc = MachineSpec{
@@ -56,6 +65,8 @@ pub const specs = struct {
         .platform = platforms.specs.x86,
         .machine_code = "src/kernel/machine/efi_pc/machine.zig",
         .linker_script = "src/kernel/machine/efi_pc/linker.ld",
+
+        .disk_formatter = "efi_pc",
     };
 
     pub const microvm = MachineSpec{
@@ -64,6 +75,8 @@ pub const specs = struct {
         .platform = platforms.specs.x86,
         .machine_code = "src/kernel/machine/microvm/machine.zig",
         .linker_script = "src/kernel/machine/microvm/linker.ld",
+
+        .disk_formatter = "microvm",
     };
 
     // Arm machines:
@@ -73,5 +86,7 @@ pub const specs = struct {
         .platform = platforms.specs.arm,
         .machine_code = "src/kernel/machine/arm_virt/machine.zig",
         .linker_script = "src/kernel/machine/arm_virt/linker.ld",
+
+        .disk_formatter = "arm virt",
     };
 };

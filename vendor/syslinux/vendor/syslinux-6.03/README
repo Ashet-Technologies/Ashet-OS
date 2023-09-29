@@ -1,0 +1,40 @@
+See the files in the doc directory for documentation about SYSLINUX:
+
+	syslinux.txt	    - Usage instructions; manual.
+	distrib.txt	    - For creators of Linux distributions.
+	pxelinux.txt	    - Documentation specific to PXELINUX.
+	isolinux.txt	    - Documentation specific to ISOLINUX.
+	extlinux.txt	    - Documentation specific to EXTLINUX.
+	menu.txt	    - About the menu systems.
+	usbkey.txt	    - About using SYSLINUX on USB keys.
+	memdisk.txt         - Documentation about MEMDISK.
+
+Also see the files:
+
+	NEWS		    - List of changes from previous releases.
+	TODO		    - About features planned for future releases.
+	COPYING		    - For the license terms of this software.
+
+SYSLINUX now builds in a Linux environment, using nasm.  You need nasm
+version 2.03 or later (2.07 or later recommended) to build SYSLINUX
+from source.  See http://www.nasm.us/ for information about nasm.
+
+"utils/isohybrid" needs the UUID library and following header file,
+
+	/usr/include/uuid/uuid.h
+
+You can get them from the "uuid-dev" package on Debian based systems
+or from the "libuuid-devel" package on RPM based distributions.
+
+There is now a mailing list for SYSLINUX.  See the end of syslinux.txt
+for details.
+
+SYSLINUX is:
+
+   Copyright 1994-2011 H. Peter Anvin et al - All Rights Reserved
+
+   This program is free software; you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation, Inc., 53 Temple Place Ste 330,
+   Boston MA 02111-1307, USA; either version 2 of the License, or
+   (at your option) any later version; incorporated herein by reference.

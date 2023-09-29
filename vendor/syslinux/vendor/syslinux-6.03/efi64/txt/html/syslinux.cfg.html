@@ -1,0 +1,1786 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN"
+    "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en">
+<head>
+<meta http-equiv="Content-Type" content="application/xhtml+xml; charset=UTF-8" />
+<meta name="generator" content="AsciiDoc 8.6.8" />
+<title>syslinux.cfg(5)</title>
+<style type="text/css">
+/* Shared CSS for AsciiDoc xhtml11 and html5 backends */
+
+/* Default font. */
+body {
+  font-family: Georgia,serif;
+}
+
+/* Title font. */
+h1, h2, h3, h4, h5, h6,
+div.title, caption.title,
+thead, p.table.header,
+#toctitle,
+#author, #revnumber, #revdate, #revremark,
+#footer {
+  font-family: Arial,Helvetica,sans-serif;
+}
+
+body {
+  margin: 1em 5% 1em 5%;
+}
+
+a {
+  color: blue;
+  text-decoration: underline;
+}
+a:visited {
+  color: fuchsia;
+}
+
+em {
+  font-style: italic;
+  color: navy;
+}
+
+strong {
+  font-weight: bold;
+  color: #083194;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  color: #527bbd;
+  margin-top: 1.2em;
+  margin-bottom: 0.5em;
+  line-height: 1.3;
+}
+
+h1, h2, h3 {
+  border-bottom: 2px solid silver;
+}
+h2 {
+  padding-top: 0.5em;
+}
+h3 {
+  float: left;
+}
+h3 + * {
+  clear: left;
+}
+h5 {
+  font-size: 1.0em;
+}
+
+div.sectionbody {
+  margin-left: 0;
+}
+
+hr {
+  border: 1px solid silver;
+}
+
+p {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+ul, ol, li > p {
+  margin-top: 0;
+}
+ul > li     { color: #aaa; }
+ul > li > * { color: black; }
+
+.monospaced, code, pre {
+  font-family: "Courier New", Courier, monospace;
+  font-size: inherit;
+  color: navy;
+  padding: 0;
+  margin: 0;
+}
+
+
+#author {
+  color: #527bbd;
+  font-weight: bold;
+  font-size: 1.1em;
+}
+#email {
+}
+#revnumber, #revdate, #revremark {
+}
+
+#footer {
+  font-size: small;
+  border-top: 2px solid silver;
+  padding-top: 0.5em;
+  margin-top: 4.0em;
+}
+#footer-text {
+  float: left;
+  padding-bottom: 0.5em;
+}
+#footer-badges {
+  float: right;
+  padding-bottom: 0.5em;
+}
+
+#preamble {
+  margin-top: 1.5em;
+  margin-bottom: 1.5em;
+}
+div.imageblock, div.exampleblock, div.verseblock,
+div.quoteblock, div.literalblock, div.listingblock, div.sidebarblock,
+div.admonitionblock {
+  margin-top: 1.0em;
+  margin-bottom: 1.5em;
+}
+div.admonitionblock {
+  margin-top: 2.0em;
+  margin-bottom: 2.0em;
+  margin-right: 10%;
+  color: #606060;
+}
+
+div.content { /* Block element content. */
+  padding: 0;
+}
+
+/* Block element titles. */
+div.title, caption.title {
+  color: #527bbd;
+  font-weight: bold;
+  text-align: left;
+  margin-top: 1.0em;
+  margin-bottom: 0.5em;
+}
+div.title + * {
+  margin-top: 0;
+}
+
+td div.title:first-child {
+  margin-top: 0.0em;
+}
+div.content div.title:first-child {
+  margin-top: 0.0em;
+}
+div.content + div.title {
+  margin-top: 0.0em;
+}
+
+div.sidebarblock > div.content {
+  background: #ffffee;
+  border: 1px solid #dddddd;
+  border-left: 4px solid #f0f0f0;
+  padding: 0.5em;
+}
+
+div.listingblock > div.content {
+  border: 1px solid #dddddd;
+  border-left: 5px solid #f0f0f0;
+  background: #f8f8f8;
+  padding: 0.5em;
+}
+
+div.quoteblock, div.verseblock {
+  padding-left: 1.0em;
+  margin-left: 1.0em;
+  margin-right: 10%;
+  border-left: 5px solid #f0f0f0;
+  color: #888;
+}
+
+div.quoteblock > div.attribution {
+  padding-top: 0.5em;
+  text-align: right;
+}
+
+div.verseblock > pre.content {
+  font-family: inherit;
+  font-size: inherit;
+}
+div.verseblock > div.attribution {
+  padding-top: 0.75em;
+  text-align: left;
+}
+/* DEPRECATED: Pre version 8.2.7 verse style literal block. */
+div.verseblock + div.attribution {
+  text-align: left;
+}
+
+div.admonitionblock .icon {
+  vertical-align: top;
+  font-size: 1.1em;
+  font-weight: bold;
+  text-decoration: underline;
+  color: #527bbd;
+  padding-right: 0.5em;
+}
+div.admonitionblock td.content {
+  padding-left: 0.5em;
+  border-left: 3px solid #dddddd;
+}
+
+div.exampleblock > div.content {
+  border-left: 3px solid #dddddd;
+  padding-left: 0.5em;
+}
+
+div.imageblock div.content { padding-left: 0; }
+span.image img { border-style: none; }
+a.image:visited { color: white; }
+
+dl {
+  margin-top: 0.8em;
+  margin-bottom: 0.8em;
+}
+dt {
+  margin-top: 0.5em;
+  margin-bottom: 0;
+  font-style: normal;
+  color: navy;
+}
+dd > *:first-child {
+  margin-top: 0.1em;
+}
+
+ul, ol {
+    list-style-position: outside;
+}
+ol.arabic {
+  list-style-type: decimal;
+}
+ol.loweralpha {
+  list-style-type: lower-alpha;
+}
+ol.upperalpha {
+  list-style-type: upper-alpha;
+}
+ol.lowerroman {
+  list-style-type: lower-roman;
+}
+ol.upperroman {
+  list-style-type: upper-roman;
+}
+
+div.compact ul, div.compact ol,
+div.compact p, div.compact p,
+div.compact div, div.compact div {
+  margin-top: 0.1em;
+  margin-bottom: 0.1em;
+}
+
+tfoot {
+  font-weight: bold;
+}
+td > div.verse {
+  white-space: pre;
+}
+
+div.hdlist {
+  margin-top: 0.8em;
+  margin-bottom: 0.8em;
+}
+div.hdlist tr {
+  padding-bottom: 15px;
+}
+dt.hdlist1.strong, td.hdlist1.strong {
+  font-weight: bold;
+}
+td.hdlist1 {
+  vertical-align: top;
+  font-style: normal;
+  padding-right: 0.8em;
+  color: navy;
+}
+td.hdlist2 {
+  vertical-align: top;
+}
+div.hdlist.compact tr {
+  margin: 0;
+  padding-bottom: 0;
+}
+
+.comment {
+  background: yellow;
+}
+
+.footnote, .footnoteref {
+  font-size: 0.8em;
+}
+
+span.footnote, span.footnoteref {
+  vertical-align: super;
+}
+
+#footnotes {
+  margin: 20px 0 20px 0;
+  padding: 7px 0 0 0;
+}
+
+#footnotes div.footnote {
+  margin: 0 0 5px 0;
+}
+
+#footnotes hr {
+  border: none;
+  border-top: 1px solid silver;
+  height: 1px;
+  text-align: left;
+  margin-left: 0;
+  width: 20%;
+  min-width: 100px;
+}
+
+div.colist td {
+  padding-right: 0.5em;
+  padding-bottom: 0.3em;
+  vertical-align: top;
+}
+div.colist td img {
+  margin-top: 0.3em;
+}
+
+@media print {
+  #footer-badges { display: none; }
+}
+
+#toc {
+  margin-bottom: 2.5em;
+}
+
+#toctitle {
+  color: #527bbd;
+  font-size: 1.1em;
+  font-weight: bold;
+  margin-top: 1.0em;
+  margin-bottom: 0.1em;
+}
+
+div.toclevel0, div.toclevel1, div.toclevel2, div.toclevel3, div.toclevel4 {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+div.toclevel2 {
+  margin-left: 2em;
+  font-size: 0.9em;
+}
+div.toclevel3 {
+  margin-left: 4em;
+  font-size: 0.9em;
+}
+div.toclevel4 {
+  margin-left: 6em;
+  font-size: 0.9em;
+}
+
+span.aqua { color: aqua; }
+span.black { color: black; }
+span.blue { color: blue; }
+span.fuchsia { color: fuchsia; }
+span.gray { color: gray; }
+span.green { color: green; }
+span.lime { color: lime; }
+span.maroon { color: maroon; }
+span.navy { color: navy; }
+span.olive { color: olive; }
+span.purple { color: purple; }
+span.red { color: red; }
+span.silver { color: silver; }
+span.teal { color: teal; }
+span.white { color: white; }
+span.yellow { color: yellow; }
+
+span.aqua-background { background: aqua; }
+span.black-background { background: black; }
+span.blue-background { background: blue; }
+span.fuchsia-background { background: fuchsia; }
+span.gray-background { background: gray; }
+span.green-background { background: green; }
+span.lime-background { background: lime; }
+span.maroon-background { background: maroon; }
+span.navy-background { background: navy; }
+span.olive-background { background: olive; }
+span.purple-background { background: purple; }
+span.red-background { background: red; }
+span.silver-background { background: silver; }
+span.teal-background { background: teal; }
+span.white-background { background: white; }
+span.yellow-background { background: yellow; }
+
+span.big { font-size: 2em; }
+span.small { font-size: 0.6em; }
+
+span.underline { text-decoration: underline; }
+span.overline { text-decoration: overline; }
+span.line-through { text-decoration: line-through; }
+
+div.unbreakable { page-break-inside: avoid; }
+
+
+/*
+ * xhtml11 specific
+ *
+ * */
+
+div.tableblock {
+  margin-top: 1.0em;
+  margin-bottom: 1.5em;
+}
+div.tableblock > table {
+  border: 3px solid #527bbd;
+}
+thead, p.table.header {
+  font-weight: bold;
+  color: #527bbd;
+}
+p.table {
+  margin-top: 0;
+}
+/* Because the table frame attribute is overriden by CSS in most browsers. */
+div.tableblock > table[frame="void"] {
+  border-style: none;
+}
+div.tableblock > table[frame="hsides"] {
+  border-left-style: none;
+  border-right-style: none;
+}
+div.tableblock > table[frame="vsides"] {
+  border-top-style: none;
+  border-bottom-style: none;
+}
+
+
+/*
+ * html5 specific
+ *
+ * */
+
+table.tableblock {
+  margin-top: 1.0em;
+  margin-bottom: 1.5em;
+}
+thead, p.tableblock.header {
+  font-weight: bold;
+  color: #527bbd;
+}
+p.tableblock {
+  margin-top: 0;
+}
+table.tableblock {
+  border-width: 3px;
+  border-spacing: 0px;
+  border-style: solid;
+  border-color: #527bbd;
+  border-collapse: collapse;
+}
+th.tableblock, td.tableblock {
+  border-width: 1px;
+  padding: 4px;
+  border-style: solid;
+  border-color: #527bbd;
+}
+
+table.tableblock.frame-topbot {
+  border-left-style: hidden;
+  border-right-style: hidden;
+}
+table.tableblock.frame-sides {
+  border-top-style: hidden;
+  border-bottom-style: hidden;
+}
+table.tableblock.frame-none {
+  border-style: hidden;
+}
+
+th.tableblock.halign-left, td.tableblock.halign-left {
+  text-align: left;
+}
+th.tableblock.halign-center, td.tableblock.halign-center {
+  text-align: center;
+}
+th.tableblock.halign-right, td.tableblock.halign-right {
+  text-align: right;
+}
+
+th.tableblock.valign-top, td.tableblock.valign-top {
+  vertical-align: top;
+}
+th.tableblock.valign-middle, td.tableblock.valign-middle {
+  vertical-align: middle;
+}
+th.tableblock.valign-bottom, td.tableblock.valign-bottom {
+  vertical-align: bottom;
+}
+
+
+/*
+ * manpage specific
+ *
+ * */
+
+body.manpage h1 {
+  padding-top: 0.5em;
+  padding-bottom: 0.5em;
+  border-top: 2px solid silver;
+  border-bottom: 2px solid silver;
+}
+body.manpage h2 {
+  border-style: none;
+}
+body.manpage div.sectionbody {
+  margin-left: 3em;
+}
+
+@media print {
+  body.manpage div#toc { display: none; }
+}
+
+
+</style>
+<script type="text/javascript">
+/*<![CDATA[*/
+var asciidoc = {  // Namespace.
+
+/////////////////////////////////////////////////////////////////////
+// Table Of Contents generator
+/////////////////////////////////////////////////////////////////////
+
+/* Author: Mihai Bazon, September 2002
+ * http://students.infoiasi.ro/~mishoo
+ *
+ * Table Of Content generator
+ * Version: 0.4
+ *
+ * Feel free to use this script under the terms of the GNU General Public
+ * License, as long as you do not remove or alter this notice.
+ */
+
+ /* modified by Troy D. Hanson, September 2006. License: GPL */
+ /* modified by Stuart Rackham, 2006, 2009. License: GPL */
+
+// toclevels = 1..4.
+toc: function (toclevels) {
+
+  function getText(el) {
+    var text = "";
+    for (var i = el.firstChild; i != null; i = i.nextSibling) {
+      if (i.nodeType == 3 /* Node.TEXT_NODE */) // IE doesn't speak constants.
+        text += i.data;
+      else if (i.firstChild != null)
+        text += getText(i);
+    }
+    return text;
+  }
+
+  function TocEntry(el, text, toclevel) {
+    this.element = el;
+    this.text = text;
+    this.toclevel = toclevel;
+  }
+
+  function tocEntries(el, toclevels) {
+    var result = new Array;
+    var re = new RegExp('[hH]([1-'+(toclevels+1)+'])');
+    // Function that scans the DOM tree for header elements (the DOM2
+    // nodeIterator API would be a better technique but not supported by all
+    // browsers).
+    var iterate = function (el) {
+      for (var i = el.firstChild; i != null; i = i.nextSibling) {
+        if (i.nodeType == 1 /* Node.ELEMENT_NODE */) {
+          var mo = re.exec(i.tagName);
+          if (mo && (i.getAttribute("class") || i.getAttribute("className")) != "float") {
+            result[result.length] = new TocEntry(i, getText(i), mo[1]-1);
+          }
+          iterate(i);
+        }
+      }
+    }
+    iterate(el);
+    return result;
+  }
+
+  var toc = document.getElementById("toc");
+  if (!toc) {
+    return;
+  }
+
+  // Delete existing TOC entries in case we're reloading the TOC.
+  var tocEntriesToRemove = [];
+  var i;
+  for (i = 0; i < toc.childNodes.length; i++) {
+    var entry = toc.childNodes[i];
+    if (entry.nodeName.toLowerCase() == 'div'
+     && entry.getAttribute("class")
+     && entry.getAttribute("class").match(/^toclevel/))
+      tocEntriesToRemove.push(entry);
+  }
+  for (i = 0; i < tocEntriesToRemove.length; i++) {
+    toc.removeChild(tocEntriesToRemove[i]);
+  }
+
+  // Rebuild TOC entries.
+  var entries = tocEntries(document.getElementById("content"), toclevels);
+  for (var i = 0; i < entries.length; ++i) {
+    var entry = entries[i];
+    if (entry.element.id == "")
+      entry.element.id = "_toc_" + i;
+    var a = document.createElement("a");
+    a.href = "#" + entry.element.id;
+    a.appendChild(document.createTextNode(entry.text));
+    var div = document.createElement("div");
+    div.appendChild(a);
+    div.className = "toclevel" + entry.toclevel;
+    toc.appendChild(div);
+  }
+  if (entries.length == 0)
+    toc.parentNode.removeChild(toc);
+},
+
+
+/////////////////////////////////////////////////////////////////////
+// Footnotes generator
+/////////////////////////////////////////////////////////////////////
+
+/* Based on footnote generation code from:
+ * http://www.brandspankingnew.net/archive/2005/07/format_footnote.html
+ */
+
+footnotes: function () {
+  // Delete existing footnote entries in case we're reloading the footnodes.
+  var i;
+  var noteholder = document.getElementById("footnotes");
+  if (!noteholder) {
+    return;
+  }
+  var entriesToRemove = [];
+  for (i = 0; i < noteholder.childNodes.length; i++) {
+    var entry = noteholder.childNodes[i];
+    if (entry.nodeName.toLowerCase() == 'div' && entry.getAttribute("class") == "footnote")
+      entriesToRemove.push(entry);
+  }
+  for (i = 0; i < entriesToRemove.length; i++) {
+    noteholder.removeChild(entriesToRemove[i]);
+  }
+
+  // Rebuild footnote entries.
+  var cont = document.getElementById("content");
+  var spans = cont.getElementsByTagName("span");
+  var refs = {};
+  var n = 0;
+  for (i=0; i<spans.length; i++) {
+    if (spans[i].className == "footnote") {
+      n++;
+      var note = spans[i].getAttribute("data-note");
+      if (!note) {
+        // Use [\s\S] in place of . so multi-line matches work.
+        // Because JavaScript has no s (dotall) regex flag.
+        note = spans[i].innerHTML.match(/\s*\[([\s\S]*)]\s*/)[1];
+        spans[i].innerHTML =
+          "[<a id='_footnoteref_" + n + "' href='#_footnote_" + n +
+          "' title='View footnote' class='footnote'>" + n + "</a>]";
+        spans[i].setAttribute("data-note", note);
+      }
+      noteholder.innerHTML +=
+        "<div class='footnote' id='_footnote_" + n + "'>" +
+        "<a href='#_footnoteref_" + n + "' title='Return to text'>" +
+        n + "</a>. " + note + "</div>";
+      var id =spans[i].getAttribute("id");
+      if (id != null) refs["#"+id] = n;
+    }
+  }
+  if (n == 0)
+    noteholder.parentNode.removeChild(noteholder);
+  else {
+    // Process footnoterefs.
+    for (i=0; i<spans.length; i++) {
+      if (spans[i].className == "footnoteref") {
+        var href = spans[i].getElementsByTagName("a")[0].getAttribute("href");
+        href = href.match(/#.*/)[0];  // Because IE return full URL.
+        n = refs[href];
+        spans[i].innerHTML =
+          "[<a href='#_footnote_" + n +
+          "' title='View footnote' class='footnote'>" + n + "</a>]";
+      }
+    }
+  }
+},
+
+install: function(toclevels) {
+  var timerId;
+
+  function reinstall() {
+    asciidoc.footnotes();
+    if (toclevels) {
+      asciidoc.toc(toclevels);
+    }
+  }
+
+  function reinstallAndRemoveTimer() {
+    clearInterval(timerId);
+    reinstall();
+  }
+
+  timerId = setInterval(reinstall, 500);
+  if (document.addEventListener)
+    document.addEventListener("DOMContentLoaded", reinstallAndRemoveTimer, false);
+  else
+    window.onload = reinstallAndRemoveTimer;
+}
+
+}
+asciidoc.install();
+/*]]>*/
+</script>
+</head>
+<body class="manpage">
+<div id="header">
+<h1>
+syslinux.cfg(5) Manual Page
+</h1>
+<h2>NAME</h2>
+<div class="sectionbody">
+<p>syslinux.cfg -
+   *Syslinux* configuration file
+</p>
+</div>
+</div>
+<div id="content">
+<div class="sect1">
+<h2 id="_description">DESCRIPTION</h2>
+<div class="sectionbody">
+<div class="paragraph"><p>Configuration for the boot behavior and user experience of <strong>Syslinux</strong>
+boot loaders, the format of display files and the boot prompt behavior.</p></div>
+<div class="paragraph"><p>Blank lines are ignored.</p></div>
+<div class="paragraph"><p>Note that the configuration file is not completely decoded.  Syntax
+different from the one described above may still work correctly in this
+version of <strong>Syslinux</strong>, but may break in a future one.</p></div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_location_name">LOCATION/NAME</h2>
+<div class="sectionbody">
+<div class="paragraph"><p><strong>SYSLINUX</strong> (before 4.00) used the configuration filename of
+syslinux.cfg.  <strong>EXTLINUX</strong> (merged into <strong>SYSLINUX</strong> as of 4.00) used the
+filename extlinux.conf.  Both default to searching for the config file
+in the installed directory (containing ldlinux.sys/extlinux.sys).  As of
+4.00, <strong>SYSLINUX</strong> will search for extlinux.conf then syslinux.cfg in each
+directory before falling back to the next directory.</p></div>
+<div class="paragraph"><p>As of 3.35, <strong>SYSLINUX</strong> also searches /boot/syslinux, /syslinux and /.</p></div>
+<div class="paragraph"><p><strong>ISOLINUX</strong> (before 4.02) used the configuration filename of
+isolinux.cfg, searching  /boot/isolinux (starting 2.00), then /isolinux
+and /.  As of 4.02, <strong>ISOLINUX</strong> will search for isolinux.cfg then
+syslinux.cfg in /boot/isolinux before searching for the same files in
+/isolinux, /boot/syslinux, /syslinux, and /.</p></div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_global_directives_main">GLOBAL DIRECTIVES - MAIN</h2>
+<div class="sectionbody">
+<div class="dlist"><dl>
+<dt class="hdlist1">
+<strong>#</strong> comment
+</dt>
+<dd>
+<p>
+A line comment.  As of version 3.10, the space between the <strong>#</strong> and the
+comment is no longer required.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>MENU</strong> any string
+</dt>
+<dd>
+<p>
+(3.00+) A directive for the simple menu system, treated as a comment
+outside the menu.  See menu.txt.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>INCLUDE</strong> <em>filename</em>
+</dt>
+<dd>
+<p>
+Inserts the contents of another file at this point in the configuration
+file. Files can currently be nested up to 16 levels deep, but it is not
+guaranteed that more than 8 levels will be supported in the future.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>DEFAULT</strong> <em>kernel</em> <em>options&#8230;</em>
+</dt>
+<dd>
+<p>
+Sets the default command line (which often references a LABEL).  If
+<strong>Syslinux</strong> boots automatically, it will act just as if the entries after
+<strong>DEFAULT</strong> had been typed in at the <em>boot:</em> prompt.  Multiple uses will
+result in an override.
+</p>
+<div class="paragraph"><p>If no configuration file is present, or no <strong>DEFAULT</strong> or <strong>UI</strong> entry is
+present in the config file, an error message is displayed and the
+<em>boot:</em> prompt is shown (3.85+).</p></div>
+</dd>
+<dt class="hdlist1">
+<strong>UI</strong> <em>module</em> <em>options&#8230;</em>
+</dt>
+<dd>
+<p>
+Selects a specific user interface <em>module</em> (typically menu.c32 or
+vesamenu.c32).  The command-line interface treats this as a directive
+that overrides the <strong>DEFAULT</strong> directive to load this module instead at
+startup, for an empty command line and at timeout and <strong>PROMPT</strong> directive
+to not prompt (but these directives may have effects on other
+configuration parsers).  Multiple uses will result in an override.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>LABEL</strong> <em>mylabel</em>
+</dt>
+<dd>
+<p>
+Begin a new <strong>LABEL</strong> clause.  If <em>mylabel</em> is entered as the kernel to
+boot, <strong>Syslinux</strong> should instead boot "image" (specified by a directive
+from <strong>KERNEL-LIKE DIRECTIVES</strong>) with any specified <strong>DUAL-PURPOSE
+DIRECTIVES</strong> being used instead of the global instance.
+</p>
+<div class="paragraph"><p><em>mylabel</em> must be unique.  Currently the first instance is used but may
+result in an error or undesired behavior.  <em>mylabel</em> ends at the first
+character that is not a non-white-space printable character and should
+be restricted to non-white-space typeable characters.  Prior to version
+3.32, this would transformed to a DOS compatible format of 8.3 with a
+restricted character set.  A <strong>LABEL</strong> clause must contain exactly 1 of
+the <strong>KERNEL-LIKE DIRECTIVES</strong> and may contain 1 each of the <strong>LABEL-ONLY
+DIRECTIVES</strong> or <strong>DUAL-PURPOSE DIRECTIVES</strong>.</p></div>
+<div class="paragraph"><p>Within a <strong>LABEL</strong>, using multiple <strong>KERNEL-LIKE DIRECTIVES</strong> or reuse of
+<strong>LABEL-ONLY DIRECTIVES</strong> or <strong>DUAL-PURPOSE DIRECTIVES</strong> will result in an
+override.  Otherwise, multiple instances of the same directive will
+result in the last being effective.</p></div>
+</dd>
+</dl></div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_dual_purpose_directives">DUAL-PURPOSE DIRECTIVES</h2>
+<div class="sectionbody">
+<div class="paragraph"><p>Use of any of the <strong>DUAL-PURPOSE DIRECTIVES</strong> as <strong>GLOBAL DIRECTIVES</strong> is
+discouraged if there will be any non-Linux images loaded as <strong>ALL</strong> images
+will get these, including those manually entered at the <em>boot:</em> prompt.</p></div>
+<div class="dlist"><dl>
+<dt class="hdlist1">
+<strong>APPEND</strong> <em>options&#8230;</em>
+</dt>
+<dd>
+<p>
+Add one or more options to the kernel command line.  These are added
+both for automatic and manual boots.  The options are added at the very
+beginning of the kernel command line, usually permitting explicitly
+entered kernel options to override them.  This is the equivalent of the
+LILO "append" option.
+</p>
+<div class="paragraph"><p>Use of the parameter <em>initrd=</em> supports multiple filenames separated by
+commas (ie <em>initrd=initrd_file1,initrd_file2</em>) within a single instance.
+This is mostly useful for initramfs, which can be composed of multiple
+separate cpio or cpio.gz archives.</p></div>
+<div class="paragraph"><p>Note: all initrd files except the last one are zero-padded to a 4K page
+boundary.  This should not affect initramfs.</p></div>
+<div class="paragraph"><p>Note: Only the last effective <em>initrd=</em> parameter is used for loading
+initrd files.</p></div>
+</dd>
+<dt class="hdlist1">
+<strong>APPEND</strong> -
+</dt>
+<dd>
+<p>
+Append nothing.  <strong>APPEND</strong> with a single hyphen as argument in a <strong>LABEL</strong>
+section can be used to override a global <strong>APPEND</strong>.
+</p>
+</dd>
+</dl></div>
+<div class="dlist"><dl>
+<dt class="hdlist1">
+<strong>SYSAPPEND</strong> <em>bitmask</em>
+</dt>
+<dt class="hdlist1">
+<strong>IPAPPEND</strong> <em>bitmask</em>
+</dt>
+<dd>
+<p>
+(<strong>SYSAPPEND</strong>: 5.10+; <strong>IPAPPEND</strong>: <strong>PXELINUX</strong> only)
+The <strong>SYSAPPEND</strong> option was introduced in <strong>Syslinux</strong> 5.10; it is an
+enhancement of a previous option <strong>IPAPPEND</strong> which was only available on
+<strong>PXELINUX</strong>.  <em>bitmask</em> is interpreted as decimal format unless prefixed
+with "0x" for hexadecimal or "0" (zero) for octal.  The <em>bitmask</em> is an
+OR (sum) of the following integer options:
+</p>
+<div class="dlist"><dl>
+<dt class="hdlist1">
+<strong>1</strong>
+</dt>
+<dd>
+<p>
+An option of the following format should be generated, based on
+the input from the DHCP/BOOTP or PXE boot server and added to the kernel
+command line(see note below; empty for non-PXELINUX variants):
+</p>
+<div class="listingblock">
+<div class="content">
+<pre><code>ip=&lt;client-ip&gt;:&lt;boot-server-ip&gt;:&lt;gw-ip&gt;:&lt;netmask&gt;</code></pre>
+</div></div>
+<div class="admonitionblock">
+<table><tr>
+<td class="icon">
+<div class="title">Note</div>
+</td>
+<td class="content">The use of option 1 is no substitute for running a DHCP client in
+the booted system and should instead only be used to seed the client for
+a request.  Without regular renewals, the lease acquired by the PXE BIOS
+will expire, making the IP address available for reuse by the DHCP
+server.</td>
+</tr></table>
+</div>
+</dd>
+<dt class="hdlist1">
+<strong>2</strong>
+</dt>
+<dd>
+<p>
+An option of the following format should be generated, in
+dash-separated hexadecimal with leading hardware type (same as for the
+configuration file; see pxelinux.txt.) and added to the kernel command
+line, allowing an initrd program to determine from which interface the
+system booted(empty for non-PXELINUX variants):
+</p>
+<div class="listingblock">
+<div class="content">
+<pre><code>BOOTIF=&lt;hardware-address-of-boot-interface&gt;</code></pre>
+</div></div>
+</dd>
+<dt class="hdlist1">
+<strong>4</strong>
+</dt>
+<dd>
+<p>
+An option of the following format should be generated, in lower
+case hexadecimal in the format normally used for UUIDs (same as for the
+configuration file; see pxelinux.txt.) and added to the kernel command
+line:
+</p>
+<div class="listingblock">
+<div class="content">
+<pre><code>SYSUUID=&lt;system uuid&gt;</code></pre>
+</div></div>
+</dd>
+<dt class="hdlist1">
+<strong>8</strong>
+</dt>
+<dd>
+<p>
+(5.10+) indicate the CPU family and certain particularly
+significant CPU feature bits:
+</p>
+<div class="listingblock">
+<div class="content">
+<pre><code>CPU=&lt;family&gt;&lt;features&gt;</code></pre>
+</div></div>
+<div class="paragraph"><p>The &lt;family&gt; is a single digit from 3 (i386) to 6 (i686 or higher.)  The
+following CPU features are currently reported; additional flags may be
+added in the future:</p></div>
+<div class="literalblock">
+<div class="content">
+<pre><code>P       Physical Address Extension (PAE)
+V       Intel Virtualization Technology (VT/VMX)
+T       Intel Trusted Exection Technology (TXT/SMX)
+X       Execution Disable (XD/NX)
+L       Long Mode (x86-64)
+S       AMD SMX virtualization</code></pre>
+</div></div>
+</dd>
+<dt class="hdlist1">
+<strong>DMI</strong>
+</dt>
+<dd>
+<p>
+(5.10+) The following strings are derived from DMI/SMBIOS
+information if available:
+</p>
+<div class="literalblock">
+<div class="content">
+<pre><code>Bit     String          Significance
+-------------------------------------------------------------
+0x00010 SYSVENDOR=      System vendor name
+0x00020 SYSPRODUCT=     System product name
+0x00040 SYSVERSION=     System version
+0x00080 SYSSERIAL=      System serial number
+0x00100 SYSSKU=         System SKU
+0x00200 SYSFAMILY=      System family
+0x00400 MBVENDOR=       Motherboard vendor name
+0x00800 MBVERSION=      Motherboard version
+0x01000 MBSERIAL=       Motherboard serial number
+0x02000 MBASSET=        Motherboard asset tag
+0x04000 BIOSVENDOR=     BIOS vendor name
+0x08000 BIOSVERSION=    BIOS version
+0x10000 SYSFF=          System form factor</code></pre>
+</div></div>
+<div class="paragraph"><p>If these strings contain white-space characters, they are replaced with
+underscores (_).</p></div>
+<div class="paragraph"><p>The system form factor value is a number defined in the SMBIOS
+specification, available at <a href="http://www.dmtf.org/">http://www.dmtf.org/</a>.  As of version 2.7.1
+of the specification, the following values are defined:</p></div>
+<div class="literalblock">
+<div class="content">
+<pre><code> 1     Other
+ 2     Unknown
+ 3     Desktop
+ 4     Low profile desktop
+ 5     Pizza box
+ 6     Mini tower
+ 7     Tower
+ 8     Portble
+ 9     Laptop
+10     Notebook
+11     Handheld
+12     Docking station
+13     All-in-one
+14     Subnotebook
+15     Space-saving
+16     Lunch box
+17     Main server chassis
+18     Expansion chassis
+19     Subchassis
+20     Bus expansion chassis
+21     Peripheral chassis
+22     RAID chassis
+23     Rack mount chasss
+24     Sealed-case PC
+25     Multi-system chassis
+26     Compact PCI
+27     Advanced TCI
+28     Blade
+29     Blade enclosure</code></pre>
+</div></div>
+</dd>
+</dl></div>
+</dd>
+</dl></div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_kernel_like_directives">KERNEL-LIKE DIRECTIVES</h2>
+<div class="sectionbody">
+<div class="dlist"><dl>
+<dt class="hdlist1">
+<strong>KERNEL</strong> <em>image</em>
+</dt>
+<dd>
+<p>
+Load a kernel-like file <em>image</em> with automatic filetype detection based
+on file extension, listed under the non-auto-detecting directives,
+defaulting to <strong>LINUX</strong>.
+</p>
+</dd>
+</dl></div>
+<div class="paragraph"><p><strong>LINUX</strong> is used as an example]
+<strong>LINUX</strong> <em>image</em>::
+Load <em>image</em> as a Linux-like kernel. MEMDISK is an example of a
+non-Linux kernel loaded in a Linux-like fashion.</p></div>
+<div class="dlist"><dl>
+<dt class="hdlist1">
+<strong>BOOT</strong> <em>image</em>
+</dt>
+<dd>
+<p>
+(<strong>ISOLINUX</strong> only: .bin; <strong>SYSLINUX</strong> only: .bs) Load a boot sector.  .bin
+is a "CD boot sector" and .bs is a regular disk boot sector.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>BSS</strong> <em>image</em>
+</dt>
+<dd>
+<p>
+(<strong>SYSLINUX</strong> only: .bss) Load a BSS image, a .bs image with the DOS
+superblock patched in.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>COMBOOT</strong> <em>image</em>
+</dt>
+<dd>
+<p>
+(.com, .cbt; Removed as of 5.00) Load a <strong>Syslinux</strong> COMBOOT image.  .com
+images may also be runnable from DOS while .cbt images are not.  See
+also <strong>comboot.txt</strong>
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>COM32</strong> <em>image</em>
+</dt>
+<dd>
+<p>
+(.c32) Load a <strong>Syslinux</strong> COM32 (32-bit <strong>COMBOOT</strong>) image.  See also
+<strong>comboot.txt</strong>
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>CONFIG</strong> <em>image</em>
+</dt>
+<dd>
+<p>
+Load a new configuration file.  The configuration file is read, the
+working directory is changed (if specified via an <strong>APPEND</strong>), then the
+configuration file is parsed.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>FDIMAGE</strong> <em>image</em>
+</dt>
+<dd>
+<p>
+(Removed as of 4.05, added 1.65; <strong>ISOLINUX</strong> only: .img) Load a disk
+image.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>LOCALBOOT</strong> <em>type</em>
+</dt>
+<dd>
+<p>
+(<strong>PXELINUX</strong> 1.53+; <strong>ISOLINUX</strong> ??3.10+; <strong>SYSLINUX</strong> 3.70+)Attempt a
+different local boot method.  The special value -1 causes the boot
+loader to report failure to the BIOS, which, on recent BIOSes, should
+mean that the next boot device in the boot sequence should be activated.
+ Values other than those documented may produce undesired results.
+</p>
+<div class="paragraph"><p>On <strong>PXELINUX</strong>, <em>type</em> 0 means perform a normal boot.  <em>type</em> 4 will
+perform a local boot with the Universal Network Driver Interface (UNDI)
+driver still resident in memory.  Finally, <em>type</em> 5 will perform a local
+boot with the entire PXE stack, including the UNDI driver, still
+resident in memory. All other values are undefined.  If you don&#8217;t know
+what the UNDI or PXE stacks are, don&#8217;t worry&#8201;&#8212;&#8201;you don&#8217;t want them,
+just specify 0.</p></div>
+<div class="paragraph"><p>On <strong>ISOLINUX</strong>/<strong>SYSLINUX</strong>, the <em>type</em> specifies the local drive number to
+boot from; 0x00 is the primary floppy drive and 0x80 is the primary hard
+drive.</p></div>
+</dd>
+<dt class="hdlist1">
+<strong>PXE</strong> <em>image</em>
+</dt>
+<dd>
+<p>
+(<strong>PXELINUX</strong> only: .0) Load a PXE NBP (Network Boot Program) image.  The
+PXE protocol does not provide any means for specifiying or using a
+command line or initrd.
+</p>
+</dd>
+</dl></div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_label_only_directives">LABEL-ONLY DIRECTIVES</h2>
+<div class="sectionbody">
+<div class="dlist"><dl>
+<dt class="hdlist1">
+<strong>INITRD</strong> <em>initrd_file</em>
+</dt>
+<dd>
+<p>
+(3.71+) An initrd can be specified in a separate statement (INITRD)
+instead of as part of the <strong>APPEND</strong> statement; this functionally appends
+"initrd=initrd_file" to the kernel command line.  Like <em>initrd=</em>, this
+also supports multiple comma separated file names (see <strong>APPEND</strong>).
+</p>
+</dd>
+</dl></div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_global_directives_secondary">GLOBAL DIRECTIVES - SECONDARY</h2>
+<div class="sectionbody">
+<div class="paragraph"><p>These are global directives that are of lesser importance, often
+affecting the user experience and not the boot process.</p></div>
+<div class="dlist"><dl>
+<dt class="hdlist1">
+<strong>ALLOWOPTIONS</strong> <em>flag_val</em>
+</dt>
+<dd>
+<p>
+If <em>flag_val</em> is 0, the user is not allowed to specify any arguments on
+the kernel command line.  The only options recognized are those
+specified in an <strong>APPEND</strong>) statement.  The default is 1.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>IMPLICIT</strong> <em>flag_val</em>
+</dt>
+<dd>
+<p>
+If <em>flag_val</em> is 0, do not load a kernel image unless it has been
+explicitly named in a <strong>LABEL</strong> statement.  The default is 1.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>TIMEOUT</strong> <em>timeout</em>
+</dt>
+<dd>
+<p>
+Indicates how long to wait at the <em>boot:</em> prompt until booting
+automatically, in units of 1/10 s.  The timeout is cancelled as soon as
+the user types anything on the keyboard, the assumption being that the
+user will complete the command line already begun.  The timer is reset
+to 0 upon return from an unsuccessful attempt to boot or from a module.
+A timeout of zero (the default) will disable the timeout completely.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>TOTALTIMEOUT</strong> <em>timeout</em>
+</dt>
+<dd>
+<p>
+Indicates how long to wait until booting automatically, in units of
+1/10 s.  This timeout is <strong>not</strong> cancelled by user input, and can thus be
+used to deal with serial port glitches or "the user walked away" type
+situations.  A timeout of zero (the default) will disable the timeout
+completely.
+</p>
+<div class="paragraph"><p>Both <strong>TIMEOUT</strong> and <strong>TOTALTIMEOUT</strong> can be used together, for example:</p></div>
+<div class="listingblock">
+<div class="content">
+<pre><code># Wait 5 seconds unless the user types something, but
+# always boot after 15 minutes.
+TIMEOUT 50
+TOTALTIMEOUT 9000</code></pre>
+</div></div>
+</dd>
+</dl></div>
+<div class="dlist"><dl>
+<dt class="hdlist1">
+<strong>ONTIMEOUT</strong> <em>kernel options&#8230;</em>
+</dt>
+<dd>
+<p>
+Sets the command line invoked on a timeout (which often references a
+LABEL).  If not specified, <em>UI</em> (if used) or 'DEFAULT is used.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>ONERROR</strong> <em>kernel options&#8230;</em>
+</dt>
+<dd>
+<p>
+If a kernel image is not found (either due to it not existing, or
+because <strong>IMPLICIT</strong> is set), run the specified command.  The faulty
+command line is appended to the specified options, so if the <strong>ONERROR</strong>
+directive reads as:
+</p>
+<div class="listingblock">
+<div class="content">
+<pre><code>ONERROR xyzzy plugh</code></pre>
+</div></div>
+<div class="paragraph"><p>and the command line as entered by the user is:</p></div>
+<div class="listingblock">
+<div class="content">
+<pre><code>foo bar baz</code></pre>
+</div></div>
+<div class="paragraph"><p><strong>Syslinux</strong> will execute the following as if entered by the user:</p></div>
+<div class="listingblock">
+<div class="content">
+<pre><code>xyzzy plugh foo bar baz</code></pre>
+</div></div>
+</dd>
+<dt class="hdlist1">
+<strong>SERIAL</strong> <em>port [baudrate [flowcontrol]]</em>
+</dt>
+<dd>
+<p>
+Enables a serial port to act as the console.  <em>port</em> is a number (0 =
+/dev/ttyS0 = COM1, etc.) or an I/O port address (e.g. 0x3F8); if
+<em>baudrate</em> is omitted, the baud rate defaults to 9600 bps.  The serial
+parameters are hardcoded to be 8 bits, no parity, 1 stop bit.
+</p>
+<div class="paragraph"><p><em>flowcontrol</em> is a combination of the following bits:</p></div>
+<div class="literalblock">
+<div class="content">
+<pre><code>0x001 - Assert DTR
+0x002 - Assert RTS
+0x008 - Enable interrupts
+0x010 - Wait for CTS assertion
+0x020 - Wait for DSR assertion
+0x040 - Wait for RI assertion
+0x080 - Wait for DCD assertion
+0x100 - Ignore input unless CTS asserted
+0x200 - Ignore input unless DSR asserted
+0x400 - Ignore input unless RI asserted
+0x800 - Ignore input unless DCD asserted</code></pre>
+</div></div>
+<div class="paragraph"><p>All other bits are reserved.</p></div>
+<div class="paragraph"><p>Typical values are:</p></div>
+<div class="literalblock">
+<div class="content">
+<pre><code>    0 - No flow control (default)
+0x303 - Null modem cable detect
+0x013 - RTS/CTS flow control
+0x813 - RTS/CTS flow control, modem input
+0x023 - DTR/DSR flow control
+0x083 - DTR/DCD flow control</code></pre>
+</div></div>
+<div class="paragraph"><p>For the <strong>SERIAL</strong> directive to be guaranteed to work properly, it should
+be the first directive in the configuration file.</p></div>
+<div class="admonitionblock">
+<table><tr>
+<td class="icon">
+<div class="title">Note</div>
+</td>
+<td class="content"><em>port</em> values from 0 to 3 means the first four serial ports
+detected by the BIOS.  They may or may not correspond to the legacy port
+values 0x3F8, 0x2F8, 0x3E8, 0x2E8.</td>
+</tr></table>
+</div>
+<div class="paragraph"><p>Enabling interrupts (setting the 0x008 bit) may give better
+responsiveness without setting the <strong>NOHALT</strong> option, but could
+potentially cause problems with buggy BIOSes.</p></div>
+<div class="paragraph"><p>This option is "sticky" and is not automatically reset when loading a
+new configuration file with the CONFIG command.</p></div>
+</dd>
+<dt class="hdlist1">
+<strong>NOHALT</strong> <em>flag_val</em>
+</dt>
+<dd>
+<p>
+If <em>flag_val</em> is 1, don&#8217;t halt the processor while idle. Halting the
+processor while idle significantly reduces the power consumption, but
+can cause poor responsiveness to the serial console, especially when
+using scripts to drive the serial console, as opposed to human
+interaction.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>CONSOLE</strong> <em>flag_val</em>
+</dt>
+<dd>
+<p>
+If <em>flag_val</em> is 0, disable output to the normal video console. If
+<em>flag_val</em> is 1, enable output to the video console (this is the
+default.)
+</p>
+<div class="paragraph"><p>Some BIOSes try to forward this to the serial console and sometimes make
+a total mess thereof, so this option lets you disable the video console
+on these systems.</p></div>
+</dd>
+<dt class="hdlist1">
+<strong>FONT</strong> <em>filename</em>
+</dt>
+<dd>
+<p>
+Load a font in .psf format before displaying any output (except the
+copyright line, which is output as ldlinux.sys itself is loaded.)
+<strong>Syslinux</strong> only loads the font onto the video card; if the .psf file
+contains a Unicode table it is ignored.  This only works on EGA and VGA
+cards; hopefully it should do nothing on others.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>KBDMAP</strong> <em>keymap</em>
+</dt>
+<dd>
+<p>
+Install a simple keyboard map.  The keyboard remapper used is <strong>very</strong>
+simplistic (it simply remaps the keycodes received from the BIOS, which
+means that only the key combinations relevant in the default layout&#8201;&#8212;&#8201;usually U.S. English&#8201;&#8212;&#8201;can be mapped) but should at least help people
+with AZERTY keyboard layout and the locations of = and , (two special
+characters used heavily on the Linux kernel command line.)
+</p>
+<div class="paragraph"><p>The included program keytab-lilo.pl from the LILO distribution can be
+used to create such keymaps.  The file keytab-lilo.txt contains the
+documentation for this program.</p></div>
+</dd>
+<dt class="hdlist1">
+<strong>DISPLAY</strong> <em>filename</em>
+</dt>
+<dd>
+<p>
+Displays the indicated file on the screen at boot time (before the boot:
+prompt, if displayed).  Please see the section below on <strong>DISPLAY</strong> files.
+</p>
+<div class="admonitionblock">
+<table><tr>
+<td class="icon">
+<div class="title">Note</div>
+</td>
+<td class="content">If the file is missing, this option is simply ignored.</td>
+</tr></table>
+</div>
+</dd>
+<dt class="hdlist1">
+<strong>SAY</strong> <em>message</em>
+</dt>
+<dd>
+<p>
+Prints the message on the screen.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>PROMPT</strong> <em>flag_val</em>
+</dt>
+<dd>
+<p>
+If <em>flag_val</em> is 0, display the boot: prompt only if the Shift or Alt
+key is pressed, or Caps Lock or Scroll lock is set (this is the
+default).  If <em>flag_val</em> is 1, always display the boot: prompt.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>NOESCAPE</strong> <em>flag_val</em>
+</dt>
+<dd>
+<p>
+If <em>flag_val</em> is set to 1, ignore the Shift/Alt/Caps Lock/Scroll Lock
+escapes.  Use this (together with PROMPT 0) to force the default boot
+alternative.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>NOCOMPLETE</strong> <em>flag_val</em>
+</dt>
+<dd>
+<p>
+If <em>flag_val</em> is set to 1, the Tab key does not display labels at the
+boot: prompt.
+</p>
+</dd>
+</dl></div>
+<div class="dlist"><dl>
+<dt class="hdlist1">
+<strong>F1</strong> <em>filename</em>
+</dt>
+<dt class="hdlist1">
+<strong>F2</strong> <em>filename</em>
+</dt>
+<dt class="hdlist1">
+<strong>F3</strong> <em>filename</em>
+</dt>
+<dt class="hdlist1">
+<strong>F4</strong> <em>filename</em>
+</dt>
+<dt class="hdlist1">
+<strong>F5</strong> <em>filename</em>
+</dt>
+<dt class="hdlist1">
+<strong>F6</strong> <em>filename</em>
+</dt>
+<dt class="hdlist1">
+<strong>F7</strong> <em>filename</em>
+</dt>
+<dt class="hdlist1">
+<strong>F8</strong> <em>filename</em>
+</dt>
+<dt class="hdlist1">
+<strong>F9</strong> <em>filename</em>
+</dt>
+<dt class="hdlist1">
+<strong>F10</strong> <em>filename</em>
+</dt>
+<dt class="hdlist1">
+<strong>F11</strong> <em>filename</em>
+</dt>
+<dt class="hdlist1">
+<strong>F12</strong> <em>filename</em>
+</dt>
+<dd>
+<p>
+Displays the indicated file on the screen when a function key is pressed
+at the boot: prompt.  This can be used to implement pre-boot online help
+(presumably for the kernel command line options.)  Please see the
+section below on DISPLAY files.
+</p>
+<div class="paragraph"><p>When using the serial console, press &lt;Ctrl-F&gt;&lt;digit&gt; to get to the help
+screens, e.g. &lt;Ctrl-F&gt;&lt;2&gt; to get to the F2 screen. For F10-F12, hit
+&lt;Ctrl-F&gt;&lt;A&gt;, &lt;Ctrl-F&gt;B, &lt;Ctrl-F&gt;C.  For compatibility with earlier
+versions, F10 can also be entered as &lt;Ctrl-F&gt;0.</p></div>
+</dd>
+<dt class="hdlist1">
+<strong>PATH</strong> <em>path</em>
+</dt>
+<dd>
+<p>
+(5.00+) Specify a space-separated (' <em>; 5.00-5.10 was a colon ':</em>) list
+of directories to search when attempting to load modules. This directive
+is useful for specifying the directories containing the lib*.c32 library
+files as other modules may be dependent on these files, but may not
+reside in the same directory.  Multiple instances will append additional
+paths.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>SENDCOOKIES</strong> <em>bitmask</em>
+</dt>
+<dd>
+<p>
+(<strong>PXELINUX</strong> 5.10+) When downloading files over http, the SYSAPPEND
+strings are prepended with <em>Syslinux</em> and sent to the server as cookies.
+The cookies are URL-encoded; whitespace is <strong>not</strong> replaced with
+underscores.
+</p>
+<div class="paragraph"><p>This command limits the cookies send; 0 means no cookies.  The default
+is -1, meaning send all cookies.</p></div>
+<div class="paragraph"><p>This option is "sticky" and is not automatically reset when loading a
+new configuration file with the CONFIG command.</p></div>
+</dd>
+</dl></div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_display_file_format">DISPLAY FILE FORMAT</h2>
+<div class="sectionbody">
+<div class="paragraph"><p>DISPLAY and function-key help files are text files in either DOS or UNIX
+format (with or without &lt;CR&gt;).  In addition, the following special codes
+are interpreted:</p></div>
+<div class="paragraph"><p>identical to #3</p></div>
+<div class="dlist"><dl>
+<dt class="hdlist1">
+<strong>&lt;FF&gt;</strong>
+</dt>
+<dd>
+<p>
+&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;                               = &lt;Ctrl-L&gt; = ASCII 12<br />
+Clear the screen, home the cursor.  Note that the screen is filled with
+the current display color.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>&lt;FF&gt;</strong>
+</dt>
+<dd>
+<p>
+= &lt;Ctrl-L&gt; = ASCII 12; Clear the screen, home the cursor.  Note that the
+screen is filled with the current display color.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>&lt;FF&gt;</strong>
+</dt>
+<dd>
+<p>
+&lt;FF&gt; = &lt;Ctrl-L&gt; = ASCII 12
+</p>
+<div class="paragraph"><p>Clear the screen, home the cursor.  Note that the screen is filled with
+the current display color.</p></div>
+</dd>
+<dt class="hdlist1">
+<strong>&lt;FF&gt;</strong>
+</dt>
+<dd>
+<p>
+&lt;FF&gt; = &lt;Ctrl-L&gt; = ASCII 12<br />
+Clear the screen, home the cursor.  Note that the screen is filled with
+the current display color.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>&lt;SI&gt;</strong><em>&lt;bg&gt;&lt;fg&gt;</em>
+</dt>
+<dd>
+<p>
+&lt;SI&gt; = &lt;Ctrl-O&gt; = ASCII 15
+</p>
+<div class="paragraph"><p>Set the display colors to the specified background and foreground
+colors, where &lt;bg&gt; and &lt;fg&gt; are the 2 hex digits representing 1 byte,
+corresponding to the standard PC display attributes:</p></div>
+<div class="literalblock">
+<div class="content">
+<pre><code>0 = black               8 = dark grey
+1 = dark blue           9 = bright blue
+2 = dark green          a = bright green
+3 = dark cyan           b = bright cyan
+4 = dark red            c = bright red
+5 = dark purple         d = bright purple
+6 = brown               e = yellow
+7 = light grey          f = white</code></pre>
+</div></div>
+<div class="paragraph"><p>Picking a bright color (8-f) for the background results in the
+corresponding dark color (0-7), with the foreground flashing.</p></div>
+<div class="paragraph"><p>Colors are not visible over the serial console.</p></div>
+</dd>
+<dt class="hdlist1">
+<strong>&lt;CAN&gt;</strong><em>filename&lt;newline&gt;</em>
+</dt>
+<dd>
+<p>
+&lt;CAN&gt; = &lt;Ctrl-X&gt; = ASCII 24
+</p>
+<div class="paragraph"><p>If a VGA display is present, enter graphics mode and display the graphic
+included in the specified file.  The file format is an ad hoc format
+called LSS16; the included Perl program "ppmtolss16" can be used to
+produce these images.  This Perl program also includes the file format
+specification.</p></div>
+<div class="paragraph"><p>The image is displayed in 640x480 16-color mode.  Once in graphics mode,
+the display attributes (set by &lt;SI&gt; code sequences) work slightly
+differently: the background color is ignored, and the foreground colors
+are the 16 colors specified in the image file.  For that reason,
+ppmtolss16 allows you to specify that certain colors should be assigned
+to specific color indicies.</p></div>
+<div class="paragraph"><p>Color indicies 0 and 7, in particular, should be chosen with care: 0 is
+the background color, and 7 is the color used for the text printed by
+<strong>Syslinux</strong> itself.</p></div>
+</dd>
+<dt class="hdlist1">
+<strong>&lt;EM&gt;</strong>
+</dt>
+<dd>
+<p>
+&lt;EM&gt; = &lt;Ctrl-Y&gt; = ASCII 25<br />
+If we are currently in graphics mode, return to text mode.
+</p>
+</dd>
+<dt class="hdlist1">
+<strong>&lt;DLE&gt;</strong>..<strong>&lt;ETB&gt;</strong>
+</dt>
+<dd>
+<p>
+&lt;Ctrl-P&gt;..&lt;Ctrl-W&gt; = ASCII 16-23
+</p>
+<div class="paragraph"><p>These codes can be used to select which modes to print a certain part of
+the message file in.  Each of these control characters select a specific
+set of modes (text screen, graphics screen, serial port) for which the
+output is actually displayed:</p></div>
+<div class="literalblock">
+<div class="content">
+<pre><code>Character                       Text    Graph   Serial
+------------------------------------------------------
+&lt;DLE&gt; = &lt;Ctrl-P&gt; = ASCII 16     No      No      No
+&lt;DC1&gt; = &lt;Ctrl-Q&gt; = ASCII 17     Yes     No      No
+&lt;DC2&gt; = &lt;Ctrl-R&gt; = ASCII 18     No      Yes     No
+&lt;DC3&gt; = &lt;Ctrl-S&gt; = ASCII 19     Yes     Yes     No
+&lt;DC4&gt; = &lt;Ctrl-T&gt; = ASCII 20     No      No      Yes
+&lt;NAK&gt; = &lt;Ctrl-U&gt; = ASCII 21     Yes     No      Yes
+&lt;SYN&gt; = &lt;Ctrl-V&gt; = ASCII 22     No      Yes     Yes
+&lt;ETB&gt; = &lt;Ctrl-W&gt; = ASCII 23     Yes     Yes     Yes</code></pre>
+</div></div>
+<div class="paragraph"><p>For example, the following will actually print out which mode the
+console is in:</p></div>
+<div class="literalblock">
+<div class="content">
+<pre><code>&lt;DC1&gt;Text mode&lt;DC2&gt;Graphics mode&lt;DC4&gt;Serial port&lt;ETB&gt;</code></pre>
+</div></div>
+</dd>
+<dt class="hdlist1">
+<strong>&lt;SUB&gt;</strong>
+</dt>
+<dd>
+<p>
+&lt;SUB&gt; = &lt;Ctrl-Z&gt; = ASCII 26
+</p>
+<div class="paragraph"><p>End of file (DOS convention).</p></div>
+</dd>
+<dt class="hdlist1">
+<strong>&lt;BEL&gt;</strong>
+</dt>
+<dd>
+<p>
+&lt;BEL&gt; = &lt;Ctrl-G&gt; = ASCII 7<br />
+Beep the speaker.
+</p>
+</dd>
+</dl></div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_boot_loader_ids_used">BOOT LOADER IDS USED</h2>
+<div class="sectionbody">
+<div class="paragraph"><p>The Linux boot protocol supports a "boot loader ID", a single byte where
+the upper nybble specifies a boot loader family (3 = <strong>Syslinux</strong>) and the
+lower nybble is version or, in the case of <strong>Syslinux</strong>, media:</p></div>
+<div class="literalblock">
+<div class="content">
+<pre><code>0x31 (49) = SYSLINUX
+0x32 (50) = PXELINUX
+0x33 (51) = ISOLINUX
+0x34 (52) = EXTLINUX</code></pre>
+</div></div>
+<div class="paragraph"><p>In recent versions of Linux, this ID is available as
+/proc/sys/kernel/bootloader_type.</p></div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_novice_protection">NOVICE PROTECTION</h2>
+<div class="sectionbody">
+<div class="paragraph"><p><strong>Syslinux</strong> will attempt to detect booting on a machine with too little
+memory, which means the Linux boot sequence cannot complete.  If so, a
+message is displayed and the boot sequence aborted.  Holding down the
+Ctrl key while booting disables this feature.</p></div>
+<div class="paragraph"><p>Any file that <strong>Syslinux</strong> uses can be marked hidden, system or readonly
+if so is convenient; <strong>Syslinux</strong> ignores all file attributes.  The
+<strong>SYSLINUX</strong> installer automatically sets the readonly/hidden/system
+attributes on LDLINUX.SYS.</p></div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_example">EXAMPLE</h2>
+<div class="sectionbody">
+<div class="paragraph"><p>Here are some sample config files:</p></div>
+<div class="listingblock">
+<div class="content">
+<pre><code># SERIAL 0 115200
+DEFAULT linux
+PROMPT 1
+TIMEOUT 600
+
+LABEL linux
+  LINUX vmlinuz
+  APPEND initrd=initrd1.gz,initrd2.gz
+
+LABEL m
+  COM32 menu.c32</code></pre>
+</div></div>
+<div class="paragraph"><p>In this example, serial port use is disabled but can be enabled by
+uncommenting the first line and utilize serial port 0 at 115200 bps.  If
+<em>linux</em> is typed on the command line, the kernel-like file <em>vmlinuz</em> is
+executed as a Linux kernel, initrd files initrd1.gz and initrd2.gz are
+loaded as initial ramdisk files (like cpio.gz files for initramfs).  If
+<em>m</em> is typed on the command line, the COM32 module <em>menu.c32</em> is
+executed to launch a menu system.</p></div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_known_bugs">KNOWN BUGS</h2>
+<div class="sectionbody">
+<div class="paragraph"><p>Several known bugs/common problems are listed at
+<a href="http://www.syslinux.org/wiki/index.php/Common_Problems">http://www.syslinux.org/wiki/index.php/Common_Problems</a> and known
+hardware compatibility issues are listed at
+<a href="http://www.syslinux.org/wiki/index.php/Hardware_Compatibility">http://www.syslinux.org/wiki/index.php/Hardware_Compatibility</a> with
+filename translation difficulty and early PXE stacks being some of the
+most common.  Reporting of other encountered issues is welcome and
+appreciated.</p></div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_bug_reports">BUG REPORTS</h2>
+<div class="sectionbody">
+<div class="paragraph"><p>I would appreciate hearing of any problems you have with Syslinux.  I
+would also like to hear from you if you have successfully used Syslinux,
+<strong>especially</strong> if you are using it for a distribution.</p></div>
+<div class="paragraph"><p>If you are reporting problems, please include all possible information
+about your system and your BIOS; the vast majority of all problems
+reported turn out to be BIOS or hardware bugs, and I need as much
+information as possible in order to diagnose the problems.</p></div>
+<div class="paragraph"><p>There is a mailing list for discussion among Syslinux users and for
+announcements of new and test versions.  To join, or to browse the
+archive, go to:</p></div>
+<div class="paragraph"><p><a href="http://www.zytor.com/mailman/listinfo/syslinux">http://www.zytor.com/mailman/listinfo/syslinux</a></p></div>
+<div class="paragraph"><p>Please DO NOT send HTML messages or attachments to the mailing list
+(including multipart/alternative or similar.)  All such messages will be
+bounced.</p></div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_author">AUTHOR</h2>
+<div class="sectionbody">
+<div class="paragraph"><p>This AsciiDoc derived document is a modified version of the original
+<strong>SYSLINUX</strong> documentation by H. Peter Anvin &lt;<a href="mailto:hpa@zytor.com">hpa@zytor.com</a>&gt;.  The conversion
+to an AsciiDoc was made by Gene Cumm &lt;<a href="mailto:gene.cumm@gmail.com">gene.cumm@gmail.com</a>&gt;</p></div>
+</div>
+</div>
+</div>
+<div id="footnotes"><hr /></div>
+<div id="footer">
+<div id="footer-text">
+Last updated 2014-01-17 16:09:56 PST
+</div>
+</div>
+</body>
+</html>

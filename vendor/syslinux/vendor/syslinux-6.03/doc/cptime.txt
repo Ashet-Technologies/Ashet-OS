@@ -1,0 +1,50 @@
+= cptime.c32(1) =
+:doctype: manpage
+:author:  Gene Cumm
+:email:   gene.cumm@gmail.com
+:revdate: 2011-12-17
+
+
+== NAME ==
+cptime.c32 - times the copy off (read) of a file
+
+
+== SYNOPSIS ==
+*cptime.c32* ['OPTIONS'] 'FILE'...
+
+
+== DESCRIPTION ==
+Times the copy off (read) of a file, optionally computes/displays
+transfer rates(on by default) with an adjustable transfer size and
+maximum transfer length.
+
+
+== OPTIONS ==
+*-b* 'SIZE'::
+    use 'SIZE' for transfer size; defaults to 2048 for COM32
+
+*-l*::
+    long output mode; default; reverses *-s*
+
+*-n* 'LEN'::
+    maximum length to fetch; defaults to whole file
+
+*-q*::
+    quiet (normal/non-verbose) mode; default; reverses *-v*
+
+*-s*::
+    simple output mode
+
+*-v*::
+    verbose mode
+
+The same mode is used for all files.
+
+
+== AUTHOR ==
+{author} <{email}>
+
+== COPYRIGHT ==
+Copyright \(C) 2011 {author}. Free use of this software is granted under
+the terms of the GNU General Public License (GPL).
+

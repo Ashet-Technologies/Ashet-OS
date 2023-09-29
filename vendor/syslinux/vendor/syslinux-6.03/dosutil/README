@@ -1,0 +1,10 @@
+This directory contains utilities for use under DOS.
+Although not part of Syslinux per se, they might be useful with MEMDISK.
+
+eltorito.sys	- Generic El Torito CD-ROM driver
+		  Written by Gary Tong and Bart Lagerweij.
+		  Ported to NASM by H. Peter Anvin.
+
+mdiskchk.com	- Simple program to query for the existence of a
+		  MEMDISK and display parameters.
+

@@ -1,0 +1,348 @@
+          Overview of writing code using the menu system
+          ----------------------------------------------
+
+This file contains implementation and developer documentation.
+For simple cases, you should start by using simple.c as a template.
+complex.c illustrates most of the features available in the menu system.
+
+Menu Features currently supported are:
+* menu items,
+* submenus,
+* disabled items,
+* checkboxes,
+* invisible items (useful for dynamic menus), and
+* Radio menus,
+* Context sensitive help
+* Authenticated users
+
+The keys used are:
+
+* Arrow Keys, PgUp, PgDn, Home, End Keys
+* Space to switch state of a checkbox
+* Enter to choose the item
+* Escape to exit from it
+* Shortcut keys
+
+1. Overview
+-----------
+
+The code usually consists of many stages.
+
+ * Configuring the menusytem
+ * Installing global handlers [optional]
+ * Populating the menusystem
+ * Executing the menusystem
+ * Processing the result
+
+1.1 Configuring the menusystem
+------------------------------
+This includes setting the window the menu system should use,
+the choice of colors, the title of the menu etc. In most functions
+calls, a value of -1 indicates that the default value be used.
+For details about what the arguments are look at function
+declarations in menu.h
+
+<code>
+  // Choose the default title and setup default values for all attributes....
+  init_menusystem(NULL);
+  set_window_size(1,1,23,78); // Leave one row/col border all around
+
+  // Choose the default values for all attributes and char's
+  // -1 means choose defaults (Actually the next 4 lines are not needed)
+  set_normal_attr (-1,-1,-1,-1);
+  set_status_info (-1,-1);
+  set_title_info  (-1,-1);
+  set_misc_info(-1,-1,-1,-1);
+</code>
+
+1.2 Populating the menusystem
+-----------------------------
+This involves adding a menu to the system, and the options which
+should appear in the menu. An example is given below.
+
+<code>
+  MAINMENU = add_menu(" Menu Title ",-1);
+  CHECKED = 1;
+  add_item("option1","Status 1",OPT_RUN,"kernel1 arg1=val1",0);
+  add_item("selfloop","Status 2",OPT_SUBMENU,NULL,MAINMENU);
+  add_item("othermenu","Status 3",OPT_SUBMENU,"menuname",0);
+  add_sep();
+  add_item("checkbox,"Checkbox Info",OPT_CHECKBOX,NULL,CHECKED);
+  add_item("Exit ","Status String",OPT_EXITMENU,NULL,0);
+</code>
+
+The call to add_menu has two arguments, the first being the title of
+the menu and the second an upper bound on the number of items in the menu.
+Putting a -1, will use the default (see MENUSIZE in menu.h). If you try
+to add more items than specified, the extra items will not appear in
+the menu. The accuracy of this number affects the memory required
+to run the system.
+
+If you do not want to keep track of the return values, you can also use
+the following variant of add_menu
+
+<code>
+add_named_menu("main"," Menu Title ",-1)
+</code>
+
+This creates a new menu as before and gives it a name "main". When using named
+menus, you get an alternate way for adding submenu's. See below for details.
+
+The call to add_item has five arguments.
+The first argument is the text which appears in the menu itself.
+The second argument is the text displayed in the status line.
+The third argument indicates the type of this menuitem. It is one of
+the following
+
+ * OPT_RUN : executable content
+ * OPT_EXITMENU : exits menu to parent
+ * OPT_SUBMENU : if selected, displays a submenu
+ * OPT_CHECKBOX : associates a boolean with this item which can be toggled
+ * OPT_RADIOMENU: associates this with a radio menu.
+      After execution, the data field of this item will point
+      to the option selected.
+ * OPT_SEP : A menu seperator (visually divide menu into parts)
+ * OPT_RADIOITEM: this item is one of the options in a RADIOMENU
+ * OPT_INACTIVE : A disabled item (user cannot select this)
+ * OPT_INVISIBLE: This item will not be displayed.
+
+The fourth argument is the value of the data field always a string.
+Usually this string is just copied and nothing is done with it. Two
+cases, where it is used.
+
+In case of a radiomenu the input string is ignored and the "data" field
+points to the menuitem chosen (Dont forget to typecast this pointer to
+(t_menuitem *) when reading this info).
+
+In case of a submenu, this string if non-trivial is interpreted as the
+name of the submenu which should be linked there. This interpretation
+happens when the menu is first run and not when the menu system is being
+created. This allows the user to create the menusystem in an arbitrary
+order.
+
+
+The fifth argument is a number whose meaning depends on the type of the
+item. For a CHECKBOX it should be 0/1 setting the initial state of the
+checkbox. For a SUBMENU it should be the index of the menu which should
+be displayed if this option is chosen. Incase the data field is non-trivial,
+this number is ignored and computed later. For a RADIOMENU it should be the
+index of the menu which contains all the options (All items in that menu
+not of type RADIOITEM are ignored). For all other types, this
+argument has no meaning at all.
+
+A call to add_sep is a convenient shorthand for calling add_item
+with the type set to OPT_SEP.
+
+1.3 Executing the menusystem
+----------------------------
+This is the simplest of all. Just call showmenus, with the index
+of the main menu as its argument. It returns a pointer to the menu
+item which was selected by the user.
+
+<code>
+   choice = showmenus(MAIN); // Initial menu is the one with index MAIN
+   // or choice = showmenus(find_menu_num("main")); // Initial menu is the one named "main"
+</code>
+
+1.4 Processing the result
+-------------------------
+This pointer will either be NULL (user hit Escape) or always point
+to a menuitem which can be "executed", i.e. it will be of type OPT_RUN.
+Usually at this point, all we need to do is to ask syslinux to run
+the command associated with this menuitem. The following code executes
+the command stored in choice->data (there is no other use for the data
+field, except for radiomenu's)
+
+<code>
+  if (choice)
+  {
+        if (choice->action == OPT_RUN)
+        {
+            if (syslinux) runcommand(choice->data);
+            else csprint(choice->data,0x07);
+            return 1;
+        }
+        csprint("Error in programming!",0x07);
+  }
+</code>
+
+2. Advanced features
+--------------------
+Everycall to add_item actually returns a pointer to the menuitem
+created. This can be useful when using any of the advanced features.
+
+2.1 extra_data
+--------------
+For example, every menuitem has an "extra_data" field (a pointer)
+which the user can use to point any data he/she pleases. The menusystem
+itself does not use this field in anyway.
+
+2.2 helpid
+----------
+Every item also has a field called "helpid". It is meant to hold some
+kind of identifier which can be referenced and used to generate
+a context sensitive help system. This can be set after a call to
+add_item as follows
+<code>
+  add_item("selfloop","Status 2",OPT_SUBMENU,NULL,MAINMENU);
+  set_item_options('A',4516);
+</code>
+
+The first is the shortcut key for this entry. You can put -1 to ensure
+that the shortcut key is not reset. The second is some unsigned integer.
+If this value is 0xFFFF, then the helpid is not changed.
+
+2.3 Installing global handlers
+------------------------------
+It is possible to register handlers for the menu system. These are
+user functions which are called by the menusystem in certain
+situations. Usually the handlers get a pointer to the menusystem
+datastructure as well as a pointer to the current item selected.
+Some handlers may get additional information. Some handlers are
+required to return values while others are not required to do so.
+
+Currently the menusystem support three types of global handlers
+* timeout handler
+* screen handler
+* keys handler
+
+2.3.1 timeout handler
+---------------------
+This is installed using a call to "reg_ontimeout(fn,numsteps,stepsize)"
+function. fn is a pointer to a function which takes no arguments and
+returns one of CODE_WAIT, CODE_ENTER, CODE_ESCAPE. This function is
+called when numsteps*stepsize Centiseconds have gone by without any
+user input. If the function returns CODE_WAIT then the menusystem
+waits for user input (for another numsteps*stepsize Centiseconds). If
+CODE_ENTER or CODE_ESCAPE is returned, then the system pretends that
+the user hit ENTER or ESCAPE on the keyboard and acts accordingly.
+
+2.3.2 Screen handler
+--------------------
+This is installed using a call to "reg_handler(HDLR_SCREEN,fn)". fn is
+a pointer to a function which takes a pointer to the menusystem
+datastructure and the current item selected and returns nothing.
+This is called everytime a menu is drawn (i.e. everytime user changes
+the current selection). This is meant for displaying any additional
+information which reflects the current state of the system.
+
+2.3.3 Keys handler
+------------------
+This is installed using a call to "reg_handler(HDLR_KEYS,fn)". fn is
+a pointer to a function which takes a pointer to the menusystem
+datastructure, the current item and the scan code of a key and returns
+nothing. This function is called when the user presses a key which
+the menusystem does not know to dealwith. In any case, when this call
+returns the screen should not have changed in any way. Usually,
+one can change the active page and display any output needed and
+reset the active page when you return from this call.
+
+complex.c implements a key_handler, which implements a simple
+context sensitive help system, by displaying the contents of a
+file whose name is based on the helpid of the active item.
+
+Also, complex.c's handler allows certain users to make changes
+to edit the commands associated with a menu item.
+
+2.4 Installing item level handlers
+----------------------------------
+In addition to global handlers, one can also install handlers for each
+individual item. A handler for an individual item is a function which
+takes a pointer to the menusystem datastructure and a pointer to the
+current item and return a structure of type t_handler_return. Currently
+it has two bit fields "valid" and "refresh".
+
+This handler is called when the user hits "enter" on a RUN item, or
+changes the status of a CHECKBOX, or called *after* a radio menu choice
+has been set. In all other cases, installing a handler has no effect.
+
+The handler can change any of the internal datastructures it pleases.
+For e.g. in a radiomenu handler, one can change the text displayed
+on the menuitem depending on which choice was selected (see complex.c
+for an example). The return values are ignored for RADIOMENU's.
+
+In case of RUN items: the return values are used as follows. If the
+return value of "valid" was false, then this user choice is ignored.
+This is useful if the handler has useful side effects. For e.g.
+complex.c has a Login item, whose handler always return INVALID. It
+sets a global variable to the name of the user logged in, and enables
+some menu items, and makes some invisible items visible.
+
+* If the handler does not change the visibility status of any items,
+  the handler should set "refresh" to 0.
+* If the handler changes the visibility status of items in the current
+  menu set "refresh" to 1.
+* If you are changing the visibility status of items in menu's currently
+  not displayed, then you can set "refresh" to 0.
+* Changing the visibility status of items in another menu
+  which is currently displayed, is not supported. If you do it,
+  the screen contents may not reflect the change until you get to the
+  menu which was changed. When you do get to that menu, you may notice
+  pieces of the old menu still on the screen.
+
+In case of CHECKBOXES: the return value of "valid" is ignored. Because,
+the handler can change the value of checkbox if the user selected value
+is not appropriate. only the value of "refresh" is honored. In this case
+all the caveats in the previous paragraph apply.
+
+menu.h defines two instances of t_handler_return
+ACTION_VALID and ACTION_INVALID for common use. These set the valid flag
+to 1 and 0 respectively and the refresh flag to 0.
+
+3. Things to look out for
+-------------------------
+When you define the menu system, always declare it in the opposite
+order, i.e. all lower level menu's should be defined before the higher
+level menus. This is because in order to define the MAINMENU, you need
+to know the index assigned to all its submenus.
+
+4. Additional Modules
+---------------------
+You can make use of the following additional modules, in writing your
+handlers.
+
+* Passwords
+* Help
+
+4.1 Passwords
+-------------
+This module was written by Th. Gebhardt. This is basically a modification
+of the DES crypt function obtained by removing the dependence of the
+original crypt function on C libraries. The following functions are
+defined
+
+  init_passwords(PWDFILE)
+      // Read in the password database from the file
+  authenticate_user(user,pwd)
+      // Checks if user,pwd is valid
+  isallowed(user,perm)
+      // Checks if the user has a specified permission
+  close_passwords()
+      // Unloads password database from memory
+
+  See the sample password file for more details about the file format
+  and the implementation of permissions.
+
+See complex.c for a example of how to use this.
+
+4.2 Help
+--------
+This can be used to set up a context sensitive help system. The following
+functions are defined
+
+   init_help(HELPBASEDIR)
+       // Initialises the help system. All help files will be loaded
+       // from the directory specified.
+   runhelpsystem(context)
+       // Displays the contents of HELPBASEDIR/hlp<context>.txt
+
+In order to have a functioning help system, you just need to create
+the hlp<NNNNN>.txt files and initialize the help system by specifying
+the base directory.
+
+The first line of this file assumed to be the title of the help screen.
+You can use ^N and ^O to change attributes absolutely and relatively,
+i.e. [^O]46 (i.e. Ctrl-O followed by chars 4 and 6) will set the
+attribute to 46, while [^N]08 will XOR the current attribute with
+specified number, thus in this case the first [^N]08 will turn on
+highlighting and the second one will turn it off.

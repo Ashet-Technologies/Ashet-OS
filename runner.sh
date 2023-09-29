@@ -1,0 +1,1 @@
+clear && zig build -Dmachine=bios_pc -Doptimize=ReleaseSafe  && mdir -b/i zig-out/bios_pc.img@@2K && MACHINE=bios_pc ./tools/std-run.sh 

@@ -1,0 +1,262 @@
+A .menu file can be used to describe basic menu structures which can be converted
+into C code which can then be compiled into a .c32 file for use with SYSLINUX.
+The format of a .menu file is similar to an ini file, but with important
+differences.
+
+Lines starting with # and ; are treated as comments. Blank lines are used to
+separate the attributes of one menu item from another. Multiple blank lines are
+equivalent to a single one.  In other contexts Blank lines are not significant.
+
+Menus
+-----
+Each menu declaration starts with a line containing the name of menu in [ ].
+This is the "nickname" of the menu and should be different for different menus.
+This is not visible to the user of the menu system. The initial menu must
+be called "main"
+
+The menu declaration is followed by lines which set the attributes of the menu.
+This is followed by a blank line and followed by declaration of menu items in
+that menu.
+
+All lines which occur before the first menu declaration is considered as
+a global declaration.
+
+Abstract Format
+---------------
+
+The overall format should look like this
+
+--------------------------------------------------------
+<GLOBAL SETTINGS>
+
+[menuname1]
+
+<MENU SETTINGS>
+
+<ITEM 1>
+
+...
+
+<ITEM N>
+
+[menuname2]
+
+<MENU SETTINGS>
+
+<ITEM A>
+
+<ITEM B>
+
+----------------------------------------------------------
+
+GLOBAL SETTINGS
+---------------
+The following global settings are now supported. Many of the keywords
+accept what we call a "DOT COMMAND" as argument. Simply put they are
+instructions to the menu system to perform certain actions.
+The syntax and semantics of DOT COMMANDS are given later in the section
+titled "DOT COMMANDS".
+
+videomode: (default 0xFF)  [Use with care]
+   The textmode in which the whole menu system should operate.
+   Must be a number (use 0x notation for hexadecimal).
+   Lookup Ralph Brown Interrupt List and search for Video Mode
+   to find a number to put here.
+
+   setting to 0xFF will mean, menu system will use the current
+   video mode.
+
+title:
+   The title of the whole menu system
+
+top, left, bot, right: (default 0,0,21,79)
+   The area of the screen used by the menu system. The remaining
+   part of the screen can be used by the user for anything.
+
+helpdir: (default /isolinux/help)
+   Location of the directory where help information is stored. The
+   help files must be called "hlpNNNNN.txt" where NNNNN is the helpid.
+
+pwdfile: (default /isolinux/passwd)
+   The name of the password file which contains user, password and permissions
+   See "passwd" file for details regarding format of this file
+
+editrow: (default 23)
+   the row on the screen where one can edit the command line. This must
+   be outside the menu area. Set this to a negative number to disable
+   editing the command line. In case of authenticated users, the current
+   user must have "editcmd" permissions to edit the command line
+
+pwdrow: (default 23)
+   The row on the screen used for user authentication. Must be outside
+   menu area (can be same as editrow). Set to negative to disable
+   user authentication
+
+skipif: (default 0)
+   The OR of the bits in the Shift-flags any of which can cause the menu system
+   to be skipped all together (0 means menu system always runs). It can also
+   be a combination of "Alt","Ctrl","Shift","Caps","Ins","Scroll".
+   When menu system starts it checks if any of the specified keys are On/pressed.
+   If true, the system exits immediately and executes the skipcmd.
+
+   e.g. setting it to "shift-alt-caps" means menu will be skipped if alt OR shift
+   is pressed OR caps is on. setting to "0" means menu will always run.
+
+skipcmd: (default .exit)
+   valid terminal commands: .exit .ignore or any syslinux command
+   command to execute if menu system is skipped. This must be a non-trivial
+   syslinux command if skipcondn is not "0". ".exit" means menu system
+   quits back to the boot prompt.
+
+startfile: (default "")
+   if non-empty the system will display the contents of this file before launching
+   the menusystem. This happens only if the menusystem is not skipped. Can be used
+   to display licensing, usage or welcome messages. A file with given name
+   is expected to be found in the helpdir directory.
+
+exitcmd: (default .exit)
+   valid terminal commands: .exit .repeat or any syslinux command
+   The default command to execute when user quits the menu system.
+
+exitcmdroot: (default =exitcmd)
+   Same as exitcmd except applies when current user has "root" privileges. If not
+   specified, it is assumed to be the same as exitcmd
+
+timeout: (default 3000)
+   The amount of time (in multiple of 0.1 seconds) to wait for user keypress. If no
+   key pressed for specified duration then the timeoutcmd is executed.
+
+totaltimeout: (default 0)
+   The total amount of time (in multiples of 0.1 seconds) the system will wait for
+   user to make a decision. If no decision has been made in the specified duration
+   totaltimeoutcmd will be executed
+
+   NOTE: This does not include the time spent browsing the help system or
+   the time taken for the user to enter his/her authentication credentials.
+
+timeoutcmd: (default .beep)
+   valid terminal commands: .wait .enter .escape or any syslinux command
+   command to execute when we timeout waiting for user input. The commands
+   .enter and .escape tell the menu system to pretend the user typed ENTER or
+   ESCAPE on the keyboard, while .wait tells the menusystem to wait for one
+   more time period
+
+totaltimeoutcmd: (default .wait)
+   choices are the same as for timeoutcmd
+
+MENU SETTINGS
+-------------
+
+title: (must be specified)
+   Title of this menu
+
+row,col: [Usage not recomended]
+   position in screen where this menu should be placed. By default the
+   system will choose an appropriate location.
+
+ITEM ATTRIBUTES
+---------------
+
+item:
+      The string displayed to the user. Characters enclosed in < > are highlighted.
+
+shortcut: (default -1) valid values A-Za-z0-9 or -1 [Usage not recommended]
+      Sets the shortcut key for this item. If set to -1, the system scans for the first
+      highlighted letter in the given range and sets that as the shortcut key.
+
+info: (default same as data)
+      Additional textual information displayed in the status bar
+
+type:
+      the type of entry this item represents. This is one of the following:
+
+      run:       choosing this will run something in SYSLINUX
+                 use data to specify the actual command to execute
+      exitmenu:  exit to parent menu
+      submenu:   choosing will open up submenu
+                 use data to specify the "nickname" of the menu
+                 which should come here
+      sep:       Position a separator here
+      inactive:  menu item is disabled
+      checkbox:  this is a checkbox
+                 use state to set initial state
+      invisible: User does not see this item
+      radioitem: One choice in a radiomenu
+      radiomenu: Allow user to choose one of many choices
+                 (initial choice is always NULL)
+      login:     Selecting this will allow user to login to system
+
+data:
+      for run items, the syslinux command to execute
+      for submenus and radiomenus, nickname of menu
+      for checkboxes, string to be added to kernel command line (if set)
+      for radioitems, string to be added to kernel command line (if chosen)
+
+ipappend:
+      ipappend flag to pass to PXELINUX (harmless for other variants of SYSLINUX)
+      See syslinux documentation for meaning of the FLAGS
+
+helpid: (default 65535 which is not a valid id)
+      associates a context for the help system.
+
+state: (default 0)
+      Initial state of a checkbox (for other items this has no meaning)
+
+perms: (default "")
+      string containing the name of the permission which user must
+      have to activate this item. For eg. if this item is a submenu
+      then user needs the permission in order to open the submenu
+
+argsmenu: (default "")
+      Name of the menu to be scanned for setting additional arguments to
+      pass to command line when this item is chosen for execution. Submenus
+      of specified menu are also scanned. Only checkboxes and radiomenu's
+      are scanned. Items of other type in this menu is silently ignored.
+
+
+DOT COMMANDS
+------------
+Dot commands are basically instructions to the menu system to do certain things.
+
+A "single command" is one of the following
+
+[NT] A syslinux command (any DOT command not starting with a "." is assumed to be this)
+[NT] .beep [n]
+[NT] .help <file>
+[NT] .nop
+[T]  .exit or .quit (equivalent)
+[T]  .repeat or .wait or .ignore (all three are equivalent)
+
+A dot command is a sequence of "single commands" separated by a "%". When a dot command
+is executed the system executes all the given "single commands" in the specified order.
+All the commands marked "[T]" are terminal commands, i.e. when the system encounters
+such a command it stops processing the dot command and returns the terminal command
+which caused the termination to the caller (who usually interprets the command
+appropriately).
+
+All commands marked with [NT] are non-terminal commands, i.e. once these commands are
+processed the system continues to process the remaining "single commands" specified in
+the "DOT COMMAND".
+
+Note: The case of a syslinux command is tricky. When executed, the command should never return
+(if the specified kernel exists) so the fact that we consider it a [NT] should be taken with
+a pinch of salt. However, if the syslinux command does return (in case of no kernel), then
+remaining "single commands" are processed. In particular "ker1 arg1 % ker2 arg2 % ker3 args"
+has the effect of executing the first kernel which exists
+
+.nop:
+   Does nothing.
+.beep:
+   .beep [n] produces a beep n times. n must be between 0 and 9. If not specified n=1.
+   (hence .beep 0 is equivalent to .nop)
+.help:
+   .help <file>
+   Displays the help file <file> which is assumed to be in the "help" directory. Its name
+   does not have to be in the form "hlpNNNNN.txt" (as required by the context sensitive help).
+   Executing this command will mean the appropriate help screen is displayed till the user hits
+   ESCAPE
+
+The meaning of the Terminal commands can vary with the context in which it is used. For example,
+a ".enter" or ".escape" does not have any meaning in the "onerrorcmd" context but it has a meaning
+in the "ontimeout" context. In case the user gives a Terminal command which does not make sense, it
+is upto the code (in this case adv_menu.tpl) to do what it pleases.

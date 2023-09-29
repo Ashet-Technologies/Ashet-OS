@@ -1,0 +1,393 @@
+#!/usr/bin/perl
+## -----------------------------------------------------------------------
+##
+##   Copyright 2004-2008 H. Peter Anvin - All Rights Reserved
+##
+##   This program is free software; you can redistribute it and/or modify
+##   it under the terms of the GNU General Public License as published by
+##   the Free Software Foundation, Inc., 53 Temple Place Ste 330,
+##   Boston MA 02111-1307, USA; either version 2 of the License, or
+##   (at your option) any later version; incorporated herein by reference.
+##
+## -----------------------------------------------------------------------
+
+##
+## ppmtolss16
+##
+## Convert a PNM file with max 16 colors to a simple RLE-based format:
+##
+## uint32 0x1413f33d    ; magic (littleendian)
+## uint16 xsize		; littleendian
+## uint16 ysize		; littleendian
+## 16 x uint8 r,g,b	; color map, in 6-bit format (each byte is 0..63)
+##
+## Then, a sequence of nybbles:
+##
+## N	... if N is != previous pixel, one pixel of color N
+## ... otherwise run sequence follows ...
+## M    ... if M > 0 then run length is M
+## ... otherwise run sequence is encoded in two nybbles,
+##     littleendian, +16
+##
+## The nybble sequences are on a per-row basis; runs may not extend
+## across rows and odd-nybble rows are zero-padded.
+##
+## At the start of row, the "previous pixel" is assumed to be zero.
+##
+## Usage:
+##
+##	ppmtolss16 [#rrggbb=i ...] < input.ppm > output.rle
+##
+## Command line options of the form #rrggbb=i indicate that
+## the color #rrggbb (hex) should be assigned index i (decimal)
+##
+
+eval { use bytes; };
+eval { binmode STDIN; };
+eval { binmode STDOUT; };
+
+$magic = 0x1413f33d;
+
+# Get a token from the PPM header.  Ignore comments and leading
+# and trailing whitespace, as is required by the spec.
+# This routine eats exactly one character of trailing whitespace,
+# unless it is a comment (in which case it eats the comment up
+# to and including the end of line.)
+sub get_token() {
+    my($token, $ch);
+    my($ch);
+
+    do {
+	$ch = getc(STDIN);
+	return undef if ( !defined($ch) ); # EOF
+	if ( $ch eq '#' ) {
+	    do {
+		$ch = getc(STDIN);
+		return undef if ( !defined($ch) );
+	    } while ( $ch ne "\n" );
+	}
+    } while ( $ch =~ /^[ \t\n\v\f\r]$/ );
+
+    $token = $ch;
+    while ( 1 ) {
+	$ch = getc(STDIN);
+	last if ( $ch =~ /^[ \t\n\v\f\r\#]$/ );
+	$token .= $ch;
+    }
+    if ( $ch eq '#' ) {
+	do {
+	    $ch = getc(STDIN);
+	} while ( defined($ch) && $ch ne "\n" );
+    }
+    return $token;
+}
+
+# Get a token, and make sure it is numeric (and exists)
+sub get_numeric_token() {
+    my($token) = get_token();
+
+    if ( $token !~ /^[0-9]+$/ ) {
+	print STDERR "Format error on input\n";
+	exit 1;
+    }
+
+    return $token + 0;
+}
+
+# Must be called before each pixel row is read
+sub start_new_row() {
+    $getrgb_leftover_bit_cnt = 0;
+    $getrgb_leftover_bit_val = 0;
+}
+
+# Get a single RGB token depending on the PNM type
+sub getrgb($) {
+    my($form) = @_;
+    my($rgb,$r,$g,$b);
+
+    if ( $form == 6 ) {
+	# Raw PPM, most common
+	return undef unless ( read(STDIN,$rgb,3) == 3 );
+	return unpack("CCC", $rgb);
+    } elsif ( $form == 3 ) {
+	# Plain PPM
+	$r = get_numeric_token();
+	$g = get_numeric_token();
+	$b = get_numeric_token();
+	return ($r,$g,$b);
+    } elsif  ( $form == 5 ) {
+	# Raw PGM
+	return undef unless ( read(STDIN,$rgb,1) == 1 );
+	$r = unpack("C", $rgb);
+	return ($r,$r,$r);
+    } elsif ( $form == 2 ) {
+	# Plain PGM
+	$r = get_numeric_token();
+	return ($r,$r,$r);
+    } elsif ( $form == 4 ) {
+	# Raw PBM
+	if ( !$getrgb_leftover_bit_cnt ) {
+	    return undef unless ( read(STDIN,$rgb,1) == 1 );
+	    $getrgb_leftover_bit_val = unpack("C", $rgb);
+	    $getrgb_leftover_bit_cnt = 8;
+	}
+	$r = ( $getrgb_leftover_bit_val & 0x80 ) ? 0x00 : 0xff;
+	$getrgb_leftover_bit_val <<= 1;
+	$getrgb_leftover_bit_cnt--;
+
+	return ($r,$r,$r);
+    } elsif ( $form == 1 ) {
+	# Plain PBM
+	my($ch);
+
+	do {
+	    $ch = getc(STDIN);
+	    return undef if ( !defined($ch) );
+	    return (255,255,255) if ( $ch eq '0' ); # White
+	    return (0,0,0) if ( $ch eq '1'); # Black
+	    if ( $ch eq '#' ) {
+		do {
+		    $ch = getc(STDIN);
+		    return undef if ( !defined($ch) );
+		} while ( $ch ne "\n" );
+	    }
+	} while ( $ch =~ /^[ \t\n\v\f\r]$/ );
+	return undef;
+    } else {
+	die "Internal error: unknown format: $form\n";
+    }
+}
+
+sub rgbconvert($$$$) {
+    my($r,$g,$b,$maxmult) = @_;
+    my($rgb);
+
+    $r = int($r*$maxmult);
+    $g = int($g*$maxmult);
+    $b = int($b*$maxmult);
+    $rgb = pack("CCC", $r, $g, $b);
+    return $rgb;
+}
+
+foreach $arg ( @ARGV ) {
+    if ( $arg =~ /^\#([0-9a-f])([0-9a-f])([0-9a-f])=([0-9]+)$/i ) {
+	$r = hex($1) << 4;
+	$g = hex($2) << 4;
+	$b = hex($3) << 4;
+	$i = $4 + 0;
+    } elsif ( $arg =~ /^\#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})=([0-9]+)$/i ) {
+	$r = hex($1);
+	$g = hex($2);
+	$b = hex($3);
+	$i = $4 + 0;
+    } elsif ( $arg =~ /^\#([0-9a-f]{3})([0-9a-f]{3})([0-9a-f]{3})=([0-9]+)$/i ) {
+	$r = hex($1) >> 4;
+	$g = hex($2) >> 4;
+	$b = hex($3) >> 4;
+	$i = $4 + 0;
+    } elsif ( $arg =~ /^\#([0-9a-f]{4})([0-9a-f]{4})([0-9a-f]{4})=([0-9]+)$/i ) {
+	$r = hex($1) >> 8;
+	$g = hex($2) >> 8;
+	$b = hex($3) >> 8;
+	$i = $4 + 0;
+    } else {
+	print STDERR "$0: Unknown argument: $arg\n";
+	next;
+    }
+
+    if ( $i > 15 ) {
+	print STDERR "$0: Color index out of range: $arg\n";
+	next;
+    }
+
+    $rgb = rgbconvert($r, $g, $b, 64/256);
+
+    if ( defined($index_forced{$i}) ) {
+	print STDERR "$0: More than one color index $i\n";
+	exit(1);
+    }
+    $index_forced{$i} = $rgb;
+    $force_index{$rgb} = $i;
+}
+
+$form = get_token();
+die "$0: stdin is not a PNM file" if ( $form !~ /^P([1-6])$/ );
+$form = $1+0;
+
+$xsize = get_numeric_token();
+$ysize = get_numeric_token();
+if ( $form == 1 || $form == 4 ) {
+    $maxcol = 255;		# Internal convention
+} else {
+    $maxcol = get_numeric_token();
+}
+$maxmult = 64/($maxcol+1);	# Equal buckets conversion
+
+@data = ();
+
+for ( $y = 0 ; $y < $ysize ; $y++ ) {
+    start_new_row();
+    for ( $x = 0 ; $x < $xsize ; $x++ ) {
+	die "$0: Premature EOF at ($x,$y) of ($xsize,$ysize)\n"
+	    if ( !scalar(@pnmrgb = getrgb($form)) );
+	# Convert to 6-bit representation
+	$rgb = rgbconvert($pnmrgb[0], $pnmrgb[1], $pnmrgb[2], $maxmult);
+	$color_count{$rgb}++;
+	push(@data, $rgb);
+    }
+}
+
+# Sort list of colors according to freqency
+@colors = sort { $color_count{$b} <=> $color_count{$a} } keys(%color_count);
+
+# Now we have our pick of colors.  Sort according to intensity;
+# this is more or less an ugly hack to cover for the fact that
+# using PPM as input doesn't let the user set the color map,
+# which the user really needs to be able to do.
+
+sub by_intensity() {
+    my($ra,$ga,$ba) = unpack("CCC", $a);
+    my($rb,$gb,$bb) = unpack("CCC", $b);
+
+    my($ia) = $ra*0.299 + $ga*0.587 + $ba*0.114;
+    my($ib) = $rb*0.299 + $gb*0.587 + $bb*0.114;
+
+    return ( $ia <=> $ib ) if ( $ia != $ib );
+
+    # If same, sort based on RGB components,
+    # with highest priority given to G, then R, then B.
+
+    return ( $ga <=> $gb ) if ( $ga != $gb );
+    return ( $ra <=> $rb ) if ( $ra != $rb );
+    return ( $ba <=> $bb );
+}
+
+@icolors = sort by_intensity @colors;
+
+# Insert forced colors into "final" array
+@colors = (undef) x 16;
+foreach $rgb ( keys(%force_index) ) {
+    $i = $force_index{$rgb};
+    $colors[$i] = $rgb;
+    $color_index{$rgb} = $i;
+}
+
+undef %force_index;
+
+# Insert remaining colors in the remaining slots,
+# in luminosity-sorted order
+$nix = 0;
+while ( scalar(@icolors) ) {
+    # Advance to the next free slot
+    $nix++ while ( defined($colors[$nix]) && $nix < 16 );
+    last if ( $nix >= 16 );
+    $rgb = shift @icolors;
+    if ( !defined($color_index{$rgb}) ) {
+	$colors[$nix] = $rgb;
+	$color_index{$rgb} = $nix;
+    }
+}
+
+while ( scalar(@icolors) ) {
+    $rgb = shift @icolors;
+    $lost++ if ( !defined($color_index{$rgb}) );
+}
+
+if ( $lost ) {
+    printf STDERR
+	"$0: Warning: color palette truncated (%d colors ignored)\n", $lost;
+}
+
+undef @icolors;
+
+# Output header
+print pack("Vvv", $magic, $xsize, $ysize);
+
+# Output color map
+for ( $i = 0 ; $i < 16 ; $i++ ) {
+    if ( defined($colors[$i]) ) {
+	print $colors[$i];
+    } else {
+	# Padding for unused color entries
+	print pack("CCC", 63*$i/15, 63*$i/15, 63*$i/15);
+    }
+}
+
+sub output_nybble($) {
+    my($ny) = @_;
+
+    if ( !defined($ny) ) {
+	if ( defined($nybble_tmp) ) {
+	    $ny = 0;		# Force the last byte out
+	} else {
+	    return;
+	}
+    }
+
+    $ny = $ny & 0x0F;
+
+    if ( defined($nybble_tmp) ) {
+	$ny = ($ny << 4) | $nybble_tmp;
+	print chr($ny);
+	$bytes++;
+	undef $nybble_tmp;
+    } else {
+	$nybble_tmp = $ny;
+    }
+}
+
+sub output_run($$$) {
+    my($last,$this,$run) = @_;
+
+    if ( $this != $last ) {
+	output_nybble($this);
+	$run--;
+    }
+    while ( $run ) {
+	if ( $run >= 16 ) {
+	    output_nybble($this);
+	    output_nybble(0);
+	    if ( $run > 271 ) {
+		$erun = 255;
+		$run -= 271;
+	    } else {
+		$erun = $run-16;
+		$run = 0;
+	    }
+	    output_nybble($erun);
+	    output_nybble($erun >> 4);
+	} else {
+	    output_nybble($this);
+	    output_nybble($run);
+	    $run = 0;
+	}
+    }
+}
+
+$bytes  = 0;
+undef $nybble_tmp;
+
+for ( $y = 0 ; $y < $ysize ; $y++ ) {
+    $last = $prev = 0;
+    $run = 0;
+    for ( $x = 0 ; $x < $xsize ; $x++ ) {
+	$rgb = shift(@data);
+	$i   = $color_index{$rgb} + 0;
+	if ( $i == $last ) {
+	    $run++;
+	} else {
+	    output_run($prev, $last, $run);
+	    $prev = $last;
+	    $last = $i;
+	    $run  = 1;
+	}
+    }
+    # Output final datum for row; we're always at least one pixel behind
+    output_run($prev, $last, $run);
+    output_nybble(undef);	# Flush row
+}
+
+$pixels = $xsize * $ysize;
+$size = ($pixels+1)/2;
+printf STDERR "%d pixels, %d bytes, (%2.2f%% compression)\n",
+    $pixels, $bytes, 100*($size-$bytes)/$size;

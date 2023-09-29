@@ -1,0 +1,2 @@
+* Write COMBOOT code to read .menu files and parse them directly
+  - take the name of menu file to parse from commandline

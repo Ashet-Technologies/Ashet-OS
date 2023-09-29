@@ -1,0 +1,321 @@
+#!/usr/bin/perl
+## -----------------------------------------------------------------------
+##
+##   Copyright 2002-2008 H. Peter Anvin - All Rights Reserved
+##   Copyright 2009-2010 Intel Corporation; author: H. Peter Anvin
+##
+##   This program is free software; you can redistribute it and/or modify
+##   it under the terms of the GNU General Public License as published by
+##   the Free Software Foundation, Inc., 53 Temple Place Ste 330,
+##   Boston MA 02111-1307, USA; either version 2 of the License, or
+##   (at your option) any later version; incorporated herein by reference.
+##
+## -----------------------------------------------------------------------
+
+#
+# Creates a blank MS-DOS formatted hard disk image
+#
+
+use bytes;
+use integer;
+use Fcntl;
+use Errno;
+use Cwd;
+use IO::Handle;			# For flush()
+
+sub absolute_path($) {
+    my($f) = @_;
+    my($c);
+
+    return $f if ( $f =~ /^\// );
+    $c = cwd();
+    $c = '' if ( $c eq '/' );
+    return $c.'/'.$f;
+}
+
+sub is_linux() {
+    return !!eval '{ '.
+	'use POSIX; '.
+	'($sysname, $nodename, $release, $version, $machine) = POSIX::uname(); '.
+	"return \$sysname eq \'Linux\'; }";
+}
+
+sub get_random() {
+    # Get a 32-bit random number
+    my $rfd, $rnd;
+    my $rid;
+
+    if (open($rfd, "< /dev/urandom\0") && read($rfd, $rnd, 4) == 4) {
+	$rid = unpack("V", $rnd);
+    }
+
+    close($rfd) if (defined($rfd));
+    return $rid if (defined($rid));
+
+    # This sucks but is better than nothing...
+    return ($$+time()) & 0xffffffff;
+}
+
+sub get_hex_data() {
+    my $mbr = '';
+    my $line, $byte;
+    while ( $line = <DATA> ) {
+	chomp $line;
+	last if ($line eq '*');
+	foreach $byte ( split(/\s+/, $line) ) {
+	    $mbr .= chr(hex($byte));
+	}
+    }
+    return $mbr;
+}
+
+$is_linux = is_linux();
+if ( $is_linux ) {
+    # IOCTL numbers
+    $BLKRRPART    = 0x125f;
+    $BLKGETSIZE   = 0x1260;
+}
+
+%opt = ();
+@args = ();
+
+while (defined($a = shift(@ARGV))) {
+    if ( $a =~ /^\-/ ) {
+	foreach $o ( split(//, substr($a,1)) ) {
+	    $opt{$o} = 1;
+	    if ($o eq 'i') {
+		$id = shift(@ARGV);
+	    }
+	}
+    } else {
+	push(@args, $a);
+    }
+}
+
+($file,$c,$h,$s) = @args;
+$c += 0;  $h += 0;  $s += 0;
+
+$pentry = 1;
+$pentry = 2 if ( $opt{'2'} );
+$pentry = 3 if ( $opt{'3'} );
+$pentry = 4 if ( $opt{'4'} );
+
+if ( $opt{'z'} ) {
+    $h = $h || 64;
+    $s = $s || 32;
+}
+
+if ( $opt{'M'} && $h && $s ) {
+    # Specify size in megabytes, not in cylinders
+    $c = ($c*1024*2)/($h*$s);
+}
+
+$is_open = 0;
+
+if ( $c == 0 && $file ne '' ) {
+    $len = 0;
+    if ( sysopen(OUTPUT, $file, O_RDWR, 0666) ) {
+	$is_open = 1;
+
+	if ( (@filestat = stat(OUTPUT)) && S_ISREG($filestat[2]) ) {
+	    $len = $filestat[7] >> 9;
+	} elsif ( $is_linux && S_ISBLK($filestat[2]) ) {
+	    $blksize = pack("L!", 0);
+	    if ( ioctl(OUTPUT, $BLKGETSIZE, $blksize) == 0 ) {
+		$len = unpack("L!", $blksize); # In 512-byte sectors!
+	    }
+	}
+    }
+
+    if ( !$len ) {
+	print STDERR "$0: $file: don't know how to determine the size of this device\n";
+	exit 1;
+    }
+
+    $c = $len/($h*$s);
+}
+
+if ( $file eq '' || $c < 1 || $h < 1 || $h > 256 || $s < 1 || $s > 63 ) {
+    print STDERR "Usage: $0 [-doFMz4][-i id] file c h s (max: 1024 256 63)\n";
+    print STDERR "    -d    add DOSEMU header\n";
+    print STDERR "    -o    print filesystem offset to stdout\n";
+    print STDERR "    -F    format partition as FAT32\n";
+    print STDERR "    -M    \"c\" argument is megabytes, calculate cylinders\n";
+    print STDERR "    -z    use zipdisk geometry (h=64 s=32)\n";
+    print STDERR "    -4    use partition entry 4 (standard for zipdisks)\n";
+    print STDERR "    -i    specify the MBR ID\n";
+    print STDERR "    -s    output a sparse file (don't allocate all blocks)\n";
+    exit 1;
+}
+
+if ($c > 1024) {
+    print STDERR "Warning: more than 1024 cylinders ($c).\n";
+    print STDERR "Not all BIOSes will be able to boot this device.\n";
+    $cc = 1024;
+} else {
+    $cc = $c;
+}
+
+$cylsize = $h*$s*512;
+
+if ( !$is_open ) {
+    sysopen(OUTPUT, $file, O_CREAT|O_RDWR|O_TRUNC, 0666)
+	or die "$0: Cannot open: $file\n";
+}
+binmode OUTPUT;
+
+# Print out DOSEMU header, if requested
+if ( $opt{'d'} ) {
+    $emuhdr = "DOSEMU\0" . pack("VVVV", $h, $s, $c, 128);
+    $emuhdr .= "\0" x (128 - length($emuhdr));
+    print OUTPUT $emuhdr;
+}
+
+# Print the MBR and partition table
+$mbr = get_hex_data();
+if ( length($mbr) > 440 ) {
+    die "$0: Bad MBR code\n";
+}
+
+$mbr .= "\0" x (440 - length($mbr));
+if (defined($id)) {
+    $id = to_int($id);
+} else {
+    $id = get_random();
+}
+$mbr .= pack("V", $id);		# Offset 440: MBR ID
+$mbr .= "\0\0";			# Offset 446: actual partition table
+
+print OUTPUT $mbr;
+
+# Print partition table
+$psize = $c*$h*$s-$s;
+$bhead   = ($h > 1) ? 1 : 0;
+$bsect   = 1;
+$bcyl    = ($h > 1) ? 0 : 1;
+$ehead   = $h-1;
+$esect   = $s + ((($cc-1) & 0x300) >> 2);
+$ecyl    = ($cc-1) & 0xff;
+if ( $c > 1024 ) {
+    $fstype = 0x0e;
+} elsif ( $psize > 65536 ) {
+    $fstype = 0x06;
+} else {
+    $fstype = 0x04;
+}
+for ( $i = 1 ; $i <= 4 ; $i++ ) {
+    if ( $i == $pentry ) {
+	print OUTPUT pack("CCCCCCCCVV", 0x80, $bhead, $bsect, $bcyl, $fstype,
+			  $ehead, $esect, $ecyl, $s, $psize);
+    } else {
+	print OUTPUT "\0" x 16;
+    }
+}
+print OUTPUT "\x55\xaa";
+
+# Output blank file
+$totalsize = $c*$h*$s;
+$tracks    = $c*$h;
+
+# If -s is given, try to simply use truncate...
+unless ($opt{'s'} && truncate(OUTPUT, $totalsize)) {
+    $track = "\0" x (512*$s);
+
+    # Print fractional track
+    print OUTPUT "\0" x (512 * ($s-1));
+
+    for ( $i = 1 ; $i < $tracks ; $i++ ) {
+	print OUTPUT $track;
+    }
+}
+
+# Print mtools temp file
+$n = 0;
+while ( !defined($tmpdir) ) {
+    $tmpdir = "/tmp/mkdiskimage.$$.".($n++);
+    if ( !mkdir($tmpdir, 0700) ) {
+	die "$0: Failed to make temp directory: $tmpdir\n"
+	    if ( $! != EEXIST );
+	undef $tmpdir;
+    }
+}
+
+$cfgfile = $tmpdir.'/mtools.conf';
+$imglink = $tmpdir.'/disk.img';
+die "$0: Failed to create symlink $imglink\n"
+    if ( !symlink(absolute_path($file), $imglink) );
+
+$header_size = ($opt{'d'} ? 128 : 0);
+
+# Start of filesystem
+$offset = $s*512 + $header_size;
+
+# Start of partition table entry
+$pstart = $header_size + 446 + 16*($pentry-1);
+
+open(MCONFIG, "> ${cfgfile}") or die "$0: Cannot make mtools config\n";
+print MCONFIG "drive z:\n";
+print MCONFIG "file=\"${imglink}\"\n";
+print MCONFIG "cylinders=${c}\n";
+print MCONFIG "heads=${h}\n";
+print MCONFIG "sectors=${s}\n";
+print MCONFIG "offset=${offset}\n";
+print MCONFIG "mformat_only\n";
+close(MCONFIG);
+
+# Output the filesystem offset to stdout if appropriate
+if ( $opt{'o'} ) {
+    print $offset, "\n";
+}
+
+$ENV{'MTOOLSRC'} = $cfgfile;
+if ( $opt{'F'} ) {
+    system('mformat', '-F', 'z:');
+} else {
+    system('mformat', 'z:');
+}
+
+# Clean up in /tmp
+unlink($cfgfile);
+unlink($imglink);
+rmdir($tmpdir);
+
+# MTOOLS doesn't write the bsHiddenSecs field correctly
+seek(OUTPUT, $offset + 0x1c, 0);
+print OUTPUT pack("V", ($offset-$header_size)>>9);
+
+# Set the partition type
+if ( $opt{'F'} ) {
+    if ( $c > 1024 ) {
+	$fstype = 0x0c;		# FAT32 LBA
+    } else {
+	$fstype = 0x0b;
+    }
+} else {
+    if ( $c > 1024 ) {
+	$fstype = 0x0e;		# FAT16 LBA
+    } elsif ( $psize > 65536 ) {
+	$fstype = 0x06;		# FAT16 > 32MB
+    } else {
+	$fstype = 0x04;		# FAT16 <= 32MB
+    }
+    seek(OUTPUT, $offset + 0x36, 0);
+    read(OUTPUT, $fsname, 8);
+
+    # FAT12: adjust partition type
+    if ( $fsname eq 'FAT12   ' ) {
+	$fstype = 0x01;		# FAT12
+    }
+}
+seek(OUTPUT, $pstart+4, 0);
+print OUTPUT pack("C", $fstype);
+
+flush OUTPUT;
+
+# Just in case this is a block device, try to flush the partition table
+if ( $is_linux ) {
+    ioctl(OUTPUT, $BLKRRPART, 0);
+};
+
+exit 0;
+__END__

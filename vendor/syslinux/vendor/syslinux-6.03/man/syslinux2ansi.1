@@ -1,0 +1,41 @@
+.TH SYSLINUX2ANSI 1
+.SH NAME
+syslinux2ansi \- converts a syslinux-format screen to pc-ansi
+.SH SYNOPSIS
+.B syslinux2ansi
+< filename.input > filename.output
+.SH DESCRIPTION
+.I Syslinux2ansi
+is a filter which converts a screen formatted for syslinux to one
+compatible with PC ANSI.  It will only read from standard in, and has
+no command line options.
+.SH BUGS
+Help and version command line options would be useful.
+.PP
+The ability to put input and output filenames on the command line might
+be good as well.
+.SS Bug reports
+I would appreciate hearing of any problems you have with SYSLINUX.  I
+would also like to hear from you if you have successfully used SYSLINUX,
+especially if you are using it for a distribution.
+.PP
+If you are reporting problems, please include all possible information
+about your system and your BIOS; the vast majority of all problems
+reported turn out to be BIOD or hardware bugs, and I need as much
+information as possible in order to diagnose the problems.
+.PP
+There is a mailing list for discussion among SYSLINUX users and for
+announcements of new and test versions.   To join, send a message to
+majordomo@linux.kernel.org with the line:
+.PP
+.B subscribe syslinux
+.PP
+in the body of the message.  The submission address is
+syslinux@linux.kernel.org.
+.SH "SEE ALSO"
+.BR syslinux(1),
+.BR perl(1)
+.SH AUTHOR
+This manual page is a quick write-up for Debian done by Kevin Kreamer
+<kkreamer@etherhogz.org>, by looking over the 1 screenful of Perl that is
+.B syslinux2ansi.

@@ -1,0 +1,17 @@
+Diagnostic MBR/VBR files
+
+handoff.bin	Show the data that the BIOS/MBR hands off to an MBR/VBR.
+
+
+  +++ USAGE +++
+
+NOTE: in the examples, mbr.bin, /dev/hda and /dev/hda1 are used as generic representations.
+
+Writing out an MBR is straight forward (it is assumed below that /dev/hda is the target raw device and /dev/hda1 is the target partition):
+
+  dd conv=notrunc bs=440 count=1 if=mbr.bin of=/dev/hda
+
+Writing a VBR to match Syslinux requires more work as it must have a jump and be offset into the partition (and as a result the code must be compatible with this offset):
+
+  echo -en "\0353\0130\0220" |dd conv=notrunc bs=1 count=3 of=/dev/hda1
+  dd conv=notrunc bs=2 count=210 seek=45 if=mbr.bin of=/dev/hda1

@@ -1,0 +1,40 @@
+			Building Syslinux
+
+From Syslinux 6.0 onwards there is support for three different
+firmware backends, BIOS, 32-bit EFI and 64-bit EFI. To allow users the
+flexibility to build only the firmware they need the Syslinux make
+infrastructure has become more complex.
+
+The Syslinux make infrastructure understands the following syntax,
+
+	make [firmware[,firwmware]] [target[,target]]
+
+If no firmware is specified then any targets will be applied to all
+three firmware backends. If no target is specified then the 'all'
+target is implicitly built.
+
+For example, to build the installers for BIOS, 32-bit EFI and 64-bit
+EFI type,
+
+	make installer
+
+TO build the BIOS and 64-bit EFI installers type,
+
+	make bios efi64 installer
+
+To delete all object files and build the installer for 32-bit EFI
+type,
+
+	make efi32 spotless installer
+
+
+      ++++ THE OBJECT DIRECTORY ++++
+
+A custom top-level object directory can be specified on the make
+command-line by using the O= variable, e.g.
+
+	make O=/tmp/syslinux-obj efi32
+
+will build the 32-bit object files under /tmp/syslinux-obj/efi32. If
+no object directory is specified then object files will be written to
+an 'obj' directory in the top-level of the Syslinux source.

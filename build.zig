@@ -1,13 +1,14 @@
 const std = @import("std");
 const FatFS = @import("zfat");
-
-const rootfs_dir = std.Build.InstallDir{ .custom = "rootfs" };
+const disk_image_step = @import("vendor/disk-image-step/build.zig");
+const syslinux_build_zig = @import("./vendor/syslinux/build.zig");
 
 const AshetContext = struct {
     b: *std.build.Builder,
     bmpconv: BitmapConverter,
     target: std.zig.CrossTarget,
     hosted_build: bool,
+    rootfs: *disk_image_step.FileSystemBuilder,
 
     fn createAshetApp(ctx: AshetContext, name: []const u8, source: []const u8, maybe_icon: ?[]const u8, optimize: std.builtin.OptimizeMode, dependencies: []const std.Build.ModuleDependency) void {
         const exe = ctx.b.addExecutable(.{
@@ -58,9 +59,7 @@ const AshetContext = struct {
 
             exe.setLinkerScriptPath(.{ .path = "src/libashet/application.ld" });
 
-            const install_app_code_step = ctx.b.addInstallFile(exe.getOutputSource(), ctx.b.fmt("apps/{s}/code", .{name}));
-            install_app_code_step.dir = rootfs_dir;
-            ctx.b.getInstallStep().dependOn(&install_app_code_step.step);
+            ctx.rootfs.addFile(exe.getEmittedBin(), ctx.b.fmt("apps/{s}/code", .{name}));
 
             if (maybe_icon) |src_icon| {
                 const icon_file = ctx.bmpconv.convert(
@@ -73,13 +72,9 @@ const AshetContext = struct {
                     },
                 );
 
-                const install_app_icon_step = ctx.b.addInstallFile(icon_file, ctx.b.fmt("apps/{s}/icon", .{name}));
-                install_app_icon_step.dir = rootfs_dir;
-                ctx.b.getInstallStep().dependOn(&install_app_icon_step.step);
+                ctx.rootfs.addFile(icon_file, ctx.b.fmt("apps/{s}/icon", .{name}));
             }
         }
-
-        // return exe;
     }
 };
 
@@ -145,6 +140,9 @@ const fatfs_config = FatFS.Config{
 
 pub fn build(b: *std.Build) !void {
     const hosted_build = b.option(bool, "hosted", "Builds the applications hosted for the current system") orelse false;
+
+    /////////////////////////////////////////////////////////////////////////////
+    // tools and deps ↓
 
     const lua_dep = b.dependency("lua", .{
         .interpreter = true,
@@ -233,7 +231,32 @@ pub fn build(b: *std.Build) !void {
         b.installArtifact(tool_extract_icon);
     }
 
-    const system_icons = AssetBundleStep.create(b);
+    {
+        const wikitool = b.addExecutable(.{
+            .name = "wikitool",
+            .root_source_file = .{ .path = "tools/wikitool.zig" },
+        });
+
+        wikitool.addModule("hypertext", mod_libhypertext);
+        wikitool.addModule("hyperdoc", mod_hyperdoc);
+        wikitool.addModule("args", mod_args);
+        wikitool.addModule("zigimg", mod_zigimg);
+        wikitool.addModule("ashet", mod_libashet);
+        wikitool.addModule("ashet-gui", mod_ashet_gui);
+
+        b.installArtifact(wikitool);
+    }
+
+    // tools and deps ↑
+    /////////////////////////////////////////////////////////////////////////////
+    // ashet os ↓
+
+    var kernel_file: std.Build.LazyPath = undefined;
+    var maybe_machine_spec: ?MachineSpec = null;
+
+    var rootfs = disk_image_step.FileSystemBuilder.init(b);
+
+    const system_icons = AssetBundleStep.create(b, &rootfs);
     {
         const desktop_icon_conv_options: BitmapConverter.Options = .{
             .geometry = .{ 32, 32 },
@@ -264,12 +287,6 @@ pub fn build(b: *std.Build) !void {
         system_icons.add("system/icons/default-app-icon.abm", bmpconv.convert(.{ .path = "artwork/os/default-app-icon.png" }, "menu.abm", desktop_icon_conv_options));
     }
 
-    b.installDirectory(.{
-        .source_dir = .{ .path = "rootfs" },
-        .install_dir = rootfs_dir,
-        .install_subdir = ".",
-    });
-
     var ui_gen = UiGenerator{
         .builder = b,
         .lua = lua_exe,
@@ -281,266 +298,223 @@ pub fn build(b: *std.Build) !void {
         }),
     };
 
-    const target = if (hosted_build)
-        b.standardTargetOptions(.{})
-    else machine_target: {
-        const machine_id = b.option(MachineID, "machine", "Defines the machine Ashet OS should be built for.") orelse blk: {
-            var stderr = std.io.getStdErr();
+    {
+        rootfs.addDirectory(
+            .{ .path = b.pathFromRoot("rootfs") },
+            ".",
+        );
 
-            var writer = stderr.writer();
-            try writer.writeAll("No machine selected. Use one of the following options:\n");
+        const target = if (hosted_build)
+            b.standardTargetOptions(.{})
+        else machine_target: {
+            const machine_id = b.option(MachineID, "machine", "Defines the machine Ashet OS should be built for.") orelse blk: {
+                var stderr = std.io.getStdErr();
 
-            inline for (comptime std.meta.declarations(machines.all)) |decl| {
-                try writer.print("- {s}\n", .{decl.name});
+                var writer = stderr.writer();
+                try writer.writeAll("No machine selected. Use one of the following options:\n");
+
+                inline for (comptime std.meta.declarations(machines.all)) |decl| {
+                    try writer.print("- {s}\n", .{decl.name});
+                }
+
+                try writer.writeAll("Falling back to rv32_virt\n");
+
+                break :blk .rv32_virt;
+            };
+
+            const machine_spec = resolveMachine(machine_id);
+
+            const machine_pkg = b.addWriteFile("machine.zig", blk: {
+                var stream = std.ArrayList(u8).init(b.allocator);
+                defer stream.deinit();
+
+                var writer = stream.writer();
+
+                try writer.writeAll("//! This is a machine-generated description of the Ashet OS target machine.\n\n");
+
+                try writer.print("pub const machine = @import(\"root\").machines.all.{};\n", .{
+                    std.zig.fmtId(machine_spec.machine_id),
+                });
+                try writer.print("pub const platform = @import(\"root\").platforms.all.{};\n", .{
+                    std.zig.fmtId(machine_spec.platform.platform_id),
+                });
+
+                try writer.print("pub const machine_name = \"{}\";\n", .{
+                    std.zig.fmtEscapes(machine_spec.name),
+                });
+                try writer.print("pub const platform_name = \"{}\";\n", .{
+                    std.zig.fmtEscapes(machine_spec.platform.name),
+                });
+
+                maybe_machine_spec = machine_spec;
+
+                break :blk try stream.toOwnedSlice();
+            });
+
+            const cguana_dep = b.anonymousDependency("vendor/ziglibc", @import("vendor/ziglibc/build.zig"), .{
+                .target = machine_spec.platform.target,
+                .optimize = .ReleaseSafe,
+
+                .static = true,
+                .dynamic = false,
+                .start = .none,
+                .trace = false,
+
+                .cstd = true,
+                .posix = false,
+                .gnu = false,
+                .linux = false,
+            });
+
+            const ashet_libc = cguana_dep.artifact("cguana");
+
+            // const ashet_libc = cguana_dep.ziglibc.addLibc(b, .{
+            //     .variant = .freestanding,
+            //     .link = .static,
+            //     .start = .ziglibc,
+            //     .trace = false,
+            //     .target = machine_spec.platform.target,
+            //     .optimize = .ReleaseSafe,
+            // });
+
+            const kernel_exe = b.addExecutable(.{
+                .name = "ashet-os",
+                .root_source_file = .{ .path = "src/kernel/main.zig" },
+                .target = machine_spec.platform.target,
+                .optimize = optimize,
+            });
+
+            {
+                kernel_exe.code_model = .small;
+                kernel_exe.bundle_compiler_rt = true;
+                kernel_exe.rdynamic = true; // Prevent the compiler from garbage collecting exported symbols
+                kernel_exe.single_threaded = true;
+                kernel_exe.omit_frame_pointer = false;
+                kernel_exe.strip = false; // never strip debug info
+                if (optimize == .Debug) {
+                    // we always want frame pointers in debug build!
+                    kernel_exe.omit_frame_pointer = false;
+                }
+
+                kernel_exe.addModule("system-assets", ui_gen.mod_system_assets);
+                kernel_exe.addModule("ashet-abi", mod_ashet_abi);
+                kernel_exe.addModule("ashet-std", mod_ashet_std);
+                kernel_exe.addModule("ashet", mod_libashet);
+                kernel_exe.addModule("ashet-gui", mod_ashet_gui);
+                kernel_exe.addModule("virtio", mod_virtio);
+                kernel_exe.addModule("ashet-fs", mod_libashetfs);
+                kernel_exe.addModule("args", mod_args);
+                kernel_exe.addAnonymousModule("machine", .{
+                    .source_file = machine_pkg.files.items[0].getFileSource(),
+                });
+                kernel_exe.addModule("fatfs", fatfs_module);
+                kernel_exe.setLinkerScriptPath(.{ .path = machine_spec.linker_script });
+                b.installArtifact(kernel_exe);
+
+                kernel_exe.addSystemIncludePath(.{ .path = "vendor/ziglibc/inc/libc" });
+
+                FatFS.link(kernel_exe, fatfs_config);
+
+                kernel_exe.linkLibrary(ashet_libc);
+
+                {
+                    const lwip = create_lwIP(b, kernel_exe.target, .ReleaseSafe);
+                    lwip.is_linking_libc = false;
+                    lwip.strip = false;
+                    lwip.addSystemIncludePath(.{ .path = "vendor/ziglibc/inc/libc" });
+                    kernel_exe.linkLibrary(lwip);
+                    setup_lwIP(kernel_exe);
+                }
+
+                {
+                    const kernel_step = b.step("kernel", "Only builds the OS kernel");
+                    kernel_step.dependOn(&kernel_exe.step);
+                }
             }
 
-            try writer.writeAll("Falling back to rv32_virt\n");
+            kernel_file = kernel_exe.getEmittedBin();
 
-            break :blk .rv32_virt;
+            break :machine_target machine_spec.platform.target;
         };
 
-        const machine_spec = resolveMachine(machine_id);
-
-        const machine_pkg = b.addWriteFile("machine.zig", blk: {
-            var stream = std.ArrayList(u8).init(b.allocator);
-            defer stream.deinit();
-
-            var writer = stream.writer();
-
-            try writer.writeAll("//! This is a machine-generated description of the Ashet OS target machine.\n\n");
-
-            try writer.print("pub const machine = @import(\"root\").machines.all.{};\n", .{
-                std.zig.fmtId(machine_spec.machine_id),
-            });
-            try writer.print("pub const platform = @import(\"root\").platforms.all.{};\n", .{
-                std.zig.fmtId(machine_spec.platform.platform_id),
-            });
-
-            try writer.print("pub const machine_name = \"{}\";\n", .{
-                std.zig.fmtEscapes(machine_spec.name),
-            });
-            try writer.print("pub const platform_name = \"{}\";\n", .{
-                std.zig.fmtEscapes(machine_spec.platform.name),
-            });
-
-            break :blk try stream.toOwnedSlice();
-        });
-
-        const cguana_dep = b.anonymousDependency("vendor/ziglibc", @import("vendor/ziglibc/build.zig"), .{
-            .target = machine_spec.platform.target,
-            .optimize = .ReleaseSafe,
-
-            .static = true,
-            .dynamic = false,
-            .start = .none,
-            .trace = false,
-
-            .cstd = true,
-            .posix = false,
-            .gnu = false,
-            .linux = false,
-        });
-
-        const ashet_libc = cguana_dep.artifact("cguana");
-
-        // const ashet_libc = cguana_dep.ziglibc.addLibc(b, .{
-        //     .variant = .freestanding,
-        //     .link = .static,
-        //     .start = .ziglibc,
-        //     .trace = false,
-        //     .target = machine_spec.platform.target,
-        //     .optimize = .ReleaseSafe,
-        // });
-
-        const kernel_exe = b.addExecutable(.{
-            .name = "ashet-os",
-            .root_source_file = .{ .path = "src/kernel/main.zig" },
-            .target = machine_spec.platform.target,
-            .optimize = optimize,
-        });
+        var ctx = AshetContext{
+            .b = b,
+            .bmpconv = bmpconv,
+            .target = target,
+            .hosted_build = hosted_build,
+            .rootfs = &rootfs,
+        };
 
         {
-            kernel_exe.code_model = .small;
-            kernel_exe.bundle_compiler_rt = true;
-            kernel_exe.rdynamic = true; // Prevent the compiler from garbage collecting exported symbols
-            kernel_exe.single_threaded = true;
-            kernel_exe.omit_frame_pointer = false;
-            kernel_exe.strip = false; // never strip debug info
-            if (optimize == .Debug) {
-                // we always want frame pointers in debug build!
-                kernel_exe.omit_frame_pointer = false;
-            }
-
-            kernel_exe.addModule("system-assets", ui_gen.mod_system_assets);
-            kernel_exe.addModule("ashet-abi", mod_ashet_abi);
-            kernel_exe.addModule("ashet-std", mod_ashet_std);
-            kernel_exe.addModule("ashet", mod_libashet);
-            kernel_exe.addModule("ashet-gui", mod_ashet_gui);
-            kernel_exe.addModule("virtio", mod_virtio);
-            kernel_exe.addModule("ashet-fs", mod_libashetfs);
-            kernel_exe.addModule("args", mod_args);
-            kernel_exe.addAnonymousModule("machine", .{
-                .source_file = machine_pkg.files.items[0].getFileSource(),
-            });
-            kernel_exe.addModule("fatfs", fatfs_module);
-            kernel_exe.setLinkerScriptPath(.{ .path = machine_spec.linker_script });
-            b.installArtifact(kernel_exe);
-
-            kernel_exe.addSystemIncludePath(.{ .path = "vendor/ziglibc/inc/libc" });
-
-            FatFS.link(kernel_exe, fatfs_config);
-
-            kernel_exe.linkLibrary(ashet_libc);
-
             {
-                const lwip = create_lwIP(b, kernel_exe.target, .ReleaseSafe);
-                lwip.is_linking_libc = false;
-                lwip.strip = false;
-                lwip.addSystemIncludePath(.{ .path = "vendor/ziglibc/inc/libc" });
-                kernel_exe.linkLibrary(lwip);
-                setup_lwIP(kernel_exe);
+                const browser_assets = AssetBundleStep.create(b, &rootfs);
+
+                ctx.createAshetApp("browser", "src/apps/browser/browser.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Search online.png", optimize, &.{
+                    .{
+                        .name = "assets",
+                        .module = b.createModule(.{
+                            .source_file = browser_assets.getOutput(),
+                            .dependencies = &.{},
+                        }),
+                    },
+                    .{ .name = "hypertext", .module = mod_libhypertext },
+                    .{ .name = "main_window_layout", .module = ui_gen.render(.{ .path = b.pathFromRoot("src/apps/browser/main_window.lua") }) },
+                });
             }
 
-            {
-                const kernel_step = b.step("kernel", "Only builds the OS kernel");
-                kernel_step.dependOn(&kernel_exe.step);
-            }
-        }
+            ctx.createAshetApp("clock", "src/apps/clock/clock.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Time.png", optimize, &.{});
+            ctx.createAshetApp("commander", "src/apps/commander/commander.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Folder.png", optimize, &.{});
+            ctx.createAshetApp("editor", "src/apps/editor/editor.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Edit page.png", optimize, &.{});
+            ctx.createAshetApp("music", "src/apps/music/music.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Play.png", optimize, &.{});
+            ctx.createAshetApp("paint", "src/apps/paint/paint.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Painter.png", optimize, &.{});
 
-        if (kernel_exe.target.getCpuArch() == .x86 or kernel_exe.target.getCpuArch() == .x86_64) {
-            // prepare PXE environment:
-
-            const install_pxe_kernel = b.addInstallArtifact(kernel_exe, .{
-                .dest_dir = .{ .override = .{ .custom = "pxe" } },
+            ctx.createAshetApp("terminal", "src/apps/terminal/terminal.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Tools.png", optimize, &.{
+                .{ .name = "system-assets", .module = ui_gen.mod_system_assets },
+                .{ .name = "fraxinus", .module = mod_fraxinus },
             });
 
-            const install_pxe_root = b.addInstallDirectory(.{
-                .source_dir = .{ .path = "rootfs-pxe" },
-                .install_dir = .{ .custom = "pxe" },
-                .install_subdir = ".",
-            });
+            ctx.createAshetApp("gui-demo", "src/apps/gui-demo.zig", null, optimize, &.{});
+            ctx.createAshetApp("font-demo", "src/apps/font-demo.zig", null, optimize, &.{});
+            ctx.createAshetApp("net-demo", "src/apps/net-demo.zig", null, optimize, &.{});
 
-            b.getInstallStep().dependOn(&install_pxe_root.step);
-            b.getInstallStep().dependOn(&install_pxe_kernel.step);
-        }
-
-        const raw_step = b.addObjCopy(kernel_exe.getOutputSource(), .{
-            .basename = "ashet-os.bin",
-            .format = .bin,
-            // .only_section
-            // . pad_to = 0x200_0000,
-        });
-
-        const install_raw_step = b.addInstallFile(raw_step.getOutputSource(), "rom/ashet-os.bin");
-
-        b.getInstallStep().dependOn(&install_raw_step.step);
-
-        // Makes sure zig-out/disk.img exists, but doesn't touch the data at all
-        const setup_disk_cmd = b.addSystemCommand(&.{
-            "fallocate",
-            "-l",
-            "32M",
-            "zig-out/disk.img",
-        });
-
-        const run_cmd = b.addSystemCommand(&.{"qemu-system-riscv32"});
-        run_cmd.addArgs(&.{
-            "-M", "virt",
-            "-m",      "32M", // we have *some* overhead on the virt platform
-            "-device", "virtio-gpu-device,xres=400,yres=300",
-            "-device", "virtio-keyboard-device",
-            "-device", "virtio-mouse-device",
-            "-d",      "guest_errors",
-            "-bios",   "none",
-            "-drive",  "if=pflash,index=0,file=zig-out/bin/ashet-os.bin,format=raw",
-            "-drive",  "if=pflash,index=1,file=zig-out/disk.img,format=raw",
-        });
-        run_cmd.step.dependOn(&setup_disk_cmd.step);
-        run_cmd.step.dependOn(b.getInstallStep());
-        if (b.args) |args| {
-            run_cmd.addArgs(args);
-        }
-
-        const run_step = b.step("run", "Run the app");
-        run_step.dependOn(&run_cmd.step);
-
-        break :machine_target machine_spec.platform.target;
-    };
-
-    var ctx = AshetContext{
-        .b = b,
-        .bmpconv = bmpconv,
-        .target = target,
-        .hosted_build = hosted_build,
-    };
-
-    {
-        {
-            const browser_assets = AssetBundleStep.create(b);
-
-            ctx.createAshetApp("browser", "src/apps/browser/browser.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Search online.png", optimize, &.{
-                .{
-                    .name = "assets",
-                    .module = b.createModule(.{
-                        .source_file = browser_assets.getOutput(),
-                        .dependencies = &.{},
-                    }),
-                },
+            ctx.createAshetApp("wiki", "src/apps/wiki/wiki.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Help book.png", optimize, &.{
                 .{ .name = "hypertext", .module = mod_libhypertext },
-                .{ .name = "main_window_layout", .module = ui_gen.render(.{ .path = b.pathFromRoot("src/apps/browser/main_window.lua") }) },
+                .{ .name = "hyperdoc", .module = mod_hyperdoc },
+                .{ .name = "ui-layout", .module = ui_gen.render(.{ .path = b.pathFromRoot("src/apps/wiki/ui.lua") }) },
             });
-        }
 
-        ctx.createAshetApp("clock", "src/apps/clock/clock.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Time.png", optimize, &.{});
-        ctx.createAshetApp("commander", "src/apps/commander/commander.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Folder.png", optimize, &.{});
-        ctx.createAshetApp("editor", "src/apps/editor/editor.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Edit page.png", optimize, &.{});
-        ctx.createAshetApp("music", "src/apps/music/music.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Play.png", optimize, &.{});
-        ctx.createAshetApp("paint", "src/apps/paint/paint.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Painter.png", optimize, &.{});
-
-        ctx.createAshetApp("terminal", "src/apps/terminal/terminal.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Tools.png", optimize, &.{
-            .{ .name = "system-assets", .module = ui_gen.mod_system_assets },
-            .{ .name = "fraxinus", .module = mod_fraxinus },
-        });
-
-        ctx.createAshetApp("gui-demo", "src/apps/gui-demo.zig", null, optimize, &.{});
-        ctx.createAshetApp("font-demo", "src/apps/font-demo.zig", null, optimize, &.{});
-        ctx.createAshetApp("net-demo", "src/apps/net-demo.zig", null, optimize, &.{});
-
-        ctx.createAshetApp("wiki", "src/apps/wiki/wiki.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Help book.png", optimize, &.{
-            .{ .name = "hypertext", .module = mod_libhypertext },
-            .{ .name = "hyperdoc", .module = mod_hyperdoc },
-            .{ .name = "ui-layout", .module = ui_gen.render(.{ .path = b.pathFromRoot("src/apps/wiki/ui.lua") }) },
-        });
-
-        {
-            ctx.createAshetApp("dungeon", "src/apps/dungeon/dungeon.zig", "artwork/apps/dungeon/dungeon.png", optimize, &.{});
-            // addBitmap(dungeon, bmpconv, "artwork/dungeon/floor.png", "src/apps/dungeon/data/floor.abm", .{ 32, 32 });
-            // addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-plain.png", "src/apps/dungeon/data/wall-plain.abm", .{ 32, 32 });
-            // addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-cobweb.png", "src/apps/dungeon/data/wall-cobweb.abm", .{ 32, 32 });
-            // addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-paper.png", "src/apps/dungeon/data/wall-paper.abm", .{ 32, 32 });
-            // addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-vines.png", "src/apps/dungeon/data/wall-vines.abm", .{ 32, 32 });
-            // addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-door.png", "src/apps/dungeon/data/wall-door.abm", .{ 32, 32 });
-            // addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-post-l.png", "src/apps/dungeon/data/wall-post-l.abm", .{ 32, 32 });
-            // addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-post-r.png", "src/apps/dungeon/data/wall-post-r.abm", .{ 32, 32 });
-            // addBitmap(dungeon, bmpconv, "artwork/dungeon/enforcer.png", "src/apps/dungeon/data/enforcer.abm", .{ 32, 60 });
+            {
+                ctx.createAshetApp("dungeon", "src/apps/dungeon/dungeon.zig", "artwork/apps/dungeon/dungeon.png", optimize, &.{});
+                // addBitmap(dungeon, bmpconv, "artwork/dungeon/floor.png", "src/apps/dungeon/data/floor.abm", .{ 32, 32 });
+                // addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-plain.png", "src/apps/dungeon/data/wall-plain.abm", .{ 32, 32 });
+                // addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-cobweb.png", "src/apps/dungeon/data/wall-cobweb.abm", .{ 32, 32 });
+                // addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-paper.png", "src/apps/dungeon/data/wall-paper.abm", .{ 32, 32 });
+                // addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-vines.png", "src/apps/dungeon/data/wall-vines.abm", .{ 32, 32 });
+                // addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-door.png", "src/apps/dungeon/data/wall-door.abm", .{ 32, 32 });
+                // addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-post-l.png", "src/apps/dungeon/data/wall-post-l.abm", .{ 32, 32 });
+                // addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-post-r.png", "src/apps/dungeon/data/wall-post-r.abm", .{ 32, 32 });
+                // addBitmap(dungeon, bmpconv, "artwork/dungeon/enforcer.png", "src/apps/dungeon/data/enforcer.abm", .{ 32, 60 });
+            }
         }
     }
 
-    {
-        const wikitool = b.addExecutable(.{
-            .name = "wikitool",
-            .root_source_file = .{ .path = "tools/wikitool.zig" },
-        });
+    if (maybe_machine_spec) |machine_spec| {
+        const disk_formatter = getDiskFormatter(machine_spec.disk_formatter);
 
-        wikitool.addModule("hypertext", mod_libhypertext);
-        wikitool.addModule("hyperdoc", mod_hyperdoc);
-        wikitool.addModule("args", mod_args);
-        wikitool.addModule("zigimg", mod_zigimg);
-        wikitool.addModule("ashet", mod_libashet);
-        wikitool.addModule("ashet-gui", mod_ashet_gui);
+        const disk_image = disk_formatter(b, kernel_file, &rootfs);
 
-        b.installArtifact(wikitool);
+        const install_disk_image = b.addInstallFileWithDir(
+            disk_image,
+            .prefix,
+            b.fmt("{s}.img", .{machine_spec.machine_id}),
+        );
+
+        b.getInstallStep().dependOn(&install_disk_image.step);
     }
+
+    // ashet os ↑
+    /////////////////////////////////////////////////////////////////////////////
+    // tests ↓
 
     if (b.option([]const u8, "test-ui", "If set to a file, will compile the ui-layout-tester tool based on the file passed")) |file_name| {
         const ui_tester = b.addExecutable(.{
@@ -613,6 +587,127 @@ pub fn build(b: *std.Build) !void {
         b.getInstallStep().dependOn(&install_step.step);
     }
 }
+
+fn getDiskFormatter(name: []const u8) *const fn (*std.Build, std.Build.LazyPath, *disk_image_step.FileSystemBuilder) std.Build.LazyPath {
+    inline for (comptime std.meta.declarations(disk_formatters)) |fmt_decl| {
+        if (std.mem.eql(u8, fmt_decl.name, name)) {
+            return @field(disk_formatters, fmt_decl.name);
+        }
+    }
+    @panic("Machine has invalid disk formatter defined!");
+}
+
+const disk_formatters = struct {
+
+    // if (kernel_exe.target.getCpuArch() == .x86 or kernel_exe.target.getCpuArch() == .x86_64) {
+    //     // prepare PXE environment:
+
+    //     const install_pxe_kernel = b.addInstallArtifact(kernel_exe, .{
+    //         .dest_dir = .{ .override = .{ .custom = "pxe" } },
+    //     });
+
+    //     const install_pxe_root = b.addInstallDirectory(.{
+    //         .source_dir = .{ .path = "rootfs-pxe" },
+    //         .install_dir = .{ .custom = "pxe" },
+    //         .install_subdir = ".",
+    //     });
+
+    //     b.getInstallStep().dependOn(&install_pxe_root.step);
+    //     b.getInstallStep().dependOn(&install_pxe_kernel.step);
+    // }
+
+    // // Makes sure zig-out/disk.img exists, but doesn't touch the data at all
+    // const setup_disk_cmd = b.addSystemCommand(&.{
+    //     "fallocate",
+    //     "-l",
+    //     "32M",
+    //     "zig-out/disk.img",
+    // });
+
+    // const run_cmd = b.addSystemCommand(&.{"qemu-system-riscv32"});
+    // run_cmd.addArgs(&.{
+    //     "-M", "virt",
+    //     "-m",      "32M", // we have *some* overhead on the virt platform
+    //     "-device", "virtio-gpu-device,xres=400,yres=300",
+    //     "-device", "virtio-keyboard-device",
+    //     "-device", "virtio-mouse-device",
+    //     "-d",      "guest_errors",
+    //     "-bios",   "none",
+    //     "-drive",  "if=pflash,index=0,file=zig-out/bin/ashet-os.bin,format=raw",
+    //     "-drive",  "if=pflash,index=1,file=zig-out/disk.img,format=raw",
+    // });
+    // run_cmd.step.dependOn(&setup_disk_cmd.step);
+    // run_cmd.step.dependOn(b.getInstallStep());
+    // if (b.args) |args| {
+    //     run_cmd.addArgs(args);
+    // }
+
+    // const run_step = b.step("run", "Run the app");
+    // run_step.dependOn(&run_cmd.step);
+
+    pub fn rv32_virt(b: *std.Build, kernel_file: std.Build.LazyPath, disk_content: *disk_image_step.FileSystemBuilder) std.Build.LazyPath {
+        const raw_step = b.addObjCopy(kernel_file, .{
+            .basename = "ashet-os.bin",
+            .format = .bin,
+            // .only_section
+            .pad_to = 0x200_0000,
+        });
+        const install_raw_step = b.addInstallFile(raw_step.getOutputSource(), "rom/ashet-os.bin");
+        b.getInstallStep().dependOn(&install_raw_step.step);
+
+        const disk = disk_image_step.initializeDisk(b, 0x0200_0000, .{
+            .fs = disk_content.finalize(.{ .format = .fat16, .label = "AshetOS" }),
+        });
+
+        return disk.getImageFile();
+    }
+
+    pub fn bios_pc(b: *std.Build, kernel_file: std.Build.LazyPath, disk_content: *disk_image_step.FileSystemBuilder) std.Build.LazyPath {
+        disk_content.addFile(kernel_file, "/ashet-os");
+
+        disk_content.addFile(.{ .path = "./rootfs-x86/syslinux/modules.alias" }, "syslinux/modules.alias");
+        disk_content.addFile(.{ .path = "./rootfs-x86/syslinux/pci.ids" }, "syslinux/pci.ids");
+        disk_content.addFile(.{ .path = "./rootfs-x86/syslinux/syslinux.cfg" }, "syslinux/syslinux.cfg");
+
+        disk_content.addFile(.{ .path = "./vendor/syslinux/vendor/syslinux-6.03/bios/com32/cmenu/libmenu/libmenu.c32" }, "syslinux/libmenu.c32");
+        disk_content.addFile(.{ .path = "./vendor/syslinux/vendor/syslinux-6.03/bios/com32/gpllib/libgpl.c32" }, "syslinux/libgpl.c32");
+        disk_content.addFile(.{ .path = "./vendor/syslinux/vendor/syslinux-6.03/bios/com32/hdt/hdt.c32" }, "syslinux/hdt.c32");
+        disk_content.addFile(.{ .path = "./vendor/syslinux/vendor/syslinux-6.03/bios/com32/lib/libcom32.c32" }, "syslinux/libcom32.c32");
+        disk_content.addFile(.{ .path = "./vendor/syslinux/vendor/syslinux-6.03/bios/com32/libutil/libutil.c32" }, "syslinux/libutil.c32");
+        disk_content.addFile(.{ .path = "./vendor/syslinux/vendor/syslinux-6.03/bios/com32/mboot/mboot.c32" }, "syslinux/mboot.c32");
+        disk_content.addFile(.{ .path = "./vendor/syslinux/vendor/syslinux-6.03/bios/com32/menu/menu.c32" }, "syslinux/menu.c32");
+        disk_content.addFile(.{ .path = "./vendor/syslinux/vendor/syslinux-6.03/bios/com32/modules/poweroff.c32" }, "syslinux/poweroff.c32");
+        disk_content.addFile(.{ .path = "./vendor/syslinux/vendor/syslinux-6.03/bios/com32/modules/reboot.c32" }, "syslinux/reboot.c32");
+
+        const disk = disk_image_step.initializeDisk(b, 500 * disk_image_step.MiB, .{
+            .mbr = .{
+                .bootloader = @embedFile("./vendor/syslinux/vendor/syslinux-6.03/bios/mbr/mbr.bin").*,
+                .partitions = .{
+                    &.{
+                        .type = .fat32_lba,
+                        .bootable = true,
+                        .size = 499 * disk_image_step.MiB,
+                        .data = .{ .fs = disk_content.finalize(.{ .format = .fat32, .label = "AshetOS" }) },
+                    },
+                    null,
+                    null,
+                    null,
+                },
+            },
+        });
+
+        const syslinux_dep = b.anonymousDependency("./vendor/syslinux/", syslinux_build_zig, .{
+            .release = true,
+        });
+        const syslinux_installer = syslinux_dep.artifact("syslinux");
+
+        const raw_disk_file = disk.getImageFile();
+
+        const install_syslinux = InstallSyslinuxStep.create(b, syslinux_installer, raw_disk_file);
+
+        return .{ .generated = &install_syslinux.output_file };
+    }
+};
 
 fn create_lwIP(b: *std.build.Builder, target: std.zig.CrossTarget, optimize: std.builtin.OptimizeMode) *std.build.LibExeObjStep {
     const lib = b.addStaticLibrary(.{
@@ -795,8 +890,9 @@ const AssetBundleStep = struct {
     builder: *std.build.Builder,
     files: std.StringHashMap(std.Build.FileSource),
     output_file: std.Build.GeneratedFile,
+    rootfs: *disk_image_step.FileSystemBuilder,
 
-    pub fn create(builder: *std.Build) *AssetBundleStep {
+    pub fn create(builder: *std.Build, rootfs: *disk_image_step.FileSystemBuilder) *AssetBundleStep {
         const bundle = builder.allocator.create(AssetBundleStep) catch @panic("oom");
         errdefer builder.allocator.destroy(bundle);
 
@@ -812,6 +908,7 @@ const AssetBundleStep = struct {
             .builder = builder,
             .files = std.StringHashMap(std.Build.FileSource).init(builder.allocator),
             .output_file = .{ .step = &bundle.step },
+            .rootfs = rootfs,
         };
 
         return bundle;
@@ -824,9 +921,11 @@ const AssetBundleStep = struct {
         ) catch @panic("oom");
         item.addStepDependencies(&bundle.step);
 
-        const install_step = bundle.builder.addInstallFile(item, path);
-        install_step.dir = rootfs_dir;
-        bundle.builder.getInstallStep().dependOn(&install_step.step);
+        bundle.rootfs.addFile(item, path);
+
+        // const install_step = bundle.builder.addInstallFile(item, path);
+        // install_step.dir = rootfs_dir;
+        // bundle.builder.getInstallStep().dependOn(&install_step.step);
     }
 
     pub fn getOutput(bundle: *AssetBundleStep) std.Build.FileSource {
@@ -872,93 +971,83 @@ const AssetBundleStep = struct {
     }
 };
 
-// const DiskImageStep = struct {
-//     pub const Format = enum {
-//         adf,
-//         fat32,
-//     };
+const InstallSyslinuxStep = struct {
+    step: std.Build.Step,
+    output_file: std.Build.GeneratedFile,
+    input_file: std.Build.LazyPath,
+    syslinux: *std.Build.Step.Compile,
 
-//     pub const Options = struct {
-//         format: Format,
-//         disk_size: u64,
-//     };
+    pub fn create(builder: *std.Build, syslinux: *std.Build.Step.Compile, input_file: std.Build.LazyPath) *InstallSyslinuxStep {
+        const bundle = builder.allocator.create(InstallSyslinuxStep) catch @panic("oom");
+        errdefer builder.allocator.destroy(bundle);
 
-//     step: std.Build.Step,
-//     disk_file: std.Build.GeneratedFile,
-//     entries: std.ArrayList(Entry),
+        bundle.* = InstallSyslinuxStep{
+            .step = std.Build.Step.init(.{
+                .id = .custom,
+                .name = "install syslinux",
+                .owner = builder,
+                .makeFn = make,
+                .first_ret_addr = null,
+                .max_rss = 0,
+            }),
+            .syslinux = syslinux,
+            .input_file = input_file,
+            .output_file = .{ .step = &bundle.step },
+        };
+        input_file.addStepDependencies(&bundle.step);
+        bundle.step.dependOn(&syslinux.step);
 
-//     format: Format,
-//     disk_size: u64,
+        return bundle;
+    }
 
-//     pub fn create(b: *std.Build, options: Options) *DiskImageStep {
-//         const dis = b.allocator.create(DiskImageStep) catch @panic("oom");
-//         dis.* = DiskImageStep{
-//             .step = std.Build.Step.init(.{
-//                 .id = .custom,
-//                 .name = "disk image",
-//                 .owner = b,
-//                 .makeFn = make,
-//                 .first_ret_addr = @returnAddress(),
-//             }),
-//             .disk_file = .{ .step = &dis.step },
-//             .entries = std.ArrayList(Entry).init(b.allocator),
+    fn make(step: *std.build.Step, node: *std.Progress.Node) !void {
+        _ = node;
 
-//             .format = options.format,
-//             .disk_size = options.disk_size,
-//         };
-//         return dis;
-//     }
+        const iss = @fieldParentPtr(InstallSyslinuxStep, "step", step);
+        const b = step.owner;
 
-//     pub fn getDiskFile(dis: *DiskImageStep) std.Build.LazyPath {
-//         return .{ .generated = &dis.disk_file };
-//     }
+        const disk_image = iss.input_file.getPath2(b, step);
 
-//     pub fn copyFile(dis: *DiskImageStep, source: std.Build.LazyPath, destination: []const u8) void {
-//         std.debug.assert(std.fs.path.isAbsolutePosix(destination));
-//         dis.entries.append(.{
-//             .copy_file = .{
-//                 .source = source.dupe(dis.step.owner),
-//                 .dest = dis.step.owner.dupe(destination),
-//             },
-//         }) catch @panic("oom");
-//         source.addStepDependencies(&dis.step);
-//     }
+        var man = b.cache.obtain();
+        defer man.deinit();
 
-//     pub fn copyDirectory(dis: *DiskImageStep, source: std.Build.LazyPath, destination: []const u8) void {
-//         std.debug.assert(std.fs.path.isAbsolutePosix(destination));
-//         dis.entries.append(.{
-//             .copy_directory = .{
-//                 .source = source.dupe(dis.step.owner),
-//                 .dest = dis.step.owner.dupe(destination),
-//             },
-//         }) catch @panic("oom");
-//         source.addStepDependencies(&dis.step);
-//     }
+        _ = try man.addFile(disk_image, null);
 
-//     pub fn makeDirectory(dis: *DiskImageStep, directory_path: []const u8) void {
-//         std.debug.assert(std.fs.path.isAbsolutePosix(directory_path));
-//         dis.entries.append(.{
-//             .directory = dis.step.owner.dupe(directory_path),
-//         }) catch @panic("oom");
-//     }
+        step.result_cached = try step.cacheHit(&man);
+        const digest = man.final();
 
-//     const Entry = union(enum) {
-//         make_directory: []const u8,
-//         copy_file: struct {
-//             source: std.Build.LazyPath,
-//             destination: []const u8,
-//         },
-//         copy_directory: struct {
-//             source: std.Build.LazyPath,
-//             destination: []const u8,
-//         },
-//     };
+        const output_components = .{ "o", &digest, "disk.img" };
+        const output_sub_path = b.pathJoin(&output_components);
+        const output_sub_dir_path = std.fs.path.dirname(output_sub_path).?;
+        b.cache_root.handle.makePath(output_sub_dir_path) catch |err| {
+            return step.fail("unable to make path '{}{s}': {s}", .{
+                b.cache_root, output_sub_dir_path, @errorName(err),
+            });
+        };
 
-//     fn make(step: *std.Build.Step, prog_node: *std.Progress.Node) !void {
-//         _ = prog_node;
+        iss.output_file.path = try b.cache_root.join(b.allocator, &output_components);
 
-//         const dis = @fieldParentPtr(DiskImageStep, "step", step);
+        if (step.result_cached)
+            return;
 
-//         _ = dis;
-//     }
-// };
+        try std.fs.Dir.copyFile(
+            b.cache_root.handle,
+            disk_image,
+            b.cache_root.handle,
+            iss.output_file.path.?,
+            .{},
+        );
+
+        _ = step.owner.exec(&.{
+            iss.syslinux.getEmittedBin().getPath2(iss.syslinux.step.owner, step),
+            "--offset",
+            "2048",
+            "--install",
+            "--directory",
+            "syslinux", // path *inside* the image
+            iss.output_file.path.?,
+        });
+
+        try step.writeManifest(&man);
+    }
+};

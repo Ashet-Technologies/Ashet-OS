@@ -1,0 +1,22 @@
+
+// == BUG REPORTS ==
+
+I would appreciate hearing of any problems you have with Syslinux.  I
+would also like to hear from you if you have successfully used Syslinux,
+*especially* if you are using it for a distribution.
+
+If you are reporting problems, please include all possible information
+about your system and your BIOS; the vast majority of all problems
+reported turn out to be BIOS or hardware bugs, and I need as much
+information as possible in order to diagnose the problems.
+
+There is a mailing list for discussion among Syslinux users and for
+announcements of new and test versions.  To join, or to browse the
+archive, go to:
+
+http://www.zytor.com/mailman/listinfo/syslinux
+
+Please DO NOT send HTML messages or attachments to the mailing list
+(including multipart/alternative or similar.)  All such messages will be
+bounced.
+
