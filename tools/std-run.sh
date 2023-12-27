@@ -18,7 +18,7 @@ if [ -z "$MACHINE" ]; then
 fi
 
 BOOTROM="${ROOT}/zig-out/rom/ashet-os.bin"
-DISK="${ROOT}/zig-out/bios_pc.img"
+DISK="${ROOT}/zig-out/${MACHINE}.img"
 
 # # validate wiki integrity
 # for file in $(find "${rootfs_path}/wiki" -name "*.hdoc"); do 
