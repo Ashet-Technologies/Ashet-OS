@@ -150,6 +150,9 @@ pub fn build(b: *std.Build) !void {
         .@"shared-lib" = false,
         .@"static-lib" = false,
         .headers = false,
+        .target = std.zig.CrossTarget{
+            .abi = .musl,
+        },
     });
 
     const lua_exe = lua_dep.artifact("lua");

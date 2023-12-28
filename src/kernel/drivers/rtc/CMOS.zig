@@ -59,7 +59,9 @@ fn nanoTimestamp(driver: *Driver) i128 {
 
     const secs_to_start_of_day = @as(u32, hour.toInt()) + 60 * @as(u32, minute.toInt()) + 60 * 60 * @as(u32, minute.toInt());
 
-    const days_to_start_of_year = cumulated_days_in_months[month.toInt()];
+    // std.log.info("month: {}", .{month.toInt()});
+
+    const days_to_start_of_year = cumulated_days_in_months[month.toInt() - 1];
 
     // std.log.info("seconds = {}", .{seconds});
     // std.log.info("minute  = {}", .{minute});

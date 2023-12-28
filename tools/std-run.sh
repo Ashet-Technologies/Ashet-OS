@@ -67,6 +67,7 @@ case $MACHINE in
           -vga std \
           -s "$@" \
         | llvm-addr2line -e "${APP}"
+        # | "${ROOT}/zig-out/bin/debug-filter" "${APP}"
         ;;
         
     efi_pc)

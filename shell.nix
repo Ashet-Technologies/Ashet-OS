@@ -6,5 +6,6 @@ pkgs.mkShell {
     pkgs.qemu-utils
     pkgs.mtools
     pkgs.syslinux
+    pkgs.llvmPackages_16.bintools
   ];
 }
