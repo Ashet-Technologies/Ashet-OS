@@ -1,82 +1,14 @@
 const std = @import("std");
 const FatFS = @import("zfat");
+
 const disk_image_step = @import("vendor/disk-image-step/build.zig");
 const syslinux_build_zig = @import("./vendor/syslinux/build.zig");
 
-const AshetContext = struct {
-    b: *std.build.Builder,
-    bmpconv: BitmapConverter,
-    target: std.zig.CrossTarget,
-    hosted_build: bool,
-    rootfs: *disk_image_step.FileSystemBuilder,
-
-    fn createAshetApp(ctx: AshetContext, name: []const u8, source: []const u8, maybe_icon: ?[]const u8, optimize: std.builtin.OptimizeMode, dependencies: []const std.Build.ModuleDependency) void {
-        const exe = ctx.b.addExecutable(.{
-            .name = ctx.b.fmt("{s}.app", .{name}),
-            .root_source_file = if (ctx.hosted_build)
-                .{ .path = "src/libuserland/main.zig" }
-            else
-                .{ .path = source },
-            .optimize = optimize,
-            .target = ctx.target,
-        });
-
-        exe.omit_frame_pointer = false; // this is useful for debugging
-
-        if (ctx.hosted_build) {
-            exe.addModule("ashet", ctx.b.modules.get("ashet").?);
-            exe.addModule("ashet-std", ctx.b.modules.get("ashet-std").?);
-            exe.addModule("ashet-abi", ctx.b.modules.get("ashet-abi").?);
-            exe.addAnonymousModule("app", .{
-                .source_file = .{ .path = source },
-                .dependencies = std.mem.concat(ctx.b.allocator, std.Build.ModuleDependency, &.{
-                    &.{
-                        .{ .name = "ashet", .module = ctx.b.modules.get("ashet").? },
-                        .{ .name = "ashet-gui", .module = ctx.b.modules.get("ashet-gui").? },
-                        .{ .name = "ashet-std", .module = ctx.b.modules.get("ashet-std").? },
-                    },
-                    dependencies,
-                }) catch @panic("oom"),
-            });
-
-            exe.linkSystemLibrary("sdl2");
-            exe.linkLibC();
-            ctx.b.installArtifact(exe);
-        } else {
-            exe.addModule("ashet", ctx.b.modules.get("ashet").?);
-            exe.addModule("ashet-std", ctx.b.modules.get("ashet-std").?);
-            exe.addModule("ashet-gui", ctx.b.modules.get("ashet-gui").?); // just add GUI to all apps by default *shrug*
-            for (dependencies) |dep| {
-                exe.addModule(dep.name, dep.module);
-            }
-
-            exe.code_model = .small;
-            exe.single_threaded = true; // AshetOS doesn't support multithreading in a modern sense
-            exe.pie = true; // AshetOS requires PIE executables
-            exe.force_pic = true; // which need PIC code
-            exe.linkage = .static; // but everything is statically linked, we don't support shared objects
-            exe.strip = false;
-
-            exe.setLinkerScriptPath(.{ .path = "src/libashet/application.ld" });
-
-            ctx.rootfs.addFile(exe.getEmittedBin(), ctx.b.fmt("apps/{s}/code", .{name}));
-
-            if (maybe_icon) |src_icon| {
-                const icon_file = ctx.bmpconv.convert(
-                    .{ .path = src_icon },
-                    ctx.b.fmt("{s}.icon", .{name}),
-                    .{
-                        .geometry = .{ 32, 32 },
-                        .palette = .{ .predefined = "src/kernel/data/palette.gpl" },
-                        // .palette = .{ .sized = 15 },
-                    },
-                );
-
-                ctx.rootfs.addFile(icon_file, ctx.b.fmt("apps/{s}/icon", .{name}));
-            }
-        }
-    }
-};
+const ashet_com = @import("src/build/os-common.zig");
+const ashet_apps = @import("src/build/apps.zig");
+const ashet_kernel = @import("src/build/kernel.zig");
+const AssetBundleStep = @import("src/build/AssetBundleStep.zig");
+const BitmapConverter = @import("src/build/BitmapConverter.zig");
 
 const ziglibc_file = std.build.FileSource{ .path = "vendor/libc/ziglibc.txt" };
 
@@ -100,31 +32,6 @@ fn resolveMachine(id: MachineID) MachineSpec {
     }
     unreachable;
 }
-
-const UiGenerator = struct {
-    builder: *std.Build,
-    lua: *std.Build.CompileStep,
-    mod_ashet_gui: *std.Build.Module,
-    mod_ashet: *std.Build.Module,
-    mod_system_assets: *std.Build.Module,
-
-    pub fn render(gen: @This(), input: std.Build.FileSource) *std.Build.Module {
-        const runner = gen.builder.addRunArtifact(gen.lua);
-        runner.cwd = gen.builder.pathFromRoot(".");
-        runner.addFileSourceArg(.{ .path = gen.builder.pathFromRoot("tools/ui-layouter.lua") });
-        runner.addFileSourceArg(input);
-        const out_file = runner.addOutputFileArg("ui-layout.zig");
-
-        return gen.builder.createModule(.{
-            .source_file = out_file,
-            .dependencies = &.{
-                .{ .name = "ashet", .module = gen.mod_ashet },
-                .{ .name = "ashet-gui", .module = gen.mod_ashet_gui },
-                .{ .name = "system-assets", .module = gen.mod_system_assets },
-            },
-        });
-    }
-};
 
 const fatfs_config = FatFS.Config{
     .max_long_name_len = 121,
@@ -210,6 +117,24 @@ pub fn build(b: *std.Build) !void {
         .source_file = .{ .path = "src/libafs/afs.zig" },
         .dependencies = &.{},
     });
+    const fatfs_module = FatFS.createModule(b, fatfs_config);
+
+    var modules = ashet_com.Modules{
+        .hyperdoc = mod_hyperdoc,
+        .args = mod_args,
+        .zigimg = mod_zigimg,
+        .fraxinus = mod_fraxinus,
+        .ashet_std = mod_ashet_std,
+        .virtio = mod_virtio,
+        .ashet_abi = mod_ashet_abi,
+        .libashet = mod_libashet,
+        .ashet_gui = mod_ashet_gui,
+        .libhypertext = mod_libhypertext,
+        .libashetfs = mod_libashetfs,
+        .fatfs = fatfs_module,
+
+        .system_assets = undefined,
+    };
 
     const afs_tool = b.addExecutable(.{
         .name = "afs-tool",
@@ -221,8 +146,6 @@ pub fn build(b: *std.Build) !void {
     const tools_step = b.step("tools", "Builds the build and debug tools");
 
     const optimize = b.standardOptimizeOption(.{});
-
-    const fatfs_module = FatFS.createModule(b, fatfs_config);
 
     const bmpconv = BitmapConverter.init(b);
     b.installArtifact(bmpconv.converter);
@@ -290,15 +213,17 @@ pub fn build(b: *std.Build) !void {
         system_icons.add("system/icons/default-app-icon.abm", bmpconv.convert(.{ .path = "artwork/os/default-app-icon.png" }, "menu.abm", desktop_icon_conv_options));
     }
 
-    var ui_gen = UiGenerator{
+    modules.system_assets = b.createModule(.{
+        .source_file = system_icons.getOutput(),
+        .dependencies = &.{},
+    });
+
+    var ui_gen = ashet_com.UiGenerator{
         .builder = b,
         .lua = lua_exe,
         .mod_ashet = mod_libashet,
         .mod_ashet_gui = mod_ashet_gui,
-        .mod_system_assets = b.createModule(.{
-            .source_file = system_icons.getOutput(),
-            .dependencies = &.{},
-        }),
+        .mod_system_assets = modules.system_assets,
     };
 
     {
@@ -326,113 +251,19 @@ pub fn build(b: *std.Build) !void {
             };
 
             const machine_spec = resolveMachine(machine_id);
+            maybe_machine_spec = machine_spec;
 
-            const machine_pkg = b.addWriteFile("machine.zig", blk: {
-                var stream = std.ArrayList(u8).init(b.allocator);
-                defer stream.deinit();
-
-                var writer = stream.writer();
-
-                try writer.writeAll("//! This is a machine-generated description of the Ashet OS target machine.\n\n");
-
-                try writer.print("pub const machine = @import(\"root\").machines.all.{};\n", .{
-                    std.zig.fmtId(machine_spec.machine_id),
-                });
-                try writer.print("pub const platform = @import(\"root\").platforms.all.{};\n", .{
-                    std.zig.fmtId(machine_spec.platform.platform_id),
-                });
-
-                try writer.print("pub const machine_name = \"{}\";\n", .{
-                    std.zig.fmtEscapes(machine_spec.name),
-                });
-                try writer.print("pub const platform_name = \"{}\";\n", .{
-                    std.zig.fmtEscapes(machine_spec.platform.name),
-                });
-
-                maybe_machine_spec = machine_spec;
-
-                break :blk try stream.toOwnedSlice();
-            });
-
-            const cguana_dep = b.anonymousDependency("vendor/ziglibc", @import("vendor/ziglibc/build.zig"), .{
-                .target = machine_spec.platform.target,
-                .optimize = .ReleaseSafe,
-
-                .static = true,
-                .dynamic = false,
-                .start = .none,
-                .trace = false,
-
-                .cstd = true,
-                .posix = false,
-                .gnu = false,
-                .linux = false,
-            });
-
-            const ashet_libc = cguana_dep.artifact("cguana");
-
-            // const ashet_libc = cguana_dep.ziglibc.addLibc(b, .{
-            //     .variant = .freestanding,
-            //     .link = .static,
-            //     .start = .ziglibc,
-            //     .trace = false,
-            //     .target = machine_spec.platform.target,
-            //     .optimize = .ReleaseSafe,
-            // });
-
-            const kernel_exe = b.addExecutable(.{
-                .name = "ashet-os",
-                .root_source_file = .{ .path = "src/kernel/main.zig" },
+            const kernel_exe = ashet_kernel.create(b, .{
                 .target = machine_spec.platform.target,
                 .optimize = optimize,
+                .fatfs_config = fatfs_config,
+                .machine_spec = machine_spec,
+                .modules = modules,
             });
 
             {
-                kernel_exe.code_model = .small;
-                kernel_exe.bundle_compiler_rt = true;
-                kernel_exe.rdynamic = true; // Prevent the compiler from garbage collecting exported symbols
-                kernel_exe.single_threaded = true;
-                kernel_exe.omit_frame_pointer = false;
-                kernel_exe.strip = false; // never strip debug info
-                if (optimize == .Debug) {
-                    // we always want frame pointers in debug build!
-                    kernel_exe.omit_frame_pointer = false;
-                }
-
-                kernel_exe.addModule("system-assets", ui_gen.mod_system_assets);
-                kernel_exe.addModule("ashet-abi", mod_ashet_abi);
-                kernel_exe.addModule("ashet-std", mod_ashet_std);
-                kernel_exe.addModule("ashet", mod_libashet);
-                kernel_exe.addModule("ashet-gui", mod_ashet_gui);
-                kernel_exe.addModule("virtio", mod_virtio);
-                kernel_exe.addModule("ashet-fs", mod_libashetfs);
-                kernel_exe.addModule("args", mod_args);
-                kernel_exe.addAnonymousModule("machine", .{
-                    .source_file = machine_pkg.files.items[0].getFileSource(),
-                });
-                kernel_exe.addModule("fatfs", fatfs_module);
-                kernel_exe.setLinkerScriptPath(.{ .path = machine_spec.linker_script });
-                b.installArtifact(kernel_exe);
-
-                kernel_exe.addSystemIncludePath(.{ .path = "vendor/ziglibc/inc/libc" });
-
-                FatFS.link(kernel_exe, fatfs_config);
-
-                kernel_exe.linkLibrary(ashet_libc);
-
-                {
-                    const lwip = create_lwIP(b, kernel_exe.target, .ReleaseSafe);
-                    lwip.is_linking_libc = false;
-                    lwip.strip = false;
-                    lwip.addSystemIncludePath(.{ .path = "vendor/ziglibc/inc/libc" });
-                    kernel_exe.linkLibrary(lwip);
-                    setup_lwIP(kernel_exe);
-                }
-
-                {
-                    const kernel_step = b.step("kernel", "Only builds the OS kernel");
-                    kernel_step.dependOn(&kernel_exe.step);
-                }
+                const kernel_step = b.step("kernel", "Only builds the OS kernel");
+                kernel_step.dependOn(&kernel_exe.step);
             }
 
             kernel_file = kernel_exe.getEmittedBin();
@@ -440,7 +271,7 @@ pub fn build(b: *std.Build) !void {
             break :machine_target machine_spec.platform.target;
         };
 
-        var ctx = AshetContext{
+        var ctx = ashet_apps.AshetContext{
             .b = b,
             .bmpconv = bmpconv,
             .target = target,
@@ -448,57 +279,13 @@ pub fn build(b: *std.Build) !void {
             .rootfs = &rootfs,
         };
 
-        {
-            {
-                const browser_assets = AssetBundleStep.create(b, &rootfs);
-
-                ctx.createAshetApp("browser", "src/apps/browser/browser.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Search online.png", optimize, &.{
-                    .{
-                        .name = "assets",
-                        .module = b.createModule(.{
-                            .source_file = browser_assets.getOutput(),
-                            .dependencies = &.{},
-                        }),
-                    },
-                    .{ .name = "hypertext", .module = mod_libhypertext },
-                    .{ .name = "main_window_layout", .module = ui_gen.render(.{ .path = b.pathFromRoot("src/apps/browser/main_window.lua") }) },
-                });
-            }
-
-            ctx.createAshetApp("clock", "src/apps/clock/clock.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Time.png", optimize, &.{});
-            ctx.createAshetApp("commander", "src/apps/commander/commander.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Folder.png", optimize, &.{});
-            ctx.createAshetApp("editor", "src/apps/editor/editor.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Edit page.png", optimize, &.{});
-            ctx.createAshetApp("music", "src/apps/music/music.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Play.png", optimize, &.{});
-            ctx.createAshetApp("paint", "src/apps/paint/paint.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Painter.png", optimize, &.{});
-
-            ctx.createAshetApp("terminal", "src/apps/terminal/terminal.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Tools.png", optimize, &.{
-                .{ .name = "system-assets", .module = ui_gen.mod_system_assets },
-                .{ .name = "fraxinus", .module = mod_fraxinus },
-            });
-
-            ctx.createAshetApp("gui-demo", "src/apps/gui-demo.zig", null, optimize, &.{});
-            ctx.createAshetApp("font-demo", "src/apps/font-demo.zig", null, optimize, &.{});
-            ctx.createAshetApp("net-demo", "src/apps/net-demo.zig", null, optimize, &.{});
-
-            ctx.createAshetApp("wiki", "src/apps/wiki/wiki.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Help book.png", optimize, &.{
-                .{ .name = "hypertext", .module = mod_libhypertext },
-                .{ .name = "hyperdoc", .module = mod_hyperdoc },
-                .{ .name = "ui-layout", .module = ui_gen.render(.{ .path = b.pathFromRoot("src/apps/wiki/ui.lua") }) },
-            });
-
-            {
-                ctx.createAshetApp("dungeon", "src/apps/dungeon/dungeon.zig", "artwork/apps/dungeon/dungeon.png", optimize, &.{});
-                // addBitmap(dungeon, bmpconv, "artwork/dungeon/floor.png", "src/apps/dungeon/data/floor.abm", .{ 32, 32 });
-                // addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-plain.png", "src/apps/dungeon/data/wall-plain.abm", .{ 32, 32 });
-                // addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-cobweb.png", "src/apps/dungeon/data/wall-cobweb.abm", .{ 32, 32 });
-                // addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-paper.png", "src/apps/dungeon/data/wall-paper.abm", .{ 32, 32 });
-                // addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-vines.png", "src/apps/dungeon/data/wall-vines.abm", .{ 32, 32 });
-                // addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-door.png", "src/apps/dungeon/data/wall-door.abm", .{ 32, 32 });
-                // addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-post-l.png", "src/apps/dungeon/data/wall-post-l.abm", .{ 32, 32 });
-                // addBitmap(dungeon, bmpconv, "artwork/dungeon/wall-post-r.png", "src/apps/dungeon/data/wall-post-r.abm", .{ 32, 32 });
-                // addBitmap(dungeon, bmpconv, "artwork/dungeon/enforcer.png", "src/apps/dungeon/data/enforcer.abm", .{ 32, 60 });
-            }
-        }
+        ashet_apps.compileApps(
+            b,
+            &ctx,
+            optimize,
+            modules,
+            &ui_gen,
+        );
     }
 
     if (maybe_machine_spec) |machine_spec| {
@@ -709,268 +496,6 @@ const disk_formatters = struct {
         const install_syslinux = InstallSyslinuxStep.create(b, syslinux_installer, raw_disk_file);
 
         return .{ .generated = &install_syslinux.output_file };
-    }
-};
-
-fn create_lwIP(b: *std.build.Builder, target: std.zig.CrossTarget, optimize: std.builtin.OptimizeMode) *std.build.LibExeObjStep {
-    const lib = b.addStaticLibrary(.{
-        .name = "lwip",
-        .target = target,
-        .optimize = optimize,
-    });
-
-    const flags = [_][]const u8{ "-std=c99", "-fno-sanitize=undefined" };
-    const files = [_][]const u8{
-        // Core files
-        "vendor/lwip/src/core/init.c",
-        "vendor/lwip/src/core/udp.c",
-        "vendor/lwip/src/core/inet_chksum.c",
-        "vendor/lwip/src/core/altcp_alloc.c",
-        "vendor/lwip/src/core/stats.c",
-        "vendor/lwip/src/core/altcp.c",
-        "vendor/lwip/src/core/mem.c",
-        "vendor/lwip/src/core/ip.c",
-        "vendor/lwip/src/core/pbuf.c",
-        "vendor/lwip/src/core/netif.c",
-        "vendor/lwip/src/core/tcp_out.c",
-        "vendor/lwip/src/core/dns.c",
-        "vendor/lwip/src/core/tcp_in.c",
-        "vendor/lwip/src/core/memp.c",
-        "vendor/lwip/src/core/tcp.c",
-        "vendor/lwip/src/core/sys.c",
-        "vendor/lwip/src/core/def.c",
-        "vendor/lwip/src/core/timeouts.c",
-        "vendor/lwip/src/core/raw.c",
-        "vendor/lwip/src/core/altcp_tcp.c",
-
-        // IPv4 implementation:
-        "vendor/lwip/src/core/ipv4/dhcp.c",
-        "vendor/lwip/src/core/ipv4/autoip.c",
-        "vendor/lwip/src/core/ipv4/ip4_frag.c",
-        "vendor/lwip/src/core/ipv4/etharp.c",
-        "vendor/lwip/src/core/ipv4/ip4.c",
-        "vendor/lwip/src/core/ipv4/ip4_addr.c",
-        "vendor/lwip/src/core/ipv4/igmp.c",
-        "vendor/lwip/src/core/ipv4/icmp.c",
-
-        // IPv6 implementation:
-        "vendor/lwip/src/core/ipv6/icmp6.c",
-        "vendor/lwip/src/core/ipv6/ip6_addr.c",
-        "vendor/lwip/src/core/ipv6/ip6.c",
-        "vendor/lwip/src/core/ipv6/ip6_frag.c",
-        "vendor/lwip/src/core/ipv6/mld6.c",
-        "vendor/lwip/src/core/ipv6/dhcp6.c",
-        "vendor/lwip/src/core/ipv6/inet6.c",
-        "vendor/lwip/src/core/ipv6/ethip6.c",
-        "vendor/lwip/src/core/ipv6/nd6.c",
-
-        // Interfaces:
-        "vendor/lwip/src/netif/bridgeif.c",
-        "vendor/lwip/src/netif/ethernet.c",
-        "vendor/lwip/src/netif/slipif.c",
-        "vendor/lwip/src/netif/bridgeif_fdb.c",
-
-        // sequential APIs
-        // "vendor/lwip/src/api/err.c",
-        // "vendor/lwip/src/api/api_msg.c",
-        // "vendor/lwip/src/api/netifapi.c",
-        // "vendor/lwip/src/api/sockets.c",
-        // "vendor/lwip/src/api/netbuf.c",
-        // "vendor/lwip/src/api/api_lib.c",
-        // "vendor/lwip/src/api/tcpip.c",
-        // "vendor/lwip/src/api/netdb.c",
-        // "vendor/lwip/src/api/if_api.c",
-
-        // 6LoWPAN
-        "vendor/lwip/src/netif/lowpan6.c",
-        "vendor/lwip/src/netif/lowpan6_ble.c",
-        "vendor/lwip/src/netif/lowpan6_common.c",
-        "vendor/lwip/src/netif/zepif.c",
-
-        // PPP
-        // "vendor/lwip/src/netif/ppp/polarssl/arc4.c",
-        // "vendor/lwip/src/netif/ppp/polarssl/des.c",
-        // "vendor/lwip/src/netif/ppp/polarssl/md4.c",
-        // "vendor/lwip/src/netif/ppp/polarssl/sha1.c",
-        // "vendor/lwip/src/netif/ppp/polarssl/md5.c",
-        // "vendor/lwip/src/netif/ppp/ipcp.c",
-        // "vendor/lwip/src/netif/ppp/magic.c",
-        // "vendor/lwip/src/netif/ppp/pppoe.c",
-        // "vendor/lwip/src/netif/ppp/mppe.c",
-        // "vendor/lwip/src/netif/ppp/multilink.c",
-        // "vendor/lwip/src/netif/ppp/chap-new.c",
-        // "vendor/lwip/src/netif/ppp/auth.c",
-        // "vendor/lwip/src/netif/ppp/chap_ms.c",
-        // "vendor/lwip/src/netif/ppp/ipv6cp.c",
-        // "vendor/lwip/src/netif/ppp/chap-md5.c",
-        // "vendor/lwip/src/netif/ppp/upap.c",
-        // "vendor/lwip/src/netif/ppp/pppapi.c",
-        // "vendor/lwip/src/netif/ppp/pppos.c",
-        // "vendor/lwip/src/netif/ppp/eap.c",
-        // "vendor/lwip/src/netif/ppp/pppol2tp.c",
-        // "vendor/lwip/src/netif/ppp/demand.c",
-        // "vendor/lwip/src/netif/ppp/fsm.c",
-        // "vendor/lwip/src/netif/ppp/eui64.c",
-        // "vendor/lwip/src/netif/ppp/ccp.c",
-        // "vendor/lwip/src/netif/ppp/pppcrypt.c",
-        // "vendor/lwip/src/netif/ppp/utils.c",
-        // "vendor/lwip/src/netif/ppp/vj.c",
-        // "vendor/lwip/src/netif/ppp/lcp.c",
-        // "vendor/lwip/src/netif/ppp/ppp.c",
-        // "vendor/lwip/src/netif/ppp/ecp.c",
-    };
-
-    lib.addCSourceFiles(&files, &flags);
-
-    setup_lwIP(lib);
-
-    return lib;
-}
-
-fn setup_lwIP(dst: *std.build.LibExeObjStep) void {
-    dst.addIncludePath(.{ .path = "vendor/lwip/src/include" });
-    dst.addIncludePath(.{ .path = "src/kernel/components/network/include" });
-}
-
-const BitmapConverter = struct {
-    builder: *std.Build,
-    converter: *std.Build.CompileStep,
-
-    pub fn init(builder: *std.Build) BitmapConverter {
-        const zig_args_module = builder.dependency("args", .{}).module("args");
-        const zigimg = builder.dependency("zigimg", .{}).module("zigimg");
-
-        const tool_mkicon = builder.addExecutable(.{ .name = "tool_mkicon", .root_source_file = .{ .path = "tools/mkicon.zig" } });
-        tool_mkicon.addModule("zigimg", zigimg);
-        tool_mkicon.addModule("ashet-abi", builder.modules.get("ashet-abi").?);
-        tool_mkicon.addModule("args", zig_args_module);
-
-        return BitmapConverter{
-            .builder = builder,
-            .converter = tool_mkicon,
-        };
-    }
-
-    pub const Options = struct {
-        palette: Palette = .{ .sized = 15 },
-        geometry: ?[2]u32 = null,
-
-        const Palette = union(enum) {
-            predefined: []const u8,
-            sized: u8,
-        };
-    };
-
-    pub fn convert(conv: BitmapConverter, source: std.Build.FileSource, basename: []const u8, options: Options) std.Build.FileSource {
-        const mkicon = conv.builder.addRunArtifact(conv.converter);
-
-        mkicon.addFileSourceArg(source);
-
-        switch (options.palette) {
-            .predefined => |palette| {
-                mkicon.addArg("--palette");
-                mkicon.addFileSourceArg(.{ .path = palette });
-            },
-            .sized => |size| {
-                mkicon.addArg("--color-count");
-                mkicon.addArg(conv.builder.fmt("{d}", .{size}));
-            },
-        }
-        if (options.geometry) |geometry| {
-            mkicon.addArg("--geometry");
-            mkicon.addArg(conv.builder.fmt("{}x{}", .{ geometry[0], geometry[1] }));
-        }
-
-        mkicon.addArg("-o");
-        const result = mkicon.addOutputFileArg(basename);
-
-        return result;
-    }
-};
-
-const AssetBundleStep = struct {
-    step: std.Build.Step,
-    builder: *std.build.Builder,
-    files: std.StringHashMap(std.Build.FileSource),
-    output_file: std.Build.GeneratedFile,
-    rootfs: *disk_image_step.FileSystemBuilder,
-
-    pub fn create(builder: *std.Build, rootfs: *disk_image_step.FileSystemBuilder) *AssetBundleStep {
-        const bundle = builder.allocator.create(AssetBundleStep) catch @panic("oom");
-        errdefer builder.allocator.destroy(bundle);
-
-        bundle.* = AssetBundleStep{
-            .step = std.Build.Step.init(.{
-                .id = .custom,
-                .name = "bundle assets",
-                .owner = builder,
-                .makeFn = make,
-                .first_ret_addr = null,
-                .max_rss = 0,
-            }),
-            .builder = builder,
-            .files = std.StringHashMap(std.Build.FileSource).init(builder.allocator),
-            .output_file = .{ .step = &bundle.step },
-            .rootfs = rootfs,
-        };
-
-        return bundle;
-    }
-
-    pub fn add(bundle: *AssetBundleStep, path: []const u8, item: std.Build.FileSource) void {
-        bundle.files.putNoClobber(
-            bundle.builder.dupe(path),
-            item,
-        ) catch @panic("oom");
-        item.addStepDependencies(&bundle.step);
-
-        bundle.rootfs.addFile(item, path);
-
-        // const install_step = bundle.builder.addInstallFile(item, path);
-        // install_step.dir = rootfs_dir;
-        // bundle.builder.getInstallStep().dependOn(&install_step.step);
-    }
-
-    pub fn getOutput(bundle: *AssetBundleStep) std.Build.FileSource {
-        return std.Build.FileSource{
-            .generated = &bundle.output_file,
-        };
-    }
-
-    fn make(step: *std.build.Step, node: *std.Progress.Node) !void {
-        const bundle = @fieldParentPtr(AssetBundleStep, "step", step);
-
-        var write_step = std.Build.WriteFileStep.create(bundle.builder);
-
-        var embed_file = std.ArrayList(u8).init(bundle.builder.allocator);
-        defer embed_file.deinit();
-
-        const writer = embed_file.writer();
-
-        try writer.writeAll(
-            \\//! AUTOGENERATED CODE
-            \\
-        );
-
-        {
-            var it = bundle.files.iterator();
-            while (it.next()) |kv| {
-                _ = write_step.addCopyFile(
-                    kv.value_ptr.*,
-                    bundle.builder.fmt("blobs/{s}", .{kv.key_ptr.*}),
-                );
-                try writer.print("pub const {} = @embedFile(\"blobs/{}\");\n", .{
-                    std.zig.fmtId(kv.key_ptr.*),
-                    std.zig.fmtEscapes(kv.key_ptr.*),
-                });
-            }
-        }
-
-        const bundle_file_source = write_step.add("bundle.zig", try embed_file.toOwnedSlice());
-
-        try write_step.step.makeFn(&write_step.step, node);
-
-        bundle.output_file.path = bundle_file_source.getPath(bundle.builder);
     }
 };
 
