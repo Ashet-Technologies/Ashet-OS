@@ -45,8 +45,167 @@ const fatfs_config = FatFS.Config{
     .mkfs = true,
 };
 
+fn createSystemIcons(b: *std.Build, bmpconv: BitmapConverter, rootfs: ?*disk_image_step.FileSystemBuilder) *AssetBundleStep {
+    const system_icons = AssetBundleStep.create(b, rootfs);
+
+    {
+        const desktop_icon_conv_options: BitmapConverter.Options = .{
+            .geometry = .{ 32, 32 },
+            .palette = .{
+                .predefined = "src/kernel/data/palette.gpl",
+            },
+        };
+
+        const tool_icon_conv_options: BitmapConverter.Options = .{
+            .geometry = .{ 16, 16 },
+            .palette = .{
+                .predefined = "src/kernel/data/palette.gpl",
+            },
+        };
+        system_icons.add("system/icons/back.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Go back.png" }, "back.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/forward.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Go forward.png" }, "forward.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/reload.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Refresh.png" }, "reload.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/home.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Home.png" }, "home.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/go.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Go.png" }, "go.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/stop.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Stop sign.png" }, "stop.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/menu.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Tune.png" }, "menu.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/plus.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/13.png" }, "plus.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/delete.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Delete.png" }, "delete.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/copy.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Copy.png" }, "copy.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/cut.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Cut.png" }, "cut.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/paste.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Paste.png" }, "paste.abm", tool_icon_conv_options));
+
+        system_icons.add("system/icons/default-app-icon.abm", bmpconv.convert(.{ .path = "artwork/os/default-app-icon.png" }, "menu.abm", desktop_icon_conv_options));
+    }
+
+    return system_icons;
+}
+
+fn buildHostedApps(
+    b: *std.Build,
+    target: std.zig.CrossTarget,
+    optimize: std.builtin.OptimizeMode,
+    bmpconv: BitmapConverter,
+    modules: ashet_com.Modules,
+    lua_exe: *std.Build.Step.Compile,
+) void {
+    const system_icons = createSystemIcons(b, bmpconv, null);
+
+    const system_assets = b.createModule(.{
+        .source_file = system_icons.getOutput(),
+        .dependencies = &.{},
+    });
+
+    var ui_gen = ashet_com.UiGenerator{
+        .builder = b,
+        .lua = lua_exe,
+        .mod_ashet = modules.libashet,
+        .mod_ashet_gui = modules.ashet_gui,
+        .mod_system_assets = system_assets,
+    };
+
+    var ctx = ashet_apps.AshetContext{
+        .b = b,
+        .bmpconv = bmpconv,
+        .target = target,
+        .mode = .hosted,
+    };
+
+    ashet_apps.compileApps(
+        b,
+        &ctx,
+        optimize,
+        modules,
+        &ui_gen,
+    );
+}
+
+fn buildOs(
+    b: *std.Build,
+    optimize: std.builtin.OptimizeMode,
+    bmpconv: BitmapConverter,
+    modules: ashet_com.Modules,
+    lua_exe: *std.Build.Step.Compile,
+    kernel_step: *std.Build.Step,
+    machine_id: MachineID,
+) void {
+    var rootfs = disk_image_step.FileSystemBuilder.init(b);
+
+    const system_icons = createSystemIcons(b, bmpconv, &rootfs);
+
+    const system_assets = b.createModule(.{
+        .source_file = system_icons.getOutput(),
+        .dependencies = &.{},
+    });
+
+    var ui_gen = ashet_com.UiGenerator{
+        .builder = b,
+        .lua = lua_exe,
+        .mod_ashet = modules.libashet,
+        .mod_ashet_gui = modules.ashet_gui,
+        .mod_system_assets = system_assets,
+    };
+
+    rootfs.addDirectory(
+        .{ .path = b.pathFromRoot("rootfs") },
+        ".",
+    );
+
+    const machine_spec = resolveMachine(machine_id);
+
+    const kernel_exe = ashet_kernel.create(b, .{
+        .target = machine_spec.platform.target,
+        .optimize = optimize,
+        .fatfs_config = fatfs_config,
+        .machine_spec = machine_spec,
+        .modules = modules,
+        .system_assets = system_assets,
+    });
+
+    const kernel_file = kernel_exe.getEmittedBin();
+
+    const install_kernel = b.addInstallFileWithDir(
+        kernel_file,
+        .{ .custom = "kernel" },
+        b.fmt("{s}.elf", .{machine_spec.machine_id}),
+    );
+
+    kernel_step.dependOn(&install_kernel.step);
+    b.getInstallStep().dependOn(&install_kernel.step);
+
+    const target = machine_spec.platform.target;
+
+    var ctx = ashet_apps.AshetContext{
+        .b = b,
+        .bmpconv = bmpconv,
+        .target = target,
+        .mode = .{ .target_fs = &rootfs },
+    };
+
+    ashet_apps.compileApps(
+        b,
+        &ctx,
+        optimize,
+        modules,
+        &ui_gen,
+    );
+
+    const disk_formatter = getDiskFormatter(machine_spec.disk_formatter);
+
+    const disk_image = disk_formatter(b, kernel_file, &rootfs);
+
+    const install_disk_image = b.addInstallFileWithDir(
+        disk_image,
+        .{ .custom = "disk" },
+        b.fmt("{s}.img", .{machine_spec.machine_id}),
+    );
+
+    b.getInstallStep().dependOn(&install_disk_image.step);
+}
+
 pub fn build(b: *std.Build) !void {
-    const hosted_build = b.option(bool, "hosted", "Builds the applications hosted for the current system") orelse false;
+    const hosted_target = b.standardTargetOptions(.{});
+    const kernel_step = b.step("kernel", "Only builds the OS kernel");
 
     /////////////////////////////////////////////////////////////////////////////
     // tools and deps ↓
@@ -132,8 +291,6 @@ pub fn build(b: *std.Build) !void {
         .libhypertext = mod_libhypertext,
         .libashetfs = mod_libashetfs,
         .fatfs = fatfs_module,
-
-        .system_assets = undefined,
     };
 
     const afs_tool = b.addExecutable(.{
@@ -177,149 +334,62 @@ pub fn build(b: *std.Build) !void {
     /////////////////////////////////////////////////////////////////////////////
     // ashet os ↓
 
-    var kernel_file: std.Build.LazyPath = undefined;
-    var maybe_machine_spec: ?MachineSpec = null;
+    // hosted build:
 
-    var rootfs = disk_image_step.FileSystemBuilder.init(b);
-
-    const system_icons = AssetBundleStep.create(b, &rootfs);
-    {
-        const desktop_icon_conv_options: BitmapConverter.Options = .{
-            .geometry = .{ 32, 32 },
-            .palette = .{
-                .predefined = "src/kernel/data/palette.gpl",
-            },
-        };
-
-        const tool_icon_conv_options: BitmapConverter.Options = .{
-            .geometry = .{ 16, 16 },
-            .palette = .{
-                .predefined = "src/kernel/data/palette.gpl",
-            },
-        };
-        system_icons.add("system/icons/back.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Go back.png" }, "back.abm", tool_icon_conv_options));
-        system_icons.add("system/icons/forward.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Go forward.png" }, "forward.abm", tool_icon_conv_options));
-        system_icons.add("system/icons/reload.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Refresh.png" }, "reload.abm", tool_icon_conv_options));
-        system_icons.add("system/icons/home.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Home.png" }, "home.abm", tool_icon_conv_options));
-        system_icons.add("system/icons/go.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Go.png" }, "go.abm", tool_icon_conv_options));
-        system_icons.add("system/icons/stop.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Stop sign.png" }, "stop.abm", tool_icon_conv_options));
-        system_icons.add("system/icons/menu.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Tune.png" }, "menu.abm", tool_icon_conv_options));
-        system_icons.add("system/icons/plus.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/13.png" }, "plus.abm", tool_icon_conv_options));
-        system_icons.add("system/icons/delete.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Delete.png" }, "delete.abm", tool_icon_conv_options));
-        system_icons.add("system/icons/copy.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Copy.png" }, "copy.abm", tool_icon_conv_options));
-        system_icons.add("system/icons/cut.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Cut.png" }, "cut.abm", tool_icon_conv_options));
-        system_icons.add("system/icons/paste.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Paste.png" }, "paste.abm", tool_icon_conv_options));
-
-        system_icons.add("system/icons/default-app-icon.abm", bmpconv.convert(.{ .path = "artwork/os/default-app-icon.png" }, "menu.abm", desktop_icon_conv_options));
-    }
-
-    modules.system_assets = b.createModule(.{
-        .source_file = system_icons.getOutput(),
-        .dependencies = &.{},
-    });
-
-    var ui_gen = ashet_com.UiGenerator{
-        .builder = b,
-        .lua = lua_exe,
-        .mod_ashet = mod_libashet,
-        .mod_ashet_gui = mod_ashet_gui,
-        .mod_system_assets = modules.system_assets,
-    };
+    buildHostedApps(
+        b,
+        hosted_target,
+        optimize,
+        bmpconv,
+        modules,
+        lua_exe,
+    );
 
     {
-        rootfs.addDirectory(
-            .{ .path = b.pathFromRoot("rootfs") },
-            ".",
-        );
+        const machine_id = b.option(MachineID, "machine", "Defines the machine Ashet OS should be built for.") orelse blk: {
+            var stderr = std.io.getStdErr();
 
-        const target = if (hosted_build)
-            b.standardTargetOptions(.{})
-        else machine_target: {
-            const machine_id = b.option(MachineID, "machine", "Defines the machine Ashet OS should be built for.") orelse blk: {
-                var stderr = std.io.getStdErr();
+            var writer = stderr.writer();
+            try writer.writeAll("No machine selected. Use one of the following options:\n");
 
-                var writer = stderr.writer();
-                try writer.writeAll("No machine selected. Use one of the following options:\n");
-
-                inline for (comptime std.meta.declarations(machines.all)) |decl| {
-                    try writer.print("- {s}\n", .{decl.name});
-                }
-
-                try writer.writeAll("Falling back to rv32_virt\n");
-
-                break :blk .rv32_virt;
-            };
-
-            const machine_spec = resolveMachine(machine_id);
-            maybe_machine_spec = machine_spec;
-
-            const kernel_exe = ashet_kernel.create(b, .{
-                .target = machine_spec.platform.target,
-                .optimize = optimize,
-                .fatfs_config = fatfs_config,
-                .machine_spec = machine_spec,
-                .modules = modules,
-            });
-
-            {
-                const kernel_step = b.step("kernel", "Only builds the OS kernel");
-                kernel_step.dependOn(&kernel_exe.step);
+            inline for (comptime std.meta.declarations(machines.all)) |decl| {
+                try writer.print("- {s}\n", .{decl.name});
             }
 
-            kernel_file = kernel_exe.getEmittedBin();
+            try writer.writeAll("Falling back to rv32_virt\n");
 
-            break :machine_target machine_spec.platform.target;
+            break :blk .rv32_virt;
         };
 
-        var ctx = ashet_apps.AshetContext{
-            .b = b,
-            .bmpconv = bmpconv,
-            .target = target,
-            .hosted_build = hosted_build,
-            .rootfs = &rootfs,
-        };
-
-        ashet_apps.compileApps(
+        buildOs(
             b,
-            &ctx,
             optimize,
+            bmpconv,
             modules,
-            &ui_gen,
+            lua_exe,
+            kernel_step,
+            machine_id,
         );
-    }
-
-    if (maybe_machine_spec) |machine_spec| {
-        const disk_formatter = getDiskFormatter(machine_spec.disk_formatter);
-
-        const disk_image = disk_formatter(b, kernel_file, &rootfs);
-
-        const install_disk_image = b.addInstallFileWithDir(
-            disk_image,
-            .prefix,
-            b.fmt("{s}.img", .{machine_spec.machine_id}),
-        );
-
-        b.getInstallStep().dependOn(&install_disk_image.step);
     }
 
     // ashet os ↑
     /////////////////////////////////////////////////////////////////////////////
     // tests ↓
 
-    if (b.option([]const u8, "test-ui", "If set to a file, will compile the ui-layout-tester tool based on the file passed")) |file_name| {
-        const ui_tester = b.addExecutable(.{
-            .name = "ui-layout-tester",
-            .root_source_file = .{ .path = "tools/ui-layout-tester.zig" },
-        });
+    // if (b.option([]const u8, "test-ui", "If set to a file, will compile the ui-layout-tester tool based on the file passed")) |file_name| {
+    //     const ui_tester = b.addExecutable(.{
+    //         .name = "ui-layout-tester",
+    //         .root_source_file = .{ .path = "tools/ui-layout-tester.zig" },
+    //     });
 
-        ui_tester.addModule("ashet", mod_libashet);
-        ui_tester.addModule("ashet-gui", mod_ashet_gui);
-        ui_tester.addModule("ui-layout", ui_gen.render(.{ .path = b.pathFromRoot(file_name) }));
+    //     ui_tester.addModule("ashet", mod_libashet);
+    //     ui_tester.addModule("ashet-gui", mod_ashet_gui);
+    //     ui_tester.addModule("ui-layout", ui_gen.render(.{ .path = b.pathFromRoot(file_name) }));
 
-        ui_tester.linkSystemLibrary("sdl2");
-        b.installArtifact(ui_tester);
-        ui_tester.linkLibC();
-    }
+    //     ui_tester.linkSystemLibrary("sdl2");
+    //     b.installArtifact(ui_tester);
+    //     ui_tester.linkLibC();
+    // }
 
     const std_tests = b.addTest(.{
         .root_source_file = .{ .path = "src/std/std.zig" },
@@ -360,21 +430,6 @@ pub fn build(b: *std.Build) !void {
         b.getInstallStep().dependOn(&install_step.step);
 
         tools_step.dependOn(&install_step.step);
-    }
-
-    {
-        const init_disk = b.addExecutable(.{
-            .name = "init-disk",
-            .root_source_file = .{ .path = "tools/init-disk.zig" },
-        });
-        init_disk.linkLibC();
-        init_disk.addModule("fatfs", fatfs_module);
-        init_disk.addModule("args", mod_args);
-        const install_step = b.addInstallArtifact(init_disk, .{});
-        FatFS.link(init_disk, fatfs_config);
-
-        tools_step.dependOn(&install_step.step);
-        b.getInstallStep().dependOn(&install_step.step);
     }
 }
 

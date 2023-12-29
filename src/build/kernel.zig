@@ -14,6 +14,7 @@ pub const KernelOptions = struct {
     fatfs_config: FatFS.Config,
     machine_spec: MachineSpec,
     modules: ashet_com.Modules,
+    system_assets: *std.Build.Module,
 };
 
 fn writeMachineSpec(writer: anytype, machine_spec: MachineSpec) !void {
@@ -79,7 +80,7 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
         kernel_exe.omit_frame_pointer = false;
     }
 
-    kernel_exe.addModule("system-assets", options.modules.system_assets);
+    kernel_exe.addModule("system-assets", options.system_assets);
     kernel_exe.addModule("ashet-abi", options.modules.ashet_abi);
     kernel_exe.addModule("ashet-std", options.modules.ashet_std);
     kernel_exe.addModule("ashet", options.modules.libashet);
@@ -92,7 +93,6 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
     });
     kernel_exe.addModule("fatfs", options.modules.fatfs);
     kernel_exe.setLinkerScriptPath(.{ .path = options.machine_spec.linker_script });
-    b.installArtifact(kernel_exe);
 
     kernel_exe.addSystemIncludePath(.{ .path = "vendor/ziglibc/inc/libc" });
 

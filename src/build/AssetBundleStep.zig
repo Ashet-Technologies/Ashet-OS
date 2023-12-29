@@ -7,9 +7,9 @@ step: std.Build.Step,
 builder: *std.build.Builder,
 files: std.StringHashMap(std.Build.FileSource),
 output_file: std.Build.GeneratedFile,
-rootfs: *disk_image_step.FileSystemBuilder,
+rootfs: ?*disk_image_step.FileSystemBuilder,
 
-pub fn create(builder: *std.Build, rootfs: *disk_image_step.FileSystemBuilder) *AssetBundleStep {
+pub fn create(builder: *std.Build, rootfs: ?*disk_image_step.FileSystemBuilder) *AssetBundleStep {
     const bundle = builder.allocator.create(AssetBundleStep) catch @panic("oom");
     errdefer builder.allocator.destroy(bundle);
 
@@ -38,7 +38,8 @@ pub fn add(bundle: *AssetBundleStep, path: []const u8, item: std.Build.FileSourc
     ) catch @panic("oom");
     item.addStepDependencies(&bundle.step);
 
-    bundle.rootfs.addFile(item, path);
+    if (bundle.rootfs) |rootfs|
+        rootfs.addFile(item, path);
 
     // const install_step = bundle.builder.addInstallFile(item, path);
     // install_step.dir = rootfs_dir;

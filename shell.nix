@@ -7,5 +7,9 @@ pkgs.mkShell {
     pkgs.mtools
     pkgs.syslinux
     pkgs.llvmPackages_16.bintools
+    pkgs.pkg-config
+  ];
+  buildInputs = [
+    pkgs.SDL2
   ];
 }

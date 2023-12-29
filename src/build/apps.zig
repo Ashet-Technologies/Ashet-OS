@@ -12,16 +12,16 @@ pub fn compileApps(
     ui_gen: *ashet_com.UiGenerator,
 ) void {
     {
-        const browser_assets = AssetBundleStep.create(b, ctx.rootfs);
+        // const browser_assets = AssetBundleStep.create(b, ctx.rootfs);
 
         ctx.createAshetApp("browser", "src/apps/browser/browser.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Search online.png", optimize, &.{
-            .{
-                .name = "assets",
-                .module = b.createModule(.{
-                    .source_file = browser_assets.getOutput(),
-                    .dependencies = &.{},
-                }),
-            },
+            // .{
+            //     .name = "assets",
+            //     .module = b.createModule(.{
+            //         .source_file = browser_assets.getOutput(),
+            //         .dependencies = &.{},
+            //     }),
+            // },
             .{ .name = "hypertext", .module = modules.libhypertext },
             .{ .name = "main_window_layout", .module = ui_gen.render(.{ .path = b.pathFromRoot("src/apps/browser/main_window.lua") }) },
         });
@@ -62,17 +62,21 @@ pub fn compileApps(
     }
 }
 
+pub const Mode = union(enum) {
+    hosted,
+    target_fs: *disk_image_step.FileSystemBuilder,
+};
+
 pub const AshetContext = struct {
     b: *std.build.Builder,
     bmpconv: BitmapConverter,
     target: std.zig.CrossTarget,
-    hosted_build: bool,
-    rootfs: *disk_image_step.FileSystemBuilder,
+    mode: Mode,
 
     fn createAshetApp(ctx: AshetContext, name: []const u8, source: []const u8, maybe_icon: ?[]const u8, optimize: std.builtin.OptimizeMode, dependencies: []const std.Build.ModuleDependency) void {
         const exe = ctx.b.addExecutable(.{
             .name = ctx.b.fmt("{s}.app", .{name}),
-            .root_source_file = if (ctx.hosted_build)
+            .root_source_file = if (ctx.mode == .hosted)
                 .{ .path = "src/libuserland/main.zig" }
             else
                 .{ .path = source },
@@ -82,57 +86,65 @@ pub const AshetContext = struct {
 
         exe.omit_frame_pointer = false; // this is useful for debugging
 
-        if (ctx.hosted_build) {
-            exe.addModule("ashet", ctx.b.modules.get("ashet").?);
-            exe.addModule("ashet-std", ctx.b.modules.get("ashet-std").?);
-            exe.addModule("ashet-abi", ctx.b.modules.get("ashet-abi").?);
-            exe.addAnonymousModule("app", .{
-                .source_file = .{ .path = source },
-                .dependencies = std.mem.concat(ctx.b.allocator, std.Build.ModuleDependency, &.{
-                    &.{
-                        .{ .name = "ashet", .module = ctx.b.modules.get("ashet").? },
-                        .{ .name = "ashet-gui", .module = ctx.b.modules.get("ashet-gui").? },
-                        .{ .name = "ashet-std", .module = ctx.b.modules.get("ashet-std").? },
-                    },
-                    dependencies,
-                }) catch @panic("oom"),
-            });
+        switch (ctx.mode) {
+            .hosted => {
+                exe.addModule("ashet", ctx.b.modules.get("ashet").?);
+                exe.addModule("ashet-std", ctx.b.modules.get("ashet-std").?);
+                exe.addModule("ashet-abi", ctx.b.modules.get("ashet-abi").?);
+                exe.addAnonymousModule("app", .{
+                    .source_file = .{ .path = source },
+                    .dependencies = std.mem.concat(ctx.b.allocator, std.Build.ModuleDependency, &.{
+                        &.{
+                            .{ .name = "ashet", .module = ctx.b.modules.get("ashet").? },
+                            .{ .name = "ashet-gui", .module = ctx.b.modules.get("ashet-gui").? },
+                            .{ .name = "ashet-std", .module = ctx.b.modules.get("ashet-std").? },
+                        },
+                        dependencies,
+                    }) catch @panic("oom"),
+                });
 
-            exe.linkSystemLibrary("sdl2");
-            exe.linkLibC();
-            ctx.b.installArtifact(exe);
-        } else {
-            exe.addModule("ashet", ctx.b.modules.get("ashet").?);
-            exe.addModule("ashet-std", ctx.b.modules.get("ashet-std").?);
-            exe.addModule("ashet-gui", ctx.b.modules.get("ashet-gui").?); // just add GUI to all apps by default *shrug*
-            for (dependencies) |dep| {
-                exe.addModule(dep.name, dep.module);
-            }
+                exe.linkSystemLibrary("sdl2");
+                exe.linkLibC();
 
-            exe.code_model = .small;
-            exe.single_threaded = true; // AshetOS doesn't support multithreading in a modern sense
-            exe.pie = true; // AshetOS requires PIE executables
-            exe.force_pic = true; // which need PIC code
-            exe.linkage = .static; // but everything is statically linked, we don't support shared objects
-            exe.strip = false;
+                const install = ctx.b.addInstallArtifact(exe, .{ .dest_dir = .{
+                    .override = .{ .custom = "hosted" },
+                } });
 
-            exe.setLinkerScriptPath(.{ .path = "src/libashet/application.ld" });
+                ctx.b.getInstallStep().dependOn(&install.step);
+            },
+            .target_fs => |rootfs| {
+                exe.addModule("ashet", ctx.b.modules.get("ashet").?);
+                exe.addModule("ashet-std", ctx.b.modules.get("ashet-std").?);
+                exe.addModule("ashet-gui", ctx.b.modules.get("ashet-gui").?); // just add GUI to all apps by default *shrug*
+                for (dependencies) |dep| {
+                    exe.addModule(dep.name, dep.module);
+                }
 
-            ctx.rootfs.addFile(exe.getEmittedBin(), ctx.b.fmt("apps/{s}/code", .{name}));
+                exe.code_model = .small;
+                exe.single_threaded = true; // AshetOS doesn't support multithreading in a modern sense
+                exe.pie = true; // AshetOS requires PIE executables
+                exe.force_pic = true; // which need PIC code
+                exe.linkage = .static; // but everything is statically linked, we don't support shared objects
+                exe.strip = false;
 
-            if (maybe_icon) |src_icon| {
-                const icon_file = ctx.bmpconv.convert(
-                    .{ .path = src_icon },
-                    ctx.b.fmt("{s}.icon", .{name}),
-                    .{
-                        .geometry = .{ 32, 32 },
-                        .palette = .{ .predefined = "src/kernel/data/palette.gpl" },
-                        // .palette = .{ .sized = 15 },
-                    },
-                );
+                exe.setLinkerScriptPath(.{ .path = "src/libashet/application.ld" });
 
-                ctx.rootfs.addFile(icon_file, ctx.b.fmt("apps/{s}/icon", .{name}));
-            }
+                rootfs.addFile(exe.getEmittedBin(), ctx.b.fmt("apps/{s}/code", .{name}));
+
+                if (maybe_icon) |src_icon| {
+                    const icon_file = ctx.bmpconv.convert(
+                        .{ .path = src_icon },
+                        ctx.b.fmt("{s}.icon", .{name}),
+                        .{
+                            .geometry = .{ 32, 32 },
+                            .palette = .{ .predefined = "src/kernel/data/palette.gpl" },
+                            // .palette = .{ .sized = 15 },
+                        },
+                    );
+
+                    rootfs.addFile(icon_file, ctx.b.fmt("apps/{s}/icon", .{name}));
+                }
+            },
         }
     }
 };

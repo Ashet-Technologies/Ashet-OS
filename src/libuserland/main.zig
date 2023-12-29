@@ -833,6 +833,7 @@ fn mapFileSystemError(err: anytype) !noreturn {
         FileNotFound,
         NoSpaceLeft,
         SystemFdQuotaExceeded,
+        NetworkNotFound,
     };
 
     return switch (@as(E, err)) {
@@ -875,6 +876,7 @@ fn mapFileSystemError(err: anytype) !noreturn {
         error.FileNotFound => error.DiskError,
         error.NoSpaceLeft => error.DiskError,
         error.SystemFdQuotaExceeded => error.DiskError,
+        error.NetworkNotFound => error.DiskError,
         else => |e| return e,
     };
 }

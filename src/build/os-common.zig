@@ -12,8 +12,9 @@ pub const Modules = struct {
     ashet_gui: *std.Build.Module,
     libhypertext: *std.Build.Module,
     libashetfs: *std.Build.Module,
-    system_assets: *std.Build.Module,
     fatfs: *std.Build.Module,
+
+    // system_assets: *std.Build.Module,
 };
 
 pub const UiGenerator = struct {
