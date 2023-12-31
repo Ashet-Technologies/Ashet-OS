@@ -9,16 +9,16 @@ ROOT="$(realpath "$(dirname "$(realpath "$0")")"/../)"
 
 cd "${ROOT}"
 
-if [ -z "$APP" ]; then
-    APP="${ROOT}/zig-out/bin/ashet-os"
-fi
-
 if [ -z "$MACHINE" ]; then 
     MACHINE="rv32_virt"
 fi
 
+if [ -z "$APP" ]; then
+    APP="${ROOT}/zig-out/kernel/${MACHINE}.elf"
+fi
+
 BOOTROM="${ROOT}/zig-out/rom/ashet-os.bin"
-DISK="${ROOT}/zig-out/${MACHINE}.img"
+DISK="${ROOT}/zig-out/disk/${MACHINE}.img"
 
 # # validate wiki integrity
 # for file in $(find "${rootfs_path}/wiki" -name "*.hdoc"); do 

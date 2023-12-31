@@ -4,7 +4,7 @@ const ashet = @import("root");
 const VPBA_UART_BASE = 0x10000000;
 const VPBA_VIRTIO_BASE = 0x10001000;
 
-pub const machine_config = ashet.machines.MachineConfig{
+pub const machine_config = ashet.ports.MachineConfig{
     .load_sections = .{ .data = true, .bss = true },
 };
 

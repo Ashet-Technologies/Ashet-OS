@@ -1,0 +1,14 @@
+hdoc "1.0"
+
+itemize {
+  item { p { span "before" } }
+  item { 
+    itemize {
+      item { p { span "inner 1" } }
+      item { p { span "inner 2" } }
+      item { p { span "inner 3" } }
+    }
+  }
+  item { p { span "after" } }
+}
+

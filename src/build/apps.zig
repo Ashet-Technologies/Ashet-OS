@@ -3,6 +3,7 @@ const ashet_com = @import("os-common.zig");
 const disk_image_step = @import("../../vendor/disk-image-step/build.zig");
 const AssetBundleStep = @import("AssetBundleStep.zig");
 const BitmapConverter = @import("BitmapConverter.zig");
+const targets = @import("targets.zig");
 
 pub fn compileApps(
     b: *std.build.Builder,
@@ -63,17 +64,24 @@ pub fn compileApps(
 }
 
 pub const Mode = union(enum) {
-    hosted,
-    target_fs: *disk_image_step.FileSystemBuilder,
+    hosted: std.zig.CrossTarget,
+    native: struct {
+        rootfs: *disk_image_step.FileSystemBuilder,
+        platform: targets.Platform,
+    },
 };
 
 pub const AshetContext = struct {
     b: *std.build.Builder,
     bmpconv: BitmapConverter,
-    target: std.zig.CrossTarget,
     mode: Mode,
 
     fn createAshetApp(ctx: AshetContext, name: []const u8, source: []const u8, maybe_icon: ?[]const u8, optimize: std.builtin.OptimizeMode, dependencies: []const std.Build.ModuleDependency) void {
+        const target = switch (ctx.mode) {
+            .hosted => |target| target,
+            .native => |info| targets.getPlatformSpec(info.platform).target,
+        };
+
         const exe = ctx.b.addExecutable(.{
             .name = ctx.b.fmt("{s}.app", .{name}),
             .root_source_file = if (ctx.mode == .hosted)
@@ -81,7 +89,7 @@ pub const AshetContext = struct {
             else
                 .{ .path = source },
             .optimize = optimize,
-            .target = ctx.target,
+            .target = target,
         });
 
         exe.omit_frame_pointer = false; // this is useful for debugging
@@ -112,7 +120,7 @@ pub const AshetContext = struct {
 
                 ctx.b.getInstallStep().dependOn(&install.step);
             },
-            .target_fs => |rootfs| {
+            .native => |info| {
                 exe.addModule("ashet", ctx.b.modules.get("ashet").?);
                 exe.addModule("ashet-std", ctx.b.modules.get("ashet-std").?);
                 exe.addModule("ashet-gui", ctx.b.modules.get("ashet-gui").?); // just add GUI to all apps by default *shrug*
@@ -129,7 +137,7 @@ pub const AshetContext = struct {
 
                 exe.setLinkerScriptPath(.{ .path = "src/libashet/application.ld" });
 
-                rootfs.addFile(exe.getEmittedBin(), ctx.b.fmt("apps/{s}/code", .{name}));
+                info.rootfs.addFile(exe.getEmittedBin(), ctx.b.fmt("apps/{s}/code", .{name}));
 
                 if (maybe_icon) |src_icon| {
                     const icon_file = ctx.bmpconv.convert(
@@ -142,7 +150,7 @@ pub const AshetContext = struct {
                         },
                     );
 
-                    rootfs.addFile(icon_file, ctx.b.fmt("apps/{s}/icon", .{name}));
+                    info.rootfs.addFile(icon_file, ctx.b.fmt("apps/{s}/icon", .{name}));
                 }
             },
         }

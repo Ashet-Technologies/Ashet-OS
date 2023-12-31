@@ -4,14 +4,14 @@
 
 const std = @import("std");
 const ashet = @import("root");
-const x86 = ashet.platforms.all.x86;
+const x86 = @import("platform");
 const logger = std.log.scoped(.bios_pc);
 
 const args = @import("args");
 
 const VgaTerminal = @import("VgaTerminal.zig");
 
-pub const machine_config = ashet.machines.MachineConfig{
+pub const machine_config = ashet.ports.MachineConfig{
     .load_sections = .{ .data = false, .bss = false },
 };
 

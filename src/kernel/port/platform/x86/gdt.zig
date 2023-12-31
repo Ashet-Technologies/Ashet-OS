@@ -1,5 +1,5 @@
 const std = @import("std");
-const ashet = @import("../../main.zig");
+const ashet = @import("root");
 
 const Granularity = enum(u1) {
     byte = 0,

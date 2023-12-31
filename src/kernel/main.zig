@@ -17,13 +17,12 @@ pub const time = @import("components/time.zig");
 pub const ui = @import("components/ui.zig");
 pub const video = @import("components/video.zig");
 
-pub const platforms = @import("platform/all.zig");
-pub const machines = @import("machine/all.zig");
+pub const ports = @import("port/targets.zig");
 
-pub const machine = @import("machine").machine;
-pub const platform = @import("machine").platform;
+pub const machine = @import("machine");
+pub const platform = @import("platform");
 
-pub const machine_config: machines.MachineConfig = machine.machine_config;
+pub const machine_config: ports.MachineConfig = machine.machine_config;
 
 comptime {
     // force instantiation of the machine and platform elements

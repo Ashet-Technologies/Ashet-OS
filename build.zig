@@ -12,26 +12,18 @@ const BitmapConverter = @import("src/build/BitmapConverter.zig");
 
 const ziglibc_file = std.build.FileSource{ .path = "vendor/libc/ziglibc.txt" };
 
+const kernel_targets = @import("src/kernel/port/targets.zig");
+const build_targets = @import("src/build/targets.zig");
+
 fn addBitmap(target: *std.build.LibExeObjStep, bmpconv: BitmapConverter, src: []const u8, dst: []const u8, size: [2]u32) void {
     const file = bmpconv.convert(.{ .path = src }, std.fs.path.basename(dst), .{ .geometry = size });
 
     file.addStepDependencies(&target.step);
 }
 
-const machines = @import("src/kernel/machine/all.zig");
-const platforms = @import("src/kernel/platform/all.zig");
-
-const MachineID = std.meta.DeclEnum(machines.specs);
-const MachineSpec = machines.MachineSpec;
-
-fn resolveMachine(id: MachineID) MachineSpec {
-    inline for (comptime std.meta.declarations(machines.specs)) |decl| {
-        if (id == @field(MachineID, decl.name)) {
-            return @field(machines.specs, decl.name);
-        }
-    }
-    unreachable;
-}
+const Platform = kernel_targets.Platform;
+const Machine = kernel_targets.Machine;
+const MachineSpec = kernel_targets.MachineSpec;
 
 const fatfs_config = FatFS.Config{
     .max_long_name_len = 121,
@@ -107,8 +99,7 @@ fn buildHostedApps(
     var ctx = ashet_apps.AshetContext{
         .b = b,
         .bmpconv = bmpconv,
-        .target = target,
-        .mode = .hosted,
+        .mode = .{ .hosted = target },
     };
 
     ashet_apps.compileApps(
@@ -127,7 +118,7 @@ fn buildOs(
     modules: ashet_com.Modules,
     lua_exe: *std.Build.Step.Compile,
     kernel_step: *std.Build.Step,
-    machine_id: MachineID,
+    machine: Machine,
 ) void {
     var rootfs = disk_image_step.FileSystemBuilder.init(b);
 
@@ -146,15 +137,11 @@ fn buildOs(
         .mod_system_assets = system_assets,
     };
 
-    rootfs.addDirectory(
-        .{ .path = b.pathFromRoot("rootfs") },
-        ".",
-    );
+    rootfs.addDirectory(.{ .path = b.pathFromRoot("rootfs") }, ".");
 
-    const machine_spec = resolveMachine(machine_id);
+    const machine_spec = build_targets.getMachineSpec(machine);
 
     const kernel_exe = ashet_kernel.create(b, .{
-        .target = machine_spec.platform.target,
         .optimize = optimize,
         .fatfs_config = fatfs_config,
         .machine_spec = machine_spec,
@@ -173,13 +160,15 @@ fn buildOs(
     kernel_step.dependOn(&install_kernel.step);
     b.getInstallStep().dependOn(&install_kernel.step);
 
-    const target = machine_spec.platform.target;
-
     var ctx = ashet_apps.AshetContext{
         .b = b,
         .bmpconv = bmpconv,
-        .target = target,
-        .mode = .{ .target_fs = &rootfs },
+        .mode = .{
+            .native = .{
+                .platform = machine_spec.platform,
+                .rootfs = &rootfs,
+            },
+        },
     };
 
     ashet_apps.compileApps(
@@ -346,14 +335,14 @@ pub fn build(b: *std.Build) !void {
     );
 
     {
-        const machine_id = b.option(MachineID, "machine", "Defines the machine Ashet OS should be built for.") orelse blk: {
+        const machine_id = b.option(Machine, "machine", "Defines the machine Ashet OS should be built for.") orelse blk: {
             var stderr = std.io.getStdErr();
 
             var writer = stderr.writer();
             try writer.writeAll("No machine selected. Use one of the following options:\n");
 
-            inline for (comptime std.meta.declarations(machines.all)) |decl| {
-                try writer.print("- {s}\n", .{decl.name});
+            for (comptime std.enums.values(Machine)) |decl| {
+                try writer.print("- {s}\n", .{@tagName(decl)});
             }
 
             try writer.writeAll("Falling back to rv32_virt\n");

@@ -5,39 +5,71 @@ const FatFS = @import("zfat");
 const ashet_com = @import("os-common.zig");
 const ashet_lwip = @import("lwip.zig");
 
-const machines = @import("../kernel/machine/all.zig");
-const MachineSpec = machines.MachineSpec;
+const build_targets = @import("targets.zig");
 
 pub const KernelOptions = struct {
-    target: std.zig.CrossTarget,
     optimize: std.builtin.OptimizeMode,
     fatfs_config: FatFS.Config,
-    machine_spec: MachineSpec,
+    machine_spec: *const build_targets.MachineSpec,
     modules: ashet_com.Modules,
     system_assets: *std.Build.Module,
 };
 
-fn writeMachineSpec(writer: anytype, machine_spec: MachineSpec) !void {
-    try writer.writeAll("//! This is a machine-generated description of the Ashet OS target machine.\n\n");
+fn renderMachineInfo(
+    b: *std.Build,
+    machine_spec: *const build_targets.MachineSpec,
+    platform_spec: *const build_targets.PlatformSpec,
+) ![]const u8 {
+    var stream = std.ArrayList(u8).init(b.allocator);
+    defer stream.deinit();
 
-    try writer.print("pub const machine = @import(\"root\").machines.all.{};\n", .{
-        std.zig.fmtId(machine_spec.machine_id),
-    });
-    try writer.print("pub const platform = @import(\"root\").platforms.all.{};\n", .{
-        std.zig.fmtId(machine_spec.platform.platform_id),
-    });
+    const writer = stream.writer();
+
+    try writer.writeAll("//! This is a machine-generated description of the Ashet OS target machine.\n\n");
 
     try writer.print("pub const machine_name = \"{}\";\n", .{
         std.zig.fmtEscapes(machine_spec.name),
     });
     try writer.print("pub const platform_name = \"{}\";\n", .{
-        std.zig.fmtEscapes(machine_spec.platform.name),
+        std.zig.fmtEscapes(platform_spec.name),
     });
+
+    return try stream.toOwnedSlice();
 }
 
 pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
+    const platform_spec = build_targets.getPlatformSpec(options.machine_spec.platform);
+
+    const machine_info_module = blk: {
+        const machine_info = renderMachineInfo(
+            b,
+            options.machine_spec,
+            platform_spec,
+        ) catch @panic("out of memory!");
+
+        const write_file_step = b.addWriteFile("machine-info.zig", machine_info);
+
+        const module = b.createModule(.{
+            .source_file = write_file_step.files.items[0].getPath(),
+        });
+
+        break :blk module;
+    };
+
+    const platform_module = b.createModule(.{
+        .source_file = .{ .path = platform_spec.source_file },
+    });
+
+    const machine_module = b.createModule(.{
+        .source_file = .{ .path = options.machine_spec.source_file },
+        .dependencies = &.{
+            .{ .name = "platform", .module = platform_module },
+            .{ .name = "args", .module = options.modules.args }, // TODO: Make explicit list of dependencies
+        },
+    });
+
     const cguana_dep = b.anonymousDependency("vendor/ziglibc", @import("../../vendor/ziglibc/build.zig"), .{
-        .target = options.target,
+        .target = platform_spec.target,
         .optimize = .ReleaseSafe,
 
         .static = true,
@@ -53,19 +85,10 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
 
     const ashet_libc = cguana_dep.artifact("cguana");
 
-    const machine_pkg = b.addWriteFile("machine.zig", blk: {
-        var stream = std.ArrayList(u8).init(b.allocator);
-        defer stream.deinit();
-
-        writeMachineSpec(stream.writer(), options.machine_spec) catch @panic("out of memory!");
-
-        break :blk stream.toOwnedSlice() catch @panic("out of memory");
-    });
-
     const kernel_exe = b.addExecutable(.{
         .name = "ashet-os",
         .root_source_file = .{ .path = "src/kernel/main.zig" },
-        .target = options.target,
+        .target = platform_spec.target,
         .optimize = options.optimize,
     });
 
@@ -88,9 +111,12 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
     kernel_exe.addModule("virtio", options.modules.virtio);
     kernel_exe.addModule("ashet-fs", options.modules.libashetfs);
     kernel_exe.addModule("args", options.modules.args);
-    kernel_exe.addAnonymousModule("machine", .{
-        .source_file = machine_pkg.files.items[0].getFileSource(),
-    });
+    kernel_exe.addModule("machine-info", machine_info_module);
+    kernel_exe.addModule("machine", machine_module);
+    kernel_exe.addModule("platform", platform_module);
+
+    kernel_exe.addModule("platform.x86", platform_module);
+
     kernel_exe.addModule("fatfs", options.modules.fatfs);
     kernel_exe.setLinkerScriptPath(.{ .path = options.machine_spec.linker_script });
 
