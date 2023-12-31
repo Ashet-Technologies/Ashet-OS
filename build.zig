@@ -192,6 +192,19 @@ fn buildOs(
     b.getInstallStep().dependOn(&install_disk_image.step);
 }
 
+fn writeAllMachineInfo() !void {
+    var stderr = std.io.getStdErr();
+
+    var writer = stderr.writer();
+    try writer.writeAll("Bad or emptymachine selection. All available machines are:\n");
+
+    for (comptime std.enums.values(Machine)) |decl| {
+        try writer.print("- {s}\n", .{@tagName(decl)});
+    }
+
+    try writer.writeAll("Please fix your command line!\n");
+}
+
 pub fn build(b: *std.Build) !void {
     const hosted_target = b.standardTargetOptions(.{});
     const kernel_step = b.step("kernel", "Only builds the OS kernel");
@@ -334,31 +347,42 @@ pub fn build(b: *std.Build) !void {
         lua_exe,
     );
 
+    const MachineSet = std.enums.EnumSet(Machine);
+
+    const machines = if (b.option([]const u8, "machine", "Defines the machine Ashet OS should be built for.")) |machine_list_str| set: {
+        var set = MachineSet.initEmpty();
+
+        var tokenizer = std.mem.tokenizeScalar(u8, machine_list_str, ',');
+
+        while (tokenizer.next()) |machine_str| {
+            const machine = std.meta.stringToEnum(Machine, machine_str) orelse {
+                try writeAllMachineInfo();
+                return error.BadMachine;
+            };
+            set.insert(machine);
+        }
+
+        if (set.count() == 0) {
+            try writeAllMachineInfo();
+            return error.BadMachine;
+        }
+
+        break :set set;
+    } else MachineSet.initFull(); // by default, build for all machines
+
     {
-        const machine_id = b.option(Machine, "machine", "Defines the machine Ashet OS should be built for.") orelse blk: {
-            var stderr = std.io.getStdErr();
-
-            var writer = stderr.writer();
-            try writer.writeAll("No machine selected. Use one of the following options:\n");
-
-            for (comptime std.enums.values(Machine)) |decl| {
-                try writer.print("- {s}\n", .{@tagName(decl)});
-            }
-
-            try writer.writeAll("Falling back to rv32_virt\n");
-
-            break :blk .rv32_virt;
-        };
-
-        buildOs(
-            b,
-            optimize,
-            bmpconv,
-            modules,
-            lua_exe,
-            kernel_step,
-            machine_id,
-        );
+        var iter = machines.iterator();
+        while (iter.next()) |machine| {
+            buildOs(
+                b,
+                optimize,
+                bmpconv,
+                modules,
+                lua_exe,
+                kernel_step,
+                machine,
+            );
+        }
     }
 
     // ashet os ↑
