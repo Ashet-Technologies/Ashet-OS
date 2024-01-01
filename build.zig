@@ -25,6 +25,14 @@ const Platform = kernel_targets.Platform;
 const Machine = kernel_targets.Machine;
 const MachineSpec = kernel_targets.MachineSpec;
 
+const generic_qemu_flags = [_][]const u8{
+    "-d",         "guest_errors,unimp",
+    "-display",   "gtk,show-tabs=on",
+    "-serial",    "stdio",
+    "-no-reboot", "-no-shutdown",
+    "-s",
+};
+
 const fatfs_config = FatFS.Config{
     .max_long_name_len = 121,
     .code_page = .us,
@@ -111,6 +119,12 @@ fn buildHostedApps(
     );
 }
 
+const OS = struct {
+    kernel_elf: std.Build.LazyPath,
+    kernel_bin: std.Build.LazyPath,
+    disk_img: std.Build.LazyPath,
+};
+
 fn buildOs(
     b: *std.Build,
     optimize: std.builtin.OptimizeMode,
@@ -119,7 +133,7 @@ fn buildOs(
     lua_exe: *std.Build.Step.Compile,
     kernel_step: *std.Build.Step,
     machine: Machine,
-) void {
+) OS {
     var rootfs = disk_image_step.FileSystemBuilder.init(b);
 
     const system_icons = createSystemIcons(b, bmpconv, &rootfs);
@@ -151,14 +165,31 @@ fn buildOs(
 
     const kernel_file = kernel_exe.getEmittedBin();
 
-    const install_kernel = b.addInstallFileWithDir(
-        kernel_file,
-        .{ .custom = "kernel" },
-        b.fmt("{s}.elf", .{machine_spec.machine_id}),
-    );
+    {
+        const install_kernel = b.addInstallFileWithDir(
+            kernel_file,
+            .{ .custom = "kernel" },
+            b.fmt("{s}.elf", .{machine_spec.machine_id}),
+        );
 
-    kernel_step.dependOn(&install_kernel.step);
-    b.getInstallStep().dependOn(&install_kernel.step);
+        kernel_step.dependOn(&install_kernel.step);
+        b.getInstallStep().dependOn(&install_kernel.step);
+    }
+
+    const raw_step = b.addObjCopy(kernel_file, .{
+        .basename = b.fmt("{s}.bin", .{machine_spec.machine_id}),
+        .format = .bin,
+        // .only_section
+        .pad_to = 0x200_0000,
+    });
+    raw_step.step.dependOn(&kernel_exe.step);
+
+    const install_raw_step = b.addInstallFileWithDir(
+        raw_step.getOutputSource(),
+        .{ .custom = "rom" },
+        raw_step.basename,
+    );
+    b.getInstallStep().dependOn(&install_raw_step.step);
 
     var ctx = ashet_apps.AshetContext{
         .b = b,
@@ -190,6 +221,12 @@ fn buildOs(
     );
 
     b.getInstallStep().dependOn(&install_disk_image.step);
+
+    return OS{
+        .disk_img = disk_image,
+        .kernel_bin = raw_step.getOutputSource(),
+        .kernel_elf = kernel_file,
+    };
 }
 
 fn writeAllMachineInfo() !void {
@@ -208,6 +245,10 @@ fn writeAllMachineInfo() !void {
 pub fn build(b: *std.Build) !void {
     const hosted_target = b.standardTargetOptions(.{});
     const kernel_step = b.step("kernel", "Only builds the OS kernel");
+    const validate_step = b.step("validate", "Validates files in the rootfs");
+    const run_step = b.step("run", "Executes the selected kernel with qemu. Use -Dmachine to run only one");
+
+    b.getInstallStep().dependOn(validate_step); // "install" also validates the rootfs.
 
     /////////////////////////////////////////////////////////////////////////////
     // tools and deps ↓
@@ -373,7 +414,10 @@ pub fn build(b: *std.Build) !void {
     {
         var iter = machines.iterator();
         while (iter.next()) |machine| {
-            buildOs(
+            const machine_spec = build_targets.getMachineSpec(machine);
+            const platform_spec = build_targets.getPlatformSpec(machine_spec.platform);
+
+            const os = buildOs(
                 b,
                 optimize,
                 bmpconv,
@@ -382,6 +426,42 @@ pub fn build(b: *std.Build) !void {
                 kernel_step,
                 machine,
             );
+
+            const Variables = struct {
+                @"${DISK}": std.Build.LazyPath,
+                @"${BOOTROM}": std.Build.LazyPath,
+                @"${KERNEL}": std.Build.LazyPath,
+            };
+
+            const variables = Variables{
+                .@"${DISK}" = os.disk_img,
+                .@"${BOOTROM}" = os.kernel_bin,
+                .@"${KERNEL}" = os.kernel_elf,
+            };
+
+            const vm_runner = b.addSystemCommand(&.{platform_spec.qemu_exe});
+            vm_runner.addArgs(&generic_qemu_flags);
+
+            arg_loop: for (machine_spec.qemu_cli) |arg| {
+                inline for (@typeInfo(Variables).Struct.fields) |fld| {
+                    const path = @field(variables, fld.name);
+
+                    if (std.mem.eql(u8, arg, fld.name)) {
+                        vm_runner.addFileArg(path);
+                        continue :arg_loop;
+                    } else if (std.mem.endsWith(u8, arg, fld.name)) {
+                        vm_runner.addPrefixedFileArg(arg[0 .. arg.len - fld.name.len], path);
+                        continue :arg_loop;
+                    }
+                }
+                vm_runner.addArg(arg);
+            }
+
+            if (b.args) |args| {
+                vm_runner.addArgs(args);
+            }
+
+            run_step.dependOn(&vm_runner.step);
         }
     }
 
@@ -444,6 +524,15 @@ pub fn build(b: *std.Build) !void {
 
         tools_step.dependOn(&install_step.step);
     }
+
+    // tests ↑
+    /////////////////////////////////////////////////////////////////////////////
+    // validation ↓
+    {
+        const validate_wiki = b.addSystemCommand(&.{b.pathFromRoot("./tools/validate-wiki.sh")});
+
+        validate_step.dependOn(&validate_wiki.step);
+    }
 }
 
 fn getDiskFormatter(name: []const u8) *const fn (*std.Build, std.Build.LazyPath, *disk_image_step.FileSystemBuilder) std.Build.LazyPath {
@@ -504,14 +593,7 @@ const disk_formatters = struct {
     // run_step.dependOn(&run_cmd.step);
 
     pub fn rv32_virt(b: *std.Build, kernel_file: std.Build.LazyPath, disk_content: *disk_image_step.FileSystemBuilder) std.Build.LazyPath {
-        const raw_step = b.addObjCopy(kernel_file, .{
-            .basename = "ashet-os.bin",
-            .format = .bin,
-            // .only_section
-            .pad_to = 0x200_0000,
-        });
-        const install_raw_step = b.addInstallFile(raw_step.getOutputSource(), "rom/ashet-os.bin");
-        b.getInstallStep().dependOn(&install_raw_step.step);
+        _ = kernel_file;
 
         const disk = disk_image_step.initializeDisk(b, 0x0200_0000, .{
             .fs = disk_content.finalize(.{ .format = .fat16, .label = "AshetOS" }),

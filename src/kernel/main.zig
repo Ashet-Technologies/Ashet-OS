@@ -320,14 +320,14 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
 
                     if (addr >= base and addr < top) {
                         writer.print("{d: >4}:{s}: 0x{X:0>8}\r\n", .{ index, proc.file_name, addr - base }) catch {};
-                        writer.print("0x{X:0>8}\r\n", .{addr - base}) catch {};
+                        // writer.print("0x{X:0>8}\r\n", .{addr - base}) catch {};
                         continue;
                     }
                 }
             }
 
             writer.print("{d: >4}: kernel:0x{X:0>8}\r\n", .{ index, addr }) catch {};
-            writer.print("0x{X:0>8}\r\n", .{addr}) catch {};
+            // writer.print("0x{X:0>8}\r\n", .{addr}) catch {};
         }
     }
 

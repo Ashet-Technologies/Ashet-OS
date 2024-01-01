@@ -80,13 +80,14 @@ pub const core = struct {
         debug.write(msg);
         debug.write("\r\n");
 
-        const base_address = syscall("process.getBaseAddress")();
+        const base_address = process.getBaseAddress();
+        const proc_name = process.getFileName();
 
-        debug.writer().print("process base:  0x{X:0>8}\n", .{base_address}) catch {};
+        debug.writer().print("process base:  {s}:0x{X:0>8}\n", .{ proc_name, base_address }) catch {};
 
         if (maybe_return_address) |return_address| {
             var buf: [64]u8 = undefined;
-            debug.write(std.fmt.bufPrint(&buf, "return address: 0x{X:0>8}\n", .{return_address - base_address}) catch "return address: ???\n");
+            debug.write(std.fmt.bufPrint(&buf, "return address: {s}:0x{X:0>8}\n", .{ proc_name, return_address - base_address }) catch "return address: ???\n");
         }
 
         if (@import("builtin").mode == .Debug) {
@@ -94,7 +95,7 @@ pub const core = struct {
             var iter = std.debug.StackIterator.init(null, null);
             while (iter.next()) |item| {
                 var buf: [64]u8 = undefined;
-                debug.write(std.fmt.bufPrint(&buf, "- 0x{X:0>8}\n", .{item - base_address}) catch "- ???\n");
+                debug.write(std.fmt.bufPrint(&buf, "- {s}:0x{X:0>8}\n", .{ proc_name, item - base_address }) catch "- ???\n");
             }
         }
 
@@ -108,7 +109,7 @@ pub const core = struct {
                 frame_index = (frame_index + 1) % stack_trace.instruction_addresses.len;
             }) {
                 const return_address = stack_trace.instruction_addresses[frame_index];
-                debug.writer().print("- 0x{X:0>8}\n", .{return_address - base_address}) catch {};
+                debug.writer().print("- {s}:0x{X:0>8}\n", .{ proc_name, return_address - base_address }) catch {};
             }
 
             if (stack_trace.index > stack_trace.instruction_addresses.len) {
@@ -209,9 +210,10 @@ pub const debug = struct {
         if (is_hosted) {
             std.io.getStdErr().writeAll(buffer) catch {};
         } else {
-            for (buffer) |char| {
-                @as(*volatile u8, @ptrFromInt(0x1000_0000)).* = char;
-            }
+            // for (buffer) |char| {
+            //     @as(*volatile u8, @ptrFromInt(0x1000_0000)).* = char;
+            // }
+            process.writeLog(.debug, buffer);
         }
     }
 
@@ -228,6 +230,18 @@ pub const debug = struct {
 };
 
 pub const process = struct {
+    pub fn getBaseAddress() usize {
+        return syscall("process.getBaseAddress")();
+    }
+
+    pub fn getFileName() []const u8 {
+        return std.mem.sliceTo(syscall("process.getFileName")(), 0);
+    }
+
+    pub fn writeLog(level: abi.LogLevel, msg: []const u8) void {
+        syscall("process.writeLog")(level, msg.ptr, msg.len);
+    }
+
     pub fn yield() void {
         syscall("process.yield")();
     }

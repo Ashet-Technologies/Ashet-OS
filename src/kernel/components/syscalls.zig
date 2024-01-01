@@ -114,6 +114,25 @@ fn @"process.getBaseAddress"() callconv(.C) usize {
     return @intFromPtr(getCurrentProcess().process_memory.ptr);
 }
 
+fn @"process.getFileName"() callconv(.C) [*:0]const u8 {
+    return getCurrentProcess().file_name.ptr;
+}
+
+fn @"process.writeLog"(log_level: abi.LogLevel, ptr: [*]const u8, len: usize) callconv(.C) void {
+    const string = ptr[0..len];
+
+    const proc = getCurrentProcess();
+
+    switch (log_level) {
+        .critical => std.log.info("{s}(critical): {s}", .{ proc.file_name, string }),
+        .err => std.log.info("{s}(err): {s}", .{ proc.file_name, string }),
+        .warn => std.log.info("{s}(warn): {s}", .{ proc.file_name, string }),
+        .notice => std.log.info("{s}(notice): {s}", .{ proc.file_name, string }),
+        .debug => std.log.info("{s}(debug): {s}", .{ proc.file_name, string }),
+        _ => std.log.info("{s}(unknown,{}): {s}", .{ proc.file_name, @intFromEnum(log_level), string }),
+    }
+}
+
 fn @"process.breakpoint"() callconv(.C) void {
     const proc = getCurrentProcess();
     std.log.info("breakpoint in process {s}.", .{proc.master_thread.getName()});

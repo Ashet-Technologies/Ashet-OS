@@ -91,6 +91,10 @@ pub const syscall_definitions = [_]SysCallDefinition{
     // Allocates memory pages from the system.
     defineSysCall("process.memory.allocate", fn (size: usize, ptr_align: u8) ?[*]u8, 70),
     defineSysCall("process.memory.release", fn (ptr: [*]u8, size: usize, ptr_align: u8) void, 71),
+
+    defineSysCall("process.getFileName", fn () [*:0]const u8, 72),
+
+    defineSysCall("process.writeLog", fn (log_level: LogLevel, ptr: [*]const u8, len: usize) void, 73),
 };
 
 const SysCallDefinition = struct {
@@ -118,8 +122,6 @@ fn SysCallFunc(comptime call: SysCall) type {
     }
     unreachable;
 }
-
-
 
 pub fn syscall(comptime name: []const u8) SysCallFunc(@field(SysCall, name)) {
     const target = @import("builtin").target;
@@ -250,6 +252,15 @@ pub const syscall_table_size: u32 = blk: {
             limit = def.index;
     }
     break :blk limit + 2; // off-by-one + magic number
+};
+
+pub const LogLevel = enum(u8) {
+    critical = 0,
+    err = 1,
+    warn = 2,
+    notice = 3,
+    debug = 4,
+    _,
 };
 
 pub const NetworkStatus = enum(u8) {

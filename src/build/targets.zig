@@ -10,6 +10,8 @@ pub const PlatformSpec = struct {
     platform_id: []const u8,
     source_file: []const u8,
     target: std.zig.CrossTarget,
+
+    qemu_exe: []const u8,
 };
 
 pub const MachineSpec = struct {
@@ -19,6 +21,12 @@ pub const MachineSpec = struct {
     source_file: []const u8,
     linker_script: []const u8,
     disk_formatter: []const u8, // defined in build.zig
+
+    /// Instantiation:
+    /// Uses place holders:
+    /// - "${BOOTROM}"
+    /// - "${DISK}"
+    qemu_cli: []const []const u8,
 };
 
 pub fn getPlatformSpec(platform: Platform) *const PlatformSpec {
@@ -38,6 +46,7 @@ pub fn getPlatformSpec(platform: Platform) *const PlatformSpec {
                     .reserve_x4, // Don't allow LLVM to use the "tp" register. We want that for our own purposes
                 }),
             },
+            .qemu_exe = "qemu-system-riscv32",
         },
 
         .arm => comptime &PlatformSpec{
@@ -50,6 +59,7 @@ pub fn getPlatformSpec(platform: Platform) *const PlatformSpec {
                 .abi = .eabi,
                 .cpu_model = .{ .explicit = &std.Target.arm.cpu.generic },
             },
+            .qemu_exe = "qemu-system-arm",
         },
 
         .x86 => comptime &PlatformSpec{
@@ -68,6 +78,7 @@ pub fn getPlatformSpec(platform: Platform) *const PlatformSpec {
                     .x87,
                 }),
             },
+            .qemu_exe = "qemu-system-i386",
         },
     };
 }
@@ -93,6 +104,20 @@ pub fn getMachineSpec(machine: Machine) *const MachineSpec {
             .linker_script = "src/kernel/port/machine/rv32_virt/linker.ld",
 
             .disk_formatter = "rv32_virt",
+
+            .qemu_cli = &.{
+                "-M",      "virt",
+                "-m",      "32M",
+                "-netdev", "user,id=hostnet",
+                "-object", "filter-dump,id=hostnet-dump,netdev=hostnet,file=ashet-os.pcap",
+                "-device", "virtio-gpu-device,xres=800,yres=480",
+                "-device", "virtio-keyboard-device",
+                "-device", "virtio-mouse-device",
+                "-device", "virtio-net-device,netdev=hostnet,mac=52:54:00:12:34:56",
+                "-bios",   "none",
+                "-drive",  "if=pflash,index=0,format=raw,file=${BOOTROM}",
+                "-drive",  "if=pflash,index=1,format=raw,file=${DISK}",
+            },
         },
 
         // x86 machines:
@@ -104,6 +129,13 @@ pub fn getMachineSpec(machine: Machine) *const MachineSpec {
             .linker_script = "src/kernel/port/machine/bios_pc/linker.ld",
 
             .disk_formatter = "bios_pc",
+
+            .qemu_cli = &.{
+                "-machine", "pc",
+                "-cpu",     "pentium2",
+                "-hda",     "${DISK}",
+                "-vga",     "std",
+            },
         },
 
         // pub const efi_pc = MachineSpec{

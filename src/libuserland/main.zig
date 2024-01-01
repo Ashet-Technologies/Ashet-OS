@@ -885,6 +885,7 @@ pub const syscall_table: abi.SysCallTable = .{
     .@"process.yield" = process_yield,
     .@"process.exit" = process_exit,
     .@"process.getBaseAddress" = process_getBaseAddress,
+    .@"process.getFileName" = process_getFileName,
     .@"process.breakpoint" = process_breakpoint,
     .@"time.nanoTimestamp" = time_nanoTimestamp,
     .@"video.acquire" = video_acquire,
@@ -924,6 +925,11 @@ fn process_exit(exit_code: u32) callconv(.C) noreturn {
 
 fn process_getBaseAddress() callconv(.C) usize {
     @panic("process_getBaseAddress not implemented yet!");
+}
+
+fn process_getFileName() callconv(.C) [*:0]const u8 {
+    logger.err("process_getFileName not implemented yet!\n", .{});
+    return "hosted";
 }
 
 fn process_breakpoint() callconv(.C) void {

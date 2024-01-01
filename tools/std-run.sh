@@ -20,28 +20,14 @@ fi
 BOOTROM="${ROOT}/zig-out/rom/ashet-os.bin"
 DISK="${ROOT}/zig-out/disk/${MACHINE}.img"
 
-# # validate wiki integrity
-# for file in $(find "${rootfs_path}/wiki" -name "*.hdoc"); do 
-#     hyperdoc "$file" > /dev/null
-# done
 
-qemu_generic_flags="-d guest_errors,unimp -display gtk,show-tabs=on -serial stdio -no-reboot -no-shutdown"
+
+
 
 case $MACHINE in
     rv32_virt)
         qemu-system-riscv32 ${qemu_generic_flags} \
-                -M virt \
-                -m 32M \
-                -netdev user,id=hostnet \
-                -object filter-dump,id=hostnet-dump,netdev=hostnet,file=ashet-os.pcap \
-                -device virtio-gpu-device,xres=400,yres=300 \
-                -device virtio-keyboard-device \
-                -device virtio-mouse-device \
-                -device virtio-net-device,netdev=hostnet,mac=52:54:00:12:34:56 \
-                -bios none \
-                -drive "if=pflash,index=0,file=${BOOTROM},format=raw" \
-                -drive "if=pflash,index=1,file=${DISK},format=raw" \
-                -s "$@" \
+                
         | "${ROOT}/zig-out/bin/debug-filter" "${APP}"
         ;;
 
@@ -61,11 +47,7 @@ case $MACHINE in
 
     bios_pc)
         qemu-system-i386 ${qemu_generic_flags} \
-          -machine pc \
-          -cpu pentium2 \
-          -hda "${DISK}" \
-          -vga std \
-          -s "$@" \
+          
         | llvm-addr2line -e "${APP}"
         # | "${ROOT}/zig-out/bin/debug-filter" "${APP}"
         ;;
