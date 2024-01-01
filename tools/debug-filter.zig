@@ -1,5 +1,14 @@
 const std = @import("std");
 
+// REWORK:
+//
+//  debug-filter \
+//   --elf kernel=<kernel-elf> \
+//   --elf wiki=<wiki-elf> \
+//   …
+//   -- applicaation arg a arb b arg c …
+//
+
 pub fn main() !void {
     const allocator = std.heap.c_allocator;
 
