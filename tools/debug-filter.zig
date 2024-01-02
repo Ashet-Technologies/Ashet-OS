@@ -1,4 +1,5 @@
 const std = @import("std");
+const args_parser = @import("args");
 
 // REWORK:
 //
@@ -9,81 +10,203 @@ const std = @import("std");
 //   -- applicaation arg a arb b arg c …
 //
 
-pub fn main() !void {
+const ElfFile = struct {
+    name: []const u8,
+    path: []const u8,
+
+    file: std.fs.File,
+    dwarf: dwarf.DwarfInfo,
+};
+
+const ElfSet = std.StringArrayHashMap(ElfFile);
+
+fn processLine(allocator: std.mem.Allocator, elves: ElfSet, output: std.fs.File, line: []const u8) !void {
+    var out_line_buffer = std.io.bufferedWriter(output.writer());
+    const writer = out_line_buffer.writer();
+    {
+        var index: usize = 0;
+        walk: while (index < line.len) {
+            // search for "0x????????" in the output stream
+            if (std.mem.indexOfPos(u8, line, index, "0x")) |start| outer_scan: {
+                scan: {
+
+                    // basic bounds check
+                    if (start + 10 > line.len)
+                        break :scan;
+                    for (line[start + 2 .. start + 10]) |c| {
+                        if (!std.ascii.isHex(c))
+                            break :scan;
+                    }
+
+                    const address = std.fmt.parseInt(u32, line[start + 2 .. start + 10], 16) catch break :scan;
+
+                    try writer.writeAll(line[index .. start + 10]);
+                    index = start + 10;
+
+                    var symbol_info = getSymbolFromDwarf(u32, allocator, address, &elves.values()[0].dwarf) catch break :outer_scan;
+                    defer symbol_info.deinit(allocator);
+
+                    if (symbol_info.line_info) |line_info| {
+                        try writer.print("[{s}:{d},{s}]", .{ line_info.file_name, line_info.line, symbol_info.symbol_name });
+                    } else if (!std.mem.eql(u8, symbol_info.symbol_name, "???")) {
+                        try writer.print("[{s}]", .{symbol_info.symbol_name});
+                    }
+
+                    continue :walk;
+                }
+
+                try writer.writeAll(line[index .. start + 2]);
+                index = start + 2;
+                continue :walk;
+            } else {
+                try writer.writeAll(line[index..]);
+                break;
+            }
+        }
+        try writer.writeAll("\n");
+    }
+    try out_line_buffer.flush();
+}
+
+fn consumePollResult(
+    allocator: std.mem.Allocator,
+    elves: ElfSet,
+    output: std.fs.File,
+    line_buffer: *std.ArrayList(u8),
+    fifo: *std.io.PollFifo,
+) !void {
+    while (true) {
+        const input_len = fifo.readableLength();
+
+        if (input_len == 0)
+            return;
+
+        const base = line_buffer.items.len;
+        try line_buffer.resize(base + input_len);
+
+        const new_bytes = line_buffer.items[base..];
+        std.debug.assert(new_bytes.len == input_len);
+
+        const consumed_len = fifo.read(new_bytes);
+        std.debug.assert(consumed_len == input_len);
+
+        while (std.mem.indexOfScalar(u8, line_buffer.items, '\n')) |line_end| {
+            const line = line_buffer.items[0..line_end];
+
+            try processLine(allocator, elves, output, line);
+
+            try line_buffer.replaceRange(0, line_end + 1, ""); // drop this line
+
+        }
+    }
+}
+
+pub fn main() !u8 {
     const allocator = std.heap.c_allocator;
+
+    var elves = ElfSet.init(allocator);
+    defer elves.deinit();
 
     const argv = try std.process.argsAlloc(allocator);
     errdefer std.process.argsFree(allocator, argv);
 
-    if (argv.len != 2) {
-        @panic("debug-filter <elf>");
-    }
+    const app_argv = blk: {
+        var i: usize = 1;
+        while (i < argv.len) {
+            if (!std.mem.eql(u8, argv[i], "--elf"))
+                break;
 
-    var file = try std.fs.cwd().openFile(argv[1], .{});
-
-    var debug_info = try readElfDebugInfo(allocator, file);
-
-    var stdin = std.io.getStdIn();
-    const line_reader = stdin.reader();
-
-    var stdout = std.io.getStdOut();
-
-    while (true) {
-        var line_buffer: [4096]u8 = undefined;
-
-        const line_or_null = try line_reader.readUntilDelimiterOrEof(&line_buffer, '\n');
-
-        const line = line_or_null orelse break;
-
-        errdefer |e| std.log.err("failed to parse line {s}: {s}", .{ line, @errorName(e) });
-
-        // process line
-        var out_line_buffer = std.io.bufferedWriter(stdout.writer());
-        const writer = out_line_buffer.writer();
-        {
-            var index: usize = 0;
-            walk: while (index < line.len) {
-                // search for "0x????????" in the output stream
-                if (std.mem.indexOfPos(u8, line, index, "0x")) |start| outer_scan: {
-                    scan: {
-
-                        // basic bounds check
-                        if (start + 10 > line.len)
-                            break :scan;
-                        for (line[start + 2 .. start + 10]) |c| {
-                            if (!std.ascii.isHex(c))
-                                break :scan;
-                        }
-
-                        const address = std.fmt.parseInt(u32, line[start + 2 .. start + 10], 16) catch break :scan;
-
-                        try writer.writeAll(line[index .. start + 10]);
-                        index = start + 10;
-
-                        var symbol_info = getSymbolFromDwarf(u32, allocator, address, &debug_info) catch break :outer_scan;
-                        defer symbol_info.deinit(allocator);
-
-                        if (symbol_info.line_info) |line_info| {
-                            try writer.print("[{s}:{d},{s}]", .{ line_info.file_name, line_info.line, symbol_info.symbol_name });
-                        } else if (!std.mem.eql(u8, symbol_info.symbol_name, "???")) {
-                            try writer.print("[{s}]", .{symbol_info.symbol_name});
-                        }
-
-                        continue :walk;
-                    }
-
-                    try writer.writeAll(line[index .. start + 2]);
-                    index = start + 2;
-                    continue :walk;
-                } else {
-                    try writer.writeAll(line[index..]);
-                    break;
-                }
+            if (i + 1 >= argv.len) {
+                @panic("invalid argument!");
             }
-            try writer.writeAll("\n");
+
+            const app_spec = argv[i + 1];
+
+            const splitter = std.mem.indexOfScalar(u8, app_spec, '=') orelse @panic("bad app spec");
+
+            const app_name = app_spec[0..splitter];
+            const app_path = app_spec[splitter + 1 ..];
+
+            const prev = try elves.fetchPut(app_name, ElfFile{
+                .name = app_name,
+                .path = app_path,
+
+                .file = undefined,
+                .dwarf = undefined,
+            });
+            if (prev != null)
+                @panic("duplicate app!");
+
+            i += 2;
         }
-        try out_line_buffer.flush();
+
+        break :blk argv[i..];
+    };
+
+    if (app_argv.len == 0) {
+        @panic("missing application cli!");
     }
+
+    for (elves.values()) |*value| {
+        value.file = try std.fs.cwd().openFile(value.path, .{});
+        value.dwarf = try readElfDebugInfo(allocator, value.file);
+    }
+
+    {
+        var proc = std.ChildProcess.init(app_argv, allocator);
+
+        proc.stdin_behavior = .Inherit;
+        proc.stdout_behavior = .Pipe;
+        proc.stderr_behavior = .Pipe;
+
+        try proc.spawn();
+        {
+            var poller = std.io.poll(allocator, enum { stdout, stderr }, .{
+                .stdout = proc.stdout.?,
+                .stderr = proc.stderr.?,
+            });
+            defer poller.deinit();
+
+            var stdout_line_buffer = std.ArrayList(u8).init(allocator);
+            defer stdout_line_buffer.deinit();
+
+            var stderr_line_buffer = std.ArrayList(u8).init(allocator);
+            defer stderr_line_buffer.deinit();
+
+            while (try poller.poll()) {
+                try consumePollResult(
+                    allocator,
+                    elves,
+                    std.io.getStdOut(),
+                    &stdout_line_buffer,
+                    poller.fifo(.stdout),
+                );
+                try consumePollResult(
+                    allocator,
+                    elves,
+                    std.io.getStdErr(),
+                    &stderr_line_buffer,
+                    poller.fifo(.stderr),
+                );
+            }
+
+            if (stdout_line_buffer.items.len > 0) {
+                try processLine(allocator, elves, std.io.getStdOut(), stdout_line_buffer.items);
+            }
+            if (stderr_line_buffer.items.len > 0) {
+                try processLine(allocator, elves, std.io.getStdErr(), stderr_line_buffer.items);
+            }
+        }
+
+        const result = try proc.wait();
+
+        if (result != .Exited)
+            @panic("bad process result");
+
+        return result.Exited;
+    }
+
+    return 0;
 }
 
 const dwarf = @import("lib/adjusted-dwarf.zig");

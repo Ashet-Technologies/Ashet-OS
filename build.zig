@@ -20,7 +20,9 @@ pub fn build(b: *std.Build) !void {
     const kernel_step = b.step("kernel", "Only builds the OS kernel");
     const validate_step = b.step("validate", "Validates files in the rootfs");
     const run_step = b.step("run", "Executes the selected kernel with qemu. Use -Dmachine to run only one");
+    const tools_step = b.step("tools", "Builds the build and debug tools");
 
+    const optimize = b.standardOptimizeOption(.{});
     const build_native_apps = b.option(bool, "apps", "Builds the native apps (default: on)") orelse true;
     const build_hosted_apps = b.option(bool, "hosted", "Builds the hosted apps (default: on)") orelse true;
 
@@ -119,9 +121,18 @@ pub fn build(b: *std.Build) !void {
     afs_tool.addModule("args", mod_args);
     b.installArtifact(afs_tool);
 
-    const tools_step = b.step("tools", "Builds the build and debug tools");
+    {
+        const debug_filter = b.addExecutable(.{
+            .name = "debug-filter",
+            .root_source_file = .{ .path = "tools/debug-filter.zig" },
+        });
+        debug_filter.addModule("args", mod_args);
+        debug_filter.linkLibC();
 
-    const optimize = b.standardOptimizeOption(.{});
+        const install_step = b.addInstallArtifact(debug_filter, .{});
+        b.getInstallStep().dependOn(&install_step.step);
+        tools_step.dependOn(&install_step.step);
+    }
 
     const bmpconv = BitmapConverter.init(b);
     b.installArtifact(bmpconv.converter);
@@ -293,18 +304,6 @@ pub fn build(b: *std.Build) !void {
     test_step.dependOn(&b.addRunArtifact(std_tests).step);
     test_step.dependOn(&b.addRunArtifact(gui_tests).step);
     test_step.dependOn(&b.addRunArtifact(fs_tests).step);
-    {
-        const debug_filter = b.addExecutable(.{
-            .name = "debug-filter",
-            .root_source_file = .{ .path = "tools/debug-filter.zig" },
-        });
-        debug_filter.linkLibC();
-        const install_step = b.addInstallArtifact(debug_filter, .{});
-
-        b.getInstallStep().dependOn(&install_step.step);
-
-        tools_step.dependOn(&install_step.step);
-    }
 
     // tests ↑
     /////////////////////////////////////////////////////////////////////////////

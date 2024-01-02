@@ -137,6 +137,13 @@ pub const AshetContext = struct {
 
                 exe.setLinkerScriptPath(.{ .path = "src/libashet/application.ld" });
 
+                const install = ctx.b.addInstallFileWithDir(
+                    exe.getEmittedBin(),
+                    .{ .custom = ctx.b.fmt("apps/{s}", .{@tagName(info.platform)}) }, // apps are the same *per platform*, not *per target*!
+                    exe.name,
+                );
+                ctx.b.getInstallStep().dependOn(&install.step);
+
                 info.rootfs.addFile(exe.getEmittedBin(), ctx.b.fmt("apps/{s}/code", .{name}));
 
                 if (maybe_icon) |src_icon| {
