@@ -243,7 +243,7 @@ pub const std_options = struct {
     }
 };
 
-const CodeLocation = struct {
+pub const CodeLocation = struct {
     pointer: usize,
 
     pub fn format(codeloc: CodeLocation, fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {

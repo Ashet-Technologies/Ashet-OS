@@ -73,8 +73,6 @@ const hw = struct {
 };
 
 pub fn initialize() !void {
-    // hw.rtc = ashet.drivers.rtc.Goldfish.init(0x0101000);
-
     logger.info("initialize PL011 uart...", .{});
     hw.uart = ashet.drivers.serial.PL011.init(0x0900_0000);
 

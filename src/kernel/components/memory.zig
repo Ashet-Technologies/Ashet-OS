@@ -147,6 +147,18 @@ pub fn initializeLinearMemory() void {
     logger.info("free ram: {} ({}/{} pages)", .{ page_size * free_memory, free_memory, page_manager.pageCount() });
 }
 
+extern var kernel_stack: u8;
+extern var kernel_stack_start: u8;
+
+pub fn isPointerToKernelStack(ptr: anytype) bool {
+    const stack_end: usize = @intFromPtr(&kernel_stack);
+    const stack_start: usize = @intFromPtr(&kernel_stack_start);
+
+    const addr = @intFromPtr(ptr);
+
+    return (addr >= stack_start) and (addr < stack_end);
+}
+
 pub const debug = struct {
     pub fn getPageCount() u32 {
         return page_manager.pageCount();

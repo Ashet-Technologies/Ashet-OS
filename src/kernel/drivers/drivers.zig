@@ -52,11 +52,13 @@ var driver_lists = std.EnumArray(DriverClass, ?*Driver).initFill(null);
 pub fn install(driver: *Driver) void {
     std.debug.assert(driver.next == null);
 
+    std.debug.assert(!ashet.memory.isPointerToKernelStack(driver));
+
     const head = driver_lists.getPtr(driver.class);
     driver.next = head.*;
     head.* = driver;
 
-    logger.info("installed driver '{s}'", .{driver.name});
+    logger.info("installed {s} driver '{s}'", .{ @tagName(driver.class), driver.name });
 }
 
 pub fn first(comptime class: DriverClass) ?*ResolvedDriverInterface(class) {
@@ -84,7 +86,7 @@ pub fn DriverIterator(comptime class: DriverClass) type {
         pub fn next(iter: *Iterator) ?*ResolvedDriverInterface(class) {
             const item = iter.next_item orelse return null;
             iter.next_item = item.next;
-            std.debug.assert(item.class == class);
+            item.validate(class);
             return &@field(item.class, @tagName(class));
         }
     };
@@ -102,7 +104,7 @@ pub fn getDriverName(comptime class: DriverClass, intf: *ResolvedDriverInterface
     const di: *DriverInterface = @as(*DriverInterface, @ptrCast(intf));
 
     const dri: *Driver = @fieldParentPtr(Driver, "class", di);
-
+    dri.validate(class);
     return dri.name;
 }
 
@@ -112,6 +114,15 @@ pub const Driver = struct {
     name: []const u8,
     next: ?*Driver = null,
     class: DriverInterface,
+
+    fn validate(dri: *Driver, comptime class: DriverClass) void {
+        if (dri.class != class) {
+            logger.err("bad driver {}", .{ashet.CodeLocation{ .pointer = @intFromPtr(dri) }});
+            logger.err("expected class {s}, but found {s}", .{ comptime @tagName(class), @tagName(dri.class) });
+            logger.err("driver data: {}", .{dri.*});
+            @panic("driver corrupted");
+        }
+    }
 };
 
 pub const DriverClass = enum {
@@ -139,7 +150,10 @@ pub const DriverInterface = union(DriverClass) {
 pub fn resolveDriver(comptime class: DriverClass, ptr: *ResolvedDriverInterface(class)) *Driver {
     const container = @as(*DriverInterface, @ptrCast(ptr));
     std.debug.assert(@intFromPtr(container) == @intFromPtr(&@field(container, @tagName(class))));
-    return @fieldParentPtr(Driver, "class", container);
+
+    const driver = @fieldParentPtr(Driver, "class", container);
+    driver.validate(class);
+    return driver;
 }
 
 pub const BlockDevice = ashet.storage.BlockDevice;
