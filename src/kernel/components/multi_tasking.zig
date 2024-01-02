@@ -3,19 +3,40 @@ const hal = @import("hal");
 const ashet = @import("../main.zig");
 const logger = std.log.scoped(.multitasking);
 
-var initialized: bool = false;
-var current_screen_idx: usize = 0;
+const ProcessList = std.TailQueue(void);
+const ProcessNode = ProcessList.Node;
 
-pub fn initialize() void {
-    // We initialize the first process ad-hoc in selectScreen
-    initialized = false;
-}
+// var initialized: bool = false;
+// var current_screen_idx: usize = 0;
+
+var process_list: ProcessList = .{};
 
 /// The process in this variable is the only process able to control the screen.
 /// If `null`, the regular desktop UI is active.
 pub var exclusive_video_controller: ?*Process = null;
 
+pub fn initialize() void {
+    // We initialize the first process ad-hoc in selectScreen
+    // initialized = false;
+}
+
+pub fn processIterator() ProcessIterator {
+    return ProcessIterator{ .current = process_list.first };
+}
+
+pub const ProcessIterator = struct {
+    current: ?*ProcessNode,
+
+    pub fn next(iter: *ProcessIterator) ?*Process {
+        const current = iter.current orelse return null;
+        iter.current = current.next;
+        return @fieldParentPtr(Process, "list_item", current);
+    }
+};
+
 pub const Process = struct {
+    list_item: ProcessNode = .{ .data = {} },
+
     master_thread: *ashet.scheduler.Thread,
     thread_count: usize = 0,
     process_memory: []align(ashet.memory.page_size) u8,
@@ -43,6 +64,9 @@ pub const Process = struct {
 
         process.file_name = try process.memory_arena.allocator().dupeZ(u8, name);
 
+        process_list.append(&process.list_item);
+        errdefer process_list.remove(&process.list_item);
+
         process.master_thread = try ashet.scheduler.Thread.spawn(entry_point, arg, .{
             .stack_size = options.stack_size,
             .process = process,
@@ -58,6 +82,8 @@ pub const Process = struct {
     }
 
     pub fn kill(proc: *Process) void {
+        process_list.remove(&proc.list_item);
+
         if (exclusive_video_controller == proc) {
             exclusive_video_controller = null;
         }

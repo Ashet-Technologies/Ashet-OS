@@ -243,6 +243,31 @@ pub const std_options = struct {
     }
 };
 
+const CodeLocation = struct {
+    pointer: usize,
+
+    pub fn format(codeloc: CodeLocation, fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = opt;
+
+        var iter = multi_tasking.processIterator();
+        while (iter.next()) |proc| {
+            const base = @intFromPtr(proc.process_memory.ptr);
+            const top = base +| proc.process_memory.len;
+            if (codeloc.pointer >= base and codeloc.pointer < top) {
+                try writer.print("{s}:0x{X:0>8}", .{ proc.file_name, codeloc.pointer - base });
+                return;
+            }
+        }
+
+        try writer.print("kernel:0x{X:0>8}", .{codeloc.pointer});
+    }
+};
+
+fn fmtCodeLocation(addr: usize) CodeLocation {
+    return CodeLocation{ .pointer = addr };
+}
+
 pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, maybe_return_address: ?usize) noreturn {
     @setCold(true);
 
@@ -260,7 +285,6 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
     }
     const sp = platform.getStackPointer();
 
-    _ = maybe_return_address;
     _ = maybe_error_trace;
 
     var writer = Debug.writer();
@@ -282,7 +306,10 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
 
     const current_thread = scheduler.Thread.current();
 
-    writer.print("return address:\r\n      0x{X:0>8}\r\n\r\n", .{@returnAddress()}) catch {};
+    if (maybe_return_address) |return_address| {
+        writer.print("    panic return address: {}\r\n\r\n", .{fmtCodeLocation(return_address)}) catch {};
+    }
+    writer.print(" function return address: {}\r\n\r\n", .{fmtCodeLocation(@returnAddress())}) catch {};
 
     {
         var stack_end: usize = @intFromPtr(&kernel_stack);
@@ -344,21 +371,23 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
         var index: usize = 0;
         var it = std.debug.StackIterator.init(@returnAddress(), null);
         while (it.next()) |addr| : (index += 1) {
-            if (current_thread) |thread| {
-                if (thread.process) |proc| {
-                    const base = @intFromPtr(proc.process_memory.ptr);
-                    const top = base +| proc.process_memory.len;
+            writer.print("{d: >4}: {}\r\n", .{ index, fmtCodeLocation(addr) }) catch {};
 
-                    if (addr >= base and addr < top) {
-                        writer.print("{d: >4}: {s}:0x{X:0>8}\r\n", .{ index, proc.file_name, addr - base }) catch {};
-                        // writer.print("0x{X:0>8}\r\n", .{addr - base}) catch {};
-                        continue;
-                    }
-                }
-            }
+            // if (current_thread) |thread| {
+            //     if (thread.process) |proc| {
+            //         const base = @intFromPtr(proc.process_memory.ptr);
+            //         const top = base +| proc.process_memory.len;
 
-            writer.print("{d: >4}: kernel:0x{X:0>8}\r\n", .{ index, addr }) catch {};
-            // writer.print("0x{X:0>8}\r\n", .{addr}) catch {};
+            //         if (addr >= base and addr < top) {
+            //             writer.print("{d: >4}: {s}:0x{X:0>8}\r\n", .{ index, proc.file_name, addr - base }) catch {};
+            //             // writer.print("0x{X:0>8}\r\n", .{addr - base}) catch {};
+            //             continue;
+            //         }
+            //     }
+            // }
+
+            // writer.print("{d: >4}: kernel:0x{X:0>8}\r\n", .{ index, addr }) catch {};
+            // // writer.print("0x{X:0>8}\r\n", .{addr}) catch {};
         }
     }
 
