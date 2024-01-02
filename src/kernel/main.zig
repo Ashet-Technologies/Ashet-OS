@@ -32,25 +32,36 @@ comptime {
 }
 
 export fn ashet_kernelMain() void {
+    Debug.setTraceLoc(@src());
     memory.loadKernelMemory(machine_config.load_sections);
 
     if (@hasDecl(machine, "earlyInitialize")) {
         // If required, initialize the machine basics first,
         // set up linear memory or detect how much memory is available.
+
+        Debug.setTraceLoc(@src());
         machine.earlyInitialize();
     }
 
     // Populate RAM with the right sections, and compute how much dynamic memory we have available
+
+    Debug.setTraceLoc(@src());
     memory.initializeLinearMemory();
 
     // Initialize scheduler before HAL as it doesn't require anything except memory pages for thread
     // storage, queues and stacks.
+
+    Debug.setTraceLoc(@src());
     scheduler.initialize();
+
+    full_panic = true;
 
     main() catch |err| {
         std.log.err("main() failed with {}", .{err});
         @panic("system failure");
     };
+
+    @panic("TODO: Poweroff");
 }
 
 fn main() !void {
@@ -131,6 +142,12 @@ var runtime_sdata_string = "Hello, well initialized .sdata!\r\n".*;
 extern fn hang() callconv(.C) noreturn;
 
 pub const Debug = struct {
+    var trace_loc: std.builtin.SourceLocation = undefined;
+
+    pub inline fn setTraceLoc(loc: std.builtin.SourceLocation) void {
+        trace_loc = loc;
+    }
+
     const Error = error{};
     fn write(_: void, bytes: []const u8) Error!usize {
         machine.debugWrite(bytes);
@@ -170,6 +187,7 @@ pub fn stackCheck() void {
 }
 
 var double_panic = false;
+var full_panic = false;
 
 pub const LogLevel = std.log.Level;
 
@@ -227,6 +245,19 @@ pub const std_options = struct {
 
 pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, maybe_return_address: ?usize) noreturn {
     @setCold(true);
+
+    if (!full_panic) {
+        machine.debugWrite("PANIC: ");
+        machine.debugWrite(message);
+        machine.debugWrite("\r\n");
+        Debug.writer().print("last trace: {s}:{}:{} ({s})\r\n", .{
+            Debug.trace_loc.file,
+            Debug.trace_loc.line,
+            Debug.trace_loc.column,
+            Debug.trace_loc.fn_name,
+        }) catch {};
+        hang();
+    }
     const sp = platform.getStackPointer();
 
     _ = maybe_return_address;

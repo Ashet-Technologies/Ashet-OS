@@ -52,7 +52,6 @@ pub const ControlRegs = extern struct {
     device: DeviceInfo,
 
     pub const DeviceInfo = extern union {
-        padding: [0xf00]u8,
         gpu: gpu.Config,
         input: input.Config,
         network: network.Config,

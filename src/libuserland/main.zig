@@ -886,6 +886,7 @@ pub const syscall_table: abi.SysCallTable = .{
     .@"process.exit" = process_exit,
     .@"process.getBaseAddress" = process_getBaseAddress,
     .@"process.getFileName" = process_getFileName,
+    .@"process.writeLog" = process_writeLog,
     .@"process.breakpoint" = process_breakpoint,
     .@"time.nanoTimestamp" = time_nanoTimestamp,
     .@"video.acquire" = video_acquire,
@@ -930,6 +931,11 @@ fn process_getBaseAddress() callconv(.C) usize {
 fn process_getFileName() callconv(.C) [*:0]const u8 {
     logger.err("process_getFileName not implemented yet!\n", .{});
     return "hosted";
+}
+
+fn process_writeLog(log_level: abi.LogLevel, msg_ptr: [*]const u8, msg_len: usize) callconv(.C) void {
+    const msg = msg_ptr[0..msg_len];
+    std.debug.print("log({s}): {s}\n", .{ @tagName(log_level), msg });
 }
 
 fn process_breakpoint() callconv(.C) void {

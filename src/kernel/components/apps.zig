@@ -20,6 +20,7 @@ pub fn startAppElf(app: AppID) !void {
     const expected_elf_machine: std.elf.EM = switch (system_arch) {
         .riscv32 => .RISCV,
         .x86 => .@"386",
+        .arm, .thumb => .ARM,
         else => @compileError("Unsupported machine type: " ++ @tagName(system_arch)),
     };
 
@@ -151,6 +152,9 @@ pub fn startAppElf(app: AppID) !void {
                 }
             }
         },
+
+        .thumb => @panic("TODO: Implement app loading on arm!"),
+
         else => @compileError("Unsupported machine type: " ++ @tagName(system_arch)),
     };
 

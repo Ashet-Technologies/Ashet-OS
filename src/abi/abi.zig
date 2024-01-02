@@ -144,7 +144,11 @@ pub fn syscall(comptime name: []const u8) SysCallFunc(@field(SysCall, name)) {
                     : [off] "p" (offset),
                 );
             },
-            .arm => @panic("no syscalls on arm yet"),
+
+            .arm => @panic("Only Arm thumb instruction set is supported!"),
+
+            .thumb => @panic("no syscalls on arm/thumb yet"),
+
             else => @compileError("unsupported platform"),
         },
         else => @compileError("unsupported os"),

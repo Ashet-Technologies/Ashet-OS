@@ -15,238 +15,14 @@ const ziglibc_file = std.build.FileSource{ .path = "vendor/libc/ziglibc.txt" };
 const kernel_targets = @import("src/kernel/port/targets.zig");
 const build_targets = @import("src/build/targets.zig");
 
-fn addBitmap(target: *std.build.LibExeObjStep, bmpconv: BitmapConverter, src: []const u8, dst: []const u8, size: [2]u32) void {
-    const file = bmpconv.convert(.{ .path = src }, std.fs.path.basename(dst), .{ .geometry = size });
-
-    file.addStepDependencies(&target.step);
-}
-
-const Platform = kernel_targets.Platform;
-const Machine = kernel_targets.Machine;
-const MachineSpec = kernel_targets.MachineSpec;
-
-const generic_qemu_flags = [_][]const u8{
-    "-d",         "guest_errors,unimp",
-    "-display",   "gtk,show-tabs=on",
-    "-serial",    "stdio",
-    "-no-reboot", "-no-shutdown",
-    "-s",
-};
-
-const fatfs_config = FatFS.Config{
-    .max_long_name_len = 121,
-    .code_page = .us,
-    .volumes = .{
-        .count = 8,
-    },
-    .rtc = .{
-        .static = .{ .year = 2022, .month = .jul, .day = 10 },
-    },
-    .mkfs = true,
-};
-
-fn createSystemIcons(b: *std.Build, bmpconv: BitmapConverter, rootfs: ?*disk_image_step.FileSystemBuilder) *AssetBundleStep {
-    const system_icons = AssetBundleStep.create(b, rootfs);
-
-    {
-        const desktop_icon_conv_options: BitmapConverter.Options = .{
-            .geometry = .{ 32, 32 },
-            .palette = .{
-                .predefined = "src/kernel/data/palette.gpl",
-            },
-        };
-
-        const tool_icon_conv_options: BitmapConverter.Options = .{
-            .geometry = .{ 16, 16 },
-            .palette = .{
-                .predefined = "src/kernel/data/palette.gpl",
-            },
-        };
-        system_icons.add("system/icons/back.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Go back.png" }, "back.abm", tool_icon_conv_options));
-        system_icons.add("system/icons/forward.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Go forward.png" }, "forward.abm", tool_icon_conv_options));
-        system_icons.add("system/icons/reload.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Refresh.png" }, "reload.abm", tool_icon_conv_options));
-        system_icons.add("system/icons/home.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Home.png" }, "home.abm", tool_icon_conv_options));
-        system_icons.add("system/icons/go.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Go.png" }, "go.abm", tool_icon_conv_options));
-        system_icons.add("system/icons/stop.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Stop sign.png" }, "stop.abm", tool_icon_conv_options));
-        system_icons.add("system/icons/menu.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Tune.png" }, "menu.abm", tool_icon_conv_options));
-        system_icons.add("system/icons/plus.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/13.png" }, "plus.abm", tool_icon_conv_options));
-        system_icons.add("system/icons/delete.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Delete.png" }, "delete.abm", tool_icon_conv_options));
-        system_icons.add("system/icons/copy.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Copy.png" }, "copy.abm", tool_icon_conv_options));
-        system_icons.add("system/icons/cut.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Cut.png" }, "cut.abm", tool_icon_conv_options));
-        system_icons.add("system/icons/paste.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Paste.png" }, "paste.abm", tool_icon_conv_options));
-
-        system_icons.add("system/icons/default-app-icon.abm", bmpconv.convert(.{ .path = "artwork/os/default-app-icon.png" }, "menu.abm", desktop_icon_conv_options));
-    }
-
-    return system_icons;
-}
-
-fn buildHostedApps(
-    b: *std.Build,
-    target: std.zig.CrossTarget,
-    optimize: std.builtin.OptimizeMode,
-    bmpconv: BitmapConverter,
-    modules: ashet_com.Modules,
-    lua_exe: *std.Build.Step.Compile,
-) void {
-    const system_icons = createSystemIcons(b, bmpconv, null);
-
-    const system_assets = b.createModule(.{
-        .source_file = system_icons.getOutput(),
-        .dependencies = &.{},
-    });
-
-    var ui_gen = ashet_com.UiGenerator{
-        .builder = b,
-        .lua = lua_exe,
-        .mod_ashet = modules.libashet,
-        .mod_ashet_gui = modules.ashet_gui,
-        .mod_system_assets = system_assets,
-    };
-
-    var ctx = ashet_apps.AshetContext{
-        .b = b,
-        .bmpconv = bmpconv,
-        .mode = .{ .hosted = target },
-    };
-
-    ashet_apps.compileApps(
-        b,
-        &ctx,
-        optimize,
-        modules,
-        &ui_gen,
-    );
-}
-
-const OS = struct {
-    kernel_elf: std.Build.LazyPath,
-    kernel_bin: std.Build.LazyPath,
-    disk_img: std.Build.LazyPath,
-};
-
-fn buildOs(
-    b: *std.Build,
-    optimize: std.builtin.OptimizeMode,
-    bmpconv: BitmapConverter,
-    modules: ashet_com.Modules,
-    lua_exe: *std.Build.Step.Compile,
-    kernel_step: *std.Build.Step,
-    machine: Machine,
-) OS {
-    var rootfs = disk_image_step.FileSystemBuilder.init(b);
-
-    const system_icons = createSystemIcons(b, bmpconv, &rootfs);
-
-    const system_assets = b.createModule(.{
-        .source_file = system_icons.getOutput(),
-        .dependencies = &.{},
-    });
-
-    var ui_gen = ashet_com.UiGenerator{
-        .builder = b,
-        .lua = lua_exe,
-        .mod_ashet = modules.libashet,
-        .mod_ashet_gui = modules.ashet_gui,
-        .mod_system_assets = system_assets,
-    };
-
-    rootfs.addDirectory(.{ .path = b.pathFromRoot("rootfs") }, ".");
-
-    const machine_spec = build_targets.getMachineSpec(machine);
-
-    const kernel_exe = ashet_kernel.create(b, .{
-        .optimize = optimize,
-        .fatfs_config = fatfs_config,
-        .machine_spec = machine_spec,
-        .modules = modules,
-        .system_assets = system_assets,
-    });
-
-    const kernel_file = kernel_exe.getEmittedBin();
-
-    {
-        const install_kernel = b.addInstallFileWithDir(
-            kernel_file,
-            .{ .custom = "kernel" },
-            b.fmt("{s}.elf", .{machine_spec.machine_id}),
-        );
-
-        kernel_step.dependOn(&install_kernel.step);
-        b.getInstallStep().dependOn(&install_kernel.step);
-    }
-
-    const raw_step = b.addObjCopy(kernel_file, .{
-        .basename = b.fmt("{s}.bin", .{machine_spec.machine_id}),
-        .format = .bin,
-        // .only_section
-        .pad_to = 0x200_0000,
-    });
-    raw_step.step.dependOn(&kernel_exe.step);
-
-    const install_raw_step = b.addInstallFileWithDir(
-        raw_step.getOutputSource(),
-        .{ .custom = "rom" },
-        raw_step.basename,
-    );
-    b.getInstallStep().dependOn(&install_raw_step.step);
-
-    var ctx = ashet_apps.AshetContext{
-        .b = b,
-        .bmpconv = bmpconv,
-        .mode = .{
-            .native = .{
-                .platform = machine_spec.platform,
-                .rootfs = &rootfs,
-            },
-        },
-    };
-
-    ashet_apps.compileApps(
-        b,
-        &ctx,
-        optimize,
-        modules,
-        &ui_gen,
-    );
-
-    const disk_formatter = getDiskFormatter(machine_spec.disk_formatter);
-
-    const disk_image = disk_formatter(b, kernel_file, &rootfs);
-
-    const install_disk_image = b.addInstallFileWithDir(
-        disk_image,
-        .{ .custom = "disk" },
-        b.fmt("{s}.img", .{machine_spec.machine_id}),
-    );
-
-    b.getInstallStep().dependOn(&install_disk_image.step);
-
-    return OS{
-        .disk_img = disk_image,
-        .kernel_bin = raw_step.getOutputSource(),
-        .kernel_elf = kernel_file,
-    };
-}
-
-fn writeAllMachineInfo() !void {
-    var stderr = std.io.getStdErr();
-
-    var writer = stderr.writer();
-    try writer.writeAll("Bad or emptymachine selection. All available machines are:\n");
-
-    for (comptime std.enums.values(Machine)) |decl| {
-        try writer.print("- {s}\n", .{@tagName(decl)});
-    }
-
-    try writer.writeAll("Please fix your command line!\n");
-}
-
 pub fn build(b: *std.Build) !void {
     const hosted_target = b.standardTargetOptions(.{});
     const kernel_step = b.step("kernel", "Only builds the OS kernel");
     const validate_step = b.step("validate", "Validates files in the rootfs");
     const run_step = b.step("run", "Executes the selected kernel with qemu. Use -Dmachine to run only one");
+
+    const build_native_apps = b.option(bool, "apps", "Builds the native apps (default: on)") orelse true;
+    const build_hosted_apps = b.option(bool, "hosted", "Builds the hosted apps (default: on)") orelse true;
 
     b.getInstallStep().dependOn(validate_step); // "install" also validates the rootfs.
 
@@ -379,14 +155,16 @@ pub fn build(b: *std.Build) !void {
 
     // hosted build:
 
-    buildHostedApps(
-        b,
-        hosted_target,
-        optimize,
-        bmpconv,
-        modules,
-        lua_exe,
-    );
+    if (build_hosted_apps) {
+        buildHostedApps(
+            b,
+            hosted_target,
+            optimize,
+            bmpconv,
+            modules,
+            lua_exe,
+        );
+    }
 
     const MachineSet = std.enums.EnumSet(Machine);
 
@@ -425,6 +203,7 @@ pub fn build(b: *std.Build) !void {
                 lua_exe,
                 kernel_step,
                 machine,
+                build_native_apps,
             );
 
             const Variables = struct {
@@ -460,6 +239,8 @@ pub fn build(b: *std.Build) !void {
             if (b.args) |args| {
                 vm_runner.addArgs(args);
             }
+
+            vm_runner.stdio = .inherit;
 
             run_step.dependOn(&vm_runner.step);
         }
@@ -535,6 +316,236 @@ pub fn build(b: *std.Build) !void {
     }
 }
 
+fn addBitmap(target: *std.build.LibExeObjStep, bmpconv: BitmapConverter, src: []const u8, dst: []const u8, size: [2]u32) void {
+    const file = bmpconv.convert(.{ .path = src }, std.fs.path.basename(dst), .{ .geometry = size });
+
+    file.addStepDependencies(&target.step);
+}
+
+const Platform = kernel_targets.Platform;
+const Machine = kernel_targets.Machine;
+const MachineSpec = kernel_targets.MachineSpec;
+
+const generic_qemu_flags = [_][]const u8{
+    "-d",         "guest_errors,unimp",
+    "-display",   "gtk,show-tabs=on",
+    "-serial",    "stdio",
+    "-no-reboot", "-no-shutdown",
+    "-s",
+};
+
+const fatfs_config = FatFS.Config{
+    .max_long_name_len = 121,
+    .code_page = .us,
+    .volumes = .{
+        .count = 8,
+    },
+    .rtc = .{
+        .static = .{ .year = 2022, .month = .jul, .day = 10 },
+    },
+    .mkfs = true,
+};
+
+fn createSystemIcons(b: *std.Build, bmpconv: BitmapConverter, rootfs: ?*disk_image_step.FileSystemBuilder) *AssetBundleStep {
+    const system_icons = AssetBundleStep.create(b, rootfs);
+
+    {
+        const desktop_icon_conv_options: BitmapConverter.Options = .{
+            .geometry = .{ 32, 32 },
+            .palette = .{
+                .predefined = "src/kernel/data/palette.gpl",
+            },
+        };
+
+        const tool_icon_conv_options: BitmapConverter.Options = .{
+            .geometry = .{ 16, 16 },
+            .palette = .{
+                .predefined = "src/kernel/data/palette.gpl",
+            },
+        };
+        system_icons.add("system/icons/back.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Go back.png" }, "back.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/forward.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Go forward.png" }, "forward.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/reload.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Refresh.png" }, "reload.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/home.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Home.png" }, "home.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/go.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Go.png" }, "go.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/stop.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Stop sign.png" }, "stop.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/menu.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Tune.png" }, "menu.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/plus.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-toolbar-icons/13.png" }, "plus.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/delete.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Delete.png" }, "delete.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/copy.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Copy.png" }, "copy.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/cut.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Cut.png" }, "cut.abm", tool_icon_conv_options));
+        system_icons.add("system/icons/paste.abm", bmpconv.convert(.{ .path = "artwork/icons/small-icons/16x16-free-application-icons/16x16/Paste.png" }, "paste.abm", tool_icon_conv_options));
+
+        system_icons.add("system/icons/default-app-icon.abm", bmpconv.convert(.{ .path = "artwork/os/default-app-icon.png" }, "menu.abm", desktop_icon_conv_options));
+    }
+
+    return system_icons;
+}
+
+fn buildHostedApps(
+    b: *std.Build,
+    target: std.zig.CrossTarget,
+    optimize: std.builtin.OptimizeMode,
+    bmpconv: BitmapConverter,
+    modules: ashet_com.Modules,
+    lua_exe: *std.Build.Step.Compile,
+) void {
+    const system_icons = createSystemIcons(b, bmpconv, null);
+
+    const system_assets = b.createModule(.{
+        .source_file = system_icons.getOutput(),
+        .dependencies = &.{},
+    });
+
+    var ui_gen = ashet_com.UiGenerator{
+        .builder = b,
+        .lua = lua_exe,
+        .mod_ashet = modules.libashet,
+        .mod_ashet_gui = modules.ashet_gui,
+        .mod_system_assets = system_assets,
+    };
+
+    var ctx = ashet_apps.AshetContext{
+        .b = b,
+        .bmpconv = bmpconv,
+        .mode = .{ .hosted = target },
+    };
+
+    ashet_apps.compileApps(
+        b,
+        &ctx,
+        optimize,
+        modules,
+        &ui_gen,
+    );
+}
+
+const OS = struct {
+    kernel_elf: std.Build.LazyPath,
+    kernel_bin: std.Build.LazyPath,
+    disk_img: std.Build.LazyPath,
+};
+
+fn buildOs(
+    b: *std.Build,
+    optimize: std.builtin.OptimizeMode,
+    bmpconv: BitmapConverter,
+    modules: ashet_com.Modules,
+    lua_exe: *std.Build.Step.Compile,
+    kernel_step: *std.Build.Step,
+    machine: Machine,
+    build_native_apps: bool,
+) OS {
+    var rootfs = disk_image_step.FileSystemBuilder.init(b);
+
+    const system_icons = createSystemIcons(b, bmpconv, &rootfs);
+
+    const system_assets = b.createModule(.{
+        .source_file = system_icons.getOutput(),
+        .dependencies = &.{},
+    });
+
+    var ui_gen = ashet_com.UiGenerator{
+        .builder = b,
+        .lua = lua_exe,
+        .mod_ashet = modules.libashet,
+        .mod_ashet_gui = modules.ashet_gui,
+        .mod_system_assets = system_assets,
+    };
+
+    rootfs.addDirectory(.{ .path = b.pathFromRoot("rootfs") }, ".");
+
+    const machine_spec = build_targets.getMachineSpec(machine);
+
+    const kernel_exe = ashet_kernel.create(b, .{
+        .optimize = optimize,
+        .fatfs_config = fatfs_config,
+        .machine_spec = machine_spec,
+        .modules = modules,
+        .system_assets = system_assets,
+    });
+
+    const kernel_file = kernel_exe.getEmittedBin();
+
+    {
+        const install_kernel = b.addInstallFileWithDir(
+            kernel_file,
+            .{ .custom = "kernel" },
+            b.fmt("{s}.elf", .{machine_spec.machine_id}),
+        );
+
+        kernel_step.dependOn(&install_kernel.step);
+        b.getInstallStep().dependOn(&install_kernel.step);
+    }
+
+    const raw_step = b.addObjCopy(kernel_file, .{
+        .basename = b.fmt("{s}.bin", .{machine_spec.machine_id}),
+        .format = .bin,
+        // .only_section
+        .pad_to = machine_spec.rom_size,
+    });
+    raw_step.step.dependOn(&kernel_exe.step);
+
+    const install_raw_step = b.addInstallFileWithDir(
+        raw_step.getOutputSource(),
+        .{ .custom = "rom" },
+        raw_step.basename,
+    );
+    b.getInstallStep().dependOn(&install_raw_step.step);
+
+    var ctx = ashet_apps.AshetContext{
+        .b = b,
+        .bmpconv = bmpconv,
+        .mode = .{
+            .native = .{
+                .platform = machine_spec.platform,
+                .rootfs = &rootfs,
+            },
+        },
+    };
+
+    if (build_native_apps) {
+        ashet_apps.compileApps(
+            b,
+            &ctx,
+            optimize,
+            modules,
+            &ui_gen,
+        );
+    }
+
+    const disk_formatter = getDiskFormatter(machine_spec.disk_formatter);
+
+    const disk_image = disk_formatter(b, kernel_file, &rootfs);
+
+    const install_disk_image = b.addInstallFileWithDir(
+        disk_image,
+        .{ .custom = "disk" },
+        b.fmt("{s}.img", .{machine_spec.machine_id}),
+    );
+
+    b.getInstallStep().dependOn(&install_disk_image.step);
+
+    return OS{
+        .disk_img = disk_image,
+        .kernel_bin = raw_step.getOutputSource(),
+        .kernel_elf = kernel_file,
+    };
+}
+
+fn writeAllMachineInfo() !void {
+    var stderr = std.io.getStdErr();
+
+    var writer = stderr.writer();
+    try writer.writeAll("Bad or emptymachine selection. All available machines are:\n");
+
+    for (comptime std.enums.values(Machine)) |decl| {
+        try writer.print("- {s}\n", .{@tagName(decl)});
+    }
+
+    try writer.writeAll("Please fix your command line!\n");
+}
+
 fn getDiskFormatter(name: []const u8) *const fn (*std.Build, std.Build.LazyPath, *disk_image_step.FileSystemBuilder) std.Build.LazyPath {
     inline for (comptime std.meta.declarations(disk_formatters)) |fmt_decl| {
         if (std.mem.eql(u8, fmt_decl.name, name)) {
@@ -542,6 +553,16 @@ fn getDiskFormatter(name: []const u8) *const fn (*std.Build, std.Build.LazyPath,
         }
     }
     @panic("Machine has invalid disk formatter defined!");
+}
+
+pub fn generic_virt_formatter(b: *std.Build, kernel_file: std.Build.LazyPath, disk_content: *disk_image_step.FileSystemBuilder, disk_image_size: usize) std.Build.LazyPath {
+    _ = kernel_file;
+
+    const disk = disk_image_step.initializeDisk(b, disk_image_size, .{
+        .fs = disk_content.finalize(.{ .format = .fat16, .label = "AshetOS" }),
+    });
+
+    return disk.getImageFile();
 }
 
 const disk_formatters = struct {
@@ -593,13 +614,11 @@ const disk_formatters = struct {
     // run_step.dependOn(&run_cmd.step);
 
     pub fn rv32_virt(b: *std.Build, kernel_file: std.Build.LazyPath, disk_content: *disk_image_step.FileSystemBuilder) std.Build.LazyPath {
-        _ = kernel_file;
+        return generic_virt_formatter(b, kernel_file, disk_content, 0x0200_0000);
+    }
 
-        const disk = disk_image_step.initializeDisk(b, 0x0200_0000, .{
-            .fs = disk_content.finalize(.{ .format = .fat16, .label = "AshetOS" }),
-        });
-
-        return disk.getImageFile();
+    pub fn arm_virt(b: *std.Build, kernel_file: std.Build.LazyPath, disk_content: *disk_image_step.FileSystemBuilder) std.Build.LazyPath {
+        return generic_virt_formatter(b, kernel_file, disk_content, 0x0400_0000);
     }
 
     pub fn bios_pc(b: *std.Build, kernel_file: std.Build.LazyPath, disk_content: *disk_image_step.FileSystemBuilder) std.Build.LazyPath {

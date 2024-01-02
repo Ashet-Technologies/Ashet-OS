@@ -10,7 +10,8 @@ pub const block = struct {
 };
 
 pub const serial = struct {
-    pub const ns16c550 = @import("serial/ns16c550.zig");
+    pub const NS16C550 = @import("serial/NS16C550.zig");
+    pub const PL011 = @import("serial/PL011.zig");
 };
 
 pub const filesystem = struct {
@@ -22,6 +23,7 @@ pub const rtc = struct {
     pub const Dummy = @import("rtc/Dummy.zig");
     pub const CMOS = @import("rtc/CMOS.zig");
     pub const Goldfish = @import("rtc/Goldfish.zig");
+    pub const PL031 = @import("rtc/PL031.zig");
 };
 
 pub const video = struct {
@@ -356,26 +358,41 @@ pub const FileSystemDriver = struct {
 };
 
 pub const SerialPort = struct {
-    //
-    dummy: u8,
+    pub const WriteMode = enum { blocking, only_fifo };
+
+    writeFn: *const fn (*Driver, msg: []const u8, mode: WriteMode) usize,
+
+    pub fn poll(idev: *SerialPort, msg: []const u8, mode: WriteMode) void {
+        idev.writeFn(resolveDriver(.serial, idev), msg, mode);
+    }
 };
 
 pub const NetworkInterface = ashet.network.NetworkInterface;
 
 const virtio = @import("virtio");
 
+pub const VirtIoConfiguration = struct {
+    base: usize,
+    max_count: usize,
+    desc_size: usize,
+};
+
 /// Scans a memory area for virtio devices and installs all found device drivers.
-pub fn scanVirtioDevices(allocator: std.mem.Allocator, base_address: usize, max_count: usize) !void {
-    const virtio_base = @as([*]align(4096) volatile virtio.ControlRegs, @ptrFromInt(base_address));
+pub fn scanVirtioDevices(allocator: std.mem.Allocator, comptime cfg: VirtIoConfiguration) !void {
+    const virtio_base: [*]align(0x200) volatile virtio.ControlRegs = @ptrFromInt(cfg.base);
 
     if (virtio_base[0].magic != virtio.ControlRegs.magic) {
         @panic("not virt platform!");
     }
 
-    var i: usize = 0;
+    std.log.info("sizeof control regs: {}", .{@sizeOf(virtio.ControlRegs)});
 
-    while (i < max_count and virtio_base[i].magic == virtio.ControlRegs.magic) : (i += 1) {
-        const regs = &virtio_base[i];
+    var reg_addr: usize = cfg.base;
+    for (0..cfg.max_count) |_| {
+        const regs: *align(0x200) volatile virtio.ControlRegs = @ptrFromInt(reg_addr);
+        if (regs.magic != virtio.ControlRegs.magic)
+            break;
+        reg_addr += cfg.desc_size;
 
         if (regs.version != 1 and regs.version != 2) {
             continue;

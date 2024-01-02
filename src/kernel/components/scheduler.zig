@@ -187,6 +187,7 @@ pub const Thread = struct {
                 thread.push(@intFromPtr(func)); // EAX
             },
             .arm => @compileError("arm support not implemented yet!"),
+            .thumb => @panic("arm-thumb support not implemented yet!"),
 
             else => @compileError(std.fmt.comptimePrint("{s} is not a supported platform", .{@tagName(target)})),
         }
@@ -675,6 +676,34 @@ comptime {
         ),
 
         .arm => @compileError("arm support not implemented yet!"),
+
+        .thumb => asm (preamble ++
+                \\
+                \\.thumb
+                \\.thumb_func
+                \\.global ashet_scheduler_threadTrampoline
+                \\.type ashet_scheduler_threadTrampoline, %function
+                \\ashet_scheduler_threadTrampoline:
+                \\
+                \\.thumb
+                \\.thumb_func
+                \\.global ashet_scheduler_switchTasks
+                \\.type ashet_scheduler_switchTasks, %function
+                \\ashet_scheduler_switchTasks:
+                //
+                //  save all registers that are callee-saved to the stack
+
+                //  backup the current state:
+
+                // restore the new state:
+
+                //  then restore all registers from the stack
+                //  in the same order we saved them above
+
+                //
+                //  and jump into the new thread function
+                \\  
+        ),
 
         else => @compileError(std.fmt.comptimePrint("{s} is not a supported platform", .{@tagName(target)})),
     }

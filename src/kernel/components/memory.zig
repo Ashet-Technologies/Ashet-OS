@@ -1,5 +1,6 @@
 const std = @import("std");
 const ashet = @import("../main.zig");
+const machine = @import("machine");
 const logger = std.log.scoped(.memory);
 
 pub const Section = struct {
@@ -26,10 +27,33 @@ pub const MemorySections = struct {
 /// First stage in memory initialization:
 /// Copy the `.data` section into RAM, and zero out `.bss`.
 /// This is needed to have all globals have a well-defined state.
-pub inline fn loadKernelMemory(comptime sections: MemorySections) void {
-    // First, populate all RAM sections from flash
+pub fn loadKernelMemory(comptime sections: MemorySections) void {
+    ashet.Debug.setTraceLoc(@src());
+
+    if (sections.bss) {
+        ashet.Debug.setTraceLoc(@src());
+
+        const bss_start = @intFromPtr(&__kernel_bss_start);
+        const bss_end = @intFromPtr(&__kernel_bss_end);
+
+        const bss_size = bss_end - bss_start;
+
+        ashet.Debug.setTraceLoc(@src());
+
+        logger.debug("bss_start   = 0x{X:0>8}", .{bss_start});
+        logger.debug("bss_end     = 0x{X:0>8}", .{bss_end});
+        logger.debug("bss_size    = 0x{X:0>8}", .{bss_size});
+
+        ashet.Debug.setTraceLoc(@src());
+
+        @memset(@as([*]u32, @ptrFromInt(bss_start))[0 .. bss_size / 4], 0);
+
+        ashet.Debug.setTraceLoc(@src());
+    }
 
     if (sections.data) {
+        ashet.Debug.setTraceLoc(@src());
+
         // const flash_start = @ptrToInt(&__kernel_flash_start);
         const flash_end = @intFromPtr(&__kernel_flash_end);
         const data_start = @intFromPtr(&__kernel_data_start);
@@ -37,33 +61,29 @@ pub inline fn loadKernelMemory(comptime sections: MemorySections) void {
 
         const data_size = data_end - data_start;
 
+        ashet.Debug.setTraceLoc(@src());
+
         // logger.debug("flash_start = 0x{X:0>8}", .{flash_start});
-        // logger.debug("flash_end   = 0x{X:0>8}", .{flash_end});
-        // logger.debug("data_start  = 0x{X:0>8}", .{data_start});
-        // logger.debug("data_end    = 0x{X:0>8}", .{data_end});
-        // logger.debug("data_size   = 0x{X:0>8}", .{data_size});
+        logger.debug("flash_end   = 0x{X:0>8}", .{flash_end});
+        logger.debug("data_start  = 0x{X:0>8}", .{data_start});
+        logger.debug("data_end    = 0x{X:0>8}", .{data_end});
+        logger.debug("data_size   = 0x{X:0>8}", .{data_size});
+
+        ashet.Debug.setTraceLoc(@src());
 
         @memcpy(
             @as([*]u32, @ptrFromInt(data_start))[0 .. data_size / 4],
             @as([*]u32, @ptrFromInt(flash_end))[0 .. data_size / 4],
         );
-    }
-    if (sections.bss) {
-        const bss_start = @intFromPtr(&__kernel_bss_start);
-        const bss_end = @intFromPtr(&__kernel_bss_end);
 
-        const bss_size = bss_end - bss_start;
-
-        // logger.debug("bss_start   = 0x{X:0>8}", .{bss_start});
-        // logger.debug("bss_end     = 0x{X:0>8}", .{bss_end});
-        // logger.debug("bss_size    = 0x{X:0>8}", .{bss_size});
-
-        @memset(@as([*]u32, @ptrFromInt(bss_start))[0 .. bss_size / 4], 0);
+        ashet.Debug.setTraceLoc(@src());
     }
 }
 
 /// Initialize the linear system memory and allocators.
 pub fn initializeLinearMemory() void {
+    ashet.Debug.setTraceLoc(@src());
+
     const flash_start = @intFromPtr(&__kernel_flash_start);
     const flash_end = @intFromPtr(&__kernel_flash_end);
     const data_start = @intFromPtr(&__kernel_data_start);
@@ -72,6 +92,7 @@ pub fn initializeLinearMemory() void {
     const bss_end = @intFromPtr(&__kernel_bss_end);
 
     // compute and initialize the memory map
+    ashet.Debug.setTraceLoc(@src());
     const linear_memory_region: Section = ashet.machine.getLinearMemoryRegion();
 
     // logger.info("linear memory starts at 0x{X:0>8} and is {d:.3} ({} pages) large", .{
@@ -79,6 +100,7 @@ pub fn initializeLinearMemory() void {
     //     std.fmt.fmtIntSizeBin(linear_memory_region.length),
     //     linear_memory_region.length / page_size,
     // });
+    ashet.Debug.setTraceLoc(@src());
     logger.info("linear memory starts at 0x{X:0>8} and is {} ({} pages) large", .{
         linear_memory_region.offset,
         linear_memory_region.length,
@@ -86,12 +108,14 @@ pub fn initializeLinearMemory() void {
     });
 
     // make sure we have at least some pages to play with.
+    ashet.Debug.setTraceLoc(@src());
     if (linear_memory_region.length < 8 * page_size) {
         @panic("not enough linear memory.");
     }
 
     // Now that we're ready for action and the kernel has all predefined variables loaded,
     // let's initialize linear memory management
+    ashet.Debug.setTraceLoc(@src());
     page_manager = RawPageStorageManager.init(linear_memory_region);
 
     // mark all kernel regions that overlap with the linear memory
@@ -103,7 +127,9 @@ pub fn initializeLinearMemory() void {
     };
     for (kernel_regions, 0..) |region, region_id| {
         logger.debug("disable region {}", .{region_id});
-        var base_ptr = @as([*]u8, @ptrFromInt(region.offset));
+        ashet.Debug.setTraceLoc(@src());
+
+        var base_ptr = @as([*]allowzero u8, @ptrFromInt(region.offset));
         var i: usize = 0;
         while (i < region.length) : (i += page_size) {
             if (page_manager.ptrToPage(base_ptr + i)) |page| {
@@ -113,9 +139,11 @@ pub fn initializeLinearMemory() void {
         }
     }
 
+    ashet.Debug.setTraceLoc(@src());
     const free_memory = page_manager.getFreePageCount();
 
     // TODO: logger.info("free ram: {:.2} ({}/{} pages)", .{ std.fmt.fmtIntSizeBin(page_size * free_memory), free_memory, page_manager.pageCount() });
+    ashet.Debug.setTraceLoc(@src());
     logger.info("free ram: {} ({}/{} pages)", .{ page_size * free_memory, free_memory, page_manager.pageCount() });
 }
 

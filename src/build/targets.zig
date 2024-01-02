@@ -21,6 +21,7 @@ pub const MachineSpec = struct {
     source_file: []const u8,
     linker_script: []const u8,
     disk_formatter: []const u8, // defined in build.zig
+    rom_size: ?usize,
 
     /// Instantiation:
     /// Uses place holders:
@@ -54,10 +55,33 @@ pub fn getPlatformSpec(platform: Platform) *const PlatformSpec {
             .platform_id = "arm",
             .source_file = "src/kernel/port/platform/arm.zig",
             .target = std.zig.CrossTarget{
-                .cpu_arch = .arm,
+                .cpu_arch = .thumb,
                 .os_tag = .freestanding,
                 .abi = .eabi,
-                .cpu_model = .{ .explicit = &std.Target.arm.cpu.generic },
+                .cpu_model = .{
+                    // .explicit = &std.Target.arm.cpu.cortex_a7, // this seems to be a pretty reasonable base line
+                    .explicit = &std.Target.arm.cpu.generic,
+                },
+                .cpu_features_add = std.Target.arm.featureSet(&.{
+                    .v7a,
+                }),
+                .cpu_features_sub = std.Target.arm.featureSet(&.{
+                    .v7a, // this is stupid, but it keeps out all the neon stuff we don't wnat
+
+                    // drop everything FPU related:
+                    .neon,
+                    .neonfp,
+                    .neon_fpmovs,
+                    .fp64,
+                    .fpregs,
+                    .fpregs64,
+                    .vfp2,
+                    .vfp2sp,
+                    .vfp3,
+                    .vfp3d16,
+                    .vfp3d16sp,
+                    .vfp3sp,
+                }),
             },
             .qemu_exe = "qemu-system-arm",
         },
@@ -86,7 +110,7 @@ pub fn getPlatformSpec(platform: Platform) *const PlatformSpec {
 pub fn getMachineSpec(machine: Machine) *const MachineSpec {
     return switch (machine) {
         // RISC-V machines:
-        // pub const ashet_home_computer = MachineSpec{
+        // pub const ashet_home_computer =&comptime  MachineSpec{
         //     .name = "Ashet Home Computer",
         //     .machine_id = "ashet_home_computer",
         //     .platform = platforms.specs.riscv,
@@ -106,6 +130,7 @@ pub fn getMachineSpec(machine: Machine) *const MachineSpec {
             .disk_formatter = "rv32_virt",
 
             .qemu_cli = &.{
+                "-cpu",    "rv32",
                 "-M",      "virt",
                 "-m",      "32M",
                 "-netdev", "user,id=hostnet",
@@ -118,6 +143,8 @@ pub fn getMachineSpec(machine: Machine) *const MachineSpec {
                 "-drive",  "if=pflash,index=0,format=raw,file=${BOOTROM}",
                 "-drive",  "if=pflash,index=1,format=raw,file=${DISK}",
             },
+
+            .rom_size = 0x0200_0000,
         },
 
         // x86 machines:
@@ -136,9 +163,11 @@ pub fn getMachineSpec(machine: Machine) *const MachineSpec {
                 "-hda",     "${DISK}",
                 "-vga",     "std",
             },
+
+            .rom_size = null,
         },
 
-        // pub const efi_pc = MachineSpec{ (qemu-system-x86_64)
+        // pub const efi_pc =&comptime  MachineSpec{ (qemu-system-x86_64)
         //     .name = "Generic PC (EFI)",
         //     .machine_id = "efi_pc",
         //     .platform = platforms.specs.x86,
@@ -153,7 +182,7 @@ pub fn getMachineSpec(machine: Machine) *const MachineSpec {
         //     }
         // };
 
-        // pub const microvm = MachineSpec{
+        // pub const microvm = &comptime MachineSpec{
         //     .name = "MicroVM",
         //     .machine_id = "microvm",
         //     .platform = platforms.specs.x86,
@@ -175,14 +204,31 @@ pub fn getMachineSpec(machine: Machine) *const MachineSpec {
         // };
 
         // Arm machines:
-        // pub const arm_virt = MachineSpec{
-        //     .name = "Arm virt",
-        //     .machine_id = "arm_virt",
-        //     .platform = platforms.specs.arm,
-        //     .source_file = "src/kernel/port/machine/arm_virt/machine.zig",
-        //     .linker_script = "src/kernel/port/machine/arm_virt/linker.ld",
+        .arm_virt => &comptime MachineSpec{
+            .name = "Arm virt",
+            .machine_id = "arm_virt",
+            .platform = .arm,
+            .source_file = "src/kernel/port/machine/arm_virt/arm_virt.zig",
+            .linker_script = "src/kernel/port/machine/arm_virt/linker.ld",
 
-        //     .disk_formatter = "arm virt",
-        // };
+            .disk_formatter = "arm_virt",
+
+            .qemu_cli = &.{
+                "-cpu",    "cortex-a7",
+                "-M",      "virt",
+                "-m",      "32M",
+                "-netdev", "user,id=hostnet",
+                "-object", "filter-dump,id=hostnet-dump,netdev=hostnet,file=ashet-os.pcap",
+                "-device", "virtio-gpu-device,xres=800,yres=480",
+                "-device", "virtio-keyboard-device",
+                "-device", "virtio-mouse-device",
+                "-device", "virtio-net-device,netdev=hostnet,mac=52:54:00:12:34:56",
+                // "-bios",   "none",
+                "-drive",  "if=pflash,index=0,format=raw,file=${BOOTROM}",
+                "-drive",  "if=pflash,index=1,format=raw,file=${DISK}",
+            },
+
+            .rom_size = 0x0400_0000,
+        },
     };
 }
