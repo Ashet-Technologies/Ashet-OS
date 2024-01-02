@@ -23,27 +23,48 @@ const ElfSet = std.StringArrayHashMap(ElfFile);
 fn processLine(allocator: std.mem.Allocator, elves: ElfSet, output: std.fs.File, line: []const u8) !void {
     var out_line_buffer = std.io.bufferedWriter(output.writer());
     const writer = out_line_buffer.writer();
+
     {
-        var index: usize = 0;
-        walk: while (index < line.len) {
-            // search for "0x????????" in the output stream
-            if (std.mem.indexOfPos(u8, line, index, "0x")) |start| outer_scan: {
-                scan: {
+        var str_index: usize = 0;
+        while (str_index < line.len) {
+            var earliest_elf: ?*ElfFile = null;
+            var elf_pos: usize = std.math.maxInt(usize);
+            var elf_addr: u64 = 0;
+
+            // first, determine the first occurrance of an elf index:
+
+            for (elves.values()) |*elf| {
+                var prefix_buf: [64]u8 = undefined;
+                const prefix = try std.fmt.bufPrint(&prefix_buf, "{s}:0x", .{elf.name});
+
+                if (std.mem.indexOfPos(u8, line, str_index, prefix)) |start| {
+                    if (start > elf_pos)
+                        continue;
 
                     // basic bounds check
-                    if (start + 10 > line.len)
-                        break :scan;
-                    for (line[start + 2 .. start + 10]) |c| {
-                        if (!std.ascii.isHex(c))
-                            break :scan;
+                    if (start + prefix.len + 8 > line.len) {
+                        continue;
                     }
 
-                    const address = std.fmt.parseInt(u32, line[start + 2 .. start + 10], 16) catch break :scan;
+                    const int_str = line[start..][prefix.len..][0..8];
+                    for (int_str) |c| {
+                        if (!std.ascii.isHex(c))
+                            continue;
+                    }
 
-                    try writer.writeAll(line[index .. start + 10]);
-                    index = start + 10;
+                    elf_addr = std.fmt.parseInt(u64, int_str, 16) catch unreachable;
+                    elf_pos = start;
+                    earliest_elf = elf;
+                }
+            }
 
-                    var symbol_info = getSymbolFromDwarf(u32, allocator, address, &elves.values()[0].dwarf) catch break :outer_scan;
+            if (earliest_elf) |elf| {
+                try writer.writeAll(elf.name);
+                try writer.writeAll(":0x");
+                try writer.print("{X:0>8}", .{elf_addr});
+                str_index = elf_pos + elf.name.len + 11; // ":0x" + 8 digits
+
+                if (getSymbolFromDwarf(u32, allocator, elf_addr, &elf.dwarf)) |symbol_info| {
                     defer symbol_info.deinit(allocator);
 
                     if (symbol_info.line_info) |line_info| {
@@ -51,15 +72,11 @@ fn processLine(allocator: std.mem.Allocator, elves: ElfSet, output: std.fs.File,
                     } else if (!std.mem.eql(u8, symbol_info.symbol_name, "???")) {
                         try writer.print("[{s}]", .{symbol_info.symbol_name});
                     }
-
-                    continue :walk;
+                } else |err| {
+                    try writer.print("[ERROR:{s}]", .{@errorName(err)});
                 }
-
-                try writer.writeAll(line[index .. start + 2]);
-                index = start + 2;
-                continue :walk;
             } else {
-                try writer.writeAll(line[index..]);
+                try writer.writeAll(line[str_index..]);
                 break;
             }
         }
