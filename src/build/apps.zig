@@ -5,8 +5,13 @@ const AssetBundleStep = @import("AssetBundleStep.zig");
 const BitmapConverter = @import("BitmapConverter.zig");
 const targets = @import("targets.zig");
 
+pub const App = struct {
+    name: []const u8,
+    exe: std.build.LazyPath,
+    icon: ?std.build.LazyPath,
+};
+
 pub fn compileApps(
-    b: *std.build.Builder,
     ctx: *AshetContext,
     optimize: std.builtin.OptimizeMode,
     modules: ashet_com.Modules,
@@ -24,7 +29,7 @@ pub fn compileApps(
             //     }),
             // },
             .{ .name = "hypertext", .module = modules.libhypertext },
-            .{ .name = "main_window_layout", .module = ui_gen.render(.{ .path = b.pathFromRoot("src/apps/browser/main_window.lua") }) },
+            .{ .name = "main_window_layout", .module = ui_gen.render(.{ .path = ctx.b.pathFromRoot("src/apps/browser/main_window.lua") }) },
         });
     }
 
@@ -46,7 +51,7 @@ pub fn compileApps(
     ctx.createAshetApp("wiki", "src/apps/wiki/wiki.zig", "artwork/icons/small-icons/32x32-free-design-icons/32x32/Help book.png", optimize, &.{
         .{ .name = "hypertext", .module = modules.libhypertext },
         .{ .name = "hyperdoc", .module = modules.hyperdoc },
-        .{ .name = "ui-layout", .module = ui_gen.render(.{ .path = b.pathFromRoot("src/apps/wiki/ui.lua") }) },
+        .{ .name = "ui-layout", .module = ui_gen.render(.{ .path = ctx.b.pathFromRoot("src/apps/wiki/ui.lua") }) },
     });
 
     {
@@ -76,7 +81,22 @@ pub const AshetContext = struct {
     bmpconv: BitmapConverter,
     mode: Mode,
 
-    fn createAshetApp(ctx: AshetContext, name: []const u8, source: []const u8, maybe_icon: ?[]const u8, optimize: std.builtin.OptimizeMode, dependencies: []const std.Build.ModuleDependency) void {
+    app_list: std.ArrayList(App),
+
+    pub fn init(
+        b: *std.build.Builder,
+        bmpconv: BitmapConverter,
+        mode: Mode,
+    ) AshetContext {
+        return AshetContext{
+            .b = b,
+            .bmpconv = bmpconv,
+            .mode = mode,
+            .app_list = std.ArrayList(App).init(b.allocator),
+        };
+    }
+
+    fn createAshetApp(ctx: *AshetContext, name: []const u8, source: []const u8, maybe_icon: ?[]const u8, optimize: std.builtin.OptimizeMode, dependencies: []const std.Build.ModuleDependency) void {
         const target = switch (ctx.mode) {
             .hosted => |target| target,
             .native => |info| targets.getPlatformSpec(info.platform).target,
@@ -146,7 +166,7 @@ pub const AshetContext = struct {
 
                 info.rootfs.addFile(exe.getEmittedBin(), ctx.b.fmt("apps/{s}/code", .{name}));
 
-                if (maybe_icon) |src_icon| {
+                const icon_file = if (maybe_icon) |src_icon| blk: {
                     const icon_file = ctx.bmpconv.convert(
                         .{ .path = src_icon },
                         ctx.b.fmt("{s}.icon", .{name}),
@@ -158,7 +178,16 @@ pub const AshetContext = struct {
                     );
 
                     info.rootfs.addFile(icon_file, ctx.b.fmt("apps/{s}/icon", .{name}));
-                }
+                    break :blk icon_file;
+                } else null;
+
+                ctx.app_list.append(
+                    App{
+                        .name = name,
+                        .exe = exe.getEmittedBin(),
+                        .icon = icon_file,
+                    },
+                ) catch @panic("out of memory");
             },
         }
     }

@@ -121,7 +121,7 @@ pub fn build(b: *std.Build) !void {
     afs_tool.addModule("args", mod_args);
     b.installArtifact(afs_tool);
 
-    {
+    const debug_filter = blk: {
         const debug_filter = b.addExecutable(.{
             .name = "debug-filter",
             .root_source_file = .{ .path = "tools/debug-filter.zig" },
@@ -132,7 +132,9 @@ pub fn build(b: *std.Build) !void {
         const install_step = b.addInstallArtifact(debug_filter, .{});
         b.getInstallStep().dependOn(&install_step.step);
         tools_step.dependOn(&install_step.step);
-    }
+
+        break :blk debug_filter;
+    };
 
     const bmpconv = BitmapConverter.init(b);
     b.installArtifact(bmpconv.converter);
@@ -229,7 +231,25 @@ pub fn build(b: *std.Build) !void {
                 .@"${KERNEL}" = os.kernel_elf,
             };
 
-            const vm_runner = b.addSystemCommand(&.{platform_spec.qemu_exe});
+            // Run qemu with the debug-filter wrapped around so we can translate addresses
+            // to file:line,function info
+            const vm_runner = b.addRunArtifact(debug_filter);
+
+            // Add debug elf contexts:
+            vm_runner.addArg("--elf");
+            vm_runner.addPrefixedFileArg("kernel=", os.kernel_elf);
+
+            for (os.apps) |app| {
+                var app_name_buf: [128]u8 = undefined;
+
+                const app_name = try std.fmt.bufPrint(&app_name_buf, "{s}=", .{app.name});
+
+                vm_runner.addArg("--elf");
+                vm_runner.addPrefixedFileArg(app_name, app.exe);
+            }
+
+            // from now on regular QEMU flags:
+            vm_runner.addArg(platform_spec.qemu_exe);
             vm_runner.addArgs(&generic_qemu_flags);
 
             arg_loop: for (machine_spec.qemu_cli) |arg| {
@@ -404,14 +424,13 @@ fn buildHostedApps(
         .mod_system_assets = system_assets,
     };
 
-    var ctx = ashet_apps.AshetContext{
-        .b = b,
-        .bmpconv = bmpconv,
-        .mode = .{ .hosted = target },
-    };
+    var ctx = ashet_apps.AshetContext.init(
+        b,
+        bmpconv,
+        .{ .hosted = target },
+    );
 
     ashet_apps.compileApps(
-        b,
         &ctx,
         optimize,
         modules,
@@ -423,6 +442,8 @@ const OS = struct {
     kernel_elf: std.Build.LazyPath,
     kernel_bin: std.Build.LazyPath,
     disk_img: std.Build.LazyPath,
+
+    apps: []const ashet_apps.App,
 };
 
 fn buildOs(
@@ -492,20 +513,19 @@ fn buildOs(
     );
     b.getInstallStep().dependOn(&install_raw_step.step);
 
-    var ctx = ashet_apps.AshetContext{
-        .b = b,
-        .bmpconv = bmpconv,
-        .mode = .{
+    var ctx = ashet_apps.AshetContext.init(
+        b,
+        bmpconv,
+        .{
             .native = .{
                 .platform = machine_spec.platform,
                 .rootfs = &rootfs,
             },
         },
-    };
+    );
 
     if (build_native_apps) {
         ashet_apps.compileApps(
-            b,
             &ctx,
             optimize,
             modules,
@@ -529,6 +549,7 @@ fn buildOs(
         .disk_img = disk_image,
         .kernel_bin = raw_step.getOutputSource(),
         .kernel_elf = kernel_file,
+        .apps = ctx.app_list.items,
     };
 }
 

@@ -621,8 +621,7 @@ fn compareIndexNode(ctx: void, lhs: Index.Node, rhs: Index.Node) bool {
     const rhs_folder = (rhs.content == .list);
 
     if (lhs_folder != rhs_folder) {
-        if (lhs_folder)
-            return true;
+        return lhs_folder;
     }
 
     return std.ascii.lessThanIgnoreCase(lhs.title, rhs.title);

@@ -59,9 +59,11 @@ fn processLine(allocator: std.mem.Allocator, elves: ElfSet, output: std.fs.File,
             }
 
             if (earliest_elf) |elf| {
+                try writer.writeAll(line[str_index..elf_pos]);
                 try writer.writeAll(elf.name);
                 try writer.writeAll(":0x");
                 try writer.print("{X:0>8}", .{elf_addr});
+
                 str_index = elf_pos + elf.name.len + 11; // ":0x" + 8 digits
 
                 if (getSymbolFromDwarf(u32, allocator, elf_addr, &elf.dwarf)) |symbol_info| {
