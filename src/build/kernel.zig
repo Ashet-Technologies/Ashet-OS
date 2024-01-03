@@ -6,6 +6,7 @@ const ashet_com = @import("os-common.zig");
 const ashet_lwip = @import("lwip.zig");
 
 const build_targets = @import("targets.zig");
+const platforms = @import("platform.zig");
 
 pub const KernelOptions = struct {
     optimize: std.builtin.OptimizeMode,
@@ -13,6 +14,7 @@ pub const KernelOptions = struct {
     machine_spec: *const build_targets.MachineSpec,
     modules: ashet_com.Modules,
     system_assets: *std.Build.Module,
+    platforms: platforms.PlatformData,
 };
 
 fn renderMachineInfo(
@@ -38,12 +40,13 @@ fn renderMachineInfo(
 }
 
 pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
-    const platform_spec = build_targets.getPlatformSpec(options.machine_spec.platform);
+    const machine_spec = options.machine_spec;
+    const platform_spec = build_targets.getPlatformSpec(machine_spec.platform);
 
     const machine_info_module = blk: {
         const machine_info = renderMachineInfo(
             b,
-            options.machine_spec,
+            machine_spec,
             platform_spec,
         ) catch @panic("out of memory!");
 
@@ -56,34 +59,30 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
         break :blk module;
     };
 
-    const platform_module = b.createModule(.{
-        .source_file = .{ .path = platform_spec.source_file },
-    });
-
     const machine_module = b.createModule(.{
-        .source_file = .{ .path = options.machine_spec.source_file },
+        .source_file = .{ .path = machine_spec.source_file },
         .dependencies = &.{
-            .{ .name = "platform", .module = platform_module },
+            .{ .name = "platform", .module = options.platforms.modules.getAssertContains(machine_spec.platform) },
             .{ .name = "args", .module = options.modules.args }, // TODO: Make explicit list of dependencies
         },
     });
 
-    const cguana_dep = b.anonymousDependency("vendor/ziglibc", @import("../../vendor/ziglibc/build.zig"), .{
-        .target = platform_spec.target,
-        .optimize = .ReleaseSafe,
+    // const cguana_dep = b.anonymousDependency("vendor/ziglibc", @import("../../vendor/ziglibc/build.zig"), .{
+    //     .target = platform_spec.target,
+    //     .optimize = .ReleaseSafe,
 
-        .static = true,
-        .dynamic = false,
-        .start = .none,
-        .trace = false,
+    //     .static = true,
+    //     .dynamic = false,
+    //     .start = .none,
+    //     .trace = false,
 
-        .cstd = true,
-        .posix = false,
-        .gnu = false,
-        .linux = false,
-    });
+    //     .cstd = true,
+    //     .posix = false,
+    //     .gnu = false,
+    //     .linux = false,
+    // });
 
-    const ashet_libc = cguana_dep.artifact("cguana");
+    // const ashet_libc = cguana_dep.artifact("cguana");
 
     const kernel_exe = b.addExecutable(.{
         .name = "ashet-os",
@@ -113,9 +112,15 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
     kernel_exe.addModule("args", options.modules.args);
     kernel_exe.addModule("machine-info", machine_info_module);
     kernel_exe.addModule("machine", machine_module);
-    kernel_exe.addModule("platform", platform_module);
+    kernel_exe.addModule("platform", options.platforms.modules.getAssertContains(machine_spec.platform));
 
-    kernel_exe.addModule("platform.x86", platform_module);
+    for (std.enums.values(build_targets.Platform)) |platform| {
+        const mod = options.platforms.modules.getAssertContains(platform);
+        kernel_exe.addModule(
+            b.fmt("platform.{s}", .{@tagName(platform)}),
+            mod,
+        );
+    }
 
     kernel_exe.addModule("fatfs", options.modules.fatfs);
     kernel_exe.setLinkerScriptPath(.{ .path = options.machine_spec.linker_script });
@@ -124,13 +129,10 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
 
     FatFS.link(kernel_exe, options.fatfs_config);
 
-    kernel_exe.linkLibrary(ashet_libc);
+    kernel_exe.linkLibrary(options.platforms.libc.getAssertContains(machine_spec.platform));
 
     {
-        const lwip = ashet_lwip.create(b, kernel_exe.target, .ReleaseSafe);
-        lwip.is_linking_libc = false;
-        lwip.strip = false;
-        lwip.addSystemIncludePath(.{ .path = "vendor/ziglibc/inc/libc" });
+        const lwip = options.platforms.lwip.getAssertContains(machine_spec.platform);
         kernel_exe.linkLibrary(lwip);
         ashet_lwip.setup(kernel_exe);
     }

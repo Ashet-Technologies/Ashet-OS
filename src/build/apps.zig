@@ -4,6 +4,7 @@ const disk_image_step = @import("../../vendor/disk-image-step/build.zig");
 const AssetBundleStep = @import("AssetBundleStep.zig");
 const BitmapConverter = @import("BitmapConverter.zig");
 const targets = @import("targets.zig");
+const platforms = @import("platform.zig");
 
 pub const App = struct {
     name: []const u8,
@@ -71,8 +72,9 @@ pub fn compileApps(
 pub const Mode = union(enum) {
     hosted: std.zig.CrossTarget,
     native: struct {
-        rootfs: *disk_image_step.FileSystemBuilder,
+        platforms: platforms.PlatformData,
         platform: targets.Platform,
+        rootfs: *disk_image_step.FileSystemBuilder,
     },
 };
 

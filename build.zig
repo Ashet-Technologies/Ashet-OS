@@ -14,6 +14,7 @@ const ziglibc_file = std.build.FileSource{ .path = "vendor/libc/ziglibc.txt" };
 
 const kernel_targets = @import("src/kernel/port/targets.zig");
 const build_targets = @import("src/build/targets.zig");
+const platforms_build = @import("src/build/platform.zig");
 
 pub fn build(b: *std.Build) !void {
     const hosted_target = b.standardTargetOptions(.{});
@@ -179,6 +180,8 @@ pub fn build(b: *std.Build) !void {
         );
     }
 
+    const platforms = platforms_build.init(b);
+
     const MachineSet = std.enums.EnumSet(Machine);
 
     const machines = if (b.option([]const u8, "machine", "Defines the machine Ashet OS should be built for.")) |machine_list_str| set: {
@@ -217,6 +220,7 @@ pub fn build(b: *std.Build) !void {
                 kernel_step,
                 machine,
                 build_native_apps,
+                platforms,
             );
 
             const Variables = struct {
@@ -454,7 +458,8 @@ fn buildOs(
     lua_exe: *std.Build.Step.Compile,
     kernel_step: *std.Build.Step,
     machine: Machine,
-    build_native_apps: bool,
+    build_apps: bool,
+    platforms: platforms_build.PlatformData,
 ) OS {
     var rootfs = disk_image_step.FileSystemBuilder.init(b);
 
@@ -483,6 +488,7 @@ fn buildOs(
         .machine_spec = machine_spec,
         .modules = modules,
         .system_assets = system_assets,
+        .platforms = platforms,
     });
 
     const kernel_file = kernel_exe.getEmittedBin();
@@ -518,13 +524,14 @@ fn buildOs(
         bmpconv,
         .{
             .native = .{
+                .platforms = platforms,
                 .platform = machine_spec.platform,
                 .rootfs = &rootfs,
             },
         },
     );
 
-    if (build_native_apps) {
+    if (build_apps) {
         ashet_apps.compileApps(
             &ctx,
             optimize,
