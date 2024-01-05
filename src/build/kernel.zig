@@ -62,7 +62,7 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
     const machine_module = b.createModule(.{
         .source_file = .{ .path = machine_spec.source_file },
         .dependencies = &.{
-            .{ .name = "platform", .module = options.platforms.modules.getAssertContains(machine_spec.platform) },
+            .{ .name = "platform", .module = options.platforms.modules.get(machine_spec.platform) },
             .{ .name = "args", .module = options.modules.args }, // TODO: Make explicit list of dependencies
         },
     });
@@ -112,10 +112,10 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
     kernel_exe.addModule("args", options.modules.args);
     kernel_exe.addModule("machine-info", machine_info_module);
     kernel_exe.addModule("machine", machine_module);
-    kernel_exe.addModule("platform", options.platforms.modules.getAssertContains(machine_spec.platform));
+    kernel_exe.addModule("platform", options.platforms.modules.get(machine_spec.platform));
 
     for (std.enums.values(build_targets.Platform)) |platform| {
-        const mod = options.platforms.modules.getAssertContains(platform);
+        const mod = options.platforms.modules.get(platform);
         kernel_exe.addModule(
             b.fmt("platform.{s}", .{@tagName(platform)}),
             mod,
@@ -125,14 +125,16 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
     kernel_exe.addModule("fatfs", options.modules.fatfs);
     kernel_exe.setLinkerScriptPath(.{ .path = options.machine_spec.linker_script });
 
-    kernel_exe.addSystemIncludePath(.{ .path = "vendor/ziglibc/inc/libc" });
+    for (options.platforms.include_paths.get(machine_spec.platform).items) |path| {
+        kernel_exe.addSystemIncludePath(path);
+    }
 
     FatFS.link(kernel_exe, options.fatfs_config);
 
-    kernel_exe.linkLibrary(options.platforms.libc.getAssertContains(machine_spec.platform));
+    kernel_exe.linkLibrary(options.platforms.libc.get(machine_spec.platform));
 
     {
-        const lwip = options.platforms.lwip.getAssertContains(machine_spec.platform);
+        const lwip = options.platforms.lwip.get(machine_spec.platform);
         kernel_exe.linkLibrary(lwip);
         ashet_lwip.setup(kernel_exe);
     }
