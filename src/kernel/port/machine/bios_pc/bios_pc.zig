@@ -99,6 +99,8 @@ pub fn initialize() !void {
     );
     serial_ready = true;
 
+    std.log.info("debug serial port initialized", .{});
+
     const mbheader = x86.start.multiboot_info orelse @panic("Ashet OS must be bootet via a MultiBoot 1 compatible bootloader. Use syslinux or grub!");
 
     if (mbheader.flags.boot_loader_name) {
