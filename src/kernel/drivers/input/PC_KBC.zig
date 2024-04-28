@@ -461,7 +461,7 @@ fn readData(kbc: PC_KBC) !u8 {
 // }
 
 const default_deadline = 1000; // ms
-const resend_deadline = 100; // ms
+const resend_deadline = 10; // ms
 
 const Deadline = struct {
     deadline: u64,
