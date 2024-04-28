@@ -72,6 +72,10 @@ const hw = struct {
     var rtc: ashet.drivers.rtc.PL031 = undefined;
 };
 
+pub fn get_tick_count() u64 {
+    return 0; // TODO: Implement precision timer
+}
+
 pub fn initialize() !void {
     logger.info("initialize PL011 uart...", .{});
     hw.uart = ashet.drivers.serial.PL011.init(0x0900_0000);

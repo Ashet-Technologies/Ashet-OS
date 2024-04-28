@@ -49,6 +49,10 @@ const hw = struct {
     var cfi: ashet.drivers.block.CFI_NOR_Flash = undefined;
 };
 
+pub fn get_tick_count() u64 {
+    return 0; // TODO: Implement precision timer
+}
+
 pub fn initialize() !void {
     hw.rtc = ashet.drivers.rtc.Goldfish.init(0x0101000);
     hw.cfi = try ashet.drivers.block.CFI_NOR_Flash.init(0x2200_0000, 0x0200_0000);
