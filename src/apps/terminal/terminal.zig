@@ -254,23 +254,27 @@ const NewTabDialog = struct {
             std.log.err("failed to get ui event for new tab dialog: {s}", .{@errorName(err)});
             return;
         };
+        const app = ntd.app;
+        defer if (app.new_tab_dialog != null) {
+            _ = ashet.io.scheduleAndAwait(&ntd.event_iop.iop, .schedule_only);
+        };
 
         const event = ashet.ui.constructEvent(iop.outputs.event_type, iop.outputs.event);
 
         switch (event) {
             .mouse => |input| {
                 if (ntd.widgets.interface.sendMouseEvent(input)) |gui_event| {
-                    ntd.app.dispatchEvent(gui_event);
+                    app.dispatchEvent(gui_event);
                 }
             },
             .keyboard => |input| {
                 if (ntd.widgets.interface.sendKeyboardEvent(input)) |gui_event| {
-                    ntd.app.dispatchEvent(gui_event);
+                    app.dispatchEvent(gui_event);
                 }
             },
             .window_close => {
                 ntd.close();
-                ntd.app.new_tab_dialog = null;
+                app.new_tab_dialog = null;
             },
             .window_minimize => {},
             .window_restore => {},
@@ -281,8 +285,6 @@ const NewTabDialog = struct {
                 ntd.paint();
             },
         }
-
-        _ = ashet.io.scheduleAndAwait(&ntd.event_iop.iop, .schedule_only);
     }
 };
 

@@ -15,6 +15,20 @@ pub const machine_config = ashet.ports.MachineConfig{
     .load_sections = .{ .data = false, .bss = false },
 };
 
+const SerialPortIO = struct {
+    base_port: u16,
+
+    pub fn write(io: SerialPortIO, reg: ashet.drivers.serial.ns16c550.Register, value: u8) void {
+        return x86.out(u8, io.base_port + @intFromEnum(reg), value);
+    }
+
+    pub fn read(io: SerialPortIO, reg: ashet.drivers.serial.ns16c550.Register) u8 {
+        return x86.in(u8, io.base_port + @intFromEnum(reg));
+    }
+};
+
+const NS16C550 = ashet.drivers.serial.ns16c550.NS16C550(SerialPortIO);
+
 const hw = struct {
     //! list of fixed hardware components
 
@@ -31,8 +45,14 @@ const hw = struct {
 
     // TODO: Add a higher precision timer to the OS for better timeouts
     var pit: ashet.drivers.timer.Programmable_Interval_Timer = undefined;
+
+    var serial0: NS16C550 = undefined;
+    var serial1: NS16C550 = undefined;
+    var serial2: NS16C550 = undefined;
+    var serial3: NS16C550 = undefined;
 };
 
+var serial_ready: bool = false;
 var graphics_enabled: bool = false;
 
 const DebugChannel = enum {
@@ -53,11 +73,31 @@ fn printCliError(err: args.Error) !void {
     cli_ok = false;
 }
 
+const COM1_PORT = 0x3F8;
+const COM2_PORT = 0x2F8;
+const COM3_PORT = 0x3E8;
+const COM4_PORT = 0x2E8;
+
 pub fn initialize() !void {
+
     // x86 requires GDT and IDT, as a lot of x86 devices are only well usable with
     // interrupts. We're also using the GDT for interrupts
     x86.gdt.init();
     x86.idt.init();
+
+    hw.serial0 = NS16C550.init(.{ .base_port = COM1_PORT });
+    hw.serial1 = NS16C550.init(.{ .base_port = COM2_PORT });
+    hw.serial2 = NS16C550.init(.{ .base_port = COM3_PORT });
+    hw.serial3 = NS16C550.init(.{ .base_port = COM4_PORT });
+
+    // we have to configure serial0 as we may use it for debug logging:
+    hw.serial0.configure(
+        115_200,
+        .eight,
+        .none,
+        .one,
+    );
+    serial_ready = true;
 
     const mbheader = x86.start.multiboot_info orelse @panic("Ashet OS must be bootet via a MultiBoot 1 compatible bootloader. Use syslinux or grub!");
 
@@ -198,8 +238,14 @@ pub fn debugWrite(msg: []const u8) void {
     switch (kernel_options.debug) {
         .none => {},
         .serial => {
-            for (msg) |char| {
-                x86.out(u8, 0x3F8, char);
+            if (serial_ready) {
+                for (msg) |char| {
+                    hw.serial0.write_byte(char);
+                }
+            } else {
+                for (msg) |char| {
+                    x86.out(u8, COM1_PORT, char);
+                }
             }
         },
         .parallel => {

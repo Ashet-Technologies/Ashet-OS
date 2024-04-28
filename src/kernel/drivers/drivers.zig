@@ -10,7 +10,7 @@ pub const block = struct {
 };
 
 pub const serial = struct {
-    pub const NS16C550 = @import("serial/NS16C550.zig");
+    pub const ns16c550 = @import("serial/NS16C550.zig");
     pub const PL011 = @import("serial/PL011.zig");
 };
 
