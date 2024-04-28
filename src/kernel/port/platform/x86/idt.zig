@@ -161,12 +161,12 @@ pub fn disableAllIRQs() void {
 }
 
 pub fn enableExternalInterrupts() void {
-    // std.log.debug("interrupts are now enabled", .{});
+    // logger.debug("interrupts are now enabled", .{});
     asm volatile ("sti");
 }
 
 pub fn disableExternalInterrupts() void {
-    // std.log.debug("interrupts are now disabled", .{});
+    // logger.debug("interrupts are now disabled", .{});
     asm volatile ("cli");
 }
 

@@ -74,7 +74,7 @@ pub const enableInterrupts = idt.enableExternalInterrupts;
 /// port number and `value` will be sent to that port.
 pub inline fn out(comptime T: type, port: u16, value: T) void {
     // if (port != 0x3F8 and port != 0x80) {
-    //     std.log.debug("out(0x{X:0>4}, {X:0>2})", .{
+    //     logger.debug("out(0x{X:0>4}, {X:0>2})", .{
     //         port, value,
     //     });
     // }

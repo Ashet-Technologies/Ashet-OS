@@ -1517,14 +1517,14 @@ pub const desktop = struct {
             defer icon_file.close();
 
             app.icon = Icon.load(icon_file.reader(), app.palette_base) catch |err| blk: {
-                std.log.warn("Failed to load icon for application {s}: {s}", .{
+                logger.warn("Failed to load icon for application {s}: {s}", .{
                     ent.getName(),
                     @errorName(err),
                 });
                 break :blk default_icon;
             };
         } else |_| {
-            std.log.warn("Application {s} does not have an icon. Using default.", .{ent.getName()});
+            logger.warn("Application {s} does not have an icon. Using default.", .{ent.getName()});
             app.icon = default_icon;
         }
     }

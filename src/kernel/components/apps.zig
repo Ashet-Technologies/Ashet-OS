@@ -304,7 +304,7 @@ pub fn startAppElf(app: AppID) !void {
                     }
                 },
                 elf.SHT_DYNAMIC => {
-                    std.log.info("DYNAMIC shdr {}", .{shdr});
+                    logger.info("DYNAMIC shdr {}", .{shdr});
                     //
                 },
 

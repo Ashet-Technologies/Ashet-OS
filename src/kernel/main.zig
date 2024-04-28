@@ -226,7 +226,7 @@ pub const std_options = struct {
                 return;
         }
 
-        const prefix = if (ansi)
+        const color_code = if (ansi)
             switch (message_level) {
                 .err => "\x1B[91m", // red
                 .warn => "\x1B[93m", // yellow
@@ -237,9 +237,33 @@ pub const std_options = struct {
             "";
         const postfix = if (ansi) "\x1B[0m" else ""; // reset terminal properties
 
-        const level_txt = comptime message_level.asText();
-        const prefix2 = if (scope == .default) ": " else "(" ++ @tagName(scope) ++ "): ";
-        Debug.writer().print(prefix ++ level_txt ++ prefix2 ++ format ++ postfix ++ "\n", args) catch return;
+        const level_txt = comptime switch (message_level) {
+            .err => "E",
+            .warn => "W",
+            .info => "I",
+            .debug => "D",
+        };
+        const scope_tag = comptime if (scope != .default)
+            @tagName(scope)
+        else
+            "unscoped";
+
+        {
+            var cs = CriticalSection.enter();
+            defer cs.leave();
+
+            const when = time.get_tick_count();
+
+            Debug.writer().print(color_code ++ "{d: >6}.{d:0>3} [{s}] {s}: ", .{
+                when / 1000,
+                when % 1000,
+                level_txt,
+                scope_tag,
+            }) catch return;
+
+            Debug.writer().print(format, args) catch return;
+            Debug.writer().print(postfix ++ "\r\n", .{}) catch return;
+        }
     }
 };
 

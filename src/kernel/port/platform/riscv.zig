@@ -1,5 +1,6 @@
 const std = @import("std");
 const ashet = @import("root");
+const logger = std.log.scoped(.riscv);
 
 pub const page_size = 4096;
 
@@ -13,10 +14,10 @@ pub const start = struct {
             : [out] "=r" (-> u32),
         );
 
-        std.log.err("trap happened. trap code: 0x{X:0>8}", .{trap_reason});
+        logger.err("trap happened. trap code: 0x{X:0>8}", .{trap_reason});
         if (trap_reason >= 0x8000_0000) {
             // asynchronous
-            std.log.err("async trap: {s}", .{switch (trap_reason) {
+            logger.err("async trap: {s}", .{switch (trap_reason) {
                 // swi:
                 0x8000_0000 => "user software interrupt",
                 0x8000_0001 => "supervisor software interrupt",
@@ -46,7 +47,7 @@ pub const start = struct {
             }});
         } else {
             // synchronous
-            std.log.err("sync trap: {s}", .{switch (trap_reason) {
+            logger.err("sync trap: {s}", .{switch (trap_reason) {
                 // faults:
                 0x0000_0000 => "instruction address misaligned",
                 0x0000_0001 => "instruction access fault",

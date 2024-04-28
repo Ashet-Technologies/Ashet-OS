@@ -180,7 +180,7 @@ pub const debug = struct {
                 if (i > 0) {
                     writer.writeAll("]") catch {};
                 }
-                writer.print("\n0x{X:0>8}: [", .{page_manager.region.offset + i * page_size}) catch {};
+                writer.print("\r\n0x{X:0>8}: [", .{page_manager.region.offset + i * page_size}) catch {};
             }
             if (page_manager.isFree(@as(Page, @enumFromInt(i)))) {
                 free_memory += page_size;
@@ -190,13 +190,13 @@ pub const debug = struct {
             }
         }
 
-        writer.writeAll("]\n") catch {};
+        writer.writeAll("]\r\n") catch {};
 
         // for (page_manager.bitmap(), 0..) |item, index| {
         //     writer.print("{X:0>4}: {b:0>32}\r\n", .{ index, item }) catch {};
         // }
 
-        writer.print("free ram: {} ({}/{} pages)\n", .{ free_memory, free_memory / page_size, page_manager.pageCount() }) catch {};
+        writer.print("free ram: {} ({}/{} pages)\r\n", .{ free_memory, free_memory / page_size, page_manager.pageCount() }) catch {};
     }
 };
 

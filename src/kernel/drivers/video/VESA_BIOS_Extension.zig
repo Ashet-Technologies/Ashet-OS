@@ -52,18 +52,25 @@ pub fn init(allocator: std.mem.Allocator, mbinfo: *multiboot.Info) !VESA_BIOS_Ex
     if (vbe_control.signature != vbe.Control.signature)
         @panic("invalid vbe signature!");
 
-    // std.log.info("vbe_control = {}", .{vbe_control});
+    // logger.info("vbe_control = {}", .{vbe_control});
 
-    std.log.info("  oemstring = '{s}'", .{std.mem.sliceTo(vbe_control.oemstring.get(), 0)});
-    std.log.info("  oem_vendor_name = '{s}'", .{std.mem.sliceTo(vbe_control.oem_vendor_name.get(), 0)});
-    std.log.info("  oem_product_name = '{s}'", .{std.mem.sliceTo(vbe_control.oem_product_name.get(), 0)});
-    std.log.info("  oem_product_rev = '{s}'", .{std.mem.sliceTo(vbe_control.oem_product_rev.get(), 0)});
+    logger.info("  oemstring = '{s}'", .{std.mem.sliceTo(vbe_control.oemstring.get(), 0)});
+    logger.info("  oem_vendor_name = '{s}'", .{std.mem.sliceTo(vbe_control.oem_vendor_name.get(), 0)});
+    logger.info("  oem_product_name = '{s}'", .{std.mem.sliceTo(vbe_control.oem_product_name.get(), 0)});
+    logger.info("  oem_product_rev = '{s}'", .{std.mem.sliceTo(vbe_control.oem_product_rev.get(), 0)});
 
     {
-        std.log.info("  video modes:", .{});
+        logger.info("  video modes:", .{});
         var modes = vbe_control.mode_ptr.get();
         while (modes[0] != 0xFFFF) {
-            std.log.info("    - {X:0>4}", .{modes[0]});
+            if (findModeByAssignedNumber(modes[0])) |mode| {
+                switch (mode) {
+                    .text => |tm| logger.info("    - {X:0>4} (text {}x{})", .{ modes[0], tm.columns, tm.rows }),
+                    .graphics => |gm| logger.info("    - {X:0>4} (graphics {}x{}, {s})", .{ modes[0], gm.width, gm.height, @tagName(gm.colors) }),
+                }
+            } else {
+                logger.info("    - {X:0>4} (unknown)", .{modes[0]});
+            }
             modes += 1;
         }
     }
@@ -71,20 +78,20 @@ pub fn init(allocator: std.mem.Allocator, mbinfo: *multiboot.Info) !VESA_BIOS_Ex
     const vbe_mode = @as(*vbe.ModeInfo, @ptrFromInt(vbe_info.mode_info));
 
     if (vbe_mode.memory_model != .direct_color) {
-        std.log.err("mode_info = {}", .{vbe_mode});
+        logger.err("mode_info = {}", .{vbe_mode});
         @panic("VBE mode wasn't properly initialized: invalid color mode");
     }
     if (vbe_mode.number_of_planes != 1) {
-        std.log.err("mode_info = {}", .{vbe_mode});
+        logger.err("mode_info = {}", .{vbe_mode});
         @panic("VBE mode wasn't properly initialized: more than 1 plane");
     }
     if (vbe_mode.bits_per_pixel != 32) {
-        std.log.err("mode_info = {}", .{vbe_mode});
+        logger.err("mode_info = {}", .{vbe_mode});
         @panic("VBE mode wasn't properly initialized: expected 32 bpp");
     }
 
-    std.log.info("video resolution: {}x{}", .{ vbe_mode.x_resolution, vbe_mode.y_resolution });
-    std.log.info("video memory:     {}K", .{64 * vbe_control.ram_size});
+    logger.info("video resolution: {}x{}", .{ vbe_mode.x_resolution, vbe_mode.y_resolution });
+    logger.info("video memory:     {}K", .{64 * vbe_control.ram_size});
 
     const framebuffer_config = FramebufferConfig{
         .scanline0 = vbe_mode.phys_base_ptr,
@@ -356,7 +363,7 @@ const Framebuffer = struct {
 
 // var offset: u8 = 0;
 // while (true) {
-//     std.log.info("frame: {}", .{offset});
+//     logger.info("frame: {}", .{offset});
 
 //     {
 //         @setRuntimeSafety(false);
@@ -387,3 +394,77 @@ const Framebuffer = struct {
 
 //     offset +%= 1;
 // }
+
+const ColorDepth = enum {
+    @"16",
+    @"256",
+    @"1:5:5:5",
+    @"5:6:5",
+    @"8:8:8",
+};
+
+const Mode = union(enum) {
+    text: struct {
+        rows: u8,
+        columns: u8,
+    },
+    graphics: struct {
+        width: u16,
+        height: u16,
+        colors: ColorDepth,
+    },
+};
+
+fn textMode(c: u8, r: u8) Mode {
+    return .{ .text = .{ .rows = r, .columns = c } };
+}
+fn graphicsMode(w: u16, h: u16, c: ColorDepth) Mode {
+    return .{ .graphics = .{ .width = w, .height = h, .colors = c } };
+}
+
+const KnownMode = struct {
+    assigned_number: u16,
+    mode: Mode,
+};
+
+fn knownMode(an: u16, mode: Mode) KnownMode {
+    return .{ .assigned_number = an, .mode = mode };
+}
+
+fn findModeByAssignedNumber(an: u16) ?Mode {
+    return for (known_modes) |kn| {
+        if (kn.assigned_number == an)
+            break kn.mode;
+    } else null;
+}
+
+pub const known_modes = [_]KnownMode{
+    knownMode(0x100, graphicsMode(640, 400, .@"256")),
+    knownMode(0x101, graphicsMode(640, 480, .@"256")),
+    knownMode(0x102, graphicsMode(800, 600, .@"16")),
+    knownMode(0x103, graphicsMode(800, 600, .@"256")),
+    knownMode(0x104, graphicsMode(1024, 768, .@"16")),
+    knownMode(0x105, graphicsMode(1024, 768, .@"256")),
+    knownMode(0x106, graphicsMode(1280, 1024, .@"16")),
+    knownMode(0x107, graphicsMode(1280, 1024, .@"256")),
+    knownMode(0x108, textMode(80, 60)),
+    knownMode(0x109, textMode(132, 25)),
+    knownMode(0x10A, textMode(132, 43)),
+    knownMode(0x10B, textMode(132, 50)),
+    knownMode(0x10C, textMode(132, 60)),
+    knownMode(0x10D, graphicsMode(320, 200, .@"1:5:5:5")),
+    knownMode(0x10E, graphicsMode(320, 200, .@"5:6:5")),
+    knownMode(0x10F, graphicsMode(320, 200, .@"8:8:8")),
+    knownMode(0x110, graphicsMode(640, 480, .@"1:5:5:5")),
+    knownMode(0x111, graphicsMode(640, 480, .@"5:6:5")),
+    knownMode(0x112, graphicsMode(640, 480, .@"8:8:8")),
+    knownMode(0x113, graphicsMode(800, 600, .@"1:5:5:5")),
+    knownMode(0x114, graphicsMode(800, 600, .@"5:6:5")),
+    knownMode(0x115, graphicsMode(800, 600, .@"8:8:8")),
+    knownMode(0x116, graphicsMode(1024, 768, .@"1:5:5:5")),
+    knownMode(0x117, graphicsMode(1024, 768, .@"5:6:5")),
+    knownMode(0x118, graphicsMode(1024, 768, .@"8:8:8")),
+    knownMode(0x119, graphicsMode(1280, 1024, .@"1:5:5:5")),
+    knownMode(0x11A, graphicsMode(1280, 1024, .@"5:6:5")),
+    knownMode(0x11B, graphicsMode(1280, 1024, .@"8:8:8")),
+};

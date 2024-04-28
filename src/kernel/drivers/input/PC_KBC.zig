@@ -1,3 +1,9 @@
+//!
+//!
+//! Intel 8042: https://www.dosdays.co.uk/media/intel/Intel%208042.pdf
+//! OSDev:      https://wiki.osdev.org/%228042%22_PS/2_Controller
+//!
+
 const std = @import("std");
 const ashet = @import("../../main.zig");
 const logger = std.log.scoped(.kbc);
@@ -26,7 +32,7 @@ decoders: *std.EnumArray(Channel, Decoder) = &global_decoders,
 
 /// This routine roughly follows the steps described in
 /// https://wiki.osdev.org/%228042%22_PS/2_Controller#Initialising_the_PS.2F2_Controller
-pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleInitialize }!PC_KBC {
+pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleInitialize, CommandNotAccepted, BufferOverrun }!PC_KBC {
     if (global_channels.count() > 0) {
         return error.DoubleInitialize;
     }
@@ -143,8 +149,28 @@ pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleIni
     // Step 10: Reset Devices
     {
         var iter = kbc.channels.iterator();
-        while (iter.next()) |chan| {
-            try chan.writeCommand(DeviceMessage.common(.reset));
+        channel_loop: while (iter.next()) |chan| {
+            chan.writeCommand(DeviceMessage.common(.reset)) catch |err| switch (err) {
+                error.Timeout => {
+                    logger.debug("{s} reset response: <timeout>", .{@tagName(chan)});
+                    kbc.channels.remove(chan);
+                    continue :channel_loop;
+                },
+
+                error.BufferOverrun => {
+                    logger.debug("{s} reset response: <buffer overrun>", .{@tagName(chan)});
+                    kbc.channels.remove(chan);
+                    continue :channel_loop;
+                },
+
+                error.CommandNotAccepted => {
+                    logger.debug("{s} reset response: <not accepted>", .{@tagName(chan)});
+                    kbc.channels.remove(chan);
+                    continue :channel_loop;
+                },
+
+                else => |e| return e,
+            };
             if (chan.readData()) |response| {
                 logger.debug("{s} reset response: 0x{X:0>2}", .{ @tagName(chan), response });
             } else |err| {
@@ -337,21 +363,50 @@ const Channel = enum {
         try writeRawData(data);
     }
 
-    pub fn writeCommand(chan: Channel, cmd: DeviceMessage) !void {
-        try chan.writeData(cmd.data);
-        while (true) {
-            const response = try chan.readData();
-            if (response == 0x00) {
-                // buffer overrun
-                continue;
-            }
-            if (response == ACK) {
-                return;
-            }
+    pub fn writeCommand(chan: Channel, cmd: DeviceMessage) error{ NoAcknowledge, CommandNotAccepted, Timeout, BufferOverrun }!void {
+        errdefer |e| logger.warn("writing command 0x{X:0>2} failed: {s}", .{
+            cmd.data,
+            @errorName(e),
+        });
 
-            logger.warn("Expected acknowledge (0x{X:0>2}), got 0x{X:0>2}", .{ ACK, response });
-            return error.NoAcknowledge;
+        const retry_limit = 3;
+        var retry_count: u32 = 0;
+        const timeout = Deadline.init(10 * default_deadline);
+        retry_loop: while (retry_count < retry_limit) { //  and !timeout.is_reached()) {
+
+            try chan.writeData(cmd.data);
+
+            const response = while (true) {
+                const response = try chan.readData();
+                if (response != 0x00) {
+                    break response;
+                }
+                // buffer overrun
+                if (timeout.is_reached())
+                    return error.BufferOverrun;
+            };
+
+            switch (response) {
+                0x00 => unreachable,
+
+                ACK => return,
+
+                RESEND => {
+                    logger.debug("Controller wants command to be resend, delay a little and try again!", .{});
+                    Deadline.init(resend_deadline).wait();
+                    retry_count += 1;
+                    continue :retry_loop;
+                },
+
+                else => {
+                    logger.warn("Expected acknowledge (0x{X:0>2}), got 0x{X:0>2}", .{ ACK, response });
+                    return error.NoAcknowledge;
+                },
+            }
         }
+        if (retry_count == retry_limit)
+            return error.CommandNotAccepted;
+        return error.Timeout;
     }
 
     pub fn detectDeviceType(chan: Channel) !?DeviceType {
@@ -391,27 +446,58 @@ fn readData(kbc: PC_KBC) !u8 {
     return try result;
 }
 
-fn busyLoop(cnt: u32) void {
-    var i: u32 = 0;
-    while (i < cnt) : (i += 1) {
-        asm volatile (""
-            :
-            : [x] "r" (i),
-        );
+// fn busyLoop(cnt: u32) void {
+//     var i: u32 = 0;
+//     while (i < cnt) : (i += 1) {
+//         asm volatile (""
+//             :
+//             : [x] "r" (i),
+//         );
+//     }
+// }
+
+// fn delayPortRead() void {
+//     busyLoop(10_000);
+// }
+
+const default_deadline = 1000; // ms
+const resend_deadline = 100; // ms
+
+const Deadline = struct {
+    deadline: u64,
+
+    fn init(timeout: u32) Deadline {
+        // std.debug.assert(ashet.platform.areInterruptsEnabled());
+        return .{
+            .deadline = ashet.time.get_tick_count() + timeout,
+        };
     }
-}
+
+    pub fn is_reached(deadline: Deadline) bool {
+        return ashet.time.get_tick_count() >= deadline.deadline;
+    }
+
+    pub fn wait(deadline: Deadline) void {
+        while (!deadline.is_reached()) {
+            //
+        }
+    }
+};
 
 fn delayPortRead() void {
-    busyLoop(10_000);
+    for (0..1_000) |_| {
+        asm volatile ("" ::: "memory");
+    }
 }
 
 fn writeRawData(data: u8) error{Timeout}!void {
     errdefer logger.err("timeout while executing writeRawData({})", .{data});
-    var timeout: u8 = 255;
+
+    const deadline = Deadline.init(default_deadline);
+
     while (readStatus().input_buffer == .full) {
-        if (timeout == 0)
+        if (deadline.is_reached())
             return error.Timeout;
-        timeout -= 1;
         delayPortRead();
     }
     // logger.debug("0x{X:0>2} => [DAT]", .{data});
@@ -420,11 +506,11 @@ fn writeRawData(data: u8) error{Timeout}!void {
 
 fn readRawData() error{Timeout}!u8 {
     errdefer logger.err("timeout while executing readRawData()", .{});
-    var timeout: u8 = 255;
+
+    const deadline = Deadline.init(default_deadline);
     while (readStatus().output_buffer == .empty) {
-        if (timeout == 0)
+        if (deadline.is_reached())
             return error.Timeout;
-        timeout -= 1;
         delayPortRead();
     }
     const value = x86.in(u8, ports.data);
@@ -434,11 +520,10 @@ fn readRawData() error{Timeout}!u8 {
 
 fn writeRawCommand(cmd: Command) error{Timeout}!void {
     errdefer logger.err("timeout while executing writeRawCommand({})", .{cmd});
-    var timeout: u8 = 255;
+    const deadline = Deadline.init(default_deadline);
     while (readStatus().input_buffer == .full) {
-        if (timeout == 0)
+        if (deadline.is_reached())
             return error.Timeout;
-        timeout -= 1;
         delayPortRead();
     }
     // logger.debug("0x{X:0>2} => [CMD]", .{@enumToInt(cmd)});
@@ -613,6 +698,7 @@ const PortTestResult = enum(u8) {
 };
 
 const ACK = 0xFA;
+const RESEND = 0xFE;
 
 const Decoder = union {
     mouse: MouseDecoder,
@@ -725,7 +811,7 @@ const KeyboardDecoder = struct {
                 // Check for fake shifts and ignore them
                 if (scancode == 0x2A or scancode == 0x36)
                     return;
-                std.log.debug("e0 code: 0x{X:0>2}", .{scancode});
+                logger.debug("e0 code: 0x{X:0>2}", .{scancode});
                 ashet.input.pushRawEventFromIRQ(.{
                     .keyboard = .{
                         .scancode = @as(u8, 0x80) | scancode,
@@ -742,7 +828,7 @@ const KeyboardDecoder = struct {
                 const input7 = @as(u7, @truncate(input));
                 const scancode = (@as(u16, input7) << 8) | low;
 
-                std.log.debug("e1 code: 0x{X:0>4}", .{scancode});
+                logger.debug("e1 code: 0x{X:0>4}", .{scancode});
                 ashet.input.pushRawEventFromIRQ(.{
                     .keyboard = .{
                         .scancode = scancode,

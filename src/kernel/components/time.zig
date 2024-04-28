@@ -23,6 +23,10 @@ pub fn timestamp() i64 {
     return @divTrunc(milliTimestamp(), std.time.ms_per_s);
 }
 
+pub fn get_tick_count() u64 {
+    return ashet.machine.get_tick_count();
+}
+
 //
 
 const Timer = ashet.abi.Timer;

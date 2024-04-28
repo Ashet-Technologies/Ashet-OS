@@ -123,19 +123,21 @@ fn @"process.writeLog"(log_level: abi.LogLevel, ptr: [*]const u8, len: usize) ca
 
     const proc = getCurrentProcess();
 
+    const logger = std.log.scoped(.userland);
+
     switch (log_level) {
-        .critical => std.log.info("{s}(critical): {s}", .{ proc.file_name, string }),
-        .err => std.log.info("{s}(err): {s}", .{ proc.file_name, string }),
-        .warn => std.log.info("{s}(warn): {s}", .{ proc.file_name, string }),
-        .notice => std.log.info("{s}(notice): {s}", .{ proc.file_name, string }),
-        .debug => std.log.info("{s}(debug): {s}", .{ proc.file_name, string }),
-        _ => std.log.info("{s}(unknown,{}): {s}", .{ proc.file_name, @intFromEnum(log_level), string }),
+        .critical => logger.info("{s}(critical): {s}", .{ proc.file_name, string }),
+        .err => logger.info("{s}(err): {s}", .{ proc.file_name, string }),
+        .warn => logger.info("{s}(warn): {s}", .{ proc.file_name, string }),
+        .notice => logger.info("{s}(notice): {s}", .{ proc.file_name, string }),
+        .debug => logger.info("{s}(debug): {s}", .{ proc.file_name, string }),
+        _ => logger.info("{s}(unknown,{}): {s}", .{ proc.file_name, @intFromEnum(log_level), string }),
     }
 }
 
 fn @"process.breakpoint"() callconv(.C) void {
     const proc = getCurrentProcess();
-    std.log.info("breakpoint in process {s}.", .{proc.master_thread.getName()});
+    std.log.scoped(.userland).info("breakpoint in process {s}.", .{proc.master_thread.getName()});
 
     var cont: bool = false;
     while (!cont) {

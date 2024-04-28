@@ -43,7 +43,6 @@ const hw = struct {
 
     var rtc: ashet.drivers.rtc.CMOS = undefined;
 
-    // TODO: Add a higher precision timer to the OS for better timeouts
     var pit: ashet.drivers.timer.Programmable_Interval_Timer = undefined;
 
     var serial0: NS16C550 = undefined;
@@ -78,12 +77,38 @@ const COM2_PORT = 0x2F8;
 const COM3_PORT = 0x3E8;
 const COM4_PORT = 0x2E8;
 
+var timer_counter: u64 = 0;
+
+fn timer_intterupt(state: *x86.idt.CpuState) *x86.idt.CpuState {
+    timer_counter += 1;
+
+    if (@import("builtin").mode == .Debug) {
+        if (timer_counter % 2500 == 0) {
+            logger.debug("system still alive", .{});
+        }
+    }
+
+    return state;
+}
+
+pub fn get_tick_count() u64 {
+    var cs = ashet.CriticalSection.enter();
+    defer cs.leave();
+
+    return timer_counter;
+}
+
 pub fn initialize() !void {
 
     // x86 requires GDT and IDT, as a lot of x86 devices are only well usable with
     // interrupts. We're also using the GDT for interrupts
     x86.gdt.init();
     x86.idt.init();
+
+    hw.pit = ashet.drivers.timer.Programmable_Interval_Timer.init();
+
+    x86.idt.set_IRQ_Handler(0x0, timer_intterupt);
+    x86.idt.enableIRQ(0);
 
     hw.serial0 = NS16C550.init(.{ .base_port = COM1_PORT });
     hw.serial1 = NS16C550.init(.{ .base_port = COM2_PORT });
@@ -99,7 +124,7 @@ pub fn initialize() !void {
     );
     serial_ready = true;
 
-    std.log.info("debug serial port initialized", .{});
+    logger.info("debug serial port initialized", .{});
 
     const mbheader = x86.start.multiboot_info orelse @panic("Ashet OS must be bootet via a MultiBoot 1 compatible bootloader. Use syslinux or grub!");
 
@@ -155,12 +180,12 @@ pub fn initialize() !void {
         hw.vbe = vbe;
         ashet.drivers.install(&hw.vbe.driver);
     } else |vbe_error| {
-        std.log.warn("VBE not available ({s}), falling back to classic VGA", .{@errorName(vbe_error)});
+        logger.warn("VBE not available ({s}), falling back to classic VGA", .{@errorName(vbe_error)});
 
         if (hw.vga.init()) |_| {
             ashet.drivers.install(&hw.vga.driver);
         } else |vga_error| {
-            std.log.warn("VGA not available ({s}), panicking...", .{@errorName(vga_error)});
+            logger.warn("VGA not available ({s}), panicking...", .{@errorName(vga_error)});
             @panic("Ashet OS does requires a video card!");
         }
     }

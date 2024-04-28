@@ -17,17 +17,17 @@ const libashet = @import("ashet");
 
 pub fn run(_: ?*anyopaque) callconv(.C) u32 {
     const thread = ashet.scheduler.Thread.current() orelse {
-        std.log.err("splash screen must be run in a thread.", .{});
+        logger.err("splash screen must be run in a thread.", .{});
         return 1;
     };
 
     const task = thread.process orelse {
-        std.log.err("splash screen requires thread to be associated with a process.", .{});
+        logger.err("splash screen requires thread to be associated with a process.", .{});
         return 1;
     };
 
     SplashScreen.run(task) catch |err| {
-        std.log.err("splash screen failed with {}", .{err});
+        logger.err("splash screen failed with {}", .{err});
         return 1;
     };
 

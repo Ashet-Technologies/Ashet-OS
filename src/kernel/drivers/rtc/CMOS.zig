@@ -2,6 +2,7 @@ const std = @import("std");
 const ashet = @import("../../main.zig");
 const Driver = ashet.drivers.Driver;
 const x86 = @import("platform.x86");
+const logger = std.log.scoped(.cmos_rtc);
 
 const CMOS = @This();
 
@@ -59,15 +60,15 @@ fn nanoTimestamp(driver: *Driver) i128 {
 
     const secs_to_start_of_day = @as(u32, hour.toInt()) + 60 * @as(u32, minute.toInt()) + 60 * 60 * @as(u32, minute.toInt());
 
-    // std.log.info("month: {}", .{month.toInt()});
+    // logger.info("month: {}", .{month.toInt()});
 
     const days_to_start_of_year = cumulated_days_in_months[month.toInt() - 1];
 
-    // std.log.info("seconds = {}", .{seconds});
-    // std.log.info("minute  = {}", .{minute});
-    // std.log.info("hour    = {}", .{hour});
-    // std.log.info("month   = {}", .{month});
-    // std.log.info("year    = {}{}", .{ century, year });
+    // logger.info("seconds = {}", .{seconds});
+    // logger.info("minute  = {}", .{minute});
+    // logger.info("hour    = {}", .{hour});
+    // logger.info("month   = {}", .{month});
+    // logger.info("year    = {}{}", .{ century, year });
 
     return std.time.ns_per_s * (std.time.epoch.secs_per_day * (356 * @as(i128, years_to_epoc) + days_to_start_of_year) + secs_to_start_of_day + seconds.toInt());
 }

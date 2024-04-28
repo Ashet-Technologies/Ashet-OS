@@ -575,17 +575,17 @@ pub fn statEntry(iop: *ashet.abi.fs.StatEntry) void {
 }
 
 pub fn nearMove(iop: *ashet.abi.fs.NearMove) void {
-    std.log.err("fs.nearMove not implemented yet!", .{});
+    logger.err("fs.nearMove not implemented yet!", .{});
     ashet.io.finalizeWithResult(iop, .{});
 }
 
 pub fn farMove(iop: *ashet.abi.fs.FarMove) void {
-    std.log.err("fs.farMove not implemented yet!", .{});
+    logger.err("fs.farMove not implemented yet!", .{});
     ashet.io.finalizeWithResult(iop, .{});
 }
 
 pub fn copy(iop: *ashet.abi.fs.Copy) void {
-    std.log.err("fs.copy not implemented yet!", .{});
+    logger.err("fs.copy not implemented yet!", .{});
     ashet.io.finalizeWithResult(iop, .{});
 }
 

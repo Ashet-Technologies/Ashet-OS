@@ -14,6 +14,10 @@ pub const serial = struct {
     pub const PL011 = @import("serial/PL011.zig");
 };
 
+pub const timer = struct {
+    pub const Programmable_Interval_Timer = @import("timer/Programmable_Interval_Timer.zig");
+};
+
 pub const filesystem = struct {
     pub const AshetFS = @import("filesystem/AshetFS.zig");
     pub const VFAT = @import("filesystem/VFAT.zig");
@@ -399,7 +403,7 @@ pub fn scanVirtioDevices(allocator: std.mem.Allocator, comptime cfg: VirtIoConfi
         @panic("not virt platform!");
     }
 
-    std.log.info("sizeof control regs: {}", .{@sizeOf(virtio.ControlRegs)});
+    logger.info("sizeof control regs: {}", .{@sizeOf(virtio.ControlRegs)});
 
     var reg_addr: usize = cfg.base;
     for (0..cfg.max_count) |_| {
