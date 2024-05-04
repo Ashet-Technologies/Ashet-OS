@@ -28,6 +28,7 @@ pub const rtc = struct {
     pub const CMOS = @import("rtc/CMOS.zig");
     pub const Goldfish = @import("rtc/Goldfish.zig");
     pub const PL031 = @import("rtc/PL031.zig");
+    pub const HostedSystemClock = @import("rtc/HostedSystemClock.zig");
 };
 
 pub const video = struct {
@@ -35,6 +36,7 @@ pub const video = struct {
     pub const Virtio_GPU_Device = @import("video/Virtio_GPU_Device.zig");
     pub const VESA_BIOS_Extension = @import("video/VESA_BIOS_Extension.zig");
     pub const VGA = @import("video/VGA.zig");
+    pub const Virtual_Video_Output = @import("video/Virtual_Video_Output.zig");
 };
 
 pub const network = struct {

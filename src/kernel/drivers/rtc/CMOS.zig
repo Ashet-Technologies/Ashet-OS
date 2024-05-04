@@ -1,7 +1,7 @@
 const std = @import("std");
 const ashet = @import("../../main.zig");
 const Driver = ashet.drivers.Driver;
-const x86 = @import("platform.x86");
+const x86 = ashet.ports.platforms.x86;
 const logger = std.log.scoped(.cmos_rtc);
 
 const CMOS = @This();

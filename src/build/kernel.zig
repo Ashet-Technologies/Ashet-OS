@@ -29,8 +29,14 @@ fn renderMachineInfo(
 
     try writer.writeAll("//! This is a machine-generated description of the Ashet OS target machine.\n\n");
 
+    try writer.print("pub const machine_id = .{};\n", .{
+        std.zig.fmtId(machine_spec.machine_id),
+    });
     try writer.print("pub const machine_name = \"{}\";\n", .{
         std.zig.fmtEscapes(machine_spec.name),
+    });
+    try writer.print("pub const platform_id = .{};\n", .{
+        std.zig.fmtId(platform_spec.platform_id),
     });
     try writer.print("pub const platform_name = \"{}\";\n", .{
         std.zig.fmtEscapes(platform_spec.name),
@@ -59,14 +65,6 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
         break :blk module;
     };
 
-    const machine_module = b.createModule(.{
-        .source_file = .{ .path = machine_spec.source_file },
-        .dependencies = &.{
-            .{ .name = "platform", .module = options.platforms.modules.get(machine_spec.platform) },
-            .{ .name = "args", .module = options.modules.args }, // TODO: Make explicit list of dependencies
-        },
-    });
-
     // const cguana_dep = b.anonymousDependency("vendor/ziglibc", @import("../../vendor/ziglibc/build.zig"), .{
     //     .target = platform_spec.target,
     //     .optimize = .ReleaseSafe,
@@ -84,12 +82,41 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
 
     // const ashet_libc = cguana_dep.artifact("cguana");
 
+    const kernel_mod = b.createModule(.{
+        .source_file = .{ .path = "src/kernel/main.zig" },
+        .dependencies = &.{
+            .{ .name = "machine-info", .module = machine_info_module },
+            .{ .name = "system-assets", .module = options.system_assets },
+            .{ .name = "ashet-abi", .module = options.modules.ashet_abi },
+            .{ .name = "ashet-std", .module = options.modules.ashet_std },
+            .{ .name = "ashet", .module = options.modules.libashet },
+            .{ .name = "ashet-gui", .module = options.modules.ashet_gui },
+            .{ .name = "virtio", .module = options.modules.virtio },
+            .{ .name = "ashet-fs", .module = options.modules.libashetfs },
+            .{ .name = "args", .module = options.modules.args },
+            .{ .name = "fatfs", .module = options.modules.fatfs },
+            .{ .name = "args", .module = options.modules.args },
+        },
+    });
+    // for (std.enums.values(build_targets.Platform)) |platform| {
+    //     const mod = options.platforms.modules.get(platform);
+    //     kernel_mod.dependencies.put(
+    //         b.fmt("platform.{s}", .{@tagName(platform)}),
+    //         mod,
+    //     ) catch @panic("out of memory");
+    // }
+
+    const start_file: std.Build.LazyPath = machine_spec.start_file orelse
+        platform_spec.start_file orelse
+        .{ .path = "src/kernel/port/platform/generic-startup.zig" };
+
     const kernel_exe = b.addExecutable(.{
         .name = "ashet-os",
-        .root_source_file = .{ .path = "src/kernel/main.zig" },
+        .root_source_file = start_file,
         .target = platform_spec.target,
         .optimize = options.optimize,
     });
+    kernel_exe.addModule("kernel", kernel_mod);
 
     kernel_exe.code_model = .small;
     kernel_exe.bundle_compiler_rt = true;
@@ -102,27 +129,6 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
         kernel_exe.omit_frame_pointer = false;
     }
 
-    kernel_exe.addModule("system-assets", options.system_assets);
-    kernel_exe.addModule("ashet-abi", options.modules.ashet_abi);
-    kernel_exe.addModule("ashet-std", options.modules.ashet_std);
-    kernel_exe.addModule("ashet", options.modules.libashet);
-    kernel_exe.addModule("ashet-gui", options.modules.ashet_gui);
-    kernel_exe.addModule("virtio", options.modules.virtio);
-    kernel_exe.addModule("ashet-fs", options.modules.libashetfs);
-    kernel_exe.addModule("args", options.modules.args);
-    kernel_exe.addModule("machine-info", machine_info_module);
-    kernel_exe.addModule("machine", machine_module);
-    kernel_exe.addModule("platform", options.platforms.modules.get(machine_spec.platform));
-
-    for (std.enums.values(build_targets.Platform)) |platform| {
-        const mod = options.platforms.modules.get(platform);
-        kernel_exe.addModule(
-            b.fmt("platform.{s}", .{@tagName(platform)}),
-            mod,
-        );
-    }
-
-    kernel_exe.addModule("fatfs", options.modules.fatfs);
     kernel_exe.setLinkerScriptPath(.{ .path = options.machine_spec.linker_script });
 
     for (options.platforms.include_paths.get(machine_spec.platform).items) |path| {

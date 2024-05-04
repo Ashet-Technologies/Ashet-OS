@@ -3,7 +3,7 @@
 //!
 
 const std = @import("std");
-const ashet = @import("root");
+const ashet = @import("kernel");
 const x86 = ashet.platforms.all.x86;
 
 const VgaTerminal = @import("VgaTerminal.zig");

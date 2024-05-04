@@ -35,9 +35,9 @@ pub fn init(b: *std.Build) PlatformData {
         libc.single_threaded = true;
         data.libc.set(platform, libc);
 
-        data.modules.set(platform, b.createModule(.{
-            .source_file = .{ .path = platform_spec.source_file },
-        }));
+        // data.modules.set(platform, b.createModule(.{
+        //     .source_file = .{ .path = platform_spec.source_file },
+        // }));
 
         {
             const lwip = ashet_lwip.create(b, platform_spec.target, .ReleaseSafe);

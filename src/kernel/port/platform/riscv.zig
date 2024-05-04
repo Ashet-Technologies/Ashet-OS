@@ -1,5 +1,5 @@
 const std = @import("std");
-const ashet = @import("root");
+const ashet = @import("../../main.zig");
 const logger = std.log.scoped(.riscv);
 
 pub const page_size = 4096;

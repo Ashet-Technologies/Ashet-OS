@@ -7,7 +7,7 @@
 const std = @import("std");
 const ashet = @import("../../main.zig");
 const logger = std.log.scoped(.kbc);
-const x86 = @import("platform.x86");
+const x86 = ashet.ports.platforms.x86;
 
 const PC_KBC = @This();
 const Driver = ashet.drivers.Driver;

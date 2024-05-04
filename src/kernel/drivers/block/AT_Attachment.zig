@@ -1,7 +1,7 @@
 const std = @import("std");
 const ashet = @import("../../main.zig");
 const logger = std.log.scoped(.ata);
-const x86 = @import("platform.x86");
+const x86 = ashet.ports.platforms.x86;
 
 const AT_Attachment = @This();
 const Driver = ashet.drivers.Driver;

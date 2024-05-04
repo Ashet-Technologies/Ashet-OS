@@ -126,32 +126,26 @@ fn SysCallFunc(comptime call: SysCall) type {
 pub fn syscall(comptime name: []const u8) SysCallFunc(@field(SysCall, name)) {
     const target = @import("builtin").target;
 
-    switch (target.os.tag) {
-        .linux, .windows => {
-            return @field(@import("root").syscall_table, name);
+    switch (target.cpu.arch) {
+        .riscv32 => {
+            const table = asm (""
+                : [ptr] "={tp}" (-> *const SysCallTable),
+            );
+            return @field(table, name);
         },
-        .freestanding => switch (target.cpu.arch) {
-            .riscv32 => {
-                const table = asm (""
-                    : [ptr] "={tp}" (-> *const SysCallTable),
-                );
-                return @field(table, name);
-            },
-            .x86 => {
-                const offset: u32 = @offsetOf(SysCallTable, name);
-                return asm ("mov %fs:%[off], %[out]"
-                    : [out] "=r" (-> SysCallFunc(@field(SysCall, name))),
-                    : [off] "p" (offset),
-                );
-            },
-
-            .arm => @panic("Only Arm thumb instruction set is supported!"),
-
-            .thumb => @panic("no syscalls on arm/thumb yet"),
-
-            else => @compileError("unsupported platform"),
+        .x86 => {
+            const offset: u32 = @offsetOf(SysCallTable, name);
+            return asm ("mov %fs:%[off], %[out]"
+                : [out] "=r" (-> SysCallFunc(@field(SysCall, name))),
+                : [off] "p" (offset),
+            );
         },
-        else => @compileError("unsupported os"),
+
+        .arm => @panic("Only Arm thumb instruction set is supported!"),
+
+        .thumb => @panic("no syscalls on arm/thumb yet"),
+
+        else => @compileError("unsupported platform " ++ @tagName(target.cpu.arch)),
     }
 }
 

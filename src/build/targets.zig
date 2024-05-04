@@ -10,6 +10,7 @@ pub const PlatformSpec = struct {
     platform_id: []const u8,
     source_file: []const u8,
     target: std.zig.CrossTarget,
+    start_file: ?std.Build.LazyPath,
 
     qemu_exe: []const u8,
 };
@@ -22,6 +23,8 @@ pub const MachineSpec = struct {
     linker_script: []const u8,
     disk_formatter: []const u8, // defined in build.zig
     rom_size: ?usize,
+
+    start_file: ?std.Build.LazyPath,
 
     /// Instantiation:
     /// Uses place holders:
@@ -36,6 +39,7 @@ pub fn getPlatformSpec(platform: Platform) *const PlatformSpec {
             .name = "RISC-V",
             .platform_id = "riscv",
             .source_file = "src/kernel/port/platform/riscv.zig",
+            .start_file = null,
             .target = std.zig.CrossTarget{
                 .cpu_arch = .riscv32,
                 .os_tag = .freestanding,
@@ -54,6 +58,7 @@ pub fn getPlatformSpec(platform: Platform) *const PlatformSpec {
             .name = "Arm",
             .platform_id = "arm",
             .source_file = "src/kernel/port/platform/arm.zig",
+            .start_file = null,
             .target = std.zig.CrossTarget{
                 .cpu_arch = .thumb,
                 .os_tag = .freestanding,
@@ -90,6 +95,7 @@ pub fn getPlatformSpec(platform: Platform) *const PlatformSpec {
             .name = "x86",
             .platform_id = "x86",
             .source_file = "src/kernel/port/platform/x86.zig",
+            .start_file = null,
             .target = std.zig.CrossTarget{
                 .cpu_arch = .x86,
                 .os_tag = .freestanding,
@@ -103,6 +109,20 @@ pub fn getPlatformSpec(platform: Platform) *const PlatformSpec {
                 }),
             },
             .qemu_exe = "qemu-system-i386",
+        },
+
+        .hosted => comptime &PlatformSpec{
+            .name = "hosted",
+            .platform_id = "hosted",
+            .source_file = "src/kernel/port/platform/hosted.zig",
+            .start_file = .{ .path = "src/kernel/port/platform/hosted-startup.zig" },
+            .target = std.zig.CrossTarget{
+                .cpu_arch = .x86,
+                .os_tag = .linux,
+                .abi = .musl,
+                .cpu_model = .baseline,
+            },
+            .qemu_exe = "echo",
         },
     };
 }
@@ -125,6 +145,7 @@ pub fn getMachineSpec(machine: Machine) *const MachineSpec {
             .machine_id = "rv32_virt",
             .platform = .riscv,
             .source_file = "src/kernel/port/machine/rv32_virt/rv32_virt.zig",
+            .start_file = null,
             .linker_script = "src/kernel/port/machine/rv32_virt/linker.ld",
 
             .disk_formatter = "rv32_virt",
@@ -153,6 +174,7 @@ pub fn getMachineSpec(machine: Machine) *const MachineSpec {
             .machine_id = "bios_pc",
             .platform = .x86,
             .source_file = "src/kernel/port/machine/bios_pc/bios_pc.zig",
+            .start_file = null,
             .linker_script = "src/kernel/port/machine/bios_pc/linker.ld",
 
             .disk_formatter = "bios_pc",
@@ -163,6 +185,21 @@ pub fn getMachineSpec(machine: Machine) *const MachineSpec {
                 "-hda",     "${DISK}",
                 "-vga",     "std",
             },
+
+            .rom_size = null,
+        },
+
+        .linux_pc => &MachineSpec{
+            .name = "Hosted (x86 Linux)",
+            .machine_id = "linux_pc",
+            .platform = .hosted,
+            .source_file = "src/kernel/port/machine/linux_pc/linux_pc.zig",
+            .start_file = null,
+            .linker_script = "src/kernel/port/machine/linux_pc/linker.ld",
+
+            .disk_formatter = "linux_pc",
+
+            .qemu_cli = &.{},
 
             .rom_size = null,
         },
@@ -209,6 +246,7 @@ pub fn getMachineSpec(machine: Machine) *const MachineSpec {
             .machine_id = "arm_virt",
             .platform = .arm,
             .source_file = "src/kernel/port/machine/arm_virt/arm_virt.zig",
+            .start_file = null,
             .linker_script = "src/kernel/port/machine/arm_virt/linker.ld",
 
             .disk_formatter = "arm_virt",

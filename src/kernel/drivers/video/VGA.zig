@@ -1,8 +1,8 @@
 const std = @import("std");
-const ashet = @import("root");
+const ashet = @import("../../main.zig");
 const logger = std.log.scoped(.vga);
 
-const x86 = @import("platform.x86");
+const x86 = ashet.ports.platforms.x86;
 const VGA = @This();
 const Driver = ashet.drivers.Driver;
 const ColorIndex = ashet.abi.ColorIndex;

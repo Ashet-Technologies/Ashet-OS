@@ -648,6 +648,10 @@ const disk_formatters = struct {
         return generic_virt_formatter(b, kernel_file, disk_content, 0x0400_0000);
     }
 
+    pub fn linux_pc(b: *std.Build, kernel_file: std.Build.LazyPath, disk_content: *disk_image_step.FileSystemBuilder) std.Build.LazyPath {
+        return generic_virt_formatter(b, kernel_file, disk_content, 0x0400_0000);
+    }
+
     pub fn bios_pc(b: *std.Build, kernel_file: std.Build.LazyPath, disk_content: *disk_image_step.FileSystemBuilder) std.Build.LazyPath {
         disk_content.addFile(kernel_file, "/ashet-os");
 

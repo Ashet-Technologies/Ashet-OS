@@ -1,5 +1,5 @@
 const std = @import("std");
-const ashet = @import("root");
+const ashet = @import("kernel");
 const logger = std.log.scoped(.@"platform-virt");
 
 const virtio = @import("virtio/virtio.zig");

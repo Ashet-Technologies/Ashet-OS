@@ -1,4 +1,5 @@
 const std = @import("std");
+const machine_info = @import("machine-info");
 
 pub const abi = @import("ashet-abi");
 pub const apps = @import("components/apps.zig");
@@ -19,8 +20,22 @@ pub const video = @import("components/video.zig");
 
 pub const ports = @import("port/targets.zig");
 
-pub const machine = @import("machine");
-pub const platform = @import("platform");
+pub const platform_id: ports.Platform = machine_info.platform_id;
+pub const machine_id: ports.Machine = machine_info.machine_id;
+
+pub const platform = switch (platform_id) {
+    .riscv => @import("port/platform/riscv.zig"),
+    .arm => @import("port/platform/arm.zig"),
+    .x86 => @import("port/platform/x86.zig"),
+    .hosted => @import("port/platform/hosted.zig"),
+};
+
+pub const machine = switch (machine_id) {
+    .rv32_virt => @import("port/machine/rv32_virt/rv32_virt.zig"),
+    .arm_virt => @import("port/machine/arm_virt/arm_virt.zig"),
+    .bios_pc => @import("port/machine/bios_pc/bios_pc.zig"),
+    .linux_pc => @import("port/machine/linux_pc/linux_pc.zig"),
+};
 
 pub const machine_config: ports.MachineConfig = machine.machine_config;
 
@@ -31,7 +46,7 @@ comptime {
     _ = platform.start; // explicitly refer to the entry point implementation
 }
 
-export fn ashet_kernelMain() void {
+pub export fn ashet_kernelMain() void {
     Debug.setTraceLoc(@src());
     memory.loadKernelMemory(machine_config.load_sections);
 

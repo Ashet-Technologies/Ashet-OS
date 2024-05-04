@@ -1,5 +1,5 @@
 const std = @import("std");
-const ashet = @import("root");
+const ashet = @import("kernel");
 
 pub const multiboot = @import("x86/multiboot.zig");
 pub const gdt = @import("x86/gdt.zig");

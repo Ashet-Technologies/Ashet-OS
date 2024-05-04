@@ -37,7 +37,7 @@
 //!     00000000fffe0000-00000000ffffffff (prio 0, ram): pc.bios
 
 const std = @import("std");
-const ashet = @import("root");
+const ashet = @import("kernel");
 
 const VPBA_UART_BASE = 0x10000000;
 const VPBA_VIRTIO_BASE = 0x10001000;

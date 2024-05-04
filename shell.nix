@@ -7,7 +7,7 @@ pkgs.mkShell {
     pkgs.mtools
     pkgs.syslinux
     # pkgs.llvmPackages_16.bintools
-    # pkgs.gdb
+    pkgs.gdb
     pkgs.pkg-config
     # pkgs.gcc-arm-embedded
   ];
