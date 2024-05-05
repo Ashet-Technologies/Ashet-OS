@@ -8,6 +8,7 @@
 //! That declaration is then passed around for invoking the system.
 //!
 const std = @import("std");
+const builtin = @import("builtin");
 const hal = @import("hal");
 const ashet = @import("../main.zig");
 
@@ -23,6 +24,10 @@ pub const syscall_table: abi.SysCallTable = blk: {
 
 pub fn initialize() void {
     // might require some work in the future for arm/x86
+    switch (builtin.target.cpu.arch) {
+        .x86 => abi.os_interface.syscall_table = &syscall_table,
+        else => {},
+    }
 }
 
 pub fn getCurrentThread() *ashet.scheduler.Thread {

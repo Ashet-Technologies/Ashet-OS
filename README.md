@@ -94,3 +94,7 @@ The following list contains devices for which there is a planned port of Ashet O
 - LoLa Compiler (LoLa)
 - Asm Compiler (Asm)
 - Shell Service (Shell)
+
+## Useful Links
+
+- [Free & Open RISC-V Reference Card](https://www.cl.cam.ac.uk/teaching/1617/ECAD+Arch/files/docs/RISCVGreenCardv8-20151013.pdf)

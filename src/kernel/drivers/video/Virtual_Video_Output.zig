@@ -64,7 +64,7 @@ fn setResolution(driver: *Driver, width: u15, height: u15) void {
     _ = vd;
     _ = width;
     _ = height;
-    logger.warn("resize not supported on plain VGA!", .{});
+    logger.warn("resize not supported of virtual screen!", .{});
 }
 
 fn setBorder(driver: *Driver, color: ColorIndex) void {

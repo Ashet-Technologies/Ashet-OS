@@ -123,6 +123,13 @@ fn SysCallFunc(comptime call: SysCall) type {
     unreachable;
 }
 
+pub const os_interface = switch (@import("builtin").target.cpu.arch) {
+    .x86 => struct {
+        pub var syscall_table: *const SysCallTable = undefined;
+    },
+    else => struct {},
+};
+
 pub fn syscall(comptime name: []const u8) SysCallFunc(@field(SysCall, name)) {
     const target = @import("builtin").target;
 
@@ -134,10 +141,14 @@ pub fn syscall(comptime name: []const u8) SysCallFunc(@field(SysCall, name)) {
             return @field(table, name);
         },
         .x86 => {
-            const offset: u32 = @offsetOf(SysCallTable, name);
-            return asm ("mov %fs:%[off], %[out]"
-                : [out] "=r" (-> SysCallFunc(@field(SysCall, name))),
-                : [off] "p" (offset),
+            // const offset: u32 = @offsetOf(SysCallTable, name);
+            // return asm ("mov %fs:%[off], %[out]"
+            //     : [out] "=r" (-> SysCallFunc(@field(SysCall, name))),
+            //     : [off] "p" (offset),
+            // );
+            return @field(
+                os_interface.syscall_table,
+                name,
             );
         },
 

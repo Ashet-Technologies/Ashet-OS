@@ -6,3 +6,5 @@ comptime {
 }
 
 pub const std_options = kernel.std_options;
+
+pub const panic = kernel.panic;

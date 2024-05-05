@@ -219,10 +219,21 @@ pub fn main() !u8 {
 
         const result = try proc.wait();
 
-        if (result != .Exited)
-            @panic("bad process result");
-
-        return result.Exited;
+        switch (result) {
+            .Exited => |code| return code,
+            .Signal => |signal| {
+                std.log.err("process died with signal {d}", .{signal});
+                return 1;
+            },
+            .Stopped => |code| {
+                std.log.err("process was stopped: 0x{X:0>8}", .{code});
+                return 1;
+            },
+            .Unknown => |code| {
+                std.log.err("process had an unknown exit reason (0x{X:0>8})", .{code});
+                return 1;
+            },
+        }
     }
 
     return 0;

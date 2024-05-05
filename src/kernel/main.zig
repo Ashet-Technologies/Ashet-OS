@@ -88,6 +88,10 @@ fn main() !void {
     // This will install all relevant drivers, set up interrupts if necessary and so on.
     try machine.initialize();
 
+    // Should be initialized as early as possible, but has to be initialized
+    // after machine initialization (as now drivers are available):
+    syscalls.initialize();
+
     video.initialize();
 
     filesystem.initialize();
@@ -99,11 +103,9 @@ fn main() !void {
     try thread.start();
     thread.detach();
 
-    try ui.start();
-
     try network.start();
 
-    syscalls.initialize();
+    try ui.start();
 
     scheduler.start();
 

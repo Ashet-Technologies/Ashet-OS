@@ -19,6 +19,14 @@ comptime {
 }
 
 fn _start() callconv(.C) u32 {
+    if (builtin.target.cpu.arch == .x86) {
+        // First thing on x86: Store the syscall table away so we can access
+        // the syscalls later.
+        abi.os_interface.syscall_table = asm (""
+            : [sctp] "={ecx}" (-> *const abi.SysCallTable),
+        );
+    }
+
     const res = @import("root").main();
     const Res = @TypeOf(res);
 

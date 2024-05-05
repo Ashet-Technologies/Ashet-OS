@@ -7,6 +7,7 @@ pub const block = struct {
     pub const CFI_NOR_Flash = @import("block/CFI_NOR_Flash.zig");
     pub const AT_Attachment = @import("block/AT_Attachment.zig");
     pub const RAM_Disk = @import("block/ram-disk.zig").RAM_Disk;
+    pub const Host_Disk_Image = @import("block/Host_Disk_Image.zig");
 };
 
 pub const serial = struct {
@@ -105,9 +106,17 @@ fn ResolvedDriverInterface(comptime class: DriverClass) type {
 pub fn getDriverName(comptime class: DriverClass, intf: *ResolvedDriverInterface(class)) []const u8 {
     // if (@offsetOf(DriverInterface, @tagName(class)) != 0) @compileError("oh no!");
 
-    std.debug.assert(@as(*DriverInterface, @ptrFromInt(0x1000)) == @as(*DriverInterface, @ptrCast(&@field(@as(*DriverInterface, @ptrFromInt(0x1000)), @tagName(class)))));
+    // if (@import("builtin").mode == .Debug) {
+    //     const dummyValue = @unionInit(DriverInterface, @tagName(class), undefined);
+    //     const field_ptr = &@field(&dummyValue, @tagName(class));
+    //     const field_as_dummy: *const DriverInterface = @ptrCast(field_ptr);
+
+    //     std.debug.assert(&dummyValue == field_as_dummy);
+    // }
 
     const di: *DriverInterface = @as(*DriverInterface, @ptrCast(intf));
+
+    std.debug.assert(@intFromPtr(di) == @intFromPtr(&@field(di, @tagName(class))));
 
     const dri: *Driver = @fieldParentPtr(Driver, "class", di);
     dri.validate(class);

@@ -15,7 +15,7 @@ pub fn start() !void {
     T.started = true;
 
     const thread = try ashet.scheduler.Thread.spawn(run, null, .{
-        .stack_size = 2 * 65536,
+        .stack_size = (1 << 20),
     });
     try thread.setName("ui.run");
     try thread.start();

@@ -120,7 +120,7 @@ pub fn getPlatformSpec(platform: Platform) *const PlatformSpec {
                 .cpu_arch = .x86,
                 .os_tag = .linux,
                 .abi = .musl,
-                .cpu_model = .baseline,
+                .cpu_model = .{ .explicit = &std.Target.x86.cpu.i686 },
             },
             .qemu_exe = "echo",
         },

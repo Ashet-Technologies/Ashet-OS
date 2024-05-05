@@ -182,7 +182,7 @@ pub const Thread = struct {
                 thread.push(0x0000_0000); // ESI
                 thread.push(0x0000_0000); // EBP
                 thread.push(0x0000_0000); // EDX
-                thread.push(0x0000_0000); // ECX
+                thread.push(@intFromPtr(&ashet.syscalls.syscall_table)); // ECX
                 thread.push(@intFromPtr(arg)); // EBX
                 thread.push(@intFromPtr(func)); // EAX
             },
@@ -619,6 +619,10 @@ comptime {
         .x86 => asm (preamble ++
                 \\
                 \\ashet_scheduler_threadTrampoline:
+                //  in x86, the ABI says that the stack has to be aligned to 16,
+                //  so let's do that:
+                \\  and $0xfffffff0, %esp
+                // \\  sub $8, %esp
                 //
                 //  we just restored the thread state from scheduler.createThread,
                 //  so %ebx contains the argument,
@@ -634,7 +638,7 @@ comptime {
                 \\  push %eax
                 //
                 //  then kill the thread by jumping into the exit function.
-                //  There's no need to use call/jalr here, as the exit() call won't
+                //  There's no need to use call here, as the exit() call won't
                 //  ever return here in the first place.
                 \\  jmp ashet_scheduler_threadExit
                 \\
