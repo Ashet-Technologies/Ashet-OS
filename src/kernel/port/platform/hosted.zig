@@ -50,13 +50,19 @@ pub inline fn getStackPointer() usize {
     );
 }
 
+var global_lock: std.Thread.Mutex = .{};
+var interrupt_flag: bool = true;
+
 pub fn areInterruptsEnabled() bool {
-    return false;
+    return interrupt_flag;
 }
 
 pub fn disableInterrupts() void {
-    //
+    global_lock.lock();
+    interrupt_flag = false;
 }
+
 pub fn enableInterrupts() void {
-    //
+    interrupt_flag = true;
+    global_lock.unlock();
 }

@@ -451,7 +451,9 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
 
 export fn ashet_lockInterrupts(were_enabled: *bool) void {
     were_enabled.* = platform.areInterruptsEnabled();
-    platform.disableInterrupts();
+    if (were_enabled.*) {
+        platform.disableInterrupts();
+    }
 }
 
 export fn ashet_unlockInterrupts(enable: bool) void {

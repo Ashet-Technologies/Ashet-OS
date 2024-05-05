@@ -419,19 +419,30 @@ pub const Color = packed struct(u16) {
     }
 
     pub fn toRgb32(color: Color) u32 {
-        const src_r: u32 = color.r;
-        const src_g: u32 = color.g;
-        const src_b: u32 = color.b;
+        const exp = color.toRgb888();
+        return @as(u32, exp.r) << 0 |
+            @as(u32, exp.g) << 8 |
+            @as(u32, exp.b) << 16;
+    }
+
+    pub fn toRgb888(color: Color) RGB888 {
+        const src_r: u8 = color.r;
+        const src_g: u8 = color.g;
+        const src_b: u8 = color.b;
 
         // expand bits to form a linear range between 0…255
-        const exp_r = (src_r << 3) | (src_r >> 2);
-        const exp_g = (src_g << 2) | (src_g >> 4);
-        const exp_b = (src_b << 3) | (src_b >> 2);
-
-        return exp_r << 0 |
-            exp_g << 8 |
-            exp_b << 16;
+        return .{
+            .r = (src_r << 3) | (src_r >> 2),
+            .g = (src_g << 2) | (src_g >> 4),
+            .b = (src_b << 3) | (src_b >> 2),
+        };
     }
+
+    pub const RGB888 = extern struct {
+        r: u8,
+        g: u8,
+        b: u8,
+    };
 };
 
 pub const InputEventType = enum(u8) {

@@ -232,12 +232,12 @@ fn poll(driver: *Driver) void {
                     },
                     .cess_rel => {
                         if (evt.code == 0) {
-                            ashet.input.pushRawEvent(.{ .mouse_motion = .{
+                            ashet.input.pushRawEvent(.{ .mouse_rel_motion = .{
                                 .dx = @as(i32, @bitCast(evt.value)),
                                 .dy = 0,
                             } });
                         } else if (evt.code == 1) {
-                            ashet.input.pushRawEvent(.{ .mouse_motion = .{
+                            ashet.input.pushRawEvent(.{ .mouse_rel_motion = .{
                                 .dx = 0,
                                 .dy = @as(i32, @bitCast(evt.value)),
                             } });

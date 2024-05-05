@@ -5,6 +5,7 @@
 const std = @import("std");
 const ashet = @import("../../../main.zig");
 const network = @import("network");
+const vnc = @import("vnc");
 const logger = std.log.scoped(.linux_pc);
 
 const args = @import("args");
@@ -103,13 +104,15 @@ pub fn initialize() !void {
                 const address = network.Address.parse(address_str) catch badKernelOption("video", "bad vnc endpoint");
                 const port = std.fmt.parseInt(u16, port_str, 10) catch badKernelOption("video", "bad vnc endpoint");
 
-                const driver = try global_memory.create(ashet.drivers.video.Host_VNC_Output);
-                try driver.init(
+                const server = try VNC_Server.init(
                     .{ .address = address, .port = port },
                     res_x,
                     res_y,
                 );
-                ashet.drivers.install(&driver.driver);
+
+                ashet.input.keyboard.model = &ashet.input.keyboard.models.vnc;
+
+                ashet.drivers.install(&server.screen.driver);
             } else if (std.mem.eql(u8, device_type, "sdl")) {
                 badKernelOption("video", "sdl not supported yet!");
             } else if (std.mem.eql(u8, device_type, "drm")) {
@@ -164,3 +167,177 @@ pub fn getLinearMemoryRegion() ashet.memory.Section {
         .length = linear_memory.len,
     };
 }
+
+const VNC_Server = struct {
+    socket: network.Socket,
+
+    screen: ashet.drivers.video.Host_VNC_Output,
+    input: ashet.drivers.input.Host_VNC_Input,
+
+    pub fn init(
+        endpoint: network.EndPoint,
+        width: u16,
+        height: u16,
+    ) !*VNC_Server {
+        var server_sock = try network.Socket.create(.ipv4, .tcp);
+        errdefer server_sock.close();
+
+        try server_sock.enablePortReuse(true);
+        try server_sock.bind(endpoint);
+
+        try server_sock.listen();
+
+        const server = try global_memory.create(VNC_Server);
+        errdefer global_memory.destroy(server);
+
+        server.* = .{
+            .socket = server_sock,
+            .screen = try ashet.drivers.video.Host_VNC_Output.init(width, height),
+            .input = ashet.drivers.input.Host_VNC_Input.init(),
+        };
+
+        const thread = try std.Thread.spawn(.{}, handler, .{server});
+        thread.detach();
+
+        return server;
+    }
+
+    fn handler(vd: *VNC_Server) !void {
+        while (true) {
+            const client = try vd.socket.accept();
+
+            var server = try vnc.Server.open(std.heap.page_allocator, client, .{
+                .screen_width = vd.screen.width,
+                .screen_height = vd.screen.height,
+                .desktop_name = "Ashet OS",
+            });
+            defer server.close();
+
+            std.debug.print("protocol version:  {}\n", .{server.protocol_version});
+            std.debug.print("shared connection: {}\n", .{server.shared_connection});
+
+            const Point = struct { x: u16, y: u16 };
+            var old_mouse: ?Point = null;
+            var old_button: u8 = 0;
+
+            while (try server.waitEvent()) |event| {
+                switch (event) {
+                    .set_pixel_format => {}, // use internal handler
+
+                    .framebuffer_update_request => |in_req| {
+                        const req: vnc.ClientEvent.FramebufferUpdateRequest = .{
+                            .incremental = false,
+                            .x = 0,
+                            .y = 0,
+                            .width = vd.screen.width,
+                            .height = vd.screen.height,
+                        };
+                        _ = in_req;
+
+                        var fb = std.ArrayList(u8).init(std.heap.page_allocator);
+                        defer fb.deinit();
+
+                        var y: usize = 0;
+                        while (y < req.height) : (y += 1) {
+                            var x: usize = 0;
+                            while (x < req.width) : (x += 1) {
+                                const px = x + req.x;
+                                const py = y + req.y;
+
+                                const color = if (px < vd.screen.width and py < vd.screen.height) blk: {
+                                    const offset = py * vd.screen.width + px;
+                                    std.debug.assert(offset < vd.screen.backbuffer.len);
+
+                                    const index = vd.screen.backbuffer[offset];
+
+                                    const raw_color = vd.screen.palette[@intFromEnum(index)];
+
+                                    const rgb = raw_color.toRgb888();
+
+                                    break :blk vnc.Color{
+                                        .r = @as(f32, @floatFromInt(rgb.r)) / 255.0,
+                                        .g = @as(f32, @floatFromInt(rgb.g)) / 255.0,
+                                        .b = @as(f32, @floatFromInt(rgb.b)) / 255.0,
+                                    };
+                                } else vnc.Color{ .r = 1.0, .g = 0.0, .b = 1.0 };
+
+                                var buf: [8]u8 = undefined;
+                                const bits = server.pixel_format.encode(&buf, color);
+                                try fb.appendSlice(bits);
+                            }
+                        }
+
+                        try server.sendFramebufferUpdate(&[_]vnc.UpdateRectangle{
+                            .{
+                                .x = req.x,
+                                .y = req.y,
+                                .width = req.width,
+                                .height = req.height,
+                                .encoding = .raw,
+                                .data = fb.items,
+                            },
+                        });
+                    },
+
+                    .key_event => |ev| {
+                        var cs = ashet.CriticalSection.enter();
+                        defer cs.leave();
+                        ashet.input.pushRawEventFromIRQ(.{
+                            .keyboard = .{
+                                .down = ev.down,
+                                .scancode = @truncate(@intFromEnum(ev.key)),
+                            },
+                        });
+                    },
+
+                    .pointer_event => |ptr| {
+                        var cs = ashet.CriticalSection.enter();
+                        defer cs.leave();
+
+                        if (old_mouse) |prev| {
+                            if (prev.x != ptr.x or prev.y != ptr.y) {
+                                ashet.input.pushRawEventFromIRQ(.{
+                                    .mouse_abs_motion = .{
+                                        .x = @intCast(ptr.x),
+                                        .y = @intCast(ptr.y),
+                                    },
+                                });
+                            }
+                        }
+                        old_mouse = Point{
+                            .x = ptr.x,
+                            .y = ptr.y,
+                        };
+
+                        if (old_button != ptr.buttons) {
+                            for (0..7) |i| {
+                                const mask: u8 = @as(u8, 1) << @truncate(i);
+
+                                if ((old_button ^ ptr.buttons) & mask != 0) {
+                                    ashet.input.pushRawEventFromIRQ(.{
+                                        .mouse_button = .{
+                                            .button = switch (i) {
+                                                0 => .left,
+                                                1 => .right,
+                                                2 => .middle,
+                                                3 => .nav_previous,
+                                                4 => .nav_next,
+                                                5 => .wheel_down,
+                                                6 => .wheel_up,
+                                                else => unreachable,
+                                            },
+                                            .down = (ptr.buttons & mask) != 0,
+                                        },
+                                    });
+                                }
+                            }
+                            old_button = ptr.buttons;
+                        }
+                    },
+
+                    else => std.debug.print("received unhandled event: {}\n", .{event}),
+                }
+            }
+        }
+    }
+};

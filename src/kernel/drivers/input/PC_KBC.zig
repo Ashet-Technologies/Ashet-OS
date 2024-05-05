@@ -755,7 +755,7 @@ const MouseDecoder = struct {
                 if ((dx != 0 or dy != 0) and !decoder.current.x_overflow and !decoder.current.y_overflow) {
                     ashet.input.pushRawEvent(.{
                         // PC mouse is using inverted Y
-                        .mouse_motion = .{ .dx = dx, .dy = -dy },
+                        .mouse_rel_motion = .{ .dx = dx, .dy = -dy },
                     });
                 }
 

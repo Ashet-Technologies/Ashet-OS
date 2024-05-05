@@ -52,6 +52,8 @@ pub const input = struct {
 
     /// PC Keyboard (and mouse) Controller
     pub const PC_KBC = @import("input/PC_KBC.zig");
+
+    pub const Host_VNC_Input = @import("input/Host_VNC_Input.zig");
 };
 
 var driver_lists = std.EnumArray(DriverClass, ?*Driver).initFill(null);

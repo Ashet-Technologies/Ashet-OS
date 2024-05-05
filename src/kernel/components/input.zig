@@ -39,12 +39,18 @@ pub fn tick() void {
 
 pub const raw = struct {
     pub const Event = union(enum) {
-        mouse_motion: MouseMotion,
+        mouse_abs_motion: MouseAbsMotion,
+        mouse_rel_motion: MouseRelMotion,
         mouse_button: MouseButton,
         keyboard: KeyEvent,
     };
 
-    pub const MouseMotion = struct {
+    pub const MouseAbsMotion = struct {
+        x: i16,
+        y: i16,
+    };
+
+    pub const MouseRelMotion = struct {
         dx: i32,
         dy: i32,
     };
@@ -129,7 +135,25 @@ pub fn getEvent() ?Event {
     while (true) {
         const raw_event = event_queue.pull() orelse return null;
         switch (raw_event) {
-            .mouse_motion => |data| {
+            .mouse_abs_motion => |data| {
+                const max_size = ashet.video.getMaxResolution();
+
+                const old_cursor = cursor;
+
+                cursor.x = @intCast(std.math.clamp(data.x, 0, @as(i17, max_size.width -| 1)));
+                cursor.y = @intCast(std.math.clamp(data.y, 0, @as(i17, max_size.height -| 1)));
+
+                return Event{ .mouse = .{
+                    .type = .motion,
+                    .dx = cursor.x - old_cursor.x,
+                    .dy = cursor.y - old_cursor.y,
+                    .x = cursor.x,
+                    .y = cursor.y,
+                    .button = .none,
+                } };
+            },
+
+            .mouse_rel_motion => |data| {
                 const dx = @as(i16, @truncate(std.math.clamp(data.dx, std.math.minInt(i16), std.math.maxInt(i16))));
                 const dy = @as(i16, @truncate(std.math.clamp(data.dy, std.math.minInt(i16), std.math.maxInt(i16))));
 
@@ -147,6 +171,7 @@ pub fn getEvent() ?Event {
                     .button = .none,
                 } };
             },
+
             .mouse_button => |data| {
                 const event_type = if (data.down)
                     ashet.abi.MouseEvent.Type.button_press
@@ -229,6 +254,7 @@ pub const keyboard = struct {
 
     pub const models = struct {
         pub const pc105 = Model.compile(@embedFile("../data/keyboard/models/pc105"));
+        pub const vnc = Model.compile(@embedFile("../data/keyboard/models/vnc"));
     };
 
     pub const layouts = struct {
