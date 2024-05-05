@@ -38,6 +38,7 @@ pub const video = struct {
     pub const VESA_BIOS_Extension = @import("video/VESA_BIOS_Extension.zig");
     pub const VGA = @import("video/VGA.zig");
     pub const Virtual_Video_Output = @import("video/Virtual_Video_Output.zig");
+    pub const Host_VNC_Output = @import("video/Host_VNC_Output.zig");
 };
 
 pub const network = struct {

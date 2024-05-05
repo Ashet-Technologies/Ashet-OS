@@ -4,7 +4,7 @@
 
 const std = @import("std");
 const ashet = @import("../../../main.zig");
-const x86 = @import("platform");
+const network = @import("network");
 const logger = std.log.scoped(.linux_pc);
 
 const args = @import("args");
@@ -16,7 +16,6 @@ pub const machine_config = ashet.ports.MachineConfig{
 const hw = struct {
     //! list of fixed hardware components
 
-    var video0: ashet.drivers.video.Virtual_Video_Output = .{};
     var systemClock: ashet.drivers.rtc.HostedSystemClock = .{};
 };
 
@@ -52,9 +51,10 @@ var global_memory_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 const global_memory = global_memory_arena.allocator();
 
 pub fn initialize() !void {
+    try network.init();
+
     startup_time = try std.time.Instant.now();
 
-    ashet.drivers.install(&hw.video0.driver);
     ashet.drivers.install(&hw.systemClock.driver);
 
     const argv = try std.process.argsAlloc(global_memory);
@@ -82,6 +82,46 @@ pub fn initialize() !void {
             driver.* = try ashet.drivers.block.Host_Disk_Image.init(file, mode);
 
             ashet.drivers.install(&driver.driver);
+        } else if (std.mem.eql(u8, component, "video")) {
+            // "video:<type>:<width>:<height>:<args>"
+            const device_type = iter.next() orelse badKernelOption("video", "missing video device type");
+
+            const res_x_str = iter.next() orelse badKernelOption("video", "missing horizontal resolution");
+            const res_y_str = iter.next() orelse badKernelOption("video", "missing vertical resolution");
+
+            const res_x = std.fmt.parseInt(u16, res_x_str, 10) catch badKernelOption("video", "bad horizontal resolution");
+            const res_y = std.fmt.parseInt(u16, res_y_str, 10) catch badKernelOption("video", "bad vertical resolution");
+
+            if (res_x == 0 or res_y == 0) badKernelOption("video", "resolution must be larger than zero");
+
+            if (std.mem.eql(u8, device_type, "vnc")) {
+                // "video:<type>:<width>:<height>:<ip>:<port>"
+
+                const address_str = iter.next() orelse badKernelOption("video", "missing vnc address");
+                const port_str = iter.next() orelse badKernelOption("video", "missing vnc port");
+
+                const address = network.Address.parse(address_str) catch badKernelOption("video", "bad vnc endpoint");
+                const port = std.fmt.parseInt(u16, port_str, 10) catch badKernelOption("video", "bad vnc endpoint");
+
+                const driver = try global_memory.create(ashet.drivers.video.Host_VNC_Output);
+                try driver.init(
+                    .{ .address = address, .port = port },
+                    res_x,
+                    res_y,
+                );
+                ashet.drivers.install(&driver.driver);
+            } else if (std.mem.eql(u8, device_type, "sdl")) {
+                badKernelOption("video", "sdl not supported yet!");
+            } else if (std.mem.eql(u8, device_type, "drm")) {
+                badKernelOption("video", "drm not supported yet!");
+            } else if (std.mem.eql(u8, device_type, "dummy")) {
+                if (res_x != 320 or res_y != 240) badKernelOption("video", "resolution must be 320x240!");
+                const driver = try global_memory.create(ashet.drivers.video.Virtual_Video_Output);
+                driver.* = ashet.drivers.video.Virtual_Video_Output.init();
+                ashet.drivers.install(&driver.driver);
+            } else {
+                badKernelOption("video", "bad video device type");
+            }
         } else {
             badKernelOption(component, "does not exist");
         }

@@ -34,5 +34,13 @@
             .url = "https://github.com/MasterQ32/fraxinus/archive/dac75f30046d2fb7eeed893d505722f5f781d832.tar.gz",
             .hash = "1220b54f999bed8a965d0978cb3375083e9038286c5414cb06726318b4f3917a01d2",
         },
+        .network = .{
+            .url = "https://github.com/MasterQ32/zig-network/archive/cdff53a2527598112a02b442045d4aef39a2e5e2.tar.gz",
+            .hash = "1220509b2da888b2d1ea452ed9d384134a754a940d1dc3865c87da7d224b89912b3d",
+        },
+        .vnc = .{
+            .url = "https://github.com/MasterQ32/zvnc/archive/52c16e585c17611ac3ee09ca9a131845fa07f157.tar.gz",
+            .hash = "12205d9dc1ae86ccdb30e6a6b56ae91f0d38244d095cc18c1e7c13a4846e0d77d5a2",
+        },
     },
 }

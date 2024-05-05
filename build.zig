@@ -47,6 +47,13 @@ pub fn build(b: *std.Build) !void {
 
     const turtlefont_dep = b.dependency("turtlefont", .{});
 
+    const network_dep = b.dependency("network", .{});
+    const vnc_dep = b.dependency("vnc", .{});
+
+    const mod_network = network_dep.module("network");
+
+    const mod_vnc = vnc_dep.module("vnc");
+
     const text_editor_module = b.dependency("text-editor", .{}).module("text-editor");
     const mod_hyperdoc = b.dependency("hyperdoc", .{}).module("hyperdoc");
 
@@ -113,6 +120,8 @@ pub fn build(b: *std.Build) !void {
         .libhypertext = mod_libhypertext,
         .libashetfs = mod_libashetfs,
         .fatfs = fatfs_module,
+        .network = mod_network,
+        .vnc = mod_vnc,
     };
 
     const afs_tool = b.addExecutable(.{

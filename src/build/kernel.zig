@@ -96,6 +96,10 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
             .{ .name = "args", .module = options.modules.args },
             .{ .name = "fatfs", .module = options.modules.fatfs },
             .{ .name = "args", .module = options.modules.args },
+            .{ .name = "vnc", .module = options.modules.vnc },
+
+            // only required on hosted instances:
+            .{ .name = "network", .module = options.modules.network },
         },
     });
     // for (std.enums.values(build_targets.Platform)) |platform| {
@@ -121,7 +125,7 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
     kernel_exe.code_model = .small;
     kernel_exe.bundle_compiler_rt = true;
     kernel_exe.rdynamic = true; // Prevent the compiler from garbage collecting exported symbols
-    kernel_exe.single_threaded = true;
+    kernel_exe.single_threaded = (kernel_exe.target.getOsTag() == .freestanding);
     kernel_exe.omit_frame_pointer = false;
     kernel_exe.strip = false; // never strip debug info
     if (options.optimize == .Debug) {
