@@ -4,6 +4,7 @@ A tiny cross-platform operating system, focused on hackability.
 
 Supported platforms are:
 
+- 🔧 Linux/x86 "Hosted Simulation" (wip)
 - 🔧 RISC-V (wip)
 - 🔧 x86 (wip)
 - ⌛ Arm (planned)
@@ -41,25 +42,6 @@ The following list contains devices for which there is a planned port of Ashet O
 - Desktop OS
   - Open several window-based applications
   - Play games
-
-## Driver/Device Support
-
-- block device
-  - ATA (PIO)
-  - Common Flash Interface (NOR flash)
-- input
-  - VirtIO Input (MMIO)
-  - PC KBC
-- network
-  - VirtIO Net (MMIO)
-- rtc
-  - PC CMOS
-  - Goldfish RTC
-  - Dummy
-- video
-  - VGA
-  - Vesa BIOS Extension
-  - VirtIO GPU (MMIO)
 
 ## Planned Applications
 

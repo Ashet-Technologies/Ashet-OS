@@ -117,7 +117,7 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
     const kernel_exe = b.addExecutable(.{
         .name = "ashet-os",
         .root_source_file = start_file,
-        .target = platform_spec.target,
+        .target = machine_spec.alt_target orelse platform_spec.target,
         .optimize = options.optimize,
     });
     kernel_exe.addModule("kernel", kernel_mod);

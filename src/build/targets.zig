@@ -25,6 +25,7 @@ pub const MachineSpec = struct {
     rom_size: ?usize,
 
     start_file: ?std.Build.LazyPath,
+    alt_target: ?std.zig.CrossTarget,
 
     /// Instantiation:
     /// Uses place holders:
@@ -118,7 +119,7 @@ pub fn getPlatformSpec(platform: Platform) *const PlatformSpec {
             .start_file = .{ .path = "src/kernel/port/platform/hosted-startup.zig" },
             .target = std.zig.CrossTarget{
                 .cpu_arch = .x86,
-                .os_tag = .linux,
+                .os_tag = .freestanding,
                 .abi = .musl,
                 .cpu_model = .{ .explicit = &std.Target.x86.cpu.i686 },
             },
@@ -149,6 +150,7 @@ pub fn getMachineSpec(machine: Machine) *const MachineSpec {
             .linker_script = "src/kernel/port/machine/rv32_virt/linker.ld",
 
             .disk_formatter = "rv32_virt",
+            .alt_target = null,
 
             .qemu_cli = &.{
                 "-cpu",    "rv32",
@@ -178,6 +180,7 @@ pub fn getMachineSpec(machine: Machine) *const MachineSpec {
             .linker_script = "src/kernel/port/machine/bios_pc/linker.ld",
 
             .disk_formatter = "bios_pc",
+            .alt_target = null,
 
             .qemu_cli = &.{
                 "-machine", "pc",
@@ -198,6 +201,12 @@ pub fn getMachineSpec(machine: Machine) *const MachineSpec {
             .linker_script = "src/kernel/port/machine/linux_pc/linker.ld",
 
             .disk_formatter = "linux_pc",
+            .alt_target = std.zig.CrossTarget{
+                .cpu_arch = .x86,
+                .os_tag = .linux,
+                .abi = .musl,
+                .cpu_model = .{ .explicit = &std.Target.x86.cpu.i686 },
+            },
 
             .qemu_cli = &.{},
 
@@ -250,6 +259,7 @@ pub fn getMachineSpec(machine: Machine) *const MachineSpec {
             .linker_script = "src/kernel/port/machine/arm_virt/linker.ld",
 
             .disk_formatter = "arm_virt",
+            .alt_target = null,
 
             .qemu_cli = &.{
                 "-cpu",    "cortex-a7",

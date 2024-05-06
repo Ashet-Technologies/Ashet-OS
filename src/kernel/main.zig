@@ -210,7 +210,7 @@ pub const LogLevel = std.log.Level;
 
 pub const log_levels = struct {
     pub var io: LogLevel = .info;
-    pub var ui: LogLevel = .info;
+    pub var ui: LogLevel = .debug;
     pub var network: LogLevel = .info;
     pub var filesystem: LogLevel = .debug;
     pub var memory: LogLevel = .info;

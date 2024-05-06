@@ -1,7 +1,7 @@
 const std = @import("std");
 const ashet = @import("../main.zig");
 const libashet = @import("ashet");
-const logger = std.log.scoped(.s);
+const logger = std.log.scoped(.apps);
 const system_arch = @import("builtin").target.cpu.arch;
 
 pub const AppID = struct {
@@ -111,6 +111,7 @@ pub fn startAppElf(app: AppID) !void {
             const R_386_32PLT = 11; //   word32     L + A
 
             pub fn apply(process_base: usize, process_memory: []align(ashet.memory.page_size) u8, offset: Elf32_Addr, info: Elf32_Word, addend: ?Elf32_Sword) void {
+                logger.debug("applying rela 0x{X:0>4} to 0x{X:0>8}", .{ info, offset });
                 switch (info) {
                     // rela.R_RISCV_RELATIVE => {
                     //     // logger.err("apply rela: offset={x:0>8} addend={x}", .{ entry.r_offset, entry.r_addend });
@@ -220,17 +221,21 @@ pub fn startAppElf(app: AppID) !void {
         break :blk hi_addr - lo_addr;
     };
 
+    logger.debug("Application {s} is {d} bytes large", .{ app.getName(), required_bytes });
+
     const process_memory = try ashet.memory.page_allocator.alignedAlloc(u8, ashet.memory.page_size, required_bytes);
     errdefer ashet.memory.page_allocator.free(process_memory);
 
     const process_base = @intFromPtr(process_memory.ptr);
+
+    logger.debug("Load application {s} to 0x{X:0>8}", .{ app.getName(), process_base });
 
     // Actually load the exe into memory
     {
         var pheaders = header.program_header_iterator(&file);
         while (try pheaders.next()) |phdr| {
             if (phdr.p_type != elf.PT_LOAD) {
-                // logger.warn("skipping program header: {}", .{phdr});
+                logger.warn("skipping program header: {}", .{phdr});
                 continue;
             }
 
