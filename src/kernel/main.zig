@@ -481,3 +481,15 @@ pub const CriticalSection = struct {
         cs.* = undefined;
     }
 };
+
+// TODO: move to foundation-libc
+export fn memchr(buf: ?[*]const c_char, ch: c_int, len: usize) ?[*]c_char {
+    const s = buf orelse return null;
+
+    const searched: c_char = @bitCast(@as(u8, @truncate(@as(c_uint, @bitCast(ch)))));
+
+    return if (std.mem.indexOf(c_char, s[0..len], &.{searched})) |index|
+        @constCast(s + index)
+    else
+        null;
+}

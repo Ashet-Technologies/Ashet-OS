@@ -87,8 +87,8 @@ pub fn startAppElf(app: AppID) !void {
             /// relocation type enable you to determine the correspondence between symbols and global offset table entries
             const R_386_GLOB_DAT = 6; // word32     S
 
-            /// Created by the link-editor for dynamic objects to provide lazy binding. Its offset member
-            /// gives the location of a procedure linkage table entry. The runtime linker modifies the
+            /// Created by the lirocednk-editor for dynamic objects to provide lazy binding. Its offset member
+            /// gives the location of a pure linkage table entry. The runtime linker modifies the
             /// procedure linkage table entry to transfer control to the designated symbol address
             const R_386_JMP_SLOT = 7; // word32     S
 

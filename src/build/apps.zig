@@ -18,6 +18,8 @@ pub fn compileApps(
     modules: ashet_com.Modules,
     ui_gen: *ashet_com.UiGenerator,
 ) void {
+    ctx.createAshetApp("hello-world", "src/apps/hello-world.zig", null, optimize, &.{});
+
     {
         // const browser_assets = AssetBundleStep.create(b, ctx.rootfs);
 
@@ -113,6 +115,8 @@ pub const AshetContext = struct {
 
         switch (ctx.mode) {
             .native => |info| {
+                exe.linkLibrary(info.platforms.libsyscall.get(info.platform));
+
                 exe.addModule("ashet", ctx.b.modules.get("ashet").?);
                 exe.addModule("ashet-std", ctx.b.modules.get("ashet-std").?);
                 exe.addModule("ashet-gui", ctx.b.modules.get("ashet-gui").?); // just add GUI to all apps by default *shrug*
@@ -124,7 +128,7 @@ pub const AshetContext = struct {
                 exe.single_threaded = true; // AshetOS doesn't support multithreading in a modern sense
                 exe.pie = true; // AshetOS requires PIE executables
                 exe.force_pic = true; // which need PIC code
-                exe.linkage = .static; // but everything is statically linked, we don't support shared objects
+                exe.linkage = .dynamic;
                 exe.strip = false;
 
                 exe.setLinkerScriptPath(.{ .path = "src/libashet/application.ld" });

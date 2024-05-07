@@ -1,0 +1,50 @@
+# Ashet OS GUI Design
+
+- Focus on targets:
+  - RV32 virt
+  - x86 bios
+  - Arm virt
+  - Pi400 (prio)
+  - Ox64 (headless/spi display)
+- TSR apps
+  - Terminate and Stay Resident
+  - Must be explicitly killed with a KillProcess call, last thread exit isnt deadly.
+- Modular GUI
+  - Widget Base + Standard Events in kernel
+  - Widger drawing and logic in TSR plugins
+  - Widget tree is maintained by kernel
+  - Widgets have GUID as identifier
+  - Context menus are kernel feature
+  - Window layout manager is a TSR app
+    - standard is the infinite canvas
+  - Support proper modal dialogs
+- Provide global draw API
+  - Primitives
+  - Text, Rich text, Hyper text
+  - Bitmap graphics
+- Global Drag'n'drop feature
+  - Allow apps to provide drop sources and drop sinks
+- Global semantic screenshots
+  - Encode as png/qoi
+  - Use private chunk for semantics
+  - CBOR encoded?
+- Store creator/modifier app per file
+- Store mime type per file
+- Implement the "Unified Action Center"
+  - Provides means to populate context menus
+  - Provides means to handle D&D
+  - Scriptable actions (Js/LoLa)
+  - Standard configurable actions
+- Unified Clipboard System
+  - History
+  - Slots
+  - Save to file
+  - Load from file
+- Central painting API
+  - provide painting primitives
+  - 2D accelerated when possible
+  - Also include Mirage3D ?
+- Syscalls via "shared libraries"
+  - OS loader will just link kernel functions
+  - Shared libs can be implemented as TSR with stub main
+- Port/rewrite LoLa for 0.12 so we can integrate it in AshetOS for scripting

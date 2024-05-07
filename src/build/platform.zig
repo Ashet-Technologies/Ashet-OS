@@ -9,6 +9,7 @@ pub fn PlatformMap(comptime T: type) type {
 }
 
 pub const PlatformData = struct {
+    libsyscall: PlatformMap(*std.Build.CompileStep) = PlatformMap(*std.Build.CompileStep).initUndefined(),
     libc: PlatformMap(*std.Build.CompileStep) = PlatformMap(*std.Build.CompileStep).initUndefined(),
     lwip: PlatformMap(*std.Build.CompileStep) = PlatformMap(*std.Build.CompileStep).initUndefined(),
     modules: PlatformMap(*std.Build.Module) = PlatformMap(*std.Build.Module).initUndefined(),
@@ -48,6 +49,23 @@ pub fn init(b: *std.Build) PlatformData {
             }
             data.lwip.set(platform, lwip);
         }
+
+        const libsyscall = b.addSharedLibrary(.{
+            .name = "syscall",
+            .target = platform_spec.target,
+            .optimize = .ReleaseSafe,
+            .root_source_file = .{ .path = "src/abi/libsyscall.zig" },
+        });
+
+        const install_libsyscall = b.addInstallFileWithDir(
+            libsyscall.getEmittedBin(),
+            .{ .custom = b.fmt("lib/{s}", .{@tagName(platform)}) },
+            "libsyscall.so",
+        );
+
+        b.getInstallStep().dependOn(&install_libsyscall.step);
+
+        data.libsyscall.set(platform, libsyscall);
     }
 
     return data;
