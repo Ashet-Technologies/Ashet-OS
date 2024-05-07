@@ -12,6 +12,7 @@ pkgs.mkShell {
     # pkgs.gcc-arm-embedded
   ];
   buildInputs = [
-    pkgs.SDL2
+    pkgs.pkgsi686Linux.SDL2
+    pkgs.pkgsi686Linux.lua5_1
   ];
 }

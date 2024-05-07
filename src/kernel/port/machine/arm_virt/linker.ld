@@ -28,9 +28,9 @@ SECTIONS {
 
     .stack (NOLOAD) : {
         . = ALIGN(4096);
-        KEEP(kernel_stack_start = .);
+        kernel_stack_start = .;
         . += 0x8000; 
-        KEEP(kernel_stack = .);
+        kernel_stack = .;
     } > dram
 
     .data : AT (__kernel_flash_end){

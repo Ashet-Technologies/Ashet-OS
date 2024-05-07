@@ -39,6 +39,7 @@ pub const video = struct {
     pub const VGA = @import("video/VGA.zig");
     pub const Virtual_Video_Output = @import("video/Virtual_Video_Output.zig");
     pub const Host_VNC_Output = @import("video/Host_VNC_Output.zig");
+    pub const Host_SDL_Output = @import("video/Host_SDL_Output.zig");
 };
 
 pub const network = struct {
@@ -54,6 +55,7 @@ pub const input = struct {
     pub const PC_KBC = @import("input/PC_KBC.zig");
 
     pub const Host_VNC_Input = @import("input/Host_VNC_Input.zig");
+    pub const Host_SDL_Input = @import("input/Host_SDL_Input.zig");
 };
 
 var driver_lists = std.EnumArray(DriverClass, ?*Driver).initFill(null);

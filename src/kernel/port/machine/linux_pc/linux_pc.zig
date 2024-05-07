@@ -6,9 +6,11 @@ const std = @import("std");
 const ashet = @import("../../../main.zig");
 const network = @import("network");
 const args_parser = @import("args");
+const sdl2 = @import("SDL2.zig");
 const logger = std.log.scoped(.linux_pc);
 
 const VNC_Server = @import("VNC_Server.zig");
+const SDL_Display = @import("SDL_Display.zig");
 
 pub const machine_config = ashet.ports.MachineConfig{
     .load_sections = .{ .data = false, .bss = false },
@@ -46,6 +48,10 @@ var global_memory_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 pub const global_memory = global_memory_arena.allocator();
 
 pub fn initialize() !void {
+    if (sdl2.SDL_Init(sdl2.SDL_INIT_EVERYTHING) < 0) {
+        @panic("failed to init SDL");
+    }
+
     const res = std.os.linux.mprotect(
         &linear_memory,
         linear_memory.len,
@@ -117,7 +123,13 @@ pub fn initialize() !void {
 
                 ashet.drivers.install(&server.screen.driver);
             } else if (std.mem.eql(u8, device_type, "sdl")) {
-                badKernelOption("video", "sdl not supported yet!");
+                const display = try SDL_Display.init(
+                    global_memory,
+                    res_x,
+                    res_y,
+                );
+
+                ashet.drivers.install(&display.screen.driver);
             } else if (std.mem.eql(u8, device_type, "drm")) {
                 badKernelOption("video", "drm not supported yet!");
             } else if (std.mem.eql(u8, device_type, "dummy")) {

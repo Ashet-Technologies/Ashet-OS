@@ -100,6 +100,7 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
 
             // only required on hosted instances:
             .{ .name = "network", .module = options.modules.network },
+            // .{ .name = "sdl", .module = options.modules.sdl },
         },
     });
     // for (std.enums.values(build_targets.Platform)) |platform| {
@@ -137,6 +138,18 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
 
     for (options.platforms.include_paths.get(machine_spec.platform).items) |path| {
         kernel_exe.addSystemIncludePath(path);
+    }
+
+    switch (options.machine_spec.platform) {
+        .hosted => {
+            kernel_exe.linkLibC();
+            kernel_exe.linkSystemLibrary2("sdl2", .{
+                .use_pkg_config = .force,
+                .search_strategy = .mode_first,
+            });
+            kernel_exe.linkage = .dynamic;
+        },
+        else => {},
     }
 
     FatFS.link(kernel_exe, options.fatfs_config);

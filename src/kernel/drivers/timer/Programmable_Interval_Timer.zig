@@ -17,7 +17,6 @@ pub const Register = enum(u16) {
     counter1 = 0x41, // 	Counter-Register für Channel 1 setzen/lesen
     counter2 = 0x42, // 	Counter-Register für Channel 2 setzen/lesen
     control = 0x43, // 	Initalisierung (siehe unten)
-
 };
 
 fn write_reg(reg: Register, value: u8) void {

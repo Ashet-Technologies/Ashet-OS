@@ -171,7 +171,7 @@ pub fn getMachineSpec(machine: Machine) *const MachineSpec {
         },
 
         // x86 machines:
-        .bios_pc => &MachineSpec{
+        .bios_pc => comptime &MachineSpec{
             .name = "Generic PC (BIOS)",
             .machine_id = "bios_pc",
             .platform = .x86,
@@ -192,7 +192,7 @@ pub fn getMachineSpec(machine: Machine) *const MachineSpec {
             .rom_size = null,
         },
 
-        .linux_pc => &MachineSpec{
+        .linux_pc => comptime &MachineSpec{
             .name = "Hosted (x86 Linux)",
             .machine_id = "linux_pc",
             .platform = .hosted,
@@ -204,8 +204,9 @@ pub fn getMachineSpec(machine: Machine) *const MachineSpec {
             .alt_target = std.zig.CrossTarget{
                 .cpu_arch = .x86,
                 .os_tag = .linux,
-                .abi = .musl,
+                .abi = .gnu,
                 .cpu_model = .{ .explicit = &std.Target.x86.cpu.i686 },
+                .dynamic_linker = std.Target.DynamicLinker.init("/nix/store/xlyscnvzz5l3pkvf280qp5czg387b98f-glibc-2.38-44/lib/ld-linux.so.2"),
             },
 
             .qemu_cli = &.{},
