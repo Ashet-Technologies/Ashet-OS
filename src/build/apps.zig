@@ -70,7 +70,6 @@ pub fn compileApps(
 }
 
 pub const Mode = union(enum) {
-    hosted: std.zig.CrossTarget,
     native: struct {
         platforms: platforms.PlatformData,
         platform: targets.Platform,
@@ -100,16 +99,12 @@ pub const AshetContext = struct {
 
     fn createAshetApp(ctx: *AshetContext, name: []const u8, source: []const u8, maybe_icon: ?[]const u8, optimize: std.builtin.OptimizeMode, dependencies: []const std.Build.ModuleDependency) void {
         const target = switch (ctx.mode) {
-            .hosted => |target| target,
             .native => |info| targets.getPlatformSpec(info.platform).target,
         };
 
         const exe = ctx.b.addExecutable(.{
             .name = ctx.b.fmt("{s}.app", .{name}),
-            .root_source_file = if (ctx.mode == .hosted)
-                .{ .path = "src/libuserland/main.zig" }
-            else
-                .{ .path = source },
+            .root_source_file = .{ .path = source },
             .optimize = optimize,
             .target = target,
         });
@@ -117,31 +112,6 @@ pub const AshetContext = struct {
         exe.omit_frame_pointer = false; // this is useful for debugging
 
         switch (ctx.mode) {
-            .hosted => {
-                exe.addModule("ashet", ctx.b.modules.get("ashet").?);
-                exe.addModule("ashet-std", ctx.b.modules.get("ashet-std").?);
-                exe.addModule("ashet-abi", ctx.b.modules.get("ashet-abi").?);
-                exe.addAnonymousModule("app", .{
-                    .source_file = .{ .path = source },
-                    .dependencies = std.mem.concat(ctx.b.allocator, std.Build.ModuleDependency, &.{
-                        &.{
-                            .{ .name = "ashet", .module = ctx.b.modules.get("ashet").? },
-                            .{ .name = "ashet-gui", .module = ctx.b.modules.get("ashet-gui").? },
-                            .{ .name = "ashet-std", .module = ctx.b.modules.get("ashet-std").? },
-                        },
-                        dependencies,
-                    }) catch @panic("oom"),
-                });
-
-                exe.linkSystemLibrary("sdl2");
-                exe.linkLibC();
-
-                const install = ctx.b.addInstallArtifact(exe, .{ .dest_dir = .{
-                    .override = .{ .custom = "hosted" },
-                } });
-
-                ctx.b.getInstallStep().dependOn(&install.step);
-            },
             .native => |info| {
                 exe.addModule("ashet", ctx.b.modules.get("ashet").?);
                 exe.addModule("ashet-std", ctx.b.modules.get("ashet-std").?);

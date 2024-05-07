@@ -8,7 +8,10 @@ const ColorIndex = ashet.abi.ColorIndex;
 const Color = ashet.abi.Color;
 const Resolution = ashet.abi.Size;
 
-backbuffer: []align(ashet.memory.page_size) ColorIndex,
+backbuffer_lock: std.Thread.Mutex = .{},
+
+backbuffer: []ColorIndex,
+frontbuffer: []align(ashet.memory.page_size) ColorIndex,
 width: u16,
 height: u16,
 
@@ -37,20 +40,21 @@ pub fn init(
     const fb = try std.heap.page_allocator.alignedAlloc(
         ColorIndex,
         ashet.memory.page_size,
-        @as(u32, width) * @as(u32, height),
+        2 * @as(u32, width) * @as(u32, height),
     );
     errdefer std.heap.page_allocator.free(fb);
 
     return .{
         .width = width,
         .height = height,
-        .backbuffer = fb,
+        .frontbuffer = fb[0 .. fb.len / 2],
+        .backbuffer = fb[fb.len / 2 .. fb.len],
     };
 }
 
 fn getVideoMemory(driver: *Driver) []align(ashet.memory.page_size) ColorIndex {
     const vd = @fieldParentPtr(Host_VNC_Output, "driver", driver);
-    return vd.backbuffer;
+    return vd.frontbuffer;
 }
 
 fn getPaletteMemory(driver: *Driver) *[256]Color {
@@ -96,5 +100,9 @@ fn getBorder(driver: *Driver) ColorIndex {
 
 fn flush(driver: *Driver) void {
     const vd = @fieldParentPtr(Host_VNC_Output, "driver", driver);
-    _ = vd;
+
+    // vd.backbuffer_lock.lock();
+    // defer vd.backbuffer_lock.unlock();
+
+    @memcpy(vd.backbuffer, vd.frontbuffer);
 }

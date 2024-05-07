@@ -17,7 +17,7 @@ const build_targets = @import("src/build/targets.zig");
 const platforms_build = @import("src/build/platform.zig");
 
 pub fn build(b: *std.Build) !void {
-    const hosted_target = b.standardTargetOptions(.{});
+    // const hosted_target = b.standardTargetOptions(.{});
     const kernel_step = b.step("kernel", "Only builds the OS kernel");
     const validate_step = b.step("validate", "Validates files in the rootfs");
     const run_step = b.step("run", "Executes the selected kernel with qemu. Use -Dmachine to run only one");
@@ -25,7 +25,7 @@ pub fn build(b: *std.Build) !void {
 
     const optimize = b.standardOptimizeOption(.{});
     const build_native_apps = b.option(bool, "apps", "Builds the native apps (default: on)") orelse true;
-    const build_hosted_apps = b.option(bool, "hosted", "Builds the hosted apps (default: on)") orelse true;
+    // const build_hosted_apps = b.option(bool, "hosted", "Builds the hosted apps (default: on)") orelse true;
 
     b.getInstallStep().dependOn(validate_step); // "install" also validates the rootfs.
 
@@ -175,19 +175,6 @@ pub fn build(b: *std.Build) !void {
     // tools and deps ↑
     /////////////////////////////////////////////////////////////////////////////
     // ashet os ↓
-
-    // hosted build:
-
-    if (build_hosted_apps) {
-        buildHostedApps(
-            b,
-            hosted_target,
-            optimize,
-            bmpconv,
-            modules,
-            lua_exe,
-        );
-    }
 
     const platforms = platforms_build.init(b);
 
@@ -412,43 +399,6 @@ fn createSystemIcons(b: *std.Build, bmpconv: BitmapConverter, rootfs: ?*disk_ima
     }
 
     return system_icons;
-}
-
-fn buildHostedApps(
-    b: *std.Build,
-    target: std.zig.CrossTarget,
-    optimize: std.builtin.OptimizeMode,
-    bmpconv: BitmapConverter,
-    modules: ashet_com.Modules,
-    lua_exe: *std.Build.Step.Compile,
-) void {
-    const system_icons = createSystemIcons(b, bmpconv, null);
-
-    const system_assets = b.createModule(.{
-        .source_file = system_icons.getOutput(),
-        .dependencies = &.{},
-    });
-
-    var ui_gen = ashet_com.UiGenerator{
-        .builder = b,
-        .lua = lua_exe,
-        .mod_ashet = modules.libashet,
-        .mod_ashet_gui = modules.ashet_gui,
-        .mod_system_assets = system_assets,
-    };
-
-    var ctx = ashet_apps.AshetContext.init(
-        b,
-        bmpconv,
-        .{ .hosted = target },
-    );
-
-    ashet_apps.compileApps(
-        &ctx,
-        optimize,
-        modules,
-        &ui_gen,
-    );
 }
 
 const OS = struct {

@@ -89,16 +89,22 @@ fn connection_handler(vd: *VNC_Server) !void {
                 }, // use internal handler
 
                 .framebuffer_update_request => |req| {
-                    @memcpy(new_framebuffer, vd.screen.backbuffer);
+                    {
+                        // vd.screen.backbuffer_lock.lock();
+                        // defer vd.screen.backbuffer_lock.unlock();
+                        @memcpy(new_framebuffer, vd.screen.backbuffer);
+                    }
 
                     // logger.info("framebuffer update request: {}", .{in_req});
+
                     var rectangles = std.ArrayList(vnc.UpdateRectangle).init(request_allocator);
                     defer rectangles.deinit();
 
-                    const incremental_support = false;
+                    const incremental_support = true;
 
                     if (incremental_support and req.incremental) {
-                        // Compute and send differential update:
+
+                        // Compute differential update:
                         var base: usize = req.y * vd.screen.width;
                         var y: usize = 0;
                         while (y < req.height) : (y += 1) {
@@ -126,11 +132,11 @@ fn connection_handler(vd: *VNC_Server) !void {
                                     new_framebuffer,
                                     server.pixel_format,
                                 ));
-                                logger.debug("sending incremental update on scanline {} from {}...{}", .{
-                                    req.y + y,
-                                    req.x + first_diff,
-                                    last_diff,
-                                });
+                                // logger.debug("sending incremental update on scanline {} from {}...{}", .{
+                                //     req.y + y,
+                                //     req.x + first_diff,
+                                //     last_diff,
+                                // });
                             }
 
                             base += vd.screen.width;
@@ -150,10 +156,24 @@ fn connection_handler(vd: *VNC_Server) !void {
                         ));
                     }
 
-                    logger.debug("Respond to update request ({},{})+({}x{}) with {} updated rectangles", .{
-                        req.x,                req.y, req.width, req.height,
-                        rectangles.items.len,
-                    });
+                    if (rectangles.items.len == 0) {
+                        try rectangles.append(try vd.encode_screen_rect(
+                            request_allocator,
+                            .{
+                                .x = req.x,
+                                .y = req.y,
+                                .width = 1,
+                                .height = 1,
+                            },
+                            new_framebuffer,
+                            server.pixel_format,
+                        ));
+                    }
+
+                    // logger.debug("Respond to update request ({},{})+({}x{}) with {} updated rectangles", .{
+                    //     req.x,                req.y, req.width, req.height,
+                    //     rectangles.items.len,
+                    // });
                     try server.sendFramebufferUpdate(rectangles.items);
 
                     @memcpy(old_framebuffer, new_framebuffer);
