@@ -619,10 +619,10 @@ comptime {
         .x86 => asm (preamble ++
                 \\
                 \\ashet_scheduler_threadTrampoline:
-                //  in x86, the ABI says that the stack has to be aligned to 16,
-                //  so let's do that:
+                //  in x86, the SYS-V ABI says that the stack has to be
+                //  aligned to 16 when `call` is invoked, so let's do that:
                 \\  and $0xfffffff0, %esp
-                // \\  sub $8, %esp
+                \\  sub $0x0C, %esp
                 //
                 //  we just restored the thread state from scheduler.createThread,
                 //  so %ebx contains the argument,
