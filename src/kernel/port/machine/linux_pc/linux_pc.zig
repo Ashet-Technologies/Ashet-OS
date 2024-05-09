@@ -6,7 +6,7 @@ const std = @import("std");
 const ashet = @import("../../../main.zig");
 const network = @import("network");
 const args_parser = @import("args");
-const sdl2 = @import("SDL2.zig");
+const sdl = @import("SDL2.zig");
 const logger = std.log.scoped(.linux_pc);
 
 const VNC_Server = @import("VNC_Server.zig");
@@ -48,7 +48,7 @@ var global_memory_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 pub const global_memory = global_memory_arena.allocator();
 
 pub fn initialize() !void {
-    if (sdl2.SDL_Init(sdl2.SDL_INIT_EVERYTHING) < 0) {
+    if (sdl.SDL_Init(sdl.SDL_INIT_EVERYTHING) < 0) {
         @panic("failed to init SDL");
     }
 
@@ -64,6 +64,9 @@ pub fn initialize() !void {
     startup_time = try std.time.Instant.now();
 
     ashet.drivers.install(&hw.systemClock.driver);
+
+    var video_out_index: usize = 0;
+    var any_sdl_output: bool = false;
 
     var cli = args_parser.parseForCurrentProcess(KernelOptions, global_memory, .print) catch std.os.exit(1);
     cli.options = kernel_options;
@@ -125,11 +128,14 @@ pub fn initialize() !void {
             } else if (std.mem.eql(u8, device_type, "sdl")) {
                 const display = try SDL_Display.init(
                     global_memory,
+                    video_out_index,
                     res_x,
                     res_y,
                 );
 
                 ashet.drivers.install(&display.screen.driver);
+
+                any_sdl_output = true;
             } else if (std.mem.eql(u8, device_type, "drm")) {
                 badKernelOption("video", "drm not supported yet!");
             } else if (std.mem.eql(u8, device_type, "dummy")) {
@@ -140,14 +146,46 @@ pub fn initialize() !void {
             } else {
                 badKernelOption("video", "bad video device type");
             }
+
+            video_out_index += 1;
         } else {
             badKernelOption(component, "does not exist");
         }
+    }
+
+    if (any_sdl_output) {
+        const thread = try ashet.scheduler.Thread.spawn(handle_SDL_events, null, .{});
+        try thread.setName("sdl.eventloop");
+        try thread.start();
+        thread.detach();
     }
 }
 
 pub fn debugWrite(msg: []const u8) void {
     std.debug.print("{s}", .{msg});
+}
+
+fn handle_SDL_events(ptr: ?*anyopaque) callconv(.C) u32 {
+    errdefer |err| {
+        logger.err("SDL event loop crashed: {s}", .{@errorName(err)});
+        std.os.exit(1);
+    }
+    _ = ptr;
+
+    while (true) {
+        var event: sdl.SDL_Event = undefined;
+        while (sdl.SDL_PollEvent(&event) != 0) {
+            switch (event.type) {
+                sdl.SDL_QUIT => std.os.exit(1),
+
+                else => {
+                    logger.debug("unhandled SDL event of type {}", .{event.type});
+                },
+            }
+        }
+
+        ashet.scheduler.yield();
+    }
 }
 
 // extern const __machine_linmem_start: u8 align(4);

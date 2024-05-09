@@ -1,6 +1,6 @@
 const std = @import("std");
 const ashet = @import("../../main.zig");
-const sdl2 = @import("../../port/machine/linux_pc/SDL2.zig");
+const sdl = @import("../../port/machine/linux_pc/SDL2.zig");
 const logger = std.log.scoped(.host_sdl_output);
 
 const Host_SDL_Output = @This();
@@ -9,7 +9,9 @@ const ColorIndex = ashet.abi.ColorIndex;
 const Color = ashet.abi.Color;
 const Resolution = ashet.abi.Size;
 
-frontbuffer: *sdl2.SDL_Texture,
+renderer: *sdl.SDL_Renderer,
+texture: *sdl.SDL_Texture,
+
 backbuffer: []align(ashet.memory.page_size) ColorIndex,
 width: u16,
 height: u16,
@@ -32,22 +34,35 @@ driver: Driver = .{
     },
 },
 
-pub fn init(
-    width: u16,
-    height: u16,
-) !Host_SDL_Output {
-    const fb = try std.heap.page_allocator.alignedAlloc(
+pub fn init(renderer: *sdl.SDL_Renderer, texture: *sdl.SDL_Texture) !Host_SDL_Output {
+    var c_width: c_int = 0;
+    var c_height: c_int = 0;
+
+    sdl.assert(sdl.SDL_QueryTexture(
+        texture,
+        null,
+        null,
+        &c_width,
+        &c_height,
+    ));
+    const width: u16 = @intCast(c_width);
+    const height: u16 = @intCast(c_height);
+
+    const backbuffer = try std.heap.page_allocator.alignedAlloc(
         ColorIndex,
         ashet.memory.page_size,
         @as(u32, width) * @as(u32, height),
     );
-    errdefer std.heap.page_allocator.free(fb);
+    errdefer std.heap.page_allocator.free(backbuffer);
 
     return .{
         .width = width,
         .height = height,
-        .backbuffer = fb[0 .. fb.len / 2],
-        .frontbuffer = undefined,
+
+        .renderer = renderer,
+        .texture = texture,
+
+        .backbuffer = backbuffer,
     };
 }
 
@@ -100,7 +115,47 @@ fn getBorder(driver: *Driver) ColorIndex {
 fn flush(driver: *Driver) void {
     const vd = @fieldParentPtr(Host_SDL_Output, "driver", driver);
 
-    _ = vd;
+    // Stream texture data:
+    // logger.debug("stream data begin", .{});
+    {
+        var raw_pixel_ptr: ?*anyopaque = undefined;
+        var raw_pixel_pitch: c_int = 0;
+        sdl.assert(sdl.SDL_LockTexture(
+            vd.texture,
+            null,
+            &raw_pixel_ptr,
+            &raw_pixel_pitch,
+        ));
+        defer sdl.SDL_UnlockTexture(vd.texture);
 
-    // TODO: Update texture from frontbuffer!
+        var src_pixel_ptr: [*]const ColorIndex = vd.backbuffer.ptr;
+        const src_pixel_pitch: usize = vd.width;
+
+        var dst_pixel_ptr: [*]u8 = @ptrCast(raw_pixel_ptr.?);
+        const dst_pixel_pitch: usize = @intCast(raw_pixel_pitch);
+
+        for (0..vd.height) |_| {
+            const src_scanline: [*]const ColorIndex = src_pixel_ptr;
+            const dst_scanline: [*]Color = @ptrCast(@alignCast(dst_pixel_ptr));
+
+            for (src_scanline[0..vd.width], dst_scanline[0..vd.width]) |index, *color| {
+                color.* = vd.palette[@intFromEnum(index)];
+            }
+
+            src_pixel_ptr += src_pixel_pitch;
+            dst_pixel_ptr += dst_pixel_pitch;
+        }
+    }
+    // logger.debug("stream data end", .{});
+
+    sdl.assert(sdl.SDL_RenderCopy(
+        vd.renderer,
+        vd.texture,
+        null,
+        null,
+    ));
+
+    // logger.debug("present", .{});
+    sdl.SDL_RenderPresent(vd.renderer);
+    // logger.debug("render end", .{});
 }

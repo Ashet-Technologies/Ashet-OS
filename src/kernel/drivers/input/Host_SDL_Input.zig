@@ -24,7 +24,6 @@ pub fn init() Host_SDL_Input {
 
 fn poll(driver: *Driver) void {
     const device = @fieldParentPtr(Host_SDL_Input, "driver", driver);
-
     _ = device;
     // ashet.input.pushRawEvent(.{ .keyboard = .{
     //     .scancode = evt.code,
