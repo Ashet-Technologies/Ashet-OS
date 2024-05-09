@@ -23,6 +23,7 @@
 - Service Methods
   - Register/unregister service
   - Query registered services
+- Input drivers can have an associated video output for absolute positioning
 
 # List
 

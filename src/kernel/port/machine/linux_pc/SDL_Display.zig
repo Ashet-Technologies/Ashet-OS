@@ -6,11 +6,21 @@ const ashet = @import("../../../main.zig");
 
 const SDL_Display = @This();
 
+const SDL_WINDOW_USERDATA_SLUG = "AshetOS.SDL_DisplayPointer";
+
 allocator: std.mem.Allocator,
 index: usize,
 
+window: *sdl.SDL_Window,
+renderer: *sdl.SDL_Renderer,
 screen: ashet.drivers.video.Host_SDL_Output,
 input: ashet.drivers.input.Host_SDL_Input,
+
+pub fn from_window(window: *sdl.SDL_Window) ?*SDL_Display {
+    return @ptrCast(@alignCast(
+        sdl.SDL_GetWindowData(window, SDL_WINDOW_USERDATA_SLUG),
+    ));
+}
 
 pub fn init(
     allocator: std.mem.Allocator,
@@ -37,6 +47,12 @@ pub fn init(
         sdl.SDL_WINDOW_SHOWN,
     ) orelse sdl.panic();
 
+    _ = sdl.SDL_SetWindowData(
+        window,
+        SDL_WINDOW_USERDATA_SLUG,
+        server,
+    );
+
     const renderer = sdl.SDL_CreateRenderer(
         window,
         -1,
@@ -54,6 +70,10 @@ pub fn init(
     server.* = .{
         .allocator = allocator,
         .index = index,
+
+        .window = window,
+        .renderer = renderer,
+
         .screen = try ashet.drivers.video.Host_SDL_Output.init(
             renderer,
             backbuffer_texture,

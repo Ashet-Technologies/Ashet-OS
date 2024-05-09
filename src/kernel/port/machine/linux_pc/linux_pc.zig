@@ -165,6 +165,11 @@ pub fn debugWrite(msg: []const u8) void {
     std.debug.print("{s}", .{msg});
 }
 
+fn display_from_sdl_window_id(id: u32) ?*SDL_Display {
+    const window = sdl.SDL_GetWindowFromID(id) orelse return null;
+    return SDL_Display.from_window(window);
+}
+
 fn handle_SDL_events(ptr: ?*anyopaque) callconv(.C) u32 {
     errdefer |err| {
         logger.err("SDL event loop crashed: {s}", .{@errorName(err)});
@@ -177,6 +182,56 @@ fn handle_SDL_events(ptr: ?*anyopaque) callconv(.C) u32 {
         while (sdl.SDL_PollEvent(&event) != 0) {
             switch (event.type) {
                 sdl.SDL_QUIT => std.os.exit(1),
+
+                sdl.SDL_MOUSEMOTION => {
+                    if (display_from_sdl_window_id(event.motion.windowID)) |display| {
+                        // TODO: Handle multiple video outputs
+
+                        var raw_window_width: c_int = 0;
+                        var raw_window_height: c_int = 0;
+
+                        sdl.SDL_GetWindowSize(
+                            display.window,
+                            &raw_window_width,
+                            &raw_window_height,
+                        );
+
+                        const window_width: i32 = @intCast(raw_window_width);
+                        const window_height: i32 = @intCast(raw_window_height);
+
+                        const screen_width: i32 = display.screen.width;
+                        const screen_height: i32 = display.screen.height;
+
+                        const window_x: i32 = event.motion.x;
+                        const window_y: i32 = event.motion.y;
+
+                        const screen_x: i32 = @divFloor((screen_width - 1) * window_x, window_width - 1);
+                        const screen_y: i32 = @divFloor((screen_height - 1) * window_y, window_height - 1);
+
+                        ashet.input.pushRawEvent(.{ .mouse_abs_motion = .{
+                            .x = @intCast(screen_x),
+                            .y = @intCast(screen_y),
+                        } });
+                    }
+                },
+
+                sdl.SDL_MOUSEBUTTONDOWN, sdl.SDL_MOUSEBUTTONUP => blk: {
+                    if (display_from_sdl_window_id(event.motion.windowID)) |display| {
+                        _ = display;
+
+                        ashet.input.pushRawEvent(.{ .mouse_button = .{
+                            .button = switch (event.button.button) {
+                                sdl.SDL_BUTTON_LEFT => .left,
+                                sdl.SDL_BUTTON_MIDDLE => .middle,
+                                sdl.SDL_BUTTON_RIGHT => .right,
+                                sdl.SDL_BUTTON_X1 => .nav_previous,
+                                sdl.SDL_BUTTON_X2 => .nav_next,
+                                else => break :blk,
+                            },
+                            .down = (event.button.state == sdl.SDL_PRESSED),
+                        } });
+                    }
+                },
 
                 else => {
                     logger.debug("unhandled SDL event of type {}", .{event.type});
