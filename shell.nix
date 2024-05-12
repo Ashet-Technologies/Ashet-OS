@@ -2,9 +2,9 @@
 pkgs.mkShell {
   nativeBuildInputs = [
     pkgs.zig_0_11
-    pkgs.qemu
-    pkgs.qemu-utils
-    pkgs.mtools
+#    pkgs.qemu
+#    pkgs.qemu-utils
+#    pkgs.mtools
     pkgs.syslinux
     # pkgs.llvmPackages_16.bintools
     pkgs.gdb
@@ -13,6 +13,6 @@ pkgs.mkShell {
   ];
   buildInputs = [
     pkgs.pkgsi686Linux.SDL2
-    pkgs.pkgsi686Linux.lua5_1
+#    pkgs.pkgsi686Linux.lua5_1
   ];
 }

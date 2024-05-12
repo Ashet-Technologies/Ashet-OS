@@ -121,6 +121,9 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
         .target = machine_spec.alt_target orelse platform_spec.target,
         .optimize = options.optimize,
     });
+
+    kernel_exe.step.dependOn(machine_info_module.source_file.generated.step);
+
     kernel_exe.addModule("kernel", kernel_mod);
 
     kernel_exe.code_model = .small;

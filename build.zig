@@ -23,7 +23,26 @@ pub fn build(b: *std.Build) !void {
     const run_step = b.step("run", "Executes the selected kernel with qemu. Use -Dmachine to run only one");
     const tools_step = b.step("tools", "Builds the build and debug tools");
 
-    const optimize = b.standardOptimizeOption(.{});
+    const optimize_kernel = b.option(
+        bool,
+        "optimize",
+        "Optimize the kernel and applications.",
+    ) orelse false;
+
+    const optimize_kernel_mode: std.builtin.Mode = if (optimize_kernel)
+        .ReleaseSafe
+    else
+        .Debug;
+
+    const optimize_apps_mode: std.builtin.Mode = b.option(
+        std.builtin.Mode,
+        "optimize-apps",
+        "Optimize apps differently from the kernel.",
+    ) orelse if (optimize_kernel)
+        .ReleaseSafe
+    else
+        .Debug;
+
     const build_native_apps = b.option(bool, "apps", "Builds the native apps (default: on)") orelse true;
     // const build_hosted_apps = b.option(bool, "hosted", "Builds the hosted apps (default: on)") orelse true;
 
@@ -209,7 +228,8 @@ pub fn build(b: *std.Build) !void {
 
             const os = buildOs(
                 b,
-                optimize,
+                optimize_kernel_mode,
+                optimize_apps_mode,
                 bmpconv,
                 modules,
                 lua_exe,
@@ -299,19 +319,19 @@ pub fn build(b: *std.Build) !void {
     const std_tests = b.addTest(.{
         .root_source_file = .{ .path = "src/std/std.zig" },
         .target = .{},
-        .optimize = optimize,
+        .optimize = optimize_kernel_mode,
     });
 
     const fs_tests = b.addTest(.{
         .root_source_file = .{ .path = "src/libafs/testsuite.zig" },
         .target = .{},
-        .optimize = optimize,
+        .optimize = optimize_kernel_mode,
     });
 
     const gui_tests = b.addTest(.{
         .root_source_file = .{ .path = "src/libgui/gui.zig" },
         .target = .{},
-        .optimize = optimize,
+        .optimize = optimize_kernel_mode,
     });
     {
         var iter = b.modules.get("ashet-gui").?.dependencies.iterator();
@@ -411,7 +431,8 @@ const OS = struct {
 
 fn buildOs(
     b: *std.Build,
-    optimize: std.builtin.OptimizeMode,
+    optimize_kernel: std.builtin.OptimizeMode,
+    optimize_apps: std.builtin.OptimizeMode,
     bmpconv: BitmapConverter,
     modules: ashet_com.Modules,
     lua_exe: *std.Build.Step.Compile,
@@ -442,7 +463,7 @@ fn buildOs(
     const machine_spec = build_targets.getMachineSpec(machine);
 
     const kernel_exe = ashet_kernel.create(b, .{
-        .optimize = optimize,
+        .optimize = optimize_kernel,
         .fatfs_config = fatfs_config,
         .machine_spec = machine_spec,
         .modules = modules,
@@ -493,7 +514,7 @@ fn buildOs(
     if (build_apps) {
         ashet_apps.compileApps(
             &ctx,
-            optimize,
+            optimize_apps,
             modules,
             &ui_gen,
         );

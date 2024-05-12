@@ -1,13 +1,30 @@
 #!/bin/sh
 set -e
 clear
+
+
+lpaths="$(pkg-config --libs-only-L sdl2 | sed -re 's/-L//g')"
+libs="$(pkg-config --libs-only-l sdl2 | sed -re 's/-l([^ ]+)/lib\1.so/g')"
+
+for path_prefix in ${lpaths}; do
+    for path_suffix in ${libs}; do
+        lpath="${path_prefix}/${path_suffix}"
+        if [ -e "${lpath}" ]; then
+            if [ -z "${LD_PRELOAD}" ]; then
+                LD_PRELOAD="${lpath}"
+            else
+                LD_PRELOAD="${lpath}:${LD_PRELOAD}"
+            fi
+        fi
+
+    done
+done
+
 zig build \
     -Dmachine=linux_pc \
     -freference-trace
 
-export LD_PRELOAD=/nix/store/4jz7xy4rpgb9drc756w7346h4gn83sv6-SDL2-2.30.1/lib/libSDL2-2.0.so.0.3000.1
-
-
+export LD_PRELOAD
 
 if [ -z "$GDB" ]; then
     exec ./zig-out/bin/debug-filter \
