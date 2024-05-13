@@ -25,16 +25,6 @@ fn dynamic_resolver(a: u32, b: u32, c: u32, d: u32) callconv(.C) void {
     @panic("hello, dynamic code!");
 }
 
-const symbols = struct {
-    pub fn @"ashet-os.syscalls.demo1"() callconv(.C) void {
-        logger.info("ashet-os.syscalls.demo1()\r\n", .{});
-    }
-
-    pub fn @"ashet-os.syscalls.demo2"() callconv(.C) void {
-        logger.info("ashet-os.syscalls.demo2()\r\n", .{});
-    }
-};
-
 pub fn load(file: *libashet.fs.File) !loader.LoadedExecutable {
     const expected_elf_machine: std.elf.EM = switch (system_arch) {
         .riscv32 => .RISCV,
@@ -297,7 +287,7 @@ pub fn load(file: *libashet.fs.File) !loader.LoadedExecutable {
                         var entry: elf.Elf32_Rela = undefined;
                         try buffered_reader.reader().readNoEof(std.mem.asBytes(&entry));
 
-                        Relocation.fromRelA(entry).apply(reloc_env);
+                        try Relocation.fromRelA(entry).apply(reloc_env);
                     }
                 },
                 elf.SHT_REL => {
@@ -321,7 +311,7 @@ pub fn load(file: *libashet.fs.File) !loader.LoadedExecutable {
                         var entry: elf.Elf32_Rel = undefined;
                         try buffered_reader.reader().readNoEof(std.mem.asBytes(&entry));
 
-                        Relocation.fromRel(entry).apply(reloc_env);
+                        try Relocation.fromRel(entry).apply(reloc_env);
                     }
                 },
                 elf.SHT_DYNAMIC => {
@@ -405,19 +395,20 @@ const Environment = struct {
         std.mem.writeIntNative(T, env.memory[offset..][0..@sizeOf(T)], value);
     }
 
-    pub fn resolveSymbol(env: Environment, index: usize) Elf32_Addr {
-        logger.debug("resolve symbol {}", .{index});
-        const symtab = env.dynamic.?.symtab.?;
-        const syment = env.dynamic.?.syment.?;
+    pub fn resolveSymbol(env: Environment, index: usize) error{ BadExecutable, MissingSymbol }!Elf32_Addr {
+        // logger.debug("resolve symbol {}", .{index});
+        const dynamic = env.dynamic orelse return error.BadExecutable;
+        const symtab = dynamic.symtab orelse return error.BadExecutable;
+        const syment = dynamic.syment orelse return error.BadExecutable;
 
         const offset = symtab + syment * index;
 
-        logger.info("symbol({}) => tab=0x{X:0>8}, ent=0x{X:0>8}, off=0x{X:0>8}", .{
-            index,
-            symtab,
-            syment,
-            offset,
-        });
+        // logger.info("symbol({}) => tab=0x{X:0>8}, ent=0x{X:0>8}, off=0x{X:0>8}", .{
+        //     index,
+        //     symtab,
+        //     syment,
+        //     offset,
+        // });
 
         var sym: *const elf.Sym = @ptrCast(@alignCast(env.memory[offset..].ptr));
 
@@ -426,25 +417,31 @@ const Environment = struct {
         var symname: []const u8 = env.memory[env.dynamic.?.strtab.? + sym.st_name ..];
         symname = symname[0..std.mem.indexOfScalar(u8, symname, 0).?];
 
-        logger.info(
-            \\symbol(name={}/'{}', value={}, size={}, shndx={}, type={}, bind={}
-        , .{
-            sym.st_name,
-            std.zig.fmtEscapes(symname),
-            sym.st_value,
-            sym.st_size,
-            sym.st_shndx,
-            info.type,
-            info.bind,
-        });
+        // logger.debug(
+        //     \\resolve symbol(name={}/'{}', value={}, size={}, shndx={}, type={}, bind={}
+        // , .{
+        //     sym.st_name,
+        //     std.zig.fmtEscapes(symname),
+        //     sym.st_value,
+        //     sym.st_size,
+        //     sym.st_shndx,
+        //     info.type,
+        //     info.bind,
+        // });
 
-        inline for (@typeInfo(symbols).Struct.decls) |decl| {
-            if (std.mem.eql(u8, decl.name, symname)) {
-                const func_ptr: usize = @intFromPtr(
-                    &@field(symbols, decl.name),
-                );
-
-                return func_ptr;
+        // Only search function symbols:
+        if (info.type == .func) {
+            inline for (@typeInfo(ashet.abi.SysCallTable).Struct.fields) |decl| {
+                if (comptime std.mem.eql(u8, decl.name, "magic_number"))
+                    continue;
+                if (comptime std.mem.startsWith(u8, decl.name, "padding"))
+                    continue;
+                if (std.mem.eql(u8, decl.name, symname)) {
+                    const func_ptr: usize = @intFromPtr(
+                        @field(ashet.syscalls.syscall_table, decl.name),
+                    );
+                    return func_ptr;
+                }
             }
         }
 
@@ -452,7 +449,7 @@ const Environment = struct {
             std.zig.fmtEscapes(symname),
         });
 
-        return sym.st_value;
+        return error.MissingSymbol;
     }
 
     const SymbolInfo = packed struct(u8) {
@@ -511,17 +508,21 @@ const Relocation = struct {
         };
     }
 
-    pub fn apply(reloc: Relocation, env: Environment) void {
+    pub fn apply(reloc: Relocation, env: Environment) error{ BadExecutable, MissingSymbol, UnsupportedRelocation }!void {
         reloc.type.apply(reloc, env) catch |err| switch (err) {
-            error.UnsupportedRelocation => logger.err(
-                "Unsupported relocation with (type={}, symbol={}, offset=0x{X:0>8}, addend={?})",
-                .{
-                    reloc.type,
-                    reloc.symbol,
-                    reloc.offset,
-                    reloc.addend,
-                },
-            ),
+            error.UnsupportedRelocation => {
+                logger.err(
+                    "Unsupported relocation with (type={}, symbol={}, offset=0x{X:0>8}, addend={?})",
+                    .{
+                        reloc.type,
+                        reloc.symbol,
+                        reloc.offset,
+                        reloc.addend,
+                    },
+                );
+                return error.UnsupportedRelocation;
+            },
+            else => |e| return e,
         };
     }
 
@@ -529,7 +530,7 @@ const Relocation = struct {
         return src;
     }
 
-    pub fn execute(reloc: Relocation, env: Environment, comptime T: type, comptime script: []const u8) void {
+    pub fn execute(reloc: Relocation, env: Environment, comptime T: type, comptime script: []const u8) error{ BadExecutable, MissingSymbol }!void {
         const addend: T = if (reloc.addend) |addend|
             @bitCast(expand(T, addend))
         else
@@ -545,7 +546,7 @@ const Relocation = struct {
                 .got => unreachable, // TODO: Implement this
                 .plt_offset => unreachable, // TODO: Implement this
                 .offset => reloc.offset,
-                .symbol => env.resolveSymbol(reloc.symbol),
+                .symbol => try env.resolveSymbol(reloc.symbol),
             };
 
             result = switch (opcode.operator) {
@@ -659,11 +660,11 @@ const RelocationType: type = switch (system_arch) {
 
         pub fn apply(reloc_type: @This(), relocation: Relocation, env: Environment) !void {
             switch (reloc_type) {
-                .@"32" => relocation.execute(env, word32, "S+A"),
-                .@"64" => relocation.execute(env, word64, "S+A"),
-                .relative => relocation.execute(env, wordclass, "B+A"),
+                .@"32" => try relocation.execute(env, word32, "S+A"),
+                .@"64" => try relocation.execute(env, word64, "S+A"),
+                .relative => try relocation.execute(env, wordclass, "B+A"),
                 .copy => @panic("R_RV32_COPY not implemented yet!"),
-                .jump_slot => relocation.execute(env, wordclass, "S"),
+                .jump_slot => try relocation.execute(env, wordclass, "S"),
 
                 else => return error.UnsupportedRelocation,
             }
@@ -724,17 +725,17 @@ const RelocationType: type = switch (system_arch) {
             switch (reloc_type) {
                 .none => logger.warn("Found invalid R_386_NONE relocation", .{}),
 
-                .@"32" => relocation.execute(env, word32, "S+A"),
-                .pc32 => relocation.execute(env, word32, "S+A-P"),
-                .got32 => relocation.execute(env, word32, "G+A"),
-                .plt32 => relocation.execute(env, word32, "L+A-P"),
+                .@"32" => try relocation.execute(env, word32, "S+A"),
+                .pc32 => try relocation.execute(env, word32, "S+A-P"),
+                .got32 => try relocation.execute(env, word32, "G+A"),
+                .plt32 => try relocation.execute(env, word32, "L+A-P"),
                 .copy => @panic("Implement R_386_COPY relocation"),
-                .glob_dat => relocation.execute(env, word32, "S"),
-                .jmp_slot => relocation.execute(env, word32, "S"),
-                .relative => relocation.execute(env, word32, "B+A"),
-                .gotoff => relocation.execute(env, word32, "S+A-GOT"),
-                .gotpc => relocation.execute(env, word32, "GOT+A-P"),
-                .@"32plt" => relocation.execute(env, word32, "L+A"),
+                .glob_dat => try relocation.execute(env, word32, "S"),
+                .jmp_slot => try relocation.execute(env, word32, "S"),
+                .relative => try relocation.execute(env, word32, "B+A"),
+                .gotoff => try relocation.execute(env, word32, "S+A-GOT"),
+                .gotpc => try relocation.execute(env, word32, "GOT+A-P"),
+                .@"32plt" => try relocation.execute(env, word32, "L+A"),
 
                 _ => return error.UnsupportedRelocation,
             }
