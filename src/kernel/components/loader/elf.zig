@@ -387,6 +387,8 @@ const Elf32_Word = std.elf.Elf32_Word;
 const Elf32_Sword = std.elf.Elf32_Sword;
 
 const word32 = u32;
+const word64 = u64;
+const wordclass = usize;
 
 const Environment = struct {
     base: usize,
@@ -523,9 +525,13 @@ const Relocation = struct {
         };
     }
 
+    fn expand(comptime T: type, src: anytype) std.meta.Int(@typeInfo(@TypeOf(src)).Int.signedness, @bitSizeOf(T)) {
+        return src;
+    }
+
     pub fn execute(reloc: Relocation, env: Environment, comptime T: type, comptime script: []const u8) void {
         const addend: T = if (reloc.addend) |addend|
-            @bitCast(addend)
+            @bitCast(expand(T, addend))
         else
             env.read(T, reloc.offset);
 
@@ -643,24 +649,21 @@ const RelocationType: type = switch (system_arch) {
         // A - Addend field in the relocation entry associated with the symbol
         // B - Base address of a shared object loaded into memory
         none = 0,
-        @"32" = 1,
-        @"64" = 2,
-        relative = 3, // B + A Relocation against a local symbol in a shared object,
+        @"32" = 1, // word32 : S + A, 32-bit relocation
+        @"64" = 2, // word64 : S + A, 64-bit relocation
+        relative = 3, // wordclass : B + A, Adjust a link address (A) to its load address (B + A)
+        copy = 4,
+        jump_slot = 5, // wordclass : S, Indicates the symbol associated with a PLT entry
 
         _,
 
         pub fn apply(reloc_type: @This(), relocation: Relocation, env: Environment) !void {
             switch (reloc_type) {
-                .relative => {
-                    const actual_added = @as(u32, @bitCast(
-                        relocation.addend orelse env.read(isize, relocation.offset),
-                    ));
-                    env.write(
-                        relocation.offset,
-                        usize,
-                        env.base +% actual_added, // abusing the fact that a u32 and i32 are interchangible when doing wraparound addition
-                    );
-                },
+                .@"32" => relocation.execute(env, word32, "S+A"),
+                .@"64" => relocation.execute(env, word64, "S+A"),
+                .relative => relocation.execute(env, wordclass, "B+A"),
+                .copy => @panic("R_RV32_COPY not implemented yet!"),
+                .jump_slot => relocation.execute(env, wordclass, "S"),
 
                 else => return error.UnsupportedRelocation,
             }
