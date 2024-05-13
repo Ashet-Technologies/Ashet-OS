@@ -256,6 +256,11 @@ pub fn load(file: *libashet.fs.File) !loader.LoadedExecutable {
     }
 
     {
+        const reloc_env = Environment{
+            .base = process_base,
+            .memory = process_memory,
+        };
+
         var sheaders = header.section_header_iterator(file);
         while (try sheaders.next()) |shdr| {
             switch (shdr.sh_type) {
@@ -279,7 +284,8 @@ pub fn load(file: *libashet.fs.File) !loader.LoadedExecutable {
                     while (i < shdr.sh_size / shdr.sh_entsize) : (i += 1) {
                         var entry: elf.Elf32_Rela = undefined;
                         try buffered_reader.reader().readNoEof(std.mem.asBytes(&entry));
-                        rela.apply(process_base, process_memory, entry.r_offset, entry.r_info, entry.r_addend);
+
+                        Relocation.fromRelA(entry).apply(reloc_env);
                     }
                 },
                 elf.SHT_REL => {
@@ -302,7 +308,8 @@ pub fn load(file: *libashet.fs.File) !loader.LoadedExecutable {
                     while (i < shdr.sh_size / shdr.sh_entsize) : (i += 1) {
                         var entry: elf.Elf32_Rel = undefined;
                         try buffered_reader.reader().readNoEof(std.mem.asBytes(&entry));
-                        rela.apply(process_base, process_memory, entry.r_offset, entry.r_info, null);
+
+                        Relocation.fromRel(entry).apply(reloc_env);
                     }
                 },
                 elf.SHT_DYNAMIC => {
@@ -367,137 +374,272 @@ const Elf32_Addr = std.elf.Elf32_Addr;
 const Elf32_Word = std.elf.Elf32_Word;
 const Elf32_Sword = std.elf.Elf32_Sword;
 
-const rela: type = switch (system_arch) {
-    .riscv32 => struct {
+const word32 = u32;
+
+const Environment = struct {
+    base: usize,
+    memory: []align(ashet.memory.page_size) u8,
+
+    pub fn read(env: Environment, comptime T: type, offset: usize) T {
+        return std.mem.readIntNative(T, env.memory[offset..][0..@sizeOf(T)]);
+    }
+
+    pub fn write(env: Environment, comptime T: type, offset: usize, value: T) void {
+        std.mem.writeIntNative(T, env.memory[offset..][0..@sizeOf(T)], value);
+    }
+};
+
+const Relocation = struct {
+    offset: Elf32_Addr,
+    type: RelocationType,
+    symbol: u24,
+    addend: ?Elf32_Sword,
+
+    pub fn fromRelA(rela: elf.Rela) Relocation {
+        const info: ElfRelaInfo = @bitCast(rela.r_info);
+        return .{
+            .offset = rela.r_offset,
+            .type = info.type,
+            .symbol = info.symbol,
+            .addend = rela.r_addend,
+        };
+    }
+
+    pub fn fromRel(rel: elf.Rel) Relocation {
+        const info: ElfRelaInfo = @bitCast(rel.r_info);
+        return .{
+            .offset = rel.r_offset,
+            .type = info.type,
+            .symbol = info.symbol,
+            .addend = null,
+        };
+    }
+
+    pub fn apply(reloc: Relocation, env: Environment) void {
+        reloc.type.apply(reloc, env) catch |err| switch (err) {
+            error.UnsupportedRelocation => logger.err(
+                "Unsupported relocation with (type={}, symbol={}, offset=0x{X:0>8}, addend={?})",
+                .{
+                    reloc.type,
+                    reloc.symbol,
+                    reloc.offset,
+                    reloc.addend,
+                },
+            ),
+        };
+    }
+
+    pub fn execute(reloc: Relocation, env: Environment, comptime T: type, comptime script: []const u8) void {
+        const addend: T = if (reloc.addend) |addend|
+            @bitCast(addend)
+        else
+            env.read(T, reloc.offset);
+
+        var result: T = 0;
+
+        inline for (comptime ScriptEngine.parse(script)) |opcode| {
+            const value: T = switch (opcode.target) {
+                .addend => addend,
+                .base => @intCast(env.base),
+                .got_offset => unreachable, // TODO: Implement this
+                .got => unreachable, // TODO: Implement this
+                .plt_offset => unreachable, // TODO: Implement this
+                .offset => reloc.offset,
+                .symbol => unreachable, // TODO: Implement this
+            };
+
+            result = switch (opcode.operator) {
+                .add => result +% value,
+                .sub => result -% value,
+            };
+        }
+
+        env.write(T, reloc.offset, result);
+    }
+
+    const ScriptEngine = struct {
+        const Operator = enum(u8) { add = '+', sub = '-' };
+        const Target = enum(u8) {
+            /// A This means the addend used to compute the value of the relocatable field.
+            addend = 'A',
+
+            /// This means the base address at which a shared object has been loaded into memory
+            /// during execution. Generally, a shared object file is built with a 0 base virtual address,
+            /// but the execution address will be different.
+            base = 'B',
+
+            /// This means the offset into the global offset table at which the address of the
+            /// relocation entry's symbol will reside during execution. See "Global Offset Table''
+            /// below for more information
+            got_offset = 'G',
+
+            // This means the address of the global offset table. See "Global Offset Table'' below
+            // for more information.
+            got = 'g', // ACTUALLY ENCODED AS "GOT"
+
+            /// This means the place (section offset or address) of the procedure linkage table entry
+            /// for a symbol. A procedure linkage table entry redirects a function call to the proper
+            /// destination. The link editor builds the initial procedure linkage table, and the
+            /// dynamic linker modifies the entries during execution. See "Procedure Linkage
+            /// Table'' below for more information.
+            plt_offset = 'L',
+
+            /// This means the place (section offset or address) of the storage unit being relocated
+            /// (computed using r_offset ).
+            offset = 'P',
+
+            /// This means the value of the symbol whose index resides in the relocation entry.
+            symbol = 'S',
+        };
+
+        const Opcode = struct {
+            operator: Operator,
+            target: Target,
+        };
+
+        fn parse(script: []const u8) []const Opcode {
+            // @setEvalBranchQuota(10_000);
+
+            var code: []const Opcode = &.{};
+
+            var operator: Operator = .add;
+            var start = 0;
+            var run = 0;
+            while (start < script.len) : (run += 1) {
+                const next_operator: Operator = if (run < script.len)
+                    switch (script[run]) {
+                        '+' => .add,
+                        '-' => .sub,
+                        else => continue,
+                    }
+                else
+                    undefined;
+                defer operator = next_operator;
+
+                const item = script[start..run];
+                defer start = run + 1;
+
+                const target: Target = if (item.len != 1)
+                    if (std.mem.eql(u8, item, "GOT"))
+                        .got
+                    else
+                        @compileError("Found invalid symbol: " ++ item)
+                else
+                    @enumFromInt(item[0]);
+
+                code = code ++ &[1]Opcode{
+                    .{ .target = target, .operator = operator },
+                };
+            }
+
+            return code;
+        }
+    };
+
+    const ElfRelaInfo = packed struct(Elf32_Word) {
+        type: RelocationType,
+        symbol: u24,
+    };
+};
+
+const RelocationType: type = switch (system_arch) {
+    .riscv32 => enum(u8) {
+
         // https://github.com/riscv-non-isa/riscv-elf-psabi-doc/blob/master/riscv-elf.adoc
         // A - Addend field in the relocation entry associated with the symbol
         // B - Base address of a shared object loaded into memory
-        const R_RISCV_NONE = 0;
-        const R_RISCV_32 = 1;
-        const R_RISCV_64 = 2;
-        const R_RISCV_RELATIVE = 3; // B + A Relocation against a local symbol in a shared object,
+        none = 0,
+        @"32" = 1,
+        @"64" = 2,
+        relative = 3, // B + A Relocation against a local symbol in a shared object,
 
-        pub fn apply(process_base: usize, process_memory: []align(ashet.memory.page_size) u8, offset: Elf32_Addr, info: Elf32_Word, addend: ?Elf32_Sword) void {
-            switch (info) {
-                R_RISCV_RELATIVE => {
-                    // logger.err("apply rela: offset={x:0>8} addend={x}", .{ entry.r_offset, entry.r_addend });
+        _,
 
-                    const reloc_area = process_memory[@as(usize, @intCast(offset))..][0..@sizeOf(usize)];
-
-                    const actual_added = @as(u32, @bitCast(addend orelse std.mem.readIntLittle(i32, reloc_area))); // abusing the fact that a u32 and i32 are interchangible when doing wraparound addition
-                    std.mem.writeIntLittle(
+        pub fn apply(reloc_type: @This(), relocation: Relocation, env: Environment) !void {
+            switch (reloc_type) {
+                .relative => {
+                    const actual_added = @as(u32, @bitCast(
+                        relocation.addend orelse env.read(isize, relocation.offset),
+                    ));
+                    env.write(
+                        relocation.offset,
                         usize,
-                        reloc_area,
-                        process_base +% actual_added,
+                        env.base +% actual_added, // abusing the fact that a u32 and i32 are interchangible when doing wraparound addition
                     );
                 },
 
-                else => logger.err("unhandled rv32 rela: info={} offset={x:0>8} addend={?x:0>8}", .{
-                    info,
-                    offset,
-                    addend,
-                }),
+                else => return error.UnsupportedRelocation,
             }
         }
     },
-    .x86 => struct {
+    .x86 => enum(u8) {
         //! https://docs.oracle.com/cd/E19683-01/817-3677/chapter6-26/index.html
 
-        const RelocationType = enum(u8) {
-            none = 0, //     None       None
+        none = 0, //     None       None
 
-            @"32" = 1, //    word32     S + A
+        @"32" = 1, //    word32     S + A
 
-            pc32 = 2, //     word32     S + A - P
+        pc32 = 2, //     word32     S + A - P
 
-            /// Computes the distance from the base of the global offset table to the symbol's global offset table entry. It also instructs the link-editor to create a global offset table.
-            got32 = 3, //    word32     G + A
+        /// Computes the distance from the base of the global offset table to the symbol's global offset table entry. It also instructs the link-editor to create a global offset table.
+        got32 = 3, //    word32     G + A
 
-            /// Computes the address of the symbol's procedure linkage table entry and instructs the link-editor to create a procedure linkage table.
-            plt32 = 4, //    word32     L + A - P
+        /// Computes the address of the symbol's procedure linkage table entry and instructs the link-editor to create a procedure linkage table.
+        plt32 = 4, //    word32     L + A - P
 
-            /// Created by the link-editor for dynamic executables to preserve a read-only text segment.
-            /// Its offset member refers to a location in a writable segment. The symbol table index
-            /// specifies a symbol that should exist both in the current object file and in a shared object.
-            /// During execution, the runtime linker copies data associated with the shared object's symbol
-            /// to the location specified by the offset. See Copy Relocations.
-            copy = 5, //     None       None
+        /// Created by the link-editor for dynamic executables to preserve a read-only text segment.
+        /// Its offset member refers to a location in a writable segment. The symbol table index
+        /// specifies a symbol that should exist both in the current object file and in a shared object.
+        /// During execution, the runtime linker copies data associated with the shared object's symbol
+        /// to the location specified by the offset. See Copy Relocations.
+        copy = 5, //     None       None
 
-            /// Used to set a global offset table entry to the address of the specified symbol. The special
-            /// relocation type enable you to determine the correspondence between symbols and global offset table entries
-            glob_dat = 6, // word32     S
+        /// Used to set a global offset table entry to the address of the specified symbol. The special
+        /// relocation type enable you to determine the correspondence between symbols and global offset table entries
+        glob_dat = 6, // word32     S
 
-            /// Created by the lirocednk-editor for dynamic objects to provide lazy binding. Its offset member
-            /// gives the location of a pure linkage table entry. The runtime linker modifies the
-            /// procedure linkage table entry to transfer control to the designated symbol address
-            jmp_slot = 7, // word32     S
+        /// Created by the lirocednk-editor for dynamic objects to provide lazy binding. Its offset member
+        /// gives the location of a pure linkage table entry. The runtime linker modifies the
+        /// procedure linkage table entry to transfer control to the designated symbol address
+        jmp_slot = 7, // word32     S
 
-            /// Created by the link-editor for dynamic objects. Its offset member gives the location within
-            /// a shared object that contains a value representing a relative address. The runtime linker
-            /// computes the corresponding virtual address by adding the virtual address at which the shared
-            /// object is loaded to the relative address. Relocation entries for this type must specify 0 for
-            /// the symbol table index.
-            relative = 8, // word32     B + A
+        /// Created by the link-editor for dynamic objects. Its offset member gives the location within
+        /// a shared object that contains a value representing a relative address. The runtime linker
+        /// computes the corresponding virtual address by adding the virtual address at which the shared
+        /// object is loaded to the relative address. Relocation entries for this type must specify 0 for
+        /// the symbol table index.
+        relative = 8, // word32     B + A
 
-            /// Computes the difference between a symbol's value and the address of the global offset table. It also
-            /// instructs the link-editor to create the global offset table.
-            gotoff = 9, //   word32     S + A - GOT
+        /// Computes the difference between a symbol's value and the address of the global offset table. It also
+        /// instructs the link-editor to create the global offset table.
+        gotoff = 9, //   word32     S + A - GOT
 
-            /// Resembles R_386_PC32, except that it uses the address of the global offset table in its calculation.
-            /// The symbol referenced in this relocation normally is _GLOBAL_OFFSET_TABLE_, which also instructs the
-            /// link-editor to create the global offset table.
-            gotpc = 10, //   word32     GOT + A - P
+        /// Resembles R_386_PC32, except that it uses the address of the global offset table in its calculation.
+        /// The symbol referenced in this relocation normally is _GLOBAL_OFFSET_TABLE_, which also instructs the
+        /// link-editor to create the global offset table.
+        gotpc = 10, //   word32     GOT + A - P
 
-            @"32plt" = 11, //   word32     L + A
+        @"32plt" = 11, //   word32     L + A
 
-            _,
-        };
+        _,
 
-        pub fn apply(process_base: usize, process_memory: []align(ashet.memory.page_size) u8, offset: Elf32_Addr, _info: Elf32_Word, addend: ?Elf32_Sword) void {
-            const Info = packed struct(Elf32_Word) {
-                type: RelocationType,
-                symbol: u24,
-            };
-
-            const info: Info = @bitCast(_info);
-
-            logger.debug("applying rela type={}, symbol={} to 0x{X:0>8}, added={?}", .{ info.type, info.symbol, offset, addend });
-
-            const reloc_memory: *anyopaque = &process_memory[@as(usize, @intCast(offset))];
-            switch (info.type) {
+        pub fn apply(reloc_type: @This(), relocation: Relocation, env: Environment) !void {
+            switch (reloc_type) {
                 .none => logger.warn("Found invalid R_386_NONE relocation", .{}),
 
-                .@"32" => @panic("Implement R_386_32 relocation"),
-                .pc32 => @panic("Implement R_386_PC32 relocation"),
-                .got32 => @panic("Implement R_386_GOT32 relocation"),
-                .plt32 => @panic("Implement R_386_PLT32 relocation"),
+                .@"32" => relocation.execute(env, word32, "S+A"),
+                .pc32 => relocation.execute(env, word32, "S+A-P"),
+                .got32 => relocation.execute(env, word32, "G+A"),
+                .plt32 => relocation.execute(env, word32, "L+A-P"),
                 .copy => @panic("Implement R_386_COPY relocation"),
-                .glob_dat => @panic("Implement R_386_GLOB_DAT relocation"),
-                .relative => {
-                    const value: *isize = @ptrCast(@alignCast(reloc_memory));
-                    const actual_added = addend orelse value.*;
-                    value.* = @bitCast(
-                        process_base +% @as(usize, @bitCast(actual_added)), // abusing the fact that a u32 and i32 are interchangible when doing wraparound addition
-                    );
-                },
-                .gotoff => @panic("Implement R_386_GOTOFF relocation"),
-                .gotpc => @panic("Implement R_386_GOTPC relocation"),
-                .@"32plt" => @panic("Implement R_386_32PLT relocation"),
+                .glob_dat => relocation.execute(env, word32, "S"),
+                .jmp_slot => relocation.execute(env, word32, "S"),
+                .relative => relocation.execute(env, word32, "B+A"),
+                .gotoff => relocation.execute(env, word32, "S+A-GOT"),
+                .gotpc => relocation.execute(env, word32, "GOT+A-P"),
+                .@"32plt" => relocation.execute(env, word32, "L+A"),
 
-                .jmp_slot => { // word32 S
-                    // The link editor creates this relocation type for dynamic linking. Its offset
-                    // member gives the location of a procedure linkage table entry. The dynamic
-                    // linker modifies the procedure linkage table entry to transfer control to the
-                    // designated symbol's address [see "Procedure Linkage Table'' below].
-                    // @panic("implement jmp_slot rela");
-                },
-
-                _ => logger.err("undefined x86 rela: type={} symbol={} offset={x:0>8} addend={?x:0>8}", .{
-                    @intFromEnum(info.type),
-                    info.symbol,
-                    offset,
-                    addend,
-                }),
+                _ => return error.UnsupportedRelocation,
             }
         }
     },
