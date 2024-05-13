@@ -22,7 +22,12 @@ done
 
 zig build \
     -Dmachine=linux_pc \
-    -freference-trace
+    -freference-trace \
+    "$@"
+
+readelf -ldrS --syms --dyn-syms  zig-out/apps/hosted/hello-world.app  > /tmp/dump
+objdump -S  zig-out/apps/hosted/hello-world.app  >> /tmp/dump
+
 
 export LD_PRELOAD
 

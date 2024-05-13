@@ -25,6 +25,16 @@ fn dynamic_resolver(a: u32, b: u32, c: u32, d: u32) callconv(.C) void {
     @panic("hello, dynamic code!");
 }
 
+const symbols = struct {
+    pub fn @"ashet-os.syscalls.demo1"() callconv(.C) void {
+        logger.info("ashet-os.syscalls.demo1()\r\n", .{});
+    }
+
+    pub fn @"ashet-os.syscalls.demo2"() callconv(.C) void {
+        logger.info("ashet-os.syscalls.demo2()\r\n", .{});
+    }
+};
+
 pub fn load(file: *libashet.fs.File) !loader.LoadedExecutable {
     const expected_elf_machine: std.elf.EM = switch (system_arch) {
         .riscv32 => .RISCV,
@@ -257,6 +267,8 @@ pub fn load(file: *libashet.fs.File) !loader.LoadedExecutable {
 
     {
         const reloc_env = Environment{
+            .dynamic = dynamic_section,
+            .file = file,
             .base = process_base,
             .memory = process_memory,
         };
@@ -380,6 +392,9 @@ const Environment = struct {
     base: usize,
     memory: []align(ashet.memory.page_size) u8,
 
+    dynamic: ?DynamicSection,
+    file: *libashet.fs.File,
+
     pub fn read(env: Environment, comptime T: type, offset: usize) T {
         return std.mem.readIntNative(T, env.memory[offset..][0..@sizeOf(T)]);
     }
@@ -387,6 +402,85 @@ const Environment = struct {
     pub fn write(env: Environment, comptime T: type, offset: usize, value: T) void {
         std.mem.writeIntNative(T, env.memory[offset..][0..@sizeOf(T)], value);
     }
+
+    pub fn resolveSymbol(env: Environment, index: usize) Elf32_Addr {
+        logger.debug("resolve symbol {}", .{index});
+        const symtab = env.dynamic.?.symtab.?;
+        const syment = env.dynamic.?.syment.?;
+
+        const offset = symtab + syment * index;
+
+        logger.info("symbol({}) => tab=0x{X:0>8}, ent=0x{X:0>8}, off=0x{X:0>8}", .{
+            index,
+            symtab,
+            syment,
+            offset,
+        });
+
+        var sym: *const elf.Sym = @ptrCast(@alignCast(env.memory[offset..].ptr));
+
+        const info: SymbolInfo = @bitCast(sym.st_info);
+
+        var symname: []const u8 = env.memory[env.dynamic.?.strtab.? + sym.st_name ..];
+        symname = symname[0..std.mem.indexOfScalar(u8, symname, 0).?];
+
+        logger.info(
+            \\symbol(name={}/'{}', value={}, size={}, shndx={}, type={}, bind={}
+        , .{
+            sym.st_name,
+            std.zig.fmtEscapes(symname),
+            sym.st_value,
+            sym.st_size,
+            sym.st_shndx,
+            info.type,
+            info.bind,
+        });
+
+        inline for (@typeInfo(symbols).Struct.decls) |decl| {
+            if (std.mem.eql(u8, decl.name, symname)) {
+                const func_ptr: usize = @intFromPtr(
+                    &@field(symbols, decl.name),
+                );
+
+                return func_ptr;
+            }
+        }
+
+        logger.warn("Symbol '{}' could not be resolved. Does that syscall really exist?", .{
+            std.zig.fmtEscapes(symname),
+        });
+
+        return sym.st_value;
+    }
+
+    const SymbolInfo = packed struct(u8) {
+        type: enum(u4) {
+            notype = elf.STT_NOTYPE,
+            object = elf.STT_OBJECT,
+            func = elf.STT_FUNC,
+            section = elf.STT_SECTION,
+            file = elf.STT_FILE,
+            common = elf.STT_COMMON,
+            tls = elf.STT_TLS,
+            num = elf.STT_NUM,
+            loos = elf.STT_LOOS,
+            hios = elf.STT_HIOS,
+            loproc = elf.STT_LOPROC,
+            hiproc = elf.STT_HIPROC,
+            _,
+        },
+        bind: enum(u4) {
+            local = elf.STB_LOCAL,
+            global = elf.STB_GLOBAL,
+            weak = elf.STB_WEAK,
+            num = elf.STB_NUM,
+            loos = elf.STB_LOOS,
+            hios = elf.STB_HIOS,
+            loproc = elf.STB_LOPROC,
+            hiproc = elf.STB_HIPROC,
+            _,
+        },
+    };
 };
 
 const Relocation = struct {
@@ -445,7 +539,7 @@ const Relocation = struct {
                 .got => unreachable, // TODO: Implement this
                 .plt_offset => unreachable, // TODO: Implement this
                 .offset => reloc.offset,
-                .symbol => unreachable, // TODO: Implement this
+                .symbol => env.resolveSymbol(reloc.symbol),
             };
 
             result = switch (opcode.operator) {
