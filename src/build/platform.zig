@@ -51,7 +51,7 @@ pub fn init(b: *std.Build) PlatformData {
         }
 
         const libsyscall = b.addSharedLibrary(.{
-            .name = "syscall",
+            .name = "AshetOS",
             .target = platform_spec.target,
             .optimize = .ReleaseSafe,
             .root_source_file = .{ .path = "src/abi/libsyscall.zig" },
@@ -60,7 +60,7 @@ pub fn init(b: *std.Build) PlatformData {
         const install_libsyscall = b.addInstallFileWithDir(
             libsyscall.getEmittedBin(),
             .{ .custom = b.fmt("lib/{s}", .{@tagName(platform)}) },
-            "libsyscall.so",
+            "libAshetOS.so",
         );
 
         b.getInstallStep().dependOn(&install_libsyscall.step);

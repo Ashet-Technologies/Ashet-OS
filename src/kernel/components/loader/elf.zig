@@ -739,7 +739,7 @@ const RelocationType: type = switch (system_arch) {
         }
     },
 
-    .thumb => @panic("TODO: Implement app loading on arm!"),
+    .thumb => @compileError("TODO: Implement app loading on arm!"),
 
     else => @compileError("Unsupported machine type: " ++ @tagName(system_arch)),
 };

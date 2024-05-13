@@ -160,7 +160,7 @@ pub const Thread = struct {
         switch (target) {
             .riscv32 => {
                 thread.push(0x0000_0000); //      x3  ; gp Global pointer
-                thread.push(@intFromPtr(&ashet.syscalls.syscall_table)); //      x4  ; tp Thread pointer
+                thread.push(0x0000_0000); //      x4  ; tp Thread pointer
                 thread.push(0x0000_0000); //      x8  ; s0
                 thread.push(0x0000_0000); //      x9  ; s1
                 thread.push(@intFromPtr(func)); // x18  ; s2

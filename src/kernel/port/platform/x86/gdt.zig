@@ -94,7 +94,7 @@ const Descriptor = packed struct(u64) {
     }
 };
 
-var gdt: [4]Descriptor align(16) = [4]Descriptor{
+var gdt: [3]Descriptor align(16) = [3]Descriptor{
     // 0, 0x00: null descriptor
     @as(Descriptor, @bitCast(@as(u64, 0))),
 
@@ -111,9 +111,6 @@ var gdt: [4]Descriptor align(16) = [4]Descriptor{
         .size = .bits32,
         .longmode = false,
     }),
-
-    // 3, 0x18: Syscall Data Segment
-    undefined,
 };
 
 const DescriptorTable = extern struct {
@@ -127,11 +124,6 @@ export const gdtp = DescriptorTable{
 };
 
 pub fn init() void {
-    gdt[3] = Descriptor.init(@intFromPtr(&ashet.syscalls.syscall_table), @sizeOf(ashet.abi.SysCallTable), Descriptor.Access.readOnlySegment(0), Descriptor.Flags{
-        .granularity = .byte,
-        .size = .bits32,
-        .longmode = false,
-    });
     asm volatile ("lgdt gdtp");
     asm volatile (
         \\ mov $0x10, %%ax
