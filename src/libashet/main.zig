@@ -19,14 +19,6 @@ comptime {
 }
 
 fn _start() callconv(.C) u32 {
-    if (builtin.target.cpu.arch == .x86) {
-        // First thing on x86: Store the syscall table away so we can access
-        // the syscalls later.
-        abi.os_interface.syscall_table = asm (""
-            : [sctp] "={ecx}" (-> *const abi.SysCallTable),
-        );
-    }
-
     const res = @import("root").main();
     const Res = @TypeOf(res);
 
@@ -80,7 +72,7 @@ pub const core = struct {
             debug.write("PANIC LOOP DETECTED: ");
             debug.write(msg);
             debug.write("\r\n");
-            syscall("process.exit")(1);
+            abi.syscalls.@"ashet.process.exit"(1);
         }
         nested_panic = true;
 
@@ -128,10 +120,10 @@ pub const core = struct {
 
         if (@import("builtin").mode == .Debug) {
             debug.write("breakpoint.\n");
-            syscall("process.breakpoint")();
+            abi.syscalls.@"ashet.process.breakpoint"();
         }
 
-        syscall("process.exit")(1);
+        abi.syscalls.@"ashet.process.exit"(1);
     }
 };
 
@@ -155,14 +147,14 @@ pub const io = struct {
     }
 
     pub fn scheduleAndAwait(start_queue: ?*IOP, wait: WaitIO) ?*IOP {
-        const result = syscall("io.scheduleAndAwait")(start_queue, wait);
+        const result = abi.syscalls.@"ashet.io.scheduleAndAwait"(start_queue, wait);
         if (wait == .schedule_only)
             std.debug.assert(result == null);
         return result;
     }
 
     pub fn cancel(event: *IOP) void {
-        return syscall("io.cancel")(event);
+        return abi.syscalls.@"ashet.io.cancel"(event);
     }
 
     pub fn singleShot(op: anytype) !void {
@@ -239,23 +231,23 @@ pub const debug = struct {
 
 pub const process = struct {
     pub fn getBaseAddress() usize {
-        return syscall("process.getBaseAddress")();
+        return abi.syscalls.@"ashet.process.getBaseAddress"();
     }
 
     pub fn getFileName() []const u8 {
-        return std.mem.sliceTo(syscall("process.getFileName")(), 0);
+        return std.mem.sliceTo(abi.syscalls.@"ashet.process.getFileName"(), 0);
     }
 
     pub fn writeLog(level: abi.LogLevel, msg: []const u8) void {
-        syscall("process.writeLog")(level, msg.ptr, msg.len);
+        abi.syscalls.@"ashet.process.writeLog"(level, msg.ptr, msg.len);
     }
 
     pub fn yield() void {
-        syscall("process.yield")();
+        abi.syscalls.@"ashet.process.yield"();
     }
 
     pub fn exit(code: u32) noreturn {
-        syscall("process.exit")(code);
+        abi.syscalls.@"ashet.process.exit"(code);
     }
 
     pub fn allocator() std.mem.Allocator {
@@ -279,7 +271,7 @@ pub const process = struct {
     fn globalAlloc(ctx: *anyopaque, len: usize, ptr_align: u8, ret_addr: usize) ?[*]u8 {
         _ = ctx;
         _ = ret_addr;
-        return syscall("process.memory.allocate")(len, ptr_align);
+        return abi.syscalls.@"ashet.process.memory.allocate"(len, ptr_align);
     }
 
     /// Attempt to expand or shrink memory in place. `buf.len` must equal the
@@ -321,33 +313,33 @@ pub const process = struct {
     fn globalFree(ctx: *anyopaque, buf: []u8, buf_align: u8, ret_addr: usize) void {
         _ = ctx;
         _ = ret_addr;
-        return syscall("process.memory.release")(buf.ptr, buf.len, buf_align);
+        return abi.syscalls.@"ashet.process.memory.release"(buf.ptr, buf.len, buf_align);
     }
 };
 
 pub const video = struct {
     pub fn acquire() bool {
-        return syscall("video.acquire")();
+        return abi.syscalls.@"ashet.video.acquire"();
     }
 
     pub fn release() void {
-        syscall("video.release")();
+        abi.syscalls.@"ashet.video.release"();
     }
 
     pub fn setBorder(color: abi.ColorIndex) void {
-        syscall("video.setBorder")(color);
+        abi.syscalls.@"ashet.video.setBorder"(color);
     }
 
     pub fn setResolution(width: u16, height: u16) void {
-        syscall("video.setResolution")(width, height);
+        abi.syscalls.@"ashet.video.setResolution"(width, height);
     }
 
     pub fn getVideoMemory() [*]align(4) abi.ColorIndex {
-        return syscall("video.getVideoMemory")();
+        return abi.syscalls.@"ashet.video.getVideoMemory"();
     }
 
     pub fn getPaletteMemory() *[abi.palette_size]abi.Color {
-        return syscall("video.getPaletteMemory")();
+        return abi.syscalls.@"ashet.video.getPaletteMemory"();
     }
 };
 
@@ -361,22 +353,22 @@ pub const ui = struct {
     pub const ColorIndex = abi.ColorIndex;
 
     pub fn createWindow(title: []const u8, min: Size, max: Size, startup: Size, flags: CreateWindowFlags) error{OutOfMemory}!*const Window {
-        return syscall("ui.createWindow")(title.ptr, title.len, min, max, startup, flags) orelse return error.OutOfMemory;
+        return abi.syscalls.@"ashet.ui.createWindow"(title.ptr, title.len, min, max, startup, flags) orelse return error.OutOfMemory;
     }
     pub fn destroyWindow(win: *const Window) void {
-        syscall("ui.destroyWindow")(win);
+        abi.syscalls.@"ashet.ui.destroyWindow"(win);
     }
 
     pub fn moveWindow(win: *const Window, x: i16, y: i16) void {
-        syscall("ui.moveWindow")(win, x, y);
+        abi.syscalls.@"ashet.ui.moveWindow"(win, x, y);
     }
 
     pub fn resizeWindow(win: *const Window, x: u16, y: u16) void {
-        syscall("ui.resizeWindow")(win, x, y);
+        abi.syscalls.@"ashet.ui.resizeWindow"(win, x, y);
     }
 
     pub fn setWindowTitle(win: *const Window, title: []const u8) void {
-        syscall("ui.setWindowTitle")(win, title.ptr, title.len);
+        abi.syscalls.@"ashet.ui.setWindowTitle"(win, title.ptr, title.len);
     }
 
     pub fn getEvent(win: *const Window) Event {
@@ -399,12 +391,12 @@ pub const ui = struct {
     }
 
     pub fn invalidate(win: *const Window, rect: Rectangle) void {
-        syscall("ui.invalidate")(win, rect);
+        abi.syscalls.@"ashet.ui.invalidate"(win, rect);
     }
 
     pub fn getSystemFont(font_name: []const u8) ![]const u8 {
         var out_slice: []const u8 = undefined;
-        const err = syscall("ui.getSystemFont")(font_name.ptr, font_name.len, &out_slice.ptr, &out_slice.len);
+        const err = abi.syscalls.@"ashet.ui.getSystemFont"(font_name.ptr, font_name.len, &out_slice.ptr, &out_slice.len);
         try abi.GetSystemFontError.throw(err);
         return out_slice;
     }
@@ -602,12 +594,12 @@ pub const net = struct {
 
         pub fn open() !Tcp {
             var sock: abi.TcpSocket = undefined;
-            try abi.tcp.CreateError.throw(syscall("network.tcp.createSocket")(&sock));
+            try abi.tcp.CreateError.throw(abi.syscalls.@"ashet.network.tcp.createSocket"(&sock));
             return Tcp{ .sock = sock };
         }
 
         pub fn close(tcp: *Tcp) void {
-            syscall("network.tcp.destroySocket")(tcp.sock);
+            abi.syscalls.@"ashet.network.tcp.destroySocket"(tcp.sock);
             tcp.* = undefined;
         }
 
@@ -663,12 +655,12 @@ pub const net = struct {
 
         pub fn open() !Udp {
             var sock: abi.UdpSocket = undefined;
-            try abi.udp.CreateError.throw(syscall("network.udp.createSocket")(&sock));
+            try abi.udp.CreateError.throw(abi.syscalls.@"ashet.network.udp.createSocket"(&sock));
             return Udp{ .sock = sock };
         }
 
         pub fn close(udp: *Udp) void {
-            syscall("network.udp.destroySocket")(udp.sock);
+            abi.syscalls.@"ashet.network.udp.destroySocket"(udp.sock);
             udp.* = undefined;
         }
 
@@ -738,6 +730,6 @@ pub const net = struct {
 
 pub const time = struct {
     pub fn nanoTimestamp() i128 {
-        return syscall("time.nanoTimestamp")();
+        return abi.syscalls.@"ashet.time.nanoTimestamp"();
     }
 };

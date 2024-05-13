@@ -183,7 +183,7 @@ pub const RTC = struct {
 
     pub fn nanoTimestamp(clk: *RTC) i128 {
         return clk.nanoTimestampFn(resolveDriver(.rtc, clk));
-    }
+    } 
 };
 
 pub const VideoDevice = struct {

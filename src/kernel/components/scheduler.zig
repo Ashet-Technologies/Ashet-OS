@@ -182,7 +182,7 @@ pub const Thread = struct {
                 thread.push(0x0000_0000); // ESI
                 thread.push(0x0000_0000); // EBP
                 thread.push(0x0000_0000); // EDX
-                thread.push(@intFromPtr(&ashet.syscalls.syscall_table)); // ECX
+                thread.push(0x0000_0000); // ECX
                 thread.push(@intFromPtr(arg)); // EBX
                 thread.push(@intFromPtr(func)); // EAX
             },

@@ -431,14 +431,11 @@ const Environment = struct {
 
         // Only search function symbols:
         if (info.type == .func) {
-            inline for (@typeInfo(ashet.abi.SysCallTable).Struct.fields) |decl| {
-                if (comptime std.mem.eql(u8, decl.name, "magic_number"))
-                    continue;
-                if (comptime std.mem.startsWith(u8, decl.name, "padding"))
-                    continue;
+            inline for (@typeInfo(ashet.abi.syscalls).Struct.decls) |decl| {
                 if (std.mem.eql(u8, decl.name, symname)) {
                     const func_ptr: usize = @intFromPtr(
-                        @field(ashet.syscalls.syscall_table, decl.name),
+                        // just provide the internally linked versions:
+                        &@field(ashet.abi.syscalls, decl.name),
                     );
                     return func_ptr;
                 }

@@ -1,69 +1,77 @@
 const std = @import("std");
 
-/// defines the syscall interface
-pub const system_magic: usize = 0x9a9d5a1b; // chosen by a fair dice roll
+pub const syscalls = struct {
+    pub extern fn @"ashet.process.yield"() void;
+    pub extern fn @"ashet.process.exit"(u32) noreturn;
+    pub extern fn @"ashet.process.getBaseAddress"() usize;
+    pub extern fn @"ashet.process.breakpoint"() void;
+    pub extern fn @"ashet.process.getFileName"() [*:0]const u8;
+    pub extern fn @"ashet.process.writeLog"(log_level: LogLevel, ptr: [*]const u8, len: usize) void;
 
-pub const syscall_definitions = [_]SysCallDefinition{
-    defineSysCall("process.yield", fn () void, 0),
-    defineSysCall("process.exit", fn (u32) noreturn, 1),
-    defineSysCall("process.getBaseAddress", fn () usize, 2),
-    defineSysCall("process.breakpoint", fn () void, 3),
+    // Allocates memory pages from the system.
+    pub extern fn @"ashet.process.memory.allocate"(size: usize, ptr_align: u8) ?[*]u8;
+    pub extern fn @"ashet.process.memory.release"(ptr: [*]u8, size: usize, ptr_align: u8) void;
 
-    defineSysCall("time.nanoTimestamp", fn () i128, 4),
+    pub extern fn @"ashet.time.nanoTimestamp"() i128;
 
     // Aquires direct access to the screen. When `true` is returned,
     // this process has the sole access to the screen buffers.
-    defineSysCall("video.acquire", fn () bool, 5),
+    pub extern fn @"ashet.video.acquire"() bool;
 
     // Releases the access to the video and returns to desktop mode.
-    defineSysCall("video.release", fn () void, 6),
+    pub extern fn @"ashet.video.release"() void;
 
     // Changes the border color of the screen. Parameter is an index into
     // the palette.
-    defineSysCall("video.setBorder", fn (ColorIndex) void, 7),
+    pub extern fn @"ashet.video.setBorder"(ColorIndex) void;
 
     // Sets the screen resolution. Legal values are between 1×1 and the platform specific
     // maximum resolution returned by `video.getMaxResolution()`.
     // Everything out of bounds will be clamped into that range.
-    defineSysCall("video.setResolution", fn (u16, u16) void, 8),
+    pub extern fn @"ashet.video.setResolution"(u16, u16) void;
 
     // Returns a pointer to linear video memory, row-major.
     // Pixels rows will have a stride of the current video buffer width.
     // The first pixel in the memory is the top-left pixel.
-    defineSysCall("video.getVideoMemory", fn () [*]align(4) ColorIndex, 9),
+    pub extern fn @"ashet.video.getVideoMemory"() [*]align(4) ColorIndex;
 
     // Returns a pointer to the current palette. Changing this palette
     // will directly change the associated colors on the screen.
-    defineSysCall("video.getPaletteMemory", fn () *[palette_size]Color, 10),
+    pub extern fn @"ashet.video.getPaletteMemory"() *[palette_size]Color;
 
     // Fetches a copy of the current system pallete.
-    defineSysCall("video.getPalette", fn (*[palette_size]Color) void, 11),
+    pub extern fn @"ashet.video.getPalette"(*[palette_size]Color) void;
 
-    defineSysCall("ui.createWindow", fn (title: [*]const u8, title_len: usize, min: Size, max: Size, startup: Size, flags: CreateWindowFlags) ?*const Window, 14),
-    defineSysCall("ui.destroyWindow", fn (*const Window) void, 15),
-    defineSysCall("ui.moveWindow", fn (*const Window, x: i16, y: i16) void, 16),
-    defineSysCall("ui.resizeWindow", fn (*const Window, x: u16, y: u16) void, 17),
-    defineSysCall("ui.setWindowTitle", fn (*const Window, title: [*]const u8, title_len: usize) void, 18),
-    defineSysCall("ui.invalidate", fn (*const Window, rect: Rectangle) void, 20),
+    // Returns the maximum possible screen resolution.
+    pub extern fn @"ashet.video.getMaxResolution"() Size;
 
-    defineSysCall("ui.getSystemFont", fn (font_name_ptr: [*]const u8, font_name_len: usize, font_data_ptr: *[*]const u8, font_data_len: *usize) GetSystemFontError.Enum, 21),
+    // Returns the current resolution
+    pub extern fn @"ashet.video.getResolution"() Size;
+
+    pub extern fn @"ashet.ui.createWindow"(title: [*]const u8, title_len: usize, min: Size, max: Size, startup: Size, flags: CreateWindowFlags) ?*const Window;
+    pub extern fn @"ashet.ui.destroyWindow"(*const Window) void;
+    pub extern fn @"ashet.ui.moveWindow"(*const Window, x: i16, y: i16) void;
+    pub extern fn @"ashet.ui.resizeWindow"(*const Window, x: u16, y: u16) void;
+    pub extern fn @"ashet.ui.setWindowTitle"(*const Window, title: [*]const u8, title_len: usize) void;
+    pub extern fn @"ashet.ui.invalidate"(*const Window, rect: Rectangle) void;
+    pub extern fn @"ashet.ui.getSystemFont"(font_name_ptr: [*]const u8, font_name_len: usize, font_data_ptr: *[*]const u8, font_data_len: *usize) GetSystemFontError.Enum;
 
     // resolves the dns entry `host` for the given `service`.
     // - `host` is a legal dns entry
     // - `port` is either a port number
     // - `buffer` and `limit` define a structure where all resolved IPs can be stored.
     // Function returns the number of host entries found or 0 if the host name could not be resolved.
-    // defineSysCall("network.dns.resolve", fn (host: [*:0]const u8, port: u16, buffer: [*]EndPoint, limit: usize) usize, 34),
+    // pub extern fn @"ashet.network.dns.resolve" (host: [*:0]const u8, port: u16, buffer: [*]EndPoint, limit: usize) usize;
 
     // getStatus: FnPtr(fn () NetworkStatus),
     // ping: FnPtr(fn ([*]Ping, usize) void),
     // TODO: Implement NIC-specific queries (mac, ips, names, ...)
 
-    defineSysCall("network.udp.createSocket", fn (result: *UdpSocket) udp.CreateError.Enum, 35),
-    defineSysCall("network.udp.destroySocket", fn (UdpSocket) void, 36),
+    pub extern fn @"ashet.network.udp.createSocket"(result: *UdpSocket) udp.CreateError.Enum;
+    pub extern fn @"ashet.network.udp.destroySocket"(UdpSocket) void;
 
-    defineSysCall("network.tcp.createSocket", fn (out: *TcpSocket) tcp.CreateError.Enum, 44),
-    defineSysCall("network.tcp.destroySocket", fn (TcpSocket) void, 45),
+    pub extern fn @"ashet.network.tcp.createSocket"(out: *TcpSocket) tcp.CreateError.Enum;
+    pub extern fn @"ashet.network.tcp.destroySocket"(TcpSocket) void;
 
     // Starts new I/O operations and returns completed ones.
     //
@@ -74,193 +82,13 @@ pub const syscall_definitions = [_]SysCallDefinition{
     // The function will optionally block based on the `wait` parameter.
     //
     // The return value is the HEAD element of a linked list of completed I/O events.
-    defineSysCall("io.scheduleAndAwait", fn (?*IOP, WaitIO) ?*IOP, 50),
+    pub extern fn @"ashet.io.scheduleAndAwait"(?*IOP, WaitIO) ?*IOP;
 
     // Cancels a single I/O operation.
-    defineSysCall("io.cancel", fn (*IOP) void, 51),
-
-    // Returns the maximum possible screen resolution.
-    defineSysCall("video.getMaxResolution", fn () Size, 52),
-
-    // Returns the current resolution
-    defineSysCall("video.getResolution", fn () Size, 53),
+    pub extern fn @"ashet.io.cancel"(*IOP) void;
 
     // Finds a file system by name
-    defineSysCall("fs.findFilesystem", fn (name_ptr: [*]const u8, name_len: usize) FileSystemId, 60),
-
-    // Allocates memory pages from the system.
-    defineSysCall("process.memory.allocate", fn (size: usize, ptr_align: u8) ?[*]u8, 70),
-    defineSysCall("process.memory.release", fn (ptr: [*]u8, size: usize, ptr_align: u8) void, 71),
-
-    defineSysCall("process.getFileName", fn () [*:0]const u8, 72),
-
-    defineSysCall("process.writeLog", fn (log_level: LogLevel, ptr: [*]const u8, len: usize) void, 73),
-};
-
-const SysCallDefinition = struct {
-    name: []const u8,
-    signature: type,
-    index: u32,
-};
-
-fn defineSysCall(comptime name: []const u8, comptime Func: type, comptime index: u32) SysCallDefinition {
-    var ti = @typeInfo(Func);
-    ti.Fn.calling_convention = .C;
-    const T2 = @Type(ti);
-
-    return SysCallDefinition{
-        .name = name,
-        .signature = *const T2,
-        .index = index,
-    };
-}
-
-fn SysCallFunc(comptime call: SysCall) type {
-    for (syscall_definitions) |def| {
-        if (def.index == @intFromEnum(call))
-            return def.signature;
-    }
-    unreachable;
-}
-
-pub const os_interface = switch (@import("builtin").target.cpu.arch) {
-    .x86 => struct {
-        pub var syscall_table: *const SysCallTable = undefined;
-    },
-    else => struct {},
-};
-
-pub fn syscall(comptime name: []const u8) SysCallFunc(@field(SysCall, name)) {
-    const target = @import("builtin").target;
-
-    switch (target.cpu.arch) {
-        .riscv32 => {
-            const table = asm (""
-                : [ptr] "={tp}" (-> *const SysCallTable),
-            );
-            return @field(table, name);
-        },
-        .x86 => {
-            // const offset: u32 = @offsetOf(SysCallTable, name);
-            // return asm ("mov %fs:%[off], %[out]"
-            //     : [out] "=r" (-> SysCallFunc(@field(SysCall, name))),
-            //     : [off] "p" (offset),
-            // );
-            return @field(
-                os_interface.syscall_table,
-                name,
-            );
-        },
-
-        .arm => @panic("Only Arm thumb instruction set is supported!"),
-
-        .thumb => @panic("no syscalls on arm/thumb yet"),
-
-        else => @compileError("unsupported platform " ++ @tagName(target.cpu.arch)),
-    }
-}
-
-pub const SysCall: type = blk: {
-    var fields: []const std.builtin.Type.EnumField = &.{};
-    for (syscall_definitions) |def| {
-        const field = std.builtin.Type.EnumField{
-            .name = def.name,
-            .value = def.index,
-        };
-        fields = fields ++ [1]std.builtin.Type.EnumField{field};
-    }
-
-    break :blk @Type(.{
-        .Enum = .{
-            .decls = &.{},
-            .fields = fields,
-            .tag_type = u32,
-            .is_exhaustive = false,
-        },
-    });
-};
-
-pub const SysCallTable: type = blk: {
-    @setEvalBranchQuota(100_000);
-
-    var fields: []const std.builtin.Type.StructField = &.{};
-
-    const default_padding: usize = 0;
-    const padding_field = std.builtin.Type.StructField{
-        .name = undefined,
-        .type = usize,
-        .default_value = &default_padding,
-        .is_comptime = false,
-        .alignment = @alignOf(usize),
-    };
-
-    const magic_number_value: usize = system_magic;
-    const magic_number_field = std.builtin.Type.StructField{
-        .name = "magic_number",
-        .type = usize,
-        .default_value = &magic_number_value,
-        .is_comptime = false,
-        .alignment = @alignOf(usize),
-    };
-    fields = fields ++ [1]std.builtin.Type.StructField{magic_number_field};
-
-    var used_slots = [1]?[]const u8{null} ** syscall_table_size;
-
-    var index: usize = 0;
-    var offset: usize = 0;
-    while (index < syscall_definitions.len) : (index += 1) {
-        const def = syscall_definitions[index];
-
-        if (used_slots[def.index]) |other| {
-            @compileError(std.fmt.comptimePrint("The syscall {s} uses slot {}, which is already occupied by syscall {s}.", .{
-                def.name,
-                def.index,
-                other,
-            }));
-        }
-        used_slots[def.index] = def.name;
-
-        std.debug.assert(def.index >= offset);
-
-        while (offset < def.index) : (offset += 1) {
-            var clone = padding_field;
-            clone.name = std.fmt.comptimePrint("padding{d}", .{offset});
-            fields = fields ++ [1]std.builtin.Type.StructField{clone};
-        }
-
-        const field = std.builtin.Type.StructField{
-            .name = def.name,
-            .type = def.signature,
-            .default_value = null,
-            .is_comptime = false,
-            .alignment = @alignOf(usize),
-        };
-        fields = fields ++ [1]std.builtin.Type.StructField{field};
-        offset += 1;
-    }
-
-    if (fields.len != syscall_table_size)
-        @compileError("Mismatch in table size vs. index");
-
-    break :blk @Type(.{
-        .Struct = .{
-            .layout = .Extern,
-            .backing_integer = null,
-            .fields = fields,
-            .decls = &.{},
-            .is_tuple = false,
-        },
-    });
-};
-
-/// The total size of the syscall table. Each entry is one `usize` large.
-pub const syscall_table_size: u32 = blk: {
-    var limit: u32 = 0;
-    for (syscall_definitions) |def| {
-        if (def.index > limit)
-            limit = def.index;
-    }
-    break :blk limit + 2; // off-by-one + magic number
+    pub extern fn @"ashet.fs.findFilesystem"(name_ptr: [*]const u8, name_len: usize) FileSystemId;
 };
 
 pub const LogLevel = enum(u8) {
