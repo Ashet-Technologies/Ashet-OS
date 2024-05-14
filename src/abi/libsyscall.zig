@@ -1,32 +1,12 @@
-pub export fn @"ashet.process.yield"() void {}
-pub export fn @"ashet.process.exit"() void {}
-pub export fn @"ashet.process.getBaseAddress"() void {}
-pub export fn @"ashet.process.breakpoint"() void {}
-pub export fn @"ashet.process.getFileName"() void {}
-pub export fn @"ashet.process.writeLog"() void {}
-pub export fn @"ashet.process.memory.allocate"() void {}
-pub export fn @"ashet.process.memory.release"() void {}
-pub export fn @"ashet.time.nanoTimestamp"() void {}
-pub export fn @"ashet.video.acquire"() void {}
-pub export fn @"ashet.video.release"() void {}
-pub export fn @"ashet.video.setBorder"() void {}
-pub export fn @"ashet.video.setResolution"() void {}
-pub export fn @"ashet.video.getVideoMemory"() void {}
-pub export fn @"ashet.video.getPaletteMemory"() void {}
-pub export fn @"ashet.video.getPalette"() void {}
-pub export fn @"ashet.video.getMaxResolution"() void {}
-pub export fn @"ashet.video.getResolution"() void {}
-pub export fn @"ashet.ui.createWindow"() void {}
-pub export fn @"ashet.ui.destroyWindow"() void {}
-pub export fn @"ashet.ui.moveWindow"() void {}
-pub export fn @"ashet.ui.resizeWindow"() void {}
-pub export fn @"ashet.ui.setWindowTitle"() void {}
-pub export fn @"ashet.ui.invalidate"() void {}
-pub export fn @"ashet.ui.getSystemFont"() void {}
-pub export fn @"ashet.network.udp.createSocket"() void {}
-pub export fn @"ashet.network.udp.destroySocket"() void {}
-pub export fn @"ashet.network.tcp.createSocket"() void {}
-pub export fn @"ashet.network.tcp.destroySocket"() void {}
-pub export fn @"ashet.io.scheduleAndAwait"() void {}
-pub export fn @"ashet.io.cancel"() void {}
-pub export fn @"ashet.fs.findFilesystem"() void {}
+const std = @import("std");
+const abi = @import("abi");
+
+fn syscall_stub() callconv(.C) void {}
+
+comptime {
+    for (@typeInfo(abi.syscalls).Struct.decls) |decl| {
+        @export(syscall_stub, std.builtin.ExportOptions{
+            .name = decl.name,
+        });
+    }
+}

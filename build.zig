@@ -199,7 +199,7 @@ pub fn build(b: *std.Build) !void {
     /////////////////////////////////////////////////////////////////////////////
     // ashet os ↓
 
-    const platforms = platforms_build.init(b);
+    const platforms = platforms_build.init(b, modules);
 
     const MachineSet = std.enums.EnumSet(Machine);
 

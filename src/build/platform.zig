@@ -1,6 +1,7 @@
 const std = @import("std");
 const foundation_libc = @import("../../vendor/foundation-libc/build.zig");
 const ashet_lwip = @import("lwip.zig");
+const common = @import("os-common.zig");
 
 const build_targets = @import("targets.zig");
 
@@ -16,7 +17,7 @@ pub const PlatformData = struct {
     include_paths: PlatformMap(std.ArrayListUnmanaged(std.Build.LazyPath)) = PlatformMap(std.ArrayListUnmanaged(std.Build.LazyPath)).initFill(.{}),
 };
 
-pub fn init(b: *std.Build) PlatformData {
+pub fn init(b: *std.Build, modules: common.Modules) PlatformData {
     const foundation_dep = b.anonymousDependency("vendor/foundation-libc", foundation_libc, .{});
 
     var data = PlatformData{};
@@ -56,6 +57,7 @@ pub fn init(b: *std.Build) PlatformData {
             .optimize = .ReleaseSafe,
             .root_source_file = .{ .path = "src/abi/libsyscall.zig" },
         });
+        libsyscall.addModule("abi", modules.ashet_abi);
 
         const install_libsyscall = b.addInstallFileWithDir(
             libsyscall.getEmittedBin(),
