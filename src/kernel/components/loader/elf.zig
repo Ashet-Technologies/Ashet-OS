@@ -739,7 +739,21 @@ const RelocationType: type = switch (system_arch) {
         }
     },
 
-    .thumb => @compileError("TODO: Implement app loading on arm!"),
+    .thumb => enum(u8) {
+        none = 0,
+
+        _,
+
+        pub fn apply(reloc_type: @This(), relocation: Relocation, env: Environment) !void {
+            _ = reloc_type;
+            _ = relocation;
+            _ = env;
+            @panic("TODO: Implement Arm relocations!");
+            // switch (reloc_type) {
+            //     else => return error.UnsupportedRelocation,
+            // }
+        }
+    },
 
     else => @compileError("Unsupported machine type: " ++ @tagName(system_arch)),
 };

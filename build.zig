@@ -23,6 +23,10 @@ pub fn build(b: *std.Build) !void {
     const run_step = b.step("run", "Executes the selected kernel with qemu. Use -Dmachine to run only one");
     const tools_step = b.step("tools", "Builds the build and debug tools");
 
+    // options:
+
+    const no_gui = b.option(bool, "no-gui", "Disables GUI for runners") orelse false;
+
     const optimize_kernel = b.option(
         bool,
         "optimize",
@@ -272,6 +276,12 @@ pub fn build(b: *std.Build) !void {
             vm_runner.addArg(platform_spec.qemu_exe);
             vm_runner.addArgs(&generic_qemu_flags);
 
+            if (no_gui) {
+                vm_runner.addArgs(&console_qemu_flags);
+            } else {
+                vm_runner.addArgs(&display_qemu_flags);
+            }
+
             arg_loop: for (machine_spec.qemu_cli) |arg| {
                 inline for (@typeInfo(Variables).Struct.fields) |fld| {
                     const path = @field(variables, fld.name);
@@ -367,10 +377,17 @@ const MachineSpec = kernel_targets.MachineSpec;
 
 const generic_qemu_flags = [_][]const u8{
     "-d",         "guest_errors,unimp",
-    "-display",   "gtk,show-tabs=on",
     "-serial",    "stdio",
     "-no-reboot", "-no-shutdown",
     "-s",
+};
+
+const display_qemu_flags = [_][]const u8{
+    "-display", "gtk,show-tabs=on",
+};
+
+const console_qemu_flags = [_][]const u8{
+    "-display", "none",
 };
 
 const fatfs_config = FatFS.Config{
