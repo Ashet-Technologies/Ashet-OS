@@ -363,6 +363,19 @@ pub fn build(b: *std.Build) !void {
 
         validate_step.dependOn(&validate_wiki.step);
     }
+    // validation ↑
+    /////////////////////////////////////////////////////////////////////////////
+    // documentation ↓
+
+    const docgen = b.addTest(.{
+        .root_source_file = .{ .path = "src/abi/abi-v2.zig" },
+    });
+
+    b.installDirectory(.{
+        .source_dir = docgen.getEmittedDocs(),
+        .install_dir = .prefix,
+        .install_subdir = "documentation",
+    });
 }
 
 fn addBitmap(target: *std.build.LibExeObjStep, bmpconv: BitmapConverter, src: []const u8, dst: []const u8, size: [2]u32) void {
