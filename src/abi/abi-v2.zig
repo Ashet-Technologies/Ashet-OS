@@ -1,149 +1,191 @@
+//!
+//! WARNING:
+//!     THIS FILE IS MEANT TO BE PREPROCESSED BY A TOOL TO CONVERT INTO
+//!     C-COMPATIBLE APIS!
+//!
+
 const std = @import("std");
 
+const abi = @This();
+
 pub const syscalls = struct {
-    /// Returns a pointer to the file name of the process.
-    pub extern fn @"ashet.process.getFileName"() [*:0]const u8;
+    pub const process = struct {
+        /// Returns a pointer to the file name of the process.
+        pub extern fn getFileName() [*:0]const u8;
 
-    /// Returns the base address of the process.
-    pub extern fn @"ashet.process.getBaseAddress"() usize;
+        /// Returns the base address of the process.
+        pub extern fn getBaseAddress() usize;
 
-    /// Terminates the process with the given exit code
-    pub extern fn @"ashet.process.terminate"(exit_code: u32) noreturn;
+        /// Terminates the process with the given exit code
+        pub extern fn terminate(exit_code: ExitCode) noreturn;
 
-    /// Returns control to the scheduler. Returns when the scheduler
-    /// schedules the process again.
-    pub extern fn @"ashet.process.thread.yield"() void;
+        pub const thread = struct {
+            /// Returns control to the scheduler. Returns when the scheduler
+            /// schedules the process again.
+            pub extern fn yield() void;
 
-    /// Terminates the current thread.
-    pub extern fn @"ashet.process.thread.exit"(exit_code: u32) noreturn;
+            /// Terminates the current thread.
+            pub extern fn exit(exit_code: ExitCode) noreturn;
 
-    /// Waits for the thread to exit and returns its return code.
-    pub extern fn @"ashet.process.thread.join"(*Thread) u32;
+            /// Waits for the thread to exit and returns its return code.
+            pub extern fn join(*Thread) ExitCode;
 
-    /// Spawns a new thread with `function` passing `arg` to it.
-    /// If `stack_size` is not 0, will create a stack with the given size.
-    pub extern fn @"ashet.process.thread.spawn"(function: ThreadFunction, arg: ?*anyopaque, stack_size: usize) ?*Thread;
+            /// Spawns a new thread with `function` passing `arg` to it.
+            /// If `stack_size` is not 0, will create a stack with the given size.
+            pub extern fn spawn(function: ThreadFunction, arg: ?*anyopaque, stack_size: usize) ?*Thread;
 
-    /// Kills the given thread with `exit_code`.
-    pub extern fn @"ashet.process.thread.kill"(*Thread, exit_code: u32) void;
+            /// Kills the given thread with `exit_code`.
+            pub extern fn kill(*Thread, exit_code: ExitCode) void;
+        };
 
-    /// Writes to the system debug log.
-    pub extern fn @"ashet.process.debug.writeLog"(log_level: LogLevel, ptr: [*]const u8, len: usize) void;
+        pub const debug = struct {
+            /// Writes to the system debug log.
+            pub extern fn writeLog(log_level: LogLevel, message: []const u8) void;
 
-    /// Stops the process and allows debugging.
-    pub extern fn @"ashet.process.debug.breakpoint"() void;
+            /// Stops the process and allows debugging.
+            pub extern fn breakpoint() void;
+        };
 
-    /// Allocates memory pages from the system.
-    pub extern fn @"ashet.process.memory.allocate"(size: usize, ptr_align: u8) ?[*]u8;
+        pub const memory = struct {
+            /// Allocates memory pages from the system.
+            pub extern fn allocate(size: usize, ptr_align: u8) ?[*]u8;
 
-    /// Returns memory to the systme.
-    pub extern fn @"ashet.process.memory.release"(ptr: [*]u8, size: usize, ptr_align: u8) void;
+            /// Returns memory to the systme.
+            pub extern fn release(mem: []u8, ptr_align: u8) void;
+        };
+    };
 
-    /// Returns the time in nanoseconds since system startup.
-    /// This clock is monotonically increasing.
-    pub extern fn @"ashet.clock.monotonic"() u64;
+    pub const clock = struct {
+        /// Returns the time in nanoseconds since system startup.
+        /// This clock is monotonically increasing.
+        pub extern fn monotonic() u64;
+    };
 
-    /// Get a calendar timestamp, in nanoseconds, relative to UTC 1970-01-01.
-    /// Precision of timing depends on the hardware.
-    /// The return value is signed because it is possible to have a date that is
-    /// before the epoch.
-    pub extern fn @"ashet.time.nanoTimestamp"() i128;
+    pub const time = struct {
+        /// Get a calendar timestamp, in nanoseconds, relative to UTC 1970-01-01.
+        /// Precision of timing depends on the hardware.
+        /// The return value is signed because it is possible to have a date that is
+        /// before the epoch.
+        pub extern fn nanoTimestamp() i128;
+    };
 
-    // Aquires direct access to the screen. When `true` is returned,
-    // this process has the sole access to the screen buffers.
-    pub extern fn @"ashet.video.acquire"(VideoOutput) bool;
+    pub const video = struct {
 
-    // Releases the access to the video and returns to desktop mode.
-    pub extern fn @"ashet.video.release"(VideoOutput) void;
+        // Aquires direct access to the screen. When `true` is returned,
+        // this process has the sole access to the screen buffers.
+        pub extern fn acquire(VideoOutput) bool;
 
-    // Changes the border color of the screen. Parameter is an index into
-    // the palette.
-    pub extern fn @"ashet.video.setBorder"(VideoOutput, ColorIndex) void;
+        // Releases the access to the video and returns to desktop mode.
+        pub extern fn release(VideoOutput) void;
 
-    // Sets the screen resolution. Legal values are between 1×1 and the platform specific
-    // maximum resolution returned by `video.getMaxResolution()`.
-    // Everything out of bounds will be clamped into that range.
-    pub extern fn @"ashet.video.setResolution"(VideoOutput, u16, u16) void;
+        // Changes the border color of the screen. Parameter is an index into
+        // the palette.
+        pub extern fn setBorder(VideoOutput, ColorIndex) void;
 
-    // Returns a pointer to linear video memory, row-major.
-    // Pixels rows will have a stride of the current video buffer width.
-    // The first pixel in the memory is the top-left pixel.
-    pub extern fn @"ashet.video.getVideoMemory"(VideoOutput) [*]align(4) ColorIndex;
+        // Sets the screen resolution. Legal values are between 1×1 and the platform specific
+        // maximum resolution returned by `video.getMaxResolution()`.
+        // Everything out of bounds will be clamped into that range.
+        pub extern fn setResolution(VideoOutput, u16, u16) void;
 
-    // Returns a pointer to the current palette. Changing this palette
-    // will directly change the associated colors on the screen.
-    pub extern fn @"ashet.video.getPaletteMemory"(VideoOutput) *[palette_size]Color;
+        // Returns a pointer to linear video memory, row-major.
+        // Pixels rows will have a stride of the current video buffer width.
+        // The first pixel in the memory is the top-left pixel.
+        pub extern fn getVideoMemory(VideoOutput) [*]align(4) ColorIndex;
 
-    // Fetches a copy of the current system pallete.
-    pub extern fn @"ashet.video.getPalette"(VideoOutput, *[palette_size]Color) void;
+        // Returns a pointer to the current palette. Changing this palette
+        // will directly change the associated colors on the screen.
+        pub extern fn getPaletteMemory(VideoOutput) *[palette_size]Color;
 
-    // Returns the maximum possible screen resolution.
-    pub extern fn @"ashet.video.getMaxResolution"(VideoOutput) Size;
+        // Fetches a copy of the current system pallete.
+        pub extern fn getPalette(VideoOutput, *[palette_size]Color) void;
 
-    // Returns the current resolution
-    pub extern fn @"ashet.video.getResolution"(VideoOutput) Size;
+        // Returns the maximum possible screen resolution.
+        pub extern fn getMaxResolution(VideoOutput) Size;
 
-    // pub extern fn @"ashet.ui.createWindow"(title: [*]const u8, title_len: usize, min: Size, max: Size, startup: Size, flags: CreateWindowFlags) ?*const Window;
-    // pub extern fn @"ashet.ui.destroyWindow"(*const Window) void;
-    // pub extern fn @"ashet.ui.moveWindow"(*const Window, x: i16, y: i16) void;
-    // pub extern fn @"ashet.ui.resizeWindow"(*const Window, x: u16, y: u16) void;
-    // pub extern fn @"ashet.ui.setWindowTitle"(*const Window, title: [*]const u8, title_len: usize) void;
-    // pub extern fn @"ashet.ui.invalidate"(*const Window, rect: Rectangle) void;
-    // pub extern fn @"ashet.ui.getSystemFont"(font_name_ptr: [*]const u8, font_name_len: usize, font_data_ptr: *[*]const u8, font_data_len: *usize) GetSystemFontError.Enum;
+        // Returns the current resolution
+        pub extern fn getResolution(VideoOutput) Size;
+    };
 
-    // resolves the dns entry `host` for the given `service`.
-    // - `host` is a legal dns entry
-    // - `port` is either a port number
-    // - `buffer` and `limit` define a structure where all resolved IPs can be stored.
-    // Function returns the number of host entries found or 0 if the host name could not be resolved.
-    // pub extern fn @"ashet.network.dns.resolve" (host: [*:0]const u8, port: u16, buffer: [*]EndPoint, limit: usize) usize;
+    pub const network = struct {
+        pub const dns = struct {
+            // resolves the dns entry `host` for the given `service`.
+            // - `host` is a legal dns entry
+            // - `port` is either a port number
+            // - `buffer` and `limit` define a structure where all resolved IPs can be stored.
+            // Function returns the number of host entries found or 0 if the host name could not be resolved.
+            // pub extern fn @"resolve" (host: [*:0]const u8, port: u16, buffer: [*]EndPoint, limit: usize) usize;
 
-    // getStatus: FnPtr(fn () NetworkStatus),
-    // ping: FnPtr(fn ([*]Ping, usize) void),
-    // TODO: Implement NIC-specific queries (mac, ips, names, ...)
+            // getStatus: FnPtr(fn () NetworkStatus),
+            // ping: FnPtr(fn ([*]Ping, usize) void),
+            // TODO: Implement NIC-specific queries (mac, ips, names, ...)
+        };
 
-    pub extern fn @"ashet.network.udp.createSocket"(result: *UdpSocket) udp.CreateError.Enum;
-    pub extern fn @"ashet.network.udp.destroySocket"(UdpSocket) void;
+        pub const udp = struct {
+            pub extern fn createSocket(result: *UdpSocket) abi.udp.CreateError.Enum;
+            pub extern fn destroySocket(UdpSocket) void;
+        };
 
-    pub extern fn @"ashet.network.tcp.createSocket"(out: *TcpSocket) tcp.CreateError.Enum;
-    pub extern fn @"ashet.network.tcp.destroySocket"(TcpSocket) void;
+        pub const tcp = struct {
+            pub extern fn createSocket(out: *TcpSocket) abi.tcp.CreateError.Enum;
+            pub extern fn destroySocket(TcpSocket) void;
+        };
+    };
 
-    /// Starts new I/O operations and returns completed ones.
-    ///
-    /// If `start_queue` is given, the kernel will schedule the events in the kernel.
-    /// All events in this queue must not be freed until they are returned by this function
-    /// at a later point.
-    ///
-    /// The function will optionally block based on the `wait` parameter.
-    ///
-    /// The return value is the HEAD element of a linked list of completed I/O events.
-    pub extern fn @"ashet.io.scheduleAndAwait"(?*IOP, WaitIO) ?*IOP;
-    /// Cancels a single I/O operation.
-    pub extern fn @"ashet.io.cancel"(*IOP) void;
+    pub const io = struct {
+        /// Starts new I/O operations and returns completed ones.
+        ///
+        /// If `start_queue` is given, the kernel will schedule the events in the kernel.
+        /// All events in this queue must not be freed until they are returned by this function
+        /// at a later point.
+        ///
+        /// The function will optionally block based on the `wait` parameter.
+        ///
+        /// The return value is the HEAD element of a linked list of completed I/O events.
+        pub extern fn scheduleAndAwait(?*IOP, WaitIO) ?*IOP;
 
-    /// Finds a file system by name
-    pub extern fn @"ashet.fs.findFilesystem"(name_ptr: [*]const u8, name_len: usize) FileSystemId;
+        /// Cancels a single I/O operation.
+        pub extern fn cancel(*IOP) void;
+    };
 
-    /// Registers a new service `uuid` in the system.
-    /// Takes an array of function pointers that will be provided for IPC and a service name to be advertised.
-    pub extern fn @"ashet.service.register"(uuid: *const UUID, funcs_ptr: [*]const AbstractFunction, funcs_len: usize, name_ptr: [*]const u8, name_len: usize) ServiceRegisterError;
-    /// Removes a previously service announcement.
-    pub extern fn @"ashet.service.unregister"(uuid: *const UUID) void;
-    /// Returns the number of total registrations for the given service `uuid`.
-    pub extern fn @"ashet.service.count"(uuid: *const UUID) usize;
-    /// Returns a pointer to the `index`th instance of the service behind `uuid`.
-    /// Also returns a handle to the process that registered the service.
-    pub extern fn @"ashet.service.get"(uuid: *const UUID, index: usize, funcs_ptr: *[*]const AbstractFunction, funcs_len: *usize, name_ptr: *[*]const u8, name_len: *usize, process: *ProcessID) bool;
+    pub const fs = struct {
+        /// Finds a file system by name
+        pub extern fn findFilesystem(name: []const u8) FileSystemId;
+    };
 
-    /// Sets the contents of the clip board.
-    /// Takes a mime type as well as the value in the provided format.
-    pub extern fn @"ashet.clipboard.set"(mime_ptr: [*]const u8, mime_len: usize, value_ptr: [*]const u8, value_len: usize) ClipboardSetError;
-    /// Returns the current type present in the clipboard, if any.
-    pub extern fn @"ashet.clipboard.get_type"(mime_ptr: *[*]const u8, mime_len: *usize) bool;
-    /// Returns the current clipboard value as the provided mime type.
-    /// The os provides a conversion *if possible*, otherwise returns an error.
-    /// The returned memory for `value` is owned by the process and must be freed with `ashet.process.memory.release`.
-    pub extern fn @"ashet.clipboard.get_value"(mime_ptr: [*]const u8, mime_len: usize, value_ptr: ?[*]const u8, value_len: *usize) ClipboardGetError;
+    pub const service = struct {
+        /// Registers a new service `uuid` in the system.
+        /// Takes an array of function pointers that will be provided for IPC and a service name to be advertised.
+        pub extern fn register(uuid: *const UUID, funcs: []const AbstractFunction, name: []const u8) ServiceRegisterError;
+
+        /// Removes a previously service announcement.
+        pub extern fn unregister(uuid: *const UUID) void;
+
+        /// Returns the number of total registrations for the given service `uuid`.
+        pub extern fn count(uuid: *const UUID) usize;
+
+        /// Returns a pointer to the `index`th instance of the service behind `uuid`.
+        /// Also returns a handle to the process that registered the service.
+        pub extern fn get(uuid: *const UUID, index: usize, funcs: *[]const AbstractFunction, name: *[]const u8, process: *ProcessID) bool;
+    };
+
+    pub const clipboard = struct {
+        /// Sets the contents of the clip board.
+        /// Takes a mime type as well as the value in the provided format.
+        pub extern fn set(mime: []const u8, value: []const u8) ClipboardSetError;
+
+        /// Returns the current type present in the clipboard, if any.
+        pub extern fn get_type(mime: *[]const u8) bool;
+
+        /// Returns the current clipboard value as the provided mime type.
+        /// The os provides a conversion *if possible*, otherwise returns an error.
+        /// The returned memory for `value` is owned by the process and must be freed with `ashet.process.memory.release`.
+        pub extern fn get_value(mime: []const u8, value: *?[]const u8) ClipboardGetError;
+    };
+
+    pub const gui = struct {
+        /// Returns the font data for the given font name, if any.
+        pub extern fn get_system_font(font_name: []const u8, font: *SystemFont) GetSystemFontError;
+    };
 };
 
 /// Handle to a thread.
@@ -157,6 +199,23 @@ pub const AbstractFunction = fn () callconv(.C) void;
 pub const VideoOutput = enum(u8) {
     /// The primary video output
     primary = 0,
+    _,
+};
+
+pub const SystemFont = extern struct {
+    ptr: [*]align(4) const u8,
+    len: usize,
+
+    pub fn @"type"(sf: @This()) FontType {
+        return @enumFromInt(
+            std.mem.readIntNative(u32, sf.ptr[0..4]),
+        );
+    }
+};
+
+pub const FontType = enum(u32) {
+    bitmap = 0xcb3765be,
+    vector = 0x4c2b8688,
     _,
 };
 
@@ -182,7 +241,7 @@ pub const Framebuffer = struct {
     /// legal operations.
     type: Type,
 
-    pub const Type enum(u8) {
+    pub const Type = enum(u8) {
         /// A pure in-memory frame buffer used for off-screen rendering.
         memory = 0,
         /// A video device backed frame buffer. Can be used to paint on a screen
@@ -317,11 +376,13 @@ pub const ClipboardGetError = ErrorSet(.{
     .OutOfMemory = 3,
 });
 
-pub const ExitCode = struct {
-    pub const success = @as(u32, 0);
-    pub const failure = @as(u32, 1);
+pub const ExitCode = enum(u32) {
+    success = @as(u32, 0),
+    failure = @as(u32, 1),
 
-    pub const killed = ~@as(u32, 0);
+    killed = ~@as(u32, 0),
+
+    _,
 };
 
 pub const ThreadFunction = *const fn (?*anyopaque) callconv(.C) u32;
