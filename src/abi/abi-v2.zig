@@ -6,18 +6,25 @@
 
 const std = @import("std");
 
+const ErrorSet = @import("error_set.zig").ErrorSet;
+const iops = @import("iops.zig");
+
 const abi = @This();
 
 pub const syscalls = struct {
     pub const process = struct {
         /// Returns a pointer to the file name of the process.
-        pub extern fn getFileName() [*:0]const u8;
+        pub extern fn get_file_name(?*Process) [*:0]const u8;
 
         /// Returns the base address of the process.
-        pub extern fn getBaseAddress() usize;
+        pub extern fn get_base_address(?*Process) usize;
 
-        /// Terminates the process with the given exit code
+        /// Terminates the current process with the given exit code
         pub extern fn terminate(exit_code: ExitCode) noreturn;
+
+        /// Terminates a foreign process.
+        /// If the current process is passed, this function will not return
+        pub extern fn kill(*Process) void;
 
         pub const thread = struct {
             /// Returns control to the scheduler. Returns when the scheduler
@@ -40,7 +47,7 @@ pub const syscalls = struct {
 
         pub const debug = struct {
             /// Writes to the system debug log.
-            pub extern fn writeLog(log_level: LogLevel, message: []const u8) void;
+            pub extern fn write_log(log_level: LogLevel, message: []const u8) void;
 
             /// Stops the process and allows debugging.
             pub extern fn breakpoint() void;
@@ -53,6 +60,23 @@ pub const syscalls = struct {
             /// Returns memory to the systme.
             pub extern fn release(mem: []u8, ptr_align: u8) void;
         };
+
+        pub const monitor = struct {
+            /// Queries all owned resources by a process.
+            pub extern fn enumerate_processes(?[]*Process) usize;
+
+            /// Queries all owned resources by a process.
+            pub extern fn query_owned_resources(*Process, ?[]*SystemResource) usize;
+
+            /// Returns the total number of bytes the process takes up in RAM.
+            pub extern fn query_total_memory_usage(*Process) usize;
+
+            /// Returns the number of dynamically allocated bytes for this process.
+            pub extern fn query_dynamic_memory_usage(*Process) usize;
+
+            /// Returns the number of total memory objects this process has right now.
+            pub extern fn query_active_allocation_count(*Process) usize;
+        };
     };
 
     pub const clock = struct {
@@ -62,51 +86,63 @@ pub const syscalls = struct {
     };
 
     pub const time = struct {
-        /// Get a calendar timestamp, in nanoseconds, relative to UTC 1970-01-01.
+        /// Get a calendar timestamp relative to UTC 1970-01-01.
         /// Precision of timing depends on the hardware.
         /// The return value is signed because it is possible to have a date that is
         /// before the epoch.
-        pub extern fn nanoTimestamp() i128;
+        pub extern fn now() DateTime;
     };
 
     pub const video = struct {
+        /// Returns a list of all video outputs.
+        ///
+        /// If `ids` is `null`, the total number of available outputs is returned,
+        /// otherwise, up to `ids.len` elements are written into the provided array
+        /// and the number of written elements is returned.
+        pub extern fn enumerate(ids: ?[]VideoOutputID) usize;
 
-        // Aquires direct access to the screen. When `true` is returned,
-        // this process has the sole access to the screen buffers.
-        pub extern fn acquire(VideoOutput) bool;
+        /// Acquire exclusive access to a video output.
+        pub extern fn acquire(VideoOutputID) ?*VideoOutput;
 
-        // Releases the access to the video and returns to desktop mode.
-        pub extern fn release(VideoOutput) void;
+        /// Returns the current resolution
+        pub extern fn get_resolution(*VideoOutput) Size;
 
-        // Changes the border color of the screen. Parameter is an index into
-        // the palette.
-        pub extern fn setBorder(VideoOutput, ColorIndex) void;
+        /// Returns a pointer to linear video memory, row-major.
+        /// Pixels rows will have a stride of the current video buffer width.
+        /// The first pixel in the memory is the top-left pixel.
+        pub extern fn get_video_memory(*VideoOutput) [*]align(4) ColorIndex;
 
-        // Sets the screen resolution. Legal values are between 1×1 and the platform specific
-        // maximum resolution returned by `video.getMaxResolution()`.
-        // Everything out of bounds will be clamped into that range.
-        pub extern fn setResolution(VideoOutput, u16, u16) void;
+        /// Fetches a copy of the current color pallete.
+        pub extern fn get_palette(*VideoOutput, *[palette_size]Color) void;
 
-        // Returns a pointer to linear video memory, row-major.
-        // Pixels rows will have a stride of the current video buffer width.
-        // The first pixel in the memory is the top-left pixel.
-        pub extern fn getVideoMemory(VideoOutput) [*]align(4) ColorIndex;
+        /// Changes the current color palette.
+        pub extern fn set_palette(*VideoOutput, *const [palette_size]Color) SetPaletteError;
 
-        // Returns a pointer to the current palette. Changing this palette
-        // will directly change the associated colors on the screen.
-        pub extern fn getPaletteMemory(VideoOutput) *[palette_size]Color;
+        // /// Returns a pointer to the current palette. Changing this palette
+        // /// will directly change the associated colors on the screen.
+        // /// If `null` is returned, no direct access to the video palette is possible.
+        // pub extern fn get_palette_memory(*VideoOutput) ?*[palette_size]Color;
 
-        // Fetches a copy of the current system pallete.
-        pub extern fn getPalette(VideoOutput, *[palette_size]Color) void;
+        // /// Changes the border color of the screen. Parameter is an index into
+        // /// the palette.
+        // pub extern fn set_border(*VideoOutput, ColorIndex) void;
 
-        // Returns the maximum possible screen resolution.
-        pub extern fn getMaxResolution(VideoOutput) Size;
+        // /// Returns the maximum possible screen resolution.
+        // pub extern fn get_max_resolution(*VideoOutput) Size;
 
-        // Returns the current resolution
-        pub extern fn getResolution(VideoOutput) Size;
+        // /// Sets the screen resolution. Legal values are between 1×1 and the platform specific
+        // /// maximum resolution returned by `video.getMaxResolution()`.
+        // /// Everything out of bounds will be clamped into that range.
+        // pub extern fn change_resolution(*VideoOutput, u16, u16) void;
+
     };
 
     pub const network = struct {
+
+        // getStatus: FnPtr(fn () NetworkStatus),
+        // ping: FnPtr(fn ([*]Ping, usize) void),
+        // TODO: Implement NIC-specific queries (mac, ips, names, ...)
+
         pub const dns = struct {
             // resolves the dns entry `host` for the given `service`.
             // - `host` is a legal dns entry
@@ -115,19 +151,14 @@ pub const syscalls = struct {
             // Function returns the number of host entries found or 0 if the host name could not be resolved.
             // pub extern fn @"resolve" (host: [*:0]const u8, port: u16, buffer: [*]EndPoint, limit: usize) usize;
 
-            // getStatus: FnPtr(fn () NetworkStatus),
-            // ping: FnPtr(fn ([*]Ping, usize) void),
-            // TODO: Implement NIC-specific queries (mac, ips, names, ...)
         };
 
         pub const udp = struct {
-            pub extern fn createSocket(result: *UdpSocket) abi.udp.CreateError.Enum;
-            pub extern fn destroySocket(UdpSocket) void;
+            pub extern fn create_socket(result: **UdpSocket) abi.udp.CreateError.Enum;
         };
 
         pub const tcp = struct {
-            pub extern fn createSocket(out: *TcpSocket) abi.tcp.CreateError.Enum;
-            pub extern fn destroySocket(TcpSocket) void;
+            pub extern fn create_socket(out: **TcpSocket) abi.tcp.CreateError.Enum;
         };
     };
 
@@ -141,7 +172,7 @@ pub const syscalls = struct {
         /// The function will optionally block based on the `wait` parameter.
         ///
         /// The return value is the HEAD element of a linked list of completed I/O events.
-        pub extern fn scheduleAndAwait(?*IOP, WaitIO) ?*IOP;
+        pub extern fn schedule_and_await(?*IOP, WaitIO) ?*IOP;
 
         /// Cancels a single I/O operation.
         pub extern fn cancel(*IOP) void;
@@ -149,7 +180,7 @@ pub const syscalls = struct {
 
     pub const fs = struct {
         /// Finds a file system by name
-        pub extern fn findFilesystem(name: []const u8) FileSystemId;
+        pub extern fn find_filesystem(name: []const u8) FileSystemId;
     };
 
     pub const service = struct {
@@ -165,7 +196,7 @@ pub const syscalls = struct {
 
         /// Returns a pointer to the `index`th instance of the service behind `uuid`.
         /// Also returns a handle to the process that registered the service.
-        pub extern fn get(uuid: *const UUID, index: usize, funcs: *[]const AbstractFunction, name: *[]const u8, process: *ProcessID) bool;
+        pub extern fn get(uuid: *const UUID, index: usize, funcs: *[]const AbstractFunction, name: *[]const u8, process: ?**Process) bool;
     };
 
     pub const clipboard = struct {
@@ -182,211 +213,265 @@ pub const syscalls = struct {
         pub extern fn get_value(mime: []const u8, value: *?[]const u8) ClipboardGetError;
     };
 
-    pub const gui = struct {
+    pub const draw = struct {
         /// Returns the font data for the given font name, if any.
-        pub extern fn get_system_font(font_name: []const u8, font: *SystemFont) GetSystemFontError;
+        pub extern fn get_system_font(font_name: []const u8, font: **Font) GetSystemFontError;
+
+        /// Creates a new custom font from the given data.
+        pub extern fn create_font(data: []const u8, font: **Font) CreateFontError;
+
+        /// Returns true if the given font is a system-owned font.
+        pub extern fn is_system_font(*Font) bool;
+
+        //
+
+        /// Creates a new in-memory framebuffer that can be used for offscreen painting.
+        pub extern fn create_memory_framebuffer(width: u16, height: u16) ?*Framebuffer;
+
+        /// Creates a new framebuffer based off a video output. Can be used to output pixels
+        /// to the screen.
+        pub extern fn create_video_framebuffer(*VideoOutput) ?*Framebuffer;
+
+        /// Returns the type of a framebuffer object.
+        pub extern fn get_framebuffer_type(*Framebuffer) FramebufferType;
+
+        /// Returns the size of a framebuffer object.
+        pub extern fn get_framebuffer_size(*Framebuffer) Size;
+
+        //
+
+        // TODO: Insert render functions here
+    };
+
+    pub const gui = struct {
+        // TODO: Implement GUI syscalls
+
+        /// Opens a message box popup window and prompts the user for response.
+        ///
+        /// *Remarks:* This function is blocking and will only return when the user has entered their choice.
+        pub extern fn message_box(message: []const u8, caption: []const u8, buttons: MessageBoxButtons, icon: MessageBoxIcon) MessageBoxResult;
+
+        pub extern fn register_widget_type(uuid: *const UUID, *const WidgetDescriptor) RegisterWidgetTypeError;
+
+        pub extern fn unregister_widget_type(uuid: *const UUID) void;
+
+        // pub extern fn create_window(window: **Window, …) CreateWindowError;
+
+        // pub extern fn create_widget(window: *Window, uuid: *const UUID, widget: **Widget, …) CreateWidgetError;
+
+        // Legacy API:
+        // ui.createWindow           (title: [*]const u8, title_len: usize, min: Size, max: Size, startup: Size, flags: CreateWindowFlags) ?*const Window
+        // ui.invalidate             (*const Window, rect: Rectangle) void
+        // ui.moveWindow             (*const Window, x: i16, y: i16) void
+        // ui.resizeWindow           (*const Window, x: u16, y: u16) void
+        // ui.setWindowTitle         (*const Window, title: [*]const u8, title_len: usize) void -->
+    };
+
+    pub const resources = struct {
+        /// Returns the type of the system resource.
+        pub extern fn get_type(*SystemResource) SystemResource.Type;
+
+        /// Returns the current owner of this resource.
+        pub extern fn get_owner(*SystemResource) ?*Process;
+
+        /// Transfers ownership to another process.
+        pub extern fn set_owner(*SystemResource, *Process) void;
+
+        /// Closes the system resource and releases its memory.
+        /// The handle will be invalid after this function.
+        pub extern fn close(*SystemResource) void;
     };
 };
 
-/// Handle to a thread.
-pub const Thread = opaque {};
+///////////////////////////////////////////////////////////
+// Constants:
 
-pub const UUID = [16]u8;
+/// The maximum number of bytes in a file system identifier name.
+/// This is chosen to be a power of two, and long enough to accommodate
+/// typical file system names:
+/// - `SYS`
+/// - `USB0`
+/// - `USB10`
+/// - `PF0`
+/// - `CF7`
+pub const max_fs_name_len = 8;
 
-pub const AbstractFunction = fn () callconv(.C) void;
+/// The maximum number of bytes in a file system type name.
+/// Chosen to be a power of two, and long enough to accomodate typical names:
+/// - `FAT16`
+/// - `FAT32`
+/// - `exFAT`
+/// - `NTFS`
+/// - `ReiserFS`
+/// - `ISO 9660`
+/// - `btrfs`
+/// - `AFFS`
+pub const max_fs_type_len = 32;
 
-/// Index of the systems video outputs.
-pub const VideoOutput = enum(u8) {
-    /// The primary video output
-    primary = 0,
-    _,
+/// The maximum number of bytes in a file name.
+/// This is chosen to be a power of two, and reasonably long.
+/// As some programs use sha256 checksums and 64 bytes are enough to store
+/// a hex-encoded 256 bit sequence:
+/// - `114ac2caf8fefad1116dbfb1bd68429f68e9e088b577c9b3f5a3ff0fe77ec886`
+/// This should also enough for most reasonable file names in the wild.
+pub const max_file_name_len = 120;
+
+pub const palette_size = std.math.maxInt(@typeInfo(ColorIndex).Enum.tag_type) + 1;
+
+pub const system_widgets = struct {
+    pub const label = UUID.constant("53b8be36-969a-46a3-bdf5-e3d197890219");
+    pub const button = UUID.constant("782ccd0e-bae4-4093-93fe-12c1f86ff43c");
+    pub const text_box = UUID.constant("02eddbc3-b882-41e9-8aba-10d12b451e11");
+    pub const multi_line_text_box = UUID.constant("84d40a1a-04ab-4e00-ae93-6e91e6b3d10a");
+    pub const vertical_scroll_bar = UUID.constant("d1c52f74-e9b8-4067-8bb6-fe01c49d97ae");
+    pub const horizontal_scroll_bar = UUID.constant("2899397f-ede2-46e9-8458-1eea29c81fa1");
+    pub const progress_bar = UUID.constant("b96290a9-542f-45f5-9e37-1ce9084fc0e3");
+    pub const check_box = UUID.constant("051c6bff-d491-4e5a-8b77-6f4244da52ee");
+    pub const radio_button = UUID.constant("4f18fde6-944c-494f-a55c-ba11f45fcfa3");
+    pub const panel = UUID.constant("1fa5b237-0bda-48d1-b95a-fcf80616318b");
+    pub const group_box = UUID.constant("b96bc6a2-6df0-4f76-962a-4af18fdf3548");
 };
 
-pub const SystemFont = extern struct {
-    ptr: [*]align(4) const u8,
-    len: usize,
+///////////////////////////////////////////////////////////
+// System resources:
 
-    pub fn @"type"(sf: @This()) FontType {
-        return @enumFromInt(
-            std.mem.readIntNative(u32, sf.ptr[0..4]),
-        );
+/// Handle to an abstract system resource.
+pub const SystemResource = opaque {
+    pub const get_type = syscalls.resources.get_type;
+    pub const get_owner = syscalls.resources.get_owner;
+    pub const set_owner = syscalls.resources.set_owner;
+    pub const close = syscalls.resources.close;
+
+    /// Casts the resource into a concrete type. Fails, if the type does not match.
+    pub fn cast(resource: *SystemResource, comptime t: Type) error{InvalidType}!*CastResult(t) {
+        const actual = resource.get_type();
+        if (actual != t)
+            return error.InvalidType;
+        return @ptrCast(resource);
+    }
+
+    fn CastResult(comptime t: Type) type {
+        return switch (t) {
+            .process => Process,
+            .thread => Thread,
+
+            .tcp_socket => TcpSocket,
+            .udp_socket => UdpSocket,
+
+            .file => File,
+
+            .directory => Directory,
+            .video_output => VideoOutput,
+
+            .font => Font,
+            .framebuffer => Framebuffer,
+
+            _ => @compileError("Undefined type passed."),
+        };
+    }
+
+    pub const Type = enum(u16) {
+        process,
+        thread,
+
+        tcp_socket,
+        udp_socket,
+
+        file,
+        directory,
+
+        video_output,
+
+        font,
+        framebuffer,
+
+        _,
+    };
+};
+
+pub const Process = opaque {
+    pub fn as_resource(value: *@This()) *SystemResource {
+        return @ptrCast(value);
     }
 };
 
-pub const FontType = enum(u32) {
-    bitmap = 0xcb3765be,
-    vector = 0x4c2b8688,
-    _,
+pub const Thread = opaque {
+    pub fn as_resource(value: *@This()) *SystemResource {
+        return @ptrCast(value);
+    }
 };
 
-/// Opaque identifier of a process.
-pub const ProcessID = enum(u32) {
-    /// Handle of an invalid process.
-    invalid = std.math.maxInt(u32),
-    _,
+pub const TcpSocket = opaque {
+    pub fn as_resource(value: *@This()) *SystemResource {
+        return @ptrCast(value);
+    }
 };
 
-/// An abstract 2D frame buffer the OS or applications can draw to.
-pub const Framebuffer = struct {
-    /// Pointer to the first pixel in the frame buffer.
-    pixels: [*]ColorIndex,
-    /// Number of pixels between each row.
-    stride: usize,
-    /// Number of logical horizontal pixels in the frame buffer.
-    width: u16,
-    /// Number of logical vertical pixels in the frame buffer.
-    height: u16,
-
-    /// Type of the framebuffer, provides information about additional
-    /// legal operations.
-    type: Type,
-
-    pub const Type = enum(u8) {
-        /// A pure in-memory frame buffer used for off-screen rendering.
-        memory = 0,
-        /// A video device backed frame buffer. Can be used to paint on a screen
-        /// directly.
-        video = 1,
-        /// A frame buffer provided by a user interface element. These frame buffers
-        /// may hold additional semantic information.
-        widget = 2,
-    };
+pub const UdpSocket = opaque {
+    pub fn as_resource(value: *@This()) *SystemResource {
+        return @ptrCast(value);
+    }
 };
 
-pub const LogLevel = enum(u8) {
-    critical = 0,
-    err = 1,
-    warn = 2,
-    notice = 3,
-    debug = 4,
-    _,
+pub const File = opaque {
+    pub fn as_resource(value: *@This()) *SystemResource {
+        return @ptrCast(value);
+    }
 };
 
-pub const NetworkStatus = enum(u8) {
-    disconnected = 0, // no cable is plugged in
-    mac_available = 1, // cable is plugged in and connected, no DHCP or static IP performed yet
-    ip_available = 2, // interface got at least one IP assigned
-    gateway_available = 3, // the gateway, if any, is reachable
+pub const Directory = opaque {
+    pub fn as_resource(value: *@This()) *SystemResource {
+        return @ptrCast(value);
+    }
+};
+
+pub const VideoOutput = opaque {
+    pub fn as_resource(value: *@This()) *SystemResource {
+        return @ptrCast(value);
+    }
+};
+
+pub const Font = opaque {
+    pub fn as_resource(value: *@This()) *SystemResource {
+        return @ptrCast(value);
+    }
+};
+
+/// A framebuffer is something that can be drawn on.
+pub const Framebuffer = opaque {
+    pub fn as_resource(value: *@This()) *SystemResource {
+        return @ptrCast(value);
+    }
+};
+
+///////////////////////////////////////////////////////////
+// Simple types:
+
+pub const UUID = struct {
+    bytes: [16]u8,
+
+    /// Parses a UUID in the format
+    /// `3ad20402-1711-4bbc-b6c3-ff8a1da068c6`
+    /// and returns a pointer to it.
+    pub fn constant(str: *const [36:0]u8) *const UUID {
+        _ = str;
+        unreachable;
+    }
 };
 
 pub const MAC = [6]u8;
 
-pub const IP_Type = enum(u8) { ipv4, ipv6 };
-
-pub const IP = extern struct {
-    type: IP_Type,
-    addr: extern union {
-        v4: IPv4,
-        v6: IPv6,
-    },
-
-    pub fn ipv4(addr: [4]u8) IP {
-        return IP{ .type = .ipv4, .addr = .{ .v4 = .{ .addr = addr } } };
-    }
-
-    pub fn ipv6(addr: [16]u8, zone: u8) IP {
-        return IP{ .type = .ipv6, .addr = .{ .v6 = .{ .addr = addr, .zone = zone } } };
-    }
-
-    pub fn format(ip: IP, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-        switch (ip.type) {
-            .ipv4 => try ip.addr.v4.format(fmt, opt, writer),
-            .ipv6 => try ip.addr.v6.format(fmt, opt, writer),
-        }
-    }
-};
-
-pub const IPv4 = extern struct {
-    addr: [4]u8 align(4),
-
-    pub fn format(ip: IPv4, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = opt;
-        try writer.print("{}.{}.{}.{}", .{
-            ip.addr[0],
-            ip.addr[1],
-            ip.addr[2],
-            ip.addr[3],
-        });
-    }
-};
-
-pub const IPv6 = extern struct {
-    addr: [16]u8 align(4),
-    zone: u8,
-
-    pub fn format(ip: IPv6, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = opt;
-        try writer.print("[{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}/{}]", .{
-            ip.addr[0],
-            ip.addr[1],
-            ip.addr[2],
-            ip.addr[3],
-            ip.addr[4],
-            ip.addr[5],
-            ip.addr[6],
-            ip.addr[7],
-            ip.addr[8],
-            ip.addr[9],
-            ip.addr[10],
-            ip.addr[11],
-            ip.addr[12],
-            ip.addr[13],
-            ip.addr[14],
-            ip.addr[15],
-            ip.zone,
-        });
-    }
-};
-
-pub const EndPoint = extern struct {
-    ip: IP,
-    port: u16,
-
-    pub fn new(ip: IP, port: u16) EndPoint {
-        return EndPoint{ .ip = ip, .port = port };
-    }
-};
-
-pub const Ping = extern struct {
-    destination: IP, // who to ping
-    ttl: u16, // hops
-    timeout: u16, // ms, a minute timeout for ping is enough. if you have a higher ping, you have other problems
-    response: u16 = undefined, // response time in ms
-};
-
-pub const TcpSocket = enum(u32) { invalid = std.math.maxInt(u32), _ };
-pub const UdpSocket = enum(u32) { invalid = std.math.maxInt(u32), _ };
-
-pub const ServiceRegisterError = ErrorSet(.{
-    .Unexpected = 1,
-    .AlreadyRegistered = 2,
-    .SystemResources = 3,
-});
-
-pub const ClipboardSetError = ErrorSet(.{
-    .Unexpected = 1,
-    .SystemResources = 2,
-});
-
-pub const ClipboardGetError = ErrorSet(.{
-    .Unexpected = 1,
-    .ConversionFailed = 2,
-    .OutOfMemory = 3,
-});
-
-pub const ExitCode = enum(u32) {
-    success = @as(u32, 0),
-    failure = @as(u32, 1),
-
-    killed = ~@as(u32, 0),
-
-    _,
-};
+pub const AbstractFunction = fn () callconv(.C) void;
 
 pub const ThreadFunction = *const fn (?*anyopaque) callconv(.C) u32;
 
+/// A date-and-time type encoding the time point in question as a
+/// Unix timestamp in milliseconds
+pub const DateTime = enum(i64) {
+    _,
+};
+
+/// Index into a color palette.
 pub const ColorIndex = enum(u8) {
     _,
 
@@ -403,100 +488,130 @@ pub const ColorIndex = enum(u8) {
     }
 };
 
-pub const palette_size = std.math.maxInt(@typeInfo(ColorIndex).Enum.tag_type) + 1;
+///////////////////////////////////////////////////////////
+// Enumerations:
 
-/// A 16 bpp color value using RGB565 encoding.
-pub const Color = packed struct(u16) {
-    r: u5,
-    g: u6,
-    b: u5,
+pub const IP_Type = enum(u8) { ipv4, ipv6 };
 
-    pub fn toU16(c: Color) u16 {
-        return @as(u16, @bitCast(c));
-    }
+pub const WaitIO = enum(u32) {
+    /// Don't wait for any I/O to complete.
+    dont_block,
 
-    pub fn fromU16(u: u16) Color {
-        return @as(Color, @bitCast(u));
-    }
+    /// Doesn't block the call, and guarantees that no event is returned by `scheduleAndAwait`.
+    /// This can be used to enqueue new IOPs outside of the event loop.
+    schedule_only,
 
-    pub fn fromRgb888(r: u8, g: u8, b: u8) Color {
-        return Color{
-            .r = @as(u5, @truncate(r >> 3)),
-            .g = @as(u6, @truncate(g >> 2)),
-            .b = @as(u5, @truncate(b >> 3)),
+    /// Wait for at least one I/O to complete operation.
+    wait_one,
+
+    /// Wait until all scheduled I/O operations have completed.
+    wait_all,
+
+    /// Returns whether the operation is blocking or not.
+    pub fn isBlocking(wait: WaitIO) bool {
+        return switch (wait) {
+            .dont_block => false,
+            .schedule_only => false,
+            .wait_one => true,
+            .wait_all => true,
         };
     }
+};
 
-    pub fn toRgb32(color: Color) u32 {
-        const exp = color.toRgb888();
-        return @as(u32, exp.r) << 0 |
-            @as(u32, exp.g) << 8 |
-            @as(u32, exp.b) << 16;
-    }
+/// Index of the systems video outputs.
+pub const VideoOutputID = enum(u8) {
+    /// The primary video output
+    primary = 0,
+    _,
+};
 
-    pub fn toRgb888(color: Color) RGB888 {
-        const src_r: u8 = color.r;
-        const src_g: u8 = color.g;
-        const src_b: u8 = color.b;
+pub const FontType = enum(u32) {
+    bitmap = 0,
+    vector = 1,
+    _,
+};
 
-        // expand bits to form a linear range between 0…255
-        return .{
-            .r = (src_r << 3) | (src_r >> 2),
-            .g = (src_g << 2) | (src_g >> 4),
-            .b = (src_b << 3) | (src_b >> 2),
-        };
-    }
+pub const FramebufferType = enum(u8) {
+    /// A pure in-memory frame buffer used for off-screen rendering.
+    memory = 0,
 
-    pub const RGB888 = extern struct {
-        r: u8,
-        g: u8,
-        b: u8,
-    };
+    /// A video device backed frame buffer. Can be used to paint on a screen
+    /// directly.
+    video = 1,
+
+    /// A frame buffer provided by a user interface element. These frame buffers
+    /// may hold additional semantic information.
+    widget = 2,
+};
+
+pub const MessageBoxIcon = enum(u8) {
+    information = 0,
+    question = 1,
+    warning = 2,
+    @"error" = 3,
+};
+
+pub const MessageBoxResult = enum(u8) {
+    ok = @bitOffsetOf(MessageBoxButtons, "ok"),
+    cancel = @bitOffsetOf(MessageBoxButtons, "cancel"),
+    yes = @bitOffsetOf(MessageBoxButtons, "yes"),
+    no = @bitOffsetOf(MessageBoxButtons, "no"),
+    abort = @bitOffsetOf(MessageBoxButtons, "abort"),
+    retry = @bitOffsetOf(MessageBoxButtons, "retry"),
+    @"continue" = @bitOffsetOf(MessageBoxButtons, "continue"),
+    ignore = @bitOffsetOf(MessageBoxButtons, "ignore"),
+};
+
+pub const ExitCode = enum(u32) {
+    success = @as(u32, 0),
+    failure = @as(u32, 1),
+
+    killed = ~@as(u32, 0),
+
+    _,
+};
+
+pub const LogLevel = enum(u8) {
+    critical = 0,
+    err = 1,
+    warn = 2,
+    notice = 3,
+    debug = 4,
+    _,
+};
+
+pub const FileSystemId = enum(u32) {
+    /// This is the file system which the os has bootet from.
+    system = 0,
+
+    /// the filesystem isn't valid.
+    invalid = ~@as(u32, 0),
+
+    /// All other ids are unique file systems.
+    _,
+};
+
+pub const FileAttributes = packed struct(u16) {
+    directory: bool,
+    reserved: u15 = 0,
+};
+
+pub const FileAccess = enum(u8) {
+    read_only = 0,
+    write_only = 1,
+    read_write = 2,
+};
+
+pub const FileMode = enum(u8) {
+    open_existing = 0, // opens file when it exists on disk
+    open_always = 1, // creates file when it does not exist, or opens the file without truncation.
+    create_new = 2, // creates file when there is no file with that name
+    create_always = 3, // creates file when it does not exist, or opens the file and truncates it to zero length
 };
 
 pub const InputEventType = enum(u8) {
     mouse = 1,
     keyboard = 2,
-};
-
-pub const InputEvent = extern union {
-    mouse: MouseEvent,
-    keyboard: KeyboardEvent,
-};
-
-pub const MouseEvent = extern struct {
-    type: Type,
-    x: i16,
-    y: i16,
-    dx: i16,
-    dy: i16,
-    button: MouseButton,
-
-    pub const Type = enum(u8) {
-        motion,
-        button_press,
-        button_release,
-    };
-};
-
-pub const KeyboardEvent = extern struct {
-    /// The raw scancode for the key. Meaning depends on the layout,
-    /// represents kinda the physical position on the keyboard.
-    scancode: u32,
-
-    /// The virtual key, independent of layout. Represents the logical
-    /// function of the key.
-    key: KeyCode,
-
-    /// If set, the pressed key combination has a mapping that produces
-    /// text input. UTF-8 encoded.
-    text: ?[*:0]const u8,
-
-    /// The key in this event was pressed or released
-    pressed: bool,
-
-    /// The modifier keys currently active
-    modifiers: KeyboardModifiers,
 };
 
 pub const KeyCode = enum(u16) {
@@ -626,6 +741,120 @@ pub const MouseButton = enum(u8) {
     wheel_up = 7,
 };
 
+///////////////////////////////////////////////////////////
+// Compound types:
+
+pub const WidgetDescriptor = extern struct {
+    // TODO: Fill this out
+};
+
+pub const MessageBoxButtons = packed struct(u8) {
+    pub const ok: MessageBoxButtons = .{ .ok = true };
+    pub const ok_cancel: MessageBoxButtons = .{ .ok = true, .cancel = true };
+    pub const yes_no: MessageBoxButtons = .{ .yes = true, .no = true };
+    pub const yes_no_cancel: MessageBoxButtons = .{ .yes = true, .no = true, .cancel = true };
+    pub const retry_cancel: MessageBoxButtons = .{ .retry = true, .cancel = true };
+    pub const abort_retry_ignore: MessageBoxButtons = .{ .abort = true, .retry = true, .ignore = true };
+
+    ok: bool = false,
+    cancel: bool = false,
+    yes: bool = false,
+    no: bool = false,
+    abort: bool = false,
+    retry: bool = false,
+    @"continue": bool = false,
+    ignore: bool = false,
+};
+
+/// A 16 bpp color value using RGB565 encoding.
+pub const Color = packed struct(u16) {
+    r: u5,
+    g: u6,
+    b: u5,
+
+    pub fn toU16(c: Color) u16 {
+        return @as(u16, @bitCast(c));
+    }
+
+    pub fn fromU16(u: u16) Color {
+        return @as(Color, @bitCast(u));
+    }
+
+    pub fn fromRgb888(r: u8, g: u8, b: u8) Color {
+        return Color{
+            .r = @as(u5, @truncate(r >> 3)),
+            .g = @as(u6, @truncate(g >> 2)),
+            .b = @as(u5, @truncate(b >> 3)),
+        };
+    }
+
+    pub fn toRgb32(color: Color) u32 {
+        const exp = color.toRgb888();
+        return @as(u32, exp.r) << 0 |
+            @as(u32, exp.g) << 8 |
+            @as(u32, exp.b) << 16;
+    }
+
+    pub fn toRgb888(color: Color) RGB888 {
+        const src_r: u8 = color.r;
+        const src_g: u8 = color.g;
+        const src_b: u8 = color.b;
+
+        // expand bits to form a linear range between 0…255
+        return .{
+            .r = (src_r << 3) | (src_r >> 2),
+            .g = (src_g << 2) | (src_g >> 4),
+            .b = (src_b << 3) | (src_b >> 2),
+        };
+    }
+
+    pub const RGB888 = extern struct {
+        r: u8,
+        g: u8,
+        b: u8,
+    };
+};
+
+pub const InputEvent = extern union {
+    mouse: MouseEvent,
+    keyboard: KeyboardEvent,
+};
+
+pub const MouseEvent = extern struct {
+    type: Type,
+    x: i16,
+    y: i16,
+    dx: i16,
+    dy: i16,
+    button: MouseButton,
+
+    pub const Type = enum(u8) {
+        motion,
+        button_press,
+        button_release,
+    };
+};
+
+pub const KeyboardEvent = extern struct {
+    /// The raw scancode for the key. Meaning depends on the layout,
+    /// represents kinda the physical position on the keyboard.
+    scancode: u32,
+
+    /// The virtual key, independent of layout. Represents the logical
+    /// function of the key.
+    key: KeyCode,
+
+    /// If set, the pressed key combination has a mapping that produces
+    /// text input. UTF-8 encoded.
+    text: ?[*:0]const u8,
+
+    /// The key in this event was pressed or released
+    pressed: bool,
+
+    /// The modifier keys currently active
+    modifiers: KeyboardModifiers,
+};
+
 pub const KeyboardModifiers = packed struct(u16) {
     shift: bool,
     alt: bool,
@@ -636,24 +865,6 @@ pub const KeyboardModifiers = packed struct(u16) {
     ctrl_right: bool,
     alt_graph: bool,
     padding: u8 = 0,
-};
-
-/// Computes the character attributes and selects both foreground and background color.
-pub fn charAttributes(foreground: u4, background: u4) u8 {
-    return (CharAttributes{ .fg = foreground, .bg = background }).toByte();
-}
-
-pub const CharAttributes = packed struct { // (u8)
-    bg: u4, // lo nibble
-    fg: u4, // hi nibble
-
-    pub fn fromByte(val: u8) CharAttributes {
-        return @as(CharAttributes, @bitCast(val));
-    }
-
-    pub fn toByte(attr: CharAttributes) u8 {
-        return @as(u8, @bitCast(attr));
-    }
 };
 
 pub const Point = extern struct {
@@ -801,769 +1012,6 @@ pub const Rectangle = extern struct {
     }
 };
 
-pub const UiEvent = extern union {
-    mouse: MouseEvent,
-    keyboard: KeyboardEvent,
-};
-
-pub const UiEventType = enum(u16) {
-    mouse,
-
-    /// A keyboard event happened while the window had focus.
-    keyboard,
-
-    /// The user requested the window to be closed.
-    window_close,
-
-    /// The window was minimized and is not visible anymore.
-    window_minimize,
-
-    /// The window was restored from minimized state.
-    window_restore,
-
-    /// The window is currently moving on the screen. Query `window.bounds` to get the new position.
-    window_moving,
-
-    /// The window was moved on the screen. Query `window.bounds` to get the new position.
-    window_moved,
-
-    /// The window size is currently changing. Query `window.bounds` to get the new size.
-    window_resizing,
-
-    /// The window size changed. Query `window.bounds` to get the new size.
-    window_resized,
-};
-
-pub const Window = extern struct {
-    /// Pointer to a linear buffer of pixels. These pixels define the content of the window.
-    /// The data is layed out row-major, with `stride` bytes between each row.
-    pixels: [*]ColorIndex,
-
-    /// The number of bytes in each row in `pixels`.
-    stride: u32,
-
-    /// The current position of the window on the screen. Will not contain the decorators, but only
-    /// the position of the framebuffer.
-    client_rectangle: Rectangle,
-
-    /// The minimum size of this window. The window can never be smaller than this.
-    min_size: Size,
-
-    /// The maximum size of this window. The window can never be bigger than this.
-    max_size: Size,
-
-    /// A pointer to the NUL terminated window title.
-    title: [*:0]const u8,
-
-    /// A collection of informative flags.
-    flags: Flags,
-
-    pub const Flags = packed struct(u8) {
-        /// The window is currently minimized.
-        minimized: bool,
-
-        /// The window currently has keyboard focus.
-        focus: bool,
-
-        /// This window is a popup and cannot be minimized
-        popup: bool,
-
-        padding: u5 = 0,
-    };
-};
-
-pub const CreateWindowFlags = packed struct(u32) {
-    popup: bool = false,
-    padding: u31 = 0,
-};
-
-pub const GetSystemFontError = ErrorSet(.{
-    .FileNotFound = 1,
-    .SystemResources = 2,
-    .OutOfMemory = 3,
-    .Unexpected = 4,
-});
-
-// Auxiliary helpers
-
-const ErrorSetTag = opaque {};
-
-pub fn ErrorSet(comptime options: anytype) type {
-    const Int = u32;
-
-    comptime var error_fields: []const std.builtin.Type.Error = &.{};
-    inline for (@typeInfo(@TypeOf(options)).Struct.fields) |field| {
-        if (std.mem.eql(u8, field.name, "ok"))
-            @compileError("ErrorSet items cannot be called \"ok\"!");
-        error_fields = error_fields ++ [1]std.builtin.Type.Error{
-            .{ .name = field.name },
-        };
-    }
-
-    const error_type = @Type(std.builtin.Type{
-        .ErrorSet = error_fields,
-    });
-
-    comptime var enum_items: []const std.builtin.Type.EnumField = &.{};
-    inline for (@typeInfo(@TypeOf(options)).Struct.fields) |field| {
-        const value: Int = @field(options, field.name);
-        if (value == 0)
-            @compileError("ErrorSet items cannot have the reserved value 0!");
-        enum_items = enum_items ++ [1]std.builtin.Type.EnumField{
-            .{ .name = field.name, .value = value },
-        };
-    }
-
-    enum_items = enum_items ++ [1]std.builtin.Type.EnumField{
-        .{ .name = "ok", .value = 0 },
-    };
-
-    const enum_type = @Type(std.builtin.Type{
-        .Enum = .{
-            .tag_type = Int,
-            .fields = enum_items,
-            .decls = &.{},
-            .is_exhaustive = false, // this is important so the value passed is actually just a bare integer with all values legal
-        },
-    });
-
-    comptime var error_list: []const error_type = &.{};
-    comptime var enum_list: []const enum_type = &.{};
-    inline for (@typeInfo(@TypeOf(options)).Struct.fields) |field| {
-        error_list = error_list ++ [1]error_type{@field(error_type, field.name)};
-        enum_list = enum_list ++ [1]enum_type{@field(enum_type, field.name)};
-    }
-
-    return struct {
-        const error_set_marker = ErrorSetTag;
-
-        pub const Error = error_type;
-        pub const Enum = enum_type;
-
-        pub fn throw(val: Enum) (error{Unexpected} || Error)!void {
-            if (val == .ok)
-                return; // 0 is the success code
-            for (enum_list, 0..) |match, index| {
-                if (match == val)
-                    return error_list[index];
-            }
-            return error.Unexpected;
-        }
-
-        pub fn map(err_union: Error!void) Enum {
-            if (err_union) |_| {
-                return .ok;
-            } else |err| {
-                for (error_list, 0..) |match, index| {
-                    if (match == err)
-                        return enum_list[index];
-                }
-                unreachable;
-            }
-        }
-    };
-}
-
-pub const DefaultError = ErrorSet(.{
-    .Unexpected = 1,
-});
-
-///////////////////////////////////////////////////////////////////////////////
-
-// I/O Operation
-pub const IOP = extern struct {
-    type: Type,
-    next: ?*IOP,
-    tag: usize, // user specified data
-
-    kernel_data: [7]usize = undefined, // internal data used by the kernel to store
-
-    pub const Type = enum(u32) {
-        // Timer
-        timer = 1,
-
-        // TCP IOPs:
-        tcp_connect,
-        tcp_bind,
-        tcp_send,
-        tcp_receive,
-
-        // UDP IOPs:
-        udp_bind,
-        udp_connect,
-        udp_disconnect,
-        udp_send,
-        udp_send_to,
-        udp_receive_from,
-
-        // Input IOPS:
-        input_get_event,
-
-        // UI IOPS:
-        ui_get_event,
-
-        // FS IOPS:
-        fs_sync,
-        fs_get_filesystem_info,
-        fs_open_drive,
-        fs_open_dir,
-        fs_close_dir,
-        fs_reset_dir_enumeration,
-        fs_enumerate_dir,
-        fs_delete,
-        fs_mkdir,
-        fs_stat_entry,
-        fs_near_move,
-        fs_far_move,
-        fs_copy,
-        fs_open_file,
-        fs_close_file,
-        fs_flush_file,
-        fs_read,
-        fs_write,
-        fs_stat_file,
-        fs_resize,
-    };
-
-    pub const Definition = struct {
-        type: Type,
-        @"error": type,
-        outputs: type = struct {},
-        inputs: type = struct {},
-    };
-
-    pub fn define(comptime def: Definition) type {
-        if (!@hasDecl(def.@"error", "error_set_marker") or (def.@"error".error_set_marker != ErrorSetTag)) {
-            @compileError("IOP.define expects .error to be a type created by ErrorSet()!");
-        }
-
-        const inputs = @typeInfo(def.inputs).Struct.fields;
-        const outputs = @typeInfo(def.outputs).Struct.fields;
-
-        const inputs_augmented = @Type(.{
-            .Struct = .{
-                .layout = .Extern,
-                .fields = inputs,
-                .decls = &.{},
-                .is_tuple = false,
-            },
-        });
-
-        var output_fields = outputs[0..outputs.len].*;
-
-        for (&output_fields) |*fld| {
-            if (fld.default_value != null) {
-                @compileError(std.fmt.comptimePrint("IOP outputs are not allowed to have default values. {s}/{s} has one.", .{
-                    @tagName(def.type),
-                    fld.name,
-                }));
-            }
-            fld.default_value = undefinedDefaultFor(fld.type);
-        }
-
-        const outputs_augmented = @Type(.{
-            .Struct = .{
-                .layout = .Extern,
-                .fields = &output_fields,
-                .decls = &.{},
-                .is_tuple = false,
-            },
-        });
-
-        return extern struct {
-            const Self = @This();
-
-            /// Marker used to recognize types as I/O ops.
-            /// This marker cannot be accessed outside this file, so *all* IOPs must be
-            /// defined in this file.
-            /// This allows a certain safety against programming mistakes, as a foreign type cannot be accidently marked as an IOP.
-            const iop_marker = IOP_Tag;
-
-            pub const iop_type = def.type;
-
-            pub const Inputs = inputs_augmented;
-            pub const Outputs = outputs_augmented;
-            pub const ErrorSet = def.@"error";
-            pub const Error = Self.ErrorSet.Error;
-
-            iop: IOP = .{
-                .type = def.type,
-                .next = null,
-                .tag = 0,
-                .kernel_data = undefined,
-            },
-            @"error": Self.ErrorSet.Enum = undefined,
-            inputs: Inputs,
-            outputs: Outputs = undefined,
-
-            pub fn new(inputs_: Inputs) Self {
-                return Self{ .inputs = inputs_ };
-            }
-
-            pub fn chain(self: *Self, next: anytype) void {
-                const Next = @TypeOf(next.*);
-                if (comptime !isIOP(Next))
-                    @compileError("next must be a pointer to IOP!");
-                const next_ptr: *Next = next;
-                const next_iop: *IOP = &next_ptr.iop;
-
-                var it: ?*IOP = &self.iop;
-                while (it) |p| : (it = p.next) {
-                    if (p == &next_iop) // already in the chain
-                        return;
-
-                    if (p.next == null) {
-                        p.next = &next_iop;
-                        return;
-                    }
-                }
-
-                unreachable;
-            }
-
-            pub fn check(val: Self) Error!void {
-                return Self.ErrorSet.throw(val.@"error");
-            }
-
-            pub fn setOk(val: *Self) void {
-                val.@"error" = .ok;
-            }
-
-            pub fn setError(val: *Self, err: Error) void {
-                val.@"error" = Self.ErrorSet.map(err);
-            }
-        };
-    }
-
-    const IOP_Tag = opaque {};
-    pub fn isIOP(comptime T: type) bool {
-        return @hasDecl(T, "iop_marker") and (T.iop_marker == IOP_Tag);
-    }
-
-    pub fn cast(comptime T: type, iop: *IOP) *T {
-        if (comptime !isIOP(T)) @compileError("Only a type created by IOP.define can be passed to cast!");
-        std.debug.assert(iop.type == T.iop_type);
-        return @fieldParentPtr(T, "iop", iop);
-    }
-
-    fn undefinedDefaultFor(comptime T: type) *T {
-        comptime var value: T = undefined;
-        return &value;
-    }
-};
-
-pub const WaitIO = enum(u32) {
-    /// Don't wait for any I/O to complete.
-    dont_block,
-
-    /// Doesn't block the call, and guarantees that no event is returned by `scheduleAndAwait`.
-    /// This can be used to enqueue new IOPs outside of the event loop.
-    schedule_only,
-
-    /// Wait for at least one I/O to complete operation.
-    wait_one,
-
-    /// Wait until all scheduled I/O operations have completed.
-    wait_all,
-
-    /// Returns whether the operation is blocking or not.
-    pub fn isBlocking(wait: WaitIO) bool {
-        return switch (wait) {
-            .dont_block => false,
-            .schedule_only => false,
-            .wait_one => true,
-            .wait_all => true,
-        };
-    }
-};
-
-pub const Timer = IOP.define(.{
-    .type = .timer,
-    .@"error" = ErrorSet(.{ .Unexpected = 1 }),
-    .inputs = struct {
-        timeout: i128,
-    },
-});
-
-pub const udp = struct {
-    const Socket = UdpSocket;
-
-    pub const Bind = IOP.define(.{
-        .type = .udp_bind,
-        .@"error" = BindError,
-        .inputs = struct {
-            socket: UdpSocket,
-            bind_point: EndPoint,
-        },
-        .outputs = struct {
-            bind_point: EndPoint,
-        },
-    });
-
-    pub const Connect = IOP.define(.{
-        .type = .udp_connect,
-        .@"error" = ConnectError,
-        .inputs = struct {
-            socket: UdpSocket,
-            target: EndPoint,
-        },
-    });
-
-    pub const Disconnect = IOP.define(.{
-        .type = .udp_disconnect,
-        .@"error" = DisconnectError,
-        .inputs = struct {
-            socket: UdpSocket,
-        },
-    });
-
-    pub const Send = IOP.define(.{
-        .type = .udp_send,
-        .@"error" = SendError,
-        .inputs = struct {
-            socket: UdpSocket,
-            data_ptr: [*]const u8,
-            data_len: usize,
-        },
-        .outputs = struct {
-            bytes_sent: usize,
-        },
-    });
-
-    pub const SendTo = IOP.define(.{
-        .type = .udp_send_to,
-        .@"error" = SendError,
-        .inputs = struct {
-            socket: UdpSocket,
-            receiver: EndPoint,
-            data_ptr: [*]const u8,
-            data_len: usize,
-        },
-        .outputs = struct {
-            bytes_sent: usize,
-        },
-    });
-
-    pub const ReceiveFrom = IOP.define(.{
-        .type = .udp_receive_from,
-        .@"error" = ReceiveFromError,
-        .inputs = struct {
-            socket: UdpSocket,
-            buffer_ptr: [*]u8,
-            buffer_len: usize,
-        },
-        .outputs = struct {
-            bytes_received: usize,
-            sender: EndPoint,
-        },
-    });
-
-    pub const CreateError = ErrorSet(.{
-        .SystemResources = 1,
-    });
-
-    pub const BindError = ErrorSet(.{
-        .InvalidHandle = 1,
-        .SystemResources = 2,
-        .AddressInUse = 3,
-        .IllegalValue = 4,
-        .Unexpected = 5,
-    });
-
-    pub const ConnectError = ErrorSet(.{
-        .InvalidHandle = 1,
-        .SystemResources = 2,
-        .AlreadyConnected = 4,
-        .AlreadyConnecting = 5,
-        .BufferError = 6,
-        .IllegalArgument = 10,
-        .IllegalValue = 11,
-        .InProgress = 12,
-        .LowlevelInterfaceError = 13,
-        .OutOfMemory = 15,
-        .Routing = 16,
-        .Timeout = 17,
-        .Unexpected = 19,
-    });
-
-    pub const DisconnectError = ErrorSet(.{
-        .InvalidHandle = 1,
-        .SystemResources = 2,
-        .NotConnected = 3,
-        .Unexpected = 4,
-    });
-
-    pub const SendError = ErrorSet(.{
-        .InvalidHandle = 1,
-        .SystemResources = 2,
-        .BufferError = 6,
-        .IllegalArgument = 10,
-        .IllegalValue = 11,
-        .InProgress = 12,
-        .LowlevelInterfaceError = 13,
-        .NotConnected = 14,
-        .OutOfMemory = 15,
-        .Routing = 16,
-        .Timeout = 17,
-        .Unexpected = 19,
-    });
-
-    pub const SendToError = ErrorSet(.{
-        .InvalidHandle = 1,
-        .SystemResources = 2,
-        .BufferError = 6,
-        .IllegalArgument = 10,
-        .IllegalValue = 11,
-        .InProgress = 12,
-        .LowlevelInterfaceError = 13,
-        .OutOfMemory = 15,
-        .Routing = 16,
-        .Timeout = 17,
-        .Unexpected = 19,
-    });
-
-    pub const ReceiveFromError = ErrorSet(.{
-        .InvalidHandle = 1,
-        .SystemResources = 2,
-        .BufferError = 6,
-        .IllegalArgument = 10,
-        .IllegalValue = 11,
-        .InProgress = 12,
-        .LowlevelInterfaceError = 13,
-        .OutOfMemory = 15,
-        .Routing = 16,
-        .Timeout = 17,
-        .Unexpected = 19,
-    });
-};
-
-pub const tcp = struct {
-    const Socket = TcpSocket;
-
-    pub const Bind = IOP.define(.{
-        .type = .tcp_bind,
-        .@"error" = BindError,
-        .inputs = struct {
-            socket: Socket,
-            bind_point: EndPoint,
-        },
-        .outputs = struct {
-            bind_point: EndPoint,
-        },
-    });
-
-    pub const Connect = IOP.define(.{
-        .type = .tcp_connect,
-        .@"error" = ConnectError,
-        .inputs = struct {
-            socket: Socket,
-            target: EndPoint,
-        },
-    });
-
-    pub const Send = IOP.define(.{
-        .type = .tcp_send,
-        .@"error" = SendError,
-        .inputs = struct {
-            socket: Socket,
-            data_ptr: [*]const u8,
-            data_len: usize,
-        },
-        .outputs = struct {
-            bytes_sent: usize,
-        },
-    });
-
-    pub const Receive = IOP.define(.{
-        .type = .tcp_receive,
-        .@"error" = ReceiveError,
-        .inputs = struct {
-            socket: Socket,
-            buffer_ptr: [*]u8,
-            buffer_len: usize,
-            read_all: bool, // if true, will read until `buffer_len` bytes arrived. otherwise will read until the end of a single packet
-        },
-        .outputs = struct {
-            bytes_received: usize,
-        },
-    });
-
-    pub const CreateError = ErrorSet(.{
-        .SystemResources = 1,
-    });
-
-    pub const BindError = ErrorSet(.{
-        .InvalidHandle = 1,
-        .SystemResources = 2,
-        .AddressInUse = 3,
-        .IllegalValue = 4,
-        .Unexpected = 5,
-    });
-
-    pub const ConnectError = ErrorSet(.{
-        .InvalidHandle = 1,
-        .SystemResources = 2,
-        .AlreadyConnected = 4,
-        .AlreadyConnecting = 5,
-        .BufferError = 6,
-        .ConnectionAborted = 7,
-        .ConnectionClosed = 8,
-        .ConnectionReset = 9,
-        .IllegalArgument = 10,
-        .IllegalValue = 11,
-        .InProgress = 12,
-        .LowlevelInterfaceError = 13,
-        .OutOfMemory = 15,
-        .Routing = 16,
-        .Timeout = 17,
-        .Unexpected = 19,
-    });
-
-    pub const SendError = ErrorSet(.{
-        .InvalidHandle = 1,
-        .SystemResources = 2,
-        .BufferError = 3,
-        .ConnectionAborted = 4,
-        .ConnectionClosed = 5,
-        .ConnectionReset = 6,
-        .IllegalArgument = 7,
-        .IllegalValue = 8,
-        .InProgress = 9,
-        .LowlevelInterfaceError = 10,
-        .NotConnected = 11,
-        .OutOfMemory = 12,
-        .Routing = 13,
-        .Timeout = 14,
-        .Unexpected = 15,
-    });
-
-    pub const ReceiveError = ErrorSet(.{
-        .InvalidHandle = 1,
-        .SystemResources = 2,
-        .AlreadyConnected = 3,
-        .AlreadyConnecting = 4,
-        .BufferError = 5,
-        .ConnectionAborted = 6,
-        .ConnectionClosed = 7,
-        .ConnectionReset = 8,
-        .IllegalArgument = 9,
-        .IllegalValue = 10,
-        .InProgress = 11,
-        .LowlevelInterfaceError = 12,
-        .NotConnected = 13,
-        .OutOfMemory = 14,
-        .Routing = 15,
-        .Timeout = 16,
-        .Unexpected = 17,
-    });
-};
-
-pub const input = struct {
-    const Error = ErrorSet(.{
-        .NonExclusiveAccess = 1,
-        .InProgress = 2,
-        .Unexpected = 3,
-    });
-
-    pub const GetEvent = IOP.define(.{
-        .type = .input_get_event,
-        .@"error" = Error,
-        .outputs = struct {
-            event_type: InputEventType,
-            event: InputEvent,
-        },
-    });
-};
-
-pub const ui = struct {
-    const Error = ErrorSet(.{
-        .Unexpected = 1,
-        .InProgress = 2,
-    });
-
-    pub const GetEvent = IOP.define(.{
-        .type = .ui_get_event,
-        .@"error" = Error,
-        .inputs = struct { window: *const Window },
-        .outputs = struct {
-            event_type: UiEventType,
-            event: UiEvent,
-        },
-    });
-};
-
-// A file or directory on Ashet OS can be named with any legal UTF-8 sequence
-// that does not contain `/` and `:`. It is recommended to only create file names
-// that are actually typeable on the operating system tho.
-//
-// There are some special file names:
-// - `.` is the "current directory" selector and does not add to the path.
-// - `..` is the "parent directory" selector and navigates up in the directory hierarchy if possible.
-// - Any sequence of upper case ASCII letters and digits (`A-Z`, `0-9`) that ends with `:` is a file system name. This name specifies
-//   the root directory of a certain file system.
-//
-// Paths are either a relative or absolute addyessing of a file system entity.
-// Paths are composed of a sequence of names, each name separated by `/`.
-// A file system name is only legal as the first element of a path sequence, making the path an absolute path.
-//
-// There is a limit on how long a file/directory name can be, but there's no limit on how long a total
-// path can be.
-//
-// Here are some examples for valid paths:
-// - `example.txt`
-// - `docs/wiki.txt`
-// - `SYS:/apps/editor/code`
-// - `USB0:/foo/../bar` (which is equivalent to `USB0:/bar`)
-//
-// The filesystem that is used to boot the OS from has an alias `SYS:` that is always a legal way to address this file system.
-
-/// The maximum number of bytes in a file system identifier name.
-/// This is chosen to be a power of two, and long enough to accommodate
-/// typical file system names:
-/// - `SYS`
-/// - `USB0`
-/// - `USB10`
-/// - `PF0`
-/// - `CF7`
-pub const max_fs_name_len = 8;
-
-/// The maximum number of bytes in a file system type name.
-/// Chosen to be a power of two, and long enough to accomodate typical names:
-/// - `FAT16`
-/// - `FAT32`
-/// - `exFAT`
-/// - `NTFS`
-/// - `ReiserFS`
-/// - `ISO 9660`
-/// - `btrfs`
-/// - `AFFS`
-pub const max_fs_type_len = 32;
-
-/// The maximum number of bytes in a file name.
-/// This is chosen to be a power of two, and reasonably long.
-/// As some programs use sha256 checksums and 64 bytes are enough to store
-/// a hex-encoded 256 bit sequence:
-/// - `114ac2caf8fefad1116dbfb1bd68429f68e9e088b577c9b3f5a3ff0fe77ec886`
-/// This should also enough for most reasonable file names in the wild.
-pub const max_file_name_len = 120;
-
-/// Unix timestamp in milliseconds
-pub const DateTime = i64;
-
-pub const FileSystemId = enum(u32) {
-    /// This is the file system which the os has bootet from.
-    system = 0,
-
-    /// the filesystem isn't valid.
-    invalid = ~@as(u32, 0),
-
-    /// All other ids are unique file systems.
-    _,
-};
-
-pub const FileHandle = enum(u32) { invalid, _ };
-pub const DirectoryHandle = enum(u32) { invalid, _ };
-
 pub const FileSystemInfo = extern struct {
     id: FileSystemId, // system-unique id of this file system
     flags: Flags, // binary infos about the file system
@@ -1598,193 +1046,349 @@ pub const FileInfo = extern struct {
     }
 };
 
-pub const FileAttributes = packed struct(u16) {
-    directory: bool,
-    reserved: u15 = 0,
+pub const IP = extern struct {
+    type: IP_Type,
+    addr: extern union {
+        v4: IPv4,
+        v6: IPv6,
+    },
+
+    pub fn ipv4(addr: [4]u8) IP {
+        return IP{ .type = .ipv4, .addr = .{ .v4 = .{ .addr = addr } } };
+    }
+
+    pub fn ipv6(addr: [16]u8, zone: u8) IP {
+        return IP{ .type = .ipv6, .addr = .{ .v6 = .{ .addr = addr, .zone = zone } } };
+    }
+
+    pub fn format(ip: IP, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
+        switch (ip.type) {
+            .ipv4 => try ip.addr.v4.format(fmt, opt, writer),
+            .ipv6 => try ip.addr.v6.format(fmt, opt, writer),
+        }
+    }
 };
 
-pub const FileAccess = enum(u8) {
-    read_only = 0,
-    write_only = 1,
-    read_write = 2,
+pub const IPv4 = extern struct {
+    addr: [4]u8 align(4),
+
+    pub fn format(ip: IPv4, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = opt;
+        try writer.print("{}.{}.{}.{}", .{
+            ip.addr[0],
+            ip.addr[1],
+            ip.addr[2],
+            ip.addr[3],
+        });
+    }
 };
 
-pub const FileMode = enum(u8) {
-    open_existing = 0, // opens file when it exists on disk
-    open_always = 1, // creates file when it does not exist, or opens the file without truncation.
-    create_new = 2, // creates file when there is no file with that name
-    create_always = 3, // creates file when it does not exist, or opens the file and truncates it to zero length
+pub const IPv6 = extern struct {
+    addr: [16]u8 align(4),
+    zone: u8,
+
+    pub fn format(ip: IPv6, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = opt;
+        try writer.print("[{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}/{}]", .{
+            ip.addr[0],
+            ip.addr[1],
+            ip.addr[2],
+            ip.addr[3],
+            ip.addr[4],
+            ip.addr[5],
+            ip.addr[6],
+            ip.addr[7],
+            ip.addr[8],
+            ip.addr[9],
+            ip.addr[10],
+            ip.addr[11],
+            ip.addr[12],
+            ip.addr[13],
+            ip.addr[14],
+            ip.addr[15],
+            ip.zone,
+        });
+    }
 };
 
+pub const EndPoint = extern struct {
+    ip: IP,
+    port: u16,
+
+    pub fn new(ip: IP, port: u16) EndPoint {
+        return EndPoint{ .ip = ip, .port = port };
+    }
+};
+
+///////////////////////////////////////////////////////////
+// Error types:
+
+pub const RegisterWidgetTypeError = ErrorSet(.{
+    .AlreadyRegistered = 1,
+    .SystemResources = 2,
+});
+
+pub const SetPaletteError = ErrorSet(.{
+    .Unsupported = 1,
+});
+
+pub const ServiceRegisterError = ErrorSet(.{
+    .AlreadyRegistered = 1,
+    .SystemResources = 2,
+});
+
+pub const ClipboardSetError = ErrorSet(.{
+    .SystemResources = 1,
+});
+
+pub const ClipboardGetError = ErrorSet(.{
+    .ConversionFailed = 1,
+    .OutOfMemory = 2,
+});
+
+pub const GetSystemFontError = ErrorSet(.{
+    .FileNotFound = 1,
+    .SystemResources = 2,
+    .OutOfMemory = 3,
+});
+
+pub const CreateFontError = ErrorSet(.{
+    .InvalidData = 1,
+    .SystemResources = 2,
+    .OutOfMemory = 3,
+});
+
+///////////////////////////////////////////////////////////
+// IO Operations:
+
+pub const IOP = iops.Generic_IOP(IOP_Type);
+
+pub const IOP_Type = enum(u32) {
+    // Timer
+    timer = 1,
+
+    // TCP IOPs:
+    tcp_connect,
+    tcp_bind,
+    tcp_send,
+    tcp_receive,
+
+    // UDP IOPs:
+    udp_bind,
+    udp_connect,
+    udp_disconnect,
+    udp_send,
+    udp_send_to,
+    udp_receive_from,
+
+    // Input IOPS:
+    input_get_event,
+
+    // FS IOPS:
+    fs_sync,
+    fs_get_filesystem_info,
+    fs_open_drive,
+    fs_open_dir,
+    fs_close_dir,
+    fs_reset_dir_enumeration,
+    fs_enumerate_dir,
+    fs_delete,
+    fs_mkdir,
+    fs_stat_entry,
+    fs_near_move,
+    fs_far_move,
+    fs_copy,
+    fs_open_file,
+    fs_close_file,
+    fs_flush_file,
+    fs_read,
+    fs_write,
+    fs_stat_file,
+    fs_resize,
+};
+
+pub const Timer = IOP.define(.{
+    .type = .timer,
+    .@"error" = ErrorSet(.{ .Unexpected = 1 }),
+    .inputs = struct {
+        timeout: i128,
+    },
+});
+
+/// A file or directory on Ashet OS can be named with any legal UTF-8 sequence
+/// that does not contain `/` and `:`. It is recommended to only create file names
+/// that are actually typeable on the operating system tho.
+///
+/// There are some special file names:
+/// - `.` is the "current directory" selector and does not add to the path.
+/// - `..` is the "parent directory" selector and navigates up in the directory hierarchy if possible.
+/// - Any sequence of upper case ASCII letters and digits (`A-Z`, `0-9`) that ends with `:` is a file system name. This name specifies
+///   the root directory of a certain file system.
+///
+/// Paths are either a relative or absolute addyessing of a file system entity.
+/// Paths are composed of a sequence of names, each name separated by `/`.
+/// A file system name is only legal as the first element of a path sequence, making the path an absolute path.
+///
+/// There is a limit on how long a file/directory name can be, but there's no limit on how long a total
+/// path can be.
+///
+/// Here are some examples for valid paths:
+/// - `example.txt`
+/// - `docs/wiki.txt`
+/// - `SYS:/apps/editor/code`
+/// - `USB0:/foo/../bar` (which is equivalent to `USB0:/bar`)
+///
+/// The filesystem that is used to boot the OS from has an alias `SYS:` that is always a legal way to address this file system.
 pub const fs = struct {
     pub const FileSystemError = ErrorSet(.{
-        .Unexpected = 1,
-        .Denied = 2,
-        .DiskErr = 3,
-        .Exist = 4,
-        .IntErr = 5,
-        .InvalidDrive = 6,
-        .InvalidName = 7,
-        .InvalidObject = 8,
-        .InvalidParameter = 9,
-        .Locked = 10,
-        .MkfsAborted = 11,
-        .NoFile = 12,
-        .NoFilesystem = 13,
-        .NoPath = 14,
-        .Overflow = 18,
-        .Timeout = 19,
-        .TooManyOpenFiles = 20,
-        .WriteProtected = 21,
-        .InvalidFileHandle = 22,
-        .InvalidDevice = 23,
-        .PathTooLong = 24,
-        .Unimplemented = 25,
+        .Denied = 1,
+        .DiskErr = 2,
+        .Exist = 3,
+        .IntErr = 4,
+        .InvalidDrive = 5,
+        .InvalidName = 6,
+        .InvalidObject = 7,
+        .InvalidParameter = 8,
+        .Locked = 9,
+        .MkfsAborted = 10,
+        .NoFile = 11,
+        .NoFilesystem = 12,
+        .NoPath = 13,
+        .Overflow = 17,
+        .Timeout = 18,
+        .TooManyOpenFiles = 19,
+        .WriteProtected = 20,
+        .InvalidFileHandle = 21,
+        .InvalidDevice = 22,
+        .PathTooLong = 23,
+        .Unimplemented = 24,
     });
 
     pub const SyncError = ErrorSet(.{
-        .Unexpected = 1,
-        .DiskError = 2,
+        .DiskError = 1,
     });
     pub const GetFilesystemInfoError = ErrorSet(.{
-        .Unexpected = 1,
-        .DiskError = 2,
-        .InvalidFileSystem = 3,
+        .DiskError = 1,
+        .InvalidFileSystem = 2,
     });
     pub const OpenDriveError = ErrorSet(.{
-        .Unexpected = 1,
-        .DiskError = 2,
-        .InvalidFileSystem = 3,
-        .FileNotFound = 4,
-        .NotADir = 5,
-        .InvalidPath = 6,
-        .SystemFdQuotaExceeded = 7,
-        .SystemResources = 8,
+        .DiskError = 1,
+        .InvalidFileSystem = 2,
+        .FileNotFound = 3,
+        .NotADir = 4,
+        .InvalidPath = 5,
+        .SystemFdQuotaExceeded = 6,
+        .SystemResources = 7,
     });
     pub const OpenDirError = ErrorSet(.{
-        .Unexpected = 1,
-        .DiskError = 2,
-        .InvalidHandle = 3,
-        .FileNotFound = 4,
-        .NotADir = 5,
-        .InvalidPath = 6,
-        .SystemFdQuotaExceeded = 7,
-        .SystemResources = 8,
+        .DiskError = 1,
+        .InvalidHandle = 2,
+        .FileNotFound = 3,
+        .NotADir = 4,
+        .InvalidPath = 5,
+        .SystemFdQuotaExceeded = 6,
+        .SystemResources = 7,
     });
     pub const CloseDirError = ErrorSet(.{
-        .Unexpected = 1,
-        .InvalidHandle = 2,
+        .InvalidHandle = 1,
     });
     pub const ResetDirEnumerationError = ErrorSet(.{
-        .Unexpected = 1,
-        .DiskError = 2,
-        .InvalidHandle = 3,
-        .SystemResources = 4,
+        .DiskError = 1,
+        .InvalidHandle = 2,
+        .SystemResources = 3,
     });
     pub const EnumerateDirError = ErrorSet(.{
-        .Unexpected = 1,
-        .DiskError = 2,
-        .InvalidHandle = 3,
-        .SystemResources = 4,
+        .DiskError = 1,
+        .InvalidHandle = 2,
+        .SystemResources = 3,
     });
     pub const DeleteFileError = ErrorSet(.{
-        .Unexpected = 1,
-        .DiskError = 2,
-        .InvalidHandle = 3,
-        .FileNotFound = 4,
-        .InvalidPath = 5,
+        .DiskError = 1,
+        .InvalidHandle = 2,
+        .FileNotFound = 3,
+        .InvalidPath = 4,
     });
     pub const MkDirError = ErrorSet(.{
-        .Unexpected = 1,
-        .DiskError = 2,
-        .InvalidHandle = 3,
-        .Exists = 4,
-        .InvalidPath = 5,
+        .DiskError = 1,
+        .InvalidHandle = 2,
+        .Exists = 3,
+        .InvalidPath = 4,
     });
     pub const StatEntryError = ErrorSet(.{
-        .Unexpected = 1,
-        .DiskError = 2,
-        .InvalidHandle = 3,
-        .FileNotFound = 4,
-        .InvalidPath = 5,
+        .DiskError = 1,
+        .InvalidHandle = 2,
+        .FileNotFound = 3,
+        .InvalidPath = 4,
     });
     pub const NearMoveError = ErrorSet(.{
-        .Unexpected = 1,
-        .DiskError = 2,
-        .InvalidHandle = 3,
-        .FileNotFound = 4,
-        .InvalidPath = 5,
-        .Exists = 6,
+        .DiskError = 1,
+        .InvalidHandle = 2,
+        .FileNotFound = 3,
+        .InvalidPath = 4,
+        .Exists = 5,
     });
     pub const FarMoveError = ErrorSet(.{
-        .Unexpected = 1,
-        .DiskError = 2,
-        .InvalidHandle = 3,
-        .FileNotFound = 4,
-        .InvalidPath = 5,
-        .Exists = 6,
-        .NoSpaceLeft = 7,
+        .DiskError = 1,
+        .InvalidHandle = 2,
+        .FileNotFound = 3,
+        .InvalidPath = 4,
+        .Exists = 5,
+        .NoSpaceLeft = 6,
     });
     pub const CopyFileError = ErrorSet(.{
-        .Unexpected = 1,
-        .DiskError = 2,
-        .InvalidHandle = 3,
-        .FileNotFound = 4,
-        .InvalidPath = 5,
-        .Exists = 6,
-        .NoSpaceLeft = 7,
+        .DiskError = 1,
+        .InvalidHandle = 2,
+        .FileNotFound = 3,
+        .InvalidPath = 4,
+        .Exists = 5,
+        .NoSpaceLeft = 6,
     });
     pub const OpenFileError = ErrorSet(.{
-        .Unexpected = 1,
-        .DiskError = 2,
-        .InvalidHandle = 3,
-        .FileNotFound = 4,
-        .InvalidPath = 5,
-        .Exists = 6,
-        .NoSpaceLeft = 7,
-        .SystemFdQuotaExceeded = 8,
-        .SystemResources = 9,
-        .WriteProtected = 10,
-        .FileAlreadyExists = 11,
+        .DiskError = 1,
+        .InvalidHandle = 2,
+        .FileNotFound = 3,
+        .InvalidPath = 4,
+        .Exists = 5,
+        .NoSpaceLeft = 6,
+        .SystemFdQuotaExceeded = 7,
+        .SystemResources = 8,
+        .WriteProtected = 9,
+        .FileAlreadyExists = 10,
     });
     pub const FlushFileError = ErrorSet(.{
-        .Unexpected = 1,
-        .DiskError = 2,
-        .InvalidHandle = 3,
-        .SystemResources = 4,
+        .DiskError = 1,
+        .InvalidHandle = 2,
+        .SystemResources = 3,
     });
     pub const ReadError = ErrorSet(.{
-        .Unexpected = 1,
-        .DiskError = 2,
-        .InvalidHandle = 3,
-        .SystemResources = 4,
+        .DiskError = 1,
+        .InvalidHandle = 2,
+        .SystemResources = 3,
     });
     pub const WriteError = ErrorSet(.{
-        .Unexpected = 1,
-        .DiskError = 2,
-        .InvalidHandle = 3,
-        .NoSpaceLeft = 4,
-        .SystemResources = 5,
-        .WriteProtected = 6,
+        .DiskError = 1,
+        .InvalidHandle = 2,
+        .NoSpaceLeft = 3,
+        .SystemResources = 4,
+        .WriteProtected = 5,
     });
     pub const StatFileError = ErrorSet(.{
-        .Unexpected = 1,
-        .DiskError = 2,
-        .InvalidHandle = 3,
-        .SystemResources = 4,
+        .DiskError = 1,
+        .InvalidHandle = 2,
+        .SystemResources = 3,
     });
     pub const ResizeFileError = ErrorSet(.{
-        .Unexpected = 1,
-        .DiskError = 2,
-        .InvalidHandle = 3,
-        .NoSpaceLeft = 4,
-        .SystemResources = 5,
+        .DiskError = 1,
+        .InvalidHandle = 2,
+        .NoSpaceLeft = 3,
+        .SystemResources = 4,
     });
     pub const CloseFileError = ErrorSet(.{
-        .Unexpected = 1,
-        .DiskError = 2,
-        .InvalidHandle = 3,
-        .SystemResources = 4,
+        .DiskError = 1,
+        .InvalidHandle = 2,
+        .SystemResources = 3,
     });
 
     /// Flushes all open files to disk.
@@ -1809,22 +1413,22 @@ pub const fs = struct {
         .type = .fs_open_drive,
         .@"error" = OpenDriveError,
         .inputs = struct { fs: FileSystemId, path_ptr: [*]const u8, path_len: usize },
-        .outputs = struct { dir: DirectoryHandle },
+        .outputs = struct { dir: ?*Directory },
     });
 
     /// opens a directory relative to the given dir handle.
     pub const OpenDir = IOP.define(.{
         .type = .fs_open_dir,
         .@"error" = OpenDirError,
-        .inputs = struct { dir: DirectoryHandle, path_ptr: [*]const u8, path_len: usize },
-        .outputs = struct { dir: DirectoryHandle },
+        .inputs = struct { dir: *Directory, path_ptr: [*]const u8, path_len: usize },
+        .outputs = struct { dir: ?*Directory },
     });
 
     /// closes the directory handle
     pub const CloseDir = IOP.define(.{
         .type = .fs_close_dir,
         .@"error" = CloseDirError,
-        .inputs = struct { dir: DirectoryHandle },
+        .inputs = struct { dir: *Directory },
         .outputs = struct {},
     });
 
@@ -1832,14 +1436,14 @@ pub const fs = struct {
     pub const ResetDirEnumeration = IOP.define(.{
         .type = .fs_reset_dir_enumeration,
         .@"error" = ResetDirEnumerationError,
-        .inputs = struct { dir: DirectoryHandle },
+        .inputs = struct { dir: *Directory },
     });
 
     /// returns the info for the current file or "eof", and advances the iterator to the next entry if possible
     pub const EnumerateDir = IOP.define(.{
         .type = .fs_enumerate_dir,
         .@"error" = EnumerateDirError,
-        .inputs = struct { dir: DirectoryHandle },
+        .inputs = struct { dir: *Directory },
         .outputs = struct { eof: bool, info: FileInfo },
     });
 
@@ -1847,7 +1451,7 @@ pub const fs = struct {
     pub const Delete = IOP.define(.{
         .type = .fs_delete,
         .@"error" = DeleteFileError,
-        .inputs = struct { dir: DirectoryHandle, path_ptr: [*]const u8, path_len: usize, recurse: bool },
+        .inputs = struct { dir: *Directory, path_ptr: [*]const u8, path_len: usize, recurse: bool },
     });
 
     /// creates a new directory relative to dir. If `path` contains subdirectories, all
@@ -1855,8 +1459,8 @@ pub const fs = struct {
     pub const MkDir = IOP.define(.{
         .type = .fs_mkdir,
         .@"error" = MkDirError,
-        .inputs = struct { dir: DirectoryHandle, path_ptr: [*]const u8, path_len: usize },
-        .outputs = struct { DirectoryHandle },
+        .inputs = struct { dir: *Directory, path_ptr: [*]const u8, path_len: usize, mkopen: bool },
+        .outputs = struct { ?*Directory },
     });
 
     /// returns the type of the file/dir at path, also adds size and modification dates
@@ -1864,7 +1468,7 @@ pub const fs = struct {
         .type = .fs_stat_entry,
         .@"error" = StatEntryError,
         .inputs = struct {
-            dir: DirectoryHandle,
+            dir: *Directory,
             path_ptr: [*]const u8,
             path_len: usize,
         },
@@ -1877,7 +1481,7 @@ pub const fs = struct {
         .type = .fs_near_move,
         .@"error" = NearMoveError,
         .inputs = struct {
-            src_dir: DirectoryHandle,
+            src_dir: *Directory,
             src_path_ptr: [*]const u8,
             src_path_len: usize,
             dst_path_ptr: [*]const u8,
@@ -1893,10 +1497,10 @@ pub const fs = struct {
         .type = .fs_far_move,
         .@"error" = FarMoveError,
         .inputs = struct {
-            src_dir: DirectoryHandle,
+            src_dir: *Directory,
             src_path_ptr: [*]const u8,
             src_path_len: usize,
-            dst_dir: DirectoryHandle,
+            dst_dir: *Directory,
             dst_path_ptr: [*]const u8,
             dst_path_len: usize,
         },
@@ -1907,10 +1511,10 @@ pub const fs = struct {
         .type = .fs_copy,
         .@"error" = CopyFileError,
         .inputs = struct {
-            src_dir: DirectoryHandle,
+            src_dir: *Directory,
             src_path_ptr: [*]const u8,
             src_path_len: usize,
-            dst_dir: DirectoryHandle,
+            dst_dir: *Directory,
             dst_path_ptr: [*]const u8,
             dst_path_len: usize,
         },
@@ -1923,27 +1527,27 @@ pub const fs = struct {
         .type = .fs_open_file,
         .@"error" = OpenFileError,
         .inputs = struct {
-            dir: DirectoryHandle,
+            dir: *Directory,
             path_ptr: [*]const u8,
             path_len: usize,
             access: FileAccess,
             mode: FileMode,
         },
-        .outputs = struct { handle: FileHandle },
+        .outputs = struct { handle: ?*File },
     });
 
     /// closes the handle and flushes the file.
     pub const CloseFile = IOP.define(.{
         .type = .fs_close_file,
         .@"error" = CloseFileError,
-        .inputs = struct { file: FileHandle },
+        .inputs = struct { file: *File },
     });
 
     /// makes sure this file is safely stored to mass storage device
     pub const FlushFile = IOP.define(.{
         .type = .fs_flush_file,
         .@"error" = FlushFileError,
-        .inputs = struct { file: FileHandle },
+        .inputs = struct { file: *File },
     });
 
     /// directly reads data from a given offset into the file. no streaming API to the kernel
@@ -1951,7 +1555,7 @@ pub const fs = struct {
         .type = .fs_read,
         .@"error" = ReadError,
         .inputs = struct {
-            file: FileHandle,
+            file: *File,
             offset: u64,
             buffer_ptr: [*]u8,
             buffer_len: usize,
@@ -1964,7 +1568,7 @@ pub const fs = struct {
         .type = .fs_write,
         .@"error" = WriteError,
         .inputs = struct {
-            file: FileHandle,
+            file: *File,
             offset: u64,
             buffer_ptr: [*]const u8,
             buffer_len: usize,
@@ -1976,7 +1580,7 @@ pub const fs = struct {
     pub const StatFile = IOP.define(.{
         .type = .fs_stat_file,
         .@"error" = StatFileError,
-        .inputs = struct { file: FileHandle },
+        .inputs = struct { file: *File },
         .outputs = struct { info: FileInfo },
     });
 
@@ -1984,6 +1588,298 @@ pub const fs = struct {
     pub const Resize = IOP.define(.{
         .type = .fs_resize,
         .@"error" = ResizeFileError,
-        .inputs = struct { file: FileHandle, length: u64 },
+        .inputs = struct { file: *File, length: u64 },
     });
 };
+
+pub const udp = struct {
+    pub const Bind = IOP.define(.{
+        .type = .udp_bind,
+        .@"error" = BindError,
+        .inputs = struct {
+            socket: *UdpSocket,
+            bind_point: EndPoint,
+        },
+        .outputs = struct {
+            bind_point: EndPoint,
+        },
+    });
+
+    pub const Connect = IOP.define(.{
+        .type = .udp_connect,
+        .@"error" = ConnectError,
+        .inputs = struct {
+            socket: *UdpSocket,
+            target: EndPoint,
+        },
+    });
+
+    pub const Disconnect = IOP.define(.{
+        .type = .udp_disconnect,
+        .@"error" = DisconnectError,
+        .inputs = struct {
+            socket: *UdpSocket,
+        },
+    });
+
+    pub const Send = IOP.define(.{
+        .type = .udp_send,
+        .@"error" = SendError,
+        .inputs = struct {
+            socket: *UdpSocket,
+            data_ptr: [*]const u8,
+            data_len: usize,
+        },
+        .outputs = struct {
+            bytes_sent: usize,
+        },
+    });
+
+    pub const SendTo = IOP.define(.{
+        .type = .udp_send_to,
+        .@"error" = SendError,
+        .inputs = struct {
+            socket: *UdpSocket,
+            receiver: EndPoint,
+            data_ptr: [*]const u8,
+            data_len: usize,
+        },
+        .outputs = struct {
+            bytes_sent: usize,
+        },
+    });
+
+    pub const ReceiveFrom = IOP.define(.{
+        .type = .udp_receive_from,
+        .@"error" = ReceiveFromError,
+        .inputs = struct {
+            socket: *UdpSocket,
+            buffer_ptr: [*]u8,
+            buffer_len: usize,
+        },
+        .outputs = struct {
+            bytes_received: usize,
+            sender: EndPoint,
+        },
+    });
+
+    pub const CreateError = ErrorSet(.{
+        .SystemResources = 1,
+    });
+
+    pub const BindError = ErrorSet(.{
+        .InvalidHandle = 1,
+        .SystemResources = 2,
+        .AddressInUse = 3,
+        .IllegalValue = 4,
+    });
+
+    pub const ConnectError = ErrorSet(.{
+        .InvalidHandle = 1,
+        .SystemResources = 2,
+        .AlreadyConnected = 4,
+        .AlreadyConnecting = 5,
+        .BufferError = 6,
+        .IllegalArgument = 10,
+        .IllegalValue = 11,
+        .InProgress = 12,
+        .LowlevelInterfaceError = 13,
+        .OutOfMemory = 15,
+        .Routing = 16,
+        .Timeout = 17,
+    });
+
+    pub const DisconnectError = ErrorSet(.{
+        .InvalidHandle = 1,
+        .SystemResources = 2,
+        .NotConnected = 3,
+    });
+
+    pub const SendError = ErrorSet(.{
+        .InvalidHandle = 1,
+        .SystemResources = 2,
+        .BufferError = 6,
+        .IllegalArgument = 10,
+        .IllegalValue = 11,
+        .InProgress = 12,
+        .LowlevelInterfaceError = 13,
+        .NotConnected = 14,
+        .OutOfMemory = 15,
+        .Routing = 16,
+        .Timeout = 17,
+    });
+
+    pub const SendToError = ErrorSet(.{
+        .InvalidHandle = 1,
+        .SystemResources = 2,
+        .BufferError = 6,
+        .IllegalArgument = 10,
+        .IllegalValue = 11,
+        .InProgress = 12,
+        .LowlevelInterfaceError = 13,
+        .OutOfMemory = 15,
+        .Routing = 16,
+        .Timeout = 17,
+    });
+
+    pub const ReceiveFromError = ErrorSet(.{
+        .InvalidHandle = 1,
+        .SystemResources = 2,
+        .BufferError = 6,
+        .IllegalArgument = 10,
+        .IllegalValue = 11,
+        .InProgress = 12,
+        .LowlevelInterfaceError = 13,
+        .OutOfMemory = 15,
+        .Routing = 16,
+        .Timeout = 17,
+    });
+};
+
+pub const tcp = struct {
+    pub const Bind = IOP.define(.{
+        .type = .tcp_bind,
+        .@"error" = BindError,
+        .inputs = struct {
+            socket: *TcpSocket,
+            bind_point: EndPoint,
+        },
+        .outputs = struct {
+            bind_point: EndPoint,
+        },
+    });
+
+    pub const Connect = IOP.define(.{
+        .type = .tcp_connect,
+        .@"error" = ConnectError,
+        .inputs = struct {
+            socket: *TcpSocket,
+            target: EndPoint,
+        },
+    });
+
+    pub const Send = IOP.define(.{
+        .type = .tcp_send,
+        .@"error" = SendError,
+        .inputs = struct {
+            socket: *TcpSocket,
+            data_ptr: [*]const u8,
+            data_len: usize,
+        },
+        .outputs = struct {
+            bytes_sent: usize,
+        },
+    });
+
+    pub const Receive = IOP.define(.{
+        .type = .tcp_receive,
+        .@"error" = ReceiveError,
+        .inputs = struct {
+            socket: *TcpSocket,
+            buffer_ptr: [*]u8,
+            buffer_len: usize,
+            read_all: bool, // if true, will read until `buffer_len` bytes arrived. otherwise will read until the end of a single packet
+        },
+        .outputs = struct {
+            bytes_received: usize,
+        },
+    });
+
+    pub const CreateError = ErrorSet(.{
+        .SystemResources = 1,
+    });
+
+    pub const BindError = ErrorSet(.{
+        .InvalidHandle = 1,
+        .SystemResources = 2,
+        .AddressInUse = 3,
+        .IllegalValue = 4,
+    });
+
+    pub const ConnectError = ErrorSet(.{
+        .InvalidHandle = 1,
+        .SystemResources = 2,
+        .AlreadyConnected = 4,
+        .AlreadyConnecting = 5,
+        .BufferError = 6,
+        .ConnectionAborted = 7,
+        .ConnectionClosed = 8,
+        .ConnectionReset = 9,
+        .IllegalArgument = 10,
+        .IllegalValue = 11,
+        .InProgress = 12,
+        .LowlevelInterfaceError = 13,
+        .OutOfMemory = 15,
+        .Routing = 16,
+        .Timeout = 17,
+    });
+
+    pub const SendError = ErrorSet(.{
+        .InvalidHandle = 1,
+        .SystemResources = 2,
+        .BufferError = 3,
+        .ConnectionAborted = 4,
+        .ConnectionClosed = 5,
+        .ConnectionReset = 6,
+        .IllegalArgument = 7,
+        .IllegalValue = 8,
+        .InProgress = 9,
+        .LowlevelInterfaceError = 10,
+        .NotConnected = 11,
+        .OutOfMemory = 12,
+        .Routing = 13,
+        .Timeout = 14,
+    });
+
+    pub const ReceiveError = ErrorSet(.{
+        .InvalidHandle = 1,
+        .SystemResources = 2,
+        .AlreadyConnected = 3,
+        .AlreadyConnecting = 4,
+        .BufferError = 5,
+        .ConnectionAborted = 6,
+        .ConnectionClosed = 7,
+        .ConnectionReset = 8,
+        .IllegalArgument = 9,
+        .IllegalValue = 10,
+        .InProgress = 11,
+        .LowlevelInterfaceError = 12,
+        .NotConnected = 13,
+        .OutOfMemory = 14,
+        .Routing = 15,
+        .Timeout = 16,
+    });
+};
+
+pub const input = struct {
+    const Error = ErrorSet(.{
+        .NonExclusiveAccess = 1,
+        .InProgress = 2,
+    });
+
+    pub const GetEvent = IOP.define(.{
+        .type = .input_get_event,
+        .@"error" = Error,
+        .outputs = struct {
+            event_type: InputEventType,
+            event: InputEvent,
+        },
+    });
+};
+
+///////////////////////////////////////////////////////////
+// Legacy:
+
+// pub const NetworkStatus = enum(u8) {
+//     disconnected = 0, // no cable is plugged in
+//     mac_available = 1, // cable is plugged in and connected, no DHCP or static IP performed yet
+//     ip_available = 2, // interface got at least one IP assigned
+//     gateway_available = 3, // the gateway, if any, is reachable
+// };
+
+// pub const Ping = extern struct {
+//     destination: IP, // who to ping
+//     ttl: u16, // hops
+//     timeout: u16, // ms, a minute timeout for ping is enough. if you have a higher ping, you have other problems
+//     response: u16 = undefined, // response time in ms
+// };
