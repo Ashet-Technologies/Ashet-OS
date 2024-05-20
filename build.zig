@@ -169,6 +169,19 @@ pub fn build(b: *std.Build) !void {
         break :blk debug_filter;
     };
 
+    {
+        const abi_mapper = b.addExecutable(.{
+            .name = "abi-mapper",
+            .root_source_file = .{ .path = "tools/abi-mapper.zig" },
+        });
+        abi_mapper.addModule("args", mod_args);
+        abi_mapper.linkLibC();
+
+        const install_step = b.addInstallArtifact(abi_mapper, .{});
+        b.getInstallStep().dependOn(&install_step.step);
+        tools_step.dependOn(&install_step.step);
+    }
+
     const bmpconv = BitmapConverter.init(b);
     b.installArtifact(bmpconv.converter);
     {

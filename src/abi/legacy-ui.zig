@@ -69,10 +69,6 @@ pub const Window = extern struct {
     };
 };
 
-pub const CreateWindowFlags = packed struct(u32) {
-    popup: bool = false,
-    padding: u31 = 0,
-};
 
 ///////////////////////////////////////////////////////////////////////////////
 

@@ -11,277 +11,7 @@ const iops = @import("iops.zig");
 
 const abi = @This();
 
-pub const syscalls = struct {
-    pub const process = struct {
-        /// Returns a pointer to the file name of the process.
-        pub extern fn get_file_name(?*Process) [*:0]const u8;
-
-        /// Returns the base address of the process.
-        pub extern fn get_base_address(?*Process) usize;
-
-        /// Terminates the current process with the given exit code
-        pub extern fn terminate(exit_code: ExitCode) noreturn;
-
-        /// Terminates a foreign process.
-        /// If the current process is passed, this function will not return
-        pub extern fn kill(*Process) void;
-
-        pub const thread = struct {
-            /// Returns control to the scheduler. Returns when the scheduler
-            /// schedules the process again.
-            pub extern fn yield() void;
-
-            /// Terminates the current thread.
-            pub extern fn exit(exit_code: ExitCode) noreturn;
-
-            /// Waits for the thread to exit and returns its return code.
-            pub extern fn join(*Thread) ExitCode;
-
-            /// Spawns a new thread with `function` passing `arg` to it.
-            /// If `stack_size` is not 0, will create a stack with the given size.
-            pub extern fn spawn(function: ThreadFunction, arg: ?*anyopaque, stack_size: usize) ?*Thread;
-
-            /// Kills the given thread with `exit_code`.
-            pub extern fn kill(*Thread, exit_code: ExitCode) void;
-        };
-
-        pub const debug = struct {
-            /// Writes to the system debug log.
-            pub extern fn write_log(log_level: LogLevel, message: []const u8) void;
-
-            /// Stops the process and allows debugging.
-            pub extern fn breakpoint() void;
-        };
-
-        pub const memory = struct {
-            /// Allocates memory pages from the system.
-            pub extern fn allocate(size: usize, ptr_align: u8) ?[*]u8;
-
-            /// Returns memory to the systme.
-            pub extern fn release(mem: []u8, ptr_align: u8) void;
-        };
-
-        pub const monitor = struct {
-            /// Queries all owned resources by a process.
-            pub extern fn enumerate_processes(?[]*Process) usize;
-
-            /// Queries all owned resources by a process.
-            pub extern fn query_owned_resources(*Process, ?[]*SystemResource) usize;
-
-            /// Returns the total number of bytes the process takes up in RAM.
-            pub extern fn query_total_memory_usage(*Process) usize;
-
-            /// Returns the number of dynamically allocated bytes for this process.
-            pub extern fn query_dynamic_memory_usage(*Process) usize;
-
-            /// Returns the number of total memory objects this process has right now.
-            pub extern fn query_active_allocation_count(*Process) usize;
-        };
-    };
-
-    pub const clock = struct {
-        /// Returns the time in nanoseconds since system startup.
-        /// This clock is monotonically increasing.
-        pub extern fn monotonic() u64;
-    };
-
-    pub const time = struct {
-        /// Get a calendar timestamp relative to UTC 1970-01-01.
-        /// Precision of timing depends on the hardware.
-        /// The return value is signed because it is possible to have a date that is
-        /// before the epoch.
-        pub extern fn now() DateTime;
-    };
-
-    pub const video = struct {
-        /// Returns a list of all video outputs.
-        ///
-        /// If `ids` is `null`, the total number of available outputs is returned,
-        /// otherwise, up to `ids.len` elements are written into the provided array
-        /// and the number of written elements is returned.
-        pub extern fn enumerate(ids: ?[]VideoOutputID) usize;
-
-        /// Acquire exclusive access to a video output.
-        pub extern fn acquire(VideoOutputID) ?*VideoOutput;
-
-        /// Returns the current resolution
-        pub extern fn get_resolution(*VideoOutput) Size;
-
-        /// Returns a pointer to linear video memory, row-major.
-        /// Pixels rows will have a stride of the current video buffer width.
-        /// The first pixel in the memory is the top-left pixel.
-        pub extern fn get_video_memory(*VideoOutput) [*]align(4) ColorIndex;
-
-        /// Fetches a copy of the current color pallete.
-        pub extern fn get_palette(*VideoOutput, *[palette_size]Color) void;
-
-        /// Changes the current color palette.
-        pub extern fn set_palette(*VideoOutput, *const [palette_size]Color) SetPaletteError;
-
-        // /// Returns a pointer to the current palette. Changing this palette
-        // /// will directly change the associated colors on the screen.
-        // /// If `null` is returned, no direct access to the video palette is possible.
-        // pub extern fn get_palette_memory(*VideoOutput) ?*[palette_size]Color;
-
-        // /// Changes the border color of the screen. Parameter is an index into
-        // /// the palette.
-        // pub extern fn set_border(*VideoOutput, ColorIndex) void;
-
-        // /// Returns the maximum possible screen resolution.
-        // pub extern fn get_max_resolution(*VideoOutput) Size;
-
-        // /// Sets the screen resolution. Legal values are between 1×1 and the platform specific
-        // /// maximum resolution returned by `video.getMaxResolution()`.
-        // /// Everything out of bounds will be clamped into that range.
-        // pub extern fn change_resolution(*VideoOutput, u16, u16) void;
-
-    };
-
-    pub const network = struct {
-
-        // getStatus: FnPtr(fn () NetworkStatus),
-        // ping: FnPtr(fn ([*]Ping, usize) void),
-        // TODO: Implement NIC-specific queries (mac, ips, names, ...)
-
-        pub const dns = struct {
-            // resolves the dns entry `host` for the given `service`.
-            // - `host` is a legal dns entry
-            // - `port` is either a port number
-            // - `buffer` and `limit` define a structure where all resolved IPs can be stored.
-            // Function returns the number of host entries found or 0 if the host name could not be resolved.
-            // pub extern fn @"resolve" (host: [*:0]const u8, port: u16, buffer: [*]EndPoint, limit: usize) usize;
-
-        };
-
-        pub const udp = struct {
-            pub extern fn create_socket(result: **UdpSocket) abi.udp.CreateError.Enum;
-        };
-
-        pub const tcp = struct {
-            pub extern fn create_socket(out: **TcpSocket) abi.tcp.CreateError.Enum;
-        };
-    };
-
-    pub const io = struct {
-        /// Starts new I/O operations and returns completed ones.
-        ///
-        /// If `start_queue` is given, the kernel will schedule the events in the kernel.
-        /// All events in this queue must not be freed until they are returned by this function
-        /// at a later point.
-        ///
-        /// The function will optionally block based on the `wait` parameter.
-        ///
-        /// The return value is the HEAD element of a linked list of completed I/O events.
-        pub extern fn schedule_and_await(?*IOP, WaitIO) ?*IOP;
-
-        /// Cancels a single I/O operation.
-        pub extern fn cancel(*IOP) void;
-    };
-
-    pub const fs = struct {
-        /// Finds a file system by name
-        pub extern fn find_filesystem(name: []const u8) FileSystemId;
-    };
-
-    pub const service = struct {
-        /// Registers a new service `uuid` in the system.
-        /// Takes an array of function pointers that will be provided for IPC and a service name to be advertised.
-        pub extern fn register(uuid: *const UUID, funcs: []const AbstractFunction, name: []const u8) ServiceRegisterError;
-
-        /// Removes a previously service announcement.
-        pub extern fn unregister(uuid: *const UUID) void;
-
-        /// Returns the number of total registrations for the given service `uuid`.
-        pub extern fn count(uuid: *const UUID) usize;
-
-        /// Returns a pointer to the `index`th instance of the service behind `uuid`.
-        /// Also returns a handle to the process that registered the service.
-        pub extern fn get(uuid: *const UUID, index: usize, funcs: *[]const AbstractFunction, name: *[]const u8, process: ?**Process) bool;
-    };
-
-    pub const clipboard = struct {
-        /// Sets the contents of the clip board.
-        /// Takes a mime type as well as the value in the provided format.
-        pub extern fn set(mime: []const u8, value: []const u8) ClipboardSetError;
-
-        /// Returns the current type present in the clipboard, if any.
-        pub extern fn get_type(mime: *[]const u8) bool;
-
-        /// Returns the current clipboard value as the provided mime type.
-        /// The os provides a conversion *if possible*, otherwise returns an error.
-        /// The returned memory for `value` is owned by the process and must be freed with `ashet.process.memory.release`.
-        pub extern fn get_value(mime: []const u8, value: *?[]const u8) ClipboardGetError;
-    };
-
-    pub const draw = struct {
-        /// Returns the font data for the given font name, if any.
-        pub extern fn get_system_font(font_name: []const u8, font: **Font) GetSystemFontError;
-
-        /// Creates a new custom font from the given data.
-        pub extern fn create_font(data: []const u8, font: **Font) CreateFontError;
-
-        /// Returns true if the given font is a system-owned font.
-        pub extern fn is_system_font(*Font) bool;
-
-        //
-
-        /// Creates a new in-memory framebuffer that can be used for offscreen painting.
-        pub extern fn create_memory_framebuffer(width: u16, height: u16) ?*Framebuffer;
-
-        /// Creates a new framebuffer based off a video output. Can be used to output pixels
-        /// to the screen.
-        pub extern fn create_video_framebuffer(*VideoOutput) ?*Framebuffer;
-
-        /// Returns the type of a framebuffer object.
-        pub extern fn get_framebuffer_type(*Framebuffer) FramebufferType;
-
-        /// Returns the size of a framebuffer object.
-        pub extern fn get_framebuffer_size(*Framebuffer) Size;
-
-        //
-
-        // TODO: Insert render functions here
-    };
-
-    pub const gui = struct {
-        // TODO: Implement GUI syscalls
-
-        /// Opens a message box popup window and prompts the user for response.
-        ///
-        /// *Remarks:* This function is blocking and will only return when the user has entered their choice.
-        pub extern fn message_box(message: []const u8, caption: []const u8, buttons: MessageBoxButtons, icon: MessageBoxIcon) MessageBoxResult;
-
-        pub extern fn register_widget_type(uuid: *const UUID, *const WidgetDescriptor) RegisterWidgetTypeError;
-
-        pub extern fn unregister_widget_type(uuid: *const UUID) void;
-
-        // pub extern fn create_window(window: **Window, …) CreateWindowError;
-
-        // pub extern fn create_widget(window: *Window, uuid: *const UUID, widget: **Widget, …) CreateWidgetError;
-
-        // Legacy API:
-        // ui.createWindow           (title: [*]const u8, title_len: usize, min: Size, max: Size, startup: Size, flags: CreateWindowFlags) ?*const Window
-        // ui.invalidate             (*const Window, rect: Rectangle) void
-        // ui.moveWindow             (*const Window, x: i16, y: i16) void
-        // ui.resizeWindow           (*const Window, x: u16, y: u16) void
-        // ui.setWindowTitle         (*const Window, title: [*]const u8, title_len: usize) void -->
-    };
-
-    pub const resources = struct {
-        /// Returns the type of the system resource.
-        pub extern fn get_type(*SystemResource) SystemResource.Type;
-
-        /// Returns the current owner of this resource.
-        pub extern fn get_owner(*SystemResource) ?*Process;
-
-        /// Transfers ownership to another process.
-        pub extern fn set_owner(*SystemResource, *Process) void;
-
-        /// Closes the system resource and releases its memory.
-        /// The handle will be invalid after this function.
-        pub extern fn close(*SystemResource) void;
-    };
-};
+pub const syscalls = @import("syscalls.zig");
 
 ///////////////////////////////////////////////////////////
 // Constants:
@@ -358,6 +88,8 @@ pub const SystemResource = opaque {
             .tcp_socket => TcpSocket,
             .udp_socket => UdpSocket,
 
+            .service => Service,
+
             .file => File,
 
             .directory => Directory,
@@ -365,6 +97,10 @@ pub const SystemResource = opaque {
 
             .font => Font,
             .framebuffer => Framebuffer,
+
+            .window => Window,
+            .widget => Widget,
+            .desktop_server => DesktopServer,
 
             _ => @compileError("Undefined type passed."),
         };
@@ -385,8 +121,18 @@ pub const SystemResource = opaque {
         font,
         framebuffer,
 
+        window,
+        widget,
+        desktop_server,
+
         _,
     };
+};
+
+pub const Service = opaque {
+    pub fn as_resource(value: *@This()) *SystemResource {
+        return @ptrCast(value);
+    }
 };
 
 pub const Process = opaque {
@@ -444,6 +190,24 @@ pub const Framebuffer = opaque {
     }
 };
 
+pub const Window = opaque {
+    pub fn as_resource(value: *@This()) *SystemResource {
+        return @ptrCast(value);
+    }
+};
+
+pub const Widget = opaque {
+    pub fn as_resource(value: *@This()) *SystemResource {
+        return @ptrCast(value);
+    }
+};
+
+pub const DesktopServer = opaque {
+    pub fn as_resource(value: *@This()) *SystemResource {
+        return @ptrCast(value);
+    }
+};
+
 ///////////////////////////////////////////////////////////
 // Simple types:
 
@@ -490,6 +254,27 @@ pub const ColorIndex = enum(u8) {
 
 ///////////////////////////////////////////////////////////
 // Enumerations:
+
+pub const NotificationKind = enum(u8) {
+    /// Important information that require immediate action
+    /// by the user.
+    ///
+    /// This should be handled with care and only for reall
+    /// urgent situations like low battery power or
+    /// unsufficient disk memory.
+    attention = 0,
+
+    /// This is a regular user notification, which should be used
+    /// sparingly.
+    ///
+    /// Typical notifications of this kind are in the category of
+    /// "download completed", "video fully rendered" or similar.
+    information = 128,
+
+    /// Silent notifications that might be informational, but do not
+    /// require attention by the user at all.
+    whisper = 255,
+};
 
 pub const IP_Type = enum(u8) { ipv4, ipv6 };
 
@@ -539,9 +324,13 @@ pub const FramebufferType = enum(u8) {
     /// directly.
     video = 1,
 
+    /// A frame buffer provided by a window. These frame buffers
+    /// may hold additional semantic information.
+    window = 2,
+
     /// A frame buffer provided by a user interface element. These frame buffers
     /// may hold additional semantic information.
-    widget = 2,
+    widget = 3,
 };
 
 pub const MessageBoxIcon = enum(u8) {
@@ -743,6 +532,11 @@ pub const MouseButton = enum(u8) {
 
 ///////////////////////////////////////////////////////////
 // Compound types:
+
+pub const CreateWindowFlags = packed struct(u32) {
+    popup: bool = false,
+    padding: u31 = 0,
+};
 
 pub const WidgetDescriptor = extern struct {
     // TODO: Fill this out
@@ -1124,6 +918,15 @@ pub const EndPoint = extern struct {
 
 ///////////////////////////////////////////////////////////
 // Error types:
+
+pub const CreateWindowError = ErrorSet(.{
+    .SystemResources,
+    .InvalidDimensions,
+});
+pub const CreateWidgetError = ErrorSet(.{
+    .SystemResources,
+    .WidgetNotFound,
+});
 
 pub const RegisterWidgetTypeError = ErrorSet(.{
     .AlreadyRegistered = 1,
