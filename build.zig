@@ -169,19 +169,6 @@ pub fn build(b: *std.Build) !void {
         break :blk debug_filter;
     };
 
-    {
-        const abi_mapper = b.addExecutable(.{
-            .name = "abi-mapper",
-            .root_source_file = .{ .path = "tools/abi-mapper.zig" },
-        });
-        abi_mapper.addModule("args", mod_args);
-        abi_mapper.linkLibC();
-
-        const install_step = b.addInstallArtifact(abi_mapper, .{});
-        b.getInstallStep().dependOn(&install_step.step);
-        tools_step.dependOn(&install_step.step);
-    }
-
     const bmpconv = BitmapConverter.init(b);
     b.installArtifact(bmpconv.converter);
     {
@@ -380,15 +367,15 @@ pub fn build(b: *std.Build) !void {
     /////////////////////////////////////////////////////////////////////////////
     // documentation ↓
 
-    const docgen = b.addTest(.{
-        .root_source_file = .{ .path = "src/abi/abi-v2.zig" },
-    });
+    // const docgen = b.addTest(.{
+    //     .root_source_file = .{ .path = "src/abi/abi-v2.zig" },
+    // });
 
-    b.installDirectory(.{
-        .source_dir = docgen.getEmittedDocs(),
-        .install_dir = .prefix,
-        .install_subdir = "documentation",
-    });
+    // b.installDirectory(.{
+    //     .source_dir = docgen.getEmittedDocs(),
+    //     .install_dir = .prefix,
+    //     .install_subdir = "documentation",
+    // });
 }
 
 fn addBitmap(target: *std.build.LibExeObjStep, bmpconv: BitmapConverter, src: []const u8, dst: []const u8, size: [2]u32) void {

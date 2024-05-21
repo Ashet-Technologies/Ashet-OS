@@ -11,7 +11,9 @@ const iops = @import("iops.zig");
 
 const abi = @This();
 
-pub const syscalls = @import("syscalls.zig");
+pub const syscalls = struct {
+    // generated syscalls: {{ syscalls }}
+};
 
 ///////////////////////////////////////////////////////////
 // Constants:
@@ -100,7 +102,7 @@ pub const SystemResource = opaque {
 
             .window => Window,
             .widget => Widget,
-            .desktop_server => DesktopServer,
+            .desktop => Desktop,
 
             _ => @compileError("Undefined type passed."),
         };
@@ -123,7 +125,7 @@ pub const SystemResource = opaque {
 
         window,
         widget,
-        desktop_server,
+        desktop,
 
         _,
     };
@@ -202,7 +204,7 @@ pub const Widget = opaque {
     }
 };
 
-pub const DesktopServer = opaque {
+pub const Desktop = opaque {
     pub fn as_resource(value: *@This()) *SystemResource {
         return @ptrCast(value);
     }
@@ -918,6 +920,14 @@ pub const EndPoint = extern struct {
 
 ///////////////////////////////////////////////////////////
 // Error types:
+
+pub const CreateDesktopError = ErrorSet(.{
+    .SystemResources,
+});
+
+pub const SendNotificationError = ErrorSet(.{
+    .SystemResources,
+});
 
 pub const CreateWindowError = ErrorSet(.{
     .SystemResources,

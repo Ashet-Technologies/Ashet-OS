@@ -10,6 +10,7 @@ pkgs.mkShell {
     pkgs.pkg-config
     pkgs.python311
     pkgs.python311Packages.lark
+    pkgs.python311Packages.jinja2
     pkgs.python311Packages.dataclasses-json
   ];
   buildInputs = [

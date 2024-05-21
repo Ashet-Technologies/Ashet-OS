@@ -1,3 +1,4 @@
+/// Syscalls related to processes
 const process = struct {
     /// Returns a pointer to the file name of the process.
     fn get_file_name(?*Process) [*:0]const u8;
@@ -49,10 +50,10 @@ const process = struct {
 
     const monitor = struct {
         /// Queries all owned resources by a process.
-        fn enumerate_processes(?[]*Process) usize;
+        fn enumerate_processes(processes: ?[]*Process) usize;
 
         /// Queries all owned resources by a process.
-        fn query_owned_resources(*Process, ?[]*SystemResource) usize;
+        fn query_owned_resources(*Process, resources: ?[]*SystemResource) usize;
 
         /// Returns the total number of bytes the process takes up in RAM.
         fn query_total_memory_usage(*Process) usize;
@@ -184,7 +185,7 @@ const service = struct {
     fn get_process(*Service) *Process;
 
     /// Returns the functions registerd by the service.
-    fn get_functions(*Service, funcs: ?*[]const AbstractFunction) usize;
+    fn get_functions(*Service, funcs: ?[]const AbstractFunction) usize;
 };
 
 const clipboard = struct {
@@ -193,7 +194,7 @@ const clipboard = struct {
     fn set(mime: []const u8, value: []const u8) ClipboardSetError;
 
     /// Returns the current type present in the clipboard, if any.
-    fn get_type(mime: *[]const u8) bool;
+    fn get_type() ?[*:0]const u8;
 
     /// Returns the current clipboard value as the provided mime type.
     /// The os provides a conversion *if possible*, otherwise returns an error.
@@ -273,9 +274,11 @@ const gui = struct {
 
     fn place_widget(widget: *Widget, position: Point, size: Size) void;
 
+    // Context Menu API:
+
     // TODO: gui.context_menu
 
-    // Desktop Server
+    // Desktop Server API:
 
     /// Creates a new desktop with the given name.
     fn create_desktop(desktop: **Desktop, name: []const u8) CreateDesktopError;

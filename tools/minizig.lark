@@ -1,0 +1,56 @@
+
+container : decl*
+
+decl : doc_comment? raw_decl
+
+raw_decl: fn_decl
+        | ns_decl
+
+ns_decl : "const" identifier "=" "struct" "{" container "}" ";"
+
+fn_decl : "fn" identifier "(" param_list ")" type ";"
+
+param_list : [parameter ("," parameter)*]
+
+parameter: doc_comment? raw_parameter
+        
+raw_parameter: type
+    | identifier ":" type 
+   
+type : ref_type
+     | opt_type
+     | arr_type
+     | ptr_type
+
+ref_type: identifier
+opt_type: "?" type
+arr_type: "[" value [ ":" value ] "]" type 
+
+ptr_type: ptr_size ptr_mods type
+
+ptr_size: "*"
+        | ptr_size_slice
+        | ptr_size_many
+        
+ptr_size_many:"[" "*" ( ":" value )? "]"
+ptr_size_slice:"[" ( ":" value )? "]"
+
+ptr_mods: ptr_const? ptr_volatile? ptr_align? 
+    ptr_const: "const"
+    ptr_volatile: "volatile"
+    ptr_align: "align" "(" value ")"
+
+doc_comment: doc_comment_line doc_comment_line *
+
+value: integer | identifier
+
+identifier: /[a-zA-Z_0-9\.]+/
+
+integer: /-?\d+/
+
+doc_comment_line: /\/\/\/[^\n]*/
+COMMENT:          /\/\/[^\n]*/
+
+%import common.WS
+%ignore WS
+%ignore COMMENT
