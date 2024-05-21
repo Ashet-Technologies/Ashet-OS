@@ -6,14 +6,13 @@
 
 const std = @import("std");
 
-const ErrorSet = @import("error_set.zig").ErrorSet;
+// const ErrorSet = @import("error_set.zig").ErrorSet;
 const iops = @import("iops.zig");
 
 const abi = @This();
 
-pub const syscalls = struct {
-    // generated syscalls: {{ syscalls }}
-};
+///////////////////////////////////////////////////////////
+// Generated code: {{ syscalls }}
 
 ///////////////////////////////////////////////////////////
 // Constants:
@@ -103,6 +102,7 @@ pub const SystemResource = opaque {
             .window => Window,
             .widget => Widget,
             .desktop => Desktop,
+            .widget_type => WidgetType,
 
             _ => @compileError("Undefined type passed."),
         };
@@ -205,6 +205,12 @@ pub const Widget = opaque {
 };
 
 pub const Desktop = opaque {
+    pub fn as_resource(value: *@This()) *SystemResource {
+        return @ptrCast(value);
+    }
+};
+
+pub const WidgetType = opaque {
     pub fn as_resource(value: *@This()) *SystemResource {
         return @ptrCast(value);
     }
@@ -919,59 +925,7 @@ pub const EndPoint = extern struct {
 };
 
 ///////////////////////////////////////////////////////////
-// Error types:
-
-pub const CreateDesktopError = ErrorSet(.{
-    .SystemResources,
-});
-
-pub const SendNotificationError = ErrorSet(.{
-    .SystemResources,
-});
-
-pub const CreateWindowError = ErrorSet(.{
-    .SystemResources,
-    .InvalidDimensions,
-});
-pub const CreateWidgetError = ErrorSet(.{
-    .SystemResources,
-    .WidgetNotFound,
-});
-
-pub const RegisterWidgetTypeError = ErrorSet(.{
-    .AlreadyRegistered = 1,
-    .SystemResources = 2,
-});
-
-pub const SetPaletteError = ErrorSet(.{
-    .Unsupported = 1,
-});
-
-pub const ServiceRegisterError = ErrorSet(.{
-    .AlreadyRegistered = 1,
-    .SystemResources = 2,
-});
-
-pub const ClipboardSetError = ErrorSet(.{
-    .SystemResources = 1,
-});
-
-pub const ClipboardGetError = ErrorSet(.{
-    .ConversionFailed = 1,
-    .OutOfMemory = 2,
-});
-
-pub const GetSystemFontError = ErrorSet(.{
-    .FileNotFound = 1,
-    .SystemResources = 2,
-    .OutOfMemory = 3,
-});
-
-pub const CreateFontError = ErrorSet(.{
-    .InvalidData = 1,
-    .SystemResources = 2,
-    .OutOfMemory = 3,
-});
+// Callback types:
 
 ///////////////////////////////////////////////////////////
 // IO Operations:
@@ -1476,10 +1430,6 @@ pub const udp = struct {
         },
     });
 
-    pub const CreateError = ErrorSet(.{
-        .SystemResources = 1,
-    });
-
     pub const BindError = ErrorSet(.{
         .InvalidHandle = 1,
         .SystemResources = 2,
@@ -1596,10 +1546,6 @@ pub const tcp = struct {
         .outputs = struct {
             bytes_received: usize,
         },
-    });
-
-    pub const CreateError = ErrorSet(.{
-        .SystemResources = 1,
     });
 
     pub const BindError = ErrorSet(.{

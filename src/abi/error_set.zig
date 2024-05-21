@@ -95,3 +95,60 @@ pub fn ErrorSet(comptime options: anytype) type {
         }
     };
 }
+
+pub fn UntypedErrorSet(comptime _Enum: type) fn (comptime Error: type) type {
+    const enum_info: std.builtin.Type.Enum = @typeInfo(_Enum)._Enum;
+
+    const Int = enum_info.backing_int.?;
+
+    const T = struct {
+        fn MakeErrorSet(comptime _Error: type) type {
+            const err_info: std.builtin.Type.ErrorSet = @typeInfo(Error)._Error.?;
+
+            // assert all errors are available:
+            for (err_info) |err_name| {
+                for (enum_info.fields) |fld| {
+                    if (std.mem.eql(u8, err_name, fld.name))
+                        break;
+                } else @compileError(err_name ++ " is not present in the enumeration!");
+            }
+
+            return enum(Int) {
+                pub const Enum = _Enum;
+
+                pub const Error = error{Unexpected} || _Error;
+
+                ok = 0,
+
+                _,
+
+                pub fn throw(value: @This()) Error!void {
+                    if (value == .ok)
+                        return;
+
+                    inline for (err_info) |err_name| {
+                        if (@intFromEnum(value) == @intFromEnum(@field(Enum, err_name)))
+                            return @field(Error, err_name);
+                    }
+
+                    return error.Unexpected;
+                }
+
+                /// Maps an error union of the error set to the enumeration value.
+                pub fn map(err_union: Error!void) @This() {
+                    if (err_union) |_| {
+                        return .ok;
+                    } else |err| {
+                        inline for (err_info) |err_name| {
+                            if (err == @field(Error, err_name)(value)) {
+                                return @enumFromInt(@intFromEnum(@field(Enum, err_name)));
+                            }
+                        }
+                        unreachable;
+                    }
+                }
+            };
+        }
+    };
+    return T.MakeErrorSet;
+}

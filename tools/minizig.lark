@@ -5,12 +5,15 @@ decl : doc_comment? raw_decl
 
 raw_decl: fn_decl
         | ns_decl
+        | err_decl
 
 ns_decl : "const" identifier "=" "struct" "{" container "}" ";"
 
 fn_decl : "fn" identifier "(" param_list ")" type ";"
 
-param_list : [parameter ("," parameter)*]
+err_decl : "const" identifier "=" err_type ";"
+
+param_list : [parameter ("," parameter)* ","?]
 
 parameter: doc_comment? raw_parameter
         
@@ -21,11 +24,12 @@ type : ref_type
      | opt_type
      | arr_type
      | ptr_type
+     | err_type
 
 ref_type: identifier
 opt_type: "?" type
 arr_type: "[" value [ ":" value ] "]" type 
-
+err_type : "error" "{" [ identifier ("," identifier)* ","? ] "}"
 ptr_type: ptr_size ptr_mods type
 
 ptr_size: "*"

@@ -8,13 +8,24 @@ import jinja2
 from pathlib import Path 
 from enum import StrEnum 
 from lark import Lark, Transformer
-from dataclasses import dataclass
+from dataclasses import dataclass, field 
 
 WITH_LINKNAME = False 
 THIS_PATH = Path(__file__).parent 
 GRAMMAR_PATH = THIS_PATH / "minizig.lark"
 SYSCALL_PATH = THIS_PATH / ".." / "src"/"abi"/"syscalls.zig"
 ABI_PATH = THIS_PATH / ".." / "src"/"abi"/"abi-v2.zig"
+
+@dataclass
+class ErrorAllocation:
+    mapping: dict[str, int] = field(default_factory=lambda:dict())
+
+    def get_number(self, err: str):
+        val = self.mapping.get(err, None)
+        if val is None:
+            val = max(self.mapping.values() or [0]) + 1
+            self.mapping[err] = val 
+        return val
 
 class PointerSize(StrEnum):
     one = "*"
@@ -74,6 +85,10 @@ class Function(Declaration):
     return_type: Type 
 
 @dataclass
+class ErrorSet(Declaration,Type):
+    errors: set[str]
+
+@dataclass
 class Container :
     decls: list[Declaration]
 
@@ -112,6 +127,11 @@ class ZigCodeTransformer(Transformer):
             decls = items[1].decls,
         )
 
+    def err_decl(self, items) -> ErrorSet:
+        etype =items[1]
+        etype.name = items[0]
+        return etype
+
     def param_list(self, items) -> list[Parameter]:
         assert len(items) >= 1
         if items[0] is None: # special case: empty list
@@ -142,7 +162,7 @@ class ZigCodeTransformer(Transformer):
         assert len(items) == 1
         if isinstance(items[0], Type):
             return items[0]
-        print("unmapped type", items)
+        print("unmapped type", items, file=sys.stderr)
         return Type()
 
     def ref_type(self, items) -> ReferenceType:
@@ -150,6 +170,9 @@ class ZigCodeTransformer(Transformer):
 
     def opt_type(self, items) -> OptionalType:
         return OptionalType(inner= items[0])
+
+    def err_type(self, items) -> ErrorSet:
+        return ErrorSet(errors=set(items),docs=None,name=None)
 
     def arr_type(self, items) -> ArrayType:
         return ArrayType(
@@ -241,6 +264,10 @@ def render_type(stream, t: Type):
         else:
             stream.write(f"[{t.size}]")
         render_type(stream, t.inner)
+    elif isinstance(t, ErrorSet):
+        stream.write("ErrorSet(error{")
+        stream.write(",".join( t.errors))
+        stream.write("})")
     elif isinstance(t, PointerType):
         if t.size == PointerSize.one:
             stream.write("*")
@@ -268,19 +295,20 @@ def render_type(stream, t: Type):
     else:
         assert False 
 
-def render_container(stream, declarations: list[Declaration], indent: int = 0, prefix:str = "ashet.syscall"):
+def render_container(stream, declarations: list[Declaration], errors: ErrorAllocation, indent: int = 0, prefix:str = "ashet"):
     I = "    " * indent
     for decl in declarations:
         if decl.docs is not None:
             for line in decl.docs.lines:
                 stream.write(f"{I}/// {line}\n")
+        
+        symbol = f"{prefix}_{decl.name}"
 
         if isinstance(decl, Namespace):
             stream.write(f"{I}pub const {decl.name} = struct {{\n")
-            render_container(stream, decl.decls, indent + 1, prefix + "." + decl.name)
+            render_container(stream, decl.decls,errors, indent + 1, symbol)
             stream.write(f"{I}}};\n")
         elif isinstance(decl, Function):
-            symbol = f"{prefix}.{decl.name}"
 
             if WITH_LINKNAME:
                 stream.write(f"{I}pub extern fn {decl.name}(")
@@ -310,16 +338,28 @@ def render_container(stream, declarations: list[Declaration], indent: int = 0, p
                 stream.write(f", .{{ .name = \"{symbol}\" }})")
 
             stream.write(f";\n")
+        elif isinstance(decl, ErrorSet):
+            
+
+            stream.write(f"{I}pub const {decl.name} = ErrorSet(error{{\n")
+            
+            for err in sorted(decl.errors, key=lambda e:errors.get_number(e)):
+                stream.write(f"{I}    {err},\n")
+
+            stream.write(f"{I}}});\n")
+
         else:
             assert False 
         stream.write("\n")
 
-def foreach_fn(declarations: list[Declaration], func):
+def foreach(declarations: list[Declaration], T: type, func):
     for decl in declarations:
         if isinstance(decl, Namespace):
-            foreach_fn(decl.decls, func)
-        elif isinstance(decl, Function):
+            foreach(decl.decls, T, func)
+        elif isinstance(decl, T):
             func(decl)
+        elif isinstance(decl, ErrorSet) or isinstance(decl, Function):
+            pass 
         else:
             assert False 
 
@@ -333,6 +373,8 @@ def assert_legal_extern_type(t: Type):
         assert_legal_extern_type(t.inner)
     elif isinstance(t, PointerType):
         assert t.size != PointerSize.slice
+    elif isinstance(t, ErrorSet):
+        assert True 
     else:
         assert False 
 
@@ -348,8 +390,6 @@ def transform_function(func: Function):
     new_params: list[Parameter] = list()
 
     for param in func.params:
-
-        pass # TODO: add source transformations here
 
         ptr_type = param.type
         is_out_value = False 
@@ -399,6 +439,7 @@ def transform_function(func: Function):
 
     func.params = new_params
 
+
 def main():
 
     grammar_source = GRAMMAR_PATH.read_text()
@@ -415,13 +456,34 @@ def main():
     
     root_container = transformer.transform(parse_tree)
 
-    foreach_fn(root_container.decls, func=transform_function)
+    errors = ErrorAllocation()
 
-    foreach_fn(root_container.decls, func=assert_legal_extern_fn)
+    foreach(root_container.decls, Function, func=transform_function)
+
+    foreach(root_container.decls, Function, func=assert_legal_extern_fn)
+
+    def alloc_error(set: ErrorSet):
+        for err in set.errors:
+            errors.get_number(err)
+    foreach(root_container.decls, ErrorSet, alloc_error)
 
     syscalls_code = ""
     with io.StringIO() as strio:
-        render_container(strio, root_container.decls)
+
+
+        strio.write("/// Global error set, defines numeric values for all errors.\n")
+        strio.write("pub const Error = enum(u16) {\n")
+        for key, value in sorted(errors.mapping.items(), key=lambda kv: kv[1]):
+            assert key != "ok"
+            assert key != "Unexpected"
+            assert 0 < value < 0xFFFF
+            strio.write(f"    {key} = {value},\n")
+        strio.write("};\n")
+        strio.write("\n")
+        strio.write("pub const ErrorSet = @import(\"error_set.zig\").UntypedErrorSet(Error);\n")
+        strio.write("\n")
+        
+        render_container(strio, root_container.decls,errors)
         syscalls_code = strio.getvalue()
 
     sys.stdout.write(abi_template.render(
