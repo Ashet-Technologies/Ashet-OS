@@ -6,13 +6,13 @@ pkgs.mkShell {
     #    pkgs.qemu-utils
     pkgs.mtools
     pkgs.syslinux
-    # pkgs.llvmPackages_16.bintools
     pkgs.gdb
     pkgs.pkg-config
-    # pkgs.gcc-arm-embedded
+    pkgs.python311
+    pkgs.python311Packages.lark
+    pkgs.python311Packages.dataclasses-json
   ];
   buildInputs = [
     pkgs.pkgsi686Linux.SDL2
-    #    pkgs.pkgsi686Linux.lua5_1
   ];
 }
