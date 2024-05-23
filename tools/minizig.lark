@@ -6,12 +6,27 @@ decl : doc_comment? raw_decl
 raw_decl: fn_decl
         | ns_decl
         | err_decl
+        | iop_decl
 
 ns_decl : "const" identifier "=" "struct" "{" container "}" ";"
 
 fn_decl : "fn" identifier "(" param_list ")" type ";"
 
 err_decl : "const" identifier "=" err_type ";"
+
+iop_decl : "const" identifier "=" iop ";"
+
+
+iop : "IOP" "{" iop_field* "}"
+
+iop_field        : iop_error
+                 | iop_input
+                 | iop_output
+iop_error        : ".@\"error\"" "=" err_type ","
+iop_input        : ".inputs" "=" iop_struct ","
+iop_output       : ".outputs" "=" iop_struct ","
+iop_struct       : "struct" "{" iop_struct_field* "}"
+iop_struct_field : identifier ":" type ","
 
 param_list : [parameter ("," parameter)* ","?]
 

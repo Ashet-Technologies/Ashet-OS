@@ -360,3 +360,20 @@ const syscalls = struct {
         // TODO: Add notification listeners
     };
 };
+
+/// This namespace contains the supported I/O operations of Ashet OS.
+const io = struct {
+    const input = struct {
+        /// Waits for an input event and completes when any input was done.
+        const GetEvent = IOP{
+            .@"error" = error{
+                NonExclusiveAccess,
+                InProgress,
+            },
+            .outputs = struct {
+                event_type: InputEventType,
+                event: InputEvent,
+            },
+        };
+    };
+};

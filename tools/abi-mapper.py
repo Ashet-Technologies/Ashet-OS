@@ -89,6 +89,12 @@ class ErrorSet(Declaration,Type):
     errors: set[str]
 
 @dataclass
+class IOP(Declaration):
+    inputs: list[Parameter]
+    outputs: list[Parameter]
+    error: ErrorSet
+
+@dataclass
 class Container :
     decls: list[Declaration]
 
@@ -131,6 +137,36 @@ class ZigCodeTransformer(Transformer):
         etype =items[1]
         etype.name = items[0]
         return etype
+
+    def iop_decl(self, items) -> IOP:
+
+        print("IOP:", items, file=sys.stderr)
+
+        return IOP(
+            name = items[0],
+            docs = None,
+        )
+
+    def iop_field(self, items) -> tuple[str, Parameter | ErrorSet]:
+        print("iop field:", items, file=sys.stderr)
+
+    def iop_error(self, items) -> tuple[str, ErrorSet]: 
+        assert len(items) == 1
+        assert isinstance(items[0], ErrorSet)
+        return ("error", items[0])
+
+    def iop_input(self, items):
+        print("iop_input", items, file=sys.stderr)
+
+    def iop_output(self, items):
+        print("iop_output", items, file=sys.stderr)
+        
+    def iop_struct(self, items):
+        print("iop_struct", items, file=sys.stderr)
+
+    def iop_struct_field(self, items):
+        print("iop_struct_field", items, file=sys.stderr)
+
 
     def param_list(self, items) -> list[Parameter]:
         assert len(items) >= 1
