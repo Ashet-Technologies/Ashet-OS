@@ -140,33 +140,55 @@ class ZigCodeTransformer(Transformer):
 
     def iop_decl(self, items) -> IOP:
 
-        print("IOP:", items, file=sys.stderr)
+        params = {
+            "inputs": list(),
+            "outputs": list(),
+            "error": None,
+        }
+
+        for kind, data in items[1]:
+            params[kind] = data
 
         return IOP(
             name = items[0],
             docs = None,
+            inputs = params["inputs"],
+            outputs = params["outputs"],
+            error = params["error"],
         )
 
-    def iop_field(self, items) -> tuple[str, Parameter | ErrorSet]:
-        print("iop field:", items, file=sys.stderr)
+    def iop(self, items) -> list[tuple[str, list[Parameter] | ErrorSet]]:
+        return items
+
+    def iop_field(self, items) -> tuple[str, list[Parameter] | ErrorSet]:
+        assert len(items) == 1
+        return items[0]
 
     def iop_error(self, items) -> tuple[str, ErrorSet]: 
         assert len(items) == 1
         assert isinstance(items[0], ErrorSet)
         return ("error", items[0])
 
-    def iop_input(self, items):
-        print("iop_input", items, file=sys.stderr)
+    def iop_input(self, items) -> tuple[str, list[Parameter]]:
+        assert len(items) == 1
+        assert all(isinstance(item, Parameter) for item in items[0])
+        return ("inputs", items[0])
 
-    def iop_output(self, items):
-        print("iop_output", items, file=sys.stderr)
+    def iop_output(self, items) -> tuple[str, list[Parameter]]:
+        assert len(items) == 1
+        assert all(isinstance(item, Parameter) for item in items[0])
+        return ("outputs", items[0])
         
-    def iop_struct(self, items):
-        print("iop_struct", items, file=sys.stderr)
+    def iop_struct(self, items) -> list[Parameter]:
+        assert all(isinstance(item, Parameter) for item in items)
+        return items
 
     def iop_struct_field(self, items):
-        print("iop_struct_field", items, file=sys.stderr)
-
+        return Parameter(
+            docs = items[0],
+            name = items[1],
+            type = items[2],
+        )
 
     def param_list(self, items) -> list[Parameter]:
         assert len(items) >= 1
@@ -384,6 +406,21 @@ def render_container(stream, declarations: list[Declaration], errors: ErrorAlloc
 
             stream.write(f"{I}}});\n")
 
+        elif isinstance(decl, IOP):
+
+
+            stream.write(f"{I}pub const {decl.name} = IOP.define(.{{\n")
+            
+            stream.write(f"{I}    .type = .@\"????\",\n")
+            stream.write(f"{I}    .@\"error\" = ErrorSet(error{{\n")
+            stream.write(f"{I}    }}),\n")
+            stream.write(f"{I}    .inputs = struct {{\n")
+            stream.write(f"{I}    }},\n")
+            stream.write(f"{I}    .outputs = struct {{\n")
+            stream.write(f"{I}    }},\n")
+
+            stream.write(f"{I}}});\n")
+
         else:
             assert False 
         stream.write("\n")
@@ -394,7 +431,7 @@ def foreach(declarations: list[Declaration], T: type, func):
             foreach(decl.decls, T, func)
         elif isinstance(decl, T):
             func(decl)
-        elif isinstance(decl, ErrorSet) or isinstance(decl, Function):
+        elif isinstance(decl, ErrorSet) or isinstance(decl, Function) or isinstance(decl, IOP):
             pass 
         else:
             assert False 

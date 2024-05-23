@@ -371,6 +371,7 @@ const io = struct {
                 InProgress,
             },
             .outputs = struct {
+                /// Defines which element of `event` is active.
                 event_type: InputEventType,
                 event: InputEvent,
             },

@@ -17,7 +17,7 @@ err_decl : "const" identifier "=" err_type ";"
 iop_decl : "const" identifier "=" iop ";"
 
 
-iop : "IOP" "{" iop_field* "}"
+iop : "IOP" "{" [iop_field*] "}"
 
 iop_field        : iop_error
                  | iop_input
@@ -26,7 +26,7 @@ iop_error        : ".@\"error\"" "=" err_type ","
 iop_input        : ".inputs" "=" iop_struct ","
 iop_output       : ".outputs" "=" iop_struct ","
 iop_struct       : "struct" "{" iop_struct_field* "}"
-iop_struct_field : identifier ":" type ","
+iop_struct_field : [doc_comment] identifier ":" type ","
 
 param_list : [parameter ("," parameter)* ","?]
 
