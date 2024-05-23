@@ -353,13 +353,15 @@ def render_type(stream, t: Type):
     else:
         assert False 
 
+def render_docstring(stream ,I: str, docs: DocComment | None):
+    if docs is not None:
+        for line in docs.lines:
+            stream.write(f"{I}/// {line}\n")
+
 def render_container(stream, declarations: list[Declaration], errors: ErrorAllocation, indent: int = 0, prefix:str = "ashet"):
     I = "    " * indent
     for decl in declarations:
-        if decl.docs is not None:
-            for line in decl.docs.lines:
-                stream.write(f"{I}/// {line}\n")
-        
+        render_docstring(stream, I, decl.docs)
         symbol = f"{prefix}_{decl.name}"
 
         if isinstance(decl, Namespace):
@@ -408,16 +410,30 @@ def render_container(stream, declarations: list[Declaration], errors: ErrorAlloc
 
         elif isinstance(decl, IOP):
 
+            def write_struct_fields(struct: list[Parameter]):
+                for field in struct:
+                    if field.docs:
+                        render_docstring(stream, I + "        ", field.docs)
+                    stream.write(f"{I}         {field.name}: ")
+                    render_type(stream, field.type)
+                    stream.write(",\n")
 
             stream.write(f"{I}pub const {decl.name} = IOP.define(.{{\n")
             
             stream.write(f"{I}    .type = .@\"????\",\n")
-            stream.write(f"{I}    .@\"error\" = ErrorSet(error{{\n")
-            stream.write(f"{I}    }}),\n")
-            stream.write(f"{I}    .inputs = struct {{\n")
-            stream.write(f"{I}    }},\n")
-            stream.write(f"{I}    .outputs = struct {{\n")
-            stream.write(f"{I}    }},\n")
+            if decl.error is not None:
+                stream.write(f"{I}    .@\"error\" = ErrorSet(error{{\n")
+                for err in sorted(decl.error.errors, key=lambda e:errors.get_number(e)):
+                    stream.write(f"{I}        {err},\n")
+                stream.write(f"{I}    }}),\n")
+            if len(decl.inputs) > 0:
+                stream.write(f"{I}    .inputs = struct {{\n")
+                write_struct_fields(decl.inputs)
+                stream.write(f"{I}    }},\n")
+            if len(decl.outputs) > 0:
+                stream.write(f"{I}    .outputs = struct {{\n")
+                write_struct_fields(decl.outputs)
+                stream.write(f"{I}    }},\n")
 
             stream.write(f"{I}}});\n")
 
