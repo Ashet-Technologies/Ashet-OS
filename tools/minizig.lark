@@ -7,7 +7,7 @@ zigcode_raw: EVERYTHING
 
 container : decl*
 
-decl : "pub"? "extern"? doc_comment? raw_decl
+decl : doc_comment? "pub"? "extern"? raw_decl
 
 raw_decl: fn_decl
         | ns_decl
@@ -20,17 +20,8 @@ fn_decl : "\"syscall\"" "fn"  identifier "(" param_list ")" type ";"
 
 err_decl : "const" identifier "=" err_type ";"
 
-iop_decl : "const" identifier "=" iop ";"
+iop_decl : "\"iop\"" "fn" identifier "(" param_list ")" err_type  "!" iop_struct ";"
 
-
-iop : "IOP" "{" [iop_field*] "}"
-
-iop_field        : iop_error
-                 | iop_input
-                 | iop_output
-iop_error        : ".@\"error\"" "=" err_type ","
-iop_input        : ".inputs" "=" iop_struct ","
-iop_output       : ".outputs" "=" iop_struct ","
 iop_struct       : "struct" "{" iop_struct_field* "}"
 iop_struct_field : [doc_comment] identifier ":" type ","
 

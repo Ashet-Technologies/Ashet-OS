@@ -132,6 +132,11 @@ class ErrorAllocation:
         for err in set.errors:
             self.get_number(err)
 
+def unwrap_items(func):
+    def _deco(self, items):
+        return func(self, *items)
+    return _deco
+
 class ZigCodeTransformer(Transformer):
 
     def toplevel(self, items) -> TopLevelCode:
@@ -182,47 +187,16 @@ class ZigCodeTransformer(Transformer):
         etype.name = items[0]
         return etype
 
-    def iop_decl(self, items) -> IOP:
-
-        params = {
-            "inputs": list(),
-            "outputs": list(),
-            "error": None,
-        }
-
-        for kind, data in items[1]:
-            params[kind] = data
-
+    @unwrap_items
+    def iop_decl(self, identifier, inputs, errorset, outputs) -> IOP:
         return IOP(
-            name = items[0],
+            name = identifier,
             docs = None,
-            inputs = params["inputs"],
-            outputs = params["outputs"],
-            error = params["error"],
+            inputs = inputs,
+            outputs = outputs,
+            error = errorset,
         )
 
-    def iop(self, items) -> list[tuple[str, list[Parameter] | ErrorSet]]:
-        return items
-
-    def iop_field(self, items) -> tuple[str, list[Parameter] | ErrorSet]:
-        assert len(items) == 1
-        return items[0]
-
-    def iop_error(self, items) -> tuple[str, ErrorSet]: 
-        assert len(items) == 1
-        assert isinstance(items[0], ErrorSet)
-        return ("error", items[0])
-
-    def iop_input(self, items) -> tuple[str, list[Parameter]]:
-        assert len(items) == 1
-        assert all(isinstance(item, Parameter) for item in items[0])
-        return ("inputs", items[0])
-
-    def iop_output(self, items) -> tuple[str, list[Parameter]]:
-        assert len(items) == 1
-        assert all(isinstance(item, Parameter) for item in items[0])
-        return ("outputs", items[0])
-        
     def iop_struct(self, items) -> list[Parameter]:
         assert all(isinstance(item, Parameter) for item in items)
         return items
@@ -519,12 +493,9 @@ def assert_legal_extern_fn(func: Function):
         assert_legal_extern_type(p.type)
     assert_legal_extern_type(func.return_type)
 
-
-def transform_function(func: Function):
-
-    new_params: list[Parameter] = list()
-
-    for param in func.params:
+def transform_parameter_list(in_params: list[Parameter]) -> list[Parameter]:
+    out_params: list[Parameter] = list()
+    for param in in_params:
 
         ptr_type = param.type
         is_out_value = False 
@@ -538,15 +509,15 @@ def transform_function(func: Function):
             ptr_type = ptr_type.inner
 
         if not isinstance(ptr_type, PointerType):
-            new_params.append(param)
+            out_params.append(param)
             continue 
 
         if ptr_type.size != PointerSize.slice:
-            new_params.append(param)
+            out_params.append(param)
             continue 
 
         if param.name is None :
-            panic("bad function:", func.name)
+            panic("bad function:", param)
 
         
         len_param = Parameter(
@@ -568,10 +539,17 @@ def transform_function(func: Function):
                 volatile=False,
             )
         
-        new_params.append(param)
-        new_params.append(len_param)
+        out_params.append(param)
+        out_params.append(len_param)
 
-    func.params = new_params
+    return out_params
+
+def transform_function(func: Function):
+    func.params = transform_parameter_list(func.params)
+
+def transform_iop(iop: IOP):
+    iop.inputs = transform_parameter_list(iop.inputs)
+    iop.outputs = transform_parameter_list(iop.outputs)
 
 
 def main():
@@ -592,7 +570,11 @@ def main():
     for decl in root_container.decls:
         errors.collect(decl)
 
+    # Convert all parameters of functions into extern compatible ones
     foreach(root_container.decls, Function, func=transform_function)
+    
+    # Convert all input/output structs of IOPs into extern compatible ones
+    foreach(root_container.decls, IOP, func=transform_iop)
 
     foreach(root_container.decls, Function, func=assert_legal_extern_fn)
 
