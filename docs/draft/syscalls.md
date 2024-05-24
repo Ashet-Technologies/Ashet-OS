@@ -2,6 +2,10 @@
 
 # Required Changes
 
+ashetos:
++ cli arguments [ str | resource | memory  ]
++ shared resources
+
 - Kernel Resource System
   - All user-allocatable resources stored in a DoublyLinkedList
   - Have a common user-exposable pointer and forward/backward conversion possible
@@ -47,4 +51,6 @@
 - Input drivers can have an associated video output for absolute positioning
 - Process monitoring functionality
   => process.monitor
+
+
 

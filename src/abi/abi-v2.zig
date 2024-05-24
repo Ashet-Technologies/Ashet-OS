@@ -137,6 +137,18 @@ pub const Service = opaque {
     }
 };
 
+pub const SharedMemory = opaque {
+    pub fn as_resource(value: *@This()) *SystemResource {
+        return @ptrCast(value);
+    }
+};
+
+pub const Pipe = opaque {
+    pub fn as_resource(value: *@This()) *SystemResource {
+        return @ptrCast(value);
+    }
+};
+
 pub const Process = opaque {
     pub fn as_resource(value: *@This()) *SystemResource {
         return @ptrCast(value);

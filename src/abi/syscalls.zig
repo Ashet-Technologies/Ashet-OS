@@ -359,6 +359,38 @@ const syscalls = struct {
 
         // TODO: Add notification listeners
     };
+
+    const shm = struct {
+        /// Constructs a new shared memory object with `size` bytes of memory.
+        /// Shared memory can be written by all processes without any memory protection.
+        pub fn create(**SharedMemory, size: usize) error{
+            SystemResources,
+        };
+
+        /// Returns the number of bytes inside the given shared memory object.
+        pub fn get_length(*SharedMemory) usize;
+
+        /// Returns a pointer to the shared memory.
+        pub fn get_pointer(*SharedMemory) [*]align(16) u8;
+    };
+
+    const pipe = struct {
+        /// Spawns a new pipe with `buffer_size` bytes of intermediate buffer.
+        /// If `buffer_size` is 0, the pipe is synchronous and can only send data
+        /// if a `read` call is active. Otherwise, up to `buffer_size` bytes can be
+        /// stored in a FIFO.
+        fn create(**Pipe, buffer_size: usize) error{
+            SystemResources,
+        };
+
+        /// Writes `buffer` into the given pipe and returns the number of bytes written.
+        /// If `blocking` is true, the function blocks until `buffer.len` bytes are written.
+        fn write(*Pipe, buffer: []const u8, blocking: bool) usize;
+
+        /// Reads data from a pipe into `buffer` and returns the number of bytes read.
+        /// If `blocking` is true, the function blocks until `buffer.len` bytes are read.
+        fn read(*Pipe, buffer: []u8, blocking: bool) usize;
+    };
 };
 
 /// This namespace contains the supported I/O operations of Ashet OS.
