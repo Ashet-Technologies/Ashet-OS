@@ -23,6 +23,7 @@ err_decl : "const" identifier "=" err_type ";"
 iop_decl : "\"iop\"" "fn" identifier "(" param_list ")" err_type  "!" iop_struct ";"
 
 iop_struct       : "struct" "{" iop_struct_field* "}"
+                 | "void"
 iop_struct_field : [doc_comment] identifier ":" type ","
 
 param_list : [parameter ("," parameter)* ","?]

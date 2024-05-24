@@ -408,6 +408,12 @@ const syscalls = struct {
 
 /// This namespace contains the supported I/O operations of Ashet OS.
 const io = struct {
+    /// Sleeps until `clock.monotonic()` returns at least `timeout`.
+    extern "iop" fn Timer(
+        /// Monotonic timestamp in nanoseconds until the IOP completes.
+        timeout: u64,
+    ) error{}!void;
+
     const process = struct {
         /// Spawns a new process
         extern "iop" fn Spawn(
@@ -460,6 +466,439 @@ const io = struct {
         ) error{}!struct {
             length: usize,
         };
+    };
+
+    const network = struct {
+        pub const udp = struct {
+            extern "iop" fn Bind(socket: UdpSocket, bind_point: EndPoint) error{
+                InvalidHandle,
+                SystemResources,
+                AddressInUse,
+                IllegalValue,
+            }!struct {
+                bind_point: EndPoint,
+            };
+
+            extern "iop" fn Connect(
+                socket: UdpSocket,
+                target: EndPoint,
+            ) error{
+                InvalidHandle,
+                SystemResources,
+                AlreadyConnected,
+                AlreadyConnecting,
+                BufferError,
+                IllegalArgument,
+                IllegalValue,
+                InProgress,
+                LowlevelInterfaceError,
+                OutOfMemory,
+                Routing,
+                Timeout,
+            }!void;
+
+            extern "iop" fn Disconnect(socket: UdpSocket) error{
+                InvalidHandle,
+                SystemResources,
+                NotConnected,
+            }!void;
+
+            extern "iop" fn Send(
+                socket: UdpSocket,
+                data: []const u8,
+            ) error{
+                InvalidHandle,
+                SystemResources,
+                BufferError,
+                IllegalArgument,
+                IllegalValue,
+                InProgress,
+                LowlevelInterfaceError,
+                NotConnected,
+                OutOfMemory,
+                Routing,
+                Timeout,
+            }!struct {
+                bytes_sent: usize,
+            };
+
+            extern "iop" fn SendTo(
+                socket: UdpSocket,
+                receiver: EndPoint,
+                data: []const u8,
+            ) error{
+                InvalidHandle,
+                SystemResources,
+                BufferError,
+                IllegalArgument,
+                IllegalValue,
+                InProgress,
+                LowlevelInterfaceError,
+                OutOfMemory,
+                Routing,
+                Timeout,
+            }!struct {
+                bytes_sent: usize,
+            };
+
+            extern "iop" fn ReceiveFrom(
+                socket: UdpSocket,
+                buffer: []u8,
+            ) error{
+                InvalidHandle,
+                SystemResources,
+                BufferError,
+                IllegalArgument,
+                IllegalValue,
+                InProgress,
+                LowlevelInterfaceError,
+                OutOfMemory,
+                Routing,
+                Timeout,
+            }!struct {
+                bytes_received: usize,
+                sender: EndPoint,
+            };
+        };
+
+        pub const tcp = struct {
+            extern "iop" fn Bind(
+                socket: TcpSocket,
+                bind_point: EndPoint,
+            ) error{
+                InvalidHandle,
+                SystemResources,
+                AddressInUse,
+                IllegalValue,
+            }!struct {
+                bind_point: EndPoint,
+            };
+
+            extern "iop" fn Connect(
+                socket: TcpSocket,
+                target: EndPoint,
+            ) error{
+                InvalidHandle,
+                SystemResources,
+                AlreadyConnected,
+                AlreadyConnecting,
+                BufferError,
+                ConnectionAborted,
+                ConnectionClosed,
+                ConnectionReset,
+                IllegalArgument,
+                IllegalValue,
+                InProgress,
+                LowlevelInterfaceError,
+                OutOfMemory,
+                Routing,
+                Timeout,
+            }!void;
+
+            extern "iop" fn Send(
+                socket: TcpSocket,
+                data: []const u8,
+            ) error{
+                InvalidHandle,
+                SystemResources,
+                BufferError,
+                ConnectionAborted,
+                ConnectionClosed,
+                ConnectionReset,
+                IllegalArgument,
+                IllegalValue,
+                InProgress,
+                LowlevelInterfaceError,
+                NotConnected,
+                OutOfMemory,
+                Routing,
+                Timeout,
+            }!struct {
+                bytes_sent: usize,
+            };
+
+            extern "iop" fn Receive(
+                socket: TcpSocket,
+                buffer: []u8,
+                /// if true, will read until `buffer.len` bytes arrived. otherwise will read until the end of a single packet
+                read_all: bool,
+            ) error{
+                InvalidHandle,
+                SystemResources,
+                AlreadyConnected,
+                AlreadyConnecting,
+                BufferError,
+                ConnectionAborted,
+                ConnectionClosed,
+                ConnectionReset,
+                IllegalArgument,
+                IllegalValue,
+                InProgress,
+                LowlevelInterfaceError,
+                NotConnected,
+                OutOfMemory,
+                Routing,
+                Timeout,
+            }!struct {
+                bytes_received: usize,
+            };
+        };
+    };
+
+    /// A file or directory on Ashet OS can be named with any legal UTF-8 sequence
+    /// that does not contain `/` and `:`. It is recommended to only create file names
+    /// that are actually typeable on the operating system tho.
+    ///
+    /// There are some special file names:
+    /// - `.` is the "current directory" selector and does not add to the path.
+    /// - `..` is the "parent directory" selector and navigates up in the directory hierarchy if possible.
+    /// - Any sequence of upper case ASCII letters and digits (`A-Z`, `0-9`) that ends with `:` is a file system name. This name specifies
+    ///   the root directory of a certain file system.
+    ///
+    /// Paths are either a relative or absolute addyessing of a file system entity.
+    /// Paths are composed of a sequence of names, each name separated by `/`.
+    /// A file system name is only legal as the first element of a path sequence, making the path an absolute path.
+    ///
+    /// There is a limit on how long a file/directory name can be, but there's no limit on how long a total
+    /// path can be.
+    ///
+    /// Here are some examples for valid paths:
+    /// - `example.txt`
+    /// - `docs/wiki.txt`
+    /// - `SYS:/apps/editor/code`
+    /// - `USB0:/foo/../bar` (which is equivalent to `USB0:/bar`)
+    ///
+    /// The filesystem that is used to boot the OS from has an alias `SYS:` that is always a legal way to address this file system.
+    pub const fs = struct {
+        /// Flushes all open files to disk.
+        extern "iop" fn Sync() error{DiskError}!void;
+
+        /// Gets information about a file system.
+        /// Also returns a `next` id that can be used to iterate over all filesystems.
+        /// The `system` filesystem is guaranteed to be the first one.
+        extern "iop" fn GetFilesystemInfo(fs: FileSystemId) error{
+            DiskError,
+            InvalidFileSystem,
+        }!struct {
+            info: FileSystemInfo,
+            next: FileSystemId,
+        };
+
+        /// opens a directory on a filesystem
+        extern "iop" fn OpenDrive(fs: FileSystemId, path: []const u8) error{
+            DiskError,
+            InvalidFileSystem,
+            FileNotFound,
+            NotADir,
+            InvalidPath,
+            SystemFdQuotaExceeded,
+            SystemResources,
+        }!struct {
+            dir: Directory,
+        };
+
+        /// opens a directory relative to the given dir handle.
+        extern "iop" fn OpenDir(dir: Directory, path: []const u8) error{
+            DiskError,
+            InvalidHandle,
+            FileNotFound,
+            NotADir,
+            InvalidPath,
+            SystemFdQuotaExceeded,
+            SystemResources,
+        }!struct {
+            dir: Directory,
+        };
+
+        /// closes the directory handle
+        extern "iop" fn CloseDir(dir: Directory) error{InvalidHandle}!struct {};
+
+        /// resets the directory iterator to the starting point
+        extern "iop" fn ResetDirEnumeration(dir: Directory) error{
+            DiskError,
+            InvalidHandle,
+            SystemResources,
+        }!void;
+
+        /// returns the info for the current file or "eof", and advances the iterator to the next entry if possible
+        extern "iop" fn EnumerateDir(dir: Directory) error{
+            DiskError,
+            InvalidHandle,
+            SystemResources,
+        }!struct {
+            eof: bool,
+            info: FileInfo,
+        };
+
+        /// deletes a file or directory by the given path.
+        extern "iop" fn Delete(
+            dir: Directory,
+            path: []const u8,
+            recurse: bool,
+        ) error{
+            DiskError,
+            InvalidHandle,
+            FileNotFound,
+            InvalidPath,
+        }!void;
+
+        /// creates a new directory relative to dir. If `path` contains subdirectories, all
+        /// directories are created.
+        extern "iop" fn MkDir(
+            dir: Directory,
+            path: []const u8,
+            mkopen: bool,
+        ) error{
+            DiskError,
+            InvalidHandle,
+            Exists,
+            InvalidPath,
+        }!struct {
+            dir: Directory,
+        };
+
+        /// returns the type of the file/dir at path, also adds size and modification dates
+        extern "iop" fn StatEntry(
+            dir: Directory,
+            path_ptr: [*]const u8,
+            path_len: usize,
+        ) error{
+            DiskError,
+            InvalidHandle,
+            FileNotFound,
+            InvalidPath,
+        }!struct {
+            info: FileInfo,
+        };
+
+        /// renames a file inside the same file system.
+        /// NOTE: This is a cheap operation and does not require the copying of data.
+        extern "iop" fn NearMove(
+            src_dir: Directory,
+            src_path: []const u8,
+            dst_path: []const u8,
+        ) error{
+            DiskError,
+            InvalidHandle,
+            FileNotFound,
+            InvalidPath,
+            Exists,
+        }!void;
+
+        // GROUP: modification
+
+        /// moves a file or directory between two unrelated directories. Can also move between different file systems.
+        /// NOTE: This syscall might copy the data.
+        extern "iop" fn FarMove(
+            src_dir: Directory,
+            src_path: []const u8,
+            dst_dir: Directory,
+            dst_path: []const u8,
+        ) error{
+            DiskError,
+            InvalidHandle,
+            FileNotFound,
+            InvalidPath,
+            Exists,
+            NoSpaceLeft,
+        }!void;
+
+        /// copies a file or directory between two unrelated directories. Can also move between different file systems.
+        extern "iop" fn Copy(
+            src_dir: Directory,
+            src_path: []const u8,
+            dst_dir: Directory,
+            dst_path: []const u8,
+        ) error{
+            DiskError,
+            InvalidHandle,
+            FileNotFound,
+            InvalidPath,
+            Exists,
+            NoSpaceLeft,
+        }!void;
+
+        // // GROUP: file handling
+
+        /// opens a file from the given directory.
+        extern "iop" fn OpenFile(
+            dir: Directory,
+            path: []const u8,
+            access: FileAccess,
+            mode: FileMode,
+        ) error{
+            DiskError,
+            InvalidHandle,
+            FileNotFound,
+            InvalidPath,
+            Exists,
+            NoSpaceLeft,
+            SystemFdQuotaExceeded,
+            SystemResources,
+            WriteProtected,
+            FileAlreadyExists,
+        }!struct {
+            handle: File,
+        };
+
+        /// closes the handle and flushes the file.
+        extern "iop" fn CloseFile(file: File) error{
+            DiskError,
+            InvalidHandle,
+            SystemResources,
+        }!void;
+
+        /// makes sure this file is safely stored to mass storage device
+        extern "iop" fn FlushFile(file: File) error{
+            DiskError,
+            InvalidHandle,
+            SystemResources,
+        }!void;
+
+        /// directly reads data from a given offset into the file. no streaming API to the kernel
+        extern "iop" fn Read(
+            file: File,
+            offset: u64,
+            buffer: []u8,
+        ) error{
+            DiskError,
+            InvalidHandle,
+            SystemResources,
+        }!struct {
+            count: usize,
+        };
+
+        /// directly writes data to a given offset into the file. no streaming API to the kernel
+        extern "iop" fn Write(
+            file: File,
+            offset: u64,
+            buffer: []const u8,
+        ) error{
+            DiskError,
+            InvalidHandle,
+            NoSpaceLeft,
+            SystemResources,
+            WriteProtected,
+        }!struct {
+            count: usize,
+        };
+
+        /// allows us to get the current size of the file, modification dates, and so on
+        extern "iop" fn StatFile(file: File) error{
+            DiskError,
+            InvalidHandle,
+            SystemResources,
+        }!struct {
+            info: FileInfo,
+        };
+
+        /// Resizes the file to the given length in bytes. Can be also used to truncate a file to zero length.
+        extern "iop" fn Resize(file: File, length: u64) error{
+            DiskError,
+            InvalidHandle,
+            NoSpaceLeft,
+            SystemResources,
+        }!void;
     };
 };
 
@@ -1466,656 +1905,6 @@ pub const IOP_Type = enum(u32) {
     fs_write,
     fs_stat_file,
     fs_resize,
-};
-
-pub const Timer = IOP.define(.{
-    .type = .timer,
-    .@"error" = ErrorSet(.{ .Unexpected = 1 }),
-    .inputs = struct {
-        timeout: i128,
-    },
-});
-
-/// A file or directory on Ashet OS can be named with any legal UTF-8 sequence
-/// that does not contain `/` and `:`. It is recommended to only create file names
-/// that are actually typeable on the operating system tho.
-///
-/// There are some special file names:
-/// - `.` is the "current directory" selector and does not add to the path.
-/// - `..` is the "parent directory" selector and navigates up in the directory hierarchy if possible.
-/// - Any sequence of upper case ASCII letters and digits (`A-Z`, `0-9`) that ends with `:` is a file system name. This name specifies
-///   the root directory of a certain file system.
-///
-/// Paths are either a relative or absolute addyessing of a file system entity.
-/// Paths are composed of a sequence of names, each name separated by `/`.
-/// A file system name is only legal as the first element of a path sequence, making the path an absolute path.
-///
-/// There is a limit on how long a file/directory name can be, but there's no limit on how long a total
-/// path can be.
-///
-/// Here are some examples for valid paths:
-/// - `example.txt`
-/// - `docs/wiki.txt`
-/// - `SYS:/apps/editor/code`
-/// - `USB0:/foo/../bar` (which is equivalent to `USB0:/bar`)
-///
-/// The filesystem that is used to boot the OS from has an alias `SYS:` that is always a legal way to address this file system.
-pub const fs = struct {
-    pub const FileSystemError = ErrorSet(.{
-        .Denied = 1,
-        .DiskErr = 2,
-        .Exist = 3,
-        .IntErr = 4,
-        .InvalidDrive = 5,
-        .InvalidName = 6,
-        .InvalidObject = 7,
-        .InvalidParameter = 8,
-        .Locked = 9,
-        .MkfsAborted = 10,
-        .NoFile = 11,
-        .NoFilesystem = 12,
-        .NoPath = 13,
-        .Overflow = 17,
-        .Timeout = 18,
-        .TooManyOpenFiles = 19,
-        .WriteProtected = 20,
-        .InvalidFileHandle = 21,
-        .InvalidDevice = 22,
-        .PathTooLong = 23,
-        .Unimplemented = 24,
-    });
-
-    pub const SyncError = ErrorSet(.{
-        .DiskError = 1,
-    });
-    pub const GetFilesystemInfoError = ErrorSet(.{
-        .DiskError = 1,
-        .InvalidFileSystem = 2,
-    });
-    pub const OpenDriveError = ErrorSet(.{
-        .DiskError = 1,
-        .InvalidFileSystem = 2,
-        .FileNotFound = 3,
-        .NotADir = 4,
-        .InvalidPath = 5,
-        .SystemFdQuotaExceeded = 6,
-        .SystemResources = 7,
-    });
-    pub const OpenDirError = ErrorSet(.{
-        .DiskError = 1,
-        .InvalidHandle = 2,
-        .FileNotFound = 3,
-        .NotADir = 4,
-        .InvalidPath = 5,
-        .SystemFdQuotaExceeded = 6,
-        .SystemResources = 7,
-    });
-    pub const CloseDirError = ErrorSet(.{
-        .InvalidHandle = 1,
-    });
-    pub const ResetDirEnumerationError = ErrorSet(.{
-        .DiskError = 1,
-        .InvalidHandle = 2,
-        .SystemResources = 3,
-    });
-    pub const EnumerateDirError = ErrorSet(.{
-        .DiskError = 1,
-        .InvalidHandle = 2,
-        .SystemResources = 3,
-    });
-    pub const DeleteFileError = ErrorSet(.{
-        .DiskError = 1,
-        .InvalidHandle = 2,
-        .FileNotFound = 3,
-        .InvalidPath = 4,
-    });
-    pub const MkDirError = ErrorSet(.{
-        .DiskError = 1,
-        .InvalidHandle = 2,
-        .Exists = 3,
-        .InvalidPath = 4,
-    });
-    pub const StatEntryError = ErrorSet(.{
-        .DiskError = 1,
-        .InvalidHandle = 2,
-        .FileNotFound = 3,
-        .InvalidPath = 4,
-    });
-    pub const NearMoveError = ErrorSet(.{
-        .DiskError = 1,
-        .InvalidHandle = 2,
-        .FileNotFound = 3,
-        .InvalidPath = 4,
-        .Exists = 5,
-    });
-    pub const FarMoveError = ErrorSet(.{
-        .DiskError = 1,
-        .InvalidHandle = 2,
-        .FileNotFound = 3,
-        .InvalidPath = 4,
-        .Exists = 5,
-        .NoSpaceLeft = 6,
-    });
-    pub const CopyFileError = ErrorSet(.{
-        .DiskError = 1,
-        .InvalidHandle = 2,
-        .FileNotFound = 3,
-        .InvalidPath = 4,
-        .Exists = 5,
-        .NoSpaceLeft = 6,
-    });
-    pub const OpenFileError = ErrorSet(.{
-        .DiskError = 1,
-        .InvalidHandle = 2,
-        .FileNotFound = 3,
-        .InvalidPath = 4,
-        .Exists = 5,
-        .NoSpaceLeft = 6,
-        .SystemFdQuotaExceeded = 7,
-        .SystemResources = 8,
-        .WriteProtected = 9,
-        .FileAlreadyExists = 10,
-    });
-    pub const FlushFileError = ErrorSet(.{
-        .DiskError = 1,
-        .InvalidHandle = 2,
-        .SystemResources = 3,
-    });
-    pub const ReadError = ErrorSet(.{
-        .DiskError = 1,
-        .InvalidHandle = 2,
-        .SystemResources = 3,
-    });
-    pub const WriteError = ErrorSet(.{
-        .DiskError = 1,
-        .InvalidHandle = 2,
-        .NoSpaceLeft = 3,
-        .SystemResources = 4,
-        .WriteProtected = 5,
-    });
-    pub const StatFileError = ErrorSet(.{
-        .DiskError = 1,
-        .InvalidHandle = 2,
-        .SystemResources = 3,
-    });
-    pub const ResizeFileError = ErrorSet(.{
-        .DiskError = 1,
-        .InvalidHandle = 2,
-        .NoSpaceLeft = 3,
-        .SystemResources = 4,
-    });
-    pub const CloseFileError = ErrorSet(.{
-        .DiskError = 1,
-        .InvalidHandle = 2,
-        .SystemResources = 3,
-    });
-
-    /// Flushes all open files to disk.
-    pub const Sync = IOP.define(.{
-        .type = .fs_sync,
-        .@"error" = SyncError,
-        .inputs = struct {},
-    });
-
-    /// Gets information about a file system.
-    /// Also returns a `next` id that can be used to iterate over all filesystems.
-    /// The `system` filesystem is guaranteed to be the first one.
-    pub const GetFilesystemInfo = IOP.define(.{
-        .type = .fs_get_filesystem_info,
-        .@"error" = GetFilesystemInfoError,
-        .inputs = struct { fs: FileSystemId },
-        .outputs = struct { info: FileSystemInfo, next: FileSystemId },
-    });
-
-    /// opens a directory on a filesystem
-    pub const OpenDrive = IOP.define(.{
-        .type = .fs_open_drive,
-        .@"error" = OpenDriveError,
-        .inputs = struct { fs: FileSystemId, path_ptr: [*]const u8, path_len: usize },
-        .outputs = struct { dir: ?*Directory },
-    });
-
-    /// opens a directory relative to the given dir handle.
-    pub const OpenDir = IOP.define(.{
-        .type = .fs_open_dir,
-        .@"error" = OpenDirError,
-        .inputs = struct { dir: *Directory, path_ptr: [*]const u8, path_len: usize },
-        .outputs = struct { dir: ?*Directory },
-    });
-
-    /// closes the directory handle
-    pub const CloseDir = IOP.define(.{
-        .type = .fs_close_dir,
-        .@"error" = CloseDirError,
-        .inputs = struct { dir: *Directory },
-        .outputs = struct {},
-    });
-
-    /// resets the directory iterator to the starting point
-    pub const ResetDirEnumeration = IOP.define(.{
-        .type = .fs_reset_dir_enumeration,
-        .@"error" = ResetDirEnumerationError,
-        .inputs = struct { dir: *Directory },
-    });
-
-    /// returns the info for the current file or "eof", and advances the iterator to the next entry if possible
-    pub const EnumerateDir = IOP.define(.{
-        .type = .fs_enumerate_dir,
-        .@"error" = EnumerateDirError,
-        .inputs = struct { dir: *Directory },
-        .outputs = struct { eof: bool, info: FileInfo },
-    });
-
-    /// deletes a file or directory by the given path.
-    pub const Delete = IOP.define(.{
-        .type = .fs_delete,
-        .@"error" = DeleteFileError,
-        .inputs = struct { dir: *Directory, path_ptr: [*]const u8, path_len: usize, recurse: bool },
-    });
-
-    /// creates a new directory relative to dir. If `path` contains subdirectories, all
-    /// directories are created.
-    pub const MkDir = IOP.define(.{
-        .type = .fs_mkdir,
-        .@"error" = MkDirError,
-        .inputs = struct { dir: *Directory, path_ptr: [*]const u8, path_len: usize, mkopen: bool },
-        .outputs = struct { ?*Directory },
-    });
-
-    /// returns the type of the file/dir at path, also adds size and modification dates
-    pub const StatEntry = IOP.define(.{
-        .type = .fs_stat_entry,
-        .@"error" = StatEntryError,
-        .inputs = struct {
-            dir: *Directory,
-            path_ptr: [*]const u8,
-            path_len: usize,
-        },
-        .outputs = struct { info: FileInfo },
-    });
-
-    /// renames a file inside the same file system.
-    /// NOTE: This is a cheap operation and does not require the copying of data.
-    pub const NearMove = IOP.define(.{
-        .type = .fs_near_move,
-        .@"error" = NearMoveError,
-        .inputs = struct {
-            src_dir: *Directory,
-            src_path_ptr: [*]const u8,
-            src_path_len: usize,
-            dst_path_ptr: [*]const u8,
-            dst_path_len: usize,
-        },
-    });
-
-    // GROUP: modification
-
-    /// moves a file or directory between two unrelated directories. Can also move between different file systems.
-    /// NOTE: This syscall might copy the data.
-    pub const FarMove = IOP.define(.{
-        .type = .fs_far_move,
-        .@"error" = FarMoveError,
-        .inputs = struct {
-            src_dir: *Directory,
-            src_path_ptr: [*]const u8,
-            src_path_len: usize,
-            dst_dir: *Directory,
-            dst_path_ptr: [*]const u8,
-            dst_path_len: usize,
-        },
-    });
-
-    /// copies a file or directory between two unrelated directories. Can also move between different file systems.
-    pub const Copy = IOP.define(.{
-        .type = .fs_copy,
-        .@"error" = CopyFileError,
-        .inputs = struct {
-            src_dir: *Directory,
-            src_path_ptr: [*]const u8,
-            src_path_len: usize,
-            dst_dir: *Directory,
-            dst_path_ptr: [*]const u8,
-            dst_path_len: usize,
-        },
-    });
-
-    // // GROUP: file handling
-
-    /// opens a file from the given directory.
-    pub const OpenFile = IOP.define(.{
-        .type = .fs_open_file,
-        .@"error" = OpenFileError,
-        .inputs = struct {
-            dir: *Directory,
-            path_ptr: [*]const u8,
-            path_len: usize,
-            access: FileAccess,
-            mode: FileMode,
-        },
-        .outputs = struct { handle: ?*File },
-    });
-
-    /// closes the handle and flushes the file.
-    pub const CloseFile = IOP.define(.{
-        .type = .fs_close_file,
-        .@"error" = CloseFileError,
-        .inputs = struct { file: *File },
-    });
-
-    /// makes sure this file is safely stored to mass storage device
-    pub const FlushFile = IOP.define(.{
-        .type = .fs_flush_file,
-        .@"error" = FlushFileError,
-        .inputs = struct { file: *File },
-    });
-
-    /// directly reads data from a given offset into the file. no streaming API to the kernel
-    pub const Read = IOP.define(.{
-        .type = .fs_read,
-        .@"error" = ReadError,
-        .inputs = struct {
-            file: *File,
-            offset: u64,
-            buffer_ptr: [*]u8,
-            buffer_len: usize,
-        },
-        .outputs = struct { count: usize },
-    });
-
-    /// directly writes data to a given offset into the file. no streaming API to the kernel
-    pub const Write = IOP.define(.{
-        .type = .fs_write,
-        .@"error" = WriteError,
-        .inputs = struct {
-            file: *File,
-            offset: u64,
-            buffer_ptr: [*]const u8,
-            buffer_len: usize,
-        },
-        .outputs = struct { count: usize },
-    });
-
-    /// allows us to get the current size of the file, modification dates, and so on
-    pub const StatFile = IOP.define(.{
-        .type = .fs_stat_file,
-        .@"error" = StatFileError,
-        .inputs = struct { file: *File },
-        .outputs = struct { info: FileInfo },
-    });
-
-    /// Resizes the file to the given length in bytes. Can be also used to truncate a file to zero length.
-    pub const Resize = IOP.define(.{
-        .type = .fs_resize,
-        .@"error" = ResizeFileError,
-        .inputs = struct { file: *File, length: u64 },
-    });
-};
-
-pub const udp = struct {
-    pub const Bind = IOP.define(.{
-        .type = .udp_bind,
-        .@"error" = BindError,
-        .inputs = struct {
-            socket: *UdpSocket,
-            bind_point: EndPoint,
-        },
-        .outputs = struct {
-            bind_point: EndPoint,
-        },
-    });
-
-    pub const Connect = IOP.define(.{
-        .type = .udp_connect,
-        .@"error" = ConnectError,
-        .inputs = struct {
-            socket: *UdpSocket,
-            target: EndPoint,
-        },
-    });
-
-    pub const Disconnect = IOP.define(.{
-        .type = .udp_disconnect,
-        .@"error" = DisconnectError,
-        .inputs = struct {
-            socket: *UdpSocket,
-        },
-    });
-
-    pub const Send = IOP.define(.{
-        .type = .udp_send,
-        .@"error" = SendError,
-        .inputs = struct {
-            socket: *UdpSocket,
-            data_ptr: [*]const u8,
-            data_len: usize,
-        },
-        .outputs = struct {
-            bytes_sent: usize,
-        },
-    });
-
-    pub const SendTo = IOP.define(.{
-        .type = .udp_send_to,
-        .@"error" = SendError,
-        .inputs = struct {
-            socket: *UdpSocket,
-            receiver: EndPoint,
-            data_ptr: [*]const u8,
-            data_len: usize,
-        },
-        .outputs = struct {
-            bytes_sent: usize,
-        },
-    });
-
-    pub const ReceiveFrom = IOP.define(.{
-        .type = .udp_receive_from,
-        .@"error" = ReceiveFromError,
-        .inputs = struct {
-            socket: *UdpSocket,
-            buffer_ptr: [*]u8,
-            buffer_len: usize,
-        },
-        .outputs = struct {
-            bytes_received: usize,
-            sender: EndPoint,
-        },
-    });
-
-    pub const BindError = ErrorSet(.{
-        .InvalidHandle = 1,
-        .SystemResources = 2,
-        .AddressInUse = 3,
-        .IllegalValue = 4,
-    });
-
-    pub const ConnectError = ErrorSet(.{
-        .InvalidHandle = 1,
-        .SystemResources = 2,
-        .AlreadyConnected = 4,
-        .AlreadyConnecting = 5,
-        .BufferError = 6,
-        .IllegalArgument = 10,
-        .IllegalValue = 11,
-        .InProgress = 12,
-        .LowlevelInterfaceError = 13,
-        .OutOfMemory = 15,
-        .Routing = 16,
-        .Timeout = 17,
-    });
-
-    pub const DisconnectError = ErrorSet(.{
-        .InvalidHandle = 1,
-        .SystemResources = 2,
-        .NotConnected = 3,
-    });
-
-    pub const SendError = ErrorSet(.{
-        .InvalidHandle = 1,
-        .SystemResources = 2,
-        .BufferError = 6,
-        .IllegalArgument = 10,
-        .IllegalValue = 11,
-        .InProgress = 12,
-        .LowlevelInterfaceError = 13,
-        .NotConnected = 14,
-        .OutOfMemory = 15,
-        .Routing = 16,
-        .Timeout = 17,
-    });
-
-    pub const SendToError = ErrorSet(.{
-        .InvalidHandle = 1,
-        .SystemResources = 2,
-        .BufferError = 6,
-        .IllegalArgument = 10,
-        .IllegalValue = 11,
-        .InProgress = 12,
-        .LowlevelInterfaceError = 13,
-        .OutOfMemory = 15,
-        .Routing = 16,
-        .Timeout = 17,
-    });
-
-    pub const ReceiveFromError = ErrorSet(.{
-        .InvalidHandle = 1,
-        .SystemResources = 2,
-        .BufferError = 6,
-        .IllegalArgument = 10,
-        .IllegalValue = 11,
-        .InProgress = 12,
-        .LowlevelInterfaceError = 13,
-        .OutOfMemory = 15,
-        .Routing = 16,
-        .Timeout = 17,
-    });
-};
-
-pub const tcp = struct {
-    pub const Bind = IOP.define(.{
-        .type = .tcp_bind,
-        .@"error" = BindError,
-        .inputs = struct {
-            socket: *TcpSocket,
-            bind_point: EndPoint,
-        },
-        .outputs = struct {
-            bind_point: EndPoint,
-        },
-    });
-
-    pub const Connect = IOP.define(.{
-        .type = .tcp_connect,
-        .@"error" = ConnectError,
-        .inputs = struct {
-            socket: *TcpSocket,
-            target: EndPoint,
-        },
-    });
-
-    pub const Send = IOP.define(.{
-        .type = .tcp_send,
-        .@"error" = SendError,
-        .inputs = struct {
-            socket: *TcpSocket,
-            data_ptr: [*]const u8,
-            data_len: usize,
-        },
-        .outputs = struct {
-            bytes_sent: usize,
-        },
-    });
-
-    pub const Receive = IOP.define(.{
-        .type = .tcp_receive,
-        .@"error" = ReceiveError,
-        .inputs = struct {
-            socket: *TcpSocket,
-            buffer_ptr: [*]u8,
-            buffer_len: usize,
-            read_all: bool, // if true, will read until `buffer_len` bytes arrived. otherwise will read until the end of a single packet
-        },
-        .outputs = struct {
-            bytes_received: usize,
-        },
-    });
-
-    pub const BindError = ErrorSet(.{
-        .InvalidHandle = 1,
-        .SystemResources = 2,
-        .AddressInUse = 3,
-        .IllegalValue = 4,
-    });
-
-    pub const ConnectError = ErrorSet(.{
-        .InvalidHandle = 1,
-        .SystemResources = 2,
-        .AlreadyConnected = 4,
-        .AlreadyConnecting = 5,
-        .BufferError = 6,
-        .ConnectionAborted = 7,
-        .ConnectionClosed = 8,
-        .ConnectionReset = 9,
-        .IllegalArgument = 10,
-        .IllegalValue = 11,
-        .InProgress = 12,
-        .LowlevelInterfaceError = 13,
-        .OutOfMemory = 15,
-        .Routing = 16,
-        .Timeout = 17,
-    });
-
-    pub const SendError = ErrorSet(.{
-        .InvalidHandle = 1,
-        .SystemResources = 2,
-        .BufferError = 3,
-        .ConnectionAborted = 4,
-        .ConnectionClosed = 5,
-        .ConnectionReset = 6,
-        .IllegalArgument = 7,
-        .IllegalValue = 8,
-        .InProgress = 9,
-        .LowlevelInterfaceError = 10,
-        .NotConnected = 11,
-        .OutOfMemory = 12,
-        .Routing = 13,
-        .Timeout = 14,
-    });
-
-    pub const ReceiveError = ErrorSet(.{
-        .InvalidHandle = 1,
-        .SystemResources = 2,
-        .AlreadyConnected = 3,
-        .AlreadyConnecting = 4,
-        .BufferError = 5,
-        .ConnectionAborted = 6,
-        .ConnectionClosed = 7,
-        .ConnectionReset = 8,
-        .IllegalArgument = 9,
-        .IllegalValue = 10,
-        .InProgress = 11,
-        .LowlevelInterfaceError = 12,
-        .NotConnected = 13,
-        .OutOfMemory = 14,
-        .Routing = 15,
-        .Timeout = 16,
-    });
-};
-
-pub const input = struct {
-    const Error = ErrorSet(.{
-        .NonExclusiveAccess = 1,
-        .InProgress = 2,
-    });
-
-    pub const GetEvent = IOP.define(.{
-        .type = .input_get_event,
-        .@"error" = Error,
-        .outputs = struct {
-            event_type: InputEventType,
-            event: InputEvent,
-        },
-    });
 };
 
 ///////////////////////////////////////////////////////////
