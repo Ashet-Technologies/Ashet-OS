@@ -3,7 +3,6 @@
 # Required Changes
 
 ashetos:
-+ cli arguments [ str | resource | memory  ]
 + shared resources
 
 - Kernel Resource System

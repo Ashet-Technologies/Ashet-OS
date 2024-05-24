@@ -16,7 +16,7 @@ raw_decl: fn_decl
 
 ns_decl : "const" identifier "=" "struct" "{" container "}" ";"
 
-fn_decl : "fn" identifier "(" param_list ")" type ";"
+fn_decl : "\"syscall\"" "fn"  identifier "(" param_list ")" type ";"
 
 err_decl : "const" identifier "=" err_type ";"
 
