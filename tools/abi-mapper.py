@@ -2,30 +2,29 @@
 
 from operator import truediv
 import sys
-import io 
+import io
+from typing import NoReturn 
 import jinja2
+
 
 from pathlib import Path 
 from enum import StrEnum 
+from jinja2.nodes import Name
 from lark import Lark, Transformer
 from dataclasses import dataclass, field 
+
+def log(*args):
+    print(" ".join(repr(v) for v in args), file=sys.stderr)
+
+def panic(*args) -> NoReturn:
+    log("PANIC:", *args)
+    raise AssertionError() 
 
 WITH_LINKNAME = False 
 THIS_PATH = Path(__file__).parent 
 GRAMMAR_PATH = THIS_PATH / "minizig.lark"
-SYSCALL_PATH = THIS_PATH / ".." / "src"/"abi"/"syscalls.zig"
 ABI_PATH = THIS_PATH / ".." / "src"/"abi"/"abi-v2.zig"
 
-@dataclass
-class ErrorAllocation:
-    mapping: dict[str, int] = field(default_factory=lambda:dict())
-
-    def get_number(self, err: str):
-        val = self.mapping.get(err, None)
-        if val is None:
-            val = max(self.mapping.values() or [0]) + 1
-            self.mapping[err] = val 
-        return val
 
 class PointerSize(StrEnum):
     one = "*"
@@ -98,8 +97,53 @@ class IOP(Declaration):
 class Container :
     decls: list[Declaration]
 
+@dataclass
+class TopLevelCode(Container):
+    rest: str
+
+
+@dataclass
+class ErrorAllocation:
+    mapping: dict[str, int] = field(default_factory=lambda:dict())
+
+    def get_number(self, err: str):
+        val = self.mapping.get(err, None)
+        if val is None:
+            val = max(self.mapping.values() or [0]) + 1
+            self.mapping[err] = val 
+        return val
+    
+    def collect(self, decl: Declaration):
+
+        if isinstance(decl, ErrorSet):
+            self.insert_error_set(decl)
+        elif isinstance(decl, Namespace):
+            for sub in  decl.decls:
+                self.collect(sub)
+        elif isinstance(decl, Function):
+            if isinstance( decl.return_type , ErrorSet):
+                self.insert_error_set(decl.return_type)
+        elif isinstance(decl, IOP):
+            self.insert_error_set(decl.error)
+        else:
+            panic("unexpected", decl)
+    
+    def insert_error_set(self, set: ErrorSet):
+        for err in set.errors:
+            self.get_number(err)
 
 class ZigCodeTransformer(Transformer):
+
+    def toplevel(self, items) -> TopLevelCode:
+        return TopLevelCode(
+            decls = items[0].decls,
+            rest = items[1] or "",
+        )
+
+    def zigcode(self, items) -> str:
+        assert len(items) == 1
+        return items[0].value
+
     
     def container(self, items) -> Container:
         return Container(decls = items )
@@ -134,7 +178,7 @@ class ZigCodeTransformer(Transformer):
         )
 
     def err_decl(self, items) -> ErrorSet:
-        etype =items[1]
+        etype = items[1]
         etype.name = items[0]
         return etype
 
@@ -230,6 +274,8 @@ class ZigCodeTransformer(Transformer):
         return OptionalType(inner= items[0])
 
     def err_type(self, items) -> ErrorSet:
+        if len(items) == 1 and items[0] is None:
+            items = []
         return ErrorSet(errors=set(items),docs=None,name=None)
 
     def arr_type(self, items) -> ArrayType:
@@ -340,7 +386,7 @@ def render_type(stream, t: Type):
                 stream.write(f":{t.sentinel}")
             stream.write("]")
         else:
-            assert False 
+            panic("unexpected", t.size)
         
         if t.const:
             stream.write("const ")
@@ -351,7 +397,7 @@ def render_type(stream, t: Type):
         
         render_type(stream, t.inner)
     else:
-        assert False 
+        panic("unexpected", t)
 
 def render_docstring(stream ,I: str, docs: DocComment | None):
     if docs is not None:
@@ -438,7 +484,7 @@ def render_container(stream, declarations: list[Declaration], errors: ErrorAlloc
             stream.write(f"{I}}});\n")
 
         else:
-            assert False 
+            panic("unexpected", decl)
         stream.write("\n")
 
 def foreach(declarations: list[Declaration], T: type, func):
@@ -450,7 +496,7 @@ def foreach(declarations: list[Declaration], T: type, func):
         elif isinstance(decl, ErrorSet) or isinstance(decl, Function) or isinstance(decl, IOP):
             pass 
         else:
-            assert False 
+            panic("unexpected", decl)
 
 def assert_legal_extern_type(t: Type):
     
@@ -465,7 +511,7 @@ def assert_legal_extern_type(t: Type):
     elif isinstance(t, ErrorSet):
         assert True 
     else:
-        assert False 
+        panic("unexpected", t)
 
 def assert_legal_extern_fn(func: Function):
 
@@ -500,8 +546,7 @@ def transform_function(func: Function):
             continue 
 
         if param.name is None :
-            print("bad function:", func.name, file=sys.stderr)
-            assert False 
+            panic("bad function:", func.name)
 
         
         len_param = Parameter(
@@ -532,31 +577,26 @@ def transform_function(func: Function):
 def main():
 
     grammar_source = GRAMMAR_PATH.read_text()
-    zig_parser = Lark(grammar_source, start='container')
+    zig_parser = Lark(grammar_source, start='toplevel')
     
-    environment = jinja2.Environment()
-    abi_template = environment.from_string(ABI_PATH.read_text())
 
-    source_code = SYSCALL_PATH.read_text()
+    source_code = ABI_PATH.read_text()
 
     transformer = ZigCodeTransformer()
 
     parse_tree = zig_parser.parse(source_code)
     
-    root_container = transformer.transform(parse_tree)
+    root_container: TopLevelCode = transformer.transform(parse_tree)
 
     errors = ErrorAllocation()
+    for decl in root_container.decls:
+        errors.collect(decl)
 
     foreach(root_container.decls, Function, func=transform_function)
 
     foreach(root_container.decls, Function, func=assert_legal_extern_fn)
 
-    def alloc_error(set: ErrorSet):
-        for err in set.errors:
-            errors.get_number(err)
-    foreach(root_container.decls, ErrorSet, alloc_error)
-
-    syscalls_code = ""
+    transformed_code = ""
     with io.StringIO() as strio:
 
 
@@ -573,11 +613,19 @@ def main():
         strio.write("\n")
         
         render_container(strio, root_container.decls,errors)
-        syscalls_code = strio.getvalue()
+        transformed_code = strio.getvalue()
 
-    sys.stdout.write(abi_template.render(
-        syscalls="\n\n" + syscalls_code,
-    ))
+    sys.stdout.write(
+"""
+//!
+//! THIS CODE WAS AUTOGENERATED!
+//!
+
+
+""")
+    sys.stdout.write(transformed_code)
+
+    sys.stdout.write(root_container.rest)
     
 
 if __name__ == "__main__":

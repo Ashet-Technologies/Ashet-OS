@@ -1,7 +1,13 @@
 
+toplevel: container [zigcode]
+
+zigcode: "usingnamespace" "zig" ";" EVERYTHING
+
+zigcode_raw: EVERYTHING
+
 container : decl*
 
-decl : doc_comment? raw_decl
+decl : "pub"? "extern"? doc_comment? raw_decl
 
 raw_decl: fn_decl
         | ns_decl
@@ -69,6 +75,8 @@ integer: /-?\d+/
 
 doc_comment_line: /\/\/\/[^\n]*/
 COMMENT:          /\/\/[^\n]*/
+
+EVERYTHING:       /.+/s
 
 %import common.WS
 %ignore WS
