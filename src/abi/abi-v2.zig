@@ -1859,55 +1859,6 @@ pub const EndPoint = extern struct {
 // Callback types:
 
 ///////////////////////////////////////////////////////////
-// IO Operations:
-
-pub const IOP = iops.Generic_IOP(IOP_Type);
-
-pub const IOP_Type = enum(u32) {
-    // Timer
-    timer = 1,
-
-    // TCP IOPs:
-    tcp_connect,
-    tcp_bind,
-    tcp_send,
-    tcp_receive,
-
-    // UDP IOPs:
-    udp_bind,
-    udp_connect,
-    udp_disconnect,
-    udp_send,
-    udp_send_to,
-    udp_receive_from,
-
-    // Input IOPS:
-    input_get_event,
-
-    // FS IOPS:
-    fs_sync,
-    fs_get_filesystem_info,
-    fs_open_drive,
-    fs_open_dir,
-    fs_close_dir,
-    fs_reset_dir_enumeration,
-    fs_enumerate_dir,
-    fs_delete,
-    fs_mkdir,
-    fs_stat_entry,
-    fs_near_move,
-    fs_far_move,
-    fs_copy,
-    fs_open_file,
-    fs_close_file,
-    fs_flush_file,
-    fs_read,
-    fs_write,
-    fs_stat_file,
-    fs_resize,
-};
-
-///////////////////////////////////////////////////////////
 // Legacy:
 
 // pub const NetworkStatus = enum(u8) {

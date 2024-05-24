@@ -3,9 +3,9 @@
 from operator import truediv
 import sys
 import io
+import os
 from typing import NoReturn 
 import jinja2
-
 
 from pathlib import Path 
 from enum import StrEnum 
@@ -92,6 +92,7 @@ class IOP(Declaration):
     inputs: list[Parameter]
     outputs: list[Parameter]
     error: ErrorSet
+    key: str = ""
 
 @dataclass
 class Container :
@@ -440,7 +441,7 @@ def render_container(stream, declarations: list[Declaration], errors: ErrorAlloc
 
             stream.write(f"{I}pub const {decl.name} = IOP.define(.{{\n")
             
-            stream.write(f"{I}    .type = .@\"????\",\n")
+            stream.write(f"{I}    .type = .@\"{decl.key}\",\n")
             if decl.error is not None:
                 stream.write(f"{I}    .@\"error\" = ErrorSet(error{{\n")
                 for err in sorted(decl.error.errors, key=lambda e:errors.get_number(e)):
@@ -461,12 +462,12 @@ def render_container(stream, declarations: list[Declaration], errors: ErrorAlloc
             panic("unexpected", decl)
         stream.write("\n")
 
-def foreach(declarations: list[Declaration], T: type, func):
+def foreach(declarations: list[Declaration], T: type, func, namespace: list[str]=[]):
     for decl in declarations:
         if isinstance(decl, Namespace):
-            foreach(decl.decls, T, func)
+            foreach(decl.decls, T, func, namespace + [decl.name])
         elif isinstance(decl, T):
-            func(decl)
+            func(decl,namespace)
         elif isinstance(decl, ErrorSet) or isinstance(decl, Function) or isinstance(decl, IOP):
             pass 
         else:
@@ -487,7 +488,7 @@ def assert_legal_extern_type(t: Type):
     else:
         panic("unexpected", t)
 
-def assert_legal_extern_fn(func: Function):
+def assert_legal_extern_fn(func: Function,ns:list[str]):
 
     for p in func.params:
         assert_legal_extern_type(p.type)
@@ -544,10 +545,10 @@ def transform_parameter_list(in_params: list[Parameter]) -> list[Parameter]:
 
     return out_params
 
-def transform_function(func: Function):
+def transform_function(func: Function,ns:list[str]):
     func.params = transform_parameter_list(func.params)
 
-def transform_iop(iop: IOP):
+def transform_iop(iop: IOP,ns:list[str]):
     iop.inputs = transform_parameter_list(iop.inputs)
     iop.outputs = transform_parameter_list(iop.outputs)
 
@@ -576,6 +577,20 @@ def main():
     # Convert all input/output structs of IOPs into extern compatible ones
     foreach(root_container.decls, IOP, func=transform_iop)
 
+    
+    iop_numbers: dict[int,IOP] = dict()
+    
+    def allocate_iop_num(iop: IOP, ns:list[str]):
+        index = len(iop_numbers) + 1
+        name = "_".join([*ns, iop.name])
+        iop.key = name
+        iop_numbers[index] = iop 
+    foreach(root_container.decls, IOP, allocate_iop_num)
+
+    iop_prefix = os.path.commonprefix([iop.key for iop in iop_numbers.values()])
+    for iop in iop_numbers.values():
+        iop.key = iop.key.removeprefix(iop_prefix)
+
     foreach(root_container.decls, Function, func=assert_legal_extern_fn)
 
     transformed_code = ""
@@ -592,6 +607,16 @@ def main():
         strio.write("};\n")
         strio.write("\n")
         strio.write("pub const ErrorSet = @import(\"error_set.zig\").UntypedErrorSet(Error);\n")
+        strio.write("\n")
+        strio.write("\n")
+        strio.write("/// Global error set, defines numeric values for all errors.\n")
+        strio.write("pub const IOP_Type = enum(u32) {\n")
+        for value, iop in sorted(iop_numbers.items(), key=lambda kv: kv[0]):
+            strio.write(f"    {iop.key} = {value},\n")
+        strio.write("};\n")
+        strio.write("\n")
+        strio.write("pub const IOP = iops.Generic_IOP(IOP_Type);\n")
+        strio.write("\n")
         strio.write("\n")
         
         render_container(strio, root_container.decls,errors)
