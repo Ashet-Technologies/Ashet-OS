@@ -177,10 +177,12 @@ const syscalls = struct {
         };
 
         const udp = struct {
+            /// Creates a new UDP socket.
             extern "syscall" fn create_socket(out: *UdpSocket) error{SystemResources};
         };
 
         const tcp = struct {
+            /// Creates a new TCP socket.
             extern "syscall" fn create_socket(out: *TcpSocket) error{SystemResources};
         };
     };
@@ -285,33 +287,41 @@ const syscalls = struct {
         /// *Remarks:* This function is blocking and will only return when the user has entered their choice.
         extern "syscall" fn message_box(Desktop, message: []const u8, caption: []const u8, buttons: MessageBoxButtons, icon: MessageBoxIcon) MessageBoxResult;
 
-        extern "syscall" fn register_widget_type(*WidgetType, uuid: *const UUID, *const WidgetDescriptor) error{
+        extern "syscall" fn register_widget_type(out: *WidgetType, *const WidgetDescriptor) error{
             AlreadyRegistered,
             SystemResources,
         };
 
         // Window API:
 
+        /// Spawns a new window.
         extern "syscall" fn create_window(window: *Window, desktop: *Desktop, title: []const u8, min: Size, max: Size, startup: Size, flags: CreateWindowFlags) error{
             SystemResources,
             InvalidDimensions,
         };
 
-        extern "syscall" fn resize_window(Window, x: u16, y: u16) void;
+        /// Resizes a window to the new siue.
+        extern "syscall" fn resize_window(Window, size: Size) void;
 
+        /// Changes a window title.
         extern "syscall" fn set_window_title(Window, title: []const u8) void;
 
+        /// Notifies the desktop that a window wants attention from the user.
+        /// This could just pop the window to the front, make it blink, show a small notification, ...
         extern "syscall" fn mark_window_urgent(Window) void;
 
         // TODO: gui.app_menu
 
         // Widget API:
 
+        /// Create a new widget identified by `uuid` on the given `window`.
+        /// Position and size of the widget are undetermined at start and a call to `place_widget` should be performed on success.
         extern "syscall" fn create_widget(widget: *Widget, window: Window, uuid: *const UUID) error{
             SystemResources,
             WidgetNotFound,
         };
 
+        /// Moves and resizes a widget in one.
         extern "syscall" fn place_widget(widget: Widget, position: Point, size: Size) void;
 
         // Context Menu API:
@@ -334,6 +344,7 @@ const syscalls = struct {
 
         // TODO: Function to get the "current"/"primary"/"associated" desktop server, how?
 
+        /// Returns the name of the provided desktop.
         extern "syscall" fn get_desktop_name(Desktop) [*:0]const u8;
 
         /// Enumerates all available desktops.
@@ -353,17 +364,17 @@ const syscalls = struct {
         const clipboard = struct {
             /// Sets the contents of the clip board.
             /// Takes a mime type as well as the value in the provided format.
-            extern "syscall" fn set(Desktop, mime: []const u8, value: []const u8) error{
+            extern "syscall" fn set(desktop: Desktop, mime: []const u8, value: []const u8) error{
                 SystemResources,
             };
 
             /// Returns the current type present in the clipboard, if any.
-            extern "syscall" fn get_type(Desktop) ?[*:0]const u8;
+            extern "syscall" fn get_type(desktop: Desktop) ?[*:0]const u8;
 
             /// Returns the current clipboard value as the provided mime type.
             /// The os provides a conversion *if possible*, otherwise returns an error.
             /// The returned memory for `value` is owned by the process and must be freed with `ashet.process.memory.release`.
-            extern "syscall" fn get_value(Desktop, mime: []const u8, value: *?[]const u8) error{
+            extern "syscall" fn get_value(desktop: Desktop, mime: []const u8, value: *?[]const u8) error{
                 ConversionFailed,
                 OutOfMemory,
             };
@@ -908,10 +919,7 @@ usingnamespace zig; // regular code beyond this
 // Imports:
 
 const std = @import("std");
-
-// const ErrorSet = @import("error_set.zig").ErrorSet;
 const iops = @import("iops.zig");
-
 const abi = @This();
 
 ///////////////////////////////////////////////////////////
@@ -968,11 +976,6 @@ pub const system_widgets = struct {
 
 /// Handle to an abstract system resource.
 pub const SystemResource = opaque {
-    pub const get_type = syscalls.resources.get_type;
-    pub const get_owner = syscalls.resources.get_owner;
-    pub const set_owner = syscalls.resources.set_owner;
-    pub const close = syscalls.resources.close;
-
     /// Casts the resource into a concrete type. Fails, if the type does not match.
     pub fn cast(resource: *SystemResource, comptime t: Type) error{InvalidType}!*CastResult(t) {
         const actual = resource.get_type();
@@ -1478,6 +1481,7 @@ pub const CreateWindowFlags = packed struct(u32) {
 };
 
 pub const WidgetDescriptor = extern struct {
+    uuid: UUID,
     // TODO: Fill this out
 };
 
