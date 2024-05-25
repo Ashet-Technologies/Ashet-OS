@@ -42,6 +42,9 @@ const syscalls = struct {
         /// Returns the base address of the process.
         extern "syscall" fn get_base_address(?Process) usize;
 
+        /// Returns the arguments that were passed to this process in `Spawn`.
+        extern "syscall" fn get_arguments(?Process, argv: ?[]SpawnProcessArg) usize;
+
         /// Terminates the current process with the given exit code
         extern "syscall" fn terminate(exit_code: ExitCode) noreturn;
 
@@ -77,7 +80,7 @@ const syscalls = struct {
         };
 
         const memory = struct {
-            /// Allocates memory pages from the system.
+            /// Allocates memory
             extern "syscall" fn allocate(size: usize, ptr_align: u8) ?[*]u8;
 
             /// Returns memory to the systme.
@@ -217,7 +220,7 @@ const syscalls = struct {
         };
 
         /// Enumerates all registered services.
-        extern "syscall" fn enumerate(uuid: *const UUID, services: []Service) bool;
+        extern "syscall" fn enumerate(uuid: *const UUID, services: ?[]Service) usize;
 
         /// Returns the name of the service.
         extern "syscall" fn get_name(Service) [*:0]const u8;
@@ -295,12 +298,12 @@ const syscalls = struct {
         // Window API:
 
         /// Spawns a new window.
-        extern "syscall" fn create_window(window: *Window, desktop: *Desktop, title: []const u8, min: Size, max: Size, startup: Size, flags: CreateWindowFlags) error{
+        extern "syscall" fn create_window(window: *Window, desktop: Desktop, title: []const u8, min: Size, max: Size, startup: Size, flags: CreateWindowFlags) error{
             SystemResources,
             InvalidDimensions,
         };
 
-        /// Resizes a window to the new siue.
+        /// Resizes a window to the new size.
         extern "syscall" fn resize_window(Window, size: Size) void;
 
         /// Changes a window title.
@@ -323,6 +326,14 @@ const syscalls = struct {
 
         /// Moves and resizes a widget in one.
         extern "syscall" fn place_widget(widget: Widget, position: Point, size: Size) void;
+
+        /// Returns WidgetType-associated "opaque" data for this widget.
+        ///
+        /// This is meant as a convenience tool to store additional information per widget
+        /// like internal state and such.
+        ///
+        /// The size of this must be known and cannot be queried.
+        extern "syscall" fn get_widget_data(Widget) [*]align(16) u8;
 
         // Context Menu API:
 
@@ -452,7 +463,7 @@ const io = struct {
             InProgress,
         }!struct {
             /// Defines which element of `event` is active.
-            event_type: InputEventType,
+            event_type: InputEvent.Type,
             event: InputEvent,
         };
     };
@@ -911,6 +922,15 @@ const io = struct {
             SystemResources,
         }!void;
     };
+
+    const gui = struct {
+        /// Waits for an event on the given `Window`, completing as soon as
+        /// an event arrived.
+        extern "iop" fn GetWindowEvent(window: Window) error{InProgress}!struct {
+            event_type: WindowEvent.Type,
+            event: WindowEvent,
+        };
+    };
 };
 
 usingnamespace zig; // regular code beyond this
@@ -1322,11 +1342,6 @@ pub const FileMode = enum(u8) {
     create_always = 3, // creates file when it does not exist, or opens the file and truncates it to zero length
 };
 
-pub const InputEventType = enum(u8) {
-    mouse = 1,
-    keyboard = 2,
-};
-
 pub const KeyCode = enum(u16) {
     escape = 1,
     @"1",
@@ -1482,7 +1497,220 @@ pub const CreateWindowFlags = packed struct(u32) {
 
 pub const WidgetDescriptor = extern struct {
     uuid: UUID,
+
+    /// Number of bytes allocated in a Widget for this widget type.
+    /// See `get_widget_data` function for further information.
+    data_size: usize,
+
+    flags: Flags,
+
     // TODO: Fill this out
+
+    // Event Handlers:
+
+    handle_event: *const fn () callconv(.C) void,
+
+    pub const Flags = packed struct(u32) {
+        /// If `true`, the user can focus this widget with the mouse or keyboard.
+        focusable: bool,
+
+        /// If `true`, the user is able to open a context menu on this.
+        context_menu: bool,
+
+        /// If `true`, this widget is able to receive events with the mouse.
+        /// If `false`, the widget is ignored in the position-to-widget resolution.
+        hit_test_visible: bool,
+
+        /// If `true`, the user is able to potentially drop data via Drag&Drop
+        /// on this widget.
+        allow_drop: bool,
+
+        /// If `true`, the user can copy/cut/paste data from/into this widget.
+        clipboard_sensitive: bool,
+
+        _padding: u28 = 0,
+    };
+};
+
+pub const WidgetEvent = extern union {
+    mouse: MouseEvent,
+    keyboard: KeyboardEvent,
+
+    // TODO: Add event data
+
+    pub const Type = enum(u16) {
+        // lifecycle:
+
+        /// The widget was created and attached to a window.
+        create,
+
+        /// The widget is in the process of being destroyed.
+        /// After this event, the handle will be invalid.
+        destroy,
+
+        // basic input:
+
+        /// The user clicked on the widget with the primary mouse button
+        /// or pressed the return or space bar button on the keyboard.
+        click,
+
+        // keyboard input:
+
+        /// A key was pressed on the keyboard.
+        key_press,
+
+        /// A key was released on the keyboard.
+        key_release,
+
+        // mouse specific extras:
+
+        /// The mouse was moved inside the rectangle of the widget.
+        ///
+        /// NOTE: This event can only happen when `hit_test_visible` was set
+        /// in the widget creation flags.
+        mouse_enter,
+
+        /// The mouse was moved outside the rectangle of the widget.
+        ///
+        /// NOTE: This event can only happen when `hit_test_visible` was set
+        /// in the widget creation flags.
+        mouse_leave,
+
+        /// The mouse stopped for some time over the widget.
+        ///
+        /// NOTE: This event can only happen when `hit_test_visible` was set
+        /// in the widget creation flags.
+        mouse_hover,
+
+        /// A mouse button was pressed over the widget.
+        ///
+        /// NOTE: This event can only happen when `hit_test_visible` was set
+        /// in the widget creation flags.
+        mouse_button_press,
+
+        /// A mouse button was released over the widget.
+        ///
+        /// NOTE: This event can only happen when `hit_test_visible` was set
+        /// in the widget creation flags.
+        mouse_button_release,
+
+        /// The mouse was moved over the widget.
+        ///
+        /// NOTE: This event can only happen when `hit_test_visible` was set
+        /// in the widget creation flags.
+        mouse_motion,
+
+        /// A vertical or horizontal scroll wheel was scrolled over the widget.
+        ///
+        /// NOTE: This event can only happen when `hit_test_visible` was set
+        /// in the widget creation flags.
+        scroll,
+
+        // drag&drop operations:
+
+        /// The user dragged a payload into the rectangle of this widget.
+        ///
+        /// NOTE: This event can only happen when `allow_drop` was set in the
+        /// widget creation flags.
+        drag_enter,
+
+        /// The user dragged a payload out of the rectangle of this widget.
+        ///
+        /// NOTE: This event can only happen when `allow_drop` was set in the
+        /// widget type creation flags.
+        drag_leave,
+
+        /// The user dragged a payload over the rectangle of this widget.
+        ///
+        /// NOTE: This event can only happen when `allow_drop` was set in the
+        /// widget type creation flags.
+        drag_over,
+
+        /// The user dropped a payload into this widget.
+        ///
+        /// NOTE: This event can only happen when `allow_drop` was set in the
+        /// widget type creation flags.
+        drag_drop,
+
+        // clipboard operations:
+
+        /// The user requested a clipboard copy operation, usually by pressing 'Ctrl-C'.
+        ///
+        /// NOTE: This event can only happen when `clipboard_sensitive` was set in
+        /// the widget type creation flags.
+        clipboard_copy,
+
+        /// The user requested a clipboard paste operation, usually by pressing 'Ctrl-V'.
+        ///
+        /// NOTE: This event can only happen when `clipboard_sensitive` was set in
+        /// the widget type creation flags.
+        clipboard_paste,
+
+        /// The user requested a clipboard cut operation, usually by pressing 'Ctrl-X'.
+        ///
+        /// NOTE: This event can only happen when `clipboard_sensitive` was set in
+        /// the widget type creation flags.
+        clipboard_cut,
+
+        // widget specific:
+
+        /// The widget was resized with a call to `place_widget`.
+        ///
+        /// NOTE: This event will not fire if the widget was only moved.
+        resized,
+
+        /// The widget should draw itself.
+        paint,
+
+        /// User pressed the "context menu" button or did a
+        /// secondary mouse button click on the  widget.
+        context_menu_request,
+
+        /// The widget received focus via mouse or keyboard.
+        focus_enter,
+
+        /// The widget lost focus after receiving it.
+        focus_leave,
+
+        _,
+    };
+};
+
+pub const WindowEvent = extern union {
+    mouse: MouseEvent,
+    keyboard: KeyboardEvent,
+
+    pub const Type = enum(u16) {
+        key_press,
+        key_release,
+
+        mouse_enter,
+        mouse_leave,
+        mouse_motion,
+        mouse_button_press,
+        mouse_button_release,
+
+        /// The user requested the window to be closed.
+        window_close,
+
+        /// The window was minimized and is not visible anymore.
+        window_minimize,
+
+        /// The window was restored from minimized state.
+        window_restore,
+
+        /// The window is currently moving on the screen. Query `window.bounds` to get the new position.
+        window_moving,
+
+        /// The window was moved on the screen. Query `window.bounds` to get the new position.
+        window_moved,
+
+        /// The window size is currently changing. Query `window.bounds` to get the new size.
+        window_resizing,
+
+        /// The window size changed. Query `window.bounds` to get the new size.
+        window_resized,
+    };
 };
 
 pub const MessageBoxButtons = packed struct(u8) {
@@ -1555,21 +1783,23 @@ pub const Color = packed struct(u16) {
 pub const InputEvent = extern union {
     mouse: MouseEvent,
     keyboard: KeyboardEvent,
+
+    pub const Type = enum(u8) {
+        key_press = 0,
+        key_release = 1,
+
+        mouse_motion = 2,
+        mouse_button_press = 3,
+        mouse_button_release = 4,
+    };
 };
 
 pub const MouseEvent = extern struct {
-    type: Type,
     x: i16,
     y: i16,
     dx: i16,
     dy: i16,
     button: MouseButton,
-
-    pub const Type = enum(u8) {
-        motion,
-        button_press,
-        button_release,
-    };
 };
 
 pub const KeyboardEvent = extern struct {
