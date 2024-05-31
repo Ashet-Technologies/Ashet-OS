@@ -970,13 +970,56 @@ const io = struct {
 
     const sync = struct {
         /// Waits for the given `SyncEvent` to be notified.
-        extern "iop" fn WaitForEvent(SyncEvent) void;
+        extern "iop" fn WaitForEvent(SyncEvent) error{}!void;
 
-        extern "iop" fn Lock(Mutex) void;
+        extern "iop" fn Lock(Mutex) error{}!void;
     };
 };
 
+pub const Service = struct(SystemResource) {};
+
+pub const SharedMemory = struct(SystemResource) {};
+
+pub const Pipe = struct(SystemResource) {};
+
+pub const Process = struct(SystemResource) {};
+
+pub const Thread = struct(SystemResource) {};
+
+pub const TcpSocket = struct(SystemResource) {};
+
+pub const UdpSocket = struct(SystemResource) {};
+
+pub const File = struct(SystemResource) {};
+
+pub const Directory = struct(SystemResource) {};
+
+pub const VideoOutput = struct(SystemResource) {};
+
+pub const Font = struct(SystemResource) {};
+
+/// A framebuffer is something that can be drawn on.
+pub const Framebuffer = struct(SystemResource) {};
+
+pub const Window = struct(SystemResource) {};
+
+pub const Widget = struct(SystemResource) {};
+
+pub const Desktop = struct(SystemResource) {};
+
+pub const WidgetType = struct(SystemResource) {};
+
+pub const SyncEvent = struct(SystemResource) {};
+
+pub const Mutex = struct(SystemResource) {};
+
 usingnamespace zig; // regular code beyond this
+
+/// Constructor for generic asynchronous I/O oerations
+pub const IOP = iops.Generic_IOP(IOP_Type);
+
+/// Constructor for a generic, ABI passable error set.
+pub const ErrorSet = @import("error_set.zig").UntypedErrorSet(Error);
 
 ///////////////////////////////////////////////////////////
 // Imports:
@@ -1048,169 +1091,10 @@ pub const SystemResource = opaque {
     }
 
     fn CastResult(comptime t: Type) type {
-        return switch (t) {
-            .process => Process,
-            .thread => Thread,
-
-            .tcp_socket => TcpSocket,
-            .udp_socket => UdpSocket,
-
-            .service => Service,
-
-            .file => File,
-
-            .directory => Directory,
-            .video_output => VideoOutput,
-
-            .font => Font,
-            .framebuffer => Framebuffer,
-
-            .window => Window,
-            .widget => Widget,
-            .desktop => Desktop,
-            .widget_type => WidgetType,
-
-            .sync_event => SyncEvent,
-            .mutex => Mutex,
-
-            _ => @compileError("Undefined type passed."),
-        };
+        return __SystemResourceCastResult(t);
     }
 
-    pub const Type = enum(u16) {
-        process,
-        thread,
-
-        tcp_socket,
-        udp_socket,
-
-        file,
-        directory,
-
-        video_output,
-
-        font,
-        framebuffer,
-
-        window,
-        widget,
-        widget_type,
-        desktop,
-
-        sync_event,
-        mutex,
-
-        _,
-    };
-};
-
-pub const Service = *opaque {
-    pub fn as_resource(value: *@This()) *SystemResource {
-        return @ptrCast(value);
-    }
-};
-
-pub const SharedMemory = *opaque {
-    pub fn as_resource(value: *@This()) *SystemResource {
-        return @ptrCast(value);
-    }
-};
-
-pub const Pipe = *opaque {
-    pub fn as_resource(value: *@This()) *SystemResource {
-        return @ptrCast(value);
-    }
-};
-
-pub const Process = *opaque {
-    pub fn as_resource(value: *@This()) *SystemResource {
-        return @ptrCast(value);
-    }
-};
-
-pub const Thread = *opaque {
-    pub fn as_resource(value: *@This()) *SystemResource {
-        return @ptrCast(value);
-    }
-};
-
-pub const TcpSocket = *opaque {
-    pub fn as_resource(value: *@This()) *SystemResource {
-        return @ptrCast(value);
-    }
-};
-
-pub const UdpSocket = *opaque {
-    pub fn as_resource(value: *@This()) *SystemResource {
-        return @ptrCast(value);
-    }
-};
-
-pub const File = *opaque {
-    pub fn as_resource(value: *@This()) *SystemResource {
-        return @ptrCast(value);
-    }
-};
-
-pub const Directory = *opaque {
-    pub fn as_resource(value: *@This()) *SystemResource {
-        return @ptrCast(value);
-    }
-};
-
-pub const VideoOutput = *opaque {
-    pub fn as_resource(value: *@This()) *SystemResource {
-        return @ptrCast(value);
-    }
-};
-
-pub const Font = *opaque {
-    pub fn as_resource(value: *@This()) *SystemResource {
-        return @ptrCast(value);
-    }
-};
-
-/// A framebuffer is something that can be drawn on.
-pub const Framebuffer = *opaque {
-    pub fn as_resource(value: *@This()) *SystemResource {
-        return @ptrCast(value);
-    }
-};
-
-pub const Window = *opaque {
-    pub fn as_resource(value: *@This()) *SystemResource {
-        return @ptrCast(value);
-    }
-};
-
-pub const Widget = *opaque {
-    pub fn as_resource(value: *@This()) *SystemResource {
-        return @ptrCast(value);
-    }
-};
-
-pub const Desktop = *opaque {
-    pub fn as_resource(value: *@This()) *SystemResource {
-        return @ptrCast(value);
-    }
-};
-
-pub const WidgetType = *opaque {
-    pub fn as_resource(value: *@This()) *SystemResource {
-        return @ptrCast(value);
-    }
-};
-
-pub const SyncEvent = *opaque {
-    pub fn as_resource(value: *@This()) *SystemResource {
-        return @ptrCast(value);
-    }
-};
-
-pub const Mutex = *opaque {
-    pub fn as_resource(value: *@This()) *SystemResource {
-        return @ptrCast(value);
-    }
+    pub const Type = __SystemResourceType;
 };
 
 ///////////////////////////////////////////////////////////

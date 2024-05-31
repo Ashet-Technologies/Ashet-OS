@@ -13,8 +13,11 @@ raw_decl: fn_decl
         | ns_decl
         | err_decl
         | iop_decl
+        | src_decl
 
 ns_decl : "const" identifier "=" "struct" "{" container "}" ";"
+
+src_decl : "const" identifier "=" "struct" "(" "SystemResource" ")" "{" "}" ";"
 
 fn_decl : "\"syscall\"" "fn"  identifier "(" param_list ")" type ";"
 

@@ -3,3 +3,4 @@ zig-out/
 *.pcap
 .vscode/
 rootfs-pxe/ashet-os
+.venv/

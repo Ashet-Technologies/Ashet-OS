@@ -13,8 +13,22 @@ from jinja2.nodes import Name
 from lark import Lark, Transformer
 from dataclasses import dataclass, field 
 
-def log(*args):
-    print(" ".join(repr(v) for v in args), file=sys.stderr)
+import caseconverter
+
+
+
+def log(*args, **kwargs):
+    if len(args) > 0:
+        print(" ".join(repr(v) for v in args), file=sys.stderr)
+    l = max(len(k) for k in  kwargs.keys())
+    for k,v in kwargs.items():
+        r = repr(v)
+        try:
+            r = ", ".join(repr(i) for i in v)
+        except TypeError:
+            pass
+        print(f"{k.rjust(l)}: {r}", file=sys.stderr)
+
 
 def panic(*args) -> NoReturn:
     log("PANIC:", *args)
@@ -79,6 +93,10 @@ class Namespace(Declaration):
     decls: list[Declaration]
 
 @dataclass
+class SystemResource(Declaration):
+    pass 
+
+@dataclass
 class Function(Declaration):
     params: list[Parameter]
     return_type: Type 
@@ -126,6 +144,8 @@ class ErrorAllocation:
                 self.insert_error_set(decl.return_type)
         elif isinstance(decl, IOP):
             self.insert_error_set(decl.error)
+        elif isinstance(decl, SystemResource): 
+            pass
         else:
             panic("unexpected", decl)
     
@@ -167,6 +187,13 @@ class ZigCodeTransformer(Transformer):
     def raw_decl(self, items) -> Declaration:
         assert len(items) == 1
         return items[0]
+
+    def src_decl(self, items) -> SystemResource:
+        assert len(items) == 1
+        return SystemResource(
+            name = items[0],
+            docs = None,
+        )
     
     def fn_decl(self, items) -> Function:
         return Function(
@@ -458,9 +485,18 @@ def render_container(stream, declarations: list[Declaration], errors: ErrorAlloc
 
             stream.write(f"{I}}});\n")
 
+        elif isinstance(decl, SystemResource): 
+            stream.write(f"{I}pub const {decl.name} = *opaque {{\n")
+            stream.write(f"{I}    pub fn as_resource(value: *@This()) *SystemResource {{\n")
+            stream.write(f"{I}        return @ptrCast(value);\n")
+            stream.write(f"{I}    }}\n")
+            stream.write(f"{I}}};\n")
+
         else:
             panic("unexpected", decl)
         stream.write("\n")
+
+
 
 def foreach(declarations: list[Declaration], T: type, func, namespace: list[str]=[]):
     for decl in declarations:
@@ -468,7 +504,7 @@ def foreach(declarations: list[Declaration], T: type, func, namespace: list[str]
             foreach(decl.decls, T, func, namespace + [decl.name])
         elif isinstance(decl, T):
             func(decl,namespace)
-        elif isinstance(decl, ErrorSet) or isinstance(decl, Function) or isinstance(decl, IOP):
+        elif isinstance(decl, ErrorSet) or isinstance(decl, Function) or isinstance(decl, IOP) or isinstance(decl, SystemResource):
             pass 
         else:
             panic("unexpected", decl)
@@ -593,34 +629,14 @@ def main():
 
     foreach(root_container.decls, Function, func=assert_legal_extern_fn)
 
-    transformed_code = ""
-    with io.StringIO() as strio:
 
+    sys_resources: list[str] = list()
+    
+    def collect_src(src: SystemResource, ns:list[str]):
+        name = ".".join([*ns, src.name])
+        sys_resources.append(name)
+    foreach(root_container.decls, SystemResource, collect_src)
 
-        strio.write("/// Global error set, defines numeric values for all errors.\n")
-        strio.write("pub const Error = enum(u16) {\n")
-        for key, value in sorted(errors.mapping.items(), key=lambda kv: kv[1]):
-            assert key != "ok"
-            assert key != "Unexpected"
-            assert 0 < value < 0xFFFF
-            strio.write(f"    {key} = {value},\n")
-        strio.write("};\n")
-        strio.write("\n")
-        strio.write("pub const ErrorSet = @import(\"error_set.zig\").UntypedErrorSet(Error);\n")
-        strio.write("\n")
-        strio.write("\n")
-        strio.write("/// Global error set, defines numeric values for all errors.\n")
-        strio.write("pub const IOP_Type = enum(u32) {\n")
-        for value, iop in sorted(iop_numbers.items(), key=lambda kv: kv[0]):
-            strio.write(f"    {iop.key} = {value},\n")
-        strio.write("};\n")
-        strio.write("\n")
-        strio.write("pub const IOP = iops.Generic_IOP(IOP_Type);\n")
-        strio.write("\n")
-        strio.write("\n")
-        
-        render_container(strio, root_container.decls,errors)
-        transformed_code = strio.getvalue()
 
     sys.stdout.write(
 """
@@ -630,10 +646,55 @@ def main():
 
 
 """)
-    sys.stdout.write(transformed_code)
+    transformed_code = ""
+    with io.StringIO() as strio:
+        render_container(strio, root_container.decls,errors)
+        sys.stdout.write(strio.getvalue())
 
     sys.stdout.write(root_container.rest)
     
+    with io.StringIO() as strio:
+        strio.write("\n")
+        strio.write("\n")
+        strio.write("/// Global error set, defines numeric values for all errors.\n")
+        strio.write("pub const Error = enum(u16) {\n")
+        for key, value in sorted(errors.mapping.items(), key=lambda kv: kv[1]):
+            assert key != "ok"
+            assert key != "Unexpected"
+            assert 0 < value < 0xFFFF
+            strio.write(f"    {key} = {value},\n")
+        strio.write("};\n")
+        strio.write("\n")
+        strio.write("\n")
+        strio.write("/// Global error set, defines numeric values for all errors.\n")
+        strio.write("pub const IOP_Type = enum(u32) {\n")
+        for value, iop in sorted(iop_numbers.items(), key=lambda kv: kv[0]):
+            strio.write(f"    {iop.key} = {value},\n")
+        strio.write("};\n")
+        strio.write("\n")
+        strio.write("\n")
+        strio.write("const __SystemResourceType = enum(u16) {\n")
+            
+        for src in sys_resources:
+            strio.write(f"    {caseconverter.snakecase(src)},\n")
+
+        strio.write("    _,\n");
+        strio.write("};\n");
+
+        strio.write("\n")
+        strio.write("fn __SystemResourceCastResult(comptime t: __SystemResourceType) type {\n")
+        strio.write("    return switch (t) {\n")
+        
+        for src in sys_resources:
+            strio.write(f"        .{caseconverter.snakecase(src)} => {src},\n")
+
+        strio.write("         _ => @compileError(\"Undefined type passed.\"),\n")
+        strio.write("    };\n")
+        strio.write("}\n")
+
+        strio.write("\n")
+        
+        sys.stdout.write(strio.getvalue())
 
 if __name__ == "__main__":
     main()
