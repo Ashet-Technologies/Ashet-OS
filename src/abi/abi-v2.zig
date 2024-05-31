@@ -415,16 +415,40 @@ const syscalls = struct {
     };
 
     const pipe = struct {
-        /// Spawns a new pipe with `buffer_size` bytes of intermediate buffer.
-        /// If `buffer_size` is 0, the pipe is synchronous and can only send data
-        /// if a `read` call is active. Otherwise, up to `buffer_size` bytes can be
+        /// Spawns a new pipe with `fifo_length` elements of `object_size` bytes.
+        /// If `fifo_length` is 0, the pipe is synchronous and can only send data
+        /// if a `read` call is active. Otherwise, up to `fifo_length` elements can be
         /// stored in a FIFO.
-        extern "syscall" fn create(*Pipe, buffer_size: usize) error{
+        extern "syscall" fn create(*Pipe, object_size: usize, fifo_length: usize) error{
             SystemResources,
         };
 
-        /// Returns the size of the pipe-internal FIFO in bytes.
-        extern "syscall" fn get_fifo_size(Pipe) usize;
+        /// Returns the length of the pipe-internal FIFO in elements.
+        extern "syscall" fn get_fifo_length(Pipe) usize;
+
+        /// Returns the size of the objects stored in the pipe.
+        extern "syscall" fn get_object_size(Pipe) usize;
+    };
+
+    const sync = struct {
+        /// Creates a new `SyncEvent` object that can be used to synchronize
+        /// different processes.
+        extern "syscall" fn create_event(*SyncEvent) error{SystemResources};
+
+        /// Completes one `WaitForEvent` IOP waiting for the given event.
+        extern "syscall" fn notify_one(SyncEvent) void;
+
+        /// Completes all `WaitForEvent` IOP waiting for the given event.
+        extern "syscall" fn notify_all(SyncEvent) void;
+
+        /// Creates a new mutual exclusion.
+        extern "syscall" fn create_mutex(*Mutex) error{SystemResources};
+
+        /// Tries to lock a mutex and returns if it was successful.
+        extern "syscall" fn try_lock(Mutex) bool;
+
+        /// Unlocks a mutual exclusion. Completes a single `Lock` IOP if it exists.
+        extern "syscall" fn unlock(Mutex) void;
     };
 };
 
@@ -469,24 +493,36 @@ const io = struct {
     };
 
     const pipe = struct {
-        /// Writes `buffer` into the given pipe and returns the number of bytes written.
-        /// If `blocking` is true, the function blocks until `buffer.len` bytes are written.
+        /// Writes elements from `data` into the given pipe.
         extern "iop" fn Write(
             pipe: Pipe,
-            buffer: []const u8,
-            blocking: bool,
+            /// Pointer to the first element. Length defines how many elements are to be transferred.
+            data: []const u8,
+            /// Distance between each element in `data`. Can be different from the pipes element size
+            /// to allow sparse data to be transferred.
+            /// If `0`, it will use the `object_size` property of the pipe.
+            stride: usize,
+            /// Defines how the write should operate.
+            mode: PipeMode,
         ) error{}!struct {
-            length: usize,
+            /// Numbert of elements written into the pipe.
+            count: usize,
         };
 
-        /// Reads data from a pipe into `buffer` and returns the number of bytes read.
-        /// If `blocking` is true, the function blocks until `buffer.len` bytes are read.
+        /// Reads elements from a pipe into `buffer`.
         extern "iop" fn Read(
             pipe: Pipe,
+            /// Points to the first element to be received.
             buffer: []u8,
-            blocking: bool,
+            /// Distance between each element in `buffer`. Can be different from the pipes element size
+            /// to allow sparse data to be transferred.
+            /// If `0`, it will use the `object_size` property of the pipe.
+            stride: usize,
+            /// Defines how the read should operate.
+            mode: PipeMode,
         ) error{}!struct {
-            length: usize,
+            /// Number of elements read.
+            count: usize,
         };
     };
 
@@ -931,6 +967,13 @@ const io = struct {
             event: WindowEvent,
         };
     };
+
+    const sync = struct {
+        /// Waits for the given `SyncEvent` to be notified.
+        extern "iop" fn WaitForEvent(SyncEvent) void;
+
+        extern "iop" fn Lock(Mutex) void;
+    };
 };
 
 usingnamespace zig; // regular code beyond this
@@ -1027,6 +1070,9 @@ pub const SystemResource = opaque {
             .desktop => Desktop,
             .widget_type => WidgetType,
 
+            .sync_event => SyncEvent,
+            .mutex => Mutex,
+
             _ => @compileError("Undefined type passed."),
         };
     }
@@ -1050,6 +1096,9 @@ pub const SystemResource = opaque {
         widget,
         widget_type,
         desktop,
+
+        sync_event,
+        mutex,
 
         _,
     };
@@ -1152,6 +1201,18 @@ pub const WidgetType = *opaque {
     }
 };
 
+pub const SyncEvent = *opaque {
+    pub fn as_resource(value: *@This()) *SystemResource {
+        return @ptrCast(value);
+    }
+};
+
+pub const Mutex = *opaque {
+    pub fn as_resource(value: *@This()) *SystemResource {
+        return @ptrCast(value);
+    }
+};
+
 ///////////////////////////////////////////////////////////
 // Simple types:
 
@@ -1198,6 +1259,15 @@ pub const ColorIndex = enum(u8) {
 
 ///////////////////////////////////////////////////////////
 // Enumerations:
+
+pub const PipeMode = enum(u8) {
+    /// Completes immediatly even if no elements could be processed.
+    nonblocking = 0,
+    /// Returns when at least one element could be processed.
+    at_least_one = 1,
+    /// Returns only when all elements are processed.
+    all = 2,
+};
 
 pub const NotificationKind = enum(u8) {
     /// Important information that require immediate action
