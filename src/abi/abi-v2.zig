@@ -327,6 +327,16 @@ const syscalls = struct {
         /// Moves and resizes a widget in one.
         extern "syscall" fn place_widget(widget: Widget, position: Point, size: Size) void;
 
+        /// Triggers the `control` event of the widget with the given `message` as a payload.
+        extern "syscall" fn control_widget(widget: Widget, message: WidgetControlMessage) error{
+            SystemResources,
+        };
+
+        /// Triggers the `widget_notify` event of the `Window` that owns `widget` with `event` as the payload.
+        extern "syscall" fn notify_owner(widget: Widget, event: WidgetNotifyEvent) error{
+            SystemResources,
+        };
+
         /// Returns WidgetType-associated "opaque" data for this widget.
         ///
         /// This is meant as a convenience tool to store additional information per widget
@@ -1462,7 +1472,7 @@ pub const WidgetDescriptor = extern struct {
 
     // Event Handlers:
 
-    handle_event: *const fn () callconv(.C) void,
+    handle_event: *const fn (*const WidgetEvent) callconv(.C) void,
 
     pub const Flags = packed struct(u32) {
         /// If `true`, the user can focus this widget with the mouse or keyboard.
@@ -1486,9 +1496,30 @@ pub const WidgetDescriptor = extern struct {
     };
 };
 
+pub const WidgetControlMessage = extern struct {
+    /// The widget-specific type of the control message.
+    /// Could be something like `get_property`, `set_property`, `set_text`, ...
+    type: u32,
+
+    /// Generic parameters that can be passed to the widget.
+    params: [4]usize,
+};
+
+pub const WidgetNotifyEvent = extern struct {
+    widget: Widget,
+
+    /// The widget-specific type of event.
+    /// Could be something like `text_changed`, `clicked`, `checked_changed`, ...
+    type: u32,
+
+    /// Generic data associated with the event.
+    data: [4]usize,
+};
+
 pub const WidgetEvent = extern union {
     mouse: MouseEvent,
     keyboard: KeyboardEvent,
+    control: WidgetControlMessage,
 
     // TODO: Add event data
 
@@ -1501,6 +1532,9 @@ pub const WidgetEvent = extern union {
         /// The widget is in the process of being destroyed.
         /// After this event, the handle will be invalid.
         destroy,
+
+        /// The creator of the widget wants to do something widget-specific.
+        control,
 
         // basic input:
 
@@ -1633,8 +1667,11 @@ pub const WidgetEvent = extern union {
 pub const WindowEvent = extern union {
     mouse: MouseEvent,
     keyboard: KeyboardEvent,
+    widget_notify: WidgetNotifyEvent,
 
     pub const Type = enum(u16) {
+        widget_notify,
+
         key_press,
         key_release,
 
