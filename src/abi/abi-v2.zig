@@ -359,6 +359,7 @@ const syscalls = struct {
             /// Number of bytes allocated in a Window for this desktop.
             /// See `get_desktop_data` function for further information.
             window_data_size: usize,
+            descriptor: *const DesktopDescriptor,
         ) error{
             SystemResources,
         };
@@ -382,6 +383,10 @@ const syscalls = struct {
         /// The size of this must be known and cannot be queried.
         extern "syscall" fn get_desktop_data(Window) [*]align(16) u8;
 
+        extern "syscall" fn send_notification(desktop: Desktop, message: []const u8, kind: NotificationKind) error{
+            SystemResources,
+        };
+
         const clipboard = struct {
             /// Sets the contents of the clip board.
             /// Takes a mime type as well as the value in the provided format.
@@ -400,14 +405,6 @@ const syscalls = struct {
                 OutOfMemory,
             };
         };
-    };
-
-    const notification = struct {
-        extern "syscall" fn send(message: []const u8, kind: NotificationKind) error{
-            SystemResources,
-        };
-
-        // TODO: Add notification listeners
     };
 
     const shm = struct {
@@ -1073,20 +1070,6 @@ pub const max_file_name_len = 120;
 
 pub const palette_size = std.math.maxInt(@typeInfo(ColorIndex).Enum.tag_type) + 1;
 
-pub const system_widgets = struct {
-    pub const label = UUID.constant("53b8be36-969a-46a3-bdf5-e3d197890219");
-    pub const button = UUID.constant("782ccd0e-bae4-4093-93fe-12c1f86ff43c");
-    pub const text_box = UUID.constant("02eddbc3-b882-41e9-8aba-10d12b451e11");
-    pub const multi_line_text_box = UUID.constant("84d40a1a-04ab-4e00-ae93-6e91e6b3d10a");
-    pub const vertical_scroll_bar = UUID.constant("d1c52f74-e9b8-4067-8bb6-fe01c49d97ae");
-    pub const horizontal_scroll_bar = UUID.constant("2899397f-ede2-46e9-8458-1eea29c81fa1");
-    pub const progress_bar = UUID.constant("b96290a9-542f-45f5-9e37-1ce9084fc0e3");
-    pub const check_box = UUID.constant("051c6bff-d491-4e5a-8b77-6f4244da52ee");
-    pub const radio_button = UUID.constant("4f18fde6-944c-494f-a55c-ba11f45fcfa3");
-    pub const panel = UUID.constant("1fa5b237-0bda-48d1-b95a-fcf80616318b");
-    pub const group_box = UUID.constant("b96bc6a2-6df0-4f76-962a-4af18fdf3548");
-};
-
 ///////////////////////////////////////////////////////////
 // System resources:
 
@@ -1116,6 +1099,9 @@ pub const UUID = struct {
     /// Parses a UUID in the format
     /// `3ad20402-1711-4bbc-b6c3-ff8a1da068c6`
     /// and returns a pointer to it.
+    ///
+    /// You can generate UUIDs at
+    /// https://www.uuidgenerator.net/version4
     pub fn constant(str: *const [36:0]u8) *const UUID {
         _ = str;
         unreachable;
@@ -1720,6 +1706,45 @@ pub const MessageBoxButtons = packed struct(u8) {
     retry: bool = false,
     @"continue": bool = false,
     ignore: bool = false,
+};
+
+pub const DesktopDescriptor = extern struct {
+    //
+};
+
+pub const DesktopEvent = extern union {
+    create_window: Window,
+    destroy_window: Window,
+
+    show_notification: DesktopNotificationEvent,
+    show_query: DesktopQueryEvent,
+
+    pub const Type = enum(u16) {
+        // lifecycle management:
+
+        /// A window was created on this desktop.
+        create_window,
+
+        /// A window was destroyed on this desktop.
+        destroy_window,
+
+        // user interaction:
+
+        /// `send_notification` was called and the desktop user should receive
+        /// a notification.
+        show_notification,
+
+        _,
+    };
+
+    pub const DesktopNotificationEvent = extern struct {
+        message_ptr: [*]const u8,
+        message_len: usize,
+    };
+
+    pub const DesktopQueryEvent = extern struct {
+        // TODO: Implement message box
+    };
 };
 
 /// A 16 bpp color value using RGB565 encoding.
