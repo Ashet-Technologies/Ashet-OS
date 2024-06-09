@@ -285,11 +285,6 @@ const syscalls = struct {
     };
 
     const gui = struct {
-        /// Opens a message box popup window and prompts the user for response.
-        ///
-        /// *Remarks:* This function is blocking and will only return when the user has entered their choice.
-        extern "syscall" fn message_box(Desktop, message: []const u8, caption: []const u8, buttons: MessageBoxButtons, icon: MessageBoxIcon) MessageBoxResult;
-
         extern "syscall" fn register_widget_type(out: *WidgetType, *const WidgetDescriptor) error{
             AlreadyRegistered,
             SystemResources,
@@ -356,9 +351,6 @@ const syscalls = struct {
             desktop: *Desktop,
             /// User-visible name of the desktop.
             name: []const u8,
-            /// Number of bytes allocated in a Window for this desktop.
-            /// See `get_desktop_data` function for further information.
-            window_data_size: usize,
             descriptor: *const DesktopDescriptor,
         ) error{
             SystemResources,
@@ -383,7 +375,37 @@ const syscalls = struct {
         /// The size of this must be known and cannot be queried.
         extern "syscall" fn get_desktop_data(Window) [*]align(16) u8;
 
-        extern "syscall" fn send_notification(desktop: Desktop, message: []const u8, kind: NotificationKind) error{
+        /// Notifies the system that a message box was confirmed by the user.
+        ///
+        /// **NOTE:** This function is meant to be implemented by a desktop server.
+        /// Regular GUI applications should not use this function as they have no
+        /// access to a `MessageBoxEvent.RequestID`.
+        extern "syscall" fn notify_message_box(
+            /// The desktop that completed the message box.
+            source: Desktop,
+            /// The request id that was passed in `MessageBoxEvent`.
+            request_id: MessageBoxEvent.RequestID,
+            /// The resulting button which the user clicked.
+            result: MessageBoxResult,
+        ) void;
+
+        /// Posts an event into the window event queue so the window owner
+        /// can handle the event.
+        extern "syscall" fn post_window_event(
+            window: Window,
+            event_type: WindowEvent.Type,
+            event: WindowEvent,
+        ) error{SystemResources};
+
+        /// Sends a notification to the provided `desktop`.
+        extern "syscall" fn send_notification(
+            /// Where to show the notification?
+            desktop: Desktop,
+            /// What text is displayed in the notification?
+            message: []const u8,
+            /// How urgent is the notification to the user?
+            severity: NotificationSeverity,
+        ) error{
             SystemResources,
         };
 
@@ -973,12 +995,24 @@ const io = struct {
             event_type: WindowEvent.Type,
             event: WindowEvent,
         };
+
+        /// Opens a message box popup window and prompts the user for response.
+        extern "iop" fn ShowMessageBox(
+            Desktop,
+            message: []const u8,
+            caption: []const u8,
+            buttons: MessageBoxButtons,
+            icon: MessageBoxIcon,
+        ) error{}!struct {
+            result: MessageBoxResult,
+        };
     };
 
     const sync = struct {
         /// Waits for the given `SyncEvent` to be notified.
         extern "iop" fn WaitForEvent(SyncEvent) error{}!void;
 
+        /// Locks a mutex. Will complete once the mutex is locked.
         extern "iop" fn Lock(Mutex) error{}!void;
     };
 };
@@ -1149,7 +1183,7 @@ pub const PipeMode = enum(u8) {
     all = 2,
 };
 
-pub const NotificationKind = enum(u8) {
+pub const NotificationSeverity = enum(u8) {
     /// Important information that require immediate action
     /// by the user.
     ///
@@ -1458,7 +1492,7 @@ pub const WidgetDescriptor = extern struct {
 
     // Event Handlers:
 
-    handle_event: *const fn (*const WidgetEvent) callconv(.C) void,
+    handle_event: *const fn (Widget, *const WidgetEvent) callconv(.C) void,
 
     pub const Flags = packed struct(u32) {
         /// If `true`, the user can focus this widget with the mouse or keyboard.
@@ -1709,7 +1743,13 @@ pub const MessageBoxButtons = packed struct(u8) {
 };
 
 pub const DesktopDescriptor = extern struct {
-    //
+    /// Number of bytes allocated in a Window for this desktop.
+    /// See `get_desktop_data` function for further information.
+    window_data_size: usize,
+
+    /// A function pointer to the event handler of a desktop.
+    /// The desktop will receive events via this function.
+    handle_event: *const fn (Desktop, *const DesktopEvent) callconv(.C) void,
 };
 
 pub const DesktopEvent = extern union {
@@ -1717,7 +1757,7 @@ pub const DesktopEvent = extern union {
     destroy_window: Window,
 
     show_notification: DesktopNotificationEvent,
-    show_query: DesktopQueryEvent,
+    show_message_box: MessageBoxEvent,
 
     pub const Type = enum(u16) {
         // lifecycle management:
@@ -1730,21 +1770,53 @@ pub const DesktopEvent = extern union {
 
         // user interaction:
 
-        /// `send_notification` was called and the desktop user should receive
+        /// `send_notification` was called and the desktop user should display
         /// a notification.
         show_notification,
 
+        /// `send_notification` was called and the desktop user should display
+        /// a notification.
+        show_message_box,
+
         _,
     };
+};
 
-    pub const DesktopNotificationEvent = extern struct {
-        message_ptr: [*]const u8,
-        message_len: usize,
-    };
+pub const DesktopNotificationEvent = extern struct {
+    /// The text of the notification.
+    message_ptr: [*]const u8,
 
-    pub const DesktopQueryEvent = extern struct {
-        // TODO: Implement message box
-    };
+    /// Length of `message_ptr`.
+    message_len: usize,
+
+    /// The severity/importance of the notification.
+    severity: NotificationSeverity,
+};
+
+pub const MessageBoxEvent = extern struct {
+    /// The desktop-specific request id that must be passed into
+    /// `notify_message_box` to finish the message box request.
+    request_id: RequestID,
+
+    /// Pointer to the content of the message box.
+    message_ptr: [*]const u8,
+
+    /// length of `message_ptr`.
+    message_len: usize,
+
+    /// Pointer to the caption of the message box.
+    caption_ptr: [*]const u8,
+
+    /// length of `caption_ptr`.
+    caption_len: usize,
+
+    /// Which buttons are presented to the user?
+    buttons: MessageBoxButtons,
+
+    /// Which icon is shown?
+    icon: MessageBoxIcon,
+
+    pub const RequestID = enum(u16) { _ };
 };
 
 /// A 16 bpp color value using RGB565 encoding.

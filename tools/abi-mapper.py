@@ -15,8 +15,6 @@ from dataclasses import dataclass, field
 
 import caseconverter
 
-
-
 def log(*args, **kwargs):
     if len(args) > 0:
         print(" ".join(repr(v) for v in args), file=sys.stderr)

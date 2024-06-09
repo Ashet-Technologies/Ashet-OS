@@ -22,6 +22,12 @@ pub fn build(b: *std.Build) !void {
     const validate_step = b.step("validate", "Validates files in the rootfs");
     const run_step = b.step("run", "Executes the selected kernel with qemu. Use -Dmachine to run only one");
     const tools_step = b.step("tools", "Builds the build and debug tools");
+    const abi_step = b.step("abi", "Only compile and update the ABI stuff");
+
+    // subgroups:
+
+    b.getInstallStep().dependOn(abi_step);
+    b.getInstallStep().dependOn(tools_step);
 
     // options:
 
@@ -91,6 +97,51 @@ pub fn build(b: *std.Build) !void {
     const mod_virtio = b.addModule("virtio", .{
         .source_file = .{ .path = "vendor/libvirtio/src/virtio.zig" },
     });
+
+    const abi_src = blk: {
+        const compile_abi = b.addSystemCommand(&.{
+            "python3.11",
+            b.pathFromRoot("./tools/abi-mapper.py"),
+        });
+
+        const unformatted = compile_abi.captureStdOut();
+        compile_abi.captured_stdout.?.basename = "abi-unformatted.zig";
+
+        const fmt = b.addSystemCommand(&.{
+            b.zig_exe, "fmt", "--stdin",
+        });
+
+        fmt.setStdIn(.{ .lazy_path = unformatted });
+        const formatted = fmt.captureStdOut();
+        fmt.captured_stdout.?.basename = "abi.zig";
+
+        const wf = b.addWriteFiles();
+        const abi_src = wf.addCopyFile(formatted, "AshetOS.zig");
+        _ = wf.addCopyFile(.{ .path = "src/abi/error_set.zig" }, "error_set.zig");
+        _ = wf.addCopyFile(.{ .path = "src/abi/iops.zig" }, "iops.zig");
+
+        const install_mod_step = b.addInstallDirectory(.{
+            .source_dir = wf.getDirectory(),
+            .install_dir = .lib,
+            .install_subdir = "zig",
+        });
+        abi_step.dependOn(&install_mod_step.step);
+
+        const docgen = b.addTest(.{
+            .root_source_file = abi_src,
+        });
+
+        const install_docs = b.addInstallDirectory(.{
+            .source_dir = docgen.getEmittedDocs(),
+            .install_dir = .lib,
+            .install_subdir = "docs",
+        });
+        abi_step.dependOn(&install_docs.step);
+
+        break :blk abi_src;
+    };
+
+    _ = abi_src;
 
     const mod_ashet_abi = b.addModule("ashet-abi", .{
         .source_file = .{ .path = "src/abi/abi.zig" },
@@ -163,7 +214,6 @@ pub fn build(b: *std.Build) !void {
         debug_filter.linkLibC();
 
         const install_step = b.addInstallArtifact(debug_filter, .{});
-        b.getInstallStep().dependOn(&install_step.step);
         tools_step.dependOn(&install_step.step);
 
         break :blk debug_filter;
@@ -365,17 +415,7 @@ pub fn build(b: *std.Build) !void {
     }
     // validation ↑
     /////////////////////////////////////////////////////////////////////////////
-    // documentation ↓
 
-    // const docgen = b.addTest(.{
-    //     .root_source_file = .{ .path = "src/abi/abi-v2.zig" },
-    // });
-
-    // b.installDirectory(.{
-    //     .source_dir = docgen.getEmittedDocs(),
-    //     .install_dir = .prefix,
-    //     .install_subdir = "documentation",
-    // });
 }
 
 fn addBitmap(target: *std.build.LibExeObjStep, bmpconv: BitmapConverter, src: []const u8, dst: []const u8, size: [2]u32) void {
