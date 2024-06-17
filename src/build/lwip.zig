@@ -3,119 +3,126 @@ const std = @import("std");
 const flags = [_][]const u8{ "-std=c99", "-fno-sanitize=undefined" };
 const files = [_][]const u8{
     // Core files
-    "vendor/lwip/src/core/init.c",
-    "vendor/lwip/src/core/udp.c",
-    "vendor/lwip/src/core/inet_chksum.c",
-    "vendor/lwip/src/core/altcp_alloc.c",
-    "vendor/lwip/src/core/stats.c",
-    "vendor/lwip/src/core/altcp.c",
-    "vendor/lwip/src/core/mem.c",
-    "vendor/lwip/src/core/ip.c",
-    "vendor/lwip/src/core/pbuf.c",
-    "vendor/lwip/src/core/netif.c",
-    "vendor/lwip/src/core/tcp_out.c",
-    "vendor/lwip/src/core/dns.c",
-    "vendor/lwip/src/core/tcp_in.c",
-    "vendor/lwip/src/core/memp.c",
-    "vendor/lwip/src/core/tcp.c",
-    "vendor/lwip/src/core/sys.c",
-    "vendor/lwip/src/core/def.c",
-    "vendor/lwip/src/core/timeouts.c",
-    "vendor/lwip/src/core/raw.c",
-    "vendor/lwip/src/core/altcp_tcp.c",
+    "core/init.c",
+    "core/udp.c",
+    "core/inet_chksum.c",
+    "core/altcp_alloc.c",
+    "core/stats.c",
+    "core/altcp.c",
+    "core/mem.c",
+    "core/ip.c",
+    "core/pbuf.c",
+    "core/netif.c",
+    "core/tcp_out.c",
+    "core/dns.c",
+    "core/tcp_in.c",
+    "core/memp.c",
+    "core/tcp.c",
+    "core/sys.c",
+    "core/def.c",
+    "core/timeouts.c",
+    "core/raw.c",
+    "core/altcp_tcp.c",
 
     // IPv4 implementation:
-    "vendor/lwip/src/core/ipv4/dhcp.c",
-    "vendor/lwip/src/core/ipv4/autoip.c",
-    "vendor/lwip/src/core/ipv4/ip4_frag.c",
-    "vendor/lwip/src/core/ipv4/etharp.c",
-    "vendor/lwip/src/core/ipv4/ip4.c",
-    "vendor/lwip/src/core/ipv4/ip4_addr.c",
-    "vendor/lwip/src/core/ipv4/igmp.c",
-    "vendor/lwip/src/core/ipv4/icmp.c",
+    "core/ipv4/dhcp.c",
+    "core/ipv4/autoip.c",
+    "core/ipv4/ip4_frag.c",
+    "core/ipv4/etharp.c",
+    "core/ipv4/ip4.c",
+    "core/ipv4/ip4_addr.c",
+    "core/ipv4/igmp.c",
+    "core/ipv4/icmp.c",
 
     // IPv6 implementation:
-    "vendor/lwip/src/core/ipv6/icmp6.c",
-    "vendor/lwip/src/core/ipv6/ip6_addr.c",
-    "vendor/lwip/src/core/ipv6/ip6.c",
-    "vendor/lwip/src/core/ipv6/ip6_frag.c",
-    "vendor/lwip/src/core/ipv6/mld6.c",
-    "vendor/lwip/src/core/ipv6/dhcp6.c",
-    "vendor/lwip/src/core/ipv6/inet6.c",
-    "vendor/lwip/src/core/ipv6/ethip6.c",
-    "vendor/lwip/src/core/ipv6/nd6.c",
+    "core/ipv6/icmp6.c",
+    "core/ipv6/ip6_addr.c",
+    "core/ipv6/ip6.c",
+    "core/ipv6/ip6_frag.c",
+    "core/ipv6/mld6.c",
+    "core/ipv6/dhcp6.c",
+    "core/ipv6/inet6.c",
+    "core/ipv6/ethip6.c",
+    "core/ipv6/nd6.c",
 
     // Interfaces:
-    "vendor/lwip/src/netif/bridgeif.c",
-    "vendor/lwip/src/netif/ethernet.c",
-    "vendor/lwip/src/netif/slipif.c",
-    "vendor/lwip/src/netif/bridgeif_fdb.c",
+    "netif/bridgeif.c",
+    "netif/ethernet.c",
+    "netif/slipif.c",
+    "netif/bridgeif_fdb.c",
 
     // sequential APIs
-    // "vendor/lwip/src/api/err.c",
-    // "vendor/lwip/src/api/api_msg.c",
-    // "vendor/lwip/src/api/netifapi.c",
-    // "vendor/lwip/src/api/sockets.c",
-    // "vendor/lwip/src/api/netbuf.c",
-    // "vendor/lwip/src/api/api_lib.c",
-    // "vendor/lwip/src/api/tcpip.c",
-    // "vendor/lwip/src/api/netdb.c",
-    // "vendor/lwip/src/api/if_api.c",
+    // "api/err.c",
+    // "api/api_msg.c",
+    // "api/netifapi.c",
+    // "api/sockets.c",
+    // "api/netbuf.c",
+    // "api/api_lib.c",
+    // "api/tcpip.c",
+    // "api/netdb.c",
+    // "api/if_api.c",
 
     // 6LoWPAN
-    "vendor/lwip/src/netif/lowpan6.c",
-    "vendor/lwip/src/netif/lowpan6_ble.c",
-    "vendor/lwip/src/netif/lowpan6_common.c",
-    "vendor/lwip/src/netif/zepif.c",
+    "netif/lowpan6.c",
+    "netif/lowpan6_ble.c",
+    "netif/lowpan6_common.c",
+    "netif/zepif.c",
 
     // PPP
-    // "vendor/lwip/src/netif/ppp/polarssl/arc4.c",
-    // "vendor/lwip/src/netif/ppp/polarssl/des.c",
-    // "vendor/lwip/src/netif/ppp/polarssl/md4.c",
-    // "vendor/lwip/src/netif/ppp/polarssl/sha1.c",
-    // "vendor/lwip/src/netif/ppp/polarssl/md5.c",
-    // "vendor/lwip/src/netif/ppp/ipcp.c",
-    // "vendor/lwip/src/netif/ppp/magic.c",
-    // "vendor/lwip/src/netif/ppp/pppoe.c",
-    // "vendor/lwip/src/netif/ppp/mppe.c",
-    // "vendor/lwip/src/netif/ppp/multilink.c",
-    // "vendor/lwip/src/netif/ppp/chap-new.c",
-    // "vendor/lwip/src/netif/ppp/auth.c",
-    // "vendor/lwip/src/netif/ppp/chap_ms.c",
-    // "vendor/lwip/src/netif/ppp/ipv6cp.c",
-    // "vendor/lwip/src/netif/ppp/chap-md5.c",
-    // "vendor/lwip/src/netif/ppp/upap.c",
-    // "vendor/lwip/src/netif/ppp/pppapi.c",
-    // "vendor/lwip/src/netif/ppp/pppos.c",
-    // "vendor/lwip/src/netif/ppp/eap.c",
-    // "vendor/lwip/src/netif/ppp/pppol2tp.c",
-    // "vendor/lwip/src/netif/ppp/demand.c",
-    // "vendor/lwip/src/netif/ppp/fsm.c",
-    // "vendor/lwip/src/netif/ppp/eui64.c",
-    // "vendor/lwip/src/netif/ppp/ccp.c",
-    // "vendor/lwip/src/netif/ppp/pppcrypt.c",
-    // "vendor/lwip/src/netif/ppp/utils.c",
-    // "vendor/lwip/src/netif/ppp/vj.c",
-    // "vendor/lwip/src/netif/ppp/lcp.c",
-    // "vendor/lwip/src/netif/ppp/ppp.c",
-    // "vendor/lwip/src/netif/ppp/ecp.c",
+    // "netif/ppp/polarssl/arc4.c",
+    // "netif/ppp/polarssl/des.c",
+    // "netif/ppp/polarssl/md4.c",
+    // "netif/ppp/polarssl/sha1.c",
+    // "netif/ppp/polarssl/md5.c",
+    // "netif/ppp/ipcp.c",
+    // "netif/ppp/magic.c",
+    // "netif/ppp/pppoe.c",
+    // "netif/ppp/mppe.c",
+    // "netif/ppp/multilink.c",
+    // "netif/ppp/chap-new.c",
+    // "netif/ppp/auth.c",
+    // "netif/ppp/chap_ms.c",
+    // "netif/ppp/ipv6cp.c",
+    // "netif/ppp/chap-md5.c",
+    // "netif/ppp/upap.c",
+    // "netif/ppp/pppapi.c",
+    // "netif/ppp/pppos.c",
+    // "netif/ppp/eap.c",
+    // "netif/ppp/pppol2tp.c",
+    // "netif/ppp/demand.c",
+    // "netif/ppp/fsm.c",
+    // "netif/ppp/eui64.c",
+    // "netif/ppp/ccp.c",
+    // "netif/ppp/pppcrypt.c",
+    // "netif/ppp/utils.c",
+    // "netif/ppp/vj.c",
+    // "netif/ppp/lcp.c",
+    // "netif/ppp/ppp.c",
+    // "netif/ppp/ecp.c",
 };
 
-pub fn create(b: *std.build.Builder, target: std.zig.CrossTarget, optimize: std.builtin.OptimizeMode) *std.build.LibExeObjStep {
+pub fn create(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Step.Compile {
     const lib = b.addStaticLibrary(.{
         .name = "lwip",
         .target = target,
         .optimize = optimize,
     });
 
-    lib.addCSourceFiles(&files, &flags);
+    const upstream = b.dependency("lwip", .{});
 
-    setup(lib);
+    lib.addCSourceFiles(.{
+        .root = upstream.path("src"),
+        .files = &files,
+        .flags = &flags,
+    });
+    lib.addIncludePath(upstream.path("src/include"));
+    lib.addIncludePath(b.path("src/kernel/components/network/include"));
 
     return lib;
 }
 
-pub fn setup(dst: *std.build.LibExeObjStep) void {
-    dst.addIncludePath(.{ .path = "vendor/lwip/src/include" });
-    dst.addIncludePath(.{ .path = "src/kernel/components/network/include" });
+pub fn setup(b: *std.Build, dst: *std.Build.Step.Compile) void {
+    const upstream = b.dependency("lwip", .{});
+    dst.addIncludePath(upstream.path("src/include"));
+    dst.addIncludePath(b.path("src/kernel/components/network/include"));
 }
