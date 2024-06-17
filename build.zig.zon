@@ -3,44 +3,50 @@
     .version = "0.1.0",
     .dependencies = .{
         .zfat = .{
-            .url = "https://github.com/ZigEmbeddedGroup/zfat/archive/c97bcca86b4e878023df070c9e0264a21c056622.tar.gz",
-            .hash = "1220a1f050f3a67785cbe68283b252f02f72885eea80d6a9e1856b02cd66deaf1492",
+            .url = "https://github.com/ZigEmbeddedGroup/zfat/archive/68dbbe19258b174fe4f374a91b4cc939019d9fe7.tar.gz",
+            .hash = "1220963601b9bc8dacc422d098368567e5c7b84d21f9ae73067fe3eb9c566aea02fd",
         },
         .@"text-editor" = .{
-            .url = "https://github.com/MasterQ32/TextEditor/archive/cfa2d58f4870ef7f74b7f45b57e86c492001a6c9.tar.gz",
-            .hash = "12203149d62eb94d919582cfd2482a4abd14b7908a69928ec0fe2724969388a2ad01",
+            .url = "https://github.com/ikskuh/TextEditor/archive/d17ff0b33501665038ee89bf707a5bc4eb2d712a.tar.gz",
+            .hash = "122006de3415f0d67e53148a523d2d4b9e9992a7560c4cd74d0c512e6195d2b6e4e3",
         },
         .zigimg = .{
-            .url = "https://github.com/zigimg/zigimg/archive/40ddb16fd246174545b7327a12dce7f0889ada7a.tar.gz",
-            .hash = "12208c69b00540fe3f38893800fb6c89a9fe27b4a687de5d0462e498a43db4caeec0",
+            .url = "https://github.com/zigimg/zigimg/archive/cbb0c64caffd5b02863aadd62bab48cef7f86ceb.tar.gz",
+            .hash = "1220c0980dc05816b12a8188546b4847bcf38e5e99defc0ea79a8d6bd4809049a029",
         },
         .args = .{
-            .url = "https://github.com/MasterQ32/zig-args/archive/bb2eced8ddf28114b3a1ff761c2d80b90b1a61e2.tar.gz",
-            .hash = "12208556082c280af264ca2a174fd04fc7a35f865bfe59e2c61f4a977bf7a65063e4",
+            .url = "https://github.com/ikskuh/zig-args/archive/872272205d95bdba33798c94e72c5387a31bc806.tar.gz",
+            .hash = "1220fe6ae56b668cc4a033282b5f227bfbb46a67ede6d84e9f9493fea9de339b5f37",
         },
         .hyperdoc = .{
-            .url = "https://github.com/MasterQ32/hyperdoc/archive/2d7db6836918af2b77972a6e09b849a351faf40a.tar.gz",
-            .hash = "1220697b65c227e6f031e11f54889568e730108e5731c5aa9617e50d3d56cbfb7cd8",
+            .url = "https://github.com/Ashet-Technologies/hyperdoc/archive/e39cd84d93efdfb12bf185f7174fb58295d86535.tar.gz",
+            .hash = "1220bafb626a8a02e6d00bcac242d40346cc86444bb3c82002853a390ed03e501018",
         },
         .lua = .{
-            .url = "https://github.com/MasterQ32/lua/archive/0fc5a993e7ec3b5064500cfbdb1117f86469c68d.tar.gz",
-            .hash = "1220219fdd09defd298fe497792e17093af553f74a0069283f79f6f3487d8aae6303",
+            .url = "https://github.com/ikskuh/lua/archive/fb5d920c0bed763cc6b9f27db2500046f8ff8985.tar.gz",
+            .hash = "1220c974e7ed2e377a8d9d5de26459c1397bae04dc52af9b1909afbe0061810b3749",
         },
         .turtlefont = .{
-            .url = "https://github.com/MasterQ32/turtlefont/archive/efdfcd1b7a2928db6fcb97b71da09d0397121cd1.tar.gz",
-            .hash = "122023a2b405e3e2fbe84c7aed6b1bde90b5168ac19e1e8f99697b888d4458adaf0f",
+            .url = "https://github.com/ikskuh/turtlefont/archive/9d7d3879cda0fcbdbbf1574129aec75e2627429f.tar.gz",
+            .hash = "1220e00c64606030f7bb37534120537aa4550ddd35a008c0836cf7d78c128c221dc3",
         },
         .fraxinus = .{
-            .url = "https://github.com/MasterQ32/fraxinus/archive/dac75f30046d2fb7eeed893d505722f5f781d832.tar.gz",
-            .hash = "1220b54f999bed8a965d0978cb3375083e9038286c5414cb06726318b4f3917a01d2",
+            .url = "https://github.com/Ashet-Technologies/fraxinus/archive/7242967dbb15fafe60c55181f8d6de1ceb607e11.tar.gz",
+            .hash = "1220febc25edafb38c23b2be165de155d4d95439ebdbc0a9e4c5affd4d161f8a1cb9",
         },
         .network = .{
-            .url = "https://github.com/MasterQ32/zig-network/archive/cdff53a2527598112a02b442045d4aef39a2e5e2.tar.gz",
-            .hash = "1220509b2da888b2d1ea452ed9d384134a754a940d1dc3865c87da7d224b89912b3d",
+            .url = "https://github.com/ikskuh/zig-network/archive/117d0d5d3ba2891ce4c8e3dfcd0c24a3976a46ce.tar.gz",
+            .hash = "122033a766875fe3e349f81903e1ca33f47b5887a506b2916269d16a8576d607652b",
         },
         .vnc = .{
-            .url = "https://github.com/MasterQ32/zvnc/archive/52c16e585c17611ac3ee09ca9a131845fa07f157.tar.gz",
-            .hash = "12205d9dc1ae86ccdb30e6a6b56ae91f0d38244d095cc18c1e7c13a4846e0d77d5a2",
+            .url = "https://github.com/ikskuh/zvnc/archive/7c051fdabe7486d3f01d4e66b8a4dace3ea714a2.tar.gz",
+            .hash = "1220c9d868d911539c3fb44aef66face2097fcc7b8f2e0aaff82cea6be397c9469e5",
+        },
+        .lwip = .{
+            .url = "http://download.savannah.nongnu.org/releases/lwip/lwip-2.1.3.zip",
+            .hash = "1220c46a1fabb690b8b84b01ffe185142aac3489d400963b6c7dd252320806dd07e2",
         },
     },
+
+    .paths = .{""},
 }
