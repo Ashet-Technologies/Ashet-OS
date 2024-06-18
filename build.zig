@@ -1,8 +1,8 @@
 const std = @import("std");
 const FatFS = @import("zfat");
 
-const disk_image_step = @import("vendor/disk-image-step/build.zig");
-const syslinux_build_zig = @import("./vendor/syslinux/build.zig");
+const disk_image_step = @import("disk-image-step");
+const syslinux_build_zig = @import("vendor/syslinux/build.zig");
 
 const ashet_com = @import("src/build/os-common.zig");
 const ashet_apps = @import("src/build/apps.zig");

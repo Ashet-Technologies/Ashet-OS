@@ -1,5 +1,5 @@
 const std = @import("std");
-const disk_image_step = @import("../../vendor/disk-image-step/build.zig");
+const disk_image_step = @import("disk-image-step");
 
 const AssetBundleStep = @This();
 

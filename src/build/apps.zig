@@ -1,6 +1,6 @@
 const std = @import("std");
 const ashet_com = @import("os-common.zig");
-const disk_image_step = @import("../../vendor/disk-image-step/build.zig");
+const disk_image_step = @import("disk-image-step");
 const AssetBundleStep = @import("AssetBundleStep.zig");
 const BitmapConverter = @import("BitmapConverter.zig");
 const targets = @import("targets.zig");

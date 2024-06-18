@@ -1,5 +1,5 @@
 const std = @import("std");
-const foundation_libc = @import("../../vendor/foundation-libc/build.zig");
+const foundation_libc = @import("foundation-libc");
 const ashet_lwip = @import("lwip.zig");
 const common = @import("os-common.zig");
 
@@ -10,31 +10,33 @@ pub fn PlatformMap(comptime T: type) type {
 }
 
 pub const PlatformData = struct {
-    libsyscall: PlatformMap(*std.Build.CompileStep) = PlatformMap(*std.Build.CompileStep).initUndefined(),
-    libc: PlatformMap(*std.Build.CompileStep) = PlatformMap(*std.Build.CompileStep).initUndefined(),
-    lwip: PlatformMap(*std.Build.CompileStep) = PlatformMap(*std.Build.CompileStep).initUndefined(),
+    libsyscall: PlatformMap(*std.Build.Step.Compile) = PlatformMap(*std.Build.Step.Compile).initUndefined(),
+    libc: PlatformMap(*std.Build.Step.Compile) = PlatformMap(*std.Build.Step.Compile).initUndefined(),
+    lwip: PlatformMap(*std.Build.Step.Compile) = PlatformMap(*std.Build.Step.Compile).initUndefined(),
     modules: PlatformMap(*std.Build.Module) = PlatformMap(*std.Build.Module).initUndefined(),
     include_paths: PlatformMap(std.ArrayListUnmanaged(std.Build.LazyPath)) = PlatformMap(std.ArrayListUnmanaged(std.Build.LazyPath)).initFill(.{}),
 };
 
 pub fn init(b: *std.Build, modules: common.Modules) PlatformData {
-    const foundation_dep = b.anonymousDependency("vendor/foundation-libc", foundation_libc, .{});
+    // const foundation_dep = b.anonymousDependency("vendor/foundation-libc", foundation_libc, .{});
 
     var data = PlatformData{};
 
     for (std.enums.values(build_targets.Platform)) |platform| {
         const platform_spec = build_targets.getPlatformSpec(platform);
 
-        data.include_paths.getPtr(platform).append(b.allocator, .{
-            .cwd_relative = b.pathFromRoot("vendor/foundation-libc/include"),
-        }) catch @panic("out of memory");
+        const foundation_dep = b.dependency("foundation-libc", .{
+            .target = b.resolveTargetQuery(platform_spec.target),
+            .optimize = .ReleaseSafe,
+            .single_threaded = true,
+        });
 
-        const libc = foundation_libc.createLibrary(
-            foundation_dep.builder,
-            platform_spec.target,
-            .ReleaseSafe,
-        );
-        libc.single_threaded = true;
+        data.include_paths.getPtr(platform).append(
+            b.allocator,
+            foundation_dep.path("include"),
+        ) catch @panic("out of memory");
+
+        const libc = foundation_dep.artifact("foundation");
         data.libc.set(platform, libc);
 
         // data.modules.set(platform, b.createModule(.{
@@ -42,9 +44,10 @@ pub fn init(b: *std.Build, modules: common.Modules) PlatformData {
         // }));
 
         {
-            const lwip = ashet_lwip.create(b, platform_spec.target, .ReleaseSafe);
+            const target = b.resolveTargetQuery(platform_spec.target);
+            const lwip = ashet_lwip.create(b, target, .ReleaseSafe);
             lwip.is_linking_libc = false;
-            lwip.strip = false;
+            lwip.root_module.strip = false;
             for (data.include_paths.get(platform).items) |path| {
                 lwip.addSystemIncludePath(path);
             }
@@ -53,11 +56,11 @@ pub fn init(b: *std.Build, modules: common.Modules) PlatformData {
 
         const libsyscall = b.addSharedLibrary(.{
             .name = "AshetOS",
-            .target = platform_spec.target,
+            .target = b.resolveTargetQuery(platform_spec.target),
             .optimize = .ReleaseSafe,
-            .root_source_file = .{ .path = "src/abi/libsyscall.zig" },
+            .root_source_file = b.path("src/abi/libsyscall.zig"),
         });
-        libsyscall.addModule("abi", modules.ashet_abi);
+        libsyscall.root_module.addImport("abi", modules.ashet_abi);
 
         const install_libsyscall = b.addInstallFileWithDir(
             libsyscall.getEmittedBin(),
