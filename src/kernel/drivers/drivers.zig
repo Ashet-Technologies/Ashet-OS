@@ -123,7 +123,7 @@ pub fn getDriverName(comptime class: DriverClass, intf: *ResolvedDriverInterface
 
     std.debug.assert(@intFromPtr(di) == @intFromPtr(&@field(di, @tagName(class))));
 
-    const dri: *Driver = @fieldParentPtr(Driver, "class", di);
+    const dri: *Driver = @fieldParentPtr("class", di);
     dri.validate(class);
     return dri.name;
 }
@@ -171,7 +171,7 @@ pub fn resolveDriver(comptime class: DriverClass, ptr: *ResolvedDriverInterface(
     const container = @as(*DriverInterface, @ptrCast(ptr));
     std.debug.assert(@intFromPtr(container) == @intFromPtr(&@field(container, @tagName(class))));
 
-    const driver = @fieldParentPtr(Driver, "class", container);
+    const driver: *Driver = @fieldParentPtr("class", container);
     driver.validate(class);
     return driver;
 }
@@ -183,7 +183,7 @@ pub const RTC = struct {
 
     pub fn nanoTimestamp(clk: *RTC) i128 {
         return clk.nanoTimestampFn(resolveDriver(.rtc, clk));
-    } 
+    }
 };
 
 pub const VideoDevice = struct {

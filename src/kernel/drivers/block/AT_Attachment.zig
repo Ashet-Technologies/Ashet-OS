@@ -56,12 +56,12 @@ pub fn init(index: u3) error{NoAtaController}!AT_Attachment {
 }
 
 fn present(driver: *Driver) bool {
-    const device = @fieldParentPtr(AT_Attachment, "driver", driver);
+    const device: *AT_Attachment = @fieldParentPtr("driver", driver);
     return device.is_present;
 }
 
 fn read(driver: *Driver, block: u64, data: []u8) ashet.storage.BlockDevice.ReadError!void {
-    const device = @fieldParentPtr(AT_Attachment, "driver", driver);
+    const device: *AT_Attachment = @fieldParentPtr("driver", driver);
 
     const lba = std.math.cast(u23, block) orelse return error.InvalidBlock;
 
@@ -71,7 +71,7 @@ fn read(driver: *Driver, block: u64, data: []u8) ashet.storage.BlockDevice.ReadE
 }
 
 fn write(driver: *Driver, block: u64, data: []const u8) ashet.storage.BlockDevice.WriteError!void {
-    const device = @fieldParentPtr(AT_Attachment, "driver", driver);
+    const device: *AT_Attachment = @fieldParentPtr("driver", driver);
 
     const lba = std.math.cast(u23, block) orelse return error.InvalidBlock;
 

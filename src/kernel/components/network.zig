@@ -153,7 +153,7 @@ fn netif_status_callback(netif_c: [*c]c.netif) callconv(.C) void {
 
 fn netif_init(netif_c: [*c]c.netif) callconv(.C) c.err_t {
     const netif: *c.netif = netif_c;
-    const nic = @fieldParentPtr(NetworkInterface, "netif", netif);
+    const nic: *NetworkInterface = @fieldParentPtr("netif", netif);
 
     netif.linkoutput = netif_output;
     netif.output = c.etharp_output;
@@ -169,7 +169,7 @@ fn netif_init(netif_c: [*c]c.netif) callconv(.C) c.err_t {
 fn netif_output(netif_c: [*c]c.netif, pbuf_c: [*c]c.pbuf) callconv(.C) c.err_t {
     const netif: *c.netif = netif_c;
     const pbuf: *c.pbuf = pbuf_c;
-    const nic = @fieldParentPtr(NetworkInterface, "netif", netif);
+    const nic: *NetworkInterface = @fieldParentPtr("netif", netif);
 
     // c.LINK_STATS_INC(lwip_stats.link.xmit);
     // Update SNMP stats (only if you use SNMP)
@@ -432,7 +432,7 @@ pub const udp = struct {
     fn handleIncomingPacket(arg: ?*anyopaque, pcb_c: [*c]c.udp_pcb, pbuf_c: [*c]c.pbuf, addr_c: [*c]const c.ip_addr_t, port: u16) callconv(.C) void {
         const data: *Data = @ptrCast(@alignCast(arg));
         const pcb: *c.udp_pcb = pcb_c;
-        var pbuf: *c.pbuf = pbuf_c;
+        const pbuf: *c.pbuf = pbuf_c;
         const addr: *const c.ip_addr_t = addr_c;
 
         _ = pcb;

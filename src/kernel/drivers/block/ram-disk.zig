@@ -49,19 +49,19 @@ pub fn RAM_Disk(comptime access: Access) type {
         }
 
         pub fn isPresent(dri: *Driver) void {
-            const disk = @fieldParentPtr(RDisk, "driver", dri);
+            const disk: *RDisk = @fieldParentPtr("driver", dri);
             _ = disk;
             return true;
         }
         pub fn read(dri: *Driver, block_num: u32, buffer: []u8) BlockDevice.ReadError!void {
-            const disk = @fieldParentPtr(RDisk, "driver", dri);
+            const disk: *RDisk = @fieldParentPtr("driver", dri);
 
             const offset = 512 * block_num;
             std.mem.copyForwards(u8, buffer, disk.slice[offset..][0..512]);
         }
 
         pub fn write(dri: *Driver, block_num: u32, buffer: []const u8) BlockDevice.WriteError!void {
-            const disk = @fieldParentPtr(RDisk, "driver", dri);
+            const disk: *RDisk = @fieldParentPtr("driver", dri);
 
             const offset = 512 * block_num;
             std.mem.copyForwards(u8, disk.slice[offset..][0..512], buffer);

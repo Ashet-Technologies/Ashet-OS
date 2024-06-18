@@ -30,7 +30,7 @@ pub const ProcessIterator = struct {
     pub fn next(iter: *ProcessIterator) ?*Process {
         const current = iter.current orelse return null;
         iter.current = current.next;
-        return @fieldParentPtr(Process, "list_item", current);
+        return @fieldParentPtr("list_item", current);
     }
 };
 

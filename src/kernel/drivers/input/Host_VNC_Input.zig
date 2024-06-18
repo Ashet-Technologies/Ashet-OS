@@ -24,7 +24,7 @@ pub fn init() Host_VNC_Input {
 }
 
 fn poll(driver: *Driver) void {
-    const device = @fieldParentPtr(Host_VNC_Input, "driver", driver);
+    const device: *Host_VNC_Input = @fieldParentPtr("driver", driver);
 
     _ = device;
     // ashet.input.pushRawEvent(.{ .keyboard = .{

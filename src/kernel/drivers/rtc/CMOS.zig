@@ -45,7 +45,7 @@ const cumulated_days_in_months = blk: {
 };
 
 fn nanoTimestamp(driver: *Driver) i128 {
-    const rtc = @fieldParentPtr(CMOS, "driver", driver);
+    const rtc: *CMOS = @fieldParentPtr("driver", driver);
 
     const seconds = x86.cmos.readRegister(.seconds, rtc.disable_nmi);
     const minute = x86.cmos.readRegister(.minute, rtc.disable_nmi);

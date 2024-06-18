@@ -68,7 +68,7 @@ const BlockDevice = struct {
     }
 
     pub fn getStatus(intf: *fatfs.Disk) fatfs.Disk.Status {
-        const self = @fieldParentPtr(BlockDevice, "disk", intf);
+        const self: *BlockDevice = @fieldParentPtr("disk", intf);
         return fatfs.Disk.Status{
             .initialized = true,
             .disk_present = self.backing.isPresent(),
@@ -77,12 +77,12 @@ const BlockDevice = struct {
     }
 
     pub fn initialize(intf: *fatfs.Disk) fatfs.Disk.Error!fatfs.Disk.Status {
-        const self = @fieldParentPtr(BlockDevice, "disk", intf);
+        const self: *BlockDevice = @fieldParentPtr("disk", intf);
         return getStatus(&self.disk);
     }
 
     pub fn read(intf: *fatfs.Disk, buff: [*]u8, sector: fatfs.LBA, count: c_uint) fatfs.Disk.Error!void {
-        const self = @fieldParentPtr(BlockDevice, "disk", intf);
+        const self: *BlockDevice = @fieldParentPtr("disk", intf);
 
         const block_ptr = @as([*][512]u8, @ptrCast(buff));
 
@@ -98,7 +98,7 @@ const BlockDevice = struct {
     }
 
     pub fn write(intf: *fatfs.Disk, buff: [*]const u8, sector: fatfs.LBA, count: c_uint) fatfs.Disk.Error!void {
-        const self = @fieldParentPtr(BlockDevice, "disk", intf);
+        const self: *BlockDevice = @fieldParentPtr("disk", intf);
 
         const block_ptr = @as([*]const [512]u8, @ptrCast(buff));
 
@@ -115,7 +115,7 @@ const BlockDevice = struct {
     }
 
     pub fn ioctl(intf: *fatfs.Disk, cmd: fatfs.IoCtl, buff: [*]u8) fatfs.Disk.Error!void {
-        const self = @fieldParentPtr(BlockDevice, "disk", intf);
+        const self: *BlockDevice = @fieldParentPtr("disk", intf);
         switch (cmd) {
             .sync => {
                 // TODO: Implement block device flushing
@@ -314,7 +314,7 @@ const Instance = struct {
             },
         };
 
-        var file = fatfs.File.open(full_path.str(), open_flags) catch |err| switch (err) {
+        const file = fatfs.File.open(full_path.str(), open_flags) catch |err| switch (err) {
             error.DiskErr => return error.DiskError,
             error.IntErr => return error.DiskError,
             error.Timeout => return error.DiskError,
@@ -446,7 +446,7 @@ const Instance = struct {
     }
 
     fn getPtr(p: *GenericInstance) *Instance {
-        return @fieldParentPtr(Instance, "generic", p);
+        return @fieldParentPtr("generic", p);
     }
 
     const vtable = GenericInstance.VTable{
@@ -518,7 +518,7 @@ const Enumerator = struct {
     }
 
     fn getPtr(p: *GenericEnumerator) *Enumerator {
-        return @fieldParentPtr(Enumerator, "generic", p);
+        return @fieldParentPtr("generic", p);
     }
 
     const vtable = GenericEnumerator.VTable{

@@ -127,17 +127,17 @@ pub fn init(allocator: std.mem.Allocator, mbinfo: *multiboot.Info) !VESA_BIOS_Ex
 }
 
 fn getVideoMemory(driver: *Driver) []align(ashet.memory.page_size) ColorIndex {
-    const vd = @fieldParentPtr(VESA_BIOS_Extension, "driver", driver);
+    const vd: *VESA_BIOS_Extension = @fieldParentPtr("driver", driver);
     return vd.backing_buffer;
 }
 
 fn getPaletteMemory(driver: *Driver) *[256]Color {
-    const vd = @fieldParentPtr(VESA_BIOS_Extension, "driver", driver);
+    const vd: *VESA_BIOS_Extension = @fieldParentPtr("driver", driver);
     return &vd.backing_palette;
 }
 
 fn getResolution(driver: *Driver) Resolution {
-    const vd = @fieldParentPtr(VESA_BIOS_Extension, "driver", driver);
+    const vd: *VESA_BIOS_Extension = @fieldParentPtr("driver", driver);
     return Resolution{
         .width = vd.graphics_width,
         .height = vd.graphics_height,
@@ -145,7 +145,7 @@ fn getResolution(driver: *Driver) Resolution {
 }
 
 fn getMaxResolution(driver: *Driver) Resolution {
-    const vd = @fieldParentPtr(VESA_BIOS_Extension, "driver", driver);
+    const vd: *VESA_BIOS_Extension = @fieldParentPtr("driver", driver);
     return Resolution{
         .width = @as(u16, @intCast(vd.framebuffer.width)),
         .height = @as(u16, @intCast(vd.framebuffer.height)),
@@ -153,25 +153,25 @@ fn getMaxResolution(driver: *Driver) Resolution {
 }
 
 fn setResolution(driver: *Driver, width: u15, height: u15) void {
-    const vd = @fieldParentPtr(VESA_BIOS_Extension, "driver", driver);
+    const vd: *VESA_BIOS_Extension = @fieldParentPtr("driver", driver);
     vd.graphics_width = @min(vd.framebuffer.width, width);
     vd.graphics_height = @min(vd.framebuffer.height, height);
     vd.graphics_resized = true;
 }
 
 fn setBorder(driver: *Driver, color: ColorIndex) void {
-    const vd = @fieldParentPtr(VESA_BIOS_Extension, "driver", driver);
+    const vd: *VESA_BIOS_Extension = @fieldParentPtr("driver", driver);
     vd.border_color = color;
     vd.graphics_resized = true;
 }
 
 fn getBorder(driver: *Driver) ColorIndex {
-    const vd = @fieldParentPtr(VESA_BIOS_Extension, "driver", driver);
+    const vd: *VESA_BIOS_Extension = @fieldParentPtr("driver", driver);
     return vd.border_color;
 }
 
 fn flush(driver: *Driver) void {
-    const vd = @fieldParentPtr(VESA_BIOS_Extension, "driver", driver);
+    const vd: *VESA_BIOS_Extension = @fieldParentPtr("driver", driver);
 
     @setRuntimeSafety(false);
     // const flush_time_start = readHwCounter();

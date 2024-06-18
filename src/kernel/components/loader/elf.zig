@@ -410,7 +410,7 @@ const Environment = struct {
         //     offset,
         // });
 
-        var sym: *const elf.Sym = @ptrCast(@alignCast(env.memory[offset..].ptr));
+        const sym: *const elf.Sym = @ptrCast(@alignCast(env.memory[offset..].ptr));
 
         const info: SymbolInfo = @bitCast(sym.st_info);
 

@@ -25,7 +25,7 @@ pub fn init(base: usize) PL011 {
 }
 
 fn pl011(dri: *Driver) *PL011 {
-    return @fieldParentPtr(PL011, "driver", dri);
+    return @fieldParentPtr("driver", dri);
 }
 
 fn writeSome(dri: *Driver, msg: []const u8, mode: WriteMode) usize {

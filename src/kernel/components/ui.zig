@@ -457,7 +457,7 @@ const MinimizedIterator = struct {
         const width = @as(u15, @intCast(@min(6 * title.len + 2 + 11 + 10, 75)));
         defer iter.dx += (width + 4);
 
-        var mini = MinimizedWindow{
+        const mini = MinimizedWindow{
             .window = window,
             .bounds = Rectangle{
                 .x = iter.dx,
@@ -771,7 +771,7 @@ pub const Window = struct {
     event_awaiter: ?*ashet.abi.ui.GetEvent = null,
 
     pub fn getFromABI(win: *const ashet.abi.Window) *Window {
-        const window = @fieldParentPtr(Window, "user_facing", win);
+        const window: *Window = @fieldParentPtr("user_facing", win);
         return @as(*Window, @ptrFromInt(@intFromPtr(window)));
     }
 
@@ -828,8 +828,8 @@ pub const Window = struct {
         };
 
         if (WindowIterator.topWindow()) |top_window| blk: {
-            var spawn_x = top_window.user_facing.client_rectangle.x + 16;
-            var spawn_y = top_window.user_facing.client_rectangle.y + 16;
+            const spawn_x = top_window.user_facing.client_rectangle.x + 16;
+            const spawn_y = top_window.user_facing.client_rectangle.y + 16;
 
             if (spawn_x + @as(i17, top_window.user_facing.client_rectangle.width) >= framebuffer.width)
                 break :blk;
@@ -1052,7 +1052,7 @@ fn sizeMax(a: Size, b: Size) Size {
 }
 
 fn nodeToWindow(node: *WindowQueue.Node) *Window {
-    return @fieldParentPtr(Window, "node", node);
+    return @fieldParentPtr("node", node);
 }
 
 // const framebuffer = struct {
@@ -1123,14 +1123,14 @@ fn nodeToWindow(node: *WindowQueue.Node) *Window {
 pub const icons = struct {
     fn parsedSpriteSize(comptime def: []const u8) Size {
         var it = std.mem.split(u8, def, "\n");
-        var first = it.next().?;
+        const first = it.next().?;
         const width = first.len;
         var height = 1;
         while (it.next()) |line| {
             std.debug.assert(line.len == width);
             height += 1;
         }
-        return Size{ .width = width, .height = height };
+        return .{ .width = width, .height = height };
     }
 
     fn ParseResult(comptime def: []const u8) type {
@@ -1255,7 +1255,7 @@ const wallpaper = struct {
     const pixels = blk: {
         @setEvalBranchQuota(4 * 400 * 300);
 
-        var data = @as([400 * 300]ColorIndex, @bitCast(raw[0 .. 400 * 300].*));
+        const data = @as([400 * 300]ColorIndex, @bitCast(raw[0 .. 400 * 300].*));
 
         for (data) |*c| {
             c.* = c.shift(framebuffer_wallpaper_shift - 1);
@@ -1275,7 +1275,7 @@ const wallpaper = struct {
 };
 
 pub const desktop = struct {
-    const Icon = struct {
+    pub const Icon = struct {
         pub const width = 32;
         pub const height = 32;
 

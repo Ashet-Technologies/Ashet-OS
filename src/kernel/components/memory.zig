@@ -129,7 +129,7 @@ pub fn initializeLinearMemory() void {
         logger.debug("disable region {}", .{region_id});
         ashet.Debug.setTraceLoc(@src());
 
-        var base_ptr = @as([*]allowzero u8, @ptrFromInt(region.offset));
+        const base_ptr = @as([*]allowzero u8, @ptrFromInt(region.offset));
         var i: usize = 0;
         while (i < region.length) : (i += page_size) {
             if (page_manager.ptrToPage(base_ptr + i)) |page| {

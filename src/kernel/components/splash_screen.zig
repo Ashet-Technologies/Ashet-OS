@@ -14,6 +14,7 @@ const hal = @import("hal");
 const ashet = @import("../main.zig");
 const logger = std.log.scoped(.@"splash screen");
 const libashet = @import("ashet");
+const Icon = @import("ui.zig").desktop.Icon;
 
 pub fn run(_: ?*anyopaque) callconv(.C) u32 {
     const thread = ashet.scheduler.Thread.current() orelse {
@@ -58,7 +59,7 @@ const SplashScreen = struct {
             while (libashet.input.getKeyboardEvent()) |event| {
                 if (!event.pressed)
                     continue;
-                var previous_app = screen.current_app;
+                const previous_app = screen.current_app;
                 switch (event.key) {
                     .left => if (screen.current_app > 0) {
                         screen.current_app -= 1;

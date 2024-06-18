@@ -115,7 +115,7 @@ const system_palette_info = blk: {
         if (index >= colors.len)
             @compileError(std.fmt.comptimePrint("palette.gpl contains more than {} colors!", .{colors.len}));
 
-        var trimmed = std.mem.trim(u8, line, " \t"); // remove leading/trailing whitespace
+        const trimmed = std.mem.trim(u8, line, " \t"); // remove leading/trailing whitespace
 
         if (std.mem.startsWith(u8, trimmed, "#"))
             continue;

@@ -327,7 +327,7 @@ const iop_handlers = struct {
 
     fn fs_stat_file(iop: *ashet.abi.fs.StatFile) ashet.abi.fs.StatFile.Error!ashet.abi.fs.StatFile.Outputs {
         const ctx: *File = try file_handles.resolve(iop.inputs.file);
-        var info = try ctx.fs.driver.statFile(ctx.handle);
+        const info = try ctx.fs.driver.statFile(ctx.handle);
         return .{ .info = info };
     }
 

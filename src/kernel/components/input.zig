@@ -214,7 +214,7 @@ pub fn getEvent() ?Event {
 
                 const text_ptr = keyboard.layout.translate(key_code, modifiers.shift, modifiers.alt_graph);
 
-                var event = ashet.abi.KeyboardEvent{
+                const event = ashet.abi.KeyboardEvent{
                     .scancode = src_event.scancode,
                     .key = key_code,
                     .text = text_ptr,

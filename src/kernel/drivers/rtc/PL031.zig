@@ -23,7 +23,7 @@ pub fn init(base: usize) PL031 {
 }
 
 fn pl031(dri: *Driver) *PL031 {
-    return @fieldParentPtr(PL031, "driver", dri);
+    return @fieldParentPtr("driver", dri);
 }
 
 fn nanoTimestamp(dri: *Driver) i128 {

@@ -125,7 +125,7 @@ const Instance = struct {
     fn openDirFromRoot(generic: *GenericInstance, path: []const u8) FileSystemDriver.OpenDirAbsError!DirectoryHandle {
         const instance = getPtr(generic);
 
-        var dir = resolvePath(&instance.fs, instance.fs.root_directory, path, .directory) catch |err| return try mapFileSystemError(err);
+        const dir = resolvePath(&instance.fs, instance.fs.root_directory, path, .directory) catch |err| return try mapFileSystemError(err);
 
         return enumCast(DirectoryHandle, dir);
     }
@@ -133,7 +133,7 @@ const Instance = struct {
     fn openDirRelative(generic: *GenericInstance, base_dir: DirectoryHandle, path: []const u8) FileSystemDriver.OpenDirRelError!DirectoryHandle {
         const instance = getPtr(generic);
 
-        var dir = resolvePath(&instance.fs, enumCast(afs.DirectoryHandle, base_dir), path, .directory) catch |err| return try mapFileSystemError(err);
+        const dir = resolvePath(&instance.fs, enumCast(afs.DirectoryHandle, base_dir), path, .directory) catch |err| return try mapFileSystemError(err);
 
         return enumCast(DirectoryHandle, dir);
     }
@@ -151,7 +151,7 @@ const Instance = struct {
         _ = access;
         _ = mode;
 
-        var fs_file = resolvePath(&instance.fs, enumCast(afs.DirectoryHandle, base_dir), path, .file) catch |err| return try mapFileSystemError(err);
+        const fs_file = resolvePath(&instance.fs, enumCast(afs.DirectoryHandle, base_dir), path, .file) catch |err| return try mapFileSystemError(err);
 
         return enumCast(FileHandle, fs_file);
     }
@@ -218,7 +218,7 @@ const Instance = struct {
     }
 
     fn getPtr(p: *GenericInstance) *Instance {
-        return @fieldParentPtr(Instance, "generic", p);
+        return @fieldParentPtr("generic", p);
     }
 
     const vtable = GenericInstance.VTable{
@@ -257,7 +257,7 @@ const Enumerator = struct {
         const parent = Instance.getPtr(inst.instance);
 
         // work around RLS
-        var iter = parent.fs.iterate(enumerator.directory) catch |err| return try mapFileSystemError(err);
+        const iter = parent.fs.iterate(enumerator.directory) catch |err| return try mapFileSystemError(err);
         enumerator.iterator = iter;
     }
 
@@ -285,7 +285,7 @@ const Enumerator = struct {
     }
 
     fn getPtr(p: *GenericEnumerator) *Enumerator {
-        return @fieldParentPtr(Enumerator, "generic", p);
+        return @fieldParentPtr("generic", p);
     }
 
     const vtable = GenericEnumerator.VTable{

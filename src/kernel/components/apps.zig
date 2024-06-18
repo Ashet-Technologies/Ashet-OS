@@ -23,7 +23,7 @@ pub fn startApp(app: AppID) !void {
     var file = try app_dir.openFile("code", .read_only, .open_existing);
     defer file.close();
 
-    var loaded = try loader.load(&file, .elf);
+    const loaded = try loader.load(&file, .elf);
 
     try spawnApp(app, loaded);
 }
@@ -52,7 +52,7 @@ pub fn startAppBinary(app: AppID) !void {
     });
 
     {
-        var file = try ashet.filesystem.open(app_path, .read_only, .open_existing);
+        const file = try ashet.filesystem.open(app_path, .read_only, .open_existing);
         defer ashet.filesystem.close(file);
 
         const len = try ashet.filesystem.read(file, process_memory[0..proc_byte_size]);

@@ -37,13 +37,13 @@ pub fn init(file: std.fs.File, mode: std.fs.File.OpenMode) !Host_Disk_Image {
 }
 
 pub fn isPresent(dri: *Driver) bool {
-    const disk = @fieldParentPtr(Host_Disk_Image, "driver", dri);
+    const disk: *Host_Disk_Image = @fieldParentPtr("driver", dri);
     _ = disk;
     return true;
 }
 
 pub fn read(dri: *Driver, block_num: u64, buffer: []u8) BlockDevice.ReadError!void {
-    const disk = @fieldParentPtr(Host_Disk_Image, "driver", dri);
+    const disk: *Host_Disk_Image = @fieldParentPtr("driver", dri);
 
     const offset = 512 * block_num;
     disk.file.seekTo(offset) catch return error.Fault;
@@ -51,7 +51,7 @@ pub fn read(dri: *Driver, block_num: u64, buffer: []u8) BlockDevice.ReadError!vo
 }
 
 pub fn write(dri: *Driver, block_num: u64, buffer: []const u8) BlockDevice.WriteError!void {
-    const disk = @fieldParentPtr(Host_Disk_Image, "driver", dri);
+    const disk: *Host_Disk_Image = @fieldParentPtr("driver", dri);
 
     if (disk.mode != .read_write)
         return error.NotSupported;

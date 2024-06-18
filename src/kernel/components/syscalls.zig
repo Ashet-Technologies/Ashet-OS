@@ -148,7 +148,7 @@ const impls = struct {
 
         var cont: bool = false;
         while (!cont) {
-            std.mem.doNotOptimizeAway(cont);
+            std.mem.doNotOptimizeAway(&cont);
         }
     }
 
@@ -188,7 +188,7 @@ const impls = struct {
     export fn @"ashet.ui.invalidate"(win: *const abi.Window, rect: abi.Rectangle) callconv(.C) void {
         const window = ashet.ui.Window.getFromABI(win);
 
-        var screen_rect = abi.Rectangle{
+        const screen_rect = abi.Rectangle{
             .x = window.user_facing.client_rectangle.x + rect.x,
             .y = window.user_facing.client_rectangle.y + rect.y,
             .width = @intCast(std.math.clamp(rect.width, 0, @as(i17, window.user_facing.client_rectangle.width) - rect.x)),
