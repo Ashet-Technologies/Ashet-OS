@@ -771,31 +771,26 @@ const disk_formatters = struct {
 
         const raw_disk_file = disk.getImageFile();
 
-        // const install_syslinux = InstallSyslinuxStep.create(b, syslinux_installer, raw_disk_file);
+        const install_syslinux = InstallSyslinuxStep.create(b, syslinux_installer, raw_disk_file);
 
-        const install_syslinux = b.addRunArtifact(syslinux_installer);
-        install_syslinux.addArgs(&.{
-            "--offset",
-            "2048",
-            "--install",
-            "--directory",
-            "syslinux",
-        });
-        install_syslinux.addFileInput(raw_disk_file);
-
-        return raw_disk_file;
+        return .{ .generated = .{ .file = install_syslinux.output_file } };
     }
 };
 
 const InstallSyslinuxStep = struct {
     step: std.Build.Step,
-    output_file: std.Build.GeneratedFile,
+    output_file: *std.Build.GeneratedFile,
     input_file: std.Build.LazyPath,
     syslinux: *std.Build.Step.Compile,
 
     pub fn create(builder: *std.Build, syslinux: *std.Build.Step.Compile, input_file: std.Build.LazyPath) *InstallSyslinuxStep {
         const bundle = builder.allocator.create(InstallSyslinuxStep) catch @panic("oom");
         errdefer builder.allocator.destroy(bundle);
+
+        const outfile = builder.allocator.create(std.Build.GeneratedFile) catch @panic("oom");
+        errdefer builder.allocator.destroy(outfile);
+
+        outfile.* = .{ .step = &bundle.step };
 
         bundle.* = InstallSyslinuxStep{
             .step = std.Build.Step.init(.{
@@ -808,7 +803,7 @@ const InstallSyslinuxStep = struct {
             }),
             .syslinux = syslinux,
             .input_file = input_file,
-            .output_file = .{ .step = &bundle.step },
+            .output_file = outfile,
         };
         input_file.addStepDependencies(&bundle.step);
         bundle.step.dependOn(&syslinux.step);
@@ -824,7 +819,7 @@ const InstallSyslinuxStep = struct {
 
         const disk_image = iss.input_file.getPath2(b, step);
 
-        var man = b.cache.obtain();
+        var man = b.graph.cache.obtain();
         defer man.deinit();
 
         _ = try man.addFile(disk_image, null);
@@ -854,7 +849,7 @@ const InstallSyslinuxStep = struct {
             .{},
         );
 
-        _ = step.owner.exec(&.{
+        _ = step.owner.run(&.{
             iss.syslinux.getEmittedBin().getPath2(iss.syslinux.step.owner, step),
             "--offset",
             "2048",
