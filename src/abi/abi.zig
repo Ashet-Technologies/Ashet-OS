@@ -490,7 +490,7 @@ pub const Point = extern struct {
     }
 
     pub fn manhattenDistance(a: Point, b: Point) u16 {
-        return std.math.absCast(a.x - b.x) + std.math.absCast(a.y - b.y);
+        return @abs(a.x - b.x) + @abs(a.y - b.y);
     }
 
     pub fn format(point: Point, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
@@ -962,7 +962,7 @@ pub const IOP = extern struct {
     pub fn cast(comptime T: type, iop: *IOP) *T {
         if (comptime !isIOP(T)) @compileError("Only a type created by IOP.define can be passed to cast!");
         std.debug.assert(iop.type == T.iop_type);
-        return @fieldParentPtr("iop", iop);
+        return @alignCast(@fieldParentPtr("iop", iop));
     }
 
     fn undefinedDefaultFor(comptime T: type) *T {

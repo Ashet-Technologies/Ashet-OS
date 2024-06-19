@@ -217,7 +217,7 @@ fn readBlocks(device: AT_Attachment, lba: u24, buffer: []u8) BlockDevice.ReadErr
         while (i < block_size) : (i += 2) {
             const value = device.readData();
 
-            std.mem.writeIntNative(u16, current_block[0..2], value);
+            current_block[0..2].* = @bitCast(value);
             current_block += 2;
         }
     }

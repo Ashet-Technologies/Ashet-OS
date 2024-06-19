@@ -120,7 +120,7 @@ const system_palette_info = blk: {
         if (std.mem.startsWith(u8, trimmed, "#"))
             continue;
 
-        var tups = std.mem.tokenize(u8, trimmed, "\t ");
+        var tups = std.mem.tokenizeAny(u8, trimmed, "\t ");
 
         const r = std.fmt.parseInt(u8, tups.next().?, 10) catch @compileError("failed to parse color tuple");
         const g = std.fmt.parseInt(u8, tups.next().?, 10) catch @compileError("failed to parse color tuple");
@@ -131,8 +131,11 @@ const system_palette_info = blk: {
         if (tups.next()) |name| {
             // color name
 
-            const new_field = std.builtin.Type.StructField{
-                .name = name,
+            var name_: [name.len:0]u8 = undefined;
+            @memcpy(&name_, name);
+
+            const new_field: std.builtin.Type.StructField = .{
+                .name = &name_,
                 .type = ashet.abi.ColorIndex,
                 .default_value = &ashet.abi.ColorIndex.get(@as(u8, @intCast(index))),
                 .is_comptime = true,
@@ -153,7 +156,7 @@ const system_palette_info = blk: {
         .palette = colors,
         .KnownColors = @Type(.{
             .Struct = .{
-                .layout = .Auto,
+                .layout = .auto,
                 .backing_integer = null,
                 .fields = fields,
                 .decls = &.{},

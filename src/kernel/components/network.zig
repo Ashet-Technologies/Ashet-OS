@@ -219,9 +219,9 @@ pub fn start() !void {
 
         _ = c.netif_add(
             netif,
-            @as(*c.ip4_addr_t, @ptrCast(c.IP4_ADDR_ANY)), // ipaddr
-            @as(*c.ip4_addr_t, @ptrCast(c.IP4_ADDR_ANY)), // netmask
-            @as(*c.ip4_addr_t, @ptrCast(c.IP4_ADDR_ANY)), // gw
+            @as(*c.ip4_addr_t, @ptrCast(@constCast(c.IP4_ADDR_ANY))), // ipaddr
+            @as(*c.ip4_addr_t, @ptrCast(@constCast(c.IP4_ADDR_ANY))), // netmask
+            @as(*c.ip4_addr_t, @ptrCast(@constCast(c.IP4_ADDR_ANY))), // gw
             null,
             netif_init,
             c.netif_input,

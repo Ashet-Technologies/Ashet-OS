@@ -771,8 +771,9 @@ pub const Window = struct {
     event_awaiter: ?*ashet.abi.ui.GetEvent = null,
 
     pub fn getFromABI(win: *const ashet.abi.Window) *Window {
-        const window: *Window = @fieldParentPtr("user_facing", win);
-        return @as(*Window, @ptrFromInt(@intFromPtr(window)));
+        const window: *Window = @constCast(@alignCast(@fieldParentPtr("user_facing", win)));
+        // return @as(*Window, @ptrFromInt(@intFromPtr(window)));
+        return window;
     }
 
     pub fn create(
@@ -1297,24 +1298,24 @@ pub const desktop = struct {
 
             var pixels: [height][width]u8 = undefined;
 
-            const magic = try stream.readIntLittle(u32);
+            const magic = try stream.readInt(u32, .little);
             if (magic != 0x48198b74)
                 return error.InvalidFormat;
 
-            const s_width = try stream.readIntLittle(u16);
-            const s_height = try stream.readIntLittle(u16);
+            const s_width = try stream.readInt(u16, .little);
+            const s_height = try stream.readInt(u16, .little);
             if ((s_width != width) or (s_height != height))
                 return error.InvalidDimension;
 
-            const s_flags = try stream.readIntLittle(u16);
+            const s_flags = try stream.readInt(u16, .little);
             const transparent = ((s_flags & 1) != 0);
 
-            var palette_size: usize = try stream.readIntLittle(u8);
+            var palette_size: usize = try stream.readInt(u8, .little);
             if (palette_size == 0)
                 palette_size = 256;
             // if (palette_size >= 16)
             //     return error.PaletteTooLarge;
-            const transparency_key = try stream.readIntLittle(u8);
+            const transparency_key = try stream.readInt(u8, .little);
 
             try stream.readNoEof(std.mem.sliceAsBytes(&pixels));
             // try stream.readNoEof(std.mem.sliceAsBytes(icon.palette[0..palette_size]));

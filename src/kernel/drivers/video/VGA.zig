@@ -39,16 +39,16 @@ pub fn init(vga: *VGA) !void {
 }
 
 fn getVideoMemory(driver: *Driver) []align(ashet.memory.page_size) ColorIndex {
-    const vd: *VGA = @fieldParentPtr("driver", driver);
+    const vd: *VGA = @alignCast(@fieldParentPtr("driver", driver));
     return &vd.backbuffer;
 }
 fn getPaletteMemory(driver: *Driver) *[256]Color {
-    const vd: *VGA = @fieldParentPtr("driver", driver);
+    const vd: *VGA = @alignCast(@fieldParentPtr("driver", driver));
     return &vd.palette;
 }
 
 fn getResolution(driver: *Driver) Resolution {
-    const vd: *VGA = @fieldParentPtr("driver", driver);
+    const vd: *VGA = @alignCast(@fieldParentPtr("driver", driver));
     _ = vd;
 
     return Resolution{
@@ -58,7 +58,7 @@ fn getResolution(driver: *Driver) Resolution {
 }
 
 fn getMaxResolution(driver: *Driver) Resolution {
-    const vd: *VGA = @fieldParentPtr("driver", driver);
+    const vd: *VGA = @alignCast(@fieldParentPtr("driver", driver));
     _ = vd;
     return Resolution{
         .width = 320,
@@ -67,7 +67,7 @@ fn getMaxResolution(driver: *Driver) Resolution {
 }
 
 fn setResolution(driver: *Driver, width: u15, height: u15) void {
-    const vd: *VGA = @fieldParentPtr("driver", driver);
+    const vd: *VGA = @alignCast(@fieldParentPtr("driver", driver));
     _ = vd;
     _ = width;
     _ = height;
@@ -75,19 +75,19 @@ fn setResolution(driver: *Driver, width: u15, height: u15) void {
 }
 
 fn setBorder(driver: *Driver, color: ColorIndex) void {
-    const vd: *VGA = @fieldParentPtr("driver", driver);
+    const vd: *VGA = @alignCast(@fieldParentPtr("driver", driver));
     _ = vd;
     _ = color;
 }
 
 fn getBorder(driver: *Driver) ColorIndex {
-    const vd: *VGA = @fieldParentPtr("driver", driver);
+    const vd: *VGA = @alignCast(@fieldParentPtr("driver", driver));
     _ = vd;
     return ColorIndex.get(0);
 }
 
 fn flush(driver: *Driver) void {
-    const vd: *VGA = @fieldParentPtr("driver", driver);
+    const vd: *VGA = @alignCast(@fieldParentPtr("driver", driver));
 
     vd.loadPalette(vd.palette);
 

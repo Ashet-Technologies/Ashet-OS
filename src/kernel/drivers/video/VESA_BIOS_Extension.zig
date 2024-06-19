@@ -337,7 +337,7 @@ const FramebufferConfig = struct {
                 const color: Pixel = (@as(Pixel, rgb.r) << rshift) |
                     (@as(Pixel, rgb.g) << gshift) |
                     (@as(Pixel, rgb.b) << bshift);
-                std.mem.writeIntLittle(Pixel, ptr[0 .. (@typeInfo(Pixel).Int.bits + 7) / 8], color);
+                std.mem.writeInt(Pixel, ptr[0 .. (@typeInfo(Pixel).Int.bits + 7) / 8], color, .little);
             }
         }.write;
     }
