@@ -3,8 +3,8 @@
     .version = "0.1.0",
     .dependencies = .{
         .zfat = .{
-            .url = "https://github.com/ZigEmbeddedGroup/zfat/archive/68dbbe19258b174fe4f374a91b4cc939019d9fe7.tar.gz",
-            .hash = "1220963601b9bc8dacc422d098368567e5c7b84d21f9ae73067fe3eb9c566aea02fd",
+            .url = "https://github.com/ZigEmbeddedGroup/zfat/archive/6c9fcecd0326c8f3bf3353afbee6b3f5987d49ca.tar.gz",
+            .hash = "122064858e32ce4448b7c02813379658a74ebf85f026f9936fa627b1a40c3bb9cc39",
         },
         .@"text-editor" = .{
             .url = "https://github.com/ikskuh/TextEditor/archive/d17ff0b33501665038ee89bf707a5bc4eb2d712a.tar.gz",
@@ -53,6 +53,9 @@
         .@"foundation-libc" = .{
             .url = "https://github.com/ZigEmbeddedGroup/foundation-libc/archive/6a32c97a297bb250c67918946991165a5fc09844.tar.gz",
             .hash = "1220ac855930db0699253dc81d3153c11b0d077e3ebe7a97b7986bea71db166eb76b",
+        },
+        .syslinux = .{
+            .path = "vendor/syslinux",
         },
     },
 
