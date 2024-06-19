@@ -12,7 +12,6 @@ pub const Modules = struct {
     ashet_gui: *std.Build.Module,
     libhypertext: *std.Build.Module,
     libashetfs: *std.Build.Module,
-    fatfs: *std.Build.Module,
     network: *std.Build.Module,
     vnc: *std.Build.Module,
 

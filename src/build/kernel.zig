@@ -67,22 +67,24 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
         break :blk module;
     };
 
-    // const cguana_dep = b.anonymousDependency("vendor/ziglibc", @import("../../vendor/ziglibc/build.zig"), .{
-    //     .target = platform_spec.target,
-    //     .optimize = .ReleaseSafe,
+    const kernel_target = b.resolveTargetQuery(machine_spec.alt_target orelse platform_spec.target);
 
-    //     .static = true,
-    //     .dynamic = false,
-    //     .start = .none,
-    //     .trace = false,
+    const libc = options.platforms.libc.get(machine_spec.platform);
 
-    //     .cstd = true,
-    //     .posix = false,
-    //     .gnu = false,
-    //     .linux = false,
-    // });
+    const zfat = b.dependency("zfat", .{
+        .@"no-libc" = true,
+        .target = kernel_target,
+        .optimize = options.optimize,
+        .max_long_name_len = options.fatfs_config.max_long_name_len,
+        .code_page = options.fatfs_config.code_page,
+        .@"volume-count" = options.fatfs_config.volumes,
+        .@"static-rtc" = options.fatfs_config.rtc,
+        .mkfs = options.fatfs_config.mkfs,
+    });
 
-    // const ashet_libc = cguana_dep.artifact("cguana");
+    const zfat_mod = zfat.module("zfat");
+
+    zfat_mod.addIncludePath(libc.getEmittedIncludeTree());
 
     const kernel_mod = b.createModule(.{
         .root_source_file = b.path("src/kernel/main.zig"),
@@ -96,7 +98,7 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
             .{ .name = "virtio", .module = options.modules.virtio },
             .{ .name = "ashet-fs", .module = options.modules.libashetfs },
             .{ .name = "args", .module = options.modules.args },
-            .{ .name = "fatfs", .module = options.modules.fatfs },
+            .{ .name = "fatfs", .module = zfat_mod },
             .{ .name = "args", .module = options.modules.args },
             .{ .name = "vnc", .module = options.modules.vnc },
 
@@ -117,8 +119,6 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
         platform_spec.start_file orelse
         b.path("src/kernel/port/platform/generic-startup.zig");
 
-    const kernel_target = b.resolveTargetQuery(machine_spec.alt_target orelse platform_spec.target);
-
     const kernel_exe = b.addExecutable(.{
         .name = "ashet-os",
         .root_source_file = start_file,
@@ -130,7 +130,7 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
 
     kernel_exe.root_module.addImport("kernel", kernel_mod);
 
-    kernel_exe.root_module.code_model = .small;
+    // TODO(fqu): kernel_exe.root_module.code_model = .small;
     kernel_exe.bundle_compiler_rt = true;
     kernel_exe.rdynamic = true; // Prevent the compiler from garbage collecting exported symbols
     kernel_exe.root_module.single_threaded = (kernel_exe.rootModuleTarget().os.tag == .freestanding);
@@ -150,7 +150,7 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
     switch (options.machine_spec.platform) {
         .hosted => {
             kernel_exe.linkLibC();
-            kernel_exe.linkSystemLibrary2("sdl2", .{
+            kernel_exe.linkSystemLibrary2("SDL2", .{
                 .use_pkg_config = .force,
                 .search_strategy = .mode_first,
             });
@@ -159,23 +159,7 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
         else => {},
     }
 
-    const zfat = b.dependency("zfat", .{
-        .target = kernel_target,
-        .optimize = options.optimize,
-        .max_long_name_len = options.fatfs_config.max_long_name_len,
-        .code_page = options.fatfs_config.code_page,
-        .@"volume-count" = options.fatfs_config.volumes,
-        .@"static-rtc" = options.fatfs_config.rtc,
-        .mkfs = options.fatfs_config.mkfs,
-    });
-
-    kernel_exe.root_module.addImport("zfat", zfat.module("zfat"));
-
-    // kernel_exe.linkLibrary(zfat.artifact("zfat"));
-
-    // FatFS.link(kernel_exe, options.fatfs_config);
-
-    kernel_exe.linkLibrary(options.platforms.libc.get(machine_spec.platform));
+    kernel_exe.linkLibrary(libc);
 
     {
         const lwip = options.platforms.lwip.get(machine_spec.platform);

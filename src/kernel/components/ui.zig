@@ -709,8 +709,8 @@ const Event = union(ashet.abi.UiEventType) {
     window_restore,
     window_moving,
     window_moved,
-    window_resized,
     window_resizing,
+    window_resized,
 };
 
 pub fn destroyAllWindowsForProcess(proc: *ashet.multi_tasking.Process) void {

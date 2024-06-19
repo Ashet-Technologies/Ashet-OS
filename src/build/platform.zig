@@ -18,8 +18,6 @@ pub const PlatformData = struct {
 };
 
 pub fn init(b: *std.Build, modules: common.Modules) PlatformData {
-    // const foundation_dep = b.anonymousDependency("vendor/foundation-libc", foundation_libc, .{});
-
     var data = PlatformData{};
 
     for (std.enums.values(build_targets.Platform)) |platform| {
@@ -31,12 +29,11 @@ pub fn init(b: *std.Build, modules: common.Modules) PlatformData {
             .single_threaded = true,
         });
 
+        const libc = foundation_dep.artifact("foundation");
         data.include_paths.getPtr(platform).append(
             b.allocator,
-            foundation_dep.path("include"),
+            libc.getEmittedIncludeTree(),
         ) catch @panic("out of memory");
-
-        const libc = foundation_dep.artifact("foundation");
         data.libc.set(platform, libc);
 
         // data.modules.set(platform, b.createModule(.{

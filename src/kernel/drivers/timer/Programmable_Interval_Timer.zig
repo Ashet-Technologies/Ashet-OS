@@ -40,7 +40,7 @@ pub fn init() PIT {
     const counter_limit: u16 = timer_frequency / requested_frequency;
 
     var bytes: [2]u8 = undefined;
-    std.mem.writeInt(u16, &bytes, counter_limit, .Little);
+    std.mem.writeInt(u16, &bytes, counter_limit, .little);
     write_reg(.counter0, bytes[0]);
     write_reg(.counter0, bytes[1]);
 

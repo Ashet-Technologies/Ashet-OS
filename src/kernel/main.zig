@@ -225,64 +225,65 @@ pub const log_levels = struct {
     pub var fatfs: LogLevel = .info;
 };
 
-pub const std_options = struct {
-    pub const log_level = if (@import("builtin").mode == .Debug) .debug else .info;
-
-    pub fn logFn(
-        comptime message_level: std.log.Level,
-        comptime scope: @Type(.EnumLiteral),
-        comptime format: []const u8,
-        args: anytype,
-    ) void {
-        const ansi = true;
-
-        const scope_name = @tagName(scope);
-
-        if (@hasDecl(log_levels, scope_name)) {
-            if (@intFromEnum(message_level) > @intFromEnum(@field(log_levels, scope_name)))
-                return;
-        }
-
-        const color_code = if (ansi)
-            switch (message_level) {
-                .err => "\x1B[91m", // red
-                .warn => "\x1B[93m", // yellow
-                .info => "\x1B[97m", // white
-                .debug => "\x1B[90m", // gray
-            }
-        else
-            "";
-        const postfix = if (ansi) "\x1B[0m" else ""; // reset terminal properties
-
-        const level_txt = comptime switch (message_level) {
-            .err => "E",
-            .warn => "W",
-            .info => "I",
-            .debug => "D",
-        };
-        const scope_tag = comptime if (scope != .default)
-            @tagName(scope)
-        else
-            "unscoped";
-
-        {
-            var cs = CriticalSection.enter();
-            defer cs.leave();
-
-            const when = time.get_tick_count();
-
-            Debug.writer().print(color_code ++ "{d: >6}.{d:0>3} [{s}] {s}: ", .{
-                when / 1000,
-                when % 1000,
-                level_txt,
-                scope_tag,
-            }) catch return;
-
-            Debug.writer().print(format, args) catch return;
-            Debug.writer().print(postfix ++ "\r\n", .{}) catch return;
-        }
-    }
+pub const std_options = std.Options{
+    .log_level = if (@import("builtin").mode == .Debug) .debug else .info,
+    .logFn = kernel_log_fn,
 };
+
+fn kernel_log_fn(
+    comptime message_level: std.log.Level,
+    comptime scope: @Type(.EnumLiteral),
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    const ansi = true;
+
+    const scope_name = @tagName(scope);
+
+    if (@hasDecl(log_levels, scope_name)) {
+        if (@intFromEnum(message_level) > @intFromEnum(@field(log_levels, scope_name)))
+            return;
+    }
+
+    const color_code = if (ansi)
+        switch (message_level) {
+            .err => "\x1B[91m", // red
+            .warn => "\x1B[93m", // yellow
+            .info => "\x1B[97m", // white
+            .debug => "\x1B[90m", // gray
+        }
+    else
+        "";
+    const postfix = if (ansi) "\x1B[0m" else ""; // reset terminal properties
+
+    const level_txt = comptime switch (message_level) {
+        .err => "E",
+        .warn => "W",
+        .info => "I",
+        .debug => "D",
+    };
+    const scope_tag = comptime if (scope != .default)
+        @tagName(scope)
+    else
+        "unscoped";
+
+    {
+        var cs = CriticalSection.enter();
+        defer cs.leave();
+
+        const when = time.get_tick_count();
+
+        Debug.writer().print(color_code ++ "{d: >6}.{d:0>3} [{s}] {s}: ", .{
+            when / 1000,
+            when % 1000,
+            level_txt,
+            scope_tag,
+        }) catch return;
+
+        Debug.writer().print(format, args) catch return;
+        Debug.writer().print(postfix ++ "\r\n", .{}) catch return;
+    }
+}
 
 pub const CodeLocation = struct {
     pointer: usize,

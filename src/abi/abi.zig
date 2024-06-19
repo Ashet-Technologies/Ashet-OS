@@ -861,7 +861,7 @@ pub const IOP = extern struct {
 
         const inputs_augmented = @Type(.{
             .Struct = .{
-                .layout = .Extern,
+                .layout = .@"extern",
                 .fields = inputs,
                 .decls = &.{},
                 .is_tuple = false,
@@ -882,7 +882,7 @@ pub const IOP = extern struct {
 
         const outputs_augmented = @Type(.{
             .Struct = .{
-                .layout = .Extern,
+                .layout = .@"extern",
                 .fields = &output_fields,
                 .decls = &.{},
                 .is_tuple = false,

@@ -79,6 +79,10 @@
             caseconverter
           ];
 
+          buildInputs = [
+            nixpkgs.legacyPackages.i686-linux.SDL2
+          ];
+
           configurePhase = "";
 
           buildPhase = ''

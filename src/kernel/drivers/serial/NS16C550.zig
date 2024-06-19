@@ -44,7 +44,7 @@ pub fn NS16C550(comptime IO: type) type {
             const divisor: u16 = @intCast(115_200 / baud_rate);
 
             var divisor_bits: [2]u8 = undefined;
-            std.mem.writeInt(u16, &divisor_bits, divisor, .Little);
+            std.mem.writeInt(u16, &divisor_bits, divisor, .little);
 
             // disable interrupts
             port.out(.ier_divh, 0x00);

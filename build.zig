@@ -1,5 +1,4 @@
 const std = @import("std");
-const FatFS = @import("zfat");
 
 const disk_image_step = @import("disk-image-step");
 // const syslinux_build_zig = @import("vendor/syslinux/build.zig");
@@ -179,14 +178,14 @@ pub fn build(b: *std.Build) !void {
         .root_source_file = b.path("src/libafs/afs.zig"),
     });
 
-    const fatfs_dep = b.dependency("zfat", .{
-        .max_long_name_len = fatfs_config.max_long_name_len,
-        .code_page = fatfs_config.code_page,
-        .@"volume-count" = fatfs_config.volumes,
-        .@"static-rtc" = fatfs_config.rtc,
-        .mkfs = fatfs_config.mkfs,
-    });
-    const fatfs_module = fatfs_dep.module("zfat");
+    // const fatfs_dep = b.dependency("zfat", .{
+    //     .max_long_name_len = fatfs_config.max_long_name_len,
+    //     .code_page = fatfs_config.code_page,
+    //     .@"volume-count" = fatfs_config.volumes,
+    //     .@"static-rtc" = fatfs_config.rtc,
+    //     .mkfs = fatfs_config.mkfs,
+    // });
+    // const fatfs_module = fatfs_dep.module("zfat");
 
     const modules: ashet_com.Modules = .{
         .hyperdoc = mod_hyperdoc,
@@ -200,7 +199,7 @@ pub fn build(b: *std.Build) !void {
         .ashet_gui = mod_ashet_gui,
         .libhypertext = mod_libhypertext,
         .libashetfs = mod_libashetfs,
-        .fatfs = fatfs_module,
+        // .fatfs = fatfs_module,
         .network = mod_network,
         .vnc = mod_vnc,
     };
@@ -457,9 +456,11 @@ const console_qemu_flags = [_][]const u8{
     "-display", "none",
 };
 
+const zfat = @import("zfat");
+
 pub const ZfatConfig = struct {
     max_long_name_len: u8,
-    code_page: FatFS.CodePage,
+    code_page: zfat.CodePage,
     volumes: u5,
     rtc: []const u8,
     mkfs: bool,
