@@ -73,7 +73,7 @@ pub fn main() !u8 {
     defer allocator.free(palette);
 
     var document = blk: {
-        var file_text = try std.fs.cwd().readFileAlloc(allocator, input_file_name, 10 << 20);
+        const file_text = try std.fs.cwd().readFileAlloc(allocator, input_file_name, 10 << 20);
         defer allocator.free(file_text);
 
         var error_pos: hyperdoc.ErrorLocation = undefined;

@@ -642,7 +642,7 @@ fn parseFormValue(comptime Address: type, allocator: mem.Allocator, in_stream: a
                 return parseFormValue(Address, allocator, in_stream, child_form_id, endian, is_64);
             }
             const F = @TypeOf(async parseFormValue(Address, allocator, in_stream, child_form_id, endian, is_64));
-            var frame = try allocator.create(F);
+            const frame = try allocator.create(F);
             defer allocator.destroy(frame);
             return await @asyncCall(frame, {}, parseFormValue, .{ allocator, in_stream, child_form_id, endian, is_64 });
         },
@@ -1278,7 +1278,7 @@ pub const DwarfInfo = struct {
             if (opcode == LNS.extended_op) {
                 const op_size = try leb.readULEB128(u64, in);
                 if (op_size < 1) return badDwarf();
-                var sub_op = try in.readByte();
+                const sub_op = try in.readByte();
                 switch (sub_op) {
                     LNE.end_sequence => {
                         prog.end_sequence = true;

@@ -19,7 +19,7 @@ pub fn loadPaletteFile(allocator: std.mem.Allocator, path: []const u8) ![]zigimg
     }
 
     while (literator.next()) |line| {
-        var trimmed = std.mem.trim(u8, line, " \t"); // remove leading/trailing whitespace
+        const trimmed = std.mem.trim(u8, line, " \t"); // remove leading/trailing whitespace
         // if (std.mem.indexOfScalar(u8, trimmed, '\t')) |tab_index| { // remove the color name
         //     trimmed = std.mem.trim(u8, trimmed[0..tab_index], " ");
         // }
