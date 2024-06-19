@@ -121,7 +121,7 @@ pub fn create(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bui
     return lib;
 }
 
-pub fn setup(b: *std.Build, dst: *std.Build.Step.Compile) void {
+pub fn setup(b: *std.Build, dst: *std.Build.Module) void {
     const upstream = b.dependency("lwip", .{});
     dst.addIncludePath(upstream.path("src/include"));
     dst.addIncludePath(b.path("src/kernel/components/network/include"));

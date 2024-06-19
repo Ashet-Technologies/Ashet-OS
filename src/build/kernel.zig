@@ -164,7 +164,7 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
     {
         const lwip = options.platforms.lwip.get(machine_spec.platform);
         kernel_exe.linkLibrary(lwip);
-        ashet_lwip.setup(b, kernel_exe);
+        ashet_lwip.setup(b, kernel_mod);
     }
 
     return kernel_exe;
