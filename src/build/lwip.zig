@@ -106,6 +106,7 @@ pub fn create(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.bui
         .name = "lwip",
         .target = target,
         .optimize = optimize,
+        .link_libc = true,
     });
 
     const upstream = b.dependency("lwip", .{});
