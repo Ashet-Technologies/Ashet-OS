@@ -108,7 +108,7 @@ const Renderer = struct {
                 defer ren.enable_block_spacing = prev_block_spacing;
                 ren.enable_block_spacing = false;
 
-                var string_width = std.math.log10_int(ol.len) + 2;
+                const string_width = std.math.log10_int(ol.len) + 2;
 
                 ren.position.x += 6 * string_width;
 
