@@ -19,7 +19,7 @@ pub fn main() !u8 {
 
     verbose = cli.options.verbose;
 
-    var image_file_name = cli.options.image orelse {
+    const image_file_name = cli.options.image orelse {
         try std.io.getStdErr().writeAll("Missing option --image!\n");
         return 1;
     };
@@ -522,7 +522,7 @@ fn copyDirectoryToDisk(fs: *FileSystem, src_dir: std.fs.IterableDir, target_dir:
                 var src_child_dir = try src_dir.dir.openIterableDir(entry.name, .{});
                 defer src_child_dir.close();
 
-                var dst_child_dir = fs.createDirectory(target_dir, entry.name, std.time.nanoTimestamp()) catch |err| switch (err) {
+                const dst_child_dir = fs.createDirectory(target_dir, entry.name, std.time.nanoTimestamp()) catch |err| switch (err) {
                     error.FileAlreadyExists => (try fs.getEntry(target_dir, entry.name)).handle.directory,
                     else => |e| return e,
                 };
@@ -545,9 +545,9 @@ fn copyDirectoryToDisk(fs: *FileSystem, src_dir: std.fs.IterableDir, target_dir:
 }
 
 fn copyFileToDirectory(fs: *FileSystem, target_dir: afs.DirectoryHandle, src: std.fs.File, dst_name: []const u8) !void {
-    var stat = try src.stat();
+    const stat = try src.stat();
 
-    var dst_file = try fs.createFile(target_dir, dst_name, std.time.nanoTimestamp());
+    const dst_file = try fs.createFile(target_dir, dst_name, std.time.nanoTimestamp());
     try fs.resizeFile(dst_file, stat.size);
 
     var block_data: [8192]u8 = undefined;

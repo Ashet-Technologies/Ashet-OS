@@ -21,7 +21,7 @@ pub fn BlockDevice(comptime block_count: u32) type {
         }
 
         fn fromCtx(ctx: *anyopaque) *BD {
-            return @as(*BD, @ptrCast(@alignCast(@alignOf(BD), ctx)));
+            return @ptrCast(@alignCast(ctx));
         }
 
         fn getBlockCount(ctx: *anyopaque) u32 {
@@ -113,7 +113,7 @@ test "format smol file system" {
 test "init fs driver" {
     var bd = makeEmptyFs();
 
-    var fs = try FileSystem.init(bd.interface());
+    const fs = try FileSystem.init(bd.interface());
 
     try std.testing.expectEqual(@as(u64, bd.blocks.len), fs.size);
     try std.testing.expectEqual(@as(u32, 1), fs.version);
@@ -135,7 +135,7 @@ test "read metadata" {
 
     const root = fs.getRootDir();
 
-    var meta = try fs.readMetaData(root.object());
+    const meta = try fs.readMetaData(root.object());
     try std.testing.expectEqual(@as(i128, 1337), meta.create_time);
     try std.testing.expectEqual(@as(i128, 1337), meta.modify_time);
     try std.testing.expectEqual(@as(u64, 0), meta.size);
@@ -150,7 +150,7 @@ test "modify metadata" {
 
     try fs.updateMetaData(root.object(), .{});
     {
-        var meta = try fs.readMetaData(root.object());
+        const meta = try fs.readMetaData(root.object());
         try std.testing.expectEqual(@as(i128, 1337), meta.create_time);
         try std.testing.expectEqual(@as(i128, 1337), meta.modify_time);
         try std.testing.expectEqual(@as(u64, 0), meta.size);
@@ -159,7 +159,7 @@ test "modify metadata" {
 
     try fs.updateMetaData(root.object(), .{ .create_time = 424242 });
     {
-        var meta = try fs.readMetaData(root.object());
+        const meta = try fs.readMetaData(root.object());
         try std.testing.expectEqual(@as(i128, 424242), meta.create_time);
         try std.testing.expectEqual(@as(i128, 1337), meta.modify_time);
         try std.testing.expectEqual(@as(u64, 0), meta.size);
@@ -168,7 +168,7 @@ test "modify metadata" {
 
     try fs.updateMetaData(root.object(), .{ .modify_time = 112233 });
     {
-        var meta = try fs.readMetaData(root.object());
+        const meta = try fs.readMetaData(root.object());
         try std.testing.expectEqual(@as(i128, 424242), meta.create_time);
         try std.testing.expectEqual(@as(i128, 112233), meta.modify_time);
         try std.testing.expectEqual(@as(u64, 0), meta.size);
@@ -177,7 +177,7 @@ test "modify metadata" {
 
     try fs.updateMetaData(root.object(), .{ .flags = 0xBEEFBABE });
     {
-        var meta = try fs.readMetaData(root.object());
+        const meta = try fs.readMetaData(root.object());
         try std.testing.expectEqual(@as(i128, 424242), meta.create_time);
         try std.testing.expectEqual(@as(i128, 112233), meta.modify_time);
         try std.testing.expectEqual(@as(u64, 0), meta.size);
@@ -190,7 +190,7 @@ test "modify metadata" {
         .flags = 0xAABBCCDD,
     });
     {
-        var meta = try fs.readMetaData(root.object());
+        const meta = try fs.readMetaData(root.object());
         try std.testing.expectEqual(@as(i128, 100), meta.create_time);
         try std.testing.expectEqual(@as(i128, -10), meta.modify_time);
         try std.testing.expectEqual(@as(u64, 0), meta.size);
