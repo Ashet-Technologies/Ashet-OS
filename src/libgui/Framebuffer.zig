@@ -136,7 +136,7 @@ pub fn fillRectangle(fb: Framebuffer, rect: Rectangle, color: ColorIndex) void {
 }
 
 pub fn drawRectangle(fb: Framebuffer, rect: Rectangle, color: ColorIndex) void {
-    var dst = fb.clip(rect);
+    const dst = fb.clip(rect);
 
     var top = dst.pixels;
     var bot = dst.pixels + (dst.height -| 1) * fb.stride;
@@ -210,18 +210,18 @@ pub fn drawLine(fb: Framebuffer, from: Point, to: Point, color: ColorIndex) void
         var x0 = from.x;
         var y0 = from.y;
 
-        var x1 = to.x;
-        var y1 = to.y;
+        const x1 = to.x;
+        const y1 = to.y;
 
         // Implementation taken from
         // https://de.wikipedia.org/wiki/Bresenham-Algorithmus#Kompakte_Variante
         // That means that the following code block is licenced under CC-BY-SA
         // which is compatible to the project licence.
         {
-            var dx = H.abs(x1 - x0);
-            var sx: i2 = if (x0 < x1) 1 else -1;
-            var dy = -H.abs(y1 - y0);
-            var sy: i2 = if (y0 < y1) 1 else -1;
+            const dx = H.abs(x1 - x0);
+            const sx: i2 = if (x0 < x1) 1 else -1;
+            const dy = -H.abs(y1 - y0);
+            const sy: i2 = if (y0 < y1) 1 else -1;
             var err = dx + dy;
             var e2: i16 = undefined;
 

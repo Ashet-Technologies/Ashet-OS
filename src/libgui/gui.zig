@@ -104,14 +104,14 @@ pub const Interface = struct {
 
     pub fn firstWidget(gui: Interface) ?*Widget {
         return if (gui.widgets.first) |node|
-            @fieldParentPtr(Widget, "siblings", node)
+            @fieldParentPtr("siblings", node)
         else
             null;
     }
 
     pub fn lastWidget(gui: Interface) ?*Widget {
         return if (gui.widgets.last) |node|
-            @fieldParentPtr(Widget, "siblings", node)
+            @fieldParentPtr("siblings", node)
         else
             null;
     }
@@ -344,7 +344,7 @@ pub const Interface = struct {
             }
         };
 
-        var dst = target.clip(rect);
+        const dst = target.clip(rect);
 
         var top = dst.pixels;
         var bot = dst.pixels + (dst.height - 1) * target.stride;
@@ -670,14 +670,14 @@ pub const Widget = struct {
 
     pub fn nextWidget(widget: *Widget) ?*Widget {
         return if (widget.siblings.next) |node|
-            @fieldParentPtr(Widget, "siblings", node)
+            @fieldParentPtr("siblings", node)
         else
             null;
     }
 
     pub fn previousWidget(widget: *Widget) ?*Widget {
         return if (widget.siblings.prev) |node|
-            @fieldParentPtr(Widget, "siblings", node)
+            @fieldParentPtr("siblings", node)
         else
             null;
     }
@@ -1227,7 +1227,7 @@ test "smoke test 01" {
     var interface = Interface{ .widgets = &widgets };
 
     var pixel_storage: [1][182]ColorIndex = undefined;
-    var fb = Framebuffer{
+    const fb = Framebuffer{
         .pixels = @as([*]ColorIndex, @ptrCast(&pixel_storage)),
         .stride = 0, // just overwrite the first line again
         .width = 182,
@@ -1260,6 +1260,6 @@ pub const WidgetIterator = struct {
         switch (wi.dir) {
             inline else => |dir| wi.node = @field(current, @tagName(dir)),
         }
-        return @fieldParentPtr(Widget, "siblings", current);
+        return @fieldParentPtr("siblings", current);
     }
 };

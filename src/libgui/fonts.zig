@@ -215,7 +215,7 @@ pub const BitmapFont = struct {
 
         var width: u15 = 0;
         while (iter.nextCodepoint()) |cp| {
-            var glyph = font.getGlyph(cp) orelse continue;
+            const glyph = font.getGlyph(cp) orelse continue;
 
             width += glyph.advance;
         }
@@ -265,7 +265,7 @@ pub const VectorFont = struct {
 
         var width: u15 = 0;
         while (iter.nextCodepoint()) |cp| {
-            var glyph = font.getGlyph(cp) orelse continue;
+            const glyph = font.getGlyph(cp) orelse continue;
 
             width += @as(u15, @intCast(opt.scaleX(glyph.advance)));
             width += @intFromBool(font.bold);
