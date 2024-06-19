@@ -8,9 +8,11 @@ const ashet_lwip = @import("lwip.zig");
 const build_targets = @import("targets.zig");
 const platforms = @import("platform.zig");
 
+const ZfatConfig = @import("../../build.zig").ZfatConfig;
+
 pub const KernelOptions = struct {
     optimize: std.builtin.OptimizeMode,
-    fatfs_config: FatFS.Config,
+    fatfs_config: ZfatConfig,
     machine_spec: *const build_targets.MachineSpec,
     modules: ashet_com.Modules,
     system_assets: *std.Build.Module,
@@ -59,7 +61,7 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
         const write_file_step = b.addWriteFile("machine-info.zig", machine_info);
 
         const module = b.createModule(.{
-            .source_file = write_file_step.files.items[0].getPath(),
+            .root_source_file = write_file_step.files.items[0].getPath(),
         });
 
         break :blk module;
@@ -83,8 +85,8 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
     // const ashet_libc = cguana_dep.artifact("cguana");
 
     const kernel_mod = b.createModule(.{
-        .source_file = .{ .path = "src/kernel/main.zig" },
-        .dependencies = &.{
+        .root_source_file = b.path("src/kernel/main.zig"),
+        .imports = &.{
             .{ .name = "machine-info", .module = machine_info_module },
             .{ .name = "system-assets", .module = options.system_assets },
             .{ .name = "ashet-abi", .module = options.modules.ashet_abi },
@@ -113,31 +115,33 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
 
     const start_file: std.Build.LazyPath = machine_spec.start_file orelse
         platform_spec.start_file orelse
-        .{ .path = "src/kernel/port/platform/generic-startup.zig" };
+        b.path("src/kernel/port/platform/generic-startup.zig");
+
+    const kernel_target = b.resolveTargetQuery(machine_spec.alt_target orelse platform_spec.target);
 
     const kernel_exe = b.addExecutable(.{
         .name = "ashet-os",
         .root_source_file = start_file,
-        .target = machine_spec.alt_target orelse platform_spec.target,
+        .target = kernel_target,
         .optimize = options.optimize,
     });
 
-    kernel_exe.step.dependOn(machine_info_module.source_file.generated.step);
+    kernel_exe.step.dependOn(machine_info_module.root_source_file.?.generated.file.step);
 
-    kernel_exe.addModule("kernel", kernel_mod);
+    kernel_exe.root_module.addImport("kernel", kernel_mod);
 
-    kernel_exe.code_model = .small;
+    kernel_exe.root_module.code_model = .small;
     kernel_exe.bundle_compiler_rt = true;
     kernel_exe.rdynamic = true; // Prevent the compiler from garbage collecting exported symbols
-    kernel_exe.single_threaded = (kernel_exe.target.getOsTag() == .freestanding);
-    kernel_exe.omit_frame_pointer = false;
-    kernel_exe.strip = false; // never strip debug info
+    kernel_exe.root_module.single_threaded = (kernel_exe.rootModuleTarget().os.tag == .freestanding);
+    kernel_exe.root_module.omit_frame_pointer = false;
+    kernel_exe.root_module.strip = false; // never strip debug info
     if (options.optimize == .Debug) {
         // we always want frame pointers in debug build!
-        kernel_exe.omit_frame_pointer = false;
+        kernel_exe.root_module.omit_frame_pointer = false;
     }
 
-    kernel_exe.setLinkerScriptPath(.{ .path = options.machine_spec.linker_script });
+    kernel_exe.setLinkerScriptPath(b.path(options.machine_spec.linker_script));
 
     for (options.platforms.include_paths.get(machine_spec.platform).items) |path| {
         kernel_exe.addSystemIncludePath(path);
@@ -155,14 +159,28 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
         else => {},
     }
 
-    FatFS.link(kernel_exe, options.fatfs_config);
+    const zfat = b.dependency("zfat", .{
+        .target = kernel_target,
+        .optimize = options.optimize,
+        .max_long_name_len = options.fatfs_config.max_long_name_len,
+        .code_page = options.fatfs_config.code_page,
+        .@"volume-count" = options.fatfs_config.volumes,
+        .@"static-rtc" = options.fatfs_config.rtc,
+        .mkfs = options.fatfs_config.mkfs,
+    });
+
+    kernel_exe.root_module.addImport("zfat", zfat.module("zfat"));
+
+    // kernel_exe.linkLibrary(zfat.artifact("zfat"));
+
+    // FatFS.link(kernel_exe, options.fatfs_config);
 
     kernel_exe.linkLibrary(options.platforms.libc.get(machine_spec.platform));
 
     {
         const lwip = options.platforms.lwip.get(machine_spec.platform);
         kernel_exe.linkLibrary(lwip);
-        ashet_lwip.setup(kernel_exe);
+        ashet_lwip.setup(b, kernel_exe);
     }
 
     return kernel_exe;

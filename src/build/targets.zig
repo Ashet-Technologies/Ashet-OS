@@ -9,7 +9,7 @@ pub const PlatformSpec = struct {
     name: []const u8,
     platform_id: []const u8,
     source_file: []const u8,
-    target: std.zig.CrossTarget,
+    target: std.Target.Query,
     start_file: ?std.Build.LazyPath,
 
     qemu_exe: []const u8,
@@ -97,7 +97,7 @@ pub fn getPlatformSpec(platform: Platform) *const PlatformSpec {
             .platform_id = "x86",
             .source_file = "src/kernel/port/platform/x86.zig",
             .start_file = null,
-            .target = std.zig.CrossTarget{
+            .target = .{
                 .cpu_arch = .x86,
                 .os_tag = .freestanding,
                 .abi = .musleabi,
@@ -116,8 +116,8 @@ pub fn getPlatformSpec(platform: Platform) *const PlatformSpec {
             .name = "hosted",
             .platform_id = "hosted",
             .source_file = "src/kernel/port/platform/hosted.zig",
-            .start_file = .{ .path = "src/kernel/port/platform/hosted-startup.zig" },
-            .target = std.zig.CrossTarget{
+            .start_file = .{ .cwd_relative = "src/kernel/port/platform/hosted-startup.zig" },
+            .target = .{
                 .cpu_arch = .x86,
                 .os_tag = .freestanding,
                 .abi = .musl,

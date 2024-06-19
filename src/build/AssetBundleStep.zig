@@ -4,8 +4,8 @@ const disk_image_step = @import("disk-image-step");
 const AssetBundleStep = @This();
 
 step: std.Build.Step,
-builder: *std.build.Builder,
-files: std.StringHashMap(std.Build.FileSource),
+builder: *std.Build,
+files: std.StringHashMap(std.Build.LazyPath),
 output_file: std.Build.GeneratedFile,
 rootfs: ?*disk_image_step.FileSystemBuilder,
 
@@ -23,7 +23,7 @@ pub fn create(builder: *std.Build, rootfs: ?*disk_image_step.FileSystemBuilder) 
             .max_rss = 0,
         }),
         .builder = builder,
-        .files = std.StringHashMap(std.Build.FileSource).init(builder.allocator),
+        .files = std.StringHashMap(std.Build.LazyPath).init(builder.allocator),
         .output_file = .{ .step = &bundle.step },
         .rootfs = rootfs,
     };
@@ -31,7 +31,7 @@ pub fn create(builder: *std.Build, rootfs: ?*disk_image_step.FileSystemBuilder) 
     return bundle;
 }
 
-pub fn add(bundle: *AssetBundleStep, path: []const u8, item: std.Build.FileSource) void {
+pub fn add(bundle: *AssetBundleStep, path: []const u8, item: std.Build.LazyPath) void {
     bundle.files.putNoClobber(
         bundle.builder.dupe(path),
         item,
@@ -46,16 +46,14 @@ pub fn add(bundle: *AssetBundleStep, path: []const u8, item: std.Build.FileSourc
     // bundle.builder.getInstallStep().dependOn(&install_step.step);
 }
 
-pub fn getOutput(bundle: *AssetBundleStep) std.Build.FileSource {
-    return std.Build.FileSource{
-        .generated = &bundle.output_file,
-    };
+pub fn getOutput(bundle: *AssetBundleStep) std.Build.LazyPath {
+    return .{ .generated = .{ .file = &bundle.output_file } };
 }
 
-fn make(step: *std.build.Step, node: *std.Progress.Node) !void {
-    const bundle = @fieldParentPtr(AssetBundleStep, "step", step);
+fn make(step: *std.Build.Step, node: std.Progress.Node) !void {
+    const bundle: *AssetBundleStep = @fieldParentPtr("step", step);
 
-    var write_step = std.Build.WriteFileStep.create(bundle.builder);
+    var write_step = std.Build.Step.WriteFile.create(bundle.builder);
 
     var embed_file = std.ArrayList(u8).init(bundle.builder.allocator);
     defer embed_file.deinit();

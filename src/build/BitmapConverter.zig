@@ -3,19 +3,23 @@ const std = @import("std");
 const BitmapConverter = @This();
 
 builder: *std.Build,
-converter: *std.Build.CompileStep,
+converter: *std.Build.Step.Compile,
 
-pub fn init(builder: *std.Build) BitmapConverter {
-    const zig_args_module = builder.dependency("args", .{}).module("args");
-    const zigimg = builder.dependency("zigimg", .{}).module("zigimg");
+pub fn init(b: *std.Build) BitmapConverter {
+    const zig_args_module = b.dependency("args", .{}).module("args");
+    const zigimg = b.dependency("zigimg", .{}).module("zigimg");
 
-    const tool_mkicon = builder.addExecutable(.{ .name = "tool_mkicon", .root_source_file = .{ .path = "tools/mkicon.zig" } });
-    tool_mkicon.addModule("zigimg", zigimg);
-    tool_mkicon.addModule("ashet-abi", builder.modules.get("ashet-abi").?);
-    tool_mkicon.addModule("args", zig_args_module);
+    const tool_mkicon = b.addExecutable(.{
+        .name = "tool_mkicon",
+        .root_source_file = b.path("tools/mkicon.zig"),
+        .target = b.graph.host,
+    });
+    tool_mkicon.root_module.addImport("zigimg", zigimg);
+    tool_mkicon.root_module.addImport("ashet-abi", b.modules.get("ashet-abi").?);
+    tool_mkicon.root_module.addImport("args", zig_args_module);
 
     return BitmapConverter{
-        .builder = builder,
+        .builder = b,
         .converter = tool_mkicon,
     };
 }
@@ -25,20 +29,20 @@ pub const Options = struct {
     geometry: ?[2]u32 = null,
 
     const Palette = union(enum) {
-        predefined: []const u8,
+        predefined: std.Build.LazyPath,
         sized: u8,
     };
 };
 
-pub fn convert(conv: BitmapConverter, source: std.Build.FileSource, basename: []const u8, options: Options) std.Build.FileSource {
+pub fn convert(conv: BitmapConverter, source: std.Build.LazyPath, basename: []const u8, options: Options) std.Build.LazyPath {
     const mkicon = conv.builder.addRunArtifact(conv.converter);
 
-    mkicon.addFileSourceArg(source);
+    mkicon.addFileArg(source);
 
     switch (options.palette) {
         .predefined => |palette| {
             mkicon.addArg("--palette");
-            mkicon.addFileSourceArg(.{ .path = palette });
+            mkicon.addFileArg(palette);
         },
         .sized => |size| {
             mkicon.addArg("--color-count");
