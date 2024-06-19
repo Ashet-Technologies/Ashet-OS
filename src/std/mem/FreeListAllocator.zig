@@ -107,7 +107,7 @@ test "basic formatting" {
     const base_region = try std.testing.allocator.alloc(u8, 256 * 1024);
     defer std.testing.allocator.free(base_region);
 
-    var fla = FreeListAllocator.init(base_region);
+    const fla = FreeListAllocator.init(base_region);
 
     _ = fla;
 }
