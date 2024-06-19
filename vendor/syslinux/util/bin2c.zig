@@ -57,7 +57,7 @@ pub fn main() !void {
         }
     };
 
-    var printer: Printer = { .writer = writer };
+    var printer: Printer = .{ .writer = writer };
 
     {
         try writer.print("unsigned char {s}[] = {{\n", .{symbol_name});
