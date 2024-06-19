@@ -246,15 +246,15 @@ fn mapWholeFile(file: std.fs.File) ![]align(std.mem.page_size) const u8 {
         defer file.close();
 
         const file_len = std.math.cast(usize, try file.getEndPos()) orelse std.math.maxInt(usize);
-        const mapped_mem = try std.os.mmap(
+        const mapped_mem = try std.posix.mmap(
             null,
             file_len,
-            std.os.PROT.READ,
-            std.os.MAP.SHARED,
+            std.posix.PROT.READ,
+            .{ .TYPE = .SHARED },
             file.handle,
             0,
         );
-        errdefer std.os.munmap(mapped_mem);
+        errdefer std.posix.munmap(mapped_mem);
 
         return mapped_mem;
     }

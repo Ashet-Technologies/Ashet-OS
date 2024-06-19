@@ -132,7 +132,7 @@ pub fn Generic_IOP(comptime Type: type) type {
         pub fn cast(comptime T: type, iop: *IOP) *T {
             if (comptime !isIOP(T)) @compileError("Only a type created by IOP.define can be passed to cast!");
             std.debug.assert(iop.type == T.iop_type);
-            return @fieldParentPtr(T, "iop", iop);
+            return @fieldParentPtr("iop", iop);
         }
 
         fn undefinedDefaultFor(comptime T: type) *T {

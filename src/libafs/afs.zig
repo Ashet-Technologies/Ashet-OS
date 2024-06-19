@@ -423,7 +423,7 @@ pub const FileSystem = struct {
                 // we can savely write the next block in the chain, no matter
                 // if `list_buf` contains a `ObjectBlock` or `RefListBlock`.
                 // the `next` field is always the last 4 bytes.
-                std.mem.writeIntLittle(u32, list_buf[508..512], new_list_block);
+                std.mem.writeInt(u32, list_buf[508..512], new_list_block, .little);
 
                 // write-back the changes to the fs.
                 try fs.device.writeBlock(list_block_num, &list_buf);
@@ -544,7 +544,7 @@ pub const FileSystem = struct {
             // std.debug.print("  => skip {} blocks\n", .{skip_forward_count});
 
             for (0..skip_forward_count) |_| {
-                const next_list = std.mem.readIntLittle(u32, storage_blob[508..512]);
+                const next_list = std.mem.readInt(u32, storage_blob[508..512], .little);
                 if (next_list == 0)
                     return error.CorruptFilesystem;
                 try fs.device.readBlock(next_list, &storage_blob);
@@ -568,7 +568,7 @@ pub const FileSystem = struct {
                     const next_ref_block = try fs.allocBlock();
 
                     try fs.device.writeBlock(next_ref_block, &zero_block);
-                    std.mem.writeIntLittle(u32, storage_blob[508..512], next_ref_block);
+                    std.mem.writeInt(u32, storage_blob[508..512], next_ref_block, .little);
                     try fs.device.writeBlock(current_block, &storage_blob);
 
                     current_block = next_ref_block;

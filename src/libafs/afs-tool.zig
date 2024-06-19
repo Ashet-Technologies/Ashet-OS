@@ -65,7 +65,7 @@ pub fn main() !u8 {
         };
 
         if (cli.positionals.len > 0) {
-            var dir = try std.fs.cwd().openIterableDir(cli.positionals[0], .{});
+            var dir = try std.fs.cwd().openDir(cli.positionals[0], .{ .iterate = true });
             defer dir.close();
 
             var fs = try FileSystem.init(block_device.interface());
@@ -188,7 +188,7 @@ pub fn main() !u8 {
             if (is_dir) {
                 const target_dir = try resolvePath(&fs, dest_path, .directory);
 
-                var dir = try std.fs.cwd().openIterableDir(source_path, .{});
+                var dir = try std.fs.cwd().openDir(source_path, .{ .iterate = true });
                 defer dir.close();
 
                 try copyDirectoryToDisk(&fs, dir, target_dir);
@@ -503,23 +503,23 @@ const BlockDevice = struct {
     };
 };
 
-fn copyDirectoryToDisk(fs: *FileSystem, src_dir: std.fs.IterableDir, target_dir: afs.DirectoryHandle) !void {
+fn copyDirectoryToDisk(fs: *FileSystem, src_dir: std.fs.Dir, target_dir: afs.DirectoryHandle) !void {
     var iter = src_dir.iterate();
 
     while (try iter.next()) |_entry| {
-        const entry: std.fs.IterableDir.Entry = _entry;
+        const entry: std.fs.Dir.Entry = _entry;
 
         var realpath_buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
 
         if (verbose) {
             std.log.info("copying {s}...", .{
-                try src_dir.dir.realpath(entry.name, &realpath_buffer),
+                try src_dir.realpath(entry.name, &realpath_buffer),
             });
         }
 
         switch (entry.kind) {
             .directory => {
-                var src_child_dir = try src_dir.dir.openIterableDir(entry.name, .{});
+                var src_child_dir = try src_dir.openDir(entry.name, .{ .iterate = true });
                 defer src_child_dir.close();
 
                 const dst_child_dir = fs.createDirectory(target_dir, entry.name, std.time.nanoTimestamp()) catch |err| switch (err) {
@@ -530,14 +530,14 @@ fn copyDirectoryToDisk(fs: *FileSystem, src_dir: std.fs.IterableDir, target_dir:
                 try copyDirectoryToDisk(fs, src_child_dir, dst_child_dir);
             },
             .file => {
-                var src_file = try src_dir.dir.openFile(entry.name, .{});
+                var src_file = try src_dir.openFile(entry.name, .{});
                 defer src_file.close();
 
                 try copyFileToDirectory(fs, target_dir, src_file, entry.name);
             },
 
             else => std.log.err("cannot copy {s}: {s} is not a supported file type!", .{
-                try src_dir.dir.realpath(entry.name, &realpath_buffer),
+                try src_dir.realpath(entry.name, &realpath_buffer),
                 @tagName(entry.kind),
             }),
         }

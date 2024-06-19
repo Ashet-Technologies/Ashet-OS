@@ -34,16 +34,16 @@ pub fn main() !u8 {
     var buffered_reader = std.io.bufferedReader(input_file.reader());
     var reader = buffered_reader.reader();
 
-    const magic = try reader.readIntLittle(u32);
+    const magic = try reader.readInt(u32, .little);
     if (magic != 0x48198b74) {
         @panic("invalid magic number!");
     }
-    const width = try reader.readIntLittle(u16);
-    const height = try reader.readIntLittle(u16);
-    const flags = try reader.readIntLittle(u16);
+    const width = try reader.readInt(u16, .little);
+    const height = try reader.readInt(u16, .little);
+    const flags = try reader.readInt(u16, .little);
     const is_transparent = (flags & 1) != 0;
-    const palette_size = try reader.readIntLittle(u8);
-    const transparency_key = try reader.readIntLittle(u8);
+    const palette_size = try reader.readInt(u8, .little);
+    const transparency_key = try reader.readInt(u8, .little);
 
     const indexed_bitmap = try arena.allocator().alloc(u8, @as(usize, width) * height);
     const palette = try arena.allocator().alloc(Rgba32, palette_size);
@@ -51,7 +51,7 @@ pub fn main() !u8 {
     try reader.readNoEof(indexed_bitmap);
 
     for (palette) |*color| {
-        const packed_color = try reader.readIntLittle(u16);
+        const packed_color = try reader.readInt(u16, .little);
 
         const color_565 = abi.Color.fromU16(packed_color);
 

@@ -98,7 +98,7 @@ pub fn main() !u8 {
         if (available_palettes.len == 0)
             @panic("failed to generate any fitting palette!");
 
-        var min_quality = computePaletteQuality(available_palettes[0], raw_image);
+        const min_quality = computePaletteQuality(available_palettes[0], raw_image);
         var palette = available_palettes[0];
 
         for (available_palettes[1..]) |pal| {
@@ -151,12 +151,12 @@ pub fn main() !u8 {
     var buffered_writer = std.io.bufferedWriter(out_file.writer());
     var writer = buffered_writer.writer();
 
-    try writer.writeIntLittle(u32, 0x48198b74);
-    try writer.writeIntLittle(u16, @as(u16, @intCast(raw_image.width)));
-    try writer.writeIntLittle(u16, @as(u16, @intCast(raw_image.height)));
-    try writer.writeIntLittle(u16, if (transparency) @as(u16, 0x0001) else 0x0000); // flags, enable transparency
-    try writer.writeIntLittle(u8, limit); // palette size
-    try writer.writeIntLittle(u8, 0xFF); // transparent
+    try writer.writeInt(u32, 0x48198b74, .little);
+    try writer.writeInt(u16, @as(u16, @intCast(raw_image.width)), .little);
+    try writer.writeInt(u16, @as(u16, @intCast(raw_image.height)), .little);
+    try writer.writeInt(u16, if (transparency) @as(u16, 0x0001) else 0x0000, .little); // flags, enable transparency
+    try writer.writeInt(u8, limit, .little); // palette size
+    try writer.writeInt(u8, 0xFF, .little); // transparent
 
     try writer.writeAll(bitmap);
 
@@ -167,7 +167,7 @@ pub fn main() !u8 {
             .g = rgb565.g,
             .b = rgb565.b,
         };
-        try writer.writeIntLittle(u16, abi_color.toU16());
+        try writer.writeInt(u16, abi_color.toU16(), .little);
     }
 
     try buffered_writer.flush();
@@ -193,12 +193,12 @@ fn quantizeCountColors(allocator: std.mem.Allocator, palette_size: usize, image:
     if (color_map.keys().len > palette_size)
         return error.TooManyColors;
 
-    var palette = try allocator.alloc(Rgba32, palette_size);
+    const palette = try allocator.alloc(Rgba32, palette_size);
     std.mem.copyForwards(Rgba32, palette, color_map.keys());
     return palette;
 }
 
-fn quantizeOctree(allocator: std.mem.Allocator, palette_size: usize, image: zigimg.Image) !Palette {
+fn quantizeOctree(allocator: std.mem.Allocator, palette_size: u32, image: zigimg.Image) !Palette {
     var quantizer = zigimg.OctTreeQuantizer.init(allocator);
     defer quantizer.deinit();
 
@@ -216,7 +216,7 @@ fn quantizeOctree(allocator: std.mem.Allocator, palette_size: usize, image: zigi
     const palette_buffer = try allocator.alloc(Rgba32, palette_size);
     errdefer allocator.free(palette_buffer);
 
-    const octree_palette = try quantizer.makePalette(palette_size, palette_buffer);
+    const octree_palette = quantizer.makePalette(palette_size, palette_buffer);
 
     std.debug.assert(palette_buffer.ptr == octree_palette.ptr);
 
@@ -281,7 +281,7 @@ fn getBestMatch(pal: Palette, col: Rgba32) usize {
     var best: usize = 0;
     var threshold: u32 = colorDist(pal[0], col);
     for (pal[1..], 0..) |color, index| {
-        var dist = colorDist(color, col);
+        const dist = colorDist(color, col);
         if (dist < threshold) {
             threshold = dist;
             best = index + 1; // oof by one, as we iterate over pal[1..]

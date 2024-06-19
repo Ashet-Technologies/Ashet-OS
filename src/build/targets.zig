@@ -25,7 +25,7 @@ pub const MachineSpec = struct {
     rom_size: ?usize,
 
     start_file: ?std.Build.LazyPath,
-    alt_target: ?std.zig.CrossTarget,
+    alt_target: ?std.Target.Query,
 
     /// Instantiation:
     /// Uses place holders:
@@ -41,7 +41,7 @@ pub fn getPlatformSpec(platform: Platform) *const PlatformSpec {
             .platform_id = "riscv",
             .source_file = "src/kernel/port/platform/riscv.zig",
             .start_file = null,
-            .target = std.zig.CrossTarget{
+            .target = .{
                 .cpu_arch = .riscv32,
                 .os_tag = .freestanding,
                 .abi = .eabi,
@@ -60,7 +60,7 @@ pub fn getPlatformSpec(platform: Platform) *const PlatformSpec {
             .platform_id = "arm",
             .source_file = "src/kernel/port/platform/arm.zig",
             .start_file = null,
-            .target = std.zig.CrossTarget{
+            .target = .{
                 .cpu_arch = .thumb,
                 .os_tag = .freestanding,
                 .abi = .eabi,
@@ -201,7 +201,7 @@ pub fn getMachineSpec(machine: Machine) *const MachineSpec {
             .linker_script = "src/kernel/port/machine/linux_pc/linker.ld",
 
             .disk_formatter = "linux_pc",
-            .alt_target = std.zig.CrossTarget{
+            .alt_target = .{
                 .cpu_arch = .x86,
                 .os_tag = .linux,
                 .abi = .gnu,

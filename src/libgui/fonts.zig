@@ -85,20 +85,20 @@ pub const BitmapFont = struct {
     };
 
     pub fn glyphCount(bf: BitmapFont) u32 {
-        return std.mem.readIntLittle(u32, bf.data[8..12]);
+        return std.mem.readInt(u32, bf.data[8..12], .little);
     }
 
     pub fn lineHeight(bf: BitmapFont) u15 {
-        return @as(u15, @intCast(std.math.clamp(0, std.mem.readIntLittle(u32, bf.data[4..8]), std.math.maxInt(u15))));
+        return @intCast(std.math.clamp(0, std.mem.readInt(u32, bf.data[4..8], .little), std.math.maxInt(u15)));
     }
 
     fn getGlyphMeta(bf: BitmapFont, index: usize) PackedCodepointAdvance {
-        return @as(PackedCodepointAdvance, @bitCast(std.mem.readIntLittle(u32, bf.data[12 + 4 * index ..][0..4])));
+        return @bitCast(std.mem.readInt(u32, bf.data[12 + 4 * index ..][0..4], .little));
     }
 
     fn getGlyphOffset(bf: BitmapFont, index: usize) u32 {
         const count = bf.glyphCount();
-        return std.mem.readIntLittle(u32, bf.data[12 + 4 * count + 4 * index ..][0..4]);
+        return std.mem.readInt(u32, bf.data[12 + 4 * count + 4 * index ..][0..4], .little);
     }
 
     fn getEncodedGlyphs(bf: BitmapFont) []const u8 {
@@ -110,7 +110,7 @@ pub const BitmapFont = struct {
         if (buffer.len < 12)
             return error.InvalidFont;
 
-        const magic = std.mem.readIntLittle(u32, buffer[0..4]);
+        const magic = std.mem.readInt(u32, buffer[0..4], .little);
         if (magic != magic_number)
             return error.InvalidFont;
 
@@ -137,8 +137,8 @@ pub const BitmapFont = struct {
 
             const encoded_glyph = glyph_storage[offset..];
 
-            const width = std.mem.readIntLittle(u8, encoded_glyph[0..1]);
-            const height = std.mem.readIntLittle(u8, encoded_glyph[1..2]);
+            const width = std.mem.readInt(u8, encoded_glyph[0..1], .little);
+            const height = std.mem.readInt(u8, encoded_glyph[1..2], .little);
             const stride = (height + 7) / 8;
             const size = width * stride;
 
@@ -192,8 +192,8 @@ pub const BitmapFont = struct {
 
         const encoded_glyph = font.getEncodedGlyphs()[offset..];
 
-        const width = std.mem.readIntLittle(u8, encoded_glyph[0..1]);
-        const height = std.mem.readIntLittle(u8, encoded_glyph[1..2]);
+        const width = std.mem.readInt(u8, encoded_glyph[0..1], .little);
+        const height = std.mem.readInt(u8, encoded_glyph[1..2], .little);
         const stride = (height + 7) / 8;
         const size = width * stride;
 
@@ -202,8 +202,8 @@ pub const BitmapFont = struct {
 
             .width = width,
             .height = height,
-            .offset_x = std.mem.readIntLittle(i8, encoded_glyph[2..3]),
-            .offset_y = std.mem.readIntLittle(i8, encoded_glyph[3..4]),
+            .offset_x = std.mem.readInt(i8, encoded_glyph[2..3], .little),
+            .offset_y = std.mem.readInt(i8, encoded_glyph[3..4], .little),
 
             .bits = encoded_glyph[4 .. 4 + size],
         };

@@ -265,7 +265,7 @@ pub fn main() !void {
             index_buf = try allocator.alloc(ashet.abi.ColorIndex, size);
         }
 
-        var fb = gui.Framebuffer{
+        const fb = gui.Framebuffer{
             .width = @as(u15, @intCast(width)),
             .height = @as(u15, @intCast(height)),
             .stride = @as(u15, @intCast(width)),
