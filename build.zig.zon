@@ -47,8 +47,8 @@
             .hash = "1220c46a1fabb690b8b84b01ffe185142aac3489d400963b6c7dd252320806dd07e2",
         },
         .@"disk-image-step" = .{
-            .url = "https://github.com/zig-osdev/disk-image-step/archive/d722b6ec0ad49cdb7bd385064ca3edad2a74dc8c.tar.gz",
-            .hash = "12201d07caf5469111800d2fdd33a6f343c306a586caf661bdf3f029ea3e17730f9f",
+            .url = "https://github.com/zig-osdev/disk-image-step/archive/a2a3ee1c20eaf67cdbe8434e2774690061bb12f1.tar.gz",
+            .hash = "1220e83b6376a42839a522403aa31ae8c2bff630f3c3a16dfb4eef4f930888a31cec",
         },
         .@"foundation-libc" = .{
             .url = "https://github.com/ZigEmbeddedGroup/foundation-libc/archive/6a32c97a297bb250c67918946991165a5fc09844.tar.gz",
