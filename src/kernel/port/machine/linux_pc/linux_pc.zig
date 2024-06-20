@@ -41,7 +41,7 @@ pub fn get_tick_count() u64 {
 
 fn badKernelOption(option: []const u8, reason: []const u8) noreturn {
     std.log.err("bad command line interface: component '{}': {s}", .{ std.zig.fmtEscapes(option), reason });
-    std.os.exit(1);
+    std.process.exit(1);
 }
 
 var global_memory_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -68,7 +68,7 @@ pub fn initialize() !void {
     var video_out_index: usize = 0;
     var any_sdl_output: bool = false;
 
-    var cli = args_parser.parseForCurrentProcess(KernelOptions, global_memory, .print) catch std.os.exit(1);
+    var cli = args_parser.parseForCurrentProcess(KernelOptions, global_memory, .print) catch std.process.exit(1);
     cli.options = kernel_options;
     for (cli.positionals) |arg| {
         var iter = std.mem.split(u8, arg, ":");
@@ -181,7 +181,7 @@ fn handle_SDL_events(ptr: ?*anyopaque) callconv(.C) u32 {
         var event: sdl.SDL_Event = undefined;
         while (sdl.SDL_PollEvent(&event) != 0) {
             switch (event.type) {
-                sdl.SDL_QUIT => std.os.exit(1),
+                sdl.SDL_QUIT => std.process.exit(1),
 
                 sdl.SDL_MOUSEMOTION => {
                     if (display_from_sdl_window_id(event.motion.windowID)) |display| {

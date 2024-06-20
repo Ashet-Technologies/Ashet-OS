@@ -87,6 +87,8 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
     zfat_mod.addIncludePath(libc.getEmittedIncludeTree());
 
     const kernel_mod = b.createModule(.{
+        .target = kernel_target,
+        .optimize = options.optimize,
         .root_source_file = b.path("src/kernel/main.zig"),
         .imports = &.{
             .{ .name = "machine-info", .module = machine_info_module },
@@ -149,12 +151,12 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
 
     switch (options.machine_spec.platform) {
         .hosted => {
-            kernel_exe.linkLibC();
-            kernel_exe.linkSystemLibrary2("SDL2", .{
+            kernel_mod.linkSystemLibrary("sdl2", .{
                 .use_pkg_config = .force,
                 .search_strategy = .mode_first,
             });
             kernel_exe.linkage = .dynamic;
+            kernel_exe.linkLibC();
         },
         else => {},
     }

@@ -20,13 +20,13 @@ for path_prefix in ${lpaths}; do
     done
 done
 
-zig build \
-    -Dmachine=linux_pc \
-    -freference-trace \
-    "$@"
+# zig build \
+#     -Dmachine=linux_pc \
+#     -freference-trace \
+#     "$@"
 
-readelf -ldrS --syms --dyn-syms  zig-out/apps/hosted/hello-world.app  > /tmp/dump
-objdump -S  zig-out/apps/hosted/hello-world.app  >> /tmp/dump
+# readelf -ldrS --syms --dyn-syms  zig-out/apps/hosted/hello-world.app  > /tmp/dump
+# objdump -S  zig-out/apps/hosted/hello-world.app  >> /tmp/dump
 
 
 export LD_PRELOAD

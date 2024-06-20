@@ -10,7 +10,7 @@ pub fn panic() noreturn {
     const string = std.mem.sliceTo(string_ptr, 0);
 
     logger.err("{s}", .{string});
-    std.os.exit(1);
+    std.process.exit(1);
 }
 
 pub fn assert(err: c_int) void {

@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const machine_info = @import("machine-info");
 
 pub const abi = @import("ashet-abi");
@@ -73,6 +74,14 @@ pub export fn ashet_kernelMain() void {
 
     main() catch |err| {
         std.log.err("main() failed with {}", .{err});
+
+        if (@errorReturnTrace()) |error_trace| {
+            if (builtin.os.tag != .freestanding) {
+                // hosted environment:
+                std.debug.dumpStackTrace(error_trace.*);
+            }
+        }
+
         @panic("system failure");
     };
 

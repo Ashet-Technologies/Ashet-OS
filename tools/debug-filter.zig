@@ -172,7 +172,7 @@ pub fn main() !u8 {
     }
 
     {
-        var proc = std.ChildProcess.init(app_argv, allocator);
+        var proc = std.process.Child.init(app_argv, allocator);
 
         proc.stdin_behavior = .Inherit;
         proc.stdout_behavior = .Pipe;
@@ -269,11 +269,11 @@ pub fn readElfDebugInfo(allocator: std.mem.Allocator, elf_file: std.fs.File) !dw
         if (hdr.e_ident[elf.EI_VERSION] != 1) return error.InvalidElfVersion;
 
         const endian: std.builtin.Endian = switch (hdr.e_ident[elf.EI_DATA]) {
-            elf.ELFDATA2LSB => .Little,
-            elf.ELFDATA2MSB => .Big,
+            elf.ELFDATA2LSB => .little,
+            elf.ELFDATA2MSB => .big,
             else => return error.InvalidElfEndian,
         };
-        std.debug.assert(endian == .Little); // this is our own debug info
+        std.debug.assert(endian == .little); // this is our own debug info
 
         const shoff = hdr.e_shoff;
         const str_section_off = shoff + @as(u64, hdr.e_shentsize) * @as(u64, hdr.e_shstrndx);

@@ -32,16 +32,16 @@ pub fn init() Virtual_Video_Output {
 }
 
 fn getVideoMemory(driver: *Driver) []align(ashet.memory.page_size) ColorIndex {
-    const vd: *Virtual_Video_Output = @fieldParentPtr("driver", driver);
+    const vd = driver.resolve(Virtual_Video_Output, "driver");
     return &vd.backbuffer;
 }
 fn getPaletteMemory(driver: *Driver) *[256]Color {
-    const vd: *Virtual_Video_Output = @fieldParentPtr("driver", driver);
+    const vd = driver.resolve(Virtual_Video_Output, "driver");
     return &vd.palette;
 }
 
 fn getResolution(driver: *Driver) Resolution {
-    const vd: *Virtual_Video_Output = @fieldParentPtr("driver", driver);
+    const vd = driver.resolve(Virtual_Video_Output, "driver");
     _ = vd;
 
     return Resolution{
@@ -51,7 +51,7 @@ fn getResolution(driver: *Driver) Resolution {
 }
 
 fn getMaxResolution(driver: *Driver) Resolution {
-    const vd: *Virtual_Video_Output = @fieldParentPtr("driver", driver);
+    const vd = driver.resolve(Virtual_Video_Output, "driver");
     _ = vd;
     return Resolution{
         .width = 320,
@@ -60,7 +60,7 @@ fn getMaxResolution(driver: *Driver) Resolution {
 }
 
 fn setResolution(driver: *Driver, width: u15, height: u15) void {
-    const vd: *Virtual_Video_Output = @fieldParentPtr("driver", driver);
+    const vd = driver.resolve(Virtual_Video_Output, "driver");
     _ = vd;
     _ = width;
     _ = height;
@@ -68,18 +68,18 @@ fn setResolution(driver: *Driver, width: u15, height: u15) void {
 }
 
 fn setBorder(driver: *Driver, color: ColorIndex) void {
-    const vd: *Virtual_Video_Output = @fieldParentPtr("driver", driver);
+    const vd = driver.resolve(Virtual_Video_Output, "driver");
     _ = vd;
     _ = color;
 }
 
 fn getBorder(driver: *Driver) ColorIndex {
-    const vd: *Virtual_Video_Output = @fieldParentPtr("driver", driver);
+    const vd = driver.resolve(Virtual_Video_Output, "driver");
     _ = vd;
     return ColorIndex.get(0);
 }
 
 fn flush(driver: *Driver) void {
-    const vd: *Virtual_Video_Output = @fieldParentPtr("driver", driver);
+    const vd = driver.resolve(Virtual_Video_Output, "driver");
     _ = vd;
 }
