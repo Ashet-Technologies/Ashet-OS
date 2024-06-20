@@ -143,6 +143,12 @@ pub const Driver = struct {
             @panic("driver corrupted");
         }
     }
+
+    /// Returns the parent structure of the driver.
+    /// Assumes `<Actual>.<field_name>` is a field to a `Driver` type.
+    pub fn resolve(dri: *Driver, comptime Actual: type, comptime field_name: []const u8) *Actual {
+        return @alignCast(@fieldParentPtr(field_name, dri));
+    }
 };
 
 pub const DriverClass = enum {

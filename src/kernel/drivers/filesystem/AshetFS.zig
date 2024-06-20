@@ -218,7 +218,7 @@ const Instance = struct {
     }
 
     fn getPtr(p: *GenericInstance) *Instance {
-        return @fieldParentPtr("generic", p);
+        return @alignCast(@fieldParentPtr("generic", p));
     }
 
     const vtable = GenericInstance.VTable{
@@ -285,7 +285,7 @@ const Enumerator = struct {
     }
 
     fn getPtr(p: *GenericEnumerator) *Enumerator {
-        return @fieldParentPtr("generic", p);
+        return @alignCast(@fieldParentPtr("generic", p));
     }
 
     const vtable = GenericEnumerator.VTable{

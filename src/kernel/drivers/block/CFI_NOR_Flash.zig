@@ -128,7 +128,7 @@ pub fn CfiDeviceImpl(comptime InterfaceWidth: type) type {
             for (&bytes, 0..) |*b, i| {
                 b.* = @as(u8, @truncate(base[reg + i]));
             }
-            return std.mem.readIntLittle(T, &bytes);
+            return std.mem.readInt(T, &bytes, .little);
         }
 
         fn present(driver: *Driver) bool {

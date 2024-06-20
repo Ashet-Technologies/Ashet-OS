@@ -204,7 +204,7 @@ fn mapToMouseButton(val: u16) ?ashet.abi.MouseButton {
 }
 
 fn poll(driver: *Driver) void {
-    const device: *Virtio_Input_Device = @fieldParentPtr("driver", driver);
+    const device: *Virtio_Input_Device = driver.resolve(Virtio_Input_Device, "driver");
 
     device_fetch: while (true) {
         const evt = getDeviceEvent(device) orelse break :device_fetch;
