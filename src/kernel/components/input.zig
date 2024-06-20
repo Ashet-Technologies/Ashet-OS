@@ -277,7 +277,7 @@ pub const keyboard = struct {
         mapping: *const Map,
 
         pub fn compile(comptime source_def: []const u8) Layout {
-            comptime var mapping = blk: {
+            const mapping = comptime blk: {
                 const Entry = struct {
                     keycode: Key,
                     strings: Strings = .{},
@@ -354,7 +354,7 @@ pub const keyboard = struct {
         }
 
         fn internString(comptime len: comptime_int, comptime items: [len]u8) [*:0]const u8 {
-            comptime var storage: [len + 1]u8 = items ++ [1]u8{0};
+            const storage: [len + 1]u8 = comptime items ++ [1]u8{0};
             return storage[0..len :0];
         }
 
@@ -378,7 +378,7 @@ pub const keyboard = struct {
         entries: []const ?Key,
 
         pub fn compile(comptime source_def: []const u8) Model {
-            comptime var mapping = blk: {
+            const mapping = comptime blk: {
                 const Entry = struct {
                     scancode: u16,
                     keycode: Key,

@@ -109,11 +109,13 @@ pub fn parse(comptime base: u8, comptime spec: []const u8) Bitmap {
             }
         }
 
+        const const_buffer = buffer;
+
         break :blk Bitmap{
             .width = width,
             .height = height,
             .stride = width,
-            .pixels = @as([*]ColorIndex, @ptrCast(&buffer)),
+            .pixels = @as([*]const ColorIndex, @ptrCast(&const_buffer)),
             .transparent = transparent,
         };
     };

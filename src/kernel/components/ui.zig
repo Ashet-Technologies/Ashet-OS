@@ -1566,11 +1566,12 @@ pub const desktop = struct {
                 c.* = if ((y + x) % 2 == 0) ColorIndex.get(0x01) else ColorIndex.get(0x00);
             }
         }
+        const buffer_copy = buffer;
         break :blk Bitmap{
             .width = Icon.width + 2,
             .height = Icon.height + 2,
             .stride = Icon.width + 2,
-            .pixels = @as([*]ColorIndex, @ptrCast(&buffer)),
+            .pixels = @as([*]const ColorIndex, @ptrCast(&buffer_copy)),
             .transparent = ColorIndex.get(0x01),
         };
     };
