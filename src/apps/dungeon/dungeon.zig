@@ -283,7 +283,7 @@ const Raycaster = struct {
 
                 // project the wall height onto the screen and
                 // adjust the zbuffer
-                wallHeight = @as(u32, @intFromFloat(height / @fabs(result.distance) + 0.5));
+                wallHeight = @as(u32, @intFromFloat(height / @abs(result.distance) + 0.5));
                 // std.log.info("x={} => d={d} => {}", .{ x, result.distance, wallHeight });
                 break :blk result.distance;
             } else std.math.inf(f32); // no hit means infinite distance
@@ -397,9 +397,9 @@ const Raycaster = struct {
 
     fn drawSprite(rc: Raycaster, fb: gui.Framebuffer, sprite: Sprite) void {
         const delta = sprite.position.sub(rc.camera_position);
-        const angle = angdiff(std.math.atan2(f32, delta.y, delta.x), rc.camera_rotation);
+        const angle = angdiff(std.math.atan2(delta.y, delta.x), rc.camera_rotation);
 
-        if (@fabs(angle) > std.math.pi / 2.0)
+        if (@abs(angle) > std.math.pi / 2.0)
             return;
 
         const distance2 = delta.length2();

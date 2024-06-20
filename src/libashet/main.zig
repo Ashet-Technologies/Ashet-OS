@@ -5,13 +5,20 @@ pub const abi = @import("ashet-abi");
 
 pub const syscall = abi.syscall;
 
-pub const is_hosted = builtin.is_test or (builtin.target.os.tag != .freestanding);
+pub const is_hosted = builtin.is_test or (builtin.target.os.tag != .other and builtin.target.os.tag != .freestanding);
+
+// comptime {
+//     TODO:
+//     if (builtin.target.os.tag == .freestanding) {
+//         @compileError("OS tag '.freestanding' is legacy code and must not be used anymore. Apps now have to be compiled with OS tag '.other!'");
+//     }
+// }
 
 comptime {
     if (!is_hosted) {
         if (@hasDecl(@import("root"), "main")) {
             @export(_start, .{
-                .linkage = .Strong,
+                .linkage = .strong,
                 .name = "_start",
             });
         }
@@ -48,23 +55,25 @@ fn _start() callconv(.C) u32 {
     unreachable;
 }
 
+fn log_app_message(
+    comptime message_level: std.log.Level,
+    comptime scope: @Type(.EnumLiteral),
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    const level_txt = comptime message_level.asText();
+    const prefix2 = if (scope == .default) ": " else "(" ++ @tagName(scope) ++ "): ";
+
+    var writer = std.io.Writer(void, debug.WriteError, debug.writeString){ .context = {} };
+
+    writer.print(level_txt ++ prefix2 ++ format ++ "\r\n", args) catch unreachable;
+}
+
 pub const core = struct {
     var nested_panic: bool = false;
 
-    pub const std_options = struct {
-        pub fn logFn(
-            comptime message_level: std.log.Level,
-            comptime scope: @Type(.EnumLiteral),
-            comptime format: []const u8,
-            args: anytype,
-        ) void {
-            const level_txt = comptime message_level.asText();
-            const prefix2 = if (scope == .default) ": " else "(" ++ @tagName(scope) ++ "): ";
-
-            var writer = std.io.Writer(void, debug.WriteError, debug.writeString){ .context = {} };
-
-            writer.print(level_txt ++ prefix2 ++ format ++ "\r\n", args) catch unreachable;
-        }
+    pub const std_options = std.Options{
+        .logFn = log_app_message,
     };
 
     pub fn panic(msg: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, maybe_return_address: ?usize) noreturn {

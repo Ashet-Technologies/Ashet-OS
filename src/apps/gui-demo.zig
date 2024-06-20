@@ -47,8 +47,7 @@ var radio_group = gui.RadioGroup{};
 var main_window = MainWindow{};
 
 var widgets = blk: {
-    var list = [_]gui.Widget{};
-
+    const list = [_]gui.Widget{};
     break :blk list;
 };
 

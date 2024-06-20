@@ -187,7 +187,7 @@ pub const Interface = struct {
                                     .horizontal => click_point.x - rects.knob_button.x,
                                 };
                                 const rel_pos = @divTrunc(100 *| pos, size);
-                                const abs_jump = std.math.absCast(rel_pos);
+                                const abs_jump = @abs(rel_pos);
 
                                 const var_step_size: u15 = if (abs_jump > 50)
                                     30

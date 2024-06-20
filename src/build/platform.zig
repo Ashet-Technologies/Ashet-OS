@@ -54,7 +54,7 @@ pub fn init(b: *std.Build, modules: common.Modules) PlatformData {
         const libsyscall = b.addSharedLibrary(.{
             .name = "AshetOS",
             .target = b.resolveTargetQuery(platform_spec.target),
-            .optimize = .ReleaseSafe,
+            .optimize = .ReleaseSmall,
             .root_source_file = b.path("src/abi/libsyscall.zig"),
         });
         libsyscall.root_module.addImport("abi", modules.ashet_abi);

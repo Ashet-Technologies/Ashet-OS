@@ -35,6 +35,7 @@ pub const MachineSpec = struct {
 };
 
 pub fn getPlatformSpec(platform: Platform) *const PlatformSpec {
+    const os_tag = .other; // TODO: ZIG-20355 Replace with "other" or "ashetos"
     return switch (platform) {
         .riscv => comptime &PlatformSpec{
             .name = "RISC-V",
@@ -43,8 +44,9 @@ pub fn getPlatformSpec(platform: Platform) *const PlatformSpec {
             .start_file = null,
             .target = .{
                 .cpu_arch = .riscv32,
-                .os_tag = .freestanding,
+                .os_tag = os_tag,
                 .abi = .eabi,
+                .ofmt = .elf,
                 .cpu_model = .{ .explicit = &std.Target.riscv.cpu.generic_rv32 },
                 .cpu_features_add = std.Target.riscv.featureSet(&[_]std.Target.riscv.Feature{
                     .c,
@@ -62,8 +64,9 @@ pub fn getPlatformSpec(platform: Platform) *const PlatformSpec {
             .start_file = null,
             .target = .{
                 .cpu_arch = .thumb,
-                .os_tag = .freestanding,
+                .os_tag = os_tag,
                 .abi = .eabi,
+                .ofmt = .elf,
                 .cpu_model = .{
                     // .explicit = &std.Target.arm.cpu.cortex_a7, // this seems to be a pretty reasonable base line
                     .explicit = &std.Target.arm.cpu.generic,
@@ -99,8 +102,9 @@ pub fn getPlatformSpec(platform: Platform) *const PlatformSpec {
             .start_file = null,
             .target = .{
                 .cpu_arch = .x86,
-                .os_tag = .freestanding,
-                .abi = .musleabi,
+                .os_tag = os_tag,
+                .abi = .eabi,
+                .ofmt = .elf,
                 .cpu_model = .{ .explicit = &std.Target.x86.cpu.i486 },
                 .cpu_features_add = std.Target.x86.featureSet(&.{
                     .soft_float,
@@ -119,8 +123,9 @@ pub fn getPlatformSpec(platform: Platform) *const PlatformSpec {
             .start_file = .{ .cwd_relative = "src/kernel/port/platform/hosted-startup.zig" },
             .target = .{
                 .cpu_arch = .x86,
-                .os_tag = .freestanding,
-                .abi = .musl,
+                .os_tag = os_tag,
+                .abi = .eabi,
+                .ofmt = .elf,
                 .cpu_model = .{ .explicit = &std.Target.x86.cpu.i686 },
             },
             .qemu_exe = "echo",

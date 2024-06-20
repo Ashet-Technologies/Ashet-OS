@@ -117,7 +117,7 @@ pub fn main() !void {
                     wiki_software.handleEvent(guievt);
 
                 if (data.type == .button_press) {
-                    var point = Point.new(data.x, data.y);
+                    const point = Point.new(data.x, data.y);
 
                     const tree_view_bounds = main_window.tree_view.bounds.shrink(3);
                     const doc_view_bounds = main_window.doc_view.bounds.shrink(3);
@@ -245,7 +245,7 @@ const WikiSoftware = struct {
         }
 
         if (wiki.document) |*page| {
-            var doc_fb = fb.view(main_window.doc_view.bounds.shrink(4));
+            const doc_fb = fb.view(main_window.doc_view.bounds.shrink(4));
 
             page.links.shrinkRetainingCapacity(0);
 
@@ -300,7 +300,7 @@ const WikiSoftware = struct {
         var arena = std.heap.ArenaAllocator.init(ashet.process.allocator());
         defer arena.deinit();
 
-        const path = try std.Uri.unescapeString(arena.allocator(), uri.path);
+        const path = try uri.path.toRawMaybeAlloc(arena.allocator());
 
         if (std.mem.eql(u8, uri.scheme, "wiki")) {
             if (uri.host != null)
@@ -515,7 +515,7 @@ fn loadIndex(root: *ashet.fs.Directory, allocator: std.mem.Allocator) !Index {
     var path_buffer = std.ArrayList(u8).init(arena.allocator());
     defer path_buffer.deinit();
 
-    var root_node = try loadIndexFolder(root, arena.allocator(), &path_buffer);
+    const root_node = try loadIndexFolder(root, arena.allocator(), &path_buffer);
 
     var map = LeafMap.init(arena.allocator());
     errdefer map.deinit();

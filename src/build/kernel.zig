@@ -67,7 +67,10 @@ pub fn create(b: *std.Build, options: KernelOptions) *std.Build.Step.Compile {
         break :blk module;
     };
 
-    const kernel_target = b.resolveTargetQuery(machine_spec.alt_target orelse platform_spec.target);
+    var bad_kernel_target = machine_spec.alt_target orelse platform_spec.target;
+    bad_kernel_target.os_tag = .freestanding;
+
+    const kernel_target = b.resolveTargetQuery(bad_kernel_target);
 
     const libc = options.platforms.libc.get(machine_spec.platform);
 

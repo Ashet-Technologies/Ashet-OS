@@ -300,7 +300,7 @@ const App = struct {
     cursor_blink_visible: bool = false,
 
     pub fn paint(app: *App) void {
-        var fb = gui.Framebuffer.forWindow(app.window);
+        const fb = gui.Framebuffer.forWindow(app.window);
 
         app.widgets.interface.paint(fb);
 
@@ -433,7 +433,7 @@ const App = struct {
     }
 
     fn openNewTabDialog(app: *App) !void {
-        var window = try ashet.ui.createWindow(
+        const window = try ashet.ui.createWindow(
             "New Terminal",
             gui.Size.new(100, 130),
             gui.Size.new(100, 130),
@@ -698,7 +698,7 @@ pub fn main() !void {
     app.paint();
 
     app_loop: while (true) {
-        var iop_list: ?*ashet.abi.IOP = ashet.io.scheduleAndAwait(null, .wait_one);
+        const iop_list: ?*ashet.abi.IOP = ashet.io.scheduleAndAwait(null, .wait_one);
 
         var iter = ashet.io.iterate(iop_list);
 

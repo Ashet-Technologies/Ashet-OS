@@ -75,7 +75,7 @@ pub const dummy_logo = parse(
 fn parsedSpriteSize(comptime def: []const u8) ashet.ui.Size {
     @setEvalBranchQuota(100_000);
     var it = std.mem.split(u8, def, "\n");
-    var first = it.next().?;
+    const first = it.next().?;
     const width = first.len;
     var height = 1;
     while (it.next()) |line| {
