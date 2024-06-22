@@ -1,6 +1,7 @@
 .{
     .name = "ashet-os",
     .version = "0.1.0",
+    .minimum_zig_version = "0.13.1",
     .dependencies = .{
         .zfat = .{
             .url = "https://github.com/ZigEmbeddedGroup/zfat/archive/6c9fcecd0326c8f3bf3353afbee6b3f5987d49ca.tar.gz",

@@ -1,8 +1,0 @@
-include_dir=vendor/ziglibc/inc/libc
-sys_include_dir=vendor/ziglibc/inc/libc
-
-crt_dir=zig-out/lib
-
-msvc_lib_dir=
-kernel32_lib_dir=
-gcc_dir=

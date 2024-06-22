@@ -212,8 +212,6 @@ pub const input = struct {
     }
 };
 
-pub const console = @import("console.zig");
-
 pub const debug = struct {
     pub fn write(buffer: []const u8) void {
         if (is_hosted) {

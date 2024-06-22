@@ -42,18 +42,6 @@ pub fn getPlatformSpec(platform: Platform) *const PlatformSpec {
             .platform_id = "riscv",
             .source_file = "src/kernel/port/platform/riscv.zig",
             .start_file = null,
-            .target = .{
-                .cpu_arch = .riscv32,
-                .os_tag = os_tag,
-                .abi = .eabi,
-                .ofmt = .elf,
-                .cpu_model = .{ .explicit = &std.Target.riscv.cpu.generic_rv32 },
-                .cpu_features_add = std.Target.riscv.featureSet(&[_]std.Target.riscv.Feature{
-                    .c,
-                    .m,
-                    .reserve_x4, // Don't allow LLVM to use the "tp" register. We want that for our own purposes
-                }),
-            },
             .qemu_exe = "qemu-system-riscv32",
         },
 
@@ -62,36 +50,6 @@ pub fn getPlatformSpec(platform: Platform) *const PlatformSpec {
             .platform_id = "arm",
             .source_file = "src/kernel/port/platform/arm.zig",
             .start_file = null,
-            .target = .{
-                .cpu_arch = .thumb,
-                .os_tag = os_tag,
-                .abi = .eabi,
-                .ofmt = .elf,
-                .cpu_model = .{
-                    // .explicit = &std.Target.arm.cpu.cortex_a7, // this seems to be a pretty reasonable base line
-                    .explicit = &std.Target.arm.cpu.generic,
-                },
-                .cpu_features_add = std.Target.arm.featureSet(&.{
-                    .v7a,
-                }),
-                .cpu_features_sub = std.Target.arm.featureSet(&.{
-                    .v7a, // this is stupid, but it keeps out all the neon stuff we don't wnat
-
-                    // drop everything FPU related:
-                    .neon,
-                    .neonfp,
-                    .neon_fpmovs,
-                    .fp64,
-                    .fpregs,
-                    .fpregs64,
-                    .vfp2,
-                    .vfp2sp,
-                    .vfp3,
-                    .vfp3d16,
-                    .vfp3d16sp,
-                    .vfp3sp,
-                }),
-            },
             .qemu_exe = "qemu-system-arm",
         },
 
@@ -100,19 +58,6 @@ pub fn getPlatformSpec(platform: Platform) *const PlatformSpec {
             .platform_id = "x86",
             .source_file = "src/kernel/port/platform/x86.zig",
             .start_file = null,
-            .target = .{
-                .cpu_arch = .x86,
-                .os_tag = os_tag,
-                .abi = .eabi,
-                .ofmt = .elf,
-                .cpu_model = .{ .explicit = &std.Target.x86.cpu.i486 },
-                .cpu_features_add = std.Target.x86.featureSet(&.{
-                    .soft_float,
-                }),
-                .cpu_features_sub = std.Target.x86.featureSet(&.{
-                    .x87,
-                }),
-            },
             .qemu_exe = "qemu-system-i386",
         },
 
@@ -121,13 +66,6 @@ pub fn getPlatformSpec(platform: Platform) *const PlatformSpec {
             .platform_id = "hosted",
             .source_file = "src/kernel/port/platform/hosted.zig",
             .start_file = .{ .cwd_relative = "src/kernel/port/platform/hosted-startup.zig" },
-            .target = .{
-                .cpu_arch = .x86,
-                .os_tag = os_tag,
-                .abi = .eabi,
-                .ofmt = .elf,
-                .cpu_model = .{ .explicit = &std.Target.x86.cpu.i686 },
-            },
             .qemu_exe = "echo",
         },
     };

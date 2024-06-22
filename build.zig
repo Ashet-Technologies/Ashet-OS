@@ -1,15 +1,12 @@
 const std = @import("std");
 
 const disk_image_step = @import("disk-image-step");
-// const syslinux_build_zig = @import("vendor/syslinux/build.zig");
 
 const ashet_com = @import("src/build/os-common.zig");
 const ashet_apps = @import("src/build/apps.zig");
 const ashet_kernel = @import("src/build/kernel.zig");
 const AssetBundleStep = @import("src/build/AssetBundleStep.zig");
 const BitmapConverter = @import("src/build/BitmapConverter.zig");
-
-// const ziglibc_file = std.build.FileSource{ .path = "vendor/libc/ziglibc.txt" };
 
 const kernel_targets = @import("src/kernel/port/targets.zig");
 const build_targets = @import("src/build/targets.zig");
