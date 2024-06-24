@@ -7,16 +7,16 @@ pub fn main() !void {
 
     const writer = output.writer();
 
-    try writer.writeIntLittle(u32, 0xcb3765be);
-    try writer.writeIntLittle(u32, 8);
-    try writer.writeIntLittle(u32, 256);
+    try writer.writeInt(u32, 0xcb3765be, .little);
+    try writer.writeInt(u32, 8, .little);
+    try writer.writeInt(u32, 256, .little);
 
     for (0..256) |cp| {
-        try writer.writeIntLittle(u32, @as(u32, @intCast(cp)) | (6 << 24));
+        try writer.writeInt(u32, @as(u32, @intCast(cp)) | (6 << 24), .little);
     }
 
     for (0..256) |i| {
-        try writer.writeIntLittle(u32, @as(u32, @intCast(10 * i)));
+        try writer.writeInt(u32, @intCast(10 * i), .little);
     }
 
     const src_w = 7;
@@ -28,7 +28,7 @@ pub fn main() !void {
     const dst_w = 6;
     const dst_h = 8;
 
-    const source_pixels = @embedFile("../src/libgui/fonts/6x8.raw");
+    const source_pixels = @embedFile("raw_font");
     if (source_pixels.len != src_w * src_h * 256)
         @compileError(std.fmt.comptimePrint("Font file must be 16 by 16 characters of size {}x{}", .{ src_w, src_h }));
 
@@ -40,10 +40,10 @@ pub fn main() !void {
         const cx = c % 16;
         const cy = c / 16;
 
-        try writer.writeIntLittle(u8, 6); // glyph width
-        try writer.writeIntLittle(u8, 8); // glyph height
-        try writer.writeIntLittle(i8, 0); // offset x
-        try writer.writeIntLittle(i8, 0); // offset y
+        try writer.writeInt(u8, 6, .little); // glyph width
+        try writer.writeInt(u8, 8, .little); // glyph height
+        try writer.writeInt(i8, 0, .little); // offset x
+        try writer.writeInt(i8, 0, .little); // offset y
 
         var x: usize = 0;
         while (x < dst_w) : (x += 1) {
@@ -59,11 +59,11 @@ pub fn main() !void {
                 const pix = source_pixels[src_i];
 
                 if (pix != 0) {
-                    bits |= @as(u8, 1) << @as(u3, @intCast(y));
+                    bits |= @as(u8, 1) << @intCast(y);
                 }
             }
 
-            try writer.writeIntLittle(u8, bits);
+            try writer.writeInt(u8, bits, .little);
         }
     }
 }
