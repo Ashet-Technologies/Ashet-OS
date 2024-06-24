@@ -192,7 +192,6 @@ pub fn build(b: *std.Build) !void {
         .vnc = mod_vnc,
     };
 
-
     const debug_filter = blk: {
         const debug_filter = b.addExecutable(.{
             .name = "debug-filter",
@@ -437,7 +436,6 @@ const console_qemu_flags = [_][]const u8{
     "-display", "none",
 };
 
-
 const OS = struct {
     kernel_elf: std.Build.LazyPath,
     kernel_bin: std.Build.LazyPath,
@@ -459,7 +457,6 @@ fn buildOs(
     platforms: platforms_build.PlatformData,
 ) OS {
     var rootfs = disk_image_step.FileSystemBuilder.init(b);
-
 
     var ui_gen = ashet_com.UiGenerator{
         .builder = b,
@@ -531,18 +528,6 @@ fn buildOs(
         );
     }
 
-    const disk_formatter = getDiskFormatter(machine_spec.disk_formatter);
-
-    const disk_image = disk_formatter(b, kernel_file, &rootfs);
-
-    const install_disk_image = b.addInstallFileWithDir(
-        disk_image,
-        .{ .custom = "disk" },
-        b.fmt("{s}.img", .{machine_spec.machine_id}),
-    );
-
-    b.getInstallStep().dependOn(&install_disk_image.step);
-
     return OS{
         .disk_img = disk_image,
         .kernel_bin = raw_step.getOutputSource(),
@@ -564,225 +549,4 @@ fn writeAllMachineInfo() !void {
     try writer.writeAll("Please fix your command line!\n");
 }
 
-fn getDiskFormatter(name: []const u8) *const fn (*std.Build, std.Build.LazyPath, *disk_image_step.FileSystemBuilder) std.Build.LazyPath {
-    inline for (comptime std.meta.declarations(disk_formatters)) |fmt_decl| {
-        if (std.mem.eql(u8, fmt_decl.name, name)) {
-            return @field(disk_formatters, fmt_decl.name);
-        }
-    }
-    @panic("Machine has invalid disk formatter defined!");
-}
 
-pub fn generic_virt_formatter(b: *std.Build, kernel_file: std.Build.LazyPath, disk_content: *disk_image_step.FileSystemBuilder, disk_image_size: usize) std.Build.LazyPath {
-    _ = kernel_file;
-
-    const disk_image_dep = b.dependency("disk-image-step", .{});
-
-    const disk = disk_image_step.initializeDisk(
-        disk_image_dep,
-        disk_image_size,
-        .{
-            .fs = disk_content.finalize(.{ .format = .fat16, .label = "AshetOS" }),
-        },
-    );
-
-    return disk.getImageFile();
-}
-
-const disk_formatters = struct {
-
-    // if (kernel_exe.target.getCpuArch() == .x86 or kernel_exe.target.getCpuArch() == .x86_64) {
-    //     // prepare PXE environment:
-
-    //     const install_pxe_kernel = b.addInstallArtifact(kernel_exe, .{
-    //         .dest_dir = .{ .override = .{ .custom = "pxe" } },
-    //     });
-
-    //     const install_pxe_root = b.addInstallDirectory(.{
-    //         .source_dir = b.path("rootfs-pxe"),
-    //         .install_dir = .{ .custom = "pxe" },
-    //         .install_subdir = ".",
-    //     });
-
-    //     b.getInstallStep().dependOn(&install_pxe_root.step);
-    //     b.getInstallStep().dependOn(&install_pxe_kernel.step);
-    // }
-
-    // // Makes sure zig-out/disk.img exists, but doesn't touch the data at all
-    // const setup_disk_cmd = b.addSystemCommand(&.{
-    //     "fallocate",
-    //     "-l",
-    //     "32M",
-    //     "zig-out/disk.img",
-    // });
-
-    // const run_cmd = b.addSystemCommand(&.{"qemu-system-riscv32"});
-    // run_cmd.addArgs(&.{
-    //     "-M", "virt",
-    //     "-m",      "32M", // we have *some* overhead on the virt platform
-    //     "-device", "virtio-gpu-device,xres=400,yres=300",
-    //     "-device", "virtio-keyboard-device",
-    //     "-device", "virtio-mouse-device",
-    //     "-d",      "guest_errors",
-    //     "-bios",   "none",
-    //     "-drive",  "if=pflash,index=0,file=zig-out/bin/ashet-os.bin,format=raw",
-    //     "-drive",  "if=pflash,index=1,file=zig-out/disk.img,format=raw",
-    // });
-    // run_cmd.step.dependOn(&setup_disk_cmd.step);
-    // run_cmd.step.dependOn(b.getInstallStep());
-    // if (b.args) |args| {
-    //     run_cmd.addArgs(args);
-    // }
-
-    // const run_step = b.step("run", "Run the app");
-    // run_step.dependOn(&run_cmd.step);
-
-    pub fn rv32_virt(b: *std.Build, kernel_file: std.Build.LazyPath, disk_content: *disk_image_step.FileSystemBuilder) std.Build.LazyPath {
-        return generic_virt_formatter(b, kernel_file, disk_content, 0x0200_0000);
-    }
-
-    pub fn arm_virt(b: *std.Build, kernel_file: std.Build.LazyPath, disk_content: *disk_image_step.FileSystemBuilder) std.Build.LazyPath {
-        return generic_virt_formatter(b, kernel_file, disk_content, 0x0400_0000);
-    }
-
-    pub fn linux_pc(b: *std.Build, kernel_file: std.Build.LazyPath, disk_content: *disk_image_step.FileSystemBuilder) std.Build.LazyPath {
-        return generic_virt_formatter(b, kernel_file, disk_content, 0x0400_0000);
-    }
-
-    pub fn bios_pc(b: *std.Build, kernel_file: std.Build.LazyPath, disk_content: *disk_image_step.FileSystemBuilder) std.Build.LazyPath {
-        disk_content.addFile(kernel_file, "/ashet-os");
-
-        disk_content.addFile(b.path("./rootfs-x86/syslinux/modules.alias"), "syslinux/modules.alias");
-        disk_content.addFile(b.path("./rootfs-x86/syslinux/pci.ids"), "syslinux/pci.ids");
-        disk_content.addFile(b.path("./rootfs-x86/syslinux/syslinux.cfg"), "syslinux/syslinux.cfg");
-
-        disk_content.addFile(b.path("./vendor/syslinux/vendor/syslinux-6.03/bios/com32/cmenu/libmenu/libmenu.c32"), "syslinux/libmenu.c32");
-        disk_content.addFile(b.path("./vendor/syslinux/vendor/syslinux-6.03/bios/com32/gpllib/libgpl.c32"), "syslinux/libgpl.c32");
-        disk_content.addFile(b.path("./vendor/syslinux/vendor/syslinux-6.03/bios/com32/hdt/hdt.c32"), "syslinux/hdt.c32");
-        disk_content.addFile(b.path("./vendor/syslinux/vendor/syslinux-6.03/bios/com32/lib/libcom32.c32"), "syslinux/libcom32.c32");
-        disk_content.addFile(b.path("./vendor/syslinux/vendor/syslinux-6.03/bios/com32/libutil/libutil.c32"), "syslinux/libutil.c32");
-        disk_content.addFile(b.path("./vendor/syslinux/vendor/syslinux-6.03/bios/com32/mboot/mboot.c32"), "syslinux/mboot.c32");
-        disk_content.addFile(b.path("./vendor/syslinux/vendor/syslinux-6.03/bios/com32/menu/menu.c32"), "syslinux/menu.c32");
-        disk_content.addFile(b.path("./vendor/syslinux/vendor/syslinux-6.03/bios/com32/modules/poweroff.c32"), "syslinux/poweroff.c32");
-        disk_content.addFile(b.path("./vendor/syslinux/vendor/syslinux-6.03/bios/com32/modules/reboot.c32"), "syslinux/reboot.c32");
-
-        const disk_image_dep = b.dependency("disk-image-step", .{});
-
-        const disk = disk_image_step.initializeDisk(disk_image_dep, 500 * disk_image_step.MiB, .{
-            .mbr = .{
-                .bootloader = @embedFile("./vendor/syslinux/vendor/syslinux-6.03/bios/mbr/mbr.bin").*,
-                .partitions = .{
-                    &.{
-                        .type = .fat32_lba,
-                        .bootable = true,
-                        .size = 499 * disk_image_step.MiB,
-                        .data = .{ .fs = disk_content.finalize(.{ .format = .fat32, .label = "AshetOS" }) },
-                    },
-                    null,
-                    null,
-                    null,
-                },
-            },
-        });
-
-        // const syslinux_dep = b.anonymousDependency("./vendor/syslinux/", syslinux_build_zig, .{
-        //     .release = true,
-        // });
-
-        const syslinux_dep = b.dependency("syslinux", .{ .release = true });
-
-        const syslinux_installer = syslinux_dep.artifact("syslinux");
-
-        const raw_disk_file = disk.getImageFile();
-
-        const install_syslinux = InstallSyslinuxStep.create(b, syslinux_installer, raw_disk_file);
-
-        return .{ .generated = .{ .file = install_syslinux.output_file } };
-    }
-};
-
-const InstallSyslinuxStep = struct {
-    step: std.Build.Step,
-    output_file: *std.Build.GeneratedFile,
-    input_file: std.Build.LazyPath,
-    syslinux: *std.Build.Step.Compile,
-
-    pub fn create(builder: *std.Build, syslinux: *std.Build.Step.Compile, input_file: std.Build.LazyPath) *InstallSyslinuxStep {
-        const bundle = builder.allocator.create(InstallSyslinuxStep) catch @panic("oom");
-        errdefer builder.allocator.destroy(bundle);
-
-        const outfile = builder.allocator.create(std.Build.GeneratedFile) catch @panic("oom");
-        errdefer builder.allocator.destroy(outfile);
-
-        outfile.* = .{ .step = &bundle.step };
-
-        bundle.* = InstallSyslinuxStep{
-            .step = std.Build.Step.init(.{
-                .id = .custom,
-                .name = "install syslinux",
-                .owner = builder,
-                .makeFn = make,
-                .first_ret_addr = null,
-                .max_rss = 0,
-            }),
-            .syslinux = syslinux,
-            .input_file = input_file,
-            .output_file = outfile,
-        };
-        input_file.addStepDependencies(&bundle.step);
-        bundle.step.dependOn(&syslinux.step);
-
-        return bundle;
-    }
-
-    fn make(step: *std.Build.Step, node: std.Progress.Node) !void {
-        _ = node;
-
-        const iss: *InstallSyslinuxStep = @fieldParentPtr("step", step);
-        const b = step.owner;
-
-        const disk_image = iss.input_file.getPath2(b, step);
-
-        var man = b.graph.cache.obtain();
-        defer man.deinit();
-
-        _ = try man.addFile(disk_image, null);
-
-        step.result_cached = try step.cacheHit(&man);
-        const digest = man.final();
-
-        const output_components = .{ "o", &digest, "disk.img" };
-        const output_sub_path = b.pathJoin(&output_components);
-        const output_sub_dir_path = std.fs.path.dirname(output_sub_path).?;
-        b.cache_root.handle.makePath(output_sub_dir_path) catch |err| {
-            return step.fail("unable to make path '{}{s}': {s}", .{
-                b.cache_root, output_sub_dir_path, @errorName(err),
-            });
-        };
-
-        iss.output_file.path = try b.cache_root.join(b.allocator, &output_components);
-
-        if (step.result_cached)
-            return;
-
-        try std.fs.Dir.copyFile(
-            b.cache_root.handle,
-            disk_image,
-            b.cache_root.handle,
-            iss.output_file.path.?,
-            .{},
-        );
-
-        _ = step.owner.run(&.{
-            iss.syslinux.getEmittedBin().getPath2(iss.syslinux.step.owner, step),
-            "--offset",
-            "2048",
-            "--install",
-            "--directory",
-            "syslinux", // path *inside* the image
-            iss.output_file.path.?,
-        });
-
-        try step.writeManifest(&man);
-    }
-};

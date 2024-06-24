@@ -1,5 +1,5 @@
 const std = @import("std");
-const abiBuild = @import("abi");
+const abiBuild = @import("ashet-abi");
 const Platform = abiBuild.Platform;
 
 pub const Machine = @import("port/machine_id.zig").MachineID;

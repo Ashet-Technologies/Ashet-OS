@@ -4,7 +4,7 @@
     .paths = .{"."},
     .dependencies = .{
         // Internal dependencies:
-        .abi = .{
+        .@"ashet-abi" = .{
             .path = "../abi",
         },
 

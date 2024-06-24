@@ -1,12 +1,37 @@
 const std = @import("std");
 const kernel_package = @import("kernel");
 
-const TargetMachine = kernel_package.TargetMachine;
+const Machine = kernel_package.Machine;
 
 pub fn build(b: *std.Build) void {
-    const run_machine = b.option(TargetMachine, "machine", "Selects which machine to run with the 'run' step");
+    // Steps:
 
-    _ = run_machine;
+    const machine_steps = blk: {
+        var steps = std.EnumArray(Machine, *std.Build.Step).initUndefined();
+        for (std.enums.values(Machine)) |machine| {
+            const step = b.step(
+                @tagName(machine),
+                b.fmt("Compiles the OS for {s}", .{@tagName(machine)}),
+            );
+            b.getInstallStep().dependOn(step);
+            steps.set(machine, step);
+        }
+        break :blk steps;
+    };
+
+    // Options:
+    const maybe_run_machine = b.option(Machine, "machine", "Selects which machine to run with the 'run' step");
+
+    // Build:
+
+    _ = machine_steps;
+
+    if (maybe_run_machine) |run_machine| {
+        const run_step = b.step("run", b.fmt("Runs the OS machine {s}", .{@tagName(run_machine)}));
+
+        // TODO: Implement run step here!
+        _ = run_step;
+    }
 }
 
 const PlatformStartupConfig = struct {
@@ -33,7 +58,7 @@ const platform_info_map = std.EnumArray(PlatformStartupConfig, PlatformStartupCo
     },
 });
 
-const machine_info_map = std.EnumArray(TargetMachine, MachineStartupConfig).init(.{
+const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
     .@"pc-bios" = .{
         .qemu_cli = &.{
             "-machine", "pc",

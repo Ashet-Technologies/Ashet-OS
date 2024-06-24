@@ -1,4 +1,5 @@
 const std = @import("std");
+const abi = @import("ashet-abi");
 
 pub const MachineID = enum {
     // pi400,
@@ -21,6 +22,15 @@ pub const MachineID = enum {
             .@"qemu-virt-rv32" => "QEMU virt (RISC-V)",
             .@"qemu-virt-arm" => "QEMU virt (Arm)",
             .@"hosted-x86-linux" => "OS Hosted (x86, Linux)",
+        };
+    }
+
+    pub fn get_platform(target: MachineID) abi.Platform {
+        return switch (target) {
+            .@"pc-bios" => .x86,
+            .@"qemu-virt-rv32" => .rv32,
+            .@"qemu-virt-arm" => .arm,
+            .@"hosted-x86-linux" => .x86,
         };
     }
 };
