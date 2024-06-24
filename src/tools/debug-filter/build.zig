@@ -12,5 +12,8 @@ pub fn build(b: *std.Build) !void {
         .link_libc = true,
     });
 
+    const args_mod = b.dependency("args", .{}).module("args");
+    exe.root_module.addImport("args", args_mod);
+
     b.installArtifact(exe);
 }
