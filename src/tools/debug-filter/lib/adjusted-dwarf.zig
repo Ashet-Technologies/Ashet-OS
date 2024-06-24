@@ -435,7 +435,7 @@ const LineNumberProgram = struct {
         target_address: u64,
         version: u16,
     ) LineNumberProgram {
-        return LineNumberProgram{
+        return .{
             .address = 0,
             .file = 1,
             .line = 1,
@@ -544,7 +544,7 @@ fn parseFormValueConstant(in_stream: anytype, signed: bool, endian: std.builtin.
     // TODO: Please forgive me, I've worked around zig not properly spilling some intermediate values here.
     // `nosuspend` should be removed from all the function calls once it is fixed.
     return FormValue{
-        .Const = Constant{
+        .Const = .{
             .signed = signed,
             .payload = switch (size) {
                 1 => try nosuspend in_stream.readInt(u8, endian),
@@ -646,7 +646,7 @@ fn parseFormValue(comptime Address: type, allocator: mem.Allocator, in_stream: a
             defer allocator.destroy(frame);
             return await @asyncCall(frame, {}, parseFormValue, .{ allocator, in_stream, child_form_id, endian, is_64 });
         },
-        FORM.implicit_const => FormValue{ .Const = Constant{ .signed = true, .payload = undefined } },
+        FORM.implicit_const => FormValue{ .Const = .{ .signed = true, .payload = undefined } },
         FORM.loclistx => return FormValue{ .LocListOffset = try nosuspend leb.readULEB128(u64, in_stream) },
         FORM.rnglistx => return FormValue{ .RangeListOffset = try nosuspend leb.readULEB128(u64, in_stream) },
         else => {
@@ -1060,7 +1060,7 @@ pub const DwarfInfo = struct {
         if (abbrev_code == 0) return null;
         const table_entry = getAbbrevTableEntry(abbrev_table, abbrev_code) orelse return badDwarf();
 
-        var result = Die{
+        var result: Die = .{
             // Lives as long as the Die.
             .arena = std.heap.ArenaAllocator.init(allocator),
             .tag_id = table_entry.tag_id,
@@ -1068,7 +1068,7 @@ pub const DwarfInfo = struct {
         };
         try result.attrs.resize(allocator, table_entry.attrs.items.len);
         for (table_entry.attrs.items, 0..) |attr, i| {
-            result.attrs.items[i] = Die.Attr{
+            result.attrs.items[i] = .{
                 .id = attr.attr_id,
                 .value = try parseFormValue(
                     Address,

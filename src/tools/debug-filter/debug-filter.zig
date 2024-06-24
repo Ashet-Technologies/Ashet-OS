@@ -146,7 +146,7 @@ pub fn main() !u8 {
             const app_name = app_spec[0..splitter];
             const app_path = app_spec[splitter + 1 ..];
 
-            const prev = try elves.fetchPut(app_name, ElfFile{
+            const prev = try elves.fetchPut(app_name, .{
                 .name = app_name,
                 .path = app_path,
 
@@ -325,7 +325,7 @@ pub fn readElfDebugInfo(allocator: std.mem.Allocator, elf_file: std.fs.File) !dw
             }
         }
 
-        var di = dwarf.DwarfInfo{
+        var di: dwarf.DwarfInfo = .{
             .endian = endian,
             .debug_info = opt_debug_info orelse return error.MissingDebugInfo,
             .debug_abbrev = opt_debug_abbrev orelse return error.MissingDebugInfo,
