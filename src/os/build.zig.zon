@@ -1,0 +1,15 @@
+.{
+    .name = "AshetOS",
+    .version = "0.1.0",
+    .paths = .{ "build.zig", "build.zig.zon" },
+    .dependencies = .{
+        .@"disk-image-step" = .{
+            .url = "https://github.com/zig-osdev/disk-image-step/archive/a2a3ee1c20eaf67cdbe8434e2774690061bb12f1.tar.gz",
+            .hash = "1220e83b6376a42839a522403aa31ae8c2bff630f3c3a16dfb4eef4f930888a31cec",
+        },
+
+        .syslinux = .{
+            .path = "vendor/syslinux",
+        },
+    },
+}

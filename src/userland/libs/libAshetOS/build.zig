@@ -2,14 +2,17 @@ const std = @import("std");
 
 const ashet_abi = @import("abi");
 
-pub const Target = ashet_abi.ApplicationTarget;
+/// Applications target *platforms*, not explicit targets
+/// like Zig does.
+/// We just use the Ashet OS platform here.
+pub const Target = ashet_abi.Platform;
 
 pub fn standardTargetOption(b: *std.Build) Target {
     return b.option(Target, "target", "Sets the machine to build for") orelse @panic("-Dtarget required!");
 }
 
 pub fn addExecutable(b: *std.Build, options: ExecutableOptions) *std.Build.Step.Compile {
-    const zig_target = options.target.resolve(b);
+    const zig_target = options.target.resolve_target(b);
 
     const exe = b.addExecutable(.{
         .name = options.name,
@@ -54,7 +57,7 @@ pub fn build(b: *std.Build) void {
 
     // Build:
 
-    const target = ashet_target.resolve(b);
+    const target = ashet_target.resolve_target(b);
 
     const libsyscall = b.addSharedLibrary(.{
         .name = "AshetOS",

@@ -1,0 +1,29 @@
+.{
+    .name = "ashet-os",
+    .version = "0.1.0",
+    .minimum_zig_version = "0.13.1",
+    .dependencies = .{
+        .@"text-editor" = .{
+            .url = "https://github.com/ikskuh/TextEditor/archive/221e0a7c6e4513b13d528acc26cb09e0f4388947.tar.gz",
+            .hash = "1220b2729566b9e67225b82f3a68ce875bfd2b65687c7bb4a314786e1a58af7f0532",
+        },
+        .zigimg = .{
+            .url = "https://github.com/zigimg/zigimg/archive/cbb0c64caffd5b02863aadd62bab48cef7f86ceb.tar.gz",
+            .hash = "1220c0980dc05816b12a8188546b4847bcf38e5e99defc0ea79a8d6bd4809049a029",
+        },
+        .hyperdoc = .{
+            .url = "https://github.com/Ashet-Technologies/hyperdoc/archive/e39cd84d93efdfb12bf185f7174fb58295d86535.tar.gz",
+            .hash = "1220bafb626a8a02e6d00bcac242d40346cc86444bb3c82002853a390ed03e501018",
+        },
+        .lua = .{
+            .url = "https://github.com/ikskuh/lua/archive/fb5d920c0bed763cc6b9f27db2500046f8ff8985.tar.gz",
+            .hash = "1220c974e7ed2e377a8d9d5de26459c1397bae04dc52af9b1909afbe0061810b3749",
+        },
+        .fraxinus = .{
+            .url = "https://github.com/Ashet-Technologies/fraxinus/archive/7242967dbb15fafe60c55181f8d6de1ceb607e11.tar.gz",
+            .hash = "1220febc25edafb38c23b2be165de155d4d95439ebdbc0a9e4c5affd4d161f8a1cb9",
+        },
+    },
+
+    .paths = .{"."},
+}

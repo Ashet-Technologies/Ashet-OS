@@ -25,7 +25,7 @@ pub const platform_id: ports.Platform = machine_info.platform_id;
 pub const machine_id: ports.Machine = machine_info.machine_id;
 
 pub const platform = switch (platform_id) {
-    .riscv => @import("port/platform/riscv.zig"),
+    .rv32 => @import("port/platform/rv32.zig"),
     .arm => @import("port/platform/arm.zig"),
     .x86 => @import("port/platform/x86.zig"),
     .hosted => @import("port/platform/hosted.zig"),

@@ -1,5 +1,5 @@
 const std = @import("std");
-const afs = @import("afs.zig");
+const afs = @import("afs");
 const args_parser = @import("args");
 
 var verbose: bool = true;
