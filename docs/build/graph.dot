@@ -1,0 +1,77 @@
+digraph {
+    rankdir = TB;
+    node [shape = box; fontsize = 10; fontname = monospace;];
+    edge [fontsize = 9; fontname = monospace;];
+    
+    
+    abi;
+    abi_mapper [label = "abi-mapper";];
+    
+    libhypertext;
+    
+    subgraph cluster_tools {
+        wikitool;
+        mkicon;
+        mkfont;
+    }
+    
+    
+    subgraph cluster_userland {
+        label = "Userland";
+        
+        libAshetOS;
+        swl;
+        
+        apps [label = "apps";];
+    }
+    
+    subgraph cluster_kernel {
+        label = "Kernel";
+        kernel;
+        ashet_std;
+        ashet_fs;
+        virtio;
+    }
+    
+    subgraph cluster_disk {
+        label = "Disk Image";
+        
+        rootfs [label = "os";];
+        assets [label = "os-assets";];
+    }
+    
+    
+    
+    
+    
+    abi_mapper -> abi;
+    
+    abi -> libAshetOS;
+    ashet_std -> libAshetOS;
+    
+    
+    abi -> kernel;
+    virtio -> kernel;
+    ashet_fs -> kernel;
+    ashet_std -> kernel;
+    
+    
+    libAshetOS -> apps;
+    swl -> apps;
+    libhypertext -> apps;
+    
+    libhypertext -> wikitool;
+    
+    
+    mkfont -> assets;
+    mkicon -> assets;
+    wikitool -> assets;
+    
+    assets -> rootfs;
+    kernel -> rootfs [label = "target:\nmachine";];
+    apps -> rootfs [label = "target:\nplatform";];
+    
+    rootfs -> rootbuild [label = "machine 1";];
+    rootfs -> rootbuild [label = "machine 2";];
+    rootfs -> rootbuild [label = "machine 3";];
+}
