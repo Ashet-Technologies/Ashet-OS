@@ -69,6 +69,7 @@
             pkgs.gdb
             pkgs.pkg-config
             pkgs.python311
+            pkgs.graphviz
 
             # prebundled python packages:
             pkgs.python311Packages.lark

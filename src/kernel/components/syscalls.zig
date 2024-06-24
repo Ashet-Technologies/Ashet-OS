@@ -153,49 +153,69 @@ const impls = struct {
     }
 
     export fn @"ashet.ui.createWindow"(title: [*]const u8, title_len: usize, min: abi.Size, max: abi.Size, startup: abi.Size, flags: abi.CreateWindowFlags) callconv(.C) ?*const abi.Window {
-        const window = ashet.ui.Window.create(getCurrentProcess(), title[0..title_len], min, max, startup, flags) catch return null;
-        return &window.user_facing;
+        // const window = ashet.ui.Window.create(getCurrentProcess(), title[0..title_len], min, max, startup, flags) catch return null;
+        // return &window.user_facing;
+        _ = title;
+        _ = title_len;
+        _ = min;
+        _ = max;
+        _ = startup;
+        _ = flags;
+        return null;
     }
 
     export fn @"ashet.ui.destroyWindow"(win: *const abi.Window) callconv(.C) void {
-        const window = ashet.ui.Window.getFromABI(win);
-        window.destroy();
+        _ = win;
+        // const window = ashet.ui.Window.getFromABI(win);
+        // window.destroy();
     }
 
     export fn @"ashet.ui.moveWindow"(win: *const abi.Window, x: i16, y: i16) callconv(.C) void {
-        const window = ashet.ui.Window.getFromABI(win);
+        _ = win;
+        _ = x;
+        _ = y;
+        // const window = ashet.ui.Window.getFromABI(win);
 
-        window.user_facing.client_rectangle.x = x;
-        window.user_facing.client_rectangle.y = y;
+        // window.user_facing.client_rectangle.x = x;
+        // window.user_facing.client_rectangle.y = y;
 
-        window.pushEvent(.window_moved);
+        // window.pushEvent(.window_moved);
     }
 
     export fn @"ashet.ui.resizeWindow"(win: *const abi.Window, x: u16, y: u16) callconv(.C) void {
-        const window = ashet.ui.Window.getFromABI(win);
+        _ = win;
+        _ = x;
+        _ = y;
+        // const window = ashet.ui.Window.getFromABI(win);
 
-        window.user_facing.client_rectangle.width = x;
-        window.user_facing.client_rectangle.height = y;
+        // window.user_facing.client_rectangle.width = x;
+        // window.user_facing.client_rectangle.height = y;
 
-        window.pushEvent(.window_resized);
+        // window.pushEvent(.window_resized);
     }
 
     export fn @"ashet.ui.setWindowTitle"(win: *const abi.Window, title: [*]const u8, title_len: usize) callconv(.C) void {
-        const window = ashet.ui.Window.getFromABI(win);
-        window.setTitle(title[0..title_len]) catch std.log.err("setWindowTitle: out of memory!", .{});
+        _ = win;
+        _ = title;
+        _ = title_len;
+        // const window = ashet.ui.Window.getFromABI(win);
+        // window.setTitle(title[0..title_len]) catch std.log.err("setWindowTitle: out of memory!", .{});
     }
 
     export fn @"ashet.ui.invalidate"(win: *const abi.Window, rect: abi.Rectangle) callconv(.C) void {
-        const window = ashet.ui.Window.getFromABI(win);
+        _ = win;
+        _ = rect;
 
-        const screen_rect = abi.Rectangle{
-            .x = window.user_facing.client_rectangle.x + rect.x,
-            .y = window.user_facing.client_rectangle.y + rect.y,
-            .width = @intCast(std.math.clamp(rect.width, 0, @as(i17, window.user_facing.client_rectangle.width) - rect.x)),
-            .height = @intCast(std.math.clamp(rect.height, 0, @as(i17, window.user_facing.client_rectangle.height) - rect.y)),
-        };
+        // const window = ashet.ui.Window.getFromABI(win);
 
-        ashet.ui.invalidateRegion(screen_rect);
+        // const screen_rect = abi.Rectangle{
+        //     .x = window.user_facing.client_rectangle.x + rect.x,
+        //     .y = window.user_facing.client_rectangle.y + rect.y,
+        //     .width = @intCast(std.math.clamp(rect.width, 0, @as(i17, window.user_facing.client_rectangle.width) - rect.x)),
+        //     .height = @intCast(std.math.clamp(rect.height, 0, @as(i17, window.user_facing.client_rectangle.height) - rect.y)),
+        // };
+
+        // ashet.ui.invalidateRegion(screen_rect);
     }
 
     export fn @"ashet.network.udp.createSocket"(out: *abi.UdpSocket) callconv(.C) abi.udp.CreateError.Enum {
@@ -256,15 +276,20 @@ const impls = struct {
     }
 
     export fn @"ashet.ui.getSystemFont"(font_name_ptr: [*]const u8, font_name_len: usize, font_data_ptr: *[*]const u8, font_data_len: *usize) callconv(.C) abi.GetSystemFontError.Enum {
-        const font_name = font_name_ptr[0..font_name_len];
-
-        const font_data = ashet.ui.getSystemFont(font_name) catch |err| {
-            return abi.GetSystemFontError.map(err);
-        };
-
-        font_data_ptr.* = font_data.ptr;
-        font_data_len.* = font_data.len;
-
+        _ = font_name_ptr;
+        _ = font_name_len;
+        _ = font_data_ptr;
+        _ = font_data_len;
         return .ok;
+        // const font_name = font_name_ptr[0..font_name_len];
+
+        // const font_data = ashet.ui.getSystemFont(font_name) catch |err| {
+        //     return abi.GetSystemFontError.map(err);
+        // };
+
+        // font_data_ptr.* = font_data.ptr;
+        // font_data_len.* = font_data.len;
+
+        // return .ok;
     }
 };

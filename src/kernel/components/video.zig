@@ -103,7 +103,7 @@ const system_palette_info = blk: {
 
     const gpl_palette = @embedFile("../data/palette.gpl");
 
-    var literator = std.mem.tokenizeSequence(u8, gpl_palette, "\r\n");
+    var literator = std.mem.tokenizeAny(u8, gpl_palette, "\r\n");
 
     if (!std.mem.eql(u8, literator.next() orelse @compileError("Not a GIMP palette file!"), "GIMP Palette"))
         @compileError("Not a GIMP palette file!");

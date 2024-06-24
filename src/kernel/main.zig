@@ -16,7 +16,7 @@ pub const serial = @import("components/serial.zig");
 pub const storage = @import("components/storage.zig");
 pub const syscalls = @import("components/syscalls.zig");
 pub const time = @import("components/time.zig");
-pub const ui = @import("components/ui.zig");
+// pub const ui = @import("components/ui.zig");
 pub const video = @import("components/video.zig");
 
 pub const ports = @import("port/targets.zig");
@@ -24,18 +24,19 @@ pub const ports = @import("port/targets.zig");
 pub const platform_id: ports.Platform = machine_info.platform_id;
 pub const machine_id: ports.Machine = machine_info.machine_id;
 
-pub const platform = switch (platform_id) {
+pub const platform = if (machine_id.is_hosted())
+    @import("port/platform/hosted.zig")
+else switch (platform_id) {
     .rv32 => @import("port/platform/rv32.zig"),
     .arm => @import("port/platform/arm.zig"),
     .x86 => @import("port/platform/x86.zig"),
-    .hosted => @import("port/platform/hosted.zig"),
 };
 
 pub const machine = switch (machine_id) {
-    .rv32_virt => @import("port/machine/rv32_virt/rv32_virt.zig"),
-    .arm_virt => @import("port/machine/arm_virt/arm_virt.zig"),
-    .bios_pc => @import("port/machine/bios_pc/bios_pc.zig"),
-    .linux_pc => @import("port/machine/linux_pc/linux_pc.zig"),
+    .@"pc-bios" => @import("port/machine/bios_pc/bios_pc.zig"),
+    .@"qemu-virt-rv32" => @import("port/machine/rv32_virt/rv32_virt.zig"),
+    .@"qemu-virt-arm" => @import("port/machine/arm_virt/arm_virt.zig"),
+    .@"hosted-x86-linux" => @import("port/machine/linux_pc/linux_pc.zig"),
 };
 
 pub const machine_config: ports.MachineConfig = machine.machine_config;
@@ -114,7 +115,7 @@ fn main() !void {
 
     try network.start();
 
-    try ui.start();
+    // try ui.start();
 
     scheduler.start();
 

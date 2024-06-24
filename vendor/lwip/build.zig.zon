@@ -1,0 +1,14 @@
+.{
+    .name = "lwip",
+    .version = "0.1.0",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+    },
+    .dependencies = .{
+        .lwip = .{
+            .url = "http://download.savannah.nongnu.org/releases/lwip/lwip-2.1.3.zip",
+            .hash = "1220c46a1fabb690b8b84b01ffe185142aac3489d400963b6c7dd252320806dd07e2",
+        },
+    },
+}

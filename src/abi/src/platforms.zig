@@ -17,7 +17,7 @@ pub const Platform = enum {
     }
 };
 
-const app_display_name_map = std.EnumArray(Platform, std.Target.Query).init(.{
+const app_display_name_map = std.EnumArray(Platform, []const u8).init(.{
     .x86 = "Intel x86",
     .arm = "Arm 32-bit",
     .rv32 = "RISC-V 32-bit",

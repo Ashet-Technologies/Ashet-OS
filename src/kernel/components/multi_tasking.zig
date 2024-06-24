@@ -87,7 +87,7 @@ pub const Process = struct {
         if (exclusive_video_controller == proc) {
             exclusive_video_controller = null;
         }
-        ashet.ui.destroyAllWindowsForProcess(proc);
+        // ashet.ui.destroyAllWindowsForProcess(proc);
         if (proc.thread_count > 0) {
             proc.master_thread.kill();
         }

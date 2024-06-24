@@ -1,5 +1,7 @@
 const std = @import("std");
 
+pub const Platform = @import("src/platforms.zig").Platform;
+
 pub const syscalls = struct {
     pub extern fn @"ashet.process.yield"() void;
     pub extern fn @"ashet.process.exit"(u32) noreturn;

@@ -17,44 +17,39 @@ pub fn build(b: *std.Build) void {
     const platform_id = machine_config.platform;
 
     // Dependencies:
-    const abi_dep = b.dependency("abi", .{ .target = platform_id });
+    const abi_dep = b.dependency("abi", .{});
     const virtio_dep = b.dependency("virtio", .{});
     const ashet_fs_dep = b.dependency("ashet_fs", .{});
     const ashet_std_dep = b.dependency("ashet_std", .{});
-    const system_assets_dep = b.dependency("system_assets", .{});
     const args_dep = b.dependency("args", .{});
-    const turtlefont_dep = b.dependency("turtlefont", .{});
     const network_dep = b.dependency("network", .{});
     const vnc_dep = b.dependency("vnc", .{});
-    const lwip_dep = b.dependency("lwip", .{ .target = kernel_target });
+    const lwip_dep = b.dependency("lwip", .{ .target = kernel_target, .optimize = .ReleaseSafe });
     const libc_dep = b.dependency("foundation-libc", .{ .target = kernel_target, .optimize = optimize });
     const zfat_dep = b.dependency("zfat", .{
         .@"no-libc" = true,
         .target = kernel_target,
         .optimize = optimize,
-        .max_long_name_len = 121,
+        .max_long_name_len = @as(u8, 121),
         .code_page = .us,
-        .@"volume-count" = 8,
-        .@"static-rtc" = "2022-07-10", // TODO: Fix this
+        .@"volume-count" = @as(u8, 8),
+        .@"static-rtc" = @as([]const u8, "2022-07-10"), // TODO: Fix this
         .mkfs = true,
     });
 
     // Modules:
 
-    const abi_mod = abi_dep.module("abi");
+    const abi_mod = abi_dep.module("ashet-abi");
     const virtio_mod = virtio_dep.module("virtio");
     const ashet_fs_mod = ashet_fs_dep.module("ashet-fs");
     const ashet_std_mod = ashet_std_dep.module("ashet-std");
     const args_mod = args_dep.module("args");
-    const turtlefont_mod = turtlefont_dep.module("turtlefont");
     const network_mod = network_dep.module("network");
     const vnc_mod = vnc_dep.module("vnc");
     const zfat_mod = zfat_dep.module("zfat");
+    const lwip_mod = lwip_dep.module("lwip");
 
     // Build:
-    const libc = libc_dep.artifact("foundation");
-
-    zfat_mod.addIncludePath(libc.getEmittedIncludeTree());
 
     const machine_info_module = blk: {
         const machine_info = renderMachineInfo(
@@ -75,13 +70,12 @@ pub fn build(b: *std.Build) void {
     const kernel_mod = b.createModule(.{
         .target = kernel_target,
         .optimize = optimize,
-        .root_source_file = b.path("src/kernel/main.zig"),
+        .root_source_file = b.path("main.zig"),
         .imports = &.{
             .{ .name = "machine-info", .module = machine_info_module },
-            .{ .name = "system-assets", .module = options.system_assets },
             .{ .name = "ashet-abi", .module = abi_mod },
             .{ .name = "ashet-std", .module = ashet_std_mod },
-            .{ .name = "virtio", .module = options.modules.virtio },
+            .{ .name = "virtio", .module = virtio_mod },
             .{ .name = "ashet-fs", .module = ashet_fs_mod },
             .{ .name = "args", .module = args_mod },
             .{ .name = "fatfs", .module = zfat_mod },
@@ -94,6 +88,13 @@ pub fn build(b: *std.Build) void {
         },
     });
 
+    kernel_mod.addImport("lwip", lwip_mod);
+    kernel_mod.addIncludePath(b.path("components/network/include"));
+    lwip_mod.addIncludePath(b.path("components/network/include"));
+    for (lwip_mod.include_dirs.items) |dir| {
+        kernel_mod.include_dirs.append(b.allocator, dir) catch @panic("out of memory");
+    }
+
     const start_file = if (machine_id.is_hosted())
         b.path("port/platform/startup/hosted.zig")
     else
@@ -103,11 +104,10 @@ pub fn build(b: *std.Build) void {
         .name = "ashet-os",
         .root_source_file = start_file,
         .target = kernel_target,
-        .optimize = options.optimize,
+        .optimize = optimize,
     });
 
     kernel_exe.step.dependOn(machine_info_module.root_source_file.?.generated.file.step);
-
     kernel_exe.root_module.addImport("kernel", kernel_mod);
 
     // TODO(fqu): kernel_exe.root_module.code_model = .small;
@@ -121,13 +121,15 @@ pub fn build(b: *std.Build) void {
         kernel_exe.root_module.omit_frame_pointer = false;
     }
 
-    kernel_exe.setLinkerScriptPath(b.path(options.machine_spec.linker_script));
+    kernel_exe.setLinkerScriptPath(b.path(machine_config.linker_script));
 
-    for (options.platforms.include_paths.get(machine_spec.platform).items) |path| {
-        kernel_exe.addSystemIncludePath(path);
-    }
+    // for (options.platforms.include_paths.get(machine_spec.platform).items) |path| {
+    //     kernel_exe.addSystemIncludePath(path);
+    // }
 
-    if (platform_id.is_hosted()) {
+    _ = platform_config;
+
+    if (machine_id.is_hosted()) {
         kernel_mod.linkSystemLibrary("sdl2", .{
             .use_pkg_config = .force,
             .search_strategy = .mode_first,
@@ -135,16 +137,15 @@ pub fn build(b: *std.Build) void {
         kernel_exe.linkage = .dynamic;
         kernel_exe.linkLibC();
     } else {
+        const libc = libc_dep.artifact("foundation");
+
+        lwip_mod.addIncludePath(libc.getEmittedIncludeTree());
+        zfat_mod.addIncludePath(libc.getEmittedIncludeTree());
+
         kernel_exe.linkLibrary(libc);
     }
 
-    {
-        const lwip = options.platforms.lwip.get(machine_spec.platform);
-        kernel_exe.linkLibrary(lwip);
-        ashet_lwip.setup(b, kernel_mod);
-    }
-
-    return kernel_exe;
+    b.installArtifact(kernel_exe);
 }
 
 const PlatformConfig = struct {
@@ -163,11 +164,12 @@ fn constructTargetQuery(spec: std.Target.Query) std.Target.Query {
     var base: std.Target.Query = spec;
 
     if (base.os_tag == null) {
-        base.os_tag = .freestanding;
-        base.ofmt = .elf;
         std.debug.assert(base.dynamic_linker.len == 0);
         std.debug.assert(base.ofmt == null);
+        base.os_tag = .freestanding;
+        base.ofmt = .elf;
     } else {
+        std.debug.assert(base.os_tag != .freestanding);
         // We're in a hosted environment, explicit os is set
     }
 
@@ -282,7 +284,7 @@ const generic_rv32 = .{
 fn renderMachineInfo(
     b: *std.Build,
     machine_id: Machine,
-    platform_id: abiBuild.ApplicationTarget,
+    platform_id: Platform,
     // machine_spec: *const build_targets.MachineSpec,
     // platform_spec: *const build_targets.PlatformSpec,
 ) ![]const u8 {
@@ -294,13 +296,13 @@ fn renderMachineInfo(
     try writer.writeAll("//! This is a machine-generated description of the Ashet OS target machine.\n\n");
 
     try writer.print("pub const machine_id = .{};\n", .{
-        std.zig.fmtId(machine_id),
+        std.zig.fmtId(@tagName(machine_id)),
     });
     try writer.print("pub const machine_name = \"{}\";\n", .{
         std.zig.fmtEscapes(machine_id.get_display_name()),
     });
     try writer.print("pub const platform_id = .{};\n", .{
-        std.zig.fmtId(platform_id),
+        std.zig.fmtId(@tagName(platform_id)),
     });
     try writer.print("pub const platform_name = \"{}\";\n", .{
         std.zig.fmtEscapes(platform_id.get_display_name()),

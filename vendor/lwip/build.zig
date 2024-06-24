@@ -1,5 +1,30 @@
 const std = @import("std");
 
+pub fn build(b: *std.Build) void {
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
+
+    const upstream = b.dependency("lwip", .{});
+
+    const lwip = b.addModule("lwip", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
+    lwip.addCSourceFiles(.{
+        .root = upstream.path("src"),
+        .files = &files,
+        .flags = &flags,
+    });
+    lwip.addIncludePath(upstream.path("src/include"));
+}
+
+// pub fn setup(b: *std.Build, dst: *std.Build.Module) void {
+//     const upstream = b.dependency("lwip", .{});
+//     dst.addIncludePath(upstream.path("src/include"));
+//     dst.addIncludePath(b.path("src/kernel/components/network/include"));
+// }
+
 const flags = [_][]const u8{ "-std=c99", "-fno-sanitize=undefined" };
 const files = [_][]const u8{
     // Core files
@@ -48,7 +73,7 @@ const files = [_][]const u8{
     // Interfaces:
     "netif/bridgeif.c",
     "netif/ethernet.c",
-    "netif/slipif.c",
+    // "netif/slipif.c",
     "netif/bridgeif_fdb.c",
 
     // sequential APIs
@@ -100,29 +125,3 @@ const files = [_][]const u8{
     // "netif/ppp/ppp.c",
     // "netif/ppp/ecp.c",
 };
-
-pub fn create(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Step.Compile {
-    const lib = b.addStaticLibrary(.{
-        .name = "lwip",
-        .target = target,
-        .optimize = optimize,
-    });
-
-    const upstream = b.dependency("lwip", .{});
-
-    lib.addCSourceFiles(.{
-        .root = upstream.path("src"),
-        .files = &files,
-        .flags = &flags,
-    });
-    lib.addIncludePath(upstream.path("src/include"));
-    lib.addIncludePath(b.path("src/kernel/components/network/include"));
-
-    return lib;
-}
-
-pub fn setup(b: *std.Build, dst: *std.Build.Module) void {
-    const upstream = b.dependency("lwip", .{});
-    dst.addIncludePath(upstream.path("src/include"));
-    dst.addIncludePath(b.path("src/kernel/components/network/include"));
-}

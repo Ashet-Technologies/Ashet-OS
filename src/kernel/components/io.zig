@@ -121,7 +121,7 @@ pub fn scheduleAndAwait(start_queue: ?*IOP, wait: WaitIO) ?*IOP {
 
             .input_get_event => ashet.input.getEventIOP(IOP.cast(abi.input.GetEvent, event)),
 
-            .ui_get_event => ashet.ui.getEvent(IOP.cast(abi.ui.GetEvent, event)),
+            .ui_get_event => @panic("deprecated iop"), // ashet.ui.getEvent(IOP.cast(abi.ui.GetEvent, event)),
 
             // fs api
 
@@ -193,7 +193,7 @@ pub fn cancel(event: *ashet.abi.IOP) void {
         return;
 
     switch (event.type) {
-        .ui_get_event => ashet.ui.cancelGetEvent(IOP.cast(abi.ui.GetEvent, event)),
+        .ui_get_event => @panic("deprecated iop!"), //  ashet.ui.cancelGetEvent(IOP.cast(abi.ui.GetEvent, event)),
 
         else => {
             logger.err("non-implemented cancel of type {}", .{event.type});
