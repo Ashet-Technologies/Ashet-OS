@@ -1123,7 +1123,7 @@ fn nodeToWindow(node: *WindowQueue.Node) *Window {
 
 pub const icons = struct {
     fn parsedSpriteSize(comptime def: []const u8) Size {
-        var it = std.mem.split(u8, def, "\n");
+        var it = std.mem.splitScalar(u8, def, '\n');
         const first = it.next().?;
         const width = first.len;
         var height = 1;
@@ -1147,7 +1147,7 @@ pub const icons = struct {
             [1]?ColorIndex{null} ** size.width,
         } ** size.height;
 
-        var it = std.mem.split(u8, def, "\n");
+        var it = std.mem.splitScalar(u8, def, '\n');
         var y: usize = 0;
         while (it.next()) |line| : (y += 1) {
             var x: usize = 0;

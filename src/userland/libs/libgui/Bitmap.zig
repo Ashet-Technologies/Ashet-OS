@@ -70,7 +70,7 @@ pub fn parse(comptime base: u8, comptime spec: []const u8) Bitmap {
         var used = std.bit_set.IntegerBitSet(16).initFull();
 
         {
-            var it = std.mem.split(u8, spec, "\n");
+            var it = std.mem.splitScalar(u8, spec, '\n');
             while (it.next()) |line| {
                 if (line.len > width) width = line.len;
                 height += 1;
@@ -93,7 +93,7 @@ pub fn parse(comptime base: u8, comptime spec: []const u8) Bitmap {
 
         var buffer = [1][width]ColorIndex{[1]ColorIndex{ColorIndex.get(0)} ** width} ** height;
         {
-            var it = std.mem.split(u8, spec, "\n");
+            var it = std.mem.splitScalar(u8, spec, '\n');
             var y = 0;
             while (it.next()) |line| : (y += 1) {
                 for (line, 0..) |_, x| {

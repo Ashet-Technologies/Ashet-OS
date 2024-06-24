@@ -45,7 +45,7 @@ pub fn main() !u8 {
     }
 
     const size: [2]usize = if (cli.options.geometry) |spec| blk: {
-        var it = std.mem.split(u8, spec, "x");
+        var it = std.mem.splitScalar(u8, spec, 'x');
         const w = try std.fmt.parseInt(usize, it.next().?, 10);
         const h = try std.fmt.parseInt(usize, it.next().?, 10);
         break :blk .{ w, h };

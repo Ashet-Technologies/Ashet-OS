@@ -290,7 +290,7 @@ pub const keyboard = struct {
 
                 while (lines.next()) |line| {
                     if (std.mem.startsWith(u8, line, "keymap")) {
-                        var items = std.mem.tokenize(u8, line, " \t");
+                        var items = std.mem.tokenizeAny(u8, line, " \t");
 
                         _ = items.next() orelse unreachable; // this is "scancode"
 
@@ -392,7 +392,7 @@ pub const keyboard = struct {
 
                 while (lines.next()) |line| {
                     if (std.mem.startsWith(u8, line, "scancode")) {
-                        var items = std.mem.tokenize(u8, line, " \t");
+                        var items = std.mem.tokenizeAny(u8, line, " \t");
 
                         _ = items.next() orelse unreachable; // this is "scancode"
 

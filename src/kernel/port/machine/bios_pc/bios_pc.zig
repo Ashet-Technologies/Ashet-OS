@@ -140,7 +140,7 @@ pub fn initialize() !void {
 
         var temp_buffer: [4096]u8 = undefined;
 
-        var iter = std.mem.tokenize(u8, cli_string, "\t\r\n ");
+        var iter = std.mem.tokenizeAny(u8, cli_string, "\t\r\n ");
         var fba = std.heap.FixedBufferAllocator.init(&temp_buffer);
 
         const opt = args.parse(KernelOptions, &iter, fba.allocator(), .{ .forward = printCliError }) catch |err| {

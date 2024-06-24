@@ -327,7 +327,7 @@ fn resolvePath(fs: *afs.FileSystem, root_dir: afs.DirectoryHandle, path: []const
 
     var current_dir = root_dir;
 
-    var splitter = std.mem.tokenize(u8, path, "/");
+    var splitter = std.mem.tokenizeScalar(u8, path, '/');
 
     if (splitter.next()) |first_element| {
         var next_element: ?[]const u8 = first_element;

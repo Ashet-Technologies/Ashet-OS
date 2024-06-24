@@ -10,7 +10,7 @@ pub fn loadPaletteFile(allocator: std.mem.Allocator, path: []const u8) ![]zigimg
 
     try palette.ensureTotalCapacity(256);
 
-    var literator = std.mem.tokenize(u8, palette_string, "\r\n");
+    var literator = std.mem.tokenizeSequence(u8, palette_string, "\r\n");
 
     const file_header = literator.next() orelse return error.InvalidFile;
 
@@ -31,7 +31,7 @@ pub fn loadPaletteFile(allocator: std.mem.Allocator, path: []const u8) ![]zigimg
             return error.PaletteTooLarge;
         }
 
-        var tups = std.mem.tokenize(u8, trimmed, " \t");
+        var tups = std.mem.tokenizeAny(u8, trimmed, " \t");
         errdefer std.log.err("detected invalid line: '{}'\n", .{std.zig.fmtEscapes(trimmed)});
 
         const r = try std.fmt.parseInt(u8, tups.next() orelse return error.InvalidFile, 10);

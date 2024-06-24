@@ -71,7 +71,7 @@ pub fn initialize() !void {
     var cli = args_parser.parseForCurrentProcess(KernelOptions, global_memory, .print) catch std.process.exit(1);
     cli.options = kernel_options;
     for (cli.positionals) |arg| {
-        var iter = std.mem.split(u8, arg, ":");
+        var iter = std.mem.splitScalar(u8, arg, ':');
         const component = iter.next().?; // first element does always exist
 
         if (std.mem.eql(u8, component, "drive")) {

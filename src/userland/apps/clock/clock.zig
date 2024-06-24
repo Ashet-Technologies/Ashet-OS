@@ -144,7 +144,7 @@ pub const clock_face = gui.Bitmap.parse(0,
 
 fn parsedSpriteSize(comptime def: []const u8) ashet.ui.Size {
     @setEvalBranchQuota(100_000);
-    var it = std.mem.split(u8, def, "\n");
+    var it = std.mem.splitScalar(u8, def, '\n');
     const first = it.next().?;
     const width = first.len;
     var height = 1;
@@ -169,7 +169,7 @@ fn parse(comptime def: []const u8) ParseResult(def) {
         [1]?ashet.ui.ColorIndex{null} ** size.width,
     } ** size.height;
 
-    var it = std.mem.split(u8, def, "\n");
+    var it = std.mem.splitScalar(u8, def, '\n');
     var y: usize = 0;
     while (it.next()) |line| : (y += 1) {
         var x: usize = 0;
