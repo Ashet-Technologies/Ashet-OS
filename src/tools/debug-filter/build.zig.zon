@@ -1,0 +1,11 @@
+.{
+    .name = "debug-filter",
+    .version = "0.0.1",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "debug-filter.zig",
+        "lib",
+    },
+    .dependencies = .{},
+}
