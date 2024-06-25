@@ -456,8 +456,6 @@ fn buildOs(
     build_apps: bool,
     platforms: platforms_build.PlatformData,
 ) OS {
-    var rootfs = disk_image_step.FileSystemBuilder.init(b);
-
     var ui_gen = ashet_com.UiGenerator{
         .builder = b,
         .lua = lua_exe,
@@ -465,19 +463,6 @@ fn buildOs(
         .mod_ashet_gui = modules.ashet_gui,
         .mod_system_assets = system_assets,
     };
-
-    rootfs.addDirectory(b.path("rootfs"), ".");
-
-    const machine_spec = build_targets.getMachineSpec(machine);
-
-    const kernel_exe = ashet_kernel.create(b, .{
-        .optimize = optimize_kernel,
-        .fatfs_config = fatfs_config,
-        .machine_spec = machine_spec,
-        .modules = modules,
-        .system_assets = system_assets,
-        .platforms = platforms,
-    });
 
     const kernel_file = kernel_exe.getEmittedBin();
 
@@ -548,5 +533,3 @@ fn writeAllMachineInfo() !void {
 
     try writer.writeAll("Please fix your command line!\n");
 }
-
-
