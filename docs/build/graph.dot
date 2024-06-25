@@ -1,48 +1,61 @@
 digraph {
     rankdir = TB;
-    node [shape = box; fontsize = 10; fontname = monospace;];
-    edge [fontsize = 9; fontname = monospace;];
+    fontname = "sans";
+    node [shape = box; fontsize = 10;];
+    edge [fontsize = 9;];
+    splines=true;
+
+    rootbuild [label = "/build.zig";];
     
+    subgraph cluster_libs {
+        rank = same;
+        color = gray;
+        
+        libhypertext;
+        ashet_std;
+    }
     
     abi;
-    abi_mapper [label = "abi-mapper";];
-    
-    libhypertext;
     
     subgraph cluster_tools {
+        rank = min;
+        color = gray;
+        
         wikitool;
         mkicon;
         mkfont;
+        abi_mapper [label = "abi-mapper";];
     }
-    
     
     subgraph cluster_userland {
         label = "Userland";
+        color = gray;
         
         libAshetOS;
+        apps;
         swl;
-        
-        apps [label = "apps";];
     }
     
     subgraph cluster_kernel {
         label = "Kernel";
+        color = gray;
+        
         kernel;
-        ashet_std;
         ashet_fs;
         virtio;
     }
     
     subgraph cluster_disk {
         label = "Disk Image";
+        color = gray;
         
-        rootfs [label = "os";];
-        assets [label = "os-assets";];
+        subgraph {
+            rank = same;
+            
+            rootfs [label = "os";];
+            assets [label = "os-assets";];
+        }
     }
-    
-    
-    
-    
     
     abi_mapper -> abi;
     
@@ -58,10 +71,9 @@ digraph {
     
     libAshetOS -> apps;
     swl -> apps;
-    libhypertext -> apps;
     
     libhypertext -> wikitool;
-    
+    // libhypertext -> apps;
     
     mkfont -> assets;
     mkicon -> assets;
@@ -74,4 +86,7 @@ digraph {
     rootfs -> rootbuild [label = "machine 1";];
     rootfs -> rootbuild [label = "machine 2";];
     rootfs -> rootbuild [label = "machine 3";];
+    
+    label = "Build System";
+    labelloc = "t";
 }
