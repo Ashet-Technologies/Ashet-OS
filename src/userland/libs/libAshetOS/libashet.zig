@@ -14,17 +14,6 @@ pub const is_hosted = builtin.is_test or (builtin.target.os.tag != .other and bu
 //     }
 // }
 
-comptime {
-    if (!is_hosted) {
-        if (@hasDecl(@import("root"), "main")) {
-            @export(_start, .{
-                .linkage = .strong,
-                .name = "_start",
-            });
-        }
-    }
-}
-
 fn _start() callconv(.C) u32 {
     const res = @import("root").main();
     const Res = @TypeOf(res);
@@ -71,6 +60,17 @@ fn log_app_message(
 
 pub const core = struct {
     var nested_panic: bool = false;
+
+    comptime {
+        if (!is_hosted) {
+            if (@hasDecl(@import("root"), "main")) {
+                @export(_start, .{
+                    .linkage = .strong,
+                    .name = "_start",
+                });
+            }
+        }
+    }
 
     pub const std_options = std.Options{
         .logFn = log_app_message,
