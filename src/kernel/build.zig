@@ -17,7 +17,7 @@ pub fn build(b: *std.Build) void {
     const platform_id = machine_config.platform;
 
     // Dependencies:
-    const abi_dep = b.dependency("abi", .{});
+    const abi_dep = b.dependency("ashet-abi", .{});
     const virtio_dep = b.dependency("virtio", .{});
     const ashet_fs_dep = b.dependency("ashet_fs", .{});
     const ashet_std_dep = b.dependency("ashet_std", .{});
@@ -101,7 +101,7 @@ pub fn build(b: *std.Build) void {
         b.path("port/platform/startup/generic.zig");
 
     const kernel_exe = b.addExecutable(.{
-        .name = "ashet-os",
+        .name = "kernel",
         .root_source_file = start_file,
         .target = kernel_target,
         .optimize = optimize,

@@ -10,7 +10,7 @@ pub fn loadPaletteFile(allocator: std.mem.Allocator, path: []const u8) ![]zigimg
 
     try palette.ensureTotalCapacity(256);
 
-    var literator = std.mem.tokenizeSequence(u8, palette_string, "\r\n");
+    var literator = std.mem.tokenizeAny(u8, palette_string, "\r\n");
 
     const file_header = literator.next() orelse return error.InvalidFile;
 

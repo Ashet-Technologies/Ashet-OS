@@ -14,9 +14,12 @@ pub fn build(b: *std.Build) void {
 
     // Dependencies:
 
-    const kernel_dep = b.dependency("kernel", .{ .machine = machine, .optimize = optimize });
+    const kernel_dep = b.dependency("kernel", .{
+        .machine = machine,
+        .release = (optimize != .Debug),
+    });
     const assets_dep = b.dependency("assets", .{});
-    const syslinux_dep = b.dependency("syslinux", .{});
+    const syslinux_dep = b.dependency("syslinux", .{ .release = true });
 
     const disk_image_dep = b.dependency("disk-image-step", .{});
 
@@ -33,8 +36,12 @@ pub fn build(b: *std.Build) void {
     // Phase 1: Target independent root fs:
 
     var rootfs = disk_image_step.FileSystemBuilder.init(b);
+    {
+        rootfs.addDirectory(b.path("../../rootfs"), ".");
 
-    rootfs.addDirectory(b.path("../../rootfs"), ".");
+        const asset_source = assets_dep.namedWriteFiles("assets");
+        rootfs.addDirectory(asset_source.getDirectory(), ".");
+    }
 
     // Phase 2: Platform dependent root fs
 
@@ -71,9 +78,16 @@ pub fn build(b: *std.Build) void {
 
     const disk_image = switch (machine) {
         .@"pc-bios" => blk: {
+            var bootloader_buffer: [440]u8 = undefined;
+            const syslinux_bootloader = std.fs.cwd().readFile(
+                syslinux_dep.path("vendor/syslinux-6.03/bios/mbr/mbr.bin").getPath(b),
+                &bootloader_buffer,
+            ) catch @panic("failed to load bootloader!");
+            std.debug.assert(syslinux_bootloader.len == bootloader_buffer.len);
+
             const disk = disk_image_step.initializeDisk(disk_image_dep, 500 * disk_image_step.MiB, .{
                 .mbr = .{
-                    .bootloader = @embedFile("./vendor/syslinux/vendor/syslinux-6.03/bios/mbr/mbr.bin").*,
+                    .bootloader = bootloader_buffer,
                     .partitions = .{
                         &.{
                             .type = .fat32_lba,
@@ -88,21 +102,19 @@ pub fn build(b: *std.Build) void {
                 },
             });
 
-            const syslinux_dep = b.dependency("syslinux", .{ .release = true });
-
             const syslinux_installer = syslinux_dep.artifact("syslinux");
 
             const raw_disk_file = disk.getImageFile();
 
             const install_syslinux = InstallSyslinuxStep.create(b, syslinux_installer, raw_disk_file);
 
-            break :blk .{ .generated = .{ .file = install_syslinux.output_file } };
+            break :blk std.Build.LazyPath{ .generated = .{ .file = install_syslinux.output_file } };
         },
 
         else => blk: {
             const disk = disk_image_step.initializeDisk(
                 disk_image_dep,
-                machine_info.disk_image_size,
+                machine_info.disk_size,
                 .{
                     .fs = rootfs.finalize(.{ .format = .fat16, .label = "AshetOS" }),
                 },
@@ -113,33 +125,40 @@ pub fn build(b: *std.Build) void {
     };
 
     // TODO: consider using `b.fmt("{s}.img", .{machine_spec.machine_id})`, or move
-    const install_disk_image = b.addInstallFile(disk_image, "os.img");
-
+    const install_disk_image = b.addInstallFile(disk_image, "disk.img");
     b.getInstallStep().dependOn(&install_disk_image.step);
+
+    if (machine_info.rom_size) |rom_size| {
+        const objcopy_kernel = b.addObjCopy(kernel_elf, .{
+            .basename = "kernel.bin",
+            .format = .bin,
+            .pad_to = rom_size,
+        });
+
+        const install_bin_file = b.addInstallFile(objcopy_kernel.getOutput(), "kernel.bin");
+        b.getInstallStep().dependOn(&install_bin_file.step);
+    }
 }
 
 const MachineDependentOsConfig = struct {
-    disk_image_size: usize,
+    disk_size: usize,
     rom_size: ?usize,
 };
 
 const machine_info_map = std.EnumArray(Machine, MachineDependentOsConfig).init(.{
     .@"pc-bios" = .{
-        .disk_formatter = "bios_pc",
         .rom_size = null,
+        .disk_size = 512 * disk_image_step.MiB,
     },
     .@"qemu-virt-rv32" = .{
-        .disk_formatter = "rv32_virt",
         .disk_size = 0x0200_0000,
         .rom_size = 0x0200_0000,
     },
     .@"qemu-virt-arm" = .{
-        .disk_formatter = "arm_virt",
         .disk_size = 0x0400_0000,
         .rom_size = 0x0400_0000,
     },
     .@"hosted-x86-linux" = .{
-        .disk_formatter = "linux_pc",
         .disk_size = 0x0400_0000,
         .rom_size = null,
     },

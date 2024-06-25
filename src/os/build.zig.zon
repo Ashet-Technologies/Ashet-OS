@@ -15,7 +15,7 @@
         },
 
         .syslinux = .{
-            .path = "vendor/syslinux",
+            .path = "../../vendor/syslinux",
         },
 
         // Externel deps:

@@ -10,7 +10,7 @@ pub fn build(b: *std.Build) void {
         .name = "mkicon",
         .root_source_file = b.path("mkicon.zig"),
         .target = b.graph.host,
-        .optimize = .ReleaseSafe,
+        .optimize = .Debug,
     });
     exe.root_module.addImport("zigimg", zigimg_mod);
     exe.root_module.addImport("ashet-abi", abi_mod);
