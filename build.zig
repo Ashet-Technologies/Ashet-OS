@@ -3,6 +3,12 @@ const kernel_package = @import("kernel");
 
 const Machine = kernel_package.Machine;
 
+const default_machines = std.EnumSet(Machine).init(.{
+    .@"pc-bios" = true,
+    .@"qemu-virt-rv32" = true,
+    .@"hosted-x86-linux" = true,
+});
+
 pub fn build(b: *std.Build) void {
     // Steps:
 
@@ -13,18 +19,38 @@ pub fn build(b: *std.Build) void {
                 @tagName(machine),
                 b.fmt("Compiles the OS for {s}", .{@tagName(machine)}),
             );
-            b.getInstallStep().dependOn(step);
+            if (default_machines.contains(machine)) {
+                b.getInstallStep().dependOn(step);
+            }
             steps.set(machine, step);
         }
         break :blk steps;
     };
+
+    // TODO: consider using `b.fmt("{s}.img", .{machine_spec.machine_id})`, or move
 
     // Options:
     const maybe_run_machine = b.option(Machine, "machine", "Selects which machine to run with the 'run' step");
 
     // Build:
 
-    _ = machine_steps;
+    for (std.enums.values(Machine)) |machine| {
+        const step = machine_steps.get(machine);
+
+        const machine_os_dep = b.dependency("os", .{
+            .machine = machine,
+        });
+
+        const install_step = b.addInstallDirectory(.{
+            .source_dir = .{ .cwd_relative = machine_os_dep.builder.install_prefix },
+            .install_dir = .prefix,
+            .install_subdir = @tagName(machine),
+        });
+        install_step.step.dependOn(machine_os_dep.builder.getInstallStep());
+        step.dependOn(&install_step.step);
+    }
+
+    // Run:
 
     if (maybe_run_machine) |run_machine| {
         const run_step = b.step("run", b.fmt("Runs the OS machine {s}", .{@tagName(run_machine)}));

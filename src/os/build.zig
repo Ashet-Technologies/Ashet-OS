@@ -124,7 +124,6 @@ pub fn build(b: *std.Build) void {
         },
     };
 
-    // TODO: consider using `b.fmt("{s}.img", .{machine_spec.machine_id})`, or move
     const install_disk_image = b.addInstallFile(disk_image, "disk.img");
     b.getInstallStep().dependOn(&install_disk_image.step);
 
