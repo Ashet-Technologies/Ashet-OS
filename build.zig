@@ -1,7 +1,9 @@
 const std = @import("std");
 const kernel_package = @import("kernel");
+const abi_package = @import("ashet-abi");
 
 const Machine = kernel_package.Machine;
+const Platform = abi_package.Platform;
 
 const default_machines = std.EnumSet(Machine).init(.{
     .@"pc-bios" = true,
@@ -27,12 +29,17 @@ pub fn build(b: *std.Build) void {
         break :blk steps;
     };
 
-    // TODO: consider using `b.fmt("{s}.img", .{machine_spec.machine_id})`, or move
-
     // Options:
     const maybe_run_machine = b.option(Machine, "machine", "Selects which machine to run with the 'run' step");
+    const no_gui = b.option(bool, "no-gui", "Disables GUI for runners") orelse false;
+
+    // Dependencies:
+
+    const debugfilter_dep = b.dependency("debugfilter", .{});
 
     // Build:
+
+    const debugfilter = debugfilter_dep.artifact("debug-filter");
 
     for (std.enums.values(Machine)) |machine| {
         const step = machine_steps.get(machine);
@@ -55,8 +62,81 @@ pub fn build(b: *std.Build) void {
     if (maybe_run_machine) |run_machine| {
         const run_step = b.step("run", b.fmt("Runs the OS machine {s}", .{@tagName(run_machine)}));
 
-        // TODO: Implement run step here!
-        _ = run_step;
+        const platform_info = platform_info_map.get(run_machine.get_platform());
+        const machine_info = machine_info_map.get(run_machine);
+
+        const disk_img: std.Build.LazyPath = if (true) @panic("oh no") else false;
+        const kernel_bin: std.Build.LazyPath = if (true) @panic("oh no") else false;
+        const kernel_elf: std.Build.LazyPath = if (true) @panic("oh no") else false;
+
+        const AppDef = struct {
+            name: []const u8,
+            exe: std.Build.LazyPath,
+        };
+
+        const apps: []const AppDef = &.{};
+
+        const Variables = struct {
+            @"${DISK}": std.Build.LazyPath,
+            @"${BOOTROM}": std.Build.LazyPath,
+            @"${KERNEL}": std.Build.LazyPath,
+        };
+
+        const variables = Variables{
+            .@"${DISK}" = disk_img,
+            .@"${BOOTROM}" = kernel_bin,
+            .@"${KERNEL}" = kernel_elf,
+        };
+
+        // Run qemu with the debug-filter wrapped around so we can translate addresses
+        // to file:line,function info
+        const vm_runner = b.addRunArtifact(debugfilter);
+
+        // Add debug elf contexts:
+        vm_runner.addArg("--elf");
+        vm_runner.addPrefixedFileArg("kernel=", kernel_elf);
+
+        for (apps) |app| {
+            var app_name_buf: [128]u8 = undefined;
+
+            const app_name = try std.fmt.bufPrint(&app_name_buf, "{s}=", .{app.name});
+
+            vm_runner.addArg("--elf");
+            vm_runner.addPrefixedFileArg(app_name, app.exe);
+        }
+
+        // from now on regular QEMU flags:
+        vm_runner.addArg(platform_info.qemu_exe);
+        vm_runner.addArgs(&generic_qemu_flags);
+
+        if (no_gui) {
+            vm_runner.addArgs(&console_qemu_flags);
+        } else {
+            vm_runner.addArgs(&display_qemu_flags);
+        }
+
+        arg_loop: for (machine_info.qemu_cli) |arg| {
+            inline for (@typeInfo(Variables).Struct.fields) |fld| {
+                const path = @field(variables, fld.name);
+
+                if (std.mem.eql(u8, arg, fld.name)) {
+                    vm_runner.addFileArg(path);
+                    continue :arg_loop;
+                } else if (std.mem.endsWith(u8, arg, fld.name)) {
+                    vm_runner.addPrefixedFileArg(arg[0 .. arg.len - fld.name.len], path);
+                    continue :arg_loop;
+                }
+            }
+            vm_runner.addArg(arg);
+        }
+
+        if (b.args) |args| {
+            vm_runner.addArgs(args);
+        }
+
+        vm_runner.stdio = .inherit;
+
+        run_step.dependOn(&vm_runner.step);
     }
 }
 
@@ -72,7 +152,7 @@ const MachineStartupConfig = struct {
     qemu_cli: []const []const u8,
 };
 
-const platform_info_map = std.EnumArray(PlatformStartupConfig, PlatformStartupConfig).init(.{
+const platform_info_map = std.EnumArray(Platform, PlatformStartupConfig).init(.{
     .x86 = .{
         .qemu_exe = "qemu-system-i386",
     },
@@ -150,3 +230,18 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
     //     },
     // },
 });
+
+const generic_qemu_flags = [_][]const u8{
+    "-d",         "guest_errors,unimp",
+    "-serial",    "stdio",
+    "-no-reboot", "-no-shutdown",
+    "-s",
+};
+
+const display_qemu_flags = [_][]const u8{
+    "-display", "gtk,show-tabs=on",
+};
+
+const console_qemu_flags = [_][]const u8{
+    "-display", "none",
+};

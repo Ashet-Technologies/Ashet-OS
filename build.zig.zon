@@ -9,6 +9,12 @@
         .kernel = .{
             .path = "src/kernel",
         },
+        .@"ashet-abi" = .{
+            .path = "src/abi",
+        },
+        .debugfilter = .{
+            .path = "src/tools/debug-filter",
+        },
     },
 
     .paths = .{"."},

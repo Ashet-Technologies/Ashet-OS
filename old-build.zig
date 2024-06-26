@@ -27,8 +27,6 @@ pub fn build(b: *std.Build) !void {
 
     // options:
 
-    const no_gui = b.option(bool, "no-gui", "Disables GUI for runners") orelse false;
-
     const optimize_kernel = b.option(
         bool,
         "optimize",
@@ -242,114 +240,6 @@ pub fn build(b: *std.Build) !void {
     /////////////////////////////////////////////////////////////////////////////
     // ashet os ↓
 
-    const platforms = platforms_build.init(b, modules);
-
-    const MachineSet = std.enums.EnumSet(Machine);
-
-    const machines = if (b.option([]const u8, "machine", "Defines the machine Ashet OS should be built for.")) |machine_list_str| set: {
-        var set = MachineSet.initEmpty();
-
-        var tokenizer = std.mem.tokenizeScalar(u8, machine_list_str, ',');
-
-        while (tokenizer.next()) |machine_str| {
-            const machine = std.meta.stringToEnum(Machine, machine_str) orelse {
-                try writeAllMachineInfo();
-                return error.BadMachine;
-            };
-            set.insert(machine);
-        }
-
-        if (set.count() == 0) {
-            try writeAllMachineInfo();
-            return error.BadMachine;
-        }
-
-        break :set set;
-    } else MachineSet.initFull(); // by default, build for all machines
-
-    {
-        var iter = machines.iterator();
-        while (iter.next()) |machine| {
-            const machine_spec = build_targets.getMachineSpec(machine);
-            const platform_spec = build_targets.getPlatformSpec(machine_spec.platform);
-
-            const os = buildOs(
-                b,
-                optimize_kernel_mode,
-                optimize_apps_mode,
-                bmpconv,
-                modules,
-                lua_exe,
-                kernel_step,
-                machine,
-                build_native_apps,
-                platforms,
-            );
-
-            const Variables = struct {
-                @"${DISK}": std.Build.LazyPath,
-                @"${BOOTROM}": std.Build.LazyPath,
-                @"${KERNEL}": std.Build.LazyPath,
-            };
-
-            const variables = Variables{
-                .@"${DISK}" = os.disk_img,
-                .@"${BOOTROM}" = os.kernel_bin,
-                .@"${KERNEL}" = os.kernel_elf,
-            };
-
-            // Run qemu with the debug-filter wrapped around so we can translate addresses
-            // to file:line,function info
-            const vm_runner = b.addRunArtifact(debug_filter);
-
-            // Add debug elf contexts:
-            vm_runner.addArg("--elf");
-            vm_runner.addPrefixedFileArg("kernel=", os.kernel_elf);
-
-            for (os.apps) |app| {
-                var app_name_buf: [128]u8 = undefined;
-
-                const app_name = try std.fmt.bufPrint(&app_name_buf, "{s}=", .{app.name});
-
-                vm_runner.addArg("--elf");
-                vm_runner.addPrefixedFileArg(app_name, app.exe);
-            }
-
-            // from now on regular QEMU flags:
-            vm_runner.addArg(platform_spec.qemu_exe);
-            vm_runner.addArgs(&generic_qemu_flags);
-
-            if (no_gui) {
-                vm_runner.addArgs(&console_qemu_flags);
-            } else {
-                vm_runner.addArgs(&display_qemu_flags);
-            }
-
-            arg_loop: for (machine_spec.qemu_cli) |arg| {
-                inline for (@typeInfo(Variables).Struct.fields) |fld| {
-                    const path = @field(variables, fld.name);
-
-                    if (std.mem.eql(u8, arg, fld.name)) {
-                        vm_runner.addFileArg(path);
-                        continue :arg_loop;
-                    } else if (std.mem.endsWith(u8, arg, fld.name)) {
-                        vm_runner.addPrefixedFileArg(arg[0 .. arg.len - fld.name.len], path);
-                        continue :arg_loop;
-                    }
-                }
-                vm_runner.addArg(arg);
-            }
-
-            if (b.args) |args| {
-                vm_runner.addArgs(args);
-            }
-
-            vm_runner.stdio = .inherit;
-
-            run_step.dependOn(&vm_runner.step);
-        }
-    }
-
     // ashet os ↑
     /////////////////////////////////////////////////////////////////////////////
     // tests ↓
@@ -421,20 +311,6 @@ const Platform = kernel_targets.Platform;
 const Machine = kernel_targets.Machine;
 const MachineSpec = kernel_targets.MachineSpec;
 
-const generic_qemu_flags = [_][]const u8{
-    "-d",         "guest_errors,unimp",
-    "-serial",    "stdio",
-    "-no-reboot", "-no-shutdown",
-    "-s",
-};
-
-const display_qemu_flags = [_][]const u8{
-    "-display", "gtk,show-tabs=on",
-};
-
-const console_qemu_flags = [_][]const u8{
-    "-display", "none",
-};
 
 const OS = struct {
     kernel_elf: std.Build.LazyPath,
