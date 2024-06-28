@@ -18,6 +18,12 @@
             .path = "../../vendor/syslinux",
         },
 
+        // Applications:
+
+        .hello_world = .{
+            .path = "../userland/apps/hello-world",
+        },
+
         // Externel deps:
         .@"disk-image-step" = .{
             .url = "https://github.com/zig-osdev/disk-image-step/archive/76191fd940fde8caa58887913829ebe699a37e63.tar.gz",

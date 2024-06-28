@@ -48,13 +48,13 @@ pub fn build(b: *std.Build) void {
             .machine = machine,
         });
 
-        const install_step = b.addInstallDirectory(.{
-            .source_dir = .{ .cwd_relative = machine_os_dep.builder.install_prefix },
-            .install_dir = .prefix,
-            .install_subdir = @tagName(machine),
-        });
-        install_step.step.dependOn(machine_os_dep.builder.getInstallStep());
-        step.dependOn(&install_step.step);
+        const out_dir: std.Build.InstallDir = .{ .custom = @tagName(machine) };
+        const os_files = machine_os_dep.namedWriteFiles("ashet-os");
+
+        for (os_files.files.items) |file| {
+            const install_elf_step = b.addInstallFileWithDir(file.getPath(), out_dir, file.sub_path);
+            step.dependOn(&install_elf_step.step);
+        }
     }
 
     // Run:
@@ -65,9 +65,15 @@ pub fn build(b: *std.Build) void {
         const platform_info = platform_info_map.get(run_machine.get_platform());
         const machine_info = machine_info_map.get(run_machine);
 
-        const disk_img: std.Build.LazyPath = if (true) @panic("oh no") else false;
-        const kernel_bin: std.Build.LazyPath = if (true) @panic("oh no") else false;
-        const kernel_elf: std.Build.LazyPath = if (true) @panic("oh no") else false;
+        const machine_os_dep = b.dependency("os", .{
+            .machine = run_machine,
+        });
+
+        const os_files = machine_os_dep.namedWriteFiles("ashet-os");
+
+        const kernel_elf = get_named_file(os_files, "kernel.elf").?;
+        const disk_img = get_named_file(os_files, "disk.img").?;
+        const kernel_bin = get_named_file(os_files, "kernel.bin");
 
         const AppDef = struct {
             name: []const u8,
@@ -76,16 +82,10 @@ pub fn build(b: *std.Build) void {
 
         const apps: []const AppDef = &.{};
 
-        const Variables = struct {
-            @"${DISK}": std.Build.LazyPath,
-            @"${BOOTROM}": std.Build.LazyPath,
-            @"${KERNEL}": std.Build.LazyPath,
-        };
-
         const variables = Variables{
             .@"${DISK}" = disk_img,
-            .@"${BOOTROM}" = kernel_bin,
             .@"${KERNEL}" = kernel_elf,
+            .@"${BOOTROM}" = kernel_bin orelse b.path("<missing>"),
         };
 
         // Run qemu with the debug-filter wrapped around so we can translate addresses
@@ -105,29 +105,26 @@ pub fn build(b: *std.Build) void {
             vm_runner.addPrefixedFileArg(app_name, app.exe);
         }
 
-        // from now on regular QEMU flags:
-        vm_runner.addArg(platform_info.qemu_exe);
-        vm_runner.addArgs(&generic_qemu_flags);
+        if (!run_machine.is_hosted()) {
 
-        if (no_gui) {
-            vm_runner.addArgs(&console_qemu_flags);
-        } else {
-            vm_runner.addArgs(&display_qemu_flags);
-        }
+            // from now on regular QEMU flags:
+            vm_runner.addArg(platform_info.qemu_exe);
+            vm_runner.addArgs(&generic_qemu_flags);
 
-        arg_loop: for (machine_info.qemu_cli) |arg| {
-            inline for (@typeInfo(Variables).Struct.fields) |fld| {
-                const path = @field(variables, fld.name);
-
-                if (std.mem.eql(u8, arg, fld.name)) {
-                    vm_runner.addFileArg(path);
-                    continue :arg_loop;
-                } else if (std.mem.endsWith(u8, arg, fld.name)) {
-                    vm_runner.addPrefixedFileArg(arg[0 .. arg.len - fld.name.len], path);
-                    continue :arg_loop;
-                }
+            if (no_gui) {
+                vm_runner.addArgs(&console_qemu_flags);
+            } else {
+                vm_runner.addArgs(&display_qemu_flags);
             }
-            vm_runner.addArg(arg);
+
+            for (machine_info.qemu_cli) |arg| {
+                variables.addArg(vm_runner, arg);
+            }
+        } else {
+            vm_runner.addFileArg(kernel_elf);
+            for (machine_info.hosted_cli) |arg| {
+                variables.addArg(vm_runner, arg);
+            }
         }
 
         if (b.args) |args| {
@@ -144,12 +141,37 @@ const PlatformStartupConfig = struct {
     qemu_exe: []const u8,
 };
 
+const Variables = struct {
+    @"${DISK}": std.Build.LazyPath,
+    @"${BOOTROM}": std.Build.LazyPath,
+    @"${KERNEL}": std.Build.LazyPath,
+
+    pub fn addArg(variables: Variables, runner: *std.Build.Step.Run, arg: []const u8) void {
+        inline for (@typeInfo(Variables).Struct.fields) |fld| {
+            const path = @field(variables, fld.name);
+
+            if (std.mem.eql(u8, arg, fld.name)) {
+                runner.addFileArg(path);
+                return;
+            }
+
+            if (std.mem.endsWith(u8, arg, fld.name)) {
+                runner.addPrefixedFileArg(arg[0 .. arg.len - fld.name.len], path);
+                return;
+            }
+        }
+        runner.addArg(arg);
+    }
+};
+
 const MachineStartupConfig = struct {
     /// Instantiation:
     /// Uses place holders:
     /// - "${BOOTROM}"
     /// - "${DISK}"
-    qemu_cli: []const []const u8,
+    qemu_cli: []const []const u8 = &.{},
+
+    hosted_cli: []const []const u8 = &.{},
 };
 
 const platform_info_map = std.EnumArray(Platform, PlatformStartupConfig).init(.{
@@ -206,7 +228,10 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
         },
     },
     .@"hosted-x86-linux" = .{
-        .qemu_cli = &.{},
+        .hosted_cli = &.{
+            "drive:${DISK}",
+            "video:sdl:800:480",
+        },
     },
 
     // .@"pc-efi" = .{
@@ -245,3 +270,10 @@ const display_qemu_flags = [_][]const u8{
 const console_qemu_flags = [_][]const u8{
     "-display", "none",
 };
+
+fn get_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) ?std.Build.LazyPath {
+    return for (write_files.files.items) |file| {
+        if (std.mem.eql(u8, file.sub_path, sub_path))
+            break file.getPath();
+    } else null;
+}

@@ -5,6 +5,16 @@ const kernel_package = @import("kernel");
 
 const Machine = kernel_package.Machine;
 
+const App = struct {
+    name: []const u8,
+    dep_name: []const u8,
+    artifact_name: ?[]const u8 = null,
+};
+
+const apps: []const App = &.{
+    .{ .name = "hello-world", .dep_name = "hello_world" },
+};
+
 pub fn build(b: *std.Build) void {
     // Options:
     const machine = b.option(Machine, "machine", "What machine should AshetOS be built for?") orelse @panic("no machine defined!");
@@ -31,7 +41,9 @@ pub fn build(b: *std.Build) void {
 
     const kernel_elf = kernel.getEmittedBin();
 
-    // TODO: add objcopy for kernel_bin file
+    const result_files = b.addNamedWriteFiles("ashet-os");
+
+    _ = result_files.addCopyFile(kernel_elf, "kernel.elf");
 
     // Phase 1: Target independent root fs:
 
@@ -45,7 +57,21 @@ pub fn build(b: *std.Build) void {
 
     // Phase 2: Platform dependent root fs
 
-    // TODO: Install applications here
+    for (apps) |app| {
+        const app_path = b.fmt("apps/{s}", .{app.name});
+        const app_exe_path = b.fmt("apps/{s}/code", .{app.name});
+
+        const app_dep = b.dependency(app.dep_name, .{ .target = platform });
+
+        const app_exe = app_dep.artifact(
+            app.artifact_name orelse app.name,
+        );
+
+        const app_bin = app_exe.getEmittedBin();
+
+        rootfs.mkdir(app_path);
+        rootfs.addFile(app_bin, app_exe_path);
+    }
 
     switch (platform) {
         else => {},
@@ -124,6 +150,8 @@ pub fn build(b: *std.Build) void {
         },
     };
 
+    _ = result_files.addCopyFile(disk_image, "disk.img");
+
     const install_disk_image = b.addInstallFile(disk_image, "disk.img");
     b.getInstallStep().dependOn(&install_disk_image.step);
 
@@ -134,7 +162,11 @@ pub fn build(b: *std.Build) void {
             .pad_to = rom_size,
         });
 
-        const install_bin_file = b.addInstallFile(objcopy_kernel.getOutput(), "kernel.bin");
+        const kernel_bin = objcopy_kernel.getOutput();
+
+        _ = result_files.addCopyFile(kernel_bin, "kernel.bin");
+
+        const install_bin_file = b.addInstallFile(kernel_bin, "kernel.bin");
         b.getInstallStep().dependOn(&install_bin_file.step);
     }
 }
