@@ -11,6 +11,8 @@ const default_machines = std.EnumSet(Machine).init(.{
     .@"hosted-x86-linux" = true,
 });
 
+const qemu_debug_options_default = "cpu_reset,guest_errors,unimp";
+
 pub fn build(b: *std.Build) void {
     // Steps:
 
@@ -32,6 +34,12 @@ pub fn build(b: *std.Build) void {
     // Options:
     const maybe_run_machine = b.option(Machine, "machine", "Selects which machine to run with the 'run' step");
     const no_gui = b.option(bool, "no-gui", "Disables GUI for runners") orelse false;
+    const qemu_debug_options = b.option(
+        []const u8,
+        "qemu-debug",
+        b.fmt("Sets the QEMU debug options (default: '{s}')", .{qemu_debug_options_default}),
+    ) orelse
+        qemu_debug_options_default;
 
     // Dependencies:
 
@@ -110,6 +118,10 @@ pub fn build(b: *std.Build) void {
             // from now on regular QEMU flags:
             vm_runner.addArg(platform_info.qemu_exe);
             vm_runner.addArgs(&generic_qemu_flags);
+
+            if (qemu_debug_options.len > 0) {
+                vm_runner.addArgs(&.{ "-d", qemu_debug_options });
+            }
 
             if (no_gui) {
                 vm_runner.addArgs(&console_qemu_flags);
@@ -257,7 +269,6 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
 });
 
 const generic_qemu_flags = [_][]const u8{
-    "-d",         "guest_errors,unimp",
     "-serial",    "stdio",
     "-no-reboot", "-no-shutdown",
     "-s",

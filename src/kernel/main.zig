@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const machine_info = @import("machine-info");
+const log = std.log.scoped(.main);
 
 pub const abi = @import("ashet-abi");
 pub const apps = @import("components/apps.zig");
@@ -73,9 +74,8 @@ pub export fn ashet_kernelMain() void {
 
     full_panic = true;
 
-    main() catch |err| {
-        std.log.err("main() failed with {}", .{err});
-
+    log.info("entering checked main()", .{});
+    main() catch {
         if (@errorReturnTrace()) |error_trace| {
             if (builtin.os.tag != .freestanding) {
                 // hosted environment:
@@ -90,37 +90,49 @@ pub export fn ashet_kernelMain() void {
 }
 
 fn main() !void {
+    errdefer |err| log.err("main() failed with {}", .{err});
+
     // Before we initialize the hardware, we already add hardware independent drivers
     // for stuff like file systems, virtual block devices and so on...
+    log.info("install builtin drivers...", .{});
     drivers.installBuiltinDrivers();
 
     // Initialize the hardware into a well-defined state. After this, we can safely perform I/O ops.
     // This will install all relevant drivers, set up interrupts if necessary and so on.
+    log.info("initialize machine...", .{});
     try machine.initialize();
 
     // Should be initialized as early as possible, but has to be initialized
     // after machine initialization (as now drivers are available):
+    log.info("initialize syscalls...", .{});
     syscalls.initialize();
 
+    log.info("initialize video...", .{});
     video.initialize();
 
+    log.info("initialize filesystem...", .{});
     filesystem.initialize();
 
+    log.info("initialize input...", .{});
     input.initialize();
 
+    log.info("spawn kernel main thread...", .{});
     const thread = try scheduler.Thread.spawn(tickSystem, null, .{});
     try thread.setName("os.tick");
     try thread.start();
     thread.detach();
 
+    log.info("startup network...", .{});
     try network.start();
 
     // try ui.start();
 
+    log.info("entering scheduler...", .{});
+
     scheduler.start();
 
     // All tasks stopped, what should we do now?
-    std.log.warn("All threads stopped. System is now halting.", .{});
+    log.warn("All threads stopped. System is now halting.", .{});
 }
 
 pub const global_hotkeys = struct {
@@ -136,7 +148,7 @@ pub const global_hotkeys = struct {
                     const total_pages = memory.debug.getPageCount();
                     const free_pages = memory.debug.getFreePageCount();
 
-                    std.log.info("current memory usage: {}/{} pages free, {:.3}/{:.3} used, {}% used", .{
+                    log.info("current memory usage: {}/{} pages free, {:.3}/{:.3} used, {}% used", .{
                         free_pages,
                         total_pages,
                         std.fmt.fmtIntSizeBin(memory.page_size * (total_pages - free_pages)),
