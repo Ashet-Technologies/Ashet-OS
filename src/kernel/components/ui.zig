@@ -699,7 +699,7 @@ const WindowIterator = struct {
     }
 };
 
-const WindowQueue = std.TailQueue(void);
+const WindowQueue = std.DoublyLinkedList(void);
 
 const Event = union(ashet.abi.UiEventType) {
     mouse: ashet.abi.MouseEvent,

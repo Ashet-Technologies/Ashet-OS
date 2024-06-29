@@ -3,7 +3,7 @@ const hal = @import("hal");
 const ashet = @import("../main.zig");
 const logger = std.log.scoped(.multitasking);
 
-const ProcessList = std.TailQueue(void);
+const ProcessList = std.DoublyLinkedList(void);
 const ProcessNode = ProcessList.Node;
 
 // var initialized: bool = false;

@@ -403,7 +403,7 @@ pub const ThreadIterator = struct {
     }
 };
 
-const ThreadQueue = std.TailQueue(void);
+const ThreadQueue = std.DoublyLinkedList(void);
 
 var wait_queue: ThreadQueue = .{};
 
