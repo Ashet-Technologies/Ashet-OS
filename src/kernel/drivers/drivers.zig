@@ -123,7 +123,7 @@ pub fn getDriverName(comptime class: DriverClass, intf: *ResolvedDriverInterface
 
     std.debug.assert(@intFromPtr(di) == @intFromPtr(&@field(di, @tagName(class))));
 
-    const dri: *Driver = @fieldParentPtr(Driver, "class", di);
+    const dri: *Driver = @fieldParentPtr("class", di);
     dri.validate(class);
     return dri.name;
 }
@@ -142,6 +142,12 @@ pub const Driver = struct {
             logger.err("driver data: {}", .{dri.*});
             @panic("driver corrupted");
         }
+    }
+
+    /// Returns the parent structure of the driver.
+    /// Assumes `<Actual>.<field_name>` is a field to a `Driver` type.
+    pub fn resolve(dri: *Driver, comptime Actual: type, comptime field_name: []const u8) *Actual {
+        return @alignCast(@fieldParentPtr(field_name, dri));
     }
 };
 
@@ -171,7 +177,7 @@ pub fn resolveDriver(comptime class: DriverClass, ptr: *ResolvedDriverInterface(
     const container = @as(*DriverInterface, @ptrCast(ptr));
     std.debug.assert(@intFromPtr(container) == @intFromPtr(&@field(container, @tagName(class))));
 
-    const driver = @fieldParentPtr(Driver, "class", container);
+    const driver: *Driver = @fieldParentPtr("class", container);
     driver.validate(class);
     return driver;
 }
@@ -183,7 +189,7 @@ pub const RTC = struct {
 
     pub fn nanoTimestamp(clk: *RTC) i128 {
         return clk.nanoTimestampFn(resolveDriver(.rtc, clk));
-    } 
+    }
 };
 
 pub const VideoDevice = struct {

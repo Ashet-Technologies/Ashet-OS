@@ -77,6 +77,26 @@ The following list contains devices for which there is a planned port of Ashet O
 - Asm Compiler (Asm)
 - Shell Service (Shell)
 
+## Contributing
+
+### Compiling The Project
+
+The results of the compilation are usually disk images, except for a machine based on the `hosted` machine.
+
+#### Compile everything:
+
+```sh-session
+[user@host] $ zig build
+[user@host] $ 
+```
+
+#### Compile for a single machine:
+
+```sh-session
+[user@host] $ zig build <machine-name>
+[user@host] $ 
+```
+
 ## Useful Links
 
 - [Free & Open RISC-V Reference Card](https://www.cl.cam.ac.uk/teaching/1617/ECAD+Arch/files/docs/RISCVGreenCardv8-20151013.pdf)

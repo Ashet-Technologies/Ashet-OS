@@ -118,13 +118,13 @@ comptime {
 }
 
 fn linkIsUp(driver: *Driver) bool {
-    const device = @fieldParentPtr(Virtio_Net_Device, "driver", driver);
+    const device = driver.resolve(Virtio_Net_Device, "driver");
     _ = device;
     return true;
 }
 
 fn allocPacket(driver: *Driver, size: usize) ?[]u8 {
-    const device = @fieldParentPtr(Virtio_Net_Device, "driver", driver);
+    const device = driver.resolve(Virtio_Net_Device, "driver");
 
     if (size > Buffer.max_mtu)
         return null;
@@ -148,9 +148,9 @@ fn allocPacket(driver: *Driver, size: usize) ?[]u8 {
 fn send(driver: *Driver, packet: []u8) bool {
     std.debug.assert(packet.len == Buffer.max_mtu);
 
-    const device = @fieldParentPtr(Virtio_Net_Device, "driver", driver);
+    const device = driver.resolve(Virtio_Net_Device, "driver");
 
-    const buffer = @fieldParentPtr(Buffer, "data", packet.ptr[0..Buffer.max_mtu]);
+    const buffer: *Buffer = @alignCast(@fieldParentPtr("data", packet.ptr[0..Buffer.max_mtu]));
 
     logger.debug("sending {} bytes...", .{buffer.length});
 
@@ -161,7 +161,7 @@ fn send(driver: *Driver, packet: []u8) bool {
 }
 
 fn fetchNic(driver: *Driver) void {
-    const device = @fieldParentPtr(Virtio_Net_Device, "driver", driver);
+    const device = driver.resolve(Virtio_Net_Device, "driver");
 
     device.handleIncomingData() catch |err| {
         logger.err("error while receiving packets from nic {s}: {s}", .{ device.driver.class.network.getName(), @errorName(err) });

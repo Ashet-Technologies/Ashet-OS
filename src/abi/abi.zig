@@ -1,5 +1,7 @@
 const std = @import("std");
 
+pub const Platform = @import("src/platforms.zig").Platform;
+
 pub const syscalls = struct {
     pub extern fn @"ashet.process.yield"() void;
     pub extern fn @"ashet.process.exit"(u32) noreturn;
@@ -490,7 +492,7 @@ pub const Point = extern struct {
     }
 
     pub fn manhattenDistance(a: Point, b: Point) u16 {
-        return std.math.absCast(a.x - b.x) + std.math.absCast(a.y - b.y);
+        return @abs(a.x - b.x) + @abs(a.y - b.y);
     }
 
     pub fn format(point: Point, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
@@ -861,7 +863,7 @@ pub const IOP = extern struct {
 
         const inputs_augmented = @Type(.{
             .Struct = .{
-                .layout = .Extern,
+                .layout = .@"extern",
                 .fields = inputs,
                 .decls = &.{},
                 .is_tuple = false,
@@ -882,7 +884,7 @@ pub const IOP = extern struct {
 
         const outputs_augmented = @Type(.{
             .Struct = .{
-                .layout = .Extern,
+                .layout = .@"extern",
                 .fields = &output_fields,
                 .decls = &.{},
                 .is_tuple = false,
@@ -962,7 +964,7 @@ pub const IOP = extern struct {
     pub fn cast(comptime T: type, iop: *IOP) *T {
         if (comptime !isIOP(T)) @compileError("Only a type created by IOP.define can be passed to cast!");
         std.debug.assert(iop.type == T.iop_type);
-        return @fieldParentPtr(T, "iop", iop);
+        return @alignCast(@fieldParentPtr("iop", iop));
     }
 
     fn undefinedDefaultFor(comptime T: type) *T {

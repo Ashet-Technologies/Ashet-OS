@@ -1,46 +1,21 @@
 .{
     .name = "ashet-os",
     .version = "0.1.0",
+    .minimum_zig_version = "0.13.1",
     .dependencies = .{
-        .zfat = .{
-            .url = "https://github.com/ZigEmbeddedGroup/zfat/archive/c97bcca86b4e878023df070c9e0264a21c056622.tar.gz",
-            .hash = "1220a1f050f3a67785cbe68283b252f02f72885eea80d6a9e1856b02cd66deaf1492",
+        .os = .{
+            .path = "src/os",
         },
-        .@"text-editor" = .{
-            .url = "https://github.com/MasterQ32/TextEditor/archive/cfa2d58f4870ef7f74b7f45b57e86c492001a6c9.tar.gz",
-            .hash = "12203149d62eb94d919582cfd2482a4abd14b7908a69928ec0fe2724969388a2ad01",
+        .kernel = .{
+            .path = "src/kernel",
         },
-        .zigimg = .{
-            .url = "https://github.com/zigimg/zigimg/archive/40ddb16fd246174545b7327a12dce7f0889ada7a.tar.gz",
-            .hash = "12208c69b00540fe3f38893800fb6c89a9fe27b4a687de5d0462e498a43db4caeec0",
+        .@"ashet-abi" = .{
+            .path = "src/abi",
         },
-        .args = .{
-            .url = "https://github.com/MasterQ32/zig-args/archive/bb2eced8ddf28114b3a1ff761c2d80b90b1a61e2.tar.gz",
-            .hash = "12208556082c280af264ca2a174fd04fc7a35f865bfe59e2c61f4a977bf7a65063e4",
-        },
-        .hyperdoc = .{
-            .url = "https://github.com/MasterQ32/hyperdoc/archive/2d7db6836918af2b77972a6e09b849a351faf40a.tar.gz",
-            .hash = "1220697b65c227e6f031e11f54889568e730108e5731c5aa9617e50d3d56cbfb7cd8",
-        },
-        .lua = .{
-            .url = "https://github.com/MasterQ32/lua/archive/0fc5a993e7ec3b5064500cfbdb1117f86469c68d.tar.gz",
-            .hash = "1220219fdd09defd298fe497792e17093af553f74a0069283f79f6f3487d8aae6303",
-        },
-        .turtlefont = .{
-            .url = "https://github.com/MasterQ32/turtlefont/archive/efdfcd1b7a2928db6fcb97b71da09d0397121cd1.tar.gz",
-            .hash = "122023a2b405e3e2fbe84c7aed6b1bde90b5168ac19e1e8f99697b888d4458adaf0f",
-        },
-        .fraxinus = .{
-            .url = "https://github.com/MasterQ32/fraxinus/archive/dac75f30046d2fb7eeed893d505722f5f781d832.tar.gz",
-            .hash = "1220b54f999bed8a965d0978cb3375083e9038286c5414cb06726318b4f3917a01d2",
-        },
-        .network = .{
-            .url = "https://github.com/MasterQ32/zig-network/archive/cdff53a2527598112a02b442045d4aef39a2e5e2.tar.gz",
-            .hash = "1220509b2da888b2d1ea452ed9d384134a754a940d1dc3865c87da7d224b89912b3d",
-        },
-        .vnc = .{
-            .url = "https://github.com/MasterQ32/zvnc/archive/52c16e585c17611ac3ee09ca9a131845fa07f157.tar.gz",
-            .hash = "12205d9dc1ae86ccdb30e6a6b56ae91f0d38244d095cc18c1e7c13a4846e0d77d5a2",
+        .debugfilter = .{
+            .path = "src/tools/debug-filter",
         },
     },
+
+    .paths = .{"."},
 }

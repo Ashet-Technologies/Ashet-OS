@@ -53,17 +53,17 @@ pub fn init(
 }
 
 fn getVideoMemory(driver: *Driver) []align(ashet.memory.page_size) ColorIndex {
-    const vd = @fieldParentPtr(Host_VNC_Output, "driver", driver);
+    const vd: *Host_VNC_Output = @fieldParentPtr("driver", driver);
     return vd.frontbuffer;
 }
 
 fn getPaletteMemory(driver: *Driver) *[256]Color {
-    const vd = @fieldParentPtr(Host_VNC_Output, "driver", driver);
+    const vd: *Host_VNC_Output = @fieldParentPtr("driver", driver);
     return &vd.palette;
 }
 
 fn getResolution(driver: *Driver) Resolution {
-    const vd = @fieldParentPtr(Host_VNC_Output, "driver", driver);
+    const vd: *Host_VNC_Output = @fieldParentPtr("driver", driver);
     return Resolution{
         .width = vd.width,
         .height = vd.height,
@@ -71,7 +71,7 @@ fn getResolution(driver: *Driver) Resolution {
 }
 
 fn getMaxResolution(driver: *Driver) Resolution {
-    const vd = @fieldParentPtr(Host_VNC_Output, "driver", driver);
+    const vd: *Host_VNC_Output = @fieldParentPtr("driver", driver);
     return Resolution{
         .width = vd.width,
         .height = vd.height,
@@ -79,7 +79,7 @@ fn getMaxResolution(driver: *Driver) Resolution {
 }
 
 fn setResolution(driver: *Driver, width: u15, height: u15) void {
-    const vd = @fieldParentPtr(Host_VNC_Output, "driver", driver);
+    const vd: *Host_VNC_Output = @fieldParentPtr("driver", driver);
     _ = vd;
     _ = width;
     _ = height;
@@ -87,19 +87,19 @@ fn setResolution(driver: *Driver, width: u15, height: u15) void {
 }
 
 fn setBorder(driver: *Driver, color: ColorIndex) void {
-    const vd = @fieldParentPtr(Host_VNC_Output, "driver", driver);
+    const vd: *Host_VNC_Output = @fieldParentPtr("driver", driver);
     _ = vd;
     _ = color;
 }
 
 fn getBorder(driver: *Driver) ColorIndex {
-    const vd = @fieldParentPtr(Host_VNC_Output, "driver", driver);
+    const vd: *Host_VNC_Output = @fieldParentPtr("driver", driver);
     _ = vd;
     return ColorIndex.get(0);
 }
 
 fn flush(driver: *Driver) void {
-    const vd = @fieldParentPtr(Host_VNC_Output, "driver", driver);
+    const vd: *Host_VNC_Output = @fieldParentPtr("driver", driver);
 
     // vd.backbuffer_lock.lock();
     // defer vd.backbuffer_lock.unlock();

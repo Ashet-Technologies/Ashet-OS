@@ -1,5 +1,7 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const machine_info = @import("machine-info");
+const log = std.log.scoped(.main);
 
 pub const abi = @import("ashet-abi");
 pub const apps = @import("components/apps.zig");
@@ -15,7 +17,7 @@ pub const serial = @import("components/serial.zig");
 pub const storage = @import("components/storage.zig");
 pub const syscalls = @import("components/syscalls.zig");
 pub const time = @import("components/time.zig");
-pub const ui = @import("components/ui.zig");
+// pub const ui = @import("components/ui.zig");
 pub const video = @import("components/video.zig");
 
 pub const ports = @import("port/targets.zig");
@@ -23,18 +25,19 @@ pub const ports = @import("port/targets.zig");
 pub const platform_id: ports.Platform = machine_info.platform_id;
 pub const machine_id: ports.Machine = machine_info.machine_id;
 
-pub const platform = switch (platform_id) {
-    .riscv => @import("port/platform/riscv.zig"),
+pub const platform = if (machine_id.is_hosted())
+    @import("port/platform/hosted.zig")
+else switch (platform_id) {
+    .rv32 => @import("port/platform/rv32.zig"),
     .arm => @import("port/platform/arm.zig"),
     .x86 => @import("port/platform/x86.zig"),
-    .hosted => @import("port/platform/hosted.zig"),
 };
 
 pub const machine = switch (machine_id) {
-    .rv32_virt => @import("port/machine/rv32_virt/rv32_virt.zig"),
-    .arm_virt => @import("port/machine/arm_virt/arm_virt.zig"),
-    .bios_pc => @import("port/machine/bios_pc/bios_pc.zig"),
-    .linux_pc => @import("port/machine/linux_pc/linux_pc.zig"),
+    .@"pc-bios" => @import("port/machine/bios_pc/bios_pc.zig"),
+    .@"qemu-virt-rv32" => @import("port/machine/rv32_virt/rv32_virt.zig"),
+    .@"qemu-virt-arm" => @import("port/machine/arm_virt/arm_virt.zig"),
+    .@"hosted-x86-linux" => @import("port/machine/linux_pc/linux_pc.zig"),
 };
 
 pub const machine_config: ports.MachineConfig = machine.machine_config;
@@ -46,7 +49,12 @@ comptime {
     _ = platform.start; // explicitly refer to the entry point implementation
 }
 
-pub export fn ashet_kernelMain() void {
+export fn ashet_kernelMain() noreturn {
+    // trampoline into kernelMain() to have full stack tracing.
+    kernelMain();
+}
+
+fn kernelMain() noreturn {
     Debug.setTraceLoc(@src());
     memory.loadKernelMemory(machine_config.load_sections);
 
@@ -71,8 +79,15 @@ pub export fn ashet_kernelMain() void {
 
     full_panic = true;
 
-    main() catch |err| {
-        std.log.err("main() failed with {}", .{err});
+    log.info("entering checked main()", .{});
+    main() catch {
+        if (@errorReturnTrace()) |error_trace| {
+            if (builtin.os.tag != .freestanding) {
+                // hosted environment:
+                std.debug.dumpStackTrace(error_trace.*);
+            }
+        }
+
         @panic("system failure");
     };
 
@@ -80,37 +95,49 @@ pub export fn ashet_kernelMain() void {
 }
 
 fn main() !void {
+    errdefer |err| log.err("main() failed with {}", .{err});
+
     // Before we initialize the hardware, we already add hardware independent drivers
     // for stuff like file systems, virtual block devices and so on...
+    log.info("install builtin drivers...", .{});
     drivers.installBuiltinDrivers();
 
     // Initialize the hardware into a well-defined state. After this, we can safely perform I/O ops.
     // This will install all relevant drivers, set up interrupts if necessary and so on.
+    log.info("initialize machine...", .{});
     try machine.initialize();
 
     // Should be initialized as early as possible, but has to be initialized
     // after machine initialization (as now drivers are available):
+    log.info("initialize syscalls...", .{});
     syscalls.initialize();
 
+    log.info("initialize video...", .{});
     video.initialize();
 
+    log.info("initialize filesystem...", .{});
     filesystem.initialize();
 
+    log.info("initialize input...", .{});
     input.initialize();
 
+    log.info("spawn kernel main thread...", .{});
     const thread = try scheduler.Thread.spawn(tickSystem, null, .{});
     try thread.setName("os.tick");
     try thread.start();
     thread.detach();
 
+    log.info("startup network...", .{});
     try network.start();
 
-    try ui.start();
+    // try ui.start();
+
+    log.info("entering scheduler...", .{});
 
     scheduler.start();
 
     // All tasks stopped, what should we do now?
-    std.log.warn("All threads stopped. System is now halting.", .{});
+    log.warn("All threads stopped. System is now halting.", .{});
 }
 
 pub const global_hotkeys = struct {
@@ -126,7 +153,7 @@ pub const global_hotkeys = struct {
                     const total_pages = memory.debug.getPageCount();
                     const free_pages = memory.debug.getFreePageCount();
 
-                    std.log.info("current memory usage: {}/{} pages free, {:.3}/{:.3} used, {}% used", .{
+                    log.info("current memory usage: {}/{} pages free, {:.3}/{:.3} used, {}% used", .{
                         free_pages,
                         total_pages,
                         std.fmt.fmtIntSizeBin(memory.page_size * (total_pages - free_pages)),
@@ -225,64 +252,65 @@ pub const log_levels = struct {
     pub var fatfs: LogLevel = .info;
 };
 
-pub const std_options = struct {
-    pub const log_level = if (@import("builtin").mode == .Debug) .debug else .info;
-
-    pub fn logFn(
-        comptime message_level: std.log.Level,
-        comptime scope: @Type(.EnumLiteral),
-        comptime format: []const u8,
-        args: anytype,
-    ) void {
-        const ansi = true;
-
-        const scope_name = @tagName(scope);
-
-        if (@hasDecl(log_levels, scope_name)) {
-            if (@intFromEnum(message_level) > @intFromEnum(@field(log_levels, scope_name)))
-                return;
-        }
-
-        const color_code = if (ansi)
-            switch (message_level) {
-                .err => "\x1B[91m", // red
-                .warn => "\x1B[93m", // yellow
-                .info => "\x1B[97m", // white
-                .debug => "\x1B[90m", // gray
-            }
-        else
-            "";
-        const postfix = if (ansi) "\x1B[0m" else ""; // reset terminal properties
-
-        const level_txt = comptime switch (message_level) {
-            .err => "E",
-            .warn => "W",
-            .info => "I",
-            .debug => "D",
-        };
-        const scope_tag = comptime if (scope != .default)
-            @tagName(scope)
-        else
-            "unscoped";
-
-        {
-            var cs = CriticalSection.enter();
-            defer cs.leave();
-
-            const when = time.get_tick_count();
-
-            Debug.writer().print(color_code ++ "{d: >6}.{d:0>3} [{s}] {s}: ", .{
-                when / 1000,
-                when % 1000,
-                level_txt,
-                scope_tag,
-            }) catch return;
-
-            Debug.writer().print(format, args) catch return;
-            Debug.writer().print(postfix ++ "\r\n", .{}) catch return;
-        }
-    }
+pub const std_options = std.Options{
+    .log_level = if (@import("builtin").mode == .Debug) .debug else .info,
+    .logFn = kernel_log_fn,
 };
+
+fn kernel_log_fn(
+    comptime message_level: std.log.Level,
+    comptime scope: @Type(.EnumLiteral),
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    const ansi = true;
+
+    const scope_name = @tagName(scope);
+
+    if (@hasDecl(log_levels, scope_name)) {
+        if (@intFromEnum(message_level) > @intFromEnum(@field(log_levels, scope_name)))
+            return;
+    }
+
+    const color_code = if (ansi)
+        switch (message_level) {
+            .err => "\x1B[91m", // red
+            .warn => "\x1B[93m", // yellow
+            .info => "\x1B[97m", // white
+            .debug => "\x1B[90m", // gray
+        }
+    else
+        "";
+    const postfix = if (ansi) "\x1B[0m" else ""; // reset terminal properties
+
+    const level_txt = comptime switch (message_level) {
+        .err => "E",
+        .warn => "W",
+        .info => "I",
+        .debug => "D",
+    };
+    const scope_tag = comptime if (scope != .default)
+        @tagName(scope)
+    else
+        "unscoped";
+
+    {
+        var cs = CriticalSection.enter();
+        defer cs.leave();
+
+        const when = time.get_tick_count();
+
+        Debug.writer().print(color_code ++ "{d: >6}.{d:0>3} [{s}] {s}: ", .{
+            when / 1000,
+            when % 1000,
+            level_txt,
+            scope_tag,
+        }) catch return;
+
+        Debug.writer().print(format, args) catch return;
+        Debug.writer().print(postfix ++ "\r\n", .{}) catch return;
+    }
+}
 
 pub const CodeLocation = struct {
     pointer: usize,

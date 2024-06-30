@@ -403,7 +403,7 @@ pub const ThreadIterator = struct {
     }
 };
 
-const ThreadQueue = std.TailQueue(void);
+const ThreadQueue = std.DoublyLinkedList(void);
 
 var wait_queue: ThreadQueue = .{};
 
@@ -420,11 +420,12 @@ export var ashet_scheduler_restore_thread: *Thread = undefined;
 var kernel_thread_backup: [std.mem.alignForward(usize, @sizeOf(Thread) + 56, 256)]u8 align(256) = undefined;
 
 pub fn getKernelThread() *Thread {
+    // TODO: https://github.com/ziglang/zig/pull/20089
     return @as(*Thread, @ptrFromInt(@intFromPtr(&kernel_thread_backup) + kernel_thread_backup.len - @sizeOf(Thread)));
 }
 
 fn nodeToThread(node: *ThreadQueue.Node) *Thread {
-    return @fieldParentPtr(Thread, "node", node);
+    return @fieldParentPtr("node", node);
 }
 
 fn fetchThread(queue: *ThreadQueue) ?*Thread {

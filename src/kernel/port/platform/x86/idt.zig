@@ -106,14 +106,23 @@ export fn handle_interrupt(_cpu: *CpuState) *CpuState {
     return cpu;
 }
 
-export var idt: [256]Descriptor align(16) = undefined;
+export var idt: [256]Descriptor align(16) linksection(".rodata.irq") = .{@as(Descriptor, @bitCast(@as(u64, 0)))} ** 256;
+
+const InterruptTable = extern struct {
+    limit: u16,
+    table: [*]Descriptor align(2),
+};
+
+export const idtp linksection(".rodata.irq") = InterruptTable{
+    .limit = @sizeOf(@TypeOf(idt)) - 1,
+    .table = &idt,
+};
 
 pub fn init() void {
-    comptime var i: usize = 0;
-    inline while (i < idt.len) : (i += 1) {
-        idt[i] = Descriptor.init(getInterruptStub(i), 0x08, .interruptGate, .bits32, 0, true);
+    inline for (&idt, 0..) |*entry, i| {
+        const desc = Descriptor.init(getInterruptStub(i), 0x08, .interruptGate, .bits32, 0, true);
+        entry.* = desc;
     }
-
     asm volatile ("lidt idtp");
 
     PIC.primary.initialize(0x20);
@@ -238,16 +247,6 @@ const Descriptor = packed struct(u64) {
     }
 };
 
-const InterruptTable = extern struct {
-    limit: u16,
-    table: [*]Descriptor align(2),
-};
-
-export const idtp = InterruptTable{
-    .limit = @sizeOf(@TypeOf(idt)) - 1,
-    .table = &idt,
-};
-
 export fn common_isr_handler() callconv(.Naked) void {
     asm volatile (
     // save cpu state
@@ -281,7 +280,7 @@ export fn common_isr_handler() callconv(.Naked) void {
     );
 }
 
-fn getInterruptStub(comptime i: u32) fn () callconv(.Naked) void {
+fn getInterruptStub(comptime i: u32) *const fn () callconv(.Naked) void {
     const Wrapper = struct {
         fn stub_with_zero() callconv(.Naked) void {
             asm volatile (
@@ -304,7 +303,7 @@ fn getInterruptStub(comptime i: u32) fn () callconv(.Naked) void {
         }
     };
     return switch (i) {
-        8, 10...14, 17 => Wrapper.stub_with_errorcode,
-        else => Wrapper.stub_with_zero,
+        8, 10...14, 17 => &Wrapper.stub_with_errorcode,
+        else => &Wrapper.stub_with_zero,
     };
 }

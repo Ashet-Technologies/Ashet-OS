@@ -1,9 +1,0 @@
-
-include_dir=vendor/libc/include
-sys_include_dir=vendor/libc/include
-
-crt_dir=lib
-
-msvc_lib_dir=
-kernel32_lib_dir=
-gcc_dir=

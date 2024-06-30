@@ -18,7 +18,7 @@ pub fn init() HostedSystemClock {
 }
 
 fn nanoTimestamp(driver: *Driver) i128 {
-    const rtc = @fieldParentPtr(HostedSystemClock, "driver", driver);
+    const rtc: *HostedSystemClock = @fieldParentPtr("driver", driver);
     _ = rtc;
     return std.time.nanoTimestamp();
 }

@@ -87,9 +87,9 @@ pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleIni
         try kbc.writeCommand(.enable_secondary_port);
 
         try kbc.writeCommand(.read_cmd_byte);
-        var cmd_byte = @as(CommandByte, @bitCast(try kbc.readData()));
+        const cmd_byte: CommandByte = @bitCast(try kbc.readData());
 
-        var two_channels = (cmd_byte.secondary_clk_enable == .enabled);
+        const two_channels = (cmd_byte.secondary_clk_enable == .enabled);
 
         try kbc.writeCommand(.disable_secondary_port);
 
@@ -332,7 +332,7 @@ fn handleMouseInterrupt(state: *CpuState) *CpuState {
 }
 
 fn poll(driver: *Driver) void {
-    const kbc = @fieldParentPtr(PC_KBC, "driver", driver);
+    const kbc: *PC_KBC = @fieldParentPtr("driver", driver);
     kbc.internalPoll() catch |err| logger.err("error while polling kbc: {}", .{err});
 }
 
@@ -441,7 +441,7 @@ fn writeData(kbc: PC_KBC, value: u8) !void {
 
 fn readData(kbc: PC_KBC) !u8 {
     _ = kbc;
-    var result = readRawData();
+    const result = readRawData();
     // logger.debug("readData() => {!X:0>2}", .{result});
     return try result;
 }

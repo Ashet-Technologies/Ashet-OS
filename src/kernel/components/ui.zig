@@ -457,7 +457,7 @@ const MinimizedIterator = struct {
         const width = @as(u15, @intCast(@min(6 * title.len + 2 + 11 + 10, 75)));
         defer iter.dx += (width + 4);
 
-        var mini = MinimizedWindow{
+        const mini = MinimizedWindow{
             .window = window,
             .bounds = Rectangle{
                 .x = iter.dx,
@@ -699,7 +699,7 @@ const WindowIterator = struct {
     }
 };
 
-const WindowQueue = std.TailQueue(void);
+const WindowQueue = std.DoublyLinkedList(void);
 
 const Event = union(ashet.abi.UiEventType) {
     mouse: ashet.abi.MouseEvent,
@@ -709,8 +709,8 @@ const Event = union(ashet.abi.UiEventType) {
     window_restore,
     window_moving,
     window_moved,
-    window_resized,
     window_resizing,
+    window_resized,
 };
 
 pub fn destroyAllWindowsForProcess(proc: *ashet.multi_tasking.Process) void {
@@ -771,8 +771,9 @@ pub const Window = struct {
     event_awaiter: ?*ashet.abi.ui.GetEvent = null,
 
     pub fn getFromABI(win: *const ashet.abi.Window) *Window {
-        const window = @fieldParentPtr(Window, "user_facing", win);
-        return @as(*Window, @ptrFromInt(@intFromPtr(window)));
+        const window: *Window = @constCast(@alignCast(@fieldParentPtr("user_facing", win)));
+        // return @as(*Window, @ptrFromInt(@intFromPtr(window)));
+        return window;
     }
 
     pub fn create(
@@ -828,8 +829,8 @@ pub const Window = struct {
         };
 
         if (WindowIterator.topWindow()) |top_window| blk: {
-            var spawn_x = top_window.user_facing.client_rectangle.x + 16;
-            var spawn_y = top_window.user_facing.client_rectangle.y + 16;
+            const spawn_x = top_window.user_facing.client_rectangle.x + 16;
+            const spawn_y = top_window.user_facing.client_rectangle.y + 16;
 
             if (spawn_x + @as(i17, top_window.user_facing.client_rectangle.width) >= framebuffer.width)
                 break :blk;
@@ -1052,7 +1053,7 @@ fn sizeMax(a: Size, b: Size) Size {
 }
 
 fn nodeToWindow(node: *WindowQueue.Node) *Window {
-    return @fieldParentPtr(Window, "node", node);
+    return @fieldParentPtr("node", node);
 }
 
 // const framebuffer = struct {
@@ -1122,15 +1123,15 @@ fn nodeToWindow(node: *WindowQueue.Node) *Window {
 
 pub const icons = struct {
     fn parsedSpriteSize(comptime def: []const u8) Size {
-        var it = std.mem.split(u8, def, "\n");
-        var first = it.next().?;
+        var it = std.mem.splitScalar(u8, def, '\n');
+        const first = it.next().?;
         const width = first.len;
         var height = 1;
         while (it.next()) |line| {
             std.debug.assert(line.len == width);
             height += 1;
         }
-        return Size{ .width = width, .height = height };
+        return .{ .width = width, .height = height };
     }
 
     fn ParseResult(comptime def: []const u8) type {
@@ -1146,7 +1147,7 @@ pub const icons = struct {
             [1]?ColorIndex{null} ** size.width,
         } ** size.height;
 
-        var it = std.mem.split(u8, def, "\n");
+        var it = std.mem.splitScalar(u8, def, '\n');
         var y: usize = 0;
         while (it.next()) |line| : (y += 1) {
             var x: usize = 0;
@@ -1255,7 +1256,7 @@ const wallpaper = struct {
     const pixels = blk: {
         @setEvalBranchQuota(4 * 400 * 300);
 
-        var data = @as([400 * 300]ColorIndex, @bitCast(raw[0 .. 400 * 300].*));
+        const data = @as([400 * 300]ColorIndex, @bitCast(raw[0 .. 400 * 300].*));
 
         for (data) |*c| {
             c.* = c.shift(framebuffer_wallpaper_shift - 1);
@@ -1275,7 +1276,7 @@ const wallpaper = struct {
 };
 
 pub const desktop = struct {
-    const Icon = struct {
+    pub const Icon = struct {
         pub const width = 32;
         pub const height = 32;
 
@@ -1297,24 +1298,24 @@ pub const desktop = struct {
 
             var pixels: [height][width]u8 = undefined;
 
-            const magic = try stream.readIntLittle(u32);
+            const magic = try stream.readInt(u32, .little);
             if (magic != 0x48198b74)
                 return error.InvalidFormat;
 
-            const s_width = try stream.readIntLittle(u16);
-            const s_height = try stream.readIntLittle(u16);
+            const s_width = try stream.readInt(u16, .little);
+            const s_height = try stream.readInt(u16, .little);
             if ((s_width != width) or (s_height != height))
                 return error.InvalidDimension;
 
-            const s_flags = try stream.readIntLittle(u16);
+            const s_flags = try stream.readInt(u16, .little);
             const transparent = ((s_flags & 1) != 0);
 
-            var palette_size: usize = try stream.readIntLittle(u8);
+            var palette_size: usize = try stream.readInt(u8, .little);
             if (palette_size == 0)
                 palette_size = 256;
             // if (palette_size >= 16)
             //     return error.PaletteTooLarge;
-            const transparency_key = try stream.readIntLittle(u8);
+            const transparency_key = try stream.readInt(u8, .little);
 
             try stream.readNoEof(std.mem.sliceAsBytes(&pixels));
             // try stream.readNoEof(std.mem.sliceAsBytes(icon.palette[0..palette_size]));
@@ -1565,11 +1566,12 @@ pub const desktop = struct {
                 c.* = if ((y + x) % 2 == 0) ColorIndex.get(0x01) else ColorIndex.get(0x00);
             }
         }
+        const buffer_copy = buffer;
         break :blk Bitmap{
             .width = Icon.width + 2,
             .height = Icon.height + 2,
             .stride = Icon.width + 2,
-            .pixels = @as([*]ColorIndex, @ptrCast(&buffer)),
+            .pixels = @as([*]const ColorIndex, @ptrCast(&buffer_copy)),
             .transparent = ColorIndex.get(0x01),
         };
     };

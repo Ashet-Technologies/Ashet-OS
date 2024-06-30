@@ -20,6 +20,6 @@ pub fn init(initial_time: i128) Goldfish {
 }
 
 fn nanoTimestamp(driver: *Driver) i128 {
-    const rtc = @fieldParentPtr(Goldfish, "driver", driver);
+    const rtc: *Goldfish = @fieldParentPtr("driver", driver);
     return rtc.time;
 }

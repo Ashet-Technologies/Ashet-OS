@@ -28,3 +28,6 @@ pub const Window = extern struct {
         padding: u5 = 0,
     };
 };
+
+pub const Rectangle = struct {};
+pub const Size = struct {};

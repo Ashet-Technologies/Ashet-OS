@@ -137,7 +137,7 @@ pub const video = struct {
 
                     var x: usize = 0;
                     while (x < gw) : (x += 1) {
-                        var bits = glyph[x];
+                        const bits = glyph[x];
 
                         comptime var y: usize = 0;
                         inline while (y < gh) : (y += 1) {

@@ -13,13 +13,14 @@ pub fn build(b: *std.Build) void {
 
     const bin2c = b.addExecutable(.{
         .name = "bin2c",
-        .root_source_file = .{ .path = "util/bin2c.zig" },
+        .root_source_file = b.path("util/bin2c.zig"),
+        .target = b.graph.host,
     });
     // b.installArtifact(bin2c);
 
-    const bootsect_bin = converToC(bin2c, "syslinux_bootsect", .{ .path = "vendor/syslinux-6.03/bios/core/ldlinux.bss" });
-    const ldlinux_bin = converToC(bin2c, "syslinux_ldlinux", .{ .path = "vendor/syslinux-6.03/bios/core/ldlinux.sys" });
-    const ldlinuxc32_bin = converToC(bin2c, "syslinux_ldlinuxc32", .{ .path = "vendor/syslinux-6.03/bios/com32/elflink/ldlinux/ldlinux.c32" });
+    const bootsect_bin = converToC(bin2c, "syslinux_bootsect", b.path("vendor/syslinux-6.03/bios/core/ldlinux.bss"));
+    const ldlinux_bin = converToC(bin2c, "syslinux_ldlinux", b.path("vendor/syslinux-6.03/bios/core/ldlinux.sys"));
+    const ldlinuxc32_bin = converToC(bin2c, "syslinux_ldlinuxc32", b.path("vendor/syslinux-6.03/bios/com32/elflink/ldlinux/ldlinux.c32"));
 
     const syslinux = b.addExecutable(.{
         .name = "syslinux",
@@ -28,12 +29,16 @@ pub fn build(b: *std.Build) void {
     });
     syslinux.linkLibC();
 
-    syslinux.addIncludePath(.{ .path = "vendor/syslinux-6.03/mtools" });
-    syslinux.addIncludePath(.{ .path = "vendor/syslinux-6.03/libinstaller" });
-    syslinux.addIncludePath(.{ .path = "vendor/syslinux-6.03/libfat" });
-    syslinux.addIncludePath(.{ .path = "vendor/syslinux-6.03/bios/" });
+    syslinux.addIncludePath(b.path("vendor/syslinux-6.03/mtools"));
+    syslinux.addIncludePath(b.path("vendor/syslinux-6.03/libinstaller"));
+    syslinux.addIncludePath(b.path("vendor/syslinux-6.03/libfat"));
+    syslinux.addIncludePath(b.path("vendor/syslinux-6.03/bios/"));
 
-    syslinux.addCSourceFiles(&sources, &flags);
+    syslinux.addCSourceFiles(.{
+        .root = b.path("vendor"),
+        .files = &sources,
+        .flags = &flags,
+    });
     syslinux.addCSourceFile(.{ .file = bootsect_bin, .flags = &flags });
     syslinux.addCSourceFile(.{ .file = ldlinux_bin, .flags = &flags });
     syslinux.addCSourceFile(.{ .file = ldlinuxc32_bin, .flags = &flags });
@@ -47,13 +52,13 @@ const flags = [_][]const u8{
 };
 
 const sources = [_][]const u8{
-    "vendor/syslinux-6.03/mtools/syslinux.c",
-    "vendor/syslinux-6.03/libinstaller/fs.c",
-    "vendor/syslinux-6.03/libinstaller/syslxmod.c",
-    "vendor/syslinux-6.03/libinstaller/syslxopt.c",
-    "vendor/syslinux-6.03/libinstaller/setadv.c",
-    "vendor/syslinux-6.03/libfat/cache.c",
-    "vendor/syslinux-6.03/libfat/fatchain.c",
-    "vendor/syslinux-6.03/libfat/open.c",
-    "vendor/syslinux-6.03/libfat/searchdir.c",
+    "syslinux-6.03/mtools/syslinux.c",
+    "syslinux-6.03/libinstaller/fs.c",
+    "syslinux-6.03/libinstaller/syslxmod.c",
+    "syslinux-6.03/libinstaller/syslxopt.c",
+    "syslinux-6.03/libinstaller/setadv.c",
+    "syslinux-6.03/libfat/cache.c",
+    "syslinux-6.03/libfat/fatchain.c",
+    "syslinux-6.03/libfat/open.c",
+    "syslinux-6.03/libfat/searchdir.c",
 };

@@ -128,18 +128,18 @@ pub fn CfiDeviceImpl(comptime InterfaceWidth: type) type {
             for (&bytes, 0..) |*b, i| {
                 b.* = @as(u8, @truncate(base[reg + i]));
             }
-            return std.mem.readIntLittle(T, &bytes);
+            return std.mem.readInt(T, &bytes, .little);
         }
 
         fn present(driver: *Driver) bool {
-            const device = @fieldParentPtr(CFI_NOR_Flash, "driver", driver);
+            const device: *CFI_NOR_Flash = @fieldParentPtr("driver", driver);
             const base = @as([*]volatile InterfaceWidth, @ptrFromInt(device.offset));
             _ = base;
             return true;
         }
 
         fn read(driver: *Driver, block: u64, data: []u8) ashet.storage.BlockDevice.ReadError!void {
-            const device = @fieldParentPtr(CFI_NOR_Flash, "driver", driver);
+            const device: *CFI_NOR_Flash = @fieldParentPtr("driver", driver);
             const base = @as([*]volatile InterfaceWidth, @ptrFromInt(device.offset));
 
             const block_items = device.driver.class.block.block_size / @sizeOf(InterfaceWidth);
@@ -152,7 +152,7 @@ pub fn CfiDeviceImpl(comptime InterfaceWidth: type) type {
         }
 
         fn write(driver: *Driver, block: u64, data: []const u8) ashet.storage.BlockDevice.WriteError!void {
-            const device = @fieldParentPtr(CFI_NOR_Flash, "driver", driver);
+            const device: *CFI_NOR_Flash = @fieldParentPtr("driver", driver);
             const base = @as([*]volatile InterfaceWidth, @ptrFromInt(device.offset));
 
             // we cannot write 256 byte blocks on 8 bit address bus

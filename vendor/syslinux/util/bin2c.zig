@@ -57,7 +57,7 @@ pub fn main() !void {
         }
     };
 
-    var printer = Printer{ .writer = writer };
+    var printer: Printer = .{ .writer = writer };
 
     {
         try writer.print("unsigned char {s}[] = {{\n", .{symbol_name});
@@ -86,7 +86,7 @@ pub fn main() !void {
         try writer.writeAll("};\n\n");
     }
 
-    var stat = try input.stat();
+    const stat = try input.stat();
 
     try writer.print("const unsigned int {s}_len = {d};\n\n", .{
         symbol_name,

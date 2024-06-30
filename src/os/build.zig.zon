@@ -1,0 +1,33 @@
+.{
+    .name = "AshetOS",
+    .version = "0.1.0",
+    .paths = .{ "build.zig", "build.zig.zon" },
+    .dependencies = .{
+
+        // Internal deps:
+
+        .kernel = .{
+            .path = "../kernel",
+        },
+
+        .assets = .{
+            .path = "../os-assets",
+        },
+
+        .syslinux = .{
+            .path = "../../vendor/syslinux",
+        },
+
+        // Applications:
+
+        .hello_world = .{
+            .path = "../userland/apps/hello-world",
+        },
+
+        // Externel deps:
+        .@"disk-image-step" = .{
+            .url = "https://github.com/zig-osdev/disk-image-step/archive/76191fd940fde8caa58887913829ebe699a37e63.tar.gz",
+            .hash = "1220d2ec49b268e747abb692be6db41406cc46cabd0e64f0a97bea74790653ee0baf",
+        },
+    },
+}

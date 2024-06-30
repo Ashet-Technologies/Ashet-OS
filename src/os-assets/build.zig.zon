@@ -1,0 +1,10 @@
+.{
+    .name = "kernel-assets",
+    .version = "0.1.0",
+    .paths = .{ "build.zig", "build.zig.zon" },
+    .dependencies = .{
+        .mkicon = .{
+            .path = "../tools/mkicon",
+        },
+    },
+}

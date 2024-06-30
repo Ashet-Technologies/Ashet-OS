@@ -131,7 +131,6 @@ pub fn init() void {
         \\ mov %%ax, %%es
         \\ mov %%ax, %%gs
         \\ mov %%ax, %%ss
-        \\ mov $0x18, %%ax
         \\ mov %%ax, %%fs
         \\ ljmp $0x8, $.reload // change code segment by using far jumping
         \\ .reload:

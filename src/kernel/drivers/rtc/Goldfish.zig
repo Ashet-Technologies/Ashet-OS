@@ -20,7 +20,7 @@ pub fn init(base: usize) Goldfish {
 }
 
 fn nanoTimestamp(driver: *Driver) i128 {
-    const rtc = @fieldParentPtr(Goldfish, "driver", driver);
+    const rtc: *Goldfish = @fieldParentPtr("driver", driver);
     return rtc.regs.read();
 }
 

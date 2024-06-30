@@ -1,5 +1,34 @@
 # Build Refactoring to `build.zig` only
 
+Build System Refactor:
+
+- Move tools into package `os-tools`
+- Define a custom "ashetos" target
+- Create package for "os support" (libashet)
+- Move each app into it's own package using the "os support" package
+
+## Kernel Target
+
+Format is roughly `<machine>[-<metainfo>]*`
+
+- `pi400`
+- `ox64`
+- `pc-bios`
+- `pc-efi`
+- `gamecube`
+- `qemu-virt-rv32`
+- `qemu-virt-arm`
+- `hosted-x86_64-linux`
+- `hosted-x86_64-windows`
+- …
+
+## Application Target
+
+- `x86`
+- `arm`
+- `rv32`
+- `ppc`
+
 ## Build Steps
 
 1. Compile tools

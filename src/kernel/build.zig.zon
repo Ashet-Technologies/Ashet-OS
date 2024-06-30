@@ -1,0 +1,50 @@
+.{
+    .name = "kernel",
+    .version = "0.1.0",
+    .paths = .{"."},
+    .dependencies = .{
+        // Internal dependencies:
+        .@"ashet-abi" = .{
+            .path = "../abi",
+        },
+
+        .virtio = .{
+            .path = "../../vendor/libvirtio",
+        },
+
+        .lwip = .{
+            .path = "../../vendor/lwip",
+        },
+
+        .ashet_fs = .{
+            .path = "../../vendor/ashet-fs",
+        },
+
+        .ashet_std = .{
+            .path = "../../vendor/ashet-std",
+        },
+
+        // External dependencieS:
+        .args = .{
+            .url = "https://github.com/ikskuh/zig-args/archive/872272205d95bdba33798c94e72c5387a31bc806.tar.gz",
+            .hash = "1220fe6ae56b668cc4a033282b5f227bfbb46a67ede6d84e9f9493fea9de339b5f37",
+        },
+
+        .network = .{
+            .url = "https://github.com/ikskuh/zig-network/archive/117d0d5d3ba2891ce4c8e3dfcd0c24a3976a46ce.tar.gz",
+            .hash = "122033a766875fe3e349f81903e1ca33f47b5887a506b2916269d16a8576d607652b",
+        },
+        .vnc = .{
+            .url = "https://github.com/ikskuh/zvnc/archive/7c051fdabe7486d3f01d4e66b8a4dace3ea714a2.tar.gz",
+            .hash = "1220c9d868d911539c3fb44aef66face2097fcc7b8f2e0aaff82cea6be397c9469e5",
+        },
+        .@"foundation-libc" = .{
+            .url = "https://github.com/ZigEmbeddedGroup/foundation-libc/archive/6a32c97a297bb250c67918946991165a5fc09844.tar.gz",
+            .hash = "1220ac855930db0699253dc81d3153c11b0d077e3ebe7a97b7986bea71db166eb76b",
+        },
+        .zfat = .{
+            .url = "https://github.com/ZigEmbeddedGroup/zfat/archive/6c9fcecd0326c8f3bf3353afbee6b3f5987d49ca.tar.gz",
+            .hash = "122064858e32ce4448b7c02813379658a74ebf85f026f9936fa627b1a40c3bb9cc39",
+        },
+    },
+}

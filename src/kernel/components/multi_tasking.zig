@@ -3,7 +3,7 @@ const hal = @import("hal");
 const ashet = @import("../main.zig");
 const logger = std.log.scoped(.multitasking);
 
-const ProcessList = std.TailQueue(void);
+const ProcessList = std.DoublyLinkedList(void);
 const ProcessNode = ProcessList.Node;
 
 // var initialized: bool = false;
@@ -30,7 +30,7 @@ pub const ProcessIterator = struct {
     pub fn next(iter: *ProcessIterator) ?*Process {
         const current = iter.current orelse return null;
         iter.current = current.next;
-        return @fieldParentPtr(Process, "list_item", current);
+        return @fieldParentPtr("list_item", current);
     }
 };
 
@@ -87,7 +87,7 @@ pub const Process = struct {
         if (exclusive_video_controller == proc) {
             exclusive_video_controller = null;
         }
-        ashet.ui.destroyAllWindowsForProcess(proc);
+        // ashet.ui.destroyAllWindowsForProcess(proc);
         if (proc.thread_count > 0) {
             proc.master_thread.kill();
         }

@@ -1,0 +1,10 @@
+.{
+    .name = "mkfont",
+    .version = "0.0.1",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "make-bitmap-font.zig",
+    },
+    .dependencies = .{},
+}

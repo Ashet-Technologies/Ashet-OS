@@ -35,7 +35,7 @@ pub fn load(file: *libashet.fs.File) !loader.LoadedExecutable {
 
     var header = try elf.Header.read(file);
 
-    if (header.endian != .Little)
+    if (header.endian != .little)
         return error.InvalidEndian;
     if (header.machine != expected_elf_machine)
         return error.InvalidMachine;
@@ -388,11 +388,13 @@ const Environment = struct {
     file: *libashet.fs.File,
 
     pub fn read(env: Environment, comptime T: type, offset: usize) T {
-        return std.mem.readIntNative(T, env.memory[offset..][0..@sizeOf(T)]);
+        return @bitCast(env.memory[offset..][0..@sizeOf(T)].*);
+        // return std.mem.readIntNative(T, env.memory[offset..][0..@sizeOf(T)]);
     }
 
     pub fn write(env: Environment, comptime T: type, offset: usize, value: T) void {
-        std.mem.writeIntNative(T, env.memory[offset..][0..@sizeOf(T)], value);
+        // std.mem.writeIntNative(T, env.memory[offset..][0..@sizeOf(T)], value);
+        env.memory[offset..][0..@sizeOf(T)].* = @bitCast(value);
     }
 
     pub fn resolveSymbol(env: Environment, index: usize) error{ BadExecutable, MissingSymbol }!Elf32_Addr {
@@ -410,7 +412,7 @@ const Environment = struct {
         //     offset,
         // });
 
-        var sym: *const elf.Sym = @ptrCast(@alignCast(env.memory[offset..].ptr));
+        const sym: *const elf.Sym = @ptrCast(@alignCast(env.memory[offset..].ptr));
 
         const info: SymbolInfo = @bitCast(sym.st_info);
 

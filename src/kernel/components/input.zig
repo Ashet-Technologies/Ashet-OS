@@ -214,7 +214,7 @@ pub fn getEvent() ?Event {
 
                 const text_ptr = keyboard.layout.translate(key_code, modifiers.shift, modifiers.alt_graph);
 
-                var event = ashet.abi.KeyboardEvent{
+                const event = ashet.abi.KeyboardEvent{
                     .scancode = src_event.scancode,
                     .key = key_code,
                     .text = text_ptr,
@@ -277,7 +277,7 @@ pub const keyboard = struct {
         mapping: *const Map,
 
         pub fn compile(comptime source_def: []const u8) Layout {
-            comptime var mapping = blk: {
+            const mapping = comptime blk: {
                 const Entry = struct {
                     keycode: Key,
                     strings: Strings = .{},
@@ -290,7 +290,7 @@ pub const keyboard = struct {
 
                 while (lines.next()) |line| {
                     if (std.mem.startsWith(u8, line, "keymap")) {
-                        var items = std.mem.tokenize(u8, line, " \t");
+                        var items = std.mem.tokenizeAny(u8, line, " \t");
 
                         _ = items.next() orelse unreachable; // this is "scancode"
 
@@ -354,7 +354,7 @@ pub const keyboard = struct {
         }
 
         fn internString(comptime len: comptime_int, comptime items: [len]u8) [*:0]const u8 {
-            comptime var storage: [len + 1]u8 = items ++ [1]u8{0};
+            const storage: [len + 1]u8 = comptime items ++ [1]u8{0};
             return storage[0..len :0];
         }
 
@@ -378,7 +378,7 @@ pub const keyboard = struct {
         entries: []const ?Key,
 
         pub fn compile(comptime source_def: []const u8) Model {
-            comptime var mapping = blk: {
+            const mapping = comptime blk: {
                 const Entry = struct {
                     scancode: u16,
                     keycode: Key,
@@ -392,7 +392,7 @@ pub const keyboard = struct {
 
                 while (lines.next()) |line| {
                     if (std.mem.startsWith(u8, line, "scancode")) {
-                        var items = std.mem.tokenize(u8, line, " \t");
+                        var items = std.mem.tokenizeAny(u8, line, " \t");
 
                         _ = items.next() orelse unreachable; // this is "scancode"
 
