@@ -1,0 +1,215 @@
+const std = @import("std");
+const ashet = @import("../../../main.zig");
+const cr = @import("cr.zig");
+
+const page_size = 4096;
+
+pub fn initialize() !void {
+    const page = try ashet.memory.page_allocator.create(Page);
+    page.directory = .{
+        .entries = std.mem.zeroes([1024]PageDirectory.Entry),
+    };
+
+    set_page_directory(&page.directory);
+}
+
+pub fn update(range: ashet.memory_protection.Range, protection: ashet.memory_protection.Protection) void {
+    const count: u32 = @intCast(range.length / page_size);
+    for (0..count) |offset| {
+        map_identity(range.base + page_size * offset, protection, true);
+    }
+}
+
+pub fn activate() void {
+    cr.CR0.modify(.{
+        .paging = true,
+    });
+}
+
+pub fn map_identity(address: u32, protection: ashet.memory_protection.Protection, auto_invalidate: bool) void {
+    const entry = get_page_entry(address, true);
+
+    const vmm_addr: PageDirectoryAddress = @bitCast(address);
+    entry.* = .{
+        .in_use = true,
+        .writable = switch (protection) {
+            .read_only => false,
+            .read_write => true,
+        },
+        .access_level = .everyone,
+        .use_write_through_caching = false,
+        .disable_caching = false,
+        .was_accessed = false,
+        .was_written = false,
+        .pat_index_2 = 0,
+        .global = false,
+        .unused = 0,
+
+        .address_top_bits = vmm_addr.address_top_bits,
+    };
+
+    if (auto_invalidate) {
+        invalidate_address(address);
+    }
+}
+
+pub fn invalidate_address(address: u32) void {
+    if (!cr.CR0.read().paging) {
+        return;
+    }
+
+    asm volatile ("invlpg (%[addr])"
+        :
+        : [addr] "r" (address),
+    );
+}
+
+fn get_page_table(address: u32, comptime force_exist: bool) if (force_exist) *PageTable else ?*PageTable {
+    const vmm_addr: PageAddress = @bitCast(address);
+
+    const page_directory = get_page_directory();
+
+    const entry = &page_directory.entries[vmm_addr.page_directory_index];
+
+    if (!entry.in_use) {
+        if (force_exist) {
+            // TODO(fqu): Allocate pages here instead of panicing
+
+            const sub_page = ashet.memory.page_allocator.create(Page) catch @panic("failed to allocate backing memory for page table!");
+            sub_page.table = .{
+                .entries = std.mem.zeroes([1024]PageTable.Entry),
+            };
+
+            const page_table_addr = PageDirectoryAddress.from_ptr(sub_page);
+
+            entry.* = .{
+                .in_use = true,
+                .writable = false,
+                .access_level = .kernel,
+                .use_write_through_caching = false,
+                .disable_caching = false,
+                .was_accessed = false,
+                .was_written = false,
+                .page_size = .@"4kiB",
+                .global = true,
+                .unused = 0,
+                .address_top_bits = page_table_addr.address_top_bits,
+            };
+        } else {
+            return null;
+        }
+    }
+
+    const addr: PageDirectoryAddress = @bitCast(entry.*);
+
+    return addr.to_ptr(PageTable, 0).?;
+}
+
+fn get_page_entry(address: u32, comptime force_exist: bool) if (force_exist) *PageTable.Entry else ?*PageTable.Entry {
+    const vmm_addr: PageAddress = @bitCast(address);
+
+    const table = get_page_table(address, force_exist);
+
+    return &table.entries[vmm_addr.page_table_index];
+}
+
+fn get_page_directory() *PageDirectory {
+    const dir_address: PageDirectoryAddress = .{
+        .offset = 0,
+        .address_top_bits = cr.CR3.read().page_directory_base,
+    };
+    return dir_address.to_ptr(PageDirectory, 0).?;
+}
+
+fn set_page_directory(directory: *PageDirectory) void {
+    const dir_address = PageDirectoryAddress.from_ptr(directory);
+    cr.CR3.modify(.{
+        .page_directory_base = dir_address.address_top_bits,
+    });
+}
+
+const PageAddress = packed struct(u32) {
+    offset: u12,
+    page_table_index: u10,
+    page_directory_index: u10,
+};
+
+const PageDirectoryAddress = packed struct(u32) {
+    offset: u12,
+    address_top_bits: u20,
+
+    fn from_ptr(ptr: anytype) PageDirectoryAddress {
+        return @bitCast(@intFromPtr(ptr));
+    }
+
+    fn to_ptr(pda: PageDirectoryAddress, comptime T: type, replace_offset: ?u12) ?*T {
+        const changed = if (replace_offset) |offset|
+            PageDirectoryAddress{ .address_top_bits = pda.address_top_bits, .offset = offset }
+        else
+            pda;
+        return @ptrFromInt(@as(u32, @bitCast(changed)));
+    }
+};
+
+const Page = extern union {
+    raw: [page_size]u8 align(page_size),
+    directory: PageDirectory,
+    table: PageTable,
+    entries: [1024]Entry,
+
+    const Entry = packed struct(u32) {
+        in_use: bool,
+        _padding: u11,
+        address_top_bits: u20,
+    };
+};
+
+const PageDirectory = extern struct {
+    entries: [1024]Entry align(page_size),
+
+    const Entry = packed struct(u32) {
+        in_use: bool, // 0
+        writable: bool, // 1
+        access_level: AccessLevel, // 2
+        use_write_through_caching: bool, // 3
+        disable_caching: bool, // 4
+        was_accessed: bool, // 5
+        was_written: bool, // 6
+        page_size: PageSize, // 7
+        global: bool, // 8
+        unused: u3, // 9,10,11
+        address_top_bits: u20, // 12...31
+    };
+};
+
+const PageTable = extern struct {
+    entries: [1024]Entry align(page_size),
+
+    const Entry = packed struct(u32) {
+        in_use: bool, // 0
+        writable: bool, // 1
+        access_level: AccessLevel, // 2
+        use_write_through_caching: bool, // 3
+        disable_caching: bool, // 4
+        was_accessed: bool, // 5
+        was_written: bool, // 6
+        pat_index_2: u1, // 7
+        global: bool, // 8
+        unused: u3, // 9,10,11
+        address_top_bits: u20, // 12..31
+    };
+};
+
+const AccessLevel = enum(u1) { kernel = 0, everyone = 1 };
+
+const PageSize = enum(u1) { @"4kiB" = 0, @"4MiB" = 1 };
+
+comptime {
+    std.debug.assert(@sizeOf(Page) == page_size);
+    std.debug.assert(@sizeOf(PageDirectory) == page_size);
+    std.debug.assert(@sizeOf(PageTable) == page_size);
+
+    std.debug.assert(@alignOf(Page) == page_size);
+    std.debug.assert(@alignOf(PageDirectory) == page_size);
+    std.debug.assert(@alignOf(PageTable) == page_size);
+}

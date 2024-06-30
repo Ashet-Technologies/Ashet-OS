@@ -13,6 +13,11 @@ const VgaTerminal = @import("VgaTerminal.zig");
 
 pub const machine_config = ashet.ports.MachineConfig{
     .load_sections = .{ .data = false, .bss = false },
+    .memory_protection = .{
+        .initialize = x86.vmm.initialize,
+        .update = x86.vmm.update,
+        .activate = x86.vmm.activate,
+    },
 };
 
 const SerialPortIO = struct {
