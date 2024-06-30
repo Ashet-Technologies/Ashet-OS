@@ -8,6 +8,19 @@ pub const Section = struct {
     length: u32,
 };
 
+pub const ProtectedRange = struct {
+    base: u32,
+    length: u32,
+    protection: ashet.memory_protection.Protection,
+
+    fn to_section(pr: ProtectedRange) Section {
+        return .{
+            .offset = pr.base,
+            .length = pr.length,
+        };
+    }
+};
+
 pub const page_size = ashet.platform.page_size;
 
 var page_manager: RawPageStorageManager = undefined;
@@ -23,6 +36,30 @@ pub const MemorySections = struct {
     data: bool,
     bss: bool,
 };
+
+pub fn get_protected_ranges() []const ProtectedRange {
+    const Static = struct {
+        var ranges: [4]ProtectedRange = undefined;
+    };
+
+    const flash_start = @intFromPtr(&__kernel_flash_start);
+    const flash_end = @intFromPtr(&__kernel_flash_end);
+    const data_start = @intFromPtr(&__kernel_data_start);
+    const data_end = @intFromPtr(&__kernel_data_end);
+    const bss_start = @intFromPtr(&__kernel_bss_start);
+    const bss_end = @intFromPtr(&__kernel_bss_end);
+
+    const linear_memory = ashet.machine.getLinearMemoryRegion();
+
+    Static.ranges = [_]ProtectedRange{
+        .{ .base = linear_memory.offset, .length = linear_memory.length, .protection = .read_write },
+        .{ .base = flash_start, .length = flash_end - flash_start, .protection = .read_only },
+        .{ .base = data_start, .length = data_end - data_start, .protection = .read_write },
+        .{ .base = bss_start, .length = bss_end - bss_start, .protection = .read_write },
+    };
+
+    return &Static.ranges;
+}
 
 /// First stage in memory initialization:
 /// Copy the `.data` section into RAM, and zero out `.bss`.
@@ -84,19 +121,16 @@ pub fn loadKernelMemory(comptime sections: MemorySections) void {
 pub fn initializeLinearMemory() void {
     ashet.Debug.setTraceLoc(@src());
 
-    const flash_start = @intFromPtr(&__kernel_flash_start);
-    const flash_end = @intFromPtr(&__kernel_flash_end);
-    const data_start = @intFromPtr(&__kernel_data_start);
-    const data_end = @intFromPtr(&__kernel_data_end);
-    const bss_start = @intFromPtr(&__kernel_bss_start);
-    const bss_end = @intFromPtr(&__kernel_bss_end);
-
     // compute and initialize the memory map
     ashet.Debug.setTraceLoc(@src());
-    const linear_memory_region: Section = ashet.machine.getLinearMemoryRegion();
+
+    const memory_ranges = get_protected_ranges();
+
+    const linear_memory_region = memory_ranges[0].to_section();
+    const kernel_memory_regions = memory_ranges[1..];
 
     // logger.info("linear memory starts at 0x{X:0>8} and is {d:.3} ({} pages) large", .{
-    //     linear_memory_region.offset,
+    //     linear_memory_region.base,
     //     std.fmt.fmtIntSizeBin(linear_memory_region.length),
     //     linear_memory_region.length / page_size,
     // });
@@ -120,16 +154,12 @@ pub fn initializeLinearMemory() void {
 
     // mark all kernel regions that overlap with the linear memory
     // as "used", so we don't allocate them later.
-    const kernel_regions = [_]Section{
-        Section{ .offset = flash_start, .length = flash_end - flash_start },
-        Section{ .offset = data_start, .length = data_end - data_start },
-        Section{ .offset = bss_start, .length = bss_end - bss_start },
-    };
-    for (kernel_regions, 0..) |region, region_id| {
+
+    for (kernel_memory_regions, 0..) |region, region_id| {
         logger.debug("disable region {}", .{region_id});
         ashet.Debug.setTraceLoc(@src());
 
-        const base_ptr = @as([*]allowzero u8, @ptrFromInt(region.offset));
+        const base_ptr = @as([*]allowzero u8, @ptrFromInt(region.base));
         var i: usize = 0;
         while (i < region.length) : (i += page_size) {
             if (page_manager.ptrToPage(base_ptr + i)) |page| {
