@@ -144,6 +144,7 @@ pub fn build(b: *std.Build) void {
         }
 
         vm_runner.stdio = .inherit;
+        vm_runner.has_side_effects = true;
 
         run_step.dependOn(&vm_runner.step);
     }
@@ -203,7 +204,7 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
         .qemu_cli = &.{
             "-machine", "pc",
             "-cpu",     "pentium2",
-            "-hda",     "${DISK}",
+            "-drive",   "if=ide,index=0,format=raw,file=${DISK}",
             "-vga",     "std",
         },
     },

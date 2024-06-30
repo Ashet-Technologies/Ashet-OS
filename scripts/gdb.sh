@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 ROOT="$(realpath "$(dirname "$(realpath "$0")")"/../)"
 export "PATH=/home/felix/projects/forks/binutils-gdb/prefix/bin/:${PATH}"

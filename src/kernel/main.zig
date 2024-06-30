@@ -49,7 +49,12 @@ comptime {
     _ = platform.start; // explicitly refer to the entry point implementation
 }
 
-pub export fn ashet_kernelMain() void {
+export fn ashet_kernelMain() noreturn {
+    // trampoline into kernelMain() to have full stack tracing.
+    kernelMain();
+}
+
+fn kernelMain() noreturn {
     Debug.setTraceLoc(@src());
     memory.loadKernelMemory(machine_config.load_sections);
 

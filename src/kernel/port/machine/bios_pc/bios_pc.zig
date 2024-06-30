@@ -102,14 +102,19 @@ pub fn initialize() !void {
 
     // x86 requires GDT and IDT, as a lot of x86 devices are only well usable with
     // interrupts. We're also using the GDT for interrupts
+    logger.debug("configure GDT...", .{});
     x86.gdt.init();
+
+    logger.debug("configure IDT...", .{});
     x86.idt.init();
 
+    logger.debug("initialize PIT...", .{});
     hw.pit = ashet.drivers.timer.Programmable_Interval_Timer.init();
 
     x86.idt.set_IRQ_Handler(0x0, timer_intterupt);
     x86.idt.enableIRQ(0);
 
+    logger.debug("initialize serial ports...", .{});
     hw.serial0 = NS16C550.init(.{ .base_port = COM1_PORT });
     hw.serial1 = NS16C550.init(.{ .base_port = COM2_PORT });
     hw.serial2 = NS16C550.init(.{ .base_port = COM3_PORT });
@@ -126,6 +131,7 @@ pub fn initialize() !void {
 
     logger.info("debug serial port initialized", .{});
 
+    logger.debug("parse multiboot header...", .{});
     const mbheader = x86.start.multiboot_info orelse @panic("Ashet OS must be bootet via a MultiBoot 1 compatible bootloader. Use syslinux or grub!");
 
     if (mbheader.flags.boot_loader_name) {
@@ -176,6 +182,7 @@ pub fn initialize() !void {
 
     logger.info("multiboot info: {}", .{mbheader});
 
+    logger.debug("initialize VBE...", .{});
     if (ashet.drivers.video.VESA_BIOS_Extension.init(ashet.memory.allocator, mbheader)) |vbe| {
         hw.vbe = vbe;
         ashet.drivers.install(&hw.vbe.driver);
@@ -194,9 +201,11 @@ pub fn initialize() !void {
     // RTC must be instantiated already as the ATA driver needs a system clock
     // for timeout measurement!
 
+    logger.debug("initialize CMOS...", .{});
     hw.rtc = ashet.drivers.rtc.CMOS.init();
     ashet.drivers.install(&hw.rtc.driver);
 
+    logger.debug("initialize ATA...", .{});
     for (&hw.ata, 0..) |*ata, index| {
         // requires rtc to be initialized!
         ata.* = ashet.drivers.block.AT_Attachment.init(@as(u3, @truncate(index))) catch {
@@ -205,8 +214,10 @@ pub fn initialize() !void {
         ashet.drivers.install(&ata.driver);
     }
 
+    logger.debug("enable interrupts...", .{});
     x86.enableInterrupts();
 
+    logger.debug("initialize KBC...", .{});
     if (ashet.drivers.input.PC_KBC.init()) |kbc| {
         hw.kbc = kbc;
         ashet.drivers.install(&hw.kbc.driver);
