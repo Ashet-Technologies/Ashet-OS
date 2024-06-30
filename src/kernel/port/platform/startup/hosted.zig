@@ -7,10 +7,12 @@ comptime {
 
 pub const std_options = kernel.std_options;
 
+extern fn ashet_kernelMain() void;
+
 // pub const panic = kernel.panic;
 
 pub fn main() !void {
-    kernel.ashet_kernelMain();
+    ashet_kernelMain();
 }
 
 export fn hang() noreturn {

@@ -33,7 +33,7 @@ var startup_time: ?std.time.Instant = null;
 pub fn get_tick_count() u64 {
     if (startup_time) |sutime| {
         var now = std.time.Instant.now() catch unreachable;
-        return @intCast(now.since(sutime) / std.time.ns_per_us);
+        return @intCast(now.since(sutime) / std.time.ns_per_ms);
     } else {
         return 0;
     }

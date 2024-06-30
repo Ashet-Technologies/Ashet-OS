@@ -79,7 +79,7 @@ const COM4_PORT = 0x2E8;
 
 var timer_counter: u64 = 0;
 
-fn timer_intterupt(state: *x86.idt.CpuState) *x86.idt.CpuState {
+fn timer_interrupt(state: *x86.idt.CpuState) *x86.idt.CpuState {
     timer_counter += 1;
 
     if (@import("builtin").mode == .Debug) {
@@ -111,7 +111,7 @@ pub fn initialize() !void {
     logger.debug("initialize PIT...", .{});
     hw.pit = ashet.drivers.timer.Programmable_Interval_Timer.init();
 
-    x86.idt.set_IRQ_Handler(0x0, timer_intterupt);
+    x86.idt.set_IRQ_Handler(0x0, timer_interrupt);
     x86.idt.enableIRQ(0);
 
     logger.debug("initialize serial ports...", .{});
