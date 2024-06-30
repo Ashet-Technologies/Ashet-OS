@@ -11,6 +11,8 @@ const args_parser = @import("args");
 //
 
 const ElfFile = struct {
+    const max_name_len: usize = 128;
+
     name: []const u8,
     path: []const u8,
 
@@ -18,104 +20,184 @@ const ElfFile = struct {
     dwarf: dwarf.DwarfInfo,
 };
 
+const max_suffix_len = 3 + 8 * 2; // ":0x" + 8 hex encoded bytes
+
 const ElfSet = std.StringArrayHashMap(ElfFile);
 
-fn processLine(allocator: std.mem.Allocator, elves: ElfSet, output: std.fs.File, line: []const u8) !void {
-    var out_line_buffer = std.io.bufferedWriter(output.writer());
-    const writer = out_line_buffer.writer();
+fn renderElfData(allocator: std.mem.Allocator, elf_addr: u64, elf: *ElfFile, output: *std.io.BufferedWriter(4096, std.fs.File.Writer)) !void {
+    const writer = output.writer();
 
-    {
-        var str_index: usize = 0;
-        while (str_index < line.len) {
-            var earliest_elf: ?*ElfFile = null;
-            var elf_pos: usize = std.math.maxInt(usize);
-            var elf_addr: u64 = 0;
+    if (getSymbolFromDwarf(u32, allocator, elf_addr, &elf.dwarf)) |symbol_info| {
+        defer symbol_info.deinit(allocator);
 
-            // first, determine the first occurrance of an elf index:
-
-            for (elves.values()) |*elf| {
-                var prefix_buf: [64]u8 = undefined;
-                const prefix = try std.fmt.bufPrint(&prefix_buf, "{s}:0x", .{elf.name});
-
-                if (std.mem.indexOfPos(u8, line, str_index, prefix)) |start| {
-                    if (start > elf_pos)
-                        continue;
-
-                    // basic bounds check
-                    if (start + prefix.len + 8 > line.len) {
-                        continue;
-                    }
-
-                    const int_str = line[start..][prefix.len..][0..8];
-                    for (int_str) |c| {
-                        if (!std.ascii.isHex(c))
-                            continue;
-                    }
-
-                    elf_addr = std.fmt.parseInt(u64, int_str, 16) catch unreachable;
-                    elf_pos = start;
-                    earliest_elf = elf;
-                }
-            }
-
-            if (earliest_elf) |elf| {
-                try writer.writeAll(line[str_index..elf_pos]);
-                try writer.writeAll(elf.name);
-                try writer.writeAll(":0x");
-                try writer.print("{X:0>8}", .{elf_addr});
-
-                str_index = elf_pos + elf.name.len + 11; // ":0x" + 8 digits
-
-                if (getSymbolFromDwarf(u32, allocator, elf_addr, &elf.dwarf)) |symbol_info| {
-                    defer symbol_info.deinit(allocator);
-
-                    if (symbol_info.line_info) |line_info| {
-                        try writer.print("[{s}:{d},{s}]", .{ line_info.file_name, line_info.line, symbol_info.symbol_name });
-                    } else if (!std.mem.eql(u8, symbol_info.symbol_name, "???")) {
-                        try writer.print("[{s}]", .{symbol_info.symbol_name});
-                    }
-                } else |err| {
-                    try writer.print("[ERROR:{s}]", .{@errorName(err)});
-                }
-            } else {
-                try writer.writeAll(line[str_index..]);
-                break;
-            }
+        if (symbol_info.line_info) |line_info| {
+            try writer.print("[{s}:{d},{s}]", .{ line_info.file_name, line_info.line, symbol_info.symbol_name });
+        } else if (!std.mem.eql(u8, symbol_info.symbol_name, "???")) {
+            try writer.print("[{s}]", .{symbol_info.symbol_name});
         }
-        try writer.writeAll("\n");
+    } else |err| {
+        try writer.print("[ERROR:{s}]", .{@errorName(err)});
     }
-    try out_line_buffer.flush();
+}
+
+const ParseOut = struct {
+    elf: *ElfFile,
+    addr: u64,
+};
+
+fn parsePollResult(
+    elves: ElfSet,
+    line_buffer: RingBuffer,
+    bit_width: enum { bits32, bits64 },
+) ?ParseOut {
+    var suffix: [RingBuffer.max_item_count]u8 = undefined;
+    line_buffer.copy_to(&suffix); // will be filled back to front!
+
+    const addrLen: usize = switch (bit_width) {
+        .bits32 => 8, // nibbles,
+        .bits64 => 16, // nibbles
+    };
+
+    for (suffix[suffix.len - addrLen ..]) |byte| {
+        if (!std.ascii.isHex(byte))
+            return null; // last digits not hex
+    }
+
+    if (suffix[suffix.len - addrLen - 1] != 'x')
+        return null;
+    if (suffix[suffix.len - addrLen - 2] != '0')
+        return null;
+    if (suffix[suffix.len - addrLen - 3] != ':')
+        return null;
+
+    const elf_addr = std.fmt.parseInt(u64, suffix[suffix.len - addrLen ..], 16) catch unreachable;
+
+    const matched_elf = for (elves.values()) |*elf| {
+        const name_prefix_pos = suffix.len - addrLen - 3 - elf.name.len;
+
+        const prefix = suffix[name_prefix_pos..][0..elf.name.len];
+
+        if (std.mem.eql(u8, elf.name, prefix))
+            break elf;
+    } else return null;
+
+    return .{
+        .addr = elf_addr,
+        .elf = matched_elf,
+    };
+}
+
+test "parsePollResult empty ring" {
+    var empty_elves = ElfSet.init(std.testing.allocator);
+    defer empty_elves.deinit();
+
+    const rb = RingBuffer{};
+
+    try std.testing.expect(parsePollResult(empty_elves, rb, .bits32) == null);
+    try std.testing.expect(parsePollResult(empty_elves, rb, .bits64) == null);
+}
+
+test "parsePollResult bits32 hit" {
+    var empty_elves = ElfSet.init(std.testing.allocator);
+    defer empty_elves.deinit();
+
+    try empty_elves.put("basic", ElfFile{ .name = "basic", .dwarf = undefined, .file = undefined, .path = undefined });
+
+    var rb = RingBuffer{};
+    rb.push_slice("basic:0xAABBCCDD");
+
+    const bits32_result = parsePollResult(empty_elves, rb, .bits32);
+    const bits64_result = parsePollResult(empty_elves, rb, .bits64);
+
+    try std.testing.expect(bits32_result != null);
+    try std.testing.expect(bits64_result == null);
+
+    try std.testing.expectEqual(empty_elves.getPtr("basic").?, bits32_result.?.elf);
+    try std.testing.expectEqual(@as(u64, 0xAABBCCDD), bits32_result.?.addr);
+}
+
+test "parsePollResult bits64 hit" {
+    var empty_elves = ElfSet.init(std.testing.allocator);
+    defer empty_elves.deinit();
+
+    try empty_elves.put("basic", ElfFile{ .name = "basic", .dwarf = undefined, .file = undefined, .path = undefined });
+
+    var rb = RingBuffer{};
+    rb.push_slice("basic:0xAABBCCDD00112233");
+
+    const bits32_result = parsePollResult(empty_elves, rb, .bits32);
+    const bits64_result = parsePollResult(empty_elves, rb, .bits64);
+
+    try std.testing.expect(bits32_result == null);
+    try std.testing.expect(bits64_result != null);
+
+    try std.testing.expectEqual(empty_elves.getPtr("basic").?, bits64_result.?.elf);
+    try std.testing.expectEqual(@as(u64, 0xAABBCCDD00112233), bits64_result.?.addr);
+}
+
+test "parsePollResult bits32 missing" {
+    var empty_elves = ElfSet.init(std.testing.allocator);
+    defer empty_elves.deinit();
+
+    try empty_elves.put("basic", ElfFile{ .name = "basic", .dwarf = undefined, .file = undefined, .path = undefined });
+
+    var rb = RingBuffer{};
+    rb.push_slice("bas1c:0xAABBCCDD");
+
+    const bits32_result = parsePollResult(empty_elves, rb, .bits32);
+    const bits64_result = parsePollResult(empty_elves, rb, .bits64);
+
+    try std.testing.expect(bits32_result == null);
+    try std.testing.expect(bits64_result == null);
+}
+
+test "parsePollResult bits64 missing" {
+    var empty_elves = ElfSet.init(std.testing.allocator);
+    defer empty_elves.deinit();
+
+    try empty_elves.put("basic", ElfFile{ .name = "basic", .dwarf = undefined, .file = undefined, .path = undefined });
+
+    var rb = RingBuffer{};
+    rb.push_slice("bas1ic:0xAABBCCDD00112233");
+
+    const bits32_result = parsePollResult(empty_elves, rb, .bits32);
+    const bits64_result = parsePollResult(empty_elves, rb, .bits64);
+
+    try std.testing.expect(bits32_result == null);
+    try std.testing.expect(bits64_result == null);
 }
 
 fn consumePollResult(
     allocator: std.mem.Allocator,
     elves: ElfSet,
-    output: std.fs.File,
-    line_buffer: *std.ArrayList(u8),
+    output: *std.io.BufferedWriter(4096, std.fs.File.Writer),
+    line_buffer: *RingBuffer,
     fifo: *std.io.PollFifo,
 ) !void {
+    var chunk: [64]u8 = undefined;
     while (true) {
-        const input_len = fifo.readableLength();
-
+        const input_len = fifo.read(&chunk);
         if (input_len == 0)
             return;
 
-        const base = line_buffer.items.len;
-        try line_buffer.resize(base + input_len);
+        for (chunk[0..input_len]) |byte| {
+            line_buffer.push(byte);
+            try output.writer().writeByte(byte);
 
-        const new_bytes = line_buffer.items[base..];
-        std.debug.assert(new_bytes.len == input_len);
+            if (byte == '\n') {
+                try output.flush();
+                continue;
+            }
 
-        const consumed_len = fifo.read(new_bytes);
-        std.debug.assert(consumed_len == input_len);
+            if (!std.ascii.isHex(byte)) {
+                continue;
+            }
 
-        while (std.mem.indexOfScalar(u8, line_buffer.items, '\n')) |line_end| {
-            const line = line_buffer.items[0..line_end];
-
-            try processLine(allocator, elves, output, line);
-
-            try line_buffer.replaceRange(0, line_end + 1, ""); // drop this line
-
+            if (parsePollResult(elves, line_buffer.*, .bits32)) |result| {
+                try renderElfData(allocator, result.addr, result.elf, output);
+            } else if (parsePollResult(elves, line_buffer.*, .bits64)) |result| {
+                try renderElfData(allocator, result.addr, result.elf, output);
+            }
         }
     }
 }
@@ -145,6 +227,10 @@ pub fn main() !u8 {
 
             const app_name = app_spec[0..splitter];
             const app_path = app_spec[splitter + 1 ..];
+
+            if (app_name.len > ElfFile.max_name_len) {
+                @panic("elf name out of bounds");
+            }
 
             const prev = try elves.fetchPut(app_name, .{
                 .name = app_name,
@@ -186,35 +272,31 @@ pub fn main() !u8 {
             });
             defer poller.deinit();
 
-            var stdout_line_buffer = std.ArrayList(u8).init(allocator);
-            defer stdout_line_buffer.deinit();
+            var stdout_line_buffer = RingBuffer{};
+            var stderr_line_buffer = RingBuffer{};
 
-            var stderr_line_buffer = std.ArrayList(u8).init(allocator);
-            defer stderr_line_buffer.deinit();
+            var stdout_buffered_writer = std.io.bufferedWriter(std.io.getStdOut().writer());
+            var stderr_buffered_writer = std.io.bufferedWriter(std.io.getStdErr().writer());
 
             while (try poller.poll()) {
                 try consumePollResult(
                     allocator,
                     elves,
-                    std.io.getStdOut(),
+                    &stdout_buffered_writer,
                     &stdout_line_buffer,
                     poller.fifo(.stdout),
                 );
                 try consumePollResult(
                     allocator,
                     elves,
-                    std.io.getStdErr(),
+                    &stderr_buffered_writer,
                     &stderr_line_buffer,
                     poller.fifo(.stderr),
                 );
             }
 
-            if (stdout_line_buffer.items.len > 0) {
-                try processLine(allocator, elves, std.io.getStdOut(), stdout_line_buffer.items);
-            }
-            if (stderr_line_buffer.items.len > 0) {
-                try processLine(allocator, elves, std.io.getStdErr(), stderr_line_buffer.items);
-            }
+            try stdout_buffered_writer.flush();
+            try stderr_buffered_writer.flush();
         }
 
         const result = try proc.wait();
@@ -237,6 +319,85 @@ pub fn main() !u8 {
     }
 
     return 0;
+}
+
+const RingBuffer = struct {
+    const max_item_count = ElfFile.max_name_len + max_suffix_len;
+
+    data: [max_item_count]u8 = .{0} ** max_item_count,
+    next_element: usize = 0,
+
+    pub fn push(rb: *RingBuffer, byte: u8) void {
+        rb.data[rb.next_element] = byte;
+        rb.next_element += 1;
+        if (rb.next_element >= rb.data.len) {
+            rb.next_element = 0;
+        }
+    }
+
+    pub fn push_slice(rb: *RingBuffer, slice: []const u8) void {
+        for (slice) |byte| {
+            rb.push(byte);
+        }
+    }
+
+    /// Returns the `index`th last element
+    pub fn get(rb: RingBuffer, index: usize) u8 {
+        std.debug.assert(index < rb.data.len);
+        const actual_index = (rb.data.len + rb.next_element - 1 - index) % rb.data.len;
+        return rb.data[actual_index];
+    }
+
+    /// Copy the ring buffer to the `slice` with the latest element in the ring is
+    /// the last element in the slice.
+    pub fn copy_to(rb: RingBuffer, array: *[max_item_count]u8) void {
+        for (0..rb.data.len) |i| {
+            const rb_index = (rb.next_element + i) % rb.data.len;
+            const byte = rb.data[rb_index];
+            array[i] = byte;
+        }
+    }
+};
+
+test "RingBuffer get" {
+    var rb = RingBuffer{};
+
+    try std.testing.expect(rb.get(0) == 0);
+    try std.testing.expect(rb.get(1) == 0);
+    try std.testing.expect(rb.get(2) == 0);
+    try std.testing.expect(rb.get(3) == 0);
+
+    rb.push(10);
+
+    try std.testing.expect(rb.get(0) == 10);
+    try std.testing.expect(rb.get(1) == 0);
+    try std.testing.expect(rb.get(2) == 0);
+    try std.testing.expect(rb.get(3) == 0);
+
+    rb.push(20);
+
+    try std.testing.expect(rb.get(0) == 20);
+    try std.testing.expect(rb.get(1) == 10);
+    try std.testing.expect(rb.get(2) == 0);
+    try std.testing.expect(rb.get(3) == 0);
+
+    rb.push_slice(&.{ 30, 40 });
+
+    try std.testing.expect(rb.get(0) == 40);
+    try std.testing.expect(rb.get(1) == 30);
+    try std.testing.expect(rb.get(2) == 20);
+    try std.testing.expect(rb.get(3) == 10);
+}
+
+test "RingBuffer copy_to" {
+    var rb = RingBuffer{};
+
+    rb.push_slice(&.{ 10, 20, 30, 40, 50, 60, 70, 80 });
+
+    var out: [RingBuffer.max_item_count]u8 = undefined;
+    rb.copy_to(&out);
+
+    try std.testing.expectEqualSlices(u8, &.{ 10, 20, 30, 40, 50, 60, 70, 80 }, out[out.len - 8 ..]);
 }
 
 const dwarf = @import("lib/adjusted-dwarf.zig");
