@@ -1,6 +1,8 @@
 const std = @import("std");
 const args_parser = @import("args");
 
+const is_windows = @import("builtin").os.tag == .windows;
+
 // REWORK:
 //
 //  debug-filter \
@@ -18,6 +20,7 @@ const ElfFile = struct {
 
     file: std.fs.File,
     dwarf: dwarf.DwarfInfo,
+    mem: MapResult,
 };
 
 const max_suffix_len = 3 + 8 * 2; // ":0x" + 8 hex encoded bytes
@@ -101,7 +104,13 @@ test "parsePollResult bits32 hit" {
     var empty_elves = ElfSet.init(std.testing.allocator);
     defer empty_elves.deinit();
 
-    try empty_elves.put("basic", ElfFile{ .name = "basic", .dwarf = undefined, .file = undefined, .path = undefined });
+    try empty_elves.put("basic", .{
+        .name = "basic",
+        .mem = undefined,
+        .dwarf = undefined,
+        .file = undefined,
+        .path = undefined,
+    });
 
     var rb = RingBuffer{};
     rb.push_slice("basic:0xAABBCCDD");
@@ -120,7 +129,13 @@ test "parsePollResult bits64 hit" {
     var empty_elves = ElfSet.init(std.testing.allocator);
     defer empty_elves.deinit();
 
-    try empty_elves.put("basic", ElfFile{ .name = "basic", .dwarf = undefined, .file = undefined, .path = undefined });
+    try empty_elves.put("basic", .{
+        .name = "basic",
+        .dwarf = undefined,
+        .mem = undefined,
+        .file = undefined,
+        .path = undefined,
+    });
 
     var rb = RingBuffer{};
     rb.push_slice("basic:0xAABBCCDD00112233");
@@ -139,7 +154,13 @@ test "parsePollResult bits32 missing" {
     var empty_elves = ElfSet.init(std.testing.allocator);
     defer empty_elves.deinit();
 
-    try empty_elves.put("basic", ElfFile{ .name = "basic", .dwarf = undefined, .file = undefined, .path = undefined });
+    try empty_elves.put("basic", .{
+        .name = "basic",
+        .dwarf = undefined,
+        .mem = undefined,
+        .file = undefined,
+        .path = undefined,
+    });
 
     var rb = RingBuffer{};
     rb.push_slice("bas1c:0xAABBCCDD");
@@ -155,7 +176,13 @@ test "parsePollResult bits64 missing" {
     var empty_elves = ElfSet.init(std.testing.allocator);
     defer empty_elves.deinit();
 
-    try empty_elves.put("basic", ElfFile{ .name = "basic", .dwarf = undefined, .file = undefined, .path = undefined });
+    try empty_elves.put("basic", .{
+        .name = "basic",
+        .dwarf = undefined,
+        .mem = undefined,
+        .file = undefined,
+        .path = undefined,
+    });
 
     var rb = RingBuffer{};
     rb.push_slice("bas1ic:0xAABBCCDD00112233");
@@ -238,6 +265,7 @@ pub fn main() !u8 {
 
                 .file = undefined,
                 .dwarf = undefined,
+                .mem = undefined,
             });
             if (prev != null)
                 @panic("duplicate app!");
@@ -254,7 +282,20 @@ pub fn main() !u8 {
 
     for (elves.values()) |*value| {
         value.file = try std.fs.cwd().openFile(value.path, .{});
-        value.dwarf = try readElfDebugInfo(allocator, value.file);
+        const mem, const info = try readElfDebugInfo(allocator, value.file);
+        value.dwarf = info;
+        value.mem = mem;
+    }
+    defer {
+        for (elves.values()) |*value| {
+            value.dwarf.deinit(allocator);
+            if (is_windows) {
+                value.mem.deinit();
+                value.file.close();
+            } else {
+                std.posix.munmap(value.mem);
+            }
+        }
     }
 
     {
@@ -402,29 +443,109 @@ test "RingBuffer copy_to" {
 
 const dwarf = @import("lib/adjusted-dwarf.zig");
 
-fn mapWholeFile(file: std.fs.File) ![]align(std.mem.page_size) const u8 {
-    nosuspend {
-        defer file.close();
+const windows = struct {
+    const win = std.os.windows;
 
-        const file_len = std.math.cast(usize, try file.getEndPos()) orelse std.math.maxInt(usize);
-        const mapped_mem = try std.posix.mmap(
-            null,
-            file_len,
-            std.posix.PROT.READ,
-            .{ .TYPE = .SHARED },
+    extern "kernel32" fn CreateFileMappingA(
+        hFile: win.HANDLE,
+        lpFileMappingAttributes: ?*anyopaque,
+        flProtect: win.DWORD,
+        dwMaximumSizeHigh: win.DWORD,
+        dwMaximumSizeLow: win.DWORD,
+        lpName: ?win.LPCSTR,
+    ) ?win.HANDLE;
+
+    extern "kernel32" fn MapViewOfFile(
+        hFileMappingObject: win.HANDLE,
+        dwDesiredAccess: win.DWORD,
+        dwFileOffsetHigh: win.DWORD,
+        dwFileOffsetLow: win.DWORD,
+        dwNumberOfBytesToMap: win.SIZE_T,
+    ) ?win.LPVOID;
+
+    extern "kernel32" fn UnmapViewOfFile(
+        lpBaseAddress: win.LPCVOID,
+    ) win.BOOL;
+
+    const Handle = win.HANDLE;
+
+    fn createMapping(file: std.fs.File) !Handle {
+        const mapping = CreateFileMappingA(
             file.handle,
+            null,
+            win.PAGE_READONLY,
             0,
+            0,
+            null,
         );
-        errdefer std.posix.munmap(mapped_mem);
+        if (mapping == null) return error.MappingFailed;
+        return mapping.?;
+    }
 
-        return mapped_mem;
+    const FILE_MAP_READ = 4;
+
+    fn mapView(mapping: Handle, size: usize) !*anyopaque {
+        const view = MapViewOfFile(
+            mapping,
+            FILE_MAP_READ,
+            0,
+            0,
+            size,
+        );
+        if (view == null) return error.ViewFailed;
+        return view.?;
+    }
+
+    fn unmapView(addr: *const anyopaque) !void {
+        const res = UnmapViewOfFile(addr);
+        if (res == 0) return error.UnmapFailed;
+    }
+};
+
+const MapResult = if (is_windows) struct {
+    mapping_handle: windows.Handle,
+    mem: []align(std.mem.page_size) const u8,
+
+    fn deinit(self: MapResult) void {
+        windows.unmapView(@ptrCast(self.mem.ptr)) catch {};
+        std.os.windows.CloseHandle(self.mapping_handle);
+    }
+} else []align(std.mem.page_size) const u8;
+
+fn mapWholeFile(file: std.fs.File) !MapResult {
+    nosuspend {
+        const file_len = std.math.cast(usize, try file.getEndPos()) orelse std.math.maxInt(usize);
+        if (is_windows) {
+            const mapping = try windows.createMapping(file);
+            const mapped_view = try windows.mapView(mapping, file_len);
+            const mapped_mem = @as([*]align(std.mem.page_size) const u8, @ptrCast(@alignCast(mapped_view)))[0..file_len];
+            return .{
+                .mapping_handle = mapping,
+                .mem = mapped_mem,
+            };
+        } else {
+            defer file.close();
+
+            const mapped_mem = try std.posix.mmap(
+                null,
+                file_len,
+                std.posix.PROT.READ,
+                .{ .TYPE = .SHARED },
+                file.handle,
+                0,
+            );
+            errdefer std.posix.munmap(mapped_mem);
+
+            return mapped_mem;
+        }
     }
 }
 
-pub fn readElfDebugInfo(allocator: std.mem.Allocator, elf_file: std.fs.File) !dwarf.DwarfInfo {
+pub fn readElfDebugInfo(allocator: std.mem.Allocator, elf_file: std.fs.File) !struct { MapResult, dwarf.DwarfInfo } {
     const elf = std.elf;
     nosuspend {
-        const mapped_mem = try mapWholeFile(elf_file);
+        const map_result = try mapWholeFile(elf_file);
+        const mapped_mem = if (is_windows) map_result.mem else map_result;
         const hdr: *const elf.Elf32_Ehdr = @ptrCast(&mapped_mem[0]);
         if (!std.mem.eql(u8, hdr.e_ident[0..4], elf.MAGIC)) return error.InvalidElfMagic;
         if (hdr.e_ident[elf.EI_VERSION] != 1) return error.InvalidElfVersion;
@@ -504,7 +625,7 @@ pub fn readElfDebugInfo(allocator: std.mem.Allocator, elf_file: std.fs.File) !dw
 
         try dwarf.openDwarfDebugInfo(&di, u32, allocator);
 
-        return di;
+        return .{ map_result, di };
     }
 }
 
