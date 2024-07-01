@@ -26,8 +26,8 @@
 
         // Externel deps:
         .@"disk-image-step" = .{
-            .url = "https://github.com/zig-osdev/disk-image-step/archive/76191fd940fde8caa58887913829ebe699a37e63.tar.gz",
-            .hash = "1220d2ec49b268e747abb692be6db41406cc46cabd0e64f0a97bea74790653ee0baf",
+            .url = "https://github.com/zig-osdev/disk-image-step/archive/04881824f85e2eac0caf3ddf52c462d3d38a78f6.tar.gz",
+            .hash = "12208fd2f0f3e5db1bf323e86f33e99216d6d790778710ec917f6335005437e2e684",
         },
     },
 }
