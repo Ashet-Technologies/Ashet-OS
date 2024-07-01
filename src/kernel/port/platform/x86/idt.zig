@@ -82,7 +82,7 @@ export fn handle_interrupt(_cpu: *CpuState) *CpuState {
             if (irqHandlers[cpu.interrupt - 0x20]) |handler| {
                 cpu = handler(cpu);
             } else {
-                logger.warn("Unhandled IRQ{}: {}", .{ cpu.interrupt - 0x20, cpu });
+                logger.warn("Unhandled IRQ{}:\n{}", .{ cpu.interrupt - 0x20, cpu });
             }
 
             if (cpu.interrupt >= 0x28) {
@@ -91,7 +91,7 @@ export fn handle_interrupt(_cpu: *CpuState) *CpuState {
             PIC.primary.notifyEndOfInterrupt();
         },
         else => {
-            logger.err("Unhandled interrupt: {}", .{cpu});
+            logger.err("Unhandled interrupt:\n{}", .{cpu});
 
             @panic("Unhandled exception!");
             // while (true) {

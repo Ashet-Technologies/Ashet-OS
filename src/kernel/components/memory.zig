@@ -25,6 +25,8 @@ pub const page_size = ashet.platform.page_size;
 
 var page_manager: RawPageStorageManager = undefined;
 
+extern const kernel_stack_start: u8 align(4);
+extern const kernel_stack: u8 align(4);
 extern const __kernel_flash_start: u8 align(4);
 extern const __kernel_flash_end: u8 align(4);
 extern const __kernel_data_start: u8 align(4);
@@ -39,11 +41,13 @@ pub const MemorySections = struct {
 
 pub fn get_protected_ranges() []const ProtectedRange {
     const Static = struct {
-        var ranges: [4]ProtectedRange = undefined;
+        var ranges: [5]ProtectedRange = undefined;
     };
 
     const flash_start = @intFromPtr(&__kernel_flash_start);
     const flash_end = @intFromPtr(&__kernel_flash_end);
+    const stack_start = @intFromPtr(&kernel_stack_start);
+    const stack_end = @intFromPtr(&kernel_stack);
     const data_start = @intFromPtr(&__kernel_data_start);
     const data_end = @intFromPtr(&__kernel_data_end);
     const bss_start = @intFromPtr(&__kernel_bss_start);
@@ -56,6 +60,7 @@ pub fn get_protected_ranges() []const ProtectedRange {
         .{ .base = flash_start, .length = flash_end - flash_start, .protection = .read_only },
         .{ .base = data_start, .length = data_end - data_start, .protection = .read_write },
         .{ .base = bss_start, .length = bss_end - bss_start, .protection = .read_write },
+        .{ .base = stack_start, .length = stack_end - kernel_stack_start, .protection = .read_write },
     };
 
     return &Static.ranges;
@@ -176,9 +181,6 @@ pub fn initializeLinearMemory() void {
     ashet.Debug.setTraceLoc(@src());
     logger.info("free ram: {} ({}/{} pages)", .{ page_size * free_memory, free_memory, page_manager.pageCount() });
 }
-
-extern var kernel_stack: u8;
-extern var kernel_stack_start: u8;
 
 pub fn isPointerToKernelStack(ptr: anytype) bool {
     const stack_end: usize = @intFromPtr(&kernel_stack);

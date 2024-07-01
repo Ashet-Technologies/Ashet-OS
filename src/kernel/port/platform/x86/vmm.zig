@@ -1,4 +1,5 @@
 const std = @import("std");
+const log = std.log.scoped(.x86_vmm);
 const ashet = @import("../../../main.zig");
 const cr = @import("cr.zig");
 
@@ -32,10 +33,7 @@ pub fn map_identity(address: u32, protection: ashet.memory_protection.Protection
     const vmm_addr: PageDirectoryAddress = @bitCast(address);
     entry.* = .{
         .in_use = true,
-        .writable = switch (protection) {
-            .read_only => false,
-            .read_write => true,
-        },
+        .writable = (protection == .read_write),
         .access_level = .everyone,
         .use_write_through_caching = false,
         .disable_caching = false,
@@ -47,6 +45,16 @@ pub fn map_identity(address: u32, protection: ashet.memory_protection.Protection
 
         .address_top_bits = vmm_addr.address_top_bits,
     };
+
+    const page_addr: PageAddress = @bitCast(address);
+    log.debug("map_identity(0x{X:0>8} (0x{X:0>5}:{X:0>3}:{X:0>3}), .{s}, {})", .{
+        address,
+        page_addr.page_directory_index,
+        page_addr.page_table_index,
+        page_addr.offset,
+        @tagName(protection),
+        auto_invalidate,
+    });
 
     if (auto_invalidate) {
         invalidate_address(address);
@@ -73,8 +81,6 @@ fn get_page_table(address: u32, comptime force_exist: bool) if (force_exist) *Pa
 
     if (!entry.in_use) {
         if (force_exist) {
-            // TODO(fqu): Allocate pages here instead of panicing
-
             const sub_page = ashet.memory.page_allocator.create(Page) catch @panic("failed to allocate backing memory for page table!");
             sub_page.table = .{
                 .entries = std.mem.zeroes([1024]PageTable.Entry),
@@ -84,14 +90,14 @@ fn get_page_table(address: u32, comptime force_exist: bool) if (force_exist) *Pa
 
             entry.* = .{
                 .in_use = true,
-                .writable = false,
+                .writable = true,
                 .access_level = .kernel,
                 .use_write_through_caching = false,
                 .disable_caching = false,
                 .was_accessed = false,
                 .was_written = false,
                 .page_size = .@"4kiB",
-                .global = true,
+                .global = false,
                 .unused = 0,
                 .address_top_bits = page_table_addr.address_top_bits,
             };

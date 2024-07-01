@@ -103,7 +103,7 @@ pub fn get_tick_count() u64 {
     return timer_counter;
 }
 
-pub fn initialize() !void {
+pub fn earlyInitialize() void {
 
     // x86 requires GDT and IDT, as a lot of x86 devices are only well usable with
     // interrupts. We're also using the GDT for interrupts
@@ -113,6 +113,11 @@ pub fn initialize() !void {
     logger.debug("configure IDT...", .{});
     x86.idt.init();
 
+    logger.debug("enable interrupts...", .{});
+    x86.enableInterrupts();
+}
+
+pub fn initialize() !void {
     logger.debug("initialize PIT...", .{});
     hw.pit = ashet.drivers.timer.Programmable_Interval_Timer.init();
 
@@ -218,9 +223,6 @@ pub fn initialize() !void {
         };
         ashet.drivers.install(&ata.driver);
     }
-
-    logger.debug("enable interrupts...", .{});
-    x86.enableInterrupts();
 
     logger.debug("initialize KBC...", .{});
     if (ashet.drivers.input.PC_KBC.init()) |kbc| {

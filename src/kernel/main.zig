@@ -204,11 +204,36 @@ pub const Debug = struct {
         machine.debugWrite(bytes);
         return bytes.len;
     }
-
     const Writer = std.io.Writer(void, Error, write);
 
+    fn write_with_indent(indent: usize, bytes: []const u8) Error!usize {
+        const indent_part: [8]u8 = .{' '} ** 8;
+
+        var spliter = std.mem.splitScalar(u8, bytes, '\n');
+
+        machine.debugWrite(spliter.first());
+        while (spliter.next()) |continuation| {
+            machine.debugWrite("\r\n");
+
+            var i: usize = indent;
+            while (i > 0) {
+                const prefix = indent_part[0..@min(indent_part.len, i)];
+                machine.debugWrite(prefix);
+                i -= prefix.len;
+            }
+            machine.debugWrite(continuation);
+        }
+
+        return bytes.len;
+    }
+    const IndentWriter = std.io.Writer(usize, Error, write_with_indent);
+
     pub fn writer() Writer {
-        return Writer{ .context = {} };
+        return .{ .context = {} };
+    }
+
+    pub fn indent_writer(indent: u64) IndentWriter {
+        return .{ .context = @truncate(indent) };
     }
 };
 
@@ -307,14 +332,18 @@ fn kernel_log_fn(
 
         const when = time.get_tick_count();
 
-        Debug.writer().print(color_code ++ "{d: >6}.{d:0>3} [{s}] {s}: ", .{
+        var counting_writer = std.io.countingWriter(Debug.writer());
+
+        Debug.writer().writeAll(color_code) catch return;
+
+        counting_writer.writer().print("{d: >6}.{d:0>3} [{s}] {s}: ", .{
             when / 1000,
             when % 1000,
             level_txt,
             scope_tag,
         }) catch return;
 
-        Debug.writer().print(format, args) catch return;
+        Debug.indent_writer(counting_writer.bytes_written).print(format, args) catch return;
         Debug.writer().print(postfix ++ "\r\n", .{}) catch return;
     }
 }

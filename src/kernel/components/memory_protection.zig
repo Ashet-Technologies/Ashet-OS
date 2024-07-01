@@ -40,6 +40,8 @@ pub fn initialize() !void {
 
     log.info("activate...", .{});
     machine_impl.activate();
+
+    log.info("memory protection ready.", .{});
 }
 
 pub fn is_supported() bool {
