@@ -334,7 +334,7 @@ pub fn getLinearMemoryRegion() ashet.memory.Section {
     return ashet.memory.Section{ .offset = linmem_start, .length = linmem_end - linmem_start };
 }
 
-export const multiboot_header linksection(".multiboot") = x86.multiboot.Header.withChecksum(.{
+export const multiboot_header linksection(".text.multiboot") = x86.multiboot.Header.withChecksum(.{
     .flags = .{
         .req_modules_align_4k = false,
         .req_mem_info = true,
@@ -350,6 +350,6 @@ export const multiboot_header linksection(".multiboot") = x86.multiboot.Header.w
 
     .mode_type = .linear_fb,
     .width = 800,
-    .height = 600,
+    .height = 480,
     .depth = 32,
 });
