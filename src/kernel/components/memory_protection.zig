@@ -16,6 +16,14 @@ const machine_impl = ashet.machine.machine_config.memory_protection.?;
 pub const Range = struct {
     base: usize,
     length: usize,
+
+    pub fn from_slice(slice: anytype) Range {
+        const bytes = std.mem.sliceAsBytes(slice);
+        return .{
+            .base = @intFromPtr(bytes.ptr),
+            .length = bytes.len,
+        };
+    }
 };
 
 pub const Protection = enum {

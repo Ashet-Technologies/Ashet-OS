@@ -1,4 +1,5 @@
 const std = @import("std");
+const cr = @import("cr.zig");
 const x86 = @import("../x86.zig");
 const logger = std.log.scoped(.idt);
 const PIC = @import("PIC.zig");
@@ -47,25 +48,23 @@ export fn handle_interrupt(_cpu: *CpuState) *CpuState {
 
             if (cpu.interrupt == 0x0D) {
                 // GPF
-                logger.err("Offending address: 0x{X:0>8}", .{cpu.eip});
-                logger.err("Error code:        0x{X:0>8}", .{cpu.errorcode});
+                logger.err("Offending address: kernel:0x{X:0>8}", .{cpu.eip});
+                logger.err("Error code:        kernel:0x{X:0>8}", .{cpu.errorcode});
             }
 
             if (cpu.interrupt == 0x0E) {
                 // PF
-                const cr2 = asm volatile ("mov %%cr2, %[cr]"
-                    : [cr] "=r" (-> usize),
-                );
-                const cr3 = asm volatile ("mov %%cr3, %[cr]"
-                    : [cr] "=r" (-> usize),
-                );
+                const cr2 = cr.CR2.read();
+                const cr3 = cr.CR3.read();
+
                 _ = cr3;
-                logger.err("Page Fault when {1s} address 0x{0X} from {3s}: {2s}", .{
-                    cr2,
+                logger.err("Page Fault when {s} address kernel:0x{X:0>8} from {s}: {s}", .{
                     if ((cpu.errorcode & 2) != 0) @as([]const u8, "writing") else @as([]const u8, "reading"),
-                    if ((cpu.errorcode & 1) != 0) @as([]const u8, "access denied") else @as([]const u8, "page unmapped"),
+                    cr2.page_fault_address,
                     if ((cpu.errorcode & 4) != 0) @as([]const u8, "userspace") else @as([]const u8, "kernelspace"),
+                    if ((cpu.errorcode & 1) != 0) @as([]const u8, "access denied") else @as([]const u8, "page unmapped"),
                 });
+                logger.err("Offending address: kernel:0x{X:0>8}", .{cpu.eip});
             }
 
             @panic("Unhandled exception!");

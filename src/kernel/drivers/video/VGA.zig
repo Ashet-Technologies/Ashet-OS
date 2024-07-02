@@ -30,8 +30,21 @@ driver: Driver = .{
     },
 },
 
+const memory_ranges = [_]x86.vmm.Range{
+    .{ .base = 0xA0000, .length = 0x20000 },
+    // these are included in the range above:
+    // .{.base = 0xA0000, .length = 0x10000 },
+    // .{.base = 0xB0000, .length = 0x08000 },
+    // .{.base = 0xB8000, .length = 0x08000 },
+};
+
 pub fn init(vga: *VGA) !void {
+    for (memory_ranges) |range| {
+        x86.vmm.update(range, .read_write);
+    }
+
     vga.* = VGA{};
+
     writeVgaRegisters(modes.g_320x200x256);
 
     vga.loadPalette(vga.palette);

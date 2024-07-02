@@ -5,6 +5,8 @@ const cr = @import("cr.zig");
 
 const page_size = 4096;
 
+pub const Range = ashet.memory_protection.Range;
+
 pub fn initialize() !void {
     const page = try ashet.memory.page_allocator.create(Page);
     page.directory = .{
@@ -14,8 +16,20 @@ pub fn initialize() !void {
     set_page_directory(&page.directory);
 }
 
-pub fn update(range: ashet.memory_protection.Range, protection: ashet.memory_protection.Protection) void {
-    const count: u32 = @intCast(range.length / page_size);
+pub fn update(range: Range, protection: ashet.memory_protection.Protection) void {
+    change_protection(range, protection);
+}
+
+pub fn ensure_accessible_obj(object: anytype) void {
+    change_protection(Range.from_slice(std.mem.asBytes(object)), null);
+}
+
+pub fn ensure_accessible_slice(slice: anytype) void {
+    change_protection(Range.from_slice(slice), null);
+}
+
+pub fn change_protection(range: Range, protection: ?ashet.memory_protection.Protection) void {
+    const count: u32 = @intCast(std.mem.alignForward(usize, range.length, page_size) / page_size);
     for (0..count) |offset| {
         map_identity(range.base + page_size * offset, protection, true);
     }
@@ -27,13 +41,24 @@ pub fn activate() void {
     });
 }
 
-pub fn map_identity(address: u32, protection: ashet.memory_protection.Protection, auto_invalidate: bool) void {
+pub fn map_identity(address: u32, protection: ?ashet.memory_protection.Protection, auto_invalidate: bool) void {
+    // Make sure the zero page is always non-accessible!
+    std.debug.assert(address > page_size);
+
     const entry = get_page_entry(address, true);
 
     const vmm_addr: PageDirectoryAddress = @bitCast(address);
+
+    const is_writable = if (protection) |prot|
+        (prot == .read_write)
+    else if (entry.in_use)
+        entry.writable
+    else
+        false;
+
     entry.* = .{
         .in_use = true,
-        .writable = (protection == .read_write),
+        .writable = is_writable,
         .access_level = .everyone,
         .use_write_through_caching = false,
         .disable_caching = false,
@@ -52,7 +77,7 @@ pub fn map_identity(address: u32, protection: ashet.memory_protection.Protection
         page_addr.page_directory_index,
         page_addr.page_table_index,
         page_addr.offset,
-        @tagName(protection),
+        if (protection) |prot| @tagName(prot) else "<keep>",
         auto_invalidate,
     });
 

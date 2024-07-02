@@ -144,6 +144,8 @@ pub fn initialize() !void {
     logger.debug("parse multiboot header...", .{});
     const mbheader = x86.start.multiboot_info orelse @panic("Ashet OS must be bootet via a MultiBoot 1 compatible bootloader. Use syslinux or grub!");
 
+    x86.vmm.ensure_accessible_obj(mbheader);
+
     if (mbheader.flags.boot_loader_name) {
         logger.info("system bootloader: '{}'", .{
             std.zig.fmtEscapes(std.mem.sliceTo(mbheader.boot_loader_name, 0)),
