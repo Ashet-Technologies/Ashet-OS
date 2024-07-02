@@ -16,6 +16,11 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("util/bin2c.zig"),
         .target = b.graph.host,
     });
+    const checksize = b.addExecutable(.{
+        .name = "checksize",
+        .root_source_file = b.path("util/checksize.zig"),
+        .target = b.graph.host,
+    });
     // b.installArtifact(bin2c);
 
     const bootsect_bin = converToC(bin2c, "syslinux_bootsect", b.path("vendor/syslinux-6.03/bios/core/ldlinux.bss"));
@@ -34,11 +39,28 @@ pub fn build(b: *std.Build) void {
     syslinux.addIncludePath(b.path("vendor/syslinux-6.03/libfat"));
     syslinux.addIncludePath(b.path("vendor/syslinux-6.03/bios/"));
 
-    syslinux.addCSourceFiles(.{
-        .root = b.path("vendor"),
-        .files = &sources,
-        .flags = &flags,
-    });
+    if (target.result.os.tag == .windows) {
+        syslinux.addCSourceFiles(.{
+            .root = b.path("vendor"),
+            .files = &windows_sources,
+            .flags = &flags,
+        });
+        syslinux.addIncludePath(b.path("vendor/syslinux-6.03/win"));
+
+        const run_checksize = b.addRunArtifact(checksize);
+        run_checksize.addFileArg(b.path("vendor/syslinux-6.03/bios/mbr/mbr.bin"));
+        const mbr_bin = run_checksize.addOutputFileArg("mbr.bin");
+        run_checksize.addArg("440");
+
+        const syslinux_mbr_bin = converToC(bin2c, "syslinux_mbr", mbr_bin);
+        syslinux.addCSourceFile(.{ .file = syslinux_mbr_bin, .flags = &flags });
+    } else {
+        syslinux.addCSourceFiles(.{
+            .root = b.path("vendor"),
+            .files = &linux_sources,
+            .flags = &flags,
+        });
+    }
     syslinux.addCSourceFile(.{ .file = bootsect_bin, .flags = &flags });
     syslinux.addCSourceFile(.{ .file = ldlinux_bin, .flags = &flags });
     syslinux.addCSourceFile(.{ .file = ldlinuxc32_bin, .flags = &flags });
@@ -51,7 +73,20 @@ const flags = [_][]const u8{
     "-fno-sanitize=undefined",
 };
 
-const sources = [_][]const u8{
+const windows_sources = [_][]const u8{
+    "syslinux-6.03/win/syslinux.c",
+    "syslinux-6.03/win/ntfssect.c",
+    "syslinux-6.03/libinstaller/fs.c",
+    "syslinux-6.03/libinstaller/syslxmod.c",
+    "syslinux-6.03/libinstaller/syslxopt.c",
+    "syslinux-6.03/libinstaller/setadv.c",
+    "syslinux-6.03/libfat/cache.c",
+    "syslinux-6.03/libfat/fatchain.c",
+    "syslinux-6.03/libfat/open.c",
+    "syslinux-6.03/libfat/searchdir.c",
+};
+
+const linux_sources = [_][]const u8{
     "syslinux-6.03/mtools/syslinux.c",
     "syslinux-6.03/libinstaller/fs.c",
     "syslinux-6.03/libinstaller/syslxmod.c",
