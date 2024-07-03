@@ -103,7 +103,7 @@ pub fn UntypedErrorSet(comptime _Enum: type) fn (comptime Error: type) type {
 
     const T = struct {
         fn MakeErrorSet(comptime _Error: type) type {
-            const err_info: std.builtin.Type.ErrorSet = @typeInfo(Error)._Error.?;
+            const err_info: std.builtin.Type.ErrorSet = @typeInfo(_Error).Error.?;
 
             // assert all errors are available:
             for (err_info) |err_name| {
@@ -140,7 +140,7 @@ pub fn UntypedErrorSet(comptime _Enum: type) fn (comptime Error: type) type {
                         return .ok;
                     } else |err| {
                         inline for (err_info) |err_name| {
-                            if (err == @field(Error, err_name)(value)) {
+                            if (err == @field(Error, err_name)) {
                                 return @enumFromInt(@intFromEnum(@field(Enum, err_name)));
                             }
                         }
