@@ -5,9 +5,17 @@ const logger = std.log.scoped(.memory);
 
 pub const protection = @import("memory/protection.zig");
 
-pub const Section = struct {
-    offset: u32,
-    length: u32,
+pub const Range = struct {
+    base: usize,
+    length: usize,
+
+    pub fn from_slice(slice: anytype) Range {
+        const bytes = std.mem.sliceAsBytes(slice);
+        return .{
+            .base = @intFromPtr(bytes.ptr),
+            .length = bytes.len,
+        };
+    }
 };
 
 pub const ProtectedRange = struct {
@@ -15,9 +23,9 @@ pub const ProtectedRange = struct {
     length: u32,
     protection: ashet.memory.protection.Protection,
 
-    fn to_section(pr: ProtectedRange) Section {
+    fn to_range(pr: ProtectedRange) Range {
         return .{
-            .offset = pr.base,
+            .base = pr.base,
             .length = pr.length,
         };
     }
@@ -67,7 +75,7 @@ pub fn get_protected_ranges() []const ProtectedRange {
     const linear_memory = ashet.machine.getLinearMemoryRegion();
 
     Static.ranges = [_]ProtectedRange{
-        .{ .base = linear_memory.offset, .length = linear_memory.length, .protection = .read_write },
+        .{ .base = linear_memory.base, .length = linear_memory.length, .protection = .read_write },
         .{ .base = flash_start, .length = flash_end - flash_start, .protection = .read_only },
         .{ .base = data_start, .length = data_end - data_start, .protection = .read_write },
         .{ .base = bss_start, .length = bss_end - bss_start, .protection = .read_write },
@@ -142,7 +150,7 @@ pub fn initializeLinearMemory() void {
 
     const memory_ranges = get_protected_ranges();
 
-    const linear_memory_region = memory_ranges[0].to_section();
+    const linear_memory_region = memory_ranges[0].to_range();
     const kernel_memory_regions = memory_ranges[1..];
 
     // logger.info("linear memory starts at 0x{X:0>8} and is {d:.3} ({} pages) large", .{
@@ -152,7 +160,7 @@ pub fn initializeLinearMemory() void {
     // });
     ashet.Debug.setTraceLoc(@src());
     logger.info("linear memory starts at 0x{X:0>8} and is {} ({} pages) large", .{
-        linear_memory_region.offset,
+        linear_memory_region.base,
         linear_memory_region.length,
         linear_memory_region.length / page_size,
     });
@@ -223,7 +231,7 @@ pub const debug = struct {
                 if (i > 0) {
                     writer.writeAll("]") catch {};
                 }
-                writer.print("\r\n0x{X:0>8}: [", .{page_manager.region.offset + i * page_size}) catch {};
+                writer.print("\r\n0x{X:0>8}: [", .{page_manager.region.base + i * page_size}) catch {};
             }
             if (page_manager.isFree(@as(RawPageStorageManager.Page, @enumFromInt(i)))) {
                 free_memory += page_size;

@@ -12,24 +12,14 @@ const ashet = @import("../../main.zig");
 
 const page_size = ashet.memory.page_size;
 const machine_impl = ashet.machine.machine_config.memory_protection.?;
-
-pub const Range = struct {
-    base: usize,
-    length: usize,
-
-    pub fn from_slice(slice: anytype) Range {
-        const bytes = std.mem.sliceAsBytes(slice);
-        return .{
-            .base = @intFromPtr(bytes.ptr),
-            .length = bytes.len,
-        };
-    }
-};
+const Range = ashet.memory.Range;
 
 pub const Protection = enum {
     read_only,
     read_write,
 };
+
+var is_initialized = false;
 
 pub fn initialize() !void {
     if (comptime !is_supported())
@@ -46,14 +36,22 @@ pub fn initialize() !void {
         );
     }
 
+    log.info("configure page manager ...", .{});
+
     log.info("activate...", .{});
     machine_impl.activate();
 
     log.info("memory protection ready.", .{});
+
+    is_initialized = true;
 }
 
 pub fn is_supported() bool {
     return (ashet.machine.machine_config.memory_protection != null);
+}
+
+pub fn is_enabled() bool {
+    return is_initialized;
 }
 
 pub fn change(range: Range, protection: Protection) void {

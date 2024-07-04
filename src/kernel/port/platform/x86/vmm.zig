@@ -5,7 +5,7 @@ const cr = @import("cr.zig");
 
 const page_size = 4096;
 
-pub const Range = ashet.memory.protection.Range;
+pub const Range = ashet.memory.Range;
 
 pub fn initialize() !void {
     const page = try ashet.memory.page_allocator.create(Page);

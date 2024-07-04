@@ -5,13 +5,13 @@ const std = @import("std");
 const memory = @import("../memory.zig");
 const logger = std.log.scoped(.page_allocator);
 
-const Section = memory.Section;
+const Range = memory.Range;
 const USizeIndex = memory.USizeIndex;
 const page_size = memory.page_size;
 
 const RawPageStorageManager = @This();
 
-region: Section,
+region: Range,
 
 inline fn bitMask(index: USizeIndex) usize {
     return (@as(usize, 1) << index);
@@ -54,17 +54,17 @@ comptime {
     std.debug.assert(bitMarkedFree(all_bits_used, 0) == false);
 }
 
-pub fn init(section: Section) RawPageStorageManager {
+pub fn init(section: Range) RawPageStorageManager {
     var pm = RawPageStorageManager{
-        .region = Section{
+        .region = Range{
             // make sure that we've aligned our memory section forward to a page boundary.
-            .offset = std.mem.alignForward(usize, section.offset, page_size),
+            .base = std.mem.alignForward(usize, section.base, page_size),
             .length = undefined,
         },
     };
     // adjust the memory length to be a multiple of page_size, including our (potentially now) aligned
     // memory start.
-    pm.region.length = std.mem.alignBackward(usize, section.length -| (pm.region.offset - section.offset), page_size);
+    pm.region.length = std.mem.alignBackward(usize, section.length -| (pm.region.base - section.base), page_size);
 
     const bmp = pm.bitmap();
 
@@ -109,7 +109,7 @@ fn bitmap(pm: RawPageStorageManager) []usize {
     // We put the bitmap at the start of our memory, as we know we have the place for it.
     // This is guaranteed as we store only one bit per page_size (often 4096) byte, so
     // the bitmap always fits.
-    return @as([*]usize, @ptrFromInt(pm.region.offset))[0..bitmap_length];
+    return @as([*]usize, @ptrFromInt(pm.region.base))[0..bitmap_length];
 }
 
 /// Returns the number of pages managed by `pm`.
@@ -233,11 +233,11 @@ pub fn markUsed(pm: *RawPageStorageManager, page: Page) void {
 /// returns the page index into `pm` if so.
 pub fn ptrToPage(pm: *RawPageStorageManager, ptr: anytype) ?Page {
     const offset = @intFromPtr(ptr);
-    if (offset < pm.region.offset)
+    if (offset < pm.region.base)
         return null;
-    if (offset >= pm.region.offset + pm.region.length)
+    if (offset >= pm.region.base + pm.region.length)
         return null;
-    return @as(Page, @enumFromInt(@as(u32, @truncate((offset - pm.region.offset) / page_size))));
+    return @as(Page, @enumFromInt(@as(u32, @truncate((offset - pm.region.base) / page_size))));
 }
 
 /// Converts a given `page` index for `pm` into a physical memory address.
@@ -245,7 +245,7 @@ pub fn pageToPtr(pm: *RawPageStorageManager, page: Page) ?*align(page_size) anyo
     const num = @intFromEnum(page);
     if (num >= pm.pageCount())
         return null;
-    return @as(*align(page_size) anyopaque, @ptrFromInt(pm.region.offset + page_size * num));
+    return @as(*align(page_size) anyopaque, @ptrFromInt(pm.region.base + page_size * num));
 }
 
 /// A reference to a memory page.
