@@ -15,7 +15,13 @@ const machine_impl = ashet.machine.machine_config.memory_protection.?;
 const Range = ashet.memory.Range;
 
 pub const Protection = enum {
+    /// Access to the memory isn't allowed and should panic
+    forbidden,
+
+    /// Access to the memory is read-only and writes should panic.
     read_only,
+
+    /// Access to the memory is okay for both reads and writes.
     read_write,
 };
 
@@ -36,13 +42,13 @@ pub fn initialize() !void {
         );
     }
 
-    log.info("configure page manager ...", .{});
+    log.info("enable page manager protection...", .{});
+    ashet.memory.enable_page_manager_protection();
 
     log.info("activate...", .{});
     machine_impl.activate();
 
     log.info("memory protection ready.", .{});
-
     is_initialized = true;
 }
 
@@ -52,6 +58,13 @@ pub fn is_supported() bool {
 
 pub fn is_enabled() bool {
     return is_initialized;
+}
+
+pub fn get_protection(address: usize) Protection {
+    if (!is_enabled())
+        return .read_write; // no protection means everything is read-write anyways
+
+    return machine_impl.get_protection(address);
 }
 
 pub fn change(range: Range, protection: Protection) void {

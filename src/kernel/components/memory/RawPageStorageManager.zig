@@ -12,6 +12,7 @@ const page_size = memory.page_size;
 const RawPageStorageManager = @This();
 
 region: Range,
+use_memory_protection: bool = false,
 
 inline fn bitMask(index: USizeIndex) usize {
     return (@as(usize, 1) << index);
@@ -220,6 +221,10 @@ pub fn markFree(pm: *RawPageStorageManager, page: Page) void {
     // logger.debug("markFree({})", .{page});
     const bmp = pm.bitmap();
     markBitFree(&bmp[page.wordIndex()], page.bitIndex());
+    if (pm.use_memory_protection) {
+        // Unallocated pages are non-accessible:
+        memory.protection.change(pm.pageToRange(page), .forbidden);
+    }
 }
 
 /// Marks the `page` as "used" (clears the bit).
@@ -227,6 +232,10 @@ pub fn markUsed(pm: *RawPageStorageManager, page: Page) void {
     // logger.debug("markUsed({})", .{page});
     const bmp = pm.bitmap();
     markBitUsed(&bmp[page.wordIndex()], page.bitIndex());
+    if (pm.use_memory_protection) {
+        // RW is a sane default, page should be explicitly marked "read-only" with memory.protection.change.
+        memory.protection.change(pm.pageToRange(page), .read_write);
+    }
 }
 
 /// Checks if the given `ptr` is in the range managed by `pm` and
@@ -246,6 +255,30 @@ pub fn pageToPtr(pm: *RawPageStorageManager, page: Page) ?*align(page_size) anyo
     if (num >= pm.pageCount())
         return null;
     return @as(*align(page_size) anyopaque, @ptrFromInt(pm.region.base + page_size * num));
+}
+
+/// Converst a given `page` index for `pm` into the physical memory range.
+/// `page` must be valid.
+pub fn pageToRange(pm: RawPageStorageManager, page: Page) Range {
+    const num = @intFromEnum(page);
+    std.debug.assert(num <= pm.pageCount());
+    return .{
+        .base = pm.region.base + page_size * num,
+        .length = page_size,
+    };
+}
+
+pub fn enable_page_manager_protection(pm: *RawPageStorageManager) void {
+    pm.use_memory_protection = true;
+
+    for (0..pm.pageCount()) |page_index| {
+        const page: Page = @enumFromInt(page_index);
+        const range = pm.pageToRange(page);
+        memory.protection.change(range, if (pm.isFree(page))
+            .forbidden
+        else
+            .read_write);
+    }
 }
 
 /// A reference to a memory page.

@@ -85,6 +85,10 @@ pub fn get_protected_ranges() []const ProtectedRange {
     return &Static.ranges;
 }
 
+pub fn enable_page_manager_protection() void {
+    page_manager.enable_page_manager_protection();
+}
+
 /// First stage in memory initialization:
 /// Copy the `.data` section into RAM, and zero out `.bss`.
 /// This is needed to have all globals have a well-defined state.
@@ -225,6 +229,17 @@ pub const debug = struct {
 
         const items_per_line = 64;
 
+        if (protection.is_enabled()) {
+            writer.writeAll("Legend:\r\n") catch {};
+            writer.writeAll("       free ok: ' ' bad mprot: '!'\r\n") catch {};
+            writer.writeAll("  read-only ok: '□' bad mprot: '◇'\r\n") catch {};
+            writer.writeAll(" read-write ok: '▣' bad mprot: '◈'\r\n") catch {};
+        } else {
+            writer.writeAll("Legend:\r\n") catch {};
+            writer.writeAll("       free ok: ' '\r\n") catch {};
+            writer.writeAll(" read-write ok: '#'\r\n") catch {};
+        }
+
         var i: usize = 0;
         while (i < page_manager.pageCount()) : (i += 1) {
             if (i % items_per_line == 0) {
@@ -233,12 +248,26 @@ pub const debug = struct {
                 }
                 writer.print("\r\n0x{X:0>8}: [", .{page_manager.region.base + i * page_size}) catch {};
             }
-            if (page_manager.isFree(@as(RawPageStorageManager.Page, @enumFromInt(i)))) {
+
+            const page: RawPageStorageManager.Page = @enumFromInt(i);
+
+            const is_free = page_manager.isFree(page);
+            if (is_free) {
                 free_memory += page_size;
-                writer.writeAll(" ") catch {};
-            } else {
-                writer.writeAll("#") catch {};
             }
+
+            const sigil = if (protection.is_enabled())
+                switch (protection.get_protection(@intFromPtr(page_manager.pageToPtr(page)))) {
+                    .forbidden => if (is_free) " " else "!",
+                    .read_only => if (!is_free) "□" else "◇",
+                    .read_write => if (!is_free) "▣" else "◈",
+                }
+            else if (is_free)
+                " "
+            else
+                "#";
+
+            writer.writeAll(sigil) catch {};
         }
 
         writer.writeAll("]\r\n") catch {};

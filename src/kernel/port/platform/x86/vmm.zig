@@ -20,6 +20,18 @@ pub fn update(range: Range, protection: ashet.memory.protection.Protection) void
     change_protection(range, protection);
 }
 
+pub fn get_protection(address: usize) ashet.memory.protection.Protection {
+    const entry = get_page_entry(address, false) orelse return .forbidden;
+
+    if (!entry.in_use)
+        return .forbidden;
+
+    return if (entry.writable)
+        .read_write
+    else
+        .read_only;
+}
+
 pub fn ensure_accessible_obj(object: anytype) void {
     change_protection(Range.from_slice(std.mem.asBytes(object)), null);
 }
@@ -47,29 +59,33 @@ pub fn map_identity(address: u32, protection: ?ashet.memory.protection.Protectio
 
     const entry = get_page_entry(address, true);
 
-    const vmm_addr: PageDirectoryAddress = @bitCast(address);
+    if (protection != .forbidden) {
+        const vmm_addr: PageDirectoryAddress = @bitCast(address);
 
-    const is_writable = if (protection) |prot|
-        (prot == .read_write)
-    else if (entry.in_use)
-        entry.writable
-    else
-        false;
+        const is_writable = if (protection) |prot|
+            (prot == .read_write)
+        else if (entry.in_use)
+            entry.writable
+        else
+            false;
 
-    entry.* = .{
-        .in_use = true,
-        .writable = is_writable,
-        .access_level = .everyone,
-        .use_write_through_caching = false,
-        .disable_caching = false,
-        .was_accessed = false,
-        .was_written = false,
-        .pat_index_2 = 0,
-        .global = false,
-        .unused = 0,
+        entry.* = .{
+            .in_use = true,
+            .writable = is_writable,
+            .access_level = .everyone,
+            .use_write_through_caching = false,
+            .disable_caching = false,
+            .was_accessed = false,
+            .was_written = false,
+            .pat_index_2 = 0,
+            .global = false,
+            .unused = 0,
 
-        .address_top_bits = vmm_addr.address_top_bits,
-    };
+            .address_top_bits = vmm_addr.address_top_bits,
+        };
+    } else {
+        entry.* = @bitCast(@as(u32, 0));
+    }
 
     const page_addr: PageAddress = @bitCast(address);
     log.debug("map_identity(0x{X:0>8} (0x{X:0>5}:{X:0>3}:{X:0>3}), .{s}, {})", .{
@@ -139,7 +155,12 @@ fn get_page_table(address: u32, comptime force_exist: bool) if (force_exist) *Pa
 fn get_page_entry(address: u32, comptime force_exist: bool) if (force_exist) *PageTable.Entry else ?*PageTable.Entry {
     const vmm_addr: PageAddress = @bitCast(address);
 
-    const table = get_page_table(address, force_exist);
+    const maybe_table = get_page_table(address, force_exist);
+
+    const table = if (force_exist)
+        maybe_table
+    else
+        maybe_table orelse return null;
 
     return &table.entries[vmm_addr.page_table_index];
 }
