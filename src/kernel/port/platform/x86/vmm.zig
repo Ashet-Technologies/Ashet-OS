@@ -5,7 +5,7 @@ const cr = @import("cr.zig");
 
 const page_size = 4096;
 
-pub const Range = ashet.memory_protection.Range;
+pub const Range = ashet.memory.protection.Range;
 
 pub fn initialize() !void {
     const page = try ashet.memory.page_allocator.create(Page);
@@ -16,7 +16,7 @@ pub fn initialize() !void {
     set_page_directory(&page.directory);
 }
 
-pub fn update(range: Range, protection: ashet.memory_protection.Protection) void {
+pub fn update(range: Range, protection: ashet.memory.protection.Protection) void {
     change_protection(range, protection);
 }
 
@@ -28,7 +28,7 @@ pub fn ensure_accessible_slice(slice: anytype) void {
     change_protection(Range.from_slice(slice), null);
 }
 
-pub fn change_protection(range: Range, protection: ?ashet.memory_protection.Protection) void {
+pub fn change_protection(range: Range, protection: ?ashet.memory.protection.Protection) void {
     const count: u32 = @intCast(std.mem.alignForward(usize, range.length, page_size) / page_size);
     for (0..count) |offset| {
         map_identity(range.base + page_size * offset, protection, true);
@@ -41,7 +41,7 @@ pub fn activate() void {
     });
 }
 
-pub fn map_identity(address: u32, protection: ?ashet.memory_protection.Protection, auto_invalidate: bool) void {
+pub fn map_identity(address: u32, protection: ?ashet.memory.protection.Protection, auto_invalidate: bool) void {
     // Make sure the zero page is always non-accessible!
     std.debug.assert(address > page_size);
 

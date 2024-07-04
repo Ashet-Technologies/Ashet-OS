@@ -10,7 +10,6 @@ pub const filesystem = @import("components/filesystem.zig");
 pub const input = @import("components/input.zig");
 pub const io = @import("components/io.zig");
 pub const memory = @import("components/memory.zig");
-pub const memory_protection = @import("components/memory_protection.zig");
 pub const multi_tasking = @import("components/multi_tasking.zig");
 pub const network = @import("components/network.zig");
 pub const scheduler = @import("components/scheduler.zig");
@@ -102,7 +101,7 @@ fn main() !void {
     // Initialize memory protection, which might need
     // dynamic page allocations to store certain data:
     log.info("initialize memory protection...", .{});
-    try memory_protection.initialize();
+    try memory.protection.initialize();
 
     // Before we initialize the hardware, we already add hardware independent drivers
     // for stuff like file systems, virtual block devices and so on...

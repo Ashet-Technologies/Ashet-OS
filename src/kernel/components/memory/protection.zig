@@ -8,7 +8,7 @@
 const std = @import("std");
 const log = std.log.scoped(.mprot);
 
-const ashet = @import("../main.zig");
+const ashet = @import("../../main.zig");
 
 const page_size = ashet.memory.page_size;
 const machine_impl = ashet.machine.machine_config.memory_protection.?;
