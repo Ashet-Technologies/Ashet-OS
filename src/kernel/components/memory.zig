@@ -228,8 +228,6 @@ pub fn initializeLinearMemory() void {
     // TODO: logger.info("free ram: {:.2} ({}/{} pages)", .{ std.fmt.fmtIntSizeBin(page_size * free_memory), free_memory, page_manager.pageCount() });
     ashet.Debug.setTraceLoc(@src());
     logger.info("free ram: {} ({}/{} pages allocated)", .{ page_size * free_memory, free_memory, page_manager.pageCount() });
-
-    debug.dumpPageMap();
 }
 
 pub fn isPointerToKernelStack(ptr: anytype) bool {

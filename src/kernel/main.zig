@@ -98,9 +98,6 @@ fn kernelMain() noreturn {
 fn main() !void {
     errdefer |err| log.err("main() failed with {}", .{err});
 
-    log.info("entering kernel main()...", .{});
-    memory.debug.dumpPageMap();
-
     // Initialize memory protection, which might need
     // dynamic page allocations to store certain data:
     log.info("initialize memory protection...", .{});

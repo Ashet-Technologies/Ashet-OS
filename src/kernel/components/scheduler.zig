@@ -684,13 +684,13 @@ comptime {
 
         .thumb => asm (preamble ++
                 \\
-                \\.thumb
+                // \\.thumb
                 \\.thumb_func
                 \\.global ashet_scheduler_threadTrampoline
                 \\.type ashet_scheduler_threadTrampoline, %function
                 \\ashet_scheduler_threadTrampoline:
                 \\
-                \\.thumb
+                // \\.thumb
                 \\.thumb_func
                 \\.global ashet_scheduler_switchTasks
                 \\.type ashet_scheduler_switchTasks, %function
