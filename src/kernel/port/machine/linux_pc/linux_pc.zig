@@ -252,11 +252,11 @@ comptime {
     // as we know that these won't overlap with linmem anyways:
     asm (
         \\
-        \\.global kernel_stack_start
-        \\.global kernel_stack
+        \\.global __kernel_stack_start
+        \\.global __kernel_stack_end
         \\kernel_stack_start:
         \\.space 8 * 1024 * 1024        # 8 MB of stack
-        \\kernel_stack:
+        \\__kernel_stack_end:
         \\
         \\__kernel_flash_start:
         \\__kernel_flash_end:

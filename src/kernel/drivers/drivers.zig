@@ -440,9 +440,15 @@ pub fn scanVirtioDevices(allocator: std.mem.Allocator, comptime cfg: VirtIoConfi
 
         switch (regs.device_id) {
             .reserved => continue,
-            .gpu => installVirtioDriver(video.Virtio_GPU_Device, allocator, regs) catch |err| @panic(@errorName(err)),
-            .input => installVirtioDriver(input.Virtio_Input_Device, allocator, regs) catch |err| @panic(@errorName(err)),
-            .network => installVirtioDriver(network.Virtio_Net_Device, allocator, regs) catch |err| @panic(@errorName(err)),
+            .gpu => installVirtioDriver(video.Virtio_GPU_Device, allocator, regs) catch |err| {
+                logger.err("failed to initialize gpu @ 0x{X:0>8}: {s}", .{ @intFromPtr(regs), @errorName(err) });
+            },
+            .input => installVirtioDriver(input.Virtio_Input_Device, allocator, regs) catch |err| {
+                logger.err("failed to initialize input @ 0x{X:0>8}: {s}", .{ @intFromPtr(regs), @errorName(err) });
+            },
+            .network => installVirtioDriver(network.Virtio_Net_Device, allocator, regs) catch |err| {
+                logger.err("failed to initialize network @ 0x{X:0>8}: {s}", .{ @intFromPtr(regs), @errorName(err) });
+            },
             else => logger.warn("Found unsupported virtio device: {s}", .{@tagName(regs.device_id)}),
         }
     }

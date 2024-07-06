@@ -70,6 +70,8 @@ pub fn build(b: *std.Build) void {
     if (maybe_run_machine) |run_machine| {
         const run_step = b.step("run", b.fmt("Runs the OS machine {s}", .{@tagName(run_machine)}));
 
+        run_step.dependOn(machine_steps.get(run_machine));
+
         const platform_info = platform_info_map.get(run_machine.get_platform());
         const machine_info = machine_info_map.get(run_machine);
 

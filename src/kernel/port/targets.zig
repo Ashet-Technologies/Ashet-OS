@@ -8,6 +8,15 @@ pub const Platform = ashet.abi.Platform;
 pub const MachineConfig = struct {
     /// If this is set, the kernel will initialize the `.data` and `.bss` sections.
     load_sections: ashet.memory.MemorySections,
+
+    memory_protection: ?MemoryProtectionConfig,
+};
+
+pub const MemoryProtectionConfig = struct {
+    activate: fn () void,
+    initialize: fn () error{OutOfMemory}!void,
+    update: fn (ashet.memory.Range, ashet.memory.protection.Protection) void,
+    get_protection: fn (address: usize) ashet.memory.protection.Protection,
 };
 
 pub const platforms = struct {

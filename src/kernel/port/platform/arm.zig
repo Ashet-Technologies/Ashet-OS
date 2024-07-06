@@ -60,16 +60,17 @@ pub const start = struct {
             //  1C      Fast Interrupt (FIQ)
             \\  ldr pc, =_arm_except_FIQ
             \\
-            \\.thumb
+            // \\.thumb
             \\.thumb_func
             \\.global _start
             \\.type _start, %function
             \\_start:
-            \\  ldr sp, =kernel_stack
+            \\  ldr r0, =__kernel_stack_end
+            \\  mov sp, r0
             \\  bl ashet_kernelMain
             //  fallthrough to hang:
             \\
-            \\.thumb
+            // \\.thumb
             \\.thumb_func
             \\.global hang
             \\.type hang, %function

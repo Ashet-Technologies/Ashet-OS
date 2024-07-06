@@ -25,7 +25,11 @@ pub fn build(b: *std.Build) void {
     const network_dep = b.dependency("network", .{});
     const vnc_dep = b.dependency("vnc", .{});
     const lwip_dep = b.dependency("lwip", .{ .target = kernel_target, .optimize = .ReleaseSafe });
-    const libc_dep = b.dependency("foundation-libc", .{ .target = kernel_target, .optimize = optimize });
+    const libc_dep = b.dependency("foundation-libc", .{
+        .target = kernel_target,
+        .optimize = optimize,
+        .single_threaded = true,
+    });
     const zfat_dep = b.dependency("zfat", .{
         .@"no-libc" = true,
         .target = kernel_target,
@@ -275,8 +279,10 @@ const generic_rv32 = .{
     .abi = .eabi,
     .cpu_model = .{ .explicit = &std.Target.riscv.cpu.generic_rv32 },
     .cpu_features_add = std.Target.riscv.featureSet(&[_]std.Target.riscv.Feature{
-        .c,
+        .i,
         .m,
+        .c,
+        .zbb,
         // .reserve_x4, // Don't allow LLVM to use the "tp" register. We want that for our own purposes
     }),
 };

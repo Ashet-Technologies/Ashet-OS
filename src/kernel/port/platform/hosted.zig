@@ -22,7 +22,7 @@ pub const start = struct {
     //         \\.section .text
     //         \\.global _start
     //         \\_start:
-    //         \\  mov $kernel_stack, %esp
+    //         \\  mov $__kernel_stack_end, %esp
     //         \\  cmpl $0x2BADB002, %eax
     //         \\  jne .no_multiboot
     //         \\

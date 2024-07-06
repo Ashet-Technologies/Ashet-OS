@@ -94,7 +94,7 @@ pub const start = struct {
             \\.section .text._start
             \\.global _start
             \\_start:
-            \\  la   sp, kernel_stack // defined in linker script 
+            \\  la   sp, __kernel_stack_end // defined in linker script 
             \\
             \\  la     t0, handleTrap
             \\  csrw   mtvec, t0

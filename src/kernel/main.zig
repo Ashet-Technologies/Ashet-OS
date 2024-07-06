@@ -66,7 +66,8 @@ fn kernelMain() noreturn {
         machine.earlyInitialize();
     }
 
-    // Populate RAM with the right sections, and compute how much dynamic memory we have available
+    // Populate RAM with the right sections, and compute how
+    // much dynamic memory we have available:
 
     Debug.setTraceLoc(@src());
     memory.initializeLinearMemory();
@@ -96,6 +97,11 @@ fn kernelMain() noreturn {
 
 fn main() !void {
     errdefer |err| log.err("main() failed with {}", .{err});
+
+    // Initialize memory protection, which might need
+    // dynamic page allocations to store certain data:
+    log.info("initialize memory protection...", .{});
+    try memory.protection.initialize();
 
     // Before we initialize the hardware, we already add hardware independent drivers
     // for stuff like file systems, virtual block devices and so on...
@@ -193,26 +199,81 @@ pub const Debug = struct {
     }
 
     const Error = error{};
-    fn write(_: void, bytes: []const u8) Error!usize {
+    fn writeWithErr(_: void, bytes: []const u8) Error!usize {
         machine.debugWrite(bytes);
         return bytes.len;
     }
+    const Writer = std.io.Writer(void, Error, writeWithErr);
 
-    const Writer = std.io.Writer(void, Error, write);
+    fn write_with_indent(indent: usize, bytes: []const u8) Error!usize {
+        const indent_part: [8]u8 = .{' '} ** 8;
+
+        var spliter = std.mem.splitScalar(u8, bytes, '\n');
+
+        machine.debugWrite(spliter.first());
+        while (spliter.next()) |continuation| {
+            machine.debugWrite("\r\n");
+
+            var i: usize = indent;
+            while (i > 0) {
+                const prefix = indent_part[0..@min(indent_part.len, i)];
+                machine.debugWrite(prefix);
+                i -= prefix.len;
+            }
+            machine.debugWrite(continuation);
+        }
+
+        return bytes.len;
+    }
+    const IndentWriter = std.io.Writer(usize, Error, write_with_indent);
 
     pub fn writer() Writer {
-        return Writer{ .context = {} };
+        return .{ .context = {} };
+    }
+
+    pub fn indent_writer(indent: u64) IndentWriter {
+        return .{ .context = @truncate(indent) };
+    }
+
+    pub fn write(text: []const u8) void {
+        machine.debugWrite(text);
+    }
+
+    pub fn print(comptime fmt: []const u8, args: anytype) void {
+        writer().print(fmt, args) catch {};
+    }
+
+    pub fn println(comptime fmt: []const u8, args: anytype) void {
+        writer().print(fmt ++ "\r\n", args) catch {};
+    }
+
+    pub fn printStackTrace(prefix: []const u8, stack_trace: *std.builtin.StackTrace, comptime print_fn: fn (comptime []const u8, anytype) void) void {
+        var frame_index: usize = 0;
+        var frames_left: usize = @min(stack_trace.index, stack_trace.instruction_addresses.len);
+
+        while (frames_left != 0) : ({
+            frames_left -= 1;
+            frame_index = (frame_index + 1) % stack_trace.instruction_addresses.len;
+        }) {
+            const return_address = stack_trace.instruction_addresses[frame_index];
+            print_fn("{s}[{}] {}", .{ prefix, frame_index, fmtCodeLocation(return_address) });
+        }
+
+        if (stack_trace.index > stack_trace.instruction_addresses.len) {
+            const dropped_frames = stack_trace.index - stack_trace.instruction_addresses.len;
+            print_fn("{s}({d} additional stack frames skipped...)", .{ prefix, dropped_frames });
+        }
     }
 };
 
-extern var kernel_stack: u8;
-extern var kernel_stack_start: u8;
+extern var __kernel_stack_end: anyopaque;
+extern var __kernel_stack_start: anyopaque;
 
 pub fn stackCheck() void {
     const sp = platform.getStackPointer();
 
-    var stack_end: usize = @intFromPtr(&kernel_stack);
-    var stack_start: usize = @intFromPtr(&kernel_stack_start);
+    var stack_end: usize = @intFromPtr(&__kernel_stack_end);
+    var stack_start: usize = @intFromPtr(&__kernel_stack_start);
 
     if (scheduler.Thread.current()) |thread| {
         stack_end = @intFromPtr(thread.getBasePointer());
@@ -300,14 +361,18 @@ fn kernel_log_fn(
 
         const when = time.get_tick_count();
 
-        Debug.writer().print(color_code ++ "{d: >6}.{d:0>3} [{s}] {s}: ", .{
+        var counting_writer = std.io.countingWriter(Debug.writer());
+
+        Debug.writer().writeAll(color_code) catch return;
+
+        counting_writer.writer().print("{d: >6}.{d:0>3} [{s}] {s}: ", .{
             when / 1000,
             when % 1000,
             level_txt,
             scope_tag,
         }) catch return;
 
-        Debug.writer().print(format, args) catch return;
+        Debug.indent_writer(counting_writer.bytes_written).print(format, args) catch return;
         Debug.writer().print(postfix ++ "\r\n", .{}) catch return;
     }
 }
@@ -344,45 +409,47 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
         machine.debugWrite("PANIC: ");
         machine.debugWrite(message);
         machine.debugWrite("\r\n");
-        Debug.writer().print("last trace: {s}:{}:{} ({s})\r\n", .{
+        Debug.print("last trace: {s}:{}:{} ({s})\r\n", .{
             Debug.trace_loc.file,
             Debug.trace_loc.line,
             Debug.trace_loc.column,
             Debug.trace_loc.fn_name,
-        }) catch {};
+        });
         hang();
     }
     const sp = platform.getStackPointer();
 
-    _ = maybe_error_trace;
-
-    var writer = Debug.writer();
     if (double_panic) {
-        writer.writeAll("\r\nDOUBLE PANIC: ") catch {};
-        writer.writeAll(message) catch {};
-        writer.writeAll("\r\n") catch {};
+        Debug.write("\r\nDOUBLE PANIC: ");
+        Debug.write(message);
+        Debug.write("\r\n");
         hang();
     }
     double_panic = true;
 
-    writer.writeAll("\r\n") catch {};
-    writer.writeAll("=========================================================================\r\n") catch {};
-    writer.writeAll("Kernel Panic: ") catch {};
-    writer.writeAll(message) catch {};
-    writer.writeAll("\r\n") catch {};
-    writer.writeAll("=========================================================================\r\n") catch {};
-    writer.writeAll("\r\n") catch {};
+    Debug.write("\r\n");
+    Debug.write("=========================================================================\r\n");
+    Debug.write("Kernel Panic: ");
+    Debug.write(message);
+    Debug.write("\r\n");
+    Debug.write("=========================================================================\r\n");
+    Debug.write("\r\n");
 
     const current_thread = scheduler.Thread.current();
 
     if (maybe_return_address) |return_address| {
-        writer.print("    panic return address: {}\r\n\r\n", .{fmtCodeLocation(return_address)}) catch {};
+        Debug.print("    panic return address: {}\r\n\r\n", .{fmtCodeLocation(return_address)});
     }
-    writer.print(" function return address: {}\r\n\r\n", .{fmtCodeLocation(@returnAddress())}) catch {};
+    Debug.print(" function return address: {}\r\n\r\n", .{fmtCodeLocation(@returnAddress())});
+
+    if (maybe_error_trace) |error_trace| {
+        Debug.write("error return trace:\r\n");
+        Debug.printStackTrace("  ", error_trace, Debug.println);
+    }
 
     {
-        var stack_end: usize = @intFromPtr(&kernel_stack);
-        var stack_start: usize = @intFromPtr(&kernel_stack_start);
+        var stack_end: usize = @intFromPtr(&__kernel_stack_end);
+        var stack_start: usize = @intFromPtr(&__kernel_stack_start);
 
         if (current_thread) |thread| {
             stack_end = @intFromPtr(thread.getBasePointer());
@@ -393,54 +460,54 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
 
         const stack_size: usize = stack_end - stack_start;
 
-        writer.print("stack usage:\r\n", .{}) catch {};
+        Debug.print("stack usage:\r\n", .{});
 
-        writer.print("  low:     0x{X:0>8}\r\n", .{stack_start}) catch {};
-        writer.print("  pointer: 0x{X:0>8}\r\n", .{sp}) catch {};
-        writer.print("  high:    0x{X:0>8}\r\n", .{stack_end}) catch {};
-        // writer.print("  size:    {d:.3}\r\n", .{std.fmt.fmtIntSizeBin(stack_size)}) catch {};
-        writer.print("  size:    {d}\r\n", .{stack_size}) catch {};
+        Debug.print("  low:     0x{X:0>8}\r\n", .{stack_start});
+        Debug.print("  pointer: 0x{X:0>8}\r\n", .{sp});
+        Debug.print("  high:    0x{X:0>8}\r\n", .{stack_end});
+        // Debug.print("  size:    {d:.3}\r\n", .{std.fmt.fmtIntSizeBin(stack_size)});
+        Debug.print("  size:    {d}\r\n", .{stack_size});
 
         if (sp > stack_end) {
             // stack underflow
-            writer.print("  usage:   UNDERFLOW by {} bytes!\r\n", .{
+            Debug.print("  usage:   UNDERFLOW by {} bytes!\r\n", .{
                 sp - stack_end,
-            }) catch {};
+            });
         } else if (sp <= stack_start) {
             // stack overflow
-            writer.print("  usage:   OVERFLOW by {} bytes!\r\n", .{
+            Debug.print("  usage:   OVERFLOW by {} bytes!\r\n", .{
                 stack_start - sp,
-            }) catch {};
+            });
         } else {
             // stack nominal
-            writer.print("  usage:   {d}%\r\n", .{
+            Debug.print("  usage:   {d}%\r\n", .{
                 100 - (100 * (sp - stack_start)) / stack_size,
-            }) catch {};
+            });
         }
-        writer.writeAll("\r\n") catch {};
+        Debug.write("\r\n");
     }
 
     if (@import("builtin").mode == .Debug) {
         if (scheduler.Thread.current()) |thread| {
-            writer.print("current thread:\r\n", .{}) catch {};
-            writer.print("  [!] {}\r\n\r\n", .{thread}) catch {};
+            Debug.print("current thread:\r\n", .{});
+            Debug.print("  [!] {}\r\n\r\n", .{thread});
         }
 
-        writer.writeAll("waiting threads:\r\n") catch {};
+        Debug.write("waiting threads:\r\n");
         var index: usize = 0;
         var queue = scheduler.ThreadIterator.init();
         while (queue.next()) |thread| : (index += 1) {
-            writer.print("  [{}] {}\r\n", .{ index, thread }) catch {};
+            Debug.print("  [{}] {}\r\n", .{ index, thread });
         }
-        writer.writeAll("\r\n") catch {};
+        Debug.write("\r\n");
     }
 
     {
-        writer.writeAll("stack trace:\r\n") catch {};
+        Debug.write("stack trace:\r\n");
         var index: usize = 0;
         var it = std.debug.StackIterator.init(@returnAddress(), null);
         while (it.next()) |addr| : (index += 1) {
-            writer.print("{d: >4}: {}\r\n", .{ index, fmtCodeLocation(addr) }) catch {};
+            Debug.print("{d: >4}: {}\r\n", .{ index, fmtCodeLocation(addr) });
 
             // if (current_thread) |thread| {
             //     if (thread.process) |proc| {
@@ -448,31 +515,31 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
             //         const top = base +| proc.process_memory.len;
 
             //         if (addr >= base and addr < top) {
-            //             writer.print("{d: >4}: {s}:0x{X:0>8}\r\n", .{ index, proc.file_name, addr - base }) catch {};
-            //             // writer.print("0x{X:0>8}\r\n", .{addr - base}) catch {};
+            //             Debug.print("{d: >4}: {s}:0x{X:0>8}\r\n", .{ index, proc.file_name, addr - base });
+            //             // Debug.print("0x{X:0>8}\r\n", .{addr - base});
             //             continue;
             //         }
             //     }
             // }
 
-            // writer.print("{d: >4}: kernel:0x{X:0>8}\r\n", .{ index, addr }) catch {};
-            // // writer.print("0x{X:0>8}\r\n", .{addr}) catch {};
+            // Debug.print("{d: >4}: kernel:0x{X:0>8}\r\n", .{ index, addr });
+            // // Debug.print("0x{X:0>8}\r\n", .{addr});
         }
     }
 
-    writer.writeAll("\r\n") catch {};
+    Debug.write("\r\n");
 
-    writer.writeAll("Memory map:\r\n") catch {};
+    Debug.write("Memory map:\r\n");
     memory.debug.dumpPageMap();
 
     // print the kernel message again so we have a wraparound
-    writer.writeAll("\r\n") catch {};
-    writer.writeAll("=========================================================================\r\n") catch {};
-    writer.writeAll("Kernel Panic: ") catch {};
-    writer.writeAll(message) catch {};
-    writer.writeAll("\r\n") catch {};
-    writer.writeAll("=========================================================================\r\n") catch {};
-    writer.writeAll("\r\n") catch {};
+    Debug.write("\r\n");
+    Debug.write("=========================================================================\r\n");
+    Debug.write("Kernel Panic: ");
+    Debug.write(message);
+    Debug.write("\r\n");
+    Debug.write("=========================================================================\r\n");
+    Debug.write("\r\n");
 
     hang();
 }

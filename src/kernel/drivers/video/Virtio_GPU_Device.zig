@@ -234,14 +234,19 @@ const GPU = struct {
             });
         }
 
-        gpu.fb_mem = gpu.setupFramebuffer(allocator, Scanout.first, ResourceId.framebuffer, di.pmodes[0].r.width, di.pmodes[0].r.height) catch |err| {
+        const width = di.pmodes[0].r.width;
+        const height = di.pmodes[0].r.height;
+
+        logger.info("detected framebuffer size: {}x{}", .{ width, height });
+
+        gpu.fb_mem = gpu.setupFramebuffer(allocator, Scanout.first, ResourceId.framebuffer, width, height) catch |err| {
             logger.err("failed to setup framebuffer: {s}", .{@errorName(err)});
             return;
         };
         errdefer allocator.free(gpu.fb_mem);
 
-        gpu.fb_width = di.pmodes[0].r.width;
-        gpu.fb_height = di.pmodes[0].r.height;
+        gpu.fb_width = width;
+        gpu.fb_height = height;
 
         logger.info("gpu ready with {}x{} @ {*}", .{ gpu.fb_width, gpu.fb_height, gpu.fb_mem });
     }

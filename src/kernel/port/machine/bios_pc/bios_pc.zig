@@ -13,6 +13,12 @@ const VgaTerminal = @import("VgaTerminal.zig");
 
 pub const machine_config = ashet.ports.MachineConfig{
     .load_sections = .{ .data = false, .bss = false },
+    .memory_protection = .{
+        .initialize = x86.vmm.initialize,
+        .update = x86.vmm.update,
+        .activate = x86.vmm.activate,
+        .get_protection = x86.vmm.get_protection,
+    },
 };
 
 const SerialPortIO = struct {
@@ -98,7 +104,7 @@ pub fn get_tick_count() u64 {
     return timer_counter;
 }
 
-pub fn initialize() !void {
+pub fn earlyInitialize() void {
 
     // x86 requires GDT and IDT, as a lot of x86 devices are only well usable with
     // interrupts. We're also using the GDT for interrupts
@@ -108,6 +114,11 @@ pub fn initialize() !void {
     logger.debug("configure IDT...", .{});
     x86.idt.init();
 
+    logger.debug("enable interrupts...", .{});
+    x86.enableInterrupts();
+}
+
+pub fn initialize() !void {
     logger.debug("initialize PIT...", .{});
     hw.pit = ashet.drivers.timer.Programmable_Interval_Timer.init();
 
@@ -133,6 +144,8 @@ pub fn initialize() !void {
 
     logger.debug("parse multiboot header...", .{});
     const mbheader = x86.start.multiboot_info orelse @panic("Ashet OS must be bootet via a MultiBoot 1 compatible bootloader. Use syslinux or grub!");
+
+    x86.vmm.ensure_accessible_obj(mbheader);
 
     if (mbheader.flags.boot_loader_name) {
         logger.info("system bootloader: '{}'", .{
@@ -213,9 +226,6 @@ pub fn initialize() !void {
         };
         ashet.drivers.install(&ata.driver);
     }
-
-    logger.debug("enable interrupts...", .{});
-    x86.enableInterrupts();
 
     logger.debug("initialize KBC...", .{});
     if (ashet.drivers.input.PC_KBC.init()) |kbc| {
@@ -319,13 +329,13 @@ pub fn debugWrite(msg: []const u8) void {
 extern const __machine_linmem_start: u8 align(4);
 extern const __machine_linmem_end: u8 align(4);
 
-pub fn getLinearMemoryRegion() ashet.memory.Section {
+pub fn getLinearMemoryRegion() ashet.memory.Range {
     const linmem_start = @intFromPtr(&__machine_linmem_start);
     const linmem_end = @intFromPtr(&__machine_linmem_end);
-    return ashet.memory.Section{ .offset = linmem_start, .length = linmem_end - linmem_start };
+    return ashet.memory.Range{ .base = linmem_start, .length = linmem_end - linmem_start };
 }
 
-export const multiboot_header linksection(".multiboot") = x86.multiboot.Header.withChecksum(.{
+export const multiboot_header linksection(".text.multiboot") = x86.multiboot.Header.withChecksum(.{
     .flags = .{
         .req_modules_align_4k = false,
         .req_mem_info = true,
@@ -341,6 +351,6 @@ export const multiboot_header linksection(".multiboot") = x86.multiboot.Header.w
 
     .mode_type = .linear_fb,
     .width = 800,
-    .height = 600,
+    .height = 480,
     .depth = 32,
 });
