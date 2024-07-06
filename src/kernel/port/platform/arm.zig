@@ -65,7 +65,7 @@ pub const start = struct {
             \\.global _start
             \\.type _start, %function
             \\_start:
-            \\  ldr sp, =kernel_stack
+            \\  ldr sp, =__kernel_stack_end
             \\  bl ashet_kernelMain
             //  fallthrough to hang:
             \\

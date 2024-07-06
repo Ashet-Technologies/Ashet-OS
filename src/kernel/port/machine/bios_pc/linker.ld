@@ -23,9 +23,9 @@ SECTIONS
 
     .data ALIGN(4096) : {
         . = ALIGN(4096);
-        kernel_stack_start = .;
+        __kernel_stack_start = .;
         . += 0x30000;
-        kernel_stack = .;
+        __kernel_stack_end = .;
 
         __kernel_data_start = .;
         . = ALIGN(4096);

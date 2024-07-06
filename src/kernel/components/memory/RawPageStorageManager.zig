@@ -2,6 +2,8 @@
 //! - `1` means that page is currently in use
 
 const std = @import("std");
+const builtin = @import("builtin");
+const ashet = @import("../../main.zig");
 const memory = @import("../memory.zig");
 const logger = std.log.scoped(.page_allocator);
 
@@ -72,6 +74,12 @@ pub fn init(section: Range) RawPageStorageManager {
     // Initialize the memory to "all pages free"
     @memset(bmp, all_bits_free);
 
+    std.debug.assert(pm.isFree(@enumFromInt(0)));
+    std.debug.assert(pm.isFree(@enumFromInt(pm.pageCount() - 1)));
+
+    logger.debug("bitmap: {any}", .{bmp[0..10]});
+    defer logger.debug("bitmap: {any}", .{bmp[0..10]});
+
     // compute the amount of pages we need to store the allocation state of pages.
     // we have to round up here, as we need to use all bits in the bitmap.
     const bitmap_page_count = (bmp.len * @sizeOf(usize) + page_size - 1) / page_size;
@@ -141,6 +149,19 @@ pub fn getRequiredPages(pm: RawPageStorageManager, bytes: usize) u32 {
 /// Use `pageToPtr` to obtain a physical pointer to it.
 /// Returned memory must be freed with `freePages` using the same return value as returned by `allocPages`.
 pub fn allocPages(pm: *RawPageStorageManager, count: u32) error{OutOfMemory}!PageSlice {
+    errdefer if (builtin.mode == .Debug) {
+        var stack_trace_addresses: [16]usize = undefined;
+        var stack_trace: std.builtin.StackTrace = .{
+            .index = 0,
+            .instruction_addresses = &stack_trace_addresses,
+        };
+
+        std.debug.captureStackTrace(@returnAddress(), &stack_trace);
+
+        logger.warn("memory allocation for {} pages failed at:", .{count});
+        ashet.Debug.printStackTrace("  ", &stack_trace, logger.warn);
+    };
+
     if (count == 0) return error.OutOfMemory;
     if (count >= pm.pageCount()) return error.OutOfMemory;
 

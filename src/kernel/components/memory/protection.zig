@@ -28,8 +28,10 @@ pub const Protection = enum {
 var is_initialized = false;
 
 pub fn initialize() !void {
-    if (comptime !is_supported())
+    if (comptime !is_supported()) {
+        log.warn("not available, skipping initialization...", .{});
         return;
+    }
 
     log.info("initialize...", .{});
     try machine_impl.initialize();
@@ -61,6 +63,9 @@ pub fn is_enabled() bool {
 }
 
 pub fn get_protection(address: usize) Protection {
+    if (comptime !is_supported())
+        return .read_write;
+
     if (!is_enabled())
         return .read_write; // no protection means everything is read-write anyways
 
@@ -68,6 +73,9 @@ pub fn get_protection(address: usize) Protection {
 }
 
 pub fn change(range: Range, protection: Protection) void {
+    if (comptime !is_supported())
+        return;
+
     std.debug.assert(std.mem.isAligned(range.base, page_size));
     std.debug.assert(std.mem.isAligned(range.length, page_size));
 

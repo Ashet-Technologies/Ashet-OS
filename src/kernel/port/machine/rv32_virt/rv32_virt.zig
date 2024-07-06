@@ -35,6 +35,7 @@ const VPBA_UART_BASE = 0x10000000;
 
 pub const machine_config = ashet.ports.MachineConfig{
     .load_sections = .{ .data = true, .bss = true },
+    .memory_protection = null, // TODO: No memory protection on RISC-V yet!
 };
 
 const virtio_config = ashet.drivers.VirtIoConfiguration{
@@ -74,10 +75,10 @@ pub fn debugWrite(msg: []const u8) void {
 extern const __machine_linmem_start: u8 align(4);
 extern const __machine_linmem_end: u8 align(4);
 
-pub fn getLinearMemoryRegion() ashet.memory.Section {
+pub fn getLinearMemoryRegion() ashet.memory.Range {
     const linmem_start = @intFromPtr(&__machine_linmem_start);
     const linmem_end = @intFromPtr(&__machine_linmem_end);
-    return ashet.memory.Section{ .offset = linmem_start, .length = linmem_end - linmem_start };
+    return .{ .base = linmem_start, .length = linmem_end - linmem_start };
 }
 
 // /// Defines which serial ports are available to the system

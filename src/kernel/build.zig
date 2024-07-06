@@ -275,8 +275,10 @@ const generic_rv32 = .{
     .abi = .eabi,
     .cpu_model = .{ .explicit = &std.Target.riscv.cpu.generic_rv32 },
     .cpu_features_add = std.Target.riscv.featureSet(&[_]std.Target.riscv.Feature{
-        .c,
+        .i,
         .m,
+        .c,
+        .zbb,
         // .reserve_x4, // Don't allow LLVM to use the "tp" register. We want that for our own purposes
     }),
 };

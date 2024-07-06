@@ -31,6 +31,28 @@ pub const ProtectedRange = struct {
     }
 };
 
+pub const KernelMemoryRange = struct {
+    base: u32,
+    length: u32,
+    protection: ashet.memory.protection.Protection,
+    name: []const u8,
+
+    fn to_protected_range(km: KernelMemoryRange) Range {
+        return .{
+            .base = km.base,
+            .length = km.length,
+            .protection = km.protection,
+        };
+    }
+
+    fn to_range(km: KernelMemoryRange) Range {
+        return .{
+            .base = km.base,
+            .length = km.length,
+        };
+    }
+};
+
 pub const USizeIndex = @Type(.{
     .Int = .{
         .bits = std.math.log2_int_ceil(u32, @bitSizeOf(usize)),
@@ -44,29 +66,29 @@ pub const page_size = ashet.platform.page_size;
 
 var page_manager: RawPageStorageManager = undefined;
 
-extern const kernel_stack_start: u8 align(4);
-extern const kernel_stack: u8 align(4);
-extern const __kernel_flash_start: u8 align(4);
-extern const __kernel_flash_end: u8 align(4);
-extern const __kernel_data_start: u8 align(4);
-extern const __kernel_data_end: u8 align(4);
-extern const __kernel_bss_start: u8 align(4);
-extern const __kernel_bss_end: u8 align(4);
+extern const __kernel_stack_start: anyopaque align(4);
+extern const __kernel_stack_end: anyopaque align(4);
+extern const __kernel_flash_start: anyopaque align(4);
+extern const __kernel_flash_end: anyopaque align(4);
+extern const __kernel_data_start: anyopaque align(4);
+extern const __kernel_data_end: anyopaque align(4);
+extern const __kernel_bss_start: anyopaque align(4);
+extern const __kernel_bss_end: anyopaque align(4);
 
 pub const MemorySections = struct {
     data: bool,
     bss: bool,
 };
 
-pub fn get_protected_ranges() []const ProtectedRange {
+pub fn get_protected_ranges() []const KernelMemoryRange {
     const Static = struct {
-        var ranges: [5]ProtectedRange = undefined;
+        var ranges: [5]KernelMemoryRange = undefined;
     };
 
     const flash_start = @intFromPtr(&__kernel_flash_start);
     const flash_end = @intFromPtr(&__kernel_flash_end);
-    const stack_start = @intFromPtr(&kernel_stack_start);
-    const stack_end = @intFromPtr(&kernel_stack);
+    const stack_start = @intFromPtr(&__kernel_stack_start);
+    const stack_end = @intFromPtr(&__kernel_stack_end);
     const data_start = @intFromPtr(&__kernel_data_start);
     const data_end = @intFromPtr(&__kernel_data_end);
     const bss_start = @intFromPtr(&__kernel_bss_start);
@@ -74,12 +96,12 @@ pub fn get_protected_ranges() []const ProtectedRange {
 
     const linear_memory = ashet.machine.getLinearMemoryRegion();
 
-    Static.ranges = [_]ProtectedRange{
-        .{ .base = linear_memory.base, .length = linear_memory.length, .protection = .read_write },
-        .{ .base = flash_start, .length = flash_end - flash_start, .protection = .read_only },
-        .{ .base = data_start, .length = data_end - data_start, .protection = .read_write },
-        .{ .base = bss_start, .length = bss_end - bss_start, .protection = .read_write },
-        .{ .base = stack_start, .length = stack_end - kernel_stack_start, .protection = .read_write },
+    Static.ranges = [_]KernelMemoryRange{
+        .{ .name = "linear", .base = linear_memory.base, .length = linear_memory.length, .protection = .read_write },
+        .{ .name = "flash", .base = flash_start, .length = flash_end - flash_start, .protection = .read_only },
+        .{ .name = "data", .base = data_start, .length = data_end - data_start, .protection = .read_write },
+        .{ .name = "bss", .base = bss_start, .length = bss_end - bss_start, .protection = .read_write },
+        .{ .name = "stack", .base = stack_start, .length = stack_end - stack_start, .protection = .read_write },
     };
 
     return &Static.ranges;
@@ -147,21 +169,24 @@ pub fn loadKernelMemory(comptime sections: MemorySections) void {
 
 /// Initialize the linear system memory and allocators.
 pub fn initializeLinearMemory() void {
-    ashet.Debug.setTraceLoc(@src());
-
     // compute and initialize the memory map
     ashet.Debug.setTraceLoc(@src());
 
     const memory_ranges = get_protected_ranges();
 
+    logger.info("kernel memory ranges:", .{});
+    for (memory_ranges) |range| {
+        logger.info("  {s: >8} [base=0x{X:0>8}, length=0x{X:0>8}, protection={s}]", .{
+            range.name,
+            range.base,
+            range.length,
+            @tagName(range.protection),
+        });
+    }
+
     const linear_memory_region = memory_ranges[0].to_range();
     const kernel_memory_regions = memory_ranges[1..];
 
-    // logger.info("linear memory starts at 0x{X:0>8} and is {d:.3} ({} pages) large", .{
-    //     linear_memory_region.base,
-    //     std.fmt.fmtIntSizeBin(linear_memory_region.length),
-    //     linear_memory_region.length / page_size,
-    // });
     ashet.Debug.setTraceLoc(@src());
     logger.info("linear memory starts at 0x{X:0>8} and is {} ({} pages) large", .{
         linear_memory_region.base,
@@ -202,12 +227,14 @@ pub fn initializeLinearMemory() void {
 
     // TODO: logger.info("free ram: {:.2} ({}/{} pages)", .{ std.fmt.fmtIntSizeBin(page_size * free_memory), free_memory, page_manager.pageCount() });
     ashet.Debug.setTraceLoc(@src());
-    logger.info("free ram: {} ({}/{} pages)", .{ page_size * free_memory, free_memory, page_manager.pageCount() });
+    logger.info("free ram: {} ({}/{} pages allocated)", .{ page_size * free_memory, free_memory, page_manager.pageCount() });
+
+    debug.dumpPageMap();
 }
 
 pub fn isPointerToKernelStack(ptr: anytype) bool {
-    const stack_end: usize = @intFromPtr(&kernel_stack);
-    const stack_start: usize = @intFromPtr(&kernel_stack_start);
+    const stack_end: usize = @intFromPtr(&__kernel_stack_end);
+    const stack_start: usize = @intFromPtr(&__kernel_stack_start);
 
     const addr = @intFromPtr(ptr);
 
@@ -236,8 +263,8 @@ pub const debug = struct {
             writer.writeAll(" read-write ok: '▣' bad mprot: '◈'\r\n") catch {};
         } else {
             writer.writeAll("Legend:\r\n") catch {};
-            writer.writeAll("       free ok: ' '\r\n") catch {};
-            writer.writeAll(" read-write ok: '#'\r\n") catch {};
+            writer.writeAll("       free: ' '\r\n") catch {};
+            writer.writeAll("  allocated: '#'\r\n") catch {};
         }
 
         var i: usize = 0;

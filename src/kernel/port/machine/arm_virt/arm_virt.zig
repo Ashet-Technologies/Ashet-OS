@@ -63,6 +63,7 @@ const virtio_config = ashet.drivers.VirtIoConfiguration{
 
 pub const machine_config = ashet.ports.MachineConfig{
     .load_sections = .{ .data = true, .bss = true },
+    .memory_protection = null,
 };
 
 const hw = struct {
