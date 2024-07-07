@@ -147,12 +147,27 @@ pub const Thread = struct {
     /// **NOTE:** When choosing `stack_size`, one should remember that it will also include the management structures
     /// for the thread
     pub fn spawn(func: ThreadFunction, arg: ?*anyopaque, options: ThreadSpawnOptions) error{OutOfMemory}!*Thread {
-        const stack_size = std.mem.alignForward(usize, options.stack_size, ashet.memory.page_size);
+        const use_canary = ashet.memory.protection.is_enabled();
+
+        // the canary requires a single page at the "bottom" of the stack:
+        const additional_stack_size: usize = if (use_canary)
+            ashet.memory.page_size
+        else
+            0;
+
+        const stack_size = std.mem.alignForward(usize, options.stack_size + additional_stack_size, ashet.memory.page_size);
 
         // Requires the use of `ThreadAllocator`.
         // See `ashet_scheduler_threadExit` and `internalDestroy` for more explanation.
         const stack_bottom = try ashet.memory.ThreadAllocator.alloc(stack_size);
         errdefer ashet.memory.ThreadAllocator.free(stack_bottom);
+
+        if (use_canary) {
+            // make the stack canary forbidden:
+            ashet.memory.protection.change(ashet.memory.Range.from_slice(
+                stack_bottom[0..additional_stack_size],
+            ), .forbidden);
+        }
 
         const thread = @as(*Thread, @ptrFromInt(@intFromPtr(stack_bottom.ptr) + stack_size - @sizeOf(Thread)));
         const thread_proc = options.process;
