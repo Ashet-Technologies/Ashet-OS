@@ -25,8 +25,7 @@ pub fn build(b: *std.Build) !void {
     // const MI_BUILD_OBJECT = b.option(bool, "MI_BUILD_OBJECT", "Build object library") orelse true;
     // const MI_BUILD_TESTS = b.option(bool, "MI_BUILD_TESTS", "Build test executables") orelse true;
     const MI_DEBUG_TSAN = b.option(bool, "MI_DEBUG_TSAN", "Build with thread sanitizer (needs clang)") orelse false;
-    const MI_DEBUG_UBSAN = b.option(bool, "MI_DEBUG_UBSAN", "Build with undefined-behavior sanitizer (needs clang++)") orelse false;
-    _ = MI_DEBUG_UBSAN; // autofix
+    // const MI_DEBUG_UBSAN = b.option(bool, "MI_DEBUG_UBSAN", "Build with undefined-behavior sanitizer (needs clang++)") orelse false;
     const MI_SKIP_COLLECT_ON_EXIT = b.option(bool, "MI_SKIP_COLLECT_ON_EXIT", "Skip collecting memory on program exit") orelse false;
     const MI_NO_PADDING = b.option(bool, "MI_NO_PADDING", "Force no use of padding even in DEBUG mode etc.") orelse false;
     // const MI_INSTALL_TOPLEVEL = b.option(bool, "MI_INSTALL_TOPLEVEL", "Install directly into $CMAKE_INSTALL_PREFIX instead of PREFIX/lib/mimalloc-version") orelse false;
