@@ -30,6 +30,8 @@
 
 const std = @import("std");
 const ashet = @import("../../../main.zig");
+const rv32 = ashet.ports.platforms.riscv;
+const logger = std.log.scoped(.@"qemu-virt-rv32");
 
 const VPBA_UART_BASE = 0x10000000;
 
@@ -55,6 +57,8 @@ pub fn get_tick_count() u64 {
 }
 
 pub fn initialize() !void {
+    dump_machine_info();
+
     hw.rtc = ashet.drivers.rtc.Goldfish.init(0x0101000);
     hw.cfi = try ashet.drivers.block.CFI_NOR_Flash.init(0x2200_0000, 0x0200_0000);
 
@@ -98,3 +102,45 @@ pub fn getLinearMemoryRegion() ashet.memory.Range {
 //         @intToPtr(*volatile u8, @import("regs.zig").VPBA_UART_BASE).* = char;
 //     }
 // }
+
+fn dump_machine_info() void {
+    const vendor_id = rv32.ControlStatusRegister.read(.mvendorid);
+    const arch_id = rv32.ControlStatusRegister.read(.marchid);
+    const imp_id = rv32.ControlStatusRegister.read(.mimpid);
+    const hart_id = rv32.ControlStatusRegister.read(.mhartid);
+    const isa = rv32.ControlStatusRegister.read(.misa);
+
+    const ISA = packed struct(u32) {
+        extensions: u26,
+
+        _padding: u4,
+
+        machine_xlen: enum(u2) {
+            undefined = 0b00,
+            @"32 bit" = 0b01,
+            @"64 bit" = 0b10,
+            @"128 bit" = 0b11,
+        },
+    };
+
+    const isa_decoded: ISA = @bitCast(isa);
+
+    var extension_str: [26]u8 = undefined;
+    var extension_count: usize = 0;
+
+    for (0..26) |i| {
+        if ((isa_decoded.extensions & (@as(u32, 1) << @truncate(i))) != 0) {
+            extension_str[extension_count] = @truncate('A' + i);
+            extension_count += 1;
+        }
+    }
+
+    logger.info("machine info:", .{});
+    logger.info("  vendor:     0x{X:0>8}", .{vendor_id});
+    logger.info("  arch:       0x{X:0>8}", .{arch_id});
+    logger.info("  imp:        0x{X:0>8}", .{imp_id});
+    logger.info("  hart:       0x{X:0>8}", .{hart_id});
+    logger.info("  isa:        0x{X:0>8}", .{isa});
+    logger.info("    xlen:     {s}", .{@tagName(isa_decoded.machine_xlen)});
+    logger.info("    ext:      {s}", .{extension_str[0..extension_count]});
+}
