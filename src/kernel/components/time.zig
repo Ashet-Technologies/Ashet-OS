@@ -23,11 +23,53 @@ pub fn timestamp() i64 {
     return @divTrunc(milliTimestamp(), std.time.ms_per_s);
 }
 
-pub fn get_tick_count() u64 {
-    return ashet.machine.get_tick_count();
-}
+/// Monotonic clock in millisecond precision
+pub const Instant = enum(u64) {
+    _,
 
-//
+    pub fn now() Instant {
+        return @enumFromInt(ashet.machine.get_tick_count());
+    }
+
+    pub fn ms_since(future: Instant, past: Instant) u64 {
+        return @intFromEnum(future) - @intFromEnum(past);
+    }
+
+    pub fn add_ms(point: Instant, ms: u64) Instant {
+        return @enumFromInt(@intFromEnum(point) + ms);
+    }
+
+    pub fn less_than(lhs: Instant, rhs: Instant) bool {
+        return @intFromEnum(lhs) < @intFromEnum(rhs);
+    }
+
+    pub fn less_or_equal(lhs: Instant, rhs: Instant) bool {
+        return (lhs == rhs) or lhs.less_than(rhs);
+    }
+};
+
+/// Deadlines based on the monotonic clock.
+pub const Deadline = struct {
+    when: Instant,
+
+    pub fn init_rel(timeout_ms: u32) Deadline {
+        return .{ .when = Instant.now().add_ms(timeout_ms) };
+    }
+
+    pub fn init_abs(when: Instant) Deadline {
+        return .{ .when = when };
+    }
+
+    pub fn is_reached(deadline: Deadline) bool {
+        return deadline.when.less_or_equal(Instant.now());
+    }
+
+    pub fn wait(deadline: Deadline) void {
+        while (!deadline.is_reached()) {
+            //
+        }
+    }
+};
 
 const Timer = ashet.abi.Timer;
 

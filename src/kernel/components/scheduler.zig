@@ -66,13 +66,13 @@ pub fn dumpStats() void {
             logger.info("  current thread: ip=0x{X:0>8}", .{thread.ip});
         }
     }
-    logger.info("  total:     {}", .{stats.total_count});
+    logger.info("  total:     {}", .{global_stats.total_count});
     logger.info("  waiting:   {}", .{wait_queue.len});
-    logger.info("  suspended: {}", .{stats.suspended_count});
-    logger.info("  running:   {}", .{stats.running_count});
+    logger.info("  suspended: {}", .{global_stats.suspended_count});
+    logger.info("  running:   {}", .{global_stats.running_count});
 }
 
-pub const stats = struct {
+pub const global_stats = struct {
     var total_count: usize = 0;
     var suspended_count: usize = 0;
     var running_count: usize = 0;
@@ -80,6 +80,18 @@ pub const stats = struct {
 
 pub const ExitCode = ashet.abi.ExitCode;
 pub const ThreadFunction = ashet.abi.ThreadFunction;
+
+pub const Stats = struct {
+    times_scheduled: u32 = 0,
+    total_execution_time_ms: u64 = 0,
+
+    schedule_time: ?ashet.time.Instant = null,
+
+    pub fn reset(stats: *Stats) void {
+        stats.times_scheduled = 0;
+        stats.total_execution_time_ms = 0;
+    }
+};
 
 /// Thread management structure.
 /// Is allocated in such a way that is is stored at the end of the last page of thread stack.
@@ -114,6 +126,9 @@ pub const Thread = struct {
     stack_size: usize,
 
     debug_info: DebugInfo = .{},
+
+    /// Stores runtime statistics of this thread.
+    stats: Stats = .{},
 
     process_link: ?ashet.multi_tasking.ProcessThreadList.Node = null,
 
@@ -195,7 +210,7 @@ pub const Thread = struct {
             else => @compileError(std.fmt.comptimePrint("{s} is not a supported platform", .{@tagName(target)})),
         }
 
-        stats.total_count += 1;
+        global_stats.total_count += 1;
 
         return thread;
     }
@@ -242,7 +257,7 @@ pub const Thread = struct {
         thread.flags.started = true;
         enqueueThread(&wait_queue, thread);
 
-        stats.running_count += 1;
+        global_stats.running_count += 1;
     }
 
     pub fn detach(thread: *Thread) void {
@@ -260,7 +275,7 @@ pub const Thread = struct {
             return;
 
         thread.flags.suspended = true;
-        stats.suspended_count += 1;
+        global_stats.suspended_count += 1;
 
         if (thread.isCurrent()) {
             // current thread will be yielded, and because it's suspended, we won't
@@ -288,7 +303,7 @@ pub const Thread = struct {
         std.debug.assert(thread.queue == null);
         enqueueThread(&wait_queue, thread);
         thread.flags.suspended = false;
-        stats.suspended_count -= 1;
+        global_stats.suspended_count -= 1;
     }
 
     /// Kills the thread and releases all of its resources.
@@ -322,7 +337,7 @@ pub const Thread = struct {
             // thread even if it is already dead.
             queue.remove(&thread.node);
 
-            stats.running_count -= 1;
+            global_stats.running_count -= 1;
         }
 
         logger.info("killing thread {}", .{thread});
@@ -347,7 +362,7 @@ pub const Thread = struct {
         // is not changed between the free and the `performSwitch` call.
         ashet.memory.ThreadAllocator.free(stack_bottom[0..thread.stack_size]);
 
-        stats.total_count -= 1;
+        global_stats.total_count -= 1;
     }
 
     fn push(thread: *Thread, value: u32) void {
@@ -473,6 +488,16 @@ fn performSwitch(from: *Thread, to: *Thread) void {
     // });
 
     std.debug.assert(current_thread.? == from);
+
+    // Update timings
+    const now = ashet.time.Instant.now();
+    if (from.stats.schedule_time) |schedule_time| {
+        from.stats.total_execution_time_ms += now.ms_since(schedule_time);
+    }
+    to.stats.schedule_time = now;
+    to.stats.times_scheduled += 1;
+
+    // Prepare task switch:
     ashet_scheduler_save_thread = from;
     ashet_scheduler_restore_thread = to;
     current_thread = to;

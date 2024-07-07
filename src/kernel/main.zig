@@ -394,15 +394,15 @@ fn kernel_log_fn(
         var cs = CriticalSection.enter();
         defer cs.leave();
 
-        const when = time.get_tick_count();
+        const now = time.Instant.now();
 
         var counting_writer = std.io.countingWriter(Debug.writer());
 
         Debug.writer().writeAll(color_code) catch return;
 
         counting_writer.writer().print("{d: >6}.{d:0>3} [{s}] {s}: ", .{
-            when / 1000,
-            when % 1000,
+            @intFromEnum(now) / 1000,
+            @intFromEnum(now) % 1000,
             level_txt,
             scope_tag,
         }) catch return;
