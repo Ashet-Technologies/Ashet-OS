@@ -132,7 +132,9 @@ fn main() !void {
 
     log.info("spawn kernel main thread...", .{});
     {
-        const thread = try scheduler.Thread.spawn(global_kernel_tick, null, .{});
+        const thread = try scheduler.Thread.spawn(global_kernel_tick, null, .{
+            .stack_size = 128 * 1024,
+        });
         try thread.setName("os.tick");
         try thread.start();
         thread.detach();
@@ -146,7 +148,9 @@ fn main() !void {
     {
         log.info("starting entry point thread...", .{});
 
-        const thread = try scheduler.Thread.spawn(load_entry_point, null, .{});
+        const thread = try scheduler.Thread.spawn(load_entry_point, null, .{
+            .stack_size = 128 * 1024,
+        });
         try thread.setName("os.entrypoint");
         try thread.start();
         thread.detach();
@@ -169,10 +173,14 @@ fn load_entry_point(_: ?*anyopaque) callconv(.C) u32 {
     log.info("loading entry point...", .{});
 
     apps.startApp(.{
-        .name = "hello-world",
+        .name = "init",
     }) catch @panic("failed to start up the system");
 
     log.info("start application successfully loaded!", .{});
+
+    while (true) {
+        scheduler.yield();
+    }
 
     return 0;
 }
@@ -180,9 +188,19 @@ fn load_entry_point(_: ?*anyopaque) callconv(.C) u32 {
 /// This function runs to keep certain kernel tasks alive and
 /// working.
 fn global_kernel_tick(_: ?*anyopaque) callconv(.C) u32 {
+    const frame_rate = 1000 / 30; // 30 Hz
+
+    var video_flush_deadline = time.Deadline.init_rel(frame_rate);
     while (true) {
         if (video.auto_flush) {
-            video.flush();
+            if (video_flush_deadline.is_reached()) {
+                video_flush_deadline.move_forward(frame_rate);
+                video.flush();
+                while (video_flush_deadline.is_reached()) {
+                    log.warn("dropping auto-flush video frame!", .{});
+                    video_flush_deadline.move_forward(frame_rate);
+                }
+            }
         }
         input.tick();
         time.tick();
@@ -218,9 +236,6 @@ pub const global_hotkeys = struct {
         return false;
     }
 };
-
-var runtime_data_string = "Hello, well initialized .data!\r\n".*;
-var runtime_sdata_string = "Hello, well initialized .sdata!\r\n".*;
 
 extern fn hang() callconv(.C) noreturn;
 

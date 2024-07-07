@@ -385,5 +385,9 @@ pub const ThreadAllocator = struct {
 
     pub fn free(buf: []u8) void {
         ashet.memory.PageAllocator.free(undefined, buf, 12, @returnAddress());
+        if (protection.is_enabled()) {
+            // TODO: This is a horrible hack right now:
+            protection.change(Range.from_slice(buf), .read_write);
+        }
     }
 };

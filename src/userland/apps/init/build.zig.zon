@@ -1,0 +1,10 @@
+.{
+    .name = "init",
+    .version = "0.1.0",
+    .paths = .{ "build.zig", "build.zig.zon", "init.zig" },
+    .dependencies = .{
+        .AshetOS = .{
+            .path = "../../libs/libAshetOS",
+        },
+    },
+}

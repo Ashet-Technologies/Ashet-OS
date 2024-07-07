@@ -64,6 +64,10 @@ pub const Deadline = struct {
         return deadline.when.less_or_equal(Instant.now());
     }
 
+    pub fn move_forward(deadline: *Deadline, delta_ms: u32) void {
+        deadline.when = deadline.when.add_ms(delta_ms);
+    }
+
     pub fn wait(deadline: Deadline) void {
         while (!deadline.is_reached()) {
             //
