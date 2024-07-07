@@ -25,7 +25,7 @@ fn dynamic_resolver(a: u32, b: u32, c: u32, d: u32) callconv(.C) void {
     @panic("hello, dynamic code!");
 }
 
-pub fn load(file: *libashet.fs.File) !loader.LoadedExecutable {
+pub fn load(file: *libashet.fs.File, allocator: std.mem.Allocator) !loader.LoadedExecutable {
     const expected_elf_machine: std.elf.EM = switch (system_arch) {
         .riscv32 => .RISCV,
         .x86 => .@"386",
@@ -154,8 +154,8 @@ pub fn load(file: *libashet.fs.File) !loader.LoadedExecutable {
         break :dynamic_loader dsect;
     };
 
-    const process_memory = try ashet.memory.page_allocator.alignedAlloc(u8, ashet.memory.page_size, required_bytes);
-    errdefer ashet.memory.page_allocator.free(process_memory);
+    const process_memory = try allocator.alignedAlloc(u8, ashet.memory.page_size, required_bytes);
+    errdefer allocator.free(process_memory);
 
     const process_base = @intFromPtr(process_memory.ptr);
 

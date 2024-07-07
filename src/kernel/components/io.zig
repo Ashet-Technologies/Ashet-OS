@@ -73,8 +73,8 @@ pub fn scheduleAndAwait(start_queue: ?*IOP, wait: WaitIO) ?*IOP {
     ashet.stackCheck();
 
     const thread = ashet.scheduler.Thread.current() orelse @panic("scheduleAndAwait called in a non-thread context!");
-    const context: *Context = if (thread.process) |process|
-        &process.io_context
+    const context: *Context = if (thread.process_link) |link|
+        &link.data.process.io_context
     else
         &kernel_context; // kernel can also schedule I/Os
     // const process = thread.process orelse @panic("scheduleAndAwait called in a non-process context!");
@@ -184,8 +184,8 @@ pub fn cancel(event: *ashet.abi.IOP) void {
     ashet.stackCheck();
 
     const thread = ashet.scheduler.Thread.current() orelse @panic("scheduleAndAwait called in a non-thread context!");
-    const context: *Context = if (thread.process) |process|
-        &process.io_context
+    const context: *Context = if (thread.process_link) |link|
+        &link.data.process.io_context
     else
         &kernel_context; // kernel can also schedule I/Os
 

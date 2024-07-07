@@ -369,6 +369,11 @@ const PageAllocator = struct {
 };
 
 /// An allocator used for allocation/deletion of threads.
+///
+/// The important difference of this allocator to regular Zig allocators is
+/// that it does never `undefine` the memory after `free`. This is required
+/// for the scheduler to work properly!
+///
 /// **DO NOT USE THE ALLOCATOR FOR ANYTHING ELSE**.
 pub const ThreadAllocator = struct {
     pub fn alloc(len: usize) error{OutOfMemory}![]u8 {

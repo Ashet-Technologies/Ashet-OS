@@ -115,7 +115,7 @@ pub const Thread = struct {
 
     debug_info: DebugInfo = .{},
 
-    process: ?*ashet.multi_tasking.Process,
+    process_link: ?ashet.multi_tasking.ProcessThreadList.Node = null,
 
     /// Returns a pointer to the current thread.
     pub fn current() ?*Thread {
@@ -147,11 +147,14 @@ pub const Thread = struct {
             .ip = @intFromPtr(&ashet_scheduler_threadTrampoline),
             .exit_code = 0,
             .stack_size = stack_size,
-            .process = thread_proc,
+            .process_link = if (thread_proc) |proc| .{ .data = .{
+                .thread = thread,
+                .process = proc,
+            } } else null,
         };
 
-        if (thread.process) |proc| {
-            proc.thread_count += 1;
+        if (thread.process_link) |*link| {
+            link.data.process.threads.append(link);
         }
 
         if (@import("builtin").mode == .Debug) {
@@ -324,9 +327,12 @@ pub const Thread = struct {
 
         logger.info("killing thread {}", .{thread});
 
-        if (thread.process) |proc| {
-            proc.thread_count -= 1;
-            if (proc.thread_count == 0) {
+        if (thread.process_link) |*link| {
+            std.debug.assert(link.data.thread == thread);
+            const proc = link.data.process;
+            proc.threads.remove(link);
+
+            if (proc.stay_resident == false and proc.threads.len == 0) {
                 proc.kill();
             }
         }

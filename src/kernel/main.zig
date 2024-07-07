@@ -127,23 +127,67 @@ fn main() !void {
     log.info("initialize input...", .{});
     input.initialize();
 
+    log.info("initialize process handling...", .{});
+    multi_tasking.initialize();
+
     log.info("spawn kernel main thread...", .{});
-    const thread = try scheduler.Thread.spawn(tickSystem, null, .{});
-    try thread.setName("os.tick");
-    try thread.start();
-    thread.detach();
+    {
+        const thread = try scheduler.Thread.spawn(global_kernel_tick, null, .{});
+        try thread.setName("os.tick");
+        try thread.start();
+        thread.detach();
+    }
 
     log.info("startup network...", .{});
     try network.start();
 
     // try ui.start();
 
-    log.info("entering scheduler...", .{});
+    {
+        log.info("starting entry point thread...", .{});
 
+        const thread = try scheduler.Thread.spawn(load_entry_point, null, .{});
+        try thread.setName("os.entrypoint");
+        try thread.start();
+        thread.detach();
+    }
+
+    log.info("entering scheduler...", .{});
     scheduler.start();
 
     // All tasks stopped, what should we do now?
     log.warn("All threads stopped. System is now halting.", .{});
+}
+
+/// This thread is just loading the startup application, and
+/// is then quitting.
+///
+/// It's required to use a thread here to keep the IO subsystem
+/// up and running. If we would try loading the application from
+/// the `main()` function, we'd be blocking.
+fn load_entry_point(_: ?*anyopaque) callconv(.C) u32 {
+    log.info("loading entry point...", .{});
+
+    apps.startApp(.{
+        .name = "hello-world",
+    }) catch @panic("failed to start up the system");
+
+    log.info("start application successfully loaded!", .{});
+
+    return 0;
+}
+
+/// This function runs to keep certain kernel tasks alive and
+/// working.
+fn global_kernel_tick(_: ?*anyopaque) callconv(.C) u32 {
+    while (true) {
+        if (video.auto_flush) {
+            video.flush();
+        }
+        input.tick();
+        time.tick();
+        scheduler.yield();
+    }
 }
 
 pub const global_hotkeys = struct {
@@ -174,17 +218,6 @@ pub const global_hotkeys = struct {
         return false;
     }
 };
-
-fn tickSystem(_: ?*anyopaque) callconv(.C) u32 {
-    while (true) {
-        if (video.auto_flush) {
-            video.flush();
-        }
-        input.tick();
-        time.tick();
-        scheduler.yield();
-    }
-}
 
 var runtime_data_string = "Hello, well initialized .data!\r\n".*;
 var runtime_sdata_string = "Hello, well initialized .sdata!\r\n".*;
@@ -303,6 +336,8 @@ pub const log_levels = struct {
     pub var filesystem: LogLevel = .debug;
     pub var memory: LogLevel = .info;
     pub var drivers: LogLevel = .info;
+    pub var mprot: LogLevel = .info; // very noise modules!
+    pub var x86_vmm: LogLevel = .info; // very noise modules!
 
     // drivers:
     pub var @"virtio-net": LogLevel = .info;
@@ -386,10 +421,12 @@ pub const CodeLocation = struct {
 
         var iter = multi_tasking.processIterator();
         while (iter.next()) |proc| {
-            const base = @intFromPtr(proc.process_memory.ptr);
-            const top = base +| proc.process_memory.len;
+            const process_memory = proc.executable_memory orelse continue;
+
+            const base = @intFromPtr(process_memory.ptr);
+            const top = base +| process_memory.len;
             if (codeloc.pointer >= base and codeloc.pointer < top) {
-                try writer.print("{s}:0x{X:0>8}", .{ proc.file_name, codeloc.pointer - base });
+                try writer.print("{s}:0x{X:0>8}", .{ proc.name, codeloc.pointer - base });
                 return;
             }
         }

@@ -40,6 +40,9 @@ pub fn build(b: *std.Build) void {
         .@"static-rtc" = @as([]const u8, "2022-07-10"), // TODO: Fix this
         .mkfs = true,
     });
+    const libashetos_dep = b.dependency("libashetos", .{
+        .target = platform_id,
+    });
 
     // Modules:
 
@@ -52,6 +55,7 @@ pub fn build(b: *std.Build) void {
     const vnc_mod = vnc_dep.module("vnc");
     const zfat_mod = zfat_dep.module("zfat");
     const lwip_mod = lwip_dep.module("lwip");
+    const ashetos_mod = libashetos_dep.module("ashet");
 
     // Build:
 
@@ -84,7 +88,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "args", .module = args_mod },
             .{ .name = "fatfs", .module = zfat_mod },
             .{ .name = "vnc", .module = vnc_mod },
-            // .{ .name = "ashet", .module = options.modules.libashet },
+            .{ .name = "ashet", .module = ashetos_mod },
 
             // only required on hosted instances:
             .{ .name = "network", .module = network_mod },
