@@ -88,7 +88,12 @@ pub fn build(b: *std.Build) void {
         const write_file_step = b.addWriteFile("machine-info.zig", machine_info);
 
         const module = b.createModule(.{
-            .root_source_file = write_file_step.files.items[0].getPath(),
+            .root_source_file = .{
+                .generated = .{
+                    .file = &write_file_step.generated_directory,
+                    .sub_path = write_file_step.files.items[0].sub_path,
+                },
+            },
         });
 
         break :blk module;

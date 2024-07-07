@@ -67,13 +67,14 @@ pub fn build(b: *std.Build) void {
         });
         os_deps.set(machine, machine_os_dep);
 
-        const out_dir: std.Build.InstallDir = .{ .custom = @tagName(machine) };
         const os_files = machine_os_dep.namedWriteFiles("ashet-os");
 
-        for (os_files.files.items) |file| {
-            const install_elf_step = b.addInstallFileWithDir(file.getPath(), out_dir, file.sub_path);
-            step.dependOn(&install_elf_step.step);
-        }
+        const install_elves = b.addInstallDirectory(.{
+            .source_dir = os_files.getDirectory(),
+            .install_dir = .{ .custom = @tagName(machine) },
+            .install_subdir = "",
+        });
+        step.dependOn(&install_elves.step);
 
         if (list_apps) {
             std.debug.print("available files for '{s}':\n", .{
@@ -369,7 +370,12 @@ const console_qemu_flags = [_][]const u8{
 fn get_optional_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) ?std.Build.LazyPath {
     for (write_files.files.items) |file| {
         if (std.mem.eql(u8, file.sub_path, sub_path))
-            return file.getPath();
+            return  .{
+                .generated = .{
+                    .file = &write_files.generated_directory,
+                    .sub_path = file.sub_path,
+                },
+            };
     }
     return null;
 }
