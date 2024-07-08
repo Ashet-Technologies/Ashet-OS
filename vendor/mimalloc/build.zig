@@ -31,8 +31,7 @@ pub fn build(b: *std.Build) !void {
     // const MI_INSTALL_TOPLEVEL = b.option(bool, "MI_INSTALL_TOPLEVEL", "Install directly into $CMAKE_INSTALL_PREFIX instead of PREFIX/lib/mimalloc-version") orelse false;
     const MI_NO_THP = b.option(bool, "MI_NO_THP", "Disable transparent huge pages support on Linux/Android for the mimalloc process only") orelse false;
 
-    const lib = b.addStaticLibrary(.{
-        .name = "mimalloc",
+    const mimalloc = b.addModule("mimalloc", .{
         .target = target,
         .optimize = optimize,
         .pic = true,
@@ -58,10 +57,10 @@ pub fn build(b: *std.Build) !void {
         if (target.result.isDarwin()) {
             if (MI_OSX_ZONE) {
                 try sources.append("src/prim/osx/alloc-override-zone.c");
-                lib.defineCMacro("MI_OSX_ZONE", null);
+                mimalloc.addCMacro("MI_OSX_ZONE", "1");
             }
             if (MI_OSX_INTERPOSE) {
-                lib.defineCMacro("MI_OSX_INTERPOSE", null);
+                mimalloc.addCMacro("MI_OSX_INTERPOSE", "1");
             }
         }
     }
@@ -69,46 +68,46 @@ pub fn build(b: *std.Build) !void {
     if (target.result.os.tag == .windows) {
         if (target.result.cpu.arch.isARM()) @panic("Cannot use redirection on Windows ARM");
         if (!MI_WIN_REDIRECT) {
-            lib.defineCMacro("MI_WIN_NOREDIRECT", null);
+            mimalloc.addCMacro("MI_WIN_NOREDIRECT", "1");
         }
     }
 
-    if (MI_SECURE) lib.defineCMacro("MI_SECURE", "4");
-    if (MI_TRACK_VALGRIND) lib.defineCMacro("MI_TRACK_VALGRIND", null);
+    if (MI_SECURE) mimalloc.addCMacro("MI_SECURE", "4");
+    if (MI_TRACK_VALGRIND) mimalloc.addCMacro("MI_TRACK_VALGRIND", "1");
 
     if (MI_TRACK_ASAN) {
         if (target.result.isDarwin() and MI_OVERRIDE) @panic("Cannot enable address sanitizer support on macOS if MI_OVERRIDE is true");
         if (MI_TRACK_VALGRIND) @panic("Cannot enable address sanitizer support with also Valgrind support enabled");
-        lib.defineCMacro("MI_TRACK_ASAN", null);
+        mimalloc.addCMacro("MI_TRACK_ASAN", "1");
         try flags.append("-fsanitize=address");
     }
 
     if (MI_TRACK_ETW) {
         if (target.result.os.tag != .windows) @panic("Can only enable ETW support on Windows");
         if (MI_TRACK_VALGRIND or MI_TRACK_ASAN) @panic("Cannot enable ETW support with also Valgrind or ASAN support enabled");
-        lib.defineCMacro("MI_TRACK_ETW", null);
+        mimalloc.addCMacro("MI_TRACK_ETW", "1");
     }
 
-    if (MI_SKIP_COLLECT_ON_EXIT) lib.defineCMacro("MI_SKIP_COLLECT_ON_EXIT", null);
-    if (MI_DEBUG_FULL) lib.defineCMacro("MI_DEBUG", "3");
+    if (MI_SKIP_COLLECT_ON_EXIT) mimalloc.addCMacro("MI_SKIP_COLLECT_ON_EXIT", "1");
+    if (MI_DEBUG_FULL) mimalloc.addCMacro("MI_DEBUG", "3");
     if (MI_NO_PADDING) {
-        lib.defineCMacro("MI_PADDING", "0");
+        mimalloc.addCMacro("MI_PADDING", "0");
     } else if (MI_PADDING) {
-        lib.defineCMacro("MI_PADDING", "1");
+        mimalloc.addCMacro("MI_PADDING", "1");
     }
-    if (MI_XMALLOC) lib.defineCMacro("MI_XMALLOC", null);
-    if (MI_SHOW_ERRORS) lib.defineCMacro("MI_SHOW_ERRORS", null);
+    if (MI_XMALLOC) mimalloc.addCMacro("MI_XMALLOC", "1");
+    if (MI_SHOW_ERRORS) mimalloc.addCMacro("MI_SHOW_ERRORS", "1");
 
     if (MI_DEBUG_TSAN) {
-        lib.defineCMacro("MI_TSAN", null);
+        mimalloc.addCMacro("MI_TSAN", "1");
         try flags.appendSlice(&.{ "-fsanitize=thread", "-g", "-O1" });
     }
 
     if (target.result.isAndroid() or target.result.os.tag == .linux) {
-        if (MI_NO_THP) lib.defineCMacro("MI_NO_THP", null);
+        if (MI_NO_THP) mimalloc.addCMacro("MI_NO_THP", "1");
     }
 
-    if (target.result.isMusl()) lib.defineCMacro("MI_LIBC_MUSL", null);
+    if (target.result.isMusl()) mimalloc.addCMacro("MI_LIBC_MUSL", "1");
 
     try flags.appendSlice(&.{
         "-Wno-unknown-pragmas",
@@ -131,15 +130,15 @@ pub fn build(b: *std.Build) !void {
     }
 
     if (target.result.isMinGW()) {
-        lib.defineCMacro("_WIN32_WINNT", "0x600");
+        mimalloc.addCMacro("_WIN32_WINNT", "0x600");
     }
 
     if (target.result.os.tag == .windows) {
-        lib.linkSystemLibrary("psapi");
-        lib.linkSystemLibrary("shell32");
-        lib.linkSystemLibrary("user32");
-        lib.linkSystemLibrary("advapi32");
-        lib.linkSystemLibrary("bcrypt");
+        mimalloc.linkSystemLibrary("psapi", .{});
+        mimalloc.linkSystemLibrary("shell32", .{});
+        mimalloc.linkSystemLibrary("user32", .{});
+        mimalloc.linkSystemLibrary("advapi32", .{});
+        mimalloc.linkSystemLibrary("bcrypt", .{});
     } else {
         // TODO: Find a way to link them conditionally if they exist
         // lib.linkSystemLibrary("pthread");
@@ -148,18 +147,12 @@ pub fn build(b: *std.Build) !void {
     }
 
     const upstream = b.dependency("mimalloc", .{});
-    lib.addCSourceFiles(.{
+    mimalloc.addCSourceFiles(.{
         .root = upstream.path("src"),
         .files = sources.items,
         .flags = flags.items,
     });
-    lib.addIncludePath(upstream.path("include"));
-
-    lib.installHeader(upstream.path("include/mimalloc.h"), "mimalloc.h");
-    lib.installHeader(upstream.path("include/mimalloc-override.h"), "mimalloc-override.h");
-    lib.installHeader(upstream.path("include/mimalloc-new-delete.h"), "mimalloc-new-delete.h");
-
-    b.installArtifact(lib);
+    mimalloc.addIncludePath(upstream.path("include"));
 }
 
 const mimalloc_sources = [_][]const u8{

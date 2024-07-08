@@ -4,13 +4,13 @@
 
     .dependencies = .{
         .mimalloc = .{
-            .url = "https://github.com/microsoft/mimalloc/archive/refs/tags/v2.1.7.tar.gz",
-            .hash = "12209bba1fc4faac01d1ee247a38bdb9f340ce60e457d194fa9da4f7c22b96986521",
+            .path = "mimalloc-2.1.7",
         },
     },
 
     .paths = .{
         "build.zig",
         "build.zig.zon",
+        "mimalloc-2.1.7",
     },
 }
