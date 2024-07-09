@@ -133,7 +133,7 @@ fn main() !void {
     log.info("spawn kernel main thread...", .{});
     {
         const thread = try scheduler.Thread.spawn(global_kernel_tick, null, .{
-            .stack_size = 128 * 1024,
+            .stack_size = 512 * 1024,
         });
         try thread.setName("os.tick");
         try thread.start();
@@ -149,7 +149,7 @@ fn main() !void {
         log.info("starting entry point thread...", .{});
 
         const thread = try scheduler.Thread.spawn(load_entry_point, null, .{
-            .stack_size = 128 * 1024,
+            .stack_size = 512 * 1024,
         });
         try thread.setName("os.entrypoint");
         try thread.start();
@@ -174,7 +174,12 @@ fn load_entry_point(_: ?*anyopaque) callconv(.C) u32 {
 
     apps.startApp(.{
         .name = "init",
-    }) catch @panic("failed to start up the system");
+    }) catch |err| {
+        log.err("failed to start up the init process: {s}", .{@errorName(err)});
+        if (@errorReturnTrace()) |trace|
+            Debug.printStackTrace("  ", trace, Debug.println);
+        @panic("failed to start up the system");
+    };
 
     log.info("start application successfully loaded!", .{});
 
@@ -415,9 +420,11 @@ fn kernel_log_fn(
 
         Debug.writer().writeAll(color_code) catch return;
 
-        counting_writer.writer().print("{d: >6}.{d:0>3} [{s}] {s}: ", .{
-            @intFromEnum(now) / 1000,
-            @intFromEnum(now) % 1000,
+        const now_ms: u64 = @intFromEnum(now);
+        var writer = counting_writer.writer();
+        writer.print("{d: >6}.{d:0>3} [{s}] {s}: ", .{
+            now_ms / 1000,
+            now_ms % 1000,
             level_txt,
             scope_tag,
         }) catch return;

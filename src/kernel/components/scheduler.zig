@@ -57,6 +57,12 @@ const target = @import("builtin").target.cpu.arch;
 
 const debug_mode = @import("builtin").mode == .Debug;
 
+const canary_size = ashet.memory.page_size;
+
+comptime {
+    std.debug.assert(std.mem.isAligned(canary_size, ashet.memory.page_size));
+}
+
 pub fn dumpStats() void {
     logger.info("stat dump:", .{});
     if (current_thread) |thread| {
@@ -106,7 +112,8 @@ pub const Thread = struct {
         started: bool = false,
         finished: bool = false,
         detached: bool = false,
-        padding: u28 = 0,
+        has_canary: bool = false,
+        padding: u27 = 0,
     };
 
     pub const default_stack_size = 32768;
@@ -151,7 +158,7 @@ pub const Thread = struct {
 
         // the canary requires a single page at the "bottom" of the stack:
         const additional_stack_size: usize = if (use_canary)
-            ashet.memory.page_size
+            canary_size
         else
             0;
 
@@ -165,7 +172,7 @@ pub const Thread = struct {
         if (use_canary) {
             // make the stack canary forbidden:
             ashet.memory.protection.change(ashet.memory.Range.from_slice(
-                stack_bottom[0..additional_stack_size],
+                stack_bottom[0..canary_size],
             ), .forbidden);
         }
 
@@ -181,6 +188,9 @@ pub const Thread = struct {
                 .thread = thread,
                 .process = proc,
             } } else null,
+            .flags = .{
+                .has_canary = use_canary,
+            },
         };
 
         if (thread.process_link) |*link| {
@@ -371,6 +381,13 @@ pub const Thread = struct {
 
         const stack_bottom = stack_top - thread.stack_size;
 
+        if (thread.flags.has_canary) {
+            // make the stack canary writable again:
+            ashet.memory.protection.change(ashet.memory.Range.from_slice(
+                stack_bottom[0..canary_size],
+            ), .read_write);
+        }
+
         // we have to use the ThreadAlloactor that doesn't invalidate
         // the memory.
         // `ashet_scheduler_threadExit` relies on the assumption that the memory
@@ -496,6 +513,8 @@ pub fn start() void {
     current_thread = null;
 }
 
+var delete_previous_thread: ?*Thread = null;
+
 fn performSwitch(from: *Thread, to: *Thread) void {
     // logger.debug("switch thread from 0x{X:0>8} (esp=0x{X:0>8}) to 0x{X:0>8} (esp=0x{X:0>8})", .{
     //     @ptrToInt(from), from.sp,
@@ -518,6 +537,18 @@ fn performSwitch(from: *Thread, to: *Thread) void {
     current_thread = to;
 
     ashet_scheduler_switchTasks();
+
+    if (delete_previous_thread) |true_previous| {
+        logger.info("delete previous thread ('{s}', {}).", .{ true_previous.getName(), ashet.CodeLocation{ .pointer = true_previous.debug_info.entry_point } });
+        delete_previous_thread = null;
+
+        // If the previous thread was marked for deletion, we can
+        // now safely assume it won't be resumed ever again, and we've
+        // switched the stack to one that won't get deleted.
+        //
+        // thus, we can free the memory:
+        true_previous.internalDestroy();
+    }
 }
 
 pub fn yield() void {
@@ -554,19 +585,11 @@ export fn ashet_scheduler_threadExit(code: u32) callconv(.C) noreturn {
 
     if (old_thread.isDetached()) {
         // Destroy detached threads when they're finished. We don't need them anymore.
-        //
-        // A WORD OF WARNING:
-        // This code here assumes that between this point
-        // and the restoration of the next stack, no fresh heap allocation
-        // is performed. This way, we have the guarantee that our stack memory
-        // is still unused by other code!
-        //
-        // When we start using interrupts, we have to disable them
-        // on entering exit() or yield()
-        // and restore them shortly before the `ret` in
-        // `ashet_scheduler_switchTasks`. This way, we can be sure to have a critical section
-        // that cannot be interrupted, thus have no spurious heap allocations.
-        old_thread.internalDestroy();
+        // We have to delay deletion though, for a short period of time until after the
+        // task switch.
+        // Otherwise, memory protection will kill our stack and we will triple-fault.
+        std.debug.assert(delete_previous_thread == null);
+        delete_previous_thread = old_thread;
     }
 
     // We save the thread we switch to into dummy storage

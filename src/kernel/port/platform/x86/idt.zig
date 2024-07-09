@@ -257,8 +257,14 @@ export fn common_isr_handler() callconv(.Naked) void {
         \\ push %%ebx
         \\ push %%eax
         \\ 
-        // invoke the handler with stack pointer as paramter, and return value
-        \\ push %%esp
+        // back up the actual "pointer to stack" into eax
+        \\ mov %%esp, %%eax
+        // stack here is in a desolate state of "whatever happened to me, oh god"
+        // let's align it for SysV abi conformance:
+        \\ and $0xfffffff0, %esp
+        \\ sub $0x0C, %esp
+        // invoke the handler with the previous stack pointer as paramter, and return value
+        \\ push %%eax
         \\ call handle_interrupt
         \\ mov %%eax, %%esp
         \\ 

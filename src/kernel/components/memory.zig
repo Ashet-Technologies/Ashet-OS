@@ -377,17 +377,14 @@ const PageAllocator = struct {
 /// **DO NOT USE THE ALLOCATOR FOR ANYTHING ELSE**.
 pub const ThreadAllocator = struct {
     pub fn alloc(len: usize) error{OutOfMemory}![]u8 {
-        return if (ashet.memory.PageAllocator.alloc(undefined, len, 12, @returnAddress())) |ptr|
+        return if (PageAllocator.alloc(undefined, len, 12, @returnAddress())) |ptr|
             ptr[0..len]
         else
             error.OutOfMemory;
     }
 
     pub fn free(buf: []u8) void {
-        ashet.memory.PageAllocator.free(undefined, buf, 12, @returnAddress());
-        if (protection.is_enabled()) {
-            // TODO: This is a horrible hack right now:
-            protection.change(Range.from_slice(buf), .read_write);
-        }
+        @memset(buf, 0x55); // scream differently than zig
+        PageAllocator.free(undefined, buf, 12, @returnAddress());
     }
 };
