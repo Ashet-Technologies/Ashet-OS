@@ -183,11 +183,16 @@ fn load_entry_point(_: ?*anyopaque) callconv(.C) u32 {
 
     log.info("start application successfully loaded!", .{});
 
-    // for (0..100) |_| {
-    //     scheduler.yield();
-    // }
+    var deadline = time.Deadline.init_rel(10_000);
+    while (true) {
+        while (!deadline.is_reached()) {
+            scheduler.yield();
+        }
+        deadline.move_forward(10_000);
 
-    // if (true) @panic("oh no!");
+        log.info("regular memory dump:", .{});
+        memory.debug.dumpPageMap();
+    }
 
     return 0;
 }
