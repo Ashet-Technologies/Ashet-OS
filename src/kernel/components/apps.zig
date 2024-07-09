@@ -36,7 +36,7 @@ pub fn startApp(app: AppID) !void {
     const thread = try ashet.scheduler.Thread.spawn(
         @as(ashet.scheduler.ThreadFunction, @ptrFromInt(loaded.entry_point)),
         null,
-        .{ .process = process, .stack_size = 512 * 1024 },
+        .{ .process = process, .stack_size = 64 * 1024 },
     );
     errdefer thread.kill();
 

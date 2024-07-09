@@ -259,6 +259,9 @@ pub const debug = struct {
             writer.writeAll("       free ok: ' ' bad mprot: '!'\r\n") catch {};
             writer.writeAll("  read-only ok: '□' bad mprot: '◇'\r\n") catch {};
             writer.writeAll(" read-write ok: '▣' bad mprot: '◈'\r\n") catch {};
+            writer.writeAll("     no access: '\x1B[90m▓\x1B[0m'\r\n") catch {};
+            writer.writeAll("   read access: '\x1B[93m▓\x1B[0m'\r\n") catch {};
+            writer.writeAll("  write access: '\x1B[91m▓\x1B[0m'\r\n") catch {};
         } else {
             writer.writeAll("Legend:\r\n") catch {};
             writer.writeAll("       free: ' '\r\n") catch {};
@@ -281,13 +284,24 @@ pub const debug = struct {
                 free_memory += page_size;
             }
 
-            const sigil = if (protection.is_enabled())
-                switch (protection.get_protection(@intFromPtr(page_manager.pageToPtr(page)))) {
+            const sigil = if (protection.is_enabled()) blk: {
+                const info = protection.get_address_info(@intFromPtr(page_manager.pageToPtr(page)));
+
+                writer.writeAll(
+                    if (info.was_written)
+                        "\x1B[91m" // write => red
+                    else if (info.was_accessed)
+                        "\x1B[93m" // read => yellow
+                    else
+                        "\x1B[90m", // untouched => gray
+                ) catch {};
+
+                break :blk switch (info.protection) {
                     .forbidden => if (is_free) " " else "!",
                     .read_only => if (!is_free) "□" else "◇",
                     .read_write => if (!is_free) "▣" else "◈",
-                }
-            else if (is_free)
+                };
+            } else if (is_free)
                 " "
             else
                 "#";

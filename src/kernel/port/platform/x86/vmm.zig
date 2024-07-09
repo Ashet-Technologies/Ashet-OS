@@ -32,6 +32,30 @@ pub fn get_protection(address: usize) ashet.memory.protection.Protection {
         .read_only;
 }
 
+pub fn query_address(address: usize) ashet.memory.protection.AddressInfo {
+    const entry = get_page_entry(address, false) orelse return .{
+        .protection = .forbidden,
+        .was_accessed = false,
+        .was_written = false,
+    };
+
+    if (!entry.in_use)
+        return .{
+            .protection = .forbidden,
+            .was_accessed = false,
+            .was_written = false,
+        };
+
+    return .{
+        .protection = if (entry.writable)
+            .read_write
+        else
+            .read_only,
+        .was_accessed = entry.was_accessed,
+        .was_written = entry.was_written,
+    };
+}
+
 pub fn ensure_accessible_obj(object: anytype) void {
     change_protection(Range.from_slice(std.mem.asBytes(object)), null);
 }

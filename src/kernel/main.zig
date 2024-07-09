@@ -133,7 +133,7 @@ fn main() !void {
     log.info("spawn kernel main thread...", .{});
     {
         const thread = try scheduler.Thread.spawn(global_kernel_tick, null, .{
-            .stack_size = 512 * 1024,
+            .stack_size = 32 * 1024,
         });
         try thread.setName("os.tick");
         try thread.start();
@@ -149,7 +149,7 @@ fn main() !void {
         log.info("starting entry point thread...", .{});
 
         const thread = try scheduler.Thread.spawn(load_entry_point, null, .{
-            .stack_size = 512 * 1024,
+            .stack_size = 32 * 1024,
         });
         try thread.setName("os.entrypoint");
         try thread.start();
@@ -183,9 +183,11 @@ fn load_entry_point(_: ?*anyopaque) callconv(.C) u32 {
 
     log.info("start application successfully loaded!", .{});
 
-    while (true) {
-        scheduler.yield();
-    }
+    // for (0..100) |_| {
+    //     scheduler.yield();
+    // }
+
+    // if (true) @panic("oh no!");
 
     return 0;
 }

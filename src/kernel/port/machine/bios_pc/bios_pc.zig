@@ -18,6 +18,7 @@ pub const machine_config = ashet.ports.MachineConfig{
         .update = x86.vmm.update,
         .activate = x86.vmm.activate,
         .get_protection = x86.vmm.get_protection,
+        .get_info = x86.vmm.query_address,
     },
 };
 
