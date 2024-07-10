@@ -478,7 +478,7 @@ pub fn getKernelThread() *Thread {
 }
 
 fn nodeToThread(node: *ThreadQueue.Node) *Thread {
-    return @fieldParentPtr("node", node);
+    return @alignCast(@fieldParentPtr("node", node));
 }
 
 fn fetchThread(queue: *ThreadQueue) ?*Thread {

@@ -14,6 +14,7 @@ const SDL_Display = @import("SDL_Display.zig");
 
 pub const machine_config = ashet.ports.MachineConfig{
     .load_sections = .{ .data = false, .bss = false },
+    .memory_protection = null, // TODO: Implement mprotect based solution
 };
 
 const hw = struct {
@@ -254,7 +255,7 @@ comptime {
         \\
         \\.global __kernel_stack_start
         \\.global __kernel_stack_end
-        \\kernel_stack_start:
+        \\__kernel_stack_start:
         \\.space 8 * 1024 * 1024        # 8 MB of stack
         \\__kernel_stack_end:
         \\
@@ -269,9 +270,9 @@ comptime {
 
 var linear_memory: [64 * 1024 * 1024]u8 align(4096) = undefined;
 
-pub fn getLinearMemoryRegion() ashet.memory.Section {
-    return ashet.memory.Section{
-        .offset = @intFromPtr(&linear_memory),
+pub fn getLinearMemoryRegion() ashet.memory.Range {
+    return .{
+        .base = @intFromPtr(&linear_memory),
         .length = linear_memory.len,
     };
 }
