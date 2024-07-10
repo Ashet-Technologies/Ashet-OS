@@ -371,7 +371,7 @@ const Channel = enum {
 
         const retry_limit = 3;
         var retry_count: u32 = 0;
-        const timeout = Deadline.init(10 * default_deadline);
+        const timeout = Deadline.init_rel(10 * default_deadline);
         retry_loop: while (retry_count < retry_limit) { //  and !timeout.is_reached()) {
 
             try chan.writeData(cmd.data);
@@ -393,7 +393,7 @@ const Channel = enum {
 
                 RESEND => {
                     logger.debug("Controller wants command to be resend, delay a little and try again!", .{});
-                    Deadline.init(resend_deadline).wait();
+                    Deadline.init_rel(resend_deadline).wait();
                     retry_count += 1;
                     continue :retry_loop;
                 },
@@ -463,26 +463,7 @@ fn readData(kbc: PC_KBC) !u8 {
 const default_deadline = 1000; // ms
 const resend_deadline = 10; // ms
 
-const Deadline = struct {
-    deadline: u64,
-
-    fn init(timeout: u32) Deadline {
-        // std.debug.assert(ashet.platform.areInterruptsEnabled());
-        return .{
-            .deadline = ashet.time.get_tick_count() + timeout,
-        };
-    }
-
-    pub fn is_reached(deadline: Deadline) bool {
-        return ashet.time.get_tick_count() >= deadline.deadline;
-    }
-
-    pub fn wait(deadline: Deadline) void {
-        while (!deadline.is_reached()) {
-            //
-        }
-    }
-};
+const Deadline = ashet.time.Deadline;
 
 fn delayPortRead() void {
     for (0..1_000) |_| {
@@ -493,7 +474,7 @@ fn delayPortRead() void {
 fn writeRawData(data: u8) error{Timeout}!void {
     errdefer logger.err("timeout while executing writeRawData({})", .{data});
 
-    const deadline = Deadline.init(default_deadline);
+    const deadline = Deadline.init_rel(default_deadline);
 
     while (readStatus().input_buffer == .full) {
         if (deadline.is_reached())
@@ -507,7 +488,7 @@ fn writeRawData(data: u8) error{Timeout}!void {
 fn readRawData() error{Timeout}!u8 {
     errdefer logger.err("timeout while executing readRawData()", .{});
 
-    const deadline = Deadline.init(default_deadline);
+    const deadline = Deadline.init_rel(default_deadline);
     while (readStatus().output_buffer == .empty) {
         if (deadline.is_reached())
             return error.Timeout;
@@ -520,7 +501,7 @@ fn readRawData() error{Timeout}!u8 {
 
 fn writeRawCommand(cmd: Command) error{Timeout}!void {
     errdefer logger.err("timeout while executing writeRawCommand({})", .{cmd});
-    const deadline = Deadline.init(default_deadline);
+    const deadline = Deadline.init_rel(default_deadline);
     while (readStatus().input_buffer == .full) {
         if (deadline.is_reached())
             return error.Timeout;

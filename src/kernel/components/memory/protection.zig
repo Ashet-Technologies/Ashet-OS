@@ -72,6 +72,30 @@ pub fn get_protection(address: usize) Protection {
     return machine_impl.get_protection(address);
 }
 
+pub const AddressInfo = struct {
+    protection: Protection,
+    was_accessed: bool,
+    was_written: bool,
+};
+
+pub fn get_address_info(address: usize) AddressInfo {
+    const disabled_result: AddressInfo = .{
+        .protection = .read_write, // no protection means everything is read-write anyways
+        .was_accessed = true,
+        .was_written = true,
+    };
+    if (comptime !is_supported())
+        return disabled_result;
+
+    if (!is_enabled())
+        return disabled_result;
+
+    return if (machine_impl.get_info) |get_info|
+        get_info(address)
+    else
+        disabled_result;
+}
+
 pub fn change(range: Range, protection: Protection) void {
     if (comptime !is_supported())
         return;

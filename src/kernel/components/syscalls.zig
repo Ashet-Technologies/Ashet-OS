@@ -43,7 +43,10 @@ pub fn getCurrentThread() *ashet.scheduler.Thread {
 }
 
 pub fn getCurrentProcess() *ashet.multi_tasking.Process {
-    return getCurrentThread().process orelse @panic("syscall only legal in a process");
+    return if (getCurrentThread().process_link) |link|
+        link.data.process
+    else
+        @panic("syscall only legal in a process");
 }
 
 const impls = struct {
@@ -118,11 +121,14 @@ const impls = struct {
     }
 
     export fn @"ashet.process.getBaseAddress"() callconv(.C) usize {
-        return @intFromPtr(getCurrentProcess().process_memory.ptr);
+        return if (getCurrentProcess().executable_memory) |mem|
+            @intFromPtr(mem.ptr)
+        else
+            0;
     }
 
     export fn @"ashet.process.getFileName"() callconv(.C) [*:0]const u8 {
-        return getCurrentProcess().file_name.ptr;
+        return getCurrentProcess().name.ptr;
     }
 
     export fn @"ashet.process.writeLog"(log_level: abi.LogLevel, ptr: [*]const u8, len: usize) callconv(.C) void {
@@ -133,18 +139,18 @@ const impls = struct {
         const logger = std.log.scoped(.userland);
 
         switch (log_level) {
-            .critical => logger.info("{s}(critical): {s}", .{ proc.file_name, string }),
-            .err => logger.info("{s}(err): {s}", .{ proc.file_name, string }),
-            .warn => logger.info("{s}(warn): {s}", .{ proc.file_name, string }),
-            .notice => logger.info("{s}(notice): {s}", .{ proc.file_name, string }),
-            .debug => logger.info("{s}(debug): {s}", .{ proc.file_name, string }),
-            _ => logger.info("{s}(unknown,{}): {s}", .{ proc.file_name, @intFromEnum(log_level), string }),
+            .critical => logger.info("{s}(critical): {s}", .{ proc.name, string }),
+            .err => logger.info("{s}(err): {s}", .{ proc.name, string }),
+            .warn => logger.info("{s}(warn): {s}", .{ proc.name, string }),
+            .notice => logger.info("{s}(notice): {s}", .{ proc.name, string }),
+            .debug => logger.info("{s}(debug): {s}", .{ proc.name, string }),
+            _ => logger.info("{s}(unknown,{}): {s}", .{ proc.name, @intFromEnum(log_level), string }),
         }
     }
 
     export fn @"ashet.process.breakpoint"() callconv(.C) void {
         const proc = getCurrentProcess();
-        std.log.scoped(.userland).info("breakpoint in process {s}.", .{proc.master_thread.getName()});
+        std.log.scoped(.userland).info("breakpoint in process {s}.", .{proc.name});
 
         var cont: bool = false;
         while (!cont) {

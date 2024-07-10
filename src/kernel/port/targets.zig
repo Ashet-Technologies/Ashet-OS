@@ -17,6 +17,7 @@ pub const MemoryProtectionConfig = struct {
     initialize: fn () error{OutOfMemory}!void,
     update: fn (ashet.memory.Range, ashet.memory.protection.Protection) void,
     get_protection: fn (address: usize) ashet.memory.protection.Protection,
+    get_info: ?fn (address: usize) ashet.memory.protection.AddressInfo,
 };
 
 pub const platforms = struct {

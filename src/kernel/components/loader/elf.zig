@@ -25,7 +25,7 @@ fn dynamic_resolver(a: u32, b: u32, c: u32, d: u32) callconv(.C) void {
     @panic("hello, dynamic code!");
 }
 
-pub fn load(file: *libashet.fs.File) !loader.LoadedExecutable {
+pub fn load(file: *libashet.fs.File, allocator: std.mem.Allocator) !loader.LoadedExecutable {
     const expected_elf_machine: std.elf.EM = switch (system_arch) {
         .riscv32 => .RISCV,
         .x86 => .@"386",
@@ -154,8 +154,8 @@ pub fn load(file: *libashet.fs.File) !loader.LoadedExecutable {
         break :dynamic_loader dsect;
     };
 
-    const process_memory = try ashet.memory.page_allocator.alignedAlloc(u8, ashet.memory.page_size, required_bytes);
-    errdefer ashet.memory.page_allocator.free(process_memory);
+    const process_memory = try allocator.alignedAlloc(u8, ashet.memory.page_size, required_bytes);
+    errdefer allocator.free(process_memory);
 
     const process_base = @intFromPtr(process_memory.ptr);
 
@@ -355,6 +355,37 @@ pub fn load(file: *libashet.fs.File) !loader.LoadedExecutable {
                     std.elf.SHT_HIUSER => "SHT_HIUSER",
                     else => "unknown",
                 }}),
+            }
+        }
+    }
+
+    // apply page protection:
+    {
+        var pheaders = header.program_header_iterator(file);
+        while (try pheaders.next()) |phdr| {
+            if (phdr.p_type != elf.PT_LOAD)
+                continue;
+
+            // const flag_r = (phdr.p_flags & elf.PF_R) != 0;
+            const flag_w = (phdr.p_flags & elf.PF_W) != 0;
+            // const flag_x = (phdr.p_flags & elf.PF_X) != 0;
+
+            if (flag_w == false) {
+                // read-only section
+                if (!std.mem.isAligned(@intCast(phdr.p_vaddr), ashet.memory.page_size))
+                    return error.UnalignedProgramHeader;
+                if (!std.mem.isAligned(@intCast(phdr.p_memsz), ashet.memory.page_size))
+                    return error.UnalignedProgramHeader;
+
+                logger.debug("change protection of 0x{X:0>8}+(mem=0x{X:0>8}, file=0x{X:0>8}) to read_only!", .{
+                    phdr.p_vaddr,
+                    phdr.p_memsz,
+                    phdr.p_filesz,
+                });
+                ashet.memory.protection.change(
+                    ashet.memory.Range.from_slice(process_memory[@intCast(phdr.p_vaddr)..][0..@intCast(phdr.p_memsz)]),
+                    .read_only,
+                );
             }
         }
     }

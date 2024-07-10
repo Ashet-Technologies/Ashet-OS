@@ -13,6 +13,7 @@ const App = struct {
 
 const apps: []const App = &.{
     .{ .name = "hello-world", .dep_name = "hello_world" },
+    .{ .name = "init", .dep_name = "init" },
 };
 
 pub fn build(b: *std.Build) void {
@@ -71,6 +72,11 @@ pub fn build(b: *std.Build) void {
 
         rootfs.mkdir(app_path);
         rootfs.addFile(app_bin, app_exe_path);
+
+        _ = result_files.addCopyFile(
+            app_bin,
+            b.fmt("apps/{s}.elf", .{app.name}),
+        );
     }
 
     switch (platform) {

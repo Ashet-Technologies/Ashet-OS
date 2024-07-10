@@ -57,6 +57,12 @@ const target = @import("builtin").target.cpu.arch;
 
 const debug_mode = @import("builtin").mode == .Debug;
 
+const canary_size = ashet.memory.page_size;
+
+comptime {
+    std.debug.assert(std.mem.isAligned(canary_size, ashet.memory.page_size));
+}
+
 pub fn dumpStats() void {
     logger.info("stat dump:", .{});
     if (current_thread) |thread| {
@@ -66,13 +72,13 @@ pub fn dumpStats() void {
             logger.info("  current thread: ip=0x{X:0>8}", .{thread.ip});
         }
     }
-    logger.info("  total:     {}", .{stats.total_count});
+    logger.info("  total:     {}", .{global_stats.total_count});
     logger.info("  waiting:   {}", .{wait_queue.len});
-    logger.info("  suspended: {}", .{stats.suspended_count});
-    logger.info("  running:   {}", .{stats.running_count});
+    logger.info("  suspended: {}", .{global_stats.suspended_count});
+    logger.info("  running:   {}", .{global_stats.running_count});
 }
 
-pub const stats = struct {
+pub const global_stats = struct {
     var total_count: usize = 0;
     var suspended_count: usize = 0;
     var running_count: usize = 0;
@@ -80,6 +86,18 @@ pub const stats = struct {
 
 pub const ExitCode = ashet.abi.ExitCode;
 pub const ThreadFunction = ashet.abi.ThreadFunction;
+
+pub const Stats = struct {
+    times_scheduled: u32 = 0,
+    total_execution_time_ms: u64 = 0,
+
+    schedule_time: ?ashet.time.Instant = null,
+
+    pub fn reset(stats: *Stats) void {
+        stats.times_scheduled = 0;
+        stats.total_execution_time_ms = 0;
+    }
+};
 
 /// Thread management structure.
 /// Is allocated in such a way that is is stored at the end of the last page of thread stack.
@@ -94,7 +112,8 @@ pub const Thread = struct {
         started: bool = false,
         finished: bool = false,
         detached: bool = false,
-        padding: u28 = 0,
+        has_canary: bool = false,
+        padding: u27 = 0,
     };
 
     pub const default_stack_size = 32768;
@@ -115,7 +134,10 @@ pub const Thread = struct {
 
     debug_info: DebugInfo = .{},
 
-    process: ?*ashet.multi_tasking.Process,
+    /// Stores runtime statistics of this thread.
+    stats: Stats = .{},
+
+    process_link: ?ashet.multi_tasking.ProcessThreadList.Node = null,
 
     /// Returns a pointer to the current thread.
     pub fn current() ?*Thread {
@@ -132,12 +154,27 @@ pub const Thread = struct {
     /// **NOTE:** When choosing `stack_size`, one should remember that it will also include the management structures
     /// for the thread
     pub fn spawn(func: ThreadFunction, arg: ?*anyopaque, options: ThreadSpawnOptions) error{OutOfMemory}!*Thread {
-        const stack_size = std.mem.alignForward(usize, options.stack_size, ashet.memory.page_size);
+        const use_canary = ashet.memory.protection.is_enabled();
+
+        // the canary requires a single page at the "bottom" of the stack:
+        const additional_stack_size: usize = if (use_canary)
+            canary_size
+        else
+            0;
+
+        const stack_size = std.mem.alignForward(usize, options.stack_size + additional_stack_size, ashet.memory.page_size);
 
         // Requires the use of `ThreadAllocator`.
         // See `ashet_scheduler_threadExit` and `internalDestroy` for more explanation.
         const stack_bottom = try ashet.memory.ThreadAllocator.alloc(stack_size);
         errdefer ashet.memory.ThreadAllocator.free(stack_bottom);
+
+        if (use_canary) {
+            // make the stack canary forbidden:
+            ashet.memory.protection.change(ashet.memory.Range.from_slice(
+                stack_bottom[0..canary_size],
+            ), .forbidden);
+        }
 
         const thread = @as(*Thread, @ptrFromInt(@intFromPtr(stack_bottom.ptr) + stack_size - @sizeOf(Thread)));
         const thread_proc = options.process;
@@ -147,11 +184,17 @@ pub const Thread = struct {
             .ip = @intFromPtr(&ashet_scheduler_threadTrampoline),
             .exit_code = 0,
             .stack_size = stack_size,
-            .process = thread_proc,
+            .process_link = if (thread_proc) |proc| .{ .data = .{
+                .thread = thread,
+                .process = proc,
+            } } else null,
+            .flags = .{
+                .has_canary = use_canary,
+            },
         };
 
-        if (thread.process) |proc| {
-            proc.thread_count += 1;
+        if (thread.process_link) |*link| {
+            link.data.process.threads.append(link);
         }
 
         if (@import("builtin").mode == .Debug) {
@@ -192,7 +235,7 @@ pub const Thread = struct {
             else => @compileError(std.fmt.comptimePrint("{s} is not a supported platform", .{@tagName(target)})),
         }
 
-        stats.total_count += 1;
+        global_stats.total_count += 1;
 
         return thread;
     }
@@ -239,7 +282,7 @@ pub const Thread = struct {
         thread.flags.started = true;
         enqueueThread(&wait_queue, thread);
 
-        stats.running_count += 1;
+        global_stats.running_count += 1;
     }
 
     pub fn detach(thread: *Thread) void {
@@ -257,7 +300,7 @@ pub const Thread = struct {
             return;
 
         thread.flags.suspended = true;
-        stats.suspended_count += 1;
+        global_stats.suspended_count += 1;
 
         if (thread.isCurrent()) {
             // current thread will be yielded, and because it's suspended, we won't
@@ -285,7 +328,7 @@ pub const Thread = struct {
         std.debug.assert(thread.queue == null);
         enqueueThread(&wait_queue, thread);
         thread.flags.suspended = false;
-        stats.suspended_count -= 1;
+        global_stats.suspended_count -= 1;
     }
 
     /// Kills the thread and releases all of its resources.
@@ -319,14 +362,17 @@ pub const Thread = struct {
             // thread even if it is already dead.
             queue.remove(&thread.node);
 
-            stats.running_count -= 1;
+            global_stats.running_count -= 1;
         }
 
         logger.info("killing thread {}", .{thread});
 
-        if (thread.process) |proc| {
-            proc.thread_count -= 1;
-            if (proc.thread_count == 0) {
+        if (thread.process_link) |*link| {
+            std.debug.assert(link.data.thread == thread);
+            const proc = link.data.process;
+            proc.threads.remove(link);
+
+            if (proc.stay_resident == false and proc.threads.len == 0) {
                 proc.kill();
             }
         }
@@ -335,13 +381,20 @@ pub const Thread = struct {
 
         const stack_bottom = stack_top - thread.stack_size;
 
+        if (thread.flags.has_canary) {
+            // make the stack canary writable again:
+            ashet.memory.protection.change(ashet.memory.Range.from_slice(
+                stack_bottom[0..canary_size],
+            ), .read_write);
+        }
+
         // we have to use the ThreadAlloactor that doesn't invalidate
         // the memory.
         // `ashet_scheduler_threadExit` relies on the assumption that the memory
         // is not changed between the free and the `performSwitch` call.
         ashet.memory.ThreadAllocator.free(stack_bottom[0..thread.stack_size]);
 
-        stats.total_count -= 1;
+        global_stats.total_count -= 1;
     }
 
     fn push(thread: *Thread, value: u32) void {
@@ -425,7 +478,7 @@ pub fn getKernelThread() *Thread {
 }
 
 fn nodeToThread(node: *ThreadQueue.Node) *Thread {
-    return @fieldParentPtr("node", node);
+    return @alignCast(@fieldParentPtr("node", node));
 }
 
 fn fetchThread(queue: *ThreadQueue) ?*Thread {
@@ -460,6 +513,8 @@ pub fn start() void {
     current_thread = null;
 }
 
+var delete_previous_thread: ?*Thread = null;
+
 fn performSwitch(from: *Thread, to: *Thread) void {
     // logger.debug("switch thread from 0x{X:0>8} (esp=0x{X:0>8}) to 0x{X:0>8} (esp=0x{X:0>8})", .{
     //     @ptrToInt(from), from.sp,
@@ -467,11 +522,33 @@ fn performSwitch(from: *Thread, to: *Thread) void {
     // });
 
     std.debug.assert(current_thread.? == from);
+
+    // Update timings
+    const now = ashet.time.Instant.now();
+    if (from.stats.schedule_time) |schedule_time| {
+        from.stats.total_execution_time_ms += now.ms_since(schedule_time);
+    }
+    to.stats.schedule_time = now;
+    to.stats.times_scheduled += 1;
+
+    // Prepare task switch:
     ashet_scheduler_save_thread = from;
     ashet_scheduler_restore_thread = to;
     current_thread = to;
 
     ashet_scheduler_switchTasks();
+
+    if (delete_previous_thread) |true_previous| {
+        logger.info("delete previous thread ('{s}', {}).", .{ true_previous.getName(), ashet.CodeLocation{ .pointer = true_previous.debug_info.entry_point } });
+        delete_previous_thread = null;
+
+        // If the previous thread was marked for deletion, we can
+        // now safely assume it won't be resumed ever again, and we've
+        // switched the stack to one that won't get deleted.
+        //
+        // thus, we can free the memory:
+        true_previous.internalDestroy();
+    }
 }
 
 pub fn yield() void {
@@ -508,19 +585,11 @@ export fn ashet_scheduler_threadExit(code: u32) callconv(.C) noreturn {
 
     if (old_thread.isDetached()) {
         // Destroy detached threads when they're finished. We don't need them anymore.
-        //
-        // A WORD OF WARNING:
-        // This code here assumes that between this point
-        // and the restoration of the next stack, no fresh heap allocation
-        // is performed. This way, we have the guarantee that our stack memory
-        // is still unused by other code!
-        //
-        // When we start using interrupts, we have to disable them
-        // on entering exit() or yield()
-        // and restore them shortly before the `ret` in
-        // `ashet_scheduler_switchTasks`. This way, we can be sure to have a critical section
-        // that cannot be interrupted, thus have no spurious heap allocations.
-        old_thread.internalDestroy();
+        // We have to delay deletion though, for a short period of time until after the
+        // task switch.
+        // Otherwise, memory protection will kill our stack and we will triple-fault.
+        std.debug.assert(delete_previous_thread == null);
+        delete_previous_thread = old_thread;
     }
 
     // We save the thread we switch to into dummy storage

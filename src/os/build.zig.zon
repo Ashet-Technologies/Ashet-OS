@@ -20,6 +20,10 @@
 
         // Applications:
 
+        .init = .{
+            .path = "../userland/apps/init",
+        },
+
         .hello_world = .{
             .path = "../userland/apps/hello-world",
         },

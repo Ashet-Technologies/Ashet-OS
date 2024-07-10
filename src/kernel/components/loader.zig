@@ -14,8 +14,12 @@ pub const BinaryFormat = enum {
     elf,
 };
 
-pub fn load(file: *libashet.fs.File, format: BinaryFormat) !LoadedExecutable {
+pub fn load(
+    file: *libashet.fs.File,
+    allocator: std.mem.Allocator,
+    format: BinaryFormat,
+) !LoadedExecutable {
     return switch (format) {
-        .elf => try elf.load(file),
+        .elf => try elf.load(file, allocator),
     };
 }

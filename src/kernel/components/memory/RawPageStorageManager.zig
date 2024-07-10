@@ -71,6 +71,8 @@ pub fn init(section: Range) RawPageStorageManager {
 
     const bmp = pm.bitmap();
 
+    std.debug.assert(bmp.len == (pm.pageCount() + @bitSizeOf(usize) - 1) / @bitSizeOf(usize));
+
     // Initialize the memory to "all pages free"
     @memset(bmp, all_bits_free);
 
@@ -93,6 +95,8 @@ pub fn init(section: Range) RawPageStorageManager {
         }
     }
 
+    std.debug.assert(!pm.isFree(@enumFromInt(0))); // this must always be in the bitmap
+
     return pm;
 }
 
@@ -104,11 +108,7 @@ pub fn init(section: Range) RawPageStorageManager {
 /// to search for free pages. If a free page means a bit is set, we can trivially
 /// check for "val != 0" to figure out if the current word contains any free pages.
 fn bitmap(pm: RawPageStorageManager) []usize {
-
-    // if length is not page aligned, we're losing up to page_size bytes, which is okay.
-    // as it's not a full page, we would violate the guarantees by the memory system, which
-    // is to provide fullly usable memory pages.
-    const total_page_count = (pm.region.length / pm.pageCount());
+    const total_page_count = pm.pageCount();
 
     // compute the amount of pages we require to store which pages are allocated or not.
     // we orginize the bitmap in `usize` elements, as we can efficiently manipulate them
@@ -123,6 +123,9 @@ fn bitmap(pm: RawPageStorageManager) []usize {
 
 /// Returns the number of pages managed by `pm`.
 pub fn pageCount(pm: RawPageStorageManager) u32 {
+    // if length is not page aligned, we're losing up to page_size bytes, which is okay.
+    // as it's not a full page, we would violate the guarantees by the memory system, which
+    // is to provide fully usable memory pages.
     return pm.region.length / page_size;
 }
 

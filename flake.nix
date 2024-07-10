@@ -65,6 +65,7 @@
 
             pkgs.qemu
             pkgs.mtools
+            pkgs.llvmPackages_17.bintools
 
             pkgs.gdb
             pkgs.pkg-config
