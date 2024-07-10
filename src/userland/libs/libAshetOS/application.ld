@@ -1,25 +1,25 @@
 ENTRY(_start)
+
 SECTIONS {
     .text : {
         *(.text)
         *(.text.*)
-    }
-
-    . = ALIGN(4);
+    } 
 
     .rodata : {
         *(.rodata)
         *(.rodata.*)
-    }
+        . = ALIGN(4096);
+    } 
 
-    . = ALIGN(4);
+    . = ALIGN(4096);
 
     .data : {
-        *(.data)
-        *(.data.*)
-
         *(.sdata)
         *(.sdata.*)
+
+        *(.data)
+        *(.data.*)
     }
 
     . = ALIGN(4);

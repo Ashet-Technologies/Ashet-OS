@@ -72,6 +72,11 @@ pub fn build(b: *std.Build) void {
 
         rootfs.mkdir(app_path);
         rootfs.addFile(app_bin, app_exe_path);
+
+        _ = result_files.addCopyFile(
+            app_bin,
+            b.fmt("apps/{s}.elf", .{app.name}),
+        );
     }
 
     switch (platform) {

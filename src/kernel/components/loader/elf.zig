@@ -359,6 +359,27 @@ pub fn load(file: *libashet.fs.File, allocator: std.mem.Allocator) !loader.Loade
         }
     }
 
+    // apply page protection:
+    {
+        var pheaders = header.program_header_iterator(file);
+        while (try pheaders.next()) |phdr| {
+            if (phdr.p_type != elf.PT_LOAD)
+                continue;
+
+            // const flag_r = (phdr.p_flags & elf.PF_R) != 0;
+            const flag_w = (phdr.p_flags & elf.PF_W) != 0;
+            // const flag_x = (phdr.p_flags & elf.PF_X) != 0;
+
+            if (!flag_w) {
+                logger.info("change protection of 0x{X:0>8}+(mem=0x{X:0>8}, file=0x{X:0>8}) to read_only!", .{
+                    phdr.p_vaddr,
+                    phdr.p_memsz,
+                    phdr.p_filesz,
+                });
+            }
+        }
+    }
+
     const entry_point = process_base + @as(usize, @intCast(header.entry));
 
     logger.info("loaded to address 0x{X:0>8}, entry point is 0x{X:0>8}", .{
