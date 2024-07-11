@@ -17,6 +17,7 @@ pub const serial = @import("components/serial.zig");
 pub const storage = @import("components/storage.zig");
 pub const syscalls = @import("components/syscalls.zig");
 pub const time = @import("components/time.zig");
+pub const resources = @import("components/resources.zig");
 // pub const ui = @import("components/ui.zig");
 pub const video = @import("components/video.zig");
 
@@ -43,13 +44,17 @@ pub const machine = switch (machine_id) {
 pub const machine_config: ports.MachineConfig = machine.machine_config;
 
 comptime {
-    // force instantiation of the machine and platform elements
-    _ = machine;
-    _ = platform;
-    _ = platform.start; // explicitly refer to the entry point implementation
+    if (!builtin.is_test) {
+        // force instantiation of the machine and platform elements
+        _ = machine;
+        _ = platform;
+        _ = platform.start; // explicitly refer to the entry point implementation
+
+        @export(ashet_kernelMain, .{});
+    }
 }
 
-export fn ashet_kernelMain() noreturn {
+fn ashet_kernelMain() noreturn {
     // trampoline into kernelMain() to have full stack tracing.
     kernelMain();
 }
@@ -653,4 +658,8 @@ export fn memchr(buf: ?[*]const c_char, ch: c_int, len: usize) ?[*]c_char {
         @constCast(s + index)
     else
         null;
+}
+
+test {
+    _ = resources;
 }

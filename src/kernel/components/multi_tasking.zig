@@ -59,6 +59,8 @@ pub const Process = struct {
     /// Slice of where the executable was loaded in memory
     executable_memory: ?[]const u8 = null,
 
+    resources: ashet.resources.HandlePool,
+
     pub const CreateOptions = struct {
         name: ?[]const u8 = null,
         stay_resident: bool = false,
