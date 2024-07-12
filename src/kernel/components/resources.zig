@@ -264,3 +264,131 @@ test "HandlePool" {
 
     try std.testing.expectError(error.GenerationMismatch, pool.free(h1.handle));
 }
+
+test "HandlePool Stress Test" {
+
+    // test configuration:
+    const repeat_count = 100; // number of test loops
+    const loop_count = 10_000; // number of alloc/free/resolve calls per loop
+    const free_chance = 0.7; // random free chance
+    const alloc_chance = 0.8; // random alloc chance
+    const retain_chance = 0.1; // accidently double-free percentage
+    const fake_free_chance = 0.1; // chance for freeing random handles
+    const fake_resolve_chance = 0.1; // chance for freeing random handles
+
+    // test:
+
+    var dummy: ashet.multi_tasking.Process = undefined;
+
+    var rng_engine = std.rand.DefaultPrng.init(0x1337);
+    const rng = rng_engine.random();
+
+    for (0..repeat_count) |test_loop| {
+        var pool = HandlePool.init(std.testing.allocator);
+        defer pool.deinit();
+
+        var alive_handles = std.ArrayList(Handle).init(std.testing.allocator);
+        defer alive_handles.deinit();
+
+        var retained_items = std.AutoHashMap(Handle, void).init(std.testing.allocator);
+        defer retained_items.deinit();
+
+        try alive_handles.ensureTotalCapacity(loop_count);
+
+        var max_level: usize = 0;
+        var alloc_count: usize = 0;
+        var free_count: usize = 0;
+        var fake_free_count: usize = 0;
+        var fake_resolve_count: usize = 0;
+        var retain_count: usize = 0;
+
+        for (0..loop_count) |_| {
+            if (alive_handles.items.len > 0 and rng.float(f32) < free_chance) {
+                const index = rng.intRangeLessThan(usize, 0, alive_handles.items.len);
+
+                const retain_item = rng.float(f32) < retain_chance;
+
+                const handle = if (retain_item)
+                    alive_handles.items[index]
+                else
+                    alive_handles.swapRemove(index);
+
+                pool.free(handle) catch {
+                    // this is fine in our scenario
+                };
+
+                if (retain_item) {
+                    retain_count += 1;
+                    try retained_items.put(handle, {});
+                } else {
+                    _ = retained_items.remove(handle);
+                }
+
+                free_count += 1;
+            }
+
+            if (rng.float(f32) < alloc_chance) {
+                const res = try pool.alloc(&dummy);
+                std.debug.assert(res.owner.data == &dummy);
+
+                try alive_handles.append(res.handle);
+
+                alloc_count += 1;
+            }
+
+            if (rng.float(f32) < fake_free_chance) {
+                const handle: Handle = @ptrFromInt(rng.int(usize));
+
+                if (pool.free(handle)) |_| {
+                    const alive_index = std.mem.indexOfScalar(Handle, alive_handles.items, handle);
+                    try std.testing.expect(alive_index != null);
+
+                    _ = alive_handles.swapRemove(alive_index.?);
+                    _ = retained_items.remove(handle);
+                } else |_| {
+                    // this is fine
+                    fake_free_count += 1;
+                }
+            }
+
+            if (rng.float(f32) < fake_resolve_chance) {
+                const handle: Handle = @ptrFromInt(rng.int(usize));
+
+                if (pool.resolve(handle)) |_| {
+                    try std.testing.expect(std.mem.indexOfScalar(Handle, alive_handles.items, handle) != null);
+                } else |_| {
+                    // this is fine
+                    fake_resolve_count += 1;
+                }
+            }
+
+            if (alive_handles.items.len > 0) {
+                const index = rng.intRangeLessThan(usize, 0, alive_handles.items.len);
+
+                const handle = alive_handles.items[index];
+
+                if (retained_items.get(handle) != null) {
+                    try std.testing.expectEqual(@as(?*Owner, null), pool.resolve(handle) catch null);
+                } else {
+                    _ = try pool.resolve(handle);
+                }
+            }
+
+            max_level = @max(max_level, alive_handles.items.len);
+        }
+
+        while (alive_handles.popOrNull()) |handle| {
+            pool.free(handle) catch {
+                // this is fine in our scenario
+            };
+        }
+
+        std.debug.print("\ntest loop {}:\n", .{test_loop});
+        std.debug.print("  max_level          = {}\n", .{max_level});
+        std.debug.print("  alloc_count        = {}\n", .{alloc_count});
+        std.debug.print("  free_count         = {}\n", .{free_count});
+        std.debug.print("  retain_count       = {}\n", .{retain_count});
+        std.debug.print("  fake_free_count    = {}\n", .{fake_free_count});
+        std.debug.print("  fake_resolve_count = {}\n", .{fake_resolve_count});
+    }
+}
