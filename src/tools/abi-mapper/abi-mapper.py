@@ -1,15 +1,12 @@
 #!/usr/bin/env python3.11
 
-from operator import truediv
 import sys
 import io
 import os
 from typing import NoReturn 
-import jinja2
 
 from pathlib import Path 
-from enum import StrEnum 
-from jinja2.nodes import Name
+from enum import StrEnum
 from lark import Lark, Transformer
 from dataclasses import dataclass, field 
 
@@ -35,7 +32,7 @@ def panic(*args) -> NoReturn:
 WITH_LINKNAME = False 
 THIS_PATH = Path(__file__).parent 
 GRAMMAR_PATH = THIS_PATH / "minizig.lark"
-ABI_PATH = THIS_PATH / ".." / "src"/"abi"/"abi-v2.zig"
+ABI_PATH = THIS_PATH / ".." / ".." / "abi"/"abi-v2.zig"
 
 
 class PointerSize(StrEnum):
