@@ -3,6 +3,21 @@ const std = @import("std");
 pub const Platform = @import("src/platforms.zig").Platform;
 
 pub const syscalls = struct {
+    // new syscalls:
+
+    pub extern fn @"ashet.resources.get_type"(SystemResource) SystemResourceType;
+    pub extern fn @"ashet.resources.get_owners"(SystemResource, owners_ptr: ?[*]Process, owners_len: usize) usize;
+    pub extern fn @"ashet.resources.release"(SystemResource) FreeResourceError;
+    pub extern fn @"ashet.resources.destroy"(SystemResource) FreeResourceError;
+
+    pub extern fn @"ashet.shm.create"(size: usize) ?SharedMemory;
+
+    pub extern fn @"ashet.shm.get_length"(SharedMemory) usize;
+
+    pub extern fn @"ashet.shm.get_pointer"(SharedMemory) [*]align(16) u8;
+
+    // old syscalls:
+
     pub extern fn @"ashet.process.yield"() void;
     pub extern fn @"ashet.process.exit"(u32) noreturn;
     pub extern fn @"ashet.process.getBaseAddress"() usize;
@@ -91,6 +106,28 @@ pub const syscalls = struct {
 
     // Finds a file system by name
     pub extern fn @"ashet.fs.findFilesystem"(name_ptr: [*]const u8, name_len: usize) FileSystemId;
+};
+
+pub const FreeResourceError = enum(u32) { success = 0, bad_handle = 1 };
+
+pub const SystemResource = *const opaque {};
+
+pub const SystemResourceType = enum(u32) {
+    bad_handle = 0,
+    //process = 1,
+    shared_memory = 2,
+};
+
+pub const SharedMemory = *const opaque {
+    pub fn as_resource(ptr: SharedMemory) SystemResource {
+        return @ptrCast(ptr);
+    }
+};
+
+pub const Process = *const opaque {
+    pub fn as_resource(ptr: Process) SystemResource {
+        return @ptrCast(ptr);
+    }
 };
 
 pub const LogLevel = enum(u8) {

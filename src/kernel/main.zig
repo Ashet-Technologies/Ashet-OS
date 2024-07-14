@@ -20,6 +20,7 @@ pub const time = @import("components/time.zig");
 pub const resources = @import("components/resources.zig");
 // pub const ui = @import("components/ui.zig");
 pub const video = @import("components/video.zig");
+pub const shared_memory = @import("components/shared_memory.zig");
 
 pub const ports = @import("port/targets.zig");
 
@@ -50,11 +51,13 @@ comptime {
         _ = platform;
         _ = platform.start; // explicitly refer to the entry point implementation
 
-        @export(ashet_kernelMain, .{});
+        @export(ashet_kernelMain, .{
+            .name = "ashet_kernelMain",
+        });
     }
 }
 
-fn ashet_kernelMain() noreturn {
+fn ashet_kernelMain() callconv(.C) noreturn {
     // trampoline into kernelMain() to have full stack tracing.
     kernelMain();
 }

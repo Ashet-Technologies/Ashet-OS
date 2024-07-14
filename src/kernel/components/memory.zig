@@ -402,3 +402,53 @@ pub const ThreadAllocator = struct {
         PageAllocator.free(undefined, buf, 12, @returnAddress());
     }
 };
+
+/// Computes the key size for the memory pool we
+/// use to allocate elements of the given `size`.
+pub fn align_pool_element_size(size: usize) usize {
+    return std.mem.alignForward(usize, size, 32);
+}
+
+/// Returns a memory pool for `T`. This pool might be shared with
+/// other types, which does not affect allocation qualities.
+pub fn type_pool(comptime T: type) type {
+    comptime {
+        std.debug.assert(@alignOf(T) < @sizeOf(T));
+    }
+    return struct {
+        const element_size = align_pool_element_size(@sizeOf(T));
+        const backing_pool = sized_element_pool(element_size);
+
+        pub fn alloc() error{OutOfMemory}!*align(element_size) T {
+            return @ptrCast(try backing_pool.alloc());
+        }
+
+        pub fn free(res: *T) void {
+            backing_pool.free(@ptrCast(@alignCast(res)));
+        }
+    };
+}
+
+/// Memory pool with elements of equal size.
+pub fn sized_element_pool(comptime element_size: usize) type {
+    return struct {
+        pub const Buffer = [element_size]u8;
+
+        pub const BufferPointer = *align(element_size) Buffer;
+
+        // Dummy struct we need to specify the alignment of our elements.
+        const Item = extern struct {
+            raw: Buffer align(element_size),
+        };
+
+        var items = std.heap.MemoryPool(Item).init(ashet.memory.allocator);
+
+        pub fn alloc() error{OutOfMemory}!BufferPointer {
+            return @ptrCast(try items.create());
+        }
+
+        pub fn free(res: BufferPointer) void {
+            items.destroy(@ptrCast(res));
+        }
+    };
+}

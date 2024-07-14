@@ -1,59 +1,90 @@
 const std = @import("std");
 const ashet = @import("../main.zig");
+const logger = std.log.scoped(.resources);
 
 /// Encodes the different types of system resources.
-/// TODO: Move to ABI
-pub const Type = enum {
-    //
-};
+pub const TypeId = ashet.abi.SystemResourceType;
 
 /// This is the ABI-public version of a system resource.
-pub const Handle = *opaque {}; // ashet.abi.SystemResource;
+pub const Handle = ashet.abi.SystemResource;
 
 /// This is the kernel-internal abstraction over system resources.
 pub const SystemResource = struct {
-    type: Type,
-    vtable: *const VTable,
+    type: TypeId,
 
     /// Number of processes this resource is referenced by.
-    owners: std.DoublyLinkedList(void) = .{},
+    owners: std.DoublyLinkedList(Ownership) = .{},
 
     pub fn cast(src: *SystemResource, comptime Resource: type) error{BadCast}!*Resource {
-        const expected_type = Resource.system_resource_type;
+        const expected_type = instanceTypeId(Resource);
         if (src.type != expected_type)
             return error.BadCast;
-        return @alignCast(@fieldParentPtr(Resource, "system_resource"));
+        return @alignCast(@fieldParentPtr("system_resource", src));
     }
 
-    pub fn retain(src: *SystemResource) void {
-        src.refcount += 1;
+    pub fn add_owner(src: *SystemResource, owner: *OwnershipNode) void {
+        std.debug.assert(owner.data.resource == src);
+        logger.debug("add process 0x{X:0>8} to resource 0x{X:0>8} of type {s}", .{
+            @intFromPtr(owner.data.process),
+            @intFromPtr(src),
+            @tagName(src.type),
+        });
+        src.owners.append(owner);
     }
 
-    pub fn release(src: *SystemResource) void {
-        src.refcount -|= 1;
-        if (src.refcount == 0) {
+    pub fn remove_owner(src: *SystemResource, owner: *OwnershipNode) void {
+        std.debug.assert(owner.data.resource == src);
+        logger.debug("remove process 0x{X:0>8} from resource 0x{X:0>8} of type {s}", .{
+            @intFromPtr(owner.data.process),
+            @intFromPtr(src),
+            @tagName(src.type),
+        });
+        src.owners.remove(owner);
+        if (src.owners.len == 0) {
             src.destroy();
         }
     }
 
-    /// Immediatly destroys the system resource.
+    /// Destroys the resource
     pub fn destroy(src: *SystemResource) void {
+        logger.debug("destroy 0x{X:0>8} of type {s}", .{
+            @intFromPtr(src),
+            @tagName(src.type),
+        });
+        src.unlink();
+        switch (src.type) {
+            .bad_handle => unreachable,
+            inline else => |type_id| {
+                const instance = src.cast(ashet.resources.InstanceType(type_id)) catch unreachable;
+                instance.destroy();
+            },
+        }
+    }
+
+    /// Removes all references from owning processes.
+    fn unlink(src: *SystemResource) void {
         var it = src.owners.first;
         while (it) |node| {
             it = node.next;
-            node.data.remove_resource(src);
+            node.data.process.resources.free_by_ownership(node) catch |err| switch (err) {
+                error.DoubleFree => {
+                    // this is fine, as unlink() might result from a process dropping a resource
+                },
+                error.NotOwned => unreachable, // kernel implementation bug
+            };
         }
-        src.vtable.destroy(src);
-        src.* = undefined;
     }
-
-    pub const VTable = struct {
-        destroy: *const fn (*SystemResource) void,
-    };
 };
 
-pub const Owner = std.DoublyLinkedList(*ashet.multi_tasking.Process).Node;
+/// Link between a process and a resource.
+pub const Ownership = struct {
+    process: *ashet.multi_tasking.Process,
+    resource: *SystemResource,
+};
 
+pub const OwnershipNode = std.DoublyLinkedList(Ownership).Node;
+
+/// Manages allocation
 pub const HandlePool = struct {
     const grow_margin = 64; // always allocate 64 chunks at once
 
@@ -61,7 +92,7 @@ pub const HandlePool = struct {
 
     bit_map: std.DynamicBitSetUnmanaged = .{},
     generations: std.ArrayListUnmanaged(EncodedHandle.Generation) = .{},
-    owners: std.SegmentedList(Owner, grow_margin) = .{},
+    owners: std.SegmentedList(OwnershipNode, grow_margin) = .{},
 
     pub fn init(allocator: std.mem.Allocator) HandlePool {
         return .{
@@ -78,10 +109,11 @@ pub const HandlePool = struct {
 
     pub const AllocResult = struct {
         handle: Handle,
-        owner: *Owner,
+        ownership: *OwnershipNode,
     };
 
-    pub fn alloc(pool: *HandlePool, proc: *ashet.multi_tasking.Process) error{ OutOfMemory, OutOfHandles }!AllocResult {
+    /// Allocates a new handle and returns both handle and the owner, with uninitialized `.data`
+    pub fn alloc(pool: *HandlePool) error{ OutOfMemory, OutOfHandles }!AllocResult {
         const raw_index = pool.bit_map.toggleFirstSet() orelse blk: {
             const original_len = pool.bit_map.capacity();
 
@@ -127,16 +159,16 @@ pub const HandlePool = struct {
 
         const owner = pool.owners.uncheckedAt(raw_index);
         owner.* = .{
-            .data = proc,
+            .data = undefined,
         };
 
         return .{
             .handle = @ptrFromInt(@as(usize, @bitCast(encoded))),
-            .owner = owner,
+            .ownership = owner,
         };
     }
 
-    pub fn free(pool: *HandlePool, handle: Handle) error{ InvalidHandle, DoubleFree, GenerationMismatch }!void {
+    pub fn free_by_handle(pool: *HandlePool, handle: Handle) error{ InvalidHandle, DoubleFree, GenerationMismatch }!void {
         std.debug.assert(pool.generations.items.len == pool.bit_map.capacity());
         std.debug.assert(pool.owners.len == pool.bit_map.capacity());
 
@@ -146,20 +178,48 @@ pub const HandlePool = struct {
         if (handle_bits.index >= pool.bit_map.capacity())
             return error.InvalidHandle;
 
-        const generation_ptr = &pool.generations.items[handle_bits.index];
-
         if (pool.generations.items[handle_bits.index] != handle_bits.generation)
             return error.GenerationMismatch;
 
-        if (pool.bit_map.isSet(handle_bits.index))
-            return error.DoubleFree;
-
-        pool.bit_map.set(handle_bits.index);
-        pool.owners.at(handle_bits.index).* = undefined;
-        generation_ptr.* +%= 1;
+        pool.free_by_index(handle_bits.index) catch |err| switch (err) {
+            error.OutOfBounds => unreachable,
+            error.DoubleFree => |e| return e,
+        };
     }
 
-    pub fn resolve(pool: *HandlePool, handle: Handle) error{ InvalidHandle, GenerationMismatch, Gone }!*Owner {
+    pub fn free_by_ownership(pool: *HandlePool, ownership: *OwnershipNode) error{ NotOwned, DoubleFree }!void {
+        std.debug.assert(pool.generations.items.len == pool.bit_map.capacity());
+        std.debug.assert(pool.owners.len == pool.bit_map.capacity());
+
+        var index: usize = 0;
+        var iter = pool.owners.iterator(0);
+        while (iter.next()) |owned_ownership| : (index += 1) {
+            if (owned_ownership == ownership) {
+                return pool.free_by_index(index) catch |err| switch (err) {
+                    error.OutOfBounds => unreachable,
+                    error.DoubleFree => |e| e,
+                };
+            }
+        }
+        return error.NotOwned;
+    }
+
+    pub fn free_by_index(pool: *HandlePool, index: usize) error{ OutOfBounds, DoubleFree }!void {
+        std.debug.assert(pool.generations.items.len == pool.bit_map.capacity());
+        std.debug.assert(pool.owners.len == pool.bit_map.capacity());
+
+        if (index >= pool.bit_map.capacity())
+            return error.OutOfBounds;
+
+        if (pool.bit_map.isSet(index))
+            return error.DoubleFree;
+
+        pool.bit_map.set(index);
+        pool.owners.at(index).* = undefined;
+        pool.generations.items[index] +%= 1;
+    }
+
+    pub fn resolve(pool: *HandlePool, handle: Handle) error{ InvalidHandle, GenerationMismatch, Gone }!*OwnershipNode {
         std.debug.assert(pool.generations.items.len == pool.bit_map.capacity());
         std.debug.assert(pool.owners.len == pool.bit_map.capacity());
 
@@ -177,6 +237,38 @@ pub const HandlePool = struct {
 
         return pool.owners.uncheckedAt(handle_bits.index);
     }
+
+    pub fn iterator(pool: HandlePool) Iterator {
+        return .{ .pool = pool };
+    }
+
+    pub const Iterator = struct {
+        pool: HandlePool,
+        index: usize = 0,
+
+        pub fn next(iter: *Iterator) ?IterationItem {
+            const max_count = iter.pool.bit_map.capacity();
+
+            while (iter.index < max_count and iter.pool.bit_map.isSet(iter.index)) {
+                iter.index += 1;
+            }
+            if (iter.index >= max_count)
+                return null;
+
+            const index = iter.index;
+            iter.index += 1;
+            std.debug.assert(!iter.pool.bit_map.isSet(index));
+            return .{
+                .index = index,
+                .ownership = iter.pool.owners.at(index),
+            };
+        }
+    };
+
+    pub const IterationItem = struct {
+        index: usize,
+        ownership: *OwnershipNode,
+    };
 
     /// We use a pretty complex encoding scheme for the
     /// handles.
@@ -234,35 +326,28 @@ pub const HandlePool = struct {
 };
 
 test "HandlePool" {
-    var p1: ashet.multi_tasking.Process = undefined;
-    var p2: ashet.multi_tasking.Process = undefined;
-    var p3: ashet.multi_tasking.Process = undefined;
-
     var pool = HandlePool.init(std.testing.allocator);
     defer pool.deinit();
 
-    const h1 = try pool.alloc(&p1);
-    const h2 = try pool.alloc(&p2);
+    const h1 = try pool.alloc();
+    const h2 = try pool.alloc();
 
-    try std.testing.expect(h1.owner.data == &p1);
-    try std.testing.expect(h2.owner.data == &p2);
+    try std.testing.expect(try pool.resolve(h1.handle) == h1.ownership);
+    try std.testing.expect(try pool.resolve(h2.handle) == h2.ownership);
 
-    try std.testing.expect(try pool.resolve(h1.handle) == h1.owner);
-    try std.testing.expect(try pool.resolve(h2.handle) == h2.owner);
+    try pool.free_by_handle(h1.handle);
+    try std.testing.expectError(error.GenerationMismatch, pool.free_by_handle(h1.handle));
 
-    try pool.free(h1.handle);
-    try std.testing.expectError(error.GenerationMismatch, pool.free(h1.handle));
-
-    const h3 = try pool.alloc(&p3);
+    const h3 = try pool.alloc();
 
     try std.testing.expectError(error.GenerationMismatch, pool.resolve(h1.handle));
-    try std.testing.expect(try pool.resolve(h2.handle) == h2.owner);
-    try std.testing.expect(try pool.resolve(h3.handle) == h3.owner);
+    try std.testing.expect(try pool.resolve(h2.handle) == h2.ownership);
+    try std.testing.expect(try pool.resolve(h3.handle) == h3.ownership);
 
-    try pool.free(h2.handle);
-    try pool.free(h3.handle);
+    try pool.free_by_handle(h2.handle);
+    try pool.free_by_handle(h3.handle);
 
-    try std.testing.expectError(error.GenerationMismatch, pool.free(h1.handle));
+    try std.testing.expectError(error.GenerationMismatch, pool.free_by_handle(h1.handle));
 }
 
 test "HandlePool Stress Test" {
@@ -275,10 +360,9 @@ test "HandlePool Stress Test" {
     const retain_chance = 0.1; // accidently double-free percentage
     const fake_free_chance = 0.1; // chance for freeing random handles
     const fake_resolve_chance = 0.1; // chance for freeing random handles
+    const iterate_chance = 0.1; // chance for iterating all handles
 
     // test:
-
-    var dummy: ashet.multi_tasking.Process = undefined;
 
     var rng_engine = std.rand.DefaultPrng.init(0x1337);
     const rng = rng_engine.random();
@@ -313,7 +397,7 @@ test "HandlePool Stress Test" {
                 else
                     alive_handles.swapRemove(index);
 
-                pool.free(handle) catch {
+                pool.free_by_handle(handle) catch {
                     // this is fine in our scenario
                 };
 
@@ -328,8 +412,7 @@ test "HandlePool Stress Test" {
             }
 
             if (rng.float(f32) < alloc_chance) {
-                const res = try pool.alloc(&dummy);
-                std.debug.assert(res.owner.data == &dummy);
+                const res = try pool.alloc();
 
                 try alive_handles.append(res.handle);
 
@@ -339,7 +422,7 @@ test "HandlePool Stress Test" {
             if (rng.float(f32) < fake_free_chance) {
                 const handle: Handle = @ptrFromInt(rng.int(usize));
 
-                if (pool.free(handle)) |_| {
+                if (pool.free_by_handle(handle)) |_| {
                     const alive_index = std.mem.indexOfScalar(Handle, alive_handles.items, handle);
                     try std.testing.expect(alive_index != null);
 
@@ -361,6 +444,15 @@ test "HandlePool Stress Test" {
                     fake_resolve_count += 1;
                 }
             }
+            if (rng.float(f32) < iterate_chance) {
+                var count: usize = 0;
+                var iter = pool.iterator();
+                while (iter.next()) |item| {
+                    try std.testing.expect(!pool.bit_map.isSet(item.index));
+                    count += 1;
+                }
+                try std.testing.expectEqual(iter.pool.bit_map.capacity() - iter.pool.bit_map.count(), count);
+            }
 
             if (alive_handles.items.len > 0) {
                 const index = rng.intRangeLessThan(usize, 0, alive_handles.items.len);
@@ -368,7 +460,7 @@ test "HandlePool Stress Test" {
                 const handle = alive_handles.items[index];
 
                 if (retained_items.get(handle) != null) {
-                    try std.testing.expectEqual(@as(?*Owner, null), pool.resolve(handle) catch null);
+                    try std.testing.expectEqual(@as(?*OwnershipNode, null), pool.resolve(handle) catch null);
                 } else {
                     _ = try pool.resolve(handle);
                 }
@@ -378,7 +470,7 @@ test "HandlePool Stress Test" {
         }
 
         while (alive_handles.popOrNull()) |handle| {
-            pool.free(handle) catch {
+            pool.free_by_handle(handle) catch {
                 // this is fine in our scenario
             };
         }
@@ -390,5 +482,40 @@ test "HandlePool Stress Test" {
         std.debug.print("  retain_count       = {}\n", .{retain_count});
         std.debug.print("  fake_free_count    = {}\n", .{fake_free_count});
         std.debug.print("  fake_resolve_count = {}\n", .{fake_resolve_count});
+    }
+}
+
+/// Maps `TypeId` to a concrete type.
+pub fn InstanceType(comptime type_enum: TypeId) type {
+    return switch (type_enum) {
+        .bad_handle => @compileError("bad handle is unmapped"),
+        .shared_memory => ashet.shared_memory.SharedMemory,
+    };
+}
+
+/// Maps a concrete type to it's `TypeId`
+pub fn instanceTypeId(comptime T: type) TypeId {
+    const result = comptime blk: {
+        for (std.enums.values(TypeId)) |type_id| {
+            if (type_id == .bad_handle)
+                continue;
+            if (InstanceType(type_id) == T)
+                break :blk type_id;
+        }
+        @compileError(@typeName(T) ++ " is not a registered resource type!");
+    };
+    return result;
+}
+
+comptime {
+    for (std.enums.values(TypeId)) |type_id| {
+        if (type_id == .bad_handle)
+            continue;
+        const T = InstanceType(type_id);
+        if (!@hasField(T, "system_resource"))
+            @compileError(@typeName(T) ++ " is registered as a system resource, but has no field 'system_resource'!");
+        const field = std.meta.fieldInfo(T, @field(std.meta.FieldEnum(T), "system_resource"));
+        if (field.type != SystemResource)
+            @compileError(@typeName(T) ++ ".system_resource is not a SystemResource!");
     }
 }

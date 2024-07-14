@@ -73,8 +73,12 @@ pub const Process = struct {
             .memory_arena = std.heap.ArenaAllocator.init(ashet.memory.allocator),
             .name = undefined,
             .stay_resident = options.stay_resident,
+            .resources = undefined,
         };
         errdefer process.memory_arena.deinit();
+
+        process.resources = ashet.resources.HandlePool.init(process.memory_arena.allocator());
+        errdefer process.resources.deinit();
 
         process.name = if (options.name) |name|
             try process.memory_arena.allocator().dupeZ(u8, name)
@@ -116,10 +120,21 @@ pub const Process = struct {
             exclusive_video_controller = null;
         }
 
+        // TODO: remove when threads are a resource!
         // destroy all threads:
         while (proc.threads.popFirst()) |thread| {
             std.debug.assert(thread.data.process == proc);
             thread.data.thread.kill();
+        }
+
+        // Drop all resource ownerships:
+        {
+            var iter = proc.resources.iterator();
+            while (iter.next()) |item| {
+                const res = item.ownership.data.resource;
+                res.remove_owner(item.ownership);
+                proc.resources.free_by_index(item.index) catch unreachable; // all resources we can reach here are valid
+            }
         }
 
         proc.memory_arena.deinit();
