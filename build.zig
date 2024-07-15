@@ -15,6 +15,7 @@ const qemu_debug_options_default = "cpu_reset,guest_errors,unimp";
 
 pub fn build(b: *std.Build) void {
     // Steps:
+    const test_step = b.step("test", "Runs the test suite");
 
     const machine_steps = blk: {
         var steps = std.EnumArray(Machine, *std.Build.Step).initUndefined();
@@ -63,6 +64,31 @@ pub fn build(b: *std.Build) void {
             const install_elf_step = b.addInstallFileWithDir(file.getPath(), out_dir, file.sub_path);
             step.dependOn(&install_elf_step.step);
         }
+    }
+
+    // Test
+    {
+        const abi_dep = b.dependency("ashet-abi", .{});
+        const abi_mod = abi_dep.module("ashet-abi");
+
+        const machine_info = b.addWriteFile("machine_info.zig",
+            \\pub const platform_id = .x86;
+            \\pub const machine_id = .@"pc-bios";
+        ).files.items[0].getPath();
+
+        const machine_info_mod = b.createModule(.{
+            .root_source_file = machine_info,
+        });
+
+        const kernel_tests = b.addTest(.{
+            .root_source_file = b.path("src/kernel/main.zig"),
+            .target = b.resolveTargetQuery(.{ .cpu_arch = .x86 }),
+            .optimize = .Debug,
+        });
+        kernel_tests.root_module.addImport("machine-info", machine_info_mod);
+        kernel_tests.root_module.addImport("args", machine_info_mod);
+        kernel_tests.root_module.addImport("ashet-abi", abi_mod);
+        test_step.dependOn(&b.addRunArtifact(kernel_tests).step);
     }
 
     // Run:
