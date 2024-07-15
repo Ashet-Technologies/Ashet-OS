@@ -129,3 +129,16 @@ pub fn waitIO() void {
     // is now mostly unused. This should be a safe no-op.
     out(u8, 0x80, 0);
 }
+
+/// Returns the current cycle-clock value.
+pub fn get_clock() u64 {
+    var a: u32 = undefined;
+    var b: u32 = undefined;
+    asm volatile ("rdtsc"
+        : [a] "={edx}" (a),
+          [b] "={eax}" (b),
+        :
+        : "ecx"
+    );
+    return (@as(u64, a) << 32) | b;
+}

@@ -21,6 +21,7 @@ pub const resources = @import("components/resources.zig");
 // pub const ui = @import("components/ui.zig");
 pub const video = @import("components/video.zig");
 pub const shared_memory = @import("components/shared_memory.zig");
+pub const random = @import("components/random.zig");
 
 pub const ports = @import("port/targets.zig");
 
@@ -110,6 +111,13 @@ fn main() !void {
     // dynamic page allocations to store certain data:
     log.info("initialize memory protection...", .{});
     try memory.protection.initialize();
+
+    // Initialize the entropy pool so it can begin gathering bits
+    // for critical start-up applications. The pool needs at least
+    // some amount of hardware entropy to be safe to use in later
+    // start-ups. We will utilize the cycle-counter for this.
+    log.info("initialize entropy pool...", .{});
+    random.initialize();
 
     // Before we initialize the hardware, we already add hardware independent drivers
     // for stuff like file systems, virtual block devices and so on...
