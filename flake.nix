@@ -74,8 +74,8 @@
 
             # prebundled python packages:
             pkgs.python311Packages.lark
-            pkgs.python311Packages.jinja2
             pkgs.python311Packages.dataclasses-json
+            pkgs.ruff
 
             # pypi packages:
             caseconverter
