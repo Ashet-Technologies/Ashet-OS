@@ -1,9 +1,8 @@
 #!/usr/bin/env python3.11
 
-import argparse
 import sys
-import io
 import os
+import re 
 from typing import NoReturn 
 
 from pathlib import Path 
@@ -361,21 +360,46 @@ class ZigCodeTransformer(Transformer):
     def doc_comment_line(self, items):
         return items[0].value.lstrip("///").strip()
 
-def render_type(stream, t: Type):
+ZIG_BUILTIN_TYPES = { 
+    "void", "noreturn",
+    "bool",
+    "anyopaque", 
+    "f16", "f32", "f64", "f80", "f128",
+    "usize", "isize",
+}
+
+def is_builtin_type(name: str) -> bool:
+    if name in ZIG_BUILTIN_TYPES:
+        return True
+    
+    if re.match(r"[ui]\d+", name):
+        return True
+    
+    return False 
+
+def render_type(stream, t: Type, abi_namespace: str | None = None ):
+
+    ns_prefix = ""
+    if abi_namespace is not None:
+        ns_prefix = f"{abi_namespace}."
     
     if isinstance(t, ReferenceType):
-        stream.write(t.name)
+
+        if is_builtin_type(t.name):
+            stream.write(t.name)
+        else:
+            stream.write(ns_prefix + t.name)
     elif isinstance(t, OptionalType):
         stream.write("?")
-        render_type(stream, t.inner)
+        render_type(stream, t.inner, abi_namespace)
     elif isinstance(t, ArrayType):
         if t.sentinel is not None:
             stream.write(f"[{t.size}:{t.sentinel}]")
         else:
             stream.write(f"[{t.size}]")
-        render_type(stream, t.inner)
+        render_type(stream, t.inner, abi_namespace)
     elif isinstance(t, ErrorSet):
-        stream.write("ErrorSet(error{")
+        stream.write(ns_prefix+"ErrorSet(error{")
         stream.write(",".join( t.errors))
         stream.write("})")
     elif isinstance(t, PointerType):
@@ -401,7 +425,7 @@ def render_type(stream, t: Type):
         if t.alignment is not None :
             stream.write(f"align({t.alignment}) ")
         
-        render_type(stream, t.inner)
+        render_type(stream, t.inner, abi_namespace)
     else:
         panic("unexpected", t)
 
@@ -409,6 +433,8 @@ def render_docstring(stream ,I: str, docs: DocComment | None):
     if docs is not None:
         for line in docs.lines:
             stream.write(f"{I}/// {line}\n")
+
+
 
 def render_container(stream, declarations: list[Declaration], errors: ErrorAllocation, indent: int = 0, prefix:str = "ashet"):
     I = "    " * indent
@@ -428,7 +454,6 @@ def render_container(stream, declarations: list[Declaration], errors: ErrorAlloc
                 stream.write(f"{I}pub const {decl.name} = @extern(*const fn(")
                 
             if len(decl.params) > 0:
-
                 stream.write("\n")
             
                 for param in decl.params:
@@ -605,55 +630,50 @@ def render_abi_definition(stream, abi: ABI_Definition):
 
 """)
 
-    transformed_code = ""
-    with io.StringIO() as strio:
-        render_container(strio, root_container.decls,errors)
-        stream.write(strio.getvalue())
+    render_container(stream, root_container.decls,errors)
 
     stream.write(root_container.rest)
     
-    with io.StringIO() as strio:
-        strio.write("\n")
-        strio.write("\n")
-        strio.write("/// Global error set, defines numeric values for all errors.\n")
-        strio.write("pub const Error = enum(u16) {\n")
-        for key, value in sorted(errors.mapping.items(), key=lambda kv: kv[1]):
-            assert key != "ok"
-            assert key != "Unexpected"
-            assert 0 < value < 0xFFFF
-            strio.write(f"    {key} = {value},\n")
-        strio.write("};\n")
-        strio.write("\n")
-        strio.write("\n")
-        strio.write("/// Global error set, defines numeric values for all errors.\n")
-        strio.write("pub const IOP_Type = enum(u32) {\n")
-        for value, iop in sorted(iop_numbers.items(), key=lambda kv: kv[0]):
-            strio.write(f"    {iop.key} = {value},\n")
-        strio.write("};\n")
-        strio.write("\n")
-        strio.write("\n")
-        strio.write("const __SystemResourceType = enum(u16) {\n")
-            
-        for src in sys_resources:
-            strio.write(f"    {caseconverter.snakecase(src)},\n")
-
-        strio.write("    _,\n");
-        strio.write("};\n");
-
-        strio.write("\n")
-        strio.write("fn __SystemResourceCastResult(comptime t: __SystemResourceType) type {\n")
-        strio.write("    return switch (t) {\n")
+    stream.write("\n")
+    stream.write("\n")
+    stream.write("/// Global error set, defines numeric values for all errors.\n")
+    stream.write("pub const Error = enum(u16) {\n")
+    for key, value in sorted(errors.mapping.items(), key=lambda kv: kv[1]):
+        assert key != "ok"
+        assert key != "Unexpected"
+        assert 0 < value < 0xFFFF
+        stream.write(f"    {key} = {value},\n")
+    stream.write("};\n")
+    stream.write("\n")
+    stream.write("\n")
+    stream.write("/// Global error set, defines numeric values for all errors.\n")
+    stream.write("pub const IOP_Type = enum(u32) {\n")
+    for value, iop in sorted(iop_numbers.items(), key=lambda kv: kv[0]):
+        stream.write(f"    {iop.key} = {value},\n")
+    stream.write("};\n")
+    stream.write("\n")
+    stream.write("\n")
+    stream.write("const __SystemResourceType = enum(u16) {\n")
         
-        for src in sys_resources:
-            strio.write(f"        .{caseconverter.snakecase(src)} => {src},\n")
+    for src in sys_resources:
+        stream.write(f"    {caseconverter.snakecase(src)},\n")
 
-        strio.write("         _ => @compileError(\"Undefined type passed.\"),\n")
-        strio.write("    };\n")
-        strio.write("}\n")
+    stream.write("    _,\n");
+    stream.write("};\n");
 
-        strio.write("\n")
-        
-        stream.write(strio.getvalue())
+    stream.write("\n")
+    stream.write("fn __SystemResourceCastResult(comptime t: __SystemResourceType) type {\n")
+    stream.write("    return switch (t) {\n")
+    
+    for src in sys_resources:
+        stream.write(f"        .{caseconverter.snakecase(src)} => {src},\n")
+
+    stream.write("         _ => @compileError(\"Undefined type passed.\"),\n")
+    stream.write("    };\n")
+    stream.write("}\n")
+
+    stream.write("\n")
+    
 
 
 def render_kernel_implementation(stream, abi: ABI_Definition):
@@ -665,9 +685,54 @@ def render_kernel_implementation(stream, abi: ABI_Definition):
     stream.write("""//!
 //! THIS CODE WAS AUTOGENERATED!
 //!
+const std = @import("std");
+const abi = @import("abi");
 
-
+/// This function creates a type that, when references,
+/// will export all ashet os systemcalls.
+///
+/// Syscalls will are expected to be in their respective
+/// namespace as in the ABI file.
+pub fn create_exports(comptime Impl: type) type {
+    return struct {
 """)
+
+    def emit_impl(func: Function, ns: list[str]):
+        emit_name = ".".join(("ashet", *ns, func.name))
+        import_name = ".".join(("Impl", *ns, func.name))
+        stream.write(f'        export fn @"{emit_name}"(')
+
+        params = [
+            (
+                param.name if param.name is not None else f"_param{index}",
+                param
+             )
+            for index, param in enumerate( func.params)
+        ]
+
+        if len(params) > 0:
+            first=True
+            for name, param in params:
+                if not first: stream.write(", ")
+                first = False 
+                stream.write(f"{name}: ")
+                render_type(stream, param.type,abi_namespace="abi")
+        
+        stream.write(') ')
+        render_type(stream, func.return_type, abi_namespace="abi")
+        stream.write(' { \n')
+
+        stream.write(f"            return {import_name}(")
+        stream.write(", ".join(name for name,_ in params))
+        stream.write(f");\n")
+
+        stream.write("        }\n")
+        stream.write("\n")
+
+    foreach(root_container.decls, Function, func=emit_impl)
+
+    stream.write("    };\n")
+    stream.write("}\n")
 
 def render_userland_implementation(stream, abi: ABI_Definition):
     root_container = abi.root_container
