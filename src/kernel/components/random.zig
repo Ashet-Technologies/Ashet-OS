@@ -42,24 +42,22 @@ const Block = extern struct {
     counter: u16,
 };
 
-const TimerState = struct {
-    entropy: u64,
-    samples_per_bit: u32,
-};
-
 pub fn initialize() void {
+    // we try to get as much entropy as quickly as possible to not hinder boot times
     const clock = get_hw_entropy();
-    const hash = std.crypto.hash.blake2.Blake2s256.init(
-        .{ .key = std.mem.asBytes(&clock) },
-    );
+    var hash = Blake2s256.init(.{ .key = std.mem.asBytes(&clock) });
+    if (ashet.platform.get_rdseed()) |seed| hash.update(std.mem.asBytes(&seed));
+
     pool = .{ .hash = hash, .init_bits = 0 };
+
+    crng = .{ .generation = 0, .key = undefined, .phase = .empty };
+    crng.reseed();
 }
 
-/// This function is not crypto-graphically safe unless `wait_for_entropy` was
+/// This function is not cryptographically safe unless `wait_for_entropy` was
 /// called before-hand.
 pub fn get_random_bytes(buf: [*]u8, len: usize) void {
     if (len == 0) return;
-    // a reseed incase the caller didn't use wait_for_entropy before-hand
     crng.reseed();
     crng.draw(buf[0..len]);
 }
@@ -83,27 +81,17 @@ const MAX_SAMPLES_PER_BIT = HZ / 15;
 const POOL_BITS = Blake2s256.digest_length * 8;
 
 fn generate_timing_entropy() void {
-    var state: TimerState align(128) = undefined;
-
-    var last = get_hw_entropy();
-    var num_different: u32 = 0;
-    for (0..NUM_TRIAL_SAMPLES) |_| {
-        state.entropy = get_hw_entropy();
-        if (state.entropy != last) num_different += 1;
-        last = state.entropy;
-    }
-    state.samples_per_bit = @divFloor(NUM_TRIAL_SAMPLES, num_different + 1);
-    if (state.samples_per_bit > MAX_SAMPLES_PER_BIT) return;
+    var entropy: u64 = get_hw_entropy();
 
     // do some operations where it's unlikely the CPU can predict what's going to happen
-    var dummy: u32 = 0;
-    while (dummy < @max(10, get_hw_entropy() % 100)) {
-        pool.hash.update(std.mem.asBytes(&state.entropy));
+    var index: u32 = 0;
+    while (index < @max(10, get_hw_entropy() % 100)) : (entropy = get_hw_entropy()) {
+        pool.hash.update(std.mem.asBytes(&entropy));
         credit_bits(1); // we've created one entropy bit
-        dummy += 1;
-        state.entropy = get_hw_entropy();
+        index += 1;
     }
-    pool.hash.update(std.mem.asBytes(&state.entropy));
+    entropy = get_hw_entropy();
+    pool.hash.update(std.mem.asBytes(&entropy));
 }
 
 /// Increases the amount of entropy bits we think we have in the pool
@@ -128,12 +116,6 @@ fn credit_bits(bits: usize) void {
     }
 }
 
-/// Removes entropy from the pool via writing random bytes to
-/// `ptr`. The amount of entropy it will remove might be
-/// overfitted to the provided `len`.
-///
-/// This function assumes that the entropy pool has enough
-/// randomness.
 fn extract_entropy(ptr: [*]u8, len: usize) void {
     var seed: [Blake2s256.digest_length]u8 = undefined;
     var next: [Blake2s256.digest_length]u8 = undefined;
@@ -169,6 +151,7 @@ fn extract_entropy(ptr: [*]u8, len: usize) void {
     }
 }
 
+// TODO: mixin other sources of hw entropy that can be quickly attained
 fn get_hw_entropy() u64 {
     return ashet.platform.get_clock();
 }

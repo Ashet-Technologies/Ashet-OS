@@ -16,7 +16,7 @@ pub const syscalls = struct {
 
     pub extern fn @"ashet.shm.get_pointer"(SharedMemory) [*]align(16) u8;
 
-    pub extern fn @"ashet.random.get_random"([*]u8, usize, RandMode) void;
+    pub extern fn @"ashet.random.get_random"([*]u8, usize) void;
 
     // old syscalls:
 
@@ -1846,9 +1846,4 @@ pub const fs = struct {
         .@"error" = ResizeFileError,
         .inputs = struct { file: FileHandle, length: u64 },
     });
-};
-
-pub const RandMode = enum(u8) {
-    soft,
-    strict,
 };

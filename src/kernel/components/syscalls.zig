@@ -336,12 +336,7 @@ const impls = struct {
         return .success;
     }
 
-    export fn @"ashet.random.get_random"(ptr: [*]u8, len: usize, mode: ashet.abi.RandMode) void {
-        if (!ashet.random.crng_ready() and mode == .strict) {
-            // strict generation mode requires us to have enough entropy in the pool
-            // before extracting
-            ashet.random.wait_for_entropy();
-        }
+    export fn @"ashet.random.get_random"(ptr: [*]u8, len: usize) void {
         ashet.random.get_random_bytes(ptr, len);
     }
 
