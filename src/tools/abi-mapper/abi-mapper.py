@@ -182,7 +182,6 @@ class ParameterCollection:
             multi_ptr_type = replace_field(slice_type, size=PointerSize.many)
             for transform in reversed(reconstruct_stack):
                 multi_ptr_type = transform(multi_ptr_type)
-                
 
             ptr_param = Parameter(
                 name = f"{param.name}_ptr",
@@ -835,9 +834,9 @@ pub fn create_exports(comptime Impl: type) type {
         returns_error = isinstance(func.return_type, ErrorSet)
 
         if returns_error:
-            stream.write("const __error: ")
-            render_type(stream, func.return_type, abi_namespace="abi")
-            stream.write(".StrictError = ")
+            stream.write("const __error_union: error{ ")
+            stream.write(", ".join(func.return_type.errors))
+            stream.write(" }!void = ")
         else:
             stream.write("return ")
 
@@ -850,9 +849,9 @@ pub fn create_exports(comptime Impl: type) type {
 
                 if annotation.is_optional:
                     if annotation.is_out:
-                        args.append(f"if({ptr_p.name} != null) &{name}__slice else null")
+                        args.append(f"if ({ptr_p.name} != null) &{name}__slice else null")
                     else:
-                        args.append(f"if({ptr_p.name}) |__ptr| __ptr[0..{len_p.name}] else null")
+                        args.append(f"if ({ptr_p.name}) |__ptr| __ptr[0..{len_p.name}] else null")
                 else: # not optional
                     if annotation.is_out:
                         args.append(f"&{name}__slice")
@@ -864,14 +863,15 @@ pub fn create_exports(comptime Impl: type) type {
                 assert len(natives) == 1
                 args.append(natives[0].name)
 
-        stream.write(f"{import_name}(")
-        stream.write(", ".join(args))
-        stream.write(f");\n")
+        stream.write(f"{import_name}(\n")
+        for arg in args:
+            stream.write(f"                {arg},\n")
+        stream.write(f"            );\n")
 
         for slice_name, ptr_name, len_name, is_optional in out_slices:
             if is_optional:
-                stream.write(f"            {ptr_name}.* = if({slice_name}) |__slice| __slice.ptr else null;\n")
-                stream.write(f"            {len_name}.* = if({slice_name}) |__slice| __slice.len else 0;\n")
+                stream.write(f"            {ptr_name}.* = if ({slice_name}) |__slice| __slice.ptr else null;\n")
+                stream.write(f"            {len_name}.* = if ({slice_name}) |__slice| __slice.len else 0;\n")
             else:
                 stream.write(f"            {ptr_name}.* = {slice_name}.ptr;\n")
                 stream.write(f"            {len_name}.* = {slice_name}.len;\n")
@@ -879,10 +879,12 @@ pub fn create_exports(comptime Impl: type) type {
         if returns_error:
             error_set = func.return_type
             assert isinstance(error_set, ErrorSet)
-            stream.write("            return switch (__error) {\n")
+            stream.write("            if (__error_union) |_| {} else |__error| {\n")
+            stream.write("                return switch (__error) {\n")
             for error in error_set.errors:
-                stream.write(f"                error.{error} => .{error},\n")
-            stream.write("            };\n")
+                stream.write(f"                    error.{error} => .{error},\n")
+            stream.write("                };\n")
+            stream.write("            }\n")
 
         stream.write("        }\n")
         stream.write("\n")
