@@ -3,13 +3,18 @@
 import sys
 import os
 import re 
-from typing import NoReturn 
+from typing import NoReturn, Optional, Any 
+from collections.abc import Callable, Iterable
 
 from pathlib import Path 
 from enum import StrEnum
 from lark import Lark, Transformer
-from dataclasses import dataclass, field 
+from dataclasses import dataclass, field, replace as replace_field
 from argparse import ArgumentParser
+from typing import TypeVar, Generic
+
+T = TypeVar('T')
+
 
 import caseconverter
 
@@ -35,30 +40,43 @@ THIS_PATH = Path(__file__).parent
 GRAMMAR_PATH = THIS_PATH / "minizig.lark"
 # ABI_PATH = THIS_PATH / ".." / ".." / "abi"/"abi-v2.zig"
 
+class RefValue(Generic[T]):
+    value: T
+
+    def __init__(self, default: T = None):
+        self.value = default 
+
+    def __str__(self) -> str:
+        return str(self.value)
+
+    def __repr__(self) -> str:
+        return f"ref<{self.value!r}>"
 
 class PointerSize(StrEnum):
     one = "*"
     many = "[*]"
     slice = "[]"
 
+
+@dataclass(frozen=True, eq=True)
 class Type :
     ...
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class ReferenceType(Type):
     name: str 
     
-@dataclass
+@dataclass(frozen=True, eq=True)
 class OptionalType(Type):
     inner: Type 
     
-@dataclass
+@dataclass(frozen=True, eq=True)
 class ArrayType(Type):
     size: str
     sentinel: str | None 
     inner: Type 
 
-@dataclass 
+@dataclass (frozen=True, eq=True)
 class PointerType(Type):
     size: PointerSize
     sentinel: str | None
@@ -68,56 +86,186 @@ class PointerType(Type):
     inner: Type
 
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class DocComment:
     lines: list[str]
     
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class Declaration:
     name: str 
     docs: DocComment | None 
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class Parameter:
     docs: DocComment | None 
     name: str | None 
     type: Type 
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class Namespace(Declaration):
     decls: list[Declaration]
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class SystemResource(Declaration):
     pass 
 
 @dataclass
-class Function(Declaration):
-    params: list[Parameter]
-    return_type: Type 
+class ParameterAnnotation:
+    is_slice: bool
+    is_optional: bool
+    is_out: bool
 
-@dataclass
+    @property
+    def is_regular(self) -> bool:
+        return not (self.is_slice or self.is_out)
+
+class ParameterCollection:
+    abi: list[Parameter]
+    native: list[Parameter] = field(default_factory=list)
+    annotations: list[ParameterAnnotation] = field(default_factory=list)
+
+    def __init__(self, params: list[Parameter]):
+        self.abi = [
+            param if param.name else replace_field(param, name=f"_param{index}")
+            for index, param in enumerate(params)
+        ]
+        self.native = list()
+        self.annotations = list()
+
+        for param in self.abi:
+            
+            reconstruct_stack: list[Callable[[Type],Type]] = list()
+            slice_type = param.type
+            is_out_value = False 
+            is_optional_value=False
+
+            if isinstance(slice_type, PointerType) and slice_type.size == PointerSize.one and not slice_type.const:
+                slice_type = slice_type.inner
+                is_out_value = True
+                reconstruct_stack.append( lambda t: PointerType(
+                    size=PointerSize.one,
+                    const=False,
+                    inner=t,
+                    sentinel=None,
+                    alignment=None,
+                    volatile=False,
+                ))
+            
+            # Allow single-level unwrap:
+            if isinstance(slice_type, OptionalType):
+                slice_type = slice_type.inner
+                reconstruct_stack.append( lambda t: OptionalType(inner=t))
+                is_optional_value=True
+
+            if not isinstance(slice_type, PointerType):
+                self.native.append(param)
+                self.annotations.append(ParameterAnnotation(
+                    is_slice=False,
+                    is_optional=is_optional_value,
+                    is_out=False,
+                ))
+                continue 
+
+            if slice_type.size != PointerSize.slice:
+                self.native.append(param)
+                self.annotations.append(ParameterAnnotation(
+                    is_slice=False,
+                    is_optional=is_optional_value,
+                    is_out=False,
+                ))
+                continue
+
+            if param.name is None :
+                panic("bad function:", param)
+
+            multi_ptr_type = replace_field(slice_type, size=PointerSize.many)
+            for transform in reversed(reconstruct_stack):
+                multi_ptr_type = transform(multi_ptr_type)
+                
+
+            ptr_param = Parameter(
+                name = f"{param.name}_ptr",
+                docs=param.docs,
+                type=multi_ptr_type,
+            )
+            len_param = Parameter(
+                name=f"{param.name}_len",
+                docs=DocComment(lines=[f"Length of {param.name}_ptr"]),
+                type=ReferenceType("usize"),
+            )
+
+            if is_out_value:
+                len_param = replace_field(len_param, type = PointerType(
+                    inner = len_param.type,
+                    alignment=None,
+                    const=False,
+                    sentinel=None,
+                    size=PointerSize.one,
+                    volatile=False,
+                ))
+            self.annotations.append(ParameterAnnotation(
+                is_slice=True,
+                is_optional=is_optional_value,
+                is_out=is_out_value,
+            ))
+            self.native.append(ptr_param)
+            self.native.append(len_param)
+        
+        assert len(self.native) >= len(self.abi)
+        assert len(self.annotations) == len(self.abi)
+
+    def __len__(self):
+        return len(self.abi)
+
+    def __iter__(self):
+        anni = iter(self.annotations)
+        nati = iter(self.native)
+        
+        for abi in self.abi:
+            annotation = next(anni)
+
+            if annotation.is_slice:
+                ptr_p = next(nati)
+                len_p = next(nati)
+                natives = (ptr_p, len_p)
+            else:
+                natives = (next(nati),)
+
+            yield (abi.name, annotation, abi, natives)
+
+
+
+        
+
+
+@dataclass(frozen=True, eq=True)
+class Function(Declaration):
+    params: ParameterCollection
+    return_type: Type 
+    
+
+@dataclass(frozen=True, eq=True)
 class ErrorSet(Declaration,Type):
     errors: set[str]
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class IOP(Declaration):
-    inputs: list[Parameter]
-    outputs: list[Parameter]
+    inputs: ParameterCollection
+    outputs: ParameterCollection
     error: ErrorSet
-    key: str = ""
+    key: RefValue[str] = field(default=RefValue[str](""))
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class Container :
     decls: list[Declaration]
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class TopLevelCode(Container):
     rest: str
 
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class ErrorAllocation:
     mapping: dict[str, int] = field(default_factory=lambda:dict())
 
@@ -149,7 +297,7 @@ class ErrorAllocation:
         for err in set.errors:
             self.get_number(err)
 
-@dataclass
+@dataclass(frozen=True, eq=True)
 class ABI_Definition:
     root_container: TopLevelCode
     errors: ErrorAllocation
@@ -182,8 +330,7 @@ class ZigCodeTransformer(Transformer):
         if len(items) == 1: # no doc comment
             return items[0]
         elif len(items) == 2: # with doc comment
-            items[1].docs = items[0]
-            return items[1]
+            return replace_field(items[1], docs=items[0])
         else:
             assert False 
 
@@ -202,7 +349,7 @@ class ZigCodeTransformer(Transformer):
         return Function(
             name = items[0],
             docs = None,
-            params = items[1],
+            params = ParameterCollection( items[1]),
             return_type = items[2],
         )
 
@@ -223,8 +370,8 @@ class ZigCodeTransformer(Transformer):
         return IOP(
             name = identifier,
             docs = None,
-            inputs = inputs,
-            outputs = outputs,
+            inputs =ParameterCollection( inputs),
+            outputs =ParameterCollection( outputs),
             error = errorset,
         )
 
@@ -250,8 +397,7 @@ class ZigCodeTransformer(Transformer):
         if len(items) == 1: # no doc comment
             return items[0]
         elif len(items) == 2: # with doc comment
-            items[1].docs = items[0]
-            return items[1]
+            return replace_field( items[1], docs=items[0])
         else:
             assert False 
 
@@ -260,7 +406,6 @@ class ZigCodeTransformer(Transformer):
         if len(items) == 1: # no doc comment
             return Parameter(docs=None, name=None, type = items[0])
         elif len(items) == 2: # with doc comment
-            items[1].docs = items[0]
             return Parameter(docs=None, name=items[0], type=items[1])
         else:
             assert False 
@@ -382,6 +527,17 @@ def render_type(stream, t: Type, abi_namespace: str | None = None ):
     ns_prefix = ""
     if abi_namespace is not None:
         ns_prefix = f"{abi_namespace}."
+
+    def _ns(name: str) -> str:
+        return ns_prefix + name 
+
+    def _value(value: str) -> str:
+        if value == "true" or value == "false":
+            return value 
+        if isinstance(value, str) and re.match(r"[a-zA-Z_][a-zA-Z_]*", value):
+            return _ns(value)
+        return value
+
     
     if isinstance(t, ReferenceType):
 
@@ -394,9 +550,9 @@ def render_type(stream, t: Type, abi_namespace: str | None = None ):
         render_type(stream, t.inner, abi_namespace)
     elif isinstance(t, ArrayType):
         if t.sentinel is not None:
-            stream.write(f"[{t.size}:{t.sentinel}]")
+            stream.write(f"[{_value(t.size)}:{_value(t.sentinel)}]")
         else:
-            stream.write(f"[{t.size}]")
+            stream.write(f"[{_value(t.size)}]")
         render_type(stream, t.inner, abi_namespace)
     elif isinstance(t, ErrorSet):
         stream.write(ns_prefix+"ErrorSet(error{")
@@ -408,12 +564,12 @@ def render_type(stream, t: Type, abi_namespace: str | None = None ):
         elif t.size == PointerSize.many:
             stream.write("[*")
             if t.sentinel is not None:
-                stream.write(f":{t.sentinel}")
+                stream.write(f":{_value(t.sentinel)}")
             stream.write("]")
         elif t.size == PointerSize.slice:
             stream.write("[")
             if t.sentinel is not None:
-                stream.write(f":{t.sentinel}")
+                stream.write(f":{_value(t.sentinel)}")
             stream.write("]")
         else:
             panic("unexpected", t.size)
@@ -453,10 +609,10 @@ def render_container(stream, declarations: list[Declaration], errors: ErrorAlloc
             else:
                 stream.write(f"{I}pub const {decl.name} = @extern(*const fn(")
                 
-            if len(decl.params) > 0:
+            if len(decl.params.native) > 0:
                 stream.write("\n")
             
-                for param in decl.params:
+                for param in decl.params.native:
                     stream.write(f"{I}    ")
                     if param.name is not None:
                         stream.write(f"{param.name}: ")
@@ -503,13 +659,13 @@ def render_container(stream, declarations: list[Declaration], errors: ErrorAlloc
                 for err in sorted(decl.error.errors, key=lambda e:errors.get_number(e)):
                     stream.write(f"{I}        {err},\n")
                 stream.write(f"{I}    }}),\n")
-            if len(decl.inputs) > 0:
+            if len(decl.native_inputs) > 0:
                 stream.write(f"{I}    .inputs = struct {{\n")
-                write_struct_fields(decl.inputs)
+                write_struct_fields(decl.native_inputs)
                 stream.write(f"{I}    }},\n")
-            if len(decl.outputs) > 0:
+            if len(decl.native_outputs) > 0:
                 stream.write(f"{I}    .outputs = struct {{\n")
-                write_struct_fields(decl.outputs)
+                write_struct_fields(decl.native_outputs)
                 stream.write(f"{I}    }},\n")
 
             stream.write(f"{I}}});\n")
@@ -555,67 +711,11 @@ def assert_legal_extern_type(t: Type):
 
 def assert_legal_extern_fn(func: Function,ns:list[str]):
 
-    for p in func.params:
+    for p in func.params.native:
         assert_legal_extern_type(p.type)
     assert_legal_extern_type(func.return_type)
 
-def transform_parameter_list(in_params: list[Parameter]) -> list[Parameter]:
-    out_params: list[Parameter] = list()
-    for param in in_params:
 
-        ptr_type = param.type
-        is_out_value = False 
-
-        if isinstance(ptr_type, PointerType) and ptr_type.size == PointerSize.one and not ptr_type.const:
-            ptr_type = ptr_type.inner
-            is_out_value = True
-        
-        # Allow single-level unwrap:
-        if isinstance(ptr_type, OptionalType):
-            ptr_type = ptr_type.inner
-
-        if not isinstance(ptr_type, PointerType):
-            out_params.append(param)
-            continue 
-
-        if ptr_type.size != PointerSize.slice:
-            out_params.append(param)
-            continue 
-
-        if param.name is None :
-            panic("bad function:", param)
-
-        
-        len_param = Parameter(
-            name=f"{param.name}_len",
-            docs=DocComment(lines=[f"Length of {param.name}_ptr"]),
-            type=ReferenceType("usize"),
-        )
-
-        param.name += "_ptr"
-        ptr_type.size = PointerSize.many
-
-        if is_out_value:
-            len_param.type = PointerType(
-                inner = len_param.type,
-                alignment=None,
-                const=False,
-                sentinel=None,
-                size=PointerSize.one,
-                volatile=False,
-            )
-        
-        out_params.append(param)
-        out_params.append(len_param)
-
-    return out_params
-
-def transform_function(func: Function,ns:list[str]):
-    func.params = transform_parameter_list(func.params)
-
-def transform_iop(iop: IOP,ns:list[str]):
-    iop.inputs = transform_parameter_list(iop.inputs)
-    iop.outputs = transform_parameter_list(iop.outputs)
 
 def render_abi_definition(stream, abi: ABI_Definition):
     root_container = abi.root_container
@@ -646,7 +746,7 @@ def render_abi_definition(stream, abi: ABI_Definition):
     stream.write("};\n")
     stream.write("\n")
     stream.write("\n")
-    stream.write("/// Global error set, defines numeric values for all errors.\n")
+    stream.write("/// IO operation type, defines numeric values for IOPs.\n")
     stream.write("pub const IOP_Type = enum(u32) {\n")
     for value, iop in sorted(iop_numbers.items(), key=lambda kv: kv[0]):
         stream.write(f"    {iop.key} = {value},\n")
@@ -702,29 +802,87 @@ pub fn create_exports(comptime Impl: type) type {
         import_name = ".".join(("Impl", *ns, func.name))
         stream.write(f'        export fn @"{emit_name}"(')
 
-        params = [
-            (
-                param.name if param.name is not None else f"_param{index}",
-                param
-             )
-            for index, param in enumerate( func.params)
-        ]
-
-        if len(params) > 0:
+        if len(func.params) > 0:
             first=True
-            for name, param in params:
+            for param in func.params.native:
                 if not first: stream.write(", ")
                 first = False 
-                stream.write(f"{name}: ")
+                stream.write(f"{param.name}: ")
                 render_type(stream, param.type,abi_namespace="abi")
         
         stream.write(') ')
         render_type(stream, func.return_type, abi_namespace="abi")
         stream.write(' { \n')
 
-        stream.write(f"            return {import_name}(")
-        stream.write(", ".join(name for name,_ in params))
+        out_slices: list[tuple[str,str,str]] = list()
+        for name, annotation, abi, natives in func.params:
+
+            if not annotation.is_slice:
+                continue 
+            if not annotation.is_out:
+                continue 
+            
+            slice_name = f"{name}__slice"
+
+            out_slices.append((slice_name, natives[0].name, natives[1].name, annotation.is_optional))
+            stream.write(f"            var {slice_name}: ")
+            assert isinstance(abi.type, PointerType)
+            render_type(stream, abi.type.inner, abi_namespace="abi")
+            stream.write(" = undefined;\n")
+
+        stream.write("            ")
+
+        returns_error = isinstance(func.return_type, ErrorSet)
+
+        if returns_error:
+            stream.write("const __error: ")
+            render_type(stream, func.return_type, abi_namespace="abi")
+            stream.write(".StrictError = ")
+        else:
+            stream.write("return ")
+
+        args: list[str] = list()
+        for name, annotation, abi, natives in func.params:
+
+            if annotation.is_slice:
+                assert len(natives) == 2
+                (ptr_p, len_p ) = natives
+
+                if annotation.is_optional:
+                    if annotation.is_out:
+                        args.append(f"if({ptr_p.name} != null) &{name}__slice else null")
+                    else:
+                        args.append(f"if({ptr_p.name}) |__ptr| __ptr[0..{len_p.name}] else null")
+                else: # not optional
+                    if annotation.is_out:
+                        args.append(f"&{name}__slice")
+                    else:
+                        args.append(f"{ptr_p.name}[0..{len_p.name}]")
+
+
+            else:
+                assert len(natives) == 1
+                args.append(natives[0].name)
+
+        stream.write(f"{import_name}(")
+        stream.write(", ".join(args))
         stream.write(f");\n")
+
+        for slice_name, ptr_name, len_name, is_optional in out_slices:
+            if is_optional:
+                stream.write(f"            {ptr_name}.* = if({slice_name}) |__slice| __slice.ptr else null;\n")
+                stream.write(f"            {len_name}.* = if({slice_name}) |__slice| __slice.len else 0;\n")
+            else:
+                stream.write(f"            {ptr_name}.* = {slice_name}.ptr;\n")
+                stream.write(f"            {len_name}.* = {slice_name}.len;\n")
+
+        if returns_error:
+            error_set = func.return_type
+            assert isinstance(error_set, ErrorSet)
+            stream.write("            return switch (__error) {\n")
+            for error in error_set.errors:
+                stream.write(f"                error.{error} => .{error},\n")
+            stream.write("            };\n")
 
         stream.write("        }\n")
         stream.write("\n")
@@ -781,25 +939,19 @@ def main():
     for decl in root_container.decls:
         errors.collect(decl)
 
-    # Convert all parameters of functions into extern compatible ones
-    foreach(root_container.decls, Function, func=transform_function)
-    
-    # Convert all input/output structs of IOPs into extern compatible ones
-    foreach(root_container.decls, IOP, func=transform_iop)
-
     
     iop_numbers: dict[int,IOP] = dict()
-    
+     
     def allocate_iop_num(iop: IOP, ns:list[str]):
         index = len(iop_numbers) + 1
         name = "_".join([*ns, iop.name])
-        iop.key = name
-        iop_numbers[index] = iop 
+        iop.key.value = name
+        iop_numbers[index] = iop
     foreach(root_container.decls, IOP, allocate_iop_num)
 
-    iop_prefix = os.path.commonprefix([iop.key for iop in iop_numbers.values()])
+    iop_prefix = os.path.commonprefix([iop.key.value for iop in iop_numbers.values()])
     for iop in iop_numbers.values():
-        iop.key = iop.key.removeprefix(iop_prefix)
+        iop.key.value = iop.key.value.removeprefix(iop_prefix)
 
     foreach(root_container.decls, Function, func=assert_legal_extern_fn)
 
