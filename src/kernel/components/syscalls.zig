@@ -337,15 +337,12 @@ const impls = struct {
     }
 
     export fn @"ashet.random.get_random"(ptr: [*]u8, len: usize, mode: ashet.abi.RandMode) void {
-        switch (mode) {
-            .strict => {
-                // strict generation mode requires us to have enough entropy in the pool
-                // before extracting
-                ashet.random.wait_for_entropy();
-                ashet.random.get_random_bytes(ptr, len);
-            },
-            .soft => @panic("TODO: get_random soft mode"),
+        if (!ashet.random.crng_ready() and mode == .strict) {
+            // strict generation mode requires us to have enough entropy in the pool
+            // before extracting
+            ashet.random.wait_for_entropy();
         }
+        ashet.random.get_random_bytes(ptr, len);
     }
 
     export fn @"ashet.shm.create"(size: usize) ?ashet.abi.SharedMemory {

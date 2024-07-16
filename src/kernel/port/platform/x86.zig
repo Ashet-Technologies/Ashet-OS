@@ -142,3 +142,14 @@ pub fn get_clock() u64 {
     );
     return (@as(u64, a) << 32) | b;
 }
+
+pub fn get_rdseed() ?u64 {
+    const features = @import("builtin").target.cpu.features;
+    if (!std.Target.x86.featureSetHas(features, .rdseed)) return null;
+
+    var v: u64 = undefined;
+    asm volatile ("rdseed %[out]"
+        : [out] "=r" (v),
+    );
+    return v;
+}

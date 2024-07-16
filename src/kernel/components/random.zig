@@ -8,8 +8,6 @@ const ChaCha = std.Random.ChaCha;
 var pool: Pool = undefined;
 var crng: Crng = undefined;
 
-/// A small wrapper around a running `Blake2s256` hash which provides
-/// an easier interface to manage the pool.
 const Pool = struct {
     hash: Blake2s256,
     init_bits: usize,
@@ -39,22 +37,6 @@ const Phase = enum {
     ready,
 };
 
-/// Represents a piece of entropy which can be mixed into
-/// the running pool.
-pub const Event = union(enum) {
-    /// A cycle timestamp from the CPU. It's very important
-    /// that this number comes from hardware as it's credited
-    /// to more entropy-bits.
-    ///
-    /// Useful for doing generating cycle-timing entropy.
-    cycle: u64,
-    /// An arbitrary slice of bytes which contains some data.
-    /// Has a low or even no credit score, depending on the phase
-    /// of initialization that we're in. The earlier we are in
-    /// booting, the less entropy this will add.
-    arbitrary: []const u8,
-};
-
 const Block = extern struct {
     seed: [32]u64,
     counter: u16,
@@ -73,6 +55,8 @@ pub fn initialize() void {
     pool = .{ .hash = hash, .init_bits = 0 };
 }
 
+/// This function is not crypto-graphically safe unless `wait_for_entropy` was
+/// called before-hand.
 pub fn get_random_bytes(buf: [*]u8, len: usize) void {
     if (len == 0) return;
     // a reseed incase the caller didn't use wait_for_entropy before-hand
@@ -80,11 +64,17 @@ pub fn get_random_bytes(buf: [*]u8, len: usize) void {
     crng.draw(buf[0..len]);
 }
 
+/// This function blocks until there is enough credited entropy in the pool to extract
+/// a full ChaCha key.
 pub fn wait_for_entropy() void {
     while (crng.phase != .ready) {
         generate_timing_entropy();
         log.debug("generating entropy, crng phase: {s}", .{@tagName(crng.phase)});
     }
+}
+
+pub fn crng_ready() bool {
+    return crng.phase == .ready;
 }
 
 const HZ = 1000;
@@ -149,7 +139,16 @@ fn extract_entropy(ptr: [*]u8, len: usize) void {
     var next: [Blake2s256.digest_length]u8 = undefined;
     var block: Block = undefined;
 
-    for (0..32) |i| block.seed[i] = get_hw_entropy();
+    {
+        var i: u32 = 0;
+        while (i < 32) : (i += 1) {
+            if (ashet.platform.get_rdseed()) |long| {
+                block.seed[i] = long;
+                i += 1;
+            }
+            block.seed[i] = get_hw_entropy();
+        }
+    }
 
     pool.hash.final(&seed);
 
