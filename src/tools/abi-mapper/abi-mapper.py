@@ -1031,8 +1031,8 @@ def main():
 
     cli_parser = ArgumentParser()
 
-    cli_parser.add_argument("-o", "--output", type=Path, required=False)
-    cli_parser.add_argument("-m", "--mode", type=Renderer, required=False, default=Renderer.definition)
+    cli_parser.add_argument("--output", type=Path, required=False)
+    cli_parser.add_argument("--mode", type=Renderer, required=False, default=Renderer.definition)
     cli_parser.add_argument("abi", type=Path)
 
     cli = cli_parser.parse_args()
