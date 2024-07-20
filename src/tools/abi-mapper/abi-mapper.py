@@ -606,7 +606,7 @@ def render_container(stream, declarations: list[Declaration], errors: ErrorAlloc
             if WITH_LINKNAME:
                 stream.write(f"{I}pub extern fn {decl.name}(")
             else:
-                stream.write(f"{I}pub const {decl.name} = @extern(*const fn(")
+                stream.write(f'{I}extern fn @"{symbol}"(')
                 
             if len(decl.params.native) > 0:
                 stream.write("\n")
@@ -625,11 +625,11 @@ def render_container(stream, declarations: list[Declaration], errors: ErrorAlloc
                 stream.write(f"linkname(\"{symbol}\") ")
 
             render_type(stream, decl.return_type)
-            
-            if not WITH_LINKNAME:
-                stream.write(f", .{{ .name = \"{symbol}\" }})")
 
             stream.write(f";\n")
+
+            stream.write(f'{I}pub const {decl.name} = @"{symbol}";\n')
+
         elif isinstance(decl, ErrorSet):
             
 
@@ -1028,11 +1028,13 @@ class Renderer(StrEnum):
     userland = "userland"
 
 def main():
+    global WITH_LINKNAME
 
     cli_parser = ArgumentParser()
 
     cli_parser.add_argument("--output", type=Path, required=False)
     cli_parser.add_argument("--mode", type=Renderer, required=False, default=Renderer.definition)
+    cli_parser.add_argument("--use-linkname", action="store_true", required=False)
     cli_parser.add_argument("abi", type=Path)
 
     cli = cli_parser.parse_args()
@@ -1040,6 +1042,7 @@ def main():
     output_path: Path | None  = cli.output
     abi_path: Path = cli.abi
     render_mode: Renderer = cli.mode
+    WITH_LINKNAME = cli.use_linkname
 
     grammar_source = GRAMMAR_PATH.read_text()
     zig_parser = Lark(grammar_source, start='toplevel')
