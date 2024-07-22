@@ -1,5 +1,18 @@
 const syscalls = struct {
     extern "syscall" fn no_operation() void;
+
+    extern "syscall" fn arg_with_name(v: u32) u32;
+    extern "syscall" fn arg_without_name(u32) u32;
+
+    extern "syscall" fn regular_slice(slice: []const u8) u32;
+
+    extern "syscall" fn optional_slice(slice: ?[]const u8) u32;
+
+    extern "syscall" fn out_slice(index: u32, out: *[]const u8) void;
+
+    extern "syscall" fn out_optional_slice(index: u32, out: *?[]const u8) void;
+
+    extern "syscall" fn return_plain_error(index: u32) error{ One, Two };
 };
 
 const io = struct {
@@ -22,5 +35,10 @@ pub const IOP = struct {
 };
 
 pub fn ErrorSet(comptime et: type) type {
-    return et;
+    _ = et;
+    return enum(u32) {
+        ok = 0,
+        One = 1,
+        Two = 2,
+    };
 }

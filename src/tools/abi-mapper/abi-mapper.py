@@ -837,7 +837,7 @@ pub fn create_exports(comptime Impl: type) type {
             stream.write(", ".join(func.return_type.errors))
             stream.write(" }!void = ")
         else:
-            stream.write("return ")
+            stream.write("const __result = ")
 
         args: list[str] = list()
         for name, annotation, abi, natives in func.params:
@@ -848,7 +848,7 @@ pub fn create_exports(comptime Impl: type) type {
 
                 if annotation.is_optional:
                     if annotation.is_out:
-                        args.append(f"if ({ptr_p.name} != null) &{name}__slice else null")
+                        args.append(f"&{name}__slice")
                     else:
                         args.append(f"if ({ptr_p.name}) |__ptr| __ptr[0..{len_p.name}] else null")
                 else: # not optional
@@ -879,12 +879,14 @@ pub fn create_exports(comptime Impl: type) type {
             assert isinstance(error_set, ErrorSet)
             stream.write("            if (__error_union) |_| {\n")
             stream.write("                return .ok;\n")
-            stream.write("            else |__error| {\n")
+            stream.write("            } else |__error| {\n")
             stream.write("                return switch (__error) {\n")
             for error in error_set.errors:
                 stream.write(f"                    error.{error} => .{error},\n")
             stream.write("                };\n")
             stream.write("            }\n")
+        else:
+            stream.write("            return __result;\n")
 
         stream.write("        }\n")
         stream.write("\n")
@@ -944,7 +946,10 @@ const abi = @import("abi");
             stream.write(f"            var {slice_name}_ptr: ")
             assert isinstance(natives[0].type, PointerType)
             render_type(stream, natives[0].type.inner, abi_namespace="abi")
-            stream.write(" = null;\n")
+            if isinstance(natives[0].type.inner, OptionalType):
+                stream.write(" = null;\n")
+            else:
+                stream.write(f" = {name}.ptr;\n")
             
             stream.write(f"            var {slice_name}_len: usize = 0;\n")
 
@@ -954,7 +959,7 @@ const abi = @import("abi");
         if returns_error:
             stream.write("const __error_value = ")
         else:
-            stream.write("return ")
+            stream.write("const __result = ")
 
         args: list[str] = list()
         for name, annotation, abi, natives in func.params:
@@ -965,8 +970,8 @@ const abi = @import("abi");
 
                 if annotation.is_optional:
                     if annotation.is_out:
-                        args.append(f"if ({name} != null) &{name}__slice_ptr else null")
-                        args.append(f"if ({name} != null) &{name}__slice_len else null")
+                        args.append(f"&{name}__slice_ptr")
+                        args.append(f"&{name}__slice_len")
                     else:
                         args.append(f"if ({name}) |__slice| __slice.ptr else null")
                         args.append(f"if ({name}) |__slice| __slice.len else 0")
@@ -991,7 +996,7 @@ const abi = @import("abi");
             if is_optional:
                 stream.write(f"            {slice_name}.* = if ({ptr_name}) |__ptr| __ptr[0..{len_name}] else null;\n")
             else:
-                stream.write(f"            {slice_name}.* = {ptr_name}.ptr[0..{len_name}];\n")
+                stream.write(f"            {slice_name}.* = {ptr_name}[0..{len_name}];\n")
 
         if returns_error:
             error_set = func.return_type
@@ -1001,6 +1006,8 @@ const abi = @import("abi");
             for error in error_set.errors:
                 stream.write(f"               .{error} => error.{error},\n")
             stream.write("            };\n")
+        else:
+            stream.write("            return __result;\n")
 
         stream.write("        }\n")
         stream.write("\n")
