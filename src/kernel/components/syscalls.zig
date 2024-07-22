@@ -336,7 +336,7 @@ const impls = struct {
         return .success;
     }
 
-    export fn @"ashet.random.get_random"(ptr: [*]u8, len: usize) void {
+    export fn @"ashet.random.get_soft_random"(ptr: [*]u8, len: usize) void {
         ashet.random.get_random_bytes(ptr, len);
     }
 

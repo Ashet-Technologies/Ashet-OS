@@ -130,8 +130,16 @@ pub fn waitIO() void {
     out(u8, 0x80, 0);
 }
 
-/// Returns the current cycle-clock value.
-pub fn get_clock() u64 {
+pub fn get_cpu_cycle_counter() u64 {
+    return rdtsc();
+}
+
+pub fn get_cpu_random_seed() ?u64 {
+    return rdseed();
+}
+
+/// Invokes x86 Read Time-Stamp Counter instruction
+fn rdtsc() u64 {
     var a: u32 = undefined;
     var b: u32 = undefined;
     asm volatile ("rdtsc"
@@ -143,7 +151,8 @@ pub fn get_clock() u64 {
     return (@as(u64, a) << 32) | b;
 }
 
-pub fn get_rdseed() ?u64 {
+/// Invokes x86 Read Random SEED instructions
+fn rdseed() ?u64 {
     const features = @import("builtin").target.cpu.features;
     if (!std.Target.x86.featureSetHas(features, .rdseed)) return null;
 

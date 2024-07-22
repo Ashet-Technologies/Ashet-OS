@@ -45,11 +45,9 @@ const Block = extern struct {
 pub fn initialize() void {
     // we try to get as much entropy as quickly as possible to not hinder boot times
     const clock = get_hw_entropy();
-    var hash = Blake2s256.init(.{ .key = std.mem.asBytes(&clock) });
-    if (ashet.platform.get_rdseed()) |seed| hash.update(std.mem.asBytes(&seed));
+    const hash = Blake2s256.init(.{ .key = std.mem.asBytes(&clock) });
 
     pool = .{ .hash = hash, .init_bits = 0 };
-
     crng = .{ .generation = 0, .key = undefined, .phase = .empty };
     crng.reseed();
 }
@@ -151,7 +149,8 @@ fn extract_entropy(ptr: [*]u8, len: usize) void {
     }
 }
 
-// TODO: mixin other sources of hw entropy that can be quickly attained
 fn get_hw_entropy() u64 {
-    return ashet.platform.get_clock();
+    var cycle = ashet.platform.get_cpu_cycle_counter();
+    if (ashet.platform.get_cpu_random_seed()) |seed| cycle ^= seed;
+    return cycle;
 }
