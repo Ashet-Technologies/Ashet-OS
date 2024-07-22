@@ -254,6 +254,7 @@ class IOP(Declaration):
     outputs: ParameterCollection
     error: ErrorSet
     key: RefValue[str] = field(default=RefValue[str](""))
+    number: RefValue[int]= field(default=RefValue[int](None))
 
 @dataclass(frozen=True, eq=True)
 class Container :
@@ -300,8 +301,8 @@ class ErrorAllocation:
 class ABI_Definition:
     root_container: TopLevelCode
     errors: ErrorAllocation
-    iop_numbers: dict[int,IOP]
     sys_resources: list[str]
+    iops: list[IOP]
 
 def unwrap_items(func):
     def _deco(self, items):
@@ -719,7 +720,6 @@ def assert_legal_extern_fn(func: Function,ns:list[str]):
 def render_abi_definition(stream, abi: ABI_Definition):
     root_container = abi.root_container
     errors = abi.errors
-    iop_numbers = abi.iop_numbers
     sys_resources = abi.sys_resources
 
     stream.write("""//!
@@ -747,8 +747,8 @@ def render_abi_definition(stream, abi: ABI_Definition):
     stream.write("\n")
     stream.write("/// IO operation type, defines numeric values for IOPs.\n")
     stream.write("pub const IOP_Type = enum(u32) {\n")
-    for value, iop in sorted(iop_numbers.items(), key=lambda kv: kv[0]):
-        stream.write(f"    {iop.key} = {value},\n")
+    for iop in sorted(abi.iops, key=lambda iop: iop.number.value):
+        stream.write(f"    {iop.key.value} = {iop.number.value},\n")
     stream.write("};\n")
     stream.write("\n")
     stream.write("\n")
@@ -778,7 +778,6 @@ def render_abi_definition(stream, abi: ABI_Definition):
 def render_kernel_implementation(stream, abi: ABI_Definition):
     root_container = abi.root_container
     errors = abi.errors
-    iop_numbers = abi.iop_numbers
     sys_resources = abi.sys_resources
 
     stream.write("""//!
@@ -797,7 +796,7 @@ pub fn create_exports(comptime Impl: type) type {
 """)
 
     def emit_impl(func: Function, ns: list[str]):
-        emit_name = ".".join(("ashet", *ns, func.name))
+        emit_name = "_".join(("ashet", *ns, func.name))
         import_name = ".".join(("Impl", *ns, func.name))
         stream.write(f'        export fn @"{emit_name}"(')
 
@@ -898,7 +897,6 @@ pub fn create_exports(comptime Impl: type) type {
 def render_userland_implementation(stream, abi: ABI_Definition):
     root_container = abi.root_container
     errors = abi.errors
-    iop_numbers = abi.iop_numbers
     sys_resources = abi.sys_resources
 
     stream.write("""//!
@@ -1059,19 +1057,24 @@ def main():
     for decl in root_container.decls:
         errors.collect(decl)
 
-    
     iop_numbers: dict[int,IOP] = dict()
      
     def allocate_iop_num(iop: IOP, ns:list[str]):
         index = len(iop_numbers) + 1
         name = "_".join([*ns, iop.name])
         iop.key.value = name
+        iop.number.value = index 
         iop_numbers[index] = iop
     foreach(root_container.decls, IOP, allocate_iop_num)
 
-    iop_prefix = os.path.commonprefix([iop.key.value for iop in iop_numbers.values()])
-    for iop in iop_numbers.values():
-        iop.key.value = iop.key.value.removeprefix(iop_prefix)
+    print(iop_numbers)
+
+    if len(iop_numbers) > 1:
+        iop_prefix = os.path.commonprefix([iop.key.value for iop in iop_numbers.values()])
+        for iop in iop_numbers.values():
+            old = iop.key.value
+            iop.key.value = iop.key.value.removeprefix(iop_prefix)
+            print(repr(old), repr(iop.key.value))
 
     foreach(root_container.decls, Function, func=assert_legal_extern_fn)
 
@@ -1086,8 +1089,8 @@ def main():
     abi = ABI_Definition(
         root_container=root_container,
         errors=errors,
-        iop_numbers=iop_numbers,
         sys_resources=sys_resources,
+        iops=list(iop_numbers.values())
     )
 
     renderer = {

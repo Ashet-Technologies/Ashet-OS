@@ -8,6 +8,7 @@ const requirements = [_][]const u8{
 
 pub fn build(b: *std.Build) void {
     const create_venv_step = b.step("venv", "Creates the python venv");
+    const test_step = b.step("test", "Runs the test suite");
 
     const global_python3 = b.findProgram(&.{
         "python3.11",
@@ -32,14 +33,10 @@ pub fn build(b: *std.Build) void {
     else
         pyenv.path(b, "bin/python");
 
-    const pyenv_pip = if (builtin.os.tag == .windows)
-        pyenv.path(b, "Scripts/pip.exe")
-    else
-        pyenv.path(b, "bin/pip");
+    const pyenv_install_packages = add_run_script(b, pyenv_python3);
 
-    const pyenv_install_packages = addRunScript(b, pyenv_pip);
-
-    pyenv_install_packages.addFileArg(pyenv_pip);
+    pyenv_install_packages.addArg("-m");
+    pyenv_install_packages.addArg("pip");
     pyenv_install_packages.addArg("install");
     pyenv_install_packages.addArgs(&requirements);
 
@@ -49,46 +46,86 @@ pub fn build(b: *std.Build) void {
     venv_info_printer.addArg("python3=");
     venv_info_printer.addFileArg(pyenv_python3);
 
-    venv_info_printer.addArg("pip=");
-    venv_info_printer.addFileArg(pyenv_pip);
-
     create_venv_step.dependOn(&venv_info_printer.step);
 
-    const abi_mapper_script = b.path("abi-mapper.py");
+    const cc = Converter{
+        .b = b,
+        .py3 = pyenv_python3,
+        .script = b.path("abi-mapper.py"),
+    };
+
     const abi_v2_def = b.path("../../abi/abi-v2.zig");
 
     {
-        const generate_core_abi = addRunScript(b, pyenv_python3);
-        generate_core_abi.addFileArg(abi_mapper_script);
-        generate_core_abi.addArg("--mode=definition");
-        const abi_zig = generate_core_abi.addPrefixedOutputFileArg("--output=", "abi.zig");
-        generate_core_abi.addFileArg(abi_v2_def);
-
+        const abi_zig = cc.convert_abi_file(abi_v2_def, .definition);
         b.getInstallStep().dependOn(&b.addInstallHeaderFile(abi_zig, "abi.zig").step);
     }
 
     {
-        const generate_core_abi = addRunScript(b, pyenv_python3);
-        generate_core_abi.addFileArg(abi_mapper_script);
-        generate_core_abi.addArg("--mode=kernel");
-        const abi_zig = generate_core_abi.addPrefixedOutputFileArg("--output=", "kernel-impl.zig");
-        generate_core_abi.addFileArg(abi_v2_def);
-
+        const abi_zig = cc.convert_abi_file(abi_v2_def, .kernel);
         b.getInstallStep().dependOn(&b.addInstallHeaderFile(abi_zig, "kernel-impl.zig").step);
     }
 
     {
-        const generate_core_abi = addRunScript(b, pyenv_python3);
-        generate_core_abi.addFileArg(abi_mapper_script);
-        generate_core_abi.addArg("--mode=userland");
-        const abi_zig = generate_core_abi.addPrefixedOutputFileArg("--output=", "userland-impl.zig");
-        generate_core_abi.addFileArg(abi_v2_def);
-
+        const abi_zig = cc.convert_abi_file(abi_v2_def, .userland);
         b.getInstallStep().dependOn(&b.addInstallHeaderFile(abi_zig, "userland-impl.zig").step);
     }
+
+    test_step.dependOn(add_behaviour_test(
+        cc,
+        b.path("tests/coverage.zabi"),
+        b.path("tests/coverage.zig"),
+    ));
 }
 
-fn addRunScript(b: *std.Build, script: std.Build.LazyPath) *std.Build.Step.Run {
+fn add_behaviour_test(cc: Converter, input: std.Build.LazyPath, evaluator: std.Build.LazyPath) *std.Build.Step {
+    const abi_code = cc.convert_abi_file(input, .definition);
+    const provider_code = cc.convert_abi_file(input, .kernel);
+    const consumer_code = cc.convert_abi_file(input, .userland);
+
+    const abi_mod = cc.b.createModule(.{ .root_source_file = abi_code });
+    const provider_mod = cc.b.createModule(.{
+        .root_source_file = provider_code,
+        .imports = &.{
+            .{ .name = "abi", .module = abi_mod },
+        },
+    });
+    const consumer_mod = cc.b.createModule(.{
+        .root_source_file = consumer_code,
+        .imports = &.{
+            .{ .name = "abi", .module = abi_mod },
+        },
+    });
+
+    const test_runner = cc.b.addTest(.{
+        .root_source_file = evaluator,
+    });
+
+    test_runner.root_module.addImport("abi", abi_mod);
+    test_runner.root_module.addImport("provider", provider_mod);
+    test_runner.root_module.addImport("consumer", consumer_mod);
+
+    const test_exec = cc.b.addRunArtifact(test_runner);
+
+    return &test_exec.step;
+}
+
+const Converter = struct {
+    b: *std.Build,
+    py3: std.Build.LazyPath,
+    script: std.Build.LazyPath,
+
+    pub fn convert_abi_file(cc: Converter, input: std.Build.LazyPath, mode: enum { userland, kernel, definition }) std.Build.LazyPath {
+        const generate_core_abi = add_run_script(cc.b, cc.py3);
+        generate_core_abi.addFileArg(cc.script);
+        generate_core_abi.addArg(cc.b.fmt("--mode={s}", .{@tagName(mode)}));
+        const abi_zig = generate_core_abi.addPrefixedOutputFileArg("--output=", "impl.zig");
+        generate_core_abi.addFileArg(input);
+        return abi_zig;
+    }
+};
+
+fn add_run_script(b: *std.Build, script: std.Build.LazyPath) *std.Build.Step.Run {
     const run = std.Build.Step.Run.create(b, "custom script");
     run.addFileArg(script);
     return run;

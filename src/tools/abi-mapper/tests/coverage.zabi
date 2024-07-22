@@ -1,0 +1,26 @@
+const syscalls = struct {
+    extern "syscall" fn no_operation() void;
+};
+
+const io = struct {
+    extern "iop" fn NoOperation() error{}!void;
+};
+
+pub const Src1 = struct(SystemResource) {};
+pub const Src2 = struct(SystemResource) {};
+
+usingnamespace zig; // regular code beyond this
+
+// pass this verbatim!
+
+pub const SystemResource = struct {};
+
+pub const IOP = struct {
+    pub fn define(v: anytype) @TypeOf(v) {
+        return v;
+    }
+};
+
+pub fn ErrorSet(comptime et: type) type {
+    return et;
+}
