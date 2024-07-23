@@ -13,6 +13,15 @@ const syscalls = struct {
     extern "syscall" fn out_optional_slice(index: u32, out: *?[]const u8) void;
 
     extern "syscall" fn return_plain_error(index: u32) error{ One, Two };
+
+    const slice_asserts = struct {
+        extern "syscall" fn basic([]const u8) void;
+        extern "syscall" fn optional(?[]const u8) void;
+        extern "syscall" fn out_basic(*[]const u8) void;
+        extern "syscall" fn out_optional(*?[]const u8) void;
+        extern "syscall" fn inout_basic(*[]const u8) void;
+        extern "syscall" fn inout_optional(*?[]const u8) void;
+    };
 };
 
 const io = struct {

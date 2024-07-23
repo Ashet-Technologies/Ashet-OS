@@ -819,6 +819,8 @@ pub fn create_exports(comptime Impl: type) type {
                 continue 
             if not annotation.is_out:
                 continue 
+
+            assert len(natives) == 2
             
             slice_name = f"{name}__slice"
 
@@ -826,7 +828,11 @@ pub fn create_exports(comptime Impl: type) type {
             stream.write(f"            var {slice_name}: ")
             assert isinstance(abi.type, PointerType)
             render_type(stream, abi.type.inner, abi_namespace="abi")
-            stream.write(" = undefined;\n")
+
+            if annotation.is_optional:
+                stream.write(f" = if({natives[0].name}.*) |__ptr| __ptr[0..{natives[1].name}.*] else null;\n")
+            else:
+                stream.write(f" = {natives[0].name}.*[0..{natives[1].name}.*];\n")
 
         stream.write("            ")
 
@@ -947,11 +953,14 @@ const abi = @import("abi");
             assert isinstance(natives[0].type, PointerType)
             render_type(stream, natives[0].type.inner, abi_namespace="abi")
             if isinstance(natives[0].type.inner, OptionalType):
-                stream.write(" = null;\n")
+                stream.write(f" = if({abi.name}.*) |__slice| __slice.ptr else null;\n")
             else:
                 stream.write(f" = {name}.ptr;\n")
-            
-            stream.write(f"            var {slice_name}_len: usize = 0;\n")
+             
+            if annotation.is_optional:
+                stream.write(f"            var {slice_name}_len: usize = if({abi.name}.*) |__slice| __slice.len else 0;\n")
+            else:
+                stream.write(f"            var {slice_name}_len: usize = {abi.name}.len;\n")
 
         stream.write("            ")
 

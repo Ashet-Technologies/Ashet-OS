@@ -83,7 +83,79 @@ test "syscalls.return_plain_error" {
     try std.testing.expectError(error.Two, consumer.syscalls.return_plain_error(2));
 }
 
+test "syscalls.slice_asserts.basic" {
+    consumer.syscalls.slice_asserts.basic(global_slice);
+}
+
+test "optional" {
+    expect_null = false;
+    consumer.syscalls.slice_asserts.optional(global_slice);
+
+    expect_null = true;
+    consumer.syscalls.slice_asserts.optional(null);
+}
+
+test "out_basic" {
+    var slice: []const u8 = undefined;
+    consumer.syscalls.slice_asserts.out_basic(&slice);
+    try std.testing.expectEqual(global_slice, slice);
+}
+
+test "out_optional" {
+    var slice: ?[]const u8 = undefined;
+
+    provide_null = false;
+    slice = undefined;
+    consumer.syscalls.slice_asserts.out_optional(&slice);
+    try std.testing.expectEqual(@as(?[]const u8, global_slice), slice);
+
+    provide_null = true;
+    slice = undefined;
+    consumer.syscalls.slice_asserts.out_optional(&slice);
+    try std.testing.expectEqual(@as(?[]const u8, null), slice);
+}
+
+test "inout_basic" {
+    var slice: []const u8 = global_slice;
+    consumer.syscalls.slice_asserts.inout_basic(&slice);
+    try std.testing.expectEqual(global_slice[4..9], slice);
+}
+
+test "inout_optional" {
+    var slice: ?[]const u8 = &.{};
+
+    expect_null = false;
+    provide_null = false;
+    slice = global_slice;
+    consumer.syscalls.slice_asserts.inout_optional(&slice);
+    try std.testing.expectEqual(@as(?[]const u8, global_slice[4..9]), slice);
+
+    expect_null = true;
+    provide_null = false;
+    slice = null;
+    consumer.syscalls.slice_asserts.inout_optional(&slice);
+    try std.testing.expectEqual(@as(?[]const u8, global_slice[4..9]), slice);
+
+    expect_null = false;
+    provide_null = true;
+    slice = global_slice;
+    consumer.syscalls.slice_asserts.inout_optional(&slice);
+    try std.testing.expectEqual(@as(?[]const u8, null), slice);
+
+    expect_null = true;
+    provide_null = true;
+    slice = null;
+    consumer.syscalls.slice_asserts.inout_optional(&slice);
+    try std.testing.expectEqual(@as(?[]const u8, null), slice);
+}
+
+var expect_null = false;
+var provide_null = false;
 var no_operation_called = false;
+
+var global_slice_memory: [17]u8 align(4) = undefined;
+
+const global_slice = global_slice_memory[3..14];
 
 comptime {
     _ = provider.create_exports(root);
@@ -138,5 +210,55 @@ const root = struct {
                 else => {},
             };
         }
+
+        pub const slice_asserts = struct {
+            pub fn basic(slice: []const u8) void {
+                std.debug.assert(global_slice.ptr == slice.ptr);
+                std.debug.assert(global_slice.len == slice.len);
+            }
+
+            pub fn optional(slice: ?[]const u8) void {
+                if (expect_null) {
+                    std.debug.assert(slice == null);
+                } else {
+                    std.debug.assert(global_slice.ptr == slice.?.ptr);
+                    std.debug.assert(global_slice.len == slice.?.len);
+                }
+            }
+
+            pub fn out_basic(slice: *[]const u8) void {
+                slice.* = global_slice;
+            }
+
+            pub fn out_optional(slice: *?[]const u8) void {
+                if (provide_null) {
+                    slice.* = null;
+                } else {
+                    slice.* = global_slice;
+                }
+            }
+
+            pub fn inout_basic(slice: *[]const u8) void {
+                std.debug.assert(global_slice.ptr == slice.ptr);
+                std.debug.assert(global_slice.len == slice.len);
+
+                slice.* = global_slice[4..9];
+            }
+
+            pub fn inout_optional(slice: *?[]const u8) void {
+                if (expect_null) {
+                    std.debug.assert(slice.* == null);
+                } else {
+                    std.debug.assert(global_slice.ptr == slice.*.?.ptr);
+                    std.debug.assert(global_slice.len == slice.*.?.len);
+                }
+
+                if (provide_null) {
+                    slice.* = null;
+                } else {
+                    slice.* = global_slice[4..9];
+                }
+            }
+        };
     };
 };
