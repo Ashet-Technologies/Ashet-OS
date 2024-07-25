@@ -311,7 +311,6 @@ const Platform = kernel_targets.Platform;
 const Machine = kernel_targets.Machine;
 const MachineSpec = kernel_targets.MachineSpec;
 
-
 const OS = struct {
     kernel_elf: std.Build.LazyPath,
     kernel_bin: std.Build.LazyPath,

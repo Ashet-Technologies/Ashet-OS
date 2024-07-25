@@ -16,6 +16,8 @@ pub const syscalls = struct {
 
     pub extern fn @"ashet.shm.get_pointer"(SharedMemory) [*]align(16) u8;
 
+    pub extern fn @"ashet.random.get_soft_random"([*]u8, usize) void;
+
     // old syscalls:
 
     pub extern fn @"ashet.process.yield"() void;

@@ -129,3 +129,36 @@ pub fn waitIO() void {
     // is now mostly unused. This should be a safe no-op.
     out(u8, 0x80, 0);
 }
+
+pub fn get_cpu_cycle_counter() u64 {
+    return rdtsc();
+}
+
+pub fn get_cpu_random_seed() ?u64 {
+    return rdseed();
+}
+
+/// Invokes x86 Read Time-Stamp Counter instruction
+fn rdtsc() u64 {
+    var a: u32 = undefined;
+    var b: u32 = undefined;
+    asm volatile ("rdtsc"
+        : [a] "={edx}" (a),
+          [b] "={eax}" (b),
+        :
+        : "ecx"
+    );
+    return (@as(u64, a) << 32) | b;
+}
+
+/// Invokes x86 Read Random SEED instructions
+fn rdseed() ?u64 {
+    const features = @import("builtin").target.cpu.features;
+    if (!std.Target.x86.featureSetHas(features, .rdseed)) return null;
+
+    var v: u64 = undefined;
+    asm volatile ("rdseed %[out]"
+        : [out] "=r" (v),
+    );
+    return v;
+}

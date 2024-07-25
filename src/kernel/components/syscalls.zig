@@ -336,6 +336,10 @@ const impls = struct {
         return .success;
     }
 
+    export fn @"ashet.random.get_soft_random"(ptr: [*]u8, len: usize) void {
+        ashet.random.get_random_bytes(ptr, len);
+    }
+
     export fn @"ashet.shm.create"(size: usize) ?ashet.abi.SharedMemory {
         const process = getCurrentProcess();
 

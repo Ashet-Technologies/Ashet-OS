@@ -479,6 +479,14 @@ const syscalls = struct {
         /// Unlocks a mutual exclusion. Completes a single `Lock` IOP if it exists.
         extern "syscall" fn unlock(Mutex) void;
     };
+
+    const random = struct {
+        /// Fills the provided pointer with random bytes from the entropy pool.
+        ///
+        /// If the entropy pool runs out of entropy bits, this call does not block
+        /// and draw bytes from the pool.
+        extern "syscall" fn get_soft_random([*]u8, usize) void;
+    };
 };
 
 /// This namespace contains the supported I/O operations of Ashet OS.
@@ -1014,6 +1022,14 @@ const io = struct {
 
         /// Locks a mutex. Will complete once the mutex is locked.
         extern "iop" fn Lock(Mutex) error{}!void;
+    };
+
+    const random = struct {
+        /// Fills the provided buffer with given length amount of random bytes.
+        ///
+        /// This call blocks until the entropy pool has enough entropy to fill
+        /// an entire hash to draw from.
+        extern "iop" fn get_strict_random([*]u8, usize) error{}!void;
     };
 };
 
