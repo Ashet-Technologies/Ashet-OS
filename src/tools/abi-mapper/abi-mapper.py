@@ -1042,12 +1042,37 @@ const abi = @import("abi");
         
         stream.write(') ')
 
-        returns_error = isinstance(func.native_return_type, ErrorSet)
-        if returns_error:
+        if isinstance(func.native_return_type, ErrorSet):
+            error_set: ErrorSet = func.native_return_type
             stream.write("error{ ")
-            stream.write(", ".join((*func.native_return_type.errors, "Unexpected")))
+            stream.write(", ".join((*error_set.errors, "Unexpected")))
             stream.write(" }!void")
+
+            @contextmanager
+            def handle_call():
+
+                stream.write("const __error_value = ")
+
+                yield 
+
+
+                stream.write("            return switch (__error_value) {\n")
+                stream.write("                .ok => {},\n")
+                stream.write("                _ => error.Unexpected,\n")
+                for error in error_set.errors:
+                    stream.write(f"               .{error} => error.{error},\n")
+                stream.write("            };\n")
+
         else:
+
+            @contextmanager
+            def handle_call():
+                stream.write("const __result = ")
+                yield 
+                stream.write("            return __result;\n")
+
+
+
             render_type(stream, func.native_return_type, abi_namespace="abi")
         stream.write(' { \n')
 
@@ -1077,60 +1102,45 @@ const abi = @import("abi");
 
         stream.write("            ")
 
+        with handle_call():
 
-        if returns_error:
-            stream.write("const __error_value = ")
-        else:
-            stream.write("const __result = ")
+            args: list[str] = list()
+            for name, annotation, abi, natives in func.params:
 
-        args: list[str] = list()
-        for name, annotation, abi, natives in func.params:
+                if annotation.is_slice:
+                    assert len(natives) == 2
+                    (ptr_p, len_p ) = natives
 
-            if annotation.is_slice:
-                assert len(natives) == 2
-                (ptr_p, len_p ) = natives
+                    if annotation.is_optional:
+                        if annotation.is_out:
+                            args.append(f"&{name}__slice_ptr")
+                            args.append(f"&{name}__slice_len")
+                        else:
+                            args.append(f"if ({name}) |__slice| __slice.ptr else null")
+                            args.append(f"if ({name}) |__slice| __slice.len else 0")
+                    else: # not optional
+                        if annotation.is_out:
+                            args.append(f"&{name}__slice_ptr")
+                            args.append(f"&{name}__slice_len")
+                        else:
+                            args.append(f"{name}.ptr")
+                            args.append(f"{name}.len")
 
-                if annotation.is_optional:
-                    if annotation.is_out:
-                        args.append(f"&{name}__slice_ptr")
-                        args.append(f"&{name}__slice_len")
-                    else:
-                        args.append(f"if ({name}) |__slice| __slice.ptr else null")
-                        args.append(f"if ({name}) |__slice| __slice.len else 0")
-                else: # not optional
-                    if annotation.is_out:
-                        args.append(f"&{name}__slice_ptr")
-                        args.append(f"&{name}__slice_len")
-                    else:
-                        args.append(f"{name}.ptr")
-                        args.append(f"{name}.len")
+                else:
+                    assert len(natives) == 1
+                    args.append(natives[0].name)
 
-            else:
-                assert len(natives) == 1
-                args.append(natives[0].name)
+            stream.write(f'{abi_name}(\n')
+            for arg in args:
+                stream.write(f"                {arg},\n")
+            stream.write(f"            );\n")
 
-        stream.write(f'{abi_name}(\n')
-        for arg in args:
-            stream.write(f"                {arg},\n")
-        stream.write(f"            );\n")
+            for slice_name, ptr_name, len_name, is_optional in out_slices:
+                if is_optional:
+                    stream.write(f"            {slice_name}.* = if ({ptr_name}) |__ptr| __ptr[0..{len_name}] else null;\n")
+                else:
+                    stream.write(f"            {slice_name}.* = {ptr_name}[0..{len_name}];\n")
 
-        for slice_name, ptr_name, len_name, is_optional in out_slices:
-            if is_optional:
-                stream.write(f"            {slice_name}.* = if ({ptr_name}) |__ptr| __ptr[0..{len_name}] else null;\n")
-            else:
-                stream.write(f"            {slice_name}.* = {ptr_name}[0..{len_name}];\n")
-
-        if returns_error:
-            error_set = func.native_return_type
-            assert isinstance(error_set, ErrorSet)
-            stream.write("            return switch (__error_value) {\n")
-            stream.write("                .ok => {},\n")
-            stream.write("                _ => error.Unexpected,\n")
-            for error in error_set.errors:
-                stream.write(f"               .{error} => error.{error},\n")
-            stream.write("            };\n")
-        else:
-            stream.write("            return __result;\n")
 
         stream.write("        }\n")
         stream.write("\n")
