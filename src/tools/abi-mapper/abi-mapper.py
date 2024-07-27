@@ -3,8 +3,11 @@
 import sys
 import os
 import re 
+import hashlib
 from typing import NoReturn, Optional, Any 
 from collections.abc import Callable, Iterable
+from contextlib import contextmanager
+
 
 from pathlib import Path 
 from enum import StrEnum
@@ -85,6 +88,10 @@ class PointerType(Type):
     alignment: str | None 
     inner: Type
 
+@dataclass(frozen=True, eq=True)
+class ErrorUnion(Type):
+    error: "ErrorSet"
+    result: Type
 
 @dataclass(frozen=True, eq=True)
 class DocComment:
@@ -115,10 +122,11 @@ class ParameterAnnotation:
     is_slice: bool
     is_optional: bool
     is_out: bool
+    technical: bool
 
     @property
     def is_regular(self) -> bool:
-        return not (self.is_slice or self.is_out)
+        return not (self.is_slice or self.is_out or self.technical)
 
 class ParameterCollection:
     abi: list[Parameter]
@@ -135,84 +143,90 @@ class ParameterCollection:
 
         for param in self.abi:
             
-            reconstruct_stack: list[Callable[[Type],Type]] = list()
-            slice_type = param.type
-            is_out_value = False 
-            is_optional_value=False
-
-            if isinstance(slice_type, PointerType) and slice_type.size == PointerSize.one and not slice_type.const:
-                slice_type = slice_type.inner
-                is_out_value = True
-                reconstruct_stack.append( lambda t: PointerType(
-                    size=PointerSize.one,
-                    const=False,
-                    inner=t,
-                    sentinel=None,
-                    alignment=None,
-                    volatile=False,
-                ))
-            
-            # Allow single-level unwrap:
-            if isinstance(slice_type, OptionalType):
-                slice_type = slice_type.inner
-                reconstruct_stack.append( lambda t: OptionalType(inner=t))
-                is_optional_value=True
-
-            if not isinstance(slice_type, PointerType):
-                self.native.append(param)
-                self.annotations.append(ParameterAnnotation(
-                    is_slice=False,
-                    is_optional=is_optional_value,
-                    is_out=False,
-                ))
-                continue 
-
-            if slice_type.size != PointerSize.slice:
-                self.native.append(param)
-                self.annotations.append(ParameterAnnotation(
-                    is_slice=False,
-                    is_optional=is_optional_value,
-                    is_out=False,
-                ))
-                continue
-
-            if param.name is None :
-                panic("bad function:", param)
-
-            multi_ptr_type = replace_field(slice_type, size=PointerSize.many)
-            for transform in reversed(reconstruct_stack):
-                multi_ptr_type = transform(multi_ptr_type)
-
-            ptr_param = Parameter(
-                name = f"{param.name}_ptr",
-                docs=param.docs,
-                type=multi_ptr_type,
-            )
-            len_param = Parameter(
-                name=f"{param.name}_len",
-                docs=DocComment(lines=[f"Length of {param.name}_ptr"]),
-                type=ReferenceType("usize"),
-            )
-
-            if is_out_value:
-                len_param = replace_field(len_param, type = PointerType(
-                    inner = len_param.type,
-                    alignment=None,
-                    const=False,
-                    sentinel=None,
-                    size=PointerSize.one,
-                    volatile=False,
-                ))
-            self.annotations.append(ParameterAnnotation(
-                is_slice=True,
-                is_optional=is_optional_value,
-                is_out=is_out_value,
-            ))
-            self.native.append(ptr_param)
-            self.native.append(len_param)
+            self.append(param)
         
         assert len(self.native) >= len(self.abi)
         assert len(self.annotations) == len(self.abi)
+
+    def append(self, param: Parameter, technical: bool = False):
+        reconstruct_stack: list[Callable[[Type],Type]] = list()
+        slice_type = param.type
+        is_out_value = False 
+        is_optional_value=False
+
+        if isinstance(slice_type, PointerType) and slice_type.size == PointerSize.one and not slice_type.const:
+            slice_type = slice_type.inner
+            is_out_value = True
+            reconstruct_stack.append( lambda t: PointerType(
+                size=PointerSize.one,
+                const=False,
+                inner=t,
+                sentinel=None,
+                alignment=None,
+                volatile=False,
+            ))
+        
+        # Allow single-level unwrap:
+        if isinstance(slice_type, OptionalType):
+            slice_type = slice_type.inner
+            reconstruct_stack.append( lambda t: OptionalType(inner=t))
+            is_optional_value=True
+
+        if not isinstance(slice_type, PointerType):
+            self.native.append(param)
+            self.annotations.append(ParameterAnnotation(
+                    is_slice=False,
+                    is_optional=is_optional_value,
+                    is_out=False,
+                    technical=technical,
+                ))
+            return 
+
+        if slice_type.size != PointerSize.slice:
+            self.native.append(param)
+            self.annotations.append(ParameterAnnotation(
+                is_slice=False,
+                is_optional=is_optional_value,
+                is_out=False,
+                technical=technical,
+            ))
+            return
+
+        if param.name is None :
+            panic("bad function:", param)
+
+        multi_ptr_type = replace_field(slice_type, size=PointerSize.many)
+        for transform in reversed(reconstruct_stack):
+            multi_ptr_type = transform(multi_ptr_type)
+
+        ptr_param = Parameter(
+            name = f"{param.name}_ptr",
+            docs=param.docs,
+            type=multi_ptr_type,
+        )
+        len_param = Parameter(
+            name=f"{param.name}_len",
+            docs=DocComment(lines=[f"Length of {param.name}_ptr"]),
+            type=ReferenceType("usize"),
+        )
+
+        if is_out_value:
+            len_param = replace_field(len_param, type = PointerType(
+                inner = len_param.type,
+                alignment=None,
+                const=False,
+                sentinel=None,
+                size=PointerSize.one,
+                volatile=False,
+            ))
+        self.annotations.append(ParameterAnnotation(
+            is_slice=True,
+            is_optional=is_optional_value,
+            is_out=is_out_value,
+            technical=technical,
+        ))
+        self.native.append(ptr_param)
+        self.native.append(len_param)
 
     def __len__(self):
         return len(self.abi)
@@ -241,8 +255,17 @@ class ParameterCollection:
 @dataclass(frozen=True, eq=True)
 class Function(Declaration):
     params: ParameterCollection
-    return_type: Type 
+    abi_return_type: Type 
     
+    @property
+    def native_return_type(self) -> "Type":
+        if isinstance(self.abi_return_type, ErrorUnion):
+            # we pass the result via out parameter,
+            # and the error via return type:
+            return self.abi_return_type.error
+        
+        return self.abi_return_type
+            
 
 @dataclass(frozen=True, eq=True)
 class ErrorSet(Declaration,Type):
@@ -277,15 +300,16 @@ class ErrorAllocation:
         return val
     
     def collect(self, decl: Declaration):
-
         if isinstance(decl, ErrorSet):
             self.insert_error_set(decl)
         elif isinstance(decl, Namespace):
             for sub in  decl.decls:
                 self.collect(sub)
         elif isinstance(decl, Function):
-            if isinstance( decl.return_type , ErrorSet):
-                self.insert_error_set(decl.return_type)
+            if isinstance( decl.abi_return_type , ErrorSet):
+                self.insert_error_set(decl.abi_return_type)
+            elif isinstance(decl.abi_return_type, ErrorUnion):
+                self.insert_error_set(decl.abi_return_type.error)
         elif isinstance(decl, IOP):
             self.insert_error_set(decl.error)
         elif isinstance(decl, SystemResource): 
@@ -346,12 +370,35 @@ class ZigCodeTransformer(Transformer):
         )
     
     def fn_decl(self, items) -> Function:
-        return Function(
+        func = Function(
             name = items[0],
             docs = None,
             params = ParameterCollection( items[1]),
-            return_type = items[2],
+            abi_return_type = items[2],
         )
+
+        if isinstance(func.abi_return_type, ErrorUnion):
+            func.params.append(Parameter( 
+                name="__return_value",
+                type=PointerType(
+                    size=PointerSize.one,
+                    inner = func.abi_return_type.result,
+                    sentinel=None,
+                    const=False,
+                    volatile=False,
+                    alignment=None,
+                ),
+                docs=None,
+            ), technical=True)
+
+        return func
+
+    @unwrap_items
+    def return_type(self, error_type, result_type) -> Type:
+        if error_type is not None:
+            return ErrorUnion(result=result_type, error=error_type)
+        else:
+            return result_type
 
     def ns_decl(self, items) -> Namespace:
         return Namespace(
@@ -625,7 +672,7 @@ def render_container(stream, declarations: list[Declaration], errors: ErrorAlloc
             if WITH_LINKNAME:
                 stream.write(f"linkname(\"{symbol}\") ")
 
-            render_type(stream, decl.return_type)
+            render_type(stream, decl.native_return_type)
 
             stream.write(f";\n")
 
@@ -709,11 +756,10 @@ def assert_legal_extern_type(t: Type):
     else:
         panic("unexpected", t)
 
-def assert_legal_extern_fn(func: Function,ns:list[str]):
-
+def assert_legal_extern_fn(func: Function, ns: list[str]):
     for p in func.params.native:
         assert_legal_extern_type(p.type)
-    assert_legal_extern_type(func.return_type)
+    assert_legal_extern_type(func.native_return_type)
 
 
 
@@ -795,6 +841,15 @@ pub fn create_exports(comptime Impl: type) type {
     return struct {
 """)
 
+    def get_error_set_name(es: Iterable[str], prefix: str) -> str:
+        return prefix + hashlib.sha1("\x00".join(sorted(set(es))).encode()).hexdigest()
+
+    required_errorset_unwraps: set[tuple[str,... ]] = set ()
+    def depend_on_error_set(es: ErrorSet) -> str:
+        required_errorset_unwraps.add(tuple(sorted(es.errors)))
+        return get_error_set_name(es.errors, '')
+
+
     def emit_impl(func: Function, ns: list[str]):
         emit_name = "_".join(("ashet", *ns, func.name))
         import_name = ".".join(("Impl", *ns, func.name))
@@ -809,7 +864,7 @@ pub fn create_exports(comptime Impl: type) type {
                 render_type(stream, param.type,abi_namespace="abi")
         
         stream.write(') ')
-        render_type(stream, func.return_type, abi_namespace="abi")
+        render_type(stream, func.native_return_type, abi_namespace="abi")
         stream.write(' { \n')
 
         out_slices: list[tuple[str,str,str]] = list()
@@ -836,14 +891,51 @@ pub fn create_exports(comptime Impl: type) type {
 
         stream.write("            ")
 
-        returns_error = isinstance(func.return_type, ErrorSet)
+        if isinstance(func.abi_return_type, ErrorUnion):
+            error_union: ErrorUnion = func.abi_return_type
+            error_set_name = depend_on_error_set(error_union.error)
 
-        if returns_error:
-            stream.write("const __error_union: error{ ")
-            stream.write(", ".join(func.return_type.errors))
-            stream.write(" }!void = ")
+            @contextmanager
+            def handle_call():
+
+                stream.write(f"const __error_union: ZigErrorSet_{error_set_name}!");
+                render_type(stream, error_union.result)
+                stream.write(" = ")
+
+                yield   
+
+                stream.write("if(__error_union) |__result| {\n")
+                stream.write("  __return_value.* = __result;\n")
+                stream.write("  return .ok;\n")
+                stream.write("} else |__err| {\n")
+                stream.write(f"  return __unwrap_{error_set_name}(__err);\n")
+                stream.write("}\n")
+
+
+        elif isinstance(func.native_return_type, ErrorSet):
+            error_set: ErrorSet = func.native_return_type
+            error_set_name = depend_on_error_set(error_set)
+
+            @contextmanager 
+            def handle_call():
+                stream.write(f"const __error_union: ZigErrorSet_{error_set_name}!void = ")
+
+                yield 
+
+                stream.write("if(__error_union) |_| {\n")
+                stream.write("  return .ok;\n")
+                stream.write("} else |__err| {\n")
+                stream.write(f"  return __unwrap_{error_set_name}(__err);\n")
+                stream.write("}\n")
+
         else:
-            stream.write("const __result = ")
+
+            @contextmanager
+            def handle_call():
+                stream.write("const __result = ")
+                yield 
+                stream.write("return __result;\n")
+
 
         args: list[str] = list()
         for name, annotation, abi, natives in func.params:
@@ -867,32 +959,21 @@ pub fn create_exports(comptime Impl: type) type {
                 assert len(natives) == 1
                 args.append(natives[0].name)
 
-        stream.write(f"{import_name}(\n")
-        for arg in args:
-            stream.write(f"                {arg},\n")
-        stream.write(f"            );\n")
+        with handle_call():
 
-        for slice_name, ptr_name, len_name, is_optional in out_slices:
-            if is_optional:
-                stream.write(f"            {ptr_name}.* = if ({slice_name}) |__slice| __slice.ptr else null;\n")
-                stream.write(f"            {len_name}.* = if ({slice_name}) |__slice| __slice.len else 0;\n")
-            else:
-                stream.write(f"            {ptr_name}.* = {slice_name}.ptr;\n")
-                stream.write(f"            {len_name}.* = {slice_name}.len;\n")
+            stream.write(f"{import_name}(\n")
+            for arg in args:
+                stream.write(f"                {arg},\n")
+            stream.write(f"            );\n")
 
-        if returns_error:
-            error_set = func.return_type
-            assert isinstance(error_set, ErrorSet)
-            stream.write("            if (__error_union) |_| {\n")
-            stream.write("                return .ok;\n")
-            stream.write("            } else |__error| {\n")
-            stream.write("                return switch (__error) {\n")
-            for error in error_set.errors:
-                stream.write(f"                    error.{error} => .{error},\n")
-            stream.write("                };\n")
-            stream.write("            }\n")
-        else:
-            stream.write("            return __result;\n")
+            for slice_name, ptr_name, len_name, is_optional in out_slices:
+                if is_optional:
+                    stream.write(f"            {ptr_name}.* = if ({slice_name}) |__slice| __slice.ptr else null;\n")
+                    stream.write(f"            {len_name}.* = if ({slice_name}) |__slice| __slice.len else 0;\n")
+                else:
+                    stream.write(f"            {ptr_name}.* = {slice_name}.ptr;\n")
+                    stream.write(f"            {len_name}.* = {slice_name}.len;\n")
+
 
         stream.write("        }\n")
         stream.write("\n")
@@ -901,6 +982,38 @@ pub fn create_exports(comptime Impl: type) type {
 
     stream.write("    };\n")
     stream.write("}\n")
+
+    stream.write("\n")
+
+    for error_set in sorted(required_errorset_unwraps):
+
+        
+
+        def write_error_type():
+            stream.write("error{")
+            stream.write(",".join(error_set))
+            stream.write("}")
+        
+        stream.write(f"const {get_error_set_name(error_set, 'ZigErrorSet_')} = ")
+        write_error_type()
+        stream.write(";\n")
+
+        stream.write(f"const {get_error_set_name(error_set, 'AbiErrorSet_')} = abi.ErrorSet(")
+        stream.write(get_error_set_name(error_set, 'ZigErrorSet_'))
+        stream.write(");\n")
+
+        stream.write(f"fn __unwrap_{get_error_set_name(error_set, '')}(__error: ")
+        stream.write(get_error_set_name(error_set, "ZigErrorSet_"))
+        stream.write(") ")
+        stream.write(get_error_set_name(error_set, "AbiErrorSet_"))
+        stream.write(" {\n")
+        stream.write("                return switch (__error) {\n")
+        for error in error_set:
+            stream.write(f"                    error.{error} => .{error},\n")
+        stream.write("                };\n")
+
+        stream.write("}\n")
+
 
 def render_userland_implementation(stream, abi: ABI_Definition):
     root_container = abi.root_container
@@ -929,13 +1042,13 @@ const abi = @import("abi");
         
         stream.write(') ')
 
-        returns_error = isinstance(func.return_type, ErrorSet)
+        returns_error = isinstance(func.native_return_type, ErrorSet)
         if returns_error:
             stream.write("error{ ")
-            stream.write(", ".join(func.return_type.errors))
+            stream.write(", ".join((*func.native_return_type.errors, "Unexpected")))
             stream.write(" }!void")
         else:
-            render_type(stream, func.return_type, abi_namespace="abi")
+            render_type(stream, func.native_return_type, abi_namespace="abi")
         stream.write(' { \n')
 
         out_slices: list[tuple[str,str,str]] = list()
@@ -1008,10 +1121,11 @@ const abi = @import("abi");
                 stream.write(f"            {slice_name}.* = {ptr_name}[0..{len_name}];\n")
 
         if returns_error:
-            error_set = func.return_type
+            error_set = func.native_return_type
             assert isinstance(error_set, ErrorSet)
             stream.write("            return switch (__error_value) {\n")
             stream.write("                .ok => {},\n")
+            stream.write("                _ => error.Unexpected,\n")
             for error in error_set.errors:
                 stream.write(f"               .{error} => error.{error},\n")
             stream.write("            };\n")

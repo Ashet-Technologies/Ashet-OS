@@ -83,6 +83,13 @@ test "syscalls.return_plain_error" {
     try std.testing.expectError(error.Two, consumer.syscalls.return_plain_error(2));
 }
 
+test "syscalls.return_error_union" {
+    try std.testing.expectError(error.Domain, consumer.syscalls.return_error_union(-5));
+    try std.testing.expectError(error.TooLarge, consumer.syscalls.return_error_union(1e8));
+    try std.testing.expectApproxEqAbs(0.0, try consumer.syscalls.return_error_union(0), 0.01);
+    try std.testing.expectApproxEqAbs(1.41, try consumer.syscalls.return_error_union(2), 0.01);
+}
+
 test "syscalls.slice_asserts.basic" {
     consumer.syscalls.slice_asserts.basic(global_slice);
 }
@@ -209,6 +216,14 @@ const root = struct {
                 2 => error.Two,
                 else => {},
             };
+        }
+
+        pub fn return_error_union(square: f32) error{ Domain, TooLarge }!f32 {
+            if (square > 256.0)
+                return error.TooLarge;
+            if (square < 0)
+                return error.Domain;
+            return @sqrt(square);
         }
 
         pub const slice_asserts = struct {

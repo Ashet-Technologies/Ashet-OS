@@ -51,6 +51,7 @@ pub fn build(b: *std.Build) void {
     const cc = Converter{
         .b = b,
         .py3 = pyenv_python3,
+        .install_packages = &pyenv_install_packages.step,
         .script = b.path("abi-mapper.py"),
     };
 
@@ -114,6 +115,7 @@ const Converter = struct {
     b: *std.Build,
     py3: std.Build.LazyPath,
     script: std.Build.LazyPath,
+    install_packages: *std.Build.Step,
 
     pub fn convert_abi_file(cc: Converter, input: std.Build.LazyPath, mode: enum { userland, kernel, definition }) std.Build.LazyPath {
         const generate_core_abi = add_run_script(cc.b, cc.py3);
@@ -121,6 +123,7 @@ const Converter = struct {
         generate_core_abi.addArg(cc.b.fmt("--mode={s}", .{@tagName(mode)}));
         const abi_zig = generate_core_abi.addPrefixedOutputFileArg("--output=", "impl.zig");
         generate_core_abi.addFileArg(input);
+        generate_core_abi.step.dependOn(cc.install_packages);
         return abi_zig;
     }
 };
