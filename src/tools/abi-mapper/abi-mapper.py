@@ -4,6 +4,7 @@ import sys
 import os
 import re 
 import hashlib
+import io 
 from typing import NoReturn, Optional, Any 
 from collections.abc import Callable, Iterable
 from contextlib import contextmanager
@@ -569,7 +570,47 @@ def is_builtin_type(name: str) -> bool:
     
     return False 
 
-def render_type(stream, t: Type, abi_namespace: str | None = None ):
+class CodeStream(io.TextIOBase):
+
+    _target: io.TextIOBase
+    _indent: int 
+    _line_buffer: str
+
+    def __init__(self, target: io.TextIOBase):
+        assert target is not None 
+        self._target = target 
+        self._indent = 0
+        self._line_buffer = ""
+
+    def _get_emit_text(self, text: str) -> str:
+        self._line_buffer += text 
+        
+        out = ""
+        while "\n" in self._line_buffer:
+            i = self._line_buffer.index("\n")
+            out += "    " * self._indent
+            out += self._line_buffer[0:i+1]
+            self._line_buffer = self._line_buffer[i+1:]
+
+        return out 
+
+
+    def write(self, *args: str) -> int:
+        out = self._get_emit_text("".join(args))
+        return self._target.write(out)
+
+    def writeln(self, *args: str) -> int:
+        return self.write(*args, "\n") 
+    
+    @contextmanager
+    def indent(self):
+        self._indent += 1
+        try:
+            yield 
+        finally:
+            self._indent -= 1
+
+def render_type(stream: CodeStream, t: Type, abi_namespace: str | None = None ):
 
     ns_prefix = ""
     if abi_namespace is not None:
@@ -602,7 +643,7 @@ def render_type(stream, t: Type, abi_namespace: str | None = None ):
             stream.write(f"[{_value(t.size)}]")
         render_type(stream, t.inner, abi_namespace)
     elif isinstance(t, ErrorSet):
-        stream.write(ns_prefix+"ErrorSet(error{")
+        stream.write(ns_prefix, "ErrorSet(error{")
         stream.write(",".join( t.errors))
         stream.write("})")
     elif isinstance(t, PointerType):
@@ -632,40 +673,39 @@ def render_type(stream, t: Type, abi_namespace: str | None = None ):
     else:
         panic("unexpected", t)
 
-def render_docstring(stream ,I: str, docs: DocComment | None):
+def render_docstring(stream:CodeStream, docs: DocComment | None):
     if docs is not None:
         for line in docs.lines:
-            stream.write(f"{I}/// {line}\n")
+            stream.writeln(f"/// {line}")
 
 
 
-def render_container(stream, declarations: list[Declaration], errors: ErrorAllocation, indent: int = 0, prefix:str = "ashet"):
-    I = "    " * indent
+def render_container(stream:CodeStream, declarations: list[Declaration], errors: ErrorAllocation, prefix:str = "ashet"):
     for decl in declarations:
-        render_docstring(stream, I, decl.docs)
+        render_docstring(stream, decl.docs)
         symbol = f"{prefix}_{decl.name}"
 
         if isinstance(decl, Namespace):
-            stream.write(f"{I}pub const {decl.name} = struct {{\n")
-            render_container(stream, decl.decls,errors, indent + 1, symbol)
-            stream.write(f"{I}}};\n")
+            stream.write(f"pub const {decl.name} = struct {{\n")
+            with stream.indent():
+                render_container(stream, decl.decls,errors, symbol)
+            stream.write(f"}};\n")
         elif isinstance(decl, Function):
 
             if WITH_LINKNAME:
-                stream.write(f"{I}pub extern fn {decl.name}(")
+                stream.write(f"pub extern fn {decl.name}(")
             else:
-                stream.write(f'{I}extern fn @"{symbol}"(')
+                stream.write(f'extern fn @"{symbol}"(')
                 
             if len(decl.params.native) > 0:
                 stream.write("\n")
             
                 for param in decl.params.native:
-                    stream.write(f"{I}    ")
+                    stream.write(f"    ")
                     if param.name is not None:
                         stream.write(f"{param.name}: ")
                     render_type(stream, param.type)
                     stream.write(",\n")
-                stream.write(I)
 
             stream.write(f") ")
 
@@ -676,53 +716,58 @@ def render_container(stream, declarations: list[Declaration], errors: ErrorAlloc
 
             stream.write(f";\n")
 
-            stream.write(f'{I}pub const {decl.name} = @"{symbol}";\n')
+            stream.write(f'pub const {decl.name} = @"{symbol}";\n')
 
         elif isinstance(decl, ErrorSet):
             
-
-            stream.write(f"{I}pub const {decl.name} = ErrorSet(error{{\n")
+            stream.write(f"pub const {decl.name} = ErrorSet(error{{\n")
             
             for err in sorted(decl.errors, key=lambda e:errors.get_number(e)):
-                stream.write(f"{I}    {err},\n")
+                stream.write(f"    {err},\n")
 
-            stream.write(f"{I}}});\n")
+            stream.write(f"}});\n")
 
         elif isinstance(decl, IOP):
 
             def write_struct_fields(struct: list[Parameter]):
                 for field in struct:
                     if field.docs:
-                        render_docstring(stream, I + "        ", field.docs)
-                    stream.write(f"{I}         {field.name}: ")
+                        render_docstring(stream, field.docs)
+                    stream.write(f"{field.name}: ")
                     render_type(stream, field.type)
                     stream.write(",\n")
 
-            stream.write(f"{I}pub const {decl.name} = IOP.define(.{{\n")
+            stream.write(f"pub const {decl.name} = IOP.define(.{{\n")
             
-            stream.write(f"{I}    .type = .@\"{decl.key}\",\n")
-            if decl.error is not None:
-                stream.write(f"{I}    .@\"error\" = ErrorSet(error{{\n")
-                for err in sorted(decl.error.errors, key=lambda e:errors.get_number(e)):
-                    stream.write(f"{I}        {err},\n")
-                stream.write(f"{I}    }}),\n")
-            if len(decl.inputs.native) > 0:
-                stream.write(f"{I}    .inputs = struct {{\n")
-                write_struct_fields(decl.inputs.native)
-                stream.write(f"{I}    }},\n")
-            if len(decl.outputs.native) > 0:
-                stream.write(f"{I}    .outputs = struct {{\n")
-                write_struct_fields(decl.outputs.native)
-                stream.write(f"{I}    }},\n")
+            with stream.indent():
+                stream.write(f".type = .@\"{decl.key}\",\n")
+                if decl.error is not None:
+                    stream.write(f".@\"error\" = ErrorSet(error{{\n")
+                    with stream.indent():
+                        for err in sorted(decl.error.errors, key=lambda e:errors.get_number(e)):
+                            stream.write(f"{err},\n")
+                    stream.write("}),\n")
+                if len(decl.inputs.native) > 0:
+                    stream.write(f".inputs = struct {{\n")
+                    with stream.indent():
+                        write_struct_fields(decl.inputs.native)
+                    stream.write("},\n")
+                if len(decl.outputs.native) > 0:
+                    stream.write(f".outputs = struct {{\n")
+                    with stream.indent():
+                        write_struct_fields(decl.outputs.native)
+                    stream.write("},\n")
 
-            stream.write(f"{I}}});\n")
+            stream.write("});\n")
 
         elif isinstance(decl, SystemResource): 
-            stream.write(f"{I}pub const {decl.name} = *opaque {{\n")
-            stream.write(f"{I}    pub fn as_resource(value: *@This()) *SystemResource {{\n")
-            stream.write(f"{I}        return @ptrCast(value);\n")
-            stream.write(f"{I}    }}\n")
-            stream.write(f"{I}}};\n")
+            stream.write(f"pub const {decl.name} = *opaque {{\n")
+            with stream.indent():
+                stream.write(f"pub fn as_resource(value: *@This()) *SystemResource {{\n")
+                with stream.indent():
+                    stream.write(f"return @ptrCast(value);\n")
+                stream.write("}\n")
+            stream.write("};\n")
 
         else:
             panic("unexpected", decl)
@@ -763,7 +808,7 @@ def assert_legal_extern_fn(func: Function, ns: list[str]):
 
 
 
-def render_abi_definition(stream, abi: ABI_Definition):
+def render_abi_definition(stream:CodeStream, abi: ABI_Definition):
     root_container = abi.root_container
     errors = abi.errors
     sys_resources = abi.sys_resources
@@ -819,12 +864,225 @@ def render_abi_definition(stream, abi: ABI_Definition):
 
     stream.write("\n")
     
+class ErrorSetMapper:
+    requested_types: set[tuple[str,... ]] = set ()
 
+    def __init__(self):
+        self.requested_types = set ()
+
+    @staticmethod
+    def get_error_set_name(es: Iterable[str], prefix: str) -> str:
+        return prefix + hashlib.sha1("\x00".join(sorted(set(es))).encode()).hexdigest()
+
+    def get_zig_error_type(self, es: ErrorSet) -> str:
+        self.requested_types.add(tuple(sorted(es.errors)))
+        return ErrorSetMapper.get_error_set_name(es.errors, '__ZigError_')
+
+    def get_native_error_type(self, es: ErrorSet) -> str:
+        self.requested_types.add(tuple(sorted(es.errors)))
+        return ErrorSetMapper.get_error_set_name(es.errors, '__AbiError_')
+
+    def get_native_to_zig_mapper(self, es: ErrorSet) -> str:
+        self.requested_types.add(tuple(sorted(es.errors)))
+        return "__unwrap_n2z_" + ErrorSetMapper.get_error_set_name(es.errors, '')
+
+    def get_zig_to_native_mapper(self, es: ErrorSet) -> str:
+        self.requested_types.add(tuple(sorted(es.errors)))
+        return "__unwrap_z2n_" + ErrorSetMapper.get_error_set_name(es.errors, '')
+
+    def _render_type_defs(self, stream: CodeStream, error_set: Iterable[str], with_unexpected: bool):
+        def write_error_type():
+            stream.write("error{")
+            stream.write(",".join(error_set))
+            stream.write("}")
+        
+        # we have to insert the "Unexpected" here, as 
+        # the other side might have more error codes
+        stream.write(f"const {ErrorSetMapper.get_error_set_name(error_set, '__ZigError_')} = ")
+        write_error_type()
+        if with_unexpected:
+            stream.write(" || error {Unexpected}")
+        stream.write(";\n")
+
+        stream.write(f"const {ErrorSetMapper.get_error_set_name(error_set, '__AbiError_')} = abi.ErrorSet(")
+        write_error_type()
+        stream.write(");\n")
+
+    def render_zig_to_native_mappers(self, stream: CodeStream) -> None:
+        for error_set in sorted(self.requested_types):
+            self._render_type_defs( stream, error_set, False)
+
+            stream.write(f"fn __unwrap_z2n_{ErrorSetMapper.get_error_set_name(error_set, '')}(__error: ")
+            stream.write(ErrorSetMapper.get_error_set_name(error_set, "__ZigError_"))
+            stream.write(") ")
+            stream.write(ErrorSetMapper.get_error_set_name(error_set, "__AbiError_"))
+            stream.write(" {\n")
+            with stream.indent():
+                stream.write("return switch (__error) {\n")
+                with stream.indent():
+                    for error in error_set:
+                        stream.write(f"error.{error} => .{error},\n")
+                stream.write("};\n")
+
+            stream.write("}\n")
+            stream.write("\n")
+
+    def render_native_to_zig_mappers(self, stream: CodeStream) -> None:
+        for error_set in sorted(self.requested_types):
+            self._render_type_defs( stream, error_set, True)
+            
+
+            stream.write(f"fn __unwrap_n2z_{ErrorSetMapper.get_error_set_name(error_set, '')}(__error: ")
+            stream.write(ErrorSetMapper.get_error_set_name(error_set, "__AbiError_"))
+            stream.write(") ")
+            stream.write(ErrorSetMapper.get_error_set_name(error_set, "__ZigError_"))
+            stream.write(" {\n")
+            with stream.indent():
+                stream.write("return switch (__error) {\n")
+                with stream.indent():
+                    stream.write(".ok => unreachable, // must be checked before calling!\n")
+                    for error in error_set:
+                        stream.write(f".{error} => error.{error},\n")
+                    stream.write("_ => error.Unexpected,\n")
+                stream.write("};\n")
+
+            stream.write("}\n")
+            stream.write("\n")
 
 def render_kernel_implementation(stream, abi: ABI_Definition):
     root_container = abi.root_container
-    errors = abi.errors
-    sys_resources = abi.sys_resources
+
+    all_error_sets = ErrorSetMapper()
+
+    def emit_impl(func: Function, ns: list[str]):
+        emit_name = "_".join(("ashet", *ns, func.name))
+        import_name = ".".join(("Impl", *ns, func.name))
+        stream.write(f'export fn @"{emit_name}"(')
+
+        if len(func.params) > 0:
+            first=True
+            for param in func.params.native:
+                if not first: stream.write(", ")
+                first = False 
+                stream.write(f"{param.name}: ")
+                render_type(stream, param.type,abi_namespace="abi")
+        
+        stream.write(') ')
+        render_type(stream, func.native_return_type, abi_namespace="abi")
+        stream.write(' { \n')
+        with stream.indent():
+            out_slices: list[tuple[str,str,str]] = list()
+            for name, annotation, abi, natives in func.params:
+
+                if not annotation.is_slice:
+                    continue 
+                if not annotation.is_out:
+                    continue 
+
+                assert len(natives) == 2
+                
+                slice_name = f"{name}__slice"
+
+                out_slices.append((slice_name, natives[0].name, natives[1].name, annotation.is_optional))
+                stream.write(f"var {slice_name}: ")
+                assert isinstance(abi.type, PointerType)
+                render_type(stream, abi.type.inner, abi_namespace="abi")
+
+                if annotation.is_optional:
+                    stream.write(f" = if({natives[0].name}.*) |__ptr| __ptr[0..{natives[1].name}.*] else null;\n")
+                else:
+                    stream.write(f" = {natives[0].name}.*[0..{natives[1].name}.*];\n")
+
+
+            if isinstance(func.abi_return_type, ErrorUnion):
+                error_union: ErrorUnion = func.abi_return_type
+
+                @contextmanager
+                def handle_call():
+
+                    stream.write(f"const __error_union: {all_error_sets.get_zig_error_type(error_union.error)}!");
+                    render_type(stream, error_union.result)
+                    stream.write(" = ")
+
+                    yield   
+
+                    stream.write("if(__error_union) |__result| {\n")
+                    with stream.indent():
+                        stream.write("__return_value.* = __result;\n")
+                        stream.write("return .ok;\n")
+                    stream.write("} else |__err| {\n")
+                    with stream.indent():
+                        stream.write(f"return {all_error_sets.get_zig_to_native_mapper(error_union.error)}(__err);\n")
+                    stream.write("}\n")
+
+
+            elif isinstance(func.native_return_type, ErrorSet):
+                error_set: ErrorSet = func.native_return_type
+
+                @contextmanager 
+                def handle_call():
+                    stream.write(f"const __error_union: {all_error_sets.get_zig_error_type(error_set)}!void = ")
+
+                    yield 
+
+                    stream.write("if(__error_union) |_| {\n")
+                    with stream.indent():
+                        stream.write("return .ok;\n")
+                    stream.write("} else |__err| {\n")
+                    with stream.indent():
+                        stream.write(f"return {all_error_sets.get_zig_to_native_mapper(error_set)}(__err);\n")
+                    stream.write("}\n")
+
+            else:
+
+                @contextmanager
+                def handle_call():
+                    stream.write("const __result = ")
+                    yield 
+                    stream.write("return __result;\n")
+
+
+            args: list[str] = list()
+            for name, annotation, abi, natives in func.params:
+
+                if annotation.is_slice:
+                    assert len(natives) == 2
+                    (ptr_p, len_p ) = natives
+
+                    if annotation.is_optional:
+                        if annotation.is_out:
+                            args.append(f"&{name}__slice")
+                        else:
+                            args.append(f"if ({ptr_p.name}) |__ptr| __ptr[0..{len_p.name}] else null")
+                    else: # not optional
+                        if annotation.is_out:
+                            args.append(f"&{name}__slice")
+                        else:
+                            args.append(f"{ptr_p.name}[0..{len_p.name}]")
+
+                else:
+                    assert len(natives) == 1
+                    args.append(natives[0].name)
+
+            with handle_call():
+
+                stream.write(f"{import_name}(\n")
+                with stream.indent():
+                    for arg in args:
+                        stream.write(f"{arg},\n")
+                stream.write(");\n")
+
+                for slice_name, ptr_name, len_name, is_optional in out_slices:
+                    if is_optional:
+                        stream.write(f"{ptr_name}.* = if ({slice_name}) |__slice| __slice.ptr else null;\n")
+                        stream.write(f"{len_name}.* = if ({slice_name}) |__slice| __slice.len else 0;\n")
+                    else:
+                        stream.write(f"{ptr_name}.* = {slice_name}.ptr;\n")
+                        stream.write(f"{len_name}.* = {slice_name}.len;\n")
+
+
+        stream.write("}\n")
+        stream.write("\n")
 
     stream.write("""//!
 //! THIS CODE WAS AUTOGENERATED!
@@ -841,184 +1099,37 @@ pub fn create_exports(comptime Impl: type) type {
     return struct {
 """)
 
-    def get_error_set_name(es: Iterable[str], prefix: str) -> str:
-        return prefix + hashlib.sha1("\x00".join(sorted(set(es))).encode()).hexdigest()
-
-    required_errorset_unwraps: set[tuple[str,... ]] = set ()
-    def depend_on_error_set(es: ErrorSet) -> str:
-        required_errorset_unwraps.add(tuple(sorted(es.errors)))
-        return get_error_set_name(es.errors, '')
-
-
-    def emit_impl(func: Function, ns: list[str]):
-        emit_name = "_".join(("ashet", *ns, func.name))
-        import_name = ".".join(("Impl", *ns, func.name))
-        stream.write(f'        export fn @"{emit_name}"(')
-
-        if len(func.params) > 0:
-            first=True
-            for param in func.params.native:
-                if not first: stream.write(", ")
-                first = False 
-                stream.write(f"{param.name}: ")
-                render_type(stream, param.type,abi_namespace="abi")
-        
-        stream.write(') ')
-        render_type(stream, func.native_return_type, abi_namespace="abi")
-        stream.write(' { \n')
-
-        out_slices: list[tuple[str,str,str]] = list()
-        for name, annotation, abi, natives in func.params:
-
-            if not annotation.is_slice:
-                continue 
-            if not annotation.is_out:
-                continue 
-
-            assert len(natives) == 2
-            
-            slice_name = f"{name}__slice"
-
-            out_slices.append((slice_name, natives[0].name, natives[1].name, annotation.is_optional))
-            stream.write(f"            var {slice_name}: ")
-            assert isinstance(abi.type, PointerType)
-            render_type(stream, abi.type.inner, abi_namespace="abi")
-
-            if annotation.is_optional:
-                stream.write(f" = if({natives[0].name}.*) |__ptr| __ptr[0..{natives[1].name}.*] else null;\n")
-            else:
-                stream.write(f" = {natives[0].name}.*[0..{natives[1].name}.*];\n")
-
-        stream.write("            ")
-
-        if isinstance(func.abi_return_type, ErrorUnion):
-            error_union: ErrorUnion = func.abi_return_type
-            error_set_name = depend_on_error_set(error_union.error)
-
-            @contextmanager
-            def handle_call():
-
-                stream.write(f"const __error_union: ZigErrorSet_{error_set_name}!");
-                render_type(stream, error_union.result)
-                stream.write(" = ")
-
-                yield   
-
-                stream.write("if(__error_union) |__result| {\n")
-                stream.write("  __return_value.* = __result;\n")
-                stream.write("  return .ok;\n")
-                stream.write("} else |__err| {\n")
-                stream.write(f"  return __unwrap_{error_set_name}(__err);\n")
-                stream.write("}\n")
-
-
-        elif isinstance(func.native_return_type, ErrorSet):
-            error_set: ErrorSet = func.native_return_type
-            error_set_name = depend_on_error_set(error_set)
-
-            @contextmanager 
-            def handle_call():
-                stream.write(f"const __error_union: ZigErrorSet_{error_set_name}!void = ")
-
-                yield 
-
-                stream.write("if(__error_union) |_| {\n")
-                stream.write("  return .ok;\n")
-                stream.write("} else |__err| {\n")
-                stream.write(f"  return __unwrap_{error_set_name}(__err);\n")
-                stream.write("}\n")
-
-        else:
-
-            @contextmanager
-            def handle_call():
-                stream.write("const __result = ")
-                yield 
-                stream.write("return __result;\n")
-
-
-        args: list[str] = list()
-        for name, annotation, abi, natives in func.params:
-
-            if annotation.is_slice:
-                assert len(natives) == 2
-                (ptr_p, len_p ) = natives
-
-                if annotation.is_optional:
-                    if annotation.is_out:
-                        args.append(f"&{name}__slice")
-                    else:
-                        args.append(f"if ({ptr_p.name}) |__ptr| __ptr[0..{len_p.name}] else null")
-                else: # not optional
-                    if annotation.is_out:
-                        args.append(f"&{name}__slice")
-                    else:
-                        args.append(f"{ptr_p.name}[0..{len_p.name}]")
-
-            else:
-                assert len(natives) == 1
-                args.append(natives[0].name)
-
-        with handle_call():
-
-            stream.write(f"{import_name}(\n")
-            for arg in args:
-                stream.write(f"                {arg},\n")
-            stream.write(f"            );\n")
-
-            for slice_name, ptr_name, len_name, is_optional in out_slices:
-                if is_optional:
-                    stream.write(f"            {ptr_name}.* = if ({slice_name}) |__slice| __slice.ptr else null;\n")
-                    stream.write(f"            {len_name}.* = if ({slice_name}) |__slice| __slice.len else 0;\n")
-                else:
-                    stream.write(f"            {ptr_name}.* = {slice_name}.ptr;\n")
-                    stream.write(f"            {len_name}.* = {slice_name}.len;\n")
-
-
-        stream.write("        }\n")
-        stream.write("\n")
-
-    foreach(root_container.decls, Function, func=emit_impl)
-
-    stream.write("    };\n")
+    with stream.indent():
+        with stream.indent():
+            foreach(root_container.decls, Function, func=emit_impl)
+        stream.write("};\n")
     stream.write("}\n")
 
     stream.write("\n")
 
-    for error_set in sorted(required_errorset_unwraps):
-
-        
-
-        def write_error_type():
-            stream.write("error{")
-            stream.write(",".join(error_set))
-            stream.write("}")
-        
-        stream.write(f"const {get_error_set_name(error_set, 'ZigErrorSet_')} = ")
-        write_error_type()
-        stream.write(";\n")
-
-        stream.write(f"const {get_error_set_name(error_set, 'AbiErrorSet_')} = abi.ErrorSet(")
-        stream.write(get_error_set_name(error_set, 'ZigErrorSet_'))
-        stream.write(");\n")
-
-        stream.write(f"fn __unwrap_{get_error_set_name(error_set, '')}(__error: ")
-        stream.write(get_error_set_name(error_set, "ZigErrorSet_"))
-        stream.write(") ")
-        stream.write(get_error_set_name(error_set, "AbiErrorSet_"))
-        stream.write(" {\n")
-        stream.write("                return switch (__error) {\n")
-        for error in error_set:
-            stream.write(f"                    error.{error} => .{error},\n")
-        stream.write("                };\n")
-
-        stream.write("}\n")
+    all_error_sets.render_zig_to_native_mappers(stream)
 
 
-def render_userland_implementation(stream, abi: ABI_Definition):
+@dataclass
+class GenParam:
+    before_call: Callable[[], None] 
+    before_return: Callable[[], None] 
+    signature: list[Parameter]
+    invocation: list[str ]
+
+def render_parameter_list(stream:CodeStream, params: Iterable[Parameter]):
+    
+    first=True
+    for param in params:
+        if not first:
+            stream.write(", ")
+        first = False 
+        stream.write(f"{param.name}: ")
+        render_type(stream, param.type, abi_namespace="abi")
+
+
+def render_userland_implementation(stream:CodeStream, abi: ABI_Definition):
     root_container = abi.root_container
-    errors = abi.errors
-    sys_resources = abi.sys_resources
 
     stream.write("""//!
 //! THIS CODE WAS AUTOGENERATED!
@@ -1028,21 +1139,123 @@ const std = @import("std");
 const abi = @import("abi");
 
 """)
-    def emit_impl(func: Function, ns: tuple[str,...]):
-        abi_name = ".".join(("abi", *ns, func.name))
-        stream.write(f'        pub fn @"{func.name}"(')
 
-        if len(func.params) > 0:
-            first=True
-            for param in func.params.abi:
-                if not first: stream.write(", ")
-                first = False 
-                stream.write(f"{param.name}: ")
-                render_type(stream, param.type,abi_namespace="abi")
+
+    all_error_sets = ErrorSetMapper()
+
+    def emit_impl(func: Function, ns: tuple[str,...]):
+
+        gen_params: list[GenParam] = list()
         
+        print("emit", func.name)
+        for _name, _annotation, _abi, _natives in func.params:
+            # _wrapper is required to "drop" the four parameters
+            # from the local scope and move them into a nested one,
+            # so the two closures can actually capture them safely
+            def _wrapper(name, annotation, abi, natives):
+                invocation_args: list[str] = list()
+                if annotation.is_slice:
+                    assert len(natives) == 2
+                    (ptr_p, len_p ) = natives
+
+                    if annotation.is_optional:
+                        if annotation.is_out:
+                            invocation_args.append(f"&{name}__slice_ptr")
+                            invocation_args.append(f"&{name}__slice_len")
+                        else:
+                            invocation_args.append(f"if ({name}) |__slice| __slice.ptr else null")
+                            invocation_args.append(f"if ({name}) |__slice| __slice.len else 0")
+                    else: # not optional
+                        if annotation.is_out:
+                            invocation_args.append(f"&{name}__slice_ptr")
+                            invocation_args.append(f"&{name}__slice_len")
+                        else:
+                            invocation_args.append(f"{name}.ptr")
+                            invocation_args.append(f"{name}.len")
+                    assert len(invocation_args) == 2
+                else:
+                    assert len(natives) == 1
+                    invocation_args.append(natives[0].name)
+
+                slice_name = f"{name}__slice"
+                ptr_name = f"{slice_name}_ptr"
+                len_name = f"{slice_name}_len"
+
+                def handle_before_call():
+                    if not annotation.is_slice:
+                        return  
+                    if not annotation.is_out:
+                        return  
+                    
+                    # out_slices.append((name, , annotation.is_optional))
+                    stream.write(f"var {slice_name}_ptr: ")
+                    assert isinstance(natives[0].type, PointerType)
+                    render_type(stream, natives[0].type.inner, abi_namespace="abi")
+                    if isinstance(natives[0].type.inner, OptionalType):
+                        stream.write(f" = if({abi.name}.*) |__slice| __slice.ptr else null;\n")
+                    else:
+                        stream.write(f" = {name}.ptr;\n")
+                     
+                    if annotation.is_optional:
+                        stream.write(f"var {slice_name}_len: usize = if({abi.name}.*) |__slice| __slice.len else 0;\n")
+                    else:
+                        stream.write(f"var {slice_name}_len: usize = {abi.name}.len;\n")
+
+                def handle_before_return():
+                    if not annotation.is_slice:
+                        return  
+                    if not annotation.is_out:
+                        return  
+                    if annotation.is_optional:
+                        stream.write(f"{name}.* = if ({ptr_name}) |__ptr| __ptr[0..{len_name}] else null;\n")
+                    else:
+                        stream.write(f"{name}.* = {ptr_name}[0..{len_name}];\n")
+
+                gen_params.append(GenParam(
+                    signature=[abi],
+                    invocation=invocation_args,
+                    before_call=handle_before_call,
+                    before_return=handle_before_return,
+                ))
+            _wrapper(_name, _annotation, _abi, _natives)
+
+        signature_params = [ p for gp in gen_params for p in gp.signature ]
+        invocation_params = [ p for gp in gen_params for p in gp.invocation ]
+
+        abi_name = ".".join(("abi", *ns, func.name))
+        stream.write(f'pub fn @"{func.name}"(')
+        render_parameter_list(stream, signature_params)
         stream.write(') ')
 
-        if isinstance(func.native_return_type, ErrorSet):
+        if isinstance(func.abi_return_type, ErrorUnion):
+            error_union: ErrorUnion = func.abi_return_type
+            stream.write("error{ ")
+            stream.write(", ".join((*error_union.error.errors, "Unexpected")))
+            stream.write(" }!")
+            render_type(stream, error_union.result,abi_namespace="abi")
+
+            invocation_params.append("&__result")
+
+            @contextmanager
+            def handle_call():
+                
+                stream.write("var __result: ")
+                render_type(stream, error_union.result, abi_namespace="abi")
+                stream.write(" = undefined;\n")
+
+                stream.write("const __error_code: ")
+                stream.write(all_error_sets.get_native_error_type(error_union.error))
+                stream.write(" = ")
+
+                yield 
+
+                stream.write("return if (__error_code != .ok)\n");
+                with stream.indent():
+                    stream.write(f"{all_error_sets.get_native_to_zig_mapper(error_union.error)}(__error_code)\n")
+                stream.write("else\n")
+                with stream.indent():
+                    stream.write("__result;\n")
+        elif isinstance(func.native_return_type, ErrorSet):
             error_set: ErrorSet = func.native_return_type
             stream.write("error{ ")
             stream.write(", ".join((*error_set.errors, "Unexpected")))
@@ -1055,101 +1268,48 @@ const abi = @import("abi");
 
                 yield 
 
-
-                stream.write("            return switch (__error_value) {\n")
-                stream.write("                .ok => {},\n")
-                stream.write("                _ => error.Unexpected,\n")
-                for error in error_set.errors:
-                    stream.write(f"               .{error} => error.{error},\n")
-                stream.write("            };\n")
-
+                stream.write("if (__error_value != .ok)\n");
+                with stream.indent():
+                    stream.write(f"return {all_error_sets.get_native_to_zig_mapper(error_set)}(__error_value);\n")
         else:
 
             @contextmanager
             def handle_call():
                 stream.write("const __result = ")
                 yield 
-                stream.write("            return __result;\n")
-
-
+                stream.write("return __result;\n")
 
             render_type(stream, func.native_return_type, abi_namespace="abi")
-        stream.write(' { \n')
 
-        out_slices: list[tuple[str,str,str]] = list()
-        for name, annotation, abi, natives in func.params:
+        stream.write(' {\n')
 
-            if not annotation.is_slice:
-                continue 
-            if not annotation.is_out:
-                continue 
-            
-            slice_name = f"{name}__slice"
+        with stream.indent():
 
-            out_slices.append((name, f"{slice_name}_ptr", f"{slice_name}_len", annotation.is_optional))
-            stream.write(f"            var {slice_name}_ptr: ")
-            assert isinstance(natives[0].type, PointerType)
-            render_type(stream, natives[0].type.inner, abi_namespace="abi")
-            if isinstance(natives[0].type.inner, OptionalType):
-                stream.write(f" = if({abi.name}.*) |__slice| __slice.ptr else null;\n")
-            else:
-                stream.write(f" = {name}.ptr;\n")
-             
-            if annotation.is_optional:
-                stream.write(f"            var {slice_name}_len: usize = if({abi.name}.*) |__slice| __slice.len else 0;\n")
-            else:
-                stream.write(f"            var {slice_name}_len: usize = {abi.name}.len;\n")
+            for gp in gen_params:
+                if gp.before_call is not None:
+                    gp.before_call()
 
-        stream.write("            ")
+            with handle_call():
+                stream.write(f'{abi_name}(\n')
+                with stream.indent():
+                    for arg in invocation_params:
+                        stream.write(f"{arg},\n")
+                stream.write(f");\n")
 
-        with handle_call():
-
-            args: list[str] = list()
-            for name, annotation, abi, natives in func.params:
-
-                if annotation.is_slice:
-                    assert len(natives) == 2
-                    (ptr_p, len_p ) = natives
-
-                    if annotation.is_optional:
-                        if annotation.is_out:
-                            args.append(f"&{name}__slice_ptr")
-                            args.append(f"&{name}__slice_len")
-                        else:
-                            args.append(f"if ({name}) |__slice| __slice.ptr else null")
-                            args.append(f"if ({name}) |__slice| __slice.len else 0")
-                    else: # not optional
-                        if annotation.is_out:
-                            args.append(f"&{name}__slice_ptr")
-                            args.append(f"&{name}__slice_len")
-                        else:
-                            args.append(f"{name}.ptr")
-                            args.append(f"{name}.len")
-
-                else:
-                    assert len(natives) == 1
-                    args.append(natives[0].name)
-
-            stream.write(f'{abi_name}(\n')
-            for arg in args:
-                stream.write(f"                {arg},\n")
-            stream.write(f"            );\n")
-
-            for slice_name, ptr_name, len_name, is_optional in out_slices:
-                if is_optional:
-                    stream.write(f"            {slice_name}.* = if ({ptr_name}) |__ptr| __ptr[0..{len_name}] else null;\n")
-                else:
-                    stream.write(f"            {slice_name}.* = {ptr_name}[0..{len_name}];\n")
+                for gp in gen_params:
+                    if gp.before_return is not None:
+                        gp.before_return()
 
 
-        stream.write("        }\n")
+        stream.write("}\n")
         stream.write("\n")
 
     def recursive_render(decls: list[Declaration], ns_prefix: tuple[str,...] = tuple()):
         for decl in decls:
             if isinstance(decl, Namespace):
                 stream.write(f"pub const {decl.name} = struct {{\n")
-                recursive_render(decl.decls, (*ns_prefix, decl.name))
+                with stream.indent():
+                    recursive_render(decl.decls, (*ns_prefix, decl.name))
                 stream.write("};\n")
                 stream.write("\n")
             elif isinstance(decl, Function):
@@ -1158,7 +1318,12 @@ const abi = @import("abi");
                 pass 
             else:
                 panic("unexpected", decl)
+
     recursive_render(root_container.decls)
+
+    stream.write("\n")
+
+    all_error_sets.render_native_to_zig_mappers(stream)
 
 class Renderer(StrEnum):
     definition = "definition"
@@ -1241,9 +1406,9 @@ def main():
 
     if output_path is not None:
         with output_path.open("w") as f:
-            renderer(stream=f,abi=abi)
+            renderer(stream=CodeStream(f),abi=abi)
     else:
-        renderer(stream=sys.stdout,abi=abi)
+        renderer(stream=CodeStream(sys.stdout),abi=abi)
 
     
 
