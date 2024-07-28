@@ -49,34 +49,24 @@ pub fn build(b: *std.Build) void {
 
     create_venv_step.dependOn(&venv_info_printer.step);
 
-    const compile_abi_mapper = add_run_script(b, pyenv_python3);
-    compile_abi_mapper.addFileArg(b.path("create-wrapper.py"));
-    compile_abi_mapper.addPrefixedFileArg("--interpreter=", pyenv_python3);
-    compile_abi_mapper.addPrefixedFileArg("--script=", b.path("abi-mapper.py"));
-    compile_abi_mapper.addArg(b.fmt("--host={s}", .{@tagName(b.host.result.os.tag)}));
+    const python_wrapper_options = b.addOptions();
+    python_wrapper_options.addOptionPath("interpreter", pyenv_python3);
+    python_wrapper_options.addOptionPath("script", b.path("src/abi-mapper.py"));
+    python_wrapper_options.step.dependOn(&pyenv_install_packages.step);
 
-    const script_name = if (b.host.result.os.tag == .windows)
-        "abi-mapper.bat"
-    else
-        "abi-mapper.sh";
+    const python_wrapper = b.addExecutable(.{
+        .name = "abi-wrapper",
+        .optimize = .ReleaseSafe,
+        .target = b.host,
+        .root_source_file = b.path("src/exe-wrapper.zig"),
+    });
+    python_wrapper.root_module.addOptions("options", python_wrapper_options);
 
-    const wrapper_script = compile_abi_mapper.addPrefixedOutputFileArg("--output=", script_name);
-
-    // for debugging:
-    venv_info_printer.addArg("abi-mapper=");
-    venv_info_printer.addDirectoryArg(wrapper_script);
-
-    const named_scripts = b.addNamedWriteFiles("scripts");
-
-    _ = named_scripts.addCopyFile(wrapper_script, script_name);
-
-    const install_script_step = b.addInstallFileWithDir(wrapper_script, .bin, script_name);
-    b.getInstallStep().dependOn(&install_script_step.step);
+    b.installArtifact(python_wrapper);
 
     const cc = Converter{
         .b = b,
-        .install_packages = &pyenv_install_packages.step,
-        .script = wrapper_script,
+        .mapper = python_wrapper,
     };
 
     test_step.dependOn(add_behaviour_test(
@@ -120,16 +110,14 @@ fn add_behaviour_test(cc: Converter, input: std.Build.LazyPath, evaluator: std.B
 
 const Converter = struct {
     b: *std.Build,
-    script: std.Build.LazyPath,
-    install_packages: *std.Build.Step,
+    mapper: *std.Build.Step.Compile,
 
     pub fn convert_abi_file(cc: Converter, input: std.Build.LazyPath, mode: enum { userland, kernel, definition }) std.Build.LazyPath {
-        const generate_core_abi = add_run_script(cc.b, cc.script);
+        const generate_core_abi = cc.b.addRunArtifact(cc.mapper);
         generate_core_abi.addPrefixedFileArg("--zig-exe=", .{ .cwd_relative = cc.b.graph.zig_exe });
         generate_core_abi.addArg(cc.b.fmt("--mode={s}", .{@tagName(mode)}));
         const abi_zig = generate_core_abi.addPrefixedOutputFileArg("--output=", cc.b.fmt("{s}.zig", .{@tagName(mode)}));
         generate_core_abi.addFileArg(input);
-        generate_core_abi.step.dependOn(cc.install_packages);
         return abi_zig;
     }
 };
