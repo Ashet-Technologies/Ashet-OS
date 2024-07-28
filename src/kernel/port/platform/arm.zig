@@ -136,3 +136,11 @@ pub inline fn disableInterrupts() void {
 pub inline fn enableInterrupts() void {
     // TODO: Implement interrupts on Arm!
 }
+
+pub fn get_cpu_cycle_counter() u64 {
+    return 0;
+}
+
+pub fn get_cpu_random_seed() ?u64 {
+    return null;
+}
