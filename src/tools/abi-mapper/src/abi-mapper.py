@@ -278,8 +278,8 @@ class IOP(Declaration):
     inputs: ParameterCollection
     outputs: ParameterCollection
     error: ErrorSet
-    key: RefValue[str] = field(default=RefValue[str](""))
-    number: RefValue[int]= field(default=RefValue[int](None))
+    key: RefValue[str] = field(default_factory=lambda: RefValue[str](""))
+    number: RefValue[int]= field(default_factory=lambda: RefValue[int](None))
 
 @dataclass(frozen=True, eq=True)
 class Container :
@@ -1372,16 +1372,21 @@ def main():
         iop.key.value = name
         iop.number.value = index
         iop_numbers[index] = iop
+        # print("assign", name, iop.number.value, iop.key.value)
+
     foreach(root_container.decls, IOP, allocate_iop_num)
 
-    print(iop_numbers)
+    # print(iop_numbers)
 
     if len(iop_numbers) > 1:
-        iop_prefix = os.path.commonprefix([iop.key.value for iop in iop_numbers.values()])
+        all_iops = [iop.key.value for iop in iop_numbers.values()]
+        # print(all_iops)
+        iop_prefix = os.path.commonprefix(all_iops)
+        # print("common prefix: ", iop_prefix)
         for iop in iop_numbers.values():
-            old = iop.key.value
+            # old = iop.key.value
             iop.key.value = iop.key.value.removeprefix(iop_prefix)
-            print(repr(old), repr(iop.key.value))
+            # print(iop.name,repr(old), repr(iop.key.value))
 
     foreach(root_container.decls, Function, func=assert_legal_extern_fn)
 
