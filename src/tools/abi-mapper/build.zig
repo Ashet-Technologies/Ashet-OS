@@ -122,7 +122,7 @@ const Converter = struct {
         generate_core_abi.addFileArg(cc.script);
         generate_core_abi.addPrefixedFileArg("--zig-exe=", .{ .cwd_relative = cc.b.graph.zig_exe });
         generate_core_abi.addArg(cc.b.fmt("--mode={s}", .{@tagName(mode)}));
-        const abi_zig = generate_core_abi.addPrefixedOutputFileArg("--output=", "impl.zig");
+        const abi_zig = generate_core_abi.addPrefixedOutputFileArg("--output=", cc.b.fmt("{s}.zig", .{@tagName(mode)}));
         generate_core_abi.addFileArg(input);
         generate_core_abi.step.dependOn(cc.install_packages);
         return abi_zig;
