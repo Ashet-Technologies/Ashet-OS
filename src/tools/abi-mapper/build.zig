@@ -4,6 +4,7 @@ const builtin = @import("builtin");
 const requirements = [_][]const u8{
     "case-converter>=1.1.0",
     "lark>=1.1",
+    "pyinstaller>=6.9.0",
 };
 
 pub fn build(b: *std.Build) void {
@@ -48,29 +49,35 @@ pub fn build(b: *std.Build) void {
 
     create_venv_step.dependOn(&venv_info_printer.step);
 
+    const compile_abi_mapper = add_run_script(b, pyenv_python3);
+    compile_abi_mapper.addFileArg(b.path("create-wrapper.py"));
+    compile_abi_mapper.addPrefixedFileArg("--interpreter=", pyenv_python3);
+    compile_abi_mapper.addPrefixedFileArg("--script=", b.path("abi-mapper.py"));
+    compile_abi_mapper.addArg(b.fmt("--host={s}", .{@tagName(b.host.result.os.tag)}));
+
+    const script_name = if (b.host.result.os.tag == .windows)
+        "abi-mapper.bat"
+    else
+        "abi-mapper.sh";
+
+    const wrapper_script = compile_abi_mapper.addPrefixedOutputFileArg("--output=", script_name);
+
+    // for debugging:
+    venv_info_printer.addArg("abi-mapper=");
+    venv_info_printer.addDirectoryArg(wrapper_script);
+
+    const named_scripts = b.addNamedWriteFiles("scripts");
+
+    _ = named_scripts.addCopyFile(wrapper_script, script_name);
+
+    const install_script_step = b.addInstallFileWithDir(wrapper_script, .bin, script_name);
+    b.getInstallStep().dependOn(&install_script_step.step);
+
     const cc = Converter{
         .b = b,
-        .py3 = pyenv_python3,
         .install_packages = &pyenv_install_packages.step,
-        .script = b.path("abi-mapper.py"),
+        .script = wrapper_script,
     };
-
-    const abi_v2_def = b.path("../../abi/abi-v2.zig");
-
-    {
-        const abi_zig = cc.convert_abi_file(abi_v2_def, .definition);
-        b.getInstallStep().dependOn(&b.addInstallHeaderFile(abi_zig, "abi.zig").step);
-    }
-
-    {
-        const abi_zig = cc.convert_abi_file(abi_v2_def, .kernel);
-        b.getInstallStep().dependOn(&b.addInstallHeaderFile(abi_zig, "kernel-impl.zig").step);
-    }
-
-    {
-        const abi_zig = cc.convert_abi_file(abi_v2_def, .userland);
-        b.getInstallStep().dependOn(&b.addInstallHeaderFile(abi_zig, "userland-impl.zig").step);
-    }
 
     test_step.dependOn(add_behaviour_test(
         cc,
@@ -113,13 +120,11 @@ fn add_behaviour_test(cc: Converter, input: std.Build.LazyPath, evaluator: std.B
 
 const Converter = struct {
     b: *std.Build,
-    py3: std.Build.LazyPath,
     script: std.Build.LazyPath,
     install_packages: *std.Build.Step,
 
     pub fn convert_abi_file(cc: Converter, input: std.Build.LazyPath, mode: enum { userland, kernel, definition }) std.Build.LazyPath {
-        const generate_core_abi = add_run_script(cc.b, cc.py3);
-        generate_core_abi.addFileArg(cc.script);
+        const generate_core_abi = add_run_script(cc.b, cc.script);
         generate_core_abi.addPrefixedFileArg("--zig-exe=", .{ .cwd_relative = cc.b.graph.zig_exe });
         generate_core_abi.addArg(cc.b.fmt("--mode={s}", .{@tagName(mode)}));
         const abi_zig = generate_core_abi.addPrefixedOutputFileArg("--output=", cc.b.fmt("{s}.zig", .{@tagName(mode)}));
