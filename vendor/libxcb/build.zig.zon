@@ -1,0 +1,22 @@
+.{
+    .name = "xcb",
+    .version = "1.17.0",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+    },
+    .dependencies = .{
+        .libxcb = .{
+            .url = "https://xcb.freedesktop.org/dist/libxcb-1.17.0.tar.xz",
+            .hash = "1220831f5a2200342ff164b8806cc348d3e8ddf1be1be72ff1164fa9fea71e87f64a",
+        },
+        .xcb_proto = .{
+            .url = "https://xcb.freedesktop.org/dist/xcb-proto-1.17.0.tar.xz",
+            .hash = "12204f67a2a017b7c94a32f5da915beab29d4f300fd368bdd50a7becf6e18ea1f94b",
+        },
+        .cpython = .{
+            .url = "https://github.com/allyourcodebase/cpython/archive/04087f079f033bace60d650c05b6635be3141d54.tar.gz",
+            .hash = "1220bb14f07a3c8d05eeff3dc5048417e6c0180d417441e381a8d31e109319ecbe46",
+        },
+    },
+}

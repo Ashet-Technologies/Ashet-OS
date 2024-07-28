@@ -1,0 +1,15 @@
+.{
+    .name = "libwindow",
+    .version = "0.1.0",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+    .dependencies = .{
+        .libxcb = .{
+            .url = "https://xcb.freedesktop.org/dist/libxcb-1.17.0.tar.xz",
+            .hash = "1220831f5a2200342ff164b8806cc348d3e8ddf1be1be72ff1164fa9fea71e87f64a",
+        },
+    },
+}
