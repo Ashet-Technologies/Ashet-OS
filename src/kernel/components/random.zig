@@ -122,7 +122,7 @@ fn extract_entropy(ptr: [*]u8, len: usize) void {
     {
         var i: u32 = 0;
         while (i < 32) : (i += 1) {
-            if (ashet.platform.get_rdseed()) |long| {
+            if (ashet.platform.get_cpu_random_seed()) |long| {
                 block.seed[i] = long;
                 i += 1;
             }
