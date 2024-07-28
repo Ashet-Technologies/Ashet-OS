@@ -1001,7 +1001,7 @@ def render_kernel_implementation(stream, abi: ABI_Definition):
                 def handle_call():
 
                     stream.write(f"const __error_union: {all_error_sets.get_zig_error_type(error_union.error)}!");
-                    render_type(stream, error_union.result)
+                    render_type(stream, error_union.result,abi_namespace="abi")
                     stream.write(" = ")
 
                     yield

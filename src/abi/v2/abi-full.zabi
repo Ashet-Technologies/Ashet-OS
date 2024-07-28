@@ -86,6 +86,23 @@ const syscalls = struct {
             /// Returns memory to the systme.
             extern "syscall" fn release(mem: []u8, ptr_align: u8) void;
         };
+
+        const monitor = struct {
+            /// Queries all owned resources by a process.
+            extern "syscall" fn enumerate_processes(processes: ?[]Process) usize;
+
+            /// Queries all owned resources by a process.
+            extern "syscall" fn query_owned_resources(Process, reslist: ?[]*SystemResource) usize;
+
+            /// Returns the total number of bytes the process takes up in RAM.
+            extern "syscall" fn query_total_memory_usage(Process) usize;
+
+            /// Returns the number of dynamically allocated bytes for this process.
+            extern "syscall" fn query_dynamic_memory_usage(Process) usize;
+
+            /// Returns the number of total memory objects this process has right now.
+            extern "syscall" fn query_active_allocation_count(Process) usize;
+        };
     };
 
     const clock = struct {
@@ -145,6 +162,33 @@ const syscalls = struct {
         //  fn change_resolution(*VideoOutput, u16, u16) void;
     };
 
+    const network = struct {
+
+        // getStatus: FnPtr(fn () NetworkStatus),
+        // ping: FnPtr(fn ([*]Ping, usize) void),
+        // TODO: Implement NIC-specific queries (mac, ips, names, ...)
+
+        const dns = struct {
+            // resolves the dns entry `host` for the given `service`.
+            // - `host` is a legal dns entry
+            // - `port` is either a port number
+            // - `buffer` and `limit` define a structure where all resolved IPs can be stored.
+            // Function returns the number of host entries found or 0 if the host name could not be resolved.
+            //  fn @"resolve" (host: [*:0]const u8, port: u16, buffer: [*]EndPoint, limit: usize) usize;
+
+        };
+
+        const udp = struct {
+            /// Creates a new UDP socket.
+            extern "syscall" fn create_socket(out: *UdpSocket) error{SystemResources};
+        };
+
+        const tcp = struct {
+            /// Creates a new TCP socket.
+            extern "syscall" fn create_socket(out: *TcpSocket) error{SystemResources};
+        };
+    };
+
     const io = struct {
         /// Starts new I/O operations and returns completed ones.
         ///
@@ -155,53 +199,82 @@ const syscalls = struct {
         /// The function will optionally block based on the `wait` parameter.
         ///
         /// The return value is the HEAD element of a linked list of completed I/O events.
-        extern "syscall" fn schedule_and_await(start_queue: ?*IOP, wait: WaitIO) ?*IOP;
+        extern "syscall" fn schedule_and_await(?*IOP, WaitIO) ?*IOP;
 
         /// Cancels a single I/O operation.
-        extern "syscall" fn cancel(iop: *IOP) void;
+        extern "syscall" fn cancel(*IOP) void;
+    };
+
+    const fs = struct {
+        /// Finds a file system by name
+        extern "syscall" fn find_filesystem(name: []const u8) FileSystemId;
+    };
+
+    const service = struct {
+        /// Registers a new service `uuid` in the system.
+        /// Takes an array of function pointers that will be provided for IPC and a service name to be advertised.
+        extern "syscall" fn create(svc: *Service, uuid: *const UUID, funcs: []const AbstractFunction, name: []const u8) error{
+            AlreadyRegistered,
+            SystemResources,
+        };
+
+        /// Enumerates all registered services.
+        extern "syscall" fn enumerate(uuid: *const UUID, services: ?[]Service) usize;
+
+        /// Returns the name of the service.
+        extern "syscall" fn get_name(Service) [*:0]const u8;
+
+        /// Returns the process that created this service.
+        extern "syscall" fn get_process(Service) Process;
+
+        /// Returns the functions registerd by the service.
+        extern "syscall" fn get_functions(Service, funcs: ?[]const AbstractFunction) usize;
     };
 
     const draw = struct {
         // Fonts:
 
         /// Returns the font data for the given font name, if any.
-        extern "syscall" fn get_system_font(font_name: []const u8) error{
+        extern "syscall" fn get_system_font(font_name: []const u8, font: **Font) error{
             FileNotFound,
             SystemResources,
             OutOfMemory,
-        }!Font;
+        };
 
         /// Creates a new custom font from the given data.
-        extern "syscall" fn create_font(data: []const u8) error{
+        extern "syscall" fn create_font(data: []const u8, font: **Font) error{
             InvalidData,
             SystemResources,
             OutOfMemory,
-        }!Font;
+        };
 
         /// Returns true if the given font is a system-owned font.
-        extern "syscall" fn is_system_font(Font) bool;
+        extern "syscall" fn is_system_font(*Font) bool;
 
         // Framebuffer management:
 
         /// Creates a new in-memory framebuffer that can be used for offscreen painting.
-        extern "syscall" fn create_memory_framebuffer(size: Size) ?Framebuffer;
+        extern "syscall" fn create_memory_framebuffer(size: Size) ?*Framebuffer;
 
         /// Creates a new framebuffer based off a video output. Can be used to output pixels
         /// to the screen.
-        extern "syscall" fn create_video_framebuffer(VideoOutput) ?Framebuffer;
+        extern "syscall" fn create_video_framebuffer(*VideoOutput) ?*Framebuffer;
 
         /// Creates a new framebuffer that allows painting into a GUI window.
-        extern "syscall" fn create_window_framebuffer(Window) ?Framebuffer;
+        extern "syscall" fn create_window_framebuffer(*Window) ?*Framebuffer;
+
+        /// Creates a new framebuffer that allows painting into a widget.
+        extern "syscall" fn create_widget_framebuffer(*Widget) ?*Framebuffer;
 
         /// Returns the type of a framebuffer object.
-        extern "syscall" fn get_framebuffer_type(Framebuffer) FramebufferType;
+        extern "syscall" fn get_framebuffer_type(*Framebuffer) FramebufferType;
 
         /// Returns the size of a framebuffer object.
-        extern "syscall" fn get_framebuffer_size(Framebuffer) Size;
+        extern "syscall" fn get_framebuffer_size(*Framebuffer) Size;
 
         /// Marks a portion of the framebuffer as changed and forces the OS to
         /// perform an update action if necessary.
-        extern "syscall" fn invalidate_framebuffer(Framebuffer, Rectangle) void;
+        extern "syscall" fn invalidate_framebuffer(*Framebuffer, Rectangle) void;
 
         // Drawing:
 
@@ -211,14 +284,18 @@ const syscalls = struct {
     };
 
     const gui = struct {
+        extern "syscall" fn register_widget_type(out: *WidgetType, *const WidgetDescriptor) error{
+            AlreadyRegistered,
+            SystemResources,
+        };
 
         // Window API:
 
         /// Spawns a new window.
-        extern "syscall" fn create_window(desktop: Desktop, title: []const u8, min: Size, max: Size, startup: Size, flags: CreateWindowFlags) error{
+        extern "syscall" fn create_window(window: *Window, desktop: Desktop, title: []const u8, min: Size, max: Size, startup: Size, flags: CreateWindowFlags) error{
             SystemResources,
             InvalidDimensions,
-        }!Window;
+        };
 
         /// Resizes a window to the new size.
         extern "syscall" fn resize_window(Window, size: Size) void;
@@ -226,16 +303,57 @@ const syscalls = struct {
         /// Changes a window title.
         extern "syscall" fn set_window_title(Window, title: []const u8) void;
 
+        /// Notifies the desktop that a window wants attention from the user.
+        /// This could just pop the window to the front, make it blink, show a small notification, ...
+        extern "syscall" fn mark_window_urgent(Window) void;
+
+        // TODO: gui.app_menu
+
+        // Widget API:
+
+        /// Create a new widget identified by `uuid` on the given `window`.
+        /// Position and size of the widget are undetermined at start and a call to `place_widget` should be performed on success.
+        extern "syscall" fn create_widget(widget: *Widget, window: Window, uuid: *const UUID) error{
+            SystemResources,
+            WidgetNotFound,
+        };
+
+        /// Moves and resizes a widget in one.
+        extern "syscall" fn place_widget(widget: Widget, position: Point, size: Size) void;
+
+        /// Triggers the `control` event of the widget with the given `message` as a payload.
+        extern "syscall" fn control_widget(widget: Widget, message: WidgetControlMessage) error{
+            SystemResources,
+        };
+
+        /// Triggers the `widget_notify` event of the `Window` that owns `widget` with `event` as the payload.
+        extern "syscall" fn notify_owner(widget: Widget, event: WidgetNotifyEvent) error{
+            SystemResources,
+        };
+
+        /// Returns WidgetType-associated "opaque" data for this widget.
+        ///
+        /// This is meant as a convenience tool to store additional information per widget
+        /// like internal state and such.
+        ///
+        /// The size of this must be known and cannot be queried.
+        extern "syscall" fn get_widget_data(Widget) [*]align(16) u8;
+
+        // Context Menu API:
+
+        // TODO: gui.context_menu
+
         // Desktop Server API:
 
         /// Creates a new desktop with the given name.
         extern "syscall" fn create_desktop(
+            desktop: *Desktop,
             /// User-visible name of the desktop.
             name: []const u8,
             descriptor: *const DesktopDescriptor,
         ) error{
             SystemResources,
-        }!Desktop;
+        };
 
         // TODO: Function to get the "current"/"primary"/"associated" desktop server, how?
 
@@ -256,6 +374,20 @@ const syscalls = struct {
         /// The size of this must be known and cannot be queried.
         extern "syscall" fn get_desktop_data(Window) [*]align(16) u8;
 
+        /// Notifies the system that a message box was confirmed by the user.
+        ///
+        /// **NOTE:** This function is meant to be implemented by a desktop server.
+        /// Regular GUI applications should not use this function as they have no
+        /// access to a `MessageBoxEvent.RequestID`.
+        extern "syscall" fn notify_message_box(
+            /// The desktop that completed the message box.
+            source: Desktop,
+            /// The request id that was passed in `MessageBoxEvent`.
+            request_id: MessageBoxEvent.RequestID,
+            /// The resulting button which the user clicked.
+            result: MessageBoxResult,
+        ) void;
+
         /// Posts an event into the window event queue so the window owner
         /// can handle the event.
         extern "syscall" fn post_window_event(
@@ -263,6 +395,88 @@ const syscalls = struct {
             event_type: WindowEvent.Type,
             event: WindowEvent,
         ) error{SystemResources};
+
+        /// Sends a notification to the provided `desktop`.
+        extern "syscall" fn send_notification(
+            /// Where to show the notification?
+            desktop: Desktop,
+            /// What text is displayed in the notification?
+            message: []const u8,
+            /// How urgent is the notification to the user?
+            severity: NotificationSeverity,
+        ) error{
+            SystemResources,
+        };
+
+        const clipboard = struct {
+            /// Sets the contents of the clip board.
+            /// Takes a mime type as well as the value in the provided format.
+            extern "syscall" fn set(desktop: Desktop, mime: []const u8, value: []const u8) error{
+                SystemResources,
+            };
+
+            /// Returns the current type present in the clipboard, if any.
+            extern "syscall" fn get_type(desktop: Desktop) ?[*:0]const u8;
+
+            /// Returns the current clipboard value as the provided mime type.
+            /// The os provides a conversion *if possible*, otherwise returns an error.
+            /// The returned memory for `value` is owned by the process and must be freed with `ashet.process.memory.release`.
+            extern "syscall" fn get_value(desktop: Desktop, mime: []const u8, value: *?[]const u8) error{
+                ConversionFailed,
+                OutOfMemory,
+            };
+        };
+    };
+
+    const shm = struct {
+        /// Constructs a new shared memory object with `size` bytes of memory.
+        /// Shared memory can be written by all processes without any memory protection.
+        extern "syscall" fn create(*SharedMemory, size: usize) error{
+            SystemResources,
+        };
+
+        /// Returns the number of bytes inside the given shared memory object.
+        extern "syscall" fn get_length(SharedMemory) usize;
+
+        /// Returns a pointer to the shared memory.
+        extern "syscall" fn get_pointer(SharedMemory) [*]align(16) u8;
+    };
+
+    const pipe = struct {
+        /// Spawns a new pipe with `fifo_length` elements of `object_size` bytes.
+        /// If `fifo_length` is 0, the pipe is synchronous and can only send data
+        /// if a `read` call is active. Otherwise, up to `fifo_length` elements can be
+        /// stored in a FIFO.
+        extern "syscall" fn create(*Pipe, object_size: usize, fifo_length: usize) error{
+            SystemResources,
+        };
+
+        /// Returns the length of the pipe-internal FIFO in elements.
+        extern "syscall" fn get_fifo_length(Pipe) usize;
+
+        /// Returns the size of the objects stored in the pipe.
+        extern "syscall" fn get_object_size(Pipe) usize;
+    };
+
+    const sync = struct {
+        /// Creates a new `SyncEvent` object that can be used to synchronize
+        /// different processes.
+        extern "syscall" fn create_event(*SyncEvent) error{SystemResources};
+
+        /// Completes one `WaitForEvent` IOP waiting for the given event.
+        extern "syscall" fn notify_one(SyncEvent) void;
+
+        /// Completes all `WaitForEvent` IOP waiting for the given event.
+        extern "syscall" fn notify_all(SyncEvent) void;
+
+        /// Creates a new mutual exclusion.
+        extern "syscall" fn create_mutex(*Mutex) error{SystemResources};
+
+        /// Tries to lock a mutex and returns if it was successful.
+        extern "syscall" fn try_lock(Mutex) bool;
+
+        /// Unlocks a mutual exclusion. Completes a single `Lock` IOP if it exists.
+        extern "syscall" fn unlock(Mutex) void;
     };
 
     const random = struct {
@@ -861,7 +1075,7 @@ usingnamespace zig; // regular code beyond this
 pub const IOP = iops.Generic_IOP(IOP_Type);
 
 /// Constructor for a generic, ABI passable error set.
-pub const ErrorSet = @import("error_set.zig").ErrorSet;
+pub const ErrorSet = @import("error_set.zig").UntypedErrorSet(Error);
 
 ///////////////////////////////////////////////////////////
 // Imports:
@@ -909,7 +1123,7 @@ pub const palette_size = std.math.maxInt(@typeInfo(ColorIndex).Enum.tag_type) + 
 // System resources:
 
 /// Handle to an abstract system resource.
-pub const SystemResource = enum(usize) {
+pub const SystemResource = opaque {
     /// Casts the resource into a concrete type. Fails, if the type does not match.
     pub fn cast(resource: *SystemResource, comptime t: Type) error{InvalidType}!*CastResult(t) {
         const actual = resource.get_type();
@@ -1263,7 +1477,7 @@ pub const SpawnProcessArg = struct {
         resource = 1,
     };
 
-    pub const String = extern struct {
+    pub const String = struct {
         ptr: [*]const u8,
         len: usize,
     };
@@ -1271,7 +1485,7 @@ pub const SpawnProcessArg = struct {
     type: Type,
     value: extern union {
         text: String,
-        resource: SystemResource,
+        resource: *SystemResource,
     },
 };
 

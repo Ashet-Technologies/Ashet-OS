@@ -1,11 +1,11 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const requirements = [_][]const u8{
-    "case-converter>=1.1.0",
-    "lark>=1.1",
-    "pyinstaller>=6.9.0",
-};
+const requirements_spec =
+    \\case-converter>=1.1.0
+    \\lark>=1.1
+    \\pyinstaller>=6.9.0
+;
 
 pub fn build(b: *std.Build) void {
     const create_venv_step = b.step("venv", "Creates the python venv");
@@ -34,15 +34,20 @@ pub fn build(b: *std.Build) void {
     else
         pyenv.path(b, "bin/python");
 
+    const requirements_file = b.addWriteFile("requirements.txt", requirements_spec);
+
     const pyenv_install_packages = add_run_script(b, pyenv_python3);
 
     pyenv_install_packages.addArg("-m");
     pyenv_install_packages.addArg("pip");
     pyenv_install_packages.addArg("install");
-    pyenv_install_packages.addArgs(&requirements);
+    pyenv_install_packages.addArg("-r");
+    pyenv_install_packages.addFileArg(requirements_file.files.items[0].getPath()); // we need to use a
+    pyenv_install_packages.addArg("--log");
+    const install_log = pyenv_install_packages.addOutputFileArg("pip.log");
 
     const venv_info_printer = b.addSystemCommand(&.{"echo"});
-    venv_info_printer.step.dependOn(&pyenv_install_packages.step);
+    install_log.addStepDependencies(&venv_info_printer.step);
 
     venv_info_printer.addArg("python3=");
     venv_info_printer.addFileArg(pyenv_python3);

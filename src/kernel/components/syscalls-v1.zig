@@ -9,7 +9,6 @@
 //!
 const std = @import("std");
 const builtin = @import("builtin");
-const hal = @import("hal");
 const ashet = @import("../main.zig");
 
 const abi = ashet.abi;
@@ -337,7 +336,7 @@ const impls = struct {
     }
 
     export fn @"ashet.random.get_soft_random"(ptr: [*]u8, len: usize) void {
-        ashet.random.get_random_bytes(ptr, len);
+        ashet.random.get_random_bytes(ptr[0..len]);
     }
 
     export fn @"ashet.shm.create"(size: usize) ?ashet.abi.SharedMemory {
