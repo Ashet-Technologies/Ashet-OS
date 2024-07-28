@@ -55,7 +55,7 @@ pub fn build(b: *std.Build) void {
     python_wrapper_options.step.dependOn(&pyenv_install_packages.step);
 
     const python_wrapper = b.addExecutable(.{
-        .name = "abi-wrapper",
+        .name = "abi-mapper",
         .optimize = .ReleaseSafe,
         .target = b.host,
         .root_source_file = b.path("src/exe-wrapper.zig"),
@@ -66,7 +66,7 @@ pub fn build(b: *std.Build) void {
 
     const cc = Converter{
         .b = b,
-        .mapper = python_wrapper,
+        .executable = python_wrapper,
     };
 
     test_step.dependOn(add_behaviour_test(
@@ -108,12 +108,12 @@ fn add_behaviour_test(cc: Converter, input: std.Build.LazyPath, evaluator: std.B
     return &test_exec.step;
 }
 
-const Converter = struct {
+pub const Converter = struct {
     b: *std.Build,
-    mapper: *std.Build.Step.Compile,
+    executable: *std.Build.Step.Compile,
 
     pub fn convert_abi_file(cc: Converter, input: std.Build.LazyPath, mode: enum { userland, kernel, definition }) std.Build.LazyPath {
-        const generate_core_abi = cc.b.addRunArtifact(cc.mapper);
+        const generate_core_abi = cc.b.addRunArtifact(cc.executable);
         generate_core_abi.addPrefixedFileArg("--zig-exe=", .{ .cwd_relative = cc.b.graph.zig_exe });
         generate_core_abi.addArg(cc.b.fmt("--mode={s}", .{@tagName(mode)}));
         const abi_zig = generate_core_abi.addPrefixedOutputFileArg("--output=", cc.b.fmt("{s}.zig", .{@tagName(mode)}));
