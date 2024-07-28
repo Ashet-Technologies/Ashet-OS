@@ -120,6 +120,7 @@ const Converter = struct {
     pub fn convert_abi_file(cc: Converter, input: std.Build.LazyPath, mode: enum { userland, kernel, definition }) std.Build.LazyPath {
         const generate_core_abi = add_run_script(cc.b, cc.py3);
         generate_core_abi.addFileArg(cc.script);
+        generate_core_abi.addPrefixedFileArg("--zig-exe=", .{ .cwd_relative = cc.b.graph.zig_exe });
         generate_core_abi.addArg(cc.b.fmt("--mode={s}", .{@tagName(mode)}));
         const abi_zig = generate_core_abi.addPrefixedOutputFileArg("--output=", "impl.zig");
         generate_core_abi.addFileArg(input);
