@@ -28,12 +28,14 @@ pub fn build(b: *std.Build) void {
         const generated_abi_code = abi_mapper.convert_abi_file(abi_v2_def, .definition);
         const generated_provider_code = abi_mapper.convert_abi_file(abi_v2_def, .kernel);
         const generated_consumer_code = abi_mapper.convert_abi_file(abi_v2_def, .userland);
+        const generated_stubs_code = abi_mapper.convert_abi_file(abi_v2_def, .stubs);
 
         const compose_abi_package = b.addNamedWriteFiles("abi-package");
 
         const abi_code = compose_abi_package.addCopyFile(generated_abi_code, "abi.zig");
         const provider_code = compose_abi_package.addCopyFile(generated_provider_code, "provider.zig");
         const consumer_code = compose_abi_package.addCopyFile(generated_consumer_code, "consumer.zig");
+        const stubs_code = compose_abi_package.addCopyFile(generated_stubs_code, "stubs.zig");
         _ = compose_abi_package.addCopyFile(b.path("v2/error_set.zig"), "error_set.zig");
         _ = compose_abi_package.addCopyFile(b.path("v2/iops.zig"), "iops.zig");
 
@@ -50,6 +52,13 @@ pub fn build(b: *std.Build) void {
 
         _ = b.addModule("ashet-abi-v2-consumer", .{
             .root_source_file = consumer_code,
+            .imports = &.{
+                .{ .name = "abi", .module = abi_mod },
+            },
+        });
+
+        _ = b.addModule("ashet-abi-v2-stubs", .{
+            .root_source_file = stubs_code,
             .imports = &.{
                 .{ .name = "abi", .module = abi_mod },
             },

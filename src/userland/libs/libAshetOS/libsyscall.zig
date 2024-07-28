@@ -10,3 +10,7 @@ comptime {
         });
     }
 }
+
+comptime {
+    _ = @import("stubs");
+}
