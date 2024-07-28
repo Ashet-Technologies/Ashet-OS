@@ -15,15 +15,17 @@ SECTIONS {
         *(.text._start)
         *(.text)
         *(.text.*)
+        . = ALIGN(4096);
     } > flash
 
     .rodata : {
         . = ALIGN(4);
         *(.rodata)
         *(.rodata.*)
+        . = ALIGN(4096);
     } > flash
 
-    . = ALIGN(4);
+    . = ALIGN(4096);
 
    __kernel_flash_end = . ;
 
@@ -43,11 +45,13 @@ SECTIONS {
         *(.sdata)
         *(.sdata.*)
 
-        . = ALIGN(4);
+        . = ALIGN(4096);
         __kernel_data_end = .;
     } > dram
 
+
     .bss (NOLOAD) : {
+        . = ALIGN(4096);
         __kernel_bss_start = .;
 
         *(.bss)
@@ -55,11 +59,10 @@ SECTIONS {
         *(.sbss)
         *(.sbss.*)
 
-        . = ALIGN(4);
+        . = ALIGN(4096);
         __kernel_bss_end = .;
 
         . = ALIGN(4096);
-
         __machine_linmem_start = .;
     } > dram
 

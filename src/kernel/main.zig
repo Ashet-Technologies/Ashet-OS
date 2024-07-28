@@ -112,6 +112,11 @@ fn main() !void {
     log.info("initialize memory protection...", .{});
     try memory.protection.initialize();
 
+    const page = try memory.page_allocator.alloc(u8, 4096);
+    log.warn("here!", .{});
+    memory.protection.change(memory.Range.from_slice(page), .read_only);
+    page[0] = 0;
+
     // Initialize the entropy pool so it can begin gathering bits
     // for critical start-up applications. The pool needs at least
     // some amount of hardware entropy to be safe to use in later

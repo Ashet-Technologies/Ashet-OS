@@ -37,7 +37,13 @@ const VPBA_UART_BASE = 0x10000000;
 
 pub const machine_config = ashet.ports.MachineConfig{
     .load_sections = .{ .data = true, .bss = true },
-    .memory_protection = null, // TODO: No memory protection on RISC-V yet!
+    .memory_protection = .{
+        .initialize = rv32.vmm.initialize,
+        .update = rv32.vmm.update,
+        .activate = rv32.vmm.activate,
+        .get_protection = rv32.vmm.get_protection,
+        .get_info = rv32.vmm.query_address,
+    },
 };
 
 const virtio_config = ashet.drivers.VirtIoConfiguration{

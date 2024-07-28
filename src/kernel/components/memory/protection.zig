@@ -103,7 +103,7 @@ pub fn change(range: Range, protection: Protection) void {
     std.debug.assert(std.mem.isAligned(range.base, page_size));
     std.debug.assert(std.mem.isAligned(range.length, page_size));
 
-    log.debug("Change 0x{X:0>8}+0x{X:0>8} to {s}", .{
+    log.info("Change 0x{X:0>8}+0x{X:0>8} to {s}", .{
         range.base, range.length, @tagName(protection),
     });
 
