@@ -66,3 +66,14 @@ pub fn enableInterrupts() void {
     interrupt_flag = true;
     global_lock.unlock();
 }
+
+pub fn get_cpu_cycle_counter() u64 {
+    var buf: [8]u8 = undefined;
+    // almost everything should support this
+    std.posix.getrandom(&buf) catch @panic("unsupported call");
+    return @bitCast(buf);
+}
+
+pub fn get_cpu_random_seed() ?u64 {
+    return null;
+}
