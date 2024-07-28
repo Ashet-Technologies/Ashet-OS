@@ -55,6 +55,9 @@ pub fn build(b: *std.Build) void {
     const abi_mod = abi_dep.module("ashet-abi");
     const std_mod = std_dep.module("ashet-std");
 
+    const abi_v2_mod = abi_dep.module("ashet-abi-v2");
+    const abi_v2_access_mod = abi_dep.module("ashet-abi-v2-consumer");
+
     // Build:
 
     const target = ashet_target.resolve_target(b);
@@ -73,6 +76,8 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "ashet-abi", .module = abi_mod },
             .{ .name = "ashet-std", .module = std_mod },
+            .{ .name = "ashet-abi-v2", .module = abi_v2_mod },
+            .{ .name = "ashet-abi-v2-access", .module = abi_v2_access_mod },
         },
     });
 

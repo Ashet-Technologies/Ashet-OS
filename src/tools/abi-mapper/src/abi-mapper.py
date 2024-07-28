@@ -743,18 +743,18 @@ def render_container(stream:CodeStream, declarations: list[Declaration], errors:
             with stream.indent():
                 stream.writeln(f".type = .@\"{decl.key}\",")
                 if decl.error is not None:
-                    stream.writeln(f".@\"error\" = ErrorSet(error{{")
+                    stream.writeln(".@\"error\" = ErrorSet(error{")
                     with stream.indent():
                         for err in sorted(decl.error.errors, key=lambda e:errors.get_number(e)):
                             stream.writeln(f"{err},")
                     stream.writeln("}),")
                 if len(decl.inputs.native) > 0:
-                    stream.writeln(f".inputs = struct {{")
+                    stream.writeln(".inputs = struct {")
                     with stream.indent():
                         write_struct_fields(decl.inputs.native)
                     stream.writeln("},")
                 if len(decl.outputs.native) > 0:
-                    stream.writeln(f".outputs = struct {{")
+                    stream.writeln(".outputs = struct {")
                     with stream.indent():
                         write_struct_fields(decl.outputs.native)
                     stream.writeln("},")
@@ -764,9 +764,19 @@ def render_container(stream:CodeStream, declarations: list[Declaration], errors:
         elif isinstance(decl, SystemResource):
             stream.writeln(f"pub const {decl.name} = *opaque {{")
             with stream.indent():
-                stream.writeln(f"pub fn as_resource(value: *@This()) *SystemResource {{")
+                stream.writeln("pub fn as_resource(self: *@This()) SystemResource {")
                 with stream.indent():
-                    stream.writeln(f"return @ptrCast(value);")
+                    stream.writeln("return @enumFromInt(@intFromPtr(self));")
+                stream.writeln("}")
+                stream.writeln()
+                stream.writeln("pub fn release(self: *@This()) void {")
+                with stream.indent():
+                    stream.writeln("syscalls.resources.release(self.as_resource());")
+                stream.writeln("}")
+                stream.writeln()
+                stream.writeln("pub fn destroy_now(self: *@This()) void {")
+                with stream.indent():
+                    stream.writeln("syscalls.resources.destroy(self.as_resource());")
                 stream.writeln("}")
             stream.writeln("};")
 
