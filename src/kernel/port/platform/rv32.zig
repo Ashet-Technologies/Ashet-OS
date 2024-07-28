@@ -150,6 +150,14 @@ pub fn areInterruptsEnabled() bool {
 pub fn disableInterrupts() void {}
 pub fn enableInterrupts() void {}
 
+pub fn get_cpu_cycle_counter() u64 {
+    return ControlStatusRegister.read(.cycle);
+}
+
+pub fn get_cpu_random_seed() ?u64 {
+    return ControlStatusRegister.read(.time);
+}
+
 pub const ControlStatusRegister = enum(u12) {
 
     // User Trap Setup
