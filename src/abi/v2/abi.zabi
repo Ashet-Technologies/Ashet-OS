@@ -92,7 +92,7 @@ const syscalls = struct {
             extern "syscall" fn enumerate_processes(processes: ?[]Process) usize;
 
             /// Queries all owned resources by a process.
-            extern "syscall" fn query_owned_resources(Process, resources: ?[]*SystemResource) usize;
+            extern "syscall" fn query_owned_resources(Process, reslist: ?[]*SystemResource) usize;
 
             /// Returns the total number of bytes the process takes up in RAM.
             extern "syscall" fn query_total_memory_usage(Process) usize;

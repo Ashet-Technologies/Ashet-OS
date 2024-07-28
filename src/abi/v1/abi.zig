@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub const Platform = @import("src/platforms.zig").Platform;
+pub const Platform = @import("platforms.zig").Platform;
 
 pub const syscalls = struct {
     // new syscalls:

@@ -116,7 +116,8 @@ pub fn UntypedErrorSet(comptime _Enum: type) fn (comptime Error: type) type {
             return enum(Int) {
                 pub const Enum = _Enum;
 
-                pub const Error = error{Unexpected} || _Error;
+                pub const StrictError = _Error;
+                pub const Error = error{Unexpected} || StrictError;
 
                 ok = 0,
 

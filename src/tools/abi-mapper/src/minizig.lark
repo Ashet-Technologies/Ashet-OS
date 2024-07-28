@@ -19,7 +19,9 @@ ns_decl : "const" identifier "=" "struct" "{" container "}" ";"
 
 src_decl : "const" identifier "=" "struct" "(" "SystemResource" ")" "{" "}" ";"
 
-fn_decl : "\"syscall\"" "fn"  identifier "(" param_list ")" type ";"
+fn_decl : "\"syscall\"" "fn"  identifier "(" param_list ")" return_type ";"
+
+return_type : [err_type  "!" ] type
 
 err_decl : "const" identifier "=" err_type ";"
 

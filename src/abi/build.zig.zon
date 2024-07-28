@@ -6,4 +6,9 @@
         "build.zig.zon",
         "abi.zig",
     },
+    .dependencies = .{
+        .abi_mapper = .{
+            .path = "../tools/abi-mapper",
+        },
+    },
 }
