@@ -162,15 +162,15 @@ pub const syscalls = struct {
         }
     };
 
-    pub const io = struct {
-        pub fn schedule_and_await(enqueue_list: ?*abi.IOP, wait_mode: abi.WaitIO) ?*abi.IOP {
+    pub const aops = struct {
+        pub fn schedule_and_await(enqueue_list: ?*abi.AsyncOp, wait_mode: abi.WaitIO) ?*abi.AsyncOp {
             _ = enqueue_list;
             _ = wait_mode;
 
             @panic("not implemented yet");
         }
 
-        pub fn cancel(iop: *abi.IOP) void {
+        pub fn cancel(iop: *abi.AsyncOp) void {
             _ = iop;
             @panic("not implemented yet");
         }

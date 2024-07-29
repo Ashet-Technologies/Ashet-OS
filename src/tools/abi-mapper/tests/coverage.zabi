@@ -1,33 +1,33 @@
 const syscalls = struct {
-    extern "syscall" fn no_operation() void;
+    extern fn no_operation() void;
 
-    extern "syscall" fn arg_with_name(v: u32) u32;
-    extern "syscall" fn arg_without_name(u32) u32;
+    extern fn arg_with_name(v: u32) u32;
+    extern fn arg_without_name(u32) u32;
 
-    extern "syscall" fn regular_slice(slice: []const u8) u32;
+    extern fn regular_slice(slice: []const u8) u32;
 
-    extern "syscall" fn optional_slice(slice: ?[]const u8) u32;
+    extern fn optional_slice(slice: ?[]const u8) u32;
 
-    extern "syscall" fn out_slice(index: u32, out: *[]const u8) void;
+    extern fn out_slice(index: u32, out: *[]const u8) void;
 
-    extern "syscall" fn out_optional_slice(index: u32, out: *?[]const u8) void;
+    extern fn out_optional_slice(index: u32, out: *?[]const u8) void;
 
-    extern "syscall" fn return_plain_error(index: u32) error{ One, Two };
+    extern fn return_plain_error(index: u32) error{ One, Two };
 
-    extern "syscall" fn return_error_union(square: f32) error{ Domain, TooLarge }!f32;
+    extern fn return_error_union(square: f32) error{ Domain, TooLarge }!f32;
 
     const slice_asserts = struct {
-        extern "syscall" fn basic([]const u8) void;
-        extern "syscall" fn optional(?[]const u8) void;
-        extern "syscall" fn out_basic(*[]const u8) void;
-        extern "syscall" fn out_optional(*?[]const u8) void;
-        extern "syscall" fn inout_basic(*[]const u8) void;
-        extern "syscall" fn inout_optional(*?[]const u8) void;
+        extern fn basic([]const u8) void;
+        extern fn optional(?[]const u8) void;
+        extern fn out_basic(*[]const u8) void;
+        extern fn out_optional(*?[]const u8) void;
+        extern fn inout_basic(*[]const u8) void;
+        extern fn inout_optional(*?[]const u8) void;
     };
 };
 
 const io = struct {
-    extern "iop" fn NoOperation() error{}!void;
+    async fn NoOperation() error{}!void;
 };
 
 pub const Src1 = struct(SystemResource) {};
@@ -41,11 +41,7 @@ const std = @import("std");
 
 pub const SystemResource = struct {};
 
-pub const IOP = struct {
-    pub fn define(v: anytype) @TypeOf(v) {
-        return v;
-    }
-};
+pub const AsyncOp = struct {};
 
 pub fn ErrorSet(comptime ErrorType: type) type {
     const raw_errors = @typeInfo(ErrorType).ErrorSet orelse @compileError("anyerror is not a legal error set");

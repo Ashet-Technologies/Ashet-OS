@@ -1,5 +1,25 @@
 const std = @import("std");
 
+const ErrorSetTag = opaque {};
+pub fn is_error_set(comptime T: type) bool {
+    const info = @typeInfo(T);
+    if (info != .Enum)
+        return false;
+    const einfo = info.Enum;
+    if (einfo.is_exhaustive)
+        return false;
+    if (einfo.decls.len > 0)
+        return false;
+    if (einfo.fields.len < 1)
+        return false;
+    if (!std.mem.eql(u8, einfo.fields[0].name, "ok"))
+        return false;
+    if (einfo.fields[0].value != 0)
+        return false;
+    // seems okayish now
+    return true;
+}
+
 pub fn ErrorSet(comptime ErrorType: type) type {
     const raw_errors = @typeInfo(ErrorType).ErrorSet orelse @compileError("anyerror is not a legal error set");
 

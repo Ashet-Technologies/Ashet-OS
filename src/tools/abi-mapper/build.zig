@@ -54,9 +54,11 @@ pub fn build(b: *std.Build) void {
 
     create_venv_step.dependOn(&venv_info_printer.step);
 
+    const abi_mapper_py = b.path("src/abi-mapper.py");
+
     const python_wrapper_options = b.addOptions();
     python_wrapper_options.addOptionPath("interpreter", pyenv_python3);
-    python_wrapper_options.addOptionPath("script", b.path("src/abi-mapper.py"));
+    python_wrapper_options.addOptionPath("script", abi_mapper_py);
     python_wrapper_options.step.dependOn(&pyenv_install_packages.step);
 
     const python_wrapper = b.addExecutable(.{
@@ -66,6 +68,10 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/exe-wrapper.zig"),
     });
     python_wrapper.root_module.addOptions("options", python_wrapper_options);
+    python_wrapper.root_module.addAnonymousImport("abi-mapper.py", .{
+        // Hack to make abi-mapper propagate changes on the python script:
+        .root_source_file = abi_mapper_py,
+    });
 
     b.installArtifact(python_wrapper);
 

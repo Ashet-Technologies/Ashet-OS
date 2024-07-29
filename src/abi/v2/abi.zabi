@@ -5,93 +5,93 @@
 //!
 
 ///////////////////////////////////////////////////////////
-// Syscalls & IOPS
+// Syscalls & Async Operations
 
 const syscalls = struct {
     /// All syscalls related to generic resource management.
     const resources = struct {
         /// Returns the type of the system resource.
-        extern "syscall" fn get_type(SystemResource) SystemResource.Type;
+        extern fn get_type(SystemResource) SystemResource.Type;
 
         /// Returns the current owner of this resource.
-        extern "syscall" fn get_owners(SystemResource, owners: ?[]Process) usize;
+        extern fn get_owners(SystemResource, owners: ?[]Process) usize;
 
         /// Adds the process to the owners of this resource, so the process
         /// can safely access it without fear of having a use-after-free.
-        extern "syscall" fn send_to_process(SystemResource, Process) void;
+        extern fn send_to_process(SystemResource, Process) void;
 
         /// Drops the ownership of the resource for the current process.
         /// If no owner remains, the resource will be destroyed and it's
         /// memory will be released.
         /// The handle must be assumed invalid for this process after
         /// this function returns.
-        extern "syscall" fn release(SystemResource) void;
+        extern fn release(SystemResource) void;
 
         /// Immediatly destroys the resource and releases its memory.
         ///
         /// NOTE: This will *always* destroy the resource, even if it's
         ///       also owned by another process.
-        extern "syscall" fn destroy(SystemResource) void;
+        extern fn destroy(SystemResource) void;
     };
 
     /// Syscalls related to processes
     const process = struct {
         /// Returns a pointer to the file name of the process.
-        extern "syscall" fn get_file_name(?Process) [*:0]const u8;
+        extern fn get_file_name(?Process) [*:0]const u8;
 
         /// Returns the base address of the process.
-        extern "syscall" fn get_base_address(?Process) usize;
+        extern fn get_base_address(?Process) usize;
 
         /// Returns the arguments that were passed to this process in `Spawn`.
-        extern "syscall" fn get_arguments(?Process, argv: ?[]SpawnProcessArg) usize;
+        extern fn get_arguments(?Process, argv: ?[]SpawnProcessArg) usize;
 
         /// Terminates the current process with the given exit code
-        extern "syscall" fn terminate(exit_code: ExitCode) noreturn;
+        extern fn terminate(exit_code: ExitCode) noreturn;
 
         /// Terminates a foreign process.
         /// If the current process is passed, this function will not return
-        extern "syscall" fn kill(Process) void;
+        extern fn kill(Process) void;
 
         const thread = struct {
             /// Returns control to the scheduler. Returns when the scheduler
             /// schedules the process again.
-            extern "syscall" fn yield() void;
+            extern fn yield() void;
 
             /// Terminates the current thread.
-            extern "syscall" fn exit(exit_code: ExitCode) noreturn;
+            extern fn exit(exit_code: ExitCode) noreturn;
 
             /// Waits for the thread to exit and returns its return code.
-            extern "syscall" fn join(Thread) ExitCode;
+            extern fn join(Thread) ExitCode;
 
             /// Spawns a new thread with `function` passing `arg` to it.
             /// If `stack_size` is not 0, will create a stack with the given size.
-            extern "syscall" fn spawn(function: ThreadFunction, arg: ?*anyopaque, stack_size: usize) ?Thread;
+            extern fn spawn(function: ThreadFunction, arg: ?*anyopaque, stack_size: usize) ?Thread;
 
             /// Kills the given thread with `exit_code`.
-            extern "syscall" fn kill(Thread, exit_code: ExitCode) void;
+            extern fn kill(Thread, exit_code: ExitCode) void;
         };
 
         const debug = struct {
             /// Writes to the system debug log.
-            extern "syscall" fn write_log(log_level: LogLevel, message: []const u8) void;
+            extern fn write_log(log_level: LogLevel, message: []const u8) void;
 
             /// Stops the process and allows debugging.
-            extern "syscall" fn breakpoint() void;
+            extern fn breakpoint() void;
         };
 
         const memory = struct {
             /// Allocates memory
-            extern "syscall" fn allocate(size: usize, ptr_align: u8) ?[*]u8;
+            extern fn allocate(size: usize, ptr_align: u8) ?[*]u8;
 
             /// Returns memory to the systme.
-            extern "syscall" fn release(mem: []u8, ptr_align: u8) void;
+            extern fn release(mem: []u8, ptr_align: u8) void;
         };
     };
 
     const clock = struct {
         /// Returns the time in nanoseconds since system startup.
         /// This clock is monotonically increasing.
-        extern "syscall" fn monotonic() u64;
+        extern fn monotonic() u64;
     };
 
     const time = struct {
@@ -99,7 +99,7 @@ const syscalls = struct {
         /// Precision of timing depends on the hardware.
         /// The return value is signed because it is possible to have a date that is
         /// before the epoch.
-        extern "syscall" fn now() DateTime;
+        extern fn now() DateTime;
     };
 
     const video = struct {
@@ -108,24 +108,24 @@ const syscalls = struct {
         /// If `ids` is `null`, the total number of available outputs is returned,
         /// otherwise, up to `ids.len` elements are written into the provided array
         /// and the number of written elements is returned.
-        extern "syscall" fn enumerate(ids: ?[]VideoOutputID) usize;
+        extern fn enumerate(ids: ?[]VideoOutputID) usize;
 
         /// Acquire exclusive access to a video output.
-        extern "syscall" fn acquire(VideoOutputID) ?VideoOutput;
+        extern fn acquire(VideoOutputID) ?VideoOutput;
 
         /// Returns the current resolution
-        extern "syscall" fn get_resolution(VideoOutput) Size;
+        extern fn get_resolution(VideoOutput) Size;
 
         /// Returns a pointer to linear video memory, row-major.
         /// Pixels rows will have a stride of the current video buffer width.
         /// The first pixel in the memory is the top-left pixel.
-        extern "syscall" fn get_video_memory(VideoOutput) [*]align(4) ColorIndex;
+        extern fn get_video_memory(VideoOutput) [*]align(4) ColorIndex;
 
         /// Fetches a copy of the current color pallete.
-        extern "syscall" fn get_palette(VideoOutput, *[palette_size]Color) void;
+        extern fn get_palette(VideoOutput, *[palette_size]Color) void;
 
         /// Changes the current color palette.
-        extern "syscall" fn set_palette(VideoOutput, *const [palette_size]Color) error{Unsupported};
+        extern fn set_palette(VideoOutput, *const [palette_size]Color) error{Unsupported};
 
         // /// Returns a pointer to the current palette. Changing this palette
         // /// will directly change the associated colors on the screen.
@@ -145,7 +145,7 @@ const syscalls = struct {
         //  fn change_resolution(*VideoOutput, u16, u16) void;
     };
 
-    const io = struct {
+    const aops = struct {
         /// Starts new I/O operations and returns completed ones.
         ///
         /// If `start_queue` is given, the kernel will schedule the events in the kernel.
@@ -155,53 +155,53 @@ const syscalls = struct {
         /// The function will optionally block based on the `wait` parameter.
         ///
         /// The return value is the HEAD element of a linked list of completed I/O events.
-        extern "syscall" fn schedule_and_await(start_queue: ?*IOP, wait: WaitIO) ?*IOP;
+        extern fn schedule_and_await(start_queue: ?*AsyncOp, wait: WaitIO) ?*AsyncOp;
 
         /// Cancels a single I/O operation.
-        extern "syscall" fn cancel(iop: *IOP) void;
+        extern fn cancel(aop: *AsyncOp) void;
     };
 
     const draw = struct {
         // Fonts:
 
         /// Returns the font data for the given font name, if any.
-        extern "syscall" fn get_system_font(font_name: []const u8) error{
+        extern fn get_system_font(font_name: []const u8) error{
             FileNotFound,
             SystemResources,
             OutOfMemory,
         }!Font;
 
         /// Creates a new custom font from the given data.
-        extern "syscall" fn create_font(data: []const u8) error{
+        extern fn create_font(data: []const u8) error{
             InvalidData,
             SystemResources,
             OutOfMemory,
         }!Font;
 
         /// Returns true if the given font is a system-owned font.
-        extern "syscall" fn is_system_font(Font) bool;
+        extern fn is_system_font(Font) bool;
 
         // Framebuffer management:
 
         /// Creates a new in-memory framebuffer that can be used for offscreen painting.
-        extern "syscall" fn create_memory_framebuffer(size: Size) ?Framebuffer;
+        extern fn create_memory_framebuffer(size: Size) ?Framebuffer;
 
         /// Creates a new framebuffer based off a video output. Can be used to output pixels
         /// to the screen.
-        extern "syscall" fn create_video_framebuffer(VideoOutput) ?Framebuffer;
+        extern fn create_video_framebuffer(VideoOutput) ?Framebuffer;
 
         /// Creates a new framebuffer that allows painting into a GUI window.
-        extern "syscall" fn create_window_framebuffer(Window) ?Framebuffer;
+        extern fn create_window_framebuffer(Window) ?Framebuffer;
 
         /// Returns the type of a framebuffer object.
-        extern "syscall" fn get_framebuffer_type(Framebuffer) FramebufferType;
+        extern fn get_framebuffer_type(Framebuffer) FramebufferType;
 
         /// Returns the size of a framebuffer object.
-        extern "syscall" fn get_framebuffer_size(Framebuffer) Size;
+        extern fn get_framebuffer_size(Framebuffer) Size;
 
         /// Marks a portion of the framebuffer as changed and forces the OS to
         /// perform an update action if necessary.
-        extern "syscall" fn invalidate_framebuffer(Framebuffer, Rectangle) void;
+        extern fn invalidate_framebuffer(Framebuffer, Rectangle) void;
 
         // Drawing:
 
@@ -215,21 +215,21 @@ const syscalls = struct {
         // Window API:
 
         /// Spawns a new window.
-        extern "syscall" fn create_window(desktop: Desktop, title: []const u8, min: Size, max: Size, startup: Size, flags: CreateWindowFlags) error{
+        extern fn create_window(desktop: Desktop, title: []const u8, min: Size, max: Size, startup: Size, flags: CreateWindowFlags) error{
             SystemResources,
             InvalidDimensions,
         }!Window;
 
         /// Resizes a window to the new size.
-        extern "syscall" fn resize_window(Window, size: Size) void;
+        extern fn resize_window(Window, size: Size) void;
 
         /// Changes a window title.
-        extern "syscall" fn set_window_title(Window, title: []const u8) void;
+        extern fn set_window_title(Window, title: []const u8) void;
 
         // Desktop Server API:
 
         /// Creates a new desktop with the given name.
-        extern "syscall" fn create_desktop(
+        extern fn create_desktop(
             /// User-visible name of the desktop.
             name: []const u8,
             descriptor: *const DesktopDescriptor,
@@ -240,13 +240,13 @@ const syscalls = struct {
         // TODO: Function to get the "current"/"primary"/"associated" desktop server, how?
 
         /// Returns the name of the provided desktop.
-        extern "syscall" fn get_desktop_name(Desktop) [*:0]const u8;
+        extern fn get_desktop_name(Desktop) [*:0]const u8;
 
         /// Enumerates all available desktops.
-        extern "syscall" fn enumerate_desktops(serverlist: ?[]Desktop) usize;
+        extern fn enumerate_desktops(serverlist: ?[]Desktop) usize;
 
         /// Returns all windows for a desktop handle.
-        extern "syscall" fn enumerate_desktop_windows(Desktop, window: ?[]Window) usize;
+        extern fn enumerate_desktop_windows(Desktop, window: ?[]Window) usize;
 
         /// Returns desktop-associated "opaque" data for this window.
         ///
@@ -254,11 +254,11 @@ const syscalls = struct {
         /// like position on the screen, orientation, alignment, ...
         ///
         /// The size of this must be known and cannot be queried.
-        extern "syscall" fn get_desktop_data(Window) [*]align(16) u8;
+        extern fn get_desktop_data(Window) [*]align(16) u8;
 
         /// Posts an event into the window event queue so the window owner
         /// can handle the event.
-        extern "syscall" fn post_window_event(
+        extern fn post_window_event(
             window: Window,
             event_type: WindowEvent.Type,
             event: WindowEvent,
@@ -270,28 +270,28 @@ const syscalls = struct {
         ///
         /// If the entropy pool runs out of entropy bits, this call does not block
         /// and draw bytes from the pool.
-        extern "syscall" fn get_soft_random(data: []u8) void;
+        extern fn get_soft_random(data: []u8) void;
     };
 };
 
 /// This namespace contains the supported I/O operations of Ashet OS.
 const io = struct {
     /// Sleeps until `clock.monotonic()` returns at least `timeout`.
-    extern "iop" fn Timer(
-        /// Monotonic timestamp in nanoseconds until the IOP completes.
+    async fn Timer(
+        /// Monotonic timestamp in nanoseconds until the operation completes.
         timeout: u64,
     ) error{}!void;
 
     const process = struct {
         /// Spawns a new process
-        extern "iop" fn Spawn(
+        async fn Spawn(
             /// Relative base directory for `path`.
             dir: Directory,
             /// File name of the executable relative to `dir`.
             path: []const u8,
             /// The arguments passed to the process.
             /// If a `SystemResource` is passed, it will receive the created process as a owning process.
-            /// It is safe to release the resource in this process as soon as this IOP returns.
+            /// It is safe to release the resource in this process as soon as this operation returns.
             argv: []SpawnProcessArg,
         ) error{
             SystemResources,
@@ -304,7 +304,7 @@ const io = struct {
 
     const input = struct {
         /// Waits for an input event and completes when any input was done.
-        extern "iop" fn GetEvent() error{
+        async fn GetEvent() error{
             NonExclusiveAccess,
             InProgress,
         }!struct {
@@ -316,7 +316,7 @@ const io = struct {
 
     const pipe = struct {
         /// Writes elements from `data` into the given pipe.
-        extern "iop" fn Write(
+        async fn Write(
             pipe: Pipe,
             /// Pointer to the first element. Length defines how many elements are to be transferred.
             data: []const u8,
@@ -332,7 +332,7 @@ const io = struct {
         };
 
         /// Reads elements from a pipe into `buffer`.
-        extern "iop" fn Read(
+        async fn Read(
             pipe: Pipe,
             /// Points to the first element to be received.
             buffer: []u8,
@@ -350,7 +350,7 @@ const io = struct {
 
     const network = struct {
         pub const udp = struct {
-            extern "iop" fn Bind(socket: UdpSocket, bind_point: EndPoint) error{
+            async fn Bind(socket: UdpSocket, bind_point: EndPoint) error{
                 InvalidHandle,
                 SystemResources,
                 AddressInUse,
@@ -359,7 +359,7 @@ const io = struct {
                 bind_point: EndPoint,
             };
 
-            extern "iop" fn Connect(
+            async fn Connect(
                 socket: UdpSocket,
                 target: EndPoint,
             ) error{
@@ -377,13 +377,13 @@ const io = struct {
                 Timeout,
             }!void;
 
-            extern "iop" fn Disconnect(socket: UdpSocket) error{
+            async fn Disconnect(socket: UdpSocket) error{
                 InvalidHandle,
                 SystemResources,
                 NotConnected,
             }!void;
 
-            extern "iop" fn Send(
+            async fn Send(
                 socket: UdpSocket,
                 data: []const u8,
             ) error{
@@ -402,7 +402,7 @@ const io = struct {
                 bytes_sent: usize,
             };
 
-            extern "iop" fn SendTo(
+            async fn SendTo(
                 socket: UdpSocket,
                 receiver: EndPoint,
                 data: []const u8,
@@ -421,7 +421,7 @@ const io = struct {
                 bytes_sent: usize,
             };
 
-            extern "iop" fn ReceiveFrom(
+            async fn ReceiveFrom(
                 socket: UdpSocket,
                 buffer: []u8,
             ) error{
@@ -442,7 +442,7 @@ const io = struct {
         };
 
         pub const tcp = struct {
-            extern "iop" fn Bind(
+            async fn Bind(
                 socket: TcpSocket,
                 bind_point: EndPoint,
             ) error{
@@ -454,7 +454,7 @@ const io = struct {
                 bind_point: EndPoint,
             };
 
-            extern "iop" fn Connect(
+            async fn Connect(
                 socket: TcpSocket,
                 target: EndPoint,
             ) error{
@@ -475,7 +475,7 @@ const io = struct {
                 Timeout,
             }!void;
 
-            extern "iop" fn Send(
+            async fn Send(
                 socket: TcpSocket,
                 data: []const u8,
             ) error{
@@ -497,7 +497,7 @@ const io = struct {
                 bytes_sent: usize,
             };
 
-            extern "iop" fn Receive(
+            async fn Receive(
                 socket: TcpSocket,
                 buffer: []u8,
                 /// if true, will read until `buffer.len` bytes arrived. otherwise will read until the end of a single packet
@@ -551,12 +551,12 @@ const io = struct {
     /// The filesystem that is used to boot the OS from has an alias `SYS:` that is always a legal way to address this file system.
     pub const fs = struct {
         /// Flushes all open files to disk.
-        extern "iop" fn Sync() error{DiskError}!void;
+        async fn Sync() error{DiskError}!void;
 
         /// Gets information about a file system.
         /// Also returns a `next` id that can be used to iterate over all filesystems.
         /// The `system` filesystem is guaranteed to be the first one.
-        extern "iop" fn GetFilesystemInfo(fs: FileSystemId) error{
+        async fn GetFilesystemInfo(fs: FileSystemId) error{
             DiskError,
             InvalidFileSystem,
         }!struct {
@@ -565,7 +565,7 @@ const io = struct {
         };
 
         /// opens a directory on a filesystem
-        extern "iop" fn OpenDrive(fs: FileSystemId, path: []const u8) error{
+        async fn OpenDrive(fs: FileSystemId, path: []const u8) error{
             DiskError,
             InvalidFileSystem,
             FileNotFound,
@@ -578,7 +578,7 @@ const io = struct {
         };
 
         /// opens a directory relative to the given dir handle.
-        extern "iop" fn OpenDir(dir: Directory, path: []const u8) error{
+        async fn OpenDir(dir: Directory, path: []const u8) error{
             DiskError,
             InvalidHandle,
             FileNotFound,
@@ -591,17 +591,17 @@ const io = struct {
         };
 
         /// closes the directory handle
-        extern "iop" fn CloseDir(dir: Directory) error{InvalidHandle}!struct {};
+        async fn CloseDir(dir: Directory) error{InvalidHandle}!struct {};
 
         /// resets the directory iterator to the starting point
-        extern "iop" fn ResetDirEnumeration(dir: Directory) error{
+        async fn ResetDirEnumeration(dir: Directory) error{
             DiskError,
             InvalidHandle,
             SystemResources,
         }!void;
 
         /// returns the info for the current file or "eof", and advances the iterator to the next entry if possible
-        extern "iop" fn EnumerateDir(dir: Directory) error{
+        async fn EnumerateDir(dir: Directory) error{
             DiskError,
             InvalidHandle,
             SystemResources,
@@ -611,7 +611,7 @@ const io = struct {
         };
 
         /// deletes a file or directory by the given path.
-        extern "iop" fn Delete(
+        async fn Delete(
             dir: Directory,
             path: []const u8,
             recurse: bool,
@@ -624,7 +624,7 @@ const io = struct {
 
         /// creates a new directory relative to dir. If `path` contains subdirectories, all
         /// directories are created.
-        extern "iop" fn MkDir(
+        async fn MkDir(
             dir: Directory,
             path: []const u8,
             mkopen: bool,
@@ -638,7 +638,7 @@ const io = struct {
         };
 
         /// returns the type of the file/dir at path, also adds size and modification dates
-        extern "iop" fn StatEntry(
+        async fn StatEntry(
             dir: Directory,
             path_ptr: [*]const u8,
             path_len: usize,
@@ -653,7 +653,7 @@ const io = struct {
 
         /// renames a file inside the same file system.
         /// NOTE: This is a cheap operation and does not require the copying of data.
-        extern "iop" fn NearMove(
+        async fn NearMove(
             src_dir: Directory,
             src_path: []const u8,
             dst_path: []const u8,
@@ -669,7 +669,7 @@ const io = struct {
 
         /// moves a file or directory between two unrelated directories. Can also move between different file systems.
         /// NOTE: This syscall might copy the data.
-        extern "iop" fn FarMove(
+        async fn FarMove(
             src_dir: Directory,
             src_path: []const u8,
             dst_dir: Directory,
@@ -684,7 +684,7 @@ const io = struct {
         }!void;
 
         /// copies a file or directory between two unrelated directories. Can also move between different file systems.
-        extern "iop" fn Copy(
+        async fn Copy(
             src_dir: Directory,
             src_path: []const u8,
             dst_dir: Directory,
@@ -701,7 +701,7 @@ const io = struct {
         // // GROUP: file handling
 
         /// opens a file from the given directory.
-        extern "iop" fn OpenFile(
+        async fn OpenFile(
             dir: Directory,
             path: []const u8,
             access: FileAccess,
@@ -722,21 +722,21 @@ const io = struct {
         };
 
         /// closes the handle and flushes the file.
-        extern "iop" fn CloseFile(file: File) error{
+        async fn CloseFile(file: File) error{
             DiskError,
             InvalidHandle,
             SystemResources,
         }!void;
 
         /// makes sure this file is safely stored to mass storage device
-        extern "iop" fn FlushFile(file: File) error{
+        async fn FlushFile(file: File) error{
             DiskError,
             InvalidHandle,
             SystemResources,
         }!void;
 
         /// directly reads data from a given offset into the file. no streaming API to the kernel
-        extern "iop" fn Read(
+        async fn Read(
             file: File,
             offset: u64,
             buffer: []u8,
@@ -749,7 +749,7 @@ const io = struct {
         };
 
         /// directly writes data to a given offset into the file. no streaming API to the kernel
-        extern "iop" fn Write(
+        async fn Write(
             file: File,
             offset: u64,
             buffer: []const u8,
@@ -764,7 +764,7 @@ const io = struct {
         };
 
         /// allows us to get the current size of the file, modification dates, and so on
-        extern "iop" fn StatFile(file: File) error{
+        async fn StatFile(file: File) error{
             DiskError,
             InvalidHandle,
             SystemResources,
@@ -773,7 +773,7 @@ const io = struct {
         };
 
         /// Resizes the file to the given length in bytes. Can be also used to truncate a file to zero length.
-        extern "iop" fn Resize(file: File, length: u64) error{
+        async fn Resize(file: File, length: u64) error{
             DiskError,
             InvalidHandle,
             NoSpaceLeft,
@@ -784,13 +784,13 @@ const io = struct {
     const gui = struct {
         /// Waits for an event on the given `Window`, completing as soon as
         /// an event arrived.
-        extern "iop" fn GetWindowEvent(window: Window) error{InProgress}!struct {
+        async fn GetWindowEvent(window: Window) error{InProgress}!struct {
             event_type: WindowEvent.Type,
             event: WindowEvent,
         };
 
         /// Opens a message box popup window and prompts the user for response.
-        extern "iop" fn ShowMessageBox(
+        async fn ShowMessageBox(
             Desktop,
             message: []const u8,
             caption: []const u8,
@@ -803,10 +803,10 @@ const io = struct {
 
     const sync = struct {
         /// Waits for the given `SyncEvent` to be notified.
-        extern "iop" fn WaitForEvent(SyncEvent) error{}!void;
+        async fn WaitForEvent(SyncEvent) error{}!void;
 
         /// Locks a mutex. Will complete once the mutex is locked.
-        extern "iop" fn Lock(Mutex) error{}!void;
+        async fn Lock(Mutex) error{}!void;
     };
 
     const random = struct {
@@ -814,7 +814,7 @@ const io = struct {
         ///
         /// This call blocks until the entropy pool has enough entropy to fill
         /// an entire hash to draw from.
-        extern "iop" fn get_strict_random(data: []u8) error{}!void;
+        async fn GetStrictRandom(data: []u8) error{}!void;
     };
 };
 
@@ -857,8 +857,17 @@ pub const Mutex = struct(SystemResource) {};
 
 usingnamespace zig; // regular code beyond this
 
-/// Constructor for generic asynchronous I/O oerations
-pub const IOP = iops.Generic_IOP(IOP_Type);
+/// Asynchronous operations (short AOP) are long-running
+/// operations that can run in the background (at least to
+/// a certain extend) and can be seen as long-running system
+/// calls.
+pub const AsyncOp = extern struct {
+    type: AOP_Type,
+    next: ?*AsyncOp,
+    tag: usize, // user specified data
+
+    kernel_data: [7]usize = undefined, // internal data used by the kernel to store
+};
 
 /// Constructor for a generic, ABI passable error set.
 pub const ErrorSet = @import("error_set.zig").ErrorSet;
@@ -867,7 +876,6 @@ pub const ErrorSet = @import("error_set.zig").ErrorSet;
 // Imports:
 
 const std = @import("std");
-const iops = @import("iops.zig");
 const abi = @This();
 
 ///////////////////////////////////////////////////////////
@@ -1012,7 +1020,7 @@ pub const WaitIO = enum(u32) {
     dont_block,
 
     /// Doesn't block the call, and guarantees that no event is returned by `scheduleAndAwait`.
-    /// This can be used to enqueue new IOPs outside of the event loop.
+    /// This can be used to enqueue new AsyncOps outside of the event loop.
     schedule_only,
 
     /// Wait for at least one I/O to complete operation.

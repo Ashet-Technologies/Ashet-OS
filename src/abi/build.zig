@@ -7,6 +7,7 @@ pub const Platform = ports.Platform;
 const AbiConverter = @import("abi_mapper").Converter;
 
 pub fn build(b: *std.Build) void {
+    const debug = b.step("debug", "Installs the generated ABI V2 files");
 
     // export the legacy module:
     {
@@ -63,5 +64,10 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "abi", .module = abi_mod },
             },
         });
+
+        debug.dependOn(&b.addInstallFile(abi_code, "abi.zig").step);
+        debug.dependOn(&b.addInstallFile(provider_code, "provider.zig").step);
+        debug.dependOn(&b.addInstallFile(consumer_code, "consumer.zig").step);
+        debug.dependOn(&b.addInstallFile(stubs_code, "stubs.zig").step);
     }
 }
