@@ -54,10 +54,10 @@ pub fn initialize() void {
 
 /// This function is not cryptographically safe unless `wait_for_entropy` was
 /// called before-hand.
-pub fn get_random_bytes(buf: [*]u8, len: usize) void {
-    if (len == 0) return;
+pub fn get_random_bytes(buf: []u8) void {
+    if (buf.len == 0) return;
     crng.reseed();
-    crng.draw(buf[0..len]);
+    crng.draw(buf);
 }
 
 /// This function blocks until there is enough credited entropy in the pool to extract

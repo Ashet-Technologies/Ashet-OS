@@ -22,7 +22,7 @@ pub fn Generic_IOP(comptime Type: type) type {
 
         /// Defines a new IO operation type.
         pub fn define(comptime def: Definition) type {
-            if (!error_set.isErrorSet(def.@"error")) {
+            if (!error_set.is_error_set(def.@"error")) {
                 @compileError("IOP.define expects .error to be a type created by ErrorSet()!");
             }
 
@@ -31,7 +31,7 @@ pub fn Generic_IOP(comptime Type: type) type {
 
             const inputs_augmented = @Type(.{
                 .Struct = .{
-                    .layout = .Extern,
+                    .layout = .@"extern",
                     .fields = inputs,
                     .decls = &.{},
                     .is_tuple = false,
@@ -47,12 +47,12 @@ pub fn Generic_IOP(comptime Type: type) type {
                         fld.name,
                     }));
                 }
-                fld.default_value = undefinedDefaultFor(fld.type);
+                fld.default_value = undefined_default(fld.type);
             }
 
             const outputs_augmented = @Type(.{
                 .Struct = .{
-                    .layout = .Extern,
+                    .layout = .@"extern",
                     .fields = &output_fields,
                     .decls = &.{},
                     .is_tuple = false,
@@ -135,9 +135,11 @@ pub fn Generic_IOP(comptime Type: type) type {
             return @fieldParentPtr("iop", iop);
         }
 
-        fn undefinedDefaultFor(comptime T: type) *T {
-            comptime var value: T = undefined;
-            return &value;
+        fn undefined_default(comptime T: type) ?*const anyopaque {
+            comptime {
+                const value: T = undefined;
+                return @ptrCast(&value);
+            }
         }
     };
 }

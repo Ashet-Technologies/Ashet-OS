@@ -15,7 +15,8 @@ pub const network = @import("components/network.zig");
 pub const scheduler = @import("components/scheduler.zig");
 pub const serial = @import("components/serial.zig");
 pub const storage = @import("components/storage.zig");
-pub const syscalls = @import("components/syscalls.zig");
+pub const syscalls = @import("components/syscalls-v1.zig");
+pub const syscalls_v2 = @import("components/syscalls-v2.zig");
 pub const time = @import("components/time.zig");
 pub const resources = @import("components/resources.zig");
 // pub const ui = @import("components/ui.zig");
@@ -56,6 +57,11 @@ comptime {
             .name = "ashet_kernelMain",
         });
     }
+}
+
+comptime {
+    // export the syscalls:
+    _ = syscalls_v2;
 }
 
 fn ashet_kernelMain() callconv(.C) noreturn {

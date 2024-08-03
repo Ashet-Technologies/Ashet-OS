@@ -47,6 +47,8 @@ pub fn build(b: *std.Build) void {
     // Modules:
 
     const abi_mod = abi_dep.module("ashet-abi");
+    const abi_v2_def_mod = abi_dep.module("ashet-abi-v2");
+    const abi_v2_impl_mod = abi_dep.module("ashet-abi-v2-provider");
     const virtio_mod = virtio_dep.module("virtio");
     const ashet_fs_mod = ashet_fs_dep.module("ashet-fs");
     const ashet_std_mod = ashet_std_dep.module("ashet-std");
@@ -89,6 +91,9 @@ pub fn build(b: *std.Build) void {
             .{ .name = "fatfs", .module = zfat_mod },
             .{ .name = "vnc", .module = vnc_mod },
             .{ .name = "ashet", .module = ashetos_mod },
+
+            .{ .name = "ashet-abi-v2", .module = abi_v2_def_mod },
+            .{ .name = "ashet-abi-v2-impl", .module = abi_v2_impl_mod },
 
             // only required on hosted instances:
             .{ .name = "network", .module = network_mod },

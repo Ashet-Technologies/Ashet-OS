@@ -274,12 +274,12 @@ class ErrorSet(Declaration,Type):
     errors: set[str]
 
 @dataclass(frozen=True, eq=True)
-class IOP(Declaration):
+class AsyncOp(Declaration):
     inputs: ParameterCollection
     outputs: ParameterCollection
     error: ErrorSet
-    key: RefValue[str] = field(default=RefValue[str](""))
-    number: RefValue[int]= field(default=RefValue[int](None))
+    key: RefValue[str] = field(default_factory=lambda: RefValue[str](""))
+    number: RefValue[int]= field(default_factory=lambda: RefValue[int](None))
 
 @dataclass(frozen=True, eq=True)
 class Container :
@@ -312,7 +312,7 @@ class ErrorAllocation:
                 self.insert_error_set(decl.abi_return_type)
             elif isinstance(decl.abi_return_type, ErrorUnion):
                 self.insert_error_set(decl.abi_return_type.error)
-        elif isinstance(decl, IOP):
+        elif isinstance(decl, AsyncOp):
             self.insert_error_set(decl.error)
         elif isinstance(decl, SystemResource):
             pass
@@ -328,7 +328,7 @@ class ABI_Definition:
     root_container: TopLevelCode
     errors: ErrorAllocation
     sys_resources: list[str]
-    iops: list[IOP]
+    iops: list[AsyncOp]
 
 def unwrap_items(func):
     def _deco(self, items):
@@ -415,8 +415,8 @@ class ZigCodeTransformer(Transformer):
         return etype
 
     @unwrap_items
-    def iop_decl(self, identifier, inputs, errorset, outputs) -> IOP:
-        return IOP(
+    def iop_decl(self, identifier, inputs, errorset, outputs) -> AsyncOp:
+        return AsyncOp(
             name = identifier,
             docs = None,
             inputs =ParameterCollection( inputs),
@@ -679,7 +679,138 @@ def render_docstring(stream:CodeStream, docs: DocComment | None):
         for line in docs.lines:
             stream.writeln(f"/// {line}")
 
+def render_error_set(stream:CodeStream, error_set: ErrorSet|set[str]):
+    if isinstance(error_set, ErrorSet):
+        error_set = error_set.errors
+    error_set: list[str] =sorted(set(error_set))
 
+    if len(error_set) > 1:
+        stream.writeln("error {")
+        with stream.indent():
+            for err in error_set:
+                stream.writeln(err, ",")
+        stream.writeln("}")
+
+    else:
+        stream.write("error {", ", ".join(error_set), "}")
+
+def render_aop_type(stream: CodeStream, iop: AsyncOp):
+
+    def write_struct_fields(struct: list[Parameter], default_factory: Callable[[Parameter],str]|None=None):
+        for field in struct:
+            if field.docs:
+                render_docstring(stream, field.docs)
+            stream.write(f"{field.name}: ")
+            render_type(stream, field.type)
+            if default_factory is not None:
+                stream.write(" = ")
+                stream.write(default_factory(field))
+            stream.writeln(",")
+            
+    stream.writeln("extern struct {")
+    with stream.indent():
+        stream.writeln("const Self = @This();")
+        # stream.writeln()
+        # render_docstring(stream,DocComment(
+        #     lines=[
+        #                 "Marker used to recognize types as I/O ops.",
+        #                 "This marker cannot be accessed outside this file, so *all* IOPs must be",
+        #                 "defined in this file.",
+        #                 "This allows a certain safety against programming mistakes, as a foreign type cannot be accidently marked as an IOP.",
+        #     ]))
+        # stream.writeln("const iop_marker = IOP_Tag;")
+        stream.writeln()
+
+        stream.writeln(f"pub const aop_type: AOP_Type = .{iop.key};")
+        stream.writeln()
+
+        stream.writeln("pub const Inputs = extern struct {")
+        with stream.indent():
+            write_struct_fields(iop.inputs.native)
+        stream.writeln("};")
+        stream.writeln("pub const Outputs = extern struct {")
+        with stream.indent():
+            write_struct_fields(iop.outputs.native, default_factory=lambda f: "undefined")
+        stream.writeln("};")
+        stream.write("pub const Error = ")
+        render_error_set(stream, iop.error)
+        stream.writeln(";")
+
+        stream.writeln('async_op: AsyncOp = .{')
+        with stream.indent():
+            stream.writeln('.type = aop_type,')
+            stream.writeln('.next = null,')
+            stream.writeln('.tag = 0,')
+            stream.writeln('.kernel_data = undefined,')
+        stream.writeln('},')
+        stream.writeln('@"error": ErrorSet(Error) = undefined,')
+        stream.writeln('inputs: Inputs,')
+        stream.writeln('outputs: Outputs = undefined,')
+
+        stream.writeln("")
+        stream.writeln("")
+
+        # TODO: Render transform of NewArgs to Input
+        # stream.writeln("pub const NewArgs = struct {")
+        # with stream.indent():
+        #     write_struct_fields(iop.inputs.abi)
+        # stream.writeln("};")
+
+        stream.writeln(
+        """
+        pub fn new(__inputs: Inputs) Self {
+            return Self{ .inputs = __inputs };
+        }
+
+        pub fn chain(self: *Self, next: anytype) void {
+            const Next = @TypeOf(next.*);
+            if (!@hasDecl(Next, "aop_type"))
+                @compileError("next must be a pointer to AsyncOp!");
+            const next_ptr: *Next = next;
+            const next_aop: *AsyncOp = &next_ptr.async_op;
+
+            var it: ?*AsyncOp = &self.async_op;
+            while (it) |p| : (it = p.next) {
+                if (p == &next_aop) // already in the chain
+                    return;
+
+                if (p.next == null) {
+                    p.next = &next_aop;
+                    return;
+                }
+            }
+
+            unreachable;
+        }
+
+        pub fn set_ok(val: *Self) void {
+            val.@"error" = .ok;
+        }
+        """)
+
+        stream.writeln("pub fn set_error(val: *Self, err: Error) void {")
+        with stream.indent():
+            stream.writeln('val.@"error" = switch(err) {')
+            with stream.indent():
+                for err in sorted(iop.error.errors):
+                    stream.writeln(f"error.{err} => .{err},")
+            stream.writeln("};")
+        stream.writeln("}")
+
+
+        stream.writeln("pub fn check_error(val: Self) (Error||error{Unexpected})!void {")
+        with stream.indent():
+            stream.writeln('return switch(val.@"error") {')
+            with stream.indent():
+                stream.writeln(".ok => {},")
+                for err in sorted(iop.error.errors):
+                    stream.writeln(f".{err} => error.{err},")
+                stream.writeln("_ => error.Unexpected,")
+            stream.writeln("};")
+        stream.writeln("}")
+
+
+    stream.writeln("}")
 
 def render_container(stream:CodeStream, declarations: list[Declaration], errors: ErrorAllocation, prefix:str = "ashet"):
     for decl in declarations:
@@ -690,7 +821,7 @@ def render_container(stream:CodeStream, declarations: list[Declaration], errors:
             stream.writeln(f"pub const {decl.name} = struct {{")
             with stream.indent():
                 render_container(stream, decl.decls,errors, symbol)
-            stream.writeln(f"}};")
+            stream.writeln("};")
         elif isinstance(decl, Function):
 
             if WITH_LINKNAME:
@@ -728,45 +859,28 @@ def render_container(stream:CodeStream, declarations: list[Declaration], errors:
 
             stream.writeln(f"}});")
 
-        elif isinstance(decl, IOP):
+        elif isinstance(decl, AsyncOp):
 
-            def write_struct_fields(struct: list[Parameter]):
-                for field in struct:
-                    if field.docs:
-                        render_docstring(stream, field.docs)
-                    stream.write(f"{field.name}: ")
-                    render_type(stream, field.type)
-                    stream.writeln(",")
-
-            stream.writeln(f"pub const {decl.name} = IOP.define(.{{")
-
-            with stream.indent():
-                stream.writeln(f".type = .@\"{decl.key}\",")
-                if decl.error is not None:
-                    stream.writeln(f".@\"error\" = ErrorSet(error{{")
-                    with stream.indent():
-                        for err in sorted(decl.error.errors, key=lambda e:errors.get_number(e)):
-                            stream.writeln(f"{err},")
-                    stream.writeln("}),")
-                if len(decl.inputs.native) > 0:
-                    stream.writeln(f".inputs = struct {{")
-                    with stream.indent():
-                        write_struct_fields(decl.inputs.native)
-                    stream.writeln("},")
-                if len(decl.outputs.native) > 0:
-                    stream.writeln(f".outputs = struct {{")
-                    with stream.indent():
-                        write_struct_fields(decl.outputs.native)
-                    stream.writeln("},")
-
-            stream.writeln("});")
+            stream.write(f"pub const {decl.name} = ")
+            render_aop_type(stream, decl)
+            stream.writeln(";")
 
         elif isinstance(decl, SystemResource):
             stream.writeln(f"pub const {decl.name} = *opaque {{")
             with stream.indent():
-                stream.writeln(f"pub fn as_resource(value: *@This()) *SystemResource {{")
+                stream.writeln("pub fn as_resource(self: *@This()) SystemResource {")
                 with stream.indent():
-                    stream.writeln(f"return @ptrCast(value);")
+                    stream.writeln("return @enumFromInt(@intFromPtr(self));")
+                stream.writeln("}")
+                stream.writeln()
+                stream.writeln("pub fn release(self: *@This()) void {")
+                with stream.indent():
+                    stream.writeln("syscalls.resources.release(self.as_resource());")
+                stream.writeln("}")
+                stream.writeln()
+                stream.writeln("pub fn destroy_now(self: *@This()) void {")
+                with stream.indent():
+                    stream.writeln("syscalls.resources.destroy(self.as_resource());")
                 stream.writeln("}")
             stream.writeln("};")
 
@@ -782,7 +896,7 @@ def foreach(declarations: list[Declaration], T: type, func, namespace: list[str]
             foreach(decl.decls, T, func, namespace + [decl.name])
         elif isinstance(decl, T):
             func(decl,namespace)
-        elif isinstance(decl, ErrorSet) or isinstance(decl, Function) or isinstance(decl, IOP) or isinstance(decl, SystemResource):
+        elif isinstance(decl, ErrorSet) or isinstance(decl, Function) or isinstance(decl, AsyncOp) or isinstance(decl, SystemResource):
             pass
         else:
             panic("unexpected", decl)
@@ -826,19 +940,19 @@ def render_abi_definition(stream:CodeStream, abi: ABI_Definition):
     stream.write(root_container.rest)
 
     stream.writeln()
+    # stream.writeln()
+    # stream.writeln("/// Global error set, defines numeric values for all errors.")
+    # stream.writeln("pub const Error = enum(u16) {")
+    # for key, value in sorted(errors.mapping.items(), key=lambda kv: kv[1]):
+    #     assert key != "ok"
+    #     assert key != "Unexpected"
+    #     assert 0 < value < 0xFFFF
+    #     stream.writeln(f"    {key} = {value},")
+    # stream.writeln("};")
+    # stream.writeln()
     stream.writeln()
-    stream.writeln("/// Global error set, defines numeric values for all errors.")
-    stream.writeln("pub const Error = enum(u16) {")
-    for key, value in sorted(errors.mapping.items(), key=lambda kv: kv[1]):
-        assert key != "ok"
-        assert key != "Unexpected"
-        assert 0 < value < 0xFFFF
-        stream.writeln(f"    {key} = {value},")
-    stream.writeln("};")
-    stream.writeln()
-    stream.writeln()
-    stream.writeln("/// IO operation type, defines numeric values for IOPs.")
-    stream.writeln("pub const IOP_Type = enum(u32) {")
+    stream.writeln("/// Asynchronous operation type, defines numeric values for AsyncOps.")
+    stream.writeln("pub const AOP_Type = enum(u32) {")
     for iop in sorted(abi.iops, key=lambda iop: iop.number.value):
         stream.writeln(f"    {iop.key.value} = {iop.number.value},")
     stream.writeln("};")
@@ -957,7 +1071,7 @@ def render_kernel_implementation(stream, abi: ABI_Definition):
     def emit_impl(func: Function, ns: list[str]):
         emit_name = "_".join(("ashet", *ns, func.name))
         import_name = ".".join(("Impl", *ns, func.name))
-        stream.write(f'export fn @"{emit_name}"(')
+        stream.write(f'pub export fn @"{emit_name}"(')
 
         if len(func.params) > 0:
             first=True
@@ -1001,7 +1115,7 @@ def render_kernel_implementation(stream, abi: ABI_Definition):
                 def handle_call():
 
                     stream.write(f"const __error_union: {all_error_sets.get_zig_error_type(error_union.error)}!");
-                    render_type(stream, error_union.result)
+                    render_type(stream, error_union.result,abi_namespace="abi")
                     stream.write(" = ")
 
                     yield
@@ -1314,7 +1428,7 @@ const abi = @import("abi");
                 stream.writeln()
             elif isinstance(decl, Function):
                 emit_impl(decl, ns_prefix)
-            elif isinstance(decl, ErrorSet) or isinstance(decl, IOP) or isinstance(decl, SystemResource):
+            elif isinstance(decl, ErrorSet) or isinstance(decl, AsyncOp) or isinstance(decl, SystemResource):
                 pass
             else:
                 panic("unexpected", decl)
@@ -1325,10 +1439,41 @@ const abi = @import("abi");
 
     all_error_sets.render_native_to_zig_mappers(stream)
 
+
+def render_stubs_implementation(stream, abi: ABI_Definition):
+
+
+    stream.write("""//!
+//! THIS CODE WAS AUTOGENERATED!
+//!
+const std = @import("std");
+const abi = @import("abi");
+
+fn __syscall_stub() callconv(.C) void {}
+
+""")
+
+    def emit_impl(func: Function, ns: list[str]):
+        emit_name = "_".join(("ashet", *ns, func.name))
+        
+        stream.writeln("@export(__syscall_stub, std.builtin.ExportOptions{")
+        with stream.indent():
+            stream.writeln(f'.name = "{emit_name}",')
+        stream.writeln("});")
+
+    stream.writeln("comptime {")
+    with stream.indent():
+        foreach(abi.root_container.decls, Function, func=emit_impl)
+    stream.writeln("}")
+
+    stream.writeln()
+
+
 class Renderer(StrEnum):
     definition = "definition"
     kernel = "kernel"
     userland = "userland"
+    stubs= "stubs"
 
 def main():
     global WITH_LINKNAME
@@ -1364,24 +1509,29 @@ def main():
     for decl in root_container.decls:
         errors.collect(decl)
 
-    iop_numbers: dict[int,IOP] = dict()
+    iop_numbers: dict[int,AsyncOp] = dict()
 
-    def allocate_iop_num(iop: IOP, ns:list[str]):
+    def allocate_iop_num(iop: AsyncOp, ns:list[str]):
         index = len(iop_numbers) + 1
         name = "_".join([*ns, iop.name])
         iop.key.value = name
         iop.number.value = index
         iop_numbers[index] = iop
-    foreach(root_container.decls, IOP, allocate_iop_num)
+        # print("assign", name, iop.number.value, iop.key.value)
 
-    print(iop_numbers)
+    foreach(root_container.decls, AsyncOp, allocate_iop_num)
+
+    # print(iop_numbers)
 
     if len(iop_numbers) > 1:
-        iop_prefix = os.path.commonprefix([iop.key.value for iop in iop_numbers.values()])
+        all_iops = [iop.key.value for iop in iop_numbers.values()]
+        # print(all_iops)
+        iop_prefix = os.path.commonprefix(all_iops)
+        # print("common prefix: ", iop_prefix)
         for iop in iop_numbers.values():
-            old = iop.key.value
+            # old = iop.key.value
             iop.key.value = iop.key.value.removeprefix(iop_prefix)
-            print(repr(old), repr(iop.key.value))
+            # print(iop.name,repr(old), repr(iop.key.value))
 
     foreach(root_container.decls, Function, func=assert_legal_extern_fn)
 
@@ -1404,6 +1554,7 @@ def main():
         Renderer.definition: render_abi_definition,
         Renderer.kernel: render_kernel_implementation,
         Renderer.userland: render_userland_implementation,
+        Renderer.stubs: render_stubs_implementation,
     }[render_mode]
 
     generated_code: str
@@ -1421,9 +1572,10 @@ def main():
             ],
             input=generated_code.encode('utf-8'),
             stdout=subprocess.PIPE,
-            check=True,
+            check=False,
         )
-        generated_code = fmt_result.stdout.decode('utf-8')
+        if fmt_result.returncode == 0:
+            generated_code = fmt_result.stdout.decode('utf-8')
 
     if output_path is not None:
         output_path.write_text(generated_code, encoding='utf-8')
