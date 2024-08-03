@@ -1071,7 +1071,7 @@ def render_kernel_implementation(stream, abi: ABI_Definition):
     def emit_impl(func: Function, ns: list[str]):
         emit_name = "_".join(("ashet", *ns, func.name))
         import_name = ".".join(("Impl", *ns, func.name))
-        stream.write(f'export fn @"{emit_name}"(')
+        stream.write(f'pub export fn @"{emit_name}"(')
 
         if len(func.params) > 0:
             first=True

@@ -7,8 +7,10 @@ const ashet_abi_v2_impl = @import("ashet-abi-v2-impl");
 
 comptime {
     // Force exports into existence:
-    _ = ashet_abi_v2_impl.create_exports(@This());
+    _ = exports;
 }
+
+pub const exports = ashet_abi_v2_impl.create_exports(@This());
 
 pub const syscalls = struct {
     pub const resources = struct {
@@ -164,15 +166,11 @@ pub const syscalls = struct {
 
     pub const aops = struct {
         pub fn schedule_and_await(enqueue_list: ?*abi.AsyncOp, wait_mode: abi.WaitIO) ?*abi.AsyncOp {
-            _ = enqueue_list;
-            _ = wait_mode;
-
-            @panic("not implemented yet");
+            return ashet.io.scheduleAndAwait(enqueue_list, wait_mode);
         }
 
         pub fn cancel(iop: *abi.AsyncOp) void {
-            _ = iop;
-            @panic("not implemented yet");
+            return ashet.io.cancel(iop);
         }
     };
 
