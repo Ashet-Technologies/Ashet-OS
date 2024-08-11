@@ -394,7 +394,10 @@ fn limitLength(val: usize) u16 {
 
 pub const udp = struct {
     const max_sockets = @as(usize, @intCast(c.MEMP_NUM_UDP_PCB));
-    const Socket = abi.UdpSocket;
+
+    pub const Socket = struct {
+        system_resource: ashet.resources.SystemResource = .{ .type = .udp_socket },
+    };
 
     const Data = struct {
         receive_iop: ?*abi.udp.ReceiveFrom = null,
@@ -538,7 +541,10 @@ fn mapErrSet(comptime T: type, err_or_ok: anyerror!void) T.Enum {
 
 pub const tcp = struct {
     const max_sockets = @as(usize, @intCast(c.MEMP_NUM_TCP_PCB));
-    const Socket = abi.TcpSocket;
+
+    pub const Socket = struct {
+        system_resource: ashet.resources.SystemResource = .{ .type = .tcp_socket },
+    };
 
     const Op = union(enum) {
         connect: *abi.tcp.Connect,

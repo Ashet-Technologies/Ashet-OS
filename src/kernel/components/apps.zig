@@ -14,37 +14,39 @@ pub const AppID = struct {
 };
 
 pub fn startApp(app: AppID) !void {
-    var root_dir = try libashet.fs.Directory.openDrive(.system, "apps");
-    defer root_dir.close();
+    _ = app;
+    @panic("not supported yet");
+    // var root_dir = try libashet.fs.Directory.openDrive(.system, "apps");
+    // defer root_dir.close();
 
-    var app_dir = try root_dir.openDir(app.getName());
-    defer app_dir.close();
+    // var app_dir = try root_dir.openDir(app.getName());
+    // defer app_dir.close();
 
-    var file = try app_dir.openFile("code", .read_only, .open_existing);
-    defer file.close();
+    // var file = try app_dir.openFile("code", .read_only, .open_existing);
+    // defer file.close();
 
-    const process = try ashet.multi_tasking.Process.create(.{
-        .stay_resident = false,
-        .name = app.getName(),
-    });
-    errdefer process.kill();
+    // const process = try ashet.multi_tasking.Process.create(.{
+    //     .stay_resident = false,
+    //     .name = app.getName(),
+    // });
+    // errdefer process.kill();
 
-    const loaded = try loader.load(&file, process.static_allocator(), .elf);
+    // const loaded = try loader.load(&file, process.static_allocator(), .elf);
 
-    process.executable_memory = loaded.process_memory;
+    // process.executable_memory = loaded.process_memory;
 
-    const thread = try ashet.scheduler.Thread.spawn(
-        @as(ashet.scheduler.ThreadFunction, @ptrFromInt(loaded.entry_point)),
-        null,
-        .{ .process = process, .stack_size = 64 * 1024 },
-    );
-    errdefer thread.kill();
+    // const thread = try ashet.scheduler.Thread.spawn(
+    //     @as(ashet.scheduler.ThreadFunction, @ptrFromInt(loaded.entry_point)),
+    //     null,
+    //     .{ .process = process, .stack_size = 64 * 1024 },
+    // );
+    // errdefer thread.kill();
 
-    try thread.setName(app.getName());
+    // try thread.setName(app.getName());
 
-    try thread.start();
+    // try thread.start();
 
-    thread.detach();
+    // thread.detach();
 }
 
 // pub fn startAppBinary(app: AppID) !void {

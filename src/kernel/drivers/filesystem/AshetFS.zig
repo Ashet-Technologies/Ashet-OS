@@ -373,5 +373,5 @@ fn mapFileSystemError(err: anytype) !noreturn {
 }
 
 fn dateTimeFromTimestamp(ts: i128) ashet.abi.DateTime {
-    return @as(i64, @intCast(@divTrunc(ts, std.time.ns_per_ms)));
+    return @enumFromInt(@as(i64, @intCast(@divTrunc(ts, std.time.ns_per_ms))));
 }

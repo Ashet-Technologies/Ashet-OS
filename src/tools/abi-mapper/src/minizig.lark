@@ -25,7 +25,7 @@ return_type : [err_type  "!" ] type
 
 err_decl : "const" identifier "=" err_type ";"
 
-iop_decl : "async" "fn" identifier "(" param_list ")" err_type  "!" iop_struct ";"
+iop_decl : "extern" "\"async\"" "fn" identifier "(" param_list ")" err_type  "!" iop_struct ";"
 
 iop_struct       : "struct" "{" iop_struct_field* "}"
                  | "void"

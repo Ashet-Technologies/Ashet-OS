@@ -694,7 +694,7 @@ def render_error_set(stream:CodeStream, error_set: ErrorSet|set[str]):
     else:
         stream.write("error {", ", ".join(error_set), "}")
 
-def render_aop_type(stream: CodeStream, iop: AsyncOp):
+def render_arc_type(stream: CodeStream, iop: AsyncOp):
 
     def write_struct_fields(struct: list[Parameter], default_factory: Callable[[Parameter],str]|None=None):
         for field in struct:
@@ -721,7 +721,7 @@ def render_aop_type(stream: CodeStream, iop: AsyncOp):
         # stream.writeln("const iop_marker = IOP_Tag;")
         stream.writeln()
 
-        stream.writeln(f"pub const aop_type: AOP_Type = .{iop.key};")
+        stream.writeln(f"pub const arc_type: ARC_Type = .{iop.key};")
         stream.writeln()
 
         stream.writeln("pub const Inputs = extern struct {")
@@ -736,9 +736,9 @@ def render_aop_type(stream: CodeStream, iop: AsyncOp):
         render_error_set(stream, iop.error)
         stream.writeln(";")
 
-        stream.writeln('async_op: AsyncOp = .{')
+        stream.writeln('arc: ARC = .{')
         with stream.indent():
-            stream.writeln('.type = aop_type,')
+            stream.writeln('.type = arc_type,')
             stream.writeln('.next = null,')
             stream.writeln('.tag = 0,')
             stream.writeln('.kernel_data = undefined,')
@@ -764,18 +764,18 @@ def render_aop_type(stream: CodeStream, iop: AsyncOp):
 
         pub fn chain(self: *Self, next: anytype) void {
             const Next = @TypeOf(next.*);
-            if (!@hasDecl(Next, "aop_type"))
-                @compileError("next must be a pointer to AsyncOp!");
+            if (!@hasDecl(Next, "arc_type"))
+                @compileError("next must be a pointer to an ARC!");
             const next_ptr: *Next = next;
-            const next_aop: *AsyncOp = &next_ptr.async_op;
+            const next_arc: *ARC = &next_ptr.async_op;
 
-            var it: ?*AsyncOp = &self.async_op;
+            var it: ?*ARC = &self.async_op;
             while (it) |p| : (it = p.next) {
-                if (p == &next_aop) // already in the chain
+                if (p == &next_arc) // already in the chain
                     return;
 
                 if (p.next == null) {
-                    p.next = &next_aop;
+                    p.next = &next_arc;
                     return;
                 }
             }
@@ -862,7 +862,7 @@ def render_container(stream:CodeStream, declarations: list[Declaration], errors:
         elif isinstance(decl, AsyncOp):
 
             stream.write(f"pub const {decl.name} = ")
-            render_aop_type(stream, decl)
+            render_arc_type(stream, decl)
             stream.writeln(";")
 
         elif isinstance(decl, SystemResource):
@@ -875,12 +875,12 @@ def render_container(stream:CodeStream, declarations: list[Declaration], errors:
                 stream.writeln()
                 stream.writeln("pub fn release(self: *@This()) void {")
                 with stream.indent():
-                    stream.writeln("syscalls.resources.release(self.as_resource());")
+                    stream.writeln("resources.release(self.as_resource());")
                 stream.writeln("}")
                 stream.writeln()
                 stream.writeln("pub fn destroy_now(self: *@This()) void {")
                 with stream.indent():
-                    stream.writeln("syscalls.resources.destroy(self.as_resource());")
+                    stream.writeln("resources.destroy(self.as_resource());")
                 stream.writeln("}")
             stream.writeln("};")
 
@@ -952,16 +952,18 @@ def render_abi_definition(stream:CodeStream, abi: ABI_Definition):
     # stream.writeln()
     stream.writeln()
     stream.writeln("/// Asynchronous operation type, defines numeric values for AsyncOps.")
-    stream.writeln("pub const AOP_Type = enum(u32) {")
+    stream.writeln("pub const ARC_Type = enum(u32) {")
     for iop in sorted(abi.iops, key=lambda iop: iop.number.value):
         stream.writeln(f"    {iop.key.value} = {iop.number.value},")
     stream.writeln("};")
     stream.writeln()
     stream.writeln()
     stream.writeln("const __SystemResourceType = enum(u16) {")
+    with stream.indent():
+        stream.writeln("bad_handle = 0,")
 
-    for src in sys_resources:
-        stream.writeln(f"    {caseconverter.snakecase(src)},")
+        for src in sys_resources:
+            stream.writeln(f"{caseconverter.snakecase(src)},")
 
     stream.writeln("    _,");
     stream.writeln("};");
@@ -1513,7 +1515,7 @@ def main():
 
     def allocate_iop_num(iop: AsyncOp, ns:list[str]):
         index = len(iop_numbers) + 1
-        name = "_".join([*ns, iop.name])
+        name = "_".join([*ns, caseconverter.snakecase(iop.name)])
         iop.key.value = name
         iop.number.value = index
         iop_numbers[index] = iop

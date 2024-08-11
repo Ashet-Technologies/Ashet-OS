@@ -1,16 +1,16 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const ashet = @import("../main.zig");
-const abi = @import("ashet-abi-v2");
+const abi = @import("ashet-abi");
 
-const ashet_abi_v2_impl = @import("ashet-abi-v2-impl");
+const ashet_abi_v2_impl = @import("ashet-abi-impl");
 
 comptime {
     // Force exports into existence:
     _ = exports;
 }
 
-pub const exports = ashet_abi_v2_impl.create_exports(@This());
+pub const exports = ashet_abi_v2_impl.create_exports(syscalls);
 
 pub const syscalls = struct {
     pub const resources = struct {
@@ -164,13 +164,13 @@ pub const syscalls = struct {
         }
     };
 
-    pub const aops = struct {
-        pub fn schedule_and_await(enqueue_list: ?*abi.AsyncOp, wait_mode: abi.WaitIO) ?*abi.AsyncOp {
-            return ashet.io.scheduleAndAwait(enqueue_list, wait_mode);
+    pub const arcs = struct {
+        pub fn schedule_and_await(enqueue_list: ?*abi.ARC, options: abi.Schedule_And_Await_Options) ?*abi.ARC {
+            return ashet.@"async".schedule_and_await(enqueue_list, options);
         }
 
-        pub fn cancel(iop: *abi.AsyncOp) void {
-            return ashet.io.cancel(iop);
+        pub fn cancel(arc: *abi.ARC) void {
+            return ashet.@"async".cancel(arc);
         }
     };
 

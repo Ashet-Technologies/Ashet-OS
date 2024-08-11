@@ -7,6 +7,10 @@ pub const ColorIndex = ashet.abi.ColorIndex;
 
 pub const Resolution = ashet.abi.Size;
 
+pub const Output = struct {
+    system_resource: ashet.resources.SystemResource = .{ .type = .video_output },
+};
+
 /// If true, the kernel will automatically flush the screen in a background process.
 pub var auto_flush: bool = true;
 

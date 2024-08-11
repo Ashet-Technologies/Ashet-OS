@@ -14,8 +14,20 @@ var process_memory_pool: std.heap.MemoryPool(Process) = undefined;
 /// If `null`, the regular desktop UI is active.
 pub var exclusive_video_controller: ?*Process = null;
 
+var kernel_process: *Process = undefined;
+
 pub fn initialize() void {
     process_memory_pool = std.heap.MemoryPool(Process).init(ashet.memory.allocator);
+
+    kernel_process = Process.create(.{
+        .name = "<kernel>",
+        .stay_resident = true,
+    }) catch @panic("could not create kernel process: out of memory");
+}
+
+/// Gets the handle to the kernel process.
+pub fn get_kernel_process() *Process {
+    return kernel_process;
 }
 
 pub fn processIterator() ProcessIterator {
@@ -38,11 +50,13 @@ pub const ProcessThreadList = std.DoublyLinkedList(struct {
 });
 
 pub const Process = struct {
+    system_resource: ashet.resources.SystemResource = .{ .type = .process },
+
     /// Node inside `process_list`.
     list_item: ProcessNode = .{ .data = {} },
 
     /// The IO context for scheduling IOPs
-    io_context: ashet.io.Context = .{},
+    async_context: ashet.@"async".Context = .{},
 
     /// unfreeable process allocations
     memory_arena: std.heap.ArenaAllocator,

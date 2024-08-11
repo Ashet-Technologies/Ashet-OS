@@ -1075,13 +1075,13 @@ usingnamespace zig; // regular code beyond this
 pub const IOP = iops.Generic_IOP(IOP_Type);
 
 /// Constructor for a generic, ABI passable error set.
-pub const ErrorSet = @import("error_set.zig").UntypedErrorSet(Error);
+pub const ErrorSet = @import("error_set").UntypedErrorSet(Error);
 
 ///////////////////////////////////////////////////////////
 // Imports:
 
 const std = @import("std");
-const iops = @import("iops.zig");
+const iops = @import("iops");
 const abi = @This();
 
 ///////////////////////////////////////////////////////////

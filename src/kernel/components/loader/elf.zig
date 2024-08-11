@@ -464,22 +464,12 @@ const Environment = struct {
 
         // Only search function symbols:
         if (info.type == .func) {
-            const exports = ashet.syscalls_v2.exports;
+            const exports = ashet.syscalls.exports;
             inline for (@typeInfo(exports).Struct.decls) |decl| {
                 if (std.mem.eql(u8, decl.name, symname)) {
                     const func_ptr: usize = @intFromPtr(
                         // just provide the internally linked versions:
                         &@field(exports, decl.name),
-                    );
-                    return func_ptr;
-                }
-            }
-
-            inline for (@typeInfo(ashet.abi.syscalls).Struct.decls) |decl| {
-                if (std.mem.eql(u8, decl.name, symname)) {
-                    const func_ptr: usize = @intFromPtr(
-                        // just provide the internally linked versions:
-                        &@field(ashet.abi.syscalls, decl.name),
                     );
                     return func_ptr;
                 }

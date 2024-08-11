@@ -118,6 +118,8 @@ pub const Thread = struct {
 
     pub const default_stack_size = 32768;
 
+    system_resource: ashet.resources.SystemResource = .{ .type = .thread },
+
     ip: usize,
     sp: usize,
     exit_code: u32,
@@ -137,7 +139,7 @@ pub const Thread = struct {
     /// Stores runtime statistics of this thread.
     stats: Stats = .{},
 
-    process_link: ?ashet.multi_tasking.ProcessThreadList.Node = null,
+    process_link: ashet.multi_tasking.ProcessThreadList.Node,
 
     /// Returns a pointer to the current thread.
     pub fn current() ?*Thread {
@@ -177,25 +179,23 @@ pub const Thread = struct {
         }
 
         const thread = @as(*Thread, @ptrFromInt(@intFromPtr(stack_bottom.ptr) + stack_size - @sizeOf(Thread)));
-        const thread_proc = options.process;
+        const thread_proc = options.process orelse ashet.multi_tasking.get_kernel_process();
 
         thread.* = Thread{
             .sp = @intFromPtr(thread),
             .ip = @intFromPtr(&ashet_scheduler_threadTrampoline),
             .exit_code = 0,
             .stack_size = stack_size,
-            .process_link = if (thread_proc) |proc| .{ .data = .{
+            .process_link = .{ .data = .{
                 .thread = thread,
-                .process = proc,
-            } } else null,
+                .process = thread_proc,
+            } },
             .flags = .{
                 .has_canary = use_canary,
             },
         };
 
-        if (thread.process_link) |*link| {
-            link.data.process.threads.append(link);
-        }
+        thread_proc.threads.append(&thread.process_link);
 
         if (@import("builtin").mode == .Debug) {
             thread.debug_info.entry_point = @intFromPtr(func);
@@ -342,7 +342,7 @@ pub const Thread = struct {
             // exiting the thread. By this, we can be sure that we have no
             // control flow after this function.
             thread.detach();
-            exit(ExitCode.killed);
+            exit(@intFromEnum(ExitCode.killed));
             unreachable;
         }
 
@@ -367,14 +367,12 @@ pub const Thread = struct {
 
         logger.info("killing thread {}", .{thread});
 
-        if (thread.process_link) |*link| {
-            std.debug.assert(link.data.thread == thread);
-            const proc = link.data.process;
-            proc.threads.remove(link);
+        std.debug.assert(thread.process_link.data.thread == thread);
+        const proc = thread.process_link.data.process;
+        proc.threads.remove(&thread.process_link);
 
-            if (proc.stay_resident == false and proc.threads.len == 0) {
-                proc.kill();
-            }
+        if (proc.stay_resident == false and proc.threads.len == 0) {
+            proc.kill();
         }
 
         const stack_top = thread.getBasePointer();

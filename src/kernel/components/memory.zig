@@ -424,6 +424,7 @@ pub fn type_pool(comptime T: type) type {
         }
 
         pub fn free(res: *T) void {
+            res.* = undefined;
             backing_pool.free(@ptrCast(@alignCast(res)));
         }
     };

@@ -3,10 +3,23 @@ const ashet = @import("../main.zig");
 const logger = std.log.scoped(.resources);
 
 /// Encodes the different types of system resources.
-pub const TypeId = ashet.abi.SystemResourceType;
+pub const TypeId = ashet.abi.SystemResource.Type;
 
 /// This is the ABI-public version of a system resource.
 pub const Handle = ashet.abi.SystemResource;
+
+/// Resolves the resource `handle` for the `owner` process into a pointer to
+/// `Resource`.
+pub fn resolve(
+    comptime Resource: type,
+    owner: *ashet.multi_tasking.Process,
+    handle: Handle,
+) error{ Gone, InvalidHandle, GenerationMismatch, TypeMismatch }!*Resource {
+    const link = try owner.resources.resolve(handle);
+    std.debug.assert(owner == link.data.process);
+    const resource = link.data.resource;
+    return resource.cast(Resource) catch return error.TypeMismatch;
+}
 
 /// This is the kernel-internal abstraction over system resources.
 pub const SystemResource = struct {
@@ -489,7 +502,30 @@ test "HandlePool Stress Test" {
 pub fn InstanceType(comptime type_enum: TypeId) type {
     return switch (type_enum) {
         .bad_handle => @compileError("bad handle is unmapped"),
+
         .shared_memory => ashet.shared_memory.SharedMemory,
+
+        .process => ashet.multi_tasking.Process,
+        .thread => ashet.scheduler.Thread,
+
+        .sync_event => ashet.sync.SyncEvent,
+        .mutex => ashet.sync.Mutex,
+
+        .tcp_socket => ashet.network.tcp.Socket,
+        .udp_socket => ashet.network.udp.Socket,
+
+        .file => ashet.filesystem.File,
+        .directory => ashet.filesystem.Directory,
+
+        .video_output => ashet.video.Output,
+        .framebuffer => ashet.graphics.Framebuffer,
+
+        .window => ashet.gui.Window,
+        .desktop => ashet.gui.Desktop,
+        .widget => ashet.gui.Widget,
+        .widget_type => ashet.gui.WidgetType,
+
+        _ => @compileError("bad InstanceType"),
     };
 }
 

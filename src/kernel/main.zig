@@ -8,21 +8,22 @@ pub const apps = @import("components/apps.zig");
 pub const drivers = @import("drivers/drivers.zig");
 pub const filesystem = @import("components/filesystem.zig");
 pub const input = @import("components/input.zig");
-pub const io = @import("components/io.zig");
+pub const @"async" = @import("components/async.zig");
 pub const memory = @import("components/memory.zig");
 pub const multi_tasking = @import("components/multi_tasking.zig");
 pub const network = @import("components/network.zig");
 pub const scheduler = @import("components/scheduler.zig");
 pub const serial = @import("components/serial.zig");
 pub const storage = @import("components/storage.zig");
-pub const syscalls = @import("components/syscalls-v1.zig");
-pub const syscalls_v2 = @import("components/syscalls-v2.zig");
+pub const syscalls = @import("components/syscalls.zig");
 pub const time = @import("components/time.zig");
 pub const resources = @import("components/resources.zig");
-// pub const ui = @import("components/ui.zig");
+pub const gui = @import("components/gui.zig");
+pub const graphics = @import("components/graphics.zig");
 pub const video = @import("components/video.zig");
 pub const shared_memory = @import("components/shared_memory.zig");
 pub const random = @import("components/random.zig");
+pub const sync = @import("components/sync.zig");
 
 pub const ports = @import("port/targets.zig");
 
@@ -61,7 +62,7 @@ comptime {
 
 comptime {
     // export the syscalls:
-    _ = syscalls_v2;
+    _ = syscalls;
 }
 
 fn ashet_kernelMain() callconv(.C) noreturn {
@@ -134,11 +135,6 @@ fn main() !void {
     // This will install all relevant drivers, set up interrupts if necessary and so on.
     log.info("initialize machine...", .{});
     try machine.initialize();
-
-    // Should be initialized as early as possible, but has to be initialized
-    // after machine initialization (as now drivers are available):
-    log.info("initialize syscalls...", .{});
-    syscalls.initialize();
 
     log.info("initialize video...", .{});
     video.initialize();

@@ -5,824 +5,631 @@
 //!
 
 ///////////////////////////////////////////////////////////
-// Syscalls & Async Operations
+// Syscalls & extern "async"Operations
 
-const syscalls = struct {
-    /// All syscalls related to generic resource management.
-    const resources = struct {
-        /// Returns the type of the system resource.
-        extern fn get_type(SystemResource) SystemResource.Type;
+/// All syscalls related to generic resource management.
+const resources = struct {
+    /// Returns the type of the system resource.
+    extern fn get_type(SystemResource) SystemResource.Type;
 
-        /// Returns the current owner of this resource.
-        extern fn get_owners(SystemResource, owners: ?[]Process) usize;
+    /// Returns the current owner of this resource.
+    extern fn get_owners(SystemResource, owners: ?[]Process) usize;
 
-        /// Adds the process to the owners of this resource, so the process
-        /// can safely access it without fear of having a use-after-free.
-        extern fn send_to_process(SystemResource, Process) void;
+    /// Adds the process to the owners of this resource, so the process
+    /// can safely access it without fear of having a use-after-free.
+    extern fn send_to_process(SystemResource, Process) void;
 
-        /// Drops the ownership of the resource for the current process.
-        /// If no owner remains, the resource will be destroyed and it's
-        /// memory will be released.
-        /// The handle must be assumed invalid for this process after
-        /// this function returns.
-        extern fn release(SystemResource) void;
+    /// Drops the ownership of the resource for the current process.
+    /// If no owner remains, the resource will be destroyed and it's
+    /// memory will be released.
+    /// The handle must be assumed invalid for this process after
+    /// this function returns.
+    extern fn release(SystemResource) void;
 
-        /// Immediatly destroys the resource and releases its memory.
-        ///
-        /// NOTE: This will *always* destroy the resource, even if it's
-        ///       also owned by another process.
-        extern fn destroy(SystemResource) void;
+    /// Immediatly destroys the resource and releases its memory.
+    ///
+    /// NOTE: This will *always* destroy the resource, even if it's
+    ///       also owned by another process.
+    extern fn destroy(SystemResource) void;
+};
+
+/// Syscalls related to processes
+const process = struct {
+    /// Returns a pointer to the file name of the process.
+    extern fn get_file_name(?Process) [*:0]const u8;
+
+    /// Returns the base address of the process.
+    extern fn get_base_address(?Process) usize;
+
+    /// Returns the arguments that were passed to this process in `Spawn`.
+    extern fn get_arguments(?Process, argv: ?[]SpawnProcessArg) usize;
+
+    /// Terminates the current process with the given exit code
+    extern fn terminate(exit_code: ExitCode) noreturn;
+
+    /// Terminates a foreign process.
+    /// If the current process is passed, this function will not return
+    extern fn kill(Process) void;
+
+    /// Spawns a new process
+    extern "async" fn Spawn(
+        /// Relative base directory for `path`.
+        dir: Directory,
+        /// File name of the executable relative to `dir`.
+        path: []const u8,
+        /// The arguments passed to the process.
+        /// If a `SystemResource` is passed, it will receive the created process as a owning process.
+        /// It is safe to release the resource in this process as soon as this operation returns.
+        argv: []SpawnProcessArg,
+    ) error{
+        SystemResources,
+        FileNotFound,
+    }!struct {
+        /// Handle to the spawned process.
+        process: Process,
     };
 
-    /// Syscalls related to processes
-    const process = struct {
-        /// Returns a pointer to the file name of the process.
-        extern fn get_file_name(?Process) [*:0]const u8;
+    const thread = struct {
+        /// Returns control to the scheduler. Returns when the scheduler
+        /// schedules the process again.
+        extern fn yield() void;
 
-        /// Returns the base address of the process.
-        extern fn get_base_address(?Process) usize;
+        /// Terminates the current thread.
+        extern fn exit(exit_code: ExitCode) noreturn;
 
-        /// Returns the arguments that were passed to this process in `Spawn`.
-        extern fn get_arguments(?Process, argv: ?[]SpawnProcessArg) usize;
+        /// Waits for the thread to exit and returns its return code.
+        extern fn join(Thread) ExitCode;
 
-        /// Terminates the current process with the given exit code
-        extern fn terminate(exit_code: ExitCode) noreturn;
+        /// Spawns a new thread with `function` passing `arg` to it.
+        /// If `stack_size` is not 0, will create a stack with the given size.
+        extern fn spawn(function: ThreadFunction, arg: ?*anyopaque, stack_size: usize) ?Thread;
 
-        /// Terminates a foreign process.
-        /// If the current process is passed, this function will not return
-        extern fn kill(Process) void;
-
-        const thread = struct {
-            /// Returns control to the scheduler. Returns when the scheduler
-            /// schedules the process again.
-            extern fn yield() void;
-
-            /// Terminates the current thread.
-            extern fn exit(exit_code: ExitCode) noreturn;
-
-            /// Waits for the thread to exit and returns its return code.
-            extern fn join(Thread) ExitCode;
-
-            /// Spawns a new thread with `function` passing `arg` to it.
-            /// If `stack_size` is not 0, will create a stack with the given size.
-            extern fn spawn(function: ThreadFunction, arg: ?*anyopaque, stack_size: usize) ?Thread;
-
-            /// Kills the given thread with `exit_code`.
-            extern fn kill(Thread, exit_code: ExitCode) void;
-        };
-
-        const debug = struct {
-            /// Writes to the system debug log.
-            extern fn write_log(log_level: LogLevel, message: []const u8) void;
-
-            /// Stops the process and allows debugging.
-            extern fn breakpoint() void;
-        };
-
-        const memory = struct {
-            /// Allocates memory
-            extern fn allocate(size: usize, ptr_align: u8) ?[*]u8;
-
-            /// Returns memory to the systme.
-            extern fn release(mem: []u8, ptr_align: u8) void;
-        };
+        /// Kills the given thread with `exit_code`.
+        extern fn kill(Thread, exit_code: ExitCode) void;
     };
 
-    const clock = struct {
-        /// Returns the time in nanoseconds since system startup.
-        /// This clock is monotonically increasing.
-        extern fn monotonic() u64;
+    const debug = struct {
+        /// Writes to the system debug log.
+        extern fn write_log(log_level: LogLevel, message: []const u8) void;
+
+        /// Stops the process and allows debugging.
+        extern fn breakpoint() void;
     };
 
-    const time = struct {
-        /// Get a calendar timestamp relative to UTC 1970-01-01.
-        /// Precision of timing depends on the hardware.
-        /// The return value is signed because it is possible to have a date that is
-        /// before the epoch.
-        extern fn now() DateTime;
-    };
+    const memory = struct {
+        /// Allocates memory
+        extern fn allocate(size: usize, ptr_align: u8) ?[*]u8;
 
-    const video = struct {
-        /// Returns a list of all video outputs.
-        ///
-        /// If `ids` is `null`, the total number of available outputs is returned,
-        /// otherwise, up to `ids.len` elements are written into the provided array
-        /// and the number of written elements is returned.
-        extern fn enumerate(ids: ?[]VideoOutputID) usize;
-
-        /// Acquire exclusive access to a video output.
-        extern fn acquire(VideoOutputID) ?VideoOutput;
-
-        /// Returns the current resolution
-        extern fn get_resolution(VideoOutput) Size;
-
-        /// Returns a pointer to linear video memory, row-major.
-        /// Pixels rows will have a stride of the current video buffer width.
-        /// The first pixel in the memory is the top-left pixel.
-        extern fn get_video_memory(VideoOutput) [*]align(4) ColorIndex;
-
-        /// Fetches a copy of the current color pallete.
-        extern fn get_palette(VideoOutput, *[palette_size]Color) void;
-
-        /// Changes the current color palette.
-        extern fn set_palette(VideoOutput, *const [palette_size]Color) error{Unsupported};
-
-        // /// Returns a pointer to the current palette. Changing this palette
-        // /// will directly change the associated colors on the screen.
-        // /// If `null` is returned, no direct access to the video palette is possible.
-        //  fn get_palette_memory(*VideoOutput) ?*[palette_size]Color;
-
-        // /// Changes the border color of the screen. Parameter is an index into
-        // /// the palette.
-        //  fn set_border(*VideoOutput, ColorIndex) void;
-
-        // /// Returns the maximum possible screen resolution.
-        //  fn get_max_resolution(*VideoOutput) Size;
-
-        // /// Sets the screen resolution. Legal values are between 1×1 and the platform specific
-        // /// maximum resolution returned by `video.getMaxResolution()`.
-        // /// Everything out of bounds will be clamped into that range.
-        //  fn change_resolution(*VideoOutput, u16, u16) void;
-    };
-
-    const aops = struct {
-        /// Starts new I/O operations and returns completed ones.
-        ///
-        /// If `start_queue` is given, the kernel will schedule the events in the kernel.
-        /// All events in this queue must not be freed until they are returned by this function
-        /// at a later point.
-        ///
-        /// The function will optionally block based on the `wait` parameter.
-        ///
-        /// The return value is the HEAD element of a linked list of completed I/O events.
-        extern fn schedule_and_await(start_queue: ?*AsyncOp, wait: WaitIO) ?*AsyncOp;
-
-        /// Cancels a single I/O operation.
-        extern fn cancel(aop: *AsyncOp) void;
-    };
-
-    const draw = struct {
-        // Fonts:
-
-        /// Returns the font data for the given font name, if any.
-        extern fn get_system_font(font_name: []const u8) error{
-            FileNotFound,
-            SystemResources,
-            OutOfMemory,
-        }!Font;
-
-        /// Creates a new custom font from the given data.
-        extern fn create_font(data: []const u8) error{
-            InvalidData,
-            SystemResources,
-            OutOfMemory,
-        }!Font;
-
-        /// Returns true if the given font is a system-owned font.
-        extern fn is_system_font(Font) bool;
-
-        // Framebuffer management:
-
-        /// Creates a new in-memory framebuffer that can be used for offscreen painting.
-        extern fn create_memory_framebuffer(size: Size) ?Framebuffer;
-
-        /// Creates a new framebuffer based off a video output. Can be used to output pixels
-        /// to the screen.
-        extern fn create_video_framebuffer(VideoOutput) ?Framebuffer;
-
-        /// Creates a new framebuffer that allows painting into a GUI window.
-        extern fn create_window_framebuffer(Window) ?Framebuffer;
-
-        /// Returns the type of a framebuffer object.
-        extern fn get_framebuffer_type(Framebuffer) FramebufferType;
-
-        /// Returns the size of a framebuffer object.
-        extern fn get_framebuffer_size(Framebuffer) Size;
-
-        /// Marks a portion of the framebuffer as changed and forces the OS to
-        /// perform an update action if necessary.
-        extern fn invalidate_framebuffer(Framebuffer, Rectangle) void;
-
-        // Drawing:
-
-        // TODO: fn annotate_text(*Framebuffer, area: Rectangle, text: []const u8) AnnotationError;
-
-        // TODO: Insert render functions here
-    };
-
-    const gui = struct {
-
-        // Window API:
-
-        /// Spawns a new window.
-        extern fn create_window(desktop: Desktop, title: []const u8, min: Size, max: Size, startup: Size, flags: CreateWindowFlags) error{
-            SystemResources,
-            InvalidDimensions,
-        }!Window;
-
-        /// Resizes a window to the new size.
-        extern fn resize_window(Window, size: Size) void;
-
-        /// Changes a window title.
-        extern fn set_window_title(Window, title: []const u8) void;
-
-        // Desktop Server API:
-
-        /// Creates a new desktop with the given name.
-        extern fn create_desktop(
-            /// User-visible name of the desktop.
-            name: []const u8,
-            descriptor: *const DesktopDescriptor,
-        ) error{
-            SystemResources,
-        }!Desktop;
-
-        // TODO: Function to get the "current"/"primary"/"associated" desktop server, how?
-
-        /// Returns the name of the provided desktop.
-        extern fn get_desktop_name(Desktop) [*:0]const u8;
-
-        /// Enumerates all available desktops.
-        extern fn enumerate_desktops(serverlist: ?[]Desktop) usize;
-
-        /// Returns all windows for a desktop handle.
-        extern fn enumerate_desktop_windows(Desktop, window: ?[]Window) usize;
-
-        /// Returns desktop-associated "opaque" data for this window.
-        ///
-        /// This is meant as a convenience tool to store additional information per window
-        /// like position on the screen, orientation, alignment, ...
-        ///
-        /// The size of this must be known and cannot be queried.
-        extern fn get_desktop_data(Window) [*]align(16) u8;
-
-        /// Posts an event into the window event queue so the window owner
-        /// can handle the event.
-        extern fn post_window_event(
-            window: Window,
-            event_type: WindowEvent.Type,
-            event: WindowEvent,
-        ) error{SystemResources};
-    };
-
-    const random = struct {
-        /// Fills the provided pointer with random bytes from the entropy pool.
-        ///
-        /// If the entropy pool runs out of entropy bits, this call does not block
-        /// and draw bytes from the pool.
-        extern fn get_soft_random(data: []u8) void;
+        /// Returns memory to the systme.
+        extern fn release(mem: []u8, ptr_align: u8) void;
     };
 };
 
-/// This namespace contains the supported I/O operations of Ashet OS.
-const io = struct {
+const clock = struct {
+    /// Returns the time in nanoseconds since system startup.
+    /// This clock is monotonically increasing.
+    extern fn monotonic() u64;
+
     /// Sleeps until `clock.monotonic()` returns at least `timeout`.
-    async fn Timer(
+    extern "async" fn Timer(
         /// Monotonic timestamp in nanoseconds until the operation completes.
         timeout: u64,
     ) error{}!void;
+};
 
-    const process = struct {
-        /// Spawns a new process
-        async fn Spawn(
-            /// Relative base directory for `path`.
-            dir: Directory,
-            /// File name of the executable relative to `dir`.
-            path: []const u8,
-            /// The arguments passed to the process.
-            /// If a `SystemResource` is passed, it will receive the created process as a owning process.
-            /// It is safe to release the resource in this process as soon as this operation returns.
-            argv: []SpawnProcessArg,
-        ) error{
-            SystemResources,
-            FileNotFound,
-        }!struct {
-            /// Handle to the spawned process.
-            process: Process,
-        };
+const time = struct {
+    /// Get a calendar timestamp relative to UTC 1970-01-01.
+    /// Precision of timing depends on the hardware.
+    /// The return value is signed because it is possible to have a date that is
+    /// before the epoch.
+    extern fn now() DateTime;
+};
+
+const video = struct {
+    /// Returns a list of all video outputs.
+    ///
+    /// If `ids` is `null`, the total number of available outputs is returned,
+    /// otherwise, up to `ids.len` elements are written into the provided array
+    /// and the number of written elements is returned.
+    extern fn enumerate(ids: ?[]VideoOutputID) usize;
+
+    /// Acquire exclusive access to a video output.
+    extern fn acquire(VideoOutputID) ?VideoOutput;
+
+    /// Returns the current resolution
+    extern fn get_resolution(VideoOutput) Size;
+
+    /// Returns a pointer to linear video memory, row-major.
+    /// Pixels rows will have a stride of the current video buffer width.
+    /// The first pixel in the memory is the top-left pixel.
+    extern fn get_video_memory(VideoOutput) [*]align(4) ColorIndex;
+
+    /// Fetches a copy of the current color pallete.
+    extern fn get_palette(VideoOutput, *[palette_size]Color) void;
+
+    /// Changes the current color palette.
+    extern fn set_palette(VideoOutput, *const [palette_size]Color) error{Unsupported};
+};
+
+const arcs = struct {
+    /// Starts new I/O operations and returns completed ones.
+    ///
+    /// If `start_queue` is given, the kernel will schedule the events in the kernel.
+    /// All events in this queue must not be freed until they are returned by this function
+    /// at a later point.
+    ///
+    /// The function will optionally block based on the `wait` parameter.
+    ///
+    /// The return value is the HEAD element of a linked list of completed I/O events.
+    extern fn schedule_and_await(start_queue: ?*ARC, options: Schedule_And_Await_Options) ?*ARC;
+
+    /// Cancels a single I/O operation.
+    extern fn cancel(aop: *ARC) void;
+};
+
+const random = struct {
+    /// Fills the provided pointer with random bytes from the entropy pool.
+    ///
+    /// If the entropy pool runs out of entropy bits, this call does not block
+    /// and draw bytes from the pool.
+    extern fn get_soft_random(data: []u8) void;
+
+    /// Fills the provided buffer with given length amount of random bytes.
+    ///
+    /// This call blocks until the entropy pool has enough entropy to fill
+    /// an entire hash to draw from.
+    extern "async" fn GetStrictRandom(data: []u8) error{}!void;
+};
+
+const input = struct {
+    /// Waits for an input event and completes when any input was done.
+    extern "async" fn GetEvent() error{
+        NonExclusiveAccess,
+        InProgress,
+    }!struct {
+        /// Defines which element of `event` is active.
+        event_type: InputEvent.Type,
+        event: InputEvent,
     };
+};
+const network = struct {
+    pub const udp = struct {
+        extern "async" fn Bind(socket: UdpSocket, bind_point: EndPoint) error{
+            InvalidHandle,
+            SystemResources,
+            AddressInUse,
+            IllegalValue,
+        }!struct {
+            bind_point: EndPoint,
+        };
 
-    const input = struct {
-        /// Waits for an input event and completes when any input was done.
-        async fn GetEvent() error{
-            NonExclusiveAccess,
+        extern "async" fn Connect(
+            socket: UdpSocket,
+            target: EndPoint,
+        ) error{
+            InvalidHandle,
+            SystemResources,
+            AlreadyConnected,
+            AlreadyConnecting,
+            BufferError,
+            IllegalArgument,
+            IllegalValue,
             InProgress,
-        }!struct {
-            /// Defines which element of `event` is active.
-            event_type: InputEvent.Type,
-            event: InputEvent,
-        };
-    };
+            LowlevelInterfaceError,
+            OutOfMemory,
+            Routing,
+            Timeout,
+        }!void;
 
-    const pipe = struct {
-        /// Writes elements from `data` into the given pipe.
-        async fn Write(
-            pipe: Pipe,
-            /// Pointer to the first element. Length defines how many elements are to be transferred.
+        extern "async" fn Disconnect(socket: UdpSocket) error{
+            InvalidHandle,
+            SystemResources,
+            NotConnected,
+        }!void;
+
+        extern "async" fn Send(
+            socket: UdpSocket,
             data: []const u8,
-            /// Distance between each element in `data`. Can be different from the pipes element size
-            /// to allow sparse data to be transferred.
-            /// If `0`, it will use the `object_size` property of the pipe.
-            stride: usize,
-            /// Defines how the write should operate.
-            mode: PipeMode,
-        ) error{}!struct {
-            /// Numbert of elements written into the pipe.
-            count: usize,
-        };
-
-        /// Reads elements from a pipe into `buffer`.
-        async fn Read(
-            pipe: Pipe,
-            /// Points to the first element to be received.
-            buffer: []u8,
-            /// Distance between each element in `buffer`. Can be different from the pipes element size
-            /// to allow sparse data to be transferred.
-            /// If `0`, it will use the `object_size` property of the pipe.
-            stride: usize,
-            /// Defines how the read should operate.
-            mode: PipeMode,
-        ) error{}!struct {
-            /// Number of elements read.
-            count: usize,
-        };
-    };
-
-    const network = struct {
-        pub const udp = struct {
-            async fn Bind(socket: UdpSocket, bind_point: EndPoint) error{
-                InvalidHandle,
-                SystemResources,
-                AddressInUse,
-                IllegalValue,
-            }!struct {
-                bind_point: EndPoint,
-            };
-
-            async fn Connect(
-                socket: UdpSocket,
-                target: EndPoint,
-            ) error{
-                InvalidHandle,
-                SystemResources,
-                AlreadyConnected,
-                AlreadyConnecting,
-                BufferError,
-                IllegalArgument,
-                IllegalValue,
-                InProgress,
-                LowlevelInterfaceError,
-                OutOfMemory,
-                Routing,
-                Timeout,
-            }!void;
-
-            async fn Disconnect(socket: UdpSocket) error{
-                InvalidHandle,
-                SystemResources,
-                NotConnected,
-            }!void;
-
-            async fn Send(
-                socket: UdpSocket,
-                data: []const u8,
-            ) error{
-                InvalidHandle,
-                SystemResources,
-                BufferError,
-                IllegalArgument,
-                IllegalValue,
-                InProgress,
-                LowlevelInterfaceError,
-                NotConnected,
-                OutOfMemory,
-                Routing,
-                Timeout,
-            }!struct {
-                bytes_sent: usize,
-            };
-
-            async fn SendTo(
-                socket: UdpSocket,
-                receiver: EndPoint,
-                data: []const u8,
-            ) error{
-                InvalidHandle,
-                SystemResources,
-                BufferError,
-                IllegalArgument,
-                IllegalValue,
-                InProgress,
-                LowlevelInterfaceError,
-                OutOfMemory,
-                Routing,
-                Timeout,
-            }!struct {
-                bytes_sent: usize,
-            };
-
-            async fn ReceiveFrom(
-                socket: UdpSocket,
-                buffer: []u8,
-            ) error{
-                InvalidHandle,
-                SystemResources,
-                BufferError,
-                IllegalArgument,
-                IllegalValue,
-                InProgress,
-                LowlevelInterfaceError,
-                OutOfMemory,
-                Routing,
-                Timeout,
-            }!struct {
-                bytes_received: usize,
-                sender: EndPoint,
-            };
-        };
-
-        pub const tcp = struct {
-            async fn Bind(
-                socket: TcpSocket,
-                bind_point: EndPoint,
-            ) error{
-                InvalidHandle,
-                SystemResources,
-                AddressInUse,
-                IllegalValue,
-            }!struct {
-                bind_point: EndPoint,
-            };
-
-            async fn Connect(
-                socket: TcpSocket,
-                target: EndPoint,
-            ) error{
-                InvalidHandle,
-                SystemResources,
-                AlreadyConnected,
-                AlreadyConnecting,
-                BufferError,
-                ConnectionAborted,
-                ConnectionClosed,
-                ConnectionReset,
-                IllegalArgument,
-                IllegalValue,
-                InProgress,
-                LowlevelInterfaceError,
-                OutOfMemory,
-                Routing,
-                Timeout,
-            }!void;
-
-            async fn Send(
-                socket: TcpSocket,
-                data: []const u8,
-            ) error{
-                InvalidHandle,
-                SystemResources,
-                BufferError,
-                ConnectionAborted,
-                ConnectionClosed,
-                ConnectionReset,
-                IllegalArgument,
-                IllegalValue,
-                InProgress,
-                LowlevelInterfaceError,
-                NotConnected,
-                OutOfMemory,
-                Routing,
-                Timeout,
-            }!struct {
-                bytes_sent: usize,
-            };
-
-            async fn Receive(
-                socket: TcpSocket,
-                buffer: []u8,
-                /// if true, will read until `buffer.len` bytes arrived. otherwise will read until the end of a single packet
-                read_all: bool,
-            ) error{
-                InvalidHandle,
-                SystemResources,
-                AlreadyConnected,
-                AlreadyConnecting,
-                BufferError,
-                ConnectionAborted,
-                ConnectionClosed,
-                ConnectionReset,
-                IllegalArgument,
-                IllegalValue,
-                InProgress,
-                LowlevelInterfaceError,
-                NotConnected,
-                OutOfMemory,
-                Routing,
-                Timeout,
-            }!struct {
-                bytes_received: usize,
-            };
-        };
-    };
-
-    /// A file or directory on Ashet OS can be named with any legal UTF-8 sequence
-    /// that does not contain `/` and `:`. It is recommended to only create file names
-    /// that are actually typeable on the operating system tho.
-    ///
-    /// There are some special file names:
-    /// - `.` is the "current directory" selector and does not add to the path.
-    /// - `..` is the "parent directory" selector and navigates up in the directory hierarchy if possible.
-    /// - Any sequence of upper case ASCII letters and digits (`A-Z`, `0-9`) that ends with `:` is a file system name. This name specifies
-    ///   the root directory of a certain file system.
-    ///
-    /// Paths are either a relative or absolute addyessing of a file system entity.
-    /// Paths are composed of a sequence of names, each name separated by `/`.
-    /// A file system name is only legal as the first element of a path sequence, making the path an absolute path.
-    ///
-    /// There is a limit on how long a file/directory name can be, but there's no limit on how long a total
-    /// path can be.
-    ///
-    /// Here are some examples for valid paths:
-    /// - `example.txt`
-    /// - `docs/wiki.txt`
-    /// - `SYS:/apps/editor/code`
-    /// - `USB0:/foo/../bar` (which is equivalent to `USB0:/bar`)
-    ///
-    /// The filesystem that is used to boot the OS from has an alias `SYS:` that is always a legal way to address this file system.
-    pub const fs = struct {
-        /// Flushes all open files to disk.
-        async fn Sync() error{DiskError}!void;
-
-        /// Gets information about a file system.
-        /// Also returns a `next` id that can be used to iterate over all filesystems.
-        /// The `system` filesystem is guaranteed to be the first one.
-        async fn GetFilesystemInfo(fs: FileSystemId) error{
-            DiskError,
-            InvalidFileSystem,
-        }!struct {
-            info: FileSystemInfo,
-            next: FileSystemId,
-        };
-
-        /// opens a directory on a filesystem
-        async fn OpenDrive(fs: FileSystemId, path: []const u8) error{
-            DiskError,
-            InvalidFileSystem,
-            FileNotFound,
-            NotADir,
-            InvalidPath,
-            SystemFdQuotaExceeded,
-            SystemResources,
-        }!struct {
-            dir: Directory,
-        };
-
-        /// opens a directory relative to the given dir handle.
-        async fn OpenDir(dir: Directory, path: []const u8) error{
-            DiskError,
-            InvalidHandle,
-            FileNotFound,
-            NotADir,
-            InvalidPath,
-            SystemFdQuotaExceeded,
-            SystemResources,
-        }!struct {
-            dir: Directory,
-        };
-
-        /// closes the directory handle
-        async fn CloseDir(dir: Directory) error{InvalidHandle}!struct {};
-
-        /// resets the directory iterator to the starting point
-        async fn ResetDirEnumeration(dir: Directory) error{
-            DiskError,
+        ) error{
             InvalidHandle,
             SystemResources,
-        }!void;
-
-        /// returns the info for the current file or "eof", and advances the iterator to the next entry if possible
-        async fn EnumerateDir(dir: Directory) error{
-            DiskError,
-            InvalidHandle,
-            SystemResources,
+            BufferError,
+            IllegalArgument,
+            IllegalValue,
+            InProgress,
+            LowlevelInterfaceError,
+            NotConnected,
+            OutOfMemory,
+            Routing,
+            Timeout,
         }!struct {
-            eof: bool,
-            info: FileInfo,
+            bytes_sent: usize,
         };
 
-        /// deletes a file or directory by the given path.
-        async fn Delete(
-            dir: Directory,
-            path: []const u8,
-            recurse: bool,
+        extern "async" fn SendTo(
+            socket: UdpSocket,
+            receiver: EndPoint,
+            data: []const u8,
         ) error{
-            DiskError,
-            InvalidHandle,
-            FileNotFound,
-            InvalidPath,
-        }!void;
-
-        /// creates a new directory relative to dir. If `path` contains subdirectories, all
-        /// directories are created.
-        async fn MkDir(
-            dir: Directory,
-            path: []const u8,
-            mkopen: bool,
-        ) error{
-            DiskError,
-            InvalidHandle,
-            Exists,
-            InvalidPath,
-        }!struct {
-            dir: Directory,
-        };
-
-        /// returns the type of the file/dir at path, also adds size and modification dates
-        async fn StatEntry(
-            dir: Directory,
-            path_ptr: [*]const u8,
-            path_len: usize,
-        ) error{
-            DiskError,
-            InvalidHandle,
-            FileNotFound,
-            InvalidPath,
-        }!struct {
-            info: FileInfo,
-        };
-
-        /// renames a file inside the same file system.
-        /// NOTE: This is a cheap operation and does not require the copying of data.
-        async fn NearMove(
-            src_dir: Directory,
-            src_path: []const u8,
-            dst_path: []const u8,
-        ) error{
-            DiskError,
-            InvalidHandle,
-            FileNotFound,
-            InvalidPath,
-            Exists,
-        }!void;
-
-        // GROUP: modification
-
-        /// moves a file or directory between two unrelated directories. Can also move between different file systems.
-        /// NOTE: This syscall might copy the data.
-        async fn FarMove(
-            src_dir: Directory,
-            src_path: []const u8,
-            dst_dir: Directory,
-            dst_path: []const u8,
-        ) error{
-            DiskError,
-            InvalidHandle,
-            FileNotFound,
-            InvalidPath,
-            Exists,
-            NoSpaceLeft,
-        }!void;
-
-        /// copies a file or directory between two unrelated directories. Can also move between different file systems.
-        async fn Copy(
-            src_dir: Directory,
-            src_path: []const u8,
-            dst_dir: Directory,
-            dst_path: []const u8,
-        ) error{
-            DiskError,
-            InvalidHandle,
-            FileNotFound,
-            InvalidPath,
-            Exists,
-            NoSpaceLeft,
-        }!void;
-
-        // // GROUP: file handling
-
-        /// opens a file from the given directory.
-        async fn OpenFile(
-            dir: Directory,
-            path: []const u8,
-            access: FileAccess,
-            mode: FileMode,
-        ) error{
-            DiskError,
-            InvalidHandle,
-            FileNotFound,
-            InvalidPath,
-            Exists,
-            NoSpaceLeft,
-            SystemFdQuotaExceeded,
-            SystemResources,
-            WriteProtected,
-            FileAlreadyExists,
-        }!struct {
-            handle: File,
-        };
-
-        /// closes the handle and flushes the file.
-        async fn CloseFile(file: File) error{
-            DiskError,
             InvalidHandle,
             SystemResources,
-        }!void;
+            BufferError,
+            IllegalArgument,
+            IllegalValue,
+            InProgress,
+            LowlevelInterfaceError,
+            OutOfMemory,
+            Routing,
+            Timeout,
+        }!struct {
+            bytes_sent: usize,
+        };
 
-        /// makes sure this file is safely stored to mass storage device
-        async fn FlushFile(file: File) error{
-            DiskError,
-            InvalidHandle,
-            SystemResources,
-        }!void;
-
-        /// directly reads data from a given offset into the file. no streaming API to the kernel
-        async fn Read(
-            file: File,
-            offset: u64,
+        extern "async" fn ReceiveFrom(
+            socket: UdpSocket,
             buffer: []u8,
         ) error{
-            DiskError,
             InvalidHandle,
             SystemResources,
+            BufferError,
+            IllegalArgument,
+            IllegalValue,
+            InProgress,
+            LowlevelInterfaceError,
+            OutOfMemory,
+            Routing,
+            Timeout,
         }!struct {
-            count: usize,
+            bytes_received: usize,
+            sender: EndPoint,
         };
+    };
 
-        /// directly writes data to a given offset into the file. no streaming API to the kernel
-        async fn Write(
-            file: File,
-            offset: u64,
-            buffer: []const u8,
+    pub const tcp = struct {
+        extern "async" fn Bind(
+            socket: TcpSocket,
+            bind_point: EndPoint,
         ) error{
-            DiskError,
             InvalidHandle,
-            NoSpaceLeft,
             SystemResources,
-            WriteProtected,
+            AddressInUse,
+            IllegalValue,
         }!struct {
-            count: usize,
+            bind_point: EndPoint,
         };
 
-        /// allows us to get the current size of the file, modification dates, and so on
-        async fn StatFile(file: File) error{
-            DiskError,
+        extern "async" fn Connect(
+            socket: TcpSocket,
+            target: EndPoint,
+        ) error{
             InvalidHandle,
             SystemResources,
-        }!struct {
-            info: FileInfo,
-        };
-
-        /// Resizes the file to the given length in bytes. Can be also used to truncate a file to zero length.
-        async fn Resize(file: File, length: u64) error{
-            DiskError,
-            InvalidHandle,
-            NoSpaceLeft,
-            SystemResources,
+            AlreadyConnected,
+            AlreadyConnecting,
+            BufferError,
+            ConnectionAborted,
+            ConnectionClosed,
+            ConnectionReset,
+            IllegalArgument,
+            IllegalValue,
+            InProgress,
+            LowlevelInterfaceError,
+            OutOfMemory,
+            Routing,
+            Timeout,
         }!void;
-    };
 
-    const gui = struct {
-        /// Waits for an event on the given `Window`, completing as soon as
-        /// an event arrived.
-        async fn GetWindowEvent(window: Window) error{InProgress}!struct {
-            event_type: WindowEvent.Type,
-            event: WindowEvent,
+        extern "async" fn Send(
+            socket: TcpSocket,
+            data: []const u8,
+        ) error{
+            InvalidHandle,
+            SystemResources,
+            BufferError,
+            ConnectionAborted,
+            ConnectionClosed,
+            ConnectionReset,
+            IllegalArgument,
+            IllegalValue,
+            InProgress,
+            LowlevelInterfaceError,
+            NotConnected,
+            OutOfMemory,
+            Routing,
+            Timeout,
+        }!struct {
+            bytes_sent: usize,
         };
 
-        /// Opens a message box popup window and prompts the user for response.
-        async fn ShowMessageBox(
-            Desktop,
-            message: []const u8,
-            caption: []const u8,
-            buttons: MessageBoxButtons,
-            icon: MessageBoxIcon,
-        ) error{}!struct {
-            result: MessageBoxResult,
+        extern "async" fn Receive(
+            socket: TcpSocket,
+            buffer: []u8,
+            /// if true, will read until `buffer.len` bytes arrived. otherwise will read until the end of a single packet
+            read_all: bool,
+        ) error{
+            InvalidHandle,
+            SystemResources,
+            AlreadyConnected,
+            AlreadyConnecting,
+            BufferError,
+            ConnectionAborted,
+            ConnectionClosed,
+            ConnectionReset,
+            IllegalArgument,
+            IllegalValue,
+            InProgress,
+            LowlevelInterfaceError,
+            NotConnected,
+            OutOfMemory,
+            Routing,
+            Timeout,
+        }!struct {
+            bytes_received: usize,
         };
-    };
-
-    const sync = struct {
-        /// Waits for the given `SyncEvent` to be notified.
-        async fn WaitForEvent(SyncEvent) error{}!void;
-
-        /// Locks a mutex. Will complete once the mutex is locked.
-        async fn Lock(Mutex) error{}!void;
-    };
-
-    const random = struct {
-        /// Fills the provided buffer with given length amount of random bytes.
-        ///
-        /// This call blocks until the entropy pool has enough entropy to fill
-        /// an entire hash to draw from.
-        async fn GetStrictRandom(data: []u8) error{}!void;
     };
 };
 
-pub const Service = struct(SystemResource) {};
+/// A file or directory on Ashet OS can be named with any legal UTF-8 sequence
+/// that does not contain `/` and `:`. It is recommended to only create file names
+/// that are actually typeable on the operating system tho.
+///
+/// There are some special file names:
+/// - `.` is the "current directory" selector and does not add to the path.
+/// - `..` is the "parent directory" selector and navigates up in the directory hierarchy if possible.
+/// - Any sequence of upper case ASCII letters and digits (`A-Z`, `0-9`) that ends with `:` is a file system name. This name specifies
+///   the root directory of a certain file system.
+///
+/// Paths are either a relative or absolute addyessing of a file system entity.
+/// Paths are composed of a sequence of names, each name separated by `/`.
+/// A file system name is only legal as the first element of a path sequence, making the path an absolute path.
+///
+/// There is a limit on how long a file/directory name can be, but there's no limit on how long a total
+/// path can be.
+///
+/// Here are some examples for valid paths:
+/// - `example.txt`
+/// - `docs/wiki.txt`
+/// - `SYS:/apps/editor/code`
+/// - `USB0:/foo/../bar` (which is equivalent to `USB0:/bar`)
+///
+/// The filesystem that is used to boot the OS from has an alias `SYS:` that is always a legal way to address this file system.
+pub const fs = struct {
+    /// Flushes all open files to disk.
+    extern "async" fn Sync() error{DiskError}!void;
+
+    /// Gets information about a file system.
+    /// Also returns a `next` id that can be used to iterate over all filesystems.
+    /// The `system` filesystem is guaranteed to be the first one.
+    extern "async" fn GetFilesystemInfo(fs: FileSystemId) error{
+        DiskError,
+        InvalidFileSystem,
+    }!struct {
+        info: FileSystemInfo,
+        next: FileSystemId,
+    };
+
+    /// opens a directory on a filesystem
+    extern "async" fn OpenDrive(fs: FileSystemId, path: []const u8) error{
+        DiskError,
+        InvalidFileSystem,
+        FileNotFound,
+        NotADir,
+        InvalidPath,
+        SystemFdQuotaExceeded,
+        SystemResources,
+    }!struct {
+        dir: Directory,
+    };
+
+    /// opens a directory relative to the given dir handle.
+    extern "async" fn OpenDir(dir: Directory, path: []const u8) error{
+        DiskError,
+        InvalidHandle,
+        FileNotFound,
+        NotADir,
+        InvalidPath,
+        SystemFdQuotaExceeded,
+        SystemResources,
+    }!struct {
+        dir: Directory,
+    };
+
+    /// closes the directory handle
+    extern "async" fn CloseDir(dir: Directory) error{InvalidHandle}!struct {};
+
+    /// resets the directory iterator to the starting point
+    extern "async" fn ResetDirEnumeration(dir: Directory) error{
+        DiskError,
+        InvalidHandle,
+        SystemResources,
+    }!void;
+
+    /// returns the info for the current file or "eof", and advances the iterator to the next entry if possible
+    extern "async" fn EnumerateDir(dir: Directory) error{
+        DiskError,
+        InvalidHandle,
+        SystemResources,
+    }!struct {
+        eof: bool,
+        info: FileInfo,
+    };
+
+    /// deletes a file or directory by the given path.
+    extern "async" fn Delete(
+        dir: Directory,
+        path: []const u8,
+        recurse: bool,
+    ) error{
+        DiskError,
+        InvalidHandle,
+        FileNotFound,
+        InvalidPath,
+    }!void;
+
+    /// creates a new directory relative to dir. If `path` contains subdirectories, all
+    /// directories are created.
+    extern "async" fn MkDir(
+        dir: Directory,
+        path: []const u8,
+        mkopen: bool,
+    ) error{
+        DiskError,
+        InvalidHandle,
+        Exists,
+        InvalidPath,
+    }!struct {
+        dir: Directory,
+    };
+
+    /// returns the type of the file/dir at path, also adds size and modification dates
+    extern "async" fn StatEntry(
+        dir: Directory,
+        path_ptr: [*]const u8,
+        path_len: usize,
+    ) error{
+        DiskError,
+        InvalidHandle,
+        FileNotFound,
+        InvalidPath,
+    }!struct {
+        info: FileInfo,
+    };
+
+    /// renames a file inside the same file system.
+    /// NOTE: This is a cheap operation and does not require the copying of data.
+    extern "async" fn NearMove(
+        src_dir: Directory,
+        src_path: []const u8,
+        dst_path: []const u8,
+    ) error{
+        DiskError,
+        InvalidHandle,
+        FileNotFound,
+        InvalidPath,
+        Exists,
+    }!void;
+
+    // GROUP: modification
+
+    /// moves a file or directory between two unrelated directories. Can also move between different file systems.
+    /// NOTE: This syscall might copy the data.
+    extern "async" fn FarMove(
+        src_dir: Directory,
+        src_path: []const u8,
+        dst_dir: Directory,
+        dst_path: []const u8,
+    ) error{
+        DiskError,
+        InvalidHandle,
+        FileNotFound,
+        InvalidPath,
+        Exists,
+        NoSpaceLeft,
+    }!void;
+
+    /// copies a file or directory between two unrelated directories. Can also move between different file systems.
+    extern "async" fn Copy(
+        src_dir: Directory,
+        src_path: []const u8,
+        dst_dir: Directory,
+        dst_path: []const u8,
+    ) error{
+        DiskError,
+        InvalidHandle,
+        FileNotFound,
+        InvalidPath,
+        Exists,
+        NoSpaceLeft,
+    }!void;
+
+    // // GROUP: file handling
+
+    /// opens a file from the given directory.
+    extern "async" fn OpenFile(
+        dir: Directory,
+        path: []const u8,
+        access: FileAccess,
+        mode: FileMode,
+    ) error{
+        DiskError,
+        InvalidHandle,
+        FileNotFound,
+        InvalidPath,
+        Exists,
+        NoSpaceLeft,
+        SystemFdQuotaExceeded,
+        SystemResources,
+        WriteProtected,
+        FileAlreadyExists,
+    }!struct {
+        handle: File,
+    };
+
+    /// closes the handle and flushes the file.
+    extern "async" fn CloseFile(file: File) error{
+        DiskError,
+        InvalidHandle,
+        SystemResources,
+    }!void;
+
+    /// makes sure this file is safely stored to mass storage device
+    extern "async" fn FlushFile(file: File) error{
+        DiskError,
+        InvalidHandle,
+        SystemResources,
+    }!void;
+
+    /// directly reads data from a given offset into the file. no streaming API to the kernel
+    extern "async" fn Read(
+        file: File,
+        offset: u64,
+        buffer: []u8,
+    ) error{
+        DiskError,
+        InvalidHandle,
+        SystemResources,
+    }!struct {
+        count: usize,
+    };
+
+    /// directly writes data to a given offset into the file. no streaming API to the kernel
+    extern "async" fn Write(
+        file: File,
+        offset: u64,
+        buffer: []const u8,
+    ) error{
+        DiskError,
+        InvalidHandle,
+        NoSpaceLeft,
+        SystemResources,
+        WriteProtected,
+    }!struct {
+        count: usize,
+    };
+
+    /// allows us to get the current size of the file, modification dates, and so on
+    extern "async" fn StatFile(file: File) error{
+        DiskError,
+        InvalidHandle,
+        SystemResources,
+    }!struct {
+        info: FileInfo,
+    };
+
+    /// Resizes the file to the given length in bytes. Can be also used to truncate a file to zero length.
+    extern "async" fn Resize(file: File, length: u64) error{
+        DiskError,
+        InvalidHandle,
+        NoSpaceLeft,
+        SystemResources,
+    }!void;
+};
+
+// pub const Service = struct(SystemResource) {};
 
 pub const SharedMemory = struct(SystemResource) {};
 
-pub const Pipe = struct(SystemResource) {};
+// pub const Pipe = struct(SystemResource) {};
 
 pub const Process = struct(SystemResource) {};
 
@@ -838,7 +645,7 @@ pub const Directory = struct(SystemResource) {};
 
 pub const VideoOutput = struct(SystemResource) {};
 
-pub const Font = struct(SystemResource) {};
+// pub const Font = struct(SystemResource) {};
 
 /// A framebuffer is something that can be drawn on.
 pub const Framebuffer = struct(SystemResource) {};
@@ -857,21 +664,26 @@ pub const Mutex = struct(SystemResource) {};
 
 usingnamespace zig; // regular code beyond this
 
+// pub const ARC = extern struct {
+//     type: ARC_Type,
+//     next: ?*ARC,
+//     tag: usize, // user specified data
+
+//     kernel_data: [7]usize = undefined, // internal data used by the kernel to store
+// };
+
+/// Constructor for a generic, ABI passable error set.
+pub const ErrorSet = @import("error_set").ErrorSet;
+
 /// Asynchronous operations (short AOP) are long-running
 /// operations that can run in the background (at least to
 /// a certain extend) and can be seen as long-running system
 /// calls.
-pub const AsyncOp = extern struct {
-    type: AOP_Type,
-    next: ?*AsyncOp,
-    tag: usize, // user specified data
+pub const ARC = @import("async_running_call").Generic_ARC(ARC_Type);
 
-    kernel_data: [7]usize = undefined, // internal data used by the kernel to store
-};
+pub const platforms = @import("platforms");
 
-/// Constructor for a generic, ABI passable error set.
-pub const ErrorSet = @import("error_set.zig").ErrorSet;
-
+pub const Platform = platforms.Platform;
 ///////////////////////////////////////////////////////////
 // Imports:
 
@@ -960,6 +772,9 @@ pub const ThreadFunction = *const fn (?*anyopaque) callconv(.C) u32;
 /// A date-and-time type encoding the time point in question as a
 /// Unix timestamp in milliseconds
 pub const DateTime = enum(i64) {
+    /// 1970-01-01 00:00
+    epoch = 0,
+
     _,
 };
 
@@ -1015,29 +830,42 @@ pub const NotificationSeverity = enum(u8) {
 
 pub const IP_Type = enum(u8) { ipv4, ipv6 };
 
-pub const WaitIO = enum(u32) {
-    /// Don't wait for any I/O to complete.
-    dont_block,
+pub const Schedule_And_Await_Options = extern struct {
+    wait: Wait,
+    thread_affinity: Thread_Affinity,
 
-    /// Doesn't block the call, and guarantees that no event is returned by `scheduleAndAwait`.
-    /// This can be used to enqueue new AsyncOps outside of the event loop.
-    schedule_only,
+    pub const Thread_Affinity = enum(u8) {
+        /// Waits for ARCs scheduled from *any* thread in the current process.
+        all_threads,
 
-    /// Wait for at least one I/O to complete operation.
-    wait_one,
+        /// Waits for ARCs scheduled from *this* thread.
+        this_thread,
+    };
 
-    /// Wait until all scheduled I/O operations have completed.
-    wait_all,
+    pub const Wait = enum(u8) {
+        /// Don't wait for any I/O to complete.
+        dont_block,
 
-    /// Returns whether the operation is blocking or not.
-    pub fn isBlocking(wait: WaitIO) bool {
-        return switch (wait) {
-            .dont_block => false,
-            .schedule_only => false,
-            .wait_one => true,
-            .wait_all => true,
-        };
-    }
+        /// Doesn't block the call, and guarantees that no event is returned by `scheduleAndAwait`.
+        /// This can be used to enqueue new ARCs outside of the event loop.
+        schedule_only,
+
+        /// Wait for at least one I/O to complete operation.
+        wait_one,
+
+        /// Wait until all scheduled I/O operations have completed.
+        wait_all,
+
+        /// Returns whether the operation is blocking or not.
+        pub fn isBlocking(wait: Wait) bool {
+            return switch (wait) {
+                .dont_block => false,
+                .schedule_only => false,
+                .wait_one => true,
+                .wait_all => true,
+            };
+        }
+    };
 };
 
 /// Index of the systems video outputs.
