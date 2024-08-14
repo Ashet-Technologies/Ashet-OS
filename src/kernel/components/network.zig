@@ -54,7 +54,7 @@ pub const MAC = struct {
 
 pub fn appendToPBUF(pbuf: *c.pbuf, data: []const u8) !void {
     const len = std.math.cast(u16, data.len) orelse return error.OutOfMemory;
-    try lwipTry(c.pbuf_take(pbuf, data.ptr, len));
+    try lwip.pbuf.take(pbuf, data.ptr, len);
 }
 
 pub const IncomingPacket = struct {
@@ -241,7 +241,7 @@ pub fn start() !void {
 
         c.netif_set_up(netif);
 
-        try lwipTry(c.dhcp_start(netif));
+        try lwip.dhcp.start(netif);
 
         c.netif_set_link_up(netif);
     }
@@ -289,7 +289,8 @@ fn networkThread(_: ?*anyopaque) callconv(.C) u32 {
 // Don't care for wraparound, this is only used for time diffs. Not implementing this function means
 // you cannot use some modules (e.g. TCP timestamps, internal timeouts for NO_SYS==1).
 export fn sys_now() u32 {
-    return @as(u32, @truncate(@as(u64, @bitCast(ashet.time.milliTimestamp()))));
+    const now = ashet.time.Instant.now();
+    return @truncate(now.ms_since_start());
 }
 
 const LwipError = error{
@@ -475,6 +476,7 @@ const lwip = struct {
     const udp = struct {
         const bind = wrap_lwip_call(c.udp_bind, &.{}).invoke;
         const connect = wrap_lwip_call(c.udp_connect, &.{}).invoke;
+        const disconnect = c.udp_disconnect;
         const send = wrap_lwip_call(c.udp_send, &.{}).invoke;
         const sendto = wrap_lwip_call(c.udp_sendto, &.{}).invoke;
     };
@@ -521,58 +523,54 @@ pub const udp = struct {
     pub const Socket = struct {
         system_resource: ashet.resources.SystemResource = .{ .type = .udp_socket },
 
+        pcb: *c.udp_pcb,
+        receive_iop: ?*ashet.@"async".AsyncCall = null,
+
+        pub fn create() error{SystemResources}!*Socket {
+            const socket = ashet.memory.type_pool(Socket).alloc() catch return error.SystemResources;
+            errdefer ashet.memory.type_pool(Socket).free(socket);
+
+            const pcb = c.udp_new() orelse return error.SystemResources;
+            errdefer comptime unreachable;
+
+            c.udp_arg(pcb, socket);
+            c.udp_recv(pcb, handleIncomingPacket, socket);
+
+            return socket;
+        }
+
         pub fn destroy(sock: *Socket) void {
-            _ = sock;
-            @panic("Not implemented yet!");
+            c.udp_remove(sock.pcb);
+            ashet.memory.type_pool(Socket).free(sock);
+        }
+
+        fn from_callback(arg: ?*anyopaque) *Socket {
+            return @ptrCast(@alignCast(arg.?));
+        }
+
+        fn resolve(call: *ashet.@"async".AsyncCall, dir: ashet.abi.UdpSocket) error{InvalidHandle}!*Socket {
+            const proc = call.get_process();
+            return ashet.resources.resolve(Socket, proc, dir.as_resource()) catch |err| {
+                logger.warn("process {} used invalid socket handle {}: {s}", .{ proc, dir, @errorName(err) });
+                return error.InvalidHandle;
+            };
         }
     };
 
-    const Data = struct {
-        receive_iop: ?*abi_udp.ReceiveFrom = null,
-    };
-
-    var pool: astd.IndexPool(u32, max_sockets) = .{};
-    var sockets: [max_sockets]*c.udp_pcb = undefined;
-    var socket_meta: [max_sockets]Data = undefined;
-
-    fn unmap(sock: Socket) error{InvalidHandle}!*c.udp_pcb {
-        if (sock == .invalid)
-            return error.InvalidHandle;
-        const index = @intFromEnum(sock);
-        if (index >= max_sockets)
-            return error.InvalidHandle;
-        if (!pool.alive(index))
-            return error.InvalidHandle;
-        return sockets[index];
-    }
-
-    pub fn createSocket() !Socket {
-        const index = pool.alloc() orelse return error.SystemResources;
-        errdefer pool.free(index);
-
-        const pcb = c.udp_new() orelse return error.SystemResources;
-        sockets[index] = pcb;
-
-        socket_meta[index] = Data{};
-
-        c.udp_recv(pcb, handleIncomingPacket, &socket_meta[index]);
-
-        return @as(Socket, @enumFromInt(index));
-    }
-
     fn handleIncomingPacket(arg: ?*anyopaque, pcb_c: [*c]c.udp_pcb, pbuf_c: [*c]c.pbuf, addr_c: [*c]const c.ip_addr_t, port: u16) callconv(.C) void {
-        const data: *Data = @ptrCast(@alignCast(arg));
+        const socket = Socket.from_callback(arg);
         const pcb: *c.udp_pcb = pcb_c;
         const pbuf: *c.pbuf = pbuf_c;
         const addr: *const c.ip_addr_t = addr_c;
 
-        _ = pcb;
+        std.debug.assert(socket.pcb == pcb);
 
-        const iop = data.receive_iop orelse {
+        const call = socket.receive_iop orelse {
             logger.err("failed to queue received pbuf. dropping packet of {} bytes.", .{pbuf.tot_len});
             _ = c.pbuf_free(pbuf);
             return;
         };
+        const iop = call.arc.cast(abi_udp.ReceiveFrom);
 
         const limited_len = @as(u16, @truncate(@min(pbuf.tot_len, iop.inputs.buffer_len)));
 
@@ -584,79 +582,114 @@ pub const udp = struct {
 
         logger.debug("received some data via udp: {} bytes from {}", .{ limited_len, sender });
 
-        data.receive_iop = null;
-        ashet.io.finalizeWithResult(iop, .{
+        socket.receive_iop = null;
+        call.finalize(abi_udp.ReceiveFrom, .{
             .bytes_received = limited_len,
             .sender = sender,
         });
     }
 
-    pub fn destroySocket(sock: Socket) void {
-        const pcb = unmap(sock) catch return;
-        const index = @intFromEnum(sock);
-        c.udp_remove(pcb);
-        sockets[index] = undefined;
-        socket_meta[index] = undefined;
-        pool.free(index);
+    pub fn bind(call: *ashet.@"async".AsyncCall, inputs: abi_udp.Bind.Inputs) void {
+        const socket = Socket.resolve(call, inputs.socket) catch |err| {
+            return call.finalize(abi_udp.Bind, err);
+        };
+
+        lwip.udp.bind(socket.pcb, &mapIP(inputs.bind_point.ip), inputs.bind_point.port) catch |err| {
+            return call.finalize(abi_udp.Bind, err);
+        };
+
+        call.finalize(abi_udp.Bind, .{});
     }
 
-    pub fn bind(data: *abi_udp.Bind) void {
-        const pcb = unmap(data.inputs.socket) catch |err| return ashet.io.finalizeWithError(data, err);
-        lwipTry(c.udp_bind(pcb, &mapIP(data.inputs.bind_point.ip), data.inputs.bind_point.port)) catch |err| return ashet.io.finalizeWithError(data, err);
-        ashet.io.finalizeWithResult(data, .{});
+    pub fn connect(call: *ashet.@"async".AsyncCall, inputs: abi_udp.Connect.Inputs) void {
+        const socket = Socket.resolve(call, inputs.socket) catch |err| {
+            return call.finalize(abi_udp.Connect, err);
+        };
+        lwip.udp.connect(socket.pcb, &mapIP(inputs.target.ip), inputs.target.port) catch |err| {
+            return ashet.io.finalize(abi_udp.Connect, err);
+        };
+        call.finalize(abi_udp.Connect, .{});
     }
 
-    pub fn connect(data: *abi_udp.Connect) void {
-        const pcb = unmap(data.inputs.socket) catch |err| return ashet.io.finalizeWithError(data, err);
-        lwipTry(c.udp_connect(pcb, &mapIP(data.inputs.target.ip), data.inputs.target.port)) catch |err| return ashet.io.finalizeWithError(data, err);
-        ashet.io.finalizeWithResult(data, .{});
+    pub fn disconnect(call: *ashet.@"async".AsyncCall, inputs: abi_udp.Disconnect.Inputs) void {
+        const socket = Socket.resolve(call, inputs.socket) catch |err| {
+            return call.finalize(abi_udp.Bind, err);
+        };
+        lwip.udp.disconnect(socket.pcb);
+        call.finalize(abi_udp.Disconnect, .{});
     }
 
-    pub fn disconnect(data: *abi_udp.Disconnect) void {
-        const pcb = unmap(data.inputs.socket) catch |err| return ashet.io.finalizeWithError(data, err);
-        c.udp_disconnect(pcb);
-        ashet.io.finalizeWithResult(data, .{});
-    }
+    pub fn send(call: *ashet.@"async".AsyncCall, inputs: abi_udp.Send.Inputs) void {
+        const socket = Socket.resolve(call, inputs.socket) catch |err| {
+            return call.finalize(abi_udp.Send, err);
+        };
 
-    pub fn send(data: *abi_udp.Send) void {
-        const pcb = unmap(data.inputs.socket) catch |err| return ashet.io.finalizeWithError(data, err);
+        const stripped_len = std.math.cast(u16, inputs.data_len) orelse {
+            return call.finalize(abi_udp.Send, error.OutOfMemory);
+        };
 
-        const stripped_len = std.math.cast(u16, data.inputs.data_len) orelse return ashet.io.finalizeWithError(data, error.OutOfMemory);
-
-        const pbuf = c.pbuf_alloc(c.PBUF_TRANSPORT, stripped_len, c.PBUF_POOL) orelse return ashet.io.finalizeWithError(data, error.OutOfMemory);
+        const pbuf = c.pbuf_alloc(c.PBUF_TRANSPORT, stripped_len, c.PBUF_POOL) orelse {
+            return call.finalize(abi_udp.Send, error.OutOfMemory);
+        };
         defer _ = c.pbuf_free(pbuf);
 
-        appendToPBUF(pbuf, data.inputs.data_ptr[0..stripped_len]) catch |err| return ashet.io.finalizeWithError(data, err);
+        appendToPBUF(pbuf, inputs.data_ptr[0..stripped_len]) catch |err| {
+            return call.finalize(abi_udp.Send, err);
+        };
 
-        lwipTry(c.udp_send(pcb, pbuf)) catch |err| return ashet.io.finalizeWithError(data, err);
+        lwip.udp.send(socket.pcb, pbuf) catch |err| {
+            return call.finalize(abi_udp.Send, err);
+        };
 
-        ashet.io.finalizeWithResult(data, .{ .bytes_sent = stripped_len });
+        call.finalize(abi_udp.Send, .{ .bytes_sent = stripped_len });
     }
 
-    pub fn sendTo(data: *abi_udp.SendTo) void {
-        const pcb = unmap(data.inputs.socket) catch |err| return ashet.io.finalizeWithError(data, err);
+    pub fn sendTo(call: *ashet.@"async".AsyncCall, inputs: abi_udp.SendTo.Inputs) void {
+        const socket = Socket.resolve(call, inputs.socket) catch |err| {
+            return call.finalize(abi_udp.SendTo, err);
+        };
 
-        const stripped_len = std.math.cast(u16, data.inputs.data_len) orelse return ashet.io.finalizeWithError(data, error.OutOfMemory);
+        const stripped_len = std.math.cast(u16, inputs.data_len) orelse {
+            return call.finalize(abi_udp.SendTo, error.OutOfMemory);
+        };
 
-        const pbuf = c.pbuf_alloc(c.PBUF_TRANSPORT, stripped_len, c.PBUF_POOL) orelse return ashet.io.finalizeWithError(data, error.OutOfMemory);
+        const pbuf = c.pbuf_alloc(c.PBUF_TRANSPORT, stripped_len, c.PBUF_POOL) orelse {
+            return call.finalize(abi_udp.SendTo, error.OutOfMemory);
+        };
         defer _ = c.pbuf_free(pbuf);
 
-        appendToPBUF(pbuf, data.inputs.data_ptr[0..stripped_len]) catch |err| return ashet.io.finalizeWithError(data, err);
+        appendToPBUF(pbuf, inputs.data_ptr[0..stripped_len]) catch |err| {
+            return call.finalize(abi_udp.SendTo, err);
+        };
 
-        lwipTry(c.udp_sendto(pcb, pbuf, &mapIP(data.inputs.receiver.ip), data.inputs.receiver.port)) catch |err| return ashet.io.finalizeWithError(data, err);
+        lwip.udp.sendto(socket.pcb, pbuf, &mapIP(inputs.receiver.ip), inputs.receiver.port) catch |err| {
+            return call.finalize(abi_udp.SendTo, err);
+        };
 
-        ashet.io.finalizeWithResult(data, .{ .bytes_sent = stripped_len });
+        call.finalize(abi_udp.SendTo, .{ .bytes_sent = stripped_len });
     }
 
-    pub fn receiveFrom(data: *abi_udp.ReceiveFrom) void {
-        const pcb = unmap(data.inputs.socket) catch |err| return ashet.io.finalizeWithError(data, err);
-        const context = &socket_meta[@intFromEnum(data.inputs.socket)];
+    pub fn receiveFrom(call: *ashet.@"async".AsyncCall, inputs: abi_udp.ReceiveFrom.Inputs) void {
+        const socket = Socket.resolve(call, inputs.socket) catch |err| {
+            return call.finalize(abi_udp.Bind, err);
+        };
 
-        _ = pcb;
-        if (context.receive_iop != null) {
-            return ashet.io.finalizeWithError(data, error.InProgress);
+        if (socket.receive_iop != null) {
+            return call.finalize(abi_udp.ReceiveFrom, error.InProgress);
+        } else {
+            call.cancel_context = socket;
+            call.cancel_fn = cancel_receive_from;
+            socket.receive_iop = call;
         }
-        context.receive_iop = data;
+    }
+
+    fn cancel_receive_from(call: *ashet.@"async".AsyncCall) void {
+        const socket = Socket.from_callback(call.cancel_context);
+
+        // Cancelling the receive operation is pretty trivial here:
+        // we just delete the target where the receive function should store its
+        // received frame:
+        socket.receive_iop = null;
     }
 };
 

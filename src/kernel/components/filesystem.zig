@@ -174,18 +174,16 @@ fn resolve_file(call: *ashet.@"async".AsyncCall, dir: ashet.abi.File) error{Inva
     };
 }
 
-fn get_dir_handle(call: *ashet.@"async".AsyncCall, dir: *Directory) ashet.abi.Directory {
+fn create_dir_handle(call: *ashet.@"async".AsyncCall, dir: *Directory) !ashet.abi.Directory {
     const proc = call.get_process();
-    _ = proc;
-    _ = dir;
-    @panic("not implemented yet");
+    const handle = try proc.assign_new_resource(&dir.system_resource);
+    return handle.unsafe_cast(.directory);
 }
 
-fn get_file_handle(call: *ashet.@"async".AsyncCall, file: *File) ashet.abi.File {
+fn create_file_handle(call: *ashet.@"async".AsyncCall, file: *File) !ashet.abi.File {
     const proc = call.get_process();
-    _ = proc;
-    _ = file;
-    @panic("not implemented yet");
+    const handle = try proc.assign_new_resource(&file.system_resource);
+    return handle.unsafe_cast(.file);
 }
 
 const iop_handlers = struct {
@@ -213,7 +211,7 @@ const iop_handlers = struct {
         const backing = try Directory.create(ctx, dri_dir);
         errdefer backing.destroy();
 
-        return .{ .dir = get_dir_handle(call, backing) };
+        return .{ .dir = try create_dir_handle(call, backing) };
     }
 
     fn fs_open_dir(call: *ashet.@"async".AsyncCall, inputs: fs_abi.OpenDir.Inputs) fs_abi.OpenDir.Error!fs_abi.OpenDir.Outputs {
@@ -225,7 +223,7 @@ const iop_handlers = struct {
         const backing = try Directory.create(ctx.fs, dri_dir);
         errdefer backing.destroy();
 
-        return .{ .dir = get_dir_handle(call, backing) };
+        return .{ .dir = try create_dir_handle(call, backing) };
     }
 
     fn fs_close_dir(call: *ashet.@"async".AsyncCall, inputs: fs_abi.CloseDir.Inputs) fs_abi.CloseDir.Error!fs_abi.CloseDir.Outputs {
@@ -312,8 +310,9 @@ const iop_handlers = struct {
             ctx.fs,
             dri_file,
         );
+        errdefer file.destroy();
 
-        return .{ .handle = get_file_handle(call, file) };
+        return .{ .handle = try create_file_handle(call, file) };
     }
 
     fn fs_close_file(call: *ashet.@"async".AsyncCall, inputs: fs_abi.CloseFile.Inputs) fs_abi.CloseFile.Error!fs_abi.CloseFile.Outputs {

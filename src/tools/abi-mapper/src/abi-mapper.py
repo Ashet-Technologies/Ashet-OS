@@ -965,7 +965,7 @@ def render_abi_definition(stream:CodeStream, abi: ABI_Definition):
     stream.writeln()
     stream.writeln("const __SystemResourceType = enum(u16) {")
     with stream.indent():
-        stream.writeln("bad_handle = 0,")
+        # stream.writeln("bad_handle = 0,")
 
         for src in sys_resources:
             stream.writeln(f"{caseconverter.snakecase(src)},")
@@ -980,7 +980,7 @@ def render_abi_definition(stream:CodeStream, abi: ABI_Definition):
     for src in sys_resources:
         stream.writeln(f"        .{caseconverter.snakecase(src)} => {src},")
 
-    stream.writeln("         _ => @compileError(\"Undefined type passed.\"),")
+    # stream.writeln("         _ => @compileError(\"Undefined type passed.\"),")
     stream.writeln("    };")
     stream.writeln("}")
 

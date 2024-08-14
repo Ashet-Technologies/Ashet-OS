@@ -339,52 +339,5 @@ const impls = struct {
         ashet.random.get_random_bytes(ptr[0..len]);
     }
 
-    export fn @"ashet.shm.create"(size: usize) ?ashet.abi.SharedMemory {
-        const process = getCurrentProcess();
-
-        const info = process.resources.alloc() catch return null;
-
-        const shm = ashet.shared_memory.SharedMemory.create(size) catch {
-            process.resources.free_by_handle(info.handle) catch unreachable;
-            return null;
-        };
-
-        info.ownership.* = .{
-            .data = .{
-                .process = process,
-                .resource = &shm.system_resource,
-            },
-        };
-        shm.system_resource.add_owner(info.ownership);
-
-        return @ptrCast(info.handle);
-    }
-
-    export fn @"ashet.shm.get_length"(shm_handle: ashet.abi.SharedMemory) usize {
-        _, const shm = resolve_typed_resource(ashet.shared_memory.SharedMemory, @ptrCast(shm_handle)) catch return 0;
-        return shm.buffer.len;
-    }
-
-    export fn @"ashet.shm.get_pointer"(shm_handle: ashet.abi.SharedMemory) [*]align(16) u8 {
-        const T = struct {
-            const empty: [0]u8 align(16) = .{};
-        };
-        _, const shm = resolve_typed_resource(ashet.shared_memory.SharedMemory, @ptrCast(shm_handle)) catch return &T.empty;
-        return shm.buffer.ptr;
-    }
 };
 
-fn resolve_base_resource(handle: ashet.resources.Handle) !struct { *ashet.multi_tasking.Process, *ashet.resources.SystemResource } {
-    const process = getCurrentProcess();
-    const ownership = try process.resources.resolve(handle);
-    std.debug.assert(ownership.data.process == process);
-    return .{ process, ownership.data.resource };
-}
-
-fn resolve_typed_resource(comptime Resource: type, handle: ashet.resources.Handle) !struct { *ashet.multi_tasking.Process, *Resource } {
-    const process, const resource = try resolve_base_resource(handle);
-
-    const typed = try resource.cast(Resource);
-
-    return .{ process, typed };
-}

@@ -645,6 +645,20 @@ pub const fs = struct {
     }!void;
 };
 
+const shm = struct {
+    /// Constructs a new shared memory object with `size` bytes of memory.
+    /// Shared memory can be written by all processes without any memory protection.
+    extern fn create(size: usize) error{
+        SystemResources,
+    }!SharedMemory;
+
+    /// Returns the number of bytes inside the given shared memory object.
+    extern fn get_length(SharedMemory) usize;
+
+    /// Returns a pointer to the shared memory.
+    extern fn get_pointer(SharedMemory) [*]align(16) u8;
+};
+
 // pub const Service = struct(SystemResource) {};
 
 pub const SharedMemory = struct(SystemResource) {};
@@ -753,11 +767,16 @@ pub const SystemResource = enum(usize) {
     _,
 
     /// Casts the resource into a concrete type. Fails, if the type does not match.
-    pub fn cast(resource: *SystemResource, comptime t: Type) error{InvalidType}!*CastResult(t) {
-        const actual = resource.get_type();
+    pub fn cast(resource: SystemResource, comptime t: Type) error{InvalidType}!CastResult(t) {
+        const actual = resources.get_type(resource);
         if (actual != t)
             return error.InvalidType;
-        return @ptrCast(resource);
+        return resource.unsafe_cast(t);
+    }
+
+    /// Casts the resource into a concrete type. Fails, if the type does not match.
+    pub fn unsafe_cast(resource: SystemResource, comptime t: Type) CastResult(t) {
+        return @ptrFromInt(@intFromEnum(resource));
     }
 
     fn CastResult(comptime t: Type) type {

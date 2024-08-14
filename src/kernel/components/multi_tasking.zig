@@ -12,6 +12,8 @@ var process_list: ProcessList = .{};
 /// If `null`, the regular desktop UI is active.
 pub var exclusive_video_controller: ?*Process = null;
 
+var initialized = false;
+
 var kernel_process: *Process = undefined;
 
 pub fn initialize() void {
@@ -19,10 +21,12 @@ pub fn initialize() void {
         .name = "<kernel>",
         .stay_resident = true,
     }) catch @panic("could not create kernel process: out of memory");
+    initialized = true;
 }
 
 /// Gets the handle to the kernel process.
 pub fn get_kernel_process() *Process {
+    std.debug.assert(initialized);
     return kernel_process;
 }
 
@@ -192,5 +196,21 @@ pub const Process = struct {
     pub fn static_allocator(proc: *Process) std.mem.Allocator {
         std.debug.assert(!proc.is_zombie());
         return proc.memory_arena.allocator();
+    }
+
+    /// Assigns this process the system resource `res` and returns the handle.
+    pub fn assign_new_resource(proc: *Process, res: *ashet.resources.SystemResource) error{SystemResources}!ashet.abi.SystemResource {
+        const info = proc.resources.alloc() catch return error.SystemResources;
+        errdefer proc.resources.free_by_handle(info.handle) catch unreachable;
+
+        info.ownership.* = .{
+            .data = .{
+                .process = proc,
+                .resource = res,
+            },
+        };
+        res.add_owner(info.ownership);
+
+        return info.handle;
     }
 };

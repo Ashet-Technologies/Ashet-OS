@@ -331,4 +331,55 @@ pub const syscalls = struct {
             ashet.random.get_random_bytes(data);
         }
     };
+
+    pub const shm = struct {
+        pub fn create(size: usize) error{SystemResources}!ashet.abi.SharedMemory {
+            const proc = getCurrentProcess();
+
+            const memref = ashet.shared_memory.SharedMemory.create(size) catch {
+                return error.SystemResources;
+            };
+            errdefer memref.destroy();
+
+            const handle = try proc.assign_new_resource(&memref.system_resource);
+
+            return handle.unsafe_cast(.shared_memory);
+        }
+
+        pub fn get_length(shm_handle: ashet.abi.SharedMemory) usize {
+            _, const memref = resolve_typed_resource(ashet.shared_memory.SharedMemory, shm_handle.as_resource()) catch return 0;
+            return memref.buffer.len;
+        }
+
+        pub fn get_pointer(shm_handle: ashet.abi.SharedMemory) [*]align(16) u8 {
+            const T = struct {
+                const empty: [0]u8 align(16) = .{};
+            };
+            _, const memref = resolve_typed_resource(ashet.shared_memory.SharedMemory, shm_handle.as_resource()) catch return &T.empty;
+            return memref.buffer.ptr;
+        }
+    };
 };
+
+fn resolve_base_resource(handle: ashet.resources.Handle) !struct { *ashet.multi_tasking.Process, *ashet.resources.SystemResource } {
+    const process = getCurrentProcess();
+    const ownership = try process.resources.resolve(handle);
+    std.debug.assert(ownership.data.process == process);
+    return .{ process, ownership.data.resource };
+}
+
+fn resolve_typed_resource(comptime Resource: type, handle: ashet.resources.Handle) !struct { *ashet.multi_tasking.Process, *Resource } {
+    const process, const resource = try resolve_base_resource(handle);
+
+    const typed = try resource.cast(Resource);
+
+    return .{ process, typed };
+}
+
+fn getCurrentThread() *ashet.scheduler.Thread {
+    return ashet.scheduler.Thread.current() orelse @panic("syscall only legal in a process");
+}
+
+fn getCurrentProcess() *ashet.multi_tasking.Process {
+    return getCurrentThread().get_process();
+}

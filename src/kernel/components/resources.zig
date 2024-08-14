@@ -66,7 +66,6 @@ pub const SystemResource = struct {
         });
         src.unlink();
         switch (src.type) {
-            .bad_handle => unreachable,
             inline else => |type_id| {
                 const instance = src.cast(ashet.resources.InstanceType(type_id)) catch unreachable;
                 instance.destroy();
@@ -182,7 +181,7 @@ pub const HandlePool = struct {
         };
 
         return .{
-            .handle = @ptrFromInt(@as(usize, @bitCast(encoded))),
+            .handle = @enumFromInt(@as(usize, @bitCast(encoded))),
             .ownership = owner,
         };
     }
@@ -191,7 +190,7 @@ pub const HandlePool = struct {
         std.debug.assert(pool.generations.items.len == pool.bit_map.capacity());
         std.debug.assert(pool.owners.len == pool.bit_map.capacity());
 
-        const handle_bits: EncodedHandle = @bitCast(@intFromPtr(handle));
+        const handle_bits: EncodedHandle = @bitCast(@intFromEnum(handle));
 
         handle_bits.validate_checksum() catch return error.InvalidHandle;
         if (handle_bits.index >= pool.bit_map.capacity())
@@ -507,8 +506,6 @@ test "HandlePool Stress Test" {
 /// Maps `TypeId` to a concrete type.
 pub fn InstanceType(comptime type_enum: TypeId) type {
     return switch (type_enum) {
-        .bad_handle => @compileError("bad handle is unmapped"),
-
         .shared_memory => ashet.shared_memory.SharedMemory,
 
         .process => ashet.multi_tasking.Process,
@@ -537,8 +534,6 @@ pub fn InstanceType(comptime type_enum: TypeId) type {
 pub fn instanceTypeId(comptime T: type) TypeId {
     const result = comptime blk: {
         for (std.enums.values(TypeId)) |type_id| {
-            if (type_id == .bad_handle)
-                continue;
             if (InstanceType(type_id) == T)
                 break :blk type_id;
         }
@@ -549,8 +544,6 @@ pub fn instanceTypeId(comptime T: type) TypeId {
 
 comptime {
     for (std.enums.values(TypeId)) |type_id| {
-        if (type_id == .bad_handle)
-            continue;
         const T = InstanceType(type_id);
         if (!@hasField(T, "system_resource"))
             @compileError(@typeName(T) ++ " is registered as a system resource, but has no field 'system_resource'!");

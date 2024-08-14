@@ -42,20 +42,26 @@ const AsyncHandler = struct {
 
         const Wrap = switch (fun_info.params.len) {
             1 => struct {
+                const original: fn (*AsyncCall) void = func;
+
                 fn call(_call: *AsyncCall, value: *anyopaque) void {
                     _ = value;
-                    return func(_call);
+                    return original(_call);
                 }
             },
 
             2 => struct {
-                fn call(_call: *AsyncCall, value: *anyopaque) void {
-                    const Inputs = fun_info.params[1].type.?;
-                    comptime std.debug.assert(@typeInfo(Inputs) == .Struct);
+                const Inputs = fun_info.params[1].type.?;
+                comptime {
+                    std.debug.assert(@typeInfo(Inputs) == .Struct);
+                }
 
+                const original: fn (*AsyncCall, Inputs) void = func;
+
+                fn call(_call: *AsyncCall, value: *anyopaque) void {
                     const inputs_ptr: *const Inputs = @ptrCast(@alignCast(value));
 
-                    return func(_call, inputs_ptr.*);
+                    return original(_call, inputs_ptr.*);
                 }
             },
 
@@ -81,12 +87,12 @@ const async_call_handlers = std.EnumArray(ashet.abi.ARC_Type, AsyncHandler).init
     .network_tcp_send = AsyncHandler.wrap(ashet.network.tcp.send),
     .network_tcp_receive = AsyncHandler.wrap(ashet.network.tcp.receive),
 
-    .network_udp_bind = AsyncHandler.todo("network_udp_bind"), //   AsyncHandler.wrap(ashet.network.udp.bind),
-    .network_udp_connect = AsyncHandler.todo("network_udp_connect"), //   AsyncHandler.wrap(ashet.network.udp.connect),
-    .network_udp_disconnect = AsyncHandler.todo("network_udp_disconnect"), //   AsyncHandler.wrap(ashet.network.udp.disconnect),
-    .network_udp_send = AsyncHandler.todo("network_udp_send"), //   AsyncHandler.wrap(ashet.network.udp.send),
-    .network_udp_send_to = AsyncHandler.todo("network_udp_send_to"), //   AsyncHandler.wrap(ashet.network.udp.sendTo),
-    .network_udp_receive_from = AsyncHandler.todo("network_udp_receive_from"), //   AsyncHandler.wrap(ashet.network.udp.receiveFrom),
+    .network_udp_bind = AsyncHandler.wrap(ashet.network.udp.bind),
+    .network_udp_connect = AsyncHandler.wrap(ashet.network.udp.connect),
+    .network_udp_disconnect = AsyncHandler.wrap(ashet.network.udp.disconnect),
+    .network_udp_send = AsyncHandler.wrap(ashet.network.udp.send),
+    .network_udp_send_to = AsyncHandler.wrap(ashet.network.udp.sendTo),
+    .network_udp_receive_from = AsyncHandler.wrap(ashet.network.udp.receiveFrom),
 
     .input_get_event = AsyncHandler.wrap(ashet.input.schedule_get_event),
 
@@ -128,7 +134,7 @@ pub fn schedule(event: *ARC) error{ SystemResources, AlreadyScheduled }!void {
 
             const Generic = tag.as_type();
             const generic = call.arc.cast(Generic);
-            handler.call(call, generic);
+            handler.call(call, &generic.inputs);
         },
     }
 }
@@ -237,12 +243,12 @@ pub fn cancel(arc: *ARC) error{
             return error.Completed;
         },
         .in_flight => {
-            // TODO: Implement actual cancelling of events
-            switch (arc.type) {
-                else => {
-                    logger.err("non-implemented cancel of type {}", .{arc.type});
-                    @panic("unimplemented cancel!");
-                },
+            if (call.cancel_fn) |cancel_fn| {
+                cancel_fn(call);
+            } else {
+                // TODO: Implement actual cancelling of events
+                logger.err("non-implemented cancel of type {}", .{arc.type});
+                @panic("AshetOS has no idea how to cancel this!");
             }
         },
     }
@@ -271,6 +277,15 @@ pub const AsyncCall = struct {
     /// Stored inside a `WorkQueue` type. Is used to provide kernel subsystems
     /// a way to store their pending tasks.
     work_link: CallQueue.Node = .{ .data = {} },
+
+    /// Function pointer to a function that cancels the async call
+    /// after it has been fetched from its work_queue, but was not moved
+    /// to the "completed" queue.
+    cancel_fn: ?*const fn (*AsyncCall) void = null,
+
+    /// A pointer to a context that can be used to bypass several lookups
+    /// from `arc` to cancel the operation quickly.
+    cancel_context: ?*anyopaque = null,
 
     /// Returns the thread that scheduled the ARC.
     pub fn get_thread(ac: *AsyncCall) *ashet.scheduler.Thread {

@@ -119,6 +119,13 @@ fn main() !void {
     log.info("initialize memory protection...", .{});
     try memory.protection.initialize();
 
+    // now that we have memory protection enabled, we can
+    // initialize multi-tasking. this should happen as early
+    // as possible as it is necessary to have a "kernel process"
+    // which can be used to schedule kernel i/o.
+    log.info("initialize process handling...", .{});
+    multi_tasking.initialize();
+
     // Initialize the entropy pool so it can begin gathering bits
     // for critical start-up applications. The pool needs at least
     // some amount of hardware entropy to be safe to use in later
@@ -144,9 +151,6 @@ fn main() !void {
 
     log.info("initialize input...", .{});
     input.initialize();
-
-    log.info("initialize process handling...", .{});
-    multi_tasking.initialize();
 
     log.info("spawn kernel main thread...", .{});
     {

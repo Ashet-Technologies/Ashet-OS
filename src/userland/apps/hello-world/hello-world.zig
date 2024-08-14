@@ -4,5 +4,5 @@ const ashet = @import("ashet");
 pub usingnamespace ashet.core;
 
 pub fn main() !void {
-    _ = try ashet.debug.writer().write("Hello, World!\r\n");
+    try ashet.process.debug.log_writer(.notice).writeAll("Hello, World!\r\n");
 }
