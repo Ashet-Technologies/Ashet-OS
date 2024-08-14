@@ -272,6 +272,11 @@ pub const Thread = struct {
         return thread.isStarted() and !thread.isFinished();
     }
 
+    /// returns the process this thread belongs to.
+    pub fn get_process(thread: *Thread) *ashet.multi_tasking.Process {
+        return thread.process_link.data.process;
+    }
+
     /// Starts the thread.
     pub fn start(thread: *Thread) error{AlreadyStarted}!void {
         if (thread.isStarted())

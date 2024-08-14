@@ -8,236 +8,242 @@ const logger = std.log.scoped(.io);
 pub const ARC = ashet.abi.ARC;
 const WaitIO = ashet.abi.WaitIO;
 
-const KernelData = struct {
-    context: *Context,
-    thread: *ashet.scheduler.Thread,
-    // data: Data,
-
-    /// This node is linked into one of the linked lists inside `Context`.
-    owner_node: EventQueueNode = .{ .data = {} },
-
-    /// This node is linked into interior lists of kernel components that handle this async call.
-    schedule_node: EventQueueNode = .{ .data = {} },
-
-    flags: Flags,
-
-    // const Data = extern union {
-    //     padding: [4]usize,
-    // };
-
-    const Flags = packed struct(usize) {
-        resume_on_completed: bool,
-        padding: @Type(.{ .Int = .{ .bits = @bitSizeOf(usize) - 1, .signedness = .unsigned } }) = 0,
-    };
-
-    /// Casts the opaque kernel data into the actual instance.
-    pub fn get(ptr: *ARC) *KernelData {
-        return @as(*KernelData, @ptrCast(&ptr.kernel_data));
-    }
-
-    /// Returns the ARC for the provided kernel data pointer.
-    pub fn get_arc(ptr: *KernelData) *ARC {
-        return @fieldParentPtr("kernel_data", ptr);
-    }
-};
-
-/// Returns the thread that scheduled the ARC.
-pub fn get_thread(arc: *ARC) *ashet.scheduler.Thread {
-    return KernelData.get(arc).thread;
-}
-
-/// Returns the process that scheduled the ARC.
-pub fn get_process(arc: *ARC) *ashet.multi_tasking.Process {
-    return get_thread(arc).process_link.data.process;
-}
-
-comptime {
-    // assert that KernelData can alias to the erased data structure
-    const ErasedData = std.meta.fieldInfo(ARC, .kernel_data).type;
-    std.debug.assert(@sizeOf(KernelData) == @sizeOf(ErasedData));
-    std.debug.assert(@alignOf(KernelData) <= @alignOf(ErasedData));
-}
-
-/// Management context for async running calls.
-pub const Context = struct {
-    /// List of all in-flight elements
-    in_flight: EventQueue = .{},
-
-    /// List of all completed elements.
-    completed: EventQueue = .{},
-};
-
-/// Completes the `event` element and moves it from the in_flight queue into the completed queue.
-pub fn finalize(event: *ARC) void {
-    const data = KernelData.get(event);
-
-    std.debug.assert(data.schedule_node.prev == null);
-    std.debug.assert(data.schedule_node.next == null);
-
-    std.debug.assert(node_in_queue(data.context.in_flight, &data.owner_node));
-    defer std.debug.assert(node_in_queue(data.context.completed, &data.owner_node));
-
-    data.context.in_flight.remove(&data.owner_node);
-    data.context.completed.append(&data.owner_node);
-
-    // We finished an event, resume the thread if its waiting for I/O:
-    if (data.flags.resume_on_completed) {
-        data.thread.@"resume"();
-    }
-}
-
-/// Finalizes the `generic` ARC with the `err` error code.
-pub fn finalize_with_error(generic: anytype, err: anyerror) void {
-    if (!comptime ARC.is_arc(@TypeOf(generic.*)))
-        @compileError("finalize_with_error requires an ARC instance!");
-    generic.outputs = undefined; // explicitly kill the content here in debug kernels
-    generic.set_error(astd.mapToUnexpected(@TypeOf(generic.*).Error, err));
-    finalize(&generic.arc);
-}
-
-/// Finalizes the `generic` ARC with the `outputs` result.
-pub fn finalize_with_result(generic: anytype, outputs: @TypeOf(generic.*).Outputs) void {
-    if (!comptime ARC.is_arc(@TypeOf(generic.*)))
-        @compileError("finalize_with_result requires an ARC instance!");
-    generic.outputs = outputs;
-    generic.set_ok();
-    finalize(&generic.arc);
-}
-
-var kernel_context: Context = .{};
-
-pub fn schedule_and_await(start_queue: ?*ARC, options: abi.Schedule_And_Await_Options) ?*ARC {
-    ashet.stackCheck();
-
+/// Returns the current thread and async scheduling context.
+fn get_context() struct { *ashet.scheduler.Thread, *Context } {
     const thread = ashet.scheduler.Thread.current() orelse @panic("schedule_and_await called in a non-thread context!");
     const context: *Context = &thread.process_link.data.process.async_context;
-    // const process = thread.process orelse @panic("scheduleAndAwait called in a non-process context!");
+    return .{ thread, context };
+}
 
-    // TODO: verify that start_queue has no loops
+const AsyncHandler = struct {
+    call: fn (*AsyncCall, *anyopaque) void,
 
-    var queue = start_queue;
-    while (queue) |event| {
-        // advance the queue as the first step, so we can now destroy and
-        // restructeventure the linked list properties of our current event
-        queue = event.next;
-        std.debug.assert(queue != start_queue); // very basic sanity check
+    pub fn todo(comptime msg: []const u8) AsyncHandler {
+        const Wrap = struct {
+            fn call(_call: *AsyncCall, value: *anyopaque) void {
+                _ = _call;
+                _ = value;
+                @panic(msg ++ " is not implemented yet!");
+            }
+        };
+        return .{
+            .call = Wrap.call,
+        };
+    }
 
-        const data = KernelData.get(event);
-        data.* = KernelData{
-            .context = context,
-            .thread = thread,
-            .flags = .{
-                .resume_on_completed = (options.wait != .dont_block),
+    pub fn wrap(comptime func: anytype) AsyncHandler {
+        const F = @TypeOf(func);
+
+        const fun_info = @typeInfo(F).Fn;
+
+        std.debug.assert(fun_info.return_type == void);
+        std.debug.assert(fun_info.is_var_args == false);
+        std.debug.assert(fun_info.is_generic == false);
+
+        const Wrap = switch (fun_info.params.len) {
+            1 => struct {
+                fn call(_call: *AsyncCall, value: *anyopaque) void {
+                    _ = value;
+                    return func(_call);
+                }
             },
+
+            2 => struct {
+                fn call(_call: *AsyncCall, value: *anyopaque) void {
+                    const Inputs = fun_info.params[1].type.?;
+                    comptime std.debug.assert(@typeInfo(Inputs) == .Struct);
+
+                    const inputs_ptr: *const Inputs = @ptrCast(@alignCast(value));
+
+                    return func(_call, inputs_ptr.*);
+                }
+            },
+
+            else => @compileError("invalid arguments"),
         };
 
-        logger.debug("dispatching i/o: {s}", .{@tagName(event.type)});
+        return AsyncHandler{
+            .call = Wrap.call,
+        };
+    }
+};
 
-        // unhinge from queue, so we're able to finish the ARC immediatly.
-        event.next = null;
-        context.in_flight.append(&data.owner_node);
+const async_call_handlers = std.EnumArray(ashet.abi.ARC_Type, AsyncHandler).init(.{
+    .clock_timer = AsyncHandler.wrap(ashet.time.schedule_timer),
+    .datetime_alarm = AsyncHandler.wrap(ashet.time.schedule_alarm),
 
-        switch (event.type) {
-            .clock_timer => ashet.time.scheduleTimer(ARC.cast(abi.clock.Timer, event)),
+    .process_spawn = AsyncHandler.todo("process_spawn"),
 
-            .process_spawn => @panic("not done yet"),
+    .random_get_strict_random = AsyncHandler.todo("random_get_strict_random"),
 
-            .random_get_strict_random => @panic("not done yet"),
+    .network_tcp_bind = AsyncHandler.wrap(ashet.network.tcp.bind),
+    .network_tcp_connect = AsyncHandler.wrap(ashet.network.tcp.connect),
+    .network_tcp_send = AsyncHandler.wrap(ashet.network.tcp.send),
+    .network_tcp_receive = AsyncHandler.wrap(ashet.network.tcp.receive),
 
-            .network_tcp_bind => ashet.network.tcp.bind(ARC.cast(abi.tcp.Bind, event)),
-            .network_tcp_connect => ashet.network.tcp.connect(ARC.cast(abi.tcp.Connect, event)),
-            .network_tcp_send => ashet.network.tcp.send(ARC.cast(abi.tcp.Send, event)),
-            .network_tcp_receive => ashet.network.tcp.receive(ARC.cast(abi.tcp.Receive, event)),
+    .network_udp_bind = AsyncHandler.todo("network_udp_bind"), //   AsyncHandler.wrap(ashet.network.udp.bind),
+    .network_udp_connect = AsyncHandler.todo("network_udp_connect"), //   AsyncHandler.wrap(ashet.network.udp.connect),
+    .network_udp_disconnect = AsyncHandler.todo("network_udp_disconnect"), //   AsyncHandler.wrap(ashet.network.udp.disconnect),
+    .network_udp_send = AsyncHandler.todo("network_udp_send"), //   AsyncHandler.wrap(ashet.network.udp.send),
+    .network_udp_send_to = AsyncHandler.todo("network_udp_send_to"), //   AsyncHandler.wrap(ashet.network.udp.sendTo),
+    .network_udp_receive_from = AsyncHandler.todo("network_udp_receive_from"), //   AsyncHandler.wrap(ashet.network.udp.receiveFrom),
 
-            .network_udp_bind => ashet.network.udp.bind(ARC.cast(abi.udp.Bind, event)),
-            .network_udp_connect => ashet.network.udp.connect(ARC.cast(abi.udp.Connect, event)),
-            .network_udp_disconnect => ashet.network.udp.disconnect(ARC.cast(abi.udp.Disconnect, event)),
-            .network_udp_send => ashet.network.udp.send(ARC.cast(abi.udp.Send, event)),
-            .network_udp_send_to => ashet.network.udp.sendTo(ARC.cast(abi.udp.SendTo, event)),
-            .network_udp_receive_from => ashet.network.udp.receiveFrom(ARC.cast(abi.udp.ReceiveFrom, event)),
+    .input_get_event = AsyncHandler.wrap(ashet.input.schedule_get_event),
 
-            .input_get_event => ashet.input.getEventARC(ARC.cast(abi.input.GetEvent, event)),
+    .fs_sync = AsyncHandler.wrap(ashet.filesystem.sync),
+    .fs_get_filesystem_info = AsyncHandler.wrap(ashet.filesystem.getFilesystemInfo),
+    .fs_open_drive = AsyncHandler.wrap(ashet.filesystem.openDrive),
+    .fs_open_dir = AsyncHandler.wrap(ashet.filesystem.openDir),
+    .fs_close_dir = AsyncHandler.wrap(ashet.filesystem.closeDir),
+    .fs_reset_dir_enumeration = AsyncHandler.wrap(ashet.filesystem.resetDirEnumeration),
+    .fs_enumerate_dir = AsyncHandler.wrap(ashet.filesystem.enumerateDir),
+    .fs_delete = AsyncHandler.wrap(ashet.filesystem.delete),
+    .fs_mk_dir = AsyncHandler.wrap(ashet.filesystem.mkdir),
+    .fs_stat_entry = AsyncHandler.wrap(ashet.filesystem.statEntry),
+    .fs_near_move = AsyncHandler.wrap(ashet.filesystem.nearMove),
+    .fs_far_move = AsyncHandler.wrap(ashet.filesystem.farMove),
+    .fs_copy = AsyncHandler.wrap(ashet.filesystem.copy),
+    .fs_open_file = AsyncHandler.wrap(ashet.filesystem.openFile),
+    .fs_close_file = AsyncHandler.wrap(ashet.filesystem.closeFile),
+    .fs_flush_file = AsyncHandler.wrap(ashet.filesystem.flushFile),
+    .fs_read = AsyncHandler.wrap(ashet.filesystem.read),
+    .fs_write = AsyncHandler.wrap(ashet.filesystem.write),
+    .fs_stat_file = AsyncHandler.wrap(ashet.filesystem.statFile),
+    .fs_resize = AsyncHandler.wrap(ashet.filesystem.resize),
+});
 
-            // fs api
+pub fn schedule(event: *ARC) error{ SystemResources, AlreadyScheduled }!void {
+    const thread, const context = get_context();
 
-            .fs_sync => ashet.filesystem.sync(ARC.cast(abi.fs.Sync, event)),
-            .fs_get_filesystem_info => ashet.filesystem.getFilesystemInfo(ARC.cast(abi.fs.GetFilesystemInfo, event)),
-            .fs_open_drive => ashet.filesystem.openDrive(ARC.cast(abi.fs.OpenDrive, event)),
-            .fs_open_dir => ashet.filesystem.openDir(ARC.cast(abi.fs.OpenDir, event)),
-            .fs_close_dir => ashet.filesystem.closeDir(ARC.cast(abi.fs.CloseDir, event)),
-            .fs_reset_dir_enumeration => ashet.filesystem.resetDirEnumeration(ARC.cast(abi.fs.ResetDirEnumeration, event)),
-            .fs_enumerate_dir => ashet.filesystem.enumerateDir(ARC.cast(abi.fs.EnumerateDir, event)),
-            .fs_delete => ashet.filesystem.delete(ARC.cast(abi.fs.Delete, event)),
-            .fs_mk_dir => ashet.filesystem.mkdir(ARC.cast(abi.fs.MkDir, event)),
-            .fs_stat_entry => ashet.filesystem.statEntry(ARC.cast(abi.fs.StatEntry, event)),
-            .fs_near_move => ashet.filesystem.nearMove(ARC.cast(abi.fs.NearMove, event)),
-            .fs_far_move => ashet.filesystem.farMove(ARC.cast(abi.fs.FarMove, event)),
-            .fs_copy => ashet.filesystem.copy(ARC.cast(abi.fs.Copy, event)),
-            .fs_open_file => ashet.filesystem.openFile(ARC.cast(abi.fs.OpenFile, event)),
-            .fs_close_file => ashet.filesystem.closeFile(ARC.cast(abi.fs.CloseFile, event)),
-            .fs_flush_file => ashet.filesystem.flushFile(ARC.cast(abi.fs.FlushFile, event)),
-            .fs_read => ashet.filesystem.read(ARC.cast(abi.fs.Read, event)),
-            .fs_write => ashet.filesystem.write(ARC.cast(abi.fs.Write, event)),
-            .fs_stat_file => ashet.filesystem.statFile(ARC.cast(abi.fs.StatFile, event)),
-            .fs_resize => ashet.filesystem.resize(ARC.cast(abi.fs.Resize, event)),
+    const call = try AsyncCall.create(context, event, thread);
+    errdefer call.destroy();
 
-            // .fs_delete => ashet.filesystem.delete(ARC.cast(abi.fs.Delete, event)),
-            // .fs_mkdir => ashet.filesystem.mkdir(ARC.cast(abi.fs.MkDir, event)),
-            // .fs_rename => ashet.filesystem.rename(ARC.cast(abi.fs.Rename, event)),
-            // .fs_stat => ashet.filesystem.stat(ARC.cast(abi.fs.Stat, event)),
+    logger.debug("dispatching i/o: {s}", .{@tagName(event.type)});
 
-            // // file api
-            // .fs_openFile => ashet.filesystem.open(ARC.cast(abi.fs.file.Open, event)),
-            // .fs_read => ashet.filesystem.read(ARC.cast(abi.fs.file.Read, event)),
-            // .fs_write => ashet.filesystem.write(ARC.cast(abi.fs.file.Write, event)),
-            // .fs_seekTo => ashet.filesystem.seekTo(ARC.cast(abi.fs.file.SeekTo, event)),
-            // .fs_flush => ashet.filesystem.flush(ARC.cast(abi.fs.file.Flush, event)),
-            // .fs_close => ashet.filesystem.close(ARC.cast(abi.fs.file.Close, event)),
+    context.in_flight.append(&call.owner_link);
 
-            // // dir api:
-            // .fs_openDir => ashet.filesystem.openDir(ARC.cast(abi.fs.dir.Open, event)),
-            // .fs_nextFile => ashet.filesystem.next(ARC.cast(abi.fs.dir.Next, event)),
-            // .fs_closeDir => ashet.filesystem.closeDir(ARC.cast(abi.fs.dir.Close, event)),
+    switch (event.type) {
+        inline else => |tag| {
+            const handler = comptime async_call_handlers.get(tag);
+
+            const Generic = tag.as_type();
+            const generic = call.arc.cast(Generic);
+            handler.call(call, generic);
+        },
+    }
+}
+
+/// Pops the first element of the queue that belongs to `thread_filter` if set or any thread if `thread_filter` is null`.
+fn pop_with_threadaffinity(queue: *CallQueue, thread_filter: ?*ashet.scheduler.Thread) ?*CallQueue.Node {
+    const thread = thread_filter orelse return queue.popFirst();
+    var iter = queue.first;
+    while (iter) |node| : (iter = node.next) {
+        const call = AsyncCall.from_owner_link(node);
+        if (call.thread == thread) {
+            queue.remove(node);
+            return node;
+        }
+    }
+    return null;
+}
+
+/// Counts all elements in `queue` which belong to `thread_filter` if set or returns the total count if `thread_filter` is `null`.
+fn count_with_threadaffinity(queue: CallQueue, thread_filter: ?*ashet.scheduler.Thread) usize {
+    const thread = thread_filter orelse return queue.len;
+
+    var count: usize = 0;
+    var iter = queue.first;
+    while (iter) |node| : (iter = node.next) {
+        const call = AsyncCall.from_owner_link(node);
+        if (call.thread == thread) {
+            count += 1;
         }
     }
 
-    switch (options.wait) {
-        .schedule_only => return null, // do nothing, and also don't flush the completed queue
-        .dont_block => {}, // just do nothing here :)
-        .wait_one => while (context.completed.len == 0) {
-            thread.@"suspend"(); // we're waiting for completion, so we can remove ourselves from scheduling
-        },
-        .wait_all => while (context.pending > 0) {
-            thread.@"suspend"(); // we're waiting for completion, so we can remove ourselves from scheduling
-        },
-    }
-
-    return context.completed.flush();
+    return 1;
 }
 
-pub fn cancel(event: *ashet.abi.ARC) void {
-    ashet.stackCheck();
+pub fn await_completion(completed: []*ARC, options: ashet.abi.Await_Options) error{Unscheduled}!usize {
+    const thread, const context = get_context();
 
-    const thread = ashet.scheduler.Thread.current() orelse @panic("scheduleAndAwait called in a non-thread context!");
-    const context: *Context = &thread.process_link.data.process.async_context;
+    context.awaiter_count += 1;
+    defer context.awaiter_count -= 1;
 
-    const data = KernelData.get(event);
+    const filter_thread = switch (options.thread_affinity) {
+        .this_thread => thread,
+        .all_threads => null,
+    };
 
-    if (node_in_queue(context.completed, &data.owner_node)) {
-        std.debug.assert(!node_in_queue(context.in_flight, &data.owner_node));
-        std.debug.assert(data.schedule_node.prev == null);
-        std.debug.assert(data.schedule_node.next == null);
-        // We're already done
-        context.completed.remove(&data.owner_node);
-        return;
-    } else if (node_in_queue(context.in_flight, &data.owner_node)) {
-        std.debug.assert(node_in_queue(context.in_flight, &data.owner_node));
+    // unset the whole array:
+    for (completed) |*arc| {
+        arc.* = undefined;
     }
 
-    switch (event.type) {
-        else => {
-            logger.err("non-implemented cancel of type {}", .{event.type});
-            @panic("unimplemented cancel!");
+    var count: usize = 0;
+    gather_loop: while (count < completed.len) {
+        if (pop_with_threadaffinity(&context.completed, filter_thread)) |node| {
+            // we have a completed call, fill the queue:
+            const call = AsyncCall.from_owner_link(node);
+            std.debug.assert(call.work_link.next == null);
+            std.debug.assert(call.work_link.prev == null);
+
+            completed[count] = call.arc;
+            count += 1;
+
+            call.destroy();
+        } else {
+            // we don't have anything completed yet, so check how
+            // the user wants us to proceed:
+            switch (options.wait) {
+                // we never block, we just immediatly return:
+                .dont_block => break :gather_loop,
+
+                // check if we found at least a single return value:
+                .wait_one => if (count > 0)
+                    break :gather_loop,
+
+                // Check if we have completed all in-flight tasks:
+                .wait_all => if (count_with_threadaffinity(context.in_flight, filter_thread) == 0)
+                    break :gather_loop,
+            }
+
+            // TODO: Mark thread to be woken up again!
+
+            // suspend and wait to be woken up again, in the hope that we've completed events:
+            thread.@"suspend"();
+        }
+    }
+
+    return count;
+}
+
+pub fn cancel(arc: *ARC) error{
+    Unscheduled,
+    Completed,
+}!void {
+    const thread, const context = get_context();
+
+    _ = thread;
+
+    const call, const queue_name = context.get_call_object(arc) orelse return error.Unscheduled;
+
+    switch (queue_name) {
+        .completed => {
+            std.debug.assert(!node_in_queue(context.in_flight, &call.owner_link));
+            std.debug.assert(call.work_link.prev == null);
+            std.debug.assert(call.work_link.next == null);
+            // We're already done
+            context.completed.remove(&call.owner_link);
+            return error.Completed;
+        },
+        .in_flight => {
+            // TODO: Implement actual cancelling of events
+            switch (arc.type) {
+                else => {
+                    logger.err("non-implemented cancel of type {}", .{arc.type});
+                    @panic("unimplemented cancel!");
+                },
+            }
         },
     }
 }
@@ -247,11 +253,156 @@ pub fn destroy(context: *Context) void {
     _ = context;
 }
 
-const EventQueue = std.DoublyLinkedList(void);
+/// Kernel management object for an asynchronous system call.
+///
+/// This management object is created with `schedule_and_await` and is returned
+/// by either `cancel` or also `schedule_and_await`.
+pub const AsyncCall = struct {
+    arc: *ARC,
 
-const EventQueueNode = EventQueue.Node;
+    context: *Context,
 
-fn node_in_queue(q: EventQueue, n: *EventQueueNode) bool {
+    thread: *ashet.scheduler.Thread,
+
+    /// Stored inside the `Context` type, can be used to list all
+    /// async calls for a given process.
+    owner_link: CallQueue.Node = .{ .data = {} },
+
+    /// Stored inside a `WorkQueue` type. Is used to provide kernel subsystems
+    /// a way to store their pending tasks.
+    work_link: CallQueue.Node = .{ .data = {} },
+
+    /// Returns the thread that scheduled the ARC.
+    pub fn get_thread(ac: *AsyncCall) *ashet.scheduler.Thread {
+        return ac.thread;
+    }
+
+    /// Returns the process that scheduled the ARC.
+    pub fn get_process(ac: *AsyncCall) *ashet.multi_tasking.Process {
+        return ac.thread.process_link.data.process;
+    }
+
+    /// Finalizes the ARC with the provided `result` which is either an error or the outputs of the
+    /// ARC.
+    pub fn finalize(ac: *AsyncCall, comptime T: type, result: T.Error!T.Outputs) void {
+        if (!comptime ARC.is_arc(T))
+            @compileError("finalize_with_error requires an ARC instance!");
+
+        const expected_type: ashet.abi.ARC_Type = T.arc_type;
+        std.debug.assert(ac.arc.type == expected_type);
+        if (result) |value| {
+            const generic: *T = T.from_arc(ac.arc);
+            generic.outputs = value;
+            generic.set_ok();
+            ac.finalize_unsafe();
+        } else |err| {
+            const generic: *T = T.from_arc(ac.arc);
+            generic.outputs = undefined; // explicitly kill the content here in debug kernels
+            generic.set_error(err);
+            ac.finalize_unsafe();
+        }
+    }
+
+    /// Completes the `event` element and moves it from the in_flight queue into the completed queue.
+    pub fn finalize_unsafe(ac: *AsyncCall) void {
+        std.debug.assert(ac.work_link.prev == null);
+        std.debug.assert(ac.work_link.next == null);
+
+        std.debug.assert(node_in_queue(ac.context.in_flight, &ac.owner_link));
+        defer std.debug.assert(node_in_queue(ac.context.completed, &ac.owner_link));
+
+        ac.context.in_flight.remove(&ac.owner_link);
+        ac.context.completed.append(&ac.owner_link);
+
+        // We finished an event, resume the thread if its waiting for I/O:
+        if (ac.context.awaiter_count > 0) {
+            ac.thread.@"resume"();
+        }
+    }
+
+    fn create(
+        context: *Context,
+        arc: *ARC,
+        thread: *ashet.scheduler.Thread,
+    ) error{SystemResources}!*AsyncCall {
+        const item = ashet.memory.type_pool(AsyncCall).alloc() catch return error.SystemResources;
+        item.* = AsyncCall{
+            .context = context,
+            .arc = arc,
+            .thread = thread,
+        };
+        return item;
+    }
+
+    /// Destroys the async call. Asserts that the call isn't in-flight anymore.
+    fn destroy(call: *AsyncCall) void {
+
+        // Check if the call isn't queued anymore:
+        std.debug.assert(!node_in_queue(call.context.in_flight, &call.owner_link));
+        std.debug.assert(!node_in_queue(call.context.completed, &call.owner_link));
+        std.debug.assert(call.owner_link.prev == null);
+        std.debug.assert(call.owner_link.next == null);
+        std.debug.assert(call.work_link.prev == null);
+        std.debug.assert(call.work_link.next == null);
+
+        ashet.memory.type_pool(AsyncCall).free(call);
+    }
+
+    fn from_work_link(node: *CallQueue.Node) *AsyncCall {
+        return @fieldParentPtr("work_link", node);
+    }
+
+    fn from_owner_link(node: *CallQueue.Node) *AsyncCall {
+        return @fieldParentPtr("owner_link", node);
+    }
+};
+
+/// Management context for async running calls.
+pub const Context = struct {
+    /// List of all in-flight elements
+    in_flight: CallQueue = .{},
+
+    /// List of all completed elements.
+    completed: CallQueue = .{},
+
+    /// Number of active `await_completion` calls. If non-zero, the awaiting thread should
+    /// be resumed.
+    awaiter_count: usize = 0,
+
+    pub const QueueName = enum { in_flight, completed };
+
+    pub fn get_call_object(ctx: Context, arc: *ARC) ?struct { *AsyncCall, QueueName } {
+        // Search the completion queue first, as we're interested primarily in those.
+        {
+            var it = ctx.completed.first;
+            while (it) |node| : (it = node.next) {
+                const call = AsyncCall.from_owner_link(node);
+                if (call.arc == arc) {
+                    std.debug.assert(!node_in_queue(ctx.in_flight, &call.owner_link));
+                    return .{ call, .completed };
+                }
+            }
+        }
+
+        // Then search the in-flight queue:
+        {
+            var it = ctx.in_flight.first;
+            while (it) |node| : (it = node.next) {
+                const call = AsyncCall.from_owner_link(node);
+                if (call.arc == arc) {
+                    std.debug.assert(!node_in_queue(ctx.completed, &call.owner_link));
+                    return .{ call, .in_flight };
+                }
+            }
+        }
+
+        return null;
+    }
+};
+
+const CallQueue = std.DoublyLinkedList(void);
+
+fn node_in_queue(q: CallQueue, n: *CallQueue.Node) bool {
     var iter = q.first;
     return while (iter) |node| : (iter = node.next) {
         if (iter == n)
@@ -266,18 +417,60 @@ pub const WorkQueue = struct {
     /// so it can resume working on the queued tasks.
     wakeup_thread: ?*ashet.scheduler.Thread,
 
-    queue: EventQueue = .{},
+    queue: CallQueue = .{},
+
+    /// Returns the next-to-be-dequeued job.
+    pub fn get_head(wq: WorkQueue) ?*AsyncCall {
+        const node = wq.queue.first orelse return null;
+        return AsyncCall.from_work_link(node);
+    }
 
     /// Enqueues an ARC into
-    pub fn enqueue(wq: *WorkQueue, arc: *ARC) void {
-        const data = KernelData.get(arc);
+    pub fn enqueue(wq: *WorkQueue, arc: *AsyncCall) void {
+        std.debug.assert(arc.work_link.next == null);
+        std.debug.assert(arc.work_link.prev == null);
 
-        // Assert the node isn't accidently queued yet:
-        std.debug.assert(data.schedule_node.prev == null);
-        std.debug.assert(data.schedule_node.next == null);
-        std.debug.assert(!wq.contains(arc));
+        arc.work_link = .{ .data = {} };
 
-        wq.queue.append(&data.schedule_node);
+        wq.queue.append(&arc.work_link);
+
+        if (wq.wakeup_thread) |thread| {
+            // Wake up the optionally attached thread so work can be resumed:
+            thread.@"resume"();
+        }
+    }
+
+    /// Inserts an ARC into the WorkQueue based on a priority. The priority is determined
+    /// by calling `comparer.lt(arc, node)`, with `node` being any node in the list.
+    /// If `arc` is less than node, it will be scheduled before the first `node` that meets
+    /// that requirement.
+    pub fn priority_enqueue(wq: *WorkQueue, arc: *AsyncCall, comparer: anytype) void {
+        std.debug.assert(arc.work_link.next == null);
+        std.debug.assert(arc.work_link.prev == null);
+
+        arc.work_link = .{ .data = {} };
+
+        if (wq.queue.first != null) {
+            var iter = wq.queue.first;
+
+            while (iter) |node| : (iter = node.next) {
+                // check if the new node is "more important" then
+                // the one we're iterating. If so, insert the node
+                // before the current node as it's higher priority:
+                const point = AsyncCall.from_work_link(node);
+                if (!comparer.lt(arc, point)) {
+                    wq.queue.insertBefore(node, &arc.work_link);
+                    break;
+                }
+            } else {
+                // we did not break the while, so we reached the end,
+                // so our node is the least priority task:
+                wq.queue.append(&arc.work_link);
+            }
+        } else {
+            std.debug.assert(wq.queue.len == 0);
+            wq.queue.append(&arc.work_link);
+        }
 
         if (wq.wakeup_thread) |thread| {
             // Wake up the optionally attached thread so work can be resumed:
@@ -287,14 +480,14 @@ pub const WorkQueue = struct {
 
     /// Pops a single work item from the queue and returns it.
     /// Returns `null` if no work items are present.
-    pub fn dequeue(wq: *WorkQueue) ?*ARC {
+    pub fn dequeue(wq: *WorkQueue) ?*AsyncCall {
         const node = wq.queue.popFirst() orelse return null;
-        const data: *KernelData = @fieldParentPtr("schedule_node", node);
-        return data.get_arc();
+        const call: *AsyncCall = @fieldParentPtr("work_link", node);
+        return call;
     }
 
     /// Returns `true` if the `arc` is currently queued in this queue.
-    pub fn contains(wq: WorkQueue, arc: *ARC) bool {
-        return node_in_queue(wq.queue, &KernelData.get(arc).schedule_node);
+    pub fn contains(wq: WorkQueue, arc: *AsyncCall) bool {
+        return node_in_queue(wq.queue, &arc.work_link);
     }
 };

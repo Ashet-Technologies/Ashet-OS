@@ -16,6 +16,9 @@ const c = @cImport({
     @cInclude("lwip/timeouts.h");
 });
 
+const abi_tcp = ashet.abi.network.tcp;
+const abi_udp = ashet.abi.network.udp;
+
 pub const Interface = enum {
     ethernet,
     ieee802_11,
@@ -357,6 +360,126 @@ fn lwipTry(err: c.err_t) LwipError!void {
     };
 }
 
+const LWIP_Error_Code = enum(c.err_t) {
+    mem = c.ERR_MEM,
+    buf = c.ERR_BUF,
+    timeout = c.ERR_TIMEOUT,
+    rte = c.ERR_RTE,
+    inprogress = c.ERR_INPROGRESS,
+    val = c.ERR_VAL,
+    wouldblock = c.ERR_WOULDBLOCK,
+    use = c.ERR_USE,
+    already = c.ERR_ALREADY,
+    isconn = c.ERR_ISCONN,
+    conn = c.ERR_CONN,
+    interface = c.ERR_IF,
+    abrt = c.ERR_ABRT,
+    rst = c.ERR_RST,
+    clsd = c.ERR_CLSD,
+    arg = c.ERR_ARG,
+
+    fn to_zig_error(code: LWIP_Error_Code) LwipError {
+        std.debug.assert(@intFromEnum(code) != c.ERR_OK);
+        return switch (code) {
+            .mem => LwipError.OutOfMemory,
+            .buf => LwipError.BufferError,
+            .timeout => LwipError.Timeout,
+            .rte => LwipError.Routing,
+            .inprogress => LwipError.InProgress,
+            .val => LwipError.IllegalValue,
+            .wouldblock => LwipError.WouldBlock,
+            .use => LwipError.AddressInUse,
+            .already => LwipError.AlreadyConnecting,
+            .isconn => LwipError.AlreadyConnected,
+            .conn => LwipError.NotConnected,
+            .interface => LwipError.LowlevelInterfaceError,
+            .abrt => LwipError.ConnectionAborted,
+            .rst => LwipError.ConnectionReset,
+            .clsd => LwipError.ConnectionClosed,
+            .arg => LwipError.IllegalArgument,
+        };
+    }
+};
+
+fn wrap_lwip_call(comptime func: anytype, comptime error_set: []const LWIP_Error_Code) type {
+    const F = @TypeOf(func);
+    const fnInfo = @typeInfo(F).Fn;
+
+    std.debug.assert(fnInfo.return_type == c.err_t);
+
+    var arg_fields: [fnInfo.params.len]std.builtin.Type.StructField = undefined;
+    for (&arg_fields, fnInfo.params, 0..) |*out, in, i| {
+        out.* = .{
+            .name = std.fmt.comptimePrint("{d}", .{i}),
+            .type = in.type.?,
+            .alignment = @alignOf(in.type.?),
+            .default_value = null,
+            .is_comptime = false,
+        };
+    }
+
+    var errors: [error_set.len]std.builtin.Type.Error = undefined;
+    for (&errors, error_set) |*out, in| {
+        out.* = .{ .name = @errorName(in.to_zig_error()) };
+    }
+
+    const E = @Type(.{ .ErrorSet = &errors });
+
+    const Tuple = @Type(.{ .Struct = .{
+        .layout = .auto,
+        .is_tuple = true,
+        .decls = &.{},
+        .fields = &arg_fields,
+    } });
+
+    return struct {
+        fn invoke_tuple(args: Tuple) E!void {
+            const return_code: c.err_t = @call(.auto, func, args);
+            if (return_code == c.ERR_OK)
+                return;
+            inline for (error_set) |err| {
+                if (return_code == @intFromEnum(err))
+                    return @field(anyerror, @errorName(err.to_zig_error()));
+            }
+            std.log.err("{} returned unexpected error code {}", .{ &func, return_code });
+            @panic("unexpected return value from LWIP!");
+        }
+
+        const invoke = astd.mpl.reify_function(invoke_tuple);
+    };
+}
+
+// TODO(fqu): Search lwIP sources to see what errors each function can return:
+const lwip = struct {
+    const pbuf = struct {
+        const take = wrap_lwip_call(c.pbuf_take, &.{.mem}).invoke;
+    };
+
+    const dhcp = struct {
+        const start = wrap_lwip_call(c.dhcp_start, &.{}).invoke;
+    };
+
+    const tcp = struct {
+        const bind = wrap_lwip_call(c.tcp_bind, &.{
+            // ERR_OK if bound
+            .use, // ERR_USE if the port is already in use
+            .val, // ERR_VAL if bind failed because the PCB is not in a valid state
+        }).invoke;
+        const connect = wrap_lwip_call(c.tcp_connect, &.{
+            .val, //ERR_VAL if invalid arguments are given
+            // ERR_OK if connect request has been sent
+            // other err_t values if connect request couldn't be sent
+        }).invoke;
+        const write = wrap_lwip_call(c.tcp_write, &.{.mem}).invoke;
+    };
+    const udp = struct {
+        const bind = wrap_lwip_call(c.udp_bind, &.{}).invoke;
+        const connect = wrap_lwip_call(c.udp_connect, &.{}).invoke;
+        const send = wrap_lwip_call(c.udp_send, &.{}).invoke;
+        const sendto = wrap_lwip_call(c.udp_sendto, &.{}).invoke;
+    };
+};
+
 pub const EndPoint = abi.EndPoint;
 pub const IP = abi.IP;
 
@@ -397,10 +520,15 @@ pub const udp = struct {
 
     pub const Socket = struct {
         system_resource: ashet.resources.SystemResource = .{ .type = .udp_socket },
+
+        pub fn destroy(sock: *Socket) void {
+            _ = sock;
+            @panic("Not implemented yet!");
+        }
     };
 
     const Data = struct {
-        receive_iop: ?*abi.udp.ReceiveFrom = null,
+        receive_iop: ?*abi_udp.ReceiveFrom = null,
     };
 
     var pool: astd.IndexPool(u32, max_sockets) = .{};
@@ -472,25 +600,25 @@ pub const udp = struct {
         pool.free(index);
     }
 
-    pub fn bind(data: *abi.udp.Bind) void {
+    pub fn bind(data: *abi_udp.Bind) void {
         const pcb = unmap(data.inputs.socket) catch |err| return ashet.io.finalizeWithError(data, err);
         lwipTry(c.udp_bind(pcb, &mapIP(data.inputs.bind_point.ip), data.inputs.bind_point.port)) catch |err| return ashet.io.finalizeWithError(data, err);
         ashet.io.finalizeWithResult(data, .{});
     }
 
-    pub fn connect(data: *abi.udp.Connect) void {
+    pub fn connect(data: *abi_udp.Connect) void {
         const pcb = unmap(data.inputs.socket) catch |err| return ashet.io.finalizeWithError(data, err);
         lwipTry(c.udp_connect(pcb, &mapIP(data.inputs.target.ip), data.inputs.target.port)) catch |err| return ashet.io.finalizeWithError(data, err);
         ashet.io.finalizeWithResult(data, .{});
     }
 
-    pub fn disconnect(data: *abi.udp.Disconnect) void {
+    pub fn disconnect(data: *abi_udp.Disconnect) void {
         const pcb = unmap(data.inputs.socket) catch |err| return ashet.io.finalizeWithError(data, err);
         c.udp_disconnect(pcb);
         ashet.io.finalizeWithResult(data, .{});
     }
 
-    pub fn send(data: *abi.udp.Send) void {
+    pub fn send(data: *abi_udp.Send) void {
         const pcb = unmap(data.inputs.socket) catch |err| return ashet.io.finalizeWithError(data, err);
 
         const stripped_len = std.math.cast(u16, data.inputs.data_len) orelse return ashet.io.finalizeWithError(data, error.OutOfMemory);
@@ -505,7 +633,7 @@ pub const udp = struct {
         ashet.io.finalizeWithResult(data, .{ .bytes_sent = stripped_len });
     }
 
-    pub fn sendTo(data: *abi.udp.SendTo) void {
+    pub fn sendTo(data: *abi_udp.SendTo) void {
         const pcb = unmap(data.inputs.socket) catch |err| return ashet.io.finalizeWithError(data, err);
 
         const stripped_len = std.math.cast(u16, data.inputs.data_len) orelse return ashet.io.finalizeWithError(data, error.OutOfMemory);
@@ -520,7 +648,7 @@ pub const udp = struct {
         ashet.io.finalizeWithResult(data, .{ .bytes_sent = stripped_len });
     }
 
-    pub fn receiveFrom(data: *abi.udp.ReceiveFrom) void {
+    pub fn receiveFrom(data: *abi_udp.ReceiveFrom) void {
         const pcb = unmap(data.inputs.socket) catch |err| return ashet.io.finalizeWithError(data, err);
         const context = &socket_meta[@intFromEnum(data.inputs.socket)];
 
@@ -532,22 +660,11 @@ pub const udp = struct {
     }
 };
 
-fn mapErrSet(comptime T: type, err_or_ok: anyerror!void) T.Enum {
-    return if (err_or_ok) |_|
-        .ok
-    else |err|
-        T.map(astd.mapToUnexpected(T.Error, err));
-}
-
 pub const tcp = struct {
     const max_sockets = @as(usize, @intCast(c.MEMP_NUM_TCP_PCB));
 
-    pub const Socket = struct {
-        system_resource: ashet.resources.SystemResource = .{ .type = .tcp_socket },
-    };
-
     const Op = union(enum) {
-        connect: *abi.tcp.Connect,
+        connect: *ashet.@"async".AsyncCall,
         receive: ReceiveOp,
         send: SendOp,
 
@@ -561,27 +678,31 @@ pub const tcp = struct {
 
         pub fn finalize(op: *Op, err: anyerror!void) void {
             switch (op.*) {
-                .connect => |ev| ev.@"error" = mapErrSet(ashet.abi.tcp.ConnectError, err),
-                .receive => |dat| dat.event.@"error" = mapErrSet(ashet.abi.tcp.ReceiveError, err),
-                .send => |*dat| dat.event.@"error" = mapErrSet(ashet.abi.tcp.SendError, err),
+                .connect => |ev| ev.finalize_with_result(ashet.abi.tcp.Connect, err),
+                .receive => |dat| dat.event.finalize_with_result(ashet.abi.tcp.Receive, err),
+                .send => |*dat| dat.event.finalize_with_result(ashet.abi.tcp.Send, err),
             }
             ashet.io.finalize(op.event());
         }
     };
 
     const SendOp = struct {
-        event: *abi.tcp.Send,
+        event: *ashet.@"async".AsyncCall,
         total_sent: usize = 0, // total bytes transferred for `event`.
         chunk_size: usize = 0, // passsed bytes for the current chunk (invocation of op.total_sent
         chunk_sent: usize = 0, // transferred bytes for the current chunk (invocation of op.total_sent)
     };
 
     const ReceiveOp = struct {
-        event: *abi.tcp.Receive,
+        event: *ashet.@"async".AsyncCall,
         write_offset: usize = 0,
     };
 
-    const Data = struct {
+    pub const Socket = struct {
+        system_resource: ashet.resources.SystemResource = .{ .type = .tcp_socket },
+
+        pcb: *c.tcp_pcb,
+
         connected: bool = false, // true when the connection has been established
         closed: bool = false, // true when the connection has been closed
         op: ?Op = null,
@@ -590,207 +711,175 @@ pub const tcp = struct {
         /// When all bytes in that pbuf are received, we can free it and accept more data.
         recv_offset: u16 = 0,
 
-        pub fn fromArg(arg: ?*anyopaque) *Data {
+        pub fn create() error{SystemResources}!*Socket {
+            const socket = ashet.memory.type_pool(Socket).alloc() catch return error.SystemResources;
+            errdefer ashet.memory.type_pool(Socket).free(socket);
+
+            const pcb = c.tcp_new() orelse return error.SystemResources;
+            errdefer comptime unreachable;
+
+            c.tcp_arg(pcb, socket);
+
+            c.tcp_err(pcb, tcpErrCallback);
+            c.tcp_recv(pcb, tcpRecvCallback);
+            c.tcp_sent(pcb, tcpSentCallback);
+            // c.tcp_accept(pcb, tcp_accept_fn);
+
+            return socket;
+        }
+
+        pub fn destroy(sock: *Socket) void {
+            if (c.tcp_close(sock.pcb) != c.ERR_OK) {
+                c.tcp_abort(sock.pcb);
+            }
+
+            // while (socket_meta[index].receive_queue.pull()) |packet| {
+            //     _ = c.pbuf_free(packet.data);
+            // }
+
+            ashet.memory.type_pool(Socket).free(sock);
+        }
+
+        fn from_callback(arg: ?*anyopaque) *Socket {
             return @ptrCast(@alignCast(arg.?));
         }
     };
 
-    var pool: astd.IndexPool(u32, max_sockets) = .{};
-    var sockets: [max_sockets]*c.tcp_pcb = undefined;
-    var socket_meta: [max_sockets]Data = undefined;
-
-    fn unmap(sock: Socket) error{InvalidHandle}!*c.tcp_pcb {
-        if (sock == .invalid)
+    fn resolve_socket(call: *ashet.@"async".AsyncCall, dir: ashet.abi.TcpSocket) error{InvalidHandle}!*Socket {
+        const proc = call.get_process();
+        return ashet.resources.resolve(Socket, proc, dir.as_resource()) catch |err| {
+            logger.warn("process {} used invalid socket handle {}: {s}", .{ proc, dir, @errorName(err) });
             return error.InvalidHandle;
-        const index = @intFromEnum(sock);
-        if (index >= max_sockets)
-            return error.InvalidHandle;
-        if (!pool.alive(index))
-            return error.InvalidHandle;
-        return sockets[index];
-    }
-
-    pub fn createSocket() !Socket {
-        const index = pool.alloc() orelse return error.SystemResources;
-        errdefer pool.free(index);
-
-        const pcb = c.tcp_new() orelse return error.SystemResources;
-        sockets[index] = pcb;
-
-        socket_meta[index] = Data{};
-
-        c.tcp_arg(pcb, &socket_meta[index]);
-
-        c.tcp_err(pcb, tcpErrCallback);
-        c.tcp_recv(pcb, tcpRecvCallback);
-        c.tcp_sent(pcb, tcpSentCallback);
-        // c.tcp_accept(pcb, tcp_accept_fn);
-
-        return @as(Socket, @enumFromInt(index));
-    }
-
-    pub fn destroySocket(sock: Socket) void {
-        const pcb = unmap(sock) catch return;
-        const index = @intFromEnum(sock);
-
-        if (c.tcp_close(pcb) != c.ERR_OK) {
-            c.tcp_abort(pcb);
-        }
-
-        // while (socket_meta[index].receive_queue.pull()) |packet| {
-        //     _ = c.pbuf_free(packet.data);
-        // }
-        sockets[index] = undefined;
-        socket_meta[index] = undefined;
-        pool.free(index);
+        };
     }
 
     fn tcpErrCallback(arg: ?*anyopaque, err: c.err_t) callconv(.C) void {
-        const state = Data.fromArg(arg);
+        const sock = Socket.from_callback(arg);
 
         logger.err("tcp: err(arg={*}, err={!})", .{ arg, lwipTry(err) });
 
-        if (state.op) |*op| {
+        if (sock.op) |*op| {
             op.finalize(lwipTry(err));
         }
     }
 
-    pub fn bind(ev: *abi.tcp.Bind) void {
-        const pcb = unmap(ev.inputs.socket) catch |err| {
-            ev.@"error" = abi.tcp.BindError.map(err);
-            ashet.io.finalize(&ev.iop);
-            return;
+    pub fn bind(call: *ashet.@"async".AsyncCall, inputs: abi_tcp.Bind.Inputs) void {
+        const socket = resolve_socket(call, inputs.socket) catch |err| {
+            return call.finalize(abi_tcp.Bind, err);
         };
-        ev.@"error" = mapErrSet(
-            abi.tcp.BindError,
-            lwipTry(c.tcp_bind(pcb, &mapIP(ev.inputs.bind_point.ip), ev.inputs.bind_point.port)),
-        );
-        ev.outputs.bind_point = EndPoint{
-            .ip = unmapIP(pcb.local_ip),
-            .port = pcb.local_port,
-        };
-        ashet.io.finalize(&ev.iop);
+
+        if (lwip.tcp.bind(socket.pcb, &mapIP(inputs.bind_point.ip), inputs.bind_point.port)) {
+            return call.finalize(abi_tcp.Bind, .{ .bind_point = EndPoint{
+                .ip = unmapIP(socket.pcb.local_ip),
+                .port = socket.pcb.local_port,
+            } });
+        } else |err| {
+            return call.finalize(abi_tcp.Bind, err);
+        }
     }
 
-    pub fn connect(ev: *abi.tcp.Connect) void {
-        const pcb = unmap(ev.inputs.socket) catch |err| {
-            ev.@"error" = abi.tcp.ConnectError.map(err);
-            ashet.io.finalize(&ev.iop);
-            return;
+    pub fn connect(call: *ashet.@"async".AsyncCall, inputs: abi_tcp.Connect.Inputs) void {
+        const socket = resolve_socket(call, inputs.socket) catch |err| {
+            return call.finalize(abi_tcp.Bind, err);
         };
-        const data = &socket_meta[@intFromEnum(ev.inputs.socket)];
-        if (data.op != null) {
-            ev.@"error" = .InProgress;
-            ashet.io.finalize(&ev.iop);
-            return;
+        if (socket.op != null) {
+            return call.finalize(abi_tcp.Connect, error.InProgress);
         }
-        data.op = .{ .connect = ev };
 
-        ev.@"error" = mapErrSet(
-            abi.tcp.ConnectError,
-            lwipTry(c.tcp_connect(pcb, &mapIP(ev.inputs.target.ip), ev.inputs.target.port, tcpConnectedCallback)),
-        );
-        if (ev.@"error" != .ok) {
-            data.op = null;
-            ashet.io.finalize(&ev.iop);
+        socket.op = .{ .connect = call };
+
+        if (lwip.tcp.connect(socket.pcb, &mapIP(inputs.target.ip), inputs.target.port, tcpConnectedCallback)) {
+            // async call will be resolved by the callback
+        } else |err| {
+            socket.op = null;
+            return call.finalize(abi_tcp.Connect, err);
         }
     }
 
     fn tcpConnectedCallback(arg: ?*anyopaque, pcb_c: [*c]c.tcp_pcb, err: c.err_t) callconv(.C) c.err_t {
         const pcb: *c.tcp_pcb = pcb_c;
-        const state = Data.fromArg(arg);
-        const event = state.op.?.connect;
+        const socket = Socket.from_callback(arg);
+        const event = socket.op.?.connect;
 
         // err: An unused error code, always ERR_OK currently ;-)
         std.debug.assert(err == c.ERR_OK);
 
-        logger.debug("tcp: connected(arg={}, pcb={*}, err={!})", .{ state, pcb, lwipTry(err) });
+        logger.debug("tcp: connected(arg={}, pcb={*}, err={!})", .{ socket, pcb, lwipTry(err) });
 
-        state.connected = true;
-        state.op = null;
-        ashet.io.finalize(&event.iop);
+        socket.connected = true;
+        socket.op = null;
+        event.finalize(abi_tcp.Connect, .{});
 
         return c.ERR_OK;
     }
 
-    pub fn send(ev: *abi.tcp.Send) void {
-        const pcb = unmap(ev.inputs.socket) catch |err| {
-            ev.@"error" = abi.tcp.SendError.map(err);
-            ashet.io.finalize(&ev.iop);
-            return;
+    pub fn send(call: *ashet.@"async".AsyncCall, inputs: abi_tcp.Send.Inputs) void {
+        const socket = resolve_socket(call, inputs.socket) catch |err| {
+            return call.finalize(abi_tcp.Bind, err);
         };
-        const data = &socket_meta[@intFromEnum(ev.inputs.socket)];
-        if (data.op != null) {
-            ev.@"error" = .InProgress;
-            ashet.io.finalize(&ev.iop);
-            return;
+        if (socket.op != null) {
+            return call.finalize(abi_tcp.Send, error.InProgress);
         }
 
-        if (!data.connected) {
-            ev.@"error" = .NotConnected;
-            ashet.io.finalize(&ev.iop);
-            return;
+        if (!socket.connected) {
+            return call.finalize(abi_tcp.Send, error.NotConnected);
         }
-        if (data.closed) {
-            ev.@"error" = .ok;
-            ev.outputs.bytes_sent = 0;
-            ashet.io.finalize(&ev.iop);
-            return;
+        if (socket.closed) {
+            return call.finalize(abi_tcp.Send, .{
+                .bytes_sent = 0,
+            });
         }
 
-        data.op = .{ .send = .{ .event = ev } };
-        const op = &data.op.?.send;
+        socket.op = .{ .send = .{ .event = call } };
+        const op = &socket.op.?.send;
 
-        transferNextChunk(pcb, data, op);
+        transferNextChunk(socket.pcb, socket, op);
     }
 
-    fn transferNextChunk(pcb: *c.tcp_pcb, data: *Data, op: *SendOp) void {
-        const event = op.event;
+    fn transferNextChunk(pcb: *c.tcp_pcb, socket: *Socket, op: *SendOp) void {
+        const call = op.event;
+        const iop = call.arc.cast(abi_tcp.Send);
 
-        if (op.total_sent == event.inputs.data_len) {
-            event.@"error" = .ok;
-            event.outputs.bytes_sent = op.total_sent;
-            ashet.io.finalize(&event.iop);
-            data.op = null;
-            return;
+        if (op.total_sent == iop.inputs.data_len) {
+            socket.op = null;
+            return call.finalize(abi_tcp.Send, .{ .bytes_sent = op.total_sent });
         }
 
-        const rest_len = event.inputs.data_len - op.total_sent;
+        const rest_len = iop.inputs.data_len - op.total_sent;
         const rest_limited = @min(c.tcp_sndbuf(pcb), limitLength(rest_len));
 
         const last = true; // (op.total_sent + rest_limited == event.data_len);
-        event.@"error" = mapErrSet(
-            abi.tcp.SendError,
-            lwipTry(c.tcp_write(pcb, event.inputs.data_ptr + op.total_sent, rest_limited, if (!last) c.TCP_WRITE_FLAG_MORE else 0)),
-        );
-        if (event.@"error" == .ok) {
+
+        if (lwip.tcp.write(pcb, iop.inputs.data_ptr + op.total_sent, rest_limited, if (!last) c.TCP_WRITE_FLAG_MORE else 0)) {
             op.chunk_sent = 0;
             op.chunk_size = rest_limited;
             return;
-        }
+        } else |err| {
+            if (err == error.OutOfMemory) {
+                @panic("not handled yet: reschedule the transfer at a later point again");
+            }
 
-        if (event.@"error" == .OutOfMemory) {
-            @panic("not handled yet: reschedule the transfer at a later point again");
-        }
+            logger.err("failed to send: {}", .{err});
 
-        logger.err("failed to send: {}", .{event.@"error"});
-        data.op = null;
-        ashet.io.finalize(&event.iop);
+            socket.op = null;
+            return call.finalize(abi_tcp.Send, err);
+        }
     }
 
     fn tcpSentCallback(arg: ?*anyopaque, pcb_c: [*c]c.tcp_pcb, sent: u16) callconv(.C) c.err_t {
         const pcb: *c.tcp_pcb = pcb_c;
-        const state = Data.fromArg(arg);
+        const socket = Socket.from_callback(arg);
 
-        const op = &state.op.?.send;
+        const op = &socket.op.?.send;
+        const iop = op.event.arc.cast(abi_tcp.Send);
 
         op.total_sent += sent;
         op.chunk_sent += sent;
-        std.debug.assert(op.total_sent <= op.event.inputs.data_len);
+        std.debug.assert(op.total_sent <= iop.inputs.data_len);
 
         if (op.chunk_sent == op.chunk_size) {
             logger.debug("tcp: full transfer(sent {} bytes, now {} bytes. sending next chunk)", .{ sent, op.chunk_size });
-            transferNextChunk(pcb, state, op);
+            transferNextChunk(pcb, socket, op);
         } else {
             // Just happily idle until our current chunk is fully transferred
             logger.debug("tcp: partial transfer(sent {} bytes, now {} of {} bytes)", .{ sent, op.chunk_sent, op.chunk_size });
@@ -799,104 +888,90 @@ pub const tcp = struct {
         return c.ERR_OK;
     }
 
-    pub fn receive(ev: *abi.tcp.Receive) void {
-        const pcb = unmap(ev.inputs.socket) catch |err| {
-            ev.@"error" = abi.tcp.ReceiveError.map(err);
-            ashet.io.finalize(&ev.iop);
-            return;
+    pub fn receive(call: *ashet.@"async".AsyncCall, inputs: abi_tcp.Receive.Inputs) void {
+        const socket = resolve_socket(call, inputs.socket) catch |err| {
+            return call.finalize(abi_tcp.Bind, err);
         };
-        const data = &socket_meta[@intFromEnum(ev.inputs.socket)];
-        if (data.op != null) {
-            ev.@"error" = .InProgress;
-            ashet.io.finalize(&ev.iop);
-            return;
+        if (socket.op != null) {
+            return call.finalize(abi_tcp.Receive, error.InProgress);
         }
 
-        if (!data.connected) {
-            ev.@"error" = .NotConnected;
-            ashet.io.finalize(&ev.iop);
-            return;
+        if (!socket.connected) {
+            return call.finalize(abi_tcp.Receive, error.NotConnected);
         }
-        if (data.closed) {
-            ev.@"error" = .ok;
-            ev.outputs.bytes_received = 0;
-            ashet.io.finalize(&ev.iop);
-            return;
+        if (socket.closed) {
+            return call.finalize(abi_tcp.Receive, .{ .bytes_received = 0 });
         }
-
-        _ = pcb;
 
         // for receiption, we just set up the buffer and wait until it's completed
-        data.op = .{ .receive = .{ .event = ev } };
-
-        ev.outputs.bytes_received = 0;
-        ev.@"error" = .ok;
+        socket.op = .{ .receive = .{ .event = call } };
     }
 
     // Sets the callback function that will be called when new data arrives. The callback function will be passed a NULL pbuf to indicate that the remote host has closed the connection.
     // If the callback function returns ERR_OK or ERR_ABRT it must have freed the pbuf, otherwise it must not have freed it.
     fn tcpRecvCallback(arg: ?*anyopaque, pcb_c: [*c]c.tcp_pcb, pbuf_c: [*c]c.pbuf, err: c.err_t) callconv(.C) c.err_t {
         const pcb: *c.tcp_pcb = pcb_c;
-        const data = Data.fromArg(arg);
+        const socket = Socket.from_callback(arg);
 
         if (err != c.ERR_OK) {
-            logger.debug("tcp: recv(arg={}, tot_len=<nil>, err={!})", .{ data, lwipTry(err) });
+            logger.debug("tcp: recv(arg={}, tot_len=<nil>, err={!})", .{ socket, lwipTry(err) });
             return c.ERR_OK;
         }
 
         if (pbuf_c == null) {
-            data.closed = true;
-            logger.debug("tcp: recv(arg={},  tot_len=<nil>, err=end of stream)", .{data});
+            socket.closed = true;
+            logger.debug("tcp: recv(arg={},  tot_len=<nil>, err=end of stream)", .{socket});
 
-            if (data.op) |*op| {
+            if (socket.op) |*op| {
                 op.finalize({});
-                data.op = null;
+                socket.op = null;
             }
 
             return c.ERR_OK;
         }
 
-        if (data.op == null) {
+        if (socket.op == null) {
             return c.ERR_WOULDBLOCK; // we can't receive anything right now
         }
 
-        const op: *ReceiveOp = switch (data.op.?) {
+        const op: *ReceiveOp = switch (socket.op.?) {
             .receive => |*op| op,
             else => return c.ERR_WOULDBLOCK, // we can't receive anything right now
         };
+        const call = op.event;
+        const iop = op.event.arc.cast(abi_tcp.Receive);
 
         const pbuf: *c.pbuf = pbuf_c;
 
-        std.debug.assert(pbuf.tot_len > data.recv_offset);
-        const available_src = pbuf.tot_len - data.recv_offset;
-        const available_dst = op.event.inputs.buffer_len;
+        std.debug.assert(pbuf.tot_len > socket.recv_offset);
+        const available_src = pbuf.tot_len - socket.recv_offset;
+        const available_dst = iop.inputs.buffer_len;
 
         const copy_len = @min(available_dst, available_src);
 
-        const copied_len = c.pbuf_copy_partial(pbuf, op.event.inputs.buffer_ptr, copy_len, data.recv_offset);
+        const copied_len = c.pbuf_copy_partial(pbuf, iop.inputs.buffer_ptr, copy_len, socket.recv_offset);
 
         if (copied_len == 0) {
             logger.err("failed to copy data from recv callback into async receive event", .{});
         }
 
-        data.recv_offset += copied_len;
+        socket.recv_offset += copied_len;
         op.write_offset += copied_len;
 
         c.tcp_recved(pcb, copied_len);
 
-        if (op.write_offset == op.event.inputs.buffer_len or !op.event.inputs.read_all) {
+        if (op.write_offset == iop.inputs.buffer_len or !iop.inputs.read_all) {
             // op completed
-
-            op.event.outputs.bytes_received = op.write_offset;
-            op.event.@"error" = .ok;
-            ashet.io.finalize(&op.event.iop);
-
-            data.op = null;
+            call.finalize(abi_tcp.Receive, .{
+                .bytes_received = op.write_offset,
+            });
+            socket.op = null;
+            return;
         }
 
-        if (data.recv_offset == pbuf.tot_len) {
+        if (socket.recv_offset == pbuf.tot_len) {
             // we consumed all of this buffer, notify stack that we're done now.
-            data.recv_offset = 0;
+            socket.recv_offset = 0;
             _ = c.pbuf_free(pbuf);
             return c.ERR_OK;
         } else {

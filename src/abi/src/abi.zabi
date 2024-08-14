@@ -117,12 +117,18 @@ const clock = struct {
     ) error{}!void;
 };
 
-const time = struct {
+const datetime = struct {
     /// Get a calendar timestamp relative to UTC 1970-01-01.
     /// Precision of timing depends on the hardware.
     /// The return value is signed because it is possible to have a date that is
     /// before the epoch.
     extern fn now() DateTime;
+
+    /// Sleeps until `datetime.now()` returns a point in  time that comes after `when`.
+    extern "async" fn Alarm(
+        /// Earliest possible date time of when the alarm triggers.
+        when: DateTime,
+    ) error{}!void;
 };
 
 const video = struct {
@@ -152,19 +158,35 @@ const video = struct {
 };
 
 const arcs = struct {
-    /// Starts new I/O operations and returns completed ones.
+    /// Starts new asynchronous operations.
     ///
-    /// If `start_queue` is given, the kernel will schedule the events in the kernel.
-    /// All events in this queue must not be freed until they are returned by this function
-    /// at a later point.
+    /// NOTE: Until the operation has successfully completed or was
+    ///       cancelled, the ARC structure must be considered owned
+    ///       by the kernel and must not be changed from userspace.
+    ///       It can also change its contents spuriously until the
+    ///       operation is returned to userland.
     ///
-    /// The function will optionally block based on the `wait` parameter.
-    ///
-    /// The return value is the HEAD element of a linked list of completed I/O events.
-    extern fn schedule_and_await(start_queue: ?*ARC, options: Schedule_And_Await_Options) ?*ARC;
+    extern fn schedule(async_call: *ARC) error{ SystemResources, AlreadyScheduled }!void;
 
-    /// Cancels a single I/O operation.
-    extern fn cancel(aop: *ARC) void;
+    /// Awaits one or more asynchronous operations and returns the
+    /// number of `completed` elements.
+    ///
+    /// The kernel will fill out `completed` up to the returned number of elements.
+    /// All other values are undefined.
+    ///
+    /// NOTE: For blocking operations, this function will suspend the current
+    ///       thread until the request has been completed.
+    extern fn await_completion(completed: []*ARC, options: Await_Options) error{Unscheduled}!usize;
+
+    /// Cancels an asynchronous call.
+    ///
+    /// NOTE: If the operation has already completed, an error will be returned saying so.
+    ///
+    /// NOTE: The cancelled operation will not be returned by `await` anymore.
+    extern fn cancel(aop: *ARC) error{
+        Unscheduled,
+        Completed,
+    }!void;
 };
 
 const random = struct {
@@ -187,8 +209,6 @@ const input = struct {
         NonExclusiveAccess,
         InProgress,
     }!struct {
-        /// Defines which element of `event` is active.
-        event_type: InputEvent.Type,
         event: InputEvent,
     };
 };
@@ -730,6 +750,8 @@ pub const palette_size = std.math.maxInt(@typeInfo(ColorIndex).Enum.tag_type) + 
 
 /// Handle to an abstract system resource.
 pub const SystemResource = enum(usize) {
+    _,
+
     /// Casts the resource into a concrete type. Fails, if the type does not match.
     pub fn cast(resource: *SystemResource, comptime t: Type) error{InvalidType}!*CastResult(t) {
         const actual = resource.get_type();
@@ -830,7 +852,11 @@ pub const NotificationSeverity = enum(u8) {
 
 pub const IP_Type = enum(u8) { ipv4, ipv6 };
 
-pub const Schedule_And_Await_Options = extern struct {
+pub const Schedule_Result = enum(u8) {
+    scheduled = 0,
+};
+
+pub const Await_Options = extern struct {
     wait: Wait,
     thread_affinity: Thread_Affinity,
 
@@ -843,24 +869,28 @@ pub const Schedule_And_Await_Options = extern struct {
     };
 
     pub const Wait = enum(u8) {
-        /// Don't wait for any I/O to complete.
-        dont_block,
+        /// Don't wait for any additional calls to complete, just return
+        /// whatever was completed in the meantime.
+        dont_block = 0,
 
-        /// Doesn't block the call, and guarantees that no event is returned by `scheduleAndAwait`.
-        /// This can be used to enqueue new ARCs outside of the event loop.
-        schedule_only,
+        /// Wait for at least a single call to complete operation.
+        wait_one = 1,
 
-        /// Wait for at least one I/O to complete operation.
-        wait_one,
-
-        /// Wait until all scheduled I/O operations have completed.
-        wait_all,
+        /// Wait until all scheduled operations have completed.
+        ///
+        /// This will only wait so long until either
+        /// a) all scheduled ops are stored into the result array
+        /// or
+        /// b) the result array is full
+        ///
+        /// NOTE: If `thread_affinity` is `.all_threads`, other threads can still
+        ///       schedule more operations and make this function block longer.
+        wait_all = 2,
 
         /// Returns whether the operation is blocking or not.
         pub fn isBlocking(wait: Wait) bool {
             return switch (wait) {
                 .dont_block => false,
-                .schedule_only => false,
                 .wait_one => true,
                 .wait_all => true,
             };
@@ -1506,6 +1536,7 @@ pub const Color = packed struct(u16) {
 };
 
 pub const InputEvent = extern union {
+    event_type: Type,
     mouse: MouseEvent,
     keyboard: KeyboardEvent,
 
@@ -1517,9 +1548,32 @@ pub const InputEvent = extern union {
         mouse_button_press = 3,
         mouse_button_release = 4,
     };
+
+    // Check consistency:
+    comptime {
+        const union_fields = @typeInfo(@This()).Union.fields;
+
+        // first union field must define our event type:
+        std.debug.assert(union_fields[0].type == Type);
+
+        // check that all other fields are extern structs that share
+        // the first field with this union:
+        for (union_fields[1..]) |fld| {
+            const event_type = @typeInfo(fld.type).Struct;
+
+            const first_field = event_type.fields[0];
+
+            std.debug.assert(event_type.layout == .@"extern");
+            std.debug.assert(first_field.type == Type);
+            std.debug.assert(std.mem.eql(u8, first_field.name, union_fields[0].name));
+            std.debug.assert(@offsetOf(fld.type, union_fields[0].name) == 0);
+        }
+    }
 };
 
 pub const MouseEvent = extern struct {
+    event_type: InputEvent.Type, // MUST BE FIRST!
+
     x: i16,
     y: i16,
     dx: i16,
@@ -1528,6 +1582,8 @@ pub const MouseEvent = extern struct {
 };
 
 pub const KeyboardEvent = extern struct {
+    event_type: InputEvent.Type, // MUST BE FIRST!
+
     /// The raw scancode for the key. Meaning depends on the layout,
     /// represents kinda the physical position on the keyboard.
     scancode: u32,

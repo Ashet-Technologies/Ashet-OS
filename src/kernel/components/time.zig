@@ -31,6 +31,10 @@ pub const Instant = enum(u64) {
         return @enumFromInt(ashet.machine.get_tick_count());
     }
 
+    pub fn ms_since_start(future: Instant) u64 {
+        return @intFromEnum(future);
+    }
+
     pub fn ms_since(future: Instant, past: Instant) u64 {
         return @intFromEnum(future) - @intFromEnum(past);
     }
@@ -76,68 +80,86 @@ pub const Deadline = struct {
 };
 
 const Timer = ashet.abi.clock.Timer;
+const Alarm = ashet.abi.datetime.Alarm;
 
-var global_timer_queue: ?*Timer = null;
+var global_timer_queue: ashet.@"async".WorkQueue = .{
+    .wakeup_thread = null,
+};
+
+var global_alarm_queue: ashet.@"async".WorkQueue = .{
+    .wakeup_thread = null,
+};
 
 /// Period subsystem update, will finalize
 /// all finished timers.
 pub fn tick() void {
-    const now = nanoTimestamp();
+    process_timer_events();
 
-    while (global_timer_queue) |timer| {
-        if (now >= timer.inputs.timeout) {
-            // the timer has been timed out, so schedule the IOP and remove it from the queue
-            global_timer_queue = if (timer.arc.next) |next|
-                ashet.abi.ARC.cast(Timer, next)
-            else
-                null;
+    process_alarm_events();
+}
 
-            timer.arc.next = null;
-            ashet.@"async".finalize(&timer.arc);
-        } else {
-            // the queue is sorted, so we've reached the end of what we can schedule right now
-            return;
+fn process_alarm_events() void {
+    const now = milliTimestamp();
+
+    while (global_alarm_queue.get_head()) |next_alarm| {
+        const alarm = next_alarm.arc.cast(Alarm).inputs;
+        // the queue is sorted, so we've reached the end of what we can schedule right now
+        if (now < @intFromEnum(alarm.when)) {
+            break;
         }
+
+        const dequeued = global_alarm_queue.dequeue();
+        std.debug.assert(dequeued == next_alarm);
+        next_alarm.finalize(Alarm, .{});
     }
 }
 
-pub fn scheduleTimer(timer: *Timer) void {
-    timer.arc.next = null;
+fn process_timer_events() void {
+    const now = Instant.now();
 
-    const now = nanoTimestamp();
-    if (now >= timer.inputs.timeout) {
-        ashet.@"async".finalize(&timer.arc);
-    } else {
-        const insert = timer.inputs.timeout;
-        if (global_timer_queue == null) {
-            // start the queue
-            global_timer_queue = timer;
-        } else if (global_timer_queue.?.inputs.timeout > insert) {
-            // we're head of the queue
-            timer.arc.next = &global_timer_queue.?.arc;
-            global_timer_queue = timer;
-        } else {
-            // we're not the head of the queue, insert somewhere further in the list
-            var iter = global_timer_queue;
-            while (iter) |old| {
-                std.debug.assert(old.inputs.timeout <= insert);
-                const next = ashet.abi.ARC.cast(Timer, old.arc.next orelse {
-                    // there's no next, just append to the end
-                    old.arc.next = &timer.arc;
-                    return;
-                });
-
-                if (next.inputs.timeout > insert) {
-                    // the next element will timeout after the current one, let's insert here
-
-                    timer.arc.next = &next.arc;
-                    old.arc.next = &timer.arc;
-                } else {
-                    // iterate further
-                    iter = next;
-                }
-            }
-            unreachable;
+    while (global_timer_queue.get_head()) |next_timer| {
+        const timer = next_timer.arc.cast(Timer).inputs;
+        // the queue is sorted, so we've reached the end of what we can schedule right now
+        if (now.ms_since_start() < timer.timeout) {
+            break;
         }
+
+        const dequeued = global_timer_queue.dequeue();
+        std.debug.assert(dequeued == next_timer);
+        next_timer.finalize(Timer, .{});
+    }
+}
+
+const TimerComparer = struct {
+    pub fn lt(_: @This(), lhs: *ashet.@"async".AsyncCall, rhs: *ashet.@"async".AsyncCall) bool {
+        const lhs_timer = lhs.arc.cast(Timer);
+        const rhs_timer = rhs.arc.cast(Timer);
+        return lhs_timer.inputs.timeout < rhs_timer.inputs.timeout;
+    }
+};
+
+pub fn schedule_timer(call: *ashet.@"async".AsyncCall, inputs: Timer.Inputs) void {
+    const now = Instant.now();
+    if (now.ms_since_start() >= inputs.timeout) {
+        call.finalize(Timer, .{});
+    } else {
+        global_timer_queue.priority_enqueue(call, TimerComparer{});
+    }
+}
+
+const AlarmComparer = struct {
+    pub fn lt(_: @This(), lhs: *ashet.@"async".AsyncCall, rhs: *ashet.@"async".AsyncCall) bool {
+        const lhs_alarm = lhs.arc.cast(Alarm);
+        const rhs_alarm = rhs.arc.cast(Alarm);
+        return @intFromEnum(lhs_alarm.inputs.when) < @intFromEnum(rhs_alarm.inputs.when);
+    }
+};
+
+pub fn schedule_alarm(call: *ashet.@"async".AsyncCall, inputs: Alarm.Inputs) void {
+    const now = milliTimestamp();
+    if (now >= @intFromEnum(inputs.when)) {
+        call.finalize(Alarm, .{});
+    } else {
+        global_alarm_queue.priority_enqueue(call, AlarmComparer{});
     }
 }

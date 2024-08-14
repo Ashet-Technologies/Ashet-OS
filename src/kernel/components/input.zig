@@ -3,6 +3,9 @@ const ashet = @import("../main.zig");
 const logger = std.log.scoped(.input);
 const astd = @import("ashet-std");
 
+// We're doing a "dumb" alias to the ABI event here, it already contains the event type:
+pub const Event = ashet.abi.InputEvent;
+
 var shift_left_state: bool = false;
 var shift_right_state: bool = false;
 
@@ -32,7 +35,7 @@ pub fn tick() void {
         defer cs.leave();
 
         while (async_queue.pull()) |evt| {
-            pushRawEvent(evt);
+            push_raw_event(evt);
         }
     }
 }
@@ -66,26 +69,21 @@ pub const raw = struct {
     };
 };
 
-pub const Event = union(enum) {
-    keyboard: ashet.abi.KeyboardEvent,
-    mouse: ashet.abi.MouseEvent,
-};
-
 /// stores incoming events from either interrupts or polling.
 var event_queue: astd.RingBuffer(raw.Event, 32) = .{};
 
-var event_awaiter: ?*ashet.abi.input.GetEvent = null;
+var event_awaiter: ?*ashet.@"async".AsyncCall = null;
 
 var async_queue: astd.RingBuffer(raw.Event, 16) = .{};
 
-pub fn pushRawEventFromIRQ(raw_event: raw.Event) void {
+pub fn push_raw_event_from_irq(raw_event: raw.Event) void {
     if (async_queue.full()) {
         logger.warn("dropping {s} event", .{@tagName(event_queue.pull().?)});
     }
     async_queue.push(raw_event);
 }
 
-pub fn pushRawEvent(raw_event: raw.Event) void {
+pub fn push_raw_event(raw_event: raw.Event) void {
     if (event_queue.full()) {
         logger.warn("dropping {s} event", .{@tagName(event_queue.pull().?)});
     }
@@ -93,141 +91,146 @@ pub fn pushRawEvent(raw_event: raw.Event) void {
 
     if (event_awaiter) |awaiter| {
         if (getEvent()) |evt| {
-            finishIOP(awaiter, evt);
+            finish_arc(awaiter, evt);
             event_awaiter = null;
         }
     }
 }
 
-pub fn getEventIOP(iop: *ashet.abi.input.GetEvent) void {
-    const proc = ashet.syscalls.getCurrentProcess();
+pub fn schedule_get_event(call: *ashet.@"async".AsyncCall) void {
+    const proc = call.thread.get_process();
 
     if (!proc.isExclusiveVideoController()) {
-        return ashet.io.finalizeWithError(iop, error.NonExclusiveAccess);
+        return call.finalize(ashet.abi.input.GetEvent, error.NonExclusiveAccess);
     }
 
     if (event_awaiter != null) {
-        return ashet.io.finalizeWithError(iop, error.InProgress);
+        return call.finalize(ashet.abi.input.GetEvent, error.InProgress);
     }
 
     if (getEvent()) |evt| {
-        return finishIOP(iop, evt);
+        return finish_arc(call, evt);
+    } else {
+        event_awaiter = call;
     }
-
-    event_awaiter = iop;
 }
 
-fn finishIOP(iop: *ashet.abi.input.GetEvent, evt: Event) void {
-    const result: ashet.abi.input.GetEvent.Outputs = switch (evt) {
-        .keyboard => |data| .{
-            .event_type = .keyboard,
-            .event = .{ .keyboard = data },
+fn finish_arc(call: *ashet.@"async".AsyncCall, evt: Event) void {
+    call.finalize(ashet.abi.input.GetEvent, .{ .event = evt });
+}
+
+fn convert_raw_event(raw_event: raw.Event) ?Event {
+    switch (raw_event) {
+        .mouse_abs_motion => |data| {
+            // TODO: Handle video outputs / virtual screen size
+            const max_size = ashet.video.getMaxResolution();
+
+            const old_cursor = cursor;
+
+            cursor.x = @intCast(std.math.clamp(data.x, 0, @as(i17, max_size.width -| 1)));
+            cursor.y = @intCast(std.math.clamp(data.y, 0, @as(i17, max_size.height -| 1)));
+
+            return Event{ .mouse = .{
+                .event_type = .mouse_motion,
+                .dx = cursor.x - old_cursor.x,
+                .dy = cursor.y - old_cursor.y,
+                .x = cursor.x,
+                .y = cursor.y,
+                .button = .none,
+            } };
         },
-        .mouse => |data| .{
-            .event_type = .mouse,
-            .event = .{ .mouse = data },
+
+        .mouse_rel_motion => |data| {
+            const dx = @as(i16, @truncate(std.math.clamp(data.dx, std.math.minInt(i16), std.math.maxInt(i16))));
+            const dy = @as(i16, @truncate(std.math.clamp(data.dy, std.math.minInt(i16), std.math.maxInt(i16))));
+
+            const max_size = ashet.video.getMaxResolution();
+
+            cursor.x = @intCast(std.math.clamp(cursor.x + dx, 0, @as(i17, max_size.width -| 1)));
+            cursor.y = @intCast(std.math.clamp(cursor.y + dy, 0, @as(i17, max_size.height -| 1)));
+
+            return Event{ .mouse = .{
+                .event_type = .mouse_motion,
+                .dx = dx,
+                .dy = dy,
+                .x = cursor.x,
+                .y = cursor.y,
+                .button = .none,
+            } };
         },
-    };
-    ashet.io.finalizeWithResult(iop, result);
+
+        .mouse_button => |data| {
+            const button = switch (data.button) {
+                .left => ashet.abi.MouseButton.left,
+                .right => ashet.abi.MouseButton.right,
+                .middle => ashet.abi.MouseButton.middle,
+                .nav_previous => ashet.abi.MouseButton.nav_previous,
+                .nav_next => ashet.abi.MouseButton.nav_next,
+                .wheel_down => ashet.abi.MouseButton.wheel_down,
+                .wheel_up => ashet.abi.MouseButton.wheel_up,
+                else => return null,
+            };
+
+            const mouse_event: ashet.abi.MouseEvent = .{
+                .event_type = if (data.down)
+                    .mouse_button_press
+                else
+                    .mouse_button_release,
+                .dx = 0,
+                .dy = 0,
+                .x = cursor.x,
+                .y = cursor.y,
+                .button = button,
+            };
+
+            return .{ .mouse = mouse_event };
+        },
+
+        .keyboard => |src_event| {
+            const key_code = keyboard.model.scancodeToKeycode(src_event.scancode) orelse .unknown;
+
+            switch (key_code) {
+                .shift_left => shift_left_state = src_event.down,
+                .shift_right => shift_right_state = src_event.down,
+                .ctrl_left => ctrl_left_state = src_event.down,
+                .ctrl_right => ctrl_right_state = src_event.down,
+                .alt => alt_state = src_event.down,
+                .alt_graph => alt_graph_state = src_event.down,
+
+                else => {},
+            }
+
+            const modifiers = getKeyboardModifiers();
+
+            const text_ptr = keyboard.layout.translate(key_code, modifiers.shift, modifiers.alt_graph);
+
+            const event = ashet.abi.KeyboardEvent{
+                .event_type = if (src_event.down)
+                    .key_press
+                else
+                    .key_release,
+                .scancode = src_event.scancode,
+                .key = key_code,
+                .text = text_ptr,
+                .modifiers = modifiers,
+                .pressed = src_event.down,
+            };
+
+            // We swallow the event if the global hotkey system consumes it
+            if (ashet.global_hotkeys.handle(event))
+                return null;
+
+            return Event{ .keyboard = event };
+        },
+    }
 }
 
 pub fn getEvent() ?Event {
     while (true) {
         const raw_event = event_queue.pull() orelse return null;
-        switch (raw_event) {
-            .mouse_abs_motion => |data| {
-                const max_size = ashet.video.getMaxResolution();
 
-                const old_cursor = cursor;
-
-                cursor.x = @intCast(std.math.clamp(data.x, 0, @as(i17, max_size.width -| 1)));
-                cursor.y = @intCast(std.math.clamp(data.y, 0, @as(i17, max_size.height -| 1)));
-
-                return Event{ .mouse = .{
-                    .type = .motion,
-                    .dx = cursor.x - old_cursor.x,
-                    .dy = cursor.y - old_cursor.y,
-                    .x = cursor.x,
-                    .y = cursor.y,
-                    .button = .none,
-                } };
-            },
-
-            .mouse_rel_motion => |data| {
-                const dx = @as(i16, @truncate(std.math.clamp(data.dx, std.math.minInt(i16), std.math.maxInt(i16))));
-                const dy = @as(i16, @truncate(std.math.clamp(data.dy, std.math.minInt(i16), std.math.maxInt(i16))));
-
-                const max_size = ashet.video.getMaxResolution();
-
-                cursor.x = @intCast(std.math.clamp(cursor.x + dx, 0, @as(i17, max_size.width -| 1)));
-                cursor.y = @intCast(std.math.clamp(cursor.y + dy, 0, @as(i17, max_size.height -| 1)));
-
-                return Event{ .mouse = .{
-                    .type = .motion,
-                    .dx = dx,
-                    .dy = dy,
-                    .x = cursor.x,
-                    .y = cursor.y,
-                    .button = .none,
-                } };
-            },
-
-            .mouse_button => |data| {
-                const event_type = if (data.down)
-                    ashet.abi.MouseEvent.Type.button_press
-                else
-                    ashet.abi.MouseEvent.Type.button_release;
-                const button = switch (data.button) {
-                    .left => ashet.abi.MouseButton.left,
-                    .right => ashet.abi.MouseButton.right,
-                    .middle => ashet.abi.MouseButton.middle,
-                    .nav_previous => ashet.abi.MouseButton.nav_previous,
-                    .nav_next => ashet.abi.MouseButton.nav_next,
-                    .wheel_down => ashet.abi.MouseButton.wheel_down,
-                    .wheel_up => ashet.abi.MouseButton.wheel_up,
-                    else => return null,
-                };
-                return Event{ .mouse = .{
-                    .type = event_type,
-                    .dx = 0,
-                    .dy = 0,
-                    .x = cursor.x,
-                    .y = cursor.y,
-                    .button = button,
-                } };
-            },
-            .keyboard => |src_event| {
-                const key_code = keyboard.model.scancodeToKeycode(src_event.scancode) orelse .unknown;
-
-                switch (key_code) {
-                    .shift_left => shift_left_state = src_event.down,
-                    .shift_right => shift_right_state = src_event.down,
-                    .ctrl_left => ctrl_left_state = src_event.down,
-                    .ctrl_right => ctrl_right_state = src_event.down,
-                    .alt => alt_state = src_event.down,
-                    .alt_graph => alt_graph_state = src_event.down,
-
-                    else => {},
-                }
-
-                const modifiers = getKeyboardModifiers();
-
-                const text_ptr = keyboard.layout.translate(key_code, modifiers.shift, modifiers.alt_graph);
-
-                const event = ashet.abi.KeyboardEvent{
-                    .scancode = src_event.scancode,
-                    .key = key_code,
-                    .text = text_ptr,
-                    .modifiers = modifiers,
-                    .pressed = src_event.down,
-                };
-
-                // We swallow the event if the global hotkey system consumes it
-                if (ashet.global_hotkeys.handle(event))
-                    continue;
-
-                return Event{ .keyboard = event };
-            },
+        if (convert_raw_event(raw_event)) |event| {
+            return event;
         }
     }
 }

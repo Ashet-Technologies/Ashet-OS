@@ -3,14 +3,34 @@ const builtin = @import("builtin");
 const ashet = @import("../main.zig");
 const abi = @import("ashet-abi");
 
+const strace = std.log.scoped(.strace);
+
 const ashet_abi_v2_impl = @import("ashet-abi-impl");
+
+pub const SystemCall = ashet_abi_v2_impl.Syscall_ID;
 
 comptime {
     // Force exports into existence:
     _ = exports;
 }
 
-pub const exports = ashet_abi_v2_impl.create_exports(syscalls);
+pub var enable_trace: bool = false;
+
+pub const exports = ashet_abi_v2_impl.create_exports(syscalls, callbacks);
+
+const callbacks = struct {
+    pub fn before_syscall(sc: SystemCall) void {
+        if (enable_trace) {
+            strace.info("{s}", .{@tagName(sc)});
+        }
+        ashet.stackCheck();
+    }
+
+    pub fn after_syscall(sc: SystemCall) void {
+        _ = sc;
+        ashet.stackCheck();
+    }
+};
 
 pub const syscalls = struct {
     pub const resources = struct {
@@ -118,15 +138,13 @@ pub const syscalls = struct {
 
     pub const clock = struct {
         pub fn monotonic() u64 {
-            //
-            @panic("not implemented yet");
+            return @intFromEnum(ashet.time.Instant.now());
         }
     };
 
-    pub const time = struct {
+    pub const datetime = struct {
         pub fn now() abi.DateTime {
-            //
-            @panic("not implemented yet");
+            return @enumFromInt(ashet.time.milliTimestamp());
         }
     };
 
@@ -165,12 +183,16 @@ pub const syscalls = struct {
     };
 
     pub const arcs = struct {
-        pub fn schedule_and_await(enqueue_list: ?*abi.ARC, options: abi.Schedule_And_Await_Options) ?*abi.ARC {
-            return ashet.@"async".schedule_and_await(enqueue_list, options);
+        pub fn schedule(async_call: *abi.ARC) error{ SystemResources, AlreadyScheduled }!void {
+            return try ashet.@"async".schedule(async_call);
         }
 
-        pub fn cancel(arc: *abi.ARC) void {
-            return ashet.@"async".cancel(arc);
+        pub fn await_completion(completed: []*abi.ARC, options: abi.Await_Options) error{Unscheduled}!usize {
+            return try ashet.@"async".await_completion(completed, options);
+        }
+
+        pub fn cancel(arc: *abi.ARC) error{ Unscheduled, Completed }!void {
+            return try ashet.@"async".cancel(arc);
         }
     };
 

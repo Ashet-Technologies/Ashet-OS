@@ -707,17 +707,17 @@ const MouseDecoder = struct {
                     decoder.state = .fetch_x;
 
                     if (header.left != decoder.current.left) {
-                        ashet.input.pushRawEvent(.{
+                        ashet.input.push_raw_event(.{
                             .mouse_button = .{ .button = .left, .down = header.left },
                         });
                     }
                     if (header.right != decoder.current.right) {
-                        ashet.input.pushRawEvent(.{
+                        ashet.input.push_raw_event(.{
                             .mouse_button = .{ .button = .right, .down = header.right },
                         });
                     }
                     if (header.middle != decoder.current.middle) {
-                        ashet.input.pushRawEvent(.{
+                        ashet.input.push_raw_event(.{
                             .mouse_button = .{ .button = .middle, .down = header.middle },
                         });
                     }
@@ -734,7 +734,7 @@ const MouseDecoder = struct {
                 const dy = @as(i8, @bitCast(input));
 
                 if ((dx != 0 or dy != 0) and !decoder.current.x_overflow and !decoder.current.y_overflow) {
-                    ashet.input.pushRawEvent(.{
+                    ashet.input.push_raw_event(.{
                         // PC mouse is using inverted Y
                         .mouse_rel_motion = .{ .dx = dx, .dy = -dy },
                     });
@@ -775,7 +775,7 @@ const KeyboardDecoder = struct {
                     decoder.state = .e1;
                 } else {
                     const scancode = @as(u7, @truncate(input));
-                    ashet.input.pushRawEventFromIRQ(.{
+                    ashet.input.push_raw_event_from_irq(.{
                         .keyboard = .{
                             .scancode = scancode,
                             .down = (scancode == input), // if different, the upper bit is set
@@ -793,7 +793,7 @@ const KeyboardDecoder = struct {
                 if (scancode == 0x2A or scancode == 0x36)
                     return;
                 logger.debug("e0 code: 0x{X:0>2}", .{scancode});
-                ashet.input.pushRawEventFromIRQ(.{
+                ashet.input.push_raw_event_from_irq(.{
                     .keyboard = .{
                         .scancode = @as(u8, 0x80) | scancode,
                         .down = (scancode == input), // if different, the upper bit is set
@@ -810,7 +810,7 @@ const KeyboardDecoder = struct {
                 const scancode = (@as(u16, input7) << 8) | low;
 
                 logger.debug("e1 code: 0x{X:0>4}", .{scancode});
-                ashet.input.pushRawEventFromIRQ(.{
+                ashet.input.push_raw_event_from_irq(.{
                     .keyboard = .{
                         .scancode = scancode,
                         .down = (input7 == input), // if different, the upper bit is set

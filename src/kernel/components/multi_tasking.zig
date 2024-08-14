@@ -8,8 +8,6 @@ const ProcessNode = ProcessList.Node;
 
 var process_list: ProcessList = .{};
 
-var process_memory_pool: std.heap.MemoryPool(Process) = undefined;
-
 /// The process in this variable is the only process able to control the screen.
 /// If `null`, the regular desktop UI is active.
 pub var exclusive_video_controller: ?*Process = null;
@@ -17,8 +15,6 @@ pub var exclusive_video_controller: ?*Process = null;
 var kernel_process: *Process = undefined;
 
 pub fn initialize() void {
-    process_memory_pool = std.heap.MemoryPool(Process).init(ashet.memory.allocator);
-
     kernel_process = Process.create(.{
         .name = "<kernel>",
         .stay_resident = true,
@@ -73,15 +69,19 @@ pub const Process = struct {
     /// Slice of where the executable was loaded in memory
     executable_memory: ?[]const u8 = null,
 
+    /// If `true`, the process was killed and it is now zombie process.
+    is_killed: bool = false,
+
     resources: ashet.resources.HandlePool,
 
     pub const CreateOptions = struct {
         name: ?[]const u8 = null,
         stay_resident: bool = false,
     };
+
     pub fn create(options: CreateOptions) !*Process {
-        const process: *Process = try process_memory_pool.create();
-        errdefer process_memory_pool.destroy(process);
+        const process: *Process = try ashet.memory.type_pool(Process).alloc();
+        errdefer ashet.memory.type_pool(Process).free(process);
 
         process.* = Process{
             .memory_arena = std.heap.ArenaAllocator.init(ashet.memory.allocator),
@@ -127,7 +127,14 @@ pub const Process = struct {
     // return process;
     // }
 
+    pub fn is_zombie(proc: Process) bool {
+        return proc.is_killed;
+    }
+
+    /// Kills the process, stops all threads, and releases of its resources.
     pub fn kill(proc: *Process) void {
+        std.debug.assert(!proc.is_zombie());
+
         process_list.remove(&proc.list_item);
 
         if (exclusive_video_controller == proc) {
@@ -149,28 +156,41 @@ pub const Process = struct {
                 res.remove_owner(item.ownership);
                 proc.resources.free_by_index(item.index) catch unreachable; // all resources we can reach here are valid
             }
+            proc.resources.deinit();
         }
 
         proc.memory_arena.deinit();
 
-        process_memory_pool.destroy(proc);
+        proc.is_killed = true;
+    }
+
+    /// Kills the thread and deletes it afterwards. This will invalidate all resource handles!
+    pub fn destroy(proc: *Process) void {
+        if (!proc.is_killed) {
+            proc.kill();
+        }
+        ashet.memory.type_pool(Process).free(proc);
     }
 
     pub fn save(proc: *Process) void {
-        _ = proc;
+        std.debug.assert(!proc.is_zombie());
+        // TODO
     }
 
     pub fn restore(proc: *const Process) void {
-        _ = proc;
+        std.debug.assert(!proc.is_zombie());
+        // TODO
     }
 
     pub fn isExclusiveVideoController(proc: *Process) bool {
+        std.debug.assert(!proc.is_zombie());
         return (exclusive_video_controller == proc);
     }
 
     /// Returns a handle to a memory arena associated with the process.
     /// Memory allocated with this allocator cannot be freed.
     pub fn static_allocator(proc: *Process) std.mem.Allocator {
+        std.debug.assert(!proc.is_zombie());
         return proc.memory_arena.allocator();
     }
 };

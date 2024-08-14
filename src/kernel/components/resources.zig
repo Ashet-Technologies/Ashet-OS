@@ -71,6 +71,12 @@ pub const SystemResource = struct {
                 const instance = src.cast(ashet.resources.InstanceType(type_id)) catch unreachable;
                 instance.destroy();
             },
+
+            // Threads need special handling
+            .thread => {
+                const instance = src.cast(ashet.scheduler.Thread) catch unreachable;
+                instance.kill();
+            },
         }
     }
 
@@ -236,7 +242,7 @@ pub const HandlePool = struct {
         std.debug.assert(pool.generations.items.len == pool.bit_map.capacity());
         std.debug.assert(pool.owners.len == pool.bit_map.capacity());
 
-        const handle_bits: EncodedHandle = @bitCast(@intFromPtr(handle));
+        const handle_bits: EncodedHandle = @bitCast(@intFromEnum(handle));
 
         handle_bits.validate_checksum() catch return error.InvalidHandle;
         if (handle_bits.index >= pool.bit_map.capacity())
@@ -524,8 +530,6 @@ pub fn InstanceType(comptime type_enum: TypeId) type {
         .desktop => ashet.gui.Desktop,
         .widget => ashet.gui.Widget,
         .widget_type => ashet.gui.WidgetType,
-
-        _ => @compileError("bad InstanceType"),
     };
 }
 

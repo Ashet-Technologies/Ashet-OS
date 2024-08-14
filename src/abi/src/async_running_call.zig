@@ -7,26 +7,25 @@ pub fn Generic_ARC(comptime Type: type) type {
         const ARC = @This();
 
         type: Type,
-        next: ?*ARC,
         tag: usize, // user specified data
 
-        kernel_data: [7]usize = undefined, // internal data used by the kernel to store
-
-        pub fn cast(comptime T: type, arc: *ARC) *T {
+        pub fn cast(arc: *ARC, comptime T: type) *T {
+            comptime std.debug.assert(is_arc(T));
             std.debug.assert(arc.type == T.arc_type);
             return @fieldParentPtr("arc", arc);
         }
 
-        fn undefined_default(comptime T: type) ?*const anyopaque {
-            comptime {
-                const value: T = undefined;
-                return @ptrCast(&value);
-            }
-        }
-
         pub fn is_arc(comptime T: type) bool {
-            // hit me with your best shot:
-            return @hasField(T, "arc");
+            if (!@hasField(T, "arc")) return false;
+            if (std.meta.fieldInfo(T, .arc).type != ARC) return false;
+
+            if (!@hasDecl(T, "Inputs")) return false;
+            if (!@hasDecl(T, "Outputs")) return false;
+            if (!@hasDecl(T, "Error")) return false;
+            if (!@hasDecl(T, "arc_type")) return false;
+            if (@TypeOf(T.arc_type) != Type) return false;
+
+            return true;
         }
     };
 }

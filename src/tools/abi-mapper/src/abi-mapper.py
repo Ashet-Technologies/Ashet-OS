@@ -104,6 +104,7 @@ class DocComment:
 class Declaration:
     name: str
     docs: DocComment | None
+    full_qualified_name: RefValue[str] = field(kw_only=True, default_factory=lambda: RefValue[str](None))
 
 @dataclass(frozen=True, eq=True)
 class Parameter:
@@ -253,9 +254,16 @@ class ParameterCollection:
 
 
 
+@dataclass(frozen=True, eq=True)
+class EnumeratedComponent:
+    """
+    A component that can be listed in an enumeration.
+    """
+    key: RefValue[str] = field(kw_only=True,default_factory=lambda: RefValue[str](""))
+    number: RefValue[int]= field(kw_only=True, default_factory=lambda: RefValue[int](None))
 
 @dataclass(frozen=True, eq=True)
-class Function(Declaration):
+class Function(Declaration, EnumeratedComponent):
     params: ParameterCollection
     abi_return_type: Type
 
@@ -274,12 +282,10 @@ class ErrorSet(Declaration,Type):
     errors: set[str]
 
 @dataclass(frozen=True, eq=True)
-class AsyncOp(Declaration):
+class AsyncOp(Declaration, EnumeratedComponent):
     inputs: ParameterCollection
     outputs: ParameterCollection
     error: ErrorSet
-    key: RefValue[str] = field(default_factory=lambda: RefValue[str](""))
-    number: RefValue[int]= field(default_factory=lambda: RefValue[int](None))
 
 @dataclass(frozen=True, eq=True)
 class Container :
@@ -329,6 +335,7 @@ class ABI_Definition:
     errors: ErrorAllocation
     sys_resources: list[str]
     iops: list[AsyncOp]
+    syscalls: list[Function]
 
 def unwrap_items(func):
     def _deco(self, items):
@@ -627,7 +634,6 @@ def render_type(stream: CodeStream, t: Type, abi_namespace: str | None = None ):
             return _ns(value)
         return value
 
-
     if isinstance(t, ReferenceType):
 
         if is_builtin_type(t.name):
@@ -739,9 +745,7 @@ def render_arc_type(stream: CodeStream, iop: AsyncOp):
         stream.writeln('arc: ARC = .{')
         with stream.indent():
             stream.writeln('.type = arc_type,')
-            stream.writeln('.next = null,')
             stream.writeln('.tag = 0,')
-            stream.writeln('.kernel_data = undefined,')
         stream.writeln('},')
         stream.writeln('@"error": ErrorSet(Error) = undefined,')
         stream.writeln('inputs: Inputs,')
@@ -762,29 +766,12 @@ def render_arc_type(stream: CodeStream, iop: AsyncOp):
             return Self{ .inputs = __inputs };
         }
 
-        pub fn chain(self: *Self, next: anytype) void {
-            const Next = @TypeOf(next.*);
-            if (!@hasDecl(Next, "arc_type"))
-                @compileError("next must be a pointer to an ARC!");
-            const next_ptr: *Next = next;
-            const next_arc: *ARC = &next_ptr.async_op;
-
-            var it: ?*ARC = &self.async_op;
-            while (it) |p| : (it = p.next) {
-                if (p == &next_arc) // already in the chain
-                    return;
-
-                if (p.next == null) {
-                    p.next = &next_arc;
-                    return;
-                }
-            }
-
-            unreachable;
-        }
-
         pub fn set_ok(val: *Self) void {
             val.@"error" = .ok;
+        }
+
+        pub fn from_arc(arc: *ARC) *Self {
+            return @fieldParentPtr("arc", arc);
         }
         """)
 
@@ -796,6 +783,7 @@ def render_arc_type(stream: CodeStream, iop: AsyncOp):
                     stream.writeln(f"error.{err} => .{err},")
             stream.writeln("};")
         stream.writeln("}")
+        stream.writeln()
 
 
         stream.writeln("pub fn check_error(val: Self) (Error||error{Unexpected})!void {")
@@ -953,8 +941,25 @@ def render_abi_definition(stream:CodeStream, abi: ABI_Definition):
     stream.writeln()
     stream.writeln("/// Asynchronous operation type, defines numeric values for AsyncOps.")
     stream.writeln("pub const ARC_Type = enum(u32) {")
-    for iop in sorted(abi.iops, key=lambda iop: iop.number.value):
-        stream.writeln(f"    {iop.key.value} = {iop.number.value},")
+    with stream.indent():
+        for iop in sorted(abi.iops, key=lambda iop: iop.number.value):
+            stream.writeln(f"{iop.key.value} = {iop.number.value},")
+        
+        stream.writeln()
+
+        stream.writeln("pub fn as_type(comptime arc_type: @This()) type {");
+        with stream.indent():
+            stream.writeln("return switch(arc_type) {");
+            with stream.indent():
+                for iop in sorted(abi.iops, key=lambda iop: iop.number.value):
+                    stream.writeln(f".{iop.key.value} => {iop.full_qualified_name.value},")
+
+            stream.writeln("};")
+        stream.writeln("}")
+
+    stream.writeln()
+    stream.writeln()
+    stream.writeln()
     stream.writeln("};")
     stream.writeln()
     stream.writeln()
@@ -965,8 +970,8 @@ def render_abi_definition(stream:CodeStream, abi: ABI_Definition):
         for src in sys_resources:
             stream.writeln(f"{caseconverter.snakecase(src)},")
 
-    stream.writeln("    _,");
-    stream.writeln("};");
+    # stream.writeln("    _,")
+    stream.writeln("};")
 
     stream.writeln()
     stream.writeln("fn __SystemResourceCastResult(comptime t: __SystemResourceType) type {")
@@ -1087,6 +1092,9 @@ def render_kernel_implementation(stream, abi: ABI_Definition):
         render_type(stream, func.native_return_type, abi_namespace="abi")
         stream.writeln(' { ')
         with stream.indent():
+            stream.writeln(f'Callbacks.before_syscall(.{func.key.value});')
+            stream.writeln(f'defer Callbacks.after_syscall(.{func.key.value});')
+
             out_slices: list[tuple[str,str,str]] = list()
             for name, annotation, abi, natives in func.params:
 
@@ -1211,7 +1219,8 @@ const abi = @import("abi");
 ///
 /// Syscalls will are expected to be in their respective
 /// namespace as in the ABI file.
-pub fn create_exports(comptime Impl: type) type {
+pub fn create_exports(comptime Impl: type, comptime Callbacks: type) type {
+
     return struct {
 """)
 
@@ -1223,7 +1232,17 @@ pub fn create_exports(comptime Impl: type) type {
 
     stream.writeln()
 
+    stream.writeln("/// Enumeration of all syscall numbers.")
+    stream.writeln("pub const Syscall_ID = enum(u32) {")
+    for sc in sorted(abi.syscalls, key=lambda sc: sc.number.value):
+        stream.writeln(f"    {sc.key.value} = {sc.number.value},")
+    stream.writeln("};")
+
+    stream.writeln()
+
     all_error_sets.render_zig_to_native_mappers(stream)
+    
+
 
 
 @dataclass
@@ -1477,6 +1496,35 @@ class Renderer(StrEnum):
     userland = "userland"
     stubs= "stubs"
 
+def _create_enumeration(
+    declarations,
+    ElementType: type,
+):
+
+    numbers: dict[int,AsyncOp] = dict()
+
+    def allocate_iop_num(iop: AsyncOp, ns:list[str]):
+        index = len(numbers) + 1
+        name = "_".join([*ns, caseconverter.snakecase(iop.name)])
+        iop.key.value = name
+        iop.number.value = index
+        numbers[index] = iop
+        # print("assign", name, iop.number.value, iop.key.value)
+
+    foreach(declarations, ElementType, allocate_iop_num)
+
+    if len(numbers) > 1:
+        all_iops = [iop.key.value for iop in numbers.values()]
+        # print(all_iops)
+        iop_prefix = os.path.commonprefix(all_iops)
+        # print("common prefix: ", iop_prefix)
+        for iop in numbers.values():
+            # old = iop.key.value
+            iop.key.value = iop.key.value.removeprefix(iop_prefix)
+            # print(iop.name,repr(old), repr(iop.key.value))
+
+    return list(numbers.values())
+
 def main():
     global WITH_LINKNAME
 
@@ -1511,32 +1559,22 @@ def main():
     for decl in root_container.decls:
         errors.collect(decl)
 
-    iop_numbers: dict[int,AsyncOp] = dict()
+    iop_list = _create_enumeration(
+        root_container.decls,
+        AsyncOp,
+    )
 
-    def allocate_iop_num(iop: AsyncOp, ns:list[str]):
-        index = len(iop_numbers) + 1
-        name = "_".join([*ns, caseconverter.snakecase(iop.name)])
-        iop.key.value = name
-        iop.number.value = index
-        iop_numbers[index] = iop
-        # print("assign", name, iop.number.value, iop.key.value)
-
-    foreach(root_container.decls, AsyncOp, allocate_iop_num)
-
-    # print(iop_numbers)
-
-    if len(iop_numbers) > 1:
-        all_iops = [iop.key.value for iop in iop_numbers.values()]
-        # print(all_iops)
-        iop_prefix = os.path.commonprefix(all_iops)
-        # print("common prefix: ", iop_prefix)
-        for iop in iop_numbers.values():
-            # old = iop.key.value
-            iop.key.value = iop.key.value.removeprefix(iop_prefix)
-            # print(iop.name,repr(old), repr(iop.key.value))
+    syscall_list = _create_enumeration(
+        root_container.decls,
+        Function,
+    )
 
     foreach(root_container.decls, Function, func=assert_legal_extern_fn)
 
+    def _set_ns_name(decl: Declaration, ns: list[str]):
+        decl.full_qualified_name.value = ".".join((*ns, decl.name ))
+
+    foreach(root_container.decls, Declaration, func=_set_ns_name)
 
     sys_resources: list[str] = list()
 
@@ -1549,7 +1587,8 @@ def main():
         root_container=root_container,
         errors=errors,
         sys_resources=sys_resources,
-        iops=list(iop_numbers.values())
+        iops=iop_list,
+        syscalls=syscall_list,
     )
 
     renderer = {

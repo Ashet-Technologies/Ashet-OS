@@ -66,7 +66,7 @@ doc_comment: doc_comment_line doc_comment_line *
 
 value: integer | identifier
 
-identifier: /[a-zA-Z_0-9\.]+/
+identifier: /[a-zA-Z_0-9\.]+|@"[^"+]"/
 
 integer: /-?\d+/
 

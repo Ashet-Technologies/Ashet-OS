@@ -9,6 +9,11 @@ pub const Resolution = ashet.abi.Size;
 
 pub const Output = struct {
     system_resource: ashet.resources.SystemResource = .{ .type = .video_output },
+
+    pub fn destroy(sock: *Output) void {
+        _ = sock;
+        @panic("Not implemented yet!");
+    }
 };
 
 /// If true, the kernel will automatically flush the screen in a background process.
