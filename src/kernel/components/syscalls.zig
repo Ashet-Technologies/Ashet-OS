@@ -34,28 +34,44 @@ const callbacks = struct {
 
 pub const syscalls = struct {
     pub const resources = struct {
-        pub fn get_type(res: abi.SystemResource) abi.SystemResource.Type {
-            _ = res;
-            @panic("not implemented yet");
+        pub fn get_type(src_handle: abi.SystemResource) !abi.SystemResource.Type {
+            _, const resource = resolve_base_resource(src_handle) catch return error.BadHandle;
+            return resource.type;
         }
 
-        pub fn get_owners(res: abi.SystemResource, owners: ?[]abi.Process) usize {
-            _ = res;
-            _ = owners;
-            @panic("not implemented yet");
+        pub fn get_owners(src_handle: abi.SystemResource, maybe_owners: ?[]abi.Process) usize {
+            _, const src = resolve_base_resource(src_handle) catch return 0;
+
+            if (maybe_owners) |owners| {
+                const limit = @min(src.owners.len, owners.len);
+                var iter = src.owners.first;
+                for (0..limit) |i| {
+                    owners[i] = @ptrCast(iter.?.data.process); // TODO: Transform to handle here!
+                    iter = iter.?.next;
+                }
+                return limit;
+            } else {
+                return src.owners.len;
+            }
         }
+
         pub fn send_to_process(res: abi.SystemResource, proc: abi.Process) void {
             _ = res;
             _ = proc;
             @panic("not implemented yet");
         }
-        pub fn release(res: abi.SystemResource) void {
-            _ = res;
-            @panic("not implemented yet");
+
+        pub fn release(src_handle: abi.SystemResource) void {
+            const proc, const resource = resolve_base_resource(src_handle) catch return;
+
+            const ownership = proc.resources.resolve(src_handle) catch return;
+
+            resource.remove_owner(ownership);
         }
-        pub fn destroy(res: abi.SystemResource) void {
-            _ = res;
-            @panic("not implemented yet");
+
+        pub fn destroy(src_handle: abi.SystemResource) void {
+            _, const resource = resolve_base_resource(src_handle) catch return;
+            resource.destroy();
         }
     };
 
@@ -88,22 +104,25 @@ pub const syscalls = struct {
 
         pub const thread = struct {
             pub fn yield() void {
-                //
+                ashet.scheduler.yield();
             }
+
             pub fn exit(exit_code: abi.ExitCode) noreturn {
-                _ = exit_code;
-                @panic("not implemented yet");
+                ashet.scheduler.exit(@intFromEnum(exit_code));
             }
+
             pub fn join(thr: abi.Thread) abi.ExitCode {
                 _ = thr;
                 @panic("not implemented yet");
             }
+
             pub fn spawn(function: abi.ThreadFunction, arg: ?*anyopaque, stack_size: usize) ?abi.Thread {
                 _ = function;
                 _ = arg;
                 _ = stack_size;
                 @panic("not implemented yet");
             }
+
             pub fn kill(thr: abi.Thread, exit_code: abi.ExitCode) void {
                 _ = thr;
                 _ = exit_code;
@@ -113,25 +132,46 @@ pub const syscalls = struct {
 
         pub const debug = struct {
             pub fn write_log(log_level: abi.LogLevel, message: []const u8) void {
-                _ = log_level;
-                _ = message;
-                @panic("not implemented yet");
+                const proc = getCurrentProcess();
+
+                const logger = std.log.scoped(.userland);
+
+                switch (log_level) {
+                    .critical => logger.info("{s}(critical): {s}", .{ proc.name, message }),
+                    .err => logger.info("{s}(err): {s}", .{ proc.name, message }),
+                    .warn => logger.info("{s}(warn): {s}", .{ proc.name, message }),
+                    .notice => logger.info("{s}(notice): {s}", .{ proc.name, message }),
+                    .debug => logger.info("{s}(debug): {s}", .{ proc.name, message }),
+                    _ => logger.info("{s}(unknown,{}): {s}", .{ proc.name, @intFromEnum(log_level), message }),
+                }
             }
             pub fn breakpoint() void {
-                @panic("not implemented yet");
+                const proc = getCurrentProcess();
+                std.log.scoped(.userland).info("breakpoint in process {s}.", .{proc.name});
+
+                var cont: bool = false;
+                while (!cont) {
+                    std.mem.doNotOptimizeAway(&cont);
+                }
             }
         };
 
         pub const memory = struct {
             pub fn allocate(size: usize, ptr_align: u8) ?[*]u8 {
-                _ = size;
-                _ = ptr_align;
-                @panic("not implemented yet");
+                const proc = getCurrentProcess();
+                return proc.dynamic_allocator().rawAlloc(
+                    size,
+                    ptr_align,
+                    @returnAddress(),
+                );
             }
             pub fn release(mem: []u8, ptr_align: u8) void {
-                _ = mem;
-                _ = ptr_align;
-                @panic("not implemented yet");
+                const proc = getCurrentProcess();
+                proc.dynamic_allocator().rawFree(
+                    mem,
+                    ptr_align,
+                    @returnAddress(),
+                );
             }
         };
     };

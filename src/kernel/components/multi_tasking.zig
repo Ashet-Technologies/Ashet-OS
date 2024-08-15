@@ -198,6 +198,13 @@ pub const Process = struct {
         return proc.memory_arena.allocator();
     }
 
+    /// Returns a handle to a general purpose allocator associated with the process.
+    pub fn dynamic_allocator(proc: *Process) std.mem.Allocator {
+        std.debug.assert(!proc.is_zombie());
+        // TODO(fqu): Actually implemenet this!
+        return proc.memory_arena.allocator();
+    }
+
     /// Assigns this process the system resource `res` and returns the handle.
     pub fn assign_new_resource(proc: *Process, res: *ashet.resources.SystemResource) error{SystemResources}!ashet.abi.SystemResource {
         const info = proc.resources.alloc() catch return error.SystemResources;

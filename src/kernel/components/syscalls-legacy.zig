@@ -111,50 +111,11 @@ const impls = struct {
         return ashet.video.getResolution();
     }
 
-    export fn @"ashet.process.exit"(exit_code: u32) callconv(.C) noreturn {
-        ashet.scheduler.exit(exit_code);
-    }
-
-    export fn @"ashet.process.yield"() callconv(.C) void {
-        ashet.scheduler.yield();
-    }
-
     export fn @"ashet.process.getBaseAddress"() callconv(.C) usize {
         return if (getCurrentProcess().executable_memory) |mem|
             @intFromPtr(mem.ptr)
         else
             0;
-    }
-
-    export fn @"ashet.process.getFileName"() callconv(.C) [*:0]const u8 {
-        return getCurrentProcess().name.ptr;
-    }
-
-    export fn @"ashet.process.writeLog"(log_level: abi.LogLevel, ptr: [*]const u8, len: usize) callconv(.C) void {
-        const string = ptr[0..len];
-
-        const proc = getCurrentProcess();
-
-        const logger = std.log.scoped(.userland);
-
-        switch (log_level) {
-            .critical => logger.info("{s}(critical): {s}", .{ proc.name, string }),
-            .err => logger.info("{s}(err): {s}", .{ proc.name, string }),
-            .warn => logger.info("{s}(warn): {s}", .{ proc.name, string }),
-            .notice => logger.info("{s}(notice): {s}", .{ proc.name, string }),
-            .debug => logger.info("{s}(debug): {s}", .{ proc.name, string }),
-            _ => logger.info("{s}(unknown,{}): {s}", .{ proc.name, @intFromEnum(log_level), string }),
-        }
-    }
-
-    export fn @"ashet.process.breakpoint"() callconv(.C) void {
-        const proc = getCurrentProcess();
-        std.log.scoped(.userland).info("breakpoint in process {s}.", .{proc.name});
-
-        var cont: bool = false;
-        while (!cont) {
-            std.mem.doNotOptimizeAway(&cont);
-        }
     }
 
     export fn @"ashet.ui.createWindow"(title: [*]const u8, title_len: usize, min: abi.Size, max: abi.Size, startup: abi.Size, flags: abi.CreateWindowFlags) callconv(.C) ?*const abi.Window {
@@ -231,10 +192,6 @@ const impls = struct {
         ashet.network.udp.destroySocket(sock);
     }
 
-    export fn @"ashet.time.nanoTimestamp"() callconv(.C) i128 {
-        return ashet.time.nanoTimestamp();
-    }
-
     export fn @"ashet.network.tcp.createSocket"(out: *abi.TcpSocket) callconv(.C) abi.tcp.CreateError.Enum {
         out.* = ashet.network.tcp.createSocket() catch |e| return abi.tcp.CreateError.map(e);
         return .ok;
@@ -244,14 +201,6 @@ const impls = struct {
         ashet.network.tcp.destroySocket(sock);
     }
 
-    export fn @"ashet.io.scheduleAndAwait"(start_queue: ?*abi.IOP, wait: abi.WaitIO) callconv(.C) ?*abi.IOP {
-        return ashet.io.scheduleAndAwait(start_queue, wait);
-    }
-
-    export fn @"ashet.io.cancel"(event: *abi.IOP) callconv(.C) void {
-        return ashet.io.cancel(event);
-    }
-
     export fn @"ashet.fs.findFilesystem"(name_ptr: [*]const u8, name_len: usize) callconv(.C) abi.FileSystemId {
         if (ashet.filesystem.findFilesystem(name_ptr[0..name_len])) |fs| {
             std.debug.assert(fs != .invalid);
@@ -259,25 +208,6 @@ const impls = struct {
         } else {
             return .invalid;
         }
-    }
-
-    export fn @"ashet.process.memory.allocate"(size: usize, ptr_align: u8) callconv(.C) ?[*]u8 {
-        const process = getCurrentProcess();
-        return process.memory_arena.allocator().rawAlloc(
-            size,
-            ptr_align,
-            @returnAddress(),
-        );
-    }
-
-    export fn @"ashet.process.memory.release"(ptr: [*]u8, size: usize, ptr_align: u8) callconv(.C) void {
-        const process = getCurrentProcess();
-        const slice = ptr[0..size];
-        process.memory_arena.allocator().rawFree(
-            slice,
-            ptr_align,
-            @returnAddress(),
-        );
     }
 
     export fn @"ashet.ui.getSystemFont"(font_name_ptr: [*]const u8, font_name_len: usize, font_data_ptr: *[*]const u8, font_data_len: *usize) callconv(.C) abi.GetSystemFontError.Enum {
@@ -298,46 +228,4 @@ const impls = struct {
         // return .ok;
     }
 
-    export fn @"ashet.resources.get_type"(src_handle: ashet.abi.SystemResource) ashet.abi.SystemResourceType {
-        _, const resource = resolve_base_resource(src_handle) catch return .bad_handle;
-        return resource.type;
-    }
-
-    export fn @"ashet.resources.get_owners"(src_handle: ashet.abi.SystemResource, maybe_owners_ptr: ?[*]ashet.abi.Process, owners_len: usize) usize {
-        _, const src = resolve_base_resource(src_handle) catch return 0;
-
-        if (maybe_owners_ptr) |owners_ptr| {
-            const limit = @min(src.owners.len, owners_len);
-            var iter = src.owners.first;
-            for (0..limit) |i| {
-                owners_ptr[i] = @ptrCast(iter.?.data.process); // TODO: Transform to handle here!
-                iter = iter.?.next;
-            }
-            return limit;
-        } else {
-            return src.owners.len;
-        }
-    }
-
-    export fn @"ashet.resources.release"(src_handle: ashet.abi.SystemResource) ashet.abi.FreeResourceError {
-        const process, const resource = resolve_base_resource(src_handle) catch return .bad_handle;
-
-        const ownership = process.resources.resolve(src_handle) catch return .bad_handle;
-
-        resource.remove_owner(ownership);
-
-        return .success;
-    }
-
-    export fn @"ashet.resources.destroy"(src_handle: ashet.abi.SystemResource) ashet.abi.FreeResourceError {
-        _, const resource = resolve_base_resource(src_handle) catch return .bad_handle;
-        resource.destroy();
-        return .success;
-    }
-
-    export fn @"ashet.random.get_soft_random"(ptr: [*]u8, len: usize) void {
-        ashet.random.get_random_bytes(ptr[0..len]);
-    }
-
 };
-

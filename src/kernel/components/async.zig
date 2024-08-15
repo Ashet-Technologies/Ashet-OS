@@ -497,6 +497,8 @@ pub const WorkQueue = struct {
     /// Returns `null` if no work items are present.
     pub fn dequeue(wq: *WorkQueue) ?*AsyncCall {
         const node = wq.queue.popFirst() orelse return null;
+        node.next = null;
+        node.prev = null;
         const call: *AsyncCall = @fieldParentPtr("work_link", node);
         return call;
     }

@@ -10,7 +10,7 @@
 /// All syscalls related to generic resource management.
 const resources = struct {
     /// Returns the type of the system resource.
-    extern fn get_type(SystemResource) SystemResource.Type;
+    extern fn get_type(SystemResource) error{BadHandle}!SystemResource.Type;
 
     /// Returns the current owner of this resource.
     extern fn get_owners(SystemResource, owners: ?[]Process) usize;
@@ -767,8 +767,8 @@ pub const SystemResource = enum(usize) {
     _,
 
     /// Casts the resource into a concrete type. Fails, if the type does not match.
-    pub fn cast(resource: SystemResource, comptime t: Type) error{InvalidType}!CastResult(t) {
-        const actual = resources.get_type(resource);
+    pub fn cast(resource: SystemResource, comptime t: Type) error{ BadHandle, InvalidType }!CastResult(t) {
+        const actual = try resources.get_type(resource);
         if (actual != t)
             return error.InvalidType;
         return resource.unsafe_cast(t);
