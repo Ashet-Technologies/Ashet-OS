@@ -189,13 +189,13 @@ pub const process = struct {
     };
 };
 
-pub const io = struct {
+pub const overlapped = struct {
     pub const ARC = abi.ARC;
     pub const WaitIO = abi.WaitIO;
     pub const ThreadAffinity = abi.ThreadAffinity;
 
     // pub fn scheduleAndAwait(start_queue: ?*IOP, wait: WaitIO) ?*IOP {
-    //     const result = abi.syscalls.@"ashet.io.scheduleAndAwait"(start_queue, wait);
+    //     const result = abi.syscalls.@"ashet.overlapped.scheduleAndAwait"(start_queue, wait);
     //     if (wait == .schedule_only)
     //         std.debug.assert(result == null);
     //     return result;
@@ -212,11 +212,11 @@ pub const io = struct {
             @compileError("singleShot expects a pointer to an ARC instance");
         const event: *ARC = &op.arc;
 
-        try userland.arcs.schedule(event);
+        try userland.overlapped.schedule(event);
 
         var completed: [1]*ARC = undefined;
 
-        const count = try userland.arcs.await_completion(&completed, .{
+        const count = try userland.overlapped.await_completion(&completed, .{
             .thread_affinity = .this_thread,
             .wait = .wait_one,
         });
@@ -244,7 +244,7 @@ pub const io = struct {
 //     };
 
 //     pub fn getEvent() !Event {
-//         const out = try io.performOne(abi.input.GetEvent, .{});
+//         const out = try overlapped.performOne(abi.input.GetEvent, .{});
 //         return switch (out.event_type) {
 //             .keyboard => Event{ .keyboard = out.event.keyboard },
 //             .mouse => Event{ .mouse = out.event.mouse },
@@ -252,12 +252,12 @@ pub const io = struct {
 //     }
 
 //     pub fn getMouseEvent() abi.MouseEvent {
-//         const out = try io.performOne(abi.input.GetMouseEvent, .{});
+//         const out = try overlapped.performOne(abi.input.GetMouseEvent, .{});
 //         return out.event;
 //     }
 
 //     pub fn getKeyboardEvent() abi.KeyboardEvent {
-//         const out = try io.performOne(abi.input.GetKeyboardEvent, .{});
+//         const out = try overlapped.performOne(abi.input.GetKeyboardEvent, .{});
 //         return out.event;
 //     }
 // };
@@ -405,7 +405,7 @@ pub const io = struct {
 //     }
 
 //     pub fn getEvent(win: *const Window) Event {
-//         const out = io.performOne(abi.ui.GetEvent, .{ .window = win }) catch unreachable;
+//         const out = overlapped.performOne(abi.ui.GetEvent, .{ .window = win }) catch unreachable;
 //         return constructEvent(out.event_type, out.event);
 //     }
 
@@ -462,7 +462,7 @@ pub const fs = struct {
         offset: u64,
 
         pub fn close(file: *File) void {
-            _ = io.performOne(abi.fs.CloseFile, .{ .file = file.handle }) catch |err| {
+            _ = overlapped.performOne(abi.fs.CloseFile, .{ .file = file.handle }) catch |err| {
                 std.log.scoped(.filesystem).err("failed to close file handle {}: {s}", .{ file.handle, @errorName(err) });
                 return;
             };
@@ -470,7 +470,7 @@ pub const fs = struct {
         }
 
         pub fn flush(file: *File) !void {
-            _ = try io.performOne(abi.fs.file.Flush, .{ .file = file.handle });
+            _ = try overlapped.performOne(abi.fs.file.Flush, .{ .file = file.handle });
         }
 
         fn streamRead(file: *File, buffer: []u8) ReadError!usize {
@@ -486,7 +486,7 @@ pub const fs = struct {
         }
 
         pub fn read(file: File, offset: u64, buffer: []u8) ReadError!usize {
-            const out = try io.performOne(abi.fs.Read, .{
+            const out = try overlapped.performOne(abi.fs.Read, .{
                 .file = file.handle,
                 .offset = offset,
                 .buffer_ptr = buffer.ptr,
@@ -496,7 +496,7 @@ pub const fs = struct {
         }
 
         pub fn write(file: File, offset: u64, buffer: []const u8) WriteError!usize {
-            const out = try io.performOne(abi.fs.Write, .{
+            const out = try overlapped.performOne(abi.fs.Write, .{
                 .file = file.handle,
                 .offset = offset,
                 .buffer_ptr = buffer.ptr,
@@ -506,7 +506,7 @@ pub const fs = struct {
         }
 
         pub fn stat(file: File) StatError!abi.FileInfo {
-            const out = try io.performOne(abi.fs.StatFile, .{
+            const out = try overlapped.performOne(abi.fs.StatFile, .{
                 .file = file.handle,
             });
             return out.info;
@@ -551,7 +551,7 @@ pub const fs = struct {
         handle: abi.Directory,
 
         pub fn openDrive(filesystem: abi.FileSystemId, path: []const u8) OpenDriveError!Directory {
-            const out = try io.performOne(abi.fs.OpenDrive, .{
+            const out = try overlapped.performOne(abi.fs.OpenDrive, .{
                 .fs = filesystem,
                 .path_ptr = path.ptr,
                 .path_len = path.len,
@@ -562,7 +562,7 @@ pub const fs = struct {
         }
 
         pub fn openDir(dir: Directory, path: []const u8) OpenError!Directory {
-            const out = try io.performOne(abi.fs.OpenDir, .{
+            const out = try overlapped.performOne(abi.fs.OpenDir, .{
                 .dir = dir.handle,
                 .path_ptr = path.ptr,
                 .path_len = path.len,
@@ -573,7 +573,7 @@ pub const fs = struct {
         }
 
         pub fn close(dir: *Directory) void {
-            _ = io.performOne(abi.fs.CloseDir, .{ .dir = dir.handle }) catch |err| {
+            _ = overlapped.performOne(abi.fs.CloseDir, .{ .dir = dir.handle }) catch |err| {
                 std.log.scoped(.filesystem).err("failed to close directory handle {}: {s}", .{ dir.handle, @errorName(err) });
                 return;
             };
@@ -583,12 +583,12 @@ pub const fs = struct {
 
         pub const ResetError = abi.fs.ResetDirEnumerationError.Error || GenericError;
         pub fn reset(dir: *Directory) ResetError!void {
-            _ = try io.performOne(abi.fs.ResetDirEnumeration, .{ .dir = dir.handle });
+            _ = try overlapped.performOne(abi.fs.ResetDirEnumeration, .{ .dir = dir.handle });
         }
 
         pub const NextError = abi.fs.EnumerateDirError.Error || GenericError;
         pub fn next(dir: *Directory) NextError!?abi.FileInfo {
-            const out = try io.performOne(abi.fs.EnumerateDir, .{ .dir = dir.handle });
+            const out = try overlapped.performOne(abi.fs.EnumerateDir, .{ .dir = dir.handle });
 
             return if (out.eof)
                 null
@@ -598,7 +598,7 @@ pub const fs = struct {
 
         pub const OpenFileError = abi.fs.OpenFile.Error || GenericError;
         pub fn openFile(dir: Directory, path: []const u8, access: abi.FileAccess, mode: abi.FileMode) OpenFileError!File {
-            const out = try io.performOne(abi.fs.OpenFile, .{
+            const out = try overlapped.performOne(abi.fs.OpenFile, .{
                 .dir = dir.handle,
                 .path_ptr = path.ptr,
                 .path_len = path.len,
@@ -634,7 +634,7 @@ pub const fs = struct {
 //         }
 
 //         pub fn bind(tcp: *Tcp, endpoint: EndPoint) !EndPoint {
-//             const out = try io.performOne(abi.tcp.Bind, .{
+//             const out = try overlapped.performOne(abi.tcp.Bind, .{
 //                 .socket = tcp.sock,
 //                 .bind_point = endpoint,
 //             });
@@ -642,14 +642,14 @@ pub const fs = struct {
 //         }
 
 //         pub fn connect(tcp: *Tcp, endpoint: EndPoint) !void {
-//             _ = try io.performOne(abi.tcp.Connect, .{
+//             _ = try overlapped.performOne(abi.tcp.Connect, .{
 //                 .socket = tcp.sock,
 //                 .target = endpoint,
 //             });
 //         }
 
 //         pub fn write(tcp: *Tcp, data: []const u8) abi.tcp.Send.Error!usize {
-//             const out = try io.performOne(abi.tcp.Send, .{
+//             const out = try overlapped.performOne(abi.tcp.Send, .{
 //                 .socket = tcp.sock,
 //                 .data_ptr = data.ptr,
 //                 .data_len = data.len,
@@ -658,7 +658,7 @@ pub const fs = struct {
 //         }
 
 //         pub fn read(tcp: *Tcp, buffer: []u8) abi.tcp.Receive.Error!usize {
-//             const out = try io.performOne(abi.tcp.Receive, .{
+//             const out = try overlapped.performOne(abi.tcp.Receive, .{
 //                 .socket = tcp.sock,
 //                 .buffer_ptr = buffer.ptr,
 //                 .buffer_len = buffer.len,
@@ -695,7 +695,7 @@ pub const fs = struct {
 //         }
 
 //         pub fn bind(udp: Udp, ep: EndPoint) !EndPoint {
-//             const out = try io.performOne(abi.udp.Bind, .{
+//             const out = try overlapped.performOne(abi.udp.Bind, .{
 //                 .socket = udp.sock,
 //                 .bind_point = ep,
 //             });
@@ -703,14 +703,14 @@ pub const fs = struct {
 //         }
 
 //         pub fn connect(udp: Udp, ep: EndPoint) !void {
-//             _ = try io.performOne(abi.udp.Connect, .{
+//             _ = try overlapped.performOne(abi.udp.Connect, .{
 //                 .socket = udp.sock,
 //                 .target = ep,
 //             });
 //         }
 
 //         pub fn disconnect(udp: Udp) !void {
-//             _ = try io.performOne(abi.udp.Disconnect, .{
+//             _ = try overlapped.performOne(abi.udp.Disconnect, .{
 //                 .socket = udp.sock,
 //             });
 //         }
@@ -718,7 +718,7 @@ pub const fs = struct {
 //         pub fn send(udp: Udp, message: []const u8) !usize {
 //             if (message.len == 0)
 //                 return 0;
-//             const out = try io.performOne(abi.udp.Send, .{
+//             const out = try overlapped.performOne(abi.udp.Send, .{
 //                 .socket = udp.sock,
 //                 .data_ptr = message.ptr,
 //                 .data_len = message.len,
@@ -729,7 +729,7 @@ pub const fs = struct {
 //         pub fn sendTo(udp: Udp, target: EndPoint, message: []const u8) !usize {
 //             if (message.len == 0)
 //                 return 0;
-//             const out = try io.performOne(abi.udp.SendTo, .{
+//             const out = try overlapped.performOne(abi.udp.SendTo, .{
 //                 .socket = udp.sock,
 //                 .receiver = target,
 //                 .data_ptr = message.ptr,
@@ -747,7 +747,7 @@ pub const fs = struct {
 //             if (data.len == 0)
 //                 return 0;
 
-//             const out = try io.performOne(abi.udp.ReceiveFrom, .{
+//             const out = try overlapped.performOne(abi.udp.ReceiveFrom, .{
 //                 .socket = udp.sock,
 //                 .buffer_ptr = data.ptr,
 //                 .buffer_len = data.len,

@@ -12,7 +12,7 @@ pub fn Generic_ARC(comptime Type: type) type {
         pub fn cast(arc: *ARC, comptime T: type) *T {
             comptime std.debug.assert(is_arc(T));
             std.debug.assert(arc.type == T.arc_type);
-            return @fieldParentPtr("arc", arc);
+            return @fieldParentPtr("arc", @as(*align(@alignOf(T)) ARC, @alignCast(arc)));
         }
 
         pub fn is_arc(comptime T: type) bool {

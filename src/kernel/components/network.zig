@@ -524,7 +524,7 @@ pub const udp = struct {
         system_resource: ashet.resources.SystemResource = .{ .type = .udp_socket },
 
         pcb: *c.udp_pcb,
-        receive_iop: ?*ashet.@"async".AsyncCall = null,
+        receive_iop: ?*ashet.overlapped.AsyncCall = null,
 
         pub fn create() error{SystemResources}!*Socket {
             const socket = ashet.memory.type_pool(Socket).alloc() catch return error.SystemResources;
@@ -548,7 +548,7 @@ pub const udp = struct {
             return @ptrCast(@alignCast(arg.?));
         }
 
-        fn resolve(call: *ashet.@"async".AsyncCall, dir: ashet.abi.UdpSocket) error{InvalidHandle}!*Socket {
+        fn resolve(call: *ashet.overlapped.AsyncCall, dir: ashet.abi.UdpSocket) error{InvalidHandle}!*Socket {
             const proc = call.get_process();
             return ashet.resources.resolve(Socket, proc, dir.as_resource()) catch |err| {
                 logger.warn("process {} used invalid socket handle {}: {s}", .{ proc, dir, @errorName(err) });
@@ -589,7 +589,7 @@ pub const udp = struct {
         });
     }
 
-    pub fn bind(call: *ashet.@"async".AsyncCall, inputs: abi_udp.Bind.Inputs) void {
+    pub fn bind(call: *ashet.overlapped.AsyncCall, inputs: abi_udp.Bind.Inputs) void {
         const socket = Socket.resolve(call, inputs.socket) catch |err| {
             return call.finalize(abi_udp.Bind, err);
         };
@@ -601,7 +601,7 @@ pub const udp = struct {
         call.finalize(abi_udp.Bind, .{});
     }
 
-    pub fn connect(call: *ashet.@"async".AsyncCall, inputs: abi_udp.Connect.Inputs) void {
+    pub fn connect(call: *ashet.overlapped.AsyncCall, inputs: abi_udp.Connect.Inputs) void {
         const socket = Socket.resolve(call, inputs.socket) catch |err| {
             return call.finalize(abi_udp.Connect, err);
         };
@@ -611,7 +611,7 @@ pub const udp = struct {
         call.finalize(abi_udp.Connect, .{});
     }
 
-    pub fn disconnect(call: *ashet.@"async".AsyncCall, inputs: abi_udp.Disconnect.Inputs) void {
+    pub fn disconnect(call: *ashet.overlapped.AsyncCall, inputs: abi_udp.Disconnect.Inputs) void {
         const socket = Socket.resolve(call, inputs.socket) catch |err| {
             return call.finalize(abi_udp.Bind, err);
         };
@@ -619,7 +619,7 @@ pub const udp = struct {
         call.finalize(abi_udp.Disconnect, .{});
     }
 
-    pub fn send(call: *ashet.@"async".AsyncCall, inputs: abi_udp.Send.Inputs) void {
+    pub fn send(call: *ashet.overlapped.AsyncCall, inputs: abi_udp.Send.Inputs) void {
         const socket = Socket.resolve(call, inputs.socket) catch |err| {
             return call.finalize(abi_udp.Send, err);
         };
@@ -644,7 +644,7 @@ pub const udp = struct {
         call.finalize(abi_udp.Send, .{ .bytes_sent = stripped_len });
     }
 
-    pub fn sendTo(call: *ashet.@"async".AsyncCall, inputs: abi_udp.SendTo.Inputs) void {
+    pub fn sendTo(call: *ashet.overlapped.AsyncCall, inputs: abi_udp.SendTo.Inputs) void {
         const socket = Socket.resolve(call, inputs.socket) catch |err| {
             return call.finalize(abi_udp.SendTo, err);
         };
@@ -669,7 +669,7 @@ pub const udp = struct {
         call.finalize(abi_udp.SendTo, .{ .bytes_sent = stripped_len });
     }
 
-    pub fn receiveFrom(call: *ashet.@"async".AsyncCall, inputs: abi_udp.ReceiveFrom.Inputs) void {
+    pub fn receiveFrom(call: *ashet.overlapped.AsyncCall, inputs: abi_udp.ReceiveFrom.Inputs) void {
         const socket = Socket.resolve(call, inputs.socket) catch |err| {
             return call.finalize(abi_udp.Bind, err);
         };
@@ -683,7 +683,7 @@ pub const udp = struct {
         }
     }
 
-    fn cancel_receive_from(call: *ashet.@"async".AsyncCall) void {
+    fn cancel_receive_from(call: *ashet.overlapped.AsyncCall) void {
         const socket = Socket.from_callback(call.cancel_context);
 
         // Cancelling the receive operation is pretty trivial here:
@@ -697,7 +697,7 @@ pub const tcp = struct {
     const max_sockets = @as(usize, @intCast(c.MEMP_NUM_TCP_PCB));
 
     const Op = union(enum) {
-        connect: *ashet.@"async".AsyncCall,
+        connect: *ashet.overlapped.AsyncCall,
         receive: ReceiveOp,
         send: SendOp,
 
@@ -720,14 +720,14 @@ pub const tcp = struct {
     };
 
     const SendOp = struct {
-        event: *ashet.@"async".AsyncCall,
+        event: *ashet.overlapped.AsyncCall,
         total_sent: usize = 0, // total bytes transferred for `event`.
         chunk_size: usize = 0, // passsed bytes for the current chunk (invocation of op.total_sent
         chunk_sent: usize = 0, // transferred bytes for the current chunk (invocation of op.total_sent)
     };
 
     const ReceiveOp = struct {
-        event: *ashet.@"async".AsyncCall,
+        event: *ashet.overlapped.AsyncCall,
         write_offset: usize = 0,
     };
 
@@ -778,7 +778,7 @@ pub const tcp = struct {
         }
     };
 
-    fn resolve_socket(call: *ashet.@"async".AsyncCall, dir: ashet.abi.TcpSocket) error{InvalidHandle}!*Socket {
+    fn resolve_socket(call: *ashet.overlapped.AsyncCall, dir: ashet.abi.TcpSocket) error{InvalidHandle}!*Socket {
         const proc = call.get_process();
         return ashet.resources.resolve(Socket, proc, dir.as_resource()) catch |err| {
             logger.warn("process {} used invalid socket handle {}: {s}", .{ proc, dir, @errorName(err) });
@@ -796,7 +796,7 @@ pub const tcp = struct {
         }
     }
 
-    pub fn bind(call: *ashet.@"async".AsyncCall, inputs: abi_tcp.Bind.Inputs) void {
+    pub fn bind(call: *ashet.overlapped.AsyncCall, inputs: abi_tcp.Bind.Inputs) void {
         const socket = resolve_socket(call, inputs.socket) catch |err| {
             return call.finalize(abi_tcp.Bind, err);
         };
@@ -811,7 +811,7 @@ pub const tcp = struct {
         }
     }
 
-    pub fn connect(call: *ashet.@"async".AsyncCall, inputs: abi_tcp.Connect.Inputs) void {
+    pub fn connect(call: *ashet.overlapped.AsyncCall, inputs: abi_tcp.Connect.Inputs) void {
         const socket = resolve_socket(call, inputs.socket) catch |err| {
             return call.finalize(abi_tcp.Bind, err);
         };
@@ -846,7 +846,7 @@ pub const tcp = struct {
         return c.ERR_OK;
     }
 
-    pub fn send(call: *ashet.@"async".AsyncCall, inputs: abi_tcp.Send.Inputs) void {
+    pub fn send(call: *ashet.overlapped.AsyncCall, inputs: abi_tcp.Send.Inputs) void {
         const socket = resolve_socket(call, inputs.socket) catch |err| {
             return call.finalize(abi_tcp.Bind, err);
         };
@@ -921,7 +921,7 @@ pub const tcp = struct {
         return c.ERR_OK;
     }
 
-    pub fn receive(call: *ashet.@"async".AsyncCall, inputs: abi_tcp.Receive.Inputs) void {
+    pub fn receive(call: *ashet.overlapped.AsyncCall, inputs: abi_tcp.Receive.Inputs) void {
         const socket = resolve_socket(call, inputs.socket) catch |err| {
             return call.finalize(abi_tcp.Bind, err);
         };

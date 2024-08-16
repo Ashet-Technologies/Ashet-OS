@@ -56,7 +56,7 @@ pub const Process = struct {
     list_item: ProcessNode = .{ .data = {} },
 
     /// The IO context for scheduling IOPs
-    async_context: ashet.@"async".Context = .{},
+    async_context: ashet.overlapped.Context = .{},
 
     /// unfreeable process allocations
     memory_arena: std.heap.ArenaAllocator,

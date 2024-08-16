@@ -10,13 +10,13 @@ const io = ashet.userland.io;
 pub fn main() !void {
     _ = try ashet.process.debug.log_writer(.notice).write("Init system says hello!\r\n");
 
-    const apps_dir = try ashet.io.performOne(abi.fs.OpenDrive, .{
+    const apps_dir = try ashet.overlapped.performOne(abi.fs.OpenDrive, .{
         .fs = .system,
         .path_ptr = "apps",
         .path_len = 4,
     });
 
-    const desktop_proc = try ashet.io.performOne(abi.process.Spawn, .{
+    const desktop_proc = try ashet.overlapped.performOne(abi.process.Spawn, .{
         .dir = apps_dir.dir,
         .path_ptr = "desktop/classic",
         .path_len = 15,

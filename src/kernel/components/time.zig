@@ -82,11 +82,11 @@ pub const Deadline = struct {
 const Timer = ashet.abi.clock.Timer;
 const Alarm = ashet.abi.datetime.Alarm;
 
-var global_timer_queue: ashet.@"async".WorkQueue = .{
+var global_timer_queue: ashet.overlapped.WorkQueue = .{
     .wakeup_thread = null,
 };
 
-var global_alarm_queue: ashet.@"async".WorkQueue = .{
+var global_alarm_queue: ashet.overlapped.WorkQueue = .{
     .wakeup_thread = null,
 };
 
@@ -131,14 +131,14 @@ fn process_timer_events() void {
 }
 
 const TimerComparer = struct {
-    pub fn lt(_: @This(), lhs: *ashet.@"async".AsyncCall, rhs: *ashet.@"async".AsyncCall) bool {
+    pub fn lt(_: @This(), lhs: *ashet.overlapped.AsyncCall, rhs: *ashet.overlapped.AsyncCall) bool {
         const lhs_timer = lhs.arc.cast(Timer);
         const rhs_timer = rhs.arc.cast(Timer);
         return lhs_timer.inputs.timeout < rhs_timer.inputs.timeout;
     }
 };
 
-pub fn schedule_timer(call: *ashet.@"async".AsyncCall, inputs: Timer.Inputs) void {
+pub fn schedule_timer(call: *ashet.overlapped.AsyncCall, inputs: Timer.Inputs) void {
     const now = Instant.now();
     if (now.ms_since_start() >= inputs.timeout) {
         call.finalize(Timer, .{});
@@ -148,14 +148,14 @@ pub fn schedule_timer(call: *ashet.@"async".AsyncCall, inputs: Timer.Inputs) voi
 }
 
 const AlarmComparer = struct {
-    pub fn lt(_: @This(), lhs: *ashet.@"async".AsyncCall, rhs: *ashet.@"async".AsyncCall) bool {
+    pub fn lt(_: @This(), lhs: *ashet.overlapped.AsyncCall, rhs: *ashet.overlapped.AsyncCall) bool {
         const lhs_alarm = lhs.arc.cast(Alarm);
         const rhs_alarm = rhs.arc.cast(Alarm);
         return @intFromEnum(lhs_alarm.inputs.when) < @intFromEnum(rhs_alarm.inputs.when);
     }
 };
 
-pub fn schedule_alarm(call: *ashet.@"async".AsyncCall, inputs: Alarm.Inputs) void {
+pub fn schedule_alarm(call: *ashet.overlapped.AsyncCall, inputs: Alarm.Inputs) void {
     const now = milliTimestamp();
     if (now >= @intFromEnum(inputs.when)) {
         call.finalize(Alarm, .{});

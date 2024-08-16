@@ -222,17 +222,17 @@ pub const syscalls = struct {
         }
     };
 
-    pub const arcs = struct {
+    pub const overlapped = struct {
         pub fn schedule(async_call: *abi.ARC) error{ SystemResources, AlreadyScheduled }!void {
-            return try ashet.@"async".schedule(async_call);
+            return try ashet.overlapped.schedule(async_call);
         }
 
         pub fn await_completion(completed: []*abi.ARC, options: abi.Await_Options) error{Unscheduled}!usize {
-            return try ashet.@"async".await_completion(completed, options);
+            return try ashet.overlapped.await_completion(completed, options);
         }
 
         pub fn cancel(arc: *abi.ARC) error{ Unscheduled, Completed }!void {
-            return try ashet.@"async".cancel(arc);
+            return try ashet.overlapped.cancel(arc);
         }
     };
 

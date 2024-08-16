@@ -87,13 +87,14 @@ pub const start = struct {
             }});
         }
 
-        if (ashet.scheduler.Thread.current()) |thread| {
-            if (thread.process_link) |link| {
-                _ = link;
+        // TODO(fqu): Reimplement this
+        // if (ashet.scheduler.Thread.current()) |thread| {
+        //     if (thread.process_link) |link| {
+        //         _ = link;
 
-                ashet.scheduler.exit(1);
-            }
-        }
+        //         ashet.scheduler.exit(1);
+        //     }
+        // }
 
         @panic("unhandled trap");
     }
@@ -452,3 +453,11 @@ pub const AccessLevel = enum(u2) {
     reserved = 0b10,
     machine = 0b11,
 };
+
+pub fn get_cpu_random_seed() ?u64 {
+    return ControlStatusRegister.read(.time);
+}
+
+pub fn get_cpu_cycle_counter() u64 {
+    return ControlStatusRegister.read(.cycle);
+}

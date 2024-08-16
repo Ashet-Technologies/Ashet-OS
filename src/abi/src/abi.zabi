@@ -157,7 +157,7 @@ const video = struct {
     extern fn set_palette(VideoOutput, *const [palette_size]Color) error{Unsupported};
 };
 
-const arcs = struct {
+const overlapped = struct {
     /// Starts new asynchronous operations.
     ///
     /// NOTE: Until the operation has successfully completed or was

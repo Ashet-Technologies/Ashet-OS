@@ -771,7 +771,7 @@ def render_arc_type(stream: CodeStream, iop: AsyncOp):
         }
 
         pub fn from_arc(arc: *ARC) *Self {
-            return @fieldParentPtr("arc", arc);
+            return @fieldParentPtr("arc", @as(*align(@alignOf(Self)) ARC, @alignCast(arc)));
         }
         """)
 

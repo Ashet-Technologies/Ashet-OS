@@ -72,7 +72,7 @@ pub const raw = struct {
 /// stores incoming events from either interrupts or polling.
 var event_queue: astd.RingBuffer(raw.Event, 32) = .{};
 
-var event_awaiter: ?*ashet.@"async".AsyncCall = null;
+var event_awaiter: ?*ashet.overlapped.AsyncCall = null;
 
 var async_queue: astd.RingBuffer(raw.Event, 16) = .{};
 
@@ -97,7 +97,7 @@ pub fn push_raw_event(raw_event: raw.Event) void {
     }
 }
 
-pub fn schedule_get_event(call: *ashet.@"async".AsyncCall) void {
+pub fn schedule_get_event(call: *ashet.overlapped.AsyncCall) void {
     const proc = call.thread.get_process();
 
     if (!proc.isExclusiveVideoController()) {
@@ -115,7 +115,7 @@ pub fn schedule_get_event(call: *ashet.@"async".AsyncCall) void {
     }
 }
 
-fn finish_arc(call: *ashet.@"async".AsyncCall, evt: Event) void {
+fn finish_arc(call: *ashet.overlapped.AsyncCall, evt: Event) void {
     call.finalize(ashet.abi.input.GetEvent, .{ .event = evt });
 }
 
