@@ -151,6 +151,9 @@ fn main() !void {
     log.info("initialize filesystem...", .{});
     filesystem.initialize();
 
+    log.info("initialize overlapped workers...", .{});
+    try overlapped.initialize();
+
     log.info("initialize input...", .{});
     input.initialize();
 
@@ -389,6 +392,7 @@ pub const log_levels = struct {
     pub var drivers: LogLevel = .info;
     pub var mprot: LogLevel = .info; // very noise modules!
     pub var x86_vmm: LogLevel = .info; // very noise modules!
+    pub var overlapped: LogLevel = .info; // very noise modules!
 
     // drivers:
     pub var @"virtio-net": LogLevel = .info;

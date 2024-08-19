@@ -3,8 +3,6 @@ const ashet = @import("../main.zig");
 const libashet = @import("ashet");
 const logger = std.log.scoped(.apps);
 
-const loader = @import("loader.zig");
-
 pub const AppID = struct {
     name: []const u8,
 
@@ -23,28 +21,7 @@ pub fn startApp(app: AppID) !void {
     var file = try app_dir.openFile("code", .read_only, .open_existing);
     defer file.close();
 
-    const process = try ashet.multi_tasking.Process.create(.{
-        .stay_resident = false,
-        .name = app.getName(),
-    });
-    errdefer process.kill();
-
-    const loaded = try loader.load(&file, process.static_allocator(), .elf);
-
-    process.executable_memory = loaded.process_memory;
-
-    const thread = try ashet.scheduler.Thread.spawn(
-        @as(ashet.scheduler.ThreadFunction, @ptrFromInt(loaded.entry_point)),
-        null,
-        .{ .process = process, .stack_size = 64 * 1024 },
-    );
-    errdefer thread.kill();
-
-    try thread.setName(app.getName());
-
-    try thread.start();
-
-    thread.detach();
+    _ = try ashet.multi_tasking.spawn_blocking(app.getName(), &file, &.{});
 }
 
 // pub fn startAppBinary(app: AppID) !void {

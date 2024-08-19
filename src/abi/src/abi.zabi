@@ -84,17 +84,21 @@ const process = struct {
 
     /// Spawns a new process
     extern "async" fn Spawn(
-        /// Relative base directory for `path`.
+        /// Relative banse directory for `path`.
         dir: Directory,
         /// File name of the executable relative to `dir`.
         path: []const u8,
         /// The arguments passed to the process.
         /// If a `SystemResource` is passed, it will receive the created process as a owning process.
         /// It is safe to release the resource in this process as soon as this operation returns.
-        argv: []SpawnProcessArg,
+        argv: []const SpawnProcessArg,
     ) error{
         SystemResources,
         FileNotFound,
+        InvalidPath,
+        BadExecutable,
+        InvalidHandle,
+        DiskError,
     }!struct {
         /// Handle to the spawned process.
         process: Process,
@@ -263,7 +267,7 @@ const network = struct {
 
     pub const udp = struct {
         /// Creates a new TCP socket.
-        extern fn create_socket() error{SystemResources}!TcpSocket;
+        extern fn create_socket() error{SystemResources}!UdpSocket;
 
         extern "async" fn Bind(socket: UdpSocket, bind_point: EndPoint) error{
             InvalidHandle,
@@ -358,7 +362,7 @@ const network = struct {
 
     pub const tcp = struct {
         /// Creates a new UDP socket.
-        extern fn create_socket() error{SystemResources}!UdpSocket;
+        extern fn create_socket() error{SystemResources}!TcpSocket;
 
         extern "async" fn Bind(
             socket: TcpSocket,

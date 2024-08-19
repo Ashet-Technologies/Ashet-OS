@@ -3,10 +3,29 @@ const hal = @import("hal");
 const abi = ashet.abi;
 const ashet = @import("../main.zig");
 const astd = @import("ashet-std");
-const logger = std.log.scoped(.io);
+const logger = std.log.scoped(.overlapped);
 
 pub const ARC = ashet.abi.ARC;
 const WaitIO = ashet.abi.WaitIO;
+
+const work_queue_count = 1;
+var next_work_queue: usize = 0;
+var work_queues: [work_queue_count]WorkQueue = undefined;
+
+pub fn initialize() !void {
+    var buffer: [32]u8 = undefined;
+    for (&work_queues, 0..) |*wq, index| {
+        const thread = try ashet.scheduler.Thread.spawn(background_worker_loop, wq, .{});
+
+        try thread.setName(try std.fmt.bufPrint(&buffer, "background{}", .{index}));
+
+        wq.* = WorkQueue{ .wakeup_thread = thread };
+
+        thread.start() catch unreachable;
+
+        thread.detach();
+    }
+}
 
 /// Returns the current thread and async scheduling context.
 fn get_context() struct { *ashet.scheduler.Thread, *Context } {
@@ -78,7 +97,7 @@ const async_call_handlers = std.EnumArray(ashet.abi.ARC_Type, AsyncHandler).init
     .clock_timer = AsyncHandler.wrap(ashet.time.schedule_timer),
     .datetime_alarm = AsyncHandler.wrap(ashet.time.schedule_alarm),
 
-    .process_spawn = AsyncHandler.todo("process_spawn"),
+    .process_spawn = AsyncHandler.wrap(ashet.multi_tasking.spawn_overlapped),
 
     .random_get_strict_random = AsyncHandler.todo("random_get_strict_random"),
 
@@ -133,7 +152,7 @@ pub fn schedule(event: *ARC) error{ SystemResources, AlreadyScheduled }!void {
     const call = try AsyncCall.create(context, event, thread);
     errdefer call.destroy();
 
-    logger.debug("dispatching i/o: {s}", .{@tagName(event.type)});
+    logger.debug("dispatching {s} from {}", .{ @tagName(event.type), thread });
 
     context.in_flight.append(&call.owner_link);
 
@@ -194,6 +213,8 @@ pub fn await_completion(completed: []*ARC, options: ashet.abi.Await_Options) err
         arc.* = undefined;
     }
 
+    logger.debug("await completion from {?}", .{filter_thread});
+
     var count: usize = 0;
     gather_loop: while (count < completed.len) {
         if (pop_with_threadaffinity(&context.completed, filter_thread)) |node| {
@@ -204,6 +225,8 @@ pub fn await_completion(completed: []*ARC, options: ashet.abi.Await_Options) err
 
             completed[count] = call.arc;
             count += 1;
+
+            logger.debug("returning {s} to userland from {}", .{ @tagName(call.arc.type), thread });
 
             call.destroy();
         } else {
@@ -222,12 +245,17 @@ pub fn await_completion(completed: []*ARC, options: ashet.abi.Await_Options) err
                     break :gather_loop,
             }
 
+            logger.debug("suspend {} and wait for completion...", .{thread});
+
             // TODO: Mark thread to be woken up again!
 
             // suspend and wait to be woken up again, in the hope that we've completed events:
             thread.@"suspend"();
+
+            logger.debug("resumed {} from awaiting completion", .{thread});
         }
     }
+    logger.debug("await yielded {} items", .{count});
 
     return count;
 }
@@ -285,7 +313,7 @@ pub const AsyncCall = struct {
 
     /// Stored inside a `WorkQueue` type. Is used to provide kernel subsystems
     /// a way to store their pending tasks.
-    work_link: CallQueue.Node = .{ .data = {} },
+    work_link: WorkQueue.Node = .{ .data = null },
 
     /// Function pointer to a function that cancels the async call
     /// after it has been fetched from its work_queue, but was not moved
@@ -318,17 +346,18 @@ pub const AsyncCall = struct {
             const generic: *T = T.from_arc(ac.arc);
             generic.outputs = value;
             generic.set_ok();
-            ac.finalize_unsafe();
+            logger.debug("completing {s} with result", .{@tagName(ac.arc.type)});
         } else |err| {
             const generic: *T = T.from_arc(ac.arc);
             generic.outputs = undefined; // explicitly kill the content here in debug kernels
             generic.set_error(err);
-            ac.finalize_unsafe();
+            logger.debug("completing {s} with error {s}", .{ @tagName(ac.arc.type), @errorName(err) });
         }
+        ac.finalize_unsafe();
     }
 
     /// Completes the `event` element and moves it from the in_flight queue into the completed queue.
-    pub fn finalize_unsafe(ac: *AsyncCall) void {
+    fn finalize_unsafe(ac: *AsyncCall) void {
         std.debug.assert(ac.work_link.prev == null);
         std.debug.assert(ac.work_link.next == null);
 
@@ -340,6 +369,7 @@ pub const AsyncCall = struct {
 
         // We finished an event, resume the thread if its waiting for I/O:
         if (ac.context.awaiter_count > 0) {
+            logger.debug("for {s} resume awaiter {}", .{ @tagName(ac.arc.type), ac.thread });
             ac.thread.@"resume"();
         }
     }
@@ -372,7 +402,7 @@ pub const AsyncCall = struct {
         ashet.memory.type_pool(AsyncCall).free(call);
     }
 
-    fn from_work_link(node: *CallQueue.Node) *AsyncCall {
+    fn from_work_link(node: *WorkQueue.Node) *AsyncCall {
         return @fieldParentPtr("work_link", node);
     }
 
@@ -437,11 +467,16 @@ fn node_in_queue(q: CallQueue, n: *CallQueue.Node) bool {
 /// A work queue for ARCs, meant for the use inside
 /// subsystems that handle asynchronous calls.
 pub const WorkQueue = struct {
+    const Backing = std.DoublyLinkedList(Item);
+
+    pub const Item = ?*anyopaque;
+    pub const Node = Backing.Node;
+
     /// If this is set, the queue will wake up the thread
     /// so it can resume working on the queued tasks.
     wakeup_thread: ?*ashet.scheduler.Thread,
 
-    queue: CallQueue = .{},
+    queue: Backing = .{},
 
     /// Returns the next-to-be-dequeued job.
     pub fn get_head(wq: WorkQueue) ?*AsyncCall {
@@ -450,11 +485,11 @@ pub const WorkQueue = struct {
     }
 
     /// Enqueues an ARC into
-    pub fn enqueue(wq: *WorkQueue, arc: *AsyncCall) void {
+    pub fn enqueue(wq: *WorkQueue, arc: *AsyncCall, item: Item) void {
         std.debug.assert(arc.work_link.next == null);
         std.debug.assert(arc.work_link.prev == null);
 
-        arc.work_link = .{ .data = {} };
+        arc.work_link = .{ .data = item };
 
         wq.queue.append(&arc.work_link);
 
@@ -468,11 +503,11 @@ pub const WorkQueue = struct {
     /// by calling `comparer.lt(arc, node)`, with `node` being any node in the list.
     /// If `arc` is less than node, it will be scheduled before the first `node` that meets
     /// that requirement.
-    pub fn priority_enqueue(wq: *WorkQueue, arc: *AsyncCall, comparer: anytype) void {
+    pub fn priority_enqueue(wq: *WorkQueue, arc: *AsyncCall, item: Item, comparer: anytype) void {
         std.debug.assert(arc.work_link.next == null);
         std.debug.assert(arc.work_link.prev == null);
 
-        arc.work_link = .{ .data = {} };
+        arc.work_link = .{ .data = item };
 
         if (wq.queue.first != null) {
             var iter = wq.queue.first;
@@ -504,12 +539,12 @@ pub const WorkQueue = struct {
 
     /// Pops a single work item from the queue and returns it.
     /// Returns `null` if no work items are present.
-    pub fn dequeue(wq: *WorkQueue) ?*AsyncCall {
+    pub fn dequeue(wq: *WorkQueue) ?struct { *AsyncCall, Item } {
         const node = wq.queue.popFirst() orelse return null;
         node.next = null;
         node.prev = null;
         const call: *AsyncCall = @fieldParentPtr("work_link", node);
-        return call;
+        return .{ call, node.data };
     }
 
     /// Returns `true` if the `arc` is currently queued in this queue.
@@ -517,3 +552,47 @@ pub const WorkQueue = struct {
         return node_in_queue(wq.queue, &arc.work_link);
     }
 };
+
+/// Handler for background workers.
+pub const Background_Worker = fn (*AsyncCall) void;
+
+/// Wraps an asynchronous call handler that takes input and returns a generic version.
+pub fn create_handler(comptime Arc: type, comptime handler: fn (*AsyncCall, Arc.Inputs) Arc.Error!Arc.Outputs) *const Background_Worker {
+    const Wrap = struct {
+        fn wrapped(call: *AsyncCall) void {
+            const cast = call.arc.cast(Arc);
+            call.finalize(Arc, handler(call, cast.inputs));
+        }
+    };
+    return Wrap.wrapped;
+}
+
+/// Queues `call` to be processed by `handler` in a background thread.
+pub fn enqueue_background_task(call: *AsyncCall, handler: *const Background_Worker) void {
+    const i = next_work_queue;
+    next_work_queue += 1;
+    if (next_work_queue >= work_queues.len) {
+        next_work_queue = 0;
+    }
+    work_queues[i].enqueue(call, @constCast(handler));
+}
+
+fn background_worker_loop(context: ?*anyopaque) callconv(.C) u32 {
+    const q: *WorkQueue = @ptrCast(@alignCast(context.?));
+
+    logger.info("overlapped background worker ready.", .{});
+
+    while (true) {
+        while (q.dequeue()) |work_item| {
+            const call, const ctx = work_item;
+
+            const worker: *const Background_Worker = @ptrCast(ctx);
+
+            logger.debug("execute overlapped call .{s}", .{@tagName(call.arc.type)});
+            worker(call);
+        }
+
+        // go to sleep again until we're done.
+        ashet.scheduler.Thread.current().?.@"suspend"();
+    }
+}

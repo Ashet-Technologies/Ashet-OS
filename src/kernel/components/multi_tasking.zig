@@ -1,7 +1,9 @@
 const std = @import("std");
 const hal = @import("hal");
+const libashet = @import("ashet");
 const ashet = @import("../main.zig");
 const logger = std.log.scoped(.multitasking);
+const loader = @import("loader.zig");
 
 const ProcessList = std.DoublyLinkedList(void);
 const ProcessNode = ProcessList.Node;
@@ -22,6 +24,115 @@ pub fn initialize() void {
         .stay_resident = true,
     }) catch @panic("could not create kernel process: out of memory");
     initialized = true;
+}
+
+pub fn spawn_blocking(
+    proc_name: []const u8,
+    file: *libashet.fs.File,
+    argv: []const ashet.abi.SpawnProcessArg,
+) !*Process {
+    const process = try ashet.multi_tasking.Process.create(.{
+        .stay_resident = false,
+        .name = proc_name,
+    });
+    errdefer process.kill();
+
+    // TODO: Process argv!
+
+    _ = argv;
+
+    const loaded = try loader.load(file, process.static_allocator(), .elf);
+
+    process.executable_memory = loaded.process_memory;
+
+    const thread = try ashet.scheduler.Thread.spawn(
+        @as(ashet.scheduler.ThreadFunction, @ptrFromInt(loaded.entry_point)),
+        null,
+        .{ .process = process, .stack_size = 64 * 1024 },
+    );
+    errdefer thread.kill();
+
+    try thread.setName(proc_name);
+
+    thread.start() catch |err| switch (err) {
+        error.AlreadyStarted => unreachable,
+    };
+
+    thread.detach();
+
+    return process;
+}
+
+pub fn spawn_overlapped(call: *ashet.overlapped.AsyncCall) void {
+    ashet.overlapped.enqueue_background_task(
+        call,
+        ashet.overlapped.create_handler(ashet.abi.process.Spawn, spawn_background),
+    );
+}
+
+fn spawn_background(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.process.Spawn.Inputs) ashet.abi.process.Spawn.Error!ashet.abi.process.Spawn.Outputs {
+    var dir: libashet.fs.Directory = .{
+        .handle = inputs.dir,
+    };
+
+    var file = dir.openFile(inputs.path_ptr[0..inputs.path_len], .read_only, .open_existing) catch |err| return switch (err) {
+        error.InvalidPath,
+        error.DiskError,
+        error.InvalidHandle,
+        error.SystemResources,
+        error.FileNotFound,
+        => |e| e,
+
+        error.SystemFdQuotaExceeded => error.SystemResources,
+
+        error.WriteProtected,
+        error.FileAlreadyExists,
+        error.NoSpaceLeft,
+        error.Unexpected,
+        error.Exists,
+        => unreachable,
+    };
+    defer file.close();
+
+    var proc = spawn_blocking(
+        "<new>",
+        &file,
+        inputs.argv_ptr[0..inputs.argv_len],
+    ) catch |err| return switch (err) {
+        error.OutOfMemory => error.SystemResources,
+
+        error.SystemResources,
+        error.DiskError,
+        error.InvalidHandle,
+        => |e| e,
+
+        error.EndOfStream,
+        error.InvalidElfMagic,
+        error.InvalidElfVersion,
+        error.InvalidElfEndian,
+        error.InvalidElfClass,
+        error.InvalidEndian,
+        error.InvalidBitSize,
+        error.InvalidMachine,
+        error.NoCode,
+        error.BadExecutable,
+        error.InvalidPltRel,
+        error.MissingSymbol,
+        error.UnsupportedRelocation,
+        error.UnalignedProgramHeader,
+        error.Overflow,
+        => error.BadExecutable,
+
+        error.Unexpected,
+        => unreachable,
+    };
+    errdefer proc.kill();
+
+    const handle = try call.get_process().assign_new_resource(&proc.system_resource);
+
+    return .{
+        .process = handle.unsafe_cast(.process),
+    };
 }
 
 /// Gets the handle to the kernel process.
@@ -219,5 +330,11 @@ pub const Process = struct {
         res.add_owner(info.ownership);
 
         return info.handle;
+    }
+
+    pub fn format(proc: *const Process, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        try writer.print("Thread(0x{X:0>8}, \"{}\")", .{ @intFromPtr(proc), std.zig.fmtEscapes(proc.name) });
     }
 };

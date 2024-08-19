@@ -639,16 +639,28 @@ pub const syscalls = struct {
         };
 
         pub const udp = struct {
-            /// Creates a new TCP socket.
-            pub fn create_socket() error{SystemResources}!abi.TcpSocket {
-                @panic("not done yet");
+            pub fn create_socket() error{SystemResources}!abi.UdpSocket {
+                const proc = getCurrentProcess();
+
+                const sock = try ashet.network.udp.Socket.create();
+                errdefer sock.destroy();
+
+                const handle = try proc.assign_new_resource(&sock.system_resource);
+
+                return handle.unsafe_cast(.udp_socket);
             }
         };
 
         pub const tcp = struct {
-            /// Creates a new UDP socket.
-            pub fn create_socket() error{SystemResources}!abi.UdpSocket {
-                @panic("not done yet");
+            pub fn create_socket() error{SystemResources}!abi.TcpSocket {
+                const proc = getCurrentProcess();
+
+                const sock = try ashet.network.tcp.Socket.create();
+                errdefer sock.destroy();
+
+                const handle = try proc.assign_new_resource(&sock.system_resource);
+
+                return handle.unsafe_cast(.tcp_socket);
             }
         };
     };
@@ -719,8 +731,12 @@ pub const syscalls = struct {
     pub const fs = struct {
         /// Finds a file system by name
         pub fn find_filesystem(name: []const u8) abi.FileSystemId {
-            _ = name;
-            @panic("not implemented yet");
+            if (ashet.filesystem.findFilesystem(name)) |fsid| {
+                std.debug.assert(fsid != .invalid);
+                return fsid;
+            } else {
+                return .invalid;
+            }
         }
     };
 

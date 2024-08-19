@@ -108,7 +108,7 @@ fn process_alarm_events() void {
             break;
         }
 
-        const dequeued = global_alarm_queue.dequeue();
+        const dequeued, _ = global_alarm_queue.dequeue().?;
         std.debug.assert(dequeued == next_alarm);
         next_alarm.finalize(Alarm, .{});
     }
@@ -124,7 +124,7 @@ fn process_timer_events() void {
             break;
         }
 
-        const dequeued = global_timer_queue.dequeue();
+        const dequeued, _ = global_timer_queue.dequeue().?;
         std.debug.assert(dequeued == next_timer);
         next_timer.finalize(Timer, .{});
     }
@@ -143,7 +143,7 @@ pub fn schedule_timer(call: *ashet.overlapped.AsyncCall, inputs: Timer.Inputs) v
     if (now.ms_since_start() >= inputs.timeout) {
         call.finalize(Timer, .{});
     } else {
-        global_timer_queue.priority_enqueue(call, TimerComparer{});
+        global_timer_queue.priority_enqueue(call, null, TimerComparer{});
     }
 }
 
@@ -160,6 +160,6 @@ pub fn schedule_alarm(call: *ashet.overlapped.AsyncCall, inputs: Alarm.Inputs) v
     if (now >= @intFromEnum(inputs.when)) {
         call.finalize(Alarm, .{});
     } else {
-        global_alarm_queue.priority_enqueue(call, AlarmComparer{});
+        global_alarm_queue.priority_enqueue(call, null, AlarmComparer{});
     }
 }

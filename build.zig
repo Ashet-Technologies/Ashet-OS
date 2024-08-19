@@ -14,23 +14,6 @@ const default_machines = std.EnumSet(Machine).init(.{
 const qemu_debug_options_default = "cpu_reset,guest_errors,unimp";
 
 pub fn build(b: *std.Build) void {
-    // Steps:
-    const test_step = b.step("test", "Runs the test suite");
-
-    const machine_steps = blk: {
-        var steps = std.EnumArray(Machine, *std.Build.Step).initUndefined();
-        for (std.enums.values(Machine)) |machine| {
-            const step = b.step(
-                @tagName(machine),
-                b.fmt("Compiles the OS for {s}", .{@tagName(machine)}),
-            );
-            if (default_machines.contains(machine)) {
-                b.getInstallStep().dependOn(step);
-            }
-            steps.set(machine, step);
-        }
-        break :blk steps;
-    };
 
     // Options:
     const maybe_run_machine = b.option(Machine, "machine", "Selects which machine to run with the 'run' step");
@@ -41,6 +24,26 @@ pub fn build(b: *std.Build) void {
         b.fmt("Sets the QEMU debug options (default: '{s}')", .{qemu_debug_options_default}),
     ) orelse
         qemu_debug_options_default;
+
+    // Steps:
+    const test_step = b.step("test", "Runs the test suite");
+
+    const machine_steps = blk: {
+        var steps = std.EnumArray(Machine, *std.Build.Step).initUndefined();
+        for (std.enums.values(Machine)) |machine| {
+            const step = b.step(
+                @tagName(machine),
+                b.fmt("Compiles the OS for {s}", .{@tagName(machine)}),
+            );
+            if (maybe_run_machine == null or maybe_run_machine == machine) {
+                if (default_machines.contains(machine)) {
+                    b.getInstallStep().dependOn(step);
+                }
+            }
+            steps.set(machine, step);
+        }
+        break :blk steps;
+    };
 
     // Dependencies:
 
