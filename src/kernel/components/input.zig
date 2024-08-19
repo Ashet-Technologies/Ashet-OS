@@ -131,7 +131,7 @@ fn convert_raw_event(raw_event: raw.Event) ?Event {
             cursor.y = @intCast(std.math.clamp(data.y, 0, @as(i17, max_size.height -| 1)));
 
             return Event{ .mouse = .{
-                .event_type = .mouse_motion,
+                .event_type = .{ .input = .mouse_motion },
                 .dx = cursor.x - old_cursor.x,
                 .dy = cursor.y - old_cursor.y,
                 .x = cursor.x,
@@ -150,7 +150,7 @@ fn convert_raw_event(raw_event: raw.Event) ?Event {
             cursor.y = @intCast(std.math.clamp(cursor.y + dy, 0, @as(i17, max_size.height -| 1)));
 
             return Event{ .mouse = .{
-                .event_type = .mouse_motion,
+                .event_type = .{ .input = .mouse_motion },
                 .dx = dx,
                 .dy = dy,
                 .x = cursor.x,
@@ -172,10 +172,10 @@ fn convert_raw_event(raw_event: raw.Event) ?Event {
             };
 
             const mouse_event: ashet.abi.MouseEvent = .{
-                .event_type = if (data.down)
+                .event_type = .{ .input = if (data.down)
                     .mouse_button_press
                 else
-                    .mouse_button_release,
+                    .mouse_button_release },
                 .dx = 0,
                 .dy = 0,
                 .x = cursor.x,
@@ -205,10 +205,10 @@ fn convert_raw_event(raw_event: raw.Event) ?Event {
             const text_ptr = keyboard.layout.translate(key_code, modifiers.shift, modifiers.alt_graph);
 
             const event = ashet.abi.KeyboardEvent{
-                .event_type = if (src_event.down)
+                .event_type = .{ .input = if (src_event.down)
                     .key_press
                 else
-                    .key_release,
+                    .key_release },
                 .scancode = src_event.scancode,
                 .key = key_code,
                 .text = text_ptr,

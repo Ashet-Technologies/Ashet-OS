@@ -5,7 +5,7 @@
 //!
 
 ///////////////////////////////////////////////////////////
-// Syscalls & extern "async"Operations
+// Syscalls & Asynchronous/Overlapped Operations
 
 /// All syscalls related to generic resource management.
 const resources = struct {
@@ -31,6 +31,37 @@ const resources = struct {
     /// NOTE: This will *always* destroy the resource, even if it's
     ///       also owned by another process.
     extern fn destroy(SystemResource) void;
+};
+const overlapped = struct {
+    /// Starts new asynchronous operations.
+    ///
+    /// NOTE: Until the operation has successfully completed or was
+    ///       cancelled, the ARC structure must be considered owned
+    ///       by the kernel and must not be changed from userspace.
+    ///       It can also change its contents spuriously until the
+    ///       operation is returned to userland.
+    ///
+    extern fn schedule(async_call: *ARC) error{ SystemResources, AlreadyScheduled }!void;
+
+    /// Awaits one or more asynchronous operations and returns the
+    /// number of `completed` elements.
+    ///
+    /// The kernel will fill out `completed` up to the returned number of elements.
+    /// All other values are undefined.
+    ///
+    /// NOTE: For blocking operations, this function will suspend the current
+    ///       thread until the request has been completed.
+    extern fn await_completion(completed: []*ARC, options: Await_Options) error{Unscheduled}!usize;
+
+    /// Cancels an asynchronous call.
+    ///
+    /// NOTE: If the operation has already completed, an error will be returned saying so.
+    ///
+    /// NOTE: The cancelled operation will not be returned by `await` anymore.
+    extern fn cancel(aop: *ARC) error{
+        Unscheduled,
+        Completed,
+    }!void;
 };
 
 /// Syscalls related to processes
@@ -103,6 +134,23 @@ const process = struct {
         /// Returns memory to the systme.
         extern fn release(mem: []u8, ptr_align: u8) void;
     };
+
+    const monitor = struct {
+        /// Queries all owned resources by a process.
+        extern fn enumerate_processes(processes: ?[]Process) usize;
+
+        /// Queries all owned resources by a process.
+        extern fn query_owned_resources(owner: Process, reslist: ?[]SystemResource) usize;
+
+        /// Returns the total number of bytes the process takes up in RAM.
+        extern fn query_total_memory_usage(proc: Process) usize;
+
+        /// Returns the number of dynamically allocated bytes for this process.
+        extern fn query_dynamic_memory_usage(proc: Process) usize;
+
+        /// Returns the number of total memory objects this process has right now.
+        extern fn query_active_allocation_count(proc: Process) usize;
+    };
 };
 
 const clock = struct {
@@ -155,38 +203,23 @@ const video = struct {
 
     /// Changes the current color palette.
     extern fn set_palette(VideoOutput, *const [palette_size]Color) error{Unsupported};
-};
 
-const overlapped = struct {
-    /// Starts new asynchronous operations.
-    ///
-    /// NOTE: Until the operation has successfully completed or was
-    ///       cancelled, the ARC structure must be considered owned
-    ///       by the kernel and must not be changed from userspace.
-    ///       It can also change its contents spuriously until the
-    ///       operation is returned to userland.
-    ///
-    extern fn schedule(async_call: *ARC) error{ SystemResources, AlreadyScheduled }!void;
+    // /// Returns a pointer to the current palette. Changing this palette
+    // /// will directly change the associated colors on the screen.
+    // /// If `null` is returned, no direct access to the video palette is possible.
+    //  fn get_palette_memory(*VideoOutput) ?*[palette_size]Color;
 
-    /// Awaits one or more asynchronous operations and returns the
-    /// number of `completed` elements.
-    ///
-    /// The kernel will fill out `completed` up to the returned number of elements.
-    /// All other values are undefined.
-    ///
-    /// NOTE: For blocking operations, this function will suspend the current
-    ///       thread until the request has been completed.
-    extern fn await_completion(completed: []*ARC, options: Await_Options) error{Unscheduled}!usize;
+    // /// Changes the border color of the screen. Parameter is an index into
+    // /// the palette.
+    //  fn set_border(*VideoOutput, ColorIndex) void;
 
-    /// Cancels an asynchronous call.
-    ///
-    /// NOTE: If the operation has already completed, an error will be returned saying so.
-    ///
-    /// NOTE: The cancelled operation will not be returned by `await` anymore.
-    extern fn cancel(aop: *ARC) error{
-        Unscheduled,
-        Completed,
-    }!void;
+    // /// Returns the maximum possible screen resolution.
+    //  fn get_max_resolution(*VideoOutput) Size;
+
+    // /// Sets the screen resolution. Legal values are between 1×1 and the platform specific
+    // /// maximum resolution returned by `video.getMaxResolution()`.
+    // /// Everything out of bounds will be clamped into that range.
+    //  fn change_resolution(*VideoOutput, u16, u16) void;
 };
 
 const random = struct {
@@ -212,8 +245,26 @@ const input = struct {
         event: InputEvent,
     };
 };
+
 const network = struct {
+    // getStatus: FnPtr(fn () NetworkStatus),
+    // ping: FnPtr(fn ([*]Ping, usize) void),
+    // TODO: Implement NIC-specific queries (mac, ips, names, ...)
+
+    const dns = struct {
+        // resolves the dns entry `host` for the given `service`.
+        // - `host` is a legal dns entry
+        // - `port` is either a port number
+        // - `buffer` and `limit` define a structure where all resolved IPs can be stored.
+        // Function returns the number of host entries found or 0 if the host name could not be resolved.
+        //  fn @"resolve" (host: [*:0]const u8, port: u16, buffer: [*]EndPoint, limit: usize) usize;
+
+    };
+
     pub const udp = struct {
+        /// Creates a new TCP socket.
+        extern fn create_socket() error{SystemResources}!TcpSocket;
+
         extern "async" fn Bind(socket: UdpSocket, bind_point: EndPoint) error{
             InvalidHandle,
             SystemResources,
@@ -306,6 +357,9 @@ const network = struct {
     };
 
     pub const tcp = struct {
+        /// Creates a new UDP socket.
+        extern fn create_socket() error{SystemResources}!UdpSocket;
+
         extern "async" fn Bind(
             socket: TcpSocket,
             bind_point: EndPoint,
@@ -414,6 +468,9 @@ const network = struct {
 ///
 /// The filesystem that is used to boot the OS from has an alias `SYS:` that is always a legal way to address this file system.
 pub const fs = struct {
+    /// Finds a file system by name
+    extern fn find_filesystem(name: []const u8) FileSystemId;
+
     /// Flushes all open files to disk.
     extern "async" fn Sync() error{DiskError}!void;
 
@@ -659,11 +716,327 @@ const shm = struct {
     extern fn get_pointer(SharedMemory) [*]align(16) u8;
 };
 
-// pub const Service = struct(SystemResource) {};
+const pipe = struct {
+    /// Spawns a new pipe with `fifo_length` elements of `object_size` bytes.
+    /// If `fifo_length` is 0, the pipe is synchronous and can only send data
+    /// if a `read` call is active. Otherwise, up to `fifo_length` elements can be
+    /// stored in a FIFO.
+    extern fn create(object_size: usize, fifo_length: usize) error{
+        SystemResources,
+    }!Pipe;
+
+    /// Returns the length of the pipe-internal FIFO in elements.
+    extern fn get_fifo_length(Pipe) usize;
+
+    /// Returns the size of the objects stored in the pipe.
+    extern fn get_object_size(Pipe) usize;
+
+    /// Writes elements from `data` into the given pipe.
+    extern "async" fn Write(
+        pipe: Pipe,
+        /// Pointer to the first element. Length defines how many elements are to be transferred.
+        data: []const u8,
+        /// Distance between each element in `data`. Can be different from the pipes element size
+        /// to allow sparse data to be transferred.
+        /// If `0`, it will use the `object_size` property of the pipe.
+        stride: usize,
+        /// Defines how the write should operate.
+        mode: PipeMode,
+    ) error{}!struct {
+        /// Numbert of elements written into the pipe.
+        count: usize,
+    };
+
+    /// Reads elements from a pipe into `buffer`.
+    extern "async" fn Read(
+        pipe: Pipe,
+        /// Points to the first element to be received.
+        buffer: []u8,
+        /// Distance between each element in `buffer`. Can be different from the pipes element size
+        /// to allow sparse data to be transferred.
+        /// If `0`, it will use the `object_size` property of the pipe.
+        stride: usize,
+        /// Defines how the read should operate.
+        mode: PipeMode,
+    ) error{}!struct {
+        /// Number of elements read.
+        count: usize,
+    };
+};
+
+const sync = struct {
+    /// Creates a new `SyncEvent` object that can be used to synchronize
+    /// different processes.
+    extern fn create_event() error{SystemResources}!SyncEvent;
+
+    /// Completes one `WaitForEvent` IOP waiting for the given event.
+    extern fn notify_one(SyncEvent) void;
+
+    /// Completes all `WaitForEvent` IOP waiting for the given event.
+    extern fn notify_all(SyncEvent) void;
+
+    /// Waits for the given `SyncEvent` to be notified.
+    extern "async" fn WaitForEvent(SyncEvent) error{}!void;
+
+    /// Creates a new mutual exclusion.
+    extern fn create_mutex() error{SystemResources}!Mutex;
+
+    /// Tries to lock a mutex and returns if it was successful.
+    extern fn try_lock(Mutex) bool;
+
+    /// Unlocks a mutual exclusion. Completes a single `Lock` IOP if it exists.
+    extern fn unlock(Mutex) void;
+
+    /// Locks a mutex. Will complete once the mutex is locked.
+    extern "async" fn Lock(Mutex) error{}!void;
+};
+
+const draw = struct {
+    // Fonts:
+
+    /// Returns the font data for the given font name, if any.
+    extern fn get_system_font(font_name: []const u8) error{
+        FileNotFound,
+        SystemResources,
+        OutOfMemory,
+    }!Font;
+
+    /// Creates a new custom font from the given data.
+    extern fn create_font(data: []const u8) error{
+        InvalidData,
+        SystemResources,
+        OutOfMemory,
+    }!Font;
+
+    /// Returns true if the given font is a system-owned font.
+    extern fn is_system_font(Font) bool;
+
+    // Framebuffer management:
+
+    /// Creates a new in-memory framebuffer that can be used for offscreen painting.
+    extern fn create_memory_framebuffer(size: Size) error{SystemResources}!Framebuffer;
+
+    /// Creates a new framebuffer based off a video output. Can be used to output pixels
+    /// to the screen.
+    extern fn create_video_framebuffer(VideoOutput) error{SystemResources}!Framebuffer;
+
+    /// Creates a new framebuffer that allows painting into a GUI window.
+    extern fn create_window_framebuffer(Window) error{SystemResources}!Framebuffer;
+
+    /// Creates a new framebuffer that allows painting into a widget.
+    extern fn create_widget_framebuffer(Widget) error{SystemResources}!Framebuffer;
+
+    /// Returns the type of a framebuffer object.
+    extern fn get_framebuffer_type(Framebuffer) FramebufferType;
+
+    /// Returns the size of a framebuffer object.
+    extern fn get_framebuffer_size(Framebuffer) Size;
+
+    /// Marks a portion of the framebuffer as changed and forces the OS to
+    /// perform an update action if necessary.
+    extern fn invalidate_framebuffer(Framebuffer, Rectangle) void;
+
+    // Drawing:
+
+    // TODO: fn annotate_text(*Framebuffer, area: Rectangle, text: []const u8) AnnotationError;
+
+    // TODO: Insert render functions here
+};
+
+const gui = struct {
+    extern fn register_widget_type(*const WidgetDescriptor) error{
+        AlreadyRegistered,
+        SystemResources,
+    }!WidgetType;
+
+    /// Opens a message box popup window and prompts the user for response.
+    extern "async" fn ShowMessageBox(
+        Desktop,
+        message: []const u8,
+        caption: []const u8,
+        buttons: MessageBoxButtons,
+        icon: MessageBoxIcon,
+    ) error{}!struct {
+        result: MessageBoxResult,
+    };
+
+    // Window API:
+
+    /// Spawns a new window.
+    extern fn create_window(
+        desktop: Desktop,
+        title: []const u8,
+        min: Size,
+        max: Size,
+        startup: Size,
+        flags: CreateWindowFlags,
+    ) error{
+        SystemResources,
+        InvalidDimensions,
+    }!Window;
+
+    /// Resizes a window to the new size.
+    extern fn resize_window(Window, size: Size) void;
+
+    /// Changes a window title.
+    extern fn set_window_title(Window, title: []const u8) void;
+
+    /// Notifies the desktop that a window wants attention from the user.
+    /// This could just pop the window to the front, make it blink, show a small notification, ...
+    extern fn mark_window_urgent(Window) void;
+
+    /// Waits for an event on the given `Window`, completing as soon as
+    /// an event arrived.
+    extern "async" fn GetWindowEvent(window: Window) error{InProgress}!struct {
+        event_type: WindowEvent.Type,
+        event: WindowEvent,
+    };
+
+    // TODO: gui.app_menu
+
+    // Widget API:
+
+    /// Create a new widget identified by `uuid` on the given `window`.
+    /// Position and size of the widget are undetermined at start and a call to `place_widget` should be performed on success.
+    extern fn create_widget(window: Window, uuid: *const UUID) error{
+        SystemResources,
+        WidgetNotFound,
+    }!Widget;
+
+    /// Moves and resizes a widget in one.
+    extern fn place_widget(widget: Widget, position: Point, size: Size) void;
+
+    /// Triggers the `control` event of the widget with the given `message` as a payload.
+    extern fn control_widget(widget: Widget, message: WidgetControlMessage) error{
+        SystemResources,
+    };
+
+    /// Triggers the `widget_notify` event of the `Window` that owns `widget` with `event` as the payload.
+    extern fn notify_owner(widget: Widget, event: WidgetNotifyEvent) error{
+        SystemResources,
+    };
+
+    /// Returns WidgetType-associated "opaque" data for this widget.
+    ///
+    /// This is meant as a convenience tool to store additional information per widget
+    /// like internal state and such.
+    ///
+    /// The size of this must be known and cannot be queried.
+    extern fn get_widget_data(Widget) [*]align(16) u8;
+
+    // Context Menu API:
+
+    // TODO: gui.context_menu
+
+    // Desktop Server API:
+
+    /// Creates a new desktop with the given name.
+    extern fn create_desktop(
+        /// User-visible name of the desktop.
+        name: []const u8,
+        descriptor: *const DesktopDescriptor,
+    ) error{
+        SystemResources,
+    }!Desktop;
+
+    // TODO: Function to get the "current"/"primary"/"associated" desktop server, how?
+
+    /// Returns the name of the provided desktop.
+    extern fn get_desktop_name(Desktop) [*:0]const u8;
+
+    /// Enumerates all available desktops.
+    extern fn enumerate_desktops(serverlist: ?[]Desktop) usize;
+
+    /// Returns all windows for a desktop handle.
+    extern fn enumerate_desktop_windows(Desktop, window: ?[]Window) usize;
+
+    /// Returns desktop-associated "opaque" data for this window.
+    ///
+    /// This is meant as a convenience tool to store additional information per window
+    /// like position on the screen, orientation, alignment, ...
+    ///
+    /// The size of this must be known and cannot be queried.
+    extern fn get_desktop_data(Window) [*]align(16) u8;
+
+    /// Notifies the system that a message box was confirmed by the user.
+    ///
+    /// **NOTE:** This function is meant to be implemented by a desktop server.
+    /// Regular GUI applications should not use this function as they have no
+    /// access to a `MessageBoxEvent.RequestID`.
+    extern fn notify_message_box(
+        /// The desktop that completed the message box.
+        source: Desktop,
+        /// The request id that was passed in `MessageBoxEvent`.
+        request_id: MessageBoxEvent.RequestID,
+        /// The resulting button which the user clicked.
+        result: MessageBoxResult,
+    ) void;
+
+    /// Posts an event into the window event queue so the window owner
+    /// can handle the event.
+    extern fn post_window_event(
+        window: Window,
+        event: WindowEvent,
+    ) error{SystemResources};
+
+    /// Sends a notification to the provided `desktop`.
+    extern fn send_notification(
+        /// Where to show the notification?
+        desktop: Desktop,
+        /// What text is displayed in the notification?
+        message: []const u8,
+        /// How urgent is the notification to the user?
+        severity: NotificationSeverity,
+    ) error{
+        SystemResources,
+    };
+
+    const clipboard = struct {
+        /// Sets the contents of the clip board.
+        /// Takes a mime type as well as the value in the provided format.
+        extern fn set(desktop: Desktop, mime: []const u8, value: []const u8) error{
+            SystemResources,
+        };
+
+        /// Returns the current type present in the clipboard, if any.
+        extern fn get_type(desktop: Desktop) ?[*:0]const u8;
+
+        /// Returns the current clipboard value as the provided mime type.
+        /// The os provides a conversion *if possible*, otherwise returns an error.
+        /// The returned memory for `value` is owned by the process and must be freed with `ashet.process.memory.release`.
+        extern fn get_value(desktop: Desktop, mime: []const u8, value: *?[]const u8) error{
+            ConversionFailed,
+            OutOfMemory,
+        };
+    };
+};
+
+const service = struct {
+    /// Registers a new service `uuid` in the system.
+    /// Takes an array of function pointers that will be provided for IPC and a service name to be advertised.
+    extern fn create(uuid: *const UUID, funcs: []const AbstractFunction, name: []const u8) error{
+        AlreadyRegistered,
+        SystemResources,
+    }!Service;
+
+    /// Enumerates all registered services.
+    extern fn enumerate(uuid: *const UUID, services: ?[]Service) usize;
+
+    /// Returns the name of the service.
+    extern fn get_name(Service) [*:0]const u8;
+
+    /// Returns the process that created this service.
+    extern fn get_process(Service) Process;
+
+    /// Returns the functions registerd by the service.
+    extern fn get_functions(Service, funcs: ?[]AbstractFunction) usize;
+};
+
+pub const Service = struct(SystemResource) {};
 
 pub const SharedMemory = struct(SystemResource) {};
 
-// pub const Pipe = struct(SystemResource) {};
+pub const Pipe = struct(SystemResource) {};
 
 pub const Process = struct(SystemResource) {};
 
@@ -679,7 +1052,7 @@ pub const Directory = struct(SystemResource) {};
 
 pub const VideoOutput = struct(SystemResource) {};
 
-// pub const Font = struct(SystemResource) {};
+pub const Font = struct(SystemResource) {};
 
 /// A framebuffer is something that can be drawn on.
 pub const Framebuffer = struct(SystemResource) {};
@@ -789,7 +1162,7 @@ pub const SystemResource = enum(usize) {
 ///////////////////////////////////////////////////////////
 // Simple types:
 
-pub const UUID = struct {
+pub const UUID = extern struct {
     bytes: [16]u8,
 
     /// Parses a UUID in the format
@@ -806,7 +1179,7 @@ pub const UUID = struct {
 
 pub const MAC = [6]u8;
 
-pub const AbstractFunction = fn () callconv(.C) void;
+pub const AbstractFunction = *const fn () callconv(.C) void;
 
 pub const ThreadFunction = *const fn (?*anyopaque) callconv(.C) u32;
 
@@ -1198,11 +1571,13 @@ pub const WidgetDescriptor = extern struct {
         /// If `true`, the user can copy/cut/paste data from/into this widget.
         clipboard_sensitive: bool,
 
-        _padding: u28 = 0,
+        _padding: u27 = 0,
     };
 };
 
 pub const WidgetControlMessage = extern struct {
+    event_type: WidgetEvent.Type,
+
     /// The widget-specific type of the control message.
     /// Could be something like `get_property`, `set_property`, `set_text`, ...
     type: u32,
@@ -1212,6 +1587,8 @@ pub const WidgetControlMessage = extern struct {
 };
 
 pub const WidgetNotifyEvent = extern struct {
+    event_type: WindowEvent.Type,
+
     widget: Widget,
 
     /// The widget-specific type of event.
@@ -1220,194 +1597,6 @@ pub const WidgetNotifyEvent = extern struct {
 
     /// Generic data associated with the event.
     data: [4]usize,
-};
-
-pub const WidgetEvent = extern union {
-    mouse: MouseEvent,
-    keyboard: KeyboardEvent,
-    control: WidgetControlMessage,
-
-    // TODO: Add event data
-
-    pub const Type = enum(u16) {
-        // lifecycle:
-
-        /// The widget was created and attached to a window.
-        create,
-
-        /// The widget is in the process of being destroyed.
-        /// After this event, the handle will be invalid.
-        destroy,
-
-        /// The creator of the widget wants to do something widget-specific.
-        control,
-
-        // basic input:
-
-        /// The user clicked on the widget with the primary mouse button
-        /// or pressed the return or space bar button on the keyboard.
-        click,
-
-        // keyboard input:
-
-        /// A key was pressed on the keyboard.
-        key_press,
-
-        /// A key was released on the keyboard.
-        key_release,
-
-        // mouse specific extras:
-
-        /// The mouse was moved inside the rectangle of the widget.
-        ///
-        /// NOTE: This event can only happen when `hit_test_visible` was set
-        /// in the widget creation flags.
-        mouse_enter,
-
-        /// The mouse was moved outside the rectangle of the widget.
-        ///
-        /// NOTE: This event can only happen when `hit_test_visible` was set
-        /// in the widget creation flags.
-        mouse_leave,
-
-        /// The mouse stopped for some time over the widget.
-        ///
-        /// NOTE: This event can only happen when `hit_test_visible` was set
-        /// in the widget creation flags.
-        mouse_hover,
-
-        /// A mouse button was pressed over the widget.
-        ///
-        /// NOTE: This event can only happen when `hit_test_visible` was set
-        /// in the widget creation flags.
-        mouse_button_press,
-
-        /// A mouse button was released over the widget.
-        ///
-        /// NOTE: This event can only happen when `hit_test_visible` was set
-        /// in the widget creation flags.
-        mouse_button_release,
-
-        /// The mouse was moved over the widget.
-        ///
-        /// NOTE: This event can only happen when `hit_test_visible` was set
-        /// in the widget creation flags.
-        mouse_motion,
-
-        /// A vertical or horizontal scroll wheel was scrolled over the widget.
-        ///
-        /// NOTE: This event can only happen when `hit_test_visible` was set
-        /// in the widget creation flags.
-        scroll,
-
-        // drag&drop operations:
-
-        /// The user dragged a payload into the rectangle of this widget.
-        ///
-        /// NOTE: This event can only happen when `allow_drop` was set in the
-        /// widget creation flags.
-        drag_enter,
-
-        /// The user dragged a payload out of the rectangle of this widget.
-        ///
-        /// NOTE: This event can only happen when `allow_drop` was set in the
-        /// widget type creation flags.
-        drag_leave,
-
-        /// The user dragged a payload over the rectangle of this widget.
-        ///
-        /// NOTE: This event can only happen when `allow_drop` was set in the
-        /// widget type creation flags.
-        drag_over,
-
-        /// The user dropped a payload into this widget.
-        ///
-        /// NOTE: This event can only happen when `allow_drop` was set in the
-        /// widget type creation flags.
-        drag_drop,
-
-        // clipboard operations:
-
-        /// The user requested a clipboard copy operation, usually by pressing 'Ctrl-C'.
-        ///
-        /// NOTE: This event can only happen when `clipboard_sensitive` was set in
-        /// the widget type creation flags.
-        clipboard_copy,
-
-        /// The user requested a clipboard paste operation, usually by pressing 'Ctrl-V'.
-        ///
-        /// NOTE: This event can only happen when `clipboard_sensitive` was set in
-        /// the widget type creation flags.
-        clipboard_paste,
-
-        /// The user requested a clipboard cut operation, usually by pressing 'Ctrl-X'.
-        ///
-        /// NOTE: This event can only happen when `clipboard_sensitive` was set in
-        /// the widget type creation flags.
-        clipboard_cut,
-
-        // widget specific:
-
-        /// The widget was resized with a call to `place_widget`.
-        ///
-        /// NOTE: This event will not fire if the widget was only moved.
-        resized,
-
-        /// The widget should draw itself.
-        paint,
-
-        /// User pressed the "context menu" button or did a
-        /// secondary mouse button click on the  widget.
-        context_menu_request,
-
-        /// The widget received focus via mouse or keyboard.
-        focus_enter,
-
-        /// The widget lost focus after receiving it.
-        focus_leave,
-
-        _,
-    };
-};
-
-pub const WindowEvent = extern union {
-    mouse: MouseEvent,
-    keyboard: KeyboardEvent,
-    widget_notify: WidgetNotifyEvent,
-
-    pub const Type = enum(u16) {
-        widget_notify,
-
-        key_press,
-        key_release,
-
-        mouse_enter,
-        mouse_leave,
-        mouse_motion,
-        mouse_button_press,
-        mouse_button_release,
-
-        /// The user requested the window to be closed.
-        window_close,
-
-        /// The window was minimized and is not visible anymore.
-        window_minimize,
-
-        /// The window was restored from minimized state.
-        window_restore,
-
-        /// The window is currently moving on the screen. Query `window.bounds` to get the new position.
-        window_moving,
-
-        /// The window was moved on the screen. Query `window.bounds` to get the new position.
-        window_moved,
-
-        /// The window size is currently changing. Query `window.bounds` to get the new size.
-        window_resizing,
-
-        /// The window size changed. Query `window.bounds` to get the new size.
-        window_resized,
-    };
 };
 
 pub const MessageBoxButtons = packed struct(u8) {
@@ -1559,7 +1748,7 @@ pub const InputEvent = extern union {
     mouse: MouseEvent,
     keyboard: KeyboardEvent,
 
-    pub const Type = enum(u8) {
+    pub const Type = enum(u16) {
         key_press = 0,
         key_release = 1,
 
@@ -1568,30 +1757,274 @@ pub const InputEvent = extern union {
         mouse_button_release = 4,
     };
 
-    // Check consistency:
     comptime {
-        const union_fields = @typeInfo(@This()).Union.fields;
-
-        // first union field must define our event type:
-        std.debug.assert(union_fields[0].type == Type);
-
-        // check that all other fields are extern structs that share
-        // the first field with this union:
-        for (union_fields[1..]) |fld| {
-            const event_type = @typeInfo(fld.type).Struct;
-
-            const first_field = event_type.fields[0];
-
-            std.debug.assert(event_type.layout == .@"extern");
-            std.debug.assert(first_field.type == Type);
-            std.debug.assert(std.mem.eql(u8, first_field.name, union_fields[0].name));
-            std.debug.assert(@offsetOf(fld.type, union_fields[0].name) == 0);
-        }
+        validate_event_type(@This());
     }
 };
 
+pub const WidgetEvent = extern union {
+    event_type: Type,
+
+    mouse: MouseEvent,
+    keyboard: KeyboardEvent,
+    control: WidgetControlMessage,
+
+    // TODO: Add event data
+
+    pub const Type = enum(u16) {
+        // lifecycle:
+
+        /// The widget was created and attached to a window.
+        create,
+
+        /// The widget is in the process of being destroyed.
+        /// After this event, the handle will be invalid.
+        destroy,
+
+        /// The creator of the widget wants to do something widget-specific.
+        control,
+
+        // basic input:
+
+        /// The user clicked on the widget with the primary mouse button
+        /// or pressed the return or space bar button on the keyboard.
+        click,
+
+        // keyboard input:
+
+        /// A key was pressed on the keyboard.
+        key_press,
+
+        /// A key was released on the keyboard.
+        key_release,
+
+        // mouse specific extras:
+
+        /// The mouse was moved inside the rectangle of the widget.
+        ///
+        /// NOTE: This event can only happen when `hit_test_visible` was set
+        /// in the widget creation flags.
+        mouse_enter,
+
+        /// The mouse was moved outside the rectangle of the widget.
+        ///
+        /// NOTE: This event can only happen when `hit_test_visible` was set
+        /// in the widget creation flags.
+        mouse_leave,
+
+        /// The mouse stopped for some time over the widget.
+        ///
+        /// NOTE: This event can only happen when `hit_test_visible` was set
+        /// in the widget creation flags.
+        mouse_hover,
+
+        /// A mouse button was pressed over the widget.
+        ///
+        /// NOTE: This event can only happen when `hit_test_visible` was set
+        /// in the widget creation flags.
+        mouse_button_press,
+
+        /// A mouse button was released over the widget.
+        ///
+        /// NOTE: This event can only happen when `hit_test_visible` was set
+        /// in the widget creation flags.
+        mouse_button_release,
+
+        /// The mouse was moved over the widget.
+        ///
+        /// NOTE: This event can only happen when `hit_test_visible` was set
+        /// in the widget creation flags.
+        mouse_motion,
+
+        /// A vertical or horizontal scroll wheel was scrolled over the widget.
+        ///
+        /// NOTE: This event can only happen when `hit_test_visible` was set
+        /// in the widget creation flags.
+        scroll,
+
+        // drag&drop operations:
+
+        /// The user dragged a payload into the rectangle of this widget.
+        ///
+        /// NOTE: This event can only happen when `allow_drop` was set in the
+        /// widget creation flags.
+        drag_enter,
+
+        /// The user dragged a payload out of the rectangle of this widget.
+        ///
+        /// NOTE: This event can only happen when `allow_drop` was set in the
+        /// widget type creation flags.
+        drag_leave,
+
+        /// The user dragged a payload over the rectangle of this widget.
+        ///
+        /// NOTE: This event can only happen when `allow_drop` was set in the
+        /// widget type creation flags.
+        drag_over,
+
+        /// The user dropped a payload into this widget.
+        ///
+        /// NOTE: This event can only happen when `allow_drop` was set in the
+        /// widget type creation flags.
+        drag_drop,
+
+        // clipboard operations:
+
+        /// The user requested a clipboard copy operation, usually by pressing 'Ctrl-C'.
+        ///
+        /// NOTE: This event can only happen when `clipboard_sensitive` was set in
+        /// the widget type creation flags.
+        clipboard_copy,
+
+        /// The user requested a clipboard paste operation, usually by pressing 'Ctrl-V'.
+        ///
+        /// NOTE: This event can only happen when `clipboard_sensitive` was set in
+        /// the widget type creation flags.
+        clipboard_paste,
+
+        /// The user requested a clipboard cut operation, usually by pressing 'Ctrl-X'.
+        ///
+        /// NOTE: This event can only happen when `clipboard_sensitive` was set in
+        /// the widget type creation flags.
+        clipboard_cut,
+
+        // widget specific:
+
+        /// The widget was resized with a call to `place_widget`.
+        ///
+        /// NOTE: This event will not fire if the widget was only moved.
+        resized,
+
+        /// The widget should draw itself.
+        paint,
+
+        /// User pressed the "context menu" button or did a
+        /// secondary mouse button click on the  widget.
+        context_menu_request,
+
+        /// The widget received focus via mouse or keyboard.
+        focus_enter,
+
+        /// The widget lost focus after receiving it.
+        focus_leave,
+
+        _,
+    };
+
+    comptime {
+        validate_event_type(@This());
+    }
+};
+
+pub const WindowEvent = extern union {
+    event_type: Type,
+
+    mouse: MouseEvent,
+    keyboard: KeyboardEvent,
+    widget_notify: WidgetNotifyEvent,
+
+    pub const Type = enum(u16) {
+        widget_notify,
+
+        key_press,
+        key_release,
+
+        mouse_enter,
+        mouse_leave,
+        mouse_motion,
+        mouse_button_press,
+        mouse_button_release,
+
+        /// The user requested the window to be closed.
+        window_close,
+
+        /// The window was minimized and is not visible anymore.
+        window_minimize,
+
+        /// The window was restored from minimized state.
+        window_restore,
+
+        /// The window is currently moving on the screen. Query `window.bounds` to get the new position.
+        window_moving,
+
+        /// The window was moved on the screen. Query `window.bounds` to get the new position.
+        window_moved,
+
+        /// The window size is currently changing. Query `window.bounds` to get the new size.
+        window_resizing,
+
+        /// The window size changed. Query `window.bounds` to get the new size.
+        window_resized,
+    };
+
+    comptime {
+        validate_event_type(@This());
+    }
+};
+
+fn validate_event_type(comptime Event: type) void {
+    const union_fields = @typeInfo(Event).Union.fields;
+
+    // first union field must define our event type:
+    std.debug.assert(union_fields[0].type == Event.Type);
+
+    var requires_shared_event_type = false;
+
+    // check that all other fields are extern structs that share
+    // the first field with this union:
+    for (union_fields[1..]) |fld| {
+        const event_type = @typeInfo(fld.type).Struct;
+
+        const first_field = event_type.fields[0];
+
+        const Msg = [1][]const u8;
+        var problems: []const []const u8 = &.{};
+
+        if (event_type.layout != .@"extern") {
+            problems = problems ++ &.{"layout not extern"};
+        }
+        if (first_field.type != Event.Type and first_field.type != SharedEventType) {
+            problems = problems ++ Msg{"first field must be either Event.Type or SharedEventType"};
+        }
+        if (!std.mem.eql(u8, first_field.name, union_fields[0].name)) {
+            problems = problems ++ Msg{std.fmt.comptimePrint("first field must be named {}", .{std.zig.fmtId(first_field.name)})};
+        }
+        if (@offsetOf(fld.type, union_fields[0].name) != 0) {
+            problems = problems ++ Msg{std.fmt.comptimePrint("{} must have offset 0", .{std.zig.fmtId(union_fields[0].name)})};
+        }
+
+        if (problems.len > 0) {
+            var msg: []const u8 = "failed to validate " ++ @typeName(Event) ++ ":";
+            for (problems) |problem| {
+                msg = msg ++ "\n" ++ problem;
+            }
+            @compileError(msg);
+        }
+
+        if (first_field.type == SharedEventType) {
+            requires_shared_event_type = true;
+        }
+    }
+
+    if (requires_shared_event_type) {
+        const in_shared_type = for (@typeInfo(SharedEventType).Union.fields) |fld| {
+            if (fld.type == Event.Type)
+                break true;
+        } else false;
+        if (!in_shared_type)
+            @compileError(@typeName(Event.Type) ++ " is not contained in SharedEventType!");
+    }
+}
+
+/// Event structures shared between different event groups
+pub const SharedEventType = extern union {
+    input: InputEvent.Type,
+    widget: WidgetEvent.Type,
+    window: WindowEvent.Type,
+};
+
 pub const MouseEvent = extern struct {
-    event_type: InputEvent.Type, // MUST BE FIRST!
+    event_type: SharedEventType, // MUST BE FIRST!
 
     x: i16,
     y: i16,
@@ -1601,7 +2034,7 @@ pub const MouseEvent = extern struct {
 };
 
 pub const KeyboardEvent = extern struct {
-    event_type: InputEvent.Type, // MUST BE FIRST!
+    event_type: SharedEventType, // MUST BE FIRST!
 
     /// The raw scancode for the key. Meaning depends on the layout,
     /// represents kinda the physical position on the keyboard.

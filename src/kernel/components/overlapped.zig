@@ -116,6 +116,15 @@ const async_call_handlers = std.EnumArray(ashet.abi.ARC_Type, AsyncHandler).init
     .fs_write = AsyncHandler.wrap(ashet.filesystem.write),
     .fs_stat_file = AsyncHandler.wrap(ashet.filesystem.statFile),
     .fs_resize = AsyncHandler.wrap(ashet.filesystem.resize),
+
+    .pipe_write = AsyncHandler.todo("pipe_write"),
+    .pipe_read = AsyncHandler.todo("pipe_read"),
+
+    .sync_wait_for_event = AsyncHandler.todo("sync_wait_for_event"),
+    .sync_lock = AsyncHandler.todo("sync_lock"),
+
+    .gui_show_message_box = AsyncHandler.todo("gui_show_message_box"),
+    .gui_get_window_event = AsyncHandler.todo("gui_get_window_event"),
 });
 
 pub fn schedule(event: *ARC) error{ SystemResources, AlreadyScheduled }!void {

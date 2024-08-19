@@ -507,6 +507,8 @@ test "HandlePool Stress Test" {
 pub fn InstanceType(comptime type_enum: TypeId) type {
     return switch (type_enum) {
         .shared_memory => ashet.shared_memory.SharedMemory,
+        .pipe => ashet.pipes.Pipe,
+        .service => ashet.ipc.Service,
 
         .process => ashet.multi_tasking.Process,
         .thread => ashet.scheduler.Thread,
@@ -522,6 +524,7 @@ pub fn InstanceType(comptime type_enum: TypeId) type {
 
         .video_output => ashet.video.Output,
         .framebuffer => ashet.graphics.Framebuffer,
+        .font => ashet.graphics.Font,
 
         .window => ashet.gui.Window,
         .desktop => ashet.gui.Desktop,

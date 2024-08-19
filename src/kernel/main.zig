@@ -24,6 +24,8 @@ pub const video = @import("components/video.zig");
 pub const shared_memory = @import("components/shared_memory.zig");
 pub const random = @import("components/random.zig");
 pub const sync = @import("components/sync.zig");
+pub const pipes = @import("components/pipes.zig");
+pub const ipc = @import("components/ipc.zig");
 
 pub const ports = @import("port/targets.zig");
 

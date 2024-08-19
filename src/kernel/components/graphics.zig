@@ -9,3 +9,12 @@ pub const Framebuffer = struct {
         @panic("Not implemented yet!");
     }
 };
+
+pub const Font = struct {
+    system_resource: ashet.resources.SystemResource = .{ .type = .font },
+
+    pub fn destroy(sock: *Font) void {
+        _ = sock;
+        @panic("Not implemented yet!");
+    }
+};
