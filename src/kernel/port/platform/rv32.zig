@@ -151,6 +151,14 @@ pub fn areInterruptsEnabled() bool {
 pub fn disableInterrupts() void {}
 pub fn enableInterrupts() void {}
 
+pub fn get_cpu_cycle_counter() u64 {
+    return ControlStatusRegister.read(.cycle);
+}
+
+pub fn get_cpu_random_seed() ?u64 {
+    return ControlStatusRegister.read(.time);
+}
+
 pub const ControlStatusRegister = enum(u12) {
 
     // User Trap Setup
@@ -453,11 +461,3 @@ pub const AccessLevel = enum(u2) {
     reserved = 0b10,
     machine = 0b11,
 };
-
-pub fn get_cpu_random_seed() ?u64 {
-    return ControlStatusRegister.read(.time);
-}
-
-pub fn get_cpu_cycle_counter() u64 {
-    return ControlStatusRegister.read(.cycle);
-}

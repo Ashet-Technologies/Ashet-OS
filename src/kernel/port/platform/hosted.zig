@@ -67,12 +67,17 @@ pub fn enableInterrupts() void {
     global_lock.unlock();
 }
 
+pub fn get_cpu_cycle_counter() u64 {
+    // return @truncate(@as(u128, @bitCast(std.time.nanoTimestamp())));
+
+    var buf: [8]u8 = undefined;
+    // almost everything should support this
+    std.posix.getrandom(&buf) catch @panic("unsupported call");
+    return @bitCast(buf);
+}
+
 pub fn get_cpu_random_seed() ?u64 {
     var seed: u64 = 0;
     std.posix.getrandom(std.mem.asBytes(&seed)) catch @panic("getrandom failed");
     return seed;
-}
-
-pub fn get_cpu_cycle_counter() u64 {
-    return @truncate(@as(u128, @bitCast(std.time.nanoTimestamp())));
 }
