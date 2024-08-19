@@ -214,7 +214,7 @@ fn poll(driver: *Driver) void {
             .keyboard => {
                 switch (event_type) {
                     .unset => {},
-                    .cess_key => ashet.input.pushRawEvent(.{ .keyboard = .{
+                    .cess_key => ashet.input.push_raw_event(.{ .keyboard = .{
                         .scancode = evt.code,
                         .down = evt.value != 0,
                     } }),
@@ -225,19 +225,19 @@ fn poll(driver: *Driver) void {
                 switch (event_type) {
                     .unset => {},
                     .cess_key => {
-                        ashet.input.pushRawEvent(.{ .mouse_button = .{
+                        ashet.input.push_raw_event(.{ .mouse_button = .{
                             .button = mapToMouseButton(evt.code) orelse continue,
                             .down = (evt.value != 0),
                         } });
                     },
                     .cess_rel => {
                         if (evt.code == 0) {
-                            ashet.input.pushRawEvent(.{ .mouse_rel_motion = .{
+                            ashet.input.push_raw_event(.{ .mouse_rel_motion = .{
                                 .dx = @as(i32, @bitCast(evt.value)),
                                 .dy = 0,
                             } });
                         } else if (evt.code == 1) {
-                            ashet.input.pushRawEvent(.{ .mouse_rel_motion = .{
+                            ashet.input.push_raw_event(.{ .mouse_rel_motion = .{
                                 .dx = 0,
                                 .dy = @as(i32, @bitCast(evt.value)),
                             } });

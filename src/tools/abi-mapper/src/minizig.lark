@@ -19,13 +19,13 @@ ns_decl : "const" identifier "=" "struct" "{" container "}" ";"
 
 src_decl : "const" identifier "=" "struct" "(" "SystemResource" ")" "{" "}" ";"
 
-fn_decl : "\"syscall\"" "fn"  identifier "(" param_list ")" return_type ";"
+fn_decl : "fn"  identifier "(" param_list ")" return_type ";"
 
 return_type : [err_type  "!" ] type
 
 err_decl : "const" identifier "=" err_type ";"
 
-iop_decl : "\"iop\"" "fn" identifier "(" param_list ")" err_type  "!" iop_struct ";"
+iop_decl : "extern" "\"async\"" "fn" identifier "(" param_list ")" err_type  "!" iop_struct ";"
 
 iop_struct       : "struct" "{" iop_struct_field* "}"
                  | "void"
@@ -66,7 +66,7 @@ doc_comment: doc_comment_line doc_comment_line *
 
 value: integer | identifier
 
-identifier: /[a-zA-Z_0-9\.]+/
+identifier: /[a-zA-Z_0-9\.]+|@"[^"+]"/
 
 integer: /-?\d+/
 

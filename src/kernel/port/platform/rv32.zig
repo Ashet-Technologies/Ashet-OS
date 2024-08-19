@@ -87,13 +87,14 @@ pub const start = struct {
             }});
         }
 
-        if (ashet.scheduler.Thread.current()) |thread| {
-            if (thread.process_link) |link| {
-                _ = link;
+        // TODO(fqu): Reimplement this
+        // if (ashet.scheduler.Thread.current()) |thread| {
+        //     if (thread.process_link) |link| {
+        //         _ = link;
 
-                ashet.scheduler.exit(1);
-            }
-        }
+        //         ashet.scheduler.exit(1);
+        //     }
+        // }
 
         @panic("unhandled trap");
     }

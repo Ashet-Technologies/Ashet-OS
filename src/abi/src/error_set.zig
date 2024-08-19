@@ -1,47 +1,24 @@
-const syscalls = struct {
-    extern fn no_operation() void;
-
-    extern fn arg_with_name(v: u32) u32;
-    extern fn arg_without_name(u32) u32;
-
-    extern fn regular_slice(slice: []const u8) u32;
-
-    extern fn optional_slice(slice: ?[]const u8) u32;
-
-    extern fn out_slice(index: u32, out: *[]const u8) void;
-
-    extern fn out_optional_slice(index: u32, out: *?[]const u8) void;
-
-    extern fn return_plain_error(index: u32) error{ One, Two };
-
-    extern fn return_error_union(square: f32) error{ Domain, TooLarge }!f32;
-
-    const slice_asserts = struct {
-        extern fn basic([]const u8) void;
-        extern fn optional(?[]const u8) void;
-        extern fn out_basic(*[]const u8) void;
-        extern fn out_optional(*?[]const u8) void;
-        extern fn inout_basic(*[]const u8) void;
-        extern fn inout_optional(*?[]const u8) void;
-    };
-};
-
-const io = struct {
-    async fn NoOperation() error{}!void;
-};
-
-pub const Src1 = struct(SystemResource) {};
-pub const Src2 = struct(SystemResource) {};
-
-usingnamespace zig; // regular code beyond this
-
-// pass this verbatim!
-
 const std = @import("std");
 
-pub const SystemResource = struct {};
-
-pub const AsyncOp = struct {};
+const ErrorSetTag = opaque {};
+pub fn is_error_set(comptime T: type) bool {
+    const info = @typeInfo(T);
+    if (info != .Enum)
+        return false;
+    const einfo = info.Enum;
+    if (einfo.is_exhaustive)
+        return false;
+    if (einfo.decls.len > 0)
+        return false;
+    if (einfo.fields.len < 1)
+        return false;
+    if (!std.mem.eql(u8, einfo.fields[0].name, "ok"))
+        return false;
+    if (einfo.fields[0].value != 0)
+        return false;
+    // seems okayish now
+    return true;
+}
 
 pub fn ErrorSet(comptime ErrorType: type) type {
     const raw_errors = @typeInfo(ErrorType).ErrorSet orelse @compileError("anyerror is not a legal error set");

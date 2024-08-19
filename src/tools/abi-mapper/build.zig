@@ -1,11 +1,11 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const requirements = [_][]const u8{
-    "case-converter>=1.1.0",
-    "lark>=1.1",
-    "pyinstaller>=6.9.0",
-};
+const requirements_spec =
+    \\case-converter>=1.1.0
+    \\lark>=1.1
+    \\pyinstaller>=6.9.0
+;
 
 pub fn build(b: *std.Build) void {
     const create_venv_step = b.step("venv", "Creates the python venv");
@@ -34,24 +34,32 @@ pub fn build(b: *std.Build) void {
     else
         pyenv.path(b, "bin/python");
 
+    const requirements_file = b.addWriteFile("requirements.txt", requirements_spec);
+
     const pyenv_install_packages = add_run_script(b, pyenv_python3);
 
     pyenv_install_packages.addArg("-m");
     pyenv_install_packages.addArg("pip");
     pyenv_install_packages.addArg("install");
-    pyenv_install_packages.addArgs(&requirements);
+    pyenv_install_packages.addArg("-r");
+    pyenv_install_packages.addFileArg(requirements_file.files.items[0].getPath()); // we need to use a
+    pyenv_install_packages.addArg("--log");
+    const install_log = pyenv_install_packages.addOutputFileArg("pip.log");
 
     const venv_info_printer = b.addSystemCommand(&.{"echo"});
-    venv_info_printer.step.dependOn(&pyenv_install_packages.step);
+    install_log.addStepDependencies(&venv_info_printer.step);
 
     venv_info_printer.addArg("python3=");
     venv_info_printer.addFileArg(pyenv_python3);
 
     create_venv_step.dependOn(&venv_info_printer.step);
 
+    const abi_mapper_py = b.path("src/abi-mapper.py");
+    const grammar_file = b.path("src/minizig.lark");
+
     const python_wrapper_options = b.addOptions();
     python_wrapper_options.addOptionPath("interpreter", pyenv_python3);
-    python_wrapper_options.addOptionPath("script", b.path("src/abi-mapper.py"));
+    python_wrapper_options.addOptionPath("script", abi_mapper_py);
     python_wrapper_options.step.dependOn(&pyenv_install_packages.step);
 
     const python_wrapper = b.addExecutable(.{
@@ -61,6 +69,14 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/exe-wrapper.zig"),
     });
     python_wrapper.root_module.addOptions("options", python_wrapper_options);
+    python_wrapper.root_module.addAnonymousImport("abi-mapper.py", .{
+        // Hack to make abi-mapper propagate changes on the python script:
+        .root_source_file = abi_mapper_py,
+    });
+    python_wrapper.root_module.addAnonymousImport("minizig.lark", .{
+        // Hack to make abi-mapper propagate changes on the python script:
+        .root_source_file = grammar_file,
+    });
 
     b.installArtifact(python_wrapper);
 
@@ -112,7 +128,7 @@ pub const Converter = struct {
     b: *std.Build,
     executable: *std.Build.Step.Compile,
 
-    pub fn convert_abi_file(cc: Converter, input: std.Build.LazyPath, mode: enum { userland, kernel, definition }) std.Build.LazyPath {
+    pub fn convert_abi_file(cc: Converter, input: std.Build.LazyPath, mode: enum { userland, kernel, definition, stubs }) std.Build.LazyPath {
         const generate_core_abi = cc.b.addRunArtifact(cc.executable);
         generate_core_abi.addPrefixedFileArg("--zig-exe=", .{ .cwd_relative = cc.b.graph.zig_exe });
         generate_core_abi.addArg(cc.b.fmt("--mode={s}", .{@tagName(mode)}));

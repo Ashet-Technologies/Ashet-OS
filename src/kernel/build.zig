@@ -47,6 +47,7 @@ pub fn build(b: *std.Build) void {
     // Modules:
 
     const abi_mod = abi_dep.module("ashet-abi");
+    const abi_impl_mod = abi_dep.module("ashet-abi-provider");
     const virtio_mod = virtio_dep.module("virtio");
     const ashet_fs_mod = ashet_fs_dep.module("ashet-fs");
     const ashet_std_mod = ashet_std_dep.module("ashet-std");
@@ -82,6 +83,7 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "machine-info", .module = machine_info_module },
             .{ .name = "ashet-abi", .module = abi_mod },
+            .{ .name = "ashet-abi-impl", .module = abi_impl_mod },
             .{ .name = "ashet-std", .module = ashet_std_mod },
             .{ .name = "virtio", .module = virtio_mod },
             .{ .name = "ashet-fs", .module = ashet_fs_mod },

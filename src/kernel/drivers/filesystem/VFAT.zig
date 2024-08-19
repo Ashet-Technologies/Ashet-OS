@@ -396,8 +396,8 @@ const Instance = struct {
             .attributes = .{
                 .directory = false,
             },
-            .creation_date = 0, // TODO: Fill out dateTimeFromTimestamp(info.date, info.time),
-            .modified_date = 0, // TODO: Fill out dateTimeFromTimestamp(info.date, info.time),
+            .creation_date = .epoch, // TODO: Fill out dateTimeFromTimestamp(info.date, info.time),
+            .modified_date = .epoch, // TODO: Fill out dateTimeFromTimestamp(info.date, info.time),
         };
     }
 
@@ -537,5 +537,5 @@ fn dateTimeFromTimestamp(date: fatfs.Date, time: fatfs.Time) ashet.abi.DateTime 
     // TODO: Implemen time conversion
     _ = date;
     _ = time;
-    return 0;
+    return .epoch;
 }

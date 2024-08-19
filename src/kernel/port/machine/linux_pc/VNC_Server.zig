@@ -182,7 +182,7 @@ fn connection_handler(vd: *VNC_Server) !void {
                 .key_event => |ev| {
                     var cs = ashet.CriticalSection.enter();
                     defer cs.leave();
-                    ashet.input.pushRawEventFromIRQ(.{
+                    ashet.input.push_raw_event_from_irq(.{
                         .keyboard = .{
                             .down = ev.down,
                             .scancode = @truncate(@intFromEnum(ev.key)),
@@ -196,7 +196,7 @@ fn connection_handler(vd: *VNC_Server) !void {
 
                     if (old_mouse) |prev| {
                         if (prev.x != ptr.x or prev.y != ptr.y) {
-                            ashet.input.pushRawEventFromIRQ(.{
+                            ashet.input.push_raw_event_from_irq(.{
                                 .mouse_abs_motion = .{
                                     .x = @intCast(ptr.x),
                                     .y = @intCast(ptr.y),
@@ -214,7 +214,7 @@ fn connection_handler(vd: *VNC_Server) !void {
                             const mask: u8 = @as(u8, 1) << @truncate(i);
 
                             if ((old_button ^ ptr.buttons) & mask != 0) {
-                                ashet.input.pushRawEventFromIRQ(.{
+                                ashet.input.push_raw_event_from_irq(.{
                                     .mouse_button = .{
                                         .button = switch (i) {
                                             0 => .left,

@@ -3,19 +3,35 @@ const ashet = @import("ashet");
 
 pub usingnamespace ashet.core;
 
-pub fn main() !void {
-    _ = try ashet.debug.writer().write("Init system says hello!\r\n");
+const abi = ashet.abi;
+const syscalls = ashet.userland;
+const io = ashet.userland.io;
 
-    // while (true) {
-    //     ashet.process.yield();
-    // }
+pub fn main() !void {
+    _ = try ashet.process.debug.log_writer(.notice).write("Init system says hello!\r\n");
+
+    const apps_dir = try ashet.overlapped.performOne(abi.fs.OpenDrive, .{
+        .fs = .system,
+        .path_ptr = "apps",
+        .path_len = 4,
+    });
+
+    const desktop_proc = try ashet.overlapped.performOne(abi.process.Spawn, .{
+        .dir = apps_dir.dir,
+        .path_ptr = "desktop/classic",
+        .path_len = 15,
+        .argv_ptr = &[_]abi.SpawnProcessArg{},
+        .argv_len = 0,
+    });
+
+    std.log.info("spawned desktop process: {}", .{desktop_proc});
 
     for (0..10) |_| {
-        const shm = ashet.abi.syscalls.@"ashet.shm.create"(4096) orelse return error.OutOfMemory;
+        const shm = try syscalls.shm.create(4096);
 
         std.log.info("shm: ptr=0x{X:0>8}, size={}", .{
-            @intFromPtr(ashet.abi.syscalls.@"ashet.shm.get_pointer"(shm)),
-            ashet.abi.syscalls.@"ashet.shm.get_length"(shm),
+            @intFromPtr(syscalls.shm.get_pointer(shm)),
+            syscalls.shm.get_length(shm),
         });
     }
 }

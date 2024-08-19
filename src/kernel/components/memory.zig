@@ -417,38 +417,76 @@ pub fn type_pool(comptime T: type) type {
     }
     return struct {
         const element_size = align_pool_element_size(@sizeOf(T));
-        const backing_pool = sized_element_pool(element_size);
+        const element_alignment = @max(@alignOf(T), std.math.floorPowerOfTwo(usize, element_size));
 
-        pub fn alloc() error{OutOfMemory}!*align(element_size) T {
-            return @ptrCast(try backing_pool.alloc());
+        // TODO: Determine element alignment such that it doesn't waste *too* much memory, but also keeps the number of pools small!
+
+        const backing_pool = sized_aligned_element_pool(element_size, element_alignment);
+
+        var allocated_items: usize = 0;
+
+        /// Number of active items in the pool.
+        pub fn get_count() usize {
+            return allocated_items;
         }
 
+        /// Allocates a new item.
+        pub fn alloc() error{OutOfMemory}!*align(element_alignment) T {
+            const item = try backing_pool.alloc();
+            allocated_items += 1;
+            return @ptrCast(item);
+        }
+
+        /// Frees a previously allocated item.
         pub fn free(res: *T) void {
+            std.debug.assert(allocated_items > 0);
             backing_pool.free(@ptrCast(@alignCast(res)));
+            allocated_items -= 1;
         }
     };
 }
 
 /// Memory pool with elements of equal size.
 pub fn sized_element_pool(comptime element_size: usize) type {
+    const alignment = std.math.floorPowerOfTwo(usize, element_size);
+    return sized_aligned_element_pool(element_size, alignment);
+}
+
+/// A memory pool with elements of `element_size` that are aligned to `alignment`.
+pub fn sized_aligned_element_pool(comptime element_size: usize, comptime alignment: usize) type {
+    std.debug.assert(std.math.isPowerOfTwo(alignment));
+    std.debug.assert(alignment <= element_size);
     return struct {
         pub const Buffer = [element_size]u8;
 
-        pub const BufferPointer = *align(element_size) Buffer;
+        pub const BufferPointer = *align(alignment) Buffer;
+
+        var allocated_items: usize = 0;
+
+        /// Number of active items in the pool.
+        pub fn get_count() usize {
+            return allocated_items;
+        }
 
         // Dummy struct we need to specify the alignment of our elements.
         const Item = extern struct {
-            raw: Buffer align(element_size),
+            raw: Buffer align(alignment),
         };
 
         var items = std.heap.MemoryPool(Item).init(ashet.memory.allocator);
 
+        /// Creates a new chunk of `element_size` bytes.
         pub fn alloc() error{OutOfMemory}!BufferPointer {
-            return @ptrCast(try items.create());
+            const item = try items.create();
+            allocated_items += 1;
+            return @ptrCast(item);
         }
 
+        /// Frees a previously allocated chunk of `element_size` bytes.
         pub fn free(res: BufferPointer) void {
+            res.* = undefined;
             items.destroy(@ptrCast(res));
+            allocated_items -= 1;
         }
     };
 }

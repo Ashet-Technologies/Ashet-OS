@@ -1,5 +1,7 @@
 const std = @import("std");
 
+pub const mpl = @import("mpl.zig");
+
 pub const RingBuffer = @import("ringbuffer.zig").RingBuffer;
 pub const HandleAllocator = @import("handle-allocator.zig").HandleAllocator;
 pub const IndexPool = @import("indexpool.zig").IndexPool;

@@ -99,18 +99,18 @@ pub fn ErrorSet(comptime options: anytype) type {
 pub fn UntypedErrorSet(comptime _Enum: type) fn (comptime Error: type) type {
     const enum_info: std.builtin.Type.Enum = @typeInfo(_Enum).Enum;
 
-    const Int = enum_info.backing_int.?;
+    const Int = enum_info.tag_type;
 
     const T = struct {
         fn MakeErrorSet(comptime _Error: type) type {
-            const err_info: std.builtin.Type.ErrorSet = @typeInfo(_Error).ErrorSet;
+            const err_info: []const std.builtin.Type.Error = @typeInfo(_Error).ErrorSet.?;
 
             // assert all errors are available:
-            for (err_info) |err_name| {
+            for (err_info) |err_value| {
                 for (enum_info.fields) |fld| {
-                    if (std.mem.eql(u8, err_name, fld.name))
+                    if (std.mem.eql(u8, err_value.name, fld.name))
                         break;
-                } else @compileError(err_name ++ " is not present in the enumeration!");
+                } else @compileError(err_value.name ++ " is not present in the enumeration!");
             }
 
             return enum(Int) {

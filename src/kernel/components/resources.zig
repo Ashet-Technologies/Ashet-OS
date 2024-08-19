@@ -3,10 +3,23 @@ const ashet = @import("../main.zig");
 const logger = std.log.scoped(.resources);
 
 /// Encodes the different types of system resources.
-pub const TypeId = ashet.abi.SystemResourceType;
+pub const TypeId = ashet.abi.SystemResource.Type;
 
 /// This is the ABI-public version of a system resource.
 pub const Handle = ashet.abi.SystemResource;
+
+/// Resolves the resource `handle` for the `owner` process into a pointer to
+/// `Resource`.
+pub fn resolve(
+    comptime Resource: type,
+    owner: *ashet.multi_tasking.Process,
+    handle: Handle,
+) error{ Gone, InvalidHandle, GenerationMismatch, TypeMismatch }!*Resource {
+    const link = try owner.resources.resolve(handle);
+    std.debug.assert(owner == link.data.process);
+    const resource = link.data.resource;
+    return resource.cast(Resource) catch return error.TypeMismatch;
+}
 
 /// This is the kernel-internal abstraction over system resources.
 pub const SystemResource = struct {
@@ -53,10 +66,15 @@ pub const SystemResource = struct {
         });
         src.unlink();
         switch (src.type) {
-            .bad_handle => unreachable,
             inline else => |type_id| {
                 const instance = src.cast(ashet.resources.InstanceType(type_id)) catch unreachable;
                 instance.destroy();
+            },
+
+            // Threads need special handling
+            .thread => {
+                const instance = src.cast(ashet.scheduler.Thread) catch unreachable;
+                instance.kill();
             },
         }
     }
@@ -163,7 +181,7 @@ pub const HandlePool = struct {
         };
 
         return .{
-            .handle = @ptrFromInt(@as(usize, @bitCast(encoded))),
+            .handle = @enumFromInt(@as(usize, @bitCast(encoded))),
             .ownership = owner,
         };
     }
@@ -172,7 +190,7 @@ pub const HandlePool = struct {
         std.debug.assert(pool.generations.items.len == pool.bit_map.capacity());
         std.debug.assert(pool.owners.len == pool.bit_map.capacity());
 
-        const handle_bits: EncodedHandle = @bitCast(@intFromPtr(handle));
+        const handle_bits: EncodedHandle = @bitCast(@intFromEnum(handle));
 
         handle_bits.validate_checksum() catch return error.InvalidHandle;
         if (handle_bits.index >= pool.bit_map.capacity())
@@ -223,7 +241,7 @@ pub const HandlePool = struct {
         std.debug.assert(pool.generations.items.len == pool.bit_map.capacity());
         std.debug.assert(pool.owners.len == pool.bit_map.capacity());
 
-        const handle_bits: EncodedHandle = @bitCast(@intFromPtr(handle));
+        const handle_bits: EncodedHandle = @bitCast(@intFromEnum(handle));
 
         handle_bits.validate_checksum() catch return error.InvalidHandle;
         if (handle_bits.index >= pool.bit_map.capacity())
@@ -488,8 +506,30 @@ test "HandlePool Stress Test" {
 /// Maps `TypeId` to a concrete type.
 pub fn InstanceType(comptime type_enum: TypeId) type {
     return switch (type_enum) {
-        .bad_handle => @compileError("bad handle is unmapped"),
         .shared_memory => ashet.shared_memory.SharedMemory,
+        .pipe => ashet.pipes.Pipe,
+        .service => ashet.ipc.Service,
+
+        .process => ashet.multi_tasking.Process,
+        .thread => ashet.scheduler.Thread,
+
+        .sync_event => ashet.sync.SyncEvent,
+        .mutex => ashet.sync.Mutex,
+
+        .tcp_socket => ashet.network.tcp.Socket,
+        .udp_socket => ashet.network.udp.Socket,
+
+        .file => ashet.filesystem.File,
+        .directory => ashet.filesystem.Directory,
+
+        .video_output => ashet.video.Output,
+        .framebuffer => ashet.graphics.Framebuffer,
+        .font => ashet.graphics.Font,
+
+        .window => ashet.gui.Window,
+        .desktop => ashet.gui.Desktop,
+        .widget => ashet.gui.Widget,
+        .widget_type => ashet.gui.WidgetType,
     };
 }
 
@@ -497,8 +537,6 @@ pub fn InstanceType(comptime type_enum: TypeId) type {
 pub fn instanceTypeId(comptime T: type) TypeId {
     const result = comptime blk: {
         for (std.enums.values(TypeId)) |type_id| {
-            if (type_id == .bad_handle)
-                continue;
             if (InstanceType(type_id) == T)
                 break :blk type_id;
         }
@@ -509,8 +547,6 @@ pub fn instanceTypeId(comptime T: type) TypeId {
 
 comptime {
     for (std.enums.values(TypeId)) |type_id| {
-        if (type_id == .bad_handle)
-            continue;
         const T = InstanceType(type_id);
         if (!@hasField(T, "system_resource"))
             @compileError(@typeName(T) ++ " is registered as a system resource, but has no field 'system_resource'!");

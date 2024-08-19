@@ -52,8 +52,11 @@ pub fn build(b: *std.Build) void {
 
     // Modules:
 
-    const abi_mod = abi_dep.module("ashet-abi");
     const std_mod = std_dep.module("ashet-std");
+
+    const abi_mod = abi_dep.module("ashet-abi");
+    const abi_access_mod = abi_dep.module("ashet-abi-consumer");
+    const abi_stubs_mod = abi_dep.module("ashet-abi-stubs");
 
     // Build:
 
@@ -66,13 +69,15 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("libsyscall.zig"),
     });
     libsyscall.root_module.addImport("abi", abi_mod);
+    libsyscall.root_module.addImport("stubs", abi_stubs_mod);
     b.installArtifact(libsyscall);
 
     _ = b.addModule("ashet", .{
         .root_source_file = b.path("libashet.zig"),
         .imports = &.{
-            .{ .name = "ashet-abi", .module = abi_mod },
             .{ .name = "ashet-std", .module = std_mod },
+            .{ .name = "ashet-abi", .module = abi_mod },
+            .{ .name = "ashet-abi-access", .module = abi_access_mod },
         },
     });
 

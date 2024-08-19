@@ -209,7 +209,7 @@ fn handle_SDL_events(ptr: ?*anyopaque) callconv(.C) u32 {
                         const screen_x: i32 = @divFloor((screen_width - 1) * window_x, window_width - 1);
                         const screen_y: i32 = @divFloor((screen_height - 1) * window_y, window_height - 1);
 
-                        ashet.input.pushRawEvent(.{ .mouse_abs_motion = .{
+                        ashet.input.push_raw_event(.{ .mouse_abs_motion = .{
                             .x = @intCast(screen_x),
                             .y = @intCast(screen_y),
                         } });
@@ -220,7 +220,7 @@ fn handle_SDL_events(ptr: ?*anyopaque) callconv(.C) u32 {
                     if (display_from_sdl_window_id(event.motion.windowID)) |display| {
                         _ = display;
 
-                        ashet.input.pushRawEvent(.{ .mouse_button = .{
+                        ashet.input.push_raw_event(.{ .mouse_button = .{
                             .button = switch (event.button.button) {
                                 sdl.SDL_BUTTON_LEFT => .left,
                                 sdl.SDL_BUTTON_MIDDLE => .middle,
