@@ -509,6 +509,7 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
             Debug.trace_loc.column,
             Debug.trace_loc.fn_name,
         });
+        machine.debugWrite("\r\n");
         hang();
     }
     const sp = platform.getStackPointer();
