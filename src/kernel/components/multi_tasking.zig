@@ -7,6 +7,7 @@ const loader = @import("loader.zig");
 
 const ProcessList = std.DoublyLinkedList(void);
 const ProcessNode = ProcessList.Node;
+const ExitCode = ashet.abi.ExitCode;
 
 var process_list: ProcessList = .{};
 
@@ -35,7 +36,7 @@ pub fn spawn_blocking(
         .stay_resident = false,
         .name = proc_name,
     });
-    errdefer process.kill();
+    errdefer process.kill(.killed);
 
     // TODO: Process argv!
 
@@ -64,6 +65,7 @@ pub fn spawn_blocking(
 }
 
 pub fn spawn_overlapped(call: *ashet.overlapped.AsyncCall) void {
+    logger.debug("spawn_overlapped()", .{});
     ashet.overlapped.enqueue_background_task(
         call,
         ashet.overlapped.create_handler(ashet.abi.process.Spawn, spawn_background),
@@ -71,32 +73,75 @@ pub fn spawn_overlapped(call: *ashet.overlapped.AsyncCall) void {
 }
 
 fn spawn_background(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.process.Spawn.Inputs) ashet.abi.process.Spawn.Error!ashet.abi.process.Spawn.Outputs {
-    var dir: libashet.fs.Directory = .{
-        .handle = inputs.dir,
+    const this_thread = ashet.scheduler.Thread.current().?;
+
+    var open_file = ashet.abi.fs.OpenFile.new(.{
+        .dir = inputs.dir,
+        .path_ptr = inputs.path_ptr,
+        .path_len = inputs.path_len,
+        .access = .read_only,
+        .mode = .open_existing,
+    });
+
+    logger.debug("spawn_background().schedule_with_context", .{});
+    ashet.overlapped.schedule_with_context(
+        call.thread,
+        call.context,
+        &open_file.arc,
+    ) catch |err| return switch (err) {
+        error.AlreadyScheduled => unreachable,
+        error.SystemResources => |e| e,
     };
 
-    var file = dir.openFile(inputs.path_ptr[0..inputs.path_len], .read_only, .open_existing) catch |err| return switch (err) {
-        error.InvalidPath,
-        error.DiskError,
-        error.InvalidHandle,
-        error.SystemResources,
-        error.FileNotFound,
-        => |e| e,
-
-        error.SystemFdQuotaExceeded => error.SystemResources,
-
-        error.WriteProtected,
-        error.FileAlreadyExists,
-        error.NoSpaceLeft,
-        error.Unexpected,
-        error.Exists,
-        => unreachable,
+    logger.debug("spawn_background().await_completion_with_context", .{});
+    var completed: [1]*ashet.abi.ARC = .{&open_file.arc};
+    const count = ashet.overlapped.await_completion_with_context(
+        this_thread,
+        call.context,
+        &completed,
+        .{
+            .thread_affinity = .all_threads,
+            .wait = .wait_one,
+            // TODO(fqu): .preselected = true,
+        },
+    ) catch |err| return switch (err) {
+        error.Unscheduled => unreachable,
     };
-    defer file.close();
+    std.debug.assert(count == 1);
+    std.debug.assert(completed[0] == &open_file.arc);
 
+    logger.debug("spawn_background().resolve", .{});
+    const kernel_file_handle = ashet.resources.resolve(ashet.filesystem.File, call.get_process(), open_file.outputs.handle.as_resource()) catch @panic("unrecoverage resource leak");
+    defer kernel_file_handle.system_resource.destroy();
+
+    // var file = dir.openFile(inputs.path_ptr[0..inputs.path_len], .read_only, .open_existing) catch |err| return switch (err) {
+    //     error.InvalidPath,
+    //     error.DiskError,
+    //     error.InvalidHandle,
+    //     error.SystemResources,
+    //     error.FileNotFound,
+    //     => |e| e,
+
+    //     error.SystemFdQuotaExceeded => error.SystemResources,
+
+    //     error.WriteProtected,
+    //     error.FileAlreadyExists,
+    //     error.NoSpaceLeft,
+    //     error.Unexpected,
+    //     error.Exists,
+    //     => unreachable,
+    // };
+    // defer file.close();
+
+    var file_handle: libashet.fs.File = .{
+        .handle = open_file.outputs.handle,
+        .offset = 0,
+    };
+
+    logger.debug("spawn_background().spawn_blockiong", .{});
     var proc = spawn_blocking(
         "<new>",
-        &file,
+        &file_handle,
         inputs.argv_ptr[0..inputs.argv_len],
     ) catch |err| return switch (err) {
         error.OutOfMemory => error.SystemResources,
@@ -126,8 +171,9 @@ fn spawn_background(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.process
         error.Unexpected,
         => unreachable,
     };
-    errdefer proc.kill();
+    errdefer proc.kill(.killed);
 
+    logger.debug("spawn_background().assign_new_resource", .{});
     const handle = try call.get_process().assign_new_resource(&proc.system_resource);
 
     return .{
@@ -184,8 +230,9 @@ pub const Process = struct {
     /// Slice of where the executable was loaded in memory
     executable_memory: ?[]const u8 = null,
 
-    /// If `true`, the process was killed and it is now zombie process.
-    is_killed: bool = false,
+    /// If not null, the process was terminated is now zombie process.
+    /// Zombies exist as handles, but do not own any data anymore
+    exit_code: ?ExitCode = null,
 
     resources: ashet.resources.HandlePool,
 
@@ -243,11 +290,11 @@ pub const Process = struct {
     // }
 
     pub fn is_zombie(proc: Process) bool {
-        return proc.is_killed;
+        return (proc.exit_code != null);
     }
 
     /// Kills the process, stops all threads, and releases of its resources.
-    pub fn kill(proc: *Process) void {
+    pub fn kill(proc: *Process, exit_code: ExitCode) void {
         std.debug.assert(!proc.is_zombie());
 
         process_list.remove(&proc.list_item);
@@ -276,13 +323,13 @@ pub const Process = struct {
 
         proc.memory_arena.deinit();
 
-        proc.is_killed = true;
+        proc.exit_code = exit_code;
     }
 
     /// Kills the thread and deletes it afterwards. This will invalidate all resource handles!
     pub fn destroy(proc: *Process) void {
-        if (!proc.is_killed) {
-            proc.kill();
+        if (!proc.is_zombie()) {
+            proc.kill(ExitCode.killed);
         }
         ashet.memory.type_pool(Process).free(proc);
     }

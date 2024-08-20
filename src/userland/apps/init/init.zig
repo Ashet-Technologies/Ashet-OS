@@ -18,8 +18,8 @@ pub fn main() !void {
 
     const desktop_proc = try ashet.overlapped.performOne(abi.process.Spawn, .{
         .dir = apps_dir.dir,
-        .path_ptr = "desktop/classic",
-        .path_len = 15,
+        .path_ptr = "hello-world/code",
+        .path_len = 11,
         .argv_ptr = &[_]abi.SpawnProcessArg{},
         .argv_len = 0,
     });

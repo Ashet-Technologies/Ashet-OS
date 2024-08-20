@@ -111,15 +111,6 @@ const impls = struct {
         return ashet.video.getResolution();
     }
 
-    export fn @"ashet.process.getBaseAddress"() callconv(.C) usize {
-        return if (getCurrentProcess().executable_memory) |mem|
-            @intFromPtr(mem.ptr)
-        else
-            0;
-    }
-
-
-
     export fn @"ashet.ui.getSystemFont"(font_name_ptr: [*]const u8, font_name_len: usize, font_data_ptr: *[*]const u8, font_data_len: *usize) callconv(.C) abi.GetSystemFontError.Enum {
         _ = font_name_ptr;
         _ = font_name_len;

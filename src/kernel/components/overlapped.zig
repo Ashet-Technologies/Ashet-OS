@@ -146,9 +146,14 @@ const async_call_handlers = std.EnumArray(ashet.abi.ARC_Type, AsyncHandler).init
     .gui_get_window_event = AsyncHandler.todo("gui_get_window_event"),
 });
 
+/// Schedules a new overlapped event from the current thread context.
 pub fn schedule(event: *ARC) error{ SystemResources, AlreadyScheduled }!void {
     const thread, const context = get_context();
+    return schedule_with_context(thread, context, event);
+}
 
+/// Schedules a new overlapped event from the given thread and context.
+pub fn schedule_with_context(thread: *ashet.scheduler.Thread, context: *Context, event: *ARC) error{ SystemResources, AlreadyScheduled }!void {
     const call = try AsyncCall.create(context, event, thread);
     errdefer call.destroy();
 
@@ -167,39 +172,12 @@ pub fn schedule(event: *ARC) error{ SystemResources, AlreadyScheduled }!void {
     }
 }
 
-/// Pops the first element of the queue that belongs to `thread_filter` if set or any thread if `thread_filter` is null`.
-fn pop_with_threadaffinity(queue: *CallQueue, thread_filter: ?*ashet.scheduler.Thread) ?*CallQueue.Node {
-    const thread = thread_filter orelse return queue.popFirst();
-    var iter = queue.first;
-    while (iter) |node| : (iter = node.next) {
-        const call = AsyncCall.from_owner_link(node);
-        if (call.thread == thread) {
-            queue.remove(node);
-            return node;
-        }
-    }
-    return null;
-}
-
-/// Counts all elements in `queue` which belong to `thread_filter` if set or returns the total count if `thread_filter` is `null`.
-fn count_with_threadaffinity(queue: CallQueue, thread_filter: ?*ashet.scheduler.Thread) usize {
-    const thread = thread_filter orelse return queue.len;
-
-    var count: usize = 0;
-    var iter = queue.first;
-    while (iter) |node| : (iter = node.next) {
-        const call = AsyncCall.from_owner_link(node);
-        if (call.thread == thread) {
-            count += 1;
-        }
-    }
-
-    return 1;
-}
-
 pub fn await_completion(completed: []*ARC, options: ashet.abi.Await_Options) error{Unscheduled}!usize {
     const thread, const context = get_context();
+    return await_completion_with_context(thread, context, completed, options);
+}
 
+pub fn await_completion_with_context(thread: *ashet.scheduler.Thread, context: *Context, completed: []*ARC, options: ashet.abi.Await_Options) error{Unscheduled}!usize {
     context.awaiter_count += 1;
     defer context.awaiter_count -= 1;
 
@@ -595,4 +573,34 @@ fn background_worker_loop(context: ?*anyopaque) callconv(.C) u32 {
         // go to sleep again until we're done.
         ashet.scheduler.Thread.current().?.@"suspend"();
     }
+}
+
+/// Pops the first element of the queue that belongs to `thread_filter` if set or any thread if `thread_filter` is null`.
+fn pop_with_threadaffinity(queue: *CallQueue, thread_filter: ?*ashet.scheduler.Thread) ?*CallQueue.Node {
+    const thread = thread_filter orelse return queue.popFirst();
+    var iter = queue.first;
+    while (iter) |node| : (iter = node.next) {
+        const call = AsyncCall.from_owner_link(node);
+        if (call.thread == thread) {
+            queue.remove(node);
+            return node;
+        }
+    }
+    return null;
+}
+
+/// Counts all elements in `queue` which belong to `thread_filter` if set or returns the total count if `thread_filter` is `null`.
+fn count_with_threadaffinity(queue: CallQueue, thread_filter: ?*ashet.scheduler.Thread) usize {
+    const thread = thread_filter orelse return queue.len;
+
+    var count: usize = 0;
+    var iter = queue.first;
+    while (iter) |node| : (iter = node.next) {
+        const call = AsyncCall.from_owner_link(node);
+        if (call.thread == thread) {
+            count += 1;
+        }
+    }
+
+    return 1;
 }

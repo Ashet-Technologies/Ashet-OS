@@ -76,14 +76,30 @@ pub const syscalls = struct {
     };
 
     pub const process = struct {
-        pub fn get_file_name(proc: ?abi.Process) [*:0]const u8 {
-            _ = proc;
-            @panic("not implemented yet");
+        pub fn get_file_name(maybe_proc: ?abi.Process) [*:0]const u8 {
+            const kproc = if (maybe_proc) |handle| blk: {
+                _, const proc = resolve_typed_resource(ashet.multi_tasking.Process, handle.as_resource()) catch |err| {
+                    return @errorName(err);
+                };
+                break :blk proc;
+            } else getCurrentProcess();
+
+            return kproc.name.ptr;
         }
 
-        pub fn get_base_address(proc: ?abi.Process) usize {
-            _ = proc;
-            @panic("not implemented yet");
+        pub fn get_base_address(maybe_proc: ?abi.Process) usize {
+            const kproc = if (maybe_proc) |handle| blk: {
+                _, const proc = resolve_typed_resource(ashet.multi_tasking.Process, handle.as_resource()) catch {
+                    // TODO: Log err
+                    return 0;
+                };
+                break :blk proc;
+            } else getCurrentProcess();
+
+            return if (kproc.executable_memory) |mem|
+                @intFromPtr(mem.ptr)
+            else
+                0x00;
         }
 
         pub fn get_arguments(proc: ?abi.Process, argv: ?[]abi.SpawnProcessArg) usize {
@@ -93,13 +109,25 @@ pub const syscalls = struct {
         }
 
         pub fn terminate(exit_code: abi.ExitCode) noreturn {
+            const proc = getCurrentProcess();
+
+            proc.stay_resident = false;
+
+            var thread_iter = proc.threads.first;
+            while (thread_iter) |thread_node| : (thread_iter = thread_node.next) {
+                thread_node.data.thread.kill();
+            }
             _ = exit_code;
-            @panic("not implemented yet");
+
+            ashet.scheduler.yield();
+            @panic("terminator?");
         }
 
-        pub fn kill(proc: abi.Process) void {
-            _ = proc;
-            @panic("not implemented yet");
+        pub fn kill(handle: abi.Process) void {
+            _, const kproc = resolve_typed_resource(ashet.multi_tasking.Process, handle.as_resource()) catch return;
+            if (!kproc.is_zombie()) {
+                kproc.kill(.killed);
+            }
         }
 
         pub const thread = struct {
