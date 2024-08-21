@@ -159,30 +159,28 @@ pub fn initialize() void {
 }
 
 fn resolve_dir(call: *ashet.overlapped.AsyncCall, dir: ashet.abi.Directory) error{InvalidHandle}!*Directory {
-    const proc = call.get_process();
-    return ashet.resources.resolve(Directory, proc, dir.as_resource()) catch |err| {
-        logger.warn("process {} used invalid file handle {}: {s}", .{ proc, dir, @errorName(err) });
+    const owner = call.resource_owner;
+    return ashet.resources.resolve(Directory, owner, dir.as_resource()) catch |err| {
+        logger.warn("process {} used invalid file handle {}: {s}", .{ owner, dir, @errorName(err) });
         return error.InvalidHandle;
     };
 }
 
 fn resolve_file(call: *ashet.overlapped.AsyncCall, dir: ashet.abi.File) error{InvalidHandle}!*File {
-    const proc = call.get_process();
-    return ashet.resources.resolve(File, proc, dir.as_resource()) catch |err| {
-        logger.warn("process {} used invalid file handle {}: {s}", .{ proc, dir, @errorName(err) });
+    const owner = call.resource_owner;
+    return ashet.resources.resolve(File, owner, dir.as_resource()) catch |err| {
+        logger.warn("process {} used invalid file handle {}: {s}", .{ owner, dir, @errorName(err) });
         return error.InvalidHandle;
     };
 }
 
 fn create_dir_handle(call: *ashet.overlapped.AsyncCall, dir: *Directory) !ashet.abi.Directory {
-    const proc = call.get_process();
-    const handle = try proc.assign_new_resource(&dir.system_resource);
+    const handle = try call.resource_owner.assign_new_resource(&dir.system_resource);
     return handle.unsafe_cast(.directory);
 }
 
 fn create_file_handle(call: *ashet.overlapped.AsyncCall, file: *File) !ashet.abi.File {
-    const proc = call.get_process();
-    const handle = try proc.assign_new_resource(&file.system_resource);
+    const handle = try call.resource_owner.assign_new_resource(&file.system_resource);
     return handle.unsafe_cast(.file);
 }
 

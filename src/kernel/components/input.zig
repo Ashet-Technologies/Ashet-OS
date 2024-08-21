@@ -98,11 +98,11 @@ pub fn push_raw_event(raw_event: raw.Event) void {
 }
 
 pub fn schedule_get_event(call: *ashet.overlapped.AsyncCall) void {
-    const proc = call.thread.get_process();
-
-    if (!proc.isExclusiveVideoController()) {
-        return call.finalize(ashet.abi.input.GetEvent, error.NonExclusiveAccess);
-    }
+    // TODO: Implement this again!
+    // const proc = call.thread.get_process();
+    // if (!proc.isExclusiveVideoController()) {
+    //     return call.finalize(ashet.abi.input.GetEvent, error.NonExclusiveAccess);
+    // }
 
     if (event_awaiter != null) {
         return call.finalize(ashet.abi.input.GetEvent, error.InProgress);

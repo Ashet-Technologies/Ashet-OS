@@ -549,9 +549,9 @@ pub const udp = struct {
         }
 
         fn resolve(call: *ashet.overlapped.AsyncCall, dir: ashet.abi.UdpSocket) error{InvalidHandle}!*Socket {
-            const proc = call.get_process();
-            return ashet.resources.resolve(Socket, proc, dir.as_resource()) catch |err| {
-                logger.warn("process {} used invalid socket handle {}: {s}", .{ proc, dir, @errorName(err) });
+            const owner = call.resource_owner;
+            return ashet.resources.resolve(Socket, owner, dir.as_resource()) catch |err| {
+                logger.warn("process {} used invalid socket handle {}: {s}", .{ owner, dir, @errorName(err) });
                 return error.InvalidHandle;
             };
         }
@@ -770,9 +770,9 @@ pub const tcp = struct {
     };
 
     fn resolve_socket(call: *ashet.overlapped.AsyncCall, dir: ashet.abi.TcpSocket) error{InvalidHandle}!*Socket {
-        const proc = call.get_process();
-        return ashet.resources.resolve(Socket, proc, dir.as_resource()) catch |err| {
-            logger.warn("process {} used invalid socket handle {}: {s}", .{ proc, dir, @errorName(err) });
+        const owner = call.resource_owner;
+        return ashet.resources.resolve(Socket, owner, dir.as_resource()) catch |err| {
+            logger.warn("process {} used invalid socket handle {}: {s}", .{ owner, dir, @errorName(err) });
             return error.InvalidHandle;
         };
     }
@@ -853,7 +853,7 @@ pub const tcp = struct {
         // err: An unused error code, always ERR_OK currently ;-)
         std.debug.assert(err == c.ERR_OK);
 
-        logger.debug("tcp: connected(arg={}, pcb={*}, err={!})", .{ socket, pcb, lwipTry(err) });
+        logger.debug("tcp: connected(arg={}, pcb={?*}, err={!})", .{ socket, pcb, lwipTry(err) });
 
         socket.connected = true;
         socket.op = null;

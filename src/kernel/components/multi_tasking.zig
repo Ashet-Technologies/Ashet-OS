@@ -73,9 +73,7 @@ pub fn spawn_overlapped(call: *ashet.overlapped.AsyncCall) void {
     );
 }
 
-fn spawn_background(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.process.Spawn.Inputs) ashet.abi.process.Spawn.Error!ashet.abi.process.Spawn.Outputs {
-    const this_thread = ashet.scheduler.Thread.current().?;
-
+fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.process.Spawn.Inputs) ashet.abi.process.Spawn.Error!ashet.abi.process.Spawn.Outputs {
     var open_file = ashet.abi.fs.OpenFile.new(.{
         .dir = inputs.dir,
         .path_ptr = inputs.path_ptr,
@@ -86,8 +84,8 @@ fn spawn_background(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.process
 
     logger.debug("spawn_background().schedule_with_context", .{});
     ashet.overlapped.schedule_with_context(
-        call.thread,
-        call.context,
+        call.resource_owner,
+        context,
         &open_file.arc,
     ) catch |err| return switch (err) {
         error.AlreadyScheduled => unreachable,
@@ -97,8 +95,7 @@ fn spawn_background(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.process
     logger.debug("spawn_background().await_completion_with_context", .{});
     var completed: [1]*ashet.abi.ARC = .{&open_file.arc};
     const count = ashet.overlapped.await_completion_with_context(
-        this_thread,
-        call.context,
+        context,
         &completed,
         .{
             .thread_affinity = .all_threads,
@@ -111,8 +108,25 @@ fn spawn_background(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.process
     std.debug.assert(count == 1);
     std.debug.assert(completed[0] == &open_file.arc);
 
+    open_file.check_error() catch |err| return switch (err) {
+        error.WriteProtected,
+        error.FileAlreadyExists,
+        error.NoSpaceLeft,
+        error.Unexpected,
+        error.Exists,
+        => unreachable,
+
+        error.SystemFdQuotaExceeded => error.SystemResources,
+
+        else => |e| e,
+    };
+
     logger.debug("spawn_background().resolve", .{});
-    const kernel_file_handle = ashet.resources.resolve(ashet.filesystem.File, call.get_process(), open_file.outputs.handle.as_resource()) catch @panic("unrecoverage resource leak");
+    const kernel_file_handle = ashet.resources.resolve(
+        ashet.filesystem.File,
+        call.resource_owner,
+        open_file.outputs.handle.as_resource(),
+    ) catch @panic("unrecoverage resource leak");
     defer kernel_file_handle.system_resource.destroy();
 
     // var file = dir.openFile(inputs.path_ptr[0..inputs.path_len], .read_only, .open_existing) catch |err| return switch (err) {
@@ -175,7 +189,7 @@ fn spawn_background(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.process
     errdefer proc.kill(.killed);
 
     logger.debug("spawn_background().assign_new_resource", .{});
-    const handle = try call.get_process().assign_new_resource(&proc.system_resource);
+    const handle = try call.resource_owner.assign_new_resource(&proc.system_resource);
 
     return .{
         .process = handle.unsafe_cast(.process),

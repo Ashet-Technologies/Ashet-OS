@@ -127,7 +127,10 @@ pub fn build(b: *std.Build) void {
             exe: std.Build.LazyPath,
         };
 
-        const apps: []const AppDef = &.{};
+        const apps: []const AppDef = &.{
+            .{ .name = "init", .exe = get_named_file(os_files, "apps/init.elf").? },
+            .{ .name = "hello-world", .exe = get_named_file(os_files, "apps/hello-world.elf").? },
+        };
 
         const variables = Variables{
             .@"${DISK}" = disk_img,
@@ -146,7 +149,7 @@ pub fn build(b: *std.Build) void {
         for (apps) |app| {
             var app_name_buf: [128]u8 = undefined;
 
-            const app_name = try std.fmt.bufPrint(&app_name_buf, "{s}=", .{app.name});
+            const app_name = std.fmt.bufPrint(&app_name_buf, "{s}=", .{app.name}) catch @panic("out of memory");
 
             vm_runner.addArg("--elf");
             vm_runner.addPrefixedFileArg(app_name, app.exe);
