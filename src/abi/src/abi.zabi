@@ -1357,7 +1357,6 @@ pub const LogLevel = enum(u8) {
     warn = 2,
     notice = 3,
     debug = 4,
-    _,
 };
 
 pub const FileSystemId = enum(u32) {

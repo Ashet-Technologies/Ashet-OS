@@ -161,17 +161,7 @@ pub const syscalls = struct {
         pub const debug = struct {
             pub fn write_log(log_level: abi.LogLevel, message: []const u8) void {
                 const proc = getCurrentProcess();
-
-                const logger = std.log.scoped(.userland);
-
-                switch (log_level) {
-                    .critical => logger.info("{s}(critical): {s}", .{ proc.name, message }),
-                    .err => logger.info("{s}(err): {s}", .{ proc.name, message }),
-                    .warn => logger.info("{s}(warn): {s}", .{ proc.name, message }),
-                    .notice => logger.info("{s}(notice): {s}", .{ proc.name, message }),
-                    .debug => logger.info("{s}(debug): {s}", .{ proc.name, message }),
-                    _ => logger.info("{s}(unknown,{}): {s}", .{ proc.name, @intFromEnum(log_level), message }),
-                }
+                proc.write_log(log_level, message);
             }
             pub fn breakpoint() void {
                 const proc = getCurrentProcess();

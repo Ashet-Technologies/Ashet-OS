@@ -69,7 +69,7 @@ pub fn build(b: *std.Build) void {
         }
     }
 
-    // Test
+    // Kernel Unit Tests
     {
         const abi_dep = b.dependency("ashet-abi", .{});
         const abi_mod = abi_dep.module("ashet-abi");
@@ -92,6 +92,14 @@ pub fn build(b: *std.Build) void {
         kernel_tests.root_module.addImport("args", machine_info_mod);
         kernel_tests.root_module.addImport("ashet-abi", abi_mod);
         test_step.dependOn(&b.addRunArtifact(kernel_tests).step);
+    }
+
+    {
+        const astd_mod = b.dependency("ashet-std", .{});
+
+        const astd_tests = astd_mod.artifact("ashet-std-tests");
+
+        test_step.dependOn(&b.addRunArtifact(astd_tests).step);
     }
 
     // Run:

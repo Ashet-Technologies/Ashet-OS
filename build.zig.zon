@@ -12,6 +12,9 @@
         .@"ashet-abi" = .{
             .path = "src/abi",
         },
+        .@"ashet-std" = .{
+            .path = "vendor/ashet-std",
+        },
         .debugfilter = .{
             .path = "src/tools/debug-filter",
         },

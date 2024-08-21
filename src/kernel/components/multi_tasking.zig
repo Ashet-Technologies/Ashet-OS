@@ -1,6 +1,7 @@
 const std = @import("std");
 const hal = @import("hal");
 const libashet = @import("ashet");
+const astd = @import("ashet-std");
 const ashet = @import("../main.zig");
 const logger = std.log.scoped(.multitasking);
 const loader = @import("loader.zig");
@@ -207,6 +208,9 @@ pub const ProcessThreadList = std.DoublyLinkedList(struct {
 });
 
 pub const Process = struct {
+    const debug_line_buffer_length = 64;
+    const DebugLogBuffers = std.EnumArray(ashet.abi.LogLevel, astd.LineBuffer(debug_line_buffer_length));
+
     system_resource: ashet.resources.SystemResource = .{ .type = .process },
 
     /// Node inside `process_list`.
@@ -235,6 +239,8 @@ pub const Process = struct {
     exit_code: ?ExitCode = null,
 
     resources: ashet.resources.HandlePool,
+
+    debug_outputs: DebugLogBuffers = DebugLogBuffers.initFill(.{}),
 
     pub const CreateOptions = struct {
         name: ?[]const u8 = null,
@@ -383,5 +389,26 @@ pub const Process = struct {
         _ = fmt;
         _ = options;
         try writer.print("Thread(0x{X:0>8}, \"{}\")", .{ @intFromPtr(proc), std.zig.fmtEscapes(proc.name) });
+    }
+
+    pub fn write_log(proc: *Process, log_level: ashet.abi.LogLevel, text: []const u8) void {
+        const output = proc.debug_outputs.getPtr(log_level);
+
+        const process_logger = std.log.scoped(.process);
+
+        var offset: usize = 0;
+        while (offset < text.len) {
+            const consumed, const maybe_text = output.append(text[offset..]);
+            offset += consumed;
+            if (maybe_text) |log_line| {
+                switch (log_level) {
+                    .critical => process_logger.err("{s}: CRITICAL: {s}", .{ proc.name, log_line }),
+                    .err => process_logger.err("{s}: {s}", .{ proc.name, log_line }),
+                    .warn => process_logger.warn("{s}: {s}", .{ proc.name, log_line }),
+                    .notice => process_logger.info("{s}: {s}", .{ proc.name, log_line }),
+                    .debug => process_logger.debug("{s}: {s}", .{ proc.name, log_line }),
+                }
+            }
+        }
     }
 };
