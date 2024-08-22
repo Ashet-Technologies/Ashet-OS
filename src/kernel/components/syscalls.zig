@@ -63,10 +63,7 @@ pub const syscalls = struct {
 
         pub fn release(src_handle: abi.SystemResource) void {
             const proc, const resource = resolve_base_resource(src_handle) catch return;
-
-            const ownership = proc.resources.resolve(src_handle) catch return;
-
-            resource.remove_owner(ownership);
+            proc.drop_resource_ownership(resource, src_handle);
         }
 
         pub fn destroy(src_handle: abi.SystemResource) void {

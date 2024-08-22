@@ -148,12 +148,17 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
     // };
     // defer file.close();
 
+    const bg_process = ashet.scheduler.Thread.current().?.get_process();
+
+    const local_resource_handle = try bg_process.assign_new_resource(&kernel_file_handle.system_resource);
+    defer bg_process.drop_resource_ownership(&kernel_file_handle.system_resource, local_resource_handle);
+
     var file_handle: libashet.fs.File = .{
-        .handle = open_file.outputs.handle,
+        .handle = local_resource_handle.unsafe_cast(.file),
         .offset = 0,
     };
 
-    logger.debug("spawn_background().spawn_blockiong", .{});
+    logger.debug("spawn_background().spawn_blocking", .{});
     var proc = spawn_blocking(
         "<new>",
         &file_handle,
@@ -397,6 +402,28 @@ pub const Process = struct {
         res.add_owner(info.ownership);
 
         return info.handle;
+    }
+
+    pub fn drop_resource_ownership(proc: *Process, res: *ashet.resources.SystemResource, handle_hint: ?ashet.abi.SystemResource) void {
+        const resource_index: usize = if (handle_hint) |handle| blk: {
+            break :blk proc.resources.index_from_handle(handle) catch |err| {
+                logger.err("resource was not owned by process {}: {s}", .{ proc, @errorName(err) });
+                return;
+            };
+        } else blk: {
+            break :blk proc.resources.index_from_resource(res) orelse {
+                logger.err("drop_resource_ownership(): resource was not owned by process {}", .{proc});
+                return;
+            };
+        };
+
+        const ownership = proc.resources.ownership_from_index(resource_index);
+
+        res.remove_owner(ownership);
+
+        proc.resources.free_by_index(resource_index) catch |err| {
+            std.log.err("failed to release resource: {s}", .{@errorName(err)});
+        };
     }
 
     pub fn format(proc: *const Process, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {

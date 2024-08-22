@@ -392,7 +392,7 @@ pub const log_levels = struct {
     pub var drivers: LogLevel = .info;
     pub var mprot: LogLevel = .info; // very noise modules!
     pub var x86_vmm: LogLevel = .info; // very noise modules!
-    pub var overlapped: LogLevel = .debug; // very noise modules!
+    pub var overlapped: LogLevel = .info; // very noise modules!
 
     // drivers:
     pub var @"virtio-net": LogLevel = .info;
