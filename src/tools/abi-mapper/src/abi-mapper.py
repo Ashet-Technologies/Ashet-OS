@@ -920,6 +920,13 @@ def render_container(
                 with stream.indent():
                     stream.writeln("resources.destroy(self.as_resource());")
                 stream.writeln("}")
+                stream.writeln()
+                stream.writeln("pub fn format(res: ",decl.name,", fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {")
+                with stream.indent():
+                    stream.writeln("_ = fmt;")
+                    stream.writeln("_ = options;")
+                    stream.writeln('try writer.print("',decl.name,'(0x{X:0>8})", .{ @intFromPtr(res) });')
+                stream.writeln("}")
             stream.writeln("};")
 
         else:

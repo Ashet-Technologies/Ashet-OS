@@ -66,7 +66,6 @@ pub fn spawn_blocking(
 }
 
 pub fn spawn_overlapped(call: *ashet.overlapped.AsyncCall) void {
-    logger.debug("spawn_overlapped()", .{});
     ashet.overlapped.enqueue_background_task(
         call,
         ashet.overlapped.create_handler(ashet.abi.process.Spawn, spawn_background),
@@ -82,7 +81,6 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
         .mode = .open_existing,
     });
 
-    logger.debug("spawn_background().schedule_with_context", .{});
     ashet.overlapped.schedule_with_context(
         call.resource_owner,
         context,
@@ -92,7 +90,6 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
         error.SystemResources => |e| e,
     };
 
-    logger.debug("spawn_background().await_completion_with_context", .{});
     var completed: [1]*ashet.abi.ARC = .{&open_file.arc};
     const count = ashet.overlapped.await_completion_with_context(
         context,
@@ -121,7 +118,6 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
         else => |e| e,
     };
 
-    logger.debug("spawn_background().resolve", .{});
     const kernel_file_handle = ashet.resources.resolve(
         ashet.filesystem.File,
         call.resource_owner,
@@ -158,7 +154,6 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
         .offset = 0,
     };
 
-    logger.debug("spawn_background().spawn_blocking", .{});
     var proc = spawn_blocking(
         "<new>",
         &file_handle,
@@ -193,7 +188,6 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
     };
     errdefer proc.kill(.killed);
 
-    logger.debug("spawn_background().assign_new_resource", .{});
     const handle = try call.resource_owner.assign_new_resource(&proc.system_resource);
 
     return .{

@@ -15,6 +15,7 @@ pub fn main() !void {
         .path_ptr = "apps",
         .path_len = 4,
     });
+    defer apps_dir.dir.release();
 
     const desktop_proc = try ashet.overlapped.performOne(abi.process.Spawn, .{
         .dir = apps_dir.dir,
@@ -23,6 +24,7 @@ pub fn main() !void {
         .argv_ptr = &[_]abi.SpawnProcessArg{},
         .argv_len = 0,
     });
+    defer desktop_proc.process.release();
 
     std.log.info("spawned desktop process: {}", .{desktop_proc});
 
