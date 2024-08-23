@@ -14,6 +14,7 @@ const App = struct {
 const apps: []const App = &.{
     .{ .name = "hello-world", .dep_name = "hello_world" },
     .{ .name = "init", .dep_name = "init" },
+    .{ .name = "testing/behaviour", .dep_name = "test_behaviour", .artifact_name = "test-behaviour" },
 };
 
 pub fn build(b: *std.Build) void {

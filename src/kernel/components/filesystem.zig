@@ -159,30 +159,28 @@ pub fn initialize() void {
 }
 
 fn resolve_dir(call: *ashet.overlapped.AsyncCall, dir: ashet.abi.Directory) error{InvalidHandle}!*Directory {
-    const proc = call.get_process();
-    return ashet.resources.resolve(Directory, proc, dir.as_resource()) catch |err| {
-        logger.warn("process {} used invalid file handle {}: {s}", .{ proc, dir, @errorName(err) });
+    const owner = call.resource_owner;
+    return ashet.resources.resolve(Directory, owner, dir.as_resource()) catch |err| {
+        logger.warn("process {} used invalid file handle {}: {s}", .{ owner, dir, @errorName(err) });
         return error.InvalidHandle;
     };
 }
 
 fn resolve_file(call: *ashet.overlapped.AsyncCall, dir: ashet.abi.File) error{InvalidHandle}!*File {
-    const proc = call.get_process();
-    return ashet.resources.resolve(File, proc, dir.as_resource()) catch |err| {
-        logger.warn("process {} used invalid file handle {}: {s}", .{ proc, dir, @errorName(err) });
+    const owner = call.resource_owner;
+    return ashet.resources.resolve(File, owner, dir.as_resource()) catch |err| {
+        logger.warn("process {} used invalid file handle {}: {s}", .{ owner, dir, @errorName(err) });
         return error.InvalidHandle;
     };
 }
 
 fn create_dir_handle(call: *ashet.overlapped.AsyncCall, dir: *Directory) !ashet.abi.Directory {
-    const proc = call.get_process();
-    const handle = try proc.assign_new_resource(&dir.system_resource);
+    const handle = try call.resource_owner.assign_new_resource(&dir.system_resource);
     return handle.unsafe_cast(.directory);
 }
 
 fn create_file_handle(call: *ashet.overlapped.AsyncCall, file: *File) !ashet.abi.File {
-    const proc = call.get_process();
-    const handle = try proc.assign_new_resource(&file.system_resource);
+    const handle = try call.resource_owner.assign_new_resource(&file.system_resource);
     return handle.unsafe_cast(.file);
 }
 
@@ -194,6 +192,8 @@ const iop_handlers = struct {
     }
 
     fn fs_open_drive(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.OpenDrive.Inputs) fs_abi.OpenDrive.Error!fs_abi.OpenDrive.Outputs {
+        errdefer |err| logger.warn("fs_open_drive({}) => {}", .{ inputs.fs, err });
+
         const disk_id = if (inputs.fs == .system)
             sys_disk_index
         else
@@ -215,6 +215,8 @@ const iop_handlers = struct {
     }
 
     fn fs_open_dir(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.OpenDir.Inputs) fs_abi.OpenDir.Error!fs_abi.OpenDir.Outputs {
+        errdefer |err| logger.warn("fs_open_dir('{s}') => {}", .{ inputs.path_ptr[0..inputs.path_len], err });
+
         const ctx: *Directory = try resolve_dir(call, inputs.dir);
 
         const dri_dir = try ctx.fs.driver.openDirRelative(ctx.handle, inputs.path_ptr[0..inputs.path_len]);
@@ -296,6 +298,8 @@ const iop_handlers = struct {
     }
 
     fn fs_open_file(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.OpenFile.Inputs) fs_abi.OpenFile.Error!fs_abi.OpenFile.Outputs {
+        errdefer |err| logger.warn("fs_open_file('{s}') => {}", .{ inputs.path_ptr[0..inputs.path_len], err });
+
         const ctx: *Directory = try resolve_dir(call, inputs.dir);
 
         const dri_file = try ctx.fs.driver.openFile(
@@ -356,7 +360,8 @@ fn filesystemCoreLoop(_: ?*anyopaque) callconv(.C) noreturn {
     const abi = ashet.abi;
 
     while (true) {
-        while (work_queue.dequeue()) |async_call| {
+        while (work_queue.dequeue()) |_async_call| {
+            const async_call, _ = _async_call;
             // perform the IOP here
 
             const type_map = .{
@@ -415,8 +420,7 @@ fn filesystemCoreLoop(_: ?*anyopaque) callconv(.C) noreturn {
             }
         }
 
-        // go to sleep again until we're done.
-        ashet.scheduler.Thread.current().?.@"suspend"();
+        ashet.scheduler.yield();
     }
 }
 
@@ -485,7 +489,7 @@ pub fn findFilesystem(name: []const u8) ?ashet.abi.FileSystemId {
 }
 
 pub fn sync(call: *ashet.overlapped.AsyncCall) void {
-    work_queue.enqueue(call);
+    work_queue.enqueue(call, null);
 }
 
 pub fn getFilesystemInfo(call: *ashet.overlapped.AsyncCall) void {
@@ -508,7 +512,7 @@ pub fn openDrive(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.OpenDrive.Inp
         return call.finalize(fs_abi.OpenDrive, err);
     };
 
-    work_queue.enqueue(call);
+    work_queue.enqueue(call, null);
 }
 
 pub fn openDir(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.OpenDir.Inputs) void {
@@ -521,28 +525,28 @@ pub fn openDir(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.OpenDir.Inputs)
         return call.finalize(fs_abi.OpenDir, err);
     };
 
-    work_queue.enqueue(call);
+    work_queue.enqueue(call, null);
 }
 
 pub fn closeDir(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.CloseDir.Inputs) void {
     _ = resolve_dir(call, inputs.dir) catch |err| {
         return call.finalize(fs_abi.CloseDir, err);
     };
-    work_queue.enqueue(call);
+    work_queue.enqueue(call, null);
 }
 
 pub fn resetDirEnumeration(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.ResetDirEnumeration.Inputs) void {
     _ = resolve_dir(call, inputs.dir) catch |err| {
         return call.finalize(fs_abi.ResetDirEnumeration, err);
     };
-    work_queue.enqueue(call);
+    work_queue.enqueue(call, null);
 }
 
 pub fn enumerateDir(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.EnumerateDir.Inputs) void {
     _ = resolve_dir(call, inputs.dir) catch |err| {
         return call.finalize(fs_abi.ResetDirEnumeration, err);
     };
-    work_queue.enqueue(call);
+    work_queue.enqueue(call, null);
 }
 
 pub fn delete(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.Delete.Inputs) void {
@@ -555,7 +559,7 @@ pub fn delete(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.Delete.Inputs) v
         return call.finalize(fs_abi.Delete, error.InvalidPath);
     };
 
-    work_queue.enqueue(call);
+    work_queue.enqueue(call, null);
 }
 
 pub fn mkdir(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.MkDir.Inputs) void {
@@ -568,7 +572,7 @@ pub fn mkdir(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.MkDir.Inputs) voi
         return call.finalize(fs_abi.MkDir, err);
     };
 
-    work_queue.enqueue(call);
+    work_queue.enqueue(call, null);
 }
 
 pub fn statEntry(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.StatEntry.Inputs) void {
@@ -581,7 +585,7 @@ pub fn statEntry(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.StatEntry.Inp
         return call.finalize(fs_abi.StatEntry, err);
     };
 
-    work_queue.enqueue(call);
+    work_queue.enqueue(call, null);
 }
 
 pub fn nearMove(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.NearMove.Inputs) void {
@@ -612,47 +616,47 @@ pub fn openFile(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.OpenFile.Input
         return call.finalize(fs_abi.OpenFile, err);
     };
 
-    work_queue.enqueue(call);
+    work_queue.enqueue(call, null);
 }
 
 pub fn closeFile(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.CloseFile.Inputs) void {
     _ = resolve_file(call, inputs.file) catch |err| {
         return call.finalize(fs_abi.CloseFile, err);
     };
-    work_queue.enqueue(call);
+    work_queue.enqueue(call, null);
 }
 
 pub fn flushFile(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.FlushFile.Inputs) void {
     _ = resolve_file(call, inputs.file) catch |err| {
         return call.finalize(fs_abi.FlushFile, err);
     };
-    work_queue.enqueue(call);
+    work_queue.enqueue(call, null);
 }
 
 pub fn read(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.Read.Inputs) void {
     _ = resolve_file(call, inputs.file) catch |err| {
         return call.finalize(fs_abi.Read, err);
     };
-    work_queue.enqueue(call);
+    work_queue.enqueue(call, null);
 }
 
 pub fn write(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.Write.Inputs) void {
     _ = resolve_file(call, inputs.file) catch |err| {
         return call.finalize(fs_abi.Write, err);
     };
-    work_queue.enqueue(call);
+    work_queue.enqueue(call, null);
 }
 
 pub fn statFile(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.StatFile.Inputs) void {
     _ = resolve_file(call, inputs.file) catch |err| {
         return call.finalize(fs_abi.StatFile, err);
     };
-    work_queue.enqueue(call);
+    work_queue.enqueue(call, null);
 }
 
 pub fn resize(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.Resize.Inputs) void {
     _ = resolve_file(call, inputs.file) catch |err| {
         return call.finalize(fs_abi.Resize, err);
     };
-    work_queue.enqueue(call);
+    work_queue.enqueue(call, null);
 }

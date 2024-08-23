@@ -272,7 +272,7 @@ pub const debug = struct {
         while (i < page_manager.pageCount()) : (i += 1) {
             if (i % items_per_line == 0) {
                 if (i > 0) {
-                    writer.writeAll("]") catch {};
+                    writer.writeAll("\x1B[0m]") catch {};
                 }
                 writer.print("\r\n0x{X:0>8}: [", .{page_manager.region.base + i * page_size}) catch {};
             }
@@ -309,13 +309,50 @@ pub const debug = struct {
             writer.writeAll(sigil) catch {};
         }
 
-        writer.writeAll("]\r\n") catch {};
+        writer.writeAll("\x1B[0m]\r\n") catch {};
 
         // for (page_manager.bitmap(), 0..) |item, index| {
         //     writer.print("{X:0>4}: {b:0>32}\r\n", .{ index, item }) catch {};
         // }
 
-        writer.print("free ram: {} ({}/{} pages)\r\n", .{ free_memory, free_memory / page_size, page_manager.pageCount() }) catch {};
+        writer.print("free ram: {} ({}/{} pages)\r\n", .{ fmt_mem_size(free_memory), free_memory / page_size, page_manager.pageCount() }) catch {};
+    }
+
+    fn fmt_mem_size(size: usize) std.fmt.Formatter(format_mem_size) {
+        return .{ .data = size };
+    }
+
+    fn format_mem_size(size: usize, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        const Unit = struct {
+            base: u64,
+            name: []const u8,
+
+            const table = [_]@This(){
+                .{ .base = (1 << 10), .name = "kB" },
+                .{ .base = (1 << 20), .name = "MB" },
+                .{ .base = (1 << 30), .name = "GB" },
+            };
+        };
+
+        var maybe_unit: ?Unit = null;
+        for (Unit.table) |u| {
+            if (size >= u.base)
+                maybe_unit = u;
+        }
+
+        if (maybe_unit) |unit| {
+            const byte_count: u64 = size;
+            const scaled = (byte_count * 1000) / unit.base;
+
+            const int_part = scaled / 1000;
+            const fract_part = scaled % 1000;
+
+            try writer.print("{d}.{d:0>3}{s}", .{ int_part, fract_part, unit.name });
+        } else {
+            try writer.print("{}B", .{size});
+        }
     }
 };
 

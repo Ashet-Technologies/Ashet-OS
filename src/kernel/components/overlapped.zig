@@ -3,10 +3,29 @@ const hal = @import("hal");
 const abi = ashet.abi;
 const ashet = @import("../main.zig");
 const astd = @import("ashet-std");
-const logger = std.log.scoped(.io);
+const logger = std.log.scoped(.overlapped);
 
 pub const ARC = ashet.abi.ARC;
 const WaitIO = ashet.abi.WaitIO;
+
+const work_queue_count = 1;
+var next_work_queue: usize = 0;
+var work_queues: [work_queue_count]WorkQueue = undefined;
+
+pub fn initialize() !void {
+    var buffer: [32]u8 = undefined;
+    for (&work_queues, 0..) |*wq, index| {
+        const thread = try ashet.scheduler.Thread.spawn(background_worker_loop, wq, .{});
+
+        try thread.setName(try std.fmt.bufPrint(&buffer, "background{}", .{index}));
+
+        wq.* = WorkQueue{ .wakeup_thread = thread };
+
+        thread.start() catch unreachable;
+
+        thread.detach();
+    }
+}
 
 /// Returns the current thread and async scheduling context.
 fn get_context() struct { *ashet.scheduler.Thread, *Context } {
@@ -78,7 +97,7 @@ const async_call_handlers = std.EnumArray(ashet.abi.ARC_Type, AsyncHandler).init
     .clock_timer = AsyncHandler.wrap(ashet.time.schedule_timer),
     .datetime_alarm = AsyncHandler.wrap(ashet.time.schedule_alarm),
 
-    .process_spawn = AsyncHandler.todo("process_spawn"),
+    .process_spawn = AsyncHandler.wrap(ashet.multi_tasking.spawn_overlapped),
 
     .random_get_strict_random = AsyncHandler.todo("random_get_strict_random"),
 
@@ -127,13 +146,23 @@ const async_call_handlers = std.EnumArray(ashet.abi.ARC_Type, AsyncHandler).init
     .gui_get_window_event = AsyncHandler.todo("gui_get_window_event"),
 });
 
+/// Schedules a new overlapped event from the current thread context.
 pub fn schedule(event: *ARC) error{ SystemResources, AlreadyScheduled }!void {
     const thread, const context = get_context();
+    return schedule_with_context(thread.get_process(), context, event);
+}
 
-    const call = try AsyncCall.create(context, event, thread);
+/// Schedules a new overlapped event from the given thread and context.
+pub fn schedule_with_context(resource_owner: *ashet.multi_tasking.Process, context: *Context, event: *ARC) error{ SystemResources, AlreadyScheduled }!void {
+    const call = try AsyncCall.create(
+        context,
+        event,
+        resource_owner,
+        ashet.scheduler.Thread.current().?,
+    );
     errdefer call.destroy();
 
-    logger.debug("dispatching i/o: {s}", .{@tagName(event.type)});
+    logger.debug("dispatching {s} from {}", .{ @tagName(event.type), resource_owner });
 
     context.in_flight.append(&call.owner_link);
 
@@ -148,51 +177,34 @@ pub fn schedule(event: *ARC) error{ SystemResources, AlreadyScheduled }!void {
     }
 }
 
-/// Pops the first element of the queue that belongs to `thread_filter` if set or any thread if `thread_filter` is null`.
-fn pop_with_threadaffinity(queue: *CallQueue, thread_filter: ?*ashet.scheduler.Thread) ?*CallQueue.Node {
-    const thread = thread_filter orelse return queue.popFirst();
-    var iter = queue.first;
-    while (iter) |node| : (iter = node.next) {
-        const call = AsyncCall.from_owner_link(node);
-        if (call.thread == thread) {
-            queue.remove(node);
-            return node;
-        }
-    }
-    return null;
-}
-
-/// Counts all elements in `queue` which belong to `thread_filter` if set or returns the total count if `thread_filter` is `null`.
-fn count_with_threadaffinity(queue: CallQueue, thread_filter: ?*ashet.scheduler.Thread) usize {
-    const thread = thread_filter orelse return queue.len;
-
-    var count: usize = 0;
-    var iter = queue.first;
-    while (iter) |node| : (iter = node.next) {
-        const call = AsyncCall.from_owner_link(node);
-        if (call.thread == thread) {
-            count += 1;
-        }
-    }
-
-    return 1;
-}
-
 pub fn await_completion(completed: []*ARC, options: ashet.abi.Await_Options) error{Unscheduled}!usize {
-    const thread, const context = get_context();
+    _, const context = get_context();
+    return await_completion_with_context(context, completed, options);
+}
 
-    context.awaiter_count += 1;
-    defer context.awaiter_count -= 1;
+pub fn await_completion_with_context(context: *Context, completed: []*ARC, options: ashet.abi.Await_Options) error{Unscheduled}!usize {
+    // We always have to resume the thread calling this function.
+    // Everything else doesn't make sense at all:
+    const thread = ashet.scheduler.Thread.current().?;
 
     const filter_thread = switch (options.thread_affinity) {
         .this_thread => thread,
         .all_threads => null,
     };
 
+    var awaiter_node = AwaiterNode{
+        .data = .{
+            .resume_thread = thread,
+            .filter_thread = filter_thread,
+        },
+    };
+
     // unset the whole array:
     for (completed) |*arc| {
         arc.* = undefined;
     }
+
+    logger.debug("await completion from {?}", .{filter_thread});
 
     var count: usize = 0;
     gather_loop: while (count < completed.len) {
@@ -204,6 +216,8 @@ pub fn await_completion(completed: []*ARC, options: ashet.abi.Await_Options) err
 
             completed[count] = call.arc;
             count += 1;
+
+            logger.debug("returning {s} to userland from {}", .{ @tagName(call.arc.type), thread });
 
             call.destroy();
         } else {
@@ -222,12 +236,20 @@ pub fn await_completion(completed: []*ARC, options: ashet.abi.Await_Options) err
                     break :gather_loop,
             }
 
-            // TODO: Mark thread to be woken up again!
+            logger.debug("suspend {} and wait for completion...", .{thread});
 
-            // suspend and wait to be woken up again, in the hope that we've completed events:
-            thread.@"suspend"();
+            {
+                context.awaiters.append(&awaiter_node);
+                defer context.awaiters.remove(&awaiter_node);
+
+                // suspend and wait to be woken up again, in the hope that we've completed events:
+                thread.@"suspend"();
+            }
+
+            logger.debug("resumed {} from awaiting completion", .{thread});
         }
     }
+    logger.debug("await yielded {} items", .{count});
 
     return count;
 }
@@ -275,9 +297,14 @@ pub fn destroy(context: *Context) void {
 pub const AsyncCall = struct {
     arc: *ARC,
 
+    /// The scheduling context for this ARC. Controls awaiters and completion queue.
     context: *Context,
 
-    thread: *ashet.scheduler.Thread,
+    /// Stores the process which owns created/referenced resource handles.
+    resource_owner: *ashet.multi_tasking.Process,
+
+    /// Stores the thread that scheduled this call
+    scheduling_thread: *ashet.scheduler.Thread,
 
     /// Stored inside the `Context` type, can be used to list all
     /// async calls for a given process.
@@ -285,7 +312,7 @@ pub const AsyncCall = struct {
 
     /// Stored inside a `WorkQueue` type. Is used to provide kernel subsystems
     /// a way to store their pending tasks.
-    work_link: CallQueue.Node = .{ .data = {} },
+    work_link: WorkQueue.Node = .{ .data = null },
 
     /// Function pointer to a function that cancels the async call
     /// after it has been fetched from its work_queue, but was not moved
@@ -296,15 +323,15 @@ pub const AsyncCall = struct {
     /// from `arc` to cancel the operation quickly.
     cancel_context: ?*anyopaque = null,
 
-    /// Returns the thread that scheduled the ARC.
-    pub fn get_thread(ac: *AsyncCall) *ashet.scheduler.Thread {
-        return ac.thread;
-    }
+    // /// Returns the thread that scheduled the ARC.
+    // pub fn get_thread(ac: *AsyncCall) *ashet.scheduler.Thread {
+    //     return ac.thread;
+    // }
 
-    /// Returns the process that scheduled the ARC.
-    pub fn get_process(ac: *AsyncCall) *ashet.multi_tasking.Process {
-        return ac.thread.process_link.data.process;
-    }
+    // /// Returns the process that scheduled the ARC.
+    // pub fn get_process(ac: *AsyncCall) *ashet.multi_tasking.Process {
+    //     return ac.thread.process_link.data.process;
+    // }
 
     /// Finalizes the ARC with the provided `result` which is either an error or the outputs of the
     /// ARC.
@@ -318,17 +345,18 @@ pub const AsyncCall = struct {
             const generic: *T = T.from_arc(ac.arc);
             generic.outputs = value;
             generic.set_ok();
-            ac.finalize_unsafe();
+            logger.debug("completing {s} with result", .{@tagName(ac.arc.type)});
         } else |err| {
             const generic: *T = T.from_arc(ac.arc);
             generic.outputs = undefined; // explicitly kill the content here in debug kernels
             generic.set_error(err);
-            ac.finalize_unsafe();
+            logger.debug("completing {s} with error {s}", .{ @tagName(ac.arc.type), @errorName(err) });
         }
+        ac.finalize_unsafe();
     }
 
     /// Completes the `event` element and moves it from the in_flight queue into the completed queue.
-    pub fn finalize_unsafe(ac: *AsyncCall) void {
+    fn finalize_unsafe(ac: *AsyncCall) void {
         std.debug.assert(ac.work_link.prev == null);
         std.debug.assert(ac.work_link.next == null);
 
@@ -338,22 +366,31 @@ pub const AsyncCall = struct {
         ac.context.in_flight.remove(&ac.owner_link);
         ac.context.completed.append(&ac.owner_link);
 
-        // We finished an event, resume the thread if its waiting for I/O:
-        if (ac.context.awaiter_count > 0) {
-            ac.thread.@"resume"();
+        // When we finish an event, we have to ensure potential awaiters are woken up and resume
+        // the processing:
+
+        {
+            var iter = ac.context.awaiters.first;
+            while (iter) |node| : (iter = node.next) {
+                if (node.data.filter_thread == null or node.data.filter_thread == ac.scheduling_thread) {
+                    node.data.resume_thread.@"resume"();
+                }
+            }
         }
     }
 
     fn create(
         context: *Context,
         arc: *ARC,
-        thread: *ashet.scheduler.Thread,
+        resource_owner: *ashet.multi_tasking.Process,
+        scheduling_thread: *ashet.scheduler.Thread,
     ) error{SystemResources}!*AsyncCall {
         const item = ashet.memory.type_pool(AsyncCall).alloc() catch return error.SystemResources;
         item.* = AsyncCall{
             .context = context,
             .arc = arc,
-            .thread = thread,
+            .resource_owner = resource_owner,
+            .scheduling_thread = scheduling_thread,
         };
         return item;
     }
@@ -372,7 +409,7 @@ pub const AsyncCall = struct {
         ashet.memory.type_pool(AsyncCall).free(call);
     }
 
-    fn from_work_link(node: *CallQueue.Node) *AsyncCall {
+    fn from_work_link(node: *WorkQueue.Node) *AsyncCall {
         return @fieldParentPtr("work_link", node);
     }
 
@@ -380,6 +417,19 @@ pub const AsyncCall = struct {
         return @fieldParentPtr("owner_link", node);
     }
 };
+
+/// A structure that describes an active invocation of `await_completion_with_context`
+/// and allows resuming that function.
+const Awaiter = struct {
+    /// Which thread must be resumed to complete?
+    resume_thread: *ashet.scheduler.Thread,
+
+    /// Which thread has scheduled the original async call?
+    filter_thread: ?*ashet.scheduler.Thread,
+};
+
+const AwaiterList = std.DoublyLinkedList(Awaiter);
+const AwaiterNode = AwaiterList.Node;
 
 /// Management context for async running calls.
 pub const Context = struct {
@@ -391,7 +441,7 @@ pub const Context = struct {
 
     /// Number of active `await_completion` calls. If non-zero, the awaiting thread should
     /// be resumed.
-    awaiter_count: usize = 0,
+    awaiters: AwaiterList = .{},
 
     pub const QueueName = enum { in_flight, completed };
 
@@ -437,11 +487,16 @@ fn node_in_queue(q: CallQueue, n: *CallQueue.Node) bool {
 /// A work queue for ARCs, meant for the use inside
 /// subsystems that handle asynchronous calls.
 pub const WorkQueue = struct {
+    const Backing = std.DoublyLinkedList(Item);
+
+    pub const Item = ?*anyopaque;
+    pub const Node = Backing.Node;
+
     /// If this is set, the queue will wake up the thread
     /// so it can resume working on the queued tasks.
     wakeup_thread: ?*ashet.scheduler.Thread,
 
-    queue: CallQueue = .{},
+    queue: Backing = .{},
 
     /// Returns the next-to-be-dequeued job.
     pub fn get_head(wq: WorkQueue) ?*AsyncCall {
@@ -450,11 +505,11 @@ pub const WorkQueue = struct {
     }
 
     /// Enqueues an ARC into
-    pub fn enqueue(wq: *WorkQueue, arc: *AsyncCall) void {
+    pub fn enqueue(wq: *WorkQueue, arc: *AsyncCall, item: Item) void {
         std.debug.assert(arc.work_link.next == null);
         std.debug.assert(arc.work_link.prev == null);
 
-        arc.work_link = .{ .data = {} };
+        arc.work_link = .{ .data = item };
 
         wq.queue.append(&arc.work_link);
 
@@ -468,11 +523,11 @@ pub const WorkQueue = struct {
     /// by calling `comparer.lt(arc, node)`, with `node` being any node in the list.
     /// If `arc` is less than node, it will be scheduled before the first `node` that meets
     /// that requirement.
-    pub fn priority_enqueue(wq: *WorkQueue, arc: *AsyncCall, comparer: anytype) void {
+    pub fn priority_enqueue(wq: *WorkQueue, arc: *AsyncCall, item: Item, comparer: anytype) void {
         std.debug.assert(arc.work_link.next == null);
         std.debug.assert(arc.work_link.prev == null);
 
-        arc.work_link = .{ .data = {} };
+        arc.work_link = .{ .data = item };
 
         if (wq.queue.first != null) {
             var iter = wq.queue.first;
@@ -504,12 +559,12 @@ pub const WorkQueue = struct {
 
     /// Pops a single work item from the queue and returns it.
     /// Returns `null` if no work items are present.
-    pub fn dequeue(wq: *WorkQueue) ?*AsyncCall {
+    pub fn dequeue(wq: *WorkQueue) ?struct { *AsyncCall, Item } {
         const node = wq.queue.popFirst() orelse return null;
         node.next = null;
         node.prev = null;
         const call: *AsyncCall = @fieldParentPtr("work_link", node);
-        return call;
+        return .{ call, node.data };
     }
 
     /// Returns `true` if the `arc` is currently queued in this queue.
@@ -517,3 +572,79 @@ pub const WorkQueue = struct {
         return node_in_queue(wq.queue, &arc.work_link);
     }
 };
+
+/// Handler for background workers.
+pub const Background_Worker = fn (*Context, *AsyncCall) void;
+
+/// Wraps an asynchronous call handler that takes input and returns a generic version.
+pub fn create_handler(comptime Arc: type, comptime handler: fn (*Context, *AsyncCall, Arc.Inputs) Arc.Error!Arc.Outputs) *const Background_Worker {
+    const Wrap = struct {
+        fn wrapped(ctx: *Context, call: *AsyncCall) void {
+            const cast = call.arc.cast(Arc);
+            call.finalize(Arc, handler(ctx, call, cast.inputs));
+        }
+    };
+    return Wrap.wrapped;
+}
+
+/// Queues `call` to be processed by `handler` in a background thread.
+pub fn enqueue_background_task(call: *AsyncCall, handler: *const Background_Worker) void {
+    const i = next_work_queue;
+    next_work_queue += 1;
+    if (next_work_queue >= work_queues.len) {
+        next_work_queue = 0;
+    }
+    work_queues[i].enqueue(call, @constCast(handler));
+}
+
+fn background_worker_loop(context: ?*anyopaque) callconv(.C) u32 {
+    const q: *WorkQueue = @ptrCast(@alignCast(context.?));
+
+    logger.info("overlapped background worker ready.", .{});
+
+    var overlapped_context = Context{};
+
+    while (true) {
+        while (q.dequeue()) |work_item| {
+            const call, const ctx = work_item;
+
+            const worker: *const Background_Worker = @ptrCast(ctx);
+
+            logger.debug("execute overlapped call .{s}", .{@tagName(call.arc.type)});
+            worker(&overlapped_context, call);
+        }
+
+        // go to sleep again until we're done.
+        ashet.scheduler.Thread.current().?.@"suspend"();
+    }
+}
+
+/// Pops the first element of the queue that belongs to `thread_filter` if set or any thread if `thread_filter` is null`.
+fn pop_with_threadaffinity(queue: *CallQueue, thread_filter: ?*ashet.scheduler.Thread) ?*CallQueue.Node {
+    const thread = thread_filter orelse return queue.popFirst();
+    var iter = queue.first;
+    while (iter) |node| : (iter = node.next) {
+        const call = AsyncCall.from_owner_link(node);
+        if (call.scheduling_thread == thread) {
+            queue.remove(node);
+            return node;
+        }
+    }
+    return null;
+}
+
+/// Counts all elements in `queue` which belong to `thread_filter` if set or returns the total count if `thread_filter` is `null`.
+fn count_with_threadaffinity(queue: CallQueue, thread_filter: ?*ashet.scheduler.Thread) usize {
+    const thread = thread_filter orelse return queue.len;
+
+    var count: usize = 0;
+    var iter = queue.first;
+    while (iter) |node| : (iter = node.next) {
+        const call = AsyncCall.from_owner_link(node);
+        if (call.scheduling_thread == thread) {
+            count += 1;
+        }
+    }
+
+    return 1;
+}

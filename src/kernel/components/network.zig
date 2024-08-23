@@ -326,9 +326,6 @@ const LwipError = error{
     ConnectionClosed,
     /// Illegal argument.
     IllegalArgument,
-
-    /// Unexpected error code
-    Unexpected,
 };
 
 fn lwipErr(err: c.err_t) LwipError {
@@ -357,7 +354,10 @@ fn lwipTry(err: c.err_t) LwipError!void {
         c.ERR_RST => LwipError.ConnectionReset,
         c.ERR_CLSD => LwipError.ConnectionClosed,
         c.ERR_ARG => LwipError.IllegalArgument,
-        else => LwipError.Unexpected,
+        else => {
+            logger.err("error code: {}", .{err});
+            @panic("unexpected lwip error code!");
+        },
     };
 }
 
@@ -533,7 +533,7 @@ pub const udp = struct {
             const pcb = c.udp_new() orelse return error.SystemResources;
             errdefer comptime unreachable;
 
-            c.udp_arg(pcb, socket);
+            // c.udp_arg(pcb, socket);
             c.udp_recv(pcb, handleIncomingPacket, socket);
 
             return socket;
@@ -549,9 +549,9 @@ pub const udp = struct {
         }
 
         fn resolve(call: *ashet.overlapped.AsyncCall, dir: ashet.abi.UdpSocket) error{InvalidHandle}!*Socket {
-            const proc = call.get_process();
-            return ashet.resources.resolve(Socket, proc, dir.as_resource()) catch |err| {
-                logger.warn("process {} used invalid socket handle {}: {s}", .{ proc, dir, @errorName(err) });
+            const owner = call.resource_owner;
+            return ashet.resources.resolve(Socket, owner, dir.as_resource()) catch |err| {
+                logger.warn("process {} used invalid socket handle {}: {s}", .{ owner, dir, @errorName(err) });
                 return error.InvalidHandle;
             };
         }
@@ -708,15 +708,6 @@ pub const tcp = struct {
                 .send => |*dat| &dat.event.iop,
             };
         }
-
-        pub fn finalize(op: *Op, err: anyerror!void) void {
-            switch (op.*) {
-                .connect => |ev| ev.finalize_with_result(ashet.abi.tcp.Connect, err),
-                .receive => |dat| dat.event.finalize_with_result(ashet.abi.tcp.Receive, err),
-                .send => |*dat| dat.event.finalize_with_result(ashet.abi.tcp.Send, err),
-            }
-            ashet.io.finalize(op.event());
-        }
     };
 
     const SendOp = struct {
@@ -779,9 +770,9 @@ pub const tcp = struct {
     };
 
     fn resolve_socket(call: *ashet.overlapped.AsyncCall, dir: ashet.abi.TcpSocket) error{InvalidHandle}!*Socket {
-        const proc = call.get_process();
-        return ashet.resources.resolve(Socket, proc, dir.as_resource()) catch |err| {
-            logger.warn("process {} used invalid socket handle {}: {s}", .{ proc, dir, @errorName(err) });
+        const owner = call.resource_owner;
+        return ashet.resources.resolve(Socket, owner, dir.as_resource()) catch |err| {
+            logger.warn("process {} used invalid socket handle {}: {s}", .{ owner, dir, @errorName(err) });
             return error.InvalidHandle;
         };
     }
@@ -792,7 +783,32 @@ pub const tcp = struct {
         logger.err("tcp: err(arg={*}, err={!})", .{ arg, lwipTry(err) });
 
         if (sock.op) |*op| {
-            op.finalize(lwipTry(err));
+            switch (op.*) {
+                .connect => |evt| evt.finalize(abi_tcp.Connect, switch (lwipErr(err)) {
+                    error.AddressInUse,
+                    error.NotConnected,
+                    error.WouldBlock,
+                    => unreachable,
+                    else => |e| e,
+                }),
+                .receive => |o| o.event.finalize(abi_tcp.Receive, switch (lwipErr(err)) {
+                    error.AlreadyConnected,
+                    error.AlreadyConnecting,
+                    error.AddressInUse,
+                    error.WouldBlock,
+                    => unreachable,
+                    else => |e| e,
+                }),
+                .send => |o| o.event.finalize(abi_tcp.Send, switch (lwipErr(err)) {
+                    error.AddressInUse,
+                    error.NotConnected,
+                    error.WouldBlock,
+                    error.AlreadyConnected,
+                    error.AlreadyConnecting,
+                    => unreachable,
+                    else => |e| e,
+                }),
+            }
         }
     }
 
@@ -837,7 +853,7 @@ pub const tcp = struct {
         // err: An unused error code, always ERR_OK currently ;-)
         std.debug.assert(err == c.ERR_OK);
 
-        logger.debug("tcp: connected(arg={}, pcb={*}, err={!})", .{ socket, pcb, lwipTry(err) });
+        logger.debug("tcp: connected(arg={}, pcb={?*}, err={!})", .{ socket, pcb, lwipTry(err) });
 
         socket.connected = true;
         socket.op = null;
@@ -956,7 +972,11 @@ pub const tcp = struct {
             logger.debug("tcp: recv(arg={},  tot_len=<nil>, err=end of stream)", .{socket});
 
             if (socket.op) |*op| {
-                op.finalize({});
+                if (op.* == .receive) {
+                    op.receive.event.finalize(abi_tcp.Receive, .{
+                        .bytes_received = 0,
+                    });
+                }
                 socket.op = null;
             }
 
@@ -999,7 +1019,7 @@ pub const tcp = struct {
                 .bytes_received = op.write_offset,
             });
             socket.op = null;
-            return;
+            return c.ERR_OK;
         }
 
         if (socket.recv_offset == pbuf.tot_len) {

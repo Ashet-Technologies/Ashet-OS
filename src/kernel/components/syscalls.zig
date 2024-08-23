@@ -63,10 +63,7 @@ pub const syscalls = struct {
 
         pub fn release(src_handle: abi.SystemResource) void {
             const proc, const resource = resolve_base_resource(src_handle) catch return;
-
-            const ownership = proc.resources.resolve(src_handle) catch return;
-
-            resource.remove_owner(ownership);
+            proc.drop_resource_ownership(resource, src_handle);
         }
 
         pub fn destroy(src_handle: abi.SystemResource) void {
@@ -76,30 +73,78 @@ pub const syscalls = struct {
     };
 
     pub const process = struct {
-        pub fn get_file_name(proc: ?abi.Process) [*:0]const u8 {
-            _ = proc;
-            @panic("not implemented yet");
+        fn _resolve_maybe_proc(maybe_proc: ?abi.Process) !*ashet.multi_tasking.Process {
+            return if (maybe_proc) |handle| blk: {
+                _, const proc = try resolve_typed_resource(ashet.multi_tasking.Process, handle.as_resource());
+                break :blk proc;
+            } else getCurrentProcess();
         }
 
-        pub fn get_base_address(proc: ?abi.Process) usize {
-            _ = proc;
-            @panic("not implemented yet");
+        pub fn get_file_name(maybe_proc: ?abi.Process) [*:0]const u8 {
+            const kproc = _resolve_maybe_proc(maybe_proc) catch |err| {
+                return @as([*:0]const u8, @errorName(err));
+            };
+            return kproc.name.ptr;
         }
 
-        pub fn get_arguments(proc: ?abi.Process, argv: ?[]abi.SpawnProcessArg) usize {
-            _ = proc;
-            _ = argv;
-            @panic("not implemented yet");
+        pub fn get_base_address(maybe_proc: ?abi.Process) usize {
+            const kproc = _resolve_maybe_proc(maybe_proc) catch {
+                // TODO: Log err
+                return 0;
+            };
+
+            return if (kproc.executable_memory) |mem|
+                @intFromPtr(mem.ptr)
+            else
+                0x00;
+        }
+
+        pub fn get_arguments(maybe_proc: ?abi.Process, maybe_argv: ?[]abi.SpawnProcessArg) usize {
+            const cproc = getCurrentProcess();
+            const kproc = _resolve_maybe_proc(maybe_proc) catch {
+                // TODO: Log err
+                return 0;
+            };
+
+            if (maybe_argv) |argv| {
+                const count = @min(argv.len, kproc.cli_arguments.len);
+                for (argv[0..count], kproc.cli_arguments[0..count]) |*out, in| {
+                    out.* = .{
+                        .type = in,
+                        .value = switch (in) {
+                            .string => |value| .{ .text = ashet.abi.SpawnProcessArg.String.new(value) },
+                            .resource => |handle| .{
+                                .resource = if (kproc == cproc) handle else @panic("TODO: Implement resource transition!"),
+                            },
+                        },
+                    };
+                }
+                return count;
+            } else {
+                return kproc.cli_arguments.len;
+            }
         }
 
         pub fn terminate(exit_code: abi.ExitCode) noreturn {
+            const proc = getCurrentProcess();
+
+            proc.stay_resident = false;
+
+            var thread_iter = proc.threads.first;
+            while (thread_iter) |thread_node| : (thread_iter = thread_node.next) {
+                thread_node.data.thread.kill();
+            }
             _ = exit_code;
-            @panic("not implemented yet");
+
+            ashet.scheduler.yield();
+            @panic("terminator?");
         }
 
-        pub fn kill(proc: abi.Process) void {
-            _ = proc;
-            @panic("not implemented yet");
+        pub fn kill(handle: abi.Process) void {
+            _, const kproc = resolve_typed_resource(ashet.multi_tasking.Process, handle.as_resource()) catch return;
+            if (!kproc.is_zombie()) {
+                kproc.kill(.killed);
+            }
         }
 
         pub const thread = struct {
@@ -133,17 +178,7 @@ pub const syscalls = struct {
         pub const debug = struct {
             pub fn write_log(log_level: abi.LogLevel, message: []const u8) void {
                 const proc = getCurrentProcess();
-
-                const logger = std.log.scoped(.userland);
-
-                switch (log_level) {
-                    .critical => logger.info("{s}(critical): {s}", .{ proc.name, message }),
-                    .err => logger.info("{s}(err): {s}", .{ proc.name, message }),
-                    .warn => logger.info("{s}(warn): {s}", .{ proc.name, message }),
-                    .notice => logger.info("{s}(notice): {s}", .{ proc.name, message }),
-                    .debug => logger.info("{s}(debug): {s}", .{ proc.name, message }),
-                    _ => logger.info("{s}(unknown,{}): {s}", .{ proc.name, @intFromEnum(log_level), message }),
-                }
+                proc.write_log(log_level, message);
             }
             pub fn breakpoint() void {
                 const proc = getCurrentProcess();
@@ -639,16 +674,28 @@ pub const syscalls = struct {
         };
 
         pub const udp = struct {
-            /// Creates a new TCP socket.
-            pub fn create_socket() error{SystemResources}!abi.TcpSocket {
-                @panic("not done yet");
+            pub fn create_socket() error{SystemResources}!abi.UdpSocket {
+                const proc = getCurrentProcess();
+
+                const sock = try ashet.network.udp.Socket.create();
+                errdefer sock.destroy();
+
+                const handle = try proc.assign_new_resource(&sock.system_resource);
+
+                return handle.unsafe_cast(.udp_socket);
             }
         };
 
         pub const tcp = struct {
-            /// Creates a new UDP socket.
-            pub fn create_socket() error{SystemResources}!abi.UdpSocket {
-                @panic("not done yet");
+            pub fn create_socket() error{SystemResources}!abi.TcpSocket {
+                const proc = getCurrentProcess();
+
+                const sock = try ashet.network.tcp.Socket.create();
+                errdefer sock.destroy();
+
+                const handle = try proc.assign_new_resource(&sock.system_resource);
+
+                return handle.unsafe_cast(.tcp_socket);
             }
         };
     };
@@ -719,8 +766,12 @@ pub const syscalls = struct {
     pub const fs = struct {
         /// Finds a file system by name
         pub fn find_filesystem(name: []const u8) abi.FileSystemId {
-            _ = name;
-            @panic("not implemented yet");
+            if (ashet.filesystem.findFilesystem(name)) |fsid| {
+                std.debug.assert(fsid != .invalid);
+                return fsid;
+            } else {
+                return .invalid;
+            }
         }
     };
 

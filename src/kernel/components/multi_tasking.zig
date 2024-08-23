@@ -1,10 +1,14 @@
 const std = @import("std");
 const hal = @import("hal");
+const libashet = @import("ashet");
+const astd = @import("ashet-std");
 const ashet = @import("../main.zig");
 const logger = std.log.scoped(.multitasking);
+const loader = @import("loader.zig");
 
 const ProcessList = std.DoublyLinkedList(void);
 const ProcessNode = ProcessList.Node;
+const ExitCode = ashet.abi.ExitCode;
 
 var process_list: ProcessList = .{};
 
@@ -22,6 +26,180 @@ pub fn initialize() void {
         .stay_resident = true,
     }) catch @panic("could not create kernel process: out of memory");
     initialized = true;
+}
+
+pub fn spawn_blocking(
+    proc_name: []const u8,
+    file: *libashet.fs.File,
+    argv: []const ashet.abi.SpawnProcessArg,
+) !*Process {
+    const process = try ashet.multi_tasking.Process.create(.{
+        .stay_resident = false,
+        .name = proc_name,
+    });
+    errdefer process.kill(.killed);
+
+    // TODO: Process argv!
+
+    _ = argv;
+
+    const loaded = try loader.load(file, process.static_allocator(), .elf);
+
+    process.executable_memory = loaded.process_memory;
+
+    const thread = try ashet.scheduler.Thread.spawn(
+        @as(ashet.scheduler.ThreadFunction, @ptrFromInt(loaded.entry_point)),
+        null,
+        .{ .process = process, .stack_size = 64 * 1024 },
+    );
+    errdefer thread.kill();
+
+    try thread.setName(proc_name);
+
+    thread.start() catch |err| switch (err) {
+        error.AlreadyStarted => unreachable,
+    };
+
+    thread.detach();
+
+    return process;
+}
+
+pub fn spawn_overlapped(call: *ashet.overlapped.AsyncCall) void {
+    ashet.overlapped.enqueue_background_task(
+        call,
+        ashet.overlapped.create_handler(ashet.abi.process.Spawn, spawn_background),
+    );
+}
+
+fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.process.Spawn.Inputs) ashet.abi.process.Spawn.Error!ashet.abi.process.Spawn.Outputs {
+    const exe_path = inputs.path_ptr[0..inputs.path_len];
+
+    const raw_basename = std.fs.path.basenamePosix(exe_path);
+    const exe_name = if (std.mem.eql(u8, raw_basename, "code"))
+        std.fs.path.basenamePosix(std.fs.path.dirnamePosix(exe_path) orelse return error.InvalidPath)
+    else
+        raw_basename;
+
+    var open_file = ashet.abi.fs.OpenFile.new(.{
+        .dir = inputs.dir,
+        .path_ptr = exe_path.ptr,
+        .path_len = exe_path.len,
+        .access = .read_only,
+        .mode = .open_existing,
+    });
+
+    ashet.overlapped.schedule_with_context(
+        call.resource_owner,
+        context,
+        &open_file.arc,
+    ) catch |err| return switch (err) {
+        error.AlreadyScheduled => unreachable,
+        error.SystemResources => |e| e,
+    };
+
+    var completed: [1]*ashet.abi.ARC = .{&open_file.arc};
+    const count = ashet.overlapped.await_completion_with_context(
+        context,
+        &completed,
+        .{
+            .thread_affinity = .all_threads,
+            .wait = .wait_one,
+            // TODO(fqu): .preselected = true,
+        },
+    ) catch |err| return switch (err) {
+        error.Unscheduled => unreachable,
+    };
+    std.debug.assert(count == 1);
+    std.debug.assert(completed[0] == &open_file.arc);
+
+    open_file.check_error() catch |err| return switch (err) {
+        error.WriteProtected,
+        error.FileAlreadyExists,
+        error.NoSpaceLeft,
+        error.Unexpected,
+        error.Exists,
+        => unreachable,
+
+        error.SystemFdQuotaExceeded => error.SystemResources,
+
+        else => |e| e,
+    };
+
+    const kernel_file_handle = ashet.resources.resolve(
+        ashet.filesystem.File,
+        call.resource_owner,
+        open_file.outputs.handle.as_resource(),
+    ) catch @panic("unrecoverage resource leak");
+    defer kernel_file_handle.system_resource.destroy();
+
+    const bg_process = ashet.scheduler.Thread.current().?.get_process();
+
+    const local_resource_handle = try bg_process.assign_new_resource(&kernel_file_handle.system_resource);
+    defer bg_process.drop_resource_ownership(&kernel_file_handle.system_resource, local_resource_handle);
+
+    var file_handle: libashet.fs.File = .{
+        .handle = local_resource_handle.unsafe_cast(.file),
+        .offset = 0,
+    };
+
+    const proc = spawn_blocking(
+        exe_name,
+        &file_handle,
+        inputs.argv_ptr[0..inputs.argv_len],
+    ) catch |err| return switch (err) {
+        error.OutOfMemory => error.SystemResources,
+
+        error.SystemResources,
+        error.DiskError,
+        error.InvalidHandle,
+        => |e| e,
+
+        error.EndOfStream,
+        error.InvalidElfMagic,
+        error.InvalidElfVersion,
+        error.InvalidElfEndian,
+        error.InvalidElfClass,
+        error.InvalidEndian,
+        error.InvalidBitSize,
+        error.InvalidMachine,
+        error.NoCode,
+        error.BadExecutable,
+        error.InvalidPltRel,
+        error.MissingSymbol,
+        error.UnsupportedRelocation,
+        error.UnalignedProgramHeader,
+        error.Overflow,
+        => error.BadExecutable,
+
+        error.Unexpected,
+        => unreachable,
+    };
+    errdefer proc.kill(.killed);
+
+    const argv_in = inputs.argv_ptr[0..inputs.argv_len];
+    const argv_out = proc.static_allocator().alloc(SpawnProcessArg, argv_in.len) catch return error.SystemResources;
+    for (argv_out, argv_in) |*out, in| {
+        out.* = switch (in.type) {
+            .string => .{
+                .string = proc.static_allocator().dupe(u8, in.value.text.slice()) catch return error.SystemResources,
+            },
+            .resource => .{
+                .resource = blk: {
+                    const ownership = call.resource_owner.resources.resolve(in.value.resource) catch return error.InvalidHandle;
+                    break :blk try proc.assign_new_resource(ownership.data.resource);
+                },
+            },
+        };
+    }
+
+    proc.cli_arguments = argv_out;
+
+    const handle = try call.resource_owner.assign_new_resource(&proc.system_resource);
+
+    return .{
+        .process = handle.unsafe_cast(.process),
+    };
 }
 
 /// Gets the handle to the kernel process.
@@ -49,7 +227,15 @@ pub const ProcessThreadList = std.DoublyLinkedList(struct {
     process: *Process,
 });
 
+pub const SpawnProcessArg = union(ashet.abi.SpawnProcessArg.Type) {
+    string: []const u8,
+    resource: ashet.abi.SystemResource,
+};
+
 pub const Process = struct {
+    const debug_line_buffer_length = 64;
+    const DebugLogBuffers = std.EnumArray(ashet.abi.LogLevel, astd.LineBuffer(debug_line_buffer_length));
+
     system_resource: ashet.resources.SystemResource = .{ .type = .process },
 
     /// Node inside `process_list`.
@@ -73,10 +259,19 @@ pub const Process = struct {
     /// Slice of where the executable was loaded in memory
     executable_memory: ?[]const u8 = null,
 
-    /// If `true`, the process was killed and it is now zombie process.
-    is_killed: bool = false,
+    /// If not null, the process was terminated is now zombie process.
+    /// Zombies exist as handles, but do not own any data anymore
+    exit_code: ?ExitCode = null,
 
     resources: ashet.resources.HandlePool,
+
+    debug_outputs: DebugLogBuffers = DebugLogBuffers.initFill(.{}),
+
+    /// Stores the command-line arguments for the process.
+    /// Memory is owned by `.memory_arena`, while resources are also
+    /// assigned to this process. The resource handles won't necessarily be valid
+    /// as the user is free to free them.
+    cli_arguments: []const SpawnProcessArg = &.{},
 
     pub const CreateOptions = struct {
         name: ?[]const u8 = null,
@@ -132,11 +327,11 @@ pub const Process = struct {
     // }
 
     pub fn is_zombie(proc: Process) bool {
-        return proc.is_killed;
+        return (proc.exit_code != null);
     }
 
     /// Kills the process, stops all threads, and releases of its resources.
-    pub fn kill(proc: *Process) void {
+    pub fn kill(proc: *Process, exit_code: ExitCode) void {
         std.debug.assert(!proc.is_zombie());
 
         process_list.remove(&proc.list_item);
@@ -165,13 +360,13 @@ pub const Process = struct {
 
         proc.memory_arena.deinit();
 
-        proc.is_killed = true;
+        proc.exit_code = exit_code;
     }
 
     /// Kills the thread and deletes it afterwards. This will invalidate all resource handles!
     pub fn destroy(proc: *Process) void {
-        if (!proc.is_killed) {
-            proc.kill();
+        if (!proc.is_zombie()) {
+            proc.kill(ExitCode.killed);
         }
         ashet.memory.type_pool(Process).free(proc);
     }
@@ -219,5 +414,54 @@ pub const Process = struct {
         res.add_owner(info.ownership);
 
         return info.handle;
+    }
+
+    pub fn drop_resource_ownership(proc: *Process, res: *ashet.resources.SystemResource, handle_hint: ?ashet.abi.SystemResource) void {
+        const resource_index: usize = if (handle_hint) |handle| blk: {
+            break :blk proc.resources.index_from_handle(handle) catch |err| {
+                logger.err("resource was not owned by process {}: {s}", .{ proc, @errorName(err) });
+                return;
+            };
+        } else blk: {
+            break :blk proc.resources.index_from_resource(res) orelse {
+                logger.err("drop_resource_ownership(): resource was not owned by process {}", .{proc});
+                return;
+            };
+        };
+
+        const ownership = proc.resources.ownership_from_index(resource_index);
+
+        res.remove_owner(ownership);
+
+        proc.resources.free_by_index(resource_index) catch |err| {
+            std.log.err("failed to release resource: {s}", .{@errorName(err)});
+        };
+    }
+
+    pub fn format(proc: *const Process, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        try writer.print("Thread(0x{X:0>8}, \"{}\")", .{ @intFromPtr(proc), std.zig.fmtEscapes(proc.name) });
+    }
+
+    pub fn write_log(proc: *Process, log_level: ashet.abi.LogLevel, text: []const u8) void {
+        const output = proc.debug_outputs.getPtr(log_level);
+
+        const process_logger = std.log.scoped(.process);
+
+        var offset: usize = 0;
+        while (offset < text.len) {
+            const consumed, const maybe_text = output.append(text[offset..]);
+            offset += consumed;
+            if (maybe_text) |log_line| {
+                switch (log_level) {
+                    .critical => process_logger.err("{s}: CRITICAL: {s}", .{ proc.name, log_line }),
+                    .err => process_logger.err("{s}: {s}", .{ proc.name, log_line }),
+                    .warn => process_logger.warn("{s}: {s}", .{ proc.name, log_line }),
+                    .notice => process_logger.info("{s}: {s}", .{ proc.name, log_line }),
+                    .debug => process_logger.debug("{s}: {s}", .{ proc.name, log_line }),
+                }
+            }
+        }
     }
 };

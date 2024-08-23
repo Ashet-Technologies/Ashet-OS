@@ -163,10 +163,24 @@ pub const HandlePool = struct {
 
         std.debug.assert(!pool.bit_map.isSet(raw_index));
 
-        const generation_ptr = &pool.generations.items[raw_index];
+        const handle = pool.handle_from_index(raw_index);
+
+        const owner = pool.owners.uncheckedAt(raw_index);
+        owner.* = .{
+            .data = undefined,
+        };
+
+        return .{
+            .handle = handle,
+            .ownership = owner,
+        };
+    }
+
+    fn handle_from_index(pool: HandlePool, index: usize) Handle {
+        const generation_ptr = &pool.generations.items[index];
 
         var encoded: EncodedHandle = .{
-            .index = @intCast(raw_index),
+            .index = @intCast(index),
             .generation = generation_ptr.*,
             .checksum = 0,
         };
@@ -175,18 +189,10 @@ pub const HandlePool = struct {
             encoded.generation,
         );
 
-        const owner = pool.owners.uncheckedAt(raw_index);
-        owner.* = .{
-            .data = undefined,
-        };
-
-        return .{
-            .handle = @enumFromInt(@as(usize, @bitCast(encoded))),
-            .ownership = owner,
-        };
+        return @enumFromInt(@as(usize, @bitCast(encoded)));
     }
 
-    pub fn free_by_handle(pool: *HandlePool, handle: Handle) error{ InvalidHandle, DoubleFree, GenerationMismatch }!void {
+    pub fn index_from_handle(pool: *HandlePool, handle: Handle) error{ InvalidHandle, DoubleFree, GenerationMismatch }!usize {
         std.debug.assert(pool.generations.items.len == pool.bit_map.capacity());
         std.debug.assert(pool.owners.len == pool.bit_map.capacity());
 
@@ -199,7 +205,13 @@ pub const HandlePool = struct {
         if (pool.generations.items[handle_bits.index] != handle_bits.generation)
             return error.GenerationMismatch;
 
-        pool.free_by_index(handle_bits.index) catch |err| switch (err) {
+        return handle_bits.index;
+    }
+
+    pub fn free_by_handle(pool: *HandlePool, handle: Handle) error{ InvalidHandle, DoubleFree, GenerationMismatch }!void {
+        const index = try pool.index_from_handle(handle);
+
+        pool.free_by_index(index) catch |err| switch (err) {
             error.OutOfBounds => unreachable,
             error.DoubleFree => |e| return e,
         };
@@ -254,6 +266,28 @@ pub const HandlePool = struct {
             return error.Gone;
 
         return pool.owners.uncheckedAt(handle_bits.index);
+    }
+
+    pub fn index_from_resource(pool: *HandlePool, resource: *SystemResource) ?usize {
+        std.debug.assert(pool.generations.items.len == pool.bit_map.capacity());
+        std.debug.assert(pool.owners.len == pool.bit_map.capacity());
+
+        var index: usize = 0;
+        var iter = pool.owners.iterator(0);
+        while (iter.next()) |owned_ownership| : (index += 1) {
+            if (owned_ownership.data.resource == resource) {
+                return index;
+            }
+        }
+        return null;
+    }
+
+    pub fn ownership_from_index(pool: *HandlePool, index: usize) *OwnershipNode {
+        std.debug.assert(pool.generations.items.len == pool.bit_map.capacity());
+        std.debug.assert(pool.owners.len == pool.bit_map.capacity());
+        std.debug.assert(index < pool.owners.len);
+
+        return pool.owners.at(index);
     }
 
     pub fn iterator(pool: HandlePool) Iterator {

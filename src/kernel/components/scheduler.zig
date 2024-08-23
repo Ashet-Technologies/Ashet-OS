@@ -377,7 +377,7 @@ pub const Thread = struct {
         proc.threads.remove(&thread.process_link);
 
         if (proc.stay_resident == false and proc.threads.len == 0) {
-            proc.kill();
+            proc.kill(.success);
         }
 
         const stack_top = thread.getBasePointer();

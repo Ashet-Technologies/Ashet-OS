@@ -14,23 +14,6 @@ const default_machines = std.EnumSet(Machine).init(.{
 const qemu_debug_options_default = "cpu_reset,guest_errors,unimp";
 
 pub fn build(b: *std.Build) void {
-    // Steps:
-    const test_step = b.step("test", "Runs the test suite");
-
-    const machine_steps = blk: {
-        var steps = std.EnumArray(Machine, *std.Build.Step).initUndefined();
-        for (std.enums.values(Machine)) |machine| {
-            const step = b.step(
-                @tagName(machine),
-                b.fmt("Compiles the OS for {s}", .{@tagName(machine)}),
-            );
-            if (default_machines.contains(machine)) {
-                b.getInstallStep().dependOn(step);
-            }
-            steps.set(machine, step);
-        }
-        break :blk steps;
-    };
 
     // Options:
     const maybe_run_machine = b.option(Machine, "machine", "Selects which machine to run with the 'run' step");
@@ -41,6 +24,26 @@ pub fn build(b: *std.Build) void {
         b.fmt("Sets the QEMU debug options (default: '{s}')", .{qemu_debug_options_default}),
     ) orelse
         qemu_debug_options_default;
+
+    // Steps:
+    const test_step = b.step("test", "Runs the test suite");
+
+    const machine_steps = blk: {
+        var steps = std.EnumArray(Machine, *std.Build.Step).initUndefined();
+        for (std.enums.values(Machine)) |machine| {
+            const step = b.step(
+                @tagName(machine),
+                b.fmt("Compiles the OS for {s}", .{@tagName(machine)}),
+            );
+            if (maybe_run_machine == null or maybe_run_machine == machine) {
+                if (default_machines.contains(machine)) {
+                    b.getInstallStep().dependOn(step);
+                }
+            }
+            steps.set(machine, step);
+        }
+        break :blk steps;
+    };
 
     // Dependencies:
 
@@ -66,7 +69,7 @@ pub fn build(b: *std.Build) void {
         }
     }
 
-    // Test
+    // Kernel Unit Tests
     {
         const abi_dep = b.dependency("ashet-abi", .{});
         const abi_mod = abi_dep.module("ashet-abi");
@@ -89,6 +92,14 @@ pub fn build(b: *std.Build) void {
         kernel_tests.root_module.addImport("args", machine_info_mod);
         kernel_tests.root_module.addImport("ashet-abi", abi_mod);
         test_step.dependOn(&b.addRunArtifact(kernel_tests).step);
+    }
+
+    {
+        const astd_mod = b.dependency("ashet-std", .{});
+
+        const astd_tests = astd_mod.artifact("ashet-std-tests");
+
+        test_step.dependOn(&b.addRunArtifact(astd_tests).step);
     }
 
     // Run:
@@ -116,7 +127,10 @@ pub fn build(b: *std.Build) void {
             exe: std.Build.LazyPath,
         };
 
-        const apps: []const AppDef = &.{};
+        const apps: []const AppDef = &.{
+            .{ .name = "init", .exe = get_named_file(os_files, "apps/init.elf").? },
+            .{ .name = "hello-world", .exe = get_named_file(os_files, "apps/hello-world.elf").? },
+        };
 
         const variables = Variables{
             .@"${DISK}" = disk_img,
@@ -135,7 +149,7 @@ pub fn build(b: *std.Build) void {
         for (apps) |app| {
             var app_name_buf: [128]u8 = undefined;
 
-            const app_name = try std.fmt.bufPrint(&app_name_buf, "{s}=", .{app.name});
+            const app_name = std.fmt.bufPrint(&app_name_buf, "{s}=", .{app.name}) catch @panic("out of memory");
 
             vm_runner.addArg("--elf");
             vm_runner.addPrefixedFileArg(app_name, app.exe);

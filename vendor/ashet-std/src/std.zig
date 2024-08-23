@@ -2,13 +2,17 @@ const std = @import("std");
 
 pub const mpl = @import("mpl.zig");
 
+const line_buffer = @import("line_buffer.zig");
+
 pub const RingBuffer = @import("ringbuffer.zig").RingBuffer;
 pub const HandleAllocator = @import("handle-allocator.zig").HandleAllocator;
 pub const IndexPool = @import("indexpool.zig").IndexPool;
 pub const FreeListAllocator = @import("mem/FreeListAllocator.zig").FreeListAllocator;
 pub const StaticPool = @import("mem/StaticPool.zig").StaticPool;
+pub const LineBuffer = line_buffer.LineBuffer;
 
 test {
+    _ = line_buffer;
     @import("std").testing.refAllDecls(@This());
 }
 
