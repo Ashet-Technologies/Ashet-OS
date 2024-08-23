@@ -1145,7 +1145,9 @@ pub const SystemResource = enum(usize) {
 
     /// Casts the resource into a concrete type. Fails, if the type does not match.
     pub fn cast(resource: SystemResource, comptime t: Type) error{ BadHandle, InvalidType }!CastResult(t) {
-        const actual = try resources.get_type(resource);
+        var actual: Type = undefined;
+        if (resources.get_type(resource, &actual) != .ok)
+            return error.BadHandle;
         if (actual != t)
             return error.InvalidType;
         return resource.unsafe_cast(t);
@@ -1161,6 +1163,20 @@ pub const SystemResource = enum(usize) {
     }
 
     pub const Type = __SystemResourceType;
+
+    pub fn format(src: SystemResource, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = options;
+        if (fmt.len == 1 and fmt[0] == 'T') {
+            var src_type: Type = undefined;
+            if (resources.get_type(src, &src_type) == .ok) {
+                try writer.print("SystemResource(0x{X:0>8}, type={s})", .{ @intFromEnum(src), @tagName(src_type) });
+            } else {
+                try writer.print("SystemResource(0x{X:0>8}, bad handle)", .{@intFromEnum(src)});
+            }
+        } else {
+            try writer.print("SystemResource(0x{X:0>8})", .{@intFromEnum(src)});
+        }
+    }
 };
 
 ///////////////////////////////////////////////////////////
@@ -1519,6 +1535,22 @@ pub const MouseButton = enum(u8) {
 // Compound types:
 
 pub const SpawnProcessArg = struct {
+    /// Creates a new SpawnProcessArg that is a string.
+    pub fn string(text: []const u8) SpawnProcessArg {
+        return .{ .type = .string, .value = .{ .text = String.new(text) } };
+    }
+
+    /// Creates a new SpawnProcessArg that refers to a resource.
+    pub fn resource(handle: SystemResource) SpawnProcessArg {
+        return .{ .type = .resource, .value = .{ .resource = handle } };
+    }
+
+    type: Type,
+    value: extern union {
+        text: String,
+        resource: SystemResource,
+    },
+
     pub const Type = enum(u8) {
         string = 0,
         resource = 1,
@@ -1527,13 +1559,15 @@ pub const SpawnProcessArg = struct {
     pub const String = extern struct {
         ptr: [*]const u8,
         len: usize,
-    };
 
-    type: Type,
-    value: extern union {
-        text: String,
-        resource: SystemResource,
-    },
+        pub fn new(_slice: []const u8) String {
+            return .{ .ptr = _slice.ptr, .len = _slice.len };
+        }
+
+        pub fn slice(str: String) []const u8 {
+            return str.ptr[0..str.len];
+        }
+    };
 };
 
 pub const CreateWindowFlags = packed struct(u32) {

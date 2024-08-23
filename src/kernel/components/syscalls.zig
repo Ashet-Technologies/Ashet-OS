@@ -73,25 +73,25 @@ pub const syscalls = struct {
     };
 
     pub const process = struct {
-        pub fn get_file_name(maybe_proc: ?abi.Process) [*:0]const u8 {
-            const kproc = if (maybe_proc) |handle| blk: {
-                _, const proc = resolve_typed_resource(ashet.multi_tasking.Process, handle.as_resource()) catch |err| {
-                    return @errorName(err);
-                };
+        fn _resolve_maybe_proc(maybe_proc: ?abi.Process) !*ashet.multi_tasking.Process {
+            return if (maybe_proc) |handle| blk: {
+                _, const proc = try resolve_typed_resource(ashet.multi_tasking.Process, handle.as_resource());
                 break :blk proc;
             } else getCurrentProcess();
+        }
 
+        pub fn get_file_name(maybe_proc: ?abi.Process) [*:0]const u8 {
+            const kproc = _resolve_maybe_proc(maybe_proc) catch |err| {
+                return @as([*:0]const u8, @errorName(err));
+            };
             return kproc.name.ptr;
         }
 
         pub fn get_base_address(maybe_proc: ?abi.Process) usize {
-            const kproc = if (maybe_proc) |handle| blk: {
-                _, const proc = resolve_typed_resource(ashet.multi_tasking.Process, handle.as_resource()) catch {
-                    // TODO: Log err
-                    return 0;
-                };
-                break :blk proc;
-            } else getCurrentProcess();
+            const kproc = _resolve_maybe_proc(maybe_proc) catch {
+                // TODO: Log err
+                return 0;
+            };
 
             return if (kproc.executable_memory) |mem|
                 @intFromPtr(mem.ptr)
@@ -99,10 +99,30 @@ pub const syscalls = struct {
                 0x00;
         }
 
-        pub fn get_arguments(proc: ?abi.Process, argv: ?[]abi.SpawnProcessArg) usize {
-            _ = proc;
-            _ = argv;
-            @panic("not implemented yet");
+        pub fn get_arguments(maybe_proc: ?abi.Process, maybe_argv: ?[]abi.SpawnProcessArg) usize {
+            const cproc = getCurrentProcess();
+            const kproc = _resolve_maybe_proc(maybe_proc) catch {
+                // TODO: Log err
+                return 0;
+            };
+
+            if (maybe_argv) |argv| {
+                const count = @min(argv.len, kproc.cli_arguments.len);
+                for (argv[0..count], kproc.cli_arguments[0..count]) |*out, in| {
+                    out.* = .{
+                        .type = in,
+                        .value = switch (in) {
+                            .string => |value| .{ .text = ashet.abi.SpawnProcessArg.String.new(value) },
+                            .resource => |handle| .{
+                                .resource = if (kproc == cproc) handle else @panic("TODO: Implement resource transition!"),
+                            },
+                        },
+                    };
+                }
+                return count;
+            } else {
+                return kproc.cli_arguments.len;
+            }
         }
 
         pub fn terminate(exit_code: abi.ExitCode) noreturn {

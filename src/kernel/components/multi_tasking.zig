@@ -73,10 +73,18 @@ pub fn spawn_overlapped(call: *ashet.overlapped.AsyncCall) void {
 }
 
 fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.process.Spawn.Inputs) ashet.abi.process.Spawn.Error!ashet.abi.process.Spawn.Outputs {
+    const exe_path = inputs.path_ptr[0..inputs.path_len];
+
+    const raw_basename = std.fs.path.basenamePosix(exe_path);
+    const exe_name = if (std.mem.eql(u8, raw_basename, "code"))
+        std.fs.path.basenamePosix(std.fs.path.dirnamePosix(exe_path) orelse return error.InvalidPath)
+    else
+        raw_basename;
+
     var open_file = ashet.abi.fs.OpenFile.new(.{
         .dir = inputs.dir,
-        .path_ptr = inputs.path_ptr,
-        .path_len = inputs.path_len,
+        .path_ptr = exe_path.ptr,
+        .path_len = exe_path.len,
         .access = .read_only,
         .mode = .open_existing,
     });
@@ -125,25 +133,6 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
     ) catch @panic("unrecoverage resource leak");
     defer kernel_file_handle.system_resource.destroy();
 
-    // var file = dir.openFile(inputs.path_ptr[0..inputs.path_len], .read_only, .open_existing) catch |err| return switch (err) {
-    //     error.InvalidPath,
-    //     error.DiskError,
-    //     error.InvalidHandle,
-    //     error.SystemResources,
-    //     error.FileNotFound,
-    //     => |e| e,
-
-    //     error.SystemFdQuotaExceeded => error.SystemResources,
-
-    //     error.WriteProtected,
-    //     error.FileAlreadyExists,
-    //     error.NoSpaceLeft,
-    //     error.Unexpected,
-    //     error.Exists,
-    //     => unreachable,
-    // };
-    // defer file.close();
-
     const bg_process = ashet.scheduler.Thread.current().?.get_process();
 
     const local_resource_handle = try bg_process.assign_new_resource(&kernel_file_handle.system_resource);
@@ -154,8 +143,8 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
         .offset = 0,
     };
 
-    var proc = spawn_blocking(
-        "<new>",
+    const proc = spawn_blocking(
+        exe_name,
         &file_handle,
         inputs.argv_ptr[0..inputs.argv_len],
     ) catch |err| return switch (err) {
@@ -188,6 +177,24 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
     };
     errdefer proc.kill(.killed);
 
+    const argv_in = inputs.argv_ptr[0..inputs.argv_len];
+    const argv_out = proc.static_allocator().alloc(SpawnProcessArg, argv_in.len) catch return error.SystemResources;
+    for (argv_out, argv_in) |*out, in| {
+        out.* = switch (in.type) {
+            .string => .{
+                .string = proc.static_allocator().dupe(u8, in.value.text.slice()) catch return error.SystemResources,
+            },
+            .resource => .{
+                .resource = blk: {
+                    const ownership = call.resource_owner.resources.resolve(in.value.resource) catch return error.InvalidHandle;
+                    break :blk try proc.assign_new_resource(ownership.data.resource);
+                },
+            },
+        };
+    }
+
+    proc.cli_arguments = argv_out;
+
     const handle = try call.resource_owner.assign_new_resource(&proc.system_resource);
 
     return .{
@@ -219,6 +226,11 @@ pub const ProcessThreadList = std.DoublyLinkedList(struct {
     thread: *ashet.scheduler.Thread,
     process: *Process,
 });
+
+pub const SpawnProcessArg = union(ashet.abi.SpawnProcessArg.Type) {
+    string: []const u8,
+    resource: ashet.abi.SystemResource,
+};
 
 pub const Process = struct {
     const debug_line_buffer_length = 64;
@@ -254,6 +266,12 @@ pub const Process = struct {
     resources: ashet.resources.HandlePool,
 
     debug_outputs: DebugLogBuffers = DebugLogBuffers.initFill(.{}),
+
+    /// Stores the command-line arguments for the process.
+    /// Memory is owned by `.memory_arena`, while resources are also
+    /// assigned to this process. The resource handles won't necessarily be valid
+    /// as the user is free to free them.
+    cli_arguments: []const SpawnProcessArg = &.{},
 
     pub const CreateOptions = struct {
         name: ?[]const u8 = null,
