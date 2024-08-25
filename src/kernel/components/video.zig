@@ -1,35 +1,135 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const ashet = @import("../main.zig");
+const logger = std.log.scoped(.video);
 
 pub const Color = ashet.abi.Color;
 pub const ColorIndex = ashet.abi.ColorIndex;
-
+pub const OutputID = ashet.abi.VideoOutputID;
 pub const Resolution = ashet.abi.Size;
 
 pub const Output = struct {
     system_resource: ashet.resources.SystemResource = .{ .type = .video_output },
 
-    pub fn destroy(sock: *Output) void {
-        _ = sock;
-        @panic("Not implemented yet!");
+    /// If true, the kernel will automatically flush the screen in a background process.
+    auto_flush: bool = true,
+    video_driver: *ashet.drivers.VideoDevice,
+
+    pub fn get_resolution(output: Output) Resolution {
+        return output.video_driver.getResolution();
+    }
+
+    /// The raw exposed video memory. Writing to this will change the content
+    /// on the screen.
+    /// Memory is interpreted with the current video mode to produce an image.
+    pub fn get_video_memory(output: Output) [*]align(16) ColorIndex {
+        return output.video_driver.getVideoMemory().ptr;
+    }
+
+    /// The currently used palette. Modifying values here changes the appearance of
+    /// the displayed picture.
+    pub fn get_palette_memory(output: Output) *[256]Color {
+        return output.video_driver.getPaletteMemory();
+    }
+
+    /// Sets the border color of the screen. This color fills all unreachable pixels.
+    /// *C64 feeling intensifies.*
+    pub fn set_border(output: Output, b: ColorIndex) void {
+        output.video_driver.setBorder(b);
+    }
+
+    /// Potentially synchronizes the video storage with the screen.
+    /// Without calling this, the screen might not be refreshed at all.
+    pub fn flush(output: Output) void {
+        output.video_driver.flush();
+    }
+
+    pub fn get_max_resolution(output: Output) Resolution {
+        return output.video_driver.getMaxResolution();
+    }
+
+    pub fn get_border(output: Output) ColorIndex {
+        return output.video_driver.getBorder();
+    }
+
+    /// Sets the screen resolution of the video mode.
+    /// This will make it simpler to create smaller applications that are
+    /// centered on the screen by reducing the logical resolution of the screen.
+    /// This only applies to graphics mode.
+    pub fn set_resolution(output: Output, width: u15, height: u15) void {
+        std.debug.assert(width > 0 and height > 0);
+        output.video_driver.setResolution(width, height);
     }
 };
 
-/// If true, the kernel will automatically flush the screen in a background process.
-pub var auto_flush: bool = true;
+const frame_rate = 1000 / 30; // 30 Hz
 
-/// The raw exposed video memory. Writing to this will change the content
-/// on the screen.
-/// Memory is interpreted with the current video mode to produce an image.
-pub fn getVideoMemory() []align(ashet.memory.page_size) ColorIndex {
-    return video_driver.getVideoMemory();
+var video_outputs: []Output = &.{};
+var video_flush_deadline = ashet.time.Deadline.init_abs(.system_start);
+
+pub fn initialize() !void {
+    const count: usize = blk: {
+        var drivers = ashet.drivers.enumerate(.video);
+        var count: usize = 0;
+        while (drivers.next() != null) {
+            count += 1;
+        }
+        break :blk count;
+    };
+
+    video_outputs = try ashet.memory.allocator.alloc(Output, count);
+    {
+        var drivers = ashet.drivers.enumerate(.video);
+        var index: usize = 0;
+        while (drivers.next()) |driver| : (index += 1) {
+            video_outputs[index] = Output{
+                .video_driver = driver,
+            };
+        }
+    }
+    video_flush_deadline = ashet.time.Deadline.init_rel(frame_rate);
 }
 
-/// The currently used palette. Modifying values here changes the appearance of
-/// the displayed picture.
-pub fn getPaletteMemory() *[256]Color {
-    return video_driver.getPaletteMemory();
+fn flush_all() void {
+    for (video_outputs) |*video_output| {
+        if (video_output.auto_flush) {
+            video_output.flush();
+        }
+    }
+}
+
+///Ticks the video subsystem
+pub fn tick() void {
+    if (video_flush_deadline.is_reached()) {
+        video_flush_deadline.move_forward(frame_rate);
+        flush_all();
+        while (video_flush_deadline.is_reached()) {
+            logger.warn("dropping auto-flush video frame!", .{});
+            video_flush_deadline.move_forward(frame_rate);
+        }
+    }
+}
+
+pub fn enumerate(maybe_ids: ?[]OutputID) usize {
+    if (maybe_ids) |ids| {
+        const count = @min(ids.len, video_outputs.len);
+        for (ids, 0..count) |*id, index| {
+            id.* = @enumFromInt(@as(u8, @intCast(index)));
+        }
+        return count;
+    } else {
+        return video_outputs.len;
+    }
+}
+
+pub fn acquire_output(output_id: OutputID) error{ NotFound, NotAvailable }!*Output {
+    const index = @intFromEnum(output_id);
+    if (index >= video_outputs.len)
+        return error.NotFound;
+    const output = &video_outputs[index];
+    if (output.system_resource.owners.len > 0)
+        return error.NotAvailable;
+    return output;
 }
 
 /// Contains initialization defaults for the system
@@ -174,46 +274,6 @@ const system_palette_info = blk: {
         }),
     };
 };
-
-var video_driver: *ashet.drivers.VideoDevice = undefined;
-
-pub fn initialize() void {
-    video_driver = ashet.drivers.first(.video) orelse @panic("no video device found!");
-}
-
-/// Sets the border color of the screen. This color fills all unreachable pixels.
-/// *C64 feeling intensifies.*
-pub fn setBorder(b: ColorIndex) void {
-    video_driver.setBorder(b);
-}
-
-/// Potentially synchronizes the video storage with the screen.
-/// Without calling this, the screen might not be refreshed at all.
-pub fn flush() void {
-    video_driver.flush();
-}
-
-/// Returns the current screen resolution
-pub fn getResolution() Resolution {
-    return video_driver.getResolution();
-}
-
-pub fn getMaxResolution() Resolution {
-    return video_driver.getMaxResolution();
-}
-
-pub fn getBorder() ColorIndex {
-    return video_driver.getBorder();
-}
-
-/// Sets the screen resolution of the video mode.
-/// This will make it simpler to create smaller applications that are
-/// centered on the screen by reducing the logical resolution of the screen.
-/// This only applies to graphics mode.
-pub fn setResolution(width: u15, height: u15) void {
-    std.debug.assert(width > 0 and height > 0);
-    video_driver.setResolution(width, height);
-}
 
 // Render text mode:
 // {

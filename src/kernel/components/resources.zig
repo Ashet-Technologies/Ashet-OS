@@ -76,6 +76,9 @@ pub const SystemResource = struct {
                 const instance = src.cast(ashet.scheduler.Thread) catch unreachable;
                 instance.kill();
             },
+
+            // video outputs are non-destroyed resources, they will exist until system exit.
+            .video_output => {},
         }
     }
 

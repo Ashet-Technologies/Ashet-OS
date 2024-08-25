@@ -15,12 +15,12 @@ var ctrl_right_state: bool = false;
 var alt_state: bool = false;
 var alt_graph_state: bool = false;
 
-pub var cursor: ashet.abi.Point = undefined;
+// pub var cursor: ashet.abi.Point = undefined;
 
 pub fn initialize() void {
-    const res = ashet.video.getResolution();
+    // const res = ashet.video.getResolution();
 
-    cursor = ashet.abi.Point.new(@as(i16, @intCast(res.width / 2)), @as(i16, @intCast(res.height / 2)));
+    // cursor = ashet.abi.Point.new(@as(i16, @intCast(res.width / 2)), @as(i16, @intCast(res.height / 2)));
 }
 
 /// Period subsystem update, will poll for input events
@@ -122,68 +122,74 @@ fn finish_arc(call: *ashet.overlapped.AsyncCall, evt: Event) void {
 fn convert_raw_event(raw_event: raw.Event) ?Event {
     switch (raw_event) {
         .mouse_abs_motion => |data| {
+            _ = data;
+            @panic("handle abs motion input");
             // TODO: Handle video outputs / virtual screen size
-            const max_size = ashet.video.getMaxResolution();
+            // const max_size = ashet.video.getMaxResolution();
 
-            const old_cursor = cursor;
+            // const old_cursor = cursor;
 
-            cursor.x = @intCast(std.math.clamp(data.x, 0, @as(i17, max_size.width -| 1)));
-            cursor.y = @intCast(std.math.clamp(data.y, 0, @as(i17, max_size.height -| 1)));
+            // cursor.x = @intCast(std.math.clamp(data.x, 0, @as(i17, max_size.width -| 1)));
+            // cursor.y = @intCast(std.math.clamp(data.y, 0, @as(i17, max_size.height -| 1)));
 
-            return Event{ .mouse = .{
-                .event_type = .{ .input = .mouse_motion },
-                .dx = cursor.x - old_cursor.x,
-                .dy = cursor.y - old_cursor.y,
-                .x = cursor.x,
-                .y = cursor.y,
-                .button = .none,
-            } };
+            // return Event{ .mouse = .{
+            //     .event_type = .{ .input = .mouse_motion },
+            //     .dx = cursor.x - old_cursor.x,
+            //     .dy = cursor.y - old_cursor.y,
+            //     .x = cursor.x,
+            //     .y = cursor.y,
+            //     .button = .none,
+            // } };
         },
 
         .mouse_rel_motion => |data| {
-            const dx = @as(i16, @truncate(std.math.clamp(data.dx, std.math.minInt(i16), std.math.maxInt(i16))));
-            const dy = @as(i16, @truncate(std.math.clamp(data.dy, std.math.minInt(i16), std.math.maxInt(i16))));
+            _ = data;
+            @panic("handle rel motion input");
+            // const dx = @as(i16, @truncate(std.math.clamp(data.dx, std.math.minInt(i16), std.math.maxInt(i16))));
+            // const dy = @as(i16, @truncate(std.math.clamp(data.dy, std.math.minInt(i16), std.math.maxInt(i16))));
 
-            const max_size = ashet.video.getMaxResolution();
+            // const max_size = ashet.video.getMaxResolution();
 
-            cursor.x = @intCast(std.math.clamp(cursor.x + dx, 0, @as(i17, max_size.width -| 1)));
-            cursor.y = @intCast(std.math.clamp(cursor.y + dy, 0, @as(i17, max_size.height -| 1)));
+            // cursor.x = @intCast(std.math.clamp(cursor.x + dx, 0, @as(i17, max_size.width -| 1)));
+            // cursor.y = @intCast(std.math.clamp(cursor.y + dy, 0, @as(i17, max_size.height -| 1)));
 
-            return Event{ .mouse = .{
-                .event_type = .{ .input = .mouse_motion },
-                .dx = dx,
-                .dy = dy,
-                .x = cursor.x,
-                .y = cursor.y,
-                .button = .none,
-            } };
+            // return Event{ .mouse = .{
+            //     .event_type = .{ .input = .mouse_motion },
+            //     .dx = dx,
+            //     .dy = dy,
+            //     .x = cursor.x,
+            //     .y = cursor.y,
+            //     .button = .none,
+            // } };
         },
 
         .mouse_button => |data| {
-            const button = switch (data.button) {
-                .left => ashet.abi.MouseButton.left,
-                .right => ashet.abi.MouseButton.right,
-                .middle => ashet.abi.MouseButton.middle,
-                .nav_previous => ashet.abi.MouseButton.nav_previous,
-                .nav_next => ashet.abi.MouseButton.nav_next,
-                .wheel_down => ashet.abi.MouseButton.wheel_down,
-                .wheel_up => ashet.abi.MouseButton.wheel_up,
-                else => return null,
-            };
+            _ = data;
+            @panic("handle mouse motion input");
+            // const button = switch (data.button) {
+            //     .left => ashet.abi.MouseButton.left,
+            //     .right => ashet.abi.MouseButton.right,
+            //     .middle => ashet.abi.MouseButton.middle,
+            //     .nav_previous => ashet.abi.MouseButton.nav_previous,
+            //     .nav_next => ashet.abi.MouseButton.nav_next,
+            //     .wheel_down => ashet.abi.MouseButton.wheel_down,
+            //     .wheel_up => ashet.abi.MouseButton.wheel_up,
+            //     else => return null,
+            // };
 
-            const mouse_event: ashet.abi.MouseEvent = .{
-                .event_type = .{ .input = if (data.down)
-                    .mouse_button_press
-                else
-                    .mouse_button_release },
-                .dx = 0,
-                .dy = 0,
-                .x = cursor.x,
-                .y = cursor.y,
-                .button = button,
-            };
+            // const mouse_event: ashet.abi.MouseEvent = .{
+            //     .event_type = .{ .input = if (data.down)
+            //         .mouse_button_press
+            //     else
+            //         .mouse_button_release },
+            //     .dx = 0,
+            //     .dy = 0,
+            //     .x = 0, // TODO: cursor.x,
+            //     .y = 0, // TODO: cursor.y,
+            //     .button = button,
+            // };
 
-            return .{ .mouse = mouse_event };
+            // return .{ .mouse = mouse_event };
         },
 
         .keyboard => |src_event| {

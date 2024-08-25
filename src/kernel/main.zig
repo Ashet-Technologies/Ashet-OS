@@ -146,7 +146,7 @@ fn main() !void {
     try machine.initialize();
 
     log.info("initialize video...", .{});
-    video.initialize();
+    try video.initialize();
 
     log.info("initialize filesystem...", .{});
     filesystem.initialize();
@@ -227,20 +227,8 @@ fn load_entry_point(_: ?*anyopaque) callconv(.C) u32 {
 /// This function runs to keep certain kernel tasks alive and
 /// working.
 fn global_kernel_tick(_: ?*anyopaque) callconv(.C) u32 {
-    const frame_rate = 1000 / 30; // 30 Hz
-
-    var video_flush_deadline = time.Deadline.init_rel(frame_rate);
     while (true) {
-        if (video.auto_flush) {
-            if (video_flush_deadline.is_reached()) {
-                video_flush_deadline.move_forward(frame_rate);
-                video.flush();
-                while (video_flush_deadline.is_reached()) {
-                    log.warn("dropping auto-flush video frame!", .{});
-                    video_flush_deadline.move_forward(frame_rate);
-                }
-            }
-        }
+        video.tick();
         input.tick();
         time.tick();
         scheduler.yield();

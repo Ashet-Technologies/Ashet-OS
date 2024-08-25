@@ -376,7 +376,7 @@ pub const Thread = struct {
         const proc = thread.process_link.data.process;
         proc.threads.remove(&thread.process_link);
 
-        if (proc.stay_resident == false and proc.threads.len == 0) {
+        if (!proc.is_zombie() and proc.stay_resident == false and proc.threads.len == 0) {
             proc.kill(.success);
         }
 

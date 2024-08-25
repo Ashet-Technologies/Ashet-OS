@@ -32,6 +32,10 @@
             .path = "../userland/apps/testing/behaviour",
         },
 
+        .desktop_classic = .{
+            .path = "../userland/apps/desktop/classic",
+        },
+
         // Externel deps:
         .@"disk-image-step" = .{
             .url = "https://github.com/zig-osdev/disk-image-step/archive/04881824f85e2eac0caf3ddf52c462d3d38a78f6.tar.gz",

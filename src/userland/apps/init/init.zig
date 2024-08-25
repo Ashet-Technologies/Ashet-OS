@@ -17,25 +17,36 @@ pub fn main() !void {
     });
     defer apps_dir.dir.release();
 
-const shm_handle = try syscalls.shm.create(4096);
-defer shm_handle.release();
+    const shm_handle = try syscalls.shm.create(4096);
+    defer shm_handle.release();
 
-const shm = syscalls.shm.get_pointer(shm_handle)[0..syscalls.shm.get_length(shm_handle)];
-@memset(shm, 0x00);
-@memcpy(shm[0..22], "This is shared memory!");
+    const shm = syscalls.shm.get_pointer(shm_handle)[0..syscalls.shm.get_length(shm_handle)];
+    @memset(shm, 0x00);
+    @memcpy(shm[0..22], "This is shared memory!");
 
-const desktop_proc = try ashet.overlapped.performOne(abi.process.Spawn, .{
-    .dir = apps_dir.dir,
-    .path_ptr = "testing/behaviour/code",
-    .path_len = 22,
-    .argv_ptr = &[_]abi.SpawnProcessArg{
-        abi.SpawnProcessArg.string("--shared"),
-        abi.SpawnProcessArg.resource(shm_handle.as_resource()),
-        abi.SpawnProcessArg.string("hello, this is text"),
-    },
-    .argv_len = 3,
-});
-defer desktop_proc.process.release();
+    const behaviour_proc = try ashet.overlapped.performOne(abi.process.Spawn, .{
+        .dir = apps_dir.dir,
+        .path_ptr = "testing/behaviour/code",
+        .path_len = 22,
+        .argv_ptr = &[_]abi.SpawnProcessArg{
+            abi.SpawnProcessArg.string("--shared"),
+            abi.SpawnProcessArg.resource(shm_handle.as_resource()),
+            abi.SpawnProcessArg.string("hello, this is text"),
+        },
+        .argv_len = 3,
+    });
+    defer behaviour_proc.process.release();
+
+    std.log.info("spawned behaviour process: {}", .{behaviour_proc});
+
+    const desktop_proc = try ashet.overlapped.performOne(abi.process.Spawn, .{
+        .dir = apps_dir.dir,
+        .path_ptr = "desktop/classic/code",
+        .path_len = 20,
+        .argv_ptr = &[_]abi.SpawnProcessArg{},
+        .argv_len = 0,
+    });
+    defer desktop_proc.process.release();
 
     std.log.info("spawned desktop process: {}", .{desktop_proc});
 

@@ -25,6 +25,8 @@ pub fn timestamp() i64 {
 
 /// Monotonic clock in millisecond precision
 pub const Instant = enum(u64) {
+    system_start = 0,
+
     _,
 
     pub fn now() Instant {

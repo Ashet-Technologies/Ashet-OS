@@ -248,6 +248,7 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
             "-cpu",     "pentium2",
             "-drive",   "if=ide,index=0,format=raw,file=${DISK}",
             "-vga",     "std",
+            "--device", "isa-debug-exit",
         },
     },
     .@"qemu-virt-rv32" = .{

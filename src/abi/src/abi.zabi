@@ -192,21 +192,25 @@ const video = struct {
     extern fn enumerate(ids: ?[]VideoOutputID) usize;
 
     /// Acquire exclusive access to a video output.
-    extern fn acquire(VideoOutputID) ?VideoOutput;
+    extern fn acquire(VideoOutputID) error{
+        SystemResources,
+        NotFound,
+        NotAvailable,
+    }!VideoOutput;
 
     /// Returns the current resolution
-    extern fn get_resolution(VideoOutput) Size;
+    extern fn get_resolution(VideoOutput) error{InvalidHandle}!Size;
 
     /// Returns a pointer to linear video memory, row-major.
     /// Pixels rows will have a stride of the current video buffer width.
     /// The first pixel in the memory is the top-left pixel.
-    extern fn get_video_memory(VideoOutput) [*]align(4) ColorIndex;
+    extern fn get_video_memory(VideoOutput) error{InvalidHandle}![*]align(4) ColorIndex;
 
     /// Fetches a copy of the current color pallete.
-    extern fn get_palette(VideoOutput, *[palette_size]Color) void;
+    extern fn get_palette(VideoOutput, *[palette_size]Color) error{InvalidHandle}!void;
 
     /// Changes the current color palette.
-    extern fn set_palette(VideoOutput, *const [palette_size]Color) error{Unsupported};
+    extern fn set_palette(VideoOutput, *const [palette_size]Color) error{ InvalidHandle, Unsupported };
 
     // /// Returns a pointer to the current palette. Changing this palette
     // /// will directly change the associated colors on the screen.

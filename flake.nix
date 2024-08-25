@@ -41,9 +41,6 @@
             pkgs.pkg-config
             pkgs.python311
             pkgs.graphviz
-
-            # prebundled python packages:
-            pkgs.ruff
           ];
 
           buildInputs = [

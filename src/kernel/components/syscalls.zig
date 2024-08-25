@@ -258,32 +258,36 @@ pub const syscalls = struct {
 
     pub const video = struct {
         pub fn enumerate(ids: ?[]abi.VideoOutputID) usize {
-            _ = ids;
-            @panic("not implemented yet");
+            return ashet.video.enumerate(ids);
         }
 
-        pub fn acquire(output: abi.VideoOutputID) ?abi.VideoOutput {
-            _ = output;
-            @panic("not implemented yet");
+        pub fn acquire(output: abi.VideoOutputID) error{ SystemResources, NotFound, NotAvailable }!abi.VideoOutput {
+            const proc = getCurrentProcess();
+
+            const video_output = try ashet.video.acquire_output(output);
+
+            const handle = try proc.assign_new_resource(&video_output.system_resource);
+
+            return handle.unsafe_cast(.video_output);
         }
 
-        pub fn get_resolution(output: abi.VideoOutput) abi.Size {
-            _ = output;
-            @panic("not implemented yet");
+        pub fn get_resolution(output_handle: abi.VideoOutput) error{InvalidHandle}!abi.Size {
+            _, const output = try resolve_typed_resource(ashet.video.Output, output_handle.as_resource());
+            return output.get_resolution();
         }
 
-        pub fn get_video_memory(output: abi.VideoOutput) [*]align(4) abi.ColorIndex {
-            _ = output;
-            @panic("not implemented yet");
+        pub fn get_video_memory(output_handle: abi.VideoOutput) error{InvalidHandle}![*]align(4) abi.ColorIndex {
+            _, const output = try resolve_typed_resource(ashet.video.Output, output_handle.as_resource());
+            return output.get_video_memory();
         }
 
-        pub fn get_palette(output: abi.VideoOutput, palette: *[abi.palette_size]abi.Color) void {
+        pub fn get_palette(output: abi.VideoOutput, palette: *[abi.palette_size]abi.Color) error{InvalidHandle}!void {
             _ = output;
             _ = palette;
             @panic("not implemented yet");
         }
 
-        pub fn set_palette(output: abi.VideoOutput, palette: *const [abi.palette_size]abi.Color) error{Unsupported} {
+        pub fn set_palette(output: abi.VideoOutput, palette: *const [abi.palette_size]abi.Color) error{ InvalidHandle, Unsupported } {
             _ = output;
             _ = palette;
             @panic("not implemented yet");
@@ -823,10 +827,10 @@ fn resolve_base_resource(handle: ashet.resources.Handle) !struct { *ashet.multi_
     return .{ process, ownership.data.resource };
 }
 
-fn resolve_typed_resource(comptime Resource: type, handle: ashet.resources.Handle) !struct { *ashet.multi_tasking.Process, *Resource } {
-    const process, const resource = try resolve_base_resource(handle);
+fn resolve_typed_resource(comptime Resource: type, handle: ashet.resources.Handle) error{InvalidHandle}!struct { *ashet.multi_tasking.Process, *Resource } {
+    const process, const resource = resolve_base_resource(handle) catch return error.InvalidHandle;
 
-    const typed = try resource.cast(Resource);
+    const typed = resource.cast(Resource) catch return error.InvalidHandle;
 
     return .{ process, typed };
 }

@@ -273,6 +273,8 @@ pub const Process = struct {
     /// as the user is free to free them.
     cli_arguments: []const SpawnProcessArg = &.{},
 
+    process_handle: ashet.abi.Process,
+
     pub const CreateOptions = struct {
         name: ?[]const u8 = null,
         stay_resident: bool = false,
@@ -287,6 +289,7 @@ pub const Process = struct {
             .name = undefined,
             .stay_resident = options.stay_resident,
             .resources = undefined,
+            .process_handle = undefined,
         };
         errdefer process.memory_arena.deinit();
 
@@ -297,6 +300,10 @@ pub const Process = struct {
             try process.memory_arena.allocator().dupeZ(u8, name)
         else
             try std.fmt.allocPrintZ(process.memory_arena.allocator(), "Process(0x{X:0>8})", .{@intFromPtr(process)});
+
+        // we do actually own ourselves (*_*)
+        const raw_handle = try process.assign_new_resource(&process.system_resource);
+        process.process_handle = raw_handle.unsafe_cast(.process);
 
         process_list.append(&process.list_item);
         errdefer process_list.remove(&process.list_item);
@@ -332,7 +339,9 @@ pub const Process = struct {
 
     /// Kills the process, stops all threads, and releases of its resources.
     pub fn kill(proc: *Process, exit_code: ExitCode) void {
+        logger.debug("kill({}, {})", .{ proc, @intFromEnum(exit_code) });
         std.debug.assert(!proc.is_zombie());
+        proc.exit_code = exit_code;
 
         process_list.remove(&proc.list_item);
 
@@ -340,11 +349,17 @@ pub const Process = struct {
             exclusive_video_controller = null;
         }
 
-        // TODO: remove when threads are a resource!
-        // destroy all threads:
-        while (proc.threads.popFirst()) |thread| {
-            std.debug.assert(thread.data.process == proc);
-            thread.data.thread.kill();
+        // Destroy all threads attached to this process:
+        {
+            var iter = proc.threads.first;
+            while (iter) |link| {
+                // we have to advance before we remove the thread
+                // from the list (implicitly by kill!)
+                iter = link.next;
+
+                std.debug.assert(link.data.process == proc);
+                link.data.thread.kill();
+            }
         }
 
         // Drop all resource ownerships:
@@ -352,6 +367,17 @@ pub const Process = struct {
             var iter = proc.resources.iterator();
             while (iter.next()) |item| {
                 const res = item.ownership.data.resource;
+                if (res == &proc.system_resource) {
+                    // We have to skip our own resource handle here as
+                    // removing the last owner from the resource handle will
+                    // invoke `Process.destroy()` in that case.
+                    //
+                    // This would release the memory for this Process and accessing
+                    // anything beyond this would be a bug.
+                    // `destroy()` will already be called when the process should be
+                    // killed anyways, so this is fine and *not* a resource leak!
+                    continue;
+                }
                 res.remove_owner(item.ownership);
                 proc.resources.free_by_index(item.index) catch unreachable; // all resources we can reach here are valid
             }
@@ -359,12 +385,12 @@ pub const Process = struct {
         }
 
         proc.memory_arena.deinit();
-
-        proc.exit_code = exit_code;
     }
 
     /// Kills the thread and deletes it afterwards. This will invalidate all resource handles!
     pub fn destroy(proc: *Process) void {
+        logger.debug("destroy({})", .{proc});
+
         if (!proc.is_zombie()) {
             proc.kill(ExitCode.killed);
         }
