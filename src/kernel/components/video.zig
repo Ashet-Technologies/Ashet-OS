@@ -7,6 +7,7 @@ pub const Color = ashet.abi.Color;
 pub const ColorIndex = ashet.abi.ColorIndex;
 pub const OutputID = ashet.abi.VideoOutputID;
 pub const Resolution = ashet.abi.Size;
+pub const VideoMemory = ashet.abi.VideoMemory;
 
 pub const Output = struct {
     system_resource: ashet.resources.SystemResource = .{ .type = .video_output },
@@ -22,8 +23,21 @@ pub const Output = struct {
     /// The raw exposed video memory. Writing to this will change the content
     /// on the screen.
     /// Memory is interpreted with the current video mode to produce an image.
-    pub fn get_video_memory(output: Output) [*]align(16) ColorIndex {
-        return output.video_driver.getVideoMemory().ptr;
+    pub fn get_video_memory(output: Output) VideoMemory {
+        const res = output.video_driver.getResolution();
+
+        const vmem = output.video_driver.getVideoMemory();
+
+        const stride: usize = res.width;
+
+        std.debug.assert(vmem.len >= (stride * @as(usize, res.height)));
+
+        return .{
+            .base = vmem.ptr,
+            .stride = res.width,
+            .width = res.width,
+            .height = res.height,
+        };
     }
 
     /// The currently used palette. Modifying values here changes the appearance of

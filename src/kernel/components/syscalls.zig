@@ -276,7 +276,7 @@ pub const syscalls = struct {
             return output.get_resolution();
         }
 
-        pub fn get_video_memory(output_handle: abi.VideoOutput) error{InvalidHandle}![*]align(4) abi.ColorIndex {
+        pub fn get_video_memory(output_handle: abi.VideoOutput) error{InvalidHandle}!abi.VideoMemory {
             _, const output = try resolve_typed_resource(ashet.video.Output, output_handle.as_resource());
             return output.get_video_memory();
         }

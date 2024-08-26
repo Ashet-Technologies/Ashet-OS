@@ -204,7 +204,7 @@ const video = struct {
     /// Returns a pointer to linear video memory, row-major.
     /// Pixels rows will have a stride of the current video buffer width.
     /// The first pixel in the memory is the top-left pixel.
-    extern fn get_video_memory(VideoOutput) error{InvalidHandle}![*]align(4) ColorIndex;
+    extern fn get_video_memory(VideoOutput) error{InvalidHandle}!VideoMemory;
 
     /// Fetches a copy of the current color pallete.
     extern fn get_palette(VideoOutput, *[palette_size]Color) error{InvalidHandle}!void;
@@ -2251,6 +2251,25 @@ pub const Rectangle = extern struct {
             rect.height,
         });
     }
+};
+
+pub const VideoMemory = extern struct {
+    /// Pointer to the first pixel of the first scanline.
+    ///
+    /// Each scanline is `.stride` elements separated from
+    /// each other and contains `width` valid elements.
+    ///
+    /// There are `height` total scanlines available.
+    base: [*]align(4) ColorIndex,
+
+    /// Length of a scanline.
+    stride: usize,
+
+    /// Number of valid elements in a scanline
+    width: u16,
+
+    /// Number of valid scanlines.
+    height: u16,
 };
 
 pub const FileSystemInfo = extern struct {

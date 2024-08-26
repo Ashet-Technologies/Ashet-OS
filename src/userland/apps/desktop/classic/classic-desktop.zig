@@ -3,7 +3,7 @@ const ashet = @import("ashet");
 
 pub usingnamespace ashet.core;
 
-const abi = ashet.abi_v2;
+const abi = ashet.abi;
 const syscalls = ashet.userland;
 
 pub fn main() !void {
@@ -20,7 +20,21 @@ pub fn main() !void {
 
     const vmem = try syscalls.video.get_video_memory(video_output);
 
-    std.log.info("video memory resides at 0x{X:0>8}", .{@intFromPtr(vmem)});
+    std.log.info("video memory: base=0x{X:0>8}, stride={}, width={}, height={}", .{
+        @intFromPtr(vmem.base),
+        vmem.stride,
+        vmem.width,
+        vmem.height,
+    });
+
+    // Load nice pattern:
+    var scanline: [*]abi.ColorIndex = vmem.base;
+    for (0..vmem.height) |y| {
+        for (scanline[0..vmem.width], 0..) |*pixel, x| {
+            pixel.* = @enumFromInt(@as(u4, @truncate(x ^ y)));
+        }
+        scanline += vmem.stride;
+    }
 
     while (true) {
         //
