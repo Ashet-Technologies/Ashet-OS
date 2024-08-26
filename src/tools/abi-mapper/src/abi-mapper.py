@@ -375,14 +375,42 @@ class ABI_JsonEncoder(json.JSONEncoder):
                      "sys_resources": o.sys_resources,
                      "iops": list(map(self.default, o.iops)),
                      "syscalls": list(map(self.default, o.syscalls)) }
-        elif isinstance(o, AsyncOp):
-            return "ASYNCOP"
-        elif isinstance(o, Function):
-            return { "fn": o.name }
         elif isinstance(o, Declaration):
-            return { "name": o.name, "docs": o.docs if o.docs else "" }
+            return self.json_decl(o)
+        elif isinstance(o, Type):
+            return self.json_type(o)
         else:
             return super().default(o)
+        
+    def json_decl(self, d: Declaration):
+        assert isinstance(d, Declaration)
+        decl_json = { "name": d.name,
+                      "docs": d.docs,
+                      "full_qualified_name": str(d.full_qualified_name),
+                      "value": None }
+        if isinstance(d, SystemResource):
+            decl_json["value"] = { "SystemResource": {} }
+        elif isinstance(d, Namespace):
+            decl_json["value"] = { "Namespace": { "decls": list(map(self.json_decl, d.decls)) } }
+        elif isinstance(d, ErrorSet):
+            decl_json["value"] = { "ErrorSet": { "errors": list(d.errors) } }
+        elif isinstance(d, Function):
+            decl_json["value"] = { "Function": {
+                "params": None,
+                "abi_return_type": None,
+                "key": str(d.key),
+                "value": d.number.value
+            } }
+        elif isinstance(d, AsyncOp):
+            decl_json["value"] = { "AsyncOp": {
+                "inputs": None,
+                "outputs": None,
+                "error": self.json_type(d.error)  
+            } }
+        return decl_json
+
+    def json_type(self, t: Type):
+        assert isinstance(t, Type)
 
 def unwrap_items(func):
     def _deco(self, items):
