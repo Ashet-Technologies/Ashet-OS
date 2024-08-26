@@ -90,6 +90,12 @@ pub fn build(b: *std.Build) void {
         b.path("tests/coverage.zabi"),
         b.path("tests/coverage.zig"),
     ));
+
+    const json_step = b.step("json", "Emit the JSON dump of test abi");
+
+    const json = cc.get_json_dump(b.path("tests/coverage.zabi"));
+
+    json_step.dependOn(&b.addInstallFile(json, "abi-test.json").step);
 }
 
 fn add_behaviour_test(cc: Converter, input: std.Build.LazyPath, evaluator: std.Build.LazyPath) *std.Build.Step {
@@ -135,6 +141,13 @@ pub const Converter = struct {
         const abi_zig = generate_core_abi.addPrefixedOutputFileArg("--output=", cc.b.fmt("{s}.zig", .{@tagName(mode)}));
         generate_core_abi.addFileArg(input);
         return abi_zig;
+    }
+
+    pub fn get_json_dump(cc: Converter, input: std.Build.LazyPath) std.Build.LazyPath {
+        const generate_json = cc.b.addRunArtifact(cc.executable);
+        const abi_json = generate_json.addPrefixedOutputFileArg("--emit-json=", "abi.json");
+        generate_json.addFileArg(input);
+        return abi_json;
     }
 };
 

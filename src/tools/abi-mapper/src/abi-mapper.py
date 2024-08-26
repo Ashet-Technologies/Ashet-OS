@@ -7,6 +7,7 @@ import hashlib
 import io
 import subprocess
 import caseconverter
+import json
 from typing import NoReturn, Optional, Any
 from collections.abc import Callable, Iterable
 from contextlib import contextmanager
@@ -365,6 +366,23 @@ class ABI_Definition:
     iops: list[AsyncOp]
     syscalls: list[Function]
 
+class ABI_JsonEncoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, ABI_Definition):
+            json_root_container = { "decls": list(map(self.default, o.root_container.decls)), "rest": o.root_container.rest}
+            return { "root_container": json_root_container,
+                     "errors": o.errors.mapping,
+                     "sys_resources": o.sys_resources,
+                     "iops": list(map(self.default, o.iops)),
+                     "syscalls": list(map(self.default, o.syscalls)) }
+        elif isinstance(o, AsyncOp):
+            return "ASYNCOP"
+        elif isinstance(o, Function):
+            return { "fn": o.name }
+        elif isinstance(o, Declaration):
+            return { "name": o.name, "docs": o.docs if o.docs else "" }
+        else:
+            return super().default(o)
 
 def unwrap_items(func):
     def _deco(self, items):
@@ -1607,6 +1625,7 @@ def main():
     cli_parser.add_argument("--use-linkname", action="store_true", required=False)
     cli_parser.add_argument("--zig-exe", type=Path, required=False)
     cli_parser.add_argument("abi", type=Path)
+    cli_parser.add_argument("--emit-json", type=Path, required=False)
 
     cli = cli_parser.parse_args()
 
@@ -1615,6 +1634,7 @@ def main():
     render_mode: Renderer = cli.mode
     WITH_LINKNAME = cli.use_linkname
     zig_exe: Path | None = Path(cli.zig_exe) if cli.zig_exe else None
+    json_path: Path | None = Path(cli.emit_json) if cli.emit_json else None
 
     grammar_source = GRAMMAR_PATH.read_text()
     zig_parser = Lark(grammar_source, start="toplevel")
@@ -1698,6 +1718,10 @@ def main():
         output_path.chmod(stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
     else:
         sys.stdout.write(generated_code)
+    
+    if json_path is not None:
+        with json_path.open(mode='w') as j:
+            json.dump(abi, j, cls=ABI_JsonEncoder, indent=1)
 
 
 if __name__ == "__main__":
