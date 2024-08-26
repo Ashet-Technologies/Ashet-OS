@@ -379,6 +379,25 @@ class ABI_JsonEncoder(json.JSONEncoder):
             return self.json_decl(o)
         elif isinstance(o, Type):
             return self.json_type(o)
+        elif isinstance(o, ParameterCollection):
+            return {
+                "abi": list(map(self.default, o.abi)),
+                "native": list(map(self.default, o.native)),
+                "annotations": list(map(self.default, o.annotations))
+            }
+        elif isinstance(o, Parameter):
+            return {
+                "name": o.name,
+                "docs": { "lines": o.docs.lines } if o.docs is not None else None,
+                "type": self.json_type(o.type)
+            }
+        elif isinstance(o, ParameterAnnotation):
+            return {
+                "is_slice": o.is_slice,
+                "is_optional": o.is_optional,
+                "is_out": o.is_out,
+                "technical": o.technical
+            }
         else:
             return super().default(o)
         
@@ -396,21 +415,51 @@ class ABI_JsonEncoder(json.JSONEncoder):
             decl_json["value"] = { "ErrorSet": { "errors": list(d.errors) } }
         elif isinstance(d, Function):
             decl_json["value"] = { "Function": {
-                "params": None,
-                "abi_return_type": None,
+                "params": self.default(d.params),
+                "abi_return_type": self.json_type(d.abi_return_type),
                 "key": str(d.key),
                 "value": d.number.value
             } }
         elif isinstance(d, AsyncOp):
             decl_json["value"] = { "AsyncOp": {
-                "inputs": None,
-                "outputs": None,
-                "error": self.json_type(d.error)  
+                "inputs": self.default(d.inputs),
+                "outputs": self.default(d.outputs),
+                "error": self.json_type(d.error)
             } }
         return decl_json
 
     def json_type(self, t: Type):
         assert isinstance(t, Type)
+        if isinstance(t, ReferenceType):
+            return { "ReferenceType": { "name": t.name } }
+        elif isinstance(t, OptionalType):
+            return { "OptionalType": { "inner": self.json_type(t.inner) } }
+        elif isinstance(t, ArrayType):
+            return { "ArrayType": {
+                "size": t.size,
+                "sentinel": t.sentinel,
+                "inner": self.json_type(t.inner)
+            } }
+        elif isinstance(t, PointerType):
+            return { "PointerType": {
+                "size": t.size,
+                "sentinel": t.sentinel,
+                "const": t.const,
+                "volatile": t.volatile,
+                "alignment": t.alignment,
+                "inner": self.json_type(t.inner)
+            } }
+        elif isinstance(t, ErrorUnion):
+            return { "ErrorUnion": {
+                "error": self.json_type(t.error),
+                "result": self.json_type(t.result)
+            } }
+        elif isinstance(t, ErrorSet):
+            return { "ErrorSet": {
+                "errors": list(t.errors)
+            } }
+        else:
+            super().default(t)
 
 def unwrap_items(func):
     def _deco(self, items):
