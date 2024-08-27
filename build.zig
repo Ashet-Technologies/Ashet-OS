@@ -130,6 +130,7 @@ pub fn build(b: *std.Build) void {
         const apps: []const AppDef = &.{
             .{ .name = "init", .exe = get_named_file(os_files, "apps/init.elf").? },
             .{ .name = "hello-world", .exe = get_named_file(os_files, "apps/hello-world.elf").? },
+            .{ .name = "hello-gui", .exe = get_named_file(os_files, "apps/hello-gui.elf").? },
         };
 
         const variables = Variables{

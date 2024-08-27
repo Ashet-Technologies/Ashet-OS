@@ -36,25 +36,49 @@ pub fn main() !void {
         scanline += vmem.stride;
     }
 
+    // Let the rest of the system continue to boot:
+    syscalls.process.thread.yield();
+
+    const desktop = try syscalls.gui.create_desktop("Classic", &.{
+        .window_data_size = @sizeOf(WindowData),
+        .handle_event = handle_desktop_event,
+    });
+    defer desktop.release();
+
+    const apps_dir = try ashet.overlapped.performOne(abi.fs.OpenDrive, .{
+        .fs = .system,
+        .path_ptr = "apps",
+        .path_len = 4,
+    });
+    defer apps_dir.dir.release();
+
+    const desktop_proc = try ashet.overlapped.performOne(abi.process.Spawn, .{
+        .dir = apps_dir.dir,
+        .path_ptr = "hello-gui/code",
+        .path_len = 14,
+        .argv_ptr = &[_]abi.SpawnProcessArg{
+            abi.SpawnProcessArg.string("--desktop"),
+            abi.SpawnProcessArg.resource(desktop.as_resource()),
+        },
+        .argv_len = 2,
+    });
+    desktop_proc.process.release(); // we're not interested in "holding" onto process
+
     while (true) {
-        //
-
-        syscalls.process.thread.yield();
+        // TODO: Can we suspend this thread and just react to the desktop events
+        //       in the callback context?
+        //       Long running event handlers like message boxes should probably run
+        //       inside the main thread here?
+        ashet.process.thread.yield();
     }
-
-    // const desktop = try syscalls.gui.create_desktop("Classic", &.{
-    //     .window_data_size = @sizeOf(WindowData),
-    //     .handle_event = handle_desktop_event,
-    // });
-    // defer desktop.release();
 }
 
-// fn handle_desktop_event(desktop: abi.Desktop, event: *const abi.DesktopEvent) callconv(.C) void {
-//     //
-//     _ = desktop;
-//     _ = event;
-// }
+fn handle_desktop_event(desktop: abi.Desktop, event: *const abi.DesktopEvent) callconv(.C) void {
+    std.log.info("handle desktop event of type {}", .{event.event_type});
 
-// const WindowData = struct {
-//     //
-// };
+    _ = desktop;
+}
+
+const WindowData = struct {
+    //
+};

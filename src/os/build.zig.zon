@@ -28,6 +28,10 @@
             .path = "../userland/apps/hello-world",
         },
 
+        .hello_gui = .{
+            .path = "../userland/apps/hello-gui",
+        },
+
         .test_behaviour = .{
             .path = "../userland/apps/testing/behaviour",
         },

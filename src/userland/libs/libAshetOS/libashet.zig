@@ -166,6 +166,80 @@ pub const process = struct {
         userland.process.terminate(exit_code);
     }
 
+    pub const thread = struct {
+        pub fn yield() void {
+            userland.process.thread.yield();
+        }
+    };
+
+    pub const mem = struct {
+        pub fn allocator() std.mem.Allocator {
+            return .{
+                .ptr = undefined,
+                .vtable = &allocator_vtable,
+            };
+        }
+
+        const allocator_vtable = std.mem.Allocator.VTable{
+            .alloc = globalAlloc,
+            .resize = globalResize,
+            .free = globalFree,
+        };
+
+        /// Attempt to allocate exactly `len` bytes aligned to `1 << ptr_align`.
+        ///
+        /// `ret_addr` is optionally provided as the first return address of the
+        /// allocation call stack. If the value is `0` it means no return address
+        /// has been provided.
+        fn globalAlloc(ctx: *anyopaque, len: usize, ptr_align: u8, ret_addr: usize) ?[*]u8 {
+            _ = ctx;
+            _ = ret_addr;
+            return abi.syscalls.@"ashet.process.memory.allocate"(len, ptr_align);
+        }
+
+        /// Attempt to expand or shrink memory in place. `buf.len` must equal the
+        /// length requested from the most recent successful call to `alloc` or
+        /// `resize`. `buf_align` must equal the same value that was passed as the
+        /// `ptr_align` parameter to the original `alloc` call.
+        ///
+        /// A result of `true` indicates the resize was successful and the
+        /// allocation now has the same address but a size of `new_len`. `false`
+        /// indicates the resize could not be completed without moving the
+        /// allocation to a different address.
+        ///
+        /// `new_len` must be greater than zero.
+        ///
+        /// `ret_addr` is optionally provided as the first return address of the
+        /// allocation call stack. If the value is `0` it means no return address
+        /// has been provided.
+        fn globalResize(ctx: *anyopaque, buf: []u8, buf_align: u8, new_len: usize, ret_addr: usize) bool {
+            _ = ctx;
+            _ = buf;
+            _ = buf_align;
+            _ = new_len;
+            _ = ret_addr;
+            // TODO: Introduce process.memory.resize syscall
+            return false;
+        }
+
+        /// Free and invalidate a buffer.
+        ///
+        /// `buf.len` must equal the most recent length returned by `alloc` or
+        /// given to a successful `resize` call.
+        ///
+        /// `buf_align` must equal the same value that was passed as the
+        /// `ptr_align` parameter to the original `alloc` call.
+        ///
+        /// `ret_addr` is optionally provided as the first return address of the
+        /// allocation call stack. If the value is `0` it means no return address
+        /// has been provided.
+        fn globalFree(ctx: *anyopaque, buf: []u8, buf_align: u8, ret_addr: usize) void {
+            _ = ctx;
+            _ = ret_addr;
+            return abi.syscalls.@"ashet.process.memory.release"(buf.ptr, buf.len, buf_align);
+        }
+    };
+
     pub const debug = struct {
         pub const WriteError = error{};
         pub const LogWriter = std.io.Writer(abi.LogLevel, WriteError, _write_log);
@@ -260,191 +334,6 @@ pub const overlapped = struct {
 //         const out = try overlapped.performOne(abi.input.GetKeyboardEvent, .{});
 //         return out.event;
 //     }
-// };
-
-// pub const process = struct {
-//     pub fn getBaseAddress() usize {
-//         return abi.syscalls.@"ashet.process.getBaseAddress"();
-//     }
-
-//     pub fn getFileName() []const u8 {
-//         return std.mem.sliceTo(abi.syscalls.@"ashet.process.getFileName"(), 0);
-//     }
-
-//     pub fn writeLog(level: abi.LogLevel, msg: []const u8) void {
-//         abi.syscalls.@"ashet.process.writeLog"(level, msg.ptr, msg.len);
-//     }
-
-//     pub fn yield() void {
-//         abi.syscalls.@"ashet.process.yield"();
-//     }
-
-//     pub fn exit(code: u32) noreturn {
-//         abi.syscalls.@"ashet.process.exit"(code);
-//     }
-
-//     pub fn allocator() std.mem.Allocator {
-//         return .{
-//             .ptr = undefined,
-//             .vtable = &allocator_vtable,
-//         };
-//     }
-
-//     const allocator_vtable = std.mem.Allocator.VTable{
-//         .alloc = globalAlloc,
-//         .resize = globalResize,
-//         .free = globalFree,
-//     };
-
-//     /// Attempt to allocate exactly `len` bytes aligned to `1 << ptr_align`.
-//     ///
-//     /// `ret_addr` is optionally provided as the first return address of the
-//     /// allocation call stack. If the value is `0` it means no return address
-//     /// has been provided.
-//     fn globalAlloc(ctx: *anyopaque, len: usize, ptr_align: u8, ret_addr: usize) ?[*]u8 {
-//         _ = ctx;
-//         _ = ret_addr;
-//         return abi.syscalls.@"ashet.process.memory.allocate"(len, ptr_align);
-//     }
-
-//     /// Attempt to expand or shrink memory in place. `buf.len` must equal the
-//     /// length requested from the most recent successful call to `alloc` or
-//     /// `resize`. `buf_align` must equal the same value that was passed as the
-//     /// `ptr_align` parameter to the original `alloc` call.
-//     ///
-//     /// A result of `true` indicates the resize was successful and the
-//     /// allocation now has the same address but a size of `new_len`. `false`
-//     /// indicates the resize could not be completed without moving the
-//     /// allocation to a different address.
-//     ///
-//     /// `new_len` must be greater than zero.
-//     ///
-//     /// `ret_addr` is optionally provided as the first return address of the
-//     /// allocation call stack. If the value is `0` it means no return address
-//     /// has been provided.
-//     fn globalResize(ctx: *anyopaque, buf: []u8, buf_align: u8, new_len: usize, ret_addr: usize) bool {
-//         _ = ctx;
-//         _ = buf;
-//         _ = buf_align;
-//         _ = new_len;
-//         _ = ret_addr;
-//         // TODO: Introduce process.memory.resize syscall
-//         return false;
-//     }
-
-//     /// Free and invalidate a buffer.
-//     ///
-//     /// `buf.len` must equal the most recent length returned by `alloc` or
-//     /// given to a successful `resize` call.
-//     ///
-//     /// `buf_align` must equal the same value that was passed as the
-//     /// `ptr_align` parameter to the original `alloc` call.
-//     ///
-//     /// `ret_addr` is optionally provided as the first return address of the
-//     /// allocation call stack. If the value is `0` it means no return address
-//     /// has been provided.
-//     fn globalFree(ctx: *anyopaque, buf: []u8, buf_align: u8, ret_addr: usize) void {
-//         _ = ctx;
-//         _ = ret_addr;
-//         return abi.syscalls.@"ashet.process.memory.release"(buf.ptr, buf.len, buf_align);
-//     }
-// };
-
-// pub const video = struct {
-//     pub fn acquire() bool {
-//         return abi.syscalls.@"ashet.video.acquire"();
-//     }
-
-//     pub fn release() void {
-//         abi.syscalls.@"ashet.video.release"();
-//     }
-
-//     pub fn setBorder(color: abi.ColorIndex) void {
-//         abi.syscalls.@"ashet.video.setBorder"(color);
-//     }
-
-//     pub fn setResolution(width: u16, height: u16) void {
-//         abi.syscalls.@"ashet.video.setResolution"(width, height);
-//     }
-
-//     pub fn getVideoMemory() [*]align(4) abi.ColorIndex {
-//         return abi.syscalls.@"ashet.video.getVideoMemory"();
-//     }
-
-//     pub fn getPaletteMemory() *[abi.palette_size]abi.Color {
-//         return abi.syscalls.@"ashet.video.getPaletteMemory"();
-//     }
-// };
-
-// pub const ui = struct {
-//     pub const Window = abi.Window;
-//     pub const CreateWindowFlags = abi.CreateWindowFlags;
-//     pub const Size = abi.Size;
-//     pub const Point = abi.Point;
-//     pub const Rectangle = abi.Rectangle;
-//     pub const Color = abi.Color;
-//     pub const ColorIndex = abi.ColorIndex;
-
-//     pub fn createWindow(title: []const u8, min: Size, max: Size, startup: Size, flags: CreateWindowFlags) error{OutOfMemory}!*const Window {
-//         return abi.syscalls.@"ashet.ui.createWindow"(title.ptr, title.len, min, max, startup, flags) orelse return error.OutOfMemory;
-//     }
-//     pub fn destroyWindow(win: *const Window) void {
-//         abi.syscalls.@"ashet.ui.destroyWindow"(win);
-//     }
-
-//     pub fn moveWindow(win: *const Window, x: i16, y: i16) void {
-//         abi.syscalls.@"ashet.ui.moveWindow"(win, x, y);
-//     }
-
-//     pub fn resizeWindow(win: *const Window, x: u16, y: u16) void {
-//         abi.syscalls.@"ashet.ui.resizeWindow"(win, x, y);
-//     }
-
-//     pub fn setWindowTitle(win: *const Window, title: []const u8) void {
-//         abi.syscalls.@"ashet.ui.setWindowTitle"(win, title.ptr, title.len);
-//     }
-
-//     pub fn getEvent(win: *const Window) Event {
-//         const out = overlapped.performOne(abi.ui.GetEvent, .{ .window = win }) catch unreachable;
-//         return constructEvent(out.event_type, out.event);
-//     }
-
-//     pub fn constructEvent(event_type: abi.UiEventType, event_data: abi.UiEvent) Event {
-//         return switch (event_type) {
-//             .mouse => .{ .mouse = event_data.mouse },
-//             .keyboard => .{ .keyboard = event_data.keyboard },
-//             .window_close => .window_close,
-//             .window_minimize => .window_minimize,
-//             .window_restore => .window_restore,
-//             .window_moving => .window_moving,
-//             .window_moved => .window_moved,
-//             .window_resizing => .window_resizing,
-//             .window_resized => .window_resized,
-//         };
-//     }
-
-//     pub fn invalidate(win: *const Window, rect: Rectangle) void {
-//         abi.syscalls.@"ashet.ui.invalidate"(win, rect);
-//     }
-
-//     pub fn getSystemFont(font_name: []const u8) ![]const u8 {
-//         var out_slice: []const u8 = undefined;
-//         const err = abi.syscalls.@"ashet.ui.getSystemFont"(font_name.ptr, font_name.len, &out_slice.ptr, &out_slice.len);
-//         try abi.GetSystemFontError.throw(err);
-//         return out_slice;
-//     }
-
-//     pub const Event = union(abi.UiEventType) {
-//         mouse: abi.MouseEvent,
-//         keyboard: abi.KeyboardEvent,
-//         window_close,
-//         window_minimize,
-//         window_restore,
-//         window_moving,
-//         window_moved,
-//         window_resizing,
-//         window_resized,
-//     };
 // };
 
 pub const fs = struct {

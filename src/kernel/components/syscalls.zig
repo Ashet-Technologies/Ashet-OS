@@ -404,7 +404,7 @@ pub const syscalls = struct {
 
         /// Spawns a new window.
         pub fn create_window(
-            desktop: abi.Desktop,
+            desktop_handle: abi.Desktop,
             title: []const u8,
             min: abi.Size,
             max: abi.Size,
@@ -413,14 +413,22 @@ pub const syscalls = struct {
         ) error{
             SystemResources,
             InvalidDimensions,
+            InvalidHandle,
         }!abi.Window {
-            _ = desktop;
-            _ = title;
-            _ = min;
-            _ = max;
-            _ = startup;
-            _ = flags;
-            @panic("not implemented yet");
+            const kproc, const desktop = try resolve_typed_resource(ashet.gui.Desktop, desktop_handle.as_resource());
+
+            const window = try ashet.gui.Window.create(
+                desktop,
+                title,
+                min,
+                max,
+                startup,
+                flags,
+            );
+            errdefer window.destroy();
+
+            const handle = try kproc.assign_new_resource(&window.system_resource);
+            return handle.unsafe_cast(.window);
         }
 
         /// Resizes a window to the new size.
@@ -510,27 +518,57 @@ pub const syscalls = struct {
         ) error{
             SystemResources,
         }!abi.Desktop {
-            _ = name;
-            _ = descriptor;
-            @panic("not implemented yet");
+            const proc = getCurrentProcess();
+
+            const desktop = try ashet.gui.Desktop.create(
+                name,
+                descriptor.*,
+            );
+            errdefer desktop.destroy();
+
+            const handle = try proc.assign_new_resource(&desktop.system_resource);
+
+            return handle.unsafe_cast(.desktop);
         }
 
-        // TODO: Function to get the "current"/"primary"/"associated" desktop server, how?
-
         /// Returns the name of the provided desktop.
-        pub fn get_desktop_name(desktop: abi.Desktop) [*:0]const u8 {
-            _ = desktop;
-            @panic("not implemented yet");
+        pub fn get_desktop_name(desktop_handle: abi.Desktop) error{InvalidHandle}![*:0]const u8 {
+            _, const desktop = try resolve_typed_resource(ashet.gui.Desktop, desktop_handle.as_resource());
+
+            return desktop.name.ptr;
         }
 
         /// Enumerates all available desktops.
-        pub fn enumerate_desktops(serverlist: ?[]abi.Desktop) usize {
-            _ = serverlist;
-            @panic("not implemented yet");
+        pub fn enumerate_desktops(maybe_list: ?[]abi.Desktop) usize {
+            const proc = getCurrentProcess();
+
+            var iter = ashet.gui.iterate_desktops();
+
+            if (maybe_list) |list| {
+                var cnt: usize = 0;
+                while (cnt < list.len) : (cnt += 1) {
+                    const desktop = iter.next() orelse break;
+                    const handle = proc.assign_new_resource(&desktop.system_resource) catch {
+                        for (list[0..cnt]) |handle| {
+                            _, const base_resource = resolve_base_resource(handle.as_resource()) catch unreachable;
+                            proc.drop_resource_ownership(base_resource, handle.as_resource());
+                        }
+                        return 0;
+                    };
+                    list[cnt] = handle.unsafe_cast(.desktop);
+                }
+                return cnt;
+            } else {
+                var cnt: usize = 0;
+                while (iter.next() != null) {
+                    cnt += 1;
+                }
+                return cnt;
+            }
         }
 
         /// Returns all windows for a desktop handle.
-        pub fn enumerate_desktop_windows(desktop: abi.Desktop, windows: ?[]abi.Window) usize {
+        pub fn enumerate_desktop_windows(desktop: abi.Desktop, windows: ?[]abi.Window) error{InvalidHandle}!usize {
             _ = desktop;
             _ = windows;
             @panic("not implemented yet");

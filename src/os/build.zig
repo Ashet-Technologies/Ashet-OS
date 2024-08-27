@@ -13,6 +13,7 @@ const App = struct {
 
 const apps: []const App = &.{
     .{ .name = "hello-world", .dep_name = "hello_world" },
+    .{ .name = "hello-gui", .dep_name = "hello_gui" },
     .{ .name = "init", .dep_name = "init" },
     .{ .name = "testing/behaviour", .dep_name = "test_behaviour", .artifact_name = "test-behaviour" },
     .{ .name = "desktop/classic", .dep_name = "desktop_classic", .artifact_name = "classic-desktop" },

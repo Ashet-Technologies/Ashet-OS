@@ -881,6 +881,7 @@ const gui = struct {
     ) error{
         SystemResources,
         InvalidDimensions,
+        InvalidHandle,
     }!Window;
 
     /// Resizes a window to the new size.
@@ -896,7 +897,6 @@ const gui = struct {
     /// Waits for an event on the given `Window`, completing as soon as
     /// an event arrived.
     extern "async" fn GetWindowEvent(window: Window) error{InProgress}!struct {
-        event_type: WindowEvent.Type,
         event: WindowEvent,
     };
 
@@ -950,13 +950,13 @@ const gui = struct {
     // TODO: Function to get the "current"/"primary"/"associated" desktop server, how?
 
     /// Returns the name of the provided desktop.
-    extern fn get_desktop_name(Desktop) [*:0]const u8;
+    extern fn get_desktop_name(Desktop) error{InvalidHandle}![*:0]const u8;
 
     /// Enumerates all available desktops.
     extern fn enumerate_desktops(serverlist: ?[]Desktop) usize;
 
     /// Returns all windows for a desktop handle.
-    extern fn enumerate_desktop_windows(Desktop, window: ?[]Window) usize;
+    extern fn enumerate_desktop_windows(Desktop, window: ?[]Window) error{InvalidHandle}!usize;
 
     /// Returns desktop-associated "opaque" data for this window.
     ///
@@ -1669,8 +1669,10 @@ pub const DesktopDescriptor = extern struct {
 };
 
 pub const DesktopEvent = extern union {
-    create_window: Window,
-    destroy_window: Window,
+    event_type: Type,
+
+    create_window: DesktopWindowEvent,
+    destroy_window: DesktopWindowEvent,
 
     show_notification: DesktopNotificationEvent,
     show_message_box: MessageBoxEvent,
@@ -1696,9 +1698,20 @@ pub const DesktopEvent = extern union {
 
         _,
     };
+
+    comptime {
+        validate_event_type(@This());
+    }
+};
+
+pub const DesktopWindowEvent = extern struct {
+    event_type: DesktopEvent.Type,
+    window: Window,
 };
 
 pub const DesktopNotificationEvent = extern struct {
+    event_type: DesktopEvent.Type,
+
     /// The text of the notification.
     message_ptr: [*]const u8,
 
@@ -1710,6 +1723,8 @@ pub const DesktopNotificationEvent = extern struct {
 };
 
 pub const MessageBoxEvent = extern struct {
+    event_type: DesktopEvent.Type,
+
     /// The desktop-specific request id that must be passed into
     /// `notify_message_box` to finish the message box request.
     request_id: RequestID,

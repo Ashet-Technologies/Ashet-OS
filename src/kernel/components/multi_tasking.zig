@@ -285,7 +285,7 @@ pub const Process = struct {
         errdefer ashet.memory.type_pool(Process).free(process);
 
         process.* = Process{
-            .memory_arena = std.heap.ArenaAllocator.init(ashet.memory.allocator),
+            .memory_arena = std.heap.ArenaAllocator.init(ashet.memory.page_allocator),
             .name = undefined,
             .stay_resident = options.stay_resident,
             .resources = undefined,
