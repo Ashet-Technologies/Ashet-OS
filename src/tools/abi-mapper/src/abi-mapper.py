@@ -767,10 +767,12 @@ def render_arc_type(stream: CodeStream, iop: AsyncOp):
 
         stream.writeln("pub const Inputs = extern struct {")
         with stream.indent():
+            stream.writeln("pub const Overlapped = Self;") 
             write_struct_fields(iop.inputs.native)
         stream.writeln("};")
         stream.writeln("pub const Outputs = extern struct {")
         with stream.indent():
+            stream.writeln("pub const Overlapped = Self;") 
             write_struct_fields(iop.outputs.native, default_factory=lambda f: "undefined")
         stream.writeln("};")
         stream.write("pub const Error = ")

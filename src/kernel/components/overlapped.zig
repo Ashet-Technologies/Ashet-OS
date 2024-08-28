@@ -35,18 +35,17 @@ fn get_context() struct { *ashet.scheduler.Thread, *Context } {
 }
 
 const AsyncHandler = struct {
-    call: fn (*AsyncCall, *anyopaque) void,
+    call: *const fn (*AsyncCall) void,
 
     pub fn todo(comptime msg: []const u8) AsyncHandler {
         const Wrap = struct {
-            fn call(_call: *AsyncCall, value: *anyopaque) void {
+            fn call(_call: *AsyncCall) void {
                 _ = _call;
-                _ = value;
                 @panic(msg ++ " is not implemented yet!");
             }
         };
         return .{
-            .call = Wrap.call,
+            .call = &Wrap.call,
         };
     }
 
@@ -61,26 +60,21 @@ const AsyncHandler = struct {
 
         const Wrap = switch (fun_info.params.len) {
             1 => struct {
-                const original: fn (*AsyncCall) void = func;
-
-                fn call(_call: *AsyncCall, value: *anyopaque) void {
-                    _ = value;
-                    return original(_call);
-                }
+                const call = func;
             },
 
             2 => struct {
                 const Inputs = fun_info.params[1].type.?;
+                const Generic = Inputs.Overlapped;
                 comptime {
                     std.debug.assert(@typeInfo(Inputs) == .Struct);
                 }
 
                 const original: fn (*AsyncCall, Inputs) void = func;
 
-                fn call(_call: *AsyncCall, value: *anyopaque) void {
-                    const inputs_ptr: *const Inputs = @ptrCast(@alignCast(value));
-
-                    return original(_call, inputs_ptr.*);
+                fn call(_call: *AsyncCall) void {
+                    const generic = _call.arc.cast(Generic);
+                    return original(_call, generic.inputs);
                 }
             },
 
@@ -88,7 +82,7 @@ const AsyncHandler = struct {
         };
 
         return AsyncHandler{
-            .call = Wrap.call,
+            .call = &Wrap.call,
         };
     }
 };
@@ -166,15 +160,8 @@ pub fn schedule_with_context(resource_owner: *ashet.multi_tasking.Process, conte
 
     context.in_flight.append(&call.owner_link);
 
-    switch (event.type) {
-        inline else => |tag| {
-            const handler = comptime async_call_handlers.get(tag);
-
-            const Generic = tag.as_type();
-            const generic = call.arc.cast(Generic);
-            handler.call(call, &generic.inputs);
-        },
-    }
+    const handler = async_call_handlers.get(event.type);
+    handler.call(call);
 }
 
 pub fn await_completion(completed: []*ARC, options: ashet.abi.Await_Options) error{Unscheduled}!usize {
