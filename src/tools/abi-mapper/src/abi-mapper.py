@@ -369,8 +369,10 @@ class ABI_Definition:
 class ABI_JsonEncoder(json.JSONEncoder):
     def default(self, o):
         if isinstance(o, ABI_Definition):
-            json_root_container = { "decls": list(map(self.default, o.root_container.decls)), "rest": o.root_container.rest}
-            return { "root_container": json_root_container,
+            return { "root_container": {
+                        "decls": list(map(self.default, o.root_container.decls)),
+                        "rest": o.root_container.rest
+                     },
                      "errors": o.errors.mapping,
                      "sys_resources": o.sys_resources,
                      "iops": list(map(self.default, o.iops)),
