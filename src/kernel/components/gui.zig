@@ -102,6 +102,8 @@ pub const Window = struct {
 
     is_popup: bool,
 
+    window_data: []align(16) u8,
+
     fn from_node(node: *WindowDesktopLinkNode) *Window {
         return @fieldParentPtr("desktop", node);
     }
@@ -125,9 +127,13 @@ pub const Window = struct {
             .is_popup = flags.popup,
             .desktop = .{ .data = .{ .desktop = desktop } },
             .title = "<unset>",
+            .window_data = undefined,
         };
 
+        window.window_data = window.associated_memory.allocator().alignedAlloc(u8, 16, desktop.descriptor.window_data_size) catch return error.SystemResources;
         window.title = window.associated_memory.allocator().dupeZ(u8, title) catch return error.SystemResources;
+
+        @memset(window.window_data, 0);
 
         desktop.windows.append(&window.desktop);
 

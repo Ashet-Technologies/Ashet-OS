@@ -964,7 +964,7 @@ const gui = struct {
     /// like position on the screen, orientation, alignment, ...
     ///
     /// The size of this must be known and cannot be queried.
-    extern fn get_desktop_data(Window) [*]align(16) u8;
+    extern fn get_desktop_data(Window) error{InvalidHandle}![*]align(16) u8;
 
     /// Notifies the system that a message box was confirmed by the user.
     ///

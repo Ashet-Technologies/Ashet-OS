@@ -580,9 +580,9 @@ pub const syscalls = struct {
         /// like position on the screen, orientation, alignment, ...
         ///
         /// The size of this must be known and cannot be queried.
-        pub fn get_desktop_data(window: abi.Window) [*]align(16) u8 {
-            _ = window;
-            @panic("not implemented yet");
+        pub fn get_desktop_data(window_handle: abi.Window) error{InvalidHandle}![*]align(16) u8 {
+            _, const window = try resolve_typed_resource(ashet.gui.Window, window_handle.as_resource());
+            return window.window_data.ptr;
         }
 
         /// Notifies the system that a message box was confirmed by the user.
