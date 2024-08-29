@@ -14,19 +14,15 @@ comptime {
     _ = exports;
 }
 
-pub var enable_trace: bool = false;
-
 pub const exports = ashet_abi_v2_impl.create_exports(syscalls, callbacks);
 
 const callbacks = struct {
-    pub fn before_syscall(sc: SystemCall) void {
-        if (enable_trace) {
-            strace.info("{s}", .{@tagName(sc)});
-        }
+    pub inline fn before_syscall(sc: SystemCall) void {
         ashet.stackCheck();
+        strace.info("{s} from {}", .{ @tagName(sc), ashet.fmtCodeLocation(@returnAddress()) });
     }
 
-    pub fn after_syscall(sc: SystemCall) void {
+    pub inline fn after_syscall(sc: SystemCall) void {
         _ = sc;
         ashet.stackCheck();
     }
@@ -63,7 +59,7 @@ pub const syscalls = struct {
 
         pub fn release(src_handle: abi.SystemResource) void {
             const proc, const resource = resolve_base_resource(src_handle) catch return;
-            proc.drop_resource_ownership(resource, src_handle);
+            proc.drop_resource_ownership(resource);
         }
 
         pub fn destroy(src_handle: abi.SystemResource) void {
@@ -512,7 +508,6 @@ pub const syscalls = struct {
 
         /// Creates a new desktop with the given name.
         pub fn create_desktop(
-            /// User-visible name of the desktop.
             name: []const u8,
             descriptor: *const abi.DesktopDescriptor,
         ) error{
@@ -521,6 +516,7 @@ pub const syscalls = struct {
             const proc = getCurrentProcess();
 
             const desktop = try ashet.gui.Desktop.create(
+                proc,
                 name,
                 descriptor.*,
             );
@@ -551,7 +547,7 @@ pub const syscalls = struct {
                     const handle = proc.assign_new_resource(&desktop.system_resource) catch {
                         for (list[0..cnt]) |handle| {
                             _, const base_resource = resolve_base_resource(handle.as_resource()) catch unreachable;
-                            proc.drop_resource_ownership(base_resource, handle.as_resource());
+                            proc.drop_resource_ownership(base_resource);
                         }
                         return 0;
                     };

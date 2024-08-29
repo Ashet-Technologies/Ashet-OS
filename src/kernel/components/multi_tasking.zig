@@ -136,7 +136,7 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
     const bg_process = ashet.scheduler.Thread.current().?.get_process();
 
     const local_resource_handle = try bg_process.assign_new_resource(&kernel_file_handle.system_resource);
-    defer bg_process.drop_resource_ownership(&kernel_file_handle.system_resource, local_resource_handle);
+    defer bg_process.drop_resource_ownership(&kernel_file_handle.system_resource);
 
     var file_handle: libashet.fs.File = .{
         .handle = local_resource_handle.unsafe_cast(.file),
@@ -273,7 +273,7 @@ pub const Process = struct {
     /// as the user is free to free them.
     cli_arguments: []const SpawnProcessArg = &.{},
 
-    process_handle: ashet.abi.Process,
+    self_process_handle: ashet.abi.Process,
 
     pub const CreateOptions = struct {
         name: ?[]const u8 = null,
@@ -289,7 +289,7 @@ pub const Process = struct {
             .name = undefined,
             .stay_resident = options.stay_resident,
             .resources = undefined,
-            .process_handle = undefined,
+            .self_process_handle = undefined,
         };
         errdefer process.memory_arena.deinit();
 
@@ -303,7 +303,7 @@ pub const Process = struct {
 
         // we do actually own ourselves (*_*)
         const raw_handle = try process.assign_new_resource(&process.system_resource);
-        process.process_handle = raw_handle.unsafe_cast(.process);
+        process.self_process_handle = raw_handle.unsafe_cast(.process);
 
         process_list.append(&process.list_item);
         errdefer process_list.remove(&process.list_item);
@@ -426,8 +426,25 @@ pub const Process = struct {
         return proc.memory_arena.allocator();
     }
 
-    /// Assigns this process the system resource `res` and returns the handle.
+    /// Gets the resource handle assigned to the process.
+    ///
+    /// Returns `null` if the resource isn't owned by `proc`.
+    pub fn get_resource_handle(proc: *Process, res: *ashet.resources.SystemResource) ?ashet.abi.SystemResource {
+        logger.debug("get_resource_handle({}, {})", .{ proc, res });
+        var iter = res.owners.first;
+        while (iter) |node| : (iter = node.next) {
+            if (node.data.process == proc) {
+                return node.data.handle;
+            }
+        }
+        return null;
+    }
+
+    /// Assigns this process a new resource.
+    /// Asserts that the resource was not assigned before.
     pub fn assign_new_resource(proc: *Process, res: *ashet.resources.SystemResource) error{SystemResources}!ashet.abi.SystemResource {
+        std.debug.assert(proc.get_resource_handle(res) == null);
+
         const info = proc.resources.alloc() catch return error.SystemResources;
         errdefer proc.resources.free_by_handle(info.handle) catch unreachable;
 
@@ -435,6 +452,7 @@ pub const Process = struct {
             .data = .{
                 .process = proc,
                 .resource = res,
+                .handle = info.handle,
             },
         };
         res.add_owner(info.ownership);
@@ -442,17 +460,19 @@ pub const Process = struct {
         return info.handle;
     }
 
-    pub fn drop_resource_ownership(proc: *Process, res: *ashet.resources.SystemResource, handle_hint: ?ashet.abi.SystemResource) void {
-        const resource_index: usize = if (handle_hint) |handle| blk: {
-            break :blk proc.resources.index_from_handle(handle) catch |err| {
-                logger.err("resource was not owned by process {}: {s}", .{ proc, @errorName(err) });
-                return;
-            };
-        } else blk: {
-            break :blk proc.resources.index_from_resource(res) orelse {
-                logger.err("drop_resource_ownership(): resource was not owned by process {}", .{proc});
-                return;
-            };
+    /// Ensures that a process owns a resource and returns it.
+    pub fn ensure_resource_handle(proc: *Process, res: *ashet.resources.SystemResource) error{SystemResources}!ashet.abi.SystemResource {
+        return get_resource_handle(proc, res) orelse try proc.assign_new_resource(res);
+    }
+
+    /// Drops the resource from the process and removes the handle.
+    pub fn drop_resource_ownership(proc: *Process, res: *ashet.resources.SystemResource) void {
+        logger.debug("drop_resource_ownership({}, {})", .{ proc, res });
+        const handle = proc.get_resource_handle(res) orelse return;
+
+        const resource_index: usize = proc.resources.index_from_handle(handle) catch |err| {
+            logger.err("resource was not owned by process {}: {s}", .{ proc, @errorName(err) });
+            return;
         };
 
         const ownership = proc.resources.ownership_from_index(resource_index);
@@ -473,7 +493,7 @@ pub const Process = struct {
     pub fn write_log(proc: *Process, log_level: ashet.abi.LogLevel, text: []const u8) void {
         const output = proc.debug_outputs.getPtr(log_level);
 
-        const process_logger = std.log.scoped(.process);
+        const process_logger = std.log.scoped(.userland);
 
         var offset: usize = 0;
         while (offset < text.len) {

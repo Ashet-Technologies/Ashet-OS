@@ -41,10 +41,15 @@ pub const Desktop = struct {
 
     windows: WindowDesktopLinkList = .{},
 
+    server_process: *ashet.multi_tasking.Process,
+
     name: [:0]const u8,
-    descriptor: ashet.abi.DesktopDescriptor,
+
+    window_data_size: usize,
+    handle_event: *const fn (ashet.abi.Desktop, *const ashet.abi.DesktopEvent) callconv(.C) void,
 
     pub fn create(
+        server_process: *ashet.multi_tasking.Process,
         name: []const u8,
         descriptor: ashet.abi.DesktopDescriptor,
     ) error{SystemResources}!*Desktop {
@@ -53,8 +58,12 @@ pub const Desktop = struct {
 
         desktop.* = .{
             .associated_memory = std.heap.ArenaAllocator.init(ashet.memory.allocator),
+            .server_process = server_process,
+
             .name = "<unset>",
-            .descriptor = descriptor,
+
+            .window_data_size = descriptor.window_data_size,
+            .handle_event = descriptor.handle_event,
         };
         errdefer desktop.associated_memory.deinit();
 
@@ -84,6 +93,59 @@ pub const Desktop = struct {
 
         desktop.associated_memory.deinit();
         ashet.memory.type_pool(Desktop).free(desktop);
+    }
+
+    fn process_event(desktop: *Desktop, event: ashet.abi.DesktopEvent) void {
+        const desktop_handle = desktop.server_process.get_resource_handle(&desktop.system_resource) orelse @panic("process_event called for a process that does not own the desktop");
+
+        desktop.handle_event(
+            desktop_handle.unsafe_cast(.desktop),
+            &event,
+        );
+    }
+
+    fn notify_create_window(desktop: *Desktop, window: *Window) error{SystemResources}!void {
+        const window_handle = try desktop.server_process.assign_new_resource(&window.system_resource);
+
+        desktop.process_event(.{
+            .create_window = .{
+                .event_type = .create_window,
+                .window = window_handle.unsafe_cast(.window),
+            },
+        });
+    }
+
+    fn notify_destroy_window(desktop: *Desktop, window: *Window) void {
+        const window_handle = desktop.server_process.get_resource_handle(&window.system_resource) orelse return;
+        desktop.process_event(.{
+            .create_window = .{
+                .event_type = .destroy_window,
+                .window = window_handle.unsafe_cast(.window),
+            },
+        });
+    }
+
+    fn notify_show_notification(desktop: *Desktop, message: []const u8, severity: ashet.abi.NotificationSeverity) void {
+        _ = desktop;
+        _ = message;
+        _ = severity;
+        @panic("show notification not implemented yet!");
+    }
+
+    fn notify_show_message_box(
+        desktop: *Desktop,
+        message: []const u8,
+        caption: []const u8,
+        buttons: ashet.abi.MessageBoxButtons,
+        icon: ashet.abi.MessageBoxIcon,
+    ) void {
+        //
+        _ = desktop;
+        _ = message;
+        _ = caption;
+        _ = buttons;
+        _ = icon;
+        @panic("show message box not implemented yet!");
     }
 };
 
@@ -129,13 +191,18 @@ pub const Window = struct {
             .title = "<unset>",
             .window_data = undefined,
         };
+        errdefer window.associated_memory.deinit();
 
-        window.window_data = window.associated_memory.allocator().alignedAlloc(u8, 16, desktop.descriptor.window_data_size) catch return error.SystemResources;
-        window.title = window.associated_memory.allocator().dupeZ(u8, title) catch return error.SystemResources;
-
+        window.window_data = window.associated_memory.allocator().alignedAlloc(u8, 16, desktop.window_data_size) catch return error.SystemResources;
         @memset(window.window_data, 0);
 
+        window.title = window.associated_memory.allocator().dupeZ(u8, title) catch return error.SystemResources;
+
         desktop.windows.append(&window.desktop);
+        errdefer desktop.windows.remove(&window.desktop);
+
+        // Invoke the handler process:
+        try desktop.notify_create_window(window);
 
         return window;
     }
@@ -143,7 +210,8 @@ pub const Window = struct {
     pub fn destroy(window: *Window) void {
         const desktop: *Desktop = window.desktop.data.desktop;
 
-        // TODO: Notify desktop of window destruction!
+        // Invoke the handler process:
+        desktop.notify_destroy_window(window);
 
         desktop.windows.remove(&window.desktop);
         ashet.memory.type_pool(Window).free(window);
@@ -167,3 +235,9 @@ pub const WidgetType = struct {
         @panic("Not implemented yet!");
     }
 };
+
+pub fn schedule_get_window_event(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.gui.GetWindowEvent.Inputs) void {
+    //
+    _ = call;
+    _ = inputs;
+}

@@ -137,7 +137,7 @@ const async_call_handlers = std.EnumArray(ashet.abi.ARC_Type, AsyncHandler).init
     .sync_lock = AsyncHandler.todo("sync_lock"),
 
     .gui_show_message_box = AsyncHandler.todo("gui_show_message_box"),
-    .gui_get_window_event = AsyncHandler.todo("gui_get_window_event"),
+    .gui_get_window_event = AsyncHandler.wrap(ashet.gui.schedule_get_window_event),
 });
 
 /// Schedules a new overlapped event from the current thread context.

@@ -95,12 +95,23 @@ pub const SystemResource = struct {
             };
         }
     }
+
+    pub fn format(src: *const SystemResource, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        try writer.print("SystemResource(0x{X:0>8}, type={s}, owners={d})", .{
+            @intFromPtr(src),
+            @tagName(src.type),
+            src.owners.len,
+        });
+    }
 };
 
 /// Link between a process and a resource.
 pub const Ownership = struct {
     process: *ashet.multi_tasking.Process,
     resource: *SystemResource,
+    handle: Handle,
 };
 
 pub const OwnershipNode = std.DoublyLinkedList(Ownership).Node;

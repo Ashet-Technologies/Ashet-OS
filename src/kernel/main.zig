@@ -49,6 +49,49 @@ pub const machine = switch (machine_id) {
 
 pub const machine_config: ports.MachineConfig = machine.machine_config;
 
+pub const LogLevel = std.log.Level;
+
+pub const log_levels = struct {
+    pub var default: LogLevel = .debug;
+    pub var userland: LogLevel = .debug;
+    pub var strace: LogLevel = .debug;
+
+    // kernel components
+    pub var main: LogLevel = .debug;
+    pub var scheduler: LogLevel = .debug;
+    pub var io: LogLevel = .info;
+    pub var ui: LogLevel = .debug;
+    pub var network: LogLevel = .info;
+    pub var filesystem: LogLevel = .debug;
+    pub var resources: LogLevel = .debug;
+    pub var memory: LogLevel = .info;
+    pub var drivers: LogLevel = .info;
+    pub var page_allocator: LogLevel = .debug;
+    pub var mprot: LogLevel = .info; // very noise modules!
+    pub var x86_vmm: LogLevel = .info; // very noise modules!
+    pub var overlapped: LogLevel = .info; // very noise modules!
+    pub var elf_loader: LogLevel = .info;
+    pub var video: LogLevel = .debug;
+    pub var multitasking: LogLevel = .debug;
+
+    // drivers:
+    pub var @"virtio-net": LogLevel = .info;
+    pub var @"virtio-gpu": LogLevel = .info;
+    pub var @"virtio-input": LogLevel = .info;
+    pub var kbc: LogLevel = .info;
+
+    // external modules:
+    pub var fatfs: LogLevel = .info;
+
+    // platforms:
+
+    // platforms.x86:
+    pub var idt: LogLevel = .debug;
+
+    // machines:
+    pub var bios_pc: LogLevel = .debug;
+};
+
 comptime {
     if (!builtin.is_test) {
         // force instantiation of the machine and platform elements
@@ -369,32 +412,26 @@ pub fn stackCheck() void {
 var double_panic = false;
 var full_panic = false;
 
-pub const LogLevel = std.log.Level;
-
-pub const log_levels = struct {
-    pub var io: LogLevel = .info;
-    pub var ui: LogLevel = .debug;
-    pub var network: LogLevel = .info;
-    pub var filesystem: LogLevel = .debug;
-    pub var memory: LogLevel = .info;
-    pub var drivers: LogLevel = .info;
-    pub var mprot: LogLevel = .info; // very noise modules!
-    pub var x86_vmm: LogLevel = .info; // very noise modules!
-    pub var overlapped: LogLevel = .info; // very noise modules!
-
-    // drivers:
-    pub var @"virtio-net": LogLevel = .info;
-    pub var @"virtio-gpu": LogLevel = .info;
-    pub var @"virtio-input": LogLevel = .info;
-
-    // system modules:
-    pub var fatfs: LogLevel = .info;
-};
-
 pub const std_options = std.Options{
     .log_level = if (@import("builtin").mode == .Debug) .debug else .info,
     .logFn = kernel_log_fn,
 };
+
+fn kernel_log_once(comptime scope: @Type(.EnumLiteral)) void {
+    const T = struct {
+        var triggered: bool = false;
+
+        fn print() void {
+            if (triggered)
+                return;
+            triggered = true; // must be set before the log to prevent recursion
+            std.log.warn("log scope .{} has no explicit filter in root.log_levels", .{
+                std.zig.fmtId(@tagName(scope)),
+            });
+        }
+    };
+    T.print();
+}
 
 fn kernel_log_fn(
     comptime message_level: std.log.Level,
@@ -409,6 +446,8 @@ fn kernel_log_fn(
     if (@hasDecl(log_levels, scope_name)) {
         if (@intFromEnum(message_level) > @intFromEnum(@field(log_levels, scope_name)))
             return;
+    } else {
+        kernel_log_once(scope);
     }
 
     const color_code = if (ansi)
@@ -480,7 +519,7 @@ pub const CodeLocation = struct {
     }
 };
 
-fn fmtCodeLocation(addr: usize) CodeLocation {
+pub fn fmtCodeLocation(addr: usize) CodeLocation {
     return CodeLocation{ .pointer = addr };
 }
 
