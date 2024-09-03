@@ -226,6 +226,10 @@ fn main() !void {
         thread.detach();
     }
 
+    syscalls.strace_enabled.remove(.process_debug_write_log);
+    syscalls.strace_enabled.remove(.overlapped_await_completion);
+    syscalls.strace_enabled.remove(.overlapped_schedule);
+
     log.info("entering scheduler...", .{});
     scheduler.start();
 

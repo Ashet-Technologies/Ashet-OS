@@ -37,22 +37,23 @@ pub const SystemResource = struct {
 
     pub fn add_owner(src: *SystemResource, owner: *OwnershipNode) void {
         std.debug.assert(owner.data.resource == src);
-        logger.debug("add process 0x{X:0>8} to resource 0x{X:0>8} of type {s}", .{
-            @intFromPtr(owner.data.process),
-            @intFromPtr(src),
-            @tagName(src.type),
+        logger.debug("add process {} to resource {}", .{
+            owner.data.process,
+            src,
         });
         src.owners.append(owner);
     }
 
     pub fn remove_owner(src: *SystemResource, owner: *OwnershipNode) void {
         std.debug.assert(owner.data.resource == src);
-        logger.debug("remove process 0x{X:0>8} from resource 0x{X:0>8} of type {s}", .{
-            @intFromPtr(owner.data.process),
-            @intFromPtr(src),
-            @tagName(src.type),
+        logger.debug("remove process {} from resource {}", .{
+            owner.data.process,
+            src
         });
         src.owners.remove(owner);
+        owner.* = undefined;
+        
+        logger.debug("owner count now {}", .{src.owners.len});
         if (src.owners.len == 0) {
             src.destroy();
         }
@@ -60,15 +61,18 @@ pub const SystemResource = struct {
 
     /// Destroys the resource
     pub fn destroy(src: *SystemResource) void {
-        logger.debug("destroy 0x{X:0>8} of type {s}", .{
-            @intFromPtr(src),
-            @tagName(src.type),
-        });
+        logger.debug("destroy {}", .{src});
+        
         src.unlink();
         switch (src.type) {
             inline else => |type_id| {
                 const instance = src.cast(ashet.resources.InstanceType(type_id)) catch unreachable;
                 instance.destroy();
+            },
+
+            .process => {
+                const instance = src.cast(ashet.multi_tasking.Process) catch unreachable;
+                instance.destroy_for_resource();
             },
 
             // Threads need special handling

@@ -39,25 +39,25 @@ pub fn main() !void {
 
     std.log.info("spawned behaviour process: {}", .{behaviour_proc});
 
-    const desktop_proc = try ashet.overlapped.performOne(abi.process.Spawn, .{
-        .dir = apps_dir.dir,
-        .path_ptr = "desktop/classic/code",
-        .path_len = 20,
-        .argv_ptr = &[_]abi.SpawnProcessArg{},
-        .argv_len = 0,
-    });
-    defer desktop_proc.process.release();
+    // const desktop_proc = try ashet.overlapped.performOne(abi.process.Spawn, .{
+    //     .dir = apps_dir.dir,
+    //     .path_ptr = "desktop/classic/code",
+    //     .path_len = 20,
+    //     .argv_ptr = &[_]abi.SpawnProcessArg{},
+    //     .argv_len = 0,
+    // });
+    // defer desktop_proc.process.release();
 
-    std.log.info("spawned desktop process: {}", .{desktop_proc});
+    // std.log.info("spawned desktop process: {}", .{desktop_proc});
 
     // TODO: await spawned process to exit, then print contents of shm!
 
-    for (0..10) |_| {
-        const spare_shm_handle = try syscalls.shm.create(4096);
+    // for (0..10) |_| {
+    //     const spare_shm_handle = try syscalls.shm.create(4096);
 
-        std.log.info("shm: ptr=0x{X:0>8}, size={}", .{
-            @intFromPtr(syscalls.shm.get_pointer(spare_shm_handle)),
-            syscalls.shm.get_length(spare_shm_handle),
-        });
-    }
+    //     std.log.info("shm: ptr=0x{X:0>8}, size={}", .{
+    //         @intFromPtr(syscalls.shm.get_pointer(spare_shm_handle)),
+    //         syscalls.shm.get_length(spare_shm_handle),
+    //     });
+    // }
 }

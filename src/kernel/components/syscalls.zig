@@ -16,10 +16,21 @@ comptime {
 
 pub const exports = ashet_abi_v2_impl.create_exports(syscalls, callbacks);
 
+pub var strace_enabled: std.enums.EnumSet(SystemCall) = std.enums.EnumSet(SystemCall).initFull();
+
+inline fn print_strace(name: []const u8) void {
+    var it = std.debug.StackIterator.init(@returnAddress(), null);
+    var current = it.next() orelse @returnAddress();
+    current = it.next() orelse current;
+    strace.info("{s} from {}", .{ name, ashet.fmtCodeLocation(current) });
+}
+
 const callbacks = struct {
     pub inline fn before_syscall(sc: SystemCall) void {
         ashet.stackCheck();
-        strace.info("{s} from {}", .{ @tagName(sc), ashet.fmtCodeLocation(@returnAddress()) });
+        if (strace_enabled.contains(sc)) {
+            print_strace(@tagName(sc));
+        }
     }
 
     pub inline fn after_syscall(sc: SystemCall) void {
@@ -71,7 +82,7 @@ pub const syscalls = struct {
     pub const process = struct {
         fn _resolve_maybe_proc(maybe_proc: ?abi.Process) !*ashet.multi_tasking.Process {
             return if (maybe_proc) |handle| blk: {
-                _, const proc = try resolve_typed_resource(ashet.multi_tasking.Process, handle.as_resource());
+                _, const proc = try resolve_process_handle(handle.as_resource());
                 break :blk proc;
             } else getCurrentProcess();
         }
@@ -126,18 +137,19 @@ pub const syscalls = struct {
 
             proc.stay_resident = false;
 
-            var thread_iter = proc.threads.first;
-            while (thread_iter) |thread_node| : (thread_iter = thread_node.next) {
-                thread_node.data.thread.kill();
-            }
-            _ = exit_code;
+            // var thread_iter = proc.threads.first;
+            // while (thread_iter) |thread_node| : (thread_iter = thread_node.next) {
+            //     thread_node.data.thread.kill();
+            // }
+            // std.debug.assert(proc.threads.len == 0);
+            proc.kill(exit_code);
 
             ashet.scheduler.yield();
             @panic("terminator?");
         }
 
         pub fn kill(handle: abi.Process) void {
-            _, const kproc = resolve_typed_resource(ashet.multi_tasking.Process, handle.as_resource()) catch return;
+            _, const kproc = resolve_process_handle(handle.as_resource()) catch return;
             if (!kproc.is_zombie()) {
                 kproc.kill(.killed);
             }
@@ -869,10 +881,20 @@ fn resolve_typed_resource(comptime Resource: type, handle: ashet.resources.Handl
     return .{ process, typed };
 }
 
+fn resolve_process_handle(handle: ashet.resources.Handle) error{ InvalidHandle, DeadProcess }!struct { *ashet.multi_tasking.Process, *ashet.multi_tasking.Process } {
+    const kproc, const uproc = try resolve_process_handle(handle);
+    if (uproc.is_zombie())
+        return error.DeadProcess;
+    return .{ kproc, uproc };
+}
+
 fn getCurrentThread() *ashet.scheduler.Thread {
     return ashet.scheduler.Thread.current() orelse @panic("syscall only legal in a process");
 }
 
 fn getCurrentProcess() *ashet.multi_tasking.Process {
-    return getCurrentThread().get_process();
+    const kproc = getCurrentThread().get_process();
+    if (kproc.is_zombie())
+        @panic("zombie process called a system call!");
+    return kproc;
 }

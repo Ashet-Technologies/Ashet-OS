@@ -140,11 +140,11 @@ pub fn build(b: *std.Build) void {
     _ = platform_config;
 
     if (machine_id.is_hosted()) {
-        kernel_mod.linkSystemLibrary("sdl2", .{
-            .use_pkg_config = .force,
-            .search_strategy = .mode_first,
-        });
-        kernel_exe.linkage = .dynamic;
+        // kernel_mod.linkSystemLibrary("sdl2", .{
+        //     .use_pkg_config = .force,
+        //     .search_strategy = .mode_first,
+        // });
+        kernel_exe.linkage = .static;
         kernel_exe.linkLibC();
     } else {
         const libc = libc_dep.artifact("foundation");
@@ -228,9 +228,9 @@ const machine_info_map = std.EnumArray(Machine, MachineConfig).init(.{
         .target = constructTargetQuery(.{
             .cpu_arch = .x86,
             .os_tag = .linux,
-            .abi = .gnu,
+            .abi = .musl,
             .cpu_model = .{ .explicit = &std.Target.x86.cpu.i686 },
-            .dynamic_linker = std.Target.DynamicLinker.init("/nix/store/xlyscnvzz5l3pkvf280qp5czg387b98f-glibc-2.38-44/lib/ld-linux.so.2"),
+            // .dynamic_linker = std.Target.DynamicLinker.init("/nix/store/xlyscnvzz5l3pkvf280qp5czg387b98f-glibc-2.38-44/lib/ld-linux.so.2"),
         }),
 
         .source_file = "port/machine/linux_pc/linux_pc.zig",
