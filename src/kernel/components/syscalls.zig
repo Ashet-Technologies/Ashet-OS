@@ -62,20 +62,22 @@ pub const syscalls = struct {
             }
         }
 
-        pub fn send_to_process(res: abi.SystemResource, proc: abi.Process) void {
-            _ = res;
-            _ = proc;
-            @panic("not implemented yet");
+        pub fn send_to_process(src_handle: abi.SystemResource, proc_handle: abi.Process) error{ SystemResources, InvalidHandle, DeadProcess }!void {
+            const kproc1, const resource = try resolve_base_resource(src_handle);
+            const kproc2, const tproc = try resolve_process_handle(proc_handle.as_resource());
+            std.debug.assert(kproc1 == kproc2);
+
+            _ = try ashet.resources.add_to_process(tproc, resource);
         }
 
         pub fn release(src_handle: abi.SystemResource) void {
             const proc, const resource = resolve_base_resource(src_handle) catch return;
-            proc.drop_resource_ownership(resource);
+            ashet.resources.remove_from_process(proc, resource);
         }
 
         pub fn destroy(src_handle: abi.SystemResource) void {
             _, const resource = resolve_base_resource(src_handle) catch return;
-            resource.destroy();
+            ashet.resources.destroy(resource);
         }
     };
 
@@ -274,7 +276,7 @@ pub const syscalls = struct {
 
             const video_output = try ashet.video.acquire_output(output);
 
-            const handle = try proc.assign_new_resource(&video_output.system_resource);
+            const handle = try ashet.resources.add_to_process(proc, &video_output.system_resource);
 
             return handle.unsafe_cast(.video_output);
         }
@@ -435,7 +437,7 @@ pub const syscalls = struct {
             );
             errdefer window.destroy();
 
-            const handle = try kproc.assign_new_resource(&window.system_resource);
+            const handle = try ashet.resources.add_to_process(kproc, &window.system_resource);
             return handle.unsafe_cast(.window);
         }
 
@@ -534,7 +536,7 @@ pub const syscalls = struct {
             );
             errdefer desktop.destroy();
 
-            const handle = try proc.assign_new_resource(&desktop.system_resource);
+            const handle = try ashet.resources.add_to_process(proc, &desktop.system_resource);
 
             return handle.unsafe_cast(.desktop);
         }
@@ -556,10 +558,10 @@ pub const syscalls = struct {
                 var cnt: usize = 0;
                 while (cnt < list.len) : (cnt += 1) {
                     const desktop = iter.next() orelse break;
-                    const handle = proc.assign_new_resource(&desktop.system_resource) catch {
+                    const handle = ashet.resources.add_to_process(proc, &desktop.system_resource) catch {
                         for (list[0..cnt]) |handle| {
                             _, const base_resource = resolve_base_resource(handle.as_resource()) catch unreachable;
-                            proc.drop_resource_ownership(base_resource);
+                            ashet.resources.remove_from_process(proc, base_resource);
                         }
                         return 0;
                     };
@@ -689,7 +691,7 @@ pub const syscalls = struct {
             };
             errdefer memref.destroy();
 
-            const handle = try proc.assign_new_resource(&memref.system_resource);
+            const handle = try ashet.resources.add_to_process(proc, &memref.system_resource);
 
             return handle.unsafe_cast(.shared_memory);
         }
@@ -730,7 +732,7 @@ pub const syscalls = struct {
                 const sock = try ashet.network.udp.Socket.create();
                 errdefer sock.destroy();
 
-                const handle = try proc.assign_new_resource(&sock.system_resource);
+                const handle = try ashet.resources.add_to_process(proc, &sock.system_resource);
 
                 return handle.unsafe_cast(.udp_socket);
             }
@@ -743,7 +745,7 @@ pub const syscalls = struct {
                 const sock = try ashet.network.tcp.Socket.create();
                 errdefer sock.destroy();
 
-                const handle = try proc.assign_new_resource(&sock.system_resource);
+                const handle = try ashet.resources.add_to_process(proc, &sock.system_resource);
 
                 return handle.unsafe_cast(.tcp_socket);
             }
@@ -868,9 +870,10 @@ pub const syscalls = struct {
 
 fn resolve_base_resource(handle: ashet.resources.Handle) !struct { *ashet.multi_tasking.Process, *ashet.resources.SystemResource } {
     const process = getCurrentProcess();
-    const ownership = try process.resources.resolve(handle);
-    std.debug.assert(ownership.data.process == process);
-    return .{ process, ownership.data.resource };
+
+    const resource = try ashet.resources.resolve_untyped(process, handle);
+
+    return .{ process, resource };
 }
 
 fn resolve_typed_resource(comptime Resource: type, handle: ashet.resources.Handle) error{InvalidHandle}!struct { *ashet.multi_tasking.Process, *Resource } {

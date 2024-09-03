@@ -521,6 +521,7 @@ pub const udp = struct {
     const max_sockets = @as(usize, @intCast(c.MEMP_NUM_UDP_PCB));
 
     pub const Socket = struct {
+        pub const Destructor = ashet.resources.Destructor(@This(), _internal_destroy);
         system_resource: ashet.resources.SystemResource = .{ .type = .udp_socket },
 
         pcb: *c.udp_pcb,
@@ -539,7 +540,9 @@ pub const udp = struct {
             return socket;
         }
 
-        pub fn destroy(sock: *Socket) void {
+        pub const destroy = Destructor.destroy;
+
+        fn _internal_destroy(sock: *Socket) void {
             c.udp_remove(sock.pcb);
             ashet.memory.type_pool(Socket).free(sock);
         }
@@ -723,6 +726,8 @@ pub const tcp = struct {
     };
 
     pub const Socket = struct {
+        pub const Destructor = ashet.resources.Destructor(@This(), _internal_destroy);
+
         system_resource: ashet.resources.SystemResource = .{ .type = .tcp_socket },
 
         pcb: *c.tcp_pcb,
@@ -752,7 +757,9 @@ pub const tcp = struct {
             return socket;
         }
 
-        pub fn destroy(sock: *Socket) void {
+        pub const destroy = Destructor.destroy;
+
+        fn _internal_destroy(sock: *Socket) void {
             if (c.tcp_close(sock.pcb) != c.ERR_OK) {
                 c.tcp_abort(sock.pcb);
             }

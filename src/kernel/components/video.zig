@@ -10,11 +10,15 @@ pub const Resolution = ashet.abi.Size;
 pub const VideoMemory = ashet.abi.VideoMemory;
 
 pub const Output = struct {
+    pub const Destructor = ashet.resources.Destructor(@This(), _noop);
+
     system_resource: ashet.resources.SystemResource = .{ .type = .video_output },
 
     /// If true, the kernel will automatically flush the screen in a background process.
     auto_flush: bool = true,
     video_driver: *ashet.drivers.VideoDevice,
+
+    fn _noop(_: *Output) void {}
 
     pub fn get_resolution(output: Output) Resolution {
         return output.video_driver.getResolution();

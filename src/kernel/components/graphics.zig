@@ -2,18 +2,24 @@ const std = @import("std");
 const ashet = @import("../main.zig");
 
 pub const Framebuffer = struct {
+    pub const Destructor = ashet.resources.Destructor(@This(), _internal_destroy);
     system_resource: ashet.resources.SystemResource = .{ .type = .framebuffer },
 
-    pub fn destroy(sock: *Framebuffer) void {
+    pub const destroy = Destructor.destroy;
+
+    fn _internal_destroy(sock: *Framebuffer) void {
         _ = sock;
         @panic("Not implemented yet!");
     }
 };
 
 pub const Font = struct {
+    pub const Destructor = ashet.resources.Destructor(@This(), _internal_destroy);
     system_resource: ashet.resources.SystemResource = .{ .type = .font },
 
-    pub fn destroy(sock: *Font) void {
+    pub const destroy = Destructor.destroy;
+
+    fn _internal_destroy(sock: *Font) void {
         _ = sock;
         @panic("Not implemented yet!");
     }

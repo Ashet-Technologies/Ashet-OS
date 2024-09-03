@@ -17,7 +17,7 @@ const resources = struct {
 
     /// Adds the process to the owners of this resource, so the process
     /// can safely access it without fear of having a use-after-free.
-    extern fn send_to_process(SystemResource, Process) void;
+    extern fn send_to_process(SystemResource, Process) error{ SystemResources, InvalidHandle, DeadProcess }!void;
 
     /// Drops the ownership of the resource for the current process.
     /// If no owner remains, the resource will be destroyed and it's

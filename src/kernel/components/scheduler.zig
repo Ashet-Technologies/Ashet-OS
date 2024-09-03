@@ -102,6 +102,8 @@ pub const Stats = struct {
 /// Thread management structure.
 /// Is allocated in such a way that is is stored at the end of the last page of thread stack.
 pub const Thread = struct {
+    pub const Destructor = ashet.resources.Destructor(@This(), kill);
+
     pub const DebugInfo = if (debug_mode) struct {
         entry_point: usize = 0,
         name: [32]u8 = [1]u8{0} ** 32,

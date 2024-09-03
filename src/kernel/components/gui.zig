@@ -33,6 +33,8 @@ pub fn iterate_desktops() DesktopIterator {
 }
 
 pub const Desktop = struct {
+    pub const Destructor = ashet.resources.Destructor(@This(), _internal_destroy);
+
     system_resource: ashet.resources.SystemResource = .{ .type = .desktop },
 
     associated_memory: std.heap.ArenaAllocator,
@@ -74,7 +76,9 @@ pub const Desktop = struct {
         return desktop;
     }
 
-    pub fn destroy(desktop: *Desktop) void {
+    pub const destroy = Destructor.destroy;
+
+    fn _internal_destroy(desktop: *Desktop) void {
         all_desktops.remove(&desktop.global_link_node);
 
         // Destroy all associated windows:
@@ -87,7 +91,7 @@ pub const Desktop = struct {
                 // then destroy, as destroying the window will also kill
                 // `node`:
                 const window = Window.from_node(node);
-                window.system_resource.destroy();
+                window.destroy();
             }
         }
 
@@ -96,7 +100,7 @@ pub const Desktop = struct {
     }
 
     fn process_event(desktop: *Desktop, event: ashet.abi.DesktopEvent) void {
-        const desktop_handle = desktop.server_process.get_resource_handle(&desktop.system_resource) orelse @panic("process_event called for a process that does not own the desktop");
+        const desktop_handle = ashet.resources.get_handle(desktop.server_process, &desktop.system_resource) orelse @panic("process_event called for a process that does not own the desktop");
 
         desktop.handle_event(
             desktop_handle.unsafe_cast(.desktop),
@@ -105,7 +109,7 @@ pub const Desktop = struct {
     }
 
     fn notify_create_window(desktop: *Desktop, window: *Window) error{SystemResources}!void {
-        const window_handle = try desktop.server_process.assign_new_resource(&window.system_resource);
+        const window_handle = try ashet.resources.add_to_process(desktop.server_process, &window.system_resource);
 
         desktop.process_event(.{
             .create_window = .{
@@ -116,7 +120,7 @@ pub const Desktop = struct {
     }
 
     fn notify_destroy_window(desktop: *Desktop, window: *Window) void {
-        const window_handle = desktop.server_process.get_resource_handle(&window.system_resource) orelse return;
+        const window_handle = ashet.resources.get_handle(desktop.server_process, &window.system_resource) orelse return;
         desktop.process_event(.{
             .create_window = .{
                 .event_type = .destroy_window,
@@ -150,6 +154,8 @@ pub const Desktop = struct {
 };
 
 pub const Window = struct {
+    pub const Destructor = ashet.resources.Destructor(@This(), _internal_destroy);
+
     system_resource: ashet.resources.SystemResource = .{ .type = .window },
 
     desktop: WindowDesktopLinkNode,
@@ -207,7 +213,9 @@ pub const Window = struct {
         return window;
     }
 
-    pub fn destroy(window: *Window) void {
+    pub const destroy = Destructor.destroy;
+
+    fn _internal_destroy(window: *Window) void {
         const desktop: *Desktop = window.desktop.data.desktop;
 
         // Invoke the handler process:
@@ -219,18 +227,24 @@ pub const Window = struct {
 };
 
 pub const Widget = struct {
+    pub const Destructor = ashet.resources.Destructor(@This(), _internal_destroy);
     system_resource: ashet.resources.SystemResource = .{ .type = .widget },
 
-    pub fn destroy(sock: *Widget) void {
+    pub const destroy = Destructor.destroy;
+
+    fn _internal_destroy(sock: *Widget) void {
         _ = sock;
         @panic("Not implemented yet!");
     }
 };
 
 pub const WidgetType = struct {
+    pub const Destructor = ashet.resources.Destructor(@This(), _internal_destroy);
     system_resource: ashet.resources.SystemResource = .{ .type = .widget_type },
 
-    pub fn destroy(sock: *WidgetType) void {
+    pub const destroy = Destructor.destroy;
+
+    fn _internal_destroy(sock: *WidgetType) void {
         _ = sock;
         @panic("Not implemented yet!");
     }

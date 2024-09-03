@@ -8,19 +8,6 @@ pub const TypeId = ashet.abi.SystemResource.Type;
 /// This is the ABI-public version of a system resource.
 pub const Handle = ashet.abi.SystemResource;
 
-/// Resolves the resource `handle` for the `owner` process into a pointer to
-/// `Resource`.
-pub fn resolve(
-    comptime Resource: type,
-    owner: *ashet.multi_tasking.Process,
-    handle: Handle,
-) error{ Gone, InvalidHandle, GenerationMismatch, TypeMismatch }!*Resource {
-    const link = try owner.resources.resolve(handle);
-    std.debug.assert(owner == link.data.process);
-    const resource = link.data.resource;
-    return resource.cast(Resource) catch return error.TypeMismatch;
-}
-
 /// This is the kernel-internal abstraction over system resources.
 pub const SystemResource = struct {
     type: TypeId,
@@ -33,71 +20,6 @@ pub const SystemResource = struct {
         if (src.type != expected_type)
             return error.BadCast;
         return @alignCast(@fieldParentPtr("system_resource", src));
-    }
-
-    pub fn add_owner(src: *SystemResource, owner: *OwnershipNode) void {
-        std.debug.assert(owner.data.resource == src);
-        logger.debug("add process {} to resource {}", .{
-            owner.data.process,
-            src,
-        });
-        src.owners.append(owner);
-    }
-
-    pub fn remove_owner(src: *SystemResource, owner: *OwnershipNode) void {
-        std.debug.assert(owner.data.resource == src);
-        logger.debug("remove process {} from resource {}", .{
-            owner.data.process,
-            src
-        });
-        src.owners.remove(owner);
-        owner.* = undefined;
-        
-        logger.debug("owner count now {}", .{src.owners.len});
-        if (src.owners.len == 0) {
-            src.destroy();
-        }
-    }
-
-    /// Destroys the resource
-    pub fn destroy(src: *SystemResource) void {
-        logger.debug("destroy {}", .{src});
-        
-        src.unlink();
-        switch (src.type) {
-            inline else => |type_id| {
-                const instance = src.cast(ashet.resources.InstanceType(type_id)) catch unreachable;
-                instance.destroy();
-            },
-
-            .process => {
-                const instance = src.cast(ashet.multi_tasking.Process) catch unreachable;
-                instance.destroy_for_resource();
-            },
-
-            // Threads need special handling
-            .thread => {
-                const instance = src.cast(ashet.scheduler.Thread) catch unreachable;
-                instance.kill();
-            },
-
-            // video outputs are non-destroyed resources, they will exist until system exit.
-            .video_output => {},
-        }
-    }
-
-    /// Removes all references from owning processes.
-    fn unlink(src: *SystemResource) void {
-        var it = src.owners.first;
-        while (it) |node| {
-            it = node.next;
-            node.data.process.resources.free_by_ownership(node) catch |err| switch (err) {
-                error.DoubleFree => {
-                    // this is fine, as unlink() might result from a process dropping a resource
-                },
-                error.NotOwned => unreachable, // kernel implementation bug
-            };
-        }
     }
 
     pub fn format(src: *const SystemResource, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
@@ -149,7 +71,7 @@ pub const HandlePool = struct {
     };
 
     /// Allocates a new handle and returns both handle and the owner, with uninitialized `.data`
-    pub fn alloc(pool: *HandlePool) error{ OutOfMemory, OutOfHandles }!AllocResult {
+    fn alloc(pool: *HandlePool) error{ OutOfMemory, OutOfHandles }!AllocResult {
         const raw_index = pool.bit_map.toggleFirstSet() orelse blk: {
             const original_len = pool.bit_map.capacity();
 
@@ -210,7 +132,7 @@ pub const HandlePool = struct {
         return @enumFromInt(@as(usize, @bitCast(encoded)));
     }
 
-    pub fn index_from_handle(pool: *HandlePool, handle: Handle) error{ InvalidHandle, DoubleFree, GenerationMismatch }!usize {
+    fn index_from_handle(pool: *HandlePool, handle: Handle) error{ InvalidHandle, DoubleFree, GenerationMismatch }!usize {
         std.debug.assert(pool.generations.items.len == pool.bit_map.capacity());
         std.debug.assert(pool.owners.len == pool.bit_map.capacity());
 
@@ -226,7 +148,7 @@ pub const HandlePool = struct {
         return handle_bits.index;
     }
 
-    pub fn free_by_handle(pool: *HandlePool, handle: Handle) error{ InvalidHandle, DoubleFree, GenerationMismatch }!void {
+    fn free_by_handle(pool: *HandlePool, handle: Handle) error{ InvalidHandle, DoubleFree, GenerationMismatch }!void {
         const index = try pool.index_from_handle(handle);
 
         pool.free_by_index(index) catch |err| switch (err) {
@@ -235,7 +157,7 @@ pub const HandlePool = struct {
         };
     }
 
-    pub fn free_by_ownership(pool: *HandlePool, ownership: *OwnershipNode) error{ NotOwned, DoubleFree }!void {
+    fn free_by_ownership(pool: *HandlePool, ownership: *OwnershipNode) error{ NotOwned, DoubleFree }!void {
         std.debug.assert(pool.generations.items.len == pool.bit_map.capacity());
         std.debug.assert(pool.owners.len == pool.bit_map.capacity());
 
@@ -252,7 +174,7 @@ pub const HandlePool = struct {
         return error.NotOwned;
     }
 
-    pub fn free_by_index(pool: *HandlePool, index: usize) error{ OutOfBounds, DoubleFree }!void {
+    fn free_by_index(pool: *HandlePool, index: usize) error{ OutOfBounds, DoubleFree }!void {
         std.debug.assert(pool.generations.items.len == pool.bit_map.capacity());
         std.debug.assert(pool.owners.len == pool.bit_map.capacity());
 
@@ -267,7 +189,7 @@ pub const HandlePool = struct {
         pool.generations.items[index] +%= 1;
     }
 
-    pub fn resolve(pool: *HandlePool, handle: Handle) error{ InvalidHandle, GenerationMismatch, Gone }!*OwnershipNode {
+    fn resolve(pool: *HandlePool, handle: Handle) error{ InvalidHandle, GenerationMismatch, Gone }!*OwnershipNode {
         std.debug.assert(pool.generations.items.len == pool.bit_map.capacity());
         std.debug.assert(pool.owners.len == pool.bit_map.capacity());
 
@@ -286,7 +208,7 @@ pub const HandlePool = struct {
         return pool.owners.uncheckedAt(handle_bits.index);
     }
 
-    pub fn index_from_resource(pool: *HandlePool, resource: *SystemResource) ?usize {
+    fn index_from_resource(pool: *HandlePool, resource: *SystemResource) ?usize {
         std.debug.assert(pool.generations.items.len == pool.bit_map.capacity());
         std.debug.assert(pool.owners.len == pool.bit_map.capacity());
 
@@ -300,7 +222,7 @@ pub const HandlePool = struct {
         return null;
     }
 
-    pub fn ownership_from_index(pool: *HandlePool, index: usize) *OwnershipNode {
+    fn ownership_from_index(pool: *HandlePool, index: usize) *OwnershipNode {
         std.debug.assert(pool.generations.items.len == pool.bit_map.capacity());
         std.debug.assert(pool.owners.len == pool.bit_map.capacity());
         std.debug.assert(index < pool.owners.len);
@@ -308,7 +230,7 @@ pub const HandlePool = struct {
         return pool.owners.at(index);
     }
 
-    pub fn iterator(pool: HandlePool) Iterator {
+    fn iterator(pool: HandlePool) Iterator {
         return .{ .pool = pool };
     }
 
@@ -606,4 +528,226 @@ comptime {
         if (field.type != SystemResource)
             @compileError(@typeName(T) ++ ".system_resource is not a SystemResource!");
     }
+}
+
+///
+/// Each system resource must declare a `pub const Destructor = Destructor(@This(), ...)`
+/// which will be invoked by the resource management system to destroy the resource.
+///
+/// This is used to prevent accidental destruction of a resource via a "method call".
+///
+/// The `Destructor` type exports a `destroy` function which can be included into the resource
+/// type for proper destruction:
+///
+/// ```zig
+/// pub const Destructor = ashet.resources.Destructor(@This(), _internal_destroy);
+/// pub const destroy = Destructor.destroy;
+/// ```
+///
+pub fn Destructor(comptime Resource: type, comptime destroyFn: fn (*Resource) void) type {
+    const T = struct {
+        /// Wrapper function that will forward the call to the resource destruction.
+        pub fn destroy(res: *Resource) void {
+            ashet.resources.destroy(&res.system_resource);
+        }
+
+        /// Actually destructs the resource
+        fn destructor(res: *Resource) void {
+            // assert we don't have a bug somewhere:
+            std.debug.assert(res.system_resource.owners.len == 0);
+            destroyFn(res);
+        }
+    };
+    std.debug.assert(@sizeOf(T) == 0);
+    return T;
+}
+
+/// Resolves `handle` for the resource namespace inside `process`.
+/// Returns a pointer to the `Ownership` structure describing the
+fn resolve_ownership(process: *ashet.multi_tasking.Process, handle: Handle) error{InvalidHandle}!*Ownership {
+    const link_node: *OwnershipNode = process.resource_handles.resolve(handle) catch |err| switch (err) {
+        error.InvalidHandle,
+        error.Gone,
+        error.GenerationMismatch,
+        => return error.InvalidHandle,
+    };
+
+    const link: *Ownership = &link_node.data;
+
+    std.debug.assert(link.process == process);
+    std.debug.assert(link.handle == handle);
+
+    return link;
+}
+
+/// Resolves the given resource `handle` for `process` into an untyped `SystemResource`.
+pub fn resolve_untyped(process: *ashet.multi_tasking.Process, handle: Handle) error{InvalidHandle}!*SystemResource {
+    const link = try resolve_ownership(process, handle);
+    std.debug.assert(link.process == process);
+    return link.resource;
+}
+
+/// Resolves the resource `handle` for the `owner` process into a pointer to `Resource`.
+pub fn resolve(
+    comptime Resource: type,
+    process: *ashet.multi_tasking.Process,
+    handle: Handle,
+) error{ InvalidHandle, TypeMismatch }!*Resource {
+    const link = try resolve_ownership(process, handle);
+    std.debug.assert(link.process == process);
+    return link.resource.cast(Resource) catch return error.TypeMismatch;
+}
+
+/// Returns the handle for `resource` if `process` owns `resource`, otherwise `null`.
+pub fn get_handle(process: *ashet.multi_tasking.Process, resource: *SystemResource) ?Handle {
+    logger.debug("get_resource_handle({}, {}, zombie={})", .{ process, resource, process.is_zombie() });
+    // if (process.is_zombie())
+    //     return null;
+
+    var iter = resource.owners.first;
+    while (iter) |node| : (iter = node.next) {
+        logger.debug("- node: 0x{X:0>8}", .{@intFromPtr(node)});
+        if (node.data.process == process) {
+            return node.data.handle;
+        }
+    }
+    return null;
+}
+
+/// Adds the system `resource` from a `process` and returns the handle.
+/// If the resource is already owned by `process`, nothing will be done and the handle will be returned.
+pub fn add_to_process(process: *ashet.multi_tasking.Process, resource: *SystemResource) error{SystemResources}!Handle {
+    if (get_handle(process, resource)) |handle| {
+        logger.debug("add_to_process({}, {}) => existing: {}", .{ process, resource, handle });
+        return handle;
+    }
+
+    logger.debug("add_to_process({}, {}) => add new", .{ process, resource });
+    ashet.multi_tasking.debug_dump();
+
+    std.debug.assert(process.is_zombie() == false);
+
+    const info = process.resource_handles.alloc() catch return error.SystemResources;
+    errdefer comptime @panic("no error beyond this point");
+
+    info.ownership.* = .{
+        .data = .{
+            .process = process,
+            .resource = resource,
+            .handle = info.handle,
+        },
+    };
+    resource.owners.append(info.ownership);
+
+    logger.debug("  handle: {}", .{info.handle});
+
+    return info.handle;
+}
+
+/// Removes the system `resource` from a `process`.
+pub fn remove_from_process(process: *ashet.multi_tasking.Process, resource: *SystemResource) void {
+    logger.debug("drop_resource_ownership({}, {}, zombie={})", .{ process, resource, process.is_zombie() });
+    // if (process.is_zombie()) {
+    //     // Zombies don't own anything, they're dead.
+    //     std.debug.assert(get_handle(process, resource) == null);
+    //     logger.debug("drop_resource_ownership: {} is a zombie, can't drop {}", .{ process, resource });
+    //     return;
+    // }
+
+    const handle = get_handle(process, resource) orelse {
+        logger.debug("drop_resource_ownership: {} was not owned by {}", .{ resource, process });
+        return;
+    };
+
+    std.debug.assert(resource.owners.len > 0);
+
+    {
+        const previous_count = resource.owners.len;
+        defer std.debug.assert(resource.owners.len == previous_count - 1);
+
+        const resource_index: usize = process.resource_handles.index_from_handle(handle) catch |err| {
+            logger.err("resource was not owned by process {}: {s}", .{ process, @errorName(err) });
+            @panic("kernel bug: get_handle() yields resource, but index_from_handle does not.");
+        };
+
+        const ownership = process.resource_handles.ownership_from_index(resource_index);
+
+        std.debug.assert(ownership.data.process == process);
+        std.debug.assert(ownership.data.handle == handle);
+        std.debug.assert(ownership.data.resource == resource);
+
+        logger.debug("remove process {} from resource {}", .{ process, resource });
+        resource.owners.remove(ownership);
+
+        ownership.* = undefined;
+
+        process.resource_handles.free_by_index(resource_index) catch |err| {
+            std.log.err("failed to release resource: {s}", .{@errorName(err)});
+            @panic("kernel bug: resource is allocated, but yielded error when freeing");
+        };
+    }
+
+    logger.debug("owner count now {}", .{resource.owners.len});
+    if (resource.owners.len == 0) {
+        destroy(resource);
+    }
+}
+
+/// Immediatly destroys the system resource and invalidates all handles.
+pub fn destroy(resource: *SystemResource) void {
+    logger.debug("destroy {}", .{resource});
+
+    // Unlink resource from all processes:
+    logger.debug("unlink resource {}", .{resource});
+    var it = resource.owners.first;
+    while (it) |node| {
+        it = node.next;
+        resource.owners.remove(node);
+        node.data.process.resource_handles.free_by_ownership(node) catch |err| switch (err) {
+            error.DoubleFree => {
+                // this is fine, as unlink() might result from a process dropping a resource
+            },
+            error.NotOwned => unreachable, // kernel implementation bug
+        };
+    }
+    std.debug.assert(resource.owners.len == 0);
+
+    logger.debug("destruct {}", .{resource});
+
+    switch (resource.type) {
+        inline else => |type_id| {
+            const Resource = ashet.resources.InstanceType(type_id);
+            const instance = resource.cast(Resource) catch unreachable;
+
+            Resource.Destructor.destructor(instance);
+        },
+    }
+}
+
+/// Removes all resources from the process.
+pub fn unlink_process(process: *ashet.multi_tasking.Process) void {
+    logger.debug("unlink_process({})", .{process});
+
+    logger.info("before unlink:", .{});
+    ashet.multi_tasking.debug_dump();
+
+    var iter = process.resource_handles.iterator();
+    while (iter.next()) |item| {
+        const res = item.ownership.data.resource;
+        if (res == &process.system_resource) {
+            // We have to skip our own resource handle here as
+            // removing the last owner from the resource handle will
+            // invoke `Process.destroy()` in that case.
+            //
+            // This would release the memory for this Process and accessing
+            // anything beyond this would be a bug.
+            // `destroy()` will already be called when the process should be
+            // killed anyways, so this is fine and *not* a resource leak!
+            continue;
+        }
+        remove_from_process(process, res);
+    }
+
+    logger.info("after unlink:", .{});
+    ashet.multi_tasking.debug_dump();
 }

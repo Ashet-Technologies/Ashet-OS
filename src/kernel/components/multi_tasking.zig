@@ -131,12 +131,12 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
         call.resource_owner,
         open_file.outputs.handle.as_resource(),
     ) catch @panic("unrecoverage resource leak");
-    defer kernel_file_handle.system_resource.destroy();
+    defer ashet.resources.destroy(&kernel_file_handle.system_resource);
 
     const bg_process = ashet.scheduler.Thread.current().?.get_process();
 
-    const local_resource_handle = try bg_process.assign_new_resource(&kernel_file_handle.system_resource);
-    defer bg_process.drop_resource_ownership(&kernel_file_handle.system_resource);
+    const local_resource_handle = try ashet.resources.add_to_process(bg_process, &kernel_file_handle.system_resource);
+    defer ashet.resources.remove_from_process(bg_process, &kernel_file_handle.system_resource);
 
     var file_handle: libashet.fs.File = .{
         .handle = local_resource_handle.unsafe_cast(.file),
@@ -186,8 +186,8 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
             },
             .resource => .{
                 .resource = blk: {
-                    const ownership = call.resource_owner.resources.resolve(in.value.resource) catch return error.InvalidHandle;
-                    break :blk try proc.assign_new_resource(ownership.data.resource);
+                    const resource = ashet.resources.resolve_untyped(call.resource_owner, in.value.resource) catch return error.InvalidHandle;
+                    break :blk try ashet.resources.add_to_process(proc, resource);
                 },
             },
         };
@@ -195,7 +195,7 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
 
     proc.cli_arguments = argv_out;
 
-    const handle = try call.resource_owner.assign_new_resource(&proc.system_resource);
+    const handle = try ashet.resources.add_to_process(call.resource_owner, &proc.system_resource);
 
     return .{
         .process = handle.unsafe_cast(.process),
@@ -236,6 +236,8 @@ pub const Process = struct {
     const debug_line_buffer_length = 64;
     const DebugLogBuffers = std.EnumArray(ashet.abi.LogLevel, astd.LineBuffer(debug_line_buffer_length));
 
+    pub const Destructor = ashet.resources.Destructor(@This(), _internal_destroy);
+
     system_resource: ashet.resources.SystemResource = .{ .type = .process },
 
     /// Node inside `process_list`.
@@ -263,7 +265,8 @@ pub const Process = struct {
     /// Zombies exist as handles, but do not own any data anymore
     exit_code: ?ExitCode = null,
 
-    resources: ashet.resources.HandlePool,
+    /// Set of active resource handles.
+    resource_handles: ashet.resources.HandlePool,
 
     debug_outputs: DebugLogBuffers = DebugLogBuffers.initFill(.{}),
 
@@ -288,13 +291,13 @@ pub const Process = struct {
             .memory_arena = std.heap.ArenaAllocator.init(ashet.memory.page_allocator),
             .name = undefined,
             .stay_resident = options.stay_resident,
-            .resources = undefined,
+            .resource_handles = undefined,
             .self_process_handle = undefined,
         };
         errdefer process.memory_arena.deinit();
 
-        process.resources = ashet.resources.HandlePool.init(process.memory_arena.allocator());
-        errdefer process.resources.deinit();
+        process.resource_handles = ashet.resources.HandlePool.init(process.memory_arena.allocator());
+        errdefer process.resource_handles.deinit();
 
         process.name = if (options.name) |name|
             try process.memory_arena.allocator().dupeZ(u8, name)
@@ -302,7 +305,7 @@ pub const Process = struct {
             try std.fmt.allocPrintZ(process.memory_arena.allocator(), "Process(0x{X:0>8})", .{@intFromPtr(process)});
 
         // we do actually own ourselves (*_*)
-        const raw_handle = try process.assign_new_resource(&process.system_resource);
+        const raw_handle = try ashet.resources.add_to_process(process, &process.system_resource);
         process.self_process_handle = raw_handle.unsafe_cast(.process);
 
         process_list.append(&process.list_item);
@@ -316,17 +319,21 @@ pub const Process = struct {
         return process;
     }
 
-    /// Kills the thread and deletes it afterwards. This will invalidate all resource handles!
-    // pub fn destroy(proc: *Process) void {
-    // // proc.system_resource.destroy();
-    // }
+    /// Destroys the process resource and releases its memory.
+    pub const destroy = Destructor.destroy;
 
-    pub fn destroy_for_resource(proc: *Process) void {
+    /// Kills the thread and deletes it afterwards. This will invalidate all resource handles!
+    fn _internal_destroy(proc: *Process) void {
         logger.debug("destroy({})", .{proc});
 
         if (!proc.is_zombie()) {
             proc.kill(ExitCode.killed);
         }
+
+        // TODO(fqu): Is that the right point?
+        proc.resource_handles.deinit();
+        proc.memory_arena.deinit();
+
         ashet.memory.type_pool(Process).free(proc);
     }
 
@@ -362,7 +369,6 @@ pub const Process = struct {
         std.debug.assert(!proc.is_zombie());
 
         proc.exit_code = exit_code;
-
         process_list.remove(&proc.list_item);
 
         if (exclusive_video_controller == proc) {
@@ -382,30 +388,8 @@ pub const Process = struct {
             }
         }
 
-        // Drop all resource ownerships:
-        {
-            var iter = proc.resources.iterator();
-            while (iter.next()) |item| {
-                const res = item.ownership.data.resource;
-                // if (res == &proc.system_resource) {
-                //     // We have to skip our own resource handle here as
-                //     // removing the last owner from the resource handle will
-                //     // invoke `Process.destroy()` in that case.
-                //     //
-                //     // This would release the memory for this Process and accessing
-                //     // anything beyond this would be a bug.
-                //     // `destroy()` will already be called when the process should be
-                //     // killed anyways, so this is fine and *not* a resource leak!
-                //     continue;
-                // }
-                res.remove_owner(item.ownership);
-                proc.resources.free_by_index(item.index) catch unreachable; // all resources we can reach here are valid
-            }
-            proc.resources.deinit();
-        }
-
-        proc.name = "dead zombie";
-        proc.memory_arena.deinit();
+        // Drop all resource ownerships. This might delete the process so it has to be last!
+        ashet.resources.unlink_process(proc);
     }
 
     pub fn save(proc: *Process) void {
@@ -437,81 +421,11 @@ pub const Process = struct {
         return proc.memory_arena.allocator();
     }
 
-    /// Gets the resource handle assigned to the process.
-    ///
-    /// Returns `null` if the resource isn't owned by `proc`.
-    pub fn get_resource_handle(proc: *Process, res: *ashet.resources.SystemResource) ?ashet.abi.SystemResource {
-        logger.debug("get_resource_handle({}, {}, zombie={})", .{ proc, res, proc.is_zombie() });
-        if (proc.is_zombie())
-            return null;
-
-        var iter = res.owners.first;
-        while (iter) |node| : (iter = node.next) {
-            logger.debug("- node: 0x{X:0>8}", .{@intFromPtr(node)});
-            if (node.data.process == proc) {
-                return node.data.handle;
-            }
-        }
-        return null;
-    }
-
-    /// Assigns this process a new resource.
-    /// Asserts that the resource was not assigned before.
-    pub fn assign_new_resource(proc: *Process, res: *ashet.resources.SystemResource) error{SystemResources}!ashet.abi.SystemResource {
-        std.debug.assert(proc.get_resource_handle(res) == null);
-        std.debug.assert(proc.is_zombie() == false);
-
-        const info = proc.resources.alloc() catch return error.SystemResources;
-        errdefer proc.resources.free_by_handle(info.handle) catch unreachable;
-
-        info.ownership.* = .{
-            .data = .{
-                .process = proc,
-                .resource = res,
-                .handle = info.handle,
-            },
-        };
-        res.add_owner(info.ownership);
-
-        return info.handle;
-    }
-
-    /// Ensures that a process owns a resource and returns it.
-    pub fn ensure_resource_handle(proc: *Process, res: *ashet.resources.SystemResource) error{SystemResources}!ashet.abi.SystemResource {
-        return get_resource_handle(proc, res) orelse try proc.assign_new_resource(res);
-    }
-
-    /// Drops the resource from the process and removes the handle.
-    pub fn drop_resource_ownership(proc: *Process, res: *ashet.resources.SystemResource) void {
-        debug_dump();
-
-        logger.debug("drop_resource_ownership({}, {}, zombie={})", .{ proc, res, proc.is_zombie() });
-        if (proc.is_zombie()) {
-            // Zombies don't own anything, they're dead.
-            return;
-        }
-
-        const handle = proc.get_resource_handle(res) orelse return;
-
-        const resource_index: usize = proc.resources.index_from_handle(handle) catch |err| {
-            logger.err("resource was not owned by process {}: {s}", .{ proc, @errorName(err) });
-            return;
-        };
-
-        const ownership = proc.resources.ownership_from_index(resource_index);
-
-        res.remove_owner(ownership);
-
-        proc.resources.free_by_index(resource_index) catch |err| {
-            std.log.err("failed to release resource: {s}", .{@errorName(err)});
-        };
-    }
-
     pub fn format(proc: *const Process, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
         _ = fmt;
         _ = options;
         if (proc.is_zombie()) {
-            try writer.print("Process(0x{X:0>8}, <zombie>)", .{@intFromPtr(proc)});
+            try writer.print("Process(0x{X:0>8}, \"{}\", <zombie>)", .{ @intFromPtr(proc), std.zig.fmtEscapes(proc.name) });
         } else {
             try writer.print("Process(0x{X:0>8}, \"{}\")", .{ @intFromPtr(proc), std.zig.fmtEscapes(proc.name) });
         }
@@ -539,7 +453,7 @@ pub const Process = struct {
     }
 };
 
-fn debug_dump() void {
+pub fn debug_dump() void {
     logger.info("process list:", .{});
     var iter = process_list.first;
     while (iter) |proc_node| : (iter = proc_node.next) {
@@ -547,9 +461,9 @@ fn debug_dump() void {
 
         logger.info("- {}", .{proc});
 
-        for (0..proc.resources.bit_map.capacity()) |i| {
-            if (proc.resources.bit_map.isSet(i) == false) {
-                const item = proc.resources.owners.at(i);
+        for (0..proc.resource_handles.bit_map.capacity()) |i| {
+            if (proc.resource_handles.bit_map.isSet(i) == false) {
+                const item = proc.resource_handles.owners.at(i);
                 logger.info("  - {} => {}", .{
                     item.data.handle,
                     item.data.resource,

@@ -15,6 +15,8 @@ const max_drives = 8;
 const max_open_files = 64;
 
 pub const File = struct {
+    pub const Destructor = ashet.resources.Destructor(@This(), _internal_destroy);
+
     system_resource: ashet.resources.SystemResource = .{ .type = .file },
 
     fs: *FileSystem,
@@ -32,13 +34,17 @@ pub const File = struct {
         return dir;
     }
 
-    pub fn destroy(file: *File) void {
+    pub const destroy = Destructor.destroy;
+
+    fn _internal_destroy(file: *File) void {
         file.fs.driver.closeFile(file.handle);
         ashet.memory.type_pool(File).free(file);
     }
 };
 
 pub const Directory = struct {
+    pub const Destructor = ashet.resources.Destructor(@This(), _internal_destroy);
+
     system_resource: ashet.resources.SystemResource = .{ .type = .directory },
 
     fs: *FileSystem,
@@ -57,7 +63,9 @@ pub const Directory = struct {
         return dir;
     }
 
-    pub fn destroy(dir: *Directory) void {
+    pub const destroy = Destructor.destroy;
+
+    fn _internal_destroy(dir: *Directory) void {
         if (dir.iter) |iter| {
             dir.fs.driver.destroyEnumerator(iter);
         }
@@ -175,12 +183,12 @@ fn resolve_file(call: *ashet.overlapped.AsyncCall, dir: ashet.abi.File) error{In
 }
 
 fn create_dir_handle(call: *ashet.overlapped.AsyncCall, dir: *Directory) !ashet.abi.Directory {
-    const handle = try call.resource_owner.assign_new_resource(&dir.system_resource);
+    const handle = try ashet.resources.add_to_process(call.resource_owner, &dir.system_resource);
     return handle.unsafe_cast(.directory);
 }
 
 fn create_file_handle(call: *ashet.overlapped.AsyncCall, file: *File) !ashet.abi.File {
-    const handle = try call.resource_owner.assign_new_resource(&file.system_resource);
+    const handle = try ashet.resources.add_to_process(call.resource_owner, &file.system_resource);
     return handle.unsafe_cast(.file);
 }
 
@@ -230,7 +238,7 @@ const iop_handlers = struct {
 
     fn fs_close_dir(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.CloseDir.Inputs) fs_abi.CloseDir.Error!fs_abi.CloseDir.Outputs {
         const ctx: *Directory = try resolve_dir(call, inputs.dir);
-        ctx.destroy();
+        ashet.resources.destroy(&ctx.system_resource);
         return .{};
     }
 
