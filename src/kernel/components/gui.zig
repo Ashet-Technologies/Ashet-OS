@@ -1,5 +1,6 @@
 const std = @import("std");
 const ashet = @import("../main.zig");
+const logger = std.log.scoped(.gui);
 
 const Size = ashet.abi.Size;
 const CreateWindowFlags = ashet.abi.CreateWindowFlags;
@@ -254,4 +255,5 @@ pub fn schedule_get_window_event(call: *ashet.overlapped.AsyncCall, inputs: ashe
     //
     _ = call;
     _ = inputs;
+    logger.warn("TODO: implement schedule_get_window_event", .{});
 }

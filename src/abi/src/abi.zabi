@@ -1656,6 +1656,54 @@ pub const MessageBoxButtons = packed struct(u8) {
     retry: bool = false,
     @"continue": bool = false,
     ignore: bool = false,
+
+    pub fn format(buttons: MessageBoxButtons, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        const max_length = comptime "ok,cancel,yes,no,abort,retry,continue,ignore".len;
+
+        var buffer: [max_length]u8 = undefined;
+        var stream = std.io.fixedBufferStream(&buffer);
+
+        if (buttons.ok) {
+            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
+            stream.writer().writeAll("ok") catch unreachable;
+        }
+        if (buttons.cancel) {
+            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
+            stream.writer().writeAll("cancel") catch unreachable;
+        }
+        if (buttons.yes) {
+            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
+            stream.writer().writeAll("yes") catch unreachable;
+        }
+        if (buttons.no) {
+            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
+            stream.writer().writeAll("no") catch unreachable;
+        }
+        if (buttons.abort) {
+            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
+            stream.writer().writeAll("abort") catch unreachable;
+        }
+        if (buttons.retry) {
+            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
+            stream.writer().writeAll("retry") catch unreachable;
+        }
+        if (buttons.@"continue") {
+            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
+            stream.writer().writeAll("continue") catch unreachable;
+        }
+        if (buttons.ignore) {
+            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
+            stream.writer().writeAll("ignore") catch unreachable;
+        }
+
+        if (stream.pos > 0) {
+            try writer.writeAll(stream.getWritten());
+        } else {
+            try writer.writeAll("none");
+        }
+    }
 };
 
 pub const DesktopDescriptor = extern struct {
@@ -1681,20 +1729,20 @@ pub const DesktopEvent = extern union {
         // lifecycle management:
 
         /// A window was created on this desktop.
-        create_window,
+        create_window = 0,
 
         /// A window was destroyed on this desktop.
-        destroy_window,
+        destroy_window = 1,
 
         // user interaction:
 
         /// `send_notification` was called and the desktop user should display
         /// a notification.
-        show_notification,
+        show_notification = 2,
 
         /// `send_notification` was called and the desktop user should display
         /// a notification.
-        show_message_box,
+        show_message_box = 3,
 
         _,
     };
@@ -1720,6 +1768,10 @@ pub const DesktopNotificationEvent = extern struct {
 
     /// The severity/importance of the notification.
     severity: NotificationSeverity,
+
+    pub fn message(ev: DesktopNotificationEvent) []const u8 {
+        return ev.message_ptr[0..ev.message_len];
+    }
 };
 
 pub const MessageBoxEvent = extern struct {
@@ -1748,6 +1800,14 @@ pub const MessageBoxEvent = extern struct {
     icon: MessageBoxIcon,
 
     pub const RequestID = enum(u16) { _ };
+
+    pub fn caption(ev: MessageBoxEvent) []const u8 {
+        return ev.caption_ptr[0..ev.caption_len];
+    }
+
+    pub fn message(ev: MessageBoxEvent) []const u8 {
+        return ev.message_ptr[0..ev.message_len];
+    }
 };
 
 /// A 16 bpp color value using RGB565 encoding.
@@ -1831,28 +1891,28 @@ pub const WidgetEvent = extern union {
         // lifecycle:
 
         /// The widget was created and attached to a window.
-        create,
+        create = 0,
 
         /// The widget is in the process of being destroyed.
         /// After this event, the handle will be invalid.
-        destroy,
+        destroy = 1,
 
         /// The creator of the widget wants to do something widget-specific.
-        control,
+        control = 2,
 
         // basic input:
 
         /// The user clicked on the widget with the primary mouse button
         /// or pressed the return or space bar button on the keyboard.
-        click,
+        click = 3,
 
         // keyboard input:
 
         /// A key was pressed on the keyboard.
-        key_press,
+        key_press = 4,
 
         /// A key was released on the keyboard.
-        key_release,
+        key_release = 5,
 
         // mouse specific extras:
 
@@ -1860,43 +1920,43 @@ pub const WidgetEvent = extern union {
         ///
         /// NOTE: This event can only happen when `hit_test_visible` was set
         /// in the widget creation flags.
-        mouse_enter,
+        mouse_enter = 6,
 
         /// The mouse was moved outside the rectangle of the widget.
         ///
         /// NOTE: This event can only happen when `hit_test_visible` was set
         /// in the widget creation flags.
-        mouse_leave,
+        mouse_leave = 7,
 
         /// The mouse stopped for some time over the widget.
         ///
         /// NOTE: This event can only happen when `hit_test_visible` was set
         /// in the widget creation flags.
-        mouse_hover,
+        mouse_hover = 8,
 
         /// A mouse button was pressed over the widget.
         ///
         /// NOTE: This event can only happen when `hit_test_visible` was set
         /// in the widget creation flags.
-        mouse_button_press,
+        mouse_button_press = 9,
 
         /// A mouse button was released over the widget.
         ///
         /// NOTE: This event can only happen when `hit_test_visible` was set
         /// in the widget creation flags.
-        mouse_button_release,
+        mouse_button_release = 10,
 
         /// The mouse was moved over the widget.
         ///
         /// NOTE: This event can only happen when `hit_test_visible` was set
         /// in the widget creation flags.
-        mouse_motion,
+        mouse_motion = 11,
 
         /// A vertical or horizontal scroll wheel was scrolled over the widget.
         ///
         /// NOTE: This event can only happen when `hit_test_visible` was set
         /// in the widget creation flags.
-        scroll,
+        scroll = 12,
 
         // drag&drop operations:
 
@@ -1904,25 +1964,25 @@ pub const WidgetEvent = extern union {
         ///
         /// NOTE: This event can only happen when `allow_drop` was set in the
         /// widget creation flags.
-        drag_enter,
+        drag_enter = 13,
 
         /// The user dragged a payload out of the rectangle of this widget.
         ///
         /// NOTE: This event can only happen when `allow_drop` was set in the
         /// widget type creation flags.
-        drag_leave,
+        drag_leave = 14,
 
         /// The user dragged a payload over the rectangle of this widget.
         ///
         /// NOTE: This event can only happen when `allow_drop` was set in the
         /// widget type creation flags.
-        drag_over,
+        drag_over = 15,
 
         /// The user dropped a payload into this widget.
         ///
         /// NOTE: This event can only happen when `allow_drop` was set in the
         /// widget type creation flags.
-        drag_drop,
+        drag_drop = 16,
 
         // clipboard operations:
 
@@ -1930,39 +1990,39 @@ pub const WidgetEvent = extern union {
         ///
         /// NOTE: This event can only happen when `clipboard_sensitive` was set in
         /// the widget type creation flags.
-        clipboard_copy,
+        clipboard_copy = 17,
 
         /// The user requested a clipboard paste operation, usually by pressing 'Ctrl-V'.
         ///
         /// NOTE: This event can only happen when `clipboard_sensitive` was set in
         /// the widget type creation flags.
-        clipboard_paste,
+        clipboard_paste = 18,
 
         /// The user requested a clipboard cut operation, usually by pressing 'Ctrl-X'.
         ///
         /// NOTE: This event can only happen when `clipboard_sensitive` was set in
         /// the widget type creation flags.
-        clipboard_cut,
+        clipboard_cut = 19,
 
         // widget specific:
 
         /// The widget was resized with a call to `place_widget`.
         ///
         /// NOTE: This event will not fire if the widget was only moved.
-        resized,
+        resized = 21,
 
         /// The widget should draw itself.
-        paint,
+        paint = 20,
 
         /// User pressed the "context menu" button or did a
         /// secondary mouse button click on the  widget.
-        context_menu_request,
+        context_menu_request = 22,
 
         /// The widget received focus via mouse or keyboard.
-        focus_enter,
+        focus_enter = 23,
 
         /// The widget lost focus after receiving it.
-        focus_leave,
+        focus_leave = 24,
 
         _,
     };
@@ -1980,37 +2040,37 @@ pub const WindowEvent = extern union {
     widget_notify: WidgetNotifyEvent,
 
     pub const Type = enum(u16) {
-        widget_notify,
+        widget_notify = 0,
 
-        key_press,
-        key_release,
+        key_press = 1,
+        key_release = 2,
 
-        mouse_enter,
-        mouse_leave,
-        mouse_motion,
-        mouse_button_press,
-        mouse_button_release,
+        mouse_enter = 3,
+        mouse_leave = 4,
+        mouse_motion = 7,
+        mouse_button_press = 6,
+        mouse_button_release = 5,
 
         /// The user requested the window to be closed.
-        window_close,
+        window_close = 8,
 
         /// The window was minimized and is not visible anymore.
-        window_minimize,
+        window_minimize = 9,
 
         /// The window was restored from minimized state.
-        window_restore,
+        window_restore = 10,
 
         /// The window is currently moving on the screen. Query `window.bounds` to get the new position.
-        window_moving,
+        window_moving = 11,
 
         /// The window was moved on the screen. Query `window.bounds` to get the new position.
-        window_moved,
+        window_moved = 12,
 
         /// The window size is currently changing. Query `window.bounds` to get the new size.
-        window_resizing,
+        window_resizing = 13,
 
         /// The window size changed. Query `window.bounds` to get the new size.
-        window_resized,
+        window_resized = 14,
     };
 
     comptime {

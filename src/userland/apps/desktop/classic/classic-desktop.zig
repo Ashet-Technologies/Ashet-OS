@@ -74,7 +74,37 @@ pub fn main() !void {
 }
 
 fn handle_desktop_event(desktop: abi.Desktop, event: *const abi.DesktopEvent) callconv(.C) void {
-    std.log.info("handle desktop event of type {}", .{event.event_type});
+    std.log.debug("handle desktop event of type {s}", .{@tagName(event.event_type)});
+    switch (event.event_type) {
+        .create_window => {
+            std.log.info("handle_desktop_event.create_window({})", .{event.create_window.window});
+        },
+
+        .destroy_window => {
+            std.log.info("handle_desktop_event.destroy_window({})", .{event.destroy_window.window});
+        },
+
+        .show_message_box => {
+            std.log.info("handle_desktop_event.show_message_box(request_id=0x{X:0>4}, caption='{}', message='{}', icon={s}, buttons='{}')", .{
+                @intFromEnum(event.show_message_box.request_id),
+                std.zig.fmtEscapes(event.show_message_box.caption()),
+                std.zig.fmtEscapes(event.show_message_box.message()),
+                @tagName(event.show_message_box.icon),
+                event.show_message_box.buttons,
+            });
+        },
+
+        .show_notification => {
+            std.log.info("handle_desktop_event.show_notification(message='{}', severity={s})", .{
+                std.zig.fmtEscapes(event.show_notification.message()),
+                @tagName(event.show_notification.severity),
+            });
+        },
+
+        _ => {
+            std.log.info("handle_desktop_event(invalid event: {d})", .{@intFromEnum(event.event_type)});
+        },
+    }
 
     _ = desktop;
 }

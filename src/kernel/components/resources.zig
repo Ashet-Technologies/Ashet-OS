@@ -623,7 +623,7 @@ pub fn add_to_process(process: *ashet.multi_tasking.Process, resource: *SystemRe
     }
 
     logger.debug("add_to_process({}, {}) => add new", .{ process, resource });
-    ashet.multi_tasking.debug_dump();
+    // ashet.multi_tasking.debug_dump();
 
     std.debug.assert(process.is_zombie() == false);
 
@@ -728,8 +728,8 @@ pub fn destroy(resource: *SystemResource) void {
 pub fn unlink_process(process: *ashet.multi_tasking.Process) void {
     logger.debug("unlink_process({})", .{process});
 
-    logger.info("before unlink:", .{});
-    ashet.multi_tasking.debug_dump();
+    // logger.info("before unlink:", .{});
+    // ashet.multi_tasking.debug_dump();
 
     var iter = process.resource_handles.iterator();
     while (iter.next()) |item| {
@@ -748,6 +748,6 @@ pub fn unlink_process(process: *ashet.multi_tasking.Process) void {
         remove_from_process(process, res);
     }
 
-    logger.info("after unlink:", .{});
-    ashet.multi_tasking.debug_dump();
+    // logger.info("after unlink:", .{});
+    // ashet.multi_tasking.debug_dump();
 }

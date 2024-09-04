@@ -63,7 +63,7 @@ pub const log_levels = struct {
     pub var ui: LogLevel = .debug;
     pub var network: LogLevel = .info;
     pub var filesystem: LogLevel = .debug;
-    pub var resources: LogLevel = .debug;
+    pub var resources: LogLevel = .info;
     pub var memory: LogLevel = .info;
     pub var drivers: LogLevel = .info;
     pub var page_allocator: LogLevel = .debug;
@@ -72,7 +72,8 @@ pub const log_levels = struct {
     pub var overlapped: LogLevel = .info; // very noise modules!
     pub var elf_loader: LogLevel = .info;
     pub var video: LogLevel = .debug;
-    pub var multitasking: LogLevel = .debug;
+    pub var multitasking: LogLevel = .info;
+    pub var gui: LogLevel = .debug;
 
     // drivers:
     pub var @"virtio-net": LogLevel = .info;

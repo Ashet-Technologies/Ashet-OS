@@ -32,6 +32,8 @@ pub fn main() !void {
     );
     defer window.release();
 
+    std.log.info("created window: {}", .{window});
+
     while (true) {
         const event_res = try ashet.overlapped.performOne(ashet.abi.gui.GetWindowEvent, .{
             .window = window,
