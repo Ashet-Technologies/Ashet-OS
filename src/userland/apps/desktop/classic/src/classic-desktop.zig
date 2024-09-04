@@ -6,6 +6,20 @@ pub usingnamespace ashet.core;
 const abi = ashet.abi;
 const syscalls = ashet.userland;
 
+// Some imports:
+const Point = ashet.abi.Point;
+const Size = ashet.abi.Size;
+const Rectangle = ashet.abi.Rectangle;
+const ColorIndex = ashet.abi.ColorIndex;
+const Color = ashet.abi.Color;
+
+// Application logic:
+
+const WindowList = std.DoublyLinkedList(void);
+const WindowNode = WindowList.Node;
+
+var active_windows: WindowList = .{};
+
 pub fn main() !void {
     std.log.info("classic desktop startup...", .{});
     const video_output = try syscalls.video.acquire(.primary);
@@ -77,11 +91,25 @@ fn handle_desktop_event(desktop: abi.Desktop, event: *const abi.DesktopEvent) ca
     std.log.debug("handle desktop event of type {s}", .{@tagName(event.event_type)});
     switch (event.event_type) {
         .create_window => {
-            std.log.info("handle_desktop_event.create_window({})", .{event.create_window.window});
+            const window = event.create_window.window;
+            std.log.info("handle_desktop_event.create_window({})", .{window});
+
+            const data = WindowData.from_handle(window);
+            active_windows.append(&data.window_node);
+
+            // TODO: Set up basic structure
+
+            // TODO: Redraw invalidated desktop region
         },
 
         .destroy_window => {
-            std.log.info("handle_desktop_event.destroy_window({})", .{event.destroy_window.window});
+            const window = event.create_window.window;
+            std.log.info("handle_desktop_event.destroy_window({})", .{window});
+
+            const data = WindowData.from_handle(window);
+            active_windows.remove(&data.window_node);
+
+            // TODO: Redraw invalidated desktop region
         },
 
         .show_message_box => {
@@ -92,6 +120,8 @@ fn handle_desktop_event(desktop: abi.Desktop, event: *const abi.DesktopEvent) ca
                 @tagName(event.show_message_box.icon),
                 event.show_message_box.buttons,
             });
+
+            // TODO: Implement message boxes
         },
 
         .show_notification => {
@@ -99,6 +129,8 @@ fn handle_desktop_event(desktop: abi.Desktop, event: *const abi.DesktopEvent) ca
                 std.zig.fmtEscapes(event.show_notification.message()),
                 @tagName(event.show_notification.severity),
             });
+
+            // TODO: Implement notifications
         },
 
         _ => {
@@ -110,5 +142,11 @@ fn handle_desktop_event(desktop: abi.Desktop, event: *const abi.DesktopEvent) ca
 }
 
 const WindowData = struct {
-    //
+    window_node: WindowNode = .{ .data = {} },
+
+    pub fn from_handle(handle: ashet.abi.Window) *WindowData {
+        return @ptrCast(
+            syscalls.gui.get_desktop_data(handle) catch @panic("kernel bug"),
+        );
+    }
 };

@@ -28,6 +28,19 @@ pub fn initialize() void {
     initialized = true;
 }
 
+/// Wraps a function call such that syscalls done from this call
+/// are called from another process `context`.
+pub fn call_inside_process(
+    context: *Process,
+    function: anytype,
+    arguments: anytype,
+) @TypeOf(@call(.auto, function, arguments)) {
+    var ctx = ashet.syscalls.VirtualContextSwitch.enter(context);
+    defer ctx.leave();
+
+    return @call(.auto, function, arguments);
+}
+
 pub fn spawn_blocking(
     proc_name: []const u8,
     file: *libashet.fs.File,

@@ -86,7 +86,7 @@ pub const syscalls = struct {
             return if (maybe_proc) |handle| blk: {
                 _, const proc = try resolve_process_handle(handle.as_resource());
                 break :blk proc;
-            } else getCurrentProcess();
+            } else get_current_process();
         }
 
         pub fn get_file_name(maybe_proc: ?abi.Process) [*:0]const u8 {
@@ -109,7 +109,7 @@ pub const syscalls = struct {
         }
 
         pub fn get_arguments(maybe_proc: ?abi.Process, maybe_argv: ?[]abi.SpawnProcessArg) usize {
-            const cproc = getCurrentProcess();
+            const cproc = get_current_process();
             const kproc = _resolve_maybe_proc(maybe_proc) catch {
                 // TODO: Log err
                 return 0;
@@ -135,7 +135,7 @@ pub const syscalls = struct {
         }
 
         pub fn terminate(exit_code: abi.ExitCode) noreturn {
-            const proc = getCurrentProcess();
+            const proc = get_current_process();
 
             proc.stay_resident = false;
 
@@ -187,11 +187,11 @@ pub const syscalls = struct {
 
         pub const debug = struct {
             pub fn write_log(log_level: abi.LogLevel, message: []const u8) void {
-                const proc = getCurrentProcess();
+                const proc = get_current_process();
                 proc.write_log(log_level, message);
             }
             pub fn breakpoint() void {
-                const proc = getCurrentProcess();
+                const proc = get_current_process();
                 std.log.scoped(.userland).info("breakpoint in process {s}.", .{proc.name});
 
                 var cont: bool = false;
@@ -203,7 +203,7 @@ pub const syscalls = struct {
 
         pub const memory = struct {
             pub fn allocate(size: usize, ptr_align: u8) ?[*]u8 {
-                const proc = getCurrentProcess();
+                const proc = get_current_process();
                 return proc.dynamic_allocator().rawAlloc(
                     size,
                     ptr_align,
@@ -211,7 +211,7 @@ pub const syscalls = struct {
                 );
             }
             pub fn release(mem: []u8, ptr_align: u8) void {
-                const proc = getCurrentProcess();
+                const proc = get_current_process();
                 proc.dynamic_allocator().rawFree(
                     mem,
                     ptr_align,
@@ -272,7 +272,7 @@ pub const syscalls = struct {
         }
 
         pub fn acquire(output: abi.VideoOutputID) error{ SystemResources, NotFound, NotAvailable }!abi.VideoOutput {
-            const proc = getCurrentProcess();
+            const proc = get_current_process();
 
             const video_output = try ashet.video.acquire_output(output);
 
@@ -527,7 +527,7 @@ pub const syscalls = struct {
         ) error{
             SystemResources,
         }!abi.Desktop {
-            const proc = getCurrentProcess();
+            const proc = get_current_process();
 
             const desktop = try ashet.gui.Desktop.create(
                 proc,
@@ -550,7 +550,7 @@ pub const syscalls = struct {
 
         /// Enumerates all available desktops.
         pub fn enumerate_desktops(maybe_list: ?[]abi.Desktop) usize {
-            const proc = getCurrentProcess();
+            const proc = get_current_process();
 
             var iter = ashet.gui.iterate_desktops();
 
@@ -684,7 +684,7 @@ pub const syscalls = struct {
 
     pub const shm = struct {
         pub fn create(size: usize) error{SystemResources}!ashet.abi.SharedMemory {
-            const proc = getCurrentProcess();
+            const proc = get_current_process();
 
             const memref = ashet.shared_memory.SharedMemory.create(size) catch {
                 return error.SystemResources;
@@ -727,7 +727,7 @@ pub const syscalls = struct {
 
         pub const udp = struct {
             pub fn create_socket() error{SystemResources}!abi.UdpSocket {
-                const proc = getCurrentProcess();
+                const proc = get_current_process();
 
                 const sock = try ashet.network.udp.Socket.create();
                 errdefer sock.destroy();
@@ -740,7 +740,7 @@ pub const syscalls = struct {
 
         pub const tcp = struct {
             pub fn create_socket() error{SystemResources}!abi.TcpSocket {
-                const proc = getCurrentProcess();
+                const proc = get_current_process();
 
                 const sock = try ashet.network.tcp.Socket.create();
                 errdefer sock.destroy();
@@ -869,7 +869,7 @@ pub const syscalls = struct {
 };
 
 fn resolve_base_resource(handle: ashet.resources.Handle) !struct { *ashet.multi_tasking.Process, *ashet.resources.SystemResource } {
-    const process = getCurrentProcess();
+    const process = get_current_process();
 
     const resource = try ashet.resources.resolve_untyped(process, handle);
 
@@ -891,13 +891,35 @@ fn resolve_process_handle(handle: ashet.resources.Handle) error{ InvalidHandle, 
     return .{ kproc, uproc };
 }
 
-fn getCurrentThread() *ashet.scheduler.Thread {
-    return ashet.scheduler.Thread.current() orelse @panic("syscall only legal in a process");
+fn get_current_thread() *ashet.scheduler.Thread {
+    return ashet.scheduler.Thread.current() orelse @panic("syscall only legal in a thread");
 }
 
-fn getCurrentProcess() *ashet.multi_tasking.Process {
-    const kproc = getCurrentThread().get_process();
+var current_process_overwrite: ?*ashet.multi_tasking.Process = null;
+
+fn get_current_process() *ashet.multi_tasking.Process {
+    const kproc = current_process_overwrite orelse get_current_thread().get_process();
     if (kproc.is_zombie())
         @panic("zombie process called a system call!");
     return kproc;
 }
+
+pub const VirtualContextSwitch = struct {
+    previous_process: ?*ashet.multi_tasking.Process,
+    current_process: *ashet.multi_tasking.Process, // TODO(fqu): Make this optional in release modes, it's just for
+
+    pub fn enter(new_process: *ashet.multi_tasking.Process) VirtualContextSwitch {
+        const previous_process = current_process_overwrite;
+        current_process_overwrite = new_process;
+        return .{
+            .previous_process = previous_process,
+            .current_process = new_process,
+        };
+    }
+
+    pub fn leave(vcs: *VirtualContextSwitch) void {
+        std.debug.assert(get_current_process() == vcs.current_process);
+        std.debug.assert(current_process_overwrite == vcs.current_process);
+        current_process_overwrite = vcs.previous_process;
+    }
+};

@@ -103,9 +103,13 @@ pub const Desktop = struct {
     fn process_event(desktop: *Desktop, event: ashet.abi.DesktopEvent) void {
         const desktop_handle = ashet.resources.get_handle(desktop.server_process, &desktop.system_resource) orelse @panic("process_event called for a process that does not own the desktop");
 
-        desktop.handle_event(
-            desktop_handle.unsafe_cast(.desktop),
-            &event,
+        ashet.multi_tasking.call_inside_process(
+            desktop.server_process,
+            desktop.handle_event,
+            .{
+                desktop_handle.unsafe_cast(.desktop),
+                &event,
+            },
         );
     }
 
