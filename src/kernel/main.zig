@@ -229,6 +229,7 @@ fn main() !void {
     syscalls.strace_enabled.remove(.process_debug_write_log);
     syscalls.strace_enabled.remove(.overlapped_await_completion);
     syscalls.strace_enabled.remove(.overlapped_schedule);
+    syscalls.strace_enabled.remove(.process_thread_yield);
 
     log.info("entering scheduler...", .{});
     scheduler.start();
