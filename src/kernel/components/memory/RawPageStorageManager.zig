@@ -200,7 +200,7 @@ pub fn allocPages(pm: *RawPageStorageManager, count: u32) error{OutOfMemory}!Pag
     }
 
     while (first_page < pm.pageCount() - count) {
-        var i: usize = 1;
+        var i: usize = 0;
         const ok = while (i < count) : (i += 1) {
             if (!pm.isFree(@as(Page, @enumFromInt(first_page + i))))
                 break false;
@@ -216,7 +216,7 @@ pub fn allocPages(pm: *RawPageStorageManager, count: u32) error{OutOfMemory}!Pag
             return PageSlice{ .page = @as(Page, @enumFromInt(first_page)), .len = count };
         } else {
             // skip over all checked pages as well as the unset page
-            first_page += i;
+            first_page += @min(i, 1);
         }
     }
 
