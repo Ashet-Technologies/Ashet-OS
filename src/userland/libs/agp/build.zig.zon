@@ -1,0 +1,14 @@
+.{
+    .name = "agp",
+    .version = "0.1.0",
+    .dependencies = .{
+        .abi = .{
+            .path = "../../../abi",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}

@@ -25,6 +25,9 @@ pub fn main() !void {
     const video_output = try syscalls.video.acquire(.primary);
     defer video_output.release();
 
+    const video_fb = try syscalls.draw.create_video_framebuffer(video_output);
+    defer video_fb.release();
+
     const screen_size = try syscalls.video.get_resolution(video_output);
 
     std.log.info("primary video output has a resolution of {}x{}", .{
@@ -32,8 +35,13 @@ pub fn main() !void {
         screen_size.height,
     });
 
-    const vmem = try syscalls.video.get_video_memory(video_output);
+    const fb_size = try syscalls.draw.get_framebuffer_size(video_fb);
+    std.log.info("video output framebuffer has a resolution of {}x{}", .{
+        fb_size.width,
+        fb_size.height,
+    });
 
+    const vmem = try syscalls.video.get_video_memory(video_output);
     std.log.info("video memory: base=0x{X:0>8}, stride={}, width={}, height={}", .{
         @intFromPtr(vmem.base),
         vmem.stride,

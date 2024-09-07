@@ -826,19 +826,19 @@ const draw = struct {
 
     /// Creates a new framebuffer based off a video output. Can be used to output pixels
     /// to the screen.
-    extern fn create_video_framebuffer(VideoOutput) error{SystemResources}!Framebuffer;
+    extern fn create_video_framebuffer(VideoOutput) error{ InvalidHandle, SystemResources }!Framebuffer;
 
     /// Creates a new framebuffer that allows painting into a GUI window.
-    extern fn create_window_framebuffer(Window) error{SystemResources}!Framebuffer;
+    extern fn create_window_framebuffer(Window) error{ InvalidHandle, SystemResources }!Framebuffer;
 
     /// Creates a new framebuffer that allows painting into a widget.
-    extern fn create_widget_framebuffer(Widget) error{SystemResources}!Framebuffer;
+    extern fn create_widget_framebuffer(Widget) error{ InvalidHandle, SystemResources }!Framebuffer;
 
     /// Returns the type of a framebuffer object.
-    extern fn get_framebuffer_type(Framebuffer) FramebufferType;
+    extern fn get_framebuffer_type(Framebuffer) error{InvalidHandle}!FramebufferType;
 
     /// Returns the size of a framebuffer object.
-    extern fn get_framebuffer_size(Framebuffer) Size;
+    extern fn get_framebuffer_size(Framebuffer) error{InvalidHandle}!Size;
 
     /// Marks a portion of the framebuffer as changed and forces the OS to
     /// perform an update action if necessary.

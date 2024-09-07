@@ -1,0 +1,14 @@
+.{
+    .name = "agp-tester",
+    .version = "0.1.0",
+    .dependencies = .{
+        .agp = .{
+            .path = "../../userland/libs/agp",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
