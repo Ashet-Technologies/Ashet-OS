@@ -27,6 +27,12 @@ Command parameters can point to data on the host system. If a pointer type (`*T`
 
 ### Clear
 
+Fills the current target with `color` ignoring the current clip rectangle. This is roughly equivalent to a `fill_rect` command that always spans the full image, but has one important distinction:
+
+*Clear* does discard the pixel values and will create a new blank slate. There won't be any "previous" colors to blend over in case of transparency, and it guarantess that always all pixels are cleared to the provided color.
+
+**NOTE:** A *clear* command allows the backend to potentially exchange the internal pixel buffer for another one, allowing rendering into a new buffer, while the current one is still used for painting, while `fill_rect` will always assume that the buffer will retain the some of the old pixel data and thus must draw into the previous pixel buffer.
+
 Command Byte: `0x00`
 
 ```zig

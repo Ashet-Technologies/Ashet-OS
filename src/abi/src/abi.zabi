@@ -848,7 +848,23 @@ const draw = struct {
 
     // TODO: fn annotate_text(*Framebuffer, area: Rectangle, text: []const u8) AnnotationError;
 
-    // TODO: Insert render functions here
+    /// Renders the provided Ashet Graphics Protocol `sequence` into `target` framebuffer.
+    ///
+    /// The function will run asynchronously and will return as soon as the rendering is done.
+    ///
+    /// NOTE: On machines without hardware acceleration, this syscall might be completed synchronously.
+    extern "async" fn render(
+        /// The framebuffer which should be drawn to.
+        target: Framebuffer,
+        /// The AGP code that defines the drawing.
+        sequence: []const u8,
+        /// If the target framebuffer is invalidatable, it is automatically invalidated after the completion
+        /// of the command sequence, ensuring presentation of the contents.
+        ///
+        /// This is useful when painting into widgets or windows to ensure the window manager
+        /// actually sees the changes as soon as they are done, reducing graphics pipeline latency.
+        auto_invalidate: bool,
+    ) error{ InvalidHandle, BadCode }!void;
 };
 
 const gui = struct {
