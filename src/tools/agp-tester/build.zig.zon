@@ -5,6 +5,9 @@
         .agp = .{
             .path = "../../userland/libs/agp",
         },
+        .agp_swrast = .{
+            .path = "../../userland/libs/agp-swrast",
+        },
     },
     .paths = .{
         "build.zig",

@@ -853,7 +853,7 @@ const draw = struct {
     /// The function will run asynchronously and will return as soon as the rendering is done.
     ///
     /// NOTE: On machines without hardware acceleration, this syscall might be completed synchronously.
-    extern "async" fn render(
+    extern "async" fn Render(
         /// The framebuffer which should be drawn to.
         target: Framebuffer,
         /// The AGP code that defines the drawing.

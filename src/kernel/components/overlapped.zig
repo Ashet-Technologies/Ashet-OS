@@ -138,6 +138,8 @@ const async_call_handlers = std.EnumArray(ashet.abi.ARC_Type, AsyncHandler).init
 
     .gui_show_message_box = AsyncHandler.todo("gui_show_message_box"),
     .gui_get_window_event = AsyncHandler.wrap(ashet.gui.schedule_get_window_event),
+
+    .draw_render = AsyncHandler.wrap(ashet.graphics.render_async),
 });
 
 /// Schedules a new overlapped event from the current thread context.

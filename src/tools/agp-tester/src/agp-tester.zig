@@ -1,23 +1,208 @@
 const std = @import("std");
 const agp = @import("agp");
+const agp_swrast = @import("agp-swrast");
+
+const ColorIndex = agp.ColorIndex;
 
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
+    try verify_encoder_decoder(arena.allocator());
+
+    try render_example_image("swrast.pgm", "overdraw.pgm");
+}
+
+fn render_example_image(path: []const u8, overdraw_path: ?[]const u8) !void {
+    const width = 800;
+    const height = 480;
+
+    const black: ColorIndex = @enumFromInt(0);
+    const red: ColorIndex = @enumFromInt(1);
+    const green: ColorIndex = @enumFromInt(2);
+    const blue: ColorIndex = @enumFromInt(3);
+    const white: ColorIndex = @enumFromInt(4);
+
+    if (false)
+        _ = .{ black, red, green, blue, white };
+
+    var cmd_buffer: [2048]u8 = undefined;
+
+    // Collect draw commands:
+    const cmd_stream: []const u8 = blk: {
+        var fbs = std.io.fixedBufferStream(&cmd_buffer);
+        var enc = agp.encoder(fbs.writer());
+        {
+            try enc.clear(black);
+
+            try enc.draw_line(
+                100,
+                60,
+                200,
+                60,
+                white,
+            );
+
+            try enc.draw_line(
+                100,
+                70,
+                100,
+                150,
+                white,
+            );
+
+            try enc.draw_rect(
+                110,
+                70,
+                123,
+                35,
+                red,
+            );
+
+            try enc.fill_rect(
+                112,
+                72,
+                119,
+                31,
+                blue,
+            );
+        }
+        break :blk fbs.getWritten();
+    };
+
+    const Color = extern struct {
+        r: u8,
+        g: u8,
+        b: u8,
+
+        comptime {
+            if (@sizeOf(@This()) != 3)
+                @compileError("Color must be exactly 3 bytes!");
+        }
+
+        fn new(r: u8, g: u8, b: u8) @This() {
+            return .{ .r = r, .g = g, .b = b };
+        }
+    };
+
+    const Palette = std.enums.EnumArray(ColorIndex, Color);
+    var palette = Palette.initFill(Color.new(0xFF, 0x00, 0x0FF));
+
+    palette.set(black, Color.new(0x00, 0x00, 0x00));
+    palette.set(red, Color.new(0xFF, 0x00, 0x00));
+    palette.set(green, Color.new(0x00, 0xFF, 0x00));
+    palette.set(blue, Color.new(0x00, 0x00, 0xFF));
+    palette.set(white, Color.new(0xFF, 0xFF, 0xFF));
+
+    var pixel_buffer: [width * height]Color = undefined;
+    var overdraw_buffer: [width * height]Color = undefined;
+    @memset(&overdraw_buffer, Color{ .r = 0, .g = 0, .b = 0 });
+
+    // Render image:
+    {
+        const Backend = struct {
+            palette: *Palette,
+            framebuffer: []Color,
+            overdraw: []Color,
+
+            width: usize,
+            height: usize,
+            stride: usize,
+
+            pub fn create_cursor(back: @This()) agp_swrast.PixelCursor(.row_major) {
+                return .{
+                    .width = @intCast(back.width),
+                    .height = @intCast(back.height),
+                    .stride = back.stride,
+                };
+            }
+
+            pub fn emit_pixels(back: @This(), cursor: agp_swrast.PixelCursor(.row_major), color_index: ColorIndex, count: u16) void {
+                std.debug.assert(@as(usize, cursor.x) + count <= back.width);
+                const color = back.palette.get(color_index);
+                @memset(
+                    back.framebuffer[cursor.offset..][0..count],
+                    color,
+                );
+                for (back.overdraw[cursor.offset..][0..count]) |*cnt| {
+                    cnt.r +|= 1;
+                }
+                std.debug.print("emit(Point({}, {}), color={}, count={})\n", .{
+                    cursor.x,                  cursor.y,
+                    @intFromEnum(color_index), count,
+                });
+            }
+        };
+
+        const Rasterizer = agp_swrast.Rasterizer(Backend, .{
+            .pixel_layout = .row_major,
+        });
+
+        var rasterizer = Rasterizer.init(.{
+            .palette = &palette,
+            .framebuffer = &pixel_buffer,
+            .overdraw = &overdraw_buffer,
+            .width = width,
+            .height = height,
+            .stride = width,
+        });
+
+        var fbs = std.io.fixedBufferStream(cmd_stream);
+
+        var decoder = agp.decoder(fbs.reader());
+
+        while (try decoder.next()) |cmd| {
+            rasterizer.execute(cmd);
+        }
+    }
+
+    // Writeout image:
+    {
+        var file = try std.fs.cwd().createFile(path, .{});
+        defer file.close();
+
+        try file.writer().print("P6 {} {} 255\n", .{ width, height });
+        try file.writeAll(std.mem.asBytes(&pixel_buffer));
+    }
+    // Writeout overdraw
+    if (overdraw_path) |_overdraw_path| {
+        const overdraw_gradient = [_]Color{
+            Color.new(0xFF, 0x00, 0xFF), // this would mean clear has failed
+            Color.new(0x00, 0x00, 0x00), // no draw (clear)
+            Color.new(0xFF, 0xFF, 0xFF), // 0x overdraw
+            Color.new(0x3c, 0xeb, 0x0c), // 1x overdraw
+            Color.new(0x6e, 0xae, 0x09), // 2x overdraw
+            Color.new(0x9e, 0x74, 0x06), // 3x overdraw
+            Color.new(0xcf, 0x3a, 0x03), // 4x overdraw
+            Color.new(0xff, 0x00, 0x00), // 5x overdraw
+        };
+
+        for (&overdraw_buffer) |*pix| {
+            pix.* = overdraw_gradient[@min(pix.r, overdraw_gradient.len - 1)];
+        }
+
+        var file = try std.fs.cwd().createFile(_overdraw_path, .{});
+        defer file.close();
+
+        try file.writer().print("P6 {} {} 255\n", .{ width, height });
+        try file.writeAll(std.mem.asBytes(&overdraw_buffer));
+    }
+}
+
+fn verify_encoder_decoder(allocator: std.mem.Allocator) !void {
     var rand_engine = std.rand.DefaultPrng.init(0x1337);
     const rng = rand_engine.random();
 
-    const rand_buffer = try arena.allocator().alloc(u8, 8192);
+    const rand_buffer = try allocator.alloc(u8, 8192);
     rng.bytes(rand_buffer);
 
-    const input_cmd_stream = try arena.allocator().alloc(agp.Command, 1024);
+    const input_cmd_stream = try allocator.alloc(agp.Command, 1024);
     for (input_cmd_stream) |*item| {
         item.* = rand_cmd(rng, rand_buffer);
     }
 
     const encoded_cmd_stream = blk: {
-        var stream = std.ArrayList(u8).init(arena.allocator());
+        var stream = std.ArrayList(u8).init(allocator);
         defer stream.deinit();
 
         var encoder = agp.encoder(stream.writer());
@@ -34,7 +219,7 @@ pub fn main() !void {
         encoded_cmd_stream.len,
     });
 
-    const output_cmd_stream = try arena.allocator().alloc(agp.Command, input_cmd_stream.len);
+    const output_cmd_stream = try allocator.alloc(agp.Command, input_cmd_stream.len);
 
     {
         var fbs = std.io.fixedBufferStream(encoded_cmd_stream);

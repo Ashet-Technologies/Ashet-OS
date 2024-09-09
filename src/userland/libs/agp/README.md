@@ -25,6 +25,8 @@ Each command has a fixed length and is always introduced by so called "command b
 
 Command parameters can point to data on the host system. If a pointer type (`*T`) is used in the `struct` definition, it is an alias to a 32-bit handle to `T`. Other pointers are encoded as a u64 holding the address.
 
+All integers are encoded as little-endian, there is no padding between types.
+
 ### Clear
 
 Fills the current target with `color` ignoring the current clip rectangle. This is roughly equivalent to a `fill_rect` command that always spans the full image, but has one important distinction:
