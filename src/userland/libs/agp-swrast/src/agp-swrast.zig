@@ -187,48 +187,51 @@ pub fn Rasterizer(comptime Backend: type, comptime _options: RasterizerOptions) 
             } else if (from.x == to.x) {
                 rast.draw_vertical_line(from.x, from.y, to.y, color);
             } else {
-                logger.info("Rasterizer.draw_line()", .{});
                 // not an axis aligned line, use bresenham
 
-                // const H = struct {
-                //     fn abs(a: i16) i16 {
-                //         return if (a < 0) -a else a;
-                //     }
-                // };
+                // TODO(fqu): Write a much more optimized version of the
+                // algorithm using cursor.shift_XXX functions and clip the data
+                // to a smaller frame
 
-                // var x0 = from.x;
-                // var y0 = from.y;
+                const H = struct {
+                    fn abs(a: i16) i16 {
+                        return if (a < 0) -a else a;
+                    }
+                };
 
-                // const x1 = to.x;
-                // const y1 = to.y;
+                var x0 = from.x;
+                var y0 = from.y;
 
-                // // Implementation taken from
-                // // https://de.wikipedia.org/wiki/Bresenham-Algorithmus#Kompakte_Variante
-                // // That means that the following code block is licenced under CC-BY-SA
-                // // which is compatible to the project licence.
-                // {
-                //     const dx = H.abs(x1 - x0);
-                //     const sx: i2 = if (x0 < x1) 1 else -1;
-                //     const dy = -H.abs(y1 - y0);
-                //     const sy: i2 = if (y0 < y1) 1 else -1;
-                //     var err = dx + dy;
-                //     var e2: i16 = undefined;
+                const x1 = to.x;
+                const y1 = to.y;
 
-                //     while (true) {
-                //         fb.setPixel(x0, y0, color);
-                //         if (x0 == x1 and y0 == y1) break;
-                //         e2 = 2 * err;
-                //         if (e2 > dy) { // e_xy+e_x > 0
-                //             err += dy;
-                //             x0 += sx;
-                //         }
-                //         if (e2 < dx) { // e_xy+e_y < 0
-                //             err += dx;
-                //             y0 += sy;
-                //         }
-                //     }
-                // }
-                // // regular licence continues here
+                // Implementation taken from
+                // https://de.wikipedia.org/wiki/Bresenham-Algorithmus#Kompakte_Variante
+                // That means that the following code block is licenced under CC-BY-SA
+                // which is compatible to the project licence.
+                {
+                    const dx = H.abs(x1 - x0);
+                    const sx: i2 = if (x0 < x1) 1 else -1;
+                    const dy = -H.abs(y1 - y0);
+                    const sy: i2 = if (y0 < y1) 1 else -1;
+                    var err = dx + dy;
+                    var e2: i16 = undefined;
+
+                    while (true) {
+                        rast.set_pixel(Point.new(x0, y0), color);
+                        if (x0 == x1 and y0 == y1) break;
+                        e2 = 2 * err;
+                        if (e2 > dy) { // e_xy+e_x > 0
+                            err += dy;
+                            x0 += sx;
+                        }
+                        if (e2 < dx) { // e_xy+e_y < 0
+                            err += dx;
+                            y0 += sy;
+                        }
+                    }
+                }
+                // regular licence continues here
             }
         }
 
@@ -353,30 +356,6 @@ pub fn Rasterizer(comptime Backend: type, comptime _options: RasterizerOptions) 
                 },
                 .column_major => @compileError("not implemented yet!"),
             }
-
-            //     const dst = fb.clip(rect);
-
-            //     var top = dst.pixels;
-            //     var bot = dst.pixels + (dst.height -| 1) * fb.stride;
-
-            //     var x: u16 = 0;
-            //     while (x < dst.width) : (x += 1) {
-            //         if (dst.dy == 0) top[0] = color;
-            //         if (dst.y + dst.height == rect.bottom()) bot[0] = color;
-            //         top += 1;
-            //         bot += 1;
-            //     }
-
-            //     var left = dst.pixels;
-            //     var right = dst.pixels + (dst.width -| 1);
-
-            //     var y: u16 = 0;
-            //     while (y < dst.height) : (y += 1) {
-            //         if (dst.dx == 0) left[0] = color;
-            //         if (dst.x + dst.width == rect.right()) right[0] = color;
-            //         left += fb.stride;
-            //         right += fb.stride;
-            //     }
         }
 
         pub fn fill_rect(
@@ -490,107 +469,6 @@ pub fn Rasterizer(comptime Backend: type, comptime _options: RasterizerOptions) 
             _ = framebuffer;
             logger.info("Rasterizer.blit_framebuffer()", .{});
         }
-
-        // pub const ScreenWriter = struct {
-        //     pub const Error = error{InvalidUtf8};
-        //     pub const Writer = std.io.Writer(*ScreenWriter, Error, write);
-
-        //     const VectorRasterizer = turtlefont.Rasterizer(*ScreenWriter, ColorIndex, writeVectorPixel);
-
-        //     fb: Rast,
-        //     dx: i16,
-        //     dy: i16,
-        //     color: ColorIndex,
-        //     limit: u15, // only render till this column (exclusive)
-        //     font: *const Font,
-
-        //     pub fn writer(sw: *ScreenWriter) Writer {
-        //         return Writer{ .context = sw };
-        //     }
-
-        //     fn write(sw: *ScreenWriter, text: []const u8) Error!usize {
-        //         if (sw.dx >= sw.limit)
-        //             return text.len;
-
-        //         var utf8_view = try std.unicode.Utf8View.init(text);
-        //         var codepoints = utf8_view.iterator();
-
-        //         switch (sw.font.*) {
-        //             .bitmap => |bitmap_font| {
-        //                 const fallback_glyph = bitmap_font.getGlyph('�') orelse bitmap_font.getGlyph('?');
-
-        //                 render_loop: while (codepoints.nextCodepoint()) |char| {
-        //                     if (sw.dx >= sw.limit) {
-        //                         break;
-        //                     }
-        //                     const glyph: BitmapFont.Glyph = bitmap_font.getGlyph(char) orelse fallback_glyph orelse continue;
-
-        //                     if (sw.dx + glyph.advance >= 0) {
-        //                         var data_ptr = glyph.bits.ptr;
-
-        //                         var gx: u15 = 0;
-        //                         while (gx < glyph.width) : (gx += 1) {
-        //                             if (sw.dx + gx > sw.limit) {
-        //                                 break :render_loop;
-        //                             }
-
-        //                             var bits: u8 = undefined;
-
-        //                             var gy: u15 = 0;
-        //                             while (gy < glyph.height) : (gy += 1) {
-        //                                 if ((gy % 8) == 0) {
-        //                                     bits = data_ptr[0];
-        //                                     data_ptr += 1;
-        //                                 }
-
-        //                                 if ((bits & (@as(u8, 1) << @as(u3, @truncate(gy)))) != 0) {
-        //                                     sw.fb.setPixel(sw.dx + glyph.offset_x + gx, sw.dy + glyph.offset_y + gy, sw.color);
-        //                                 }
-        //                             }
-        //                         }
-        //                     }
-
-        //                     sw.dx += glyph.advance;
-        //                 }
-        //             },
-        //             .vector => |vector_font| {
-        //                 const fallback_glyph = vector_font.getGlyph('�') orelse vector_font.getGlyph('?');
-
-        //                 const rast = VectorRasterizer.init(sw);
-
-        //                 const options = vector_font.getTurtleOptions();
-
-        //                 while (codepoints.nextCodepoint()) |char| {
-        //                     if (sw.dx >= sw.limit) {
-        //                         break;
-        //                     }
-        //                     const glyph: VectorFont.Glyph = vector_font.getGlyph(char) orelse fallback_glyph orelse continue;
-
-        //                     const advance = options.scaleX(glyph.advance);
-
-        //                     if (sw.dx + advance >= 0) {
-        //                         rast.renderGlyph(
-        //                             options,
-        //                             sw.dx,
-        //                             sw.dy + vector_font.size,
-        //                             sw.color,
-        //                             vector_font.turtle_font.getCode(glyph),
-        //                         );
-        //                     }
-
-        //                     sw.dx += advance;
-        //                     sw.dx += @intFromBool(vector_font.bold);
-        //                 }
-        //             },
-        //         }
-
-        //         return text.len;
-        //     }
-
-        //     fn writeVectorPixel(sw: *ScreenWriter, x: i16, y: i16, color: ColorIndex) void {
-        //         sw.fb.setPixel(x, y, color);
-        //     }
-        // };
 
         // pub fn screen_writer(fb: Rast, x: i16, y: i16, font: *const Font, color: ColorIndex, max_width: ?u15) ScreenWriter {
         //     const limit = @as(u15, @intCast(if (max_width) |mw|
@@ -724,6 +602,107 @@ pub fn Rasterizer(comptime Backend: type, comptime _options: RasterizerOptions) 
                     .height = @intCast(@min(mh, rect.height - dh)),
                 };
             }
+
+            // pub const ScreenWriter = struct {
+            //     pub const Error = error{InvalidUtf8};
+            //     pub const Writer = std.io.Writer(*ScreenWriter, Error, write);
+
+            //     const VectorRasterizer = turtlefont.Rasterizer(*ScreenWriter, ColorIndex, writeVectorPixel);
+
+            //     fb: Rast,
+            //     dx: i16,
+            //     dy: i16,
+            //     color: ColorIndex,
+            //     limit: u15, // only render till this column (exclusive)
+            //     font: *const Font,
+
+            //     pub fn writer(sw: *ScreenWriter) Writer {
+            //         return Writer{ .context = sw };
+            //     }
+
+            //     fn write(sw: *ScreenWriter, text: []const u8) Error!usize {
+            //         if (sw.dx >= sw.limit)
+            //             return text.len;
+
+            //         var utf8_view = try std.unicode.Utf8View.init(text);
+            //         var codepoints = utf8_view.iterator();
+
+            //         switch (sw.font.*) {
+            //             .bitmap => |bitmap_font| {
+            //                 const fallback_glyph = bitmap_font.getGlyph('�') orelse bitmap_font.getGlyph('?');
+
+            //                 render_loop: while (codepoints.nextCodepoint()) |char| {
+            //                     if (sw.dx >= sw.limit) {
+            //                         break;
+            //                     }
+            //                     const glyph: BitmapFont.Glyph = bitmap_font.getGlyph(char) orelse fallback_glyph orelse continue;
+
+            //                     if (sw.dx + glyph.advance >= 0) {
+            //                         var data_ptr = glyph.bits.ptr;
+
+            //                         var gx: u15 = 0;
+            //                         while (gx < glyph.width) : (gx += 1) {
+            //                             if (sw.dx + gx > sw.limit) {
+            //                                 break :render_loop;
+            //                             }
+
+            //                             var bits: u8 = undefined;
+
+            //                             var gy: u15 = 0;
+            //                             while (gy < glyph.height) : (gy += 1) {
+            //                                 if ((gy % 8) == 0) {
+            //                                     bits = data_ptr[0];
+            //                                     data_ptr += 1;
+            //                                 }
+
+            //                                 if ((bits & (@as(u8, 1) << @as(u3, @truncate(gy)))) != 0) {
+            //                                     sw.fb.setPixel(sw.dx + glyph.offset_x + gx, sw.dy + glyph.offset_y + gy, sw.color);
+            //                                 }
+            //                             }
+            //                         }
+            //                     }
+
+            //                     sw.dx += glyph.advance;
+            //                 }
+            //             },
+            //             .vector => |vector_font| {
+            //                 const fallback_glyph = vector_font.getGlyph('�') orelse vector_font.getGlyph('?');
+
+            //                 const rast = VectorRasterizer.init(sw);
+
+            //                 const options = vector_font.getTurtleOptions();
+
+            //                 while (codepoints.nextCodepoint()) |char| {
+            //                     if (sw.dx >= sw.limit) {
+            //                         break;
+            //                     }
+            //                     const glyph: VectorFont.Glyph = vector_font.getGlyph(char) orelse fallback_glyph orelse continue;
+
+            //                     const advance = options.scaleX(glyph.advance);
+
+            //                     if (sw.dx + advance >= 0) {
+            //                         rast.renderGlyph(
+            //                             options,
+            //                             sw.dx,
+            //                             sw.dy + vector_font.size,
+            //                             sw.color,
+            //                             vector_font.turtle_font.getCode(glyph),
+            //                         );
+            //                     }
+
+            //                     sw.dx += advance;
+            //                     sw.dx += @intFromBool(vector_font.bold);
+            //                 }
+            //             },
+            //         }
+
+            //         return text.len;
+            //     }
+
+            //     fn writeVectorPixel(sw: *ScreenWriter, x: i16, y: i16, color: ColorIndex) void {
+            //         sw.fb.setPixel(x, y, color);
+            //     }
+            // };
         };
     };
 }

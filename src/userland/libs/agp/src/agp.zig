@@ -1,9 +1,11 @@
 //!
-//!
+//! Ashet Graphics Protocol
 //!
 
 const std = @import("std");
 const ashet = @import("ashet-abi");
+
+pub const text_format = @import("text_format.zig");
 
 pub const ColorIndex = ashet.ColorIndex;
 pub const Framebuffer = ashet.Framebuffer;

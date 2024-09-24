@@ -4,7 +4,8 @@ const builtin = @import("builtin");
 pub const abi = @import("ashet-abi");
 pub const userland = @import("ashet-abi-access");
 
-pub const syscall = abi.syscall;
+pub const graphics = @import("libashet/graphics.zig");
+pub const input = @import("libashet/input.zig");
 
 pub const is_hosted = builtin.is_test or (builtin.target.os.tag != .other and builtin.target.os.tag != .freestanding);
 
@@ -194,7 +195,7 @@ pub const process = struct {
         fn globalAlloc(ctx: *anyopaque, len: usize, ptr_align: u8, ret_addr: usize) ?[*]u8 {
             _ = ctx;
             _ = ret_addr;
-            return abi.syscalls.@"ashet.process.memory.allocate"(len, ptr_align);
+            return userland.process.memory.allocate(len, ptr_align);
         }
 
         /// Attempt to expand or shrink memory in place. `buf.len` must equal the
@@ -236,7 +237,7 @@ pub const process = struct {
         fn globalFree(ctx: *anyopaque, buf: []u8, buf_align: u8, ret_addr: usize) void {
             _ = ctx;
             _ = ret_addr;
-            return abi.syscalls.@"ashet.process.memory.release"(buf.ptr, buf.len, buf_align);
+            return userland.process.memory.release(buf, buf_align);
         }
     };
 
@@ -310,31 +311,6 @@ pub const overlapped = struct {
         return value.outputs;
     }
 };
-
-// pub const input = struct {
-//     pub const Event = union(enum) {
-//         keyboard: abi.KeyboardEvent,
-//         mouse: abi.MouseEvent,
-//     };
-
-//     pub fn getEvent() !Event {
-//         const out = try overlapped.performOne(abi.input.GetEvent, .{});
-//         return switch (out.event_type) {
-//             .keyboard => Event{ .keyboard = out.event.keyboard },
-//             .mouse => Event{ .mouse = out.event.mouse },
-//         };
-//     }
-
-//     pub fn getMouseEvent() abi.MouseEvent {
-//         const out = try overlapped.performOne(abi.input.GetMouseEvent, .{});
-//         return out.event;
-//     }
-
-//     pub fn getKeyboardEvent() abi.KeyboardEvent {
-//         const out = try overlapped.performOne(abi.input.GetKeyboardEvent, .{});
-//         return out.event;
-//     }
-// };
 
 pub const fs = struct {
     pub const File = struct {

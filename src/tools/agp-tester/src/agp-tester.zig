@@ -10,12 +10,12 @@ pub fn main() !void {
 
     try verify_encoder_decoder(arena.allocator());
 
-    try render_example_image("swrast.pgm", "overdraw.pgm");
+    try render_example_image("swrast.pgm", "overdraw.pgm", "sequence.pgm");
 }
 
-fn render_example_image(path: []const u8, overdraw_path: ?[]const u8) !void {
-    const width = 800;
-    const height = 480;
+fn render_example_image(path: []const u8, overdraw_path: ?[]const u8, sequence_path: ?[]const u8) !void {
+    const width = 480;
+    const height = 320;
 
     const black: ColorIndex = @enumFromInt(0);
     const red: ColorIndex = @enumFromInt(1);
@@ -66,6 +66,64 @@ fn render_example_image(path: []const u8, overdraw_path: ?[]const u8) !void {
                 31,
                 blue,
             );
+
+            try enc.set_pixel(100, 55, red);
+            try enc.set_pixel(102, 55, green);
+            try enc.set_pixel(104, 55, blue);
+
+            // Steep slope down
+            try enc.draw_line(
+                100,
+                160,
+                110,
+                180,
+                red,
+            );
+
+            // 45° slope down
+            try enc.draw_line(
+                120,
+                160,
+                140,
+                180,
+                red,
+            );
+
+            // Gentle slope down
+            try enc.draw_line(
+                150,
+                160,
+                180,
+                180,
+                red,
+            );
+
+            // Steep slope up
+            try enc.draw_line(
+                100,
+                210,
+                110,
+                190,
+                blue,
+            );
+
+            // 45° slope up
+            try enc.draw_line(
+                120,
+                210,
+                140,
+                190,
+                blue,
+            );
+
+            // Gentle slope up
+            try enc.draw_line(
+                150,
+                210,
+                180,
+                190,
+                blue,
+            );
         }
         break :blk fbs.getWritten();
     };
@@ -95,15 +153,16 @@ fn render_example_image(path: []const u8, overdraw_path: ?[]const u8) !void {
     palette.set(white, Color.new(0xFF, 0xFF, 0xFF));
 
     var pixel_buffer: [width * height]Color = undefined;
-    var overdraw_buffer: [width * height]Color = undefined;
-    @memset(&overdraw_buffer, Color{ .r = 0, .g = 0, .b = 0 });
+    var attrs_buffer: [width * height]Color = undefined;
+    @memset(&attrs_buffer, Color{ .r = 0, .g = 0, .b = 0 });
 
     // Render image:
     {
         const Backend = struct {
             palette: *Palette,
             framebuffer: []Color,
-            overdraw: []Color,
+            attributes: []Color,
+            next_color_id: *u8,
 
             width: usize,
             height: usize,
@@ -124,13 +183,16 @@ fn render_example_image(path: []const u8, overdraw_path: ?[]const u8) !void {
                     back.framebuffer[cursor.offset..][0..count],
                     color,
                 );
-                for (back.overdraw[cursor.offset..][0..count]) |*cnt| {
+                for (back.attributes[cursor.offset..][0..count]) |*cnt| {
                     cnt.r +|= 1;
+                    cnt.g = back.next_color_id.*;
                 }
-                std.debug.print("emit(Point({}, {}), color={}, count={})\n", .{
+                std.debug.print("emit(Point({}, {}), color={}, count={}, index={})\n", .{
                     cursor.x,                  cursor.y,
                     @intFromEnum(color_index), count,
+                    back.next_color_id.*,
                 });
+                back.next_color_id.* +%= 1;
             }
         };
 
@@ -138,10 +200,12 @@ fn render_example_image(path: []const u8, overdraw_path: ?[]const u8) !void {
             .pixel_layout = .row_major,
         });
 
+        var next_color_id: u8 = 0;
         var rasterizer = Rasterizer.init(.{
             .palette = &palette,
             .framebuffer = &pixel_buffer,
-            .overdraw = &overdraw_buffer,
+            .attributes = &attrs_buffer,
+            .next_color_id = &next_color_id,
             .width = width,
             .height = height,
             .stride = width,
@@ -177,6 +241,7 @@ fn render_example_image(path: []const u8, overdraw_path: ?[]const u8) !void {
             Color.new(0xff, 0x00, 0x00), // 5x overdraw
         };
 
+        var overdraw_buffer = attrs_buffer;
         for (&overdraw_buffer) |*pix| {
             pix.* = overdraw_gradient[@min(pix.r, overdraw_gradient.len - 1)];
         }
@@ -186,6 +251,86 @@ fn render_example_image(path: []const u8, overdraw_path: ?[]const u8) !void {
 
         try file.writer().print("P6 {} {} 255\n", .{ width, height });
         try file.writeAll(std.mem.asBytes(&overdraw_buffer));
+    }
+    if (sequence_path) |_seq_path| {
+        const seq_palette = [_]Color{
+            Color.new(0xaa, 0x00, 0x55),
+            Color.new(0xff, 0x55, 0x55),
+            Color.new(0xaa, 0x55, 0x55),
+            Color.new(0x55, 0xff, 0xaa),
+            Color.new(0x00, 0x55, 0xff),
+            Color.new(0x55, 0x55, 0x55),
+            Color.new(0xff, 0x00, 0x55),
+            Color.new(0xff, 0xff, 0x00),
+            Color.new(0x55, 0x55, 0x00),
+            Color.new(0xff, 0xaa, 0xaa),
+            Color.new(0x00, 0xff, 0x00),
+            Color.new(0x55, 0xff, 0xff),
+            Color.new(0xff, 0x55, 0xff),
+            Color.new(0x55, 0xaa, 0xff),
+            Color.new(0xff, 0xaa, 0x55),
+            Color.new(0x00, 0x00, 0xff),
+            Color.new(0xaa, 0x00, 0xaa),
+            Color.new(0x55, 0x00, 0x00),
+            Color.new(0x00, 0xaa, 0xff),
+            Color.new(0xff, 0x00, 0xff),
+            Color.new(0x00, 0xaa, 0xaa),
+            Color.new(0xaa, 0x00, 0x00),
+            Color.new(0xff, 0x00, 0xaa),
+            Color.new(0x55, 0xaa, 0x00),
+            Color.new(0x55, 0x00, 0xaa),
+            Color.new(0x55, 0xaa, 0xaa),
+            Color.new(0xaa, 0xff, 0x00),
+            Color.new(0x00, 0xff, 0x55),
+            Color.new(0xaa, 0xaa, 0x00),
+            Color.new(0x55, 0x00, 0x55),
+            Color.new(0xaa, 0x55, 0xaa),
+            Color.new(0xff, 0x00, 0x00),
+            Color.new(0x55, 0x55, 0xff),
+            Color.new(0xff, 0xaa, 0x00),
+            Color.new(0xff, 0xff, 0x55),
+            Color.new(0xaa, 0x00, 0xff),
+            Color.new(0xff, 0x55, 0x00),
+            Color.new(0xaa, 0xff, 0xaa),
+            Color.new(0x00, 0x55, 0xaa),
+            Color.new(0x00, 0x55, 0x55),
+            Color.new(0xaa, 0xff, 0xff),
+            Color.new(0x00, 0x55, 0x00),
+            Color.new(0xaa, 0x55, 0x00),
+            Color.new(0xaa, 0xaa, 0xff),
+            Color.new(0x00, 0xaa, 0x00),
+            Color.new(0x00, 0xff, 0xaa),
+            Color.new(0xff, 0xff, 0xaa),
+            Color.new(0xff, 0xaa, 0xff),
+            Color.new(0xaa, 0xaa, 0xaa),
+            Color.new(0x00, 0xff, 0xff),
+            Color.new(0x55, 0xff, 0x55),
+            Color.new(0x00, 0x00, 0xaa),
+            Color.new(0xaa, 0xaa, 0x55),
+            Color.new(0x55, 0xaa, 0x55),
+            Color.new(0x00, 0xaa, 0x55),
+            Color.new(0xaa, 0x55, 0xff),
+            Color.new(0x55, 0xff, 0x00),
+            Color.new(0xaa, 0xff, 0x55),
+            Color.new(0xff, 0x55, 0xaa),
+            Color.new(0x55, 0x55, 0xaa),
+            Color.new(0x00, 0x00, 0x55),
+            Color.new(0x55, 0x00, 0xff),
+        };
+
+        var seq_buffer = attrs_buffer;
+        for (&seq_buffer) |*pix| {
+            pix.* = if (pix.r <= 1)
+                Color.new(0, 0, 0) // background or faulty pixels
+            else
+                seq_palette[pix.g % seq_palette.len];
+        }
+
+        var file = try std.fs.cwd().createFile(_seq_path, .{});
+        defer file.close();
+
+        try file.writer().print("P6 {} {} 255\n", .{ width, height });
+        try file.writeAll(std.mem.asBytes(&seq_buffer));
     }
 }
 

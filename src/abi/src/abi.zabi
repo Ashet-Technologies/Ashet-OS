@@ -1884,9 +1884,10 @@ pub const InputEvent = extern union {
         key_press = 0,
         key_release = 1,
 
-        mouse_motion = 2,
-        mouse_button_press = 3,
-        mouse_button_release = 4,
+        mouse_rel_motion = 2,
+        mouse_abs_motion = 3,
+        mouse_button_press = 4,
+        mouse_button_release = 5,
     };
 
     comptime {

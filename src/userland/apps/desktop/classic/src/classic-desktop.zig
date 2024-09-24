@@ -61,6 +61,16 @@ pub fn main() !void {
     // Let the rest of the system continue to boot:
     syscalls.process.thread.yield();
 
+    var render_queue = try ashet.graphics.CommandQueue.init(ashet.process.mem.allocator());
+    defer render_queue.deinit();
+
+    try render_queue.fill_rect(10, 10, 100, 50, ColorIndex.get(0));
+
+    try render_queue.submit(video_fb, .{});
+
+    // First ensure the image is displayed before continuing
+    syscalls.process.thread.yield();
+
     const desktop = try syscalls.gui.create_desktop("Classic", &.{
         .window_data_size = @sizeOf(WindowData),
         .handle_event = handle_desktop_event,
@@ -86,12 +96,70 @@ pub fn main() !void {
     });
     desktop_proc.process.release(); // we're not interested in "holding" onto process
 
+    var cursor: Point = Point.new(
+        @intCast(fb_size.width / 2),
+        @intCast(fb_size.height / 2),
+    );
+
+    var requires_repaint = true;
+
     while (true) {
-        // TODO: Can we suspend this thread and just react to the desktop events
-        //       in the callback context?
-        //       Long running event handlers like message boxes should probably run
-        //       inside the main thread here?
-        ashet.process.thread.yield();
+        if (requires_repaint) {
+            requires_repaint = false;
+
+            const black = ColorIndex.get(0x0);
+            const white = ColorIndex.get(0xF);
+
+            try render_queue.clear(white);
+
+            try render_queue.draw_line(
+                cursor.x,
+                cursor.y,
+                cursor.x +| 10,
+                cursor.y +| 5,
+                black,
+            );
+            try render_queue.draw_line(
+                cursor.x,
+                cursor.y,
+                cursor.x +| 5,
+                cursor.y +| 10,
+                black,
+            );
+            try render_queue.draw_line(
+                cursor.x +| 10,
+                cursor.y +| 5,
+                cursor.x +| 5,
+                cursor.y +| 10,
+                black,
+            );
+
+            try render_queue.submit(video_fb, .{});
+        }
+
+        const event = try ashet.input.await_event();
+
+        const prev_cursor = cursor;
+        switch (event) {
+            .mouse_abs_motion => |motion| {
+                cursor = Point.new(
+                    @max(0, @min(@as(i16, @intCast(fb_size.width -| 1)), motion.x)),
+                    @max(0, @min(@as(i16, @intCast(fb_size.height -| 1)), motion.y)),
+                );
+            },
+            .mouse_rel_motion => |motion| {
+                cursor = Point.new(
+                    @max(0, @min(@as(i16, @intCast(fb_size.width -| 1)), cursor.x +| motion.dx)),
+                    @max(0, @min(@as(i16, @intCast(fb_size.height -| 1)), cursor.y +| motion.dy)),
+                );
+            },
+
+            else => |evt| std.log.warn("unhandled input event: {}", .{evt}),
+        }
+
+        if (!cursor.eql(prev_cursor)) {
+            requires_repaint = true;
+        }
     }
 }
 

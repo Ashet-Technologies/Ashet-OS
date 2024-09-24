@@ -49,10 +49,12 @@ pub fn build(b: *std.Build) void {
     // Dependencies:
     const abi_dep = b.dependency("abi", .{});
     const std_dep = b.dependency("std", .{});
+    const agp_dep = b.dependency("agp", .{});
 
     // Modules:
 
     const std_mod = std_dep.module("ashet-std");
+    const agp_mod = agp_dep.module("agp");
 
     const abi_mod = abi_dep.module("ashet-abi");
     const abi_access_mod = abi_dep.module("ashet-abi-consumer");
@@ -66,15 +68,16 @@ pub fn build(b: *std.Build) void {
         .name = "AshetOS",
         .target = target,
         .optimize = .ReleaseSmall,
-        .root_source_file = b.path("libsyscall.zig"),
+        .root_source_file = b.path("src/libsyscall.zig"),
     });
     libsyscall.root_module.addImport("abi", abi_mod);
     libsyscall.root_module.addImport("stubs", abi_stubs_mod);
     b.installArtifact(libsyscall);
 
     _ = b.addModule("ashet", .{
-        .root_source_file = b.path("libashet.zig"),
+        .root_source_file = b.path("src/libashet.zig"),
         .imports = &.{
+            .{ .name = "agp", .module = agp_mod },
             .{ .name = "ashet-std", .module = std_mod },
             .{ .name = "ashet-abi", .module = abi_mod },
             .{ .name = "ashet-abi-access", .module = abi_access_mod },

@@ -351,15 +351,27 @@ pub const syscalls = struct {
 
         /// Creates a new in-memory framebuffer that can be used for offscreen painting.
         pub fn create_memory_framebuffer(size: abi.Size) error{SystemResources}!abi.Framebuffer {
-            _ = size;
-            @panic("not implemented yet!");
+            const proc = get_current_process();
+
+            const fb = try ashet.graphics.Framebuffer.create_memory(size.width, size.height);
+            errdefer fb.destroy();
+
+            const handle = try ashet.resources.add_to_process(proc, &fb.system_resource);
+
+            return handle.unsafe_cast(.framebuffer);
         }
 
         /// Creates a new framebuffer based off a video output. Can be used to output pixels
         /// to the screen.
-        pub fn create_video_framebuffer(video_output: abi.VideoOutput) error{SystemResources}!abi.Framebuffer {
-            _ = video_output;
-            @panic("not implemented  yet!");
+        pub fn create_video_framebuffer(video_output: abi.VideoOutput) error{ SystemResources, InvalidHandle }!abi.Framebuffer {
+            const proc, const output = try resolve_typed_resource(ashet.video.Output, video_output.as_resource());
+
+            const fb = try ashet.graphics.Framebuffer.create_video_output(output);
+            errdefer fb.destroy();
+
+            const handle = try ashet.resources.add_to_process(proc, &fb.system_resource);
+
+            return handle.unsafe_cast(.framebuffer);
         }
 
         /// Creates a new framebuffer that allows painting into a GUI window.
@@ -375,15 +387,17 @@ pub const syscalls = struct {
         }
 
         /// Returns the type of a framebuffer object.
-        pub fn get_framebuffer_type(framebuffer: abi.Framebuffer) abi.FramebufferType {
-            _ = framebuffer;
-            @panic("not implemented  yet!");
+        pub fn get_framebuffer_type(framebuffer: abi.Framebuffer) error{InvalidHandle}!abi.FramebufferType {
+            _, const fb = try resolve_typed_resource(ashet.graphics.Framebuffer, framebuffer.as_resource());
+
+            return fb.type;
         }
 
         /// Returns the size of a framebuffer object.
-        pub fn get_framebuffer_size(framebuffer: abi.Framebuffer) abi.Size {
-            _ = framebuffer;
-            @panic("not implemented  yet!");
+        pub fn get_framebuffer_size(framebuffer: abi.Framebuffer) error{InvalidHandle}!abi.Size {
+            _, const fb = try resolve_typed_resource(ashet.graphics.Framebuffer, framebuffer.as_resource());
+
+            return fb.get_size();
         }
 
         /// Marks a portion of the framebuffer as changed and forces the OS to

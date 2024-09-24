@@ -43,6 +43,8 @@ pub fn build(b: *std.Build) void {
     const libashetos_dep = b.dependency("libashetos", .{
         .target = platform_id,
     });
+    const agp_dep = b.dependency("agp", .{});
+    const agp_swrast_dep = b.dependency("agp_swrast", .{});
 
     // Modules:
 
@@ -57,6 +59,8 @@ pub fn build(b: *std.Build) void {
     const zfat_mod = zfat_dep.module("zfat");
     const lwip_mod = lwip_dep.module("lwip");
     const ashetos_mod = libashetos_dep.module("ashet");
+    const agp_mod = agp_dep.module("agp");
+    const agp_swrast_mod = agp_swrast_dep.module("agp-swrast");
 
     // Build:
 
@@ -91,6 +95,8 @@ pub fn build(b: *std.Build) void {
             .{ .name = "fatfs", .module = zfat_mod },
             .{ .name = "vnc", .module = vnc_mod },
             .{ .name = "ashet", .module = ashetos_mod },
+            .{ .name = "agp", .module = agp_mod },
+            .{ .name = "agp-swrast", .module = agp_swrast_mod },
 
             // only required on hosted instances:
             .{ .name = "network", .module = network_mod },

@@ -4,11 +4,7 @@
     .paths = .{
         "build.zig",
         "build.zig.zon",
-
-        "libsyscall.zig",
-
-        "application.ld",
-        "libashet.zig",
+        "src",
     },
     .dependencies = .{
         .abi = .{
@@ -16,6 +12,9 @@
         },
         .std = .{
             .path = "../../../../vendor/ashet-std",
+        },
+        .agp = .{
+            .path = "../agp",
         },
     },
 }

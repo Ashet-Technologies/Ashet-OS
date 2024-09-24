@@ -193,3 +193,48 @@ struct {
     bitmap: *Framebuffer,
 }
 ```
+
+## AGP Debug Format
+
+To enable easier debugging, we defined a human-readable form of the protocol.
+
+The format is a line-based text format which uses ASCII encoding and LF for line separators.
+
+Each line can be one of three variants:
+
+- Blank line: Contains no information
+- Comment line: Starts with a `#`, the line will be ignored
+- Command line: Contains a AGP command
+
+Each command line contains values separated by an arbitrary amount of SPC characters.
+
+The first value is always the command name, afterwards command specific arguments follow.
+
+A special case is the `:` character, which is a separator between the regular parameters and a "fulltext" parameter. Everything after a `:` is part of the last parameter and of type `text string`.
+
+The arguments have a pre-defined type which is either a decimal or hexadecimal integer, or a variable name.
+
+Variable names are matched by the regex `\$[a-z_\-]+`, so they started with a dollar sign followed by a sequence of lower case latin characters, underscores and dashes.
+
+### Text Commands
+
+The commands can be one of the following:
+
+```plain
+clear         <color>
+set-clip-rect <x> <y> <width> <height>
+set-pixel     <x> <y> <color>
+draw-line     <x1> <y1> <x2> <y2> <color>
+draw-rect     <x> <y> <width> <height> <color>
+fill-rect     <x> <y> <width> <height> <color>
+draw-text     <x> <y> <font> <color> :<full text>
+blit-bmp      <x> <y> <bitmap>
+blit-bmp      <x> <y> <width> <height> <src x> <src y> <bitmap>
+blit-fb       <x> <y> <framebuffer>
+blit-fb       <x> <y> <width> <height> <src x> <src y> <framebuffer>
+update-color  <index> <r> <g> <b>
+```
+
+Placeholders in the form of `<name>` are used to describe the parameter semantics.
+
+Variables that point to resources can only be accesses as variable names.

@@ -1,0 +1,29 @@
+hdoc "1.0"
+
+h1 "" "Ashet OS Graphics Subsystem"
+
+h2 "palette" "Palette"
+
+pre "" {
+  span "Index | Hex     | Name\n"
+  span "------|---------|-------------\n"
+  span " 0x00 | #000000 | black\n"
+  span " 0x01 | #2d1a71 | dark blue\n"
+  span " 0x02 | #3e32d5 | blue\n"
+  span " 0x03 | #af102e | dark red\n"
+  span " 0x04 | #e4162b | red\n"
+  span " 0x05 | #0e3e12 | dark green\n"
+  span " 0x06 | #38741a | green\n"
+  span " 0x07 | #8d4131 | brown\n"
+  span " 0x08 | #ffff40 | yellow\n"
+  span " 0x09 | #505d6d | dark gray\n"
+  span " 0x0A | #7b95a0 | gray\n"
+  span " 0x0B | #a6cfd0 | bright gray\n"
+  span " 0x0C | #b44cef | violet\n"
+  span " 0x0D | #e444c3 | pink\n"
+  span " 0x0E | #00bc9f | teal\n"
+  span " 0x0F | #ffffff | white\n"
+  span " 0x10 | #afe356 | bright green\n"
+  span " 0x11 | #2f3143 | dim gray\n"
+  span " 0x12 | #fbc800 | gold\n"
+}

@@ -54,8 +54,8 @@ pub const raw = struct {
     };
 
     pub const MouseRelMotion = struct {
-        dx: i32,
-        dy: i32,
+        dx: i16,
+        dy: i16,
     };
 
     pub const MouseButton = struct {
@@ -77,6 +77,9 @@ var event_awaiter: ?*ashet.overlapped.AsyncCall = null;
 var async_queue: astd.RingBuffer(raw.Event, 16) = .{};
 
 pub fn push_raw_event_from_irq(raw_event: raw.Event) void {
+    var cs = ashet.CriticalSection.enter();
+    defer cs.leave();
+
     if (async_queue.full()) {
         logger.warn("dropping {s} event", .{@tagName(event_queue.pull().?)});
     }
@@ -120,76 +123,50 @@ fn finish_arc(call: *ashet.overlapped.AsyncCall, evt: Event) void {
 }
 
 fn convert_raw_event(raw_event: raw.Event) ?Event {
-    switch (raw_event) {
-        .mouse_abs_motion => |data| {
-            _ = data;
-            @panic("handle abs motion input");
-            // TODO: Handle video outputs / virtual screen size
-            // const max_size = ashet.video.getMaxResolution();
+    return switch (raw_event) {
+        .mouse_abs_motion => |data| Event{ .mouse = .{
+            .event_type = .{ .input = .mouse_abs_motion },
+            .dx = 0,
+            .dy = 0,
+            .x = data.x,
+            .y = data.y,
+            .button = .none,
+        } },
 
-            // const old_cursor = cursor;
-
-            // cursor.x = @intCast(std.math.clamp(data.x, 0, @as(i17, max_size.width -| 1)));
-            // cursor.y = @intCast(std.math.clamp(data.y, 0, @as(i17, max_size.height -| 1)));
-
-            // return Event{ .mouse = .{
-            //     .event_type = .{ .input = .mouse_motion },
-            //     .dx = cursor.x - old_cursor.x,
-            //     .dy = cursor.y - old_cursor.y,
-            //     .x = cursor.x,
-            //     .y = cursor.y,
-            //     .button = .none,
-            // } };
-        },
-
-        .mouse_rel_motion => |data| {
-            _ = data;
-            @panic("handle rel motion input");
-            // const dx = @as(i16, @truncate(std.math.clamp(data.dx, std.math.minInt(i16), std.math.maxInt(i16))));
-            // const dy = @as(i16, @truncate(std.math.clamp(data.dy, std.math.minInt(i16), std.math.maxInt(i16))));
-
-            // const max_size = ashet.video.getMaxResolution();
-
-            // cursor.x = @intCast(std.math.clamp(cursor.x + dx, 0, @as(i17, max_size.width -| 1)));
-            // cursor.y = @intCast(std.math.clamp(cursor.y + dy, 0, @as(i17, max_size.height -| 1)));
-
-            // return Event{ .mouse = .{
-            //     .event_type = .{ .input = .mouse_motion },
-            //     .dx = dx,
-            //     .dy = dy,
-            //     .x = cursor.x,
-            //     .y = cursor.y,
-            //     .button = .none,
-            // } };
-        },
+        .mouse_rel_motion => |data| Event{ .mouse = .{
+            .event_type = .{ .input = .mouse_rel_motion },
+            .dx = data.dx,
+            .dy = data.dy,
+            .x = 0,
+            .y = 0,
+            .button = .none,
+        } },
 
         .mouse_button => |data| {
-            _ = data;
-            @panic("handle mouse motion input");
-            // const button = switch (data.button) {
-            //     .left => ashet.abi.MouseButton.left,
-            //     .right => ashet.abi.MouseButton.right,
-            //     .middle => ashet.abi.MouseButton.middle,
-            //     .nav_previous => ashet.abi.MouseButton.nav_previous,
-            //     .nav_next => ashet.abi.MouseButton.nav_next,
-            //     .wheel_down => ashet.abi.MouseButton.wheel_down,
-            //     .wheel_up => ashet.abi.MouseButton.wheel_up,
-            //     else => return null,
-            // };
+            const button = switch (data.button) {
+                .left => ashet.abi.MouseButton.left,
+                .right => ashet.abi.MouseButton.right,
+                .middle => ashet.abi.MouseButton.middle,
+                .nav_previous => ashet.abi.MouseButton.nav_previous,
+                .nav_next => ashet.abi.MouseButton.nav_next,
+                .wheel_down => ashet.abi.MouseButton.wheel_down,
+                .wheel_up => ashet.abi.MouseButton.wheel_up,
+                else => return null,
+            };
 
-            // const mouse_event: ashet.abi.MouseEvent = .{
-            //     .event_type = .{ .input = if (data.down)
-            //         .mouse_button_press
-            //     else
-            //         .mouse_button_release },
-            //     .dx = 0,
-            //     .dy = 0,
-            //     .x = 0, // TODO: cursor.x,
-            //     .y = 0, // TODO: cursor.y,
-            //     .button = button,
-            // };
+            const mouse_event: ashet.abi.MouseEvent = .{
+                .event_type = .{ .input = if (data.down)
+                    .mouse_button_press
+                else
+                    .mouse_button_release },
+                .dx = 0,
+                .dy = 0,
+                .x = 0,
+                .y = 0,
+                .button = button,
+            };
 
-            // return .{ .mouse = mouse_event };
+            return .{ .mouse = mouse_event };
         },
 
         .keyboard => |src_event| {
@@ -228,7 +205,7 @@ fn convert_raw_event(raw_event: raw.Event) ?Event {
 
             return Event{ .keyboard = event };
         },
-    }
+    };
 }
 
 pub fn getEvent() ?Event {
