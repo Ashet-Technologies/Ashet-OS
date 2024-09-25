@@ -18,7 +18,7 @@ pub const Bitmap = struct {
     width: u16, // width of the image
     height: u16, // height of the image
     stride: u32, // row length in pixels
-    pixels: [*]ColorIndex, // height * stride pixels
+    pixels: [*]align(4) ColorIndex, // height * stride pixels
 };
 
 pub const Framebuffer = struct {

@@ -840,6 +840,10 @@ const draw = struct {
     /// Returns the size of a framebuffer object.
     extern fn get_framebuffer_size(Framebuffer) error{InvalidHandle}!Size;
 
+    /// Returns the video memory for a *memory* framebuffer.
+    /// Other framebuffer types are not allowed to be passed.
+    extern fn get_framebuffer_memory(Framebuffer) error{ InvalidHandle, Unsupported }!VideoMemory;
+
     /// Marks a portion of the framebuffer as changed and forces the OS to
     /// perform an update action if necessary.
     extern fn invalidate_framebuffer(Framebuffer, Rectangle) void;

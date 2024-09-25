@@ -400,6 +400,19 @@ pub const syscalls = struct {
             return fb.get_size();
         }
 
+        pub fn get_framebuffer_memory(framebuffer: abi.Framebuffer) error{ InvalidHandle, Unsupported }!abi.VideoMemory {
+            _, const fb = try resolve_typed_resource(ashet.graphics.Framebuffer, framebuffer.as_resource());
+            switch (fb.type) {
+                .memory => |mem| return .{
+                    .width = mem.width,
+                    .height = mem.height,
+                    .stride = mem.stride,
+                    .base = mem.pixels,
+                },
+                else => return error.Unsupported,
+            }
+        }
+
         /// Marks a portion of the framebuffer as changed and forces the OS to
         /// perform an update action if necessary.
         pub fn invalidate_framebuffer(framebuffer: abi.Framebuffer, rect: abi.Rectangle) void {

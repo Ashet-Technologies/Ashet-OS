@@ -15,6 +15,8 @@ const Color = ashet.abi.Color;
 
 // Application logic:
 
+const apps = @import("apps.zig");
+
 const WindowList = std.DoublyLinkedList(void);
 const WindowNode = WindowList.Node;
 
@@ -71,30 +73,26 @@ pub fn main() !void {
     // First ensure the image is displayed before continuing
     syscalls.process.thread.yield();
 
+    // Do load available applications before we "open" the desktop:
+    try apps.init();
+
     const desktop = try syscalls.gui.create_desktop("Classic", &.{
         .window_data_size = @sizeOf(WindowData),
         .handle_event = handle_desktop_event,
     });
     defer desktop.release();
 
-    const apps_dir = try ashet.overlapped.performOne(abi.fs.OpenDrive, .{
-        .fs = .system,
-        .path_ptr = "apps",
-        .path_len = 4,
-    });
-    defer apps_dir.dir.release();
-
-    const desktop_proc = try ashet.overlapped.performOne(abi.process.Spawn, .{
-        .dir = apps_dir.dir,
-        .path_ptr = "hello-gui/code",
-        .path_len = 14,
-        .argv_ptr = &[_]abi.SpawnProcessArg{
-            abi.SpawnProcessArg.string("--desktop"),
-            abi.SpawnProcessArg.resource(desktop.as_resource()),
-        },
-        .argv_len = 2,
-    });
-    desktop_proc.process.release(); // we're not interested in "holding" onto process
+    // const desktop_proc = try ashet.overlapped.performOne(abi.process.Spawn, .{
+    //     .dir = apps_dir.dir,
+    //     .path_ptr = "hello-gui/code",
+    //     .path_len = 14,
+    //     .argv_ptr = &[_]abi.SpawnProcessArg{
+    //         abi.SpawnProcessArg.string("--desktop"),
+    //         abi.SpawnProcessArg.resource(desktop.as_resource()),
+    //     },
+    //     .argv_len = 2,
+    // });
+    // desktop_proc.process.release(); // we're not interested in "holding" onto process
 
     var cursor: Point = Point.new(
         @intCast(fb_size.width / 2),

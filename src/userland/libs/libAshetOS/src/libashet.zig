@@ -446,12 +446,12 @@ pub const fs = struct {
             dir.* = undefined;
         }
 
-        pub const ResetError = abi.fs.ResetDirEnumerationError.Error || GenericError;
+        pub const ResetError = abi.fs.ResetDirEnumeration.Error || GenericError;
         pub fn reset(dir: *Directory) ResetError!void {
             _ = try overlapped.performOne(abi.fs.ResetDirEnumeration, .{ .dir = dir.handle });
         }
 
-        pub const NextError = abi.fs.EnumerateDirError.Error || GenericError;
+        pub const NextError = abi.fs.EnumerateDir.Error || GenericError;
         pub fn next(dir: *Directory) NextError!?abi.FileInfo {
             const out = try overlapped.performOne(abi.fs.EnumerateDir, .{ .dir = dir.handle });
 
