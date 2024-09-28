@@ -8,8 +8,6 @@ const ashet = @import("ashet");
 
 const logger = std.log.scoped(.apps);
 
-const abi = ashet.abi;
-
 pub const icon_size = ashet.abi.Size.new(32, 32);
 
 pub const App = struct {
@@ -79,6 +77,57 @@ pub fn reload() !void {
         logger.info("app[{}]: disk='{s}', display='{s}'", .{ index, app.get_disk_name(), app.get_display_name() });
     }
 }
+
+pub fn iterate(target_size: ashet.abi.Size) AppIterator {
+    return .{
+        .target_size = target_size,
+        .bounds = .{
+            .x = AppIterator.margin,
+            .y = AppIterator.margin,
+            .width = icon_size.width,
+            .height = icon_size.height,
+        },
+    };
+}
+
+pub const DesktopIcon = struct {
+    app: *const App,
+    bounds: ashet.abi.Rectangle,
+    index: usize,
+    icon: ashet.graphics.Framebuffer,
+};
+
+pub const AppIterator = struct {
+    const margin = 8;
+    const padding = 8;
+
+    index: usize = 0,
+    bounds: ashet.abi.Rectangle,
+    target_size: ashet.abi.Size,
+
+    pub fn next(self: *AppIterator) ?DesktopIcon {
+        const right_limit = self.target_size.width - self.bounds.width - padding - margin;
+
+        if (self.index >= list.items.len)
+            return null;
+
+        const info = DesktopIcon{
+            .app = &list.items[self.index],
+            .index = self.index,
+            .bounds = self.bounds,
+            .icon = list.items[self.index].icon orelse default_icon,
+        };
+        self.index += 1;
+
+        self.bounds.x += (icon_size.width + padding);
+        if (self.bounds.x >= right_limit) {
+            self.bounds.x = margin;
+            self.bounds.y += (icon_size.height + padding);
+        }
+
+        return info;
+    }
+};
 
 fn load_app(dir: ashet.fs.Directory, ent: ashet.abi.FileInfo) !void {
     // , pal_offset: *u8

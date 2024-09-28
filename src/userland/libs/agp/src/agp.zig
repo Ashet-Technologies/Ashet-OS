@@ -485,7 +485,7 @@ pub fn Decoder(Reader: type) type {
 
         fn fetch_ptr(dec: Dec, Pointer: type) !Pointer {
             return @ptrFromInt(
-                @as(usize, @intCast(try dec.reader.readInt(u64, .little))),
+                @as(usize, @intCast(try dec.reader.readInt(usize, .little))),
             );
         }
     };

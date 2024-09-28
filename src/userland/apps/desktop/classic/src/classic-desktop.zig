@@ -63,10 +63,13 @@ pub fn main() !void {
     // Let the rest of the system continue to boot:
     syscalls.process.thread.yield();
 
+    const default_font = try ashet.graphics.get_system_font("sans-6");
+    defer default_font.release();
+
     var render_queue = try ashet.graphics.CommandQueue.init(ashet.process.mem.allocator());
     defer render_queue.deinit();
 
-    try render_queue.fill_rect(10, 10, 100, 50, ColorIndex.get(0));
+    try render_queue.fill_rect(.{ .x = 10, .y = 10, .width = 100, .height = 50 }, ColorIndex.get(0));
 
     try render_queue.submit(video_fb, .{});
 
@@ -106,29 +109,54 @@ pub fn main() !void {
             requires_repaint = false;
 
             const black = ColorIndex.get(0x0);
+            const blue = ColorIndex.get(0x2);
+            const red = ColorIndex.get(0x4);
+            // const green = ColorIndex.get(0x6);
             const white = ColorIndex.get(0xF);
 
             try render_queue.clear(white);
 
+            // Draw desktop:
+            {
+                var iter = apps.iterate(fb_size);
+
+                while (iter.next()) |desktop_icon| {
+                    std.log.info("{*}", .{desktop_icon.icon});
+                    try render_queue.blit_framebuffer(
+                        desktop_icon.bounds.corner(.top_left),
+                        desktop_icon.icon,
+                    );
+
+                    try render_queue.draw_rect(
+                        desktop_icon.bounds,
+                        blue,
+                    );
+
+                    try render_queue.draw_text(
+                        desktop_icon.bounds.corner(.bottom_left),
+                        default_font,
+                        red,
+                        desktop_icon.app.get_display_name(),
+                    );
+                }
+            }
+
+            const cursor_br = Point.new(cursor.x +| 10, cursor.y +| 5);
+            const cursor_bl = Point.new(cursor.x +| 5, cursor.y +| 10);
+
             try render_queue.draw_line(
-                cursor.x,
-                cursor.y,
-                cursor.x +| 10,
-                cursor.y +| 5,
+                cursor,
+                cursor_br,
                 black,
             );
             try render_queue.draw_line(
-                cursor.x,
-                cursor.y,
-                cursor.x +| 5,
-                cursor.y +| 10,
+                cursor,
+                cursor_bl,
                 black,
             );
             try render_queue.draw_line(
-                cursor.x +| 10,
-                cursor.y +| 5,
-                cursor.x +| 5,
-                cursor.y +| 10,
+                cursor_br,
+                cursor_bl,
                 black,
             );
 

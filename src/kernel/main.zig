@@ -201,6 +201,9 @@ fn main() !void {
     log.info("initialize input...", .{});
     input.initialize();
 
+    log.info("initialize graphics subsystem...", .{});
+    try graphics.initialize();
+
     log.info("spawn kernel main thread...", .{});
     {
         const thread = try scheduler.Thread.spawn(global_kernel_tick, null, .{

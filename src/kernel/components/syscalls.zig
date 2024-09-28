@@ -325,20 +325,29 @@ pub const syscalls = struct {
         pub fn get_system_font(font_name: []const u8) error{
             FileNotFound,
             SystemResources,
-            OutOfMemory,
         }!abi.Font {
-            _ = font_name;
-            @panic("not implemented yet");
+            const proc = get_current_process();
+
+            const system_font = try ashet.graphics.get_system_font(font_name);
+
+            const handle = try ashet.resources.add_to_process(proc, &system_font.system_resource);
+
+            return handle.unsafe_cast(.font);
         }
 
         /// Creates a new custom font from the given data.
         pub fn create_font(data: []const u8) error{
             InvalidData,
             SystemResources,
-            OutOfMemory,
         }!abi.Font {
-            _ = data;
-            @panic("not implemented yet");
+            const proc = get_current_process();
+
+            const font = try ashet.graphics.Font.create(data);
+            errdefer font.destroy();
+
+            const handle = try ashet.resources.add_to_process(proc, &font.system_resource);
+
+            return handle.unsafe_cast(.font);
         }
 
         /// Returns true if the given font is a system-owned font.

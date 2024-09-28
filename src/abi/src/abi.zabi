@@ -806,14 +806,12 @@ const draw = struct {
     extern fn get_system_font(font_name: []const u8) error{
         FileNotFound,
         SystemResources,
-        OutOfMemory,
     }!Font;
 
     /// Creates a new custom font from the given data.
     extern fn create_font(data: []const u8) error{
         InvalidData,
         SystemResources,
-        OutOfMemory,
     }!Font;
 
     /// Returns true if the given font is a system-owned font.
@@ -2347,6 +2345,26 @@ pub const Rectangle = extern struct {
             rect.height,
         });
     }
+
+    pub fn corner(rect: Rectangle, corner_id: Corner) Point {
+        const edge: u2 = @intFromEnum(corner_id);
+
+        var x: i16 = rect.x;
+        var y: i16 = rect.y;
+
+        x += @intCast(@intFromBool((edge & 1) != 0) * rect.width);
+        y += @intCast(@intFromBool((edge & 2) != 0) * rect.height);
+
+        return Point.new(x, y);
+    }
+
+    pub const Corner = enum(u2) {
+        // Encodes X/Y position in bits:
+        top_left = 0b00,
+        top_right = 0b01,
+        bottom_left = 0b10,
+        bottom_right = 0b11,
+    };
 };
 
 pub const VideoMemory = extern struct {

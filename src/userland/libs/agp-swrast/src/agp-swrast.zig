@@ -3,6 +3,8 @@ const agp = @import("agp");
 const ashet = @import("ashet-abi");
 const turtlefont = @import("turtlefont");
 
+pub const fonts = @import("fonts.zig");
+
 const logger = std.log.scoped(.agp_sw_rast);
 
 const ColorIndex = agp.ColorIndex;
@@ -31,18 +33,35 @@ pub const PixelLayout = enum {
 };
 
 pub const RasterizerOptions = struct {
+    backend_type: type,
+    framebuffer_type: ?type,
     pixel_layout: PixelLayout,
 };
 
-pub fn Rasterizer(comptime Backend: type, comptime _options: RasterizerOptions) type {
+pub fn Rasterizer(comptime _options: RasterizerOptions) type {
+    const Backend: type = _options.backend_type;
+
     if (!std.meta.hasMethod(Backend, "create_cursor"))
         @compileError("backend.create_cursor() must be a legal call!");
 
     if (!std.meta.hasMethod(Backend, "emit_pixels"))
         @compileError("backend.emit_pixels(cursor, color, count) must be a legal call!");
 
+    if (_options.framebuffer_type) |FramebufferType| {
+        if (!std.meta.hasMethod(FramebufferType, "create_cursor"))
+            @compileError("framebuffer.create_cursor() must be a legal call!");
+
+        if (!std.meta.hasMethod(FramebufferType, "fetch_pixels"))
+            @compileError("framebuffer.fetch_pixels(cursor, &pixels) must be a legal call!");
+
+        if (!std.meta.hasMethod(Backend, "copy_pixels"))
+            @compileError("backend.copy_pixels(cursor, pixels) must be a legal call!");
+    }
+
     return struct {
         const Rast = @This();
+
+        const FramebufferType = (_options.framebuffer_type orelse @compileError(","));
 
         pub const Cursor = PixelCursor(options.pixel_layout);
         pub const options = _options;
@@ -96,33 +115,44 @@ pub fn Rasterizer(comptime Backend: type, comptime _options: RasterizerOptions) 
                 ),
                 .draw_text => |data| rast.draw_text(
                     Point.new(data.x, data.y),
-                    data.font,
+                    try rast.backend.resolve_font(data.font),
                     data.color,
                     data.text,
                 ),
-                .blit_bitmap => |data| rast.blit_bitmap(
-                    Point.new(data.x, data.y),
-                    data.bitmap,
-                ),
-                .blit_framebuffer => |data| rast.blit_framebuffer(
-                    Point.new(data.x, data.y),
-                    data.framebuffer,
-                ),
+
                 .update_color => |data| rast.update_color(
                     data.index,
                     data.r,
                     data.g,
                     data.b,
                 ),
+
+                .blit_framebuffer => |data| if (_options.framebuffer_type) |_| {
+                    const fb: FramebufferType = try rast.backend.resolve_framebuffer(data.framebuffer);
+                    rast.blit_framebuffer(Point.new(data.x, data.y), fb);
+                } else {
+                    return error.UnsupportedCommand;
+                },
+
+                .blit_partial_framebuffer => |data| if (_options.framebuffer_type) |_| {
+                    const fb: FramebufferType = try rast.backend.resolve_framebuffer(data.framebuffer);
+                    rast.blit_partial_framebuffer(
+                        Rectangle.new(Point.new(data.x, data.y), Size.new(data.width, data.height)),
+                        Point.new(data.src_x, data.src_y),
+                        fb,
+                    );
+                } else {
+                    return error.UnsupportedCommand;
+                },
+
+                .blit_bitmap => |data| rast.blit_bitmap(
+                    Point.new(data.x, data.y),
+                    data.bitmap,
+                ),
                 .blit_partial_bitmap => |data| rast.blit_partial_bitmap(
                     Rectangle.new(Point.new(data.x, data.y), Size.new(data.width, data.height)),
                     Point.new(data.src_x, data.src_y),
                     data.bitmap,
-                ),
-                .blit_partial_framebuffer => |data| rast.blit_partial_framebuffer(
-                    Rectangle.new(Point.new(data.x, data.y), Size.new(data.width, data.height)),
-                    Point.new(data.src_x, data.src_y),
-                    data.framebuffer,
                 ),
             }
         }
@@ -391,20 +421,12 @@ pub fn Rasterizer(comptime Backend: type, comptime _options: RasterizerOptions) 
         pub fn draw_text(
             rast: Rast,
             start: Point,
-            font: Font,
+            font: *const fonts.FontInstance,
             color: ColorIndex,
             text: []const u8,
         ) void {
-            _ = rast;
-            _ = start;
-            _ = font;
-            _ = color;
-            _ = text;
-
-            // var sw = rast.screenWriter(x, y, font, color, limit);
-            // sw.writer().writeAll(text) catch {};
-
-            logger.info("Rasterizer.draw_text()", .{});
+            var sw = rast.screen_writer(start.x, start.y, font, color, null);
+            sw.writer().writeAll(text) catch {};
         }
 
         pub fn blit_bitmap(
@@ -421,12 +443,55 @@ pub fn Rasterizer(comptime Backend: type, comptime _options: RasterizerOptions) 
         pub fn blit_framebuffer(
             rast: Rast,
             point: Point,
-            framebuffer: Framebuffer,
+            framebuffer: FramebufferType,
         ) void {
-            _ = rast;
-            _ = point;
-            _ = framebuffer;
-            logger.info("Rasterizer.blit_framebuffer()", .{});
+            if (_options.pixel_layout != PixelLayout.row_major)
+                @compileError("unsupported");
+
+            var src_cursor: Cursor = framebuffer.create_cursor();
+            var dst_cursor: Cursor = rast.get_cursor();
+
+            std.debug.assert(src_cursor.move(0, 0));
+            std.debug.assert(dst_cursor.move(@intCast(point.x), @intCast(point.y)));
+
+            var buffer: [32]ColorIndex = undefined;
+
+            logger.info("blitting {}x{} @ ({},{}) to ({},{})*({},{})", .{
+                src_cursor.width,
+                src_cursor.height,
+                src_cursor.x,
+                src_cursor.y,
+                dst_cursor.x,
+                dst_cursor.y,
+                dst_cursor.width,
+                dst_cursor.height,
+            });
+
+            // @breakpoint();
+
+            var y: u16 = 0;
+            while (y < src_cursor.height) : (y += 1) {
+                defer std.debug.assert(src_cursor.shift_down(1) == 1);
+                defer std.debug.assert(dst_cursor.shift_down(1) == 1);
+
+                var src_line_cursor = src_cursor;
+                var dst_line_cursor = dst_cursor;
+
+                var x: u16 = 0;
+                while (x < src_cursor.width) {
+                    const len: u16 = @min(@as(u16, buffer.len), dst_cursor.width - x);
+
+                    logger.info("({},{}): copy {}", .{ x, y, len });
+                    
+                    framebuffer.fetch_pixels(src_line_cursor, buffer[0..len]);
+                    rast.blit_pixels(dst_line_cursor, buffer[0..len]);
+
+                    _ = src_line_cursor.shift_right(len);
+                    _ = dst_line_cursor.shift_right(len);
+
+                    x += len;
+                }
+            }
         }
 
         pub fn update_color(
@@ -461,7 +526,7 @@ pub fn Rasterizer(comptime Backend: type, comptime _options: RasterizerOptions) 
             rast: Rast,
             target: Rectangle,
             src_pos: Point,
-            framebuffer: Framebuffer,
+            framebuffer: FramebufferType,
         ) void {
             _ = rast;
             _ = target;
@@ -470,21 +535,23 @@ pub fn Rasterizer(comptime Backend: type, comptime _options: RasterizerOptions) 
             logger.info("Rasterizer.blit_framebuffer()", .{});
         }
 
-        // pub fn screen_writer(fb: Rast, x: i16, y: i16, font: *const Font, color: ColorIndex, max_width: ?u15) ScreenWriter {
-        //     const limit = @as(u15, @intCast(if (max_width) |mw|
-        //         @as(u15, @intCast(@max(0, x + mw)))
-        //     else
-        //         fb.width));
+        pub fn screen_writer(fb: Rast, x: i16, y: i16, font: *const fonts.FontInstance, color: ColorIndex, max_width: ?u15) ScreenWriter {
+            const limit: u15 = @intCast(if (max_width) |mw|
+                @max(0, x + mw)
+            else blk: {
+                const cursor = fb.get_cursor();
+                break :blk cursor.width;
+            });
 
-        //     return ScreenWriter{
-        //         .fb = fb,
-        //         .dx = x,
-        //         .dy = y,
-        //         .color = color,
-        //         .limit = limit,
-        //         .font = font,
-        //     };
-        // }
+            return ScreenWriter{
+                .fb = fb,
+                .dx = x,
+                .dy = y,
+                .color = color,
+                .limit = limit,
+                .font = font,
+            };
+        }
 
         // pub fn blit(fb: Rast, point: Point, bitmap: Bitmap) void {
         //     const target = fb.clip(Rectangle{
@@ -527,6 +594,10 @@ pub fn Rasterizer(comptime Backend: type, comptime _options: RasterizerOptions) 
 
         fn emit(rast: Rast, cursor: Cursor, color: ColorIndex, count: u16) void {
             return rast.backend.emit_pixels(cursor, color, count);
+        }
+
+        fn blit_pixels(rast: Rast, cursor: Cursor, pixels: []const ColorIndex) void {
+            return rast.backend.copy_pixels(cursor, pixels);
         }
 
         fn clamp(value: anytype, min: anytype, max: anytype) @TypeOf(value, min, max) {
@@ -602,107 +673,113 @@ pub fn Rasterizer(comptime Backend: type, comptime _options: RasterizerOptions) 
                     .height = @intCast(@min(mh, rect.height - dh)),
                 };
             }
+        };
 
-            // pub const ScreenWriter = struct {
-            //     pub const Error = error{InvalidUtf8};
-            //     pub const Writer = std.io.Writer(*ScreenWriter, Error, write);
+        pub const ScreenWriter = struct {
+            pub const Error = error{InvalidUtf8};
+            pub const Writer = std.io.Writer(*ScreenWriter, Error, write);
 
-            //     const VectorRasterizer = turtlefont.Rasterizer(*ScreenWriter, ColorIndex, writeVectorPixel);
+            const VectorRasterizer = turtlefont.Rasterizer(*ScreenWriter, ColorIndex, writeVectorPixel);
 
-            //     fb: Rast,
-            //     dx: i16,
-            //     dy: i16,
-            //     color: ColorIndex,
-            //     limit: u15, // only render till this column (exclusive)
-            //     font: *const Font,
+            fb: Rast,
+            dx: i16,
+            dy: i16,
+            color: ColorIndex,
+            limit: u15, // only render till this column (exclusive)
+            font: *const fonts.FontInstance,
 
-            //     pub fn writer(sw: *ScreenWriter) Writer {
-            //         return Writer{ .context = sw };
-            //     }
+            pub fn writer(sw: *ScreenWriter) Writer {
+                return Writer{ .context = sw };
+            }
 
-            //     fn write(sw: *ScreenWriter, text: []const u8) Error!usize {
-            //         if (sw.dx >= sw.limit)
-            //             return text.len;
+            fn write(sw: *ScreenWriter, text: []const u8) Error!usize {
+                if (sw.dx >= sw.limit)
+                    return text.len;
 
-            //         var utf8_view = try std.unicode.Utf8View.init(text);
-            //         var codepoints = utf8_view.iterator();
+                var utf8_view = try std.unicode.Utf8View.init(text);
+                var codepoints = utf8_view.iterator();
 
-            //         switch (sw.font.*) {
-            //             .bitmap => |bitmap_font| {
-            //                 const fallback_glyph = bitmap_font.getGlyph('�') orelse bitmap_font.getGlyph('?');
+                switch (sw.font.*) {
+                    .bitmap => |bitmap_font| {
+                        const fallback_glyph = bitmap_font.getGlyph('�') orelse bitmap_font.getGlyph('?');
 
-            //                 render_loop: while (codepoints.nextCodepoint()) |char| {
-            //                     if (sw.dx >= sw.limit) {
-            //                         break;
-            //                     }
-            //                     const glyph: BitmapFont.Glyph = bitmap_font.getGlyph(char) orelse fallback_glyph orelse continue;
+                        render_loop: while (codepoints.nextCodepoint()) |char| {
+                            if (sw.dx >= sw.limit) {
+                                break;
+                            }
+                            const glyph: fonts.BitmapFont.Glyph = bitmap_font.getGlyph(char) orelse fallback_glyph orelse continue;
 
-            //                     if (sw.dx + glyph.advance >= 0) {
-            //                         var data_ptr = glyph.bits.ptr;
+                            if (sw.dx + glyph.advance >= 0) {
+                                var data_ptr = glyph.bits.ptr;
 
-            //                         var gx: u15 = 0;
-            //                         while (gx < glyph.width) : (gx += 1) {
-            //                             if (sw.dx + gx > sw.limit) {
-            //                                 break :render_loop;
-            //                             }
+                                var gx: u15 = 0;
+                                while (gx < glyph.width) : (gx += 1) {
+                                    if (sw.dx + gx > sw.limit) {
+                                        break :render_loop;
+                                    }
 
-            //                             var bits: u8 = undefined;
+                                    var bits: u8 = undefined;
 
-            //                             var gy: u15 = 0;
-            //                             while (gy < glyph.height) : (gy += 1) {
-            //                                 if ((gy % 8) == 0) {
-            //                                     bits = data_ptr[0];
-            //                                     data_ptr += 1;
-            //                                 }
+                                    var gy: u15 = 0;
+                                    while (gy < glyph.height) : (gy += 1) {
+                                        if ((gy % 8) == 0) {
+                                            bits = data_ptr[0];
+                                            data_ptr += 1;
+                                        }
 
-            //                                 if ((bits & (@as(u8, 1) << @as(u3, @truncate(gy)))) != 0) {
-            //                                     sw.fb.setPixel(sw.dx + glyph.offset_x + gx, sw.dy + glyph.offset_y + gy, sw.color);
-            //                                 }
-            //                             }
-            //                         }
-            //                     }
+                                        if ((bits & (@as(u8, 1) << @as(u3, @truncate(gy)))) != 0) {
+                                            sw.fb.set_pixel(
+                                                Point.new(
+                                                    sw.dx + glyph.offset_x + gx,
+                                                    sw.dy + glyph.offset_y + gy,
+                                                ),
+                                                sw.color,
+                                            );
+                                        }
+                                    }
+                                }
+                            }
 
-            //                     sw.dx += glyph.advance;
-            //                 }
-            //             },
-            //             .vector => |vector_font| {
-            //                 const fallback_glyph = vector_font.getGlyph('�') orelse vector_font.getGlyph('?');
+                            sw.dx += glyph.advance;
+                        }
+                    },
+                    .vector => |vector_font| {
+                        const fallback_glyph = vector_font.getGlyph('�') orelse vector_font.getGlyph('?');
 
-            //                 const rast = VectorRasterizer.init(sw);
+                        const rast = VectorRasterizer.init(sw);
 
-            //                 const options = vector_font.getTurtleOptions();
+                        const vec_options = vector_font.getTurtleOptions();
 
-            //                 while (codepoints.nextCodepoint()) |char| {
-            //                     if (sw.dx >= sw.limit) {
-            //                         break;
-            //                     }
-            //                     const glyph: VectorFont.Glyph = vector_font.getGlyph(char) orelse fallback_glyph orelse continue;
+                        while (codepoints.nextCodepoint()) |char| {
+                            if (sw.dx >= sw.limit) {
+                                break;
+                            }
+                            const glyph: fonts.VectorFont.Glyph = vector_font.getGlyph(char) orelse fallback_glyph orelse continue;
 
-            //                     const advance = options.scaleX(glyph.advance);
+                            const advance = vec_options.scaleX(glyph.advance);
 
-            //                     if (sw.dx + advance >= 0) {
-            //                         rast.renderGlyph(
-            //                             options,
-            //                             sw.dx,
-            //                             sw.dy + vector_font.size,
-            //                             sw.color,
-            //                             vector_font.turtle_font.getCode(glyph),
-            //                         );
-            //                     }
+                            if (sw.dx + advance >= 0) {
+                                rast.renderGlyph(
+                                    vec_options,
+                                    sw.dx,
+                                    sw.dy + vector_font.size,
+                                    sw.color,
+                                    vector_font.turtle_font.getCode(glyph),
+                                );
+                            }
 
-            //                     sw.dx += advance;
-            //                     sw.dx += @intFromBool(vector_font.bold);
-            //                 }
-            //             },
-            //         }
+                            sw.dx += advance;
+                            sw.dx += @intFromBool(vector_font.bold);
+                        }
+                    },
+                }
 
-            //         return text.len;
-            //     }
+                return text.len;
+            }
 
-            //     fn writeVectorPixel(sw: *ScreenWriter, x: i16, y: i16, color: ColorIndex) void {
-            //         sw.fb.setPixel(x, y, color);
-            //     }
-            // };
+            fn writeVectorPixel(sw: *ScreenWriter, x: i16, y: i16, color: ColorIndex) void {
+                sw.fb.set_pixel(Point.new(x, y), color);
+            }
         };
     };
 }
@@ -815,8 +892,8 @@ pub fn PixelCursor(comptime _layout: PixelLayout) type {
 
         /// Performs a Debug-only consistency check which
         inline fn check_consistency(pc: Cursor) void {
-            std.debug.assert(pc.x < pc.width);
-            std.debug.assert(pc.y < pc.height);
+            std.debug.assert(pc.x <= pc.width);
+            std.debug.assert(pc.y <= pc.height);
             const offset = switch (layout) {
                 .row_major => pc.stride * pc.y + pc.x,
                 .column_major => pc.stride * pc.x + pc.y,

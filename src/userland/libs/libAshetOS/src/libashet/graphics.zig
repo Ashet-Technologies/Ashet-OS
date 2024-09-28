@@ -1,10 +1,13 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const ashet = @import("../libashet.zig");
+const logger = std.log.scoped(.graphics);
+
 pub const agp = @import("agp");
 
-const ashet = @import("../libashet.zig");
-
-const Size = ashet.abi.Size;
+pub const Point = ashet.abi.Point;
+pub const Size = ashet.abi.Size;
+pub const Rectangle = ashet.abi.Rectangle;
 
 pub const ColorIndex = ashet.abi.ColorIndex;
 pub const Color = ashet.abi.Color;
@@ -82,50 +85,54 @@ pub const CommandQueue = struct {
         try cq.encoder().clear(color);
     }
 
-    pub fn set_clip_rect(cq: *CommandQueue, x: i16, y: i16, width: u16, height: u16) !void {
-        try cq.encoder().set_clip_rect(x, y, width, height);
+    pub fn set_clip_rect(cq: *CommandQueue, rectangle: Rectangle) !void {
+        try cq.encoder().set_clip_rect(rectangle.x, rectangle.y, rectangle.width, rectangle.height);
     }
 
-    pub fn set_pixel(cq: *CommandQueue, x: i16, y: i16, color: ColorIndex) !void {
-        try cq.encoder().set_pixel(x, y, color);
+    pub fn set_pixel(cq: *CommandQueue, point: Point, color: ColorIndex) !void {
+        try cq.encoder().set_pixel(point.x, point.y, color);
     }
 
-    pub fn draw_line(cq: *CommandQueue, x1: i16, y1: i16, x2: i16, y2: i16, color: ColorIndex) !void {
-        try cq.encoder().draw_line(x1, y1, x2, y2, color);
+    pub fn draw_line(cq: *CommandQueue, p1: Point, p2: Point, color: ColorIndex) !void {
+        try cq.encoder().draw_line(p1.x, p1.y, p2.x, p2.y, color);
     }
 
-    pub fn draw_rect(cq: *CommandQueue, x: i16, y: i16, width: u16, height: u16, color: ColorIndex) !void {
-        try cq.encoder().draw_rect(x, y, width, height, color);
+    pub fn draw_rect(cq: *CommandQueue, rectangle: Rectangle, color: ColorIndex) !void {
+        try cq.encoder().draw_rect(rectangle.x, rectangle.y, rectangle.width, rectangle.height, color);
     }
 
-    pub fn fill_rect(cq: *CommandQueue, x: i16, y: i16, width: u16, height: u16, color: ColorIndex) !void {
-        try cq.encoder().fill_rect(x, y, width, height, color);
+    pub fn fill_rect(cq: *CommandQueue, rectangle: Rectangle, color: ColorIndex) !void {
+        try cq.encoder().fill_rect(rectangle.x, rectangle.y, rectangle.width, rectangle.height, color);
     }
 
-    pub fn draw_text(cq: *CommandQueue, x: i16, y: i16, font: Font, color: ColorIndex, text: []const u8) !void {
-        try cq.encoder().draw_text(x, y, font, color, text);
+    pub fn draw_text(cq: *CommandQueue, point: Point, font: Font, color: ColorIndex, text: []const u8) !void {
+        try cq.encoder().draw_text(point.x, point.y, font, color, text);
     }
 
-    pub fn blit_bitmap(cq: *CommandQueue, x: i16, y: i16, bitmap: Bitmap) !void {
-        try cq.encoder().blit_bitmap(x, y, bitmap);
+    pub fn blit_bitmap(cq: *CommandQueue, point: Point, bitmap: Bitmap) !void {
+        try cq.encoder().blit_bitmap(point.x, point.y, bitmap);
     }
 
-    pub fn blit_framebuffer(cq: *CommandQueue, x: i16, y: i16, framebuffer: Framebuffer) !void {
-        try cq.encoder().blit_framebuffer(x, y, framebuffer);
+    pub fn blit_framebuffer(cq: *CommandQueue, point: Point, framebuffer: Framebuffer) !void {
+        try cq.encoder().blit_framebuffer(point.x, point.y, framebuffer);
     }
 
     pub fn update_color(cq: *CommandQueue, index: ColorIndex, r: u8, g: u8, b: u8) !void {
         try cq.encoder().update_color(index, r, g, b);
     }
 
-    pub fn blit_partial_bitmap(cq: *CommandQueue, x: i16, y: i16, width: u16, height: u16, src_x: i16, src_y: i16, bitmap: Bitmap) !void {
-        try cq.encoder().blit_partial_bitmap(x, y, width, height, src_x, src_y, bitmap);
+    pub fn blit_partial_bitmap(cq: *CommandQueue, target: Rectangle, src_pos: Point, bitmap: Bitmap) !void {
+        try cq.encoder().blit_partial_bitmap(target.x, target.y, target.width, target.height, src_pos.x, src_pos.y, bitmap);
     }
 
-    pub fn blit_partial_framebuffer(cq: *CommandQueue, x: i16, y: i16, width: u16, height: u16, src_x: i16, src_y: i16, framebuffer: Framebuffer) !void {
-        try cq.encoder().blit_partial_framebuffer(x, y, width, height, src_x, src_y, framebuffer);
+    pub fn blit_partial_framebuffer(cq: *CommandQueue, target: Rectangle, src_pos: Point, framebuffer: Framebuffer) !void {
+        try cq.encoder().blit_partial_framebuffer(target.x, target.y, target.width, target.height, src_pos.x, src_pos.y, framebuffer);
     }
 };
+
+pub fn get_system_font(font_name: []const u8) !Font {
+    return try ashet.userland.draw.get_system_font(font_name);
+}
 
 pub fn create_memory_framebuffer(size: Size) !Framebuffer {
     return try ashet.userland.draw.create_memory_framebuffer(size);
@@ -147,6 +154,15 @@ pub fn load_bitmap_file(file: ashet.fs.File) !Framebuffer {
         @field(header, fld.name) = std.mem.littleToNative(fld.type, @field(header, fld.name));
     }
 
+    logger.info("header: 0x{X:0>8} size={}x{}, palette={}, key=0x{X:0>2}, flags={X:0>4}", .{
+        header.magic,
+        header.width,
+        header.height,
+        header.palette_size,
+        header.transparency_key,
+        header.flags,
+    });
+
     if (header.magic != ABM_Header.magic_number)
         return error.InvalidFile;
 
@@ -162,6 +178,16 @@ pub fn load_bitmap_file(file: ashet.fs.File) !Framebuffer {
     errdefer fb.release();
 
     const vmem = get_framebuffer_memory(fb) catch unreachable;
+
+    logger.info("vmem: {}*{}, +{}, @{*}", .{
+        vmem.width,
+        vmem.height,
+        vmem.stride,
+        vmem.base,
+    });
+
+    std.debug.assert(vmem.width == header.width);
+    std.debug.assert(vmem.height == header.height);
 
     if (vmem.stride == vmem.width) {
         const len = try file.read(pixel_offset, std.mem.sliceAsBytes(vmem.base[0..pixel_count]));
@@ -179,6 +205,8 @@ pub fn load_bitmap_file(file: ashet.fs.File) !Framebuffer {
             scanline += vmem.stride;
         }
     }
+
+    logger.info("loaded bitmap: {any}", .{vmem.base[0..pixel_count]});
 
     // TODO(fqu): Implement distinct palette support for framebuffers?
     _ = palette_entry_count;

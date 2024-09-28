@@ -5,13 +5,20 @@ const agp_swrast = @import("agp-swrast");
 
 const logger = std.log.scoped(.graphics);
 
-const fonts = @import("graphics/fonts.zig");
+const fonts = agp_swrast.fonts;
 const software_renderer = @import("graphics/software_renderer.zig");
 
+const Point = ashet.abi.Point;
 const Size = ashet.abi.Size;
+
 const ColorIndex = ashet.abi.ColorIndex;
+
 comptime {
     std.debug.assert(ColorIndex == agp.ColorIndex);
+}
+
+pub fn initialize() !void {
+    try initialize_system_fonts();
 }
 
 pub const Bitmap = struct {
@@ -117,19 +124,97 @@ pub const Framebuffer = struct {
 
         @memset(framebuffer[cursor.offset..][0..count], color_index);
     }
+
+    pub fn fetch_pixels(fb: *Framebuffer, cursor: Cursor, pixels: []ColorIndex) void {
+        const framebuffer: [*]const ColorIndex = switch (fb.type) {
+            .memory => |bmp| bmp.pixels,
+            .video => |vmem| vmem.base,
+            .window => @panic("Framebuffer(.window).destroy Not implemented yet!"),
+            .widget => @panic("Framebuffer(.widget).destroy Not implemented yet!"),
+        };
+        // logger.info("{s} {*} {*}", .{ @tagName(fb.type), framebuffer, pixels });
+        // logger.info("{any}", .{framebuffer[cursor.offset..][0..pixels.len]});
+        @memcpy(pixels, framebuffer[cursor.offset..][0..pixels.len]);
+    }
+
+    pub fn copy_pixels(fb: *Framebuffer, cursor: Cursor, pixels: []const ColorIndex) void {
+        const framebuffer: [*]ColorIndex = switch (fb.type) {
+            .memory => |bmp| bmp.pixels,
+            .video => |vmem| vmem.base,
+            .window => @panic("Framebuffer(.window).destroy Not implemented yet!"),
+            .widget => @panic("Framebuffer(.widget).destroy Not implemented yet!"),
+        };
+        @memcpy(framebuffer[cursor.offset..][0..pixels.len], pixels);
+    }
+
+    pub fn resolve_font(fb: *Framebuffer, font_handle: ashet.abi.Font) !*const fonts.FontInstance {
+        _ = fb;
+        _ = font_handle;
+        @panic("undefined");
+    }
+
+    pub fn resolve_framebuffer(fb: *Framebuffer, fb_handle: ashet.abi.Framebuffer) !*Framebuffer {
+        _ = fb;
+        _ = fb_handle;
+        @panic("undefined");
+    }
 };
 
 pub const Font = struct {
     pub const Destructor = ashet.resources.Destructor(@This(), _internal_destroy);
+
     system_resource: ashet.resources.SystemResource = .{ .type = .font },
+
+    system_font: bool,
+    raw_data: []const u8,
+
+    font_data: fonts.FontInstance,
+
+    pub fn create(userland_data: []const u8) error{ InvalidData, SystemResources }!*Font {
+        _ = fonts.FontInstance.load(userland_data, .{}) catch return error.InvalidData;
+
+        const data = ashet.memory.allocator.dupe(u8, userland_data) catch return error.SystemResources;
+        errdefer ashet.memory.allocator.free(data);
+
+        const font = ashet.memory.type_pool(Font).alloc() catch return error.SystemResources;
+        errdefer ashet.memory.type_pool(Font).free(font);
+
+        font.* = .{
+            .system_font = false,
+            .raw_data = data,
+            .font_data = fonts.FontInstance.load(data, .{}) catch unreachable,
+        };
+
+        return font;
+    }
 
     pub const destroy = Destructor.destroy;
 
-    fn _internal_destroy(sock: *Font) void {
-        _ = sock;
-        @panic("Not implemented yet!");
+    fn _internal_destroy(font: *Font) void {
+        if (font.system_font) {
+            // statically allocated objects
+            return;
+        }
+        ashet.memory.allocator.free(font.raw_data);
+        ashet.memory.type_pool(Font).free(font);
     }
 };
+
+var system_fonts: std.StringArrayHashMap(Font) = undefined;
+
+fn initialize_system_fonts() !void {
+    system_fonts = std.StringArrayHashMap(Font).init(ashet.memory.static_memory_allocator);
+
+    try system_fonts.put("sans-6", Font{
+        .system_font = true,
+        .raw_data = @embedFile("sans-6.font"),
+        .font_data = fonts.FontInstance.load(@embedFile("sans-6.font"), .{}) catch @panic("bad font: sans-6"),
+    });
+}
+
+pub fn get_system_font(font_name: []const u8) error{FileNotFound}!*Font {
+    return system_fonts.getPtr(font_name) orelse return error.FileNotFound;
+}
 
 fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.Inputs) ashet.abi.draw.Render.Error!ashet.abi.draw.Render.Outputs {
     logger.info("render sync!", .{});
@@ -158,7 +243,9 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
 
     // Now render to the framebuffer:
     {
-        const Rasterizer = agp_swrast.Rasterizer(*Framebuffer, .{
+        const Rasterizer = agp_swrast.Rasterizer(.{
+            .backend_type = *Framebuffer,
+            .framebuffer_type = *Framebuffer,
             .pixel_layout = .row_major,
         });
 
@@ -167,7 +254,34 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
         var decoder = agp.decoder(fbs.reader());
         while (decoder.next() catch unreachable) |cmd| {
             logger.debug("execute {s}", .{@tagName(cmd)});
-            rasterizer.execute(cmd);
+            switch (cmd) {
+                .draw_text => |draw_text| {
+                    const font = ashet.resources.resolve(Font, call.resource_owner, draw_text.font.as_resource()) catch |err| switch (err) {
+                        error.TypeMismatch => return error.BadCode,
+                        else => |e| return e,
+                    };
+                    rasterizer.draw_text(
+                        Point.new(draw_text.x, draw_text.y),
+                        &font.font_data,
+                        draw_text.color,
+                        draw_text.text,
+                    );
+                },
+                .blit_framebuffer => |blit_framebuffer| {
+                    const framebuffer = ashet.resources.resolve(Framebuffer, call.resource_owner, blit_framebuffer.framebuffer.as_resource()) catch |err| switch (err) {
+                        error.TypeMismatch => return error.BadCode,
+                        else => |e| return e,
+                    };
+                    rasterizer.blit_framebuffer(
+                        Point.new(
+                            blit_framebuffer.x,
+                            blit_framebuffer.y,
+                        ),
+                        framebuffer,
+                    );
+                },
+                else => rasterizer.execute(cmd),
+            }
         }
     }
 
