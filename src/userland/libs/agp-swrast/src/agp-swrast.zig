@@ -279,7 +279,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
             const start = rast.clamp_coord(start_unclipped, .x_axis);
             const end = rast.clamp_coord(end_unclipped, .x_axis);
 
-            if (end < start)
+            if (end <= start)
                 return; // zero length
 
             const length = (end - start);
@@ -314,7 +314,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
             const start = rast.clamp_coord(start_unclipped, .y_axis);
             const end = rast.clamp_coord(end_unclipped, .y_axis);
 
-            if (end < start)
+            if (end <= start)
                 return; // zero length
 
             const length = (end - start);
@@ -444,8 +444,26 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
             var src_cursor: Cursor = framebuffer.create_cursor();
             var dst_cursor: Cursor = rast.get_cursor();
 
-            std.debug.assert(src_cursor.move(0, 0));
-            std.debug.assert(dst_cursor.move(@intCast(point.x), @intCast(point.y)));
+            if (point.x >= dst_cursor.width)
+                return;
+            if (point.y >= dst_cursor.height)
+                return;
+
+            // Compute the screen-local start:
+            const start_x: u16 = @intCast(@max(0, point.x));
+            const start_y: u16 = @intCast(@max(0, point.y));
+            std.debug.assert(dst_cursor.move(start_x, start_y));
+
+            // Compute the offset to the screen start:
+            const dx: u16 = @intCast(@max(0, -point.x));
+            const dy: u16 = @intCast(@max(0, -point.y));
+
+            // If we would never paint anything from src, discard early:
+            if (dx >= src_cursor.width)
+                return;
+            if (dy >= src_cursor.width)
+                return;
+            std.debug.assert(src_cursor.move(dx, dy));
 
             var buffer: [32]ColorIndex = undefined;
 
@@ -462,27 +480,43 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
 
             // @breakpoint();
 
-            var y: u16 = 0;
-            while (y < src_cursor.height) : (y += 1) {
-                defer std.debug.assert(src_cursor.shift_down(1) == 1);
-                defer std.debug.assert(dst_cursor.shift_down(1) == 1);
-
+            var y: u16 = dy;
+            copy_row_loop: while (y < src_cursor.height) : (y += 1) {
                 var src_line_cursor = src_cursor;
                 var dst_line_cursor = dst_cursor;
 
-                var x: u16 = 0;
-                while (x < src_cursor.width) {
+                var x: u16 = dx;
+                copy_line_loop: while (x < src_cursor.width) {
                     const len: u16 = @min(@as(u16, buffer.len), src_cursor.width - x);
 
                     // logger.info("({},{}): copy {}", .{ x, y, len });
 
                     framebuffer.fetch_pixels(src_line_cursor, buffer[0..len]);
-                    rast.blit_pixels(dst_line_cursor, buffer[0..len]);
 
+                    // src must always be big enough, as we're iterating over src:
                     std.debug.assert(src_line_cursor.shift_right(len) == len);
-                    std.debug.assert(dst_line_cursor.shift_right(len) == len);
+
+                    // create a copy of our cursor, then advance the other one.
+                    // only copy as much as we really need:
+                    const target = dst_line_cursor;
+
+                    const row_inc = dst_line_cursor.shift_right(len);
+                    rast.blit_pixels(target, buffer[0..row_inc]);
+                    // dst may be truncated, then we cancel:
+                    if (row_inc < len)
+                        break :copy_line_loop;
 
                     x += len;
+                }
+
+                // src must always be big enough, as we're iterating over src:
+                std.debug.assert(src_cursor.shift_down(1) == 1);
+
+                // dst may be truncated/out of screen:
+                switch (dst_cursor.shift_down(1)) {
+                    0 => break :copy_row_loop,
+                    1 => {},
+                    else => unreachable,
                 }
             }
         }
@@ -657,8 +691,8 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
                 const y: u16 = @intCast(@max(@as(isize, clip.y), rect.y));
                 const dw: usize = @intCast(@max(rect.x - @as(isize, x), 0));
                 const dh: usize = @intCast(@max(rect.y - @as(isize, y), 0));
-                const mw: usize = clip.width - x;
-                const mh: usize = clip.height - y;
+                const mw: usize = clip.width -| x;
+                const mh: usize = clip.height -| y;
                 return .{
                     .x = x,
                     .y = y,
