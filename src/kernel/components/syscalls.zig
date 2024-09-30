@@ -384,13 +384,19 @@ pub const syscalls = struct {
         }
 
         /// Creates a new framebuffer that allows painting into a GUI window.
-        pub fn create_window_framebuffer(window: abi.Window) error{SystemResources}!abi.Framebuffer {
-            _ = window;
-            @panic("not implemented  yet!");
+        pub fn create_window_framebuffer(window_handle: abi.Window) error{ SystemResources, InvalidHandle }!abi.Framebuffer {
+            const proc, const output = try resolve_typed_resource(ashet.gui.Window, window_handle.as_resource());
+
+            const fb = try ashet.graphics.Framebuffer.create_window(output);
+            errdefer fb.destroy();
+
+            const handle = try ashet.resources.add_to_process(proc, &fb.system_resource);
+
+            return handle.unsafe_cast(.framebuffer);
         }
 
         /// Creates a new framebuffer that allows painting into a widget.
-        pub fn create_widget_framebuffer(widget: abi.Widget) error{SystemResources}!abi.Framebuffer {
+        pub fn create_widget_framebuffer(widget: abi.Widget) error{ SystemResources, InvalidHandle }!abi.Framebuffer {
             _ = widget;
             @panic("not implemented  yet!");
         }

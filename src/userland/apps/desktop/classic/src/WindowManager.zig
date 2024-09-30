@@ -348,7 +348,7 @@ pub fn render(wm: *WindowManager, q: *ashet.graphics.CommandQueue, theme: themes
     {
         var iter = wm.window_iterator(WindowIterator.is_regular, .bottom_to_top);
         while (iter.next()) |window| {
-            // const client_rectangle = window.client_rectangle;
+            const client_rectangle = window.client_rectangle;
             const window_rectangle = window.screenRectangle();
 
             const style = if (window.flags.focus)
@@ -381,15 +381,11 @@ pub fn render(wm: *WindowManager, q: *ashet.graphics.CommandQueue, theme: themes
                 // TODO(fqu): title_width - 2,
             );
 
-            // var dy: u15 = 0;
-            // var row_ptr = window.pixels;
-            // while (dy < client_rectangle.height) : (dy += 1) {
-            //     var dx: u15 = 0;
-            //     while (dx < client_rectangle.width) : (dx += 1) {
-            //         q.set_pixel(client_rectangle.x + dx, client_rectangle.y + dy, row_ptr[dx]);
-            //     }
-            //     row_ptr += window.stride;
-            // }
+            try q.blit_partial_framebuffer(
+                client_rectangle,
+                Point.zero,
+                window.framebuffer,
+            );
 
             for (buttons.slice()) |button| {
                 const bounds = button.bounds;
@@ -409,6 +405,9 @@ pub fn create_window(
     wm: *WindowManager,
     window_handle: ashet.abi.Window,
 ) !void {
+    const framebuffer = try ashet.graphics.create_window_framebuffer(window_handle);
+    errdefer framebuffer.release();
+
     const window: *Window = Window.from_handle(window_handle);
 
     // TODO: Fetch initial info block
@@ -424,7 +423,7 @@ pub fn create_window(
     window.* = Window{
         .manager = wm,
         .handle = window_handle,
-        .memory = std.heap.ArenaAllocator.init(ashet.process.mem.allocator()),
+        .framebuffer = framebuffer,
         .client_rectangle = undefined,
         .min_size = wm.limit_window_size(size_min(min, max)),
         .max_size = wm.limit_window_size(size_max(min, max)),
@@ -434,13 +433,6 @@ pub fn create_window(
             .popup = flags.popup,
         },
     };
-    errdefer window.memory.deinit();
-
-    // const allocator = window.memory.allocator();
-
-    // const pixel_count = @as(usize, window.max_size.height) * @as(usize, window.stride);
-    // window.pixels = (try allocator.alloc(ColorIndex, pixel_count)).ptr;
-    // @memset(window.pixels[0..pixel_count], wm.current_theme.window_fill);
 
     const clamped_initial_size = size_max(size_min(initial_size, window.max_size), window.min_size);
 
@@ -494,9 +486,7 @@ pub fn destroy_window(wm: *WindowManager, window_handle: ashet.abi.Window) void 
         },
     }
 
-    var clone = window.memory;
-    window.* = undefined;
-    clone.deinit();
+    window.framebuffer.release();
 }
 
 pub fn restore_window(wm: *WindowManager, window: *Window) void {
@@ -591,7 +581,7 @@ pub const Window = struct {
 
     manager: *WindowManager,
 
-    memory: std.heap.ArenaAllocator,
+    framebuffer: ashet.graphics.Framebuffer,
 
     /// The current position of the window on the screen. Will not contain the decorators, but only
     /// the position of the framebuffer.

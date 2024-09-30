@@ -176,6 +176,7 @@ pub const Window = struct {
     is_popup: bool,
 
     window_data: []align(16) u8,
+    pixels: []align(4) ashet.abi.ColorIndex,
 
     fn from_node(node: *WindowDesktopLinkNode) *Window {
         return @fieldParentPtr("desktop", node);
@@ -201,11 +202,14 @@ pub const Window = struct {
             .desktop = .{ .data = .{ .desktop = desktop } },
             .title = "<unset>",
             .window_data = undefined,
+            .pixels = undefined,
         };
         errdefer window.associated_memory.deinit();
 
         window.window_data = window.associated_memory.allocator().alignedAlloc(u8, 16, desktop.window_data_size) catch return error.SystemResources;
         @memset(window.window_data, 0);
+
+        window.pixels = window.associated_memory.allocator().alignedAlloc(ashet.abi.ColorIndex, 4, @as(u32, window.max_size.width) * window.max_size.height) catch return error.SystemResources;
 
         window.title = window.associated_memory.allocator().dupeZ(u8, title) catch return error.SystemResources;
 

@@ -8,6 +8,7 @@ const logger = std.log.scoped(.graphics);
 const fonts = agp_swrast.fonts;
 const software_renderer = @import("graphics/software_renderer.zig");
 
+const Rectangle = ashet.abi.Rectangle;
 const Point = ashet.abi.Point;
 const Size = ashet.abi.Size;
 
@@ -76,6 +77,17 @@ pub const Framebuffer = struct {
         return fb;
     }
 
+    pub fn create_window(window: *ashet.gui.Window) error{SystemResources}!*Framebuffer {
+        const fb = ashet.memory.type_pool(Framebuffer).alloc() catch return error.SystemResources;
+        errdefer ashet.memory.type_pool(Framebuffer).free(fb);
+
+        fb.* = .{
+            .type = .{ .window = window },
+        };
+
+        return fb;
+    }
+
     pub const destroy = Destructor.destroy;
 
     fn _internal_destroy(fb: *Framebuffer) void {
@@ -85,7 +97,7 @@ pub const Framebuffer = struct {
                 ashet.memory.allocator.free(back_buffer);
             },
             .video => {},
-            .window => @panic("Framebuffer(.window).destroy Not implemented yet!"),
+            .window => {},
             .widget => @panic("Framebuffer(.widget).destroy Not implemented yet!"),
         }
         ashet.memory.type_pool(Framebuffer).free(fb);
@@ -104,7 +116,7 @@ pub const Framebuffer = struct {
         const width, const height, const stride = switch (fb.type) {
             .memory => |bmp| .{ bmp.width, bmp.height, bmp.stride },
             .video => |vmem| .{ vmem.width, vmem.height, vmem.stride },
-            .window => @panic("Framebuffer(.window).destroy Not implemented yet!"),
+            .window => |win| .{ win.size.width, win.size.height, win.max_size.width },
             .widget => @panic("Framebuffer(.widget).destroy Not implemented yet!"),
         };
         return .{
@@ -118,7 +130,7 @@ pub const Framebuffer = struct {
         const framebuffer: [*]ColorIndex = switch (fb.type) {
             .memory => |bmp| bmp.pixels,
             .video => |vmem| vmem.base,
-            .window => @panic("Framebuffer(.window).destroy Not implemented yet!"),
+            .window => |win| win.pixels.ptr,
             .widget => @panic("Framebuffer(.widget).destroy Not implemented yet!"),
         };
 
@@ -129,7 +141,7 @@ pub const Framebuffer = struct {
         const framebuffer: [*]const ColorIndex = switch (fb.type) {
             .memory => |bmp| bmp.pixels,
             .video => |vmem| vmem.base,
-            .window => @panic("Framebuffer(.window).destroy Not implemented yet!"),
+            .window => |win| win.pixels.ptr,
             .widget => @panic("Framebuffer(.widget).destroy Not implemented yet!"),
         };
         // logger.info("{s} {*} {*}", .{ @tagName(fb.type), framebuffer, pixels });
@@ -141,7 +153,7 @@ pub const Framebuffer = struct {
         const framebuffer: [*]ColorIndex = switch (fb.type) {
             .memory => |bmp| bmp.pixels,
             .video => |vmem| vmem.base,
-            .window => @panic("Framebuffer(.window).destroy Not implemented yet!"),
+            .window => |win| win.pixels.ptr,
             .widget => @panic("Framebuffer(.widget).destroy Not implemented yet!"),
         };
         @memcpy(framebuffer[cursor.offset..][0..pixels.len], pixels);
@@ -275,6 +287,20 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
                             blit_framebuffer.x,
                             blit_framebuffer.y,
                         ),
+                        framebuffer,
+                    );
+                },
+                .blit_partial_framebuffer => |blit_framebuffer| {
+                    const framebuffer = ashet.resources.resolve(Framebuffer, call.resource_owner, blit_framebuffer.framebuffer.as_resource()) catch |err| switch (err) {
+                        error.TypeMismatch => return error.BadCode,
+                        else => |e| return e,
+                    };
+                    rasterizer.blit_partial_framebuffer(
+                        Rectangle.new(
+                            Point.new(blit_framebuffer.x, blit_framebuffer.y),
+                            Size.new(blit_framebuffer.width, blit_framebuffer.height),
+                        ),
+                        Point.new(blit_framebuffer.src_x, blit_framebuffer.src_y),
                         framebuffer,
                     );
                 },
