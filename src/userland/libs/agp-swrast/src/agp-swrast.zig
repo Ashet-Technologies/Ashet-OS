@@ -282,7 +282,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
             if (end < start)
                 return; // zero length
 
-            const length = (end - start) + 1;
+            const length = (end - start);
 
             std.debug.assert(cursor.move(start, @intCast(y)));
 
@@ -317,7 +317,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
             if (end < start)
                 return; // zero length
 
-            const length = (end - start) + 1;
+            const length = (end - start);
 
             std.debug.assert(cursor.move(@intCast(x), start));
 

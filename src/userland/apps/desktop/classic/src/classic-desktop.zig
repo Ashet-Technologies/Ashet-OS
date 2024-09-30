@@ -141,13 +141,11 @@ pub fn main() !void {
             const black = ColorIndex.get(0x0);
             const blue = ColorIndex.get(0x2);
             const red = ColorIndex.get(0x4);
-            // const green = ColorIndex.get(0x6);
-            const white = ColorIndex.get(0xF);
 
             // try render_queue.clear(window_manager.current_theme.desktop_color);
 
             for (damage_tracking.tainted_regions()) |rect| {
-                try render_queue.fill_rect(rect, white); // window_manager.current_theme.desktop_color);
+                try render_queue.fill_rect(rect, current_theme.desktop_color);
             }
 
             // Draw desktop:
