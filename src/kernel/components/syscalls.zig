@@ -655,11 +655,8 @@ pub const syscalls = struct {
         pub fn post_window_event(
             window: abi.Window,
             event: abi.WindowEvent,
-        ) error{SystemResources} {
-            _ = window;
-            _ = event;
-
-            @panic("not implemented yet");
+        ) error{SystemResources}!void {
+            std.log.warn("post_window_event({}, {}) not implemented yet!", .{ window, event });
         }
 
         /// Sends a notification to the provided `desktop`.
@@ -670,9 +667,7 @@ pub const syscalls = struct {
             message: []const u8,
             /// How urgent is the notification to the user?
             severity: abi.NotificationSeverity,
-        ) error{
-            SystemResources,
-        } {
+        ) error{SystemResources}!void {
             _ = desktop;
             _ = message;
             _ = severity;
@@ -682,9 +677,7 @@ pub const syscalls = struct {
         pub const clipboard = struct {
             /// Sets the contents of the clip board.
             /// Takes a mime type as well as the value in the provided format.
-            pub fn set(desktop: abi.Desktop, mime: []const u8, value: []const u8) error{
-                SystemResources,
-            } {
+            pub fn set(desktop: abi.Desktop, mime: []const u8, value: []const u8) error{SystemResources}!void {
                 _ = desktop;
                 _ = mime;
                 _ = value;

@@ -6,6 +6,7 @@ pub const userland = @import("ashet-abi-access");
 
 pub const graphics = @import("libashet/graphics.zig");
 pub const input = @import("libashet/input.zig");
+pub const gui = @import("libashet/gui.zig");
 
 pub const is_hosted = builtin.is_test or (builtin.target.os.tag != .other and builtin.target.os.tag != .freestanding);
 

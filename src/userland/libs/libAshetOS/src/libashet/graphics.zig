@@ -5,6 +5,28 @@ const logger = std.log.scoped(.graphics);
 
 pub const agp = @import("agp");
 
+pub const known_colors = struct {
+    pub const black = ColorIndex.get(0x00); // #000000
+    pub const dark_blue = ColorIndex.get(0x01); // #2d1a71
+    pub const blue = ColorIndex.get(0x02); // #3e32d5
+    pub const dark_red = ColorIndex.get(0x03); // #af102e
+    pub const red = ColorIndex.get(0x04); // #e4162b
+    pub const dark_green = ColorIndex.get(0x05); // #0e3e12
+    pub const green = ColorIndex.get(0x06); // #38741a
+    pub const brown = ColorIndex.get(0x07); // #8d4131
+    pub const yellow = ColorIndex.get(0x08); // #ffff40
+    pub const dark_gray = ColorIndex.get(0x09); // #505d6d
+    pub const gray = ColorIndex.get(0x0A); // #7b95a0
+    pub const bright_gray = ColorIndex.get(0x0B); // #a6cfd0
+    pub const violet = ColorIndex.get(0x0C); // #b44cef
+    pub const pink = ColorIndex.get(0x0D); // #e444c3
+    pub const teal = ColorIndex.get(0x0E); // #00bc9f
+    pub const white = ColorIndex.get(0x0F); // #ffffff
+    pub const bright_green = ColorIndex.get(0x10); // #afe356
+    pub const dim_gray = ColorIndex.get(0x11); // #2f3143
+    pub const gold = ColorIndex.get(0x12); // #fbc800
+};
+
 pub const Point = ashet.abi.Point;
 pub const Size = ashet.abi.Size;
 pub const Rectangle = ashet.abi.Rectangle;
@@ -97,6 +119,22 @@ pub const CommandQueue = struct {
         try cq.encoder().draw_line(p1.x, p1.y, p2.x, p2.y, color);
     }
 
+    pub fn draw_horizontal_line(cq: *CommandQueue, left: Point, length: u16, color: ColorIndex) !void {
+        try cq.draw_line(
+            left,
+            Point.new(left.x + @as(u15, @intCast(length)), left.y),
+            color,
+        );
+    }
+
+    pub fn draw_vertical_line(cq: *CommandQueue, top: Point, length: u16, color: ColorIndex) !void {
+        try cq.draw_line(
+            top,
+            Point.new(top.x, top.y + @as(u15, @intCast(length))),
+            color,
+        );
+    }
+
     pub fn draw_rect(cq: *CommandQueue, rectangle: Rectangle, color: ColorIndex) !void {
         try cq.encoder().draw_rect(rectangle.x, rectangle.y, rectangle.width, rectangle.height, color);
     }
@@ -109,7 +147,7 @@ pub const CommandQueue = struct {
         try cq.encoder().draw_text(point.x, point.y, font, color, text);
     }
 
-    pub fn blit_bitmap(cq: *CommandQueue, point: Point, bitmap: Bitmap) !void {
+    pub fn blit_bitmap(cq: *CommandQueue, point: Point, bitmap: *const Bitmap) !void {
         try cq.encoder().blit_bitmap(point.x, point.y, bitmap);
     }
 
@@ -121,7 +159,7 @@ pub const CommandQueue = struct {
         try cq.encoder().update_color(index, r, g, b);
     }
 
-    pub fn blit_partial_bitmap(cq: *CommandQueue, target: Rectangle, src_pos: Point, bitmap: Bitmap) !void {
+    pub fn blit_partial_bitmap(cq: *CommandQueue, target: Rectangle, src_pos: Point, bitmap: *const Bitmap) !void {
         try cq.encoder().blit_partial_bitmap(target.x, target.y, target.width, target.height, src_pos.x, src_pos.y, bitmap);
     }
 

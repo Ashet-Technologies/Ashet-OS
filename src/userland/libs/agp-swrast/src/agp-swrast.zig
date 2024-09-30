@@ -429,22 +429,15 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
             sw.writer().writeAll(text) catch {};
         }
 
-        pub fn blit_bitmap(
-            rast: Rast,
-            point: Point,
-            bitmap: Bitmap,
-        ) void {
-            _ = rast;
-            _ = point;
-            _ = bitmap;
-            logger.info("Rasterizer.blit_bitmap()", .{});
+        pub fn blit_bitmap(rast: Rast, point: Point, bitmap: *const Bitmap) void {
+            return rast.blit_generic_data(point, BitmapWrap{ .bmp = bitmap });
         }
 
-        pub fn blit_framebuffer(
-            rast: Rast,
-            point: Point,
-            framebuffer: FramebufferType,
-        ) void {
+        pub fn blit_framebuffer(rast: Rast, point: Point, framebuffer: FramebufferType) void {
+            return rast.blit_generic_data(point, framebuffer);
+        }
+
+        fn blit_generic_data(rast: Rast, point: Point, framebuffer: anytype) void {
             if (_options.pixel_layout != PixelLayout.row_major)
                 @compileError("unsupported");
 
@@ -456,16 +449,16 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
 
             var buffer: [32]ColorIndex = undefined;
 
-            logger.info("blitting {}x{} @ ({},{}) to ({},{})*({},{})", .{
-                src_cursor.width,
-                src_cursor.height,
-                src_cursor.x,
-                src_cursor.y,
-                dst_cursor.x,
-                dst_cursor.y,
-                dst_cursor.width,
-                dst_cursor.height,
-            });
+            // logger.info("blitting {}x{} @ ({},{}) to ({},{})*({},{})", .{
+            //     src_cursor.width,
+            //     src_cursor.height,
+            //     src_cursor.x,
+            //     src_cursor.y,
+            //     dst_cursor.x,
+            //     dst_cursor.y,
+            //     dst_cursor.width,
+            //     dst_cursor.height,
+            // });
 
             // @breakpoint();
 
@@ -479,15 +472,15 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
 
                 var x: u16 = 0;
                 while (x < src_cursor.width) {
-                    const len: u16 = @min(@as(u16, buffer.len), dst_cursor.width - x);
+                    const len: u16 = @min(@as(u16, buffer.len), src_cursor.width - x);
 
-                    logger.info("({},{}): copy {}", .{ x, y, len });
-                    
+                    // logger.info("({},{}): copy {}", .{ x, y, len });
+
                     framebuffer.fetch_pixels(src_line_cursor, buffer[0..len]);
                     rast.blit_pixels(dst_line_cursor, buffer[0..len]);
 
-                    _ = src_line_cursor.shift_right(len);
-                    _ = dst_line_cursor.shift_right(len);
+                    std.debug.assert(src_line_cursor.shift_right(len) == len);
+                    std.debug.assert(dst_line_cursor.shift_right(len) == len);
 
                     x += len;
                 }
@@ -513,13 +506,13 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
             rast: Rast,
             target: Rectangle,
             src_pos: Point,
-            bitmap: Bitmap,
+            bitmap: *const Bitmap,
         ) void {
             _ = rast;
             _ = target;
             _ = src_pos;
             _ = bitmap;
-            logger.info("Rasterizer.blit_bitmap()", .{});
+            logger.info("Rasterizer.blit_partial_bitmap()", .{});
         }
 
         pub fn blit_partial_framebuffer(
@@ -532,7 +525,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
             _ = target;
             _ = src_pos;
             _ = framebuffer;
-            logger.info("Rasterizer.blit_framebuffer()", .{});
+            logger.info("Rasterizer.blit_partial_framebuffer()", .{});
         }
 
         pub fn screen_writer(fb: Rast, x: i16, y: i16, font: *const fonts.FontInstance, color: ColorIndex, max_width: ?u15) ScreenWriter {
@@ -784,6 +777,28 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
     };
 }
 
+/// Wrapper around agp.Bitmap that fulfils the requirements
+/// of a fetch framebuffer.
+///
+/// This allows us to use the same source for both data structures.
+const BitmapWrap = struct {
+    const Cursor = PixelCursor(.row_major);
+
+    bmp: *const Bitmap,
+
+    pub fn create_cursor(wrap: BitmapWrap) Cursor {
+        return .{
+            .width = wrap.bmp.width,
+            .height = wrap.bmp.height,
+            .stride = wrap.bmp.stride,
+        };
+    }
+
+    pub fn fetch_pixels(wrap: BitmapWrap, cursor: Cursor, pixels: []ColorIndex) void {
+        @memcpy(pixels, wrap.bmp.pixels[cursor.offset..][0..pixels.len]);
+    }
+};
+
 /// A structure that allows incremental modifications to a framebuffer layout
 /// with configurable pixel layout.
 ///
@@ -822,6 +837,13 @@ pub fn PixelCursor(comptime _layout: PixelLayout) type {
         /// Moves the cursor to (x, y) and returns `true` if inside bounds.
         pub fn move(pc: *Cursor, x: usize, y: usize) bool {
             defer pc.check_consistency();
+
+            // logger.debug("move({},{}) @ ({},{})", .{
+            //     pc.x,
+            //     pc.y,
+            //     pc.width,
+            //     pc.height,
+            // });
 
             if (x >= pc.width or y >= pc.height)
                 return false;
@@ -892,6 +914,12 @@ pub fn PixelCursor(comptime _layout: PixelLayout) type {
 
         /// Performs a Debug-only consistency check which
         inline fn check_consistency(pc: Cursor) void {
+            // logger.debug("({},{}) < ({}x{})", .{
+            //     pc.x,
+            //     pc.y,
+            //     pc.width,
+            //     pc.height,
+            // });
             std.debug.assert(pc.x <= pc.width);
             std.debug.assert(pc.y <= pc.height);
             const offset = switch (layout) {

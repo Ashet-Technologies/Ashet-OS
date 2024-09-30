@@ -10,7 +10,19 @@ pub const text_format = @import("text_format.zig");
 pub const ColorIndex = ashet.ColorIndex;
 pub const Framebuffer = ashet.Framebuffer;
 pub const Font = ashet.Font;
-pub const Bitmap = *opaque {};
+
+/// A bitmap is a typical row-major organized data structure
+/// that stores pixel data in host memory.
+///
+/// The memory it points to is read-only to allow static bitmaps,
+/// but it isn't required to be never mutated.
+pub const Bitmap = struct {
+    pixels: [*]const ColorIndex,
+    width: u16,
+    height: u16,
+    stride: usize,
+    transparency_key: ?ColorIndex,
+};
 
 pub const CommandByte = enum(u8) {
     clear = 0x00,
@@ -227,12 +239,12 @@ pub fn Encoder(Writer: type) type {
             enc: Enc,
             x: i16,
             y: i16,
-            bitmap: Bitmap,
+            bitmap: *const Bitmap,
         ) EncError!void {
             try enc.enc_cmd(.blit_bitmap);
             try enc.enc_coord(x);
             try enc.enc_coord(y);
-            try enc.enc_handle(Bitmap, bitmap);
+            try enc.enc_ptr(*const Bitmap, bitmap);
         }
 
         pub fn blit_framebuffer(
@@ -269,7 +281,7 @@ pub fn Encoder(Writer: type) type {
             height: u16,
             src_x: i16,
             src_y: i16,
-            bitmap: Bitmap,
+            bitmap: *const Bitmap,
         ) EncError!void {
             try enc.enc_cmd(.blit_partial_bitmap);
             try enc.enc_coord(x);
@@ -278,7 +290,7 @@ pub fn Encoder(Writer: type) type {
             try enc.enc_size(height);
             try enc.enc_coord(src_x);
             try enc.enc_coord(src_y);
-            try enc.enc_handle(Bitmap, bitmap);
+            try enc.enc_ptr(*const Bitmap, bitmap);
         }
 
         pub fn blit_partial_framebuffer(
@@ -416,7 +428,7 @@ pub fn Decoder(Reader: type) type {
                     .blit_bitmap = .{
                         .x = try dec.fetch_coord(),
                         .y = try dec.fetch_coord(),
-                        .bitmap = try dec.fetch_handle(Bitmap),
+                        .bitmap = try dec.fetch_ptr(*const Bitmap),
                     },
                 },
                 .blit_framebuffer => .{
@@ -442,7 +454,7 @@ pub fn Decoder(Reader: type) type {
                         .height = try dec.fetch_size(),
                         .src_x = try dec.fetch_coord(),
                         .src_y = try dec.fetch_coord(),
-                        .bitmap = try dec.fetch_handle(Bitmap),
+                        .bitmap = try dec.fetch_ptr(*const Bitmap),
                     },
                 },
                 .blit_partial_framebuffer => .{
@@ -572,7 +584,7 @@ pub const Command = union(CommandByte) {
     pub const BlitBitmap = struct {
         x: i16,
         y: i16,
-        bitmap: Bitmap,
+        bitmap: *const Bitmap,
     };
 
     pub const BlitFramebuffer = struct {
@@ -595,7 +607,7 @@ pub const Command = union(CommandByte) {
         height: u16,
         src_x: i16,
         src_y: i16,
-        bitmap: Bitmap,
+        bitmap: *const Bitmap,
     };
 
     pub const BlitPartialFramebuffer = struct {

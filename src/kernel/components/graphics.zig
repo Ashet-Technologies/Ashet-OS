@@ -217,8 +217,6 @@ pub fn get_system_font(font_name: []const u8) error{FileNotFound}!*Font {
 }
 
 fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.Inputs) ashet.abi.draw.Render.Error!ashet.abi.draw.Render.Outputs {
-    logger.info("render sync!", .{});
-
     const fb = ashet.resources.resolve(Framebuffer, call.resource_owner, inputs.target.as_resource()) catch |err| return switch (err) {
         error.InvalidHandle,
         error.TypeMismatch,
@@ -253,7 +251,7 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
 
         var decoder = agp.decoder(fbs.reader());
         while (decoder.next() catch unreachable) |cmd| {
-            logger.debug("execute {s}", .{@tagName(cmd)});
+            // logger.debug("execute {s}: {}", .{ @tagName(cmd), cmd });
             switch (cmd) {
                 .draw_text => |draw_text| {
                     const font = ashet.resources.resolve(Font, call.resource_owner, draw_text.font.as_resource()) catch |err| switch (err) {

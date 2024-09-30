@@ -3,6 +3,7 @@ const ashet = @import("ashet");
 
 pub usingnamespace ashet.core;
 
+const logger = std.log.scoped(.desktop);
 const abi = ashet.abi;
 const syscalls = ashet.userland;
 
@@ -15,12 +16,14 @@ const Color = ashet.abi.Color;
 
 // Application logic:
 
+const icons = @import("icons.zig");
 const apps = @import("apps.zig");
+const themes = @import("theme.zig");
 
-const WindowList = std.DoublyLinkedList(void);
-const WindowNode = WindowList.Node;
+const WindowManager = @import("WindowManager.zig");
+const DamageTracking = @import("DamageTracking.zig");
 
-var active_windows: WindowList = .{};
+var window_manager: WindowManager = undefined;
 
 pub fn main() !void {
     std.log.info("classic desktop startup...", .{});
@@ -66,6 +69,23 @@ pub fn main() !void {
     const default_font = try ashet.graphics.get_system_font("sans-6");
     defer default_font.release();
 
+    const current_theme = themes.Theme{
+        .title_font = default_font,
+        .dark = ashet.graphics.known_colors.dark_gray,
+        .active_window = .{
+            .border = ashet.graphics.known_colors.dark_blue,
+            .font = ashet.graphics.known_colors.white,
+            .title = ashet.graphics.known_colors.blue,
+        },
+        .inactive_window = .{
+            .border = ashet.graphics.known_colors.dim_gray,
+            .font = ashet.graphics.known_colors.bright_gray,
+            .title = ashet.graphics.known_colors.dark_gray,
+        },
+        .desktop_color = ashet.graphics.known_colors.teal,
+        .window_fill = ashet.graphics.known_colors.gray,
+    };
+
     var render_queue = try ashet.graphics.CommandQueue.init(ashet.process.mem.allocator());
     defer render_queue.deinit();
 
@@ -79,34 +99,44 @@ pub fn main() !void {
     // Do load available applications before we "open" the desktop:
     try apps.init();
 
+    var damage_tracking = DamageTracking.init(
+        Rectangle.new(Point.zero, fb_size),
+    );
+
+    window_manager = WindowManager.init(&damage_tracking);
+    defer window_manager.deinit();
+
     const desktop = try syscalls.gui.create_desktop("Classic", &.{
-        .window_data_size = @sizeOf(WindowData),
+        .window_data_size = @sizeOf(WindowManager.Window),
         .handle_event = handle_desktop_event,
     });
     defer desktop.release();
 
-    // const desktop_proc = try ashet.overlapped.performOne(abi.process.Spawn, .{
-    //     .dir = apps_dir.dir,
-    //     .path_ptr = "hello-gui/code",
-    //     .path_len = 14,
-    //     .argv_ptr = &[_]abi.SpawnProcessArg{
-    //         abi.SpawnProcessArg.string("--desktop"),
-    //         abi.SpawnProcessArg.resource(desktop.as_resource()),
-    //     },
-    //     .argv_len = 2,
-    // });
-    // desktop_proc.process.release(); // we're not interested in "holding" onto process
+    var apps_dir = try ashet.fs.Directory.openDrive(.system, "apps");
+    defer apps_dir.close();
+
+    const desktop_proc = try ashet.overlapped.performOne(abi.process.Spawn, .{
+        .dir = apps_dir.handle,
+        .path_ptr = "hello-gui/code",
+        .path_len = 14,
+        .argv_ptr = &[_]abi.SpawnProcessArg{
+            abi.SpawnProcessArg.string("--desktop"),
+            abi.SpawnProcessArg.resource(desktop.as_resource()),
+        },
+        .argv_len = 2,
+    });
+    desktop_proc.process.release(); // we're not interested in "holding" onto process
 
     var cursor: Point = Point.new(
         @intCast(fb_size.width / 2),
         @intCast(fb_size.height / 2),
     );
 
-    var requires_repaint = true;
+    damage_tracking.invalidate_screen();
 
     while (true) {
-        if (requires_repaint) {
-            requires_repaint = false;
+        if (damage_tracking.is_tainted()) {
+            defer damage_tracking.clear();
 
             const black = ColorIndex.get(0x0);
             const blue = ColorIndex.get(0x2);
@@ -114,14 +144,17 @@ pub fn main() !void {
             // const green = ColorIndex.get(0x6);
             const white = ColorIndex.get(0xF);
 
-            try render_queue.clear(white);
+            // try render_queue.clear(window_manager.current_theme.desktop_color);
+
+            for (damage_tracking.tainted_regions()) |rect| {
+                try render_queue.fill_rect(rect, white); // window_manager.current_theme.desktop_color);
+            }
 
             // Draw desktop:
             {
                 var iter = apps.iterate(fb_size);
 
                 while (iter.next()) |desktop_icon| {
-                    std.log.info("{*}", .{desktop_icon.icon});
                     try render_queue.blit_framebuffer(
                         desktop_icon.bounds.corner(.top_left),
                         desktop_icon.icon,
@@ -141,24 +174,9 @@ pub fn main() !void {
                 }
             }
 
-            const cursor_br = Point.new(cursor.x +| 10, cursor.y +| 5);
-            const cursor_bl = Point.new(cursor.x +| 5, cursor.y +| 10);
+            try window_manager.render(&render_queue, current_theme);
 
-            try render_queue.draw_line(
-                cursor,
-                cursor_br,
-                black,
-            );
-            try render_queue.draw_line(
-                cursor,
-                cursor_bl,
-                black,
-            );
-            try render_queue.draw_line(
-                cursor_br,
-                cursor_bl,
-                black,
-            );
+            try Cursor.paint(&render_queue, cursor, black);
 
             try render_queue.submit(video_fb, .{});
         }
@@ -180,14 +198,55 @@ pub fn main() !void {
                 );
             },
 
-            else => |evt| std.log.warn("unhandled input event: {}", .{evt}),
+            else => {},
         }
 
         if (!cursor.eql(prev_cursor)) {
-            requires_repaint = true;
+            damage_tracking.invalidate_region(Rectangle{
+                .x = prev_cursor.x,
+                .y = prev_cursor.y,
+                .width = Cursor.width,
+                .height = Cursor.height,
+            });
+            damage_tracking.invalidate_region(Rectangle{
+                .x = cursor.x,
+                .y = cursor.y,
+                .width = Cursor.width,
+                .height = Cursor.height,
+            });
         }
+
+        try window_manager.handle_event(cursor, event);
+
+        try window_manager.handle_after_events();
     }
 }
+
+const Cursor = struct {
+    pub const width = 11;
+    pub const height = 11;
+
+    pub fn paint(q: *ashet.graphics.CommandQueue, point: Point, fg: ColorIndex) !void {
+        const cursor_br = Point.new(point.x +| 10, point.y +| 5);
+        const cursor_bl = Point.new(point.x +| 5, point.y +| 10);
+
+        try q.draw_line(
+            point,
+            cursor_br,
+            fg,
+        );
+        try q.draw_line(
+            point,
+            cursor_bl,
+            fg,
+        );
+        try q.draw_line(
+            cursor_br,
+            cursor_bl,
+            fg,
+        );
+    }
+};
 
 fn handle_desktop_event(desktop: abi.Desktop, event: *const abi.DesktopEvent) callconv(.C) void {
     std.log.debug("handle desktop event of type {s}", .{@tagName(event.event_type)});
@@ -195,23 +254,16 @@ fn handle_desktop_event(desktop: abi.Desktop, event: *const abi.DesktopEvent) ca
         .create_window => {
             const window = event.create_window.window;
             std.log.info("handle_desktop_event.create_window({})", .{window});
-
-            const data = WindowData.from_handle(window);
-            active_windows.append(&data.window_node);
-
-            // TODO: Set up basic structure
-
-            // TODO: Redraw invalidated desktop region
+            window_manager.create_window(window) catch |err| {
+                logger.err("failed to handle window creation: {s}", .{@errorName(err)});
+            };
         },
 
         .destroy_window => {
             const window = event.create_window.window;
             std.log.info("handle_desktop_event.destroy_window({})", .{window});
 
-            const data = WindowData.from_handle(window);
-            active_windows.remove(&data.window_node);
-
-            // TODO: Redraw invalidated desktop region
+            window_manager.destroy_window(window);
         },
 
         .show_message_box => {
@@ -242,13 +294,3 @@ fn handle_desktop_event(desktop: abi.Desktop, event: *const abi.DesktopEvent) ca
 
     _ = desktop;
 }
-
-const WindowData = struct {
-    window_node: WindowNode = .{ .data = {} },
-
-    pub fn from_handle(handle: ashet.abi.Window) *WindowData {
-        return @ptrCast(
-            syscalls.gui.get_desktop_data(handle) catch @panic("kernel bug"),
-        );
-    }
-};

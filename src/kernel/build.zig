@@ -144,7 +144,7 @@ pub fn build(b: *std.Build) void {
     // TODO(fqu): kernel_exe.root_module.code_model = .small;
     kernel_exe.bundle_compiler_rt = true;
     kernel_exe.rdynamic = true; // Prevent the compiler from garbage collecting exported symbols
-    kernel_exe.root_module.single_threaded = (kernel_exe.rootModuleTarget().os.tag == .freestanding);
+    kernel_exe.root_module.single_threaded = !machine_id.is_hosted();
     kernel_exe.root_module.omit_frame_pointer = false;
     kernel_exe.root_module.strip = false; // never strip debug info
     if (optimize == .Debug) {

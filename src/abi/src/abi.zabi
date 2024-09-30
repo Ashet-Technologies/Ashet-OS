@@ -2293,11 +2293,27 @@ pub const Rectangle = extern struct {
             boundary.contains(Point.new(region.x + @as(u15, @intCast(region.width)) - 1, region.y + @as(u15, @intCast(region.height)) - 1));
     }
 
+    /// Returns true if `a` and `b` overlap.
     pub fn intersects(a: Rectangle, b: Rectangle) bool {
         return a.x + @as(u15, @intCast(a.width)) >= b.x and
             a.y + @as(u15, @intCast(a.height)) >= b.y and
             a.x <= b.x + @as(u15, @intCast(b.width)) and
             a.y <= b.y + @as(u15, @intCast(b.height));
+    }
+
+    /// Returns the overlapping region of `a` and `b`.
+    pub fn overlap(a: Rectangle, b: Rectangle) Rectangle {
+        const _left = @max(a.left(), b.left());
+        const _right = @min(a.right(), b.right());
+        const _top = @max(a.top(), b.top());
+        const _bottom = @min(a.bottom(), b.bottom());
+
+        return .{
+            .x = _left,
+            .y = _top,
+            .width = @intCast(_right -| _left),
+            .height = @intCast(_bottom -| _top),
+        };
     }
 
     pub fn eql(a: Rectangle, b: Rectangle) bool {

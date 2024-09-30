@@ -13,57 +13,11 @@ const Color = ashet.abi.Color;
 const Bitmap = gui.Bitmap;
 const Framebuffer = gui.Framebuffer;
 
-
 const AppList = std.BoundedArray(App, 15);
 
 var apps: AppList = .{};
 var selected_app: ?AppInfo = null;
 var last_click: Point = undefined;
-
-const AppInfo = struct {
-    app: *App,
-    bounds: Rectangle,
-    index: usize,
-};
-const AppIterator = struct {
-    const padding = 8;
-
-    index: usize = 0,
-    bounds: Rectangle,
-
-    pub fn init() AppIterator {
-        return AppIterator{
-            .bounds = Rectangle{
-                .x = 8,
-                .y = 8,
-                .width = Icon.width,
-                .height = Icon.height,
-            },
-        };
-    }
-
-    pub fn next(self: *AppIterator) ?AppInfo {
-        const lower_limit = framebuffer.height - self.bounds.height - 8 - 4 - 11;
-
-        if (self.index >= apps.len)
-            return null;
-
-        const info = AppInfo{
-            .app = &apps.buffer[self.index],
-            .index = self.index,
-            .bounds = self.bounds,
-        };
-        self.index += 1;
-
-        self.bounds.y += (Icon.height + padding);
-        if (self.bounds.y >= lower_limit) {
-            self.bounds.y = 8;
-            self.bounds.x += (Icon.width + padding);
-        }
-
-        return info;
-    }
-};
 
 fn idOrNull(ai: ?AppInfo) ?usize {
     return if (ai) |a| a.index else null;
@@ -91,12 +45,6 @@ fn sendClick(point: Point) void {
     }
 
     selected_app = selected;
-}
-
-fn startApp(app: App) !void {
-    try ashet.apps.startApp(.{
-        .name = app.getName(),
-    });
 }
 
 fn paint() void {
