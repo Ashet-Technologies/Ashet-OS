@@ -483,6 +483,42 @@ pub const syscalls = struct {
             return handle.unsafe_cast(.window);
         }
 
+        pub fn get_window_title(window: abi.Window, out_title: *[]const u8) error{InvalidHandle}!void {
+            _, const win = try resolve_typed_resource(ashet.gui.Window, window.as_resource());
+            out_title.* = win.title;
+        }
+
+        pub fn get_window_size(window: abi.Window) error{InvalidHandle}!abi.Size {
+            _, const win = try resolve_typed_resource(ashet.gui.Window, window.as_resource());
+            return win.size;
+        }
+
+        pub fn get_window_min_size(window: abi.Window) error{InvalidHandle}!abi.Size {
+            _, const win = try resolve_typed_resource(ashet.gui.Window, window.as_resource());
+            return win.min_size;
+        }
+
+        pub fn get_window_max_size(window: abi.Window) error{InvalidHandle}!abi.Size {
+            _, const win = try resolve_typed_resource(ashet.gui.Window, window.as_resource());
+            return win.max_size;
+        }
+
+        pub fn get_window_flags(window: abi.Window) error{InvalidHandle}!abi.CreateWindowFlags {
+            _, const win = try resolve_typed_resource(ashet.gui.Window, window.as_resource());
+            return .{
+                .popup = win.is_popup,
+            };
+        }
+
+        pub fn set_window_size(window: abi.Window, size: abi.Size) error{InvalidHandle}!abi.Size {
+            _, const win = try resolve_typed_resource(ashet.gui.Window, window.as_resource());
+            win.size = abi.Size.new(
+                std.math.clamp(size.width, win.min_size.height, win.max_size.width),
+                std.math.clamp(size.height, win.min_size.height, win.max_size.height),
+            );
+            return win.size;
+        }
+
         /// Resizes a window to the new size.
         pub fn resize_window(window: abi.Window, size: abi.Size) void {
             _ = window;

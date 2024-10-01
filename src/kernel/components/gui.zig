@@ -100,7 +100,7 @@ pub const Desktop = struct {
         ashet.memory.type_pool(Desktop).free(desktop);
     }
 
-    fn process_event(desktop: *Desktop, event: ashet.abi.DesktopEvent) void {
+    pub fn process_event(desktop: *Desktop, event: ashet.abi.DesktopEvent) void {
         const desktop_handle = ashet.resources.get_handle(desktop.server_process, &desktop.system_resource) orelse @panic("process_event called for a process that does not own the desktop");
 
         ashet.multi_tasking.call_inside_process(
@@ -208,6 +208,10 @@ pub const Window = struct {
 
         window.window_data = window.associated_memory.allocator().alignedAlloc(u8, 16, desktop.window_data_size) catch return error.SystemResources;
         @memset(window.window_data, 0);
+
+        logger.info("create window ({},{})", .{
+            window.max_size.width, window.max_size.height,
+        });
 
         window.pixels = window.associated_memory.allocator().alignedAlloc(ashet.abi.ColorIndex, 4, @as(u32, window.max_size.width) * window.max_size.height) catch return error.SystemResources;
 

@@ -267,6 +267,11 @@ fn handle_resize_window_mouse_event(wm: *WindowManager, mouse_point: Point, even
         rect.height = @intCast(std.math.clamp(@as(i17, rect.height) + dy, min.height, max.height));
 
         if (!rect.size().eql(previous)) {
+            const new_size = try ashet.gui.set_window_size(action.window.handle, rect.size());
+
+            rect.width = new_size.width;
+            rect.height = new_size.height;
+
             wm.damage_tracking.invalidate_region(prev_screen_rect);
             wm.damage_tracking.invalidate_region(action.window.screenRectangle());
             action.window.pushEvent(.window_resizing);
@@ -377,10 +382,11 @@ pub fn render(wm: *WindowManager, q: *ashet.graphics.CommandQueue, theme: themes
                 ),
                 theme.title_font,
                 style.font,
-                window.title(),
+                window.get_title(),
                 // TODO(fqu): title_width - 2,
             );
 
+            logger.info("client_rectangle={}", .{client_rectangle});
             try q.blit_partial_framebuffer(
                 client_rectangle,
                 Point.zero,
@@ -413,9 +419,9 @@ pub fn create_window(
     // TODO: Fetch initial info block
 
     // const caption: []const u8 = "Example Window";
-    const min: ashet.abi.Size = Size.new(100, 100);
-    const max: ashet.abi.Size = Size.new(300, 200);
-    const initial_size: Size = Size.new(200, 150);
+    const min: ashet.abi.Size = ashet.gui.get_window_min_size(window_handle) catch unreachable;
+    const max: ashet.abi.Size = ashet.gui.get_window_max_size(window_handle) catch unreachable;
+    const initial_size: Size = ashet.gui.get_window_size(window_handle) catch unreachable;
     const flags: ashet.abi.CreateWindowFlags = .{
         .popup = false,
     };
@@ -614,9 +620,8 @@ pub const Window = struct {
         };
     }
 
-    pub fn title(window: Window) [:0]const u8 {
-        _ = window;
-        return "untitled";
+    pub fn get_title(window: Window) []const u8 {
+        return ashet.gui.get_window_title(window.handle) catch unreachable;
     }
 
     // pub fn setTitle(window: *Window, text: []const u8) !void {
@@ -778,7 +783,7 @@ const MinimizedIterator = struct {
     fn next(iter: *MinimizedIterator) ?MinimizedWindow {
         const window = iter.inner.next() orelse return null;
 
-        const title = window.title();
+        const title = window.get_title();
         const width = @as(u15, @intCast(@min(6 * title.len + 2 + 11 + 10, 75)));
         defer iter.dx += (width + 4);
 

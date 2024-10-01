@@ -156,6 +156,20 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
                 ),
             }
         }
+        pub fn update_color(
+            rast: Rast,
+            index: ColorIndex,
+            r: u8,
+            g: u8,
+            b: u8,
+        ) void {
+            _ = rast;
+            _ = index;
+            _ = r;
+            _ = g;
+            _ = b;
+            logger.info("Rasterizer.update_color()", .{});
+        }
 
         pub fn clear(
             rast: Rast,
@@ -430,110 +444,11 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
         }
 
         pub fn blit_bitmap(rast: Rast, point: Point, bitmap: *const Bitmap) void {
-            return rast.blit_generic_data(point, BitmapWrap{ .bmp = bitmap });
+            return rast.blit_generic_data(point, Point.zero, null, BitmapWrap{ .bmp = bitmap });
         }
 
         pub fn blit_framebuffer(rast: Rast, point: Point, framebuffer: FramebufferType) void {
-            return rast.blit_generic_data(point, framebuffer);
-        }
-
-        fn blit_generic_data(rast: Rast, point: Point, framebuffer: anytype) void {
-            if (_options.pixel_layout != PixelLayout.row_major)
-                @compileError("unsupported");
-
-            var src_cursor: Cursor = framebuffer.create_cursor();
-            var dst_cursor: Cursor = rast.get_cursor();
-
-            if (point.x >= dst_cursor.width)
-                return;
-            if (point.y >= dst_cursor.height)
-                return;
-
-            // Compute the screen-local start:
-            const start_x: u16 = @intCast(@max(0, point.x));
-            const start_y: u16 = @intCast(@max(0, point.y));
-            std.debug.assert(dst_cursor.move(start_x, start_y));
-
-            // Compute the offset to the screen start:
-            const dx: u16 = @intCast(@max(0, -point.x));
-            const dy: u16 = @intCast(@max(0, -point.y));
-
-            // If we would never paint anything from src, discard early:
-            if (dx >= src_cursor.width)
-                return;
-            if (dy >= src_cursor.width)
-                return;
-            std.debug.assert(src_cursor.move(dx, dy));
-
-            var buffer: [32]ColorIndex = undefined;
-
-            // logger.info("blitting {}x{} @ ({},{}) to ({},{})*({},{})", .{
-            //     src_cursor.width,
-            //     src_cursor.height,
-            //     src_cursor.x,
-            //     src_cursor.y,
-            //     dst_cursor.x,
-            //     dst_cursor.y,
-            //     dst_cursor.width,
-            //     dst_cursor.height,
-            // });
-
-            // @breakpoint();
-
-            var y: u16 = dy;
-            copy_row_loop: while (y < src_cursor.height) : (y += 1) {
-                var src_line_cursor = src_cursor;
-                var dst_line_cursor = dst_cursor;
-
-                var x: u16 = dx;
-                copy_line_loop: while (x < src_cursor.width) {
-                    const len: u16 = @min(@as(u16, buffer.len), src_cursor.width - x);
-
-                    // logger.info("({},{}): copy {}", .{ x, y, len });
-
-                    framebuffer.fetch_pixels(src_line_cursor, buffer[0..len]);
-
-                    // src must always be big enough, as we're iterating over src:
-                    std.debug.assert(src_line_cursor.shift_right(len) == len);
-
-                    // create a copy of our cursor, then advance the other one.
-                    // only copy as much as we really need:
-                    const target = dst_line_cursor;
-
-                    const row_inc = dst_line_cursor.shift_right(len);
-                    rast.blit_pixels(target, buffer[0..row_inc]);
-                    // dst may be truncated, then we cancel:
-                    if (row_inc < len)
-                        break :copy_line_loop;
-
-                    x += len;
-                }
-
-                // src must always be big enough, as we're iterating over src:
-                std.debug.assert(src_cursor.shift_down(1) == 1);
-
-                // dst may be truncated/out of screen:
-                switch (dst_cursor.shift_down(1)) {
-                    0 => break :copy_row_loop,
-                    1 => {},
-                    else => unreachable,
-                }
-            }
-        }
-
-        pub fn update_color(
-            rast: Rast,
-            index: ColorIndex,
-            r: u8,
-            g: u8,
-            b: u8,
-        ) void {
-            _ = rast;
-            _ = index;
-            _ = r;
-            _ = g;
-            _ = b;
-            logger.info("Rasterizer.update_color()", .{});
+            return rast.blit_generic_data(point, Point.zero, null, framebuffer);
         }
 
         pub fn blit_partial_bitmap(
@@ -542,11 +457,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
             src_pos: Point,
             bitmap: *const Bitmap,
         ) void {
-            _ = rast;
-            _ = target;
-            _ = src_pos;
-            _ = bitmap;
-            logger.info("Rasterizer.blit_partial_bitmap()", .{});
+            return rast.blit_generic_data(target.position(), src_pos, target.size(), BitmapWrap{ .bmp = bitmap });
         }
 
         pub fn blit_partial_framebuffer(
@@ -555,11 +466,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
             src_pos: Point,
             framebuffer: FramebufferType,
         ) void {
-            _ = rast;
-            _ = target;
-            _ = src_pos;
-            _ = framebuffer;
-            logger.info("Rasterizer.blit_partial_framebuffer()", .{});
+            return rast.blit_generic_data(target.position(), src_pos, target.size(), framebuffer);
         }
 
         pub fn screen_writer(fb: Rast, x: i16, y: i16, font: *const fonts.FontInstance, color: ColorIndex, max_width: ?u15) ScreenWriter {
@@ -613,6 +520,105 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
         //         }
         //     }
         // }
+
+        const BlitDestination = union(enum) {
+            point: Point,
+            rect: Rectangle,
+        };
+        fn blit_generic_data(rast: Rast, target_pos: Point, source_pos: Point, optional_size: ?Size, framebuffer: anytype) void {
+            if (_options.pixel_layout != PixelLayout.row_major)
+                @compileError("unsupported");
+
+            var src_cursor: Cursor = framebuffer.create_cursor();
+            var dst_cursor: Cursor = rast.get_cursor();
+
+            if (target_pos.x >= dst_cursor.width)
+                return;
+            if (target_pos.y >= dst_cursor.height)
+                return;
+
+            // Compute the screen-local start:
+            const start_x: u16 = @intCast(@max(0, target_pos.x));
+            const start_y: u16 = @intCast(@max(0, target_pos.y));
+            std.debug.assert(dst_cursor.move(start_x, start_y));
+
+            // Compute the offset to the screen start:
+            const dx: u16 = @intCast(source_pos.x + @max(0, -target_pos.x));
+            const dy: u16 = @intCast(source_pos.y + @max(0, -target_pos.y));
+
+            // If we would never paint anything from src, discard early:
+            if (dx >= src_cursor.width)
+                return;
+            if (dy >= src_cursor.width)
+                return;
+            std.debug.assert(src_cursor.move(dx, dy));
+
+            const size = if (optional_size) |size|
+                Size.new(
+                    @min(src_cursor.width, size.width),
+                    @min(src_cursor.height, size.height),
+                )
+            else
+                Size.new(
+                    src_cursor.width,
+                    src_cursor.height,
+                );
+
+            var buffer: [32]ColorIndex = undefined;
+
+            logger.info("blitting {}x{} @ ({},{}) to ({},{})*({},{})", .{
+                src_cursor.width, src_cursor.height,
+                src_cursor.x,     src_cursor.y,
+                dst_cursor.x,     dst_cursor.y,
+                dst_cursor.width, dst_cursor.height,
+            });
+            logger.info("({},{})x({},{})", .{
+                dx,         dy,
+                size.width, size.height,
+            });
+
+            // @breakpoint();
+
+            var y: u16 = dy;
+            copy_row_loop: while (y < size.height) : (y += 1) {
+                var src_line_cursor = src_cursor;
+                var dst_line_cursor = dst_cursor;
+
+                var x: u16 = dx;
+                copy_line_loop: while (x < size.width) {
+                    const len: u16 = @min(@as(u16, buffer.len), size.width - x);
+
+                    // logger.info("({},{}): copy {}", .{ x, y, len });
+
+                    framebuffer.fetch_pixels(src_line_cursor, buffer[0..len]);
+
+                    // src must always be big enough, as we're iterating over src:
+                    std.debug.assert(src_line_cursor.shift_right(len) == len);
+
+                    // create a copy of our cursor, then advance the other one.
+                    // only copy as much as we really need:
+                    const target = dst_line_cursor;
+
+                    const row_inc = dst_line_cursor.shift_right(len);
+                    rast.blit_pixels(target, buffer[0..row_inc]);
+                    // dst may be truncated, then we cancel:
+                    if (row_inc < len)
+                        break :copy_line_loop;
+
+                    x += len;
+                }
+
+                // src must always be big enough, as we're iterating over src:
+                std.debug.assert(src_cursor.shift_down(1) == 1);
+
+                // dst may be truncated/out of screen:
+                switch (dst_cursor.shift_down(1)) {
+                    0 => break :copy_row_loop,
+                    1 => {},
+                    else => unreachable,
+                }
+            }
+        }
 
         /// Returns an unset cursor to the backing framebuffer.
         fn get_cursor(rast: Rast) Cursor {

@@ -22,13 +22,14 @@ pub fn main() !void {
 
     std.log.info("using desktop {}", .{desktop});
 
-    const window = try ashet.userland.gui.create_window(
+    const window = try ashet.gui.create_window(
         desktop,
-        "Hello GUI",
-        Size.new(100, 70),
-        Size.new(100, 70),
-        Size.new(100, 70),
-        .{},
+        .{
+            .title = "Hello GUI",
+            .min_size = Size.new(100, 100),
+            .max_size = Size.new(300, 200),
+            .initial_size = Size.new(200, 150),
+        },
     );
     defer window.release();
 

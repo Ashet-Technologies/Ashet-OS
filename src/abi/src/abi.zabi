@@ -902,6 +902,21 @@ const gui = struct {
         InvalidHandle,
     }!Window;
 
+    extern fn get_window_title(window: Window, out_title: *[]const u8) error{InvalidHandle}!void;
+
+    extern fn get_window_size(window: Window) error{InvalidHandle}!Size;
+
+    extern fn get_window_min_size(window: Window) error{InvalidHandle}!Size;
+
+    extern fn get_window_max_size(window: Window) error{InvalidHandle}!Size;
+
+    extern fn get_window_flags(window: Window) error{InvalidHandle}!CreateWindowFlags;
+
+    /// Sets the `size` of `window` and returns the new actual size.
+    /// NOTE: This event is meant to be used from desktop APIs and will not automatically
+    ///       notify the window of the resize event.
+    extern fn set_window_size(window: Window, size: Size) error{InvalidHandle}!Size;
+
     /// Resizes a window to the new size.
     extern fn resize_window(Window, size: Size) void;
 
