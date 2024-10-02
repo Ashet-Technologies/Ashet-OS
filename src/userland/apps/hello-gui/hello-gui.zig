@@ -35,7 +35,21 @@ pub fn main() !void {
 
     std.log.info("created window: {}", .{window});
 
-    while (true) {
+    const framebuffer = try ashet.graphics.create_window_framebuffer(window);
+    defer framebuffer.release();
+
+    std.log.info("created framebuffer: {}", .{framebuffer});
+
+    var command_queue = try ashet.graphics.CommandQueue.init(ashet.process.mem.allocator());
+    defer command_queue.deinit();
+
+    try paint(
+        &command_queue,
+        ashet.gui.get_window_size(window) catch unreachable,
+        framebuffer,
+    );
+
+    main_loop: while (true) {
         const event_res = try ashet.overlapped.performOne(ashet.abi.gui.GetWindowEvent, .{
             .window = window,
         });
@@ -49,16 +63,42 @@ pub fn main() !void {
             .mouse_motion,
             .mouse_button_press,
             .mouse_button_release,
-            .window_close,
             .window_minimize,
             .window_restore,
             .window_moving,
             .window_moved,
-            .window_resizing,
-            .window_resized,
             => {
                 std.log.info("unhandled ui event: {}", .{event_res.event.event_type});
             },
+
+            .window_close => break :main_loop,
+
+            .window_resizing,
+            .window_resized,
+            => {
+                // we changed size, so we have to resize our window content:
+                try paint(
+                    &command_queue,
+                    ashet.gui.get_window_size(window) catch unreachable,
+                    framebuffer,
+                );
+            },
         }
     }
+}
+
+fn paint(q: *ashet.graphics.CommandQueue, size: ashet.abi.Size, fb: ashet.graphics.Framebuffer) !void {
+    try q.clear(ashet.graphics.known_colors.brown);
+
+    try q.draw_rect(
+        .{
+            .x = 10,
+            .y = 10,
+            .width = size.width -| 20,
+            .height = size.height -| 20,
+        },
+        ashet.graphics.known_colors.pink,
+    );
+
+    try q.submit(fb, .{});
 }

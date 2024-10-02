@@ -41,8 +41,8 @@ const callbacks = struct {
 
 pub const syscalls = struct {
     pub const resources = struct {
-        pub fn get_type(src_handle: abi.SystemResource) !abi.SystemResource.Type {
-            _, const resource = resolve_base_resource(src_handle) catch return error.BadHandle;
+        pub fn get_type(src_handle: abi.SystemResource) error{InvalidHandle}!abi.SystemResource.Type {
+            _, const resource = resolve_base_resource(src_handle) catch return error.InvalidHandle;
             return resource.type;
         }
 
@@ -696,10 +696,12 @@ pub const syscalls = struct {
         /// Posts an event into the window event queue so the window owner
         /// can handle the event.
         pub fn post_window_event(
-            window: abi.Window,
+            window_handle: abi.Window,
             event: abi.WindowEvent,
-        ) error{SystemResources}!void {
-            std.log.warn("post_window_event({}, {}) not implemented yet!", .{ window, event });
+        ) error{ SystemResources, InvalidHandle }!void {
+            _, const window = try resolve_typed_resource(ashet.gui.Window, window_handle.as_resource());
+
+            window.post_event(event);
         }
 
         /// Sends a notification to the provided `desktop`.
@@ -940,7 +942,7 @@ pub const syscalls = struct {
     };
 };
 
-fn resolve_base_resource(handle: ashet.resources.Handle) !struct { *ashet.multi_tasking.Process, *ashet.resources.SystemResource } {
+fn resolve_base_resource(handle: ashet.resources.Handle) error{InvalidHandle}!struct { *ashet.multi_tasking.Process, *ashet.resources.SystemResource } {
     const process = get_current_process();
 
     const resource = try ashet.resources.resolve_untyped(process, handle);

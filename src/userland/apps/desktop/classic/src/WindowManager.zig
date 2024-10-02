@@ -236,7 +236,7 @@ fn handle_drag_window_mouse_event(wm: *WindowManager, mouse_point: Point, event:
 
     if (dx != 0 or dy != 0) {
         wm.damage_tracking.invalidate_region(action.window.screenRectangle());
-        logger.info("move window {}, {}", .{ dx, dy });
+        // logger.info("move window {}, {}", .{ dx, dy });
         action.window.client_rectangle.x += dx;
         action.window.client_rectangle.y += dy;
         action.window.pushEvent(.window_moving);
@@ -393,7 +393,7 @@ pub fn render(wm: *WindowManager, q: *ashet.graphics.CommandQueue, theme: themes
                 // TODO(fqu): title_width - 2,
             );
 
-            logger.info("client_rectangle={}", .{client_rectangle});
+            // logger.info("client_rectangle={}", .{client_rectangle});
             try q.blit_partial_framebuffer(
                 client_rectangle,
                 Point.zero,

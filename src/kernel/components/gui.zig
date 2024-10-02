@@ -1,4 +1,5 @@
 const std = @import("std");
+const astd = @import("ashet-std");
 const ashet = @import("../main.zig");
 const logger = std.log.scoped(.gui);
 
@@ -159,14 +160,18 @@ pub const Desktop = struct {
 };
 
 pub const Window = struct {
+    pub const event_queue_len = 16;
+
     pub const Destructor = ashet.resources.Destructor(@This(), _internal_destroy);
 
     system_resource: ashet.resources.SystemResource = .{ .type = .window },
-
-    desktop: WindowDesktopLinkNode,
-
     associated_memory: std.heap.ArenaAllocator,
 
+    // Desktop data:
+    desktop: WindowDesktopLinkNode,
+    window_data: []align(16) u8,
+
+    // Metadata:
     title: [:0]const u8,
 
     min_size: Size,
@@ -175,8 +180,12 @@ pub const Window = struct {
 
     is_popup: bool,
 
-    window_data: []align(16) u8,
+    // Rendering:
     pixels: []align(4) ashet.abi.ColorIndex,
+
+    // Event handling:
+    event_queue: astd.RingBuffer(ashet.abi.WindowEvent, event_queue_len) = .{},
+    event_awaiter: ?*ashet.overlapped.AsyncCall = null,
 
     fn from_node(node: *WindowDesktopLinkNode) *Window {
         return @fieldParentPtr("desktop", node);
@@ -234,8 +243,40 @@ pub const Window = struct {
         // Invoke the handler process:
         desktop.notify_destroy_window(window);
 
+        if (window.event_awaiter) |event_awaiter| {
+            // If there's still an event awaiter for our window, we have to cancel the event,
+            // as otherwise the awaiting process might be blocking forever.
+            event_awaiter.finalize(ashet.abi.gui.GetWindowEvent, error.Cancelled);
+        }
+
         desktop.windows.remove(&window.desktop);
         ashet.memory.type_pool(Window).free(window);
+    }
+
+    pub fn post_event(window: *Window, event: ashet.abi.WindowEvent) void {
+        if (window.event_queue.empty()) {
+            // If the window event queue is empty, there are no pending events and we're the first
+            // event to be pushed.
+            if (window.event_awaiter) |event_awaiter| {
+                // If that is the case, we can immediatly finish the awaiter
+                // with the event we're handling.
+                event_awaiter.finalize(ashet.abi.gui.GetWindowEvent, .{
+                    .event = event,
+                });
+                window.event_awaiter = null;
+                return;
+            }
+        } else {
+            // Non-empty event queue means that there's definitly no one awaiting us
+            // as otherwise events would've been pulled directly without setting the
+            // awaiter state:
+            std.debug.assert(window.event_awaiter == null);
+        }
+
+        if (window.event_queue.full()) {
+            logger.warn("window event queue is full, dropping event {?}", .{window.event_queue.pull()});
+        }
+        window.event_queue.push(event);
     }
 };
 
@@ -245,8 +286,8 @@ pub const Widget = struct {
 
     pub const destroy = Destructor.destroy;
 
-    fn _internal_destroy(sock: *Widget) void {
-        _ = sock;
+    fn _internal_destroy(widget: *Widget) void {
+        _ = widget;
         @panic("Not implemented yet!");
     }
 };
@@ -257,15 +298,39 @@ pub const WidgetType = struct {
 
     pub const destroy = Destructor.destroy;
 
-    fn _internal_destroy(sock: *WidgetType) void {
-        _ = sock;
+    fn _internal_destroy(widget_type: *WidgetType) void {
+        _ = widget_type;
         @panic("Not implemented yet!");
     }
 };
 
 pub fn schedule_get_window_event(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.gui.GetWindowEvent.Inputs) void {
-    //
-    _ = call;
-    _ = inputs;
-    logger.warn("TODO: implement schedule_get_window_event", .{});
+    const window: *Window = ashet.resources.resolve(Window, call.resource_owner, inputs.window.as_resource()) catch |err| {
+        return call.finalize(ashet.abi.gui.GetWindowEvent, switch (err) {
+            error.InvalidHandle, error.TypeMismatch => error.InvalidHandle,
+        });
+    };
+    // If an awaiter is set, the event queue must be empty:
+    defer if (window.event_awaiter != null)
+        std.debug.assert(window.event_queue.empty());
+
+    if (window.event_awaiter != null) {
+        // We're having assigned an event awaiter.
+        // This means there's no event yet that was completed, as otherwise it would've been
+        // removed immediatly:
+        std.debug.assert(window.event_queue.empty());
+        return call.finalize(ashet.abi.gui.GetWindowEvent, error.InProgress);
+    }
+
+    if (window.event_queue.pull()) |ready_event| {
+        // The event queue had an event for us, let's consume it and process it:
+        return call.finalize(ashet.abi.gui.GetWindowEvent, .{
+            .event = ready_event,
+        });
+    } else {
+        // The event queue is empty and we don't have an event ready,
+        // we have to await the event:
+        std.debug.assert(window.event_awaiter == null);
+        window.event_awaiter = call;
+    }
 }

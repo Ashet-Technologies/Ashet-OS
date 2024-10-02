@@ -39,6 +39,9 @@ pub fn RingBuffer(comptime T: type, comptime cap: comptime_int) type {
 
         /// Pushes an item into the ring, removing the last item if the ring is full.
         pub fn push(buffer: *Self, value: T) void {
+            buffer.assert_consistent();
+            defer buffer.assert_consistent();
+
             buffer.items[buffer.write % cap] = value;
 
             if (buffer.write >= cap and buffer.read == buffer.write - cap) {
@@ -58,12 +61,20 @@ pub fn RingBuffer(comptime T: type, comptime cap: comptime_int) type {
 
         /// Pulls an item from the ring if any.
         pub fn pull(buffer: *Self) ?T {
+            buffer.assert_consistent();
+            defer buffer.assert_consistent();
+
             if (buffer.read == buffer.write) {
                 return null;
             }
             const item = buffer.items[buffer.read % cap];
             buffer.read += 1;
             return item;
+        }
+
+        inline fn assert_consistent(buffer: *Self) void {
+            std.debug.assert(buffer.write >= buffer.read);
+            std.debug.assert((buffer.write - buffer.read) <= buffer.items.len);
         }
     };
 }

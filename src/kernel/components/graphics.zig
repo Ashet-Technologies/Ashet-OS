@@ -104,7 +104,18 @@ pub const Framebuffer = struct {
     }
 
     fn invalidate(fb: *Framebuffer) void {
-        _ = fb;
+        switch (fb.type) {
+            .memory => {}, // no-op, nothing to ivnalidate
+            .video => |vmem| {
+                _ = vmem;
+                // TODO: Forward to video output that it should be refreshed now.
+            },
+            .window => |win| {
+                _ = win;
+                // TODO: Forward to owning desktop that the window has been invalidated.
+            },
+            .widget => @panic("Framebuffer(.widget).invalidate Not implemented yet!"),
+        }
     }
 
     pub fn get_size(fb: Framebuffer) Size {
@@ -117,7 +128,7 @@ pub const Framebuffer = struct {
             .memory => |bmp| .{ bmp.width, bmp.height, bmp.stride },
             .video => |vmem| .{ vmem.width, vmem.height, vmem.stride },
             .window => |win| .{ win.size.width, win.size.height, win.max_size.width },
-            .widget => @panic("Framebuffer(.widget).destroy Not implemented yet!"),
+            .widget => @panic("Framebuffer(.widget).create_cursor Not implemented yet!"),
         };
         return .{
             .width = width,
@@ -131,7 +142,7 @@ pub const Framebuffer = struct {
             .memory => |bmp| bmp.pixels,
             .video => |vmem| vmem.base,
             .window => |win| win.pixels.ptr,
-            .widget => @panic("Framebuffer(.widget).destroy Not implemented yet!"),
+            .widget => @panic("Framebuffer(.widget).emit_pixels Not implemented yet!"),
         };
 
         @memset(framebuffer[cursor.offset..][0..count], color_index);
@@ -142,7 +153,7 @@ pub const Framebuffer = struct {
             .memory => |bmp| bmp.pixels,
             .video => |vmem| vmem.base,
             .window => |win| win.pixels.ptr,
-            .widget => @panic("Framebuffer(.widget).destroy Not implemented yet!"),
+            .widget => @panic("Framebuffer(.widget).fetch_pixels Not implemented yet!"),
         };
         // logger.info("{s} {*} {*}", .{ @tagName(fb.type), framebuffer, pixels });
         // logger.info("{any}", .{framebuffer[cursor.offset..][0..pixels.len]});
@@ -154,7 +165,7 @@ pub const Framebuffer = struct {
             .memory => |bmp| bmp.pixels,
             .video => |vmem| vmem.base,
             .window => |win| win.pixels.ptr,
-            .widget => @panic("Framebuffer(.widget).destroy Not implemented yet!"),
+            .widget => @panic("Framebuffer(.widget).copy_pixels Not implemented yet!"),
         };
         @memcpy(framebuffer[cursor.offset..][0..pixels.len], pixels);
     }

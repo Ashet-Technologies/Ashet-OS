@@ -235,6 +235,8 @@ fn main() !void {
     syscalls.strace_enabled.remove(.overlapped_await_completion);
     syscalls.strace_enabled.remove(.overlapped_schedule);
     syscalls.strace_enabled.remove(.process_thread_yield);
+    syscalls.strace_enabled.remove(.gui_get_window_max_size);
+    syscalls.strace_enabled.remove(.gui_get_window_title);
 
     log.info("entering scheduler...", .{});
     scheduler.start();

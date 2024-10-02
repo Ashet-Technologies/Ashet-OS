@@ -10,7 +10,7 @@
 /// All syscalls related to generic resource management.
 const resources = struct {
     /// Returns the type of the system resource.
-    extern fn get_type(SystemResource) error{BadHandle}!SystemResource.Type;
+    extern fn get_type(SystemResource) error{InvalidHandle}!SystemResource.Type;
 
     /// Returns the current owner of this resource.
     extern fn get_owners(SystemResource, owners: ?[]Process) usize;
@@ -929,7 +929,7 @@ const gui = struct {
 
     /// Waits for an event on the given `Window`, completing as soon as
     /// an event arrived.
-    extern "async" fn GetWindowEvent(window: Window) error{InProgress}!struct {
+    extern "async" fn GetWindowEvent(window: Window) error{ InvalidHandle, InProgress, Cancelled }!struct {
         event: WindowEvent,
     };
 
@@ -1011,14 +1011,14 @@ const gui = struct {
         request_id: MessageBoxEvent.RequestID,
         /// The resulting button which the user clicked.
         result: MessageBoxResult,
-    ) void;
+    ) error{ InvalidHandle, BadRequestId }!void;
 
     /// Posts an event into the window event queue so the window owner
     /// can handle the event.
     extern fn post_window_event(
         window: Window,
         event: WindowEvent,
-    ) error{SystemResources};
+    ) error{ InvalidHandle, SystemResources };
 
     /// Sends a notification to the provided `desktop`.
     extern fn send_notification(
@@ -1030,6 +1030,7 @@ const gui = struct {
         severity: NotificationSeverity,
     ) error{
         SystemResources,
+        InvalidHandle,
     };
 
     const clipboard = struct {
@@ -1181,10 +1182,10 @@ pub const SystemResource = enum(usize) {
     _,
 
     /// Casts the resource into a concrete type. Fails, if the type does not match.
-    pub fn cast(resource: SystemResource, comptime t: Type) error{ BadHandle, InvalidType }!CastResult(t) {
+    pub fn cast(resource: SystemResource, comptime t: Type) error{ InvalidHandle, InvalidType }!CastResult(t) {
         var actual: Type = undefined;
         if (resources.get_type(resource, &actual) != .ok)
-            return error.BadHandle;
+            return error.InvalidHandle;
         if (actual != t)
             return error.InvalidType;
         return resource.unsafe_cast(t);
