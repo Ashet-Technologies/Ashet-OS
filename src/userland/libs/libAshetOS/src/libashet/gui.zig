@@ -9,6 +9,8 @@ pub const Desktop = ashet.abi.Desktop;
 pub const Window = ashet.abi.Window;
 pub const Widget = ashet.abi.Widget;
 
+pub const WindowFlags = ashet.abi.WindowFlags;
+
 pub fn get_desktop_data(window: Window) error{ InvalidHandle, Unexpected }!*anyopaque {
     return try ashet.userland.gui.get_desktop_data(window);
 }
@@ -56,7 +58,7 @@ pub fn get_window_max_size(window: Window) error{ InvalidHandle, Unexpected }!Si
     return try ashet.userland.gui.get_window_max_size(window);
 }
 
-pub fn get_window_flags(window: Window) error{ InvalidHandle, Unexpected }!ashet.abi.CreateWindowFlags {
+pub fn get_window_flags(window: Window) error{ InvalidHandle, Unexpected }!WindowFlags {
     return try ashet.userland.gui.get_window_flags(window);
 }
 

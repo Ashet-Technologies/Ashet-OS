@@ -244,10 +244,17 @@ fn handle_drag_window_mouse_event(wm: *WindowManager, mouse_point: Point, event:
     }
 }
 
+fn signed_sat_add(dst: u16, delta: i16) u16 {
+    return if (delta < 0)
+        dst -| @as(u16, @intCast(-delta))
+    else
+        dst +| @as(u16, @intCast(delta));
+}
+
 fn handle_resize_window_mouse_event(wm: *WindowManager, mouse_point: Point, event: ashet.abi.MouseEvent, action: *DragAction) !void {
     defer action.start = mouse_point;
-    const dx = @as(i15, @intCast(mouse_point.x - action.start.x));
-    const dy = @as(i15, @intCast(mouse_point.y - action.start.y));
+    const dx = mouse_point.x - action.start.x;
+    const dy = mouse_point.y - action.start.y;
 
     if (event.button == .left and event.event_type.input == .mouse_button_release) {
         action.window.pushEvent(.window_resized);
@@ -257,18 +264,18 @@ fn handle_resize_window_mouse_event(wm: *WindowManager, mouse_point: Point, even
 
     if (dx != 0 or dy != 0) {
         const rect = &action.window.client_rectangle;
-        const min = action.window.min_size;
-        const max = action.window.max_size;
 
         const prev_screen_rect = action.window.screenRectangle();
-        const previous = rect.size();
 
-        rect.width = @intCast(std.math.clamp(@as(i17, rect.width) + dx, min.width, max.width));
-        rect.height = @intCast(std.math.clamp(@as(i17, rect.height) + dy, min.height, max.height));
+        const new_width: u16 = signed_sat_add(rect.width, dx);
+        const new_height: u16 = signed_sat_add(rect.height, dy);
 
-        if (!rect.size().eql(previous)) {
-            const new_size = try ashet.gui.set_window_size(action.window.handle, rect.size());
+        const new_size = try ashet.gui.set_window_size(action.window.handle, Size.new(
+            new_width,
+            new_height,
+        ));
 
+        if (!new_size.eql(rect.size())) {
             rect.width = new_size.width;
             rect.height = new_size.height;
 
@@ -416,39 +423,16 @@ pub fn create_window(
 
     const window: *Window = Window.from_handle(window_handle);
 
-    // TODO: Fetch initial info block
-
-    // const caption: []const u8 = "Example Window";
-    const min: ashet.abi.Size = ashet.gui.get_window_min_size(window_handle) catch unreachable;
-    const max: ashet.abi.Size = ashet.gui.get_window_max_size(window_handle) catch unreachable;
     const initial_size: Size = ashet.gui.get_window_size(window_handle) catch unreachable;
-    const flags: ashet.abi.CreateWindowFlags = .{
-        .popup = false,
-    };
 
-    window.* = Window{
-        .manager = wm,
-        .handle = window_handle,
-        .framebuffer = framebuffer,
-        .client_rectangle = undefined,
-        .min_size = wm.limit_window_size(size_min(min, max)),
-        .max_size = wm.limit_window_size(size_max(min, max)),
-        .flags = .{
-            .minimized = false,
-            .focus = false,
-            .popup = flags.popup,
-        },
-    };
+    const flags = ashet.gui.get_window_flags(window_handle) catch unreachable;
 
-    const clamped_initial_size = size_max(size_min(initial_size, window.max_size), window.min_size);
-
-    window.client_rectangle = Rectangle{
+    var client_rectangle = Rectangle{
         .x = 16,
         .y = 16,
-        .width = clamped_initial_size.width,
-        .height = clamped_initial_size.height,
+        .width = initial_size.width,
+        .height = initial_size.height,
     };
-    logger.info("initial: {}", .{window.client_rectangle});
 
     if (wm.top_window()) |top_win| blk: {
         const spawn_x = top_win.client_rectangle.x + 16;
@@ -459,11 +443,22 @@ pub fn create_window(
         if (spawn_y + @as(i17, top_win.client_rectangle.height) >= wm.damage_tracking.tracked_area.height)
             break :blk;
 
-        window.client_rectangle.x = spawn_x;
-        window.client_rectangle.y = spawn_y;
+        client_rectangle.x = spawn_x;
+        client_rectangle.y = spawn_y;
     }
 
-    // TODO: try window.setTitle(caption);
+    window.* = Window{
+        .manager = wm,
+        .handle = window_handle,
+        .framebuffer = framebuffer,
+        .client_rectangle = client_rectangle,
+        .flags = .{
+            .minimized = false,
+            .focus = false,
+            .popup = flags.popup,
+            .resizable = flags.resizable,
+        },
+    };
 
     wm.active_windows.append(&window.node);
 
@@ -546,8 +541,7 @@ pub fn maximize_window(wm: *WindowManager, window: *Window) void {
 /// Windows can be resized if their minimum size and maximum size differ
 pub fn is_window_resizable(wm: *WindowManager, window: *const Window) bool {
     _ = wm;
-    return (window.min_size.width != window.max_size.width) or
-        (window.min_size.height != window.max_size.height);
+    return window.flags.resizable;
 }
 
 pub fn is_window_maximized(wm: *WindowManager, window: *const Window) bool {
@@ -556,8 +550,9 @@ pub fn is_window_maximized(wm: *WindowManager, window: *const Window) bool {
 
 /// Windows can be maximized if their maximum size is the full screen size
 pub fn can_window_maximize(wm: *WindowManager, window: *const Window) bool {
-    return (window.max_size.width == wm.max_window_content_size.width) and
-        (window.max_size.height == wm.max_window_content_size.height);
+    const max_size = ashet.gui.get_window_max_size(window.handle) catch unreachable;
+    return (max_size.width >= wm.max_window_content_size.width) and
+        (max_size.height >= wm.max_window_content_size.height);
 }
 
 /// All windows except popups can be minimized.
@@ -592,12 +587,6 @@ pub const Window = struct {
     /// The current position of the window on the screen. Will not contain the decorators, but only
     /// the position of the framebuffer.
     client_rectangle: Rectangle,
-
-    /// The minimum size of this window. The window can never be smaller than this.
-    min_size: Size,
-
-    /// The maximum size of this window. The window can never be bigger than this.
-    max_size: Size,
 
     /// A collection of informative flags.
     flags: Flags,
@@ -729,7 +718,9 @@ pub const Window = struct {
         /// This window is a popup and cannot be minimized
         popup: bool,
 
-        padding: u5 = 0,
+        resizable: bool,
+
+        padding: u4 = 0,
     };
 };
 

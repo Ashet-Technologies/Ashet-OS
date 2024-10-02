@@ -83,6 +83,7 @@ pub const log_levels = struct {
 
     // external modules:
     pub var fatfs: LogLevel = .info;
+    pub var agp_sw_rast: LogLevel = .info;
 
     // platforms:
 

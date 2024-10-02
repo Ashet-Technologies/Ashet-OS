@@ -36,6 +36,7 @@ pub const RasterizerOptions = struct {
     backend_type: type,
     framebuffer_type: ?type,
     pixel_layout: PixelLayout,
+    blit_buffer_size: comptime_int = 64,
 };
 
 pub fn Rasterizer(comptime _options: RasterizerOptions) type {
@@ -487,40 +488,6 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
             };
         }
 
-        // pub fn blit(fb: Rast, point: Point, bitmap: Bitmap) void {
-        //     const target = fb.clip(Rectangle{
-        //         .x = point.x,
-        //         .y = point.y,
-        //         .width = bitmap.width,
-        //         .height = bitmap.height,
-        //     });
-
-        //     var dst = target.pixels;
-        //     var src = bitmap.pixels + target.dy * @as(usize, bitmap.stride);
-        //     if (bitmap.transparent) |transparent| {
-        //         var y: usize = 0;
-        //         while (y < target.height) : (y += 1) {
-        //             var x: usize = 0;
-        //             while (x < target.width) : (x += 1) {
-        //                 const pixel = src[target.dx + x];
-        //                 if (pixel != transparent) {
-        //                     dst[x] = pixel;
-        //                 }
-        //             }
-        //             dst += fb.stride;
-        //             src += bitmap.stride;
-        //         }
-        //     } else {
-        //         // use optimized memcpy route when we don't have to consider transparency
-        //         var y: usize = 0;
-        //         while (y < target.height) : (y += 1) {
-        //             std.mem.copyForwards(ColorIndex, dst[0..target.width], src[target.dx..bitmap.width]);
-        //             dst += fb.stride;
-        //             src += bitmap.stride;
-        //         }
-        //     }
-        // }
-
         const BlitDestination = union(enum) {
             point: Point,
             rect: Rectangle,
@@ -564,15 +531,15 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
                     src_cursor.height,
                 );
 
-            var buffer: [32]ColorIndex = undefined;
+            var buffer: [options.blit_buffer_size]ColorIndex = undefined;
 
-            logger.info("blitting {}x{} @ ({},{}) to ({},{})*({},{})", .{
+            logger.debug("blitting {}x{} @ ({},{}) to ({},{})*({},{})", .{
                 src_cursor.width, src_cursor.height,
                 src_cursor.x,     src_cursor.y,
                 dst_cursor.x,     dst_cursor.y,
                 dst_cursor.width, dst_cursor.height,
             });
-            logger.info("({},{})x({},{})", .{
+            logger.debug("({},{})x({},{})", .{
                 dx,         dy,
                 size.width, size.height,
             });

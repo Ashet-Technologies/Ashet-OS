@@ -910,7 +910,7 @@ const gui = struct {
 
     extern fn get_window_max_size(window: Window) error{InvalidHandle}!Size;
 
-    extern fn get_window_flags(window: Window) error{InvalidHandle}!CreateWindowFlags;
+    extern fn get_window_flags(window: Window) error{InvalidHandle}!WindowFlags;
 
     /// Sets the `size` of `window` and returns the new actual size.
     /// NOTE: This event is meant to be used from desktop APIs and will not automatically
@@ -1605,6 +1605,12 @@ pub const SpawnProcessArg = struct {
             return str.ptr[0..str.len];
         }
     };
+};
+
+pub const WindowFlags = packed struct(u32) {
+    popup: bool,
+    resizable: bool,
+    padding: u30 = 0,
 };
 
 pub const CreateWindowFlags = packed struct(u32) {

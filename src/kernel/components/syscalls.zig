@@ -503,10 +503,11 @@ pub const syscalls = struct {
             return win.max_size;
         }
 
-        pub fn get_window_flags(window: abi.Window) error{InvalidHandle}!abi.CreateWindowFlags {
+        pub fn get_window_flags(window: abi.Window) error{InvalidHandle}!abi.WindowFlags {
             _, const win = try resolve_typed_resource(ashet.gui.Window, window.as_resource());
             return .{
                 .popup = win.is_popup,
+                .resizable = !win.min_size.eql(win.max_size),
             };
         }
 
