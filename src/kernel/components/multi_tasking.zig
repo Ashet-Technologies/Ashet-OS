@@ -246,7 +246,7 @@ pub const SpawnProcessArg = union(ashet.abi.SpawnProcessArg.Type) {
 };
 
 pub const Process = struct {
-    const debug_line_buffer_length = 64;
+    const debug_line_buffer_length = 256;
     const DebugLogBuffers = std.EnumArray(ashet.abi.LogLevel, astd.LineBuffer(debug_line_buffer_length));
 
     pub const Destructor = ashet.resources.Destructor(@This(), _internal_destroy);

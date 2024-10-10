@@ -115,18 +115,6 @@ pub fn main() !void {
     var apps_dir = try ashet.fs.Directory.openDrive(.system, "apps");
     defer apps_dir.close();
 
-    const desktop_proc = try ashet.overlapped.performOne(abi.process.Spawn, .{
-        .dir = apps_dir.handle,
-        .path_ptr = "hello-gui/code",
-        .path_len = 14,
-        .argv_ptr = &[_]abi.SpawnProcessArg{
-            abi.SpawnProcessArg.string("--desktop"),
-            abi.SpawnProcessArg.resource(desktop.as_resource()),
-        },
-        .argv_len = 2,
-    });
-    desktop_proc.process.release(); // we're not interested in "holding" onto process
-
     var cursor: Point = Point.new(
         @intCast(fb_size.width / 2),
         @intCast(fb_size.height / 2),
@@ -298,7 +286,7 @@ pub fn main() !void {
 
                         const path = try std.fmt.bufPrint(&path_buffer, "{s}/code", .{app.app.get_disk_name()});
 
-                        const app_proc = try ashet.overlapped.performOne(abi.process.Spawn, .{
+                        const maybe_app = ashet.overlapped.performOne(abi.process.Spawn, .{
                             .dir = apps_dir.handle,
                             .path_ptr = path.ptr,
                             .path_len = path.len,
@@ -308,9 +296,14 @@ pub fn main() !void {
                             },
                             .argv_len = 2,
                         });
-                        app_proc.process.release(); // we're not interested in "holding" onto process
-
-                        // logger.warn("handle double click to {s}", .{app.app.get_display_name()});
+                        if (maybe_app) |app_proc| {
+                            app_proc.process.release(); // we're not interested in "holding" onto process
+                        } else |err| {
+                            logger.err("failed to start application {s}: {s}", .{
+                                app.app.get_disk_name(),
+                                @errorName(err),
+                            });
+                        }
                     }
 
                     last_click_pos = cursor;
@@ -321,9 +314,7 @@ pub fn main() !void {
                     );
                 },
 
-                .mouse_button_release => {
-                    //
-                },
+                .mouse_button_release => {},
             }
         }
     }

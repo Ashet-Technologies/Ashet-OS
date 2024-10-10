@@ -86,7 +86,7 @@ pub fn handle_event(wm: *WindowManager, mouse_point: Point, input_event: ashet.i
     return switch (input_event) {
         .key_press,
         .key_release,
-        => |event| try wm.handle_keyboard_event(event),
+        => |event| try wm.handle_keyboard_event(mouse_point, event),
 
         .mouse_abs_motion,
         .mouse_rel_motion,
@@ -96,7 +96,7 @@ pub fn handle_event(wm: *WindowManager, mouse_point: Point, input_event: ashet.i
     };
 }
 
-fn handle_keyboard_event(wm: *WindowManager, event: ashet.abi.KeyboardEvent) !bool {
+fn handle_keyboard_event(wm: *WindowManager, mouse_point: Point, event: ashet.abi.KeyboardEvent) !bool {
     if (event.key == .meta) {
         // swallow all access to meta into the UI. Windows never see the meta key!
         wm.meta_pressed = event.pressed;
@@ -110,15 +110,9 @@ fn handle_keyboard_event(wm: *WindowManager, event: ashet.abi.KeyboardEvent) !bo
         return true;
     }
 
-    focused_window.pushEvent(switch (event.event_type.input) {
-        .key_press => .{ .key_press = event },
-        .key_release => .{ .key_release = event },
-        .mouse_abs_motion,
-        .mouse_rel_motion,
-        .mouse_button_press,
-        .mouse_button_release,
-        => unreachable,
-    });
+    focused_window.pushEvent(
+        wm.map_input_event_to_window(focused_window, mouse_point, .{ .keyboard = event }),
+    );
 
     return true;
 }
@@ -190,6 +184,8 @@ fn handle_default_mouse_event(wm: *WindowManager, mouse_point: Point, event: ash
                 }
 
                 if (surface.part == .content) {
+                    surface.window.pushEvent(wm.map_input_event_to_window(surface.window, mouse_point, .{ .mouse = event }));
+
                     // TODO(fqu): Re-enable mouse events: surface.window.pushEvent(.{ .mouse = surface.window.makeMouseRelative(event) });
                 }
 
@@ -227,7 +223,7 @@ fn handle_default_mouse_event(wm: *WindowManager, mouse_point: Point, event: ash
             const surface = wm.window_from_cursor(mouse_point) orelse return false;
 
             if (surface.part == .content) {
-                // TODO(fqu): Forward mouse events: surface.window.pushEvent(.{ .mouse = surface.window.makeMouseRelative(event) });
+                surface.window.pushEvent(wm.map_input_event_to_window(surface.window, mouse_point, .{ .mouse = event }));
             }
             return true;
         },
@@ -255,6 +251,67 @@ fn handle_drag_window_mouse_event(wm: *WindowManager, mouse_point: Point, event:
     }
 
     return true;
+}
+
+fn map_input_event_to_window(wm: *WindowManager, window: *Window, mouse_point: Point, event: ashet.abi.InputEvent) WindowEvent {
+    _ = wm;
+    const rel_pos = Point.new(
+        window.client_rectangle.x - mouse_point.x,
+        window.client_rectangle.y - mouse_point.y,
+    );
+
+    return switch (event.event_type) {
+        .key_press => WindowEvent{
+            .key_press = .{
+                .event_type = .{ .window = .key_press },
+                .key = event.keyboard.key,
+                .scancode = event.keyboard.scancode,
+                .text = event.keyboard.text,
+                .pressed = event.keyboard.pressed,
+                .modifiers = event.keyboard.modifiers,
+            },
+        },
+        .key_release => WindowEvent{
+            .key_release = .{
+                .event_type = .{ .window = .key_release },
+                .key = event.keyboard.key,
+                .scancode = event.keyboard.scancode,
+                .text = event.keyboard.text,
+                .pressed = event.keyboard.pressed,
+                .modifiers = event.keyboard.modifiers,
+            },
+        },
+        .mouse_rel_motion, .mouse_abs_motion => WindowEvent{
+            .mouse_motion = .{
+                .event_type = .{ .window = .mouse_motion },
+                .x = rel_pos.x,
+                .y = rel_pos.y,
+                .dx = 0,
+                .dy = 0,
+                .button = .none,
+            },
+        },
+        .mouse_button_press => WindowEvent{
+            .mouse_button_press = .{
+                .event_type = .{ .window = .mouse_button_press },
+                .x = rel_pos.x,
+                .y = rel_pos.y,
+                .dx = 0,
+                .dy = 0,
+                .button = event.mouse.button,
+            },
+        },
+        .mouse_button_release => WindowEvent{
+            .mouse_button_release = .{
+                .event_type = .{ .window = .mouse_button_release },
+                .x = rel_pos.x,
+                .y = rel_pos.y,
+                .dx = 0,
+                .dy = 0,
+                .button = event.mouse.button,
+            },
+        },
+    };
 }
 
 fn signed_sat_add(dst: u16, delta: i16) u16 {
