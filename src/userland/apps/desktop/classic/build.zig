@@ -14,7 +14,7 @@ pub fn build(b: *std.Build) void {
         .name = "classic-desktop",
         .target = target,
         .optimize = optimize,
-        .root_source_file = b.path("classic-desktop.zig"),
+        .root_source_file = b.path("src/classic-desktop.zig"),
     });
 
     // Not mandatory, but really really sensible:

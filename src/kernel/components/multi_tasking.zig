@@ -28,6 +28,19 @@ pub fn initialize() void {
     initialized = true;
 }
 
+/// Wraps a function call such that syscalls done from this call
+/// are called from another process `context`.
+pub fn call_inside_process(
+    context: *Process,
+    function: anytype,
+    arguments: anytype,
+) @TypeOf(@call(.auto, function, arguments)) {
+    var ctx = ashet.syscalls.VirtualContextSwitch.enter(context);
+    defer ctx.leave();
+
+    return @call(.auto, function, arguments);
+}
+
 pub fn spawn_blocking(
     proc_name: []const u8,
     file: *libashet.fs.File,
@@ -50,7 +63,7 @@ pub fn spawn_blocking(
     const thread = try ashet.scheduler.Thread.spawn(
         @as(ashet.scheduler.ThreadFunction, @ptrFromInt(loaded.entry_point)),
         null,
-        .{ .process = process, .stack_size = 64 * 1024 },
+        .{ .process = process, .stack_size = 128 * 1024 },
     );
     errdefer thread.kill();
 
@@ -233,7 +246,7 @@ pub const SpawnProcessArg = union(ashet.abi.SpawnProcessArg.Type) {
 };
 
 pub const Process = struct {
-    const debug_line_buffer_length = 64;
+    const debug_line_buffer_length = 256;
     const DebugLogBuffers = std.EnumArray(ashet.abi.LogLevel, astd.LineBuffer(debug_line_buffer_length));
 
     pub const Destructor = ashet.resources.Destructor(@This(), _internal_destroy);

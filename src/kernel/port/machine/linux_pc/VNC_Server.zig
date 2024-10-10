@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const network = @import("network");
 const vnc = @import("vnc");
 const logger = std.log.scoped(.host_vnc_server);
@@ -48,6 +49,9 @@ pub fn init(
 }
 
 fn connection_handler(vd: *VNC_Server) !void {
+    if (builtin.single_threaded)
+        @compileError("Cannot use VNC_Server in single-threaded environment!");
+
     while (true) {
         var local_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
         defer local_arena.deinit();

@@ -1,11 +1,11 @@
 const std = @import("std");
-const ashet = @import("ashet");
+const ashet = @import("ashet-abi");
 const turtlefont = @import("turtlefont");
 
-const Point = ashet.abi.Point;
-const Size = ashet.abi.Size;
-const Rectangle = ashet.abi.Rectangle;
-const ColorIndex = ashet.abi.ColorIndex;
+const Point = ashet.Point;
+const Size = ashet.Size;
+const Rectangle = ashet.Rectangle;
+const ColorIndex = ashet.ColorIndex;
 
 pub const FontHint = struct {
     size: ?u15 = null,
@@ -13,37 +13,27 @@ pub const FontHint = struct {
     italic: bool = false,
 };
 
-pub const Font = union(enum) {
-    pub var default: Font = undefined;
-    pub var monospace: Font = undefined;
-
+pub const FontInstance = union(enum) {
     bitmap: BitmapFont,
     vector: VectorFont,
 
-    pub fn fromSystemFont(font_name: []const u8, hints: FontHint) error{ FileNotFound, InvalidFont, OutOfMemory, SystemResources, Unexpected }!Font {
-        return try load(
-            try ashet.ui.getSystemFont(font_name),
-            hints,
-        );
-    }
-
-    pub fn load(buffer: []const u8, hints: FontHint) error{InvalidFont}!Font {
+    pub fn load(buffer: []const u8, hints: FontHint) error{InvalidFont}!FontInstance {
         if (BitmapFont.load(buffer)) |bmp| {
-            return Font{ .bitmap = bmp };
+            return .{ .bitmap = bmp };
         } else |_| if (VectorFont.load(buffer, hints)) |vec| {
-            return Font{ .vector = vec };
+            return .{ .vector = vec };
         } else |e| {
             return e;
         }
     }
 
-    pub fn lineHeight(font: Font) u15 {
+    pub fn line_height(font: FontInstance) u15 {
         return switch (font) {
             inline else => |f| f.lineHeight(),
         };
     }
 
-    pub fn measureWidth(font: Font, string: []const u8) u15 {
+    pub fn measure_width(font: FontInstance, string: []const u8) u15 {
         return switch (font) {
             inline else => |f| f.measureWidth(string),
         };

@@ -4,7 +4,9 @@ const builtin = @import("builtin");
 pub const abi = @import("ashet-abi");
 pub const userland = @import("ashet-abi-access");
 
-pub const syscall = abi.syscall;
+pub const graphics = @import("libashet/graphics.zig");
+pub const input = @import("libashet/input.zig");
+pub const gui = @import("libashet/gui.zig");
 
 pub const is_hosted = builtin.is_test or (builtin.target.os.tag != .other and builtin.target.os.tag != .freestanding);
 
@@ -194,7 +196,7 @@ pub const process = struct {
         fn globalAlloc(ctx: *anyopaque, len: usize, ptr_align: u8, ret_addr: usize) ?[*]u8 {
             _ = ctx;
             _ = ret_addr;
-            return abi.syscalls.@"ashet.process.memory.allocate"(len, ptr_align);
+            return userland.process.memory.allocate(len, ptr_align);
         }
 
         /// Attempt to expand or shrink memory in place. `buf.len` must equal the
@@ -236,7 +238,7 @@ pub const process = struct {
         fn globalFree(ctx: *anyopaque, buf: []u8, buf_align: u8, ret_addr: usize) void {
             _ = ctx;
             _ = ret_addr;
-            return abi.syscalls.@"ashet.process.memory.release"(buf.ptr, buf.len, buf_align);
+            return userland.process.memory.release(buf, buf_align);
         }
     };
 
@@ -310,31 +312,6 @@ pub const overlapped = struct {
         return value.outputs;
     }
 };
-
-// pub const input = struct {
-//     pub const Event = union(enum) {
-//         keyboard: abi.KeyboardEvent,
-//         mouse: abi.MouseEvent,
-//     };
-
-//     pub fn getEvent() !Event {
-//         const out = try overlapped.performOne(abi.input.GetEvent, .{});
-//         return switch (out.event_type) {
-//             .keyboard => Event{ .keyboard = out.event.keyboard },
-//             .mouse => Event{ .mouse = out.event.mouse },
-//         };
-//     }
-
-//     pub fn getMouseEvent() abi.MouseEvent {
-//         const out = try overlapped.performOne(abi.input.GetMouseEvent, .{});
-//         return out.event;
-//     }
-
-//     pub fn getKeyboardEvent() abi.KeyboardEvent {
-//         const out = try overlapped.performOne(abi.input.GetKeyboardEvent, .{});
-//         return out.event;
-//     }
-// };
 
 pub const fs = struct {
     pub const File = struct {
@@ -470,12 +447,12 @@ pub const fs = struct {
             dir.* = undefined;
         }
 
-        pub const ResetError = abi.fs.ResetDirEnumerationError.Error || GenericError;
+        pub const ResetError = abi.fs.ResetDirEnumeration.Error || GenericError;
         pub fn reset(dir: *Directory) ResetError!void {
             _ = try overlapped.performOne(abi.fs.ResetDirEnumeration, .{ .dir = dir.handle });
         }
 
-        pub const NextError = abi.fs.EnumerateDirError.Error || GenericError;
+        pub const NextError = abi.fs.EnumerateDir.Error || GenericError;
         pub fn next(dir: *Directory) NextError!?abi.FileInfo {
             const out = try overlapped.performOne(abi.fs.EnumerateDir, .{ .dir = dir.handle });
 
@@ -652,3 +629,86 @@ pub const fs = struct {
 //         return abi.syscalls.@"ashet.time.nanoTimestamp"();
 //     }
 // };
+
+pub const clock = struct {
+    /// Time in nanoseconds since system startup.
+    pub const Absolute = enum(u64) {
+        system_start = 0,
+
+        _,
+
+        /// Returns the time between `newer` and `older`.
+        ///
+        /// NOTE: Asserts that `newer` happened after `older`.
+        pub fn time_since(newer: Absolute, older: Absolute) Duration {
+            return Duration.from_ns(
+                @intFromEnum(newer) - @intFromEnum(older),
+            );
+        }
+
+        pub fn lt(a: Absolute, b: Absolute) bool {
+            return @intFromEnum(a) < @intFromEnum(b);
+        }
+
+        pub fn gt(a: Absolute, b: Absolute) bool {
+            return @intFromEnum(a) > @intFromEnum(b);
+        }
+    };
+
+    /// A duration in nanoseconds.
+    pub const Duration = enum(u64) {
+        _,
+
+        /// Constructs a duration from a nanosecond time span.
+        pub fn from_ns(ns: u64) Duration {
+            return @enumFromInt(ns);
+        }
+
+        /// Constructs a duration from a microsecond time span.
+        pub fn from_us(us: u64) Duration {
+            return @enumFromInt(us * std.time.ns_per_us);
+        }
+
+        /// Constructs a duration from a millisecond time span.
+        pub fn from_ms(ms: u64) Duration {
+            return @enumFromInt(ms * std.time.ns_per_us);
+        }
+
+        /// Returns the duration in nanoseconds.
+        pub fn to_ns(dur: Duration) u64 {
+            return @intFromEnum(dur);
+        }
+
+        /// Returns the duration in microseconds.
+        pub fn to_us(dur: Duration) u64 {
+            return @intFromEnum(dur) / std.time.ns_per_us;
+        }
+
+        /// Returns the duration in milliseconds.
+        pub fn to_ms(dur: Duration) u64 {
+            return @intFromEnum(dur) / std.time.ns_per_ms;
+        }
+
+        pub fn lt(a: Duration, b: Duration) bool {
+            return @intFromEnum(a) < @intFromEnum(b);
+        }
+
+        pub fn gt(a: Duration, b: Duration) bool {
+            return @intFromEnum(a) > @intFromEnum(b);
+        }
+    };
+
+    /// Returns the time since system startup.
+    /// This clock is monotonically increasing.
+    pub fn monotonic() Absolute {
+        return @enumFromInt(userland.clock.monotonic());
+    }
+};
+
+pub const datetime = struct {
+    pub const DateTime = abi.DateTime;
+
+    pub fn now() DateTime {
+        return userland.datetime.now();
+    }
+};

@@ -63,7 +63,7 @@ pub const log_levels = struct {
     pub var ui: LogLevel = .debug;
     pub var network: LogLevel = .info;
     pub var filesystem: LogLevel = .debug;
-    pub var resources: LogLevel = .debug;
+    pub var resources: LogLevel = .info;
     pub var memory: LogLevel = .info;
     pub var drivers: LogLevel = .info;
     pub var page_allocator: LogLevel = .debug;
@@ -72,7 +72,8 @@ pub const log_levels = struct {
     pub var overlapped: LogLevel = .info; // very noise modules!
     pub var elf_loader: LogLevel = .info;
     pub var video: LogLevel = .debug;
-    pub var multitasking: LogLevel = .debug;
+    pub var multitasking: LogLevel = .info;
+    pub var gui: LogLevel = .debug;
 
     // drivers:
     pub var @"virtio-net": LogLevel = .info;
@@ -82,6 +83,7 @@ pub const log_levels = struct {
 
     // external modules:
     pub var fatfs: LogLevel = .info;
+    pub var agp_sw_rast: LogLevel = .info;
 
     // platforms:
 
@@ -200,6 +202,9 @@ fn main() !void {
     log.info("initialize input...", .{});
     input.initialize();
 
+    log.info("initialize graphics subsystem...", .{});
+    try graphics.initialize();
+
     log.info("spawn kernel main thread...", .{});
     {
         const thread = try scheduler.Thread.spawn(global_kernel_tick, null, .{
@@ -230,6 +235,8 @@ fn main() !void {
     syscalls.strace_enabled.remove(.overlapped_await_completion);
     syscalls.strace_enabled.remove(.overlapped_schedule);
     syscalls.strace_enabled.remove(.process_thread_yield);
+    syscalls.strace_enabled.remove(.gui_get_window_max_size);
+    syscalls.strace_enabled.remove(.gui_get_window_title);
 
     log.info("entering scheduler...", .{});
     scheduler.start();

@@ -4,6 +4,12 @@ const Platform = abiBuild.Platform;
 
 pub const Machine = @import("port/machine_id.zig").MachineID;
 
+fn create_embedded_resource(b: *std.Build, path: []const u8) *std.Build.Module {
+    return b.createModule(.{
+        .root_source_file = b.path(path),
+    });
+}
+
 pub fn build(b: *std.Build) void {
     // Options:
     const machine_id = b.option(Machine, "machine", "Selects the machine for which the kernel should be built.") orelse @panic("-Dmachine required!");
@@ -43,6 +49,9 @@ pub fn build(b: *std.Build) void {
     const libashetos_dep = b.dependency("libashetos", .{
         .target = platform_id,
     });
+    const agp_dep = b.dependency("agp", .{});
+    const agp_swrast_dep = b.dependency("agp_swrast", .{});
+    const turtlefont_dep = b.dependency("turtlefont", .{});
 
     // Modules:
 
@@ -57,6 +66,9 @@ pub fn build(b: *std.Build) void {
     const zfat_mod = zfat_dep.module("zfat");
     const lwip_mod = lwip_dep.module("lwip");
     const ashetos_mod = libashetos_dep.module("ashet");
+    const agp_mod = agp_dep.module("agp");
+    const agp_swrast_mod = agp_swrast_dep.module("agp-swrast");
+    const turtlefont_mod = turtlefont_dep.module("turtlefont");
 
     // Build:
 
@@ -91,6 +103,15 @@ pub fn build(b: *std.Build) void {
             .{ .name = "fatfs", .module = zfat_mod },
             .{ .name = "vnc", .module = vnc_mod },
             .{ .name = "ashet", .module = ashetos_mod },
+            .{ .name = "agp", .module = agp_mod },
+            .{ .name = "agp-swrast", .module = agp_swrast_mod },
+            .{ .name = "turtlefont", .module = turtlefont_mod },
+
+            // resources:
+            .{
+                .name = "sans-6.font",
+                .module = create_embedded_resource(b, "../../rootfs/system/fonts/sans-6.font"),
+            },
 
             // only required on hosted instances:
             .{ .name = "network", .module = network_mod },
@@ -123,7 +144,7 @@ pub fn build(b: *std.Build) void {
     // TODO(fqu): kernel_exe.root_module.code_model = .small;
     kernel_exe.bundle_compiler_rt = true;
     kernel_exe.rdynamic = true; // Prevent the compiler from garbage collecting exported symbols
-    kernel_exe.root_module.single_threaded = (kernel_exe.rootModuleTarget().os.tag == .freestanding);
+    kernel_exe.root_module.single_threaded = !machine_id.is_hosted();
     kernel_exe.root_module.omit_frame_pointer = false;
     kernel_exe.root_module.strip = false; // never strip debug info
     if (optimize == .Debug) {

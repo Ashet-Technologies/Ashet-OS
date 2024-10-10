@@ -356,6 +356,13 @@ pub const debug = struct {
     }
 };
 
+/// Allocator for allocate-once data of unknown size.
+/// Allocated memory cannot be freed.
+pub const static_memory_allocator = static_memory_arena.allocator();
+var static_memory_arena = std.heap.ArenaAllocator.init(page_allocator);
+
+/// Allocator for dynamically sized general purpose data.
+/// Use with caution!
 pub const allocator = general_purpose_allocator_instance.allocator();
 pub const page_allocator = std.mem.Allocator{
     .ptr = undefined,

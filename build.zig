@@ -24,6 +24,7 @@ pub fn build(b: *std.Build) void {
         b.fmt("Sets the QEMU debug options (default: '{s}')", .{qemu_debug_options_default}),
     ) orelse
         qemu_debug_options_default;
+    const list_apps = b.option(bool, "list-apps", "Prints a list of all files published by the OS dependency") orelse false;
 
     // Steps:
     const test_step = b.step("test", "Runs the test suite");
@@ -127,10 +128,18 @@ pub fn build(b: *std.Build) void {
             exe: std.Build.LazyPath,
         };
 
+        if (list_apps) {
+            std.debug.print("available files:\n", .{});
+            for (os_files.files.items) |file| {
+                std.debug.print("- {s}\n", .{file.sub_path});
+            }
+        }
+
         const apps: []const AppDef = &.{
             .{ .name = "init", .exe = get_named_file(os_files, "apps/init.elf").? },
             .{ .name = "hello-world", .exe = get_named_file(os_files, "apps/hello-world.elf").? },
             .{ .name = "hello-gui", .exe = get_named_file(os_files, "apps/hello-gui.elf").? },
+            .{ .name = "classic", .exe = get_named_file(os_files, "apps/desktop/classic.elf").? },
         };
 
         const variables = Variables{
@@ -287,7 +296,7 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
     .@"hosted-x86-linux" = .{
         .hosted_cli = &.{
             "drive:${DISK}",
-            "video:vnc:800:480:127.0.0.1:5900",
+            "video:vnc:800:480:0.0.0.0:5900",
         },
     },
 

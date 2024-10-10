@@ -5,7 +5,7 @@ pub const Platform = @import("platforms.zig").Platform;
 pub const syscalls = struct {
     // new syscalls:
 
-    pub extern fn @"ashet.resources.get_type"(SystemResource) SystemResourceType;
+    pub extern fn @"ashet.resourcpes.get_type"(SystemResource) SystemResourceType;
     pub extern fn @"ashet.resources.get_owners"(SystemResource, owners_ptr: ?[*]Process, owners_len: usize) usize;
     pub extern fn @"ashet.resources.release"(SystemResource) FreeResourceError;
     pub extern fn @"ashet.resources.destroy"(SystemResource) FreeResourceError;

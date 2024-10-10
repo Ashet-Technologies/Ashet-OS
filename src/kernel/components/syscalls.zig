@@ -41,8 +41,8 @@ const callbacks = struct {
 
 pub const syscalls = struct {
     pub const resources = struct {
-        pub fn get_type(src_handle: abi.SystemResource) !abi.SystemResource.Type {
-            _, const resource = resolve_base_resource(src_handle) catch return error.BadHandle;
+        pub fn get_type(src_handle: abi.SystemResource) error{InvalidHandle}!abi.SystemResource.Type {
+            _, const resource = resolve_base_resource(src_handle) catch return error.InvalidHandle;
             return resource.type;
         }
 
@@ -86,7 +86,7 @@ pub const syscalls = struct {
             return if (maybe_proc) |handle| blk: {
                 _, const proc = try resolve_process_handle(handle.as_resource());
                 break :blk proc;
-            } else getCurrentProcess();
+            } else get_current_process();
         }
 
         pub fn get_file_name(maybe_proc: ?abi.Process) [*:0]const u8 {
@@ -109,7 +109,7 @@ pub const syscalls = struct {
         }
 
         pub fn get_arguments(maybe_proc: ?abi.Process, maybe_argv: ?[]abi.SpawnProcessArg) usize {
-            const cproc = getCurrentProcess();
+            const cproc = get_current_process();
             const kproc = _resolve_maybe_proc(maybe_proc) catch {
                 // TODO: Log err
                 return 0;
@@ -135,7 +135,7 @@ pub const syscalls = struct {
         }
 
         pub fn terminate(exit_code: abi.ExitCode) noreturn {
-            const proc = getCurrentProcess();
+            const proc = get_current_process();
 
             proc.stay_resident = false;
 
@@ -187,11 +187,11 @@ pub const syscalls = struct {
 
         pub const debug = struct {
             pub fn write_log(log_level: abi.LogLevel, message: []const u8) void {
-                const proc = getCurrentProcess();
+                const proc = get_current_process();
                 proc.write_log(log_level, message);
             }
             pub fn breakpoint() void {
-                const proc = getCurrentProcess();
+                const proc = get_current_process();
                 std.log.scoped(.userland).info("breakpoint in process {s}.", .{proc.name});
 
                 var cont: bool = false;
@@ -203,7 +203,7 @@ pub const syscalls = struct {
 
         pub const memory = struct {
             pub fn allocate(size: usize, ptr_align: u8) ?[*]u8 {
-                const proc = getCurrentProcess();
+                const proc = get_current_process();
                 return proc.dynamic_allocator().rawAlloc(
                     size,
                     ptr_align,
@@ -211,7 +211,7 @@ pub const syscalls = struct {
                 );
             }
             pub fn release(mem: []u8, ptr_align: u8) void {
-                const proc = getCurrentProcess();
+                const proc = get_current_process();
                 proc.dynamic_allocator().rawFree(
                     mem,
                     ptr_align,
@@ -256,7 +256,7 @@ pub const syscalls = struct {
 
     pub const clock = struct {
         pub fn monotonic() u64 {
-            return @intFromEnum(ashet.time.Instant.now());
+            return std.time.ns_per_ms * @intFromEnum(ashet.time.Instant.now());
         }
     };
 
@@ -272,7 +272,7 @@ pub const syscalls = struct {
         }
 
         pub fn acquire(output: abi.VideoOutputID) error{ SystemResources, NotFound, NotAvailable }!abi.VideoOutput {
-            const proc = getCurrentProcess();
+            const proc = get_current_process();
 
             const video_output = try ashet.video.acquire_output(output);
 
@@ -325,20 +325,29 @@ pub const syscalls = struct {
         pub fn get_system_font(font_name: []const u8) error{
             FileNotFound,
             SystemResources,
-            OutOfMemory,
         }!abi.Font {
-            _ = font_name;
-            @panic("not implemented yet");
+            const proc = get_current_process();
+
+            const system_font = try ashet.graphics.get_system_font(font_name);
+
+            const handle = try ashet.resources.add_to_process(proc, &system_font.system_resource);
+
+            return handle.unsafe_cast(.font);
         }
 
         /// Creates a new custom font from the given data.
         pub fn create_font(data: []const u8) error{
             InvalidData,
             SystemResources,
-            OutOfMemory,
         }!abi.Font {
-            _ = data;
-            @panic("not implemented yet");
+            const proc = get_current_process();
+
+            const font = try ashet.graphics.Font.create(data);
+            errdefer font.destroy();
+
+            const handle = try ashet.resources.add_to_process(proc, &font.system_resource);
+
+            return handle.unsafe_cast(.font);
         }
 
         /// Returns true if the given font is a system-owned font.
@@ -351,39 +360,72 @@ pub const syscalls = struct {
 
         /// Creates a new in-memory framebuffer that can be used for offscreen painting.
         pub fn create_memory_framebuffer(size: abi.Size) error{SystemResources}!abi.Framebuffer {
-            _ = size;
-            @panic("not implemented yet!");
+            const proc = get_current_process();
+
+            const fb = try ashet.graphics.Framebuffer.create_memory(size.width, size.height);
+            errdefer fb.destroy();
+
+            const handle = try ashet.resources.add_to_process(proc, &fb.system_resource);
+
+            return handle.unsafe_cast(.framebuffer);
         }
 
         /// Creates a new framebuffer based off a video output. Can be used to output pixels
         /// to the screen.
-        pub fn create_video_framebuffer(video_output: abi.VideoOutput) error{SystemResources}!abi.Framebuffer {
-            _ = video_output;
-            @panic("not implemented  yet!");
+        pub fn create_video_framebuffer(video_output: abi.VideoOutput) error{ SystemResources, InvalidHandle }!abi.Framebuffer {
+            const proc, const output = try resolve_typed_resource(ashet.video.Output, video_output.as_resource());
+
+            const fb = try ashet.graphics.Framebuffer.create_video_output(output);
+            errdefer fb.destroy();
+
+            const handle = try ashet.resources.add_to_process(proc, &fb.system_resource);
+
+            return handle.unsafe_cast(.framebuffer);
         }
 
         /// Creates a new framebuffer that allows painting into a GUI window.
-        pub fn create_window_framebuffer(window: abi.Window) error{SystemResources}!abi.Framebuffer {
-            _ = window;
-            @panic("not implemented  yet!");
+        pub fn create_window_framebuffer(window_handle: abi.Window) error{ SystemResources, InvalidHandle }!abi.Framebuffer {
+            const proc, const output = try resolve_typed_resource(ashet.gui.Window, window_handle.as_resource());
+
+            const fb = try ashet.graphics.Framebuffer.create_window(output);
+            errdefer fb.destroy();
+
+            const handle = try ashet.resources.add_to_process(proc, &fb.system_resource);
+
+            return handle.unsafe_cast(.framebuffer);
         }
 
         /// Creates a new framebuffer that allows painting into a widget.
-        pub fn create_widget_framebuffer(widget: abi.Widget) error{SystemResources}!abi.Framebuffer {
+        pub fn create_widget_framebuffer(widget: abi.Widget) error{ SystemResources, InvalidHandle }!abi.Framebuffer {
             _ = widget;
             @panic("not implemented  yet!");
         }
 
         /// Returns the type of a framebuffer object.
-        pub fn get_framebuffer_type(framebuffer: abi.Framebuffer) abi.FramebufferType {
-            _ = framebuffer;
-            @panic("not implemented  yet!");
+        pub fn get_framebuffer_type(framebuffer: abi.Framebuffer) error{InvalidHandle}!abi.FramebufferType {
+            _, const fb = try resolve_typed_resource(ashet.graphics.Framebuffer, framebuffer.as_resource());
+
+            return fb.type;
         }
 
         /// Returns the size of a framebuffer object.
-        pub fn get_framebuffer_size(framebuffer: abi.Framebuffer) abi.Size {
-            _ = framebuffer;
-            @panic("not implemented  yet!");
+        pub fn get_framebuffer_size(framebuffer: abi.Framebuffer) error{InvalidHandle}!abi.Size {
+            _, const fb = try resolve_typed_resource(ashet.graphics.Framebuffer, framebuffer.as_resource());
+
+            return fb.get_size();
+        }
+
+        pub fn get_framebuffer_memory(framebuffer: abi.Framebuffer) error{ InvalidHandle, Unsupported }!abi.VideoMemory {
+            _, const fb = try resolve_typed_resource(ashet.graphics.Framebuffer, framebuffer.as_resource());
+            switch (fb.type) {
+                .memory => |mem| return .{
+                    .width = mem.width,
+                    .height = mem.height,
+                    .stride = mem.stride,
+                    .base = mem.pixels,
+                },
+                else => return error.Unsupported,
+            }
         }
 
         /// Marks a portion of the framebuffer as changed and forces the OS to
@@ -439,6 +481,43 @@ pub const syscalls = struct {
 
             const handle = try ashet.resources.add_to_process(kproc, &window.system_resource);
             return handle.unsafe_cast(.window);
+        }
+
+        pub fn get_window_title(window: abi.Window, out_title: *[]const u8) error{InvalidHandle}!void {
+            _, const win = try resolve_typed_resource(ashet.gui.Window, window.as_resource());
+            out_title.* = win.title;
+        }
+
+        pub fn get_window_size(window: abi.Window) error{InvalidHandle}!abi.Size {
+            _, const win = try resolve_typed_resource(ashet.gui.Window, window.as_resource());
+            return win.size;
+        }
+
+        pub fn get_window_min_size(window: abi.Window) error{InvalidHandle}!abi.Size {
+            _, const win = try resolve_typed_resource(ashet.gui.Window, window.as_resource());
+            return win.min_size;
+        }
+
+        pub fn get_window_max_size(window: abi.Window) error{InvalidHandle}!abi.Size {
+            _, const win = try resolve_typed_resource(ashet.gui.Window, window.as_resource());
+            return win.max_size;
+        }
+
+        pub fn get_window_flags(window: abi.Window) error{InvalidHandle}!abi.WindowFlags {
+            _, const win = try resolve_typed_resource(ashet.gui.Window, window.as_resource());
+            return .{
+                .popup = win.is_popup,
+                .resizable = !win.min_size.eql(win.max_size),
+            };
+        }
+
+        pub fn set_window_size(window: abi.Window, size: abi.Size) error{InvalidHandle}!abi.Size {
+            _, const win = try resolve_typed_resource(ashet.gui.Window, window.as_resource());
+            win.size = abi.Size.new(
+                std.math.clamp(size.width, win.min_size.height, win.max_size.width),
+                std.math.clamp(size.height, win.min_size.height, win.max_size.height),
+            );
+            return win.size;
         }
 
         /// Resizes a window to the new size.
@@ -527,7 +606,7 @@ pub const syscalls = struct {
         ) error{
             SystemResources,
         }!abi.Desktop {
-            const proc = getCurrentProcess();
+            const proc = get_current_process();
 
             const desktop = try ashet.gui.Desktop.create(
                 proc,
@@ -550,7 +629,7 @@ pub const syscalls = struct {
 
         /// Enumerates all available desktops.
         pub fn enumerate_desktops(maybe_list: ?[]abi.Desktop) usize {
-            const proc = getCurrentProcess();
+            const proc = get_current_process();
 
             var iter = ashet.gui.iterate_desktops();
 
@@ -617,13 +696,12 @@ pub const syscalls = struct {
         /// Posts an event into the window event queue so the window owner
         /// can handle the event.
         pub fn post_window_event(
-            window: abi.Window,
+            window_handle: abi.Window,
             event: abi.WindowEvent,
-        ) error{SystemResources} {
-            _ = window;
-            _ = event;
+        ) error{ SystemResources, InvalidHandle }!void {
+            _, const window = try resolve_typed_resource(ashet.gui.Window, window_handle.as_resource());
 
-            @panic("not implemented yet");
+            window.post_event(event);
         }
 
         /// Sends a notification to the provided `desktop`.
@@ -634,9 +712,7 @@ pub const syscalls = struct {
             message: []const u8,
             /// How urgent is the notification to the user?
             severity: abi.NotificationSeverity,
-        ) error{
-            SystemResources,
-        } {
+        ) error{SystemResources}!void {
             _ = desktop;
             _ = message;
             _ = severity;
@@ -646,9 +722,7 @@ pub const syscalls = struct {
         pub const clipboard = struct {
             /// Sets the contents of the clip board.
             /// Takes a mime type as well as the value in the provided format.
-            pub fn set(desktop: abi.Desktop, mime: []const u8, value: []const u8) error{
-                SystemResources,
-            } {
+            pub fn set(desktop: abi.Desktop, mime: []const u8, value: []const u8) error{SystemResources}!void {
                 _ = desktop;
                 _ = mime;
                 _ = value;
@@ -684,7 +758,7 @@ pub const syscalls = struct {
 
     pub const shm = struct {
         pub fn create(size: usize) error{SystemResources}!ashet.abi.SharedMemory {
-            const proc = getCurrentProcess();
+            const proc = get_current_process();
 
             const memref = ashet.shared_memory.SharedMemory.create(size) catch {
                 return error.SystemResources;
@@ -727,7 +801,7 @@ pub const syscalls = struct {
 
         pub const udp = struct {
             pub fn create_socket() error{SystemResources}!abi.UdpSocket {
-                const proc = getCurrentProcess();
+                const proc = get_current_process();
 
                 const sock = try ashet.network.udp.Socket.create();
                 errdefer sock.destroy();
@@ -740,7 +814,7 @@ pub const syscalls = struct {
 
         pub const tcp = struct {
             pub fn create_socket() error{SystemResources}!abi.TcpSocket {
-                const proc = getCurrentProcess();
+                const proc = get_current_process();
 
                 const sock = try ashet.network.tcp.Socket.create();
                 errdefer sock.destroy();
@@ -868,8 +942,8 @@ pub const syscalls = struct {
     };
 };
 
-fn resolve_base_resource(handle: ashet.resources.Handle) !struct { *ashet.multi_tasking.Process, *ashet.resources.SystemResource } {
-    const process = getCurrentProcess();
+fn resolve_base_resource(handle: ashet.resources.Handle) error{InvalidHandle}!struct { *ashet.multi_tasking.Process, *ashet.resources.SystemResource } {
+    const process = get_current_process();
 
     const resource = try ashet.resources.resolve_untyped(process, handle);
 
@@ -891,13 +965,35 @@ fn resolve_process_handle(handle: ashet.resources.Handle) error{ InvalidHandle, 
     return .{ kproc, uproc };
 }
 
-fn getCurrentThread() *ashet.scheduler.Thread {
-    return ashet.scheduler.Thread.current() orelse @panic("syscall only legal in a process");
+fn get_current_thread() *ashet.scheduler.Thread {
+    return ashet.scheduler.Thread.current() orelse @panic("syscall only legal in a thread");
 }
 
-fn getCurrentProcess() *ashet.multi_tasking.Process {
-    const kproc = getCurrentThread().get_process();
+var current_process_overwrite: ?*ashet.multi_tasking.Process = null;
+
+fn get_current_process() *ashet.multi_tasking.Process {
+    const kproc = current_process_overwrite orelse get_current_thread().get_process();
     if (kproc.is_zombie())
         @panic("zombie process called a system call!");
     return kproc;
 }
+
+pub const VirtualContextSwitch = struct {
+    previous_process: ?*ashet.multi_tasking.Process,
+    current_process: *ashet.multi_tasking.Process, // TODO(fqu): Make this optional in release modes, it's just for
+
+    pub fn enter(new_process: *ashet.multi_tasking.Process) VirtualContextSwitch {
+        const previous_process = current_process_overwrite;
+        current_process_overwrite = new_process;
+        return .{
+            .previous_process = previous_process,
+            .current_process = new_process,
+        };
+    }
+
+    pub fn leave(vcs: *VirtualContextSwitch) void {
+        std.debug.assert(get_current_process() == vcs.current_process);
+        std.debug.assert(current_process_overwrite == vcs.current_process);
+        current_process_overwrite = vcs.previous_process;
+    }
+};

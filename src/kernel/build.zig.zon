@@ -28,6 +28,14 @@
             .path = "../userland/libs/libAshetOS",
         },
 
+        .agp = .{
+            .path = "../userland/libs/agp",
+        },
+
+        .agp_swrast = .{
+            .path = "../userland/libs/agp-swrast",
+        },
+
         // External dependencieS:
         .args = .{
             .url = "https://github.com/ikskuh/zig-args/archive/872272205d95bdba33798c94e72c5387a31bc806.tar.gz",
@@ -49,6 +57,10 @@
         .zfat = .{
             .url = "https://github.com/ZigEmbeddedGroup/zfat/archive/6c9fcecd0326c8f3bf3353afbee6b3f5987d49ca.tar.gz",
             .hash = "122064858e32ce4448b7c02813379658a74ebf85f026f9936fa627b1a40c3bb9cc39",
+        },
+        .turtlefont = .{
+            .url = "https://github.com/ikskuh/turtlefont/archive/9d7d3879cda0fcbdbbf1574129aec75e2627429f.tar.gz",
+            .hash = "1220e00c64606030f7bb37534120537aa4550ddd35a008c0836cf7d78c128c221dc3",
         },
     },
 }

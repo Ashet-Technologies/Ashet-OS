@@ -10,7 +10,7 @@
 /// All syscalls related to generic resource management.
 const resources = struct {
     /// Returns the type of the system resource.
-    extern fn get_type(SystemResource) error{BadHandle}!SystemResource.Type;
+    extern fn get_type(SystemResource) error{InvalidHandle}!SystemResource.Type;
 
     /// Returns the current owner of this resource.
     extern fn get_owners(SystemResource, owners: ?[]Process) usize;
@@ -806,14 +806,12 @@ const draw = struct {
     extern fn get_system_font(font_name: []const u8) error{
         FileNotFound,
         SystemResources,
-        OutOfMemory,
     }!Font;
 
     /// Creates a new custom font from the given data.
     extern fn create_font(data: []const u8) error{
         InvalidData,
         SystemResources,
-        OutOfMemory,
     }!Font;
 
     /// Returns true if the given font is a system-owned font.
@@ -826,19 +824,23 @@ const draw = struct {
 
     /// Creates a new framebuffer based off a video output. Can be used to output pixels
     /// to the screen.
-    extern fn create_video_framebuffer(VideoOutput) error{SystemResources}!Framebuffer;
+    extern fn create_video_framebuffer(VideoOutput) error{ InvalidHandle, SystemResources }!Framebuffer;
 
     /// Creates a new framebuffer that allows painting into a GUI window.
-    extern fn create_window_framebuffer(Window) error{SystemResources}!Framebuffer;
+    extern fn create_window_framebuffer(Window) error{ InvalidHandle, SystemResources }!Framebuffer;
 
     /// Creates a new framebuffer that allows painting into a widget.
-    extern fn create_widget_framebuffer(Widget) error{SystemResources}!Framebuffer;
+    extern fn create_widget_framebuffer(Widget) error{ InvalidHandle, SystemResources }!Framebuffer;
 
     /// Returns the type of a framebuffer object.
-    extern fn get_framebuffer_type(Framebuffer) FramebufferType;
+    extern fn get_framebuffer_type(Framebuffer) error{InvalidHandle}!FramebufferType;
 
     /// Returns the size of a framebuffer object.
-    extern fn get_framebuffer_size(Framebuffer) Size;
+    extern fn get_framebuffer_size(Framebuffer) error{InvalidHandle}!Size;
+
+    /// Returns the video memory for a *memory* framebuffer.
+    /// Other framebuffer types are not allowed to be passed.
+    extern fn get_framebuffer_memory(Framebuffer) error{ InvalidHandle, Unsupported }!VideoMemory;
 
     /// Marks a portion of the framebuffer as changed and forces the OS to
     /// perform an update action if necessary.
@@ -848,7 +850,23 @@ const draw = struct {
 
     // TODO: fn annotate_text(*Framebuffer, area: Rectangle, text: []const u8) AnnotationError;
 
-    // TODO: Insert render functions here
+    /// Renders the provided Ashet Graphics Protocol `sequence` into `target` framebuffer.
+    ///
+    /// The function will run asynchronously and will return as soon as the rendering is done.
+    ///
+    /// NOTE: On machines without hardware acceleration, this syscall might be completed synchronously.
+    extern "async" fn Render(
+        /// The framebuffer which should be drawn to.
+        target: Framebuffer,
+        /// The AGP code that defines the drawing.
+        sequence: []const u8,
+        /// If the target framebuffer is invalidatable, it is automatically invalidated after the completion
+        /// of the command sequence, ensuring presentation of the contents.
+        ///
+        /// This is useful when painting into widgets or windows to ensure the window manager
+        /// actually sees the changes as soon as they are done, reducing graphics pipeline latency.
+        auto_invalidate: bool,
+    ) error{ InvalidHandle, BadCode }!void;
 };
 
 const gui = struct {
@@ -884,6 +902,21 @@ const gui = struct {
         InvalidHandle,
     }!Window;
 
+    extern fn get_window_title(window: Window, out_title: *[]const u8) error{InvalidHandle}!void;
+
+    extern fn get_window_size(window: Window) error{InvalidHandle}!Size;
+
+    extern fn get_window_min_size(window: Window) error{InvalidHandle}!Size;
+
+    extern fn get_window_max_size(window: Window) error{InvalidHandle}!Size;
+
+    extern fn get_window_flags(window: Window) error{InvalidHandle}!WindowFlags;
+
+    /// Sets the `size` of `window` and returns the new actual size.
+    /// NOTE: This event is meant to be used from desktop APIs and will not automatically
+    ///       notify the window of the resize event.
+    extern fn set_window_size(window: Window, size: Size) error{InvalidHandle}!Size;
+
     /// Resizes a window to the new size.
     extern fn resize_window(Window, size: Size) void;
 
@@ -896,7 +929,7 @@ const gui = struct {
 
     /// Waits for an event on the given `Window`, completing as soon as
     /// an event arrived.
-    extern "async" fn GetWindowEvent(window: Window) error{InProgress}!struct {
+    extern "async" fn GetWindowEvent(window: Window) error{ InvalidHandle, InProgress, Cancelled }!struct {
         event: WindowEvent,
     };
 
@@ -978,14 +1011,14 @@ const gui = struct {
         request_id: MessageBoxEvent.RequestID,
         /// The resulting button which the user clicked.
         result: MessageBoxResult,
-    ) void;
+    ) error{ InvalidHandle, BadRequestId }!void;
 
     /// Posts an event into the window event queue so the window owner
     /// can handle the event.
     extern fn post_window_event(
         window: Window,
         event: WindowEvent,
-    ) error{SystemResources};
+    ) error{ InvalidHandle, SystemResources };
 
     /// Sends a notification to the provided `desktop`.
     extern fn send_notification(
@@ -997,6 +1030,7 @@ const gui = struct {
         severity: NotificationSeverity,
     ) error{
         SystemResources,
+        InvalidHandle,
     };
 
     const clipboard = struct {
@@ -1148,10 +1182,10 @@ pub const SystemResource = enum(usize) {
     _,
 
     /// Casts the resource into a concrete type. Fails, if the type does not match.
-    pub fn cast(resource: SystemResource, comptime t: Type) error{ BadHandle, InvalidType }!CastResult(t) {
+    pub fn cast(resource: SystemResource, comptime t: Type) error{ InvalidHandle, InvalidType }!CastResult(t) {
         var actual: Type = undefined;
         if (resources.get_type(resource, &actual) != .ok)
-            return error.BadHandle;
+            return error.InvalidHandle;
         if (actual != t)
             return error.InvalidType;
         return resource.unsafe_cast(t);
@@ -1574,6 +1608,12 @@ pub const SpawnProcessArg = struct {
     };
 };
 
+pub const WindowFlags = packed struct(u32) {
+    popup: bool,
+    resizable: bool,
+    padding: u30 = 0,
+};
+
 pub const CreateWindowFlags = packed struct(u32) {
     popup: bool = false,
     padding: u31 = 0,
@@ -1656,6 +1696,54 @@ pub const MessageBoxButtons = packed struct(u8) {
     retry: bool = false,
     @"continue": bool = false,
     ignore: bool = false,
+
+    pub fn format(buttons: MessageBoxButtons, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        const max_length = comptime "ok,cancel,yes,no,abort,retry,continue,ignore".len;
+
+        var buffer: [max_length]u8 = undefined;
+        var stream = std.io.fixedBufferStream(&buffer);
+
+        if (buttons.ok) {
+            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
+            stream.writer().writeAll("ok") catch unreachable;
+        }
+        if (buttons.cancel) {
+            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
+            stream.writer().writeAll("cancel") catch unreachable;
+        }
+        if (buttons.yes) {
+            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
+            stream.writer().writeAll("yes") catch unreachable;
+        }
+        if (buttons.no) {
+            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
+            stream.writer().writeAll("no") catch unreachable;
+        }
+        if (buttons.abort) {
+            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
+            stream.writer().writeAll("abort") catch unreachable;
+        }
+        if (buttons.retry) {
+            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
+            stream.writer().writeAll("retry") catch unreachable;
+        }
+        if (buttons.@"continue") {
+            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
+            stream.writer().writeAll("continue") catch unreachable;
+        }
+        if (buttons.ignore) {
+            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
+            stream.writer().writeAll("ignore") catch unreachable;
+        }
+
+        if (stream.pos > 0) {
+            try writer.writeAll(stream.getWritten());
+        } else {
+            try writer.writeAll("none");
+        }
+    }
 };
 
 pub const DesktopDescriptor = extern struct {
@@ -1681,20 +1769,20 @@ pub const DesktopEvent = extern union {
         // lifecycle management:
 
         /// A window was created on this desktop.
-        create_window,
+        create_window = 0,
 
         /// A window was destroyed on this desktop.
-        destroy_window,
+        destroy_window = 1,
 
         // user interaction:
 
         /// `send_notification` was called and the desktop user should display
         /// a notification.
-        show_notification,
+        show_notification = 2,
 
         /// `send_notification` was called and the desktop user should display
         /// a notification.
-        show_message_box,
+        show_message_box = 3,
 
         _,
     };
@@ -1720,6 +1808,10 @@ pub const DesktopNotificationEvent = extern struct {
 
     /// The severity/importance of the notification.
     severity: NotificationSeverity,
+
+    pub fn message(ev: DesktopNotificationEvent) []const u8 {
+        return ev.message_ptr[0..ev.message_len];
+    }
 };
 
 pub const MessageBoxEvent = extern struct {
@@ -1748,6 +1840,14 @@ pub const MessageBoxEvent = extern struct {
     icon: MessageBoxIcon,
 
     pub const RequestID = enum(u16) { _ };
+
+    pub fn caption(ev: MessageBoxEvent) []const u8 {
+        return ev.caption_ptr[0..ev.caption_len];
+    }
+
+    pub fn message(ev: MessageBoxEvent) []const u8 {
+        return ev.message_ptr[0..ev.message_len];
+    }
 };
 
 /// A 16 bpp color value using RGB565 encoding.
@@ -1808,9 +1908,10 @@ pub const InputEvent = extern union {
         key_press = 0,
         key_release = 1,
 
-        mouse_motion = 2,
-        mouse_button_press = 3,
-        mouse_button_release = 4,
+        mouse_rel_motion = 2,
+        mouse_abs_motion = 3,
+        mouse_button_press = 4,
+        mouse_button_release = 5,
     };
 
     comptime {
@@ -1831,28 +1932,28 @@ pub const WidgetEvent = extern union {
         // lifecycle:
 
         /// The widget was created and attached to a window.
-        create,
+        create = 0,
 
         /// The widget is in the process of being destroyed.
         /// After this event, the handle will be invalid.
-        destroy,
+        destroy = 1,
 
         /// The creator of the widget wants to do something widget-specific.
-        control,
+        control = 2,
 
         // basic input:
 
         /// The user clicked on the widget with the primary mouse button
         /// or pressed the return or space bar button on the keyboard.
-        click,
+        click = 3,
 
         // keyboard input:
 
         /// A key was pressed on the keyboard.
-        key_press,
+        key_press = 4,
 
         /// A key was released on the keyboard.
-        key_release,
+        key_release = 5,
 
         // mouse specific extras:
 
@@ -1860,43 +1961,43 @@ pub const WidgetEvent = extern union {
         ///
         /// NOTE: This event can only happen when `hit_test_visible` was set
         /// in the widget creation flags.
-        mouse_enter,
+        mouse_enter = 6,
 
         /// The mouse was moved outside the rectangle of the widget.
         ///
         /// NOTE: This event can only happen when `hit_test_visible` was set
         /// in the widget creation flags.
-        mouse_leave,
+        mouse_leave = 7,
 
         /// The mouse stopped for some time over the widget.
         ///
         /// NOTE: This event can only happen when `hit_test_visible` was set
         /// in the widget creation flags.
-        mouse_hover,
+        mouse_hover = 8,
 
         /// A mouse button was pressed over the widget.
         ///
         /// NOTE: This event can only happen when `hit_test_visible` was set
         /// in the widget creation flags.
-        mouse_button_press,
+        mouse_button_press = 9,
 
         /// A mouse button was released over the widget.
         ///
         /// NOTE: This event can only happen when `hit_test_visible` was set
         /// in the widget creation flags.
-        mouse_button_release,
+        mouse_button_release = 10,
 
         /// The mouse was moved over the widget.
         ///
         /// NOTE: This event can only happen when `hit_test_visible` was set
         /// in the widget creation flags.
-        mouse_motion,
+        mouse_motion = 11,
 
         /// A vertical or horizontal scroll wheel was scrolled over the widget.
         ///
         /// NOTE: This event can only happen when `hit_test_visible` was set
         /// in the widget creation flags.
-        scroll,
+        scroll = 12,
 
         // drag&drop operations:
 
@@ -1904,25 +2005,25 @@ pub const WidgetEvent = extern union {
         ///
         /// NOTE: This event can only happen when `allow_drop` was set in the
         /// widget creation flags.
-        drag_enter,
+        drag_enter = 13,
 
         /// The user dragged a payload out of the rectangle of this widget.
         ///
         /// NOTE: This event can only happen when `allow_drop` was set in the
         /// widget type creation flags.
-        drag_leave,
+        drag_leave = 14,
 
         /// The user dragged a payload over the rectangle of this widget.
         ///
         /// NOTE: This event can only happen when `allow_drop` was set in the
         /// widget type creation flags.
-        drag_over,
+        drag_over = 15,
 
         /// The user dropped a payload into this widget.
         ///
         /// NOTE: This event can only happen when `allow_drop` was set in the
         /// widget type creation flags.
-        drag_drop,
+        drag_drop = 16,
 
         // clipboard operations:
 
@@ -1930,39 +2031,39 @@ pub const WidgetEvent = extern union {
         ///
         /// NOTE: This event can only happen when `clipboard_sensitive` was set in
         /// the widget type creation flags.
-        clipboard_copy,
+        clipboard_copy = 17,
 
         /// The user requested a clipboard paste operation, usually by pressing 'Ctrl-V'.
         ///
         /// NOTE: This event can only happen when `clipboard_sensitive` was set in
         /// the widget type creation flags.
-        clipboard_paste,
+        clipboard_paste = 18,
 
         /// The user requested a clipboard cut operation, usually by pressing 'Ctrl-X'.
         ///
         /// NOTE: This event can only happen when `clipboard_sensitive` was set in
         /// the widget type creation flags.
-        clipboard_cut,
+        clipboard_cut = 19,
 
         // widget specific:
 
         /// The widget was resized with a call to `place_widget`.
         ///
         /// NOTE: This event will not fire if the widget was only moved.
-        resized,
+        resized = 21,
 
         /// The widget should draw itself.
-        paint,
+        paint = 20,
 
         /// User pressed the "context menu" button or did a
         /// secondary mouse button click on the  widget.
-        context_menu_request,
+        context_menu_request = 22,
 
         /// The widget received focus via mouse or keyboard.
-        focus_enter,
+        focus_enter = 23,
 
         /// The widget lost focus after receiving it.
-        focus_leave,
+        focus_leave = 24,
 
         _,
     };
@@ -1980,37 +2081,37 @@ pub const WindowEvent = extern union {
     widget_notify: WidgetNotifyEvent,
 
     pub const Type = enum(u16) {
-        widget_notify,
+        widget_notify = 0,
 
-        key_press,
-        key_release,
+        key_press = 1,
+        key_release = 2,
 
-        mouse_enter,
-        mouse_leave,
-        mouse_motion,
-        mouse_button_press,
-        mouse_button_release,
+        mouse_enter = 3,
+        mouse_leave = 4,
+        mouse_motion = 7,
+        mouse_button_press = 6,
+        mouse_button_release = 5,
 
         /// The user requested the window to be closed.
-        window_close,
+        window_close = 8,
 
         /// The window was minimized and is not visible anymore.
-        window_minimize,
+        window_minimize = 9,
 
         /// The window was restored from minimized state.
-        window_restore,
+        window_restore = 10,
 
         /// The window is currently moving on the screen. Query `window.bounds` to get the new position.
-        window_moving,
+        window_moving = 11,
 
         /// The window was moved on the screen. Query `window.bounds` to get the new position.
-        window_moved,
+        window_moved = 12,
 
         /// The window size is currently changing. Query `window.bounds` to get the new size.
-        window_resizing,
+        window_resizing = 13,
 
         /// The window size changed. Query `window.bounds` to get the new size.
-        window_resized,
+        window_resized = 14,
     };
 
     comptime {
@@ -2138,7 +2239,7 @@ pub const Point = extern struct {
     }
 
     pub fn manhattenDistance(a: Point, b: Point) u16 {
-        return std.math.absCast(a.x - b.x) + std.math.absCast(a.y - b.y);
+        return @abs(a.x - b.x) + @abs(a.y - b.y);
     }
 
     pub fn format(point: Point, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
@@ -2214,11 +2315,27 @@ pub const Rectangle = extern struct {
             boundary.contains(Point.new(region.x + @as(u15, @intCast(region.width)) - 1, region.y + @as(u15, @intCast(region.height)) - 1));
     }
 
+    /// Returns true if `a` and `b` overlap.
     pub fn intersects(a: Rectangle, b: Rectangle) bool {
         return a.x + @as(u15, @intCast(a.width)) >= b.x and
             a.y + @as(u15, @intCast(a.height)) >= b.y and
             a.x <= b.x + @as(u15, @intCast(b.width)) and
             a.y <= b.y + @as(u15, @intCast(b.height));
+    }
+
+    /// Returns the overlapping region of `a` and `b`.
+    pub fn overlap(a: Rectangle, b: Rectangle) Rectangle {
+        const _left = @max(a.left(), b.left());
+        const _right = @min(a.right(), b.right());
+        const _top = @max(a.top(), b.top());
+        const _bottom = @min(a.bottom(), b.bottom());
+
+        return .{
+            .x = _left,
+            .y = _top,
+            .width = @intCast(_right -| _left),
+            .height = @intCast(_bottom -| _top),
+        };
     }
 
     pub fn eql(a: Rectangle, b: Rectangle) bool {
@@ -2266,6 +2383,26 @@ pub const Rectangle = extern struct {
             rect.height,
         });
     }
+
+    pub fn corner(rect: Rectangle, corner_id: Corner) Point {
+        const edge: u2 = @intFromEnum(corner_id);
+
+        var x: i16 = rect.x;
+        var y: i16 = rect.y;
+
+        x += @intCast(@intFromBool((edge & 1) != 0) * rect.width);
+        y += @intCast(@intFromBool((edge & 2) != 0) * rect.height);
+
+        return Point.new(x, y);
+    }
+
+    pub const Corner = enum(u2) {
+        // Encodes X/Y position in bits:
+        top_left = 0b00,
+        top_right = 0b01,
+        bottom_left = 0b10,
+        bottom_right = 0b11,
+    };
 };
 
 pub const VideoMemory = extern struct {

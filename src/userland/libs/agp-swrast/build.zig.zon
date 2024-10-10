@@ -1,0 +1,21 @@
+.{
+    .name = "agp-swrast",
+    .version = "0.1.0",
+    .dependencies = .{
+        .abi = .{
+            .path = "../../../abi",
+        },
+        .agp = .{
+            .path = "../agp",
+        },
+        .turtlefont = .{
+            .url = "https://github.com/ikskuh/turtlefont/archive/9d7d3879cda0fcbdbbf1574129aec75e2627429f.tar.gz",
+            .hash = "1220e00c64606030f7bb37534120537aa4550ddd35a008c0836cf7d78c128c221dc3",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
