@@ -27,7 +27,7 @@ const syscalls = struct {
 };
 
 const io = struct {
-    async fn NoOperation() error{}!void;
+    extern "async" fn NoOperation() error{}!void;
 };
 
 pub const Src1 = struct(SystemResource) {};

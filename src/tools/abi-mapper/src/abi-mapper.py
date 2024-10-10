@@ -7,6 +7,7 @@ import hashlib
 import io
 import subprocess
 import caseconverter
+import json
 from typing import NoReturn, Optional, Any
 from collections.abc import Callable, Iterable
 from contextlib import contextmanager
@@ -365,6 +366,102 @@ class ABI_Definition:
     iops: list[AsyncOp]
     syscalls: list[Function]
 
+class ABI_JsonEncoder(json.JSONEncoder):
+    def default(self, o):
+        if isinstance(o, ABI_Definition):
+            return { "root_container": {
+                        "decls": list(map(self.default, o.root_container.decls)),
+                        "rest": o.root_container.rest
+                     },
+                     "errors": o.errors.mapping,
+                     "sys_resources": o.sys_resources,
+                     "iops": list(map(self.default, o.iops)),
+                     "syscalls": list(map(self.default, o.syscalls)) }
+        elif isinstance(o, Declaration):
+            return self.json_decl(o)
+        elif isinstance(o, Type):
+            return self.json_type(o)
+        elif isinstance(o, ParameterCollection):
+            return {
+                "abi": list(map(self.default, o.abi)),
+                "native": list(map(self.default, o.native)),
+                "annotations": list(map(self.default, o.annotations))
+            }
+        elif isinstance(o, Parameter):
+            return {
+                "name": o.name,
+                "docs": { "lines": o.docs.lines } if o.docs is not None else None,
+                "type": self.json_type(o.type)
+            }
+        elif isinstance(o, ParameterAnnotation):
+            return {
+                "is_slice": o.is_slice,
+                "is_optional": o.is_optional,
+                "is_out": o.is_out,
+                "technical": o.technical
+            }
+        else:
+            return super().default(o)
+        
+    def json_decl(self, d: Declaration):
+        assert isinstance(d, Declaration)
+        decl_json = { "name": d.name,
+                      "docs": d.docs,
+                      "full_qualified_name": str(d.full_qualified_name),
+                      "value": None }
+        if isinstance(d, SystemResource):
+            decl_json["value"] = { "SystemResource": {} }
+        elif isinstance(d, Namespace):
+            decl_json["value"] = { "Namespace": { "decls": list(map(self.json_decl, d.decls)) } }
+        elif isinstance(d, ErrorSet):
+            decl_json["value"] = { "ErrorSet": { "errors": list(d.errors) } }
+        elif isinstance(d, Function):
+            decl_json["value"] = { "Function": {
+                "params": self.default(d.params),
+                "abi_return_type": self.json_type(d.abi_return_type),
+                "key": str(d.key),
+                "value": d.number.value
+            } }
+        elif isinstance(d, AsyncOp):
+            decl_json["value"] = { "AsyncOp": {
+                "inputs": self.default(d.inputs),
+                "outputs": self.default(d.outputs),
+                "error": self.json_type(d.error)
+            } }
+        return decl_json
+
+    def json_type(self, t: Type):
+        assert isinstance(t, Type)
+        if isinstance(t, ReferenceType):
+            return { "ReferenceType": { "name": t.name } }
+        elif isinstance(t, OptionalType):
+            return { "OptionalType": { "inner": self.json_type(t.inner) } }
+        elif isinstance(t, ArrayType):
+            return { "ArrayType": {
+                "size": t.size,
+                "sentinel": t.sentinel,
+                "inner": self.json_type(t.inner)
+            } }
+        elif isinstance(t, PointerType):
+            return { "PointerType": {
+                "size": t.size,
+                "sentinel": t.sentinel,
+                "const": t.const,
+                "volatile": t.volatile,
+                "alignment": t.alignment,
+                "inner": self.json_type(t.inner)
+            } }
+        elif isinstance(t, ErrorUnion):
+            return { "ErrorUnion": {
+                "error": self.json_type(t.error),
+                "result": self.json_type(t.result)
+            } }
+        elif isinstance(t, ErrorSet):
+            return { "ErrorSet": {
+                "errors": list(t.errors)
+            } }
+        else:
+            super().default(t)
 
 def unwrap_items(func):
     def _deco(self, items):
@@ -1589,6 +1686,7 @@ def main():
     cli_parser.add_argument("--use-linkname", action="store_true", required=False)
     cli_parser.add_argument("--zig-exe", type=Path, required=False)
     cli_parser.add_argument("abi", type=Path)
+    cli_parser.add_argument("--emit-json", type=Path, required=False)
 
     cli = cli_parser.parse_args()
 
@@ -1597,6 +1695,7 @@ def main():
     render_mode: Renderer = cli.mode
     WITH_LINKNAME = cli.use_linkname
     zig_exe: Path | None = Path(cli.zig_exe) if cli.zig_exe else None
+    json_path: Path | None = Path(cli.emit_json) if cli.emit_json else None
 
     grammar_source = GRAMMAR_PATH.read_text()
     zig_parser = Lark(grammar_source, start="toplevel")
@@ -1680,6 +1779,10 @@ def main():
         output_path.chmod(stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
     else:
         sys.stdout.write(generated_code)
+    
+    if json_path is not None:
+        with json_path.open(mode='w') as j:
+            json.dump(abi, j, cls=ABI_JsonEncoder, indent=1)
 
 
 if __name__ == "__main__":
