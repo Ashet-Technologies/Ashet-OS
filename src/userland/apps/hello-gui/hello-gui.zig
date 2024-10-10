@@ -31,7 +31,7 @@ pub fn main() !void {
             .initial_size = Size.new(200, 150),
         },
     );
-    defer window.release();
+    defer window.destroy_now();
 
     std.log.info("created window: {}", .{window});
 

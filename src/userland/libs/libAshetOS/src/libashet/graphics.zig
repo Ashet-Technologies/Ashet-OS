@@ -221,13 +221,6 @@ pub fn load_bitmap_file(file: ashet.fs.File) !Framebuffer {
 
     const vmem = get_framebuffer_memory(fb) catch unreachable;
 
-    logger.info("vmem: {}*{}, +{}, @{*}", .{
-        vmem.width,
-        vmem.height,
-        vmem.stride,
-        vmem.base,
-    });
-
     std.debug.assert(vmem.width == header.width);
     std.debug.assert(vmem.height == header.height);
 
@@ -247,8 +240,6 @@ pub fn load_bitmap_file(file: ashet.fs.File) !Framebuffer {
             scanline += vmem.stride;
         }
     }
-
-    logger.info("loaded bitmap: {any}", .{vmem.base[0..pixel_count]});
 
     // TODO(fqu): Implement distinct palette support for framebuffers?
     _ = palette_entry_count;

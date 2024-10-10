@@ -126,7 +126,10 @@ pub const Desktop = struct {
     }
 
     fn notify_destroy_window(desktop: *Desktop, window: *Window) void {
-        const window_handle = ashet.resources.get_handle(desktop.server_process, &window.system_resource) orelse return;
+        const window_handle = ashet.resources.get_handle(desktop.server_process, &window.system_resource) orelse {
+            logger.warn("failed to send destroy_window notification: window does not exist anymore!", .{});
+            return;
+        };
         desktop.process_event(.{
             .create_window = .{
                 .event_type = .destroy_window,
@@ -160,9 +163,9 @@ pub const Desktop = struct {
 };
 
 pub const Window = struct {
-    pub const event_queue_len = 16;
+    pub const Destructor = ashet.resources.DestructorWithNotification(@This(), _internal_destroy, _notify_destroy);
 
-    pub const Destructor = ashet.resources.Destructor(@This(), _internal_destroy);
+    pub const event_queue_len = 16;
 
     system_resource: ashet.resources.SystemResource = .{ .type = .window },
     associated_memory: std.heap.ArenaAllocator,
@@ -237,11 +240,21 @@ pub const Window = struct {
 
     pub const destroy = Destructor.destroy;
 
+    fn _notify_destroy(window: *Window) void {
+        const desktop: *Desktop = window.desktop.data.desktop;
+
+        // Invoke the handler process before removing it from the desktop.
+        // this operation must happen as long as the window is still an "alive" resource:
+        desktop.notify_destroy_window(window);
+
+        desktop.windows.remove(&window.desktop);
+    }
+
     fn _internal_destroy(window: *Window) void {
         const desktop: *Desktop = window.desktop.data.desktop;
 
-        // Invoke the handler process:
-        desktop.notify_destroy_window(window);
+        // The notification should have removed the window already from the desktop:
+        std.debug.assert(!astd.is_in_linked_list(WindowDesktopLinkList, desktop.windows, &window.desktop));
 
         if (window.event_awaiter) |event_awaiter| {
             // If there's still an event awaiter for our window, we have to cancel the event,
@@ -249,7 +262,6 @@ pub const Window = struct {
             event_awaiter.finalize(ashet.abi.gui.GetWindowEvent, error.Cancelled);
         }
 
-        desktop.windows.remove(&window.desktop);
         ashet.memory.type_pool(Window).free(window);
     }
 

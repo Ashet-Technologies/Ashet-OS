@@ -24,3 +24,13 @@ pub fn mapToUnexpected(comptime E: type, err: anyerror) E {
     std.log.warn("Unexpected error {s}. Mapping to error.Unexpected!", .{@errorName(err)});
     return error.Unexpected;
 }
+
+/// Checks if `expected_node` is in the given linked list.
+pub fn is_in_linked_list(comptime LinkedList: type, list: LinkedList, expected_node: *const LinkedList.Node) bool {
+    var iter = list.first;
+    while (iter) |node| : (iter = node.next) {
+        if (node == expected_node)
+            return true;
+    }
+    return false;
+}

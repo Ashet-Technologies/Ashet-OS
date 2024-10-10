@@ -562,6 +562,33 @@ pub fn Destructor(comptime Resource: type, comptime destroyFn: fn (*Resource) vo
     return T;
 }
 
+///
+/// The same as `Destructor` but supports a destroy handler to be executed *before* the resource handles are invalidated.
+///
+pub fn DestructorWithNotification(comptime Resource: type, comptime destroyFn: fn (*Resource) void, comptime notifyFn: fn (*Resource) void) type {
+    const T = struct {
+        /// Wrapper function that will forward the call to the resource destruction.
+        pub fn destroy(res: *Resource) void {
+            ashet.resources.destroy(&res.system_resource);
+        }
+
+        /// Actually destructs the resource
+        fn destructor(res: *Resource) void {
+            // assert we don't have a bug somewhere:
+            std.debug.assert(res.system_resource.owners.len == 0);
+            destroyFn(res);
+        }
+
+        /// Notifies the resource that it's going to be destroyed
+        /// immediatly.
+        fn notify_destroy(res: *Resource) void {
+            notifyFn(res);
+        }
+    };
+    std.debug.assert(@sizeOf(T) == 0);
+    return T;
+}
+
 /// Resolves `handle` for the resource namespace inside `process`.
 /// Returns a pointer to the `Ownership` structure describing the
 fn resolve_ownership(process: *ashet.multi_tasking.Process, handle: Handle) error{InvalidHandle}!*Ownership {
@@ -696,6 +723,18 @@ pub fn remove_from_process(process: *ashet.multi_tasking.Process, resource: *Sys
 /// Immediatly destroys the system resource and invalidates all handles.
 pub fn destroy(resource: *SystemResource) void {
     logger.debug("destroy {}", .{resource});
+
+    // If the resource has a early destroy notification, send it:
+    switch (resource.type) {
+        inline else => |type_id| {
+            const Resource = ashet.resources.InstanceType(type_id);
+
+            if (@hasDecl(Resource.Destructor, "notify_destroy")) {
+                const instance = resource.cast(Resource) catch unreachable;
+                Resource.Destructor.notify_destroy(instance);
+            }
+        },
+    }
 
     // Unlink resource from all processes:
     logger.debug("unlink resource {}", .{resource});
