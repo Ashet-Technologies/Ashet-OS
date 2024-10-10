@@ -134,12 +134,16 @@ pub fn main() !void {
 
     damage_tracking.invalidate_screen();
 
+    var selected_app_icon: ?usize = null;
+    var last_click_pos: ashet.abi.Point = ashet.abi.Point.zero;
+    var last_click_time: ashet.clock.Absolute = .system_start;
+
     while (true) {
         if (damage_tracking.is_tainted()) {
             defer damage_tracking.clear();
 
             const black = ColorIndex.get(0x0);
-            const blue = ColorIndex.get(0x2);
+            // const blue = ColorIndex.get(0x2);
             const red = ColorIndex.get(0x4);
 
             // try render_queue.clear(window_manager.current_theme.desktop_color);
@@ -158,15 +162,22 @@ pub fn main() !void {
                         desktop_icon.icon,
                     );
 
-                    try render_queue.draw_rect(
-                        desktop_icon.bounds,
-                        blue,
-                    );
+                    if (selected_app_icon == desktop_icon.index) {
+                        try render_queue.draw_rect(
+                            desktop_icon.bounds.grow(2),
+                            red,
+                        );
+                    } else {
+                        try render_queue.draw_rect(
+                            desktop_icon.bounds.grow(2),
+                            black,
+                        );
+                    }
 
                     try render_queue.draw_text(
                         desktop_icon.bounds.corner(.bottom_left),
                         default_font,
-                        red,
+                        black,
                         desktop_icon.app.get_display_name(),
                     );
                 }
@@ -181,42 +192,140 @@ pub fn main() !void {
 
         const event = try ashet.input.await_event();
 
-        const prev_cursor = cursor;
-        switch (event) {
-            .mouse_abs_motion => |motion| {
-                cursor = Point.new(
-                    @max(0, @min(@as(i16, @intCast(fb_size.width -| 1)), motion.x)),
-                    @max(0, @min(@as(i16, @intCast(fb_size.height -| 1)), motion.y)),
-                );
-            },
-            .mouse_rel_motion => |motion| {
-                cursor = Point.new(
-                    @max(0, @min(@as(i16, @intCast(fb_size.width -| 1)), cursor.x +| motion.dx)),
-                    @max(0, @min(@as(i16, @intCast(fb_size.height -| 1)), cursor.y +| motion.dy)),
-                );
-            },
+        // Update mouse cursor based off the event:
+        {
+            const prev_cursor = cursor;
+            switch (event) {
+                .mouse_abs_motion => |motion| {
+                    cursor = Point.new(
+                        @max(0, @min(@as(i16, @intCast(fb_size.width -| 1)), motion.x)),
+                        @max(0, @min(@as(i16, @intCast(fb_size.height -| 1)), motion.y)),
+                    );
+                },
+                .mouse_rel_motion => |motion| {
+                    cursor = Point.new(
+                        @max(0, @min(@as(i16, @intCast(fb_size.width -| 1)), cursor.x +| motion.dx)),
+                        @max(0, @min(@as(i16, @intCast(fb_size.height -| 1)), cursor.y +| motion.dy)),
+                    );
+                },
 
-            else => {},
+                else => {},
+            }
+
+            if (!cursor.eql(prev_cursor)) {
+                damage_tracking.invalidate_region(Rectangle{
+                    .x = prev_cursor.x,
+                    .y = prev_cursor.y,
+                    .width = Cursor.width,
+                    .height = Cursor.height,
+                });
+                damage_tracking.invalidate_region(Rectangle{
+                    .x = cursor.x,
+                    .y = cursor.y,
+                    .width = Cursor.width,
+                    .height = Cursor.height,
+                });
+            }
         }
 
-        if (!cursor.eql(prev_cursor)) {
-            damage_tracking.invalidate_region(Rectangle{
-                .x = prev_cursor.x,
-                .y = prev_cursor.y,
-                .width = Cursor.width,
-                .height = Cursor.height,
-            });
-            damage_tracking.invalidate_region(Rectangle{
-                .x = cursor.x,
-                .y = cursor.y,
-                .width = Cursor.width,
-                .height = Cursor.height,
-            });
-        }
-
-        try window_manager.handle_event(cursor, event);
-
+        const was_handled = try window_manager.handle_event(cursor, event);
         try window_manager.handle_after_events();
+        if (!was_handled) {
+            switch (event) {
+                .key_press, .key_release => {},
+
+                .mouse_abs_motion, .mouse_rel_motion => {},
+
+                .mouse_button_press => |data| handle_event: {
+                    if (data.button != .left)
+                        break :handle_event;
+
+                    const previous_icon = selected_app_icon;
+                    defer if (previous_icon != selected_app_icon) {
+                        // Forward event to "desktop"
+                        logger.debug("changed app selection from {?} to {?}", .{
+                            previous_icon,
+                            selected_app_icon,
+                        });
+                        // if (previous_icon) |previous| {
+                        //     damage_tracking.invalidate_region(
+                        //         previous.bounds.grow(8),
+                        //     );
+                        // }
+
+                        // if (selected_app_icon) |current| {
+                        //     damage_tracking.invalidate_region(
+                        //         current.bounds.grow(8),
+                        //     );
+                        // }
+                    };
+
+                    const app = apps.app_from_point(fb_size, cursor) orelse {
+                        // User clicked onto the backdrop, not an application icon.
+                        // This means we have to deselect the application.
+
+                        // Reset the last click time to system start so the user
+                        // won't be able to trigger an accidential double click:
+                        last_click_time = .system_start;
+
+                        selected_app_icon = null;
+                        break :handle_event;
+                    };
+
+                    const now = ashet.clock.monotonic();
+                    defer last_click_time = now;
+
+                    if (selected_app_icon == app.index) double_click_handler: {
+                        // We clicked the same app again, let's see if it was a double click:
+
+                        const pixel_since_last_click = cursor.manhattenDistance(last_click_pos);
+                        logger.debug("pixel since: {}", .{pixel_since_last_click});
+                        if (pixel_since_last_click > 4) {
+                            // too much jitter
+                            break :double_click_handler;
+                        }
+
+                        const ms_since_last_click = now.time_since(last_click_time).to_ms();
+                        logger.debug("time since: {}", .{ms_since_last_click});
+                        if (ms_since_last_click > 250) {
+                            // too slow
+                            break :double_click_handler;
+                        }
+
+                        // Start app:
+
+                        var path_buffer: [256]u8 = undefined;
+
+                        const path = try std.fmt.bufPrint(&path_buffer, "{s}/code", .{app.app.get_disk_name()});
+
+                        const app_proc = try ashet.overlapped.performOne(abi.process.Spawn, .{
+                            .dir = apps_dir.handle,
+                            .path_ptr = path.ptr,
+                            .path_len = path.len,
+                            .argv_ptr = &[_]abi.SpawnProcessArg{
+                                abi.SpawnProcessArg.string("--desktop"),
+                                abi.SpawnProcessArg.resource(desktop.as_resource()),
+                            },
+                            .argv_len = 2,
+                        });
+                        app_proc.process.release(); // we're not interested in "holding" onto process
+
+                        // logger.warn("handle double click to {s}", .{app.app.get_display_name()});
+                    }
+
+                    last_click_pos = cursor;
+
+                    selected_app_icon = app.index;
+                    damage_tracking.invalidate_region(
+                        app.bounds.grow(8),
+                    );
+                },
+
+                .mouse_button_release => {
+                    //
+                },
+            }
+        }
     }
 }
 

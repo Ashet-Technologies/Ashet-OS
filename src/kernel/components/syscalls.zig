@@ -256,7 +256,7 @@ pub const syscalls = struct {
 
     pub const clock = struct {
         pub fn monotonic() u64 {
-            return @intFromEnum(ashet.time.Instant.now());
+            return std.time.ns_per_ms * @intFromEnum(ashet.time.Instant.now());
         }
     };
 

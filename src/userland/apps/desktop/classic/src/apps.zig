@@ -90,6 +90,15 @@ pub fn iterate(target_size: ashet.abi.Size) AppIterator {
     };
 }
 
+pub fn app_from_point(target_size: ashet.abi.Size, query: ashet.abi.Point) ?DesktopIcon {
+    var iter = iterate(target_size);
+    while (iter.next()) |app| {
+        if (app.bounds.contains(query))
+            return app;
+    }
+    return null;
+}
+
 pub const DesktopIcon = struct {
     app: *const App,
     bounds: ashet.abi.Rectangle,

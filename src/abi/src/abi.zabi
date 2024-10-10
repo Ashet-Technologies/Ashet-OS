@@ -2239,7 +2239,7 @@ pub const Point = extern struct {
     }
 
     pub fn manhattenDistance(a: Point, b: Point) u16 {
-        return std.math.absCast(a.x - b.x) + std.math.absCast(a.y - b.y);
+        return @abs(a.x - b.x) + @abs(a.y - b.y);
     }
 
     pub fn format(point: Point, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {

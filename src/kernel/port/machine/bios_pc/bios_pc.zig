@@ -84,13 +84,13 @@ const COM2_PORT = 0x2F8;
 const COM3_PORT = 0x3E8;
 const COM4_PORT = 0x2E8;
 
-var timer_counter: u64 = 0;
+var timer_counter_ms: u64 = 0;
 
 fn timer_interrupt(state: *x86.idt.CpuState) *x86.idt.CpuState {
-    timer_counter += 1;
+    timer_counter_ms += 1;
 
     if (@import("builtin").mode == .Debug) {
-        if (timer_counter % 2500 == 0) {
+        if (timer_counter_ms % 2500 == 0) {
             logger.debug("system still alive", .{});
         }
     }
@@ -102,7 +102,7 @@ pub fn get_tick_count() u64 {
     var cs = ashet.CriticalSection.enter();
     defer cs.leave();
 
-    return timer_counter;
+    return timer_counter_ms;
 }
 
 pub fn earlyInitialize() void {

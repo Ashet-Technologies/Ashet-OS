@@ -82,8 +82,8 @@ pub fn handle_after_events(wm: *WindowManager) !void {
     }
 }
 
-pub fn handle_event(wm: *WindowManager, mouse_point: Point, input_event: ashet.input.Event) !void {
-    switch (input_event) {
+pub fn handle_event(wm: *WindowManager, mouse_point: Point, input_event: ashet.input.Event) !bool {
+    return switch (input_event) {
         .key_press,
         .key_release,
         => |event| try wm.handle_keyboard_event(event),
@@ -93,40 +93,45 @@ pub fn handle_event(wm: *WindowManager, mouse_point: Point, input_event: ashet.i
         .mouse_button_press,
         .mouse_button_release,
         => |event| try wm.handle_mouse_event(mouse_point, event),
-    }
+    };
 }
-fn handle_keyboard_event(wm: *WindowManager, event: ashet.abi.KeyboardEvent) !void {
+
+fn handle_keyboard_event(wm: *WindowManager, event: ashet.abi.KeyboardEvent) !bool {
     if (event.key == .meta) {
         // swallow all access to meta into the UI. Windows never see the meta key!
         wm.meta_pressed = event.pressed;
-    } else if (wm.focused_window) |window| {
-        if (!window.flags.minimized) {
-            window.pushEvent(switch (event.event_type.input) {
-                .key_press => .{ .key_press = event },
-                .key_release => .{ .key_release = event },
-                .mouse_abs_motion,
-                .mouse_rel_motion,
-                .mouse_button_press,
-                .mouse_button_release,
-                => unreachable,
-            });
-        }
+        return true;
     }
+
+    // Keyboard events are forwarded to the current window or will go into "the void":
+    const focused_window = wm.focused_window orelse return false;
+    if (focused_window.flags.minimized) {
+        // Minimized windows can't receive events either:
+        return true;
+    }
+
+    focused_window.pushEvent(switch (event.event_type.input) {
+        .key_press => .{ .key_press = event },
+        .key_release => .{ .key_release = event },
+        .mouse_abs_motion,
+        .mouse_rel_motion,
+        .mouse_button_press,
+        .mouse_button_release,
+        => unreachable,
+    });
+
+    return true;
 }
 
-fn handle_mouse_event(wm: *WindowManager, mouse_point: Point, event: ashet.abi.MouseEvent) !void {
-    // const mouse_point = Point.new(@as(i16, @intCast(event.x)), @as(i16, @intCast(event.y)));
-    // if (event.type == .motion) {
-    //     invalidateScreen();
-    // }
-    switch (wm.mouse_action) {
+fn handle_mouse_event(wm: *WindowManager, mouse_point: Point, event: ashet.abi.MouseEvent) !bool {
+    return switch (wm.mouse_action) {
         .default => try wm.handle_default_mouse_event(mouse_point, event),
         .drag_window => |*action| try wm.handle_drag_window_mouse_event(mouse_point, event, action),
         .resize_window => |*action| try wm.handle_resize_window_mouse_event(mouse_point, event, action),
-    }
+    };
 }
 
-fn handle_default_mouse_event(wm: *WindowManager, mouse_point: Point, event: ashet.abi.MouseEvent) !void {
+fn handle_default_mouse_event(wm: *WindowManager, mouse_point: Point, event: ashet.abi.MouseEvent) !bool {
     switch (event.event_type.input) {
         .key_press, .key_release => unreachable,
         .mouse_button_press => {
@@ -147,7 +152,7 @@ fn handle_default_mouse_event(wm: *WindowManager, mouse_point: Point, event: ash
                                 .start = mouse_point,
                             },
                         };
-                        return;
+                        return true;
                     }
 
                     switch (surface.part) {
@@ -160,7 +165,7 @@ fn handle_default_mouse_event(wm: *WindowManager, mouse_point: Point, event: ash
                                     },
                                 };
                             }
-                            return;
+                            return true;
                         },
                         .button => |button| switch (button) {
                             .minimize => wm.minimize_window(surface.window),
@@ -168,7 +173,7 @@ fn handle_default_mouse_event(wm: *WindowManager, mouse_point: Point, event: ash
                             .restore => wm.restore_window(surface.window),
                             .close => {
                                 surface.window.pushEvent(.window_close);
-                                return;
+                                return true;
                             },
                             .resize => {
                                 wm.mouse_action = MouseAction{
@@ -177,7 +182,7 @@ fn handle_default_mouse_event(wm: *WindowManager, mouse_point: Point, event: ash
                                         .start = mouse_point,
                                     },
                                 };
-                                return;
+                                return true;
                             },
                         },
                         .content => {}, // ignore event here, just forward
@@ -187,6 +192,8 @@ fn handle_default_mouse_event(wm: *WindowManager, mouse_point: Point, event: ash
                 if (surface.part == .content) {
                     // TODO(fqu): Re-enable mouse events: surface.window.pushEvent(.{ .mouse = surface.window.makeMouseRelative(event) });
                 }
+
+                return true;
             } else if (wm.minimized_from_cursor(mouse_point)) |mini| {
                 if (event.button == .left) {
                     if (mini.restore_button.contains(mouse_point)) {
@@ -204,26 +211,30 @@ fn handle_default_mouse_event(wm: *WindowManager, mouse_point: Point, event: ash
                         wm.focused_window = mini.window;
                     }
                 }
+                return true;
             } else {
-                // user clicked desktop, handle desktop icons here
-                logger.warn("desktop clicked at {}.", .{mouse_point});
-                // TODO(fqu): desktop.sendClick(mouse_point);
+                // user clicked past any window, so de-focus the current window
+                // and forward event to the desktop:
+                wm.focused_window = null;
+                return false;
             }
         },
+
         .mouse_button_release,
         .mouse_abs_motion,
         .mouse_rel_motion,
         => {
-            if (wm.window_from_cursor(mouse_point)) |surface| {
-                if (surface.part == .content) {
-                    // TODO(fqu): Forward mouse events: surface.window.pushEvent(.{ .mouse = surface.window.makeMouseRelative(event) });
-                }
+            const surface = wm.window_from_cursor(mouse_point) orelse return false;
+
+            if (surface.part == .content) {
+                // TODO(fqu): Forward mouse events: surface.window.pushEvent(.{ .mouse = surface.window.makeMouseRelative(event) });
             }
+            return true;
         },
     }
 }
 
-fn handle_drag_window_mouse_event(wm: *WindowManager, mouse_point: Point, event: ashet.abi.MouseEvent, action: *DragAction) !void {
+fn handle_drag_window_mouse_event(wm: *WindowManager, mouse_point: Point, event: ashet.abi.MouseEvent, action: *DragAction) !bool {
     defer action.start = mouse_point;
     const dx = @as(i15, @intCast(mouse_point.x - action.start.x));
     const dy = @as(i15, @intCast(mouse_point.y - action.start.y));
@@ -231,7 +242,7 @@ fn handle_drag_window_mouse_event(wm: *WindowManager, mouse_point: Point, event:
     if (event.button == .left and event.event_type.input == .mouse_button_release) {
         action.window.pushEvent(.window_moved);
         wm.mouse_action = .default; // must be last, we override the contents of action with this!
-        return;
+        return true;
     }
 
     if (dx != 0 or dy != 0) {
@@ -242,6 +253,8 @@ fn handle_drag_window_mouse_event(wm: *WindowManager, mouse_point: Point, event:
         action.window.pushEvent(.window_moving);
         wm.damage_tracking.invalidate_region(action.window.screenRectangle());
     }
+
+    return true;
 }
 
 fn signed_sat_add(dst: u16, delta: i16) u16 {
@@ -251,7 +264,7 @@ fn signed_sat_add(dst: u16, delta: i16) u16 {
         dst +| @as(u16, @intCast(delta));
 }
 
-fn handle_resize_window_mouse_event(wm: *WindowManager, mouse_point: Point, event: ashet.abi.MouseEvent, action: *DragAction) !void {
+fn handle_resize_window_mouse_event(wm: *WindowManager, mouse_point: Point, event: ashet.abi.MouseEvent, action: *DragAction) !bool {
     defer action.start = mouse_point;
     const dx = mouse_point.x - action.start.x;
     const dy = mouse_point.y - action.start.y;
@@ -259,7 +272,7 @@ fn handle_resize_window_mouse_event(wm: *WindowManager, mouse_point: Point, even
     if (event.button == .left and event.event_type.input == .mouse_button_release) {
         action.window.pushEvent(.window_resized);
         wm.mouse_action = .default; // must be last, we override the contents of action with this!
-        return;
+        return true;
     }
 
     if (dx != 0 or dy != 0) {
@@ -284,6 +297,8 @@ fn handle_resize_window_mouse_event(wm: *WindowManager, mouse_point: Point, even
             action.window.pushEvent(.window_resizing);
         }
     }
+
+    return true;
 }
 
 const WindowSurface = struct {

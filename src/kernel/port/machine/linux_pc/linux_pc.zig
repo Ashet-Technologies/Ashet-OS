@@ -51,10 +51,11 @@ var global_memory_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 pub const global_memory = global_memory_arena.allocator();
 
 pub fn initialize() !void {
-    if(sdl_enabled) {
-    if (sdl.SDL_Init(sdl.SDL_INIT_EVERYTHING) < 0) {
-        @panic("failed to init SDL");
-    }}
+    if (sdl_enabled) {
+        if (sdl.SDL_Init(sdl.SDL_INIT_EVERYTHING) < 0) {
+            @panic("failed to init SDL");
+        }
+    }
 
     const res = std.os.linux.mprotect(
         &linear_memory,
@@ -66,6 +67,7 @@ pub fn initialize() !void {
     try network.init();
 
     startup_time = try std.time.Instant.now();
+    logger.debug("startup time = {?}", .{startup_time});
 
     ashet.drivers.install(&hw.systemClock.driver);
 
@@ -129,25 +131,22 @@ pub fn initialize() !void {
                 ashet.input.keyboard.model = &ashet.input.keyboard.models.vnc;
 
                 ashet.drivers.install(&server.screen.driver);
-            } 
-            else if ( std.mem.eql(u8, device_type, "sdl")) {
-                if(sdl_enabled) {
-                const display = try SDL_Display.init(
-                    global_memory,
-                    video_out_index,
-                    res_x,
-                    res_y,
-                );
+            } else if (std.mem.eql(u8, device_type, "sdl")) {
+                if (sdl_enabled) {
+                    const display = try SDL_Display.init(
+                        global_memory,
+                        video_out_index,
+                        res_x,
+                        res_y,
+                    );
 
-                ashet.drivers.install(&display.screen.driver);
+                    ashet.drivers.install(&display.screen.driver);
 
-                any_sdl_output = true;
-                }
-                else {
+                    any_sdl_output = true;
+                } else {
                     badKernelOption("sdl", "sdl video output disabled!");
                 }
-            } 
-           else if (std.mem.eql(u8, device_type, "drm")) {
+            } else if (std.mem.eql(u8, device_type, "drm")) {
                 badKernelOption("video", "drm not supported yet!");
             } else if (std.mem.eql(u8, device_type, "dummy")) {
                 if (res_x != 320 or res_y != 240) badKernelOption("video", "resolution must be 320x240!");
@@ -164,13 +163,14 @@ pub fn initialize() !void {
         }
     }
 
-    if(sdl_enabled) {
-    if (any_sdl_output) {
-        const thread = try ashet.scheduler.Thread.spawn(handle_SDL_events, null, .{});
-        try thread.setName("sdl.eventloop");
-        try thread.start();
-        thread.detach();
-    }}
+    if (sdl_enabled) {
+        if (any_sdl_output) {
+            const thread = try ashet.scheduler.Thread.spawn(handle_SDL_events, null, .{});
+            try thread.setName("sdl.eventloop");
+            try thread.start();
+            thread.detach();
+        }
+    }
 }
 
 pub fn debugWrite(msg: []const u8) void {

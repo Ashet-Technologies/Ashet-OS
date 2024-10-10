@@ -629,3 +629,86 @@ pub const fs = struct {
 //         return abi.syscalls.@"ashet.time.nanoTimestamp"();
 //     }
 // };
+
+pub const clock = struct {
+    /// Time in nanoseconds since system startup.
+    pub const Absolute = enum(u64) {
+        system_start = 0,
+
+        _,
+
+        /// Returns the time between `newer` and `older`.
+        ///
+        /// NOTE: Asserts that `newer` happened after `older`.
+        pub fn time_since(newer: Absolute, older: Absolute) Duration {
+            return Duration.from_ns(
+                @intFromEnum(newer) - @intFromEnum(older),
+            );
+        }
+
+        pub fn lt(a: Absolute, b: Absolute) bool {
+            return @intFromEnum(a) < @intFromEnum(b);
+        }
+
+        pub fn gt(a: Absolute, b: Absolute) bool {
+            return @intFromEnum(a) > @intFromEnum(b);
+        }
+    };
+
+    /// A duration in nanoseconds.
+    pub const Duration = enum(u64) {
+        _,
+
+        /// Constructs a duration from a nanosecond time span.
+        pub fn from_ns(ns: u64) Duration {
+            return @enumFromInt(ns);
+        }
+
+        /// Constructs a duration from a microsecond time span.
+        pub fn from_us(us: u64) Duration {
+            return @enumFromInt(us * std.time.ns_per_us);
+        }
+
+        /// Constructs a duration from a millisecond time span.
+        pub fn from_ms(ms: u64) Duration {
+            return @enumFromInt(ms * std.time.ns_per_us);
+        }
+
+        /// Returns the duration in nanoseconds.
+        pub fn to_ns(dur: Duration) u64 {
+            return @intFromEnum(dur);
+        }
+
+        /// Returns the duration in microseconds.
+        pub fn to_us(dur: Duration) u64 {
+            return @intFromEnum(dur) / std.time.ns_per_us;
+        }
+
+        /// Returns the duration in milliseconds.
+        pub fn to_ms(dur: Duration) u64 {
+            return @intFromEnum(dur) / std.time.ns_per_ms;
+        }
+
+        pub fn lt(a: Duration, b: Duration) bool {
+            return @intFromEnum(a) < @intFromEnum(b);
+        }
+
+        pub fn gt(a: Duration, b: Duration) bool {
+            return @intFromEnum(a) > @intFromEnum(b);
+        }
+    };
+
+    /// Returns the time since system startup.
+    /// This clock is monotonically increasing.
+    pub fn monotonic() Absolute {
+        return @enumFromInt(userland.clock.monotonic());
+    }
+};
+
+pub const datetime = struct {
+    pub const DateTime = abi.DateTime;
+
+    pub fn now() DateTime {
+        return userland.datetime.now();
+    }
+};
