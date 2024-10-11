@@ -71,13 +71,6 @@ fn assert_path(disk_path: []const u8) void {
     });
 }
 
-// From fatfs.h, should be moved to zfat module!
-const AM_RDO: u8 = 0x01; //  Read only
-const AM_HID: u8 = 0x02; //  Hidden
-const AM_SYS: u8 = 0x04; //  System
-const AM_DIR: u8 = 0x10; //  Directory
-const AM_ARC: u8 = 0x20; //  Archive
-
 pub export fn mtools_flags_clear(maybe_disk_path: ?[*:0]const u8) bool {
     const disk_path = get_string(maybe_disk_path);
 
@@ -89,7 +82,7 @@ pub export fn mtools_flags_clear(maybe_disk_path: ?[*:0]const u8) bool {
 
     assert_path(disk_path);
 
-    fatfs.chmod(disk_path[3..], 0x00, AM_RDO | AM_HID | AM_SYS) catch |err| {
+    fatfs.chmod(disk_path[3..], .{ .read_only = false, .hidden = false, .system = false }) catch |err| {
         std.log.err("failed to clear flags for '{s}': {s}", .{ disk_path, @errorName(err) });
         return false;
     };
@@ -108,7 +101,7 @@ pub export fn mtools_flags_set(maybe_disk_path: ?[*:0]const u8) bool {
 
     assert_path(disk_path);
 
-    fatfs.chmod(disk_path[3..], AM_RDO | AM_HID | AM_SYS, AM_RDO | AM_HID | AM_SYS) catch |err| {
+    fatfs.chmod(disk_path[3..], .{ .read_only = true, .hidden = true, .system = true }) catch |err| {
         std.log.err("failed to set flags for '{s}': {s}", .{ disk_path, @errorName(err) });
         return false;
     };
