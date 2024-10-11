@@ -10,8 +10,8 @@
     },
     .dependencies = .{
         .zfat = .{
-            .url = "https://github.com/ZigEmbeddedGroup/zfat/archive/68dbbe19258b174fe4f374a91b4cc939019d9fe7.tar.gz",
-            .hash = "1220963601b9bc8dacc422d098368567e5c7b84d21f9ae73067fe3eb9c566aea02fd",
+            .url = "https://github.com/ZigEmbeddedGroup/zfat/archive/9644549c78d90f98b3921c12d760b0eaaaf219da.tar.gz",
+            .hash = "1220cca763cc3867e8b9fa2d1b0ff62236341698e37dd527f3815455429fc624e7e6",
         },
     },
 }

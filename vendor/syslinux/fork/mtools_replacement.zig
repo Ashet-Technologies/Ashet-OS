@@ -71,13 +71,6 @@ fn assert_path(disk_path: []const u8) void {
     });
 }
 
-// From fatfs.h, should be moved to zfat module!
-const AM_RDO: u8 = 0x01; //  Read only
-const AM_HID: u8 = 0x02; //  Hidden
-const AM_SYS: u8 = 0x04; //  System
-const AM_DIR: u8 = 0x10; //  Directory
-const AM_ARC: u8 = 0x20; //  Archive
-
 pub export fn mtools_flags_clear(maybe_disk_path: ?[*:0]const u8) bool {
     const disk_path = get_string(maybe_disk_path);
 
@@ -85,11 +78,11 @@ pub export fn mtools_flags_clear(maybe_disk_path: ?[*:0]const u8) bool {
         return false;
     defer teardown();
 
-    std.log.warn("mtools_flags_clear('{}')", .{std.zig.fmtEscapes(disk_path)});
+    std.log.debug("mtools_flags_clear('{}')", .{std.zig.fmtEscapes(disk_path)});
 
     assert_path(disk_path);
 
-    fatfs.chmod(disk_path[3..], 0x00, AM_RDO | AM_HID | AM_SYS) catch |err| {
+    fatfs.chmod(disk_path[3..], .{ .read_only = false, .hidden = false, .system = false }) catch |err| {
         std.log.err("failed to clear flags for '{s}': {s}", .{ disk_path, @errorName(err) });
         return false;
     };
@@ -104,11 +97,11 @@ pub export fn mtools_flags_set(maybe_disk_path: ?[*:0]const u8) bool {
         return false;
     defer teardown();
 
-    std.log.warn("mtools_flags_set('{}')", .{std.zig.fmtEscapes(disk_path)});
+    std.log.debug("mtools_flags_set('{}')", .{std.zig.fmtEscapes(disk_path)});
 
     assert_path(disk_path);
 
-    fatfs.chmod(disk_path[3..], AM_RDO | AM_HID | AM_SYS, AM_RDO | AM_HID | AM_SYS) catch |err| {
+    fatfs.chmod(disk_path[3..], .{ .read_only = true, .hidden = true, .system = true }) catch |err| {
         std.log.err("failed to set flags for '{s}': {s}", .{ disk_path, @errorName(err) });
         return false;
     };
@@ -131,7 +124,7 @@ pub export fn mtools_create_file(
         return false;
     defer teardown();
 
-    std.log.warn("mtools_copy_file('{}', '{}', '{}')", .{
+    std.log.debug("mtools_copy_file('{}', '{}', '{}')", .{
         std.zig.fmtEscapes(disk_path),
         std.fmt.fmtSliceHexLower(data1),
         std.fmt.fmtSliceHexLower(data2),
@@ -165,15 +158,21 @@ pub export fn mtools_move_file(maybe_disk_path_old: ?[*:0]const u8, maybe_disk_p
         return false;
     defer teardown();
 
-    assert_path(disk_path_old);
-    assert_path(disk_path_new);
 
-    std.log.warn("mtools_move_file('{}', '{}')", .{
+    std.log.debug("mtools_move_file('{}', '{}')", .{
         std.zig.fmtEscapes(disk_path_old),
         std.zig.fmtEscapes(disk_path_new),
     });
 
-    return false;
+    assert_path(disk_path_old);
+    assert_path(disk_path_new);
+
+    fatfs.rename(disk_path_old, disk_path_new) catch |err| {
+        std.log.err("failed to move file from '{s}' to '{s}': {s}", .{ disk_path_old, disk_path_new, @errorName(err) });
+        return false;
+    };
+
+    return true ;
 }
 
 fn disk_getStatus(intf: *fatfs.Disk) fatfs.Disk.Status {

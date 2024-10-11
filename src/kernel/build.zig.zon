@@ -55,8 +55,8 @@
             .hash = "1220ac855930db0699253dc81d3153c11b0d077e3ebe7a97b7986bea71db166eb76b",
         },
         .zfat = .{
-            .url = "https://github.com/ZigEmbeddedGroup/zfat/archive/6c9fcecd0326c8f3bf3353afbee6b3f5987d49ca.tar.gz",
-            .hash = "122064858e32ce4448b7c02813379658a74ebf85f026f9936fa627b1a40c3bb9cc39",
+            .url = "https://github.com/ZigEmbeddedGroup/zfat/archive/9644549c78d90f98b3921c12d760b0eaaaf219da.tar.gz",
+            .hash = "1220cca763cc3867e8b9fa2d1b0ff62236341698e37dd527f3815455429fc624e7e6",
         },
         .turtlefont = .{
             .url = "https://github.com/ikskuh/turtlefont/archive/9d7d3879cda0fcbdbbf1574129aec75e2627429f.tar.gz",
