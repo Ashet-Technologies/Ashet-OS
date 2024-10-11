@@ -1,0 +1,17 @@
+.{
+    .name = "syslinux",
+    .version = "6.3.0",
+    .paths = .{
+        "fork",
+        "util",
+        "vendor",
+        "build.zig",
+        "build.zig.zon",
+    },
+    .dependencies = .{
+        .zfat = .{
+            .url = "https://github.com/ZigEmbeddedGroup/zfat/archive/68dbbe19258b174fe4f374a91b4cc939019d9fe7.tar.gz",
+            .hash = "1220963601b9bc8dacc422d098368567e5c7b84d21f9ae73067fe3eb9c566aea02fd",
+        },
+    },
+}
