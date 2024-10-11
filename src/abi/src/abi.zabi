@@ -160,12 +160,12 @@ const process = struct {
 const clock = struct {
     /// Returns the time in nanoseconds since system startup.
     /// This clock is monotonically increasing.
-    extern fn monotonic() u64;
+    extern fn monotonic() Absolute;
 
     /// Sleeps until `clock.monotonic()` returns at least `timeout`.
     extern "async" fn Timer(
         /// Monotonic timestamp in nanoseconds until the operation completes.
-        timeout: u64,
+        timeout: Absolute,
     ) error{}!void;
 };
 
@@ -1248,6 +1248,148 @@ pub const DateTime = enum(i64) {
     epoch = 0,
 
     _,
+
+    pub fn as_unix_timestamp_ms(dt: DateTime) i64 {
+        return @intFromEnum(dt);
+    }
+
+    pub fn as_unix_timestamp_s(dt: DateTime) i64 {
+        return @divTrunc(@intFromEnum(dt), std.time.ms_per_s);
+    }
+
+    pub fn lt(a: DateTime, b: DateTime) bool {
+        return @intFromEnum(a) < @intFromEnum(b);
+    }
+
+    pub fn gt(a: DateTime, b: DateTime) bool {
+        return @intFromEnum(a) > @intFromEnum(b);
+    }
+};
+
+/// Time in nanoseconds since system startup.
+pub const Absolute = enum(u64) {
+    system_start = 0,
+
+    _,
+
+    /// Returns the time between `newer` and `older`.
+    ///
+    /// NOTE: Asserts that `newer` happened after `older`.
+    pub fn time_since(newer: Absolute, older: Absolute) Duration {
+        return Duration.from_ns(
+            @intFromEnum(newer) - @intFromEnum(older),
+        );
+    }
+
+    /// Returns the nanoseconds since system startup.
+    pub fn ns_since_start(point: Absolute) u64 {
+        return @intFromEnum(point);
+    }
+
+    /// Returns the microseconds since system startup.
+    pub fn us_since_start(point: Absolute) u64 {
+        return @intFromEnum(point) / std.time.us_per_ms;
+    }
+
+    /// Returns the milliseconds since system startup.
+    pub fn ms_since_start(point: Absolute) u64 {
+        return @intFromEnum(point) / std.time.ns_per_ms;
+    }
+
+    /// Increments the time point by `delta`.
+    pub fn increment_by(abs: Absolute, delta: Duration) Absolute {
+        return @enumFromInt(@intFromEnum(abs) + @intFromEnum(delta));
+    }
+
+    pub fn lt(a: Absolute, b: Absolute) bool {
+        return @intFromEnum(a) < @intFromEnum(b);
+    }
+
+    pub fn gt(a: Absolute, b: Absolute) bool {
+        return @intFromEnum(a) > @intFromEnum(b);
+    }
+};
+
+/// A duration in nanoseconds.
+pub const Duration = enum(u64) {
+    _,
+
+    /// Constructs a duration from a nanosecond time span.
+    pub fn from_ns(ns: u64) Duration {
+        return @enumFromInt(ns);
+    }
+
+    /// Constructs a duration from a microsecond time span.
+    pub fn from_us(us: u64) Duration {
+        return @enumFromInt(us * std.time.ns_per_us);
+    }
+
+    /// Constructs a duration from a millisecond time span.
+    pub fn from_ms(ms: u64) Duration {
+        return @enumFromInt(ms * std.time.ns_per_ms);
+    }
+
+    /// Returns the duration in nanoseconds.
+    pub fn to_ns(dur: Duration) u64 {
+        return @intFromEnum(dur);
+    }
+
+    /// Returns the duration in microseconds.
+    pub fn to_us(dur: Duration) u64 {
+        return @intFromEnum(dur) / std.time.ns_per_us;
+    }
+
+    /// Returns the duration in milliseconds.
+    pub fn to_ms(dur: Duration) u64 {
+        return @intFromEnum(dur) / std.time.ns_per_ms;
+    }
+
+    pub fn lt(a: Duration, b: Duration) bool {
+        return @intFromEnum(a) < @intFromEnum(b);
+    }
+
+    pub fn gt(a: Duration, b: Duration) bool {
+        return @intFromEnum(a) > @intFromEnum(b);
+    }
+
+    pub fn format(dur: Duration, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = options;
+        const ns = dur.to_ns();
+
+        const Scale = struct {
+            unit: []const u8,
+            divider: u64,
+        };
+
+        const scales = [_]Scale{
+            .{ .unit = "week", .divider = std.time.ns_per_week },
+            .{ .unit = "d", .divider = std.time.ns_per_day },
+            .{ .unit = "m", .divider = std.time.ns_per_min },
+            .{ .unit = "h", .divider = std.time.ns_per_hour },
+            .{ .unit = "s", .divider = std.time.ns_per_s },
+            .{ .unit = "ms", .divider = std.time.ns_per_ms },
+            .{ .unit = "us", .divider = std.time.ns_per_us },
+            .{ .unit = "ns", .divider = 1 },
+        };
+
+        const selected_scale: Scale = if (fmt.len > 0)
+            comptime for (scales) |scale| {
+                if (std.mem.eql(u8, scale.unit, fmt))
+                    break scale;
+            } else @compileError(fmt ++ " is not a valid duration unit!")
+        else for (scales) |scale| {
+            if (ns >= scale.divider)
+                break scale;
+        } else scales[0];
+
+        const int_part = ns / selected_scale.divider;
+        if (selected_scale.divider > 1) {
+            const fract_part = ns % (1000 * selected_scale.divider);
+            try writer.print("{d}.{d:0>3} {s}", .{ int_part, fract_part, selected_scale.unit });
+        } else {
+            try writer.print("{d} {s}", .{ int_part, selected_scale.unit });
+        }
+    }
 };
 
 /// Index into a color palette.

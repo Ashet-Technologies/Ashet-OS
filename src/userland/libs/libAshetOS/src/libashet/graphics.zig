@@ -3,6 +3,17 @@ const builtin = @import("builtin");
 const ashet = @import("../libashet.zig");
 const logger = std.log.scoped(.graphics);
 
+pub const Point = ashet.abi.Point;
+pub const Size = ashet.abi.Size;
+pub const Rectangle = ashet.abi.Rectangle;
+
+pub const ColorIndex = ashet.abi.ColorIndex;
+pub const Color = ashet.abi.Color;
+
+pub const Font = ashet.abi.Font;
+pub const Bitmap = agp.Bitmap;
+pub const Framebuffer = ashet.abi.Framebuffer;
+
 pub const agp = @import("agp");
 
 pub const known_colors = struct {
@@ -26,17 +37,6 @@ pub const known_colors = struct {
     pub const dim_gray = ColorIndex.get(0x11); // #2f3143
     pub const gold = ColorIndex.get(0x12); // #fbc800
 };
-
-pub const Point = ashet.abi.Point;
-pub const Size = ashet.abi.Size;
-pub const Rectangle = ashet.abi.Rectangle;
-
-pub const ColorIndex = ashet.abi.ColorIndex;
-pub const Color = ashet.abi.Color;
-
-pub const Font = ashet.abi.Font;
-pub const Bitmap = agp.Bitmap;
-pub const Framebuffer = ashet.abi.Framebuffer;
 
 pub fn render(target: Framebuffer, command_sequence: []const u8, auto_invalidate: bool) !void {
     if (builtin.mode == .Debug) {
@@ -262,3 +262,78 @@ const ABM_Header = extern struct {
         std.debug.assert(@sizeOf(@This()) == 12);
     }
 };
+
+pub fn embed_comptime_bitmap(comptime base: comptime_int, comptime def: []const u8) *const ashet.graphics.Bitmap {
+    @setEvalBranchQuota(10_000);
+
+    const size = parsedSpriteSize(def);
+    var icon: [size.height][size.width]?ColorIndex = [1][size.width]?ColorIndex{
+        [1]?ColorIndex{null} ** size.width,
+    } ** size.height;
+
+    var needs_transparency = false;
+    var can_use_0xFF = true;
+    var can_use_0x00 = true;
+
+    var it = std.mem.splitScalar(u8, def, '\n');
+    var y: usize = 0;
+    while (it.next()) |line| : (y += 1) {
+        var x: usize = 0;
+        while (x < icon[0].len) : (x += 1) {
+            icon[y][x] = if (std.fmt.parseInt(u8, line[x .. x + 1], 16)) |index|
+                ColorIndex.get(base + index)
+            else |_|
+                null;
+            if (icon[y][x] == null)
+                needs_transparency = true;
+            if (icon[y][x] == ColorIndex.get(0x00))
+                can_use_0x00 = false;
+            if (icon[y][x] == ColorIndex.get(0xFF))
+                can_use_0xFF = false;
+        }
+    }
+
+    const transparency_key: ColorIndex = if (needs_transparency)
+        if (can_use_0x00)
+            ColorIndex.get(0x00)
+        else if (can_use_0xFF)
+            ColorIndex.get(0xFF)
+        else
+            @compileError("Can't declare an icon that uses both 0xFF and 0x00!")
+    else
+        undefined;
+
+    var output_bits: [size.height * size.width]ColorIndex = undefined;
+    var index: usize = 0;
+    for (icon) |row| {
+        for (row) |pixel| {
+            output_bits[index] = pixel orelse transparency_key;
+            index += 1;
+        }
+    }
+
+    const const_output_bits = output_bits;
+
+    return comptime &ashet.graphics.Bitmap{
+        .pixels = &const_output_bits,
+        .width = size.width,
+        .height = size.height,
+        .stride = size.width,
+        .transparency_key = if (needs_transparency)
+            transparency_key
+        else
+            null,
+    };
+}
+
+fn parsedSpriteSize(comptime def: []const u8) Size {
+    var it = std.mem.splitScalar(u8, def, '\n');
+    const first = it.next().?;
+    const width = first.len;
+    var height = 1;
+    while (it.next()) |line| {
+        std.debug.assert(line.len == width);
+        height += 1;
+    }
+    return .{ .width = width, .height = height };
+}
