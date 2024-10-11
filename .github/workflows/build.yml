@@ -1,0 +1,42 @@
+name: Build
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        # os: [ubuntu-latest, windows-latest]
+        platform: [pc-bios, qemu-virt-rv32, qemu-virt-arm, hosted-x86-linux]
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v1
+        with:
+          version: 0.13.0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11' 
+
+      - name: Build ${{ matrix.platform }}
+        run: |
+          zig build ${{ matrix.platform }}
+      
+      - name: Upload disk image
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}
+          path: zig-out/${{ matrix.platform }}
+          if-no-files-found: warn
+          retention-days: 7
