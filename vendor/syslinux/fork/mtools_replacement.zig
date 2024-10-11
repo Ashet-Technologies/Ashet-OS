@@ -78,7 +78,7 @@ pub export fn mtools_flags_clear(maybe_disk_path: ?[*:0]const u8) bool {
         return false;
     defer teardown();
 
-    std.log.warn("mtools_flags_clear('{}')", .{std.zig.fmtEscapes(disk_path)});
+    std.log.debug("mtools_flags_clear('{}')", .{std.zig.fmtEscapes(disk_path)});
 
     assert_path(disk_path);
 
@@ -97,7 +97,7 @@ pub export fn mtools_flags_set(maybe_disk_path: ?[*:0]const u8) bool {
         return false;
     defer teardown();
 
-    std.log.warn("mtools_flags_set('{}')", .{std.zig.fmtEscapes(disk_path)});
+    std.log.debug("mtools_flags_set('{}')", .{std.zig.fmtEscapes(disk_path)});
 
     assert_path(disk_path);
 
@@ -124,7 +124,7 @@ pub export fn mtools_create_file(
         return false;
     defer teardown();
 
-    std.log.warn("mtools_copy_file('{}', '{}', '{}')", .{
+    std.log.debug("mtools_copy_file('{}', '{}', '{}')", .{
         std.zig.fmtEscapes(disk_path),
         std.fmt.fmtSliceHexLower(data1),
         std.fmt.fmtSliceHexLower(data2),
@@ -158,15 +158,21 @@ pub export fn mtools_move_file(maybe_disk_path_old: ?[*:0]const u8, maybe_disk_p
         return false;
     defer teardown();
 
-    assert_path(disk_path_old);
-    assert_path(disk_path_new);
 
-    std.log.warn("mtools_move_file('{}', '{}')", .{
+    std.log.debug("mtools_move_file('{}', '{}')", .{
         std.zig.fmtEscapes(disk_path_old),
         std.zig.fmtEscapes(disk_path_new),
     });
 
-    return false;
+    assert_path(disk_path_old);
+    assert_path(disk_path_new);
+
+    fatfs.rename(disk_path_old, disk_path_new) catch |err| {
+        std.log.err("failed to move file from '{s}' to '{s}': {s}", .{ disk_path_old, disk_path_new, @errorName(err) });
+        return false;
+    };
+
+    return true ;
 }
 
 fn disk_getStatus(intf: *fatfs.Disk) fatfs.Disk.Status {
