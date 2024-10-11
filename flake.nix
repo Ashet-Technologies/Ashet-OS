@@ -34,8 +34,8 @@
             pkgs.zigpkgs."0.13.0"
 
             pkgs.qemu
-            pkgs.mtools
             pkgs.llvmPackages_17.bintools
+            pkgs.clang-tools
 
             pkgs.gdb
             pkgs.pkg-config

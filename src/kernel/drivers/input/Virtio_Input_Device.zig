@@ -233,13 +233,13 @@ fn poll(driver: *Driver) void {
                     .cess_rel => {
                         if (evt.code == 0) {
                             ashet.input.push_raw_event(.{ .mouse_rel_motion = .{
-                                .dx = @as(i32, @bitCast(evt.value)),
+                                .dx = @intCast(@as(i32, @bitCast(evt.value))),
                                 .dy = 0,
                             } });
                         } else if (evt.code == 1) {
                             ashet.input.push_raw_event(.{ .mouse_rel_motion = .{
                                 .dx = 0,
-                                .dy = @as(i32, @bitCast(evt.value)),
+                                .dy = @intCast(@as(i32, @bitCast(evt.value))),
                             } });
                         }
                     },
