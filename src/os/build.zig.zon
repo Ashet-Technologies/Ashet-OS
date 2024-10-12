@@ -6,43 +6,19 @@
 
         // Internal deps:
 
-        .kernel = .{
-            .path = "../kernel",
-        },
-
-        .assets = .{
-            .path = "../os-assets",
-        },
-
-        .syslinux = .{
-            .path = "../../vendor/syslinux",
-        },
+        .kernel = .{ .path = "../kernel" },
+        .assets = .{ .path = "../os-assets" },
+        .syslinux = .{ .path = "../../vendor/syslinux" },
 
         // Applications:
 
-        .init = .{
-            .path = "../userland/apps/init",
-        },
-
-        .hello_world = .{
-            .path = "../userland/apps/hello-world",
-        },
-
-        .hello_gui = .{
-            .path = "../userland/apps/hello-gui",
-        },
-
-        .test_behaviour = .{
-            .path = "../userland/apps/testing/behaviour",
-        },
-
-        .desktop_classic = .{
-            .path = "../userland/apps/desktop/classic",
-        },
-
-        .clock = .{
-            .path = "../userland/apps/clock",
-        },
+        .init = .{ .path = "../userland/apps/init" },
+        .hello_world = .{ .path = "../userland/apps/hello-world" },
+        .hello_gui = .{ .path = "../userland/apps/hello-gui" },
+        .test_behaviour = .{ .path = "../userland/apps/testing/behaviour" },
+        .desktop_classic = .{ .path = "../userland/apps/desktop/classic" },
+        .clock = .{ .path = "../userland/apps/clock" },
+        .paint = .{ .path = "../userland/apps/paint" },
 
         // Externel deps:
         .@"disk-image-step" = .{

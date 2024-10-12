@@ -81,6 +81,11 @@ pub fn build(b: *std.Build) void {
         "apps/clock/icon",
         converter.convert(b.path("../../artwork/icons/small-icons/32x32-free-design-icons/32x32/Time.png"), "clock.abm", desktop_icon_conv_options),
     );
+
+    rootfs.install(
+        "apps/paint/icon",
+        converter.convert(b.path("../../artwork/icons/small-icons/32x32-free-design-icons/32x32/Painter.png"), "paint.abm", desktop_icon_conv_options),
+    );
 }
 
 const RootFS = struct {

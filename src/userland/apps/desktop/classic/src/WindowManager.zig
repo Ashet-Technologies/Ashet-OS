@@ -256,8 +256,8 @@ fn handle_drag_window_mouse_event(wm: *WindowManager, mouse_point: Point, event:
 fn map_input_event_to_window(wm: *WindowManager, window: *Window, mouse_point: Point, event: ashet.abi.InputEvent) WindowEvent {
     _ = wm;
     const rel_pos = Point.new(
-        window.client_rectangle.x - mouse_point.x,
-        window.client_rectangle.y - mouse_point.y,
+        mouse_point.x - window.client_rectangle.x,
+        mouse_point.y - window.client_rectangle.y,
     );
 
     return switch (event.event_type) {
