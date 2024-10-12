@@ -122,7 +122,7 @@ fn process_timer_events() void {
     while (global_timer_queue.get_head()) |next_timer| {
         const timer = next_timer.arc.cast(Timer).inputs;
         // the queue is sorted, so we've reached the end of what we can schedule right now
-        if (now.ms_since_start() < timer.timeout) {
+        if (now.ms_since_start() < timer.timeout.ms_since_start()) {
             break;
         }
 
@@ -132,36 +132,46 @@ fn process_timer_events() void {
     }
 }
 
-const TimerComparer = struct {
-    pub fn lt(_: @This(), lhs: *ashet.overlapped.AsyncCall, rhs: *ashet.overlapped.AsyncCall) bool {
-        const lhs_timer = lhs.arc.cast(Timer);
-        const rhs_timer = rhs.arc.cast(Timer);
-        return lhs_timer.inputs.timeout < rhs_timer.inputs.timeout;
-    }
-};
+fn cancel_timer(call: *ashet.overlapped.AsyncCall) void {
+    std.debug.assert(global_timer_queue.remove(call));
+}
+
+fn cancel_alarm(call: *ashet.overlapped.AsyncCall) void {
+    std.debug.assert(global_alarm_queue.remove(call));
+}
 
 pub fn schedule_timer(call: *ashet.overlapped.AsyncCall, inputs: Timer.Inputs) void {
     const now = Instant.now();
-    if (now.ms_since_start() >= inputs.timeout) {
+    if (now.ms_since_start() >= inputs.timeout.ms_since_start()) {
         call.finalize(Timer, .{});
     } else {
+        call.cancel_fn = cancel_timer;
         global_timer_queue.priority_enqueue(call, null, TimerComparer{});
     }
 }
-
-const AlarmComparer = struct {
-    pub fn lt(_: @This(), lhs: *ashet.overlapped.AsyncCall, rhs: *ashet.overlapped.AsyncCall) bool {
-        const lhs_alarm = lhs.arc.cast(Alarm);
-        const rhs_alarm = rhs.arc.cast(Alarm);
-        return @intFromEnum(lhs_alarm.inputs.when) < @intFromEnum(rhs_alarm.inputs.when);
-    }
-};
 
 pub fn schedule_alarm(call: *ashet.overlapped.AsyncCall, inputs: Alarm.Inputs) void {
     const now = milliTimestamp();
     if (now >= @intFromEnum(inputs.when)) {
         call.finalize(Alarm, .{});
     } else {
+        call.cancel_fn = cancel_alarm;
         global_alarm_queue.priority_enqueue(call, null, AlarmComparer{});
     }
 }
+
+const TimerComparer = struct {
+    pub fn lt(_: @This(), lhs: *ashet.overlapped.AsyncCall, rhs: *ashet.overlapped.AsyncCall) bool {
+        const lhs_timer = lhs.arc.cast(Timer);
+        const rhs_timer = rhs.arc.cast(Timer);
+        return ashet.abi.Absolute.lt(lhs_timer.inputs.timeout, rhs_timer.inputs.timeout);
+    }
+};
+
+const AlarmComparer = struct {
+    pub fn lt(_: @This(), lhs: *ashet.overlapped.AsyncCall, rhs: *ashet.overlapped.AsyncCall) bool {
+        const lhs_alarm = lhs.arc.cast(Alarm);
+        const rhs_alarm = rhs.arc.cast(Alarm);
+        return ashet.abi.DateTime.lt(lhs_alarm.inputs.when, rhs_alarm.inputs.when);
+    }
+};

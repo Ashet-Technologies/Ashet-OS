@@ -1,63 +1,77 @@
 const std = @import("std");
 const ashet = @import("ashet");
 
+const Size = ashet.abi.Size;
+const Point = ashet.abi.Point;
+
 pub usingnamespace ashet.core;
 
-fn nextFullSecond() i128 {
-    const ns_per_s = std.time.ns_per_s;
-    return ns_per_s * @divFloor(ashet.time.nanoTimestamp(), std.time.ns_per_s) + ns_per_s;
-}
+const window_size = Size.new(47, 47);
 
 pub fn main() !void {
-    const window = try ashet.ui.createWindow(
-        "Clock",
-        ashet.abi.Size.new(47, 47),
-        ashet.abi.Size.new(47, 47),
-        ashet.abi.Size.new(47, 47),
-        .{ .popup = true },
+    var argv_buffer: [8]ashet.abi.SpawnProcessArg = undefined;
+    const argv = ashet.process.get_arguments(null, &argv_buffer);
+
+    std.debug.assert(argv.len == 2);
+    std.debug.assert(argv[0].type == .string);
+    std.debug.assert(argv[1].type == .resource);
+
+    const desktop = try argv[1].value.resource.cast(.desktop);
+
+    std.log.info("using desktop {}", .{desktop});
+
+    const window = try ashet.gui.create_window(
+        desktop,
+        .{
+            .title = "Clock",
+            .min_size = window_size,
+            .max_size = window_size,
+            .initial_size = window_size,
+        },
     );
-    defer ashet.ui.destroyWindow(window);
+    defer window.destroy_now();
 
-    for (window.pixels[0 .. window.stride * window.max_size.height]) |*c| {
-        c.* = ashet.ui.ColorIndex.get(3);
-    }
+    const framebuffer = try ashet.graphics.create_window_framebuffer(window);
+    defer framebuffer.release();
 
-    paint(window);
+    var command_queue = try ashet.graphics.CommandQueue.init(ashet.process.mem.allocator());
+    defer command_queue.deinit();
 
-    var timer_iop = ashet.abi.Timer.new(.{ .timeout = nextFullSecond() });
-    _ = ashet.io.scheduleAndAwait(&timer_iop.iop, .schedule_only);
+    try paint(&command_queue);
+    try command_queue.submit(framebuffer, .{});
 
-    var get_event_iop = ashet.abi.ui.GetEvent.new(.{ .window = window });
-    _ = ashet.io.scheduleAndAwait(&get_event_iop.iop, .schedule_only);
+    var timer_iop = ashet.clock.Timer.new(.{ .timeout = next_full_second() });
+    try ashet.overlapped.schedule(&timer_iop.arc);
+
+    var get_event_iop = ashet.gui.GetWindowEvent.new(.{ .window = window });
+    try ashet.overlapped.schedule(&get_event_iop.arc);
 
     app_loop: while (true) {
-        var it = ashet.io.scheduleAndAwait(null, .wait_one);
-        while (it) |result| {
-            it = result.next;
-            result.next = null; // unchain from linked list, so we can schedule them again as single events
+        var arc_buffer: [2]*ashet.overlapped.ARC = undefined;
 
-            if (result == &timer_iop.iop) {
-                paint(window);
-                ashet.ui.invalidate(window, ashet.ui.Rectangle.new(.{ .x = 0, .y = 0 }, window.client_rectangle.size()));
+        const completed = try ashet.overlapped.await_completion(&arc_buffer, .{
+            .wait = .wait_one,
+            .thread_affinity = .this_thread,
+        });
 
-                timer_iop.inputs.timeout = nextFullSecond();
-                _ = ashet.io.scheduleAndAwait(&timer_iop.iop, .schedule_only);
-            } else if (result == &get_event_iop.iop) {
-                const event = ashet.ui.constructEvent(get_event_iop.outputs.event_type, get_event_iop.outputs.event);
-                switch (event) {
-                    .mouse => {},
-                    .keyboard => {},
+        for (completed) |overlapped_event| {
+            if (overlapped_event == &timer_iop.arc) {
+                try timer_iop.check_error();
+
+                try paint(&command_queue);
+                try command_queue.submit(framebuffer, .{});
+
+                timer_iop.inputs.timeout = next_full_second();
+                try ashet.overlapped.schedule(&timer_iop.arc);
+            } else if (overlapped_event == &get_event_iop.arc) {
+                const event = try get_event_iop.get_output();
+                switch (event.event_type) {
                     .window_close => break :app_loop,
-                    .window_minimize => {},
-                    .window_restore => {},
-                    .window_moving => {},
-                    .window_moved => {},
-                    .window_resizing => {},
-                    .window_resized => {},
+                    else => {},
                 }
 
-                // reschedule the IOP
-                _ = ashet.io.scheduleAndAwait(&get_event_iop.iop, .schedule_only);
+                // reschedule the IOP to receive more events:
+                try ashet.overlapped.schedule(&get_event_iop.arc);
             } else {
                 unreachable;
             }
@@ -65,23 +79,12 @@ pub fn main() !void {
     }
 }
 
-const gui = @import("ashet-gui");
+fn paint(q: *ashet.graphics.CommandQueue) !void {
+    const now = ashet.datetime.now();
 
-fn paint(window: *const ashet.ui.Window) void {
-    const time = std.time.epoch.EpochSeconds{ .secs = @as(u64, @intCast(@max(0, @divTrunc(ashet.time.nanoTimestamp(), std.time.ns_per_s)))) };
-
-    var fb = gui.Framebuffer.forWindow(window);
-
-    for (clock_face.pixels[0 .. clock_face.width * clock_face.height], 0..) |color, i| {
-        const x = @as(i16, @intCast(i % clock_face.width));
-        const y = @as(i16, @intCast(i / clock_face.width));
-        if (color != (comptime clock_face.transparent.?)) {
-            fb.setPixel(1 + x, 1 + y, color);
-            fb.setPixel(1 + x, 45 - y, color);
-            fb.setPixel(45 - x, 1 + y, color);
-            fb.setPixel(45 - x, 45 - y, color);
-        }
-    }
+    const time = std.time.epoch.EpochSeconds{
+        .secs = @as(u64, @intCast(@max(0, now.as_unix_timestamp_s()))),
+    };
 
     const day_secs = time.getDaySeconds();
 
@@ -89,34 +92,58 @@ fn paint(window: *const ashet.ui.Window) void {
     const minute = day_secs.getMinutesIntoHour();
     const seconds = day_secs.getSecondsIntoMinute();
 
-    const H = struct {
-        const digit = ashet.ui.ColorIndex.get(0);
-        const shadow = ashet.ui.ColorIndex.get(10);
-        const highlight = ashet.ui.ColorIndex.get(6);
+    const background_color = ashet.graphics.known_colors.dark_red;
 
-        fn drawDigit(f: gui.Framebuffer, pos: u15, limit: u15, color: ashet.ui.ColorIndex, len: f32) void {
-            const cx = @as(i16, @intCast(f.width / 2));
-            const cy = @as(i16, @intCast(f.height / 2));
+    try q.clear(background_color);
 
-            const angle = std.math.tau * @as(f32, @floatFromInt(pos)) / @as(f32, @floatFromInt(limit));
-
-            const dx = @as(i16, @intFromFloat(len * @sin(angle)));
-            const dy = -@as(i16, @intFromFloat(len * @cos(angle)));
-
-            f.drawLine(
-                gui.Point.new(cx, cy),
-                gui.Point.new(cx + dx, cy + dy),
-                color,
-            );
+    for (clock_face.pixels[0 .. clock_face.width * clock_face.height], 0..) |color, i| {
+        const x = @as(i16, @intCast(i % clock_face.width));
+        const y = @as(i16, @intCast(i / clock_face.width));
+        if (color != (comptime clock_face.transparency_key.?)) {
+            try q.set_pixel(Point.new(1 + x, 1 + y), color);
+            try q.set_pixel(Point.new(1 + x, 45 - y), color);
+            try q.set_pixel(Point.new(45 - x, 1 + y), color);
+            try q.set_pixel(Point.new(45 - x, 45 - y), color);
         }
+    }
+
+    const H = struct {
+        const digit = ashet.graphics.known_colors.black;
+        // const shadow = ashet.graphics.known_colors. ColorIndex.get(10);
+        const highlight = ashet.graphics.known_colors.red;
     };
 
-    H.drawDigit(fb, minute + 60 * (@as(u15, hour) % 12), 12 * 60, H.digit, 9);
-    H.drawDigit(fb, minute, 60, H.digit, 16);
-    H.drawDigit(fb, seconds, 60, H.highlight, 19);
+    const Digit = struct {
+        pos: u15,
+        limit: u15,
+        color: ashet.graphics.ColorIndex,
+        len: f32,
+    };
+
+    const digits = [3]Digit{
+        .{ .pos = minute + 60 * (@as(u15, hour) % 12), .limit = 12 * 60, .color = H.digit, .len = 9 },
+        .{ .pos = minute, .limit = 60, .color = H.digit, .len = 16 },
+        .{ .pos = seconds, .limit = 60, .color = H.highlight, .len = 19 },
+    };
+
+    for (digits) |digit| {
+        const cx = @as(i16, @intCast(window_size.width / 2));
+        const cy = @as(i16, @intCast(window_size.height / 2));
+
+        const angle = std.math.tau * @as(f32, @floatFromInt(digit.pos)) / @as(f32, @floatFromInt(digit.limit));
+
+        const dx = @as(i16, @intFromFloat(digit.len * @sin(angle)));
+        const dy = -@as(i16, @intFromFloat(digit.len * @cos(angle)));
+
+        try q.draw_line(
+            Point.new(cx, cy),
+            Point.new(cx + dx, cy + dy),
+            digit.color,
+        );
+    }
 }
 
-pub const clock_face = gui.Bitmap.parse(0,
+pub const clock_face = ashet.graphics.embed_comptime_bitmap(0,
     \\..................00000
     \\...............000FFFFF
     \\.............00FFFFFF00
@@ -142,43 +169,25 @@ pub const clock_face = gui.Bitmap.parse(0,
     \\0F000FFFFFFFFFFFFFFFFFF
 );
 
-fn parsedSpriteSize(comptime def: []const u8) ashet.ui.Size {
-    @setEvalBranchQuota(100_000);
-    var it = std.mem.splitScalar(u8, def, '\n');
-    const first = it.next().?;
-    const width = first.len;
-    var height = 1;
-    while (it.next()) |line| {
-        std.debug.assert(line.len == width);
-        height += 1;
-    }
-    return .{ .width = width, .height = height };
-}
+/// Computes the monotonic time of the next full second.
+///
+/// This is done by computing the delta of the current RTC clock to the
+/// next full second and then returning the absolute time of monotonic clock +
+/// time delta.
+fn next_full_second() ashet.clock.Absolute {
+    const ms_per_s = std.time.ms_per_s;
 
-fn ParseResult(comptime def: []const u8) type {
-    @setEvalBranchQuota(100_000);
-    const size = parsedSpriteSize(def);
-    return [size.height][size.width]?ashet.ui.ColorIndex;
-}
+    const now = ashet.datetime.now();
 
-fn parse(comptime def: []const u8) ParseResult(def) {
-    @setEvalBranchQuota(100_000);
+    const ms_in_current_s: u64 = @intCast(@mod(now.as_unix_timestamp_ms(), ms_per_s));
 
-    const size = parsedSpriteSize(def);
-    var icon: [size.height][size.width]?ashet.ui.ColorIndex = [1][size.width]?ashet.ui.ColorIndex{
-        [1]?ashet.ui.ColorIndex{null} ** size.width,
-    } ** size.height;
-
-    var it = std.mem.splitScalar(u8, def, '\n');
-    var y: usize = 0;
-    while (it.next()) |line| : (y += 1) {
-        var x: usize = 0;
-        while (x < icon[0].len) : (x += 1) {
-            icon[y][x] = if (std.fmt.parseInt(u8, line[x .. x + 1], 16)) |index|
-                ashet.ui.ColorIndex.get(index)
-            else |_|
-                null;
-        }
-    }
-    return icon;
+    const monotonic_now = ashet.clock.monotonic();
+    const increment = ashet.clock.Duration.from_ms(ms_per_s - ms_in_current_s);
+    const next_update = monotonic_now.increment_by(increment);
+    // std.log.info("{} {} {}", .{
+    //     monotonic_now,
+    //     increment,
+    //     next_update,
+    // });
+    return next_update;
 }

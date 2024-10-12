@@ -3,91 +3,73 @@ const ashet = @import("ashet");
 
 pub usingnamespace ashet.core;
 
-pub fn main() !void {
-    const window = try ashet.ui.createWindow(
-        "Dragon Craft",
-        ashet.abi.Size.new(64, 64),
-        ashet.abi.Size.max,
-        ashet.abi.Size.new(200, 150),
-        .{},
-    );
-    defer ashet.ui.destroyWindow(window);
+const Point = ashet.abi.Point;
 
-    for (window.pixels[0 .. window.stride * window.max_size.height]) |*c| {
-        c.* = ashet.ui.ColorIndex.get(0);
-    }
+pub fn main() !void {
+    var argv_buffer: [8]ashet.abi.SpawnProcessArg = undefined;
+    const argv = ashet.process.get_arguments(null, &argv_buffer);
+
+    std.debug.assert(argv.len == 2);
+    std.debug.assert(argv[0].type == .string);
+    std.debug.assert(argv[1].type == .resource);
+
+    const desktop = try argv[1].value.resource.cast(.desktop);
+
+    std.log.info("using desktop {}", .{desktop});
+
+    const window = try ashet.gui.create_window(
+        desktop,
+        .{
+            .title = "Dragon Craft",
+            .min_size = ashet.abi.Size.new(64, 64),
+            .max_size = ashet.abi.Size.new(800, 480),
+            .initial_size = ashet.abi.Size.new(200, 150),
+        },
+    );
+    defer window.destroy_now();
+
+    const framebuffer = try ashet.graphics.create_window_framebuffer(window);
+    defer framebuffer.release();
+
+    var command_queue = try ashet.graphics.CommandQueue.init(ashet.process.mem.allocator());
+    defer command_queue.deinit();
+
+    try command_queue.clear(ashet.graphics.ColorIndex.get(0));
+
+    try command_queue.submit(framebuffer, .{});
 
     var painting: bool = false;
-    var mouse_x_prev: i16 = undefined;
-    var mouse_y_prev: i16 = undefined;
+    var mouse_prev: Point = undefined;
     app_loop: while (true) {
-        const event = ashet.ui.getEvent(window);
-        switch (event) {
-            .mouse => |data| {
-                switch (data.type) {
-                    .button_press => if (data.button == .left) {
-                        painting = true;
-                        mouse_x_prev = data.x;
-                        mouse_y_prev = data.y;
-                    },
-                    .button_release => if (data.button == .left) {
-                        painting = false;
-                    },
-                    .motion => if (painting) {
-                        drawBresenhamLine(mouse_x_prev, mouse_y_prev, data.x, data.y, window);
-                        mouse_x_prev = data.x;
-                        mouse_y_prev = data.y;
-                    },
-                }
+        const get_event = try ashet.overlapped.performOne(ashet.gui.GetWindowEvent, .{ .window = window });
+        const event = &get_event.event;
+
+        switch (event.event_type) {
+            .mouse_button_press => if (event.mouse.button == .left) {
+                painting = true;
+                mouse_prev = Point.new(event.mouse.x, event.mouse.y);
+                std.log.info("start painting at {}", .{mouse_prev});
             },
-            .keyboard => {},
+            .mouse_button_release => if (event.mouse.button == .left) {
+                painting = false;
+                std.log.info("stop painting at {}", .{mouse_prev});
+            },
+            .mouse_motion => if (painting) {
+                const mouse_now = ashet.graphics.Point.new(event.mouse.x, event.mouse.y);
+                defer mouse_prev = mouse_now;
+
+                std.log.info("paint from {} to {}", .{ mouse_prev, mouse_now });
+
+                try command_queue.draw_line(
+                    mouse_prev,
+                    mouse_now,
+                    ashet.graphics.ColorIndex.get(15),
+                );
+
+                try command_queue.submit(framebuffer, .{});
+            },
             .window_close => break :app_loop,
-            .window_minimize => {},
-            .window_restore => {},
-            .window_moving => {},
-            .window_moved => {},
-            .window_resizing => {},
-            .window_resized => {},
+            else => {},
         }
     }
-}
-
-pub fn drawBresenhamLine(
-    x0: i16,
-    y0: i16,
-    x1: i16,
-    y1: i16,
-    window: *const ashet.ui.Window,
-) void {
-    var x = x0;
-    var y = y0;
-    const dx = abs(x1 - x0);
-    const sx: i16 = if (x0 < x1) 1 else -1;
-    const dy = -abs(y1 - y0);
-    const sy: i16 = if (y0 < y1) 1 else -1;
-    var err = dx + dy;
-
-    while (true) {
-        window.*.pixels[@as(usize, @intCast(y)) * window.stride + @as(usize, @intCast(x))] = ashet.ui.ColorIndex.get(0xF);
-
-        if (x0 == x1 and y0 == y1) break;
-
-        const e2 = 2 * err;
-
-        if (e2 >= dy) {
-            if (x == x1) break;
-            err = err + dy;
-            x = x + sx;
-        }
-
-        if (e2 < dx) {
-            if (y == y1) break;
-            err = err + dx;
-            y = y + sy;
-        }
-    }
-}
-
-fn abs(x: anytype) @TypeOf(x) {
-    return if (x < 0) -x else x;
 }

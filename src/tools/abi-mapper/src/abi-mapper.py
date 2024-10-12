@@ -767,12 +767,12 @@ def render_arc_type(stream: CodeStream, iop: AsyncOp):
 
         stream.writeln("pub const Inputs = extern struct {")
         with stream.indent():
-            stream.writeln("pub const Overlapped = Self;") 
+            stream.writeln("pub const Overlapped = Self;")
             write_struct_fields(iop.inputs.native)
         stream.writeln("};")
         stream.writeln("pub const Outputs = extern struct {")
         with stream.indent():
-            stream.writeln("pub const Overlapped = Self;") 
+            stream.writeln("pub const Overlapped = Self;")
             write_struct_fields(iop.outputs.native, default_factory=lambda f: "undefined")
         stream.writeln("};")
         stream.write("pub const Error = ")
@@ -833,6 +833,24 @@ def render_arc_type(stream: CodeStream, iop: AsyncOp):
                 stream.writeln("_ => error.Unexpected,")
             stream.writeln("};")
         stream.writeln("}")
+
+        stream.writeln()
+
+        stream.writeln("pub fn get_outputs(val: Self) (Error||error{Unexpected})!*const Outputs {")
+        with stream.indent():
+            stream.writeln("try val.check_error();")
+            stream.writeln("return &val.outputs;")
+        stream.writeln("}")
+
+        if len(iop.outputs.native) == 1:
+            result = iop.outputs.native[0]
+            stream.write("pub fn get_output(val: Self) (Error||error{Unexpected})!*const ")
+            render_type(stream, result.type)
+            stream.writeln(" {")
+            with stream.indent():
+                stream.writeln("try val.check_error();")
+                stream.writeln("return &val.outputs.", result.name, ";")
+            stream.writeln("}")
 
     stream.writeln("}")
 

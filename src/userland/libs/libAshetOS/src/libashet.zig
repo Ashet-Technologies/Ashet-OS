@@ -164,6 +164,11 @@ pub const process = struct {
         return userland.process.get_base_address(proc);
     }
 
+    pub fn get_arguments(proc: ?abi.Process, argv_buffer: []abi.SpawnProcessArg) []abi.SpawnProcessArg {
+        const argv_len = userland.process.get_arguments(proc, argv_buffer);
+        return argv_buffer[0..argv_len];
+    }
+
     pub fn terminate(exit_code: abi.ExitCode) noreturn {
         userland.process.terminate(exit_code);
     }
@@ -277,6 +282,15 @@ pub const overlapped = struct {
     //     return result;
     // }
 
+    pub fn schedule(event: *ARC) !void {
+        try userland.overlapped.schedule(event);
+    }
+
+    pub fn await_completion(buffer: []*ARC, options: abi.Await_Options) ![]*ARC {
+        const count = try userland.overlapped.await_completion(buffer, options);
+        return buffer[0..count];
+    }
+
     pub fn cancel(event: *ARC) !void {
         try userland.arcs.cancel(event);
     }
@@ -288,15 +302,15 @@ pub const overlapped = struct {
             @compileError("singleShot expects a pointer to an ARC instance");
         const event: *ARC = &op.arc;
 
-        try userland.overlapped.schedule(event);
+        try schedule(event);
 
-        var completed: [1]*ARC = undefined;
+        var completed_buffer: [1]*ARC = undefined;
 
-        const count = try userland.overlapped.await_completion(&completed, .{
+        const completed = try await_completion(&completed_buffer, .{
             .thread_affinity = .this_thread,
             .wait = .wait_one,
         });
-        std.debug.assert(count == 1);
+        std.debug.assert(completed.len == 1);
         std.debug.assert(completed[0] == event);
 
         try op.check_error();
@@ -631,82 +645,22 @@ pub const fs = struct {
 // };
 
 pub const clock = struct {
-    /// Time in nanoseconds since system startup.
-    pub const Absolute = enum(u64) {
-        system_start = 0,
-
-        _,
-
-        /// Returns the time between `newer` and `older`.
-        ///
-        /// NOTE: Asserts that `newer` happened after `older`.
-        pub fn time_since(newer: Absolute, older: Absolute) Duration {
-            return Duration.from_ns(
-                @intFromEnum(newer) - @intFromEnum(older),
-            );
-        }
-
-        pub fn lt(a: Absolute, b: Absolute) bool {
-            return @intFromEnum(a) < @intFromEnum(b);
-        }
-
-        pub fn gt(a: Absolute, b: Absolute) bool {
-            return @intFromEnum(a) > @intFromEnum(b);
-        }
-    };
-
-    /// A duration in nanoseconds.
-    pub const Duration = enum(u64) {
-        _,
-
-        /// Constructs a duration from a nanosecond time span.
-        pub fn from_ns(ns: u64) Duration {
-            return @enumFromInt(ns);
-        }
-
-        /// Constructs a duration from a microsecond time span.
-        pub fn from_us(us: u64) Duration {
-            return @enumFromInt(us * std.time.ns_per_us);
-        }
-
-        /// Constructs a duration from a millisecond time span.
-        pub fn from_ms(ms: u64) Duration {
-            return @enumFromInt(ms * std.time.ns_per_us);
-        }
-
-        /// Returns the duration in nanoseconds.
-        pub fn to_ns(dur: Duration) u64 {
-            return @intFromEnum(dur);
-        }
-
-        /// Returns the duration in microseconds.
-        pub fn to_us(dur: Duration) u64 {
-            return @intFromEnum(dur) / std.time.ns_per_us;
-        }
-
-        /// Returns the duration in milliseconds.
-        pub fn to_ms(dur: Duration) u64 {
-            return @intFromEnum(dur) / std.time.ns_per_ms;
-        }
-
-        pub fn lt(a: Duration, b: Duration) bool {
-            return @intFromEnum(a) < @intFromEnum(b);
-        }
-
-        pub fn gt(a: Duration, b: Duration) bool {
-            return @intFromEnum(a) > @intFromEnum(b);
-        }
-    };
+    pub const Absolute = abi.Absolute;
+    pub const Duration = abi.Duration;
 
     /// Returns the time since system startup.
     /// This clock is monotonically increasing.
     pub fn monotonic() Absolute {
-        return @enumFromInt(userland.clock.monotonic());
+        return userland.clock.monotonic();
     }
+
+    pub const Timer = abi.clock.Timer;
 };
 
 pub const datetime = struct {
     pub const DateTime = abi.DateTime;
+
+    pub const Alarm = abi.datetime.Alarm;
 
     pub fn now() DateTime {
         return userland.datetime.now();

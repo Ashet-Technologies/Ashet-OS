@@ -1,3 +1,4 @@
 https://devspace.random-projects.net/proxy/8000/vnc.html?path=proxy/5901/&autoconnect=true&reconnect=true&reconnect_delay=5000
 ~/projects/websockify/websockify.py 5901 127.0.0.1:5900
 python -m http.server 8000 -d ~/projects/novnc/
+ 

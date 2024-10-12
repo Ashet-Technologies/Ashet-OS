@@ -11,6 +11,8 @@ pub const Widget = ashet.abi.Widget;
 
 pub const WindowFlags = ashet.abi.WindowFlags;
 
+pub const GetWindowEvent = ashet.abi.gui.GetWindowEvent;
+
 pub fn get_desktop_data(window: Window) error{ InvalidHandle, Unexpected }!*anyopaque {
     return try ashet.userland.gui.get_desktop_data(window);
 }
