@@ -6,30 +6,11 @@ const Point = ashet.abi.Point;
 
 pub usingnamespace ashet.core;
 
-fn nextFullSecond() ashet.clock.Absolute {
-    const ms_per_s = std.time.ms_per_s;
-
-    const now = ashet.datetime.now();
-
-    const ms_in_current_s: u64 = @intCast(@mod(now.as_unix_timestamp_ms(), ms_per_s));
-
-    const monotonic_now = ashet.clock.monotonic();
-    const increment = ashet.clock.Duration.from_ms(ms_per_s - ms_in_current_s);
-    const next_update = monotonic_now.increment_by(increment);
-    // std.log.info("{} {} {}", .{
-    //     monotonic_now,
-    //     increment,
-    //     next_update,
-    // });
-    return next_update;
-}
-
 const window_size = Size.new(47, 47);
 
 pub fn main() !void {
     var argv_buffer: [8]ashet.abi.SpawnProcessArg = undefined;
-    const argv_len = ashet.userland.process.get_arguments(null, &argv_buffer);
-    const argv = argv_buffer[0..argv_len];
+    const argv = ashet.process.get_arguments(null, &argv_buffer);
 
     std.debug.assert(argv.len == 2);
     std.debug.assert(argv[0].type == .string);
@@ -59,7 +40,7 @@ pub fn main() !void {
     try paint(&command_queue);
     try command_queue.submit(framebuffer, .{});
 
-    var timer_iop = ashet.clock.Timer.new(.{ .timeout = nextFullSecond() });
+    var timer_iop = ashet.clock.Timer.new(.{ .timeout = next_full_second() });
     try ashet.overlapped.schedule(&timer_iop.arc);
 
     var get_event_iop = ashet.gui.GetWindowEvent.new(.{ .window = window });
@@ -80,7 +61,7 @@ pub fn main() !void {
                 try paint(&command_queue);
                 try command_queue.submit(framebuffer, .{});
 
-                timer_iop.inputs.timeout = nextFullSecond();
+                timer_iop.inputs.timeout = next_full_second();
                 try ashet.overlapped.schedule(&timer_iop.arc);
             } else if (overlapped_event == &get_event_iop.arc) {
                 const event = try get_event_iop.get_output();
@@ -187,3 +168,26 @@ pub const clock_face = ashet.graphics.embed_comptime_bitmap(0,
     \\0F000FFFFFFFFFFFFFFFFFF
     \\0F000FFFFFFFFFFFFFFFFFF
 );
+
+/// Computes the monotonic time of the next full second.
+///
+/// This is done by computing the delta of the current RTC clock to the
+/// next full second and then returning the absolute time of monotonic clock +
+/// time delta.
+fn next_full_second() ashet.clock.Absolute {
+    const ms_per_s = std.time.ms_per_s;
+
+    const now = ashet.datetime.now();
+
+    const ms_in_current_s: u64 = @intCast(@mod(now.as_unix_timestamp_ms(), ms_per_s));
+
+    const monotonic_now = ashet.clock.monotonic();
+    const increment = ashet.clock.Duration.from_ms(ms_per_s - ms_in_current_s);
+    const next_update = monotonic_now.increment_by(increment);
+    // std.log.info("{} {} {}", .{
+    //     monotonic_now,
+    //     increment,
+    //     next_update,
+    // });
+    return next_update;
+}

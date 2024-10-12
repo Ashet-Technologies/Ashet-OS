@@ -164,6 +164,11 @@ pub const process = struct {
         return userland.process.get_base_address(proc);
     }
 
+    pub fn get_arguments(proc: ?abi.Process, argv_buffer: []abi.SpawnProcessArg) []abi.SpawnProcessArg {
+        const argv_len = userland.process.get_arguments(proc, argv_buffer);
+        return argv_buffer[0..argv_len];
+    }
+
     pub fn terminate(exit_code: abi.ExitCode) noreturn {
         userland.process.terminate(exit_code);
     }

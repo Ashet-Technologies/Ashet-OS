@@ -388,6 +388,23 @@ pub const Process = struct {
             exclusive_video_controller = null;
         }
 
+        // Destroy all currently scheduled overlapped calls:
+        if (proc.async_context.in_flight.len > 0) {
+            logger.warn("process has still {} in-flight overlapped operations", .{
+                proc.async_context.in_flight.len,
+            });
+
+            while (proc.async_context.in_flight.len > 0) {
+                const first = proc.async_context.in_flight.first.?;
+                const call = ashet.overlapped.AsyncCall.from_owner_link(first);
+
+                ashet.overlapped.cancel_with_context(call.arc, &proc.async_context) catch |err| {
+                    logger.err("unexpected error {} from cancelling overlapped operation", .{err});
+                    @panic("This is a kernel bug!");
+                };
+            }
+        }
+
         // Destroy all threads attached to this process:
         {
             var iter = proc.threads.first;

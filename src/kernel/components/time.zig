@@ -132,11 +132,20 @@ fn process_timer_events() void {
     }
 }
 
+fn cancel_timer(call: *ashet.overlapped.AsyncCall) void {
+    std.debug.assert(global_timer_queue.remove(call));
+}
+
+fn cancel_alarm(call: *ashet.overlapped.AsyncCall) void {
+    std.debug.assert(global_alarm_queue.remove(call));
+}
+
 pub fn schedule_timer(call: *ashet.overlapped.AsyncCall, inputs: Timer.Inputs) void {
     const now = Instant.now();
     if (now.ms_since_start() >= inputs.timeout.ms_since_start()) {
         call.finalize(Timer, .{});
     } else {
+        call.cancel_fn = cancel_timer;
         global_timer_queue.priority_enqueue(call, null, TimerComparer{});
     }
 }
@@ -146,6 +155,7 @@ pub fn schedule_alarm(call: *ashet.overlapped.AsyncCall, inputs: Alarm.Inputs) v
     if (now >= @intFromEnum(inputs.when)) {
         call.finalize(Alarm, .{});
     } else {
+        call.cancel_fn = cancel_alarm;
         global_alarm_queue.priority_enqueue(call, null, AlarmComparer{});
     }
 }

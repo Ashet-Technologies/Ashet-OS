@@ -247,10 +247,14 @@ pub fn cancel(arc: *ARC) error{
     Unscheduled,
     Completed,
 }!void {
-    const thread, const context = get_context();
+    _, const context = get_context();
+    return cancel_with_context(arc, context);
+}
 
-    _ = thread;
-
+pub fn cancel_with_context(arc: *ARC, context: *Context) error{
+    Unscheduled,
+    Completed,
+}!void {
     const call, const queue_name = context.get_call_object(arc) orelse return error.Unscheduled;
 
     switch (queue_name) {
@@ -264,6 +268,7 @@ pub fn cancel(arc: *ARC) error{
         },
         .in_flight => {
             if (call.cancel_fn) |cancel_fn| {
+                context.in_flight.remove(&call.owner_link);
                 cancel_fn(call);
             } else {
                 // TODO: Implement actual cancelling of events
@@ -402,7 +407,7 @@ pub const AsyncCall = struct {
         return @fieldParentPtr("work_link", node);
     }
 
-    fn from_owner_link(node: *CallQueue.Node) *AsyncCall {
+    pub fn from_owner_link(node: *CallQueue.Node) *AsyncCall {
         return @fieldParentPtr("owner_link", node);
     }
 };
@@ -559,6 +564,18 @@ pub const WorkQueue = struct {
     /// Returns `true` if the `arc` is currently queued in this queue.
     pub fn contains(wq: WorkQueue, arc: *AsyncCall) bool {
         return node_in_queue(wq.queue, &arc.work_link);
+    }
+
+    /// Removes a call from this queue.
+    pub fn remove(wq: *WorkQueue, arc: *AsyncCall) bool {
+        var iter = wq.queue.first;
+        while (iter) |node| : (iter = node.next) {
+            if (node == &arc.work_link) {
+                wq.queue.remove(node);
+                return true;
+            }
+        }
+        return false;
     }
 };
 
