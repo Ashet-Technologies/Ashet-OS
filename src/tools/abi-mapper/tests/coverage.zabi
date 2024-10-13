@@ -41,6 +41,11 @@ pub const Src1 = struct(SystemResource) {};
 
 const namespaced = struct {
     pub const Src2 = struct(SystemResource) {};
+
+    pub const AllocError = error{
+        OutOfMemory,
+        Corruption,
+    };
 };
 
 usingnamespace zig; // regular code beyond this

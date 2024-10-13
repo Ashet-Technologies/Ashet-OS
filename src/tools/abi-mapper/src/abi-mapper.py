@@ -361,7 +361,6 @@ class ErrorAllocation:
 @dataclass(frozen=True, eq=True)
 class ABI_Definition:
     root_container: TopLevelCode
-    errors: ErrorAllocation
     sys_resources: list[str]
     iops: list[AsyncOp]
     syscalls: list[Function]
@@ -380,7 +379,6 @@ class ABI_JsonEncoder(json.JSONEncoder):
                     "decls": list(map(self.default, o.root_container.decls)),
                     "rest": o.root_container.rest,
                 },
-                "errors": o.errors.mapping,
                 "sys_resources": o.sys_resources,
                 "iops": list(map(self.default, o.iops)),
                 "syscalls": list(map(self.default, o.syscalls)),
@@ -572,8 +570,7 @@ class ZigCodeTransformer(Transformer):
 
     def err_decl(self, items) -> ErrorSet:
         etype = items[1]
-        etype.name = items[0]
-        return etype
+        return replace_field(etype, name=items[0])
 
     @unwrap_items
     def iop_decl(self, identifier, inputs, errorset, outputs) -> AsyncOp:
@@ -981,7 +978,6 @@ def render_arc_type(stream: CodeStream, iop: AsyncOp):
 def render_container(
     stream: CodeStream,
     declarations: list[Declaration],
-    errors: ErrorAllocation,
     prefix: str = "ashet",
 ):
     for decl in declarations:
@@ -991,7 +987,7 @@ def render_container(
         if isinstance(decl, Namespace):
             stream.writeln(f"pub const {decl.name} = struct {{")
             with stream.indent():
-                render_container(stream, decl.decls, errors, symbol)
+                render_container(stream, decl.decls, symbol)
             stream.writeln("};")
         elif isinstance(decl, Function):
             if WITH_LINKNAME:
@@ -1023,7 +1019,7 @@ def render_container(
         elif isinstance(decl, ErrorSet):
             stream.writeln(f"pub const {decl.name} = ErrorSet(error{{")
 
-            for err in sorted(decl.errors, key=lambda e: errors.get_number(e)):
+            for err in sorted(decl.errors, key=lambda e: e):
                 stream.writeln(f"    {err},")
 
             stream.writeln("});")
@@ -1112,7 +1108,6 @@ def assert_legal_extern_fn(func: Function, ns: list[str]):
 
 def render_abi_definition(stream: CodeStream, abi: ABI_Definition):
     root_container = abi.root_container
-    errors = abi.errors
     sys_resources = abi.sys_resources
 
     stream.write("""//!
@@ -1122,7 +1117,7 @@ def render_abi_definition(stream: CodeStream, abi: ABI_Definition):
 
 """)
 
-    render_container(stream, root_container.decls, errors)
+    render_container(stream, root_container.decls)
 
     stream.write(root_container.rest)
 
@@ -1752,10 +1747,6 @@ def main():
 
     root_container: TopLevelCode = transformer.transform(parse_tree)
 
-    errors = ErrorAllocation()
-    for decl in root_container.decls:
-        errors.collect(decl)
-
     iop_list = _create_enumeration(
         root_container.decls,
         AsyncOp,
@@ -1783,7 +1774,6 @@ def main():
 
     abi = ABI_Definition(
         root_container=root_container,
-        errors=errors,
         sys_resources=sys_resources,
         iops=iop_list,
         syscalls=syscall_list,
