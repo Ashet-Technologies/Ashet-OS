@@ -1,10 +1,14 @@
 const syscalls = struct {
+    /// This is a documentation example!
     extern fn no_operation() void;
 
     extern fn arg_with_name(v: u32) u32;
     extern fn arg_without_name(u32) u32;
 
-    extern fn regular_slice(slice: []const u8) u32;
+    extern fn regular_slice(
+        /// This is a parameter comment
+        slice: []const u8,
+    ) u32;
 
     extern fn optional_slice(slice: ?[]const u8) u32;
 
@@ -26,12 +30,18 @@ const syscalls = struct {
     };
 };
 
+/// Namespace documentation
+/// This is a second line
 const io = struct {
     extern "async" fn NoOperation() error{}!void;
 };
 
+/// This is a foo
 pub const Src1 = struct(SystemResource) {};
-pub const Src2 = struct(SystemResource) {};
+
+const namespaced = struct {
+    pub const Src2 = struct(SystemResource) {};
+};
 
 usingnamespace zig; // regular code beyond this
 
@@ -41,7 +51,9 @@ const std = @import("std");
 
 pub const SystemResource = struct {};
 
-pub const AsyncOp = struct {};
+pub const ARC = struct {};
+
+pub const resources = struct {};
 
 pub fn ErrorSet(comptime ErrorType: type) type {
     const raw_errors = @typeInfo(ErrorType).ErrorSet orelse @compileError("anyerror is not a legal error set");

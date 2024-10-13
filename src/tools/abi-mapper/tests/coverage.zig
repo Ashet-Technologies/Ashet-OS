@@ -165,7 +165,15 @@ var global_slice_memory: [17]u8 align(4) = undefined;
 const global_slice = global_slice_memory[3..14];
 
 comptime {
-    _ = provider.create_exports(root);
+    _ = provider.create_exports(root, struct {
+        pub inline fn before_syscall(sc: provider.Syscall_ID) void {
+            _ = sc;
+        }
+
+        pub inline fn after_syscall(sc: provider.Syscall_ID) void {
+            _ = sc;
+        }
+    });
 }
 const root = struct {
     pub const syscalls = struct {
