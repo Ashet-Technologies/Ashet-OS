@@ -90,6 +90,12 @@ pub fn build(b: *std.Build) void {
         b.path("tests/coverage.zabi"),
         b.path("tests/coverage.zig"),
     ));
+
+    const json_step = b.step("json", "Emit the JSON dump of test abi");
+
+    const json = cc.get_json_dump(b.path("tests/coverage.zabi"));
+
+    json_step.dependOn(&b.addInstallFile(json, "abi-test.json").step);
 }
 
 fn add_behaviour_test(cc: Converter, input: std.Build.LazyPath, evaluator: std.Build.LazyPath) *std.Build.Step {
@@ -111,6 +117,12 @@ fn add_behaviour_test(cc: Converter, input: std.Build.LazyPath, evaluator: std.B
         },
     });
 
+    const out_dir: std.Build.InstallDir = .{ .custom = "coverage" };
+
+    const install_abi_code = cc.b.addInstallFileWithDir(abi_code, out_dir, "abi.zig");
+    const install_provider_code = cc.b.addInstallFileWithDir(provider_code, out_dir, "provider.zig");
+    const install_consumer_code = cc.b.addInstallFileWithDir(consumer_code, out_dir, "consumer.zig");
+
     const test_runner = cc.b.addTest(.{
         .root_source_file = evaluator,
     });
@@ -118,6 +130,10 @@ fn add_behaviour_test(cc: Converter, input: std.Build.LazyPath, evaluator: std.B
     test_runner.root_module.addImport("abi", abi_mod);
     test_runner.root_module.addImport("provider", provider_mod);
     test_runner.root_module.addImport("consumer", consumer_mod);
+
+    test_runner.step.dependOn(&install_abi_code.step);
+    test_runner.step.dependOn(&install_provider_code.step);
+    test_runner.step.dependOn(&install_consumer_code.step);
 
     const test_exec = cc.b.addRunArtifact(test_runner);
 
@@ -135,6 +151,13 @@ pub const Converter = struct {
         const abi_zig = generate_core_abi.addPrefixedOutputFileArg("--output=", cc.b.fmt("{s}.zig", .{@tagName(mode)}));
         generate_core_abi.addFileArg(input);
         return abi_zig;
+    }
+
+    pub fn get_json_dump(cc: Converter, input: std.Build.LazyPath) std.Build.LazyPath {
+        const generate_json = cc.b.addRunArtifact(cc.executable);
+        const abi_json = generate_json.addPrefixedOutputFileArg("--emit-json=", "abi.json");
+        generate_json.addFileArg(input);
+        return abi_json;
     }
 };
 

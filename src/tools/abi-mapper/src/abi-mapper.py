@@ -7,6 +7,7 @@ import hashlib
 import io
 import subprocess
 import caseconverter
+import json
 from typing import NoReturn, Optional, Any
 from collections.abc import Callable, Iterable
 from contextlib import contextmanager
@@ -360,10 +361,130 @@ class ErrorAllocation:
 @dataclass(frozen=True, eq=True)
 class ABI_Definition:
     root_container: TopLevelCode
-    errors: ErrorAllocation
     sys_resources: list[str]
     iops: list[AsyncOp]
     syscalls: list[Function]
+
+
+class ABI_JsonEncoder(json.JSONEncoder):
+    def default(self, o):
+        if o is None:
+            return None
+        if isinstance(o, str):
+            return o
+
+        if isinstance(o, ABI_Definition):
+            return {
+                "root_container": {
+                    "decls": list(map(self.default, o.root_container.decls)),
+                    "rest": o.root_container.rest,
+                },
+                "sys_resources": o.sys_resources,
+                "iops": list(map(self.default, o.iops)),
+                "syscalls": list(map(self.default, o.syscalls)),
+            }
+
+        if isinstance(o, Declaration):
+            return self.json_decl(o)
+
+        if isinstance(o, Type):
+            return self.json_type(o)
+
+        if isinstance(o, ParameterCollection):
+            return {
+                "abi": list(map(self.default, o.abi)),
+                "native": list(map(self.default, o.native)),
+                "annotations": list(map(self.default, o.annotations)),
+            }
+
+        if isinstance(o, Parameter):
+            return {
+                "name": o.name,
+                "docs": self.default(o.docs),
+                "type": self.json_type(o.type),
+            }
+
+        if isinstance(o, ParameterAnnotation):
+            return {
+                "is_slice": o.is_slice,
+                "is_optional": o.is_optional,
+                "is_out": o.is_out,
+                "technical": o.technical,
+            }
+        if isinstance(o, DocComment):
+            return "\n".join(o.lines)
+
+        if isinstance(o, RefValue):
+            return self.default(o.value)
+
+        return super().default(o)
+
+    def json_decl(self, d: Declaration):
+        assert isinstance(d, Declaration)
+        decl_json = {
+            "name": d.name,
+            "docs": self.default(d.docs),
+            "full_qualified_name": d.full_qualified_name,
+            "value": None,
+        }
+        if isinstance(d, SystemResource):
+            decl_json["value"] = {
+                "SystemResource": {},
+            }
+        elif isinstance(d, Namespace):
+            decl_json["value"] = {
+                "Namespace": {
+                    "decls": list(map(self.json_decl, d.decls)),
+                },
+            }
+        elif isinstance(d, ErrorSet):
+            decl_json["value"] = {
+                "ErrorSet": {"errors": list(d.errors)},
+            }
+        elif isinstance(d, Function):
+            decl_json["value"] = {
+                "Function": {
+                    "params": self.default(d.params),
+                    "abi_return_type": self.json_type(d.abi_return_type),
+                    "key": str(d.key),
+                    "value": d.number.value,
+                }
+            }
+        elif isinstance(d, AsyncOp):
+            decl_json["value"] = {
+                "AsyncOp": {
+                    "inputs": self.default(d.inputs),
+                    "outputs": self.default(d.outputs),
+                    "error": self.json_type(d.error),
+                }
+            }
+        return decl_json
+
+    def json_type(self, t: Type):
+        assert isinstance(t, Type)
+        if isinstance(t, ReferenceType):
+            return {"ReferenceType": {"name": t.name}}
+        elif isinstance(t, OptionalType):
+            return {"OptionalType": {"inner": self.json_type(t.inner)}}
+        elif isinstance(t, ArrayType):
+            return {"ArrayType": {"size": t.size, "sentinel": t.sentinel, "inner": self.json_type(t.inner)}}
+        elif isinstance(t, PointerType):
+            return {
+                "PointerType": {
+                    "size": t.size,
+                    "sentinel": t.sentinel,
+                    "const": t.const,
+                    "volatile": t.volatile,
+                    "alignment": t.alignment,
+                    "inner": self.json_type(t.inner),
+                }
+            }
+        elif isinstance(t, ErrorUnion):
+            return {"ErrorUnion": {"error": self.json_type(t.error), "result": self.json_type(t.result)}}
+        elif isinstance(t, ErrorSet):
+            return {"ErrorSet": {"errors": list(t.errors)}}
+        else:
+            super().default(t)
 
 
 def unwrap_items(func):
@@ -449,8 +570,7 @@ class ZigCodeTransformer(Transformer):
 
     def err_decl(self, items) -> ErrorSet:
         etype = items[1]
-        etype.name = items[0]
-        return etype
+        return replace_field(etype, name=items[0])
 
     @unwrap_items
     def iop_decl(self, identifier, inputs, errorset, outputs) -> AsyncOp:
@@ -858,7 +978,6 @@ def render_arc_type(stream: CodeStream, iop: AsyncOp):
 def render_container(
     stream: CodeStream,
     declarations: list[Declaration],
-    errors: ErrorAllocation,
     prefix: str = "ashet",
 ):
     for decl in declarations:
@@ -868,7 +987,7 @@ def render_container(
         if isinstance(decl, Namespace):
             stream.writeln(f"pub const {decl.name} = struct {{")
             with stream.indent():
-                render_container(stream, decl.decls, errors, symbol)
+                render_container(stream, decl.decls, symbol)
             stream.writeln("};")
         elif isinstance(decl, Function):
             if WITH_LINKNAME:
@@ -900,7 +1019,7 @@ def render_container(
         elif isinstance(decl, ErrorSet):
             stream.writeln(f"pub const {decl.name} = ErrorSet(error{{")
 
-            for err in sorted(decl.errors, key=lambda e: errors.get_number(e)):
+            for err in sorted(decl.errors, key=lambda e: e):
                 stream.writeln(f"    {err},")
 
             stream.writeln("});")
@@ -989,7 +1108,6 @@ def assert_legal_extern_fn(func: Function, ns: list[str]):
 
 def render_abi_definition(stream: CodeStream, abi: ABI_Definition):
     root_container = abi.root_container
-    errors = abi.errors
     sys_resources = abi.sys_resources
 
     stream.write("""//!
@@ -999,7 +1117,7 @@ def render_abi_definition(stream: CodeStream, abi: ABI_Definition):
 
 """)
 
-    render_container(stream, root_container.decls, errors)
+    render_container(stream, root_container.decls)
 
     stream.write(root_container.rest)
 
@@ -1607,6 +1725,7 @@ def main():
     cli_parser.add_argument("--use-linkname", action="store_true", required=False)
     cli_parser.add_argument("--zig-exe", type=Path, required=False)
     cli_parser.add_argument("abi", type=Path)
+    cli_parser.add_argument("--emit-json", type=Path, required=False)
 
     cli = cli_parser.parse_args()
 
@@ -1615,6 +1734,7 @@ def main():
     render_mode: Renderer = cli.mode
     WITH_LINKNAME = cli.use_linkname
     zig_exe: Path | None = Path(cli.zig_exe) if cli.zig_exe else None
+    json_path: Path | None = Path(cli.emit_json) if cli.emit_json else None
 
     grammar_source = GRAMMAR_PATH.read_text()
     zig_parser = Lark(grammar_source, start="toplevel")
@@ -1626,10 +1746,6 @@ def main():
     parse_tree = zig_parser.parse(source_code)
 
     root_container: TopLevelCode = transformer.transform(parse_tree)
-
-    errors = ErrorAllocation()
-    for decl in root_container.decls:
-        errors.collect(decl)
 
     iop_list = _create_enumeration(
         root_container.decls,
@@ -1658,7 +1774,6 @@ def main():
 
     abi = ABI_Definition(
         root_container=root_container,
-        errors=errors,
         sys_resources=sys_resources,
         iops=iop_list,
         syscalls=syscall_list,
@@ -1698,6 +1813,10 @@ def main():
         output_path.chmod(stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
     else:
         sys.stdout.write(generated_code)
+
+    if json_path is not None:
+        with json_path.open(mode="w") as j:
+            json.dump(abi, j, cls=ABI_JsonEncoder, indent=1)
 
 
 if __name__ == "__main__":
