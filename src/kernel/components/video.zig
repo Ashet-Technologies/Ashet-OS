@@ -15,7 +15,8 @@ pub const Output = struct {
     system_resource: ashet.resources.SystemResource = .{ .type = .video_output },
 
     /// If true, the kernel will automatically flush the screen in a background process.
-    auto_flush: bool = true,
+    auto_flush: bool = false,
+    flush_required: bool = false,
     video_driver: *ashet.drivers.VideoDevice,
 
     fn _noop(_: *Output) void {}
@@ -56,9 +57,21 @@ pub const Output = struct {
         output.video_driver.setBorder(b);
     }
 
+    /// Requests that the driver shall flip front- and back buffers in the next
+    /// frame.
+    ///
+    /// NOTE: This is only a request, and might be called more often than necessary,
+    ///       without impacting performance.
+    pub fn flush(output: *Output) void {
+        output.flush_required = true;
+    }
+
     /// Potentially synchronizes the video storage with the screen.
     /// Without calling this, the screen might not be refreshed at all.
-    pub fn flush(output: Output) void {
+    ///
+    /// NOTE: This function will forcefully flip the buffers and might cost
+    ///       a good amount of time.
+    pub fn force_flush(output: Output) void {
         output.video_driver.flush();
     }
 
@@ -110,8 +123,9 @@ pub fn initialize() !void {
 
 fn flush_all() void {
     for (video_outputs) |*video_output| {
-        if (video_output.auto_flush) {
-            video_output.flush();
+        if (video_output.auto_flush or video_output.flush_required) {
+            video_output.flush_required = false;
+            video_output.force_flush();
         }
     }
 }

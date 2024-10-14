@@ -1903,6 +1903,7 @@ pub const DesktopEvent = extern union {
 
     create_window: DesktopWindowEvent,
     destroy_window: DesktopWindowEvent,
+    invalidate_window: DesktopWindowInvalidateEvent,
 
     show_notification: DesktopNotificationEvent,
     show_message_box: MessageBoxEvent,
@@ -1916,15 +1917,18 @@ pub const DesktopEvent = extern union {
         /// A window was destroyed on this desktop.
         destroy_window = 1,
 
+        /// A window has been invalidated and must be drawn again.
+        invalidate_window = 2,
+
         // user interaction:
 
         /// `send_notification` was called and the desktop user should display
         /// a notification.
-        show_notification = 2,
+        show_notification = 3,
 
         /// `send_notification` was called and the desktop user should display
         /// a notification.
-        show_message_box = 3,
+        show_message_box = 4,
 
         _,
     };
@@ -1937,6 +1941,12 @@ pub const DesktopEvent = extern union {
 pub const DesktopWindowEvent = extern struct {
     event_type: DesktopEvent.Type,
     window: Window,
+};
+
+pub const DesktopWindowInvalidateEvent = extern struct {
+    event_type: DesktopEvent.Type,
+    window: Window,
+    area: Rectangle,
 };
 
 pub const DesktopNotificationEvent = extern struct {

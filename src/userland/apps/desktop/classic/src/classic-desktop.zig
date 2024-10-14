@@ -358,10 +358,16 @@ fn handle_desktop_event(desktop: abi.Desktop, event: *const abi.DesktopEvent) ca
         },
 
         .destroy_window => {
-            const window = event.create_window.window;
+            const window = event.destroy_window.window;
             std.log.info("handle_desktop_event.destroy_window({})", .{window});
 
             window_manager.destroy_window(window);
+        },
+
+        .invalidate_window => {
+            const window = event.invalidate_window.window;
+            const area = event.invalidate_window.area;
+            std.log.info("handle_desktop_event.invalidate_window({}, {})", .{ window, area });
         },
 
         .show_message_box => {
