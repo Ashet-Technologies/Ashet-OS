@@ -19,6 +19,10 @@ pub const Output = struct {
     flush_required: bool = false,
     video_driver: *ashet.drivers.VideoDevice,
 
+    vsync_awaiters: ashet.overlapped.WorkQueue = .{
+        .wakeup_thread = null,
+    },
+
     fn _noop(_: *Output) void {}
 
     pub fn get_resolution(output: Output) Resolution {
@@ -75,6 +79,14 @@ pub const Output = struct {
         output.video_driver.flush();
     }
 
+    /// Notifies all overlapped events that wait for V-Blank on this output.
+    pub fn notify_vblank_awaiters(output: *Output) void {
+        while (output.vsync_awaiters.dequeue()) |tup| {
+            const call, _ = tup;
+            call.finalize(ashet.abi.video.WaitForVBlank, .{});
+        }
+    }
+
     pub fn get_max_resolution(output: Output) Resolution {
         return output.video_driver.getMaxResolution();
     }
@@ -127,6 +139,7 @@ fn flush_all() void {
             video_output.flush_required = false;
             video_output.force_flush();
         }
+        video_output.notify_vblank_awaiters();
     }
 }
 
@@ -135,6 +148,7 @@ pub fn tick() void {
     if (video_flush_deadline.is_reached()) {
         video_flush_deadline.move_forward(frame_rate);
         flush_all();
+
         while (video_flush_deadline.is_reached()) {
             logger.warn("dropping auto-flush video frame!", .{});
             video_flush_deadline.move_forward(frame_rate);
@@ -162,6 +176,14 @@ pub fn acquire_output(output_id: OutputID) error{ NotFound, NotAvailable }!*Outp
     if (output.system_resource.owners.len > 0)
         return error.NotAvailable;
     return output;
+}
+
+pub fn wait_for_vblank_async(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.video.WaitForVBlank.Inputs) void {
+    const output: *Output = ashet.resources.resolve(Output, call.resource_owner, inputs.output.as_resource()) catch {
+        call.finalize(ashet.abi.video.WaitForVBlank, error.InvalidHandle);
+        return;
+    };
+    output.vsync_awaiters.enqueue(call, null);
 }
 
 /// Contains initialization defaults for the system

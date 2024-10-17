@@ -5,7 +5,6 @@ pub usingnamespace ashet.core;
 
 const logger = std.log.scoped(.desktop);
 const abi = ashet.abi;
-const syscalls = ashet.userland;
 
 // Some imports:
 const Point = ashet.abi.Point;
@@ -27,26 +26,26 @@ var window_manager: WindowManager = undefined;
 
 pub fn main() !void {
     std.log.info("classic desktop startup...", .{});
-    const video_output = try syscalls.video.acquire(.primary);
+    const video_output = try ashet.video.acquire(.primary);
     defer video_output.release();
 
-    const video_fb = try syscalls.draw.create_video_framebuffer(video_output);
+    const video_fb = try ashet.graphics.create_video_framebuffer(video_output);
     defer video_fb.release();
 
-    const screen_size = try syscalls.video.get_resolution(video_output);
+    const screen_size = try video_output.get_resolution();
 
     std.log.info("primary video output has a resolution of {}x{}", .{
         screen_size.width,
         screen_size.height,
     });
 
-    const fb_size = try syscalls.draw.get_framebuffer_size(video_fb);
+    const fb_size = try ashet.graphics.get_framebuffer_size(video_fb);
     std.log.info("video output framebuffer has a resolution of {}x{}", .{
         fb_size.width,
         fb_size.height,
     });
 
-    const vmem = try syscalls.video.get_video_memory(video_output);
+    const vmem = try video_output.get_video_memory();
     std.log.info("video memory: base=0x{X:0>8}, stride={}, width={}, height={}", .{
         @intFromPtr(vmem.base),
         vmem.stride,
@@ -64,7 +63,7 @@ pub fn main() !void {
     }
 
     // Let the rest of the system continue to boot:
-    syscalls.process.thread.yield();
+    ashet.process.thread.yield();
 
     const default_font = try ashet.graphics.get_system_font("sans-6");
     defer default_font.release();
@@ -94,7 +93,7 @@ pub fn main() !void {
     try render_queue.submit(video_fb, .{});
 
     // First ensure the image is displayed before continuing
-    syscalls.process.thread.yield();
+    ashet.process.thread.yield();
 
     // Do load available applications before we "open" the desktop:
     try apps.init();
@@ -106,7 +105,7 @@ pub fn main() !void {
     window_manager = WindowManager.init(&damage_tracking);
     defer window_manager.deinit();
 
-    const desktop = try syscalls.gui.create_desktop("Classic", &.{
+    const desktop = try ashet.gui.create_desktop("Classic", .{
         .window_data_size = @sizeOf(WindowManager.Window),
         .handle_event = handle_desktop_event,
     });
@@ -126,195 +125,223 @@ pub fn main() !void {
     var last_click_pos: ashet.abi.Point = ashet.abi.Point.zero;
     var last_click_time: ashet.clock.Absolute = .system_start;
 
+    var wait_input_event: ashet.input.GetEvent = .{ .inputs = .{} };
+    var wait_vsync_event: ashet.video.WaitForVBlank = .{ .inputs = .{
+        .output = @ptrCast(video_output),
+    } };
+
+    try ashet.overlapped.schedule(&wait_input_event.arc);
+    try ashet.overlapped.schedule(&wait_vsync_event.arc);
+
     while (true) {
-        if (damage_tracking.is_tainted()) {
-            defer damage_tracking.clear();
+        const completed = try ashet.overlapped.await_events(.{
+            .input = &wait_input_event.arc,
+            .vsync = &wait_vsync_event.arc,
+        });
 
-            const black = ColorIndex.get(0x0);
-            // const blue = ColorIndex.get(0x2);
-            const red = ColorIndex.get(0x4);
+        if (completed.contains(.vsync)) {
+            // logger.info("vsync from app", .{});
 
-            // try render_queue.clear(window_manager.current_theme.desktop_color);
+            // Re-schedule event:
+            try ashet.overlapped.schedule(&wait_vsync_event.arc);
+            if (damage_tracking.is_tainted()) {
+                defer damage_tracking.clear();
 
-            for (damage_tracking.tainted_regions()) |rect| {
-                try render_queue.fill_rect(rect, current_theme.desktop_color);
-            }
+                const black = ColorIndex.get(0x0);
+                // const blue = ColorIndex.get(0x2);
+                const red = ColorIndex.get(0x4);
 
-            // Draw desktop:
-            {
-                var iter = apps.iterate(fb_size);
+                // try render_queue.clear(window_manager.current_theme.desktop_color);
 
-                while (iter.next()) |desktop_icon| {
-                    try render_queue.blit_framebuffer(
-                        desktop_icon.bounds.corner(.top_left),
-                        desktop_icon.icon,
-                    );
+                for (damage_tracking.tainted_regions()) |rect| {
+                    try render_queue.fill_rect(rect, current_theme.desktop_color);
+                }
 
-                    if (selected_app_icon == desktop_icon.index) {
-                        try render_queue.draw_rect(
-                            desktop_icon.bounds.grow(2),
-                            red,
+                // Draw desktop:
+                {
+                    var iter = apps.iterate(fb_size);
+
+                    while (iter.next()) |desktop_icon| {
+                        try render_queue.blit_framebuffer(
+                            desktop_icon.bounds.corner(.top_left),
+                            desktop_icon.icon,
                         );
-                    } else {
-                        try render_queue.draw_rect(
-                            desktop_icon.bounds.grow(2),
+
+                        if (selected_app_icon == desktop_icon.index) {
+                            try render_queue.draw_rect(
+                                desktop_icon.bounds.grow(2),
+                                red,
+                            );
+                        } else {
+                            try render_queue.draw_rect(
+                                desktop_icon.bounds.grow(2),
+                                black,
+                            );
+                        }
+
+                        try render_queue.draw_text(
+                            desktop_icon.bounds.corner(.bottom_left),
+                            default_font,
                             black,
+                            desktop_icon.app.get_display_name(),
                         );
                     }
+                }
 
-                    try render_queue.draw_text(
-                        desktop_icon.bounds.corner(.bottom_left),
-                        default_font,
-                        black,
-                        desktop_icon.app.get_display_name(),
-                    );
+                try window_manager.render(&render_queue, current_theme);
+
+                try Cursor.paint(&render_queue, cursor, black);
+
+                try render_queue.submit(video_fb, .{});
+            }
+        }
+
+        if (completed.contains(.input)) {
+            // re-schedule event:
+            try ashet.overlapped.schedule(&wait_input_event.arc);
+
+            const raw_event = try wait_input_event.get_output();
+
+            const event = ashet.input.Event.from_native(
+                raw_event.*,
+            );
+
+            // Update mouse cursor based off the event:
+            {
+                const prev_cursor = cursor;
+                switch (event) {
+                    .mouse_abs_motion => |motion| {
+                        cursor = Point.new(
+                            @max(0, @min(@as(i16, @intCast(fb_size.width -| 1)), motion.x)),
+                            @max(0, @min(@as(i16, @intCast(fb_size.height -| 1)), motion.y)),
+                        );
+                    },
+                    .mouse_rel_motion => |motion| {
+                        cursor = Point.new(
+                            @max(0, @min(@as(i16, @intCast(fb_size.width -| 1)), cursor.x +| motion.dx)),
+                            @max(0, @min(@as(i16, @intCast(fb_size.height -| 1)), cursor.y +| motion.dy)),
+                        );
+                    },
+
+                    else => {},
+                }
+
+                if (!cursor.eql(prev_cursor)) {
+                    damage_tracking.invalidate_region(Rectangle{
+                        .x = prev_cursor.x,
+                        .y = prev_cursor.y,
+                        .width = Cursor.width,
+                        .height = Cursor.height,
+                    });
+                    damage_tracking.invalidate_region(Rectangle{
+                        .x = cursor.x,
+                        .y = cursor.y,
+                        .width = Cursor.width,
+                        .height = Cursor.height,
+                    });
                 }
             }
 
-            try window_manager.render(&render_queue, current_theme);
+            const was_handled = try window_manager.handle_event(cursor, event);
+            try window_manager.handle_after_events();
+            if (!was_handled) {
+                switch (event) {
+                    .key_press, .key_release => {},
 
-            try Cursor.paint(&render_queue, cursor, black);
+                    .mouse_abs_motion, .mouse_rel_motion => {},
 
-            try render_queue.submit(video_fb, .{});
-        }
+                    .mouse_button_press => |data| handle_event: {
+                        if (data.button != .left)
+                            break :handle_event;
 
-        const event = try ashet.input.await_event();
-
-        // Update mouse cursor based off the event:
-        {
-            const prev_cursor = cursor;
-            switch (event) {
-                .mouse_abs_motion => |motion| {
-                    cursor = Point.new(
-                        @max(0, @min(@as(i16, @intCast(fb_size.width -| 1)), motion.x)),
-                        @max(0, @min(@as(i16, @intCast(fb_size.height -| 1)), motion.y)),
-                    );
-                },
-                .mouse_rel_motion => |motion| {
-                    cursor = Point.new(
-                        @max(0, @min(@as(i16, @intCast(fb_size.width -| 1)), cursor.x +| motion.dx)),
-                        @max(0, @min(@as(i16, @intCast(fb_size.height -| 1)), cursor.y +| motion.dy)),
-                    );
-                },
-
-                else => {},
-            }
-
-            if (!cursor.eql(prev_cursor)) {
-                damage_tracking.invalidate_region(Rectangle{
-                    .x = prev_cursor.x,
-                    .y = prev_cursor.y,
-                    .width = Cursor.width,
-                    .height = Cursor.height,
-                });
-                damage_tracking.invalidate_region(Rectangle{
-                    .x = cursor.x,
-                    .y = cursor.y,
-                    .width = Cursor.width,
-                    .height = Cursor.height,
-                });
-            }
-        }
-
-        const was_handled = try window_manager.handle_event(cursor, event);
-        try window_manager.handle_after_events();
-        if (!was_handled) {
-            switch (event) {
-                .key_press, .key_release => {},
-
-                .mouse_abs_motion, .mouse_rel_motion => {},
-
-                .mouse_button_press => |data| handle_event: {
-                    if (data.button != .left)
-                        break :handle_event;
-
-                    const previous_icon = selected_app_icon;
-                    defer if (previous_icon != selected_app_icon) {
-                        // Forward event to "desktop"
-                        logger.debug("changed app selection from {?} to {?}", .{
-                            previous_icon,
-                            selected_app_icon,
-                        });
-                        // if (previous_icon) |previous| {
-                        //     damage_tracking.invalidate_region(
-                        //         previous.bounds.grow(8),
-                        //     );
-                        // }
-
-                        // if (selected_app_icon) |current| {
-                        //     damage_tracking.invalidate_region(
-                        //         current.bounds.grow(8),
-                        //     );
-                        // }
-                    };
-
-                    const app = apps.app_from_point(fb_size, cursor) orelse {
-                        // User clicked onto the backdrop, not an application icon.
-                        // This means we have to deselect the application.
-
-                        // Reset the last click time to system start so the user
-                        // won't be able to trigger an accidential double click:
-                        last_click_time = .system_start;
-
-                        selected_app_icon = null;
-                        break :handle_event;
-                    };
-
-                    const now = ashet.clock.monotonic();
-                    defer last_click_time = now;
-
-                    if (selected_app_icon == app.index) double_click_handler: {
-                        // We clicked the same app again, let's see if it was a double click:
-
-                        const pixel_since_last_click = cursor.manhattenDistance(last_click_pos);
-                        logger.debug("pixel since: {}", .{pixel_since_last_click});
-                        if (pixel_since_last_click > 4) {
-                            // too much jitter
-                            break :double_click_handler;
-                        }
-
-                        const ms_since_last_click = now.time_since(last_click_time).to_ms();
-                        logger.debug("time since: {}", .{ms_since_last_click});
-                        if (ms_since_last_click > 250) {
-                            // too slow
-                            break :double_click_handler;
-                        }
-
-                        // Start app:
-
-                        var path_buffer: [256]u8 = undefined;
-
-                        const path = try std.fmt.bufPrint(&path_buffer, "{s}/code", .{app.app.get_disk_name()});
-
-                        const maybe_app = ashet.overlapped.performOne(abi.process.Spawn, .{
-                            .dir = apps_dir.handle,
-                            .path_ptr = path.ptr,
-                            .path_len = path.len,
-                            .argv_ptr = &[_]abi.SpawnProcessArg{
-                                abi.SpawnProcessArg.string("--desktop"),
-                                abi.SpawnProcessArg.resource(desktop.as_resource()),
-                            },
-                            .argv_len = 2,
-                        });
-                        if (maybe_app) |app_proc| {
-                            app_proc.process.release(); // we're not interested in "holding" onto process
-                        } else |err| {
-                            logger.err("failed to start application {s}: {s}", .{
-                                app.app.get_disk_name(),
-                                @errorName(err),
+                        const previous_icon = selected_app_icon;
+                        defer if (previous_icon != selected_app_icon) {
+                            // Forward event to "desktop"
+                            logger.debug("changed app selection from {?} to {?}", .{
+                                previous_icon,
+                                selected_app_icon,
                             });
+                            // if (previous_icon) |previous| {
+                            //     damage_tracking.invalidate_region(
+                            //         previous.bounds.grow(8),
+                            //     );
+                            // }
+
+                            // if (selected_app_icon) |current| {
+                            //     damage_tracking.invalidate_region(
+                            //         current.bounds.grow(8),
+                            //     );
+                            // }
+                        };
+
+                        const app = apps.app_from_point(fb_size, cursor) orelse {
+                            // User clicked onto the backdrop, not an application icon.
+                            // This means we have to deselect the application.
+
+                            // Reset the last click time to system start so the user
+                            // won't be able to trigger an accidential double click:
+                            last_click_time = .system_start;
+
+                            selected_app_icon = null;
+                            break :handle_event;
+                        };
+
+                        const now = ashet.clock.monotonic();
+                        defer last_click_time = now;
+
+                        if (selected_app_icon == app.index) double_click_handler: {
+                            // We clicked the same app again, let's see if it was a double click:
+
+                            const pixel_since_last_click = cursor.manhattenDistance(last_click_pos);
+                            logger.debug("pixel since: {}", .{pixel_since_last_click});
+                            if (pixel_since_last_click > 4) {
+                                // too much jitter
+                                break :double_click_handler;
+                            }
+
+                            const ms_since_last_click = now.time_since(last_click_time).to_ms();
+                            logger.debug("time since: {}", .{ms_since_last_click});
+                            if (ms_since_last_click > 250) {
+                                // too slow
+                                break :double_click_handler;
+                            }
+
+                            // Start app:
+
+                            var path_buffer: [256]u8 = undefined;
+
+                            const path = try std.fmt.bufPrint(&path_buffer, "{s}/code", .{app.app.get_disk_name()});
+
+                            const maybe_app = ashet.overlapped.performOne(abi.process.Spawn, .{
+                                .dir = apps_dir.handle,
+                                .path_ptr = path.ptr,
+                                .path_len = path.len,
+                                .argv_ptr = &[_]abi.SpawnProcessArg{
+                                    abi.SpawnProcessArg.string("--desktop"),
+                                    abi.SpawnProcessArg.resource(desktop.as_resource()),
+                                },
+                                .argv_len = 2,
+                            });
+                            if (maybe_app) |app_proc| {
+                                app_proc.process.release(); // we're not interested in "holding" onto process
+                            } else |err| {
+                                logger.err("failed to start application {s}: {s}", .{
+                                    app.app.get_disk_name(),
+                                    @errorName(err),
+                                });
+                            }
                         }
-                    }
 
-                    last_click_pos = cursor;
+                        last_click_pos = cursor;
 
-                    selected_app_icon = app.index;
-                    damage_tracking.invalidate_region(
-                        app.bounds.grow(8),
-                    );
-                },
+                        selected_app_icon = app.index;
+                        damage_tracking.invalidate_region(
+                            app.bounds.grow(8),
+                        );
+                    },
 
-                .mouse_button_release => {},
+                    .mouse_button_release => {},
+                }
             }
         }
     }
@@ -367,7 +394,8 @@ fn handle_desktop_event(desktop: abi.Desktop, event: *const abi.DesktopEvent) ca
         .invalidate_window => {
             const window = event.invalidate_window.window;
             const area = event.invalidate_window.area;
-            std.log.info("handle_desktop_event.invalidate_window({}, {})", .{ window, area });
+
+            window_manager.invalidate_window(window, area);
         },
 
         .show_message_box => {

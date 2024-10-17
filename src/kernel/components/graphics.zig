@@ -116,13 +116,8 @@ pub const Framebuffer = struct {
     fn invalidate(fb: *Framebuffer) void {
         switch (fb.type) {
             .memory => {}, // no-op, nothing to invalidate
-            .video => |video| {
-                video.output.flush();
-            },
-            .window => |win| {
-                _ = win;
-                // TODO: Forward to owning desktop that the window has been invalidated.
-            },
+            .video => |video| video.output.flush(),
+            .window => |win| win.invalidate_full(),
             .widget => @panic("Framebuffer(.widget).invalidate Not implemented yet!"),
         }
     }
