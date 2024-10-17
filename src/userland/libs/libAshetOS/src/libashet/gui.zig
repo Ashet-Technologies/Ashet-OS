@@ -29,6 +29,12 @@ pub const CreateWindowOptions = struct {
     popup: bool = false,
 };
 
+pub const DesktopCreateOptions = ashet.abi.DesktopDescriptor;
+
+pub fn create_desktop(name: []const u8, options: DesktopCreateOptions) !ashet.abi.Desktop {
+    return try ashet.userland.gui.create_desktop(name, &options);
+}
+
 pub fn create_window(desktop: Desktop, options: CreateWindowOptions) !ashet.abi.Window {
     return try ashet.userland.gui.create_window(
         desktop,

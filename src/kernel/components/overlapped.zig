@@ -140,6 +140,8 @@ const async_call_handlers = std.EnumArray(ashet.abi.ARC_Type, AsyncHandler).init
     .gui_get_window_event = AsyncHandler.wrap(ashet.gui.schedule_get_window_event),
 
     .draw_render = AsyncHandler.wrap(ashet.graphics.render_async),
+
+    .video_wait_for_vblank = AsyncHandler.wrap(ashet.video.wait_for_vblank_async),
 });
 
 /// Schedules a new overlapped event from the current thread context.
@@ -171,76 +173,178 @@ pub fn await_completion(completed: []*ARC, options: ashet.abi.Await_Options) err
     return await_completion_with_context(context, completed, options);
 }
 
+pub fn await_completion_of(completed: []?*ARC) error{ Unscheduled, InvalidOperation }!usize {
+    _, const context = get_context();
+    return await_completion_of_with_context(context, completed);
+}
+
 pub fn await_completion_with_context(context: *Context, completed: []*ARC, options: ashet.abi.Await_Options) error{Unscheduled}!usize {
+    return await_completion_internal(context, @ptrCast(completed), .{ .any = options }) catch |err| switch (err) {
+        error.Unscheduled => |e| return e,
+        error.InvalidOperation => unreachable,
+    };
+}
+
+pub fn await_completion_of_with_context(context: *Context, completed: []?*ARC) error{ Unscheduled, InvalidOperation }!usize {
+    return await_completion_internal(context, completed, .given) catch |err| switch (err) {
+        error.Unscheduled, error.InvalidOperation => |e| return e,
+    };
+}
+
+const AwaitMode = union(enum) {
+    given,
+    any: ashet.abi.Await_Options,
+};
+
+fn await_completion_internal(context: *Context, completed: []?*ARC, mode: AwaitMode) error{ Unscheduled, InvalidOperation }!usize {
     // We always have to resume the thread calling this function.
     // Everything else doesn't make sense at all:
     const thread = ashet.scheduler.Thread.current().?;
 
-    const filter_thread = switch (options.thread_affinity) {
-        .this_thread => thread,
-        .all_threads => null,
-    };
-
     var awaiter_node = AwaiterNode{
         .data = .{
             .resume_thread = thread,
-            .filter_thread = filter_thread,
+            .filter_thread = null,
         },
     };
 
-    // unset the whole array:
-    for (completed) |*arc| {
-        arc.* = undefined;
-    }
+    switch (mode) {
+        .any => |options| {
+            awaiter_node.data.filter_thread = switch (options.thread_affinity) {
+                .this_thread => thread,
+                .all_threads => null,
+            };
 
-    logger.debug("await completion from {?}", .{filter_thread});
-
-    var count: usize = 0;
-    gather_loop: while (count < completed.len) {
-        if (pop_with_threadaffinity(&context.completed, filter_thread)) |node| {
-            // we have a completed call, fill the queue:
-            const call = AsyncCall.from_owner_link(node);
-            std.debug.assert(call.work_link.next == null);
-            std.debug.assert(call.work_link.prev == null);
-
-            completed[count] = call.arc;
-            count += 1;
-
-            logger.debug("returning {s} to userland from {}", .{ @tagName(call.arc.type), thread });
-
-            call.destroy();
-        } else {
-            // we don't have anything completed yet, so check how
-            // the user wants us to proceed:
-            switch (options.wait) {
-                // we never block, we just immediatly return:
-                .dont_block => break :gather_loop,
-
-                // check if we found at least a single return value:
-                .wait_one => if (count > 0)
-                    break :gather_loop,
-
-                // Check if we have completed all in-flight tasks:
-                .wait_all => if (count_with_threadaffinity(context.in_flight, filter_thread) == 0)
-                    break :gather_loop,
+            // unset the whole array:
+            for (completed) |*arc| {
+                arc.* = undefined;
             }
 
-            logger.debug("suspend {} and wait for completion...", .{thread});
+            logger.debug("await completion from {?}", .{awaiter_node.data.filter_thread});
 
-            {
-                context.awaiters.append(&awaiter_node);
-                defer context.awaiters.remove(&awaiter_node);
+            var count: usize = 0;
+            gather_loop: while (count < completed.len) {
+                if (pop_with_threadaffinity(&context.completed, awaiter_node.data.filter_thread)) |node| {
+                    // we have a completed call, fill the queue:
+                    const call = AsyncCall.from_owner_link(node);
+                    std.debug.assert(call.work_link.next == null);
+                    std.debug.assert(call.work_link.prev == null);
 
-                // suspend and wait to be woken up again, in the hope that we've completed events:
+                    completed[count] = call.arc;
+                    count += 1;
+
+                    logger.debug("returning {s} to userland from {}", .{ @tagName(call.arc.type), thread });
+
+                    call.destroy();
+                } else {
+                    // we don't have anything completed yet, so check how
+                    // the user wants us to proceed:
+                    switch (options.wait) {
+                        // we never block, we just immediatly return:
+                        .dont_block => break :gather_loop,
+
+                        // check if we found at least a single return value:
+                        .wait_one => if (count > 0)
+                            break :gather_loop,
+
+                        // Check if we have completed all in-flight tasks:
+                        .wait_all => if (count_with_threadaffinity(context.in_flight, awaiter_node.data.filter_thread) == 0)
+                            break :gather_loop,
+                    }
+
+                    logger.debug("suspend {} and wait for completion...", .{thread});
+
+                    {
+                        context.awaiters.append(&awaiter_node);
+                        defer context.awaiters.remove(&awaiter_node);
+
+                        // suspend and wait to be woken up again, in the hope that we've completed events:
+                        thread.@"suspend"();
+                    }
+
+                    logger.debug("resumed {} from awaiting completion", .{thread});
+                }
+            }
+            logger.debug("await yielded {} items", .{count});
+
+            return count;
+        },
+
+        .given => {
+
+            // Validate that all given items are valid:
+            for (completed) |maybe_arc| {
+                const arc = maybe_arc orelse return error.InvalidOperation;
+                const call, _ = context.get_call_object(arc) orelse return error.Unscheduled;
+
+                if (call.awaiter_node != null)
+                    return error.InvalidOperation;
+            }
+
+            // Initialize all calls:
+
+            for (completed) |arc| {
+                const call, _ = context.get_call_object(arc.?) orelse unreachable;
+                std.debug.assert(call.awaiter_node == null);
+                call.awaiter_node = &awaiter_node;
+            }
+
+            var count: usize = 0;
+            while (count == 0) {
+                // Let's see which tasks from the completed queue
+                // have our awaiter assigned. Those tasks are finished
+                // and are meant for us:
+
+                {
+                    var iter = context.completed.first;
+                    while (iter) |node| {
+                        // must happen before the potential deletion!
+                        iter = node.next;
+
+                        // After forward iteration, we're free to invoke `call.destroy`:
+
+                        const call = AsyncCall.from_owner_link(node);
+                        if (call.awaiter_node == &awaiter_node) {
+                            context.completed.remove(node);
+                            count += 1;
+                            call.destroy();
+                        }
+                    }
+                }
+
+                if (count > 0)
+                    break;
+
+                // We're still having in-flight tasks, so suspend
+                // and wait until we have some results.
+
                 thread.@"suspend"();
             }
 
-            logger.debug("resumed {} from awaiting completion", .{thread});
-        }
-    }
-    logger.debug("await yielded {} items", .{count});
+            std.debug.assert(count <= completed.len);
 
-    return count;
+            // Update the completed array
+            for (completed) |*arc| {
+                if (context.get_call_object(arc.*.?)) |tuple| {
+                    // the task is still queued, so it didn't finish.
+                    const call, const queue_name = tuple;
+                    std.debug.assert(call.awaiter_node == &awaiter_node);
+                    std.debug.assert(queue_name == .in_flight);
+
+                    // Deregister the task so it won't access invalid stack data
+                    // when completed:
+                    call.awaiter_node = null;
+
+                    // Notify the userland that this task hasn't completed:
+                    arc.* = null;
+                } else {
+                    // The task has completed successfully, as it can't be found anymore.
+                }
+            }
+
+            return count;
+        },
+    }
 }
 
 pub fn cancel(arc: *ARC) error{
@@ -293,6 +397,12 @@ pub const AsyncCall = struct {
 
     /// The scheduling context for this ARC. Controls awaiters and completion queue.
     context: *Context,
+
+    /// This field is not null when an explicit "one given" await mode is used.
+    ///
+    /// If this field is set, the completion of this async call will always only
+    /// wake up the provided node and will ignore the contexts awaiters.
+    awaiter_node: ?*AwaiterNode = null,
 
     /// Stores the process which owns created/referenced resource handles.
     resource_owner: *ashet.multi_tasking.Process,
@@ -363,7 +473,12 @@ pub const AsyncCall = struct {
         // When we finish an event, we have to ensure potential awaiters are woken up and resume
         // the processing:
 
-        {
+        if (ac.awaiter_node) |awaiter_node| {
+            // we're explicitly awaited by a certain thread.
+            awaiter_node.data.resume_thread.@"resume"();
+        } else {
+            // We're just informing all regular awaiters that we're done:
+
             var iter = ac.context.awaiters.first;
             while (iter) |node| : (iter = node.next) {
                 if (node.data.filter_thread == null or node.data.filter_thread == ac.scheduling_thread) {

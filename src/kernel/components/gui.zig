@@ -3,7 +3,9 @@ const astd = @import("ashet-std");
 const ashet = @import("../main.zig");
 const logger = std.log.scoped(.gui);
 
+const Point = ashet.abi.Point;
 const Size = ashet.abi.Size;
+const Rectangle = ashet.abi.Rectangle;
 const CreateWindowFlags = ashet.abi.CreateWindowFlags;
 
 const WindowDesktopLink = struct {
@@ -137,6 +139,19 @@ pub const Desktop = struct {
             },
         });
     }
+    fn notify_invalidate_window(desktop: *Desktop, window: *Window, area: Rectangle) void {
+        const window_handle = ashet.resources.get_handle(desktop.server_process, &window.system_resource) orelse {
+            logger.warn("failed to send notify_invalidate_window notification: window does not exist anymore!", .{});
+            return;
+        };
+        desktop.process_event(.{
+            .invalidate_window = .{
+                .event_type = .invalidate_window,
+                .window = window_handle.unsafe_cast(.window),
+                .area = area,
+            },
+        });
+    }
 
     fn notify_show_notification(desktop: *Desktop, message: []const u8, severity: ashet.abi.NotificationSeverity) void {
         _ = desktop;
@@ -263,6 +278,16 @@ pub const Window = struct {
         }
 
         ashet.memory.type_pool(Window).free(window);
+    }
+
+    /// Invalidates the complete window and notifies the owning desktop that it should handle this.
+    pub fn invalidate_full(window: *Window) void {
+        const desktop: *Desktop = window.desktop.data.desktop;
+
+        desktop.notify_invalidate_window(window, Rectangle.new(
+            Point.zero,
+            window.size,
+        ));
     }
 
     pub fn post_event(window: *Window, event: ashet.abi.WindowEvent) void {

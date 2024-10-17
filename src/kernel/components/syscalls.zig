@@ -313,6 +313,10 @@ pub const syscalls = struct {
             return try ashet.overlapped.await_completion(completed, options);
         }
 
+        pub fn await_completion_of(completed: []?*abi.ARC) error{ Unscheduled, InvalidOperation }!usize {
+            return try ashet.overlapped.await_completion_of(completed);
+        }
+
         pub fn cancel(arc: *abi.ARC) error{ Unscheduled, Completed }!void {
             return try ashet.overlapped.cancel(arc);
         }

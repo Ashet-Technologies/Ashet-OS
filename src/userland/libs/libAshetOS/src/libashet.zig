@@ -7,6 +7,7 @@ pub const userland = @import("ashet-abi-access");
 pub const graphics = @import("libashet/graphics.zig");
 pub const input = @import("libashet/input.zig");
 pub const gui = @import("libashet/gui.zig");
+pub const video = @import("libashet/video.zig");
 
 pub const is_hosted = builtin.is_test or (builtin.target.os.tag != .other and builtin.target.os.tag != .freestanding);
 
@@ -272,8 +273,8 @@ pub const process = struct {
 
 pub const overlapped = struct {
     pub const ARC = abi.ARC;
-    pub const WaitIO = abi.WaitIO;
-    pub const ThreadAffinity = abi.ThreadAffinity;
+    pub const Wait = abi.Await_Options.Wait;
+    pub const Thread_Affinity = abi.Await_Options.Thread_Affinity;
 
     // pub fn scheduleAndAwait(start_queue: ?*IOP, wait: WaitIO) ?*IOP {
     //     const result = abi.syscalls.@"ashet.overlapped.scheduleAndAwait"(start_queue, wait);
@@ -289,6 +290,66 @@ pub const overlapped = struct {
     pub fn await_completion(buffer: []*ARC, options: abi.Await_Options) ![]*ARC {
         const count = try userland.overlapped.await_completion(buffer, options);
         return buffer[0..count];
+    }
+
+    pub fn await_completion_of(buffer: []?*ARC) !usize {
+        return try userland.overlapped.await_completion_of(buffer);
+    }
+
+    fn Awaited_Events_Enum(comptime Events: type) type {
+        const info = @typeInfo(Events).Struct;
+
+        var items: [info.fields.len]std.builtin.Type.EnumField = undefined;
+        for (&items, info.fields, 0..) |*enum_field, struct_field, i| {
+            enum_field.* = .{
+                .name = struct_field.name,
+                .value = i,
+            };
+        }
+        const EventEnum = @Type(.{
+            .Enum = .{
+                .tag_type = u32,
+                .fields = &items,
+                .decls = &.{},
+                .is_exhaustive = true,
+            },
+        });
+
+        return EventEnum;
+    }
+
+    fn Awaited_Events_Set(comptime Events: type) type {
+        return std.enums.EnumSet(Awaited_Events_Enum(Events));
+    }
+
+    /// Awaits all provided asynchronous `events`.
+    ///
+    /// Returns a bit set with all bits set for the events that have completed.
+    pub fn await_events(events: anytype) !Awaited_Events_Set(@TypeOf(events)) {
+        const Events = @TypeOf(events);
+        const info = @typeInfo(Events).Struct;
+
+        if (info.fields.len == 0)
+            @compileError("Must await at least one event!");
+
+        var completed: [info.fields.len]?*ARC = undefined;
+        inline for (&completed, info.fields) |*event, field| {
+            const value = @field(events, field.name);
+            event.* = if (@TypeOf(value) == *ARC)
+                value
+            else
+                &value.arc;
+        }
+
+        const count = try await_completion_of(&completed);
+
+        var set = Awaited_Events_Set(Events).initEmpty();
+        for (completed, 0..) |arc, i| {
+            if (arc != null)
+                set.insert(@enumFromInt(i));
+        }
+        std.debug.assert(set.count() == count);
+        return set;
     }
 
     pub fn cancel(event: *ARC) !void {

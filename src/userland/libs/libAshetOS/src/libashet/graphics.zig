@@ -176,12 +176,20 @@ pub fn create_memory_framebuffer(size: Size) !Framebuffer {
     return try ashet.userland.draw.create_memory_framebuffer(size);
 }
 
+pub fn create_video_framebuffer(output: *ashet.video.Output) !Framebuffer {
+    return try ashet.userland.draw.create_video_framebuffer(@ptrCast(output));
+}
+
 pub fn create_window_framebuffer(window: ashet.abi.Window) !Framebuffer {
     return try ashet.userland.draw.create_window_framebuffer(window);
 }
 
 pub fn get_framebuffer_memory(fb: Framebuffer) !ashet.abi.VideoMemory {
     return try ashet.userland.draw.get_framebuffer_memory(fb);
+}
+
+pub fn get_framebuffer_size(fb: Framebuffer) !ashet.abi.Size {
+    return try ashet.userland.draw.get_framebuffer_size(fb);
 }
 
 pub fn load_bitmap_file(file: ashet.fs.File) !Framebuffer {

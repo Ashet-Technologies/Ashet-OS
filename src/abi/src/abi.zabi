@@ -43,15 +43,40 @@ const overlapped = struct {
     ///
     extern fn schedule(async_call: *ARC) error{ SystemResources, AlreadyScheduled }!void;
 
-    /// Awaits one or more asynchronous operations and returns the
+    /// Awaits one or more scheduled asynchronous operations and returns the
     /// number of `completed` elements.
     ///
     /// The kernel will fill out `completed` up to the returned number of elements.
     /// All other values are undefined.
     ///
+    /// NOTE: See also: `await_completion_of`
+    ///
     /// NOTE: For blocking operations, this function will suspend the current
     ///       thread until the request has been completed.
     extern fn await_completion(completed: []*ARC, options: Await_Options) error{Unscheduled}!usize;
+
+    /// Awaits one or more explictic asynchronous operations and returns the
+    /// number of `events` elements.
+    ///
+    /// The kernel will only await elements provided in `events` and all of those events must
+    /// not be awaited by another `await_completion_of`.
+    ///
+    /// When the function returns, `events` will have all completed events unchanged, and all
+    /// unfinished events set to `null`. This way, a simple check via index can be done instead of
+    /// the need for iteration of `events` to find what was finished.
+    ///
+    /// NOTE: This syscall will always return as soon as a single event has finished.
+    ///
+    /// NOTE: It is invalid to await the same operation with two concurrent calls to `await_completion_of`.
+    ///
+    /// NOTE: Elements awaited with this function will be guaranteed to not be returned by
+    ///       another concurrent call to `await_completion`.
+    ///
+    /// NOTE: See also: `await_completion`
+    ///
+    /// NOTE: For blocking operations, this function will suspend the current
+    ///       thread until the request has been completed.
+    extern fn await_completion_of(events: []?*ARC) error{ Unscheduled, InvalidOperation }!usize;
 
     /// Cancels an asynchronous call.
     ///
@@ -211,6 +236,13 @@ const video = struct {
 
     /// Changes the current color palette.
     extern fn set_palette(VideoOutput, *const [palette_size]Color) error{ InvalidHandle, Unsupported };
+
+    /// Completes when the video output has fully scanned out an image and is now performing the v-blanking.
+    ///
+    /// This allows frame-synchronized presentation of video data.
+    extern "async" fn WaitForVBlank(
+        output: VideoOutput,
+    ) error{InvalidHandle}!void;
 
     // /// Returns a pointer to the current palette. Changing this palette
     // /// will directly change the associated colors on the screen.
@@ -1903,6 +1935,7 @@ pub const DesktopEvent = extern union {
 
     create_window: DesktopWindowEvent,
     destroy_window: DesktopWindowEvent,
+    invalidate_window: DesktopWindowInvalidateEvent,
 
     show_notification: DesktopNotificationEvent,
     show_message_box: MessageBoxEvent,
@@ -1916,15 +1949,18 @@ pub const DesktopEvent = extern union {
         /// A window was destroyed on this desktop.
         destroy_window = 1,
 
+        /// A window has been invalidated and must be drawn again.
+        invalidate_window = 2,
+
         // user interaction:
 
         /// `send_notification` was called and the desktop user should display
         /// a notification.
-        show_notification = 2,
+        show_notification = 3,
 
         /// `send_notification` was called and the desktop user should display
         /// a notification.
-        show_message_box = 3,
+        show_message_box = 4,
 
         _,
     };
@@ -1937,6 +1973,12 @@ pub const DesktopEvent = extern union {
 pub const DesktopWindowEvent = extern struct {
     event_type: DesktopEvent.Type,
     window: Window,
+};
+
+pub const DesktopWindowInvalidateEvent = extern struct {
+    event_type: DesktopEvent.Type,
+    window: Window,
+    area: Rectangle,
 };
 
 pub const DesktopNotificationEvent = extern struct {
@@ -2058,6 +2100,26 @@ pub const InputEvent = extern union {
 
     comptime {
         validate_event_type(@This());
+    }
+
+    pub fn format(evt: InputEvent, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        switch (evt.event_type) {
+            .key_press,
+            .key_release,
+            => {
+                try writer.print("InputEvent{{ .{s} = {} }}", .{ @tagName(evt.event_type), evt.keyboard });
+            },
+
+            .mouse_rel_motion,
+            .mouse_abs_motion,
+            .mouse_button_press,
+            .mouse_button_release,
+            => {
+                try writer.print("InputEvent{{ .{s} = {} }}", .{ @tagName(evt.event_type), evt.mouse });
+            },
+        }
     }
 };
 
@@ -2364,6 +2426,35 @@ pub const KeyboardModifiers = packed struct(u16) {
     ctrl_right: bool,
     alt_graph: bool,
     padding: u8 = 0,
+
+    pub fn format(mods: KeyboardModifiers, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+
+        var strings = std.BoundedArray([]const u8, 7){};
+
+        if (mods.shift) strings.appendAssumeCapacity("shift");
+        if (mods.alt) strings.appendAssumeCapacity("alt");
+        if (mods.ctrl) strings.appendAssumeCapacity("ctrl");
+        if (mods.shift_left) strings.appendAssumeCapacity("lshift");
+        if (mods.shift_right) strings.appendAssumeCapacity("rshift");
+        if (mods.ctrl_left) strings.appendAssumeCapacity("lctrl");
+        if (mods.ctrl_right) strings.appendAssumeCapacity("rctrl");
+        if (mods.alt_graph) strings.appendAssumeCapacity("alt_graph");
+
+        try writer.writeAll("Modifiers{");
+
+        if (strings.len > 0) {
+            try writer.writeAll(strings.buffer[0]);
+            for (strings.slice()[1..]) |item| {
+                try writer.writeAll(", ");
+                try writer.writeAll(item);
+            }
+        } else {
+            try writer.writeAll("none");
+        }
+        try writer.writeAll("}");
+    }
 };
 
 pub const Point = extern struct {

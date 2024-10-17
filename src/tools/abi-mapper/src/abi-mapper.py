@@ -956,7 +956,7 @@ def render_arc_type(stream: CodeStream, iop: AsyncOp):
 
         stream.writeln()
 
-        stream.writeln("pub fn get_outputs(val: Self) (Error||error{Unexpected})!*const Outputs {")
+        stream.writeln("pub fn get_outputs(val: *const Self) (Error||error{Unexpected})!*const Outputs {")
         with stream.indent():
             stream.writeln("try val.check_error();")
             stream.writeln("return &val.outputs;")
@@ -964,7 +964,7 @@ def render_arc_type(stream: CodeStream, iop: AsyncOp):
 
         if len(iop.outputs.native) == 1:
             result = iop.outputs.native[0]
-            stream.write("pub fn get_output(val: Self) (Error||error{Unexpected})!*const ")
+            stream.write("pub fn get_output(val: *const Self) (Error||error{Unexpected})!*const ")
             render_type(stream, result.type)
             stream.writeln(" {")
             with stream.indent():

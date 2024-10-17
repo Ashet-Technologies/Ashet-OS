@@ -562,6 +562,26 @@ pub fn destroy_window(wm: *WindowManager, window_handle: ashet.abi.Window) void 
     window.framebuffer.release();
 }
 
+pub fn invalidate_window(wm: *WindowManager, window_handle: ashet.abi.Window, area: Rectangle) void {
+    const window: *Window = Window.from_handle(window_handle);
+
+    const inv_pos = Point.new(
+        window.client_rectangle.x +| area.x,
+        window.client_rectangle.y +| area.y,
+    );
+    const inv_size = Size.new(
+        @min(window.client_rectangle.width - @max(0, area.x), area.width),
+        @min(window.client_rectangle.height - @max(0, area.y), area.height),
+    );
+
+    // logger.info("invalidate window={}, area={}, result={}:{}", .{ window.client_rectangle, area, inv_pos, inv_size });
+
+    wm.damage_tracking.invalidate_region(Rectangle.new(
+        inv_pos,
+        inv_size,
+    ));
+}
+
 pub fn restore_window(wm: *WindowManager, window: *Window) void {
 
     // first, invalidate all regions
