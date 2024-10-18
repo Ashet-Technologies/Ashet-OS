@@ -33,9 +33,14 @@ pub const Framebuffer = struct {
     const Cursor = agp_swrast.PixelCursor(.row_major);
     pub const Destructor = ashet.resources.Destructor(@This(), _internal_destroy);
 
+    pub const VideoOut = struct {
+        memory: ashet.video.VideoMemory,
+        output: *ashet.video.Output,
+    };
+
     pub const Type = union(ashet.abi.FramebufferType) {
         memory: Bitmap,
-        video: ashet.video.VideoMemory,
+        video: VideoOut,
         window: *ashet.gui.Window,
         widget: *ashet.gui.Widget,
     };
@@ -71,7 +76,12 @@ pub const Framebuffer = struct {
         errdefer ashet.memory.type_pool(Framebuffer).free(fb);
 
         fb.* = .{
-            .type = .{ .video = output.get_video_memory() },
+            .type = .{
+                .video = .{
+                    .output = output,
+                    .memory = output.get_video_memory(),
+                },
+            },
         };
 
         return fb;
@@ -105,15 +115,9 @@ pub const Framebuffer = struct {
 
     fn invalidate(fb: *Framebuffer) void {
         switch (fb.type) {
-            .memory => {}, // no-op, nothing to ivnalidate
-            .video => |vmem| {
-                _ = vmem;
-                // TODO: Forward to video output that it should be refreshed now.
-            },
-            .window => |win| {
-                _ = win;
-                // TODO: Forward to owning desktop that the window has been invalidated.
-            },
+            .memory => {}, // no-op, nothing to invalidate
+            .video => |video| video.output.flush(),
+            .window => |win| win.invalidate_full(),
             .widget => @panic("Framebuffer(.widget).invalidate Not implemented yet!"),
         }
     }
@@ -126,7 +130,7 @@ pub const Framebuffer = struct {
     pub fn create_cursor(fb: Framebuffer) Cursor {
         const width, const height, const stride = switch (fb.type) {
             .memory => |bmp| .{ bmp.width, bmp.height, bmp.stride },
-            .video => |vmem| .{ vmem.width, vmem.height, vmem.stride },
+            .video => |video| .{ video.memory.width, video.memory.height, video.memory.stride },
             .window => |win| .{ win.size.width, win.size.height, win.max_size.width },
             .widget => @panic("Framebuffer(.widget).create_cursor Not implemented yet!"),
         };
@@ -140,7 +144,7 @@ pub const Framebuffer = struct {
     pub fn emit_pixels(fb: *Framebuffer, cursor: Cursor, color_index: ColorIndex, count: u16) void {
         const framebuffer: [*]ColorIndex = switch (fb.type) {
             .memory => |bmp| bmp.pixels,
-            .video => |vmem| vmem.base,
+            .video => |video| video.memory.base,
             .window => |win| win.pixels.ptr,
             .widget => @panic("Framebuffer(.widget).emit_pixels Not implemented yet!"),
         };
@@ -151,7 +155,7 @@ pub const Framebuffer = struct {
     pub fn fetch_pixels(fb: *Framebuffer, cursor: Cursor, pixels: []ColorIndex) void {
         const framebuffer: [*]const ColorIndex = switch (fb.type) {
             .memory => |bmp| bmp.pixels,
-            .video => |vmem| vmem.base,
+            .video => |video| video.memory.base,
             .window => |win| win.pixels.ptr,
             .widget => @panic("Framebuffer(.widget).fetch_pixels Not implemented yet!"),
         };
@@ -163,7 +167,7 @@ pub const Framebuffer = struct {
     pub fn copy_pixels(fb: *Framebuffer, cursor: Cursor, pixels: []const ColorIndex) void {
         const framebuffer: [*]ColorIndex = switch (fb.type) {
             .memory => |bmp| bmp.pixels,
-            .video => |vmem| vmem.base,
+            .video => |video| video.memory.base,
             .window => |win| win.pixels.ptr,
             .widget => @panic("Framebuffer(.widget).copy_pixels Not implemented yet!"),
         };
