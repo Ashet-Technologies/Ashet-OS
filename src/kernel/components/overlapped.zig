@@ -305,6 +305,8 @@ fn await_completion_internal(context: *Context, completed: []?*ARC, mode: AwaitM
 
                         const call = AsyncCall.from_owner_link(node);
                         if (call.awaiter_node == &awaiter_node) {
+                            std.debug.assert(call.work_link.next == null);
+                            std.debug.assert(call.work_link.prev == null);
                             context.completed.remove(node);
                             count += 1;
                             call.destroy();
@@ -537,7 +539,7 @@ const Awaiter = struct {
     filter_thread: ?*ashet.scheduler.Thread,
 };
 
-const AwaiterList = std.DoublyLinkedList(Awaiter);
+const AwaiterList = astd.DoublyLinkedList(Awaiter, .{});
 const AwaiterNode = AwaiterList.Node;
 
 /// Management context for async running calls.
@@ -583,7 +585,7 @@ pub const Context = struct {
     }
 };
 
-const CallQueue = std.DoublyLinkedList(void);
+const CallQueue = astd.DoublyLinkedList(void, .{ .tag = opaque {} });
 
 fn node_in_queue(q: CallQueue, n: *CallQueue.Node) bool {
     var iter = q.first;
@@ -596,7 +598,7 @@ fn node_in_queue(q: CallQueue, n: *CallQueue.Node) bool {
 /// A work queue for ARCs, meant for the use inside
 /// subsystems that handle asynchronous calls.
 pub const WorkQueue = struct {
-    const Backing = std.DoublyLinkedList(Item);
+    const Backing = astd.DoublyLinkedList(Item, .{ .tag = opaque {} });
 
     pub const Item = ?*anyopaque;
     pub const Node = Backing.Node;

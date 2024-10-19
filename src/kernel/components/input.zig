@@ -114,7 +114,14 @@ pub fn schedule_get_event(call: *ashet.overlapped.AsyncCall) void {
     if (getEvent()) |evt| {
         return finish_arc(call, evt);
     } else {
+        call.cancel_fn = cancel_arc;
         event_awaiter = call;
+    }
+}
+
+fn cancel_arc(call: *ashet.overlapped.AsyncCall) void {
+    if (event_awaiter == call) {
+        event_awaiter = null;
     }
 }
 

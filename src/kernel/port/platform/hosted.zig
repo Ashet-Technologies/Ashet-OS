@@ -54,16 +54,18 @@ var global_lock: std.Thread.Mutex = .{};
 var interrupt_flag: bool = true;
 
 pub fn areInterruptsEnabled() bool {
-    return interrupt_flag;
+    return @atomicLoad(bool, &interrupt_flag, .seq_cst);
 }
 
 pub fn disableInterrupts() void {
     global_lock.lock();
-    interrupt_flag = false;
+    std.debug.assert(areInterruptsEnabled());
+    @atomicStore(bool, &interrupt_flag, false, .seq_cst);
 }
 
 pub fn enableInterrupts() void {
-    interrupt_flag = true;
+    std.debug.assert(!areInterruptsEnabled());
+    @atomicStore(bool, &interrupt_flag, true, .seq_cst);
     global_lock.unlock();
 }
 

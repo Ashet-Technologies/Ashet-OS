@@ -6,7 +6,7 @@ const ashet = @import("../main.zig");
 const logger = std.log.scoped(.multitasking);
 const loader = @import("loader.zig");
 
-const ProcessList = std.DoublyLinkedList(void);
+const ProcessList = astd.DoublyLinkedList(void, .{ .tag = opaque {} });
 const ProcessNode = ProcessList.Node;
 const ExitCode = ashet.abi.ExitCode;
 
@@ -235,10 +235,10 @@ pub const ProcessIterator = struct {
     }
 };
 
-pub const ProcessThreadList = std.DoublyLinkedList(struct {
+pub const ProcessThreadList = astd.DoublyLinkedList(struct {
     thread: *ashet.scheduler.Thread,
     process: *Process,
-});
+}, .{});
 
 pub const SpawnProcessArg = union(ashet.abi.SpawnProcessArg.Type) {
     string: []const u8,
