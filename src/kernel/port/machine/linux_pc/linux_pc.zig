@@ -14,9 +14,17 @@ const SDL_Display = @import("SDL_Display.zig");
 
 const sdl_enabled = false;
 
+const mprotect = @import("mprotect.zig");
+
 pub const machine_config = ashet.ports.MachineConfig{
     .load_sections = .{ .data = false, .bss = false },
-    .memory_protection = null, // TODO: Implement mprotect based solution
+    .memory_protection = .{
+        .initialize = mprotect.initialize,
+        .update = mprotect.update,
+        .activate = mprotect.activate,
+        .get_protection = mprotect.get_protection,
+        .get_info = mprotect.query_address,
+    },
 };
 
 const hw = struct {
@@ -270,6 +278,7 @@ comptime {
         \\.space 8 * 1024 * 1024        # 8 MB of stack
         \\__kernel_stack_end:
         \\
+        \\.align 4096
         \\__kernel_flash_start:
         \\__kernel_flash_end:
         \\__kernel_data_start:
