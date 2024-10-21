@@ -1,5 +1,12 @@
 const std = @import("std");
 const ashet = @import("kernel");
+const builtin = @import("builtin");
+
+comptime {
+    if (builtin.single_threaded) {
+        @compileError("hosted builds must be compiled as multi-threaded!");
+    }
+}
 
 pub const page_size = std.mem.page_size;
 
@@ -7,42 +14,7 @@ pub const scheduler = struct {
     //
 };
 
-pub const start = struct {
-    // pub export var multiboot_info: ?*multiboot.Info = null;
-
-    // comptime {
-    //     @export(multiboot_info, .{
-    //         .name = "ashet_x86_kernel_multiboot_info",
-    //     });
-
-    //     // the startup routine must be written in assembler to
-    //     // guarantee that no stack and register is touched is used until
-    //     // we saved
-    //     asm (
-    //         \\.section .text
-    //         \\.global _start
-    //         \\_start:
-    //         \\  mov $__kernel_stack_end, %esp
-    //         \\  cmpl $0x2BADB002, %eax
-    //         \\  jne .no_multiboot
-    //         \\
-    //         \\.has_multiboot:
-    //         \\  movl %ebx, ashet_x86_kernel_multiboot_info
-    //         \\  call ashet_kernelMain
-    //         \\  jmp hang
-    //         \\
-    //         \\.no_multiboot:
-    //         \\  movl $0, ashet_x86_kernel_multiboot_info
-    //         \\  call ashet_kernelMain
-    //         \\
-    //         \\hang:
-    //         \\  cli
-    //         \\  hlt
-    //         \\  jmp hang
-    //         \\
-    //     );
-    // }
-};
+pub const start = struct {};
 
 pub inline fn getStackPointer() usize {
     return asm (""
@@ -54,16 +26,18 @@ var global_lock: std.Thread.Mutex = .{};
 var interrupt_flag: bool = true;
 
 pub fn areInterruptsEnabled() bool {
-    return interrupt_flag;
+    return @atomicLoad(bool, &interrupt_flag, .seq_cst);
 }
 
 pub fn disableInterrupts() void {
     global_lock.lock();
-    interrupt_flag = false;
+    std.debug.assert(areInterruptsEnabled());
+    @atomicStore(bool, &interrupt_flag, false, .seq_cst);
 }
 
 pub fn enableInterrupts() void {
-    interrupt_flag = true;
+    std.debug.assert(!areInterruptsEnabled());
+    @atomicStore(bool, &interrupt_flag, true, .seq_cst);
     global_lock.unlock();
 }
 

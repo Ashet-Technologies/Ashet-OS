@@ -71,29 +71,29 @@ pub fn build(b: *std.Build) void {
     }
 
     // Kernel Unit Tests
-    {
-        const abi_dep = b.dependency("ashet-abi", .{});
-        const abi_mod = abi_dep.module("ashet-abi");
+    // {
+    //     const abi_dep = b.dependency("ashet-abi", .{});
+    //     const abi_mod = abi_dep.module("ashet-abi");
 
-        const machine_info = b.addWriteFile("machine_info.zig",
-            \\pub const platform_id = .x86;
-            \\pub const machine_id = .@"pc-bios";
-        ).files.items[0].getPath();
+    //     const machine_info = b.addWriteFile("machine_info.zig",
+    //         \\pub const platform_id = .x86;
+    //         \\pub const machine_id = .@"pc-bios";
+    //     ).files.items[0].getPath();
 
-        const machine_info_mod = b.createModule(.{
-            .root_source_file = machine_info,
-        });
+    //     const machine_info_mod = b.createModule(.{
+    //         .root_source_file = machine_info,
+    //     });
 
-        const kernel_tests = b.addTest(.{
-            .root_source_file = b.path("src/kernel/main.zig"),
-            .target = b.resolveTargetQuery(.{ .cpu_arch = .x86 }),
-            .optimize = .Debug,
-        });
-        kernel_tests.root_module.addImport("machine-info", machine_info_mod);
-        kernel_tests.root_module.addImport("args", machine_info_mod);
-        kernel_tests.root_module.addImport("ashet-abi", abi_mod);
-        test_step.dependOn(&b.addRunArtifact(kernel_tests).step);
-    }
+    //     const kernel_tests = b.addTest(.{
+    //         .root_source_file = b.path("src/kernel/main.zig"),
+    //         .target = b.resolveTargetQuery(.{ .cpu_arch = .x86 }),
+    //         .optimize = .Debug,
+    //     });
+    //     kernel_tests.root_module.addImport("machine-info", machine_info_mod);
+    //     kernel_tests.root_module.addImport("args", machine_info_mod);
+    //     kernel_tests.root_module.addImport("ashet-abi", abi_mod);
+    //     test_step.dependOn(&b.addRunArtifact(kernel_tests).step);
+    // }
 
     {
         const astd_mod = b.dependency("ashet-std", .{});

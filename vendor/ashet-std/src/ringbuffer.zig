@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 pub fn RingBuffer(comptime T: type, comptime cap: comptime_int) type {
     const IndexType = if (cap <= 0x40)
@@ -177,4 +178,34 @@ test RingBuffer {
     try std.testing.expectEqual(true, buffer.full());
     try std.testing.expectEqual(@as(usize, 4), buffer.count());
     try std.testing.expectEqual(@as(usize, 4), buffer.capacity());
+}
+
+test "RingBufferFuzzer" {
+    if (builtin.zig_version.minor < 14)
+        return error.ZigSkipTest;
+
+    try std.testing.fuzz(fuzz_ring_buffer, .{});
+}
+
+fn fuzz_ring_buffer(input: []const u8) anyerror!void {
+    var buffer = RingBuffer(u64, 16){};
+
+    var next_push_item: u64 = 0;
+    var next_pop_item: u64 = 0;
+
+    for (input) |cmd| {
+        if (cmd < 0x80) {
+            next_push_item += 1;
+            buffer.push(next_push_item);
+        } else {
+            if (buffer.pull()) |out| {
+                std.debug.assert(next_pop_item < out);
+                next_pop_item = out;
+            }
+        }
+        _ = buffer.capacity();
+        _ = buffer.empty();
+        _ = buffer.full();
+        _ = buffer.count();
+    }
 }

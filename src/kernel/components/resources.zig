@@ -1,5 +1,6 @@
 const std = @import("std");
 const ashet = @import("../main.zig");
+const astd = @import("ashet-std");
 const logger = std.log.scoped(.resources);
 
 /// Encodes the different types of system resources.
@@ -13,7 +14,7 @@ pub const SystemResource = struct {
     type: TypeId,
 
     /// Number of processes this resource is referenced by.
-    owners: std.DoublyLinkedList(Ownership) = .{},
+    owners: astd.DoublyLinkedList(Ownership, .{}) = .{},
 
     pub fn cast(src: *SystemResource, comptime Resource: type) error{BadCast}!*Resource {
         const expected_type = instanceTypeId(Resource);
@@ -40,7 +41,8 @@ pub const Ownership = struct {
     handle: Handle,
 };
 
-pub const OwnershipNode = std.DoublyLinkedList(Ownership).Node;
+const OwnershipList = astd.DoublyLinkedList(Ownership, .{});
+pub const OwnershipNode = OwnershipList.Node;
 
 /// Manages allocation
 pub const HandlePool = struct {

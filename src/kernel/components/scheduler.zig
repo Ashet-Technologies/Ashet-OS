@@ -51,6 +51,7 @@
 //!
 
 const std = @import("std");
+const astd = @import("ashet-std");
 const logger = std.log.scoped(.scheduler);
 const ashet = @import("../main.zig");
 const target = @import("builtin").target.cpu.arch;
@@ -461,7 +462,7 @@ pub const ThreadIterator = struct {
     }
 };
 
-const ThreadQueue = std.DoublyLinkedList(void);
+const ThreadQueue = astd.DoublyLinkedList(void, .{ .tag = opaque {} });
 
 var wait_queue: ThreadQueue = .{};
 

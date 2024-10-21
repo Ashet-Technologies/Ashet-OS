@@ -365,14 +365,8 @@ pub const overlapped = struct {
 
         try schedule(event);
 
-        var completed_buffer: [1]*ARC = undefined;
-
-        const completed = try await_completion(&completed_buffer, .{
-            .thread_affinity = .this_thread,
-            .wait = .wait_one,
-        });
-        std.debug.assert(completed.len == 1);
-        std.debug.assert(completed[0] == event);
+        const completed = try await_events(.{ .event = event });
+        std.debug.assert(completed.count() == 1);
 
         try op.check_error();
     }
@@ -382,6 +376,7 @@ pub const overlapped = struct {
         singleShot(&value) catch |err| switch (err) {
             error.AlreadyScheduled => unreachable,
             error.Unscheduled => unreachable,
+            error.InvalidOperation => unreachable,
             else => |e| return e,
         };
         return value.outputs;

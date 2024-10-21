@@ -11,10 +11,10 @@ const CreateWindowFlags = ashet.abi.CreateWindowFlags;
 const WindowDesktopLink = struct {
     desktop: *Desktop,
 };
-const WindowDesktopLinkList = std.DoublyLinkedList(WindowDesktopLink);
+const WindowDesktopLinkList = astd.DoublyLinkedList(WindowDesktopLink, .{});
 const WindowDesktopLinkNode = WindowDesktopLinkList.Node;
 
-const DesktopList = std.DoublyLinkedList(void);
+const DesktopList = astd.DoublyLinkedList(void, .{ .tag = opaque {} });
 
 var all_desktops: DesktopList = .{};
 
@@ -269,7 +269,7 @@ pub const Window = struct {
         const desktop: *Desktop = window.desktop.data.desktop;
 
         // The notification should have removed the window already from the desktop:
-        std.debug.assert(!astd.is_in_linked_list(WindowDesktopLinkList, desktop.windows, &window.desktop));
+        std.debug.assert(!desktop.windows.contains(&window.desktop));
 
         if (window.event_awaiter) |event_awaiter| {
             // If there's still an event awaiter for our window, we have to cancel the event,
