@@ -27,36 +27,61 @@
       system: let
         pkgs = import nixpkgs {inherit overlays system;};
       in rec {
-        packages.default = pkgs.stdenv.mkDerivation {
-          name = "ashet-os";
-          src = ./.;
-          nativeBuildInputs = [
-            pkgs.zigpkgs."0.13.0"
+        packages = {
+          default = pkgs.stdenv.mkDerivation {
+            name = "ashet-os";
+            src = ./.;
+            nativeBuildInputs = [
+              pkgs.zigpkgs."0.13.0"
 
-            pkgs.qemu
-            pkgs.llvmPackages_17.bintools
-            pkgs.clang-tools
+              pkgs.qemu
+              pkgs.llvmPackages_17.bintools
+              pkgs.clang-tools
 
-            pkgs.gdb
-            pkgs.pkg-config
-            pkgs.python311
-            pkgs.graphviz
-          ];
+              pkgs.gdb
+              pkgs.pkg-config
+              pkgs.python311
+              pkgs.graphviz
+            ];
 
-          buildInputs = [
-            nixpkgs.legacyPackages.i686-linux.SDL2
-          ];
+            buildInputs = [
+              nixpkgs.legacyPackages.i686-linux.SDL2
+            ];
 
-          configurePhase = "";
+            configurePhase = "";
+            buildPhase = "";
+            installPhase = "";
+          };
 
-          buildPhase = ''
-            zig build
-          '';
+          zig-master = pkgs.stdenv.mkDerivation {
+            name = "ashet-os";
+            src = ./.;
+            nativeBuildInputs = [
+              pkgs.zigpkgs.master
 
-          installPhase = ''
-            mv zig-out $out
-          '';
+              pkgs.qemu
+              pkgs.llvmPackages_17.bintools
+              pkgs.clang-tools
+
+              pkgs.gdb
+              pkgs.pkg-config
+              pkgs.python311
+              pkgs.graphviz
+            ];
+
+            buildInputs = [
+              nixpkgs.legacyPackages.i686-linux.SDL2
+            ];
+
+            configurePhase = "";
+            buildPhase = "";
+            installPhase = "";
+          };
+
+
         };
+
+
       }
     );
 }
