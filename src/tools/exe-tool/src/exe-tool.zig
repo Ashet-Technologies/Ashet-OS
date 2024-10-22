@@ -1072,34 +1072,34 @@ const RelocationType = struct {
                 else => return error.UnsupportedRelocation,
             },
 
-            .riscv32 => @panic("TODO: Implement .riscv32 platform relocations!"),
+            .riscv32 => switch (type_id) {
 
-            //     .riscv32 => enum(u8) {
+                //         // https://github.com/riscv-non-isa/riscv-elf-psabi-doc/blob/master/riscv-elf.adoc
+                //         // A - Addend field in the relocation entry associated with the symbol
+                //         // B - Base address of a shared object loaded into memory
 
-            //         // https://github.com/riscv-non-isa/riscv-elf-psabi-doc/blob/master/riscv-elf.adoc
-            //         // A - Addend field in the relocation entry associated with the symbol
-            //         // B - Base address of a shared object loaded into memory
-            //         none = 0,
-            //         @"32" = 1, // word32 : S + A, 32-bit relocation
-            //         @"64" = 2, // word64 : S + A, 64-bit relocation
-            //         relative = 3, // wordclass : B + A, Adjust a link address (A) to its load address (B + A)
-            //         copy = 4,
-            //         jump_slot = 5, // wordclass : S, Indicates the symbol associated with a PLT entry
+                0 => {
+                    logger.warn("Found invalid R_386_NONE relocation", .{});
+                    return error.UnsupportedRelocation;
+                },
 
-            //         _,
+                //         @"32" = 1, // word32 : S + A, 32-bit relocation
+                1 => try init(word32, "S+A"),
 
-            //         pub fn apply(reloc_type: @This(), relocation: Relocation, env: Environment) !void {
-            //             switch (reloc_type) {
-            //                 .@"32" => init(env, word32, "S+A"),
-            //                 .@"64" => init(env, word64, "S+A"),
-            //                 .relative => init(env, wordclass, "B+A"),
-            //                 .copy => @panic("R_RV32_COPY not implemented yet!"),
-            //                 .jump_slot => init(env, wordclass, "S"),
+                //         @"64" = 2, // word64 : S + A, 64-bit relocation
+                2 => try init(word64, "S+A"),
 
-            //                 else => return error.UnsupportedRelocation,
-            //             }
-            //         }
-            //     },
+                //         relative = 3, // wordclass : B + A, Adjust a link address (A) to its load address (B + A)
+                3 => try init(word32, "B+A"),
+
+                //         copy = 4,
+                4 => @panic("R_RV32_COPY not implemented yet!"),
+
+                //         jump_slot = 5, // wordclass : S, Indicates the symbol associated with a PLT entry
+                5 => try init(word32, "S"),
+
+                else => return error.UnsupportedRelocation,
+            },
 
             .arm32 => @panic("TODO: Implement .thumb platform relocations!"),
 
