@@ -8,17 +8,14 @@
 ENTRY(_start)
 
 PHDRS {
-    readonly  PT_LOAD FILEHDR PHDRS FLAGS (5); /* RX!W */
-    readwrite PT_LOAD               FLAGS (6); /* RW!X */
-    dynamic   PT_DYNAMIC            FLAGS (4); /* R!W!X */
+    readonly   PT_LOAD     FLAGS (5);          /* RX!W */
+    readwrite  PT_LOAD     FLAGS (6);          /* RW!X */
+    dynamic    PT_DYNAMIC  FLAGS (4);          /* R!W!X */
+    metadata   PT_LOAD     FLAGS (0x00100000); /* R!W!X */
 }
 
 SECTIONS {
-    . = SIZEOF_HEADERS;
-
-    .dynsym : { *(.dynsym) } :readonly
-    .dynstr : { *(.dynstr) } :readonly
-
+    
     .text : {
         . = ALIGN(4);
         *(.text) *(.text.*)
@@ -55,41 +52,34 @@ SECTIONS {
 
         . = ALIGN(4);
         *(.data) *(.data.*)
-        
+    } :readwrite
+
+    .bss : {
         . = ALIGN(4);
         *(.bss) *(.bss.*)
 
         . = ALIGN(4);
         *(.sbss) *(.sbss.*)
-
-        . = ALIGN(4096);
     } :readwrite
 
-    . = ALIGN(4096);
+    /* . = ALIGN(4096); */
 
     /*
         Make the DYNAMIC program header last so we can quickly load and align 
         the actual data sections
      */
     .dynamic : { *(.dynamic) } :dynamic
-
-    /* We're not a GNU system, even if we use GNU tools right now */
-    /DISCARD/ : {
-        *(.gnu.hash)
-        *(.hash)
-    }
-}
-
-
-
-
-    /* .plt            : { *(.plt) *(.iplt) }
-    .plt.got        : { *(.plt.got) }
-    .plt.sec        : { *(.plt.sec) }
     
+    /* . = ALIGN(4096); */
 
- .rel.dyn        :
-    {
+    .dynsym : { *(.dynsym) } :metadata
+    .dynstr : { *(.dynstr) } :metadata
+
+    .plt            : { *(.plt) *(.iplt) }  :metadata
+    .plt.got        : { *(.plt.got) }  :metadata
+    .plt.sec        : { *(.plt.sec) }  :metadata
+    
+    .rel.dyn : {
       *(.rel.init)
       *(.rel.text .rel.text.* .rel.gnu.linkonce.t.*)
       *(.rel.fini)
@@ -103,10 +93,23 @@ SECTIONS {
       *(.rel.got)
       *(.rel.bss .rel.bss.* .rel.gnu.linkonce.b.*)
       *(.rel.ifunc)
-    }
-  .rel.plt        :
-    {
+    } :metadata
+
+    .rel.plt : {
       *(.rel.plt)
       *(.rel.iplt)
+    } :metadata
+    
+    .relr.dyn : {
+        *(.relr.dyn)
+    } :metadata
+
+    /* We're not a GNU system, even if we use GNU tools right now */
+    /DISCARD/ : {
+        *(.gnu.hash)
+        *(.hash)
     }
-  .relr.dyn : { *(.relr.dyn) } */
+}
+
+
+

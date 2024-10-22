@@ -5,6 +5,12 @@ const ashex = @import("ashex.zig");
 const logger = std.log;
 const elf = std.elf;
 
+const PF_ASHETOS_NOLOAD = 0x0_01_00000;
+
+comptime {
+    std.debug.assert((PF_ASHETOS_NOLOAD & ~@as(elf.Elf32_Addr, elf.PF_MASKOS)) == 0);
+}
+
 const CliOptions = struct {
     help: bool = false,
     output: []const u8 = "",
@@ -83,12 +89,45 @@ pub fn main() !u8 {
 
     const ashex_file = try parse_elf_file(allocator, input_file_data);
 
+    // Optimize relocation size
+    for (ashex_file.relocations) |*reloc| {
+        if (reloc.type.addend != .unused) {
+            if (reloc.addend == 0) {
+                reloc.type.addend = .unused;
+            }
+        }
+    }
+
     logger.info("platform:      {s}", .{@tagName(ashex_file.platform)});
     logger.info("virtual size:  0x{X:0>8}", .{ashex_file.vmem_size});
     logger.info("entry point:   0x{X:0>8}", .{ashex_file.entry_point});
     logger.info("relocations:   {d}", .{ashex_file.relocations.len});
+    for (ashex_file.relocations) |relocation| {
+        logger.info("  - type={s}{}{}{}{}, addend={}, offset=0x{X:0>8}, syscall={}", .{
+            @tagName(relocation.type.size),
+            std.fmt.Formatter(fmt_rel_field){ .data = .{ 'A', relocation.type.addend } },
+            std.fmt.Formatter(fmt_rel_field){ .data = .{ 'B', relocation.type.base } },
+            std.fmt.Formatter(fmt_rel_field){ .data = .{ 'O', relocation.type.offset } },
+            std.fmt.Formatter(fmt_rel_field){ .data = .{ 'S', relocation.type.syscall } },
+            relocation.addend,
+            relocation.offset,
+            relocation.syscall,
+        });
+    }
     logger.info("bss sections:  {d}", .{ashex_file.bss_headers.len});
+    for (ashex_file.bss_headers) |load_hdr| {
+        logger.info("  - offset=0x{X:0>8}, size=0x{X:0>8}", .{
+            load_hdr.vmem_offset,
+            load_hdr.length,
+        });
+    }
     logger.info("load sections: {d}", .{ashex_file.load_headers.len});
+    for (ashex_file.load_headers) |load_hdr| {
+        logger.info("  - offset=0x{X:0>8}, size=0x{X:0>8}", .{
+            load_hdr.vmem_offset,
+            load_hdr.data.len,
+        });
+    }
     logger.info("syscalls:      {d}", .{ashex_file.syscalls.len});
     for (ashex_file.syscalls) |syscall| {
         logger.info("  - {s}", .{syscall});
@@ -130,26 +169,43 @@ fn parse_elf_file(
         else => return error.UnsupportedMachine,
     };
 
+    // Fetch the headers:
+    var load_headers = std.ArrayList(LoadHeader).init(allocator);
+    defer load_headers.deinit();
+
     const required_bytes: usize = blk: {
         var lo_addr: usize = 0;
         var hi_addr: usize = 0;
 
         var pheaders = header.program_header_iterator(elf_stream);
         while (try pheaders.next()) |phdr| {
-            if (phdr.p_type != elf.PT_LOAD)
-                continue;
+            switch (phdr.p_type) {
+                elf.PT_LOAD => {},
 
-            // logger.info("verifying read={} write={} exec={} offset=0x{X:0>8} vaddr=0x{X:0>8} paddr=0x{X:0>8} memlen={} bytes={} align={}", .{
-            //     @boolToInt((phdr.p_flags & elf.PF_R) != 0),
-            //     @boolToInt((phdr.p_flags & elf.PF_W) != 0),
-            //     @boolToInt((phdr.p_flags & elf.PF_X) != 0),
-            //     phdr.p_offset, // file offset
-            //     phdr.p_vaddr, // virtual load address
-            //     phdr.p_paddr, // physical load address
-            //     phdr.p_memsz, // memory size
-            //     phdr.p_filesz, // bytes in file
-            //     phdr.p_align, // alignment
-            // });
+                elf.PT_DYNAMIC => continue,
+                else => {
+                    logger.warn("skipping program header: {}", .{phdr});
+                    continue;
+                },
+            }
+
+            logger.info("verifying read={} write={} exec={} flags=0x{X:0>8} offset=0x{X:0>8} vaddr=0x{X:0>8} paddr=0x{X:0>8} memlen={} bytes={} align={}", .{
+                @intFromBool((phdr.p_flags & elf.PF_R) != 0),
+                @intFromBool((phdr.p_flags & elf.PF_W) != 0),
+                @intFromBool((phdr.p_flags & elf.PF_X) != 0),
+                phdr.p_flags,
+                phdr.p_offset, // file offset
+                phdr.p_vaddr, // virtual load address
+                phdr.p_paddr, // physical load address
+                phdr.p_memsz, // memory size
+                phdr.p_filesz, // bytes in file
+                phdr.p_align, // alignment
+            });
+
+            if ((phdr.p_flags & PF_ASHETOS_NOLOAD) != 0) {
+                logger.info("skipping phdr...", .{});
+                continue;
+            }
 
             // // check if memory is available
             // var i: usize = 0;
@@ -162,6 +218,22 @@ fn parse_elf_file(
 
             lo_addr = @min(lo_addr, @as(usize, @intCast(phdr.p_vaddr)));
             hi_addr = @max(hi_addr, @as(usize, @intCast(phdr.p_vaddr + phdr.p_memsz)));
+
+            if (phdr.p_memsz < phdr.p_filesz)
+                return error.InvalidElfFile;
+
+            const length: u32 = @intCast(phdr.p_filesz);
+
+            const file_chunk = try load_headers.addOne();
+            file_chunk.* = .{
+                .vmem_offset = @intCast(phdr.p_vaddr),
+                .data = try allocator.alloc(u8, length),
+            };
+
+            std.debug.assert(file_chunk.data.len == phdr.p_filesz);
+
+            try elf_stream.seekableStream().seekTo(phdr.p_offset);
+            try elf_stream.reader().readNoEof(file_chunk.data);
         }
 
         break :blk hi_addr - lo_addr;
@@ -237,52 +309,6 @@ fn parse_elf_file(
     };
 
     logger.info("dynamic section: {?}", .{dynamic_section});
-
-    // Fetch the headers:
-    var load_headers = std.ArrayList(LoadHeader).init(allocator);
-    defer load_headers.deinit();
-    {
-        var pheaders = header.program_header_iterator(elf_stream);
-        while (try pheaders.next()) |phdr| {
-            switch (phdr.p_type) {
-                elf.PT_LOAD => {},
-
-                elf.PT_DYNAMIC => continue,
-                else => {
-                    logger.warn("skipping program header: {}", .{phdr});
-                    continue;
-                },
-            }
-
-            logger.info("loading read={} write={} exec={} offset=0x{X:0>8} vaddr=0x{X:0>8} paddr=0x{X:0>8} memlen={} bytes={} align={}", .{
-                @intFromBool((phdr.p_flags & elf.PF_R) != 0),
-                @intFromBool((phdr.p_flags & elf.PF_W) != 0),
-                @intFromBool((phdr.p_flags & elf.PF_X) != 0),
-                phdr.p_offset, // file offset
-                phdr.p_vaddr, // virtual load address
-                phdr.p_paddr, // physical load address
-                phdr.p_memsz, // memory size
-                phdr.p_filesz, // bytes in file
-                phdr.p_align, // alignment
-            });
-
-            if (phdr.p_memsz < phdr.p_filesz)
-                return error.InvalidElfFile;
-
-            const length: u32 = @intCast(phdr.p_filesz);
-
-            const file_chunk = try load_headers.addOne();
-            file_chunk.* = .{
-                .vmem_offset = @intCast(phdr.p_vaddr),
-                .data = try allocator.alloc(u8, length),
-            };
-
-            std.debug.assert(file_chunk.data.len == phdr.p_filesz);
-
-            try elf_stream.seekableStream().seekTo(phdr.p_offset);
-            try elf_stream.reader().readNoEof(file_chunk.data);
-        }
-    }
 
     var bss_headers = std.ArrayList(BssHeader).init(allocator);
     defer bss_headers.deinit();
@@ -424,9 +450,9 @@ const AshexFile = struct {
     vmem_size: u32,
     entry_point: u32,
     syscalls: []const []const u8,
-    load_headers: []const LoadHeader,
-    bss_headers: []const BssHeader,
-    relocations: []const Relocation,
+    load_headers: []LoadHeader,
+    bss_headers: []BssHeader,
+    relocations: []Relocation,
 };
 
 fn write_ashex_file(
@@ -437,80 +463,134 @@ fn write_ashex_file(
     const endian: std.builtin.Endian = .little;
     const ashex_version = 0;
 
-    var buffered_writer = std.io.bufferedWriter(file.writer());
-    var counting_writer = std.io.countingWriter(buffered_writer.writer());
-    const writer = counting_writer.writer();
+    std.debug.assert(0 == try file.getPos());
 
-    // Write header
+    var syscalls_offset_pos: u64 = 0;
+    var syscalls_offset: u64 = 0;
+
+    var load_headers_offset_pos: u64 = 0;
+    var load_headers_offset: u64 = 0;
+
+    var bss_headers_offset_pos: u64 = 0;
+    var bss_headers_offset: u64 = 0;
+
+    var relocations_offset_pos: u64 = 0;
+    var relocations_offset: u64 = 0;
+
     {
-        try writer.writeAll(&ashex.file_magic);
-        try writer.writeInt(u8, ashex_version, endian);
-        try writer.writeInt(u8, @intFromEnum(ashex.FileType.machine32_le), endian);
-        try writer.writeInt(u8, @intFromEnum(exe.platform), endian);
-        try writer.writeByteNTimes(0x00, 1); // padding
+        var buffered_writer = std.io.bufferedWriter(file.writer());
+        var counting_writer = std.io.countingWriter(buffered_writer.writer());
+        const writer = counting_writer.writer();
+
+        // Write header
+        {
+            try writer.writeAll(&ashex.file_magic);
+            try writer.writeInt(u8, ashex_version, endian);
+            try writer.writeInt(u8, @intFromEnum(ashex.FileType.machine32_le), endian);
+            try writer.writeInt(u8, @intFromEnum(exe.platform), endian);
+            try writer.writeByteNTimes(0x00, 1); // padding
+
+            if (icon_data) |icon| {
+                try writer.writeInt(u32, @intCast(icon.len), endian);
+                try writer.writeInt(u32, 0xAABBCCDD, endian); // TODO(fqu): Add patch and write data later!
+            } else {
+                try writer.writeInt(u32, 0, endian);
+                try writer.writeInt(u32, 0, endian);
+            }
+
+            try writer.writeInt(u32, exe.vmem_size, endian);
+            try writer.writeInt(u32, exe.entry_point, endian);
+
+            syscalls_offset_pos = counting_writer.bytes_written;
+            try writer.writeInt(u32, 0x55AA55AA, endian);
+            try writer.writeInt(u32, @intCast(exe.syscalls.len), endian);
+
+            load_headers_offset_pos = counting_writer.bytes_written;
+            try writer.writeInt(u32, 0x55AA55AA, endian);
+            try writer.writeInt(u32, @intCast(exe.load_headers.len), endian);
+
+            bss_headers_offset_pos = counting_writer.bytes_written;
+            try writer.writeInt(u32, 0x55AA55AA, endian);
+            try writer.writeInt(u32, @intCast(exe.bss_headers.len), endian);
+
+            relocations_offset_pos = counting_writer.bytes_written;
+            try writer.writeInt(u32, 0x55AA55AA, endian);
+            try writer.writeInt(u32, @intCast(exe.relocations.len), endian);
+        }
+
+        // Write load headers
+        {
+            try align_writer(&counting_writer, 512);
+            load_headers_offset = counting_writer.bytes_written;
+            for (exe.load_headers) |load_header| {
+                try writer.writeInt(u32, load_header.vmem_offset, endian);
+                try writer.writeInt(u32, @intCast(load_header.data.len), endian);
+                try writer.writeAll(load_header.data);
+            }
+        }
+
+        // Write BSS headers
+        {
+            try align_writer(&counting_writer, 512);
+            bss_headers_offset = counting_writer.bytes_written;
+            for (exe.bss_headers) |bss_header| {
+                try writer.writeInt(u32, bss_header.vmem_offset, endian);
+                try writer.writeInt(u32, bss_header.length, endian);
+            }
+        }
+
+        // Write system calls:
+        {
+            try align_writer(&counting_writer, 512);
+            syscalls_offset = counting_writer.bytes_written;
+            for (exe.syscalls) |syscall| {
+                try writer.writeInt(u16, @intCast(syscall.len), endian);
+                try writer.writeAll(syscall);
+            }
+        }
+
+        // Write relocations
+        {
+            try align_writer(&counting_writer, 512);
+            relocations_offset = counting_writer.bytes_written;
+            for (exe.relocations) |reloc| {
+                try writer.writeInt(u16, @bitCast(reloc.type), endian);
+                if (reloc.type.syscall != .unused) {
+                    try writer.writeInt(u16, reloc.syscall, endian);
+                }
+                if (reloc.type.offset != .unused) {
+                    try writer.writeInt(u32, reloc.offset, endian);
+                }
+                if (reloc.type.addend != .unused) {
+                    try writer.writeInt(i32, reloc.addend, endian);
+                }
+            }
+        }
 
         if (icon_data) |icon| {
-            try writer.writeInt(u32, @intCast(icon.len), endian);
-            try writer.writeInt(u32, 0xAABBCCDD, endian); // TODO(fqu): Add patch and write data later!
-        } else {
-            try writer.writeInt(u32, 0, endian);
-            try writer.writeInt(u32, 0, endian);
+            try align_writer(&counting_writer, 512);
+            try writer.writeAll(icon);
         }
 
-        try writer.writeInt(u32, exe.vmem_size, endian);
-        try writer.writeInt(u32, exe.entry_point, endian);
-
-        try writer.writeInt(u32, @intCast(exe.syscalls.len), endian);
-        try writer.writeInt(u32, @intCast(exe.load_headers.len), endian);
-        try writer.writeInt(u32, @intCast(exe.bss_headers.len), endian);
-        try writer.writeInt(u32, @intCast(exe.relocations.len), endian);
+        try buffered_writer.flush();
     }
 
-    // Write load headers
-    {
-        try align_writer(&counting_writer, 512);
-        for (exe.load_headers) |load_header| {
-            try writer.writeInt(u32, load_header.vmem_offset, endian);
-            try writer.writeInt(u32, @intCast(load_header.data.len), endian);
-            try writer.writeAll(load_header.data);
-        }
+    if (syscalls_offset != 0) {
+        try file.seekTo(syscalls_offset_pos);
+        try file.writer().writeInt(u32, @intCast(syscalls_offset), endian);
     }
-
-    // Write BSS headers
-    {
-        try align_writer(&counting_writer, 512);
-        for (exe.bss_headers) |bss_header| {
-            try writer.writeInt(u32, bss_header.vmem_offset, endian);
-            try writer.writeInt(u32, bss_header.length, endian);
-        }
+    if (load_headers_offset != 0) {
+        try file.seekTo(load_headers_offset_pos);
+        try file.writer().writeInt(u32, @intCast(load_headers_offset), endian);
     }
-
-    // Write system calls:
-    {
-        try align_writer(&counting_writer, 512);
-        for (exe.syscalls) |syscall| {
-            try writer.writeInt(u16, @intCast(syscall.len), endian);
-            try writer.writeAll(syscall);
-        }
+    if (bss_headers_offset != 0) {
+        try file.seekTo(bss_headers_offset_pos);
+        try file.writer().writeInt(u32, @intCast(bss_headers_offset), endian);
     }
-
-    // Write relocations
-    {
-        try align_writer(&counting_writer, 512);
-        for (exe.relocations) |reloc| {
-            try writer.writeInt(u16, @bitCast(reloc.type), endian);
-            try writer.writeInt(u16, reloc.syscall, endian);
-            try writer.writeInt(u32, reloc.offset, endian);
-            try writer.writeInt(i32, reloc.addend, endian);
-        }
+    if (relocations_offset != 0) {
+        try file.seekTo(relocations_offset_pos);
+        try file.writer().writeInt(u32, @intCast(relocations_offset), endian);
     }
-
-    if (icon_data) |icon| {
-        try align_writer(&counting_writer, 512);
-        try writer.writeAll(icon);
-    }
-
-    try buffered_writer.flush();
 }
 
 fn align_writer(counting_writer: anytype, alignment: u32) !void {
@@ -1119,3 +1199,14 @@ const ScriptEngine = struct {
         return code;
     }
 };
+
+fn fmt_rel_field(val: struct { u7, ashex.RelocationField }, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+    if (val[1] == .unused)
+        return;
+    _ = fmt;
+    _ = options;
+    try writer.print("{c}{c}", .{
+        @as(u7, if (val[1] == .add) '+' else '-'),
+        val[0],
+    });
+}

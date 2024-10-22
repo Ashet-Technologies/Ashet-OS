@@ -65,9 +65,16 @@ type FileHeader = struct {
     /// Offset in virtual memory where the entry point is located.
     entry_point: u32,
 
+    syscall_offset: u32,
     syscall_count: u32,
+
+    load_header_offset: u32,
     load_header_count: u32,
+    
+    bss_header_offset: u32,
     bss_header_count: u32,
+    
+    relocation_offset: u32,
     relocation_count: u32,
 };
 
@@ -91,11 +98,15 @@ type Relocation = struct {
         // plt_offset: RelocField,
     },
     
-    // in ELF it's 24 bit, but if we have more
-    // than 64k syscalls, we're doing it wrong
-    syscall: u16,
-    offset: u32,
-    addend: i32,
+    if(type.syscall != .unused) {
+      syscall: u16,
+    }
+    if(type.offset != .unused) {
+      offset: u32,
+    }
+    if(type.addend != .unused) {
+      addend: i32,
+    }
 };
 
 type RelocField = enum(u2) {
