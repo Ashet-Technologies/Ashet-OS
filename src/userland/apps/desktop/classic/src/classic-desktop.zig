@@ -310,7 +310,7 @@ pub fn main() !void {
 
                             var path_buffer: [256]u8 = undefined;
 
-                            const path = try std.fmt.bufPrint(&path_buffer, "{s}/code", .{app.app.get_disk_name()});
+                            const path = try std.fmt.bufPrint(&path_buffer, "{s}.ashex", .{app.app.get_disk_name()});
 
                             const maybe_app = ashet.overlapped.performOne(abi.process.Spawn, .{
                                 .dir = apps_dir.handle,

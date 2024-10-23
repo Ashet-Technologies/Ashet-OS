@@ -34,12 +34,8 @@ h2 "hierarchy" "Filesystem Hierarchy"
 pre "" {
   span "SYS:/\n"
   span "  |- apps\n"
-  span "  |  |- ${app_name}\n"
-  span "  |  |  |- code\n"
-  span "  |  |  |- icon\n"
-  span "  |  '- ${app_name}\n"
-  span "  |     |- code\n"
-  span "  |     |- icon\n"
+  span "  |  |- ${app_name}.ashex\n"
+  span "  |  '- ${app_name}.ashex\n"
   span "  |- bin\n"
   span "  |  |- cat\n"
   span "  |  |- font\n"
@@ -52,14 +48,9 @@ pre "" {
 
 
 p {
-  mono "SYS:/apps/<app_name>/code\n"
-  span "ELF file that will be loaded at a relocatable address in memory. "
-  span "Contains the code of the application."
-}
-
-p {
-  mono "SYS:/apps/<app_name>/icon\n"
-  span "A 32x32 pixel sized icon with a 15 entry-palette. The file is structured like this:\n"
+  mono "SYS:/apps/<app_name>.ashex\n"
+  span "Ashet Executable File that will be loaded at a relocatable address in memory. "
+  span "Contains code, icon and embedded files of the application."
 }
 
 pre "zig" {

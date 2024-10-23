@@ -26,7 +26,7 @@ pub fn main() !void {
 
     const behaviour_proc = try ashet.overlapped.performOne(abi.process.Spawn, .{
         .dir = apps_dir.dir,
-        .path_ptr = "testing/behaviour/code",
+        .path_ptr = "testing/behaviour.ashex",
         .path_len = 22,
         .argv_ptr = &[_]abi.SpawnProcessArg{
             abi.SpawnProcessArg.string("--shared"),
@@ -41,7 +41,7 @@ pub fn main() !void {
 
     const desktop_proc = try ashet.overlapped.performOne(abi.process.Spawn, .{
         .dir = apps_dir.dir,
-        .path_ptr = "desktop/classic/code",
+        .path_ptr = "desktop/classic.ashex",
         .path_len = 20,
         .argv_ptr = &[_]abi.SpawnProcessArg{},
         .argv_len = 0,

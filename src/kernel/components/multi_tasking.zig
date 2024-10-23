@@ -94,6 +94,8 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
     else
         raw_basename;
 
+    logger.err("fix exe name computation: {s} => {s}", .{ raw_basename, exe_name });
+
     var open_file = ashet.abi.fs.OpenFile.new(.{
         .dir = inputs.dir,
         .path_ptr = exe_path.ptr,

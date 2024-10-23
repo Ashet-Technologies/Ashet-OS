@@ -1,24 +1,19 @@
 const std = @import("std");
+const AshetOS = @import("AshetOS");
 
 const disk_image_step = @import("disk-image-step");
 const kernel_package = @import("kernel");
 
 const Machine = kernel_package.Machine;
 
-const App = struct {
-    name: []const u8,
-    dep_name: []const u8,
-    artifact_name: ?[]const u8 = null,
-};
-
-const apps: []const App = &.{
-    .{ .name = "hello-world", .dep_name = "hello_world" },
-    .{ .name = "hello-gui", .dep_name = "hello_gui" },
-    .{ .name = "clock", .dep_name = "clock" },
-    .{ .name = "paint", .dep_name = "paint" },
-    .{ .name = "init", .dep_name = "init" },
-    .{ .name = "testing/behaviour", .dep_name = "test_behaviour", .artifact_name = "test-behaviour" },
-    .{ .name = "desktop/classic", .dep_name = "desktop_classic", .artifact_name = "classic-desktop" },
+const app_packages = [_][]const u8{
+    "hello_world",
+    "hello_gui",
+    "clock",
+    "paint",
+    "init",
+    "test_behaviour",
+    "desktop_classic",
 };
 
 pub fn build(b: *std.Build) void {
@@ -63,25 +58,30 @@ pub fn build(b: *std.Build) void {
 
     // Phase 2: Platform dependent root fs
 
-    for (apps) |app| {
-        const app_path = b.fmt("apps/{s}", .{app.name});
-        const app_exe_path = b.fmt("apps/{s}/code", .{app.name});
+    for (app_packages) |dep_name| {
 
-        const app_dep = b.dependency(app.dep_name, .{ .target = platform });
+        // std.log.err("dep: {s}", .{dep_name});
 
-        const app_exe = app_dep.artifact(
-            app.artifact_name orelse app.name,
-        );
+        const app_dep = b.dependency(dep_name, .{ .target = platform });
+        const app_list = AshetOS.getApplications(app_dep);
 
-        const app_bin = app_exe.getEmittedBin();
+        for (app_list) |app| {
+            // std.log.err("- {s}", .{app.target_path});
 
-        rootfs.mkdir(app_path);
-        rootfs.addFile(app_bin, app_exe_path);
+            const app_path = b.fmt("apps/{s}", .{app.target_path});
 
-        _ = result_files.addCopyFile(
-            app_bin,
-            b.fmt("apps/{s}.elf", .{app.name}),
-        );
+            // Copy the file into the disk image:
+            if (std.fs.path.dirnamePosix(app_path)) |dir| {
+                rootfs.mkdir(dir);
+            }
+            rootfs.addFile(app.file, app_path);
+
+            // TODO(fqu): Add means to also export the applications ELF file:
+            // _ = result_files.addCopyFile(
+            //     app.file,
+            //     b.fmt("apps/{s}.elf", .{app.name}),
+            // );
+        }
     }
 
     switch (platform) {

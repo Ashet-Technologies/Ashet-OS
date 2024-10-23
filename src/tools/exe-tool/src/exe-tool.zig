@@ -13,6 +13,7 @@ comptime {
 
 const CliOptions = struct {
     help: bool = false,
+    verbose: bool = false,
     output: []const u8 = "",
     icon: ?[]const u8 = null,
 
@@ -32,9 +33,30 @@ const CliOptions = struct {
             .output = "Defines the output path of the generated .ashex file.",
             .help = "Prints this help to stdout",
             .icon = "Path to a Ashet Bitmap File (.abm) which contains the application icon.",
+            .verbose = "Prints debugging information",
         },
     };
 };
+
+pub const std_options = std.Options{
+    .logFn = write_log,
+};
+
+var verbose_logging: bool = false;
+
+pub fn write_log(
+    comptime message_level: std.log.Level,
+    comptime scope: @TypeOf(.enum_literal),
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    switch (message_level) {
+        .debug, .info => if (!verbose_logging)
+            return,
+        .warn, .err => {},
+    }
+    std.log.defaultLog(message_level, scope, format, args);
+}
 
 fn print_usage(exe_name: ?[]const u8, target: std.fs.File) !void {
     try args_parser.printHelp(
@@ -52,6 +74,8 @@ pub fn main() !u8 {
 
     var cli_args = args_parser.parseForCurrentProcess(CliOptions, allocator, .print) catch return 1;
     defer cli_args.deinit();
+
+    verbose_logging = cli_args.options.verbose;
 
     if (cli_args.options.help) {
         try print_usage(cli_args.executable_name, std.io.getStdOut());
@@ -296,12 +320,37 @@ fn parse_elf_file(
                 elf.DT_PREINIT_ARRAYSZ => dsect.preinit_arraysz = dyn.d_val,
                 elf.DT_SYMTAB_SHNDX => dsect.symtab_shndx = dyn.d_val,
                 elf.DT_NUM => dsect.num = dyn.d_val,
-                // elf.DT_LOOS => dsect.loos = dyn.d_val,
-                // elf.DT_HIOS => dsect.hios = dyn.d_val,
-                // elf.DT_LOPROC => dsect.loproc = dyn.d_val,
-                // elf.DT_HIPROC => dsect.hiproc = dyn.d_val,
+
+                elf.DT_VALRNGLO => dsect.valrnglo = dyn.d_val,
+                elf.DT_GNU_PRELINKED => dsect.gnu_prelinked = dyn.d_val,
+                elf.DT_GNU_CONFLICTSZ => dsect.gnu_conflictsz = dyn.d_val,
+                elf.DT_GNU_LIBLISTSZ => dsect.gnu_liblistsz = dyn.d_val,
+                elf.DT_CHECKSUM => dsect.checksum = dyn.d_val,
+                elf.DT_PLTPADSZ => dsect.pltpadsz = dyn.d_val,
+                elf.DT_MOVEENT => dsect.moveent = dyn.d_val,
+                elf.DT_MOVESZ => dsect.movesz = dyn.d_val,
+                elf.DT_FEATURE_1 => dsect.feature_1 = dyn.d_val,
+                elf.DT_POSFLAG_1 => dsect.posflag_1 = dyn.d_val,
+
+                elf.DT_VERSYM => dsect.versym = dyn.d_val,
+                elf.DT_RELACOUNT => dsect.relacount = dyn.d_val,
+                elf.DT_RELCOUNT => dsect.relcount = dyn.d_val,
+                elf.DT_FLAGS_1 => dsect.flags_1 = dyn.d_val,
+                elf.DT_VERDEF => dsect.verdef = dyn.d_val,
+                elf.DT_VERDEFNUM => dsect.verdefnum = dyn.d_val,
+                elf.DT_VERNEED => dsect.verneed = dyn.d_val,
+                elf.DT_VERNEEDNUM => dsect.verneednum = dyn.d_val,
+                elf.DT_AUXILIARY => dsect.auxiliary = dyn.d_val,
+                elf.DT_FILTER => dsect.filter = dyn.d_val,
+
                 else => {
-                    logger.warn("unsupported DYNAMIC tag {d} (value: {d})", .{ dyn.d_tag, dyn.d_val });
+                    if (dyn.d_tag >= elf.DT_LOOS and dyn.d_tag <= elf.DT_HIOS) {
+                        logger.warn("unsupported DYNAMIC OS tag 0x{X:0>8} (value: {d})", .{ dyn.d_tag, dyn.d_val });
+                    } else if (dyn.d_tag >= elf.DT_LOPROC and dyn.d_tag <= elf.DT_HIPROC) {
+                        logger.warn("unsupported DYNAMIC PROC tag 0x{X:0>8} (value: {d})", .{ dyn.d_tag, dyn.d_val });
+                    } else {
+                        logger.err("unsupported DYNAMIC tag {d} (value: {d})", .{ dyn.d_tag, dyn.d_val });
+                    }
                 },
             }
         }
@@ -739,17 +788,28 @@ const DynamicSection = struct {
     ///
     num: ?usize = null,
 
-    // ///
-    // loos: ?usize = null,
+    // Extensions:
+    valrnglo: ?usize = null,
+    gnu_prelinked: ?usize = null,
+    gnu_conflictsz: ?usize = null,
+    gnu_liblistsz: ?usize = null,
+    checksum: ?usize = null,
+    pltpadsz: ?usize = null,
+    moveent: ?usize = null,
+    movesz: ?usize = null,
+    feature_1: ?usize = null,
+    posflag_1: ?usize = null,
 
-    // ///
-    // hios: ?usize = null,
-
-    // ///
-    // loproc: ?usize = null,
-
-    // ///
-    // hiproc: ?usize = null,
+    versym: ?usize = null,
+    relacount: ?usize = null,
+    relcount: ?usize = null,
+    flags_1: ?usize = null,
+    verdef: ?usize = null,
+    verdefnum: ?usize = null,
+    verneed: ?usize = null,
+    verneednum: ?usize = null,
+    auxiliary: ?usize = null,
+    filter: ?usize = null,
 };
 
 const Environment = struct {

@@ -16,5 +16,8 @@
         .agp = .{
             .path = "../agp",
         },
+        .ashex = .{
+            .path = "../../../tools/exe-tool",
+        },
     },
 }
