@@ -13,7 +13,7 @@ comptime {
 
 const CliOptions = struct {
     help: bool = false,
-    verbose: bool = true,
+    verbose: bool = false,
     output: []const u8 = "",
     icon: ?[]const u8 = null,
 
