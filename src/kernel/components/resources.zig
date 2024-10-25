@@ -766,27 +766,41 @@ pub fn destroy(resource: *SystemResource) void {
 }
 
 /// Removes all resources from the process.
-pub fn unlink_process(process: *ashet.multi_tasking.Process) void {
+pub fn unlink_process(process: *ashet.multi_tasking.Process, unlink_self: bool) void {
     logger.debug("unlink_process({})", .{process});
 
     // logger.info("before unlink:", .{});
     // ashet.multi_tasking.debug_dump();
 
-    var iter = process.resource_handles.iterator();
-    while (iter.next()) |item| {
-        const res = item.ownership.data.resource;
-        if (res == &process.system_resource) {
-            // We have to skip our own resource handle here as
-            // removing the last owner from the resource handle will
-            // invoke `Process.destroy()` in that case.
-            //
-            // This would release the memory for this Process and accessing
-            // anything beyond this would be a bug.
-            // `destroy()` will already be called when the process should be
-            // killed anyways, so this is fine and *not* a resource leak!
-            continue;
+    // First, iterate over all resources that aren't the process itself:
+    {
+        var iter = process.resource_handles.iterator();
+        while (iter.next()) |item| {
+            const res = item.ownership.data.resource;
+            if (res == &process.system_resource) {
+                // We have to skip our own resource handle here as
+                // removing the last owner from the resource handle will
+                // invoke `Process.destroy()` in that case.
+                //
+                // This would release the memory for this Process and accessing
+                // anything beyond this would be a bug.
+                // `destroy()` will already be called when the process should be
+                // killed anyways, so this is fine and *not* a resource leak!
+                continue;
+            }
+            remove_from_process(process, res);
         }
-        remove_from_process(process, res);
+    }
+
+    if (unlink_self) {
+        // Then iterate over the single remaining resource:
+        var iter = process.resource_handles.iterator();
+        if (iter.next()) |item| {
+            const res = item.ownership.data.resource;
+            std.debug.assert(res == &process.system_resource);
+            remove_from_process(process, res);
+            return;
+        }
     }
 
     // logger.info("after unlink:", .{});

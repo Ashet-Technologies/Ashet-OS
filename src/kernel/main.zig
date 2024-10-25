@@ -72,7 +72,7 @@ pub const log_levels = struct {
     pub var overlapped: LogLevel = .info; // very noise modules!
     pub var elf_loader: LogLevel = .info;
     pub var video: LogLevel = .debug;
-    pub var multitasking: LogLevel = .info;
+    pub var multitasking: LogLevel = .debug;
     pub var gui: LogLevel = .debug;
 
     // drivers:

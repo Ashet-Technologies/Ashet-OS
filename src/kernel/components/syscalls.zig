@@ -18,6 +18,12 @@ pub const exports = ashet_abi_v2_impl.create_exports(syscalls, callbacks);
 
 pub var strace_enabled: std.enums.EnumSet(SystemCall) = std.enums.EnumSet(SystemCall).initFull();
 
+pub fn get_address(syscall: SystemCall) usize {
+    return switch (syscall) {
+        inline else => |call| return @intFromPtr(&@field(exports, "ashet_" ++ @tagName(call))),
+    };
+}
+
 inline fn print_strace(name: []const u8) void {
     var it = std.debug.StackIterator.init(@returnAddress(), null);
     var current = it.next() orelse @returnAddress();

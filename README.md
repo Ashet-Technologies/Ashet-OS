@@ -83,14 +83,14 @@ The following list contains devices for which there is a planned port of Ashet O
 
 The results of the compilation are usually disk images, except for a machine based on the `hosted` machine.
 
-#### Compile everything:
+#### Compile everything
 
 ```sh-session
 [user@host] $ zig build
 [user@host] $ 
 ```
 
-#### Compile for a single machine:
+#### Compile for a single machine
 
 ```sh-session
 [user@host] $ zig build <machine-name>

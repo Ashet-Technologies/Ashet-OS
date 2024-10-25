@@ -10,6 +10,10 @@
         .assets = .{ .path = "../os-assets" },
         .syslinux = .{ .path = "../../vendor/syslinux" },
 
+        .AshetOS = .{
+            .path = "../userland/libs/libAshetOS",
+        },
+
         // Applications:
 
         .init = .{ .path = "../userland/apps/init" },

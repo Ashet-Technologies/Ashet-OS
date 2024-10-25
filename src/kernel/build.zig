@@ -52,6 +52,7 @@ pub fn build(b: *std.Build) void {
     const agp_dep = b.dependency("agp", .{});
     const agp_swrast_dep = b.dependency("agp_swrast", .{});
     const turtlefont_dep = b.dependency("turtlefont", .{});
+    const ashex_dep = b.dependency("ashex", .{});
 
     // Modules:
 
@@ -69,6 +70,7 @@ pub fn build(b: *std.Build) void {
     const agp_mod = agp_dep.module("agp");
     const agp_swrast_mod = agp_swrast_dep.module("agp-swrast");
     const turtlefont_mod = turtlefont_dep.module("turtlefont");
+    const ashex_mod = ashex_dep.module("ashex");
 
     // Build:
 
@@ -106,6 +108,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "agp", .module = agp_mod },
             .{ .name = "agp-swrast", .module = agp_swrast_mod },
             .{ .name = "turtlefont", .module = turtlefont_mod },
+            .{ .name = "ashex", .module = ashex_mod },
 
             // resources:
             .{

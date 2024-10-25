@@ -56,7 +56,7 @@ pub fn spawn_blocking(
 
     _ = argv;
 
-    const loaded = try loader.load(file, process.static_allocator(), .elf);
+    const loaded = try loader.load(file, process.static_allocator(), .ashex);
 
     process.executable_memory = loaded.process_memory;
 
@@ -93,6 +93,8 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
         std.fs.path.basenamePosix(std.fs.path.dirnamePosix(exe_path) orelse return error.InvalidPath)
     else
         raw_basename;
+
+    logger.err("fix exe name computation: {s} => {s}", .{ raw_basename, exe_name });
 
     var open_file = ashet.abi.fs.OpenFile.new(.{
         .dir = inputs.dir,
@@ -183,6 +185,16 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
         error.UnsupportedRelocation,
         error.UnalignedProgramHeader,
         error.Overflow,
+
+        error.InvalidAshexExecutable,
+        error.AshexMachineMismatch,
+        error.AshexPlatformMismatch,
+        error.AshexUnsupportedVersion,
+        error.AshexNoData,
+        error.AshexCorruptedFile,
+        error.AshexUnsupportedSyscall,
+        error.AshexInvalidRelocation,
+        error.AshexInvalidSyscallIndex,
         => error.BadExecutable,
 
         error.Unexpected,
@@ -419,7 +431,7 @@ pub const Process = struct {
         }
 
         // Drop all resource ownerships. This might delete the process so it has to be last!
-        ashet.resources.unlink_process(proc);
+        ashet.resources.unlink_process(proc, true);
     }
 
     pub fn save(proc: *Process) void {
