@@ -8,10 +8,10 @@
 ENTRY(_start)
 
 PHDRS {
-    readonly   PT_LOAD     FLAGS (5);          /* RX!W */
-    readwrite  PT_LOAD     FLAGS (6);          /* RW!X */
-    dynamic    PT_DYNAMIC  FLAGS (4);          /* R!W!X */
-    metadata   PT_LOAD     FLAGS (0x00100000); /* R!W!X */
+    readonly   PT_LOAD     FLAGS (0x00000005); /* RX!W */
+    readwrite  PT_LOAD     FLAGS (0x00000006); /* RW!X */
+    dynamic    PT_DYNAMIC  FLAGS (0x00000004); /* R!W!X */
+    metadata   PT_LOAD     FLAGS (0x00000000); /* R!W!X */
 }
 
 SECTIONS {
@@ -30,10 +30,17 @@ SECTIONS {
             - We apply memory protection *after* dynamic linking
             - We will never change the data afterwards
         */
+        
         . = ALIGN(4);
         *(.got.plt)
+        
+        . = ALIGN(4);
         *(.igot.plt)
+        
+        . = ALIGN(4);
         *(.got)
+
+        . = ALIGN(4);
         *(.igot)
 
         . = ALIGN(4096);
@@ -62,7 +69,7 @@ SECTIONS {
         *(.sbss) *(.sbss.*)
     } :readwrite
 
-    /* . = ALIGN(4096); */
+    . = ALIGN(4096);
 
     /*
         Make the DYNAMIC program header last so we can quickly load and align 

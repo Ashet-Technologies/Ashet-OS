@@ -56,7 +56,7 @@ pub fn spawn_blocking(
 
     _ = argv;
 
-    const loaded = try loader.load(file, process.static_allocator(), .elf);
+    const loaded = try loader.load(file, process.static_allocator(), .ashex);
 
     process.executable_memory = loaded.process_memory;
 
@@ -185,6 +185,16 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
         error.UnsupportedRelocation,
         error.UnalignedProgramHeader,
         error.Overflow,
+
+        error.InvalidAshexExecutable,
+        error.AshexMachineMismatch,
+        error.AshexPlatformMismatch,
+        error.AshexUnsupportedVersion,
+        error.AshexNoData,
+        error.AshexCorruptedFile,
+        error.AshexUnsupportedSyscall,
+        error.AshexInvalidRelocation,
+        error.AshexInvalidSyscallIndex,
         => error.BadExecutable,
 
         error.Unexpected,

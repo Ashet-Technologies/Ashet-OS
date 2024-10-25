@@ -8,6 +8,11 @@ pub fn build(b: *std.Build) void {
 
     const args_mod = args_dep.module("args");
 
+    const ashex_mod = b.addModule("ashex", .{
+        .root_source_file = b.path("src/ashex.zig"),
+    });
+    _ = ashex_mod;
+
     const exe_tool = b.addExecutable(.{
         .name = "ashet-exe",
         .target = target,

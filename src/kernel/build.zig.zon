@@ -36,6 +36,10 @@
             .path = "../userland/libs/agp-swrast",
         },
 
+        .ashex = .{
+            .path = "../tools/exe-tool",
+        },
+
         // External dependencieS:
         .args = .{
             .url = "https://github.com/ikskuh/zig-args/archive/872272205d95bdba33798c94e72c5387a31bc806.tar.gz",

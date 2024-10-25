@@ -85,9 +85,10 @@ type SystemCall = struct {
 };
 
 type Relocation = struct {
-    // TODO: Define this better
+    offset: u32,
     type: bitfield(u16) {
         size: enum(u2) { word8=0, word16=1, word32=2, word64=3 },
+        self: RelocField,
         addend: RelocField,
         base: RelocField,
         offset: RelocField,
@@ -97,12 +98,8 @@ type Relocation = struct {
         // got: RelocField,
         // plt_offset: RelocField,
     },
-    
     if(type.syscall != .unused) {
       syscall: u16,
-    }
-    if(type.offset != .unused) {
-      offset: u32,
     }
     if(type.addend != .unused) {
       addend: i32,

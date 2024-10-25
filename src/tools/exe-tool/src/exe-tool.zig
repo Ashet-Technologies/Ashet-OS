@@ -13,7 +13,7 @@ comptime {
 
 const CliOptions = struct {
     help: bool = false,
-    verbose: bool = false,
+    verbose: bool = true,
     output: []const u8 = "",
     icon: ?[]const u8 = null,
 
@@ -115,10 +115,8 @@ pub fn main() !u8 {
 
     // Optimize relocation size
     for (ashex_file.relocations) |*reloc| {
-        if (reloc.type.addend != .unused) {
-            if (reloc.addend == 0) {
-                reloc.type.addend = .unused;
-            }
+        if (reloc.type.addend != .unused and reloc.addend == 0) {
+            reloc.type.addend = .unused;
         }
     }
 
@@ -127,16 +125,7 @@ pub fn main() !u8 {
     logger.info("entry point:   0x{X:0>8}", .{ashex_file.entry_point});
     logger.info("relocations:   {d}", .{ashex_file.relocations.len});
     for (ashex_file.relocations) |relocation| {
-        logger.info("  - type={s}{}{}{}{}, addend={}, offset=0x{X:0>8}, syscall={}", .{
-            @tagName(relocation.type.size),
-            std.fmt.Formatter(fmt_rel_field){ .data = .{ 'A', relocation.type.addend } },
-            std.fmt.Formatter(fmt_rel_field){ .data = .{ 'B', relocation.type.base } },
-            std.fmt.Formatter(fmt_rel_field){ .data = .{ 'O', relocation.type.offset } },
-            std.fmt.Formatter(fmt_rel_field){ .data = .{ 'S', relocation.type.syscall } },
-            relocation.addend,
-            relocation.offset,
-            relocation.syscall,
-        });
+        logger.info("  - {}", .{relocation});
     }
     logger.info("bss sections:  {d}", .{ashex_file.bss_headers.len});
     for (ashex_file.bss_headers) |load_hdr| {
@@ -170,6 +159,7 @@ pub fn main() !u8 {
 
     return 0;
 }
+
 fn parse_elf_file(
     allocator: std.mem.Allocator,
     elf_binary_data: []const u8,
@@ -193,6 +183,46 @@ fn parse_elf_file(
         else => return error.UnsupportedMachine,
     };
 
+    const ProgramHeader = struct {
+        type: enum(elf.Elf32_Word) {
+            null = elf.PT_NULL,
+            load = elf.PT_LOAD,
+            dynamic = elf.PT_DYNAMIC,
+            interp = elf.PT_INTERP,
+            note = elf.PT_NOTE,
+            shlib = elf.PT_SHLIB,
+            phdr = elf.PT_PHDR,
+            tls = elf.PT_TLS,
+            num = elf.PT_NUM,
+
+            gnu_eh_frame = elf.PT_GNU_EH_FRAME,
+            gnu_stack = elf.PT_GNU_STACK,
+            gnu_relro = elf.PT_GNU_RELRO,
+            sunwbss = elf.PT_SUNWBSS,
+            sunwstack = elf.PT_SUNWSTACK,
+
+            _,
+        },
+        flags: packed struct(elf.Elf32_Off) {
+            executable: bool, // 1
+            writable: bool, // 2
+            readable: bool, // 4
+            _reserved: u17 = 0,
+            os: u8,
+            proc: u4,
+        },
+        offset: elf.Elf32_Addr,
+        vaddr: elf.Elf32_Addr,
+        paddr: elf.Elf32_Word,
+        filesz: elf.Elf32_Word,
+        memsz: elf.Elf32_Word,
+
+        memory: []const u8,
+    };
+
+    var phdrs = std.ArrayList(ProgramHeader).init(allocator);
+    defer phdrs.deinit();
+
     // Fetch the headers:
     var load_headers = std.ArrayList(LoadHeader).init(allocator);
     defer load_headers.deinit();
@@ -203,6 +233,18 @@ fn parse_elf_file(
 
         var pheaders = header.program_header_iterator(elf_stream);
         while (try pheaders.next()) |phdr| {
+            try phdrs.append(.{
+                .type = @enumFromInt(@as(u32, @intCast(phdr.p_type))),
+                .flags = @bitCast(@as(u32, @intCast(phdr.p_flags))),
+                .offset = @intCast(phdr.p_offset),
+                .vaddr = @intCast(phdr.p_vaddr),
+                .paddr = @intCast(phdr.p_paddr),
+                .filesz = @intCast(phdr.p_filesz),
+                .memsz = @intCast(phdr.p_memsz),
+
+                .memory = elf_binary_data[phdr.p_offset..][0..phdr.p_filesz],
+            });
+
             switch (phdr.p_type) {
                 elf.PT_LOAD => {},
 
@@ -368,14 +410,39 @@ fn parse_elf_file(
     var syscalls = SyscallAllocator.init(allocator);
 
     {
+        const strtab_buf = if (dynamic_section) |dsect|
+            if (dsect.strtab) |dynstr_addr|
+                for (phdrs.items) |phdr| {
+                    if (dynstr_addr >= phdr.vaddr and dynstr_addr < phdr.vaddr + phdr.filesz)
+                        break phdr.memory[dynstr_addr - phdr.vaddr ..];
+                } else null
+            else
+                null
+        else
+            null;
+
+        const symtab_buf = if (dynamic_section) |dsect|
+            if (dsect.symtab) |symtab_addr|
+                for (phdrs.items) |phdr| {
+                    if (symtab_addr >= phdr.vaddr and symtab_addr < phdr.vaddr + phdr.filesz)
+                        break phdr.memory[symtab_addr - phdr.vaddr ..];
+                } else null
+            else
+                null
+        else
+            null;
+
         const reloc_env = Environment{
             .elf_data = elf_binary_data,
             .dynamic = dynamic_section,
             .syscalls = &syscalls,
+            .strtab_buf = strtab_buf,
+            .symtab_buf = symtab_buf,
         };
 
         var sheaders = header.section_header_iterator(elf_stream);
         while (try sheaders.next()) |shdr| {
+            logger.info("{}", .{shdr});
             switch (shdr.sh_type) {
                 elf.SHT_RELA => {
                     // Shdr{
@@ -391,15 +458,17 @@ fn parse_elf_file(
 
                     try elf_stream.seekableStream().seekTo(shdr.sh_offset);
 
-                    var buffered_reader = std.io.bufferedReaderSize(412, elf_stream.reader());
+                    var buffered_reader = std.io.bufferedReaderSize(512, elf_stream.reader());
 
-                    var i: usize = 0;
-                    while (i < shdr.sh_size / shdr.sh_entsize) : (i += 1) {
-                        var entry: elf.Elf32_Rela = undefined;
-                        try buffered_reader.reader().readNoEof(std.mem.asBytes(&entry));
+                    const count = @divExact(shdr.sh_size, shdr.sh_entsize);
+                    for (0..count) |_| {
+                        const entry = try buffered_reader.reader().readStruct(elf.Elf32_Rela);
+                        logger.info("  {}", .{entry});
 
                         const rela_handler = try RelocationHandler.fromRelA(platform, entry);
                         const rela = try rela_handler.resolve(reloc_env);
+
+                        std.debug.assert(rela.offset <= required_bytes);
 
                         try relocations.append(rela);
                     }
@@ -417,18 +486,19 @@ fn parse_elf_file(
                     // };
 
                     try elf_stream.seekableStream().seekTo(shdr.sh_offset);
+                    var buffered_reader = std.io.bufferedReaderSize(512, elf_stream.reader());
 
-                    var buffered_reader = std.io.bufferedReaderSize(412, elf_stream.reader());
+                    const count = @divExact(shdr.sh_size, shdr.sh_entsize);
+                    for (0..count) |_| {
+                        const entry = try buffered_reader.reader().readStruct(elf.Elf32_Rel);
+                        logger.info("  {}", .{entry});
 
-                    var i: usize = 0;
-                    while (i < shdr.sh_size / shdr.sh_entsize) : (i += 1) {
-                        var entry: elf.Elf32_Rel = undefined;
-                        try buffered_reader.reader().readNoEof(std.mem.asBytes(&entry));
+                        const rel_handler = try RelocationHandler.fromRel(platform, entry);
+                        const rel = try rel_handler.resolve(reloc_env);
 
-                        const rela_handler = try RelocationHandler.fromRel(platform, entry);
-                        const rela = try rela_handler.resolve(reloc_env);
+                        std.debug.assert(rel.offset <= required_bytes);
 
-                        try relocations.append(rela);
+                        try relocations.append(rel);
                     }
                 },
                 elf.SHT_DYNAMIC => {
@@ -440,11 +510,15 @@ fn parse_elf_file(
                 std.elf.SHT_PROGBITS, std.elf.SHT_SYMTAB, std.elf.SHT_DYNSYM, std.elf.SHT_STRTAB => {},
 
                 std.elf.SHT_NOBITS => {
-                    const bss = try bss_headers.addOne();
-                    bss.* = .{
-                        .vmem_offset = @intCast(shdr.sh_addr),
-                        .length = @intCast(shdr.sh_size),
-                    };
+                    if (shdr.sh_size > 0) {
+                        const bss = try bss_headers.addOne();
+                        bss.* = .{
+                            .vmem_offset = @intCast(shdr.sh_addr),
+                            .length = @intCast(shdr.sh_size),
+                        };
+
+                        std.debug.assert(bss.vmem_offset + bss.length <= required_bytes);
+                    }
                 },
 
                 else => logger.info("unhandled section header: {s}", .{switch (shdr.sh_type) {
@@ -603,12 +677,10 @@ fn write_ashex_file(
             try align_writer(&counting_writer, 512);
             relocations_offset = counting_writer.bytes_written;
             for (exe.relocations) |reloc| {
+                try writer.writeInt(u32, reloc.offset, endian);
                 try writer.writeInt(u16, @bitCast(reloc.type), endian);
                 if (reloc.type.syscall != .unused) {
                     try writer.writeInt(u16, reloc.syscall, endian);
-                }
-                if (reloc.type.offset != .unused) {
-                    try writer.writeInt(u32, reloc.offset, endian);
                 }
                 if (reloc.type.addend != .unused) {
                     try writer.writeInt(i32, reloc.addend, endian);
@@ -676,12 +748,7 @@ const BssHeader = struct {
     length: u32,
 };
 
-const Relocation = struct {
-    type: ashex.RelocationType,
-    syscall: u16,
-    offset: u32,
-    addend: i32,
-};
+const Relocation = ashex.Relocation;
 
 const DynamicSection = struct {
     //! https://refspecs.linuxbase.org/elf/gabi4+/ch5.dynamic.html
@@ -817,56 +884,53 @@ const Environment = struct {
     syscalls: *SyscallAllocator,
     elf_data: []const u8,
 
-    pub fn read(env: Environment, comptime T: type, offset: usize) T {
-        return @bitCast(env.memory[offset..][0..@sizeOf(T)].*);
-        // return std.mem.readIntNative(T, env.memory[offset..][0..@sizeOf(T)]);
-    }
-
-    pub fn write(env: Environment, comptime T: type, offset: usize, value: T) void {
-        // std.mem.writeIntNative(T, env.memory[offset..][0..@sizeOf(T)], value);
-        env.memory[offset..][0..@sizeOf(T)].* = @bitCast(value);
-    }
+    strtab_buf: ?[]const u8,
+    symtab_buf: ?[]const u8,
 
     pub fn resolveSymbol(env: Environment, index: usize) !u16 {
         // logger.debug("resolve symbol {}", .{index});
         const dynamic = env.dynamic orelse return error.NoDynamicSection;
-        const symtab = dynamic.symtab orelse return error.NoSymTab;
+
         const syment = dynamic.syment orelse return error.NoSymEnt;
 
-        const offset = symtab + syment * index;
+        std.debug.assert(syment >= @sizeOf(elf.Elf32_Sym));
 
-        // logger.info("symbol({}) => tab=0x{X:0>8}, ent=0x{X:0>8}, off=0x{X:0>8}", .{
-        //     index,
-        //     symtab,
-        //     syment,
-        //     offset,
-        // });
+        const offset = syment * index;
 
-        // TODO: `sym` cast is broken yet:
-        const sym: *const elf.Elf32_Sym = @ptrCast(@alignCast(env.elf_data[offset..].ptr));
+        var sym: elf.Elf32_Sym = undefined;
+        @memcpy(std.mem.asBytes(&sym), env.symtab_buf.?[offset..][0..@sizeOf(elf.Elf32_Sym)]);
+
+        // const sym: *const elf.Elf32_Sym = @ptrCast(@alignCast(.ptr));
+        logger.info("=> sym: {}", .{sym});
 
         const info: SymbolInfo = @bitCast(sym.st_info);
 
-        var symname: []const u8 = env.elf_data[env.dynamic.?.strtab.? + sym.st_name ..];
+        var symname: []const u8 = env.strtab_buf.?[sym.st_name..];
         symname = symname[0..std.mem.indexOfScalar(u8, symname, 0).?];
 
-        // logger.debug(
-        //     \\resolve symbol(name={}/'{}', value={}, size={}, shndx={}, type={}, bind={}
-        // , .{
-        //     sym.st_name,
-        //     std.zig.fmtEscapes(symname),
-        //     sym.st_value,
-        //     sym.st_size,
-        //     sym.st_shndx,
-        //     info.type,
-        //     info.bind,
-        // });
+        logger.debug(
+            \\resolve symbol(name={}/'{}', value={}, size={}, shndx={}, type={}, bind={}
+        , .{
+            sym.st_name,
+            std.zig.fmtEscapes(symname),
+            sym.st_value,
+            sym.st_size,
+            sym.st_shndx,
+            info.type,
+            info.bind,
+        });
 
         // Only search function symbols:
         if (info.type == .func) {
-            const syscall_index = try env.syscalls.get_syscall_index(symname);
+            const prefix = "ashet_";
+            if (std.mem.startsWith(u8, symname, prefix)) {
+                const syscall_index = try env.syscalls.get_syscall_index(symname[prefix.len..]);
 
-            return @intCast(syscall_index);
+                return @intCast(syscall_index);
+            } else {
+                logger.err("unsupported symbol name: '{s}'", .{symname});
+                return error.BadSymbol;
+            }
 
             // const exports = ashet.syscalls.exports;
             // inline for (@typeInfo(exports).Struct.decls) |decl| {
@@ -880,30 +944,36 @@ const Environment = struct {
             // }
         }
 
+        var buf: [4]u8 = undefined;
         logger.warn("Symbol '{}' ({s}) could not be resolved. Does that syscall really exist?", .{
             std.zig.fmtEscapes(symname),
-            @tagName(info.type),
+            switch (info.type) {
+                .notype, .object, .func, .section, .file, .common, .tls, .num, .loos, .hios, .loproc, .hiproc => @tagName(info.type),
+                _ => try std.fmt.bufPrint(&buf, "{}", .{@intFromEnum(info.type)}),
+            },
         });
 
         return error.MissingSymbol;
     }
 
+    const SymbolType = enum(u4) {
+        notype = elf.STT_NOTYPE,
+        object = elf.STT_OBJECT,
+        func = elf.STT_FUNC,
+        section = elf.STT_SECTION,
+        file = elf.STT_FILE,
+        common = elf.STT_COMMON,
+        tls = elf.STT_TLS,
+        num = elf.STT_NUM,
+        loos = elf.STT_LOOS,
+        hios = elf.STT_HIOS,
+        loproc = elf.STT_LOPROC,
+        hiproc = elf.STT_HIPROC,
+        _,
+    };
+
     const SymbolInfo = packed struct(u8) {
-        type: enum(u4) {
-            notype = elf.STT_NOTYPE,
-            object = elf.STT_OBJECT,
-            func = elf.STT_FUNC,
-            section = elf.STT_SECTION,
-            file = elf.STT_FILE,
-            common = elf.STT_COMMON,
-            tls = elf.STT_TLS,
-            num = elf.STT_NUM,
-            loos = elf.STT_LOOS,
-            hios = elf.STT_HIOS,
-            loproc = elf.STT_LOPROC,
-            hiproc = elf.STT_HIPROC,
-            _,
-        },
+        type: SymbolType,
         bind: enum(u4) {
             local = elf.STB_LOCAL,
             global = elf.STB_GLOBAL,
@@ -938,7 +1008,7 @@ const RelocationHandler = struct {
         const info: ElfRelaInfo = @bitCast(rela.r_info);
         return .{
             .offset = rela.r_offset,
-            .type = try RelocationType.from_elf(platform, info.type),
+            .type = try RelocationType.from_elf(platform, info.type, .addend),
             .symbol = info.symbol,
             .addend = rela.r_addend,
         };
@@ -948,7 +1018,7 @@ const RelocationHandler = struct {
         const info: ElfRelaInfo = @bitCast(rel.r_info);
         return .{
             .offset = rel.r_offset,
-            .type = try RelocationType.from_elf(platform, info.type),
+            .type = try RelocationType.from_elf(platform, info.type, .self),
             .symbol = info.symbol,
             .addend = null,
         };
@@ -969,54 +1039,8 @@ const RelocationHandler = struct {
         return relocation;
     }
 
-    pub fn apply(reloc: Relocation, env: Environment) error{ BadExecutable, MissingSymbol, UnsupportedRelocation }!void {
-        reloc.type.apply(reloc, env) catch |err| switch (err) {
-            error.UnsupportedRelocation => {
-                logger.err(
-                    "Unsupported relocation with (type={}, symbol={}, offset=0x{X:0>8}, addend={?})",
-                    .{
-                        reloc.type,
-                        reloc.symbol,
-                        reloc.offset,
-                        reloc.addend,
-                    },
-                );
-                return error.UnsupportedRelocation;
-            },
-            else => |e| return e,
-        };
-    }
-
     fn expand(comptime T: type, src: anytype) std.meta.Int(@typeInfo(@TypeOf(src)).Int.signedness, @bitSizeOf(T)) {
         return src;
-    }
-
-    pub fn execute(reloc: Relocation, env: Environment, comptime T: type, comptime script: []const u8) error{ BadExecutable, MissingSymbol }!void {
-        const addend: T = if (reloc.addend) |addend|
-            @bitCast(expand(T, addend))
-        else
-            env.read(T, reloc.offset);
-
-        var result: T = 0;
-
-        inline for (comptime ScriptEngine.parse(script)) |opcode| {
-            const value: T = switch (opcode.target) {
-                .addend => addend,
-                .base => @intCast(env.base),
-                .got_offset => unreachable, // TODO: Implement this
-                .got => unreachable, // TODO: Implement this
-                .plt_offset => unreachable, // TODO: Implement this
-                .offset => reloc.offset,
-                .symbol => try env.resolveSymbol(reloc.symbol),
-            };
-
-            result = switch (opcode.operator) {
-                .add => result +% value,
-                .sub => result -% value,
-            };
-        }
-
-        env.write(T, reloc.offset, result);
     }
 
     const ElfRelaInfo = packed struct(Elf32_Word) {
@@ -1026,7 +1050,9 @@ const RelocationHandler = struct {
 };
 
 const RelocationType = struct {
-    pub fn init(comptime T: type, comptime script: []const u8) !ashex.RelocationType {
+    const AddendMapping = enum { addend, self };
+
+    pub fn init(comptime addend_map: AddendMapping, comptime T: type, comptime script: []const u8) !ashex.RelocationType {
         const size: ashex.RelocationSize = switch (T) {
             word8 => .word8,
             word16 => .word16,
@@ -1037,6 +1063,7 @@ const RelocationType = struct {
 
         var reloc = ashex.RelocationType{
             .size = size,
+            .self = .unused,
             .addend = .unused,
             .base = .unused,
             .offset = .unused,
@@ -1049,7 +1076,10 @@ const RelocationType = struct {
                 .sub => .subtract,
             };
             const field_name = switch (opcode.target) {
-                .addend => "addend",
+                .addend => switch (addend_map) {
+                    .addend => "addend",
+                    .self => "self",
+                },
                 .base => "base",
                 .got_offset => return error.UnsupportedRelocation,
                 .got => return error.UnsupportedRelocation,
@@ -1064,7 +1094,7 @@ const RelocationType = struct {
         return reloc;
     }
 
-    pub fn from_elf(platform: ashex.Platform, type_id: u8) error{UnsupportedRelocation}!ashex.RelocationType {
+    pub fn from_elf(platform: ashex.Platform, type_id: u8, comptime variant: AddendMapping) error{UnsupportedRelocation}!ashex.RelocationType {
         return switch (platform) {
             .x86 => switch (type_id) {
                 // https://docs.oracle.com/cd/E19683-01/817-3677/chapter6-26/index.html
@@ -1075,18 +1105,18 @@ const RelocationType = struct {
                 },
 
                 // "32"     word32     S + A
-                1 => try init(word32, "S+A"),
+                1 => try init(variant, word32, "S+A"),
 
                 // pc32     word32     S + A - P
-                2 => try init(word32, "S+A-P"),
+                2 => try init(variant, word32, "S+A-P"),
 
                 //         /// Computes the distance from the base of the global offset table to the symbol's global offset table entry. It also instructs the link-editor to create a global offset table.
                 //         got32 = 3, //    word32     G + A
-                3 => try init(word32, "G+A"),
+                3 => try init(variant, word32, "G+A"),
 
                 //         /// Computes the address of the symbol's procedure linkage table entry and instructs the link-editor to create a procedure linkage table.
                 //         plt32 = 4, //    word32     L + A - P
-                4 => try init(word32, "L+A-P"),
+                4 => try init(variant, word32, "L+A-P"),
 
                 //         /// Created by the link-editor for dynamic executables to preserve a read-only text segment.
                 //         /// Its offset member refers to a location in a writable segment. The symbol table index
@@ -1099,13 +1129,13 @@ const RelocationType = struct {
                 //         /// Used to set a global offset table entry to the address of the specified symbol. The special
                 //         /// relocation type enable you to determine the correspondence between symbols and global offset table entries
                 //         glob_dat = 6, // word32     S
-                6 => try init(word32, "S"),
+                6 => try init(variant, word32, "S"),
 
                 //         /// Created by the lirocednk-editor for dynamic objects to provide lazy binding. Its offset member
                 //         /// gives the location of a pure linkage table entry. The runtime linker modifies the
                 //         /// procedure linkage table entry to transfer control to the designated symbol address
                 //         jmp_slot = 7, // word32     S
-                7 => try init(word32, "S"),
+                7 => try init(variant, word32, "S"),
 
                 //         /// Created by the link-editor for dynamic objects. Its offset member gives the location within
                 //         /// a shared object that contains a value representing a relative address. The runtime linker
@@ -1113,21 +1143,21 @@ const RelocationType = struct {
                 //         /// object is loaded to the relative address. Relocation entries for this type must specify 0 for
                 //         /// the symbol table index.
                 //         relative = 8, // word32     B + A
-                8 => try init(word32, "B+A"),
+                8 => try init(variant, word32, "B+A"),
 
                 //         /// Computes the difference between a symbol's value and the address of the global offset table. It also
                 //         /// instructs the link-editor to create the global offset table.
                 //         gotoff = 9, //   word32     S + A - GOT
-                9 => try init(word32, "S+A-GOT"),
+                9 => try init(variant, word32, "S+A-GOT"),
 
                 //         /// Resembles R_386_PC32, except that it uses the address of the global offset table in its calculation.
                 //         /// The symbol referenced in this relocation normally is _GLOBAL_OFFSET_TABLE_, which also instructs the
                 //         /// link-editor to create the global offset table.
                 //         gotpc = 10, //   word32     GOT + A - P
-                10 => try init(word32, "GOT+A-P"),
+                10 => try init(variant, word32, "GOT+A-P"),
 
                 //         @"32plt" = 11, //   word32     L + A
-                11 => try init(word32, "L+A"),
+                11 => try init(variant, word32, "L+A"),
 
                 else => return error.UnsupportedRelocation,
             },
@@ -1144,19 +1174,19 @@ const RelocationType = struct {
                 },
 
                 //         @"32" = 1, // word32 : S + A, 32-bit relocation
-                1 => try init(word32, "S+A"),
+                1 => try init(variant, word32, "S+A"),
 
                 //         @"64" = 2, // word64 : S + A, 64-bit relocation
-                2 => try init(word64, "S+A"),
+                2 => try init(variant, word64, "S+A"),
 
                 //         relative = 3, // wordclass : B + A, Adjust a link address (A) to its load address (B + A)
-                3 => try init(word32, "B+A"),
+                3 => try init(variant, word32, "B+A"),
 
                 //         copy = 4,
                 4 => @panic("R_RV32_COPY not implemented yet!"),
 
                 //         jump_slot = 5, // wordclass : S, Indicates the symbol associated with a PLT entry
-                5 => try init(word32, "S"),
+                5 => try init(variant, word32, "S"),
 
                 else => return error.UnsupportedRelocation,
             },
@@ -1259,14 +1289,3 @@ const ScriptEngine = struct {
         return code;
     }
 };
-
-fn fmt_rel_field(val: struct { u7, ashex.RelocationField }, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-    if (val[1] == .unused)
-        return;
-    _ = fmt;
-    _ = options;
-    try writer.print("{c}{c}", .{
-        @as(u7, if (val[1] == .add) '+' else '-'),
-        val[0],
-    });
-}

@@ -9,9 +9,11 @@ pub const LoadedExecutable = struct {
 };
 
 pub const elf = @import("loader/elf.zig");
+pub const ashex = @import("loader/ashex.zig");
 
 pub const BinaryFormat = enum {
     elf,
+    ashex,
 };
 
 pub fn load(
@@ -21,5 +23,6 @@ pub fn load(
 ) !LoadedExecutable {
     return switch (format) {
         .elf => try elf.load(file, allocator),
+        .ashex => try ashex.load(file, allocator),
     };
 }
