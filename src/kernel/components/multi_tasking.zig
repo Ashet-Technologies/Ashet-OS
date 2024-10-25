@@ -431,7 +431,7 @@ pub const Process = struct {
         }
 
         // Drop all resource ownerships. This might delete the process so it has to be last!
-        ashet.resources.unlink_process(proc);
+        ashet.resources.unlink_process(proc, true);
     }
 
     pub fn save(proc: *Process) void {

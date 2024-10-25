@@ -37,10 +37,6 @@ pub fn load(file: *libashet.fs.File, allocator: std.mem.Allocator) !loader.Loade
         if (try file.read(0, &header_chunk) != 512)
             return error.InvalidAshexExecutable;
 
-        logger.debug("header blob: {}", .{
-            std.fmt.fmtSliceHexLower(&header_chunk),
-        });
-
         var header_fbs = std.io.fixedBufferStream(&header_chunk);
 
         const reader = header_fbs.reader();
@@ -99,8 +95,6 @@ pub fn load(file: *libashet.fs.File, allocator: std.mem.Allocator) !loader.Loade
             .relocation_count = try reader.readInt(u32, .little),
         };
     };
-
-    logger.debug("header: {}", .{header});
 
     const process_memory = try allocator.alignedAlloc(u8, ashet.memory.page_size, header.vmem_size);
     errdefer allocator.free(process_memory);
@@ -195,13 +189,6 @@ pub fn load(file: *libashet.fs.File, allocator: std.mem.Allocator) !loader.Loade
             else
                 0;
 
-            logger.info("execute {}", .{ashex.Relocation{
-                .type = reloc_type,
-                .offset = offset,
-                .addend = addend,
-                .syscall = syscall_index,
-            }});
-
             // Preprocess fields:
             const syscall_addr: usize = if (reloc_type.syscall != .unused)
                 if (syscall_index < syscall_mapping.len)
@@ -239,15 +226,6 @@ pub fn load(file: *libashet.fs.File, allocator: std.mem.Allocator) !loader.Loade
                     value = apply(value, reloc_type.offset, @intCast(offset));
                     value = apply(value, reloc_type.syscall, @intCast(syscall_addr));
 
-                    logger.info("run @=0x{X:0>8}, A=0x{X:0>8}, B=0x{X:0>8}, O=0x{X:0>8}, S=0x{X:0>8} => 0x{X:0>8}", .{
-                        self,
-                        addend,
-                        process_base,
-                        offset,
-                        syscall_addr,
-                        value,
-                    });
-
                     write(process_memory, T, offset, value);
                 },
             }
@@ -274,10 +252,8 @@ fn apply(input: anytype, field: ashex.RelocationField, value: @TypeOf(input)) @T
 
 fn read(memory: []u8, comptime T: type, offset: usize) T {
     return @bitCast(memory[offset..][0..@sizeOf(T)].*);
-    // return std.mem.readIntNative(T, env.memory[offset..][0..@sizeOf(T)]);
 }
 
 fn write(memory: []u8, comptime T: type, offset: usize, value: T) void {
-    // std.mem.writeIntNative(T, env.memory[offset..][0..@sizeOf(T)], value);
     memory[offset..][0..@sizeOf(T)].* = @bitCast(value);
 }
