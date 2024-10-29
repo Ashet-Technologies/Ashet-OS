@@ -117,6 +117,7 @@ pub const AshetSdk = struct {
         }
 
         const convert_to_ashex = b.addRunArtifact(sdk.ashex_tool_exe);
+        convert_to_ashex.addArg("convert");
 
         const maybe_icon_file: ?std.Build.LazyPath = switch (options.icon) {
             .none => null,

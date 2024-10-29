@@ -14,27 +14,65 @@ comptime {
 const CliOptions = struct {
     help: bool = false,
     verbose: bool = false,
-    output: []const u8 = "",
-    icon: ?[]const u8 = null,
 
     pub const shorthands = .{
-        .o = "output",
         .h = "help",
     };
 
     pub const meta = .{
-        .usage_summary = "[-h] -o <output> [--icon <path>] <elf file>",
+        .usage_summary = "[-h] <verb>",
         .full_text =
-        \\Converts an ELF file that contains an executable for Ashet OS into a Ashet Executable (.ashex) file.
+        \\Multi-purpose tooling for handling Ashet Executable (.ashex) files.
         \\
-        \\Can additionally embed an icon.
+        \\Verbs:
+        \\  convert -o <output> [--icon <path>] <elf file>
+        \\    Converts an ELF file into a ashex file.
+        \\    Can additionally embed an icon.
+        \\    
+        \\    Options:
+        \\      -o, --output Sets the output file
+        \\
+        \\  dump
+        \\    Dumps an ashex executable file.
+        \\
         ,
         .option_docs = .{
-            .output = "Defines the output path of the generated .ashex file.",
             .help = "Prints this help to stdout",
-            .icon = "Path to a Ashet Bitmap File (.abm) which contains the application icon.",
             .verbose = "Prints debugging information",
         },
+    };
+};
+
+pub const CliVerb = union(enum) {
+    convert: ConvertOptions,
+    dump: DumpOptions,
+
+    pub const DumpOptions = struct {
+        header: bool = false,
+        icon: bool = false,
+        syscalls: bool = false,
+        segments: bool = false,
+        relocations: bool = false,
+
+        all: bool = false,
+
+        pub const shorthands = .{
+            .H = "header",
+            .i = "icon",
+            .s = "syscalls",
+            .S = "segments",
+            .r = "relocations",
+            .a = "all",
+        };
+    };
+
+    pub const ConvertOptions = struct {
+        output: []const u8 = "",
+        icon: ?[]const u8 = null,
+
+        pub const shorthands = .{
+            .o = "output",
+        };
     };
 };
 
@@ -66,13 +104,18 @@ fn print_usage(exe_name: ?[]const u8, target: std.fs.File) !void {
     );
 }
 
+fn error_and_exit(comptime fmt: []const u8, options: anytype) !noreturn {
+    std.debug.print(fmt ++ "\n", options);
+    std.process.exit(1);
+}
+
 pub fn main() !u8 {
     var arena_allocator = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena_allocator.deinit();
 
     const allocator = arena_allocator.allocator();
 
-    var cli_args = args_parser.parseForCurrentProcess(CliOptions, allocator, .print) catch return 1;
+    var cli_args = args_parser.parseWithVerbForCurrentProcess(CliOptions, CliVerb, allocator, .print) catch return 1;
     defer cli_args.deinit();
 
     verbose_logging = cli_args.options.verbose;
@@ -82,19 +125,355 @@ pub fn main() !u8 {
         return 0;
     }
 
-    if (cli_args.positionals.len != 1) {
+    const verb = cli_args.verb orelse {
         try print_usage(cli_args.executable_name, std.io.getStdErr());
+        return 1;
+    };
+
+    return switch (verb) {
+        .convert => |options| return convert_file(allocator, cli_args.positionals, options),
+        .dump => |options| return dump_file(allocator, cli_args.positionals, options),
+    };
+}
+
+fn dump_header_slot(stream: anytype, prefix: []const u8, offset: u32, count: u32) !void {
+    if (count != 0) {
+        try stream.print("{s}{d: >10} (offset=0x{X:0>8})\n", .{
+            prefix,
+            count,
+            offset,
+        });
+    } else {
+        try stream.print("{s}0\n", .{prefix});
+    }
+}
+
+fn dump_file(allocator: std.mem.Allocator, positionals: []const []const u8, _options: CliVerb.DumpOptions) !u8 {
+    _ = allocator;
+
+    if (positionals.len != 1) {
+        try error_and_exit("convert requires a single executable to operate on.", .{});
+    }
+
+    var options = _options;
+    if (options.all) {
+        options.header = true;
+        options.icon = true;
+        options.syscalls = true;
+        options.segments = true;
+        options.relocations = true;
+    }
+
+    var output_stream = std.io.getStdOut();
+    const output = output_stream.writer();
+
+    const input_file_path = positionals[0];
+
+    var file = try std.fs.cwd().openFile(input_file_path, .{});
+    defer file.close();
+
+    const file_type: ashex.FileType, const file_platform: ashex.Platform, const header: ashex.Header = blk: {
+        var header_chunk: [512]u8 = undefined;
+
+        try file.seekTo(0);
+        if (try file.read(&header_chunk) != 512)
+            return error.InvalidAshexExecutable;
+
+        var header_fbs = std.io.fixedBufferStream(&header_chunk);
+
+        const reader = header_fbs.reader();
+
+        var magic: [4]u8 = undefined;
+        try reader.readNoEof(&magic);
+        if (!std.mem.eql(u8, &magic, &ashex.file_magic))
+            return error.InvalidAshexExecutable;
+
+        const file_version = try reader.readInt(u8, .little);
+        if (file_version != 0) {
+            logger.err("version mismatch. expected {}, but found {}", .{
+                0,
+                file_version,
+            });
+            return error.AshexUnsupportedVersion;
+        }
+
+        const file_type_raw = try reader.readInt(u8, .little);
+        const file_type = try std.meta.intToEnum(ashex.FileType, file_type_raw);
+
+        const file_platform_raw = try reader.readInt(u8, .little);
+        const file_platform = try std.meta.intToEnum(ashex.Platform, file_platform_raw);
+
+        try reader.skipBytes(1, .{});
+
+        const machine_endian: std.builtin.Endian = switch (file_type) {
+            .machine32_le => .little,
+        };
+
+        break :blk .{
+            file_type, file_platform, ashex.Header{
+                .icon_size = try reader.readInt(u32, machine_endian),
+                .icon_offset = try reader.readInt(u32, machine_endian),
+                .vmem_size = try reader.readInt(u32, machine_endian),
+                .entry_point = try reader.readInt(u32, machine_endian),
+                .syscall_offset = try reader.readInt(u32, machine_endian),
+                .syscall_count = try reader.readInt(u32, machine_endian),
+                .load_header_offset = try reader.readInt(u32, machine_endian),
+                .load_header_count = try reader.readInt(u32, machine_endian),
+                .bss_header_offset = try reader.readInt(u32, machine_endian),
+                .bss_header_count = try reader.readInt(u32, machine_endian),
+                .relocation_offset = try reader.readInt(u32, machine_endian),
+                .relocation_count = try reader.readInt(u32, machine_endian),
+            },
+        };
+    };
+
+    const machine_endian: std.builtin.Endian = switch (file_type) {
+        .machine32_le => .little,
+    };
+
+    if (options.header) {
+        try output.writeAll("Header:\n");
+
+        try output.print("  File type:     {s}\n", .{@tagName(file_type)});
+        try output.print("  Platform:      {s}\n", .{@tagName(file_platform)});
+
+        try output.print("  Runtime Size:  0x{X:0>8}\n", .{header.vmem_size});
+        try output.print("  Entry Point:   0x{X:0>8}\n", .{header.entry_point});
+
+        try dump_header_slot(output, "  System Calls:  ", header.syscall_offset, header.syscall_count);
+        try dump_header_slot(output, "  Load Segments: ", header.load_header_offset, header.load_header_count);
+        try dump_header_slot(output, "  Zero Segments: ", header.bss_header_offset, header.bss_header_count);
+        try dump_header_slot(output, "  Relocations:   ", header.relocation_offset, header.relocation_count);
+
+        if (header.icon_size != 0) {
+            try output.print("  Icon:          {d: >10} bytes (offset=0x{X:0>8})\n", .{
+                header.icon_size,
+                header.icon_offset,
+            });
+        } else {
+            try output.print("  Icon:     -\n", .{});
+        }
+
+        try output.writeAll("\n");
+    }
+
+    if (options.segments) {
+        try output.writeAll("Load Segments:\n");
+        try output.writeAll("\n");
+        if (header.load_header_count > 0) {
+            try file.seekTo(header.load_header_offset);
+            var buffered_reader = std.io.bufferedReader(file.reader());
+            const reader = buffered_reader.reader();
+            try output.print("  Idx Offset           Size\n", .{});
+            try output.print("  --- ---------- ----------\n", .{});
+            for (0..header.load_header_count) |i| {
+                const offset = try reader.readInt(u32, machine_endian);
+                const size = try reader.readInt(u32, machine_endian);
+                try reader.skipBytes(size, .{});
+
+                try output.print("  {d: >3} 0x{X:0>8} {d: >10}\n", .{
+                    i, offset, size,
+                });
+            }
+        } else {
+            try output.writeAll("  -\n");
+        }
+
+        try output.writeAll("\n");
+
+        try output.writeAll("Zero Segments:\n");
+        try output.writeAll("\n");
+        if (header.bss_header_count > 0) {
+            try file.seekTo(header.bss_header_offset);
+            var buffered_reader = std.io.bufferedReader(file.reader());
+            const reader = buffered_reader.reader();
+            try output.print("  Idx Offset           Size\n", .{});
+            try output.print("  --- ---------- ----------\n", .{});
+            for (0..header.bss_header_count) |i| {
+                const offset = try reader.readInt(u32, machine_endian);
+                const size = try reader.readInt(u32, machine_endian);
+
+                try output.print("  {d: >3} 0x{X:0>8} {d: >10}\n", .{
+                    i, offset, size,
+                });
+            }
+        } else {
+            try output.writeAll("  -\n");
+        }
+
+        try output.writeAll("\n");
+    }
+    if (options.syscalls) {
+        try output.writeAll("System Calls:\n");
+
+        if (header.syscall_count > 0) {
+            try file.seekTo(header.syscall_offset);
+
+            var buffered_reader = std.io.bufferedReader(file.reader());
+            const reader = buffered_reader.reader();
+
+            try output.print("  Idx Length Name\n", .{});
+            try output.print("  --- ------ ----------------------------------------\n", .{});
+
+            for (0..header.syscall_count) |i| {
+                const length = try reader.readInt(u16, machine_endian);
+
+                try output.print("  {d: >3} {d: >6} ", .{
+                    i,
+                    length,
+                });
+
+                var count: usize = 0;
+                while (count < length) {
+                    var buffer: [32]u8 = undefined;
+                    const len = @min(buffer.len, length - count);
+                    try reader.readNoEof(buffer[0..len]);
+                    try output.writeAll(buffer[0..len]);
+                    count += len;
+                }
+                std.debug.assert(count == length);
+
+                try output.writeAll("\n");
+            }
+        } else {
+            try output.writeAll("  -\n");
+        }
+
+        try output.writeAll("\n");
+    }
+
+    if (options.relocations) {
+        try output.writeAll("Relocations:\n");
+
+        if (header.relocation_count > 0) {
+            try file.seekTo(header.relocation_offset);
+
+            var buffered_reader = std.io.bufferedReader(file.reader());
+            const reader = buffered_reader.reader();
+
+            try output.print("  Idx Offset     Code   Size   Type                Syscall    Addend\n", .{});
+            try output.print("  --- ---------- ------ ------ ------------------- ---------- ----------\n", .{});
+
+            for (0..header.relocation_count) |i| {
+                const offset = try reader.readInt(u32, machine_endian);
+                const rtype_int = try reader.readInt(u16, machine_endian);
+
+                const rtype: ashex.RelocationType = @bitCast(rtype_int);
+
+                const syscall: ?u16 = if (rtype.syscall != .unused)
+                    try reader.readInt(u16, machine_endian)
+                else
+                    null;
+
+                const addend: ?i32 = if (rtype.addend != .unused)
+                    try reader.readInt(i32, machine_endian)
+                else
+                    null;
+
+                try output.print("  {d: >3} 0x{X:0>8} 0x{X:0>4} {s: <6} {ns:<19} {?d: >10} {?d: >10}\n", .{
+                    i,
+                    offset,
+                    rtype_int,
+                    @tagName(rtype.size),
+                    rtype,
+                    syscall,
+                    addend,
+                });
+            }
+        } else {
+            try output.writeAll("  -\n");
+        }
+    }
+
+    if (options.icon) {
+        try output.writeAll("Icon:\n");
+
+        if (header.icon_size > 0) {
+            try file.seekTo(header.icon_offset);
+
+            var buffered_reader = std.io.bufferedReader(file.reader());
+            const reader = buffered_reader.reader();
+
+            const expected_magic = 0x48198b74;
+            const actual_magic = try reader.readInt(u32, .little);
+            if (actual_magic == expected_magic) {
+                const width: u32 = try reader.readInt(u16, .little);
+                const height: u32 = try reader.readInt(u16, .little);
+                const flags = try reader.readInt(u16, .little);
+                const palsize_enc = try reader.readInt(u8, .little);
+                const transparency_key = try reader.readInt(u8, .little);
+
+                const palsize: u32 = if (palsize_enc == 0) @as(u32, 256) else palsize_enc;
+
+                try output.print("  size:      {}x{}\n", .{ width, height });
+                try output.print("  flags:     0x{X:0>4}\n", .{flags});
+                try output.print("  palette:   {d}\n", .{palsize});
+                try output.print("  alpha key: 0x{X:0>2}\n", .{transparency_key});
+
+                try reader.skipBytes(width * height, .{});
+
+                try output.writeAll("  palette:\n");
+                for (0..palsize) |i| {
+                    const rgb565 = try reader.readInt(u16, .little);
+                    const RGB565 = packed struct(u16) {
+                        r: u5,
+                        g: u6,
+                        b: u5,
+                    };
+                    const rgb: RGB565 = @bitCast(rgb565);
+
+                    const r: u8 = @as(u8, rgb.r) << 3 | rgb.r >> 2;
+                    const g: u8 = @as(u8, rgb.r) << 2 | rgb.r >> 4;
+                    const b: u8 = @as(u8, rgb.r) << 3 | rgb.r >> 2;
+                    try output.print("  {d: >3}: 0x{X:0>4} #{X:0>2}{X:0>2}{X:0>2}\n", .{
+                        i,
+                        rgb565,
+                        r,
+                        g,
+                        b,
+                    });
+                }
+            } else {
+                try output.print("  invalid abm magic. expected 0x{X:0>8}, but found 0x{X:0>8}\n", .{
+                    expected_magic,
+                    actual_magic,
+                });
+            }
+        } else {
+            try output.writeAll("  -\n");
+        }
+    }
+
+    return 0;
+}
+
+fn fmt_rel_field_op(val: ashex.RelocationField) std.fmt.Formatter(_fmt_rel_field_op) {
+    return .{ .data = val };
+}
+
+fn _fmt_rel_field_op(val: ashex.RelocationField, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+    _ = fmt;
+    _ = options;
+    try writer.writeAll(switch (val) {
+        .unused => " ",
+        .add => "+",
+        .subtract => "-",
+    });
+}
+
+fn convert_file(allocator: std.mem.Allocator, positionals: []const []const u8, options: CliVerb.ConvertOptions) !u8 {
+    if (positionals.len != 1) {
+        try error_and_exit("convert requires a single executable to operate on.", .{});
+    }
+
+    if (options.output.len == 0) {
+        try error_and_exit("convert requires --output to be present.", .{});
         return 1;
     }
 
-    if (cli_args.options.output.len == 0) {
-        try print_usage(cli_args.executable_name, std.io.getStdErr());
-        return 1;
-    }
-
-    const input_file_path = cli_args.positionals[0];
-    const icon_file_path = cli_args.options.icon;
-    const output_file_path = cli_args.options.output;
+    const input_file_path = positionals[0];
+    const icon_file_path = options.icon;
+    const output_file_path = options.output;
 
     const input_file_data = try std.fs.cwd().readFileAlloc(
         allocator,
@@ -588,6 +967,9 @@ fn write_ashex_file(
 
     std.debug.assert(0 == try file.getPos());
 
+    var icon_offset_pos: u64 = 0;
+    var icon_offset: u64 = 0;
+
     var syscalls_offset_pos: u64 = 0;
     var syscalls_offset: u64 = 0;
 
@@ -615,6 +997,7 @@ fn write_ashex_file(
 
             if (icon_data) |icon| {
                 try writer.writeInt(u32, @intCast(icon.len), endian);
+                icon_offset_pos = counting_writer.bytes_written;
                 try writer.writeInt(u32, 0xAABBCCDD, endian); // TODO(fqu): Add patch and write data later!
             } else {
                 try writer.writeInt(u32, 0, endian);
@@ -639,6 +1022,12 @@ fn write_ashex_file(
             relocations_offset_pos = counting_writer.bytes_written;
             try writer.writeInt(u32, 0x55AA55AA, endian);
             try writer.writeInt(u32, @intCast(exe.relocations.len), endian);
+        }
+        // Write icon data
+        if (icon_data) |icon| {
+            try align_writer(&counting_writer, 512);
+            icon_offset = counting_writer.bytes_written;
+            try writer.writeAll(icon);
         }
 
         // Write load headers
@@ -696,6 +1085,10 @@ fn write_ashex_file(
         try buffered_writer.flush();
     }
 
+    if (icon_data != null) {
+        try file.seekTo(icon_offset_pos);
+        try file.writer().writeInt(u32, @intCast(icon_offset), endian);
+    }
     if (syscalls_offset != 0) {
         try file.seekTo(syscalls_offset_pos);
         try file.writer().writeInt(u32, @intCast(syscalls_offset), endian);
