@@ -12,6 +12,9 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
         .root_source_file = b.path("clock.zig"),
+        .icon = .{
+            .convert = b.path("../../../../artwork/icons/small-icons/32x32-free-design-icons/32x32/Time.png"),
+        },
     });
 
     sdk.installApp(app, .{});
