@@ -308,14 +308,12 @@ pub fn main() !void {
 
                             // Start app:
 
-                            var path_buffer: [256]u8 = undefined;
-
-                            const path = try std.fmt.bufPrint(&path_buffer, "{s}.ashex", .{app.app.get_disk_name()});
+                            const disk_name = app.app.get_disk_name();
 
                             const maybe_app = ashet.overlapped.performOne(abi.process.Spawn, .{
                                 .dir = apps_dir.handle,
-                                .path_ptr = path.ptr,
-                                .path_len = path.len,
+                                .path_ptr = disk_name.ptr,
+                                .path_len = disk_name.len,
                                 .argv_ptr = &[_]abi.SpawnProcessArg{
                                     abi.SpawnProcessArg.string("--desktop"),
                                     abi.SpawnProcessArg.resource(desktop.as_resource()),
@@ -325,10 +323,7 @@ pub fn main() !void {
                             if (maybe_app) |app_proc| {
                                 app_proc.process.release(); // we're not interested in "holding" onto process
                             } else |err| {
-                                logger.err("failed to start application {s}: {s}", .{
-                                    app.app.get_disk_name(),
-                                    @errorName(err),
-                                });
+                                logger.err("failed to start application {s}: {s}", .{ disk_name, @errorName(err) });
                             }
                         }
 
