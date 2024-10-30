@@ -268,7 +268,7 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
             "-m",      "32M",
             "-netdev", "user,id=hostnet",
             "-object", "filter-dump,id=hostnet-dump,netdev=hostnet,file=ashet-os.pcap",
-            "-device", "virtio-gpu-device,xres=800,yres=480",
+            "-device", "virtio-gpu-device,id=screen,xres=800,yres=480",
             "-device", "virtio-keyboard-device",
             "-device", "virtio-mouse-device",
             "-device", "virtio-net-device,netdev=hostnet,mac=52:54:00:12:34:56",
@@ -333,7 +333,7 @@ const display_qemu_flags = [_][]const u8{
 };
 
 const console_qemu_flags = [_][]const u8{
-    "-display", "none",
+    "-display", "vnc=0.0.0.0:0", // Binds to VNC Port 5900
 };
 
 fn get_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) ?std.Build.LazyPath {
