@@ -32,6 +32,7 @@ root File;
 
 type File = struct {
     header: FileHeader,
+    icon_data: [header.icon.length]u8 align(512),
     load_headers: [header.load_header_count]LoadHeader align(512),
     bss_headers: [header.bss_header_count]VirtualMemoryRange align(512),
     syscalls: [header.syscall_count]SystemCall align(512),

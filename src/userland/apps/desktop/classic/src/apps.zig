@@ -57,14 +57,23 @@ pub fn reload() !void {
     // var pal_off: u8 = framebuffer_default_icon_shift;
 
     while (try apps_dir.next()) |ent| {
-        if (!ent.attributes.directory)
+        if (ent.attributes.directory)
             continue;
 
-        var app_dir = try apps_dir.openDir(ent.getName());
-        defer app_dir.close();
+        const name = ent.getName();
+
+        if (!std.mem.endsWith(u8, name, ".ashex")) {
+            logger.warn("ignore '{s}' from /apps", .{name});
+            continue;
+        }
+
+        logger.info("app: {s}", .{ent.getName()});
+
+        var app_file = try apps_dir.openFile(name, .read_only, .open_existing);
+        defer app_file.close();
 
         // , &pal_off
-        load_app(app_dir, ent) catch |err| {
+        load_app(app_file, ent.name) catch |err| {
             logger.err("failed to load application {s}: {s}", .{
                 ent.getName(),
                 @errorName(err),
@@ -138,35 +147,69 @@ pub const AppIterator = struct {
     }
 };
 
-fn load_app(dir: ashet.fs.Directory, ent: ashet.abi.FileInfo) !void {
+fn load_app(file: ashet.fs.File, file_name: [ashet.abi.max_file_name_len]u8) !void {
     // , pal_offset: *u8
+
+    const icon_byte_size, const icon_offset = blk: {
+        var header_chunk: [512]u8 = undefined;
+
+        if (try file.read(0, &header_chunk) != 512)
+            return error.InvalidFile;
+
+        var fbs = std.io.fixedBufferStream(&header_chunk);
+
+        const reader = fbs.reader();
+        var magic: [4]u8 = undefined;
+        try reader.readNoEof(&magic);
+        if (!std.mem.eql(u8, &magic, "ASHX"))
+            return error.InvalidFile;
+
+        const version = try reader.readInt(u8, .little);
+        if (version != 0)
+            return error.InvalidVersion;
+        const file_type = try reader.readInt(u8, .little);
+        if (file_type != 0)
+            return error.InvalidFileType;
+
+        const platform = try reader.readInt(u8, .little);
+        _ = platform;
+
+        try reader.skipBytes(1, .{});
+
+        const icon_byte_size = try reader.readInt(u32, .little);
+        const icon_offset = try reader.readInt(u32, .little);
+
+        break :blk .{ icon_byte_size, icon_offset };
+    };
+
     const app = list.addOne() catch {
         logger.warn("The system can only handle {} apps right now, but more are installed.", .{list.items.len});
         return;
     };
     errdefer _ = list.pop();
 
+    const file_name_str = std.mem.sliceTo(&file_name, 0);
+
     // pal_offset.* -= 15;
     // errdefer pal_offset.* += 15;
     app.* = App{
-        .disk_name_buffer = ent.name,
-        .display_name_buffer = ent.name,
+        .disk_name_buffer = file_name,
+        .display_name_buffer = file_name,
         .icon = null,
     };
 
-    if (dir.openFile("icon", .read_only, .open_existing)) |const_icon_file| {
-        var icon_file = const_icon_file;
-        defer icon_file.close();
+    @memset(app.display_name_buffer[ file_name_str.len - ".ashex".len..], 0);
 
-        app.icon = ashet.graphics.load_bitmap_file(icon_file) catch |err| blk: {
+    if (icon_byte_size != 0) {
+        app.icon = ashet.graphics.load_bitmap_file_at(file, icon_offset) catch |err| blk: {
             logger.warn("Failed to load icon for application {s}: {s}", .{
-                ent.getName(),
+                std.mem.sliceTo(&file_name, 0),
                 @errorName(err),
             });
             break :blk null;
         };
-    } else |_| {
-        logger.warn("Application {s} does not have an icon. Using default.", .{ent.getName()});
+    } else {
+        logger.warn("Application {s} does not have an icon. Using default.", .{std.mem.sliceTo(&file_name, 0)});
     }
 }
 

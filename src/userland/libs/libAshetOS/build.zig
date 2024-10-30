@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const ashet_abi = @import("abi");
+const mkicon = @import("mkicon");
 
 /// Applications target *platforms*, not explicit targets
 /// like Zig does.
@@ -45,6 +46,14 @@ pub fn init(b: *std.Build, dependency_name: []const u8, args: struct {
         .ashet_module = dep.module("ashet"),
         .linker_script = dep.path("application.ld"),
         .syscall_library = dep.artifact("AshetOS"),
+        .mkicon_exe = dep.artifact("mkicon"),
+
+        .desktop_icon_conv_options = .{
+            .geometry = .{ 32, 32 },
+            .palette = .{
+                .predefined = b.path("../../../kernel/data/palette.gpl"),
+            },
+        },
     };
     return sdk;
 }
@@ -55,10 +64,12 @@ pub const AshetSdk = struct {
     // Public properties:
 
     ashex_tool_exe: *std.Build.Step.Compile,
+    mkicon_exe: *std.Build.Step.Compile,
 
     syscall_library: *std.Build.Step.Compile,
     ashet_module: *std.Build.Module,
     linker_script: std.Build.LazyPath,
+    desktop_icon_conv_options: mkicon.ConvertOptions,
 
     // Internals:
     owning_builder: *std.Build,
@@ -106,8 +117,21 @@ pub const AshetSdk = struct {
         }
 
         const convert_to_ashex = b.addRunArtifact(sdk.ashex_tool_exe);
+        convert_to_ashex.addArg("convert");
 
-        if (options.icon_file) |icon_file| {
+        const maybe_icon_file: ?std.Build.LazyPath = switch (options.icon) {
+            .none => null,
+            .abm => |path| path,
+            .convert => |raw_image| blk: {
+                const converter: mkicon.Converter = .{
+                    .builder = b,
+                    .exe = sdk.mkicon_exe,
+                };
+                break :blk converter.convert(raw_image, b.fmt("{s}.abm", .{options.name}), sdk.desktop_icon_conv_options);
+            },
+        };
+
+        if (maybe_icon_file) |icon_file| {
             convert_to_ashex.addPrefixedFileArg("--icon=", icon_file);
         }
 
@@ -182,7 +206,7 @@ pub const ExecutableOptions = struct {
     os_module_import: ?[]const u8 = "ashet",
 
     /// If given, will embed the provided file into the generated application
-    icon_file: ?std.Build.LazyPath = null,
+    icon: IconSource = .none,
 
     root_source_file: ?std.Build.LazyPath = null,
     version: ?std.SemanticVersion = null,
@@ -197,6 +221,12 @@ pub const ExecutableOptions = struct {
     use_llvm: ?bool = null,
     use_lld: ?bool = null,
     zig_lib_dir: ?std.Build.LazyPath = null,
+
+    pub const IconSource = union(enum) {
+        none,
+        abm: std.Build.LazyPath,
+        convert: std.Build.LazyPath,
+    };
 };
 
 pub fn build(b: *std.Build) void {
@@ -208,6 +238,7 @@ pub fn build(b: *std.Build) void {
     const std_dep = b.dependency("std", .{});
     const agp_dep = b.dependency("agp", .{});
     const ashex_dep = b.dependency("ashex", .{});
+    const mkicon_dep = b.dependency("mkicon", .{});
 
     // Modules:
 
@@ -222,6 +253,9 @@ pub fn build(b: *std.Build) void {
 
     const ashet_exe_tool = ashex_dep.artifact("ashet-exe");
     b.installArtifact(ashet_exe_tool);
+
+    const image_converter = mkicon_dep.artifact("mkicon");
+    b.installArtifact(image_converter);
 
     // Build:
 

@@ -19,5 +19,8 @@
         .ashex = .{
             .path = "../../../tools/exe-tool",
         },
+        .mkicon = .{
+            .path = "../../../tools/mkicon",
+        },
     },
 }

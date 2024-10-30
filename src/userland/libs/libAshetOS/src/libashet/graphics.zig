@@ -193,9 +193,13 @@ pub fn get_framebuffer_size(fb: Framebuffer) !ashet.abi.Size {
 }
 
 pub fn load_bitmap_file(file: ashet.fs.File) !Framebuffer {
+    return try load_bitmap_file_at(file, 0);
+}
+
+pub fn load_bitmap_file_at(file: ashet.fs.File, abs_offset: u64) !Framebuffer {
     var header: ABM_Header = undefined;
 
-    if (try file.read(0, std.mem.asBytes(&header)) != @sizeOf(ABM_Header)) {
+    if (try file.read(abs_offset, std.mem.asBytes(&header)) != @sizeOf(ABM_Header)) {
         return error.InvalidFile;
     }
 
@@ -233,7 +237,7 @@ pub fn load_bitmap_file(file: ashet.fs.File) !Framebuffer {
     std.debug.assert(vmem.height == header.height);
 
     if (vmem.stride == vmem.width) {
-        const len = try file.read(pixel_offset, std.mem.sliceAsBytes(vmem.base[0..pixel_count]));
+        const len = try file.read(abs_offset + pixel_offset, std.mem.sliceAsBytes(vmem.base[0..pixel_count]));
         if (len != pixel_count)
             return error.InvalidFile;
     } else {
@@ -241,7 +245,7 @@ pub fn load_bitmap_file(file: ashet.fs.File) !Framebuffer {
         var scanline_offset = pixel_offset;
 
         for (0..header.height) |_| {
-            const len = try file.read(scanline_offset, std.mem.sliceAsBytes(scanline[0..vmem.width]));
+            const len = try file.read(abs_offset + scanline_offset, std.mem.sliceAsBytes(scanline[0..vmem.width]));
             if (len != vmem.width)
                 return error.InvalidFile;
             scanline_offset += vmem.width;
