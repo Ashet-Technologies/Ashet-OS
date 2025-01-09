@@ -172,6 +172,7 @@ pub const Framebuffer = struct {
             .widget => @panic("Framebuffer(.widget).copy_pixels Not implemented yet!"),
         };
         @memcpy(framebuffer[cursor.offset..][0..pixels.len], pixels);
+        
     }
 
     pub fn resolve_font(fb: *Framebuffer, font_handle: ashet.abi.Font) !*const fonts.FontInstance {

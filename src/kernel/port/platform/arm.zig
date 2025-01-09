@@ -59,8 +59,9 @@ pub const start = struct {
             \\  ldr pc, =_arm_except_IRQ
             //  1C      Fast Interrupt (FIQ)
             \\  ldr pc, =_arm_except_FIQ
-            \\
-            // \\.thumb
+        );
+        asm (
+            \\.thumb
             \\.thumb_func
             \\.global _start
             \\.type _start, %function

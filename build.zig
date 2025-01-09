@@ -14,7 +14,6 @@ const default_machines = std.EnumSet(Machine).init(.{
 const qemu_debug_options_default = "cpu_reset,guest_errors,unimp";
 
 pub fn build(b: *std.Build) void {
-
     // Options:
     const maybe_run_machine = b.option(Machine, "machine", "Selects which machine to run with the 'run' step");
     const no_gui = b.option(bool, "no-gui", "Disables GUI for runners") orelse false;

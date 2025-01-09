@@ -1,7 +1,7 @@
 MEMORY
 {
-           flash  (RX) : ORIGIN = 0x00000000, LENGTH = 64M
-            dram (RWX) : ORIGIN = 0x40000000, LENGTH = 16M
+    flash  (RX) : ORIGIN = 0x00000000, LENGTH = 64M
+     dram (RWX) : ORIGIN = 0x40000000, LENGTH = 16M
 }
 
 ENTRY(_start)
@@ -29,7 +29,7 @@ SECTIONS {
     .stack (NOLOAD) : {
         . = ALIGN(4096);
         __kernel_stack_start = .;
-        . += 0x8000; 
+        . += 0x40000; 
         __kernel_stack_end = .;
     } > dram
 
@@ -60,8 +60,9 @@ SECTIONS {
         . = ALIGN(4096);
 
         __machine_linmem_start = .;
+        __machine_linmem_end   = ORIGIN(dram) + LENGTH(dram);
+
+        ASSERT(__machine_linmem_start < __machine_linmem_end, "RAM overflow");
+
     } > dram
-
-    __machine_linmem_end = ORIGIN(dram) + LENGTH(dram);
-
 }

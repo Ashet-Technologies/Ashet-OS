@@ -539,6 +539,13 @@ pub fn fmtCodeLocation(addr: usize) CodeLocation {
     return CodeLocation{ .pointer = addr };
 }
 
+fn halt() noreturn {
+    if (builtin.mode == .Debug) {
+        @breakpoint();
+    }
+    hang();
+}
+
 pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, maybe_return_address: ?usize) noreturn {
     @setCold(true);
 
@@ -553,7 +560,7 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
             Debug.trace_loc.fn_name,
         });
         machine.debugWrite("\r\n");
-        hang();
+        halt();
     }
     const sp = platform.getStackPointer();
 
@@ -561,7 +568,7 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
         Debug.write("\r\nDOUBLE PANIC: ");
         Debug.write(message);
         Debug.write("\r\n");
-        hang();
+        halt();
     }
     double_panic = true;
 
@@ -679,7 +686,7 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
     Debug.write("=========================================================================\r\n");
     Debug.write("\r\n");
 
-    hang();
+    halt();
 }
 
 export fn ashet_lockInterrupts(were_enabled: *bool) void {

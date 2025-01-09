@@ -174,6 +174,8 @@ pub fn initializeLinearMemory() void {
 
     const memory_ranges = get_protected_ranges();
 
+    ashet.Debug.setTraceLoc(@src());
+
     logger.info("kernel memory ranges:", .{});
     for (memory_ranges) |range| {
         logger.info("  {s: >8} [base=0x{X:0>8}, length=0x{X:0>8}, protection={s}]", .{
@@ -183,6 +185,8 @@ pub fn initializeLinearMemory() void {
             @tagName(range.protection),
         });
     }
+
+    ashet.Debug.setTraceLoc(@src());
 
     const linear_memory_region = memory_ranges[0].to_range();
     const kernel_memory_regions = memory_ranges[1..];
