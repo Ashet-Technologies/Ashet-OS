@@ -77,11 +77,7 @@
             buildPhase = "";
             installPhase = "";
           };
-
-
         };
-
-
       }
     );
 }
