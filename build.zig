@@ -8,6 +8,7 @@ const Platform = abi_package.Platform;
 const default_machines = std.EnumSet(Machine).init(.{
     .@"pc-bios" = true,
     .@"qemu-virt-rv32" = true,
+    .@"qemu-virt-arm" = true,
     .@"hosted-x86-linux" = true,
 });
 
