@@ -628,6 +628,19 @@ fn parse_elf_file(
                 elf.PT_LOAD => {},
 
                 elf.PT_DYNAMIC => continue,
+
+                // We're just ignoring os specific program headers:
+                elf.PT_LOOS...elf.PT_HIOS => {
+                    logger.info("skipping os specific program header 0x{X:0>8}", .{phdr.p_type});
+                    continue;
+                },
+
+                // We're just ignoring processor specific program headers:
+                elf.PT_LOPROC...elf.PT_HIPROC => {
+                    logger.info("skipping processor specific program header 0x{X:0>8}", .{phdr.p_type});
+                    continue;
+                },
+
                 else => {
                     logger.warn("skipping program header: {}", .{phdr});
                     continue;
