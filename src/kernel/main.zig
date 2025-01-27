@@ -410,15 +410,17 @@ pub fn stackCheck() void {
     var stack_start: usize = @intFromPtr(&__kernel_stack_start);
 
     if (scheduler.Thread.current()) |thread| {
-        stack_end = @intFromPtr(thread.getBasePointer());
-        stack_start = stack_end - thread.stack_size;
+        stack_start = @intFromPtr(thread.stack_memory.ptr);
+        stack_end = stack_start + thread.stack_memory.len;
     }
 
     if (sp > stack_end) {
         // stack underflow
+        @breakpoint();
         @panic("STACK UNDERFLOW");
     } else if (sp <= stack_start) {
         // stack overflow
+        @breakpoint();
         @panic("STACK OVERFLOW");
     } else {
         // stack nominal
@@ -597,8 +599,8 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
         var stack_start: usize = @intFromPtr(&__kernel_stack_start);
 
         if (current_thread) |thread| {
-            stack_end = @intFromPtr(thread.getBasePointer());
-            stack_start = stack_end - thread.stack_size;
+            stack_start = @intFromPtr(thread.stack_memory.ptr);
+            stack_end = stack_start + thread.stack_memory.len;
         }
 
         std.debug.assert(stack_end > stack_start);

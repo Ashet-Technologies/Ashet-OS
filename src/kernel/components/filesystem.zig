@@ -152,7 +152,7 @@ pub fn initialize() void {
     }
 
     const driver_thread = ashet.scheduler.Thread.spawn(filesystemCoreLoop, null, .{
-        .stack_size = 32 * 1024, // some space for copying data around
+        .stack_size = 64 * 1024, // some space for copying data around
     }) catch @panic("failed to spawn filesystem thread");
     driver_thread.setName("filesystem") catch {};
 
