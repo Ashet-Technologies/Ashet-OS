@@ -46,7 +46,7 @@ pub fn invalidate_region(dt: *DamageTracking, region: Rectangle) void {
             return;
     }
 
-    logger.debug("invalidate {}", .{target});
+    // logger.debug("invalidate {}", .{target});
 
     if (dt.invalidation_areas.len == dt.invalidation_areas.capacity()) {
         dt.invalidation_areas.len = 1;
