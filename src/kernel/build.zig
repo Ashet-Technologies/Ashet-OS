@@ -223,7 +223,7 @@ const platform_info_map = std.EnumArray(Platform, PlatformConfig).init(.{
 });
 
 const machine_info_map = std.EnumArray(Machine, MachineConfig).init(.{
-    .@"pc-bios" = .{
+    .@"x86-pc-bios" = .{
         .platform = .x86,
         .target = constructTargetQuery(generic_x86),
 
@@ -231,7 +231,7 @@ const machine_info_map = std.EnumArray(Machine, MachineConfig).init(.{
         .linker_script = "port/machine/bios_pc/linker.ld",
     },
 
-    .@"qemu-virt-rv32" = .{
+    .@"rv32-qemu-virt" = .{
         .platform = .rv32,
         .target = constructTargetQuery(generic_rv32),
 
@@ -239,7 +239,7 @@ const machine_info_map = std.EnumArray(Machine, MachineConfig).init(.{
         .linker_script = "port/machine/rv32_virt/linker.ld",
     },
 
-    .@"qemu-virt-arm" = .{
+    .@"arm-qemu-virt" = .{
         .platform = .arm,
         .target = constructTargetQuery(generic_arm),
 
@@ -247,7 +247,7 @@ const machine_info_map = std.EnumArray(Machine, MachineConfig).init(.{
         .linker_script = "port/machine/arm_virt/linker.ld",
     },
 
-    .@"hosted-x86-linux" = .{
+    .@"x86-hosted-linux" = .{
         .platform = .x86,
         .target = constructTargetQuery(.{
             .cpu_arch = .x86,

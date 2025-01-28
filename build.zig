@@ -6,10 +6,10 @@ const Machine = kernel_package.Machine;
 const Platform = abi_package.Platform;
 
 const default_machines = std.EnumSet(Machine).init(.{
-    .@"pc-bios" = true,
-    .@"qemu-virt-rv32" = true,
-    .@"qemu-virt-arm" = true,
-    .@"hosted-x86-linux" = true,
+    .@"x86-pc-bios" = true,
+    .@"rv32-qemu-virt" = true,
+    .@"arm-qemu-virt" = true,
+    .@"x86-hosted-linux" = true,
 });
 
 const qemu_debug_options_default = "cpu_reset,guest_errors,unimp";
@@ -252,7 +252,7 @@ const platform_info_map = std.EnumArray(Platform, PlatformStartupConfig).init(.{
 });
 
 const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
-    .@"pc-bios" = .{
+    .@"x86-pc-bios" = .{
         .qemu_cli = &.{
             "-machine", "pc",
             "-cpu",     "pentium2",
@@ -261,7 +261,7 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
             "--device", "isa-debug-exit",
         },
     },
-    .@"qemu-virt-rv32" = .{
+    .@"rv32-qemu-virt" = .{
         .qemu_cli = &.{
             "-cpu",    "rv32",
             "-M",      "virt",
@@ -277,7 +277,7 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
             "-drive",  "if=pflash,index=1,format=raw,file=${DISK}",
         },
     },
-    .@"qemu-virt-arm" = .{
+    .@"arm-qemu-virt" = .{
         .qemu_cli = &.{
             "-cpu",    "cortex-a7",
             "-M",      "virt",
@@ -293,7 +293,7 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
             "-drive",  "if=pflash,index=1,format=raw,file=${DISK}",
         },
     },
-    .@"hosted-x86-linux" = .{
+    .@"x86-hosted-linux" = .{
         .hosted_cli = &.{
             "drive:${DISK}",
             "video:vnc:800:480:0.0.0.0:5900",

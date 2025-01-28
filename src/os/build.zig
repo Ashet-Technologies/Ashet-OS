@@ -90,7 +90,7 @@ pub fn build(b: *std.Build) void {
 
     // Phase 3: Machine dependent root fs
     switch (machine) {
-        .@"pc-bios" => {
+        .@"x86-pc-bios" => {
             rootfs.addFile(kernel_elf, "/ashet-os");
 
             rootfs.addFile(b.path("../../rootfs-x86/syslinux/modules.alias"), "syslinux/modules.alias");
@@ -114,7 +114,7 @@ pub fn build(b: *std.Build) void {
     // Phase 4: Create disk
 
     const disk_image = switch (machine) {
-        .@"pc-bios" => blk: {
+        .@"x86-pc-bios" => blk: {
             var bootloader_buffer: [440]u8 = undefined;
             const syslinux_bootloader = std.fs.cwd().readFile(
                 syslinux_dep.path("vendor/syslinux-6.03/bios/mbr/mbr.bin").getPath(b),
@@ -188,19 +188,19 @@ const MachineDependentOsConfig = struct {
 };
 
 const machine_info_map = std.EnumArray(Machine, MachineDependentOsConfig).init(.{
-    .@"pc-bios" = .{
+    .@"x86-pc-bios" = .{
         .rom_size = null,
         .disk_size = 512 * disk_image_step.MiB,
     },
-    .@"qemu-virt-rv32" = .{
+    .@"rv32-qemu-virt" = .{
         .disk_size = 0x0200_0000,
         .rom_size = 0x0200_0000,
     },
-    .@"qemu-virt-arm" = .{
+    .@"arm-qemu-virt" = .{
         .disk_size = 0x0400_0000,
         .rom_size = 0x0400_0000,
     },
-    .@"hosted-x86-linux" = .{
+    .@"x86-hosted-linux" = .{
         .disk_size = 0x0400_0000,
         .rom_size = null,
     },

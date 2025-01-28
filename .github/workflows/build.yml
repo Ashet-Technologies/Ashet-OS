@@ -12,7 +12,7 @@ jobs:
       fail-fast: false
       matrix:
         # os: [ubuntu-latest, windows-latest]
-        platform: [pc-bios, qemu-virt-rv32, qemu-virt-arm, hosted-x86-linux]
+        platform: [arm-qemu-virt, rv32-qemu-virt, x86-hosted-linux, x86-pc-bios]
 
     runs-on: ubuntu-latest
 
@@ -33,12 +33,12 @@ jobs:
       - name: Setup Python 3.11
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11' 
+          python-version: "3.11"
 
       - name: Build ${{ matrix.platform }}
         run: |
           zig build ${{ matrix.platform }}
-      
+
       - name: Upload disk image
         uses: actions/upload-artifact@v4
         with:
