@@ -86,7 +86,9 @@ const COM4_PORT = 0x2E8;
 
 var timer_counter_ms: u64 = 0;
 
-fn timer_interrupt(state: *x86.idt.CpuState) *x86.idt.CpuState {
+fn timer_interrupt(state: *x86.idt.CpuState) void {
+    _ = state;
+
     timer_counter_ms += 1;
 
     if (@import("builtin").mode == .Debug) {
@@ -94,8 +96,6 @@ fn timer_interrupt(state: *x86.idt.CpuState) *x86.idt.CpuState {
             logger.debug("system still alive", .{});
         }
     }
-
-    return state;
 }
 
 pub fn get_tick_count() u64 {
@@ -105,6 +105,8 @@ pub fn get_tick_count() u64 {
     return timer_counter_ms;
 }
 
+var interrupt_stack: [8192]u8 align(16) = undefined;
+
 pub fn earlyInitialize() void {
 
     // x86 requires GDT and IDT, as a lot of x86 devices are only well usable with
@@ -113,7 +115,7 @@ pub fn earlyInitialize() void {
     x86.gdt.init();
 
     logger.debug("configure IDT...", .{});
-    x86.idt.init();
+    x86.idt.init(&interrupt_stack);
 
     logger.debug("enable interrupts...", .{});
     x86.enableInterrupts();

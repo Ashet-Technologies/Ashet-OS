@@ -1,7 +1,7 @@
 const std = @import("std");
 const log = std.log.scoped(.x86_vmm);
 const ashet = @import("../../../main.zig");
-const cr = @import("cr.zig");
+const cr = @import("registers.zig");
 
 const page_size = 4096;
 

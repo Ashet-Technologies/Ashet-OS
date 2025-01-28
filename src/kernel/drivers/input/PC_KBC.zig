@@ -321,14 +321,14 @@ fn feedDataTo(chan: Channel) void {
     }
 }
 
-fn handleKeyboardInterrupt(state: *CpuState) *CpuState {
+fn handleKeyboardInterrupt(state: *CpuState) void {
+    _ = state;
     feedDataTo(.primary);
-    return state;
 }
 
-fn handleMouseInterrupt(state: *CpuState) *CpuState {
+fn handleMouseInterrupt(state: *CpuState) void {
+    _ = state;
     feedDataTo(.secondary);
-    return state;
 }
 
 fn poll(driver: *Driver) void {
@@ -707,17 +707,17 @@ const MouseDecoder = struct {
                     decoder.state = .fetch_x;
 
                     if (header.left != decoder.current.left) {
-                        ashet.input.push_raw_event(.{
+                        ashet.input.push_raw_event_from_irq(.{
                             .mouse_button = .{ .button = .left, .down = header.left },
                         });
                     }
                     if (header.right != decoder.current.right) {
-                        ashet.input.push_raw_event(.{
+                        ashet.input.push_raw_event_from_irq(.{
                             .mouse_button = .{ .button = .right, .down = header.right },
                         });
                     }
                     if (header.middle != decoder.current.middle) {
-                        ashet.input.push_raw_event(.{
+                        ashet.input.push_raw_event_from_irq(.{
                             .mouse_button = .{ .button = .middle, .down = header.middle },
                         });
                     }
@@ -734,7 +734,7 @@ const MouseDecoder = struct {
                 const dy = @as(i8, @bitCast(input));
 
                 if ((dx != 0 or dy != 0) and !decoder.current.x_overflow and !decoder.current.y_overflow) {
-                    ashet.input.push_raw_event(.{
+                    ashet.input.push_raw_event_from_irq(.{
                         // PC mouse is using inverted Y
                         .mouse_rel_motion = .{ .dx = dx, .dy = -dy },
                     });

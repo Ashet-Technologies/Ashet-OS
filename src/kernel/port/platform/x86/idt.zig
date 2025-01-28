@@ -1,10 +1,12 @@
 const std = @import("std");
-const cr = @import("cr.zig");
+const cr = @import("registers.zig");
 const x86 = @import("../x86.zig");
 const logger = std.log.scoped(.idt);
 const PIC = @import("PIC.zig");
 
-pub const InterruptHandler = *const fn (*CpuState) *CpuState;
+const stack_alignment = 16;
+
+pub const InterruptHandler = *const fn (*CpuState) void;
 
 var irqHandlers = [_]?InterruptHandler{null} ** 32;
 
@@ -12,8 +14,12 @@ pub fn set_IRQ_Handler(irq: u4, handler: ?InterruptHandler) void {
     irqHandlers[irq] = handler;
 }
 
-export fn handle_interrupt(_cpu: *CpuState) *CpuState {
-    var cpu = _cpu;
+export fn handle_interrupt(cpu: *CpuState) *CpuState {
+
+    // This assertion must hold, as otherwise, our code walks weird paths:
+    std.debug.assert(_x86_interrupt_nesting > 0);
+
+    // var cpu = _cpu;
     // logger.debug("int[0x{X:0>2}]", .{cpu.interrupt});
     switch (cpu.interrupt) {
         0x00...0x1F => {
@@ -79,7 +85,7 @@ export fn handle_interrupt(_cpu: *CpuState) *CpuState {
         0x20...0x2F => {
             // IRQ
             if (irqHandlers[cpu.interrupt - 0x20]) |handler| {
-                cpu = handler(cpu);
+                handler(cpu);
             } else {
                 logger.warn("Unhandled IRQ{}:\n{}", .{ cpu.interrupt - 0x20, cpu });
             }
@@ -117,7 +123,19 @@ export const idtp linksection(".rodata.irq") = InterruptTable{
     .table = &idt,
 };
 
-pub fn init() void {
+/// We're running interrupts on a dedicated stack which is not
+/// the same as the stack of the thread we're running on.
+///
+/// This variable is a global that stores that stack pointer.
+export var _x86_interrupt_stack_end: [*]align(stack_alignment) u8 = undefined;
+
+export var _x86_interrupt_nesting: u32 = 0;
+
+pub fn init(interrupt_stack: []align(stack_alignment) u8) void {
+    std.debug.assert(std.mem.isAligned(interrupt_stack.len, stack_alignment));
+
+    _x86_interrupt_stack_end = @alignCast(interrupt_stack.ptr + interrupt_stack.len);
+
     inline for (&idt, 0..) |*entry, i| {
         const desc = Descriptor.init(getInterruptStub(i), 0x08, .interruptGate, .bits32, 0, true);
         entry.* = desc;
@@ -128,6 +146,10 @@ pub fn init() void {
     PIC.secondary.initialize(0x28);
 
     disableAllIRQs();
+}
+
+pub fn isInInterruptContext() bool {
+    return (_x86_interrupt_nesting > 0);
 }
 
 pub fn fireInterrupt(comptime intr: u32) void {
@@ -248,7 +270,12 @@ const Descriptor = packed struct(u64) {
 
 export fn common_isr_handler() callconv(.Naked) void {
     asm volatile (
-    // save cpu state
+        \\
+        // Increment interrupt nesting counter so we can detect that we're in
+        // an interrupt handler routine:
+        \\ addl $1, _x86_interrupt_nesting
+        \\
+        // save cpu state
         \\ push %%ebp
         \\ push %%edi
         \\ push %%esi
@@ -261,11 +288,18 @@ export fn common_isr_handler() callconv(.Naked) void {
         \\ mov %%esp, %%eax
         // stack here is in a desolate state of "whatever happened to me, oh god"
         // let's align it for SysV abi conformance:
-        \\ and $0xfffffff0, %esp
-        \\ sub $0x0C, %esp
+        // \\ and $0xfffffff0, %esp
+        // \\ sub $0x0C, %esp
+        // Set the stack pointer to the interrupt area
+        // if we're the first interrupt (which means we have no nesting):
+        \\ cmpl $1, _x86_interrupt_nesting
+        \\ jne .nested_interrupt
+        \\ movl _x86_interrupt_stack_end, %esp
+        \\.nested_interrupt:
         // invoke the handler with the previous stack pointer as paramter, and return value
         \\ push %%eax
         \\ call handle_interrupt
+        // Restore the stack to whatever we were before the interrupt:
         \\ mov %%eax, %%esp
         \\ 
         // restore CPU state
@@ -280,6 +314,8 @@ export fn common_isr_handler() callconv(.Naked) void {
         // remove error code pushed by the interrupt stub
         \\ add $8, %%esp
         \\ 
+        // Decrement interrupt nesting counter:
+        \\ subl $1, _x86_interrupt_nesting
         // back to the code and restore CPU state
         \\ iret
     );

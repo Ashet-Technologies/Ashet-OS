@@ -5,7 +5,7 @@ pub const gdt = @import("x86/gdt.zig");
 pub const idt = @import("x86/idt.zig");
 pub const vmm = @import("x86/vmm.zig");
 pub const cmos = @import("x86/cmos.zig");
-pub const cr = @import("x86/cr.zig");
+pub const registers = @import("x86/registers.zig");
 
 pub const page_size = 4096;
 
@@ -60,13 +60,14 @@ pub fn areInterruptsEnabled() bool {
     const flags = asm (
         \\pushfd
         \\pop %[res]
-        : [res] "=r" (-> u32),
+        : [res] "=r" (-> registers.EFLAGS),
         :
         : "stack"
     );
-    return ((flags & 0x0200) != 0); // 9th bit is "interrupts are enabled"
+    return flags.interrupt_enable; // 9th bit is "interrupts are enabled"
 }
 
+pub const isInInterruptContext = idt.isInInterruptContext;
 pub const disableInterrupts = idt.disableExternalInterrupts;
 pub const enableInterrupts = idt.enableExternalInterrupts;
 
