@@ -114,9 +114,8 @@ pub fn main() !void {
     var apps_dir = try ashet.fs.Directory.openDrive(.system, "apps");
     defer apps_dir.close();
 
-    var cursor: Point = Point.new(
-        @intCast(fb_size.width / 2),
-        @intCast(fb_size.height / 2),
+    var cursor: ClampedCursor = ClampedCursor.new(
+        Rectangle.new(Point.zero, fb_size),
     );
 
     damage_tracking.invalidate_screen();
@@ -190,7 +189,7 @@ pub fn main() !void {
 
                 try window_manager.render(&render_queue, current_theme);
 
-                try Cursor.paint(&render_queue, cursor, black);
+                try Cursor.paint(&render_queue, cursor.position, black);
 
                 try render_queue.submit(video_fb, .{});
             }
@@ -201,6 +200,8 @@ pub fn main() !void {
             try ashet.overlapped.schedule(&wait_input_event.arc);
 
             const raw_event = try wait_input_event.get_output();
+            
+    std.log.err("{}", .{raw_event});
 
             const event = ashet.input.Event.from_native(
                 raw_event.*,
@@ -208,25 +209,19 @@ pub fn main() !void {
 
             // Update mouse cursor based off the event:
             {
-                const prev_cursor = cursor;
+                const prev_cursor = cursor.position;
                 switch (event) {
                     .mouse_abs_motion => |motion| {
-                        cursor = Point.new(
-                            @max(0, @min(@as(i16, @intCast(fb_size.width -| 1)), motion.x)),
-                            @max(0, @min(@as(i16, @intCast(fb_size.height -| 1)), motion.y)),
-                        );
+                        cursor.set_position(motion.x, motion.y);
                     },
                     .mouse_rel_motion => |motion| {
-                        cursor = Point.new(
-                            @max(0, @min(@as(i16, @intCast(fb_size.width -| 1)), cursor.x +| motion.dx)),
-                            @max(0, @min(@as(i16, @intCast(fb_size.height -| 1)), cursor.y +| motion.dy)),
-                        );
+                        cursor.move(motion.dx, motion.dy);
                     },
 
                     else => {},
                 }
 
-                if (!cursor.eql(prev_cursor)) {
+                if (!cursor.position.eql(prev_cursor)) {
                     damage_tracking.invalidate_region(Rectangle{
                         .x = prev_cursor.x,
                         .y = prev_cursor.y,
@@ -234,15 +229,15 @@ pub fn main() !void {
                         .height = Cursor.height,
                     });
                     damage_tracking.invalidate_region(Rectangle{
-                        .x = cursor.x,
-                        .y = cursor.y,
+                        .x = cursor.position.x,
+                        .y = cursor.position.y,
                         .width = Cursor.width,
                         .height = Cursor.height,
                     });
                 }
             }
 
-            const was_handled = try window_manager.handle_event(cursor, event);
+            const was_handled = try window_manager.handle_event(cursor.position, event);
             try window_manager.handle_after_events();
             if (!was_handled) {
                 switch (event) {
@@ -274,7 +269,7 @@ pub fn main() !void {
                             // }
                         };
 
-                        const app = apps.app_from_point(fb_size, cursor) orelse {
+                        const app = apps.app_from_point(fb_size, cursor.position) orelse {
                             // User clicked onto the backdrop, not an application icon.
                             // This means we have to deselect the application.
 
@@ -292,7 +287,7 @@ pub fn main() !void {
                         if (selected_app_icon == app.index) double_click_handler: {
                             // We clicked the same app again, let's see if it was a double click:
 
-                            const pixel_since_last_click = cursor.manhattenDistance(last_click_pos);
+                            const pixel_since_last_click = cursor.position.manhattenDistance(last_click_pos);
                             logger.debug("pixel since: {}", .{pixel_since_last_click});
                             if (pixel_since_last_click > 4) {
                                 // too much jitter
@@ -327,7 +322,7 @@ pub fn main() !void {
                             }
                         }
 
-                        last_click_pos = cursor;
+                        last_click_pos = cursor.position;
 
                         selected_app_icon = app.index;
                         damage_tracking.invalidate_region(
@@ -421,3 +416,34 @@ fn handle_desktop_event(desktop: abi.Desktop, event: *const abi.DesktopEvent) ca
 
     _ = desktop;
 }
+
+const ClampedCursor = struct {
+    position: Point,
+    area: Rectangle,
+
+    pub fn new(area: Rectangle) ClampedCursor {
+        return .{
+            .position = Point.new(
+                @intCast(area.x +% @as(i32, area.width / 2)),
+                @intCast(area.y +% @as(i32, area.height / 2)),
+            ),
+            .area = area,
+        };
+    }
+    pub fn set_position(cursor: *ClampedCursor, x: i16, y: i16) void {
+        cursor.position.x = std.math.clamp(
+            x,
+            cursor.area.x,
+            cursor.area.x +| @as(i16, @intCast(cursor.area.width -| 1)),
+        );
+        cursor.position.y = std.math.clamp(
+            y,
+            cursor.area.y,
+            cursor.area.y +| @as(i16, @intCast(cursor.area.height -| 1)),
+        );
+    }
+
+    pub fn move(cursor: *ClampedCursor, dx: i16, dy: i16) void {
+        cursor.set_position(cursor.position.x +| dx, cursor.position.y +| dy);
+    }
+};

@@ -15,12 +15,8 @@ var ctrl_right_state: bool = false;
 var alt_state: bool = false;
 var alt_graph_state: bool = false;
 
-// pub var cursor: ashet.abi.Point = undefined;
-
 pub fn initialize() void {
-    // const res = ashet.video.getResolution();
-
-    // cursor = ashet.abi.Point.new(@as(i16, @intCast(res.width / 2)), @as(i16, @intCast(res.height / 2)));
+    //
 }
 
 /// Period subsystem update, will poll for input events
@@ -126,6 +122,7 @@ fn cancel_arc(call: *ashet.overlapped.AsyncCall) void {
 }
 
 fn finish_arc(call: *ashet.overlapped.AsyncCall, evt: Event) void {
+    std.log.err("arc: {}", .{evt});
     call.finalize(ashet.abi.input.GetEvent, .{ .event = evt });
 }
 
