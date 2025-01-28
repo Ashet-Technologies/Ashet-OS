@@ -43,6 +43,7 @@ else switch (platform_id) {
 pub const machine = switch (machine_id) {
     .@"x86-pc-bios" => @import("port/machine/bios_pc/bios_pc.zig"),
     .@"rv32-qemu-virt" => @import("port/machine/rv32_virt/rv32_virt.zig"),
+    .@"arm-ashet-vhc" => @import("port/machine/arm/ashet-vhc/ashet-vhc.zig"),
     .@"arm-qemu-virt" => @import("port/machine/arm_virt/arm_virt.zig"),
     .@"x86-hosted-linux" => @import("port/machine/linux_pc/linux_pc.zig"),
 };

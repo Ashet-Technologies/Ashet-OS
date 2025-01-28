@@ -296,6 +296,16 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
             "-drive",  "if=pflash,index=1,format=raw,file=${DISK}",
         },
     },
+    .@"arm-ashet-vhc" = .{
+        .qemu_cli = &.{
+            "-M",      "ashet-vhc",
+            "-m",      "8M",
+            "-kernel", "${KERNEL}",
+            "-device", "virtio-gpu-device,xres=800,yres=480",
+            "-device", "virtio-keyboard-device",
+            "-device", "virtio-mouse-device",
+        },
+    },
     .@"x86-hosted-linux" = .{
         .hosted_cli = &.{
             "drive:${DISK}",
