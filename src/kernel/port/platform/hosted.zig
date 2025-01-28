@@ -29,6 +29,10 @@ pub fn areInterruptsEnabled() bool {
     return @atomicLoad(bool, &interrupt_flag, .seq_cst);
 }
 
+pub inline fn isInInterruptContext() bool {
+    return false; // Hosted systems don't know interrupts.
+}
+
 pub fn disableInterrupts() void {
     global_lock.lock();
     std.debug.assert(areInterruptsEnabled());

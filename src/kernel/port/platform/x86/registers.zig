@@ -1,5 +1,30 @@
 const std = @import("std");
 
+pub const EFLAGS = packed struct(u32) {
+    carry: u1, //                       bit 0: CF - Carry Flag (S)
+    _reserved0: u1, //                  bit 1:  *reserved*
+    parity: u1, //                      bit 2:  PF - Parity Flag (S)
+    _reserved1: u1, //                  bit 3:  *reserved*
+    aux_carry: u1, //                   bit 4:  AF - Auxiliary Carry Flag (S)
+    _reserved2: u1, //                  bit 5:  *reserved*
+    zero: u1, //                        bit 6:  ZF - Zero Flag (S)
+    sign: u1, //                        bit 7:  SF - Sign Flag (S)
+    trap: u1, //                        bit 8:  TF - Trap Flag (X)
+    interrupt_enable: bool, //          bit 9:  IF - Interrupt Enable Flag (X)
+    direction: u1, //                   bit 10: DF - Direction Flag (C)
+    overflow: u1, //                    bit 11: OF - Overflow Flag (S)
+    io_priviledge_level: u2, //         bit 12: IOPL - I/O Privilege Level (X)
+    nested_task: u1, //                 bit 14: NT - Nested Task Flag (X)
+    _reserved3: u1, //                  bit 15: *reserved*
+    resume_flag: u1, //                 bit 16: RF - Resume Flag (X)
+    virtual_8086_mode: bool, //         bit 17: VM - Virtual 8086 Mode (X)
+    virtual_interrupt_flag: bool, //    bit 19: VIF - Virtual Interrupt Flag (X)
+    alignment_check: bool, //           bit 18: AC - Alignment Check (X)
+    virtual_interrupt_pending: bool, // bit 20: VIP - Virtual Interrupt Pending (X)
+    has_cpuid: bool, //                 bit 21: ID - ID Flag (X)
+    _reserved4: u10, //                 bit 22: *reserved*
+};
+
 pub const CR0 = packed struct(u32) {
     protection_enabled: bool, // 0
     monitor_coprocessor_flag: enum(u1) { nothrow = 0, throw = 1 }, // 1

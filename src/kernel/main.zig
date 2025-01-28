@@ -543,7 +543,9 @@ pub fn fmtCodeLocation(addr: usize) CodeLocation {
 
 fn halt() noreturn {
     if (builtin.mode == .Debug) {
-        @breakpoint();
+        if (!double_panic) {
+            @breakpoint();
+        }
     }
     hang();
 }

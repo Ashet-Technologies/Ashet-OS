@@ -87,6 +87,8 @@ pub fn push_raw_event_from_irq(raw_event: raw.Event) void {
 }
 
 pub fn push_raw_event(raw_event: raw.Event) void {
+    std.debug.assert(!ashet.platform.isInInterruptContext());
+
     if (event_queue.full()) {
         logger.warn("dropping {s} event", .{@tagName(event_queue.pull().?)});
     }

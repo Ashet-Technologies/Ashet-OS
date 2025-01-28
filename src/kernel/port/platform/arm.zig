@@ -130,6 +130,10 @@ pub inline fn areInterruptsEnabled() bool {
     return false; // TODO: Implement interrupts on Arm!
 }
 
+pub inline fn isInInterruptContext() bool {
+    return false; // TODO: Implement interrupts on Arm!
+}
+
 pub inline fn disableInterrupts() void {
     // TODO: Implement interrupts on Arm!
 }

@@ -146,10 +146,19 @@ noinline fn readHwCounter() u64 {
 }
 
 pub fn areInterruptsEnabled() bool {
-    return false;
+    return false; // TODO: Implement interrupts on RISC-V!
 }
-pub fn disableInterrupts() void {}
-pub fn enableInterrupts() void {}
+
+pub inline fn isInInterruptContext() bool {
+    return false; // TODO: Implement interrupts on RISC-V!
+}
+
+pub fn disableInterrupts() void {
+    // TODO: Implement interrupts on RISC-V!
+}
+pub fn enableInterrupts() void {
+    // TODO: Implement interrupts on RISC-V!
+}
 
 pub fn get_cpu_cycle_counter() u64 {
     return ControlStatusRegister.read(.cycle);
