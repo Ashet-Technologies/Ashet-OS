@@ -41,11 +41,44 @@ pub fn call_inside_process(
     return @call(.auto, function, arguments);
 }
 
+pub const SpawnBlockingError = error{
+    Overflow,
+    OutOfMemory,
+
+    SystemResources,
+    DiskError,
+    InvalidHandle,
+    EndOfStream,
+    InvalidElfMagic,
+    InvalidElfVersion,
+    InvalidElfEndian,
+    InvalidElfClass,
+    InvalidEndian,
+    InvalidBitSize,
+    InvalidMachine,
+    NoCode,
+    BadExecutable,
+    InvalidPltRel,
+    MissingSymbol,
+    UnsupportedRelocation,
+    UnalignedProgramHeader,
+    InvalidAshexExecutable,
+    AshexMachineMismatch,
+    AshexPlatformMismatch,
+    AshexUnsupportedVersion,
+    AshexNoData,
+    AshexCorruptedFile,
+    AshexUnsupportedSyscall,
+    AshexInvalidRelocation,
+    AshexInvalidSyscallIndex,
+    Unexpected,
+};
+
 pub fn spawn_blocking(
     proc_name: []const u8,
     file: *libashet.fs.File,
     argv: []const ashet.abi.SpawnProcessArg,
-) !*Process {
+) SpawnBlockingError!*Process {
     const process = try ashet.multi_tasking.Process.create(.{
         .stay_resident = false,
         .name = proc_name,

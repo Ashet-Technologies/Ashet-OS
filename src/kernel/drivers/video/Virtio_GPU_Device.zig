@@ -48,6 +48,9 @@ pub fn init(allocator: std.mem.Allocator, regs: *volatile virtio.ControlRegs) !*
 
     try vd.gpu.initialize(allocator, regs);
 
+    vd.graphics_width = @intCast(@min(std.math.maxInt(u16), vd.gpu.fb_width));
+    vd.graphics_height = @intCast(@min(std.math.maxInt(u16), vd.gpu.fb_height));
+
     vd.driver.class.video.flush();
 
     return vd;
@@ -321,7 +324,7 @@ const GPU = struct {
         try gpu.execCommand();
     }
 
-    fn resourceAttachBacking(gpu: *GPU, id: ResourceId, address: *anyopaque, length: usize) !void {
+    fn resourceAttachBacking(gpu: *GPU, id: ResourceId, memory: []const u8) !void {
         gpu.vq.waitSettled();
 
         gpu.gpu_command.res_attach_backing = .{
@@ -330,8 +333,8 @@ const GPU = struct {
         };
 
         gpu.gpu_command.res_attach_backing.entries()[0] = .{
-            .addr = @intFromPtr(address),
-            .length = length,
+            .addr = @intFromPtr(memory.ptr),
+            .length = memory.len,
         };
 
         try gpu.execCommand();
@@ -352,19 +355,19 @@ const GPU = struct {
         try gpu.execCommand();
     }
 
-    fn calcStride(width: u32, bpp: u32) usize {
+    fn calcStrideBytes(width: u32, bpp: u32) usize {
         return ((width * bpp + 31) / 32) * @sizeOf(u32);
     }
 
     fn setupFramebuffer(gpu: *GPU, allocator: std.mem.Allocator, scanout: Scanout, res_id: ResourceId, width: u32, height: u32) ![]u32 {
         try gpu.create2dResource(res_id, virtio.gpu.Format.r8g8b8x8_unorm, width, height);
 
-        const stride = calcStride(width, 32);
+        const stride = @divExact(calcStrideBytes(width, 32), @sizeOf(u32));
 
         const frame_backing = try allocator.alignedAlloc(u32, @alignOf(u32), height * stride);
         errdefer allocator.free(frame_backing);
 
-        try gpu.resourceAttachBacking(res_id, frame_backing.ptr, height * stride);
+        try gpu.resourceAttachBacking(res_id, std.mem.sliceAsBytes(frame_backing));
 
         try gpu.setScanout(scanout, res_id, width, height);
 
@@ -384,7 +387,7 @@ const GPU = struct {
                 .width = width,
                 .height = height,
             },
-            .offset = y * calcStride(gpu.fb_width, 32) + x * 4,
+            .offset = y * calcStrideBytes(gpu.fb_width, 32) + x * 4,
             .resource_id = @intFromEnum(ResourceId.framebuffer),
         };
 

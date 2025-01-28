@@ -128,6 +128,13 @@ pub fn initialize() !void {
             video_outputs[index] = Output{
                 .video_driver = driver,
             };
+
+            const output = &video_outputs[index];
+
+            logger.info("found video output {}: {}", .{
+                index,
+                output.get_resolution(),
+            });
         }
     }
     video_flush_deadline = ashet.time.Deadline.init_rel(frame_rate);

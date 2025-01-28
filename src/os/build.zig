@@ -62,7 +62,10 @@ pub fn build(b: *std.Build) void {
 
         // std.log.err("dep: {s}", .{dep_name});
 
-        const app_dep = b.dependency(dep_name, .{ .target = platform });
+        const app_dep = b.dependency(dep_name, .{
+            .target = platform,
+            .optimize = optimize,
+        });
         const app_list = AshetOS.getApplications(app_dep);
 
         for (app_list) |app| {

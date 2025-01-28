@@ -15,12 +15,8 @@ var ctrl_right_state: bool = false;
 var alt_state: bool = false;
 var alt_graph_state: bool = false;
 
-// pub var cursor: ashet.abi.Point = undefined;
-
 pub fn initialize() void {
-    // const res = ashet.video.getResolution();
-
-    // cursor = ashet.abi.Point.new(@as(i16, @intCast(res.width / 2)), @as(i16, @intCast(res.height / 2)));
+    //
 }
 
 /// Period subsystem update, will poll for input events
@@ -92,9 +88,14 @@ pub fn push_raw_event(raw_event: raw.Event) void {
     if (event_queue.full()) {
         logger.warn("dropping {s} event", .{@tagName(event_queue.pull().?)});
     }
+
+    // Push the raw event into the queue for processing and invoke
+    // `getEvent()` so it can be converted into a "real" input event
     event_queue.push(raw_event);
 
     if (event_awaiter) |awaiter| {
+        // This may *not* consume the pushed raw event, as not every raw input event
+        // generates a user-visible event:
         if (getEvent()) |evt| {
             finish_arc(awaiter, evt);
             event_awaiter = null;

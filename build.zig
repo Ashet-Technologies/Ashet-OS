@@ -16,6 +16,8 @@ const qemu_debug_options_default = "cpu_reset,guest_errors,unimp";
 
 pub fn build(b: *std.Build) void {
     // Options:
+    const optimize = b.standardOptimizeOption(.{});
+
     const maybe_run_machine = b.option(Machine, "machine", "Selects which machine to run with the 'run' step");
     const no_gui = b.option(bool, "no-gui", "Disables GUI for runners") orelse false;
     const qemu_debug_options = b.option(
@@ -59,6 +61,7 @@ pub fn build(b: *std.Build) void {
 
         const machine_os_dep = b.dependency("os", .{
             .machine = machine,
+            .optimize = optimize,
         });
 
         const out_dir: std.Build.InstallDir = .{ .custom = @tagName(machine) };
