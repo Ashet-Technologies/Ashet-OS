@@ -48,6 +48,9 @@ pub fn init(allocator: std.mem.Allocator, regs: *volatile virtio.ControlRegs) !*
 
     try vd.gpu.initialize(allocator, regs);
 
+    vd.graphics_width = @intCast(@min(std.math.maxInt(u16), vd.gpu.fb_width));
+    vd.graphics_height = @intCast(@min(std.math.maxInt(u16), vd.gpu.fb_height));
+
     vd.driver.class.video.flush();
 
     return vd;

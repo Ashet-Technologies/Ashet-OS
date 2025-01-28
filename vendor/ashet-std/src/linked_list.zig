@@ -357,8 +357,8 @@ pub fn DoublyLinkedList(comptime T: type, comptime options: LinkedListOptions) t
                             std.debug.assert(list.first.?.next == list.last);
                             std.debug.assert(list.first.?.prev == null);
 
-                            std.debug.assert(list.next.?.next == null);
-                            std.debug.assert(list.next.?.prev == list.first);
+                            std.debug.assert(list.last.?.next == null);
+                            std.debug.assert(list.last.?.prev == list.first);
                         },
                         else => {
                             std.debug.assert(list.first != null);
@@ -368,8 +368,8 @@ pub fn DoublyLinkedList(comptime T: type, comptime options: LinkedListOptions) t
                             std.debug.assert(list.first.?.next != list.last);
                             std.debug.assert(list.first.?.prev == null);
 
-                            std.debug.assert(list.prev.?.next == null);
-                            std.debug.assert(list.prev.?.prev != list.first);
+                            std.debug.assert(list.last.?.next == null);
+                            std.debug.assert(list.last.?.prev != list.first);
                         },
                     }
                 },

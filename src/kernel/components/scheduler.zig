@@ -108,7 +108,10 @@ pub const Thread = struct {
     pub const DebugInfo = if (debug_mode) struct {
         entry_point: usize = 0,
         name: [32]u8 = [1]u8{0} ** 32,
-    } else struct {};
+    } else struct {
+        entry_point: u0 = 0,
+        name: [0]u8 = .{},
+    };
 
     pub const Flags = packed struct(u32) {
         suspended: bool = false,
@@ -476,7 +479,7 @@ var kernel_thread_backup: [256]u8 align(4096) = undefined;
 var kernel_thread: Thread = .{
     .sp = undefined,
     .ip = undefined,
-    .debug_info = .{ .name = "kernel".* ++ [1]u8{0} ** 26 },
+    .debug_info = if (debug_mode) .{ .name = "kernel".* ++ [1]u8{0} ** 26 } else .{},
     .exit_code = 0,
     .stack_memory = &kernel_thread_backup,
     .process_link = .{ .data = undefined },
