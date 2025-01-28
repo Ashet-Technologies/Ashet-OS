@@ -86,9 +86,14 @@ pub fn push_raw_event(raw_event: raw.Event) void {
     if (event_queue.full()) {
         logger.warn("dropping {s} event", .{@tagName(event_queue.pull().?)});
     }
+
+    // Push the raw event into the queue for processing and invoke
+    // `getEvent()` so it can be converted into a "real" input event
     event_queue.push(raw_event);
 
     if (event_awaiter) |awaiter| {
+        // This may *not* consume the pushed raw event, as not every raw input event
+        // generates a user-visible event:
         if (getEvent()) |evt| {
             finish_arc(awaiter, evt);
             event_awaiter = null;
@@ -122,7 +127,6 @@ fn cancel_arc(call: *ashet.overlapped.AsyncCall) void {
 }
 
 fn finish_arc(call: *ashet.overlapped.AsyncCall, evt: Event) void {
-    std.log.err("arc: {}", .{evt});
     call.finalize(ashet.abi.input.GetEvent, .{ .event = evt });
 }
 

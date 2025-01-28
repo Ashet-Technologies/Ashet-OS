@@ -196,16 +196,21 @@ pub fn main() !void {
         }
 
         if (completed.contains(.input)) {
-            // re-schedule event:
-            try ashet.overlapped.schedule(&wait_input_event.arc);
+            // first, get the contents from the event,
+            // then re-schedule the event.
+            //
+            // This order is important as otherwise a "reschedule" might
+            // complete synchronously and overwrite the output!
 
             const raw_event = try wait_input_event.get_output();
-            
-    std.log.err("{}", .{raw_event});
 
+            // As `get_output()` returns a pointer inside `wait_input_event`, we
+            // have to first unwrap the native event into a managed one:
             const event = ashet.input.Event.from_native(
                 raw_event.*,
             );
+
+            try ashet.overlapped.schedule(&wait_input_event.arc);
 
             // Update mouse cursor based off the event:
             {
