@@ -19,10 +19,16 @@ jobs:
     steps:
       - uses: actions/checkout@v2
 
-      - name: Setup Zig
-        uses: mlugg/setup-zig@v1
-        with:
-          version: 0.13.0
+      # - name: Setup Zig
+      #   uses: mlugg/setup-zig@v1
+      #   with:
+      #     version: 0.13.0
+
+      - name: Setup Hacky Zig 0.13.x
+        run: |
+          curl -O https://files.wendel.io/zig/zig.tar.gz
+          tar -xf zig.tar.gz
+          echo "$PWD/zig-x86_64-linux-musl-baseline" >> $GITHUB_PATH
 
       - name: Setup Python 3.11
         uses: actions/setup-python@v5

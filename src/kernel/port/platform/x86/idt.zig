@@ -179,7 +179,7 @@ pub fn disableExternalInterrupts() void {
 }
 
 pub const CpuState = packed struct {
-    // Von Hand gesicherte Register
+    // manually saved inside scheduler:
     eax: u32,
     ebx: u32,
     ecx: u32,
@@ -191,7 +191,7 @@ pub const CpuState = packed struct {
     interrupt: u32,
     errorcode: u32,
 
-    // Von der CPU gesichert
+    // saved by the cpu interrupt mechanism:
     eip: u32,
     cs: u32,
     eflags: u32,

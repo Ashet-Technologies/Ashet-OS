@@ -123,6 +123,8 @@ pub const Thread = struct {
 
     system_resource: ashet.resources.SystemResource = .{ .type = .thread },
 
+    stack_memory: []align(ashet.memory.page_size) u8,
+
     ip: usize,
     sp: usize,
     exit_code: u32,
@@ -133,9 +135,6 @@ pub const Thread = struct {
     node: ThreadQueue.Node = .{ .data = {} },
 
     flags: Flags = .{},
-
-    /// The number of memory pages allocated for this thread. Is required to free all thread memory later on.
-    stack_size: usize,
 
     debug_info: DebugInfo = .{},
 
@@ -171,24 +170,20 @@ pub const Thread = struct {
 
         // Requires the use of `ThreadAllocator`.
         // See `ashet_scheduler_threadExit` and `internalDestroy` for more explanation.
-        const stack_bottom = try ashet.memory.ThreadAllocator.alloc(stack_size);
-        errdefer ashet.memory.ThreadAllocator.free(stack_bottom);
+        const stack_memory = try ashet.memory.ThreadAllocator.alloc(stack_size);
+        errdefer ashet.memory.ThreadAllocator.free(stack_memory);
 
-        if (use_canary) {
-            // make the stack canary forbidden:
-            ashet.memory.protection.change(ashet.memory.Range.from_slice(
-                stack_bottom[0..canary_size],
-            ), .forbidden);
-        }
-
-        const thread = @as(*Thread, @ptrFromInt(@intFromPtr(stack_bottom.ptr) + stack_size - @sizeOf(Thread)));
         const thread_proc = options.process orelse ashet.multi_tasking.get_kernel_process();
 
+        const thread = try ashet.memory.type_pool(Thread).alloc();
+        errdefer ashet.memory.type_pool(Thread).free(thread);
+
         thread.* = Thread{
-            .sp = @intFromPtr(thread),
+            .stack_memory = stack_memory,
+
+            .sp = @intFromPtr(stack_memory.ptr) + stack_memory.len, // sp points to end of stack
             .ip = @intFromPtr(&ashet_scheduler_threadTrampoline),
             .exit_code = 0,
-            .stack_size = stack_size,
             .process_link = .{ .data = .{
                 .thread = thread,
                 .process = thread_proc,
@@ -197,6 +192,14 @@ pub const Thread = struct {
                 .has_canary = use_canary,
             },
         };
+
+        if (use_canary) {
+            // make the stack canary forbidden:
+            ashet.memory.protection.change(ashet.memory.Range.from_slice(
+                stack_memory[0..canary_size],
+            ), .forbidden);
+        }
+        errdefer comptime @compileError("No failures allowed after setting the stack canary.");
 
         thread_proc.threads.append(&thread.process_link);
 
@@ -285,7 +288,7 @@ pub const Thread = struct {
         if (thread.isStarted())
             return error.AlreadyStarted;
 
-        logger.info("enqueuing {} with stack size {}", .{ thread, thread.stack_size });
+        logger.info("enqueuing {} with stack size {}", .{ thread, thread.stack_memory.len });
 
         thread.flags.started = true;
         enqueueThread(&wait_queue, thread);
@@ -357,11 +360,6 @@ pub const Thread = struct {
         internalDestroy(thread);
     }
 
-    /// Returns the pointer to the "stack top"
-    pub fn getBasePointer(thread: *Thread) [*]u8 {
-        return @as([*]u8, @ptrFromInt(@intFromPtr(thread) + @sizeOf(Thread)));
-    }
-
     fn internalDestroy(thread: *Thread) void {
         if (thread.queue) |queue| {
             // when the thread is still queued,
@@ -383,14 +381,10 @@ pub const Thread = struct {
             proc.kill(.success);
         }
 
-        const stack_top = thread.getBasePointer();
-
-        const stack_bottom = stack_top - thread.stack_size;
-
         if (thread.flags.has_canary) {
             // make the stack canary writable again:
             ashet.memory.protection.change(ashet.memory.Range.from_slice(
-                stack_bottom[0..canary_size],
+                thread.stack_memory[0..canary_size],
             ), .read_write);
         }
 
@@ -398,7 +392,8 @@ pub const Thread = struct {
         // the memory.
         // `ashet_scheduler_threadExit` relies on the assumption that the memory
         // is not changed between the free and the `performSwitch` call.
-        ashet.memory.ThreadAllocator.free(stack_bottom[0..thread.stack_size]);
+        ashet.memory.ThreadAllocator.free(thread.stack_memory);
+        ashet.memory.type_pool(Thread).free(thread);
 
         global_stats.total_count -= 1;
     }
@@ -476,11 +471,19 @@ export var ashet_scheduler_save_thread: *Thread = undefined;
 export var ashet_scheduler_restore_thread: *Thread = undefined;
 
 // Reserve enough storage to save the kernel thread backup from
-var kernel_thread_backup: [std.mem.alignForward(usize, @sizeOf(Thread) + 56, 256)]u8 align(256) = undefined;
+var kernel_thread_backup: [256]u8 align(4096) = undefined;
+
+var kernel_thread: Thread = .{
+    .sp = undefined,
+    .ip = undefined,
+    .debug_info = .{ .name = "kernel".* ++ [1]u8{0} ** 26 },
+    .exit_code = 0,
+    .stack_memory = &kernel_thread_backup,
+    .process_link = .{ .data = undefined },
+};
 
 pub fn getKernelThread() *Thread {
-    // TODO: https://github.com/ziglang/zig/pull/20089
-    return @as(*Thread, @ptrFromInt(@intFromPtr(&kernel_thread_backup) + kernel_thread_backup.len - @sizeOf(Thread)));
+    return &kernel_thread;
 }
 
 fn nodeToThread(node: *ThreadQueue.Node) *Thread {

@@ -174,6 +174,8 @@ pub fn initializeLinearMemory() void {
 
     const memory_ranges = get_protected_ranges();
 
+    ashet.Debug.setTraceLoc(@src());
+
     logger.info("kernel memory ranges:", .{});
     for (memory_ranges) |range| {
         logger.info("  {s: >8} [base=0x{X:0>8}, length=0x{X:0>8}, protection={s}]", .{
@@ -183,6 +185,8 @@ pub fn initializeLinearMemory() void {
             @tagName(range.protection),
         });
     }
+
+    ashet.Debug.setTraceLoc(@src());
 
     const linear_memory_region = memory_ranges[0].to_range();
     const kernel_memory_regions = memory_ranges[1..];
@@ -379,7 +383,7 @@ const PageAllocator = struct {
         .free = free,
     };
 
-    fn alloc(_: *anyopaque, len: usize, ptr_align: u8, ret_addr: usize) ?[*]u8 {
+    fn alloc(_: *anyopaque, len: usize, ptr_align: u8, ret_addr: usize) ?[*]align(page_size) u8 {
         _ = ret_addr;
 
         std.debug.assert(len > 0);
@@ -395,7 +399,7 @@ const PageAllocator = struct {
 
         const page_slice = page_manager.allocPages(alloc_page_count) catch return null;
 
-        return @as([*]align(page_size) u8, @ptrCast(page_manager.pageToPtr(page_slice.page)));
+        return @ptrCast(page_manager.pageToPtr(page_slice.page));
     }
 
     fn resize(
@@ -434,7 +438,7 @@ const PageAllocator = struct {
 ///
 /// **DO NOT USE THE ALLOCATOR FOR ANYTHING ELSE**.
 pub const ThreadAllocator = struct {
-    pub fn alloc(len: usize) error{OutOfMemory}![]u8 {
+    pub fn alloc(len: usize) error{OutOfMemory}![]align(page_size) u8 {
         return if (PageAllocator.alloc(undefined, len, 12, @returnAddress())) |ptr|
             ptr[0..len]
         else

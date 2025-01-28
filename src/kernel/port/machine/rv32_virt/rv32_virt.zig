@@ -52,8 +52,28 @@ const hw = struct {
     var cfi: ashet.drivers.block.CFI_NOR_Flash = undefined;
 };
 
-pub fn get_tick_count() u64 {
-    return 0; // TODO: Implement precision timer
+const aplic_mtimer = struct {
+    const aplic_base = 0x0200_4000;
+    const time_base = 0x7ff8;
+    const time_freq = 10_000_000;
+
+    const time_lo: *volatile u32 = @ptrFromInt(aplic_base + time_base + 0x00);
+    const time_hi: *volatile u32 = @ptrFromInt(aplic_base + time_base + 0x04);
+
+    fn read_raw() u64 {
+        while (true) {
+            const hi_0 = time_hi.*;
+            const lo = time_lo.*;
+            const hi_1 = time_hi.*;
+            if (hi_0 == hi_1) {
+                return @bitCast([2]u32{ lo, hi_0 });
+            }
+        }
+    }
+};
+
+pub fn get_tick_count() u64 { // return value in ms
+    return aplic_mtimer.read_raw() / comptime @divExact(aplic_mtimer.time_freq, 1000);
 }
 
 pub fn initialize() !void {

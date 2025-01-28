@@ -628,6 +628,19 @@ fn parse_elf_file(
                 elf.PT_LOAD => {},
 
                 elf.PT_DYNAMIC => continue,
+
+                // We're just ignoring os specific program headers:
+                elf.PT_LOOS...elf.PT_HIOS => {
+                    logger.info("skipping os specific program header 0x{X:0>8}", .{phdr.p_type});
+                    continue;
+                },
+
+                // We're just ignoring processor specific program headers:
+                elf.PT_LOPROC...elf.PT_HIPROC => {
+                    logger.info("skipping processor specific program header 0x{X:0>8}", .{phdr.p_type});
+                    continue;
+                },
+
                 else => {
                     logger.warn("skipping program header: {}", .{phdr});
                     continue;
@@ -817,6 +830,7 @@ fn parse_elf_file(
             .syscalls = &syscalls,
             .strtab_buf = strtab_buf,
             .symtab_buf = symtab_buf,
+            .platform = platform,
         };
 
         var sheaders = header.section_header_iterator(elf_stream);
@@ -1280,7 +1294,10 @@ const Environment = struct {
     strtab_buf: ?[]const u8,
     symtab_buf: ?[]const u8,
 
+    platform: ashex.Platform,
+
     pub fn resolveSymbol(env: Environment, index: usize) !u16 {
+        errdefer |err| logger.err("failed to resolve symbol {}: {s}", .{ index, @errorName(err) });
         // logger.debug("resolve symbol {}", .{index});
         const dynamic = env.dynamic orelse return error.NoDynamicSection;
 
@@ -1295,6 +1312,7 @@ const Environment = struct {
 
         // const sym: *const elf.Elf32_Sym = @ptrCast(@alignCast(.ptr));
         logger.info("=> sym: {}", .{sym});
+        errdefer logger.err("=> sym: {}", .{sym});
 
         const info: SymbolInfo = @bitCast(sym.st_info);
 
@@ -1426,7 +1444,12 @@ const RelocationHandler = struct {
         };
 
         if (relocation.type.syscall != .unused) {
-            relocation.syscall = try env.resolveSymbol(rela.symbol);
+            if (env.platform == .arm32 and rela.symbol == 0) {
+                // HACK: Allow B(S) to be supported
+                relocation.type.syscall = .unused;
+            } else {
+                relocation.syscall = try env.resolveSymbol(rela.symbol);
+            }
         }
 
         return relocation;
@@ -1488,6 +1511,9 @@ const RelocationType = struct {
     }
 
     pub fn from_elf(platform: ashex.Platform, type_id: u8, comptime variant: AddendMapping) error{UnsupportedRelocation}!ashex.RelocationType {
+        errdefer |err| if (err == error.UnsupportedRelocation) {
+            logger.err("unsupported relocation type id: {}", .{type_id});
+        };
         return switch (platform) {
             .x86 => switch (type_id) {
                 // https://docs.oracle.com/cd/E19683-01/817-3677/chapter6-26/index.html
@@ -1584,23 +1610,48 @@ const RelocationType = struct {
                 else => return error.UnsupportedRelocation,
             },
 
-            .arm32 => @panic("TODO: Implement .thumb platform relocations!"),
+            .arm32 => switch (type_id) {
+                // Relocations can be found here:
+                // https://github.com/ARM-software/abi-aa/blob/main/aaelf32/aaelf32.rst#relocation
 
-            //     .thumb => enum(u8) {
-            //         none = 0,
+                // S        (when used on its own) is the address of the symbol.
+                // A        is the addend for the relocation.
+                // P        is the address of the place being relocated (derived from r_offset).
+                // Pa       is the adjusted address of the place being relocated, defined as (P & 0xFFFFFFFC).
+                // T        is 1 if the target symbol S has type STT_FUNC and the symbol addresses a Thumb instruction; it is 0 otherwise.
+                // B(S)     is the addressing origin of the output segment defining the symbol S. The origin is not required to be the base address of the segment. This value must always be word-aligned.
+                // GOT_ORG  is the addressing origin of the Global Offset Table (the indirection table for imported data addresses). This value must always be word-aligned. See Proxy generating relocations.
+                // GOT(S)   is the address of the GOT entry for the symbol S.
 
-            //         _,
+                // R_ARM_TLS_DTPMOD32 = 17
+                // (S ≠ 0) Resolves to the module number of the module defining the specified TLS symbol, S.
+                // (S = 0) Resolves to the module number of the current module (ie. the module containing this relocation).
+                17 => @panic("R_ARM_TLS_DTPMOD32 not implemented yet!"),
 
-            //         pub fn apply(reloc_type: @This(), relocation: Relocation, env: Environment) !void {
-            //             _ = reloc_type;
-            //             _ = relocation;
-            //             _ = env;
-            //             @panic("TODO: Implement Arm relocations!");
-            //             // switch (reloc_type) {
-            //             //     else => return error.UnsupportedRelocation,
-            //             // }
-            //         }
-            //     },
+                // R_ARM_TLS_DTPOFF32 = 18     Resolves to the index of the specified TLS symbol within its TLS block
+                18 => @panic("R_ARM_TLS_DTPOFF32 not implemented yet!"),
+
+                // R_ARM_TLS_TPOFF32 = 19
+                // (S ≠ 0) Resolves to the offset of the specified TLS symbol, S, from the Thread Pointer, TP.
+                // (S = 0) Resolves to the offset of the current module’s TLS block from the Thread Pointer, TP (the addend contains the offset of the local symbol within the TLS block).
+                19 => @panic("R_ARM_TLS_TPOFF32 not implemented yet!"),
+
+                // R_ARM_COPY = 20             See below
+                20 => @panic("R_ARM_COPY not implemented yet!"),
+
+                // R_ARM_GLOB_DAT = 21         Resolves to the address of the specified symbol
+                21 => try init(variant, word32, "S"),
+
+                // R_ARM_JUMP_SLOT = 22        Resolves to the address of the specified symbol
+                22 => try init(variant, word32, "S"),
+
+                // R_ARM_RELATIVE = 23
+                // (S ≠ 0) B(S) resolves to the difference between the address at which the segment defining the symbol S was loaded and the address at which it was linked.
+                // (S = 0) B(S) resolves to the difference between the address at which the segment being relocated was loaded and the address at which it was linked.
+                23 => try init(variant, word32, "S-B"),
+
+                else => return error.UnsupportedRelocation,
+            },
         };
     }
 };
