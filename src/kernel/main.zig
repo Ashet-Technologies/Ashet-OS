@@ -41,10 +41,10 @@ else switch (platform_id) {
 };
 
 pub const machine = switch (machine_id) {
-    .@"pc-bios" => @import("port/machine/bios_pc/bios_pc.zig"),
-    .@"qemu-virt-rv32" => @import("port/machine/rv32_virt/rv32_virt.zig"),
-    .@"qemu-virt-arm" => @import("port/machine/arm_virt/arm_virt.zig"),
-    .@"hosted-x86-linux" => @import("port/machine/linux_pc/linux_pc.zig"),
+    .@"x86-pc-bios" => @import("port/machine/bios_pc/bios_pc.zig"),
+    .@"rv32-qemu-virt" => @import("port/machine/rv32_virt/rv32_virt.zig"),
+    .@"arm-qemu-virt" => @import("port/machine/arm_virt/arm_virt.zig"),
+    .@"x86-hosted-linux" => @import("port/machine/linux_pc/linux_pc.zig"),
 };
 
 pub const machine_config: ports.MachineConfig = machine.machine_config;
