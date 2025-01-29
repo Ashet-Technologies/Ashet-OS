@@ -122,9 +122,9 @@ pub fn build(b: *std.Build) void {
 
         const os_files = machine_os_dep.namedWriteFiles("ashet-os");
 
-        const kernel_elf = get_named_file(os_files, "kernel.elf").?;
-        const disk_img = get_named_file(os_files, "disk.img").?;
-        const kernel_bin = get_named_file(os_files, "kernel.bin");
+        const kernel_elf = get_named_file(os_files, "kernel.elf");
+        const disk_img = get_named_file(os_files, "disk.img");
+        const kernel_bin = get_optional_named_file(os_files, "kernel.bin");
 
         const AppDef = struct {
             name: []const u8,
@@ -139,10 +139,10 @@ pub fn build(b: *std.Build) void {
         }
 
         const apps: []const AppDef = &.{
-            // .{ .name = "init", .exe = get_named_file(os_files, "apps/init.elf").? },
-            // .{ .name = "hello-world", .exe = get_named_file(os_files, "apps/hello-world.elf").? },
-            // .{ .name = "hello-gui", .exe = get_named_file(os_files, "apps/hello-gui.elf").? },
-            // .{ .name = "classic", .exe = get_named_file(os_files, "apps/desktop/classic.elf").? },
+            .{ .name = "init", .exe = get_named_file(os_files, "apps/init.elf") },
+            .{ .name = "hello-world", .exe = get_named_file(os_files, "apps/hello-world.elf") },
+            .{ .name = "hello-gui", .exe = get_named_file(os_files, "apps/hello-gui.elf") },
+            .{ .name = "classic", .exe = get_named_file(os_files, "apps/desktop/classic.elf") },
         };
 
         const variables = Variables{
@@ -353,9 +353,25 @@ const console_qemu_flags = [_][]const u8{
     "-display", "vnc=0.0.0.0:0", // Binds to VNC Port 5900
 };
 
-fn get_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) ?std.Build.LazyPath {
-    return for (write_files.files.items) |file| {
+fn get_optional_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) ?std.Build.LazyPath {
+    for (write_files.files.items) |file| {
         if (std.mem.eql(u8, file.sub_path, sub_path))
-            break file.getPath();
-    } else null;
+            return file.getPath();
+    }
+    return null;
+}
+
+fn get_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) std.Build.LazyPath {
+    if (get_optional_named_file(write_files, sub_path)) |path|
+        return path;
+
+    std.debug.print("missing file '{s}' in dependency '{s}:{s}'. available files are:\n", .{
+        sub_path,
+        std.mem.trimRight(u8, write_files.step.owner.dep_prefix, "."),
+        write_files.step.name,
+    });
+    for (write_files.files.items) |file| {
+        std.debug.print("- '{s}'\n", .{file.sub_path});
+    }
+    std.process.exit(1);
 }

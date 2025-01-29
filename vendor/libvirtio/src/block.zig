@@ -55,20 +55,21 @@ pub const Topology = extern struct {
 //     status: u8,
 // };
 
-pub fn FixedSizeRequest(comptime block_count: comptime_int) type {
-    return extern struct {
-        type: utils.le32, // RequestType
-        reserved: utils.le32,
-        /// The sector number indicates the offset (multiplied by 512) where the read or write is to occur. This field is
-        /// unused and set to 0 for commands other than read or write.
-        sector: utils.le64,
-        data: [request_block_size * block_count]u8, // u8 data[];
+pub const RequestHeader = extern struct {
+    type: utils.le32, // RequestType
+    reserved: utils.le32,
+    /// The sector number indicates the offset (multiplied by 512) where the read or write is to occur. This field is
+    /// unused and set to 0 for commands other than read or write.
+    sector: utils.le64,
+    // data: [request_block_size * options.block_count]u8, // u8 data[];
 
-        /// The final status byte is written by the device: either VIRTIO_BLK_S_OK for success, VIRTIO_BLK_S_-
-        /// IOERR for device or driver error or VIRTIO_BLK_S_UNSUPP for a request unsupported by device:
-        status: Status,
-    };
-}
+};
+
+pub const RequestResponse = extern struct {
+    /// The final status byte is written by the device: either VIRTIO_BLK_S_OK for success, VIRTIO_BLK_S_-
+    /// IOERR for device or driver error or VIRTIO_BLK_S_UNSUPP for a request unsupported by device:
+    status: Status,
+};
 
 pub const Status = enum(u8) {
     ok = 0,

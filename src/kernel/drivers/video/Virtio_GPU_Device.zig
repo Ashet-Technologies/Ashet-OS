@@ -38,7 +38,8 @@ driver: Driver = .{
     },
 },
 
-pub fn init(allocator: std.mem.Allocator, regs: *volatile virtio.ControlRegs) !*Virtio_GPU_Device {
+pub fn init(allocator: std.mem.Allocator, index: usize, regs: *volatile virtio.ControlRegs) !*Virtio_GPU_Device {
+    _ = index;
     const vd = try allocator.create(Virtio_GPU_Device);
     errdefer allocator.destroy(vd);
 

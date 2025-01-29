@@ -14,18 +14,24 @@ pub fn standardTargetOption(b: *std.Build) Target {
 
 pub const ExportedApp = struct {
     target_path: []const u8,
-    file: std.Build.LazyPath,
+    ashex_file: std.Build.LazyPath,
+    elf_file: std.Build.LazyPath,
 };
 
 /// Returns the list of exported applications for the given dependency
 pub fn getApplications(dep: *std.Build.Dependency) []const ExportedApp {
     const write_files = dep.namedWriteFiles(AshetSdk.exported_app_writefiles_key);
+    const elf_files = dep.namedWriteFiles(AshetSdk.exported_elf_writefiles_key);
 
     const apps = dep.builder.allocator.alloc(ExportedApp, write_files.files.items.len) catch @panic("out of memory");
 
     for (apps, write_files.files.items) |*app, writefile| {
         app.* = .{
-            .file = writefile.contents.copy,
+            .ashex_file = writefile.contents.copy,
+            .elf_file = for (elf_files.files.items) |file| {
+                if (std.mem.eql(u8, file.sub_path, writefile.sub_path))
+                    break file.contents.copy;
+            } else unreachable,
             .target_path = writefile.sub_path,
         };
     }
@@ -60,6 +66,7 @@ pub fn init(b: *std.Build, dependency_name: []const u8, args: struct {
 
 pub const AshetSdk = struct {
     pub const exported_app_writefiles_key = "ashet-os:apps";
+    pub const exported_elf_writefiles_key = "ashet-os:elves";
 
     // Public properties:
 
@@ -76,6 +83,7 @@ pub const AshetSdk = struct {
     dependency: *std.Build.Dependency,
 
     published_apps: ?*std.Build.Step.WriteFile = null,
+    published_elves: ?*std.Build.Step.WriteFile = null,
 
     pub fn addApp(sdk: *AshetSdk, options: ExecutableOptions) *AshetApp {
         const b = sdk.owning_builder;
@@ -166,10 +174,16 @@ pub const AshetSdk = struct {
         if (sdk.published_apps == null) {
             sdk.published_apps = b.addNamedWriteFiles(exported_app_writefiles_key);
         }
+        if (sdk.published_elves == null) {
+            sdk.published_elves = b.addNamedWriteFiles(exported_elf_writefiles_key);
+        }
 
-        const target_step = sdk.published_apps.?;
-        _ = target_step.addCopyFile(
+        _ = sdk.published_apps.?.addCopyFile(
             app.app_file,
+            target_file_name,
+        );
+        _ = sdk.published_elves.?.addCopyFile(
+            app.exe.getEmittedBin(),
             target_file_name,
         );
 

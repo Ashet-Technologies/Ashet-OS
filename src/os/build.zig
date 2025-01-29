@@ -77,13 +77,15 @@ pub fn build(b: *std.Build) void {
             if (std.fs.path.dirnamePosix(app_path)) |dir| {
                 rootfs.mkdir(dir);
             }
-            rootfs.addFile(app.file, app_path);
+            rootfs.addFile(app.ashex_file, app_path);
 
             // TODO(fqu): Add means to also export the applications ELF file:
-            // _ = result_files.addCopyFile(
-            //     app.file,
-            //     b.fmt("apps/{s}.elf", .{app.name}),
-            // );
+            _ = result_files.addCopyFile(
+                app.elf_file,
+                b.fmt("apps/{s}.elf", .{
+                    app.target_path[0 .. app.target_path.len - ".ashex".len],
+                }),
+            );
         }
     }
 

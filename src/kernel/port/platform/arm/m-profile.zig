@@ -1,3 +1,5 @@
+const ashet = @import("../../../main.zig");
+
 pub const start = struct {
     //
 
@@ -46,6 +48,7 @@ pub const start = struct {
     fn panic_handler(comptime msg: []const u8) FunctionPointer {
         return struct {
             fn do_panic() callconv(.C) noreturn {
+                ashet.Debug.println("panic: {s}", .{msg});
                 @panic(msg);
             }
         }.do_panic;

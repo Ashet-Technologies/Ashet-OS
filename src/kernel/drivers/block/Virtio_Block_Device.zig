@@ -9,13 +9,11 @@ const Driver = ashet.drivers.Driver;
 const ReadError = ashet.storage.BlockDevice.ReadError;
 const WriteError = ashet.storage.BlockDevice.WriteError;
 
-const queue_size = 2;
+const queue_size = 9;
 const requestq = 0;
 
-const Request = virtio.block.FixedSizeRequest(512);
-
 driver: Driver,
-
+driver_name_buffer: ["VIRTIO".len + 2]u8,
 regs: *volatile virtio.ControlRegs,
 
 // active_requests: [queue_size]Request,
@@ -23,7 +21,7 @@ vq: virtio.queue.VirtQ(queue_size),
 
 is_legacy: bool,
 
-pub fn init(allocator: std.mem.Allocator, regs: *volatile virtio.ControlRegs) !*Virtio_Block_Device {
+pub fn init(allocator: std.mem.Allocator, index: usize, regs: *volatile virtio.ControlRegs) !*Virtio_Block_Device {
     logger.info("initializing block device {*}", .{regs});
 
     const block_dev = &regs.device.block;
@@ -65,12 +63,13 @@ pub fn init(allocator: std.mem.Allocator, regs: *volatile virtio.ControlRegs) !*
     errdefer allocator.destroy(device);
 
     device.* = Virtio_Block_Device{
+        .driver_name_buffer = undefined,
         .driver = .{
             .name = "Virtio Block Device",
             .class = .{
                 .block = .{
                     .block_size = 512,
-                    .name = "virtio",
+                    .name = "VIRTIO",
                     .num_blocks = block_dev.capacity.read(is_legacy),
                     .presentFn = is_present,
                     .readFn = read_block,
@@ -83,6 +82,11 @@ pub fn init(allocator: std.mem.Allocator, regs: *volatile virtio.ControlRegs) !*
         .vq = undefined,
         .is_legacy = is_legacy,
     };
+    device.driver.class.block.name = std.fmt.bufPrint(
+        &device.driver_name_buffer,
+        "VIRTIO{}",
+        .{index},
+    ) catch @panic("out of memory");
 
     try device.vq.init(requestq, regs);
 
@@ -100,35 +104,32 @@ fn is_present(dri: *Driver) bool {
 fn read_block(dri: *Driver, block: u64, buffer: []u8) ReadError!void {
     const device: *Virtio_Block_Device = dri.resolve(Virtio_Block_Device, "driver");
 
-    _ = buffer;
+    const block_count = @divExact(buffer.len, virtio.block.request_block_size);
 
-    if (block >= device.driver.class.block.num_blocks)
+    if (block + block_count >= device.driver.class.block.num_blocks)
         return error.InvalidBlock;
 
-    var req = Request{
+    var header = virtio.block.RequestHeader{
         .type = .zero,
         .reserved = .zero,
         .sector = .zero,
-        .data = undefined,
+    };
+
+    header.type.write(@intFromEnum(virtio.block.RequestType.in), device.is_legacy);
+    header.sector.write(block, device.is_legacy);
+
+    var footer = virtio.block.RequestResponse{
         .status = .initial,
     };
 
-    req.type.write(@intFromEnum(virtio.block.RequestType.in), device.is_legacy);
-    req.sector.write(block, device.is_legacy);
-
-    // TODO: Continue here!
-    // https://docs.oasis-open.org/virtio/virtio/v1.1/virtio-v1.1.pdf
-
-    std.log.info("req start: {}", .{req});
-
     device.vq.waitSettled();
 
-    device.vq.pushDescriptor(Request, &req, .write, true, true);
+    device.vq.pushDescriptor(virtio.block.RequestHeader, &header, .read, true, false);
+    device.vq.pushDescriptorRaw(buffer.ptr, buffer.len, .write, false, false);
+    device.vq.pushDescriptor(virtio.block.RequestResponse, &footer, .write, false, true);
     device.vq.exec();
 
     _ = device.vq.waitUsed();
-
-    std.log.info("req done: {}", .{req});
 }
 
 fn write_block(dri: *Driver, block: u64, buffer: []const u8) WriteError!void {

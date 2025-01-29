@@ -31,7 +31,8 @@ transmitq: virtio.queue.VirtQ(queue_size) = undefined,
 receive_buffers: FixedPool(Buffer, queue_size) = .{},
 transmit_buffers: FixedPool(Buffer, queue_size) = .{},
 
-pub fn init(allocator: std.mem.Allocator, regs: *volatile virtio.ControlRegs) !*Virtio_Net_Device {
+pub fn init(allocator: std.mem.Allocator, index: usize, regs: *volatile virtio.ControlRegs) !*Virtio_Net_Device {
+    _ = index;
     logger.info("initializing network device {*}", .{regs});
 
     const network_dev = &regs.device.network;
