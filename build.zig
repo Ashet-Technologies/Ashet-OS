@@ -298,13 +298,16 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
     },
     .@"arm-ashet-vhc" = .{
         .qemu_cli = &.{
-            "-M",      "ashet-vhc",
-            "-m",      "8M",
-            "-kernel", "${KERNEL}",
-            "-device", "virtio-gpu-device,xres=800,yres=480",
-            "-device", "virtio-keyboard-device",
-            "-device", "virtio-mouse-device",
-            "-serial", "vc",
+            "-M",        "ashet-vhc",
+            "-m",        "8M",
+            "-kernel",   "${KERNEL}",
+            "-blockdev", "driver=file,node-name=disk_file,filename=${DISK}",
+            "-blockdev", "driver=raw,node-name=disk,file=disk_file",
+            "-device",   "virtio-gpu-device,xres=800,yres=480",
+            "-device",   "virtio-keyboard-device",
+            "-device",   "virtio-mouse-device",
+            "-device",   "virtio-blk-device,drive=disk",
+            "-serial",   "vc",
         },
     },
     .@"x86-hosted-linux" = .{
