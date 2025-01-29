@@ -304,6 +304,7 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
             "-device", "virtio-gpu-device,xres=800,yres=480",
             "-device", "virtio-keyboard-device",
             "-device", "virtio-mouse-device",
+            "-serial", "vc",
         },
     },
     .@"x86-hosted-linux" = .{

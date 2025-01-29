@@ -16,8 +16,8 @@ pub const machine_config = ashet.ports.MachineConfig{
 
 const hw = struct {
     //! list of fixed hardware components
-    var uart0: NS16C550 = undefined;
-    var uart1: NS16C550 = undefined;
+    var uart0: ashet.drivers.serial.PL011 = undefined;
+    var uart1: ashet.drivers.serial.PL011 = undefined;
     var rtc: ashet.drivers.rtc.Goldfish = undefined;
 };
 
@@ -27,8 +27,8 @@ pub fn get_tick_count() u64 {
 
 pub fn initialize() !void {
     logger.info("initialize PL011 uart...", .{});
-    hw.uart0 = NS16C550.init(@ptrFromInt(mmap.uart0.offset));
-    hw.uart1 = NS16C550.init(@ptrFromInt(mmap.uart1.offset));
+    hw.uart0 = ashet.drivers.serial.PL011.init(mmap.uart0.offset);
+    hw.uart1 = ashet.drivers.serial.PL011.init(mmap.uart1.offset);
 
     logger.info("initialize Goldfish rtc...", .{});
     hw.rtc = ashet.drivers.rtc.Goldfish.init(mmap.goldfish.offset);
@@ -46,8 +46,14 @@ pub fn initialize() !void {
 }
 
 pub fn debugWrite(msg: []const u8) void {
+    const pl011: *volatile ashet.drivers.serial.PL011.Registers = @ptrFromInt(mmap.uart0.offset);
+    const old_cr = pl011.CR;
+    defer pl011.CR = old_cr;
+
+    pl011.CR |= (1 << 8) | (1 << 0);
+
     for (msg) |c| {
-        hw.uart0.write_byte(c);
+        pl011.DR = c;
     }
 }
 
