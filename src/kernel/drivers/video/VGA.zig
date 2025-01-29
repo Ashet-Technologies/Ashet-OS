@@ -11,7 +11,10 @@ const Resolution = ashet.abi.Size;
 
 const modes = @import("x86/vga-mode-presets.zig");
 
-backbuffer: [320 * 240]ColorIndex align(ashet.memory.page_size) = undefined,
+const width = 320;
+const height = 200;
+
+backbuffer: [width * height]ColorIndex align(ashet.memory.page_size) = undefined,
 palette: [256]Color = ashet.video.defaults.palette,
 
 driver: Driver = .{
@@ -48,7 +51,16 @@ pub fn init(vga: *VGA) !void {
     writeVgaRegisters(modes.g_320x200x256);
 
     vga.loadPalette(vga.palette);
-    @memset(@as([*]align(ashet.memory.page_size) ColorIndex, @ptrFromInt(0xA0000))[0 .. 320 * 240], ColorIndex.get(0));
+
+    const vmem = @as([*]align(ashet.memory.page_size) ColorIndex, @ptrFromInt(0xA0000))[0 .. width * height];
+
+    @memset(vmem, ashet.video.defaults.border);
+
+    ashet.video.load_splash_screen(vmem, .{
+        .width = width,
+        .height = height,
+        .stride = width,
+    });
 }
 
 fn getVideoMemory(driver: *Driver) []align(ashet.memory.page_size) ColorIndex {
@@ -65,8 +77,8 @@ fn getResolution(driver: *Driver) Resolution {
     _ = vd;
 
     return Resolution{
-        .width = 320,
-        .height = 240,
+        .width = width,
+        .height = height,
     };
 }
 
@@ -74,16 +86,16 @@ fn getMaxResolution(driver: *Driver) Resolution {
     const vd: *VGA = @alignCast(@fieldParentPtr("driver", driver));
     _ = vd;
     return Resolution{
-        .width = 320,
-        .height = 240,
+        .width = width,
+        .height = height,
     };
 }
 
-fn setResolution(driver: *Driver, width: u15, height: u15) void {
+fn setResolution(driver: *Driver, _width: u15, _height: u15) void {
     const vd: *VGA = @alignCast(@fieldParentPtr("driver", driver));
     _ = vd;
-    _ = width;
-    _ = height;
+    _ = _width;
+    _ = _height;
     logger.warn("resize not supported on plain VGA!", .{});
 }
 
@@ -104,7 +116,7 @@ fn flush(driver: *Driver) void {
 
     vd.loadPalette(vd.palette);
 
-    const target = @as([*]align(ashet.memory.page_size) ColorIndex, @ptrFromInt(0xA0000))[0 .. 320 * 240];
+    const target = @as([*]align(ashet.memory.page_size) ColorIndex, @ptrFromInt(0xA0000))[0 .. width * height];
     std.mem.copyForwards(ColorIndex, target, &vd.backbuffer);
 }
 

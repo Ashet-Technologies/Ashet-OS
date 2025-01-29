@@ -12,7 +12,7 @@ const Driver = ashet.drivers.Driver;
 const max_width = 800;
 const max_height = 600;
 
-backing_buffer: [max_width * max_height]ColorIndex align(ashet.memory.page_size) = ashet.video.defaults.splash_screen ++ ([1]ColorIndex{ColorIndex.get(0)} ** (max_width * max_height - ashet.video.defaults.splash_screen.len)),
+backing_buffer: [max_width * max_height]ColorIndex align(ashet.memory.page_size) = undefined,
 backing_palette: [256]Color = ashet.video.defaults.palette,
 border_color: ColorIndex = ashet.video.defaults.border,
 
@@ -51,6 +51,17 @@ pub fn init(allocator: std.mem.Allocator, index: usize, regs: *volatile virtio.C
 
     vd.graphics_width = @intCast(@min(std.math.maxInt(u16), vd.gpu.fb_width));
     vd.graphics_height = @intCast(@min(std.math.maxInt(u16), vd.gpu.fb_height));
+
+    @memset(&vd.backing_buffer, ashet.video.defaults.border);
+
+    ashet.video.load_splash_screen(
+        &vd.backing_buffer,
+        .{
+            .width = vd.graphics_width,
+            .height = vd.graphics_height,
+            .stride = vd.graphics_width,
+        },
+    );
 
     vd.driver.class.video.flush();
 
