@@ -30,7 +30,7 @@ pub fn init(allocator: std.mem.Allocator, regs: *volatile virtio.ControlRegs) !*
 
     const input_dev = &regs.device.input;
 
-    _ = try regs.negotiateFeatures(virtio.FeatureFlags.any_layout | virtio.FeatureFlags.version_1);
+    _ = try regs.negotiateFeatures(.default);
 
     selectConfig(regs, .id_name, .unset);
 

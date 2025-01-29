@@ -8,6 +8,7 @@ pub const block = struct {
     pub const AT_Attachment = @import("block/AT_Attachment.zig");
     pub const RAM_Disk = @import("block/ram-disk.zig").RAM_Disk;
     pub const Host_Disk_Image = @import("block/Host_Disk_Image.zig");
+    pub const Virtio_Block_Device = @import("block/Virtio_Block_Device.zig");
 };
 
 pub const serial = struct {
@@ -448,6 +449,9 @@ pub fn scanVirtioDevices(allocator: std.mem.Allocator, comptime cfg: VirtIoConfi
             },
             .network => installVirtioDriver(network.Virtio_Net_Device, allocator, regs) catch |err| {
                 logger.err("failed to initialize network @ 0x{X:0>8}: {s}", .{ @intFromPtr(regs), @errorName(err) });
+            },
+            .block => installVirtioDriver(block.Virtio_Block_Device, allocator, regs) catch |err| {
+                logger.err("failed to initialize block @ 0x{X:0>8}: {s}", .{ @intFromPtr(regs), @errorName(err) });
             },
             else => logger.warn("Found unsupported virtio device: {s}", .{@tagName(regs.device_id)}),
         }

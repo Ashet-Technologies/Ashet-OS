@@ -203,7 +203,7 @@ const GPU = struct {
     fn initialize(gpu: *GPU, allocator: std.mem.Allocator, regs: *volatile virtio.ControlRegs) !void {
         logger.info("initializing gpu {*}", .{regs});
 
-        _ = try regs.negotiateFeatures(virtio.FeatureFlags.any_layout | virtio.FeatureFlags.version_1);
+        _ = try regs.negotiateFeatures(.default);
 
         const num_scanouts = &regs.device.gpu.num_scanouts;
         if (num_scanouts.* < 1) {
