@@ -142,6 +142,11 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    if (kernel_target.result.cpu.arch.isThumb()) {
+        // Disable LTO on arm as it fails hard on the linker:
+        kernel_exe.want_lto = false;
+    }
+
     kernel_exe.step.dependOn(machine_info_module.root_source_file.?.generated.file.step);
     kernel_exe.root_module.addImport("kernel", kernel_mod);
 

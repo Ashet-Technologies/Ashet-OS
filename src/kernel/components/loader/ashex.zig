@@ -39,6 +39,8 @@ pub fn load(file: *libashet.fs.File, allocator: std.mem.Allocator) !loader.Loade
 
         var header_fbs = std.io.fixedBufferStream(&header_chunk);
 
+        logger.info("ashex header: {}", .{std.fmt.fmtSliceHexUpper(&header_chunk)});
+
         const reader = header_fbs.reader();
 
         var magic: [4]u8 = undefined;
@@ -75,7 +77,7 @@ pub fn load(file: *libashet.fs.File, allocator: std.mem.Allocator) !loader.Loade
 
         try reader.skipBytes(1, .{});
 
-        break :blk ashex.Header{
+        const header: ashex.Header = .{
             .icon_size = try reader.readInt(u32, .little),
             .icon_offset = try reader.readInt(u32, .little),
 
@@ -94,7 +96,38 @@ pub fn load(file: *libashet.fs.File, allocator: std.mem.Allocator) !loader.Loade
             .relocation_offset = try reader.readInt(u32, .little),
             .relocation_count = try reader.readInt(u32, .little),
         };
+
+        const actual_checksum: u32 = std.hash.Crc32.hash(header_chunk[0..508]);
+        const header_checksum: u32 = std.mem.readInt(u32, header_chunk[508..512], .little);
+
+        if (actual_checksum != header_checksum) {
+            logger.err("checksum mismatch! header encodes 0x{X:0>8}, but header block has checksum 0x{X:0>8}", .{
+                header_checksum,
+                actual_checksum,
+            });
+            return error.InvalidAshexExecutable;
+        }
+
+        break :blk header;
     };
+
+    logger.debug("vmem_size   = 0x{X:0>8}", .{header.vmem_size});
+    logger.debug("entry_point = 0x{X:0>8}", .{header.entry_point});
+    logger.debug("syscalls:     offset=0x{X:0>8}, count={}", .{
+        header.syscall_offset, header.syscall_count,
+    });
+    logger.debug("load headers: offset=0x{X:0>8}, count={}", .{
+        header.load_header_offset, header.load_header_count,
+    });
+    logger.debug("bss headers:  offset=0x{X:0>8}, count={}", .{
+        header.bss_header_offset, header.bss_header_count,
+    });
+    logger.debug("relocations:  offset=0x{X:0>8}, count={}", .{
+        header.relocation_offset, header.relocation_count,
+    });
+    logger.debug("icon:         offset=0x{X:0>8}, size={}", .{
+        header.icon_offset, header.icon_size,
+    });
 
     const process_memory = try allocator.alignedAlloc(u8, ashet.memory.page_size, header.vmem_size);
     errdefer allocator.free(process_memory);
@@ -202,6 +235,7 @@ pub fn load(file: *libashet.fs.File, allocator: std.mem.Allocator) !loader.Loade
                 .word8 => @panic(".word8 not supported yet!"),
                 .word16 => @panic(".word16 not supported yet!"),
                 .word64 => @panic(".word64 not supported yet!"),
+
                 inline else => |size| {
                     const T = switch (size) {
                         .word8 => u8,
@@ -225,6 +259,13 @@ pub fn load(file: *libashet.fs.File, allocator: std.mem.Allocator) !loader.Loade
                     value = apply(value, reloc_type.base, @intCast(process_base));
                     value = apply(value, reloc_type.offset, @intCast(offset));
                     value = apply(value, reloc_type.syscall, @intCast(syscall_addr));
+
+                    logger.info("{{{s}}}0x{X:0>8} = 0x{X:0>8} (was: {X:0>8})", .{
+                        @typeName(T),
+                        offset,
+                        value,
+                        read(process_memory, T, offset),
+                    });
 
                     write(process_memory, T, offset, value);
                 },

@@ -122,14 +122,36 @@ fn read_block(dri: *Driver, block: u64, buffer: []u8) ReadError!void {
         .status = .initial,
     };
 
-    device.vq.waitSettled();
+    @memset(buffer, 0xAA);
 
     device.vq.pushDescriptor(virtio.block.RequestHeader, &header, .read, true, false);
     device.vq.pushDescriptorRaw(buffer.ptr, buffer.len, .write, false, false);
     device.vq.pushDescriptor(virtio.block.RequestResponse, &footer, .write, false, true);
     device.vq.exec();
 
-    _ = device.vq.waitUsed();
+    device.vq.waitSettled();
+
+    // Add memory "fence" to notify compiler that buffer has changed
+    asm volatile ("" ::: "memory");
+
+    std.debug.assert(footer.status != .initial);
+
+    if (footer.status == .ok)
+        return;
+
+    switch (footer.status) {
+        .ok => unreachable,
+        .initial => unreachable,
+        .io_error => logger.err("block device error: io_error", .{}),
+        .unsupported => logger.err("block device error: unsupported", .{}),
+        _ => {
+            logger.err("unsupported return status: {}", .{
+                @intFromEnum(footer.status),
+            });
+            return error.Fault;
+        },
+    }
+    return error.Fault;
 }
 
 fn write_block(dri: *Driver, block: u64, buffer: []const u8) WriteError!void {

@@ -209,22 +209,33 @@ fn dump_file(allocator: std.mem.Allocator, positionals: []const []const u8, _opt
             .machine32_le => .little,
         };
 
-        break :blk .{
-            file_type, file_platform, ashex.Header{
-                .icon_size = try reader.readInt(u32, machine_endian),
-                .icon_offset = try reader.readInt(u32, machine_endian),
-                .vmem_size = try reader.readInt(u32, machine_endian),
-                .entry_point = try reader.readInt(u32, machine_endian),
-                .syscall_offset = try reader.readInt(u32, machine_endian),
-                .syscall_count = try reader.readInt(u32, machine_endian),
-                .load_header_offset = try reader.readInt(u32, machine_endian),
-                .load_header_count = try reader.readInt(u32, machine_endian),
-                .bss_header_offset = try reader.readInt(u32, machine_endian),
-                .bss_header_count = try reader.readInt(u32, machine_endian),
-                .relocation_offset = try reader.readInt(u32, machine_endian),
-                .relocation_count = try reader.readInt(u32, machine_endian),
-            },
+        const header: ashex.Header = .{
+            .icon_size = try reader.readInt(u32, machine_endian),
+            .icon_offset = try reader.readInt(u32, machine_endian),
+            .vmem_size = try reader.readInt(u32, machine_endian),
+            .entry_point = try reader.readInt(u32, machine_endian),
+            .syscall_offset = try reader.readInt(u32, machine_endian),
+            .syscall_count = try reader.readInt(u32, machine_endian),
+            .load_header_offset = try reader.readInt(u32, machine_endian),
+            .load_header_count = try reader.readInt(u32, machine_endian),
+            .bss_header_offset = try reader.readInt(u32, machine_endian),
+            .bss_header_count = try reader.readInt(u32, machine_endian),
+            .relocation_offset = try reader.readInt(u32, machine_endian),
+            .relocation_count = try reader.readInt(u32, machine_endian),
         };
+
+        const actual_checksum: u32 = std.hash.Crc32.hash(header_chunk[0..508]);
+        const header_checksum: u32 = std.mem.readInt(u32, header_chunk[508..512], machine_endian);
+
+        if (actual_checksum != header_checksum) {
+            logger.err("checksum mismatch! header encodes 0x{X:0>8}, but header block has checksum 0x{X:0>8}", .{
+                header_checksum,
+                actual_checksum,
+            });
+            return 1;
+        }
+
+        break :blk .{ file_type, file_platform, header };
     };
 
     const machine_endian: std.builtin.Endian = switch (file_type) {
@@ -526,7 +537,9 @@ fn convert_file(allocator: std.mem.Allocator, positionals: []const []const u8, o
     }
 
     {
-        var file = try std.fs.cwd().createFile(output_file_path, .{});
+        var file = try std.fs.cwd().createFile(output_file_path, .{
+            .read = true,
+        });
         defer file.close();
 
         try write_ashex_file(
@@ -1036,7 +1049,15 @@ fn write_ashex_file(
             relocations_offset_pos = counting_writer.bytes_written;
             try writer.writeInt(u32, 0x55AA55AA, endian);
             try writer.writeInt(u32, @intCast(exe.relocations.len), endian);
+
+            std.debug.assert(counting_writer.bytes_written == 56);
+
+            try writer.writeByteNTimes(0xFF, 508 - counting_writer.bytes_written);
+
+            // Write checksum dummy:
+            try writer.writeInt(u32, 0x55AA55AA, endian);
         }
+
         // Write icon data
         if (icon_data) |icon| {
             try align_writer(&counting_writer, 512);
@@ -1119,10 +1140,25 @@ fn write_ashex_file(
         try file.seekTo(relocations_offset_pos);
         try file.writer().writeInt(u32, @intCast(relocations_offset), endian);
     }
+
+    // Patch checksum:
+    {
+        var header_block: [508]u8 = undefined;
+        try file.seekTo(0);
+        try file.reader().readNoEof(&header_block);
+        try file.writer().writeInt(
+            u32,
+            std.hash.Crc32.hash(&header_block),
+            endian,
+        );
+    }
 }
 
 fn align_writer(counting_writer: anytype, alignment: u32) !void {
-    try counting_writer.writer().writeByteNTimes(0xFF, alignment - (counting_writer.bytes_written % alignment));
+    const count = alignment - (counting_writer.bytes_written % alignment);
+    if (count == alignment)
+        return;
+    try counting_writer.writer().writeByteNTimes(0xFF, count);
 }
 
 const SyscallAllocator = struct {
@@ -1640,14 +1676,17 @@ const RelocationType = struct {
                 20 => @panic("R_ARM_COPY not implemented yet!"),
 
                 // R_ARM_GLOB_DAT = 21         Resolves to the address of the specified symbol
-                21 => try init(variant, word32, "S"),
+                // Script: (S + A) | T
+                21 => try init(variant, word32, "S+A"),
 
                 // R_ARM_JUMP_SLOT = 22        Resolves to the address of the specified symbol
-                22 => try init(variant, word32, "S"),
+                // Script: (S + A) | T
+                22 => try init(variant, word32, "S+A"),
 
                 // R_ARM_RELATIVE = 23
-                // (S ≠ 0) B(S) resolves to the difference between the address at which the segment defining the symbol S was loaded and the address at which it was linked.
-                // (S = 0) B(S) resolves to the difference between the address at which the segment being relocated was loaded and the address at which it was linked.
+                // B(S) + A
+                //      (S ≠ 0) B(S) resolves to the difference between the address at which the segment defining the symbol S was loaded and the address at which it was linked.
+                //      (S = 0) B(S) resolves to the difference between the address at which the segment being relocated was loaded and the address at which it was linked.
                 23 => try init(variant, word32, "S-B"),
 
                 else => return error.UnsupportedRelocation,

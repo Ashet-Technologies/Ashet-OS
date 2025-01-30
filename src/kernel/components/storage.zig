@@ -1,5 +1,6 @@
 const std = @import("std");
 const ashet = @import("../main.zig");
+const logger = std.log.scoped(.storage);
 
 pub const BlockDevice = struct {
     pub const DeviceError = error{ Fault, Timeout, InvalidBlock, DeviceNotPresent };
@@ -33,14 +34,24 @@ pub const BlockDevice = struct {
     pub fn writeBlock(dev: *BlockDevice, block_num: u32, buffer: []const u8) WriteError!void {
         std.debug.assert(block_num < dev.num_blocks);
         std.debug.assert(buffer.len == dev.block_size);
+        logger.debug("write block {}: {}", .{
+            block_num,
+            std.fmt.fmtSliceHexUpper(buffer),
+        });
         return dev.writeFn(ashet.drivers.resolveDriver(.block, dev), block_num, buffer);
     }
 
     pub fn readBlock(dev: *BlockDevice, block_num: u32, buffer: []u8) ReadError!void {
         std.debug.assert(block_num < dev.num_blocks);
         std.debug.assert(buffer.len == dev.block_size);
+        logger.debug("read block {}...", .{
+            block_num,
+        });
         const driver = ashet.drivers.resolveDriver(.block, dev);
-        return dev.readFn(driver, block_num, buffer);
+
+        const result = dev.readFn(driver, block_num, buffer);
+        logger.debug("... => {}", .{std.fmt.fmtSliceHexUpper(buffer)});
+        return result;
     }
 };
 

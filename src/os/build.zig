@@ -19,7 +19,8 @@ const app_packages = [_][]const u8{
 pub fn build(b: *std.Build) void {
     // Options:
     const machine = b.option(Machine, "machine", "What machine should AshetOS be built for?") orelse @panic("no machine defined!");
-    const optimize = b.standardOptimizeOption(.{});
+    const optimize_kernel = b.option(bool, "optimize-kernel", "Should the kernel be optimized?") orelse false;
+    const optimize_apps = b.option(std.builtin.OptimizeMode, "optimize-apps", "Optimization mode for the applications") orelse .Debug;
 
     const platform = machine.get_platform();
 
@@ -27,7 +28,7 @@ pub fn build(b: *std.Build) void {
 
     const kernel_dep = b.dependency("kernel", .{
         .machine = machine,
-        .release = (optimize != .Debug),
+        .release = optimize_kernel,
     });
     const assets_dep = b.dependency("assets", .{});
     const syslinux_dep = b.dependency("syslinux", .{ .release = true });
@@ -64,7 +65,7 @@ pub fn build(b: *std.Build) void {
 
         const app_dep = b.dependency(dep_name, .{
             .target = platform,
-            .optimize = optimize,
+            .optimize = optimize_apps,
         });
         const app_list = AshetOS.getApplications(app_dep);
 
@@ -85,6 +86,10 @@ pub fn build(b: *std.Build) void {
                 b.fmt("apps/{s}.elf", .{
                     app.target_path[0 .. app.target_path.len - ".ashex".len],
                 }),
+            );
+            _ = result_files.addCopyFile(
+                app.ashex_file,
+                b.fmt("apps/{s}", .{app.target_path}),
             );
         }
     }

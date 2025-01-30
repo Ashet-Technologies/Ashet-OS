@@ -88,7 +88,7 @@ pub const AshetSdk = struct {
     pub fn addApp(sdk: *AshetSdk, options: ExecutableOptions) *AshetApp {
         const b = sdk.owning_builder;
 
-        const zig_target = options.target.resolve_target(b);
+        const zig_target: std.Build.ResolvedTarget = options.target.resolve_target(b);
 
         const file_name = b.fmt("{s}.ashex", .{options.name});
 
@@ -114,6 +114,11 @@ pub const AshetSdk = struct {
             .zig_lib_dir = options.zig_lib_dir,
             .win32_manifest = null,
         });
+
+        if (zig_target.result.cpu.arch.isThumb()) {
+            // Disable LTO on arm as it fails hard
+            exe.want_lto = false;
+        }
 
         exe.pie = true; // AshetOS requires PIE executables
 
