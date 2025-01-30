@@ -61,6 +61,7 @@ pub fn build(b: *std.Build) void {
 
     const debugfilter = debugfilter_dep.artifact("debug-filter");
 
+    var os_deps = std.EnumArray(Machine, *std.Build.Dependency).initUndefined();
     for (std.enums.values(Machine)) |machine| {
         const step = machine_steps.get(machine);
 
@@ -69,6 +70,7 @@ pub fn build(b: *std.Build) void {
             .@"optimize-kernel" = optimize_kernel,
             .@"optimize-apps" = optimize_apps,
         });
+        os_deps.set(machine, machine_os_dep);
 
         const out_dir: std.Build.InstallDir = .{ .custom = @tagName(machine) };
         const os_files = machine_os_dep.namedWriteFiles("ashet-os");
@@ -131,9 +133,7 @@ pub fn build(b: *std.Build) void {
         const platform_info = platform_info_map.get(run_machine.get_platform());
         const machine_info = machine_info_map.get(run_machine);
 
-        const machine_os_dep = b.dependency("os", .{
-            .machine = run_machine,
-        });
+        const machine_os_dep = os_deps.get(run_machine);
 
         const os_files = machine_os_dep.namedWriteFiles("ashet-os");
 

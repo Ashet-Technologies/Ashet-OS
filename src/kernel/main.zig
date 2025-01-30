@@ -74,7 +74,7 @@ pub const log_levels = struct {
     pub var scheduler: LogLevel = .debug;
     pub var ui: LogLevel = .debug;
     pub var video: LogLevel = .debug;
-    pub var storage: LogLevel = .debug;
+    pub var storage: LogLevel = .info;
     pub var x86_vmm: LogLevel = .info; // very noise modules!
 
     // drivers:

@@ -107,6 +107,7 @@ pub fn load(file: *libashet.fs.File, allocator: std.mem.Allocator) !loader.Loade
             });
             return error.InvalidAshexExecutable;
         }
+        logger.debug("computed checksum: 0x{X:0>8}, stored checksum: 0x{X:0>8}", .{ actual_checksum, header_checksum });
 
         break :blk header;
     };

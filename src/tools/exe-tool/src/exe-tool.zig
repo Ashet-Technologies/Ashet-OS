@@ -1550,6 +1550,11 @@ const RelocationType = struct {
         errdefer |err| if (err == error.UnsupportedRelocation) {
             logger.err("unsupported relocation type id: {}", .{type_id});
         };
+
+        // Generally a good resource:
+        //   musl libc dynamic linker:
+        //     https://github.com/lsds/musl/blob/master/ldso/dynlink.c#L304
+
         return switch (platform) {
             .x86 => switch (type_id) {
                 // https://docs.oracle.com/cd/E19683-01/817-3677/chapter6-26/index.html
@@ -1687,7 +1692,7 @@ const RelocationType = struct {
                 // B(S) + A
                 //      (S ≠ 0) B(S) resolves to the difference between the address at which the segment defining the symbol S was loaded and the address at which it was linked.
                 //      (S = 0) B(S) resolves to the difference between the address at which the segment being relocated was loaded and the address at which it was linked.
-                23 => try init(variant, word32, "S-B"),
+                23 => try init(variant, word32, "B+A"),
 
                 else => return error.UnsupportedRelocation,
             },
