@@ -29,6 +29,10 @@ pub const ipc = @import("components/ipc.zig");
 
 pub const ports = @import("port/targets.zig");
 
+pub const utils = struct {
+    pub const mmio = @import("utils/mmio.zig");
+};
+
 pub const platform_id: ports.Platform = machine_info.platform_id;
 pub const machine_id: ports.Machine = machine_info.machine_id;
 

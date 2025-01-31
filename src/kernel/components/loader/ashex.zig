@@ -261,8 +261,9 @@ pub fn load(file: *libashet.fs.File, allocator: std.mem.Allocator) !loader.Loade
                     value = apply(value, reloc_type.offset, @intCast(offset));
                     value = apply(value, reloc_type.syscall, @intCast(syscall_addr));
 
-                    logger.info("{{{s}}}0x{X:0>8} = 0x{X:0>8} (was: {X:0>8})", .{
+                    logger.info("{{{s}}}0x{X:0>8}/0x{X:0>8} = 0x{X:0>8} (was: {X:0>8})", .{
                         @typeName(T),
+                        @intFromPtr(process_memory.ptr) + offset,
                         offset,
                         value,
                         read(process_memory, T, offset),
