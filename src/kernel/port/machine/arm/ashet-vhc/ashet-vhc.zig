@@ -57,6 +57,18 @@ pub fn debugWrite(msg: []const u8) void {
     }
 }
 
+pub fn binaryDebugWrite(msg: []const u8) void {
+    const pl011: *volatile ashet.drivers.serial.PL011.Registers = @ptrFromInt(mmap.uart1.offset);
+    const old_cr = pl011.CR;
+    defer pl011.CR = old_cr;
+
+    pl011.CR |= (1 << 8) | (1 << 0);
+
+    for (msg) |c| {
+        pl011.DR = c;
+    }
+}
+
 extern const __machine_linmem_start: u8 align(4);
 extern const __machine_linmem_end: u8 align(4);
 

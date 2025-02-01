@@ -315,7 +315,12 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
             "-device",   "virtio-keyboard-device",
             "-device",   "virtio-mouse-device",
             "-device",   "virtio-blk-device,drive=disk",
-            "-serial",   "vc",
+
+            // we use the second serial for dumping binary data out of the system /o\
+            "-serial",
+            "file:zig-out/init-linked.bin",
+
+            // "-serial",   "vc",
         },
     },
     .@"x86-hosted-linux" = .{

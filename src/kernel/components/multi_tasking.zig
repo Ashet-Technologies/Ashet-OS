@@ -95,6 +95,8 @@ pub fn spawn_blocking(
 
     logger.debug("loaded '{s}' to 0x{X:0>8}", .{ proc_name, @intFromPtr(loaded.process_memory.ptr) });
 
+    ashet.machine.binaryDebugWrite(loaded.process_memory);
+
     const thread = try ashet.scheduler.Thread.spawn(
         @as(ashet.scheduler.ThreadFunction, @ptrFromInt(loaded.entry_point)),
         null,
