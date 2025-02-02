@@ -21,7 +21,7 @@ pub fn build(b: *std.Build) void {
         },
     };
 
-    const rootfs = RootFS{ .write_file = b.addNamedWriteFiles("assets") };
+    const rootfs: RootFS = .{ .write_file = b.addNamedWriteFiles("assets") };
 
     rootfs.install(
         "system/icons/back.abm",
