@@ -99,7 +99,7 @@ pub const AshetSdk = struct {
             .version = options.version,
             .optimize = options.optimize,
             .code_model = options.code_model,
-            .linkage = .dynamic,
+            .linkage = .static, // AshetOS ELF executables are statically linked, as Ashex uses a non-standard dynamic linking procedure.
             .max_rss = options.max_rss,
             .link_libc = options.link_libc,
             .single_threaded = true, // AshetOS doesn't support multithreading in a modern sense
@@ -115,10 +115,10 @@ pub const AshetSdk = struct {
             .win32_manifest = null,
         });
 
-        if (zig_target.result.cpu.arch.isThumb()) {
-            // Disable LTO on arm as it fails hard
-            exe.want_lto = false;
-        }
+        // if (zig_target.result.cpu.arch.isThumb()) {
+        //     // Disable LTO on arm as it fails hard
+        //     exe.want_lto = false;
+        // }
 
         exe.pie = true; // AshetOS requires PIE executables
 
@@ -249,6 +249,10 @@ pub const ExecutableOptions = struct {
 };
 
 pub fn build(b: *std.Build) void {
+
+    // Targets:
+    const debug_step = b.step("debug", "Installs a debug executable for disassembly");
+
     // Options:
     const ashet_target = standardTargetOption(b);
 
@@ -266,10 +270,10 @@ pub fn build(b: *std.Build) void {
 
     const abi_mod = abi_dep.module("ashet-abi");
     const abi_access_mod = abi_dep.module("ashet-abi-consumer");
-    const abi_stubs_mod = abi_dep.module("ashet-abi-stubs");
+    const abi_json_mod = abi_dep.module("ashet-abi.json");
+    const abi_schema_mod = abi_dep.module("abi-schema");
 
     // External tooling:
-
     const ashet_exe_tool = ashex_dep.artifact("ashet-exe");
     b.installArtifact(ashet_exe_tool);
 
@@ -278,17 +282,53 @@ pub fn build(b: *std.Build) void {
 
     // Build:
 
+    const gen_binding_exe = b.addExecutable(.{
+        .name = "gen_abi_binding",
+        .target = b.graph.host,
+        .optimize = .Debug,
+        .root_source_file = b.path("src/gen-binding.zig"),
+    });
+    gen_binding_exe.root_module.addImport("abi-schema", abi_schema_mod);
+
+    const zig_binding = b.addRunArtifact(gen_binding_exe);
+    zig_binding.addFileArg(abi_json_mod.root_source_file.?);
+    const abi_import_zig = zig_binding.addOutputFileArg("abi_import_calls.zig");
+
+    b.getInstallStep().dependOn(
+        &b.addInstallFile(abi_import_zig, "abi_import_calls.zig").step,
+    );
+
+    const abi_import_mod = b.addModule("ashet-syscall-functions", .{
+        .root_source_file = abi_import_zig,
+    });
+
     const target = ashet_target.resolve_target(b);
 
-    const libsyscall = b.addSharedLibrary(.{
+    const libsyscall = b.addStaticLibrary(.{
         .name = "AshetOS",
         .target = target,
         .optimize = .ReleaseSmall,
         .root_source_file = b.path("src/libsyscall.zig"),
     });
     libsyscall.root_module.addImport("abi", abi_mod);
-    libsyscall.root_module.addImport("stubs", abi_stubs_mod);
+    libsyscall.root_module.addImport("stubs", abi_import_mod);
     b.installArtifact(libsyscall);
+
+    const debug_exe = b.addExecutable(.{
+        .name = b.fmt("libAshetOS.{s}", .{@tagName(ashet_target)}),
+        .root_source_file = b.path("src/binding-test.zig"),
+        .optimize = .ReleaseFast,
+        .target = target,
+        .pic = true,
+        .linkage = .static,
+    });
+    debug_exe.pie = true;
+    debug_exe.want_lto = false;
+    debug_exe.link_gc_sections = false;
+    debug_exe.linkLibrary(libsyscall);
+
+    const install_debug_exe = b.addInstallArtifact(debug_exe, .{});
+    debug_step.dependOn(&install_debug_exe.step);
 
     _ = b.addModule("ashet", .{
         .root_source_file = b.path("src/libashet.zig"),

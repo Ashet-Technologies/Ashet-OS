@@ -18,3 +18,30 @@ run-vhc: build-vhc
 debug-vhc: build-vhc
     zig-ashet build --summary none -Dmachine=arm-ashet-vhc -Doptimize-apps=ReleaseSmall install run -- -S ; stty sane
 
+
+[working-directory: 'src/userland/libs/libAshetOS']
+dump-libashet: \
+    (dump-libashet-target "arm") \
+    (dump-libashet-target "x86") \
+    (dump-libashet-target "rv32")
+
+[working-directory: 'src/userland/libs/libAshetOS']
+dump-libashet-target target:
+    zig-ashet build -Dtarget={{target}} install debug
+    llvm-readelf --dynamic \
+        --section-headers \
+        --program-headers \
+        --wide \
+        --relocs \
+        --symbols \
+        --dyn-syms \
+        --hex-dump=.ashet.patch \
+        --hex-dump=.ashet.strings \
+        --string-dump=.ashet.strings \
+        zig-out/bin/libAshetOS.{{target}} \
+        > /tmp/libashet.{{target}}.txt
+    llvm-objdump -d \
+        --wide \
+        zig-out/bin/libAshetOS.{{target}} \
+        >> /tmp/libashet.{{target}}.txt
+    
