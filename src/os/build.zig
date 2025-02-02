@@ -243,8 +243,8 @@ const InstallSyslinuxStep = struct {
         return bundle;
     }
 
-    fn make(step: *std.Build.Step, node: std.Progress.Node) !void {
-        _ = node;
+    fn make(step: *std.Build.Step, options: std.Build.Step.MakeOptions) !void {
+        _ = options;
 
         const iss: *InstallSyslinuxStep = @fieldParentPtr("step", step);
         const b = step.owner;
