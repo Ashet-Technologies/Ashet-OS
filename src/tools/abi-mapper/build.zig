@@ -34,7 +34,8 @@ pub fn build(b: *std.Build) void {
     else
         pyenv.path(b, "bin/python");
 
-    const requirements_file = b.addWriteFile("requirements.txt", requirements_spec);
+    const write_reqs = b.addWriteFiles();
+    const requirements_file = write_reqs.add("requirements.txt", requirements_spec);
 
     const pyenv_install_packages = add_run_script(b, pyenv_python3);
 
@@ -42,7 +43,7 @@ pub fn build(b: *std.Build) void {
     pyenv_install_packages.addArg("pip");
     pyenv_install_packages.addArg("install");
     pyenv_install_packages.addArg("-r");
-    pyenv_install_packages.addFileArg(requirements_file.files.items[0].getPath()); // we need to use a
+    pyenv_install_packages.addFileArg(requirements_file); // we need to use a
     pyenv_install_packages.addArg("--log");
     const install_log = pyenv_install_packages.addOutputFileArg("pip.log");
 
@@ -65,7 +66,7 @@ pub fn build(b: *std.Build) void {
     const python_wrapper = b.addExecutable(.{
         .name = "abi-mapper",
         .optimize = .ReleaseSafe,
-        .target = b.host,
+        .target = b.graph.host,
         .root_source_file = b.path("src/exe-wrapper.zig"),
     });
     python_wrapper.root_module.addOptions("options", python_wrapper_options);
