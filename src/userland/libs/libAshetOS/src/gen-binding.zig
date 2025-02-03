@@ -92,7 +92,9 @@ pub fn main() !u8 {
             \\        .target = zig_target,
             \\        .optimize = .ReleaseSmall,
             \\        .root_source_file = null,
+            \\        .pic = true,
             \\    });
+            \\    libsyscall.pie = true;
             \\
             \\    switch(ashet_target) {
             \\        .arm => libsyscall.defineCMacro("PLATFORM_THUMB", null),
