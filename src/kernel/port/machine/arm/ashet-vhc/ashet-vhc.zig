@@ -22,10 +22,27 @@ const hw = struct {
 };
 
 pub fn get_tick_count() u64 {
-    return 0; // TODO: Implement precision timer
+    var cs = ashet.CriticalSection.enter();
+    defer cs.leave();
+
+    return systick.total_count_ms;
 }
 
+var interrupt_table: ashet.platform.profile.start.InterruptTable align(128) = ashet.platform.profile.start.initial_vector_table;
+
 pub fn initialize() !void {
+    logger.info("cpuid: {s}", .{
+        ashet.platform.profile.registers.system_control_block.cpuid.read(),
+    });
+
+    // Remap interrupt table:
+    ashet.platform.profile.registers.system_control_block.vtor.write(.{
+        .table_offset = @truncate(@intFromPtr(&interrupt_table) >> 7),
+    });
+
+    logger.info("initialize SysTick...", .{});
+    systick.init();
+
     logger.info("initialize PL011 uart...", .{});
     hw.uart0 = ashet.drivers.serial.PL011.init(mmap.uart0.offset);
     hw.uart1 = ashet.drivers.serial.PL011.init(mmap.uart1.offset);
@@ -78,16 +95,33 @@ pub fn getLinearMemoryRegion() ashet.memory.Range {
     return .{ .base = linmem_start, .length = linmem_end - linmem_start };
 }
 
-const NS16C550 = ashet.drivers.serial.ns16c550.NS16C550(*opaque {
-    const Reg = ashet.drivers.serial.ns16c550.Register;
+const systick = struct {
+    const regs = ashet.platform.profile.registers.sys_tick;
 
-    pub fn read(io: *@This(), reg: Reg) u8 {
-        const regs: *[8]u32 = @alignCast(@ptrCast(io));
-        return @intCast(regs[@intFromEnum(reg)]);
+    var total_count_ms: u64 = 0;
+
+    fn init() void {
+        const calib = regs.calib.read();
+
+        if (calib.skew != .exact) {
+            logger.err("SysTick calib: {}", .{calib});
+            @panic("systick requires exact calib for now!");
+        }
+
+        regs.rvr.write(.{
+            .reload = @max(1, calib.ten_ms / 10),
+        });
+
+        interrupt_table.systick = increment_clock_irq;
+
+        regs.csr.modify(.{
+            .enabled = true,
+            .interrupt = .enabled,
+            .clock_source = .processor_clock,
+        });
     }
 
-    pub fn write(io: *@This(), reg: Reg, value: u8) void {
-        const regs: *[8]u32 = @alignCast(@ptrCast(io));
-        regs[@intFromEnum(reg)] = value;
+    fn increment_clock_irq() callconv(.C) void {
+        total_count_ms +%= 1;
     }
-});
+};

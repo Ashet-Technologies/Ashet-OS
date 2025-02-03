@@ -484,7 +484,7 @@ pub const registers = struct {
         /// Vector Table Offset Register
         pub const vtor = mmioRegister(0xE000ED08, packed struct(u32) {
             /// Reserved.
-            _reserved0: u7, // [6:0], RW
+            _reserved0: u7 = 0, // [6:0], RW
 
             /// Vector table base offset field. It contains bits[29:7] of the offset of the table base from the bottom of the memory map.
             /// Note
@@ -492,7 +492,7 @@ pub const registers = struct {
             /// 0 = code
             /// 1 = SRAM.
             /// In implementations bit[29] is sometimes called the TBLBASE bit.
-            TBLOFF: u25, // [31:7], RW
+            table_offset: u25, // [31:7], RW
         }, .{});
 
         /// Application Interrupt and Reset Control Register
@@ -1033,7 +1033,7 @@ pub const registers = struct {
             /// Value to load into the CVR register when the counter is enabled and when it reaches 0.
             reload: u24, // [23:0]
 
-            _reserved: u8, // [31:24]
+            _reserved: u8 = 0, // [31:24]
         }, .{});
 
         /// SysTick Current Value Register
@@ -1045,7 +1045,7 @@ pub const registers = struct {
             /// Return the current value of the SysTick counter.
             current: u24, // [23:0]
 
-            _reserved: u8, // [31:24]
+            _reserved: u8 = 0, // [31:24]
         }, .{});
 
         /// SysTick Calibration Value Register
