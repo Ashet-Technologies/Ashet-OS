@@ -103,21 +103,21 @@ const systick = struct {
     fn init() void {
         const calib = regs.calib.read();
 
+        if (calib.ten_ms == 0) {
+            @panic("Virtual SysTick requires known 10ms calibration, but none present!");
+        }
         if (calib.skew != .exact) {
-            logger.err("SysTick calib: {}", .{calib});
-            @panic("systick requires exact calib for now!");
+            logger.warn("SysTick has time skew!", .{});
         }
 
-        regs.rvr.write(.{
-            .reload = @max(1, calib.ten_ms / 10),
-        });
+        regs.rvr.write(.{ .reload = @max(1, calib.ten_ms / 10) });
 
         interrupt_table.systick = increment_clock_irq;
 
         regs.csr.modify(.{
             .enabled = true,
             .interrupt = .enabled,
-            .clock_source = .processor_clock,
+            .clock_source = .external_clock,
         });
     }
 
