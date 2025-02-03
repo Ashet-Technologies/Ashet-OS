@@ -1064,7 +1064,7 @@ fn parse_elf_file(
 
                         const patch_name = try elf_file.get_string(strings_section, patch_name_offset);
 
-                        logger.err("0x{X:0>8} => '{s}'", .{ patch_offset, patch_name });
+                        // logger.err("0x{X:0>8} => '{s}'", .{ patch_offset, patch_name });
 
                         // Ensure the patch fits inside the memory:
                         std.debug.assert(patch_offset + @sizeOf(u32) <= required_bytes);

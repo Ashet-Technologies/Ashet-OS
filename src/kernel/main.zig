@@ -62,6 +62,7 @@ pub const log_levels = struct {
     pub var strace: LogLevel = .debug;
 
     // kernel components
+    pub var ashex_loader: LogLevel = .info;
     pub var drivers: LogLevel = .info;
     pub var elf_loader: LogLevel = .info;
     pub var filesystem: LogLevel = .debug;
@@ -78,7 +79,7 @@ pub const log_levels = struct {
     pub var scheduler: LogLevel = .debug;
     pub var ui: LogLevel = .debug;
     pub var video: LogLevel = .debug;
-    pub var storage: LogLevel = .info;
+    pub var storage: LogLevel = .info; // very noise modules!
     pub var x86_vmm: LogLevel = .info; // very noise modules!
 
     // drivers:

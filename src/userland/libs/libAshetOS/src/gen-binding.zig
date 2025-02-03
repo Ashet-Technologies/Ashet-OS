@@ -7,9 +7,20 @@ pub fn main() !u8 {
 
     const argv = try std.process.argsAlloc(allocator);
 
-    if (argv.len != 3) {
-        @panic("gen-binding <in json file> <out zig out>");
+    if (argv.len != 4) {
+        @panic("gen-binding <in json file> <abi path> <out zig out>");
     }
+
+    const abs_abi_dir_path = argv[2];
+    std.debug.assert(std.fs.path.isAbsolute(abs_abi_dir_path));
+
+    const output_dir_path = argv[3];
+
+    var output_dir = try std.fs.cwd().openDir(output_dir_path, .{});
+    defer output_dir.close();
+
+    var src_dir = try output_dir.makeOpenPath("src", .{});
+    defer src_dir.close();
 
     const json_txt = try std.fs.cwd().readFileAlloc(allocator, argv[1], 1 << 30);
 
@@ -20,61 +31,138 @@ pub fn main() !u8 {
 
     const document = schema.value;
 
-    var array = std.ArrayList(u8).init(allocator);
+    var syscall_files = std.ArrayList([]const u8).init(allocator);
 
-    try render_document(array.writer(), document);
+    for (document.syscalls) |syscall| {
+        const filename = try std.fmt.allocPrint(allocator, "{s}.S", .{syscall.value.Function.key});
 
-    const zig_src_raw = try array.toOwnedSliceSentinel(0);
+        var impl_file = try src_dir.createFile(filename, .{});
+        defer impl_file.close();
 
-    const zig_ast = try std.zig.Ast.parse(allocator, zig_src_raw, .zig);
-    if (zig_ast.errors.len > 0) {
-        for (zig_ast.errors) |err| {
-            try zig_ast.renderError(err, std.io.getStdErr().writer());
-        }
-        return 1;
+        try render_syscall_object(
+            impl_file.writer(),
+            syscall,
+        );
+
+        try syscall_files.append(filename);
     }
 
-    const zig_src = try std.zig.Ast.render(zig_ast, allocator);
-
     {
-        var file = try std.fs.cwd().createFile(argv[2], .{});
+        const abi_relative_path = try std.fs.path.relative(allocator, output_dir_path, abs_abi_dir_path);
+
+        var file = try output_dir.createFile("build.zig.zon", .{});
         defer file.close();
 
-        try file.writeAll(zig_src);
+        const writer = file.writer();
+
+        try writer.print(
+            \\.{{
+            \\  .version = "1.0.0",
+            \\  .name = "libAshetOS.generated",
+            \\  .dependencies = .{{
+            \\      .abi = .{{
+            \\          .path = "{}",
+            \\      }}
+            \\  }},
+            \\  .paths = .{{"."}},
+            \\}}
+            \\
+        , .{
+            std.zig.fmtEscapes(abi_relative_path),
+        });
+    }
+
+    {
+        var file = try output_dir.createFile("build.zig", .{});
+        defer file.close();
+
+        const writer = file.writer();
+
+        try writer.writeAll(
+            \\const std = @import("std");
+            \\const ashet_abi = @import("abi");
+            \\
+            \\pub fn build(b: *std.Build) void {
+            \\    const ashet_target = b.option(ashet_abi.Platform, "target", "Which platform to build").?;
+            \\
+            \\    const zig_target: std.Build.ResolvedTarget = ashet_target.resolve_target(b);
+            \\
+            \\    const libsyscall = b.addStaticLibrary(.{
+            \\        .name = "AshetOS",
+            \\        .target = zig_target,
+            \\        .optimize = .ReleaseSmall,
+            \\        .root_source_file = null,
+            \\    });
+            \\
+            \\    switch(ashet_target) {
+            \\        .arm => libsyscall.defineCMacro("PLATFORM_THUMB", null),
+            \\        .rv32 => libsyscall.defineCMacro("PLATFORM_RISCV32", null),
+            \\        .x86 => libsyscall.defineCMacro("PLATFORM_X86", null),
+            \\    }
+            \\
+            \\
+        );
+
+        for (syscall_files.items) |filename| {
+            try writer.print(
+                \\    libsyscall.addAssemblyFile(b.path("src/{s}"));
+                \\
+            , .{filename});
+        }
+
+        try writer.writeAll(
+            \\    b.installArtifact(libsyscall);
+            \\}
+            \\
+        );
     }
 
     return 0;
 }
 
-fn render_document(writer: std.ArrayList(u8).Writer, document: abi_schema.Document) !void {
-    try writer.writeAll(
-        \\const std = @import("std");
-        \\const builtin = @import("builtin");
+fn render_syscall_object(writer: std.fs.File.Writer, syscall: abi_schema.Declaration) !void {
+    const function: *const abi_schema.Function = &syscall.value.Function;
+    try writer.print(
+        \\//
+        \\// Dynamic Glue Veneer of AshetOS syscall {[name]s}
+        \\//
         \\
-        \\const Arch = enum { thumb, x86, riscv32 };
-        \\const target_arch: Arch = @field(Arch, @tagName(builtin.cpu.arch));
+        \\#define SYSCALL_NAME {[name]s}
+        \\#define SYMBOL_NAME ashet_{[name]s}
         \\
-    );
-    for (document.syscalls) |syscall| {
-        try writer.writeAll("\n");
+        \\
+    , .{ .name = function.key });
 
-        const function: *const abi_schema.Function = &syscall.value.Function;
-
-        // try writer.print("export fn {}() callconv(.C) void {{\n", .{
-        //     std.zig.fmtId(function.key),
-        // });
-
-        try writer.print(
-            @embedFile("./binding-template.zig"),
-            .{
-                .name = function.key,
-            },
-        );
-
-        // try writer.writeAll("}\n");
-
-        // std.debug.print("{s} {s}\n", .{ syscall.name, function.key });
-
-        try writer.writeAll("\n");
-    }
+    try writer.writeAll(@embedFile("binding-template.S"));
 }
+
+// fn render_document(writer: std.ArrayList(u8).Writer, document: abi_schema.Document) !void {
+//     try writer.writeAll(
+//         \\const std = @import("std");
+//         \\const builtin = @import("builtin");
+//         \\
+//         \\const Arch = enum { thumb, x86, riscv32 };
+//         \\const target_arch: Arch = @field(Arch, @tagName(builtin.cpu.arch));
+//         \\
+//     );
+//     for (document.syscalls) |syscall| {
+//         try writer.writeAll("\n");
+
+//         // try writer.print("export fn {}() callconv(.C) void {{\n", .{
+//         //     std.zig.fmtId(function.key),
+//         // });
+
+//         try writer.print(
+//             @embedFile("./binding-template.zig"),
+//             .{
+//                 .name = function.key,
+//             },
+//         );
+
+//         // try writer.writeAll("}\n");
+
+//         // std.debug.print("{s} {s}\n", .{ syscall.name, function.key });
+
+//         try writer.writeAll("\n");
+//     }
+// }

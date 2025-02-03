@@ -11,7 +11,7 @@ PHDRS {
     readonly   PT_LOAD     FLAGS (0x00000005); /* RX!W */
     readwrite  PT_LOAD     FLAGS (0x00000006); /* RW!X */
     dynamic    PT_DYNAMIC  FLAGS (0x00000004); /* R!W!X */
-    metadata   PT_LOAD     FLAGS (0x00000000); /* R!W!X */
+    metadata   PT_LOAD     FLAGS (0x00100000); /* R!W!X */
 }
 
 SECTIONS {
@@ -43,7 +43,6 @@ SECTIONS {
         . = ALIGN(4);
         *(.igot)
 
-        . = ALIGN(4096);
     } :readonly
 
     /*

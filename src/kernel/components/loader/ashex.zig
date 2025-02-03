@@ -39,7 +39,7 @@ pub fn load(file: *libashet.fs.File, allocator: std.mem.Allocator) !loader.Loade
 
         var header_fbs = std.io.fixedBufferStream(&header_chunk);
 
-        logger.info("ashex header: {}", .{std.fmt.fmtSliceHexUpper(&header_chunk)});
+        logger.debug("ashex header: {}", .{std.fmt.fmtSliceHexUpper(&header_chunk)});
 
         const reader = header_fbs.reader();
 
@@ -261,7 +261,7 @@ pub fn load(file: *libashet.fs.File, allocator: std.mem.Allocator) !loader.Loade
                     value = apply(value, reloc_type.offset, @intCast(offset));
                     value = apply(value, reloc_type.syscall, @intCast(syscall_addr));
 
-                    logger.info("{{{s}}}0x{X:0>8}/0x{X:0>8} = 0x{X:0>8} (was: {X:0>8})", .{
+                    logger.debug("{{{s}}}0x{X:0>8}/0x{X:0>8} = 0x{X:0>8} (was: {X:0>8})", .{
                         @typeName(T),
                         @intFromPtr(process_memory.ptr) + offset,
                         offset,

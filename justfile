@@ -46,7 +46,7 @@ dump-libashet-target target:
         --wide \
         zig-out/bin/libAshetOS.{{target}} \
         >> /tmp/libashet.{{target}}.txt
-    
+
 dump-init: \
     (dump-init-target "arm") \
     (dump-init-target "x86") \

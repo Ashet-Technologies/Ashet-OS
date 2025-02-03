@@ -51,7 +51,7 @@ pub fn init(b: *std.Build, dependency_name: []const u8, args: struct {
         .ashex_tool_exe = dep.artifact("ashet-exe"),
         .ashet_module = dep.module("ashet"),
         .linker_script = dep.path("application.ld"),
-        .syscall_library = dep.artifact("AshetOS"),
+        .syscall_library = get_named_file(dep.namedWriteFiles("files"), "libAshetOS.a"),
         .mkicon_exe = dep.artifact("mkicon"),
 
         .desktop_icon_conv_options = .{
@@ -73,7 +73,7 @@ pub const AshetSdk = struct {
     ashex_tool_exe: *std.Build.Step.Compile,
     mkicon_exe: *std.Build.Step.Compile,
 
-    syscall_library: *std.Build.Step.Compile,
+    syscall_library: std.Build.LazyPath,
     ashet_module: *std.Build.Module,
     linker_script: std.Build.LazyPath,
     desktop_icon_conv_options: mkicon.ConvertOptions,
@@ -122,7 +122,7 @@ pub const AshetSdk = struct {
 
         exe.pie = true; // AshetOS requires PIE executables
 
-        exe.linkLibrary(sdk.syscall_library);
+        exe.addObjectFile(sdk.syscall_library);
         exe.setLinkerScript(sdk.linker_script);
 
         if (options.os_module_import) |os_module_import| {
@@ -292,27 +292,52 @@ pub fn build(b: *std.Build) void {
 
     const zig_binding = b.addRunArtifact(gen_binding_exe);
     zig_binding.addFileArg(abi_json_mod.root_source_file.?);
-    const abi_import_zig = zig_binding.addOutputFileArg("abi_import_calls.zig");
+    zig_binding.addDirectoryArg(abi_dep.path("."));
+
+    const lib_build_dir = zig_binding.addOutputDirectoryArg("binding-library");
 
     b.getInstallStep().dependOn(
-        &b.addInstallFile(abi_import_zig, "abi_import_calls.zig").step,
+        &b.addInstallDirectory(.{
+            .source_dir = lib_build_dir,
+            .install_dir = .{ .custom = "libsyscall.build" },
+            .install_subdir = ".",
+        }).step,
     );
 
-    const abi_import_mod = b.addModule("ashet-syscall-functions", .{
-        .root_source_file = abi_import_zig,
-    });
+    // const abi_import_mod = b.addModule("ashet-syscall-functions", .{
+    //     .root_source_file = abi_import_zig,
+    // });
 
     const target = ashet_target.resolve_target(b);
 
-    const libsyscall = b.addStaticLibrary(.{
-        .name = "AshetOS",
-        .target = target,
-        .optimize = .ReleaseSmall,
-        .root_source_file = b.path("src/libsyscall.zig"),
-    });
-    // libsyscall.root_module.addImport("abi", abi_mod);
-    libsyscall.root_module.addImport("stubs", abi_import_mod);
-    b.installArtifact(libsyscall);
+    // const libsyscall = b.addStaticLibrary(.{
+    //     .name = "AshetOS",
+    //     .target = target,
+    //     .optimize = .ReleaseSmall,
+    //     .root_source_file = b.path("src/libsyscall.zig"),
+    // });
+    // // libsyscall.root_module.addImport("abi", abi_mod);
+    // libsyscall.root_module.addImport("stubs", abi_import_mod);
+    // b.installArtifact(libsyscall);
+
+    const sub_build = b.addSystemCommand(&.{ b.graph.zig_exe, "build" });
+
+    sub_build.setCwd(lib_build_dir);
+    sub_build.addArg("--prefix");
+    const libsyscall_prefix = sub_build.addOutputDirectoryArg(
+        b.fmt("libsyscall.{s}", .{@tagName(ashet_target)}),
+    );
+    sub_build.addArg(b.fmt("-Dtarget={s}", .{@tagName(ashet_target)}));
+
+    b.getInstallStep().dependOn(
+        &b.addInstallDirectory(.{
+            .source_dir = libsyscall_prefix,
+            .install_dir = .{ .custom = "libsyscall.out" },
+            .install_subdir = ".",
+        }).step,
+    );
+
+    const libsyscall_path = libsyscall_prefix.path(b, "lib/libAshetOS.a");
 
     const debug_exe = b.addExecutable(.{
         .name = b.fmt("libAshetOS.{s}", .{@tagName(ashet_target)}),
@@ -325,7 +350,7 @@ pub fn build(b: *std.Build) void {
     debug_exe.pie = true;
     debug_exe.want_lto = false;
     debug_exe.link_gc_sections = false;
-    debug_exe.linkLibrary(libsyscall);
+    debug_exe.addObjectFile(libsyscall_path);
 
     const install_debug_exe = b.addInstallArtifact(debug_exe, .{});
     debug_step.dependOn(&install_debug_exe.step);
@@ -340,5 +365,41 @@ pub fn build(b: *std.Build) void {
         },
     });
 
+    b.getInstallStep().dependOn(
+        &b.addInstallFileWithDir(
+            libsyscall_path,
+            .lib,
+            "libAshetOS.a",
+        ).step,
+    );
     b.installLibFile("application.ld", "application.ld");
+
+    const exported_files = b.addNamedWriteFiles("files");
+    _ = exported_files.addCopyFile(
+        libsyscall_path,
+        "libAshetOS.a",
+    );
+}
+
+fn get_optional_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) ?std.Build.LazyPath {
+    for (write_files.files.items) |file| {
+        if (std.mem.eql(u8, file.sub_path, sub_path))
+            return file.getPath();
+    }
+    return null;
+}
+
+fn get_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) std.Build.LazyPath {
+    if (get_optional_named_file(write_files, sub_path)) |path|
+        return path;
+
+    std.debug.print("missing file '{s}' in dependency '{s}:{s}'. available files are:\n", .{
+        sub_path,
+        std.mem.trimRight(u8, write_files.step.owner.dep_prefix, "."),
+        write_files.step.name,
+    });
+    for (write_files.files.items) |file| {
+        std.debug.print("- '{s}'\n", .{file.sub_path});
+    }
+    std.process.exit(1);
 }
