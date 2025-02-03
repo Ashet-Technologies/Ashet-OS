@@ -161,3 +161,9 @@ fn fmt_rel_field_always(val: struct { u7, RelocationField }, fmt: []const u8, op
         val[0],
     });
 }
+
+pub const PatchType = enum(u32) {
+    patch_syscall = 0x01,
+
+    _,
+};

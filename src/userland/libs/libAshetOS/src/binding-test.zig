@@ -1,11 +1,11 @@
 const std = @import("std");
 
 export fn _start() void {
-    resources_get_type();
-    resources_release();
-    resources_destroy();
+    ashet_resources_get_type();
+    ashet_resources_release();
+    ashet_resources_destroy();
 }
 
-extern fn resources_get_type() void;
-extern fn resources_release() void;
-extern fn resources_destroy() void;
+extern fn ashet_resources_get_type() void;
+extern fn ashet_resources_release() void;
+extern fn ashet_resources_destroy() void;

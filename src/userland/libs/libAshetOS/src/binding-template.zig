@@ -1,13 +1,10 @@
 // zig fmt: off
-export fn @"{[name]s}"() callconv(.C) void {{
+export fn @"ashet_{[name]s}"() callconv(.C) void {{
     const suffix =
         \\
         \\.section .ashet.strings
         \\2:
-        \\  .long 4f - 3f
-        \\3:
         \\  .ascii "{[name]s}"
-        \\4:
         \\  .byte 0
     ;
     switch (target_arch) {{

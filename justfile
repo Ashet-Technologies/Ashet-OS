@@ -18,8 +18,10 @@ run-vhc: build-vhc
 debug-vhc: build-vhc
     zig-ashet build --summary none -Dmachine=arm-ashet-vhc -Doptimize-apps=ReleaseSmall install run -- -S ; stty sane
 
+[working-directory: 'src/tools/exe-tool']
+exe-tool:
+    zig-ashet build
 
-[working-directory: 'src/userland/libs/libAshetOS']
 dump-libashet: \
     (dump-libashet-target "arm") \
     (dump-libashet-target "x86") \
@@ -45,3 +47,38 @@ dump-libashet-target target:
         zig-out/bin/libAshetOS.{{target}} \
         >> /tmp/libashet.{{target}}.txt
     
+dump-init: \
+    (dump-init-target "arm") \
+    (dump-init-target "x86") \
+    (dump-init-target "rv32")
+
+[working-directory: 'src/userland/apps/init']
+dump-init-target target: (dump-libashet-target target) exe-tool
+    zig-ashet build -Dtarget={{target}} install
+
+    llvm-readelf --dynamic \
+        --section-headers \
+        --program-headers \
+        --wide \
+        --relocs \
+        --symbols \
+        --dyn-syms \
+        --hex-dump=.ashet.patch \
+        --hex-dump=.ashet.strings \
+        --string-dump=.ashet.strings \
+        zig-out/bin/init \
+        > /tmp/init.elf.{{target}}.txt
+    llvm-objdump -d \
+        --wide \
+        zig-out/bin/init \
+        >> /tmp/init.elf.{{target}}.txt
+    
+    ../../../tools/exe-tool/zig-out/bin/ashet-exe dump \
+        --all \
+        zig-out/apps/init.ashex  \
+        > /tmp/init.ashex.{{target}}.txt
+    
+    @printf "\n  %s output:\n  |- %s\n  '- %s\n\n" \
+        "{{target}}" \
+        "/tmp/init.elf.{{target}}.txt" \
+        "/tmp/init.ashex.{{target}}.txt"

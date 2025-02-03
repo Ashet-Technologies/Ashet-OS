@@ -310,7 +310,7 @@ pub fn build(b: *std.Build) void {
         .optimize = .ReleaseSmall,
         .root_source_file = b.path("src/libsyscall.zig"),
     });
-    libsyscall.root_module.addImport("abi", abi_mod);
+    // libsyscall.root_module.addImport("abi", abi_mod);
     libsyscall.root_module.addImport("stubs", abi_import_mod);
     b.installArtifact(libsyscall);
 
