@@ -117,3 +117,5 @@ The results of the compilation are usually disk images, except for a machine bas
   - [Zig 0.13 Language Reference](https://ziglang.org/documentation/0.13.0/)
   - [Zig 0.13 StandarD Library Documentation](https://ziglang.org/documentation/0.13.0/std/)
 - [QEMU Documentation](https://www.qemu.org/docs/master/system/introduction.html)
+- [RP2350](https://www.raspberrypi.com/products/rp2350/)
+  - [Datasheet](https://datasheets.raspberrypi.com/rp2350/rp2350-datasheet.pdf)
