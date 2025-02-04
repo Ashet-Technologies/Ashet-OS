@@ -62,7 +62,7 @@ pub const log_levels = struct {
     pub var strace: LogLevel = .debug;
 
     // kernel components
-    pub var ashex_loader: LogLevel = .debug;
+    pub var ashex_loader: LogLevel = .info;
     pub var drivers: LogLevel = .info;
     pub var elf_loader: LogLevel = .info;
     pub var filesystem: LogLevel = .debug;
