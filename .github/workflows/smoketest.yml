@@ -1,0 +1,62 @@
+name: Smoke Test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        # os: [ubuntu-latest, windows-latest]
+        platform: [rv32-qemu-virt, x86-hosted-linux, x86-pc-bios]
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      # - name: Setup Zig
+      #   uses: mlugg/setup-zig@v1
+      #   with:
+      #     version: 0.13.0
+
+      - name: Setup Hacky Zig 0.13.x
+        run: |
+          curl -O https://files.wendel.io/zig/zig.tar.gz
+          tar -xf zig.tar.gz
+          echo "$PWD/zig-x86_64-linux-musl-baseline" >> $GITHUB_PATH
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      
+      - name: Install QEMU
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: qemu-system
+          version: 1.1
+
+      - name: Build ${{ matrix.platform }}
+        run: |
+          zig build ${{ matrix.platform }}
+
+      - name: Perform Smoke Test ${{ matrix.platform }}
+        run: |
+          zig build -Dmachine=${{ matrix.platform }} -Dno-gui install
+
+          # this command is allowed to fail, we're doing checks by grep.
+          timeout 15s zig build -Dmachine=${{ matrix.platform }} -Dno-gui run 2>&1 | tee kernel.log || true
+
+          # Test if the desktop application did start:
+          grep -F "classic desktop ready!" kernel.log
+          
+          # Test that we didn't panic:
+          if grep -Fi "Panic:" kernel.log; then
+            # fail!
+            false
+          fi
