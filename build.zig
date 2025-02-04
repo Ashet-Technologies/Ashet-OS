@@ -323,6 +323,9 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
             // "-serial",   "vc",
         },
     },
+    .@"arm-ashet-hc" = .{
+        // True Home Computer must be debugged/runned on real hardware!
+    },
     .@"x86-hosted-linux" = .{
         .hosted_cli = &.{
             "drive:${DISK}",

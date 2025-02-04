@@ -218,6 +218,10 @@ const machine_info_map = std.EnumArray(Machine, MachineDependentOsConfig).init(.
         .disk_size = 0x0400_0000,
         .rom_size = null,
     },
+    .@"arm-ashet-hc" = .{
+        .disk_size = 0x0080_0000, // 8 MB, we store the disk inside the system image (upper half of the flash)
+        .rom_size = 0x0080_0000, // 8 MB, we store the kernel inside the system image (lower half of the flash)
+    },
 });
 
 const InstallSyslinuxStep = struct {

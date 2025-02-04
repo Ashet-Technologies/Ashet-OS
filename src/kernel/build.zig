@@ -249,6 +249,13 @@ const machine_info_map = std.EnumArray(Machine, MachineConfig).init(.{
         .linker_script = "port/machine/arm/ashet-vhc/linker.ld",
     },
 
+    .@"arm-ashet-hc" = .{
+        .target = constructTargetQuery(arm_cortex_m33),
+
+        .source_file = "port/machine/arm/ashet-hc/ashet-hc.zig",
+        .linker_script = "port/machine/arm/ashet-hc/linker.ld",
+    },
+
     .@"arm-qemu-virt" = .{
         .target = constructTargetQuery(generic_arm),
 
