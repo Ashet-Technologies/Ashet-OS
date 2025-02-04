@@ -85,6 +85,6 @@ dump-init-target target: (dump-libashet-target target) exe-tool
 
 [working-directory: 'research/x86-farcall']
 farcall:
-    zig build-exe -target x86-linux-musl -O ReleaseSmall -fno-strip -lc --name farcall farcall.S
+    zig-ashet build-exe -target x86-linux-musl -O ReleaseSmall -fno-strip -lc --name farcall farcall.S
     llvm-objdump -d ./farcall | grep -F '<main>' -A20
-    gdb ./farcall -ex 'break main' -ex 'run'
+    gdb ./farcall --quiet --command ./gdbscript

@@ -1079,8 +1079,8 @@ fn parse_elf_file(
                                 .addend = .unused,
                                 // On x86, we use "JMP rel32", which jumps to
                                 // relative start position:
-                                .base = if (platform == .x86) .subtract else .unused,
-                                .offset = if (platform == .x86) .subtract else .unused,
+                                .base = .unused,
+                                .offset = .unused,
                             },
                             .addend = 0,
                             .offset = patch_offset,

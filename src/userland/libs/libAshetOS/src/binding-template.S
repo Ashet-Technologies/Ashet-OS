@@ -34,10 +34,13 @@ SYMBOL_NAME:
 
 #elif defined(PLATFORM_X86)
 
-    // Will be encoded as E9 78 56 34 12, so the patch address
-    // is instruction "address + 1" which can be unaligned, as
-    // x86 doesn't care at all:
-    jmp 0x12345678
+    // Will be encoded as [B8 DD CC BB AA], which we can patch
+    // by changing the location (symbol name + 1)
+    mov $0xAABBCCDD, %eax
+    // Is encoded as [FF E0], and performs an absolute near jump.
+    // Using %eax is fine for SysV-i386 ABI, as it's one of the caller-saved
+    // registers.
+    jmpl *%eax
 
 .align 2 // align word to to 4 so we have sane pointer semantics:
 .set .syscall_address, SYMBOL_NAME + 1

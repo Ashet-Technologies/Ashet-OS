@@ -5,10 +5,12 @@
 .global main
 main:
 
-    // jmp _farloc
-    jmp *_farloc_ptr
+    // > FROM: "SYSTEM V APPLICATION BINARY INTERFACE", Page: 37
+    // > Registers %ebp, %ebx, %edi, %esi, and %esp "belong" to the calling function.
+    // so we can safely use %eax here:
 
-    jmp *(0xAABBCCDD)  # Indirect memory jump
+    mov $_farloc, %eax
+    jmp *%eax
 
 
 _farloc_ptr:
@@ -18,13 +20,13 @@ _farloc_ptr:
     ljmp $0x00,$_farloc
 
 _farloc:
-    push _text
-
-    call printf
+    push hello_msg
+    mov hello_msg, %eax
+    call puts
 
     push 0
     call exit
 
 .section .rodata
-_text:
+hello_msg:
     .asciz "Hello, World!\n"
