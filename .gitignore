@@ -5,3 +5,4 @@ zig-out/
 .vscode/
 rootfs-pxe/ashet-os
 .venv/
+kernel.log

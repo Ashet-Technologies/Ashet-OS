@@ -44,14 +44,13 @@ jobs:
           zig build -Dmachine=${{ matrix.platform }} -Dno-gui install
 
           # this command is allowed to fail, we're doing checks by grep.
-          timeout 15s zig build -Dmachine=${{ matrix.platform }} -Dno-gui run || true
+          timeout 15s zig build -Dmachine=${{ matrix.platform }} -Dno-gui run 2>&1 | tee kernel.log || true
 
           # Test if the desktop application did start:
-          grep -F "classic desktop ready!" zig-out/serial.log
+          grep -F "classic desktop ready!" kernel.log
           
           # Test that we didn't panic:
-          if grep -Fi "Panic:" zig-out/serial.log; then
+          if grep -Fi "Panic:" kernel.log; then
             # fail!
             false
           done
-          
