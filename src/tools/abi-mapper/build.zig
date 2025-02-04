@@ -11,6 +11,10 @@ pub fn build(b: *std.Build) void {
     const create_venv_step = b.step("venv", "Creates the python venv");
     const test_step = b.step("test", "Runs the test suite");
 
+    const abi_schema_mod = b.addModule("abi-schema", .{
+        .root_source_file = b.path("src/json-schema.zig"),
+    });
+
     const global_python3 = b.findProgram(&.{
         "python3.11",
         "python3",
@@ -91,9 +95,23 @@ pub fn build(b: *std.Build) void {
         b.path("tests/coverage.zig"),
     ));
 
-    const json_step = b.step("json", "Emit the JSON dump of test abi");
-
     const json = cc.get_json_dump(b.path("tests/coverage.zabi"));
+
+    const test_exe = b.addTest(.{
+        .root_source_file = abi_schema_mod.root_source_file.?,
+        .target = b.graph.host,
+        .optimize = .Debug,
+    });
+
+    test_exe.root_module.addAnonymousImport("coverage.json", .{
+        .root_source_file = json,
+    });
+
+    const run_test = b.addRunArtifact(test_exe);
+
+    test_step.dependOn(&run_test.step);
+
+    const json_step = b.step("json", "Emit the JSON dump of test abi");
 
     json_step.dependOn(&b.addInstallFile(json, "abi-test.json").step);
 }

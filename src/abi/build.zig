@@ -16,12 +16,16 @@ pub fn build(b: *std.Build) void {
         .executable = abi_mapper_dep.artifact("abi-mapper"),
     };
 
+    // Re-export the "abi-schema" module:
+    const abi_schema_mod = abi_mapper_dep.module("abi-schema");
+    b.modules.putNoClobber("abi-schema", abi_schema_mod) catch @panic("out of memory");
+
     const abi_v2_def = b.path("src/abi.zabi");
 
     const abi_code = abi_mapper.convert_abi_file(abi_v2_def, .definition);
     const provider_code = abi_mapper.convert_abi_file(abi_v2_def, .kernel);
     const consumer_code = abi_mapper.convert_abi_file(abi_v2_def, .userland);
-    const stubs_code = abi_mapper.convert_abi_file(abi_v2_def, .stubs);
+    const abi_json = abi_mapper.get_json_dump(abi_v2_def);
 
     const abi_mod = b.addModule("ashet-abi", .{
         .root_source_file = abi_code,
@@ -50,15 +54,12 @@ pub fn build(b: *std.Build) void {
         },
     });
 
-    _ = b.addModule("ashet-abi-stubs", .{
-        .root_source_file = stubs_code,
-        .imports = &.{
-            .{ .name = "abi", .module = abi_mod },
-        },
+    _ = b.addModule("ashet-abi.json", .{
+        .root_source_file = abi_json,
     });
 
     debug.dependOn(&b.addInstallFile(abi_code, "abi.zig").step);
     debug.dependOn(&b.addInstallFile(provider_code, "provider.zig").step);
     debug.dependOn(&b.addInstallFile(consumer_code, "consumer.zig").step);
-    debug.dependOn(&b.addInstallFile(stubs_code, "stubs.zig").step);
+    debug.dependOn(&b.addInstallFile(abi_json, "ashet-abi.json").step);
 }

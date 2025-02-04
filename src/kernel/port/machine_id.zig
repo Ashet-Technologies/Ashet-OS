@@ -9,7 +9,7 @@ const abi = @import("ashet-abi");
 ///
 pub const MachineID = enum {
     // @"arm-ashet-hc",
-    // @"arm-ashet-vhc",
+    @"arm-ashet-vhc",
     @"arm-qemu-virt",
     // @"arm-raspberrypi-pi400",
 
@@ -27,6 +27,7 @@ pub const MachineID = enum {
 
     pub fn is_hosted(target: MachineID) bool {
         return switch (target) {
+            .@"arm-ashet-vhc",
             .@"arm-qemu-virt",
             .@"rv32-qemu-virt",
             .@"x86-pc-bios",
@@ -39,6 +40,7 @@ pub const MachineID = enum {
 
     pub fn get_display_name(target: MachineID) []const u8 {
         return switch (target) {
+            .@"arm-ashet-vhc" => "Ashet Virtual Home Computer",
             .@"arm-qemu-virt" => "QEMU virt (Arm)",
             .@"rv32-qemu-virt" => "QEMU virt (RISC-V)",
             .@"x86-hosted-linux" => "OS Hosted (x86, Linux)",
@@ -49,6 +51,7 @@ pub const MachineID = enum {
     pub fn get_platform(target: MachineID) abi.Platform {
         return switch (target) {
             .@"arm-qemu-virt",
+            .@"arm-ashet-vhc",
             => .arm,
 
             .@"rv32-qemu-virt",

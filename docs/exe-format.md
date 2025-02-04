@@ -77,6 +77,12 @@ type FileHeader = struct {
     
     relocation_offset: u32,
     relocation_count: u32,
+
+    reserved: [110]u32 = .{0xFFFFFFFF} ** 110,
+
+    /// A CRC-32 (CRC32 ISO HDLC) over the first 508 bytes of the 
+    /// file:
+    checksum_crc32: u32,
 };
 
 /// A reference to a system call 

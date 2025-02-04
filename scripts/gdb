@@ -1,0 +1,9 @@
+# add-symbol-file zig-out/arm-ashet-vhc/apps/init.elf 0x1146A000
+# add-symbol-file zig-out/x86-bios-pc/apps/init.elf 0x0045D000
+target remote localhost:1234
+set disassemble-next-line on
+show disassemble-next-line
+# break m-profile.zig:51
+# break ashet_scheduler_switchTasks
+# break ashet_scheduler_threadTrampoline
+break multi_tasking.zig:107

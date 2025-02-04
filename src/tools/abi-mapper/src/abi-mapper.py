@@ -467,12 +467,12 @@ class ABI_JsonEncoder(json.JSONEncoder):
         elif isinstance(t, OptionalType):
             return {"OptionalType": {"inner": self.json_type(t.inner)}}
         elif isinstance(t, ArrayType):
-            return {"ArrayType": {"size": t.size, "sentinel": t.sentinel, "inner": self.json_type(t.inner)}}
+            return {"ArrayType": {"size": t.size, "sentinel": str(t.sentinel), "inner": self.json_type(t.inner)}}
         elif isinstance(t, PointerType):
             return {
                 "PointerType": {
                     "size": t.size,
-                    "sentinel": t.sentinel,
+                    "sentinel": str(t.sentinel),
                     "const": t.const,
                     "volatile": t.volatile,
                     "alignment": t.alignment,

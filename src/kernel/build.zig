@@ -16,11 +16,12 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
 
     // Target configuration:
+    const platform_id = machine_id.get_platform();
+
     const machine_config = machine_info_map.get(machine_id);
-    const platform_config = platform_info_map.get(machine_config.platform);
+    const platform_config = platform_info_map.get(platform_id);
 
     const kernel_target = b.resolveTargetQuery(machine_config.target);
-    const platform_id = machine_config.platform;
 
     // Dependencies:
     const abi_dep = b.dependency("ashet-abi", .{});
@@ -141,6 +142,11 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    if (kernel_target.result.cpu.arch.isThumb()) {
+        // Disable LTO on arm as it fails hard on the linker:
+        kernel_exe.want_lto = false;
+    }
+
     kernel_exe.step.dependOn(machine_info_module.root_source_file.?.generated.file.step);
     kernel_exe.root_module.addImport("kernel", kernel_mod);
 
@@ -187,7 +193,6 @@ const PlatformConfig = struct {
 };
 
 const MachineConfig = struct {
-    platform: Platform,
     target: std.Target.Query,
 
     linker_script: []const u8,
@@ -224,7 +229,6 @@ const platform_info_map = std.EnumArray(Platform, PlatformConfig).init(.{
 
 const machine_info_map = std.EnumArray(Machine, MachineConfig).init(.{
     .@"x86-pc-bios" = .{
-        .platform = .x86,
         .target = constructTargetQuery(generic_x86),
 
         .source_file = "port/machine/bios_pc/bios_pc.zig",
@@ -232,15 +236,20 @@ const machine_info_map = std.EnumArray(Machine, MachineConfig).init(.{
     },
 
     .@"rv32-qemu-virt" = .{
-        .platform = .rv32,
         .target = constructTargetQuery(generic_rv32),
 
         .source_file = "port/machine/rv32_virt/rv32_virt.zig",
         .linker_script = "port/machine/rv32_virt/linker.ld",
     },
 
+    .@"arm-ashet-vhc" = .{
+        .target = constructTargetQuery(arm_cortex_m33),
+
+        .source_file = "port/machine/arm/ashet-vhc/ashet-vhc.zig",
+        .linker_script = "port/machine/arm/ashet-vhc/linker.ld",
+    },
+
     .@"arm-qemu-virt" = .{
-        .platform = .arm,
         .target = constructTargetQuery(generic_arm),
 
         .source_file = "port/machine/arm_virt/arm_virt.zig",
@@ -248,7 +257,6 @@ const machine_info_map = std.EnumArray(Machine, MachineConfig).init(.{
     },
 
     .@"x86-hosted-linux" = .{
-        .platform = .x86,
         .target = constructTargetQuery(.{
             .cpu_arch = .x86,
             .os_tag = .linux,
@@ -302,6 +310,19 @@ const generic_arm = .{
     //     .vfp3d16sp,
     //     .vfp3sp,
     // }),
+};
+
+const arm_cortex_m33 = .{
+    .cpu_arch = .thumb,
+    .abi = .eabi,
+    .cpu_model = .{
+        .explicit = &std.Target.arm.cpu.cortex_m33,
+    },
+    .cpu_features_sub = std.Target.arm.featureSet(&.{
+        // Disable GPU in kernel
+        .slowfpvfmx,
+        .slowfpvmlx,
+    }),
 };
 
 const generic_rv32 = .{

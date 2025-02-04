@@ -40,8 +40,8 @@ pub const Registers = extern struct {
     //!
 
     DR: u32, // 0x000
-    RSR_UARTECR: u32, // 0x004
-    _reserved0: [3]u32, // 0x008 … 0x014
+    RSR_ECR: u32, // 0x004
+    _reserved0: [4]u32, // 0x008 … 0x014
     FR: u32, // 0x018
     _reserved1: u32, // 0x01C
     ILPR: u32, // 0x020
@@ -56,7 +56,7 @@ pub const Registers = extern struct {
     ICR: u32, // 0x044
     DMACR: u32, // 0x048
 
-    _reserved2: [998]u32, // 0x04C…0xFDC
+    _reserved2: [997]u32, // 0x04C…0xFDC
 
     PeriphID0: u32, // 0xFE0
     PeriphID1: u32, // 0xFE4
@@ -78,4 +78,40 @@ pub const Registers = extern struct {
             @compileError("PL011 registers must be aligned to 4.");
         }
     }
+
+    comptime {
+        for (register_info) |reg| {
+            const offset, const name = reg;
+            if (@offsetOf(@This(), name) != offset) {
+                @compileError(std.fmt.comptimePrint("Expected '{s}' to have offset 0x{X:0>3}, but found 0x{X:0>3}.", .{
+                    name, offset, @offsetOf(@This(), name),
+                }));
+            }
+        }
+    }
+};
+
+const register_info = [_]struct { u32, []const u8 }{
+    .{ 0x000, "DR" },
+    .{ 0x004, "RSR_ECR" },
+    .{ 0x018, "FR" },
+    .{ 0x020, "ILPR" },
+    .{ 0x024, "IBRD" },
+    .{ 0x028, "FBRD" },
+    .{ 0x02C, "LCR_H" },
+    .{ 0x030, "CR" },
+    .{ 0x034, "IFLS" },
+    .{ 0x038, "IMSC" },
+    .{ 0x03C, "RIS" },
+    .{ 0x040, "MIS" },
+    .{ 0x044, "ICR" },
+    .{ 0x048, "DMACR" },
+    .{ 0xFE0, "PeriphID0" },
+    .{ 0xFE4, "PeriphID1" },
+    .{ 0xFE8, "PeriphID2" },
+    .{ 0xFEC, "PeriphID3" },
+    .{ 0xFF0, "PCellID0" },
+    .{ 0xFF4, "PCellID1" },
+    .{ 0xFF8, "PCellID2" },
+    .{ 0xFFC, "PCellID3" },
 };

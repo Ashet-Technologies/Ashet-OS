@@ -77,7 +77,7 @@ pub fn push_raw_event_from_irq(raw_event: raw.Event) void {
     defer cs.leave();
 
     if (async_queue.full()) {
-        logger.warn("dropping {s} event", .{@tagName(event_queue.pull().?)});
+        logger.warn("dropping {s} event", .{@tagName(async_queue.pull().?)});
     }
     async_queue.push(raw_event);
 }

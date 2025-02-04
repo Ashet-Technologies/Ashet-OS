@@ -3,73 +3,73 @@ const virtio = @import("virtio.zig");
 
 pub const FeatureFlags = struct {
     ///  Device handles packets with partial checksum. This “checksum offload” is a common feature on modern network cards.
-    pub const csum: u64 = (1 << 0);
+    pub const csum = virtio.FeatureFlag.new(0);
 
     ///  Driver handles packets with partial checksum.
-    pub const guest_csum: u64 = (1 << 1);
+    pub const guest_csum = virtio.FeatureFlag.new(1);
 
     ///  Control channel offloads reconfiguration support.
-    pub const ctrl_guest_offloads: u64 = (1 << 2);
+    pub const ctrl_guest_offloads = virtio.FeatureFlag.new(2);
 
     ///  Device maximum MTU reporting is supported. If offered by the device, device advises driver about the value of its maximum MTU. If negotiated, the driver uses mtu as the maximum MTU value.
-    pub const mtu: u64 = (1 << 3);
+    pub const mtu = virtio.FeatureFlag.new(3);
 
     ///  Device has given MAC address.
-    pub const mac: u64 = (1 << 5);
+    pub const mac = virtio.FeatureFlag.new(5);
 
     ///  Driver can receive TSOv4.
-    pub const guest_tso4: u64 = (1 << 7);
+    pub const guest_tso4 = virtio.FeatureFlag.new(7);
 
     ///  Driver can receive TSOv6.
-    pub const guest_tso6: u64 = (1 << 8);
+    pub const guest_tso6 = virtio.FeatureFlag.new(8);
 
     ///  Driver can receive TSO with ECN.
-    pub const guest_ecn: u64 = (1 << 9);
+    pub const guest_ecn = virtio.FeatureFlag.new(9);
 
     ///  Driver can receive UFO.
-    pub const guest_ufo: u64 = (1 << 10);
+    pub const guest_ufo = virtio.FeatureFlag.new(10);
 
     ///  Device can receive TSOv4.
-    pub const host_tso4: u64 = (1 << 11);
+    pub const host_tso4 = virtio.FeatureFlag.new(11);
 
     ///  Device can receive TSOv6.
-    pub const host_tso6: u64 = (1 << 12);
+    pub const host_tso6 = virtio.FeatureFlag.new(12);
 
     ///  Device can receive TSO with ECN.
-    pub const host_ecn: u64 = (1 << 13);
+    pub const host_ecn = virtio.FeatureFlag.new(13);
 
     ///  Device can receive UFO.
-    pub const host_ufo: u64 = (1 << 14);
+    pub const host_ufo = virtio.FeatureFlag.new(14);
 
     ///  Driver can merge receive buffers.
-    pub const mrg_rxbuf: u64 = (1 << 15);
+    pub const mrg_rxbuf = virtio.FeatureFlag.new(15);
 
     ///  Configuration status field is available.
-    pub const status: u64 = (1 << 16);
+    pub const status = virtio.FeatureFlag.new(16);
 
     ///  Control channel is available.
-    pub const ctrl_vq: u64 = (1 << 17);
+    pub const ctrl_vq = virtio.FeatureFlag.new(17);
 
     ///  Control channel RX mode support.
-    pub const ctrl_rx: u64 = (1 << 18);
+    pub const ctrl_rx = virtio.FeatureFlag.new(18);
 
     ///  Control channel VLAN filtering.
-    pub const ctrl_vlan: u64 = (1 << 19);
+    pub const ctrl_vlan = virtio.FeatureFlag.new(19);
 
     ///  Driver can send gratuitous packets.
-    pub const guest_announce: u64 = (1 << 21);
+    pub const guest_announce = virtio.FeatureFlag.new(21);
 
     ///  Device supports multiqueue with automatic receive steering.
-    pub const mq: u64 = (1 << 22);
+    pub const mq = virtio.FeatureFlag.new(22);
 
     ///  Set MAC address through control channel.
-    pub const ctrl_mac_addr: u64 = (1 << 23);
+    pub const ctrl_mac_addr = virtio.FeatureFlag.new(23);
 
     ///  Device can process duplicated ACKs and report number of coalesced seg-ments and duplicated ACKs
-    pub const rsc_ext: u64 = (1 << 61);
+    pub const rsc_ext = virtio.FeatureFlag.new(61);
 
     ///  Device may act as a standby for a primary device with the same MACaddress.
-    pub const standby: u64 = (1 << 62);
+    pub const standby = virtio.FeatureFlag.new(62);
 };
 
 pub const Config = extern struct {

@@ -209,22 +209,33 @@ fn dump_file(allocator: std.mem.Allocator, positionals: []const []const u8, _opt
             .machine32_le => .little,
         };
 
-        break :blk .{
-            file_type, file_platform, ashex.Header{
-                .icon_size = try reader.readInt(u32, machine_endian),
-                .icon_offset = try reader.readInt(u32, machine_endian),
-                .vmem_size = try reader.readInt(u32, machine_endian),
-                .entry_point = try reader.readInt(u32, machine_endian),
-                .syscall_offset = try reader.readInt(u32, machine_endian),
-                .syscall_count = try reader.readInt(u32, machine_endian),
-                .load_header_offset = try reader.readInt(u32, machine_endian),
-                .load_header_count = try reader.readInt(u32, machine_endian),
-                .bss_header_offset = try reader.readInt(u32, machine_endian),
-                .bss_header_count = try reader.readInt(u32, machine_endian),
-                .relocation_offset = try reader.readInt(u32, machine_endian),
-                .relocation_count = try reader.readInt(u32, machine_endian),
-            },
+        const header: ashex.Header = .{
+            .icon_size = try reader.readInt(u32, machine_endian),
+            .icon_offset = try reader.readInt(u32, machine_endian),
+            .vmem_size = try reader.readInt(u32, machine_endian),
+            .entry_point = try reader.readInt(u32, machine_endian),
+            .syscall_offset = try reader.readInt(u32, machine_endian),
+            .syscall_count = try reader.readInt(u32, machine_endian),
+            .load_header_offset = try reader.readInt(u32, machine_endian),
+            .load_header_count = try reader.readInt(u32, machine_endian),
+            .bss_header_offset = try reader.readInt(u32, machine_endian),
+            .bss_header_count = try reader.readInt(u32, machine_endian),
+            .relocation_offset = try reader.readInt(u32, machine_endian),
+            .relocation_count = try reader.readInt(u32, machine_endian),
         };
+
+        const actual_checksum: u32 = std.hash.Crc32.hash(header_chunk[0..508]);
+        const header_checksum: u32 = std.mem.readInt(u32, header_chunk[508..512], machine_endian);
+
+        if (actual_checksum != header_checksum) {
+            logger.err("checksum mismatch! header encodes 0x{X:0>8}, but header block has checksum 0x{X:0>8}", .{
+                header_checksum,
+                actual_checksum,
+            });
+            return 1;
+        }
+
+        break :blk .{ file_type, file_platform, header };
     };
 
     const machine_endian: std.builtin.Endian = switch (file_type) {
@@ -490,7 +501,9 @@ fn convert_file(allocator: std.mem.Allocator, positionals: []const []const u8, o
     else
         null;
 
-    const ashex_file = try parse_elf_file(allocator, input_file_data);
+    var elf_file = try ElfFile.init(input_file_data);
+
+    const ashex_file = try parse_elf_file(allocator, &elf_file);
 
     // Optimize relocation size
     for (ashex_file.relocations) |*reloc| {
@@ -526,7 +539,9 @@ fn convert_file(allocator: std.mem.Allocator, positionals: []const []const u8, o
     }
 
     {
-        var file = try std.fs.cwd().createFile(output_file_path, .{});
+        var file = try std.fs.cwd().createFile(output_file_path, .{
+            .read = true,
+        });
         defer file.close();
 
         try write_ashex_file(
@@ -539,23 +554,112 @@ fn convert_file(allocator: std.mem.Allocator, positionals: []const []const u8, o
     return 0;
 }
 
+const ElfFile = struct {
+    const StreamSource = std.io.FixedBufferStream([]const u8);
+
+    header: elf.Header,
+    buffer: []const u8,
+    elf_stream_obj: StreamSource,
+
+    pub fn init(buffer: []const u8) !ElfFile {
+        var elf_stream_obj = std.io.fixedBufferStream(buffer);
+        const elf_stream = &elf_stream_obj;
+
+        const header = try elf.Header.read(elf_stream);
+
+        return .{
+            .header = header,
+            .buffer = buffer,
+            .elf_stream_obj = elf_stream_obj,
+        };
+    }
+
+    fn find_section_by_index(file: *ElfFile, index: usize) !?elf.Elf64_Shdr {
+        var iter = file.section_header_iterator();
+
+        var current: usize = 0;
+        while (try iter.next()) |header| : (current += 1) {
+            if (current == index)
+                return header;
+        }
+
+        return null;
+    }
+
+    fn find_section_by_name(file: *ElfFile, name: []const u8) !?elf.Elf64_Shdr {
+        const names = try file.find_section_by_index(file.header.shstrndx) orelse return error.MissingNameTable;
+
+        var iter = file.section_header_iterator();
+
+        while (try iter.next()) |header| {
+            const section_name = try file.get_string(names, header.sh_name);
+
+            if (std.mem.eql(u8, section_name, name))
+                return header;
+        }
+
+        return null;
+    }
+
+    fn section_header_iterator(file: *ElfFile) elf.SectionHeaderIterator(*StreamSource) {
+        return file.header.section_header_iterator(&file.elf_stream_obj);
+    }
+
+    fn program_header_iterator(file: *ElfFile) elf.ProgramHeaderIterator(*StreamSource) {
+        return file.header.program_header_iterator(&file.elf_stream_obj);
+    }
+
+    fn get_range(file: ElfFile, offset: usize, length: usize) []const u8 {
+        return file.buffer[offset..][0..length];
+    }
+
+    fn get_section_as_array(file: ElfFile, shdr: elf.Elf64_Shdr, comptime T: type) []align(1) const T {
+        const count = @divExact(shdr.sh_size, shdr.sh_entsize);
+
+        const slice = std.mem.bytesAsSlice(T, file.buffer[shdr.sh_offset..][0..shdr.sh_size]);
+        std.debug.assert(slice.len == count);
+        return slice;
+    }
+
+    fn read(file: ElfFile, offset: usize, buffer: []u8) void {
+        @memcpy(buffer, file.buffer[offset..][0..buffer.len]);
+
+        // try elf_stream.seekableStream().seekTo(phdr.p_offset);
+        // try elf_stream.reader().readNoEof();
+    }
+
+    fn get_reader(file: ElfFile, offset: usize, length: usize) StreamSource {
+        return .{ .buffer = file.get_range(offset, length), .pos = 0 };
+    }
+
+    fn get_section_range(file: ElfFile, shdr: elf.Elf64_Shdr) []const u8 {
+        return file.get_range(shdr.sh_offset, shdr.sh_size);
+    }
+
+    fn get_section_reader(file: ElfFile, shdr: elf.Elf64_Shdr) StreamSource {
+        return .{ .buffer = file.get_section_range(shdr), .pos = 0 };
+    }
+
+    fn get_string(file: ElfFile, shdr: elf.Elf64_Shdr, offset: usize) ![]const u8 {
+        const range = file.get_section_range(shdr);
+
+        const end_pos = std.mem.indexOfScalarPos(u8, range, offset, '\x00') orelse return error.OutOfBounds;
+        return range[offset..end_pos :0];
+    }
+};
+
 fn parse_elf_file(
     allocator: std.mem.Allocator,
-    elf_binary_data: []const u8,
+    elf_file: *ElfFile,
 ) !AshexFile {
-    var elf_stream_obj = std.io.fixedBufferStream(elf_binary_data);
-    const elf_stream = &elf_stream_obj;
-
-    const header = try elf.Header.read(elf_stream);
-
-    if (header.endian != .little)
+    if (elf_file.header.endian != .little)
         return error.InvalidEndian;
-    if (header.is_64 == true)
+    if (elf_file.header.is_64 == true)
         return error.InvalidBitSize;
-    if (header.phnum == 0)
+    if (elf_file.header.phnum == 0)
         return error.NoCode;
 
-    const platform: ashex.Platform = switch (header.machine) {
+    const platform: ashex.Platform = switch (elf_file.header.machine) {
         .RISCV => .riscv32,
         .@"386" => .x86,
         .ARM => .arm32,
@@ -610,7 +714,7 @@ fn parse_elf_file(
         var lo_addr: usize = 0;
         var hi_addr: usize = 0;
 
-        var pheaders = header.program_header_iterator(elf_stream);
+        var pheaders = elf_file.program_header_iterator();
         while (try pheaders.next()) |phdr| {
             try phdrs.append(.{
                 .type = @enumFromInt(@as(u32, @intCast(phdr.p_type))),
@@ -621,7 +725,7 @@ fn parse_elf_file(
                 .filesz = @intCast(phdr.p_filesz),
                 .memsz = @intCast(phdr.p_memsz),
 
-                .memory = elf_binary_data[phdr.p_offset..][0..phdr.p_filesz],
+                .memory = elf_file.get_range(phdr.p_offset, phdr.p_filesz),
             });
 
             switch (phdr.p_type) {
@@ -690,8 +794,7 @@ fn parse_elf_file(
 
             std.debug.assert(file_chunk.data.len == phdr.p_filesz);
 
-            try elf_stream.seekableStream().seekTo(phdr.p_offset);
-            try elf_stream.reader().readNoEof(file_chunk.data);
+            elf_file.read(phdr.p_offset, file_chunk.data);
         }
 
         break :blk hi_addr - lo_addr;
@@ -700,7 +803,7 @@ fn parse_elf_file(
     logger.debug("Application is {d} bytes large", .{required_bytes});
 
     const dynamic_section: ?DynamicSection = dynamic_loader: {
-        var pheaders = header.program_header_iterator(elf_stream);
+        var pheaders = elf_file.program_header_iterator();
         const dynamic_section: elf.Elf64_Phdr = while (try pheaders.next()) |phdr| {
             if (phdr.p_type == elf.PT_DYNAMIC)
                 break phdr;
@@ -709,14 +812,14 @@ fn parse_elf_file(
             break :dynamic_loader null;
         };
 
-        try elf_stream.seekableStream().seekTo(dynamic_section.p_offset);
+        var elf_reader = elf_file.get_reader(dynamic_section.p_offset, dynamic_section.p_filesz);
 
         const ent_count: usize = @intCast(dynamic_section.p_filesz / @sizeOf(elf.Elf32_Dyn));
 
         // logger.info("DYNAMIC: {}", .{dynamic_section});
         var dsect: DynamicSection = .{};
         loop: for (0..ent_count) |_| {
-            const dyn = try elf_stream.reader().readStruct(elf.Elf32_Dyn);
+            const dyn = try elf_reader.reader().readStruct(elf.Elf32_Dyn);
 
             switch (dyn.d_tag) {
                 elf.DT_NULL => break :loop,
@@ -801,6 +904,7 @@ fn parse_elf_file(
 
     var syscalls = SyscallAllocator.init(allocator);
 
+    // Parse regular DYNAMIC section:
     {
         const strtab_buf = if (dynamic_section) |dsect|
             if (dsect.strtab) |dynstr_addr|
@@ -825,7 +929,7 @@ fn parse_elf_file(
             null;
 
         const reloc_env = Environment{
-            .elf_data = elf_binary_data,
+            .elf_data = elf_file.buffer,
             .dynamic = dynamic_section,
             .syscalls = &syscalls,
             .strtab_buf = strtab_buf,
@@ -833,7 +937,7 @@ fn parse_elf_file(
             .platform = platform,
         };
 
-        var sheaders = header.section_header_iterator(elf_stream);
+        var sheaders = elf_file.section_header_iterator();
         while (try sheaders.next()) |shdr| {
             logger.info("{}", .{shdr});
             switch (shdr.sh_type) {
@@ -849,13 +953,8 @@ fn parse_elf_file(
                     //   .sh_entsize = 12,
                     // }
 
-                    try elf_stream.seekableStream().seekTo(shdr.sh_offset);
-
-                    var buffered_reader = std.io.bufferedReaderSize(512, elf_stream.reader());
-
-                    const count = @divExact(shdr.sh_size, shdr.sh_entsize);
-                    for (0..count) |_| {
-                        const entry = try buffered_reader.reader().readStruct(elf.Elf32_Rela);
+                    const relocation_array = elf_file.get_section_as_array(shdr, elf.Elf32_Rela);
+                    for (relocation_array) |entry| {
                         logger.info("  {}", .{entry});
 
                         const rela_handler = try RelocationHandler.fromRelA(platform, entry);
@@ -878,12 +977,8 @@ fn parse_elf_file(
                     //   .sh_entsize = 8,
                     // };
 
-                    try elf_stream.seekableStream().seekTo(shdr.sh_offset);
-                    var buffered_reader = std.io.bufferedReaderSize(512, elf_stream.reader());
-
-                    const count = @divExact(shdr.sh_size, shdr.sh_entsize);
-                    for (0..count) |_| {
-                        const entry = try buffered_reader.reader().readStruct(elf.Elf32_Rel);
+                    const relocation_array = elf_file.get_section_as_array(shdr, elf.Elf32_Rel);
+                    for (relocation_array) |entry| {
                         logger.info("  {}", .{entry});
 
                         const rel_handler = try RelocationHandler.fromRel(platform, entry);
@@ -944,6 +1039,66 @@ fn parse_elf_file(
         }
     }
 
+    // Parse Ashet-OS specific properties:
+    {
+        const maybe_strings_section = try elf_file.find_section_by_name(".ashet.strings");
+        const maybe_patches_section = try elf_file.find_section_by_name(".ashet.patch");
+
+        if (maybe_patches_section) |patches_section| {
+            const strings_section = maybe_strings_section orelse return error.MissingAshetStrings;
+
+            var section_reader = elf_file.get_section_reader(patches_section);
+            const reader = section_reader.reader();
+
+            while (true) {
+                const patch_type_int = reader.readInt(u32, .little) catch |err| switch (err) {
+                    error.EndOfStream => break,
+                    else => |e| return e,
+                };
+                const patch_type: ashex.PatchType = @enumFromInt(patch_type_int);
+
+                switch (patch_type) {
+                    .patch_syscall => {
+                        const patch_offset = try reader.readInt(u32, .little);
+                        const patch_name_offset = try reader.readInt(u32, .little);
+
+                        const patch_name = try elf_file.get_string(strings_section, patch_name_offset);
+
+                        // logger.err("0x{X:0>8} => '{s}'", .{ patch_offset, patch_name });
+
+                        // Ensure the patch fits inside the memory:
+                        std.debug.assert(patch_offset + @sizeOf(u32) <= required_bytes);
+
+                        const syscall_index = try syscalls.get_syscall_index(patch_name);
+
+                        try relocations.append(Relocation{
+                            .type = .{
+                                .size = .word32,
+                                .syscall = .add,
+                                .self = .unused,
+                                .addend = .unused,
+                                // On x86, we use "JMP rel32", which jumps to
+                                // relative start position:
+                                .base = .unused,
+                                .offset = .unused,
+                            },
+                            .addend = 0,
+                            .offset = patch_offset,
+                            .syscall = @intCast(syscall_index),
+                        });
+                    },
+
+                    else => {
+                        logger.err("invalid patch type: {}", .{patch_type_int});
+                        return error.InvalidAshexPatch;
+                    },
+                }
+            }
+        } else {
+            logger.err("ELF file contains no .ashet.patch section, application is invalid!", .{});
+        }
+    }
+
     for (0.., syscalls.lut.values()) |index, value| {
         std.debug.assert(index == value); // assert retained insertion order
     }
@@ -951,7 +1106,7 @@ fn parse_elf_file(
     return AshexFile{
         .platform = platform,
         .vmem_size = @intCast(required_bytes),
-        .entry_point = @intCast(header.entry),
+        .entry_point = @intCast(elf_file.header.entry),
 
         .syscalls = syscalls.lut.keys(),
         .load_headers = try load_headers.toOwnedSlice(),
@@ -1036,7 +1191,15 @@ fn write_ashex_file(
             relocations_offset_pos = counting_writer.bytes_written;
             try writer.writeInt(u32, 0x55AA55AA, endian);
             try writer.writeInt(u32, @intCast(exe.relocations.len), endian);
+
+            std.debug.assert(counting_writer.bytes_written == 56);
+
+            try writer.writeByteNTimes(0xFF, 508 - counting_writer.bytes_written);
+
+            // Write checksum dummy:
+            try writer.writeInt(u32, 0x55AA55AA, endian);
         }
+
         // Write icon data
         if (icon_data) |icon| {
             try align_writer(&counting_writer, 512);
@@ -1119,10 +1282,25 @@ fn write_ashex_file(
         try file.seekTo(relocations_offset_pos);
         try file.writer().writeInt(u32, @intCast(relocations_offset), endian);
     }
+
+    // Patch checksum:
+    {
+        var header_block: [508]u8 = undefined;
+        try file.seekTo(0);
+        try file.reader().readNoEof(&header_block);
+        try file.writer().writeInt(
+            u32,
+            std.hash.Crc32.hash(&header_block),
+            endian,
+        );
+    }
 }
 
 fn align_writer(counting_writer: anytype, alignment: u32) !void {
-    try counting_writer.writer().writeByteNTimes(0xFF, alignment - (counting_writer.bytes_written % alignment));
+    const count = alignment - (counting_writer.bytes_written % alignment);
+    if (count == alignment)
+        return;
+    try counting_writer.writer().writeByteNTimes(0xFF, count);
 }
 
 const SyscallAllocator = struct {
@@ -1514,6 +1692,11 @@ const RelocationType = struct {
         errdefer |err| if (err == error.UnsupportedRelocation) {
             logger.err("unsupported relocation type id: {}", .{type_id});
         };
+
+        // Generally a good resource:
+        //   musl libc dynamic linker:
+        //     https://github.com/lsds/musl/blob/master/ldso/dynlink.c#L304
+
         return switch (platform) {
             .x86 => switch (type_id) {
                 // https://docs.oracle.com/cd/E19683-01/817-3677/chapter6-26/index.html
@@ -1640,15 +1823,18 @@ const RelocationType = struct {
                 20 => @panic("R_ARM_COPY not implemented yet!"),
 
                 // R_ARM_GLOB_DAT = 21         Resolves to the address of the specified symbol
-                21 => try init(variant, word32, "S"),
+                // Script: (S + A) | T
+                21 => try init(variant, word32, "S+A"),
 
                 // R_ARM_JUMP_SLOT = 22        Resolves to the address of the specified symbol
-                22 => try init(variant, word32, "S"),
+                // Script: (S + A) | T
+                22 => try init(variant, word32, "S+A"),
 
                 // R_ARM_RELATIVE = 23
-                // (S ≠ 0) B(S) resolves to the difference between the address at which the segment defining the symbol S was loaded and the address at which it was linked.
-                // (S = 0) B(S) resolves to the difference between the address at which the segment being relocated was loaded and the address at which it was linked.
-                23 => try init(variant, word32, "S-B"),
+                // B(S) + A
+                //      (S ≠ 0) B(S) resolves to the difference between the address at which the segment defining the symbol S was loaded and the address at which it was linked.
+                //      (S = 0) B(S) resolves to the difference between the address at which the segment being relocated was loaded and the address at which it was linked.
+                23 => try init(variant, word32, "B+A"),
 
                 else => return error.UnsupportedRelocation,
             },

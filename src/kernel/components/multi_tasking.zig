@@ -93,6 +93,8 @@ pub fn spawn_blocking(
 
     process.executable_memory = loaded.process_memory;
 
+    logger.debug("loaded '{s}' to 0x{X:0>8}", .{ proc_name, @intFromPtr(loaded.process_memory.ptr) });
+
     const thread = try ashet.scheduler.Thread.spawn(
         @as(ashet.scheduler.ThreadFunction, @ptrFromInt(loaded.entry_point)),
         null,
@@ -502,7 +504,11 @@ pub const Process = struct {
         if (proc.is_zombie()) {
             try writer.print("Process(0x{X:0>8}, \"{}\", <zombie>)", .{ @intFromPtr(proc), std.zig.fmtEscapes(proc.name) });
         } else {
-            try writer.print("Process(0x{X:0>8}, \"{}\")", .{ @intFromPtr(proc), std.zig.fmtEscapes(proc.name) });
+            try writer.print("Process(0x{X:0>8}, \"{}\", base=0x{X:0>8})", .{
+                @intFromPtr(proc),
+                std.zig.fmtEscapes(proc.name),
+                if (proc.executable_memory) |mem| @intFromPtr(mem.ptr) else 0,
+            });
         }
     }
 

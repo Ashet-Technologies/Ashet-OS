@@ -116,6 +116,12 @@ pub fn init(allocator: std.mem.Allocator, mbinfo: *multiboot.Info) !VESA_BIOS_Ex
     errdefer allocator.free(vmem);
 
     std.mem.copyForwards(ColorIndex, vmem, &ashet.video.defaults.splash_screen);
+    @memset(vmem, ashet.video.defaults.border);
+    ashet.video.load_splash_screen(vmem, .{
+        .width = framebuffer.width,
+        .height = framebuffer.height,
+        .stride = framebuffer.stride,
+    });
 
     return VESA_BIOS_Extension{
         .framebuffer = framebuffer,

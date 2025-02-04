@@ -29,6 +29,10 @@ pub const ipc = @import("components/ipc.zig");
 
 pub const ports = @import("port/targets.zig");
 
+pub const utils = struct {
+    pub const mmio = @import("utils/mmio.zig");
+};
+
 pub const platform_id: ports.Platform = machine_info.platform_id;
 pub const machine_id: ports.Machine = machine_info.machine_id;
 
@@ -43,6 +47,7 @@ else switch (platform_id) {
 pub const machine = switch (machine_id) {
     .@"x86-pc-bios" => @import("port/machine/bios_pc/bios_pc.zig"),
     .@"rv32-qemu-virt" => @import("port/machine/rv32_virt/rv32_virt.zig"),
+    .@"arm-ashet-vhc" => @import("port/machine/arm/ashet-vhc/ashet-vhc.zig"),
     .@"arm-qemu-virt" => @import("port/machine/arm_virt/arm_virt.zig"),
     .@"x86-hosted-linux" => @import("port/machine/linux_pc/linux_pc.zig"),
 };
@@ -57,28 +62,31 @@ pub const log_levels = struct {
     pub var strace: LogLevel = .debug;
 
     // kernel components
-    pub var main: LogLevel = .debug;
-    pub var scheduler: LogLevel = .debug;
-    pub var io: LogLevel = .info;
-    pub var ui: LogLevel = .debug;
-    pub var network: LogLevel = .info;
-    pub var filesystem: LogLevel = .debug;
-    pub var resources: LogLevel = .info;
-    pub var memory: LogLevel = .info;
+    pub var ashex_loader: LogLevel = .debug;
     pub var drivers: LogLevel = .info;
-    pub var page_allocator: LogLevel = .debug;
-    pub var mprot: LogLevel = .info; // very noise modules!
-    pub var x86_vmm: LogLevel = .info; // very noise modules!
-    pub var overlapped: LogLevel = .info; // very noise modules!
     pub var elf_loader: LogLevel = .info;
-    pub var video: LogLevel = .debug;
-    pub var multitasking: LogLevel = .debug;
+    pub var filesystem: LogLevel = .debug;
     pub var gui: LogLevel = .debug;
+    pub var io: LogLevel = .info;
+    pub var main: LogLevel = .debug;
+    pub var memory: LogLevel = .info;
+    pub var mprot: LogLevel = .info; // very noise modules!
+    pub var multitasking: LogLevel = .debug;
+    pub var network: LogLevel = .info;
+    pub var overlapped: LogLevel = .info; // very noise modules!
+    pub var page_allocator: LogLevel = .debug;
+    pub var resources: LogLevel = .info;
+    pub var scheduler: LogLevel = .debug;
+    pub var ui: LogLevel = .debug;
+    pub var video: LogLevel = .debug;
+    pub var storage: LogLevel = .info; // very noise modules!
+    pub var x86_vmm: LogLevel = .info; // very noise modules!
 
     // drivers:
     pub var @"virtio-net": LogLevel = .info;
     pub var @"virtio-gpu": LogLevel = .info;
     pub var @"virtio-input": LogLevel = .info;
+    pub var @"virtio-blog": LogLevel = .debug;
     pub var kbc: LogLevel = .info;
 
     // external modules:

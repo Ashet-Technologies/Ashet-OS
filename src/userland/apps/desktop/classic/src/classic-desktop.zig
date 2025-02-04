@@ -132,6 +132,8 @@ pub fn main() !void {
     try ashet.overlapped.schedule(&wait_input_event.arc);
     try ashet.overlapped.schedule(&wait_vsync_event.arc);
 
+    std.log.info("classic desktop ready!", .{});
+
     while (true) {
         const completed = try ashet.overlapped.await_events(.{
             .input = &wait_input_event.arc,

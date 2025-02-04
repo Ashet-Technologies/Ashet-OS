@@ -193,6 +193,23 @@ pub fn wait_for_vblank_async(call: *ashet.overlapped.AsyncCall, inputs: ashet.ab
     output.vsync_awaiters.enqueue(call, null);
 }
 
+pub fn load_splash_screen(buffer: []ColorIndex, options: struct { width: u32, height: u32, stride: u32 }) void {
+    const clamp_w = @min(options.width, 256);
+    const clamp_h = @min(options.height, 128);
+    const offset_x = (options.width -| 256) / 2;
+    const offset_y = (options.height -| 128) / 2;
+
+    var src_row: [*]const ColorIndex = &defaults.splash_screen;
+    var dst_row: [*]ColorIndex = buffer.ptr + options.stride * offset_y + offset_x;
+
+    for (0..clamp_h) |_| {
+        @memcpy(dst_row[0..clamp_w], src_row[0..clamp_w]);
+
+        src_row += 256;
+        dst_row += options.stride;
+    }
+}
+
 /// Contains initialization defaults for the system
 pub const defaults = struct {
     pub const font: [256][6]u8 = blk: {

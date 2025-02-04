@@ -2,7 +2,7 @@
   "build_options": [
     {
       "name": "machine",
-      "value": "pc-bios"
+      "value": "x86-pc-bios"
     }
   ]
 }

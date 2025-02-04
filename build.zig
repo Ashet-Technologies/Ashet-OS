@@ -5,18 +5,23 @@ const abi_package = @import("ashet-abi");
 const Machine = kernel_package.Machine;
 const Platform = abi_package.Platform;
 
-const default_machines = std.EnumSet(Machine).init(.{
-    .@"x86-pc-bios" = true,
-    .@"rv32-qemu-virt" = true,
-    .@"arm-qemu-virt" = true,
-    .@"x86-hosted-linux" = true,
-});
+const excluded_machines: []const Machine = &.{
+    // Options here are excluded:
+    // .@"x86-pc-bios",
+    // .@"arm-ashet-vhc",
+    // .@"rv32-qemu-virt",
+    // .@"arm-qemu-virt",
+    // .@"x86-hosted-linux",
+};
+
+const default_machines = std.EnumSet(Machine).initMany(excluded_machines).complement();
 
 const qemu_debug_options_default = "cpu_reset,guest_errors,unimp";
 
 pub fn build(b: *std.Build) void {
     // Options:
-    const optimize = b.standardOptimizeOption(.{});
+    const optimize_kernel = b.option(bool, "optimize-kernel", "Should the kernel be optimized?") orelse false;
+    const optimize_apps = b.option(std.builtin.OptimizeMode, "optimize-apps", "Optimization mode for the applications") orelse .Debug;
 
     const maybe_run_machine = b.option(Machine, "machine", "Selects which machine to run with the 'run' step");
     const no_gui = b.option(bool, "no-gui", "Disables GUI for runners") orelse false;
@@ -56,13 +61,16 @@ pub fn build(b: *std.Build) void {
 
     const debugfilter = debugfilter_dep.artifact("debug-filter");
 
+    var os_deps = std.EnumArray(Machine, *std.Build.Dependency).initUndefined();
     for (std.enums.values(Machine)) |machine| {
         const step = machine_steps.get(machine);
 
         const machine_os_dep = b.dependency("os", .{
             .machine = machine,
-            .optimize = optimize,
+            .@"optimize-kernel" = optimize_kernel,
+            .@"optimize-apps" = optimize_apps,
         });
+        os_deps.set(machine, machine_os_dep);
 
         const out_dir: std.Build.InstallDir = .{ .custom = @tagName(machine) };
         const os_files = machine_os_dep.namedWriteFiles("ashet-os");
@@ -70,6 +78,15 @@ pub fn build(b: *std.Build) void {
         for (os_files.files.items) |file| {
             const install_elf_step = b.addInstallFileWithDir(file.getPath(), out_dir, file.sub_path);
             step.dependOn(&install_elf_step.step);
+        }
+
+        if (list_apps) {
+            std.debug.print("available files for '{s}':\n", .{
+                @tagName(machine),
+            });
+            for (os_files.files.items) |file| {
+                std.debug.print("- {s}\n", .{file.sub_path});
+            }
         }
     }
 
@@ -116,33 +133,24 @@ pub fn build(b: *std.Build) void {
         const platform_info = platform_info_map.get(run_machine.get_platform());
         const machine_info = machine_info_map.get(run_machine);
 
-        const machine_os_dep = b.dependency("os", .{
-            .machine = run_machine,
-        });
+        const machine_os_dep = os_deps.get(run_machine);
 
         const os_files = machine_os_dep.namedWriteFiles("ashet-os");
 
-        const kernel_elf = get_named_file(os_files, "kernel.elf").?;
-        const disk_img = get_named_file(os_files, "disk.img").?;
-        const kernel_bin = get_named_file(os_files, "kernel.bin");
+        const kernel_elf = get_named_file(os_files, "kernel.elf");
+        const disk_img = get_named_file(os_files, "disk.img");
+        const kernel_bin = get_optional_named_file(os_files, "kernel.bin");
 
         const AppDef = struct {
             name: []const u8,
             exe: std.Build.LazyPath,
         };
 
-        if (list_apps) {
-            std.debug.print("available files:\n", .{});
-            for (os_files.files.items) |file| {
-                std.debug.print("- {s}\n", .{file.sub_path});
-            }
-        }
-
         const apps: []const AppDef = &.{
-            // .{ .name = "init", .exe = get_named_file(os_files, "apps/init.elf").? },
-            // .{ .name = "hello-world", .exe = get_named_file(os_files, "apps/hello-world.elf").? },
-            // .{ .name = "hello-gui", .exe = get_named_file(os_files, "apps/hello-gui.elf").? },
-            // .{ .name = "classic", .exe = get_named_file(os_files, "apps/desktop/classic.elf").? },
+            .{ .name = "init", .exe = get_named_file(os_files, "apps/init.elf") },
+            .{ .name = "hello-world", .exe = get_named_file(os_files, "apps/hello-world.elf") },
+            .{ .name = "hello-gui", .exe = get_named_file(os_files, "apps/hello-gui.elf") },
+            .{ .name = "classic", .exe = get_named_file(os_files, "apps/desktop/classic.elf") },
         };
 
         const variables = Variables{
@@ -296,6 +304,25 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
             "-drive",  "if=pflash,index=1,format=raw,file=${DISK}",
         },
     },
+    .@"arm-ashet-vhc" = .{
+        .qemu_cli = &.{
+            "-M",        "ashet-vhc",
+            "-m",        "8M",
+            "-kernel",   "${KERNEL}",
+            "-blockdev", "driver=file,node-name=disk_file,filename=${DISK}",
+            "-blockdev", "driver=raw,node-name=disk,file=disk_file",
+            "-device",   "virtio-gpu-device,xres=800,yres=480",
+            "-device",   "virtio-keyboard-device",
+            "-device",   "virtio-mouse-device",
+            "-device",   "virtio-blk-device,drive=disk",
+
+            // we use the second serial for dumping binary data out of the system /o\
+            "-serial",
+            "file:zig-out/init-linked.bin",
+
+            // "-serial",   "vc",
+        },
+    },
     .@"x86-hosted-linux" = .{
         .hosted_cli = &.{
             "drive:${DISK}",
@@ -326,8 +353,9 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
 });
 
 const generic_qemu_flags = [_][]const u8{
-    "-serial",    "stdio",
     "-no-reboot", "-no-shutdown",
+    "-chardev",   "stdio,id=os-monitor,logfile=zig-out/serial.log,signal=off",
+    "-serial",    "chardev:os-monitor",
     "-s",
 };
 
@@ -339,9 +367,25 @@ const console_qemu_flags = [_][]const u8{
     "-display", "vnc=0.0.0.0:0", // Binds to VNC Port 5900
 };
 
-fn get_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) ?std.Build.LazyPath {
-    return for (write_files.files.items) |file| {
+fn get_optional_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) ?std.Build.LazyPath {
+    for (write_files.files.items) |file| {
         if (std.mem.eql(u8, file.sub_path, sub_path))
-            break file.getPath();
-    } else null;
+            return file.getPath();
+    }
+    return null;
+}
+
+fn get_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) std.Build.LazyPath {
+    if (get_optional_named_file(write_files, sub_path)) |path|
+        return path;
+
+    std.debug.print("missing file '{s}' in dependency '{s}:{s}'. available files are:\n", .{
+        sub_path,
+        std.mem.trimRight(u8, write_files.step.owner.dep_prefix, "."),
+        write_files.step.name,
+    });
+    for (write_files.files.items) |file| {
+        std.debug.print("- '{s}'\n", .{file.sub_path});
+    }
+    std.process.exit(1);
 }

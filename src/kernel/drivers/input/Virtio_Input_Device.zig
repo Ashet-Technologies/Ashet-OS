@@ -25,12 +25,14 @@ kind: DeviceData,
 events: [queue_size]virtio.input.Event,
 vq: virtio.queue.VirtQ(queue_size),
 
-pub fn init(allocator: std.mem.Allocator, regs: *volatile virtio.ControlRegs) !*Virtio_Input_Device {
+pub fn init(allocator: std.mem.Allocator, index: usize, regs: *volatile virtio.ControlRegs) !*Virtio_Input_Device {
+    _ = index;
+
     logger.info("initializing input device {*}", .{regs});
 
     const input_dev = &regs.device.input;
 
-    _ = try regs.negotiateFeatures(virtio.FeatureFlags.any_layout | virtio.FeatureFlags.version_1);
+    _ = try regs.negotiateFeatures(.default);
 
     selectConfig(regs, .id_name, .unset);
 

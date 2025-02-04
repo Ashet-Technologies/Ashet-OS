@@ -4,7 +4,7 @@
 //!
 //! RISC-V32 ABI:
 //!
-//!     Register | ABI Name | Description Saver
+//!     Register | ABI Name | Description                      Saver
 //!     ---------+----------+----------------------------------------
 //!     x0       | zero     | Hard-wired zero                  —
 //!     x1       | ra       | Return address                   Caller
@@ -41,9 +41,31 @@
 //!     - ESP
 //!     - EIP
 //!
+//! Arm/Thumb EABI:
+//!     armv8-m uses AAPCS
+//!         https://developer.arm.com/documentation/107656/0101/Getting-started-with-Armv8-M-based-systems/Procedure-Call-Standard-for-Arm-Architecture--AAPCS-?lang=en
+//!     AAPCS is documented on GitHub
+//!         https://github.com/ARM-software/abi-aa/blob/main/aapcs32/aapcs32.rst
 //!
-//!
-//!
+//!     Register | ABI Name | ABI Saver   | Saved | Description
+//!     ---------+----------+-------------+-------+----------------------------------------
+//!     r0, a1   |          | Caller      | yes   | Argument / result / scratch register 1.
+//!     r1, a2   |          | Caller      | yes   | Argument / result / scratch register 2.
+//!     r2, a3   |          | Caller      | yes   | Argument / scratch register 3.
+//!     r3, a4   |          | Caller      | yes   | Argument / scratch register 4.
+//!     r4, v1   |          | Callee      | yes   | Variable-register 1.
+//!     r5, v2   |          | Callee      | yes   | Variable-register 2.
+//!     r6, v3   |          | Callee      | yes   | Variable-register 3.
+//!     r7, v4   |          | Callee      | yes   | Variable-register 4.
+//!     r8, v5   |          | Callee      | yes   | Variable-register 5.
+//!     r9, v6   | TR       | Callee      | yes   | The meaning of this register is defined by the platform standard.
+//!              | SB       |             | yes   | Platform register or Variable-register 6.
+//!     r10, v7  |          | Callee      | yes   | Variable-register 7.
+//!     r11, v8  | FP       | Callee      | yes   | Frame Pointer or Variable-register 8.
+//!     r12      | IP       | Special     | yes   | The Intra-Procedure-call scratch register.
+//!     r13      | SP       | Special     | no    | The Stack Pointer.
+//!     r14      | LR       | Special     | no    | The Link Register.
+//!     r15      | PC       | Special     | no    | The Program Counter.
 //!
 //!
 //!
@@ -226,8 +248,9 @@ pub const Thread = struct {
                 thread.push(0x0000_0000); //     x26
                 thread.push(0x0000_0000); //     x27
             },
+
             .x86 => {
-                thread.push(@intFromPtr(&ashet_scheduler_threadTrampoline)); // return address
+                thread.push(thread.ip); // return address
 
                 // thread.push(0x0000_0000); // EFLAGS
                 thread.push(0x0000_0000); // EDI
@@ -238,8 +261,23 @@ pub const Thread = struct {
                 thread.push(@intFromPtr(arg)); // EBX
                 thread.push(@intFromPtr(func)); // EAX
             },
-            .arm => @compileError("arm support not implemented yet!"),
-            .thumb => @panic("arm-thumb support not implemented yet!"),
+
+            .thumb => {
+                // push {r0-r10,fp,ip} pushes "ip" first and "r0" last.
+                thread.push(@intFromPtr(func)); // ip
+                thread.push(0x0000_0000); // fp
+                thread.push(0x0000_0000); // r10
+                thread.push(0x0000_0000); // r9
+                thread.push(0x0000_0000); // r8
+                thread.push(0x0000_0000); // r7
+                thread.push(0x0000_0000); // r6
+                thread.push(0x0000_0000); // r5
+                thread.push(0x0000_0000); // r4
+                thread.push(0x0000_0000); // r3
+                thread.push(0x0000_0000); // r2
+                thread.push(0x0000_0000); // r1
+                thread.push(@intFromPtr(arg)); // r0
+            },
 
             else => @compileError(std.fmt.comptimePrint("{s} is not a supported platform", .{@tagName(target)})),
         }
@@ -761,8 +799,6 @@ comptime {
                 \\  ret
         ),
 
-        .arm => @compileError("arm support not implemented yet!"),
-
         .thumb => asm (preamble ++
                 \\
                 // \\.thumb
@@ -770,25 +806,54 @@ comptime {
                 \\.global ashet_scheduler_threadTrampoline
                 \\.type ashet_scheduler_threadTrampoline, %function
                 \\ashet_scheduler_threadTrampoline:
+                //
+                //  we just restored the thread state from scheduler.createThread,
+                //  so a0 already contains the argument to our thread entry point.
+                //
+                //  after we successfully restored the argument, just call the actual
+                //  thread entry point currently stored in the IP register.
+                \\  blx ip
+                //
+                //  then kill the thread by jumping into the exit function.
+                //  leaving a0 unchanged. This means that the return value of the
+                //  thread function will be retained into the exit() call.
+                //  There's no need to use call/jalr here, as the exit() call won't
+                //  ever return here in the first place.
+                \\  b ashet_scheduler_threadExit
                 \\
-                // \\.thumb
                 \\.thumb_func
                 \\.global ashet_scheduler_switchTasks
                 \\.type ashet_scheduler_switchTasks, %function
                 \\ashet_scheduler_switchTasks:
                 //
-                //  save all registers that are callee-saved to the stack
-
-                //  backup the current state:
-
-                // restore the new state:
-
-                //  then restore all registers from the stack
-                //  in the same order we saved them above
-
+                //  save all registers that to the stack
+                \\  push {r0-r10,fp,ip}
+                //
+                //  load the current thread pointer into a0
+                \\  ldr a1, .save_thread
+                \\  ldr a1, [a1]
+                //
+                //  then create a backup of the current state:
+                \\  str sp, [a1, #THREAD_SP_OFFSET]
+                \\  str lr, [a1, #THREAD_IP_OFFSET]
+                //
+                // then load the new thread pointer
+                \\  ldr a1, .restore_thread
+                \\  ldr a1, [a1]
+                //
+                //  and restore the previously saved state:
+                \\  ldr sp, [a1, #THREAD_SP_OFFSET]
+                \\  ldr lr, [a1, #THREAD_IP_OFFSET]
+                \\
+                //  then restore all registers from the stack:
+                \\  pop {r0-r10,fp,ip}
                 //
                 //  and jump into the new thread function
-                \\  
+                \\  bx lr
+                \\.save_thread:
+                \\  .word ashet_scheduler_save_thread
+                \\.restore_thread:
+                \\  .word ashet_scheduler_restore_thread
         ),
 
         else => @compileError(std.fmt.comptimePrint("{s} is not a supported platform", .{@tagName(target)})),

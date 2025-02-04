@@ -31,18 +31,17 @@ transmitq: virtio.queue.VirtQ(queue_size) = undefined,
 receive_buffers: FixedPool(Buffer, queue_size) = .{},
 transmit_buffers: FixedPool(Buffer, queue_size) = .{},
 
-pub fn init(allocator: std.mem.Allocator, regs: *volatile virtio.ControlRegs) !*Virtio_Net_Device {
+pub fn init(allocator: std.mem.Allocator, index: usize, regs: *volatile virtio.ControlRegs) !*Virtio_Net_Device {
+    _ = index;
     logger.info("initializing network device {*}", .{regs});
 
     const network_dev = &regs.device.network;
 
-    const negotiated_features = try regs.negotiateFeatures(0 |
-        virtio.FeatureFlags.any_layout |
-        virtio.FeatureFlags.version_1 | // we want the non-legacy interface
-        virtio.network.FeatureFlags.mtu | // we want to know the MTU
-        virtio.network.FeatureFlags.mrg_rxbuf | // we can use merged buffers, for legacy interface compat
-        // virtio.network.FeatureFlags.mac | // use custom mac
-        virtio.network.FeatureFlags.status // we want to know the real up/down status
+    const negotiated_features = try regs.negotiateFeatures(virtio.FeatureSet.default
+        .add(virtio.network.FeatureFlags.mtu) // we want to know the MTU
+        .add(virtio.network.FeatureFlags.mrg_rxbuf) // we can use merged buffers, for legacy interface compat
+    // .add(virtio.network.FeatureFlags.mac) // use custom mac
+        .add(virtio.network.FeatureFlags.status) // we want to know the real up/down status
     );
 
     const features = while (true) {
@@ -64,14 +63,14 @@ pub fn init(allocator: std.mem.Allocator, regs: *volatile virtio.ControlRegs) !*
         features.mtu,
         features.max_virtqueue_pairs,
     });
-    inline for (comptime std.meta.declarations(virtio.FeatureFlags)) |decl| {
-        const has_feature = ((negotiated_features & @field(virtio.FeatureFlags, decl.name)) != 0);
+    for (std.enums.values(virtio.FeatureFlag)) |value| {
+        const has_feature = negotiated_features.contains(value);
         if (has_feature) {
-            logger.info("- {s}", .{decl.name});
+            logger.info("- {s}", .{@tagName(value)});
         }
     }
     inline for (comptime std.meta.declarations(virtio.network.FeatureFlags)) |decl| {
-        const has_feature = ((negotiated_features & @field(virtio.network.FeatureFlags, decl.name)) != 0);
+        const has_feature = negotiated_features.contains(@field(virtio.network.FeatureFlags, decl.name));
         if (has_feature) {
             logger.info("- {s}", .{decl.name});
         }

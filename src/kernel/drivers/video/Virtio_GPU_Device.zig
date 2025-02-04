@@ -12,7 +12,7 @@ const Driver = ashet.drivers.Driver;
 const max_width = 800;
 const max_height = 600;
 
-backing_buffer: [max_width * max_height]ColorIndex align(ashet.memory.page_size) = ashet.video.defaults.splash_screen ++ ([1]ColorIndex{ColorIndex.get(0)} ** (max_width * max_height - ashet.video.defaults.splash_screen.len)),
+backing_buffer: [max_width * max_height]ColorIndex align(ashet.memory.page_size) = undefined,
 backing_palette: [256]Color = ashet.video.defaults.palette,
 border_color: ColorIndex = ashet.video.defaults.border,
 
@@ -38,7 +38,8 @@ driver: Driver = .{
     },
 },
 
-pub fn init(allocator: std.mem.Allocator, regs: *volatile virtio.ControlRegs) !*Virtio_GPU_Device {
+pub fn init(allocator: std.mem.Allocator, index: usize, regs: *volatile virtio.ControlRegs) !*Virtio_GPU_Device {
+    _ = index;
     const vd = try allocator.create(Virtio_GPU_Device);
     errdefer allocator.destroy(vd);
 
@@ -50,6 +51,17 @@ pub fn init(allocator: std.mem.Allocator, regs: *volatile virtio.ControlRegs) !*
 
     vd.graphics_width = @intCast(@min(std.math.maxInt(u16), vd.gpu.fb_width));
     vd.graphics_height = @intCast(@min(std.math.maxInt(u16), vd.gpu.fb_height));
+
+    @memset(&vd.backing_buffer, ashet.video.defaults.border);
+
+    ashet.video.load_splash_screen(
+        &vd.backing_buffer,
+        .{
+            .width = vd.graphics_width,
+            .height = vd.graphics_height,
+            .stride = vd.graphics_width,
+        },
+    );
 
     vd.driver.class.video.flush();
 
@@ -203,7 +215,7 @@ const GPU = struct {
     fn initialize(gpu: *GPU, allocator: std.mem.Allocator, regs: *volatile virtio.ControlRegs) !void {
         logger.info("initializing gpu {*}", .{regs});
 
-        _ = try regs.negotiateFeatures(virtio.FeatureFlags.any_layout | virtio.FeatureFlags.version_1);
+        _ = try regs.negotiateFeatures(.default);
 
         const num_scanouts = &regs.device.gpu.num_scanouts;
         if (num_scanouts.* < 1) {

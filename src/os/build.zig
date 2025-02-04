@@ -19,7 +19,8 @@ const app_packages = [_][]const u8{
 pub fn build(b: *std.Build) void {
     // Options:
     const machine = b.option(Machine, "machine", "What machine should AshetOS be built for?") orelse @panic("no machine defined!");
-    const optimize = b.standardOptimizeOption(.{});
+    const optimize_kernel = b.option(bool, "optimize-kernel", "Should the kernel be optimized?") orelse false;
+    const optimize_apps = b.option(std.builtin.OptimizeMode, "optimize-apps", "Optimization mode for the applications") orelse .Debug;
 
     const platform = machine.get_platform();
 
@@ -27,7 +28,7 @@ pub fn build(b: *std.Build) void {
 
     const kernel_dep = b.dependency("kernel", .{
         .machine = machine,
-        .release = (optimize != .Debug),
+        .release = optimize_kernel,
     });
     const assets_dep = b.dependency("assets", .{});
     const syslinux_dep = b.dependency("syslinux", .{ .release = true });
@@ -64,7 +65,7 @@ pub fn build(b: *std.Build) void {
 
         const app_dep = b.dependency(dep_name, .{
             .target = platform,
-            .optimize = optimize,
+            .optimize = optimize_apps,
         });
         const app_list = AshetOS.getApplications(app_dep);
 
@@ -77,13 +78,19 @@ pub fn build(b: *std.Build) void {
             if (std.fs.path.dirnamePosix(app_path)) |dir| {
                 rootfs.mkdir(dir);
             }
-            rootfs.addFile(app.file, app_path);
+            rootfs.addFile(app.ashex_file, app_path);
 
             // TODO(fqu): Add means to also export the applications ELF file:
-            // _ = result_files.addCopyFile(
-            //     app.file,
-            //     b.fmt("apps/{s}.elf", .{app.name}),
-            // );
+            _ = result_files.addCopyFile(
+                app.elf_file,
+                b.fmt("apps/{s}.elf", .{
+                    app.target_path[0 .. app.target_path.len - ".ashex".len],
+                }),
+            );
+            _ = result_files.addCopyFile(
+                app.ashex_file,
+                b.fmt("apps/{s}", .{app.target_path}),
+            );
         }
     }
 
@@ -204,6 +211,10 @@ const machine_info_map = std.EnumArray(Machine, MachineDependentOsConfig).init(.
         .rom_size = 0x0400_0000,
     },
     .@"x86-hosted-linux" = .{
+        .disk_size = 0x0400_0000,
+        .rom_size = null,
+    },
+    .@"arm-ashet-vhc" = .{
         .disk_size = 0x0400_0000,
         .rom_size = null,
     },

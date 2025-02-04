@@ -14,18 +14,24 @@ pub fn standardTargetOption(b: *std.Build) Target {
 
 pub const ExportedApp = struct {
     target_path: []const u8,
-    file: std.Build.LazyPath,
+    ashex_file: std.Build.LazyPath,
+    elf_file: std.Build.LazyPath,
 };
 
 /// Returns the list of exported applications for the given dependency
 pub fn getApplications(dep: *std.Build.Dependency) []const ExportedApp {
     const write_files = dep.namedWriteFiles(AshetSdk.exported_app_writefiles_key);
+    const elf_files = dep.namedWriteFiles(AshetSdk.exported_elf_writefiles_key);
 
     const apps = dep.builder.allocator.alloc(ExportedApp, write_files.files.items.len) catch @panic("out of memory");
 
     for (apps, write_files.files.items) |*app, writefile| {
         app.* = .{
-            .file = writefile.contents.copy,
+            .ashex_file = writefile.contents.copy,
+            .elf_file = for (elf_files.files.items) |file| {
+                if (std.mem.eql(u8, file.sub_path, writefile.sub_path))
+                    break file.contents.copy;
+            } else unreachable,
             .target_path = writefile.sub_path,
         };
     }
@@ -45,7 +51,7 @@ pub fn init(b: *std.Build, dependency_name: []const u8, args: struct {
         .ashex_tool_exe = dep.artifact("ashet-exe"),
         .ashet_module = dep.module("ashet"),
         .linker_script = dep.path("application.ld"),
-        .syscall_library = dep.artifact("AshetOS"),
+        .syscall_library = get_named_file(dep.namedWriteFiles("files"), "libAshetOS.a"),
         .mkicon_exe = dep.artifact("mkicon"),
 
         .desktop_icon_conv_options = .{
@@ -60,13 +66,14 @@ pub fn init(b: *std.Build, dependency_name: []const u8, args: struct {
 
 pub const AshetSdk = struct {
     pub const exported_app_writefiles_key = "ashet-os:apps";
+    pub const exported_elf_writefiles_key = "ashet-os:elves";
 
     // Public properties:
 
     ashex_tool_exe: *std.Build.Step.Compile,
     mkicon_exe: *std.Build.Step.Compile,
 
-    syscall_library: *std.Build.Step.Compile,
+    syscall_library: std.Build.LazyPath,
     ashet_module: *std.Build.Module,
     linker_script: std.Build.LazyPath,
     desktop_icon_conv_options: mkicon.ConvertOptions,
@@ -76,11 +83,12 @@ pub const AshetSdk = struct {
     dependency: *std.Build.Dependency,
 
     published_apps: ?*std.Build.Step.WriteFile = null,
+    published_elves: ?*std.Build.Step.WriteFile = null,
 
     pub fn addApp(sdk: *AshetSdk, options: ExecutableOptions) *AshetApp {
         const b = sdk.owning_builder;
 
-        const zig_target = options.target.resolve_target(b);
+        const zig_target: std.Build.ResolvedTarget = options.target.resolve_target(b);
 
         const file_name = b.fmt("{s}.ashex", .{options.name});
 
@@ -91,7 +99,7 @@ pub const AshetSdk = struct {
             .version = options.version,
             .optimize = options.optimize,
             .code_model = options.code_model,
-            .linkage = .dynamic,
+            .linkage = .static, // AshetOS ELF executables are statically linked, as Ashex uses a non-standard dynamic linking procedure.
             .max_rss = options.max_rss,
             .link_libc = options.link_libc,
             .single_threaded = true, // AshetOS doesn't support multithreading in a modern sense
@@ -107,9 +115,14 @@ pub const AshetSdk = struct {
             .win32_manifest = null,
         });
 
+        // if (zig_target.result.cpu.arch.isThumb()) {
+        //     // Disable LTO on arm as it fails hard
+        //     exe.want_lto = false;
+        // }
+
         exe.pie = true; // AshetOS requires PIE executables
 
-        exe.linkLibrary(sdk.syscall_library);
+        exe.addObjectFile(sdk.syscall_library);
         exe.setLinkerScript(sdk.linker_script);
 
         if (options.os_module_import) |os_module_import| {
@@ -166,10 +179,16 @@ pub const AshetSdk = struct {
         if (sdk.published_apps == null) {
             sdk.published_apps = b.addNamedWriteFiles(exported_app_writefiles_key);
         }
+        if (sdk.published_elves == null) {
+            sdk.published_elves = b.addNamedWriteFiles(exported_elf_writefiles_key);
+        }
 
-        const target_step = sdk.published_apps.?;
-        _ = target_step.addCopyFile(
+        _ = sdk.published_apps.?.addCopyFile(
             app.app_file,
+            target_file_name,
+        );
+        _ = sdk.published_elves.?.addCopyFile(
+            app.exe.getEmittedBin(),
             target_file_name,
         );
 
@@ -230,6 +249,10 @@ pub const ExecutableOptions = struct {
 };
 
 pub fn build(b: *std.Build) void {
+
+    // Targets:
+    const debug_step = b.step("debug", "Installs a debug executable for disassembly");
+
     // Options:
     const ashet_target = standardTargetOption(b);
 
@@ -247,10 +270,10 @@ pub fn build(b: *std.Build) void {
 
     const abi_mod = abi_dep.module("ashet-abi");
     const abi_access_mod = abi_dep.module("ashet-abi-consumer");
-    const abi_stubs_mod = abi_dep.module("ashet-abi-stubs");
+    const abi_json_mod = abi_dep.module("ashet-abi.json");
+    const abi_schema_mod = abi_dep.module("abi-schema");
 
     // External tooling:
-
     const ashet_exe_tool = ashex_dep.artifact("ashet-exe");
     b.installArtifact(ashet_exe_tool);
 
@@ -259,17 +282,78 @@ pub fn build(b: *std.Build) void {
 
     // Build:
 
+    const gen_binding_exe = b.addExecutable(.{
+        .name = "gen_abi_binding",
+        .target = b.graph.host,
+        .optimize = .Debug,
+        .root_source_file = b.path("src/gen-binding.zig"),
+    });
+    gen_binding_exe.root_module.addImport("abi-schema", abi_schema_mod);
+
+    const zig_binding = b.addRunArtifact(gen_binding_exe);
+    zig_binding.addFileArg(abi_json_mod.root_source_file.?);
+    zig_binding.addDirectoryArg(abi_dep.path("."));
+
+    const lib_build_dir = zig_binding.addOutputDirectoryArg("binding-library");
+
+    b.getInstallStep().dependOn(
+        &b.addInstallDirectory(.{
+            .source_dir = lib_build_dir,
+            .install_dir = .{ .custom = "libsyscall.build" },
+            .install_subdir = ".",
+        }).step,
+    );
+
+    // const abi_import_mod = b.addModule("ashet-syscall-functions", .{
+    //     .root_source_file = abi_import_zig,
+    // });
+
     const target = ashet_target.resolve_target(b);
 
-    const libsyscall = b.addSharedLibrary(.{
-        .name = "AshetOS",
+    // const libsyscall = b.addStaticLibrary(.{
+    //     .name = "AshetOS",
+    //     .target = target,
+    //     .optimize = .ReleaseSmall,
+    //     .root_source_file = b.path("src/libsyscall.zig"),
+    // });
+    // // libsyscall.root_module.addImport("abi", abi_mod);
+    // libsyscall.root_module.addImport("stubs", abi_import_mod);
+    // b.installArtifact(libsyscall);
+
+    const sub_build = b.addSystemCommand(&.{ b.graph.zig_exe, "build" });
+
+    sub_build.setCwd(lib_build_dir);
+    sub_build.addArg("--prefix");
+    const libsyscall_prefix = sub_build.addOutputDirectoryArg(
+        b.fmt("libsyscall.{s}", .{@tagName(ashet_target)}),
+    );
+    sub_build.addArg(b.fmt("-Dtarget={s}", .{@tagName(ashet_target)}));
+
+    b.getInstallStep().dependOn(
+        &b.addInstallDirectory(.{
+            .source_dir = libsyscall_prefix,
+            .install_dir = .{ .custom = "libsyscall.out" },
+            .install_subdir = ".",
+        }).step,
+    );
+
+    const libsyscall_path = libsyscall_prefix.path(b, "lib/libAshetOS.a");
+
+    const debug_exe = b.addExecutable(.{
+        .name = b.fmt("libAshetOS.{s}", .{@tagName(ashet_target)}),
+        .root_source_file = b.path("src/binding-test.zig"),
+        .optimize = .ReleaseFast,
         .target = target,
-        .optimize = .ReleaseSmall,
-        .root_source_file = b.path("src/libsyscall.zig"),
+        .pic = true,
+        .linkage = .static,
     });
-    libsyscall.root_module.addImport("abi", abi_mod);
-    libsyscall.root_module.addImport("stubs", abi_stubs_mod);
-    b.installArtifact(libsyscall);
+    debug_exe.pie = true;
+    debug_exe.want_lto = false;
+    debug_exe.link_gc_sections = false;
+    debug_exe.addObjectFile(libsyscall_path);
+
+    const install_debug_exe = b.addInstallArtifact(debug_exe, .{});
+    debug_step.dependOn(&install_debug_exe.step);
 
     _ = b.addModule("ashet", .{
         .root_source_file = b.path("src/libashet.zig"),
@@ -281,5 +365,41 @@ pub fn build(b: *std.Build) void {
         },
     });
 
+    b.getInstallStep().dependOn(
+        &b.addInstallFileWithDir(
+            libsyscall_path,
+            .lib,
+            "libAshetOS.a",
+        ).step,
+    );
     b.installLibFile("application.ld", "application.ld");
+
+    const exported_files = b.addNamedWriteFiles("files");
+    _ = exported_files.addCopyFile(
+        libsyscall_path,
+        "libAshetOS.a",
+    );
+}
+
+fn get_optional_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) ?std.Build.LazyPath {
+    for (write_files.files.items) |file| {
+        if (std.mem.eql(u8, file.sub_path, sub_path))
+            return file.getPath();
+    }
+    return null;
+}
+
+fn get_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) std.Build.LazyPath {
+    if (get_optional_named_file(write_files, sub_path)) |path|
+        return path;
+
+    std.debug.print("missing file '{s}' in dependency '{s}:{s}'. available files are:\n", .{
+        sub_path,
+        std.mem.trimRight(u8, write_files.step.owner.dep_prefix, "."),
+        write_files.step.name,
+    });
+    for (write_files.files.items) |file| {
+        std.debug.print("- '{s}'\n", .{file.sub_path});
+    }
+    std.process.exit(1);
 }

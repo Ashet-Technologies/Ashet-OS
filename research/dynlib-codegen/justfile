@@ -1,0 +1,368 @@
+
+
+
+
+foo:
+    zig-ashet build-lib \
+        -target thumb-other-eabi \
+        -mcpu cortex_m33         \
+        -dynamic                 \
+        -ofmt=elf                \
+        -fno-strip               \
+        -fsingle-threaded        \
+        -fno-omit-frame-pointer  \
+        -fno-sanitize-thread     \
+        -OReleaseSmall           \
+        -mcmodel small           \
+        -fPIC                    \
+        -fno-omit-frame-pointer  \
+        -fno-each-lib-rpath      \
+        -z now                   \
+        -z nodelete              \
+        -z notext                \
+        -z nocopyreloc           \
+        -z relro                 \
+        --verbose-link           \
+        --image-base 0           \
+        --script ../../src/userland/libs/libAshetOS/application.ld \
+        userland.zig
+
+    arm-none-eabi-readelf               \
+        --program-headers               \
+        --section-headers               \
+        --symbols                       \
+        --relocs                        \
+        --dynamic                       \
+        --wide                          \
+        --string-dump=.ashet.strings    \
+        --hex-dump=.ashet.strings       \
+        --hex-dump=.ashet.syscall       \
+        libuserland.so                  \
+      > libuserland.so.txt
+
+    arm-none-eabi-objdump        \
+        --disassemble            \
+        --source                 \
+        --wide                   \
+        libuserland.so           \
+      >> libuserland.so.txt
+
+
+bar:
+    arm-none-eabi-gcc -c         \
+        -mcpu=cortex-m33 \
+        -o userland.o \
+        -ffreestanding \
+        -Oz \
+        -fPIC \
+        userland.c
+
+    arm-none-eabi-gcc         \
+        -mcpu=cortex-m33 \
+        -Oz \
+        -o cuserland.so \
+        -ffreestanding \
+        -shared \
+        -fPIC \
+        -fPIE \
+        -nostartfiles \
+        -Wl,-z \
+        -Wl,now \
+        userland.o
+    # -T ../../src/userland/libs/libAshetOS/application.ld \
+
+    arm-none-eabi-readelf        \
+        --program-headers        \
+        --section-headers        \
+        --symbols                \
+        --relocs                 \
+        --dynamic                \
+        --wide                   \
+        cuserland.so           \
+      > cuserland.so.txt
+
+    arm-none-eabi-objdump        \
+        --disassemble            \
+        --source                 \
+        --wide                   \
+        cuserland.so           \
+      >> cuserland.so.txt
+
+
+# -Bsymbolic 
+# -z lazy 
+# --gc-sections
+
+
+# Usage: zig build-exe   [options] [files]
+#        zig build-lib   [options] [files]
+#        zig build-obj   [options] [files]
+#        zig test        [options] [files]
+#        zig run         [options] [files] [-- [args]]
+#        zig translate-c [options] [file]
+
+# Supported file types:
+#                     .zig    Zig source code
+#                       .o    ELF object file
+#                       .o    Mach-O (macOS) object file
+#                       .o    WebAssembly object file
+#                     .obj    COFF (Windows) object file
+#                     .lib    COFF (Windows) static library
+#                       .a    ELF static library
+#                       .a    Mach-O (macOS) static library
+#                       .a    WebAssembly static library
+#                      .so    ELF shared object (dynamic link)
+#                     .dll    Windows Dynamic Link Library
+#                   .dylib    Mach-O (macOS) dynamic library
+#                     .tbd    (macOS) text-based dylib definition
+#                       .s    Target-specific assembly source code
+#                       .S    Assembly with C preprocessor (requires LLVM extensions)
+#                       .c    C source code (requires LLVM extensions)
+#   .cxx .cc .C .cpp .stub    C++ source code (requires LLVM extensions)
+#                       .m    Objective-C source code (requires LLVM extensions)
+#                      .mm    Objective-C++ source code (requires LLVM extensions)
+#                      .bc    LLVM IR Module (requires LLVM extensions)
+#                      .cu    Cuda source code (requires LLVM extensions)
+
+# General Options:
+#   -h, --help                Print this help and exit
+#   --color [auto|off|on]     Enable or disable colored error messages
+#   -femit-bin[=path]         (default) Output machine code
+#   -fno-emit-bin             Do not output machine code
+#   -femit-asm[=path]         Output .s (assembly code)
+#   -fno-emit-asm             (default) Do not output .s (assembly code)
+#   -femit-llvm-ir[=path]     Produce a .ll file with optimized LLVM IR (requires LLVM extensions)
+#   -fno-emit-llvm-ir         (default) Do not produce a .ll file with optimized LLVM IR
+#   -femit-llvm-bc[=path]     Produce an optimized LLVM module as a .bc file (requires LLVM extensions)
+#   -fno-emit-llvm-bc         (default) Do not produce an optimized LLVM module as a .bc file
+#   -femit-h[=path]           Generate a C header file (.h)
+#   -fno-emit-h               (default) Do not generate a C header file (.h)
+#   -femit-docs[=path]        Create a docs/ dir with html documentation
+#   -fno-emit-docs            (default) Do not produce docs/ dir with html documentation
+#   -femit-implib[=path]      (default) Produce an import .lib when building a Windows DLL
+#   -fno-emit-implib          Do not produce an import .lib when building a Windows DLL
+#   --show-builtin            Output the source of @import("builtin") then exit
+#   --cache-dir [path]        Override the local cache directory
+#   --global-cache-dir [path] Override the global cache directory
+#   --zig-lib-dir [path]      Override path to Zig installation lib directory
+
+# Global Compile Options:
+#   --name [name]             Compilation unit name (not a file path)
+#   --libc [file]             Provide a file which specifies libc paths
+#   -x language               Treat subsequent input files as having type <language>
+#   --dep [[import=]name]     Add an entry to the next module's import table
+#   -M[name][=src]            Create a module based on the current per-module settings.
+#                             The first module is the main module.
+#                             "std" can be configured by omitting src
+#                             After a -M argument, per-module settings are reset.
+#   --error-limit [num]       Set the maximum amount of distinct error values
+#   -fllvm                    Force using LLVM as the codegen backend
+#   -fno-llvm                 Prevent using LLVM as the codegen backend
+#   -flibllvm                 Force using the LLVM API in the codegen backend
+#   -fno-libllvm              Prevent using the LLVM API in the codegen backend
+#   -fclang                   Force using Clang as the C/C++ compilation backend
+#   -fno-clang                Prevent using Clang as the C/C++ compilation backend
+#   -fPIE                     Force-enable Position Independent Executable
+#   -fno-PIE                  Force-disable Position Independent Executable
+#   -flto                     Force-enable Link Time Optimization (requires LLVM extensions)
+#   -fno-lto                  Force-disable Link Time Optimization
+#   -fdll-export-fns          Mark exported functions as DLL exports (Windows)
+#   -fno-dll-export-fns       Force-disable marking exported functions as DLL exports
+#   -freference-trace[=num]   Show num lines of reference trace per compile error
+#   -fno-reference-trace      Disable reference trace
+#   -fbuiltin                 Enable implicit builtin knowledge of functions
+#   -fno-builtin              Disable implicit builtin knowledge of functions
+#   -ffunction-sections       Places each function in a separate section
+#   -fno-function-sections    All functions go into same section
+#   -fdata-sections           Places each data in a separate section
+#   -fno-data-sections        All data go into same section
+#   -fformatted-panics        Enable formatted safety panics
+#   -fno-formatted-panics     Disable formatted safety panics
+#   -fstructured-cfg          (SPIR-V) force SPIR-V kernels to use structured control flow
+#   -fno-structured-cfg       (SPIR-V) force SPIR-V kernels to not use structured control flow
+#   -mexec-model=[value]      (WASI) Execution model
+#   -municode                 (Windows) Use wmain/wWinMain as entry point
+
+# Per-Module Compile Options:
+#   -target [name]            <arch><sub>-<os>-<abi> see the targets command
+#   -O [mode]                 Choose what to optimize for
+#     Debug                   (default) Optimizations off, safety on
+#     ReleaseFast             Optimize for performance, safety off
+#     ReleaseSafe             Optimize for performance, safety on
+#     ReleaseSmall            Optimize for small binary, safety off
+#   -ofmt=[fmt]               Override target object format
+#     elf                     Executable and Linking Format
+#     c                       C source code
+#     wasm                    WebAssembly
+#     coff                    Common Object File Format (Windows)
+#     macho                   macOS relocatables
+#     spirv                   Standard, Portable Intermediate Representation V (SPIR-V)
+#     plan9                   Plan 9 from Bell Labs object format
+#     hex  (planned feature)  Intel IHEX
+#     raw  (planned feature)  Dump machine code directly
+#   -mcpu [cpu]               Specify target CPU and feature set
+#   -mcmodel=[default|tiny|   Limit range of code and data virtual addresses
+#             small|kernel|
+#             medium|large]
+#   -mred-zone                Force-enable the "red-zone"
+#   -mno-red-zone             Force-disable the "red-zone"
+#   -fomit-frame-pointer      Omit the stack frame pointer
+#   -fno-omit-frame-pointer   Store the stack frame pointer
+#   -fPIC                     Force-enable Position Independent Code
+#   -fno-PIC                  Force-disable Position Independent Code
+#   -fstack-check             Enable stack probing in unsafe builds
+#   -fno-stack-check          Disable stack probing in safe builds
+#   -fstack-protector         Enable stack protection in unsafe builds
+#   -fno-stack-protector      Disable stack protection in safe builds
+#   -fsanitize-c              Enable C undefined behavior detection in unsafe builds
+#   -fno-sanitize-c           Disable C undefined behavior detection in safe builds
+#   -fvalgrind                Include valgrind client requests in release builds
+#   -fno-valgrind             Omit valgrind client requests in debug builds
+#   -fsanitize-thread         Enable Thread Sanitizer
+#   -fno-sanitize-thread      Disable Thread Sanitizer
+#   -funwind-tables           Always produce unwind table entries for all functions
+#   -fno-unwind-tables        Never produce unwind table entries
+#   -ferror-tracing           Enable error tracing in ReleaseFast mode
+#   -fno-error-tracing        Disable error tracing in Debug and ReleaseSafe mode
+#   -fsingle-threaded         Code assumes there is only one thread
+#   -fno-single-threaded      Code may not assume there is only one thread
+#   -fstrip                   Omit debug symbols
+#   -fno-strip                Keep debug symbols
+#   -idirafter [dir]          Add directory to AFTER include search path
+#   -isystem  [dir]           Add directory to SYSTEM include search path
+#   -I[dir]                   Add directory to include search path
+#   -D[macro]=[value]         Define C [macro] to [value] (1 if [value] omitted)
+#   -cflags [flags] --        Set extra flags for the next positional C source files
+#   -rcflags [flags] --       Set extra flags for the next positional .rc source files
+#   -rcincludes=[type]        Set the type of includes to use when compiling .rc source files
+#     any                     (default) Use msvc if available, fall back to gnu
+#     msvc                    Use msvc include paths (must be present on the system)
+#     gnu                     Use mingw include paths (distributed with Zig)
+#     none                    Do not use any autodetected include paths
+
+# Global Link Options:
+#   -T[script], --script [script]  Use a custom linker script
+#   --version-script [path]        Provide a version .map file
+#   --undefined-version            Allow version scripts to refer to undefined symbols
+#   --no-undefined-version         (default) Disallow version scripts from referring to undefined symbols
+#   --enable-new-dtags             Use the new behavior for dynamic tags (RUNPATH)
+#   --disable-new-dtags            Use the old behavior for dynamic tags (RPATH)
+#   --dynamic-linker [path]        Set the dynamic interpreter path (usually ld.so)
+#   --sysroot [path]               Set the system root directory (usually /)
+#   --version [ver]                Dynamic library semver
+#   -fentry                        Enable entry point with default symbol name
+#   -fentry=[name]                 Override the entry point symbol name
+#   -fno-entry                     Do not output any entry point
+#   --force_undefined [name]       Specify the symbol must be defined for the link to succeed
+#   -fsoname[=name]                Override the default SONAME value
+#   -fno-soname                    Disable emitting a SONAME
+#   -flld                          Force using LLD as the linker
+#   -fno-lld                       Prevent using LLD as the linker
+#   -fcompiler-rt                  Always include compiler-rt symbols in output
+#   -fno-compiler-rt               Prevent including compiler-rt symbols in output
+#   -rdynamic                      Add all symbols to the dynamic symbol table
+#   -feach-lib-rpath               Ensure adding rpath for each used dynamic library
+#   -fno-each-lib-rpath            Prevent adding rpath for each used dynamic library
+#   -fallow-shlib-undefined        Allows undefined symbols in shared libraries
+#   -fno-allow-shlib-undefined     Disallows undefined symbols in shared libraries
+#   --build-id[=style]             At a minor link-time expense, coordinates stripped binaries
+#       fast, uuid, sha1, md5      with debug symbols via a '.note.gnu.build-id' section
+#       0x[hexstring]              Maximum 32 bytes
+#       none                       (default) Disable build-id
+#   --eh-frame-hdr                 Enable C++ exception handling by passing --eh-frame-hdr to linker
+#   --emit-relocs                  Enable output of relocation sections for post build tools
+#   -z [arg]                       Set linker extension flags
+#     nodelete                     Indicate that the object cannot be deleted from a process
+#     notext                       Permit read-only relocations in read-only segments
+#     defs                         Force a fatal error if any undefined symbols remain
+#     undefs                       Reverse of -z defs
+#     origin                       Indicate that the object must have its origin processed
+#     nocopyreloc                  Disable the creation of copy relocations
+#     now                          (default) Force all relocations to be processed on load
+#     lazy                         Don't force all relocations to be processed on load
+#     relro                        (default) Force all relocations to be read-only after processing
+#     norelro                      Don't force all relocations to be read-only after processing
+#     common-page-size=[bytes]     Set the common page size for ELF binaries
+#     max-page-size=[bytes]        Set the max page size for ELF binaries
+#   -dynamic                       Force output to be dynamically linked
+#   -static                        Force output to be statically linked
+#   -Bsymbolic                     Bind global references locally
+#   --compress-debug-sections=[e]  Debug section compression settings
+#       none                       No compression
+#       zlib                       Compression with deflate/inflate
+#       zstd                       Compression with zstandard
+#   --gc-sections                  Force removal of functions and data that are unreachable by the entry point or exported symbols
+#   --no-gc-sections               Don't force removal of unreachable functions and data
+#   --sort-section=[value]         Sort wildcard section patterns by 'name' or 'alignment'
+#   --subsystem [subsystem]        (Windows) /SUBSYSTEM:<subsystem> to the linker
+#   --stack [size]                 Override default stack size
+#   --image-base [addr]            Set base address for executable image
+#   -install_name=[value]          (Darwin) add dylib's install name
+#   --entitlements [path]          (Darwin) add path to entitlements file for embedding in code signature
+#   -pagezero_size [value]         (Darwin) size of the __PAGEZERO segment in hexadecimal notation
+#   -headerpad [value]             (Darwin) set minimum space for future expansion of the load commands in hexadecimal notation
+#   -headerpad_max_install_names   (Darwin) set enough space as if all paths were MAXPATHLEN
+#   -dead_strip                    (Darwin) remove functions and data that are unreachable by the entry point or exported symbols
+#   -dead_strip_dylibs             (Darwin) remove dylibs that are unreachable by the entry point or exported symbols
+#   -ObjC                          (Darwin) force load all members of static archives that implement an Objective-C class or category
+#   --import-memory                (WebAssembly) import memory from the environment
+#   --export-memory                (WebAssembly) export memory to the host (Default unless --import-memory used)
+#   --import-symbols               (WebAssembly) import missing symbols from the host environment
+#   --import-table                 (WebAssembly) import function table from the host environment
+#   --export-table                 (WebAssembly) export function table to the host environment
+#   --initial-memory=[bytes]       (WebAssembly) initial size of the linear memory
+#   --max-memory=[bytes]           (WebAssembly) maximum size of the linear memory
+#   --shared-memory                (WebAssembly) use shared linear memory
+#   --global-base=[addr]           (WebAssembly) where to start to place global data
+
+# Per-Module Link Options:
+#   -l[lib], --library [lib]       Link against system library (only if actually used)
+#   -needed-l[lib],                Link against system library (even if unused)
+#     --needed-library [lib]
+#   -weak-l[lib]                   link against system library marking it and all
+#     -weak_library [lib]          referenced symbols as weak
+#   -L[d], --library-directory [d] Add a directory to the library search path
+#   -search_paths_first            For each library search path, check for dynamic
+#                                  lib then static lib before proceeding to next path.
+#   -search_paths_first_static     For each library search path, check for static
+#                                  lib then dynamic lib before proceeding to next path.
+#   -search_dylibs_first           Search for dynamic libs in all library search
+#                                  paths, then static libs.
+#   -search_static_first           Search for static libs in all library search
+#                                  paths, then dynamic libs.
+#   -search_dylibs_only            Only search for dynamic libs.
+#   -search_static_only            Only search for static libs.
+#   -rpath [path]                  Add directory to the runtime library search path
+#   -framework [name]              (Darwin) link against framework
+#   -needed_framework [name]       (Darwin) link against framework (even if unused)
+#   -needed_library [lib]          (Darwin) link against system library (even if unused)
+#   -weak_framework [name]         (Darwin) link against framework and mark it and all referenced symbols as weak
+#   -F[dir]                        (Darwin) add search path for frameworks
+#   --export=[value]               (WebAssembly) Force a symbol to be exported
+
+# Test Options:
+#   --test-filter [text]           Skip tests that do not match any filter
+#   --test-name-prefix [text]      Add prefix to all tests
+#   --test-cmd [arg]               Specify test execution command one arg at a time
+#   --test-cmd-bin                 Appends test binary path to test cmd args
+#   --test-evented-io              Runs the test in evented I/O mode
+#   --test-no-exec                 Compiles test binary without running it
+#   --test-runner [path]           Specify a custom test runner
+
+# Debug Options (Zig Compiler Development):
+#   -fopt-bisect-limit=[limit]   Only run [limit] first LLVM optimization passes
+#   -ftime-report                Print timing diagnostics
+#   -fstack-report               Print stack size diagnostics
+#   --verbose-link               Display linker invocations
+#   --verbose-cc                 Display C compiler invocations
+#   --verbose-air                Enable compiler debug output for Zig AIR
+#   --verbose-intern-pool        Enable compiler debug output for InternPool
+#   --verbose-generic-instances  Enable compiler debug output for generic instance generation
+#   --verbose-llvm-ir[=path]     Enable compiler debug output for unoptimized LLVM IR
+#   --verbose-llvm-bc=[path]     Enable compiler debug output for unoptimized LLVM BC
+#   --verbose-cimport            Enable compiler debug output for C imports
+#   --verbose-llvm-cpu-features  Enable compiler debug output for LLVM CPU features
+#   --debug-log [scope]          Enable printing debug/info log messages for scope
+#   --debug-compile-errors       Crash with helpful diagnostics at the first compile error
+#   --debug-link-snapshot        Enable dumping of the linker's state in JSON format
+#   --debug-incremental          Enable experimental feature: incremental compilation

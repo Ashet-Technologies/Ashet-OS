@@ -56,28 +56,28 @@ const build = struct {
             .abi = .eabi,
             .cpu_model = .{
                 // .explicit = &std.Target.arm.cpu.cortex_a7, // this seems to be a pretty reasonable base line
-                .explicit = &std.Target.arm.cpu.generic,
+                .explicit = &std.Target.arm.cpu.cortex_m33,
             },
-            .cpu_features_add = std.Target.arm.featureSet(&.{
-                .v7a,
-            }),
-            .cpu_features_sub = std.Target.arm.featureSet(&.{
-                .v7a, // this is stupid, but it keeps out all the neon stuff we don't wnat
+            // .cpu_features_add = std.Target.arm.featureSet(&.{
+            //     .v7a,
+            // }),
+            // .cpu_features_sub = std.Target.arm.featureSet(&.{
+            //     .v7a, // this is stupid, but it keeps out all the neon stuff we don't wnat
 
-                // drop everything FPU related:
-                .neon,
-                .neonfp,
-                .neon_fpmovs,
-                .fp64,
-                .fpregs,
-                .fpregs64,
-                .vfp2,
-                .vfp2sp,
-                .vfp3,
-                .vfp3d16,
-                .vfp3d16sp,
-                .vfp3sp,
-            }),
+            //     // drop everything FPU related:
+            //     .neon,
+            //     .neonfp,
+            //     .neon_fpmovs,
+            //     .fp64,
+            //     .fpregs,
+            //     .fpregs64,
+            //     .vfp2,
+            //     .vfp2sp,
+            //     .vfp3,
+            //     .vfp3d16,
+            //     .vfp3d16sp,
+            //     .vfp3sp,
+            // }),
         }),
 
         .rv32 = constructTargetQuery(.{

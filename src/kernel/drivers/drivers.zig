@@ -8,6 +8,7 @@ pub const block = struct {
     pub const AT_Attachment = @import("block/AT_Attachment.zig");
     pub const RAM_Disk = @import("block/ram-disk.zig").RAM_Disk;
     pub const Host_Disk_Image = @import("block/Host_Disk_Image.zig");
+    pub const Virtio_Block_Device = @import("block/Virtio_Block_Device.zig");
 };
 
 pub const serial = struct {
@@ -59,6 +60,8 @@ pub const input = struct {
 };
 
 var driver_lists = std.EnumArray(DriverClass, ?*Driver).initFill(null);
+
+export var driver_lists_ptr = &driver_lists;
 
 /// Adds a driver to the system.
 pub fn install(driver: *Driver) void {
@@ -178,6 +181,7 @@ pub fn resolveDriver(comptime class: DriverClass, ptr: *ResolvedDriverInterface(
     std.debug.assert(@intFromPtr(container) == @intFromPtr(&@field(container, @tagName(class))));
 
     const driver: *Driver = @fieldParentPtr("class", container);
+
     driver.validate(class);
     return driver;
 }
@@ -428,6 +432,7 @@ pub fn scanVirtioDevices(allocator: std.mem.Allocator, comptime cfg: VirtIoConfi
     logger.info("sizeof control regs: {}", .{@sizeOf(virtio.ControlRegs)});
 
     var reg_addr: usize = cfg.base;
+    var index: usize = 0;
     for (0..cfg.max_count) |_| {
         const regs: *align(0x200) volatile virtio.ControlRegs = @ptrFromInt(reg_addr);
         if (regs.magic != virtio.ControlRegs.magic)
@@ -440,22 +445,26 @@ pub fn scanVirtioDevices(allocator: std.mem.Allocator, comptime cfg: VirtIoConfi
 
         switch (regs.device_id) {
             .reserved => continue,
-            .gpu => installVirtioDriver(video.Virtio_GPU_Device, allocator, regs) catch |err| {
+            .gpu => installVirtioDriver(video.Virtio_GPU_Device, allocator, index, regs) catch |err| {
                 logger.err("failed to initialize gpu @ 0x{X:0>8}: {s}", .{ @intFromPtr(regs), @errorName(err) });
             },
-            .input => installVirtioDriver(input.Virtio_Input_Device, allocator, regs) catch |err| {
+            .input => installVirtioDriver(input.Virtio_Input_Device, allocator, index, regs) catch |err| {
                 logger.err("failed to initialize input @ 0x{X:0>8}: {s}", .{ @intFromPtr(regs), @errorName(err) });
             },
-            .network => installVirtioDriver(network.Virtio_Net_Device, allocator, regs) catch |err| {
+            .network => installVirtioDriver(network.Virtio_Net_Device, allocator, index, regs) catch |err| {
                 logger.err("failed to initialize network @ 0x{X:0>8}: {s}", .{ @intFromPtr(regs), @errorName(err) });
+            },
+            .block => installVirtioDriver(block.Virtio_Block_Device, allocator, index, regs) catch |err| {
+                logger.err("failed to initialize block @ 0x{X:0>8}: {s}", .{ @intFromPtr(regs), @errorName(err) });
             },
             else => logger.warn("Found unsupported virtio device: {s}", .{@tagName(regs.device_id)}),
         }
+        index += 1;
     }
 }
 
-fn installVirtioDriver(comptime T: type, allocator: std.mem.Allocator, regs: *volatile virtio.ControlRegs) !void {
-    const device: *T = try T.init(allocator, regs);
+fn installVirtioDriver(comptime T: type, allocator: std.mem.Allocator, index: usize, regs: *volatile virtio.ControlRegs) !void {
+    const device: *T = try T.init(allocator, index, regs);
     install(&device.driver);
 }
 

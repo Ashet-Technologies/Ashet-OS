@@ -1,0 +1,5 @@
+set debuginfod enabled off
+set disassemble-next-line on
+show disassemble-next-line
+break main
+run
