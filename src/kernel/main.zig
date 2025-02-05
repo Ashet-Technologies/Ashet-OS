@@ -130,12 +130,12 @@ fn kernelMain() noreturn {
     Debug.setTraceLoc(@src());
     memory.loadKernelMemory(machine_config.load_sections);
 
-    if (@hasDecl(machine, "earlyInitialize")) {
+    if (machine_config.early_initialize) |early_initialize| {
         // If required, initialize the machine basics first,
         // set up linear memory or detect how much memory is available.
 
         Debug.setTraceLoc(@src());
-        machine.earlyInitialize();
+        early_initialize();
     }
 
     // Populate RAM with the right sections, and compute how
@@ -197,7 +197,7 @@ fn main() !void {
     // Initialize the hardware into a well-defined state. After this, we can safely perform I/O ops.
     // This will install all relevant drivers, set up interrupts if necessary and so on.
     log.info("initialize machine...", .{});
-    try machine.initialize();
+    try machine_config.initialize();
 
     log.info("initialize video...", .{});
     try video.initialize();
@@ -343,7 +343,7 @@ pub const Debug = struct {
 
     const Error = error{};
     fn writeWithErr(_: void, bytes: []const u8) Error!usize {
-        machine.debugWrite(bytes);
+        machine_config.debug_write(bytes);
         return bytes.len;
     }
     const Writer = std.io.Writer(void, Error, writeWithErr);
@@ -353,17 +353,17 @@ pub const Debug = struct {
 
         var spliter = std.mem.splitScalar(u8, bytes, '\n');
 
-        machine.debugWrite(spliter.first());
+        machine_config.debug_write(spliter.first());
         while (spliter.next()) |continuation| {
-            machine.debugWrite("\r\n");
+            machine_config.debug_write("\r\n");
 
             var i: usize = indent;
             while (i > 0) {
                 const prefix = indent_part[0..@min(indent_part.len, i)];
-                machine.debugWrite(prefix);
+                machine_config.debug_write(prefix);
                 i -= prefix.len;
             }
-            machine.debugWrite(continuation);
+            machine_config.debug_write(continuation);
         }
 
         return bytes.len;
@@ -379,7 +379,7 @@ pub const Debug = struct {
     }
 
     pub fn write(text: []const u8) void {
-        machine.debugWrite(text);
+        machine_config.debug_write(text);
     }
 
     pub fn print(comptime fmt: []const u8, args: anytype) void {
@@ -563,16 +563,16 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
     @setCold(true);
 
     if (!full_panic) {
-        machine.debugWrite("PANIC: ");
-        machine.debugWrite(message);
-        machine.debugWrite("\r\n");
+        machine_config.debug_write("PANIC: ");
+        machine_config.debug_write(message);
+        machine_config.debug_write("\r\n");
         Debug.print("last trace: {s}:{}:{} ({s})\r\n", .{
             Debug.trace_loc.file,
             Debug.trace_loc.line,
             Debug.trace_loc.column,
             Debug.trace_loc.fn_name,
         });
-        machine.debugWrite("\r\n");
+        machine_config.debug_write("\r\n");
         halt();
     }
     const sp = platform.getStackPointer();

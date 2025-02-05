@@ -66,5 +66,19 @@
             .url = "https://github.com/ikskuh/turtlefont/archive/9d7d3879cda0fcbdbbf1574129aec75e2627429f.tar.gz",
             .hash = "1220e00c64606030f7bb37534120537aa4550ddd35a008c0836cf7d78c128c221dc3",
         },
+
+        // External tooling:
+
+        .regz = .{
+            .url = "https://microzig.tech/downloads/microzig/0.13.2/tools/regz.tar.gz",
+            .hash = "1220186140b54b42fa13d3afaa05c177fe7ee065d14c7a8d58fb7ff59eb31f8bc51b",
+            .lazy = false,
+        },
+
+        // .@"tools/uf2" = .{
+        //     .url = "https://microzig.tech/downloads/microzig/0.13.2/tools/uf2.tar.gz",
+        //     .hash = "1220af8a6a2e1b789d9de505e81b0b37f82ec1bddf8be12b7bbaa83ecf34c5fe4ae1",
+        //     .lazy = false,
+        // },
     },
 }

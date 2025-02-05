@@ -1,7 +1,15 @@
 
-
 build:
     zig-ashet build
+
+[working-directory: 'src/kernel']
+build-kernel:
+    zig-ashet build -Dmachine=arm-ashet-hc
+    zig-ashet build -Dmachine=arm-ashet-vhc
+    zig-ashet build -Dmachine=arm-qemu-virt
+    zig-ashet build -Dmachine=rv32-qemu-virt
+    zig-ashet build -Dmachine=x86-pc-bios
+    zig-ashet build -Dmachine=x86-hosted-linux
 
 build-vhc:
     rm -rf zig-out/arm-ashet-vhc

@@ -1,10 +1,17 @@
 const std = @import("std");
 const logger = std.log.scoped(.ashet_hc);
 const ashet = @import("../../../../main.zig");
+const rp2350 = @import("rp2350");
+const rp2350_regs = rp2350.devices.RP2350.peripherals;
 
 pub const machine_config = ashet.ports.MachineConfig{
     .load_sections = .{ .data = true, .bss = true },
     .memory_protection = null,
+    .early_initialize = null,
+    .get_tick_count_ms = get_tick_count_ms,
+    .initialize = initialize,
+    .debug_write = debug_write,
+    .get_linear_memory_region = get_linear_memory_region,
 };
 
 const hw = struct {
@@ -12,7 +19,7 @@ const hw = struct {
 
 };
 
-pub fn get_tick_count() u64 {
+fn get_tick_count_ms() u64 {
     var cs = ashet.CriticalSection.enter();
     defer cs.leave();
 
@@ -21,7 +28,7 @@ pub fn get_tick_count() u64 {
 
 var interrupt_table: ashet.platform.profile.start.InterruptTable align(128) = ashet.platform.profile.start.initial_vector_table;
 
-pub fn initialize() !void {
+fn initialize() !void {
     logger.info("cpuid: {s}", .{
         ashet.platform.profile.registers.system_control_block.cpuid.read(),
     });
@@ -35,7 +42,7 @@ pub fn initialize() !void {
     systick.init();
 }
 
-pub fn debugWrite(msg: []const u8) void {
+fn debug_write(msg: []const u8) void {
     _ = msg;
     // const pl011: *volatile ashet.drivers.serial.PL011.Registers = @ptrFromInt(mmap.uart0.offset);
     // const old_cr = pl011.CR;
@@ -51,7 +58,7 @@ pub fn debugWrite(msg: []const u8) void {
 extern const __machine_linmem_start: u8 align(4);
 extern const __machine_linmem_end: u8 align(4);
 
-pub fn getLinearMemoryRegion() ashet.memory.Range {
+fn get_linear_memory_region() ashet.memory.Range {
     const linmem_start = @intFromPtr(&__machine_linmem_start);
     const linmem_end = @intFromPtr(&__machine_linmem_end);
     return .{ .base = linmem_start, .length = linmem_end - linmem_start };

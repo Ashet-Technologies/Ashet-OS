@@ -130,6 +130,41 @@ pub fn build(b: *std.Build) void {
         kernel_mod.include_dirs.append(b.allocator, dir) catch @panic("out of memory");
     }
 
+    if (machine_id == .@"arm-ashet-hc") {
+        const regz_dep = b.dependency("regz", .{
+            .optimize = .ReleaseSafe,
+        });
+
+        const regz_exe = regz_dep.artifact("regz");
+
+        const regz_run = b.addRunArtifact(regz_exe);
+
+        regz_run.addArg("--microzig");
+        regz_run.addArg("--format");
+        regz_run.addArg("svd");
+
+        regz_run.addArg("--output_path"); // Write to a file
+        const rp2350_register_file = regz_run.addOutputFileArg("rp2350.zig");
+
+        regz_run.addFileArg(b.path("port/machine/arm/ashet-hc/rp2350.svd"));
+
+        const microzig_shim_mod = b.createModule(.{
+            .root_source_file = b.path("utils/microzig-shim.zig"),
+            .imports = &.{
+                .{ .name = "kernel", .module = kernel_mod },
+            },
+        });
+
+        const rp2350_mod = b.createModule(.{
+            .root_source_file = rp2350_register_file,
+            .imports = &.{
+                .{ .name = "microzig", .module = microzig_shim_mod },
+            },
+        });
+
+        kernel_mod.addImport("rp2350", rp2350_mod);
+    }
+
     const start_file = if (machine_id.is_hosted())
         b.path("port/platform/startup/hosted.zig")
     else

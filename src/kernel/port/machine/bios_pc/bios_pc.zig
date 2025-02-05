@@ -20,6 +20,11 @@ pub const machine_config = ashet.ports.MachineConfig{
         .get_protection = x86.vmm.get_protection,
         .get_info = x86.vmm.query_address,
     },
+    .initialize = initialize,
+    .early_initialize = early_initialize,
+    .debug_write = debug_write,
+    .get_linear_memory_region = get_linear_memory_region,
+    .get_tick_count_ms = get_tick_count_ms,
 };
 
 const SerialPortIO = struct {
@@ -98,7 +103,7 @@ fn timer_interrupt(state: *x86.idt.CpuState) void {
     }
 }
 
-pub fn get_tick_count() u64 {
+fn get_tick_count_ms() u64 {
     var cs = ashet.CriticalSection.enter();
     defer cs.leave();
 
@@ -107,7 +112,7 @@ pub fn get_tick_count() u64 {
 
 var interrupt_stack: [8192]u8 align(16) = undefined;
 
-pub fn earlyInitialize() void {
+fn early_initialize() void {
 
     // x86 requires GDT and IDT, as a lot of x86 devices are only well usable with
     // interrupts. We're also using the GDT for interrupts
@@ -121,7 +126,7 @@ pub fn earlyInitialize() void {
     x86.enableInterrupts();
 }
 
-pub fn initialize() !void {
+fn initialize() !void {
     logger.debug("initialize PIT...", .{});
     hw.pit = ashet.drivers.timer.Programmable_Interval_Timer.init();
 
@@ -285,7 +290,7 @@ fn writeVirtualSPI(msg: []const u8) void {
     busyLoop(2);
 }
 
-pub fn debugWrite(msg: []const u8) void {
+fn debug_write(msg: []const u8) void {
     switch (kernel_options.debug) {
         .none => {},
         .serial => {
@@ -332,7 +337,7 @@ pub fn debugWrite(msg: []const u8) void {
 extern const __machine_linmem_start: u8 align(4);
 extern const __machine_linmem_end: u8 align(4);
 
-pub fn getLinearMemoryRegion() ashet.memory.Range {
+fn get_linear_memory_region() ashet.memory.Range {
     const linmem_start = @intFromPtr(&__machine_linmem_start);
     const linmem_end = @intFromPtr(&__machine_linmem_end);
     return ashet.memory.Range{ .base = linmem_start, .length = linmem_end - linmem_start };

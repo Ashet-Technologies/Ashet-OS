@@ -9,7 +9,26 @@ pub const MachineConfig = struct {
     /// If this is set, the kernel will initialize the `.data` and `.bss` sections.
     load_sections: ashet.memory.MemorySections,
 
+    /// Provides function implementations for memory protections.
     memory_protection: ?MemoryProtectionConfig,
+
+    /// Performs early machine initialization, directly after the kernel
+    /// initialized '.data' and '.bss' sections.
+    early_initialize: ?fn () void,
+
+    /// Initializes the machine devices and drivers.
+    initialize: fn () anyerror!void,
+
+    /// A function that writes debug output for the machine.
+    /// This may be a no-op and discard the data if no debug output is available.
+    debug_write: fn ([]const u8) void,
+
+    /// Returns the linear memory region in which the OS can allocate
+    /// memory pages.
+    get_linear_memory_region: fn () ashet.memory.Range,
+
+    /// Returns the number of ticks in milliseconds since system start.
+    get_tick_count_ms: fn () u64,
 };
 
 pub const MemoryProtectionConfig = struct {

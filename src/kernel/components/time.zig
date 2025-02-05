@@ -30,7 +30,7 @@ pub const Instant = enum(u64) {
     _,
 
     pub fn now() Instant {
-        return @enumFromInt(ashet.machine.get_tick_count());
+        return @enumFromInt(ashet.machine_config.get_tick_count_ms());
     }
 
     pub fn ms_since_start(future: Instant) u64 {
