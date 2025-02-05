@@ -40,6 +40,10 @@
             .path = "../tools/exe-tool",
         },
 
+        // locally vendored:
+
+        .@"rp2xxx-hal" = .{ .path = "../../vendor/microzig-rp2350-hal" },
+
         // External dependencieS:
         .args = .{
             .url = "https://github.com/ikskuh/zig-args/archive/872272205d95bdba33798c94e72c5387a31bc806.tar.gz",

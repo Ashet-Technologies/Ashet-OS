@@ -1,5 +1,6 @@
 const std = @import("std");
 const abiBuild = @import("ashet-abi");
+const regz = @import("regz");
 const Platform = abiBuild.Platform;
 
 pub const Machine = @import("port/machine_id.zig").MachineID;
@@ -146,6 +147,26 @@ pub fn build(b: *std.Build) void {
         regz_run.addArg("--output_path"); // Write to a file
         const rp2350_register_file = regz_run.addOutputFileArg("rp2350.zig");
 
+        {
+            const patches: []const regz.patch.Patch = @import("port/machine/arm/ashet-hc/patches/rp2350_arm.zig").patches;
+
+            if (patches.len > 0) {
+                // write patches to file
+                const patch_ndjson = serialize_patches(
+                    b,
+                    patches,
+                );
+                const write_file_step = b.addWriteFiles();
+                const patch_file = write_file_step.add(
+                    "patch.ndjson",
+                    patch_ndjson,
+                );
+
+                regz_run.addArg("--patch_path");
+                regz_run.addFileArg(patch_file);
+            }
+        }
+
         regz_run.addFileArg(b.path("port/machine/arm/ashet-hc/rp2350.svd"));
 
         const microzig_shim_mod = b.createModule(.{
@@ -163,6 +184,20 @@ pub fn build(b: *std.Build) void {
         });
 
         kernel_mod.addImport("rp2350", rp2350_mod);
+
+        const hal_dep = b.dependency("rp2xxx-hal", .{});
+
+        const hal_mod = b.createModule(.{
+            .root_source_file = hal_dep.path("hal.zig"),
+            .imports = &.{
+                .{ .name = "microzig", .module = microzig_shim_mod },
+            },
+        });
+
+        microzig_shim_mod.addImport("rp2350-chip", rp2350_mod);
+        microzig_shim_mod.addImport("rp2350-hal", hal_mod);
+
+        kernel_mod.addImport("rp2350-hal", hal_mod);
     }
 
     const start_file = if (machine_id.is_hosted())
@@ -409,4 +444,15 @@ fn renderMachineInfo(
     });
 
     return try stream.toOwnedSlice();
+}
+
+fn serialize_patches(b: *std.Build, patches: []const regz.patch.Patch) []const u8 {
+    var buf = std.ArrayList(u8).init(b.allocator);
+
+    for (patches) |patch| {
+        std.json.stringify(patch, .{}, buf.writer()) catch @panic("OOM");
+        buf.writer().writeByte('\n') catch @panic("OOM");
+    }
+
+    return buf.toOwnedSlice() catch @panic("OOM");
 }

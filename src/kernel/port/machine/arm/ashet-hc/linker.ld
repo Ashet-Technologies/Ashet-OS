@@ -34,7 +34,7 @@ SECTIONS {
     .stack (NOLOAD) : {
         . = ALIGN(4096);
         __kernel_stack_start = .;
-        . += 0x40000; 
+        . += 0x20000; 
         __kernel_stack_end = .;
     } > sram
 
@@ -43,6 +43,7 @@ SECTIONS {
 
         *(.data*)
         *(.sdata*)
+        *(.ramtext*)
 
         . = ALIGN(4);
         __kernel_data_end = .;

@@ -2,7 +2,14 @@ const std = @import("std");
 const logger = std.log.scoped(.ashet_hc);
 const ashet = @import("../../../../main.zig");
 const rp2350 = @import("rp2350");
+const hal = @import("rp2350-hal");
 const rp2350_regs = rp2350.devices.RP2350.peripherals;
+
+const psram = @import("psram.zig");
+
+pub const clock_config = hal.clocks.config.preset.default();
+
+pub const debug_uart = hal.uart.instance.UART0;
 
 pub const machine_config = ashet.ports.MachineConfig{
     .load_sections = .{ .data = true, .bss = true },
@@ -17,6 +24,9 @@ pub const machine_config = ashet.ports.MachineConfig{
 const hw = struct {
     //! list of fixed hardware components
 
+    var uart0: ashet.drivers.serial.RP2xxx = undefined;
+    var uart1: ashet.drivers.serial.RP2xxx = undefined;
+    var fb_video: ashet.drivers.video.Virtual_Video_Output = undefined;
 };
 
 fn get_tick_count_ms() u64 {
@@ -29,12 +39,15 @@ fn get_tick_count_ms() u64 {
 var interrupt_table: ashet.platform.profile.start.InterruptTable align(128) = ashet.platform.profile.start.initial_vector_table;
 
 fn early_initialize() void {
-    // TODO: The following things are to be done here:
-    // - Disable watchdogs
-    // - Reset all unused peripherials
-    // - Setup clocks and PLL
-    // - Configure external RAM
-    // - Initialize UART0 for debugging
+    // Disable watch dog, reset all peripherials, and set the clocks and PLLs:
+    hal.init_sequence(clock_config);
+
+    debug_uart.apply(.{
+        .baud_rate = 115_200,
+        .clock_config = clock_config,
+    });
+
+    psram.init() catch @panic("failed to initialize psram!");
 }
 
 fn initialize() !void {
@@ -49,19 +62,20 @@ fn initialize() !void {
 
     logger.info("initialize SysTick...", .{});
     systick.init();
+
+    // Initialize devices and drivers:
+    hw.uart0 = try ashet.drivers.serial.RP2xxx.init(clock_config, hal.uart.instance.UART0);
+    hw.uart1 = try ashet.drivers.serial.RP2xxx.init(clock_config, hal.uart.instance.UART1);
+
+    hw.fb_video = ashet.drivers.video.Virtual_Video_Output.init();
+
+    ashet.drivers.install(&hw.uart0.driver);
+    ashet.drivers.install(&hw.uart1.driver);
+    ashet.drivers.install(&hw.fb_video.driver);
 }
 
 fn debug_write(msg: []const u8) void {
-    _ = msg;
-    // const pl011: *volatile ashet.drivers.serial.PL011.Registers = @ptrFromInt(mmap.uart0.offset);
-    // const old_cr = pl011.CR;
-    // defer pl011.CR = old_cr;
-
-    // pl011.CR |= (1 << 8) | (1 << 0);
-
-    // for (msg) |c| {
-    //     pl011.DR = c;
-    // }
+    debug_uart.write_blocking(msg, null) catch {};
 }
 
 extern const __machine_linmem_start: u8 align(4);

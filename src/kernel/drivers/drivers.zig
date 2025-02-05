@@ -14,6 +14,7 @@ pub const block = struct {
 pub const serial = struct {
     pub const ns16c550 = @import("serial/NS16C550.zig");
     pub const PL011 = @import("serial/PL011.zig");
+    pub const RP2xxx = @import("serial/RP2xxx.zig");
 };
 
 pub const timer = struct {

@@ -32,6 +32,7 @@ pub inline fn mmioRegister(address: usize, comptime Reg: type, comptime config: 
 /// A wrapper around a memory-mapped register.
 /// `Reg` must be a packed struct which encodes the fields of the register.
 pub fn MmioRegister(comptime Reg: type, comptime config: MmioConfig) type {
+    @setEvalBranchQuota(10_000);
     std.debug.assert(
         // Registers must be the size of a standard integer:
         @bitSizeOf(Reg) == 8 or
@@ -71,9 +72,16 @@ pub fn MmioRegister(comptime Reg: type, comptime config: MmioConfig) type {
 
         /// Writes the full register.
         pub fn write(mmio: *volatile MmioReg, value: Reg) void {
-            if (!comptime config.access.can_read())
+            if (!comptime config.access.can_write())
                 @compileError("Register is read-only!");
             mmio.direct_access = value;
+        }
+
+        /// Writes the full register.
+        pub fn write_default(mmio: *volatile MmioReg, value: FieldUpdate) void {
+            const default_value: Reg = @bitCast(@as(Int, 0));
+            const new_value = change_fields(default_value, value);
+            mmio.write(new_value);
         }
 
         /// Replaces the register with a new value.
@@ -85,15 +93,23 @@ pub fn MmioRegister(comptime Reg: type, comptime config: MmioConfig) type {
 
         /// Reads the register, replaces all set fields in `changes` and writes it back.
         pub fn modify(mmio: *volatile MmioReg, changes: FieldUpdate) void {
-            var value = mmio.read();
+            const current = mmio.read();
+            const new = change_fields(current, changes);
+            mmio.write(new);
+        }
 
+        fn change_fields(value: Reg, changes: FieldUpdate) Reg {
+            var new_value = value;
             inline for (std.meta.fields(FieldUpdate)) |fld| {
                 if (@field(changes, fld.name)) |updated| {
-                    @field(value, fld.name) = updated;
+                    @field(new_value, fld.name) = updated;
                 }
             }
+            return new_value;
+        }
 
-            mmio.write(value);
+        pub fn write_raw(mmio: *volatile MmioReg, value: Int) void {
+            mmio.integer_access = value;
         }
 
         pub const FieldUpdate: type = blk: {
