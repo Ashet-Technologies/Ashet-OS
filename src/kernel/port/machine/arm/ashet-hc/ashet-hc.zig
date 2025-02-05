@@ -7,7 +7,7 @@ const rp2350_regs = rp2350.devices.RP2350.peripherals;
 pub const machine_config = ashet.ports.MachineConfig{
     .load_sections = .{ .data = true, .bss = true },
     .memory_protection = null,
-    .early_initialize = null,
+    .early_initialize = early_initialize,
     .get_tick_count_ms = get_tick_count_ms,
     .initialize = initialize,
     .debug_write = debug_write,
@@ -27,6 +27,15 @@ fn get_tick_count_ms() u64 {
 }
 
 var interrupt_table: ashet.platform.profile.start.InterruptTable align(128) = ashet.platform.profile.start.initial_vector_table;
+
+fn early_initialize() void {
+    // TODO: The following things are to be done here:
+    // - Disable watchdogs
+    // - Reset all unused peripherials
+    // - Setup clocks and PLL
+    // - Configure external RAM
+    // - Initialize UART0 for debugging
+}
 
 fn initialize() !void {
     logger.info("cpuid: {s}", .{
@@ -94,3 +103,15 @@ const systick = struct {
         total_count_ms +%= 1;
     }
 };
+
+export const image_def align(64) linksection(".text.image_def") = [_]u32{
+    // For explanation, see RP2350 Datasheet, Chapter "5.9.5. Minimum Viable Image Metadata":
+    PICOBIN_BLOCK_MARKER_START,
+    0x10210142, // IMAGE_TYPE = EXE + Secure Arm + RP2350
+    0x000001ff, // End Marker Item, Total Size 1
+    0x00000000, // Pointer to the next block (self loop)
+    PICOBIN_BLOCK_MARKER_END,
+};
+
+const PICOBIN_BLOCK_MARKER_START = 0xffffded3;
+const PICOBIN_BLOCK_MARKER_END = 0xab123579;

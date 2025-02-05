@@ -18,6 +18,7 @@ SECTIONS {
 
     .text : {
         *(.text.vector_table*)
+        *(.text.image_def*)
         *(.text*)
     } > flash
 
