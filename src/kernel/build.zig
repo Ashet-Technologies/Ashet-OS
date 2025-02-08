@@ -55,6 +55,7 @@ pub fn build(b: *std.Build) void {
     const agp_swrast_dep = b.dependency("agp_swrast", .{});
     const turtlefont_dep = b.dependency("turtlefont", .{});
     const ashex_dep = b.dependency("ashex", .{});
+    const xcvt_dep = b.dependency("xcvt", .{});
 
     // Modules:
 
@@ -73,6 +74,7 @@ pub fn build(b: *std.Build) void {
     const agp_swrast_mod = agp_swrast_dep.module("agp-swrast");
     const turtlefont_mod = turtlefont_dep.module("turtlefont");
     const ashex_mod = ashex_dep.module("ashex");
+    const xcvt_mod = xcvt_dep.module("cvt");
 
     // Build:
 
@@ -111,6 +113,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "agp-swrast", .module = agp_swrast_mod },
             .{ .name = "turtlefont", .module = turtlefont_mod },
             .{ .name = "ashex", .module = ashex_mod },
+            .{ .name = "cvt", .module = xcvt_mod },
 
             // resources:
             .{
@@ -222,7 +225,7 @@ pub fn build(b: *std.Build) void {
 
     // TODO(fqu): kernel_exe.root_module.code_model = .small;
     kernel_exe.bundle_compiler_rt = true;
-    kernel_exe.rdynamic = true; // Prevent the compiler from garbage collecting exported symbols
+    // kernel_exe.rdynamic = true; // Prevent the compiler from garbage collecting exported symbols
     kernel_exe.root_module.single_threaded = !machine_id.is_hosted();
     kernel_exe.root_module.omit_frame_pointer = false;
     kernel_exe.root_module.strip = false; // never strip debug info

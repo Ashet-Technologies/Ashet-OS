@@ -110,6 +110,9 @@ comptime {
         _ = platform;
         _ = platform.start; // explicitly refer to the entry point implementation
 
+        // Force-instantiate the VFAT driver to provide the FatFS implementation:
+        _ = drivers.filesystem.VFAT;
+
         @export(ashet_kernelMain, .{
             .name = "ashet_kernelMain",
         });

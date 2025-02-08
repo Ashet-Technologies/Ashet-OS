@@ -17,8 +17,8 @@ SECTIONS {
     __kernel_flash_start = .;
 
     .text : {
-        *(.text.vector_table*)
-        *(.text.image_def*)
+        KEEP(*(.text.vector_table*))
+        KEEP(*(.text.image_def*))
         *(.text*)
     } > flash
 
@@ -34,16 +34,22 @@ SECTIONS {
     .stack (NOLOAD) : {
         . = ALIGN(4096);
         __kernel_stack_start = .;
-        . += 0x20000; 
+        . += 0x10000; 
         __kernel_stack_end = .;
     } > sram
 
     .data : AT (__kernel_flash_end){
         __kernel_data_start = .;
-
-        *(.data*)
-        *(.sdata*)
         *(.ramtext*)
+
+        . = ALIGN(4);
+        
+        *(.data*)
+        . = ALIGN(4);
+        
+        *(.sdata*)
+        . = ALIGN(4);
+        
 
         . = ALIGN(4);
         __kernel_data_end = .;

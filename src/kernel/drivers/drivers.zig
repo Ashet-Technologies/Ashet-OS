@@ -9,6 +9,7 @@ pub const block = struct {
     pub const RAM_Disk = @import("block/ram-disk.zig").RAM_Disk;
     pub const Host_Disk_Image = @import("block/Host_Disk_Image.zig");
     pub const Virtio_Block_Device = @import("block/Virtio_Block_Device.zig");
+    pub const Memory_Mapped_Flash = @import("block/Memory_Mapped_Flash.zig");
 };
 
 pub const serial = struct {
@@ -27,7 +28,7 @@ pub const filesystem = struct {
 };
 
 pub const rtc = struct {
-    pub const Dummy = @import("rtc/Dummy.zig");
+    pub const Dummy_RTC = @import("rtc/Dummy_RTC.zig");
     pub const CMOS = @import("rtc/CMOS.zig");
     pub const Goldfish = @import("rtc/Goldfish.zig");
     pub const PL031 = @import("rtc/PL031.zig");
@@ -43,6 +44,7 @@ pub const video = struct {
     pub const Host_VNC_Output = @import("video/Host_VNC_Output.zig");
     pub const Host_SDL_Output = @import("video/Host_SDL_Output.zig");
     pub const ILI9488 = @import("video/ILI9488.zig");
+    pub const HSTX_DVI = @import("video/HSTX_DVI.zig");
 };
 
 pub const network = struct {

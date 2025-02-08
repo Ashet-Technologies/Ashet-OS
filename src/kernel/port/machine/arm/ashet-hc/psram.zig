@@ -1,15 +1,13 @@
 const std = @import("std");
 const logger = std.log.scoped(.ashet_hc_psram);
 const ashet = @import("../../../../main.zig");
-const vhc = @import("ashet-hc.zig");
+const machine = @import("ashet-hc.zig");
 
 const rp2350 = @import("rp2350");
 const hal = @import("rp2350-hal");
 
 const qmi_hw = rp2350.devices.RP2350.peripherals.QMI;
 const xip_ctrl_hw = rp2350.devices.RP2350.peripherals.XIP_CTRL;
-
-const xip_cs1 = hal.gpio.num(8);
 
 const RP2350_PSRAM_ID: u8 = 0x5D;
 
@@ -39,22 +37,28 @@ const PSRAM_CMD_QUAD_WRITE: u8 = 0x38;
 const PSRAM_CMD_NOOP: u8 = 0xFF;
 
 pub fn init() !void {
-    _ = try init_xip1();
-}
-
-fn init_xip1() linksection(".ramtext") !u32 {
-    xip_cs1.set_function(.gpck_xip_cs_coresight_trace);
 
     // start with zero size
     const psram_size = get_psram_size();
+
+    logger.info("detected external PSRAM size: {}", .{psram_size});
 
     // No PSRAM - no dice
     if (psram_size == 0) {
         return error.FailedToDetectRAM;
     }
 
-    logger.info("detected external PSRAM size: {}", .{psram_size});
+    _ = try init_xip1(psram_size);
 
+    logger.info("external PSRAM ready.", .{});
+}
+
+///
+/// WARNING: `noinline` and `linksection(".ramtext")` are necessary!
+///          This function must fully execute from RAM and is not allowed to
+///          access any flash-mapped content!
+///
+noinline fn init_xip1(psram_size: usize) linksection(".ramtext") !u32 {
     {
         const intr_stash = save_and_disable_interrupts();
         defer restore_interrupts(intr_stash);
@@ -143,7 +147,12 @@ fn init_xip1() linksection(".ramtext") !u32 {
     return psram_size;
 }
 
-fn get_psram_size() linksection(".ramtext") u32 {
+///
+/// WARNING: `noinline` and `linksection(".ramtext")` are necessary!
+///          This function must fully execute from RAM and is not allowed to
+///          access any flash-mapped content!
+///
+noinline fn get_psram_size() linksection(".ramtext") u32 {
     var psram_size: usize = 0;
 
     const intr_stash = save_and_disable_interrupts();
@@ -173,10 +182,12 @@ fn get_psram_size() linksection(".ramtext") u32 {
     while (qmi_hw.DIRECT_CSR.read().BUSY != 0) {}
 
     _ = qmi_hw.DIRECT_RX.read();
+
     qmi_hw.DIRECT_CSR.modify(.{ .ASSERT_CS1N = 0 });
 
     // Read the id
     qmi_hw.DIRECT_CSR.modify(.{ .ASSERT_CS1N = 1 });
+
     var kgd: u8 = 0;
     var eid: u8 = 0;
     for (0..8) |i| {
@@ -200,7 +211,7 @@ fn get_psram_size() linksection(".ramtext") u32 {
     }
 
     // Disable direct csr.
-    qmi_hw.DIRECT_CSR.modify(.{ .ASSERT_CS1N = 1, .EN = 0 });
+    qmi_hw.DIRECT_CSR.write_default(.{ .EN = 0 });
 
     // is this the PSRAM we're looking for obi-wan?
     if (kgd == RP2350_PSRAM_ID) {
@@ -219,21 +230,26 @@ fn get_psram_size() linksection(".ramtext") u32 {
     return psram_size;
 }
 
-// Get secs / cycle for the system clock - get before disabling interrupts.
-const sysHz: comptime_int = vhc.clock_config.sys.?.frequency();
+///
+/// WARNING: `noinline` and `linksection(".ramtext")` are necessary!
+///          This function must fully execute from RAM and is not allowed to
+///          access any flash-mapped content!
+///
+noinline fn set_psram_timing() linksection(".ramcode") !void {
 
-fn set_psram_timing() linksection(".ramcode") !void {
+    // Get secs / cycle for the system clock - get before disabling interrupts.
+    const sys_clk: comptime_int = comptime machine.clock_config.sys.?.frequency();
 
     // Calculate the clock divider - goal to get clock used for PSRAM <= what
     // the PSRAM IC can handle - which is defined in SFE_PSRAM_MAX_SCK_HZ
-    const clockDivider = (sysHz + SFE_PSRAM_MAX_SCK_HZ - 1) / SFE_PSRAM_MAX_SCK_HZ;
+    const clockDivider = (sys_clk + SFE_PSRAM_MAX_SCK_HZ - 1) / SFE_PSRAM_MAX_SCK_HZ;
 
     const intr_stash = save_and_disable_interrupts();
     defer restore_interrupts(intr_stash);
 
     // Get the clock femto seconds per cycle.
 
-    const fsPerCycle = SFE_SEC_TO_FS / sysHz;
+    const fsPerCycle = SFE_SEC_TO_FS / sys_clk;
 
     // the maxSelect value is defined in units of 64 clock cycles
     // So maxFS / (64 * fsPerCycle) = maxSelect = SFE_PSRAM_MAX_SELECT_FS64/fsPerCycle
@@ -266,3 +282,20 @@ fn save_and_disable_interrupts() bool {
 fn restore_interrupts(old: bool) void {
     _ = old;
 }
+
+// inline fn trace(comptime loc: std.builtin.SourceLocation) void {
+//     const T = struct {
+//         var msg linksection(".data") = [_]u8{
+//             'L',
+//             '0' + (loc.line / 100) % 10,
+//             '0' + (loc.line / 10) % 10,
+//             '0' + (loc.line / 1) % 10,
+//             '\r',
+//             '\n',
+//         };
+//     };
+
+//     // const msg = std.fmt.comptimePrint("{s}:{d}: {s}\r\n", .{ loc.file, loc.line, loc.fn_name });
+
+//     machine.bitbang_write(&T.msg);
+// }

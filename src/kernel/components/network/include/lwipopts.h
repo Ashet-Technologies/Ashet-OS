@@ -28,7 +28,8 @@
 #define LWIP_MPU_COMPATIBLE 0
 #define LWIP_TCPIP_CORE_LOCKING 0
 
-#define MEM_SIZE 200000 // configure peak memory usage here
+// This is the internal heap LWIP uses:
+#define MEM_SIZE 100000 // configure peak memory usage here
 
 #define MEMP_NUM_PBUF 200 // protocol buffers
 

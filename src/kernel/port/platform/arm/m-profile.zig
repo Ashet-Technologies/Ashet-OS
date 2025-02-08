@@ -53,7 +53,7 @@ pub const start = struct {
 
     export fn _start() noreturn {
         // Force instantiation of vector table:
-        _ = initial_vector_table;
+        _ = cortexM_initial_vector_table;
 
         // We want the hardfault to be split into smaller parts:
         registers.system_control_block.shcrs.modify(.{
@@ -86,7 +86,9 @@ pub const start = struct {
 
     extern var __kernel_stack_end: anyopaque;
 
-    pub const initial_vector_table: InterruptTable linksection(".text.vector_table") = .{
+    pub const initial_vector_table = &cortexM_initial_vector_table;
+
+    export const cortexM_initial_vector_table: InterruptTable linksection(".text.vector_table") = .{
         .initial_stack_pointer = &__kernel_stack_end,
         .reset = _start,
     };

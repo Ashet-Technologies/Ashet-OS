@@ -1,7 +1,7 @@
 const ashet = @import("../../main.zig");
 const Driver = ashet.drivers.Driver;
 
-const Goldfish = @This();
+const Dummy_RTC = @This();
 
 driver: Driver = .{
     .name = "Dummy RTC",
@@ -13,13 +13,13 @@ driver: Driver = .{
 },
 time: i128,
 
-pub fn init(initial_time: i128) Goldfish {
-    return Goldfish{
+pub fn init(initial_time: i128) Dummy_RTC {
+    return Dummy_RTC{
         .time = initial_time,
     };
 }
 
 fn nanoTimestamp(driver: *Driver) i128 {
-    const rtc: *Goldfish = @fieldParentPtr("driver", driver);
+    const rtc: *Dummy_RTC = @alignCast(@fieldParentPtr("driver", driver));
     return rtc.time;
 }

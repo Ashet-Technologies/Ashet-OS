@@ -70,6 +70,10 @@
             .url = "https://github.com/ikskuh/turtlefont/archive/9d7d3879cda0fcbdbbf1574129aec75e2627429f.tar.gz",
             .hash = "1220e00c64606030f7bb37534120537aa4550ddd35a008c0836cf7d78c128c221dc3",
         },
+        .xcvt = .{
+            .url = "https://github.com/Ashet-Technologies/libxcvt-zig/archive/e2a73dc9b52c26499e8d4b4d79202c45db2461dd.tar.gz",
+            .hash = "1220099912cbd95a702fc56da87c43527b527fed84ae81e473bb1692cbe79ae69ed3",
+        },
 
         // External tooling:
 

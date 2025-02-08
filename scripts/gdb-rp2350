@@ -1,0 +1,9 @@
+target remote localhost:3333
+set disassemble-next-line on
+show disassemble-next-line
+
+# break at the start
+break _start
+
+# reset device and halt
+monitor reset halt 

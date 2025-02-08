@@ -154,8 +154,9 @@ fn initialize(device: *AT_Attachment) error{NoAtaController}!bool {
 /// Waits for either an error or that the device is ready.
 /// Will error after `timeout` ms have passed.
 fn waitForErrOrReady(device: AT_Attachment, timeout: usize) BlockDevice.DeviceError!void {
-    const end = ashet.time.milliTimestamp() + timeout;
-    while (ashet.time.milliTimestamp() < end) {
+    const end = ashet.time.Instant.now().add_ms(timeout);
+
+    while (ashet.time.Instant.now().less_than(end)) {
         const stat = device.status();
         // logger.debug("{}", .{stat}); // BUG: This is a horrible hack to delay the status polling
         if (stat.has_error or stat.drive_fault)
