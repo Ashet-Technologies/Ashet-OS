@@ -42,6 +42,7 @@ pub const video = struct {
     pub const Virtual_Video_Output = @import("video/Virtual_Video_Output.zig");
     pub const Host_VNC_Output = @import("video/Host_VNC_Output.zig");
     pub const Host_SDL_Output = @import("video/Host_SDL_Output.zig");
+    pub const ILI9488 = @import("video/ILI9488.zig");
 };
 
 pub const network = struct {
