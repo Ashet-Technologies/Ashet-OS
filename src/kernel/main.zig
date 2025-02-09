@@ -31,6 +31,15 @@ pub const ports = @import("port/targets.zig");
 
 pub const utils = struct {
     pub const mmio = @import("utils/mmio.zig");
+    pub const fmt = @import("utils/fmt.zig");
+
+    pub inline fn volatile_read(comptime T: type, ptr: *volatile T) T {
+        return ptr.*;
+    }
+
+    pub inline fn volatile_write(comptime T: type, ptr: *volatile T, value: T) void {
+        ptr.* = value;
+    }
 };
 
 pub const platform_id: ports.Platform = machine_info.platform_id;
@@ -60,7 +69,7 @@ pub const LogLevel = std.log.Level;
 pub const log_levels = struct {
     pub var default: LogLevel = .debug;
     pub var userland: LogLevel = .debug;
-    pub var strace: LogLevel = .debug;
+    pub var strace: LogLevel = .warn;
 
     // kernel components
     pub var ashex_loader: LogLevel = .info;
@@ -281,15 +290,19 @@ fn load_entry_point(_: ?*anyopaque) callconv(.C) u32 {
 
     log.info("start application successfully loaded!", .{});
 
-    var deadline = time.Deadline.init_rel(10_000);
-    while (true) {
-        while (!deadline.is_reached()) {
-            scheduler.yield();
-        }
-        deadline.move_forward(10_000);
+    if (machine_id != .@"arm-ashet-hc") {
+        // This is neat, but incredibly annoying over *true* serial:
 
-        log.info("regular memory dump:", .{});
-        memory.debug.dumpPageMap();
+        var deadline = time.Deadline.init_rel(10_000);
+        while (true) {
+            while (!deadline.is_reached()) {
+                scheduler.yield();
+            }
+            deadline.move_forward(10_000);
+
+            log.info("regular memory dump:", .{});
+            memory.debug.dumpPageMap();
+        }
     }
 
     return 0;

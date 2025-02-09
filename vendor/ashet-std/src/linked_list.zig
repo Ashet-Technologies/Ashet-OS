@@ -457,11 +457,21 @@ pub fn DoublyLinkedList(comptime T: type, comptime options: LinkedListOptions) t
         }
 
         /// Returns the hardening sentinel for this list depending on the sentinel mode.
-        inline fn sentinel(list: *const List) if (options.address_pinning) *const List else bool {
-            return if (options.address_pinning)
-                list
+        inline fn sentinel(list: *const List) switch (options.hardening) {
+            // We use a u0 here as it takes up no memory, but contrary to void supports == operator
+            .none => u0,
+            .basic, .full => if (options.address_pinning)
+                ?*const List
             else
-                true;
+                bool,
+        } {
+            return switch (options.hardening) {
+                .none => 0,
+                .basic, .full => if (options.address_pinning)
+                    list
+                else
+                    true,
+            };
         }
 
         fn log_list_structure(list: *const List) void {

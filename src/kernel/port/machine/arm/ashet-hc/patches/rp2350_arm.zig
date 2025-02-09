@@ -42,6 +42,7 @@ pub const patches = &.{
     .{ .set_enum_type = .{ .of = "types.peripherals.USB_DPRAM.EP14_OUT_CONTROL.ENDPOINT_TYPE", .to = "types.peripherals.USB_DPRAM.EndpointType" } },
     .{ .set_enum_type = .{ .of = "types.peripherals.USB_DPRAM.EP15_IN_CONTROL.ENDPOINT_TYPE", .to = "types.peripherals.USB_DPRAM.EndpointType" } },
     .{ .set_enum_type = .{ .of = "types.peripherals.USB_DPRAM.EP15_OUT_CONTROL.ENDPOINT_TYPE", .to = "types.peripherals.USB_DPRAM.EndpointType" } },
+
     // .{ .add_interrupt = .{
     //     .device_name = "RP2350",
     //     .idx = 40,

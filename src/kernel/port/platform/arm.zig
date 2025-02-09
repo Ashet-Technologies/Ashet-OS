@@ -66,19 +66,25 @@ pub inline fn getStackPointer() usize {
 }
 
 pub inline fn areInterruptsEnabled() bool {
-    return false; // TODO: Implement interrupts on Arm!
+    // Read PRIMASK register. When bit 0 is 0, interrupts are enabled.
+    // When bit 0 is 1, interrupts are disabled.
+    var primask: u32 = undefined;
+    asm volatile ("mrs %[ret], primask"
+        : [ret] "=r" (primask),
+    );
+    return (primask & 1) == 0;
 }
 
 pub inline fn isInInterruptContext() bool {
-    return false; // TODO: Implement interrupts on Arm!
+    return profile.executing_isr();
 }
 
 pub inline fn disableInterrupts() void {
-    // TODO: Implement interrupts on Arm!
+    profile.disable_interrupts();
 }
 
 pub inline fn enableInterrupts() void {
-    // TODO: Implement interrupts on Arm!
+    profile.enable_interrupts();
 }
 
 pub fn get_cpu_cycle_counter() u64 {

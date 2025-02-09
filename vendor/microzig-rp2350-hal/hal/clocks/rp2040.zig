@@ -214,6 +214,7 @@ pub const config = struct {
         usb: ?GeneratorConfig = null,
         adc: ?GeneratorConfig = null,
         rtc: ?GeneratorConfig = null,
+        hstx: ?GeneratorConfig = null,
         peri: ?GeneratorConfig = null,
         gpout0: ?GeneratorConfig = null,
         gpout1: ?GeneratorConfig = null,
@@ -278,6 +279,7 @@ pub const config = struct {
             if (cfg.usb) |usb| Generator.usb.apply(usb, sys_freq);
             if (cfg.adc) |adc| Generator.adc.apply(adc, sys_freq);
             if (cfg.rtc) |rtc| Generator.rtc.apply(rtc, sys_freq);
+            if (cfg.hstx) |hstx| Generator.hstx.apply(hstx, sys_freq);
             if (cfg.peri) |peri| Generator.peri.apply(peri, sys_freq);
             if (cfg.gpout0) |gpout0| Generator.gpout0.apply(gpout0, sys_freq);
             if (cfg.gpout1) |gpout1| Generator.gpout1.apply(gpout1, sys_freq);
