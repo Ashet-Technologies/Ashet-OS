@@ -7,11 +7,7 @@ const Platform = abi_package.Platform;
 
 const excluded_machines: []const Machine = &.{
     // Options here are excluded:
-    // .@"x86-pc-bios",
-    // .@"arm-ashet-vhc",
-    // .@"rv32-qemu-virt",
-    // .@"arm-qemu-virt",
-    // .@"x86-hosted-linux",
+    .@"arm-qemu-virt", // we don't support Arm A profile yet
 };
 
 const default_machines = std.EnumSet(Machine).initMany(excluded_machines).complement();
