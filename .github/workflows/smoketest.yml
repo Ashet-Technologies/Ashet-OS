@@ -7,7 +7,7 @@ on:
     branches: [master]
 
 jobs:
-  build:
+  smoketest:
     strategy:
       fail-fast: false
       matrix:
@@ -15,7 +15,7 @@ jobs:
 
         # Do not smoke-test "arm-ashet-hc", as it isn't runnable on a VM!
         platform:
-          - arm-ashet-vhc
+          # - arm-ashet-vhc # TODO(fqu): VHC requires our own QEMU fork!
           - rv32-qemu-virt
           - x86-hosted-linux
           - x86-pc-bios

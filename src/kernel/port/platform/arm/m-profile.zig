@@ -14,6 +14,16 @@ pub fn disable_interrupts() void {
     asm volatile ("cpsid i");
 }
 
+pub fn are_interrupts_enabled() bool {
+    // Read PRIMASK register. When bit 0 is 0, interrupts are enabled.
+    // When bit 0 is 1, interrupts are disabled.
+    var primask: u32 = undefined;
+    asm volatile ("mrs %[ret], primask"
+        : [ret] "=r" (primask),
+    );
+    return (primask & 1) == 0;
+}
+
 pub fn enable_fault_irq() void {
     asm volatile ("cpsie f");
 }

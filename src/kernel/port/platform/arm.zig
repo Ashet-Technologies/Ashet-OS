@@ -66,13 +66,7 @@ pub inline fn getStackPointer() usize {
 }
 
 pub inline fn areInterruptsEnabled() bool {
-    // Read PRIMASK register. When bit 0 is 0, interrupts are enabled.
-    // When bit 0 is 1, interrupts are disabled.
-    var primask: u32 = undefined;
-    asm volatile ("mrs %[ret], primask"
-        : [ret] "=r" (primask),
-    );
-    return (primask & 1) == 0;
+    return profile.are_interrupts_enabled();
 }
 
 pub inline fn isInInterruptContext() bool {
