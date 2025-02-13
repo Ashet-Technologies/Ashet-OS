@@ -63,12 +63,12 @@
             .hash = "1220ac855930db0699253dc81d3153c11b0d077e3ebe7a97b7986bea71db166eb76b",
         },
         .zfat = .{
-            .url = "https://github.com/ZigEmbeddedGroup/zfat/archive/9644549c78d90f98b3921c12d760b0eaaaf219da.tar.gz",
-            .hash = "1220cca763cc3867e8b9fa2d1b0ff62236341698e37dd527f3815455429fc624e7e6",
+            .url = "https://github.com/ZigEmbeddedGroup/zfat/archive/8f3e7fe2c8b15eaac83092fb52ab0ed30ee98f47.tar.gz",
+            .hash = "12205d874e8c9fd08d93c09ccbfddb045809afcc28e232b36b5abe3d288278ce458f",
         },
         .turtlefont = .{
-            .url = "https://github.com/ikskuh/turtlefont/archive/9d7d3879cda0fcbdbbf1574129aec75e2627429f.tar.gz",
-            .hash = "1220e00c64606030f7bb37534120537aa4550ddd35a008c0836cf7d78c128c221dc3",
+            .url = "https://github.com/ikskuh/turtlefont/archive/dbb4079434fd5444fcfb442a713ef5dd30ee0d98.tar.gz",
+            .hash = "1220221d68cd05d550696c9df1a86ae1afe8170d5c05616ade89e31c5cf76106e637",
         },
         .xcvt = .{
             .url = "https://github.com/Ashet-Technologies/libxcvt-zig/archive/e2a73dc9b52c26499e8d4b4d79202c45db2461dd.tar.gz",

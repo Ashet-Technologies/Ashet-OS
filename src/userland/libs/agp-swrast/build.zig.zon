@@ -9,8 +9,8 @@
             .path = "../agp",
         },
         .turtlefont = .{
-            .url = "https://github.com/ikskuh/turtlefont/archive/9d7d3879cda0fcbdbbf1574129aec75e2627429f.tar.gz",
-            .hash = "1220e00c64606030f7bb37534120537aa4550ddd35a008c0836cf7d78c128c221dc3",
+            .url = "https://github.com/ikskuh/turtlefont/archive/dbb4079434fd5444fcfb442a713ef5dd30ee0d98.tar.gz",
+            .hash = "1220221d68cd05d550696c9df1a86ae1afe8170d5c05616ade89e31c5cf76106e637",
         },
     },
     .paths = .{
