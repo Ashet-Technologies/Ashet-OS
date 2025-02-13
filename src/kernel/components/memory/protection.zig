@@ -11,7 +11,7 @@ const log = std.log.scoped(.mprot);
 const ashet = @import("../../main.zig");
 
 const page_size = ashet.memory.page_size;
-const machine_impl = ashet.machine.machine_config.memory_protection.?;
+const machine_impl = ashet.machine_config.memory_protection.?;
 const Range = ashet.memory.Range;
 
 pub const Protection = enum {
@@ -55,7 +55,7 @@ pub fn initialize() !void {
 }
 
 pub fn is_supported() bool {
-    return (ashet.machine.machine_config.memory_protection != null);
+    return (ashet.machine_config.memory_protection != null);
 }
 
 pub fn is_enabled() bool {

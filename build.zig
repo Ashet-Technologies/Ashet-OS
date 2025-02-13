@@ -7,11 +7,6 @@ const Platform = abi_package.Platform;
 
 const excluded_machines: []const Machine = &.{
     // Options here are excluded:
-    // .@"x86-pc-bios",
-    // .@"arm-ashet-vhc",
-    // .@"rv32-qemu-virt",
-    // .@"arm-qemu-virt",
-    // .@"x86-hosted-linux",
 };
 
 const default_machines = std.EnumSet(Machine).initMany(excluded_machines).complement();
@@ -208,6 +203,7 @@ pub fn build(b: *std.Build) void {
 
         vm_runner.stdio = .inherit;
         vm_runner.has_side_effects = true;
+        vm_runner.disable_zig_progress = true;
 
         run_step.dependOn(&vm_runner.step);
     }
@@ -322,6 +318,9 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
 
             // "-serial",   "vc",
         },
+    },
+    .@"arm-ashet-hc" = .{
+        // True Home Computer must be debugged/runned on real hardware!
     },
     .@"x86-hosted-linux" = .{
         .hosted_cli = &.{

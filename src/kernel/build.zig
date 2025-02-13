@@ -1,5 +1,6 @@
 const std = @import("std");
 const abiBuild = @import("ashet-abi");
+const regz = @import("regz");
 const Platform = abiBuild.Platform;
 
 pub const Machine = @import("port/machine_id.zig").MachineID;
@@ -54,6 +55,7 @@ pub fn build(b: *std.Build) void {
     const agp_swrast_dep = b.dependency("agp_swrast", .{});
     const turtlefont_dep = b.dependency("turtlefont", .{});
     const ashex_dep = b.dependency("ashex", .{});
+    const xcvt_dep = b.dependency("xcvt", .{});
 
     // Modules:
 
@@ -72,6 +74,7 @@ pub fn build(b: *std.Build) void {
     const agp_swrast_mod = agp_swrast_dep.module("agp-swrast");
     const turtlefont_mod = turtlefont_dep.module("turtlefont");
     const ashex_mod = ashex_dep.module("ashex");
+    const xcvt_mod = xcvt_dep.module("cvt");
 
     // Build:
 
@@ -110,6 +113,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "agp-swrast", .module = agp_swrast_mod },
             .{ .name = "turtlefont", .module = turtlefont_mod },
             .{ .name = "ashex", .module = ashex_mod },
+            .{ .name = "cvt", .module = xcvt_mod },
 
             // resources:
             .{
@@ -128,6 +132,75 @@ pub fn build(b: *std.Build) void {
     lwip_mod.addIncludePath(b.path("components/network/include"));
     for (lwip_mod.include_dirs.items) |dir| {
         kernel_mod.include_dirs.append(b.allocator, dir) catch @panic("out of memory");
+    }
+
+    if (machine_id == .@"arm-ashet-hc") {
+        const regz_dep = b.dependency("regz", .{
+            .optimize = .ReleaseSafe,
+        });
+
+        const regz_exe = regz_dep.artifact("regz");
+
+        const regz_run = b.addRunArtifact(regz_exe);
+
+        regz_run.addArg("--microzig");
+        regz_run.addArg("--format");
+        regz_run.addArg("svd");
+
+        regz_run.addArg("--output_path"); // Write to a file
+        const rp2350_register_file = regz_run.addOutputFileArg("rp2350.zig");
+
+        {
+            const patches: []const regz.patch.Patch = @import("port/machine/arm/ashet-hc/patches/rp2350_arm.zig").patches;
+
+            if (patches.len > 0) {
+                // write patches to file
+                const patch_ndjson = serialize_patches(
+                    b,
+                    patches,
+                );
+                const write_file_step = b.addWriteFiles();
+                const patch_file = write_file_step.add(
+                    "patch.ndjson",
+                    patch_ndjson,
+                );
+
+                regz_run.addArg("--patch_path");
+                regz_run.addFileArg(patch_file);
+            }
+        }
+
+        regz_run.addFileArg(b.path("port/machine/arm/ashet-hc/rp2350.svd"));
+
+        const microzig_shim_mod = b.createModule(.{
+            .root_source_file = b.path("utils/microzig-shim.zig"),
+            .imports = &.{
+                .{ .name = "kernel", .module = kernel_mod },
+            },
+        });
+
+        const rp2350_mod = b.createModule(.{
+            .root_source_file = rp2350_register_file,
+            .imports = &.{
+                .{ .name = "microzig", .module = microzig_shim_mod },
+            },
+        });
+
+        kernel_mod.addImport("rp2350", rp2350_mod);
+
+        const hal_dep = b.dependency("rp2xxx-hal", .{});
+
+        const hal_mod = b.createModule(.{
+            .root_source_file = hal_dep.path("hal.zig"),
+            .imports = &.{
+                .{ .name = "microzig", .module = microzig_shim_mod },
+            },
+        });
+
+        microzig_shim_mod.addImport("rp2350-chip", rp2350_mod);
+        microzig_shim_mod.addImport("rp2350-hal", hal_mod);
+
+        kernel_mod.addImport("rp2350-hal", hal_mod);
     }
 
     const start_file = if (machine_id.is_hosted())
@@ -152,7 +225,7 @@ pub fn build(b: *std.Build) void {
 
     // TODO(fqu): kernel_exe.root_module.code_model = .small;
     kernel_exe.bundle_compiler_rt = true;
-    kernel_exe.rdynamic = true; // Prevent the compiler from garbage collecting exported symbols
+    // kernel_exe.rdynamic = true; // Prevent the compiler from garbage collecting exported symbols
     kernel_exe.root_module.single_threaded = !machine_id.is_hosted();
     kernel_exe.root_module.omit_frame_pointer = false;
     kernel_exe.root_module.strip = false; // never strip debug info
@@ -247,6 +320,13 @@ const machine_info_map = std.EnumArray(Machine, MachineConfig).init(.{
 
         .source_file = "port/machine/arm/ashet-vhc/ashet-vhc.zig",
         .linker_script = "port/machine/arm/ashet-vhc/linker.ld",
+    },
+
+    .@"arm-ashet-hc" = .{
+        .target = constructTargetQuery(arm_cortex_m33),
+
+        .source_file = "port/machine/arm/ashet-hc/ashet-hc.zig",
+        .linker_script = "port/machine/arm/ashet-hc/linker.ld",
     },
 
     .@"arm-qemu-virt" = .{
@@ -367,4 +447,15 @@ fn renderMachineInfo(
     });
 
     return try stream.toOwnedSlice();
+}
+
+fn serialize_patches(b: *std.Build, patches: []const regz.patch.Patch) []const u8 {
+    var buf = std.ArrayList(u8).init(b.allocator);
+
+    for (patches) |patch| {
+        std.json.stringify(patch, .{}, buf.writer()) catch @panic("OOM");
+        buf.writer().writeByte('\n') catch @panic("OOM");
+    }
+
+    return buf.toOwnedSlice() catch @panic("OOM");
 }

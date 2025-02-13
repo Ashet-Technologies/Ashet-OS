@@ -25,6 +25,11 @@ pub const machine_config = ashet.ports.MachineConfig{
         .get_protection = mprotect.get_protection,
         .get_info = mprotect.query_address,
     },
+    .initialize = initialize,
+    .early_initialize = null,
+    .debug_write = debug_write,
+    .get_linear_memory_region = get_linear_memory_region,
+    .get_tick_count_ms = get_tick_count_ms,
 };
 
 const hw = struct {
@@ -41,7 +46,7 @@ var kernel_options: KernelOptions = .{};
 
 var startup_time: ?std.time.Instant = null;
 
-pub fn get_tick_count() u64 {
+fn get_tick_count_ms() u64 {
     if (startup_time) |sutime| {
         var now = std.time.Instant.now() catch unreachable;
         return @intCast(now.since(sutime) / std.time.ns_per_ms);
@@ -58,7 +63,7 @@ fn badKernelOption(option: []const u8, reason: []const u8) noreturn {
 var global_memory_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 pub const global_memory = global_memory_arena.allocator();
 
-pub fn initialize() !void {
+fn initialize() !void {
     if (sdl_enabled) {
         if (sdl.SDL_Init(sdl.SDL_INIT_EVERYTHING) < 0) {
             @panic("failed to init SDL");
@@ -181,7 +186,7 @@ pub fn initialize() !void {
     }
 }
 
-pub fn debugWrite(msg: []const u8) void {
+fn debug_write(msg: []const u8) void {
     std.debug.print("{s}", .{msg});
 }
 
@@ -290,7 +295,7 @@ comptime {
 
 var linear_memory: [64 * 1024 * 1024]u8 align(4096) = undefined;
 
-pub fn getLinearMemoryRegion() ashet.memory.Range {
+pub fn get_linear_memory_region() ashet.memory.Range {
     return .{
         .base = @intFromPtr(&linear_memory),
         .length = linear_memory.len,

@@ -12,6 +12,11 @@ const virtio_config = ashet.drivers.VirtIoConfiguration{
 pub const machine_config = ashet.ports.MachineConfig{
     .load_sections = .{ .data = true, .bss = true },
     .memory_protection = null,
+    .initialize = initialize,
+    .early_initialize = null,
+    .debug_write = debugWrite,
+    .get_linear_memory_region = getLinearMemoryRegion,
+    .get_tick_count_ms = get_tick_count_ms,
 };
 
 const hw = struct {
@@ -21,16 +26,16 @@ const hw = struct {
     var rtc: ashet.drivers.rtc.Goldfish = undefined;
 };
 
-pub fn get_tick_count() u64 {
+fn get_tick_count_ms() u64 {
     var cs = ashet.CriticalSection.enter();
     defer cs.leave();
 
     return systick.total_count_ms;
 }
 
-var interrupt_table: ashet.platform.profile.start.InterruptTable align(128) = ashet.platform.profile.start.initial_vector_table;
+var interrupt_table: ashet.platform.profile.start.InterruptTable align(128) = ashet.platform.profile.start.initial_vector_table.*;
 
-pub fn initialize() !void {
+fn initialize() !void {
     logger.info("cpuid: {s}", .{
         ashet.platform.profile.registers.system_control_block.cpuid.read(),
     });
@@ -59,10 +64,9 @@ pub fn initialize() !void {
     // ashet.drivers.install(&hw.uart0.driver);
     // ashet.drivers.install(&hw.uart1.driver);
     ashet.drivers.install(&hw.rtc.driver);
-    // ashet.drivers.install(&hw.cfi.driver);
 }
 
-pub fn debugWrite(msg: []const u8) void {
+fn debugWrite(msg: []const u8) void {
     const pl011: *volatile ashet.drivers.serial.PL011.Registers = @ptrFromInt(mmap.uart0.offset);
     const old_cr = pl011.CR;
     defer pl011.CR = old_cr;
@@ -89,7 +93,7 @@ pub fn binaryDebugWrite(msg: []const u8) void {
 extern const __machine_linmem_start: u8 align(4);
 extern const __machine_linmem_end: u8 align(4);
 
-pub fn getLinearMemoryRegion() ashet.memory.Range {
+fn getLinearMemoryRegion() ashet.memory.Range {
     const linmem_start = @intFromPtr(&__machine_linmem_start);
     const linmem_end = @intFromPtr(&__machine_linmem_end);
     return .{ .base = linmem_start, .length = linmem_end - linmem_start };

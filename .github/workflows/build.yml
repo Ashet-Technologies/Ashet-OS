@@ -12,7 +12,13 @@ jobs:
       fail-fast: false
       matrix:
         # os: [ubuntu-latest, windows-latest]
-        platform: [arm-ashet-vhc, arm-qemu-virt, rv32-qemu-virt, x86-hosted-linux, x86-pc-bios]
+        platform:
+          - arm-ashet-vhc
+          - arm-ashet-hc
+          - arm-qemu-virt
+          - rv32-qemu-virt
+          - x86-hosted-linux
+          - x86-pc-bios
 
     runs-on: ubuntu-latest
 

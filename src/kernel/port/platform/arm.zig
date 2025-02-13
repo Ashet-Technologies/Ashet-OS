@@ -66,19 +66,19 @@ pub inline fn getStackPointer() usize {
 }
 
 pub inline fn areInterruptsEnabled() bool {
-    return false; // TODO: Implement interrupts on Arm!
+    return profile.are_interrupts_enabled();
 }
 
 pub inline fn isInInterruptContext() bool {
-    return false; // TODO: Implement interrupts on Arm!
+    return profile.executing_isr();
 }
 
 pub inline fn disableInterrupts() void {
-    // TODO: Implement interrupts on Arm!
+    profile.disable_interrupts();
 }
 
 pub inline fn enableInterrupts() void {
-    // TODO: Implement interrupts on Arm!
+    profile.enable_interrupts();
 }
 
 pub fn get_cpu_cycle_counter() u64 {

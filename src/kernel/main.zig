@@ -31,6 +31,15 @@ pub const ports = @import("port/targets.zig");
 
 pub const utils = struct {
     pub const mmio = @import("utils/mmio.zig");
+    pub const fmt = @import("utils/fmt.zig");
+
+    pub inline fn volatile_read(comptime T: type, ptr: *volatile T) T {
+        return ptr.*;
+    }
+
+    pub inline fn volatile_write(comptime T: type, ptr: *volatile T, value: T) void {
+        ptr.* = value;
+    }
 };
 
 pub const platform_id: ports.Platform = machine_info.platform_id;
@@ -47,6 +56,7 @@ else switch (platform_id) {
 pub const machine = switch (machine_id) {
     .@"x86-pc-bios" => @import("port/machine/bios_pc/bios_pc.zig"),
     .@"rv32-qemu-virt" => @import("port/machine/rv32_virt/rv32_virt.zig"),
+    .@"arm-ashet-hc" => @import("port/machine/arm/ashet-hc/ashet-hc.zig"),
     .@"arm-ashet-vhc" => @import("port/machine/arm/ashet-vhc/ashet-vhc.zig"),
     .@"arm-qemu-virt" => @import("port/machine/arm_virt/arm_virt.zig"),
     .@"x86-hosted-linux" => @import("port/machine/linux_pc/linux_pc.zig"),
@@ -59,7 +69,7 @@ pub const LogLevel = std.log.Level;
 pub const log_levels = struct {
     pub var default: LogLevel = .debug;
     pub var userland: LogLevel = .debug;
-    pub var strace: LogLevel = .debug;
+    pub var strace: LogLevel = .warn;
 
     // kernel components
     pub var ashex_loader: LogLevel = .info;
@@ -109,6 +119,9 @@ comptime {
         _ = platform;
         _ = platform.start; // explicitly refer to the entry point implementation
 
+        // Force-instantiate the VFAT driver to provide the FatFS implementation:
+        _ = drivers.filesystem.VFAT;
+
         @export(ashet_kernelMain, .{
             .name = "ashet_kernelMain",
         });
@@ -129,12 +142,12 @@ fn kernelMain() noreturn {
     Debug.setTraceLoc(@src());
     memory.loadKernelMemory(machine_config.load_sections);
 
-    if (@hasDecl(machine, "earlyInitialize")) {
+    if (machine_config.early_initialize) |early_initialize| {
         // If required, initialize the machine basics first,
         // set up linear memory or detect how much memory is available.
 
         Debug.setTraceLoc(@src());
-        machine.earlyInitialize();
+        early_initialize();
     }
 
     // Populate RAM with the right sections, and compute how
@@ -196,7 +209,7 @@ fn main() !void {
     // Initialize the hardware into a well-defined state. After this, we can safely perform I/O ops.
     // This will install all relevant drivers, set up interrupts if necessary and so on.
     log.info("initialize machine...", .{});
-    try machine.initialize();
+    try machine_config.initialize();
 
     log.info("initialize video...", .{});
     try video.initialize();
@@ -277,15 +290,19 @@ fn load_entry_point(_: ?*anyopaque) callconv(.C) u32 {
 
     log.info("start application successfully loaded!", .{});
 
-    var deadline = time.Deadline.init_rel(10_000);
-    while (true) {
-        while (!deadline.is_reached()) {
-            scheduler.yield();
-        }
-        deadline.move_forward(10_000);
+    if (machine_id != .@"arm-ashet-hc") {
+        // This is neat, but incredibly annoying over *true* serial:
 
-        log.info("regular memory dump:", .{});
-        memory.debug.dumpPageMap();
+        var deadline = time.Deadline.init_rel(10_000);
+        while (true) {
+            while (!deadline.is_reached()) {
+                scheduler.yield();
+            }
+            deadline.move_forward(10_000);
+
+            log.info("regular memory dump:", .{});
+            memory.debug.dumpPageMap();
+        }
     }
 
     return 0;
@@ -342,7 +359,7 @@ pub const Debug = struct {
 
     const Error = error{};
     fn writeWithErr(_: void, bytes: []const u8) Error!usize {
-        machine.debugWrite(bytes);
+        machine_config.debug_write(bytes);
         return bytes.len;
     }
     const Writer = std.io.Writer(void, Error, writeWithErr);
@@ -352,17 +369,17 @@ pub const Debug = struct {
 
         var spliter = std.mem.splitScalar(u8, bytes, '\n');
 
-        machine.debugWrite(spliter.first());
+        machine_config.debug_write(spliter.first());
         while (spliter.next()) |continuation| {
-            machine.debugWrite("\r\n");
+            machine_config.debug_write("\r\n");
 
             var i: usize = indent;
             while (i > 0) {
                 const prefix = indent_part[0..@min(indent_part.len, i)];
-                machine.debugWrite(prefix);
+                machine_config.debug_write(prefix);
                 i -= prefix.len;
             }
-            machine.debugWrite(continuation);
+            machine_config.debug_write(continuation);
         }
 
         return bytes.len;
@@ -378,7 +395,7 @@ pub const Debug = struct {
     }
 
     pub fn write(text: []const u8) void {
-        machine.debugWrite(text);
+        machine_config.debug_write(text);
     }
 
     pub fn print(comptime fmt: []const u8, args: anytype) void {
@@ -562,16 +579,16 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
     @setCold(true);
 
     if (!full_panic) {
-        machine.debugWrite("PANIC: ");
-        machine.debugWrite(message);
-        machine.debugWrite("\r\n");
+        machine_config.debug_write("PANIC: ");
+        machine_config.debug_write(message);
+        machine_config.debug_write("\r\n");
         Debug.print("last trace: {s}:{}:{} ({s})\r\n", .{
             Debug.trace_loc.file,
             Debug.trace_loc.line,
             Debug.trace_loc.column,
             Debug.trace_loc.fn_name,
         });
-        machine.debugWrite("\r\n");
+        machine_config.debug_write("\r\n");
         halt();
     }
     const sp = platform.getStackPointer();

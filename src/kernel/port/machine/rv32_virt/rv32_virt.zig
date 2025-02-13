@@ -38,6 +38,11 @@ const VPBA_UART_BASE = 0x10000000;
 pub const machine_config = ashet.ports.MachineConfig{
     .load_sections = .{ .data = true, .bss = true },
     .memory_protection = null, // TODO: No memory protection on RISC-V yet!
+    .initialize = initialize,
+    .early_initialize = null,
+    .debug_write = debug_write,
+    .get_linear_memory_region = get_linear_memory_region,
+    .get_tick_count_ms = get_tick_count_ms,
 };
 
 const virtio_config = ashet.drivers.VirtIoConfiguration{
@@ -72,11 +77,11 @@ const aplic_mtimer = struct {
     }
 };
 
-pub fn get_tick_count() u64 { // return value in ms
+fn get_tick_count_ms() u64 { // return value in ms
     return aplic_mtimer.read_raw() / comptime @divExact(aplic_mtimer.time_freq, 1000);
 }
 
-pub fn initialize() !void {
+fn initialize() !void {
     dump_machine_info();
 
     hw.rtc = ashet.drivers.rtc.Goldfish.init(0x0101000);
@@ -88,7 +93,7 @@ pub fn initialize() !void {
     ashet.drivers.install(&hw.cfi.driver);
 }
 
-pub fn debugWrite(msg: []const u8) void {
+fn debug_write(msg: []const u8) void {
     for (msg) |c| {
         @as(*volatile u8, @ptrFromInt(VPBA_UART_BASE)).* = c;
     }
@@ -99,7 +104,7 @@ pub fn debugWrite(msg: []const u8) void {
 extern const __machine_linmem_start: u8 align(4);
 extern const __machine_linmem_end: u8 align(4);
 
-pub fn getLinearMemoryRegion() ashet.memory.Range {
+fn get_linear_memory_region() ashet.memory.Range {
     const linmem_start = @intFromPtr(&__machine_linmem_start);
     const linmem_end = @intFromPtr(&__machine_linmem_end);
     return .{ .base = linmem_start, .length = linmem_end - linmem_start };

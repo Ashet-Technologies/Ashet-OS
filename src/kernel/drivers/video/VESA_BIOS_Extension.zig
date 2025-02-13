@@ -47,12 +47,18 @@ pub fn init(allocator: std.mem.Allocator, mbinfo: *multiboot.Info) !VESA_BIOS_Ex
 
     const vbe_info = mbinfo.vbe;
 
-    const vbe_control = @as(*vbe.Control, @ptrFromInt(vbe_info.control_info));
+    const vbe_control: *vbe.Control = @ptrFromInt(vbe_info.control_info);
+    x86.vmm.ensure_accessible_obj(vbe_control);
 
     if (vbe_control.signature != vbe.Control.signature)
         @panic("invalid vbe signature!");
 
     // logger.info("vbe_control = {}", .{vbe_control});
+
+    x86.vmm.ensure_accessible_obj(vbe_control.oemstring.get());
+    x86.vmm.ensure_accessible_obj(vbe_control.oem_vendor_name.get());
+    x86.vmm.ensure_accessible_obj(vbe_control.oem_product_name.get());
+    x86.vmm.ensure_accessible_obj(vbe_control.oem_product_rev.get());
 
     logger.info("  oemstring = '{s}'", .{std.mem.sliceTo(vbe_control.oemstring.get(), 0)});
     logger.info("  oem_vendor_name = '{s}'", .{std.mem.sliceTo(vbe_control.oem_vendor_name.get(), 0)});
@@ -62,7 +68,13 @@ pub fn init(allocator: std.mem.Allocator, mbinfo: *multiboot.Info) !VESA_BIOS_Ex
     {
         logger.info("  video modes:", .{});
         var modes = vbe_control.mode_ptr.get();
-        while (modes[0] != 0xFFFF) {
+        x86.vmm.ensure_accessible_obj(modes);
+
+        while (true) {
+            x86.vmm.ensure_accessible_obj(modes);
+            if (modes[0] == 0xFFFF)
+                break;
+
             if (findModeByAssignedNumber(modes[0])) |mode| {
                 switch (mode) {
                     .text => |tm| logger.info("    - {X:0>4} (text {}x{})", .{ modes[0], tm.columns, tm.rows }),
@@ -75,7 +87,8 @@ pub fn init(allocator: std.mem.Allocator, mbinfo: *multiboot.Info) !VESA_BIOS_Ex
         }
     }
 
-    const vbe_mode = @as(*vbe.ModeInfo, @ptrFromInt(vbe_info.mode_info));
+    const vbe_mode: *vbe.ModeInfo = @ptrFromInt(vbe_info.mode_info);
+    x86.vmm.ensure_accessible_obj(vbe_mode);
 
     if (vbe_mode.memory_model != .direct_color) {
         logger.err("mode_info = {}", .{vbe_mode});
@@ -111,6 +124,8 @@ pub fn init(allocator: std.mem.Allocator, mbinfo: *multiboot.Info) !VESA_BIOS_Ex
     };
 
     const framebuffer = try framebuffer_config.instantiate();
+
+    x86.vmm.ensure_accessible_slice(framebuffer.base[0 .. framebuffer.height * framebuffer.stride]);
 
     const vmem = try allocator.alignedAlloc(ColorIndex, ashet.memory.page_size, @max(ashet.video.defaults.splash_screen.len, framebuffer.stride * framebuffer.height));
     errdefer allocator.free(vmem);
@@ -424,6 +439,7 @@ const Mode = union(enum) {
 fn textMode(c: u8, r: u8) Mode {
     return .{ .text = .{ .rows = r, .columns = c } };
 }
+
 fn graphicsMode(w: u16, h: u16, c: ColorDepth) Mode {
     return .{ .graphics = .{ .width = w, .height = h, .colors = c } };
 }

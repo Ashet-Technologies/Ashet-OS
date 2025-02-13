@@ -1,3 +1,19 @@
+pub fn executing_isr() bool {
+    @panic("not implemented yet!");
+}
+
+pub fn disable_interrupts() void {
+    @panic("not implemented yet!");
+}
+
+pub fn enable_interrupts() void {
+    @panic("not implemented yet!");
+}
+
+pub fn are_interrupts_enabled() bool {
+    @panic("not implemented yet!");
+}
+
 pub const start = struct {
     export fn _arm_except_Undef() callconv(.C) noreturn {
         @panic("Undefined Instruction");

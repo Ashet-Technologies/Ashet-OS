@@ -94,7 +94,7 @@ pub fn get_protected_ranges() []const KernelMemoryRange {
     const bss_start = @intFromPtr(&__kernel_bss_start);
     const bss_end = @intFromPtr(&__kernel_bss_end);
 
-    const linear_memory = ashet.machine.getLinearMemoryRegion();
+    const linear_memory = ashet.machine_config.get_linear_memory_region();
 
     Static.ranges = [_]KernelMemoryRange{
         .{ .name = "linear", .base = linear_memory.base, .length = linear_memory.length, .protection = .read_write },

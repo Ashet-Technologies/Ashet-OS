@@ -64,6 +64,11 @@ const virtio_config = ashet.drivers.VirtIoConfiguration{
 pub const machine_config = ashet.ports.MachineConfig{
     .load_sections = .{ .data = true, .bss = true },
     .memory_protection = null,
+    .initialize = initialize,
+    .early_initialize = null,
+    .debug_write = debug_write,
+    .get_linear_memory_region = get_linear_memory_region,
+    .get_tick_count_ms = get_tick_count_ms,
 };
 
 const hw = struct {
@@ -73,11 +78,11 @@ const hw = struct {
     var rtc: ashet.drivers.rtc.PL031 = undefined;
 };
 
-pub fn get_tick_count() u64 {
+fn get_tick_count_ms() u64 {
     return 0; // TODO: Implement precision timer
 }
 
-pub fn initialize() !void {
+fn initialize() !void {
     logger.info("initialize PL011 uart...", .{});
     hw.uart = ashet.drivers.serial.PL011.init(0x0900_0000);
 
@@ -95,7 +100,7 @@ pub fn initialize() !void {
     ashet.drivers.install(&hw.cfi.driver);
 }
 
-pub fn debugWrite(msg: []const u8) void {
+fn debug_write(msg: []const u8) void {
     const pl011: *volatile ashet.drivers.serial.PL011.Registers = @ptrFromInt(0x0900_0000);
     for (msg) |c| {
         pl011.DR = c;
@@ -105,7 +110,7 @@ pub fn debugWrite(msg: []const u8) void {
 extern const __machine_linmem_start: u8 align(4);
 extern const __machine_linmem_end: u8 align(4);
 
-pub fn getLinearMemoryRegion() ashet.memory.Range {
+fn get_linear_memory_region() ashet.memory.Range {
     const linmem_start = @intFromPtr(&__machine_linmem_start);
     const linmem_end = @intFromPtr(&__machine_linmem_end);
     return .{ .base = linmem_start, .length = linmem_end - linmem_start };

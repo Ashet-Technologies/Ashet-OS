@@ -1,7 +1,15 @@
 
-
 build:
     zig-ashet build
+
+[working-directory: 'src/kernel']
+build-kernel:
+    zig-ashet build -Dmachine=arm-ashet-hc
+    zig-ashet build -Dmachine=arm-ashet-vhc
+    zig-ashet build -Dmachine=arm-qemu-virt
+    zig-ashet build -Dmachine=rv32-qemu-virt
+    zig-ashet build -Dmachine=x86-pc-bios
+    zig-ashet build -Dmachine=x86-hosted-linux
 
 build-vhc:
     rm -rf zig-out/arm-ashet-vhc
@@ -88,3 +96,61 @@ farcall:
     zig-ashet build-exe -target x86-linux-musl -O ReleaseSmall -fno-strip -lc --name farcall farcall.S
     llvm-objdump -d ./farcall | grep -F '<main>' -A20
     gdb ./farcall --quiet --command ./gdbscript
+
+
+
+rp2350-build:
+    zig-ashet build -Doptimize-kernel arm-ashet-hc
+    llvm-size zig-out/arm-ashet-hc/kernel.elf
+    arm-none-eabi-objdump -dS zig-out/arm-ashet-hc/kernel.elf  > /tmp/arm-ashet-hc.S
+
+    # convert kernel image to UF2 file, family=rp2350_arm_s, offset=0M
+    picotool uf2 convert \
+        --family 0xe48bff59 \
+        --offset 0x10000000 \
+        zig-out/arm-ashet-hc/kernel.elf \
+        zig-out/arm-ashet-hc/kernel.uf2 \
+        --verbose
+
+    # convert disk image to UF2 file, family=data, offset=8M
+    picotool uf2 convert \
+        --family 0xe48bff58 \
+        --offset 0x10800000 \
+        zig-out/arm-ashet-hc/disk.img -t bin \
+        zig-out/arm-ashet-hc/disk.uf2 \
+        --verbose
+
+rp2350-flash: rp2350-build
+    picotool load \
+        --family 0xe48bff59 \
+        --update \
+        --verify \
+        --execute \
+        zig-out/arm-ashet-hc/kernel.uf2
+
+rp2350-upload-fs: rp2350-build
+    picotool load \
+        --update \
+        --verify \
+        zig-out/arm-ashet-hc/disk.uf2
+
+rp2350-load: rp2350-build
+    openocd -s tcl \
+        -f interface/cmsis-dap.cfg \
+        -f target/rp2350.cfg \
+        -c 'adapter speed 5000' \
+        -c "program zig-out/arm-ashet-hc/kernel.elf verify reset exit"
+
+rp2350-openocd:
+    openocd -s tcl \
+        -f interface/cmsis-dap.cfg \
+        -f target/rp2350.cfg \
+        -c 'adapter speed 5000'
+
+rp2350-gdb:
+    gdb \
+        --command "scripts/gdb-rp2350" \
+        zig-out/arm-ashet-hc/kernel.elf 
+
+rp2350-monitor:
+    picocom --baud 115200 --quiet /dev/ttyUSB0

@@ -7,12 +7,18 @@ on:
     branches: [master]
 
 jobs:
-  build:
+  smoketest:
     strategy:
       fail-fast: false
       matrix:
         # os: [ubuntu-latest, windows-latest]
-        platform: [rv32-qemu-virt, x86-hosted-linux, x86-pc-bios]
+
+        # Do not smoke-test "arm-ashet-hc", as it isn't runnable on a VM!
+        platform:
+          # - arm-ashet-vhc # TODO(fqu): VHC requires our own QEMU fork!
+          - rv32-qemu-virt
+          - x86-hosted-linux
+          - x86-pc-bios
 
     runs-on: ubuntu-latest
 
@@ -34,7 +40,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      
+
       - name: Install QEMU
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
@@ -54,7 +60,7 @@ jobs:
 
           # Test if the desktop application did start:
           grep -F "classic desktop ready!" kernel.log
-          
+
           # Test that we didn't panic:
           if grep -Fi "Panic:" kernel.log; then
             # fail!
