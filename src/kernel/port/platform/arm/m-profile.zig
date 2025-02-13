@@ -72,6 +72,8 @@ pub const start = struct {
             .usagefault_enabled = true,
         });
 
+        enable_fault_irq();
+
         ashet_kernelMain();
     }
 
