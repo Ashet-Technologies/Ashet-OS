@@ -1,19 +1,23 @@
 
+# for 0.13, we need zig-ashet, which is the fork
+# for 0.14, we need at least 0.14.0-dev.3213+53216d2f2
+zig := "zig-0.14.0-dev"
+
 build:
-    zig-ashet build
+    {{zig}} build
 
 [working-directory: 'src/kernel']
 build-kernel:
-    zig-ashet build -Dmachine=arm-ashet-hc
-    zig-ashet build -Dmachine=arm-ashet-vhc
-    zig-ashet build -Dmachine=arm-qemu-virt
-    zig-ashet build -Dmachine=rv32-qemu-virt
-    zig-ashet build -Dmachine=x86-pc-bios
-    zig-ashet build -Dmachine=x86-hosted-linux
+    {{zig}} build -Dmachine=arm-ashet-hc
+    {{zig}} build -Dmachine=arm-ashet-vhc
+    {{zig}} build -Dmachine=arm-qemu-virt
+    {{zig}} build -Dmachine=rv32-qemu-virt
+    {{zig}} build -Dmachine=x86-pc-bios
+    {{zig}} build -Dmachine=x86-hosted-linux
 
 build-vhc:
     rm -rf zig-out/arm-ashet-vhc
-    zig-ashet build --summary none -Doptimize-apps=ReleaseSmall arm-ashet-vhc
+    {{zig}} build --summary none -Doptimize-apps=ReleaseSmall arm-ashet-vhc
     ./src/tools/exe-tool/zig-out/bin/ashet-exe dump zig-out/arm-ashet-vhc/apps/init.ashex -a > /tmp/init.ashex.txt
     ( \
         readelf --dynamic --section-headers --program-headers --wide --relocs --symbols --dyn-syms zig-out/arm-ashet-vhc/apps/init.elf ; \
@@ -21,14 +25,14 @@ build-vhc:
     ) > /tmp/dump.txt
 
 run-vhc: build-vhc
-    zig-ashet build --summary none -Dmachine=arm-ashet-vhc -Doptimize-apps=ReleaseSmall install run
+    {{zig}} build --summary none -Dmachine=arm-ashet-vhc -Doptimize-apps=ReleaseSmall install run
 
 debug-vhc: build-vhc
-    zig-ashet build --summary none -Dmachine=arm-ashet-vhc -Doptimize-apps=ReleaseSmall install run -- -S ; stty sane
+    {{zig}} build --summary none -Dmachine=arm-ashet-vhc -Doptimize-apps=ReleaseSmall install run -- -S ; stty sane
 
 [working-directory: 'src/tools/exe-tool']
 exe-tool:
-    zig-ashet build
+    {{zig}} build
 
 dump-libashet: \
     (dump-libashet-target "arm") \
@@ -37,7 +41,7 @@ dump-libashet: \
 
 [working-directory: 'src/userland/libs/libAshetOS']
 dump-libashet-target target:
-    zig-ashet build -Dtarget={{target}} install debug
+    {{zig}} build -Dtarget={{target}} install debug
     llvm-readelf --dynamic \
         --section-headers \
         --program-headers \
@@ -62,7 +66,7 @@ dump-init: \
 
 [working-directory: 'src/userland/apps/init']
 dump-init-target target: (dump-libashet-target target) exe-tool
-    zig-ashet build -Dtarget={{target}} install
+    {{zig}} build -Dtarget={{target}} install
 
     llvm-readelf --dynamic \
         --section-headers \
@@ -93,14 +97,14 @@ dump-init-target target: (dump-libashet-target target) exe-tool
 
 [working-directory: 'research/x86-farcall']
 farcall:
-    zig-ashet build-exe -target x86-linux-musl -O ReleaseSmall -fno-strip -lc --name farcall farcall.S
+    {{zig}} build-exe -target x86-linux-musl -O ReleaseSmall -fno-strip -lc --name farcall farcall.S
     llvm-objdump -d ./farcall | grep -F '<main>' -A20
     gdb ./farcall --quiet --command ./gdbscript
 
 
 
 rp2350-build:
-    zig-ashet build -Doptimize-kernel arm-ashet-hc
+    {{zig}} build -Doptimize-kernel arm-ashet-hc
     llvm-size zig-out/arm-ashet-hc/kernel.elf
     arm-none-eabi-objdump -dS zig-out/arm-ashet-hc/kernel.elf  > /tmp/arm-ashet-hc.S
 

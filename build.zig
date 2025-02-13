@@ -220,7 +220,7 @@ const Variables = struct {
     @"${KERNEL}": std.Build.LazyPath,
 
     pub fn addArg(variables: Variables, runner: *std.Build.Step.Run, arg: []const u8) void {
-        inline for (@typeInfo(Variables).Struct.fields) |fld| {
+        inline for (@typeInfo(Variables).@"struct".fields) |fld| {
             const path = @field(variables, fld.name);
 
             if (std.mem.eql(u8, arg, fld.name)) {
@@ -370,7 +370,7 @@ const console_qemu_flags = [_][]const u8{
 fn get_optional_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) ?std.Build.LazyPath {
     for (write_files.files.items) |file| {
         if (std.mem.eql(u8, file.sub_path, sub_path))
-            return  .{
+            return .{
                 .generated = .{
                     .file = &write_files.generated_directory,
                     .sub_path = file.sub_path,

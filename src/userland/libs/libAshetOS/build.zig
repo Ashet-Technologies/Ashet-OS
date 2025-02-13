@@ -384,7 +384,12 @@ pub fn build(b: *std.Build) void {
 fn get_optional_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) ?std.Build.LazyPath {
     for (write_files.files.items) |file| {
         if (std.mem.eql(u8, file.sub_path, sub_path))
-            return file.getPath();
+            return .{
+                .generated = .{
+                    .file = &write_files.generated_directory,
+                    .sub_path = file.sub_path,
+                },
+            };
     }
     return null;
 }

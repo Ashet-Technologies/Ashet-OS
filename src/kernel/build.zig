@@ -355,7 +355,7 @@ const machine_info_map = std.EnumArray(Machine, MachineConfig).init(.{
     },
 });
 
-const generic_x86 = .{
+const generic_x86: std.Target.Query = .{
     .cpu_arch = .x86,
     .abi = .eabi,
     .cpu_model = .{ .explicit = &std.Target.x86.cpu.i686 },
@@ -367,7 +367,7 @@ const generic_x86 = .{
     }),
 };
 
-const generic_arm = .{
+const generic_arm: std.Target.Query = .{
     .cpu_arch = .thumb,
     .abi = .eabi,
     .cpu_model = .{
@@ -397,7 +397,7 @@ const generic_arm = .{
     // }),
 };
 
-const arm_cortex_m33 = .{
+const arm_cortex_m33: std.Target.Query = .{
     .cpu_arch = .thumb,
     .abi = .eabi,
     .cpu_model = .{
@@ -410,7 +410,7 @@ const arm_cortex_m33 = .{
     }),
 };
 
-const generic_rv32 = .{
+const generic_rv32: std.Target.Query = .{
     .cpu_arch = .riscv32,
     .abi = .eabi,
     .cpu_model = .{ .explicit = &std.Target.riscv.cpu.generic_rv32 },
