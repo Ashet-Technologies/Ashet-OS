@@ -288,14 +288,14 @@ export fn common_isr_handler() callconv(.Naked) void {
         \\ mov %%esp, %%eax
         // stack here is in a desolate state of "whatever happened to me, oh god"
         // let's align it for SysV abi conformance:
-        // \\ and $0xfffffff0, %esp
-        // \\ sub $0x0C, %esp
+        \\ and $0xfffffff0, %esp
+        \\ sub $0x0C, %esp
         // Set the stack pointer to the interrupt area
         // if we're the first interrupt (which means we have no nesting):
-        \\ cmpl $1, _x86_interrupt_nesting
-        \\ jne .nested_interrupt
-        \\ movl _x86_interrupt_stack_end, %esp
-        \\.nested_interrupt:
+        // \\ cmpl $1, _x86_interrupt_nesting
+        // \\ jne .nested_interrupt
+        // \\ movl _x86_interrupt_stack_end, %esp
+        // \\.nested_interrupt:
         // invoke the handler with the previous stack pointer as paramter, and return value
         \\ push %%eax
         \\ call handle_interrupt

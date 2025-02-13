@@ -12,23 +12,23 @@ pub const VideoMode = packed struct(u16) {
 pub const Control = extern struct {
     pub const signature: u32 = @as(u32, @bitCast([4]u8{ 'V', 'E', 'S', 'A' }));
 
-    // 0	Signatur	4	Hier sollte "VESA" stehen (=0x56455341)
+    // 0      Signatur    4   Hier sollte "VESA" stehen (=0x56455341)
     signature: u32,
     version: BCD(u16),
-    // 4	Version	2	BCD-kodiert: 0x0100 für 1.0, 0x0200 für 2.0, 0x0300 für 3.0
-    oemstring: FarPtr([*:0]const u8), // 6	Zeiger auf OEMString	4 (FARPTR)
-    flags: Flags align(2), // 10	Eigenschaften des Grafikcontrollers	4
+    // 4      Version      2      BCD-kodiert: 0x0100 für 1.0, 0x0200 für 2.0, 0x0300 für 3.0
+    oemstring: FarPtr([*:0]const u8), // 6      Zeiger auf OEMString      4 (FARPTR)
+    flags: Flags align(2), // 10      Eigenschaften des Grafikcontrollers      4
     //     Bit 2: RAMDAC-Operation: 0=Normal; 1=Leeres Bit benutzen bei großen Blöcken
     //     Bit 1: 0=Controller ist VGA-kompatibel
     //     Bit 0: DAC-Breite: 0=6 Bits; 1=6 oder 8 Bits
-    mode_ptr: FarPtr([*]const u16), // 14	Zeiger auf eine Liste mit unterstützten Grafikmodi	4 (FARPTR)	Diese Liste ist ein Array aus 16 Bit großen Einträgen, die jeweils die Nummer eines unterstützten Modus sind. Der letzte Eintrag ist 0xFFFF.
-    ram_size: u16, // 18	Größe des Grafikspeichers	2	Die Größe des Grafikspeichers in 64-kB-Blöcken
-    oem_sw_rev: BCD(u16), // 20	OEMSoftwareRevision	2
-    oem_vendor_name: FarPtr([*:0]const u8), // 22	Zeiger auf OEMVendorNameString	4 (FARPTR)
-    oem_product_name: FarPtr([*:0]const u8), // 26	Zeiger auf OEMProductNameString	4 (FARPTR)
-    oem_product_rev: FarPtr([*:0]const u8), // 30	Zeiger auf OEMProductRevision	4 (FARPTR)
-    reserved: [222]u8, // 34	reserviert	222
-    // 256	Datenbereich für OEMStrings	256
+    mode_ptr: FarPtr([*]const u16), // 14      Zeiger auf eine Liste mit unterstützten Grafikmodi      4 (FARPTR)      Diese Liste ist ein Array aus 16 Bit großen Einträgen, die jeweils die Nummer eines unterstützten Modus sind. Der letzte Eintrag ist 0xFFFF.
+    ram_size: u16, // 18      Größe des Grafikspeichers      2      Die Größe des Grafikspeichers in 64-kB-Blöcken
+    oem_sw_rev: BCD(u16), // 20      OEMSoftwareRevision      2
+    oem_vendor_name: FarPtr([*:0]const u8), // 22      Zeiger auf OEMVendorNameString      4 (FARPTR)
+    oem_product_name: FarPtr([*:0]const u8), // 26      Zeiger auf OEMProductNameString      4 (FARPTR)
+    oem_product_rev: FarPtr([*:0]const u8), // 30      Zeiger auf OEMProductRevision      4 (FARPTR)
+    reserved: [222]u8, // 34      reserviert      222
+    // 256      Datenbereich für OEMStrings      256
     oem_strings: [256]u8,
 
     comptime {

@@ -203,6 +203,7 @@ pub fn build(b: *std.Build) void {
 
         vm_runner.stdio = .inherit;
         vm_runner.has_side_effects = true;
+        vm_runner.disable_zig_progress = true;
 
         run_step.dependOn(&vm_runner.step);
     }
