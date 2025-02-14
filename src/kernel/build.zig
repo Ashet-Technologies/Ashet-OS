@@ -156,7 +156,7 @@ pub fn build(b: *std.Build) void {
         const rp2350_register_file = regz_run.addOutputFileArg("rp2350.zig");
 
         {
-            const patches: []const regz.patch.Patch = @import("port/machine/arm/ashet-hc/patches/rp2350_arm.zig").patches;
+            const patches = @import("port/machine/arm/ashet-hc/patches/rp2350_arm.zig").patches;
 
             if (patches.len > 0) {
                 // write patches to file
@@ -239,7 +239,7 @@ pub fn build(b: *std.Build) void {
         kernel_exe.root_module.omit_frame_pointer = false;
     }
 
-    kernel_exe.setLinkerScriptPath(b.path(machine_config.linker_script));
+    kernel_exe.setLinkerScript(b.path(machine_config.linker_script));
 
     // for (options.platforms.include_paths.get(machine_spec.platform).items) |path| {
     //     kernel_exe.addSystemIncludePath(path);

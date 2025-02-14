@@ -1,4 +1,5 @@
-pub const patches = &.{
+const regz = @import("regz");
+pub const patches = &[_]regz.patch.Patch{
     .{ .add_enum = .{
         .parent = "types.peripherals.USB_DPRAM",
         .@"enum" = .{

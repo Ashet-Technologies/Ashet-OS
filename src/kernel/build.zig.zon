@@ -78,8 +78,12 @@
         // External tooling:
 
         .regz = .{
-            .url = "https://microzig.tech/downloads/microzig/0.13.2/tools/regz.tar.gz",
-            .hash = "1220186140b54b42fa13d3afaa05c177fe7ee065d14c7a8d58fb7ff59eb31f8bc51b",
+            // .url = "https://microzig.tech/downloads/microzig/0.13.2/tools/regz.tar.gz",
+            // .hash = "1220186140b54b42fa13d3afaa05c177fe7ee065d14c7a8d58fb7ff59eb31f8bc51b",
+
+            .url = "https://public.devspace.random-projects.net/regz-0.14.0-dev.tar.gz",
+            .hash = "12200b5c2c2d66cd846e9c311d28cb8a0dfdf6d692412c57da29e48359fe7a0f5d1f",
+
             .lazy = false,
         },
 
