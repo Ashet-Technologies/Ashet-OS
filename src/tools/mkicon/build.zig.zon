@@ -7,12 +7,12 @@
             .path = "../../abi",
         },
         .args = .{
-            .url = "https://github.com/ikskuh/zig-args/archive/872272205d95bdba33798c94e72c5387a31bc806.tar.gz",
-            .hash = "1220fe6ae56b668cc4a033282b5f227bfbb46a67ede6d84e9f9493fea9de339b5f37",
+            .url = "https://github.com/ikskuh/zig-args/archive/968258dc1b1230493d8f1677097c832a3d7e0bd8.tar.gz",
+            .hash = "1220bdedf1a993d852d8aebcd63922a8fb163fac37b9c6ff72d187b2847a4a3a4248",
         },
         .zigimg = .{
-            .url = "https://github.com/der-teufel-programming/zigimg/archive/fff22dd8a05f0a00bb45dd8f754238497ef8446e.tar.gz",
-            .hash = "122013646f7038ecc71ddf8a0d7de346d29a6ec40140af57f838b0a975c69af512b0",
+            .url = "https://github.com/der-teufel-programming/zigimg/archive/408fef0d52b4dd46610940364602c464998abff7.tar.gz",
+            .hash = "1220518dec33fbf5f9453a4c2510c6b0e372438f201ba7493bd69dec0411817a377d",
         },
     },
 }

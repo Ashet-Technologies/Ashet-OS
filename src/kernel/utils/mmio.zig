@@ -44,12 +44,12 @@ pub fn MmioRegister(comptime Reg: type, comptime config: MmioConfig) type {
         // Registers must be atomically writable
         @sizeOf(Reg) <= @sizeOf(usize),
     );
-    std.debug.assert(@typeInfo(Reg) == .Struct);
-    std.debug.assert(@typeInfo(Reg).Struct.layout == .@"packed");
-    std.debug.assert(@typeInfo(Reg).Struct.backing_integer != null);
+    std.debug.assert(@typeInfo(Reg) == .@"struct");
+    std.debug.assert(@typeInfo(Reg).@"struct".layout == .@"packed");
+    std.debug.assert(@typeInfo(Reg).@"struct".backing_integer != null);
 
     return extern union {
-        pub const Int = @typeInfo(Reg).Struct.backing_integer.?;
+        pub const Int = @typeInfo(Reg).@"struct".backing_integer.?;
 
         pub const access = config.access;
 
@@ -118,10 +118,10 @@ pub fn MmioRegister(comptime Reg: type, comptime config: MmioConfig) type {
         }
 
         pub const FieldUpdate: type = blk: {
-            const src_info = @typeInfo(Reg).Struct;
+            const src_info = @typeInfo(Reg).@"struct";
 
             var new_info: std.builtin.Type = .{
-                .Struct = .{
+                .@"struct" = .{
                     .backing_integer = null,
                     .decls = &.{},
                     .is_tuple = false,
@@ -139,10 +139,10 @@ pub fn MmioRegister(comptime Reg: type, comptime config: MmioConfig) type {
                     .name = old_field.name,
                     .is_comptime = false,
                     .alignment = @alignOf(FieldType),
-                    .default_value = &field_default,
+                    .default_value_ptr = &field_default,
                 };
 
-                new_info.Struct.fields = new_info.Struct.fields ++ &[_]std.builtin.Type.StructField{new_field};
+                new_info.@"struct".fields = new_info.@"struct".fields ++ &[_]std.builtin.Type.StructField{new_field};
             }
 
             break :blk @Type(new_info);

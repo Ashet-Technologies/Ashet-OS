@@ -1204,7 +1204,7 @@ pub const max_fs_type_len = 32;
 /// This should also enough for most reasonable file names in the wild.
 pub const max_file_name_len = 120;
 
-pub const palette_size = std.math.maxInt(@typeInfo(ColorIndex).Enum.tag_type) + 1;
+pub const palette_size = std.math.maxInt(@typeInfo(ColorIndex).@"enum".tag_type) + 1;
 
 ///////////////////////////////////////////////////////////
 // System resources:
@@ -1432,7 +1432,7 @@ pub const ColorIndex = enum(u8) {
         return @as(ColorIndex, @enumFromInt(val));
     }
 
-    pub fn index(c: ColorIndex) @typeInfo(ColorIndex).Enum.tag_type {
+    pub fn index(c: ColorIndex) @typeInfo(ColorIndex).@"enum".tag_type {
         return @intFromEnum(c);
     }
 
@@ -1560,14 +1560,14 @@ pub const MessageBoxIcon = enum(u8) {
 };
 
 pub const MessageBoxResult = enum(u8) {
-    ok = @bitOffsetOf(MessageBoxButtons, "ok"),
-    cancel = @bitOffsetOf(MessageBoxButtons, "cancel"),
-    yes = @bitOffsetOf(MessageBoxButtons, "yes"),
-    no = @bitOffsetOf(MessageBoxButtons, "no"),
-    abort = @bitOffsetOf(MessageBoxButtons, "abort"),
-    retry = @bitOffsetOf(MessageBoxButtons, "retry"),
-    @"continue" = @bitOffsetOf(MessageBoxButtons, "continue"),
-    ignore = @bitOffsetOf(MessageBoxButtons, "ignore"),
+    ok = @bitOffsetOf(MessageBoxButtons, "has_ok"),
+    cancel = @bitOffsetOf(MessageBoxButtons, "has_cancel"),
+    yes = @bitOffsetOf(MessageBoxButtons, "has_yes"),
+    no = @bitOffsetOf(MessageBoxButtons, "has_no"),
+    abort = @bitOffsetOf(MessageBoxButtons, "has_abort"),
+    retry = @bitOffsetOf(MessageBoxButtons, "has_retry"),
+    @"continue" = @bitOffsetOf(MessageBoxButtons, "has_continue"),
+    ignore = @bitOffsetOf(MessageBoxButtons, "has_ignore"),
 };
 
 pub const ExitCode = enum(u32) {
@@ -1855,21 +1855,21 @@ pub const WidgetNotifyEvent = extern struct {
 };
 
 pub const MessageBoxButtons = packed struct(u8) {
-    pub const ok: MessageBoxButtons = .{ .ok = true };
-    pub const ok_cancel: MessageBoxButtons = .{ .ok = true, .cancel = true };
-    pub const yes_no: MessageBoxButtons = .{ .yes = true, .no = true };
-    pub const yes_no_cancel: MessageBoxButtons = .{ .yes = true, .no = true, .cancel = true };
-    pub const retry_cancel: MessageBoxButtons = .{ .retry = true, .cancel = true };
-    pub const abort_retry_ignore: MessageBoxButtons = .{ .abort = true, .retry = true, .ignore = true };
+    pub const ok: MessageBoxButtons = .{ .has_ok = true };
+    pub const ok_cancel: MessageBoxButtons = .{ .has_ok = true, .has_cancel = true };
+    pub const yes_no: MessageBoxButtons = .{ .has_yes = true, .has_no = true };
+    pub const yes_no_cancel: MessageBoxButtons = .{ .has_yes = true, .has_no = true, .has_cancel = true };
+    pub const retry_cancel: MessageBoxButtons = .{ .has_retry = true, .has_cancel = true };
+    pub const abort_retry_ignore: MessageBoxButtons = .{ .has_abort = true, .has_retry = true, .has_ignore = true };
 
-    ok: bool = false,
-    cancel: bool = false,
-    yes: bool = false,
-    no: bool = false,
-    abort: bool = false,
-    retry: bool = false,
-    @"continue": bool = false,
-    ignore: bool = false,
+    has_ok: bool = false,
+    has_cancel: bool = false,
+    has_yes: bool = false,
+    has_no: bool = false,
+    has_abort: bool = false,
+    has_retry: bool = false,
+    has_continue: bool = false,
+    has_ignore: bool = false,
 
     pub fn format(buttons: MessageBoxButtons, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
         _ = fmt;
@@ -1879,35 +1879,35 @@ pub const MessageBoxButtons = packed struct(u8) {
         var buffer: [max_length]u8 = undefined;
         var stream = std.io.fixedBufferStream(&buffer);
 
-        if (buttons.ok) {
+        if (buttons.has_ok) {
             if (stream.pos > 0) _ = stream.write(",") catch unreachable;
             stream.writer().writeAll("ok") catch unreachable;
         }
-        if (buttons.cancel) {
+        if (buttons.has_cancel) {
             if (stream.pos > 0) _ = stream.write(",") catch unreachable;
             stream.writer().writeAll("cancel") catch unreachable;
         }
-        if (buttons.yes) {
+        if (buttons.has_yes) {
             if (stream.pos > 0) _ = stream.write(",") catch unreachable;
             stream.writer().writeAll("yes") catch unreachable;
         }
-        if (buttons.no) {
+        if (buttons.has_no) {
             if (stream.pos > 0) _ = stream.write(",") catch unreachable;
             stream.writer().writeAll("no") catch unreachable;
         }
-        if (buttons.abort) {
+        if (buttons.has_abort) {
             if (stream.pos > 0) _ = stream.write(",") catch unreachable;
             stream.writer().writeAll("abort") catch unreachable;
         }
-        if (buttons.retry) {
+        if (buttons.has_retry) {
             if (stream.pos > 0) _ = stream.write(",") catch unreachable;
             stream.writer().writeAll("retry") catch unreachable;
         }
-        if (buttons.@"continue") {
+        if (buttons.has_continue) {
             if (stream.pos > 0) _ = stream.write(",") catch unreachable;
             stream.writer().writeAll("continue") catch unreachable;
         }
-        if (buttons.ignore) {
+        if (buttons.has_ignore) {
             if (stream.pos > 0) _ = stream.write(",") catch unreachable;
             stream.writer().writeAll("ignore") catch unreachable;
         }
@@ -2324,7 +2324,7 @@ pub const WindowEvent = extern union {
 };
 
 fn validate_event_type(comptime Event: type) void {
-    const union_fields = @typeInfo(Event).Union.fields;
+    const union_fields = @typeInfo(Event).@"union".fields;
 
     // first union field must define our event type:
     std.debug.assert(union_fields[0].type == Event.Type);
@@ -2334,7 +2334,7 @@ fn validate_event_type(comptime Event: type) void {
     // check that all other fields are extern structs that share
     // the first field with this union:
     for (union_fields[1..]) |fld| {
-        const event_type = @typeInfo(fld.type).Struct;
+        const event_type = @typeInfo(fld.type).@"struct";
 
         const first_field = event_type.fields[0];
 
@@ -2368,7 +2368,7 @@ fn validate_event_type(comptime Event: type) void {
     }
 
     if (requires_shared_event_type) {
-        const in_shared_type = for (@typeInfo(SharedEventType).Union.fields) |fld| {
+        const in_shared_type = for (@typeInfo(SharedEventType).@"union".fields) |fld| {
             if (fld.type == Event.Type)
                 break true;
         } else false;

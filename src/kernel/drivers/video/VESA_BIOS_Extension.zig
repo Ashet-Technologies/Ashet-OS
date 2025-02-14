@@ -50,15 +50,15 @@ pub fn init(allocator: std.mem.Allocator, mbinfo: *multiboot.Info) !VESA_BIOS_Ex
     const vbe_control: *vbe.Control = @ptrFromInt(vbe_info.control_info);
     x86.vmm.ensure_accessible_obj(vbe_control);
 
-    if (vbe_control.signature != vbe.Control.signature)
+    if (vbe_control.signature != vbe.Control.expected_signature)
         @panic("invalid vbe signature!");
 
     // logger.info("vbe_control = {}", .{vbe_control});
 
-    x86.vmm.ensure_accessible_obj(vbe_control.oemstring.get());
-    x86.vmm.ensure_accessible_obj(vbe_control.oem_vendor_name.get());
-    x86.vmm.ensure_accessible_obj(vbe_control.oem_product_name.get());
-    x86.vmm.ensure_accessible_obj(vbe_control.oem_product_rev.get());
+    x86.vmm.ensure_accessible_obj(&vbe_control.oemstring.get()[0]);
+    x86.vmm.ensure_accessible_obj(&vbe_control.oem_vendor_name.get()[0]);
+    x86.vmm.ensure_accessible_obj(&vbe_control.oem_product_name.get()[0]);
+    x86.vmm.ensure_accessible_obj(&vbe_control.oem_product_rev.get()[0]);
 
     logger.info("  oemstring = '{s}'", .{std.mem.sliceTo(vbe_control.oemstring.get(), 0)});
     logger.info("  oem_vendor_name = '{s}'", .{std.mem.sliceTo(vbe_control.oem_vendor_name.get(), 0)});
@@ -68,10 +68,9 @@ pub fn init(allocator: std.mem.Allocator, mbinfo: *multiboot.Info) !VESA_BIOS_Ex
     {
         logger.info("  video modes:", .{});
         var modes = vbe_control.mode_ptr.get();
-        x86.vmm.ensure_accessible_obj(modes);
 
         while (true) {
-            x86.vmm.ensure_accessible_obj(modes);
+            x86.vmm.ensure_accessible_obj(&modes[0]);
             if (modes[0] == 0xFFFF)
                 break;
 
@@ -358,7 +357,7 @@ const FramebufferConfig = struct {
                 const color: Pixel = (@as(Pixel, rgb.r) << rshift) |
                     (@as(Pixel, rgb.g) << gshift) |
                     (@as(Pixel, rgb.b) << bshift);
-                std.mem.writeInt(Pixel, ptr[0 .. (@typeInfo(Pixel).Int.bits + 7) / 8], color, .little);
+                std.mem.writeInt(Pixel, ptr[0 .. (@typeInfo(Pixel).int.bits + 7) / 8], color, .little);
             }
         }.write;
     }

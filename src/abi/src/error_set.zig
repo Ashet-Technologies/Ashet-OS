@@ -21,7 +21,7 @@ pub fn is_error_set(comptime T: type) bool {
 }
 
 pub fn ErrorSet(comptime ErrorType: type) type {
-    const raw_errors = @typeInfo(ErrorType).ErrorSet orelse @compileError("anyerror is not a legal error set");
+    const raw_errors = @typeInfo(ErrorType).error_set orelse @compileError("anyerror is not a legal error set");
 
     var errors = raw_errors[0..raw_errors.len].*;
 
@@ -52,7 +52,7 @@ pub fn ErrorSet(comptime ErrorType: type) type {
         u64; // you mad person
 
     return @Type(.{
-        .Enum = .{
+        .@"enum" = .{
             .tag_type = backing_int,
             .fields = &enum_fields,
             .decls = &.{},

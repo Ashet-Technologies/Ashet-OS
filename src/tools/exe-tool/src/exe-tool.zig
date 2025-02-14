@@ -667,7 +667,7 @@ fn parse_elf_file(
     };
 
     const ProgramHeader = struct {
-        type: enum(elf.Elf32_Word) {
+        type: enum(elf.Word) {
             null = elf.PT_NULL,
             load = elf.PT_LOAD,
             dynamic = elf.PT_DYNAMIC,
@@ -696,9 +696,9 @@ fn parse_elf_file(
         },
         offset: elf.Elf32_Addr,
         vaddr: elf.Elf32_Addr,
-        paddr: elf.Elf32_Word,
-        filesz: elf.Elf32_Word,
-        memsz: elf.Elf32_Word,
+        paddr: elf.Word,
+        filesz: elf.Word,
+        memsz: elf.Word,
 
         memory: []const u8,
     };
@@ -1578,8 +1578,8 @@ const Environment = struct {
 };
 
 const Elf32_Addr = std.elf.Elf32_Addr;
-const Elf32_Word = std.elf.Elf32_Word;
-const Elf32_Sword = std.elf.Elf32_Sword;
+const Elf32_Word = std.elf.Word;
+const Elf32_Sword = std.elf.Sword;
 
 const word8 = u8;
 const word16 = u16;

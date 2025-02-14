@@ -6,9 +6,12 @@ const chip = microzig.chip;
 const DMA = chip.peripherals.DMA;
 
 const hw = @import("hw.zig");
+const compat = @import("compatibility.zig");
 
-const num_channels = 12;
-var claimed_channels = std.PackedIntArray(bool, num_channels).initAllTo(false);
+const num_channels = compat.dma_channel_count;
+
+// "Marked bit" is "free"
+var claimed_channels = std.bit_set.IntegerBitSet(num_channels).initFull();
 
 pub const Dreq = enum(u6) {
     uart0_tx = 20,
@@ -18,19 +21,14 @@ pub const Dreq = enum(u6) {
 
 pub fn channel(n: u4) Channel {
     assert(n < num_channels);
-
     return @as(Channel, @enumFromInt(n));
 }
 
 pub fn claim_unused_channel() ?Channel {
-    for (0..num_channels) |i| {
-        if (claimed_channels.get(i)) {
-            claimed_channels.set(i, true);
-            return channel(@intCast(i));
-        }
-    }
-
-    return null;
+    return if(claimed_channels.toggleFirstSet()) |cid|
+        channel(@intCast(cid))
+    else 
+        null;
 }
 
 pub const Channel = enum(u4) {
@@ -40,14 +38,15 @@ pub const Channel = enum(u4) {
     pub fn claim(chan: Channel) void {
         if (chan.is_claimed())
             @panic("channel is already claimed!");
+        claimed_channels.unset(@intFromEnum(chan));
     }
 
     pub fn unclaim(chan: Channel) void {
-        claimed_channels.set(@intFromEnum(chan), false);
+        claimed_channels.set(@intFromEnum(chan));
     }
 
     pub fn is_claimed(chan: Channel) bool {
-        return claimed_channels.get(@intFromEnum(chan));
+        return claimed_channels.isSet(@intFromEnum(chan));
     }
 
     pub const Regs = extern struct {

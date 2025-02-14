@@ -29,3 +29,8 @@ pub const arch: Arch = switch (chip) {
     else
         @compileError(std.fmt.comptimePrint("Unsupported cpu for RP2350: \"{s}\"", .{microzig.config.cpu_name})),
 };
+
+pub const dma_channel_count = switch (chip) {
+    .RP2040 => 12,
+    .RP2350 => 16,
+};

@@ -4,7 +4,7 @@
 zig := "zig-0.14.0-dev"
 
 build:
-    {{zig}} build
+    {{zig}} build --summary none
 
 [working-directory: 'src/kernel']
 build-kernel:
