@@ -1,5 +1,7 @@
 
 build:
+    # just build a single os before building all, so we can fail faster
+    zig-ashet build arm-ashet-vhc
     zig-ashet build
 
 [working-directory: 'src/kernel']

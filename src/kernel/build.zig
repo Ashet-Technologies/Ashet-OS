@@ -32,6 +32,7 @@ pub fn build(b: *std.Build) void {
     const args_dep = b.dependency("args", .{});
     const network_dep = b.dependency("network", .{});
     const vnc_dep = b.dependency("vnc", .{});
+    const tinyusb_dep = b.dependency("tinyusb", .{});
     const lwip_dep = b.dependency("lwip", .{ .target = kernel_target, .optimize = .ReleaseSafe });
     const libc_dep = b.dependency("foundation-libc", .{
         .target = kernel_target,
@@ -75,6 +76,7 @@ pub fn build(b: *std.Build) void {
     const turtlefont_mod = turtlefont_dep.module("turtlefont");
     const ashex_mod = ashex_dep.module("ashex");
     const xcvt_mod = xcvt_dep.module("cvt");
+    const tinyusb_mod = tinyusb_dep.module("tinyusb");
 
     // Build:
 
@@ -114,6 +116,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "turtlefont", .module = turtlefont_mod },
             .{ .name = "ashex", .module = ashex_mod },
             .{ .name = "cvt", .module = xcvt_mod },
+            .{ .name = "tinyusb", .module = tinyusb_mod },
 
             // resources:
             .{
@@ -126,6 +129,9 @@ pub fn build(b: *std.Build) void {
             // .{ .name = "sdl", .module = options.modules.sdl },
         },
     });
+
+    const tinyusb_headers = tinyusb_dep.namedWriteFiles("include");
+    kernel_mod.addIncludePath(tinyusb_headers.getDirectory());
 
     kernel_mod.addImport("lwip", lwip_mod);
     kernel_mod.addIncludePath(b.path("components/network/include"));
@@ -222,6 +228,7 @@ pub fn build(b: *std.Build) void {
 
     kernel_exe.step.dependOn(machine_info_module.root_source_file.?.generated.file.step);
     kernel_exe.root_module.addImport("kernel", kernel_mod);
+    kernel_exe.step.dependOn(&tinyusb_headers.step);
 
     // TODO(fqu): kernel_exe.root_module.code_model = .small;
     kernel_exe.bundle_compiler_rt = true;
@@ -252,10 +259,14 @@ pub fn build(b: *std.Build) void {
     } else {
         const libc = libc_dep.artifact("foundation");
 
-        lwip_mod.addIncludePath(libc.getEmittedIncludeTree());
-        zfat_mod.addIncludePath(libc.getEmittedIncludeTree());
+        const libc_include_path = libc.getEmittedIncludeTree();
+
+        lwip_mod.addIncludePath(libc_include_path);
+        zfat_mod.addIncludePath(libc_include_path);
+        tinyusb_mod.addIncludePath(libc_include_path);
 
         kernel_exe.linkLibrary(libc);
+        kernel_exe.step.dependOn(&libc.step);
     }
 
     b.installArtifact(kernel_exe);

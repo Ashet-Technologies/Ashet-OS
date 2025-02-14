@@ -16,6 +16,10 @@
             .path = "../../vendor/lwip",
         },
 
+        .tinyusb = .{
+            .path = "../../vendor/tinyusb",
+        },
+
         .ashet_fs = .{
             .path = "../../vendor/ashet-fs",
         },
