@@ -12,6 +12,8 @@ const is_windows = @import("builtin").os.tag == .windows;
 //   -- applicaation arg a arb b arg c …
 //
 
+const page_size = std.heap.page_size_min;
+
 const ElfFile = struct {
     const max_name_len: usize = 128;
 
@@ -504,13 +506,13 @@ const windows = struct {
 
 const MapResult = if (is_windows) struct {
     mapping_handle: windows.Handle,
-    mem: []align(std.mem.page_size) const u8,
+    mem: []align(page_size) const u8,
 
     fn deinit(self: MapResult) void {
         windows.unmapView(@ptrCast(self.mem.ptr)) catch {};
         std.os.windows.CloseHandle(self.mapping_handle);
     }
-} else []align(std.mem.page_size) const u8;
+} else []align(page_size) const u8;
 
 fn mapWholeFile(file: std.fs.File) !MapResult {
     nosuspend {
@@ -518,7 +520,7 @@ fn mapWholeFile(file: std.fs.File) !MapResult {
         if (is_windows) {
             const mapping = try windows.createMapping(file);
             const mapped_view = try windows.mapView(mapping, file_len);
-            const mapped_mem = @as([*]align(std.mem.page_size) const u8, @ptrCast(@alignCast(mapped_view)))[0..file_len];
+            const mapped_mem = @as([*]align(page_size) const u8, @ptrCast(@alignCast(mapped_view)))[0..file_len];
             return .{
                 .mapping_handle = mapping,
                 .mem = mapped_mem,
