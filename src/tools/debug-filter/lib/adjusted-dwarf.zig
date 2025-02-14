@@ -14,6 +14,12 @@ pub const LANG = std.dwarf.LANG;
 pub const FORM = std.dwarf.FORM;
 pub const ATE = std.dwarf.ATE;
 
+pub const LineInfo = struct {
+    line: u64,
+    column: u64,
+    file_name: []const u8,
+};
+
 pub const LLE = struct {
     pub const end_of_list = 0x00;
     pub const base_addressx = 0x01;
@@ -462,7 +468,7 @@ const LineNumberProgram = struct {
         self: *LineNumberProgram,
         allocator: mem.Allocator,
         file_entries: []const FileEntry,
-    ) !?debug.LineInfo {
+    ) !?LineInfo {
         if (self.prev_valid and
             self.target_address >= self.prev_address and
             self.target_address < self.address)
@@ -482,7 +488,7 @@ const LineNumberProgram = struct {
                 dir_name, file_entry.path,
             });
 
-            return debug.LineInfo{
+            return LineInfo{
                 .line = if (self.prev_line >= 0) @as(u64, @intCast(self.prev_line)) else 0,
                 .column = self.prev_column,
                 .file_name = file_name,
@@ -1092,7 +1098,7 @@ pub const DwarfInfo = struct {
         allocator: mem.Allocator,
         compile_unit: CompileUnit,
         target_address: u64,
-    ) !debug.LineInfo {
+    ) !LineInfo {
         var stream = io.fixedBufferStream(di.debug_line);
         const in = &stream.reader();
         const seekable = &stream.seekableStream();

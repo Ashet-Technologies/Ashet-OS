@@ -284,6 +284,7 @@ pub fn main() !u8 {
 
     for (elves.values()) |*value| {
         value.file = try std.fs.cwd().openFile(value.path, .{});
+
         const mem, const info = try readElfDebugInfo(allocator, value.file);
         value.dwarf = info;
         value.mem = mem;
@@ -300,68 +301,80 @@ pub fn main() !u8 {
         }
     }
 
-    {
-        var proc = std.process.Child.init(app_argv, allocator);
+    // Backup termios settings so the a crashing or force-killed application
+    // might not fuck up our terminal session:
+    const terminal_config_backup = try Termios.read();
+    defer terminal_config_backup.apply() catch |err| std.log.err("failed to re-apply terminal settings: {}", .{err});
 
-        proc.stdin_behavior = .Inherit;
-        proc.stdout_behavior = .Pipe;
-        proc.stderr_behavior = .Pipe;
-
-        try proc.spawn();
-        {
-            var poller = std.io.poll(allocator, enum { stdout, stderr }, .{
-                .stdout = proc.stdout.?,
-                .stderr = proc.stderr.?,
-            });
-            defer poller.deinit();
-
-            var stdout_line_buffer = RingBuffer{};
-            var stderr_line_buffer = RingBuffer{};
-
-            var stdout_buffered_writer = std.io.bufferedWriter(std.io.getStdOut().writer());
-            var stderr_buffered_writer = std.io.bufferedWriter(std.io.getStdErr().writer());
-
-            while (try poller.poll()) {
-                try consumePollResult(
-                    allocator,
-                    elves,
-                    &stdout_buffered_writer,
-                    &stdout_line_buffer,
-                    poller.fifo(.stdout),
-                );
-                try consumePollResult(
-                    allocator,
-                    elves,
-                    &stderr_buffered_writer,
-                    &stderr_line_buffer,
-                    poller.fifo(.stderr),
-                );
-            }
-
-            try stdout_buffered_writer.flush();
-            try stderr_buffered_writer.flush();
-        }
-
-        const result = try proc.wait();
-
-        switch (result) {
-            .Exited => |code| return code,
-            .Signal => |signal| {
-                std.log.err("process died with signal {d}", .{signal});
-                return 1;
-            },
-            .Stopped => |code| {
-                std.log.err("process was stopped: 0x{X:0>8}", .{code});
-                return 1;
-            },
-            .Unknown => |code| {
-                std.log.err("process had an unknown exit reason (0x{X:0>8})", .{code});
-                return 1;
-            },
-        }
+    const term = try spawnAndFilterSubprocess(elves, app_argv, allocator);
+    switch (term) {
+        .Exited => |code| return code,
+        .Signal => |signal| {
+            std.log.err("process died with signal {d}", .{signal});
+            return 1;
+        },
+        .Stopped => |code| {
+            std.log.err("process was stopped: 0x{X:0>8}", .{code});
+            return 1;
+        },
+        .Unknown => |code| {
+            std.log.err("process had an unknown exit reason (0x{X:0>8})", .{code});
+            return 1;
+        },
     }
 
     return 0;
+}
+
+fn spawnAndFilterSubprocess(elves: ElfSet, app_argv: []const []const u8, allocator: std.mem.Allocator) !std.process.Child.Term {
+    var proc = std.process.Child.init(app_argv, allocator);
+
+    proc.stdin_behavior = .Inherit;
+    proc.stdout_behavior = .Pipe;
+    proc.stderr_behavior = .Pipe;
+
+    try proc.spawn();
+
+    filterAndForwardStdio(allocator, elves, &proc) catch |err| {
+        std.log.err("failed to forward stdio: {}", .{err});
+        return try proc.kill();
+    };
+
+    return try proc.wait();
+}
+
+fn filterAndForwardStdio(allocator: std.mem.Allocator, elves: ElfSet, proc: *std.process.Child) !void {
+    var poller = std.io.poll(allocator, enum { stdout, stderr }, .{
+        .stdout = proc.stdout.?,
+        .stderr = proc.stderr.?,
+    });
+    defer poller.deinit();
+
+    var stdout_line_buffer = RingBuffer{};
+    var stderr_line_buffer = RingBuffer{};
+
+    var stdout_buffered_writer = std.io.bufferedWriter(std.io.getStdOut().writer());
+    var stderr_buffered_writer = std.io.bufferedWriter(std.io.getStdErr().writer());
+
+    while (try poller.poll()) {
+        try consumePollResult(
+            allocator,
+            elves,
+            &stdout_buffered_writer,
+            &stdout_line_buffer,
+            poller.fifo(.stdout),
+        );
+        try consumePollResult(
+            allocator,
+            elves,
+            &stderr_buffered_writer,
+            &stderr_line_buffer,
+            poller.fifo(.stderr),
+        );
+    }
+
+    try stdout_buffered_writer.flush();
+    try stderr_buffered_writer.flush();
 }
 
 const RingBuffer = struct {
@@ -515,7 +528,7 @@ const MapResult = if (is_windows) struct {
 } else []align(page_size) const u8;
 
 fn mapWholeFile(file: std.fs.File) !MapResult {
-    nosuspend {
+    {
         const file_len = std.math.cast(usize, try file.getEndPos()) orelse std.math.maxInt(usize);
         if (is_windows) {
             const mapping = try windows.createMapping(file);
@@ -545,7 +558,7 @@ fn mapWholeFile(file: std.fs.File) !MapResult {
 
 pub fn readElfDebugInfo(allocator: std.mem.Allocator, elf_file: std.fs.File) !struct { MapResult, dwarf.DwarfInfo } {
     const elf = std.elf;
-    nosuspend {
+    {
         const map_result = try mapWholeFile(elf_file);
         const mapped_mem = if (is_windows) map_result.mem else map_result;
         const hdr: *const elf.Elf32_Ehdr = @ptrCast(&mapped_mem[0]);
@@ -631,21 +644,32 @@ pub fn readElfDebugInfo(allocator: std.mem.Allocator, elf_file: std.fs.File) !st
     }
 }
 
-fn getSymbolFromDwarf(comptime Address: type, allocator: std.mem.Allocator, address: u64, di: *dwarf.DwarfInfo) !std.debug.SymbolInfo {
-    if (nosuspend di.findCompileUnit(address)) |compile_unit| {
-        return std.debug.SymbolInfo{
-            .symbol_name = nosuspend di.getSymbolName(address) orelse "???",
+const SymbolInfo = struct {
+    symbol_name: []const u8 = "",
+    compile_unit_name: []const u8 = "???",
+    line_info: ?dwarf.LineInfo = null,
+
+    fn deinit(si: SymbolInfo, allocator: std.mem.Allocator) void {
+        _ = allocator;
+        _ = si;
+    }
+};
+
+fn getSymbolFromDwarf(comptime Address: type, allocator: std.mem.Allocator, address: u64, di: *dwarf.DwarfInfo) !SymbolInfo {
+    if (di.findCompileUnit(address)) |compile_unit| {
+        return .{
+            .symbol_name = di.getSymbolName(address) orelse "???",
             .compile_unit_name = compile_unit.die.getAttrString(di, dwarf.AT.name, di.debug_str, compile_unit.*) catch |err| switch (err) {
                 error.MissingDebugInfo, error.InvalidDebugInfo => "???",
             },
-            .line_info = nosuspend di.getLineNumberInfo(Address, allocator, compile_unit.*, address) catch |err| switch (err) {
+            .line_info = di.getLineNumberInfo(Address, allocator, compile_unit.*, address) catch |err| switch (err) {
                 error.MissingDebugInfo, error.InvalidDebugInfo => null,
                 else => return err,
             },
         };
     } else |err| switch (err) {
         error.MissingDebugInfo, error.InvalidDebugInfo => {
-            return std.debug.SymbolInfo{};
+            return .{};
         },
         else => return err,
     }
@@ -656,3 +680,47 @@ fn chopSlice(ptr: []const u8, offset: u64, size: u64) error{Overflow}![]const u8
     const end = start + (std.math.cast(usize, size) orelse return error.Overflow);
     return ptr[start..end];
 }
+
+const Termios = if (@import("builtin").os.tag == .windows)
+    WindowsTermios
+else
+    PosixTermios;
+
+const WindowsTermios = struct {
+    pub fn read() !Termios {
+        return .{};
+    }
+
+    pub fn apply(ios: Termios) !void {
+        _ = ios;
+    }
+};
+
+const PosixTermios = struct {
+    settings: [3]std.posix.termios,
+
+    pub fn read() !Termios {
+        return .{
+            .settings = .{
+                try std.posix.tcgetattr(std.posix.STDIN_FILENO),
+                try std.posix.tcgetattr(std.posix.STDOUT_FILENO),
+                try std.posix.tcgetattr(std.posix.STDERR_FILENO),
+            },
+        };
+    }
+    pub fn apply(ios: Termios) !void {
+        var result: std.posix.TermiosSetError!void = {};
+
+        std.posix.tcsetattr(std.posix.STDIN_FILENO, std.posix.TCSA.NOW, ios.settings[0]) catch |err| {
+            result = err;
+        };
+        std.posix.tcsetattr(std.posix.STDOUT_FILENO, std.posix.TCSA.NOW, ios.settings[1]) catch |err| {
+            result = err;
+        };
+        std.posix.tcsetattr(std.posix.STDERR_FILENO, std.posix.TCSA.NOW, ios.settings[2]) catch |err| {
+            result = err;
+        };
+
+        return result;
+    }
+};
