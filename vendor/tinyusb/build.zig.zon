@@ -1,0 +1,16 @@
+.{
+    .name = "tinyusb",
+    .version = "0.18.0",
+
+    .dependencies = .{
+        .upstream = .{
+            .url = "git+https://github.com/hathach/tinyusb#0.18.0",
+            .hash = "1220d8ab111d7b1c3b45fa7d60436559bc250cf42ed1b09f2b1c2cf52c6a2fc6bea1",
+        },
+    },
+
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+    },
+}

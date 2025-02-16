@@ -26,6 +26,7 @@ pub const random = @import("components/random.zig");
 pub const sync = @import("components/sync.zig");
 pub const pipes = @import("components/pipes.zig");
 pub const ipc = @import("components/ipc.zig");
+pub const usb = @import("components/usb.zig");
 
 pub const ports = @import("port/targets.zig");
 
@@ -129,8 +130,10 @@ comptime {
 }
 
 comptime {
-    // export the syscalls:
+    // the following all export symbols:
     _ = syscalls;
+    _ = usb;
+    _ = filesystem;
 }
 
 fn ashet_kernelMain() callconv(.C) noreturn {
