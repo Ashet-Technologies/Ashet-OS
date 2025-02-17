@@ -38,7 +38,8 @@ pub fn build(b: *std.Build) void {
     else
         pyenv.path(b, "bin/python");
 
-    const requirements_file = b.addWriteFile("requirements.txt", requirements_spec);
+    const write_reqs_file = b.addWriteFiles();
+    const reqs_file = write_reqs_file.add("requirements.txt", requirements_spec);
 
     const pyenv_install_packages = add_run_script(b, pyenv_python3);
 
@@ -46,12 +47,7 @@ pub fn build(b: *std.Build) void {
     pyenv_install_packages.addArg("pip");
     pyenv_install_packages.addArg("install");
     pyenv_install_packages.addArg("-r");
-    pyenv_install_packages.addFileArg(.{
-        .generated = .{
-            .file = &requirements_file.generated_directory,
-            .sub_path = "requirements.txt",
-        },
-    }); // we need to use a
+    pyenv_install_packages.addFileArg(reqs_file); // we need to use a
     pyenv_install_packages.addArg("--log");
     const install_log = pyenv_install_packages.addOutputFileArg("pip.log");
 
