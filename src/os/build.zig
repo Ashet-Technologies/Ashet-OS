@@ -14,7 +14,7 @@ const app_packages = [_][]const u8{
     "init",
     "test_behaviour",
     "desktop_classic",
-    "wiki",
+    // TODO: Include "wiki" again,
 };
 
 pub fn build(b: *std.Build) void {
