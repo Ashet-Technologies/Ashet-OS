@@ -10,6 +10,10 @@ build-kernel:
     zig-ashet build -Dmachine=rv32-qemu-virt
     zig-ashet build -Dmachine=x86-pc-bios
     zig-ashet build -Dmachine=x86-hosted-linux
+    
+[working-directory: 'src/userland/apps/wiki']
+build-wiki:
+    zig-ashet build -Dtarget=rv32
 
 build-vhc:
     rm -rf zig-out/arm-ashet-vhc

@@ -156,9 +156,13 @@ pub fn tick() void {
         video_flush_deadline.move_forward(frame_rate);
         flush_all();
 
+        var drop_count: usize = 0;
         while (video_flush_deadline.is_reached()) {
-            logger.warn("dropping auto-flush video frame!", .{});
+            drop_count += 1;
             video_flush_deadline.move_forward(frame_rate);
+        }
+        if(drop_count > 0) {
+            logger.warn("dropping {} video frames!", .{drop_count});
         }
     }
 }
