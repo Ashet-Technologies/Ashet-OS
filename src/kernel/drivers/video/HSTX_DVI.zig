@@ -115,15 +115,14 @@ pub fn start_backend(comptime clock_config: hal.clocks.config.Global) void {
     led_pin.set_function(.sio);
     led_pin.set_direction(.out);
 
-    // Configure HSTX's TMDS encoder for RGB332
-
+    // Configure HSTX's TMDS encoder for RGB233
     hstx_ctrl.EXPAND_TMDS.write_default(.{
-        .L2_NBITS = 2,
-        .L2_ROT = 0,
+        .L2_NBITS = 1,
+        .L2_ROT = 26,
         .L1_NBITS = 2,
         .L1_ROT = 29,
-        .L0_NBITS = 1,
-        .L0_ROT = 26,
+        .L0_NBITS = 2,
+        .L0_ROT = 0,
     });
 
     // Pixels (TMDS) come in 4 8-bit chunks. Control symbols (RAW) are an
