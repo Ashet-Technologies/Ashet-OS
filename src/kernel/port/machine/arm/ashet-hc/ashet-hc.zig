@@ -17,6 +17,7 @@ pub const clock_config = blk: {
 };
 
 pub const debug_uart = hal.uart.instance.UART0;
+pub const debug_uart_baud = 1_000_000;
 
 pub const machine_config = ashet.ports.MachineConfig{
     .load_sections = .{ .data = true, .bss = true },
@@ -85,7 +86,7 @@ fn early_initialize() void {
     // pinout.dbg_sda.put(0);
 
     debug_uart.apply(.{
-        .baud_rate = 115_200,
+        .baud_rate = debug_uart_baud,
         .clock_config = clock_config,
     });
 
@@ -161,8 +162,8 @@ fn initialize() !void {
     {
         hw.rtc = ashet.drivers.rtc.Dummy_RTC.init(1739025296 * std.time.ns_per_s);
 
-        hw.uart0 = try ashet.drivers.serial.RP2xxx.init(clock_config, hal.uart.instance.UART0);
-        hw.uart1 = try ashet.drivers.serial.RP2xxx.init(clock_config, hal.uart.instance.UART1);
+        hw.uart0 = try ashet.drivers.serial.RP2xxx.init(clock_config, hal.uart.instance.UART0, debug_uart_baud);
+        hw.uart1 = try ashet.drivers.serial.RP2xxx.init(clock_config, hal.uart.instance.UART1, 115_200);
 
         // hw.fb_video = ashet.drivers.video.Virtual_Video_Output.init();
 
