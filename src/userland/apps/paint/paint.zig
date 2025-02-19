@@ -48,17 +48,17 @@ pub fn main() !void {
             .mouse_button_press => if (event.mouse.button == .left) {
                 painting = true;
                 mouse_prev = Point.new(event.mouse.x, event.mouse.y);
-                std.log.info("start painting at {}", .{mouse_prev});
+                // std.log.info("start painting at {}", .{mouse_prev});
             },
             .mouse_button_release => if (event.mouse.button == .left) {
                 painting = false;
-                std.log.info("stop painting at {}", .{mouse_prev});
+                // std.log.info("stop painting at {}", .{mouse_prev});
             },
             .mouse_motion => if (painting) {
                 const mouse_now = ashet.graphics.Point.new(event.mouse.x, event.mouse.y);
                 defer mouse_prev = mouse_now;
 
-                std.log.info("paint from {} to {}", .{ mouse_prev, mouse_now });
+                // std.log.info("paint from {} to {}", .{ mouse_prev, mouse_now });
 
                 try command_queue.draw_line(
                     mouse_prev,
