@@ -354,7 +354,7 @@ export const multiboot_header linksection(".text.multiboot") = x86.multiboot.Hea
     .flags = .{
         .req_modules_align_4k = false,
         .req_mem_info = true,
-        .req_video_mode = true,
+        .req_video_mode = false,
         .hint_use_embedded_offsets = false,
     },
 

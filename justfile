@@ -1,5 +1,6 @@
 
 build:
+    zig-ashet build rv32-qemu-virt
     zig-ashet build
 
 [working-directory: 'src/kernel']
@@ -10,7 +11,7 @@ build-kernel:
     zig-ashet build -Dmachine=rv32-qemu-virt
     zig-ashet build -Dmachine=x86-pc-bios
     zig-ashet build -Dmachine=x86-hosted-linux
-    
+
 [working-directory: 'src/userland/apps/wiki']
 build-wiki:
     zig-ashet build -Dtarget=rv32

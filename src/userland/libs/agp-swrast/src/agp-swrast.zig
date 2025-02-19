@@ -7,7 +7,7 @@ pub const fonts = @import("fonts.zig");
 
 const logger = std.log.scoped(.agp_sw_rast);
 
-const ColorIndex = agp.ColorIndex;
+const Color = agp.Color;
 const Point = ashet.Point;
 const Size = ashet.Size;
 const Rectangle = ashet.Rectangle;
@@ -159,7 +159,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
         }
         pub fn update_color(
             rast: Rast,
-            index: ColorIndex,
+            index: Color,
             r: u8,
             g: u8,
             b: u8,
@@ -174,7 +174,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
 
         pub fn clear(
             rast: Rast,
-            color: ColorIndex,
+            color: Color,
         ) void {
             var cursor = rast.get_cursor();
             std.debug.assert(cursor.move(0, 0));
@@ -213,7 +213,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
         pub fn set_pixel(
             rast: Rast,
             pixel: Point,
-            color: ColorIndex,
+            color: Color,
         ) void {
             const pos = rast.clip_point(pixel) orelse return;
             var cursor = rast.get_cursor();
@@ -225,7 +225,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
             rast: Rast,
             from: Point,
             to: Point,
-            color: ColorIndex,
+            color: Color,
         ) void {
             if (from.y == to.y) {
                 rast.draw_horizontal_line(from.x, to.x, from.y, color);
@@ -282,7 +282,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
 
         /// Optimized version of line drawing for horizontal lines.
         /// Takes the pixel layout into account to emit optimized code.
-        fn draw_horizontal_line(rast: Rast, x0: i16, x1: i16, y: i16, color: ColorIndex) void {
+        fn draw_horizontal_line(rast: Rast, x0: i16, x1: i16, y: i16, color: Color) void {
             var cursor = rast.get_cursor();
             if (y < rast.clip_rect.y or @as(isize, y) - rast.clip_rect.y >= rast.clip_rect.height)
                 return;
@@ -317,7 +317,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
 
         /// Optimized version of line drawing for vertical lines.
         /// Takes the pixel layout into account to emit optimized code.
-        fn draw_vertical_line(rast: Rast, x: i16, y0: i16, y1: i16, color: ColorIndex) void {
+        fn draw_vertical_line(rast: Rast, x: i16, y0: i16, y1: i16, color: Color) void {
             var cursor = rast.get_cursor();
             if (x < rast.clip_rect.x or @as(isize, x) - rast.clip_rect.x >= rast.clip_rect.width)
                 return;
@@ -353,7 +353,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
         pub fn draw_rect(
             rast: Rast,
             rect: Rectangle,
-            color: ColorIndex,
+            color: Color,
         ) void {
             const paint_rect = rast.clip_rect.intersect(rect);
 
@@ -406,7 +406,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
         pub fn fill_rect(
             rast: Rast,
             rect: Rectangle,
-            color: ColorIndex,
+            color: Color,
         ) void {
             const paint_rect = rast.clip_rect.intersect(rect);
             if (paint_rect.is_empty())
@@ -437,7 +437,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
             rast: Rast,
             start: Point,
             font: *const fonts.FontInstance,
-            color: ColorIndex,
+            color: Color,
             text: []const u8,
         ) void {
             var sw = rast.screen_writer(start.x, start.y, font, color, null);
@@ -470,7 +470,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
             return rast.blit_generic_data(target.position(), src_pos, target.size(), framebuffer);
         }
 
-        pub fn screen_writer(fb: Rast, x: i16, y: i16, font: *const fonts.FontInstance, color: ColorIndex, max_width: ?u15) ScreenWriter {
+        pub fn screen_writer(fb: Rast, x: i16, y: i16, font: *const fonts.FontInstance, color: Color, max_width: ?u15) ScreenWriter {
             const limit: u15 = @intCast(if (max_width) |mw|
                 @max(0, x + mw)
             else blk: {
@@ -531,7 +531,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
                     src_cursor.height,
                 );
 
-            var buffer: [options.blit_buffer_size]ColorIndex = undefined;
+            var buffer: [options.blit_buffer_size]Color = undefined;
 
             logger.debug("blitting {}x{} @ ({},{}) to ({},{})*({},{})", .{
                 src_cursor.width, src_cursor.height,
@@ -592,11 +592,11 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
             return rast.backend.create_cursor();
         }
 
-        fn emit(rast: Rast, cursor: Cursor, color: ColorIndex, count: u16) void {
+        fn emit(rast: Rast, cursor: Cursor, color: Color, count: u16) void {
             return rast.backend.emit_pixels(cursor, color, count);
         }
 
-        fn blit_pixels(rast: Rast, cursor: Cursor, pixels: []const ColorIndex) void {
+        fn blit_pixels(rast: Rast, cursor: Cursor, pixels: []const Color) void {
             return rast.backend.copy_pixels(cursor, pixels);
         }
 
@@ -679,12 +679,12 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
             pub const Error = error{InvalidUtf8};
             pub const Writer = std.io.Writer(*ScreenWriter, Error, write);
 
-            const VectorRasterizer = turtlefont.Rasterizer(*ScreenWriter, ColorIndex, writeVectorPixel);
+            const VectorRasterizer = turtlefont.Rasterizer(*ScreenWriter, Color, writeVectorPixel);
 
             fb: Rast,
             dx: i16,
             dy: i16,
-            color: ColorIndex,
+            color: Color,
             limit: u15, // only render till this column (exclusive)
             font: *const fonts.FontInstance,
 
@@ -777,7 +777,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
                 return text.len;
             }
 
-            fn writeVectorPixel(sw: *ScreenWriter, x: i16, y: i16, color: ColorIndex) void {
+            fn writeVectorPixel(sw: *ScreenWriter, x: i16, y: i16, color: Color) void {
                 sw.fb.set_pixel(Point.new(x, y), color);
             }
         };
@@ -801,7 +801,7 @@ const BitmapWrap = struct {
         };
     }
 
-    pub fn fetch_pixels(wrap: BitmapWrap, cursor: Cursor, pixels: []ColorIndex) void {
+    pub fn fetch_pixels(wrap: BitmapWrap, cursor: Cursor, pixels: []Color) void {
         @memcpy(pixels, wrap.bmp.pixels[cursor.offset..][0..pixels.len]);
     }
 };

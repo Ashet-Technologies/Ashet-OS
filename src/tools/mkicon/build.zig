@@ -19,13 +19,7 @@ pub fn build(b: *std.Build) void {
 }
 
 pub const ConvertOptions = struct {
-    palette: Palette = .{ .sized = 15 },
     geometry: ?[2]u32 = null,
-
-    const Palette = union(enum) {
-        predefined: std.Build.LazyPath,
-        sized: u8,
-    };
 };
 
 pub const Converter = struct {
@@ -46,16 +40,6 @@ pub const Converter = struct {
 
         mkicon.addFileArg(source);
 
-        switch (options.palette) {
-            .predefined => |palette| {
-                mkicon.addArg("--palette");
-                mkicon.addFileArg(palette);
-            },
-            .sized => |size| {
-                mkicon.addArg("--color-count");
-                mkicon.addArg(conv.builder.fmt("{d}", .{size}));
-            },
-        }
         if (options.geometry) |geometry| {
             mkicon.addArg("--geometry");
             mkicon.addArg(conv.builder.fmt("{}x{}", .{ geometry[0], geometry[1] }));
