@@ -15,7 +15,6 @@ const regz = rp2350.devices.RP2350.peripherals;
 const HSTX_DVI = @This();
 
 const Color = ashet.video.Color;
-const ColorIndex = ashet.video.ColorIndex;
 const Resolution = ashet.video.Resolution;
 
 const hstx_ctrl = regz.HSTX_CTRL;
@@ -42,8 +41,7 @@ const MODE_V_BACK_PORCH = video_timings.vbackporch();
 const MODE_V_ACTIVE_LINES = video_timings.vdisplay;
 const MODE_V_TOTAL_LINES = video_timings.vtotal;
 
-var framebuffer: [@as(usize, video_resolution.width) * video_resolution.height]ColorIndex align(4096) = undefined;
-var palette: [256]Color = undefined;
+var framebuffer: [@as(usize, video_resolution.width) * video_resolution.height]Color align(4096) = undefined;
 
 const led_pin = hal.gpio.num(3);
 
@@ -96,14 +94,8 @@ pub fn init(comptime clock_config: hal.clocks.config.Global) !HSTX_DVI {
             .name = "HSTX DVI",
             .class = .{
                 .video = .{
-                    .getVideoMemoryFn = get_video_memory,
-                    .getPaletteMemoryFn = get_palette_memory,
-                    .setBorderFn = set_border,
-                    .flushFn = flush,
-                    .getResolutionFn = get_resolution,
-                    .getMaxResolutionFn = get_max_resolution,
-                    .getBorderFn = get_border,
-                    .setResolutionFn = set_resolution,
+                    .get_properties_fn = get_properties,
+                    .flush_fn = flush,
                 },
             },
         },
@@ -123,15 +115,14 @@ pub fn start_backend(comptime clock_config: hal.clocks.config.Global) void {
     led_pin.set_function(.sio);
     led_pin.set_direction(.out);
 
-    // Configure HSTX's TMDS encoder for RGB332
-
+    // Configure HSTX's TMDS encoder for RGB233
     hstx_ctrl.EXPAND_TMDS.write_default(.{
-        .L2_NBITS = 2,
-        .L2_ROT = 0,
+        .L2_NBITS = 1,
+        .L2_ROT = 26,
         .L1_NBITS = 2,
         .L1_ROT = 29,
-        .L0_NBITS = 1,
-        .L0_ROT = 26,
+        .L0_NBITS = 2,
+        .L0_ROT = 0,
     });
 
     // Pixels (TMDS) come in 4 8-bit chunks. Control symbols (RAW) are an
@@ -371,52 +362,20 @@ fn instance(dri: *Driver) *HSTX_DVI {
     return @fieldParentPtr("driver", dri);
 }
 
-fn get_video_memory(dri: *Driver) []align(ashet.memory.page_size) ColorIndex {
+fn get_properties(dri: *Driver) ashet.video.DeviceProperties {
     const vd = instance(dri);
     _ = vd;
-    return &framebuffer;
-}
-
-fn get_palette_memory(dri: *Driver) *[256]Color {
-    const vd = instance(dri);
-    _ = vd;
-    return &palette;
-}
-
-fn set_border(dri: *Driver, color: ColorIndex) void {
-    const vd = instance(dri);
-    _ = vd;
-    _ = color;
+    return .{
+        .video_memory = &framebuffer,
+        .video_memory_mapping = .unbuffered,
+        .resolution = video_resolution,
+        .stride = video_resolution.width,
+    };
 }
 
 fn flush(dri: *Driver) void {
     const vd = instance(dri);
     _ = vd;
-}
-
-fn get_resolution(dri: *Driver) Resolution {
-    const vd = instance(dri);
-    _ = vd;
-    return video_resolution;
-}
-
-fn get_max_resolution(dri: *Driver) Resolution {
-    const vd = instance(dri);
-    _ = vd;
-    return video_resolution;
-}
-
-fn get_border(dri: *Driver) ColorIndex {
-    const vd = instance(dri);
-    _ = vd;
-    return ColorIndex.get(0);
-}
-
-fn set_resolution(dri: *Driver, width: u15, height: u15) void {
-    const vd = instance(dri);
-    _ = vd;
-    _ = width;
-    _ = height;
 }
 
 // ----------------------------------------------------------------------------

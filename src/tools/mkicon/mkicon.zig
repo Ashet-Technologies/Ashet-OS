@@ -3,27 +3,24 @@ const zigimg = @import("zigimg");
 const abi = @import("ashet-abi");
 const args_parser = @import("args");
 
+const Color = abi.Color;
 const Rgba32 = zigimg.color.Rgba32;
 
-const Palette = []Rgba32;
+// const Palette = []Rgba32;
 
-const loadPaletteFile = @import("lib/palette.zig").loadPaletteFile;
+// const loadPaletteFile = @import("lib/palette.zig").loadPaletteFile;
 
 fn isTransparent(c: zigimg.color.Colorf32) bool {
     return c.a < 0.5;
 }
 
 const CliOptions = struct {
-    palette: ?[]const u8 = null,
     geometry: ?[]const u8 = null,
     output: ?[]const u8 = null,
-    @"color-count": ?u8 = null,
 
     pub const shorthands = .{
-        .p = "palette",
         .g = "geometry",
         .o = "output",
-        .c = "color-count",
     };
 };
 
@@ -40,9 +37,9 @@ pub fn main() !u8 {
     const input_file_name = cli.positionals[0];
     const output_file_name = cli.options.output orelse @panic("requires output file name");
 
-    if ((cli.options.palette != null) == (cli.options.@"color-count" != null)) {
-        @panic("Either palette or size must be set!");
-    }
+    // if ((cli.options.palette != null) == (cli.options.@"color-count" != null)) {
+    //     @panic("Either palette or size must be set!");
+    // }
 
     const size: [2]usize = if (cli.options.geometry) |spec| blk: {
         var it = std.mem.splitScalar(u8, spec, 'x');
@@ -58,59 +55,59 @@ pub fn main() !u8 {
         std.debug.panic("image must be {}x{}", .{ size[0], size[1] });
     }
 
-    const palette = if (cli.options.palette) |palette_file|
-        try loadPaletteFile(arena.allocator(), palette_file)
-    else blk: {
-        const color_count = cli.options.@"color-count" orelse {
-            @panic("if no palette is specified, --color-count <num> must be passed.");
-        };
+    // const palette = if (cli.options.palette) |palette_file|
+    //     try loadPaletteFile(arena.allocator(), palette_file)
+    // else blk: {
+    //     const color_count = cli.options.@"color-count" orelse {
+    //         @panic("if no palette is specified, --color-count <num> must be passed.");
+    //     };
 
-        // compute palette
-        // var quantizer = zigimg.OctTreeQuantizer.init(arena.allocator());
-        // {
-        //     var src_pixels = raw_image.iterator();
-        //     while (src_pixels.next()) |src_color| {
-        //         if (!isTransparent(src_color)) {
-        //             try quantizer.addColor(reduceTo565(src_color));
-        //         } else {
-        //             // don't count transparent pixels into the palette
-        //             // everything transparent is considered index=0 by definition,
-        //             // so we don't need to use these colors
-        //         }
-        //     }
-        // }
+    //     // compute palette
+    //     // var quantizer = zigimg.OctTreeQuantizer.init(arena.allocator());
+    //     // {
+    //     //     var src_pixels = raw_image.iterator();
+    //     //     while (src_pixels.next()) |src_color| {
+    //     //         if (!isTransparent(src_color)) {
+    //     //             try quantizer.addColor(reduceTo565(src_color));
+    //     //         } else {
+    //     //             // don't count transparent pixels into the palette
+    //     //             // everything transparent is considered index=0 by definition,
+    //     //             // so we don't need to use these colors
+    //     //         }
+    //     //     }
+    //     // }
 
-        var palettes = std.BoundedArray(Palette, 8){};
+    //     var palettes = std.BoundedArray(Palette, 8){};
 
-        if (quantizeOctree(arena.allocator(), color_count, raw_image)) |octree_palette| {
-            try palettes.append(octree_palette);
-        } else |err| {
-            std.log.err("failed to generate octree palette: {}", .{err});
-        }
+    //     if (quantizeOctree(arena.allocator(), color_count, raw_image)) |octree_palette| {
+    //         try palettes.append(octree_palette);
+    //     } else |err| {
+    //         std.log.err("failed to generate octree palette: {}", .{err});
+    //     }
 
-        if (quantizeCountColors(arena.allocator(), color_count, raw_image)) |fixed_set_palette| {
-            try palettes.append(fixed_set_palette);
-        } else |err| {
-            std.log.err("failed to generate fixed set palette: {}", .{err});
-        }
+    //     if (quantizeCountColors(arena.allocator(), color_count, raw_image)) |fixed_set_palette| {
+    //         try palettes.append(fixed_set_palette);
+    //     } else |err| {
+    //         std.log.err("failed to generate fixed set palette: {}", .{err});
+    //     }
 
-        const available_palettes = palettes.slice();
-        if (available_palettes.len == 0)
-            @panic("failed to generate any fitting palette!");
+    //     const available_palettes = palettes.slice();
+    //     if (available_palettes.len == 0)
+    //         @panic("failed to generate any fitting palette!");
 
-        const min_quality = computePaletteQuality(available_palettes[0], raw_image);
-        var palette = available_palettes[0];
+    //     const min_quality = computePaletteQuality(available_palettes[0], raw_image);
+    //     var palette = available_palettes[0];
 
-        for (available_palettes[1..]) |pal| {
-            var quality = computePaletteQuality(pal, raw_image);
-            if (quality < min_quality) {
-                quality = min_quality;
-                palette = pal;
-            }
-        }
+    //     for (available_palettes[1..]) |pal| {
+    //         var quality = computePaletteQuality(pal, raw_image);
+    //         if (quality < min_quality) {
+    //             quality = min_quality;
+    //             palette = pal;
+    //         }
+    //     }
 
-        break :blk palette;
-    };
+    //     break :blk palette;
+    // };
 
     // std.log.info("palette quality: {}", .{computePaletteQuality(palette, raw_image)});
     // for (palette32) |pal, i| {
@@ -120,29 +117,42 @@ pub fn main() !u8 {
     // }
 
     // map colors
-    var bitmap: []u8 = try arena.allocator().alloc(u8, raw_image.width * raw_image.height);
+    const bitmap: []u8 = try arena.allocator().alloc(u8, raw_image.width * raw_image.height);
+    const transparent_pixels: []bool = try arena.allocator().alloc(bool, raw_image.width * raw_image.height);
+    var transparency_keys = std.bit_set.StaticBitSet(256).initFull();
+    var has_transparency = false;
+
     {
         var i: usize = 0;
         var src_pixels = raw_image.iterator();
         while (src_pixels.next()) |src_color| : (i += 1) {
-            if (isTransparent(src_color)) {
-                bitmap[i] = 0xFF; // transparent
+            transparent_pixels[i] = isTransparent(src_color);
+            if (transparent_pixels[i]) {
+                has_transparency = true;
             } else {
-                bitmap[i] = @as(u8, @intCast(getBestMatch(palette, reduceTo565(src_color))));
+                const color = Color.from_rgbf(src_color.r, src_color.g, src_color.b);
+                bitmap[i] = color.to_u8();
+                transparency_keys.unset(color.to_u8());
             }
         }
     }
 
-    var limit: u8 = 0;
-    var transparency = false;
-    for (bitmap) |c| {
-        if (c >= (palette.len + 1) and c != 0xFF) @panic("color index out of range!");
-        if (c != 0xFF)
-            limit = @max(limit, c);
-        if (c == 0xFF)
-            transparency = true;
+    const palette_size: u8 = 0;
+
+    const transparency_key: Color = if (has_transparency)
+        Color.from_u8(@intCast(
+            transparency_keys.toggleFirstSet() orelse @panic("Requires transparency, but all 256 colors are used. We can't find a key!"),
+        ))
+    else
+        undefined;
+
+    if (has_transparency) {
+        for (bitmap, transparent_pixels) |*pixel, transparent| {
+            if (transparent) {
+                pixel.* = transparency_key.to_u8();
+            }
+        }
     }
-    limit += 1; // compute palette size
 
     // compute bitmap
     var out_file = try std.fs.cwd().createFile(output_file_name, .{});
@@ -154,141 +164,141 @@ pub fn main() !u8 {
     try writer.writeInt(u32, 0x48198b74, .little);
     try writer.writeInt(u16, @as(u16, @intCast(raw_image.width)), .little);
     try writer.writeInt(u16, @as(u16, @intCast(raw_image.height)), .little);
-    try writer.writeInt(u16, if (transparency) @as(u16, 0x0001) else 0x0000, .little); // flags, enable transparency
-    try writer.writeInt(u8, limit, .little); // palette size
-    try writer.writeInt(u8, 0xFF, .little); // transparent
+    try writer.writeInt(u16, if (has_transparency) @as(u16, 0x0001) else 0x0000, .little); // flags, enable transparency
+    try writer.writeInt(u8, palette_size, .little); // palette size
+    try writer.writeInt(u8, transparency_key.to_u8(), .little); // transparent
 
     try writer.writeAll(bitmap);
 
-    for (palette) |color| {
-        const rgb565 = zigimg.color.Rgb565.fromU32Rgba(color.toU32Rgba());
-        const abi_color = abi.Color{
-            .r = rgb565.r,
-            .g = rgb565.g,
-            .b = rgb565.b,
-        };
-        try writer.writeInt(u16, abi_color.toU16(), .little);
-    }
+    // for (palette) |color| {
+    //     const rgb565 = zigimg.color.Rgb565.fromU32Rgba(color.toU32Rgba());
+    //     const abi_color = abi.Color{
+    //         .r = rgb565.r,
+    //         .g = rgb565.g,
+    //         .b = rgb565.b,
+    //     };
+    //     try writer.writeInt(u16, abi_color.toU16(), .little);
+    // }
 
     try buffered_writer.flush();
 
     return 0;
 }
 
-fn quantizeCountColors(allocator: std.mem.Allocator, palette_size: usize, image: zigimg.Image) !Palette {
-    var color_map = std.AutoArrayHashMap(Rgba32, void).init(allocator);
-    defer color_map.deinit();
+// fn quantizeCountColors(allocator: std.mem.Allocator, palette_size: usize, image: zigimg.Image) !Palette {
+//     var color_map = std.AutoArrayHashMap(Rgba32, void).init(allocator);
+//     defer color_map.deinit();
 
-    var src_pixels = image.iterator();
-    while (src_pixels.next()) |src_color| {
-        if (!isTransparent(src_color)) {
-            try color_map.put(reduceTo565(src_color), {});
-        } else {
-            // don't count transparent pixels into the palette
-            // everything transparent is considered index=0 by definition,
-            // so we don't need to use these colors
-        }
-    }
+//     var src_pixels = image.iterator();
+//     while (src_pixels.next()) |src_color| {
+//         if (!isTransparent(src_color)) {
+//             try color_map.put(reduceTo565(src_color), {});
+//         } else {
+//             // don't count transparent pixels into the palette
+//             // everything transparent is considered index=0 by definition,
+//             // so we don't need to use these colors
+//         }
+//     }
 
-    if (color_map.keys().len > palette_size)
-        return error.TooManyColors;
+//     if (color_map.keys().len > palette_size)
+//         return error.TooManyColors;
 
-    const palette = try allocator.alloc(Rgba32, palette_size);
-    std.mem.copyForwards(Rgba32, palette, color_map.keys());
-    return palette;
-}
+//     const palette = try allocator.alloc(Rgba32, palette_size);
+//     std.mem.copyForwards(Rgba32, palette, color_map.keys());
+//     return palette;
+// }
 
-fn quantizeOctree(allocator: std.mem.Allocator, palette_size: u32, image: zigimg.Image) !Palette {
-    var quantizer = zigimg.OctTreeQuantizer.init(allocator);
-    defer quantizer.deinit();
+// fn quantizeOctree(allocator: std.mem.Allocator, palette_size: u32, image: zigimg.Image) !Palette {
+//     var quantizer = zigimg.OctTreeQuantizer.init(allocator);
+//     defer quantizer.deinit();
 
-    var src_pixels = image.iterator();
-    while (src_pixels.next()) |src_color| {
-        if (!isTransparent(src_color)) {
-            try quantizer.addColor(reduceTo565(src_color));
-        } else {
-            // don't count transparent pixels into the palette
-            // everything transparent is considered index=0 by definition,
-            // so we don't need to use these colors
-        }
-    }
+//     var src_pixels = image.iterator();
+//     while (src_pixels.next()) |src_color| {
+//         if (!isTransparent(src_color)) {
+//             try quantizer.addColor(reduceTo565(src_color));
+//         } else {
+//             // don't count transparent pixels into the palette
+//             // everything transparent is considered index=0 by definition,
+//             // so we don't need to use these colors
+//         }
+//     }
 
-    const palette_buffer = try allocator.alloc(Rgba32, palette_size);
-    errdefer allocator.free(palette_buffer);
+//     const palette_buffer = try allocator.alloc(Rgba32, palette_size);
+//     errdefer allocator.free(palette_buffer);
 
-    const octree_palette = quantizer.makePalette(palette_size, palette_buffer);
+//     const octree_palette = quantizer.makePalette(palette_size, palette_buffer);
 
-    std.debug.assert(palette_buffer.ptr == octree_palette.ptr);
+//     std.debug.assert(palette_buffer.ptr == octree_palette.ptr);
 
-    return palette_buffer[0..octree_palette.len];
-}
+//     return palette_buffer[0..octree_palette.len];
+// }
 
-/// Computes the palette quality. Lower is better.
-fn computePaletteQuality(palette: Palette, image: zigimg.Image) u64 {
-    var sum: u64 = 0;
+// /// Computes the palette quality. Lower is better.
+// fn computePaletteQuality(palette: Palette, image: zigimg.Image) u64 {
+//     var sum: u64 = 0;
 
-    var iter = image.iterator();
-    while (iter.next()) |color| {
-        if (!isTransparent(color)) {
-            const index = getBestMatch(palette, reduceTo565(color));
-            sum += colorDist(color.toRgba(u8), palette[index]);
-        }
-    }
+//     var iter = image.iterator();
+//     while (iter.next()) |color| {
+//         if (!isTransparent(color)) {
+//             const index = getBestMatch(palette, reduceTo565(color));
+//             sum += colorDist(color.toRgba(u8), palette[index]);
+//         }
+//     }
 
-    return sum;
-}
+//     return sum;
+// }
 
-fn reduceTo565(col: zigimg.color.Colorf32) Rgba32 {
-    const rgb565 = zigimg.color.Rgb565.fromU32Rgba(col.toU32Rgba());
-    return Rgba32.fromU32Rgb(rgb565.toU32Rgb());
-}
+// fn reduceTo565(col: zigimg.color.Colorf32) Rgba32 {
+//     const rgb565 = zigimg.color.Rgb565.fromU32Rgba(col.toU32Rgba());
+//     return Rgba32.fromU32Rgb(rgb565.toU32Rgb());
+// }
 
-fn colorDist(a: Rgba32, b: Rgba32) u32 {
-    // implemented after
-    // https://en.wikipedia.org/wiki/Color_difference#sRGB
-    //
+// fn colorDist(a: Rgba32, b: Rgba32) u32 {
+//     // implemented after
+//     // https://en.wikipedia.org/wiki/Color_difference#sRGB
+//     //
 
-    const Variants = enum {
-        euclidean,
-        redmean_digital,
-        redmean_smooth,
-    };
+//     const Variants = enum {
+//         euclidean,
+//         redmean_digital,
+//         redmean_smooth,
+//     };
 
-    const variant = Variants.redmean_smooth;
+//     const variant = Variants.redmean_smooth;
 
-    const dr = @as(i32, a.r) - @as(i32, b.r);
-    const dg = @as(i32, a.g) - @as(i32, b.g);
-    const db = @as(i32, a.b) - @as(i32, b.b);
+//     const dr = @as(i32, a.r) - @as(i32, b.r);
+//     const dg = @as(i32, a.g) - @as(i32, b.g);
+//     const db = @as(i32, a.b) - @as(i32, b.b);
 
-    switch (variant) {
-        .euclidean => return @as(u32, @intCast(2 * dr * dr + 4 * dg * dg + 3 * db * db)),
-        .redmean_digital => if ((@as(u32, a.r) + b.r) / 2 < 128) {
-            return @as(u32, @intCast(2 * dr * dr + 4 * dg * dg + 3 * db * db));
-        } else {
-            return @as(u32, @intCast(3 * dr * dr + 4 * dg * dg + 2 * db * db));
-        },
-        .redmean_smooth => {
-            const dhalf = @as(f32, @floatFromInt((@as(u32, a.r) + b.r) / 2));
-            const r2 = (2.0 + dhalf / 256) * @as(f32, @floatFromInt(dr * dr));
-            const g2 = 4.0 * @as(f32, @floatFromInt(dg * dg));
-            const b2 = (2.0 + (255.0 - dhalf) / 256) * @as(f32, @floatFromInt(db * db));
-            return @as(u32, @intFromFloat(10.0 * (r2 + g2 + b2)));
-        },
-    }
-}
+//     switch (variant) {
+//         .euclidean => return @as(u32, @intCast(2 * dr * dr + 4 * dg * dg + 3 * db * db)),
+//         .redmean_digital => if ((@as(u32, a.r) + b.r) / 2 < 128) {
+//             return @as(u32, @intCast(2 * dr * dr + 4 * dg * dg + 3 * db * db));
+//         } else {
+//             return @as(u32, @intCast(3 * dr * dr + 4 * dg * dg + 2 * db * db));
+//         },
+//         .redmean_smooth => {
+//             const dhalf = @as(f32, @floatFromInt((@as(u32, a.r) + b.r) / 2));
+//             const r2 = (2.0 + dhalf / 256) * @as(f32, @floatFromInt(dr * dr));
+//             const g2 = 4.0 * @as(f32, @floatFromInt(dg * dg));
+//             const b2 = (2.0 + (255.0 - dhalf) / 256) * @as(f32, @floatFromInt(db * db));
+//             return @as(u32, @intFromFloat(10.0 * (r2 + g2 + b2)));
+//         },
+//     }
+// }
 
-fn getBestMatch(pal: Palette, col: Rgba32) usize {
-    var best: usize = 0;
-    var threshold: u32 = colorDist(pal[0], col);
-    for (pal[1..], 0..) |color, index| {
-        const dist = colorDist(color, col);
-        if (dist < threshold) {
-            threshold = dist;
-            best = index + 1; // oof by one, as we iterate over pal[1..]
-        }
-    }
-    return best;
-}
+// fn getBestMatch(pal: Palette, col: Rgba32) usize {
+//     var best: usize = 0;
+//     var threshold: u32 = colorDist(pal[0], col);
+//     for (pal[1..], 0..) |color, index| {
+//         const dist = colorDist(color, col);
+//         if (dist < threshold) {
+//             threshold = dist;
+//             best = index + 1; // oof by one, as we iterate over pal[1..]
+//         }
+//     }
+//     return best;
+// }
 
 // const MedianCutQuantizer = struct {
 //     const Color = Rgba32;
