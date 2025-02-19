@@ -5,7 +5,6 @@ const logger = std.log.scoped(.vbe);
 const x86 = ashet.ports.platforms.x86;
 const VESA_BIOS_Extension = @This();
 const Driver = ashet.drivers.Driver;
-const ColorIndex = ashet.abi.ColorIndex;
 const Color = ashet.abi.Color;
 const Resolution = ashet.abi.Size;
 
@@ -16,14 +15,8 @@ driver: Driver = .{
     .name = "VESA Framebuffer",
     .class = .{
         .video = .{
-            .getVideoMemoryFn = getVideoMemory,
-            .getPaletteMemoryFn = getPaletteMemory,
-            .setBorderFn = setBorder,
-            .flushFn = flush,
-            .getResolutionFn = getResolution,
-            .getMaxResolutionFn = getMaxResolution,
-            .getBorderFn = getBorder,
-            .setResolutionFn = setResolution,
+            .flush_fn = flush,
+            .get_properties_fn = get_properties,
         },
     },
 },
@@ -33,13 +26,12 @@ vbe_mode: *vbe.ModeInfo,
 
 framebuffer: Framebuffer,
 
-backing_buffer: []align(ashet.memory.page_size) ColorIndex,
-backing_palette: [256]Color = ashet.video.defaults.palette,
-border_color: ColorIndex = ashet.video.defaults.border,
+backing_buffer: []align(ashet.memory.page_size) Color,
+border_color: Color = ashet.video.defaults.border_color,
 
 graphics_resized: bool = true,
-graphics_width: u16 ,
-graphics_height: u16 ,
+graphics_width: u16,
+graphics_height: u16,
 
 pub fn init(allocator: std.mem.Allocator, mbinfo: *multiboot.Info) !VESA_BIOS_Extension {
     if (!mbinfo.flags.vbe)
@@ -126,14 +118,14 @@ pub fn init(allocator: std.mem.Allocator, mbinfo: *multiboot.Info) !VESA_BIOS_Ex
 
     x86.vmm.ensure_accessible_slice(framebuffer.base[0 .. framebuffer.height * framebuffer.stride]);
 
-    const vmem = try allocator.alignedAlloc(ColorIndex, ashet.memory.page_size, @max(ashet.video.defaults.splash_screen.len, framebuffer.stride * framebuffer.height));
+    const vmem = try allocator.alignedAlloc(Color, ashet.memory.page_size, framebuffer.stride * framebuffer.height);
     errdefer allocator.free(vmem);
 
-    std.mem.copyForwards(ColorIndex, vmem, &ashet.video.defaults.splash_screen);
-    @memset(vmem, ashet.video.defaults.border);
-    ashet.video.load_splash_screen(vmem, .{
-        .width = framebuffer.width,
-        .height = framebuffer.height,
+    @memset(vmem, ashet.video.defaults.border_color);
+    ashet.video.load_splash_screen(.{
+        .base = vmem.ptr,
+        .width = @intCast(framebuffer.width),
+        .height = @intCast(framebuffer.height),
         .stride = framebuffer.stride,
     });
 
@@ -149,48 +141,17 @@ pub fn init(allocator: std.mem.Allocator, mbinfo: *multiboot.Info) !VESA_BIOS_Ex
     };
 }
 
-fn getVideoMemory(driver: *Driver) []align(ashet.memory.page_size) ColorIndex {
+fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
     const vd: *VESA_BIOS_Extension = @fieldParentPtr("driver", driver);
-    return vd.backing_buffer;
-}
-
-fn getPaletteMemory(driver: *Driver) *[256]Color {
-    const vd: *VESA_BIOS_Extension = @fieldParentPtr("driver", driver);
-    return &vd.backing_palette;
-}
-
-fn getResolution(driver: *Driver) Resolution {
-    const vd: *VESA_BIOS_Extension = @fieldParentPtr("driver", driver);
-    return Resolution{
-        .width = vd.graphics_width,
-        .height = vd.graphics_height,
+    return .{
+        .resolution = .{
+            .width = vd.graphics_width,
+            .height = vd.graphics_height,
+        },
+        .stride = vd.graphics_width,
+        .video_memory = vd.backing_buffer,
+        .video_memory_mapping = .buffered,
     };
-}
-
-fn getMaxResolution(driver: *Driver) Resolution {
-    const vd: *VESA_BIOS_Extension = @fieldParentPtr("driver", driver);
-    return Resolution{
-        .width = @as(u16, @intCast(vd.framebuffer.width)),
-        .height = @as(u16, @intCast(vd.framebuffer.height)),
-    };
-}
-
-fn setResolution(driver: *Driver, width: u15, height: u15) void {
-    const vd: *VESA_BIOS_Extension = @fieldParentPtr("driver", driver);
-    vd.graphics_width = @min(vd.framebuffer.width, width);
-    vd.graphics_height = @min(vd.framebuffer.height, height);
-    vd.graphics_resized = true;
-}
-
-fn setBorder(driver: *Driver, color: ColorIndex) void {
-    const vd: *VESA_BIOS_Extension = @fieldParentPtr("driver", driver);
-    vd.border_color = color;
-    vd.graphics_resized = true;
-}
-
-fn getBorder(driver: *Driver) ColorIndex {
-    const vd: *VESA_BIOS_Extension = @fieldParentPtr("driver", driver);
-    return vd.border_color;
 }
 
 fn flush(driver: *Driver) void {
@@ -254,9 +215,10 @@ fn flush(driver: *Driver) void {
     // logger.debug("frame flush time: {} cycles, avg {} cycles", .{ flush_time, flush_limit / flush_count });
 }
 
-inline fn pal(vd: *VESA_BIOS_Extension, color: ColorIndex) RGB {
+inline fn pal(vd: *VESA_BIOS_Extension, color: Color) RGB {
     @setRuntimeSafety(false);
-    return @as(RGB, @bitCast(vd.backing_palette[color.index()].toRgb32()));
+    _ = vd;
+    return @bitCast(color.to_rgb32());
 }
 
 const FramebufferConfig = struct {

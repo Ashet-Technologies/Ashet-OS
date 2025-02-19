@@ -9,16 +9,10 @@ pub fn build(b: *std.Build) void {
 
     const desktop_icon_conv_options: mkicon.ConvertOptions = .{
         .geometry = .{ 32, 32 },
-        .palette = .{
-            .predefined = b.path("../kernel/data/palette.gpl"),
-        },
     };
 
     const tool_icon_conv_options: mkicon.ConvertOptions = .{
         .geometry = .{ 16, 16 },
-        .palette = .{
-            .predefined = b.path("../kernel/data/palette.gpl"),
-        },
     };
 
     const rootfs = RootFS{ .write_file = b.addNamedWriteFiles("assets") };

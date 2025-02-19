@@ -1,12 +1,19 @@
 const std = @import("std");
 const ashet = @import("ashet");
 
-const ColorIndex = ashet.abi.ColorIndex;
+const Color = ashet.abi.Color;
 const Size = ashet.abi.Size;
 
 const parse = ashet.graphics.embed_comptime_bitmap;
 
-pub const maximize = parse(0,
+const icon_palette = .{
+    .F = Color.white,
+    .B = Color.from_rgb(0xa6, 0xcf, 0xd0),
+    .@"9" = Color.from_rgb(0x50, 0x5d, 0x6d),
+    .@"4" = Color.from_rgb(0xe4, 0x16, 0x2b),
+};
+
+pub const maximize = parse(icon_palette,
     \\.........
     \\.FFFFFFF.
     \\.F.....F.
@@ -18,7 +25,7 @@ pub const maximize = parse(0,
     \\.........
 );
 
-pub const minimize = parse(0,
+pub const minimize = parse(icon_palette,
     \\.........
     \\.........
     \\.........
@@ -30,7 +37,7 @@ pub const minimize = parse(0,
     \\.........
 );
 
-pub const restore = parse(0,
+pub const restore = parse(icon_palette,
     \\.........
     \\...FFFFF.
     \\...F...F.
@@ -42,7 +49,7 @@ pub const restore = parse(0,
     \\.........
 );
 
-pub const restore_from_tray = parse(0,
+pub const restore_from_tray = parse(icon_palette,
     \\.........
     \\..FFFFF..
     \\.........
@@ -54,7 +61,7 @@ pub const restore_from_tray = parse(0,
     \\.........
 );
 
-pub const close = parse(0,
+pub const close = parse(icon_palette,
     \\444444444
     \\444444444
     \\44F444F44
@@ -66,7 +73,7 @@ pub const close = parse(0,
     \\444444444
 );
 
-pub const resize = parse(0,
+pub const resize = parse(icon_palette,
     \\.........
     \\.FFF.....
     \\.F.F.....
@@ -78,7 +85,7 @@ pub const resize = parse(0,
     \\.........
 );
 
-pub const cursor = parse(0,
+pub const cursor = parse(icon_palette,
     \\BBB..........
     \\9FFBB........
     \\9FFFFBB......

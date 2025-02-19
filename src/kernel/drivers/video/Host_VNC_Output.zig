@@ -4,31 +4,22 @@ const logger = std.log.scoped(.virtual_screen);
 
 const Host_VNC_Output = @This();
 const Driver = ashet.drivers.Driver;
-const ColorIndex = ashet.abi.ColorIndex;
 const Color = ashet.abi.Color;
 const Resolution = ashet.abi.Size;
 
 backbuffer_lock: std.Thread.Mutex = .{},
 
-backbuffer: []ColorIndex,
-frontbuffer: []align(ashet.memory.page_size) ColorIndex,
+backbuffer: []Color,
+frontbuffer: []align(ashet.memory.page_size) Color,
 width: u16,
 height: u16,
-
-palette: [256]Color = ashet.video.defaults.palette,
 
 driver: Driver = .{
     .name = "Host VNC Screen",
     .class = .{
         .video = .{
-            .getVideoMemoryFn = getVideoMemory,
-            .getPaletteMemoryFn = getPaletteMemory,
-            .setBorderFn = setBorder,
-            .flushFn = flush,
-            .getResolutionFn = getResolution,
-            .getMaxResolutionFn = getMaxResolution,
-            .getBorderFn = getBorder,
-            .setResolutionFn = setResolution,
+            .get_properties_fn = get_properties,
+            .flush_fn = flush,
         },
     },
 },
@@ -38,7 +29,7 @@ pub fn init(
     height: u16,
 ) !Host_VNC_Output {
     const fb = try std.heap.page_allocator.alignedAlloc(
-        ColorIndex,
+        Color,
         ashet.memory.page_size,
         2 * @as(u32, width) * @as(u32, height),
     );
@@ -52,50 +43,17 @@ pub fn init(
     };
 }
 
-fn getVideoMemory(driver: *Driver) []align(ashet.memory.page_size) ColorIndex {
+fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
     const vd: *Host_VNC_Output = @fieldParentPtr("driver", driver);
-    return vd.frontbuffer;
-}
-
-fn getPaletteMemory(driver: *Driver) *[256]Color {
-    const vd: *Host_VNC_Output = @fieldParentPtr("driver", driver);
-    return &vd.palette;
-}
-
-fn getResolution(driver: *Driver) Resolution {
-    const vd: *Host_VNC_Output = @fieldParentPtr("driver", driver);
-    return Resolution{
-        .width = vd.width,
-        .height = vd.height,
+    return .{
+        .stride = vd.width,
+        .video_memory = vd.frontbuffer,
+        .video_memory_mapping = .buffered,
+        .resolution = .{
+            .width = vd.width,
+            .height = vd.height,
+        },
     };
-}
-
-fn getMaxResolution(driver: *Driver) Resolution {
-    const vd: *Host_VNC_Output = @fieldParentPtr("driver", driver);
-    return Resolution{
-        .width = vd.width,
-        .height = vd.height,
-    };
-}
-
-fn setResolution(driver: *Driver, width: u15, height: u15) void {
-    const vd: *Host_VNC_Output = @fieldParentPtr("driver", driver);
-    _ = vd;
-    _ = width;
-    _ = height;
-    logger.warn("resize not supported of vnc screen!", .{});
-}
-
-fn setBorder(driver: *Driver, color: ColorIndex) void {
-    const vd: *Host_VNC_Output = @fieldParentPtr("driver", driver);
-    _ = vd;
-    _ = color;
-}
-
-fn getBorder(driver: *Driver) ColorIndex {
-    const vd: *Host_VNC_Output = @fieldParentPtr("driver", driver);
-    _ = vd;
-    return ColorIndex.get(0);
 }
 
 fn flush(driver: *Driver) void {

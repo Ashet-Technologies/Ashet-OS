@@ -56,9 +56,6 @@ pub fn init(b: *std.Build, dependency_name: []const u8, args: struct {
 
         .desktop_icon_conv_options = .{
             .geometry = .{ 32, 32 },
-            .palette = .{
-                .predefined = b.path("../../../kernel/data/palette.gpl"),
-            },
         },
     };
     return sdk;

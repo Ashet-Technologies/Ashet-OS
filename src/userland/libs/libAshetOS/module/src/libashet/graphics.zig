@@ -7,7 +7,6 @@ pub const Point = ashet.abi.Point;
 pub const Size = ashet.abi.Size;
 pub const Rectangle = ashet.abi.Rectangle;
 
-pub const ColorIndex = ashet.abi.ColorIndex;
 pub const Color = ashet.abi.Color;
 
 pub const Font = ashet.abi.Font;
@@ -17,25 +16,25 @@ pub const Framebuffer = ashet.abi.Framebuffer;
 pub const agp = @import("agp");
 
 pub const known_colors = struct {
-    pub const black = ColorIndex.get(0x00); // #000000
-    pub const dark_blue = ColorIndex.get(0x01); // #2d1a71
-    pub const blue = ColorIndex.get(0x02); // #3e32d5
-    pub const dark_red = ColorIndex.get(0x03); // #af102e
-    pub const red = ColorIndex.get(0x04); // #e4162b
-    pub const dark_green = ColorIndex.get(0x05); // #0e3e12
-    pub const green = ColorIndex.get(0x06); // #38741a
-    pub const brown = ColorIndex.get(0x07); // #8d4131
-    pub const yellow = ColorIndex.get(0x08); // #ffff40
-    pub const dark_gray = ColorIndex.get(0x09); // #505d6d
-    pub const gray = ColorIndex.get(0x0A); // #7b95a0
-    pub const bright_gray = ColorIndex.get(0x0B); // #a6cfd0
-    pub const violet = ColorIndex.get(0x0C); // #b44cef
-    pub const pink = ColorIndex.get(0x0D); // #e444c3
-    pub const teal = ColorIndex.get(0x0E); // #00bc9f
-    pub const white = ColorIndex.get(0x0F); // #ffffff
-    pub const bright_green = ColorIndex.get(0x10); // #afe356
-    pub const dim_gray = ColorIndex.get(0x11); // #2f3143
-    pub const gold = ColorIndex.get(0x12); // #fbc800
+    pub const black = Color.from_html("#000000");
+    pub const dark_blue = Color.from_html("#2d1a71");
+    pub const blue = Color.from_html("#3e32d5");
+    pub const dark_red = Color.from_html("#af102e");
+    pub const red = Color.from_html("#e4162b");
+    pub const dark_green = Color.from_html("#0e3e12");
+    pub const green = Color.from_html("#38741a");
+    pub const brown = Color.from_html("#8d4131");
+    pub const yellow = Color.from_html("#ffff40");
+    pub const dark_gray = Color.from_html("#505d6d");
+    pub const gray = Color.from_html("#7b95a0");
+    pub const bright_gray = Color.from_html("#a6cfd0");
+    pub const violet = Color.from_html("#b44cef");
+    pub const pink = Color.from_html("#e444c3");
+    pub const teal = Color.from_html("#00bc9f");
+    pub const white = Color.from_html("#ffffff");
+    pub const bright_green = Color.from_html("#afe356");
+    pub const dim_gray = Color.from_html("#2f3143");
+    pub const gold = Color.from_html("#fbc800");
 };
 
 pub fn render(target: Framebuffer, command_sequence: []const u8, auto_invalidate: bool) !void {
@@ -103,7 +102,7 @@ pub const CommandQueue = struct {
         cq.encoder().encode(cmd);
     }
 
-    pub fn clear(cq: *CommandQueue, color: ColorIndex) !void {
+    pub fn clear(cq: *CommandQueue, color: Color) !void {
         try cq.encoder().clear(color);
     }
 
@@ -111,15 +110,15 @@ pub const CommandQueue = struct {
         try cq.encoder().set_clip_rect(rectangle.x, rectangle.y, rectangle.width, rectangle.height);
     }
 
-    pub fn set_pixel(cq: *CommandQueue, point: Point, color: ColorIndex) !void {
+    pub fn set_pixel(cq: *CommandQueue, point: Point, color: Color) !void {
         try cq.encoder().set_pixel(point.x, point.y, color);
     }
 
-    pub fn draw_line(cq: *CommandQueue, p1: Point, p2: Point, color: ColorIndex) !void {
+    pub fn draw_line(cq: *CommandQueue, p1: Point, p2: Point, color: Color) !void {
         try cq.encoder().draw_line(p1.x, p1.y, p2.x, p2.y, color);
     }
 
-    pub fn draw_horizontal_line(cq: *CommandQueue, left: Point, length: u16, color: ColorIndex) !void {
+    pub fn draw_horizontal_line(cq: *CommandQueue, left: Point, length: u16, color: Color) !void {
         try cq.draw_line(
             left,
             Point.new(left.x + @as(u15, @intCast(length)), left.y),
@@ -127,7 +126,7 @@ pub const CommandQueue = struct {
         );
     }
 
-    pub fn draw_vertical_line(cq: *CommandQueue, top: Point, length: u16, color: ColorIndex) !void {
+    pub fn draw_vertical_line(cq: *CommandQueue, top: Point, length: u16, color: Color) !void {
         try cq.draw_line(
             top,
             Point.new(top.x, top.y + @as(u15, @intCast(length))),
@@ -135,15 +134,15 @@ pub const CommandQueue = struct {
         );
     }
 
-    pub fn draw_rect(cq: *CommandQueue, rectangle: Rectangle, color: ColorIndex) !void {
+    pub fn draw_rect(cq: *CommandQueue, rectangle: Rectangle, color: Color) !void {
         try cq.encoder().draw_rect(rectangle.x, rectangle.y, rectangle.width, rectangle.height, color);
     }
 
-    pub fn fill_rect(cq: *CommandQueue, rectangle: Rectangle, color: ColorIndex) !void {
+    pub fn fill_rect(cq: *CommandQueue, rectangle: Rectangle, color: Color) !void {
         try cq.encoder().fill_rect(rectangle.x, rectangle.y, rectangle.width, rectangle.height, color);
     }
 
-    pub fn draw_text(cq: *CommandQueue, point: Point, font: Font, color: ColorIndex, text: []const u8) !void {
+    pub fn draw_text(cq: *CommandQueue, point: Point, font: Font, color: Color, text: []const u8) !void {
         try cq.encoder().draw_text(point.x, point.y, font, color, text);
     }
 
@@ -155,7 +154,7 @@ pub const CommandQueue = struct {
         try cq.encoder().blit_framebuffer(point.x, point.y, framebuffer);
     }
 
-    pub fn update_color(cq: *CommandQueue, index: ColorIndex, r: u8, g: u8, b: u8) !void {
+    pub fn update_color(cq: *CommandQueue, index: Color, r: u8, g: u8, b: u8) !void {
         try cq.encoder().update_color(index, r, g, b);
     }
 
@@ -241,7 +240,7 @@ pub fn load_bitmap_file_at(file: ashet.fs.File, abs_offset: u64) !Framebuffer {
         if (len != pixel_count)
             return error.InvalidFile;
     } else {
-        var scanline: [*]ColorIndex = vmem.base;
+        var scanline: [*]Color = vmem.base;
         var scanline_offset = pixel_offset;
 
         for (0..header.height) |_| {
@@ -275,66 +274,73 @@ const ABM_Header = extern struct {
     }
 };
 
-pub fn embed_comptime_bitmap(comptime base: comptime_int, comptime def: []const u8) *const ashet.graphics.Bitmap {
+pub fn embed_comptime_bitmap(comptime palette: anytype, comptime def: []const u8) *const ashet.graphics.Bitmap {
     @setEvalBranchQuota(100_000);
 
+    const Palette = @TypeOf(palette);
+
+    const palette_fields = @typeInfo(Palette).Struct.fields;
+    for (palette_fields) |fld| {
+        if (fld.name.len != 1 or fld.name[0] == '.' or fld.name[0] == ' ' or !std.ascii.isPrint(fld.name[0]))
+            @compileError("Invalid palette entry: '" + fld.name + "'");
+    }
+
     const size = parsedSpriteSize(def);
-    var icon: [size.height][size.width]?ColorIndex = [1][size.width]?ColorIndex{
-        [1]?ColorIndex{null} ** size.width,
+    var icon: [size.height][size.width]?Color = [1][size.width]?Color{
+        [1]?Color{null} ** size.width,
     } ** size.height;
 
     var needs_transparency = false;
-    var can_use_0xFF = true;
-    var can_use_0x00 = true;
+    var transparency_keys = std.bit_set.StaticBitSet(256).initFull();
 
     var it = std.mem.splitScalar(u8, def, '\n');
     var y: usize = 0;
     while (it.next()) |line| : (y += 1) {
         var x: usize = 0;
         while (x < icon[0].len) : (x += 1) {
-            icon[y][x] = if (std.fmt.parseInt(u8, line[x .. x + 1], 16)) |index|
-                ColorIndex.get(base + index)
-            else |_|
-                null;
-            if (icon[y][x] == null)
+            const color_key = line[x];
+            const pixel_color: ?Color = if (color_key == ' ' or color_key == '.')
+                null // transparency
+            else
+                @field(palette, &.{color_key});
+
+            if (pixel_color) |color| {
+                transparency_keys.unset(color.to_u8());
+            } else {
+                // Pixel is transparent
                 needs_transparency = true;
-            if (icon[y][x] == ColorIndex.get(0x00))
-                can_use_0x00 = false;
-            if (icon[y][x] == ColorIndex.get(0xFF))
-                can_use_0xFF = false;
+            }
+
+            icon[y][x] = pixel_color;
         }
     }
 
-    const transparency_key: ColorIndex = if (needs_transparency)
-        if (can_use_0x00)
-            ColorIndex.get(0x00)
-        else if (can_use_0xFF)
-            ColorIndex.get(0xFF)
+    const transparency_key: ?Color = if (needs_transparency)
+        if (transparency_keys.toggleFirstSet()) |key|
+            Color.from_u8(@intCast(key))
         else
             @compileError("Can't declare an icon that uses both 0xFF and 0x00!")
     else
-        undefined;
+        null;
 
-    var output_bits: [size.height * size.width]ColorIndex = undefined;
+    var output_bits: [size.height * size.width]Color = undefined;
     var index: usize = 0;
     for (icon) |row| {
         for (row) |pixel| {
-            output_bits[index] = pixel orelse transparency_key;
+            output_bits[index] = pixel orelse transparency_key.?;
             index += 1;
         }
     }
 
-    const const_output_bits = output_bits;
+    const const_output_bits = comptime output_bits;
 
     return comptime &ashet.graphics.Bitmap{
         .pixels = &const_output_bits,
         .width = size.width,
         .height = size.height,
         .stride = size.width,
-        .transparency_key = if (needs_transparency)
-            transparency_key
-        else
-            null,
+        .transparency_key = transparency_key orelse undefined,
+        .has_transparency = (transparency_key != null),
     };
 }
 

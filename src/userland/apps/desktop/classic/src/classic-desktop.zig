@@ -10,7 +10,6 @@ const abi = ashet.abi;
 const Point = ashet.abi.Point;
 const Size = ashet.abi.Size;
 const Rectangle = ashet.abi.Rectangle;
-const ColorIndex = ashet.abi.ColorIndex;
 const Color = ashet.abi.Color;
 
 // Application logic:
@@ -54,10 +53,10 @@ pub fn main() !void {
     });
 
     // Load nice pattern:
-    var scanline: [*]abi.ColorIndex = vmem.base;
+    var scanline: [*]abi.Color = vmem.base;
     for (0..vmem.height) |y| {
         for (scanline[0..vmem.width], 0..) |*pixel, x| {
-            pixel.* = @enumFromInt(@as(u4, @truncate(x ^ y)));
+            pixel.* = Color.from_u8(@as(u4, @truncate(x ^ y)));
         }
         scanline += vmem.stride;
     }
@@ -88,7 +87,7 @@ pub fn main() !void {
     var render_queue = try ashet.graphics.CommandQueue.init(ashet.process.mem.allocator());
     defer render_queue.deinit();
 
-    try render_queue.fill_rect(.{ .x = 10, .y = 10, .width = 100, .height = 50 }, ColorIndex.get(0));
+    try render_queue.fill_rect(.{ .x = 10, .y = 10, .width = 100, .height = 50 }, Color.black);
 
     try render_queue.submit(video_fb, .{});
 
@@ -148,10 +147,6 @@ pub fn main() !void {
             if (damage_tracking.is_tainted()) {
                 defer damage_tracking.clear();
 
-                const black = ColorIndex.get(0x0);
-                // const blue = ColorIndex.get(0x2);
-                const red = ColorIndex.get(0x4);
-
                 // try render_queue.clear(window_manager.current_theme.desktop_color);
 
                 for (damage_tracking.tainted_regions()) |rect| {
@@ -171,19 +166,19 @@ pub fn main() !void {
                         if (selected_app_icon == desktop_icon.index) {
                             try render_queue.draw_rect(
                                 desktop_icon.bounds.grow(2),
-                                red,
+                                Color.red,
                             );
                         } else {
                             try render_queue.draw_rect(
                                 desktop_icon.bounds.grow(2),
-                                black,
+                                Color.black,
                             );
                         }
 
                         try render_queue.draw_text(
                             desktop_icon.bounds.corner(.bottom_left),
                             default_font,
-                            black,
+                            Color.black,
                             desktop_icon.app.get_display_name(),
                         );
                     }
@@ -191,7 +186,7 @@ pub fn main() !void {
 
                 try window_manager.render(&render_queue, current_theme);
 
-                try Cursor.paint(&render_queue, cursor.position, black);
+                try Cursor.paint(&render_queue, cursor.position, Color.black);
 
                 try render_queue.submit(video_fb, .{});
             }
@@ -348,7 +343,7 @@ const Cursor = struct {
     pub const width = 11;
     pub const height = 11;
 
-    pub fn paint(q: *ashet.graphics.CommandQueue, point: Point, fg: ColorIndex) !void {
+    pub fn paint(q: *ashet.graphics.CommandQueue, point: Point, fg: Color) !void {
         const cursor_br = Point.new(point.x +| 10, point.y +| 5);
         const cursor_bl = Point.new(point.x +| 5, point.y +| 10);
 

@@ -4,7 +4,6 @@ const logger = std.log.scoped(.@"virtio-gpu");
 const virtio = @import("virtio");
 
 const Virtio_GPU_Device = @This();
-const ColorIndex = ashet.abi.ColorIndex;
 const Color = ashet.abi.Color;
 const Resolution = ashet.abi.Size;
 const Driver = ashet.drivers.Driver;
@@ -12,9 +11,7 @@ const Driver = ashet.drivers.Driver;
 const max_width = 800;
 const max_height = 600;
 
-backing_buffer: [max_width * max_height]ColorIndex align(ashet.memory.page_size) = undefined,
-backing_palette: [256]Color = ashet.video.defaults.palette,
-border_color: ColorIndex = ashet.video.defaults.border,
+backing_buffer: [max_width * max_height]Color align(ashet.memory.page_size) = undefined,
 
 gpu: GPU,
 
@@ -26,14 +23,8 @@ driver: Driver = .{
     .name = "Virtio GPU Device",
     .class = .{
         .video = .{
-            .getVideoMemoryFn = getVideoMemory,
-            .getPaletteMemoryFn = getPaletteMemory,
-            .setBorderFn = setBorder,
-            .flushFn = flush,
-            .getResolutionFn = getResolution,
-            .getMaxResolutionFn = getMaxResolution,
-            .getBorderFn = getBorder,
-            .setResolutionFn = setResolution,
+            .get_properties_fn = get_properties,
+            .flush_fn = flush,
         },
     },
 },
@@ -52,34 +43,37 @@ pub fn init(allocator: std.mem.Allocator, index: usize, regs: *volatile virtio.C
     vd.graphics_width = @intCast(@min(std.math.maxInt(u16), vd.gpu.fb_width));
     vd.graphics_height = @intCast(@min(std.math.maxInt(u16), vd.gpu.fb_height));
 
-    @memset(&vd.backing_buffer, ashet.video.defaults.border);
+    @memset(&vd.backing_buffer, ashet.video.defaults.border_color);
 
-    ashet.video.load_splash_screen(
-        &vd.backing_buffer,
-        .{
-            .width = vd.graphics_width,
-            .height = vd.graphics_height,
-            .stride = vd.graphics_width,
-        },
-    );
+    ashet.video.load_splash_screen(.{
+        .base = &vd.backing_buffer,
+        .width = vd.graphics_width,
+        .height = vd.graphics_height,
+        .stride = vd.graphics_width,
+    });
 
     vd.driver.class.video.flush();
 
     return vd;
 }
 
-inline fn pal(vd: *Virtio_GPU_Device, color: ColorIndex) u32 {
+inline fn pal(vd: *Virtio_GPU_Device, color: Color) u32 {
+    _ = vd;
     @setRuntimeSafety(false);
-    return vd.backing_palette[color.index()].toRgb32();
+    return color.to_rgb32();
 }
 
-fn getVideoMemory(driver: *Driver) []align(ashet.memory.page_size) ColorIndex {
+fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
     const vd: *Virtio_GPU_Device = @alignCast(@fieldParentPtr("driver", driver));
-    return &vd.backing_buffer;
-}
-fn getPaletteMemory(driver: *Driver) *[256]Color {
-    const vd: *Virtio_GPU_Device = @alignCast(@fieldParentPtr("driver", driver));
-    return &vd.backing_palette;
+    return .{
+        .resolution = .{
+            .width = vd.graphics_width,
+            .height = vd.graphics_height,
+        },
+        .stride = vd.graphics_width,
+        .video_memory = &vd.backing_buffer,
+        .video_memory_mapping = .buffered,
+    };
 }
 
 // var flush_limit: u64 = 0;
@@ -105,7 +99,7 @@ fn flush(driver: *Driver) void {
     if (vd.graphics_resized) {
         vd.graphics_resized = false;
 
-        const border_value = vd.pal(vd.border_color);
+        const border_value = vd.pal(ashet.video.defaults.border_color);
 
         const limit = vd.gpu.fb_width * vd.gpu.fb_height;
 
@@ -155,39 +149,6 @@ fn flush(driver: *Driver) void {
     // flush_count += 1;
 
     // logger.debug("frame flush time: {} cycles, avg {} cycles", .{ flush_time, flush_limit / flush_count });
-}
-
-fn getResolution(driver: *Driver) Resolution {
-    const vd: *Virtio_GPU_Device = @alignCast(@fieldParentPtr("driver", driver));
-    return ashet.video.Resolution{
-        .width = vd.graphics_width,
-        .height = vd.graphics_height,
-    };
-}
-
-fn getMaxResolution(driver: *Driver) Resolution {
-    const vd: *Virtio_GPU_Device = @alignCast(@fieldParentPtr("driver", driver));
-    return ashet.video.Resolution{
-        .width = @as(u16, @intCast(@min(max_width, vd.gpu.fb_width))),
-        .height = @as(u16, @intCast(@min(max_height, vd.gpu.fb_height))),
-    };
-}
-
-fn setResolution(driver: *Driver, width: u15, height: u15) void {
-    const vd: *Virtio_GPU_Device = @alignCast(@fieldParentPtr("driver", driver));
-    vd.graphics_resized = true;
-    vd.graphics_width = @min(max_width, width);
-    vd.graphics_height = @min(max_height, height);
-}
-
-fn setBorder(driver: *Driver, b: ColorIndex) void {
-    const vd: *Virtio_GPU_Device = @alignCast(@fieldParentPtr("driver", driver));
-    vd.border_color = b;
-}
-
-fn getBorder(driver: *Driver) ColorIndex {
-    const vd: *Virtio_GPU_Device = @alignCast(@fieldParentPtr("driver", driver));
-    return vd.border_color;
 }
 
 const GPU = struct {

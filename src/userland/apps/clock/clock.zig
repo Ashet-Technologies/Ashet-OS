@@ -1,6 +1,7 @@
 const std = @import("std");
 const ashet = @import("ashet");
 
+const Color = ashet.abi.Color;
 const Size = ashet.abi.Size;
 const Point = ashet.abi.Point;
 
@@ -99,7 +100,8 @@ fn paint(q: *ashet.graphics.CommandQueue) !void {
     for (clock_face.pixels[0 .. clock_face.width * clock_face.height], 0..) |color, i| {
         const x = @as(i16, @intCast(i % clock_face.width));
         const y = @as(i16, @intCast(i / clock_face.width));
-        if (color != (comptime clock_face.transparency_key.?)) {
+        comptime std.debug.assert(clock_face.has_transparency);
+        if (!color.eql(clock_face.transparency_key)) {
             try q.set_pixel(Point.new(1 + x, 1 + y), color);
             try q.set_pixel(Point.new(1 + x, 45 - y), color);
             try q.set_pixel(Point.new(45 - x, 1 + y), color);
@@ -108,15 +110,15 @@ fn paint(q: *ashet.graphics.CommandQueue) !void {
     }
 
     const H = struct {
-        const digit = ashet.graphics.known_colors.black;
-        // const shadow = ashet.graphics.known_colors. ColorIndex.get(10);
-        const highlight = ashet.graphics.known_colors.red;
+        const digit = Color.black;
+        // const shadow = ColorIndex.get(10);
+        const highlight = Color.red;
     };
 
     const Digit = struct {
         pos: u15,
         limit: u15,
-        color: ashet.graphics.ColorIndex,
+        color: ashet.graphics.Color,
         len: f32,
     };
 
@@ -143,7 +145,12 @@ fn paint(q: *ashet.graphics.CommandQueue) !void {
     }
 }
 
-pub const clock_face = ashet.graphics.embed_comptime_bitmap(0,
+const clock_face_palette = .{
+    .@"0" = Color.black,
+    .F = Color.white,
+};
+
+pub const clock_face = ashet.graphics.embed_comptime_bitmap(clock_face_palette,
     \\..................00000
     \\...............000FFFFF
     \\.............00FFFFFF00

@@ -7,7 +7,7 @@ const ashet = @import("ashet-abi");
 
 pub const text_format = @import("text_format.zig");
 
-pub const ColorIndex = ashet.ColorIndex;
+pub const Color = ashet.Color;
 pub const Framebuffer = ashet.Framebuffer;
 pub const Font = ashet.Font;
 
@@ -16,12 +16,13 @@ pub const Font = ashet.Font;
 ///
 /// The memory it points to is read-only to allow static bitmaps,
 /// but it isn't required to be never mutated.
-pub const Bitmap = struct {
-    pixels: [*]const ColorIndex,
+pub const Bitmap = extern struct {
+    pixels: [*]const Color,
     width: u16,
     height: u16,
     stride: usize,
-    transparency_key: ?ColorIndex,
+    transparency_key: Color,
+    has_transparency: bool,
 };
 
 pub const CommandByte = enum(u8) {
@@ -137,7 +138,7 @@ pub fn Encoder(Writer: type) type {
 
         pub fn clear(
             enc: Enc,
-            color: ColorIndex,
+            color: Color,
         ) EncError!void {
             try enc.enc_cmd(.clear);
             try enc.enc_color(color);
@@ -161,7 +162,7 @@ pub fn Encoder(Writer: type) type {
             enc: Enc,
             x: i16,
             y: i16,
-            color: ColorIndex,
+            color: Color,
         ) EncError!void {
             try enc.enc_cmd(.set_pixel);
             try enc.enc_coord(x);
@@ -175,7 +176,7 @@ pub fn Encoder(Writer: type) type {
             y1: i16,
             x2: i16,
             y2: i16,
-            color: ColorIndex,
+            color: Color,
         ) EncError!void {
             try enc.enc_cmd(.draw_line);
             try enc.enc_coord(x1);
@@ -191,7 +192,7 @@ pub fn Encoder(Writer: type) type {
             y: i16,
             width: u16,
             height: u16,
-            color: ColorIndex,
+            color: Color,
         ) EncError!void {
             try enc.enc_cmd(.draw_rect);
             try enc.enc_coord(x);
@@ -207,7 +208,7 @@ pub fn Encoder(Writer: type) type {
             y: i16,
             width: u16,
             height: u16,
-            color: ColorIndex,
+            color: Color,
         ) EncError!void {
             try enc.enc_cmd(.fill_rect);
             try enc.enc_coord(x);
@@ -222,7 +223,7 @@ pub fn Encoder(Writer: type) type {
             x: i16,
             y: i16,
             font: Font,
-            color: ColorIndex,
+            color: Color,
             text: []const u8,
         ) (EncError || error{Overflow})!void {
             const len = std.math.cast(u16, text.len) orelse return error.Overflow;
@@ -261,7 +262,7 @@ pub fn Encoder(Writer: type) type {
 
         pub fn update_color(
             enc: Enc,
-            index: ColorIndex,
+            index: Color,
             r: u8,
             g: u8,
             b: u8,
@@ -321,8 +322,8 @@ pub fn Encoder(Writer: type) type {
             try enc.writer.writeInt(u16, value, .little);
         }
 
-        fn enc_color(enc: Enc, value: ColorIndex) !void {
-            try enc.writer.writeInt(u8, @intFromEnum(value), .little);
+        fn enc_color(enc: Enc, value: Color) !void {
+            try enc.writer.writeInt(u8, @bitCast(value), .little);
         }
 
         fn enc_handle(enc: Enc, Handle: type, value: Handle) !void {
@@ -479,8 +480,8 @@ pub fn Decoder(Reader: type) type {
             return try dec.reader.readInt(u16, .little);
         }
 
-        fn fetch_color(dec: Dec) !ColorIndex {
-            return @enumFromInt(
+        fn fetch_color(dec: Dec) !Color {
+            return Color.from_u8(
                 try dec.reader.readInt(u8, .little),
             );
         }
@@ -533,7 +534,7 @@ pub const Command = union(CommandByte) {
     blit_partial_framebuffer: BlitPartialFramebuffer,
 
     pub const Clear = struct {
-        color: ColorIndex,
+        color: Color,
     };
 
     pub const SetClipRect = struct {
@@ -546,7 +547,7 @@ pub const Command = union(CommandByte) {
     pub const SetPixel = struct {
         x: i16,
         y: i16,
-        color: ColorIndex,
+        color: Color,
     };
 
     pub const DrawLine = struct {
@@ -554,7 +555,7 @@ pub const Command = union(CommandByte) {
         y1: i16,
         x2: i16,
         y2: i16,
-        color: ColorIndex,
+        color: Color,
     };
 
     pub const DrawRect = struct {
@@ -562,7 +563,7 @@ pub const Command = union(CommandByte) {
         y: i16,
         width: u16,
         height: u16,
-        color: ColorIndex,
+        color: Color,
     };
 
     pub const FillRect = struct {
@@ -570,14 +571,14 @@ pub const Command = union(CommandByte) {
         y: i16,
         width: u16,
         height: u16,
-        color: ColorIndex,
+        color: Color,
     };
 
     pub const DrawText = struct {
         x: i16,
         y: i16,
         font: Font,
-        color: ColorIndex,
+        color: Color,
         text: []const u8,
     };
 
@@ -594,7 +595,7 @@ pub const Command = union(CommandByte) {
     };
 
     pub const UpdateColor = struct {
-        index: ColorIndex,
+        index: Color,
         r: u8,
         g: u8,
         b: u8,

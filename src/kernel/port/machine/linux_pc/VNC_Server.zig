@@ -67,10 +67,10 @@ fn connection_handler(vd: *VNC_Server) !void {
         });
         defer server.close();
 
-        const new_framebuffer = try local_allocator.dupe(ashet.abi.ColorIndex, vd.screen.backbuffer);
+        const new_framebuffer = try local_allocator.dupe(ashet.abi.Color, vd.screen.backbuffer);
         defer local_allocator.free(new_framebuffer);
 
-        const old_framebuffer = try local_allocator.dupe(ashet.abi.ColorIndex, vd.screen.backbuffer);
+        const old_framebuffer = try local_allocator.dupe(ashet.abi.Color, vd.screen.backbuffer);
         defer local_allocator.free(old_framebuffer);
 
         std.debug.print("protocol version:  {}\n", .{server.protocol_version});
@@ -118,7 +118,7 @@ fn connection_handler(vd: *VNC_Server) !void {
                             var first_diff: usize = old_scanline.len;
                             var last_diff: usize = 0;
                             for (old_scanline, new_scanline, 0..) |old, new, index| {
-                                if (old != new) {
+                                if (old.eql(new)) {
                                     first_diff = @min(first_diff, index);
                                     last_diff = @max(last_diff, index);
                                 }
@@ -249,7 +249,7 @@ fn encode_screen_rect(
     vd: VNC_Server,
     allocator: std.mem.Allocator,
     rect: struct { x: u16, y: u16, width: u16, height: u16 },
-    framebuffer: []const ashet.abi.ColorIndex,
+    framebuffer: []const ashet.abi.Color,
     pixel_format: vnc.PixelFormat,
 ) !vnc.UpdateRectangle {
     var fb = std.ArrayList(u8).init(allocator);
@@ -266,11 +266,9 @@ fn encode_screen_rect(
                 const offset = py * vd.screen.width + px;
                 std.debug.assert(offset < framebuffer.len);
 
-                const index = framebuffer[offset];
+                const color_8 = framebuffer[offset];
 
-                const raw_color = vd.screen.palette[@intFromEnum(index)];
-
-                const rgb = raw_color.toRgb888();
+                const rgb = color_8.to_rgb888();
 
                 break :blk vnc.Color{
                     .r = @as(f32, @floatFromInt(rgb.r)) / 255.0,

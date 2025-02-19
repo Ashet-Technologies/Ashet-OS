@@ -34,7 +34,7 @@ pub fn main() !void {
     var command_queue = try ashet.graphics.CommandQueue.init(ashet.process.mem.allocator());
     defer command_queue.deinit();
 
-    try command_queue.clear(ashet.graphics.ColorIndex.get(0));
+    try command_queue.clear(ashet.graphics.Color.from_rgb(0, 0, 0));
 
     try command_queue.submit(framebuffer, .{});
 
@@ -63,7 +63,7 @@ pub fn main() !void {
                 try command_queue.draw_line(
                     mouse_prev,
                     mouse_now,
-                    ashet.graphics.ColorIndex.get(15),
+                    ashet.graphics.Color.from_rgb(255, 255, 255),
                 );
 
                 try command_queue.submit(framebuffer, .{});
