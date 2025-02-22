@@ -11,8 +11,8 @@
             .hash = "1220bdedf1a993d852d8aebcd63922a8fb163fac37b9c6ff72d187b2847a4a3a4248",
         },
         .zigimg = .{
-            .url = "https://github.com/der-teufel-programming/zigimg/archive/408fef0d52b4dd46610940364602c464998abff7.tar.gz",
-            .hash = "1220518dec33fbf5f9453a4c2510c6b0e372438f201ba7493bd69dec0411817a377d",
+            .url = "https://github.com/der-teufel-programming/zigimg/archive/7de94de43737a0d6ff8cb8049f1b72110dfc3bfd.tar.gz",
+            .hash = "1220a580de4d054d2985a766fab9c9135af890c895523b31a25b6bb21ab52843c591",
         },
     },
 }
