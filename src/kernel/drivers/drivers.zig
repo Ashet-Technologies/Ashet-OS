@@ -429,7 +429,7 @@ pub const VirtIoConfiguration = struct {
 pub fn scanVirtioDevices(allocator: std.mem.Allocator, comptime cfg: VirtIoConfiguration) !void {
     const virtio_base: [*]align(0x200) volatile virtio.ControlRegs = @ptrFromInt(cfg.base);
 
-    if (virtio_base[0].magic != virtio.ControlRegs.magic) {
+    if (virtio_base[0].magic != virtio.ControlRegs.expected_magic) {
         @panic("not virt platform!");
     }
 
@@ -439,7 +439,7 @@ pub fn scanVirtioDevices(allocator: std.mem.Allocator, comptime cfg: VirtIoConfi
     var index: usize = 0;
     for (0..cfg.max_count) |_| {
         const regs: *align(0x200) volatile virtio.ControlRegs = @ptrFromInt(reg_addr);
-        if (regs.magic != virtio.ControlRegs.magic)
+        if (regs.magic != virtio.ControlRegs.expected_magic)
             break;
         reg_addr += cfg.desc_size;
 

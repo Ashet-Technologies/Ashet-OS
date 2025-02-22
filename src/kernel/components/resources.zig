@@ -282,7 +282,7 @@ pub const HandlePool = struct {
     pub const EncodedHandle = packed struct(usize) {
         const Checksum = u2;
         const Generation = u10;
-        const Index: type = @Type(.{ .Int = .{
+        const Index: type = @Type(.{ .int = .{
             .signedness = .unsigned,
             .bits = index_bits,
         } });

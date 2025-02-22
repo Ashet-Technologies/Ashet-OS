@@ -156,14 +156,14 @@ fn initialize() !void {
     x86.vmm.ensure_accessible_obj(mbheader);
 
     if (mbheader.flags.boot_loader_name) {
-        x86.vmm.ensure_accessible_obj(mbheader.boot_loader_name);
+        x86.vmm.ensure_accessible_obj(&mbheader.boot_loader_name[0]);
         logger.info("system bootloader: '{}'", .{
             std.zig.fmtEscapes(std.mem.sliceTo(mbheader.boot_loader_name, 0)),
         });
     }
 
     kernel_options = if (mbheader.flags.cmdline) blk: {
-        x86.vmm.ensure_accessible_obj(mbheader.cmdline);
+        x86.vmm.ensure_accessible_obj(&mbheader.cmdline[0]);
 
         const cli_string = std.mem.sliceTo(mbheader.cmdline, 0);
         logger.info("kernel commandline: '{}'", .{std.zig.fmtEscapes(cli_string)});
@@ -198,7 +198,7 @@ fn initialize() !void {
         x86.vmm.ensure_accessible_slice(modules);
 
         for (modules, 0..) |mod, index| {
-            x86.vmm.ensure_accessible_obj(mod.cmdline);
+            x86.vmm.ensure_accessible_obj(&mod.cmdline[0]);
             logger.info("  [{}] = {{ lo=0x{X:0>8}, hi=0x{X:0>8}, cmdline='{}' }}", .{
                 index,
                 mod.module_lo,

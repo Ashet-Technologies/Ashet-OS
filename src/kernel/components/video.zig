@@ -324,7 +324,7 @@ const system_palette_info = blk: {
             const new_field: std.builtin.Type.StructField = .{
                 .name = &name_,
                 .type = ashet.abi.ColorIndex,
-                .default_value = &ashet.abi.ColorIndex.get(@as(u8, @intCast(index))),
+                .default_value_ptr = &ashet.abi.ColorIndex.get(@as(u8, @intCast(index))),
                 .is_comptime = true,
                 .alignment = 1,
             };
@@ -342,7 +342,7 @@ const system_palette_info = blk: {
     break :blk .{
         .palette = colors,
         .KnownColors = @Type(.{
-            .Struct = .{
+            .@"struct" = .{
                 .layout = .auto,
                 .backing_integer = null,
                 .fields = fields,

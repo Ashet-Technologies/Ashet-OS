@@ -404,8 +404,8 @@ pub fn load(file: *libashet.fs.File, allocator: std.mem.Allocator) !loader.Loade
 }
 
 const Elf32_Addr = std.elf.Elf32_Addr;
-const Elf32_Word = std.elf.Elf32_Word;
-const Elf32_Sword = std.elf.Elf32_Sword;
+const Elf32_Word = std.elf.Word;
+const Elf32_Sword = std.elf.Sword;
 
 const word32 = u32;
 const word64 = u64;
@@ -465,7 +465,7 @@ const Environment = struct {
         // Only search function symbols:
         if (info.type == .func) {
             const exports = ashet.syscalls.exports;
-            inline for (@typeInfo(exports).Struct.decls) |decl| {
+            inline for (@typeInfo(exports).@"struct".decls) |decl| {
                 if (std.mem.eql(u8, decl.name, symname)) {
                     const func_ptr: usize = @intFromPtr(
                         // just provide the internally linked versions:
@@ -557,7 +557,7 @@ const Relocation = struct {
         };
     }
 
-    fn expand(comptime T: type, src: anytype) std.meta.Int(@typeInfo(@TypeOf(src)).Int.signedness, @bitSizeOf(T)) {
+    fn expand(comptime T: type, src: anytype) std.meta.Int(@typeInfo(@TypeOf(src)).int.signedness, @bitSizeOf(T)) {
         return src;
     }
 

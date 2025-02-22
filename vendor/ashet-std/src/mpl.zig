@@ -7,14 +7,14 @@ pub fn reify_function(comptime func: anytype) @TypeOf(_reify_function(func).invo
 fn _reify_function(comptime func: anytype) type {
     //
     const F = @TypeOf(func);
-    const fnInfo = @typeInfo(F).Fn;
+    const fnInfo = @typeInfo(F).@"fn";
 
     std.debug.assert(fnInfo.params.len == 1);
 
     const ArgTuple = fnInfo.params[0].type.?;
     const CC = fnInfo.calling_convention;
 
-    const arg_info = @typeInfo(ArgTuple).Struct;
+    const arg_info = @typeInfo(ArgTuple).@"struct";
     std.debug.assert(arg_info.is_tuple);
 
     var a_backing: [arg_info.fields.len]type = undefined;

@@ -88,7 +88,7 @@ pub fn init(comptime clock_config: hal.clocks.config.Global) !HSTX_DVI {
         100 * @as(f64, @floatFromInt(hstx_bit_clock)) / @as(f64, @floatFromInt(dvi_bit_clock)),
     });
 
-    var rng = std.rand.Xoroshiro128.init(10);
+    var rng = std.Random.Xoroshiro128.init(10);
     rng.random().bytes(std.mem.sliceAsBytes(&framebuffer));
 
     const vd: HSTX_DVI = .{

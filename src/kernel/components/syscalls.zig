@@ -212,7 +212,7 @@ pub const syscalls = struct {
                 const proc = get_current_process();
                 return proc.dynamic_allocator().rawAlloc(
                     size,
-                    ptr_align,
+                    @enumFromInt(ptr_align),
                     @returnAddress(),
                 );
             }
@@ -220,7 +220,7 @@ pub const syscalls = struct {
                 const proc = get_current_process();
                 proc.dynamic_allocator().rawFree(
                     mem,
-                    ptr_align,
+                    @enumFromInt(ptr_align),
                     @returnAddress(),
                 );
             }
