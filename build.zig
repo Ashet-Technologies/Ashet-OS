@@ -208,6 +208,12 @@ pub fn build(b: *std.Build) void {
 
         run_step.dependOn(&vm_runner.step);
     }
+
+    {
+        const depz_step = b.step("depz", "Run depz build runner to get dependency graph.dot");
+        const run_depz = @import("depz").runDepz(b);
+        depz_step.dependOn(&run_depz.step);
+    }
 }
 
 const PlatformStartupConfig = struct {
