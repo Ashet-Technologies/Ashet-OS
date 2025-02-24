@@ -129,11 +129,11 @@ fn get_linear_memory_region() ashet.memory.Range {
 // }
 
 fn dump_machine_info() void {
-    const vendor_id = rv32.ControlStatusRegister.read(.mvendorid);
-    const arch_id = rv32.ControlStatusRegister.read(.marchid);
-    const imp_id = rv32.ControlStatusRegister.read(.mimpid);
-    const hart_id = rv32.ControlStatusRegister.read(.mhartid);
-    const isa = rv32.ControlStatusRegister.read(.misa);
+    const vendor_id = rv32.csr.ControlStatusRegister.read(.mvendorid);
+    const arch_id = rv32.csr.ControlStatusRegister.read(.marchid);
+    const imp_id = rv32.csr.ControlStatusRegister.read(.mimpid);
+    const hart_id = rv32.csr.ControlStatusRegister.read(.mhartid);
+    const isa = rv32.csr.ControlStatusRegister.read(.misa);
 
     const ISA = packed struct(u32) {
         extensions: u26,

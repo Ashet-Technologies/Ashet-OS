@@ -158,3 +158,8 @@ rp2350-gdb:
 
 rp2350-monitor:
     picocom --baud 115200 --quiet /dev/ttyUSB0
+
+qemu-gdb target:
+    gdb \
+        --command "scripts/gdb" \
+        zig-out/{{target}}/kernel.elf 

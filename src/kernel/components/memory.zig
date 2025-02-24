@@ -133,7 +133,7 @@ pub fn loadKernelMemory(comptime sections: MemorySections) void {
 
         ashet.Debug.setTraceLoc(@src());
 
-        @memset(@as([*]u32, @ptrFromInt(bss_start))[0 .. bss_size / 4], 0);
+        @memset(@as([*]volatile u32, @ptrFromInt(bss_start))[0 .. bss_size / 4], 0);
 
         ashet.Debug.setTraceLoc(@src());
     }
@@ -150,7 +150,7 @@ pub fn loadKernelMemory(comptime sections: MemorySections) void {
 
         ashet.Debug.setTraceLoc(@src());
 
-        // logger.debug("flash_start = 0x{X:0>8}", .{flash_start});
+        // // logger.debug("flash_start = 0x{X:0>8}", .{flash_start});
         logger.debug("flash_end   = 0x{X:0>8}", .{flash_end});
         logger.debug("data_start  = 0x{X:0>8}", .{data_start});
         logger.debug("data_end    = 0x{X:0>8}", .{data_end});
@@ -159,8 +159,8 @@ pub fn loadKernelMemory(comptime sections: MemorySections) void {
         ashet.Debug.setTraceLoc(@src());
 
         @memcpy(
-            @as([*]u32, @ptrFromInt(data_start))[0 .. data_size / 4],
-            @as([*]u32, @ptrFromInt(flash_end))[0 .. data_size / 4],
+            @as([*]volatile u32, @ptrFromInt(data_start))[0 .. data_size / 4],
+            @as([*]volatile u32, @ptrFromInt(flash_end))[0 .. data_size / 4],
         );
 
         ashet.Debug.setTraceLoc(@src());
@@ -373,10 +373,18 @@ pub const page_allocator = std.mem.Allocator{
     .vtable = &PageAllocator.vtable,
 };
 
+// 0x80040000: 00000000 684a0920 00000000 00000000 ptr, vtable, first, end_index
+//      ptr=0
+//      vtable=0x20094a68
 var general_purpose_allocator_instance = std.heap.ArenaAllocator.init(page_allocator);
 var page_allocator_instance: PageAllocator = .{};
 
 const PageAllocator = struct {
+    // 20094a68 (size=16)
+    //      7e 91 03 20 => alloc    0x2003917e => components.memory.PageAllocator.alloc
+    //      6c 93 03 20 => resize   0x2003936c => components.memory.PageAllocator.resize
+    //      7e 93 03 20 => remap    0x2003937e => components.memory.PageAllocator.remap
+    //      90 93 03 20 => free     0x20039390 => components.memory.PageAllocator.free
     const vtable = std.mem.Allocator.VTable{
         .alloc = alloc,
         .resize = resize,
