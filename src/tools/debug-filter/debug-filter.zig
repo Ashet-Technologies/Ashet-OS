@@ -697,29 +697,44 @@ const WindowsTermios = struct {
 };
 
 const PosixTermios = struct {
-    settings: [3]std.posix.termios,
+    settings: [3]?std.posix.termios,
 
     pub fn read() !Termios {
         return .{
             .settings = .{
-                try std.posix.tcgetattr(std.posix.STDIN_FILENO),
-                try std.posix.tcgetattr(std.posix.STDOUT_FILENO),
-                try std.posix.tcgetattr(std.posix.STDERR_FILENO),
+                std.posix.tcgetattr(std.posix.STDIN_FILENO) catch |err| switch (err) {
+                    error.NotATerminal => null,
+                    error.Unexpected => |e| return e,
+                },
+                std.posix.tcgetattr(std.posix.STDOUT_FILENO) catch |err| switch (err) {
+                    error.NotATerminal => null,
+                    error.Unexpected => |e| return e,
+                },
+                std.posix.tcgetattr(std.posix.STDERR_FILENO) catch |err| switch (err) {
+                    error.NotATerminal => null,
+                    error.Unexpected => |e| return e,
+                },
             },
         };
     }
     pub fn apply(ios: Termios) !void {
         var result: std.posix.TermiosSetError!void = {};
 
-        std.posix.tcsetattr(std.posix.STDIN_FILENO, std.posix.TCSA.NOW, ios.settings[0]) catch |err| {
-            result = err;
-        };
-        std.posix.tcsetattr(std.posix.STDOUT_FILENO, std.posix.TCSA.NOW, ios.settings[1]) catch |err| {
-            result = err;
-        };
-        std.posix.tcsetattr(std.posix.STDERR_FILENO, std.posix.TCSA.NOW, ios.settings[2]) catch |err| {
-            result = err;
-        };
+        if (ios.settings[0]) |attrs| {
+            std.posix.tcsetattr(std.posix.STDIN_FILENO, std.posix.TCSA.NOW, attrs) catch |err| {
+                result = err;
+            };
+        }
+        if (ios.settings[1]) |attrs| {
+            std.posix.tcsetattr(std.posix.STDOUT_FILENO, std.posix.TCSA.NOW, attrs) catch |err| {
+                result = err;
+            };
+        }
+        if (ios.settings[2]) |attrs| {
+            std.posix.tcsetattr(std.posix.STDERR_FILENO, std.posix.TCSA.NOW, attrs) catch |err| {
+                result = err;
+            };
+        }
 
         return result;
     }
