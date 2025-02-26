@@ -25,9 +25,9 @@ pub fn channel(n: u4) Channel {
 }
 
 pub fn claim_unused_channel() ?Channel {
-    return if(claimed_channels.toggleFirstSet()) |cid|
+    return if (claimed_channels.toggleFirstSet()) |cid|
         channel(@intCast(cid))
-    else 
+    else
         null;
 }
 
@@ -46,7 +46,7 @@ pub const Channel = enum(u4) {
     }
 
     pub fn is_claimed(chan: Channel) bool {
-        return claimed_channels.isSet(@intFromEnum(chan));
+        return !claimed_channels.isSet(@intFromEnum(chan));
     }
 
     pub const Regs = extern struct {
