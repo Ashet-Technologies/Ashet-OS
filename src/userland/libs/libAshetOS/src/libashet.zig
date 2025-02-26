@@ -22,7 +22,7 @@ fn _start() callconv(.C) u32 {
     const res = @import("root").main();
     const Res = @TypeOf(res);
 
-    if (@typeInfo(Res) == .ErrorUnion) {
+    if (@typeInfo(Res) == .error_union) {
         if (res) |unwrapped_res| {
             const UnwrappedRes = @TypeOf(unwrapped_res);
 
@@ -50,7 +50,7 @@ fn _start() callconv(.C) u32 {
 
 fn log_app_message(
     comptime message_level: std.log.Level,
-    comptime scope: @Type(.EnumLiteral),
+    comptime scope: @Type(.enum_literal),
     comptime format: []const u8,
     args: anytype,
 ) void {
@@ -80,7 +80,7 @@ pub const core = struct {
     comptime {
         if (!is_hosted) {
             if (@hasDecl(@import("root"), "main")) {
-                @export(_start, .{
+                @export(&_start, .{
                     .linkage = .strong,
                     .name = "_start",
                 });
@@ -192,6 +192,7 @@ pub const process = struct {
             .alloc = globalAlloc,
             .resize = globalResize,
             .free = globalFree,
+            .remap = globalRemap,
         };
 
         /// Attempt to allocate exactly `len` bytes aligned to `1 << ptr_align`.
@@ -199,10 +200,10 @@ pub const process = struct {
         /// `ret_addr` is optionally provided as the first return address of the
         /// allocation call stack. If the value is `0` it means no return address
         /// has been provided.
-        fn globalAlloc(ctx: *anyopaque, len: usize, ptr_align: u8, ret_addr: usize) ?[*]u8 {
+        fn globalAlloc(ctx: *anyopaque, len: usize, ptr_align: std.mem.Alignment, ret_addr: usize) ?[*]u8 {
             _ = ctx;
             _ = ret_addr;
-            return userland.process.memory.allocate(len, ptr_align);
+            return userland.process.memory.allocate(len, @intFromEnum(ptr_align));
         }
 
         /// Attempt to expand or shrink memory in place. `buf.len` must equal the
@@ -220,7 +221,7 @@ pub const process = struct {
         /// `ret_addr` is optionally provided as the first return address of the
         /// allocation call stack. If the value is `0` it means no return address
         /// has been provided.
-        fn globalResize(ctx: *anyopaque, buf: []u8, buf_align: u8, new_len: usize, ret_addr: usize) bool {
+        fn globalResize(ctx: *anyopaque, buf: []u8, buf_align: std.mem.Alignment, new_len: usize, ret_addr: usize) bool {
             _ = ctx;
             _ = buf;
             _ = buf_align;
@@ -228,6 +229,14 @@ pub const process = struct {
             _ = ret_addr;
             // TODO: Introduce process.memory.resize syscall
             return false;
+        }
+
+        fn globalRemap(_: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
+            _ = memory;
+            _ = alignment;
+            _ = new_len;
+            _ = ret_addr;
+            return null;
         }
 
         /// Free and invalidate a buffer.
@@ -241,10 +250,10 @@ pub const process = struct {
         /// `ret_addr` is optionally provided as the first return address of the
         /// allocation call stack. If the value is `0` it means no return address
         /// has been provided.
-        fn globalFree(ctx: *anyopaque, buf: []u8, buf_align: u8, ret_addr: usize) void {
+        fn globalFree(ctx: *anyopaque, buf: []u8, buf_align: std.mem.Alignment, ret_addr: usize) void {
             _ = ctx;
             _ = ret_addr;
-            return userland.process.memory.release(buf, buf_align);
+            return userland.process.memory.release(buf, @intFromEnum(buf_align));
         }
     };
 
@@ -297,7 +306,7 @@ pub const overlapped = struct {
     }
 
     fn Awaited_Events_Enum(comptime Events: type) type {
-        const info = @typeInfo(Events).Struct;
+        const info = @typeInfo(Events).@"struct";
 
         var items: [info.fields.len]std.builtin.Type.EnumField = undefined;
         for (&items, info.fields, 0..) |*enum_field, struct_field, i| {
@@ -307,7 +316,7 @@ pub const overlapped = struct {
             };
         }
         const EventEnum = @Type(.{
-            .Enum = .{
+            .@"enum" = .{
                 .tag_type = u32,
                 .fields = &items,
                 .decls = &.{},
@@ -327,7 +336,7 @@ pub const overlapped = struct {
     /// Returns a bit set with all bits set for the events that have completed.
     pub fn await_events(events: anytype) !Awaited_Events_Set(@TypeOf(events)) {
         const Events = @TypeOf(events);
-        const info = @typeInfo(Events).Struct;
+        const info = @typeInfo(Events).@"struct";
 
         if (info.fields.len == 0)
             @compileError("Must await at least one event!");
@@ -359,7 +368,7 @@ pub const overlapped = struct {
     pub fn singleShot(op: anytype) !void {
         const Type = @TypeOf(op);
         const ti = @typeInfo(Type);
-        if (comptime (ti != .Pointer or ti.Pointer.size != .One or !ARC.is_arc(ti.Pointer.child)))
+        if (comptime (ti != .pointer or ti.pointer.size != .one or !ARC.is_arc(ti.pointer.child)))
             @compileError("singleShot expects a pointer to an ARC instance");
         const event: *ARC = &op.arc;
 

@@ -150,7 +150,7 @@ pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleIni
     {
         var iter = kbc.channels.iterator();
         channel_loop: while (iter.next()) |chan| {
-            chan.writeCommand(DeviceMessage.common(.reset)) catch |err| switch (err) {
+            chan.writeCommand(DeviceMessage.init_common(.reset)) catch |err| switch (err) {
                 error.Timeout => {
                     logger.debug("{s} reset response: <timeout>", .{@tagName(chan)});
                     kbc.channels.remove(chan);
@@ -209,19 +209,19 @@ pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleIni
                     kbc.decoders.set(chan, Decoder{ .keyboard = .{} });
                     // TODO: Initialize keyboard
 
-                    try chan.writeCommand(DeviceMessage.common(.set_defaults));
+                    try chan.writeCommand(DeviceMessage.init_common(.set_defaults));
 
-                    try chan.writeCommand(DeviceMessage.keyboard(.select_scancode_set));
+                    try chan.writeCommand(DeviceMessage.init_keyboard(.select_scancode_set));
                     try chan.writeData(0x01); // select scancode set 1
 
-                    try chan.writeCommand(DeviceMessage.common(.enable_scanning));
+                    try chan.writeCommand(DeviceMessage.init_common(.enable_scanning));
 
                     x86.idt.enableIRQ(chan.irqNumber());
                 } else if (device.isMouse()) {
                     kbc.decoders.set(chan, Decoder{ .mouse = .{} });
 
-                    try chan.writeCommand(DeviceMessage.common(.set_defaults));
-                    try chan.writeCommand(DeviceMessage.common(.enable_scanning));
+                    try chan.writeCommand(DeviceMessage.init_common(.set_defaults));
+                    try chan.writeCommand(DeviceMessage.init_common(.enable_scanning));
 
                     x86.idt.enableIRQ(chan.irqNumber());
                 } else {
@@ -410,8 +410,8 @@ const Channel = enum {
     }
 
     pub fn detectDeviceType(chan: Channel) !?DeviceType {
-        try chan.writeCommand(DeviceMessage.common(.disable_scanning));
-        try chan.writeCommand(DeviceMessage.common(.identify));
+        try chan.writeCommand(DeviceMessage.init_common(.disable_scanning));
+        try chan.writeCommand(DeviceMessage.init_common(.identify));
 
         const lo = chan.readData() catch return null;
         const hi = chan.readData() catch 0x00;
@@ -625,16 +625,16 @@ const DeviceMessage = extern union {
     keyboard: Keyboard,
     mouse: Mouse,
 
-    pub fn data(value: u8) DeviceMessage {
+    pub fn init_data(value: u8) DeviceMessage {
         return .{ .data = value };
     }
-    pub fn common(cmd: Common) DeviceMessage {
+    pub fn init_common(cmd: Common) DeviceMessage {
         return .{ .common = cmd };
     }
-    pub fn keyboard(cmd: Keyboard) DeviceMessage {
+    pub fn init_keyboard(cmd: Keyboard) DeviceMessage {
         return .{ .keyboard = cmd };
     }
-    pub fn mouse(cmd: Mouse) DeviceMessage {
+    pub fn init_mouse(cmd: Mouse) DeviceMessage {
         return .{ .mouse = cmd };
     }
 

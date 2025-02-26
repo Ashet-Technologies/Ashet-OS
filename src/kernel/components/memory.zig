@@ -54,7 +54,7 @@ pub const KernelMemoryRange = struct {
 };
 
 pub const USizeIndex = @Type(.{
-    .Int = .{
+    .int = .{
         .bits = std.math.log2_int_ceil(u32, @bitSizeOf(usize)),
         .signedness = .unsigned,
     },
@@ -133,7 +133,7 @@ pub fn loadKernelMemory(comptime sections: MemorySections) void {
 
         ashet.Debug.setTraceLoc(@src());
 
-        @memset(@as([*]u32, @ptrFromInt(bss_start))[0 .. bss_size / 4], 0);
+        @memset(@as([*]volatile u32, @ptrFromInt(bss_start))[0 .. bss_size / 4], 0);
 
         ashet.Debug.setTraceLoc(@src());
     }
@@ -150,7 +150,7 @@ pub fn loadKernelMemory(comptime sections: MemorySections) void {
 
         ashet.Debug.setTraceLoc(@src());
 
-        // logger.debug("flash_start = 0x{X:0>8}", .{flash_start});
+        // // logger.debug("flash_start = 0x{X:0>8}", .{flash_start});
         logger.debug("flash_end   = 0x{X:0>8}", .{flash_end});
         logger.debug("data_start  = 0x{X:0>8}", .{data_start});
         logger.debug("data_end    = 0x{X:0>8}", .{data_end});
@@ -159,8 +159,8 @@ pub fn loadKernelMemory(comptime sections: MemorySections) void {
         ashet.Debug.setTraceLoc(@src());
 
         @memcpy(
-            @as([*]u32, @ptrFromInt(data_start))[0 .. data_size / 4],
-            @as([*]u32, @ptrFromInt(flash_end))[0 .. data_size / 4],
+            @as([*]volatile u32, @ptrFromInt(data_start))[0 .. data_size / 4],
+            @as([*]volatile u32, @ptrFromInt(flash_end))[0 .. data_size / 4],
         );
 
         ashet.Debug.setTraceLoc(@src());
@@ -373,17 +373,26 @@ pub const page_allocator = std.mem.Allocator{
     .vtable = &PageAllocator.vtable,
 };
 
+// 0x80040000: 00000000 684a0920 00000000 00000000 ptr, vtable, first, end_index
+//      ptr=0
+//      vtable=0x20094a68
 var general_purpose_allocator_instance = std.heap.ArenaAllocator.init(page_allocator);
 var page_allocator_instance: PageAllocator = .{};
 
 const PageAllocator = struct {
+    // 20094a68 (size=16)
+    //      7e 91 03 20 => alloc    0x2003917e => components.memory.PageAllocator.alloc
+    //      6c 93 03 20 => resize   0x2003936c => components.memory.PageAllocator.resize
+    //      7e 93 03 20 => remap    0x2003937e => components.memory.PageAllocator.remap
+    //      90 93 03 20 => free     0x20039390 => components.memory.PageAllocator.free
     const vtable = std.mem.Allocator.VTable{
         .alloc = alloc,
         .resize = resize,
+        .remap = remap,
         .free = free,
     };
 
-    fn alloc(_: *anyopaque, len: usize, ptr_align: u8, ret_addr: usize) ?[*]align(page_size) u8 {
+    fn alloc(_: *anyopaque, len: usize, ptr_align: std.mem.Alignment, ret_addr: usize) ?[*]align(page_size) u8 {
         _ = ret_addr;
 
         std.debug.assert(len > 0);
@@ -391,7 +400,7 @@ const PageAllocator = struct {
             return null;
         }
 
-        std.debug.assert(ptr_align <= std.math.log2(page_size));
+        std.debug.assert(ptr_align.toByteUnits() <= page_size);
 
         const aligned_len = std.mem.alignForward(usize, len, page_size);
 
@@ -405,7 +414,7 @@ const PageAllocator = struct {
     fn resize(
         _: *anyopaque,
         buf: []u8,
-        buf_align: u8,
+        buf_align: std.mem.Alignment,
         new_len: usize,
         ret_addr: usize,
     ) bool {
@@ -416,7 +425,15 @@ const PageAllocator = struct {
         return false;
     }
 
-    fn free(_: *anyopaque, buf: []u8, buf_align: u8, ret_addr: usize) void {
+    fn remap(_: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
+        _ = memory;
+        _ = alignment;
+        _ = new_len;
+        _ = ret_addr;
+        return null;
+    }
+
+    fn free(_: *anyopaque, buf: []u8, buf_align: std.mem.Alignment, ret_addr: usize) void {
         _ = buf_align;
         _ = ret_addr;
 
@@ -439,7 +456,7 @@ const PageAllocator = struct {
 /// **DO NOT USE THE ALLOCATOR FOR ANYTHING ELSE**.
 pub const ThreadAllocator = struct {
     pub fn alloc(len: usize) error{OutOfMemory}![]align(page_size) u8 {
-        return if (PageAllocator.alloc(undefined, len, 12, @returnAddress())) |ptr|
+        return if (PageAllocator.alloc(undefined, len, std.mem.Alignment.fromByteUnits(page_size), @returnAddress())) |ptr|
             ptr[0..len]
         else
             error.OutOfMemory;
@@ -447,7 +464,7 @@ pub const ThreadAllocator = struct {
 
     pub fn free(buf: []u8) void {
         @memset(buf, 0x55); // scream differently than zig
-        PageAllocator.free(undefined, buf, 12, @returnAddress());
+        PageAllocator.free(undefined, buf, std.mem.Alignment.fromByteUnits(page_size), @returnAddress());
     }
 };
 

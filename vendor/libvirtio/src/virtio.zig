@@ -1,6 +1,12 @@
 const std = @import("std");
 const ashet = @import("root");
 
+// From "2.7.2 Legacy Interfaces: A Note on Virtqueue Layout":
+//  Each virtqueue occupies two or more physically-contiguous pages
+//  (usually defined as 4096 bytes, but depending on the transport;
+//  henceforth referred to as Queue Align) and consists of three parts:
+pub const page_size = 4096;
+
 pub const queue = @import("queue.zig");
 pub const gpu = @import("gpu.zig");
 pub const input = @import("input.zig");
@@ -8,7 +14,7 @@ pub const network = @import("network.zig");
 pub const block = @import("block.zig");
 
 pub const ControlRegs = extern struct {
-    pub const magic: u32 = @bitCast(@as([4]u8, "virt".*));
+    pub const expected_magic: u32 = @bitCast(@as([4]u8, "virt".*));
 
     magic: u32, // "virt"
     version: u32,
@@ -99,7 +105,7 @@ pub const ControlRegs = extern struct {
         }
 
         if (legacy) {
-            regs.legacy_guest_page_size = std.mem.page_size;
+            regs.legacy_guest_page_size = page_size;
         } else {
             regs.status |= DeviceStatus.features_ok;
 

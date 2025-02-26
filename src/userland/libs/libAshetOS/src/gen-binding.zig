@@ -97,9 +97,9 @@ pub fn main() !u8 {
             \\    libsyscall.pie = true;
             \\
             \\    switch(ashet_target) {
-            \\        .arm => libsyscall.defineCMacro("PLATFORM_THUMB", null),
-            \\        .rv32 => libsyscall.defineCMacro("PLATFORM_RISCV32", null),
-            \\        .x86 => libsyscall.defineCMacro("PLATFORM_X86", null),
+            \\        .arm => libsyscall.root_module.addCMacro("PLATFORM_THUMB", "1"),
+            \\        .rv32 => libsyscall.root_module.addCMacro("PLATFORM_RISCV32", "1"),
+            \\        .x86 => libsyscall.root_module.addCMacro("PLATFORM_X86", "1"),
             \\    }
             \\
             \\
@@ -107,7 +107,7 @@ pub fn main() !u8 {
 
         for (syscall_files.items) |filename| {
             try writer.print(
-                \\    libsyscall.addAssemblyFile(b.path("src/{s}"));
+                \\    libsyscall.root_module.addAssemblyFile(b.path("src/{s}"));
                 \\
             , .{filename});
         }

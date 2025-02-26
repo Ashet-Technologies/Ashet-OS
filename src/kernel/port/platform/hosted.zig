@@ -8,7 +8,7 @@ comptime {
     }
 }
 
-pub const page_size = std.mem.page_size;
+pub const page_size = 4096; // std.mem.page_size;
 
 pub const scheduler = struct {
     //

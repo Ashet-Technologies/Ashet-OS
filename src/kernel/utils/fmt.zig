@@ -74,3 +74,47 @@ test freq {
     try expect_fmt("123.45 MHz", "{:.2}", .{freq(123_456_789)});
     try expect_fmt("123.45 GHz", "{:.2}", .{freq(123_456_789_101)});
 }
+
+pub fn @"struct"(value: anytype) StructFormatter(@TypeOf(value)) {
+    return .{ .value = value };
+}
+
+pub fn StructFormatter(comptime T: type) type {
+    const fields = @typeInfo(T).@"struct".fields;
+
+    var filtered_fields_mut: []const std.builtin.Type.StructField = &.{};
+
+    for (fields) |fld| {
+        if (!std.mem.startsWith(u8, fld.name, "_")) {
+            filtered_fields_mut = filtered_fields_mut ++ .{fld};
+        }
+    }
+
+    const filtered_fields = filtered_fields_mut;
+
+    return struct {
+        value: T,
+
+        pub fn format(sf: @This(), fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+            _ = fmt;
+            _ = options;
+
+            try writer.print("{s}{{", .{@typeName(T)});
+
+            inline for (filtered_fields, 0..) |fld, i| {
+                if (i > 0)
+                    try writer.writeAll(",");
+
+                try writer.print(" {}={}", .{
+                    std.zig.fmtId(fld.name),
+                    @field(sf.value, fld.name),
+                });
+            }
+
+            if (filtered_fields.len > 0)
+                try writer.writeAll(" ");
+
+            try writer.writeAll("}");
+        }
+    };
+}

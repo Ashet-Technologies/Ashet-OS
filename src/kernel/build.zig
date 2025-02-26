@@ -88,7 +88,12 @@ pub fn build(b: *std.Build) void {
         const write_file_step = b.addWriteFile("machine-info.zig", machine_info);
 
         const module = b.createModule(.{
-            .root_source_file = write_file_step.files.items[0].getPath(),
+            .root_source_file = .{
+                .generated = .{
+                    .file = &write_file_step.generated_directory,
+                    .sub_path = write_file_step.files.items[0].sub_path,
+                },
+            },
         });
 
         break :blk module;
@@ -151,7 +156,7 @@ pub fn build(b: *std.Build) void {
         const rp2350_register_file = regz_run.addOutputFileArg("rp2350.zig");
 
         {
-            const patches: []const regz.patch.Patch = @import("port/machine/arm/ashet-hc/patches/rp2350_arm.zig").patches;
+            const patches = @import("port/machine/arm/ashet-hc/patches/rp2350_arm.zig").patches;
 
             if (patches.len > 0) {
                 // write patches to file
@@ -234,7 +239,7 @@ pub fn build(b: *std.Build) void {
         kernel_exe.root_module.omit_frame_pointer = false;
     }
 
-    kernel_exe.setLinkerScriptPath(b.path(machine_config.linker_script));
+    kernel_exe.setLinkerScript(b.path(machine_config.linker_script));
 
     // for (options.platforms.include_paths.get(machine_spec.platform).items) |path| {
     //     kernel_exe.addSystemIncludePath(path);
@@ -350,7 +355,7 @@ const machine_info_map = std.EnumArray(Machine, MachineConfig).init(.{
     },
 });
 
-const generic_x86 = .{
+const generic_x86: std.Target.Query = .{
     .cpu_arch = .x86,
     .abi = .eabi,
     .cpu_model = .{ .explicit = &std.Target.x86.cpu.i686 },
@@ -362,7 +367,7 @@ const generic_x86 = .{
     }),
 };
 
-const generic_arm = .{
+const generic_arm: std.Target.Query = .{
     .cpu_arch = .thumb,
     .abi = .eabi,
     .cpu_model = .{
@@ -392,7 +397,7 @@ const generic_arm = .{
     // }),
 };
 
-const arm_cortex_m33 = .{
+const arm_cortex_m33: std.Target.Query = .{
     .cpu_arch = .thumb,
     .abi = .eabi,
     .cpu_model = .{
@@ -405,7 +410,7 @@ const arm_cortex_m33 = .{
     }),
 };
 
-const generic_rv32 = .{
+const generic_rv32: std.Target.Query = .{
     .cpu_arch = .riscv32,
     .abi = .eabi,
     .cpu_model = .{ .explicit = &std.Target.riscv.cpu.generic_rv32 },

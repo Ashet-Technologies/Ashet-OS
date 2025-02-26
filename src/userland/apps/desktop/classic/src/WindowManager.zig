@@ -50,7 +50,7 @@ active_windows: WindowList = .{},
 damage_tracking: *DamageTracking,
 
 pub fn init(damage_tracking: *DamageTracking) WindowManager {
-    const max_size = .{
+    const max_size: Size = .{
         .width = damage_tracking.tracked_area.width - 2,
         .height = damage_tracking.tracked_area.height - 12,
     };
