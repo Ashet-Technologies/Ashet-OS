@@ -1,5 +1,5 @@
 .{
-    .name = "ashet-abi",
+    .name = .ashet_abi,
     .version = "0.1.0",
     .paths = .{
         "build.zig",

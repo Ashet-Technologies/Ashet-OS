@@ -1,5 +1,5 @@
 .{
-    .name = "debug-filter",
+    .name = .debug_filter,
     .version = "0.0.1",
     .paths = .{
         "build.zig",

@@ -1,7 +1,7 @@
 
 # for 0.13, we need zig-ashet, which is the fork
 # for 0.14, we need at least 0.14.0-dev.3213+53216d2f2
-zig := "zig-0.14.0-dev"
+zig := "zig-0.14.0"
 
 build:
     {{zig}} build --summary none
