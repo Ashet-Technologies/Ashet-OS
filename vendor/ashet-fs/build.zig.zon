@@ -4,8 +4,8 @@
     .paths = .{ "build.zig", "build.zig.zon", "src", "test" },
     .dependencies = .{
         .args = .{
-            .url = "https://github.com/ikskuh/zig-args/archive/968258dc1b1230493d8f1677097c832a3d7e0bd8.tar.gz",
-            .hash = "1220bdedf1a993d852d8aebcd63922a8fb163fac37b9c6ff72d187b2847a4a3a4248",
+            .url = "git+https://github.com/ikskuh/zig-args.git#9425b94c103a031777fdd272c555ce93a7dea581",
+            .hash = "args-0.0.0-CiLiqv_NAAC97fGpk9hS2K681jkiqPsWP6w3ucb_ctGH",
         },
     },
 }
