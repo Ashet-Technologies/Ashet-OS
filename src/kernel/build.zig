@@ -220,6 +220,8 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    // kernel_exe.bundle_ubsan_rt = false;
+
     if (kernel_target.result.cpu.arch.isThumb()) {
         // Disable LTO on arm as it fails hard on the linker:
         kernel_exe.want_lto = false;

@@ -58,7 +58,8 @@ pub fn main() !u8 {
         try writer.print(
             \\.{{
             \\  .version = "1.0.0",
-            \\  .name = "libAshetOS.generated",
+            \\  .name = .libAshetOS_generated,
+            \\  .fingerprint = 0xbed5594329f6f10b,
             \\  .dependencies = .{{
             \\      .abi = .{{
             \\          .path = "{}",
