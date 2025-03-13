@@ -83,6 +83,10 @@ The following list contains devices for which there is a planned port of Ashet O
 
 ## Contributing
 
+This project uses [Zig 0.14.0](https://ziglang.org/download/#release-0.14.0) to compile most of the sources.
+
+In addition, an installation of [Python 3](https://www.python.org/) is required right now.
+
 ### Compiling The Project
 
 The results of the compilation are usually disk images, except for a machine based on the `hosted` machine.
@@ -101,6 +105,13 @@ The results of the compilation are usually disk images, except for a machine bas
 [user@host] $ 
 ```
 
+#### Run the OS
+
+```sh-session
+[user@host] $ zig build -Dmachine=<machine-name> run
+[user@host] $ 
+```
+
 ## Useful Links
 
 - [Free & Open RISC-V Reference Card](https://www.cl.cam.ac.uk/teaching/1617/ECAD+Arch/files/docs/RISCVGreenCardv8-20151013.pdf)
@@ -114,8 +125,8 @@ The results of the compilation are usually disk images, except for a machine bas
 - [GCC Documentation](https://gcc.gnu.org/onlinedocs/gcc/index.html)
   - [How to Use Inline Assembly Language in C Code](https://gcc.gnu.org/onlinedocs/gcc/Using-Assembly-Language-with-C.html)
 - [Zig](https://ziglang.org/)
-  - [Zig 0.13 Language Reference](https://ziglang.org/documentation/0.13.0/)
-  - [Zig 0.13 StandarD Library Documentation](https://ziglang.org/documentation/0.13.0/std/)
+  - [Zig 0.14 Language Reference](https://ziglang.org/documentation/0.14.0/)
+  - [Zig 0.14 StandarD Library Documentation](https://ziglang.org/documentation/0.14.0/std/)
 - [QEMU Documentation](https://www.qemu.org/docs/master/system/introduction.html)
 - [RP2350](https://www.raspberrypi.com/products/rp2350/)
   - [RP2350 Datasheet](https://datasheets.raspberrypi.com/rp2350/rp2350-datasheet.pdf)

@@ -13,10 +13,10 @@ const PIT = @This();
 pub const timer_frequency = 1_193_182; // Hz
 
 pub const Register = enum(u16) {
-    counter0 = 0x40, // 	Counter-Register für Channel 0 setzen/lesen
-    counter1 = 0x41, // 	Counter-Register für Channel 1 setzen/lesen
-    counter2 = 0x42, // 	Counter-Register für Channel 2 setzen/lesen
-    control = 0x43, // 	Initalisierung (siehe unten)
+    counter0 = 0x40, // Counter-Register für Channel 0 setzen/lesen
+    counter1 = 0x41, // Counter-Register für Channel 1 setzen/lesen
+    counter2 = 0x42, // Counter-Register für Channel 2 setzen/lesen
+    control = 0x43, // Initalisierung (siehe unten)
 };
 
 fn write_reg(reg: Register, value: u8) void {

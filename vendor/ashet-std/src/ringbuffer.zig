@@ -184,10 +184,11 @@ test "RingBufferFuzzer" {
     if (builtin.zig_version.minor < 14)
         return error.ZigSkipTest;
 
-    try std.testing.fuzz(fuzz_ring_buffer, .{});
+    try std.testing.fuzz({}, fuzz_ring_buffer, .{});
 }
 
-fn fuzz_ring_buffer(input: []const u8) anyerror!void {
+fn fuzz_ring_buffer(ctx: void, input: []const u8) anyerror!void {
+    _ = ctx;
     var buffer = RingBuffer(u64, 16){};
 
     var next_push_item: u64 = 0;

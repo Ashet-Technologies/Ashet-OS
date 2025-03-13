@@ -88,6 +88,7 @@ pub const log_levels = struct {
     pub var resources: LogLevel = .info;
     pub var scheduler: LogLevel = .debug;
     pub var ui: LogLevel = .debug;
+    pub var input: LogLevel = .info;
     pub var video: LogLevel = .debug;
     pub var storage: LogLevel = .info; // very noise modules!
     pub var x86_vmm: LogLevel = .info; // very noise modules!
@@ -122,7 +123,7 @@ comptime {
         // Force-instantiate the VFAT driver to provide the FatFS implementation:
         _ = drivers.filesystem.VFAT;
 
-        @export(ashet_kernelMain, .{
+        @export(&ashet_kernelMain, .{
             .name = "ashet_kernelMain",
         });
     }
@@ -460,7 +461,7 @@ pub const std_options = std.Options{
     .logFn = kernel_log_fn,
 };
 
-fn kernel_log_once(comptime scope: @Type(.EnumLiteral)) void {
+fn kernel_log_once(comptime scope: @Type(.enum_literal)) void {
     const T = struct {
         var triggered: bool = false;
 
@@ -478,7 +479,7 @@ fn kernel_log_once(comptime scope: @Type(.EnumLiteral)) void {
 
 fn kernel_log_fn(
     comptime message_level: std.log.Level,
-    comptime scope: @Type(.EnumLiteral),
+    comptime scope: @Type(.enum_literal),
     comptime format: []const u8,
     args: anytype,
 ) void {
@@ -576,7 +577,7 @@ fn halt() noreturn {
 }
 
 pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, maybe_return_address: ?usize) noreturn {
-    @setCold(true);
+    @branchHint(.cold);
 
     if (!full_panic) {
         machine_config.debug_write("PANIC: ");

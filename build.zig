@@ -56,6 +56,9 @@ pub fn build(b: *std.Build) void {
 
     const debugfilter = debugfilter_dep.artifact("debug-filter");
 
+    // Install the debug-filter executable so we can utilize it for debugging
+    b.installArtifact(debugfilter);
+
     var os_deps = std.EnumArray(Machine, *std.Build.Dependency).initUndefined();
     for (std.enums.values(Machine)) |machine| {
         const step = machine_steps.get(machine);
@@ -67,13 +70,14 @@ pub fn build(b: *std.Build) void {
         });
         os_deps.set(machine, machine_os_dep);
 
-        const out_dir: std.Build.InstallDir = .{ .custom = @tagName(machine) };
         const os_files = machine_os_dep.namedWriteFiles("ashet-os");
 
-        for (os_files.files.items) |file| {
-            const install_elf_step = b.addInstallFileWithDir(file.getPath(), out_dir, file.sub_path);
-            step.dependOn(&install_elf_step.step);
-        }
+        const install_elves = b.addInstallDirectory(.{
+            .source_dir = os_files.getDirectory(),
+            .install_dir = .{ .custom = @tagName(machine) },
+            .install_subdir = "",
+        });
+        step.dependOn(&install_elves.step);
 
         if (list_apps) {
             std.debug.print("available files for '{s}':\n", .{
@@ -207,6 +211,12 @@ pub fn build(b: *std.Build) void {
 
         run_step.dependOn(&vm_runner.step);
     }
+
+    {
+        const depz_step = b.step("depz", "Run depz build runner to get dependency graph.dot");
+        const run_depz = @import("depz").runDepz(b);
+        depz_step.dependOn(&run_depz.step);
+    }
 }
 
 const PlatformStartupConfig = struct {
@@ -219,7 +229,7 @@ const Variables = struct {
     @"${KERNEL}": std.Build.LazyPath,
 
     pub fn addArg(variables: Variables, runner: *std.Build.Step.Run, arg: []const u8) void {
-        inline for (@typeInfo(Variables).Struct.fields) |fld| {
+        inline for (@typeInfo(Variables).@"struct".fields) |fld| {
             const path = @field(variables, fld.name);
 
             if (std.mem.eql(u8, arg, fld.name)) {
@@ -369,7 +379,12 @@ const console_qemu_flags = [_][]const u8{
 fn get_optional_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) ?std.Build.LazyPath {
     for (write_files.files.items) |file| {
         if (std.mem.eql(u8, file.sub_path, sub_path))
-            return file.getPath();
+            return .{
+                .generated = .{
+                    .file = &write_files.generated_directory,
+                    .sub_path = file.sub_path,
+                },
+            };
     }
     return null;
 }

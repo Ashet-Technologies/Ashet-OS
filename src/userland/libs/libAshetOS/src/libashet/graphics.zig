@@ -276,7 +276,7 @@ const ABM_Header = extern struct {
 };
 
 pub fn embed_comptime_bitmap(comptime base: comptime_int, comptime def: []const u8) *const ashet.graphics.Bitmap {
-    @setEvalBranchQuota(10_000);
+    @setEvalBranchQuota(100_000);
 
     const size = parsedSpriteSize(def);
     var icon: [size.height][size.width]?ColorIndex = [1][size.width]?ColorIndex{

@@ -20,21 +20,19 @@ jobs:
           - x86-hosted-linux
           - x86-pc-bios
 
+        optimize_kernel:
+          - false
+          - true
+
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v2
 
-      # - name: Setup Zig
-      #   uses: mlugg/setup-zig@v1
-      #   with:
-      #     version: 0.13.0
-
-      - name: Setup Hacky Zig 0.13.x
-        run: |
-          curl -O https://files.wendel.io/zig/zig.tar.gz
-          tar -xf zig.tar.gz
-          echo "$PWD/zig-x86_64-linux-musl-baseline" >> $GITHUB_PATH
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v1
+        with:
+          version: "master" # 0.14.0
 
       - name: Setup Python 3.11
         uses: actions/setup-python@v5
@@ -49,20 +47,24 @@ jobs:
 
       - name: Build ${{ matrix.platform }}
         run: |
-          zig build ${{ matrix.platform }}
+          zig build -Doptimize-kernel=${{ matrix.optimize_kernel }} ${{ matrix.platform }}
 
       - name: Perform Smoke Test ${{ matrix.platform }}
         run: |
-          zig build -Dmachine=${{ matrix.platform }} -Dno-gui install
+          zig build -Doptimize-kernel=${{ matrix.optimize_kernel }} -Dmachine=${{ matrix.platform }} -Dno-gui install
 
           # this command is allowed to fail, we're doing checks by grep.
-          timeout 15s zig build -Dmachine=${{ matrix.platform }} -Dno-gui run 2>&1 | tee kernel.log || true
+          timeout 15s zig build -Doptimize-kernel=${{ matrix.optimize_kernel }} -Dmachine=${{ matrix.platform }} -Dno-gui run 2>&1 | tee kernel.log || true
 
           # Test if the desktop application did start:
-          grep -F "classic desktop ready!" kernel.log
+          if ! grep -F "classic desktop ready!" kernel.log; then
+            echo "kernel failed to start desktop application!" 1>&2
+            false
+          fi
 
           # Test that we didn't panic:
           if grep -Fi "Panic:" kernel.log; then
             # fail!
+            echo "kernel had a panic!" 1>&2
             false
           fi

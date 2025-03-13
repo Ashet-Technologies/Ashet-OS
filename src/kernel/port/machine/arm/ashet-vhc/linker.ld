@@ -17,7 +17,7 @@ SECTIONS {
     __kernel_flash_start = .;
 
     .text : {
-        *(.text.vector_table*)
+        KEEP(*(.text.vector_table*))
         *(.text*)
     } > flash
 

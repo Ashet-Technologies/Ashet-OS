@@ -1,5 +1,5 @@
 .{
-    .name = "ashet-std",
+    .name = .ashet_std,
     .version = "0.1.0",
     .paths = .{
         "src",

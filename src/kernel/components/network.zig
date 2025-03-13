@@ -404,7 +404,7 @@ const LWIP_Error_Code = enum(c.err_t) {
 
 fn wrap_lwip_call(comptime func: anytype, comptime error_set: []const LWIP_Error_Code) type {
     const F = @TypeOf(func);
-    const fnInfo = @typeInfo(F).Fn;
+    const fnInfo = @typeInfo(F).@"fn";
 
     std.debug.assert(fnInfo.return_type == c.err_t);
 
@@ -414,7 +414,7 @@ fn wrap_lwip_call(comptime func: anytype, comptime error_set: []const LWIP_Error
             .name = std.fmt.comptimePrint("{d}", .{i}),
             .type = in.type.?,
             .alignment = @alignOf(in.type.?),
-            .default_value = null,
+            .default_value_ptr = null,
             .is_comptime = false,
         };
     }
@@ -424,9 +424,9 @@ fn wrap_lwip_call(comptime func: anytype, comptime error_set: []const LWIP_Error
         out.* = .{ .name = @errorName(in.to_zig_error()) };
     }
 
-    const E = @Type(.{ .ErrorSet = &errors });
+    const E = @Type(.{ .error_set = &errors });
 
-    const Tuple = @Type(.{ .Struct = .{
+    const Tuple = @Type(.{ .@"struct" = .{
         .layout = .auto,
         .is_tuple = true,
         .decls = &.{},

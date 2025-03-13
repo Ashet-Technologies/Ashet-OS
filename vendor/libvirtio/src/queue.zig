@@ -1,7 +1,7 @@
 const std = @import("std");
 const virtio = @import("virtio.zig");
 
-const page_size = std.mem.page_size;
+const page_size = virtio.page_size;
 
 const VIRTIO_F_EVENT_IDX = 1;
 const VIRTQ_AVAIL_F_NO_INTERRUPT = 1;

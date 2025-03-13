@@ -10,7 +10,7 @@ pub const VideoMode = packed struct(u16) {
 };
 
 pub const Control = extern struct {
-    pub const signature: u32 = @as(u32, @bitCast([4]u8{ 'V', 'E', 'S', 'A' }));
+    pub const expected_signature: u32 = @as(u32, @bitCast([4]u8{ 'V', 'E', 'S', 'A' }));
 
     // 0      Signatur    4   Hier sollte "VESA" stehen (=0x56455341)
     signature: u32,

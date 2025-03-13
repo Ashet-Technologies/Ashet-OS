@@ -17,7 +17,7 @@ pub const start = struct {
     pub export var multiboot_info: ?*multiboot.Info = null;
 
     comptime {
-        @export(multiboot_info, .{
+        @export(&multiboot_info, .{
             .name = "ashet_x86_kernel_multiboot_info",
         });
 

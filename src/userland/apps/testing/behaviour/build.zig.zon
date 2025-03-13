@@ -1,5 +1,5 @@
 .{
-    .name = "test-behaviour",
+    .name = .test_behaviour,
     .version = "0.1.0",
     .paths = .{ "build.zig", "build.zig.zon", "test-behaviour.zig" },
     .dependencies = .{

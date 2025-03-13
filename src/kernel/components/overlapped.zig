@@ -52,7 +52,7 @@ const AsyncHandler = struct {
     pub fn wrap(comptime func: anytype) AsyncHandler {
         const F = @TypeOf(func);
 
-        const fun_info = @typeInfo(F).Fn;
+        const fun_info = @typeInfo(F).@"fn";
 
         std.debug.assert(fun_info.return_type == void);
         std.debug.assert(fun_info.is_var_args == false);
@@ -67,7 +67,7 @@ const AsyncHandler = struct {
                 const Inputs = fun_info.params[1].type.?;
                 const Generic = Inputs.Overlapped;
                 comptime {
-                    std.debug.assert(@typeInfo(Inputs) == .Struct);
+                    std.debug.assert(@typeInfo(Inputs) == .@"struct");
                 }
 
                 const original: fn (*AsyncCall, Inputs) void = func;
@@ -731,7 +731,7 @@ fn background_worker_loop(context: ?*anyopaque) callconv(.C) u32 {
         while (q.dequeue()) |work_item| {
             const call, const ctx = work_item;
 
-            const worker: *const Background_Worker = @ptrCast(ctx);
+            const worker: *const Background_Worker = @alignCast(@ptrCast(ctx));
 
             logger.debug("execute overlapped call .{s}", .{@tagName(call.arc.type)});
             worker(&overlapped_context, call);

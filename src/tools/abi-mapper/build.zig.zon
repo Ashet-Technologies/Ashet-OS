@@ -1,5 +1,5 @@
 .{
-    .name = "abi-mapper",
+    .name = .abi_mapper,
     .version = "0.1.0",
     .dependencies = .{
         // TODO: Figure out how to use this cpython fork with pip
