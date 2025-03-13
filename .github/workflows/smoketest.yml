@@ -57,10 +57,14 @@ jobs:
           timeout 15s zig build -Doptimize-kernel=${{ matrix.optimize_kernel }} -Dmachine=${{ matrix.platform }} -Dno-gui run 2>&1 | tee kernel.log || true
 
           # Test if the desktop application did start:
-          grep -F "classic desktop ready!" kernel.log
+          if ! grep -F "classic desktop ready!" kernel.log; then
+            echo "kernel failed to start desktop application!" 1>&2
+            false
+          fi
 
           # Test that we didn't panic:
           if grep -Fi "Panic:" kernel.log; then
             # fail!
+            echo "kernel had a panic!" 1>&2
             false
           fi
