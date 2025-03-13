@@ -220,7 +220,10 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    // kernel_exe.bundle_ubsan_rt = false;
+    if (machine_id == .@"arm-ashet-hc" and optimize == .Debug) {
+        std.debug.print("arm-ashet-hc has no C sanitization enabled in Debug mode!\nSee https://github.com/ziglang/zig/issues/23052 and https://github.com/ziglang/zig/issues/23216 for more details!\n", .{});
+        kernel_exe.root_module.sanitize_c = false;
+    }
 
     if (kernel_target.result.cpu.arch.isThumb()) {
         // Disable LTO on arm as it fails hard on the linker:

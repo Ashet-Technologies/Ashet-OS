@@ -3,8 +3,11 @@
 # for 0.14, we need at least 0.14.0-dev.3213+53216d2f2
 zig := "zig-0.14.0"
 
+optimize_kernel := "false"
+optimize_apps := "Debug"
+
 build:
-    {{zig}} build --summary none
+    {{zig}} build --summary none -Doptimize-kernel={{optimize_kernel}} -Doptimize-apps={{optimize_apps}}
 
 [working-directory: 'src/kernel']
 build-kernel:
