@@ -1,6 +1,7 @@
 .{
     .name = .debug_filter,
     .version = "0.0.1",
+    .fingerprint = 0xdf9137f7fbbf0c39,
     .paths = .{
         "build.zig",
         "build.zig.zon",

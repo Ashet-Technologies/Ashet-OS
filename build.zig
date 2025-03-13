@@ -56,6 +56,9 @@ pub fn build(b: *std.Build) void {
 
     const debugfilter = debugfilter_dep.artifact("debug-filter");
 
+    // Install the debug-filter executable so we can utilize it for debugging
+    b.installArtifact(debugfilter);
+
     var os_deps = std.EnumArray(Machine, *std.Build.Dependency).initUndefined();
     for (std.enums.values(Machine)) |machine| {
         const step = machine_steps.get(machine);
