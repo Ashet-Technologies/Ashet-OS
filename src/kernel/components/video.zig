@@ -314,7 +314,7 @@ pub const defaults = struct {
 //             const new_field: std.builtin.Type.StructField = .{
 //                 .name = &name_,
 //                 .type = ashet.abi.ColorIndex,
-                   .default_value_ptr = &ashet.abi.ColorIndex.get(@as(u8, @intCast(index))),
+//                  .default_value_ptr = &ashet.abi.ColorIndex.get(@as(u8, @intCast(index))),
 //                 .is_comptime = true,
 //                 .alignment = 1,
 //             };
@@ -332,7 +332,7 @@ pub const defaults = struct {
 //     break :blk .{
 //         .palette = colors,
 //         .KnownColors = @Type(.{
-            .@"struct" = .{
+//            .@"struct" = .{
 //                 .layout = .auto,
 //                 .backing_integer = null,
 //                 .fields = fields,

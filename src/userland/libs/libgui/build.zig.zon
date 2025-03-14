@@ -1,5 +1,5 @@
 .{
-    .name = "ashet-gui",
+    .name = .ashet_gui,
     .version = "0.0.0",
     .dependencies = .{
         .AshetOS = .{

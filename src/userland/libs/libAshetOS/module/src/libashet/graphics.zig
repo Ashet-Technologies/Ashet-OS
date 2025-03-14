@@ -279,7 +279,7 @@ pub fn embed_comptime_bitmap(comptime palette: anytype, comptime def: []const u8
 
     const Palette = @TypeOf(palette);
 
-    const palette_fields = @typeInfo(Palette).Struct.fields;
+    const palette_fields = @typeInfo(Palette).@"struct".fields;
     for (palette_fields) |fld| {
         if (fld.name.len != 1 or fld.name[0] == '.' or fld.name[0] == ' ' or !std.ascii.isPrint(fld.name[0]))
             @compileError("Invalid palette entry: '" + fld.name + "'");
