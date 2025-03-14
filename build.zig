@@ -13,13 +13,19 @@ const default_machines = std.EnumSet(Machine).initMany(excluded_machines).comple
 
 const qemu_debug_options_default = "cpu_reset,guest_errors,unimp";
 
+const QemuDisplayMode = enum {
+    headless,
+    sdl,
+    gtk,
+};
+
 pub fn build(b: *std.Build) void {
     // Options:
     const optimize_kernel = b.option(bool, "optimize-kernel", "Should the kernel be optimized?") orelse false;
     const optimize_apps = b.option(std.builtin.OptimizeMode, "optimize-apps", "Optimization mode for the applications") orelse .Debug;
 
     const maybe_run_machine = b.option(Machine, "machine", "Selects which machine to run with the 'run' step");
-    const no_gui = b.option(bool, "no-gui", "Disables GUI for runners") orelse false;
+    const qemu_gui = b.option(QemuDisplayMode, "gui", "Selects GUI mode for QEMU (headless, sdl, gtk)") orelse .gtk;
     const qemu_debug_options = b.option(
         []const u8,
         "qemu-debug",
@@ -185,11 +191,7 @@ pub fn build(b: *std.Build) void {
                 vm_runner.addArgs(&.{ "-d", qemu_debug_options });
             }
 
-            if (no_gui) {
-                vm_runner.addArgs(&console_qemu_flags);
-            } else {
-                vm_runner.addArgs(&display_qemu_flags);
-            }
+            vm_runner.addArgs(qemu_display_flags.get(qemu_gui));
 
             for (machine_info.qemu_cli) |arg| {
                 variables.addArg(vm_runner, arg);
@@ -368,13 +370,19 @@ const generic_qemu_flags = [_][]const u8{
     "-s",
 };
 
-const display_qemu_flags = [_][]const u8{
-    "-display", "gtk,show-tabs=on",
-};
+const qemu_display_flags: std.EnumArray(QemuDisplayMode, []const []const u8) = .init(.{
+    .gtk = &[_][]const u8{
+        "-display", "gtk,show-tabs=on",
+    },
 
-const console_qemu_flags = [_][]const u8{
-    "-display", "vnc=0.0.0.0:0", // Binds to VNC Port 5900
-};
+    .sdl = &[_][]const u8{
+        "-display", "sdl,window-close=on",
+    },
+
+    .headless = &[_][]const u8{
+        "-display", "vnc=0.0.0.0:0", // Binds to VNC Port 5900
+    },
+});
 
 fn get_optional_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) ?std.Build.LazyPath {
     for (write_files.files.items) |file| {
