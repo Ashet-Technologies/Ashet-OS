@@ -5,7 +5,6 @@ const logger = std.log.scoped(.vga);
 const x86 = ashet.ports.platforms.x86;
 const VGA = @This();
 const Driver = ashet.drivers.Driver;
-const ColorIndex = ashet.abi.ColorIndex;
 const Color = ashet.abi.Color;
 const Resolution = ashet.abi.Size;
 
@@ -14,21 +13,14 @@ const modes = @import("x86/vga-mode-presets.zig");
 const width = 320;
 const height = 200;
 
-backbuffer: [width * height]ColorIndex align(ashet.memory.page_size) = undefined,
-palette: [256]Color = ashet.video.defaults.palette,
+backbuffer: [width * height]Color align(ashet.memory.page_size) = undefined,
 
 driver: Driver = .{
     .name = "VGA",
     .class = .{
         .video = .{
-            .getVideoMemoryFn = getVideoMemory,
-            .getPaletteMemoryFn = getPaletteMemory,
-            .setBorderFn = setBorder,
-            .flushFn = flush,
-            .getResolutionFn = getResolution,
-            .getMaxResolutionFn = getMaxResolution,
-            .getBorderFn = getBorder,
-            .setResolutionFn = setResolution,
+            .get_properties_fn = get_properties,
+            .flush_fn = flush,
         },
     },
 },
@@ -50,74 +42,40 @@ pub fn init(vga: *VGA) !void {
 
     writeVgaRegisters(modes.g_320x200x256);
 
-    vga.loadPalette(vga.palette);
+    vga.loadFixedPalette();
 
-    const vmem = @as([*]align(ashet.memory.page_size) ColorIndex, @ptrFromInt(0xA0000))[0 .. width * height];
+    const vmem = @as([*]align(ashet.memory.page_size) Color, @ptrFromInt(0xA0000))[0 .. width * height];
 
-    @memset(vmem, ashet.video.defaults.border);
+    @memset(vmem, ashet.video.defaults.border_color);
 
-    ashet.video.load_splash_screen(vmem, .{
+    ashet.video.load_splash_screen(.{
+        .base = vmem.ptr,
         .width = width,
         .height = height,
         .stride = width,
     });
 }
 
-fn getVideoMemory(driver: *Driver) []align(ashet.memory.page_size) ColorIndex {
+fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
     const vd: *VGA = @alignCast(@fieldParentPtr("driver", driver));
-    return &vd.backbuffer;
-}
-fn getPaletteMemory(driver: *Driver) *[256]Color {
-    const vd: *VGA = @alignCast(@fieldParentPtr("driver", driver));
-    return &vd.palette;
-}
-
-fn getResolution(driver: *Driver) Resolution {
-    const vd: *VGA = @alignCast(@fieldParentPtr("driver", driver));
-    _ = vd;
-
-    return Resolution{
-        .width = width,
-        .height = height,
+    return .{
+        .resolution = .{
+            .width = width,
+            .height = height,
+        },
+        .stride = width,
+        .video_memory = &vd.backbuffer,
+        .video_memory_mapping = .buffered,
     };
-}
-
-fn getMaxResolution(driver: *Driver) Resolution {
-    const vd: *VGA = @alignCast(@fieldParentPtr("driver", driver));
-    _ = vd;
-    return Resolution{
-        .width = width,
-        .height = height,
-    };
-}
-
-fn setResolution(driver: *Driver, _width: u15, _height: u15) void {
-    const vd: *VGA = @alignCast(@fieldParentPtr("driver", driver));
-    _ = vd;
-    _ = _width;
-    _ = _height;
-    logger.warn("resize not supported on plain VGA!", .{});
-}
-
-fn setBorder(driver: *Driver, color: ColorIndex) void {
-    const vd: *VGA = @alignCast(@fieldParentPtr("driver", driver));
-    _ = vd;
-    _ = color;
-}
-
-fn getBorder(driver: *Driver) ColorIndex {
-    const vd: *VGA = @alignCast(@fieldParentPtr("driver", driver));
-    _ = vd;
-    return ColorIndex.get(0);
 }
 
 fn flush(driver: *Driver) void {
     const vd: *VGA = @alignCast(@fieldParentPtr("driver", driver));
 
-    vd.loadPalette(vd.palette);
+    // vd.loadPalette(vd.palette);
 
-    const target = @as([*]align(ashet.memory.page_size) ColorIndex, @ptrFromInt(0xA0000))[0 .. width * height];
-    std.mem.copyForwards(ColorIndex, target, &vd.backbuffer);
+    const target = @as([*]align(ashet.memory.page_size) Color, @ptrFromInt(0xA0000))[0 .. width * height];
+    std.mem.copyForwards(Color, target, &vd.backbuffer);
 }
 
 fn writeVgaRegisters(regs: [61]u8) void {
@@ -217,6 +175,25 @@ fn loadPalette(vga: VGA, palette: [256]Color) void {
         x86.out(u8, PALETTE_DATA, (@as(u6, rgb.r) << 1) | (rgb.r >> 4));
         x86.out(u8, PALETTE_DATA, (@as(u6, rgb.g) << 0));
         x86.out(u8, PALETTE_DATA, (@as(u6, rgb.b) << 1) | (rgb.b >> 4));
+    }
+}
+
+fn loadFixedPalette(vga: VGA) void {
+    _ = vga;
+
+    x86.out(u8, PALETTE_INDEX, 0); // tell the VGA that palette data is coming.
+    for (0..256) |index| {
+        const color: Color = @bitCast(@as(u8, @intCast(index)));
+
+        const rgb = color.to_rgb888();
+
+        const r6 = Color.compress_channel(rgb.r, u6);
+        const g6 = Color.compress_channel(rgb.g, u6);
+        const b6 = Color.compress_channel(rgb.b, u6);
+
+        x86.out(u8, PALETTE_DATA, r6);
+        x86.out(u8, PALETTE_DATA, g6);
+        x86.out(u8, PALETTE_DATA, b6);
     }
 }
 

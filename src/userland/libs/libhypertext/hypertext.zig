@@ -1,6 +1,5 @@
 const std = @import("std");
 const ashet = @import("ashet");
-const gui = @import("ashet-gui");
 const hdoc = @import("hyperdoc");
 
 pub const Color = ashet.abi.ColorIndex;
@@ -8,7 +7,7 @@ pub const Point = ashet.abi.Point;
 pub const Size = ashet.abi.Size;
 pub const Rectangle = ashet.abi.Rectangle;
 
-pub const Font = gui.Font;
+pub const Font = ashet.graphics.Font;
 
 pub const Style = struct {
     color: Color,
@@ -35,7 +34,7 @@ const Block = hdoc.Block;
 const Span = hdoc.Span;
 
 pub fn renderDocument(
-    framebuffer: gui.Framebuffer,
+    framebuffer: ashet.graphics.Framebuffer,
     document: hdoc.Document,
     theme: Theme,
     position: Point,
@@ -70,7 +69,7 @@ const Renderer = struct {
     context: *const anyopaque,
     linkCallback: *const fn (*const anyopaque, ashet.abi.Rectangle, hdoc.Link) void,
 
-    framebuffer: gui.Framebuffer,
+    framebuffer: ashet.graphics.Framebuffer,
     document: hdoc.Document,
     theme: Theme,
     position: Point,

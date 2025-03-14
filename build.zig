@@ -276,8 +276,9 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
             "-machine", "pc",
             "-cpu",     "pentium2",
             "-drive",   "if=ide,index=0,format=raw,file=${DISK}",
-            "-vga",     "std",
             "--device", "isa-debug-exit",
+            "-vga", "none", // disable standard VGA
+            "--device", "VGA,xres=800,yres=480,xmax=800,ymax=480,edid=true", // replace with customized VGA and limited resolution
         },
     },
     .@"rv32-qemu-virt" = .{
@@ -337,7 +338,8 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
     .@"x86-hosted-linux" = .{
         .hosted_cli = &.{
             "drive:${DISK}",
-            "video:vnc:800:480:0.0.0.0:5900",
+            // "video:vnc:800:480:0.0.0.0:5900",
+            "video:wayland:800:480",
         },
     },
 

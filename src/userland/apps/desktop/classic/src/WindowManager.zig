@@ -12,7 +12,6 @@ const icons = @import("icons.zig");
 const Size = ashet.abi.Size;
 const Point = ashet.abi.Point;
 const Rectangle = ashet.abi.Rectangle;
-const ColorIndex = ashet.abi.ColorIndex;
 const Color = ashet.abi.Color;
 
 const WindowEvent = union(ashet.abi.WindowEvent.Type) {
@@ -906,7 +905,7 @@ fn minimized_from_cursor(wm: *WindowManager, pt: Point) ?MinimizedWindow {
     return null;
 }
 
-fn paintButton(q: *ashet.graphics.CommandQueue, bounds: Rectangle, style: themes.WindowStyle, bg: ColorIndex, icon: *const ashet.graphics.Bitmap) !void {
+fn paintButton(q: *ashet.graphics.CommandQueue, bounds: Rectangle, style: themes.WindowStyle, bg: Color, icon: *const ashet.graphics.Bitmap) !void {
     try q.draw_horizontal_line(Point.new(bounds.x, bounds.y), bounds.width, style.border);
     try q.draw_horizontal_line(Point.new(bounds.x, bounds.y + @as(u15, @intCast(bounds.width)) - 1), bounds.width, style.border);
     try q.draw_vertical_line(Point.new(bounds.x, bounds.y), bounds.height, style.border);

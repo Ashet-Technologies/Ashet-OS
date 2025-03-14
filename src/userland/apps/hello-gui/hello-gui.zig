@@ -103,7 +103,7 @@ pub fn main() !void {
                     event.keyboard.scancode,
                     @tagName(event.keyboard.key),
                     if (event.keyboard.text) |str|
-                        std.zig.fmtEscapes(std.mem.sliceTo(str, 0))
+                        std.unicode.fmtUtf8(std.mem.sliceTo(str, 0))
                     else
                         null,
                 });

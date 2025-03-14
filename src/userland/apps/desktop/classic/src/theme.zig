@@ -1,20 +1,20 @@
 const std = @import("std");
 const ashet = @import("ashet");
 
-const ColorIndex = ashet.abi.ColorIndex;
+const Color = ashet.abi.Color;
 const Font = ashet.abi.Font;
 
 pub const Theme = struct {
     active_window: WindowStyle,
     inactive_window: WindowStyle,
-    dark: ColorIndex,
-    desktop_color: ColorIndex,
-    window_fill: ColorIndex,
+    dark: Color,
+    desktop_color: Color,
+    window_fill: Color,
     title_font: Font,
 };
 
 pub const WindowStyle = struct {
-    border: ColorIndex,
-    font: ColorIndex,
-    title: ColorIndex,
+    border: Color,
+    font: Color,
+    title: Color,
 };
