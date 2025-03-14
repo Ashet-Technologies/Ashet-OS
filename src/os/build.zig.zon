@@ -23,6 +23,7 @@
         .desktop_classic = .{ .path = "../userland/apps/desktop/classic" },
         .clock = .{ .path = "../userland/apps/clock" },
         .paint = .{ .path = "../userland/apps/paint" },
+        .wiki = .{ .path = "../userland/apps/wiki" },
 
         // Externel deps:
         .@"disk-image-step" = .{

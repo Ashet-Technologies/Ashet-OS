@@ -1,0 +1,14 @@
+.{
+    .name = "ashet-gui",
+    .version = "0.0.0",
+    .dependencies = .{
+        .AshetOS = .{
+            .path = "../libAshetOS",
+        },
+        .@"text-editor" = .{
+            .url = "https://github.com/ikskuh/TextEditor/archive/221e0a7c6e4513b13d528acc26cb09e0f4388947.tar.gz",
+            .hash = "1220b2729566b9e67225b82f3a68ce875bfd2b65687c7bb4a314786e1a58af7f0532",
+        },
+    },
+    .paths = .{"."},
+}

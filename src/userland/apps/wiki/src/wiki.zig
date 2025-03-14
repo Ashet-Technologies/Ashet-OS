@@ -4,47 +4,79 @@ const htext = @import("hypertext");
 const hdoc = @import("hyperdoc");
 const gui = @import("ashet-gui");
 
-const MainWindow = @import("ui-layout");
+const MainWindow = @import("ui.zig");
 
 var main_window: MainWindow = undefined;
 
 pub usingnamespace ashet.core;
 
-const Window = ashet.ui.Window;
+const Window = ashet.gui.Window;
+const Framebuffer = ashet.graphics.Framebuffer;
 
 var wiki_software: WikiSoftware = undefined;
 
-var title_font: gui.Font = undefined;
-var sans_font: gui.Font = undefined;
-var mono_font: gui.Font = undefined;
+var title_font: ashet.graphics.Font = undefined;
+var sans_font: ashet.graphics.Font = undefined;
+var mono_font: ashet.graphics.Font = undefined;
+
+fn load_font(dir: ashet.fs.Directory, path: []const u8) !ashet.graphics.Framebuffer {
+    var file = try dir.openFile(path, .read_only, .open_existing);
+    defer file.close();
+
+    return try ashet.graphics.load_bitmap_file(file);
+}
 
 pub fn main() !void {
+    var argv_buffer: [8]ashet.abi.SpawnProcessArg = undefined;
+    const argv_len = ashet.userland.process.get_arguments(null, &argv_buffer);
+    const argv = argv_buffer[0..argv_len];
+
+    std.debug.assert(argv.len == 2);
+    std.debug.assert(argv[0].type == .string);
+    std.debug.assert(argv[1].type == .resource);
+
+    const desktop = try argv[1].value.resource.cast(.desktop);
+
     try gui.init();
 
-    main_window.linkAndInit();
+    {
+        var system_icons = try ashet.fs.Directory.openDrive(.system, "system/icons");
+        defer system_icons.close();
 
-    title_font = try gui.Font.fromSystemFont("sans", .{});
-    sans_font = try gui.Font.fromSystemFont("sans-6", .{});
-    mono_font = try gui.Font.fromSystemFont("mono-6", .{});
+        main_window.linkAndInit(.{
+            .back = try load_font(system_icons, "back.abm"),
+            .forward = try load_font(system_icons, "forward.abm"),
+            .home = try load_font(system_icons, "home.abm"),
+            .menu = try load_font(system_icons, "menu.abm"),
+        });
+    }
 
-    const h1_font = blk: {
-        var clone = title_font;
-        clone.vector.size = 8;
-        clone.vector.bold = true;
-        break :blk clone;
-    };
-    const h2_font = blk: {
-        var clone = title_font;
-        clone.vector.size = 7;
-        clone.vector.bold = false;
-        break :blk clone;
-    };
-    const h3_font = blk: {
-        var clone = title_font;
-        clone.vector.size = 6;
-        clone.vector.bold = false;
-        break :blk clone;
-    };
+    title_font = try ashet.graphics.get_system_font("sans");
+    sans_font = try ashet.graphics.get_system_font("sans-6");
+    mono_font = try ashet.graphics.get_system_font("mono-6");
+
+    // const h1_font = blk: {
+    //     var clone = title_font;
+    //     clone.vector.size = 8;
+    //     clone.vector.bold = true;
+    //     break :blk clone;
+    // };
+    // const h2_font = blk: {
+    //     var clone = title_font;
+    //     clone.vector.size = 7;
+    //     clone.vector.bold = false;
+    //     break :blk clone;
+    // };
+    // const h3_font = blk: {
+    //     var clone = title_font;
+    //     clone.vector.size = 6;
+    //     clone.vector.bold = false;
+    //     break :blk clone;
+    // };
+
+    const h1_font = title_font;
+    const h2_font = title_font;
+    const h3_font = title_font;
 
     theme.wiki.text.font = &sans_font;
     theme.wiki.link.font = &sans_font;
@@ -54,21 +86,28 @@ pub fn main() !void {
     theme.wiki.h2.font = &h2_font;
     theme.wiki.h3.font = &h3_font;
 
-    const window = try ashet.ui.createWindow(
-        "Hyper Wiki",
-        ashet.abi.Size.new(160, 80),
-        ashet.abi.Size.max,
-        ashet.abi.Size.new(200, 150),
-        .{},
+    const window = try ashet.gui.create_window(
+        desktop,
+        .{
+            .title = "Hyper Wiki",
+            .min_size = ashet.abi.Size.new(160, 80),
+            .max_size = ashet.abi.Size.max,
+            .initial_size = ashet.abi.Size.new(200, 150),
+        },
     );
-    defer ashet.ui.destroyWindow(window);
+    defer window.destroy_now();
 
-    for (window.pixels[0 .. window.stride * window.max_size.height]) |*c| {
-        c.* = ashet.ui.ColorIndex.get(0xF);
-    }
+    const framebuffer = try ashet.graphics.create_window_framebuffer(window);
+    defer framebuffer.release();
+
+    var command_queue = try ashet.graphics.CommandQueue.init(ashet.process.mem.allocator());
+    defer command_queue.deinit();
+
+    try command_queue.clear(ashet.graphics.known_colors.white);
+    try command_queue.submit(framebuffer, .{});
 
     // Make the window appear and don't block the system
-    ashet.process.yield();
+    ashet.process.thread.yield();
 
     var wiki_root_folder = try ashet.fs.Directory.openDrive(.system, "wiki");
     defer wiki_root_folder.close();
@@ -76,7 +115,7 @@ pub fn main() !void {
     wiki_software = WikiSoftware{
         .window = window,
         .root_dir = &wiki_root_folder,
-        .index = try loadIndex(&wiki_root_folder, ashet.process.allocator()),
+        .index = try loadIndex(&wiki_root_folder, ashet.process.mem.allocator()),
     };
     defer wiki_software.index.deinit();
 
@@ -92,31 +131,42 @@ pub fn main() !void {
         std.log.err("failed to load document wiki:/welcome.hdoc: {s}", .{@errorName(err)});
     };
 
-    var last_size = window.client_rectangle.size();
+    var last_size = ashet.graphics.get_framebuffer_size(framebuffer) catch @panic("invalid framebuffer");
 
     app_loop: while (true) {
+        const window_size = ashet.graphics.get_framebuffer_size(framebuffer) catch @panic("invalid framebuffer");
         {
-            const new_size = window.client_rectangle.size();
-            if (!last_size.eql(new_size)) {
+            if (!last_size.eql(window_size)) {
                 wiki_software.relayout_request = true;
-                last_size = new_size;
+                last_size = window_size;
             }
         }
 
         if (wiki_software.relayout_request) {
-            wiki_software.doLayout();
+            wiki_software.doLayout(window_size);
         }
         if (wiki_software.repaint_request) {
-            wiki_software.paintApp();
+            try wiki_software.paintApp(framebuffer, &command_queue);
         }
 
-        const event = ashet.ui.getEvent(window);
-        switch (event) {
-            .mouse => |data| {
+        const event_out = try ashet.overlapped.performOne(ashet.gui.GetWindowEvent, .{
+            .window = window,
+        });
+
+        const event = event_out.event;
+
+        switch (event.event_type) {
+            .mouse_enter,
+            .mouse_leave,
+            .mouse_motion,
+            .mouse_button_press,
+            .mouse_button_release,
+            => {
+                const data = event.mouse;
                 if (main_window.interface.sendMouseEvent(data)) |guievt|
                     wiki_software.handleEvent(guievt);
 
-                if (data.type == .button_press) {
+                if (event.event_type == .mouse_button_press) {
                     const point = Point.new(data.x, data.y);
 
                     const tree_view_bounds = main_window.tree_view.bounds.shrink(3);
@@ -160,7 +210,9 @@ pub fn main() !void {
                     }
                 }
             },
-            .keyboard => |data| {
+
+            .key_press, .key_release => {
+                const data = event.keyboard;
                 if (main_window.interface.sendKeyboardEvent(data)) |guievt|
                     wiki_software.handleEvent(guievt);
                 wiki_software.repaint_request = true;
@@ -172,6 +224,8 @@ pub fn main() !void {
             .window_moved => {},
             .window_resizing => wiki_software.relayout_request = true,
             .window_resized => wiki_software.relayout_request = true,
+
+            .widget_notify => {},
         }
     }
 }
@@ -190,12 +244,12 @@ const WikiSoftware = struct {
     relayout_request: bool = true,
 
     root_dir: *ashet.fs.Directory,
-    window: *const Window,
+    window: Window,
     index: Index,
     document: ?Document = null,
 
-    fn doLayout(wiki: *WikiSoftware) void {
-        main_window.layout(wiki.window.client_rectangle);
+    fn doLayout(wiki: *WikiSoftware, size: Size) void {
+        main_window.layout(Rectangle.new(Point.zero, size));
 
         {
             var treeview_height: i16 = 1;
@@ -228,43 +282,39 @@ const WikiSoftware = struct {
         wiki.relayout_request = false;
     }
 
-    fn paintApp(wiki: *WikiSoftware) void {
-        var fb = gui.Framebuffer.forWindow(wiki.window);
+    fn paintApp(wiki: *WikiSoftware, fb: ashet.graphics.Framebuffer, q: *ashet.graphics.CommandQueue) !void {
+        try q.clear(ashet.graphics.known_colors.white);
 
-        main_window.interface.paint(fb);
+        try main_window.interface.paint(q);
 
-        {
-            var offset_y: i16 = 1 - @as(i16, main_window.tree_scrollbar.control.scroll_bar.level);
-            renderSidePanel(
-                fb.view(main_window.tree_view.bounds.shrink(3)),
-                &wiki.index.root,
-                if (wiki.document) |page| page.leaf else null,
-                1,
-                &offset_y,
-            );
-        }
+        // TODO:
+        // {
+        //     var offset_y: i16 = 1 - @as(i16, main_window.tree_scrollbar.control.scroll_bar.level);
+        //     renderSidePanel(
+        //         fb.view(main_window.tree_view.bounds.shrink(3)),
+        //         &wiki.index.root,
+        //         if (wiki.document) |page| page.leaf else null,
+        //         1,
+        //         &offset_y,
+        //     );
+        // }
 
-        if (wiki.document) |*page| {
-            const doc_fb = fb.view(main_window.doc_view.bounds.shrink(4));
+        // if (wiki.document) |*page| {
+        //     const doc_fb = fb.view(main_window.doc_view.bounds.shrink(4));
 
-            page.links.shrinkRetainingCapacity(0);
+        //     page.links.shrinkRetainingCapacity(0);
 
-            htext.renderDocument(
-                doc_fb,
-                page.hyperdoc,
-                theme.wiki,
-                Point.new(0, -@as(i16, main_window.doc_v_scrollbar.control.scroll_bar.level)),
-                page,
-                linkCallback,
-            );
-        }
+        //     htext.renderDocument(
+        //         doc_fb,
+        //         page.hyperdoc,
+        //         theme.wiki,
+        //         Point.new(0, -@as(i16, main_window.doc_v_scrollbar.control.scroll_bar.level)),
+        //         page,
+        //         linkCallback,
+        //     );
+        // }
 
-        ashet.ui.invalidate(wiki.window, .{
-            .x = 0,
-            .y = 0,
-            .width = fb.width,
-            .height = fb.height,
-        });
+        try q.submit(fb, .{});
         wiki.repaint_request = false;
     }
 
@@ -297,7 +347,7 @@ const WikiSoftware = struct {
     fn fetchDocumentFromUri(dir: *ashet.fs.Directory, index: *const Index, url_string: []const u8) !Document {
         const uri = try std.Uri.parse(url_string);
 
-        var arena = std.heap.ArenaAllocator.init(ashet.process.allocator());
+        var arena = std.heap.ArenaAllocator.init(ashet.process.mem.allocator());
         defer arena.deinit();
 
         const path = try uri.path.toRawMaybeAlloc(arena.allocator());
@@ -325,7 +375,7 @@ const WikiSoftware = struct {
     }
 
     fn fetchDocument(dir: *ashet.fs.Directory, leaf: *const Index.Leaf) !Document {
-        var list = std.ArrayList(u8).init(ashet.process.allocator());
+        var list = std.ArrayList(u8).init(ashet.process.mem.allocator());
         defer list.deinit();
 
         var file = try dir.openFile(leaf.file_name, .read_only, .open_existing);
@@ -339,13 +389,13 @@ const WikiSoftware = struct {
 
         std.debug.assert(len == list.items.len);
 
-        var doc = try hdoc.parse(ashet.process.allocator(), list.items, null);
+        var doc = try hdoc.parse(ashet.process.mem.allocator(), list.items, null);
         errdefer doc.deinit();
 
         return Document{
             .hyperdoc = doc,
             .leaf = leaf,
-            .links = std.ArrayList(Document.ScreenLink).init(ashet.process.allocator()),
+            .links = std.ArrayList(Document.ScreenLink).init(ashet.process.mem.allocator()),
         };
     }
 
@@ -391,10 +441,10 @@ const WikiSoftware = struct {
     }
 };
 
-const Point = ashet.ui.Point;
-const Size = ashet.ui.Size;
-const Rectangle = ashet.ui.Rectangle;
-const ColorIndex = ashet.ui.ColorIndex;
+const Point = ashet.graphics.Point;
+const Size = ashet.graphics.Size;
+const Rectangle = ashet.graphics.Rectangle;
+const ColorIndex = ashet.graphics.ColorIndex;
 
 const theme = struct {
     const sidepanel_sel = ColorIndex.get(0x12); // gold
@@ -421,7 +471,7 @@ const theme = struct {
     };
 };
 
-fn renderSidePanel(fb: gui.Framebuffer, list: *const Index.List, leaf: ?*const Index.Leaf, x: i16, y: *i16) void {
+fn renderSidePanel(fb: Framebuffer, list: *const Index.List, leaf: ?*const Index.Leaf, x: i16, y: *i16) void {
     const font = &sans_font;
 
     for (list.nodes) |*node| {

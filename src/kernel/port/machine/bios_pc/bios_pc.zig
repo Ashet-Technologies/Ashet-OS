@@ -366,6 +366,6 @@ export const multiboot_header linksection(".text.multiboot") = x86.multiboot.Hea
 
     .mode_type = .linear_fb,
     .width = 800,
-    .height = 480,
+    .height = 600,
     .depth = 32,
 });

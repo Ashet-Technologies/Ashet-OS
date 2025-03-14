@@ -1,0 +1,20 @@
+.{
+    .name = "ashet-abi",
+    .version = "0.1.0",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+    .dependencies = .{
+        .abi = .{
+            .path = "../../../../abi",
+        },
+        .std = .{
+            .path = "../../../../../vendor/ashet-std",
+        },
+        .agp = .{
+            .path = "../../agp",
+        },
+    },
+}

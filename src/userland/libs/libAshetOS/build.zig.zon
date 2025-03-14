@@ -10,17 +10,14 @@
         .abi = .{
             .path = "../../../abi",
         },
-        .std = .{
-            .path = "../../../../vendor/ashet-std",
-        },
-        .agp = .{
-            .path = "../agp",
-        },
         .ashex = .{
             .path = "../../../tools/exe-tool",
         },
         .mkicon = .{
             .path = "../../../tools/mkicon",
+        },
+        .libashet = .{
+            .path = "module",
         },
     },
 }

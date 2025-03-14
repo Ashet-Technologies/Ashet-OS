@@ -38,8 +38,8 @@ backing_palette: [256]Color = ashet.video.defaults.palette,
 border_color: ColorIndex = ashet.video.defaults.border,
 
 graphics_resized: bool = true,
-graphics_width: u16 = 256,
-graphics_height: u16 = 128,
+graphics_width: u16 ,
+graphics_height: u16 ,
 
 pub fn init(allocator: std.mem.Allocator, mbinfo: *multiboot.Info) !VESA_BIOS_Extension {
     if (!mbinfo.flags.vbe)
@@ -143,6 +143,9 @@ pub fn init(allocator: std.mem.Allocator, mbinfo: *multiboot.Info) !VESA_BIOS_Ex
         .vbe_mode = vbe_mode,
 
         .backing_buffer = vmem,
+
+        .graphics_width = @intCast(framebuffer.width),
+        .graphics_height = @intCast(framebuffer.height),
     };
 }
 
