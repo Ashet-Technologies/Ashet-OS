@@ -93,6 +93,8 @@ pub const log_levels = struct {
     pub var storage: LogLevel = .info; // very noise modules!
     pub var x86_vmm: LogLevel = .info; // very noise modules!
 
+    pub var wayland_display: LogLevel = .info;
+
     // drivers:
     pub var @"virtio-net": LogLevel = .info;
     pub var @"virtio-gpu": LogLevel = .info;
