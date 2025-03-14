@@ -75,6 +75,13 @@
             .hash = "1220099912cbd95a702fc56da87c43527b527fed84ae81e473bb1692cbe79ae69ed3",
         },
 
+        .shimizu = .{
+            // .url = "https://codeberg.org/klaji/shimizu/archive/c4464ed81f341aedf9ce2ed77fb83b02c48f2b4e.tar.gz",
+            // .hash = "shimizu-0.0.0-irfMUWDLAgCUj3fOYpifKULRmx60oO8B0wRd8ORK2ucR",
+            .url = "https://git.sr.ht/~geemili/shimizu/archive/c4464ed81f341aedf9ce2ed77fb83b02c48f2b4e.tar.gz",
+            .hash = "shimizu-0.0.0-AAAAAOu3AQCHXpy5YpvfXLU4e0CyKdCa5QecWVGeTUni",
+        },
+
         // External tooling:
 
         .regz = .{

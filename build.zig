@@ -338,7 +338,8 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
     .@"x86-hosted-linux" = .{
         .hosted_cli = &.{
             "drive:${DISK}",
-            "video:vnc:800:480:0.0.0.0:5900",
+            // "video:vnc:800:480:0.0.0.0:5900",
+            "video:wayland:800:480",
         },
     },
 
