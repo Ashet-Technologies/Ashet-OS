@@ -75,9 +75,16 @@
             .hash = "1220099912cbd95a702fc56da87c43527b527fed84ae81e473bb1692cbe79ae69ed3",
         },
 
+        // Wayland Support
         .shimizu = .{
             .url = "https://codeberg.org/klaji/shimizu/archive/c4464ed81f341aedf9ce2ed77fb83b02c48f2b4e.tar.gz",
             .hash = "shimizu-0.0.0-irfMUWDLAgCUj3fOYpifKULRmx60oO8B0wRd8ORK2ucR",
+        },
+
+        // X11 Support
+        .zigx = .{
+            .url = "git+https://github.com/Ashet-Technologies/zigx#c2a01884c594cf2a0c7b201810a03b3734c38bbf",
+            .hash = "zigx-0.0.0-P8vvS6FXCAAwHxXc3uNJcZLfut5dPposcOFMKHxcRnp7",
         },
 
         // External tooling:
