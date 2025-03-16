@@ -166,12 +166,17 @@ fn initialize() !void {
             } else if (std.mem.eql(u8, device_type, "wayland")) {
                 // "video:wayland:<width>:<height>"
 
-                const display = try Wayland_Display.init(
+                const display = Wayland_Display.init(
                     global_memory,
                     video_out_index,
                     res_x,
                     res_y,
-                );
+                ) catch |err| switch (err) {
+                    error.NoWaylandSupport => {
+                        @panic("Could not find Wayland socket!");
+                    },
+                    else => |e| return e,
+                };
 
                 ashet.drivers.install(&display.screen.driver);
 

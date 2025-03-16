@@ -205,6 +205,11 @@ pub fn build(b: *std.Build) void {
             for (machine_info.hosted_cli) |arg| {
                 variables.addArg(vm_runner, arg);
             }
+            if (machine_info.hosted_video_setup.get(qemu_gui)) |gui_args| {
+                for (gui_args) |arg| {
+                    variables.addArg(vm_runner, arg);
+                }
+            }
         }
 
         if (b.args) |args| {
@@ -260,6 +265,8 @@ const MachineStartupConfig = struct {
     qemu_cli: []const []const u8 = &.{},
 
     hosted_cli: []const []const u8 = &.{},
+
+    hosted_video_setup: std.EnumArray(QemuDisplayMode, ?[]const []const u8) = .initFill(null),
 };
 
 const platform_info_map = std.EnumArray(Platform, PlatformStartupConfig).init(.{
@@ -342,9 +349,14 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
     .@"x86-hosted-linux" = .{
         .hosted_cli = &.{
             "drive:${DISK}",
-            // "video:vnc:800:480:0.0.0.0:5900",
-            "video:wayland:800:480",
         },
+
+        .hosted_video_setup = .init(.{
+            .headless = &.{"video:vnc:800:480:0.0.0.0:5900"},
+            .gtk = &.{"video:wayland:800:480"},
+            .sdl = &.{"video:wayland:800:480"},
+            .cocoa = &.{},
+        }),
     },
 
     // .@"pc-efi" = .{

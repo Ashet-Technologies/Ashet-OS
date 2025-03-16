@@ -74,7 +74,10 @@ pub fn init(
     @memset(server.screen.frontbuffer, ashet.abi.Color.blue);
     @memset(server.screen.backbuffer, ashet.abi.Color.red);
 
-    server.connection = try shimizu.posix.Connection.open(allocator, .{});
+    server.connection = shimizu.posix.Connection.open(allocator, .{}) catch |err| switch (err) {
+        error.FileNotFound => return error.NoWaylandSupport,
+        else => |e| return e,
+    };
     errdefer server.connection.close();
 
     const connection = server.connection.connection();
