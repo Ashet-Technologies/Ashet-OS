@@ -17,6 +17,7 @@ const QemuDisplayMode = enum {
     headless,
     sdl,
     gtk,
+    cocoa,
 };
 
 pub fn build(b: *std.Build) void {
@@ -25,7 +26,10 @@ pub fn build(b: *std.Build) void {
     const optimize_apps = b.option(std.builtin.OptimizeMode, "optimize-apps", "Optimization mode for the applications") orelse .Debug;
 
     const maybe_run_machine = b.option(Machine, "machine", "Selects which machine to run with the 'run' step");
-    const qemu_gui = b.option(QemuDisplayMode, "gui", "Selects GUI mode for QEMU (headless, sdl, gtk)") orelse .gtk;
+    const qemu_gui = b.option(QemuDisplayMode, "gui", "Selects GUI mode for QEMU (headless, sdl, gtk)") orelse if (b.graph.host.result.os.tag.isDarwin())
+        QemuDisplayMode.cocoa
+    else
+        QemuDisplayMode.gtk;
     const qemu_debug_options = b.option(
         []const u8,
         "qemu-debug",
@@ -375,6 +379,10 @@ const generic_qemu_flags = [_][]const u8{
 const qemu_display_flags: std.EnumArray(QemuDisplayMode, []const []const u8) = .init(.{
     .gtk = &[_][]const u8{
         "-display", "gtk,show-tabs=on",
+    },
+
+    .cocoa = &[_][]const u8{
+        "-display", "cocoa",
     },
 
     .sdl = &[_][]const u8{
