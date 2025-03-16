@@ -17,6 +17,7 @@ const QemuDisplayMode = enum {
     headless,
     sdl,
     gtk,
+    cocoa,
 };
 
 pub fn build(b: *std.Build) void {
@@ -25,7 +26,15 @@ pub fn build(b: *std.Build) void {
     const optimize_apps = b.option(std.builtin.OptimizeMode, "optimize-apps", "Optimization mode for the applications") orelse .Debug;
 
     const maybe_run_machine = b.option(Machine, "machine", "Selects which machine to run with the 'run' step");
-    const qemu_gui = b.option(QemuDisplayMode, "gui", "Selects GUI mode for QEMU (headless, sdl, gtk)") orelse .gtk;
+    const qemu_gui = b.option(
+        QemuDisplayMode,
+        "gui",
+        "Selects GUI mode for QEMU",
+    ) orelse @as(QemuDisplayMode, switch (b.graph.host.result.os.tag) {
+        .macos => .cocoa,
+        else => .gtk,
+    });
+
     const qemu_debug_options = b.option(
         []const u8,
         "qemu-debug",
@@ -374,13 +383,14 @@ const qemu_display_flags: std.EnumArray(QemuDisplayMode, []const []const u8) = .
     .gtk = &[_][]const u8{
         "-display", "gtk,show-tabs=on",
     },
-
     .sdl = &[_][]const u8{
         "-display", "sdl,window-close=on",
     },
-
     .headless = &[_][]const u8{
         "-display", "vnc=0.0.0.0:0", // Binds to VNC Port 5900
+    },
+    .cocoa = &[_][]const u8{
+        "-display", "cocoa",
     },
 });
 
