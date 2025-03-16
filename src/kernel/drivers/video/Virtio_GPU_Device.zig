@@ -60,7 +60,7 @@ pub fn init(allocator: std.mem.Allocator, index: usize, regs: *volatile virtio.C
 inline fn pal(vd: *Virtio_GPU_Device, color: Color) u32 {
     _ = vd;
     @setRuntimeSafety(false);
-    return color.to_rgb32();
+    return @intFromEnum(color.to_abgr8888());
 }
 
 fn get_properties(driver: *Driver) ashet.video.DeviceProperties {

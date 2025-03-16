@@ -2089,12 +2089,26 @@ pub const Color = packed struct(u8) {
         };
     }
 
-    /// Converts the color to `0x00BBGGRR`
-    pub fn to_rgb32(color: Color) u32 {
+    /// Converts the color to `0xFFRRGGBB`
+    pub fn to_argb8888(color: Color) ARGB8888 {
         const exp = color.to_rgb888();
-        return @as(u32, exp.r) << 0 |
+        const value: u32 = 0xFF000000 |
+            @as(u32, exp.b) << 0 |
+            @as(u32, exp.g) << 8 |
+            @as(u32, exp.r) << 16;
+
+        return @enumFromInt(value);
+    }
+
+    /// Converts the color to `0xFFBBGGRR`
+    pub fn to_abgr8888(color: Color) ABGR8888 {
+        const exp = color.to_rgb888();
+        const value: u32 = 0xFF000000 |
+            @as(u32, exp.r) << 0 |
             @as(u32, exp.g) << 8 |
             @as(u32, exp.b) << 16;
+
+        return @enumFromInt(value);
     }
 
     pub const RGB888 = extern struct {
@@ -2129,6 +2143,20 @@ pub const Color = packed struct(u8) {
             @compileError("T must have 8 bits or less");
         return @truncate(src_value >> (8 - bits));
     }
+
+    /// 32-bit ARGB format, [31:0] A:R:G:B 8:8:8:8 little endian
+    ///
+    /// Layed out as a `u32` encoding `0xAARRGGBB`.
+    pub const ARGB8888 = enum(u32) {
+        _,
+    };
+
+    /// 32-bit ABGR format, [31:0] A:B:G:R 8:8:8:8 little endian
+    ///
+    /// Layed out as a `u32` encoding `0xAABBGGRR`.
+    pub const ABGR8888 = enum(u32) {
+        _,
+    };
 };
 
 pub const InputEvent = extern union {

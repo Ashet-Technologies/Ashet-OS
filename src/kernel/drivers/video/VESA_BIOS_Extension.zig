@@ -216,9 +216,16 @@ fn flush(driver: *Driver) void {
 }
 
 inline fn pal(vd: *VESA_BIOS_Extension, color: Color) RGB {
-    @setRuntimeSafety(false);
     _ = vd;
-    return @bitCast(color.to_rgb32());
+
+    @setRuntimeSafety(false);
+    const rgb = color.to_rgb888();
+    return .{
+        .r = rgb.r,
+        .g = rgb.g,
+        .b = rgb.b,
+        .x = 0,
+    };
 }
 
 const FramebufferConfig = struct {
@@ -328,7 +335,7 @@ const FramebufferConfig = struct {
     }
 };
 
-const RGB = packed struct {
+const RGB = packed struct(u32) {
     r: u8,
     g: u8,
     b: u8,

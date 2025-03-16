@@ -14,32 +14,31 @@ const Wayland_Display = @This();
 allocator: std.mem.Allocator,
 index: usize,
 
-connection: shimizu.Connection,
+connection: shimizu.posix.Connection,
 
-wl_surface: shimizu.Proxy(wayland.wl_surface),
+wl_surface: wayland.wl_surface,
 
-xdg_surface: shimizu.Proxy(xdg_shell.xdg_surface),
-xdg_toplevel: shimizu.Proxy(xdg_shell.xdg_toplevel),
+xdg_surface: xdg_shell.xdg_surface,
+xdg_toplevel: xdg_shell.xdg_toplevel,
 
-wl_compositor: shimizu.Proxy(wayland.wl_compositor),
-xdg_wm_base: shimizu.Proxy(xdg_shell.xdg_wm_base),
-wl_shm: shimizu.Proxy(wayland.wl_shm),
+wl_compositor: wayland.wl_compositor,
+has_wl_compositor: bool = false,
 
-globals: Globals,
+xdg_wm_base: xdg_shell.xdg_wm_base,
+has_xdg_wm_base: bool = false,
+
+wl_shm: wayland.wl_shm,
+has_wl_shm: bool = false,
+
+seat: ?Seat = null,
 
 // allocate a some framebuffers for rendering to
-framebuffers: Framebuffers,
+swap_chain: shimizu.posix.ShmSwapChain,
 
 // state to keep track of while rendering
 frame_count: u32 = 0,
 should_render: bool = true,
 running: bool = true,
-
-// event listeners
-xdg_toplevel_listener: shimizu.Listener,
-frame_callback_listener: shimizu.Listener,
-xdg_wm_base_ping_listener: shimizu.Listener,
-xdg_surface_listener: shimizu.Listener,
 
 // devices:
 screen: ashet.drivers.video.Host_VNC_Output,
@@ -69,79 +68,70 @@ pub fn init(
         .xdg_wm_base = undefined,
         .wl_shm = undefined,
 
-        .framebuffers = undefined,
-        .xdg_toplevel_listener = undefined,
-        .frame_callback_listener = undefined,
-        .xdg_wm_base_ping_listener = undefined,
-        .xdg_surface_listener = undefined,
-
-        .globals = .{
-            .wl_shm = null,
-            .wl_compositor = null,
-            .xdg_wm_base = null,
-            .connection = &server.connection,
-        },
+        .swap_chain = undefined,
     };
 
     @memset(server.screen.frontbuffer, ashet.abi.Color.blue);
     @memset(server.screen.backbuffer, ashet.abi.Color.red);
 
-    server.connection = try shimizu.openConnection(allocator, .{});
+    server.connection = try shimizu.posix.Connection.open(allocator, .{});
     errdefer server.connection.close();
 
-    const display = server.connection.getDisplayProxy();
-    const registry = try display.sendRequest(.get_registry, .{});
-    const registry_done_callback = try display.sendRequest(.sync, .{});
+    const connection = server.connection.connection();
 
-    registry.setEventListener(&server.globals.listener, Globals.onRegistryEvent, null);
+    const display = server.connection.getDisplay();
+    const registry = try display.get_registry(connection);
+    const registry_done_callback = try display.sync(connection);
+
+    try connection.setEventListener(registry, *Wayland_Display, onRegistryEvent, server);
 
     var registration_done = false;
-    var registration_done_listener: shimizu.Listener = undefined;
-    registry_done_callback.setEventListener(&registration_done_listener, onWlCallbackSetTrue, &registration_done);
+    try connection.setEventListener(
+        registry_done_callback,
+        *bool,
+        onWlCallbackSetTrue,
+        &registration_done,
+    );
 
     while (!registration_done) {
         try server.connection.recv();
     }
 
-    server.wl_compositor = .{
-        .connection = &server.connection,
-        .id = server.globals.wl_compositor orelse return error.WlCompositorNotFound,
-    };
-    server.xdg_wm_base = .{
-        .connection = &server.connection,
-        .id = server.globals.xdg_wm_base orelse return error.XdgWmBaseNotFound,
-    };
-    server.wl_shm = .{
-        .connection = &server.connection,
-        .id = server.globals.wl_shm orelse return error.WlShmNotFound,
-    };
+    if (!server.has_wl_compositor) return error.WlCompositorNotFound;
+    if (!server.has_xdg_wm_base) return error.XdgWmBaseNotFound;
+    if (!server.has_wl_shm) return error.WlShmNotFound;
 
     // set up a xdg_wm_base listener for the ping event
+    try connection.setEventListener(server.xdg_wm_base, void, onXdgWmBaseEvent, {});
 
-    server.xdg_wm_base.setEventListener(&server.xdg_wm_base_ping_listener, onXdgWmBaseEvent, null);
+    server.wl_surface = try server.wl_compositor.create_surface(connection);
+    server.xdg_surface = try server.xdg_wm_base.get_xdg_surface(connection, server.wl_surface);
+    server.xdg_toplevel = try server.xdg_surface.get_toplevel(connection);
 
-    server.wl_surface = try server.wl_compositor.sendRequest(.create_surface, .{});
-    server.xdg_surface = try server.xdg_wm_base.sendRequest(.get_xdg_surface, .{ .surface = server.wl_surface.id });
-    server.xdg_toplevel = try server.xdg_surface.sendRequest(.get_toplevel, .{});
+    try server.xdg_toplevel.set_app_id(connection, "computer.ashet.os");
 
-    try server.xdg_toplevel.sendRequest(.set_app_id, .{
-        .app_id = "computer.ashet.os",
-    });
-
-    try server.wl_surface.sendRequest(.commit, .{});
+    try server.wl_surface.commit(connection);
 
     var surface_configured = false;
 
-    server.xdg_surface.setEventListener(&server.xdg_surface_listener, onXdgSurfaceEvent, &surface_configured);
+    try connection.setEventListener(
+        server.xdg_surface,
+        *bool,
+        onXdgSurfaceEvent,
+        &surface_configured,
+    );
 
     while (!surface_configured) {
         try server.connection.recv();
     }
 
-    try server.framebuffers.allocate(server.wl_shm, .{ width, height }, 3);
-    errdefer server.framebuffers.deinit();
+    // allocate a some framebuffers for rendering to
+    server.swap_chain = .init(connection, server.wl_shm);
+    errdefer server.swap_chain.deinit();
 
-    server.xdg_toplevel.setEventListener(&server.xdg_toplevel_listener, onXdgToplevelEvent, &server.running);
+    try server.swap_chain.ensureBufferCapacity(width, height);
+
+    try connection.setEventListener(server.xdg_toplevel, *bool, onXdgToplevelEvent, &server.running);
 
     return server;
 }
@@ -159,21 +149,20 @@ pub fn process_events_wrapper(server_ptr: ?*anyopaque) callconv(.C) u32 {
 pub fn process_events(server: *Wayland_Display) !void {
     while (server.running) {
         if (server.should_render) {
-            // logger.info("swap", .{});
-            const framebuffer = try server.framebuffers.getBuffer();
+            const wl_buffer = try server.swap_chain.getBuffer(server.screen.width, server.screen.height);
 
-            // put some interesting colors into the framebuffer
+            const framebuffer = try server.swap_chain.mapBuffer(wl_buffer);
+            defer server.swap_chain.unmapBuffer(wl_buffer, framebuffer);
+            const pixels = std.mem.bytesAsSlice(Pixel, framebuffer);
 
-            // renderGradient(framebuffer.pixels, server.framebuffers.size, server.frame_count);
+            server.copyFromDriver(pixels);
 
-            server.copyFromDriver(server.framebuffers.size, framebuffer.pixels);
+            const frame_callback = try server.wl_surface.frame(server.connection.connection());
+            try server.connection.connection().setEventListener(frame_callback, *bool, onWlCallbackSetTrue, &server.should_render);
 
-            const frame_callback = try server.wl_surface.sendRequest(.frame, .{});
-            frame_callback.setEventListener(&server.frame_callback_listener, onWlCallbackSetTrue, &server.should_render);
-
-            try server.wl_surface.sendRequest(.attach, .{ .buffer = framebuffer.wl_buffer.id, .x = 0, .y = 0 });
-            try server.wl_surface.sendRequest(.damage, .{ .x = 0, .y = 0, .width = std.math.maxInt(i32), .height = std.math.maxInt(i32) });
-            try server.wl_surface.sendRequest(.commit, .{});
+            try server.wl_surface.attach(server.connection.connection(), wl_buffer, 0, 0);
+            try server.wl_surface.damage(server.connection.connection(), 0, 0, std.math.maxInt(i32), std.math.maxInt(i32));
+            try server.wl_surface.commit(server.connection.connection());
 
             server.should_render = false;
             server.frame_count += 1;
@@ -188,9 +177,9 @@ pub fn process_events(server: *Wayland_Display) !void {
     std.process.exit(0);
 }
 
-fn copyFromDriver(server: *Wayland_Display, dst_size: [2]u32, pixels: []Pixel) void {
-    const copy_w = @min(dst_size[0], server.screen.width);
-    const copy_h = @min(dst_size[1], server.screen.height);
+fn copyFromDriver(server: *Wayland_Display, pixels: []Pixel) void {
+    const copy_w = server.screen.width;
+    const copy_h = server.screen.height;
 
     var src_ptr: [*]const ashet.abi.Color = server.screen.backbuffer.ptr;
     var dst_ptr: [*]Pixel = pixels.ptr;
@@ -200,25 +189,27 @@ fn copyFromDriver(server: *Wayland_Display, dst_size: [2]u32, pixels: []Pixel) v
         const dst_row = dst_ptr[0..copy_w];
 
         for (dst_row, src_row) |*d, s| {
-            d.* = s.to_rgb888();
+            d.* = s.to_argb8888();
         }
 
         src_ptr += server.screen.width;
-        dst_ptr += dst_size[0];
+        dst_ptr += server.screen.width;
     }
 }
 
-fn onXdgSurfaceEvent(listener: *shimizu.Listener, xdg_surface: shimizu.Proxy(xdg_shell.xdg_surface), event: xdg_shell.xdg_surface.Event) shimizu.Listener.Error!void {
-    const surface_configured: *bool = @ptrCast((listener.userdata.?));
-
+fn onXdgSurfaceEvent(
+    surface_configured: *bool,
+    connection: shimizu.Connection,
+    xdg_surface: xdg_shell.xdg_surface,
+    event: xdg_shell.xdg_surface.Event,
+) !void {
     switch (event) {
         .configure => |configure| {
-            try xdg_surface.sendRequest(.ack_configure, .{ .serial = configure.serial });
+            try xdg_surface.ack_configure(connection, configure.serial);
             surface_configured.* = true;
         },
     }
 }
-
 /// An ARGB framebuffer
 pub const Framebuffers = struct {
     size: [2]u32,
@@ -323,12 +314,16 @@ fn renderGradient(framebuffer: []Pixel, fb_size: [2]u32, frame_count: u32) void 
     }
 }
 
-pub const Pixel = ashet.abi.Color.RGB888; //  = extern struct { r: u8, g: u8, b: u8, a: u8 };
+pub const Pixel = ashet.abi.Color.ARGB8888;
 
-fn onXdgToplevelEvent(listener: *shimizu.Listener, xdg_toplevel: shimizu.Proxy(xdg_shell.xdg_toplevel), event: xdg_shell.xdg_toplevel.Event) shimizu.Listener.Error!void {
+fn onXdgToplevelEvent(
+    running: *bool,
+    connection: shimizu.Connection,
+    xdg_toplevel: xdg_shell.xdg_toplevel,
+    event: xdg_shell.xdg_toplevel.Event,
+) !void {
     _ = xdg_toplevel;
-
-    const running: *bool = @ptrCast((listener.userdata.?));
+    _ = connection;
 
     switch (event) {
         .close => running.* = false,
@@ -336,102 +331,110 @@ fn onXdgToplevelEvent(listener: *shimizu.Listener, xdg_toplevel: shimizu.Proxy(x
     }
 }
 
-fn onXdgWmBaseEvent(listener: *shimizu.Listener, xdg_wm_base: shimizu.Proxy(xdg_shell.xdg_wm_base), event: xdg_shell.xdg_wm_base.Event) shimizu.Listener.Error!void {
-    _ = listener;
+fn onXdgWmBaseEvent(
+    _: void,
+    connection: shimizu.Connection,
+    xdg_wm_base: xdg_shell.xdg_wm_base,
+    event: xdg_shell.xdg_wm_base.Event,
+) !void {
     switch (event) {
         .ping => |ping| {
-            try xdg_wm_base.sendRequest(.pong, .{ .serial = ping.serial });
+            try xdg_wm_base.pong(connection, ping.serial);
         },
     }
 }
 
-fn onWlCallbackSetTrue(listener: *shimizu.Listener, wl_callback: shimizu.Proxy(wayland.wl_callback), event: wayland.wl_callback.Event) shimizu.Listener.Error!void {
+fn onWlCallbackSetTrue(
+    bool_ptr: *bool,
+    connection: shimizu.Connection,
+    wl_callback: shimizu.core.wl_callback,
+    event: shimizu.core.wl_callback.Event,
+) !void {
+    _ = connection;
     _ = wl_callback;
     _ = event;
 
-    const bool_ptr: *bool = @ptrCast((listener.userdata.?));
     bool_ptr.* = true;
 }
 
+fn create_wayland_object(connection: shimizu.Connection, registry: wayland.wl_registry, global: wayland.wl_registry.Event.Global, comptime T: type) !T {
+    const obj_id = try registry.bind(
+        connection,
+        global.name,
+        T.NAME,
+        T.VERSION,
+    );
+    return @enumFromInt(@intFromEnum(obj_id));
+}
+
 const Seat = struct {
-    connection: *shimizu.Connection,
-    listener: shimizu.Listener,
+    wl_seat: wayland.wl_seat,
 
-    wl_seat: ?shimizu.Object.WithInterface(wayland.wl_seat),
-
-    wl_pointer: ?shimizu.Object.WithInterface(wayland.wl_pointer) = null,
-    pointer_listener: shimizu.Listener = undefined,
-
-    wl_keyboard: ?shimizu.Object.WithInterface(wayland.wl_keyboard) = null,
-    keyboard_listener: shimizu.Listener = undefined,
+    wl_pointer: ?wayland.wl_pointer = null,
+    wl_keyboard: ?wayland.wl_keyboard = null,
 };
 
-const Globals = struct {
-    connection: *shimizu.Connection,
-    listener: shimizu.Listener = undefined,
-    wl_shm: ?shimizu.Object.WithInterface(wayland.wl_shm),
-    wl_compositor: ?shimizu.Object.WithInterface(wayland.wl_compositor),
-    xdg_wm_base: ?shimizu.Object.WithInterface(xdg_shell.xdg_wm_base),
-
-    seat: ?Seat = null,
-
-    fn onRegistryEvent(listener: *shimizu.Listener, registry: shimizu.Proxy(wayland.wl_registry), event: wayland.wl_registry.Event) shimizu.Listener.Error!void {
-        const globals: *@This() = @fieldParentPtr("listener", listener);
-        switch (event) {
-            .global => |global| {
-                if (shimizu.globalMatchesInterface(global, wayland.wl_compositor)) {
-                    const wl_compositor = try registry.connection.createObject(wayland.wl_compositor);
-                    try registry.sendRequest(.bind, .{ .name = global.name, .id = wl_compositor.id.asGenericNewId() });
-                    globals.wl_compositor = wl_compositor.id;
-                } else if (shimizu.globalMatchesInterface(global, xdg_shell.xdg_wm_base)) {
-                    const xdg_wm_base = try registry.connection.createObject(xdg_shell.xdg_wm_base);
-                    try registry.sendRequest(.bind, .{ .name = global.name, .id = xdg_wm_base.id.asGenericNewId() });
-                    globals.xdg_wm_base = xdg_wm_base.id;
-                } else if (shimizu.globalMatchesInterface(global, wayland.wl_shm)) {
-                    const wl_shm = try registry.connection.createObject(wayland.wl_shm);
-                    try registry.sendRequest(.bind, .{ .name = global.name, .id = wl_shm.id.asGenericNewId() });
-                    globals.wl_shm = wl_shm.id;
-                } else if (shimizu.globalMatchesInterface(global, wayland.wl_seat)) {
-                    if (globals.seat != null) {
-                        logger.warn("multiple seats detected; multiple seat handling not implemented.", .{});
-                        return;
-                    }
-
-                    const wl_seat = try registry.connection.createObject(wayland.wl_seat);
-
-                    try registry.sendRequest(.bind, .{ .name = global.name, .id = wl_seat.id.asGenericNewId() });
-
-                    globals.seat = .{
-                        .wl_seat = wl_seat.id,
-                        .listener = undefined,
-                        .connection = globals.connection,
-                    };
-                    wl_seat.setEventListener(&globals.seat.?.listener, onWlSeatEvent, &globals.seat);
+fn onRegistryEvent(server: *Wayland_Display, connection: shimizu.Connection, registry: wayland.wl_registry, event: wayland.wl_registry.Event) !void {
+    switch (event) {
+        .global => |global| {
+            if (shimizu.globalMatchesInterface(global, wayland.wl_compositor)) {
+                server.wl_compositor = try create_wayland_object(
+                    connection,
+                    registry,
+                    global,
+                    wayland.wl_compositor,
+                );
+                server.has_wl_compositor = true;
+            } else if (shimizu.globalMatchesInterface(global, xdg_shell.xdg_wm_base)) {
+                server.xdg_wm_base = try create_wayland_object(
+                    connection,
+                    registry,
+                    global,
+                    xdg_shell.xdg_wm_base,
+                );
+                server.has_xdg_wm_base = true;
+            } else if (shimizu.globalMatchesInterface(global, wayland.wl_shm)) {
+                server.wl_shm = try create_wayland_object(
+                    connection,
+                    registry,
+                    global,
+                    wayland.wl_shm,
+                );
+                server.has_wl_shm = true;
+            } else if (shimizu.globalMatchesInterface(global, wayland.wl_seat)) {
+                if (server.seat != null) {
+                    logger.warn("multiple seats detected; multiple seat handling not implemented.", .{});
+                    return;
                 }
-            },
-            else => {},
-        }
+                const wl_seat = try create_wayland_object(
+                    connection,
+                    registry,
+                    global,
+                    wayland.wl_seat,
+                );
+                server.seat = .{
+                    .wl_seat = wl_seat,
+                };
+                try connection.setEventListener(server.seat.?.wl_seat, *Seat, onWlSeatEvent, &server.seat.?);
+            }
+        },
+        else => {},
     }
-};
+}
 
-fn onWlSeatEvent(listener: *shimizu.Listener, wl_seat: shimizu.Proxy(wayland.wl_seat), event: wayland.wl_seat.Event) shimizu.Listener.Error!void {
-    const seat: *Seat = @ptrCast(@alignCast(listener.userdata));
-    const seat_b: *Seat = @fieldParentPtr("listener", listener);
-    std.debug.assert(seat == seat_b);
+fn onWlSeatEvent(seat: *Seat, connection: shimizu.Connection, wl_seat: wayland.wl_seat, event: wayland.wl_seat.Event) !void {
     switch (event) {
         .capabilities => |capabilities| {
             if (capabilities.capabilities.keyboard) {
                 logger.info("has keyboard", .{});
                 if (seat.wl_keyboard == null) {
-                    const wl_keyboard = try wl_seat.sendRequest(.get_keyboard, .{});
-                    seat.wl_keyboard = wl_keyboard.id;
-                    wl_keyboard.setEventListener(&seat.keyboard_listener, onKeyboardCallback, seat);
+                    seat.wl_keyboard = try wl_seat.get_keyboard(connection);
+                    try connection.setEventListener(seat.wl_keyboard.?, *Seat, onKeyboardCallback, seat);
                 }
             } else {
                 logger.info("has no more keyboard", .{});
-                if (seat.wl_keyboard) |wl_keyboard_id| {
-                    const wl_keyboard: shimizu.Proxy(wayland.wl_keyboard) = .{ .connection = seat.connection, .id = wl_keyboard_id };
-                    try wl_keyboard.sendRequest(.release, .{});
+                if (seat.wl_keyboard) |wl_keyboard| {
+                    try wl_keyboard.release(connection);
                     seat.wl_keyboard = null;
                 }
             }
@@ -439,14 +442,13 @@ fn onWlSeatEvent(listener: *shimizu.Listener, wl_seat: shimizu.Proxy(wayland.wl_
             if (capabilities.capabilities.pointer) {
                 logger.info("has pointer", .{});
                 if (seat.wl_pointer == null) {
-                    const wl_pointer = try wl_seat.sendRequest(.get_pointer, .{});
-                    seat.wl_pointer = wl_pointer.id;
-                    wl_pointer.setEventListener(&seat.pointer_listener, onPointerCallback, seat);
+                    seat.wl_pointer = try wl_seat.get_pointer(connection);
+                    try connection.setEventListener(seat.wl_pointer.?, *Seat, onPointerCallback, seat);
                 }
             } else {
                 logger.info("has no more pointer", .{});
                 if (seat.wl_pointer) |pointer_id| {
-                    try seat.connection.sendRequest(wayland.wl_pointer, pointer_id, .release, .{});
+                    try pointer_id.release(connection);
                     seat.wl_pointer = null;
                 }
             }
@@ -455,10 +457,9 @@ fn onWlSeatEvent(listener: *shimizu.Listener, wl_seat: shimizu.Proxy(wayland.wl_
     }
 }
 
-fn onPointerCallback(listener: *shimizu.Listener, wl_pointer: shimizu.Proxy(wayland.wl_pointer), event: wayland.wl_pointer.Event) shimizu.Listener.Error!void {
-    // const this: *@This() = @ptrCast(@alignCast(listener.userdata));
-    // const seat: *Seat = @fieldParentPtr("pointer_listener", listener);
-    _ = listener;
+fn onPointerCallback(seat: *Seat, connection: shimizu.Connection, wl_pointer: wayland.wl_pointer, event: wayland.wl_pointer.Event) !void {
+    _ = seat;
+    _ = connection;
     _ = wl_pointer;
     switch (event) {
         .enter => |enter| {
@@ -533,12 +534,9 @@ fn onPointerCallback(listener: *shimizu.Listener, wl_pointer: shimizu.Proxy(wayl
     }
 }
 
-fn onKeyboardCallback(listener: *shimizu.Listener, wl_keyboard: shimizu.Proxy(wayland.wl_keyboard), event: wayland.wl_keyboard.Event) shimizu.Listener.Error!void {
-    // const this: *@This() = @ptrCast(@alignCast(listener.userdata));
-    // const seat: *Seat = @fieldParentPtr("keyboard_listener", listener);
-    // std.debug.assert(&this.seat.? == seat);
-    _ = listener;
-    _ = wl_keyboard;
+fn onKeyboardCallback(seat: *Seat, connection: shimizu.Connection, wl_keyboard: wayland.wl_keyboard, event: wayland.wl_keyboard.Event) !void {
+    _ = seat;
+    _ = connection;
     _ = wl_keyboard;
     switch (event) {
         .keymap => |keymap_info| {
