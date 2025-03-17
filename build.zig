@@ -353,8 +353,8 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
 
         .hosted_video_setup = .init(.{
             .headless = &.{"video:vnc:800:480:0.0.0.0:5900"},
-            .gtk = &.{"video:wayland:800:480"},
-            .sdl = &.{"video:wayland:800:480"},
+            .gtk = &.{"video:x11:800:480"},
+            .sdl = &.{"video:sdl:800:480"},
             .cocoa = &.{},
         }),
     },

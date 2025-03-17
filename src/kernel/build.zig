@@ -57,6 +57,7 @@ pub fn build(b: *std.Build) void {
     const ashex_dep = b.dependency("ashex", .{});
     const xcvt_dep = b.dependency("xcvt", .{});
     const shimizu_dep = b.dependency("shimizu", .{});
+    const zigx_dep = b.dependency("zigx", .{});
 
     // Modules:
 
@@ -78,6 +79,7 @@ pub fn build(b: *std.Build) void {
     const xcvt_mod = xcvt_dep.module("cvt");
     const shimizu_mod = shimizu_dep.module("shimizu");
     const wayland_protocols_mod = shimizu_dep.module("wayland-protocols");
+    const zig_mod = zigx_dep.module("zigx");
 
     // Build:
 
@@ -131,7 +133,8 @@ pub fn build(b: *std.Build) void {
 
             // only required on hosted instances:
             .{ .name = "network", .module = network_mod },
-            // .{ .name = "sdl", .module = options.modules.sdl },
+            .{ .name = "x11", .module = zig_mod },
+            // .{ .name = "sdl", .module = options.modules.sd
         },
     });
 

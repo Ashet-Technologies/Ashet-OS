@@ -12,6 +12,7 @@ const logger = std.log.scoped(.linux_pc);
 const VNC_Server = @import("VNC_Server.zig");
 const SDL_Display = @import("SDL_Display.zig");
 const Wayland_Display = @import("Wayland_Display.zig");
+const X11_Display = @import("X11_Display.zig");
 
 const sdl_enabled = false;
 
@@ -188,6 +189,31 @@ fn initialize() !void {
                 thread.detach();
 
                 any_wayland_output = true;
+            } else if (std.mem.eql(u8, device_type, "x11")) {
+                // "video:x11:<width>:<height>"
+
+                const display = X11_Display.init(
+                    global_memory,
+                    video_out_index,
+                    res_x,
+                    res_y,
+                ) catch |err| switch (err) {
+                    // error.NoWaylandSupport => {
+                    //     @panic("Could not find Wayland socket!");
+                    // },
+                    else => |e| return e,
+                };
+
+                ashet.drivers.install(&display.screen.driver);
+
+                const thread = try ashet.scheduler.Thread.spawn(X11_Display.process_events_wrapper, display, .{
+                    .stack_size = 1024 * 1024,
+                });
+                try thread.setName("x11.eventloop");
+                try thread.start();
+                thread.detach();
+
+                // any_wayland_output = true;
             } else if (std.mem.eql(u8, device_type, "dummy")) {
                 if (res_x != 320 or res_y != 240) badKernelOption("video", "resolution must be 320x240!");
                 const driver = try global_memory.create(ashet.drivers.video.Virtual_Video_Output);
