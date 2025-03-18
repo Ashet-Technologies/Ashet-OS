@@ -88,7 +88,6 @@ fn initialize() !void {
 
     var video_out_index: usize = 0;
     var any_sdl_output: bool = false;
-    var any_wayland_output: bool = false;
 
     var cli = args_parser.parseForCurrentProcess(KernelOptions, global_memory, .print) catch std.process.exit(1);
     cli.options = kernel_options;
@@ -164,56 +163,87 @@ fn initialize() !void {
                 }
             } else if (std.mem.eql(u8, device_type, "drm")) {
                 badKernelOption("video", "drm not supported yet!");
-            } else if (std.mem.eql(u8, device_type, "wayland")) {
-                // "video:wayland:<width>:<height>"
-
-                const display = Wayland_Display.init(
+            } else if (std.mem.eql(u8, device_type, "auto-window")) {
+                if (Wayland_Display.init(
                     global_memory,
                     video_out_index,
                     res_x,
                     res_y,
-                ) catch |err| switch (err) {
+                )) |display| {
+                    ashet.drivers.install(&display.screen.driver);
+
+                    const thread = try ashet.scheduler.Thread.spawn(Wayland_Display.process_events_wrapper, display, .{
+                        .stack_size = 1024 * 1024,
+                    });
+                    try thread.setName("wayland.eventloop");
+                    try thread.start();
+                    thread.detach();
+                } else |err| switch (err) {
+                    error.NoWaylandSupport => {
+                        const display = try X11_Display.init(
+                            global_memory,
+                            video_out_index,
+                            res_x,
+                            res_y,
+                        );
+
+                        ashet.drivers.install(&display.screen.driver);
+
+                        const thread = try ashet.scheduler.Thread.spawn(X11_Display.process_events_wrapper, display, .{
+                            .stack_size = 1024 * 1024,
+                        });
+                        try thread.setName("x11.eventloop");
+                        try thread.start();
+                        thread.detach();
+                    },
+                    else => |e| return e,
+                }
+            } else if (std.mem.eql(u8, device_type, "wayland")) {
+                // "video:wayland:<width>:<height>"
+
+                if (Wayland_Display.init(
+                    global_memory,
+                    video_out_index,
+                    res_x,
+                    res_y,
+                )) |display| {
+                    ashet.drivers.install(&display.screen.driver);
+
+                    const thread = try ashet.scheduler.Thread.spawn(Wayland_Display.process_events_wrapper, display, .{
+                        .stack_size = 1024 * 1024,
+                    });
+                    try thread.setName("wayland.eventloop");
+                    try thread.start();
+                    thread.detach();
+                } else |err| switch (err) {
                     error.NoWaylandSupport => {
                         @panic("Could not find Wayland socket!");
                     },
                     else => |e| return e,
-                };
-
-                ashet.drivers.install(&display.screen.driver);
-
-                const thread = try ashet.scheduler.Thread.spawn(Wayland_Display.process_events_wrapper, display, .{
-                    .stack_size = 1024 * 1024,
-                });
-                try thread.setName("wayland.eventloop");
-                try thread.start();
-                thread.detach();
-
-                any_wayland_output = true;
+                }
             } else if (std.mem.eql(u8, device_type, "x11")) {
                 // "video:x11:<width>:<height>"
 
-                const display = X11_Display.init(
+                if (X11_Display.init(
                     global_memory,
                     video_out_index,
                     res_x,
                     res_y,
-                ) catch |err| switch (err) {
+                )) |display| {
+                    ashet.drivers.install(&display.screen.driver);
+
+                    const thread = try ashet.scheduler.Thread.spawn(X11_Display.process_events_wrapper, display, .{
+                        .stack_size = 1024 * 1024,
+                    });
+                    try thread.setName("x11.eventloop");
+                    try thread.start();
+                    thread.detach();
+                } else |err| switch (err) {
                     // error.NoWaylandSupport => {
                     //     @panic("Could not find Wayland socket!");
                     // },
                     else => |e| return e,
-                };
-
-                ashet.drivers.install(&display.screen.driver);
-
-                const thread = try ashet.scheduler.Thread.spawn(X11_Display.process_events_wrapper, display, .{
-                    .stack_size = 1024 * 1024,
-                });
-                try thread.setName("x11.eventloop");
-                try thread.start();
-                thread.detach();
-
-                // any_wayland_output = true;
+                }
             } else if (std.mem.eql(u8, device_type, "dummy")) {
                 if (res_x != 320 or res_y != 240) badKernelOption("video", "resolution must be 320x240!");
                 const driver = try global_memory.create(ashet.drivers.video.Virtual_Video_Output);
