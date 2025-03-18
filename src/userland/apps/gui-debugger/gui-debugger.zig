@@ -182,8 +182,8 @@ fn paint(
     try mouse_table.hr();
     if (maybe_mouse_event) |mouse_event| {
         try mouse_table.property("type", "{s}", .{@tagName(mouse_event.event_type.window)});
-        try mouse_table.property("abs", "{d}/{d}", .{ mouse_event.x, mouse_event.y });
-        try mouse_table.property("rel", "{d}/{d}", .{ mouse_event.dx, mouse_event.dy });
+        try mouse_table.property("abs", "({d}, {d})", .{ mouse_event.x, mouse_event.y });
+        try mouse_table.property("rel", "({d}, {d})", .{ mouse_event.dx, mouse_event.dy });
         try mouse_table.property("button", "{s}", .{@tagName(mouse_event.button)});
     } else {
         try mouse_table.row("<none>");
