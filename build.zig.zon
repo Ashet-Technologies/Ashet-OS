@@ -20,8 +20,8 @@
             .path = "src/tools/debug-filter",
         },
         .depz = .{
-            .url = "git+https://codeberg.org/Der_Teufel/depz.git#1ce7d24eb5956f3e4deef4a94dae29859133690d",
-            .hash = "122005a9c12faa3c21b87b0e0cef1e5a62ddcf824a6c594e0a5e604fb3265fa14d68",
+            .url = "git+https://codeberg.org/Der_Teufel/depz.git#abdfdec197d68720d38d445aaec48f3fe13115d0",
+            .hash = "depz-0.1.0-AAAAAM0VAAD5Kv2E6gM53kI1t9IIsW3OzgezKHzEq7B4",
         },
     },
 
