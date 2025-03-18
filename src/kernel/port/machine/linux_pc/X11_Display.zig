@@ -357,9 +357,17 @@ fn handle_mouse_motion_event(server: *X11_Display, event: x11.Event.KeyOrButtonO
 }
 
 fn handle_key_event(server: *X11_Display, event: x11.Event.Key, is_press: bool) !void {
-    _ = server;
-    _ = event;
-    _ = is_press;
+
+    // Adjust "key code" to "scancode" by adjusting to "min_keycode".
+    // On Xpra, Escape maps to "9" and "min_keycode" is 8, which maps to "1" which is the expected value.
+    const scancode: u16 = event.keycode - server.setup.fixed().min_keycode;
+
+    ashet.input.push_raw_event(.{
+        .keyboard = .{
+            .scancode = scancode,
+            .down = is_press,
+        },
+    });
 }
 
 fn handle_mouse_button_event(server: *X11_Display, event: x11.Event.KeyOrButtonOrMotion, is_press: bool) !void {
