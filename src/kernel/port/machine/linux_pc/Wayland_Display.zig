@@ -129,10 +129,11 @@ pub fn init(
     }
 
     // allocate a some framebuffers for rendering to
-    server.swap_chain = .init(connection, server.wl_shm);
-    errdefer server.swap_chain.deinit();
-
-    try server.swap_chain.ensureBufferCapacity(width, height);
+    server.swap_chain = .{ .wl_shm = server.wl_shm };
+    errdefer server.swap_chain.deinit(
+        server.connection.connection(),
+        allocator,
+    );
 
     try connection.setEventListener(server.xdg_toplevel, *bool, onXdgToplevelEvent, &server.running);
 
@@ -152,16 +153,28 @@ pub fn process_events_wrapper(server_ptr: ?*anyopaque) callconv(.C) u32 {
 pub fn process_events(server: *Wayland_Display) !void {
     while (server.running) {
         if (server.should_render) {
-            const wl_buffer = try server.swap_chain.getBuffer(server.screen.width, server.screen.height);
+            const framebuffer = try server.swap_chain.mapBuffer(
+                server.connection.connection(),
+                server.allocator,
+                (@as(u31, @sizeOf(Pixel)) * server.screen.width) * server.screen.height,
+            );
+            errdefer server.swap_chain.unmapBuffer(framebuffer);
 
-            const framebuffer = try server.swap_chain.mapBuffer(wl_buffer);
-            defer server.swap_chain.unmapBuffer(wl_buffer, framebuffer);
             const pixels = std.mem.bytesAsSlice(Pixel, framebuffer);
 
             server.copyFromDriver(pixels);
 
             const frame_callback = try server.wl_surface.frame(server.connection.connection());
             try server.connection.connection().setEventListener(frame_callback, *bool, onWlCallbackSetTrue, &server.should_render);
+
+            const wl_buffer = try server.swap_chain.sendBuffer(
+                server.connection.connection(),
+                framebuffer,
+                server.screen.width,
+                server.screen.height,
+                server.screen.width * @sizeOf(Pixel),
+                .argb8888,
+            );
 
             try server.wl_surface.attach(server.connection.connection(), wl_buffer, 0, 0);
             try server.wl_surface.damage(server.connection.connection(), 0, 0, std.math.maxInt(i32), std.math.maxInt(i32));

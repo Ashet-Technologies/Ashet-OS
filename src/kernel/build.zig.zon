@@ -77,8 +77,8 @@
 
         // Wayland Support
         .shimizu = .{
-            .url = "https://codeberg.org/klaji/shimizu/archive/c4464ed81f341aedf9ce2ed77fb83b02c48f2b4e.tar.gz",
-            .hash = "shimizu-0.0.0-irfMUWDLAgCUj3fOYpifKULRmx60oO8B0wRd8ORK2ucR",
+            .url = "https://codeberg.org/klaji/shimizu/archive/731c1fa2e848fab4c3831859d4e39f4b9ee773d8.tar.gz",
+            .hash = "shimizu-0.0.0-irfMUfDaAgD9qU_8OTFR1V2EiDHggvpSoYyTMAj_ZlNO",
         },
 
         // X11 Support
