@@ -30,9 +30,15 @@ bg_gc_id: u32,
 
 running: bool = true,
 
+// helper types:
+
+put_image_msg_buffer: []align(4) u8,
+put_image_chunk_height: u16,
+
 // devices:
 screen: ashet.drivers.video.Host_VNC_Output,
 // input: ashet.drivers.input.Host_SDL_Input,
+
 pub fn init(
     allocator: std.mem.Allocator,
     index: usize,
@@ -57,6 +63,22 @@ pub fn init(
     const server = try allocator.create(X11_Display);
     errdefer allocator.destroy(server);
 
+    const put_image_chunk_height: u16 = blk: {
+        const static_overhead = x11.put_image.getLen(0);
+
+        const max_message_size = std.math.maxInt(u18) - static_overhead;
+
+        const scanline_size = 4 * @as(u18, window_width);
+
+        const chunk_height: u16 = @intCast(max_message_size / scanline_size);
+
+        logger.info("max message size: {}", .{max_message_size});
+        logger.info("scanline size:    {}", .{scanline_size});
+        logger.info("chunk height:     {}", .{chunk_height});
+
+        break :blk chunk_height;
+    };
+
     server.* = .{
         .allocator = allocator,
         .index = index,
@@ -67,6 +89,13 @@ pub fn init(
         .double_buf = try x11.DoubleBuffer.init(
             std.mem.alignForward(usize, 1000, std.heap.page_size_min),
             .{ .memfd_name = "ZigX11DoubleBuffer" },
+        ),
+
+        .put_image_chunk_height = put_image_chunk_height,
+        .put_image_msg_buffer = try allocator.alignedAlloc(
+            u8,
+            4, // alignment
+            x11.put_image.getLen(4 * @as(u18, window_width) * put_image_chunk_height),
         ),
 
         .sock = sock,
@@ -216,6 +245,8 @@ pub fn process_events(server: *X11_Display) !void {
 
         // Wait for socket ready:
         while (true) {
+            try server.render_on_demand();
+
             var pfd: [1]std.posix.pollfd = .{
                 .{
                     .fd = server.sock,
@@ -261,20 +292,24 @@ pub fn process_events(server: *X11_Display) !void {
                     return error.X11Error;
                 },
                 .reply => |msg| {
-                    logger.info("todo: handle a reply message {}", .{msg});
+                    logger.warn("todo: handle a reply message {}", .{msg});
                     return error.TodoHandleReplyMessage;
                 },
                 .key_press => |msg| {
-                    logger.info("key_press: keycode={}", .{msg});
+                    logger.debug("key_press: keycode={}", .{msg});
+                    try server.handle_key_event(msg.*, true);
                 },
                 .key_release => |msg| {
-                    logger.info("key_release: keycode={}", .{msg});
+                    logger.debug("key_release: keycode={}", .{msg});
+                    try server.handle_key_event(msg.*, false);
                 },
                 .button_press => |msg| {
-                    logger.info("button_press: {}", .{msg});
+                    logger.debug("button_press: {}", .{msg});
+                    try server.handle_mouse_button_event(msg.*, true);
                 },
                 .button_release => |msg| {
-                    logger.info("button_release: {}", .{msg});
+                    logger.debug("button_release: {}", .{msg});
+                    try server.handle_mouse_button_event(msg.*, false);
                 },
                 .enter_notify => |msg| {
                     logger.info("enter_window: {}", .{msg});
@@ -284,22 +319,22 @@ pub fn process_events(server: *X11_Display) !void {
                 },
                 .motion_notify => |msg| {
                     // too much logging
-                    _ = msg;
-                    //logger.info("pointer_motion: {}", .{msg});
+                    logger.debug("pointer_motion: {}", .{msg});
+                    try server.handle_mouse_motion_event(msg.*);
                 },
                 .keymap_notify => |msg| {
                     logger.info("keymap_state: {}", .{msg});
                 },
                 .expose => |msg| {
-                    logger.info("expose: {}", .{msg});
-                    try server.render(server.window_id, server.bg_gc_id);
+                    logger.debug("expose: {}", .{msg});
+                    try server.force_render();
                 },
                 .mapping_notify => |msg| {
                     logger.info("mapping_notify: {}", .{msg});
                 },
                 .no_exposure => |msg| std.debug.panic("unexpected no_exposure {}", .{msg}),
                 .unhandled => |msg| {
-                    logger.info("todo: server msg {}", .{msg});
+                    logger.warn("todo: server msg {}", .{msg});
                     return error.UnhandledServerMsg;
                 },
                 .map_notify,
@@ -311,60 +346,102 @@ pub fn process_events(server: *X11_Display) !void {
     }
 }
 
-const FontDims = struct {
-    width: u8,
-    height: u8,
-    font_left: i16, // pixels to the left of the text basepoint
-    font_ascent: i16, // pixels up from the text basepoint to the top of the text
-};
+fn handle_mouse_motion_event(server: *X11_Display, event: x11.Event.KeyOrButtonOrMotion) !void {
+    _ = server;
+    ashet.input.push_raw_event(.{
+        .mouse_abs_motion = .{
+            .x = event.event_x,
+            .y = event.event_y,
+        },
+    });
+}
 
-fn render(
-    server: *X11_Display,
-    drawable_id: u32,
-    bg_gc_id: u32,
-) !void {
-    {
-        var msg: [x11.poly_fill_rectangle.getLen(1)]u8 = undefined;
-        x11.poly_fill_rectangle.serialize(&msg, .{
-            .drawable_id = drawable_id,
-            .gc_id = bg_gc_id,
-        }, &[_]x11.Rectangle{
-            .{ .x = 100, .y = 100, .width = 200, .height = 200 },
-        });
-        try server.sendOne(&msg);
+fn handle_key_event(server: *X11_Display, event: x11.Event.Key, is_press: bool) !void {
+    _ = server;
+    _ = event;
+    _ = is_press;
+}
+
+fn handle_mouse_button_event(server: *X11_Display, event: x11.Event.KeyOrButtonOrMotion, is_press: bool) !void {
+    _ = server;
+
+    const mouse_button: ashet.abi.MouseButton = switch (event.detail) {
+        // See https://github.com/torvalds/linux/blob/master/include/uapi/linux/input-event-codes.h#L762
+        1 => .left,
+        2 => .middle,
+        3 => .right,
+        4 => .wheel_up,
+        5 => .wheel_down,
+        6, 8 => .nav_previous,
+        7, 9 => .nav_next,
+        else => {
+            logger.warn("unsupported mouse button: {d}", .{event.detail});
+            return;
+        },
+    };
+
+    ashet.input.push_raw_event(.{
+        .mouse_button = .{
+            .button = mouse_button,
+            .down = is_press,
+        },
+    });
+}
+
+fn render_on_demand(server: *X11_Display) !void {
+    defer std.debug.assert(server.screen.backbuffer_dirty == false);
+
+    if (server.screen.backbuffer_dirty) {
+        try server.force_render();
     }
-    {
-        var msg: [x11.clear_area.len]u8 = undefined;
-        x11.clear_area.serialize(&msg, false, drawable_id, .{
-            .x = 150,
-            .y = 150,
-            .width = 100,
-            .height = 100,
-        });
-        try server.sendOne(&msg);
-    }
+}
 
-    {
-        var data: [4 * 4]u8 = .{
-            0x00, 0x00, 0xFF, 0xFF, // BB GG RR XX
-            0x00, 0x00, 0xFF, 0xFF, // BB GG RR XX
-            0x00, 0x00, 0xFF, 0xFF, // BB GG RR XX
-            0x00, 0x00, 0xFF, 0xFF, // BB GG RR XX
-        };
+fn force_render(server: *X11_Display) !void {
+    defer server.screen.backbuffer_dirty = false;
 
-        var msg: [x11.put_image.getLen(data.len)]u8 = undefined;
-        x11.put_image.serialize(&msg, .{ .ptr = @ptrCast(&data), .len = data.len }, .{
-            .drawable_id = drawable_id,
+    // Put window content in chunks, as we can't transfer full images
+    // as X11 has only maxInt(u18)
+
+    var source_pixels: [*]const ashet.abi.Color = server.screen.backbuffer.ptr;
+
+    var base_y: u16 = 0;
+    while (base_y < server.screen.height) : (base_y += server.put_image_chunk_height) { // BB GG RR XX
+        const chunk_height = @min(server.screen.height - base_y, server.put_image_chunk_height);
+        const chunk_size: u18 = @as(u18, 4) * @as(u18, chunk_height) * @as(u18, server.screen.width);
+
+        const chunk_pixels: usize = @as(usize, chunk_height) * server.screen.width;
+
+        // logger.info("chunk base={}, height={}, size={}, pixels={}", .{
+        //     base_y,
+        //     chunk_height,
+        //     chunk_size,
+        //     chunk_pixels,
+        // });
+
+        comptime std.debug.assert(std.mem.isAligned(x11.put_image.data_offset, 4));
+        const pixel_data: []u32 = @ptrCast(@alignCast(server.put_image_msg_buffer[x11.put_image.data_offset..][0..chunk_size]));
+
+        std.debug.assert(pixel_data.len == @divExact(chunk_size, 4));
+
+        const msg_len = x11.put_image.getLen(chunk_size);
+        x11.put_image.serializeNoDataCopy(server.put_image_msg_buffer.ptr, chunk_size, .{
+            .drawable_id = server.window_id,
             .depth = 24,
             .format = .z_pixmap,
-            .gc_id = bg_gc_id,
-            .x = 10,
-            .y = 10,
-            .width = 2,
-            .height = 2,
+            .gc_id = server.bg_gc_id,
+            .x = 0,
+            .y = @intCast(base_y),
+            .width = server.screen.width,
+            .height = chunk_height,
             .left_pad = 0,
         });
-        try server.sendOne(&msg);
+
+        for (pixel_data, source_pixels[0..chunk_pixels]) |*out, in| {
+            out.* = @intFromEnum(in.to_argb8888()); // 0x??RRGGBB
+        }
+        source_pixels += chunk_pixels;
+
+        try server.sendOne(server.put_image_msg_buffer[0..msg_len]);
     }
 }
 
@@ -372,7 +449,7 @@ fn get_reader(server: *X11_Display) SocketReader {
     return .{ .context = server.sock };
 }
 
-pub const SocketReader = std.io.Reader(std.posix.socket_t, std.posix.RecvFromError, readSocket);
+const SocketReader = std.io.Reader(std.posix.socket_t, std.posix.RecvFromError, readSocket);
 
 /// Sanity check that we're not running into data integrity (corruption) issues caused
 /// by overflowing and wrapping around to the front ofq the buffer.

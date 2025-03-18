@@ -13,6 +13,7 @@ backbuffer: []Color,
 frontbuffer: []align(ashet.memory.page_size) Color,
 width: u16,
 height: u16,
+backbuffer_dirty: bool,
 
 driver: Driver = .{
     .name = "Host VNC Screen",
@@ -40,6 +41,7 @@ pub fn init(
         .height = height,
         .frontbuffer = fb[0 .. fb.len / 2],
         .backbuffer = fb[fb.len / 2 .. fb.len],
+        .backbuffer_dirty = false,
     };
 }
 
@@ -63,4 +65,5 @@ fn flush(driver: *Driver) void {
     // defer vd.backbuffer_lock.unlock();
 
     @memcpy(vd.backbuffer, vd.frontbuffer);
+    vd.backbuffer_dirty = true;
 }
