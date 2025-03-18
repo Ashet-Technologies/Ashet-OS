@@ -44,8 +44,8 @@ pub fn encoder(enc: anytype) Encoder(@TypeOf(enc)) {
     return .{ .writer = enc };
 }
 
-pub fn decoder(dec: anytype) Decoder(@TypeOf(dec)) {
-    return .{ .reader = dec };
+pub fn decoder(allocator: std.mem.Allocator, dec: anytype) Decoder(@TypeOf(dec)) {
+    return .init(allocator, dec);
 }
 
 pub fn Encoder(Writer: type) type {
@@ -232,8 +232,10 @@ pub fn Encoder(Writer: type) type {
             try enc.enc_coord(y);
             try enc.enc_handle(Font, font);
             try enc.enc_color(color);
-            try enc.enc_ptr([*]const u8, text.ptr);
             try enc.enc_int(u16, len);
+            try enc.writer.writeAll(text);
+            // try enc.enc_ptr([*]const u8, text.ptr);
+            // try enc.enc_int(u16, len);
         }
 
         pub fn blit_bitmap(
@@ -349,10 +351,23 @@ pub fn Decoder(Reader: type) type {
         const Dec = @This();
 
         reader: Reader,
+        heap: std.ArrayList(u8),
 
-        pub const NextError = error{ InvalidCommand, EndOfStream } || Reader.Error;
+        pub const NextError = error{ InvalidCommand, EndOfStream, OutOfMemory } || Reader.Error;
 
-        pub fn next(dec: Dec) NextError!?Command {
+        pub fn init(allocator: std.mem.Allocator, reader: Reader) Dec {
+            return .{
+                .heap = .init(allocator),
+                .reader = reader,
+            };
+        }
+
+        pub fn deinit(dec: *Dec) void {
+            dec.heap.deinit();
+            dec.* = undefined;
+        }
+
+        pub fn next(dec: *Dec) NextError!?Command {
             const cmd_byte = dec.reader.readByte() catch |err| switch (err) {
                 error.EndOfStream => return null,
                 else => |e| return e,
@@ -414,14 +429,19 @@ pub fn Decoder(Reader: type) type {
                         const y = try dec.fetch_coord();
                         const font = try dec.fetch_handle(Font);
                         const color = try dec.fetch_color();
-                        const text_ptr = try dec.fetch_ptr([*]const u8);
+                        // const text_ptr = try dec.fetch_ptr([*]const u8);
                         const text_len = try dec.fetch_int(u16);
+
+                        try dec.heap.resize(text_len + 1);
+                        try dec.reader.readNoEof(dec.heap.items[0..text_len]);
+                        dec.heap.items[text_len] = 0;
+
                         break :blk .{
                             .x = x,
                             .y = y,
                             .font = font,
                             .color = color,
-                            .text = text_ptr[0..text_len],
+                            .text = dec.heap.items[0..text_len :0],
                         };
                     },
                 },

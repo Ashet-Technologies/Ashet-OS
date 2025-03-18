@@ -267,7 +267,10 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
 
     // Validate code before drawing:
     {
-        var decoder = agp.decoder(fbs.reader());
+        var static_heap: [256]u8 = undefined;
+        var fba: std.heap.FixedBufferAllocator = .init(&static_heap);
+
+        var decoder = agp.decoder(fba.allocator(), fbs.reader());
         while (true) {
             const maybe_cmd = decoder.next() catch return error.BadCode;
             if (maybe_cmd == null)
@@ -279,6 +282,9 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
 
     // Now render to the framebuffer:
     {
+        var static_heap: [256]u8 = undefined;
+        var fba: std.heap.FixedBufferAllocator = .init(&static_heap);
+
         const Rasterizer = agp_swrast.Rasterizer(.{
             .backend_type = *Framebuffer,
             .framebuffer_type = *Framebuffer,
@@ -287,7 +293,7 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
 
         var rasterizer = Rasterizer.init(fb);
 
-        var decoder = agp.decoder(fbs.reader());
+        var decoder = agp.decoder(fba.allocator(), fbs.reader());
         while (decoder.next() catch unreachable) |cmd| {
             // logger.debug("execute {s}: {}", .{ @tagName(cmd), cmd });
             switch (cmd) {

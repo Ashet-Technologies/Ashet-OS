@@ -118,14 +118,15 @@ pub fn main() !void {
 }
 
 const TablePrinter = struct {
-    const header_color = ashet.abi.Color.from_rgb(0xFF, 0x00, 0x00);
-    const label_color = ashet.abi.Color.from_rgb(0x00, 0xFF, 0x00);
-    const value_color = ashet.abi.Color.from_rgb(0x00, 0x00, 0xFF);
+    const header_color = ashet.abi.Color.from_rgb(0x80, 0xFF, 0x80);
+    const label_color = ashet.abi.Color.from_rgb(0x80, 0x80, 0x80);
+    const value_color = ashet.abi.Color.from_rgb(0xFF, 0xFF, 0xFF);
     const line_color = label_color;
 
     q: *ashet.graphics.CommandQueue,
     font: ashet.graphics.Font,
     anchor: Point,
+    fcolwidth: u15,
     width: u15,
 
     fn header(tp: *TablePrinter, name: []const u8) !void {
@@ -146,9 +147,7 @@ const TablePrinter = struct {
         const value: []const u8 = try std.fmt.bufPrint(&buffer, fmt, args);
 
         try tp.q.draw_text(tp.anchor, tp.font, label_color, name);
-        try tp.advance(8);
-        try tp.q.draw_text(tp.anchor.move_by(tp.width / 2, 0), tp.font, value_color, value);
-        std.log.info("{} {} '{}' '{}'", .{ tp.anchor, tp.anchor.move_by(tp.width / 2, 0), std.zig.fmtEscapes(name), std.zig.fmtEscapes(value) });
+        try tp.q.draw_text(tp.anchor.move_by(tp.fcolwidth, 0), tp.font, value_color, value);
         try tp.advance(8);
     }
 
@@ -175,7 +174,8 @@ fn paint(
         .q = q,
         .anchor = Point.new(10, 10),
         .font = font,
-        .width = 80,
+        .fcolwidth = 60,
+        .width = 180,
     };
 
     try mouse_table.header("Mouse Event");
@@ -187,20 +187,28 @@ fn paint(
         try mouse_table.property("button", "{s}", .{@tagName(mouse_event.button)});
     } else {
         try mouse_table.row("<none>");
+        try mouse_table.row("");
+        try mouse_table.row("");
+        try mouse_table.row("");
     }
 
-    var key_table: TablePrinter = .{
-        .q = q,
-        .anchor = Point.new(100, 10),
-        .font = font,
-        .width = 80,
-    };
+    try mouse_table.row("");
+
+    var key_table = &mouse_table;
     try key_table.header("Keyboard Event");
     try key_table.hr();
     if (maybe_key_event) |key_event| {
-        _ = key_event;
+        try key_table.property("Type", "{s}", .{@tagName(key_event.event_type.window)});
+        try key_table.property("Scancode", "{}", .{key_event.scancode});
+        try key_table.property("Key", "{s}", .{@tagName(key_event.key)});
+        try key_table.property("Text", "\"{?}\"", .{if (key_event.text) |text| std.unicode.fmtUtf8(std.mem.sliceTo(text, 0)) else null});
+        try key_table.property("Pressed", "{}", .{key_event.pressed});
+        try key_table.property("Modifiers", "{}", .{key_event.modifiers});
     } else {
         try key_table.row("<none>");
+        try mouse_table.row("");
+        try mouse_table.row("");
+        try mouse_table.row("");
     }
 
     try q.submit(fb, .{});

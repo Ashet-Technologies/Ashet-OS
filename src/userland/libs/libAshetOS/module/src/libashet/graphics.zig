@@ -41,7 +41,8 @@ pub fn render(target: Framebuffer, command_sequence: []const u8, auto_invalidate
     if (builtin.mode == .Debug) {
         // In Debug mode, assert that we have a valid command sequence:
         var fbs = std.io.fixedBufferStream(command_sequence);
-        var decoder = agp.decoder(fbs.reader());
+        var decoder = agp.decoder(ashet.process.mem.allocator(), fbs.reader());
+        defer decoder.deinit();
         while (true) {
             const res = decoder.next() catch @panic("Invalid command sequence detected!");
             if (res == null)
