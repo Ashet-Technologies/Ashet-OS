@@ -185,9 +185,34 @@ pub fn process_events(server: *Wayland_Display) !void {
         }
 
         // logger.info("tick  {}", .{server.frame_count});
-        try server.connection.recv();
+        // try server.connection.recv();
 
-        ashet.scheduler.yield();
+        wait_loop: while (true) {
+            try server.connection.flushSendBuffers();
+            // TODO: switch to std.posix.recvmsg: https://github.com/ziglang/zig/issues/20660
+            const bytes_read = std.os.linux.recvmsg(
+                server.connection.socket,
+                server.connection.getRecvMsgHdr(),
+                std.posix.MSG.DONTWAIT,
+            );
+            const errno_id: isize = @bitCast(bytes_read);
+            if (errno_id < 0) {
+                const errno: std.posix.E = @enumFromInt(@as(u16, @intCast(-errno_id)));
+                switch (errno) {
+                    .AGAIN => {
+                        ashet.scheduler.yield();
+                        continue :wait_loop;
+                    },
+                    else => {
+                        logger.err("failed to recvmsg: {}", .{errno});
+                        return error.CommError;
+                    },
+                }
+            } else {
+                try server.connection.processRecvMsgReturn(bytes_read);
+                break :wait_loop;
+            }
+        }
     }
     logger.err("window closed, stopping simulation!", .{});
     std.process.exit(0);
