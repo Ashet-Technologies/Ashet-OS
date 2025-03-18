@@ -79,7 +79,7 @@ pub fn build(b: *std.Build) void {
     const xcvt_mod = xcvt_dep.module("cvt");
     const shimizu_mod = shimizu_dep.module("shimizu");
     const wayland_protocols_mod = shimizu_dep.module("wayland-protocols");
-    const zig_mod = zigx_dep.module("zigx");
+    const zig_mod = zigx_dep.module("x");
 
     // Build:
 

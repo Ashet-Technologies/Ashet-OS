@@ -24,9 +24,9 @@ sock: std.posix.socket_t,
 setup: x11.ConnectSetup,
 
 sequence: u16 = 0,
-window_id: u32,
+window_id: x11.Window,
 
-bg_gc_id: u32,
+bg_gc_id: x11.GraphicsContext,
 
 running: bool = true,
 
@@ -101,8 +101,8 @@ pub fn init(
         .sock = sock,
         .setup = undefined,
 
-        .window_id = 0,
-        .bg_gc_id = 0,
+        .window_id = .none,
+        .bg_gc_id = .none,
     };
     logger.info("read buffer capacity is {}", .{server.double_buf.half_len});
 
@@ -167,7 +167,9 @@ pub fn init(
 
     // TODO: maybe need to call conn.setup.verify or something?
 
-    server.window_id = server.setup.fixed().resource_id_base;
+    const base_resource = server.setup.fixed().resource_id_base;
+
+    server.window_id = base_resource.asWindow();
     {
         var msg_buf: [x11.create_window.max_len]u8 = undefined;
         const len = x11.create_window.serialize(&msg_buf, .{
@@ -193,26 +195,35 @@ pub fn init(
             //            .backing_pixel = 0xbbeeeeff,
             //            .override_redirect = true,
             //            .save_under = true,
-            .event_mask = x11.event.key_press | x11.event.key_release | x11.event.button_press | x11.event.button_release | x11.event.enter_window | x11.event.leave_window | x11.event.pointer_motion
-                //                | x11.event.pointer_motion_hint WHAT THIS DO?
-                //                | x11.event.button1_motion  WHAT THIS DO?
-                //                | x11.event.button2_motion  WHAT THIS DO?
-                //                | x11.event.button3_motion  WHAT THIS DO?
-                //                | x11.event.button4_motion  WHAT THIS DO?
-                //                | x11.event.button5_motion  WHAT THIS DO?
-                //                | x11.event.button_motion  WHAT THIS DO?
-            | x11.event.keymap_state | x11.event.exposure,
+            .event_mask = .{
+                .key_press = 1,
+                .key_release = 1,
+                .button_press = 1,
+                .button_release = 1,
+                .enter_window = 1,
+                .leave_window = 1,
+                .pointer_motion = 1,
+                .pointer_motion_hint = 0, //  WHAT THIS DO?
+                .button1_motion = 0, //   WHAT THIS DO?
+                .button2_motion = 0, //   WHAT THIS DO?
+                .button3_motion = 0, //   WHAT THIS DO?
+                .button4_motion = 0, //   WHAT THIS DO?
+                .button5_motion = 0, //   WHAT THIS DO?
+                .button_motion = 0, //   WHAT THIS DO?
+                .keymap_state = 1,
+                .exposure = 1,
+            },
             //            .dont_propagate = 1,
         });
         try server.sendOne(msg_buf[0..len]);
     }
 
-    server.bg_gc_id = server.window_id + 1;
+    server.bg_gc_id = base_resource.add(1).asGraphicsContext();
     {
         var msg_buf: [x11.create_gc.max_len]u8 = undefined;
         const len = x11.create_gc.serialize(&msg_buf, .{
             .gc_id = server.bg_gc_id,
-            .drawable_id = server.window_id,
+            .drawable_id = server.window_id.asDrawable(),
         }, .{
             .foreground = screen.black_pixel,
         });
@@ -433,7 +444,7 @@ fn force_render(server: *X11_Display) !void {
 
         const msg_len = x11.put_image.getLen(chunk_size);
         x11.put_image.serializeNoDataCopy(server.put_image_msg_buffer.ptr, chunk_size, .{
-            .drawable_id = server.window_id,
+            .drawable_id = server.window_id.asDrawable(),
             .depth = 24,
             .format = .z_pixmap,
             .gc_id = server.bg_gc_id,

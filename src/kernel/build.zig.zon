@@ -83,8 +83,8 @@
 
         // X11 Support
         .zigx = .{
-            .url = "git+https://github.com/Ashet-Technologies/zigx#c2a01884c594cf2a0c7b201810a03b3734c38bbf",
-            .hash = "zigx-0.0.0-P8vvS6FXCAAwHxXc3uNJcZLfut5dPposcOFMKHxcRnp7",
+            .url = "git+https://github.com/Ashet-Technologies/zigx#fb04c79734f907ef8d8250c37d0e629364a428da",
+            .hash = "x-0.0.0-PkYGK_oJCQDuy7TzALdy0RQUQkI7xmTVMaIu-n37_tWE",
         },
 
         // External tooling:
