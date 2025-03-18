@@ -19,7 +19,10 @@ index: usize,
 // x11 stuff:
 
 double_buf: x11.DoubleBuffer,
-conn: ConnectResult,
+
+sock: std.posix.socket_t,
+setup: x11.ConnectSetup,
+
 sequence: u16 = 0,
 window_id: u32,
 
@@ -38,6 +41,19 @@ pub fn init(
 ) !*X11_Display {
     try x11.wsaStartup();
 
+    const display = x11.getDisplay();
+
+    const parsed_display = x11.parseDisplay(display) catch |err| {
+        logger.err("invalid display '{s}': {s}", .{ display, @errorName(err) });
+        std.process.exit(0xff);
+    };
+
+    const sock = x11.connect(display, parsed_display) catch |err| {
+        logger.err("failed to connect to display '{s}': {s}", .{ display, @errorName(err) });
+        std.process.exit(0xff);
+    };
+    errdefer x11.disconnect(sock);
+
     const server = try allocator.create(X11_Display);
     errdefer allocator.destroy(server);
 
@@ -53,47 +69,82 @@ pub fn init(
             .{ .memfd_name = "ZigX11DoubleBuffer" },
         ),
 
-        .conn = try connect(allocator),
+        .sock = sock,
+        .setup = undefined,
 
         .window_id = 0,
         .bg_gc_id = 0,
     };
     logger.info("read buffer capacity is {}", .{server.double_buf.half_len});
 
+    const setup_reply_len: u16 = blk: {
+        if (try x11.getAuthFilename(allocator)) |auth_filename| {
+            defer auth_filename.deinit(allocator);
+            if (try server.connectSetupAuth(parsed_display.display_num, auth_filename.str)) |reply_len|
+                break :blk reply_len;
+        }
+
+        // Try no authentication
+        logger.debug("trying no auth", .{});
+        var msg_buf: [x11.connect_setup.getLen(0, 0)]u8 = undefined;
+        if (try server.connectSetup(
+            &msg_buf,
+            .{ .ptr = undefined, .len = 0 },
+            .{ .ptr = undefined, .len = 0 },
+        )) |reply_len| {
+            break :blk reply_len;
+        }
+
+        logger.err("the X server rejected our connect setup message", .{});
+        std.process.exit(0xff);
+    };
+
+    const connect_setup = x11.ConnectSetup{
+        .buf = try allocator.allocWithOptions(u8, setup_reply_len, 4, null),
+    };
+    logger.debug("connect setup reply is {} bytes", .{connect_setup.buf.len});
+    try x11.readFull(SocketReader{ .context = sock }, connect_setup.buf);
+
+    server.setup = connect_setup;
+
     @memset(server.screen.frontbuffer, ashet.abi.Color.blue);
     @memset(server.screen.backbuffer, ashet.abi.Color.red);
 
-    errdefer std.posix.shutdown(server.conn.sock, .both) catch {};
+    errdefer std.posix.shutdown(server.sock, .both) catch {};
 
     const screen = blk: {
-        const fixed = server.conn.setup.fixed();
+        const fixed = server.setup.fixed();
+
         inline for (@typeInfo(@TypeOf(fixed.*)).@"struct".fields) |field| {
             logger.debug("{s}: {any}", .{ field.name, @field(fixed, field.name) });
         }
-        logger.debug("vendor: {s}", .{try server.conn.setup.getVendorSlice(fixed.vendor_len)});
+
+        logger.debug("vendor: {s}", .{try server.setup.getVendorSlice(fixed.vendor_len)});
         const format_list_offset = x11.ConnectSetup.getFormatListOffset(fixed.vendor_len);
         const format_list_limit = x11.ConnectSetup.getFormatListLimit(format_list_offset, fixed.format_count);
         logger.debug("fmt list off={} limit={}", .{ format_list_offset, format_list_limit });
-        const formats = try server.conn.setup.getFormatList(format_list_offset, format_list_limit);
+        const formats = try server.setup.getFormatList(format_list_offset, format_list_limit);
         for (formats, 0..) |format, i| {
-            logger.debug("format[{}] depth={:3} bpp={:3} scanpad={:3}", .{ i, format.depth, format.bits_per_pixel, format.scanline_pad });
+            logger.debug("  format[{}] depth={:3} bpp={:3} scanpad={:3}", .{ i, format.depth, format.bits_per_pixel, format.scanline_pad });
         }
-        const screen = server.conn.setup.getFirstScreenPtr(format_list_limit);
+
+        const screen = server.setup.getFirstScreenPtr(format_list_limit);
         inline for (@typeInfo(@TypeOf(screen.*)).@"struct".fields) |field| {
             logger.debug("SCREEN 0| {s}: {any}", .{ field.name, @field(screen, field.name) });
         }
+
         break :blk screen;
     };
 
     // TODO: maybe need to call conn.setup.verify or something?
 
-    server.window_id = server.conn.setup.fixed().resource_id_base;
+    server.window_id = server.setup.fixed().resource_id_base;
     {
         var msg_buf: [x11.create_window.max_len]u8 = undefined;
         const len = x11.create_window.serialize(&msg_buf, .{
             .window_id = server.window_id,
             .parent_window_id = screen.root,
-            .depth = 0, // we don't care, just inherit from the parent
+            .depth = 24, // we don't care, just inherit from the parent
             .x = 0,
             .y = 0,
             .width = window_width,
@@ -124,7 +175,7 @@ pub fn init(
             | x11.event.keymap_state | x11.event.exposure,
             //            .dont_propagate = 1,
         });
-        try server.conn.sendOne(&server.sequence, msg_buf[0..len]);
+        try server.sendOne(msg_buf[0..len]);
     }
 
     server.bg_gc_id = server.window_id + 1;
@@ -136,13 +187,13 @@ pub fn init(
         }, .{
             .foreground = screen.black_pixel,
         });
-        try server.conn.sendOne(&server.sequence, msg_buf[0..len]);
+        try server.sendOne(msg_buf[0..len]);
     }
 
     {
         var msg: [x11.map_window.len]u8 = undefined;
         x11.map_window.serialize(&msg, server.window_id);
-        try server.conn.sendOne(&server.sequence, &msg);
+        try server.sendOne(&msg);
     }
 
     return server;
@@ -152,22 +203,41 @@ pub fn process_events_wrapper(server_ptr: ?*anyopaque) callconv(.C) u32 {
     const server: *X11_Display = @ptrCast(@alignCast(server_ptr.?));
 
     server.process_events() catch |err| {
-        logger.err("failed to process wayland events: {}", .{err});
-        return 1;
+        logger.err("failed to process X11 events: {}", .{err});
+        @panic("Processing X11 events failed!");
     };
-    return 0;
+
+    std.posix.exit(0); // X11 connection closed.
 }
 
 pub fn process_events(server: *X11_Display) !void {
     var buf = server.double_buf.contiguousReadBuffer();
     while (server.running) {
+
+        // Wait for socket ready:
+        while (true) {
+            var pfd: [1]std.posix.pollfd = .{
+                .{
+                    .fd = server.sock,
+                    .events = std.posix.POLL.IN,
+                    .revents = 0,
+                },
+            };
+            _ = try std.posix.poll(&pfd, 0);
+
+            if ((pfd[0].revents & (std.posix.POLL.IN | std.posix.POLL.ERR)) != 0)
+                break;
+
+            ashet.scheduler.yield();
+        }
+
         {
             const recv_buf = buf.nextReadBuffer();
             if (recv_buf.len == 0) {
                 logger.err("buffer size {} not big enough!", .{buf.half_len});
                 return error.BufferSize;
             }
-            const len = try x11.readSock(server.conn.sock, recv_buf, 0);
+            const len = try x11.readSock(server.sock, recv_buf, 0);
             if (len == 0) {
                 logger.info("X server connection closed", .{});
                 server.running = false;
@@ -175,7 +245,7 @@ pub fn process_events(server: *X11_Display) !void {
             }
             buf.reserve(len);
         }
-        ashet.scheduler.yield();
+
         while (true) {
             const data = buf.nextReservedBuffer();
             if (data.len < 32)
@@ -222,7 +292,7 @@ pub fn process_events(server: *X11_Display) !void {
                 },
                 .expose => |msg| {
                     logger.info("expose: {}", .{msg});
-                    try server.render(server.conn.sock, &server.sequence, server.window_id, server.bg_gc_id);
+                    try server.render(server.window_id, server.bg_gc_id);
                 },
                 .mapping_notify => |msg| {
                     logger.info("mapping_notify: {}", .{msg});
@@ -250,12 +320,9 @@ const FontDims = struct {
 
 fn render(
     server: *X11_Display,
-    sock: std.posix.socket_t,
-    sequence: *u16,
     drawable_id: u32,
     bg_gc_id: u32,
 ) !void {
-    _ = server;
     {
         var msg: [x11.poly_fill_rectangle.getLen(1)]u8 = undefined;
         x11.poly_fill_rectangle.serialize(&msg, .{
@@ -264,7 +331,7 @@ fn render(
         }, &[_]x11.Rectangle{
             .{ .x = 100, .y = 100, .width = 200, .height = 200 },
         });
-        try sendOne(sock, sequence, &msg);
+        try server.sendOne(&msg);
     }
     {
         var msg: [x11.clear_area.len]u8 = undefined;
@@ -274,23 +341,35 @@ fn render(
             .width = 100,
             .height = 100,
         });
-        try sendOne(sock, sequence, &msg);
+        try server.sendOne(&msg);
     }
-    // {
-    //     const text_literal: []const u8 = "Hello X!";
-    //     const text = x11.Slice(u8, [*]const u8){ .ptr = text_literal.ptr, .len = text_literal.len };
-    //     var msg: [x11.image_text8.getLen(text.len)]u8 = undefined;
 
-    //     const text_width = font_dims.width * text_literal.len;
+    {
+        var data: [4 * 4]u8 = .{
+            0x00, 0x00, 0xFF, 0xFF, // BB GG RR XX
+            0x00, 0x00, 0xFF, 0xFF, // BB GG RR XX
+            0x00, 0x00, 0xFF, 0xFF, // BB GG RR XX
+            0x00, 0x00, 0xFF, 0xFF, // BB GG RR XX
+        };
 
-    //     x11.image_text8.serialize(&msg, text, .{
-    //         .drawable_id = drawable_id,
-    //         .gc_id = fg_gc_id,
-    //         .x = @divTrunc((server.screen.width - @as(i16, @intCast(text_width))), 2) + font_dims.font_left,
-    //         .y = @divTrunc((server.screen.height - @as(i16, @intCast(font_dims.height))), 2) + font_dims.font_ascent,
-    //     });
-    //     try sendOne(sock, sequence, &msg);
-    // }
+        var msg: [x11.put_image.getLen(data.len)]u8 = undefined;
+        x11.put_image.serialize(&msg, .{ .ptr = @ptrCast(&data), .len = data.len }, .{
+            .drawable_id = drawable_id,
+            .depth = 24,
+            .format = .z_pixmap,
+            .gc_id = bg_gc_id,
+            .x = 10,
+            .y = 10,
+            .width = 2,
+            .height = 2,
+            .left_pad = 0,
+        });
+        try server.sendOne(&msg);
+    }
+}
+
+fn get_reader(server: *X11_Display) SocketReader {
+    return .{ .context = server.sock };
 }
 
 pub const SocketReader = std.io.Reader(std.posix.socket_t, std.posix.RecvFromError, readSocket);
@@ -306,38 +385,21 @@ fn checkMessageLengthFitsInBuffer(message_length: usize, buffer_limit: usize) !v
     }
 }
 
-pub fn sendNoSequencing(sock: std.posix.socket_t, data: []const u8) !void {
-    const sent = try x11.writeSock(sock, data, 0);
+fn sendOne(server: *X11_Display, data: []const u8) !void {
+    try server.sendNoSequencing(data);
+    server.sequence +%= 1;
+}
+
+fn sendNoSequencing(server: *X11_Display, data: []const u8) !void {
+    const sent = try x11.writeSock(server.sock, data, 0);
     if (sent != data.len) {
         logger.err("send {} only sent {}\n", .{ data.len, sent });
         return error.DidNotSendAllData;
     }
 }
-pub fn sendOne(sock: std.posix.socket_t, sequence: *u16, data: []const u8) !void {
-    try sendNoSequencing(sock, data);
-    sequence.* +%= 1;
-}
 
-pub const ConnectResult = struct {
-    sock: std.posix.socket_t,
-    setup: x11.ConnectSetup,
-
-    pub fn reader(self: ConnectResult) SocketReader {
-        return .{ .context = self.sock };
-    }
-
-    pub fn sendOne(self: *const ConnectResult, sequence: *u16, data: []const u8) !void {
-        try X11_Display.sendNoSequencing(self.sock, data);
-        sequence.* +%= 1;
-    }
-
-    pub fn sendNoSequencing(self: *const ConnectResult, data: []const u8) !void {
-        try X11_Display.sendNoSequencing(self.sock, data);
-    }
-};
-
-pub fn connectSetupMaxAuth(
-    sock: std.posix.socket_t,
+fn connectSetupMaxAuth(
+    server: *X11_Display,
     comptime max_auth_len: usize,
     auth_name: x11.Slice(u16, [*]const u8),
     auth_data: x11.Slice(u16, [*]const u8),
@@ -346,11 +408,11 @@ pub fn connectSetupMaxAuth(
     const len = x11.connect_setup.getLen(auth_name.len, auth_data.len);
     if (len > max_auth_len)
         return error.AuthTooBig;
-    return connectSetup(sock, buf[0..len], auth_name, auth_data);
+    return server.connectSetup(buf[0..len], auth_name, auth_data);
 }
 
-pub fn connectSetup(
-    sock: std.posix.socket_t,
+fn connectSetup(
+    server: *X11_Display,
     msg: []u8,
     auth_name: x11.Slice(u16, [*]const u8),
     auth_data: x11.Slice(u16, [*]const u8),
@@ -358,9 +420,9 @@ pub fn connectSetup(
     std.debug.assert(msg.len == x11.connect_setup.getLen(auth_name.len, auth_data.len));
 
     x11.connect_setup.serialize(msg.ptr, 11, 0, auth_name, auth_data);
-    try sendNoSequencing(sock, msg);
+    try server.sendNoSequencing(msg);
 
-    const reader = SocketReader{ .context = sock };
+    const reader = server.get_reader();
     const connect_setup_header = try x11.readConnectSetupHeader(reader, .{});
     switch (connect_setup_header.status) {
         .failed => {
@@ -388,8 +450,8 @@ pub fn connectSetup(
 }
 
 fn connectSetupAuth(
+    server: *X11_Display,
     display_num: ?u32,
-    sock: std.posix.socket_t,
     auth_filename: []const u8,
 ) !?u16 {
     // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -407,7 +469,7 @@ fn connectSetupAuth(
     };
 
     var addr_buf: [x11.max_sock_filter_addr]u8 = undefined;
-    if (auth_filter.applySocket(sock, &addr_buf)) {
+    if (auth_filter.applySocket(server.sock, &addr_buf)) {
         logger.debug("applied address filter {}", .{auth_filter.addr});
     } else |err| {
         // not a huge deal, we'll just try all auth methods
@@ -434,57 +496,11 @@ fn connectSetupAuth(
             .len = @intCast(data.len),
         };
         logger.debug("trying auth {}", .{entry.fmt(auth_mapped.mem)});
-        if (try connectSetupMaxAuth(sock, 1000, name_x, data_x)) |reply_len|
+        if (try server.connectSetupMaxAuth(1000, name_x, data_x)) |reply_len|
             return reply_len;
     }
 
     return null;
-}
-
-pub fn connect(allocator: std.mem.Allocator) !ConnectResult {
-    const display = x11.getDisplay();
-    const parsed_display = x11.parseDisplay(display) catch |err| {
-        logger.err("invalid display '{s}': {s}", .{ display, @errorName(err) });
-        std.process.exit(0xff);
-    };
-
-    const sock = x11.connect(display, parsed_display) catch |err| {
-        logger.err("failed to connect to display '{s}': {s}", .{ display, @errorName(err) });
-        std.process.exit(0xff);
-    };
-    errdefer x11.disconnect(sock);
-
-    const setup_reply_len: u16 = blk: {
-        if (try x11.getAuthFilename(allocator)) |auth_filename| {
-            defer auth_filename.deinit(allocator);
-            if (try connectSetupAuth(parsed_display.display_num, sock, auth_filename.str)) |reply_len|
-                break :blk reply_len;
-        }
-
-        // Try no authentication
-        logger.debug("trying no auth", .{});
-        var msg_buf: [x11.connect_setup.getLen(0, 0)]u8 = undefined;
-        if (try connectSetup(
-            sock,
-            &msg_buf,
-            .{ .ptr = undefined, .len = 0 },
-            .{ .ptr = undefined, .len = 0 },
-        )) |reply_len| {
-            break :blk reply_len;
-        }
-
-        logger.err("the X server rejected our connect setup message", .{});
-        std.process.exit(0xff);
-    };
-
-    const connect_setup = x11.ConnectSetup{
-        .buf = try allocator.allocWithOptions(u8, setup_reply_len, 4, null),
-    };
-    logger.debug("connect setup reply is {} bytes", .{connect_setup.buf.len});
-    const reader = SocketReader{ .context = sock };
-    try x11.readFull(reader, connect_setup.buf);
-
-    return ConnectResult{ .sock = sock, .setup = connect_setup };
 }
 
 pub fn asReply(comptime T: type, msg_bytes: []align(4) u8) !*T {
