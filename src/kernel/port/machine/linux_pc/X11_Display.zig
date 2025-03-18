@@ -445,21 +445,10 @@ fn force_render(server: *X11_Display) !void {
     }
 }
 
-fn get_reader(server: *X11_Display) SocketReader {
-    return .{ .context = server.sock };
-}
+const SocketReader = std.io.Reader(std.posix.socket_t, std.posix.RecvFromError, recv_some_data);
 
-const SocketReader = std.io.Reader(std.posix.socket_t, std.posix.RecvFromError, readSocket);
-
-/// Sanity check that we're not running into data integrity (corruption) issues caused
-/// by overflowing and wrapping around to the front ofq the buffer.
-fn checkMessageLengthFitsInBuffer(message_length: usize, buffer_limit: usize) !void {
-    if (message_length > buffer_limit) {
-        std.debug.panic("Reply is bigger than our buffer (data corruption will ensue) {} > {}. In order to fix, increase the buffer size.", .{
-            message_length,
-            buffer_limit,
-        });
-    }
+fn recv_some_data(sock: std.posix.socket_t, buffer: []u8) std.posix.RecvFromError!usize {
+    return x11.readSock(sock, buffer, 0);
 }
 
 fn sendOne(server: *X11_Display, data: []const u8) !void {
@@ -499,7 +488,10 @@ fn connectSetup(
     x11.connect_setup.serialize(msg.ptr, 11, 0, auth_name, auth_data);
     try server.sendNoSequencing(msg);
 
-    const reader = server.get_reader();
+    const reader: SocketReader = .{
+        .context = server.sock,
+    };
+
     const connect_setup_header = try x11.readConnectSetupHeader(reader, .{});
     switch (connect_setup_header.status) {
         .failed => {
@@ -578,82 +570,4 @@ fn connectSetupAuth(
     }
 
     return null;
-}
-
-pub fn asReply(comptime T: type, msg_bytes: []align(4) u8) !*T {
-    const generic_msg: *x11.ServerMsg.Generic = @ptrCast(msg_bytes.ptr);
-    if (generic_msg.kind != .reply) {
-        logger.err("expected reply but got {}", .{generic_msg});
-        return error.UnexpectedReply;
-    }
-    return @alignCast(@ptrCast(generic_msg));
-}
-
-fn readSocket(sock: std.posix.socket_t, buffer: []u8) !usize {
-    return x11.readSock(sock, buffer, 0);
-}
-
-/// X server extension info.
-pub const ExtensionInfo = struct {
-    extension_name: []const u8,
-    /// The extension opcode is used to identify which X extension a given request is
-    /// intended for (used as the major opcode). This essentially namespaces any extension
-    /// requests. The extension differentiates its own requests by using a minor opcode.
-    opcode: u8,
-    /// Extension error codes are added on top of this base error code.
-    base_error_code: u8,
-};
-
-pub const ExtensionVersion = struct {
-    major_version: u16,
-    minor_version: u16,
-};
-
-/// Determines whether the extension is available on the server.
-pub fn getExtensionInfo(
-    sock: std.posix.socket_t,
-    sequence: *u16,
-    buffer: *x11.ContiguousReadBuffer,
-    comptime extension_name: []const u8,
-) !?ExtensionInfo {
-    const reader = SocketReader{ .context = sock };
-    const buffer_limit = buffer.half_len;
-
-    {
-        const ext_name = comptime x11.Slice(u16, [*]const u8).initComptime(extension_name);
-        var message_buffer: [x11.query_extension.getLen(ext_name.len)]u8 = undefined;
-        x11.query_extension.serialize(&message_buffer, ext_name);
-        try sendOne(sock, sequence, &message_buffer);
-    }
-    const message_length = try x11.readOneMsg(reader, @alignCast(buffer.nextReadBuffer()));
-    try checkMessageLengthFitsInBuffer(message_length, buffer_limit);
-    const optional_extension = blk: {
-        switch (x11.serverMsgTaggedUnion(@alignCast(buffer.double_buffer_ptr))) {
-            .reply => |msg_reply| {
-                const msg: *x11.ServerMsg.QueryExtension = @ptrCast(msg_reply);
-                if (msg.present == 0) {
-                    logger.info("{s} extension: not present", .{extension_name});
-                    break :blk null;
-                }
-                std.debug.assert(msg.present == 1);
-                logger.info("{s} extension: opcode={} base_error_code={}", .{
-                    extension_name,
-                    msg.major_opcode,
-                    msg.first_error,
-                });
-                logger.info("{s} extension: {}", .{ extension_name, msg });
-                break :blk ExtensionInfo{
-                    .extension_name = extension_name,
-                    .opcode = msg.major_opcode,
-                    .base_error_code = msg.first_error,
-                };
-            },
-            else => |msg| {
-                logger.err("expected a reply for `x11.query_extension` but got {}", .{msg});
-                return error.ExpectedReplyButGotSomethingElse;
-            },
-        }
-    };
-
-    return optional_extension;
 }
