@@ -2551,6 +2551,13 @@ pub const Point = extern struct {
         return @abs(a.x - b.x) + @abs(a.y - b.y);
     }
 
+    pub fn move_by(pt: Point, dx: i16, dy: i16) Point {
+        return new(
+            pt.x + dx,
+            pt.y + dy,
+        );
+    }
+
     pub fn format(point: Point, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
         _ = fmt;
         _ = options;

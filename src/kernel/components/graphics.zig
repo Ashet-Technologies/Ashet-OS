@@ -236,6 +236,18 @@ fn initialize_system_fonts() !void {
         .raw_data = @embedFile("sans-6.font"),
         .font_data = fonts.FontInstance.load(@embedFile("sans-6.font"), .{}) catch @panic("bad font: sans-6"),
     });
+
+    try system_fonts.put("mono-6", Font{
+        .system_font = true,
+        .raw_data = @embedFile("mono-6.font"),
+        .font_data = fonts.FontInstance.load(@embedFile("mono-6.font"), .{}) catch @panic("bad font: mono-6"),
+    });
+
+    try system_fonts.put("mono-8", Font{
+        .system_font = true,
+        .raw_data = @embedFile("mono-8.font"),
+        .font_data = fonts.FontInstance.load(@embedFile("mono-8.font"), .{}) catch @panic("bad font: mono-8"),
+    });
 }
 
 pub fn get_system_font(font_name: []const u8) error{FileNotFound}!*Font {
