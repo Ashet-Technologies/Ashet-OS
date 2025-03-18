@@ -17,6 +17,7 @@ const QemuDisplayMode = enum {
     headless,
     sdl,
     gtk,
+    cocoa,
 };
 
 pub fn build(b: *std.Build) void {
@@ -25,7 +26,10 @@ pub fn build(b: *std.Build) void {
     const optimize_apps = b.option(std.builtin.OptimizeMode, "optimize-apps", "Optimization mode for the applications") orelse .Debug;
 
     const maybe_run_machine = b.option(Machine, "machine", "Selects which machine to run with the 'run' step");
-    const qemu_gui = b.option(QemuDisplayMode, "gui", "Selects GUI mode for QEMU (headless, sdl, gtk)") orelse .gtk;
+    const qemu_gui = b.option(QemuDisplayMode, "gui", "Selects GUI mode for QEMU (headless, sdl, gtk)") orelse if (b.graph.host.result.os.tag.isDarwin())
+        QemuDisplayMode.cocoa
+    else
+        QemuDisplayMode.gtk;
     const qemu_debug_options = b.option(
         []const u8,
         "qemu-debug",
@@ -201,6 +205,11 @@ pub fn build(b: *std.Build) void {
             for (machine_info.hosted_cli) |arg| {
                 variables.addArg(vm_runner, arg);
             }
+            if (machine_info.hosted_video_setup.get(qemu_gui)) |gui_args| {
+                for (gui_args) |arg| {
+                    variables.addArg(vm_runner, arg);
+                }
+            }
         }
 
         if (b.args) |args| {
@@ -256,6 +265,8 @@ const MachineStartupConfig = struct {
     qemu_cli: []const []const u8 = &.{},
 
     hosted_cli: []const []const u8 = &.{},
+
+    hosted_video_setup: std.EnumArray(QemuDisplayMode, ?[]const []const u8) = .initFill(null),
 };
 
 const platform_info_map = std.EnumArray(Platform, PlatformStartupConfig).init(.{
@@ -276,8 +287,9 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
             "-machine", "pc",
             "-cpu",     "pentium2",
             "-drive",   "if=ide,index=0,format=raw,file=${DISK}",
-            "-vga",     "std",
             "--device", "isa-debug-exit",
+            "-vga", "none", // disable standard VGA
+            "--device", "VGA,xres=800,yres=480,xmax=800,ymax=480,edid=true", // replace with customized VGA and limited resolution
         },
     },
     .@"rv32-qemu-virt" = .{
@@ -337,8 +349,14 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
     .@"x86-hosted-linux" = .{
         .hosted_cli = &.{
             "drive:${DISK}",
-            "video:vnc:800:480:0.0.0.0:5900",
         },
+
+        .hosted_video_setup = .init(.{
+            .headless = &.{"video:vnc:800:480:0.0.0.0:5900"},
+            .gtk = &.{"video:auto-window:800:480"},
+            .sdl = &.{"video:sdl:800:480"},
+            .cocoa = &.{},
+        }),
     },
 
     // .@"pc-efi" = .{
@@ -373,6 +391,10 @@ const generic_qemu_flags = [_][]const u8{
 const qemu_display_flags: std.EnumArray(QemuDisplayMode, []const []const u8) = .init(.{
     .gtk = &[_][]const u8{
         "-display", "gtk,show-tabs=on",
+    },
+
+    .cocoa = &[_][]const u8{
+        "-display", "cocoa",
     },
 
     .sdl = &[_][]const u8{

@@ -7,6 +7,7 @@ optimize_kernel := "false"
 optimize_apps := "Debug"
 
 build:
+    {{zig}} build --summary none -Doptimize-kernel={{optimize_kernel}} -Doptimize-apps={{optimize_apps}} rv32-qemu-virt
     {{zig}} build --summary none -Doptimize-kernel={{optimize_kernel}} -Doptimize-apps={{optimize_apps}}
 
 [working-directory: 'src/kernel']
@@ -17,6 +18,10 @@ build-kernel:
     {{zig}} build -Dmachine=rv32-qemu-virt
     {{zig}} build -Dmachine=x86-pc-bios
     {{zig}} build -Dmachine=x86-hosted-linux
+
+[working-directory: 'src/userland/apps/wiki']
+build-wiki:
+    zig-ashet build -Dtarget=rv32
 
 build-vhc:
     rm -rf zig-out/arm-ashet-vhc

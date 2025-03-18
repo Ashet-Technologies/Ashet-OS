@@ -1,0 +1,10 @@
+.{
+    .name = .gui_debugger,
+    .version = "0.1.0",
+    .paths = .{ "build.zig", "build.zig.zon", "gui-debugger.zig" },
+    .dependencies = .{
+        .AshetOS = .{
+            .path = "../../libs/libAshetOS",
+        },
+    },
+}

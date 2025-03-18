@@ -11,11 +11,10 @@ const software_renderer = @import("graphics/software_renderer.zig");
 const Rectangle = ashet.abi.Rectangle;
 const Point = ashet.abi.Point;
 const Size = ashet.abi.Size;
-
-const ColorIndex = ashet.abi.ColorIndex;
+const Color = ashet.abi.Color;
 
 comptime {
-    std.debug.assert(ColorIndex == agp.ColorIndex);
+    std.debug.assert(Color == agp.Color);
 }
 
 pub fn initialize() !void {
@@ -26,7 +25,7 @@ pub const Bitmap = struct {
     width: u16, // width of the image
     height: u16, // height of the image
     stride: u32, // row length in pixels
-    pixels: [*]align(4) ColorIndex, // height * stride pixels
+    pixels: [*]align(4) Color, // height * stride pixels
 };
 
 pub const Framebuffer = struct {
@@ -51,7 +50,7 @@ pub const Framebuffer = struct {
     pub fn create_memory(width: u16, height: u16) error{SystemResources}!*Framebuffer {
         const stride: usize = std.mem.alignForward(usize, width, 4);
 
-        const back_buffer = ashet.memory.allocator.alignedAlloc(ColorIndex, 4, stride * height) catch return error.SystemResources;
+        const back_buffer = ashet.memory.allocator.alignedAlloc(Color, 4, stride * height) catch return error.SystemResources;
         errdefer ashet.memory.allocator.free(back_buffer);
 
         const fb = ashet.memory.type_pool(Framebuffer).alloc() catch return error.SystemResources;
@@ -141,19 +140,19 @@ pub const Framebuffer = struct {
         };
     }
 
-    pub fn emit_pixels(fb: *Framebuffer, cursor: Cursor, color_index: ColorIndex, count: u16) void {
-        const framebuffer: [*]ColorIndex = switch (fb.type) {
+    pub fn emit_pixels(fb: *Framebuffer, cursor: Cursor, color: Color, count: u16) void {
+        const framebuffer: [*]Color = switch (fb.type) {
             .memory => |bmp| bmp.pixels,
             .video => |video| video.memory.base,
             .window => |win| win.pixels.ptr,
             .widget => @panic("Framebuffer(.widget).emit_pixels Not implemented yet!"),
         };
 
-        @memset(framebuffer[cursor.offset..][0..count], color_index);
+        @memset(framebuffer[cursor.offset..][0..count], color);
     }
 
-    pub fn fetch_pixels(fb: *Framebuffer, cursor: Cursor, pixels: []ColorIndex) void {
-        const framebuffer: [*]const ColorIndex = switch (fb.type) {
+    pub fn fetch_pixels(fb: *Framebuffer, cursor: Cursor, pixels: []Color) void {
+        const framebuffer: [*]const Color = switch (fb.type) {
             .memory => |bmp| bmp.pixels,
             .video => |video| video.memory.base,
             .window => |win| win.pixels.ptr,
@@ -164,15 +163,14 @@ pub const Framebuffer = struct {
         @memcpy(pixels, framebuffer[cursor.offset..][0..pixels.len]);
     }
 
-    pub fn copy_pixels(fb: *Framebuffer, cursor: Cursor, pixels: []const ColorIndex) void {
-        const framebuffer: [*]ColorIndex = switch (fb.type) {
+    pub fn copy_pixels(fb: *Framebuffer, cursor: Cursor, pixels: []const Color) void {
+        const framebuffer: [*]Color = switch (fb.type) {
             .memory => |bmp| bmp.pixels,
             .video => |video| video.memory.base,
             .window => |win| win.pixels.ptr,
             .widget => @panic("Framebuffer(.widget).copy_pixels Not implemented yet!"),
         };
         @memcpy(framebuffer[cursor.offset..][0..pixels.len], pixels);
-        
     }
 
     pub fn resolve_font(fb: *Framebuffer, font_handle: ashet.abi.Font) !*const fonts.FontInstance {
@@ -238,6 +236,18 @@ fn initialize_system_fonts() !void {
         .raw_data = @embedFile("sans-6.font"),
         .font_data = fonts.FontInstance.load(@embedFile("sans-6.font"), .{}) catch @panic("bad font: sans-6"),
     });
+
+    try system_fonts.put("mono-6", Font{
+        .system_font = true,
+        .raw_data = @embedFile("mono-6.font"),
+        .font_data = fonts.FontInstance.load(@embedFile("mono-6.font"), .{}) catch @panic("bad font: mono-6"),
+    });
+
+    try system_fonts.put("mono-8", Font{
+        .system_font = true,
+        .raw_data = @embedFile("mono-8.font"),
+        .font_data = fonts.FontInstance.load(@embedFile("mono-8.font"), .{}) catch @panic("bad font: mono-8"),
+    });
 }
 
 pub fn get_system_font(font_name: []const u8) error{FileNotFound}!*Font {
@@ -257,7 +267,10 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
 
     // Validate code before drawing:
     {
-        var decoder = agp.decoder(fbs.reader());
+        var static_heap: [256]u8 = undefined;
+        var fba: std.heap.FixedBufferAllocator = .init(&static_heap);
+
+        var decoder = agp.decoder(fba.allocator(), fbs.reader());
         while (true) {
             const maybe_cmd = decoder.next() catch return error.BadCode;
             if (maybe_cmd == null)
@@ -269,6 +282,9 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
 
     // Now render to the framebuffer:
     {
+        var static_heap: [256]u8 = undefined;
+        var fba: std.heap.FixedBufferAllocator = .init(&static_heap);
+
         const Rasterizer = agp_swrast.Rasterizer(.{
             .backend_type = *Framebuffer,
             .framebuffer_type = *Framebuffer,
@@ -277,7 +293,7 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
 
         var rasterizer = Rasterizer.init(fb);
 
-        var decoder = agp.decoder(fbs.reader());
+        var decoder = agp.decoder(fba.allocator(), fbs.reader());
         while (decoder.next() catch unreachable) |cmd| {
             // logger.debug("execute {s}: {}", .{ @tagName(cmd), cmd });
             switch (cmd) {

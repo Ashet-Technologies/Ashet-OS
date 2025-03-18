@@ -199,7 +199,7 @@ pub const Window = struct {
     is_popup: bool,
 
     // Rendering:
-    pixels: []align(4) ashet.abi.ColorIndex,
+    pixels: []align(4) ashet.abi.Color,
 
     // Event handling:
     event_queue: astd.RingBuffer(ashet.abi.WindowEvent, event_queue_len) = .{},
@@ -240,7 +240,7 @@ pub const Window = struct {
             window.max_size.width, window.max_size.height,
         });
 
-        window.pixels = window.associated_memory.allocator().alignedAlloc(ashet.abi.ColorIndex, 4, @as(u32, window.max_size.width) * window.max_size.height) catch return error.SystemResources;
+        window.pixels = window.associated_memory.allocator().alignedAlloc(ashet.abi.Color, 4, @as(u32, window.max_size.width) * window.max_size.height) catch return error.SystemResources;
 
         window.title = window.associated_memory.allocator().dupeZ(u8, title) catch return error.SystemResources;
 

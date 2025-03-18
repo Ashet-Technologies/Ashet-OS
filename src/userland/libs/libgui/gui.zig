@@ -3,12 +3,10 @@ const ashet = @import("ashet");
 const TextEditor = @import("text-editor");
 const logger = std.log.scoped(.gui);
 
-const fonts = @import("fonts.zig");
-
-pub const Font = fonts.Font;
-pub const BitmapFont = fonts.BitmapFont;
-pub const VectorFont = fonts.VectorFont;
-pub const FontHint = fonts.FontHint;
+const Framebuffer = ashet.graphics.Framebuffer;
+const Font = ashet.graphics.Font;
+const Bitmap = ashet.graphics.Bitmap;
+const CommandQueue = ashet.graphics.CommandQueue;
 
 pub const Point = ashet.abi.Point;
 pub const Size = ashet.abi.Size;
@@ -24,10 +22,13 @@ pub fn arrayToPointerArray(array: anytype) []const *Widget {
     return &buffer;
 }
 
+var default_font: Font = undefined;
+var monospace_font: Font = undefined;
+
 /// Initializes the GUI system
 pub fn init() !void {
-    Font.default = try Font.load(try ashet.ui.getSystemFont("sans"), .{ .size = 8 });
-    Font.monospace = try Font.load(try ashet.ui.getSystemFont("mono-8"), .{});
+    default_font = try ashet.graphics.get_system_font("sans"); // TODO(fqu): , .{ .size = 8 });
+    monospace_font = try ashet.graphics.get_system_font("mono-8"); // TODO(fqu): , .{});
 }
 
 /// An event that can be passed to widgets.
@@ -67,9 +68,6 @@ pub const EventID = enum(usize) {
         // return @intToEnum(EventID, @ptrToInt(&T.x));
     }
 };
-
-pub const Framebuffer = @import("Framebuffer.zig");
-pub const Bitmap = @import("Bitmap.zig");
 
 pub const Theme = struct {
     window: ColorIndex, // filling for text-editable things like text boxes, ...
@@ -143,8 +141,8 @@ pub const Interface = struct {
     }
 
     pub fn sendMouseEvent(gui: *Interface, event: ashet.abi.MouseEvent) ?Event {
-        switch (event.type) {
-            .button_press => if (event.button == .left) {
+        switch (event.event_type.window) {
+            .mouse_button_press => if (event.button == .left) {
                 const click_point = Point.new(event.x, event.y);
                 if (gui.widgetFromPoint(click_point)) |widget| {
                     if (widget.canFocus()) {
@@ -220,8 +218,8 @@ pub const Interface = struct {
                     gui.focus = null;
                 }
             },
-            .button_release => {},
-            .motion => {},
+
+            else => {},
         }
 
         return null;
@@ -335,55 +333,58 @@ pub const Interface = struct {
         return null;
     }
 
-    fn paintFocusMarker(target: Framebuffer, rect: Rectangle, theme: Theme) void {
-        const H = struct {
-            fn dither(x: i16, y: i16) bool {
-                const rx = @as(u16, @bitCast(x));
-                const ry = @as(u16, @bitCast(y));
-                return ((rx ^ ry) & 1) == 0;
-            }
-        };
+    fn paintFocusMarker(q: *CommandQueue, rect: Rectangle, theme: Theme) !void {
+        _ = q;
+        _ = rect;
+        _ = theme;
+        // const H = struct {
+        //     fn dither(x: i16, y: i16) bool {
+        //         const rx = @as(u16, @bitCast(x));
+        //         const ry = @as(u16, @bitCast(y));
+        //         return ((rx ^ ry) & 1) == 0;
+        //     }
+        // };
 
-        const dst = target.clip(rect);
+        // const dst = target.clip(rect);
 
-        var top = dst.pixels;
-        var bot = dst.pixels + (dst.height - 1) * target.stride;
+        // var top = dst.pixels;
+        // var bot = dst.pixels + (dst.height - 1) * target.stride;
 
-        var x: u15 = 0;
-        while (x < dst.width) : (x += 1) {
-            if (dst.dy == 0) {
-                if (H.dither(dst.x + x, rect.top())) {
-                    top[0] = theme.focus;
-                }
-            }
-            if (dst.y + dst.height == rect.bottom()) {
-                if (H.dither(dst.x + x, rect.bottom())) {
-                    bot[0] = theme.focus;
-                }
-            }
-            top += 1;
-            bot += 1;
-        }
+        // var x: u15 = 0;
+        // while (x < dst.width) : (x += 1) {
+        //     if (dst.dy == 0) {
+        //         if (H.dither(dst.x + x, rect.top())) {
+        //             top[0] = theme.focus;
+        //         }
+        //     }
+        //     if (dst.y + dst.height == rect.bottom()) {
+        //         if (H.dither(dst.x + x, rect.bottom())) {
+        //             bot[0] = theme.focus;
+        //         }
+        //     }
+        //     top += 1;
+        //     bot += 1;
+        // }
 
-        var left = dst.pixels;
-        var right = dst.pixels + (dst.width - 1);
+        // var left = dst.pixels;
+        // var right = dst.pixels + (dst.width - 1);
 
-        var y: u15 = 0;
-        while (y < dst.height) : (y += 1) {
-            if (dst.dx == 0) {
-                if (H.dither(rect.left(), dst.y + y)) {
-                    left[0] = theme.focus;
-                }
-            }
-            if (dst.x + dst.width == rect.right()) {
-                if (H.dither(rect.right(), dst.y + y)) {
-                    right[0] = theme.focus;
-                }
-            }
+        // var y: u15 = 0;
+        // while (y < dst.height) : (y += 1) {
+        //     if (dst.dx == 0) {
+        //         if (H.dither(rect.left(), dst.y + y)) {
+        //             left[0] = theme.focus;
+        //         }
+        //     }
+        //     if (dst.x + dst.width == rect.right()) {
+        //         if (H.dither(rect.right(), dst.y + y)) {
+        //             right[0] = theme.focus;
+        //         }
+        //     }
 
-            left += target.stride;
-            right += target.stride;
-        }
+        //     left += target.stride;
+        //     right += target.stride;
+        // }
     }
 
     const ElementStyle = enum {
@@ -398,7 +399,7 @@ pub const Interface = struct {
         area,
     };
 
-    fn drawRectangle(gui: Interface, target: Framebuffer, rect: Rectangle, style: ElementStyle, background: ElementBackground) void {
+    fn drawRectangle(gui: Interface, q: *CommandQueue, rect: Rectangle, style: ElementStyle, background: ElementBackground) !void {
         const b = .{
             .x = rect.x,
             .y = rect.y,
@@ -406,7 +407,7 @@ pub const Interface = struct {
             .height = @as(u15, @intCast(rect.height)),
         };
 
-        target.fillRectangle(rect.shrink(1), switch (background) {
+        try q.fill_rect(rect.shrink(1), switch (background) {
             .area, .window_disabled => gui.theme.area,
             .window_enabled => gui.theme.window,
         });
@@ -414,23 +415,23 @@ pub const Interface = struct {
         switch (style) {
             .raised => {
                 if (b.width > 2 and b.height > 2) {
-                    target.drawLine(
+                    try q.draw_line(
                         Point.new(b.x + 1, b.y),
                         Point.new(b.x + b.width - 2, b.y),
                         gui.theme.area_light,
                     );
-                    target.drawLine(
+                    try q.draw_line(
                         Point.new(b.x + 1, b.y + b.height - 1),
                         Point.new(b.x + b.width - 2, b.y + b.height - 1),
                         gui.theme.area_shadow,
                     );
 
-                    target.drawLine(
+                    try q.draw_line(
                         Point.new(b.x, b.y + 1),
                         Point.new(b.x, b.y + b.height - 2),
                         gui.theme.area_shadow,
                     );
-                    target.drawLine(
+                    try q.draw_line(
                         Point.new(b.x + b.width - 1, b.y + 1),
                         Point.new(b.x + b.width - 1, b.y + b.height - 2),
                         gui.theme.area_light,
@@ -439,23 +440,23 @@ pub const Interface = struct {
             },
             .sunken => {
                 if (b.width > 2 and b.height > 2) {
-                    target.drawLine(
+                    try q.draw_line(
                         Point.new(b.x, b.y),
                         Point.new(b.x + b.width - 1, b.y),
                         gui.theme.area_shadow,
                     );
-                    target.drawLine(
+                    try q.draw_line(
                         Point.new(b.x + b.width - 1, b.y + 1),
                         Point.new(b.x + b.width - 1, b.y + b.height - 1),
                         gui.theme.area_shadow,
                     );
 
-                    target.drawLine(
+                    try q.draw_line(
                         Point.new(b.x, b.y + 1),
                         Point.new(b.x, b.y + b.height - 1),
                         gui.theme.area_light,
                     );
-                    target.drawLine(
+                    try q.draw_line(
                         Point.new(b.x + 1, b.y + b.height - 1),
                         Point.new(b.x + b.width - 2, b.y + b.height - 1),
                         gui.theme.area_light,
@@ -464,13 +465,13 @@ pub const Interface = struct {
             },
             .ridge => {
                 if (b.width > 3 and b.height > 3) {
-                    target.drawRectangle(Rectangle{
+                    try q.draw_rect(Rectangle{
                         .x = b.x + 1,
                         .y = b.y,
                         .width = b.width - 1,
                         .height = b.height - 1,
                     }, gui.theme.area_light);
-                    target.drawRectangle(Rectangle{
+                    try q.draw_rect(Rectangle{
                         .x = b.x,
                         .y = b.y + 1,
                         .width = b.width - 1,
@@ -482,7 +483,7 @@ pub const Interface = struct {
         }
     }
 
-    pub fn paint(gui: Interface, target: Framebuffer) void {
+    pub fn paint(gui: Interface, q: *CommandQueue) !void {
         var iter = WidgetIterator.bottomToTop(gui.widgets);
 
         while (iter.next()) |widget| {
@@ -495,17 +496,17 @@ pub const Interface = struct {
             switch (widget.control) {
                 inline .tool_button, .button => |ctrl| {
                     if (@hasField(@TypeOf(ctrl), "toggle_active") and ctrl.toggle_active orelse false) {
-                        gui.drawRectangle(target, widget.bounds, .sunken, .area);
+                        try gui.drawRectangle(q, widget.bounds, .sunken, .area);
                     } else {
-                        gui.drawRectangle(target, widget.bounds, .raised, .area);
+                        try gui.drawRectangle(q, widget.bounds, .raised, .area);
                     }
 
                     if (@hasField(@TypeOf(ctrl), "text")) {
-                        target.drawString(b.x + 2, b.y + 2, ctrl.text, &Font.default, gui.theme.text, b.width -| 2);
+                        try q.draw_text(b.x + 2, b.y + 2, ctrl.text, default_font, gui.theme.text, b.width -| 2);
                     }
                     if (@hasField(@TypeOf(ctrl), "icon")) {
                         const icon: Bitmap = ctrl.icon;
-                        target.blit(
+                        try q.blit(
                             Point.new(
                                 b.x + (b.width -| icon.width) / 2,
                                 b.y + (b.height -| icon.height) / 2,
@@ -515,103 +516,104 @@ pub const Interface = struct {
                     }
                 },
                 .label => |ctrl| {
-                    target.drawString(b.x, b.y, ctrl.text, &Font.default, gui.theme.label, b.width);
+                    try q.draw_text(Point.new(b.x, b.y), default_font, gui.theme.label, ctrl.text); // TODO(fqu):, b.width
                 },
                 .text_box => |ctrl| {
-                    gui.drawRectangle(target, widget.bounds, .sunken, if (ctrl.flags.read_only) .window_disabled else .window_enabled);
+                    try gui.drawRectangle(q, widget.bounds, .sunken, if (ctrl.flags.read_only) .window_disabled else .window_enabled);
 
-                    var edit_view = target.view(Rectangle{
-                        .x = b.x + 1,
-                        .y = b.y + 1,
-                        .width = b.width -| 2,
-                        .height = 9,
-                    });
+                    // TODO(fqu):
+                    // var edit_view = try q.view(Rectangle{
+                    //     .x = b.x + 1,
+                    //     .y = b.y + 1,
+                    //     .width = b.width -| 2,
+                    //     .height = 9,
+                    // });
 
-                    var writer = edit_view.screenWriter(1 - @as(i16, ctrl.scroll), 0, &Font.default, gui.theme.text, null);
-                    if (ctrl.flags.password) {
-                        writer.writer().writeByteNTimes('*', ctrl.content().len) catch {};
-                    } else {
-                        writer.writer().writeAll(ctrl.content()) catch {};
-                    }
+                    // var writer = edit_view.screenWriter(1 - @as(i16, ctrl.scroll), 0, default_font, gui.theme.text, null);
+                    // if (ctrl.flags.password) {
+                    //     writer.writer().writeByteNTimes('*', ctrl.content().len) catch {};
+                    // } else {
+                    //     writer.writer().writeAll(ctrl.content()) catch {};
+                    // }
 
-                    if (gui.focus == widget) {
-                        const cursor_x = 6 * ctrl.editor.cursor - ctrl.scroll;
-                        edit_view.drawLine(
-                            Point.new(1 + @as(i16, @intCast(cursor_x)), 1),
-                            Point.new(1 + @as(i16, @intCast(cursor_x)), 8),
-                            gui.theme.text_cursor,
-                        );
-                    }
+                    // if (gui.focus == widget) {
+                    //     const cursor_x = 6 * ctrl.editor.cursor - ctrl.scroll;
+                    //     edit_view.drawLine(
+                    //         Point.new(1 + @as(i16, @intCast(cursor_x)), 1),
+                    //         Point.new(1 + @as(i16, @intCast(cursor_x)), 8),
+                    //         gui.theme.text_cursor,
+                    //     );
+                    // }
                 },
                 .panel => {
-                    gui.drawRectangle(target, widget.bounds, .ridge, .area);
+                    try gui.drawRectangle(q, widget.bounds, .ridge, .area);
                 },
                 .picture => |ctrl| {
-                    target.blit(widget.bounds.position(), ctrl.bitmap);
+                    try q.blit_framebuffer(widget.bounds.position(), ctrl.bitmap);
                 },
                 .check_box => |ctrl| {
                     std.debug.assert(b.width == 7 and b.height == 7);
-                    target.fillRectangle(widget.bounds.shrink(1), gui.theme.window);
-                    target.drawLine(
+                    try q.fill_rect(widget.bounds.shrink(1), gui.theme.window);
+                    try q.draw_line(
                         Point.new(b.x, b.y),
                         Point.new(b.x + b.width - 1, b.y),
                         gui.theme.area_shadow,
                     );
-                    target.drawLine(
+                    try q.draw_line(
                         Point.new(b.x + b.width - 1, b.y + 1),
                         Point.new(b.x + b.width - 1, b.y + b.height - 1),
                         gui.theme.area_shadow,
                     );
 
-                    target.drawLine(
+                    try q.draw_line(
                         Point.new(b.x, b.y + 1),
                         Point.new(b.x, b.y + b.height - 1),
                         gui.theme.area_light,
                     );
-                    target.drawLine(
+                    try q.draw_line(
                         Point.new(b.x + 1, b.y + b.height - 1),
                         Point.new(b.x + b.width - 2, b.y + b.height - 1),
                         gui.theme.area_light,
                     );
 
                     if (ctrl.checked) {
-                        target.blit(Point.new(b.x + 1, b.y + 1), CheckBox.checked_icon);
+                        try q.blit_bitmap(Point.new(b.x + 1, b.y + 1), CheckBox.checked_icon);
                     }
                 },
 
                 .radio_button => |ctrl| {
                     std.debug.assert(b.width == 7 and b.height == 7);
-                    target.fillRectangle(widget.bounds.shrink(1), gui.theme.window);
+                    try q.fill_rect(widget.bounds.shrink(1), gui.theme.window);
 
-                    target.drawLine(
+                    try q.draw_line(
                         Point.new(b.x + 2, b.y),
                         Point.new(b.x + b.width - 3, b.y),
                         gui.theme.area_shadow,
                     );
-                    target.drawLine(
+                    try q.draw_line(
                         Point.new(b.x + b.width - 1, b.y + 2),
                         Point.new(b.x + b.width - 1, b.y + b.height - 3),
                         gui.theme.area_shadow,
                     );
 
-                    target.drawLine(
+                    try q.draw_line(
                         Point.new(b.x, b.y + 2),
                         Point.new(b.x, b.y + b.height - 3),
                         gui.theme.area_light,
                     );
-                    target.drawLine(
+                    try q.draw_line(
                         Point.new(b.x + 2, b.y + b.height - 1),
                         Point.new(b.x + b.width - 3, b.y + b.height - 1),
                         gui.theme.area_light,
                     );
 
-                    target.setPixel(b.x + 1, b.y + 1, gui.theme.area_shadow);
-                    target.setPixel(b.x + b.width - 2, b.y + 1, gui.theme.area_shadow);
-                    target.setPixel(b.x + 1, b.y + b.height - 2, gui.theme.area_light);
-                    target.setPixel(b.x + b.width - 2, b.y + b.height - 2, gui.theme.area_shadow);
+                    try q.set_pixel(Point.new(b.x + 1, b.y + 1), gui.theme.area_shadow);
+                    try q.set_pixel(Point.new(b.x + b.width - 2, b.y + 1), gui.theme.area_shadow);
+                    try q.set_pixel(Point.new(b.x + 1, b.y + b.height - 2), gui.theme.area_light);
+                    try q.set_pixel(Point.new(b.x + b.width - 2, b.y + b.height - 2), gui.theme.area_shadow);
 
                     if (ctrl.group.selected == ctrl.value) {
-                        target.blit(Point.new(b.x + 1, b.y + 1), RadioButton.checked_icon);
+                        try q.blit_bitmap(Point.new(b.x + 1, b.y + 1), RadioButton.checked_icon);
                     }
                 },
 
@@ -621,12 +623,12 @@ pub const Interface = struct {
                         break :widget;
                     };
 
-                    gui.drawRectangle(target, positions.decrease_button, .raised, .area);
-                    gui.drawRectangle(target, positions.scroll_area, .sunken, .area);
-                    gui.drawRectangle(target, positions.increase_button, .raised, .area);
-                    gui.drawRectangle(target, positions.knob_button, .raised, .area);
+                    try gui.drawRectangle(q, positions.decrease_button, .raised, .area);
+                    try gui.drawRectangle(q, positions.scroll_area, .sunken, .area);
+                    try gui.drawRectangle(q, positions.increase_button, .raised, .area);
+                    try gui.drawRectangle(q, positions.knob_button, .raised, .area);
 
-                    target.blit(
+                    try q.blit_bitmap(
                         Point.new(
                             positions.decrease_button.x + @as(u15, @intCast(positions.decrease_button.width -| ScrollBar.arrow_up.width)) / 2,
                             positions.decrease_button.y + @as(u15, @intCast(positions.decrease_button.height -| ScrollBar.arrow_up.height)) / 2,
@@ -636,7 +638,7 @@ pub const Interface = struct {
                             .horizontal => ScrollBar.arrow_left,
                         },
                     );
-                    target.blit(
+                    try q.blit_bitmap(
                         Point.new(
                             positions.increase_button.x + @as(u15, @intCast(positions.increase_button.width -| ScrollBar.arrow_up.width)) / 2,
                             positions.increase_button.y + @as(u15, @intCast(positions.increase_button.height -| ScrollBar.arrow_up.height)) / 2,
@@ -649,7 +651,7 @@ pub const Interface = struct {
                 },
             }
             if (gui.focus == widget) {
-                paintFocusMarker(target, widget.bounds.shrink(1), gui.theme.*);
+                try paintFocusMarker(q, widget.bounds.shrink(1), gui.theme.*);
             }
         }
     }
@@ -763,15 +765,16 @@ pub const Button = struct {
 
 pub const ToolButton = struct {
     clickEvent: ?Event = null,
-    icon: Bitmap,
+    icon: Framebuffer,
 
-    pub fn new(x: i16, y: i16, icon: Bitmap) Widget {
+    pub fn new(x: i16, y: i16, icon: Framebuffer) Widget {
+        const size = ashet.graphics.get_framebuffer_size(icon) catch @panic("failed to query framebuffer");
         return Widget{
             .bounds = Rectangle{
                 .x = x,
                 .y = y,
-                .width = icon.width + 4,
-                .height = icon.height + 4,
+                .width = size.width + 4,
+                .height = size.height + 4,
             },
             .control = .{
                 .tool_button = ToolButton{
@@ -864,9 +867,9 @@ pub const Panel = struct {
 };
 
 pub const Picture = struct {
-    bitmap: Bitmap,
+    bitmap: Framebuffer,
 
-    pub fn new(x: i16, y: i16, bitmap: Bitmap) Widget {
+    pub fn new(x: i16, y: i16, bitmap: Framebuffer) Widget {
         return Widget{
             .bounds = Rectangle{
                 .x = x,
@@ -884,7 +887,7 @@ pub const Picture = struct {
 };
 
 pub const CheckBox = struct {
-    const checked_icon = Bitmap.parse(0,
+    const checked_icon = ashet.graphics.embed_comptime_bitmap(0,
         \\.....
         \\.0.0.
         \\..0..
@@ -928,7 +931,7 @@ pub const RadioGroup = struct {
 };
 
 pub const RadioButton = struct {
-    const checked_icon = Bitmap.parse(0,
+    const checked_icon = ashet.graphics.embed_comptime_bitmap(0,
         \\.....
         \\.000.
         \\.000.
@@ -966,7 +969,7 @@ pub const RadioButton = struct {
 pub const ScrollBar = struct {
     pub const Direction = enum { vertical, horizontal };
 
-    const arrow_up = Bitmap.parse(0,
+    const arrow_up = ashet.graphics.embed_comptime_bitmap(0,
         \\.......
         \\.......
         \\...0...
@@ -975,7 +978,7 @@ pub const ScrollBar = struct {
         \\.......
         \\.......
     );
-    const arrow_down = Bitmap.parse(0,
+    const arrow_down = ashet.graphics.embed_comptime_bitmap(0,
         \\.......
         \\.......
         \\.0...0.
@@ -984,7 +987,7 @@ pub const ScrollBar = struct {
         \\.......
         \\.......
     );
-    const arrow_left = Bitmap.parse(0,
+    const arrow_left = ashet.graphics.embed_comptime_bitmap(0,
         \\.......
         \\....0..
         \\...0...
@@ -993,7 +996,7 @@ pub const ScrollBar = struct {
         \\....0..
         \\.......
     );
-    const arrow_right = Bitmap.parse(0,
+    const arrow_right = ashet.graphics.embed_comptime_bitmap(0,
         \\.......
         \\..0....
         \\...0...
@@ -1002,7 +1005,7 @@ pub const ScrollBar = struct {
         \\..0....
         \\.......
     );
-    const handle_vert = Bitmap.parse(0,
+    const handle_vert = ashet.graphics.embed_comptime_bitmap(0,
         \\.......
         \\..0....
         \\...0...
@@ -1011,7 +1014,7 @@ pub const ScrollBar = struct {
         \\..0....
         \\.......
     );
-    const handle_horiz = Bitmap.parse(0,
+    const handle_horiz = ashet.graphics.embed_comptime_bitmap(0,
         \\.......
         \\..0....
         \\...0...
@@ -1208,7 +1211,7 @@ test "smoke test 01" {
         try TextBox.new(69, 28, 99, &tb_passwd_backing, "********"),
         Label.new(15, 16, "Username:"),
         Label.new(15, 30, "Password:"),
-        Picture.new(17, 78, Bitmap.parse(0, demo_bitmap)),
+        Picture.new(17, 78, ashet.graphics.embed_comptime_bitmap(0, demo_bitmap)),
 
         Label.new(80, 70, "Magic"),
         Label.new(80, 80, "Turbo"),

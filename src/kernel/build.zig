@@ -56,6 +56,8 @@ pub fn build(b: *std.Build) void {
     const turtlefont_dep = b.dependency("turtlefont", .{});
     const ashex_dep = b.dependency("ashex", .{});
     const xcvt_dep = b.dependency("xcvt", .{});
+    const shimizu_dep = b.dependency("shimizu", .{});
+    const zigx_dep = b.dependency("zigx", .{});
 
     // Modules:
 
@@ -75,6 +77,9 @@ pub fn build(b: *std.Build) void {
     const turtlefont_mod = turtlefont_dep.module("turtlefont");
     const ashex_mod = ashex_dep.module("ashex");
     const xcvt_mod = xcvt_dep.module("cvt");
+    const shimizu_mod = shimizu_dep.module("shimizu");
+    const wayland_protocols_mod = shimizu_dep.module("wayland-protocols");
+    const zig_mod = zigx_dep.module("x");
 
     // Build:
 
@@ -120,15 +125,24 @@ pub fn build(b: *std.Build) void {
             .{ .name = "ashex", .module = ashex_mod },
             .{ .name = "cvt", .module = xcvt_mod },
 
-            // resources:
+            // embedded resources:
             .{
                 .name = "sans-6.font",
                 .module = create_embedded_resource(b, "../../rootfs/system/fonts/sans-6.font"),
             },
+            .{
+                .name = "mono-6.font",
+                .module = create_embedded_resource(b, "../../rootfs/system/fonts/mono-6.font"),
+            },
+            .{
+                .name = "mono-8.font",
+                .module = create_embedded_resource(b, "../../rootfs/system/fonts/mono-8.font"),
+            },
 
             // only required on hosted instances:
             .{ .name = "network", .module = network_mod },
-            // .{ .name = "sdl", .module = options.modules.sdl },
+            .{ .name = "x11", .module = zig_mod },
+            // .{ .name = "sdl", .module = options.modules.sd
         },
     });
 
@@ -257,6 +271,10 @@ pub fn build(b: *std.Build) void {
         //     .use_pkg_config = .force,
         //     .search_strategy = .mode_first,
         // });
+
+        kernel_mod.addImport("shimizu", shimizu_mod);
+        kernel_mod.addImport("wayland-protocols", wayland_protocols_mod);
+
         kernel_exe.linkage = .static;
         kernel_exe.linkLibC();
     } else {

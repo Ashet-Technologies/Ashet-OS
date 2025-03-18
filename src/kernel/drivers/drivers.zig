@@ -190,6 +190,8 @@ pub fn resolveDriver(comptime class: DriverClass, ptr: *ResolvedDriverInterface(
     return driver;
 }
 
+pub const VideoDevice = ashet.video.VideoDevice;
+
 pub const BlockDevice = ashet.storage.BlockDevice;
 
 pub const RTC = struct {
@@ -197,53 +199,6 @@ pub const RTC = struct {
 
     pub fn nanoTimestamp(clk: *RTC) i128 {
         return clk.nanoTimestampFn(resolveDriver(.rtc, clk));
-    }
-};
-
-pub const VideoDevice = struct {
-    const ColorIndex = ashet.video.ColorIndex;
-    const Color = ashet.video.Color;
-    const Resolution = ashet.video.Resolution;
-
-    getVideoMemoryFn: *const fn (*Driver) []align(ashet.memory.page_size) ColorIndex,
-    getPaletteMemoryFn: *const fn (*Driver) *[256]Color,
-    setBorderFn: *const fn (*Driver, ColorIndex) void,
-    flushFn: *const fn (*Driver) void,
-    getResolutionFn: *const fn (*Driver) Resolution,
-    getMaxResolutionFn: *const fn (*Driver) Resolution,
-    getBorderFn: *const fn (*Driver) ColorIndex,
-    setResolutionFn: *const fn (*Driver, width: u15, height: u15) void,
-
-    pub fn getVideoMemory(vd: *VideoDevice) []align(ashet.memory.page_size) ColorIndex {
-        return vd.getVideoMemoryFn(resolveDriver(.video, vd));
-    }
-
-    pub fn getPaletteMemory(vd: *VideoDevice) *[256]Color {
-        return vd.getPaletteMemoryFn(resolveDriver(.video, vd));
-    }
-
-    pub fn setBorder(vd: *VideoDevice, b: ColorIndex) void {
-        vd.setBorderFn(resolveDriver(.video, vd), b);
-    }
-
-    pub fn flush(vd: *VideoDevice) void {
-        vd.flushFn(resolveDriver(.video, vd));
-    }
-
-    pub fn getResolution(vd: *VideoDevice) Resolution {
-        return vd.getResolutionFn(resolveDriver(.video, vd));
-    }
-
-    pub fn getMaxResolution(vd: *VideoDevice) Resolution {
-        return vd.getMaxResolutionFn(resolveDriver(.video, vd));
-    }
-
-    pub fn getBorder(vd: *VideoDevice) ColorIndex {
-        return vd.getBorderFn(resolveDriver(.video, vd));
-    }
-
-    pub fn setResolution(vd: *VideoDevice, width: u15, height: u15) void {
-        vd.setResolutionFn(resolveDriver(.video, vd), width, height);
     }
 };
 

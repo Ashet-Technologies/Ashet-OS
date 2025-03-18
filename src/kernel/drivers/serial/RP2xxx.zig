@@ -11,9 +11,9 @@ const WriteMode = ashet.drivers.SerialPort.WriteMode;
 driver: Driver,
 device: hal.uart.UART,
 
-pub fn init(comptime clock_config: hal.clocks.config.Global, id: hal.uart.UART) !RP2xxx {
-    id.apply(.{
-        .baud_rate = 115_200,
+pub fn init(comptime clock_config: hal.clocks.config.Global, id: hal.uart.UART, baud_rate: u32) !RP2xxx {
+    try id.apply_runtime(.{
+        .baud_rate = baud_rate,
         .clock_config = clock_config,
     });
 

@@ -56,9 +56,6 @@ pub fn init(b: *std.Build, dependency_name: []const u8, args: struct {
 
         .desktop_icon_conv_options = .{
             .geometry = .{ 32, 32 },
-            .palette = .{
-                .predefined = b.path("../../../kernel/data/palette.gpl"),
-            },
         },
     };
     return sdk;
@@ -254,24 +251,25 @@ pub fn build(b: *std.Build) void {
     const debug_step = b.step("debug", "Installs a debug executable for disassembly");
 
     // Options:
-    const ashet_target = standardTargetOption(b);
+    const modules_only = b.option(bool, "module_only", "Only export the module") orelse false;
+    const maybe_ashet_target = if (!modules_only) standardTargetOption(b) else null;
 
     // Dependencies:
     const abi_dep = b.dependency("abi", .{});
-    const std_dep = b.dependency("std", .{});
-    const agp_dep = b.dependency("agp", .{});
     const ashex_dep = b.dependency("ashex", .{});
     const mkicon_dep = b.dependency("mkicon", .{});
+    const module_dep = b.dependency("libashet", .{});
 
     // Modules:
 
-    const std_mod = std_dep.module("ashet-std");
-    const agp_mod = agp_dep.module("agp");
-
-    const abi_mod = abi_dep.module("ashet-abi");
-    const abi_access_mod = abi_dep.module("ashet-abi-consumer");
     const abi_json_mod = abi_dep.module("ashet-abi.json");
     const abi_schema_mod = abi_dep.module("abi-schema");
+
+    const libashet_mod = module_dep.module("ashet");
+
+    b.modules.put("ashet", libashet_mod) catch @panic("out of memory");
+
+    const ashet_target = maybe_ashet_target orelse return;
 
     // External tooling:
     const ashet_exe_tool = ashex_dep.artifact("ashet-exe");
@@ -303,10 +301,6 @@ pub fn build(b: *std.Build) void {
             .install_subdir = ".",
         }).step,
     );
-
-    // const abi_import_mod = b.addModule("ashet-syscall-functions", .{
-    //     .root_source_file = abi_import_zig,
-    // });
 
     const target = ashet_target.resolve_target(b);
 
@@ -354,16 +348,6 @@ pub fn build(b: *std.Build) void {
 
     const install_debug_exe = b.addInstallArtifact(debug_exe, .{});
     debug_step.dependOn(&install_debug_exe.step);
-
-    _ = b.addModule("ashet", .{
-        .root_source_file = b.path("src/libashet.zig"),
-        .imports = &.{
-            .{ .name = "agp", .module = agp_mod },
-            .{ .name = "ashet-std", .module = std_mod },
-            .{ .name = "ashet-abi", .module = abi_mod },
-            .{ .name = "ashet-abi-access", .module = abi_access_mod },
-        },
-    });
 
     b.getInstallStep().dependOn(
         &b.addInstallFileWithDir(

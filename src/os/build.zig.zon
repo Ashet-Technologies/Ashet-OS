@@ -19,10 +19,12 @@
         .init = .{ .path = "../userland/apps/init" },
         .hello_world = .{ .path = "../userland/apps/hello-world" },
         .hello_gui = .{ .path = "../userland/apps/hello-gui" },
+        .gui_debugger = .{ .path = "../userland/apps/gui-debugger" },
         .test_behaviour = .{ .path = "../userland/apps/testing/behaviour" },
         .desktop_classic = .{ .path = "../userland/apps/desktop/classic" },
         .clock = .{ .path = "../userland/apps/clock" },
         .paint = .{ .path = "../userland/apps/paint" },
+        .wiki = .{ .path = "../userland/apps/wiki" },
 
         // Externel deps:
         .@"disk-image-step" = .{

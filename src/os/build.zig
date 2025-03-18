@@ -9,11 +9,13 @@ const Machine = kernel_package.Machine;
 const app_packages = [_][]const u8{
     "hello_world",
     "hello_gui",
+    "gui_debugger",
     "clock",
     "paint",
     "init",
     "test_behaviour",
     "desktop_classic",
+    // TODO: Include "wiki" again,
 };
 
 pub fn build(b: *std.Build) void {

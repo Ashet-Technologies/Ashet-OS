@@ -1,0 +1,20 @@
+.{
+    .name = "init",
+    .version = "0.1.0",
+    .paths = .{ "build.zig", "build.zig.zon", "init.zig" },
+    .dependencies = .{
+        .AshetOS = .{
+            .path = "../../libs/libAshetOS",
+        },
+        .hypertext = .{
+            .path = "../../libs/libhypertext",
+        },
+        // .@"ashet-gui" = .{
+        //     .path = "../../libs/libgui",
+        // },
+        .hyperdoc = .{
+            .url = "git+https://github.com/Ashet-Technologies/hyperdoc.git#f20deef25936fdbe548c1dd95b57cca2e0087a1f",
+            .hash = "hyperdoc-0.1.0-nnPEq7i9AABCsO5TEm6oBLbIuMK3oyf3Bq8XjimMcF2y",
+        },
+    },
+}
