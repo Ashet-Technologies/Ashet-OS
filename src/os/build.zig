@@ -123,8 +123,57 @@ pub fn build(b: *std.Build) void {
         else => {},
     }
 
-    // Phase 4: Create disk
+    if (machine_info.rom_size) |rom_size| {
+        const objcopy_kernel = b.addObjCopy(kernel_elf, .{
+            .basename = "kernel.bin",
+            .format = .bin,
+            .pad_to = rom_size,
+        });
 
+        const kernel_bin = objcopy_kernel.getOutput();
+
+        _ = result_files.addCopyFile(kernel_bin, "kernel.bin");
+
+        const install_bin_file = b.addInstallFile(kernel_bin, "kernel.bin");
+        b.getInstallStep().dependOn(&install_bin_file.step);
+    }
+
+    // Phase 4: Put all files in the rootfs into a named step as well:
+    // MUST BE DONE BEFORE "rootfs.finalize()"!
+    {
+        const rootfs_files = b.addNamedWriteFiles("rootfs");
+
+        for (rootfs.list.items) |item| {
+            switch (item) {
+                .empty_dir => |destination| {
+                    _ = rootfs_files.addCopyDirectory(
+                        b.path("empty-dir"),
+                        destination,
+                        .{
+                            .exclude_extensions = &.{".gitignore"},
+                        },
+                    );
+                },
+
+                .copy_dir => |copy| {
+                    _ = rootfs_files.addCopyDirectory(
+                        copy.source,
+                        copy.destination,
+                        .{},
+                    );
+                },
+
+                .copy_file => |copy| {
+                    _ = rootfs_files.addCopyFile(
+                        copy.source,
+                        copy.destination,
+                    );
+                },
+            }
+        }
+    }
+
+    // Phase 5: Create disk
     const disk_image = switch (machine) {
         .@"x86-pc-bios" => blk: {
             var bootloader_buffer: [440]u8 = undefined;
@@ -177,21 +226,6 @@ pub fn build(b: *std.Build) void {
 
     const install_disk_image = b.addInstallFile(disk_image, "disk.img");
     b.getInstallStep().dependOn(&install_disk_image.step);
-
-    if (machine_info.rom_size) |rom_size| {
-        const objcopy_kernel = b.addObjCopy(kernel_elf, .{
-            .basename = "kernel.bin",
-            .format = .bin,
-            .pad_to = rom_size,
-        });
-
-        const kernel_bin = objcopy_kernel.getOutput();
-
-        _ = result_files.addCopyFile(kernel_bin, "kernel.bin");
-
-        const install_bin_file = b.addInstallFile(kernel_bin, "kernel.bin");
-        b.getInstallStep().dependOn(&install_bin_file.step);
-    }
 }
 
 const MachineDependentOsConfig = struct {

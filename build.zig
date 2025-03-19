@@ -69,7 +69,8 @@ pub fn build(b: *std.Build) void {
     // Install the debug-filter executable so we can utilize it for debugging
     b.installArtifact(debugfilter);
 
-    var os_deps = std.EnumArray(Machine, *std.Build.Dependency).initUndefined();
+    var os_deps: std.EnumArray(Machine, *std.Build.Dependency) = .initUndefined();
+    var os_rootfs: std.EnumArray(Machine, ?std.Build.LazyPath) = .initFill(null);
     for (std.enums.values(Machine)) |machine| {
         const step = machine_steps.get(machine);
 
@@ -81,6 +82,7 @@ pub fn build(b: *std.Build) void {
         os_deps.set(machine, machine_os_dep);
 
         const os_files = machine_os_dep.namedWriteFiles("ashet-os");
+        const rootfs_files = machine_os_dep.namedWriteFiles("rootfs");
 
         const install_elves = b.addInstallDirectory(.{
             .source_dir = os_files.getDirectory(),
@@ -88,6 +90,20 @@ pub fn build(b: *std.Build) void {
             .install_subdir = "",
         });
         step.dependOn(&install_elves.step);
+
+        if (machine.is_hosted()) {
+            const install_rootfs = b.addInstallDirectory(.{
+                .source_dir = rootfs_files.getDirectory(),
+                .install_dir = .{ .custom = @tagName(machine) },
+                .install_subdir = "rootfs",
+            });
+            step.dependOn(&install_rootfs.step);
+
+            // `b.getInstallPath` is copied from the InstallStep itself to figure out the final output directory:
+            const install_path = b.getInstallPath(install_rootfs.options.install_dir, install_rootfs.options.install_subdir);
+            std.debug.assert(std.fs.path.isAbsolute(install_path));
+            os_rootfs.set(machine, .{ .cwd_relative = install_path });
+        }
 
         if (list_apps) {
             std.debug.print("available files for '{s}':\n", .{
@@ -165,7 +181,8 @@ pub fn build(b: *std.Build) void {
         const variables = Variables{
             .@"${DISK}" = disk_img,
             .@"${KERNEL}" = kernel_elf,
-            .@"${BOOTROM}" = kernel_bin orelse b.path("<missing>"),
+            .@"${BOOTROM}" = kernel_bin orelse b.path("<no bootrom>"),
+            .@"${ROOTFS}" = os_rootfs.get(run_machine) orelse b.path("<no rootfs>"),
         };
 
         // Run qemu with the debug-filter wrapped around so we can translate addresses
@@ -238,6 +255,7 @@ const Variables = struct {
     @"${DISK}": std.Build.LazyPath,
     @"${BOOTROM}": std.Build.LazyPath,
     @"${KERNEL}": std.Build.LazyPath,
+    @"${ROOTFS}": std.Build.LazyPath,
 
     pub fn addArg(variables: Variables, runner: *std.Build.Step.Run, arg: []const u8) void {
         inline for (@typeInfo(Variables).@"struct".fields) |fld| {
@@ -260,8 +278,10 @@ const Variables = struct {
 const MachineStartupConfig = struct {
     /// Instantiation:
     /// Uses place holders:
-    /// - "${BOOTROM}"
-    /// - "${DISK}"
+    /// - "${BOOTROM}" is the boot rom which contains the os kernel
+    /// - "${KERNEL}"  is the path to the ELF file of the kernel
+    /// - "${DISK}"    is the the file system disk image
+    /// - "${ROOTFS}"  is the path to a host directory in the prefix which contains a rootfs. Only available on hosted machines
     qemu_cli: []const []const u8 = &.{},
 
     hosted_cli: []const []const u8 = &.{},
@@ -349,6 +369,7 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
     .@"x86-hosted-linux" = .{
         .hosted_cli = &.{
             "drive:${DISK}",
+            // "fs:${ROOTFS}",
         },
 
         .hosted_video_setup = .init(.{
