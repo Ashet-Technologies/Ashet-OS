@@ -8,8 +8,8 @@
     .dependencies = .{
         .lwip = .{
             // .url = "https://download.savannah.nongnu.org/releases/lwip/lwip-2.1.3.zip",
-            .url = "https://mq32.de/public/lwip-2.1.3.zip", // selfhosted mirror as above download can't serve tls for zig
-            .hash = "1220c46a1fabb690b8b84b01ffe185142aac3489d400963b6c7dd252320806dd07e2",
+            .url = "https://random-projects.net/public/lwip-2.1.3.zip", // selfhosted mirror as above download can't serve tls for zig
+            .hash = "N-V-__8AAKCP6ADEah-rtpC4uEsB_-GFFCqsNInUAJY7bH3S",
         },
     },
 }

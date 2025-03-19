@@ -1,1 +1,0 @@
-#!/linux/busybox init

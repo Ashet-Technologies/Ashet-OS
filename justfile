@@ -42,6 +42,14 @@ debug-vhc: build-vhc
 exe-tool:
     {{zig}} build
 
+[working-directory: 'src/tools/mkfont']
+mkfont:
+    {{zig}} build
+
+[working-directory: 'src/tools/mkicon']
+mkicon:
+    {{zig}} build
+
 dump-libashet: \
     (dump-libashet-target "arm") \
     (dump-libashet-target "x86") \

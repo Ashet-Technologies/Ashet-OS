@@ -1,7 +1,0 @@
-
-original artwork by Mike Miller (MoikMellah)
-
-source: https://opengameart.org/content/communication-terminal-32x32
-licence: CC0
-
-image was adjusted to fit lighting direction and color palette 

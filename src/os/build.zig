@@ -53,7 +53,7 @@ pub fn build(b: *std.Build) void {
 
     var rootfs = disk_image_step.FileSystemBuilder.init(b);
     {
-        rootfs.addDirectory(b.path("../../rootfs"), ".");
+        rootfs.addDirectory(b.path("../../rootfs/all-systems"), ".");
 
         const asset_source = assets_dep.namedWriteFiles("assets");
         rootfs.addDirectory(asset_source.getDirectory(), ".");
@@ -105,9 +105,9 @@ pub fn build(b: *std.Build) void {
         .@"x86-pc-bios" => {
             rootfs.addFile(kernel_elf, "/ashet-os");
 
-            rootfs.addFile(b.path("../../rootfs-x86/syslinux/modules.alias"), "syslinux/modules.alias");
-            rootfs.addFile(b.path("../../rootfs-x86/syslinux/pci.ids"), "syslinux/pci.ids");
-            rootfs.addFile(b.path("../../rootfs-x86/syslinux/syslinux.cfg"), "syslinux/syslinux.cfg");
+            rootfs.addFile(b.path("../../rootfs/pc-bios/syslinux/modules.alias"), "syslinux/modules.alias");
+            rootfs.addFile(b.path("../../rootfs/pc-bios/syslinux/pci.ids"), "syslinux/pci.ids");
+            rootfs.addFile(b.path("../../rootfs/pc-bios/syslinux/syslinux.cfg"), "syslinux/syslinux.cfg");
 
             rootfs.addFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/cmenu/libmenu/libmenu.c32"), "syslinux/libmenu.c32");
             rootfs.addFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/gpllib/libgpl.c32"), "syslinux/libgpl.c32");

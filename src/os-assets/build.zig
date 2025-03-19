@@ -19,56 +19,56 @@ pub fn build(b: *std.Build) void {
 
     rootfs.install(
         "system/icons/back.abm",
-        converter.convert(b.path("../../artwork/icons/small-icons/16x16-free-application-icons/16x16/Go back.png"), "back.abm", tool_icon_conv_options),
+        converter.convert(b.path("../../assets/icons/system/back.png"), "back.abm", tool_icon_conv_options),
     );
     rootfs.install(
         "system/icons/forward.abm",
-        converter.convert(b.path("../../artwork/icons/small-icons/16x16-free-application-icons/16x16/Go forward.png"), "forward.abm", tool_icon_conv_options),
+        converter.convert(b.path("../../assets/icons/system/forward.png"), "forward.abm", tool_icon_conv_options),
     );
     rootfs.install(
         "system/icons/reload.abm",
-        converter.convert(b.path("../../artwork/icons/small-icons/16x16-free-application-icons/16x16/Refresh.png"), "reload.abm", tool_icon_conv_options),
+        converter.convert(b.path("../../assets/icons/system/refresh.png"), "reload.abm", tool_icon_conv_options),
     );
     rootfs.install(
         "system/icons/home.abm",
-        converter.convert(b.path("../../artwork/icons/small-icons/16x16-free-application-icons/16x16/Home.png"), "home.abm", tool_icon_conv_options),
+        converter.convert(b.path("../../assets/icons/system/home.png"), "home.abm", tool_icon_conv_options),
     );
     rootfs.install(
         "system/icons/go.abm",
-        converter.convert(b.path("../../artwork/icons/small-icons/16x16-free-application-icons/16x16/Go.png"), "go.abm", tool_icon_conv_options),
+        converter.convert(b.path("../../assets/icons/system/go.png"), "go.abm", tool_icon_conv_options),
     );
     rootfs.install(
         "system/icons/stop.abm",
-        converter.convert(b.path("../../artwork/icons/small-icons/16x16-free-application-icons/16x16/Stop sign.png"), "stop.abm", tool_icon_conv_options),
+        converter.convert(b.path("../../assets/icons/system/stop.png"), "stop.abm", tool_icon_conv_options),
     );
     rootfs.install(
         "system/icons/menu.abm",
-        converter.convert(b.path("../../artwork/icons/small-icons/16x16-free-application-icons/16x16/Tune.png"), "menu.abm", tool_icon_conv_options),
+        converter.convert(b.path("../../assets/icons/system/menu.png"), "menu.abm", tool_icon_conv_options),
     );
     rootfs.install(
         "system/icons/plus.abm",
-        converter.convert(b.path("../../artwork/icons/small-icons/16x16-free-toolbar-icons/13.png"), "plus.abm", tool_icon_conv_options),
+        converter.convert(b.path("../../assets/icons/system/plus.png"), "plus.abm", tool_icon_conv_options),
     );
     rootfs.install(
         "system/icons/delete.abm",
-        converter.convert(b.path("../../artwork/icons/small-icons/16x16-free-application-icons/16x16/Delete.png"), "delete.abm", tool_icon_conv_options),
+        converter.convert(b.path("../../assets/icons/system/delete.png"), "delete.abm", tool_icon_conv_options),
     );
     rootfs.install(
         "system/icons/copy.abm",
-        converter.convert(b.path("../../artwork/icons/small-icons/16x16-free-application-icons/16x16/Copy.png"), "copy.abm", tool_icon_conv_options),
+        converter.convert(b.path("../../assets/icons/system/copy.png"), "copy.abm", tool_icon_conv_options),
     );
     rootfs.install(
         "system/icons/cut.abm",
-        converter.convert(b.path("../../artwork/icons/small-icons/16x16-free-application-icons/16x16/Cut.png"), "cut.abm", tool_icon_conv_options),
+        converter.convert(b.path("../../assets/icons/system/cut.png"), "cut.abm", tool_icon_conv_options),
     );
     rootfs.install(
         "system/icons/paste.abm",
-        converter.convert(b.path("../../artwork/icons/small-icons/16x16-free-application-icons/16x16/Paste.png"), "paste.abm", tool_icon_conv_options),
+        converter.convert(b.path("../../assets/icons/system/paste.png"), "paste.abm", tool_icon_conv_options),
     );
 
     rootfs.install(
         "system/icons/default-app-icon.abm",
-        converter.convert(b.path("../../artwork/os/default-app-icon.png"), "menu.abm", desktop_icon_conv_options),
+        converter.convert(b.path("../../assets/icons/apps/default-app-icon.png"), "menu.abm", desktop_icon_conv_options),
     );
 }
 
