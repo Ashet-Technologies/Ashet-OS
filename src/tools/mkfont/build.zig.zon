@@ -5,7 +5,7 @@
     .paths = .{
         "build.zig",
         "build.zig.zon",
-        "make-font.zig",
+        "src",
     },
     .dependencies = .{
         .abi = .{

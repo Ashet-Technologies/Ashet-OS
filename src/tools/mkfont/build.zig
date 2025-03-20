@@ -10,7 +10,7 @@ pub fn build(b: *std.Build) !void {
     const zigimg_mod = b.dependency("zigimg", .{}).module("zigimg");
 
     const mkfont_mod = b.addModule("mkfont", .{
-        .root_source_file = b.path("make-font.zig"),
+        .root_source_file = b.path("src/make-font.zig"),
         .target = target,
         .optimize = optimize,
     });

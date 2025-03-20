@@ -45,6 +45,9 @@ exe-tool:
 [working-directory: 'src/tools/mkfont']
 mkfont:
     {{zig}} build
+    ./zig-out/bin/mkfont -o ./zig-out/ti83-big.font ../../../assets/fonts/ti83-big/ti83-big.font.json
+    hexdump -C ./zig-out/ti83-big.font
+    wc -c ./zig-out/ti83-big.font
 
 [working-directory: 'src/tools/mkicon']
 mkicon:
