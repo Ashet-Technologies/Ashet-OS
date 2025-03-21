@@ -20,6 +20,26 @@ const QemuDisplayMode = enum {
     cocoa,
 };
 
+const ToolDep = struct {
+    dependency: []const u8,
+    artifacts: []const []const u8,
+};
+
+const installed_tools: []const ToolDep = &.{
+    .{
+        .dependency = "debugfilter",
+        .artifacts = &.{"debug-filter"},
+    },
+    .{
+        .dependency = "mkicon",
+        .artifacts = &.{"mkicon"},
+    },
+    .{
+        .dependency = "mkfont",
+        .artifacts = &.{"mkfont"},
+    },
+};
+
 pub fn build(b: *std.Build) void {
     // Options:
     const optimize_kernel = b.option(bool, "optimize-kernel", "Should the kernel be optimized?") orelse false;
@@ -57,6 +77,15 @@ pub fn build(b: *std.Build) void {
         }
         break :blk steps;
     };
+
+    // Tools
+    for (installed_tools) |tool_dep| {
+        const dep = b.dependency(tool_dep.dependency, .{});
+        for (tool_dep.artifacts) |art_name| {
+            const art = dep.artifact(art_name);
+            b.installArtifact(art);
+        }
+    }
 
     // Dependencies:
 

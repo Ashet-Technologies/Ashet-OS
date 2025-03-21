@@ -516,20 +516,31 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
             // If we would never paint anything from src, discard early:
             if (dx >= src_cursor.width)
                 return;
-            if (dy >= src_cursor.width)
+            if (dy >= src_cursor.height)
                 return;
             std.debug.assert(src_cursor.move(dx, dy));
 
             const size = if (optional_size) |size|
                 Size.new(
-                    @min(src_cursor.width, size.width),
-                    @min(src_cursor.height, size.height),
+                    @min(src_cursor.width, dx + size.width),
+                    @min(src_cursor.height, dy + size.height),
                 )
             else
                 Size.new(
                     src_cursor.width,
                     src_cursor.height,
                 );
+
+            // std.log.info("blit({},  {},  {?}) => ({},{}) in ({}x{}), blitted ({})", .{
+            //     target_pos,
+            //     source_pos,
+            //     optional_size,
+            //     dx,
+            //     dy,
+            //     src_cursor.width,
+            //     src_cursor.height,
+            //     size,
+            // });
 
             var buffer: [options.blit_buffer_size]Color = undefined;
 

@@ -97,6 +97,27 @@ pub fn main() !void {
     // Do load available applications before we "open" the desktop:
     try apps.init();
 
+    // try loading the wallpaper:
+    const maybe_wallpaper: ?ashet.graphics.Framebuffer = blk: {
+        var config_dir = try ashet.fs.Directory.openDrive(.system, "etc/desktop");
+        defer config_dir.close();
+
+        if (config_dir.openFile("wallpaper.abm", .read_only, .open_existing)) |_file_handle| {
+            var file_handle = _file_handle;
+            defer file_handle.close();
+
+            break :blk try ashet.graphics.load_bitmap_file(file_handle);
+        } else |err| {
+            switch (err) {
+                error.FileNotFound => {},
+                else => |e| logger.warn("failed to open SYS:/etc7desktop/wallpaper.abm: {}", .{e}),
+            }
+            break :blk null;
+        }
+    };
+    defer if (maybe_wallpaper) |fb|
+        fb.release();
+
     var damage_tracking = DamageTracking.init(
         Rectangle.new(Point.zero, fb_size),
     );
@@ -147,10 +168,16 @@ pub fn main() !void {
             if (damage_tracking.is_tainted()) {
                 defer damage_tracking.clear();
 
-                // try render_queue.clear(window_manager.current_theme.desktop_color);
+                // try render_queue.clear(current_theme.desktop_color);
 
-                for (damage_tracking.tainted_regions()) |rect| {
-                    try render_queue.fill_rect(rect, current_theme.desktop_color);
+                if (maybe_wallpaper) |wallpaper| {
+                    for (damage_tracking.tainted_regions()) |rect| {
+                        try render_queue.blit_partial_framebuffer(rect, rect.position(), wallpaper);
+                    }
+                } else {
+                    for (damage_tracking.tainted_regions()) |rect| {
+                        try render_queue.fill_rect(rect, current_theme.desktop_color);
+                    }
                 }
 
                 // Draw desktop:
@@ -340,28 +367,31 @@ pub fn main() !void {
 }
 
 const Cursor = struct {
-    pub const width = 11;
-    pub const height = 11;
+    pub const width = icons.cursor.width;
+    pub const height = icons.cursor.height;
 
     pub fn paint(q: *ashet.graphics.CommandQueue, point: Point, fg: Color) !void {
-        const cursor_br = Point.new(point.x +| 10, point.y +| 5);
-        const cursor_bl = Point.new(point.x +| 5, point.y +| 10);
+        try q.blit_bitmap(point, icons.cursor);
+        _ = fg;
 
-        try q.draw_line(
-            point,
-            cursor_br,
-            fg,
-        );
-        try q.draw_line(
-            point,
-            cursor_bl,
-            fg,
-        );
-        try q.draw_line(
-            cursor_br,
-            cursor_bl,
-            fg,
-        );
+        // const cursor_br = Point.new(point.x +| 10, point.y +| 5);
+        // const cursor_bl = Point.new(point.x +| 5, point.y +| 10);
+
+        // try q.draw_line(
+        //     point,
+        //     cursor_br,
+        //     fg,
+        // );
+        // try q.draw_line(
+        //     point,
+        //     cursor_bl,
+        //     fg,
+        // );
+        // try q.draw_line(
+        //     cursor_br,
+        //     cursor_bl,
+        //     fg,
+        // );
     }
 };
 

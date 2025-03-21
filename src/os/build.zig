@@ -53,10 +53,15 @@ pub fn build(b: *std.Build) void {
 
     var rootfs = disk_image_step.FileSystemBuilder.init(b);
     {
+        // Add the rootfs part which is present on all deployments:
         rootfs.addDirectory(b.path("../../rootfs/all-systems"), ".");
 
+        // Add the rootfs part which is auto-generated during the build and contains converted files:
         const asset_source = assets_dep.namedWriteFiles("assets");
         rootfs.addDirectory(asset_source.getDirectory(), ".");
+
+        // Add the rootfs part which contains developer customizations:
+        rootfs.addDirectory(b.path("../../rootfs/dev"), ".");
     }
 
     // Phase 2: Platform dependent root fs
