@@ -61,6 +61,7 @@ pub const BitmapFontFile = struct {
         advance: ?u8 = null,
         atlas: ?Atlas = null,
         index: ?usize = null,
+        select_pixels: ?SelectPixel = null,
     };
 
     pub const Atlas = struct {
@@ -71,6 +72,12 @@ pub const BitmapFontFile = struct {
         cell_height: u16,
         cell_padding: u16,
         row_length: u16,
+    };
+
+    pub const SelectPixel = enum {
+        @"opaque",
+        white,
+        black,
     };
 };
 

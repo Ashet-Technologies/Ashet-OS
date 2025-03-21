@@ -45,9 +45,17 @@ exe-tool:
 [working-directory: 'src/tools/mkfont']
 mkfont:
     {{zig}} build
-    ./zig-out/bin/mkfont -o ./zig-out/ti83-big.font ../../../assets/fonts/ti83-big/ti83-big.font.json
-    hexdump -C ./zig-out/ti83-big.font
-    wc -c ./zig-out/ti83-big.font
+
+test-mkfont: \
+    (test-mkfont-face "mono-6") \
+    (test-mkfont-face "mono-8") \
+    (test-mkfont-face "sans-6")
+
+[working-directory: 'src/tools/mkfont']
+test-mkfont-face font: mkfont
+    ./zig-out/bin/mkfont -o ./zig-out/{{font}}.font ../../../assets/fonts/{{font}}/{{font}}.font.json
+    hexdump -C ./zig-out/{{font}}.font
+    wc -c ./zig-out/{{font}}.font
 
 [working-directory: 'src/tools/mkicon']
 mkicon:

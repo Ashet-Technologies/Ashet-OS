@@ -63,6 +63,7 @@ pub fn generate(
     for (font.glyphs.keys(), font.glyphs.values()) |codepoint, glyph| {
         const image_file = glyph.image_file orelse font.defaults.image_file orelse @panic("missing validation");
         const image = try image_cache.get_or_load(image_file);
+        const select_pixels = glyph.select_pixels orelse font.defaults.select_pixels orelse @panic("missing validation");
 
         const maybe_index = glyph.index;
         const maybe_atlas = glyph.atlas orelse font.defaults.atlas;
@@ -95,7 +96,7 @@ pub fn generate(
         for (cell_y0..cell_y1) |y| {
             for (cell_x0..cell_x1) |x| {
                 const pix = get_pixel(image, x, y);
-                if (is_glyph_body(pix)) {
+                if (is_glyph_body(select_pixels, pix)) {
                     min_x = @min(min_x, x);
                     max_x = @max(max_x, x + 1);
                     min_y = @min(min_y, y);
@@ -124,7 +125,7 @@ pub fn generate(
                     const mask: u8 = @as(u8, 1) << bit;
 
                     const pix = get_pixel(image, x, y);
-                    if (is_glyph_body(pix)) {
+                    if (is_glyph_body(select_pixels, pix)) {
                         bits[index] |= mask;
                     }
                 }
@@ -265,10 +266,14 @@ fn get_pixel(img: *const zigimg.Image, x: usize, y: usize) zigimg.color.Colorf32
     return iter.next().?;
 }
 
-fn is_glyph_body(pix: zigimg.color.Colorf32) bool {
-    if (pix.a < 0.5)
-        return false;
-    return ((pix.r + pix.g + pix.b) / 3 > 0.5);
+fn is_glyph_body(selector: schema.BitmapFontFile.SelectPixel, pix: zigimg.color.Colorf32) bool {
+    const gray_level = (pix.r + pix.g + pix.b) / 3;
+
+    return switch (selector) {
+        .@"opaque" => (pix.a >= 0.5),
+        .white => (gray_level >= 0.5),
+        .black => (gray_level <= 0.5),
+    };
 }
 
 const Bitmap = struct {

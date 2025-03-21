@@ -1,0 +1,822 @@
+{
+    "bitmap": {
+        "line_height": 8,
+        "defaults": {
+            "select_pixels": "black"
+        },
+        "glyphs": {
+            "𝑛": {
+                "image_file": "img/01h_SrecurN.gif",
+                "advance": 6
+            },
+            "𝑢": {
+                "image_file": "img/02h_SrecurU.gif",
+                "advance": 4
+            },
+            "𝑣": {
+                "image_file": "img/03h_SrecurV.gif",
+                "advance": 4
+            },
+            "𝑤": {
+                "image_file": "img/04h_SrecurW.gif",
+                "advance": 4
+            },
+            "▶": {
+                "image_file": "img/05h_Sconvert.gif",
+                "advance": 4
+            },
+            "🠟": {
+                "image_file": "img/07h_SsqDown.gif",
+                "advance": 5
+            },
+            "∫": {
+                "image_file": "img/08h_Sintegral.gif",
+                "advance": 4
+            },
+            "×": {
+                "image_file": "img/09h_Scross.gif",
+                "advance": 4
+            },
+            "□": {
+                "image_file": "img/0Ah_SboxIcon.gif",
+                "advance": 4
+            },
+            "﹢": {
+                "image_file": "img/0Bh_ScrossIcon.gif",
+                "advance": 4
+            },
+            "∙": {
+                "image_file": "img/0Ch_SdotIcon.gif",
+                "advance": 4
+            },
+            "∛": {
+                "image_file": "img/0Eh_ScubeR.gif",
+                "advance": 4
+            },
+            "𝗙": {
+                "image_file": "img/0Fh_ShexF.gif",
+                "advance": 5
+            },
+            "√": {
+                "image_file": "img/10h_Sroot.gif",
+                "advance": 4
+            },
+            "²": {
+                "image_file": "img/12h_Ssquare.gif",
+                "advance": 4
+            },
+            "∠": {
+                "image_file": "img/13h_Sangle.gif",
+                "advance": 4
+            },
+            "°": {
+                "image_file": "img/14h_Sdegree.gif",
+                "advance": 5
+            },
+            "㎭": {
+                "image_file": "img/15h_Sradian.gif",
+                "advance": 5
+            },
+            "ᵀ": {
+                "image_file": "img/16h_Stranspose.gif",
+                "advance": 4
+            },
+            "≤": {
+                "image_file": "img/17h_SLE.gif",
+                "advance": 5
+            },
+            "≠": {
+                "image_file": "img/18h_SNE.gif",
+                "advance": 6
+            },
+            "≥": {
+                "image_file": "img/19h_SGE.gif",
+                "advance": 5
+            },
+            "﹣": {
+                "image_file": "img/1Ah_Sneg.gif",
+                "advance": 4
+            },
+            "ᴇ": {
+                "image_file": "img/1Bh_Sexponent.gif",
+                "advance": 4
+            },
+            "→": {
+                "image_file": "img/1Ch_Sstore.gif",
+                "advance": 5
+            },
+            "↑": {
+                "image_file": "img/1Eh_SupArrow.gif",
+                "advance": 3
+            },
+            "↓": {
+                "image_file": "img/1Fh_SdownArrow.gif",
+                "advance": 3
+            },
+            " ": {
+                "image_file": "img/20h_Sspace.gif",
+                "advance": 1
+            },
+            "!": {
+                "image_file": "img/21h_Sexclam.gif",
+                "advance": 2
+            },
+            "\"": {
+                "image_file": "img/22h_Squote.gif",
+                "advance": 4
+            },
+            "#": {
+                "image_file": "img/23h_Spound.gif",
+                "advance": 6
+            },
+            "$": {
+                "image_file": "img/24h_Sdollar.gif",
+                "advance": 6
+            },
+            "%": {
+                "image_file": "img/25h_Spercent.gif",
+                "advance": 4
+            },
+            "&": {
+                "image_file": "img/26h_Sampersand.gif",
+                "advance": 5
+            },
+            "'": {
+                "image_file": "img/27h_Sapostrophe.gif",
+                "advance": 2
+            },
+            "(": {
+                "image_file": "img/28h_SlParen.gif",
+                "advance": 3
+            },
+            ")": {
+                "image_file": "img/29h_SrParen.gif",
+                "advance": 3
+            },
+            "*": {
+                "image_file": "img/2Ah_Sasterisk.gif",
+                "advance": 6
+            },
+            "+": {
+                "image_file": "img/2Bh_SplusSign.gif",
+                "advance": 4
+            },
+            ",": {
+                "image_file": "img/2Ch_Scomma.gif",
+                "advance": 3
+            },
+            "-": {
+                "image_file": "img/2Dh_Sdash.gif",
+                "advance": 4
+            },
+            ".": {
+                "image_file": "img/2Eh_Speriod.gif",
+                "advance": 2
+            },
+            "/": {
+                "image_file": "img/2Fh_Sslash.gif",
+                "advance": 4
+            },
+            "0": {
+                "image_file": "img/30h_S0.gif",
+                "advance": 4
+            },
+            "1": {
+                "image_file": "img/31h_S1.gif",
+                "advance": 4
+            },
+            "2": {
+                "image_file": "img/32h_S2.gif",
+                "advance": 4
+            },
+            "3": {
+                "image_file": "img/33h_S3.gif",
+                "advance": 4
+            },
+            "4": {
+                "image_file": "img/34h_S4.gif",
+                "advance": 4
+            },
+            "5": {
+                "image_file": "img/35h_S5.gif",
+                "advance": 4
+            },
+            "6": {
+                "image_file": "img/36h_S6.gif",
+                "advance": 4
+            },
+            "7": {
+                "image_file": "img/37h_S7.gif",
+                "advance": 4
+            },
+            "8": {
+                "image_file": "img/38h_S8.gif",
+                "advance": 4
+            },
+            "9": {
+                "image_file": "img/39h_S9.gif",
+                "advance": 4
+            },
+            ":": {
+                "image_file": "img/3Ah_Scolon.gif",
+                "advance": 2
+            },
+            ";": {
+                "image_file": "img/3Bh_Ssemicolon.gif",
+                "advance": 3
+            },
+            "<": {
+                "image_file": "img/3Ch_SLT.gif",
+                "advance": 4
+            },
+            "=": {
+                "image_file": "img/3Dh_SEQ.gif",
+                "advance": 4
+            },
+            ">": {
+                "image_file": "img/3Eh_SGT.gif",
+                "advance": 4
+            },
+            "?": {
+                "image_file": "img/3Fh_Squestion.gif",
+                "advance": 4
+            },
+            "@": {
+                "image_file": "img/40h_SatSign.gif",
+                "advance": 6
+            },
+            "A": {
+                "image_file": "img/41h_ScapA.gif",
+                "advance": 4
+            },
+            "B": {
+                "image_file": "img/42h_ScapB.gif",
+                "advance": 4
+            },
+            "C": {
+                "image_file": "img/43h_ScapC.gif",
+                "advance": 4
+            },
+            "D": {
+                "image_file": "img/44h_ScapD.gif",
+                "advance": 4
+            },
+            "E": {
+                "image_file": "img/45h_ScapE.gif",
+                "advance": 4
+            },
+            "F": {
+                "image_file": "img/46h_ScapF.gif",
+                "advance": 4
+            },
+            "G": {
+                "image_file": "img/47h_ScapG.gif",
+                "advance": 4
+            },
+            "H": {
+                "image_file": "img/48h_ScapH.gif",
+                "advance": 4
+            },
+            "I": {
+                "image_file": "img/49h_ScapI.gif",
+                "advance": 4
+            },
+            "J": {
+                "image_file": "img/4Ah_ScapJ.gif",
+                "advance": 4
+            },
+            "K": {
+                "image_file": "img/4Bh_ScapK.gif",
+                "advance": 4
+            },
+            "L": {
+                "image_file": "img/4Ch_ScapL.gif",
+                "advance": 4
+            },
+            "M": {
+                "image_file": "img/4Dh_ScapM.gif",
+                "advance": 4
+            },
+            "N": {
+                "image_file": "img/4Eh_ScapN.gif",
+                "advance": 4
+            },
+            "O": {
+                "image_file": "img/4Fh_ScapO.gif",
+                "advance": 4
+            },
+            "P": {
+                "image_file": "img/50h_ScapP.gif",
+                "advance": 4
+            },
+            "Q": {
+                "image_file": "img/51h_ScapQ.gif",
+                "advance": 4
+            },
+            "R": {
+                "image_file": "img/52h_ScapR.gif",
+                "advance": 4
+            },
+            "S": {
+                "image_file": "img/53h_ScapS.gif",
+                "advance": 4
+            },
+            "T": {
+                "image_file": "img/54h_ScapT.gif",
+                "advance": 4
+            },
+            "U": {
+                "image_file": "img/55h_ScapU.gif",
+                "advance": 4
+            },
+            "V": {
+                "image_file": "img/56h_ScapV.gif",
+                "advance": 4
+            },
+            "W": {
+                "image_file": "img/57h_ScapW.gif",
+                "advance": 4
+            },
+            "X": {
+                "image_file": "img/58h_ScapX.gif",
+                "advance": 4
+            },
+            "Y": {
+                "image_file": "img/59h_ScapY.gif",
+                "advance": 4
+            },
+            "Z": {
+                "image_file": "img/5Ah_ScapZ.gif",
+                "advance": 4
+            },
+            "[": {
+                "image_file": "img/5Bh_Stheta.gif",
+                "advance": 4
+            },
+            "\\": {
+                "image_file": "img/5Ch_Sbackslash.gif",
+                "advance": 4
+            },
+            "]": {
+                "image_file": "img/5Dh_SrBrack.gif",
+                "advance": 3
+            },
+            "^": {
+                "image_file": "img/5Eh_Scaret.gif",
+                "advance": 4
+            },
+            "_": {
+                "image_file": "img/5Fh_Sunderscore.gif",
+                "advance": 4
+            },
+            "`": {
+                "image_file": "img/60h_Sbackquote.gif",
+                "advance": 3
+            },
+            "a": {
+                "image_file": "img/61h_SmallA.gif",
+                "advance": 4
+            },
+            "b": {
+                "image_file": "img/62h_SmallB.gif",
+                "advance": 4
+            },
+            "c": {
+                "image_file": "img/63h_SmallC.gif",
+                "advance": 4
+            },
+            "d": {
+                "image_file": "img/64h_SmallD.gif",
+                "advance": 4
+            },
+            "e": {
+                "image_file": "img/65h_SmallE.gif",
+                "advance": 4
+            },
+            "f": {
+                "image_file": "img/66h_SmallF.gif",
+                "advance": 3
+            },
+            "g": {
+                "image_file": "img/67h_SmallG.gif",
+                "advance": 4
+            },
+            "h": {
+                "image_file": "img/68h_SmallH.gif",
+                "advance": 4
+            },
+            "i": {
+                "image_file": "img/69h_SmallI.gif",
+                "advance": 2
+            },
+            "j": {
+                "image_file": "img/6Ah_SmallJ.gif",
+                "advance": 4
+            },
+            "k": {
+                "image_file": "img/6Bh_SmallK.gif",
+                "advance": 4
+            },
+            "l": {
+                "image_file": "img/6Ch_SmallL.gif",
+                "advance": 3
+            },
+            "m": {
+                "image_file": "img/6Dh_SmallM.gif",
+                "advance": 6
+            },
+            "n": {
+                "image_file": "img/6Eh_SmallN.gif",
+                "advance": 4
+            },
+            "o": {
+                "image_file": "img/6Fh_SmallO.gif",
+                "advance": 4
+            },
+            "p": {
+                "image_file": "img/70h_SmallP.gif",
+                "advance": 4
+            },
+            "q": {
+                "image_file": "img/71h_SmallQ.gif",
+                "advance": 4
+            },
+            "r": {
+                "image_file": "img/72h_SmallR.gif",
+                "advance": 4
+            },
+            "s": {
+                "image_file": "img/73h_SmallS.gif",
+                "advance": 3
+            },
+            "t": {
+                "image_file": "img/74h_SmallT.gif",
+                "advance": 3
+            },
+            "u": {
+                "image_file": "img/75h_SmallU.gif",
+                "advance": 4
+            },
+            "v": {
+                "image_file": "img/76h_SmallV.gif",
+                "advance": 4
+            },
+            "w": {
+                "image_file": "img/77h_SmallW.gif",
+                "advance": 6
+            },
+            "x": {
+                "image_file": "img/78h_SmallX.gif",
+                "advance": 4
+            },
+            "y": {
+                "image_file": "img/79h_SmallY.gif",
+                "advance": 4
+            },
+            "z": {
+                "image_file": "img/7Ah_SmallZ.gif",
+                "advance": 5
+            },
+            "{": {
+                "image_file": "img/7Bh_SlBrace.gif",
+                "advance": 4
+            },
+            "|": {
+                "image_file": "img/7Ch_Sbar.gif",
+                "advance": 2
+            },
+            "}": {
+                "image_file": "img/7Dh_SrBrace.gif",
+                "advance": 4
+            },
+            "~": {
+                "image_file": "img/7Eh_Stilde.gif",
+                "advance": 5
+            },
+            "₀": {
+                "image_file": "img/80h_Ssub0.gif",
+                "advance": 4
+            },
+            "₁": {
+                "image_file": "img/81h_Ssub1.gif",
+                "advance": 3
+            },
+            "₂": {
+                "image_file": "img/82h_Ssub2.gif",
+                "advance": 4
+            },
+            "₃": {
+                "image_file": "img/83h_Ssub3.gif",
+                "advance": 4
+            },
+            "₄": {
+                "image_file": "img/84h_Ssub4.gif",
+                "advance": 4
+            },
+            "₅": {
+                "image_file": "img/85h_Ssub5.gif",
+                "advance": 4
+            },
+            "₆": {
+                "image_file": "img/86h_Ssub6.gif",
+                "advance": 4
+            },
+            "₇": {
+                "image_file": "img/87h_Ssub7.gif",
+                "advance": 4
+            },
+            "₈": {
+                "image_file": "img/88h_Ssub8.gif",
+                "advance": 4
+            },
+            "₉": {
+                "image_file": "img/89h_Ssub9.gif",
+                "advance": 4
+            },
+            "Á": {
+                "image_file": "img/8Ah_ScapAAcute.gif",
+                "advance": 5
+            },
+            "À": {
+                "image_file": "img/8Bh_ScapAGrave.gif",
+                "advance": 5
+            },
+            "Å": {
+                "image_file": "img/8Ch_ScapACaret.gif",
+                "advance": 5
+            },
+            "Ä": {
+                "image_file": "img/8Dh_ScapADier.gif",
+                "advance": 5
+            },
+            "á": {
+                "image_file": "img/8Eh_SaAcute.gif",
+                "advance": 5
+            },
+            "à": {
+                "image_file": "img/8Fh_SaGrave.gif",
+                "advance": 5
+            },
+            "å": {
+                "image_file": "img/90h_SaCaret.gif",
+                "advance": 5
+            },
+            "ä": {
+                "image_file": "img/91h_SaDier.gif",
+                "advance": 5
+            },
+            "È": {
+                "image_file": "img/92h_ScapEGrave.gif",
+                "advance": 5
+            },
+            "É": {
+                "image_file": "img/93h_ScapEAcute.gif",
+                "advance": 5
+            },
+            "Ê": {
+                "image_file": "img/94h_ScapECaret.gif",
+                "advance": 4
+            },
+            "Ë": {
+                "image_file": "img/95h_ScapEDier.gif",
+                "advance": 4
+            },
+            "è": {
+                "image_file": "img/96h_SeAcute.gif",
+                "advance": 4
+            },
+            "é": {
+                "image_file": "img/97h_SeGrave.gif",
+                "advance": 4
+            },
+            "ê": {
+                "image_file": "img/98h_SeCaret.gif",
+                "advance": 4
+            },
+            "ë": {
+                "image_file": "img/99h_SeDier.gif",
+                "advance": 4
+            },
+            "Í": {
+                "image_file": "img/9Ah_ScapIAcute.gif",
+                "advance": 4
+            },
+            "Ì": {
+                "image_file": "img/9Bh_ScapIGrave.gif",
+                "advance": 4
+            },
+            "Î": {
+                "image_file": "img/9Ch_ScapICaret.gif",
+                "advance": 4
+            },
+            "Ï": {
+                "image_file": "img/9Dh_ScapIDier.gif",
+                "advance": 4
+            },
+            "í": {
+                "image_file": "img/9Eh_SiAcute.gif",
+                "advance": 4
+            },
+            "ì": {
+                "image_file": "img/9Fh_SiGrave.gif",
+                "advance": 4
+            },
+            "î": {
+                "image_file": "img/A0h_SiCaret.gif",
+                "advance": 4
+            },
+            "ï": {
+                "image_file": "img/A1h_SiDier.gif",
+                "advance": 4
+            },
+            "Ó": {
+                "image_file": "img/A2h_ScapOAcute.gif",
+                "advance": 6
+            },
+            "Ò": {
+                "image_file": "img/A3h_ScapOGrave.gif",
+                "advance": 6
+            },
+            "Ô": {
+                "image_file": "img/A4h_ScapOCaret.gif",
+                "advance": 6
+            },
+            "Ö": {
+                "image_file": "img/A5h_ScapODier.gif",
+                "advance": 6
+            },
+            "ó": {
+                "image_file": "img/A6h_SoAcute.gif",
+                "advance": 6
+            },
+            "ò": {
+                "image_file": "img/A7h_SoGrave.gif",
+                "advance": 6
+            },
+            "ô": {
+                "image_file": "img/A8h_SoCaret.gif",
+                "advance": 6
+            },
+            "ö": {
+                "image_file": "img/A9h_SoDier.gif",
+                "advance": 6
+            },
+            "Ú": {
+                "image_file": "img/AAh_ScapUAcute.gif",
+                "advance": 4
+            },
+            "Ù": {
+                "image_file": "img/ABh_ScapUGrave.gif",
+                "advance": 4
+            },
+            "Û": {
+                "image_file": "img/ACh_ScapUCaret.gif",
+                "advance": 4
+            },
+            "Ü": {
+                "image_file": "img/ADh_ScapUDier.gif",
+                "advance": 4
+            },
+            "ú": {
+                "image_file": "img/AEh_SuAcute.gif",
+                "advance": 5
+            },
+            "ù": {
+                "image_file": "img/AFh_SuGrave.gif",
+                "advance": 5
+            },
+            "û": {
+                "image_file": "img/B0h_SuCaret.gif",
+                "advance": 5
+            },
+            "ü": {
+                "image_file": "img/B1h_SuDier.gif",
+                "advance": 5
+            },
+            "Ç": {
+                "image_file": "img/B2h_ScapCCed.gif",
+                "advance": 4
+            },
+            "ç": {
+                "image_file": "img/B3h_ScCed.gif",
+                "advance": 4
+            },
+            "Ñ": {
+                "image_file": "img/B4h_ScapNTilde.gif",
+                "advance": 5
+            },
+            "ñ": {
+                "image_file": "img/B5h_SnTilde.gif",
+                "advance": 5
+            },
+            "´": {
+                "image_file": "img/B6h_Saccent.gif",
+                "advance": 3
+            },
+            "·": {
+                "image_file": "img/B7h_Sgrave.gif",
+                "advance": 3
+            },
+            "¨": {
+                "image_file": "img/B8h_Sdieresis.gif",
+                "advance": 4
+            },
+            "¿": {
+                "image_file": "img/B9h_SquesDown.gif",
+                "advance": 4
+            },
+            "¡": {
+                "image_file": "img/BAh_SexclamDown.gif",
+                "advance": 2
+            },
+            "α": {
+                "image_file": "img/BBh_Salpha.gif",
+                "advance": 5
+            },
+            "β": {
+                "image_file": "img/BCh_Sbeta.gif",
+                "advance": 4
+            },
+            "γ": {
+                "image_file": "img/BDh_Sgamma.gif",
+                "advance": 5
+            },
+            "Δ": {
+                "image_file": "img/BEh_ScapDelta.gif",
+                "advance": 6
+            },
+            "δ": {
+                "image_file": "img/BFh_Sdelta.gif",
+                "advance": 4
+            },
+            "ϵ": {
+                "image_file": "img/C0h_Sepsilon.gif",
+                "advance": 4
+            },
+            "λ": {
+                "image_file": "img/C2h_Slambda.gif",
+                "advance": 4
+            },
+            "µ": {
+                "image_file": "img/C3h_Smu.gif",
+                "advance": 5
+            },
+            "π": {
+                "image_file": "img/C4h_Spi.gif",
+                "advance": 6
+            },
+            "ρ": {
+                "image_file": "img/C5h_Srho.gif",
+                "advance": 5
+            },
+            "Σ": {
+                "image_file": "img/C6h_ScapSigma.gif",
+                "advance": 5
+            },
+            "σ": {
+                "image_file": "img/C7h_Ssigma.gif",
+                "advance": 5
+            },
+            "τ": {
+                "image_file": "img/C8h_Stau.gif",
+                "advance": 5
+            },
+            "ϕ": {
+                "image_file": "img/C9h_Sphi.gif",
+                "advance": 6
+            },
+            "Ω": {
+                "image_file": "img/CAh_ScapOmega.gif",
+                "advance": 6
+            },
+            "ˣ": {
+                "image_file": "img/CDh_SsupX.gif",
+                "advance": 4
+            },
+            "…": {
+                "image_file": "img/CEh_Sellipsis.gif",
+                "advance": 3
+            },
+            "◀": {
+                "image_file": "img/CFh_Sleft.gif",
+                "advance": 4
+            },
+            "∎": {
+                "image_file": "img/D0h_Sblock.gif",
+                "advance": 3
+            },
+            "χ": {
+                "image_file": "img/D9h_Schi.gif",
+                "advance": 4
+            },
+            "█": {
+                "image_file": "img/F1h_ScurFull.gif",
+                "advance": 4
+            },
+            "ß": {
+                "image_file": "img/F4h_SsharpS.gif",
+                "advance": 5
+            }
+        }
+    }
+}
