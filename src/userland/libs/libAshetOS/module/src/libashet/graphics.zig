@@ -169,6 +169,7 @@ pub const CommandQueue = struct {
 };
 
 pub fn get_system_font(font_name: []const u8) !Font {
+    errdefer |e| logger.debug("failed to load font '{s}': {}", .{ font_name, e });
     return try ashet.userland.draw.get_system_font(font_name);
 }
 

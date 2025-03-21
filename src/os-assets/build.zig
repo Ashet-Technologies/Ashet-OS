@@ -29,19 +29,19 @@ pub fn build(b: *std.Build) void {
 
     // Fonts:
     rootfs.install(
-        "rootfs/all-systems/system/fonts/mono-6.font",
+        "system/fonts/mono-6.font",
         fontgen.convert(assets.path(b, "fonts/mono-6/mono-6.font.json")),
     );
     rootfs.install(
-        "rootfs/all-systems/system/fonts/mono-8.font",
+        "system/fonts/mono-8.font",
         fontgen.convert(assets.path(b, "fonts/mono-6/mono-6.font.json")),
     );
     rootfs.install(
-        "rootfs/all-systems/system/fonts/sans-6.font",
+        "system/fonts/sans-6.font",
         fontgen.convert(assets.path(b, "fonts/mono-6/mono-6.font.json")),
     );
     rootfs.install(
-        "rootfs/all-systems/system/fonts/sans.font",
+        "system/fonts/sans.font",
         fontgen.convert(assets.path(b, "fonts/mono-6/mono-6.font.json")),
     );
 
