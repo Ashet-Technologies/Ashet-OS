@@ -32,7 +32,7 @@
             name = "ashet-os";
             src = ./.;
             nativeBuildInputs = [
-              pkgs.zigpkgs."0.13.0"
+              pkgs.zigpkgs."0.14.0"
 
               pkgs.qemu
               pkgs.llvmPackages_17.bintools
