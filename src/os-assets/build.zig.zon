@@ -1,10 +1,14 @@
 .{
     .name = .kernel_assets,
+    .fingerprint = 0xb3e1d3fa344c8d85,
     .version = "0.1.0",
     .paths = .{ "build.zig", "build.zig.zon" },
     .dependencies = .{
         .mkicon = .{
             .path = "../tools/mkicon",
+        },
+        .mkfont = .{
+            .path = "../tools/mkfont",
         },
     },
 }

@@ -21,7 +21,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .root_source_file = b.path("src/wiki.zig"),
         .icon = .{
-            .convert = b.path("../../../../artwork/icons/small-icons/32x32-free-design-icons/32x32/Help book.png"),
+            .convert = b.path("../../../../assets/icons/apps/wiki.png"),
         },
     });
 

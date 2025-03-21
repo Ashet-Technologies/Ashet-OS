@@ -226,9 +226,6 @@ fn main() !void {
     log.info("initialize input...", .{});
     input.initialize();
 
-    log.info("initialize graphics subsystem...", .{});
-    try graphics.initialize();
-
     log.info("spawn kernel main thread...", .{});
     {
         const thread = try scheduler.Thread.spawn(global_kernel_tick, null, .{
@@ -247,7 +244,7 @@ fn main() !void {
     {
         log.info("starting entry point thread...", .{});
 
-        const thread = try scheduler.Thread.spawn(load_entry_point, null, .{
+        const thread = try scheduler.Thread.spawn(threaded_kernel_init_unchecked, null, .{
             .stack_size = 32 * 1024,
         });
         try thread.setName("os.entrypoint");
@@ -273,23 +270,29 @@ fn main() !void {
     log.warn("All threads stopped. System is now halting.", .{});
 }
 
+fn threaded_kernel_init_unchecked(_: ?*anyopaque) callconv(.C) u32 {
+    threaded_kernel_init() catch |err| {
+        std.log.err("failed to initialize kernel: {s}", .{@errorName(err)});
+        if (@errorReturnTrace()) |trace|
+            Debug.printStackTrace("  ", trace, Debug.println);
+        @panic("kernel initialization failed");
+    };
+    return 0;
+}
+
 /// This thread is just loading the startup application, and
 /// is then quitting.
 ///
 /// It's required to use a thread here to keep the IO subsystem
 /// up and running. If we would try loading the application from
 /// the `main()` function, we'd be blocking.
-fn load_entry_point(_: ?*anyopaque) callconv(.C) u32 {
+fn threaded_kernel_init() !void {
+    log.info("initialize graphics subsystem...", .{});
+    try graphics.initialize();
+
     log.info("loading entry point...", .{});
 
-    apps.startApp(.{
-        .name = "init",
-    }) catch |err| {
-        log.err("failed to start up the init process: {s}", .{@errorName(err)});
-        if (@errorReturnTrace()) |trace|
-            Debug.printStackTrace("  ", trace, Debug.println);
-        @panic("failed to start up the system");
-    };
+    try apps.startApp(.{ .name = "init" });
 
     log.info("start application successfully loaded!", .{});
 
@@ -307,8 +310,6 @@ fn load_entry_point(_: ?*anyopaque) callconv(.C) u32 {
             memory.debug.dumpPageMap();
         }
     }
-
-    return 0;
 }
 
 /// This function runs to keep certain kernel tasks alive and

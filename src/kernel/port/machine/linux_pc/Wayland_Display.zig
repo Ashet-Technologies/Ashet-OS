@@ -76,6 +76,7 @@ pub fn init(
 
     server.connection = shimizu.posix.Connection.open(allocator, .{}) catch |err| switch (err) {
         error.FileNotFound => return error.NoWaylandSupport,
+        error.XDGRuntimeDirEnvironmentVariableNotFound => return error.NoWaylandSupport,
         else => |e| return e,
     };
     errdefer server.connection.close();

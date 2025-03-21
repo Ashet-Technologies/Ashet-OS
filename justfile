@@ -42,6 +42,26 @@ debug-vhc: build-vhc
 exe-tool:
     {{zig}} build
 
+[working-directory: 'src/tools/mkfont']
+mkfont:
+    {{zig}} build
+
+test-mkfont: \
+    (test-mkfont-face "mono-6") \
+    (test-mkfont-face "mono-8") \
+    (test-mkfont-face "sans-6") \
+    (test-mkfont-face "sans")
+
+[working-directory: 'src/tools/mkfont']
+test-mkfont-face font: mkfont
+    ./zig-out/bin/mkfont -o ./zig-out/{{font}}.font ../../../assets/fonts/{{font}}/{{font}}.font.json
+    hexdump -C ./zig-out/{{font}}.font
+    wc -c ./zig-out/{{font}}.font
+
+[working-directory: 'src/tools/mkicon']
+mkicon:
+    {{zig}} build
+
 dump-libashet: \
     (dump-libashet-target "arm") \
     (dump-libashet-target "x86") \

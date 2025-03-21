@@ -1,10 +1,27 @@
 .{
-    .name = "mkfont",
+    .name = .mkfont,
     .version = "0.0.1",
+    .fingerprint = 0x1a9a2cb59c0b2811,
     .paths = .{
         "build.zig",
         "build.zig.zon",
-        "make-bitmap-font.zig",
+        "src",
     },
-    .dependencies = .{},
+    .dependencies = .{
+        .abi = .{
+            .path = "../../abi",
+        },
+        .args = .{
+            .url = "git+https://github.com/ikskuh/zig-args.git#9425b94c103a031777fdd272c555ce93a7dea581",
+            .hash = "args-0.0.0-CiLiqv_NAAC97fGpk9hS2K681jkiqPsWP6w3ucb_ctGH",
+        },
+        .zigimg = .{
+            .url = "https://github.com/der-teufel-programming/zigimg/archive/7de94de43737a0d6ff8cb8049f1b72110dfc3bfd.tar.gz",
+            .hash = "1220a580de4d054d2985a766fab9c9135af890c895523b31a25b6bb21ab52843c591",
+        },
+        .turtlefont = .{
+            .url = "https://github.com/ikskuh/turtlefont/archive/f88e8d2447475635e410c52ce798e8954b27d3df.tar.gz",
+            .hash = "turtlefont-0.1.0-TiRlD8JaAABrQ9oR7tgmhWRBIae7Esx4MLnUVyMsLbCR",
+        },
+    },
 }

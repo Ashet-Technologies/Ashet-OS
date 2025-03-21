@@ -53,10 +53,15 @@ pub fn build(b: *std.Build) void {
 
     var rootfs = disk_image_step.FileSystemBuilder.init(b);
     {
-        rootfs.addDirectory(b.path("../../rootfs"), ".");
+        // Add the rootfs part which is present on all deployments:
+        rootfs.addDirectory(b.path("../../rootfs/all-systems"), ".");
 
+        // Add the rootfs part which is auto-generated during the build and contains converted files:
         const asset_source = assets_dep.namedWriteFiles("assets");
         rootfs.addDirectory(asset_source.getDirectory(), ".");
+
+        // Add the rootfs part which contains developer customizations:
+        rootfs.addDirectory(b.path("../../rootfs/dev"), ".");
     }
 
     // Phase 2: Platform dependent root fs
@@ -105,9 +110,9 @@ pub fn build(b: *std.Build) void {
         .@"x86-pc-bios" => {
             rootfs.addFile(kernel_elf, "/ashet-os");
 
-            rootfs.addFile(b.path("../../rootfs-x86/syslinux/modules.alias"), "syslinux/modules.alias");
-            rootfs.addFile(b.path("../../rootfs-x86/syslinux/pci.ids"), "syslinux/pci.ids");
-            rootfs.addFile(b.path("../../rootfs-x86/syslinux/syslinux.cfg"), "syslinux/syslinux.cfg");
+            rootfs.addFile(b.path("../../rootfs/pc-bios/syslinux/modules.alias"), "syslinux/modules.alias");
+            rootfs.addFile(b.path("../../rootfs/pc-bios/syslinux/pci.ids"), "syslinux/pci.ids");
+            rootfs.addFile(b.path("../../rootfs/pc-bios/syslinux/syslinux.cfg"), "syslinux/syslinux.cfg");
 
             rootfs.addFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/cmenu/libmenu/libmenu.c32"), "syslinux/libmenu.c32");
             rootfs.addFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/gpllib/libgpl.c32"), "syslinux/libgpl.c32");
@@ -123,8 +128,57 @@ pub fn build(b: *std.Build) void {
         else => {},
     }
 
-    // Phase 4: Create disk
+    if (machine_info.rom_size) |rom_size| {
+        const objcopy_kernel = b.addObjCopy(kernel_elf, .{
+            .basename = "kernel.bin",
+            .format = .bin,
+            .pad_to = rom_size,
+        });
 
+        const kernel_bin = objcopy_kernel.getOutput();
+
+        _ = result_files.addCopyFile(kernel_bin, "kernel.bin");
+
+        const install_bin_file = b.addInstallFile(kernel_bin, "kernel.bin");
+        b.getInstallStep().dependOn(&install_bin_file.step);
+    }
+
+    // Phase 4: Put all files in the rootfs into a named step as well:
+    // MUST BE DONE BEFORE "rootfs.finalize()"!
+    {
+        const rootfs_files = b.addNamedWriteFiles("rootfs");
+
+        for (rootfs.list.items) |item| {
+            switch (item) {
+                .empty_dir => |destination| {
+                    _ = rootfs_files.addCopyDirectory(
+                        b.path("empty-dir"),
+                        destination,
+                        .{
+                            .exclude_extensions = &.{".gitignore"},
+                        },
+                    );
+                },
+
+                .copy_dir => |copy| {
+                    _ = rootfs_files.addCopyDirectory(
+                        copy.source,
+                        copy.destination,
+                        .{},
+                    );
+                },
+
+                .copy_file => |copy| {
+                    _ = rootfs_files.addCopyFile(
+                        copy.source,
+                        copy.destination,
+                    );
+                },
+            }
+        }
+    }
+
+    // Phase 5: Create disk
     const disk_image = switch (machine) {
         .@"x86-pc-bios" => blk: {
             var bootloader_buffer: [440]u8 = undefined;
@@ -177,21 +231,6 @@ pub fn build(b: *std.Build) void {
 
     const install_disk_image = b.addInstallFile(disk_image, "disk.img");
     b.getInstallStep().dependOn(&install_disk_image.step);
-
-    if (machine_info.rom_size) |rom_size| {
-        const objcopy_kernel = b.addObjCopy(kernel_elf, .{
-            .basename = "kernel.bin",
-            .format = .bin,
-            .pad_to = rom_size,
-        });
-
-        const kernel_bin = objcopy_kernel.getOutput();
-
-        _ = result_files.addCopyFile(kernel_bin, "kernel.bin");
-
-        const install_bin_file = b.addInstallFile(kernel_bin, "kernel.bin");
-        b.getInstallStep().dependOn(&install_bin_file.step);
-    }
 }
 
 const MachineDependentOsConfig = struct {

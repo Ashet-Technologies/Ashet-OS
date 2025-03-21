@@ -1,0 +1,9 @@
+planned:
+  https://github.com/slavfox/Cozette
+  https://github.com/romeovs/creep
+  https://github.com/nerdypepper/scientifica
+  https://www.kreativekorp.com/software/fonts/fairfax/
+  https://github.com/sunaku/tamzen-font
+  https://font.gohu.org/
+  https://terminus-font.sourceforge.net/
+  https://int10h.org/oldschool-pc-fonts/

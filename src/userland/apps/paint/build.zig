@@ -13,7 +13,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .root_source_file = b.path("paint.zig"),
         .icon = .{
-            .convert = b.path("../../../../artwork/icons/small-icons/32x32-free-design-icons/32x32/Painter.png"),
+            .convert = b.path("../../../../assets/icons/apps/paint.png"),
         },
     });
 
