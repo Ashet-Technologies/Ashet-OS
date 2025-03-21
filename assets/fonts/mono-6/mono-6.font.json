@@ -1,9 +1,9 @@
 {
     "bitmap": {
-        "line_height": 8,
+        "line_height": 6,
         "defaults": {
             "image_file": "pico-8.png",
-            "advance": 7,
+            "advance": 4,
             "select_pixels": "black",
             "atlas": {
                 "margin": 0,
@@ -16,6 +16,7 @@
             }
         },
         "glyphs": {
+            " ": { "index": 0},
             "!": { "index": 1},
             "\"": { "index": 2},
             "#": { "index": 3},

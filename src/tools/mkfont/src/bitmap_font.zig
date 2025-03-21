@@ -107,8 +107,11 @@ pub fn generate(
 
         const width = max_x -| min_x;
         const height = max_y -| min_y;
-        const shrink_dx = @min(width, min_x - cell_x0);
-        const shrink_dy = @min(height, min_y - cell_y0);
+
+        // we must use the cell size here, not the width of the emitted graphic.
+        // Consider an "_" glyph which has a height of 1, but a dy of 6
+        const shrink_dx = @min(cell_x1 - cell_x0, min_x - cell_x0);
+        const shrink_dy = @min(cell_y1 - cell_y0, min_y - cell_y0);
 
         const column_stride = vpixels_to_bytes(height);
         const byte_size = width * column_stride;
@@ -210,6 +213,8 @@ pub fn generate(
             .advance = glyph.advance orelse font.defaults.advance orelse @panic("missing validation!"),
         };
         const meta_value: u32 = @bitCast(meta);
+
+        std.log.info("advances = {} ({?} => {?})", .{ meta.advance, glyph.advance, font.defaults.advance });
 
         try writer.writeInt(u32, meta_value, .little);
     }

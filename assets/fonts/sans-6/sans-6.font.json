@@ -1,6 +1,6 @@
 {
     "bitmap": {
-        "line_height": 8,
+        "line_height": 6,
         "defaults": {
             "select_pixels": "black"
         },

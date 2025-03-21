@@ -749,7 +749,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
                                         }
                                     }
                                 }
-                            }
+                            } else {}
 
                             sw.dx += glyph.advance;
                         }

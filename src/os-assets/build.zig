@@ -8,11 +8,6 @@ pub fn build(b: *std.Build) void {
 
     const mkfont_exe = mkfont_dep.artifact("mkfont");
 
-    const fontgen: FontConverter = .{
-        .b = b,
-        .exe = mkfont_exe,
-    };
-
     const converter = mkicon.Converter.create(b, mkicon_dep);
 
     const desktop_icon_conv_options: mkicon.ConvertOptions = .{
@@ -25,24 +20,28 @@ pub fn build(b: *std.Build) void {
 
     const assets = b.path("../../assets");
 
-    const rootfs = RootFS{ .write_file = b.addNamedWriteFiles("assets") };
+    const rootfs = RootFS{
+        .write_file = b.addNamedWriteFiles("assets"),
+        .b = b,
+        .font_exe = mkfont_exe,
+    };
 
     // Fonts:
-    rootfs.install(
+    rootfs.install_font(
         "system/fonts/mono-6.font",
-        fontgen.convert(assets.path(b, "fonts/mono-6/mono-6.font.json")),
+        assets.path(b, "fonts/mono-6/mono-6.font.json"),
     );
-    rootfs.install(
+    rootfs.install_font(
         "system/fonts/mono-8.font",
-        fontgen.convert(assets.path(b, "fonts/mono-6/mono-6.font.json")),
+        assets.path(b, "fonts/mono-8/mono-8.font.json"),
     );
-    rootfs.install(
+    rootfs.install_font(
         "system/fonts/sans-6.font",
-        fontgen.convert(assets.path(b, "fonts/mono-6/mono-6.font.json")),
+        assets.path(b, "fonts/sans-6/sans-6.font.json"),
     );
-    rootfs.install(
+    rootfs.install_font(
         "system/fonts/sans.font",
-        fontgen.convert(assets.path(b, "fonts/mono-6/mono-6.font.json")),
+        assets.path(b, "fonts/sans/sans.font.json"),
     );
 
     // Icons:
@@ -104,25 +103,23 @@ pub fn build(b: *std.Build) void {
 const RootFS = struct {
     write_file: *std.Build.Step.WriteFile,
 
+    b: *std.Build,
+    font_exe: *std.Build.Step.Compile,
+
     pub fn install(rootfs: RootFS, path: []const u8, source: std.Build.LazyPath) void {
         _ = rootfs.write_file.addCopyFile(source, path);
     }
-};
 
-const FontConverter = struct {
-    b: *std.Build,
-    exe: *std.Build.Step.Compile,
-
-    pub fn convert(fc: FontConverter, src: std.Build.LazyPath) std.Build.LazyPath {
-        const run = fc.b.addRunArtifact(fc.exe);
+    pub fn install_font(rootfs: RootFS, dest_path: []const u8, src: std.Build.LazyPath) void {
+        const run = rootfs.b.addRunArtifact(rootfs.font_exe);
 
         const output = run.addPrefixedOutputFileArg(
             "--output=",
-            "converted.font",
+            std.fs.path.basename(dest_path),
         );
 
         run.addFileArg(src);
 
-        return output;
+        rootfs.install(dest_path, output);
     }
 };

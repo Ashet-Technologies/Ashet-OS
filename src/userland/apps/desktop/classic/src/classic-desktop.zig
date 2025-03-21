@@ -203,7 +203,7 @@ pub fn main() !void {
                         }
 
                         try render_queue.draw_text(
-                            desktop_icon.bounds.corner(.bottom_left),
+                            desktop_icon.bounds.corner(.bottom_left).move_by(0, 1),
                             default_font,
                             Color.black,
                             desktop_icon.app.get_display_name(),
@@ -396,7 +396,7 @@ const Cursor = struct {
 };
 
 fn handle_desktop_event(desktop: abi.Desktop, event: *const abi.DesktopEvent) callconv(.C) void {
-    std.log.debug("handle desktop event of type {s}", .{@tagName(event.event_type)});
+    // std.log.debug("handle desktop event of type {s}", .{@tagName(event.event_type)});
     switch (event.event_type) {
         .create_window => {
             const window = event.create_window.window;

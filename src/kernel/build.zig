@@ -125,20 +125,6 @@ pub fn build(b: *std.Build) void {
             .{ .name = "ashex", .module = ashex_mod },
             .{ .name = "cvt", .module = xcvt_mod },
 
-            // embedded resources:
-            .{
-                .name = "sans-6.font",
-                .module = create_embedded_resource(b, "../../rootfs/all-systems/system/fonts/sans-6.font"),
-            },
-            .{
-                .name = "mono-6.font",
-                .module = create_embedded_resource(b, "../../rootfs/all-systems/system/fonts/mono-6.font"),
-            },
-            .{
-                .name = "mono-8.font",
-                .module = create_embedded_resource(b, "../../rootfs/all-systems/system/fonts/mono-8.font"),
-            },
-
             // only required on hosted instances:
             .{ .name = "network", .module = network_mod },
             .{ .name = "x11", .module = zig_mod },

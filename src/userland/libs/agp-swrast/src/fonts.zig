@@ -83,7 +83,9 @@ pub const BitmapFont = struct {
     }
 
     fn getGlyphMeta(bf: BitmapFont, index: usize) PackedCodepointAdvance {
-        return @bitCast(std.mem.readInt(u32, bf.data[12 + 4 * index ..][0..4], .little));
+        return @bitCast(
+            std.mem.readInt(u32, bf.data[12 + 4 * index ..][0..4], .little),
+        );
     }
 
     fn getGlyphOffset(bf: BitmapFont, index: usize) u32 {
