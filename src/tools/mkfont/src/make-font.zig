@@ -3,6 +3,7 @@ const args_parser = @import("args");
 
 const schema = @import("schema.zig");
 const bitmap_font = @import("bitmap_font.zig");
+const vector_font = @import("vector_font.zig");
 
 pub const CliOptions = struct {
     output: []const u8 = "",
@@ -39,7 +40,7 @@ pub fn main() !u8 {
     // Validate fonts:
     const font_ok = switch (document.data) {
         .bitmap => |bitmap| try bitmap_font.validate(bitmap),
-        .turtle => true,
+        .turtle => |vector| try vector_font.validate(vector),
     };
 
     if (!font_ok) {
@@ -57,7 +58,7 @@ pub fn main() !u8 {
 
     switch (document.data) {
         .bitmap => |*bitmap| try bitmap_font.generate(allocator, output_file.file, rel_dir, bitmap),
-        .turtle => @panic("implement turtle font emission"),
+        .turtle => |*vector| try vector_font.generate(allocator, output_file.file, rel_dir, vector),
     }
 
     try output_file.finish();

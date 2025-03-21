@@ -49,7 +49,8 @@ mkfont:
 test-mkfont: \
     (test-mkfont-face "mono-6") \
     (test-mkfont-face "mono-8") \
-    (test-mkfont-face "sans-6")
+    (test-mkfont-face "sans-6") \
+    (test-mkfont-face "sans")
 
 [working-directory: 'src/tools/mkfont']
 test-mkfont-face font: mkfont

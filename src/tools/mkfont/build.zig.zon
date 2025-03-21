@@ -19,5 +19,9 @@
             .url = "https://github.com/der-teufel-programming/zigimg/archive/7de94de43737a0d6ff8cb8049f1b72110dfc3bfd.tar.gz",
             .hash = "1220a580de4d054d2985a766fab9c9135af890c895523b31a25b6bb21ab52843c591",
         },
+        .turtlefont = .{
+            .url = "https://github.com/ikskuh/turtlefont/archive/f88e8d2447475635e410c52ce798e8954b27d3df.tar.gz",
+            .hash = "turtlefont-0.1.0-TiRlD8JaAABrQ9oR7tgmhWRBIae7Esx4MLnUVyMsLbCR",
+        },
     },
 }

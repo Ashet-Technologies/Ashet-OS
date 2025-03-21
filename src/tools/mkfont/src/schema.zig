@@ -18,12 +18,16 @@ pub fn load(allocator: std.mem.Allocator, text: []const u8) !Document {
     errdefer result.parsed.deinit();
 
     result.data = switch (result.parsed.value) {
-        .turtle => |value| .{ .turtle = value },
+        .turtle => |vector| .{
+            .turtle = .{
+                .glyphs = try transform_turtle_glyph_map(result.parsed.arena.allocator(), vector.glyphs),
+            },
+        },
         .bitmap => |bitmap| .{
             .bitmap = .{
                 .line_height = bitmap.line_height,
                 .defaults = bitmap.defaults,
-                .glyphs = try transform_glyph_map(result.parsed.arena.allocator(), bitmap.glyphs),
+                .glyphs = try transform_bitmap_glyph_map(result.parsed.arena.allocator(), bitmap.glyphs),
             },
         },
     };
@@ -48,7 +52,7 @@ pub const Body = union(enum) {
     bitmap: BitmapFontFile,
 
     // Just a file path, turtle fonts are self-contained
-    turtle: []const u8,
+    turtle: TurtleFontFile,
 };
 
 pub const BitmapFontFile = struct {
@@ -81,12 +85,20 @@ pub const BitmapFontFile = struct {
     };
 };
 
+pub const TurtleFontFile = struct {
+    glyphs: std.AutoArrayHashMap(u21, Glyph),
+
+    pub const Glyph = struct {
+        script: []const u8,
+    };
+};
+
 const JsonRootNode = union(enum) {
     // Contains a bitmap font composed of one or more image files
     bitmap: JsonBitmapFontFile,
 
     // Just a file path, turtle fonts are self-contained
-    turtle: []const u8,
+    turtle: JsonTurtleFontFile,
 };
 
 const JsonBitmapFontFile = struct {
@@ -95,7 +107,11 @@ const JsonBitmapFontFile = struct {
     glyphs: std.json.Value,
 };
 
-fn transform_glyph_map(allocator: std.mem.Allocator, raw_map: std.json.Value) !std.AutoArrayHashMap(u21, BitmapFontFile.Glyph) {
+const JsonTurtleFontFile = struct {
+    glyphs: std.json.Value,
+};
+
+fn transform_bitmap_glyph_map(allocator: std.mem.Allocator, raw_map: std.json.Value) !std.AutoArrayHashMap(u21, BitmapFontFile.Glyph) {
     if (raw_map != .object)
         return error.InvalidGlyphObject;
 
@@ -138,6 +154,53 @@ fn transform_glyph_map(allocator: std.mem.Allocator, raw_map: std.json.Value) !s
             return error.DuplicateKey;
         }
         gop.value_ptr.* = glyph;
+    }
+
+    return output;
+}
+
+fn transform_turtle_glyph_map(allocator: std.mem.Allocator, raw_map: std.json.Value) !std.AutoArrayHashMap(u21, TurtleFontFile.Glyph) {
+    if (raw_map != .object)
+        return error.InvalidGlyphObject;
+
+    const map = &raw_map.object;
+
+    var output: std.AutoArrayHashMap(u21, TurtleFontFile.Glyph) = .init(allocator);
+    errdefer output.deinit();
+
+    var iter = map.iterator();
+    while (iter.next()) |kv| {
+        const key_str = kv.key_ptr.*;
+        const json_value = kv.value_ptr.*;
+
+        if ((std.unicode.utf8CountCodepoints(key_str) catch 0) != 1) {
+            std.log.err("invalid glyph codepoint: '{}' ({})", .{
+                std.unicode.fmtUtf8(key_str),
+                std.fmt.fmtSliceHexUpper(key_str),
+            });
+            return error.InvalidKey;
+        }
+
+        const codepoint: u21 = try std.unicode.utf8Decode(key_str);
+        if (!std.unicode.utf8ValidCodepoint(codepoint)) {
+            return error.InvalidCodePoint;
+        }
+
+        if (json_value != .string)
+            return error.InvalidGlyphSpec;
+
+        const gop = try output.getOrPut(codepoint);
+        if (gop.found_existing) {
+            std.log.err("duplicate glyph codepoint: '{}' ({})", .{
+                std.unicode.fmtUtf8(key_str),
+                std.fmt.fmtSliceHexUpper(key_str),
+            });
+            return error.DuplicateKey;
+        }
+
+        gop.value_ptr.* = .{
+            .script = json_value.string,
+        };
     }
 
     return output;

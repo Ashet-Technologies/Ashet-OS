@@ -8,6 +8,7 @@ pub fn build(b: *std.Build) !void {
     const abi_mod = b.dependency("abi", .{}).module("ashet-abi");
 
     const zigimg_mod = b.dependency("zigimg", .{}).module("zigimg");
+    const turtlefont_mod = b.dependency("turtlefont", .{}).module("turtlefont");
 
     const mkfont_mod = b.addModule("mkfont", .{
         .root_source_file = b.path("src/make-font.zig"),
@@ -16,6 +17,7 @@ pub fn build(b: *std.Build) !void {
     });
 
     mkfont_mod.addImport("zigimg", zigimg_mod);
+    mkfont_mod.addImport("turtlefont", turtlefont_mod);
     mkfont_mod.addImport("ashet-abi", abi_mod);
     mkfont_mod.addImport("args", args_mod);
 
