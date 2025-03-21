@@ -27,6 +27,7 @@
       system: let
         pkgs = import nixpkgs {inherit overlays system;};
       in rec {
+        formatter = pkgs.nixfmt-rfc-style;
         packages = {
           default = pkgs.stdenv.mkDerivation {
             name = "ashet-os";
