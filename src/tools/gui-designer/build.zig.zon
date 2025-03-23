@@ -1,0 +1,25 @@
+.{
+    .name = .gui_designer,
+    .version = "0.1.0",
+    .fingerprint = 0xfef11d76541676bb,
+    .dependencies = .{
+        .zgui = .{
+            .url = "git+https://github.com/zig-gamedev/zgui#270928b6b6a0b46030fcccf43edf16d057ade110",
+            .hash = "zgui-0.6.0-dev--L6sZMGHaAAYxlSRzcXP_RwqO9Zlk_01Xup4zNT6K_EV",
+        },
+        .zglfw = .{
+            .url = "git+https://github.com/zig-gamedev/zglfw.git#dcb1dae7d4a90f88b70dbae73300ab9b19fb250c",
+            .hash = "zglfw-0.10.0-dev-zgVDNJmZIQCIiO_94Sp5jqrPtz4Eumk3bDcxS7dSZfIj",
+        },
+        .zopengl = .{
+            .url = "git+https://github.com/zig-gamedev/zopengl.git#67cd98449c9b766086531115f0ec6c4ace095af7",
+            .hash = "zopengl-0.6.0-dev-AAAAAAtUCADc6Ew_wTmTl_LRe3Z2lLK6WraJuGhT0bmj",
+        },
+        .system_sdk = .{
+            .url = "git+https://github.com/zig-gamedev/system_sdk.git#c0dbf11cdc17da5904ea8a17eadc54dee26567ec",
+            .hash = "system_sdk-0.3.0-dev-alwUNnYaaAJAtIdE2fg4NQfDqEKs7QCXy_qYukAOBfmF",
+            .lazy = true,
+        },
+    },
+    .paths = .{ "build.zig", "build.zig.zon", "src" },
+}
