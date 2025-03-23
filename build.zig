@@ -45,6 +45,8 @@ pub fn build(b: *std.Build) void {
     const optimize_kernel = b.option(bool, "optimize-kernel", "Should the kernel be optimized?") orelse false;
     const optimize_apps = b.option(std.builtin.OptimizeMode, "optimize-apps", "Optimization mode for the applications") orelse .Debug;
 
+    const install_rootfs = b.option(bool, "rootfs", "Installs the rootfs contents as well for hosted targets (default: off)") orelse false;
+
     const maybe_run_machine = b.option(Machine, "machine", "Selects which machine to run with the 'run' step");
     const qemu_gui = b.option(QemuDisplayMode, "gui", "Selects GUI mode for QEMU (headless, sdl, gtk)") orelse if (b.graph.host.result.os.tag.isDarwin())
         QemuDisplayMode.cocoa
@@ -120,16 +122,16 @@ pub fn build(b: *std.Build) void {
         });
         step.dependOn(&install_elves.step);
 
-        if (machine.is_hosted()) {
-            const install_rootfs = b.addInstallDirectory(.{
+        if (install_rootfs and machine.is_hosted()) {
+            const install_rootfs_dir = b.addInstallDirectory(.{
                 .source_dir = rootfs_files.getDirectory(),
                 .install_dir = .{ .custom = @tagName(machine) },
                 .install_subdir = "rootfs",
             });
-            step.dependOn(&install_rootfs.step);
+            step.dependOn(&install_rootfs_dir.step);
 
             // `b.getInstallPath` is copied from the InstallStep itself to figure out the final output directory:
-            const install_path = b.getInstallPath(install_rootfs.options.install_dir, install_rootfs.options.install_subdir);
+            const install_path = b.getInstallPath(install_rootfs_dir.options.install_dir, install_rootfs_dir.options.install_subdir);
             std.debug.assert(std.fs.path.isAbsolute(install_path));
             os_rootfs.set(machine, .{ .cwd_relative = install_path });
         }
