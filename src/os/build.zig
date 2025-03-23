@@ -1,7 +1,7 @@
 const std = @import("std");
 const AshetOS = @import("AshetOS");
 
-const disk_image_step = @import("disk-image-step");
+const DiskBuildInterface = @import("disk-image-step").BuildInterface;
 const kernel_package = @import("kernel");
 
 const Machine = kernel_package.Machine;
@@ -19,6 +19,7 @@ const app_packages = [_][]const u8{
 };
 
 pub fn build(b: *std.Build) void {
+
     // Options:
     const machine = b.option(Machine, "machine", "What machine should AshetOS be built for?") orelse @panic("no machine defined!");
     const optimize_kernel = b.option(bool, "optimize-kernel", "Should the kernel be optimized?") orelse false;
@@ -35,9 +36,11 @@ pub fn build(b: *std.Build) void {
     const assets_dep = b.dependency("assets", .{});
     const syslinux_dep = b.dependency("syslinux", .{ .release = true });
 
-    const disk_image_dep = b.dependency("disk-image-step", .{});
+    const disk_image_dep = b.dependency("disk-image-step", .{ .release = true });
 
     // Build:
+
+    const disk_image_tools = DiskBuildInterface.init(b, disk_image_dep);
 
     const machine_info = machine_info_map.get(machine);
 
@@ -51,17 +54,17 @@ pub fn build(b: *std.Build) void {
 
     // Phase 1: Target independent root fs:
 
-    var rootfs = disk_image_step.FileSystemBuilder.init(b);
+    var rootfs = DiskBuildInterface.FileSystemBuilder.init(b);
     {
         // Add the rootfs part which is present on all deployments:
-        rootfs.addDirectory(b.path("../../rootfs/all-systems"), ".");
+        rootfs.copyDirectory(b.path("../../rootfs/all-systems"), "/");
 
         // Add the rootfs part which is auto-generated during the build and contains converted files:
         const asset_source = assets_dep.namedWriteFiles("assets");
-        rootfs.addDirectory(asset_source.getDirectory(), ".");
+        rootfs.copyDirectory(asset_source.getDirectory(), "/");
 
         // Add the rootfs part which contains developer customizations:
-        rootfs.addDirectory(b.path("../../rootfs/dev"), ".");
+        rootfs.copyDirectory(b.path("../../rootfs/dev"), "/");
     }
 
     // Phase 2: Platform dependent root fs
@@ -79,13 +82,13 @@ pub fn build(b: *std.Build) void {
         for (app_list) |app| {
             // std.log.err("- {s}", .{app.target_path});
 
-            const app_path = b.fmt("apps/{s}", .{app.target_path});
+            const app_path = b.fmt("/apps/{s}", .{app.target_path});
 
             // Copy the file into the disk image:
             if (std.fs.path.dirnamePosix(app_path)) |dir| {
                 rootfs.mkdir(dir);
             }
-            rootfs.addFile(app.ashex_file, app_path);
+            rootfs.copyFile(app.ashex_file, app_path);
 
             // TODO(fqu): Add means to also export the applications ELF file:
             _ = result_files.addCopyFile(
@@ -108,21 +111,9 @@ pub fn build(b: *std.Build) void {
     // Phase 3: Machine dependent root fs
     switch (machine) {
         .@"x86-pc-bios" => {
-            rootfs.addFile(kernel_elf, "/ashet-os");
+            rootfs.copyFile(kernel_elf, "/ashet-os");
 
-            rootfs.addFile(b.path("../../rootfs/pc-bios/syslinux/modules.alias"), "syslinux/modules.alias");
-            rootfs.addFile(b.path("../../rootfs/pc-bios/syslinux/pci.ids"), "syslinux/pci.ids");
-            rootfs.addFile(b.path("../../rootfs/pc-bios/syslinux/syslinux.cfg"), "syslinux/syslinux.cfg");
-
-            rootfs.addFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/cmenu/libmenu/libmenu.c32"), "syslinux/libmenu.c32");
-            rootfs.addFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/gpllib/libgpl.c32"), "syslinux/libgpl.c32");
-            rootfs.addFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/hdt/hdt.c32"), "syslinux/hdt.c32");
-            rootfs.addFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/lib/libcom32.c32"), "syslinux/libcom32.c32");
-            rootfs.addFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/libutil/libutil.c32"), "syslinux/libutil.c32");
-            rootfs.addFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/mboot/mboot.c32"), "syslinux/mboot.c32");
-            rootfs.addFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/menu/menu.c32"), "syslinux/menu.c32");
-            rootfs.addFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/modules/poweroff.c32"), "syslinux/poweroff.c32");
-            rootfs.addFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/modules/reboot.c32"), "syslinux/reboot.c32");
+            rootfs.includeScript(b.path("../../rootfs/pc-bios.dis"));
         },
 
         else => {},
@@ -174,6 +165,11 @@ pub fn build(b: *std.Build) void {
                         copy.destination,
                     );
                 },
+
+                .include_script => {
+                    // Can't handle this here!
+                    std.debug.print("cannot fetch files from included scripts\n", .{});
+                },
             }
         }
     }
@@ -181,22 +177,18 @@ pub fn build(b: *std.Build) void {
     // Phase 5: Create disk
     const disk_image = switch (machine) {
         .@"x86-pc-bios" => blk: {
-            var bootloader_buffer: [440]u8 = undefined;
-            const syslinux_bootloader = std.fs.cwd().readFile(
-                syslinux_dep.path("vendor/syslinux-6.03/bios/mbr/mbr.bin").getPath(b),
-                &bootloader_buffer,
-            ) catch @panic("failed to load bootloader!");
-            std.debug.assert(syslinux_bootloader.len == bootloader_buffer.len);
-
-            const disk = disk_image_step.initializeDisk(disk_image_dep, 500 * disk_image_step.MiB, .{
-                .mbr = .{
-                    .bootloader = bootloader_buffer,
+            const raw_disk_file = disk_image_tools.createDisk(500 * DiskBuildInterface.MiB, .{
+                .mbr_part_table = .{
+                    .bootloader = &.{ .paste_file = syslinux_dep.path("vendor/syslinux-6.03/bios/mbr/mbr.bin") },
                     .partitions = .{
                         &.{
-                            .type = .fat32_lba,
+                            .type = .@"fat32-lba",
                             .bootable = true,
-                            .size = 499 * disk_image_step.MiB,
-                            .data = .{ .fs = rootfs.finalize(.{ .format = .fat32, .label = "AshetOS" }) },
+                            .data = .{ .vfat = .{
+                                .format = .fat32,
+                                .label = "AshetOS",
+                                .tree = rootfs.finalize(),
+                            } },
                         },
                         null,
                         null,
@@ -207,24 +199,21 @@ pub fn build(b: *std.Build) void {
 
             const syslinux_installer = syslinux_dep.artifact("syslinux");
 
-            const raw_disk_file = disk.getImageFile();
-
             const install_syslinux = InstallSyslinuxStep.create(b, syslinux_installer, raw_disk_file);
 
             break :blk std.Build.LazyPath{ .generated = .{ .file = install_syslinux.output_file } };
         },
 
-        else => blk: {
-            const disk = disk_image_step.initializeDisk(
-                disk_image_dep,
-                machine_info.disk_size,
-                .{
-                    .fs = rootfs.finalize(.{ .format = .fat16, .label = "AshetOS" }),
+        else => disk_image_tools.createDisk(
+            machine_info.disk_size,
+            .{
+                .vfat = .{
+                    .label = "AshetOS",
+                    .format = .fat16,
+                    .tree = rootfs.finalize(),
                 },
-            );
-
-            break :blk disk.getImageFile();
-        },
+            },
+        ),
     };
 
     _ = result_files.addCopyFile(disk_image, "disk.img");
@@ -241,7 +230,7 @@ const MachineDependentOsConfig = struct {
 const machine_info_map = std.EnumArray(Machine, MachineDependentOsConfig).init(.{
     .@"x86-pc-bios" = .{
         .rom_size = null,
-        .disk_size = 512 * disk_image_step.MiB,
+        .disk_size = 512 * DiskBuildInterface.MiB,
     },
     .@"rv32-qemu-virt" = .{
         .disk_size = 0x0200_0000,
@@ -340,7 +329,7 @@ const InstallSyslinuxStep = struct {
         _ = step.owner.run(&.{
             iss.syslinux.getEmittedBin().getPath2(iss.syslinux.step.owner, step),
             "--offset",
-            "2048",
+            "1048576",
             "--install",
             "--directory",
             "syslinux", // path *inside* the image

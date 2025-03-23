@@ -1,6 +1,7 @@
 .{
-    .name = "AshetOS",
+    .name = .AshetOS,
     .version = "0.1.0",
+    .fingerprint = 0x81677669d4772100,
     .paths = .{ "build.zig", "build.zig.zon" },
     .dependencies = .{
 
@@ -28,8 +29,9 @@
 
         // Externel deps:
         .@"disk-image-step" = .{
-            .url = "https://github.com/zig-osdev/disk-image-step/archive/4f0cf416a6c29a33dca7cfc903e8c2ff2baa062d.tar.gz",
-            .hash = "disk_image_step-0.1.0-92RmoGfEAAA1-cyRGVPR2xU1T6mkJBS_vyhRUooLNysX",
+            .url = "git+https://github.com/zig-osdev/disk-image-step.git#06660a8b769ee550415b5b55d5fc2f26cf7980ab",
+            .hash = "dimmer-2.0.0-suxOkmoOAgCXxu_TUx2jd_R1g9tgTQSh7Cso8uK7RtRZ",
+            //            .path = "../../../../libraries/disk-image-step",
         },
     },
 }

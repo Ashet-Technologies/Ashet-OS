@@ -99,7 +99,10 @@ pub fn main() !void {
 
     // try loading the wallpaper:
     const maybe_wallpaper: ?ashet.graphics.Framebuffer = blk: {
-        var config_dir = try ashet.fs.Directory.openDrive(.system, "etc/desktop");
+        var config_dir = ashet.fs.Directory.openDrive(.system, "etc/desktop") catch |err| switch (err) {
+            error.FileNotFound => break :blk null,
+            else => |e| return e,
+        };
         defer config_dir.close();
 
         if (config_dir.openFile("wallpaper.abm", .read_only, .open_existing)) |_file_handle| {
