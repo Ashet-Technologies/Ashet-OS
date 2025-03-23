@@ -208,7 +208,19 @@ pub fn main() !void {
             const selected_widget = &window.widgets.items[index];
 
             if (zgui.begin("Properties", .{})) {
+                zgui.textUnformatted("General");
+                zgui.separator();
+
+                _ = zgui.labelText("Class", "{s}", .{selected_widget.class.name});
+
+                var nameBuffer: [32:0]u8 = @splat(0);
+                _ = zgui.inputText("Identifier", .{
+                    .buf = &nameBuffer,
+                });
+
+                zgui.textUnformatted("");
                 zgui.textUnformatted("Geometry");
+                zgui.separator();
 
                 var pos: [2]i32 = .{ selected_widget.bounds.x, selected_widget.bounds.y };
                 var size: [2]i32 = .{ selected_widget.bounds.width, selected_widget.bounds.height };
@@ -239,12 +251,6 @@ pub fn main() !void {
                     _ = zgui.tableSetColumnIndex(2);
                     if (zgui.arrowButton("##move-right", .{ .dir = .right }))
                         selected_widget.bounds.x +|= 1;
-                    (0);
-                    if (zgui.arrowButton("##move-left", .{ .dir = .left }))
-                        selected_widget.bounds.x -|= 1;
-                    _ = zgui.tableSetColumnIndex(2);
-                    if (zgui.arrowButton("##move-right", .{ .dir = .right }))
-                        selected_widget.bounds.x +|= 1;
 
                     zgui.tableNextRow(.{});
 
@@ -253,7 +259,9 @@ pub fn main() !void {
                         selected_widget.bounds.y +|= 1;
                 }
 
+                zgui.textUnformatted("");
                 zgui.textUnformatted("Anchor");
+                zgui.separator();
 
                 if (zgui.beginTable("Anchor##anchor", .{ .column = 3 })) {
                     defer zgui.endTable();
@@ -276,6 +284,9 @@ pub fn main() !void {
                     _ = zgui.checkbox("Bottom", .{ .v = &selected_widget.anchor.bottom });
                 }
 
+                zgui.textUnformatted("");
+                zgui.textUnformatted("Visuals");
+                zgui.separator();
                 _ = zgui.checkbox("Visible", .{ .v = &selected_widget.visible });
             }
             zgui.end();
