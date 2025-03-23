@@ -20,6 +20,9 @@
             .hash = "system_sdk-0.3.0-dev-alwUNnYaaAJAtIdE2fg4NQfDqEKs7QCXy_qYukAOBfmF",
             .lazy = true,
         },
+        .abi = .{
+            .path = "../../abi",
+        },
     },
     .paths = .{ "build.zig", "build.zig.zon", "src" },
 }

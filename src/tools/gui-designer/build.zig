@@ -4,6 +4,8 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
 
+    const abi_dep = b.dependency("abi", .{});
+
     const zgui_dep = b.dependency("zgui", .{
         .shared = false,
         .with_implot = true,
@@ -30,6 +32,7 @@ pub fn build(b: *std.Build) void {
     editor_mod.linkLibrary(zglfw_dep.artifact("glfw"));
 
     editor_mod.addImport("zopengl", zopengl_dep.module("root"));
+    editor_mod.addImport("ashet-abi", abi_dep.module("ashet-abi"));
 
     const editor_exe = b.addExecutable(.{
         .name = "gui-editor",
