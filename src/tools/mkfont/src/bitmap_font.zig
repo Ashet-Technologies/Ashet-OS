@@ -140,7 +140,7 @@ pub fn generate(
         var fmt: [8]u8 = undefined;
         const len = std.unicode.utf8Encode(codepoint, &fmt) catch @panic("implementation bug");
 
-        std.log.info("U+{X:0>5} ('{}') => w={} h={} dx={} dy={} bits={}", .{
+        std.log.debug("U+{X:0>5} ('{}') => w={} h={} dx={} dy={} bits={}", .{
             codepoint,
             std.unicode.fmtUtf8(fmt[0..len]),
             width,
@@ -149,13 +149,13 @@ pub fn generate(
             shrink_dy,
             std.fmt.fmtSliceHexUpper(bits),
         });
-        std.log.info("  x0={} x1={} y0={} y1={}", .{
+        std.log.debug("  x0={} x1={} y0={} y1={}", .{
             cell_x0,
             cell_x1,
             cell_y0,
             cell_y1,
         });
-        std.log.info("  x0={} x1={} y0={} y1={}", .{
+        std.log.debug("  x0={} x1={} y0={} y1={}", .{
             min_x,
             max_x,
             min_y,
@@ -180,10 +180,10 @@ pub fn generate(
                     }
                 }
 
-                std.log.info("|{s}|", .{fbs.getWritten()});
+                std.log.debug("|{s}|", .{fbs.getWritten()});
             }
 
-            std.log.info("", .{});
+            std.log.debug("", .{});
         }
 
         try glyph_bitmaps.put(codepoint, .{
@@ -213,8 +213,6 @@ pub fn generate(
             .advance = glyph.advance orelse font.defaults.advance orelse @panic("missing validation!"),
         };
         const meta_value: u32 = @bitCast(meta);
-
-        std.log.info("advances = {} ({?} => {?})", .{ meta.advance, glyph.advance, font.defaults.advance });
 
         try writer.writeInt(u32, meta_value, .little);
     }
