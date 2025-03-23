@@ -1,6 +1,9 @@
 const std = @import("std");
 
 pub fn build(b: *std.Build) void {
+    const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
+
     const args_mod = b.dependency("args", .{}).module("args");
     const abi_mod = b.dependency("abi", .{}).module("ashet-abi");
 
@@ -9,8 +12,8 @@ pub fn build(b: *std.Build) void {
     const exe = b.addExecutable(.{
         .name = "mkicon",
         .root_source_file = b.path("mkicon.zig"),
-        .target = b.graph.host,
-        .optimize = .Debug,
+        .target = target,
+        .optimize = optimize,
     });
     exe.root_module.addImport("zigimg", zigimg_mod);
     exe.root_module.addImport("ashet-abi", abi_mod);

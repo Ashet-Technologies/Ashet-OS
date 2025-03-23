@@ -3,8 +3,8 @@ const std = @import("std");
 const mkicon = @import("mkicon");
 
 pub fn build(b: *std.Build) void {
-    const mkicon_dep = b.dependency("mkicon", .{});
-    const mkfont_dep = b.dependency("mkfont", .{});
+    const mkicon_dep = b.dependency("mkicon", .{ .release = true });
+    const mkfont_dep = b.dependency("mkfont", .{ .release = true });
 
     const mkfont_exe = mkfont_dep.artifact("mkfont");
 

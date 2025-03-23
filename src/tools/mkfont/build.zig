@@ -2,7 +2,7 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
-    const optimize = b.standardOptimizeOption(.{});
+    const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
 
     const args_mod = b.dependency("args", .{}).module("args");
     const abi_mod = b.dependency("abi", .{}).module("ashet-abi");

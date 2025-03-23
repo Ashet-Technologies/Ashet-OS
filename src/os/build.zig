@@ -113,7 +113,21 @@ pub fn build(b: *std.Build) void {
         .@"x86-pc-bios" => {
             rootfs.copyFile(kernel_elf, "/ashet-os");
 
-            rootfs.includeScript(b.path("../../rootfs/pc-bios.dis"));
+            // Copy syslinux installation fikles
+            rootfs.copyFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/cmenu/libmenu/libmenu.c32"), "/syslinux/libmenu.c32");
+            rootfs.copyFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/gpllib/libgpl.c32"), "/syslinux/libgpl.c32");
+            rootfs.copyFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/hdt/hdt.c32"), "/syslinux/hdt.c32");
+            rootfs.copyFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/lib/libcom32.c32"), "/syslinux/libcom32.c32");
+            rootfs.copyFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/libutil/libutil.c32"), "/syslinux/libutil.c32");
+            rootfs.copyFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/mboot/mboot.c32"), "/syslinux/mboot.c32");
+            rootfs.copyFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/menu/menu.c32"), "/syslinux/menu.c32");
+            rootfs.copyFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/modules/poweroff.c32"), "/syslinux/poweroff.c32");
+            rootfs.copyFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/modules/reboot.c32"), "/syslinux/reboot.c32");
+
+            // Copy syslinux configuration files
+            rootfs.copyFile(b.path("../../rootfs/pc-bios/syslinux/modules.alias"), "/syslinux/modules.alias");
+            rootfs.copyFile(b.path("../../rootfs/pc-bios/syslinux/pci.ids"), "/syslinux/pci.ids");
+            rootfs.copyFile(b.path("../../rootfs/pc-bios/syslinux/syslinux.cfg"), "/syslinux/syslinux.cfg");
         },
 
         else => {},
@@ -166,10 +180,7 @@ pub fn build(b: *std.Build) void {
                     );
                 },
 
-                .include_script => {
-                    // Can't handle this here!
-                    std.debug.print("cannot fetch files from included scripts\n", .{});
-                },
+                .include_script => @panic("unsupported feature used!"),
             }
         }
     }
