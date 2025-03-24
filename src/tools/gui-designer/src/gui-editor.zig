@@ -29,9 +29,11 @@ pub fn main() !void {
     glfw.windowHint(.opengl_forward_compat, true);
     glfw.windowHint(.client_api, .opengl_api);
     glfw.windowHint(.doublebuffer, true);
+    glfw.windowHint(.wayland_app_id, "computer.ashet.os.gui_editor");
 
     const glfw_window = try glfw.Window.create(800, 500, window_title, null);
     defer glfw_window.destroy();
+
     glfw_window.setSizeLimits(400, 400, -1, -1);
 
     glfw.makeContextCurrent(glfw_window);
@@ -46,23 +48,12 @@ pub fn main() !void {
 
     zgui.io.setIniFilename(null);
 
-    const scale_factor = scale_factor: {
-        const scale = glfw_window.getContentScale();
-        break :scale_factor @max(scale[0], scale[1]);
-    };
-
-    // _ = zgui.io.addFontFromFile(
-    //     content_dir ++ "Roboto-Medium.ttf",
-    //     std.math.floor(16.0 * scale_factor),
-    // );
-
-    zgui.getStyle().scaleAllSizes(scale_factor);
-
     zgui.backend.init(glfw_window);
     defer zgui.backend.deinit();
 
     zgui.io.setConfigFlags(.{
         .dock_enable = true,
+        .dpi_enable_scale_viewport = true,
     });
 
     var window: model.Window = .{};
@@ -94,8 +85,16 @@ pub fn main() !void {
         gl.clearBufferfv(gl.COLOR, 0, &[_]f32{ 0, 0, 0, 1.0 });
 
         const fb_size = glfw_window.getFramebufferSize();
+        const win_size = glfw_window.getSize();
 
-        zgui.backend.newFrame(@intCast(fb_size[0]), @intCast(fb_size[1]));
+        const scale_x: f32 = @as(f32, @floatFromInt(fb_size[0])) / @as(f32, @floatFromInt(win_size[0]));
+        const scale_y: f32 = @as(f32, @floatFromInt(fb_size[1])) / @as(f32, @floatFromInt(win_size[1]));
+
+        _ = .{ scale_x, scale_y };
+
+        // std.debug.print("fb={any} win={any} {d};{d}\n", .{ fb_size, win_size, scale_x, scale_y });
+
+        zgui.backend.newFrame(@intCast(fb_size[0]), @intCast(fb_size[1]), scale_x, scale_y);
 
         const dockspace_id = zgui.DockSpaceOverViewport(0, zgui.getMainViewport(), .{ .auto_hide_tab_bar = true });
 
