@@ -32,7 +32,33 @@ pub const Widget = struct {
     anchor: Anchor = .top_left,
     visible: bool = true,
     class: *const Class,
+    identifier: std.ArrayListUnmanaged(u8) = .empty,
     properties: ZStringArrayHashMapUnmanaged(Value) = .empty,
+
+    pub fn init(class: *const Class, allocator: std.mem.Allocator, bounds: Rectangle) !Widget {
+        var widget: Widget = .{
+            .bounds = .new(bounds.position(), .new(
+                std.math.clamp(bounds.width, class.min_size.width, class.max_size.width),
+                std.math.clamp(bounds.height, class.min_size.height, class.max_size.height),
+            )),
+        };
+
+        for (class.properties.keys(), class.properties.values()) |name, decl| {
+            try widget.properties.putNoClobber(
+                allocator,
+                name,
+                decl.default_value,
+            );
+        }
+
+        return widget;
+    }
+
+    pub fn deinit(widget: *Widget, allocator: std.mem.Allocator) void {
+        widget.identifier.deinit(allocator);
+        widget.properties.deinit(allocator);
+        widget.* = undefined;
+    }
 };
 
 pub const Class = struct {
@@ -52,7 +78,7 @@ pub const Class = struct {
 
 pub const PropertyDescriptor = struct {
     name: [:0]const u8,
-    type: Type,
+    default_value: Value,
 };
 
 pub const Type = enum {
@@ -167,12 +193,18 @@ pub fn load_metadata(allocator: std.mem.Allocator, json_str: []const u8) !*const
                     if (value != .string)
                         return error.TypeMismatch;
 
-                    const typestr = std.meta.stringToEnum(Type, value.string) orelse return error.InvalidType;
+                    const proptype = std.meta.stringToEnum(Type, value.string) orelse return error.InvalidType;
 
                     const prop = try arena.allocator().create(PropertyDescriptor);
                     prop.* = .{
                         .name = try arena.allocator().dupeZ(u8, propkey),
-                        .type = typestr,
+                        .default_value = switch (proptype) {
+                            .bool => .{ .bool = false },
+                            .color => .{ .color = .white },
+                            .int => .{ .int = 0 },
+                            .float => .{ .float = 0 },
+                            .string => .{ .string = "" },
+                        },
                     };
 
                     try class.properties.putNoClobber(arena.allocator(), prop.name, prop);
@@ -229,4 +261,70 @@ const ZStringContext = struct {
 
 pub fn ZStringArrayHashMapUnmanaged(comptime T: type) type {
     return std.array_hash_map.ArrayHashMapUnmanaged([:0]const u8, T, ZStringContext, true);
+}
+
+pub fn save_window(window: Window, unbuffered_stream: anytype) !void {
+    var buffered_writer = std.io.bufferedWriter(unbuffered_stream);
+
+    var json = std.json.writeStream(buffered_writer.writer(), .{
+        .whitespace = .indent_2,
+    });
+
+    try json.beginObject();
+
+    try json.objectField("design_size");
+    try json.write(window.design_size);
+
+    try json.objectField("min_size");
+    try json.write(window.min_size);
+
+    try json.objectField("max_size");
+    try json.write(window.max_size);
+
+    try json.objectField("widgets");
+    try json.beginArray();
+
+    for (window.widgets.items) |widget| {
+        try json.beginObject();
+
+        try json.objectField("identifier");
+        try json.write(widget.identifier.items);
+
+        try json.objectField("bounds");
+        try json.write(widget.bounds);
+
+        try json.objectField("anchor");
+        try json.write(widget.anchor);
+
+        try json.objectField("visible");
+        try json.write(widget.visible);
+
+        try json.objectField("class");
+        try json.write(widget.class.name);
+
+        try json.objectField("properties");
+        try json.beginObject();
+        for (widget.properties.keys(), widget.properties.values()) |key, value| {
+            try json.objectField(key);
+            switch (value) {
+                inline .bool, .string, .int, .float => |val| try json.write(val),
+
+                .color => |color| {
+                    const rgb = color.to_rgb888();
+                    var buf: [7]u8 = undefined;
+                    const hex = std.fmt.bufPrint(&buf, "#{X:0>2}{X:0>2}{X:0>2}", .{ rgb.r, rgb.g, rgb.b }) catch unreachable;
+                    try json.write(hex);
+                },
+            }
+        }
+        try json.endObject();
+
+        try json.endObject();
+    }
+
+    try json.endArray();
+
+    try json.endObject();
+
+    try buffered_writer.flush();
 }

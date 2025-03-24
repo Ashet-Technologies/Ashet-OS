@@ -118,7 +118,16 @@ pub fn main() !void {
                 defer zgui.endMenu();
 
                 _ = zgui.menuItem("Restore", .{});
-                _ = zgui.menuItem("Save", .{});
+
+                if (zgui.menuItem("Save", .{})) {
+                    var result_file = try std.fs.cwd().atomicFile("current.gui.json", .{});
+                    defer result_file.deinit();
+
+                    try model.save_window(window, result_file.file.writer());
+
+                    try result_file.finish();
+                }
+
                 zgui.separator();
                 if (zgui.menuItem("Close", .{})) {
                     break;
@@ -380,26 +389,32 @@ pub fn main() !void {
                     zgui.separator();
 
                     for (selected_widget.class.properties.keys(), selected_widget.class.properties.values()) |prop_name, prop_desc| {
-                        switch (prop_desc.type) {
-                            .bool => {
-                                var dummy: bool = false;
-                                _ = zgui.checkbox(prop_name, .{ .v = &dummy });
+                        const gop = try selected_widget.properties.getOrPut(allocator, prop_name);
+                        if (!gop.found_existing) {
+                            gop.value_ptr.* = prop_desc.default_value;
+                        }
+
+                        switch (gop.value_ptr.*) {
+                            .bool => |*data| _ = zgui.checkbox(prop_name, .{ .v = data }),
+
+                            .int => |*data| _ = zgui.inputInt(prop_name, .{ .v = data }),
+                            .float => |*data| _ = zgui.inputFloat(prop_name, .{ .v = data }),
+                            .string => |data| {
+                                var work_buffer: [4096:0]u8 = @splat(0);
+                                @memcpy(work_buffer[0..data.len], data);
+
+                                _ = zgui.inputText(prop_name, .{ .buf = &work_buffer });
                             },
-                            .string => {
-                                var dummy: [64:0]u8 = @splat(0);
-                                _ = zgui.inputText(prop_name, .{ .buf = &dummy });
-                            },
-                            .int => {
-                                var dummy: i32 = 0;
-                                _ = zgui.inputInt(prop_name, .{ .v = &dummy });
-                            },
-                            .float => {
-                                var dummy: f32 = 0;
-                                _ = zgui.inputFloat(prop_name, .{ .v = &dummy });
-                            },
-                            .color => {
-                                var dummy: [3]f32 = @splat(1);
-                                _ = zgui.colorEdit3(prop_name, .{ .col = &dummy });
+                            .color => |*data| {
+                                const rgb = data.to_rgb888();
+                                var rgbf: [3]f32 = .{
+                                    @floatFromInt(rgb.r),
+                                    @floatFromInt(rgb.g),
+                                    @floatFromInt(rgb.b),
+                                };
+                                _ = zgui.colorEdit3(prop_name, .{ .col = &rgbf });
+
+                                data.* = .from_rgbf(rgbf[0], rgbf[1], rgbf[2]);
                             },
                         }
                     }
