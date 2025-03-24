@@ -4,6 +4,8 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
 
+    const run_step = b.step("run", "Runs the editor with a blank design");
+
     const abi_dep = b.dependency("abi", .{});
 
     const zgui_dep = b.dependency("zgui", .{
@@ -46,4 +48,8 @@ pub fn build(b: *std.Build) void {
     }
 
     b.installArtifact(editor_exe);
+
+    const run_editor = b.addRunArtifact(editor_exe);
+
+    run_step.dependOn(&run_editor.step);
 }

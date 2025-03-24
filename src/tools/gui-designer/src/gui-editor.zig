@@ -15,15 +15,11 @@ pub fn main() !void {
 
     const allocator = gpa.allocator();
 
+    const metadata = try model.load_metadata(allocator, @embedFile("widget-classes.json"));
+    defer metadata.deinit();
+
     try glfw.init();
     defer glfw.terminate();
-
-    // Change current working directory to where the executable is located.
-    {
-        var buffer: [1024]u8 = undefined;
-        const path = std.fs.selfExeDirPath(buffer[0..]) catch ".";
-        std.posix.chdir(path) catch {};
-    }
 
     const gl_major = 4;
     const gl_minor = 0;
@@ -48,6 +44,8 @@ pub fn main() !void {
     zgui.init(allocator);
     defer zgui.deinit();
 
+    zgui.io.setIniFilename(null);
+
     const scale_factor = scale_factor: {
         const scale = glfw_window.getContentScale();
         break :scale_factor @max(scale[0], scale[1]);
@@ -63,11 +61,15 @@ pub fn main() !void {
     zgui.backend.init(glfw_window);
     defer zgui.backend.deinit();
 
+    zgui.io.setConfigFlags(.{
+        .dock_enable = true,
+    });
+
     var window: model.Window = .{};
     defer window.widgets.deinit(allocator);
 
     try window.widgets.append(allocator, .{
-        .class = &classes[0],
+        .class = metadata.class_by_name("Button").?,
         .anchor = .top_left,
         .bounds = .new(.new(10, 10), .new(100, 50)),
     });
@@ -86,9 +88,7 @@ pub fn main() !void {
 
         zgui.backend.newFrame(@intCast(fb_size[0]), @intCast(fb_size[1]));
 
-        // Set the starting window position and size to custom values
-        zgui.setNextWindowPos(.{ .x = 20.0, .y = 20.0, .cond = .first_use_ever });
-        zgui.setNextWindowSize(.{ .w = -1.0, .h = -1.0, .cond = .first_use_ever });
+        _ = zgui.DockSpaceOverViewport(0, zgui.getMainViewport(), .{});
 
         if (zgui.beginMainMenuBar()) {
             if (zgui.beginMenu("File", true)) {
@@ -118,20 +118,20 @@ pub fn main() !void {
         zgui.end();
 
         if (zgui.begin("Toolbox", .{})) {
-            for (classes) |*class| {
-                if (zgui.button(class.name, .{ .w = 100 })) {
+            for (metadata.get_class_names()) |class_name| {
+                if (zgui.button(class_name, .{ .w = 100 })) {
                     std.debug.print("Button pressed\n", .{});
                 }
                 if (zgui.beginDragDropSource(.{})) {
                     defer zgui.endDragDropSource();
 
-                    _ = zgui.setDragDropPayload("WIDGET-CLASS", class.name, .once);
+                    _ = zgui.setDragDropPayload("WIDGET-CLASS", class_name[0 .. class_name.len + 1], .once);
                 }
             }
         }
         zgui.end();
 
-        if (zgui.begin("Window", .{})) {
+        if (zgui.begin("Window Designer", .{})) {
             const mouse_pos = zgui.getMousePos();
             const base = zgui.getCursorScreenPos();
             const draw = zgui.getWindowDrawList();
@@ -148,19 +148,42 @@ pub fn main() !void {
                 std.debug.print("{any}\n", .{zgui.getMouseDragDelta(.left, .{})});
             }
 
+            const topleft = base;
+            const bottomright: [2]f32 = .{
+                topleft[0] + @as(f32, @floatFromInt(window.design_size.width)),
+                topleft[1] + @as(f32, @floatFromInt(window.design_size.height)),
+            };
+
             draw.addRectFilled(.{
-                .pmin = base,
-                .pmax = .{
-                    base[0] + @as(f32, @floatFromInt(window.design_size.width)),
-                    base[1] + @as(f32, @floatFromInt(window.design_size.height)),
-                },
+                .pmin = topleft,
+                .pmax = bottomright,
                 .col = 0xFFCCCCCC,
             });
 
-            if (editor.render_grid) {
-                //
-            }
+            if (editor.render_grid and editor.grid_size > 1) {
+                const grid_increment: f32 = @floatFromInt(editor.grid_size);
+                std.debug.assert(grid_increment > 0);
 
+                var x: f32 = topleft[0];
+                while (x < bottomright[0]) : (x += grid_increment) {
+                    draw.addLine(.{
+                        .p1 = .{ x, topleft[1] },
+                        .p2 = .{ x, bottomright[1] },
+                        .col = 0xFFAAAAAA,
+                        .thickness = 1,
+                    });
+                }
+
+                var y: f32 = topleft[1];
+                while (y < bottomright[1]) : (y += grid_increment) {
+                    draw.addLine(.{
+                        .p1 = .{ topleft[0], y },
+                        .p2 = .{ bottomright[0], y },
+                        .col = 0xFFAAAAAA,
+                        .thickness = 1,
+                    });
+                }
+            }
             for (window.widgets.items, 0..) |widget, index| {
                 paintWidget(draw, base, widget, maybe_selected_widget_index == index);
             }
@@ -176,8 +199,8 @@ pub fn main() !void {
                 if (zgui.getDragDropPayload()) |payload| {
                     if (payload.isDataType("WIDGET-CLASS")) {
                         const payload_ptr: [*]const u8 = @ptrCast(payload.data.?);
-                        const payload_slice: []const u8 = payload_ptr[0..@intCast(payload.data_size)];
-                        if (class_by_name(payload_slice)) |class| {
+                        const payload_slice: [:0]const u8 = payload_ptr[0..@intCast(payload.data_size - 1) :0];
+                        if (metadata.class_by_name(payload_slice)) |class| {
                             const new: model.Widget = .{
                                 .class = class,
                                 .bounds = .new(pos, class.default_size),
@@ -191,8 +214,8 @@ pub fn main() !void {
 
                 if (zgui.acceptDragDropPayload("WIDGET-CLASS", .{})) |payload| {
                     const payload_ptr: [*]const u8 = @ptrCast(payload.data.?);
-                    const payload_slice: []const u8 = payload_ptr[0..@intCast(payload.data_size)];
-                    if (class_by_name(payload_slice)) |class| {
+                    const payload_slice: [:0]const u8 = payload_ptr[0..@intCast(payload.data_size - 1) :0];
+                    if (metadata.class_by_name(payload_slice)) |class| {
                         const new: model.Widget = .{
                             .class = class,
                             .bounds = .new(pos, class.default_size),
@@ -331,26 +354,10 @@ fn paintWidget(draw: zgui.DrawList, base: [2]f32, widget: model.Widget, selected
     }
 }
 
-fn class_by_name(name: []const u8) ?*const model.Class {
-    for (classes) |*class| {
-        if (std.mem.eql(u8, class.name, name))
-            return class;
-    }
-    return null;
-}
-
-const classes: []const model.Class = &.{
-    .{ .name = "Frame" },
-    .{ .name = "Label" },
-    .{ .name = "Button" },
-    .{ .name = "TextBox" },
-    .{ .name = "Picture" },
-};
-
 const EditorOptions = struct {
     grid_size: i32 = 10,
 
-    render_grid: bool = false,
+    render_grid: bool = true,
     snap_to_grid: bool = false,
 
     pub fn snap_pos(opts: EditorOptions, pos: model.Point) model.Point {

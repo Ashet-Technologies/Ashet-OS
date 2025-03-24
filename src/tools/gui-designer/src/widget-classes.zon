@@ -1,0 +1,13 @@
+{
+    "classes": {
+        "Frame": {},
+        "Label": {},
+        "Button": {},
+        "TextBox": {},
+        "Picture": {},
+        "CheckBox": {},
+        "RadioButton": {},
+        "ScrollBar": {},
+        "ToolButton": {},
+    },
+}

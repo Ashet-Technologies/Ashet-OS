@@ -1,0 +1,14 @@
+{
+    "classes": {
+        "Frame": {},
+        "Label": {},
+        "Button": {},
+        "TextBox": {},
+        "Picture": {},
+        "CheckBox": {},
+        "RadioButton": {},
+        "HScrollBar": {},
+        "VScrollBar": {},
+        "ToolButton": {}
+    }
+}
