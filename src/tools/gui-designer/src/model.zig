@@ -13,6 +13,18 @@ pub const Window = struct {
     max_size: Size = .new(std.math.maxInt(u16), std.math.maxInt(u16)),
 
     widgets: std.ArrayListUnmanaged(Widget) = .empty,
+
+    pub fn widget_from_pos(window: *Window, pos: Point) ?struct { usize, *Widget } {
+        var i: usize = window.widgets.items.len;
+        while (i > 0) {
+            i -= 1;
+
+            const widget = &window.widgets.items[i];
+            if (widget.bounds.contains(pos))
+                return .{ i, widget };
+        }
+        return null;
+    }
 };
 
 pub const Widget = struct {
@@ -20,6 +32,7 @@ pub const Widget = struct {
     anchor: Anchor = .top_left,
     visible: bool = true,
     class: *const Class,
+    properties: ZStringArrayHashMapUnmanaged(Value) = .empty,
 };
 
 pub const Class = struct {
@@ -33,6 +46,29 @@ pub const Class = struct {
     max_size: Size = .new(std.math.maxInt(u16), std.math.maxInt(u16)),
 
     default_size: Size = .new(50, 40),
+
+    properties: ZStringArrayHashMapUnmanaged(*const PropertyDescriptor) = .empty,
+};
+
+pub const PropertyDescriptor = struct {
+    name: [:0]const u8,
+    type: Type,
+};
+
+pub const Type = enum {
+    string,
+    int,
+    float,
+    bool,
+    color,
+};
+
+pub const Value = union(Type) {
+    string: []const u8,
+    int: i32,
+    float: f32,
+    bool: bool,
+    color: ashet.Color,
 };
 
 /// The anchor defines which side of a widget should stick to the parent boundary.
@@ -51,23 +87,9 @@ pub const Anchor = struct {
 };
 
 pub const Metadata = struct {
-    const ZStringContext = struct {
-        pub fn hash(self: @This(), s: [:0]const u8) u32 {
-            _ = self;
-            return std.array_hash_map.hashString(s);
-        }
-        pub fn eql(self: @This(), a: [:0]const u8, b: [:0]const u8, b_index: usize) bool {
-            _ = self;
-            _ = b_index;
-            return std.array_hash_map.eqlString(a, b);
-        }
-    };
-
-    const ZStringArrayHashMapUnmanaged = std.array_hash_map.ArrayHashMapUnmanaged([:0]const u8, *Class, ZStringContext, true);
-
     arena: *std.heap.ArenaAllocator,
 
-    classes: ZStringArrayHashMapUnmanaged = .empty,
+    classes: ZStringArrayHashMapUnmanaged(*Class) = .empty,
 
     pub fn deinit(metadata: *const Metadata) void {
         const arena = metadata.arena;
@@ -98,6 +120,7 @@ pub fn load_metadata(allocator: std.mem.Allocator, json_str: []const u8) !*const
         default_size: ?Size = null,
         min_size: ?Size = null,
         max_size: ?Size = null,
+        properties: std.json.Value = .null,
     };
 
     const arena: *std.heap.ArenaAllocator = blk: {
@@ -136,8 +159,74 @@ pub fn load_metadata(allocator: std.mem.Allocator, json_str: []const u8) !*const
             .max_size = jclass.max_size orelse .new(std.math.maxInt(u15), std.math.maxInt(u15)),
         };
 
+        switch (jclass.properties) {
+            .null => {},
+
+            .object => |jprops| {
+                for (jprops.keys(), jprops.values()) |propkey, value| {
+                    if (value != .string)
+                        return error.TypeMismatch;
+
+                    const typestr = std.meta.stringToEnum(Type, value.string) orelse return error.InvalidType;
+
+                    const prop = try arena.allocator().create(PropertyDescriptor);
+                    prop.* = .{
+                        .name = try arena.allocator().dupeZ(u8, propkey),
+                        .type = typestr,
+                    };
+
+                    try class.properties.putNoClobber(arena.allocator(), prop.name, prop);
+                }
+            },
+
+            else => return error.TypeMismatch,
+        }
+
+        inline for (.{ "width", "height" }) |prop| {
+            if (@field(class.min_size, prop) > @field(class.max_size, prop)) {
+                std.log.err("Class '{s}' min_size.{s} is bigger than max_size.{s}.", .{
+                    class.name,
+                    prop,
+                    prop,
+                });
+                return error.InvalidData;
+            }
+
+            if (@field(class.default_size, prop) < @field(class.min_size, prop)) {
+                std.log.warn("Class '{s}' default_size.{s} is less than min_size.{s}. Clamping!", .{
+                    class.name,
+                    prop,
+                    prop,
+                });
+            }
+            if (@field(class.default_size, prop) > @field(class.max_size, prop)) {
+                std.log.warn("Class '{s}' default_size.{s} is more than max_size.{s}. Clamping!", .{
+                    class.name,
+                    prop,
+                    prop,
+                });
+            }
+            @field(class.default_size, prop) = @max(@field(class.min_size, prop), @min(@field(class.max_size, prop), @field(class.default_size, prop)));
+        }
+
         try result.classes.putNoClobber(arena.allocator(), zkey, class);
     }
 
     return result;
+}
+
+const ZStringContext = struct {
+    pub fn hash(self: @This(), s: [:0]const u8) u32 {
+        _ = self;
+        return std.array_hash_map.hashString(s);
+    }
+    pub fn eql(self: @This(), a: [:0]const u8, b: [:0]const u8, b_index: usize) bool {
+        _ = self;
+        _ = b_index;
+        return std.array_hash_map.eqlString(a, b);
+    }
+};
+
+pub fn ZStringArrayHashMapUnmanaged(comptime T: type) type {
+    return std.array_hash_map.ArrayHashMapUnmanaged([:0]const u8, T, ZStringContext, true);
 }
