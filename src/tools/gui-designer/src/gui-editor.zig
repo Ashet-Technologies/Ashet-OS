@@ -125,7 +125,7 @@ pub fn main() !void {
                 if (zgui.beginDragDropSource(.{})) {
                     defer zgui.endDragDropSource();
 
-                    _ = zgui.setDragDropPayload("WIDGET-CLASS", std.mem.asBytes(class), .once);
+                    _ = zgui.setDragDropPayload("WIDGET-CLASS", class.name, .once);
                 }
             }
         }
@@ -161,8 +161,8 @@ pub fn main() !void {
                 //
             }
 
-            for (window.widgets.items) |widget| {
-                paintWidget(draw, base, widget);
+            for (window.widgets.items, 0..) |widget, index| {
+                paintWidget(draw, base, widget, maybe_selected_widget_index == index);
             }
 
             if (zgui.beginDragDropTarget()) {
@@ -177,28 +177,30 @@ pub fn main() !void {
                     if (payload.isDataType("WIDGET-CLASS")) {
                         const payload_ptr: [*]const u8 = @ptrCast(payload.data.?);
                         const payload_slice: []const u8 = payload_ptr[0..@intCast(payload.data_size)];
-                        const class: *const model.Class = @alignCast(std.mem.bytesAsValue(model.Class, payload_slice));
-                        const new: model.Widget = .{
-                            .class = class,
-                            .bounds = .new(pos, class.default_size),
-                            .anchor = .top_left,
-                        };
+                        if (class_by_name(payload_slice)) |class| {
+                            const new: model.Widget = .{
+                                .class = class,
+                                .bounds = .new(pos, class.default_size),
+                                .anchor = .top_left,
+                            };
 
-                        paintWidget(draw, base, new);
+                            paintWidget(draw, base, new, false);
+                        }
                     }
                 }
 
                 if (zgui.acceptDragDropPayload("WIDGET-CLASS", .{})) |payload| {
                     const payload_ptr: [*]const u8 = @ptrCast(payload.data.?);
                     const payload_slice: []const u8 = payload_ptr[0..@intCast(payload.data_size)];
-                    const class: *const model.Class = @alignCast(std.mem.bytesAsValue(model.Class, payload_slice));
-                    const new: model.Widget = .{
-                        .class = class,
-                        .bounds = .new(pos, class.default_size),
-                        .anchor = .top_left,
-                    };
-                    try window.widgets.append(allocator, new);
-                    std.debug.print("hello drop {s}\n", .{class.name});
+                    if (class_by_name(payload_slice)) |class| {
+                        const new: model.Widget = .{
+                            .class = class,
+                            .bounds = .new(pos, class.default_size),
+                            .anchor = .top_left,
+                        };
+                        try window.widgets.append(allocator, new);
+                        std.debug.print("hello drop {s}\n", .{class.name});
+                    }
                 }
             }
         }
@@ -298,7 +300,7 @@ pub fn main() !void {
     }
 }
 
-fn paintWidget(draw: zgui.DrawList, base: [2]f32, widget: model.Widget) void {
+fn paintWidget(draw: zgui.DrawList, base: [2]f32, widget: model.Widget, selected: bool) void {
     const x0: f32 = @floatFromInt(widget.bounds.x);
     const y0: f32 = @floatFromInt(widget.bounds.y);
 
@@ -319,6 +321,22 @@ fn paintWidget(draw: zgui.DrawList, base: [2]f32, widget: model.Widget) void {
         .pmax = .{ x + w, y + h },
         .col = 0xFF000000,
     });
+
+    if (selected) {
+        draw.addRect(.{
+            .pmin = .{ x - 2, y - 2 },
+            .pmax = .{ x + w + 2, y + h + 2 },
+            .col = 0xFF00FFFF,
+        });
+    }
+}
+
+fn class_by_name(name: []const u8) ?*const model.Class {
+    for (classes) |*class| {
+        if (std.mem.eql(u8, class.name, name))
+            return class;
+    }
+    return null;
 }
 
 const classes: []const model.Class = &.{
