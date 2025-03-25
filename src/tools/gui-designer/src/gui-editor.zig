@@ -166,7 +166,7 @@ pub fn main() !u8 {
             defer zgui.endMainMenuBar();
         }
 
-        if (zgui.begin("Options", .{})) {
+        if (zgui.begin("Options", .{ .flags = .{ .always_auto_resize = true, .no_resize = true } })) {
             _ = zgui.checkbox("Show Grid", .{ .v = &editor.render_grid });
 
             zgui.sameLine(.{});
@@ -185,8 +185,7 @@ pub fn main() !u8 {
         }
         zgui.end();
 
-        zgui.setNextWindowSize(.{ .w = 100, .h = -1, .cond = .appearing });
-        if (zgui.begin("Toolbox", .{})) {
+        if (zgui.begin("Toolbox", .{ .flags = .{ .always_vertical_scrollbar = true } })) {
             const w = zgui.getContentRegionAvail()[0];
 
             for (metadata.get_class_names()) |class_name| {
@@ -338,110 +337,150 @@ pub fn main() !u8 {
         if (zgui.begin("Properties", .{})) {
             if (maybe_selected_widget_index) |index| {
                 const selected_widget = &window.widgets.items[index];
-                zgui.textUnformatted("General");
-                zgui.separator();
-
-                _ = zgui.labelText("Class", "{s}", .{selected_widget.class.name});
-
-                var nameBuffer: [32:0]u8 = @splat(0);
-                _ = zgui.inputText("Identifier", .{
-                    .buf = &nameBuffer,
-                });
-
-                zgui.textUnformatted("");
-                zgui.textUnformatted("Geometry");
-                zgui.separator();
-
-                const fields = .{
-                    .{ .name = "x", .min = std.math.minInt(i16), .max = std.math.maxInt(i16) },
-                    .{ .name = "y", .min = std.math.minInt(i16), .max = std.math.maxInt(i16) },
-                    .{ .name = "width", .min = selected_widget.class.min_size.width, .max = selected_widget.class.max_size.width },
-                    .{ .name = "height", .min = selected_widget.class.min_size.height, .max = selected_widget.class.max_size.height },
-                };
-
-                inline for (fields) |fld| {
-                    zgui.beginDisabled(.{ .disabled = fld.min >= fld.max });
-                    defer zgui.endDisabled();
-
-                    var value: i32 = @field(selected_widget.bounds, fld.name);
-
-                    if (zgui.button("-##minus_" ++ fld.name, .{})) {
-                        value -|= 1;
-                    }
-                    zgui.sameLine(.{});
-
-                    if (zgui.button("+##plus_" ++ fld.name, .{})) {
-                        value +|= 1;
-                    }
-                    zgui.sameLine(.{});
-
-                    if (zgui.dragInt(fld.name ++ "##edit_" ++ fld.name, .{ .v = &value })) {
-                        value = std.math.clamp(value, fld.min, fld.max);
-                    }
-
-                    @field(selected_widget.bounds, fld.name) = @intCast(value);
-                }
-
-                zgui.textUnformatted("");
-                zgui.textUnformatted("Anchor");
-                zgui.separator();
-
-                if (zgui.beginTable("Anchor##anchor", .{ .column = 3 })) {
+                if (zgui.beginTable("##PropertiesTable", .{ .column = 2, .flags = .{} })) {
                     defer zgui.endTable();
 
-                    zgui.tableNextRow(.{});
+                    zgui.tableSetupColumn("Key", .{ .flags = .{ .width_fixed = true }, .init_width_or_height = 100 });
+                    zgui.tableSetupColumn("Value", .{ .flags = .{ .width_stretch = true }, .init_width_or_height = -1 });
 
-                    _ = zgui.tableSetColumnIndex(1);
-                    _ = zgui.checkbox("Top", .{ .v = &selected_widget.anchor.top });
+                    const utils = struct {
+                        pub fn header(name: [:0]const u8) void {
+                            zgui.tableNextRow(.{ .min_row_height = 20 });
+                            zgui.tableNextRow(.{ .row_flags = .{ .headers = true } });
 
-                    zgui.tableNextRow(.{});
+                            _ = zgui.tableNextColumn();
 
-                    _ = zgui.tableSetColumnIndex(0);
-                    _ = zgui.checkbox("Left", .{ .v = &selected_widget.anchor.left });
-                    _ = zgui.tableSetColumnIndex(2);
-                    _ = zgui.checkbox("Right", .{ .v = &selected_widget.anchor.right });
-
-                    zgui.tableNextRow(.{});
-
-                    _ = zgui.tableSetColumnIndex(1);
-                    _ = zgui.checkbox("Bottom", .{ .v = &selected_widget.anchor.bottom });
-                }
-
-                zgui.textUnformatted("");
-                zgui.textUnformatted("Visuals");
-                zgui.separator();
-                _ = zgui.checkbox("Visible", .{ .v = &selected_widget.visible });
-
-                if (selected_widget.class.properties.count() > 0) {
-                    zgui.textUnformatted("");
-                    zgui.textUnformatted("Widget Properties");
-                    zgui.separator();
-
-                    for (selected_widget.class.properties.keys(), selected_widget.class.properties.values()) |prop_name, prop_desc| {
-                        const gop = try selected_widget.properties.getOrPut(allocator, prop_name);
-                        if (!gop.found_existing) {
-                            gop.value_ptr.* = prop_desc.default_value;
+                            zgui.textUnformatted(name);
                         }
 
-                        switch (gop.value_ptr.*) {
-                            .bool => |*data| _ = zgui.checkbox(prop_name, .{ .v = data }),
+                        pub fn beginField(name: [:0]const u8) void {
+                            zgui.tableNextRow(.{});
 
-                            .int => |*data| _ = zgui.inputInt(prop_name, .{ .v = data }),
-                            .float => |*data| _ = zgui.inputFloat(prop_name, .{ .v = data }),
-                            .string => |*data| {
-                                _ = zgui.inputText(prop_name, .{ .buf = &data.data });
-                            },
-                            .color => |*data| {
-                                const rgb = data.to_rgb888();
-                                var rgbf: [3]f32 = .{
-                                    @floatFromInt(rgb.r),
-                                    @floatFromInt(rgb.g),
-                                    @floatFromInt(rgb.b),
-                                };
-                                _ = zgui.colorEdit3(prop_name, .{ .col = &rgbf });
+                            _ = zgui.tableNextColumn();
+                            zgui.textUnformatted(name);
+                            _ = zgui.tableNextColumn();
+                        }
+                    };
 
-                                data.* = .from_rgbf(rgbf[0], rgbf[1], rgbf[2]);
-                            },
+                    utils.header("General");
+
+                    zgui.tableNextRow(.{});
+
+                    {
+                        utils.beginField("Class");
+
+                        zgui.beginDisabled(.{ .disabled = true });
+                        defer zgui.endDisabled();
+
+                        var textinput: [256:0]u8 = @splat(0);
+                        std.mem.copyForwards(u8, &textinput, selected_widget.class.name);
+                        _ = zgui.inputText("##ClassName", .{ .buf = &textinput });
+                    }
+
+                    {
+                        utils.beginField("Identifier");
+
+                        var nameBuffer: [32:0]u8 = @splat(0);
+                        _ = zgui.inputText("##name", .{
+                            .buf = &nameBuffer,
+                        });
+                    }
+
+                    utils.header("Geometry");
+
+                    const fields = .{
+                        .{ .name = "x", .display = "X", .min = std.math.minInt(i16), .max = std.math.maxInt(i16) },
+                        .{ .name = "y", .display = "Y", .min = std.math.minInt(i16), .max = std.math.maxInt(i16) },
+                        .{ .name = "width", .display = "Width", .min = selected_widget.class.min_size.width, .max = selected_widget.class.max_size.width },
+                        .{ .name = "height", .display = "Height", .min = selected_widget.class.min_size.height, .max = selected_widget.class.max_size.height },
+                    };
+
+                    inline for (fields) |fld| {
+                        utils.beginField(fld.display);
+
+                        zgui.beginDisabled(.{ .disabled = fld.min >= fld.max });
+                        defer zgui.endDisabled();
+
+                        var value: i32 = @field(selected_widget.bounds, fld.name);
+
+                        if (zgui.dragInt("##edit_" ++ fld.name, .{ .v = &value })) {
+                            value = std.math.clamp(value, fld.min, fld.max);
+                        }
+                        zgui.sameLine(.{});
+                        if (zgui.button("-##minus_" ++ fld.name, .{})) {
+                            value -|= 1;
+                        }
+                        zgui.sameLine(.{});
+
+                        if (zgui.button("+##plus_" ++ fld.name, .{})) {
+                            value +|= 1;
+                        }
+
+                        @field(selected_widget.bounds, fld.name) = @intCast(value);
+                    }
+
+                    utils.beginField("Anchor");
+
+                    if (zgui.beginTable("Anchor##anchor", .{ .column = 3 })) {
+                        defer zgui.endTable();
+
+                        zgui.tableNextRow(.{});
+
+                        _ = zgui.tableSetColumnIndex(1);
+                        _ = zgui.checkbox("Top", .{ .v = &selected_widget.anchor.top });
+
+                        zgui.tableNextRow(.{});
+
+                        _ = zgui.tableSetColumnIndex(0);
+                        _ = zgui.checkbox("Left", .{ .v = &selected_widget.anchor.left });
+                        _ = zgui.tableSetColumnIndex(2);
+                        _ = zgui.checkbox("Right", .{ .v = &selected_widget.anchor.right });
+
+                        zgui.tableNextRow(.{});
+
+                        _ = zgui.tableSetColumnIndex(1);
+                        _ = zgui.checkbox("Bottom", .{ .v = &selected_widget.anchor.bottom });
+                    }
+
+                    utils.header("Visuals");
+
+                    utils.beginField("Visible");
+                    _ = zgui.checkbox("##Visible", .{ .v = &selected_widget.visible });
+
+                    if (selected_widget.class.properties.count() > 0) {
+                        utils.header("Widget Properties");
+
+                        for (selected_widget.class.properties.keys(), selected_widget.class.properties.values()) |prop_name, prop_desc| {
+                            const gop = try selected_widget.properties.getOrPut(allocator, prop_name);
+                            if (!gop.found_existing) {
+                                gop.value_ptr.* = prop_desc.default_value;
+                            }
+
+                            utils.beginField(prop_name);
+
+                            var key_buf: [256]u8 = undefined;
+                            const field_key = try std.fmt.bufPrintZ(&key_buf, "##userprop_{s}", .{prop_name});
+
+                            switch (gop.value_ptr.*) {
+                                .bool => |*data| _ = zgui.checkbox(field_key, .{ .v = data }),
+
+                                .int => |*data| _ = zgui.inputInt(field_key, .{ .v = data }),
+                                .float => |*data| _ = zgui.inputFloat(field_key, .{ .v = data }),
+                                .string => |*data| {
+                                    _ = zgui.inputText(field_key, .{ .buf = &data.data });
+                                },
+                                .color => |*data| {
+                                    const rgb = data.to_rgb888();
+                                    var rgbf: [3]f32 = .{
+                                        @floatFromInt(rgb.r),
+                                        @floatFromInt(rgb.g),
+                                        @floatFromInt(rgb.b),
+                                    };
+                                    _ = zgui.colorEdit3(field_key, .{ .col = &rgbf });
+
+                                    data.* = .from_rgbf(rgbf[0], rgbf[1], rgbf[2]);
+                                },
+                            }
                         }
                     }
                 }
@@ -512,6 +551,45 @@ fn paintWidget(draw: zgui.DrawList, base: [2]f32, widget: model.Widget, selected
             .pmax = .{ x + w, y + h },
             .col = 0xFFFFFFFF,
         });
+
+        if (w > 4 and h > 2) {
+            if (widget.anchor.left) {
+                draw.addLine(.{
+                    .p1 = .{ x + 1, y + 1 },
+                    .p2 = .{ x + 1, y + h - 2 },
+                    .col = 0xFF0088CC,
+                    .thickness = 1,
+                });
+            }
+            if (widget.anchor.right) {
+                draw.addLine(.{
+                    .p1 = .{ x + w - 2, y + 1 },
+                    .p2 = .{ x + w - 2, y + h - 2 },
+                    .col = 0xFF0088CC,
+                    .thickness = 1,
+                });
+            }
+        }
+
+        if (w > 2 and h > 4) {
+            if (widget.anchor.top) {
+                draw.addLine(.{
+                    .p1 = .{ x + 1, y + 1 },
+                    .p2 = .{ x + w - 2, y + 1 },
+                    .col = 0xFF0088CC,
+                    .thickness = 1,
+                });
+            }
+            if (widget.anchor.bottom) {
+                draw.addLine(.{
+                    .p1 = .{ x + 1, y + h - 2 },
+                    .p2 = .{ x + w - 2, y + h - 2 },
+                    .col = 0xFF0088CC,
+                    .thickness = 1,
+                });
+            }
+        }
+
         draw.addTextUnformatted(.{ x + 2, y + 2 }, 0xFF000000, widget.class.name);
 
         draw.addRect(.{
@@ -534,7 +612,7 @@ const EditorOptions = struct {
     grid_size: i32 = 10,
 
     render_grid: bool = true,
-    snap_to_grid: bool = false,
+    snap_to_grid: bool = true,
 
     pub fn snap_pos(opts: EditorOptions, pos: model.Point) model.Point {
         return .new(opts.snap_value(pos.x), opts.snap_value(pos.y));
