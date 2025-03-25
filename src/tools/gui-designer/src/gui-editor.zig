@@ -3,20 +3,58 @@ const std = @import("std");
 const zgui = @import("zgui");
 const glfw = @import("zglfw");
 const zopengl = @import("zopengl");
+const args_parser = @import("args");
 
 const model = @import("model.zig");
 
-// const content_dir = @import("build_options").content_dir;
-const window_title = "zig-gamedev: minimal zgpu glfw opengl3";
+pub const CliOptions = struct {
+    help: bool = false,
 
-pub fn main() !void {
+    pub const shorthands = .{
+        .h = "help",
+    };
+};
+
+fn usage_fault(comptime fmt: []const u8, params: anytype) !noreturn {
+    const stderr = std.io.getStdErr();
+    try stderr.writer().print("gui-editor: " ++ fmt, params);
+    std.process.exit(1);
+}
+
+pub fn main() !u8 {
     var gpa: std.heap.DebugAllocator(.{}) = .init;
     defer _ = gpa.deinit();
 
     const allocator = gpa.allocator();
 
+    var cli = args_parser.parseForCurrentProcess(CliOptions, allocator, .print) catch return 1;
+    defer cli.deinit();
+
     const metadata = try model.load_metadata(allocator, @embedFile("widget-classes.json"));
     defer metadata.deinit();
+
+    var window: model.Window = .{};
+    defer window.deinit(allocator);
+
+    const maybe_save_file_name: ?[]const u8 = switch (cli.positionals.len) {
+        0 => null, // Default setup, this is fine
+        1 => blk: {
+            // Open provided file
+
+            const file = try std.fs.cwd().openFile(cli.positionals[0], .{});
+            defer file.close();
+
+            window = try model.load_design(file.reader(), allocator, metadata);
+
+            break :blk cli.positionals[0];
+        },
+        else => try usage_fault(
+            "expects none or a single positional file, but {} were provided",
+            .{cli.positionals.len},
+        ),
+    };
+
+    _ = maybe_save_file_name;
 
     try glfw.init();
     defer glfw.terminate();
@@ -31,7 +69,7 @@ pub fn main() !void {
     glfw.windowHint(.doublebuffer, true);
     glfw.windowHint(.wayland_app_id, "computer.ashet.os.gui_editor");
 
-    const glfw_window = try glfw.Window.create(800, 500, window_title, null);
+    const glfw_window = try glfw.Window.create(1200, 700, "Ashet GUI Designer", null);
     defer glfw_window.destroy();
 
     glfw_window.setSizeLimits(400, 400, -1, -1);
@@ -54,15 +92,6 @@ pub fn main() !void {
     zgui.io.setConfigFlags(.{
         .dock_enable = true,
         .dpi_enable_scale_viewport = true,
-    });
-
-    var window: model.Window = .{};
-    defer window.widgets.deinit(allocator);
-
-    try window.widgets.append(allocator, .{
-        .class = metadata.class_by_name("Button").?,
-        .anchor = .top_left,
-        .bounds = .new(.new(10, 10), .new(100, 50)),
     });
 
     var maybe_selected_widget_index: ?usize = 0;
@@ -123,7 +152,7 @@ pub fn main() !void {
                     var result_file = try std.fs.cwd().atomicFile("current.gui.json", .{});
                     defer result_file.deinit();
 
-                    try model.save_window(window, result_file.file.writer());
+                    try model.save_design(window, result_file.file.writer());
 
                     try result_file.finish();
                 }
@@ -399,11 +428,8 @@ pub fn main() !void {
 
                             .int => |*data| _ = zgui.inputInt(prop_name, .{ .v = data }),
                             .float => |*data| _ = zgui.inputFloat(prop_name, .{ .v = data }),
-                            .string => |data| {
-                                var work_buffer: [4096:0]u8 = @splat(0);
-                                @memcpy(work_buffer[0..data.len], data);
-
-                                _ = zgui.inputText(prop_name, .{ .buf = &work_buffer });
+                            .string => |*data| {
+                                _ = zgui.inputText(prop_name, .{ .buf = &data.data });
                             },
                             .color => |*data| {
                                 const rgb = data.to_rgb888();
@@ -427,6 +453,7 @@ pub fn main() !void {
 
         glfw_window.swapBuffers();
     }
+    return 0;
 }
 
 const DragDropPayload = @TypeOf(zgui.getDragDropPayload().?.*);

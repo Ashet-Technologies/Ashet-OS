@@ -6,6 +6,8 @@ pub fn build(b: *std.Build) void {
 
     const run_step = b.step("run", "Runs the editor with a blank design");
 
+    const args_dep = b.dependency("args", .{});
+
     const abi_dep = b.dependency("abi", .{});
 
     const zgui_dep = b.dependency("zgui", .{
@@ -35,6 +37,7 @@ pub fn build(b: *std.Build) void {
 
     editor_mod.addImport("zopengl", zopengl_dep.module("root"));
     editor_mod.addImport("ashet-abi", abi_dep.module("ashet-abi"));
+    editor_mod.addImport("args", args_dep.module("args"));
 
     const editor_exe = b.addExecutable(.{
         .name = "gui-editor",
@@ -50,6 +53,8 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(editor_exe);
 
     const run_editor = b.addRunArtifact(editor_exe);
+
+    run_editor.addFileArg(b.path("current.gui.json"));
 
     run_step.dependOn(&run_editor.step);
 }

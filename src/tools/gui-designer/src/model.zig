@@ -14,6 +14,14 @@ pub const Window = struct {
 
     widgets: std.ArrayListUnmanaged(Widget) = .empty,
 
+    pub fn deinit(window: *Window, allocator: std.mem.Allocator) void {
+        for (window.widgets.items) |*widget| {
+            widget.deinit(allocator);
+        }
+        window.widgets.deinit(allocator);
+        window.* = undefined;
+    }
+
     pub fn widget_from_pos(window: *Window, pos: Point) ?struct { usize, *Widget } {
         var i: usize = window.widgets.items.len;
         while (i > 0) {
@@ -37,6 +45,7 @@ pub const Widget = struct {
 
     pub fn init(class: *const Class, allocator: std.mem.Allocator, bounds: Rectangle) !Widget {
         var widget: Widget = .{
+            .class = class,
             .bounds = .new(bounds.position(), .new(
                 std.math.clamp(bounds.width, class.min_size.width, class.max_size.width),
                 std.math.clamp(bounds.height, class.min_size.height, class.max_size.height),
@@ -90,11 +99,29 @@ pub const Type = enum {
 };
 
 pub const Value = union(Type) {
-    string: []const u8,
+    string: String,
     int: i32,
     float: f32,
     bool: bool,
     color: ashet.Color,
+
+    pub const String = struct {
+        pub const empty: String = .{ .data = @splat(0) };
+
+        data: [1024:0]u8,
+
+        pub fn from_slice(text: []const u8) error{OutOfMemory}!String {
+            var string: String = .empty;
+            if (text.len > string.data.len)
+                return error.OutOfMemory;
+            @memcpy(string.data[0..text.len], text);
+            return string;
+        }
+
+        pub fn slice(string: *const String) [:0]const u8 {
+            return std.mem.sliceTo(&string.data, 0);
+        }
+    };
 };
 
 /// The anchor defines which side of a widget should stick to the parent boundary.
@@ -203,7 +230,7 @@ pub fn load_metadata(allocator: std.mem.Allocator, json_str: []const u8) !*const
                             .color => .{ .color = .white },
                             .int => .{ .int = 0 },
                             .float => .{ .float = 0 },
-                            .string => .{ .string = "" },
+                            .string => .{ .string = .empty },
                         },
                     };
 
@@ -263,7 +290,7 @@ pub fn ZStringArrayHashMapUnmanaged(comptime T: type) type {
     return std.array_hash_map.ArrayHashMapUnmanaged([:0]const u8, T, ZStringContext, true);
 }
 
-pub fn save_window(window: Window, unbuffered_stream: anytype) !void {
+pub fn save_design(window: Window, unbuffered_stream: anytype) !void {
     var buffered_writer = std.io.bufferedWriter(unbuffered_stream);
 
     var json = std.json.writeStream(buffered_writer.writer(), .{
@@ -307,7 +334,9 @@ pub fn save_window(window: Window, unbuffered_stream: anytype) !void {
         for (widget.properties.keys(), widget.properties.values()) |key, value| {
             try json.objectField(key);
             switch (value) {
-                inline .bool, .string, .int, .float => |val| try json.write(val),
+                inline .bool, .int, .float => |val| try json.write(val),
+
+                .string => |val| try json.write(val.slice()),
 
                 .color => |color| {
                     const rgb = color.to_rgb888();
@@ -327,4 +356,110 @@ pub fn save_window(window: Window, unbuffered_stream: anytype) !void {
     try json.endObject();
 
     try buffered_writer.flush();
+}
+
+pub fn load_design(stream: anytype, allocator: std.mem.Allocator, metadata: *const Metadata) !Window {
+    var buffered_reader = std.io.bufferedReader(stream);
+    const reader = buffered_reader.reader();
+
+    const JWidget = struct {
+        identifier: []const u8 = "",
+        bounds: Rectangle,
+        anchor: Anchor = .top_left,
+        visible: bool = true,
+        class: []const u8,
+        properties: std.json.Value,
+    };
+
+    const JDesign = struct {
+        design_size: Size,
+
+        min_size: Size = .new(0, 0),
+        max_size: Size = .new(std.math.maxInt(u16), std.math.maxInt(u16)),
+
+        widgets: []const JWidget,
+    };
+
+    var jreader = std.json.reader(allocator, reader);
+    defer jreader.deinit();
+
+    const jdesign = try std.json.parseFromTokenSource(JDesign, allocator, &jreader, .{});
+    defer jdesign.deinit();
+
+    var window: Window = .{
+        .design_size = jdesign.value.design_size,
+        .min_size = jdesign.value.min_size,
+        .max_size = jdesign.value.max_size,
+    };
+    errdefer window.deinit(allocator);
+
+    for (jdesign.value.widgets) |jwidget| {
+        const widget = try window.widgets.addOne(allocator);
+        widget.* = .{
+            .class = metadata.class_by_name(jwidget.class) orelse return error.BadClass,
+            .anchor = jwidget.anchor,
+            .bounds = jwidget.bounds,
+            .identifier = .empty,
+            .properties = .empty,
+            .visible = jwidget.visible,
+        };
+        try widget.identifier.appendSlice(allocator, jwidget.identifier);
+
+        switch (jwidget.properties) {
+            .null => {},
+            .object => |*jproperties| {
+                for (jproperties.keys(), jproperties.values()) |name, jvalue| {
+                    const prop = widget.class.properties.getEntryAdapted(name, std.array_hash_map.StringContext{}) orelse return error.BadProperty;
+
+                    const value: Value = switch (prop.value_ptr.*.default_value) {
+                        .string => .{
+                            .string = try .from_slice(try jcast(jvalue, .string)),
+                        },
+
+                        .int => .{
+                            .int = std.math.cast(i32, try jcast(jvalue, .integer)) orelse return error.Overflow,
+                        },
+
+                        .float => .{
+                            .float = @floatCast(try jcast(jvalue, .float)),
+                        },
+
+                        .bool => .{
+                            .bool = try jcast(jvalue, .bool),
+                        },
+
+                        .color => blk: {
+                            const hexstr = try jcast(jvalue, .string);
+
+                            if (hexstr.len != 7 or hexstr[0] != '#')
+                                return error.BadColor;
+
+                            const r = try std.fmt.parseInt(u8, hexstr[1..3], 16);
+                            const g = try std.fmt.parseInt(u8, hexstr[3..5], 16);
+                            const b = try std.fmt.parseInt(u8, hexstr[5..7], 16);
+                            break :blk .{
+                                .color = .from_rgb(r, g, b),
+                            };
+                        },
+                    };
+
+                    try widget.properties.put(
+                        allocator,
+                        prop.key_ptr.*,
+                        value,
+                    );
+                }
+            },
+            else => return error.TypeMismatch,
+        }
+    }
+
+    return window;
+}
+
+fn jcast(value: std.json.Value, comptime jtype: std.meta.Tag(std.json.Value)) !@FieldType(std.json.Value, @tagName(jtype)) {
+    return switch (value) {
+        jtype => |payload| payload,
+        else => return error.TypeMismatch,
+    };
 }
