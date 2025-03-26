@@ -100,6 +100,7 @@ pub fn main() !u8 {
     var dock_layout_setup_done = false;
 
     var previously_window_clicked = false;
+    var maybe_popup_widget: ?*model.Widget = null;
 
     const DragInfo = struct {
         widget: *model.Widget,
@@ -226,6 +227,41 @@ pub fn main() !u8 {
                 .h = @floatFromInt(window.design_size.height),
             });
 
+            if (maybe_hovered_widget != null or maybe_popup_widget != null) {
+                const maybe_target_widget: ?*model.Widget = if (maybe_popup_widget) |popup|
+                    popup
+                else if (maybe_hovered_widget) |tup|
+                    tup[1]
+                else
+                    null;
+
+                if (maybe_target_widget) |target_widget| {
+                    if (zgui.beginPopupContextWindow()) {
+                        defer zgui.endPopup();
+
+                        maybe_popup_widget = target_widget;
+
+                        _ = zgui.menuItem("Copy", .{});
+                        _ = zgui.menuItem("Cut", .{});
+                        _ = zgui.separator();
+                        _ = zgui.menuItem("Snap position to grid", .{});
+                        _ = zgui.menuItem("Shrink size to grid", .{});
+                        _ = zgui.menuItem("Grow size to grid", .{});
+                        _ = zgui.separator();
+                        _ = zgui.menuItem("Bring to front", .{});
+                        _ = zgui.menuItem("Send to back", .{});
+                        _ = zgui.menuItem("Raise one layer", .{});
+                        _ = zgui.menuItem("Lower one layer", .{});
+                        _ = zgui.separator();
+                        _ = zgui.menuItem("Delete", .{});
+                    } else {
+                        maybe_popup_widget = null;
+                    }
+                } else {
+                    std.debug.assert(maybe_popup_widget == null);
+                }
+            }
+
             const is_window_pressed = zgui.isItemActive();
             defer previously_window_clicked = is_window_pressed;
 
@@ -284,6 +320,18 @@ pub fn main() !u8 {
                 .col = 0xFFCCCCCC,
             });
 
+            if (window.min_size.width > 0 and window.min_size.width < window.max_size.width and window.min_size.height > 0 and window.min_size.height < window.max_size.height) {
+                const min_bottomright: [2]f32 = .{
+                    topleft[0] + @as(f32, @floatFromInt(window.min_size.width)),
+                    topleft[1] + @as(f32, @floatFromInt(window.min_size.height)),
+                };
+                draw.addRectFilled(.{
+                    .pmin = topleft,
+                    .pmax = min_bottomright,
+                    .col = 0x10000000,
+                });
+            }
+
             if (editor.render_grid and editor.grid_size > 1) {
                 const grid_increment: f32 = @floatFromInt(editor.grid_size);
                 std.debug.assert(grid_increment > 0);
@@ -330,41 +378,86 @@ pub fn main() !u8 {
                     }
                 }
             }
+
+            if (maybe_selected_widget_index == null) {
+                draw.addRect(.{
+                    .pmin = .{ topleft[0] - 2, topleft[1] - 2 },
+                    .pmax = .{ bottomright[0] + 2, bottomright[1] + 2 },
+                    .col = 0xFF00FFFF,
+                });
+            }
         }
         zgui.end();
 
         zgui.setNextWindowSize(.{ .w = 300, .h = -1, .cond = .once });
         if (zgui.begin("Properties", .{})) {
-            if (maybe_selected_widget_index) |index| {
-                const selected_widget = &window.widgets.items[index];
-                if (zgui.beginTable("##PropertiesTable", .{ .column = 2, .flags = .{} })) {
-                    defer zgui.endTable();
+            if (zgui.beginTable("##PropertiesTable", .{ .column = 2, .flags = .{} })) {
+                defer zgui.endTable();
 
-                    zgui.tableSetupColumn("Key", .{ .flags = .{ .width_fixed = true }, .init_width_or_height = 100 });
-                    zgui.tableSetupColumn("Value", .{ .flags = .{ .width_stretch = true }, .init_width_or_height = -1 });
+                zgui.tableSetupColumn("Key", .{ .flags = .{ .width_fixed = true }, .init_width_or_height = 100 });
+                zgui.tableSetupColumn("Value", .{ .flags = .{ .width_stretch = true }, .init_width_or_height = -1 });
 
-                    const utils = struct {
-                        pub fn header(name: [:0]const u8) void {
+                const Utils = struct {
+                    first: bool = true,
+
+                    pub fn header(self: *@This(), name: [:0]const u8) void {
+                        defer self.first = false;
+
+                        if (!self.first) {
                             zgui.tableNextRow(.{ .min_row_height = 20 });
-                            zgui.tableNextRow(.{ .row_flags = .{ .headers = true } });
+                        }
+                        zgui.tableNextRow(.{ .row_flags = .{ .headers = true } });
 
-                            _ = zgui.tableNextColumn();
+                        _ = zgui.tableNextColumn();
 
-                            zgui.textUnformatted(name);
+                        zgui.textUnformatted(name);
+                    }
+
+                    pub fn beginField(self: @This(), name: [:0]const u8) void {
+                        _ = self;
+
+                        zgui.tableNextRow(.{});
+
+                        _ = zgui.tableNextColumn();
+                        zgui.textUnformatted(name);
+                        _ = zgui.tableNextColumn();
+                    }
+
+                    pub fn sizeField(self: @This(), comptime display: [:0]const u8, value_ptr: anytype, min: anytype, max: anytype) void {
+                        self.beginField(display);
+
+                        zgui.beginDisabled(.{ .disabled = min >= max });
+                        defer zgui.endDisabled();
+
+                        var value: i32 = value_ptr.*;
+
+                        _ = zgui.dragInt("##edit_" ++ display, .{ .v = &value });
+
+                        zgui.sameLine(.{});
+                        if (zgui.button("-##minus_" ++ display, .{})) {
+                            value -|= 1;
+                        }
+                        zgui.sameLine(.{});
+
+                        if (zgui.button("+##plus_" ++ display, .{})) {
+                            value +|= 1;
                         }
 
-                        pub fn beginField(name: [:0]const u8) void {
-                            zgui.tableNextRow(.{});
+                        value = std.math.clamp(value, min, max);
 
-                            _ = zgui.tableNextColumn();
-                            zgui.textUnformatted(name);
-                            _ = zgui.tableNextColumn();
-                        }
-                    };
+                        value_ptr.* = @intCast(value);
+                    }
+                };
+                var utils: Utils = .{};
+
+                if (maybe_selected_widget_index) |index| {
+                    const selected_widget = &window.widgets.items[index];
+
+                    utils.header("Widget");
 
                     utils.header("General");
 
-                    zgui.tableNextRow(.{});
+                    // zgui.tableNextRow(.{});
 
                     {
                         utils.beginField("Class");
@@ -388,36 +481,11 @@ pub fn main() !u8 {
 
                     utils.header("Geometry");
 
-                    const fields = .{
-                        .{ .name = "x", .display = "X", .min = std.math.minInt(i16), .max = std.math.maxInt(i16) },
-                        .{ .name = "y", .display = "Y", .min = std.math.minInt(i16), .max = std.math.maxInt(i16) },
-                        .{ .name = "width", .display = "Width", .min = selected_widget.class.min_size.width, .max = selected_widget.class.max_size.width },
-                        .{ .name = "height", .display = "Height", .min = selected_widget.class.min_size.height, .max = selected_widget.class.max_size.height },
-                    };
+                    utils.sizeField("X", &selected_widget.bounds.x, std.math.minInt(i16), std.math.maxInt(i16));
+                    utils.sizeField("Y", &selected_widget.bounds.y, std.math.minInt(i16), std.math.maxInt(i16));
 
-                    inline for (fields) |fld| {
-                        utils.beginField(fld.display);
-
-                        zgui.beginDisabled(.{ .disabled = fld.min >= fld.max });
-                        defer zgui.endDisabled();
-
-                        var value: i32 = @field(selected_widget.bounds, fld.name);
-
-                        if (zgui.dragInt("##edit_" ++ fld.name, .{ .v = &value })) {
-                            value = std.math.clamp(value, fld.min, fld.max);
-                        }
-                        zgui.sameLine(.{});
-                        if (zgui.button("-##minus_" ++ fld.name, .{})) {
-                            value -|= 1;
-                        }
-                        zgui.sameLine(.{});
-
-                        if (zgui.button("+##plus_" ++ fld.name, .{})) {
-                            value +|= 1;
-                        }
-
-                        @field(selected_widget.bounds, fld.name) = @intCast(value);
-                    }
+                    utils.sizeField("Width", &selected_widget.bounds.width, selected_widget.class.min_size.width, selected_widget.class.max_size.width);
+                    utils.sizeField("Height", &selected_widget.bounds.height, selected_widget.class.min_size.height, selected_widget.class.max_size.height);
 
                     utils.beginField("Anchor");
 
@@ -483,8 +551,23 @@ pub fn main() !u8 {
                             }
                         }
                     }
+                } else {
+                    // Window/Design Properties
+                    utils.header("Window");
+
+                    utils.header("Geometry");
+
+                    utils.sizeField("Min Width", &window.min_size.width, 0, window.max_size.width);
+                    utils.sizeField("Min Height", &window.min_size.height, 0, window.max_size.height);
+
+                    utils.sizeField("Max Width", &window.max_size.width, window.min_size.width, std.math.maxInt(u15));
+                    utils.sizeField("Max Height", &window.max_size.height, window.min_size.height, std.math.maxInt(u15));
+
+                    utils.sizeField("Design Width", &window.design_size.width, window.min_size.width, window.max_size.width);
+                    utils.sizeField("Design Height", &window.design_size.height, window.min_size.height, window.max_size.height);
                 }
             }
+
             zgui.end();
         }
 
