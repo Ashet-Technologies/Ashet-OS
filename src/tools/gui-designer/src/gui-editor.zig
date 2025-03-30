@@ -159,7 +159,7 @@ pub const Editor = struct {
     maybe_selected_widget_index: ?usize = 0,
 
     previously_window_clicked: bool = false,
-    maybe_popup_widget: ?*model.Widget = null,
+    maybe_popup_widget: ?model.WidgetRef = null,
 
     widget_drag: ?DragInfo = null,
 
@@ -185,6 +185,33 @@ pub const Editor = struct {
         editor.widget_drag = null;
     }
 
+    fn move_to_index(editor: *Editor, action: struct { from: usize, to: usize }) void {
+        const widgets = editor.document.window.widgets.items;
+
+        const from = action.from;
+        const to = @min(action.to, widgets.len -| 1);
+
+        if (from == to)
+            return;
+
+        @panic("not done");
+    }
+
+    fn delete_at_index(editor: *Editor, index: usize) void {
+        if (false) {
+            @panic("Implement deletion");
+        }
+        if (editor.maybe_selected_widget_index == index) {
+            // The selected widget was deleted:
+            editor.select_by_index(null);
+        } else if (editor.maybe_selected_widget_index) |*sel_index| {
+            // Selected widget was "above" the current widget, so we have to adjust the selection pointer:
+            if (sel_index.* > index) {
+                editor.select_by_index(index - 1);
+            }
+        }
+    }
+
     fn handle_options_gui(editor: *Editor) !void {
         defer zgui.end();
         if (!zgui.begin("Options", .{ .flags = .{ .always_auto_resize = true, .no_resize = true } }))
@@ -198,12 +225,36 @@ pub const Editor = struct {
 
         zgui.textUnformatted("Grid Size");
         zgui.sameLine(.{});
-        zgui.setNextItemWidth(80);
-        _ = zgui.inputInt("##GridSize", .{
+        zgui.setNextItemWidth(40);
+
+        const grid_min = 1;
+        const grid_max = 256;
+
+        _ = zgui.dragInt("##GridSize", .{
             .v = &editor.options.grid_size,
-            .step = 1,
-            .step_fast = 10,
+            .speed = 1,
+            .min = grid_min,
+            .max = grid_max,
         });
+
+        zgui.sameLine(.{});
+        {
+            zgui.beginDisabled(.{ .disabled = (editor.options.grid_size <= grid_min) });
+            defer zgui.endDisabled();
+            if (zgui.button("-##minus_GridSize", .{})) {
+                editor.options.grid_size -|= 1;
+            }
+        }
+        zgui.sameLine(.{});
+
+        {
+            zgui.beginDisabled(.{ .disabled = (editor.options.grid_size >= grid_max) });
+            defer zgui.endDisabled();
+            if (zgui.button("+##plus_GridSize", .{})) {
+                editor.options.grid_size +|= 1;
+            }
+        }
+
         editor.options.grid_size = @max(1, @min(256, editor.options.grid_size));
     }
 
@@ -258,10 +309,10 @@ pub const Editor = struct {
         });
 
         if (maybe_hovered_widget != null or editor.maybe_popup_widget != null) {
-            const maybe_target_widget: ?*model.Widget = if (editor.maybe_popup_widget) |popup|
+            const maybe_target_widget: ?model.WidgetRef = if (editor.maybe_popup_widget) |popup|
                 popup
             else if (maybe_hovered_widget) |tup|
-                tup[1]
+                tup
             else
                 null;
 
@@ -269,21 +320,48 @@ pub const Editor = struct {
                 if (zgui.beginPopupContextWindow()) {
                     defer zgui.endPopup();
 
+                    editor.maybe_selected_widget_index = target_widget.index;
                     editor.maybe_popup_widget = target_widget;
 
                     _ = zgui.menuItem("Copy", .{});
                     _ = zgui.menuItem("Cut", .{});
                     _ = zgui.separator();
-                    _ = zgui.menuItem("Snap position to grid", .{});
-                    _ = zgui.menuItem("Shrink size to grid", .{});
-                    _ = zgui.menuItem("Grow size to grid", .{});
+
+                    if (zgui.menuItem("Snap position to grid", .{})) {
+                        const new_pos = editor.options.snap_pos(target_widget.ptr.bounds.position());
+                        target_widget.ptr.bounds.x = new_pos.x;
+                        target_widget.ptr.bounds.y = new_pos.y;
+                    }
+
+                    if (zgui.menuItem("Shrink size to grid", .{})) {
+                        const new_size = editor.options.snap_size(target_widget.ptr.bounds.size(), .shrink);
+                        target_widget.ptr.bounds.width = new_size.width;
+                        target_widget.ptr.bounds.height = new_size.height;
+                    }
+
+                    if (zgui.menuItem("Grow size to grid", .{})) {
+                        const new_size = editor.options.snap_size(target_widget.ptr.bounds.size(), .grow);
+                        target_widget.ptr.bounds.width = new_size.width;
+                        target_widget.ptr.bounds.height = new_size.height;
+                    }
+
                     _ = zgui.separator();
-                    _ = zgui.menuItem("Bring to front", .{});
-                    _ = zgui.menuItem("Send to back", .{});
-                    _ = zgui.menuItem("Raise one layer", .{});
-                    _ = zgui.menuItem("Lower one layer", .{});
+                    if (zgui.menuItem("Bring to front", .{})) {
+                        editor.move_to_index(.{ .from = target_widget.index, .to = std.math.maxInt(usize) });
+                    }
+                    if (zgui.menuItem("Send to back", .{})) {
+                        editor.move_to_index(.{ .from = target_widget.index, .to = 0 });
+                    }
+                    if (zgui.menuItem("Raise one layer", .{})) {
+                        editor.move_to_index(.{ .from = target_widget.index, .to = target_widget.index +| 1 });
+                    }
+                    if (zgui.menuItem("Lower one layer", .{})) {
+                        editor.move_to_index(.{ .from = target_widget.index, .to = target_widget.index -| 1 });
+                    }
                     _ = zgui.separator();
-                    _ = zgui.menuItem("Delete", .{});
+                    if (zgui.menuItem("Delete", .{})) {
+                        editor.delete_at_index(target_widget.index);
+                    }
                 } else {
                     editor.maybe_popup_widget = null;
                 }
@@ -312,7 +390,7 @@ pub const Editor = struct {
         };
 
         if (editor.widget_drag) |drag| {
-            const newpos = editor.options.snap_pos(.new(
+            const newpos = editor.options.maybe_snap_pos(.new(
                 drag.start.x +| drag_dx,
                 drag.start.y +| drag_dy,
             ));
@@ -322,20 +400,17 @@ pub const Editor = struct {
         } else {
             // "Not dragging"
             if (is_window_clicked) {
-                if (maybe_hovered_widget) |_clicked_widget| {
-                    const index, _ = _clicked_widget;
-                    editor.select_by_index(index);
+                if (maybe_hovered_widget) |clicked_widget| {
+                    editor.select_by_index(clicked_widget.index);
                 } else {
                     editor.select_by_index(null);
                 }
             } else if (is_window_pressed) {
-                if (maybe_hovered_widget) |_hovered_widget| {
-                    const index, const hovered_widget = _hovered_widget;
-
-                    if (index == editor.maybe_selected_widget_index and (drag_dx != 0 or drag_dy != 0)) {
+                if (maybe_hovered_widget) |hovered_widget| {
+                    if (hovered_widget.index == editor.maybe_selected_widget_index and (drag_dx != 0 or drag_dy != 0)) {
                         editor.widget_drag = .{
-                            .widget = hovered_widget,
-                            .start = hovered_widget.bounds.position(),
+                            .widget = hovered_widget.ptr,
+                            .start = hovered_widget.ptr.bounds.position(),
                         };
                     }
                 }
@@ -462,7 +537,7 @@ pub const Editor = struct {
 
                     var value: i32 = value_ptr.*;
 
-                    _ = zgui.dragInt("##edit_" ++ display, .{ .v = &value });
+                    _ = zgui.dragInt("##edit_" ++ display, .{ .v = &value, .min = min, .max = max });
 
                     zgui.sameLine(.{});
                     if (zgui.button("-##minus_" ++ display, .{})) {
@@ -666,7 +741,7 @@ fn widget_from_payload(
     const new: model.Widget = .{
         .class = class,
         .bounds = .new(
-            options.snap_pos(.new(
+            options.maybe_snap_pos(.new(
                 center.x -| @as(i16, @intCast(class.default_size.width / 2)),
                 center.y -| @as(i16, @intCast(class.default_size.height / 2)),
             )),
@@ -764,15 +839,46 @@ const EditorOptions = struct {
     render_grid: bool = true,
     snap_to_grid: bool = true,
 
-    pub fn snap_pos(opts: EditorOptions, pos: model.Point) model.Point {
-        return .new(opts.snap_value(pos.x), opts.snap_value(pos.y));
+    const SnapBias = enum { grow, shrink, best_fit };
+
+    pub fn maybe_snap_pos(opts: EditorOptions, pos: model.Point) model.Point {
+        return if (opts.snap_to_grid)
+            opts.snap_pos(pos)
+        else
+            pos;
     }
 
-    pub fn snap_value(opts: EditorOptions, value: anytype) @TypeOf(value) {
-        const gs: u15 = @intCast(opts.grid_size);
+    pub fn maybe_snap_size(opts: EditorOptions, size: model.Size, bias: SnapBias) model.Point {
         return if (opts.snap_to_grid)
-            gs * @divFloor(value + gs / 2, gs)
+            opts.snap_size(size, bias)
         else
-            value;
+            size;
+    }
+
+    pub fn snap_pos(opts: EditorOptions, pos: model.Point) model.Point {
+        return .new(opts.snap_value(pos.x, .best_fit), opts.snap_value(pos.y, .best_fit));
+    }
+
+    pub fn snap_size(opts: EditorOptions, size: model.Size, snap_dir: SnapBias) model.Size {
+        const gs: u15 = @intCast(opts.grid_size);
+
+        const width = opts.snap_value(size.width, snap_dir);
+        const height = opts.snap_value(size.height, snap_dir);
+
+        return .new(
+            // Prevent both values to ever go zero. Snap to grid-size instead:
+            if (width == 0) gs else width,
+            if (height == 0) gs else height,
+        );
+    }
+
+    pub fn snap_value(opts: EditorOptions, value: anytype, bias: SnapBias) @TypeOf(value) {
+        const gs: u15 = @intCast(opts.grid_size);
+        const bias_offset = switch (bias) {
+            .shrink => 0,
+            .grow => gs - 1,
+            .best_fit => gs / 2,
+        };
+        return gs * @divFloor(value + bias_offset, gs);
     }
 };

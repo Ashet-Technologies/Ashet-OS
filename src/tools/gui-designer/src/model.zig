@@ -22,17 +22,22 @@ pub const Window = struct {
         window.* = undefined;
     }
 
-    pub fn widget_from_pos(window: *Window, pos: Point) ?struct { usize, *Widget } {
+    pub fn widget_from_pos(window: *Window, pos: Point) ?WidgetRef {
         var i: usize = window.widgets.items.len;
         while (i > 0) {
             i -= 1;
 
             const widget = &window.widgets.items[i];
             if (widget.bounds.contains(pos))
-                return .{ i, widget };
+                return .{ .index = i, .ptr = widget };
         }
         return null;
     }
+};
+
+pub const WidgetRef = struct {
+    ptr: *Widget,
+    index: usize,
 };
 
 pub const Widget = struct {
