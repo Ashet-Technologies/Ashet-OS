@@ -156,7 +156,7 @@ pub const Editor = struct {
     document: *Document,
 
     // Current Editing State
-    maybe_selected_widget_index: ?usize = 0,
+    maybe_selected_widget_index: ?usize = null,
 
     previously_window_clicked: bool = false,
     maybe_popup_widget: ?model.WidgetRef = null,
@@ -171,6 +171,7 @@ pub const Editor = struct {
         try editor.handle_toolbox_gui();
         try editor.handle_designer_gui();
         try editor.handle_properties_gui();
+        try editor.handle_hierarchy_gui();
     }
 
     fn get_selected_widget(editor: *Editor) ?*model.Widget {
@@ -188,27 +189,70 @@ pub const Editor = struct {
     fn move_to_index(editor: *Editor, action: struct { from: usize, to: usize }) void {
         const widgets = editor.document.window.widgets.items;
 
-        const from = action.from;
+        const from = @min(action.from, widgets.len -| 1);
         const to = @min(action.to, widgets.len -| 1);
+
+        std.log.debug("move_to_index(from={}, to={})", .{ from, to });
 
         if (from == to)
             return;
 
-        @panic("not done");
+        std.debug.assert(from < widgets.len);
+        std.debug.assert(to < widgets.len);
+
+        if (from == to + 1 or from + 1 == to) {
+            // Distance is 1, we can just swap the elements without doing more complex operations:
+            std.mem.swap(model.Widget, &widgets[from], &widgets[to]);
+        } else {
+            // Determine the window where we will operate in:
+            const low = @min(from, to);
+            const high = @max(from, to);
+            const move_range: []model.Widget = widgets[low .. high + 1];
+            const count = move_range.len;
+
+            if (from < to) {
+                // We move to the elements down from the end to the start
+                std.debug.assert(to == high);
+                std.debug.assert(from == low);
+
+                const clone = widgets[0];
+                std.mem.copyForwards(model.Widget, move_range[0 .. count - 1], move_range[1..count]);
+                move_range[count - 1] = clone;
+            } else {
+                // We move to the elements up to the end
+                std.debug.assert(to == low);
+                std.debug.assert(from == high);
+
+                const clone = widgets[count - 1];
+                std.mem.copyBackwards(model.Widget, move_range[1..count], move_range[0 .. count - 1]);
+                move_range[0] = clone;
+            }
+        }
+
+        // Fixup selection:
+        if (editor.maybe_selected_widget_index == from) {
+            editor.select_by_index(to);
+        }
     }
 
     fn delete_at_index(editor: *Editor, index: usize) void {
-        if (false) {
-            @panic("Implement deletion");
-        }
-        if (editor.maybe_selected_widget_index == index) {
-            // The selected widget was deleted:
+
+        // Deletion is sharing most of its implementation with move_to_index,
+        // so we utilize the fact that we can move the element to the end of the list:
+        editor.move_to_index(.{ .from = index, .to = std.math.maxInt(usize) });
+
+        // And then removing the last element:
+        const widgets = &editor.document.window.widgets;
+        if (widgets.items.len == 0)
+            return;
+
+        const last = widgets.items.len - 1;
+
+        widgets.items[last].deinit(editor.document.allocator);
+        widgets.shrinkRetainingCapacity(last);
+
+        if (editor.maybe_selected_widget_index == last) {
             editor.select_by_index(null);
-        } else if (editor.maybe_selected_widget_index) |*sel_index| {
-            // Selected widget was "above" the current widget, so we have to adjust the selection pointer:
-            if (sel_index.* > index) {
-                editor.select_by_index(index - 1);
-            }
         }
     }
 
@@ -273,6 +317,44 @@ pub const Editor = struct {
                 defer zgui.endDragDropSource();
 
                 _ = zgui.setDragDropPayload(widget_class_tag, class_name[0 .. class_name.len + 1], .once);
+            }
+        }
+    }
+
+    fn handle_hierarchy_gui(editor: *Editor) !void {
+        defer zgui.end();
+        if (!zgui.begin("Hierarchy", .{ .flags = .{ .always_vertical_scrollbar = true } }))
+            return;
+
+        if (zgui.beginListBox("##Hierarchy", .{})) {
+            defer zgui.endListBox();
+
+            for (editor.document.window.widgets.items, 0..) |widget, index| {
+                var buf: [256]u8 = undefined;
+
+                var fbs = std.io.fixedBufferStream(&buf);
+
+                if (widget.identifier.items.len > 0) {
+                    try fbs.writer().print("{s} ({s})", .{
+                        widget.identifier.items,
+                        widget.class.name,
+                    });
+                } else {
+                    try fbs.writer().print("{s}", .{
+                        widget.class.name,
+                    });
+                }
+
+                try fbs.writer().print("##{s}_{d}\x00", .{
+                    widget.class.name,
+                    index,
+                });
+
+                const key = fbs.getWritten()[0 .. fbs.pos - 1 :0];
+
+                if (zgui.selectable(key, .{ .selected = (editor.maybe_selected_widget_index == index) })) {
+                    editor.select_by_index(index);
+                }
             }
         }
     }
@@ -683,10 +765,15 @@ pub const Editor = struct {
 
         var center_dockspace_id = dockspace_id;
         const left_id = zgui.dockBuilderSplitNode(dockspace_id, .left, 0.2, null, &center_dockspace_id);
+
+        var toolbox_space_id: u32 = 0;
+        const hierarchy_space_id: u32 = zgui.dockBuilderSplitNode(left_id, .down, 0.5, null, &toolbox_space_id);
+
         const right_id = zgui.dockBuilderSplitNode(center_dockspace_id, .right, 0.4, null, &center_dockspace_id);
         const options_id = zgui.dockBuilderSplitNode(center_dockspace_id, .up, 0.1, null, &center_dockspace_id);
 
-        zgui.dockBuilderDockWindow("Toolbox", left_id);
+        zgui.dockBuilderDockWindow("Hierarchy", hierarchy_space_id);
+        zgui.dockBuilderDockWindow("Toolbox", toolbox_space_id);
         zgui.dockBuilderDockWindow("Properties", right_id);
         zgui.dockBuilderDockWindow("Window Designer", center_dockspace_id);
         zgui.dockBuilderDockWindow("Options", options_id);
