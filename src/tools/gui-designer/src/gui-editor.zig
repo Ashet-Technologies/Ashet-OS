@@ -7,6 +7,10 @@ const args_parser = @import("args");
 
 const model = @import("model.zig");
 
+const Widget = model.Widget;
+const Window = model.Window;
+const Document = model.Document;
+
 pub const CliOptions = struct {
     help: bool = false,
 
@@ -47,7 +51,7 @@ pub fn main() !u8 {
             const file = try std.fs.cwd().openFile(cli.positionals[0], .{});
             defer file.close();
 
-            document.window = try model.load_design(file.reader(), document.allocator, metadata);
+            document = try model.load_design(file.reader(), document.allocator, metadata);
 
             break :blk cli.positionals[0];
         },
@@ -130,16 +134,6 @@ pub fn main() !u8 {
     }
     return 0;
 }
-
-pub const Document = struct {
-    allocator: std.mem.Allocator,
-    window: model.Window,
-
-    pub fn deinit(doc: *Document) void {
-        doc.window.deinit(doc.allocator);
-        doc.* = undefined;
-    }
-};
 
 pub const Editor = struct {
     const DragInfo = struct {
