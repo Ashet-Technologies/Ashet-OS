@@ -1,11 +1,10 @@
 const std = @import("std");
 const ashet = @import("ashet");
-const gui = @import("ashet-gui");
 const Vec2 = @import("Vector2.zig");
 
 pub usingnamespace ashet.core;
 
-const ColorIndex = ashet.abi.ColorIndex;
+const Color = ashet.abi.Color;
 
 var raycaster: Raycaster = .{};
 
@@ -52,14 +51,36 @@ const walls = [_]Wall{
 };
 
 pub fn main() !void {
-    if (!ashet.video.acquire()) {
-        ashet.process.exit(1);
-    }
+    var argv_buffer: [8]ashet.abi.SpawnProcessArg = undefined;
+    const argv = ashet.process.get_arguments(null, &argv_buffer);
 
-    ashet.video.setResolution(400, 300);
-    ashet.video.setBorder(ColorIndex.get(2));
+    std.debug.assert(argv.len == 2);
+    std.debug.assert(argv[0].type == .string);
+    std.debug.assert(argv[1].type == .resource);
 
-    render();
+    const desktop = try argv[1].value.resource.cast(.desktop);
+
+    std.log.info("using desktop {}", .{desktop});
+
+    const window = try ashet.gui.create_window(
+        desktop,
+        .{
+            .title = "Dungeon Crawl",
+            .min_size = .new(screen_width, screen_height),
+            .max_size = .new(screen_width, screen_height),
+            .initial_size = .new(screen_width, screen_height),
+        },
+    );
+    defer window.destroy_now();
+
+    const framebuffer = try ashet.graphics.create_window_framebuffer(window);
+    defer framebuffer.release();
+
+    var command_queue = try ashet.graphics.CommandQueue.init(ashet.process.mem.allocator());
+    defer command_queue.deinit();
+
+    try render(&command_queue);
+    try command_queue.submit(framebuffer, .{});
 
     while (true) {
         var moved = false;
@@ -109,10 +130,10 @@ pub fn main() !void {
 const screen_width = 400;
 const screen_height = 300;
 
-var clonebuffer: [screen_width * screen_height]ColorIndex = undefined;
+var clonebuffer: [screen_width * screen_height]Color = undefined;
 
-fn render() void {
-    @memset(&clonebuffer, ColorIndex.get(0));
+fn render(q: *ashet.graphics.CommandQueue) void {
+    @memset(&clonebuffer, Color.black);
 
     const fb = gui.Framebuffer{
         .width = screen_width,
