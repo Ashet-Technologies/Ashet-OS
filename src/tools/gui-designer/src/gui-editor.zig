@@ -334,15 +334,12 @@ pub const Editor = struct {
 
                 var fbs = std.io.fixedBufferStream(&buf);
 
+                try fbs.writer().print("{s}", .{
+                    widget.class.name,
+                });
+
                 if (widget.identifier.items.len > 0) {
-                    try fbs.writer().print("{s} ({s})", .{
-                        widget.identifier.items,
-                        widget.class.name,
-                    });
-                } else {
-                    try fbs.writer().print("{s}", .{
-                        widget.class.name,
-                    });
+                    try fbs.writer().print(": {s}", .{widget.identifier.items});
                 }
 
                 try fbs.writer().print("##{s}_{d}\x00", .{
@@ -659,10 +656,27 @@ pub const Editor = struct {
                 {
                     utils.beginField("Identifier");
 
-                    var nameBuffer: [32:0]u8 = @splat(0);
-                    _ = zgui.inputText("##name", .{
-                        .buf = &nameBuffer,
-                    });
+                    // Ensure we have some space for receiving input text:
+                    try selected_widget.identifier.ensureUnusedCapacity(editor.document.allocator, 16);
+
+                    const capacity = selected_widget.identifier.capacity;
+                    const string: *[]u8 = &selected_widget.identifier.items;
+
+                    // This is a safe operation, as we know .capacity is the "true" size of ".items":
+                    const oldlen = string.len;
+                    string.len = capacity;
+
+                    // ensure we pad the whole string with NULs to ensure
+                    // both NUL termination and minimum string length:
+                    @memset(string.*[oldlen..], 0);
+
+                    // Slice into NUL-terminated buffer:
+                    const zbuffer: [:0]u8 = string.*[0 .. capacity - 1 :0];
+
+                    _ = zgui.inputText("##name", .{ .buf = zbuffer });
+
+                    // Reset string into the length of the NUL-terminated string:
+                    string.len = std.mem.indexOfScalar(u8, string.*, 0).?;
                 }
 
                 utils.header("Geometry");
