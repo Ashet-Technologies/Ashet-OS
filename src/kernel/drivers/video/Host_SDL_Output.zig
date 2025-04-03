@@ -1,6 +1,6 @@
 const std = @import("std");
 const ashet = @import("../../main.zig");
-const sdl = @import("../../port/machine/linux_pc/SDL2.zig");
+const sdl = @import("../../port/machine/x86/hosted-linux/SDL2.zig");
 const logger = std.log.scoped(.host_sdl_output);
 
 const Host_SDL_Output = @This();

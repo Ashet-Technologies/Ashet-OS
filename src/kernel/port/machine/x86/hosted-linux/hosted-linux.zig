@@ -3,11 +3,11 @@
 //!
 
 const std = @import("std");
-const ashet = @import("../../../main.zig");
+const ashet = @import("../../../../main.zig");
 const network = @import("network");
 const args_parser = @import("args");
 const sdl = @import("SDL2.zig");
-const logger = std.log.scoped(.linux_pc);
+const logger = std.log.scoped(.@"hosted-linux");
 
 const VNC_Server = @import("VNC_Server.zig");
 const SDL_Display = @import("SDL_Display.zig");

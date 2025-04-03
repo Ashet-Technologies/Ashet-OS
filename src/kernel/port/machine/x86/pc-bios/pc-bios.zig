@@ -3,7 +3,7 @@
 //!
 
 const std = @import("std");
-const ashet = @import("../../../main.zig");
+const ashet = @import("../../../../main.zig");
 const x86 = ashet.ports.platforms.x86;
 const logger = std.log.scoped(.bios_pc);
 

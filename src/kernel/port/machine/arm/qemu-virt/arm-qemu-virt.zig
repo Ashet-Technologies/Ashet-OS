@@ -53,7 +53,7 @@
 
 const std = @import("std");
 const logger = std.log.scoped(.arm_virt);
-const ashet = @import("../../../main.zig");
+const ashet = @import("../../../../main.zig");
 
 const virtio_config = ashet.drivers.VirtIoConfiguration{
     .base = 0x0A00_0000,

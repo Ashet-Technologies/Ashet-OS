@@ -29,7 +29,7 @@
 //     0000000300000000-00000003ffffffff (prio 0, i/o): alias pcie-mmio-high @gpex_mmio_window 0000000300000000-00000003ffffffff
 
 const std = @import("std");
-const ashet = @import("../../../main.zig");
+const ashet = @import("../../../../main.zig");
 const rv32 = ashet.ports.platforms.riscv;
 const logger = std.log.scoped(.@"qemu-virt-rv32");
 

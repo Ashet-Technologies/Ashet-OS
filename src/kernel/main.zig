@@ -54,12 +54,13 @@ else switch (platform_id) {
 };
 
 pub const machine = switch (machine_id) {
-    .@"x86-pc-bios" => @import("port/machine/bios_pc/bios_pc.zig"),
-    .@"rv32-qemu-virt" => @import("port/machine/rv32_virt/rv32_virt.zig"),
+    .@"x86-pc-bios" => @import("port/machine/x86/pc-bios/pc-bios.zig"),
+    .@"rv32-qemu-virt" => @import("port/machine/rv32/qemu-virt/rv32-qemu-virt.zig"),
     .@"arm-ashet-hc" => @import("port/machine/arm/ashet-hc/ashet-hc.zig"),
     .@"arm-ashet-vhc" => @import("port/machine/arm/ashet-vhc/ashet-vhc.zig"),
-    .@"arm-qemu-virt" => @import("port/machine/arm_virt/arm_virt.zig"),
-    .@"x86-hosted-linux" => @import("port/machine/linux_pc/linux_pc.zig"),
+    .@"arm-qemu-virt" => @import("port/machine/arm/qemu-virt/arm-qemu-virt.zig"),
+    .@"x86-hosted-linux" => @import("port/machine/x86/hosted-linux/hosted-linux.zig"),
+    .@"x86-hosted-windows" => @import("port/machine/x86/hosted-windows/hosted-windows.zig"),
 };
 
 pub const machine_config: ports.MachineConfig = machine.machine_config;

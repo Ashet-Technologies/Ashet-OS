@@ -7,7 +7,7 @@
 const std = @import("std");
 const x11 = @import("x11");
 
-const ashet = @import("../../../main.zig");
+const ashet = @import("../../../../main.zig");
 
 const logger = std.log.scoped(.x11_display);
 
