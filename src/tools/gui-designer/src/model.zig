@@ -363,7 +363,17 @@ pub fn save_design(window: Window, unbuffered_stream: anytype) !void {
     try buffered_writer.flush();
 }
 
-pub fn load_design(stream: anytype, allocator: std.mem.Allocator, metadata: *const Metadata) !Window {
+pub const Document = struct {
+    allocator: std.mem.Allocator,
+    window: Window,
+
+    pub fn deinit(doc: *Document) void {
+        doc.window.deinit(doc.allocator);
+        doc.* = undefined;
+    }
+};
+
+pub fn load_design(stream: anytype, allocator: std.mem.Allocator, metadata: *const Metadata) !Document {
     var buffered_reader = std.io.bufferedReader(stream);
     const reader = buffered_reader.reader();
 
@@ -459,7 +469,10 @@ pub fn load_design(stream: anytype, allocator: std.mem.Allocator, metadata: *con
         }
     }
 
-    return window;
+    return .{
+        .window = window,
+        .allocator = allocator,
+    };
 }
 
 fn jcast(value: std.json.Value, comptime jtype: std.meta.Tag(std.json.Value)) !@FieldType(std.json.Value, @tagName(jtype)) {

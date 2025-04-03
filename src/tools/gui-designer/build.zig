@@ -52,6 +52,21 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(editor_exe);
 
+    const compiler_mod = b.addModule("gui-compiler", .{
+        .root_source_file = b.path("src/gui-compiler.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    compiler_mod.addImport("ashet-abi", abi_dep.module("ashet-abi"));
+    compiler_mod.addImport("args", args_dep.module("args"));
+
+    const compiler_exe = b.addExecutable(.{
+        .name = "gui-compiler",
+        .root_module = compiler_mod,
+    });
+    b.installArtifact(compiler_exe);
+
     const run_editor = b.addRunArtifact(editor_exe);
 
     run_editor.addFileArg(b.path("current.gui.json"));
