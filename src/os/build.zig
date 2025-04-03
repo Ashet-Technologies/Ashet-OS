@@ -255,6 +255,10 @@ const machine_info_map = std.EnumArray(Machine, MachineDependentOsConfig).init(.
         .disk_size = 0x0400_0000,
         .rom_size = null,
     },
+    .@"x86-hosted-windows" = .{
+        .disk_size = 0x0400_0000,
+        .rom_size = null,
+    },
     .@"arm-ashet-vhc" = .{
         .disk_size = 0x0400_0000,
         .rom_size = null,

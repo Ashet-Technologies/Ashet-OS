@@ -73,14 +73,25 @@
 //!
 
 const std = @import("std");
+const builtin = @import("builtin");
 const astd = @import("ashet-std");
 const logger = std.log.scoped(.scheduler);
 const ashet = @import("../main.zig");
 const target = @import("builtin").target.cpu.arch;
 
-const debug_mode = @import("builtin").mode == .Debug;
+const debug_mode = builtin.mode == .Debug;
 
 const canary_size = ashet.memory.page_size;
+
+const scheduler_cc: std.builtin.CallingConvention = switch (builtin.cpu.arch) {
+    .x86 => if (builtin.os.tag == .windows)
+        .{ .x86_win = .{} }
+    else
+        .{ .x86_sysv = .{} },
+    .thumb => .{ .arm_aapcs = .{} },
+    .riscv32 => .{ .riscv32_ilp32 = .{} },
+    else => @compileError("unsupported platform"),
+};
 
 comptime {
     std.debug.assert(std.mem.isAligned(canary_size, ashet.memory.page_size));
@@ -624,7 +635,7 @@ pub fn yield() void {
 pub const exit = ashet_scheduler_threadExit;
 
 /// Exits the current thread and writes it `exit_code`.
-export fn ashet_scheduler_threadExit(code: u32) callconv(.C) noreturn {
+export fn ashet_scheduler_threadExit(code: u32) callconv(scheduler_cc) noreturn {
     const old_thread = current_thread orelse @panic("called scheduler.exit() from outside a thread!");
     std.debug.assert(old_thread.queue == null); // thread must not be in a queue right now
     old_thread.exit_code = code;
@@ -648,16 +659,32 @@ export fn ashet_scheduler_threadExit(code: u32) callconv(.C) noreturn {
     @panic("resumed dead thread. implementation bug in the scheduler.");
 }
 
-extern fn ashet_scheduler_switchTasks() callconv(.C) void;
-extern fn ashet_scheduler_threadTrampoline() callconv(.C) void;
+const ashet_scheduler_switchTasks = @extern(
+    *const fn () callconv(scheduler_cc) void,
+    .{
+        .name = "ashet_scheduler_switchTasks",
+        .linkage = .strong,
+    },
+);
+
+const ashet_scheduler_threadTrampoline = @extern(
+    *const fn () callconv(scheduler_cc) void,
+    .{
+        .name = "ashet_scheduler_threadTrampoline",
+        .linkage = .strong,
+    },
+);
 
 comptime {
     const preamble =
         std.fmt.comptimePrint(
-        \\.equ THREAD_SP_OFFSET, {}
-        \\.equ THREAD_IP_OFFSET, {}
-        \\
-    , .{ @offsetOf(Thread, "sp"), @offsetOf(Thread, "ip") });
+            \\.equ THREAD_SP_OFFSET, {[sp_offset]}
+            \\.equ THREAD_IP_OFFSET, {[ip_offset]}
+            \\
+        , .{
+            .sp_offset = @offsetOf(Thread, "sp"),
+            .ip_offset = @offsetOf(Thread, "ip"),
+        });
 
     switch (target) {
         .riscv32 => asm (preamble ++
@@ -736,9 +763,9 @@ comptime {
                 \\  ret
         ),
 
-        .x86 => asm (preamble ++
+        .x86 => asm (std.fmt.comptimePrint(preamble ++
                 \\
-                \\ashet_scheduler_threadTrampoline:
+                \\{[symbol_prefix]s}ashet_scheduler_threadTrampoline:
                 //  in x86, the SYS-V ABI says that the stack has to be
                 //  aligned to 16 when `call` is invoked, so let's do that:
                 \\  and $0xfffffff0, %esp
@@ -760,9 +787,9 @@ comptime {
                 //  then kill the thread by jumping into the exit function.
                 //  There's no need to use call here, as the exit() call won't
                 //  ever return here in the first place.
-                \\  jmp ashet_scheduler_threadExit
+                \\  jmp {[symbol_prefix]s}ashet_scheduler_threadExit
                 \\
-                \\ashet_scheduler_switchTasks:
+                \\{[symbol_prefix]s}ashet_scheduler_switchTasks:
                 //
                 //  save all registers that are callee-saved to the stack
                 // \\  pushf
@@ -775,12 +802,12 @@ comptime {
                 \\  push %eax
                 //
                 //  backup the current state:
-                \\  mov ashet_scheduler_save_thread, %eax
+                \\  mov {[symbol_prefix]s}ashet_scheduler_save_thread, %eax
                 \\  mov %esp, THREAD_SP_OFFSET(%eax)
                 // \\  movl    %eip, THREAD_IP_OFFSET(%eax) // is stored on the stack on x86
                 //
                 // restore the new state:
-                \\  mov ashet_scheduler_restore_thread, %eax
+                \\  mov {[symbol_prefix]s}ashet_scheduler_restore_thread, %eax
                 \\  mov THREAD_SP_OFFSET(%eax), %esp
                 // \\  movl THREAD_IP_OFFSET(%eax), %eip // lol nope
                 \\
@@ -797,7 +824,12 @@ comptime {
                 //
                 //  and jump into the new thread function
                 \\  ret
-        ),
+            , .{
+                .symbol_prefix = if (builtin.os.tag == .windows and builtin.cpu.arch == .x86)
+                    "_"
+                else
+                    "",
+            })),
 
         .thumb => asm (preamble ++
                 \\

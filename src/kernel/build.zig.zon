@@ -1,6 +1,7 @@
 .{
-    .name = "kernel",
+    .name = .kernel,
     .version = "0.1.0",
+    .fingerprint = 0x5dd29aabcec30063,
     .paths = .{"."},
     .dependencies = .{
         // Internal dependencies:

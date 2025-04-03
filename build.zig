@@ -397,6 +397,7 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
     .@"arm-ashet-hc" = .{
         // True Home Computer must be debugged/runned on real hardware!
     },
+
     .@"x86-hosted-linux" = .{
         .hosted_cli = &.{
             "drive:${DISK}",
@@ -406,6 +407,20 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
         .hosted_video_setup = .init(.{
             .headless = &.{"video:vnc:800:480:0.0.0.0:5900"},
             .gtk = &.{"video:auto-window:800:480"},
+            .sdl = &.{"video:sdl:800:480"},
+            .cocoa = &.{},
+        }),
+    },
+
+    .@"x86-hosted-windows" = .{
+        .hosted_cli = &.{
+            "drive:${DISK}",
+            // "fs:${ROOTFS}",
+        },
+
+        .hosted_video_setup = .init(.{
+            .headless = &.{"video:vnc:800:480:0.0.0.0:5900"},
+            .gtk = &.{"video:win:800:480"},
             .sdl = &.{"video:sdl:800:480"},
             .cocoa = &.{},
         }),

@@ -318,15 +318,15 @@ const machine_info_map = std.EnumArray(Machine, MachineConfig).init(.{
     .@"x86-pc-bios" = .{
         .target = constructTargetQuery(generic_x86),
 
-        .source_file = "port/machine/bios_pc/bios_pc.zig",
-        .linker_script = "port/machine/bios_pc/linker.ld",
+        .source_file = "port/machine/x86/pc-bios/pc-bios.zig",
+        .linker_script = "port/machine/x86/pc-bios/linker.ld",
     },
 
     .@"rv32-qemu-virt" = .{
         .target = constructTargetQuery(generic_rv32),
 
-        .source_file = "port/machine/rv32_virt/rv32_virt.zig",
-        .linker_script = "port/machine/rv32_virt/linker.ld",
+        .source_file = "port/machine/rv32/qemu-virt/rv32-qemu-virt.zig",
+        .linker_script = "port/machine/rv32/qemu-virt/linker.ld",
     },
 
     .@"arm-ashet-vhc" = .{
@@ -346,8 +346,8 @@ const machine_info_map = std.EnumArray(Machine, MachineConfig).init(.{
     .@"arm-qemu-virt" = .{
         .target = constructTargetQuery(generic_arm),
 
-        .source_file = "port/machine/arm_virt/arm_virt.zig",
-        .linker_script = "port/machine/arm_virt/linker.ld",
+        .source_file = "port/machine/arm/qemu-virt/qemu-virt.zig",
+        .linker_script = "port/machine/arm/qemu-virt/linker.ld",
     },
 
     .@"x86-hosted-linux" = .{
@@ -356,11 +356,22 @@ const machine_info_map = std.EnumArray(Machine, MachineConfig).init(.{
             .os_tag = .linux,
             .abi = .musl,
             .cpu_model = .{ .explicit = &std.Target.x86.cpu.i686 },
-            // .dynamic_linker = std.Target.DynamicLinker.init("/nix/store/xlyscnvzz5l3pkvf280qp5czg387b98f-glibc-2.38-44/lib/ld-linux.so.2"),
         }),
 
-        .source_file = "port/machine/linux_pc/linux_pc.zig",
-        .linker_script = "port/machine/linux_pc/linker.ld",
+        .source_file = "port/machine/x86/hosted-linux/hosted-linux.zig",
+        .linker_script = "port/machine/x86/hosted-linux/linker.ld",
+    },
+
+    .@"x86-hosted-windows" = .{
+        .target = constructTargetQuery(.{
+            .cpu_arch = .x86,
+            .os_tag = .windows,
+            .abi = .gnu,
+            .cpu_model = .{ .explicit = &std.Target.x86.cpu.i686 },
+        }),
+
+        .source_file = "port/machine/x86/hosted-windows/hosted-windows.zig",
+        .linker_script = "port/machine/x86/hosted-windows/linker.ld",
     },
 });
 

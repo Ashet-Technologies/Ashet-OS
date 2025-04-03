@@ -18,6 +18,7 @@ build-kernel:
     {{zig}} build -Dmachine=rv32-qemu-virt
     {{zig}} build -Dmachine=x86-pc-bios
     {{zig}} build -Dmachine=x86-hosted-linux
+    {{zig}} build -Dmachine=x86-hosted-windows
 
 [working-directory: 'src/userland/apps/wiki']
 build-wiki:

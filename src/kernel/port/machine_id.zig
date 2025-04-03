@@ -18,7 +18,7 @@ pub const MachineID = enum {
     // @"rv32-pine64-ox64",
 
     @"x86-hosted-linux",
-    // @"x86-hosted-windows",
+    @"x86-hosted-windows",
 
     @"x86-pc-bios",
     // @"x86-pc-efi",
@@ -35,6 +35,7 @@ pub const MachineID = enum {
             => false,
 
             .@"x86-hosted-linux",
+            .@"x86-hosted-windows",
             => true,
         };
     }
@@ -46,6 +47,7 @@ pub const MachineID = enum {
             .@"arm-qemu-virt" => "QEMU virt (Arm)",
             .@"rv32-qemu-virt" => "QEMU virt (RISC-V)",
             .@"x86-hosted-linux" => "OS Hosted (x86, Linux)",
+            .@"x86-hosted-windows" => "OS Hosted (x86, Windows)",
             .@"x86-pc-bios" => "x86 PC (BIOS)",
         };
     }
@@ -61,6 +63,7 @@ pub const MachineID = enum {
             => .rv32,
 
             .@"x86-hosted-linux",
+            .@"x86-hosted-windows",
             .@"x86-pc-bios",
             => .x86,
         };

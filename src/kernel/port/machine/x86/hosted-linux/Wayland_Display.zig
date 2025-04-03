@@ -2,7 +2,7 @@ const std = @import("std");
 const shimizu = @import("shimizu");
 const wp = @import("wayland-protocols");
 
-const ashet = @import("../../../main.zig");
+const ashet = @import("../../../../main.zig");
 
 const logger = std.log.scoped(.wayland_display);
 
