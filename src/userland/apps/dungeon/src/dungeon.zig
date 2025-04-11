@@ -62,6 +62,8 @@ pub fn main() !void {
 
     std.log.info("using desktop {}", .{desktop});
 
+    try load_textures();
+
     const window = try ashet.gui.create_window(
         desktop,
         .{
@@ -79,84 +81,79 @@ pub fn main() !void {
     var command_queue = try ashet.graphics.CommandQueue.init(ashet.process.mem.allocator());
     defer command_queue.deinit();
 
-    try render(&command_queue);
-    try command_queue.submit(framebuffer, .{});
+    try render(&command_queue, framebuffer);
 
     while (true) {
         var moved = false;
-        const event = try ashet.input.getEvent();
-        switch (event) {
-            .mouse => |data| std.log.info("mouse => {}", .{data}),
-            .keyboard => |data| {
-                if (data.pressed and data.key == .escape)
-                    return;
-                // std.log.info("keyboard: pressed={}, alt={}, shift={}, ctrl={}, altgr={}, scancode={d: >3}, key={s: <10}, text='{?s}'", .{
-                //     @boolToInt(data.pressed),
-                //     @boolToInt(data.modifiers.alt),
-                //     @boolToInt(data.modifiers.shift),
-                //     @boolToInt(data.modifiers.ctrl),
-                //     @boolToInt(data.modifiers.alt_graph),
-                //     data.scancode,
-                //     @tagName(data.key),
-                //     data.text,
-                // });
-                if (data.pressed) {
-                    moved = true;
+        _ = &moved;
 
-                    const fwd = Vec2.unitX.rotate(raycaster.camera_rotation).scale(0.1);
-                    const right = Vec2.unitY.rotate(raycaster.camera_rotation).scale(0.1);
+        const result = try ashet.overlapped.performOne(ashet.gui.GetWindowEvent, .{
+            .window = window,
+        });
+        switch (result.event.event_type) {
+            .key_press => {
+                moved = true;
 
-                    switch (data.key) {
-                        .up => raycaster.camera_position = raycaster.camera_position.add(fwd),
-                        .down => raycaster.camera_position = raycaster.camera_position.sub(fwd),
+                const fwd = Vec2.unitX.rotate(raycaster.camera_rotation).scale(0.1);
+                const right = Vec2.unitY.rotate(raycaster.camera_rotation).scale(0.1);
 
-                        .left => raycaster.camera_position = raycaster.camera_position.sub(right),
-                        .right => raycaster.camera_position = raycaster.camera_position.add(right),
+                switch (result.event.keyboard.key) {
+                    .escape => return,
 
-                        .page_up => raycaster.camera_rotation -= 0.1,
-                        .page_down => raycaster.camera_rotation += 0.1,
+                    .up => raycaster.camera_position = raycaster.camera_position.add(fwd),
+                    .down => raycaster.camera_position = raycaster.camera_position.sub(fwd),
 
-                        else => moved = false,
-                    }
+                    .left => raycaster.camera_position = raycaster.camera_position.sub(right),
+                    .right => raycaster.camera_position = raycaster.camera_position.add(right),
+
+                    .page_up => raycaster.camera_rotation -= 0.1,
+                    .page_down => raycaster.camera_rotation += 0.1,
+
+                    else => moved = false,
                 }
             },
+            .window_close => return,
+            else => {},
         }
         if (moved) {
-            render();
+            try render(&command_queue, framebuffer);
         }
+
+        ashet.process.thread.yield();
     }
 }
 
 const screen_width = 400;
 const screen_height = 300;
 
-var clonebuffer: [screen_width * screen_height]Color = undefined;
+var clonebuffer: [screen_width * screen_height]Color align(4) = undefined;
 
-fn render(q: *ashet.graphics.CommandQueue) void {
-    @memset(&clonebuffer, Color.black);
+inline fn set_pixel(x: u16, y: u16, c: Color) void {
+    clonebuffer[@as(usize, y) * screen_width + x] = c;
+}
 
-    const fb = gui.Framebuffer{
+fn render(q: *ashet.graphics.CommandQueue, fb: ashet.graphics.Framebuffer) !void {
+    const bmp = ashet.graphics.Bitmap{
         .width = screen_width,
         .height = screen_height,
         .stride = screen_width,
         .pixels = &clonebuffer,
+        .has_transparency = false,
+        .transparency_key = .black,
     };
+    @memset(&clonebuffer, Color.black);
 
-    raycaster.drawWalls(fb);
+    raycaster.drawWalls();
 
     raycaster.sortSprites(&sprites);
-    raycaster.drawSprites(fb, &sprites);
+    raycaster.drawSprites(&sprites);
 
-    // double buffering:
-    std.mem.copyForwards(ashet.abi.Color, ashet.video.getPaletteMemory(), &palette);
-    std.mem.copyForwards(ColorIndex, ashet.video.getVideoMemory()[0..clonebuffer.len], &clonebuffer);
+    try q.blit_bitmap(.zero, &bmp);
+
+    try q.submit(fb, .{});
 }
 
-const Texture = gui.Bitmap.EmbeddedBitmap;
-
-fn loadTexture(comptime path: []const u8) Texture {
-    return gui.Bitmap.embed(@embedFile(path));
-}
+const Texture = ashet.graphics.Bitmap;
 
 inline fn branchClamp(x: i32, limit: u16) u32 {
     return if (limit & (limit - 1) == 0)
@@ -165,24 +162,36 @@ inline fn branchClamp(x: i32, limit: u16) u32 {
         @as(u32, @bitCast(x)) % limit;
 }
 
-pub inline fn sampleTexture(tex: *const Texture, x: i32, y: i32) ColorIndex {
+pub inline fn sampleTexture(tex: *const Texture, x: i32, y: i32) Color {
     @setRuntimeSafety(false);
-    const u = branchClamp(x, tex.bitmap.width);
-    const v = branchClamp(y, tex.bitmap.height);
-    return tex.bitmap.pixels[v * tex.bitmap.stride + u];
+    const u = branchClamp(x, tex.width);
+    const v = branchClamp(y, tex.height);
+    return tex.pixels[v * tex.stride + u];
 }
 
-const textures = [_]Texture{
-    loadTexture("data/floor.abm"), // 0
-    loadTexture("data/wall-plain.abm"), // 1
-    loadTexture("data/wall-cobweb.abm"), // 2
-    loadTexture("data/wall-paper.abm"), // 3
-    loadTexture("data/wall-vines.abm"), // 4
-    loadTexture("data/wall-door.abm"), // 5
-    loadTexture("data/wall-post-l.abm"), // 6
-    loadTexture("data/wall-post-r.abm"), // 7
-    loadTexture("data/enforcer.abm"), // 8
-};
+var textures: [9]Texture = undefined;
+
+fn load_textures() !void {
+    var assets_dir = try ashet.fs.Directory.openDrive(.system, "apps/dungeon/data");
+    defer assets_dir.close();
+
+    textures[0] = try load_texture(assets_dir, "floor.abm");
+    textures[1] = try load_texture(assets_dir, "wall-plain.abm");
+    textures[2] = try load_texture(assets_dir, "wall-cobweb.abm");
+    textures[3] = try load_texture(assets_dir, "wall-paper.abm");
+    textures[4] = try load_texture(assets_dir, "wall-vines.abm");
+    textures[5] = try load_texture(assets_dir, "wall-door.abm");
+    textures[6] = try load_texture(assets_dir, "wall-post-l.abm");
+    textures[7] = try load_texture(assets_dir, "wall-post-r.abm");
+    textures[8] = try load_texture(assets_dir, "enforcer.abm");
+}
+
+fn load_texture(dir: ashet.fs.Directory, path: []const u8) !Texture {
+    var file = try dir.openFile(path, .read_only, .open_existing);
+    defer file.close();
+
+    return try ashet.graphics.load_bitmap_file(ashet.process.mem.allocator(), file);
+}
 
 const palette = blk: {
     var pal: [256]ashet.abi.Color = undefined;
@@ -212,7 +221,7 @@ const Raycaster = struct {
     const BackgroundPattern = union(enum) {
         background_texture: usize,
         perspective_texture: usize,
-        flat_color: ColorIndex,
+        flat_color: Color,
     };
 
     const width = screen_width;
@@ -220,7 +229,7 @@ const Raycaster = struct {
     const aspect = @as(f32, @floatFromInt(screen_width)) / @as(f32, @floatFromInt(screen_height));
 
     const floor_texture: BackgroundPattern = .{ .perspective_texture = 0 };
-    const ceiling_texture: BackgroundPattern = .{ .flat_color = ColorIndex.get(255) };
+    const ceiling_texture: BackgroundPattern = .{ .flat_color = Color.from_rgb(255, 255, 255) };
 
     camera_rotation: f32 = 0,
     camera_position: Vec2 = Vec2.zero,
@@ -279,9 +288,7 @@ const Raycaster = struct {
         break :blk val;
     };
 
-    fn drawWalls(rc: *Raycaster, fb: gui.Framebuffer) void {
-        std.debug.assert(fb.width == width);
-        std.debug.assert(fb.height == height);
+    fn drawWalls(rc: *Raycaster) void {
 
         // render the walls
         var x: u15 = 0;
@@ -319,7 +326,7 @@ const Raycaster = struct {
                 .flat_color => |color| {
                     var y: u15 = 0;
                     while (y < wallTop) : (y += 1) {
-                        fb.setPixel(x, y, color);
+                        set_pixel(x, y, color);
                     }
                 },
                 .perspective_texture => |texture_id| {
@@ -338,7 +345,7 @@ const Raycaster = struct {
                         const u = @as(i32, @intFromFloat(u_scale * fract(pos.x)));
                         const v = @as(i32, @intFromFloat(v_scale * fract(pos.y)));
 
-                        fb.setPixel(x, y, sampleTexture(texture, u, v).shift(index_shift));
+                        set_pixel(x, y, sampleTexture(texture, u, v).shift(index_shift));
                     }
                 },
             }
@@ -348,16 +355,14 @@ const Raycaster = struct {
                 const tex_id = result.wall.texture_id;
                 const texture = &textures[tex_id];
 
-                const index_shift = @as(u8, @intCast(16 * tex_id));
-
-                const u = @as(i32, @intFromFloat(@as(f32, @floatFromInt(texture.bitmap.width - 1)) * fract(result.u)));
+                const u = @as(i32, @intFromFloat(@as(f32, @floatFromInt(texture.width - 1)) * fract(result.u)));
 
                 const maxy = @min(height, wallBottom);
 
                 var y: u15 = @as(u15, @intCast(std.math.clamp(wallTop, 0, height)));
                 while (y < maxy) : (y += 1) {
-                    const v = @as(i32, @intCast(@divTrunc(texture.bitmap.height * (y - wallTop), @as(i32, @intCast(wallHeight)))));
-                    fb.setPixel(x, y, sampleTexture(texture, u, v).shift(index_shift));
+                    const v = @as(i32, @intCast(@divTrunc(texture.height * (y - wallTop), @as(i32, @intCast(wallHeight)))));
+                    set_pixel(x, y, sampleTexture(texture, u, v));
                 }
             }
 
@@ -367,15 +372,14 @@ const Raycaster = struct {
                 .flat_color => |color| {
                     var y: u15 = @as(u15, @intCast(@min(height, wallBottom)));
                     while (y < height) : (y += 1) {
-                        fb.setPixel(x, y, color);
+                        set_pixel(x, y, color);
                     }
                 },
                 .perspective_texture => |texture_id| {
-                    const index_shift = 16 * texture_id;
                     const texture = &textures[texture_id];
 
-                    const u_scale = @as(f32, @floatFromInt(texture.bitmap.width - 1));
-                    const v_scale = @as(f32, @floatFromInt(texture.bitmap.height - 1));
+                    const u_scale = @as(f32, @floatFromInt(texture.width - 1));
+                    const v_scale = @as(f32, @floatFromInt(texture.height - 1));
 
                     var y: u15 = @as(u15, @intCast(@min(height, wallBottom)));
                     while (y < height) : (y += 1) {
@@ -386,7 +390,7 @@ const Raycaster = struct {
                         const u = @as(i32, @intFromFloat(u_scale * fract(pos.x)));
                         const v = @as(i32, @intFromFloat(v_scale * fract(pos.y)));
 
-                        fb.setPixel(x, y, sampleTexture(texture, u, v).shift(index_shift));
+                        set_pixel(x, y, sampleTexture(texture, u, v));
                     }
                 },
             }
@@ -402,9 +406,9 @@ const Raycaster = struct {
         }.lt);
     }
 
-    fn drawSprites(rc: Raycaster, fb: gui.Framebuffer, spriteset: []const Sprite) void {
+    fn drawSprites(rc: Raycaster, spriteset: []const Sprite) void {
         for (spriteset) |sprite| {
-            rc.drawSprite(fb, sprite);
+            rc.drawSprite(sprite);
         }
     }
 
@@ -416,7 +420,7 @@ const Raycaster = struct {
         return ang(lhs - rhs);
     }
 
-    fn drawSprite(rc: Raycaster, fb: gui.Framebuffer, sprite: Sprite) void {
+    fn drawSprite(rc: Raycaster, sprite: Sprite) void {
         const delta = sprite.position.sub(rc.camera_position);
         const angle = angdiff(std.math.atan2(delta.y, delta.x), rc.camera_rotation);
 
@@ -443,7 +447,7 @@ const Raycaster = struct {
 
         // calculate on-screen size
         const spriteHeight = @as(u31, @intFromFloat(correction * height / distance));
-        const spriteWidth = (texture.bitmap.width * spriteHeight) / texture.bitmap.height;
+        const spriteWidth = (texture.width * spriteHeight) / texture.height;
 
         // discard the sprite when out of screen
         if ((cx + spriteWidth) < 0)
@@ -463,8 +467,6 @@ const Raycaster = struct {
         const miny = @max(0, wallTop);
         const maxy = @min(height, wallBottom);
 
-        const texture_shift = @as(u8, @intCast(16 * sprite.texture_id));
-
         // render the sprite also column major
         var x: u15 = @as(u15, @intCast(std.math.clamp(minx, 0, width)));
         while (x < maxx) : (x += 1) {
@@ -472,19 +474,19 @@ const Raycaster = struct {
             if (rc.zbuffer[x] < distance)
                 continue;
 
-            const u = @divTrunc((texture.bitmap.width - 1) * (x - left), spriteWidth - 1);
+            const u = @divTrunc((texture.width - 1) * (x - left), spriteWidth - 1);
 
             var y: u15 = @as(u15, @intCast(std.math.clamp(miny, 0, height)));
             while (y < maxy) : (y += 1) {
-                const v = @as(i32, @intFromFloat(@as(f32, @floatFromInt((texture.bitmap.height - 1) * (y - wallTop))) / @as(f32, @floatFromInt(spriteHeight - 1))));
+                const v = @as(i32, @intFromFloat(@as(f32, @floatFromInt((texture.height - 1) * (y - wallTop))) / @as(f32, @floatFromInt(spriteHeight - 1))));
 
                 const c = sampleTexture(texture, u, v);
 
                 // alpha testing
-                if (texture.bitmap.transparent != null and c == texture.bitmap.transparent.?)
+                if (texture.has_transparency and c == texture.transparency_key)
                     continue;
 
-                fb.setPixel(x, y, c.shift(texture_shift));
+                set_pixel(x, y, c);
             }
         }
     }

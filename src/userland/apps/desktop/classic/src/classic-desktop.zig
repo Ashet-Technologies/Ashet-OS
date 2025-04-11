@@ -109,7 +109,7 @@ pub fn main() !void {
             var file_handle = _file_handle;
             defer file_handle.close();
 
-            break :blk try ashet.graphics.load_bitmap_file(file_handle);
+            break :blk try ashet.graphics.load_texture_file(file_handle);
         } else |err| {
             switch (err) {
                 error.FileNotFound => {},
