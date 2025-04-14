@@ -91,81 +91,117 @@ pub fn main() !void {
 
     var last_mouse: ashet.abi.Point = undefined;
 
+    const frame_time = ashet.clock.Duration.from_us(std.time.us_per_s / 20);
+
+    var timer: ashet.clock.Timer = .{
+        .inputs = .{
+            .timeout = ashet.clock.monotonic(),
+        },
+    };
+
+    var get_event: ashet.gui.GetWindowEvent = .{
+        .inputs = .{ .window = window },
+    };
+
+    var moved = false;
+
+    try ashet.overlapped.schedule(&get_event.arc);
+    try ashet.overlapped.schedule(&timer.arc);
+
     while (true) {
-        var moved = false;
-        _ = &moved;
-
-        const result = try ashet.overlapped.performOne(ashet.gui.GetWindowEvent, .{
-            .window = window,
+        const completed = try ashet.overlapped.await_events(.{
+            .timer = &timer,
+            .get_event = &get_event,
         });
-        switch (result.event.event_type) {
-            .mouse_motion => {
-                const pos: ashet.abi.Point = .new(result.event.mouse.x, result.event.mouse.y);
-                defer last_mouse = pos;
 
-                const dx: f32 = @floatFromInt(pos.x - last_mouse.x);
-                const dy: f32 = @floatFromInt(pos.y - last_mouse.y);
+        if (completed.contains(.get_event)) {
+            const event = get_event.outputs.event;
+            switch (event.event_type) {
+                .mouse_leave => {
+                    move_enable = false;
+                    rotate_enable = false;
+                },
 
-                if (((dx != 0) or (dy != 0)) and move_enable) {
-                    const fwd = Vec2.unitX.rotate(raycaster.camera_rotation).scale(0.01);
-                    const right = Vec2.unitY.rotate(raycaster.camera_rotation).scale(-0.01);
+                .mouse_motion => {
+                    const pos: ashet.abi.Point = .new(event.mouse.x, event.mouse.y);
+                    defer last_mouse = pos;
 
-                    raycaster.camera_position = raycaster.camera_position.add(fwd.scale(dy));
-                    raycaster.camera_position = raycaster.camera_position.sub(right.scale(dx));
+                    const dx: f32 = @floatFromInt(pos.x - last_mouse.x);
+                    const dy: f32 = @floatFromInt(pos.y - last_mouse.y);
 
-                    moved = true;
-                }
+                    if (((dx != 0) or (dy != 0)) and move_enable) {
+                        const fwd = Vec2.unitX.rotate(raycaster.camera_rotation).scale(0.01);
+                        const right = Vec2.unitY.rotate(raycaster.camera_rotation).scale(-0.01);
 
-                if (dx != 0 and rotate_enable) {
-                    raycaster.camera_rotation += 0.03 * dx;
-                    moved = true;
-                }
-            },
+                        raycaster.camera_position = raycaster.camera_position.add(fwd.scale(dy));
+                        raycaster.camera_position = raycaster.camera_position.sub(right.scale(dx));
 
-            .mouse_button_press => {
-                last_mouse = .new(result.event.mouse.x, result.event.mouse.y);
-                switch (result.event.mouse.button) {
-                    .left => rotate_enable = true,
-                    .right => move_enable = true,
+                        moved = true;
+                    }
+
+                    if (dx != 0 and rotate_enable) {
+                        raycaster.camera_rotation += 0.03 * dx;
+                        moved = true;
+                    }
+                },
+
+                .mouse_button_press => {
+                    last_mouse = .new(event.mouse.x, event.mouse.y);
+                    switch (event.mouse.button) {
+                        .left => rotate_enable = true,
+                        .right => move_enable = true,
+                        else => {},
+                    }
+                },
+
+                .mouse_button_release => switch (event.mouse.button) {
+                    .left => rotate_enable = false,
+                    .right => move_enable = false,
                     else => {},
-                }
-            },
+                },
 
-            .mouse_button_release => switch (result.event.mouse.button) {
-                .left => rotate_enable = false,
-                .right => move_enable = false,
+                .key_press => {
+                    moved = true;
+
+                    const fwd = Vec2.unitX.rotate(raycaster.camera_rotation).scale(0.1);
+                    const right = Vec2.unitY.rotate(raycaster.camera_rotation).scale(0.1);
+
+                    switch (event.keyboard.key) {
+                        .escape => return,
+
+                        .up => raycaster.camera_position = raycaster.camera_position.add(fwd),
+                        .down => raycaster.camera_position = raycaster.camera_position.sub(fwd),
+
+                        .left => raycaster.camera_position = raycaster.camera_position.sub(right),
+                        .right => raycaster.camera_position = raycaster.camera_position.add(right),
+
+                        .page_up => raycaster.camera_rotation -= 0.1,
+                        .page_down => raycaster.camera_rotation += 0.1,
+
+                        else => moved = false,
+                    }
+                },
+                .window_close => return,
                 else => {},
-            },
+            }
 
-            .key_press => {
-                moved = true;
-
-                const fwd = Vec2.unitX.rotate(raycaster.camera_rotation).scale(0.1);
-                const right = Vec2.unitY.rotate(raycaster.camera_rotation).scale(0.1);
-
-                switch (result.event.keyboard.key) {
-                    .escape => return,
-
-                    .up => raycaster.camera_position = raycaster.camera_position.add(fwd),
-                    .down => raycaster.camera_position = raycaster.camera_position.sub(fwd),
-
-                    .left => raycaster.camera_position = raycaster.camera_position.sub(right),
-                    .right => raycaster.camera_position = raycaster.camera_position.add(right),
-
-                    .page_up => raycaster.camera_rotation -= 0.1,
-                    .page_down => raycaster.camera_rotation += 0.1,
-
-                    else => moved = false,
-                }
-            },
-            .window_close => return,
-            else => {},
-        }
-        if (moved) {
-            try render(&command_queue, framebuffer);
+            try ashet.overlapped.schedule(&get_event.arc);
         }
 
-        ashet.process.thread.yield();
+        if (completed.contains(.timer)) {
+            if (moved) {
+                try render(&command_queue, framebuffer);
+            }
+            moved = false;
+
+            const now = ashet.clock.monotonic();
+            const timeout = &timer.inputs.timeout;
+            while (timeout.lt(now)) {
+                timeout.* = timeout.increment_by(frame_time);
+            }
+
+            try ashet.overlapped.schedule(&timer.arc);
+        }
     }
 }
 
