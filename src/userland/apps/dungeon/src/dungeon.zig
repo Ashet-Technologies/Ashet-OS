@@ -6,6 +6,9 @@ pub usingnamespace ashet.core;
 
 const Color = ashet.abi.Color;
 
+const screen_width = 200;
+const screen_height = 150;
+
 var raycaster: Raycaster = .{};
 
 var sprites = [_]Sprite{
@@ -83,6 +86,11 @@ pub fn main() !void {
 
     try render(&command_queue, framebuffer);
 
+    var rotate_enable = false;
+    var move_enable = false;
+
+    var last_mouse: ashet.abi.Point = undefined;
+
     while (true) {
         var moved = false;
         _ = &moved;
@@ -91,6 +99,44 @@ pub fn main() !void {
             .window = window,
         });
         switch (result.event.event_type) {
+            .mouse_motion => {
+                const pos: ashet.abi.Point = .new(result.event.mouse.x, result.event.mouse.y);
+                defer last_mouse = pos;
+
+                const dx: f32 = @floatFromInt(pos.x - last_mouse.x);
+                const dy: f32 = @floatFromInt(pos.y - last_mouse.y);
+
+                if (((dx != 0) or (dy != 0)) and move_enable) {
+                    const fwd = Vec2.unitX.rotate(raycaster.camera_rotation).scale(0.01);
+                    const right = Vec2.unitY.rotate(raycaster.camera_rotation).scale(-0.01);
+
+                    raycaster.camera_position = raycaster.camera_position.add(fwd.scale(dy));
+                    raycaster.camera_position = raycaster.camera_position.sub(right.scale(dx));
+
+                    moved = true;
+                }
+
+                if (dx != 0 and rotate_enable) {
+                    raycaster.camera_rotation += 0.03 * dx;
+                    moved = true;
+                }
+            },
+
+            .mouse_button_press => {
+                last_mouse = .new(result.event.mouse.x, result.event.mouse.y);
+                switch (result.event.mouse.button) {
+                    .left => rotate_enable = true,
+                    .right => move_enable = true,
+                    else => {},
+                }
+            },
+
+            .mouse_button_release => switch (result.event.mouse.button) {
+                .left => rotate_enable = false,
+                .right => move_enable = false,
+                else => {},
+            },
+
             .key_press => {
                 moved = true;
 
@@ -122,9 +168,6 @@ pub fn main() !void {
         ashet.process.thread.yield();
     }
 }
-
-const screen_width = 400;
-const screen_height = 300;
 
 var clonebuffer: [screen_width * screen_height]Color align(4) = undefined;
 
