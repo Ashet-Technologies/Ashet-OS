@@ -4,10 +4,13 @@ const Vec2 = @import("Vector2.zig");
 
 pub usingnamespace ashet.core;
 
+const Size = ashet.abi.Size;
+
 const Color = ashet.abi.Color;
 
-const screen_width = 200;
-const screen_height = 150;
+const min_size: Size = .new(120, 60);
+const start_size: Size = .new(200, 150);
+const max_size: Size = .new(800, 480);
 
 var raycaster: Raycaster = .{};
 
@@ -53,6 +56,8 @@ const walls = [_]Wall{
     },
 };
 
+var clonebuffer: [@as(u32, max_size.width) * max_size.height]Color align(4) = undefined;
+
 pub fn main() !void {
     var argv_buffer: [8]ashet.abi.SpawnProcessArg = undefined;
     const argv = ashet.process.get_arguments(null, &argv_buffer);
@@ -71,9 +76,9 @@ pub fn main() !void {
         desktop,
         .{
             .title = "Dungeon Crawl",
-            .min_size = .new(screen_width, screen_height),
-            .max_size = .new(screen_width, screen_height),
-            .initial_size = .new(screen_width, screen_height),
+            .min_size = min_size,
+            .initial_size = start_size,
+            .max_size = max_size,
         },
     );
     defer window.destroy_now();
@@ -103,10 +108,15 @@ pub fn main() !void {
         .inputs = .{ .window = window },
     };
 
-    var moved = false;
+    var invalidated = false;
 
     try ashet.overlapped.schedule(&get_event.arc);
     try ashet.overlapped.schedule(&timer.arc);
+
+    {
+        const size = try ashet.graphics.get_framebuffer_size(framebuffer);
+        Raycaster.resize(size);
+    }
 
     while (true) {
         const completed = try ashet.overlapped.await_events(.{
@@ -120,6 +130,10 @@ pub fn main() !void {
                 .mouse_leave => {
                     move_enable = false;
                     rotate_enable = false;
+                },
+
+                .window_resized => {
+                    invalidated = true;
                 },
 
                 .mouse_motion => {
@@ -136,12 +150,12 @@ pub fn main() !void {
                         raycaster.camera_position = raycaster.camera_position.add(fwd.scale(dy));
                         raycaster.camera_position = raycaster.camera_position.sub(right.scale(dx));
 
-                        moved = true;
+                        invalidated = true;
                     }
 
                     if (dx != 0 and rotate_enable) {
                         raycaster.camera_rotation += 0.03 * dx;
-                        moved = true;
+                        invalidated = true;
                     }
                 },
 
@@ -161,7 +175,7 @@ pub fn main() !void {
                 },
 
                 .key_press => {
-                    moved = true;
+                    invalidated = true;
 
                     const fwd = Vec2.unitX.rotate(raycaster.camera_rotation).scale(0.1);
                     const right = Vec2.unitY.rotate(raycaster.camera_rotation).scale(0.1);
@@ -178,7 +192,7 @@ pub fn main() !void {
                         .page_up => raycaster.camera_rotation -= 0.1,
                         .page_down => raycaster.camera_rotation += 0.1,
 
-                        else => moved = false,
+                        else => invalidated = false,
                     }
                 },
                 .window_close => return,
@@ -189,10 +203,10 @@ pub fn main() !void {
         }
 
         if (completed.contains(.timer)) {
-            if (moved) {
+            if (invalidated) {
                 try render(&command_queue, framebuffer);
             }
-            moved = false;
+            invalidated = false;
 
             const now = ashet.clock.monotonic();
             const timeout = &timer.inputs.timeout;
@@ -205,17 +219,19 @@ pub fn main() !void {
     }
 }
 
-var clonebuffer: [screen_width * screen_height]Color align(4) = undefined;
-
 inline fn set_pixel(x: u16, y: u16, c: Color) void {
-    clonebuffer[@as(usize, y) * screen_width + x] = c;
+    clonebuffer[@as(usize, y) * max_size.width + x] = c;
 }
 
 fn render(q: *ashet.graphics.CommandQueue, fb: ashet.graphics.Framebuffer) !void {
+    const size = try ashet.graphics.get_framebuffer_size(fb);
+
+    Raycaster.resize(size);
+
     const bmp = ashet.graphics.Bitmap{
-        .width = screen_width,
-        .height = screen_height,
-        .stride = screen_width,
+        .width = size.width,
+        .height = size.height,
+        .stride = max_size.width,
         .pixels = &clonebuffer,
         .has_transparency = false,
         .transparency_key = .black,
@@ -272,19 +288,6 @@ fn load_texture(dir: ashet.fs.Directory, path: []const u8) !Texture {
     return try ashet.graphics.load_bitmap_file(ashet.process.mem.allocator(), file);
 }
 
-const palette = blk: {
-    var pal: [256]ashet.abi.Color = undefined;
-    for (textures, 0..) |tex, i| {
-        std.mem.copyForwards(
-            ashet.abi.Color,
-            pal[16 * i ..],
-            tex.palette,
-        );
-    }
-    pal[255] = ashet.abi.Color.fromRgb888(0x80, 0xCC, 0xFF);
-    break :blk pal;
-};
-
 const Sprite = struct {
     texture_id: u16,
     position: Vec2,
@@ -303,28 +306,44 @@ const Raycaster = struct {
         flat_color: Color,
     };
 
-    const width = screen_width;
-    const height = screen_height;
-    const aspect = @as(f32, @floatFromInt(screen_width)) / @as(f32, @floatFromInt(screen_height));
+    var protoray_buffer: [max_size.width]f32 = undefined;
+    var perspective_factor_buffer: [max_size.height]f32 = undefined;
 
-    const floor_texture: BackgroundPattern = .{ .perspective_texture = 0 };
-    const ceiling_texture: BackgroundPattern = .{ .flat_color = Color.from_rgb(255, 255, 255) };
+    var width: u16 = 0;
+    var height: u16 = 0;
 
-    camera_rotation: f32 = 0,
-    camera_position: Vec2 = Vec2.zero,
-    zbuffer: [width]f32 = undefined,
+    var width_f: f32 = 0;
+    var height_f: f32 = 0;
 
-    /// returns the direction a ray has when going through a specifc column
-    fn getRayDirection(rc: Raycaster, column: usize) Vec2 {
-        return Vec2.new(1.0, protorays[column]).rotate(rc.camera_rotation);
+    var aspect: f32 = 0;
+    var protorays: []const f32 = &.{};
+    var perspective_factor: []const f32 = &.{};
+
+    pub fn resize(size: Size) void {
+        std.debug.assert(size.width > 0 and size.height > 0);
+        if (width == size.width and height == size.height) {
+            std.debug.assert(protorays.len == width);
+            std.debug.assert(perspective_factor.len == height);
+            return;
+        }
+
+        width = size.width;
+        height = size.height;
+        aspect = @as(f32, @floatFromInt(width)) / @as(f32, @floatFromInt(height));
+
+        width_f = @floatFromInt(width);
+        height_f = @floatFromInt(height);
+
+        perspective_factor = reshape_perspective_correction();
+        protorays = reshape_protorays();
+
+        std.log.info("resized to {}x{}", .{ width, height });
     }
 
-    const protorays = blk: {
-        @setEvalBranchQuota(10_000);
-
-        var rays: [width]f32 = undefined;
-        for (&rays, 0..) |*dir, x| {
-            const fx = aspect * (2.0 * (@as(f32, @floatFromInt(x)) / (width - 1)) - 1.0);
+    fn reshape_protorays() []const f32 {
+        const rays = protoray_buffer[0..width];
+        for (rays, 0..) |*dir, x| {
+            const fx = aspect * (2.0 * (@as(f32, @floatFromInt(x)) / (width_f - 1)) - 1.0);
 
             const deltaAngle = std.math.atan(0.5 * fx);
 
@@ -333,19 +352,13 @@ const Raycaster = struct {
             // set length of x to 1 for early correct perspective correction
             dir.* = raw_dir.scale(1.0 / raw_dir.x).y; // .x  is always 1.0 after this scaling. Thus, we don't need to store it.
         }
+        return rays;
+    }
 
-        break :blk rays;
-    };
-
-    const RaycastResult = struct {
-        wall: *const Wall,
-        distance: f32,
-        u: f32,
-    };
-
-    const perspective_factor: [height]f32 = blk: {
-        var val: [height]f32 = undefined;
-        for (&val, 0..) |*v, y| {
+    fn reshape_perspective_correction() []const f32 {
+        const val = perspective_factor_buffer[0..height];
+        for (val, 0..) |*v, y| {
+            v.* = 0.0;
             if (y < height / 2) {
                 const scale = 2.0 / @as(f32, @floatFromInt(height - 1));
                 const fy = 1.0 - scale * @as(f32, @floatFromInt(y));
@@ -364,7 +377,25 @@ const Raycaster = struct {
             }
         }
 
-        break :blk val;
+        return val;
+    }
+
+    const floor_texture: BackgroundPattern = .{ .perspective_texture = 0 };
+    const ceiling_texture: BackgroundPattern = .{ .flat_color = Color.from_rgb(255, 255, 255) };
+
+    camera_rotation: f32 = 0,
+    camera_position: Vec2 = Vec2.zero,
+    zbuffer: [max_size.width]f32 = undefined,
+
+    /// returns the direction a ray has when going through a specifc column
+    fn getRayDirection(rc: Raycaster, column: usize) Vec2 {
+        return Vec2.new(1.0, protorays[column]).rotate(rc.camera_rotation);
+    }
+
+    const RaycastResult = struct {
+        wall: *const Wall,
+        distance: f32,
+        u: f32,
     };
 
     fn drawWalls(rc: *Raycaster) void {
@@ -390,7 +421,7 @@ const Raycaster = struct {
 
                 // project the wall height onto the screen and
                 // adjust the zbuffer
-                wallHeight = @as(u32, @intFromFloat(height / @abs(result.distance) + 0.5));
+                wallHeight = @as(u32, @intFromFloat(height_f / @abs(result.distance) + 0.5));
                 // std.log.info("x={} => d={d} => {}", .{ x, result.distance, wallHeight });
                 break :blk result.distance;
             } else std.math.inf(f32); // no hit means infinite distance
@@ -517,7 +548,7 @@ const Raycaster = struct {
 
         const fx = 2.0 * @tan(angle) / aspect;
 
-        const cx = @as(i32, @intFromFloat((width - 1) * (0.5 + 0.5 * fx)));
+        const cx: i32 = @intFromFloat((width_f - 1) * (0.5 + 0.5 * fx));
 
         const texture = &textures[sprite.texture_id];
 
@@ -525,7 +556,7 @@ const Raycaster = struct {
         const correction = @sqrt(0.5 * fx * fx + 1);
 
         // calculate on-screen size
-        const spriteHeight = @as(u31, @intFromFloat(correction * height / distance));
+        const spriteHeight: u31 = @intFromFloat(correction * height_f / distance);
         const spriteWidth = (texture.width * spriteHeight) / texture.height;
 
         // discard the sprite when out of screen
@@ -547,7 +578,7 @@ const Raycaster = struct {
         const maxy = @min(height, wallBottom);
 
         // render the sprite also column major
-        var x: u15 = @as(u15, @intCast(std.math.clamp(minx, 0, width)));
+        var x: u15 = @intCast(std.math.clamp(minx, 0, width));
         while (x < maxx) : (x += 1) {
             // Test if we are occluded by a sprite
             if (rc.zbuffer[x] < distance)
@@ -555,9 +586,9 @@ const Raycaster = struct {
 
             const u = @divTrunc((texture.width - 1) * (x - left), spriteWidth - 1);
 
-            var y: u15 = @as(u15, @intCast(std.math.clamp(miny, 0, height)));
+            var y: u15 = @intCast(std.math.clamp(miny, 0, height));
             while (y < maxy) : (y += 1) {
-                const v = @as(i32, @intFromFloat(@as(f32, @floatFromInt((texture.height - 1) * (y - wallTop))) / @as(f32, @floatFromInt(spriteHeight - 1))));
+                const v: i32 = @intFromFloat(@as(f32, @floatFromInt((texture.height - 1) * (y - wallTop))) / @as(f32, @floatFromInt(spriteHeight - 1)));
 
                 const c = sampleTexture(texture, u, v);
 
