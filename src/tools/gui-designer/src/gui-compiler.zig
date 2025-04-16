@@ -75,17 +75,22 @@ pub fn render_to_file(document: Document, stream: std.fs.File) !void {
         \\
     );
 
-    for (document.window.widgets.items) |widget| {
-        const name: []const u8 = widget.identifier.items;
-        try writer.writeAll("    {\n");
-        try writer.writeAll("        const bounds: ashet.Rectangle = .{\n");
-        try writer.writeAll("            .x = ,\n");
-        try writer.writeAll("            .y = ,\n");
-        try writer.writeAll("            .width = ,\n");
-        try writer.writeAll("            .height = ,\n");
-        try writer.writeAll("        };\n");
+    const design_size = document.window.design_size;
 
-        try writer.print("        try target.draw_widget(bounds, .{}, ", .{
+    for (document.window.widgets.items) |widget| {
+        const anchor = widget.anchor;
+        const name: []const u8 = widget.identifier.items;
+
+        const v_align: Align = .from_anchor(anchor.top, anchor.bottom);
+        const h_align: Align = .from_anchor(anchor.left, anchor.right);
+
+        try writer.writeAll("    {\n");
+        try writer.print("        const x: i16 = {};\n", .{h_align.format_pos(widget.bounds.x, widget.bounds.width, design_size.width)});
+        try writer.print("        const y: i16 = {};\n", .{v_align.format_pos(widget.bounds.y, widget.bounds.height, design_size.height)});
+        try writer.print("        const width: u16 = {};\n", .{h_align.format_size(widget.bounds.x, widget.bounds.width, design_size.width)});
+        try writer.print("        const height: u16 = {};\n", .{v_align.format_size(widget.bounds.y, widget.bounds.height, design_size.height)});
+
+        try writer.print("        try target.draw_widget(.{{ .x = x, .y = y, .width = width, .height = height }}, .{}, ", .{
             std.zig.fmtId(widget.class.name),
         });
 
@@ -108,3 +113,78 @@ pub fn render_to_file(document: Document, stream: std.fs.File) !void {
 
     try buffered_writer.flush();
 }
+
+const Align = enum {
+    near,
+    far,
+    center,
+    margin,
+
+    fn from_anchor(near: bool, far: bool) Align {
+        if (near) {
+            return if (far) .margin else .near;
+        } else {
+            return if (far) .far else .center;
+        }
+    }
+
+    fn format_pos(alignment: Align, pos: i16, size: u16, limit: u16) PosFormatter {
+        return .{
+            .alignment = alignment,
+            .pos = pos,
+            .size = size,
+            .limit = limit,
+        };
+    }
+
+    fn format_size(alignment: Align, pos: i16, size: u16, limit: u16) SizeFormatter {
+        return .{
+            .alignment = alignment,
+            .pos = pos,
+            .size = size,
+            .limit = limit,
+        };
+    }
+
+    const PosFormatter = struct {
+        alignment: Align,
+        pos: i16,
+        size: u16,
+        limit: u16,
+
+        pub fn format(formatter: PosFormatter, fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
+            _ = fmt;
+            _ = opt;
+            switch (formatter.alignment) {
+                .near, .margin => try writer.print("{}", .{formatter.pos}),
+                .far => {
+                    const margin = @as(i32, formatter.limit) - formatter.pos - formatter.size;
+
+                    try writer.print("frame.width -| {}", .{formatter.size + margin});
+                },
+                .center => @panic("center"),
+            }
+        }
+    };
+
+    const SizeFormatter = struct {
+        alignment: Align,
+        pos: i16,
+        size: u16,
+        limit: u16,
+
+        pub fn format(formatter: SizeFormatter, fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
+            _ = fmt;
+            _ = opt;
+            switch (formatter.alignment) {
+                .near, .far => try writer.print("{}", .{formatter.size}),
+                .margin => {
+                    const margin = @as(i32, formatter.pos) + formatter.limit - formatter.pos - formatter.size;
+
+                    try writer.print("frame.width -| {}", .{margin});
+                },
+                .center => @panic("center"),
+            }
+        }
+    };
+};

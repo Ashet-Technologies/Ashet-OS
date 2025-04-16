@@ -7,9 +7,13 @@ const args_parser = @import("args");
 
 const model = @import("model.zig");
 
+const Size = model.Size;
+const Point = model.Point;
+const Rectangle = model.Rectangle;
 const Widget = model.Widget;
 const Window = model.Window;
 const Document = model.Document;
+const Alignment = model.Alignment;
 
 pub const CliOptions = struct {
     help: bool = false,
@@ -157,6 +161,8 @@ pub const Editor = struct {
 
     widget_drag: ?DragInfo = null,
 
+    preview_visible: bool = false,
+
     pub fn handle_gui(editor: *Editor) !void {
         editor.setup_dockspace();
 
@@ -166,6 +172,7 @@ pub const Editor = struct {
         try editor.handle_designer_gui();
         try editor.handle_properties_gui();
         try editor.handle_hierarchy_gui();
+        try editor.handle_preview_window();
     }
 
     fn get_selected_widget(editor: *Editor) ?*model.Widget {
@@ -255,6 +262,10 @@ pub const Editor = struct {
         if (!zgui.begin("Options", .{ .flags = .{ .always_auto_resize = true, .no_resize = true } }))
             return;
 
+        _ = zgui.checkbox("Preview Window", .{ .v = &editor.preview_visible });
+
+        zgui.sameLine(.{});
+
         _ = zgui.checkbox("Show Grid", .{ .v = &editor.options.render_grid });
 
         zgui.sameLine(.{});
@@ -311,6 +322,76 @@ pub const Editor = struct {
                 defer zgui.endDragDropSource();
 
                 _ = zgui.setDragDropPayload(widget_class_tag, class_name[0 .. class_name.len + 1], .once);
+            }
+        }
+    }
+
+    fn handle_preview_window(editor: *Editor) !void {
+        if (!editor.preview_visible)
+            return;
+
+        const window = &editor.document.window;
+
+        zgui.pushStyleVar2f(.{ .idx = .window_padding, .v = .{ 0, 0 } });
+        defer zgui.popStyleVar(.{});
+
+        const style = zgui.getStyle();
+
+        const hpad = 2.0 * style.window_border_size;
+        const vpad = 2.0 * style.window_border_size + 2.0 * style.frame_padding[1] + zgui.getFontSize();
+
+        zgui.setNextWindowSize(.{
+            .cond = .appearing,
+            .w = @as(f32, @floatFromInt(window.design_size.width)) + hpad,
+            .h = @as(f32, @floatFromInt(window.design_size.height)) + vpad,
+        });
+
+        defer zgui.end();
+        if (zgui.begin("Preview", .{
+            .flags = .{ .no_docking = true, .no_collapse = true },
+            .popen = &editor.preview_visible,
+        })) {
+            const draw = zgui.getWindowDrawList();
+
+            const base: [2]f32 = zgui.getCursorScreenPos();
+
+            const size: [2]f32 = zgui.getContentRegionAvail(); // zgui.getWindowSize();
+
+            const frame: Rectangle = .{
+                .x = 0,
+                .y = 0,
+                .width = @intFromFloat(size[0]),
+                .height = @intFromFloat(size[1]),
+            };
+
+            for (window.widgets.items) |widget| {
+                const h_align: Alignment = .from_anchor(widget.anchor.left, widget.anchor.right);
+                const v_align: Alignment = .from_anchor(widget.anchor.top, widget.anchor.bottom);
+
+                std.log.info("{} {}", .{ h_align, v_align });
+
+                const h_bounds: Alignment.Bounds = .{
+                    .near_margin = widget.bounds.x,
+                    .far_margin = @intCast(window.design_size.width -| (@as(i32, widget.bounds.x) +| widget.bounds.width)),
+                    .size = widget.bounds.width,
+                    .limit = frame.width,
+                };
+                const v_bounds: Alignment.Bounds = .{
+                    .near_margin = widget.bounds.y,
+                    .far_margin = @intCast(window.design_size.height -| (@as(i32, widget.bounds.y) +| widget.bounds.height)),
+                    .size = widget.bounds.height,
+                    .limit = frame.height,
+                };
+
+                var dupe: Widget = widget;
+
+                dupe.bounds = .{
+                    .x = h_align.compute_pos(h_bounds),
+                    .y = v_align.compute_pos(v_bounds),
+                    .width = h_align.compute_size(h_bounds),
+                    .height = v_align.compute_size(v_bounds),
+                };
+                paintWidget(draw, base, dupe, false);
             }
         }
     }
