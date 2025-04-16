@@ -144,6 +144,60 @@ pub const Anchor = struct {
     right: bool,
 };
 
+pub const Alignment = enum {
+    /// Aligns to the near edge of the frame.
+    near,
+
+    /// Aligns with the far edge of the frame.
+    far,
+
+    /// Aligns between the near and the far edge, keeping size.
+    center,
+
+    /// Aligns between the near and the far edge, keeping the margins to each edge.
+    margin,
+
+    pub fn from_anchor(near: bool, far: bool) Alignment {
+        if (near) {
+            return if (far) .margin else .near;
+        } else {
+            return if (far) .far else .center;
+        }
+    }
+
+    pub const Bounds = struct {
+        near_margin: i16,
+        size: u16,
+        far_margin: i16,
+        limit: u16,
+    };
+
+    pub fn compute_pos(al: Alignment, bounds: Bounds) i16 {
+        switch (al) {
+            .near, .margin => return bounds.near_margin,
+            .far => return @intCast(std.math.clamp(
+                @as(i32, bounds.limit) -| bounds.far_margin -| bounds.size,
+                std.math.minInt(i16),
+                std.math.maxInt(i16),
+            )),
+            .center => @panic("no"),
+        }
+    }
+
+    pub fn compute_size(al: Alignment, bounds: Bounds) u16 {
+        switch (al) {
+            .near, .far, .center => return bounds.size,
+            .margin => {
+                return @intCast(std.math.clamp(
+                    @as(i32, bounds.limit) - bounds.near_margin - bounds.far_margin,
+                    std.math.minInt(u16),
+                    std.math.maxInt(u16),
+                ));
+            },
+        }
+    }
+};
+
 pub const Metadata = struct {
     arena: *std.heap.ArenaAllocator,
 

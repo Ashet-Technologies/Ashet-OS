@@ -193,41 +193,12 @@ pub fn get_framebuffer_size(fb: Framebuffer) !ashet.abi.Size {
     return try ashet.userland.draw.get_framebuffer_size(fb);
 }
 
-pub fn load_bitmap_file(file: ashet.fs.File) !Framebuffer {
-    return try load_bitmap_file_at(file, 0);
+pub fn load_texture_file(file: ashet.fs.File) !Framebuffer {
+    return try load_texture_file_at(file, 0);
 }
 
-pub fn load_bitmap_file_at(file: ashet.fs.File, abs_offset: u64) !Framebuffer {
-    var header: ABM_Header = undefined;
-
-    if (try file.read(abs_offset, std.mem.asBytes(&header)) != @sizeOf(ABM_Header)) {
-        return error.InvalidFile;
-    }
-
-    // Unswap header data:
-    inline for (comptime std.meta.fields(ABM_Header)) |fld| {
-        @field(header, fld.name) = std.mem.littleToNative(fld.type, @field(header, fld.name));
-    }
-
-    logger.info("header: 0x{X:0>8} size={}x{}, palette={}, key=0x{X:0>2}, flags={X:0>4}", .{
-        header.magic,
-        header.width,
-        header.height,
-        header.palette_size,
-        header.transparency_key,
-        header.flags,
-    });
-
-    if (header.magic != ABM_Header.magic_number)
-        return error.InvalidFile;
-
-    const pixel_count: u32 = @as(u32, header.width) * @as(u32, header.height);
-    const pixel_offset: u64 = @sizeOf(ABM_Header);
-    const palette_offset: u64 = pixel_offset + pixel_count;
-    const palette_entry_count: u16 = if (header.palette_size == 0)
-        256
-    else
-        header.palette_size;
+pub fn load_texture_file_at(file: ashet.fs.File, abs_offset: u64) !Framebuffer {
+    const header = try abm.read_header(file, abs_offset);
 
     const fb = try create_memory_framebuffer(Size.new(header.width, header.height));
     errdefer fb.release();
@@ -237,43 +208,105 @@ pub fn load_bitmap_file_at(file: ashet.fs.File, abs_offset: u64) !Framebuffer {
     std.debug.assert(vmem.width == header.width);
     std.debug.assert(vmem.height == header.height);
 
-    if (vmem.stride == vmem.width) {
-        const len = try file.read(abs_offset + pixel_offset, std.mem.sliceAsBytes(vmem.base[0..pixel_count]));
-        if (len != pixel_count)
-            return error.InvalidFile;
-    } else {
-        var scanline: [*]Color = vmem.base;
-        var scanline_offset = pixel_offset;
-
-        for (0..header.height) |_| {
-            const len = try file.read(abs_offset + scanline_offset, std.mem.sliceAsBytes(scanline[0..vmem.width]));
-            if (len != vmem.width)
-                return error.InvalidFile;
-            scanline_offset += vmem.width;
-            scanline += vmem.stride;
-        }
-    }
-
-    // TODO(fqu): Implement distinct palette support for framebuffers?
-    _ = palette_entry_count;
-    _ = palette_offset;
+    try abm.read_pixels(file, abs_offset, header, vmem);
 
     return fb;
 }
 
-const ABM_Header = extern struct {
-    const magic_number: u32 = 0x48198b74;
+pub fn load_bitmap_file(allocator: std.mem.Allocator, file: ashet.fs.File) !Bitmap {
+    return try load_bitmap_file_at(allocator, file, 0);
+}
 
-    magic: u32,
-    width: u16,
-    height: u16,
-    flags: u16,
-    palette_size: u8,
-    transparency_key: u8,
+pub fn load_bitmap_file_at(allocator: std.mem.Allocator, file: ashet.fs.File, abs_offset: u64) !Bitmap {
+    const header = try abm.read_header(file, abs_offset);
 
-    comptime {
-        std.debug.assert(@sizeOf(@This()) == 12);
+    const buffer = try allocator.alignedAlloc(Color, 4, @as(u32, header.width) * header.height);
+    errdefer allocator.free(buffer);
+
+    try abm.read_pixels(file, abs_offset, header, .{
+        .base = buffer.ptr,
+        .stride = header.width,
+        .width = header.width,
+        .height = header.height,
+    });
+
+    return .{
+        .pixels = buffer.ptr,
+        .width = header.width,
+        .height = header.height,
+        .stride = header.width,
+        .transparency_key = header.transparency_key,
+        .has_transparency = header.flags.use_transparent,
+    };
+}
+
+pub const abm = struct {
+    pub fn read_header(file: ashet.fs.File, abm_offset: u64) !Header {
+        var header: Header = undefined;
+
+        if (try file.read(abm_offset, std.mem.asBytes(&header)) != @sizeOf(Header)) {
+            return error.InvalidFile;
+        }
+
+        // Unswap header data:
+        inline for (comptime std.meta.fields(Header)) |fld| {
+            @field(header, fld.name) = std.mem.littleToNative(fld.type, @field(header, fld.name));
+        }
+
+        logger.info("header: 0x{X:0>8} size={}x{}, palette={}, key={}, flags={}", .{
+            header.magic,
+            header.width,
+            header.height,
+            header.palette_size,
+            header.transparency_key,
+            header.flags,
+        });
+
+        if (header.magic != Header.magic_number)
+            return error.InvalidFile;
+
+        return header;
     }
+
+    pub fn read_pixels(file: ashet.fs.File, abm_offset: u64, header: Header, vmem: ashet.abi.VideoMemory) !void {
+        const pixel_count: u32 = @as(u32, header.width) * @as(u32, header.height);
+        const pixel_offset: u64 = @sizeOf(abm.Header);
+
+        if (vmem.stride == vmem.width) {
+            const len = try file.read(abm_offset + pixel_offset, std.mem.sliceAsBytes(vmem.base[0..pixel_count]));
+            if (len != pixel_count)
+                return error.InvalidFile;
+        } else {
+            var scanline: [*]Color = vmem.base;
+            var scanline_offset = pixel_offset;
+
+            for (0..header.height) |_| {
+                const len = try file.read(abm_offset + scanline_offset, std.mem.sliceAsBytes(scanline[0..vmem.width]));
+                if (len != vmem.width)
+                    return error.InvalidFile;
+                scanline_offset += vmem.width;
+                scanline += vmem.stride;
+            }
+        }
+    }
+
+    const Header = extern struct {
+        const magic_number: u32 = 0x48198b74;
+
+        magic: u32,
+        width: u16,
+        height: u16,
+        flags: packed struct(u16) {
+            use_transparent: bool,
+            _padding: u15 = 0,
+        },
+        palette_size: u8,
+        transparency_key: Color,
+
+        comptime {
+            std.debug.assert(@sizeOf(@This()) == 12);
+        }
+    };
 };
 
 pub fn embed_comptime_bitmap(comptime palette: anytype, comptime def: []const u8) *const ashet.graphics.Bitmap {
@@ -325,7 +358,7 @@ pub fn embed_comptime_bitmap(comptime palette: anytype, comptime def: []const u8
     else
         null;
 
-    var output_bits: [size.height * size.width]Color = undefined;
+    var output_bits: [size.height * size.width]Color align(4) = undefined;
     var index: usize = 0;
     for (icon) |row| {
         for (row) |pixel| {
@@ -334,7 +367,7 @@ pub fn embed_comptime_bitmap(comptime palette: anytype, comptime def: []const u8
         }
     }
 
-    const const_output_bits = comptime output_bits;
+    const const_output_bits align(4) = comptime output_bits;
 
     return comptime &ashet.graphics.Bitmap{
         .pixels = &const_output_bits,

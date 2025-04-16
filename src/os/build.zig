@@ -15,6 +15,7 @@ const app_packages = [_][]const u8{
     "init",
     "test_behaviour",
     "desktop_classic",
+    "dungeon",
     // TODO: Include "wiki" again,
 };
 
@@ -77,6 +78,15 @@ pub fn build(b: *std.Build) void {
             .target = platform,
             .optimize = optimize_apps,
         });
+
+        const install_files = app_dep.namedWriteFiles("ashet.app.files");
+        for (install_files.files.items) |file| {
+            _ = rootfs.copyFile(
+                install_files.getDirectory().path(b, file.sub_path),
+                b.fmt("/{s}", .{file.sub_path}),
+            );
+        }
+
         const app_list = AshetOS.getApplications(app_dep);
 
         for (app_list) |app| {

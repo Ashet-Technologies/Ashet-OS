@@ -26,6 +26,7 @@
         .clock = .{ .path = "../userland/apps/clock" },
         .paint = .{ .path = "../userland/apps/paint" },
         .wiki = .{ .path = "../userland/apps/wiki" },
+        .dungeon = .{ .path = "../userland/apps/dungeon" },
 
         // Externel deps:
         .@"disk-image-step" = .{

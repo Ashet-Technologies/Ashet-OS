@@ -57,6 +57,8 @@ pub fn init(b: *std.Build, dependency_name: []const u8, args: struct {
         .desktop_icon_conv_options = .{
             .geometry = .{ 32, 32 },
         },
+
+        .app_files = b.addNamedWriteFiles("ashet.app.files"),
     };
     return sdk;
 }
@@ -74,6 +76,7 @@ pub const AshetSdk = struct {
     ashet_module: *std.Build.Module,
     linker_script: std.Build.LazyPath,
     desktop_icon_conv_options: mkicon.ConvertOptions,
+    app_files: *std.Build.Step.WriteFile,
 
     // Internals:
     owning_builder: *std.Build,
@@ -81,6 +84,11 @@ pub const AshetSdk = struct {
 
     published_apps: ?*std.Build.Step.WriteFile = null,
     published_elves: ?*std.Build.Step.WriteFile = null,
+
+    pub fn install_file(sdk: *AshetSdk, file: []const u8, path: std.Build.LazyPath) void {
+        std.debug.assert(std.mem.startsWith(u8, file, "/"));
+        _ = sdk.app_files.addCopyFile(path, file[1..]);
+    }
 
     pub fn addApp(sdk: *AshetSdk, options: ExecutableOptions) *AshetApp {
         const b = sdk.owning_builder;

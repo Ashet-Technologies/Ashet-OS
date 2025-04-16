@@ -207,6 +207,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "hello-world", .exe = get_named_file(os_files, "apps/hello-world.elf") },
             .{ .name = "hello-gui", .exe = get_named_file(os_files, "apps/hello-gui.elf") },
             .{ .name = "classic", .exe = get_named_file(os_files, "apps/desktop/classic.elf") },
+            .{ .name = "dungeon.ashex", .exe = get_named_file(os_files, "apps/dungeon.elf") },
         };
 
         const variables = Variables{

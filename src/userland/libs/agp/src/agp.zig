@@ -17,7 +17,7 @@ pub const Font = ashet.Font;
 /// The memory it points to is read-only to allow static bitmaps,
 /// but it isn't required to be never mutated.
 pub const Bitmap = extern struct {
-    pixels: [*]const Color,
+    pixels: [*]align(4) const Color,
     width: u16,
     height: u16,
     stride: usize,
