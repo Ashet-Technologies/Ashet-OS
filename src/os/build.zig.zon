@@ -29,13 +29,8 @@
 
         // Externel deps:
         .@"disk-image-step" = .{
-            // .url = "git+https://github.com/zig-osdev/disk-image-step.git#06660a8b769ee550415b5b55d5fc2f26cf7980ab",
-            // .hash = "dimmer-2.0.0-suxOkmoOAgCXxu_TUx2jd_R1g9tgTQSh7Cso8uK7RtRZ",
-
             .url = "git+https://github.com/zig-osdev/disk-image-step.git#f68f9c79f2c75f9221a714c1167a40e1498c38b1",
             .hash = "dimmer-2.0.0-suxOkgUWAgBYnpg01cykNDYU2VJ8-zh86GJx6_f-48i9",
-
-            //            .path = "../../../../libraries/disk-image-step",
         },
     },
 }
