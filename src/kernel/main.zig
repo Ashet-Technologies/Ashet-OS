@@ -736,7 +736,7 @@ export fn ashet_unlockInterrupts(enable: bool) void {
 
 export fn ashet_rand() u32 {
     // TODO: Improve this
-    return 4; // chose by a fair dice roll
+    return 6; // improved random number, generated from my intuition and mind (cat1000101)
 }
 
 pub const CriticalSection = struct {
