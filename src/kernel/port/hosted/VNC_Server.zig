@@ -4,7 +4,7 @@ const network = @import("network");
 const vnc = @import("vnc");
 const logger = std.log.scoped(.host_vnc_server);
 
-const ashet = @import("../../../../main.zig");
+const ashet = @import("../../main.zig");
 
 const VNC_Server = @This();
 

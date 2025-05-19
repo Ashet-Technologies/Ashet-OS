@@ -2,7 +2,7 @@ const std = @import("std");
 const sdl = @import("SDL2.zig");
 const logger = std.log.scoped(.sdl_display);
 
-const ashet = @import("../../../../main.zig");
+const ashet = @import("../../main.zig");
 
 const SDL_Display = @This();
 

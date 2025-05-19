@@ -68,4 +68,11 @@ pub const MachineID = enum {
             => .x86,
         };
     }
+
+    pub fn get_kernel_file_name(target: MachineID) []const u8 {
+        return switch (target) {
+            .@"x86-hosted-windows" => "kernel.exe",
+            else => "kernel.elf", // default file name
+        };
+    }
 };

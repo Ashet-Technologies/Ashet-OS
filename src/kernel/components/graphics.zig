@@ -230,6 +230,8 @@ pub const Font = struct {
 var system_fonts: std.StringArrayHashMap(Font) = undefined;
 
 fn initialize_system_fonts() !void {
+    errdefer |e| logger.err("failed to load system fonts: {s}", .{@errorName(e)});
+
     system_fonts = .init(ashet.memory.static_memory_allocator);
 
     var fonts_dir = try libashet.fs.Directory.openDrive(.system, "system/fonts");

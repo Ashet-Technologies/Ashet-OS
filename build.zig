@@ -193,7 +193,7 @@ pub fn build(b: *std.Build) void {
 
         const os_files = machine_os_dep.namedWriteFiles("ashet-os");
 
-        const kernel_elf = get_named_file(os_files, "kernel.elf");
+        const kernel_elf = get_named_file(os_files, run_machine.get_kernel_file_name());
         const disk_img = get_named_file(os_files, "disk.img");
         const kernel_bin = get_optional_named_file(os_files, "kernel.bin");
 
@@ -222,8 +222,11 @@ pub fn build(b: *std.Build) void {
         const vm_runner = b.addRunArtifact(debugfilter);
 
         // Add debug elf contexts:
-        vm_runner.addArg("--elf");
-        vm_runner.addPrefixedFileArg("kernel=", kernel_elf);
+        if (run_machine != .@"x86-hosted-windows") {
+            // Only add kernel for ELF platforms:
+            vm_runner.addArg("--elf");
+            vm_runner.addPrefixedFileArg("kernel=", kernel_elf);
+        }
 
         for (apps) |app| {
             var app_name_buf: [128]u8 = undefined;
@@ -401,28 +404,28 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
 
     .@"x86-hosted-linux" = .{
         .hosted_cli = &.{
-            "drive:${DISK}",
+            "drive;${DISK}",
             // "fs:${ROOTFS}",
         },
 
         .hosted_video_setup = .init(.{
-            .headless = &.{"video:vnc:800:480:0.0.0.0:5900"},
-            .gtk = &.{"video:auto-window:800:480"},
-            .sdl = &.{"video:sdl:800:480"},
+            .headless = &.{"video;vnc;800;480;0.0.0.0;5900"},
+            .gtk = &.{"video;auto-window;800;480"},
+            .sdl = &.{"video;sdl;800;480"},
             .cocoa = &.{},
         }),
     },
 
     .@"x86-hosted-windows" = .{
         .hosted_cli = &.{
-            "drive:${DISK}",
+            "drive;${DISK}",
             // "fs:${ROOTFS}",
         },
 
         .hosted_video_setup = .init(.{
-            .headless = &.{"video:vnc:800:480:0.0.0.0:5900"},
-            .gtk = &.{"video:win:800:480"},
-            .sdl = &.{"video:sdl:800:480"},
+            .headless = &.{"video;vnc;800;480;0.0.0.0;5900"},
+            .gtk = &.{"video;win;800;480"},
+            .sdl = &.{"video;sdl;800;480"},
             .cocoa = &.{},
         }),
     },
@@ -476,7 +479,7 @@ const qemu_display_flags: std.EnumArray(QemuDisplayMode, []const []const u8) = .
 
 fn get_optional_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) ?std.Build.LazyPath {
     for (write_files.files.items) |file| {
-        if (std.mem.eql(u8, file.sub_path, sub_path))
+        if (path_eql(file.sub_path, sub_path))
             return .{
                 .generated = .{
                     .file = &write_files.generated_directory,
@@ -500,4 +503,16 @@ fn get_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) 
         std.debug.print("- '{s}'\n", .{file.sub_path});
     }
     std.process.exit(1);
+}
+
+fn path_eql(lhs: []const u8, rhs: []const u8) bool {
+    if (lhs.len != rhs.len)
+        return false;
+    for (lhs, rhs) |l, r| {
+        if (std.fs.path.isSep(l) and std.fs.path.isSep(r))
+            continue;
+        if (l != r)
+            return false;
+    }
+    return true;
 }

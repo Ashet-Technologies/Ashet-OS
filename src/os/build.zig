@@ -47,11 +47,14 @@ pub fn build(b: *std.Build) void {
 
     const kernel = kernel_dep.artifact("kernel");
 
-    const kernel_elf = kernel.getEmittedBin();
+    const kernel_exe = kernel.getEmittedBin();
 
     const result_files = b.addNamedWriteFiles("ashet-os");
 
-    _ = result_files.addCopyFile(kernel_elf, "kernel.elf");
+    _ = result_files.addCopyFile(kernel_exe, machine.get_kernel_file_name());
+    if (kernel.rootModuleTarget().ofmt == .coff) {
+        _ = result_files.addCopyFile(kernel.getEmittedPdb(), "kernel.pdb");
+    }
 
     // Phase 1: Target independent root fs:
 
@@ -121,7 +124,7 @@ pub fn build(b: *std.Build) void {
     // Phase 3: Machine dependent root fs
     switch (machine) {
         .@"x86-pc-bios" => {
-            rootfs.copyFile(kernel_elf, "/ashet-os");
+            rootfs.copyFile(kernel_exe, "/ashet-os");
 
             // Copy syslinux installation fikles
             rootfs.copyFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/cmenu/libmenu/libmenu.c32"), "/syslinux/libmenu.c32");
@@ -144,7 +147,7 @@ pub fn build(b: *std.Build) void {
     }
 
     if (machine_info.rom_size) |rom_size| {
-        const objcopy_kernel = b.addObjCopy(kernel_elf, .{
+        const objcopy_kernel = b.addObjCopy(kernel_exe, .{
             .basename = "kernel.bin",
             .format = .bin,
             .pad_to = rom_size,
