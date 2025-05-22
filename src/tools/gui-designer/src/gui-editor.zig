@@ -355,7 +355,7 @@ pub const Editor = struct {
 
             const base: [2]f32 = zgui.getCursorScreenPos();
 
-            const size: [2]f32 = zgui.getContentRegionAvail(); // zgui.getWindowSize();
+            const size: [2]f32 = zgui.getContentRegionAvail();
 
             const frame: Rectangle = .{
                 .x = 0,
@@ -367,8 +367,6 @@ pub const Editor = struct {
             for (window.widgets.items) |widget| {
                 const h_align: Alignment = .from_anchor(widget.anchor.left, widget.anchor.right);
                 const v_align: Alignment = .from_anchor(widget.anchor.top, widget.anchor.bottom);
-
-                std.log.info("{} {}", .{ h_align, v_align });
 
                 const h_bounds: Alignment.Bounds = .{
                     .near_margin = widget.bounds.x,
