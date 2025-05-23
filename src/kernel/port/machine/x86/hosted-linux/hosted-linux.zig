@@ -40,7 +40,7 @@ fn initialize() !void {
         if (res != 0) @panic("mprotect failed!");
     }
 
-    try hosted.initialize();
+    try hosted.initialize(video_drivers);
 }
 
 const video_drivers: std.StaticStringMap(hosted.VideoDriverCtor) = .initComptime(.{

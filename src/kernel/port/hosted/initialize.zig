@@ -53,7 +53,7 @@ pub const VideoDriverOptions = struct {
     res_y: u16,
 };
 
-pub const VideoDriverCtor = *const fn (VideoDriverOptions) error{OutOfMemory}!void;
+pub const VideoDriverCtor = *const fn (VideoDriverOptions) anyerror!void;
 
 pub fn initialize(comptime video_drivers: std.StaticStringMap(VideoDriverCtor)) !void {
     const shared_video_drivers: []const []const u8 = &.{
