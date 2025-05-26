@@ -9,7 +9,6 @@
 
         .kernel = .{ .path = "../kernel" },
         .assets = .{ .path = "../os-assets" },
-        .syslinux = .{ .path = "../../vendor/syslinux" },
 
         .AshetOS = .{
             .path = "../userland/libs/libAshetOS",
@@ -32,6 +31,11 @@
         .@"disk-image-step" = .{
             .url = "git+https://github.com/zig-osdev/disk-image-step.git#f68f9c79f2c75f9221a714c1167a40e1498c38b1",
             .hash = "dimmer-2.0.0-suxOkgUWAgBYnpg01cykNDYU2VJ8-zh86GJx6_f-48i9",
+        },
+
+        .limine = .{
+            .url = "git+https://github.com/limine-bootloader/limine#7d2bf778c27067ba421e95154208c8b0f3bbf10f",
+            .hash = "N-V-__8AAMtwRwCKBq7qOA8fC-65FS6rsg0WL6pmA7OQBAb1",
         },
     },
 }

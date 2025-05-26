@@ -1,5 +1,10 @@
 ENTRY(_start)
 
+MEMORY 
+{
+    memory (RWX) : ORIGIN = 0x100000, LENGTH = 512M
+}
+
 SECTIONS
 {
     . = 0x100000; /* load to 1 MB */
@@ -10,12 +15,12 @@ SECTIONS
 	    KEEP(*(.text.multiboot*))
         *(.text)
         *(.text.*)
-    }
+    } > memory 
 
     .rodata ALIGN(4096) : {
         *(.rodata)
         *(.rodata.*)
-    }
+    } > memory 
 
     . = ALIGN(4096);
     
@@ -35,7 +40,7 @@ SECTIONS
         *(.sdata.*)
         . = ALIGN(4096);
         __kernel_data_end = .;
-    }
+    } > memory 
 
     .bss ALIGN(4096) : {
         __kernel_bss_start = .;
@@ -52,5 +57,5 @@ SECTIONS
         . += 0x01000000; /* 16 megs of RAM */
         . = ALIGN(4096);
         __machine_linmem_end = .;
-    }
+    } > memory
 }

@@ -151,7 +151,7 @@ fn initialize() !void {
     logger.info("debug serial port initialized", .{});
 
     logger.debug("parse multiboot header...", .{});
-    const mbheader = x86.start.multiboot_info orelse @panic("Ashet OS must be bootet via a MultiBoot 1 compatible bootloader. Use syslinux or grub!");
+    const mbheader = x86.start.multiboot_info orelse @panic("Ashet OS must be bootet via a MultiBoot 1 compatible bootloader. Use limine, syslinux or grub!");
 
     x86.vmm.ensure_accessible_obj(mbheader);
 
@@ -354,7 +354,7 @@ export const multiboot_header linksection(".text.multiboot") = x86.multiboot.Hea
     .flags = .{
         .req_modules_align_4k = false,
         .req_mem_info = true,
-        .req_video_mode = false,
+        .req_video_mode = true,
         .hint_use_embedded_offsets = false,
     },
 

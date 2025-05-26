@@ -35,9 +35,23 @@ pub fn build(b: *std.Build) void {
         .release = optimize_kernel,
     });
     const assets_dep = b.dependency("assets", .{});
-    const syslinux_dep = b.dependency("syslinux", .{ .release = true });
 
     const disk_image_dep = b.dependency("disk-image-step", .{ .release = true });
+
+    const limine_dep = b.dependency("limine", .{});
+
+    // Ext tools:
+
+    const limine_exe = b.addExecutable(.{
+        .name = "limine",
+        .target = b.resolveTargetQuery(.{}),
+        .optimize = .ReleaseSafe,
+    });
+    limine_exe.addCSourceFile(.{
+        .file = limine_dep.path("limine.c"),
+        .flags = &.{"-std=c99"},
+    });
+    limine_exe.linkLibC();
 
     // Build:
 
@@ -124,23 +138,9 @@ pub fn build(b: *std.Build) void {
     // Phase 3: Machine dependent root fs
     switch (machine) {
         .@"x86-pc-bios" => {
+            rootfs.copyFile(limine_dep.path("limine-bios.sys"), "/limine-bios.sys");
+            rootfs.copyFile(b.path("../../rootfs/pc-bios/limine.conf"), "/limine.conf");
             rootfs.copyFile(kernel_exe, "/ashet-os");
-
-            // Copy syslinux installation fikles
-            rootfs.copyFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/cmenu/libmenu/libmenu.c32"), "/syslinux/libmenu.c32");
-            rootfs.copyFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/gpllib/libgpl.c32"), "/syslinux/libgpl.c32");
-            rootfs.copyFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/hdt/hdt.c32"), "/syslinux/hdt.c32");
-            rootfs.copyFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/lib/libcom32.c32"), "/syslinux/libcom32.c32");
-            rootfs.copyFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/libutil/libutil.c32"), "/syslinux/libutil.c32");
-            rootfs.copyFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/mboot/mboot.c32"), "/syslinux/mboot.c32");
-            rootfs.copyFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/menu/menu.c32"), "/syslinux/menu.c32");
-            rootfs.copyFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/modules/poweroff.c32"), "/syslinux/poweroff.c32");
-            rootfs.copyFile(syslinux_dep.path("vendor/syslinux-6.03/bios/com32/modules/reboot.c32"), "/syslinux/reboot.c32");
-
-            // Copy syslinux configuration files
-            rootfs.copyFile(b.path("../../rootfs/pc-bios/syslinux/modules.alias"), "/syslinux/modules.alias");
-            rootfs.copyFile(b.path("../../rootfs/pc-bios/syslinux/pci.ids"), "/syslinux/pci.ids");
-            rootfs.copyFile(b.path("../../rootfs/pc-bios/syslinux/syslinux.cfg"), "/syslinux/syslinux.cfg");
         },
 
         else => {},
@@ -203,7 +203,7 @@ pub fn build(b: *std.Build) void {
         .@"x86-pc-bios" => blk: {
             const raw_disk_file = disk_image_tools.createDisk(500 * DiskBuildInterface.MiB, .{
                 .mbr_part_table = .{
-                    .bootloader = &.{ .paste_file = syslinux_dep.path("vendor/syslinux-6.03/bios/mbr/mbr.bin") },
+                    .bootloader = null, // will be installed by InstallBootloaderStep
                     .partitions = .{
                         &.{
                             .type = .@"fat32-lba",
@@ -221,11 +221,9 @@ pub fn build(b: *std.Build) void {
                 },
             });
 
-            const syslinux_installer = syslinux_dep.artifact("syslinux");
+            const install_bootloader = InstallBootloaderStep.create(b, limine_exe.getEmittedBin(), raw_disk_file);
 
-            const install_syslinux = InstallSyslinuxStep.create(b, syslinux_installer, raw_disk_file);
-
-            break :blk std.Build.LazyPath{ .generated = .{ .file = install_syslinux.output_file } };
+            break :blk std.Build.LazyPath{ .generated = .{ .file = install_bootloader.output_file } };
         },
 
         else => disk_image_tools.createDisk(
@@ -282,14 +280,14 @@ const machine_info_map = std.EnumArray(Machine, MachineDependentOsConfig).init(.
     },
 });
 
-const InstallSyslinuxStep = struct {
+const InstallBootloaderStep = struct {
     step: std.Build.Step,
     output_file: *std.Build.GeneratedFile,
     input_file: std.Build.LazyPath,
-    syslinux: *std.Build.Step.Compile,
+    bootloader: std.Build.LazyPath,
 
-    pub fn create(builder: *std.Build, syslinux: *std.Build.Step.Compile, input_file: std.Build.LazyPath) *InstallSyslinuxStep {
-        const bundle = builder.allocator.create(InstallSyslinuxStep) catch @panic("oom");
+    pub fn create(builder: *std.Build, bootloader: std.Build.LazyPath, input_file: std.Build.LazyPath) *InstallBootloaderStep {
+        const bundle = builder.allocator.create(InstallBootloaderStep) catch @panic("oom");
         errdefer builder.allocator.destroy(bundle);
 
         const outfile = builder.allocator.create(std.Build.GeneratedFile) catch @panic("oom");
@@ -297,21 +295,21 @@ const InstallSyslinuxStep = struct {
 
         outfile.* = .{ .step = &bundle.step };
 
-        bundle.* = InstallSyslinuxStep{
+        bundle.* = InstallBootloaderStep{
             .step = std.Build.Step.init(.{
                 .id = .custom,
-                .name = "install syslinux",
+                .name = "install bootloader",
                 .owner = builder,
                 .makeFn = make,
                 .first_ret_addr = null,
                 .max_rss = 0,
             }),
-            .syslinux = syslinux,
+            .bootloader = bootloader,
             .input_file = input_file,
             .output_file = outfile,
         };
         input_file.addStepDependencies(&bundle.step);
-        bundle.step.dependOn(&syslinux.step);
+        bootloader.addStepDependencies(&bundle.step);
 
         return bundle;
     }
@@ -319,7 +317,7 @@ const InstallSyslinuxStep = struct {
     fn make(step: *std.Build.Step, options: std.Build.Step.MakeOptions) !void {
         _ = options;
 
-        const iss: *InstallSyslinuxStep = @fieldParentPtr("step", step);
+        const iss: *InstallBootloaderStep = @fieldParentPtr("step", step);
         const b = step.owner;
 
         const disk_image = iss.input_file.getPath2(b, step);
@@ -355,12 +353,8 @@ const InstallSyslinuxStep = struct {
         );
 
         _ = step.owner.run(&.{
-            iss.syslinux.getEmittedBin().getPath2(iss.syslinux.step.owner, step),
-            "--offset",
-            "1048576",
-            "--install",
-            "--directory",
-            "syslinux", // path *inside* the image
+            iss.bootloader.getPath2(b, step),
+            "bios-install",
             iss.output_file.path.?,
         });
 

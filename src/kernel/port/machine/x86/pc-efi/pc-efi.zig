@@ -35,7 +35,7 @@ pub fn initialize() !void {
     x86.gdt.init();
     x86.idt.init();
 
-    const mbheader = x86.start.multiboot_info orelse @panic("Ashet OS must be bootet via a MultiBoot 1 compatible bootloader. Use syslinux or grub!");
+    const mbheader = x86.start.multiboot_info orelse @panic("Ashet OS must be bootet via a MultiBoot 1 compatible bootloader. Use limine, syslinux or grub!");
 
     if (mbheader.flags.vbe) {
         hw.vbe = ashet.drivers.video.VESA_BIOS_Extension.init(ashet.memory.allocator, mbheader) catch {
