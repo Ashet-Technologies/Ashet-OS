@@ -1,0 +1,6 @@
+#
+# This folder is meant to contain developer-provided files which should
+# not be checked into the main repository.
+#
+*
+!.gitignore

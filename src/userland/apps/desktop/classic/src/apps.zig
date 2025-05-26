@@ -38,7 +38,7 @@ pub fn init() !void {
         var default_icon_file = try desktop_dir.openFile("default-app-icon.abm", .read_only, .open_existing);
         defer default_icon_file.close();
 
-        default_icon = try ashet.graphics.load_bitmap_file(default_icon_file);
+        default_icon = try ashet.graphics.load_texture_file(default_icon_file);
     }
 
     try reload();
@@ -198,10 +198,10 @@ fn load_app(file: ashet.fs.File, file_name: [ashet.abi.max_file_name_len]u8) !vo
         .icon = null,
     };
 
-    @memset(app.display_name_buffer[ file_name_str.len - ".ashex".len..], 0);
+    @memset(app.display_name_buffer[file_name_str.len - ".ashex".len ..], 0);
 
     if (icon_byte_size != 0) {
-        app.icon = ashet.graphics.load_bitmap_file_at(file, icon_offset) catch |err| blk: {
+        app.icon = ashet.graphics.load_texture_file_at(file, icon_offset) catch |err| blk: {
             logger.warn("Failed to load icon for application {s}: {s}", .{
                 std.mem.sliceTo(&file_name, 0),
                 @errorName(err),

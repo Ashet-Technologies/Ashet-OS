@@ -46,9 +46,9 @@ pub const platforms = struct {
     pub const hosted = @import("platform/hosted.zig");
 };
 
-pub const machines = struct {
-    pub const rv32_virt = @import("machine/rv32_virt/rv32_virt.zig");
-    pub const arm_virt = @import("machine/arm_virt/arm_virt.zig");
-    pub const bios_pc = @import("machine/bios_pc/bios_pc.zig");
-    pub const linux_pc = @import("machine/linux_pc/linux_pc.zig");
-};
+// pub const machines = struct {
+//     pub const rv32_virt = @import("machine/rv32_virt/rv32_virt.zig");
+//     pub const arm_virt = @import("machine/arm_virt/arm_virt.zig");
+//     pub const bios_pc = @import("machine/bios_pc/bios_pc.zig");
+//     pub const linux_pc = @import("machine/linux_pc/linux_pc.zig");
+// };

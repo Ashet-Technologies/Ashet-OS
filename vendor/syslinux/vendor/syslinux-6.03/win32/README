@@ -1,6 +1,0 @@
-Building the Win32 installer requires the MinGW compiler, available at:
-
-	 http://www.mingw.org/
-
-Prepackaged versions of the MinGW cross-compiler are now included in
-several Linux distributions, including Fedora.

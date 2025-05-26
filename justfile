@@ -18,6 +18,7 @@ build-kernel:
     {{zig}} build -Dmachine=rv32-qemu-virt
     {{zig}} build -Dmachine=x86-pc-bios
     {{zig}} build -Dmachine=x86-hosted-linux
+    {{zig}} build -Dmachine=x86-hosted-windows
 
 [working-directory: 'src/userland/apps/wiki']
 build-wiki:
@@ -40,6 +41,26 @@ debug-vhc: build-vhc
 
 [working-directory: 'src/tools/exe-tool']
 exe-tool:
+    {{zig}} build
+
+[working-directory: 'src/tools/mkfont']
+mkfont:
+    {{zig}} build
+
+test-mkfont: \
+    (test-mkfont-face "mono-6") \
+    (test-mkfont-face "mono-8") \
+    (test-mkfont-face "sans-6") \
+    (test-mkfont-face "sans")
+
+[working-directory: 'src/tools/mkfont']
+test-mkfont-face font: mkfont
+    ./zig-out/bin/mkfont -o ./zig-out/{{font}}.font ../../../assets/fonts/{{font}}/{{font}}.font.json
+    hexdump -C ./zig-out/{{font}}.font
+    wc -c ./zig-out/{{font}}.font
+
+[working-directory: 'src/tools/mkicon']
+mkicon:
     {{zig}} build
 
 dump-libashet: \

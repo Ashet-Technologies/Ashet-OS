@@ -1,6 +1,7 @@
 .{
-    .name = "AshetOS",
+    .name = .AshetOS,
     .version = "0.1.0",
+    .fingerprint = 0x81677669d4772100,
     .paths = .{ "build.zig", "build.zig.zon" },
     .dependencies = .{
 
@@ -8,7 +9,6 @@
 
         .kernel = .{ .path = "../kernel" },
         .assets = .{ .path = "../os-assets" },
-        .syslinux = .{ .path = "../../vendor/syslinux" },
 
         .AshetOS = .{
             .path = "../userland/libs/libAshetOS",
@@ -25,11 +25,17 @@
         .clock = .{ .path = "../userland/apps/clock" },
         .paint = .{ .path = "../userland/apps/paint" },
         .wiki = .{ .path = "../userland/apps/wiki" },
+        .dungeon = .{ .path = "../userland/apps/dungeon" },
 
         // Externel deps:
         .@"disk-image-step" = .{
-            .url = "https://github.com/zig-osdev/disk-image-step/archive/4f0cf416a6c29a33dca7cfc903e8c2ff2baa062d.tar.gz",
-            .hash = "disk_image_step-0.1.0-92RmoGfEAAA1-cyRGVPR2xU1T6mkJBS_vyhRUooLNysX",
+            .url = "git+https://github.com/zig-osdev/disk-image-step.git#f68f9c79f2c75f9221a714c1167a40e1498c38b1",
+            .hash = "dimmer-2.0.0-suxOkgUWAgBYnpg01cykNDYU2VJ8-zh86GJx6_f-48i9",
+        },
+
+        .limine = .{
+            .url = "git+https://github.com/limine-bootloader/limine#7d2bf778c27067ba421e95154208c8b0f3bbf10f",
+            .hash = "N-V-__8AAMtwRwCKBq7qOA8fC-65FS6rsg0WL6pmA7OQBAb1",
         },
     },
 }

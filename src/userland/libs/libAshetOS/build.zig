@@ -57,6 +57,8 @@ pub fn init(b: *std.Build, dependency_name: []const u8, args: struct {
         .desktop_icon_conv_options = .{
             .geometry = .{ 32, 32 },
         },
+
+        .app_files = b.addNamedWriteFiles("ashet.app.files"),
     };
     return sdk;
 }
@@ -74,6 +76,7 @@ pub const AshetSdk = struct {
     ashet_module: *std.Build.Module,
     linker_script: std.Build.LazyPath,
     desktop_icon_conv_options: mkicon.ConvertOptions,
+    app_files: *std.Build.Step.WriteFile,
 
     // Internals:
     owning_builder: *std.Build,
@@ -81,6 +84,11 @@ pub const AshetSdk = struct {
 
     published_apps: ?*std.Build.Step.WriteFile = null,
     published_elves: ?*std.Build.Step.WriteFile = null,
+
+    pub fn install_file(sdk: *AshetSdk, file: []const u8, path: std.Build.LazyPath) void {
+        std.debug.assert(std.mem.startsWith(u8, file, "/"));
+        _ = sdk.app_files.addCopyFile(path, file[1..]);
+    }
 
     pub fn addApp(sdk: *AshetSdk, options: ExecutableOptions) *AshetApp {
         const b = sdk.owning_builder;
@@ -367,7 +375,7 @@ pub fn build(b: *std.Build) void {
 
 fn get_optional_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) ?std.Build.LazyPath {
     for (write_files.files.items) |file| {
-        if (std.mem.eql(u8, file.sub_path, sub_path))
+        if (path_eql(file.sub_path, sub_path))
             return .{
                 .generated = .{
                     .file = &write_files.generated_directory,
@@ -391,4 +399,16 @@ fn get_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) 
         std.debug.print("- '{s}'\n", .{file.sub_path});
     }
     std.process.exit(1);
+}
+
+fn path_eql(lhs: []const u8, rhs: []const u8) bool {
+    if (lhs.len != rhs.len)
+        return false;
+    for (lhs, rhs) |l, r| {
+        if (std.fs.path.isSep(l) and std.fs.path.isSep(r))
+            continue;
+        if (l != r)
+            return false;
+    }
+    return true;
 }

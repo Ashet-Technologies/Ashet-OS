@@ -1,0 +1,14 @@
+.{
+    .name = .dungeon,
+    .version = "0.1.0",
+    .fingerprint = 0x3ffa1f90c384506b,
+    .paths = .{ "build.zig", "build.zig.zon", "src" },
+    .dependencies = .{
+        .AshetOS = .{
+            .path = "../../libs/libAshetOS",
+        },
+        .mkicon = .{
+            .path = "../../../tools/mkicon",
+        },
+    },
+}

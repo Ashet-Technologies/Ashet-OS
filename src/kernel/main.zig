@@ -54,12 +54,13 @@ else switch (platform_id) {
 };
 
 pub const machine = switch (machine_id) {
-    .@"x86-pc-bios" => @import("port/machine/bios_pc/bios_pc.zig"),
-    .@"rv32-qemu-virt" => @import("port/machine/rv32_virt/rv32_virt.zig"),
+    .@"x86-pc-bios" => @import("port/machine/x86/pc-bios/pc-bios.zig"),
+    .@"rv32-qemu-virt" => @import("port/machine/rv32/qemu-virt/rv32-qemu-virt.zig"),
     .@"arm-ashet-hc" => @import("port/machine/arm/ashet-hc/ashet-hc.zig"),
     .@"arm-ashet-vhc" => @import("port/machine/arm/ashet-vhc/ashet-vhc.zig"),
-    .@"arm-qemu-virt" => @import("port/machine/arm_virt/arm_virt.zig"),
-    .@"x86-hosted-linux" => @import("port/machine/linux_pc/linux_pc.zig"),
+    .@"arm-qemu-virt" => @import("port/machine/arm/qemu-virt/arm-qemu-virt.zig"),
+    .@"x86-hosted-linux" => @import("port/machine/x86/hosted-linux/hosted-linux.zig"),
+    .@"x86-hosted-windows" => @import("port/machine/x86/hosted-windows/hosted-windows.zig"),
 };
 
 pub const machine_config: ports.MachineConfig = machine.machine_config;
@@ -226,9 +227,6 @@ fn main() !void {
     log.info("initialize input...", .{});
     input.initialize();
 
-    log.info("initialize graphics subsystem...", .{});
-    try graphics.initialize();
-
     log.info("spawn kernel main thread...", .{});
     {
         const thread = try scheduler.Thread.spawn(global_kernel_tick, null, .{
@@ -247,7 +245,7 @@ fn main() !void {
     {
         log.info("starting entry point thread...", .{});
 
-        const thread = try scheduler.Thread.spawn(load_entry_point, null, .{
+        const thread = try scheduler.Thread.spawn(threaded_kernel_init_unchecked, null, .{
             .stack_size = 32 * 1024,
         });
         try thread.setName("os.entrypoint");
@@ -273,23 +271,29 @@ fn main() !void {
     log.warn("All threads stopped. System is now halting.", .{});
 }
 
+fn threaded_kernel_init_unchecked(_: ?*anyopaque) callconv(.C) u32 {
+    threaded_kernel_init() catch |err| {
+        std.log.err("failed to initialize kernel: {s}", .{@errorName(err)});
+        if (@errorReturnTrace()) |trace|
+            Debug.printStackTrace("  ", trace, Debug.println);
+        @panic("kernel initialization failed");
+    };
+    return 0;
+}
+
 /// This thread is just loading the startup application, and
 /// is then quitting.
 ///
 /// It's required to use a thread here to keep the IO subsystem
 /// up and running. If we would try loading the application from
 /// the `main()` function, we'd be blocking.
-fn load_entry_point(_: ?*anyopaque) callconv(.C) u32 {
+fn threaded_kernel_init() !void {
+    log.info("initialize graphics subsystem...", .{});
+    try graphics.initialize();
+
     log.info("loading entry point...", .{});
 
-    apps.startApp(.{
-        .name = "init",
-    }) catch |err| {
-        log.err("failed to start up the init process: {s}", .{@errorName(err)});
-        if (@errorReturnTrace()) |trace|
-            Debug.printStackTrace("  ", trace, Debug.println);
-        @panic("failed to start up the system");
-    };
+    try apps.startApp(.{ .name = "init" });
 
     log.info("start application successfully loaded!", .{});
 
@@ -307,8 +311,6 @@ fn load_entry_point(_: ?*anyopaque) callconv(.C) u32 {
             memory.debug.dumpPageMap();
         }
     }
-
-    return 0;
 }
 
 /// This function runs to keep certain kernel tasks alive and

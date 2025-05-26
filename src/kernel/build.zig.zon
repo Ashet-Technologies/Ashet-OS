@@ -1,6 +1,7 @@
 .{
-    .name = "kernel",
+    .name = .kernel,
     .version = "0.1.0",
+    .fingerprint = 0x5dd29aabcec30063,
     .paths = .{"."},
     .dependencies = .{
         // Internal dependencies:
@@ -59,12 +60,12 @@
             .hash = "1220c9d868d911539c3fb44aef66face2097fcc7b8f2e0aaff82cea6be397c9469e5",
         },
         .@"foundation-libc" = .{
-            .url = "https://public.devspace.random-projects.net/foundation-libc-0.14.0-dev.tar.gz",
+            .url = "https://github.com/Ashet-Technologies/deps/raw/refs/heads/main/foundation-libc-0.14.0-dev.tar.gz",
             .hash = "foundationlibc-0.0.0-LAEuPHOUAAB91yJyMxexVJ_M3OlJxKnk-U1dq9pVswai",
         },
         .zfat = .{
             .url = "https://github.com/ZigEmbeddedGroup/zfat/archive/8f3e7fe2c8b15eaac83092fb52ab0ed30ee98f47.tar.gz",
-            .hash = "12205d874e8c9fd08d93c09ccbfddb045809afcc28e232b36b5abe3d288278ce458f",
+            .hash = "zfat-0.0.0-AAAAAMYlcABdh06Mn9CNk8Ccy_3bBFgJr8wo4jKza1q-",
         },
         .turtlefont = .{
             .url = "https://github.com/ikskuh/turtlefont/archive/dbb4079434fd5444fcfb442a713ef5dd30ee0d98.tar.gz",
@@ -93,7 +94,7 @@
             // .url = "https://microzig.tech/downloads/microzig/0.13.2/tools/regz.tar.gz",
             // .hash = "1220186140b54b42fa13d3afaa05c177fe7ee065d14c7a8d58fb7ff59eb31f8bc51b",
 
-            .url = "https://public.devspace.random-projects.net/regz-0.14.0-dev.tar.gz",
+            .url = "https://github.com/Ashet-Technologies/deps/raw/refs/heads/main/regz-0.14.0-dev.tar.gz",
             .hash = "tools_regz-0.0.0-H5A4rPJSBQBXq60B3k6yzYYKZt5nSZLKFwvLAVN5v6R2",
 
             .lazy = false,

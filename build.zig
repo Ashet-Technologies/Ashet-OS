@@ -20,10 +20,32 @@ const QemuDisplayMode = enum {
     cocoa,
 };
 
+const ToolDep = struct {
+    dependency: []const u8,
+    artifacts: []const []const u8,
+};
+
+const installed_tools: []const ToolDep = &.{
+    .{
+        .dependency = "debugfilter",
+        .artifacts = &.{"debug-filter"},
+    },
+    .{
+        .dependency = "mkicon",
+        .artifacts = &.{"mkicon"},
+    },
+    .{
+        .dependency = "mkfont",
+        .artifacts = &.{"mkfont"},
+    },
+};
+
 pub fn build(b: *std.Build) void {
     // Options:
     const optimize_kernel = b.option(bool, "optimize-kernel", "Should the kernel be optimized?") orelse false;
     const optimize_apps = b.option(std.builtin.OptimizeMode, "optimize-apps", "Optimization mode for the applications") orelse .Debug;
+
+    const install_rootfs = b.option(bool, "rootfs", "Installs the rootfs contents as well for hosted targets (default: off)") orelse false;
 
     const maybe_run_machine = b.option(Machine, "machine", "Selects which machine to run with the 'run' step");
     const qemu_gui = b.option(QemuDisplayMode, "gui", "Selects GUI mode for QEMU (headless, sdl, gtk)") orelse if (b.graph.host.result.os.tag.isDarwin())
@@ -58,6 +80,15 @@ pub fn build(b: *std.Build) void {
         break :blk steps;
     };
 
+    // Tools
+    for (installed_tools) |tool_dep| {
+        const dep = b.dependency(tool_dep.dependency, .{});
+        for (tool_dep.artifacts) |art_name| {
+            const art = dep.artifact(art_name);
+            b.installArtifact(art);
+        }
+    }
+
     // Dependencies:
 
     const debugfilter_dep = b.dependency("debugfilter", .{});
@@ -69,7 +100,8 @@ pub fn build(b: *std.Build) void {
     // Install the debug-filter executable so we can utilize it for debugging
     b.installArtifact(debugfilter);
 
-    var os_deps = std.EnumArray(Machine, *std.Build.Dependency).initUndefined();
+    var os_deps: std.EnumArray(Machine, *std.Build.Dependency) = .initUndefined();
+    var os_rootfs: std.EnumArray(Machine, ?std.Build.LazyPath) = .initFill(null);
     for (std.enums.values(Machine)) |machine| {
         const step = machine_steps.get(machine);
 
@@ -81,6 +113,7 @@ pub fn build(b: *std.Build) void {
         os_deps.set(machine, machine_os_dep);
 
         const os_files = machine_os_dep.namedWriteFiles("ashet-os");
+        const rootfs_files = machine_os_dep.namedWriteFiles("rootfs");
 
         const install_elves = b.addInstallDirectory(.{
             .source_dir = os_files.getDirectory(),
@@ -88,6 +121,20 @@ pub fn build(b: *std.Build) void {
             .install_subdir = "",
         });
         step.dependOn(&install_elves.step);
+
+        if (install_rootfs and machine.is_hosted()) {
+            const install_rootfs_dir = b.addInstallDirectory(.{
+                .source_dir = rootfs_files.getDirectory(),
+                .install_dir = .{ .custom = @tagName(machine) },
+                .install_subdir = "rootfs",
+            });
+            step.dependOn(&install_rootfs_dir.step);
+
+            // `b.getInstallPath` is copied from the InstallStep itself to figure out the final output directory:
+            const install_path = b.getInstallPath(install_rootfs_dir.options.install_dir, install_rootfs_dir.options.install_subdir);
+            std.debug.assert(std.fs.path.isAbsolute(install_path));
+            os_rootfs.set(machine, .{ .cwd_relative = install_path });
+        }
 
         if (list_apps) {
             std.debug.print("available files for '{s}':\n", .{
@@ -146,7 +193,7 @@ pub fn build(b: *std.Build) void {
 
         const os_files = machine_os_dep.namedWriteFiles("ashet-os");
 
-        const kernel_elf = get_named_file(os_files, "kernel.elf");
+        const kernel_elf = get_named_file(os_files, run_machine.get_kernel_file_name());
         const disk_img = get_named_file(os_files, "disk.img");
         const kernel_bin = get_optional_named_file(os_files, "kernel.bin");
 
@@ -160,12 +207,14 @@ pub fn build(b: *std.Build) void {
             .{ .name = "hello-world", .exe = get_named_file(os_files, "apps/hello-world.elf") },
             .{ .name = "hello-gui", .exe = get_named_file(os_files, "apps/hello-gui.elf") },
             .{ .name = "classic", .exe = get_named_file(os_files, "apps/desktop/classic.elf") },
+            .{ .name = "dungeon.ashex", .exe = get_named_file(os_files, "apps/dungeon.elf") },
         };
 
         const variables = Variables{
             .@"${DISK}" = disk_img,
             .@"${KERNEL}" = kernel_elf,
-            .@"${BOOTROM}" = kernel_bin orelse b.path("<missing>"),
+            .@"${BOOTROM}" = kernel_bin orelse b.path("<no bootrom>"),
+            .@"${ROOTFS}" = os_rootfs.get(run_machine) orelse b.path("<no rootfs>"),
         };
 
         // Run qemu with the debug-filter wrapped around so we can translate addresses
@@ -173,8 +222,11 @@ pub fn build(b: *std.Build) void {
         const vm_runner = b.addRunArtifact(debugfilter);
 
         // Add debug elf contexts:
-        vm_runner.addArg("--elf");
-        vm_runner.addPrefixedFileArg("kernel=", kernel_elf);
+        if (run_machine != .@"x86-hosted-windows") {
+            // Only add kernel for ELF platforms:
+            vm_runner.addArg("--elf");
+            vm_runner.addPrefixedFileArg("kernel=", kernel_elf);
+        }
 
         for (apps) |app| {
             var app_name_buf: [128]u8 = undefined;
@@ -238,6 +290,7 @@ const Variables = struct {
     @"${DISK}": std.Build.LazyPath,
     @"${BOOTROM}": std.Build.LazyPath,
     @"${KERNEL}": std.Build.LazyPath,
+    @"${ROOTFS}": std.Build.LazyPath,
 
     pub fn addArg(variables: Variables, runner: *std.Build.Step.Run, arg: []const u8) void {
         inline for (@typeInfo(Variables).@"struct".fields) |fld| {
@@ -260,8 +313,10 @@ const Variables = struct {
 const MachineStartupConfig = struct {
     /// Instantiation:
     /// Uses place holders:
-    /// - "${BOOTROM}"
-    /// - "${DISK}"
+    /// - "${BOOTROM}" is the boot rom which contains the os kernel
+    /// - "${KERNEL}"  is the path to the ELF file of the kernel
+    /// - "${DISK}"    is the the file system disk image
+    /// - "${ROOTFS}"  is the path to a host directory in the prefix which contains a rootfs. Only available on hosted machines
     qemu_cli: []const []const u8 = &.{},
 
     hosted_cli: []const []const u8 = &.{},
@@ -346,15 +401,31 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
     .@"arm-ashet-hc" = .{
         // True Home Computer must be debugged/runned on real hardware!
     },
+
     .@"x86-hosted-linux" = .{
         .hosted_cli = &.{
-            "drive:${DISK}",
+            "drive;${DISK}",
+            // "fs:${ROOTFS}",
         },
 
         .hosted_video_setup = .init(.{
-            .headless = &.{"video:vnc:800:480:0.0.0.0:5900"},
-            .gtk = &.{"video:auto-window:800:480"},
-            .sdl = &.{"video:sdl:800:480"},
+            .headless = &.{"video;vnc;800;480;0.0.0.0;5900"},
+            .gtk = &.{"video;auto-window;800;480"},
+            .sdl = &.{"video;sdl;800;480"},
+            .cocoa = &.{},
+        }),
+    },
+
+    .@"x86-hosted-windows" = .{
+        .hosted_cli = &.{
+            "drive;${DISK}",
+            // "fs:${ROOTFS}",
+        },
+
+        .hosted_video_setup = .init(.{
+            .headless = &.{"video;vnc;800;480;0.0.0.0;5900"},
+            .gtk = &.{"video;win;800;480"},
+            .sdl = &.{"video;sdl;800;480"},
             .cocoa = &.{},
         }),
     },
@@ -408,7 +479,7 @@ const qemu_display_flags: std.EnumArray(QemuDisplayMode, []const []const u8) = .
 
 fn get_optional_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) ?std.Build.LazyPath {
     for (write_files.files.items) |file| {
-        if (std.mem.eql(u8, file.sub_path, sub_path))
+        if (path_eql(file.sub_path, sub_path))
             return .{
                 .generated = .{
                     .file = &write_files.generated_directory,
@@ -432,4 +503,16 @@ fn get_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) 
         std.debug.print("- '{s}'\n", .{file.sub_path});
     }
     std.process.exit(1);
+}
+
+fn path_eql(lhs: []const u8, rhs: []const u8) bool {
+    if (lhs.len != rhs.len)
+        return false;
+    for (lhs, rhs) |l, r| {
+        if (std.fs.path.isSep(l) and std.fs.path.isSep(r))
+            continue;
+        if (l != r)
+            return false;
+    }
+    return true;
 }

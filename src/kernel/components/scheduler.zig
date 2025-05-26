@@ -73,14 +73,25 @@
 //!
 
 const std = @import("std");
+const builtin = @import("builtin");
 const astd = @import("ashet-std");
 const logger = std.log.scoped(.scheduler);
 const ashet = @import("../main.zig");
 const target = @import("builtin").target.cpu.arch;
 
-const debug_mode = @import("builtin").mode == .Debug;
+const debug_mode = builtin.mode == .Debug;
 
 const canary_size = ashet.memory.page_size;
+
+const scheduler_cc: std.builtin.CallingConvention = switch (builtin.cpu.arch) {
+    .x86 => if (builtin.os.tag == .windows)
+        .{ .x86_win = .{} }
+    else
+        .{ .x86_sysv = .{} },
+    .thumb => .{ .arm_aapcs = .{} },
+    .riscv32 => .{ .riscv32_ilp32 = .{} },
+    else => @compileError("unsupported platform"),
+};
 
 comptime {
     std.debug.assert(std.mem.isAligned(canary_size, ashet.memory.page_size));
@@ -624,7 +635,7 @@ pub fn yield() void {
 pub const exit = ashet_scheduler_threadExit;
 
 /// Exits the current thread and writes it `exit_code`.
-export fn ashet_scheduler_threadExit(code: u32) callconv(.C) noreturn {
+export fn ashet_scheduler_threadExit(code: u32) callconv(scheduler_cc) noreturn {
     const old_thread = current_thread orelse @panic("called scheduler.exit() from outside a thread!");
     std.debug.assert(old_thread.queue == null); // thread must not be in a queue right now
     old_thread.exit_code = code;
@@ -648,214 +659,223 @@ export fn ashet_scheduler_threadExit(code: u32) callconv(.C) noreturn {
     @panic("resumed dead thread. implementation bug in the scheduler.");
 }
 
-extern fn ashet_scheduler_switchTasks() callconv(.C) void;
-extern fn ashet_scheduler_threadTrampoline() callconv(.C) void;
+extern fn ashet_scheduler_switchTasks() callconv(scheduler_cc) void;
+extern fn ashet_scheduler_threadTrampoline() callconv(scheduler_cc) void;
 
 comptime {
-    const preamble =
-        std.fmt.comptimePrint(
-        \\.equ THREAD_SP_OFFSET, {}
-        \\.equ THREAD_IP_OFFSET, {}
+    const preamble = std.fmt.comptimePrint(
+        \\.equ THREAD_SP_OFFSET, {[sp_offset]}
+        \\.equ THREAD_IP_OFFSET, {[ip_offset]}
         \\
-    , .{ @offsetOf(Thread, "sp"), @offsetOf(Thread, "ip") });
+    , .{
+        .sp_offset = @offsetOf(Thread, "sp"),
+        .ip_offset = @offsetOf(Thread, "ip"),
+    });
 
-    switch (target) {
-        .riscv32 => asm (preamble ++
-                \\
-                \\ashet_scheduler_threadTrampoline:
-                //
-                //  we just restored the thread state from scheduler.createThread,
-                //  so s1 contains the argument to our thread entry point.
-                \\  mv a0,s3
-                //
-                //  after we successfully restored the argument, just call the actual
-                //  thread entry point
-                \\  jalr s2
-                //
-                //  then kill the thread by jumping into the exit function.
-                //  leaving a0 unchanged. This means that the return value of the
-                //  thread function will be retained into the exit() call.
-                //  There's no need to use call/jalr here, as the exit() call won't
-                //  ever return here in the first place.
-                \\  j ashet_scheduler_threadExit
-                \\
-                \\ashet_scheduler_switchTasks:
-                //
-                //  save all registers that are callee-saved to the stack
-                \\  addi sp, sp, -56 // push stack frame
-                \\  sw  x3, 52(sp)
-                \\  sw  x4, 48(sp)
-                \\  sw  x8, 44(sp)
-                \\  sw  x9, 40(sp)
-                \\  sw x18, 36(sp)
-                \\  sw x19, 32(sp)
-                \\  sw x20, 28(sp)
-                \\  sw x21, 24(sp)
-                \\  sw x22, 20(sp)
-                \\  sw x23, 16(sp)
-                \\  sw x24, 12(sp)
-                \\  sw x25, 8(sp)
-                \\  sw x26, 4(sp)
-                \\  sw x27, 0(sp)
-                //
-                //  load the current thread pointer into a0
-                \\  lui     a0, %hi(ashet_scheduler_save_thread)
-                \\  lw      a0, %lo(ashet_scheduler_save_thread)(a0)
-                //
-                //  then create a backup of the current state:
-                \\  sw sp, THREAD_SP_OFFSET(a0)
-                \\  sw ra, THREAD_IP_OFFSET(a0)
-                //
-                // then load the new thread pointer
-                \\  lui     a0, %hi(ashet_scheduler_restore_thread)
-                \\  lw      a0, %lo(ashet_scheduler_restore_thread)(a0)
-                //
-                //  and restore the previously saved state:
-                \\  lw sp, THREAD_SP_OFFSET(a0)
-                \\  lw ra, THREAD_IP_OFFSET(a0)
-                \\
-                //  then restore all registers from the stack
-                //  in the same order we saved them above
-                \\  lw  x3, 52(sp)
-                \\  lw  x4, 48(sp)
-                \\  lw  x8, 44(sp)
-                \\  lw  x9, 40(sp)
-                \\  lw x18, 36(sp)
-                \\  lw x19, 32(sp)
-                \\  lw x20, 28(sp)
-                \\  lw x21, 24(sp)
-                \\  lw x22, 20(sp)
-                \\  lw x23, 16(sp)
-                \\  lw x24, 12(sp)
-                \\  lw x25,  8(sp)
-                \\  lw x26,  4(sp)
-                \\  lw x27,  0(sp)
-                \\  addi sp, sp, 56
-                //
-                //  and jump into the new thread function
-                \\  ret
+    const main_code: []const u8 = switch (target) {
+        .riscv32 => (
+            \\
+            \\ashet_scheduler_threadTrampoline:
+            //
+            //  we just restored the thread state from scheduler.createThread,
+            //  so s1 contains the argument to our thread entry point.
+            \\  mv a0,s3
+            //
+            //  after we successfully restored the argument, just call the actual
+            //  thread entry point
+            \\  jalr s2
+            //
+            //  then kill the thread by jumping into the exit function.
+            //  leaving a0 unchanged. This means that the return value of the
+            //  thread function will be retained into the exit() call.
+            //  There's no need to use call/jalr here, as the exit() call won't
+            //  ever return here in the first place.
+            \\  j ashet_scheduler_threadExit
+            \\
+            \\ashet_scheduler_switchTasks:
+            //
+            //  save all registers that are callee-saved to the stack
+            \\  addi sp, sp, -56 // push stack frame
+            \\  sw  x3, 52(sp)
+            \\  sw  x4, 48(sp)
+            \\  sw  x8, 44(sp)
+            \\  sw  x9, 40(sp)
+            \\  sw x18, 36(sp)
+            \\  sw x19, 32(sp)
+            \\  sw x20, 28(sp)
+            \\  sw x21, 24(sp)
+            \\  sw x22, 20(sp)
+            \\  sw x23, 16(sp)
+            \\  sw x24, 12(sp)
+            \\  sw x25, 8(sp)
+            \\  sw x26, 4(sp)
+            \\  sw x27, 0(sp)
+            //
+            //  load the current thread pointer into a0
+            \\  lui     a0, %hi(ashet_scheduler_save_thread)
+            \\  lw      a0, %lo(ashet_scheduler_save_thread)(a0)
+            //
+            //  then create a backup of the current state:
+            \\  sw sp, THREAD_SP_OFFSET(a0)
+            \\  sw ra, THREAD_IP_OFFSET(a0)
+            //
+            // then load the new thread pointer
+            \\  lui     a0, %hi(ashet_scheduler_restore_thread)
+            \\  lw      a0, %lo(ashet_scheduler_restore_thread)(a0)
+            //
+            //  and restore the previously saved state:
+            \\  lw sp, THREAD_SP_OFFSET(a0)
+            \\  lw ra, THREAD_IP_OFFSET(a0)
+            \\
+            //  then restore all registers from the stack
+            //  in the same order we saved them above
+            \\  lw  x3, 52(sp)
+            \\  lw  x4, 48(sp)
+            \\  lw  x8, 44(sp)
+            \\  lw  x9, 40(sp)
+            \\  lw x18, 36(sp)
+            \\  lw x19, 32(sp)
+            \\  lw x20, 28(sp)
+            \\  lw x21, 24(sp)
+            \\  lw x22, 20(sp)
+            \\  lw x23, 16(sp)
+            \\  lw x24, 12(sp)
+            \\  lw x25,  8(sp)
+            \\  lw x26,  4(sp)
+            \\  lw x27,  0(sp)
+            \\  addi sp, sp, 56
+            //
+            //  and jump into the new thread function
+            \\  ret
         ),
 
-        .x86 => asm (preamble ++
-                \\
-                \\ashet_scheduler_threadTrampoline:
-                //  in x86, the SYS-V ABI says that the stack has to be
-                //  aligned to 16 when `call` is invoked, so let's do that:
-                \\  and $0xfffffff0, %esp
-                \\  sub $0x0C, %esp
-                //
-                //  we just restored the thread state from scheduler.createThread,
-                //  so %ebx contains the argument,
-                \\  push %ebx
-                //
-                //  and %eax contains the function to be called.
-                \\  call *%eax
-                //
-                //  remove argument from the stack again:
-                \\  addl    $4, %esp
-                //
-                //  and push the result of the function into the exit code argument.
-                \\  push %eax
-                //
-                //  then kill the thread by jumping into the exit function.
-                //  There's no need to use call here, as the exit() call won't
-                //  ever return here in the first place.
-                \\  jmp ashet_scheduler_threadExit
-                \\
-                \\ashet_scheduler_switchTasks:
-                //
-                //  save all registers that are callee-saved to the stack
-                // \\  pushf
-                \\  push %edi
-                \\  push %esi
-                \\  push %ebp
-                \\  push %edx
-                \\  push %ecx
-                \\  push %ebx
-                \\  push %eax
-                //
-                //  backup the current state:
-                \\  mov ashet_scheduler_save_thread, %eax
-                \\  mov %esp, THREAD_SP_OFFSET(%eax)
-                // \\  movl    %eip, THREAD_IP_OFFSET(%eax) // is stored on the stack on x86
-                //
-                // restore the new state:
-                \\  mov ashet_scheduler_restore_thread, %eax
-                \\  mov THREAD_SP_OFFSET(%eax), %esp
-                // \\  movl THREAD_IP_OFFSET(%eax), %eip // lol nope
-                \\
-                //  then restore all registers from the stack
-                //  in the same order we saved them above
-                \\  pop %eax
-                \\  pop %ebx
-                \\  pop %ecx
-                \\  pop %edx
-                \\  pop %ebp
-                \\  pop %esi
-                \\  pop %edi
-                // \\  popf
-                //
-                //  and jump into the new thread function
-                \\  ret
-        ),
+        .x86 => std.fmt.comptimePrint(preamble ++
+            \\
+            \\{[symbol_prefix]s}ashet_scheduler_threadTrampoline:
+            //  in x86, the SYS-V ABI says that the stack has to be
+            //  aligned to 16 when `call` is invoked, so let's do that:
+            \\  and $0xfffffff0, %esp
+            \\  sub $0x0C, %esp
+            //
+            //  we just restored the thread state from scheduler.createThread,
+            //  so %ebx contains the argument,
+            \\  push %ebx
+            //
+            //  and %eax contains the function to be called.
+            \\  call *%eax
+            //
+            //  remove argument from the stack again:
+            \\  addl    $4, %esp
+            //
+            //  and push the result of the function into the exit code argument.
+            \\  push %eax
+            //
+            //  then kill the thread by jumping into the exit function.
+            //  There's no need to use call here, as the exit() call won't
+            //  ever return here in the first place.
+            \\  jmp {[symbol_prefix]s}ashet_scheduler_threadExit
+            \\
+            \\{[symbol_prefix]s}ashet_scheduler_switchTasks:
+            //
+            //  save all registers that are callee-saved to the stack
+            // \\  pushf
+            \\  push %edi
+            \\  push %esi
+            \\  push %ebp
+            \\  push %edx
+            \\  push %ecx
+            \\  push %ebx
+            \\  push %eax
+            //
+            //  backup the current state:
+            \\  mov {[symbol_prefix]s}ashet_scheduler_save_thread, %eax
+            \\  mov %esp, THREAD_SP_OFFSET(%eax)
+            // \\  movl    %eip, THREAD_IP_OFFSET(%eax) // is stored on the stack on x86
+            //
+            // restore the new state:
+            \\  mov {[symbol_prefix]s}ashet_scheduler_restore_thread, %eax
+            \\  mov THREAD_SP_OFFSET(%eax), %esp
+            // \\  movl THREAD_IP_OFFSET(%eax), %eip // lol nope
+            \\
+            //  then restore all registers from the stack
+            //  in the same order we saved them above
+            \\  pop %eax
+            \\  pop %ebx
+            \\  pop %ecx
+            \\  pop %edx
+            \\  pop %ebp
+            \\  pop %esi
+            \\  pop %edi
+            // \\  popf
+            //
+            //  and jump into the new thread function
+            \\  ret
+        , .{
+            .symbol_prefix = if (builtin.os.tag == .windows and builtin.cpu.arch == .x86)
+                "_"
+            else
+                "",
+        }),
 
-        .thumb => asm (preamble ++
-                \\
-                // \\.thumb
-                \\.thumb_func
-                \\.global ashet_scheduler_threadTrampoline
-                \\.type ashet_scheduler_threadTrampoline, %function
-                \\ashet_scheduler_threadTrampoline:
-                //
-                //  we just restored the thread state from scheduler.createThread,
-                //  so a0 already contains the argument to our thread entry point.
-                //
-                //  after we successfully restored the argument, just call the actual
-                //  thread entry point currently stored in the IP register.
-                \\  blx ip
-                //
-                //  then kill the thread by jumping into the exit function.
-                //  leaving a0 unchanged. This means that the return value of the
-                //  thread function will be retained into the exit() call.
-                //  There's no need to use call/jalr here, as the exit() call won't
-                //  ever return here in the first place.
-                \\  b ashet_scheduler_threadExit
-                \\
-                \\.thumb_func
-                \\.global ashet_scheduler_switchTasks
-                \\.type ashet_scheduler_switchTasks, %function
-                \\ashet_scheduler_switchTasks:
-                //
-                //  save all registers that to the stack
-                \\  push {r0-r10,fp,ip}
-                //
-                //  load the current thread pointer into a0
-                \\  ldr a1, .save_thread
-                \\  ldr a1, [a1]
-                //
-                //  then create a backup of the current state:
-                \\  str sp, [a1, #THREAD_SP_OFFSET]
-                \\  str lr, [a1, #THREAD_IP_OFFSET]
-                //
-                // then load the new thread pointer
-                \\  ldr a1, .restore_thread
-                \\  ldr a1, [a1]
-                //
-                //  and restore the previously saved state:
-                \\  ldr sp, [a1, #THREAD_SP_OFFSET]
-                \\  ldr lr, [a1, #THREAD_IP_OFFSET]
-                \\
-                //  then restore all registers from the stack:
-                \\  pop {r0-r10,fp,ip}
-                //
-                //  and jump into the new thread function
-                \\  bx lr
-                \\.save_thread:
-                \\  .word ashet_scheduler_save_thread
-                \\.restore_thread:
-                \\  .word ashet_scheduler_restore_thread
+        .thumb => (
+            \\
+            // \\.thumb
+            \\.thumb_func
+            \\.global ashet_scheduler_threadTrampoline
+            \\.type ashet_scheduler_threadTrampoline, %function
+            \\ashet_scheduler_threadTrampoline:
+            //
+            //  we just restored the thread state from scheduler.createThread,
+            //  so a0 already contains the argument to our thread entry point.
+            //
+            //  after we successfully restored the argument, just call the actual
+            //  thread entry point currently stored in the IP register.
+            \\  blx ip
+            //
+            //  then kill the thread by jumping into the exit function.
+            //  leaving a0 unchanged. This means that the return value of the
+            //  thread function will be retained into the exit() call.
+            //  There's no need to use call/jalr here, as the exit() call won't
+            //  ever return here in the first place.
+            \\  b ashet_scheduler_threadExit
+            \\
+            \\.thumb_func
+            \\.global ashet_scheduler_switchTasks
+            \\.type ashet_scheduler_switchTasks, %function
+            \\ashet_scheduler_switchTasks:
+            //
+            //  save all registers that to the stack
+            \\  push {r0-r10,fp,ip}
+            //
+            //  load the current thread pointer into a0
+            \\  ldr a1, .save_thread
+            \\  ldr a1, [a1]
+            //
+            //  then create a backup of the current state:
+            \\  str sp, [a1, #THREAD_SP_OFFSET]
+            \\  str lr, [a1, #THREAD_IP_OFFSET]
+            //
+            // then load the new thread pointer
+            \\  ldr a1, .restore_thread
+            \\  ldr a1, [a1]
+            //
+            //  and restore the previously saved state:
+            \\  ldr sp, [a1, #THREAD_SP_OFFSET]
+            \\  ldr lr, [a1, #THREAD_IP_OFFSET]
+            \\
+            //  then restore all registers from the stack:
+            \\  pop {r0-r10,fp,ip}
+            //
+            //  and jump into the new thread function
+            \\  bx lr
+            \\.save_thread:
+            \\  .word ashet_scheduler_save_thread
+            \\.restore_thread:
+            \\  .word ashet_scheduler_restore_thread
         ),
 
         else => @compileError(std.fmt.comptimePrint("{s} is not a supported platform", .{@tagName(target)})),
-    }
+    };
+
+    asm (preamble ++ main_code);
 }

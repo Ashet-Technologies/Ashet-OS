@@ -1,0 +1,58 @@
+{
+    "classes": {
+        "Panel": {},
+        "Label": {
+            "properties": {
+                "text": "string"
+            }
+        },
+        "Button": {
+            "min_size": { "width": 3, "height": 12 },
+            "max_size": { "width": 32767, "height":12  },
+            "properties": {
+                "text": "string"
+            }
+        },
+        "TextBox": {
+            "min_size": { "width": 3, "height": 12 },
+            "max_size": { "width": 32767, "height":12  },
+            "properties": {
+                "text": "string"
+            }
+        },
+        "Picture": {},
+        "CheckBox": {
+            "min_size": { "width": 3, "height": 12 },
+            "max_size": { "width": 32767, "height":12  },
+            "properties": {
+                "checked": "bool"
+            }
+        },
+        "RadioButton": {
+            "min_size": { "width": 3, "height": 12 },
+            "max_size": { "width": 32767, "height":12  }
+        },
+        "HScrollBar": {
+            "min_size": { "width": 30, "height": 10 },
+            "max_size": { "width": 32767, "height":10  },
+            "properties": {
+                "minimum": "int",
+                "maximum": "int",
+                "value": "int"
+            }
+        },
+        "VScrollBar": {
+            "min_size": { "width": 10, "height": 30 },
+            "max_size": { "width": 10, "height": 32767 },
+            "properties": {
+                "minimum": "int",
+                "maximum": "int",
+                "value": "int"
+            }
+        },
+        "ToolButton": {
+            "min_size": { "width": 12, "height": 12 },
+            "max_size": { "width": 12, "height":12  }
+        }
+    }
+}

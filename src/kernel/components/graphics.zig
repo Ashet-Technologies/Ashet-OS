@@ -1,5 +1,6 @@
 const std = @import("std");
 const ashet = @import("../main.zig");
+const libashet = @import("ashet");
 const agp = @import("agp");
 const agp_swrast = @import("agp-swrast");
 
@@ -229,24 +230,48 @@ pub const Font = struct {
 var system_fonts: std.StringArrayHashMap(Font) = undefined;
 
 fn initialize_system_fonts() !void {
-    system_fonts = std.StringArrayHashMap(Font).init(ashet.memory.static_memory_allocator);
+    errdefer |e| logger.err("failed to load system fonts: {s}", .{@errorName(e)});
 
-    try system_fonts.put("sans-6", Font{
-        .system_font = true,
-        .raw_data = @embedFile("sans-6.font"),
-        .font_data = fonts.FontInstance.load(@embedFile("sans-6.font"), .{}) catch @panic("bad font: sans-6"),
-    });
+    system_fonts = .init(ashet.memory.static_memory_allocator);
 
-    try system_fonts.put("mono-6", Font{
-        .system_font = true,
-        .raw_data = @embedFile("mono-6.font"),
-        .font_data = fonts.FontInstance.load(@embedFile("mono-6.font"), .{}) catch @panic("bad font: mono-6"),
-    });
+    var fonts_dir = try libashet.fs.Directory.openDrive(.system, "system/fonts");
+    defer fonts_dir.close();
 
-    try system_fonts.put("mono-8", Font{
+    while (try fonts_dir.next()) |entry| {
+        const name = entry.getName();
+        if (!std.mem.endsWith(u8, name, ".font"))
+            continue;
+        load_system_font(fonts_dir, entry) catch {};
+    }
+}
+
+fn load_system_font(dir: libashet.fs.Directory, info: ashet.abi.FileInfo) !void {
+    const file_name = info.getName();
+    const ext = std.fs.path.extension(file_name);
+
+    const font_name = try ashet.memory.static_memory_allocator.dupe(u8, file_name[0 .. file_name.len - ext.len]);
+    errdefer ashet.memory.static_memory_allocator.free(font_name);
+
+    logger.info("Loading system font '{s}'...", .{font_name});
+    errdefer |err| logger.err("failed to load font: {s}", .{@errorName(err)});
+
+    const font_size = std.math.cast(usize, info.size) orelse return error.FileTooBig;
+
+    var font_file = try dir.openFile(file_name, .read_only, .open_existing);
+    defer font_file.close();
+
+    const font_data = try ashet.memory.static_memory_allocator.alloc(u8, font_size);
+    errdefer ashet.memory.static_memory_allocator.free(font_data);
+
+    if (try font_file.read(0, font_data) != font_data.len)
+        return error.InsufficientRead;
+
+    const instance = try fonts.FontInstance.load(font_data, .{});
+
+    try system_fonts.put(font_name, Font{
         .system_font = true,
-        .raw_data = @embedFile("mono-8.font"),
-        .font_data = fonts.FontInstance.load(@embedFile("mono-8.font"), .{}) catch @panic("bad font: mono-8"),
+        .raw_data = font_data,
+        .font_data = instance,
     });
 }
 

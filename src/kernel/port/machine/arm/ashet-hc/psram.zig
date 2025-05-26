@@ -1,6 +1,6 @@
 const std = @import("std");
 const logger = std.log.scoped(.ashet_hc_psram);
-const ashet = @import("../../../../main.zig");
+const ashet = @import("../../../../../main.zig");
 const machine = @import("ashet-hc.zig");
 
 const rp2350 = @import("rp2350");

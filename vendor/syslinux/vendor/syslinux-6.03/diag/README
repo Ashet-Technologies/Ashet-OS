@@ -1,4 +1,0 @@
-Diagnostic tools and images to assist with troubleshooting Syslinux-related issues.  See README in each directory for more details.
-
-geodsp/		Display geometry/LBA translation as the BIOS detects it.
-mbr/		Diagnostic MBRs
