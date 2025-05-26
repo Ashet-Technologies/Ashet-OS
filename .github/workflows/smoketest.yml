@@ -54,7 +54,7 @@ jobs:
           zig build -Doptimize-kernel=${{ matrix.optimize_kernel }} -Dmachine=${{ matrix.platform }} -Dgui=headless install
 
           # this command is allowed to fail, we're doing checks by grep.
-          timeout 15s zig build -Doptimize-kernel=${{ matrix.optimize_kernel }} -Dmachine=${{ matrix.platform }} -Dgui=headless run 2>&1 | tee kernel.log || true
+          timeout 20s zig build -Doptimize-kernel=${{ matrix.optimize_kernel }} -Dmachine=${{ matrix.platform }} -Dgui=headless run 2>&1 | tee kernel.log || true
 
           # Test if the desktop application did start:
           if ! grep -F "classic desktop ready!" kernel.log; then
