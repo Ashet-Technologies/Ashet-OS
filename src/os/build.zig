@@ -201,7 +201,7 @@ pub fn build(b: *std.Build) void {
     // Phase 5: Create disk
     const disk_image = switch (machine) {
         .@"x86-pc-bios" => blk: {
-            const raw_disk_file = disk_image_tools.createDisk(500 * DiskBuildInterface.MiB, .{
+            const raw_disk_file = disk_image_tools.createDisk(40 * DiskBuildInterface.MiB, .{
                 .mbr_part_table = .{
                     .bootloader = null, // will be installed by InstallBootloaderStep
                     .partitions = .{
