@@ -1,71 +1,32 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const requirements_spec =
-    \\case-converter>=1.1.0
-    \\lark>=1.1
-    \\pyinstaller>=6.9.0
-;
-
 pub fn build(b: *std.Build) void {
-    const create_venv_step = b.step("venv", "Creates the python venv");
     const test_step = b.step("test", "Runs the test suite");
 
     const abi_schema_mod = b.addModule("abi-schema", .{
         .root_source_file = b.path("src/json-schema.zig"),
     });
 
-    const global_python3 = b.findProgram(&.{
-        "python3.11",
-        "python3",
-        "python",
-    }, &.{}) catch |err| fail("python3 not found: {s}", .{@errorName(err)});
+    const python3_dep = b.dependency("cpython", .{ .optimize = .ReleaseFast });
+    const lark_dep = b.dependency("lark", .{});
+    const caseconverter_dep = b.dependency("caseconverter", .{});
 
-    const pyversion = b.run(&.{ global_python3, "--version" });
+    const pydeps_folder = b.addWriteFiles();
 
-    if (!std.ascii.lessThanIgnoreCase("Python 3.11", pyversion))
-        fail("Python version must be at least 3.11, but found {s}", .{pyversion});
+    _ = pydeps_folder.addCopyDirectory(python3_dep.path("Lib"), ".", .{});
+    _ = pydeps_folder.addCopyDirectory(lark_dep.path("lark"), "lark", .{});
+    _ = pydeps_folder.addCopyDirectory(caseconverter_dep.path("caseconverter"), "caseconverter", .{});
 
-    const create_pyenv = b.addSystemCommand(&.{
-        global_python3,
-        "-m",
-        "venv",
-    });
-    const pyenv = create_pyenv.addOutputDirectoryArg("venv");
-
-    const pyenv_python3 = if (builtin.os.tag == .windows)
-        pyenv.path(b, "Scripts/python.exe")
-    else
-        pyenv.path(b, "bin/python");
-
-    const write_reqs_file = b.addWriteFiles();
-    const reqs_file = write_reqs_file.add("requirements.txt", requirements_spec);
-
-    const pyenv_install_packages = add_run_script(b, pyenv_python3);
-
-    pyenv_install_packages.addArg("-m");
-    pyenv_install_packages.addArg("pip");
-    pyenv_install_packages.addArg("install");
-    pyenv_install_packages.addArg("-r");
-    pyenv_install_packages.addFileArg(reqs_file); // we need to use a
-    pyenv_install_packages.addArg("--log");
-    const install_log = pyenv_install_packages.addOutputFileArg("pip.log");
-
-    const venv_info_printer = b.addSystemCommand(&.{"echo"});
-    install_log.addStepDependencies(&venv_info_printer.step);
-
-    venv_info_printer.addArg("python3=");
-    venv_info_printer.addFileArg(pyenv_python3);
-
-    create_venv_step.dependOn(&venv_info_printer.step);
+    const python3_exe = python3_dep.artifact("cpython");
 
     const abi_mapper_py = b.path("src/abi-mapper.py");
     const grammar_file = b.path("src/minizig.lark");
 
     const python_wrapper_options = b.addOptions();
-    python_wrapper_options.addOptionPath("interpreter", pyenv_python3);
+    python_wrapper_options.addOptionPath("interpreter", python3_exe.getEmittedBin());
     python_wrapper_options.addOptionPath("script", abi_mapper_py);
-    python_wrapper_options.step.dependOn(&pyenv_install_packages.step);
+    python_wrapper_options.addOptionPath("python_prefix", pydeps_folder.getDirectory());
 
     const python_wrapper = b.addExecutable(.{
         .name = "abi-mapper",
