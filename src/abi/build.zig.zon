@@ -1,6 +1,7 @@
 .{
     .name = .ashet_abi,
     .version = "0.1.0",
+    .fingerprint = 0xda22a364bb841835,
     .paths = .{
         "build.zig",
         "build.zig.zon",
