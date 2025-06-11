@@ -34,51 +34,48 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(render_exe);
 
-    const abi_v2_def = b.path("src/abi.zabi");
+    {
+        const abi_v2_def = b.path("src/abi.zabi");
 
-    const abi_code = abi_mapper.convert_abi_file(abi_v2_def, .definition);
-    const provider_code = abi_mapper.convert_abi_file(abi_v2_def, .kernel);
-    const consumer_code = abi_mapper.convert_abi_file(abi_v2_def, .userland);
-    const abi_json = abi_mapper.get_json_dump(abi_v2_def);
+        const new_abi_json = abi_mapper.get_json_dump(abi_v2_def);
 
-    const abi_mod = b.addModule("ashet-abi", .{
-        .root_source_file = abi_code,
-    });
-    abi_mod.addAnonymousImport("async_running_call", .{
-        .root_source_file = b.path("src/async_running_call.zig"),
-    });
-    abi_mod.addAnonymousImport("error_set", .{
-        .root_source_file = b.path("src/error_set.zig"),
-    });
-    abi_mod.addAnonymousImport("platforms", .{
-        .root_source_file = b.path("src/platforms.zig"),
-    });
+        const update_sources = b.addUpdateSourceFiles();
+        update_sources.addCopyFileToSource(new_abi_json, "src/ashet-abi.json");
+        regenerate_step.dependOn(&update_sources.step);
+    }
+
+    const abi_json = b.path("src/ashet-abi.json");
+
+    const abi_code = convert_abi_file(b, render_exe, abi_json, .definition);
+    const provider_code = convert_abi_file(b, render_exe, abi_json, .kernel);
+    const consumer_code = convert_abi_file(b, render_exe, abi_json, .userland);
+
+    const abi_mod = b.addModule("ashet-abi", .{ .root_source_file = abi_code });
+    abi_mod.addAnonymousImport("async_running_call", .{ .root_source_file = b.path("src/async_running_call.zig") });
+    abi_mod.addAnonymousImport("error_set", .{ .root_source_file = b.path("src/error_set.zig") });
+    abi_mod.addAnonymousImport("platforms", .{ .root_source_file = b.path("src/platforms.zig") });
 
     _ = b.addModule("ashet-abi-provider", .{
         .root_source_file = provider_code,
-        .imports = &.{
-            .{ .name = "abi", .module = abi_mod },
-        },
+        .imports = &.{.{ .name = "abi", .module = abi_mod }},
     });
 
     _ = b.addModule("ashet-abi-consumer", .{
         .root_source_file = consumer_code,
-        .imports = &.{
-            .{ .name = "abi", .module = abi_mod },
-        },
+        .imports = &.{.{ .name = "abi", .module = abi_mod }},
     });
 
-    _ = b.addModule("ashet-abi.json", .{
-        .root_source_file = abi_json,
-    });
+    _ = b.addModule("ashet-abi.json", .{ .root_source_file = abi_json });
 
     debug.dependOn(&b.addInstallFile(abi_code, "abi.zig").step);
     debug.dependOn(&b.addInstallFile(provider_code, "provider.zig").step);
     debug.dependOn(&b.addInstallFile(consumer_code, "consumer.zig").step);
+}
 
-    const update_sources = b.addUpdateSourceFiles();
-
-    update_sources.addCopyFileToSource(abi_json, "src/ashet-abi.json");
-
-    regenerate_step.dependOn(&update_sources.step);
+pub fn convert_abi_file(b: *std.Build, render: *std.Build.Step.Compile, input: std.Build.LazyPath, mode: enum { userland, kernel, definition, stubs }) std.Build.LazyPath {
+    const generate_core_abi = b.addRunArtifact(render);
+    generate_core_abi.addArg(@tagName(mode));
+    generate_core_abi.addFileArg(input);
+    const abi_zig = generate_core_abi.addOutputFileArg(b.fmt("{s}.zig", .{@tagName(mode)}));
+    return abi_zig;
 }
