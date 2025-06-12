@@ -62,7 +62,7 @@ ptr_mods: ptr_const? ptr_volatile? ptr_align?
     ptr_volatile: "volatile"
     ptr_align: "align" "(" value ")"
 
-doc_comment: doc_comment_line doc_comment_line *
+doc_comment: doc_comment_line+
 
 value: integer | identifier
 
@@ -71,7 +71,7 @@ identifier: /[a-zA-Z_0-9\.]+|@"[^"+]"/
 integer: /-?\d+/
 
 doc_comment_line: /\/\/\/[^\n]*/
-COMMENT:          /\/\/[^\n]*/
+COMMENT:          /#[^\n]*/
 
 EVERYTHING:       /.+/s
 

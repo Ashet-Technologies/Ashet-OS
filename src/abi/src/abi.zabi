@@ -1,11 +1,11 @@
-//!
-//! WARNING:
-//!     THIS FILE CONTAINS A DSL THAT LOOKS LIKE ZIG BUT NEEDS TO BE
-//!     PROCESSED BY `tools/abi-mapper.py` IN ORDER TO BE COMPILABLE!
-//!
+#
+# WARNING:
+#     THIS FILE CONTAINS A DSL THAT LOOKS LIKE ZIG BUT NEEDS TO BE
+#     PROCESSED BY `tools/abi-mapper.py` IN ORDER TO BE COMPILABLE!
+#
 
 ///////////////////////////////////////////////////////////
-// Syscalls & Asynchronous/Overlapped Operations
+# Syscalls & Asynchronous/Overlapped Operations
 
 /// All syscalls related to generic resource management.
 const resources = struct {
@@ -239,18 +239,18 @@ const video = struct {
         output: VideoOutput,
     ) error{InvalidHandle}!void;
 
-    // /// Returns a pointer to the current palette. Changing this palette
-    // /// will directly change the associated colors on the screen.
-    // /// If `null` is returned, no direct access to the video palette is possible.
-    //  fn get_palette_memory(*VideoOutput) ?*[palette_size]Color;
+    # /// Returns a pointer to the current palette. Changing this palette
+    # /// will directly change the associated colors on the screen.
+    # /// If `null` is returned, no direct access to the video palette is possible.
+    #  fn get_palette_memory(*VideoOutput) ?*[palette_size]Color;
 
-    // /// Returns the maximum possible screen resolution.
-    //  fn get_max_resolution(*VideoOutput) Size;
+    # /// Returns the maximum possible screen resolution.
+    #  fn get_max_resolution(*VideoOutput) Size;
 
-    // /// Sets the screen resolution. Legal values are between 1×1 and the platform specific
-    // /// maximum resolution returned by `video.getMaxResolution()`.
-    // /// Everything out of bounds will be clamped into that range.
-    //  fn change_resolution(*VideoOutput, u16, u16) void;
+    # /// Sets the screen resolution. Legal values are between 1×1 and the platform specific
+    # /// maximum resolution returned by `video.getMaxResolution()`.
+    # /// Everything out of bounds will be clamped into that range.
+    #  fn change_resolution(*VideoOutput, u16, u16) void;
 };
 
 const random = struct {
@@ -278,17 +278,17 @@ const input = struct {
 };
 
 const network = struct {
-    // getStatus: FnPtr(fn () NetworkStatus),
-    // ping: FnPtr(fn ([*]Ping, usize) void),
-    // TODO: Implement NIC-specific queries (mac, ips, names, ...)
+    # getStatus: FnPtr(fn () NetworkStatus),
+    # ping: FnPtr(fn ([*]Ping, usize) void),
+    # TODO: Implement NIC-specific queries (mac, ips, names, ...)
 
     const dns = struct {
-        // resolves the dns entry `host` for the given `service`.
-        // - `host` is a legal dns entry
-        // - `port` is either a port number
-        // - `buffer` and `limit` define a structure where all resolved IPs can be stored.
-        // Function returns the number of host entries found or 0 if the host name could not be resolved.
-        //  fn @"resolve" (host: [*:0]const u8, port: u16, buffer: [*]EndPoint, limit: usize) usize;
+        # resolves the dns entry `host` for the given `service`.
+        # - `host` is a legal dns entry
+        # - `port` is either a port number
+        # - `buffer` and `limit` define a structure where all resolved IPs can be stored.
+        # Function returns the number of host entries found or 0 if the host name could not be resolved.
+        #  fn @"resolve" (host: [*:0]const u8, port: u16, buffer: [*]EndPoint, limit: usize) usize;
 
     };
 
@@ -617,7 +617,7 @@ pub const fs = struct {
         Exists,
     }!void;
 
-    // GROUP: modification
+    # GROUP: modification
 
     /// moves a file or directory between two unrelated directories. Can also move between different file systems.
     /// NOTE: This syscall might copy the data.
@@ -650,7 +650,7 @@ pub const fs = struct {
         NoSpaceLeft,
     }!void;
 
-    // // GROUP: file handling
+    # // GROUP: file handling
 
     /// opens a file from the given directory.
     extern "async" fn OpenFile(
@@ -823,7 +823,7 @@ const sync = struct {
 };
 
 const draw = struct {
-    // Fonts:
+    # Fonts:
 
     /// Returns the font data for the given font name, if any.
     extern fn get_system_font(font_name: []const u8) error{
@@ -840,7 +840,7 @@ const draw = struct {
     /// Returns true if the given font is a system-owned font.
     extern fn is_system_font(Font) bool;
 
-    // Framebuffer management:
+    # Framebuffer management:
 
     /// Creates a new in-memory framebuffer that can be used for offscreen painting.
     extern fn create_memory_framebuffer(size: Size) error{SystemResources}!Framebuffer;
@@ -869,9 +869,9 @@ const draw = struct {
     /// perform an update action if necessary.
     extern fn invalidate_framebuffer(Framebuffer, Rectangle) void;
 
-    // Drawing:
+    # Drawing:
 
-    // TODO: fn annotate_text(*Framebuffer, area: Rectangle, text: []const u8) AnnotationError;
+    # TODO: fn annotate_text(*Framebuffer, area: Rectangle, text: []const u8) AnnotationError;
 
     /// Renders the provided Ashet Graphics Protocol `sequence` into `target` framebuffer.
     ///
@@ -909,7 +909,7 @@ const gui = struct {
         result: MessageBoxResult,
     };
 
-    // Window API:
+    # Window API:
 
     /// Spawns a new window.
     extern fn create_window(
@@ -956,9 +956,9 @@ const gui = struct {
         event: WindowEvent,
     };
 
-    // TODO: gui.app_menu
+    # TODO: gui.app_menu
 
-    // Widget API:
+    # Widget API:
 
     /// Create a new widget identified by `uuid` on the given `window`.
     /// Position and size of the widget are undetermined at start and a call to `place_widget` should be performed on success.
@@ -988,11 +988,11 @@ const gui = struct {
     /// The size of this must be known and cannot be queried.
     extern fn get_widget_data(Widget) [*]align(16) u8;
 
-    // Context Menu API:
+    # Context Menu API:
 
-    // TODO: gui.context_menu
+    # TODO: gui.context_menu
 
-    // Desktop Server API:
+    # Desktop Server API:
 
     /// Creates a new desktop with the given name.
     extern fn create_desktop(
@@ -1003,7 +1003,7 @@ const gui = struct {
         SystemResources,
     }!Desktop;
 
-    // TODO: Function to get the "current"/"primary"/"associated" desktop server, how?
+    # TODO: Function to get the "current"/"primary"/"associated" desktop server, how?
 
     /// Returns the name of the provided desktop.
     extern fn get_desktop_name(Desktop) error{InvalidHandle}![*:0]const u8;
@@ -1134,7 +1134,7 @@ pub const SyncEvent = struct(SystemResource) {};
 
 pub const Mutex = struct(SystemResource) {};
 
-usingnamespace zig; // regular code beyond this
+usingnamespace zig; # regular code beyond this
 
 // pub const ARC = extern struct {
 //     type: ARC_Type,
@@ -2849,23 +2849,3 @@ pub const EndPoint = extern struct {
         return EndPoint{ .ip = ip, .port = port };
     }
 };
-
-///////////////////////////////////////////////////////////
-// Callback types:
-
-///////////////////////////////////////////////////////////
-// Legacy:
-
-// pub const NetworkStatus = enum(u8) {
-//     disconnected = 0, // no cable is plugged in
-//     mac_available = 1, // cable is plugged in and connected, no DHCP or static IP performed yet
-//     ip_available = 2, // interface got at least one IP assigned
-//     gateway_available = 3, // the gateway, if any, is reachable
-// };
-
-// pub const Ping = extern struct {
-//     destination: IP, // who to ping
-//     ttl: u16, // hops
-//     timeout: u16, // ms, a minute timeout for ping is enough. if you have a higher ping, you have other problems
-//     response: u16 = undefined, // response time in ms
-// };
