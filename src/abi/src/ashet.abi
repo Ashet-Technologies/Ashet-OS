@@ -1,32 +1,31 @@
+//? TODO: pub const AbstractFunction = *const fn () callconv(.C) void;
 
-// TODO: pub const AbstractFunction = *const fn () callconv(.C) void;
-
-// TODO: pub const ThreadFunction = *const fn (?*anyopaque) callconv(.C) u32;
+//? TODO: pub const ThreadFunction = *const fn (?*anyopaque) callconv(.C) u32;
 
 /// All syscalls related to generic resource management.
 namespace resources {
     /// Returns the type of the system resource.
     syscall get_type {
-        in      _param0: SystemResource,
-        error   InvalidHandle,
-        returns SystemResource.Type,
+        in     @"resource": SystemResource;
+        error  InvalidHandle;
+        return @SystemResourceType();
     }
     
     /// Returns the current owner of this resource.
     syscall get_owners {
-        in      _param0: SystemResource,
-        in      owners: ?[]Process,
-        returns usize,
+        in     @"resource": SystemResource;
+        in     owners: ?[]Process;
+        return usize;
     }
     
     /// Adds the process to the owners of this resource, so the process
     /// can safely access it without fear of having a use-after-free.
     syscall send_to_process {
-        in      _param0: SystemResource,
-        in      _param1: Process,
-        error   DeadProcess,
-        error   InvalidHandle,
-        error   SystemResources,
+        in    @"resource": SystemResource;
+        in    target: Process;
+        error DeadProcess;
+        error InvalidHandle;
+        error SystemResources;
     }
     
     /// Drops the ownership of the resource for the current process.
@@ -35,7 +34,7 @@ namespace resources {
     /// The handle must be assumed invalid for this process after
     /// this function returns.
     syscall release {
-        in      _param0: SystemResource,
+        in      @"resource": SystemResource;
     }
     
     /// Immediatly destroys the resource and releases its memory.
@@ -43,9 +42,8 @@ namespace resources {
     /// NOTE: This will *always* destroy the resource, even if it's
     /// also owned by another process.
     syscall destroy {
-        in      _param0: SystemResource,
+        in      @"resource": SystemResource;
     }
-    
 }
 
 namespace overlapped {
@@ -58,9 +56,9 @@ namespace overlapped {
     /// operation is returned to userland.
     /// 
     syscall schedule {
-        in      async_call: *ARC,
-        error   AlreadyScheduled,
-        error   SystemResources,
+        in      @"async_call": *ARC;
+        error   AlreadyScheduled;
+        error   SystemResources;
     }
     
     /// Awaits one or more scheduled asynchronous operations and returns the
@@ -74,10 +72,10 @@ namespace overlapped {
     /// NOTE: For blocking operations, this function will suspend the current
     /// thread until the request has been completed.
     syscall await_completion {
-        in      completed: []*ARC,
-        in      options: Await_Options,
-        error   Unscheduled,
-        returns usize,
+        in     completed: []*ARC;
+        in     options: Await_Options;
+        error  Unscheduled;
+        return usize;
     }
     
     /// Awaits one or more explictic asynchronous operations and returns the
@@ -102,10 +100,10 @@ namespace overlapped {
     /// NOTE: For blocking operations, this function will suspend the current
     /// thread until the request has been completed.
     syscall await_completion_of {
-        in      events: []?*ARC,
-        error   InvalidOperation,
-        error   Unscheduled,
-        returns usize,
+        in      events: []?*ARC;
+        error   InvalidOperation;
+        error   Unscheduled;
+        return usize;
     }
     
     /// Cancels an asynchronous call.
@@ -114,9 +112,9 @@ namespace overlapped {
     /// 
     /// NOTE: The cancelled operation will not be returned by `await` anymore.
     syscall cancel {
-        in      aop: *ARC,
-        error   Completed,
-        error   Unscheduled,
+        in      aop: *ARC;
+        error   Completed;
+        error   Unscheduled;
     }
     
 }
@@ -125,53 +123,53 @@ namespace overlapped {
 namespace process {
     /// Returns a pointer to the file name of the process.
     syscall get_file_name {
-        in      _param0: ?Process,
-        returns str,
+        in      _param0: ?Process;
+        return str;
     }
     
     /// Returns the base address of the process.
     syscall get_base_address {
-        in      _param0: ?Process,
-        returns usize,
+        in      _param0: ?Process;
+        return usize;
     }
     
     /// Returns the arguments that were passed to this process in `Spawn`.
     syscall get_arguments {
-        in      _param0: ?Process,
-        in      argv: ?[]SpawnProcessArg,
-        returns usize,
+        in      _param0: ?Process;
+        in      argv: ?[]SpawnProcessArg;
+        return usize;
     }
     
     /// Terminates the current process with the given exit code
     syscall terminate {
-        in      exit_code: ExitCode,
-        returns noreturn,
+        in      exit_code: ExitCode;
+        return noreturn;
     }
     
     /// Terminates a foreign process.
     /// If the current process is passed, this function will not return
     syscall kill {
-        in      _param0: Process,
+        in      _param0: Process;
     }
     
     /// Spawns a new process
     async_call Spawn {
         /// Relative base directory for `path`.
-        in      dir: Directory,
+        in      dir: Directory;
         /// File name of the executable relative to `dir`.
-        in      path: str,
+        in      path: str;
         /// The arguments passed to the process.
         /// If a `SystemResource` is passed, it will receive the created process as a owning process.
         /// It is safe to release the resource in this process as soon as this operation returns.
-        in      argv: []const SpawnProcessArg,
+        in      argv: []const SpawnProcessArg;
         /// Handle to the spawned process.
-        out     process: Process,
-        error   BadExecutable,
-        error   DiskError,
-        error   FileNotFound,
-        error   InvalidHandle,
-        error   InvalidPath,
-        error   SystemResources,
+        out     process: Process;
+        error   BadExecutable;
+        error   DiskError;
+        error   FileNotFound;
+        error   InvalidHandle;
+        error   InvalidPath;
+        error   SystemResources;
     }
     
     namespace thread {
@@ -182,29 +180,29 @@ namespace process {
         
         /// Terminates the current thread.
         syscall exit {
-            in      exit_code: ExitCode,
-            returns noreturn,
+            in      exit_code: ExitCode;
+            return noreturn;
         }
         
         /// Waits for the thread to exit and returns its return code.
         syscall join {
-            in      _param0: Thread,
-            returns ExitCode,
+            in      _param0: Thread;
+            return ExitCode;
         }
         
         /// Spawns a new thread with `function` passing `arg` to it.
         /// If `stack_size` is not 0, will create a stack with the given size.
         syscall spawn {
-            in      function: ThreadFunction,
-            in      arg: ?*anyopaque,
-            in      stack_size: usize,
-            returns ?Thread,
+            in      function: ThreadFunction;
+            in      arg: ?*anyopaque;
+            in      stack_size: usize;
+            return ?Thread;
         }
         
         /// Kills the given thread with `exit_code`.
         syscall kill {
-            in      _param0: Thread,
-            in      exit_code: ExitCode,
+            in      _param0: Thread;
+            in      exit_code: ExitCode;
         }
         
     }
@@ -212,79 +210,75 @@ namespace process {
     namespace debug {
         /// Writes to the system debug log.
         syscall write_log {
-            in      log_level: LogLevel,
-            in      message: str,
+            in      log_level: LogLevel;
+            in      message: str;
         }
         
         /// Stops the process and allows debugging.
         syscall breakpoint {
         }
-        
     }
     
     namespace memory {
         /// Allocates memory
         syscall allocate {
-            in      size: usize,
-            in      ptr_align: u8,
-            returns ?[*]u8,
+            in      size: usize;
+            in      ptr_align: u8;
+            return ?[*]u8;
         }
         
         /// Returns memory to the systme.
         syscall release {
-            in      mem: []u8,
-            in      ptr_align: u8,
+            in      mem: []u8;
+            in      ptr_align: u8;
         }
-        
     }
     
     namespace monitor {
         /// Queries all owned resources by a process.
         syscall enumerate_processes {
-            in      processes: ?[]Process,
-            returns usize,
+            in      processes: ?[]Process;
+            return usize;
         }
         
         /// Queries all owned resources by a process.
         syscall query_owned_resources {
-            in      owner: Process,
-            in      reslist: ?[]SystemResource,
-            returns usize,
+            in      owner: Process;
+            in      reslist: ?[]SystemResource;
+            return usize;
         }
         
         /// Returns the total number of bytes the process takes up in RAM.
         syscall query_total_memory_usage {
-            in      proc: Process,
-            returns usize,
+            in      proc: Process;
+            return usize;
         }
         
         /// Returns the number of dynamically allocated bytes for this process.
         syscall query_dynamic_memory_usage {
-            in      proc: Process,
-            returns usize,
+            in      proc: Process;
+            return usize;
         }
         
         /// Returns the number of total memory objects this process has right now.
         syscall query_active_allocation_count {
-            in      proc: Process,
-            returns usize,
+            in      proc: Process;
+            return usize;
         }
-        
     }
-    
 }
 
 namespace clock {
     /// Returns the time in nanoseconds since system startup.
     /// This clock is monotonically increasing.
     syscall monotonic {
-        returns Absolute,
+        return Absolute;
     }
     
     /// Sleeps until `clock.monotonic()` returns at least `timeout`.
     async_call Timer {
         /// Monotonic timestamp in nanoseconds until the operation completes.
-        in      timeout: Absolute,
+        in      timeout: Absolute;
     }
     
 }
@@ -295,13 +289,13 @@ namespace datetime {
     /// The return value is signed because it is possible to have a date that is
     /// before the epoch.
     syscall now {
-        returns DateTime,
+        return DateTime;
     }
     
     /// Sleeps until `datetime.now()` returns a point in  time that comes after `when`.
     async_call Alarm {
         /// Earliest possible date time of when the alarm triggers.
-        in      when: DateTime,
+        in      when: DateTime;
     }
     
 }
@@ -309,45 +303,45 @@ namespace datetime {
 namespace video {
     /// Returns a list of all video outputs.
     /// 
-    /// If `ids` is `null`, the total number of available outputs is returned,
+    /// If `ids` is `null`, the total number of available outputs is returned;
     /// otherwise, up to `ids.len` elements are written into the provided array
     /// and the number of written elements is returned.
     syscall enumerate {
-        in      ids: ?[]VideoOutputID,
-        returns usize,
+        in      ids: ?[]VideoOutputID;
+        return usize;
     }
     
     /// Acquire exclusive access to a video output.
     syscall acquire {
-        in      _param0: VideoOutputID,
-        error   NotAvailable,
-        error   NotFound,
-        error   SystemResources,
-        returns VideoOutput,
+        in      _param0: VideoOutputID;
+        error   NotAvailable;
+        error   NotFound;
+        error   SystemResources;
+        return VideoOutput;
     }
     
     /// Returns the current resolution
     syscall get_resolution {
-        in      _param0: VideoOutput,
-        error   InvalidHandle,
-        returns Size,
+        in      _param0: VideoOutput;
+        error   InvalidHandle;
+        return Size;
     }
     
     /// Returns a pointer to linear video memory, row-major.
     /// Pixels rows will have a stride of the current video buffer width.
     /// The first pixel in the memory is the top-left pixel.
     syscall get_video_memory {
-        in      _param0: VideoOutput,
-        error   InvalidHandle,
-        returns VideoMemory,
+        in      _param0: VideoOutput;
+        error   InvalidHandle;
+        return VideoMemory;
     }
     
     /// Completes when the video output has fully scanned out an image and is now performing the v-blanking.
     /// 
     /// This allows frame-synchronized presentation of video data.
     async_call WaitForVBlank {
-        in      output: VideoOutput,
-        error   InvalidHandle,
+        in      output: VideoOutput;
+        error   InvalidHandle;
     }
     
 }
@@ -358,7 +352,7 @@ namespace random {
     /// If the entropy pool runs out of entropy bits, this call does not block
     /// and draw bytes from the pool.
     syscall get_soft_random {
-        in      data: []u8,
+        in      data: bytebuf;
     }
     
     /// Fills the provided buffer with given length amount of random bytes.
@@ -366,143 +360,143 @@ namespace random {
     /// This call blocks until the entropy pool has enough entropy to fill
     /// an entire hash to draw from.
     async_call GetStrictRandom {
-        in      data: []u8,
+        in      data: bytebuf;
     }
-    
 }
 
 namespace input {
     /// Waits for an input event and completes when any input was done.
     async_call GetEvent {
-        out     event: InputEvent,
-        error   InProgress,
-        error   NonExclusiveAccess,
+        out     event: InputEvent;
+        error   InProgress;
+        error   NonExclusiveAccess;
     }
-    
 }
 
 namespace network {
     enum IP_Type : u8 { 
-        item ipv4, 
-        item ipv6,
+        item ipv4;
+        item ipv6;
     }
 
     struct IPv4 {
-        field addr: [4]u8 align(4),
+        field addr: [4]u8 ; //? TODO: align(4)
     }
 
     struct IPv6 {
-        field addr: [16]u8 align(4),
-        field zone: u8,
+        field addr: [16]u8; //? TODO: align(4) 
+        field zone: u8;
     }
 
     struct IP {
-        field type: IP_Type,
-        field addr: union {
-            v4: IPv4,
-            v6: IPv6,
-        },
+        field type: IP_Type;
+        field addr: AnyAddr;
+
+        union AnyAddr {
+            field v4: IPv4;
+            field v6: IPv6;
+        }
     }
 
     struct EndPoint {
-        field ip: IP,
-        field port: u16,
+        field ip: IP;
+        field port: u16;
     }
 
     namespace dns {
-        // TODO
+        //? TODO
     }
     
     namespace udp {
         /// Creates a new TCP socket.
         syscall create_socket {
-            error   SystemResources,
-            returns UdpSocket,
+            error   SystemResources;
+            return UdpSocket;
         }
         
         async_call Bind {
-            in      socket: UdpSocket,
-            in      bind_point: EndPoint,
-            out     bind_point: EndPoint,
-            error   AddressInUse,
-            error   IllegalValue,
-            error   InvalidHandle,
-            error   SystemResources,
+            in      socket: UdpSocket;
+            in      bind_point: EndPoint;
+            out     bind_point: EndPoint;
+            error   AddressInUse;
+            error   IllegalValue;
+            error   InvalidHandle;
+            error   SystemResources;
         }
         
         async_call Connect {
-            in      socket: UdpSocket,
-            in      target: EndPoint,
-            error   AlreadyConnected,
-            error   AlreadyConnecting,
-            error   BufferError,
-            error   IllegalArgument,
-            error   IllegalValue,
-            error   InProgress,
-            error   InvalidHandle,
-            error   LowlevelInterfaceError,
-            error   OutOfMemory,
-            error   Routing,
-            error   SystemResources,
-            error   Timeout,
+            in      socket: UdpSocket;
+            in      target: EndPoint;
+            error   AlreadyConnected;
+            error   AlreadyConnecting;
+            error   BufferError;
+            error   IllegalArgument;
+            error   IllegalValue;
+            error   InProgress;
+            error   InvalidHandle;
+            error   LowlevelInterfaceError;
+            error   OutOfMemory;
+            error   Routing;
+            error   SystemResources;
+            error   Timeout;
         }
         
         async_call Disconnect {
-            in      socket: UdpSocket,
-            error   InvalidHandle,
-            error   NotConnected,
-            error   SystemResources,
+            in      socket: UdpSocket;
+            error   InvalidHandle;
+            error   NotConnected;
+            error   SystemResources;
         }
         
         async_call Send {
-            in      socket: UdpSocket,
-            in      data: []const u8,
-            out     bytes_sent: usize,
-            error   BufferError,
-            error   IllegalArgument,
-            error   IllegalValue,
-            error   InProgress,
-            error   InvalidHandle,
-            error   LowlevelInterfaceError,
-            error   NotConnected,
-            error   OutOfMemory,
-            error   Routing,
-            error   SystemResources,
-            error   Timeout,
+            in      socket: UdpSocket;
+            in      data: bytestr;
+            out     bytes_sent: usize;
+            error   BufferError;
+            error   IllegalArgument;
+            error   IllegalValue;
+            error   InProgress;
+            error   InvalidHandle;
+            error   LowlevelInterfaceError;
+            error   NotConnected;
+            error   OutOfMemory;
+            error   Routing;
+            error   SystemResources;
+            error   Timeout;
         }
         
         async_call SendTo {
-            in      socket: UdpSocket,
-            in      receiver: EndPoint,
-            in      data: []const u8,
-            out     bytes_sent: usize,
-            error   BufferError,
-            error   IllegalArgument,
-            error   IllegalValue,
-            error   InProgress,
-            error   InvalidHandle,
-            error   LowlevelInterfaceError,
-            error   OutOfMemory,
-            error   Routing,
-            error   SystemResources,
-            error   Timeout,
+            in      socket: UdpSocket;
+            in      receiver: EndPoint;
+            in      data: bytestr;
+            out     bytes_sent: usize;
+            error   BufferError;
+            error   IllegalArgument;
+            error   IllegalValue;
+            error   InProgress;
+            error   InvalidHandle;
+            error   LowlevelInterfaceError;
+            error   OutOfMemory;
+            error   Routing;
+            error   SystemResources;
+            error   Timeout;
         }
         
         async_call ReceiveFrom {
-            in      socket: UdpSocket,
-            in      buffer: []u8,
-            out     bytes_received: usize,
-            out     sender: EndPoint,
-            error   BufferError,
-            error   IllegalArgument,
-            error   IllegalValue,
-            error   InProgress,
-            error   InvalidHandle,
-            error   LowlevelInterfaceError,
-            error   OutOfMemory,
-            error   Routing,
-            error   SystemResources,
-            error   Timeout,
+            in      socket: UdpSocket;
+            in      buffer: bytebuf;
+            out     bytes_received: usize;
+            out     sender: EndPoint;
+            error   BufferError;
+            error   IllegalArgument;
+            error   IllegalValue;
+            error   InProgress;
+            error   InvalidHandle;
+            error   LowlevelInterfaceError;
+            error   OutOfMemory;
+            error   Routing;
+            error   SystemResources;
+            error   Timeout;
         }
         
     }
@@ -510,82 +504,82 @@ namespace network {
     namespace tcp {
         /// Creates a new UDP socket.
         syscall create_socket {
-            error   SystemResources,
-            returns TcpSocket,
+            error   SystemResources;
+            return TcpSocket;
         }
         
         async_call Bind {
-            in      socket: TcpSocket,
-            in      bind_point: EndPoint,
-            out     bind_point: EndPoint,
-            error   AddressInUse,
-            error   IllegalValue,
-            error   InvalidHandle,
-            error   SystemResources,
+            in      socket: TcpSocket;
+            in      bind_point: EndPoint;
+            out     bind_point: EndPoint;
+            error   AddressInUse;
+            error   IllegalValue;
+            error   InvalidHandle;
+            error   SystemResources;
         }
         
         async_call Connect {
-            in      socket: TcpSocket,
-            in      target: EndPoint,
-            error   AlreadyConnected,
-            error   AlreadyConnecting,
-            error   BufferError,
-            error   ConnectionAborted,
-            error   ConnectionClosed,
-            error   ConnectionReset,
-            error   IllegalArgument,
-            error   IllegalValue,
-            error   InProgress,
-            error   InvalidHandle,
-            error   LowlevelInterfaceError,
-            error   OutOfMemory,
-            error   Routing,
-            error   SystemResources,
-            error   Timeout,
+            in      socket: TcpSocket;
+            in      target: EndPoint;
+            error   AlreadyConnected;
+            error   AlreadyConnecting;
+            error   BufferError;
+            error   ConnectionAborted;
+            error   ConnectionClosed;
+            error   ConnectionReset;
+            error   IllegalArgument;
+            error   IllegalValue;
+            error   InProgress;
+            error   InvalidHandle;
+            error   LowlevelInterfaceError;
+            error   OutOfMemory;
+            error   Routing;
+            error   SystemResources;
+            error   Timeout;
         }
         
         async_call Send {
-            in      socket: TcpSocket,
-            in      data: []const u8,
-            out     bytes_sent: usize,
-            error   BufferError,
-            error   ConnectionAborted,
-            error   ConnectionClosed,
-            error   ConnectionReset,
-            error   IllegalArgument,
-            error   IllegalValue,
-            error   InProgress,
-            error   InvalidHandle,
-            error   LowlevelInterfaceError,
-            error   NotConnected,
-            error   OutOfMemory,
-            error   Routing,
-            error   SystemResources,
-            error   Timeout,
+            in      socket: TcpSocket;
+            in      data: bytestr;
+            out     bytes_sent: usize;
+            error   BufferError;
+            error   ConnectionAborted;
+            error   ConnectionClosed;
+            error   ConnectionReset;
+            error   IllegalArgument;
+            error   IllegalValue;
+            error   InProgress;
+            error   InvalidHandle;
+            error   LowlevelInterfaceError;
+            error   NotConnected;
+            error   OutOfMemory;
+            error   Routing;
+            error   SystemResources;
+            error   Timeout;
         }
         
         async_call Receive {
-            in      socket: TcpSocket,
-            in      buffer: []u8,
+            in      socket: TcpSocket;
+            in      buffer: bytebuf;
             /// if true, will read until `buffer.len` bytes arrived. otherwise will read until the end of a single packet
-            in      read_all: bool,
-            out     bytes_received: usize,
-            error   AlreadyConnected,
-            error   AlreadyConnecting,
-            error   BufferError,
-            error   ConnectionAborted,
-            error   ConnectionClosed,
-            error   ConnectionReset,
-            error   IllegalArgument,
-            error   IllegalValue,
-            error   InProgress,
-            error   InvalidHandle,
-            error   LowlevelInterfaceError,
-            error   NotConnected,
-            error   OutOfMemory,
-            error   Routing,
-            error   SystemResources,
-            error   Timeout,
+            in      read_all: bool;
+            out     bytes_received: usize;
+            error   AlreadyConnected;
+            error   AlreadyConnecting;
+            error   BufferError;
+            error   ConnectionAborted;
+            error   ConnectionClosed;
+            error   ConnectionReset;
+            error   IllegalArgument;
+            error   IllegalValue;
+            error   InProgress;
+            error   InvalidHandle;
+            error   LowlevelInterfaceError;
+            error   NotConnected;
+            error   OutOfMemory;
+            error   Routing;
+            error   SystemResources;
+            error   Timeout;
         }
         
     }
@@ -619,232 +613,231 @@ namespace network {
 namespace fs {
     /// Finds a file system by name
     syscall find_filesystem {
-        in      name: str,
-        returns FileSystemId,
+        in      name: str;
+        return FileSystemId;
     }
     
     /// Flushes all open files to disk.
     async_call Sync {
-        error   DiskError,
+        error   DiskError;
     }
     
     /// Gets information about a file system.
     /// Also returns a `next` id that can be used to iterate over all filesystems.
     /// The `system` filesystem is guaranteed to be the first one.
     async_call GetFilesystemInfo {
-        in      fs: FileSystemId,
-        out     info: FileSystemInfo,
-        out     next: FileSystemId,
-        error   DiskError,
-        error   InvalidFileSystem,
+        in      fs: FileSystemId;
+        out     info: FileSystemInfo;
+        out     next: FileSystemId;
+        error   DiskError;
+        error   InvalidFileSystem;
     }
     
     /// opens a directory on a filesystem
     async_call OpenDrive {
-        in      fs: FileSystemId,
-        in      path: str,
-        out     dir: Directory,
-        error   DiskError,
-        error   FileNotFound,
-        error   InvalidFileSystem,
-        error   InvalidPath,
-        error   NotADir,
-        error   SystemFdQuotaExceeded,
-        error   SystemResources,
+        in      fs: FileSystemId;
+        in      path: str;
+        out     dir: Directory;
+        error   DiskError;
+        error   FileNotFound;
+        error   InvalidFileSystem;
+        error   InvalidPath;
+        error   NotADir;
+        error   SystemFdQuotaExceeded;
+        error   SystemResources;
     }
     
     /// opens a directory relative to the given dir handle.
     async_call OpenDir {
-        in      dir: Directory,
-        in      path: str,
-        out     dir: Directory,
-        error   DiskError,
-        error   FileNotFound,
-        error   InvalidHandle,
-        error   InvalidPath,
-        error   NotADir,
-        error   SystemFdQuotaExceeded,
-        error   SystemResources,
+        in      dir: Directory;
+        in      path: str;
+        out     dir: Directory;
+        error   DiskError;
+        error   FileNotFound;
+        error   InvalidHandle;
+        error   InvalidPath;
+        error   NotADir;
+        error   SystemFdQuotaExceeded;
+        error   SystemResources;
     }
     
     /// closes the directory handle
     async_call CloseDir {
-        in      dir: Directory,
-        error   InvalidHandle,
+        in      dir: Directory;
+        error   InvalidHandle;
     }
     
     /// resets the directory iterator to the starting point
     async_call ResetDirEnumeration {
-        in      dir: Directory,
-        error   DiskError,
-        error   InvalidHandle,
-        error   SystemResources,
+        in      dir: Directory;
+        error   DiskError;
+        error   InvalidHandle;
+        error   SystemResources;
     }
     
     /// returns the info for the current file or "eof", and advances the iterator to the next entry if possible
     async_call EnumerateDir {
-        in      dir: Directory,
-        out     eof: bool,
-        out     info: FileInfo,
-        error   DiskError,
-        error   InvalidHandle,
-        error   SystemResources,
+        in      dir: Directory;
+        out     eof: bool;
+        out     info: FileInfo;
+        error   DiskError;
+        error   InvalidHandle;
+        error   SystemResources;
     }
     
     /// deletes a file or directory by the given path.
     async_call Delete {
-        in      dir: Directory,
-        in      path: str,
-        in      recurse: bool,
-        error   DiskError,
-        error   FileNotFound,
-        error   InvalidHandle,
-        error   InvalidPath,
+        in      dir: Directory;
+        in      path: str;
+        in      recurse: bool;
+        error   DiskError;
+        error   FileNotFound;
+        error   InvalidHandle;
+        error   InvalidPath;
     }
     
     /// creates a new directory relative to dir. If `path` contains subdirectories, all
     /// directories are created.
     async_call MkDir {
-        in      dir: Directory,
-        in      path: str,
-        in      mkopen: bool,
-        out     dir: Directory,
-        error   DiskError,
-        error   Exists,
-        error   InvalidHandle,
-        error   InvalidPath,
+        in      dir: Directory;
+        in      path: str;
+        in      mkopen: bool;
+        out     dir: Directory;
+        error   DiskError;
+        error   Exists;
+        error   InvalidHandle;
+        error   InvalidPath;
     }
     
     /// returns the type of the file/dir at path, also adds size and modification dates
     async_call StatEntry {
-        in      dir: Directory,
-        in      path_ptr: [*]const u8,
-        in      path_len: usize,
-        out     info: FileInfo,
-        error   DiskError,
-        error   FileNotFound,
-        error   InvalidHandle,
-        error   InvalidPath,
+        in      dir: Directory;
+        in      path: str;
+        out     info: FileInfo;
+        error   DiskError;
+        error   FileNotFound;
+        error   InvalidHandle;
+        error   InvalidPath;
     }
     
     /// renames a file inside the same file system.
     /// NOTE: This is a cheap operation and does not require the copying of data.
     async_call NearMove {
-        in      src_dir: Directory,
-        in      src_path: str,
-        in      dst_path: str,
-        error   DiskError,
-        error   Exists,
-        error   FileNotFound,
-        error   InvalidHandle,
-        error   InvalidPath,
+        in      src_dir: Directory;
+        in      src_path: str;
+        in      dst_path: str;
+        error   DiskError;
+        error   Exists;
+        error   FileNotFound;
+        error   InvalidHandle;
+        error   InvalidPath;
     }
     
     /// moves a file or directory between two unrelated directories. Can also move between different file systems.
     /// NOTE: This syscall might copy the data.
     async_call FarMove {
-        in      src_dir: Directory,
-        in      src_path: str,
-        in      dst_dir: Directory,
-        in      dst_path: str,
-        error   DiskError,
-        error   Exists,
-        error   FileNotFound,
-        error   InvalidHandle,
-        error   InvalidPath,
-        error   NoSpaceLeft,
+        in      src_dir: Directory;
+        in      src_path: str;
+        in      dst_dir: Directory;
+        in      dst_path: str;
+        error   DiskError;
+        error   Exists;
+        error   FileNotFound;
+        error   InvalidHandle;
+        error   InvalidPath;
+        error   NoSpaceLeft;
     }
     
     /// copies a file or directory between two unrelated directories. Can also move between different file systems.
     async_call Copy {
-        in      src_dir: Directory,
-        in      src_path: str,
-        in      dst_dir: Directory,
-        in      dst_path: str,
-        error   DiskError,
-        error   Exists,
-        error   FileNotFound,
-        error   InvalidHandle,
-        error   InvalidPath,
-        error   NoSpaceLeft,
+        in      src_dir: Directory;
+        in      src_path: str;
+        in      dst_dir: Directory;
+        in      dst_path: str;
+        error   DiskError;
+        error   Exists;
+        error   FileNotFound;
+        error   InvalidHandle;
+        error   InvalidPath;
+        error   NoSpaceLeft;
     }
     
     /// opens a file from the given directory.
     async_call OpenFile {
-        in      dir: Directory,
-        in      path: str,
-        in      access: FileAccess,
-        in      mode: FileMode,
-        out     handle: File,
-        error   DiskError,
-        error   Exists,
-        error   FileAlreadyExists,
-        error   FileNotFound,
-        error   InvalidHandle,
-        error   InvalidPath,
-        error   NoSpaceLeft,
-        error   SystemFdQuotaExceeded,
-        error   SystemResources,
-        error   WriteProtected,
+        in      dir: Directory;
+        in      path: str;
+        in      access: FileAccess;
+        in      mode: FileMode;
+        out     handle: File;
+        error   DiskError;
+        error   Exists;
+        error   FileAlreadyExists;
+        error   FileNotFound;
+        error   InvalidHandle;
+        error   InvalidPath;
+        error   NoSpaceLeft;
+        error   SystemFdQuotaExceeded;
+        error   SystemResources;
+        error   WriteProtected;
     }
     
     /// closes the handle and flushes the file.
     async_call CloseFile {
-        in      file: File,
-        error   DiskError,
-        error   InvalidHandle,
-        error   SystemResources,
+        in      file: File;
+        error   DiskError;
+        error   InvalidHandle;
+        error   SystemResources;
     }
     
     /// makes sure this file is safely stored to mass storage device
     async_call FlushFile {
-        in      file: File,
-        error   DiskError,
-        error   InvalidHandle,
-        error   SystemResources,
+        in      file: File;
+        error   DiskError;
+        error   InvalidHandle;
+        error   SystemResources;
     }
     
     /// directly reads data from a given offset into the file. no streaming API to the kernel
     async_call Read {
-        in      file: File,
-        in      offset: u64,
-        in      buffer: []u8,
-        out     count: usize,
-        error   DiskError,
-        error   InvalidHandle,
-        error   SystemResources,
+        in      file: File;
+        in      offset: u64;
+        in      buffer: bytebuf;
+        out     count: usize;
+        error   DiskError;
+        error   InvalidHandle;
+        error   SystemResources;
     }
     
     /// directly writes data to a given offset into the file. no streaming API to the kernel
     async_call Write {
-        in      file: File,
-        in      offset: u64,
-        in      buffer: []const u8,
-        out     count: usize,
-        error   DiskError,
-        error   InvalidHandle,
-        error   NoSpaceLeft,
-        error   SystemResources,
-        error   WriteProtected,
+        in      file: File;
+        in      offset: u64;
+        in      buffer: bytestr;
+        out     count: usize;
+        error   DiskError;
+        error   InvalidHandle;
+        error   NoSpaceLeft;
+        error   SystemResources;
+        error   WriteProtected;
     }
     
     /// allows us to get the current size of the file, modification dates, and so on
     async_call StatFile {
-        in      file: File,
-        out     info: FileInfo,
-        error   DiskError,
-        error   InvalidHandle,
-        error   SystemResources,
+        in      file: File;
+        out     info: FileInfo;
+        error   DiskError;
+        error   InvalidHandle;
+        error   SystemResources;
     }
     
     /// Resizes the file to the given length in bytes. Can be also used to truncate a file to zero length.
     async_call Resize {
-        in      file: File,
-        in      length: u64,
-        error   DiskError,
-        error   InvalidHandle,
-        error   NoSpaceLeft,
-        error   SystemResources,
+        in      file: File;
+        in      length: u64;
+        error   DiskError;
+        error   InvalidHandle;
+        error   NoSpaceLeft;
+        error   SystemResources;
     }
     
 }
@@ -853,21 +846,21 @@ namespace shm {
     /// Constructs a new shared memory object with `size` bytes of memory.
     /// Shared memory can be written by all processes without any memory protection.
     syscall create {
-        in      size: usize,
-        error   SystemResources,
-        returns SharedMemory,
+        in      size: usize;
+        error   SystemResources;
+        return SharedMemory;
     }
     
     /// Returns the number of bytes inside the given shared memory object.
     syscall get_length {
-        in      _param0: SharedMemory,
-        returns usize,
+        in      _param0: SharedMemory;
+        return usize;
     }
     
     /// Returns a pointer to the shared memory.
     syscall get_pointer {
-        in      _param0: SharedMemory,
-        returns [*]align(16) u8,
+        in      _param0: SharedMemory;
+        return [*]align(16) u8;
     }
     
 }
@@ -878,52 +871,52 @@ namespace pipe {
     /// if a `read` call is active. Otherwise, up to `fifo_length` elements can be
     /// stored in a FIFO.
     syscall create {
-        in      object_size: usize,
-        in      fifo_length: usize,
-        error   SystemResources,
-        returns Pipe,
+        in      object_size: usize;
+        in      fifo_length: usize;
+        error   SystemResources;
+        return Pipe;
     }
     
     /// Returns the length of the pipe-internal FIFO in elements.
     syscall get_fifo_length {
-        in      _param0: Pipe,
-        returns usize,
+        in      _param0: Pipe;
+        return usize;
     }
     
     /// Returns the size of the objects stored in the pipe.
     syscall get_object_size {
-        in      _param0: Pipe,
-        returns usize,
+        in      _param0: Pipe;
+        return usize;
     }
     
     /// Writes elements from `data` into the given pipe.
     async_call Write {
-        in      pipe: Pipe,
+        in      pipe: Pipe;
         /// Pointer to the first element. Length defines how many elements are to be transferred.
-        in      data: []const u8,
+        in      data: bytestr;
         /// Distance between each element in `data`. Can be different from the pipes element size
         /// to allow sparse data to be transferred.
         /// If `0`, it will use the `object_size` property of the pipe.
-        in      stride: usize,
+        in      stride: usize;
         /// Defines how the write should operate.
-        in      mode: PipeMode,
+        in      mode: PipeMode;
         /// Numbert of elements written into the pipe.
-        out     count: usize,
+        out     count: usize;
     }
     
     /// Reads elements from a pipe into `buffer`.
     async_call Read {
-        in      pipe: Pipe,
+        in      pipe: Pipe;
         /// Points to the first element to be received.
-        in      buffer: []u8,
+        in      buffer: bytebuf;
         /// Distance between each element in `buffer`. Can be different from the pipes element size
         /// to allow sparse data to be transferred.
         /// If `0`, it will use the `object_size` property of the pipe.
-        in      stride: usize,
+        in      stride: usize;
         /// Defines how the read should operate.
-        in      mode: PipeMode,
+        in      mode: PipeMode;
         /// Number of elements read.
-        out     count: usize,
+        out     count: usize;
     }
     
 }
@@ -932,45 +925,45 @@ namespace sync {
     /// Creates a new `SyncEvent` object that can be used to synchronize
     /// different processes.
     syscall create_event {
-        error   SystemResources,
-        returns SyncEvent,
+        error   SystemResources;
+        return SyncEvent;
     }
     
     /// Completes one `WaitForEvent` IOP waiting for the given event.
     syscall notify_one {
-        in      _param0: SyncEvent,
+        in      _param0: SyncEvent;
     }
     
     /// Completes all `WaitForEvent` IOP waiting for the given event.
     syscall notify_all {
-        in      _param0: SyncEvent,
+        in      _param0: SyncEvent;
     }
     
     /// Waits for the given `SyncEvent` to be notified.
     async_call WaitForEvent {
-        in      _param0: SyncEvent,
+        in      _param0: SyncEvent;
     }
     
     /// Creates a new mutual exclusion.
     syscall create_mutex {
-        error   SystemResources,
-        returns Mutex,
+        error   SystemResources;
+        return Mutex;
     }
     
     /// Tries to lock a mutex and returns if it was successful.
     syscall try_lock {
-        in      _param0: Mutex,
-        returns bool,
+        in      _param0: Mutex;
+        return bool;
     }
     
     /// Unlocks a mutual exclusion. Completes a single `Lock` IOP if it exists.
     syscall unlock {
-        in      _param0: Mutex,
+        in      _param0: Mutex;
     }
     
     /// Locks a mutex. Will complete once the mutex is locked.
     async_call Lock {
-        in      _param0: Mutex,
+        in      _param0: Mutex;
     }
     
 }
@@ -978,86 +971,86 @@ namespace sync {
 namespace draw {
     /// Returns the font data for the given font name, if any.
     syscall get_system_font {
-        in      font_name: []const u8,
-        error   FileNotFound,
-        error   SystemResources,
-        returns Font,
+        in      font_name: str;
+        error   FileNotFound;
+        error   SystemResources;
+        return Font;
     }
     
     /// Creates a new custom font from the given data.
     syscall create_font {
-        in      data: []const u8,
-        error   InvalidData,
-        error   SystemResources,
-        returns Font,
+        in      data: bytestr;
+        error   InvalidData;
+        error   SystemResources;
+        return Font;
     }
     
     /// Returns true if the given font is a system-owned font.
     syscall is_system_font {
-        in      _param0: Font,
-        returns bool,
+        in      _param0: Font;
+        return bool;
     }
     
     /// Creates a new in-memory framebuffer that can be used for offscreen painting.
     syscall create_memory_framebuffer {
-        in      size: Size,
-        error   SystemResources,
-        returns Framebuffer,
+        in      size: Size;
+        error   SystemResources;
+        return Framebuffer;
     }
     
     /// Creates a new framebuffer based off a video output. Can be used to output pixels
     /// to the screen.
     syscall create_video_framebuffer {
-        in      _param0: VideoOutput,
-        error   InvalidHandle,
-        error   SystemResources,
-        returns Framebuffer,
+        in      _param0: VideoOutput;
+        error   InvalidHandle;
+        error   SystemResources;
+        return Framebuffer;
     }
     
     /// Creates a new framebuffer that allows painting into a GUI window.
     syscall create_window_framebuffer {
-        in      _param0: Window,
-        error   InvalidHandle,
-        error   SystemResources,
-        returns Framebuffer,
+        in      _param0: Window;
+        error   InvalidHandle;
+        error   SystemResources;
+        return Framebuffer;
     }
     
     /// Creates a new framebuffer that allows painting into a widget.
     syscall create_widget_framebuffer {
-        in      _param0: Widget,
-        error   InvalidHandle,
-        error   SystemResources,
-        returns Framebuffer,
+        in      _param0: Widget;
+        error   InvalidHandle;
+        error   SystemResources;
+        return Framebuffer;
     }
     
     /// Returns the type of a framebuffer object.
     syscall get_framebuffer_type {
-        in      _param0: Framebuffer,
-        error   InvalidHandle,
-        returns FramebufferType,
+        in      _param0: Framebuffer;
+        error   InvalidHandle;
+        return FramebufferType;
     }
     
     /// Returns the size of a framebuffer object.
     syscall get_framebuffer_size {
-        in      _param0: Framebuffer,
-        error   InvalidHandle,
-        returns Size,
+        in      _param0: Framebuffer;
+        error   InvalidHandle;
+        return Size;
     }
     
     /// Returns the video memory for a *memory* framebuffer.
     /// Other framebuffer types are not allowed to be passed.
     syscall get_framebuffer_memory {
-        in      _param0: Framebuffer,
-        error   InvalidHandle,
-        error   Unsupported,
-        returns VideoMemory,
+        in      _param0: Framebuffer;
+        error   InvalidHandle;
+        error   Unsupported;
+        return VideoMemory;
     }
     
     /// Marks a portion of the framebuffer as changed and forces the OS to
     /// perform an update action if necessary.
     syscall invalidate_framebuffer {
-        in      _param0: Framebuffer,
-        in      _param1: Rectangle,
+        in      _param0: Framebuffer;
+        in      _param1: Rectangle;
     }
     
     /// Renders the provided Ashet Graphics Protocol `sequence` into `target` framebuffer.
@@ -1067,150 +1060,150 @@ namespace draw {
     /// NOTE: On machines without hardware acceleration, this syscall might be completed synchronously.
     async_call Render {
         /// The framebuffer which should be drawn to.
-        in      target: Framebuffer,
+        in      target: Framebuffer;
         /// The AGP code that defines the drawing.
-        in      sequence: []const u8,
+        in      sequence: bytestr;
         /// If the target framebuffer is invalidatable, it is automatically invalidated after the completion
         /// of the command sequence, ensuring presentation of the contents.
         /// 
         /// This is useful when painting into widgets or windows to ensure the window manager
         /// actually sees the changes as soon as they are done, reducing graphics pipeline latency.
-        in      auto_invalidate: bool,
-        error   BadCode,
-        error   InvalidHandle,
+        in      auto_invalidate: bool;
+        error   BadCode;
+        error   InvalidHandle;
     }
     
 }
 
 namespace gui {
     syscall register_widget_type {
-        in      _param0: *const WidgetDescriptor,
-        error   AlreadyRegistered,
-        error   SystemResources,
-        returns WidgetType,
+        in      _param0: *const WidgetDescriptor;
+        error   AlreadyRegistered;
+        error   SystemResources;
+        return WidgetType;
     }
     
     /// Opens a message box popup window and prompts the user for response.
     async_call ShowMessageBox {
-        in      _param0: Desktop,
-        in      message: []const u8,
-        in      caption: []const u8,
-        in      buttons: MessageBoxButtons,
-        in      icon: MessageBoxIcon,
-        out     result: MessageBoxResult,
+        in      _param0: Desktop;
+        in      message: str;
+        in      caption: str;
+        in      buttons: MessageBoxButtons;
+        in      icon: MessageBoxIcon;
+        out     result: MessageBoxResult;
     }
     
     /// Spawns a new window.
     syscall create_window {
-        in      desktop: Desktop,
-        in      title: []const u8,
-        in      min: Size,
-        in      max: Size,
-        in      startup: Size,
-        in      flags: CreateWindowFlags,
-        error   InvalidDimensions,
-        error   InvalidHandle,
-        error   SystemResources,
-        returns Window,
+        in      desktop: Desktop;
+        in      title: str;
+        in      min: Size;
+        in      max: Size;
+        in      startup: Size;
+        in      flags: CreateWindowFlags;
+        error   InvalidDimensions;
+        error   InvalidHandle;
+        error   SystemResources;
+        return Window;
     }
     
     syscall get_window_title {
-        in      window: Window,
-        in      out_title: *[]const u8,
-        error   InvalidHandle,
+        in      window: Window;
+        in      out_title: *[]const u8;
+        error   InvalidHandle;
     }
     
     syscall get_window_size {
-        in      window: Window,
-        error   InvalidHandle,
-        returns Size,
+        in      window: Window;
+        error   InvalidHandle;
+        return Size;
     }
     
     syscall get_window_min_size {
-        in      window: Window,
-        error   InvalidHandle,
-        returns Size,
+        in      window: Window;
+        error   InvalidHandle;
+        return Size;
     }
     
     syscall get_window_max_size {
-        in      window: Window,
-        error   InvalidHandle,
-        returns Size,
+        in      window: Window;
+        error   InvalidHandle;
+        return Size;
     }
     
     syscall get_window_flags {
-        in      window: Window,
-        error   InvalidHandle,
-        returns WindowFlags,
+        in      window: Window;
+        error   InvalidHandle;
+        return WindowFlags;
     }
     
     /// Sets the `size` of `window` and returns the new actual size.
     /// NOTE: This event is meant to be used from desktop APIs and will not automatically
     /// notify the window of the resize event.
     syscall set_window_size {
-        in      window: Window,
-        in      size: Size,
-        error   InvalidHandle,
-        returns Size,
+        in      window: Window;
+        in      size: Size;
+        error   InvalidHandle;
+        return Size;
     }
     
     /// Resizes a window to the new size.
     syscall resize_window {
-        in      _param0: Window,
-        in      size: Size,
+        in      _param0: Window;
+        in      size: Size;
     }
     
     /// Changes a window title.
     syscall set_window_title {
-        in      _param0: Window,
-        in      title: []const u8,
+        in      _param0: Window;
+        in      title: str;
     }
     
     /// Notifies the desktop that a window wants attention from the user.
     /// This could just pop the window to the front, make it blink, show a small notification, ...
     syscall mark_window_urgent {
-        in      _param0: Window,
+        in      _param0: Window;
     }
     
     /// Waits for an event on the given `Window`, completing as soon as
     /// an event arrived.
     async_call GetWindowEvent {
-        in      window: Window,
-        out     event: WindowEvent,
-        error   Cancelled,
-        error   InProgress,
-        error   InvalidHandle,
+        in      window: Window;
+        out     event: WindowEvent;
+        error   Cancelled;
+        error   InProgress;
+        error   InvalidHandle;
     }
     
     /// Create a new widget identified by `uuid` on the given `window`.
     /// Position and size of the widget are undetermined at start and a call to `place_widget` should be performed on success.
     syscall create_widget {
-        in      window: Window,
-        in      uuid: *const UUID,
-        error   SystemResources,
-        error   WidgetNotFound,
-        returns Widget,
+        in      window: Window;
+        in      uuid: *const UUID;
+        error   SystemResources;
+        error   WidgetNotFound;
+        return Widget;
     }
     
     /// Moves and resizes a widget in one.
     syscall place_widget {
-        in      widget: Widget,
-        in      position: Point,
-        in      size: Size,
+        in      widget: Widget;
+        in      position: Point;
+        in      size: Size;
     }
     
     /// Triggers the `control` event of the widget with the given `message` as a payload.
     syscall control_widget {
-        in      widget: Widget,
-        in      message: WidgetControlMessage,
-        returns ErrorSet(error{SystemResources}),
+        in      widget: Widget;
+        in      message: WidgetControlMessage;
+        error   SystemResources;
     }
     
     /// Triggers the `widget_notify` event of the `Window` that owns `widget` with `event` as the payload.
     syscall notify_owner {
-        in      widget: Widget,
-        in      event: WidgetNotifyEvent,
-        returns ErrorSet(error{SystemResources}),
+        in      widget: Widget;
+        in      event: WidgetNotifyEvent;
+        error   SystemResources;
     }
     
     /// Returns WidgetType-associated "opaque" data for this widget.
@@ -1220,38 +1213,38 @@ namespace gui {
     /// 
     /// The size of this must be known and cannot be queried.
     syscall get_widget_data {
-        in      _param0: Widget,
-        returns [*]align(16) u8,
+        in      _param0: Widget;
+        returns [*]align(16) u8;
     }
     
     /// Creates a new desktop with the given name.
     syscall create_desktop {
         /// User-visible name of the desktop.
-        in      name: []const u8,
-        in      descriptor: *const DesktopDescriptor,
-        error   SystemResources,
-        returns Desktop,
+        in      name: str;
+        in      descriptor: *const DesktopDescriptor;
+        error   SystemResources;
+        return Desktop;
     }
     
     /// Returns the name of the provided desktop.
     syscall get_desktop_name {
-        in      _param0: Desktop,
-        error   InvalidHandle,
-        returns str,
+        in      _param0: Desktop;
+        error   InvalidHandle;
+        return str;
     }
     
     /// Enumerates all available desktops.
     syscall enumerate_desktops {
-        in      serverlist: ?[]Desktop,
-        returns usize,
+        in      serverlist: ?[]Desktop;
+        return usize;
     }
     
     /// Returns all windows for a desktop handle.
     syscall enumerate_desktop_windows {
-        in      _param0: Desktop,
-        in      window: ?[]Window,
-        error   InvalidHandle,
-        returns usize,
+        in      _param0: Desktop;
+        in      window: ?[]Window;
+        error   InvalidHandle;
+        return usize;
     }
     
     /// Returns desktop-associated "opaque" data for this window.
@@ -1261,9 +1254,9 @@ namespace gui {
     /// 
     /// The size of this must be known and cannot be queried.
     syscall get_desktop_data {
-        in      _param0: Window,
-        error   InvalidHandle,
-        returns [*]align(16) u8,
+        in      _param0: Window;
+        error   InvalidHandle;
+        returns [*]align(16) u8;
     }
     
     /// Notifies the system that a message box was confirmed by the user.
@@ -1273,58 +1266,61 @@ namespace gui {
     /// access to a `MessageBoxEvent.RequestID`.
     syscall notify_message_box {
         /// The desktop that completed the message box.
-        in      source: Desktop,
+        in      source: Desktop;
         /// The request id that was passed in `MessageBoxEvent`.
-        in      request_id: MessageBoxEvent.RequestID,
+        in      request_id: MessageBoxEvent.RequestID;
         /// The resulting button which the user clicked.
-        in      result: MessageBoxResult,
-        error   BadRequestId,
-        error   InvalidHandle,
+        in      result: MessageBoxResult;
+        error   BadRequestId;
+        error   InvalidHandle;
     }
     
     /// Posts an event into the window event queue so the window owner
     /// can handle the event.
     syscall post_window_event {
-        in      window: Window,
-        in      event: WindowEvent,
-        returns ErrorSet(error{SystemResources,InvalidHandle}),
+        in    window: Window;
+        in    event: WindowEvent;
+        error SystemResources;
+        error InvalidHandle;
     }
     
     /// Sends a notification to the provided `desktop`.
     syscall send_notification {
         /// Where to show the notification?
-        in      desktop: Desktop,
+        in      desktop: Desktop;
         /// What text is displayed in the notification?
-        in      message: []const u8,
+        in      message: str;
         /// How urgent is the notification to the user?
-        in      severity: NotificationSeverity,
-        returns ErrorSet(error{SystemResources,InvalidHandle}),
+        in      severity: NotificationSeverity;
+        error   SystemResources;
+        error   InvalidHandle;
     }
     
     namespace clipboard {
         /// Sets the contents of the clip board.
         /// Takes a mime type as well as the value in the provided format.
         syscall set {
-            in      desktop: Desktop,
-            in      mime: []const u8,
-            in      value: []const u8,
-            returns ErrorSet(error{SystemResources}),
+            in      desktop: Desktop;
+            in      mime: str;
+            in      value: str;
+            error   SystemResources;
         }
         
         /// Returns the current type present in the clipboard, if any.
         syscall get_type {
-            in      desktop: Desktop,
-            returns ?str,
+            in      desktop: Desktop;
+            returns ?str;
         }
         
         /// Returns the current clipboard value as the provided mime type.
         /// The os provides a conversion *if possible*, otherwise returns an error.
         /// The returned memory for `value` is owned by the process and must be freed with `ashet.process.memory.release`.
         syscall get_value {
-            in      desktop: Desktop,
-            in      mime: []const u8,
-            in      value: *?[]const u8,
-            returns ErrorSet(error{OutOfMemory,ConversionFailed}),
+            in    desktop: Desktop;
+            in    mime: str;
+            in    value: *?[]const u8;
+            error OutOfMemory;
+            error ConversionFailed;
         }
         
     }
@@ -1335,38 +1331,38 @@ namespace service {
     /// Registers a new service `uuid` in the system.
     /// Takes an array of function pointers that will be provided for IPC and a service name to be advertised.
     syscall create {
-        in      uuid: *const UUID,
-        in      funcs: []const AbstractFunction,
-        in      name: []const u8,
-        error   AlreadyRegistered,
-        error   SystemResources,
-        returns Service,
+        in      uuid: *const UUID;
+        in      funcs: []const AbstractFunction;
+        in      name: str;
+        error   AlreadyRegistered;
+        error   SystemResources;
+        return Service;
     }
     
     /// Enumerates all registered services.
     syscall enumerate {
-        in      uuid: *const UUID,
-        in      services: ?[]Service,
-        returns usize,
+        in      uuid: *const UUID;
+        in      services: ?[]Service;
+        return usize;
     }
     
     /// Returns the name of the service.
     syscall get_name {
-        in      _param0: Service,
-        returns str,
+        in      _param0: Service;
+        return str;
     }
     
     /// Returns the process that created this service.
     syscall get_process {
-        in      _param0: Service,
-        returns Process,
+        in      _param0: Service;
+        return Process;
     }
     
     /// Returns the functions registerd by the service.
     syscall get_functions {
-        in      _param0: Service,
-        in      funcs: ?[]AbstractFunction,
-        returns usize,
+        in      _param0: Service;
+        in      funcs: ?[]AbstractFunction;
+        return usize;
     }
     
 }
@@ -1408,10 +1404,6 @@ resource SyncEvent { }
 
 resource Mutex { }
 
-
-///////////////////////////////////////////////////////////
-// Constants:
-
 /// The maximum number of bytes in a file system identifier name.
 /// This is chosen to be a power of two, and long enough to accommodate
 /// typical file system names:
@@ -1442,14 +1434,8 @@ const max_fs_type_len = 32;
 /// This should also enough for most reasonable file names in the wild.
 const max_file_name_len = 120;
 
-///////////////////////////////////////////////////////////
-// System resources:
-
-///////////////////////////////////////////////////////////
-// Simple types:
-
 struct UUID {
-    bytes: [16]u8,
+    bytes: [16]u8;
 }
 
 
@@ -1457,32 +1443,27 @@ struct UUID {
 /// Unix timestamp in milliseconds
 enum DateTime : i64 {
     /// 1970-01-01 00:00
-    item epoch = 0,
-
-    item _,
+    item epoch = 0;
+    ...
 }
 
 /// Time in nanoseconds since system startup.
 enum Absolute : u64 {
-    item system_start = 0,
-    item _,
+    item system_start = 0;
+    ...
 }
 
 /// A duration in nanoseconds.
-enum Duration : u64 {
-    item _,
-}
+enum Duration : u64 { ... }
 
-///////////////////////////////////////////////////////////
-// Enumerations:
 
 enum PipeMode : u8 {
     /// Completes immediatly even if no elements could be processed.
-    item nonblocking = 0,
+    item nonblocking = 0;
     /// Returns when at least one element could be processed.
-    item at_least_one = 1,
+    item at_least_one = 1;
     /// Returns only when all elements are processed.
-    item all = 2,
+    item all = 2;
 }
 
 enum NotificationSeverity : u8 {
@@ -1492,42 +1473,42 @@ enum NotificationSeverity : u8 {
     /// This should be handled with care and only for reall
     /// urgent situations like low battery power or
     /// unsufficient disk memory.
-    item attention = 0,
+    item attention = 0;
 
     /// This is a regular user notification, which should be used
     /// sparingly.
     ///
     /// Typical notifications of this kind are in the category of
     /// "download completed", "video fully rendered" or similar.
-    item information = 128,
+    item information = 128;
 
     /// Silent notifications that might be informational, but do not
     /// require attention by the user at all.
-    item whisper = 255,
+    item whisper = 255;
 
-    item _,
+    ...
 }
 
 
 struct Await_Options {
-    wait: Wait,
-    thread_affinity: Thread_Affinity,
+    field wait: Wait;
+    field thread_affinity: Thread_Affinity;
 
     enum Thread_Affinity : u8 {
         /// Waits for ARCs scheduled from *any* thread in the current process.
-        item all_threads,
+        item all_threads;
 
         /// Waits for ARCs scheduled from *this* thread.
-        item this_thread,
+        item this_thread;
     }
 
     enum Wait : u8 {
         /// Don't wait for any additional calls to complete, just return
         /// whatever was completed in the meantime.
-        item dont_block = 0,
+        item dont_block = 0;
 
         /// Wait for at least a single call to complete operation.
-        item wait_one = 1,
+        item wait_one = 1;
 
         /// Wait until all scheduled operations have completed.
         ///
@@ -1538,7 +1519,7 @@ struct Await_Options {
         ///
         /// NOTE: If `thread_affinity` is `.all_threads`, other threads can still
         ///       schedule more operations and make this function block longer.
-        item wait_all = 2,
+        item wait_all = 2;
 
     }
 }
@@ -1546,744 +1527,742 @@ struct Await_Options {
 /// Index of the systems video outputs.
 enum VideoOutputID : u8 {
     /// The primary video output
-    item primary = 0,
-    item _,
+    item primary = 0;
+    ...
 }
 
 enum FontType : u32 {
-    item bitmap = 0,
-    item vector = 1,
-    item _,
+    item bitmap = 0;
+    item vector = 1;
+    ...
 }
 
 enum FramebufferType : u8 {
     /// A pure in-memory frame buffer used for off-screen rendering.
-    item memory = 0,
+    item memory = 0;
 
     /// A video device backed frame buffer. Can be used to paint on a screen
     /// directly.
-    item video = 1,
+    item video = 1;
 
     /// A frame buffer provided by a window. These frame buffers
     /// may hold additional semantic information.
-    item window = 2,
+    item window = 2;
 
     /// A frame buffer provided by a user interface element. These frame buffers
     /// may hold additional semantic information.
-    item widget = 3,
+    item widget = 3;
 }
 
 enum MessageBoxIcon : u8 {
-    item information = 0,
-    item question = 1,
-    item warning = 2,
-    item @"error" = 3,
+    item information = 0;
+    item question = 1;
+    item warning = 2;
+    item @"error" = 3;
 }
 
 
 enum ExitCode : u32 {
-    field success = @as(u32, 0),
-    field failure = @as(u32, 1),
+    field success = @as(u32, 0);
+    field failure = @as(u32, 1);
 
-    field killed = ~@as(u32, 0),
+    field killed = ~@as(u32, 0);
 
-    field _,
+    ...
 }
 
 enum LogLevel : u8 {
-    field critical = 0,
-    field err = 1,
-    field warn = 2,
-    field notice = 3,
-    field debug = 4,
+    field critical = 0;
+    field err = 1;
+    field warn = 2;
+    field notice = 3;
+    field debug = 4;
 }
 
 enum FileSystemId : u32 {
     /// This is the file system which the os has bootet from.
-    field system = 0,
+    field system = 0;
 
     /// the filesystem isn't valid.
-    field invalid = ~@as(u32, 0),
+    field invalid = ~@as(u32, 0);
 
     /// All other ids are unique file systems.
-    field _,
+    ...
 }
 
 bitstruct FileAttributes : u16 {
-    field directory: bool,
-    field reserved: u15 = 0,
+    field directory: bool;
+    field reserved: u15 = 0;
 }
 
 enum FileAccess : u8 {
-    item read_only = 0,
-    item write_only = 1,
-    item read_write = 2,
+    item read_only = 0;
+    item write_only = 1;
+    item read_write = 2;
 }
 
 enum FileMode : u8 {
-    item open_existing = 0, // opens file when it exists on disk
-    item open_always = 1, // creates file when it does not exist, or opens the file without truncation.
-    item create_new = 2, // creates file when there is no file with that name
-    item create_always = 3, // creates file when it does not exist, or opens the file and truncates it to zero length
+    /// opens file when it exists on disk
+    item open_existing = 0, 
+
+    /// creates file when it does not exist, or opens the file without truncation.
+    item open_always = 1, 
+
+    /// creates file when there is no file with that name
+    item create_new = 2, 
+
+    /// creates file when it does not exist, or opens the file and truncates it to zero length
+    item create_always = 3, 
 }
 
 enum KeyCode : u16 {
-    item escape = 1,
-    item @"1",
-    item @"2",
-    item @"3",
-    item @"4",
-    item @"5",
-    item @"6",
-    item @"7",
-    item @"8",
-    item @"9",
-    item @"0",
-    item minus,
-    item equal,
-    item backspace,
-    item tab,
-    item q,
-    item w,
-    item e,
-    item r,
-    item t,
-    item y,
-    item u,
-    item i,
-    item o,
-    item p,
-    item left_brace,
-    item right_brace,
-    item @"return",
-    item ctrl_left,
-    item a,
-    item s,
-    item d,
-    item f,
-    item g,
-    item h,
-    item j,
-    item k,
-    item l,
-    item semicolon,
-    item apostrophe,
-    item grave,
-    item shift_left,
-    item backslash,
-    item z,
-    item x,
-    item c,
-    item v,
-    item b,
-    item n,
-    item m,
-    item comma,
-    item dot,
-    item slash,
-    item shift_right,
-    item kp_asterisk,
-    item alt,
-    item space,
-    item caps_lock,
-    item f1,
-    item f2,
-    item f3,
-    item f4,
-    item f5,
-    item f6,
-    item f7,
-    item f8,
-    item f9,
-    item f10,
-    item num_lock,
-    item scroll_lock,
-    item kp_7,
-    item kp_8,
-    item kp_9,
-    item kp_minus,
-    item kp_4,
-    item kp_5,
-    item kp_6,
-    item kp_plus,
-    item kp_1,
-    item kp_2,
-    item kp_3,
-    item kp_0,
-    item kp_dot,
-    item jp_zenkakuhankaku,
-    item @"102nd",
-    item f11,
-    item f12,
-    item jp_ro,
-    item jp_katakana,
-    item jp_hiragana,
-    item jp_henkan,
-    item jp_katakana_hiragana,
-    item jp_muhenkan,
-    item jp_kp_comma,
-    item kp_enter,
-    item ctrl_right,
-    item kp_slash,
-    item print,
-    item alt_graph,
-    item linefeed,
-    item home,
-    item up,
-    item page_up,
-    item left,
-    item right,
-    item end,
-    item down,
-    item page_down,
-    item insert,
-    item delete,
-    item meta,
+    item escape = 1;
+    item @"1";
+    item @"2";
+    item @"3";
+    item @"4";
+    item @"5";
+    item @"6";
+    item @"7";
+    item @"8";
+    item @"9";
+    item @"0";
+    item minus;
+    item equal;
+    item backspace;
+    item tab;
+    item q;
+    item w;
+    item e;
+    item r;
+    item t;
+    item y;
+    item u;
+    item i;
+    item o;
+    item p;
+    item left_brace;
+    item right_brace;
+    item @"return";
+    item ctrl_left;
+    item a;
+    item s;
+    item d;
+    item f;
+    item g;
+    item h;
+    item j;
+    item k;
+    item l;
+    item semicolon;
+    item apostrophe;
+    item grave;
+    item shift_left;
+    item backslash;
+    item z;
+    item x;
+    item c;
+    item v;
+    item b;
+    item n;
+    item m;
+    item comma;
+    item dot;
+    item slash;
+    item shift_right;
+    item kp_asterisk;
+    item alt;
+    item space;
+    item caps_lock;
+    item f1;
+    item f2;
+    item f3;
+    item f4;
+    item f5;
+    item f6;
+    item f7;
+    item f8;
+    item f9;
+    item f10;
+    item num_lock;
+    item scroll_lock;
+    item kp_7;
+    item kp_8;
+    item kp_9;
+    item kp_minus;
+    item kp_4;
+    item kp_5;
+    item kp_6;
+    item kp_plus;
+    item kp_1;
+    item kp_2;
+    item kp_3;
+    item kp_0;
+    item kp_dot;
+    item jp_zenkakuhankaku;
+    item @"102nd";
+    item f11;
+    item f12;
+    item jp_ro;
+    item jp_katakana;
+    item jp_hiragana;
+    item jp_henkan;
+    item jp_katakana_hiragana;
+    item jp_muhenkan;
+    item jp_kp_comma;
+    item kp_enter;
+    item ctrl_right;
+    item kp_slash;
+    item print;
+    item alt_graph;
+    item linefeed;
+    item home;
+    item up;
+    item page_up;
+    item left;
+    item right;
+    item end;
+    item down;
+    item page_down;
+    item insert;
+    item delete;
+    item meta;
 
-    item unknown = 0xFFFF,
+    item unknown = 0xFFFF;
 }
 
 enum MouseButton : u8 {
-    item none = 0,
-    item left = 1,
-    item right = 2,
-    item middle = 3,
-    item nav_previous = 4,
-    item nav_next = 5,
-    item wheel_down = 6,
-    item wheel_up = 7,
+    item none = 0;
+    item left = 1;
+    item right = 2;
+    item middle = 3;
+    item nav_previous = 4;
+    item nav_next = 5;
+    item wheel_down = 6;
+    item wheel_up = 7;
 }
 
-///////////////////////////////////////////////////////////
-// Compound types:
-
 struct SpawnProcessArg {
-    field type: Type,
+    field type: Type;
     field value: union {
-        field text: str,
-        field resource: SystemResource,
-    },
+        field text: str;
+        field resource: SystemResource;
+    };
 
     enum Type : u8 {
-        item string = 0,
-        item resource = 1,
+        item string = 0;
+        item resource = 1;
     }
 }
 
 bitstruct WindowFlags : u32 {
-    field popup: bool,
-    field resizable: bool,
-    field padding: u30 = 0,
+    field popup: bool;
+    field resizable: bool;
+    field padding: u30 = 0;
 }
 
 bitstruct CreateWindowFlags : u32 {
-    field popup: bool = false,
-    field padding: u31 = 0,
+    field popup: bool = false;
+    field padding: u31 = 0;
 }
 
 struct WidgetDescriptor {
-    field uuid: UUID,
+    field uuid: UUID;
 
     /// Number of bytes allocated in a Widget for this widget type.
     /// See `get_widget_data` function for further information.
-    field data_size: usize,
+    field data_size: usize;
 
-    field flags: Flags,
+    field flags: Flags;
 
-    // TODO: Fill this out
+    //? TODO: Fill this out
 
-    // Event Handlers:
+    //? Event Handlers:
 
-    field handle_event: *const fn (Widget, *const WidgetEvent) callconv(.C) void,
+    field handle_event: *const fn (Widget, *const WidgetEvent) callconv(.C) void;
 
     bitstruct Flags : u32 {
         /// If `true`, the user can focus this widget with the mouse or keyboard.
-        field focusable: bool,
+        field focusable: bool;
 
         /// If `true`, the user is able to open a context menu on this.
-        field context_menu: bool,
+        field context_menu: bool;
 
         /// If `true`, this widget is able to receive events with the mouse.
         /// If `false`, the widget is ignored in the position-to-widget resolution.
-        field hit_test_visible: bool,
+        field hit_test_visible: bool;
 
         /// If `true`, the user is able to potentially drop data via Drag&Drop
         /// on this widget.
-        field allow_drop: bool,
+        field allow_drop: bool;
 
         /// If `true`, the user can copy/cut/paste data from/into this widget.
-        field clipboard_sensitive: bool,
+        field clipboard_sensitive: bool;
 
-        field _padding: u27 = 0,
+        field _padding: u27 = 0;
     }
 }
 
 struct WidgetControlMessage {
-    field event_type: WidgetEvent.Type,
+    field event_type: WidgetEvent.Type;
 
     /// The widget-specific type of the control message.
     /// Could be something like `get_property`, `set_property`, `set_text`, ...
-    field type: u32,
+    field type: u32;
 
     /// Generic parameters that can be passed to the widget.
-    field params: [4]usize,
+    field params: [4]usize;
 }
 
 struct WidgetNotifyEvent {
-    field event_type: WindowEvent.Type,
+    field event_type: WindowEvent.Type;
 
-    field widget: Widget,
+    field widget: Widget;
 
     /// The widget-specific type of event.
     /// Could be something like `text_changed`, `clicked`, `checked_changed`, ...
-    field type: u32,
+    field type: u32;
 
     /// Generic data associated with the event.
-    field data: [4]usize,
+    field data: [4]usize;
 }
 
 
 enum MessageBoxResult : u8 {
-    item ok = 0,
-    item cancel = 1,
-    item yes = 2,
-    item no = 3,
-    item abort = 4,
-    item retry = 5,
-    item @"continue" = 6,
-    item ignore = 7,
+    item ok       = 0;
+    item cancel   = 1;
+    item yes      = 2;
+    item no       = 3;
+    item abort    = 4;
+    item retry    = 5;
+    item continue = 6;
+    item ignore   = 7;
 }
 
 bitstruct MessageBoxButtons : u8 {
-    // TODO: pub const ok: MessageBoxButtons = .{ .has_ok = true }
-    // TODO: pub const ok_cancel: MessageBoxButtons = .{ .has_ok = true, .has_cancel = true }
-    // TODO: pub const yes_no: MessageBoxButtons = .{ .has_yes = true, .has_no = true }
-    // TODO: pub const yes_no_cancel: MessageBoxButtons = .{ .has_yes = true, .has_no = true, .has_cancel = true }
-    // TODO: pub const retry_cancel: MessageBoxButtons = .{ .has_retry = true, .has_cancel = true }
-    // TODO: pub const abort_retry_ignore: MessageBoxButtons = .{ .has_abort = true, .has_retry = true, .has_ignore = true }
+    //? TODO: pub const ok: MessageBoxButtons = .{ .has_ok = true }
+    //? TODO: pub const ok_cancel: MessageBoxButtons = .{ .has_ok = true, .has_cancel = true }
+    //? TODO: pub const yes_no: MessageBoxButtons = .{ .has_yes = true, .has_no = true }
+    //? TODO: pub const yes_no_cancel: MessageBoxButtons = .{ .has_yes = true, .has_no = true, .has_cancel = true }
+    //? TODO: pub const retry_cancel: MessageBoxButtons = .{ .has_retry = true, .has_cancel = true }
+    //? TODO: pub const abort_retry_ignore: MessageBoxButtons = .{ .has_abort = true, .has_retry = true, .has_ignore = true }
 
-    field has_ok: bool = false,
-    field has_cancel: bool = false,
-    field has_yes: bool = false,
-    field has_no: bool = false,
-    field has_abort: bool = false,
-    field has_retry: bool = false,
-    field has_continue: bool = false,
-    field has_ignore: bool = false,
+    field has_ok: bool = false;
+    field has_cancel: bool = false;
+    field has_yes: bool = false;
+    field has_no: bool = false;
+    field has_abort: bool = false;
+    field has_retry: bool = false;
+    field has_continue: bool = false;
+    field has_ignore: bool = false;
 }
 
 struct DesktopDescriptor {
     /// Number of bytes allocated in a Window for this desktop.
     /// See `get_desktop_data` function for further information.
-    field window_data_size: usize,
+    field window_data_size: usize;
 
     /// A function pointer to the event handler of a desktop.
     /// The desktop will receive events via this function.
-    field handle_event: *const fn (Desktop, *const DesktopEvent) callconv(.C) void,
+    field handle_event: *const fn (Desktop, *const DesktopEvent) callconv(.C) void;
 }
 
 union DesktopEvent {
-    field event_type: Type,
+    field event_type: Type;
 
-    field create_window: DesktopWindowEvent,
-    field destroy_window: DesktopWindowEvent,
-    field invalidate_window: DesktopWindowInvalidateEvent,
+    field create_window: DesktopWindowEvent;
+    field destroy_window: DesktopWindowEvent;
+    field invalidate_window: DesktopWindowInvalidateEvent;
 
-    field show_notification: DesktopNotificationEvent,
-    field show_message_box: MessageBoxEvent,
+    field show_notification: DesktopNotificationEvent;
+    field show_message_box: MessageBoxEvent;
 
     enum Type : u16 {
-        // lifecycle management:
+        //? lifecycle management:
 
         /// A window was created on this desktop.
-        item create_window = 0,
+        item create_window = 0;
 
         /// A window was destroyed on this desktop.
-        item destroy_window = 1,
+        item destroy_window = 1;
 
         /// A window has been invalidated and must be drawn again.
-        item invalidate_window = 2,
+        item invalidate_window = 2;
 
-        // user interaction:
-
-        /// `send_notification` was called and the desktop user should display
-        /// a notification.
-        item show_notification = 3,
+        //? user interaction:
 
         /// `send_notification` was called and the desktop user should display
         /// a notification.
-        item show_message_box = 4,
+        item show_notification = 3;
 
-        item _,
+        /// `send_notification` was called and the desktop user should display
+        /// a notification.
+        item show_message_box = 4;
+
+        ...
     }
 }
 
 struct DesktopWindowEvent {
-    field event_type: DesktopEvent.Type,
-    field window: Window,
+    field event_type: DesktopEvent.Type;
+    field window: Window;
 }
 
 struct DesktopWindowInvalidateEvent {
-    field event_type: DesktopEvent.Type,
-    field window: Window,
-    field area: Rectangle,
+    field event_type: DesktopEvent.Type;
+    field window: Window;
+    field area: Rectangle;
 }
 
 struct DesktopNotificationEvent {
-    field event_type: DesktopEvent.Type,
+    field event_type: DesktopEvent.Type;
 
     /// The text of the notification.
-    field message: str,
+    field message: str;
 
     /// The severity/importance of the notification.
-    field severity: NotificationSeverity,
+    field severity: NotificationSeverity;
 }
 
 struct MessageBoxEvent {
-    field event_type: DesktopEvent.Type,
+    field event_type: DesktopEvent.Type;
 
     /// The desktop-specific request id that must be passed into
     /// `notify_message_box` to finish the message box request.
-    field request_id: RequestID,
+    field request_id: RequestID;
 
     /// Pointer to the content of the message box.
-    field message_ptr: [*]const u8,
+    field message_ptr: [*]const u8;
 
     /// length of `message_ptr`.
-    field message_len: usize,
+    field message_len: usize;
 
     /// Pointer to the caption of the message box.
-    field caption_ptr: [*]const u8,
+    field caption_ptr: [*]const u8;
 
     /// length of `caption_ptr`.
-    field caption_len: usize,
+    field caption_len: usize;
 
     /// Which buttons are presented to the user?
-    field buttons: MessageBoxButtons,
+    field buttons: MessageBoxButtons;
 
     /// Which icon is shown?
-    field icon: MessageBoxIcon,
+    field icon: MessageBoxIcon;
 
-    enum RequestID : u16 {
-        item _,
-    }
+    enum RequestID : u16 { ... }
 }
 
 /// An 8-bit RGB color value with a 233 encoding (2 bits R, 3 bits G, 3 bits B)
 bitstruct Color : u8 {
-    // TODO: const black = from_rgb(0, 0, 0);
-    // TODO: const white = from_rgb(255, 255, 255);
-    // TODO: const red = from_rgb(255, 0, 0);
-    // TODO: const lime = from_rgb(0, 255, 0);
-    // TODO: const blue = from_rgb(0, 0, 255);
-    // TODO: const cyan = from_rgb(0, 255, 255);
-    // TODO: const magenta = from_rgb(255, 0, 255);
-    // TODO: const yellow = from_rgb(255, 255, 0);
+    //? TODO: const black = from_rgb(0, 0, 0);
+    //? TODO: const white = from_rgb(255, 255, 255);
+    //? TODO: const red = from_rgb(255, 0, 0);
+    //? TODO: const lime = from_rgb(0, 255, 0);
+    //? TODO: const blue = from_rgb(0, 0, 255);
+    //? TODO: const cyan = from_rgb(0, 255, 255);
+    //? TODO: const magenta = from_rgb(255, 0, 255);
+    //? TODO: const yellow = from_rgb(255, 255, 0);
 
-    field r: u2,
-    field g: u3,
-    field b: u3,
+    field r: u2;
+    field g: u3;
+    field b: u3;
 
     struct RGB888 {
-        field r: u8,
-        field g: u8,
-        field b: u8,
+        field r: u8;
+        field g: u8;
+        field b: u8;
     }
 
     /// 32-bit ARGB format, [31:0] A:R:G:B 8:8:8:8 little endian
     ///
     /// Layed out as a `u32` encoding `0xAARRGGBB`.
-    enum ARGB8888 : u32 {
-        item _,
-    }
+    enum ARGB8888 : u32 { ... }
 
     /// 32-bit ABGR format, [31:0] A:B:G:R 8:8:8:8 little endian
     ///
     /// Layed out as a `u32` encoding `0xAABBGGRR`.
-    enum ABGR8888 : u32 {
-        item _,
-    }
+    enum ABGR8888 : u32 { ... }
 }
 
 union InputEvent {
-    field event_type: Type,
-    field mouse: MouseEvent,
-    field keyboard: KeyboardEvent,
+    field event_type: Type;
+    field mouse: MouseEvent;
+    field keyboard: KeyboardEvent;
 
     enum Type : u16 {
-        item key_press = 0,
-        item key_release = 1,
+        item key_press = 0;
+        item key_release = 1;
 
-        item mouse_rel_motion = 2,
-        item mouse_abs_motion = 3,
-        item mouse_button_press = 4,
-        item mouse_button_release = 5,
+        item mouse_rel_motion = 2;
+        item mouse_abs_motion = 3;
+        item mouse_button_press = 4;
+        item mouse_button_release = 5;
     }
 }
 
 union WidgetEvent {
-    field event_type: Type,
+    field event_type: Type;
 
-    field mouse: MouseEvent,
-    field keyboard: KeyboardEvent,
-    field control: WidgetControlMessage,
+    field mouse: MouseEvent;
+    field keyboard: KeyboardEvent;
+    field control: WidgetControlMessage;
 
-    // TODO: Add event data
+    //? TODO: Add event data
 
     enum Type : u16 {
-        // lifecycle:
+        //? lifecycle:
 
         /// The widget was created and attached to a window.
-        item create = 0,
+        item create = 0;
 
         /// The widget is in the process of being destroyed.
         /// After this event, the handle will be invalid.
-        item destroy = 1,
+        item destroy = 1;
 
         /// The creator of the widget wants to do something widget-specific.
-        item control = 2,
+        item control = 2;
 
-        // basic input:
+        //? basic input:
 
         /// The user clicked on the widget with the primary mouse button
         /// or pressed the return or space bar button on the keyboard.
-        item click = 3,
+        item click = 3;
 
-        // keyboard input:
+        //? keyboard input:
 
         /// A key was pressed on the keyboard.
-        item key_press = 4,
+        item key_press = 4;
 
         /// A key was released on the keyboard.
-        item key_release = 5,
+        item key_release = 5;
 
-        // mouse specific extras:
+        //? mouse specific extras:
 
         /// The mouse was moved inside the rectangle of the widget.
         ///
         /// NOTE: This event can only happen when `hit_test_visible` was set
         /// in the widget creation flags.
-        item mouse_enter = 6,
+        item mouse_enter = 6;
 
         /// The mouse was moved outside the rectangle of the widget.
         ///
         /// NOTE: This event can only happen when `hit_test_visible` was set
         /// in the widget creation flags.
-        item mouse_leave = 7,
+        item mouse_leave = 7;
 
         /// The mouse stopped for some time over the widget.
         ///
         /// NOTE: This event can only happen when `hit_test_visible` was set
         /// in the widget creation flags.
-        item mouse_hover = 8,
+        item mouse_hover = 8;
 
         /// A mouse button was pressed over the widget.
         ///
         /// NOTE: This event can only happen when `hit_test_visible` was set
         /// in the widget creation flags.
-        item mouse_button_press = 9,
+        item mouse_button_press = 9;
 
         /// A mouse button was released over the widget.
         ///
         /// NOTE: This event can only happen when `hit_test_visible` was set
         /// in the widget creation flags.
-        item mouse_button_release = 10,
+        item mouse_button_release = 10;
 
         /// The mouse was moved over the widget.
         ///
         /// NOTE: This event can only happen when `hit_test_visible` was set
         /// in the widget creation flags.
-        item mouse_motion = 11,
+        item mouse_motion = 11;
 
         /// A vertical or horizontal scroll wheel was scrolled over the widget.
         ///
         /// NOTE: This event can only happen when `hit_test_visible` was set
         /// in the widget creation flags.
-        item scroll = 12,
+        item scroll = 12;
 
-        // drag&drop operations:
+        //? drag&drop operations:
 
         /// The user dragged a payload into the rectangle of this widget.
         ///
         /// NOTE: This event can only happen when `allow_drop` was set in the
         /// widget creation flags.
-        item drag_enter = 13,
+        item drag_enter = 13;
 
         /// The user dragged a payload out of the rectangle of this widget.
         ///
         /// NOTE: This event can only happen when `allow_drop` was set in the
         /// widget type creation flags.
-        item drag_leave = 14,
+        item drag_leave = 14;
 
         /// The user dragged a payload over the rectangle of this widget.
         ///
         /// NOTE: This event can only happen when `allow_drop` was set in the
         /// widget type creation flags.
-        item drag_over = 15,
+        item drag_over = 15;
 
         /// The user dropped a payload into this widget.
         ///
         /// NOTE: This event can only happen when `allow_drop` was set in the
         /// widget type creation flags.
-        item drag_drop = 16,
+        item drag_drop = 16;
 
-        // clipboard operations:
+        //? clipboard operations:
 
         /// The user requested a clipboard copy operation, usually by pressing 'Ctrl-C'.
         ///
         /// NOTE: This event can only happen when `clipboard_sensitive` was set in
         /// the widget type creation flags.
-        item clipboard_copy = 17,
+        item clipboard_copy = 17;
 
         /// The user requested a clipboard paste operation, usually by pressing 'Ctrl-V'.
         ///
         /// NOTE: This event can only happen when `clipboard_sensitive` was set in
         /// the widget type creation flags.
-        item clipboard_paste = 18,
+        item clipboard_paste = 18;
 
         /// The user requested a clipboard cut operation, usually by pressing 'Ctrl-X'.
         ///
         /// NOTE: This event can only happen when `clipboard_sensitive` was set in
         /// the widget type creation flags.
-        item clipboard_cut = 19,
+        item clipboard_cut = 19;
 
-        // widget specific:
+        //? widget specific:
 
         /// The widget was resized with a call to `place_widget`.
         ///
         /// NOTE: This event will not fire if the widget was only moved.
-        item resized = 21,
+        item resized = 21;
 
         /// The widget should draw itself.
-        item paint = 20,
+        item paint = 20;
 
         /// User pressed the "context menu" button or did a
         /// secondary mouse button click on the  widget.
-        item context_menu_request = 22,
+        item context_menu_request = 22;
 
         /// The widget received focus via mouse or keyboard.
-        item focus_enter = 23,
+        item focus_enter = 23;
 
         /// The widget lost focus after receiving it.
-        item focus_leave = 24,
+        item focus_leave = 24;
 
-        _,
+        ...
     }
 }
 
 union WindowEvent {
-    field event_type: Type,
+    field event_type: Type;
 
-    field mouse: MouseEvent,
-    field keyboard: KeyboardEvent,
-    field widget_notify: WidgetNotifyEvent,
+    field mouse: MouseEvent;
+    field keyboard: KeyboardEvent;
+    field widget_notify: WidgetNotifyEvent;
 
     enum Type : u16 {
-        item widget_notify = 0,
+        item widget_notify = 0;
 
-        item key_press = 1,
-        item key_release = 2,
+        item key_press = 1;
+        item key_release = 2;
 
-        item mouse_enter = 3,
-        item mouse_leave = 4,
-        item mouse_motion = 7,
-        item mouse_button_press = 6,
-        item mouse_button_release = 5,
+        item mouse_enter = 3;
+        item mouse_leave = 4;
+        item mouse_motion = 7;
+        item mouse_button_press = 6;
+        item mouse_button_release = 5;
 
         /// The user requested the window to be closed.
-        item window_close = 8,
+        item window_close = 8;
 
         /// The window was minimized and is not visible anymore.
-        item window_minimize = 9,
+        item window_minimize = 9;
 
         /// The window was restored from minimized state.
-        item window_restore = 10,
+        item window_restore = 10;
 
         /// The window is currently moving on the screen. Query `window.bounds` to get the new position.
-        item window_moving = 11,
+        item window_moving = 11;
 
         /// The window was moved on the screen. Query `window.bounds` to get the new position.
-        item window_moved = 12,
+        item window_moved = 12;
 
         /// The window size is currently changing. Query `window.bounds` to get the new size.
-        item window_resizing = 13,
+        item window_resizing = 13;
 
         /// The window size changed. Query `window.bounds` to get the new size.
-        item window_resized = 14,
+        item window_resized = 14;
     }
 }
 
 /// Event structures shared between different event groups
 union SharedEventType  {
-    field input: InputEvent.Type,
-    field widget: WidgetEvent.Type,
-    field window: WindowEvent.Type,
+    field input: InputEvent.Type;
+    field widget: WidgetEvent.Type;
+    field window: WindowEvent.Type;
 }
 
 struct MouseEvent {
-    field event_type: SharedEventType, // MUST BE FIRST!
+    field event_type: SharedEventType, //? MUST BE FIRST!
 
-    field x: i16,
-    field y: i16,
-    field dx: i16,
-    field dy: i16,
-    field button: MouseButton,
+    field x: i16;
+    field y: i16;
+    field dx: i16;
+    field dy: i16;
+    field button: MouseButton;
 }
 
 struct KeyboardEvent {
-    field event_type: SharedEventType, // MUST BE FIRST!
+    field event_type: SharedEventType, //? MUST BE FIRST!
 
-    /// The raw scancode for the key. Meaning depends on the layout,
+    /// The raw scancode for the key. Meaning depends on the layout;
     /// represents kinda the physical position on the keyboard.
-    field scancode: u32,
+    field scancode: u32;
 
     /// The virtual key, independent of layout. Represents the logical
     /// function of the key.
-    field key: KeyCode,
+    field key: KeyCode;
 
     /// If set, the pressed key combination has a mapping that produces
     /// text input. UTF-8 encoded.
-    field text: ?str,
+    field text: ?str;
 
     /// The key in this event was pressed or released
-    field pressed: bool,
+    field pressed: bool;
 
     /// The modifier keys currently active
-    field modifiers: KeyboardModifiers,
+    field modifiers: KeyboardModifiers;
 }
 
 bitstruct KeyboardModifiers : u16 {
-    field shift: bool,
-    field alt: bool,
-    field ctrl: bool,
-    field shift_left: bool,
-    field shift_right: bool,
-    field ctrl_left: bool,
-    field ctrl_right: bool,
-    field alt_graph: bool,
-    field padding: u8 = 0,
+    field shift: bool;
+    field alt: bool;
+    field ctrl: bool;
+    field shift_left: bool;
+    field shift_right: bool;
+    field ctrl_left: bool;
+    field ctrl_right: bool;
+    field alt_graph: bool;
+    field padding: u8 = 0;
 }
 
 struct Point {
-    // TODO: pub const zero = new(0, 0);
+    //? TODO: pub const zero = new(0, 0);
 
-    field x: i16,
-    field y: i16,
+    field x: i16;
+    field y: i16;
 }
 
 struct Size {
-    // TODO: const empty = new(0, 0);
-    // TODO: const max = new(std.math.maxInt(u16), std.math.maxInt(u16));
+    //? TODO: const empty = new(0, 0);
+    //? TODO: const max = new(std.math.maxInt(u16), std.math.maxInt(u16));
 
-    field width: u16,
-    field height: u16,
+    field width: u16;
+    field height: u16;
 }
 
 struct Rectangle {
-    field x: i16,
-    field y: i16,
-    field width: u16,
-    field height: u16,
+    field x: i16;
+    field y: i16;
+    field width: u16;
+    field height: u16;
 }
 
 struct VideoMemory {
@@ -2293,16 +2272,16 @@ struct VideoMemory {
     /// each other and contains `width` valid elements.
     ///
     /// There are `height` total scanlines available.
-    field base: [*]align(4) Color,
+    field base: [*]align(4) Color;
 
     /// Length of a scanline.
-    field stride: usize,
+    field stride: usize;
 
     /// Number of valid elements in a scanline
-    field width: u16,
+    field width: u16;
 
     /// Number of valid scanlines.
-    field height: u16,
+    field height: u16;
 }
 
 struct FileSystemInfo {
@@ -2326,14 +2305,14 @@ struct FileSystemInfo {
         /// the file system is mounted as read-only
         field read_only: bool, 
 
-        field reserved: u13 = 0,
+        field reserved: u13 = 0;
     }
 }
 
 struct FileInfo {
-    field name: [max_file_name_len]u8,
-    field size: u64,
-    field attributes: FileAttributes,
-    field creation_date: DateTime,
-    field modified_date: DateTime,
+    field name: [max_file_name_len]u8;
+    field size: u64;
+    field attributes: FileAttributes;
+    field creation_date: DateTime;
+    field modified_date: DateTime;
 }

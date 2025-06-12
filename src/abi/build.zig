@@ -9,13 +9,11 @@ const AbiConverter = @import("abi_mapper").Converter;
 pub fn build(b: *std.Build) void {
     const debug = b.step("debug", "Installs the generated ABI V2 files");
 
-    const regenerate_step = b.step("regenerate", "Regenerates the ABI JSON description");
-
     // generate and export the new v2 module:
     const abi_mapper_dep = b.dependency("abi_mapper", .{});
     const abi_mapper = AbiConverter{
         .b = b,
-        .executable = abi_mapper_dep.artifact("abi-mapper"),
+        .executable = abi_mapper_dep.artifact("abi-parser"),
     };
 
     // Re-export the "abi-schema" module:
@@ -34,17 +32,14 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(render_exe);
 
-    {
-        const abi_v2_def = b.path("src/abi.zabi");
+    const abi_json = blk: {
+        const abi_v2_def = b.path("src/ashet.abi");
+        const abi_id_db = b.path("db/abi-id-db.json");
 
-        const new_abi_json = abi_mapper.get_json_dump(abi_v2_def);
+        const new_abi_json = abi_mapper.get_json_dump(abi_id_db, abi_v2_def);
 
-        const update_sources = b.addUpdateSourceFiles();
-        update_sources.addCopyFileToSource(new_abi_json, "src/ashet-abi.json");
-        regenerate_step.dependOn(&update_sources.step);
-    }
-
-    const abi_json = b.path("src/ashet-abi.json");
+        break :blk new_abi_json;
+    };
 
     const abi_code = convert_abi_file(b, render_exe, abi_json, .definition);
     const provider_code = convert_abi_file(b, render_exe, abi_json, .kernel);

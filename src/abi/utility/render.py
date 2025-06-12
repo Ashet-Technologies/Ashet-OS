@@ -1430,10 +1430,6 @@ def main():
     else:
         sys.stdout.write(generated_code)
 
-    if json_path is not None:
-        with json_path.open(mode="w") as j:
-            json.dump(abi, j, cls=ABI_JsonEncoder, indent=1)
-
 
 if __name__ == "__main__":
     main()

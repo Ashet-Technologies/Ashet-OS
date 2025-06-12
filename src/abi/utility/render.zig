@@ -74,21 +74,18 @@ pub fn render_definition(writer: std.fs.File.Writer, allocator: std.mem.Allocato
     try writer.writeAll("/// Asynchronous operation type, defines numeric values for AsyncOps.\n");
     try writer.writeAll("pub const ARC_Type = enum(u32) {\n");
 
-    for(schema.iops) |iop| {
-        try writer.print("{} = {},\n", .{iop.name});
+    for (schema.iops) |iop| {
+        try writer.print("    {} = {s},\n", .{ std.zig.fmtId(iop.full_qualified_name.?), iop.name });
     }
 
-    //     stream.writeln()
+    try writer.writeAll("\n");
 
-    //     stream.writeln("pub fn as_type(comptime arc_type: @This()) type {")
-    //     with stream.indent():
-    //         stream.writeln("return switch(arc_type) {")
-    //         with stream.indent():
+    try writer.writeAll("    pub fn as_type(comptime arc_type: @This()) type {\n");
+    try writer.writeAll("        return switch(arc_type) {\n");
     //             for iop in sorted(abi.iops, key=lambda iop: iop.number.value):
-    //                 stream.writeln(f".{iop.key.value} => {iop.full_qualified_name.value},")
-
-    //         stream.writeln("};")
-    //     stream.writeln("}")
+    try writer.writeAll("            .{iop.key.value} => {iop.full_qualified_name.value},\n");
+    try writer.writeAll("        };\n");
+    try writer.writeAll("    }\n");
 
     try writer.writeAll("\n");
     try writer.writeAll("};\n");
