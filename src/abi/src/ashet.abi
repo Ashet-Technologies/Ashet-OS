@@ -1,6 +1,5 @@
-//? TODO: pub const AbstractFunction = *const fn () callconv(.C) void;
+typedef AbstractFunction = fnptr () void;
 
-//? TODO: pub const ThreadFunction = *const fn (?*anyopaque) callconv(.C) u32;
 
 /// All syscalls related to generic resource management.
 namespace resources {
@@ -8,16 +7,16 @@ namespace resources {
     syscall get_type {
         in     @"resource": SystemResource;
         error  InvalidHandle;
-        return @SystemResourceType();
+        return SystemResource.Type;
     }
-    
+
     /// Returns the current owner of this resource.
     syscall get_owners {
         in     @"resource": SystemResource;
         in     owners: ?[]Process;
         return usize;
     }
-    
+
     /// Adds the process to the owners of this resource, so the process
     /// can safely access it without fear of having a use-after-free.
     syscall send_to_process {
@@ -27,7 +26,7 @@ namespace resources {
         error InvalidHandle;
         error SystemResources;
     }
-    
+
     /// Drops the ownership of the resource for the current process.
     /// If no owner remains, the resource will be destroyed and it's
     /// memory will be released.
@@ -36,9 +35,9 @@ namespace resources {
     syscall release {
         in      @"resource": SystemResource;
     }
-    
+
     /// Immediatly destroys the resource and releases its memory.
-    /// 
+    ///
     /// NOTE: This will *always* destroy the resource, even if it's
     /// also owned by another process.
     syscall destroy {
@@ -48,27 +47,27 @@ namespace resources {
 
 namespace overlapped {
     /// Starts new asynchronous operations.
-    /// 
+    ///
     /// NOTE: Until the operation has successfully completed or was
     /// cancelled, the ARC structure must be considered owned
     /// by the kernel and must not be changed from userspace.
     /// It can also change its contents spuriously until the
     /// operation is returned to userland.
-    /// 
+    ///
     syscall schedule {
         in      @"async_call": *ARC;
         error   AlreadyScheduled;
         error   SystemResources;
     }
-    
+
     /// Awaits one or more scheduled asynchronous operations and returns the
     /// number of `completed` elements.
-    /// 
+    ///
     /// The kernel will fill out `completed` up to the returned number of elements.
     /// All other values are undefined.
-    /// 
+    ///
     /// NOTE: See also: `await_completion_of`
-    /// 
+    ///
     /// NOTE: For blocking operations, this function will suspend the current
     /// thread until the request has been completed.
     syscall await_completion {
@@ -77,26 +76,26 @@ namespace overlapped {
         error  Unscheduled;
         return usize;
     }
-    
+
     /// Awaits one or more explictic asynchronous operations and returns the
     /// number of `events` elements.
-    /// 
+    ///
     /// The kernel will only await elements provided in `events` and all of those events must
     /// not be awaited by another `await_completion_of`.
-    /// 
+    ///
     /// When the function returns, `events` will have all completed events unchanged, and all
     /// unfinished events set to `null`. This way, a simple check via index can be done instead of
     /// the need for iteration of `events` to find what was finished.
-    /// 
+    ///
     /// NOTE: This syscall will always return as soon as a single event has finished.
-    /// 
+    ///
     /// NOTE: It is invalid to await the same operation with two concurrent calls to `await_completion_of`.
-    /// 
+    ///
     /// NOTE: Elements awaited with this function will be guaranteed to not be returned by
     /// another concurrent call to `await_completion`.
-    /// 
+    ///
     /// NOTE: See also: `await_completion`
-    /// 
+    ///
     /// NOTE: For blocking operations, this function will suspend the current
     /// thread until the request has been completed.
     syscall await_completion_of {
@@ -105,53 +104,61 @@ namespace overlapped {
         error   Unscheduled;
         return usize;
     }
-    
+
     /// Cancels an asynchronous call.
-    /// 
+    ///
     /// NOTE: If the operation has already completed, an error will be returned saying so.
-    /// 
+    ///
     /// NOTE: The cancelled operation will not be returned by `await` anymore.
     syscall cancel {
         in      aop: *ARC;
         error   Completed;
         error   Unscheduled;
     }
-    
+
 }
 
 /// Syscalls related to processes
 namespace process {
+
+    enum ExitCode : u32 {
+        item success = 0;
+        item failure = 1;
+        ...
+        item killed = 0xFFFFFFFF;
+    }
+
     /// Returns a pointer to the file name of the process.
     syscall get_file_name {
-        in      _param0: ?Process;
+        in      target: ?Process;
         return str;
     }
-    
+
     /// Returns the base address of the process.
     syscall get_base_address {
-        in      _param0: ?Process;
+        in      target: ?Process;
         return usize;
     }
-    
+
     /// Returns the arguments that were passed to this process in `Spawn`.
     syscall get_arguments {
-        in      _param0: ?Process;
+        in      target: ?Process;
         in      argv: ?[]SpawnProcessArg;
         return usize;
     }
-    
+
     /// Terminates the current process with the given exit code
     syscall terminate {
         in      exit_code: ExitCode;
         return noreturn;
     }
-    
+
     /// Terminates a foreign process.
     /// If the current process is passed, this function will not return
     syscall kill {
-        in      _param0: Process;
+        in      target: Process;
     }
-    
+
     /// Spawns a new process
     async_call Spawn {
         /// Relative base directory for `path`.
@@ -171,54 +178,59 @@ namespace process {
         error   InvalidPath;
         error   SystemResources;
     }
-    
+
     namespace thread {
         /// Returns control to the scheduler. Returns when the scheduler
         /// schedules the process again.
         syscall yield {
         }
-        
+
         /// Terminates the current thread.
         syscall exit {
             in      exit_code: ExitCode;
             return noreturn;
         }
-        
+
         /// Waits for the thread to exit and returns its return code.
         syscall join {
             in      _param0: Thread;
             return ExitCode;
         }
-        
+
+        /// Defines the signature of a thread entry point.
+        /// The parameter is the `arg` value passed to `spawn`.
+        /// The return value is the exit code of the thread.
+        typedef ThreadFunction = fnptr (?*void) u32;
+
         /// Spawns a new thread with `function` passing `arg` to it.
         /// If `stack_size` is not 0, will create a stack with the given size.
         syscall spawn {
-            in      function: ThreadFunction;
-            in      arg: ?*anyopaque;
+            in      function:   ThreadFunction;
+            in      arg:        ?*void;
             in      stack_size: usize;
             return ?Thread;
         }
-        
+
         /// Kills the given thread with `exit_code`.
         syscall kill {
-            in      _param0: Thread;
+            in      target:    Thread;
             in      exit_code: ExitCode;
         }
-        
+
     }
-    
+
     namespace debug {
         /// Writes to the system debug log.
         syscall write_log {
             in      log_level: LogLevel;
             in      message: str;
         }
-        
+
         /// Stops the process and allows debugging.
         syscall breakpoint {
         }
     }
-    
+
     namespace memory {
         /// Allocates memory
         syscall allocate {
@@ -226,40 +238,40 @@ namespace process {
             in      ptr_align: u8;
             return ?[*]u8;
         }
-        
+
         /// Returns memory to the systme.
         syscall release {
             in      mem: []u8;
             in      ptr_align: u8;
         }
     }
-    
+
     namespace monitor {
         /// Queries all owned resources by a process.
         syscall enumerate_processes {
             in      processes: ?[]Process;
             return usize;
         }
-        
+
         /// Queries all owned resources by a process.
         syscall query_owned_resources {
             in      owner: Process;
             in      reslist: ?[]SystemResource;
             return usize;
         }
-        
+
         /// Returns the total number of bytes the process takes up in RAM.
         syscall query_total_memory_usage {
             in      proc: Process;
             return usize;
         }
-        
+
         /// Returns the number of dynamically allocated bytes for this process.
         syscall query_dynamic_memory_usage {
             in      proc: Process;
             return usize;
         }
-        
+
         /// Returns the number of total memory objects this process has right now.
         syscall query_active_allocation_count {
             in      proc: Process;
@@ -274,13 +286,13 @@ namespace clock {
     syscall monotonic {
         return Absolute;
     }
-    
+
     /// Sleeps until `clock.monotonic()` returns at least `timeout`.
     async_call Timer {
         /// Monotonic timestamp in nanoseconds until the operation completes.
         in      timeout: Absolute;
     }
-    
+
 }
 
 namespace datetime {
@@ -291,18 +303,18 @@ namespace datetime {
     syscall now {
         return DateTime;
     }
-    
+
     /// Sleeps until `datetime.now()` returns a point in  time that comes after `when`.
     async_call Alarm {
         /// Earliest possible date time of when the alarm triggers.
         in      when: DateTime;
     }
-    
+
 }
 
 namespace video {
     /// Returns a list of all video outputs.
-    /// 
+    ///
     /// If `ids` is `null`, the total number of available outputs is returned;
     /// otherwise, up to `ids.len` elements are written into the provided array
     /// and the number of written elements is returned.
@@ -310,7 +322,7 @@ namespace video {
         in      ids: ?[]VideoOutputID;
         return usize;
     }
-    
+
     /// Acquire exclusive access to a video output.
     syscall acquire {
         in      _param0: VideoOutputID;
@@ -319,14 +331,14 @@ namespace video {
         error   SystemResources;
         return VideoOutput;
     }
-    
+
     /// Returns the current resolution
     syscall get_resolution {
         in      _param0: VideoOutput;
         error   InvalidHandle;
         return Size;
     }
-    
+
     /// Returns a pointer to linear video memory, row-major.
     /// Pixels rows will have a stride of the current video buffer width.
     /// The first pixel in the memory is the top-left pixel.
@@ -335,28 +347,28 @@ namespace video {
         error   InvalidHandle;
         return VideoMemory;
     }
-    
+
     /// Completes when the video output has fully scanned out an image and is now performing the v-blanking.
-    /// 
+    ///
     /// This allows frame-synchronized presentation of video data.
     async_call WaitForVBlank {
         in      output: VideoOutput;
         error   InvalidHandle;
     }
-    
+
 }
 
 namespace random {
     /// Fills the provided pointer with random bytes from the entropy pool.
-    /// 
+    ///
     /// If the entropy pool runs out of entropy bits, this call does not block
     /// and draw bytes from the pool.
     syscall get_soft_random {
         in      data: bytebuf;
     }
-    
+
     /// Fills the provided buffer with given length amount of random bytes.
-    /// 
+    ///
     /// This call blocks until the entropy pool has enough entropy to fill
     /// an entire hash to draw from.
     async_call GetStrictRandom {
@@ -374,7 +386,7 @@ namespace input {
 }
 
 namespace network {
-    enum IP_Type : u8 { 
+    enum IP_Type : u8 {
         item ipv4;
         item ipv6;
     }
@@ -384,7 +396,7 @@ namespace network {
     }
 
     struct IPv6 {
-        field addr: [16]u8; //? TODO: align(4) 
+        field addr: [16]u8; //? TODO: align(4)
         field zone: u8;
     }
 
@@ -406,14 +418,14 @@ namespace network {
     namespace dns {
         //? TODO
     }
-    
+
     namespace udp {
         /// Creates a new TCP socket.
         syscall create_socket {
             error   SystemResources;
             return UdpSocket;
         }
-        
+
         async_call Bind {
             in      socket: UdpSocket;
             in      bind_point: EndPoint;
@@ -423,7 +435,7 @@ namespace network {
             error   InvalidHandle;
             error   SystemResources;
         }
-        
+
         async_call Connect {
             in      socket: UdpSocket;
             in      target: EndPoint;
@@ -440,14 +452,14 @@ namespace network {
             error   SystemResources;
             error   Timeout;
         }
-        
+
         async_call Disconnect {
             in      socket: UdpSocket;
             error   InvalidHandle;
             error   NotConnected;
             error   SystemResources;
         }
-        
+
         async_call Send {
             in      socket: UdpSocket;
             in      data: bytestr;
@@ -464,7 +476,7 @@ namespace network {
             error   SystemResources;
             error   Timeout;
         }
-        
+
         async_call SendTo {
             in      socket: UdpSocket;
             in      receiver: EndPoint;
@@ -481,7 +493,7 @@ namespace network {
             error   SystemResources;
             error   Timeout;
         }
-        
+
         async_call ReceiveFrom {
             in      socket: UdpSocket;
             in      buffer: bytebuf;
@@ -498,16 +510,16 @@ namespace network {
             error   SystemResources;
             error   Timeout;
         }
-        
+
     }
-    
+
     namespace tcp {
         /// Creates a new UDP socket.
         syscall create_socket {
             error   SystemResources;
             return TcpSocket;
         }
-        
+
         async_call Bind {
             in      socket: TcpSocket;
             in      bind_point: EndPoint;
@@ -517,7 +529,7 @@ namespace network {
             error   InvalidHandle;
             error   SystemResources;
         }
-        
+
         async_call Connect {
             in      socket: TcpSocket;
             in      target: EndPoint;
@@ -537,7 +549,7 @@ namespace network {
             error   SystemResources;
             error   Timeout;
         }
-        
+
         async_call Send {
             in      socket: TcpSocket;
             in      data: bytestr;
@@ -557,7 +569,7 @@ namespace network {
             error   SystemResources;
             error   Timeout;
         }
-        
+
         async_call Receive {
             in      socket: TcpSocket;
             in      buffer: bytebuf;
@@ -581,34 +593,34 @@ namespace network {
             error   SystemResources;
             error   Timeout;
         }
-        
+
     }
-    
+
 }
 
 /// A file or directory on Ashet OS can be named with any legal UTF-8 sequence
 /// that does not contain `/` and `:`. It is recommended to only create file names
 /// that are actually typeable on the operating system tho.
-/// 
+///
 /// There are some special file names:
 /// - `.` is the "current directory" selector and does not add to the path.
 /// - `..` is the "parent directory" selector and navigates up in the directory hierarchy if possible.
 /// - Any sequence of upper case ASCII letters and digits (`A-Z`, `0-9`) that ends with `:` is a file system name. This name specifies
 /// the root directory of a certain file system.
-/// 
+///
 /// Paths are either a relative or absolute addyessing of a file system entity.
 /// Paths are composed of a sequence of names, each name separated by `/`.
 /// A file system name is only legal as the first element of a path sequence, making the path an absolute path.
-/// 
+///
 /// There is a limit on how long a file/directory name can be, but there's no limit on how long a total
 /// path can be.
-/// 
+///
 /// Here are some examples for valid paths:
 /// - `example.txt`
 /// - `docs/wiki.txt`
 /// - `SYS:/apps/editor/code`
 /// - `USB0:/foo/../bar` (which is equivalent to `USB0:/bar`)
-/// 
+///
 /// The filesystem that is used to boot the OS from has an alias `SYS:` that is always a legal way to address this file system.
 namespace fs {
     /// Finds a file system by name
@@ -616,12 +628,12 @@ namespace fs {
         in      name: str;
         return FileSystemId;
     }
-    
+
     /// Flushes all open files to disk.
     async_call Sync {
         error   DiskError;
     }
-    
+
     /// Gets information about a file system.
     /// Also returns a `next` id that can be used to iterate over all filesystems.
     /// The `system` filesystem is guaranteed to be the first one.
@@ -632,7 +644,7 @@ namespace fs {
         error   DiskError;
         error   InvalidFileSystem;
     }
-    
+
     /// opens a directory on a filesystem
     async_call OpenDrive {
         in      fs: FileSystemId;
@@ -646,7 +658,7 @@ namespace fs {
         error   SystemFdQuotaExceeded;
         error   SystemResources;
     }
-    
+
     /// opens a directory relative to the given dir handle.
     async_call OpenDir {
         in      dir: Directory;
@@ -660,13 +672,13 @@ namespace fs {
         error   SystemFdQuotaExceeded;
         error   SystemResources;
     }
-    
+
     /// closes the directory handle
     async_call CloseDir {
         in      dir: Directory;
         error   InvalidHandle;
     }
-    
+
     /// resets the directory iterator to the starting point
     async_call ResetDirEnumeration {
         in      dir: Directory;
@@ -674,7 +686,7 @@ namespace fs {
         error   InvalidHandle;
         error   SystemResources;
     }
-    
+
     /// returns the info for the current file or "eof", and advances the iterator to the next entry if possible
     async_call EnumerateDir {
         in      dir: Directory;
@@ -684,7 +696,7 @@ namespace fs {
         error   InvalidHandle;
         error   SystemResources;
     }
-    
+
     /// deletes a file or directory by the given path.
     async_call Delete {
         in      dir: Directory;
@@ -695,7 +707,7 @@ namespace fs {
         error   InvalidHandle;
         error   InvalidPath;
     }
-    
+
     /// creates a new directory relative to dir. If `path` contains subdirectories, all
     /// directories are created.
     async_call MkDir {
@@ -708,7 +720,7 @@ namespace fs {
         error   InvalidHandle;
         error   InvalidPath;
     }
-    
+
     /// returns the type of the file/dir at path, also adds size and modification dates
     async_call StatEntry {
         in      dir: Directory;
@@ -719,7 +731,7 @@ namespace fs {
         error   InvalidHandle;
         error   InvalidPath;
     }
-    
+
     /// renames a file inside the same file system.
     /// NOTE: This is a cheap operation and does not require the copying of data.
     async_call NearMove {
@@ -732,7 +744,7 @@ namespace fs {
         error   InvalidHandle;
         error   InvalidPath;
     }
-    
+
     /// moves a file or directory between two unrelated directories. Can also move between different file systems.
     /// NOTE: This syscall might copy the data.
     async_call FarMove {
@@ -747,7 +759,7 @@ namespace fs {
         error   InvalidPath;
         error   NoSpaceLeft;
     }
-    
+
     /// copies a file or directory between two unrelated directories. Can also move between different file systems.
     async_call Copy {
         in      src_dir: Directory;
@@ -761,7 +773,7 @@ namespace fs {
         error   InvalidPath;
         error   NoSpaceLeft;
     }
-    
+
     /// opens a file from the given directory.
     async_call OpenFile {
         in      dir: Directory;
@@ -780,7 +792,7 @@ namespace fs {
         error   SystemResources;
         error   WriteProtected;
     }
-    
+
     /// closes the handle and flushes the file.
     async_call CloseFile {
         in      file: File;
@@ -788,7 +800,7 @@ namespace fs {
         error   InvalidHandle;
         error   SystemResources;
     }
-    
+
     /// makes sure this file is safely stored to mass storage device
     async_call FlushFile {
         in      file: File;
@@ -796,7 +808,7 @@ namespace fs {
         error   InvalidHandle;
         error   SystemResources;
     }
-    
+
     /// directly reads data from a given offset into the file. no streaming API to the kernel
     async_call Read {
         in      file: File;
@@ -807,7 +819,7 @@ namespace fs {
         error   InvalidHandle;
         error   SystemResources;
     }
-    
+
     /// directly writes data to a given offset into the file. no streaming API to the kernel
     async_call Write {
         in      file: File;
@@ -820,7 +832,7 @@ namespace fs {
         error   SystemResources;
         error   WriteProtected;
     }
-    
+
     /// allows us to get the current size of the file, modification dates, and so on
     async_call StatFile {
         in      file: File;
@@ -829,7 +841,7 @@ namespace fs {
         error   InvalidHandle;
         error   SystemResources;
     }
-    
+
     /// Resizes the file to the given length in bytes. Can be also used to truncate a file to zero length.
     async_call Resize {
         in      file: File;
@@ -839,7 +851,7 @@ namespace fs {
         error   NoSpaceLeft;
         error   SystemResources;
     }
-    
+
 }
 
 namespace shm {
@@ -850,19 +862,19 @@ namespace shm {
         error   SystemResources;
         return SharedMemory;
     }
-    
+
     /// Returns the number of bytes inside the given shared memory object.
     syscall get_length {
         in      _param0: SharedMemory;
         return usize;
     }
-    
+
     /// Returns a pointer to the shared memory.
     syscall get_pointer {
         in      _param0: SharedMemory;
         return [*]align(16) u8;
     }
-    
+
 }
 
 namespace pipe {
@@ -876,19 +888,19 @@ namespace pipe {
         error   SystemResources;
         return Pipe;
     }
-    
+
     /// Returns the length of the pipe-internal FIFO in elements.
     syscall get_fifo_length {
         in      _param0: Pipe;
         return usize;
     }
-    
+
     /// Returns the size of the objects stored in the pipe.
     syscall get_object_size {
         in      _param0: Pipe;
         return usize;
     }
-    
+
     /// Writes elements from `data` into the given pipe.
     async_call Write {
         in      pipe: Pipe;
@@ -903,7 +915,7 @@ namespace pipe {
         /// Numbert of elements written into the pipe.
         out     count: usize;
     }
-    
+
     /// Reads elements from a pipe into `buffer`.
     async_call Read {
         in      pipe: Pipe;
@@ -918,7 +930,7 @@ namespace pipe {
         /// Number of elements read.
         out     count: usize;
     }
-    
+
 }
 
 namespace sync {
@@ -928,44 +940,44 @@ namespace sync {
         error   SystemResources;
         return SyncEvent;
     }
-    
+
     /// Completes one `WaitForEvent` IOP waiting for the given event.
     syscall notify_one {
         in      _param0: SyncEvent;
     }
-    
+
     /// Completes all `WaitForEvent` IOP waiting for the given event.
     syscall notify_all {
         in      _param0: SyncEvent;
     }
-    
+
     /// Waits for the given `SyncEvent` to be notified.
     async_call WaitForEvent {
         in      _param0: SyncEvent;
     }
-    
+
     /// Creates a new mutual exclusion.
     syscall create_mutex {
         error   SystemResources;
         return Mutex;
     }
-    
+
     /// Tries to lock a mutex and returns if it was successful.
     syscall try_lock {
         in      _param0: Mutex;
         return bool;
     }
-    
+
     /// Unlocks a mutual exclusion. Completes a single `Lock` IOP if it exists.
     syscall unlock {
         in      _param0: Mutex;
     }
-    
+
     /// Locks a mutex. Will complete once the mutex is locked.
     async_call Lock {
         in      _param0: Mutex;
     }
-    
+
 }
 
 namespace draw {
@@ -976,7 +988,7 @@ namespace draw {
         error   SystemResources;
         return Font;
     }
-    
+
     /// Creates a new custom font from the given data.
     syscall create_font {
         in      data: bytestr;
@@ -984,20 +996,20 @@ namespace draw {
         error   SystemResources;
         return Font;
     }
-    
+
     /// Returns true if the given font is a system-owned font.
     syscall is_system_font {
         in      _param0: Font;
         return bool;
     }
-    
+
     /// Creates a new in-memory framebuffer that can be used for offscreen painting.
     syscall create_memory_framebuffer {
         in      size: Size;
         error   SystemResources;
         return Framebuffer;
     }
-    
+
     /// Creates a new framebuffer based off a video output. Can be used to output pixels
     /// to the screen.
     syscall create_video_framebuffer {
@@ -1006,7 +1018,7 @@ namespace draw {
         error   SystemResources;
         return Framebuffer;
     }
-    
+
     /// Creates a new framebuffer that allows painting into a GUI window.
     syscall create_window_framebuffer {
         in      _param0: Window;
@@ -1014,7 +1026,7 @@ namespace draw {
         error   SystemResources;
         return Framebuffer;
     }
-    
+
     /// Creates a new framebuffer that allows painting into a widget.
     syscall create_widget_framebuffer {
         in      _param0: Widget;
@@ -1022,21 +1034,21 @@ namespace draw {
         error   SystemResources;
         return Framebuffer;
     }
-    
+
     /// Returns the type of a framebuffer object.
     syscall get_framebuffer_type {
         in      _param0: Framebuffer;
         error   InvalidHandle;
         return FramebufferType;
     }
-    
+
     /// Returns the size of a framebuffer object.
     syscall get_framebuffer_size {
         in      _param0: Framebuffer;
         error   InvalidHandle;
         return Size;
     }
-    
+
     /// Returns the video memory for a *memory* framebuffer.
     /// Other framebuffer types are not allowed to be passed.
     syscall get_framebuffer_memory {
@@ -1045,18 +1057,18 @@ namespace draw {
         error   Unsupported;
         return VideoMemory;
     }
-    
+
     /// Marks a portion of the framebuffer as changed and forces the OS to
     /// perform an update action if necessary.
     syscall invalidate_framebuffer {
         in      _param0: Framebuffer;
         in      _param1: Rectangle;
     }
-    
+
     /// Renders the provided Ashet Graphics Protocol `sequence` into `target` framebuffer.
-    /// 
+    ///
     /// The function will run asynchronously and will return as soon as the rendering is done.
-    /// 
+    ///
     /// NOTE: On machines without hardware acceleration, this syscall might be completed synchronously.
     async_call Render {
         /// The framebuffer which should be drawn to.
@@ -1065,14 +1077,14 @@ namespace draw {
         in      sequence: bytestr;
         /// If the target framebuffer is invalidatable, it is automatically invalidated after the completion
         /// of the command sequence, ensuring presentation of the contents.
-        /// 
+        ///
         /// This is useful when painting into widgets or windows to ensure the window manager
         /// actually sees the changes as soon as they are done, reducing graphics pipeline latency.
         in      auto_invalidate: bool;
         error   BadCode;
         error   InvalidHandle;
     }
-    
+
 }
 
 namespace gui {
@@ -1082,7 +1094,7 @@ namespace gui {
         error   SystemResources;
         return WidgetType;
     }
-    
+
     /// Opens a message box popup window and prompts the user for response.
     async_call ShowMessageBox {
         in      _param0: Desktop;
@@ -1092,7 +1104,7 @@ namespace gui {
         in      icon: MessageBoxIcon;
         out     result: MessageBoxResult;
     }
-    
+
     /// Spawns a new window.
     syscall create_window {
         in      desktop: Desktop;
@@ -1106,37 +1118,37 @@ namespace gui {
         error   SystemResources;
         return Window;
     }
-    
+
     syscall get_window_title {
         in      window: Window;
         in      out_title: *[]const u8;
         error   InvalidHandle;
     }
-    
+
     syscall get_window_size {
         in      window: Window;
         error   InvalidHandle;
         return Size;
     }
-    
+
     syscall get_window_min_size {
         in      window: Window;
         error   InvalidHandle;
         return Size;
     }
-    
+
     syscall get_window_max_size {
         in      window: Window;
         error   InvalidHandle;
         return Size;
     }
-    
+
     syscall get_window_flags {
         in      window: Window;
         error   InvalidHandle;
         return WindowFlags;
     }
-    
+
     /// Sets the `size` of `window` and returns the new actual size.
     /// NOTE: This event is meant to be used from desktop APIs and will not automatically
     /// notify the window of the resize event.
@@ -1146,25 +1158,25 @@ namespace gui {
         error   InvalidHandle;
         return Size;
     }
-    
+
     /// Resizes a window to the new size.
     syscall resize_window {
         in      _param0: Window;
         in      size: Size;
     }
-    
+
     /// Changes a window title.
     syscall set_window_title {
         in      _param0: Window;
         in      title: str;
     }
-    
+
     /// Notifies the desktop that a window wants attention from the user.
     /// This could just pop the window to the front, make it blink, show a small notification, ...
     syscall mark_window_urgent {
         in      _param0: Window;
     }
-    
+
     /// Waits for an event on the given `Window`, completing as soon as
     /// an event arrived.
     async_call GetWindowEvent {
@@ -1174,7 +1186,7 @@ namespace gui {
         error   InProgress;
         error   InvalidHandle;
     }
-    
+
     /// Create a new widget identified by `uuid` on the given `window`.
     /// Position and size of the widget are undetermined at start and a call to `place_widget` should be performed on success.
     syscall create_widget {
@@ -1184,39 +1196,39 @@ namespace gui {
         error   WidgetNotFound;
         return Widget;
     }
-    
+
     /// Moves and resizes a widget in one.
     syscall place_widget {
         in      widget: Widget;
         in      position: Point;
         in      size: Size;
     }
-    
+
     /// Triggers the `control` event of the widget with the given `message` as a payload.
     syscall control_widget {
         in      widget: Widget;
         in      message: WidgetControlMessage;
         error   SystemResources;
     }
-    
+
     /// Triggers the `widget_notify` event of the `Window` that owns `widget` with `event` as the payload.
     syscall notify_owner {
         in      widget: Widget;
         in      event: WidgetNotifyEvent;
         error   SystemResources;
     }
-    
+
     /// Returns WidgetType-associated "opaque" data for this widget.
-    /// 
+    ///
     /// This is meant as a convenience tool to store additional information per widget
     /// like internal state and such.
-    /// 
+    ///
     /// The size of this must be known and cannot be queried.
     syscall get_widget_data {
         in      _param0: Widget;
         return [*]align(16) u8;
     }
-    
+
     /// Creates a new desktop with the given name.
     syscall create_desktop {
         /// User-visible name of the desktop.
@@ -1225,20 +1237,20 @@ namespace gui {
         error   SystemResources;
         return Desktop;
     }
-    
+
     /// Returns the name of the provided desktop.
     syscall get_desktop_name {
         in      _param0: Desktop;
         error   InvalidHandle;
         return str;
     }
-    
+
     /// Enumerates all available desktops.
     syscall enumerate_desktops {
         in      serverlist: ?[]Desktop;
         return usize;
     }
-    
+
     /// Returns all windows for a desktop handle.
     syscall enumerate_desktop_windows {
         in      _param0: Desktop;
@@ -1246,21 +1258,21 @@ namespace gui {
         error   InvalidHandle;
         return usize;
     }
-    
+
     /// Returns desktop-associated "opaque" data for this window.
-    /// 
+    ///
     /// This is meant as a convenience tool to store additional information per window
     /// like position on the screen, orientation, alignment, ...
-    /// 
+    ///
     /// The size of this must be known and cannot be queried.
     syscall get_desktop_data {
         in      _param0: Window;
         error   InvalidHandle;
         return [*]align(16) u8;
     }
-    
+
     /// Notifies the system that a message box was confirmed by the user.
-    /// 
+    ///
     /// **NOTE:** This function is meant to be implemented by a desktop server.
     /// Regular GUI applications should not use this function as they have no
     /// access to a `MessageBoxEvent.RequestID`.
@@ -1274,7 +1286,7 @@ namespace gui {
         error   BadRequestId;
         error   InvalidHandle;
     }
-    
+
     /// Posts an event into the window event queue so the window owner
     /// can handle the event.
     syscall post_window_event {
@@ -1283,7 +1295,7 @@ namespace gui {
         error SystemResources;
         error InvalidHandle;
     }
-    
+
     /// Sends a notification to the provided `desktop`.
     syscall send_notification {
         /// Where to show the notification?
@@ -1295,23 +1307,23 @@ namespace gui {
         error   SystemResources;
         error   InvalidHandle;
     }
-    
+
     namespace clipboard {
         /// Sets the contents of the clip board.
         /// Takes a mime type as well as the value in the provided format.
         syscall set {
-            in      desktop: Desktop;
-            in      mime: str;
-            in      value: str;
-            error   SystemResources;
+            in    desktop: Desktop;
+            in    mime: str;
+            in    value: str;
+            error SystemResources;
         }
-        
+
         /// Returns the current type present in the clipboard, if any.
         syscall get_type {
-            in      desktop: Desktop;
-            returns ?str;
+            in     desktop: Desktop;
+            return ?str;
         }
-        
+
         /// Returns the current clipboard value as the provided mime type.
         /// The os provides a conversion *if possible*, otherwise returns an error.
         /// The returned memory for `value` is owned by the process and must be freed with `ashet.process.memory.release`.
@@ -1322,9 +1334,9 @@ namespace gui {
             error OutOfMemory;
             error ConversionFailed;
         }
-        
+
     }
-    
+
 }
 
 namespace service {
@@ -1338,33 +1350,33 @@ namespace service {
         error   SystemResources;
         return Service;
     }
-    
+
     /// Enumerates all registered services.
     syscall enumerate {
         in      uuid: *const UUID;
         in      services: ?[]Service;
         return usize;
     }
-    
+
     /// Returns the name of the service.
     syscall get_name {
         in      _param0: Service;
         return str;
     }
-    
+
     /// Returns the process that created this service.
     syscall get_process {
         in      _param0: Service;
         return Process;
     }
-    
+
     /// Returns the functions registerd by the service.
     syscall get_functions {
         in      _param0: Service;
         in      funcs: ?[]AbstractFunction;
         return usize;
     }
-    
+
 }
 
 resource Service { }
@@ -1435,7 +1447,7 @@ const max_fs_type_len = 32;
 const max_file_name_len = 120;
 
 struct UUID {
-    bytes: [16]u8;
+    field bytes: [16]u8;
 }
 
 
@@ -1561,38 +1573,28 @@ enum MessageBoxIcon : u8 {
     item @"error" = 3;
 }
 
-
-enum ExitCode : u32 {
-    field success = @as(u32, 0);
-    field failure = @as(u32, 1);
-
-    field killed = ~@as(u32, 0);
-
-    ...
-}
-
 enum LogLevel : u8 {
-    field critical = 0;
-    field err = 1;
-    field warn = 2;
-    field notice = 3;
-    field debug = 4;
+    item critical = 0;
+    item err = 1;
+    item warn = 2;
+    item notice = 3;
+    item debug = 4;
 }
 
 enum FileSystemId : u32 {
     /// This is the file system which the os has bootet from.
-    field system = 0;
+    item system = 0;
 
     /// the filesystem isn't valid.
-    field invalid = ~@as(u32, 0);
+    item invalid = 0xFFFFFFFF;
 
     /// All other ids are unique file systems.
     ...
 }
 
 bitstruct FileAttributes : u16 {
-    field directory: bool;
-    field reserved: u15 = 0;
+    field  directory: bool;
+    reserve u15 = 0;
 }
 
 enum FileAccess : u8 {
@@ -1603,16 +1605,16 @@ enum FileAccess : u8 {
 
 enum FileMode : u8 {
     /// opens file when it exists on disk
-    item open_existing = 0, 
+    item open_existing = 0;
 
     /// creates file when it does not exist, or opens the file without truncation.
-    item open_always = 1, 
+    item open_always = 1;
 
     /// creates file when there is no file with that name
-    item create_new = 2, 
+    item create_new = 2;
 
     /// creates file when it does not exist, or opens the file and truncates it to zero length
-    item create_always = 3, 
+    item create_always = 3;
 }
 
 enum KeyCode : u16 {
@@ -1744,27 +1746,32 @@ enum MouseButton : u8 {
 
 struct SpawnProcessArg {
     field type: Type;
-    field value: union {
-        field text: str;
-        field resource: SystemResource;
-    };
+    field value: Value;
 
     enum Type : u8 {
         item string = 0;
-        item resource = 1;
+        item @"resource" = 1;
+    }
+
+    union Value {
+        field text: str;
+        field @"resource": SystemResource;
     }
 }
 
 bitstruct WindowFlags : u32 {
     field popup: bool;
     field resizable: bool;
-    field padding: u30 = 0;
+    reserve u30 = 0;
 }
 
 bitstruct CreateWindowFlags : u32 {
     field popup: bool = false;
-    field padding: u31 = 0;
+    reserve u31 = 0;
 }
+
+typedef WidgetEventHandler = fnptr (Widget, *const WidgetEvent) void;
+
 
 struct WidgetDescriptor {
     field uuid: UUID;
@@ -1779,7 +1786,7 @@ struct WidgetDescriptor {
 
     //? Event Handlers:
 
-    field handle_event: *const fn (Widget, *const WidgetEvent) callconv(.C) void;
+    field handle_event: WidgetEventHandler;
 
     bitstruct Flags : u32 {
         /// If `true`, the user can focus this widget with the mouse or keyboard.
@@ -1799,7 +1806,7 @@ struct WidgetDescriptor {
         /// If `true`, the user can copy/cut/paste data from/into this widget.
         field clipboard_sensitive: bool;
 
-        field _padding: u27 = 0;
+        reserve u27 = 0;
     }
 }
 
@@ -1857,6 +1864,8 @@ bitstruct MessageBoxButtons : u8 {
     field has_ignore: bool = false;
 }
 
+typedef DesktopEventHandler = fnptr (Desktop, *const DesktopEvent) void;
+
 struct DesktopDescriptor {
     /// Number of bytes allocated in a Window for this desktop.
     /// See `get_desktop_data` function for further information.
@@ -1864,7 +1873,7 @@ struct DesktopDescriptor {
 
     /// A function pointer to the event handler of a desktop.
     /// The desktop will receive events via this function.
-    field handle_event: *const fn (Desktop, *const DesktopEvent) callconv(.C) void;
+    field handle_event: DesktopEventHandler;
 }
 
 union DesktopEvent {
@@ -2200,7 +2209,7 @@ union SharedEventType  {
 }
 
 struct MouseEvent {
-    field event_type: SharedEventType, //? MUST BE FIRST!
+    field event_type: SharedEventType; //? MUST BE FIRST!
 
     field x: i16;
     field y: i16;
@@ -2210,7 +2219,7 @@ struct MouseEvent {
 }
 
 struct KeyboardEvent {
-    field event_type: SharedEventType, //? MUST BE FIRST!
+    field event_type: SharedEventType; //? MUST BE FIRST!
 
     /// The raw scancode for the key. Meaning depends on the layout;
     /// represents kinda the physical position on the keyboard.
@@ -2240,7 +2249,7 @@ bitstruct KeyboardModifiers : u16 {
     field ctrl_left: bool;
     field ctrl_right: bool;
     field alt_graph: bool;
-    field padding: u8 = 0;
+    reserve u8 = 0;
 }
 
 struct Point {
@@ -2286,24 +2295,24 @@ struct VideoMemory {
 
 struct FileSystemInfo {
     /// system-unique id of this file system
-    field id: FileSystemId, 
+    field id: FileSystemId;
     /// binary infos about the file system
-    field flags: Flags, 
+    field flags: Flags;
     /// user addressable file system identifier ('USB0', ...)
-    field name: [max_fs_name_len]u8, 
+    field name: [max_fs_name_len]u8;
 
     /// string identifier of a file system driver ('FAT32', ...)
-    field filesystem: [max_fs_type_len]u8, 
+    field filesystem: [max_fs_type_len]u8;
 
     bitstruct Flags : u16 {
-        /// is the system boot disk    
-        field system: bool, 
+        /// is the system boot disk
+        field system: bool;
 
         /// the file system can be removed by the user
-        field removable: bool, 
+        field removable: bool;
 
         /// the file system is mounted as read-only
-        field read_only: bool, 
+        field read_only: bool;
 
         field reserved: u13 = 0;
     }

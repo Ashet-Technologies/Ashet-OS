@@ -67,7 +67,10 @@ const TokenType = enum {
     @"return",
     @"const",
     @"align",
+    reserve,
+    fnptr,
     resource,
+    typedef,
 
     // symbols
     @"(",
@@ -81,6 +84,7 @@ const TokenType = enum {
     @"=",
     @"?",
     @"*",
+    @",",
     @"...",
 
     // values
@@ -102,6 +106,17 @@ const TokenType = enum {
     }
 };
 
+pub fn match_identifier(str: []const u8) ?usize {
+    const first_char = "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    const all_chars = first_char ++ "0123456789.";
+    for (str, 0..) |c, i| {
+        if (std.mem.indexOfScalar(u8, if (i > 0) all_chars else first_char, c) == null) {
+            return i;
+        }
+    }
+    return str.len;
+}
+
 const patterns = blk: {
     const match = ptk.matchers;
 
@@ -118,6 +133,7 @@ const patterns = blk: {
         .create(.@"=", match.literal("=")),
         .create(.@"?", match.literal("?")),
         .create(.@"*", match.literal("*")),
+        .create(.@",", match.literal(",")),
 
         .create(.namespace, match.word("namespace")),
         .create(.@"error", match.word("error")),
@@ -125,22 +141,29 @@ const patterns = blk: {
         .create(.@"union", match.word("union")),
         .create(.@"enum", match.word("enum")),
         .create(.bitstruct, match.word("bitstruct")),
+        .create(.typedef, match.word("typedef")),
         .create(.syscall, match.word("syscall")),
         .create(.async_call, match.word("async_call")),
         .create(.field, match.word("field")),
         .create(.item, match.word("item")),
         .create(.in, match.word("in")),
         .create(.out, match.word("out")),
+        .create(.resource, match.word("resource")),
+        .create(.reserve, match.word("reserve")),
+        .create(.fnptr, match.word("fnptr")),
         .create(.@"return", match.word("return")),
         .create(.@"const", match.word("const")),
+        .create(.typedef, match.word("typedef")),
         .create(.@"align", match.word("align")),
 
-        .create(.identifier, match.identifier),
+        .create(.identifier, match_identifier),
         .create(.identifier, match.sequenceOf(.{ match.literal("@\""), match.takeNoneOf("\"\n\r"), match.literal("\"") })),
         .create(.identifier, match.sequenceOf(.{ match.literal("@"), match.identifier, match.literal("()") })),
 
         .create(.doc_comment, match.sequenceOf(.{ match.literal("///"), match.takeNoneOf("\n") })),
+        .create(.doc_comment, match.literal("///")),
         .create(.comment, match.sequenceOf(.{ match.literal("//?"), match.takeNoneOf("\n") })),
+        .create(.comment, match.literal("//?")),
 
         .create(.number, match.sequenceOf(.{ match.literal("0x"), match.hexadecimalNumber })),
         .create(.number, match.sequenceOf(.{ match.literal("0b"), match.binaryNumber })),
@@ -210,6 +233,9 @@ const Parser = struct {
             .item,
             .in,
             .out,
+            .resource,
+            .reserve,
+            .typedef,
             .@"return",
             .@"const",
             .@"...",
@@ -223,6 +249,7 @@ const Parser = struct {
             .bitstruct,
             .syscall,
             .async_call,
+            .resource,
             => blk: {
                 const identifier, _ = try parser.accept_identifier();
 
@@ -257,6 +284,7 @@ const Parser = struct {
                             .bitstruct,
                             .syscall,
                             .async_call,
+                            .resource,
                             => |tag| @field(DeclarationType, @tagName(tag)),
                             else => unreachable,
                         },
@@ -272,6 +300,12 @@ const Parser = struct {
                 const identifier, _ = try parser.accept_identifier();
                 try parser.expect(.@":");
                 const field_type = try parser.accept_type();
+
+                const default_value = if (try parser.try_accept(.@"=")) |_|
+                    try parser.accept_value()
+                else
+                    null;
+
                 try parser.expect(.@";");
                 break :blk .{
                     .field = .{
@@ -284,6 +318,7 @@ const Parser = struct {
                         },
                         .name = identifier,
                         .field_type = field_type,
+                        .default_value = default_value,
                     },
                 };
             },
@@ -306,10 +341,7 @@ const Parser = struct {
                 try parser.expect(.@";");
 
                 break :blk .{
-                    .typedef = .{
-                        .type = .@"return",
-                        .definition = return_type,
-                    },
+                    .return_type = return_type,
                 };
             },
 
@@ -346,6 +378,34 @@ const Parser = struct {
                 };
             },
 
+            .reserve => blk: {
+                const pad_type = try parser.accept_type();
+                try parser.expect(.@"=");
+                const value = try parser.accept_value();
+                try parser.expect(.@";");
+
+                break :blk .{
+                    .reserve = .{
+                        .type = pad_type,
+                        .value = value,
+                    },
+                };
+            },
+
+            .typedef => blk: {
+                const name, _ = try parser.accept_identifier();
+                try parser.expect(.@"=");
+                const deftype = try parser.accept_type();
+                try parser.expect(.@";");
+
+                break :blk .{
+                    .typedef = .{
+                        .name = name,
+                        .alias = deftype,
+                    },
+                };
+            },
+
             .@"..." => .ellipse,
 
             else => unreachable,
@@ -373,6 +433,16 @@ const Parser = struct {
     }
 
     fn accept_value_val(parser: *Parser) AcceptNodeError!ValueNode {
+        if (parser.accept_identifier()) |wrap| {
+            const identifier, _ = wrap;
+
+            if (std.meta.stringToEnum(NamedValue, identifier)) |named_value| {
+                return .{ .named = named_value };
+            }
+
+            return error.UnexpectedToken;
+        } else |_| {}
+
         const tok = try parser.accept(.number);
 
         const num = std.fmt.parseInt(u64, tok.text, 0) catch unreachable;
@@ -442,10 +512,11 @@ const Parser = struct {
                 .pointer = try parser.accept_pointer(.one),
             };
         }
+
         if (try parser.try_accept(.@"[")) |_| {
-            const maybe_array_size = if (try parser.try_accept(.number)) |array_size|
-                std.fmt.parseInt(u64, array_size.text, 0) catch unreachable
-            else
+            const maybe_array_size = if (parser.accept_value()) |array_size|
+                array_size
+            else |_|
                 null;
 
             const is_unbound = if (maybe_array_size != null)
@@ -473,15 +544,62 @@ const Parser = struct {
             }
         }
 
+        if (try parser.try_accept(.fnptr)) |_| {
+            var params: std.ArrayList(*const TypeNode) = .init(parser.allocator);
+            defer params.deinit();
+
+            try parser.expect(.@"(");
+            blk: {
+                if (try parser.try_accept(.@")")) |_|
+                    break :blk;
+                while (true) {
+                    const param = try parser.accept_type();
+
+                    try params.append(param);
+
+                    if (try parser.try_accept(.@")")) |_|
+                        break :blk;
+
+                    try parser.expect(.@",");
+                }
+            }
+
+            const return_type = try parser.accept_type();
+
+            return .{
+                .fnptr = .{
+                    .parameters = try params.toOwnedSlice(),
+                    .return_type = return_type,
+                },
+            };
+        }
+
         const name, _ = try parser.accept_identifier();
 
         if (std.meta.stringToEnum(BuiltinType, name)) |builtin| {
             return .{ .builtin = builtin };
-        } else {
-            return .{
-                .named = name,
-            };
         }
+
+        if (std.mem.startsWith(u8, name, "i")) {
+            if (std.fmt.parseInt(u8, name[1..], 10)) |size| {
+                return .{ .signed_int = size };
+            } else |err| switch (err) {
+                error.Overflow => return error.UnexpectedToken,
+                error.InvalidCharacter => {},
+            }
+        }
+        if (std.mem.startsWith(u8, name, "u")) {
+            if (std.fmt.parseInt(u8, name[1..], 10)) |size| {
+                return .{ .unsigned_int = size };
+            } else |err| switch (err) {
+                error.Overflow => return error.UnexpectedToken,
+                error.InvalidCharacter => {},
+            }
+        }
+
+        return .{
+            .named = name,
+        };
     }
 
     fn accept_identifier(parser: *Parser) !struct { []const u8, Token } {
@@ -549,8 +667,10 @@ const NodeType = enum {
     declaration,
     field,
     value,
+    return_type,
     typedef,
     name,
+    reserve,
     ellipse,
 };
 
@@ -567,8 +687,10 @@ const Node = struct {
         declaration: DeclarationNode,
         field: FieldNode,
         value: AssignmentNode,
+        return_type: *const TypeNode,
         typedef: TypeDefNode,
         name: NameNode,
+        reserve: PaddingNode,
         ellipse,
     };
 };
@@ -601,6 +723,10 @@ pub const ValueType = enum {
     @"const", // "const <name> = <value>,"
     item, // "item <name> = <value>,"
 };
+pub const PaddingNode = struct {
+    type: *const TypeNode,
+    value: *const ValueNode,
+};
 
 pub const NameNode = struct {
     type: NameType,
@@ -616,6 +742,7 @@ pub const FieldNode = struct {
     type: FieldType,
     name: []const u8,
     field_type: ?*const TypeNode,
+    default_value: ?*const ValueNode,
 };
 
 pub const FieldType = enum {
@@ -625,16 +752,19 @@ pub const FieldType = enum {
 };
 
 pub const TypeDefNode = struct {
-    type: TypeDefType,
-    definition: *const TypeNode,
-};
-
-pub const TypeDefType = enum {
-    @"return", // "return <type>,"
+    name: []const u8,
+    alias: *const TypeNode,
 };
 
 pub const ValueNode = union(enum) {
     uint: u64,
+    named: NamedValue,
+};
+
+pub const NamedValue = enum {
+    null,
+    false,
+    true,
 };
 
 pub const TypeNode = union(enum) {
@@ -644,8 +774,14 @@ pub const TypeNode = union(enum) {
     pointer: PointerTypeNode,
     array: struct {
         child: *const TypeNode,
-        size: u64,
+        size: *const ValueNode,
     },
+    fnptr: struct {
+        parameters: []const *const TypeNode,
+        return_type: *const TypeNode,
+    },
+    unsigned_int: u8,
+    signed_int: u8,
 };
 
 pub const PointerTypeNode = struct {
@@ -673,16 +809,7 @@ pub const BuiltinType = enum {
     bytebuf, // Mutable, sized byte buffer
 
     // integers:
-    u8,
-    u16,
-    u32,
-    u64,
     usize,
-
-    i8,
-    i16,
-    i32,
-    i64,
     isize,
 
     // floats:
