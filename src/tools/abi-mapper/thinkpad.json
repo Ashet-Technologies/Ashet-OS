@@ -1,0 +1,48 @@
+{
+    "root": [
+        { "namespace": {
+            "full_qualified_name": ["resources"],
+            "children": [
+                { "syscall": 0 },
+                { "syscall": 1 },
+                { "syscall": 2 },
+                { "syscall": 3 }
+            ]
+        } },
+        { "namespace": {
+            "full_qualified_name": ["process"],
+            "children": [
+                { "syscall": 0 },
+                { "syscall": 1 },
+                { "namespace": {
+                    "full_qualified_name": ["process", "thread"],
+                    "children": []
+                } },
+                { "syscall": 3 }
+            ]
+        } }
+    ],
+    "syscalls": [
+        {
+            "full_qualified_name": [ "resources", "get_type" ],
+            "docs": ["Returns the type of the system resource."],
+            "inputs": [
+                { "name": "resource", "type": 0 }
+            ],
+            "errors": [
+                { "name": "InvalidHandle", "docs": [] }
+            ],
+            "return_type": 1
+        }
+    ],
+
+
+    "types": [
+        { "external": { "name": "SystemResource" } }, 
+        { "external": { "name": "SystemResource.Type" } },
+        { "structure": 0 },
+        { "union": 0 },
+        { "enum": 0 },
+        { "typedef": { "name": "ThreadFunction", "alias": 10 } }
+    ]
+}
