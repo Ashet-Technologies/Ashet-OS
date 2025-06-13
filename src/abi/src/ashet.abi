@@ -1214,7 +1214,7 @@ namespace gui {
     /// The size of this must be known and cannot be queried.
     syscall get_widget_data {
         in      _param0: Widget;
-        returns [*]align(16) u8;
+        return [*]align(16) u8;
     }
     
     /// Creates a new desktop with the given name.
@@ -1256,7 +1256,7 @@ namespace gui {
     syscall get_desktop_data {
         in      _param0: Window;
         error   InvalidHandle;
-        returns [*]align(16) u8;
+        return [*]align(16) u8;
     }
     
     /// Notifies the system that a message box was confirmed by the user.

@@ -167,6 +167,8 @@ const Parser = struct {
     core: ParserCore,
     bad_token: ?Token = null,
 
+    named_types: std.StringArrayHashMapUnmanaged(*TypeNode) = .empty,
+
     pub fn accept_document(parser: *Parser) !Document {
         var doc: std.ArrayList(Node) = .init(parser.allocator);
         defer doc.deinit();
@@ -381,10 +383,51 @@ const Parser = struct {
     }
 
     fn accept_type(parser: *Parser) AcceptNodeError!*const TypeNode {
+        const tvalue = try parser.accept_type_val();
+
+        const maybe_named_ref = if (tvalue == .named) blk: {
+            const gop = try parser.named_types.getOrPut(parser.allocator, tvalue.named);
+            if (gop.found_existing) {
+                return gop.value_ptr.*;
+            }
+            break :blk gop;
+        } else null;
+
         const node = try parser.allocator.create(TypeNode);
-        errdefer parser.allocator.destroy(node);
-        node.* = try parser.accept_type_val();
+        node.* = tvalue;
+
+        if (maybe_named_ref) |gop| {
+            std.debug.assert(!gop.found_existing);
+            std.debug.assert(tvalue == .named);
+            std.debug.assert(node.* == .named);
+
+            gop.value_ptr.* = node;
+
+            std.log.warn("new named type: {*} '{'}'", .{ node, std.zig.fmtEscapes(node.named) });
+        }
+
         return node;
+    }
+
+    fn accept_pointer(parser: *Parser, size: PointerSize) AcceptNodeError!PointerTypeNode {
+        const is_const = (try parser.try_accept(.@"const")) != null;
+
+        const alignment = if (try parser.try_accept(.@"align")) |_| blk: {
+            try parser.expect(.@"(");
+            const num_tok = try parser.accept(.number);
+            try parser.expect(.@")");
+
+            break :blk std.fmt.parseInt(u64, num_tok.text, 0) catch unreachable;
+        } else null;
+
+        const child = try parser.accept_type();
+
+        return .{
+            .child = child,
+            .is_const = is_const,
+            .alignment = alignment,
+            .size = size,
+        };
     }
 
     fn accept_type_val(parser: *Parser) AcceptNodeError!TypeNode {
@@ -393,17 +436,11 @@ const Parser = struct {
 
             return .{ .optional = child };
         }
+
         if (try parser.try_accept(.@"*")) |_| {
-            const child = try parser.accept_type();
-
-            const is_const = (try parser.try_accept(.@"const")) != null;
-
-            return .{ .pointer = .{
-                .child = child,
-                .is_const = is_const,
-                .size = .one,
-                .alignment = null,
-            } };
+            return .{
+                .pointer = try parser.accept_pointer(.one),
+            };
         }
         if (try parser.try_accept(.@"[")) |_| {
             const maybe_array_size = if (try parser.try_accept(.number)) |array_size|
@@ -411,23 +448,16 @@ const Parser = struct {
             else
                 null;
 
-            const is_unbound = (try parser.try_accept(.@"*")) != null;
+            const is_unbound = if (maybe_array_size != null)
+                false
+            else
+                (try parser.try_accept(.@"*")) != null;
+
             try parser.expect(.@"]");
 
-            const is_const = (try parser.try_accept(.@"const")) != null;
-
-            const alignment = if (try parser.try_accept(.@"align")) |_| blk: {
-                try parser.expect(.@"(");
-                const num_tok = try parser.accept(.number);
-                try parser.expect(.@")");
-
-                break :blk std.fmt.parseInt(u64, num_tok.text, 0) catch unreachable;
-            } else null;
-
-            const child = try parser.accept_type();
             if (maybe_array_size) |array_size| {
-                if (is_const) return error.UnexpectedToken;
-                if (alignment != null) return error.UnexpectedToken;
+                std.debug.assert(is_unbound == false);
+                const child = try parser.accept_type();
                 return .{
                     .array = .{
                         .child = child,
@@ -436,23 +466,22 @@ const Parser = struct {
                 };
             } else {
                 return .{
-                    .pointer = .{
-                        .child = child,
-                        .is_const = is_const,
-                        .alignment = alignment,
-                        .size = if (is_unbound) .unknown else .slice,
-                    },
+                    .pointer = try parser.accept_pointer(
+                        if (is_unbound) .unknown else .slice,
+                    ),
                 };
             }
         }
 
         const name, _ = try parser.accept_identifier();
 
-        std.log.warn("type: {s}", .{name});
-
-        return .{
-            .named = name,
-        };
+        if (std.meta.stringToEnum(BuiltinType, name)) |builtin| {
+            return .{ .builtin = builtin };
+        } else {
+            return .{
+                .named = name,
+            };
+        }
     }
 
     fn accept_identifier(parser: *Parser) !struct { []const u8, Token } {
@@ -612,16 +641,24 @@ pub const TypeNode = union(enum) {
     builtin: BuiltinType,
     named: []const u8,
     optional: *const TypeNode,
-    pointer: struct {
-        child: *const TypeNode,
-        is_const: bool,
-        alignment: ?u64,
-        size: enum { one, slice, unknown },
-    },
+    pointer: PointerTypeNode,
     array: struct {
         child: *const TypeNode,
         size: u64,
     },
+};
+
+pub const PointerTypeNode = struct {
+    child: *const TypeNode,
+    is_const: bool,
+    alignment: ?u64,
+    size: PointerSize,
+};
+
+pub const PointerSize = enum {
+    one,
+    slice,
+    unknown,
 };
 
 pub const BuiltinType = enum {
