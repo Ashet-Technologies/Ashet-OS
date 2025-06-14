@@ -2,10 +2,13 @@ const std = @import("std");
 const model = @import("model.zig");
 const syntax = @import("syntax.zig");
 
+const Location = syntax.Location;
+
 pub fn analyze(allocator: std.mem.Allocator, document: syntax.Document) !model.Document {
     var analyzer: Analyzer = .{
         .allocator = allocator,
         .scope = .init(allocator),
+        .errors = .init(allocator),
 
         .root = .init(allocator),
         .structs = .init(allocator),
@@ -20,6 +23,13 @@ pub fn analyze(allocator: std.mem.Allocator, document: syntax.Document) !model.D
     };
 
     try analyzer.run(document);
+
+    if (analyzer.errors.items.len > 0) {
+        for (analyzer.errors.items) |err| {
+            std.log.err("{s}", .{err});
+        }
+        return error.AnalysisFailed;
+    }
 
     return .{
         .root = try analyzer.root.toOwnedSlice(),
@@ -86,6 +96,7 @@ fn Collector(comptime I: type) type {
 const Analyzer = struct {
     allocator: std.mem.Allocator,
     scope: std.ArrayList([]const u8),
+    errors: std.ArrayList([]const u8),
 
     root: std.ArrayList(model.Declaration),
 
@@ -109,15 +120,39 @@ const Analyzer = struct {
         std.debug.assert(ana.scope.pop() != null);
     }
 
-    fn run(ana: *Analyzer, doc: syntax.Document) !void {
+    fn run(ana: *Analyzer, doc: syntax.Document) error{OutOfMemory}!void {
         try ana.root.resize(doc.nodes.len);
         for (ana.root.items, doc.nodes) |*out, node| {
-            out.* = try ana.map_node(node);
+            out.* = ana.map_node(node) catch |err| switch (err) {
+                // swallow silently here, all nodes are independent from each other
+                error.FatalAnalysisError => continue,
+
+                error.OutOfMemory => |e| return e,
+            };
         }
+    }
+
+    fn fatal_error(ana: *Analyzer, location: Location, comptime fmt: []const u8, args: anytype) error{ OutOfMemory, FatalAnalysisError } {
+        try ana.emit_error(location, fmt, args);
+        return error.FatalAnalysisError;
+    }
+
+    fn emit_error(ana: *Analyzer, location: Location, comptime fmt: []const u8, args: anytype) error{OutOfMemory}!void {
+        const msg = try std.fmt.allocPrint(
+            ana.allocator,
+            "{}:" ++ fmt,
+            .{location} ++ args,
+        );
+        try ana.errors.append(msg);
+    }
+
+    fn emit_unexpected_node(ana: *Analyzer, node: syntax.Node) !void {
+        try ana.emit_error(node.location, "Unexpected node: {s}", .{@tagName(node.type)});
     }
 
     const MapError = error{
         OutOfMemory,
+        FatalAnalysisError,
     };
 
     fn map_node(ana: *Analyzer, node: syntax.Node) MapError!model.Declaration {
@@ -128,12 +163,12 @@ const Analyzer = struct {
             .typedef => try ana.map_typedef(node),
             .@"const" => try ana.map_const(node),
 
-            .return_type => @panic("return_type not implemented yet!"),
-            .field => @panic("field not implemented yet!"),
-            .item => @panic("item not implemented yet!"),
-            .name => @panic("name not implemented yet!"),
-            .reserve => @panic("reserve not implemented yet!"),
-            .ellipse => @panic("ellipse not implemented yet!"),
+            .return_type => return ana.fatal_error(node.location, "invalid top-level element: return", .{}),
+            .field => return ana.fatal_error(node.location, "invalid top-level element: field", .{}),
+            .item => return ana.fatal_error(node.location, "invalid top-level element: item", .{}),
+            .@"error" => return ana.fatal_error(node.location, "invalid top-level element: error", .{}),
+            .reserve => return ana.fatal_error(node.location, "invalid top-level element: reserve", .{}),
+            .ellipse => return ana.fatal_error(node.location, "invalid top-level element: ...", .{}),
         };
     }
 
@@ -175,6 +210,7 @@ const Analyzer = struct {
         full_name: model.FQN,
         docs: model.DocString,
         sub_type: ?model.StandardType,
+        location: Location,
     };
 
     /// Strips empty heads and tails, then left-aligns a doc comment
@@ -243,9 +279,11 @@ const Analyzer = struct {
         defer children.deinit();
 
         for (decl.children) |src| {
+            if (!src.is_declaration())
+                continue;
             switch (src.type) {
                 .declaration, .typedef, .@"const" => try children.append(try ana.map_node(src)),
-                .ellipse, .field, .name, .reserve, .return_type, .item => continue,
+                else => unreachable,
             }
         }
 
@@ -256,13 +294,17 @@ const Analyzer = struct {
 
         const has_subtype = (decl.subtype != null);
         if (needs_subtype != has_subtype) {
-            @panic("TODO: Subtype expected, but not present!");
+            if (needs_subtype) {
+                return ana.fatal_error(node.location, "Sub-type expected, but none present", .{});
+            } else {
+                return ana.fatal_error(node.location, "No sub-type expected, but one is given", .{});
+            }
         }
 
         const sub_type: ?model.StandardType = if (needs_subtype) blk: {
             const model_type = try ana.map_type_inner(decl.subtype.?);
             if (model_type != .well_known)
-                @panic("TODO: subtype must be standard type");
+                return ana.fatal_error(node.location, "subtype must be standard type, not a {s}", .{@tagName(model_type)});
             break :blk model_type.well_known;
         } else null;
 
@@ -270,12 +312,13 @@ const Analyzer = struct {
             .docs = doc_comment,
             .full_name = full_name,
             .sub_type = sub_type,
+            .location = node.location,
         };
 
         const data: model.Declaration.Data = switch (decl.type) {
             .namespace => .namespace,
-            .@"struct" => .namespace,
-            .@"union" => .namespace,
+            .@"struct" => try ana.map_struct(info, decl),
+            .@"union" => try ana.map_union(info, decl),
             .@"enum" => try ana.map_enum(info, decl),
             .bitstruct => .namespace,
             .syscall => .namespace,
@@ -295,8 +338,9 @@ const Analyzer = struct {
         std.debug.assert(info.sub_type == null);
 
         for (decl.children) |child| {
-            if (child.is_declaration()) continue;
-            @panic("TODO: resources cannot have fields");
+            if (child.is_declaration())
+                continue;
+            try ana.emit_unexpected_node(child);
         }
 
         const index = try ana.resources.append(.{
@@ -311,7 +355,7 @@ const Analyzer = struct {
         std.debug.assert(info.sub_type != null);
 
         if (!info.sub_type.?.is_integer()) {
-            @panic("TODO: enum subtype must be integer");
+            return ana.fatal_error(info.location, "enum sub-type must be an integer", .{});
         }
 
         var last_index: i65 = 0;
@@ -326,7 +370,7 @@ const Analyzer = struct {
             switch (child.type) {
                 .ellipse => {
                     if (kind == .open)
-                        @panic("TODO: ellipse specified twice!");
+                        try ana.emit_error(child.location, "... specified twice", .{});
                     kind = .open;
                 },
 
@@ -336,8 +380,11 @@ const Analyzer = struct {
                     else
                         .{ .int = last_index + 1 };
                     if (value != .int)
-                        @panic("TODO: enum item must be an integer!");
+                        return ana.fatal_error(child.location, "enum item value must be an integer, not a {s}", .{@tagName(value)});
 
+                    if (defined.get(data.name) != null) {
+                        try ana.emit_error(child.location, "duplicate enum item: {s}", .{data.name});
+                    }
                     try defined.put(data.name, {});
 
                     try items.append(.{
@@ -349,7 +396,7 @@ const Analyzer = struct {
                     last_index = value.int;
                 },
 
-                else => @panic("TODO: Illegal declaration!"),
+                else => try ana.emit_unexpected_node(child),
             }
         }
 
@@ -362,6 +409,61 @@ const Analyzer = struct {
         });
 
         return .{ .@"enum" = index };
+    }
+
+    fn map_struct(ana: *Analyzer, info: NodeInfo, decl: syntax.DeclarationNode) !model.Declaration.Data {
+        return try ana.map_struct_or_union(.@"struct", info, decl);
+    }
+
+    fn map_union(ana: *Analyzer, info: NodeInfo, decl: syntax.DeclarationNode) !model.Declaration.Data {
+        return try ana.map_struct_or_union(.@"union", info, decl);
+    }
+
+    fn map_struct_or_union(ana: *Analyzer, mode: enum { @"union", @"struct" }, info: NodeInfo, decl: syntax.DeclarationNode) !model.Declaration.Data {
+        std.debug.assert(info.sub_type == null);
+
+        var fields: std.ArrayList(model.StructField) = .init(ana.allocator);
+        var defined: std.StringArrayHashMap(void) = .init(ana.allocator);
+
+        for (decl.children) |child| {
+            if (child.is_declaration())
+                continue;
+            switch (child.type) {
+                .field => |data| {
+                    const type_id = try ana.map_type(data.field_type);
+
+                    if (defined.get(data.name) != null) {
+                        try ana.emit_error(child.location, "duplicate {s} field: {s}", .{ @tagName(mode), data.name });
+                    }
+                    try defined.put(data.name, {});
+
+                    try fields.append(.{
+                        .docs = try ana.map_doc_comment(child.doc_comment),
+                        .name = data.name,
+                        .type = type_id,
+                    });
+                },
+
+                else => try ana.emit_unexpected_node(child),
+            }
+        }
+
+        const output: model.Struct = .{
+            .docs = info.docs,
+            .full_qualified_name = info.full_name,
+            .fields = try fields.toOwnedSlice(),
+        };
+
+        switch (mode) {
+            .@"struct" => {
+                const index = try ana.structs.append(output);
+                return .{ .@"struct" = index };
+            },
+            .@"union" => {
+                const index = try ana.unions.append(output);
+                return .{ .@"union" = index };
+            },
+        }
     }
 
     const MapTypeError = error{OutOfMemory};
@@ -401,6 +503,8 @@ const Analyzer = struct {
                 .fnptr => |ptr| std.mem.eql(model.TypeIndex, ptr.parameters, other.fnptr.parameters) and ptr.return_type == other.fnptr.return_type,
 
                 .ptr => |ptr| ptr.size == other.ptr.size and ptr.alignment == other.ptr.alignment and ptr.is_const == other.ptr.is_const and ptr.child == other.ptr.child,
+
+                .array => |arr| arr.size == other.array.size and arr.child == other.array.child,
             };
             if (eql)
                 return .from_int(index);
@@ -465,8 +569,16 @@ const Analyzer = struct {
             },
 
             .array => |data| {
-                _ = data;
-                @panic("array is not supported yet!");
+                const child = try ana.map_type(data.child);
+
+                const size: u32 = 0; // TODO:  Implement resolution of named array sizes
+
+                return .{
+                    .array = .{
+                        .child = child,
+                        .size = size,
+                    },
+                };
             },
 
             .fnptr => |data| {

@@ -2310,7 +2310,7 @@ struct FileSystemInfo {
         /// the file system is mounted as read-only
         field read_only: bool;
 
-        field reserved: u13 = 0;
+        reserve u13 = 0;
     }
 }
 

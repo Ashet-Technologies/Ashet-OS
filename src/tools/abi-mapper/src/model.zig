@@ -85,6 +85,7 @@ pub const Type = union(enum) {
     typedef: TypeDefition,
 
     optional: TypeIndex,
+    array: ArrayType,
 
     uint: u8,
     int: u8,
@@ -109,6 +110,11 @@ pub const PointerSize = enum {
 pub const FunctionPointer = struct {
     parameters: []const TypeIndex,
     return_type: TypeIndex,
+};
+
+pub const ArrayType = struct {
+    child: TypeIndex,
+    size: u32,
 };
 
 pub const TypeId = std.meta.Tag(Type);
@@ -141,6 +147,7 @@ pub const StructField = struct {
     docs: DocString,
     name: []const u8,
     type: TypeIndex,
+    // TODO: default: ???
 };
 
 pub const Enumeration = struct {

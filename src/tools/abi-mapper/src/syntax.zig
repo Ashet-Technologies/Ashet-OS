@@ -282,21 +282,14 @@ pub const Parser = struct {
 
                 try parser.expect(.@";");
 
-                break :blk .{
-                    .name = .{
-                        .type = .@"error",
-                        .name = name,
-                    },
-                };
+                break :blk .{ .@"error" = name };
             },
 
             .@"return" => blk: {
                 const return_type = try parser.accept_type();
                 try parser.expect(.@";");
 
-                break :blk .{
-                    .return_type = return_type,
-                };
+                break :blk .{ .return_type = return_type };
             },
 
             .@"const" => blk: {
@@ -622,7 +615,7 @@ const NodeType = enum {
     item,
     return_type,
     typedef,
-    name,
+    @"error",
     reserve,
     ellipse,
 };
@@ -641,12 +634,12 @@ pub const Node = struct {
             .declaration,
             .typedef,
             .@"const",
-            => false,
+            => true,
 
             .field,
             .item,
             .return_type,
-            .name,
+            .@"error",
             .reserve,
             .ellipse,
             => false,
@@ -660,7 +653,7 @@ pub const Node = struct {
         item: AssignmentNode, // "item <name> = <value>;"
         return_type: *const TypeNode, // "return <type>;"
         typedef: TypeDefNode,
-        name: NameNode,
+        @"error": []const u8,
         reserve: PaddingNode,
         ellipse, // "..."
     };
@@ -694,20 +687,10 @@ pub const PaddingNode = struct {
     value: *const ValueNode,
 };
 
-pub const NameNode = struct {
-    type: NameType,
-    name: []const u8,
-};
-
-pub const NameType = enum {
-    @"error", // "error OutOfMemory,"
-    item, // "item foo,"
-};
-
 pub const FieldNode = struct {
     type: FieldType,
     name: []const u8,
-    field_type: ?*const TypeNode,
+    field_type: *const TypeNode,
     default_value: ?*const ValueNode,
 };
 
