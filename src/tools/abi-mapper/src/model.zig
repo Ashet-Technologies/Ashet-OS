@@ -43,6 +43,16 @@ pub const Document = struct {
     types: []const Type,
 };
 
+pub const StructIndex = GenericIndex(Struct, "structs");
+pub const UnionIndex = GenericIndex(Struct, "unions");
+pub const EnumerationIndex = GenericIndex(Enumeration, "enums");
+pub const BitStructIndex = GenericIndex(BitStruct, "bitstructs");
+pub const SystemCallIndex = GenericIndex(SystemCall, "syscalls");
+pub const AsyncCallIndex = GenericIndex(AsyncCall, "async_calls");
+pub const ResourceIndex = GenericIndex(Resource, "resources");
+pub const ConstantIndex = GenericIndex(Constant, "constants");
+pub const TypeIndex = GenericIndex(Type, "types");
+
 pub const Declaration = struct {
     docs: DocString,
     full_qualified_name: FQN,
@@ -51,30 +61,30 @@ pub const Declaration = struct {
 
     pub const Data = union(enum) {
         namespace: void,
-        @"struct": usize, // .structs[]
-        @"union": usize, // .unions[]
-        @"enum": usize, // .enums[]
-        bitstruct: usize, // .bitstructs[]
-        syscall: usize, // .syscalls[]
-        async_call: usize, // .async_calls[]
-        resource: usize, // .resources[]
-        constant: usize, // .constants[]
-        typedef: usize, // .types[] == .typedef
+        @"struct": StructIndex,
+        @"union": UnionIndex,
+        @"enum": EnumerationIndex,
+        bitstruct: BitStructIndex,
+        syscall: SystemCallIndex,
+        async_call: AsyncCallIndex,
+        resource: ResourceIndex,
+        constant: ConstantIndex,
+        typedef: TypeIndex, // .types[] == .typedef
     };
 };
 
 pub const Type = union(enum) {
-    @"struct": usize, // .structs[]
-    @"union": usize, // .unions[]
-    @"enum": usize, // .enums[]
-    bitstruct: usize, // .bitstructs[]
-    resource: usize, // .resources[]
+    @"struct": StructIndex,
+    @"union": UnionIndex,
+    @"enum": EnumerationIndex,
+    bitstruct: BitStructIndex,
+    resource: ResourceIndex,
     well_known: StandardType,
 
     external: ExternalType,
     typedef: TypeDefition,
 
-    optional: usize, // .types[]
+    optional: TypeIndex,
 
     uint: u8,
     int: u8,
@@ -84,7 +94,7 @@ pub const Type = union(enum) {
 };
 
 pub const DataPointer = struct {
-    child: usize, // .types[]
+    child: TypeIndex,
     is_const: bool,
     alignment: ?u64,
     size: PointerSize,
@@ -97,8 +107,8 @@ pub const PointerSize = enum {
 };
 
 pub const FunctionPointer = struct {
-    parameters: []const usize, // .types[]
-    return_type: usize, // .types[]
+    parameters: []const TypeIndex,
+    return_type: TypeIndex,
 };
 
 pub const TypeId = std.meta.Tag(Type);
@@ -130,7 +140,7 @@ pub const Struct = struct {
 pub const StructField = struct {
     docs: DocString,
     name: []const u8,
-    type: usize, // .types[]
+    type: TypeIndex,
 };
 
 pub const Enumeration = struct {
@@ -160,7 +170,7 @@ pub const SystemCall = struct {
     inputs: []const Parameter,
     errors: []const Error,
 
-    return_type: usize, // .types[]
+    return_type: TypeIndex,
 };
 
 pub const AsyncCall = struct {
@@ -176,7 +186,7 @@ pub const AsyncCall = struct {
 pub const Parameter = struct {
     docs: DocString,
     name: []const u8,
-    type: usize, // .types[]
+    type: TypeIndex,
     // TODO: default: ???
 };
 
@@ -193,7 +203,7 @@ pub const Error = struct {
 pub const Constant = struct {
     docs: DocString,
     full_qualified_name: FQN,
-    type: ?usize, // .types[]
+    type: ?TypeIndex,
     // TODO: value: ???
 };
 
@@ -318,3 +328,19 @@ pub const StandardType = enum {
         };
     }
 };
+
+fn GenericIndex(comptime T: type, comptime field: []const u8) type {
+    return enum(usize) {
+        pub const Pointee = T;
+
+        _,
+
+        pub fn from_int(i: usize) @This() {
+            return @enumFromInt(i);
+        }
+
+        pub fn get(index: @This(), doc: *Document) *Pointee {
+            return @field(doc, field)[@intFromEnum(index)];
+        }
+    };
+}
