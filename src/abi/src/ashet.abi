@@ -1,6 +1,3 @@
-typedef AbstractFunction = fnptr () void;
-
-
 /// All syscalls related to generic resource management.
 namespace resources {
     /// Returns the type of the system resource.
@@ -200,13 +197,13 @@ namespace process {
         /// Defines the signature of a thread entry point.
         /// The parameter is the `arg` value passed to `spawn`.
         /// The return value is the exit code of the thread.
-        typedef ThreadFunction = fnptr (?*void) u32;
+        typedef ThreadFunction = fnptr (?anyptr) u32;
 
         /// Spawns a new thread with `function` passing `arg` to it.
         /// If `stack_size` is not 0, will create a stack with the given size.
         syscall spawn {
             in      function:   ThreadFunction;
-            in      arg:        ?*void;
+            in      arg:        ?anyptr;
             in      stack_size: usize;
             return ?Thread;
         }
@@ -1344,7 +1341,7 @@ namespace service {
     /// Takes an array of function pointers that will be provided for IPC and a service name to be advertised.
     syscall create {
         in      uuid: *const UUID;
-        in      funcs: []const AbstractFunction;
+        in      funcs: []const anyfnptr;
         in      name: str;
         error   AlreadyRegistered;
         error   SystemResources;
@@ -1360,23 +1357,22 @@ namespace service {
 
     /// Returns the name of the service.
     syscall get_name {
-        in      _param0: Service;
+        in      svc: Service;
         return str;
     }
 
     /// Returns the process that created this service.
     syscall get_process {
-        in      _param0: Service;
+        in      svc: Service;
         return Process;
     }
 
     /// Returns the functions registerd by the service.
     syscall get_functions {
-        in      _param0: Service;
-        in      funcs: ?[]AbstractFunction;
+        in      svc: Service;
+        in      funcs: ?[]anyfnptr;
         return usize;
     }
-
 }
 
 resource Service { }
@@ -2319,7 +2315,9 @@ struct FileSystemInfo {
 }
 
 struct FileInfo {
+    /// The name of the file.
     field name: [max_file_name_len]u8;
+    /// The size of the file in bytes.
     field size: u64;
     field attributes: FileAttributes;
     field creation_date: DateTime;

@@ -11,10 +11,6 @@ pub fn build(b: *std.Build) void {
     const args_mod = args_dep.module("args");
     const ptk_mod = ptk_dep.module("parser-toolkit");
 
-    const abi_schema_mod = b.addModule("abi-schema", .{
-        .root_source_file = b.path("src/json-schema.zig"),
-    });
-
     const abi_parser_mod = b.addModule("abi-parser", .{
         .target = target,
         .optimize = optimize,
@@ -22,7 +18,6 @@ pub fn build(b: *std.Build) void {
         .imports = &.{
             .{ .name = "args", .module = args_mod },
             .{ .name = "ptk", .module = ptk_mod },
-            .{ .name = "schema", .module = abi_schema_mod },
         },
     });
 

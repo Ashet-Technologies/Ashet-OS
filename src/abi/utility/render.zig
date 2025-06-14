@@ -1,5 +1,5 @@
 const std = @import("std");
-const abi_schema = @import("abi-schema");
+const abi_schema = @import("abi-parser");
 
 const Mode = enum { userland, kernel, definition, stubs };
 
