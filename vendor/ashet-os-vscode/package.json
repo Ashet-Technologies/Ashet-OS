@@ -1,0 +1,37 @@
+{
+  "name": "ashet-os-vscode",
+  "displayName": "Ashet OS",
+  "description": "Support for Ashet OS specific file formats",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "ashetabi",
+        "aliases": [
+          "Ashet ABI Definition",
+          "ashetabi"
+        ],
+        "extensions": [
+          ".abi"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "ashetabi",
+        "scopeName": "source.abi",
+        "path": "./syntaxes/ashetabi.tmLanguage.json"
+      }
+    ]
+  },
+  "dependencies": {
+    "@vscode/vsce": "^3.5.0"
+  }
+}

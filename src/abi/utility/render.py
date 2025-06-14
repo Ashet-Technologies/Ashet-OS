@@ -26,7 +26,7 @@ T = TypeVar("T")
 def log(*args, **kwargs):
     if len(args) > 0:
         print(" ".join(repr(v) for v in args), file=sys.stderr)
-    l = max(len(k) for k in kwargs.keys()) if len(kwargs.keys()) > 0 else 0
+    l = max(len(k) for k in kwargs.keys())
     for k, v in kwargs.items():
         r = repr(v)
         try:
@@ -112,9 +112,7 @@ class DocComment:
 class Declaration:
     name: str
     docs: DocComment | None
-    full_qualified_name: RefValue[str] = field(
-        kw_only=True, default_factory=lambda: RefValue[str](None)
-    )
+    full_qualified_name: RefValue[str] = field(kw_only=True, default_factory=lambda: RefValue[str](None))
 
 
 @dataclass(frozen=True, eq=True)
@@ -153,8 +151,7 @@ class ParameterCollection:
 
     def __init__(self, params: list[Parameter]):
         self.abi = [
-            param if param.name else replace_field(param, name=f"_param{index}")
-            for index, param in enumerate(params)
+            param if param.name else replace_field(param, name=f"_param{index}") for index, param in enumerate(params)
         ]
         self.native = list()
         self.annotations = list()
@@ -171,11 +168,7 @@ class ParameterCollection:
         is_out_value = False
         is_optional_value = False
 
-        if (
-            isinstance(slice_type, PointerType)
-            and slice_type.size == PointerSize.one
-            and not slice_type.const
-        ):
+        if isinstance(slice_type, PointerType) and slice_type.size == PointerSize.one and not slice_type.const:
             slice_type = slice_type.inner
             is_out_value = True
             reconstruct_stack.append(
@@ -291,9 +284,7 @@ class EnumeratedComponent:
     """
 
     key: RefValue[str] = field(kw_only=True, default_factory=lambda: RefValue[str](""))
-    number: RefValue[int] = field(
-        kw_only=True, default_factory=lambda: RefValue[int](None)
-    )
+    number: RefValue[int] = field(kw_only=True, default_factory=lambda: RefValue[int](None))
 
 
 @dataclass(frozen=True, eq=True)
@@ -333,39 +324,6 @@ class TopLevelCode(Container):
     rest: str
 
 
-@dataclass(frozen=True, eq=True)
-class ErrorAllocation:
-    mapping: dict[str, int] = field(default_factory=lambda: dict())
-
-    def get_number(self, err: str):
-        val = self.mapping.get(err, None)
-        if val is None:
-            val = max(self.mapping.values() or [0]) + 1
-            self.mapping[err] = val
-        return val
-
-    def collect(self, decl: Declaration):
-        if isinstance(decl, ErrorSet):
-            self.insert_error_set(decl)
-        elif isinstance(decl, Namespace):
-            for sub in decl.decls:
-                self.collect(sub)
-        elif isinstance(decl, Function):
-            if isinstance(decl.abi_return_type, ErrorSet):
-                self.insert_error_set(decl.abi_return_type)
-            elif isinstance(decl.abi_return_type, ErrorUnion):
-                self.insert_error_set(decl.abi_return_type.error)
-        elif isinstance(decl, AsyncOp):
-            self.insert_error_set(decl.error)
-        elif isinstance(decl, SystemResource):
-            pass
-        else:
-            panic("unexpected", decl)
-
-    def insert_error_set(self, set: ErrorSet):
-        for err in set.errors:
-            self.get_number(err)
-
 
 @dataclass(frozen=True, eq=True)
 class ABI_Definition:
@@ -373,358 +331,6 @@ class ABI_Definition:
     sys_resources: list[str]
     iops: list[AsyncOp]
     syscalls: list[Function]
-
-
-class ABI_JsonEncoder(json.JSONEncoder):
-    def default(self, o):
-        if o is None:
-            return None
-        if isinstance(o, str):
-            return o
-
-        if isinstance(o, ABI_Definition):
-            return {
-                "root_container": {
-                    "decls": list(map(self.default, o.root_container.decls)),
-                    "rest": o.root_container.rest,
-                },
-                "sys_resources": o.sys_resources,
-                "iops": list(map(self.default, o.iops)),
-                "syscalls": list(map(self.default, o.syscalls)),
-            }
-
-        if isinstance(o, Declaration):
-            return self.json_decl(o)
-
-        if isinstance(o, Type):
-            return self.json_type(o)
-
-        if isinstance(o, ParameterCollection):
-            return {
-                "abi": list(map(self.default, o.abi)),
-                "native": list(map(self.default, o.native)),
-                "annotations": list(map(self.default, o.annotations)),
-            }
-
-        if isinstance(o, Parameter):
-            return {
-                "name": o.name,
-                "docs": self.default(o.docs),
-                "type": self.json_type(o.type),
-            }
-
-        if isinstance(o, ParameterAnnotation):
-            return {
-                "is_slice": o.is_slice,
-                "is_optional": o.is_optional,
-                "is_out": o.is_out,
-                "technical": o.technical,
-            }
-        if isinstance(o, DocComment):
-            return "\n".join(o.lines)
-
-        if isinstance(o, RefValue):
-            return self.default(o.value)
-
-        return super().default(o)
-
-    def json_decl(self, d: Declaration):
-        assert isinstance(d, Declaration)
-        decl_json = {
-            "name": d.name,
-            "docs": self.default(d.docs),
-            "full_qualified_name": d.full_qualified_name,
-            "value": None,
-        }
-        if isinstance(d, SystemResource):
-            decl_json["value"] = {
-                "SystemResource": {},
-            }
-        elif isinstance(d, Namespace):
-            decl_json["value"] = {
-                "Namespace": {
-                    "decls": list(map(self.json_decl, d.decls)),
-                },
-            }
-        elif isinstance(d, ErrorSet):
-            decl_json["value"] = {
-                "ErrorSet": {"errors": list(d.errors)},
-            }
-        elif isinstance(d, Function):
-            decl_json["value"] = {
-                "Function": {
-                    "params": self.default(d.params),
-                    "abi_return_type": self.json_type(d.abi_return_type),
-                    "key": str(d.key),
-                    "value": d.number.value,
-                }
-            }
-        elif isinstance(d, AsyncOp):
-            decl_json["value"] = {
-                "AsyncOp": {
-                    "inputs": self.default(d.inputs),
-                    "outputs": self.default(d.outputs),
-                    "error": self.json_type(d.error),
-                }
-            }
-        return decl_json
-
-    def json_type(self, t: Type):
-        assert isinstance(t, Type)
-        if isinstance(t, ReferenceType):
-            return {"ReferenceType": {"name": t.name}}
-        elif isinstance(t, OptionalType):
-            return {"OptionalType": {"inner": self.json_type(t.inner)}}
-        elif isinstance(t, ArrayType):
-            return {
-                "ArrayType": {
-                    "size": t.size,
-                    "sentinel": str(t.sentinel),
-                    "inner": self.json_type(t.inner),
-                }
-            }
-        elif isinstance(t, PointerType):
-            return {
-                "PointerType": {
-                    "size": t.size,
-                    "sentinel": str(t.sentinel),
-                    "const": t.const,
-                    "volatile": t.volatile,
-                    "alignment": t.alignment,
-                    "inner": self.json_type(t.inner),
-                }
-            }
-        elif isinstance(t, ErrorUnion):
-            return {
-                "ErrorUnion": {
-                    "error": self.json_type(t.error),
-                    "result": self.json_type(t.result),
-                }
-            }
-        elif isinstance(t, ErrorSet):
-            return {"ErrorSet": {"errors": list(t.errors)}}
-        else:
-            super().default(t)
-
-
-def unwrap_items(func):
-    def _deco(self, items):
-        return func(self, *items)
-
-    return _deco
-
-
-class ZigCodeTransformer(Transformer):
-    def toplevel(self, items) -> TopLevelCode:
-        return TopLevelCode(
-            decls=items[0].decls,
-            rest=items[1] or "",
-        )
-
-    def zigcode(self, items) -> str:
-        assert len(items) == 1
-        return items[0].value
-
-    def container(self, items) -> Container:
-        return Container(decls=items)
-
-    def decl(self, items) -> Declaration:
-        if len(items) == 1:  # no doc comment
-            return items[0]
-        elif len(items) == 2:  # with doc comment
-            return replace_field(items[1], docs=items[0])
-        else:
-            assert False
-
-    def raw_decl(self, items) -> Declaration:
-        assert len(items) == 1
-        return items[0]
-
-    def src_decl(self, items) -> SystemResource:
-        assert len(items) == 1
-        return SystemResource(
-            name=items[0],
-            docs=None,
-        )
-
-    def fn_decl(self, items) -> Function:
-        func = Function(
-            name=items[0],
-            docs=None,
-            params=ParameterCollection(items[1]),
-            abi_return_type=items[2],
-        )
-
-        if isinstance(func.abi_return_type, ErrorUnion):
-            func.params.append(
-                Parameter(
-                    name="__return_value",
-                    type=PointerType(
-                        size=PointerSize.one,
-                        inner=func.abi_return_type.result,
-                        sentinel=None,
-                        const=False,
-                        volatile=False,
-                        alignment=None,
-                    ),
-                    docs=None,
-                ),
-                technical=True,
-            )
-
-        return func
-
-    @unwrap_items
-    def return_type(self, error_type, result_type) -> Type:
-        if error_type is not None:
-            return ErrorUnion(result=result_type, error=error_type)
-        else:
-            return result_type
-
-    def ns_decl(self, items) -> Namespace:
-        return Namespace(
-            name=items[0],
-            docs=None,
-            decls=items[1].decls,
-        )
-
-    def err_decl(self, items) -> ErrorSet:
-        etype = items[1]
-        return replace_field(etype, name=items[0])
-
-    @unwrap_items
-    def iop_decl(self, identifier, inputs, errorset, outputs) -> AsyncOp:
-        return AsyncOp(
-            name=identifier,
-            docs=None,
-            inputs=ParameterCollection(inputs),
-            outputs=ParameterCollection(outputs),
-            error=errorset,
-        )
-
-    def iop_struct(self, items) -> list[Parameter]:
-        assert all(isinstance(item, Parameter) for item in items)
-        return items
-
-    def iop_struct_field(self, items):
-        return Parameter(
-            docs=items[0],
-            name=items[1],
-            type=items[2],
-        )
-
-    def param_list(self, items) -> list[Parameter]:
-        assert len(items) >= 1
-        if items[0] is None:  # special case: empty list
-            assert len(items) == 1
-            return []
-        return items
-
-    def parameter(self, items) -> Parameter:
-        if len(items) == 1:  # no doc comment
-            return items[0]
-        elif len(items) == 2:  # with doc comment
-            return replace_field(items[1], docs=items[0])
-        else:
-            assert False
-
-    def raw_parameter(self, items) -> Parameter:
-        if len(items) == 1:  # no doc comment
-            return Parameter(docs=None, name=None, type=items[0])
-        elif len(items) == 2:  # with doc comment
-            return Parameter(docs=None, name=items[0], type=items[1])
-        else:
-            assert False
-
-    def type(self, items) -> Type:
-        assert len(items) == 1
-        if isinstance(items[0], Type):
-            return items[0]
-        print("unmapped type", items, file=sys.stderr)
-        return Type()
-
-    def ref_type(self, items) -> ReferenceType:
-        return ReferenceType(name=items[0])
-
-    def opt_type(self, items) -> OptionalType:
-        return OptionalType(inner=items[0])
-
-    def err_type(self, items) -> ErrorSet:
-        if len(items) == 1 and items[0] is None:
-            items = []
-        return ErrorSet(errors=set(items), docs=None, name=None)
-
-    def arr_type(self, items) -> ArrayType:
-        return ArrayType(
-            inner=items[2],
-            size=items[0],
-            sentinel=items[1],
-        )
-
-    def ptr_type(self, items) -> PointerType:
-        size, sentinel = items[0]
-        mods = items[1]
-
-        return PointerType(
-            inner=items[2],
-            size=size,
-            sentinel=sentinel,
-            const=mods.get("const", False),
-            volatile=mods.get("volatile", False),
-            alignment=mods.get("alignment", None),
-        )
-
-    def ptr_size(self, items) -> tuple[PointerSize, str | None]:
-        if len(items) == 0:  # "*"
-            return (PointerSize.one, None)
-        assert len(items) == 1
-        return items[0]
-
-    def ptr_size_many(self, items) -> tuple[PointerSize, str | None]:
-        if len(items) == 1:
-            return (PointerSize.many, items[0])
-        assert len(items) == 0
-        return (PointerSize.many, None)
-
-    def ptr_size_slice(self, items) -> tuple[PointerSize, str | None]:
-        if len(items) == 1:
-            return (PointerSize.slice, items[0])
-        assert len(items) == 0
-        return (PointerSize.slice, None)
-
-    def ptr_mods(self, items) -> dict[str, str]:
-        mods = {k: v for mod in items for k, v in mod.items()}
-        return mods
-
-    def ptr_const(self, items):
-        assert len(items) == 0
-        return {"const": True}
-
-    def ptr_volatile(self, items):
-        assert len(items) == 0
-        return {"volatile": True}
-
-    def ptr_align(self, items):
-        assert len(items) == 1
-        return {"alignment": items[0]}
-
-    def value(self, items):
-        return items[0]
-
-    def integer(self, items):
-        assert len(items) == 1
-        return int(items[0].value)
-
-    def identifier(self, items):
-        assert len(items) == 1
-        return items[0].value
-
-    def doc_comment(self, items) -> DocComment:
-        return DocComment(lines=items)
-
-    def doc_comment_line(self, items):
-        return items[0].value.lstrip("///").strip()
-
 
 ZIG_BUILTIN_TYPES = {
     "void",
@@ -913,9 +519,7 @@ def render_arc_type(stream: CodeStream, iop: AsyncOp):
         stream.writeln("pub const Outputs = extern struct {")
         with stream.indent():
             stream.writeln("pub const Overlapped = Self;")
-            write_struct_fields(
-                iop.outputs.native, default_factory=lambda f: "undefined"
-            )
+            write_struct_fields(iop.outputs.native, default_factory=lambda f: "undefined")
         stream.writeln("};")
         stream.write("pub const Error = ")
         render_error_set(stream, iop.error)
@@ -965,9 +569,7 @@ def render_arc_type(stream: CodeStream, iop: AsyncOp):
         stream.writeln("}")
         stream.writeln()
 
-        stream.writeln(
-            "pub fn check_error(val: Self) (Error||error{Unexpected})!void {"
-        )
+        stream.writeln("pub fn check_error(val: Self) (Error||error{Unexpected})!void {")
         with stream.indent():
             stream.writeln('return switch(val.@"error") {')
             with stream.indent():
@@ -980,9 +582,7 @@ def render_arc_type(stream: CodeStream, iop: AsyncOp):
 
         stream.writeln()
 
-        stream.writeln(
-            "pub fn get_outputs(val: *const Self) (Error||error{Unexpected})!*const Outputs {"
-        )
+        stream.writeln("pub fn get_outputs(val: *const Self) (Error||error{Unexpected})!*const Outputs {")
         with stream.indent():
             stream.writeln("try val.check_error();")
             stream.writeln("return &val.outputs;")
@@ -990,9 +590,7 @@ def render_arc_type(stream: CodeStream, iop: AsyncOp):
 
         if len(iop.outputs.native) == 1:
             result = iop.outputs.native[0]
-            stream.write(
-                "pub fn get_output(val: *const Self) (Error||error{Unexpected})!*const "
-            )
+            stream.write("pub fn get_output(val: *const Self) (Error||error{Unexpected})!*const ")
             render_type(stream, result.type)
             stream.writeln(" {")
             with stream.indent():
@@ -1150,20 +748,8 @@ def render_abi_definition(stream: CodeStream, abi: ABI_Definition):
     stream.write(root_container.rest)
 
     stream.writeln()
-    # stream.writeln()
-    # stream.writeln("/// Global error set, defines numeric values for all errors.")
-    # stream.writeln("pub const Error = enum(u16) {")
-    # for key, value in sorted(errors.mapping.items(), key=lambda kv: kv[1]):
-    #     assert key != "ok"
-    #     assert key != "Unexpected"
-    #     assert 0 < value < 0xFFFF
-    #     stream.writeln(f"    {key} = {value},")
-    # stream.writeln("};")
-    # stream.writeln()
     stream.writeln()
-    stream.writeln(
-        "/// Asynchronous operation type, defines numeric values for AsyncOps."
-    )
+    stream.writeln("/// Asynchronous operation type, defines numeric values for AsyncOps.")
     stream.writeln("pub const ARC_Type = enum(u32) {")
     with stream.indent():
         for iop in sorted(abi.iops, key=lambda iop: iop.number.value):
@@ -1176,9 +762,7 @@ def render_abi_definition(stream: CodeStream, abi: ABI_Definition):
             stream.writeln("return switch(arc_type) {")
             with stream.indent():
                 for iop in sorted(abi.iops, key=lambda iop: iop.number.value):
-                    stream.writeln(
-                        f".{iop.key.value} => {iop.full_qualified_name.value},"
-                    )
+                    stream.writeln(f".{iop.key.value} => {iop.full_qualified_name.value},")
 
             stream.writeln("};")
         stream.writeln("}")
@@ -1200,9 +784,7 @@ def render_abi_definition(stream: CodeStream, abi: ABI_Definition):
     stream.writeln("};")
 
     stream.writeln()
-    stream.writeln(
-        "fn __SystemResourceCastResult(comptime t: __SystemResourceType) type {"
-    )
+    stream.writeln("fn __SystemResourceCastResult(comptime t: __SystemResourceType) type {")
     stream.writeln("    return switch (t) {")
 
     for src in sys_resources:
@@ -1213,100 +795,6 @@ def render_abi_definition(stream: CodeStream, abi: ABI_Definition):
     stream.writeln("}")
 
     stream.writeln()
-
-
-KW_IN = "in     "
-KW_OUT = "out    "
-KW_ERR = "error  "
-KW_RET = "returns"
-
-
-def render_nextgen_arc_type(stream: CodeStream, iop: AsyncOp):
-    def write_struct_fields(prefix: str, struct: list[Parameter]):
-        for field in struct:
-            if field.docs:
-                render_docstring(stream, field.docs)
-            stream.write(f"{prefix} {field.name}: ")
-            render_type(stream, field.type)
-            stream.writeln(",")
-
-    with stream.indent():
-        write_struct_fields(KW_IN, iop.inputs.abi)
-        write_struct_fields(KW_OUT, iop.outputs.abi)
-        for err in sorted(iop.error.errors):
-            stream.writeln(f"{KW_ERR} {err},")
-
-
-def render_nextgen_container(
-    stream: CodeStream,
-    declarations: list[Declaration],
-    prefix: str = "ashet",
-):
-    for decl in declarations:
-        render_docstring(stream, decl.docs)
-        symbol = f"{prefix}_{decl.name}"
-
-        if isinstance(decl, Namespace):
-            stream.writeln(f"namespace {decl.name} {{")
-            with stream.indent():
-                render_nextgen_container(stream, decl.decls, symbol)
-            stream.writeln("}")
-        elif isinstance(decl, Function):
-            stream.writeln(f"syscall {decl.name} {{")
-            with stream.indent():
-                for param in decl.params.abi:
-                    render_docstring(stream, param.docs)
-                    stream.write(KW_IN + " ")
-                    if param.name is not None:
-                        stream.write(f"{param.name}: ")
-                    render_type(stream, param.type)
-                    stream.writeln(",")
-
-                return_type: Type
-
-                if isinstance(decl.abi_return_type, ErrorUnion):
-                    return_type = decl.abi_return_type.result
-                    for err in sorted(decl.abi_return_type.error.errors):
-                        stream.writeln(f"{KW_ERR} {err},")
-
-                else:
-                    return_type = decl.abi_return_type
-
-                if (
-                    not isinstance(return_type, ReferenceType)
-                    or return_type.name != "void"
-                ):
-                    stream.write(KW_RET + " ")
-                    render_type(stream, return_type)
-                    stream.writeln(",")
-
-            stream.writeln("}")
-
-        elif isinstance(decl, ErrorSet):
-            stream.writeln(f"pub const {decl.name} = ErrorSet(error{{")
-
-            for err in sorted(decl.errors, key=lambda e: e):
-                stream.writeln(f"    {err},")
-
-            stream.writeln("});")
-
-        elif isinstance(decl, AsyncOp):
-            stream.writeln(f"async_call {decl.name} {{")
-            render_nextgen_arc_type(stream, decl)
-            stream.writeln("}")
-
-        elif isinstance(decl, SystemResource):
-            stream.writeln(f"resource {decl.name} {{ }}")
-
-        else:
-            panic("unexpected", decl)
-        stream.writeln()
-
-
-def render_nextgen(stream: CodeStream, abi: ABI_Definition):
-    root_container = abi.root_container
-
-    render_nextgen_container(stream, root_container.decls)
 
 
 class ErrorSetMapper:
@@ -1335,9 +823,7 @@ class ErrorSetMapper:
         self.requested_types.add(tuple(sorted(es.errors)))
         return "__unwrap_z2n_" + ErrorSetMapper.get_error_set_name(es.errors, "")
 
-    def _render_type_defs(
-        self, stream: CodeStream, error_set: Iterable[str], with_unexpected: bool
-    ):
+    def _render_type_defs(self, stream: CodeStream, error_set: Iterable[str], with_unexpected: bool):
         def write_error_type():
             stream.write("error{")
             stream.write(",".join(error_set))
@@ -1345,17 +831,13 @@ class ErrorSetMapper:
 
         # we have to insert the "Unexpected" here, as
         # the other side might have more error codes
-        stream.write(
-            f"const {ErrorSetMapper.get_error_set_name(error_set, '__ZigError_')} = "
-        )
+        stream.write(f"const {ErrorSetMapper.get_error_set_name(error_set, '__ZigError_')} = ")
         write_error_type()
         if with_unexpected:
             stream.write(" || error {Unexpected}")
         stream.writeln(";")
 
-        stream.write(
-            f"const {ErrorSetMapper.get_error_set_name(error_set, '__AbiError_')} = abi.ErrorSet("
-        )
+        stream.write(f"const {ErrorSetMapper.get_error_set_name(error_set, '__AbiError_')} = abi.ErrorSet(")
         write_error_type()
         stream.writeln(");")
 
@@ -1363,9 +845,7 @@ class ErrorSetMapper:
         for error_set in sorted(self.requested_types):
             self._render_type_defs(stream, error_set, False)
 
-            stream.write(
-                f"fn __unwrap_z2n_{ErrorSetMapper.get_error_set_name(error_set, '')}(__error: "
-            )
+            stream.write(f"fn __unwrap_z2n_{ErrorSetMapper.get_error_set_name(error_set, '')}(__error: ")
             stream.write(ErrorSetMapper.get_error_set_name(error_set, "__ZigError_"))
             stream.write(") ")
             stream.write(ErrorSetMapper.get_error_set_name(error_set, "__AbiError_"))
@@ -1384,9 +864,7 @@ class ErrorSetMapper:
         for error_set in sorted(self.requested_types):
             self._render_type_defs(stream, error_set, True)
 
-            stream.write(
-                f"fn __unwrap_n2z_{ErrorSetMapper.get_error_set_name(error_set, '')}(__error: "
-            )
+            stream.write(f"fn __unwrap_n2z_{ErrorSetMapper.get_error_set_name(error_set, '')}(__error: ")
             stream.write(ErrorSetMapper.get_error_set_name(error_set, "__AbiError_"))
             stream.write(") ")
             stream.write(ErrorSetMapper.get_error_set_name(error_set, "__ZigError_"))
@@ -1394,9 +872,7 @@ class ErrorSetMapper:
             with stream.indent():
                 stream.writeln("return switch (__error) {")
                 with stream.indent():
-                    stream.writeln(
-                        ".ok => unreachable, // must be checked before calling!"
-                    )
+                    stream.writeln(".ok => unreachable, // must be checked before calling!")
                     for error in error_set:
                         stream.writeln(f".{error} => error.{error},")
                     stream.writeln("_ => error.Unexpected,")
@@ -1456,9 +932,7 @@ def render_kernel_implementation(stream, abi: ABI_Definition):
                 render_type(stream, abi.type.inner, abi_namespace="abi")
 
                 if annotation.is_optional:
-                    stream.writeln(
-                        f" = if({natives[0].name}.*) |__ptr| __ptr[0..{natives[1].name}.*] else null;"
-                    )
+                    stream.writeln(f" = if({natives[0].name}.*) |__ptr| __ptr[0..{natives[1].name}.*] else null;")
                 else:
                     stream.writeln(f" = {natives[0].name}.*[0..{natives[1].name}.*];")
 
@@ -1467,9 +941,7 @@ def render_kernel_implementation(stream, abi: ABI_Definition):
 
                 @contextmanager
                 def handle_call():
-                    stream.write(
-                        f"const __error_union: {all_error_sets.get_zig_error_type(error_union.error)}!"
-                    )
+                    stream.write(f"const __error_union: {all_error_sets.get_zig_error_type(error_union.error)}!")
                     render_type(stream, error_union.result, abi_namespace="abi")
                     stream.write(" = ")
 
@@ -1481,9 +953,7 @@ def render_kernel_implementation(stream, abi: ABI_Definition):
                         stream.writeln("return .ok;")
                     stream.writeln("} else |__err| {")
                     with stream.indent():
-                        stream.writeln(
-                            f"return {all_error_sets.get_zig_to_native_mapper(error_union.error)}(__err);"
-                        )
+                        stream.writeln(f"return {all_error_sets.get_zig_to_native_mapper(error_union.error)}(__err);")
                     stream.writeln("}")
 
             elif isinstance(func.native_return_type, ErrorSet):
@@ -1491,9 +961,7 @@ def render_kernel_implementation(stream, abi: ABI_Definition):
 
                 @contextmanager
                 def handle_call():
-                    stream.write(
-                        f"const __error_union: {all_error_sets.get_zig_error_type(error_set)}!void = "
-                    )
+                    stream.write(f"const __error_union: {all_error_sets.get_zig_error_type(error_set)}!void = ")
 
                     yield
 
@@ -1502,9 +970,7 @@ def render_kernel_implementation(stream, abi: ABI_Definition):
                         stream.writeln("return .ok;")
                     stream.writeln("} else |__err| {")
                     with stream.indent():
-                        stream.writeln(
-                            f"return {all_error_sets.get_zig_to_native_mapper(error_set)}(__err);"
-                        )
+                        stream.writeln(f"return {all_error_sets.get_zig_to_native_mapper(error_set)}(__err);")
                     stream.writeln("}")
 
             else:
@@ -1525,9 +991,7 @@ def render_kernel_implementation(stream, abi: ABI_Definition):
                         if annotation.is_out:
                             args.append(f"&{name}__slice")
                         else:
-                            args.append(
-                                f"if ({ptr_p.name}) |__ptr| __ptr[0..{len_p.name}] else null"
-                            )
+                            args.append(f"if ({ptr_p.name}) |__ptr| __ptr[0..{len_p.name}] else null")
                     else:  # not optional
                         if annotation.is_out:
                             args.append(f"&{name}__slice")
@@ -1547,12 +1011,8 @@ def render_kernel_implementation(stream, abi: ABI_Definition):
 
                 for slice_name, ptr_name, len_name, is_optional in out_slices:
                     if is_optional:
-                        stream.writeln(
-                            f"{ptr_name}.* = if ({slice_name}) |__slice| __slice.ptr else null;"
-                        )
-                        stream.writeln(
-                            f"{len_name}.* = if ({slice_name}) |__slice| __slice.len else 0;"
-                        )
+                        stream.writeln(f"{ptr_name}.* = if ({slice_name}) |__slice| __slice.ptr else null;")
+                        stream.writeln(f"{len_name}.* = if ({slice_name}) |__slice| __slice.len else 0;")
                     else:
                         stream.writeln(f"{ptr_name}.* = {slice_name}.ptr;")
                         stream.writeln(f"{len_name}.* = {slice_name}.len;")
@@ -1646,12 +1106,8 @@ const abi = @import("abi");
                             invocation_args.append(f"&{name}__slice_ptr")
                             invocation_args.append(f"&{name}__slice_len")
                         else:
-                            invocation_args.append(
-                                f"if ({name}) |__slice| __slice.ptr else null"
-                            )
-                            invocation_args.append(
-                                f"if ({name}) |__slice| __slice.len else 0"
-                            )
+                            invocation_args.append(f"if ({name}) |__slice| __slice.ptr else null")
+                            invocation_args.append(f"if ({name}) |__slice| __slice.len else 0")
                     else:  # not optional
                         if annotation.is_out:
                             invocation_args.append(f"&{name}__slice_ptr")
@@ -1679,16 +1135,12 @@ const abi = @import("abi");
                     assert isinstance(natives[0].type, PointerType)
                     render_type(stream, natives[0].type.inner, abi_namespace="abi")
                     if isinstance(natives[0].type.inner, OptionalType):
-                        stream.writeln(
-                            f" = if({abi.name}.*) |__slice| __slice.ptr else null;"
-                        )
+                        stream.writeln(f" = if({abi.name}.*) |__slice| __slice.ptr else null;")
                     else:
                         stream.writeln(f" = {name}.ptr;")
 
                     if annotation.is_optional:
-                        stream.writeln(
-                            f"var {slice_name}_len: usize = if({abi.name}.*) |__slice| __slice.len else 0;"
-                        )
+                        stream.writeln(f"var {slice_name}_len: usize = if({abi.name}.*) |__slice| __slice.len else 0;")
                     else:
                         stream.writeln(f"var {slice_name}_len: usize = {abi.name}.len;")
 
@@ -1698,9 +1150,7 @@ const abi = @import("abi");
                     if not annotation.is_out:
                         return
                     if annotation.is_optional:
-                        stream.writeln(
-                            f"{name}.* = if ({ptr_name}) |__ptr| __ptr[0..{len_name}] else null;"
-                        )
+                        stream.writeln(f"{name}.* = if ({ptr_name}) |__ptr| __ptr[0..{len_name}] else null;")
                     else:
                         stream.writeln(f"{name}.* = {ptr_name}[0..{len_name}];")
 
@@ -1746,9 +1196,7 @@ const abi = @import("abi");
 
                 stream.writeln("return if (__error_code != .ok)")
                 with stream.indent():
-                    stream.writeln(
-                        f"{all_error_sets.get_native_to_zig_mapper(error_union.error)}(__error_code)"
-                    )
+                    stream.writeln(f"{all_error_sets.get_native_to_zig_mapper(error_union.error)}(__error_code)")
                 stream.writeln("else")
                 with stream.indent():
                     stream.writeln("__result;")
@@ -1766,9 +1214,7 @@ const abi = @import("abi");
 
                 stream.writeln("if (__error_value != .ok)")
                 with stream.indent():
-                    stream.writeln(
-                        f"return {all_error_sets.get_native_to_zig_mapper(error_set)}(__error_value);"
-                    )
+                    stream.writeln(f"return {all_error_sets.get_native_to_zig_mapper(error_set)}(__error_value);")
         else:
 
             @contextmanager
@@ -1800,9 +1246,7 @@ const abi = @import("abi");
         stream.writeln("}")
         stream.writeln()
 
-    def recursive_render(
-        decls: list[Declaration], ns_prefix: tuple[str, ...] = tuple()
-    ):
+    def recursive_render(decls: list[Declaration], ns_prefix: tuple[str, ...] = tuple()):
         for decl in decls:
             if isinstance(decl, Namespace):
                 stream.writeln(f"pub const {decl.name} = struct {{")
@@ -1812,11 +1256,7 @@ const abi = @import("abi");
                 stream.writeln()
             elif isinstance(decl, Function):
                 emit_impl(decl, ns_prefix)
-            elif (
-                isinstance(decl, ErrorSet)
-                or isinstance(decl, AsyncOp)
-                or isinstance(decl, SystemResource)
-            ):
+            elif isinstance(decl, ErrorSet) or isinstance(decl, AsyncOp) or isinstance(decl, SystemResource):
                 pass
             else:
                 panic("unexpected", decl)
@@ -1860,7 +1300,6 @@ class Renderer(StrEnum):
     kernel = "kernel"
     userland = "userland"
     stubs = "stubs"
-    nextgen = "nextgen"
 
 
 def _create_enumeration(
@@ -1898,9 +1337,7 @@ def main():
     cli_parser = ArgumentParser()
 
     cli_parser.add_argument("--output", type=Path, required=False)
-    cli_parser.add_argument(
-        "--mode", type=Renderer, required=False, default=Renderer.definition
-    )
+    cli_parser.add_argument("--mode", type=Renderer, required=False, default=Renderer.definition)
     cli_parser.add_argument("--use-linkname", action="store_true", required=False)
     cli_parser.add_argument("--zig-exe", type=Path, required=False)
     cli_parser.add_argument("abi", type=Path)
@@ -1963,7 +1400,6 @@ def main():
         Renderer.kernel: render_kernel_implementation,
         Renderer.userland: render_userland_implementation,
         Renderer.stubs: render_stubs_implementation,
-        Renderer.nextgen: render_nextgen,
     }[render_mode]
 
     generated_code: str
@@ -1971,16 +1407,28 @@ def main():
         renderer(stream=CodeStream(f), abi=abi)
         generated_code = f.getvalue()
 
+    if zig_exe is not None:
+        fmt_result = subprocess.run(
+            args=[
+                zig_exe,
+                "fmt",
+                "--stdin",
+                "--ast-check",
+            ],
+            input=generated_code.encode("utf-8"),
+            stdout=subprocess.PIPE,
+            check=False,
+        )
+        if fmt_result.returncode == 0:
+            generated_code = fmt_result.stdout.decode("utf-8")
+
     if output_path is not None:
+        import stat
+
         output_path.write_text(generated_code, encoding="utf-8")
+        output_path.chmod(stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
     else:
         sys.stdout.write(generated_code)
-
-    if json_path is not None:
-        with json_path.open(mode="w") as j:
-            json.dump(abi, j, cls=ABI_JsonEncoder, indent=1)
-
-    print("done.")
 
 
 if __name__ == "__main__":
