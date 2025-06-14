@@ -140,7 +140,7 @@ const Analyzer = struct {
     fn emit_error(ana: *Analyzer, location: Location, comptime fmt: []const u8, args: anytype) error{OutOfMemory}!void {
         const msg = try std.fmt.allocPrint(
             ana.allocator,
-            "{}:" ++ fmt,
+            "{}: " ++ fmt,
             .{location} ++ args,
         );
         try ana.errors.append(msg);
@@ -198,11 +198,24 @@ const Analyzer = struct {
 
         const doc_comment = try ana.allocator.dupe([]const u8, node.doc_comment);
 
+        const value = try ana.resolve_value(constant.value.?);
+        _ = value;
+
+        // TODO: Implement explicit constant typing!
+        const type_id: ?model.TypeIndex = null;
+
+        const index = try ana.constants.append(.{
+            .docs = doc_comment,
+            .full_qualified_name = full_name,
+            .type = type_id,
+            // TODO: Store value!
+        });
+
         return .{
             .full_qualified_name = full_name,
             .docs = doc_comment,
             .children = &.{},
-            .data = .{ .constant = .from_int(0) }, // TODO: Implement this!
+            .data = .{ .constant = index },
         };
     }
 
@@ -320,7 +333,7 @@ const Analyzer = struct {
             .@"struct" => try ana.map_struct(info, decl),
             .@"union" => try ana.map_union(info, decl),
             .@"enum" => try ana.map_enum(info, decl),
-            .bitstruct => .namespace,
+            .bitstruct => try ana.map_bit_struct(info, decl),
             .syscall => .namespace,
             .async_call => .namespace,
             .resource => try ana.map_resource(info, decl),
@@ -437,6 +450,16 @@ const Analyzer = struct {
                     }
                     try defined.put(data.name, {});
 
+                    const default_value = if (data.default_value) |value| blk: {
+                        if (mode == .@"union")
+                            try ana.emit_error(child.location, "union fields cannot have default values", .{});
+
+                        break :blk try ana.resolve_value(value);
+                    } else null;
+
+                    // TODO: Process default_value !
+                    _ = default_value;
+
                     try fields.append(.{
                         .docs = try ana.map_doc_comment(child.doc_comment),
                         .name = data.name,
@@ -464,6 +487,70 @@ const Analyzer = struct {
                 return .{ .@"union" = index };
             },
         }
+    }
+
+    fn map_bit_struct(ana: *Analyzer, info: NodeInfo, decl: syntax.DeclarationNode) !model.Declaration.Data {
+        std.debug.assert(info.sub_type != null);
+
+        if (!info.sub_type.?.is_integer()) {
+            return ana.fatal_error(info.location, "enum sub-type must be an integer", .{});
+        }
+
+        var fields: std.ArrayList(model.BitStructField) = .init(ana.allocator);
+        var defined: std.StringArrayHashMap(void) = .init(ana.allocator);
+
+        for (decl.children) |child| {
+            if (child.is_declaration())
+                continue;
+            switch (child.type) {
+                .field => |data| {
+                    const type_id = try ana.map_type(data.field_type);
+
+                    if (defined.get(data.name) != null) {
+                        try ana.emit_error(child.location, "duplicate bitstruct field: {s}", .{data.name});
+                    }
+                    try defined.put(data.name, {});
+
+                    const default_value = if (data.default_value) |value|
+                        try ana.resolve_value(value)
+                    else
+                        null;
+
+                    // TODO: Process default_value !
+                    _ = default_value;
+
+                    try fields.append(.{
+                        .docs = try ana.map_doc_comment(child.doc_comment),
+                        .name = data.name,
+                        .type = type_id,
+                    });
+                },
+
+                .reserve => |data| {
+                    const type_id = try ana.map_type(data.type);
+
+                    // TODO: Process padding_value !
+                    const padding_value = try ana.resolve_value(data.value);
+                    _ = padding_value;
+
+                    try fields.append(.{
+                        .docs = try ana.map_doc_comment(child.doc_comment),
+                        .name = null,
+                        .type = type_id,
+                    });
+                },
+
+                else => try ana.emit_unexpected_node(child),
+            }
+        }
+
+        const index = try ana.bitstructs.append(.{
+            .docs = info.docs,
+            .full_qualified_name = info.full_name,
+            .fields = try fields.toOwnedSlice(),
+            .backing_type = info.sub_type.?,
+        });
+        return .{ .bitstruct = index };
     }
 
     const MapTypeError = error{OutOfMemory};

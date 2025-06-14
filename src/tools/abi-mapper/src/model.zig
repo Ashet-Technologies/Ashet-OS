@@ -134,7 +134,15 @@ pub const TypeDefition = struct {
 pub const BitStruct = struct {
     docs: DocString,
     full_qualified_name: FQN,
-    //
+    backing_type: StandardType,
+    fields: []const BitStructField,
+};
+
+pub const BitStructField = struct {
+    docs: DocString,
+    name: ?[]const u8, // null is reserved
+    type: TypeIndex,
+    // TODO: default: ???
 };
 
 pub const Struct = struct {
@@ -175,9 +183,9 @@ pub const SystemCall = struct {
     full_qualified_name: FQN,
 
     inputs: []const Parameter,
-    errors: []const Error,
-
     return_type: TypeIndex,
+
+    errors: []const Error,
 };
 
 pub const AsyncCall = struct {

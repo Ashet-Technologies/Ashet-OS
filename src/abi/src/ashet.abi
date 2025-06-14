@@ -3,8 +3,8 @@ namespace resources {
     /// Returns the type of the system resource.
     syscall get_type {
         in     @"resource": SystemResource;
-        error  InvalidHandle;
         return SystemResource.Type;
+        error  InvalidHandle;
     }
 
     /// Returns the current owner of this resource.
