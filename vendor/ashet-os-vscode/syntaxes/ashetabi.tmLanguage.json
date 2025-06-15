@@ -1,0 +1,108 @@
+{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "Ashet ABI Definition",
+	"patterns": [
+		{
+			"include": "#decl_keywords"
+		},
+		{
+			"include": "#item_keywords"
+		},
+		{
+			"include": "#type_keywords"
+		},
+		{
+			"include": "#builtin_type"
+		},
+		{
+			"include": "#auto_type"
+		},
+		{
+			"include": "#identifier"
+		},
+		{
+			"include": "#number"
+		},
+		{
+			"include": "#strings"
+		},
+		{
+			"include": "#comments"
+		},
+		{
+			"include": "#doc_comments"
+		},
+		{
+			"include": "#bad_comments"
+		}
+	],
+	"repository": {
+		"identifier": {
+			"patterns": [{
+				"name": "entity.name.function",
+				"match": "\\b\\w+\\b|@\"([^\"]|\\\\.)*\""
+			}]
+		},
+		"builtin_type": {
+			"patterns": [{
+				"name": "support.type.builtin.ashetabi",
+				"match": "\\b(bool|void|noreturn|str|bytestr|bytebuf|[uif]\\d+|[iu]size)\\b"
+			}]
+		},
+		"auto_type": {
+			"patterns": [
+				{
+					"name": "support.type.decl.ashetabi",
+					"match": ":\\s+(.*)\\s+;"
+				},
+				{
+					"name": "support.type.returntype.ashetabi",
+					"match": "return\\s+(.*)\\s+;"
+				}
+			]
+		},
+		"number": {
+			"patterns": [{
+				"name": "constant.numeric.ashetabi",
+				"match": "\\b(0x[0-9a-fA-F_]+|0b[01_]+|\\d+)\\b"
+			}]
+		},
+		"decl_keywords": {
+			"patterns": [{
+				"name": "storage.type.ashetabi",
+				"match": "\\b(namespace|syscall|async_call|resource|const|struct|union|enum|bitstruct|const)\\b"
+			}]
+		},
+		"item_keywords": {
+			"patterns": [{
+				"name": "keyword.control.ashetabi",
+				"match": "\\b(field|item|in|out|return|error)\\b|\\.\\.\\."
+			}]
+		},
+		"type_keywords": {
+			"patterns": [{
+				"name": "keyword.operator.ashetabi",
+				"match": "\\b(align)\\b"
+			}]
+		},
+		"comments": {
+			"patterns": [{
+				"name": "comment.line.double-slash.ashetabi",
+				"match": "//\\?.*"
+			}]
+		},
+		"doc_comments": {
+			"patterns": [{
+				"name": "string.unquoted.ashetabi",
+				"match": "///.*"
+			}]
+		},
+		"bad_comments": {
+			"patterns": [{
+				"name": "invalid.illegal.comment.ashetabi",
+				"match": "//.*"
+			}]
+		}
+	},
+	"scopeName": "source.abi"
+}
