@@ -35,8 +35,8 @@ pub const Document = struct {
     unions: []const Struct,
     enums: []const Enumeration,
     bitstructs: []const BitStruct,
-    syscalls: []const SystemCall,
-    async_calls: []const AsyncCall,
+    syscalls: []const GenericCall,
+    async_calls: []const GenericCall,
     resources: []const Resource,
     constants: []const Constant,
 
@@ -47,8 +47,8 @@ pub const StructIndex = GenericIndex(Struct, "structs");
 pub const UnionIndex = GenericIndex(Struct, "unions");
 pub const EnumerationIndex = GenericIndex(Enumeration, "enums");
 pub const BitStructIndex = GenericIndex(BitStruct, "bitstructs");
-pub const SystemCallIndex = GenericIndex(SystemCall, "syscalls");
-pub const AsyncCallIndex = GenericIndex(AsyncCall, "async_calls");
+pub const SystemCallIndex = GenericIndex(GenericCall, "syscalls");
+pub const AsyncCallIndex = GenericIndex(GenericCall, "async_calls");
 pub const ResourceIndex = GenericIndex(Resource, "resources");
 pub const ConstantIndex = GenericIndex(Constant, "constants");
 pub const TypeIndex = GenericIndex(Type, "types");
@@ -178,19 +178,10 @@ pub const EnumItem = struct {
     value: i65,
 };
 
-pub const SystemCall = struct {
+pub const GenericCall = struct {
     docs: DocString,
     full_qualified_name: FQN,
-
-    inputs: []const Parameter,
-    return_type: TypeIndex,
-
-    errors: []const Error,
-};
-
-pub const AsyncCall = struct {
-    docs: DocString,
-    full_qualified_name: FQN,
+    no_return: bool,
 
     inputs: []const Parameter,
     outputs: []const Parameter,

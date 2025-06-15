@@ -15,13 +15,13 @@ const TokenType = enum {
     item,
     in,
     out,
-    @"return",
     @"const",
     @"align",
     reserve,
     fnptr,
     resource,
     typedef,
+    noreturn,
 
     // symbols
     @"(",
@@ -102,10 +102,10 @@ const patterns = blk: {
         .create(.resource, match.word("resource")),
         .create(.reserve, match.word("reserve")),
         .create(.fnptr, match.word("fnptr")),
-        .create(.@"return", match.word("return")),
         .create(.@"const", match.word("const")),
         .create(.typedef, match.word("typedef")),
         .create(.@"align", match.word("align")),
+        .create(.noreturn, match.word("noreturn")),
 
         .create(.identifier, match_identifier),
         .create(.identifier, match.sequenceOf(.{ match.literal("@\""), match.takeNoneOf("\"\n\r"), match.literal("\"") })),
@@ -191,8 +191,8 @@ pub const Parser = struct {
             .in,
             .out,
             .reserve,
-            .@"return",
             .@"...",
+            .noreturn,
         });
 
         const node_type: Node.Data = switch (tok.type) {
@@ -261,19 +261,18 @@ pub const Parser = struct {
                     null;
 
                 try parser.expect(.@";");
-                break :blk .{
-                    .field = .{
-                        .type = switch (tok.type) {
-                            inline .field,
-                            .in,
-                            .out,
-                            => |tag| @field(FieldType, @tagName(tag)),
-                            else => unreachable,
-                        },
-                        .name = identifier,
-                        .field_type = field_type,
-                        .default_value = default_value,
-                    },
+
+                const value: FieldNode = .{
+                    .name = identifier,
+                    .field_type = field_type,
+                    .default_value = default_value,
+                };
+
+                break :blk switch (tok.type) {
+                    .field => .{ .field = value },
+                    .in => .{ .in = value },
+                    .out => .{ .out = value },
+                    else => unreachable,
                 };
             },
 
@@ -283,13 +282,6 @@ pub const Parser = struct {
                 try parser.expect(.@";");
 
                 break :blk .{ .@"error" = name };
-            },
-
-            .@"return" => blk: {
-                const return_type = try parser.accept_type();
-                try parser.expect(.@";");
-
-                break :blk .{ .return_type = return_type };
             },
 
             .@"const" => blk: {
@@ -352,6 +344,11 @@ pub const Parser = struct {
             },
 
             .@"..." => .ellipse,
+
+            .noreturn => blk: {
+                try parser.expect(.@";");
+                break :blk .noreturn;
+            },
 
             else => unreachable,
         };
@@ -611,12 +608,14 @@ pub const Parser = struct {
 const NodeType = enum {
     declaration,
     field,
+    in,
+    out,
     @"const",
     item,
-    return_type,
     typedef,
     @"error",
     reserve,
+    noreturn,
     ellipse,
 };
 
@@ -637,24 +636,29 @@ pub const Node = struct {
             => true,
 
             .field,
+            .in,
+            .out,
             .item,
-            .return_type,
             .@"error",
             .reserve,
             .ellipse,
+            .noreturn,
             => false,
         };
     }
 
     pub const Data = union(NodeType) {
         declaration: DeclarationNode,
-        field: FieldNode,
+
+        field: FieldNode, // "field <name>: <type>,"
+        in: FieldNode, // "in <name>: <type>,"
+        out: FieldNode, // "out <name>: <type>,"
         @"const": AssignmentNode, // "const <name> = <value>;"
         item: AssignmentNode, // "item <name> = <value>;"
-        return_type: *const TypeNode, // "return <type>;"
         typedef: TypeDefNode,
         @"error": []const u8,
         reserve: PaddingNode,
+        noreturn, // "noreturn;"
         ellipse, // "..."
     };
 };
@@ -688,16 +692,9 @@ pub const PaddingNode = struct {
 };
 
 pub const FieldNode = struct {
-    type: FieldType,
     name: []const u8,
     field_type: *const TypeNode,
     default_value: ?*const ValueNode,
-};
-
-pub const FieldType = enum {
-    field, // "field <name>: <type>,"
-    in, // "in <name>: <type>,"
-    out, // "out <name>: <type>,"
 };
 
 pub const TypeDefNode = struct {

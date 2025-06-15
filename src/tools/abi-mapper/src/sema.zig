@@ -163,12 +163,15 @@ const Analyzer = struct {
             .typedef => try ana.map_typedef(node),
             .@"const" => try ana.map_const(node),
 
-            .return_type => return ana.fatal_error(node.location, "invalid top-level element: return", .{}),
+            .in => return ana.fatal_error(node.location, "invalid top-level element: in", .{}),
+            .out => return ana.fatal_error(node.location, "invalid top-level element: out", .{}),
             .field => return ana.fatal_error(node.location, "invalid top-level element: field", .{}),
+
             .item => return ana.fatal_error(node.location, "invalid top-level element: item", .{}),
             .@"error" => return ana.fatal_error(node.location, "invalid top-level element: error", .{}),
             .reserve => return ana.fatal_error(node.location, "invalid top-level element: reserve", .{}),
             .ellipse => return ana.fatal_error(node.location, "invalid top-level element: ...", .{}),
+            .noreturn => return ana.fatal_error(node.location, "invalid top-level element: noreturn", .{}),
         };
     }
 
@@ -334,8 +337,8 @@ const Analyzer = struct {
             .@"union" => try ana.map_union(info, decl),
             .@"enum" => try ana.map_enum(info, decl),
             .bitstruct => try ana.map_bit_struct(info, decl),
-            .syscall => .namespace,
-            .async_call => .namespace,
+            .syscall => try ana.map_syscall(info, decl),
+            .async_call => try ana.map_async_call(info, decl),
             .resource => try ana.map_resource(info, decl),
         };
 
@@ -374,8 +377,11 @@ const Analyzer = struct {
         var last_index: i65 = 0;
         var kind: model.Enumeration.Kind = .closed;
 
-        var items: std.ArrayList(model.EnumItem) = .init(ana.allocator);
-        var defined: std.StringArrayHashMap(void) = .init(ana.allocator);
+        var items = ana.make_collector(
+            model.EnumItem,
+            "name",
+            "duplicate enum item: {s}",
+        );
 
         for (decl.children) |child| {
             if (child.is_declaration())
@@ -395,12 +401,7 @@ const Analyzer = struct {
                     if (value != .int)
                         return ana.fatal_error(child.location, "enum item value must be an integer, not a {s}", .{@tagName(value)});
 
-                    if (defined.get(data.name) != null) {
-                        try ana.emit_error(child.location, "duplicate enum item: {s}", .{data.name});
-                    }
-                    try defined.put(data.name, {});
-
-                    try items.append(.{
+                    try items.append(child.location, .{
                         .docs = try ana.map_doc_comment(child.doc_comment),
                         .name = data.name,
                         .value = value.int,
@@ -417,11 +418,115 @@ const Analyzer = struct {
             .docs = info.docs,
             .full_qualified_name = info.full_name,
             .backing_type = info.sub_type.?,
-            .items = try items.toOwnedSlice(),
+            .items = try items.resolve(),
             .kind = kind,
         });
 
         return .{ .@"enum" = index };
+    }
+
+    fn map_syscall(ana: *Analyzer, info: NodeInfo, decl: syntax.DeclarationNode) !model.Declaration.Data {
+        return ana.map_any_call(.syscall, info, decl);
+    }
+
+    fn map_async_call(ana: *Analyzer, info: NodeInfo, decl: syntax.DeclarationNode) !model.Declaration.Data {
+        return ana.map_any_call(.async_call, info, decl);
+    }
+
+    fn map_any_call(ana: *Analyzer, mode: enum { syscall, async_call }, info: NodeInfo, decl: syntax.DeclarationNode) !model.Declaration.Data {
+        std.debug.assert(info.sub_type == null);
+
+        var inputs = ana.make_collector(
+            model.Parameter,
+            "name",
+            "duplicate in parameter: {s}",
+        );
+        var outputs = ana.make_collector(
+            model.Parameter,
+            "name",
+            "duplicate out parameter: {s}",
+        );
+
+        var errors = ana.make_collector(
+            model.Error,
+            "name",
+            "duplicate error: {s}",
+        );
+
+        var no_return = false;
+
+        for (decl.children) |child| {
+            if (child.is_declaration())
+                continue;
+            switch (child.type) {
+                .in, .out => |data| {
+                    const type_id = try ana.map_type(data.field_type);
+
+                    const default_value = if (data.default_value) |value| blk: {
+                        if (child.type == .out)
+                            try ana.emit_error(child.location, "output parameters cannot have default values", .{});
+
+                        break :blk try ana.resolve_value(value);
+                    } else null;
+
+                    // TODO: Process default_value !
+                    _ = default_value;
+
+                    const param: model.Parameter = .{
+                        .docs = try ana.map_doc_comment(child.doc_comment),
+                        .name = data.name,
+                        .type = type_id,
+                    };
+
+                    if (child.type == .in) {
+                        try inputs.append(child.location, param);
+                    } else {
+                        std.debug.assert(child.type == .out);
+                        try outputs.append(child.location, param);
+                    }
+                },
+
+                .@"error" => |data| {
+                    try errors.append(child.location, .{
+                        .docs = try ana.map_doc_comment(child.doc_comment),
+                        .name = data,
+                    });
+                },
+
+                .noreturn => {
+                    if (no_return) {
+                        try ana.emit_error(child.location, "duplicate noreturn definition", .{});
+                    }
+                    no_return = true;
+                },
+
+                else => try ana.emit_unexpected_node(child),
+            }
+        }
+
+        if (no_return and outputs.fields.items.len > 0) {
+            try ana.emit_error(info.location, "calls that are noreturn cannot have out parameters", .{});
+        }
+
+        const output: model.GenericCall = .{
+            .docs = info.docs,
+            .full_qualified_name = info.full_name,
+            .inputs = try inputs.resolve(),
+            .outputs = try outputs.resolve(),
+            .errors = try errors.resolve(),
+            .no_return = no_return,
+        };
+
+        switch (mode) {
+            .syscall => {
+                const index = try ana.syscalls.append(output);
+                return .{ .syscall = index };
+            },
+            .async_call => {
+                const index = try ana.async_calls.append(output);
+                return .{ .async_call = index };
+            },
+        }
     }
 
     fn map_struct(ana: *Analyzer, info: NodeInfo, decl: syntax.DeclarationNode) !model.Declaration.Data {
@@ -432,11 +537,14 @@ const Analyzer = struct {
         return try ana.map_struct_or_union(.@"union", info, decl);
     }
 
-    fn map_struct_or_union(ana: *Analyzer, mode: enum { @"union", @"struct" }, info: NodeInfo, decl: syntax.DeclarationNode) !model.Declaration.Data {
+    fn map_struct_or_union(ana: *Analyzer, comptime mode: enum { @"union", @"struct" }, info: NodeInfo, decl: syntax.DeclarationNode) !model.Declaration.Data {
         std.debug.assert(info.sub_type == null);
 
-        var fields: std.ArrayList(model.StructField) = .init(ana.allocator);
-        var defined: std.StringArrayHashMap(void) = .init(ana.allocator);
+        var fields = ana.make_collector(
+            model.StructField,
+            "name",
+            "duplicate " ++ @tagName(mode) ++ " field: {s}",
+        );
 
         for (decl.children) |child| {
             if (child.is_declaration())
@@ -444,11 +552,6 @@ const Analyzer = struct {
             switch (child.type) {
                 .field => |data| {
                     const type_id = try ana.map_type(data.field_type);
-
-                    if (defined.get(data.name) != null) {
-                        try ana.emit_error(child.location, "duplicate {s} field: {s}", .{ @tagName(mode), data.name });
-                    }
-                    try defined.put(data.name, {});
 
                     const default_value = if (data.default_value) |value| blk: {
                         if (mode == .@"union")
@@ -460,7 +563,7 @@ const Analyzer = struct {
                     // TODO: Process default_value !
                     _ = default_value;
 
-                    try fields.append(.{
+                    try fields.append(child.location, .{
                         .docs = try ana.map_doc_comment(child.doc_comment),
                         .name = data.name,
                         .type = type_id,
@@ -474,7 +577,7 @@ const Analyzer = struct {
         const output: model.Struct = .{
             .docs = info.docs,
             .full_qualified_name = info.full_name,
-            .fields = try fields.toOwnedSlice(),
+            .fields = try fields.resolve(),
         };
 
         switch (mode) {
@@ -496,8 +599,11 @@ const Analyzer = struct {
             return ana.fatal_error(info.location, "enum sub-type must be an integer", .{});
         }
 
-        var fields: std.ArrayList(model.BitStructField) = .init(ana.allocator);
-        var defined: std.StringArrayHashMap(void) = .init(ana.allocator);
+        var fields = ana.make_collector(
+            model.BitStructField,
+            "name",
+            "duplicate bitstruct field: {s}",
+        );
 
         for (decl.children) |child| {
             if (child.is_declaration())
@@ -505,11 +611,6 @@ const Analyzer = struct {
             switch (child.type) {
                 .field => |data| {
                     const type_id = try ana.map_type(data.field_type);
-
-                    if (defined.get(data.name) != null) {
-                        try ana.emit_error(child.location, "duplicate bitstruct field: {s}", .{data.name});
-                    }
-                    try defined.put(data.name, {});
 
                     const default_value = if (data.default_value) |value|
                         try ana.resolve_value(value)
@@ -519,7 +620,7 @@ const Analyzer = struct {
                     // TODO: Process default_value !
                     _ = default_value;
 
-                    try fields.append(.{
+                    try fields.append(child.location, .{
                         .docs = try ana.map_doc_comment(child.doc_comment),
                         .name = data.name,
                         .type = type_id,
@@ -533,7 +634,7 @@ const Analyzer = struct {
                     const padding_value = try ana.resolve_value(data.value);
                     _ = padding_value;
 
-                    try fields.append(.{
+                    try fields.append(child.location, .{
                         .docs = try ana.map_doc_comment(child.doc_comment),
                         .name = null,
                         .type = type_id,
@@ -547,7 +648,7 @@ const Analyzer = struct {
         const index = try ana.bitstructs.append(.{
             .docs = info.docs,
             .full_qualified_name = info.full_name,
-            .fields = try fields.toOwnedSlice(),
+            .fields = try fields.resolve(),
             .backing_type = info.sub_type.?,
         });
         return .{ .bitstruct = index };
@@ -724,4 +825,38 @@ const Analyzer = struct {
         int: i65,
         string: []const u8,
     };
+
+    fn make_collector(ana: *Analyzer, comptime T: type, comptime name_field: []const u8, comptime error_fmt: []const u8) NamedItemCollector(T, name_field, error_fmt) {
+        return .{
+            .ana = ana,
+            .fields = .init(ana.allocator),
+            .defined = .init(ana.allocator),
+        };
+    }
+
+    fn NamedItemCollector(comptime T: type, comptime name_field: []const u8, comptime error_fmt: []const u8) type {
+        std.debug.assert(@hasField(T, name_field));
+        return struct {
+            ana: *Analyzer,
+            fields: std.ArrayList(T),
+            defined: std.StringArrayHashMap(void),
+
+            pub fn append(col: *@This(), location: Location, item: T) !void {
+                const maybe_name: ?[]const u8 = @field(item, name_field);
+                try col.fields.append(item);
+
+                if (maybe_name) |name| {
+                    if (try col.defined.fetchPut(name, {}) != null) {
+                        try col.ana.emit_error(location, error_fmt, .{name});
+                    }
+                }
+            }
+
+            pub fn resolve(col: *@This()) ![]T {
+                const result = try col.fields.toOwnedSlice();
+                col.defined.clearAndFree();
+                return result;
+            }
+        };
+    }
 };

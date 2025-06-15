@@ -45,6 +45,8 @@ pub fn main() !u8 {
                 bad_token,
             });
         }
+        if (err == error.UnexpectedToken)
+            return 1;
         return err;
     };
 

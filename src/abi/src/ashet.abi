@@ -3,7 +3,7 @@ namespace resources {
     /// Returns the type of the system resource.
     syscall get_type {
         in     @"resource": SystemResource;
-        return SystemResource.Type;
+        out    type: SystemResource.Type;
         error  InvalidHandle;
     }
 
@@ -11,7 +11,7 @@ namespace resources {
     syscall get_owners {
         in     @"resource": SystemResource;
         in     owners: ?[]Process;
-        return usize;
+        out    count: usize;
     }
 
     /// Adds the process to the owners of this resource, so the process
@@ -71,7 +71,7 @@ namespace overlapped {
         in     completed: []*ARC;
         in     options: Await_Options;
         error  Unscheduled;
-        return usize;
+        out    completed_count: usize;
     }
 
     /// Awaits one or more explictic asynchronous operations and returns the
@@ -99,7 +99,7 @@ namespace overlapped {
         in      events: []?*ARC;
         error   InvalidOperation;
         error   Unscheduled;
-        return usize;
+        out     completed_count: usize;
     }
 
     /// Cancels an asynchronous call.
@@ -128,32 +128,32 @@ namespace process {
     /// Returns a pointer to the file name of the process.
     syscall get_file_name {
         in      target: ?Process;
-        return str;
+        out    file_name: str;
     }
 
     /// Returns the base address of the process.
     syscall get_base_address {
         in      target: ?Process;
-        return usize;
+        out    base_address: usize;
     }
 
     /// Returns the arguments that were passed to this process in `Spawn`.
     syscall get_arguments {
-        in      target: ?Process;
-        in      argv: ?[]SpawnProcessArg;
-        return usize;
+        in  target: ?Process;
+        in  argv: ?[]SpawnProcessArg;
+        out count: usize;
     }
 
     /// Terminates the current process with the given exit code
     syscall terminate {
-        in      exit_code: ExitCode;
-        return noreturn;
+        in     exit_code: ExitCode;
+        noreturn;
     }
 
     /// Terminates a foreign process.
     /// If the current process is passed, this function will not return
     syscall kill {
-        in      target: Process;
+        in target: Process;
     }
 
     /// Spawns a new process
@@ -185,13 +185,13 @@ namespace process {
         /// Terminates the current thread.
         syscall exit {
             in      exit_code: ExitCode;
-            return noreturn;
+            noreturn;
         }
 
         /// Waits for the thread to exit and returns its return code.
         syscall join {
             in      _param0: Thread;
-            return ExitCode;
+            out    exit_code: ExitCode;
         }
 
         /// Defines the signature of a thread entry point.
@@ -205,7 +205,7 @@ namespace process {
             in      function:   ThreadFunction;
             in      arg:        ?anyptr;
             in      stack_size: usize;
-            return ?Thread;
+            out     thread: ?Thread;
         }
 
         /// Kills the given thread with `exit_code`.
@@ -233,7 +233,7 @@ namespace process {
         syscall allocate {
             in      size: usize;
             in      ptr_align: u8;
-            return ?[*]u8;
+            out     memory: ?[*]u8;
         }
 
         /// Returns memory to the systme.
@@ -246,33 +246,33 @@ namespace process {
     namespace monitor {
         /// Queries all owned resources by a process.
         syscall enumerate_processes {
-            in      processes: ?[]Process;
-            return usize;
+            in  processes: ?[]Process;
+            out count: usize;
         }
 
         /// Queries all owned resources by a process.
         syscall query_owned_resources {
-            in      owner: Process;
-            in      reslist: ?[]SystemResource;
-            return usize;
+            in  owner: Process;
+            in  reslist: ?[]SystemResource;
+            out count: usize;
         }
 
         /// Returns the total number of bytes the process takes up in RAM.
         syscall query_total_memory_usage {
-            in      proc: Process;
-            return usize;
+            in  proc: Process;
+            out count: usize;
         }
 
         /// Returns the number of dynamically allocated bytes for this process.
         syscall query_dynamic_memory_usage {
-            in      proc: Process;
-            return usize;
+            in  proc: Process;
+            out count: usize;
         }
 
         /// Returns the number of total memory objects this process has right now.
         syscall query_active_allocation_count {
-            in      proc: Process;
-            return usize;
+            in  proc: Process;
+            out count: usize;
         }
     }
 }
@@ -281,13 +281,13 @@ namespace clock {
     /// Returns the time in nanoseconds since system startup.
     /// This clock is monotonically increasing.
     syscall monotonic {
-        return Absolute;
+        out time: Absolute;
     }
 
     /// Sleeps until `clock.monotonic()` returns at least `timeout`.
     async_call Timer {
         /// Monotonic timestamp in nanoseconds until the operation completes.
-        in      timeout: Absolute;
+        in timeout: Absolute;
     }
 
 }
@@ -298,13 +298,13 @@ namespace datetime {
     /// The return value is signed because it is possible to have a date that is
     /// before the epoch.
     syscall now {
-        return DateTime;
+        out datetime: DateTime;
     }
 
     /// Sleeps until `datetime.now()` returns a point in  time that comes after `when`.
     async_call Alarm {
         /// Earliest possible date time of when the alarm triggers.
-        in      when: DateTime;
+        in when: DateTime;
     }
 
 }
@@ -316,33 +316,33 @@ namespace video {
     /// otherwise, up to `ids.len` elements are written into the provided array
     /// and the number of written elements is returned.
     syscall enumerate {
-        in      ids: ?[]VideoOutputID;
-        return usize;
+        in  ids: ?[]VideoOutputID;
+        out count: usize;
     }
 
     /// Acquire exclusive access to a video output.
     syscall acquire {
-        in      _param0: VideoOutputID;
-        error   NotAvailable;
-        error   NotFound;
-        error   SystemResources;
-        return VideoOutput;
+        in    output_id: VideoOutputID;
+        out   output:  VideoOutput;
+        error NotAvailable;
+        error NotFound;
+        error SystemResources;
     }
 
     /// Returns the current resolution
     syscall get_resolution {
-        in      _param0: VideoOutput;
-        error   InvalidHandle;
-        return Size;
+        in    output: VideoOutput;
+        out   resolution: Size;
+        error InvalidHandle;
     }
 
     /// Returns a pointer to linear video memory, row-major.
     /// Pixels rows will have a stride of the current video buffer width.
     /// The first pixel in the memory is the top-left pixel.
     syscall get_video_memory {
-        in      _param0: VideoOutput;
-        error   InvalidHandle;
-        return VideoMemory;
+        in     output: VideoOutput;
+        out    memory: VideoMemory;
+        error  InvalidHandle;
     }
 
     /// Completes when the video output has fully scanned out an image and is now performing the v-blanking.
@@ -361,7 +361,7 @@ namespace random {
     /// If the entropy pool runs out of entropy bits, this call does not block
     /// and draw bytes from the pool.
     syscall get_soft_random {
-        in      data: bytebuf;
+        in data: bytebuf;
     }
 
     /// Fills the provided buffer with given length amount of random bytes.
@@ -369,16 +369,16 @@ namespace random {
     /// This call blocks until the entropy pool has enough entropy to fill
     /// an entire hash to draw from.
     async_call GetStrictRandom {
-        in      data: bytebuf;
+        in data: bytebuf;
     }
 }
 
 namespace input {
     /// Waits for an input event and completes when any input was done.
     async_call GetEvent {
-        out     event: InputEvent;
-        error   InProgress;
-        error   NonExclusiveAccess;
+        out   event: InputEvent;
+        error InProgress;
+        error NonExclusiveAccess;
     }
 }
 
@@ -419,14 +419,14 @@ namespace network {
     namespace udp {
         /// Creates a new TCP socket.
         syscall create_socket {
-            error   SystemResources;
-            return UdpSocket;
+            out    socket: UdpSocket;
+            error  SystemResources;
         }
 
         async_call Bind {
             in      socket: UdpSocket;
             in      bind_point: EndPoint;
-            out     bind_point: EndPoint;
+            out     endpoint: EndPoint;
             error   AddressInUse;
             error   IllegalValue;
             error   InvalidHandle;
@@ -513,18 +513,18 @@ namespace network {
     namespace tcp {
         /// Creates a new UDP socket.
         syscall create_socket {
-            error   SystemResources;
-            return TcpSocket;
+            out   socket: TcpSocket;
+            error SystemResources;
         }
 
         async_call Bind {
-            in      socket: TcpSocket;
-            in      bind_point: EndPoint;
-            out     bind_point: EndPoint;
-            error   AddressInUse;
-            error   IllegalValue;
-            error   InvalidHandle;
-            error   SystemResources;
+            in    socket: TcpSocket;
+            in    bind_point: EndPoint;
+            out   bound_endpoint: EndPoint;
+            error AddressInUse;
+            error IllegalValue;
+            error InvalidHandle;
+            error SystemResources;
         }
 
         async_call Connect {
@@ -622,8 +622,8 @@ namespace network {
 namespace fs {
     /// Finds a file system by name
     syscall find_filesystem {
-        in      name: str;
-        return FileSystemId;
+        in  name: str;
+        out id: FileSystemId;
     }
 
     /// Flushes all open files to disk.
@@ -658,7 +658,7 @@ namespace fs {
 
     /// opens a directory relative to the given dir handle.
     async_call OpenDir {
-        in      dir: Directory;
+        in      start_dir: Directory;
         in      path: str;
         out     dir: Directory;
         error   DiskError;
@@ -711,7 +711,7 @@ namespace fs {
         in      dir: Directory;
         in      path: str;
         in      mkopen: bool;
-        out     dir: Directory;
+        out     new_dir: Directory;
         error   DiskError;
         error   Exists;
         error   InvalidHandle;
@@ -855,21 +855,23 @@ namespace shm {
     /// Constructs a new shared memory object with `size` bytes of memory.
     /// Shared memory can be written by all processes without any memory protection.
     syscall create {
-        in      size: usize;
-        error   SystemResources;
-        return SharedMemory;
+        in    size: usize;
+        out   handle: SharedMemory;
+        error SystemResources;
     }
 
     /// Returns the number of bytes inside the given shared memory object.
     syscall get_length {
-        in      _param0: SharedMemory;
-        return usize;
+        in    handle: SharedMemory;
+        out   length: usize;
+        error InvalidHandle;
     }
 
     /// Returns a pointer to the shared memory.
     syscall get_pointer {
-        in      _param0: SharedMemory;
-        return [*]align(16) u8;
+        in    handle: SharedMemory;
+        out   pointer: [*]align(16) u8;
+        error InvalidHandle;
     }
 
 }
@@ -880,22 +882,24 @@ namespace pipe {
     /// if a `read` call is active. Otherwise, up to `fifo_length` elements can be
     /// stored in a FIFO.
     syscall create {
-        in      object_size: usize;
-        in      fifo_length: usize;
-        error   SystemResources;
-        return Pipe;
+        in    object_size: usize;
+        in    fifo_length: usize;
+        error SystemResources;
+        out   handle: Pipe;
     }
 
     /// Returns the length of the pipe-internal FIFO in elements.
     syscall get_fifo_length {
-        in      _param0: Pipe;
-        return usize;
+        in    handle: Pipe;
+        out   length: usize;
+        error InvalidHandle;
     }
 
     /// Returns the size of the objects stored in the pipe.
     syscall get_object_size {
-        in      _param0: Pipe;
-        return usize;
+        in    handle: Pipe;
+        out   size: usize;
+        error InvalidHandle;
     }
 
     /// Writes elements from `data` into the given pipe.
@@ -934,132 +938,138 @@ namespace sync {
     /// Creates a new `SyncEvent` object that can be used to synchronize
     /// different processes.
     syscall create_event {
-        error   SystemResources;
-        return SyncEvent;
+        out    event: SyncEvent;
+        error  SystemResources;
     }
 
     /// Completes one `WaitForEvent` IOP waiting for the given event.
     syscall notify_one {
-        in      _param0: SyncEvent;
+        in    event: SyncEvent;
+        error InvalidHandle;
     }
 
     /// Completes all `WaitForEvent` IOP waiting for the given event.
     syscall notify_all {
-        in      _param0: SyncEvent;
+        in    event: SyncEvent;
+        error InvalidHandle;
     }
 
     /// Waits for the given `SyncEvent` to be notified.
     async_call WaitForEvent {
-        in      _param0: SyncEvent;
+        in    event: SyncEvent;
+        error InvalidHandle;
     }
 
     /// Creates a new mutual exclusion.
     syscall create_mutex {
         error   SystemResources;
-        return Mutex;
+        out    mutex: Mutex;
     }
 
     /// Tries to lock a mutex and returns if it was successful.
     syscall try_lock {
-        in      _param0: Mutex;
-        return bool;
+        in    mutex: Mutex;
+        out   is_locked: bool;
+        error InvalidHandle;
     }
 
     /// Unlocks a mutual exclusion. Completes a single `Lock` IOP if it exists.
     syscall unlock {
-        in      _param0: Mutex;
+        in    mutex: Mutex;
+        error InvalidHandle;
     }
 
     /// Locks a mutex. Will complete once the mutex is locked.
     async_call Lock {
-        in      _param0: Mutex;
+        in    mutex: Mutex;
+        error InvalidHandle;
     }
-
 }
 
 namespace draw {
     /// Returns the font data for the given font name, if any.
     syscall get_system_font {
-        in      font_name: str;
-        error   FileNotFound;
-        error   SystemResources;
-        return Font;
+        in    font_name: str;
+        out   handle: Font;
+        error FileNotFound;
+        error SystemResources;
     }
 
     /// Creates a new custom font from the given data.
     syscall create_font {
-        in      data: bytestr;
-        error   InvalidData;
-        error   SystemResources;
-        return Font;
+        in    data: bytestr;
+        out   handle: Font;
+        error InvalidData;
+        error SystemResources;
     }
 
     /// Returns true if the given font is a system-owned font.
     syscall is_system_font {
-        in      _param0: Font;
-        return bool;
+        in    font: Font;
+        out   system_font: bool;
+        error InvalidHandle;
     }
 
     /// Creates a new in-memory framebuffer that can be used for offscreen painting.
     syscall create_memory_framebuffer {
-        in      size: Size;
-        error   SystemResources;
-        return Framebuffer;
+        in    size: Size;
+        out   handle: Framebuffer;
+        error SystemResources;
     }
 
     /// Creates a new framebuffer based off a video output. Can be used to output pixels
     /// to the screen.
     syscall create_video_framebuffer {
-        in      _param0: VideoOutput;
-        error   InvalidHandle;
-        error   SystemResources;
-        return Framebuffer;
+        in    output: VideoOutput;
+        out   handle: Framebuffer;
+        error InvalidHandle;
+        error SystemResources;
     }
 
     /// Creates a new framebuffer that allows painting into a GUI window.
     syscall create_window_framebuffer {
-        in      _param0: Window;
-        error   InvalidHandle;
-        error   SystemResources;
-        return Framebuffer;
+        in    window: Window;
+        out   handle: Framebuffer;
+        error InvalidHandle;
+        error SystemResources;
     }
 
     /// Creates a new framebuffer that allows painting into a widget.
     syscall create_widget_framebuffer {
-        in      _param0: Widget;
-        error   InvalidHandle;
-        error   SystemResources;
-        return Framebuffer;
+        in    widget: Widget;
+        out   handle: Framebuffer;
+        error InvalidHandle;
+        error SystemResources;
     }
 
     /// Returns the type of a framebuffer object.
     syscall get_framebuffer_type {
-        in      _param0: Framebuffer;
-        error   InvalidHandle;
-        return FramebufferType;
+        in     fb: Framebuffer;
+        out    type: FramebufferType;
+        error  InvalidHandle;
     }
 
     /// Returns the size of a framebuffer object.
     syscall get_framebuffer_size {
-        in      _param0: Framebuffer;
-        error   InvalidHandle;
-        return Size;
+        in    fb: Framebuffer;
+        out   size: Size;
+        error InvalidHandle;
     }
 
     /// Returns the video memory for a *memory* framebuffer.
     /// Other framebuffer types are not allowed to be passed.
     syscall get_framebuffer_memory {
-        in      _param0: Framebuffer;
-        error   InvalidHandle;
-        error   Unsupported;
-        return VideoMemory;
+        in    fb: Framebuffer;
+        out   memory: VideoMemory;
+        error InvalidHandle;
+        error Unsupported;
     }
 
     /// Marks a portion of the framebuffer as changed and forces the OS to
     /// perform an update action if necessary.
     syscall invalidate_framebuffer {
-        in      _param0: Framebuffer;
-        in      _param1: Rectangle;
+        in fb: Framebuffer;
+        in area: Rectangle;
     }
 
     /// Renders the provided Ashet Graphics Protocol `sequence` into `target` framebuffer.
@@ -1086,15 +1096,15 @@ namespace draw {
 
 namespace gui {
     syscall register_widget_type {
-        in      _param0: *const WidgetDescriptor;
-        error   AlreadyRegistered;
-        error   SystemResources;
-        return WidgetType;
+        in     descriptor: *const WidgetDescriptor;
+        out    handle: WidgetType;
+        error  AlreadyRegistered;
+        error  SystemResources;
     }
 
     /// Opens a message box popup window and prompts the user for response.
     async_call ShowMessageBox {
-        in      _param0: Desktop;
+        in      desktop: Desktop;
         in      message: str;
         in      caption: str;
         in      buttons: MessageBoxButtons;
@@ -1104,115 +1114,122 @@ namespace gui {
 
     /// Spawns a new window.
     syscall create_window {
-        in      desktop: Desktop;
-        in      title: str;
-        in      min: Size;
-        in      max: Size;
-        in      startup: Size;
-        in      flags: CreateWindowFlags;
-        error   InvalidDimensions;
-        error   InvalidHandle;
-        error   SystemResources;
-        return Window;
+        in    desktop: Desktop;
+        in    title: str;
+        in    min: Size;
+        in    max: Size;
+        in    startup: Size;
+        in    flags: CreateWindowFlags;
+        out   handle: Window;
+        error InvalidDimensions;
+        error InvalidHandle;
+        error SystemResources;
     }
 
     syscall get_window_title {
-        in      window: Window;
-        in      out_title: *[]const u8;
-        error   InvalidHandle;
+        in    window: Window;
+        in    out_title: *[]const u8;
+        error InvalidHandle;
     }
 
     syscall get_window_size {
-        in      window: Window;
-        error   InvalidHandle;
-        return Size;
+        in    window: Window;
+        out   size: Size;
+        error InvalidHandle;
     }
 
     syscall get_window_min_size {
-        in      window: Window;
-        error   InvalidHandle;
-        return Size;
+        in    window: Window;
+        out   min_size: Size;
+        error InvalidHandle;
     }
 
     syscall get_window_max_size {
-        in      window: Window;
-        error   InvalidHandle;
-        return Size;
+        in    window: Window;
+        out   max_size: Size;
+        error InvalidHandle;
     }
 
     syscall get_window_flags {
-        in      window: Window;
-        error   InvalidHandle;
-        return WindowFlags;
+        in    window: Window;
+        out   flags: WindowFlags;
+        error InvalidHandle;
     }
 
     /// Sets the `size` of `window` and returns the new actual size.
     /// NOTE: This event is meant to be used from desktop APIs and will not automatically
     /// notify the window of the resize event.
     syscall set_window_size {
-        in      window: Window;
-        in      size: Size;
-        error   InvalidHandle;
-        return Size;
+        in    window: Window;
+        in    size: Size;
+        out   actual_size: Size;
+        error InvalidHandle;
     }
 
     /// Resizes a window to the new size.
     syscall resize_window {
-        in      _param0: Window;
-        in      size: Size;
+        in    window: Window;
+        in    size: Size;
+        error InvalidHandle;
     }
 
     /// Changes a window title.
     syscall set_window_title {
-        in      _param0: Window;
-        in      title: str;
+        in    handle: Window;
+        in    title: str;
+        error InvalidHandle;
     }
 
     /// Notifies the desktop that a window wants attention from the user.
     /// This could just pop the window to the front, make it blink, show a small notification, ...
     syscall mark_window_urgent {
-        in      _param0: Window;
+        in    handle: Window;
+        error InvalidHandle;
     }
 
     /// Waits for an event on the given `Window`, completing as soon as
     /// an event arrived.
     async_call GetWindowEvent {
-        in      window: Window;
-        out     event: WindowEvent;
-        error   Cancelled;
-        error   InProgress;
-        error   InvalidHandle;
+        in    window: Window;
+        out   event: WindowEvent;
+        error Cancelled;
+        error InProgress;
+        error InvalidHandle;
     }
 
     /// Create a new widget identified by `uuid` on the given `window`.
     /// Position and size of the widget are undetermined at start and a call to `place_widget` should be performed on success.
     syscall create_widget {
-        in      window: Window;
-        in      uuid: *const UUID;
-        error   SystemResources;
-        error   WidgetNotFound;
-        return Widget;
+        in    window: Window;
+        in    uuid: *const UUID;
+        out   widget: Widget;
+        error SystemResources;
+        error WidgetNotFound;
+        error InvalidHandle;
     }
 
     /// Moves and resizes a widget in one.
     syscall place_widget {
-        in      widget: Widget;
-        in      position: Point;
-        in      size: Size;
+        in    widget: Widget;
+        in    position: Point;
+        in    size: Size;
+        error InvalidHandle;
     }
 
     /// Triggers the `control` event of the widget with the given `message` as a payload.
     syscall control_widget {
-        in      widget: Widget;
-        in      message: WidgetControlMessage;
-        error   SystemResources;
+        in    widget: Widget;
+        in    message: WidgetControlMessage;
+        error SystemResources;
+        error InvalidHandle;
     }
 
     /// Triggers the `widget_notify` event of the `Window` that owns `widget` with `event` as the payload.
     syscall notify_owner {
-        in      widget: Widget;
-        in      event: WidgetNotifyEvent;
-        error   SystemResources;
+        in    widget: Widget;
+        in    event: WidgetNotifyEvent;
+        error SystemResources;
+        error InvalidHandle;
     }
 
     /// Returns WidgetType-associated "opaque" data for this widget.
@@ -1222,38 +1239,39 @@ namespace gui {
     ///
     /// The size of this must be known and cannot be queried.
     syscall get_widget_data {
-        in      _param0: Widget;
-        return [*]align(16) u8;
+        in    widget: Widget;
+        out   data: [*]align(16) u8;
+        error InvalidHandle;
     }
 
     /// Creates a new desktop with the given name.
     syscall create_desktop {
         /// User-visible name of the desktop.
-        in      name: str;
-        in      descriptor: *const DesktopDescriptor;
-        error   SystemResources;
-        return Desktop;
+        in    name: str;
+        in    descriptor: *const DesktopDescriptor;
+        out   desktop: Desktop;
+        error SystemResources;
     }
 
     /// Returns the name of the provided desktop.
     syscall get_desktop_name {
-        in      _param0: Desktop;
-        error   InvalidHandle;
-        return str;
+        in    desktop: Desktop;
+        out   name: str;
+        error InvalidHandle;
     }
 
     /// Enumerates all available desktops.
     syscall enumerate_desktops {
-        in      serverlist: ?[]Desktop;
-        return usize;
+        in    serverlist: ?[]Desktop;
+        out   count: usize;
     }
 
     /// Returns all windows for a desktop handle.
     syscall enumerate_desktop_windows {
-        in      _param0: Desktop;
-        in      window: ?[]Window;
-        error   InvalidHandle;
-        return usize;
+        in    desktop: Desktop;
+        in    window: ?[]Window;
+        out   count: usize;
+        error InvalidHandle;
     }
 
     /// Returns desktop-associated "opaque" data for this window.
@@ -1263,9 +1281,9 @@ namespace gui {
     ///
     /// The size of this must be known and cannot be queried.
     syscall get_desktop_data {
-        in      _param0: Window;
-        error   InvalidHandle;
-        return [*]align(16) u8;
+        in    window: Window;
+        out   data: [*]align(16) u8;
+        error InvalidHandle;
     }
 
     /// Notifies the system that a message box was confirmed by the user.
@@ -1317,8 +1335,9 @@ namespace gui {
 
         /// Returns the current type present in the clipboard, if any.
         syscall get_type {
-            in     desktop: Desktop;
-            return ?str;
+            in    desktop: Desktop;
+            out   type: ?str;
+            error InvalidHandle;
         }
 
         /// Returns the current clipboard value as the provided mime type.
@@ -1330,6 +1349,7 @@ namespace gui {
             in    value: *?[]const u8;
             error OutOfMemory;
             error ConversionFailed;
+            error InvalidHandle;
         }
 
     }
@@ -1340,38 +1360,41 @@ namespace service {
     /// Registers a new service `uuid` in the system.
     /// Takes an array of function pointers that will be provided for IPC and a service name to be advertised.
     syscall create {
-        in      uuid: *const UUID;
-        in      funcs: []const anyfnptr;
-        in      name: str;
-        error   AlreadyRegistered;
-        error   SystemResources;
-        return Service;
+        in    uuid: *const UUID;
+        in    funcs: []const anyfnptr;
+        in    name: str;
+        out   svc: Service;
+        error AlreadyRegistered;
+        error SystemResources;
     }
 
     /// Enumerates all registered services.
     syscall enumerate {
-        in      uuid: *const UUID;
-        in      services: ?[]Service;
-        return usize;
+        in  uuid: *const UUID;
+        in  services: ?[]Service;
+        out count: usize;
     }
 
     /// Returns the name of the service.
     syscall get_name {
-        in      svc: Service;
-        return str;
+        in    svc: Service;
+        out   name: str;
+        error InvalidHandle;
     }
 
     /// Returns the process that created this service.
     syscall get_process {
-        in      svc: Service;
-        return Process;
+        in  svc: Service;
+        out process: Process;
+        error InvalidHandle;
     }
 
     /// Returns the functions registerd by the service.
     syscall get_functions {
-        in      svc: Service;
-        in      funcs: ?[]anyfnptr;
-        return usize;
+        in    svc: Service;
+        in    funcs: ?[]anyfnptr;
+        out   count: usize;
+        error InvalidHandle;
     }
 }
 
