@@ -142,7 +142,7 @@ pub const BitStructField = struct {
     docs: DocString,
     name: ?[]const u8, // null is reserved
     type: TypeIndex,
-    // TODO: default: ???
+    default: ?Value,
 };
 
 pub const Struct = struct {
@@ -155,7 +155,7 @@ pub const StructField = struct {
     docs: DocString,
     name: []const u8,
     type: TypeIndex,
-    // TODO: default: ???
+    default: ?Value,
 };
 
 pub const Enumeration = struct {
@@ -193,7 +193,7 @@ pub const Parameter = struct {
     docs: DocString,
     name: []const u8,
     type: TypeIndex,
-    // TODO: default: ???
+    default: ?Value,
 };
 
 pub const Resource = struct {
@@ -210,7 +210,14 @@ pub const Constant = struct {
     docs: DocString,
     full_qualified_name: FQN,
     type: ?TypeIndex,
-    // TODO: value: ???
+    value: Value,
+};
+
+pub const Value = union(enum) {
+    null,
+    bool: bool,
+    int: i65,
+    string: []const u8,
 };
 
 /// The standard types are the ones that can be reified into actual

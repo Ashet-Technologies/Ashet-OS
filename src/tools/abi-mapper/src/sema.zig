@@ -202,7 +202,6 @@ const Analyzer = struct {
         const doc_comment = try ana.allocator.dupe([]const u8, node.doc_comment);
 
         const value = try ana.resolve_value(constant.value.?);
-        _ = value;
 
         // TODO: Implement explicit constant typing!
         const type_id: ?model.TypeIndex = null;
@@ -211,7 +210,7 @@ const Analyzer = struct {
             .docs = doc_comment,
             .full_qualified_name = full_name,
             .type = type_id,
-            // TODO: Store value!
+            .value = value,
         });
 
         return .{
@@ -394,7 +393,7 @@ const Analyzer = struct {
                 },
 
                 .item => |data| {
-                    const value: Value = if (data.value) |raw|
+                    const value: model.Value = if (data.value) |raw|
                         try ana.resolve_value(raw)
                     else
                         .{ .int = last_index + 1 };
@@ -469,13 +468,11 @@ const Analyzer = struct {
                         break :blk try ana.resolve_value(value);
                     } else null;
 
-                    // TODO: Process default_value !
-                    _ = default_value;
-
                     const param: model.Parameter = .{
                         .docs = try ana.map_doc_comment(child.doc_comment),
                         .name = data.name,
                         .type = type_id,
+                        .default = default_value,
                     };
 
                     if (child.type == .in) {
@@ -560,13 +557,11 @@ const Analyzer = struct {
                         break :blk try ana.resolve_value(value);
                     } else null;
 
-                    // TODO: Process default_value !
-                    _ = default_value;
-
                     try fields.append(child.location, .{
                         .docs = try ana.map_doc_comment(child.doc_comment),
                         .name = data.name,
                         .type = type_id,
+                        .default = default_value,
                     });
                 },
 
@@ -617,27 +612,24 @@ const Analyzer = struct {
                     else
                         null;
 
-                    // TODO: Process default_value !
-                    _ = default_value;
-
                     try fields.append(child.location, .{
                         .docs = try ana.map_doc_comment(child.doc_comment),
                         .name = data.name,
                         .type = type_id,
+                        .default = default_value,
                     });
                 },
 
                 .reserve => |data| {
                     const type_id = try ana.map_type(data.type);
 
-                    // TODO: Process padding_value !
                     const padding_value = try ana.resolve_value(data.value);
-                    _ = padding_value;
 
                     try fields.append(child.location, .{
                         .docs = try ana.map_doc_comment(child.doc_comment),
                         .name = null,
                         .type = type_id,
+                        .default = padding_value,
                     });
                 },
 
@@ -807,7 +799,7 @@ const Analyzer = struct {
         }
     }
 
-    fn resolve_value(ana: *Analyzer, value: *const syntax.ValueNode) !Value {
+    fn resolve_value(ana: *Analyzer, value: *const syntax.ValueNode) !model.Value {
         _ = ana;
         return switch (value.*) {
             .named => |name| switch (name) {
@@ -818,13 +810,6 @@ const Analyzer = struct {
             .uint => |int| .{ .int = int },
         };
     }
-
-    pub const Value = union(enum) {
-        null,
-        bool: bool,
-        int: i65,
-        string: []const u8,
-    };
 
     fn make_collector(ana: *Analyzer, comptime T: type, comptime name_field: []const u8, comptime error_fmt: []const u8) NamedItemCollector(T, name_field, error_fmt) {
         return .{
