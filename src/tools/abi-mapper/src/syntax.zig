@@ -150,7 +150,7 @@ pub const Parser = struct {
         var doc: std.ArrayList(Node) = .init(parser.allocator);
         defer doc.deinit();
 
-        while (parser.core.tokenizer.offset < parser.core.tokenizer.source.len) {
+        while (try parser.core.peek() != null) {
             const node = try parser.accept_node();
             try doc.append(node);
         }
@@ -408,7 +408,6 @@ pub const Parser = struct {
             }
 
             return .{
-
                 .compound = try children.toOwnedSlice(),
             };
         }
