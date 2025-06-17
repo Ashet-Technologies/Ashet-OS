@@ -29,6 +29,8 @@ pub fn analyze(allocator: std.mem.Allocator, document: syntax.Document) !model.D
 
     try analyzer.resolve_named_types();
 
+    try analyzer.resolve_magic_types();
+
     // TODO: Resolve validity of bitstructs
 
     // TODO: Validate if all constant and default values fit their assignment
@@ -41,6 +43,8 @@ pub fn analyze(allocator: std.mem.Allocator, document: syntax.Document) !model.D
         }
         return error.AnalysisFailed;
     }
+
+    // TODO: Implement garbage collection for unreferenced things
 
     return .{
         .root = try analyzer.root.toOwnedSlice(),
@@ -243,6 +247,65 @@ const Analyzer = struct {
         }
     }
 
+    fn resolve_magic_types(ana: *Analyzer) !void {
+        // TODO: Ensure all potentially required types exist.
+
+        for (ana.types.items) |*type_ref| {
+            if (type_ref.* != .typedef)
+                continue;
+
+            const type_def = type_ref.typedef;
+
+            const aliased_type = ana.types.get(type_def.alias);
+            if (aliased_type.* != .unset_magic_type)
+                continue;
+            const magic_type = aliased_type.unset_magic_type;
+
+            // std.log.err("reify {s} into {s}: {s} ", .{
+            //     type_def.full_qualified_name,
+            //     @tagName(magic_type.kind),
+            //     @tagName(magic_type.size),
+            // });
+
+            var items: std.ArrayList(model.EnumItem) = .init(ana.allocator);
+            defer items.deinit();
+
+            switch (magic_type.kind) {
+                inline else => |tag| {
+                    const tag_name = @tagName(tag);
+                    comptime std.debug.assert(std.mem.endsWith(u8, tag_name, "_enum"));
+
+                    const collector_name = tag_name[0 .. tag_name.len - "_enum".len] ++ "s";
+
+                    const collector = &@field(ana, collector_name);
+
+                    for (collector.items, 1..) |item, index| {
+                        const item_name = try std.mem.join(ana.allocator, "_", item.full_qualified_name);
+
+                        // TODO: Implement stable item id assignment!
+
+                        try items.append(.{
+                            .docs = &.{},
+                            .name = item_name,
+                            .value = @intCast(index),
+                        });
+                    }
+                },
+            }
+
+            const enum_id = try ana.enums.append(.{
+                .backing_type = convert_enum(model.StandardType, magic_type.size),
+
+                .docs = type_def.docs,
+                .full_qualified_name = type_def.full_qualified_name,
+                .kind = .closed,
+                .items = try items.toOwnedSlice(),
+            });
+
+            type_ref.* = .{ .@"enum" = enum_id };
+        }
+    }
+
     fn fatal_error(ana: *Analyzer, location: Location, comptime fmt: []const u8, args: anytype) error{ OutOfMemory, FatalAnalysisError } {
         try ana.emit_error(location, fmt, args);
         return error.FatalAnalysisError;
@@ -294,15 +357,23 @@ const Analyzer = struct {
 
         const doc_comment = try ana.allocator.dupe([]const u8, node.doc_comment);
 
-        const type_id = try ana.map_type(typedef.alias);
+        const alias_id = try ana.map_type(typedef.alias);
 
-        scope.set_link(.{ .typedef = type_id });
+        const typedef_id = try ana.types.append(.{
+            .typedef = .{
+                .docs = doc_comment,
+                .full_qualified_name = full_name,
+                .alias = alias_id,
+            },
+        });
+
+        scope.set_link(.{ .typedef = typedef_id });
 
         return .{
             .full_qualified_name = full_name,
             .docs = doc_comment,
             .children = &.{},
-            .data = .{ .typedef = type_id },
+            .data = .{ .typedef = typedef_id },
         };
     }
 
@@ -822,6 +893,8 @@ const Analyzer = struct {
 
                     break :blk true;
                 },
+
+                .unset_magic_type => |magic| magic.kind == other.unset_magic_type.kind and magic.size == other.unset_magic_type.size,
             };
             if (eql)
                 return .from_int(index);
@@ -945,6 +1018,23 @@ const Analyzer = struct {
                 64 => .{ .well_known = .i64 },
                 else => .{ .int = data },
             },
+
+            .magic => |node| {
+                const kind = std.meta.stringToEnum(model.MagicType.Kind, node.name) orelse b: {
+                    try ana.emit_error(node.location, "Unknown built-in type <<{s}:{s}>>", .{
+                        node.name,
+                        @tagName(node.sub_type),
+                    });
+                    break :b .resource_enum;
+                };
+
+                return .{
+                    .unset_magic_type = .{
+                        .kind = kind,
+                        .size = convert_enum(model.MagicType.Size, node.sub_type),
+                    },
+                };
+            },
         }
     }
 
@@ -1034,6 +1124,10 @@ fn Collector(comptime I: type) type {
                 .items = &.{},
                 .capacity = 0,
             };
+        }
+
+        pub fn get(col: *Collect, index: Index) *Item {
+            return &col.items[@intFromEnum(index)];
         }
 
         pub fn append(col: *Collect, item: Item) !Index {

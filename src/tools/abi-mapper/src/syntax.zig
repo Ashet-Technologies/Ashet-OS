@@ -38,6 +38,8 @@ const TokenType = enum {
     @",",
     @".",
     @"...",
+    magic_type_start,
+    magic_type_stop,
 
     // values
     identifier,
@@ -109,10 +111,11 @@ const patterns = blk: {
         .create(.typedef, match.word("typedef")),
         .create(.@"align", match.word("align")),
         .create(.noreturn, match.word("noreturn")),
+        .create(.magic_type_start, match.literal("<<")),
+        .create(.magic_type_stop, match.literal(">>")),
 
         .create(.identifier, match_identifier),
         .create(.identifier, match.sequenceOf(.{ match.literal("@\""), match.takeNoneOf("\"\n\r"), match.literal("\"") })),
-        .create(.identifier, match.sequenceOf(.{ match.literal("@"), match.identifier, match.literal("()") })),
 
         .create(.doc_comment, match.sequenceOf(.{ match.literal("///"), match.takeNoneOf("\n") })),
         .create(.doc_comment, match.literal("///")),
@@ -454,8 +457,6 @@ pub const Parser = struct {
             std.debug.assert(node.* == .named);
 
             gop.value_ptr.* = node;
-
-            std.log.warn("new named type: {*} '{'}'", .{ node, std.zig.fmtEscapes(node.named) });
         }
 
         return node;
@@ -483,6 +484,28 @@ pub const Parser = struct {
     }
 
     fn accept_type_val(parser: *Parser) AcceptNodeError!TypeNode {
+        if (try parser.try_accept(.magic_type_start)) |start| {
+            const name, _ = try parser.accept_identifier();
+
+            try parser.expect(.@":");
+
+            const sub_type_token = try parser.accept(.identifier);
+
+            const sub_type = std.meta.stringToEnum(MagicTypeNode.Size, sub_type_token.text) orelse {
+                return error.UnexpectedToken;
+            };
+
+            try parser.expect(.magic_type_stop);
+
+            return .{
+                .magic = .{
+                    .location = start.location,
+                    .name = name,
+                    .sub_type = sub_type,
+                },
+            };
+        }
+
         if (try parser.try_accept(.@"?")) |_| {
             const child = try parser.accept_type();
 
@@ -775,6 +798,17 @@ pub const TypeNode = union(enum) {
     },
     unsigned_int: u8,
     signed_int: u8,
+    magic: MagicTypeNode, // <<...>>
+};
+
+pub const MagicTypeNode = struct {
+    location: Location,
+
+    name: []const u8,
+
+    sub_type: Size,
+
+    pub const Size = enum { u8, u16, u32, u64, usize };
 };
 
 pub const PointerTypeNode = struct {

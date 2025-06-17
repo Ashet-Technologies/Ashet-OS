@@ -95,7 +95,36 @@ pub const Type = union(enum) {
     ptr: DataPointer,
     fnptr: FunctionPointer,
 
+    /// internal use only!
+    /// this type is required to lazily resolve to either
+    /// one of the internal types or an external type.
     unknown_named_type: UnknownNamedType,
+
+    /// internal use only!
+    /// this type is required to allow constructs like
+    /// ```
+    /// typedef MyName = <<struct_enum:u32>>;
+    /// ```
+    /// to be reified into `enum MyName : u32 { item … }
+    unset_magic_type: MagicType,
+};
+
+pub const MagicType = struct {
+    kind: Kind,
+    size: Size,
+
+    pub const Kind = enum {
+        struct_enum,
+        union_enum,
+        enum_enum,
+        bitstruct_enum,
+        syscall_enum,
+        async_call_enum,
+        resource_enum,
+        constant_enum,
+    };
+
+    pub const Size = enum { u8, u16, u32, u64, usize };
 };
 
 pub const UnknownNamedType = struct {
@@ -137,7 +166,7 @@ pub const ExternalType = struct {
 pub const TypeDefition = struct {
     docs: DocString,
     full_qualified_name: FQN,
-    alias: usize, // .types[]
+    alias: TypeIndex,
 };
 
 pub const BitStruct = struct {
@@ -368,6 +397,9 @@ pub const StandardType = enum {
 };
 
 fn GenericIndex(comptime T: type, comptime field: []const u8) type {
+    // std.debug.assert(@hasField(T, "docs"));
+    // std.debug.assert(@hasField(T, "full_qualified_name"));
+
     return enum(usize) {
         pub const Pointee = T;
 

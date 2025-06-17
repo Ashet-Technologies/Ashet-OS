@@ -1,13 +1,19 @@
+
+/// The base type for all system resources.
+enum SystemResource : usize
+{
+    ...
+
+    typedef Type = <<resource_enum:u32>>;
+}
+
 /// All syscalls related to generic resource management.
 namespace resources {
-    //? typedef SystemResource = ???;
-    //? typedef SystemResourceType = ???;
-
-
+    
     /// Returns the type of the system resource.
     syscall get_type {
         in     @"resource": SystemResource;
-        out    type: SystemResourceType;
+        out    type: SystemResource.Type;
         error  InvalidHandle;
     }
 
@@ -56,7 +62,7 @@ namespace overlapped {
         /// A user-specified pointer-sized field which 
         field tag: usize;
 
-        //? typedef Type = ???;
+        typedef Type = <<async_call_enum:u32>>;
     }
 
     /// Starts new asynchronous operations.
