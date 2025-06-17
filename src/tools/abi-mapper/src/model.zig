@@ -218,6 +218,22 @@ pub const Value = union(enum) {
     bool: bool,
     int: i65,
     string: []const u8,
+    compound: CompoundType,
+};
+
+pub const CompoundType = struct {
+    fields: std.StringArrayHashMap(Value),
+
+    pub fn jsonStringify(value: CompoundType, jws: anytype) !void {
+        try jws.beginObject();
+        for (value.fields.keys(), value.fields.values()) |key, item| {
+            try jws.objectField(key);
+            try jws.write(item);
+        }
+        try jws.endObject();
+    }
+
+    // TODO: Implement deserialization!
 };
 
 /// The standard types are the ones that can be reified into actual

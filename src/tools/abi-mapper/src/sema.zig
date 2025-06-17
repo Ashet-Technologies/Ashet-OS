@@ -22,7 +22,15 @@ pub fn analyze(allocator: std.mem.Allocator, document: syntax.Document) !model.D
         .types = .init(allocator),
     };
 
-    try analyzer.run(document);
+    try analyzer.map(document);
+
+    // TODO: Resolve named types to local references
+
+    // TODO: Resolve validity of bitstructs
+
+    // TODO: Validate if all constant and default values fit their assignment
+
+    // TODO: Compute type sizes, field offsets
 
     if (analyzer.errors.items.len > 0) {
         for (analyzer.errors.items) |err| {
@@ -120,7 +128,7 @@ const Analyzer = struct {
         std.debug.assert(ana.scope.pop() != null);
     }
 
-    fn run(ana: *Analyzer, doc: syntax.Document) error{OutOfMemory}!void {
+    fn map(ana: *Analyzer, doc: syntax.Document) error{OutOfMemory}!void {
         try ana.root.resize(doc.nodes.len);
         for (ana.root.items, doc.nodes) |*out, node| {
             out.* = ana.map_node(node) catch |err| switch (err) {
@@ -800,7 +808,6 @@ const Analyzer = struct {
     }
 
     fn resolve_value(ana: *Analyzer, value: *const syntax.ValueNode) !model.Value {
-        _ = ana;
         return switch (value.*) {
             .named => |name| switch (name) {
                 .false => .{ .bool = false },
@@ -808,6 +815,29 @@ const Analyzer = struct {
                 .null => .null,
             },
             .uint => |int| .{ .int = int },
+            .compound => |compound| {
+                var out: model.CompoundType = .{
+                    .fields = .init(ana.allocator),
+                };
+                errdefer out.fields.deinit();
+
+                try out.fields.ensureTotalCapacity(compound.len);
+
+                var available_fields: std.StringArrayHashMap(void) = .init(ana.allocator);
+                defer available_fields.deinit();
+
+                for (compound) |field_init| {
+                    if (try available_fields.fetchPut(field_init.name, {}) != null) {
+                        try ana.emit_error(field_init.location, "Duplicate field assignment '{s}'", .{field_init.name});
+                        continue;
+                    }
+
+                    const field_value = try ana.resolve_value(field_init.value);
+                    out.fields.putAssumeCapacityNoClobber(field_init.name, field_value);
+                }
+
+                return .{ .compound = out };
+            },
         };
     }
 

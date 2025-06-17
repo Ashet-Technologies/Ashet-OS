@@ -2272,15 +2272,15 @@ bitstruct KeyboardModifiers : u16 {
 }
 
 struct Point {
-    //? TODO: pub const zero = new(0, 0);
+    const zero = .{ .x = 0, .y = 0 };
 
     field x: i16;
     field y: i16;
 }
 
 struct Size {
-    //? TODO: const empty = new(0, 0);
-    //? TODO: const max = new(std.math.maxInt(u16), std.math.maxInt(u16));
+    const empty = .{ .width = 0, .height = 0 };
+    const max = .{ .width = 0xFFFF, .height = 0xFFFF };
 
     field width: u16;
     field height: u16;

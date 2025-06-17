@@ -36,6 +36,7 @@ const TokenType = enum {
     @"?",
     @"*",
     @",",
+    @".",
     @"...",
 
     // values
@@ -73,6 +74,7 @@ const patterns = blk: {
 
     const items = [_]ptk.Pattern(TokenType){
         .create(.@"...", match.literal("...")),
+
         .create(.@";", match.literal(";")),
         .create(.@"{", match.literal("{")),
         .create(.@"}", match.literal("}")),
@@ -85,6 +87,7 @@ const patterns = blk: {
         .create(.@"?", match.literal("?")),
         .create(.@"*", match.literal("*")),
         .create(.@",", match.literal(",")),
+        .create(.@".", match.literal(".")),
 
         .create(.namespace, match.word("namespace")),
         .create(.@"error", match.word("error")),
@@ -375,7 +378,43 @@ pub const Parser = struct {
     }
 
     fn accept_value_val(parser: *Parser) AcceptNodeError!ValueNode {
+        if (try parser.try_accept(.@".")) |_| {
+            // compound type
+            try parser.expect(.@"{");
+
+            var children: std.ArrayList(FieldInitNode) = .init(parser.allocator);
+            defer children.deinit();
+
+            if (try parser.try_accept(.@"}")) |_| {
+                // done
+            } else {
+                while (true) {
+                    try parser.expect(.@".");
+                    const name, const tok = try parser.accept_identifier();
+                    try parser.expect(.@"=");
+                    const value = try parser.accept_value();
+
+                    try children.append(.{
+                        .location = tok.location,
+                        .name = name,
+                        .value = value,
+                    });
+
+                    if (try parser.try_accept(.@"}")) |_|
+                        break;
+
+                    try parser.expect(.@",");
+                }
+            }
+
+            return .{
+
+                .compound = try children.toOwnedSlice(),
+            };
+        }
+
         if (parser.accept_identifier()) |wrap| {
+            // identifier
             const identifier, _ = wrap;
 
             if (std.meta.stringToEnum(NamedValue, identifier)) |named_value| {
@@ -384,6 +423,8 @@ pub const Parser = struct {
 
             return error.UnexpectedToken;
         } else |_| {}
+
+        // else: must be a number
 
         const tok = try parser.accept(.number);
 
@@ -705,6 +746,13 @@ pub const TypeDefNode = struct {
 pub const ValueNode = union(enum) {
     uint: u64,
     named: NamedValue,
+    compound: []const FieldInitNode,
+};
+
+pub const FieldInitNode = struct {
+    location: Location,
+    name: []const u8,
+    value: *const ValueNode,
 };
 
 pub const NamedValue = enum {
