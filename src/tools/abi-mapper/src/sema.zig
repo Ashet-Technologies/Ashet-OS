@@ -7,7 +7,8 @@ const Location = syntax.Location;
 pub fn analyze(allocator: std.mem.Allocator, document: syntax.Document) !model.Document {
     var analyzer: Analyzer = .{
         .allocator = allocator,
-        .scope = .init(allocator),
+        .scope_stack = .init(allocator),
+        .scope_map = .init(allocator),
         .errors = .init(allocator),
 
         .root = .init(allocator),
@@ -22,9 +23,11 @@ pub fn analyze(allocator: std.mem.Allocator, document: syntax.Document) !model.D
         .types = .init(allocator),
     };
 
+    try analyzer.scope_map.put(&.{}, &analyzer.root_scope);
+
     try analyzer.map(document);
 
-    // TODO: Resolve named types to local references
+    try analyzer.resolve_named_types();
 
     // TODO: Resolve validity of bitstructs
 
@@ -55,56 +58,40 @@ pub fn analyze(allocator: std.mem.Allocator, document: syntax.Document) !model.D
     };
 }
 
-fn Collector(comptime I: type) type {
-    return struct {
-        const Collect = @This();
-
-        pub const Item = I.Pointee;
-        pub const Index = I;
-
-        allocator: std.mem.Allocator,
-        items: []Item,
-        capacity: usize,
-
-        pub fn init(allocator: std.mem.Allocator) Collect {
-            return .{
-                .allocator = allocator,
-                .items = &.{},
-                .capacity = 0,
-            };
+const ScopeContext = struct {
+    pub fn hash(self: @This(), s: []const []const u8) u32 {
+        var hasher: std.hash.Wyhash = .init(s.len);
+        for (s) |i| {
+            hasher.update(std.mem.asBytes(&i.len));
+            hasher.update(i);
         }
-
-        pub fn append(col: *Collect, item: Item) !Index {
-            var list = col.to_list();
-            defer col.from_list(list);
-
-            const index = list.items.len;
-            try list.append(item);
-            return .from_int(index);
+        _ = self;
+        return @truncate(hasher.final());
+    }
+    pub fn eql(self: @This(), a: []const []const u8, b: []const []const u8, b_index: usize) bool {
+        _ = self;
+        _ = b_index;
+        if (a.len != b.len)
+            return false;
+        for (a, b) |l, r| {
+            if (!std.mem.eql(u8, l, r))
+                return false;
         }
-
-        pub fn toOwnedSlice(col: *Collect) ![]Item {
-            var list = col.to_list();
-            defer col.from_list(list);
-
-            return try list.toOwnedSlice();
-        }
-
-        fn to_list(col: *Collect) std.ArrayList(Item) {
-            return .{ .allocator = col.allocator, .capacity = col.capacity, .items = col.items };
-        }
-
-        fn from_list(col: *Collect, list: std.ArrayList(Item)) void {
-            col.capacity = list.capacity;
-            col.items = list.items;
-        }
-    };
-}
+        return true;
+    }
+};
 
 const Analyzer = struct {
     allocator: std.mem.Allocator,
-    scope: std.ArrayList([]const u8),
+    scope_stack: std.ArrayList([]const u8),
+    scope_map: std.ArrayHashMap([]const []const u8, *Scope, ScopeContext, true),
     errors: std.ArrayList([]const u8),
+
+    root_scope: Scope = .{
+        .parent = null,
+        .name = "<root>",
+        .type = .namespace,
+    },
 
     root: std.ArrayList(model.Declaration),
 
@@ -119,13 +106,67 @@ const Analyzer = struct {
 
     types: Collector(model.TypeIndex),
 
-    fn push_scope(ana: *Analyzer, name: []const u8) !model.FQN {
-        try ana.scope.append(name);
-        return try ana.allocator.dupe([]const u8, ana.scope.items);
+    const Scope = struct {
+        parent: ?*Scope,
+        type: Type,
+        name: []const u8,
+        link: ?Link = null,
+        children: std.StringArrayHashMapUnmanaged(*Scope) = .empty,
+
+        const Type = std.meta.Tag(Link);
+
+        const Link = model.Declaration.Data;
+
+        pub fn set_link(scope: *Scope, link: Link) void {
+            std.debug.assert(scope.link == null);
+            std.debug.assert(scope.type == link);
+            scope.link = link;
+        }
+    };
+
+    fn push_scope(ana: *Analyzer, name: []const u8, scope_type: Scope.Type) !struct { model.FQN, *Scope } {
+        const current_name = ana.current_scope_name();
+
+        const current_scope = ana.scope_map.get(current_name) orelse {
+            std.log.err("current scope: {s}", .{current_name});
+            @panic("BUG: No current scope found!");
+        };
+
+        const inserted = if (current_scope.children.get(name)) |existing_child| blk: {
+            if (scope_type != existing_child.type)
+                @panic("scope mismatch");
+            break :blk false;
+        } else blk: {
+            const child_scope: *Scope = try ana.allocator.create(Scope);
+            child_scope.* = .{
+                .parent = current_scope,
+                .name = name,
+                .type = scope_type,
+            };
+
+            try current_scope.children.put(ana.allocator, name, child_scope);
+            break :blk true;
+        };
+
+        try ana.scope_stack.append(name);
+
+        const scope = current_scope.children.get(name).?;
+
+        const scope_name = try ana.allocator.dupe([]const u8, ana.scope_stack.items);
+
+        if (inserted) {
+            try ana.scope_map.putNoClobber(scope_name, scope);
+        }
+
+        return .{ scope_name, scope };
     }
 
     fn pop_scope(ana: *Analyzer) void {
-        std.debug.assert(ana.scope.pop() != null);
+        std.debug.assert(ana.scope_stack.pop() != null);
+    }
+
+    fn current_scope_name(ana: *Analyzer) []const []const u8 {
+        return ana.scope_stack.items;
     }
 
     fn map(ana: *Analyzer, doc: syntax.Document) error{OutOfMemory}!void {
@@ -137,6 +178,68 @@ const Analyzer = struct {
 
                 error.OutOfMemory => |e| return e,
             };
+        }
+    }
+
+    fn resolve_named_types(ana: *Analyzer) !void {
+        element_resolution: for (ana.types.items) |*typedef| {
+            if (typedef.* != .unknown_named_type)
+                continue;
+            const unknown_type = &typedef.unknown_named_type;
+
+            // std.log.debug("unknown type @ scope {s}, references {s}", .{
+            //     unknown_type.declared_scope,
+            //     unknown_type.local_qualified_name,
+            // });
+            std.debug.assert(unknown_type.local_qualified_name.len > 0);
+
+            var search_scope: ?*Scope = ana.scope_map.get(unknown_type.declared_scope) orelse @panic("BUG: declared_scope not found in scope_map");
+
+            candidate_search: while (search_scope) |base_scope| : (search_scope = base_scope.parent) {
+                const base_name = unknown_type.local_qualified_name[0];
+                if (base_scope.children.get(base_name) != null) {
+                    // std.log.debug("  candidate: {s}.{s}", .{ base_scope.name, child.name });
+
+                    var sub_scope: *Scope = base_scope;
+                    for (unknown_type.local_qualified_name) |local_name| {
+                        const sub_item = sub_scope.children.get(local_name) orelse {
+                            // std.log.debug("    discard: {s}.{s}…{s}", .{ base_scope.name, child.name, local_name });
+                            continue :candidate_search;
+                        };
+
+                        sub_scope = sub_item;
+                    }
+
+                    if (sub_scope.type == .namespace) {
+                        // std.log.debug("    ! candidate rejected: {s} is namespace!", .{sub_scope.name});
+                        continue :candidate_search;
+                    }
+
+                    std.debug.assert(sub_scope.link != null);
+                    std.debug.assert(sub_scope.link.? == sub_scope.type);
+
+                    typedef.* = switch (sub_scope.link.?) {
+                        .namespace => unreachable,
+                        .@"struct" => |index| .{ .@"struct" = index },
+                        .@"union" => |index| .{ .@"union" = index },
+                        .@"enum" => |index| .{ .@"enum" = index },
+                        .bitstruct => |index| .{ .bitstruct = index },
+                        .resource => |index| .{ .resource = index },
+                        .typedef => |index| .{ .alias = index },
+                        .syscall => @panic("TODO: Invalid type reference!"),
+                        .async_call => @panic("TODO: Invalid type reference!"),
+                        .constant => @panic("TODO: Invalid type reference!"),
+                    };
+
+                    // std.log.debug("    ! candidate found {s} ({s})!", .{ sub_scope.name, @tagName(sub_scope.type) });
+
+                    continue :element_resolution;
+                }
+            }
+            std.log.err("no candidate found for type {s} at {s}!", .{
+                unknown_type.local_qualified_name,
+                unknown_type.declared_scope,
+            });
         }
     }
 
@@ -186,12 +289,14 @@ const Analyzer = struct {
     fn map_typedef(ana: *Analyzer, node: syntax.Node) !model.Declaration {
         const typedef = node.type.typedef;
 
-        const full_name = try ana.push_scope(typedef.name);
+        const full_name, const scope = try ana.push_scope(typedef.name, .typedef);
         defer ana.pop_scope();
 
         const doc_comment = try ana.allocator.dupe([]const u8, node.doc_comment);
 
         const type_id = try ana.map_type(typedef.alias);
+
+        scope.set_link(.{ .typedef = type_id });
 
         return .{
             .full_qualified_name = full_name,
@@ -204,7 +309,7 @@ const Analyzer = struct {
     fn map_const(ana: *Analyzer, node: syntax.Node) !model.Declaration {
         const constant = node.type.@"const";
 
-        const full_name = try ana.push_scope(constant.name);
+        const full_name, const scope = try ana.push_scope(constant.name, .constant);
         defer ana.pop_scope();
 
         const doc_comment = try ana.allocator.dupe([]const u8, node.doc_comment);
@@ -220,6 +325,8 @@ const Analyzer = struct {
             .type = type_id,
             .value = value,
         });
+
+        scope.set_link(.{ .constant = index });
 
         return .{
             .full_qualified_name = full_name,
@@ -293,7 +400,7 @@ const Analyzer = struct {
     fn map_decl(ana: *Analyzer, node: syntax.Node) !model.Declaration {
         const decl = node.type.declaration;
 
-        const full_name = try ana.push_scope(decl.name);
+        const full_name, const scope = try ana.push_scope(decl.name, convert_enum(Scope.Type, decl.type));
         defer ana.pop_scope();
 
         const doc_comment = try ana.map_doc_comment(node.doc_comment);
@@ -348,6 +455,8 @@ const Analyzer = struct {
             .async_call => try ana.map_async_call(info, decl),
             .resource => try ana.map_resource(info, decl),
         };
+
+        scope.set_link(data);
 
         return .{
             .full_qualified_name = full_name,
@@ -682,6 +791,7 @@ const Analyzer = struct {
                 .well_known,
                 .uint,
                 .int,
+                .alias,
                 => |val, tag| val == @field(other, @tagName(tag)),
 
                 // TODO: Check if it makes sense to compare these:
@@ -693,6 +803,25 @@ const Analyzer = struct {
                 .ptr => |ptr| ptr.size == other.ptr.size and ptr.alignment == other.ptr.alignment and ptr.is_const == other.ptr.is_const and ptr.child == other.ptr.child,
 
                 .array => |arr| arr.size == other.array.size and arr.child == other.array.child,
+
+                .unknown_named_type => |unknown| blk: {
+                    if (unknown.declared_scope.len != other.unknown_named_type.declared_scope.len)
+                        break :blk false;
+                    if (unknown.local_qualified_name.len != other.unknown_named_type.local_qualified_name.len)
+                        break :blk false;
+
+                    for (unknown.declared_scope, other.unknown_named_type.declared_scope) |lhs, rhs| {
+                        if (!std.mem.eql(u8, lhs, rhs))
+                            break :blk false;
+                    }
+
+                    for (unknown.local_qualified_name, other.unknown_named_type.local_qualified_name) |lhs, rhs| {
+                        if (!std.mem.eql(u8, lhs, rhs))
+                            break :blk false;
+                    }
+
+                    break :blk true;
+                },
             };
             if (eql)
                 return .from_int(index);
@@ -722,14 +851,26 @@ const Analyzer = struct {
             },
 
             .named => |data| {
-                const fqn = try ana.allocator.alloc([]const u8, 1);
-                fqn[0] = data;
-                // TODO: Properly implement named/external types
+                var fqn: std.ArrayList([]const u8) = .init(ana.allocator);
+                defer fqn.deinit();
+
+                var iter = std.mem.splitScalar(u8, data, '.');
+
+                while (iter.next()) |part| {
+                    if (part.len == 0) {
+                        @panic("TODO: Empty parts!");
+                        // try ana.emit_error();
+                        // continue;
+                    }
+                    try fqn.append(part);
+                }
+
+                std.debug.assert(fqn.items.len > 0);
+
                 return .{
-                    .external = .{
-                        .alias = data,
-                        .full_qualified_name = fqn,
-                        .docs = &.{},
+                    .unknown_named_type = .{
+                        .declared_scope = try ana.allocator.dupe([]const u8, ana.current_scope_name()),
+                        .local_qualified_name = try fqn.toOwnedSlice(),
                     },
                 };
             },
@@ -875,3 +1016,55 @@ const Analyzer = struct {
         };
     }
 };
+
+fn Collector(comptime I: type) type {
+    return struct {
+        const Collect = @This();
+
+        pub const Item = I.Pointee;
+        pub const Index = I;
+
+        allocator: std.mem.Allocator,
+        items: []Item,
+        capacity: usize,
+
+        pub fn init(allocator: std.mem.Allocator) Collect {
+            return .{
+                .allocator = allocator,
+                .items = &.{},
+                .capacity = 0,
+            };
+        }
+
+        pub fn append(col: *Collect, item: Item) !Index {
+            var list = col.to_list();
+            defer col.from_list(list);
+
+            const index = list.items.len;
+            try list.append(item);
+            return .from_int(index);
+        }
+
+        pub fn toOwnedSlice(col: *Collect) ![]Item {
+            var list = col.to_list();
+            defer col.from_list(list);
+
+            return try list.toOwnedSlice();
+        }
+
+        fn to_list(col: *Collect) std.ArrayList(Item) {
+            return .{ .allocator = col.allocator, .capacity = col.capacity, .items = col.items };
+        }
+
+        fn from_list(col: *Collect, list: std.ArrayList(Item)) void {
+            col.capacity = list.capacity;
+            col.items = list.items;
+        }
+    };
+}
+
+fn convert_enum(comptime T: type, src: anytype) T {
+    return switch (src) {
+        inline else => |tag| @field(T, @tagName(tag)),
+    };
+}

@@ -34,6 +34,15 @@ const resources = struct {
 };
 
 const overlapped = struct {
+    /// Handle to an asynchronously running (system) call.
+    struct ARC 
+    {
+        /// The type of operation that is performed.
+        field type: Type;
+        /// A user-specified pointer-sized field which 
+        field tag: usize; 
+    }
+
     /// Starts new asynchronous operations.
     ///
     /// NOTE: Until the operation has successfully completed or was

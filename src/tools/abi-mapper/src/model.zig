@@ -82,7 +82,9 @@ pub const Type = union(enum) {
     well_known: StandardType,
 
     external: ExternalType,
+
     typedef: TypeDefition,
+    alias: TypeIndex, // used to indirect into .typedef
 
     optional: TypeIndex,
     array: ArrayType,
@@ -92,6 +94,13 @@ pub const Type = union(enum) {
 
     ptr: DataPointer,
     fnptr: FunctionPointer,
+
+    unknown_named_type: UnknownNamedType,
+};
+
+pub const UnknownNamedType = struct {
+    declared_scope: []const []const u8,
+    local_qualified_name: []const []const u8,
 };
 
 pub const DataPointer = struct {

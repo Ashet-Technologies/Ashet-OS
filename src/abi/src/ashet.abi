@@ -1,9 +1,13 @@
 /// All syscalls related to generic resource management.
 namespace resources {
+    //? typedef SystemResource = ???;
+    //? typedef SystemResourceType = ???;
+
+
     /// Returns the type of the system resource.
     syscall get_type {
         in     @"resource": SystemResource;
-        out    type: SystemResource.Type;
+        out    type: SystemResourceType;
         error  InvalidHandle;
     }
 
@@ -43,6 +47,18 @@ namespace resources {
 }
 
 namespace overlapped {
+
+    /// Handle to an asynchronously running (system) call.
+    struct ARC
+    {
+        /// The type of operation that is performed.
+        field type: Type;
+        /// A user-specified pointer-sized field which 
+        field tag: usize;
+
+        //? typedef Type = ???;
+    }
+
     /// Starts new asynchronous operations.
     ///
     /// NOTE: Until the operation has successfully completed or was
