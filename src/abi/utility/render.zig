@@ -1,7 +1,9 @@
 const std = @import("std");
-const abi_schema = @import("abi-parser");
+const abi_parser = @import("abi-parser");
 
-const Mode = enum { userland, kernel, definition, stubs };
+const model = abi_parser.model;
+
+const Mode = enum { userland, kernel, definition, stubs, docs };
 
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -18,10 +20,7 @@ pub fn main() !void {
 
     const json_txt = try std.fs.cwd().readFileAlloc(allocator, argv[2], 1 << 30);
 
-    const schema = try abi_schema.Document.from_json_str(
-        allocator,
-        json_txt,
-    );
+    const schema = try model.from_json_str(allocator, json_txt);
 
     var output = try std.fs.cwd().atomicFile(argv[3], .{});
     defer output.deinit();
@@ -33,6 +32,7 @@ pub fn main() !void {
         .kernel => try render_kernel(output.file.writer(), allocator, document),
         .definition => try render_definition(output.file.writer(), allocator, document),
         .stubs => try render_stubs(output.file.writer(), allocator, document),
+        .docs => try render_docs(output.file.writer(), allocator, document),
     }
 
     try output.finish();
@@ -49,9 +49,10 @@ fn render_header(writer: std.fs.File.Writer) !void {
     );
 }
 
-pub fn render_definition(writer: std.fs.File.Writer, allocator: std.mem.Allocator, schema: abi_schema.Document) !void {
+pub fn render_definition(writer: std.fs.File.Writer, allocator: std.mem.Allocator, schema: model.Document) !void {
     try render_header(writer);
     _ = allocator;
+    _ = schema;
 
     try writer.writeAll(
         \\
@@ -61,74 +62,141 @@ pub fn render_definition(writer: std.fs.File.Writer, allocator: std.mem.Allocato
         \\
         \\
     );
-    try writer.writeAll(std.mem.trim(u8, schema.root_container.rest, " \r\n\t"));
-    try writer.writeAll(
-        \\
-        \\//
-        \\// The code beyond this is generated again
-        \\//
-        \\
-        \\
-    );
-
-    try writer.writeAll("/// Asynchronous operation type, defines numeric values for AsyncOps.\n");
-    try writer.writeAll("pub const ARC_Type = enum(u32) {\n");
-
-    for (schema.iops) |iop| {
-        try writer.print("    {} = {s},\n", .{ std.zig.fmtId(iop.full_qualified_name.?), iop.name });
-    }
-
-    try writer.writeAll("\n");
-
-    try writer.writeAll("    pub fn as_type(comptime arc_type: @This()) type {\n");
-    try writer.writeAll("        return switch(arc_type) {\n");
-    //             for iop in sorted(abi.iops, key=lambda iop: iop.number.value):
-    try writer.writeAll("            .{iop.key.value} => {iop.full_qualified_name.value},\n");
-    try writer.writeAll("        };\n");
-    try writer.writeAll("    }\n");
-
-    try writer.writeAll("\n");
-    try writer.writeAll("};\n");
-    // stream.writeln()
-    // stream.writeln()
-    // stream.writeln("const __SystemResourceType = enum(u16) {")
-    // with stream.indent():
-    //     # stream.writeln("bad_handle = 0,")
-
-    //     for src in sys_resources:
-    //         stream.writeln(f"{caseconverter.snakecase(src)},")
-
-    // # stream.writeln("    _,")
-    // stream.writeln("};")
-
-    // stream.writeln()
-    // stream.writeln("fn __SystemResourceCastResult(comptime t: __SystemResourceType) type {")
-    // stream.writeln("    return switch (t) {")
-
-    // for src in sys_resources:
-    //     stream.writeln(f"        .{caseconverter.snakecase(src)} => {src},")
-
-    // # stream.writeln("         _ => @compileError(\"Undefined type passed.\"),")
-    // stream.writeln("    };")
-    // stream.writeln("}")
-
-    // stream.writeln()
 }
 
-pub fn render_userland(writer: std.fs.File.Writer, allocator: std.mem.Allocator, schema: abi_schema.Document) !void {
+pub fn render_userland(writer: std.fs.File.Writer, allocator: std.mem.Allocator, schema: model.Document) !void {
     try render_header(writer);
     _ = allocator;
     _ = schema;
 }
 
-pub fn render_kernel(writer: std.fs.File.Writer, allocator: std.mem.Allocator, schema: abi_schema.Document) !void {
+pub fn render_kernel(writer: std.fs.File.Writer, allocator: std.mem.Allocator, schema: model.Document) !void {
     try render_header(writer);
     _ = allocator;
     _ = schema;
 }
 
-pub fn render_stubs(writer: std.fs.File.Writer, allocator: std.mem.Allocator, schema: abi_schema.Document) !void {
+pub fn render_stubs(writer: std.fs.File.Writer, allocator: std.mem.Allocator, schema: model.Document) !void {
     _ = writer;
     _ = allocator;
     _ = schema;
+}
+
+pub fn render_docs(writer: std.fs.File.Writer, allocator: std.mem.Allocator, schema: model.Document) !void {
+    try writer.writeAll(
+        \\<!doctype html>
+        \\<html lang="en">
+        \\
+        \\<head>
+        \\    <meta charset="UTF-8">
+        \\    <title>Ashet OS System Calls</title>
+        \\    <link rel="stylesheet" href="style.css">
+        \\</head>
+        \\
+        \\<body>
+        \\    
+        \\    <nav>
+        \\        <svg id="logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 22 22">
+        \\            <title>alert</title>
+        \\            <path d="M20 20H2V19H1V15H2V13H3V11H4V9H5V7H6V5H7V3H8V2H14V3H15V5H16V7H17V9H18V11H19V13H20V15H21V19H20V20M9 6H8V8H7V10H6V12H5V14H4V16H3V18H19V16H18V14H17V12H16V10H15V8H14V6H13V4H9V6M10 7H12V13H10V7M10 14H12V16H10V14Z" />
+        \\        </svg>
+        \\        <div class="navigation">
+        \\            <div id="searchbox">
+        \\                <input id="search" type="search" placeholder="Search...">
+        \\            </div>
+        \\            <ul id="breadcrumbs">
+        \\                <a href="#">ashet</a>
+        \\                <a href="#ashet.process">process</a>
+        \\                <a href="#ashet.process.thread">thread</a>
+        \\                <a href="#ashet.process.ThreadFunction">ThreadFunction</a>
+        \\            </ul>
+        \\        </div>
+        \\    </nav>
+        \\    <main>
+        \\
+    );
+
+    var renderer: HtmlRenderer = .{
+        .allocator = allocator,
+        .stack = .init(allocator),
+        .writer = writer,
+        .schema = &schema,
+    };
+    defer renderer.stack.deinit();
+
+    try renderer.render_declaration("ashet", .{
+        .docs = &.{},
+        .children = schema.root,
+        .full_qualified_name = &.{"ashet"},
+        .data = .namespace,
+    });
+
+    try writer.writeAll(
+        \\    </main>
+        \\
+        \\</body>
+        \\
+        \\</html>
+    );
+}
+
+const HtmlRenderer = struct {
+    writer: std.fs.File.Writer,
+    stack: std.ArrayList([]const u8),
+    allocator: std.mem.Allocator,
+    schema: *const model.Document,
+
+    pub fn render_declaration(html: *HtmlRenderer, scope_name: []const u8, decl: model.Declaration) !void {
+        try html.stack.append(scope_name);
+        defer std.debug.assert(std.mem.eql(u8, html.stack.pop().?, scope_name));
+
+        for (decl.children) |child| {
+            try html.render_declaration(child.full_qualified_name[child.full_qualified_name.len - 1], child);
+        }
+
+        try html.writer.print(
+            \\        <section id="{[0]}">
+            \\            <h1>{[1]s}: {[0]}</h1>
+            \\
+        ,
+            .{
+                fmt_fqn(html.stack.items),
+                @tagName(decl.data),
+            },
+        );
+
+        if (decl.children.len > 0) {
+            try html.writer.writeAll("            <h2>Children</h2>\n");
+            try html.writer.writeAll("            <ul>\n");
+            for (decl.children) |child| {
+                try html.writer.print(
+                    \\                <li><a href="#ashet.{[0]}">{[1]s}</a></li>
+                    \\
+                , .{
+                    fmt_fqn(child.full_qualified_name),
+                    child.full_qualified_name[child.full_qualified_name.len - 1],
+                });
+            }
+            try html.writer.writeAll("            </ul>\n");
+        }
+
+        try html.writer.writeAll(
+            \\        </section>
+            \\
+        );
+    }
+};
+
+fn fmt_fqn(fqn: []const []const u8) std.fmt.Formatter(format_fqn) {
+    return .{ .data = fqn };
+}
+
+fn format_fqn(fqn: []const []const u8, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+    _ = fmt;
+    _ = options;
+    for (fqn, 0..) |name, i| {
+        if (i > 0)
+            try writer.writeAll(".");
+        try writer.writeAll(name);
+    }
 }

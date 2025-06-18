@@ -30,44 +30,6 @@ pub fn build(b: *std.Build) void {
 
     // const test_step = b.step("test", "Runs the test suite");
 
-    // const python3_dep = b.dependency("cpython", .{ .optimize = .ReleaseFast });
-    // const lark_dep = b.dependency("lark", .{});
-    // const caseconverter_dep = b.dependency("caseconverter", .{});
-
-    // const pydeps_folder = b.addWriteFiles();
-
-    // _ = pydeps_folder.addCopyDirectory(python3_dep.path("Lib"), ".", .{});
-    // _ = pydeps_folder.addCopyDirectory(lark_dep.path("lark"), "lark", .{});
-    // _ = pydeps_folder.addCopyDirectory(caseconverter_dep.path("caseconverter"), "caseconverter", .{});
-
-    // const python3_exe = python3_dep.artifact("cpython");
-
-    // const abi_mapper_py = b.path("src/abi-mapper.py");
-    // const grammar_file = b.path("src/minizig.lark");
-
-    // const python_wrapper_options = b.addOptions();
-    // python_wrapper_options.addOptionPath("interpreter", python3_exe.getEmittedBin());
-    // python_wrapper_options.addOptionPath("script", abi_mapper_py);
-    // python_wrapper_options.addOptionPath("python_prefix", pydeps_folder.getDirectory());
-
-    // const python_wrapper = b.addExecutable(.{
-    //     .name = "abi-mapper",
-    //     .optimize = .ReleaseSafe,
-    //     .target = b.graph.host,
-    //     .root_source_file = b.path("src/exe-wrapper.zig"),
-    // });
-    // python_wrapper.root_module.addOptions("options", python_wrapper_options);
-    // python_wrapper.root_module.addAnonymousImport("abi-mapper.py", .{
-    //     // Hack to make abi-mapper propagate changes on the python script:
-    //     .root_source_file = abi_mapper_py,
-    // });
-    // python_wrapper.root_module.addAnonymousImport("minizig.lark", .{
-    //     // Hack to make abi-mapper propagate changes on the python script:
-    //     .root_source_file = grammar_file,
-    // });
-
-    // b.installArtifact(python_wrapper);
-
     // const cc = Converter{
     //     .b = b,
     //     .executable = python_wrapper,

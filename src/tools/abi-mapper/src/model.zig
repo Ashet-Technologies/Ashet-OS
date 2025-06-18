@@ -276,7 +276,41 @@ pub const CompoundType = struct {
         try jws.endObject();
     }
 
-    // TODO: Implement deserialization!
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) std.json.ParseError(@TypeOf(source.*))!CompoundType {
+        if (.object_begin != try source.next()) return error.UnexpectedToken;
+
+        var compound: CompoundType = .{ .fields = .init(allocator) };
+        errdefer compound.fields.deinit();
+
+        while (true) {
+            const name_token: std.json.Token = try source.nextAllocMax(allocator, .alloc_if_needed, options.max_value_len.?);
+            const field_name = switch (name_token) {
+                inline .string, .allocated_string => |slice| slice,
+
+                // No more fields.
+                .object_end => break,
+
+                else => return error.UnexpectedToken,
+            };
+            const gop = try compound.fields.getOrPut(field_name);
+
+            if (gop.found_existing) {
+                switch (options.duplicate_field_behavior) {
+                    .use_first => {
+                        // Parse and ignore the redundant value.
+                        // We don't want to skip the value, because we want type checking.
+                        _ = try std.json.innerParse(Value, allocator, source, options);
+                        break;
+                    },
+                    .@"error" => return error.DuplicateField,
+                    .use_last => {},
+                }
+            }
+            gop.value_ptr.* = try std.json.innerParse(Value, allocator, source, options);
+        }
+
+        return compound;
+    }
 };
 
 /// The standard types are the ones that can be reified into actual

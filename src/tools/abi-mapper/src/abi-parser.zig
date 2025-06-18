@@ -1,9 +1,9 @@
 const std = @import("std");
 const args_parser = @import("args");
 
-const syntax = @import("syntax.zig");
-const model = @import("model.zig");
-const sema = @import("sema.zig");
+pub const syntax = @import("syntax.zig");
+pub const model = @import("model.zig");
+pub const sema = @import("sema.zig");
 
 const CliOptions = struct {
     output: []const u8 = "",

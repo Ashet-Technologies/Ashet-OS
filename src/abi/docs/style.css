@@ -1,0 +1,105 @@
+html {
+    box-sizing: border-box;
+    font-size: 16px;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+ol,
+ul {
+    margin: 0;
+    padding: 0;
+    font-weight: normal;
+}
+
+ol,
+ul {
+    list-style: none;
+}
+
+img {
+    max-width: 100%;
+    height: auto;
+}
+
+
+
+
+body {
+    display: flex;
+    flex-direction: column;
+}
+
+nav {
+    display: grid;
+    grid-template-columns: 4rem auto;
+}
+
+#logo {
+    padding: 0.25rem;
+}
+
+nav .navigation {
+    display: grid;
+    flex-direction: column;
+
+    grid-template-rows: 50% 50%;
+
+    padding: 0.5rem;
+    gap: 0.25rem;
+}
+
+#searchbox {
+    flex: 1;
+}
+
+#searchbox input {
+    width: 100%;
+}
+
+#breadcrumbs {
+    list-style: none;
+    display: flex;
+    flex-direction: row;
+}
+
+#breadcrumbs a {
+    display: inline-block;
+    background-color: #CCC;
+    padding: 0 0.5em;
+    margin: 0;
+    font-family: monospace;
+    height: 2rem;
+    line-height: 2rem;
+}
+
+#breadcrumbs a:hover {
+    display: inline-block;
+    background-color: #EEE;
+}
+
+main {
+    padding: 0.5rem;
+}
+
+main section:not(:target) {
+    display: none;
+}
+
+#ashet {
+    display: block;
+}
+
+main section:target~#ashet {
+    display: none;
+}
