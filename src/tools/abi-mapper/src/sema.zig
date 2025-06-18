@@ -31,7 +31,7 @@ pub fn analyze(allocator: std.mem.Allocator, document: syntax.Document) !model.D
 
     try analyzer.resolve_magic_types();
 
-    // TODO: Resolve validity of bitstructs
+    try analyzer.validate_bit_structs();
 
     // TODO: Validate if all constant and default values fit their assignment
 
@@ -304,6 +304,67 @@ const Analyzer = struct {
 
             type_ref.* = .{ .@"enum" = enum_id };
         }
+    }
+
+    fn validate_bit_structs(ana: *Analyzer) !void {
+        for (ana.bitstructs.items) |bitstruct| {
+            std.debug.assert(bitstruct.backing_type.is_integer());
+            std.debug.assert(bitstruct.backing_type.size_in_bits() != null); // Assert we don't use `usize` or `isize` here!
+
+            const expected_size = bitstruct.backing_type.size_in_bits().?;
+
+            // std.log.err("bitstruct {s}", .{bitstruct.full_qualified_name});
+
+            var struct_size: u8 = 0;
+            for (@constCast(bitstruct.fields)) |*field| {
+                const field_type = ana.get_resolved_type(field.type);
+                const maybe_type_size = get_type_bit_size(field_type);
+                // std.log.err("  {?s} => {} ({?} bits)", .{ field.name, field_type, maybe_type_size });
+
+                const type_size = maybe_type_size orelse {
+                    @panic("TODO: error report for 'type not bit-packable'");
+                };
+
+                field.bit_shift = struct_size;
+                field.bit_count = type_size;
+
+                struct_size += type_size;
+            }
+
+            if (struct_size > expected_size) {
+                @panic("TODO: error reporting for 'fields too big'");
+            } else if (struct_size < expected_size) {
+                @panic("TODO: error reporting for 'fields too little'");
+            }
+        }
+    }
+
+    /// `tvalue` must be fully resolved and must not be any type alias
+    fn get_type_bit_size(tvalue: model.Type) ?u8 {
+        return switch (tvalue) {
+            .alias => unreachable,
+            .typedef => unreachable,
+            .unknown_named_type => unreachable,
+            .unset_magic_type => unreachable,
+
+            .uint => |bits| bits,
+            .int => |bits| bits,
+
+            .well_known => |stdtype| stdtype.size_in_bits(),
+
+            .@"enum" => @panic("TODO"),
+            .bitstruct => @panic("TODO"),
+
+            .fnptr => null,
+            .ptr => null,
+            .array => null,
+            .optional => null,
+            .external => null,
+            .resource => null,
+
+            .@"union" => null,
+            .@"struct" => null,
+        };
     }
 
     fn fatal_error(ana: *Analyzer, location: Location, comptime fmt: []const u8, args: anytype) error{ OutOfMemory, FatalAnalysisError } {
@@ -805,6 +866,9 @@ const Analyzer = struct {
                         .name = data.name,
                         .type = type_id,
                         .default = default_value,
+
+                        .bit_shift = null,
+                        .bit_count = null,
                     });
                 },
 
@@ -818,6 +882,9 @@ const Analyzer = struct {
                         .name = null,
                         .type = type_id,
                         .default = padding_value,
+
+                        .bit_shift = null,
+                        .bit_count = null,
                     });
                 },
 
@@ -830,6 +897,8 @@ const Analyzer = struct {
             .full_qualified_name = info.full_name,
             .fields = try fields.resolve(),
             .backing_type = info.sub_type.?,
+
+            .bit_count = info.sub_type.?.size_in_bits() orelse 0,
         });
         return .{ .bitstruct = index };
     }
@@ -1070,6 +1139,20 @@ const Analyzer = struct {
                 return .{ .compound = out };
             },
         };
+    }
+
+    /// Returns the actual type and skips over 'alias' types, and seeks through
+    /// typedefs to get a concrete type value.
+    fn get_resolved_type(ana: *Analyzer, type_id: model.TypeIndex) model.Type {
+        var index = type_id;
+        while (true) {
+            const type_val = ana.types.get(index);
+            switch (type_val.*) {
+                .alias => |aliased| index = aliased,
+                .typedef => |typedef| index = typedef.alias,
+                else => return type_val.*,
+            }
+        }
     }
 
     fn make_collector(ana: *Analyzer, comptime T: type, comptime name_field: []const u8, comptime error_fmt: []const u8) NamedItemCollector(T, name_field, error_fmt) {

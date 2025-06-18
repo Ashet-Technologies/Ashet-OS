@@ -173,6 +173,8 @@ pub const BitStruct = struct {
     docs: DocString,
     full_qualified_name: FQN,
     backing_type: StandardType,
+    bit_count: u8,
+
     fields: []const BitStructField,
 };
 
@@ -181,6 +183,9 @@ pub const BitStructField = struct {
     name: ?[]const u8, // null is reserved
     type: TypeIndex,
     default: ?Value,
+
+    bit_shift: ?u8,
+    bit_count: ?u8,
 };
 
 pub const Struct = struct {
@@ -392,6 +397,30 @@ pub const StandardType = enum {
             .f32,
             .f64,
             => false,
+        };
+    }
+
+    pub fn size_in_bits(st: StandardType) ?u8 {
+        return switch (st) {
+            .bool => 1,
+
+            .u8, .i8 => 8,
+            .u16, .i16 => 16,
+            .u32, .i32, .f32 => 32,
+            .u64, .i64, .f64 => 64,
+
+            .isize,
+            .usize,
+            => null,
+
+            .void,
+            .noreturn,
+            .anyptr,
+            .anyfnptr,
+            .str,
+            .bytestr,
+            .bytebuf,
+            => null,
         };
     }
 };
