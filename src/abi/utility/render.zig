@@ -108,7 +108,7 @@ pub fn render_docs(writer: std.fs.File.Writer, allocator: std.mem.Allocator, sch
         \\                <a href="#">ashet</a>
         \\                <a href="#ashet.process">process</a>
         \\                <a href="#ashet.process.thread">thread</a>
-        \\                <a href="#ashet.process.ThreadFunction">ThreadFunction</a>
+        \\                <a href="#ashet.process.thread.ThreadFunction" data-active>ThreadFunction</a>
         \\            </ul>
         \\        </div>
         \\    </nav>
@@ -164,6 +164,161 @@ const HtmlRenderer = struct {
                 @tagName(decl.data),
             },
         );
+
+        if (decl.docs.len > 0) {
+            try html.writer.print("            <h2>Documentation</h2>\n", .{});
+            try html.writer.print("<dd>{}</dd>\n", .{fmt_docs(decl.docs)});
+        }
+
+        switch (decl.data) {
+            .namespace => {},
+            .@"struct" => |index| {
+                const item = html.schema.structs[@intFromEnum(index)];
+
+                try html.writer.print("<h2>Fields</h2>\n", .{});
+
+                try html.writer.writeAll("<dl>\n");
+                for (item.fields) |field| {
+                    try html.writer.writeAll("<div>\n");
+
+                    try html.writer.print("<dt><code>{s}: {}", .{
+                        field.name,
+                        html.fmt_type(field.type),
+                    });
+
+                    if (field.default) |default| {
+                        try html.writer.print(" = {}", .{html.fmt_value(default)});
+                    }
+
+                    try html.writer.writeAll("</code></dt>");
+
+                    if (field.docs.len > 0) {
+                        try html.writer.print("<dd>{}</dd>\n", .{fmt_docs(field.docs)});
+                    }
+
+                    try html.writer.writeAll("</div>\n");
+                }
+                try html.writer.writeAll("</dl>\n");
+            },
+            .@"union" => |index| {
+                const item = html.schema.unions[@intFromEnum(index)];
+
+                try html.writer.print("<h2>Alternatives</h2>\n", .{});
+
+                try html.writer.writeAll("<dl>\n");
+                for (item.fields) |field| {
+                    try html.writer.writeAll("<div>\n");
+
+                    try html.writer.print("<dt><code>{s}: {}", .{
+                        field.name,
+                        html.fmt_type(field.type),
+                    });
+
+                    try html.writer.writeAll("</code></dt>");
+
+                    if (field.docs.len > 0) {
+                        try html.writer.print("<dd>{}</dd>\n", .{fmt_docs(field.docs)});
+                    }
+
+                    try html.writer.writeAll("</div>\n");
+                }
+                try html.writer.writeAll("</dl>\n");
+            },
+            .@"enum" => |index| {
+                const enumeration = html.schema.enums[@intFromEnum(index)];
+
+                // TODO: enumeration.backing_type
+
+                try html.writer.print("<h2>Items</h2>\n", .{});
+
+                try html.writer.writeAll("<dl>\n");
+                for (enumeration.items) |item| {
+                    try html.writer.writeAll("<div>\n");
+
+                    try html.writer.print("<dt><code>{s} = {}</code></dt>", .{
+                        item.name,
+                        item.value,
+                    });
+
+                    if (item.docs.len > 0) {
+                        try html.writer.print("<dd>{}</dd>\n", .{fmt_docs(item.docs)});
+                    }
+
+                    try html.writer.writeAll("</div>\n");
+                }
+
+                switch (enumeration.kind) {
+                    .open => {
+                        try html.writer.writeAll("<div>\n");
+
+                        try html.writer.writeAll("<dt><code>...</code></dt>");
+
+                        if (enumeration.docs.len > 0) {
+                            try html.writer.print("<dd><p>This enumeration is non-exhaustive and may assume all values a {s} can represent.</p></dd>\n", .{
+                                @tagName(enumeration.backing_type),
+                            });
+                        }
+
+                        try html.writer.writeAll("</div>\n");
+                    },
+                    .closed => {},
+                }
+
+                try html.writer.writeAll("</dl>\n");
+            },
+            .bitstruct => |index| {
+                const item = html.schema.bitstructs[@intFromEnum(index)];
+                try html.writer.print("<h2>Fields</h2>\n", .{});
+
+                try html.writer.writeAll("<dl>\n");
+                for (item.fields) |field| {
+                    try html.writer.writeAll("<div>\n");
+
+                    try html.writer.print("<dt><code>{s}: {}", .{
+                        field.name orelse "<i>reserved</i>",
+                        html.fmt_type(field.type),
+                    });
+
+                    if (field.default) |default| {
+                        try html.writer.print(" = {}", .{html.fmt_value(default)});
+                    }
+
+                    try html.writer.writeAll("</code></dt>");
+
+                    if (field.docs.len > 0) {
+                        try html.writer.print("<dd>{}</dd>\n", .{fmt_docs(field.docs)});
+                    }
+
+                    try html.writer.writeAll("</div>\n");
+                }
+                try html.writer.writeAll("</dl>\n");
+            },
+            .syscall => |index| {
+                const item = html.schema.syscalls[@intFromEnum(index)];
+                _ = item;
+                try html.writer.writeAll("<p>TODO: Implement syscall</p>\n");
+            },
+            .async_call => |index| {
+                const item = html.schema.async_calls[@intFromEnum(index)];
+                _ = item;
+                try html.writer.writeAll("<p>TODO: Implement async_call</p>\n");
+            },
+            .resource => |index| {
+                const item = html.schema.resources[@intFromEnum(index)];
+                _ = item;
+                try html.writer.writeAll("<p>TODO: Implement resource</p>\n");
+            },
+            .constant => |index| {
+                const item = html.schema.constants[@intFromEnum(index)];
+                _ = item;
+                try html.writer.writeAll("<p>TODO: Implement constant</p>\n");
+            },
+            .typedef => |index| {
+                const item = html.schema.types[@intFromEnum(index)];
+                _ = item;
+                try html.writer.writeAll("<p>TODO: Implement typedef</p>\n");
+            },
+        }
 
         try html.render_basic_list(decl, "Namespaces", &.{.namespace});
         try html.render_basic_list(decl, "Types", &.{
@@ -304,6 +459,10 @@ const HtmlRenderer = struct {
         return .{ .data = .{ html, type_id } };
     }
 
+    fn fmt_value(html: *HtmlRenderer, value: model.Value) std.fmt.Formatter(format_value) {
+        return .{ .data = .{ html, value } };
+    }
+
     fn fmt_known_type(writer: anytype, known_type: anytype) !void {
         try writer.print("<a href=\"#ashet.{}\"><span class=\"tok-type\">{s}</span></a>", .{
             fmt_fqn(known_type.full_qualified_name),
@@ -330,17 +489,51 @@ const HtmlRenderer = struct {
             .bitstruct => |index| try fmt_known_type(writer, html.schema.bitstructs[@intFromEnum(index)]),
             .resource => |index| try fmt_known_type(writer, html.schema.resources[@intFromEnum(index)]),
 
+            .optional => |child| try writer.print("?{}", .{html.fmt_type(child)}),
+            .array => |array| try writer.print("[{}]{}", .{ array.size, html.fmt_type(array.child) }),
+
+            .alias => |child| try writer.print("{}", .{html.fmt_type(child)}),
+
+            .ptr => |ptr| {
+                try writer.writeAll(switch (ptr.size) {
+                    .one => "*",
+                    .slice => "[]",
+                    .unknown => "[*]",
+                });
+
+                if (ptr.is_const) {
+                    try writer.writeAll("<span class=\"tok-kw\">const</span> ");
+                }
+
+                if (ptr.alignment) |alignment| {
+                    try writer.print("<span class=\"tok-kw\">align</span>({}) ", .{alignment});
+                }
+
+                try writer.print("{}", .{html.fmt_type(ptr.child)});
+            },
+            .fnptr,
+
             .external,
             .typedef,
-            .alias,
-            .optional,
-            .array,
-            .ptr,
-            .fnptr,
-            => try writer.writeAll("&lt;unsupported&gt;"),
+            => try writer.writeAll("&lt;TODO&gt;"),
 
             .unknown_named_type => @panic("invalid schema!"),
             .unset_magic_type => @panic("invalid schema!"),
+        }
+    }
+
+    fn format_value(packed_args: struct { *HtmlRenderer, model.Value }, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+
+        _, const value = packed_args;
+
+        switch (value) {
+            .null => try writer.writeAll("<span class=\"tok-kw\">null</span>"),
+            .bool => |val| try writer.print("{}", .{val}),
+            .int => |int| try writer.print("{}", .{int}),
+            .string => |text| try writer.print("\"{}\"", .{std.zig.fmtEscapes(text)}),
+            .compound => try writer.writeAll("&lt;TODO%gt;"),
         }
     }
 };
@@ -380,10 +573,24 @@ fn format_docs(docs: []const []const u8, fmt: []const u8, options: std.fmt.Forma
         }
 
         if (last_was_empty) {
-            try writer.writeAll("</p><p>");
+            try writer.writeAll("</p>\n<p>");
+            last_was_empty = false;
         }
 
-        try writer.writeAll(line);
+        var in_code = false;
+        for (line) |char| {
+            switch (char) {
+                '`' => {
+                    in_code = !in_code;
+                    if (in_code) {
+                        try writer.writeAll("<code>");
+                    } else {
+                        try writer.writeAll("</code>");
+                    }
+                },
+                else => try writer.writeByte(char),
+            }
+        }
         try writer.writeAll("\n");
     }
     try writer.writeAll("</p>");
