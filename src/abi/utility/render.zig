@@ -177,7 +177,7 @@ const HtmlRenderer = struct {
 
                 try html.writer.print("<h2>Fields</h2>\n", .{});
 
-                try html.writer.writeAll("<dl>\n");
+                try html.begin_dl();
                 for (item.fields) |field| {
                     try html.writer.writeAll("<div>\n");
 
@@ -198,31 +198,26 @@ const HtmlRenderer = struct {
 
                     try html.writer.writeAll("</div>\n");
                 }
-                try html.writer.writeAll("</dl>\n");
+                try html.end_dl();
             },
             .@"union" => |index| {
                 const item = html.schema.unions[@intFromEnum(index)];
 
                 try html.writer.print("<h2>Alternatives</h2>\n", .{});
 
-                try html.writer.writeAll("<dl>\n");
+                try html.begin_dl();
                 for (item.fields) |field| {
-                    try html.writer.writeAll("<div>\n");
-
-                    try html.writer.print("<dt><code>{s}: {}", .{
-                        field.name,
-                        html.fmt_type(field.type),
-                    });
-
-                    try html.writer.writeAll("</code></dt>");
-
-                    if (field.docs.len > 0) {
-                        try html.writer.print("<dd>{}</dd>\n", .{fmt_docs(field.docs)});
-                    }
-
-                    try html.writer.writeAll("</div>\n");
+                    try html.dl_item(
+                        "{s}: {}",
+                        "{}",
+                        .{
+                            field.name,
+                            html.fmt_type(field.type),
+                            fmt_docs(field.docs),
+                        },
+                    );
                 }
-                try html.writer.writeAll("</dl>\n");
+                try html.end_dl();
             },
             .@"enum" => |index| {
                 const enumeration = html.schema.enums[@intFromEnum(index)];
@@ -231,46 +226,35 @@ const HtmlRenderer = struct {
 
                 try html.writer.print("<h2>Items</h2>\n", .{});
 
-                try html.writer.writeAll("<dl>\n");
+                try html.begin_dl();
                 for (enumeration.items) |item| {
-                    try html.writer.writeAll("<div>\n");
-
-                    try html.writer.print("<dt><code>{s} = {}</code></dt>", .{
-                        item.name,
-                        item.value,
-                    });
-
-                    if (item.docs.len > 0) {
-                        try html.writer.print("<dd>{}</dd>\n", .{fmt_docs(item.docs)});
-                    }
-
-                    try html.writer.writeAll("</div>\n");
+                    try html.dl_item(
+                        "{s} = {}",
+                        "{}",
+                        .{
+                            item.name,
+                            item.value,
+                            fmt_docs(item.docs),
+                        },
+                    );
                 }
 
                 switch (enumeration.kind) {
-                    .open => {
-                        try html.writer.writeAll("<div>\n");
-
-                        try html.writer.writeAll("<dt><code>...</code></dt>");
-
-                        if (enumeration.docs.len > 0) {
-                            try html.writer.print("<dd><p>This enumeration is non-exhaustive and may assume all values a {s} can represent.</p></dd>\n", .{
-                                @tagName(enumeration.backing_type),
-                            });
-                        }
-
-                        try html.writer.writeAll("</div>\n");
-                    },
+                    .open => try html.dl_item(
+                        "...",
+                        "<p>This enumeration is non-exhaustive and may assume all values a {s} can represent.</p>",
+                        .{@tagName(enumeration.backing_type)},
+                    ),
                     .closed => {},
                 }
 
-                try html.writer.writeAll("</dl>\n");
+                try html.end_dl();
             },
             .bitstruct => |index| {
                 const item = html.schema.bitstructs[@intFromEnum(index)];
                 try html.writer.print("<h2>Fields</h2>\n", .{});
 
-                try html.writer.writeAll("<dl>\n");
+                try html.begin_dl();
                 for (item.fields) |field| {
                     try html.writer.writeAll("<div>\n");
 
@@ -291,17 +275,123 @@ const HtmlRenderer = struct {
 
                     try html.writer.writeAll("</div>\n");
                 }
-                try html.writer.writeAll("</dl>\n");
+                try html.end_dl();
             },
             .syscall => |index| {
                 const item = html.schema.syscalls[@intFromEnum(index)];
-                _ = item;
-                try html.writer.writeAll("<p>TODO: Implement syscall</p>\n");
+
+                if (item.inputs.len > 0) {
+                    try html.writer.print("<h2>Inputs</h2>\n", .{});
+
+                    try html.begin_dl();
+                    for (item.inputs) |param| {
+                        // TODO: Handle "param.default"
+                        try html.dl_item(
+                            "{}: {}",
+                            "{}",
+                            .{
+                                std.zig.fmtId(param.name),
+                                html.fmt_type(param.type),
+                                fmt_docs(param.docs),
+                            },
+                        );
+                    }
+                    try html.end_dl();
+                }
+
+                if (item.outputs.len > 0) {
+                    try html.writer.print("<h2>Outputs</h2>\n", .{});
+
+                    try html.begin_dl();
+                    for (item.outputs) |param| {
+                        // TODO: Handle "param.default"
+                        try html.dl_item(
+                            "{}: {}",
+                            "{}",
+                            .{
+                                std.zig.fmtId(param.name),
+                                html.fmt_type(param.type),
+                                fmt_docs(param.docs),
+                            },
+                        );
+                    }
+                    try html.end_dl();
+                }
+
+                if (item.errors.len > 0) {
+                    try html.writer.print("<h2>Errors</h2>\n", .{});
+
+                    try html.begin_dl();
+                    for (item.errors) |err| {
+                        try html.dl_item(
+                            "{}",
+                            "{}",
+                            .{
+                                std.zig.fmtId(err.name),
+                                fmt_docs(err.docs),
+                            },
+                        );
+                    }
+                    try html.end_dl();
+                }
             },
             .async_call => |index| {
                 const item = html.schema.async_calls[@intFromEnum(index)];
-                _ = item;
-                try html.writer.writeAll("<p>TODO: Implement async_call</p>\n");
+
+                if (item.inputs.len > 0) {
+                    try html.writer.print("<h2>Inputs</h2>\n", .{});
+
+                    try html.begin_dl();
+                    for (item.inputs) |param| {
+                        // TODO: Handle "param.default"
+                        try html.dl_item(
+                            "{}: {}",
+                            "{}",
+                            .{
+                                std.zig.fmtId(param.name),
+                                html.fmt_type(param.type),
+                                fmt_docs(param.docs),
+                            },
+                        );
+                    }
+                    try html.end_dl();
+                }
+
+                if (item.outputs.len > 0) {
+                    try html.writer.print("<h2>Outputs</h2>\n", .{});
+
+                    try html.begin_dl();
+                    for (item.outputs) |param| {
+                        // TODO: Handle "param.default"
+                        try html.dl_item(
+                            "{}: {}",
+                            "{}",
+                            .{
+                                std.zig.fmtId(param.name),
+                                html.fmt_type(param.type),
+                                fmt_docs(param.docs),
+                            },
+                        );
+                    }
+                    try html.end_dl();
+                }
+
+                if (item.errors.len > 0) {
+                    try html.writer.print("<h2>Errors</h2>\n", .{});
+
+                    try html.begin_dl();
+                    for (item.errors) |err| {
+                        try html.dl_item(
+                            "{}",
+                            "{}",
+                            .{
+                                std.zig.fmtId(err.name),
+                                fmt_docs(err.docs),
+                            },
+                        );
+                    }
+                    try html.end_dl();
+                }
             },
             .resource => |index| {
                 const item = html.schema.resources[@intFromEnum(index)];
@@ -336,6 +426,20 @@ const HtmlRenderer = struct {
         try html.writer.writeAll(
             \\        </section>
             \\
+        );
+    }
+
+    fn begin_dl(html: *HtmlRenderer) !void {
+        try html.writer.writeAll("<dl>\n");
+    }
+    fn end_dl(html: *HtmlRenderer) !void {
+        try html.writer.writeAll("</dl>\n");
+    }
+
+    fn dl_item(html: *HtmlRenderer, comptime dt_fmt: []const u8, comptime dd_fmt: []const u8, args: anytype) !void {
+        try html.writer.print(
+            "<div>\n<dt><code>" ++ dt_fmt ++ "</code></dt><dd>" ++ dd_fmt ++ "</dd></div>\n",
+            args,
         );
     }
 
