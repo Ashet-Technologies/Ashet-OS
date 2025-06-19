@@ -22,11 +22,6 @@ ul {
     font-weight: normal;
 }
 
-ol,
-ul {
-    list-style: none;
-}
-
 img {
     max-width: 100%;
     height: auto;
@@ -102,4 +97,47 @@ main section:not(:target) {
 
 main section:target~#ashet {
     display: none;
+}
+
+main section ul {
+    column-width: 15em;   
+    margin-left: 2em;
+}
+
+main section h1 {
+    border-bottom: 1px dashed;
+    margin-bottom: 1em;
+}
+
+main section h2 {
+    border-bottom: 1px solid;
+    margin-top:    1em;
+    margin-bottom: 0.5em;
+}
+
+main section dl  {
+    display: grid;
+    gap: 0.5em;
+    grid-template-columns: 100%; 
+}
+
+main section dl > div {
+    border: 1px solid;
+    padding: 0.5em;    
+}
+
+main section dl > div dd p {
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+}
+
+
+code .tok-kw {
+    color: blueviolet;
+}
+code .tok-type {
+    color: green;
+}
+code .tok-name {
+    font-weight: bolder;
 }

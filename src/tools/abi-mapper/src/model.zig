@@ -71,6 +71,8 @@ pub const Declaration = struct {
         constant: ConstantIndex,
         typedef: TypeIndex, // .types[] == .typedef
     };
+
+    pub const Kind = std.meta.Tag(Data);
 };
 
 pub const Type = union(enum) {

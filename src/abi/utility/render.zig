@@ -165,25 +165,183 @@ const HtmlRenderer = struct {
             },
         );
 
-        if (decl.children.len > 0) {
-            try html.writer.writeAll("            <h2>Children</h2>\n");
-            try html.writer.writeAll("            <ul>\n");
-            for (decl.children) |child| {
-                try html.writer.print(
-                    \\                <li><a href="#ashet.{[0]}">{[1]s}</a></li>
-                    \\
-                , .{
-                    fmt_fqn(child.full_qualified_name),
-                    child.full_qualified_name[child.full_qualified_name.len - 1],
-                });
-            }
-            try html.writer.writeAll("            </ul>\n");
-        }
+        try html.render_basic_list(decl, "Namespaces", &.{.namespace});
+        try html.render_basic_list(decl, "Types", &.{
+            .@"struct",
+            .@"union",
+            .@"enum",
+            .bitstruct,
+            .resource,
+            .typedef,
+        });
+        try html.render_basic_list(decl, "Constants", &.{.constant});
+        try html.render_group(decl, "System Calls", .syscall);
+        try html.render_group(decl, "Asynchronous Operations", .async_call);
 
         try html.writer.writeAll(
             \\        </section>
             \\
         );
+    }
+
+    fn contains_tag(tag: model.Declaration.Kind, tags: []const model.Declaration.Kind) bool {
+        for (tags) |t| {
+            if (t == tag)
+                return true;
+        }
+        return false;
+    }
+
+    pub fn render_basic_list(html: *HtmlRenderer, decl: model.Declaration, title: []const u8, tags: []const model.Declaration.Kind) !void {
+        var count: usize = 0;
+        for (decl.children) |child| {
+            if (contains_tag(child.data, tags))
+                count += 1;
+        }
+
+        if (count == 0)
+            return;
+
+        try html.writer.print("            <h2>{s}</h2>\n", .{title});
+
+        try html.writer.writeAll("            <ul>\n");
+        for (decl.children) |child| {
+            if (!contains_tag(child.data, tags))
+                continue;
+
+            try html.writer.print(
+                \\                <li><a href="#ashet.{[0]}">{[1]s}</a></li>
+                \\
+            , .{
+                fmt_fqn(child.full_qualified_name),
+                child.full_qualified_name[child.full_qualified_name.len - 1],
+            });
+        }
+        try html.writer.writeAll("            </ul>\n");
+    }
+
+    pub fn render_group(html: *HtmlRenderer, decl: model.Declaration, title: []const u8, tag: model.Declaration.Kind) !void {
+        var count: usize = 0;
+        for (decl.children) |child| {
+            if (child.data == tag)
+                count += 1;
+        }
+
+        if (count == 0)
+            return;
+
+        try html.writer.print("            <h2>{s}</h2>\n", .{title});
+
+        try html.writer.writeAll("            <dl>\n");
+        for (decl.children) |child| {
+            if (child.data != tag)
+                continue;
+
+            try html.writer.writeAll("                <div>\n");
+
+            try html.writer.print(
+                \\                    <dt><code><span class="tok-kw">{s}</span> <a href="#ashet.{s}"><span class="tok-name">{s}</span></a>(
+            , .{
+                @tagName(child.data),
+                fmt_fqn(child.full_qualified_name),
+                child.full_qualified_name[child.full_qualified_name.len - 1],
+            });
+
+            const maybe_function = switch (child.data) {
+                .syscall => |index| html.schema.syscalls[@intFromEnum(index)],
+                .async_call => |index| html.schema.async_calls[@intFromEnum(index)],
+                else => null,
+            };
+            if (maybe_function) |function| {
+                var has_any = false;
+
+                for (function.inputs) |param| {
+                    if (has_any) try html.writer.writeAll(", ");
+
+                    try html.writer.print("<span class=\"tok-kw\">in</span> <span class=\"tok-name\">{s}</span>: {}", .{
+                        param.name,
+                        html.fmt_type(param.type),
+                    });
+
+                    has_any = true;
+                }
+
+                for (function.outputs) |param| {
+                    if (has_any) try html.writer.writeAll(", ");
+
+                    try html.writer.print("<span class=\"tok-kw\">out</span> <span class=\"tok-name\">{s}</span>: {}", .{
+                        param.name,
+                        html.fmt_type(param.type),
+                    });
+
+                    has_any = true;
+                }
+
+                try html.writer.writeAll(")");
+                if (function.no_return) {
+                    try html.writer.writeAll(" <span class=\"tok-kw\">noreturn</span>");
+                }
+            } else {
+                try html.writer.writeAll(")");
+            }
+            try html.writer.writeAll("</code></dt>");
+
+            if (child.docs.len > 0) {
+                try html.writer.print(
+                    \\                    <dd>{}</dd>
+                    \\
+                , .{
+                    fmt_docs(child.docs),
+                });
+            }
+
+            try html.writer.writeAll("                </div>\n");
+        }
+        try html.writer.writeAll("            </dl>\n");
+    }
+
+    fn fmt_type(html: *HtmlRenderer, type_id: model.TypeIndex) std.fmt.Formatter(format_type) {
+        return .{ .data = .{ html, type_id } };
+    }
+
+    fn fmt_known_type(writer: anytype, known_type: anytype) !void {
+        try writer.print("<a href=\"#ashet.{}\"><span class=\"tok-type\">{s}</span></a>", .{
+            fmt_fqn(known_type.full_qualified_name),
+            fmt_fqn(known_type.full_qualified_name),
+        });
+    }
+
+    fn format_type(packed_args: struct { *HtmlRenderer, model.TypeIndex }, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+
+        const html: *HtmlRenderer, const type_id = packed_args;
+
+        const type_ref = html.schema.types[@intFromEnum(type_id)];
+
+        switch (type_ref) {
+            .well_known => |name| try writer.print("<span class=\"tok-type\">{s}</span>", .{@tagName(name)}),
+            .uint => |size| try writer.print("<span class=\"tok-type\">u{}</span>", .{size}),
+            .int => |size| try writer.print("<span class=\"tok-type\">i{}</span>", .{size}),
+
+            .@"struct" => |index| try fmt_known_type(writer, html.schema.structs[@intFromEnum(index)]),
+            .@"union" => |index| try fmt_known_type(writer, html.schema.unions[@intFromEnum(index)]),
+            .@"enum" => |index| try fmt_known_type(writer, html.schema.enums[@intFromEnum(index)]),
+            .bitstruct => |index| try fmt_known_type(writer, html.schema.bitstructs[@intFromEnum(index)]),
+            .resource => |index| try fmt_known_type(writer, html.schema.resources[@intFromEnum(index)]),
+
+            .external,
+            .typedef,
+            .alias,
+            .optional,
+            .array,
+            .ptr,
+            .fnptr,
+            => try writer.writeAll("&lt;unsupported&gt;"),
+
+            .unknown_named_type => @panic("invalid schema!"),
+            .unset_magic_type => @panic("invalid schema!"),
+        }
     }
 };
 
@@ -199,4 +357,34 @@ fn format_fqn(fqn: []const []const u8, fmt: []const u8, options: std.fmt.FormatO
             try writer.writeAll(".");
         try writer.writeAll(name);
     }
+}
+
+fn fmt_docs(docs: []const []const u8) std.fmt.Formatter(format_docs) {
+    return .{ .data = docs };
+}
+
+fn format_docs(docs: []const []const u8, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+    if (docs.len == 0)
+        return;
+
+    _ = fmt;
+    _ = options;
+
+    var last_was_empty = false;
+    try writer.writeAll("<p>");
+
+    for (docs) |line| {
+        if (line.len == 0) {
+            last_was_empty = true;
+            continue;
+        }
+
+        if (last_was_empty) {
+            try writer.writeAll("</p><p>");
+        }
+
+        try writer.writeAll(line);
+        try writer.writeAll("\n");
+    }
+    try writer.writeAll("</p>");
 }
