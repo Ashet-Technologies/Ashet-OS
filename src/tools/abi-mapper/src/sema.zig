@@ -31,6 +31,8 @@ pub fn analyze(allocator: std.mem.Allocator, document: syntax.Document) !model.D
 
     try analyzer.resolve_magic_types();
 
+    // TODO: resolve_magic_types must also rewrite the tree to change 'typedef' references into the fitting 'enum' or whatever ref
+
     try analyzer.validate_bit_structs();
 
     // TODO: Validate if all constant and default values fit their assignment

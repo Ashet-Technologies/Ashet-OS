@@ -166,8 +166,8 @@ const HtmlRenderer = struct {
         );
 
         if (decl.docs.len > 0) {
-            try html.writer.print("            <h2>Documentation</h2>\n", .{});
-            try html.writer.print("<dd>{}</dd>\n", .{fmt_docs(decl.docs)});
+            try html.writer.print("<h2>Documentation</h2>\n", .{});
+            try html.writer.print("{}\n", .{fmt_docs(decl.docs)});
         }
 
         switch (decl.data) {
@@ -667,8 +667,11 @@ fn format_docs(docs: []const []const u8, fmt: []const u8, options: std.fmt.Forma
     _ = fmt;
     _ = options;
 
+    const BlockType = enum { note, lore, relates };
+
     var last_was_empty = false;
-    try writer.writeAll("<p>");
+
+    try writer.writeAll("<div class=\"doc-regular\"><p>");
 
     for (docs) |line| {
         if (line.len == 0) {
@@ -676,13 +679,51 @@ fn format_docs(docs: []const []const u8, fmt: []const u8, options: std.fmt.Forma
             continue;
         }
 
+        var requires_new_paragraph = false;
+
         if (last_was_empty) {
-            try writer.writeAll("</p>\n<p>");
+            requires_new_paragraph = true;
             last_was_empty = false;
         }
 
+        var out_line = std.mem.trim(u8, line, " ");
+        var change_block_type: ?BlockType = null;
+
+        if (std.mem.startsWith(u8, out_line, "NOTE:")) {
+            change_block_type = .note;
+            requires_new_paragraph = true;
+            out_line = out_line[5..];
+        } else if (std.mem.startsWith(u8, out_line, "LORE:")) {
+            change_block_type = .lore;
+            requires_new_paragraph = true;
+            out_line = out_line[5..];
+        } else if (std.mem.startsWith(u8, out_line, "RELATES:")) {
+            change_block_type = .relates;
+            requires_new_paragraph = true;
+            out_line = out_line[8..];
+        }
+
+        if (change_block_type) |block_type| {
+            std.debug.assert(requires_new_paragraph == true);
+
+            try writer.writeAll("</p></div>");
+
+            try writer.print("<div class=\"docs docs-{s}\"><h3>{s}</h3><p>", .{
+                @tagName(block_type),
+                switch (block_type) {
+                    .lore => "Lore:",
+                    .note => "Note:",
+                    .relates => "Related Elements:",
+                },
+            });
+        } else if (requires_new_paragraph) {
+            try writer.writeAll("</p>\n<p>");
+        }
+
+        out_line = std.mem.trimRight(u8, out_line, " \t\r\n");
+
         var in_code = false;
-        for (line) |char| {
+        for (out_line) |char| {
             switch (char) {
                 '`' => {
                     in_code = !in_code;
@@ -695,7 +736,8 @@ fn format_docs(docs: []const []const u8, fmt: []const u8, options: std.fmt.Forma
                 else => try writer.writeByte(char),
             }
         }
+
         try writer.writeAll("\n");
     }
-    try writer.writeAll("</p>");
+    try writer.writeAll("</p></div>");
 }

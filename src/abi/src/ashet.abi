@@ -20,7 +20,7 @@ namespace resources {
     /// Returns the current owner of this resource.
     syscall get_owners {
         in     @"resource": SystemResource;
-        in     owners: ?[]Process;
+        in     owners:      ?[]Process;
         out    count: usize;
     }
 
@@ -28,7 +28,7 @@ namespace resources {
     /// can safely access it without fear of having a use-after-free.
     syscall send_to_process {
         in    @"resource": SystemResource;
-        in    target: Process;
+        in    target:      Process;
         error DeadProcess;
         error InvalidHandle;
         error SystemResources;
@@ -40,15 +40,15 @@ namespace resources {
     /// The handle must be assumed invalid for this process after
     /// this function returns.
     syscall release {
-        in      @"resource": SystemResource;
+        in @"resource": SystemResource;
     }
 
     /// Immediatly destroys the resource and releases its memory.
     ///
     /// NOTE: This will *always* destroy the resource, even if it's
-    /// also owned by another process.
+    ///       also owned by another process.
     syscall destroy {
-        in      @"resource": SystemResource;
+        in @"resource": SystemResource;
     }
 }
 
@@ -59,6 +59,7 @@ namespace overlapped {
     {
         /// The type of operation that is performed.
         field type: Type;
+
         /// A user-specified pointer-sized field which 
         field tag: usize;
 
@@ -68,10 +69,10 @@ namespace overlapped {
     /// Starts new asynchronous operations.
     ///
     /// NOTE: Until the operation has successfully completed or was
-    /// cancelled, the ARC structure must be considered owned
-    /// by the kernel and must not be changed from userspace.
-    /// It can also change its contents spuriously until the
-    /// operation is returned to userland.
+    ///       cancelled, the ARC structure must be considered owned
+    ///       by the kernel and must not be changed from userspace.
+    ///       It can also change its contents spuriously until the
+    ///       operation is returned to userland.
     ///
     syscall schedule {
         in      @"async_call": *ARC;
@@ -85,15 +86,15 @@ namespace overlapped {
     /// The kernel will fill out `completed` up to the returned number of elements.
     /// All other values are undefined.
     ///
-    /// NOTE: See also: `await_completion_of`
-    ///
     /// NOTE: For blocking operations, this function will suspend the current
-    /// thread until the request has been completed.
+    ///       thread until the request has been completed.
+    ///
+    /// RELATES: @ref await_completion_of
     syscall await_completion {
-        in     completed: []*ARC;
-        in     options: Await_Options;
-        error  Unscheduled;
+        in     completed:       []*ARC;
+        in     options:         Await_Options;
         out    completed_count: usize;
+        error  Unscheduled;
     }
 
     /// Awaits one or more explictic asynchronous operations and returns the
@@ -111,12 +112,12 @@ namespace overlapped {
     /// NOTE: It is invalid to await the same operation with two concurrent calls to `await_completion_of`.
     ///
     /// NOTE: Elements awaited with this function will be guaranteed to not be returned by
-    /// another concurrent call to `await_completion`.
-    ///
-    /// NOTE: See also: `await_completion`
+    ///       another concurrent call to `await_completion`.
     ///
     /// NOTE: For blocking operations, this function will suspend the current
-    /// thread until the request has been completed.
+    ///       thread until the request has been completed.
+    ///
+    /// RELATES: @ref await_completion
     syscall await_completion_of {
         in      events: []?*ARC;
         error   InvalidOperation;
@@ -149,33 +150,37 @@ namespace process {
 
     /// Returns a pointer to the file name of the process.
     syscall get_file_name {
-        in      target: ?Process;
-        out    file_name: str;
+        in    target:    ?Process;
+        out   file_name: str;
+        error InvalidHandle;
     }
 
     /// Returns the base address of the process.
     syscall get_base_address {
-        in      target: ?Process;
-        out    base_address: usize;
+        in    target: ?Process;
+        out   base_address: usize;
+        error InvalidHandle;
     }
 
     /// Returns the arguments that were passed to this process in `Spawn`.
     syscall get_arguments {
-        in  target: ?Process;
-        in  argv: ?[]SpawnProcessArg;
-        out count: usize;
+        in    target: ?Process;
+        in    argv:   ?[]SpawnProcessArg;
+        out   count:  usize;
+        error InvalidHandle;
     }
 
     /// Terminates the current process with the given exit code
     syscall terminate {
-        in     exit_code: ExitCode;
+        in exit_code: ExitCode;
         noreturn;
     }
 
     /// Terminates a foreign process.
     /// If the current process is passed, this function will not return
     syscall kill {
-        in target: Process;
+        in    target: Process;
+        error InvalidHandle;
     }
 
     /// Spawns a new process
@@ -212,8 +217,9 @@ namespace process {
 
         /// Waits for the thread to exit and returns its return code.
         syscall join {
-            in      _param0: Thread;
-            out    exit_code: ExitCode;
+            in    _param0: Thread;
+            out   exit_code: ExitCode;
+            error InvalidHandle;
         }
 
         /// Defines the signature of a thread entry point.
@@ -224,18 +230,19 @@ namespace process {
         /// Spawns a new thread with `function` passing `arg` to it.
         /// If `stack_size` is not 0, will create a stack with the given size.
         syscall spawn {
-            in      function:   ThreadFunction;
-            in      arg:        ?anyptr;
-            in      stack_size: usize;
-            out     thread: ?Thread;
+            in    function:   ThreadFunction;
+            in    arg:        ?anyptr;
+            in    stack_size: usize;
+            out   thread: Thread;
+            error SystemResources;
         }
 
         /// Kills the given thread with `exit_code`.
         syscall kill {
-            in      target:    Thread;
-            in      exit_code: ExitCode;
+            in    target:    Thread;
+            in    exit_code: ExitCode;
+            error InvalidHandle;
         }
-
     }
 
     namespace debug {
@@ -250,17 +257,51 @@ namespace process {
         }
     }
 
+    ///
+    /// Each process has it's own memory heap managed by the kernel. This removes the
+    /// requirement that each process has to ship their own memory allocator and the kernel
+    /// may choose a system-optimal allocation strategy.
+    ///
+    /// LORE: Ashet OS is tailored for systems with tiny memory footprints.
+    ///       The typical way of memory management in operating systems is that each process
+    ///       has their own virtual memory space and the os can do "append only"-style memory
+    ///       management.
+    ///
+    ///       The problem with this design is that it requires a memory manangement unit that
+    ///       supports virtual memory, and usually works with page granularity. This means
+    ///       the smallest chunk of memory a process can allocate is a single page, usually 4096 bytes.
+    ///
+    ///       For the systems we target, this is 0.5‰ of the total system memory assuming 8 MiB of RAM.
+    ///       Thus, Ashet OS provides a finer grained kernel memory allocator which internally allows sharing
+    ///       allocations in a much finer process memory assignments than chunks of 4096 bytes.
+    ///
     namespace memory {
-        /// Allocates memory
+        /// Allocates a chunk of memory from the process heap.
         syscall allocate {
-            in      size: usize;
-            in      ptr_align: u8;
-            out     memory: ?[*]u8;
+            /// The size of the allocated memory block in bytes.
+            ///
+            /// NOTE: Passing 0 will never succeed.
+            in    size:      usize;
+            
+            /// The alignment
+            in    ptr_align: u8;
+
+            /// A non-`null` pointer that points to exactly @ref size bytes.
+            ///
+            /// NOTE: In practise, this might point to more than @ref size bytes,
+            ///       but the code must not assume *any* excess bytes may exist.
+            out   memory:    [*]u8;
+
+            /// Is returned when the system is out of memory.
+            error SystemResource;
         }
 
-        /// Returns memory to the systme.
+        /// Returns previously allocated memory back to the process heap.
         syscall release {
+            /// The complete chunk of memory previously allocated with @ref allocate.
             in      mem: []u8;
+
+            /// The alignment that was passed to @ref allocate.ptr_align previously.
             in      ptr_align: u8;
         }
     }
@@ -277,24 +318,28 @@ namespace process {
             in  owner: Process;
             in  reslist: ?[]SystemResource;
             out count: usize;
+            error InvalidHandle;
         }
 
         /// Returns the total number of bytes the process takes up in RAM.
         syscall query_total_memory_usage {
             in  proc: Process;
             out count: usize;
+            error InvalidHandle;
         }
 
         /// Returns the number of dynamically allocated bytes for this process.
         syscall query_dynamic_memory_usage {
             in  proc: Process;
             out count: usize;
+            error InvalidHandle;
         }
 
         /// Returns the number of total memory objects this process has right now.
         syscall query_active_allocation_count {
             in  proc: Process;
             out count: usize;
+            error InvalidHandle;
         }
     }
 }
@@ -311,7 +356,6 @@ namespace clock {
         /// Monotonic timestamp in nanoseconds until the operation completes.
         in timeout: Absolute;
     }
-
 }
 
 namespace datetime {
@@ -345,7 +389,7 @@ namespace video {
     /// Acquire exclusive access to a video output.
     syscall acquire {
         in    output_id: VideoOutputID;
-        out   output:  VideoOutput;
+        out   output:    VideoOutput;
         error NotAvailable;
         error NotFound;
         error SystemResources;
@@ -353,7 +397,7 @@ namespace video {
 
     /// Returns the current resolution
     syscall get_resolution {
-        in    output: VideoOutput;
+        in    output:     VideoOutput;
         out   resolution: Size;
         error InvalidHandle;
     }
@@ -374,7 +418,6 @@ namespace video {
         in      output: VideoOutput;
         error   InvalidHandle;
     }
-
 }
 
 namespace random {
@@ -439,7 +482,7 @@ namespace network {
     }
 
     namespace udp {
-        /// Creates a new TCP socket.
+        /// Creates a new UDP socket.
         syscall create_socket {
             out    socket: UdpSocket;
             error  SystemResources;
@@ -533,7 +576,7 @@ namespace network {
     }
 
     namespace tcp {
-        /// Creates a new UDP socket.
+        /// Creates a new TCP socket.
         syscall create_socket {
             out   socket: TcpSocket;
             error SystemResources;
@@ -657,7 +700,7 @@ namespace fs {
     /// Also returns a `next` id that can be used to iterate over all filesystems.
     /// The `system` filesystem is guaranteed to be the first one.
     async_call GetFilesystemInfo {
-        in      fs: FileSystemId;
+        in      fs:   FileSystemId;
         out     info: FileSystemInfo;
         out     next: FileSystemId;
         error   DiskError;
@@ -666,9 +709,9 @@ namespace fs {
 
     /// opens a directory on a filesystem
     async_call OpenDrive {
-        in      fs: FileSystemId;
+        in      fs:   FileSystemId;
         in      path: str;
-        out     dir: Directory;
+        out     dir:  Directory;
         error   DiskError;
         error   FileNotFound;
         error   InvalidFileSystem;
@@ -681,8 +724,8 @@ namespace fs {
     /// opens a directory relative to the given dir handle.
     async_call OpenDir {
         in      start_dir: Directory;
-        in      path: str;
-        out     dir: Directory;
+        in      path:      str;
+        out     dir:       Directory;
         error   DiskError;
         error   FileNotFound;
         error   InvalidHandle;
@@ -708,8 +751,8 @@ namespace fs {
 
     /// returns the info for the current file or "eof", and advances the iterator to the next entry if possible
     async_call EnumerateDir {
-        in      dir: Directory;
-        out     eof: bool;
+        in      dir:  Directory;
+        out     eof:  bool;
         out     info: FileInfo;
         error   DiskError;
         error   InvalidHandle;
@@ -718,8 +761,8 @@ namespace fs {
 
     /// deletes a file or directory by the given path.
     async_call Delete {
-        in      dir: Directory;
-        in      path: str;
+        in      dir:     Directory;
+        in      path:    str;
         in      recurse: bool;
         error   DiskError;
         error   FileNotFound;
@@ -730,9 +773,9 @@ namespace fs {
     /// creates a new directory relative to dir. If `path` contains subdirectories, all
     /// directories are created.
     async_call MkDir {
-        in      dir: Directory;
-        in      path: str;
-        in      mkopen: bool;
+        in      dir:     Directory;
+        in      path:    str;
+        in      mkopen:  bool;
         out     new_dir: Directory;
         error   DiskError;
         error   Exists;
@@ -1180,7 +1223,7 @@ namespace gui {
 
     /// Sets the `size` of `window` and returns the new actual size.
     /// NOTE: This event is meant to be used from desktop APIs and will not automatically
-    /// notify the window of the resize event.
+    ///       notify the window of the resize event.
     syscall set_window_size {
         in    window: Window;
         in    size: Size;
@@ -1310,9 +1353,9 @@ namespace gui {
 
     /// Notifies the system that a message box was confirmed by the user.
     ///
-    /// **NOTE:** This function is meant to be implemented by a desktop server.
-    /// Regular GUI applications should not use this function as they have no
-    /// access to a `MessageBoxEvent.RequestID`.
+    /// NOTE: This function is meant to be implemented by a desktop server.
+    ///       Regular GUI applications should not use this function as they have no
+    ///       access to a `MessageBoxEvent.RequestID`.
     syscall notify_message_box {
         /// The desktop that completed the message box.
         in      source: Desktop;
@@ -1818,7 +1861,7 @@ struct WidgetDescriptor {
     field uuid: UUID;
 
     /// Number of bytes allocated in a Widget for this widget type.
-    /// See `get_widget_data` function for further information.
+    /// See @ref gui.get_widget_data function for further information.
     field data_size: usize;
 
     field flags: Flags;
@@ -1909,7 +1952,7 @@ typedef DesktopEventHandler = fnptr (Desktop, *const DesktopEvent) void;
 
 struct DesktopDescriptor {
     /// Number of bytes allocated in a Window for this desktop.
-    /// See `get_desktop_data` function for further information.
+    /// See @ref gui.get_desktop_data function for further information.
     field window_data_size: usize;
 
     /// A function pointer to the event handler of a desktop.
@@ -2091,43 +2134,43 @@ union WidgetEvent {
         /// The mouse was moved inside the rectangle of the widget.
         ///
         /// NOTE: This event can only happen when `hit_test_visible` was set
-        /// in the widget creation flags.
+        ///       in the widget creation flags.
         item mouse_enter = 6;
 
         /// The mouse was moved outside the rectangle of the widget.
         ///
         /// NOTE: This event can only happen when `hit_test_visible` was set
-        /// in the widget creation flags.
+        ///       in the widget creation flags.
         item mouse_leave = 7;
 
         /// The mouse stopped for some time over the widget.
         ///
         /// NOTE: This event can only happen when `hit_test_visible` was set
-        /// in the widget creation flags.
+        ///       in the widget creation flags.
         item mouse_hover = 8;
 
         /// A mouse button was pressed over the widget.
         ///
         /// NOTE: This event can only happen when `hit_test_visible` was set
-        /// in the widget creation flags.
+        ///       in the widget creation flags.
         item mouse_button_press = 9;
 
         /// A mouse button was released over the widget.
         ///
         /// NOTE: This event can only happen when `hit_test_visible` was set
-        /// in the widget creation flags.
+        ///       in the widget creation flags.
         item mouse_button_release = 10;
 
         /// The mouse was moved over the widget.
         ///
         /// NOTE: This event can only happen when `hit_test_visible` was set
-        /// in the widget creation flags.
+        ///       in the widget creation flags.
         item mouse_motion = 11;
 
         /// A vertical or horizontal scroll wheel was scrolled over the widget.
         ///
         /// NOTE: This event can only happen when `hit_test_visible` was set
-        /// in the widget creation flags.
+        ///       in the widget creation flags.
         item scroll = 12;
 
         //? drag&drop operations:
@@ -2135,25 +2178,25 @@ union WidgetEvent {
         /// The user dragged a payload into the rectangle of this widget.
         ///
         /// NOTE: This event can only happen when `allow_drop` was set in the
-        /// widget creation flags.
+        ///       widget creation flags.
         item drag_enter = 13;
 
         /// The user dragged a payload out of the rectangle of this widget.
         ///
         /// NOTE: This event can only happen when `allow_drop` was set in the
-        /// widget type creation flags.
+        ///       widget type creation flags.
         item drag_leave = 14;
 
         /// The user dragged a payload over the rectangle of this widget.
         ///
         /// NOTE: This event can only happen when `allow_drop` was set in the
-        /// widget type creation flags.
+        ///       widget type creation flags.
         item drag_over = 15;
 
         /// The user dropped a payload into this widget.
         ///
         /// NOTE: This event can only happen when `allow_drop` was set in the
-        /// widget type creation flags.
+        ///       widget type creation flags.
         item drag_drop = 16;
 
         //? clipboard operations:
@@ -2161,19 +2204,19 @@ union WidgetEvent {
         /// The user requested a clipboard copy operation, usually by pressing 'Ctrl-C'.
         ///
         /// NOTE: This event can only happen when `clipboard_sensitive` was set in
-        /// the widget type creation flags.
+        ///       the widget type creation flags.
         item clipboard_copy = 17;
 
         /// The user requested a clipboard paste operation, usually by pressing 'Ctrl-V'.
         ///
         /// NOTE: This event can only happen when `clipboard_sensitive` was set in
-        /// the widget type creation flags.
+        ///       the widget type creation flags.
         item clipboard_paste = 18;
 
         /// The user requested a clipboard cut operation, usually by pressing 'Ctrl-X'.
         ///
         /// NOTE: This event can only happen when `clipboard_sensitive` was set in
-        /// the widget type creation flags.
+        ///       the widget type creation flags.
         item clipboard_cut = 19;
 
         //? widget specific:
