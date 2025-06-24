@@ -28,6 +28,11 @@ pub const FQN = []const []const u8;
 /// A documentation string is a sequence of text lines.
 pub const DocString = []const []const u8;
 
+/// Returns the last item of the full qualified name.
+pub fn local_name(fqn: FQN) []const u8 {
+    return fqn[fqn.len - 1];
+}
+
 pub const Document = struct {
     root: []const Declaration,
 

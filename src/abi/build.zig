@@ -22,16 +22,27 @@ pub fn build(b: *std.Build) void {
     const abi_parser_mod = abi_mapper_dep.module("abi-parser");
     b.modules.putNoClobber("abi-parser", abi_parser_mod) catch @panic("out of memory");
 
-    const render_exe = b.addExecutable(.{
+    const render_zig_exe = b.addExecutable(.{
         .name = "render-abi-file",
         .root_module = b.createModule(.{
             .target = b.graph.host,
             .optimize = .Debug,
-            .root_source_file = b.path("utility/render.zig"),
+            .root_source_file = b.path("utility/render_zig_code.zig"),
             .imports = &.{.{ .name = "abi-parser", .module = abi_parser_mod }},
         }),
     });
-    b.installArtifact(render_exe);
+    b.installArtifact(render_zig_exe);
+
+    const render_docs_exe = b.addExecutable(.{
+        .name = "render-docs",
+        .root_module = b.createModule(.{
+            .target = b.graph.host,
+            .optimize = .Debug,
+            .root_source_file = b.path("utility/render_html.zig"),
+            .imports = &.{.{ .name = "abi-parser", .module = abi_parser_mod }},
+        }),
+    });
+    b.installArtifact(render_docs_exe);
 
     const abi_json = blk: {
         const abi_v2_def = b.path("src/ashet.abi");
@@ -46,7 +57,11 @@ pub fn build(b: *std.Build) void {
 
     b.getInstallStep().dependOn(&install_json.step);
 
-    const docs_html = convert_abi_file(b, render_exe, abi_json, .docs);
+    const docs_html = blk: {
+        const generate_core_abi = b.addRunArtifact(render_docs_exe);
+        generate_core_abi.addFileArg(abi_json);
+        break :blk generate_core_abi.addOutputFileArg("ashet-os.html");
+    };
 
     b.getInstallStep().dependOn(
         &b.addInstallFileWithDir(docs_html, .{ .custom = "docs" }, "index.html").step,
@@ -55,11 +70,12 @@ pub fn build(b: *std.Build) void {
         &b.addInstallFileWithDir(b.path("docs/style.css"), .{ .custom = "docs" }, "style.css").step,
     );
 
-    // const abi_code = convert_abi_file(b, render_exe, abi_json, .definition);
-    // const provider_code = convert_abi_file(b, render_exe, abi_json, .kernel);
-    // const consumer_code = convert_abi_file(b, render_exe, abi_json, .userland);
+    const abi_code = convert_abi_file(b, render_zig_exe, abi_json, .definition);
+    // const provider_code = convert_abi_file(b, render_zig_exe, abi_json, .kernel);
+    // const consumer_code = convert_abi_file(b, render_zig_exe, abi_json, .userland);
 
-    // const abi_mod = b.addModule("ashet-abi", .{ .root_source_file = abi_code });
+    const abi_mod = b.addModule("ashet-abi", .{ .root_source_file = abi_code });
+    _ = abi_mod;
     // abi_mod.addAnonymousImport("async_running_call", .{ .root_source_file = b.path("src/async_running_call.zig") });
     // abi_mod.addAnonymousImport("error_set", .{ .root_source_file = b.path("src/error_set.zig") });
     // abi_mod.addAnonymousImport("platforms", .{ .root_source_file = b.path("src/platforms.zig") });
@@ -76,12 +92,19 @@ pub fn build(b: *std.Build) void {
 
     _ = b.addModule("ashet-abi.json", .{ .root_source_file = abi_json });
 
-    // debug.dependOn(&b.addInstallFile(abi_code, "abi.zig").step);
-    // debug.dependOn(&b.addInstallFile(provider_code, "provider.zig").step);
-    // debug.dependOn(&b.addInstallFile(consumer_code, "consumer.zig").step);
+    b.getInstallStep().dependOn(
+        &b.addInstallFileWithDir(abi_code, .{ .custom = "binding/zig" }, "abi.zig").step,
+    );
+
+    // b.getInstallStep().dependOn(
+    //     &b.addInstallFileWithDir(provider_code, .{}, "provider.zig").step,
+    // );
+    // b.getInstallStep().dependOn(
+    //     &b.addInstallFileWithDir(consumer_code, .{}, "consumer.zig").step,
+    // );
 }
 
-pub fn convert_abi_file(b: *std.Build, render: *std.Build.Step.Compile, input: std.Build.LazyPath, mode: enum { userland, kernel, definition, stubs, docs }) std.Build.LazyPath {
+pub fn convert_abi_file(b: *std.Build, render: *std.Build.Step.Compile, input: std.Build.LazyPath, mode: enum { userland, kernel, definition, stubs }) std.Build.LazyPath {
     const generate_core_abi = b.addRunArtifact(render);
     generate_core_abi.addArg(@tagName(mode));
     generate_core_abi.addFileArg(input);

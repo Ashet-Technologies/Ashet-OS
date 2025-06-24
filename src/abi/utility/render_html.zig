@@ -3,8 +3,6 @@ const abi_parser = @import("abi-parser");
 
 const model = abi_parser.model;
 
-const Mode = enum { userland, kernel, definition, stubs, docs };
-
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -13,27 +11,19 @@ pub fn main() !void {
 
     const argv = try std.process.argsAlloc(allocator);
 
-    if (argv.len != 4)
-        @panic("<exe> <mode> <input> <output>");
+    if (argv.len != 3)
+        @panic("<exe> <input> <output>");
 
-    const mode: Mode = std.meta.stringToEnum(Mode, argv[1]) orelse return error.InvalidMode;
-
-    const json_txt = try std.fs.cwd().readFileAlloc(allocator, argv[2], 1 << 30);
+    const json_txt = try std.fs.cwd().readFileAlloc(allocator, argv[1], 1 << 30);
 
     const schema = try model.from_json_str(allocator, json_txt);
 
-    var output = try std.fs.cwd().atomicFile(argv[3], .{});
+    var output = try std.fs.cwd().atomicFile(argv[2], .{});
     defer output.deinit();
 
     const document = schema.value;
 
-    switch (mode) {
-        .userland => try render_userland(output.file.writer(), allocator, document),
-        .kernel => try render_kernel(output.file.writer(), allocator, document),
-        .definition => try render_definition(output.file.writer(), allocator, document),
-        .stubs => try render_stubs(output.file.writer(), allocator, document),
-        .docs => try render_docs(output.file.writer(), allocator, document),
-    }
+    try render_docs(output.file.writer(), allocator, document);
 
     try output.finish();
 }
