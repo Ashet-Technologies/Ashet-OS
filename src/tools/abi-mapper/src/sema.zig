@@ -306,6 +306,47 @@ const Analyzer = struct {
 
             type_ref.* = .{ .@"enum" = enum_id };
         }
+
+        const Patch = struct {
+            ana: *Analyzer,
+            //
+            pub fn apply(patch: @This(), decl: *model.Declaration) !void {
+                if (decl.data != .typedef)
+                    return;
+
+                const target_type = patch.ana.types.get(decl.data.typedef);
+
+                const new_decl: model.Declaration.Data = switch (target_type.*) {
+
+                    // no change, the type is still an indirection
+                    .typedef => return,
+
+                    .@"enum" => |idx| .{ .@"enum" = idx },
+
+                    .unset_magic_type => @panic("BUG: Magic type was not properly resolved in the code block above"),
+
+                    .@"struct",
+                    .@"union",
+                    .bitstruct,
+                    .resource,
+                    .well_known,
+                    .external,
+                    .alias,
+                    .optional,
+                    .array,
+                    .uint,
+                    .int,
+                    .ptr,
+                    .fnptr,
+                    .unknown_named_type,
+                    => unreachable,
+                };
+
+                decl.data = new_decl;
+            }
+        };
+
+        try ana.patch_tree(Patch{ .ana = ana });
     }
 
     fn validate_bit_structs(ana: *Analyzer) !void {
@@ -1154,6 +1195,18 @@ const Analyzer = struct {
                 .typedef => |typedef| index = typedef.alias,
                 else => return type_val.*,
             }
+        }
+    }
+
+    fn patch_tree(ana: *Analyzer, patch: anytype) !void {
+        try ana.patch_tree_inner(@constCast(ana.root.items), patch);
+    }
+
+    fn patch_tree_inner(ana: *Analyzer, decls: []model.Declaration, patch: anytype) !void {
+        for (decls) |*decl| {
+            try ana.patch_tree_inner(@constCast(decl.children), patch);
+
+            try patch.apply(decl);
         }
     }
 

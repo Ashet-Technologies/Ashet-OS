@@ -46,6 +46,34 @@ pub const Document = struct {
     constants: []const Constant,
 
     types: []const Type,
+
+    pub fn get_struct(doc: *const Document, idx: StructIndex) *const Struct {
+        return &doc.structs[@intFromEnum(idx)];
+    }
+    pub fn get_union(doc: *const Document, idx: UnionIndex) *const Struct {
+        return &doc.unions[@intFromEnum(idx)];
+    }
+    pub fn get_enum(doc: *const Document, idx: EnumerationIndex) *const Enumeration {
+        return &doc.enums[@intFromEnum(idx)];
+    }
+    pub fn get_bitstruct(doc: *const Document, idx: BitStructIndex) *const BitStruct {
+        return &doc.bitstructs[@intFromEnum(idx)];
+    }
+    pub fn get_syscall(doc: *const Document, idx: SystemCallIndex) *const GenericCall {
+        return &doc.syscalls[@intFromEnum(idx)];
+    }
+    pub fn get_async_call(doc: *const Document, idx: AsyncCallIndex) *const GenericCall {
+        return &doc.async_calls[@intFromEnum(idx)];
+    }
+    pub fn get_resource(doc: *const Document, idx: ResourceIndex) *const Resource {
+        return &doc.resources[@intFromEnum(idx)];
+    }
+    pub fn get_constant(doc: *const Document, idx: ConstantIndex) *const Constant {
+        return &doc.constants[@intFromEnum(idx)];
+    }
+    pub fn get_type(doc: *const Document, idx: TypeIndex) *const Type {
+        return &doc.types[@intFromEnum(idx)];
+    }
 };
 
 pub const StructIndex = GenericIndex(Struct, "structs");
