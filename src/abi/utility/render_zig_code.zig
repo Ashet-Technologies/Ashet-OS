@@ -117,22 +117,143 @@ const ZigRenderer = struct {
 
                     try zr.writer.writeln("};");
                 },
-                .@"struct" => |idx| try zr.render_struct_or_union(zr.schema.structs[@intFromEnum(idx)], child.children, .@"struct"),
-                .@"union" => |idx| try zr.render_struct_or_union(zr.schema.unions[@intFromEnum(idx)], child.children, .@"union"),
+                .@"struct" => |idx| try zr.render_struct_or_union(zr.schema.get_struct(idx), child.children, .@"struct"),
+                .@"union" => |idx| try zr.render_struct_or_union(zr.schema.get_union(idx), child.children, .@"union"),
+                .@"enum" => |idx| try zr.render_enum(zr.schema.get_enum(idx), child.children),
+                .bitstruct => |idx| try zr.render_bitstruct(zr.schema.get_bitstruct(idx), child.children),
 
-                .@"enum" => std.log.err("rendering enum is not implemented yet!", .{}),
-                .bitstruct => std.log.err("rendering bitstruct is not implemented yet!", .{}),
-                .syscall => std.log.err("rendering syscall is not implemented yet!", .{}),
-                .async_call => std.log.err("rendering async_call is not implemented yet!", .{}),
-                .resource => std.log.err("rendering resource is not implemented yet!", .{}),
-                .constant => std.log.err("rendering constant is not implemented yet!", .{}),
-                .typedef => std.log.err("rendering typedef is not implemented yet!", .{}),
+                .resource => |idx| try zr.render_resource(zr.schema.get_resource(idx), child.children),
+                .constant => |idx| try zr.render_constant(zr.schema.get_constant(idx), child.children),
+                .typedef => |idx| try zr.render_typedef(zr.schema.get_type(idx).typedef, child.children),
+
+                .syscall => |idx| try zr.render_syscall(zr.schema.get_syscall(idx), child.children),
+                .async_call => |idx| try zr.render_async_call(zr.schema.get_async_call(idx), child.children),
             }
         }
     }
 
-    fn render_struct_or_union(zr: *ZigRenderer, container: model.Struct, children: []const model.Declaration, container_type: enum { @"struct", @"union" }) !void {
-        try zr.writer.println("pub const {} = {s} {{", .{
+    fn render_syscall(zr: *ZigRenderer, syscall: *const model.GenericCall, children: []const model.Declaration) !void {
+        std.debug.assert(children.len == 0);
+
+        try zr.writer.println("pub extern fn {}(", .{
+            fmt_id(model.local_name(syscall.full_qualified_name)),
+        });
+
+        {
+            zr.writer.indent();
+            defer zr.writer.dedent();
+
+            for (syscall.inputs) |input| {
+                try zr.render_docs(input.docs);
+                try zr.writer.print("{}: {},", .{
+                    fmt_id(input.name),
+                    zr.fmt_type(input.type),
+                });
+                if (input.default) |default| {
+                    try zr.writer.print(" // = {}", .{zr.fmt_value(default)});
+                }
+                try zr.writer.writeln("");
+            }
+        }
+        try zr.writer.write(") void");
+
+        try zr.writer.writeln(";");
+    }
+
+    fn render_async_call(zr: *ZigRenderer, arc: *const model.GenericCall, children: []const model.Declaration) !void {
+        try zr.writer.println("pub const {} = extern struct {{", .{
+            fmt_id(model.local_name(arc.full_qualified_name)),
+        });
+
+        {
+            zr.writer.indent();
+            defer zr.writer.dedent();
+            try zr.writer.writeln("");
+            try zr.writer.writeln("pub const Inputs = extern struct {");
+            for (arc.inputs) |field| {
+                zr.writer.indent();
+                defer zr.writer.dedent();
+                try zr.render_docs(field.docs);
+                try zr.writer.print("{}: {}", .{
+                    fmt_id(field.name),
+                    zr.fmt_type(field.type),
+                });
+                if (field.default) |default| {
+                    try zr.writer.print(" = {}", .{zr.fmt_value(default)});
+                }
+                try zr.writer.writeln(",");
+            }
+            try zr.writer.writeln("};");
+            try zr.writer.writeln("");
+
+            try zr.writer.writeln("pub const Outputs = extern struct {");
+            for (arc.outputs) |field| {
+                zr.writer.indent();
+                defer zr.writer.dedent();
+                try zr.render_docs(field.docs);
+                try zr.writer.print("{}: {}", .{
+                    fmt_id(field.name),
+                    zr.fmt_type(field.type),
+                });
+                if (field.default) |default| {
+                    try zr.writer.print(" = {}", .{zr.fmt_value(default)});
+                }
+                try zr.writer.writeln(",");
+            }
+            try zr.writer.writeln("};");
+            try zr.writer.writeln("");
+
+            try zr.writer.writeln("pub const Error = enum(u16) {");
+            try zr.writer.writeln("    success = 0,");
+            try zr.writer.writeln("};");
+
+            try zr.writer.writeln("arc: overlapped.ARC,");
+            try zr.writer.writeln("inputs: Inputs,");
+            try zr.writer.writeln("outputs: Outputs,");
+            try zr.writer.writeln("@\"error\": Error,");
+            try zr.writer.writeln("");
+
+            try zr.writer.write("pub fn init(");
+
+            for (arc.inputs, 0..) |field, i| {
+                if (i > 0)
+                    try zr.writer.write(", ");
+                try zr.writer.print("{}: {}", .{
+                    fmt_id(field.name),
+                    zr.fmt_type(field.type),
+                });
+            }
+
+            try zr.writer.writeln(") @This() {");
+            {
+                zr.writer.indent();
+                defer zr.writer.dedent();
+                try zr.writer.writeln("return .{");
+
+                try zr.writer.println("    .arc = .{{ .type = .{_}, .tag = 0 }},", .{
+                    fmt_fqn(arc.full_qualified_name),
+                });
+                try zr.writer.writeln("    .inputs = .{");
+                for (arc.inputs) |field| {
+                    try zr.writer.println("        .{[0]} = {[0]},", .{
+                        fmt_id(field.name),
+                    });
+                }
+                try zr.writer.writeln("    },");
+                try zr.writer.writeln("    .outputs = undefined,");
+                try zr.writer.writeln("    .@\"error\" = .success,");
+                try zr.writer.writeln("};");
+            }
+            try zr.writer.writeln("}");
+
+            try zr.render_children(children);
+        }
+
+        try zr.writer.writeln("};");
+    }
+
+    fn render_struct_or_union(zr: *ZigRenderer, container: *const model.Struct, children: []const model.Declaration, container_type: enum { @"struct", @"union" }) !void {
+        try zr.writer.println("pub const {} = extern {s} {{", .{
             fmt_id(model.local_name(container.full_qualified_name)),
             @tagName(container_type),
         });
@@ -156,6 +277,105 @@ const ZigRenderer = struct {
         try zr.writer.writeln("};");
     }
 
+    fn render_bitstruct(zr: *ZigRenderer, container: *const model.BitStruct, children: []const model.Declaration) !void {
+        try zr.writer.println("pub const {} = packed struct({s}) {{", .{
+            fmt_id(model.local_name(container.full_qualified_name)),
+            @tagName(container.backing_type),
+        });
+
+        {
+            zr.writer.indent();
+            defer zr.writer.dedent();
+
+            var reserved_idx: usize = 0;
+            for (container.fields) |field| {
+                var reserved_buf: [32]u8 = undefined;
+                const reserved_id = try std.fmt.bufPrint(&reserved_buf, "_reserved{}", .{reserved_idx});
+
+                try zr.render_docs(field.docs);
+                try zr.writer.print("{}: {}", .{ fmt_id(field.name orelse reserved_id), zr.fmt_type(field.type) });
+                if (field.default) |default| {
+                    try zr.writer.print(" = {}", .{zr.fmt_value(default)});
+                }
+                try zr.writer.writeln(",");
+
+                if (field.name == null) {
+                    reserved_idx += 1;
+                }
+            }
+
+            try zr.render_children(children);
+        }
+
+        try zr.writer.writeln("};");
+    }
+
+    fn render_enum(zr: *ZigRenderer, container: *const model.Enumeration, children: []const model.Declaration) !void {
+        try zr.writer.println("pub const {} = enum({s}) {{", .{
+            fmt_id(model.local_name(container.full_qualified_name)),
+            @tagName(container.backing_type),
+        });
+
+        {
+            zr.writer.indent();
+            defer zr.writer.dedent();
+
+            for (container.items) |item| {
+                try zr.render_docs(item.docs);
+                try zr.writer.println("{} = {},", .{ fmt_id(item.name), item.value });
+            }
+
+            switch (container.kind) {
+                .closed => {},
+                .open => try zr.writer.writeln("_,"),
+            }
+
+            try zr.render_children(children);
+        }
+
+        try zr.writer.writeln("};");
+    }
+
+    fn render_resource(zr: *ZigRenderer, container: *const model.Resource, children: []const model.Declaration) !void {
+        try zr.writer.println("pub const {} = enum(usize) {{", .{
+            fmt_id(model.local_name(container.full_qualified_name)),
+        });
+
+        {
+            zr.writer.indent();
+            defer zr.writer.dedent();
+
+            try zr.writer.writeln("_,");
+
+            try zr.render_children(children);
+        }
+
+        try zr.writer.writeln("};");
+    }
+
+    fn render_constant(zr: *ZigRenderer, container: *const model.Constant, children: []const model.Declaration) !void {
+        std.debug.assert(children.len == 0);
+
+        try zr.writer.print("pub const {}", .{
+            fmt_id(model.local_name(container.full_qualified_name)),
+        });
+
+        if (container.type) |ctype| {
+            try zr.writer.print(": {}", .{zr.fmt_type(ctype)});
+        }
+
+        try zr.writer.println("= {};", .{zr.fmt_value(container.value)});
+    }
+
+    fn render_typedef(zr: *ZigRenderer, container: model.TypeDefition, children: []const model.Declaration) !void {
+        std.debug.assert(children.len == 0);
+
+        try zr.writer.println("pub const {} = {};", .{
+            fmt_id(model.local_name(container.full_qualified_name)),
+            zr.fmt_type(container.alias),
+        });
+    }
+
     fn render_docs(zr: *ZigRenderer, docs: model.DocString) !void {
         for (docs) |line| {
             try zr.writer.println("/// {s}", .{line});
@@ -172,9 +392,9 @@ const ZigRenderer = struct {
 
         const zr: *ZigRenderer, const type_id: model.TypeIndex = pack;
 
-        const type_val = zr.schema.types[@intFromEnum(type_id)];
+        const type_val = zr.schema.get_type(type_id);
 
-        switch (type_val) {
+        switch (type_val.*) {
             .alias => |child| try writer.print("{}", .{zr.fmt_type(child)}),
 
             .well_known => |id| try writer.writeAll(switch (id) {
@@ -222,30 +442,35 @@ const ZigRenderer = struct {
             },
 
             .@"enum" => |index| try writer.print("{}", .{
-                fmt_fqn(zr.schema.enums[@intFromEnum(index)].full_qualified_name),
+                fmt_fqn(zr.schema.get_enum(index).full_qualified_name),
             }),
 
             .@"struct" => |index| try writer.print("{}", .{
-                fmt_fqn(zr.schema.structs[@intFromEnum(index)].full_qualified_name),
+                fmt_fqn(zr.schema.get_struct(index).full_qualified_name),
             }),
 
             .@"union" => |index| try writer.print("{}", .{
-                fmt_fqn(zr.schema.unions[@intFromEnum(index)].full_qualified_name),
+                fmt_fqn(zr.schema.get_union(index).full_qualified_name),
             }),
 
             .bitstruct => |index| try writer.print("{}", .{
-                fmt_fqn(zr.schema.bitstructs[@intFromEnum(index)].full_qualified_name),
+                fmt_fqn(zr.schema.get_bitstruct(index).full_qualified_name),
             }),
 
             .resource => |index| try writer.print("{}", .{
-                fmt_fqn(zr.schema.resources[@intFromEnum(index)].full_qualified_name),
+                fmt_fqn(zr.schema.get_resource(index).full_qualified_name),
             }),
 
             .typedef => |typedef| try writer.print("{}", .{
                 fmt_fqn(typedef.full_qualified_name),
             }),
 
-            else => try writer.print("<<{s}>>", .{@tagName(type_val)}),
+            .uint => |size| try writer.print("u{}", .{size}),
+            .int => |size| try writer.print("i{}", .{size}),
+
+            .fnptr, .external => try writer.print("<<{s}>>", .{@tagName(type_val.*)}),
+
+            .unknown_named_type, .unset_magic_type => @panic("invalid model"),
         }
     }
 
@@ -259,9 +484,18 @@ const ZigRenderer = struct {
         _ = fmt;
         _ = zr;
         _ = options;
-        _ = value;
 
-        try writer.writeAll("<<value>>");
+        switch (value) {
+            .null => try writer.writeAll("null"),
+
+            .bool => |b| try writer.print("{}", .{b}),
+
+            .string => |str| try writer.print("\"{}\"", .{fmt_escapes(str)}),
+
+            .int => |i| try writer.print("{}", .{i}),
+
+            .compound => try writer.print("<<{s}>>", .{@tagName(value)}),
+        }
     }
 };
 
@@ -270,11 +504,11 @@ fn fmt_fqn(fqn: []const []const u8) std.fmt.Formatter(format_fqn) {
 }
 
 fn format_fqn(fqn: []const []const u8, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-    _ = fmt;
     _ = options;
     for (fqn, 0..) |name, i| {
-        if (i > 0)
-            try writer.writeAll(".");
+        if (i > 0) {
+            try writer.writeAll(if (fmt.len > 0) fmt else ".");
+        }
         try writer.writeAll(name);
     }
 }

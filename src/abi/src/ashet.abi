@@ -2024,17 +2024,11 @@ struct MessageBoxEvent {
     /// `notify_message_box` to finish the message box request.
     field request_id: RequestID;
 
-    /// Pointer to the content of the message box.
-    field message_ptr: [*]const u8;
+    /// Content of the message box.
+    field message: []const u8;
 
-    /// length of `message_ptr`.
-    field message_len: usize;
-
-    /// Pointer to the caption of the message box.
-    field caption_ptr: [*]const u8;
-
-    /// length of `caption_ptr`.
-    field caption_len: usize;
+    /// Caption of the message box.
+    field caption_ptr: []const u8;
 
     /// Which buttons are presented to the user?
     field buttons: MessageBoxButtons;
