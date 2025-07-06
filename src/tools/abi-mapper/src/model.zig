@@ -142,6 +142,49 @@ pub const Type = union(enum) {
     /// ```
     /// to be reified into `enum MyName : u32 { item … }
     unset_magic_type: MagicType,
+
+    pub fn is_c_abi_compatible(t: Type) bool {
+        return switch (t) {
+            .@"struct" => true,
+            .@"union" => true,
+            .@"enum" => true,
+            .bitstruct => true,
+            .resource => true,
+            .well_known => |id| switch (id) {
+                .void, .noreturn => true,
+                .bool => true,
+                .anyptr, .anyfnptr => true,
+                .str => false,
+                .bytestr => false,
+                .bytebuf => false,
+                .u8, .u16, .u32, .u64, .usize => true,
+                .i8, .i16, .i32, .i64, .isize => true,
+                .f32, .f64 => true,
+            },
+            .external => true,
+            .typedef => true,
+            .optional => false,
+            .array => true,
+            .uint => |bits| switch (bits) {
+                8, 16, 32, 64 => true,
+                else => false,
+            },
+            .int => |bits| switch (bits) {
+                8, 16, 32, 64 => true,
+                else => false,
+            },
+            .ptr => |ptr| switch (ptr.size) {
+                .one, .unknown => true,
+                .slice => false,
+            },
+            .fnptr => true,
+
+            // TODO: These types should not exist anymore when C-ABI check is performed
+            .alias => true,
+            .unknown_named_type => false,
+            .unset_magic_type => false,
+        };
+    }
 };
 
 pub const MagicType = struct {
@@ -226,7 +269,8 @@ pub const BitStructField = struct {
 pub const Struct = struct {
     docs: DocString,
     full_qualified_name: FQN,
-    fields: []const StructField,
+    logic_fields: []const StructField,
+    native_fields: []const StructField,
 };
 
 pub const StructField = struct {
@@ -234,6 +278,14 @@ pub const StructField = struct {
     name: []const u8,
     type: TypeIndex,
     default: ?Value,
+    role: StructFieldRole,
+};
+
+pub const StructFieldRole = union(enum) {
+    default,
+
+    slice_ptr: []const u8,
+    slice_len: []const u8,
 };
 
 pub const Enumeration = struct {
@@ -261,8 +313,11 @@ pub const GenericCall = struct {
     full_qualified_name: FQN,
     no_return: bool,
 
-    inputs: []const Parameter,
-    outputs: []const Parameter,
+    logic_inputs: []const Parameter,
+    logic_outputs: []const Parameter,
+
+    native_inputs: []const Parameter,
+    native_outputs: []const Parameter,
 
     errors: []const Error,
 };
@@ -272,6 +327,28 @@ pub const Parameter = struct {
     name: []const u8,
     type: TypeIndex,
     default: ?Value,
+
+    role: ParameterRole,
+};
+
+pub const ParameterRole = union(enum) {
+    /// This parameter is used as-is. This is the only valid role for parameters in `GenericCall.logic_inputs` and `GenericCall.logic_outputs`.
+    default,
+
+    /// This parameter communicates the error code of the call
+    @"error",
+
+    /// This parameter is the "pointer" property of an input parameter slice
+    input_ptr: []const u8,
+
+    /// This parameter is the "length" property of an input parameter slice
+    input_len: []const u8,
+
+    /// This parameter is the "pointer" property of an output parameter slice
+    output_ptr: []const u8,
+
+    /// This parameter is the "length" property of an output parameter slice
+    output_len: []const u8,
 };
 
 pub const Resource = struct {

@@ -143,7 +143,7 @@ const ZigRenderer = struct {
             zr.writer.indent();
             defer zr.writer.dedent();
 
-            for (syscall.inputs) |input| {
+            for (syscall.native_inputs) |input| {
                 try zr.render_docs(input.docs);
                 try zr.writer.print("{}: {},", .{
                     fmt_id(input.name),
@@ -170,7 +170,7 @@ const ZigRenderer = struct {
             defer zr.writer.dedent();
             try zr.writer.writeln("");
             try zr.writer.writeln("pub const Inputs = extern struct {");
-            for (arc.inputs) |field| {
+            for (arc.native_inputs) |field| {
                 zr.writer.indent();
                 defer zr.writer.dedent();
                 try zr.render_docs(field.docs);
@@ -187,7 +187,7 @@ const ZigRenderer = struct {
             try zr.writer.writeln("");
 
             try zr.writer.writeln("pub const Outputs = extern struct {");
-            for (arc.outputs) |field| {
+            for (arc.native_outputs) |field| {
                 zr.writer.indent();
                 defer zr.writer.dedent();
                 try zr.render_docs(field.docs);
@@ -215,7 +215,7 @@ const ZigRenderer = struct {
 
             try zr.writer.write("pub fn init(");
 
-            for (arc.inputs, 0..) |field, i| {
+            for (arc.logic_inputs, 0..) |field, i| {
                 if (i > 0)
                     try zr.writer.write(", ");
                 try zr.writer.print("{}: {}", .{
@@ -234,7 +234,7 @@ const ZigRenderer = struct {
                     fmt_fqn(arc.full_qualified_name),
                 });
                 try zr.writer.writeln("    .inputs = .{");
-                for (arc.inputs) |field| {
+                for (arc.native_inputs) |field| {
                     try zr.writer.println("        .{[0]} = {[0]},", .{
                         fmt_id(field.name),
                     });
@@ -262,7 +262,7 @@ const ZigRenderer = struct {
             zr.writer.indent();
             defer zr.writer.dedent();
 
-            for (container.fields) |field| {
+            for (container.native_fields) |field| {
                 try zr.render_docs(field.docs);
                 try zr.writer.print("{}: {}", .{ fmt_id(field.name), zr.fmt_type(field.type) });
                 if (field.default) |default| {

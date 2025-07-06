@@ -35,6 +35,8 @@ pub fn analyze(allocator: std.mem.Allocator, document: syntax.Document) !model.D
 
     try analyzer.validate_bit_structs();
 
+    try analyzer.compute_native_items();
+
     // TODO: Validate if all constant and default values fit their assignment
 
     // TODO: Compute type sizes, field offsets
@@ -47,6 +49,8 @@ pub fn analyze(allocator: std.mem.Allocator, document: syntax.Document) !model.D
     }
 
     // TODO: Implement garbage collection for unreferenced things
+
+    analyzer.validate_constraints();
 
     return .{
         .root = try analyzer.root.toOwnedSlice(),
@@ -129,6 +133,10 @@ const Analyzer = struct {
             scope.link = link;
         }
     };
+
+    fn format(ana: *Analyzer, comptime fmt: []const u8, args: anytype) ![]const u8 {
+        return try std.fmt.allocPrint(ana.allocator, fmt, args);
+    }
 
     fn push_scope(ana: *Analyzer, name: []const u8, scope_type: Scope.Type) !struct { model.FQN, *Scope } {
         const current_name = ana.current_scope_name();
@@ -408,6 +416,121 @@ const Analyzer = struct {
             .@"union" => null,
             .@"struct" => null,
         };
+    }
+
+    fn compute_native_items(ana: *Analyzer) !void {
+        for (ana.syscalls.items) |*syscall| {
+            try ana.compute_native_params(syscall);
+        }
+
+        for (ana.async_calls.items) |*syscall| {
+            try ana.compute_native_params(syscall);
+        }
+
+        for (ana.structs.items) |*container| {
+            try ana.compute_native_fields(container);
+        }
+
+        for (ana.unions.items) |*container| {
+            try ana.compute_native_fields(container);
+        }
+    }
+
+    fn compute_native_params(ana: *Analyzer, call: *model.GenericCall) !void {
+        _ = ana;
+        std.debug.assert(call.native_inputs.len == 0);
+        std.debug.assert(call.native_outputs.len == 0);
+    }
+
+    fn compute_native_fields(ana: *Analyzer, container: *model.Struct) !void {
+        std.debug.assert(container.native_fields.len == 0);
+
+        var native_fields: std.ArrayList(model.StructField) = .init(ana.allocator);
+        defer native_fields.deinit();
+
+        for (container.logic_fields) |fld| {
+            const fld_type = ana.get_resolved_type(fld.type);
+
+            const forward: enum { keep, discard } = blk: switch (fld_type) {
+                .well_known => |id| switch (id) {
+                    .str => {
+                        try native_fields.append(.{
+                            .docs = fld.docs,
+                            .name = ana.format("{s}_ptr", .{fld.name}),
+                            .type = try ana.map_type(&.{ .pointer = .{
+                                .size = .unknown,
+                                .is_const = true,
+                                .alignment = null,
+                                .child = try ana.map_type(&.{ .unsigned_int = 8 }),
+                            } }),
+                            .role = .{ .slice_ptr = fld.name },
+                            .default = null,
+                        });
+                        try native_fields.append(.{
+                            .docs = &.{try ana.format("The amount of bytes referenced by {s}_ptr.", .{fld.name})},
+                            .type = try ana.map_type(&.{ .builtin = .usize }),
+                            .name = try ana.format("{s}_len", .{fld.name}),
+                            .role = .{ .slice_len = fld.name },
+                            .default = null,
+                        });
+                        break :blk .discard;
+                    },
+
+                    else => .keep,
+                },
+
+                .optional => |child_idx| {
+                    const child = try ana.get_resolved_type(child_idx);
+                    if (child != .ptr or child.ptr.size != .slice)
+                        break :blk .keep;
+                    @panic("TODO: Implement optional slices");
+                },
+
+                .ptr => |ptr| switch (ptr.size) {
+                    .one, .unknown => .keep,
+                    .slice => {
+                        try native_fields.append(.{
+                            .docs = fld.docs,
+                            .name = ana.fmt("{}_ptr", .{fld.name}),
+                            .type = try ana.map_type(.{ .pointer = .{
+                                .size = .unknown,
+                                .is_const = ptr.is_const,
+                                .alignment = ptr.alignment,
+                                .child = ptr.child,
+                            } }),
+                            .role = .{ .slice_ptr = fld.name },
+                            .default = null,
+                        });
+                        try native_fields.append(.{
+                            .docs = &.{try ana.fmt("The amount of bytes referenced by {s}_ptr.", .{fld.name})},
+                            .type = try ana.map_type(.{ .builtin = .usize }),
+                            .name = try ana.fmt("{}_len", .{fld.name}),
+                            .role = .{ .slice_len = fld.name },
+                            .default = null,
+                        });
+                        break :blk .discard;
+                    },
+                },
+
+                .resource, .@"struct", .@"union", .@"enum", .bitstruct => .keep,
+
+                .fnptr => .keep,
+                .uint, .int => .keep,
+                .array => .keep,
+                .typedef => .keep, // TODO: Check if slice!
+                .external => .keep,
+
+                .alias => unreachable,
+                .unknown_named_type => unreachable,
+                .unset_magic_type => unreachable,
+            };
+
+            if (forward == .keep) {
+                try native_fields.append(fld);
+            }
+        }
+
+        container.native_fields = try native_fields.toOwnedSlice();
     }
 
     fn fatal_error(ana: *Analyzer, location: Location, comptime fmt: []const u8, args: anytype) error{ OutOfMemory, FatalAnalysisError } {
@@ -765,6 +888,7 @@ const Analyzer = struct {
                         .name = data.name,
                         .type = type_id,
                         .default = default_value,
+                        .role = .default,
                     };
 
                     if (child.type == .in) {
@@ -800,8 +924,10 @@ const Analyzer = struct {
         const output: model.GenericCall = .{
             .docs = info.docs,
             .full_qualified_name = info.full_name,
-            .inputs = try inputs.resolve(),
-            .outputs = try outputs.resolve(),
+            .logic_inputs = try inputs.resolve(),
+            .logic_outputs = try outputs.resolve(),
+            .native_inputs = &.{},
+            .native_outputs = &.{},
             .errors = try errors.resolve(),
             .no_return = no_return,
         };
@@ -854,6 +980,7 @@ const Analyzer = struct {
                         .name = data.name,
                         .type = type_id,
                         .default = default_value,
+                        .role = .default,
                     });
                 },
 
@@ -864,7 +991,8 @@ const Analyzer = struct {
         const output: model.Struct = .{
             .docs = info.docs,
             .full_qualified_name = info.full_name,
-            .fields = try fields.resolve(),
+            .logic_fields = try fields.resolve(),
+            .native_fields = &.{},
         };
 
         switch (mode) {
@@ -1207,6 +1335,106 @@ const Analyzer = struct {
             try ana.patch_tree_inner(@constCast(decl.children), patch);
 
             try patch.apply(decl);
+        }
+    }
+
+    fn validate_constraints(ana: *Analyzer) void {
+        for (ana.syscalls.items) |sc| {
+            // native calls must have either a return value
+            // or none.
+            std.debug.assert(sc.native_outputs.len <= 1);
+
+            std.debug.assert(sc.logic_inputs.len <= sc.native_inputs.len);
+            std.debug.assert(sc.logic_outputs.len <= sc.native_outputs.len);
+
+            for (sc.logic_inputs) |inp| {
+                std.debug.assert(inp.role == .default);
+            }
+
+            for (sc.logic_outputs) |outp| {
+                std.debug.assert(outp.role == .default);
+            }
+
+            for (sc.native_inputs) |inp| {
+                std.debug.assert(ana.get_resolved_type(inp.type).is_c_abi_compatible());
+
+                // inputs cannot be the error role
+                std.debug.assert(inp.role != .@"error");
+
+                // TODO: Assert that referenced parameters exist, and that they have the right pointer type
+            }
+
+            var has_error_output = false;
+            const needs_error_output = (sc.errors.len > 0);
+            for (sc.native_outputs) |outp| {
+                std.debug.assert(ana.get_resolved_type(outp.type).is_c_abi_compatible());
+                switch (outp.role) {
+                    .default => {},
+                    .@"error" => {
+                        std.debug.assert(!has_error_output);
+                        std.debug.assert(needs_error_output);
+                        has_error_output = true;
+                    },
+                    .input_len, .input_ptr => {
+                        // TODO: Assert that referenced parameters exist, and that they have the right pointer type
+                    },
+                    .output_len, .output_ptr => {
+                        // TODO: Assert that referenced parameters exist, and that they have the right pointer type
+                    },
+                }
+            }
+            if (needs_error_output) {
+                std.debug.assert(has_error_output);
+            }
+        }
+
+        for (ana.unions.items) |un| {
+            std.debug.assert(un.logic_fields.len == un.native_fields.len);
+            for (un.logic_fields) |fld| {
+                std.debug.assert(fld.role == .default);
+            }
+            for (un.native_fields) |fld| {
+                std.debug.assert(fld.role == .default);
+                std.debug.assert(ana.get_resolved_type(fld.type).is_c_abi_compatible());
+            }
+        }
+
+        for (ana.structs.items) |str| {
+            std.debug.assert(str.logic_fields.len <= str.native_fields.len);
+            for (str.logic_fields) |fld| {
+                std.debug.assert(fld.role == .default);
+            }
+            for (str.native_fields) |fld| {
+                switch (fld.role) {
+                    .default => {},
+                    .slice_len, .slice_ptr => {
+                        // TODO: Assert the referenced slice exists
+                    },
+                }
+                std.debug.assert(ana.get_resolved_type(fld.type).is_c_abi_compatible());
+            }
+        }
+
+        for (ana.bitstructs.items) |bs| {
+            std.debug.assert(bs.backing_type.is_integer());
+
+            var bit_count: usize = 0;
+            for (bs.fields) |fld| {
+                const fld_type = ana.get_resolved_type(fld.type);
+                switch (fld_type) {
+                    .well_known => |id| std.debug.assert(id.size_in_bits() != null),
+                    .@"enum", .bitstruct => {},
+                    else => unreachable,
+                }
+
+                std.debug.assert(fld.bit_count != null);
+                std.debug.assert(fld.bit_shift != null);
+
+                std.debug.assert(bit_count == fld.bit_shift.?);
+                bit_count += fld.bit_count.?;
+            }
+
+            std.debug.assert(bs.bit_count == bit_count);
         }
     }
 

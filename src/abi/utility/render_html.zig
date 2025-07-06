@@ -168,7 +168,7 @@ const HtmlRenderer = struct {
                 try html.writer.print("<h2>Fields</h2>\n", .{});
 
                 try html.begin_dl();
-                for (item.fields) |field| {
+                for (item.logic_fields) |field| {
                     try html.writer.writeAll("<div>\n");
 
                     try html.writer.print("<dt><code>{s}: {}", .{
@@ -196,7 +196,7 @@ const HtmlRenderer = struct {
                 try html.writer.print("<h2>Alternatives</h2>\n", .{});
 
                 try html.begin_dl();
-                for (item.fields) |field| {
+                for (item.logic_fields) |field| {
                     try html.dl_item(
                         "{s}: {}",
                         "{}",
@@ -270,11 +270,11 @@ const HtmlRenderer = struct {
             .syscall => |index| {
                 const item = html.schema.syscalls[@intFromEnum(index)];
 
-                if (item.inputs.len > 0) {
+                if (item.logic_inputs.len > 0) {
                     try html.writer.print("<h2>Inputs</h2>\n", .{});
 
                     try html.begin_dl();
-                    for (item.inputs) |param| {
+                    for (item.logic_inputs) |param| {
                         // TODO: Handle "param.default"
                         try html.dl_item(
                             "{}: {}",
@@ -289,11 +289,11 @@ const HtmlRenderer = struct {
                     try html.end_dl();
                 }
 
-                if (item.outputs.len > 0) {
+                if (item.logic_outputs.len > 0) {
                     try html.writer.print("<h2>Outputs</h2>\n", .{});
 
                     try html.begin_dl();
-                    for (item.outputs) |param| {
+                    for (item.logic_outputs) |param| {
                         // TODO: Handle "param.default"
                         try html.dl_item(
                             "{}: {}",
@@ -328,11 +328,11 @@ const HtmlRenderer = struct {
             .async_call => |index| {
                 const item = html.schema.async_calls[@intFromEnum(index)];
 
-                if (item.inputs.len > 0) {
+                if (item.logic_inputs.len > 0) {
                     try html.writer.print("<h2>Inputs</h2>\n", .{});
 
                     try html.begin_dl();
-                    for (item.inputs) |param| {
+                    for (item.logic_inputs) |param| {
                         // TODO: Handle "param.default"
                         try html.dl_item(
                             "{}: {}",
@@ -347,11 +347,11 @@ const HtmlRenderer = struct {
                     try html.end_dl();
                 }
 
-                if (item.outputs.len > 0) {
+                if (item.logic_outputs.len > 0) {
                     try html.writer.print("<h2>Outputs</h2>\n", .{});
 
                     try html.begin_dl();
-                    for (item.outputs) |param| {
+                    for (item.logic_outputs) |param| {
                         // TODO: Handle "param.default"
                         try html.dl_item(
                             "{}: {}",
@@ -504,7 +504,7 @@ const HtmlRenderer = struct {
             if (maybe_function) |function| {
                 var has_any = false;
 
-                for (function.inputs) |param| {
+                for (function.logic_inputs) |param| {
                     if (has_any) try html.writer.writeAll(", ");
 
                     try html.writer.print("<span class=\"tok-kw\">in</span> <span class=\"tok-name\">{s}</span>: {}", .{
@@ -515,7 +515,7 @@ const HtmlRenderer = struct {
                     has_any = true;
                 }
 
-                for (function.outputs) |param| {
+                for (function.logic_outputs) |param| {
                     if (has_any) try html.writer.writeAll(", ");
 
                     try html.writer.print("<span class=\"tok-kw\">out</span> <span class=\"tok-name\">{s}</span>: {}", .{
