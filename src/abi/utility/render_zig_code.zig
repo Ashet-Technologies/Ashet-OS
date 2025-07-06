@@ -155,7 +155,16 @@ const ZigRenderer = struct {
                 try zr.writer.writeln("");
             }
         }
-        try zr.writer.write(") void");
+        try zr.writer.write(") ");
+
+        if (syscall.native_outputs.len == 1) {
+            const retval = syscall.native_outputs[0];
+
+            try zr.writer.print("{}", .{zr.fmt_type(retval.type)});
+        } else {
+            try zr.writer.write("void");
+            std.debug.assert(syscall.native_outputs.len == 0);
+        }
 
         try zr.writer.writeln(";");
     }

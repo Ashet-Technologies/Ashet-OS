@@ -2,6 +2,8 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 pub fn build(b: *std.Build) void {
+    const test_step = b.step("test", "Runs the test suite.");
+
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
 
@@ -28,35 +30,11 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(abi_parser_exe);
 
-    // const test_step = b.step("test", "Runs the test suite");
+    const convert_test_file = b.addRunArtifact(abi_parser_exe);
+    convert_test_file.addFileArg(b.path("tests/coverage.abi"));
+    const output_file = convert_test_file.addPrefixedOutputFileArg("--output=", "coverage.json");
 
-    // const cc = Converter{
-    //     .b = b,
-    //     .executable = python_wrapper,
-    // };
-
-    // const json = cc.get_json_dump(
-    //     b.path("tests/coverage-ids.json"),
-    //     b.path("tests/coverage.zabi"),
-    // );
-
-    // const test_exe = b.addTest(.{
-    //     .root_source_file = abi_schema_mod.root_source_file.?,
-    //     .target = b.graph.host,
-    //     .optimize = .Debug,
-    // });
-
-    // test_exe.root_module.addAnonymousImport("coverage.json", .{
-    //     .root_source_file = json,
-    // });
-
-    // const run_test = b.addRunArtifact(test_exe);
-
-    // test_step.dependOn(&run_test.step);
-
-    // const json_step = b.step("json", "Emit the JSON dump of test abi");
-
-    // json_step.dependOn(&b.addInstallFile(json, "abi-test.json").step);
+    test_step.dependOn(&b.addInstallFile(output_file, "test/coverage.json").step);
 }
 
 pub const Converter = struct {

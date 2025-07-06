@@ -1193,7 +1193,8 @@ namespace gui {
 
     syscall get_window_title {
         in    window: Window;
-        in    out_title: *[]const u8;
+        in    title_buf: ?[]u8;
+        out   title_len: usize;
         error InvalidHandle;
     }
 

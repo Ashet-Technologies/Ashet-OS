@@ -437,9 +437,72 @@ const Analyzer = struct {
     }
 
     fn compute_native_params(ana: *Analyzer, call: *model.GenericCall) !void {
-        _ = ana;
         std.debug.assert(call.native_inputs.len == 0);
         std.debug.assert(call.native_outputs.len == 0);
+
+        var native_inputs: std.ArrayList(model.Parameter) = .init(ana.allocator);
+        defer native_inputs.deinit();
+
+        var native_outputs: std.ArrayList(model.Parameter) = .init(ana.allocator);
+        defer native_outputs.deinit();
+
+        const Helper = struct {
+            fn remap_outputs(a: *Analyzer, ni: *std.ArrayList(model.Parameter), no: *std.ArrayList(model.Parameter)) !void {
+                try ni.ensureUnusedCapacity(no.items.len);
+                for (no.items) |item| {
+                    var copy = item;
+                    copy.type = try a.map_model_type(.{ .ptr = .{
+                        .alignment = null,
+                        .is_const = false,
+                        .size = .one,
+                        .child = item.type,
+                    } });
+                    ni.appendAssumeCapacity(copy);
+                }
+                no.clearAndFree();
+            }
+
+            fn render(a: *Analyzer, list: *std.ArrayList(model.Parameter), params: []const model.Parameter) !void {
+                for (params) |param| {
+                    if (a.get_resolved_type(param.type).is_c_abi_compatible()) {
+                        try list.append(param);
+                    } else {
+                        // TODO!
+                        std.log.err("implement type resolution for {}", .{a.get_resolved_type(param.type)});
+                    }
+                }
+            }
+        };
+
+        try Helper.render(ana, &native_inputs, call.logic_inputs);
+        try Helper.render(ana, &native_outputs, call.logic_outputs);
+
+        if (call.errors.len > 0) {
+            // function has errors, append all output parameters to the inputs,
+            // then replace with error return value
+
+            try Helper.remap_outputs(ana, &native_inputs, &native_outputs);
+
+            try native_outputs.append(.{
+                .name = "error_code",
+                .default = null,
+                .docs = &.{},
+                .role = .@"error",
+                .type = try ana.map_model_type(.{ .well_known = .u16 }),
+            });
+        } else if (native_outputs.items.len == 1) {
+            // function has a (true) single return value, we can keep that for C
+
+        } else {
+            // function must return `void` as we cannot return more than a single value through C ABI.
+            // also convert all outputs to input parameters with pointers:
+            try Helper.remap_outputs(ana, &native_inputs, &native_outputs);
+        }
+
+        std.debug.assert(native_outputs.items.len <= 1);
+
+        call.native_inputs = try native_inputs.toOwnedSlice();
+        call.native_outputs = try native_outputs.toOwnedSlice();
     }
 
     fn compute_native_fields(ana: *Analyzer, container: *model.Struct) !void {
@@ -448,18 +511,49 @@ const Analyzer = struct {
         var native_fields: std.ArrayList(model.StructField) = .init(ana.allocator);
         defer native_fields.deinit();
 
+        const Helper = struct {
+            ana: *Analyzer,
+            nf: *std.ArrayList(model.StructField),
+
+            fn emit_slice(
+                h: @This(),
+                basename: []const u8,
+                docs: model.DocString,
+                ptr_type: model.Type,
+            ) !void {
+                try h.nf.append(.{
+                    .docs = docs,
+                    .name = try h.ana.format("{s}_ptr", .{basename}),
+                    .type = try h.ana.map_model_type(ptr_type),
+                    .role = .{ .slice_ptr = basename },
+                    .default = null,
+                });
+                try h.nf.append(.{
+                    .docs = try h.ana.allocator.dupe([]const u8, &.{
+                        try h.ana.format("The number of elements referenced by {s}_ptr.", .{basename}),
+                    }),
+                    .name = try h.ana.format("{s}_len", .{basename}),
+                    .type = try h.ana.map_model_type(.{ .well_known = .usize }),
+                    .role = .{ .slice_len = basename },
+                    .default = null,
+                });
+            }
+        };
+
+        const helper: Helper = .{ .nf = &native_fields, .ana = ana };
+
         for (container.logic_fields) |fld| {
             const fld_type = ana.get_resolved_type(fld.type);
 
             const forward: enum { keep, discard } = blk: switch (fld_type) {
                 .well_known => |id| switch (id) {
-                    .str => {
+                    .bytestr, .bytebuf, .str => {
                         try native_fields.append(.{
                             .docs = fld.docs,
                             .name = try ana.format("{s}_ptr", .{fld.name}),
                             .type = try ana.map_model_type(.{ .ptr = .{
                                 .size = .unknown,
-                                .is_const = true,
+                                .is_const = (id != .bytebuf),
                                 .alignment = null,
                                 .child = try ana.map_model_type(.{ .well_known = .u8 }),
                             } }),
@@ -485,33 +579,35 @@ const Analyzer = struct {
                     const child = ana.get_resolved_type(child_idx);
                     if (child != .ptr or child.ptr.size != .slice)
                         break :blk .keep;
-                    @panic("TODO: Implement optional slices");
-                },
-
-                .ptr => |ptr| switch (ptr.size) {
-                    .one, .unknown => .keep,
-                    .slice => {
-                        try native_fields.append(.{
-                            .docs = fld.docs,
-                            .name = try ana.format("{s}_ptr", .{fld.name}),
-                            .type = try ana.map_model_type(.{ .ptr = .{
+                    const ptr = &child.ptr;
+                    try helper.emit_slice(
+                        fld.name,
+                        fld.docs,
+                        .{
+                            .optional = try ana.map_model_type(.{ .ptr = .{
                                 .size = .unknown,
                                 .is_const = ptr.is_const,
                                 .alignment = ptr.alignment,
                                 .child = ptr.child,
                             } }),
-                            .role = .{ .slice_ptr = fld.name },
-                            .default = null,
-                        });
-                        try native_fields.append(.{
-                            .docs = try ana.allocator.dupe([]const u8, &.{
-                                try ana.format("The amount of bytes referenced by {s}_ptr.", .{fld.name}),
-                            }),
-                            .name = try ana.format("{s}_len", .{fld.name}),
-                            .type = try ana.map_model_type(.{ .well_known = .usize }),
-                            .role = .{ .slice_len = fld.name },
-                            .default = null,
-                        });
+                        },
+                    );
+                    break :blk .discard;
+                },
+
+                .ptr => |ptr| switch (ptr.size) {
+                    .one, .unknown => .keep,
+                    .slice => {
+                        try helper.emit_slice(
+                            fld.name,
+                            fld.docs,
+                            .{ .ptr = .{
+                                .size = .unknown,
+                                .is_const = ptr.is_const,
+                                .alignment = ptr.alignment,
+                                .child = ptr.child,
+                            } },
+                        );
                         break :blk .discard;
                     },
                 },
