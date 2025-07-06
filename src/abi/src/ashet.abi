@@ -2025,10 +2025,10 @@ struct MessageBoxEvent {
     field request_id: RequestID;
 
     /// Content of the message box.
-    field message: []const u8;
+    field message: str;
 
     /// Caption of the message box.
-    field caption_ptr: []const u8;
+    field caption: str;
 
     /// Which buttons are presented to the user?
     field buttons: MessageBoxButtons;

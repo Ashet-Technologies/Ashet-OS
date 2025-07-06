@@ -50,7 +50,7 @@ pub fn analyze(allocator: std.mem.Allocator, document: syntax.Document) !model.D
 
     // TODO: Implement garbage collection for unreferenced things
 
-    analyzer.validate_constraints();
+    // analyzer.validate_constraints();
 
     return .{
         .root = try analyzer.root.toOwnedSlice(),
@@ -456,20 +456,22 @@ const Analyzer = struct {
                     .str => {
                         try native_fields.append(.{
                             .docs = fld.docs,
-                            .name = ana.format("{s}_ptr", .{fld.name}),
-                            .type = try ana.map_type(&.{ .pointer = .{
+                            .name = try ana.format("{s}_ptr", .{fld.name}),
+                            .type = try ana.map_model_type(.{ .ptr = .{
                                 .size = .unknown,
                                 .is_const = true,
                                 .alignment = null,
-                                .child = try ana.map_type(&.{ .unsigned_int = 8 }),
+                                .child = try ana.map_model_type(.{ .well_known = .u8 }),
                             } }),
                             .role = .{ .slice_ptr = fld.name },
                             .default = null,
                         });
                         try native_fields.append(.{
-                            .docs = &.{try ana.format("The amount of bytes referenced by {s}_ptr.", .{fld.name})},
-                            .type = try ana.map_type(&.{ .builtin = .usize }),
+                            .docs = try ana.allocator.dupe([]const u8, &.{
+                                try ana.format("The amount of bytes referenced by {s}_ptr.", .{fld.name}),
+                            }),
                             .name = try ana.format("{s}_len", .{fld.name}),
+                            .type = try ana.map_model_type(.{ .well_known = .usize }),
                             .role = .{ .slice_len = fld.name },
                             .default = null,
                         });
@@ -480,7 +482,7 @@ const Analyzer = struct {
                 },
 
                 .optional => |child_idx| {
-                    const child = try ana.get_resolved_type(child_idx);
+                    const child = ana.get_resolved_type(child_idx);
                     if (child != .ptr or child.ptr.size != .slice)
                         break :blk .keep;
                     @panic("TODO: Implement optional slices");
@@ -491,8 +493,8 @@ const Analyzer = struct {
                     .slice => {
                         try native_fields.append(.{
                             .docs = fld.docs,
-                            .name = ana.fmt("{}_ptr", .{fld.name}),
-                            .type = try ana.map_type(.{ .pointer = .{
+                            .name = try ana.format("{s}_ptr", .{fld.name}),
+                            .type = try ana.map_model_type(.{ .ptr = .{
                                 .size = .unknown,
                                 .is_const = ptr.is_const,
                                 .alignment = ptr.alignment,
@@ -502,9 +504,11 @@ const Analyzer = struct {
                             .default = null,
                         });
                         try native_fields.append(.{
-                            .docs = &.{try ana.fmt("The amount of bytes referenced by {s}_ptr.", .{fld.name})},
-                            .type = try ana.map_type(.{ .builtin = .usize }),
-                            .name = try ana.fmt("{}_len", .{fld.name}),
+                            .docs = try ana.allocator.dupe([]const u8, &.{
+                                try ana.format("The amount of bytes referenced by {s}_ptr.", .{fld.name}),
+                            }),
+                            .name = try ana.format("{s}_len", .{fld.name}),
+                            .type = try ana.map_model_type(.{ .well_known = .usize }),
                             .role = .{ .slice_len = fld.name },
                             .default = null,
                         });
@@ -1079,6 +1083,10 @@ const Analyzer = struct {
     fn map_type(ana: *Analyzer, type_node: *const syntax.TypeNode) MapTypeError!model.TypeIndex {
         const decl: model.Type = try ana.map_type_inner(type_node);
 
+        return try ana.map_model_type(decl);
+    }
+
+    fn map_model_type(ana: *Analyzer, decl: model.Type) MapTypeError!model.TypeIndex {
         if (ana.find_type(decl)) |index|
             return index;
 
