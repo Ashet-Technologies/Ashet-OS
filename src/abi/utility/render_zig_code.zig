@@ -3,6 +3,9 @@ const abi_parser = @import("abi-parser");
 
 const code_writer = @import("code_writer.zig");
 
+const fmt_id = std.zig.fmtId;
+const fmt_escapes = std.zig.fmtEscapes;
+
 const model = abi_parser.model;
 
 const Mode = enum { userland, kernel, definition, stubs };
@@ -61,18 +64,231 @@ pub fn render_definition(writer: *CodeWriter, allocator: std.mem.Allocator, sche
         .allocator = allocator,
         .writer = writer,
         .schema = &schema,
+        .scope_prefix = "",
     };
 
     try renderer.render_children(schema.root);
 }
 
-pub fn render_userland(writer: *CodeWriter, allocator: std.mem.Allocator, schema: model.Document) !void {
+pub fn render_kernel(writer: *CodeWriter, allocator: std.mem.Allocator, schema: model.Document) !void {
     try render_header(writer);
-    _ = allocator;
-    _ = schema;
+
+    var renderer: ZigRenderer = .{
+        .allocator = allocator,
+        .writer = writer,
+        .schema = &schema,
+        .scope_prefix = "abi.",
+    };
+
+    try writer.write(
+        \\const std = @import("std");
+        \\const abi = @import("abi");
+        \\
+        \\/// This function creates a type that, when references,
+        \\/// will export all ashet os systemcalls.
+        \\///
+        \\/// Syscalls will are expected to be in their respective
+        \\/// namespace as in the ABI file.
+        \\pub fn create_exports(comptime Impl: type, comptime Callbacks: type) type {
+        \\
+    );
+
+    {
+        writer.indent();
+        defer writer.dedent();
+
+        try writer.writeln("return struct {");
+        {
+            writer.indent();
+            defer writer.dedent();
+
+            for (schema.syscalls) |syscall| {
+                try writer.print("pub export fn ashet_syscalls_{_}(", .{fmt_fqn(syscall.full_qualified_name)});
+
+                for (syscall.native_inputs, 0..) |input, index| {
+                    if (index > 0)
+                        try writer.write(", ");
+
+                    try writer.print("{}: {}", .{
+                        fmt_id(input.name),
+                        renderer.fmt_type(input.type),
+                    });
+                }
+
+                try writer.write(") ");
+
+                const has_errors = (syscall.errors.len > 0);
+
+                if (syscall.native_outputs.len > 0) {
+                    std.debug.assert(syscall.native_outputs.len == 1);
+                    try writer.print("{}", .{renderer.fmt_type(syscall.native_outputs[0].type)});
+                } else {
+                    std.debug.assert(!has_errors);
+                    try writer.write("void");
+                }
+
+                try writer.writeln(" {");
+
+                {
+                    writer.indent();
+                    defer writer.dedent();
+
+                    try writer.println("Callbacks.before_syscall(.{_});", .{fmt_fqn(syscall.full_qualified_name)});
+                    try writer.println("defer Callbacks.after_syscall(.{_});", .{fmt_fqn(syscall.full_qualified_name)});
+
+                    if (has_errors) {
+                        // the return value must be an error union
+                        try writer.write("const __err_or_result: error{");
+
+                        for (syscall.errors, 0..) |err, i| {
+                            if (i > 0) {
+                                try writer.write(",");
+                            }
+                            try writer.print("{}", .{
+                                fmt_id(err.name),
+                            });
+                        }
+
+                        try writer.write("}!");
+                    } else {
+                        // the return value must be a regular value
+                        try writer.write("const __result: ");
+                    }
+
+                    if (syscall.logic_outputs.len > 0) {
+                        std.debug.assert(syscall.logic_outputs.len == 1);
+                        try writer.print("{}", .{
+                            renderer.fmt_type(syscall.logic_outputs[0].type),
+                        });
+                    } else {
+                        try writer.write("void");
+                    }
+
+                    try writer.println(" = Impl.{}(", .{
+                        fmt_fqn(syscall.full_qualified_name),
+                    });
+                    {
+                        writer.indent();
+                        defer writer.dedent();
+
+                        for (syscall.logic_inputs) |param| {
+                            switch (param.role) {
+                                .default => {
+                                    try writer.println("{},", .{fmt_id(param.name)});
+                                },
+                                .input_slice => |slice| {
+                                    if (schema.get_type(param.type).* == .optional) {
+                                        try writer.println("if({}) |__ptr| __ptr[0..{}] else null,", .{ fmt_id(slice.ptr), fmt_id(slice.len) });
+                                    } else {
+                                        try writer.println("{}[0..{}],", .{ fmt_id(slice.ptr), fmt_id(slice.len) });
+                                    }
+                                },
+                                else => unreachable,
+                            }
+                        }
+                    }
+
+                    try writer.writeln(");");
+
+                    if (has_errors) {
+                        try writer.writeln("if(__err_or_result) |__result| {");
+                        writer.indent();
+                    }
+
+                    // TODO: Reassemble slice type if necessary!
+
+                    if (has_errors) {
+                        if (syscall.logic_outputs.len > 0) {
+                            std.debug.assert(syscall.logic_outputs.len == 1);
+
+                            for (syscall.native_inputs) |param| {
+                                const param_type = schema.get_type(param.type).*;
+                                switch (param.role) {
+                                    .output => {
+                                        try writer.println("{}.* = __result;", .{
+                                            fmt_id(param.name),
+                                        });
+                                    },
+                                    .output_ptr => {
+                                        if (param_type == .optional) {
+                                            try writer.println("{}.* = if(__result) |__slice| __slice.ptr else null;", .{
+                                                fmt_id(param.name),
+                                            });
+                                        } else {
+                                            try writer.println("{}.* = __result.ptr;", .{
+                                                fmt_id(param.name),
+                                            });
+                                        }
+                                    },
+                                    .output_len => {
+                                        if (param_type == .optional) {
+                                            try writer.println("{}.* = if(__result) |__slice| __slice.len else 0;", .{
+                                                fmt_id(param.name),
+                                            });
+                                        } else {
+                                            try writer.println("{}.* = __result.len;", .{
+                                                fmt_id(param.name),
+                                            });
+                                        }
+                                    },
+                                    else => {},
+                                }
+                            }
+                        } else {
+                            try writer.writeln("_ = __result;");
+                        }
+                        try writer.writeln("return 0;");
+
+                        writer.dedent();
+                        try writer.writeln("} else |__error| {");
+                        writer.indent();
+
+                        try writer.writeln("return switch(__error) {");
+                        writer.indent();
+
+                        for (syscall.errors) |err| {
+                            try writer.println("error.{} => {},", .{
+                                fmt_id(err.name),
+                                err.value,
+                            });
+                        }
+
+                        writer.dedent();
+                        try writer.writeln("};");
+
+                        writer.dedent();
+                        try writer.writeln("}");
+                    } else {
+                        try writer.writeln("return __result;");
+                    }
+                }
+                try writer.writeln("}");
+                try writer.writeln("");
+            }
+        }
+
+        try writer.writeln("};");
+    }
+    try writer.writeln("}");
+    try writer.writeln("");
+
+    try writer.write(
+        \\/// Enumeration of all syscall numbers.
+        \\pub const Syscall_ID = enum(u32) {
+    );
+    {
+        writer.indent();
+        defer writer.dedent();
+
+        for (schema.syscalls) |syscall| {
+            try writer.println("{_} = {},", .{ fmt_fqn(syscall.full_qualified_name), @intFromEnum(syscall.uid) });
+        }
+    }
+    try writer.writeln("};");
+    try writer.writeln("");
 }
 
-pub fn render_kernel(writer: *CodeWriter, allocator: std.mem.Allocator, schema: model.Document) !void {
+pub fn render_userland(writer: *CodeWriter, allocator: std.mem.Allocator, schema: model.Document) !void {
     try render_header(writer);
     _ = allocator;
     _ = schema;
@@ -87,12 +303,10 @@ pub fn render_stubs(writer: *CodeWriter, allocator: std.mem.Allocator, schema: m
 const ZigRenderer = struct {
     const Error = CodeWriter.Error;
 
-    const fmt_id = std.zig.fmtId;
-    const fmt_escapes = std.zig.fmtEscapes;
-
     writer: *CodeWriter,
     allocator: std.mem.Allocator,
     schema: *const model.Document,
+    scope_prefix: []const u8,
 
     fn render_children(zr: *ZigRenderer, children: []const model.Declaration) Error!void {
         for (children, 0..) |child, index| {
@@ -450,27 +664,33 @@ const ZigRenderer = struct {
                 try writer.print("{}", .{zr.fmt_type(ptr.child)});
             },
 
-            .@"enum" => |index| try writer.print("{}", .{
+            .@"enum" => |index| try writer.print("{s}{}", .{
+                zr.scope_prefix,
                 fmt_fqn(zr.schema.get_enum(index).full_qualified_name),
             }),
 
-            .@"struct" => |index| try writer.print("{}", .{
+            .@"struct" => |index| try writer.print("{s}{}", .{
+                zr.scope_prefix,
                 fmt_fqn(zr.schema.get_struct(index).full_qualified_name),
             }),
 
-            .@"union" => |index| try writer.print("{}", .{
+            .@"union" => |index| try writer.print("{s}{}", .{
+                zr.scope_prefix,
                 fmt_fqn(zr.schema.get_union(index).full_qualified_name),
             }),
 
-            .bitstruct => |index| try writer.print("{}", .{
+            .bitstruct => |index| try writer.print("{s}{}", .{
+                zr.scope_prefix,
                 fmt_fqn(zr.schema.get_bitstruct(index).full_qualified_name),
             }),
 
-            .resource => |index| try writer.print("{}", .{
+            .resource => |index| try writer.print("{s}{}", .{
+                zr.scope_prefix,
                 fmt_fqn(zr.schema.get_resource(index).full_qualified_name),
             }),
 
-            .typedef => |typedef| try writer.print("{}", .{
+            .typedef => |typedef| try writer.print("{s}{}", .{
+                zr.scope_prefix,
                 fmt_fqn(typedef.full_qualified_name),
             }),
 

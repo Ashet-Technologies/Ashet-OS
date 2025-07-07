@@ -116,6 +116,8 @@ const Analyzer = struct {
 
     types: Collector(model.TypeIndex),
 
+    uid_base: u32 = 1,
+
     const Scope = struct {
         parent: ?*Scope,
         type: Type,
@@ -133,6 +135,14 @@ const Analyzer = struct {
             scope.link = link;
         }
     };
+
+    /// Returns a unique ID based on the `fqn` of the object.
+    fn get_uid(ana: *Analyzer, fqn: model.FQN) error{OutOfMemory}!model.UniqueID {
+        _ = fqn; // TODO: Implement derivation from FQN and a UID database.
+        const uid: model.UniqueID = @enumFromInt(ana.uid_base);
+        ana.uid_base += 1;
+        return uid;
+    }
 
     fn format(ana: *Analyzer, comptime fmt: []const u8, args: anytype) ![]const u8 {
         return try std.fmt.allocPrint(ana.allocator, fmt, args);
@@ -304,6 +314,7 @@ const Analyzer = struct {
             }
 
             const enum_id = try ana.enums.append(.{
+                .uid = try ana.get_uid(type_def.full_qualified_name),
                 .backing_type = convert_enum(model.StandardType, magic_type.size),
 
                 .docs = type_def.docs,
@@ -458,6 +469,9 @@ const Analyzer = struct {
                         .size = .one,
                         .child = item.type,
                     } });
+                    if (copy.role == .default) {
+                        copy.role = .output;
+                    }
                     ni.appendAssumeCapacity(copy);
                 }
                 no.clearAndFree();
@@ -465,18 +479,18 @@ const Analyzer = struct {
 
             const RenderMode = enum { input, output };
 
-            fn render(a: *Analyzer, list: *std.ArrayList(model.Parameter), params: []const model.Parameter, mode: RenderMode) !void {
-                for (params) |param| {
+            fn render(a: *Analyzer, list: *std.ArrayList(model.Parameter), params: []model.Parameter, mode: RenderMode) !void {
+                for (params) |*param| {
                     const resolved = a.get_resolved_type(param.type);
                     if (resolved.is_c_abi_compatible()) {
-                        try list.append(param);
+                        try list.append(param.*);
                         continue;
                     }
 
                     switch (resolved) {
                         .well_known => |id| switch (id) {
                             .bytestr, .bytebuf, .str => {
-                                try emit_slice(a, list, param.name, param.docs, .{
+                                try emit_slice(a, list, param, .{
                                     .ptr = .{
                                         .alignment = null,
                                         .is_const = (id != .bytebuf),
@@ -490,7 +504,7 @@ const Analyzer = struct {
 
                         .ptr => |ptr| {
                             std.debug.assert(ptr.size == .slice);
-                            try emit_slice(a, list, param.name, param.docs, .{
+                            try emit_slice(a, list, param, .{
                                 .ptr = .{
                                     .alignment = ptr.alignment,
                                     .is_const = ptr.is_const,
@@ -505,7 +519,7 @@ const Analyzer = struct {
                             switch (inner) {
                                 .well_known => |id| switch (id) {
                                     .bytestr, .bytebuf, .str => {
-                                        try emit_slice(a, list, param.name, param.docs, .{
+                                        try emit_slice(a, list, param, .{
                                             .optional = try a.map_model_type(.{
                                                 .ptr = .{
                                                     .alignment = null,
@@ -517,7 +531,7 @@ const Analyzer = struct {
                                         }, mode);
                                     },
                                     .anyptr, .anyfnptr => {
-                                        try list.append(param);
+                                        try list.append(param.*);
                                     },
                                     else => {
                                         std.log.err("unsupported optional builtin type {}", .{inner});
@@ -525,10 +539,10 @@ const Analyzer = struct {
                                 },
                                 .ptr => |ptr| switch (ptr.size) {
                                     .one, .unknown => {
-                                        try list.append(param);
+                                        try list.append(param.*);
                                     },
                                     .slice => {
-                                        try emit_slice(a, list, param.name, param.docs, .{
+                                        try emit_slice(a, list, param, .{
                                             .optional = try a.map_model_type(.{
                                                 .ptr = .{
                                                     .alignment = ptr.alignment,
@@ -539,6 +553,10 @@ const Analyzer = struct {
                                             }),
                                         }, mode);
                                     },
+                                },
+                                .resource => {
+                                    // TODO: How to handle optional system resources properly?
+                                    try list.append(param.*);
                                 },
                                 else => {
                                     std.log.err("unsupported optional type {}", .{inner});
@@ -558,38 +576,46 @@ const Analyzer = struct {
             fn emit_slice(
                 a: *Analyzer,
                 list: *std.ArrayList(model.Parameter),
-                basename: []const u8,
-                docs: model.DocString,
+                param: *model.Parameter,
                 ptr_type: model.Type,
                 mode: RenderMode,
             ) !void {
+                const ptr_name = try a.format("{s}_ptr", .{param.name});
+                const len_name = try a.format("{s}_len", .{param.name});
+
+                param.role = switch (mode) {
+                    .input => .{ .input_slice = .{ .ptr = ptr_name, .len = len_name } },
+                    .output => .{ .output_slice = .{ .ptr = ptr_name, .len = len_name } },
+                };
+
                 try list.append(.{
-                    .docs = docs,
-                    .name = try a.format("{s}_ptr", .{basename}),
+                    .docs = param.docs,
+                    .name = ptr_name,
                     .type = try a.map_model_type(ptr_type),
                     .role = switch (mode) {
-                        .input => .{ .input_ptr = basename },
-                        .output => .{ .output_ptr = basename },
+                        .input => .{ .input_ptr = param.name },
+                        .output => .{ .output_ptr = param.name },
                     },
                     .default = null,
                 });
                 try list.append(.{
                     .docs = try a.allocator.dupe([]const u8, &.{
-                        try a.format("The number of elements referenced by {s}_ptr.", .{basename}),
+                        try a.format("The number of elements referenced by {s}_ptr.", .{param.name}),
                     }),
-                    .name = try a.format("{s}_len", .{basename}),
+                    .name = len_name,
                     .type = try a.map_model_type(.{ .well_known = .usize }),
                     .role = switch (mode) {
-                        .input => .{ .input_len = basename },
-                        .output => .{ .output_len = basename },
+                        .input => .{ .input_len = param.name },
+                        .output => .{ .output_len = param.name },
                     },
                     .default = null,
                 });
             }
         };
 
-        try Helper.render(ana, &native_inputs, call.logic_inputs, .input);
-        try Helper.render(ana, &native_outputs, call.logic_outputs, .output);
+        // @constCast is fine here, as we do still own all the data
+        try Helper.render(ana, &native_inputs, @constCast(call.logic_inputs), .input);
+        try Helper.render(ana, &native_outputs, @constCast(call.logic_outputs), .output);
 
         switch (emit_mode) {
             .function_call => {
@@ -837,6 +863,7 @@ const Analyzer = struct {
         const type_id: ?model.TypeIndex = null;
 
         const index = try ana.constants.append(.{
+            .uid = try ana.get_uid(full_name),
             .docs = doc_comment,
             .full_qualified_name = full_name,
             .type = type_id,
@@ -993,6 +1020,7 @@ const Analyzer = struct {
         }
 
         const index = try ana.resources.append(.{
+            .uid = try ana.get_uid(info.full_name),
             .docs = info.docs,
             .full_qualified_name = info.full_name,
         });
@@ -1048,6 +1076,7 @@ const Analyzer = struct {
         }
 
         const index = try ana.enums.append(.{
+            .uid = try ana.get_uid(info.full_name),
             .docs = info.docs,
             .full_qualified_name = info.full_name,
             .backing_type = info.sub_type.?,
@@ -1120,6 +1149,7 @@ const Analyzer = struct {
 
                 .@"error" => |data| {
                     try errors.append(child.location, .{
+                        .value = @intCast(errors.fields.items.len + 1), // TODO: Implement fqn + error name based caching in database file
                         .docs = try ana.map_doc_comment(child.doc_comment),
                         .name = data,
                     });
@@ -1141,6 +1171,7 @@ const Analyzer = struct {
         }
 
         const output: model.GenericCall = .{
+            .uid = try ana.get_uid(info.full_name),
             .docs = info.docs,
             .full_qualified_name = info.full_name,
             .logic_inputs = try inputs.resolve(),
@@ -1208,6 +1239,7 @@ const Analyzer = struct {
         }
 
         const output: model.Struct = .{
+            .uid = try ana.get_uid(info.full_name),
             .docs = info.docs,
             .full_qualified_name = info.full_name,
             .logic_fields = try fields.resolve(),
@@ -1283,6 +1315,7 @@ const Analyzer = struct {
         }
 
         const index = try ana.bitstructs.append(.{
+            .uid = try ana.get_uid(info.full_name),
             .docs = info.docs,
             .full_qualified_name = info.full_name,
             .fields = try fields.resolve(),
@@ -1571,11 +1604,19 @@ const Analyzer = struct {
             std.debug.assert(sc.logic_outputs.len <= sc.native_outputs.len);
 
             for (sc.logic_inputs) |inp| {
-                std.debug.assert(inp.role == .default);
+                switch (inp.role) {
+                    .default => {},
+                    .input_slice => {},
+                    else => unreachable,
+                }
             }
 
             for (sc.logic_outputs) |outp| {
-                std.debug.assert(outp.role == .default);
+                switch (outp.role) {
+                    .default => {},
+                    .output_slice => {},
+                    else => unreachable,
+                }
             }
 
             for (sc.native_inputs) |inp| {

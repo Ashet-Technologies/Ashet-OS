@@ -33,6 +33,12 @@ pub fn local_name(fqn: FQN) []const u8 {
     return fqn[fqn.len - 1];
 }
 
+/// A unique ID that can be used to identify an object.
+pub const UniqueID = enum(u32) {
+    unassigned,
+    _,
+};
+
 pub const Document = struct {
     root: []const Declaration,
 
@@ -248,6 +254,7 @@ pub const TypeDefition = struct {
 };
 
 pub const BitStruct = struct {
+    uid: UniqueID,
     docs: DocString,
     full_qualified_name: FQN,
     backing_type: StandardType,
@@ -267,6 +274,7 @@ pub const BitStructField = struct {
 };
 
 pub const Struct = struct {
+    uid: UniqueID,
     docs: DocString,
     full_qualified_name: FQN,
     logic_fields: []const StructField,
@@ -289,6 +297,7 @@ pub const StructFieldRole = union(enum) {
 };
 
 pub const Enumeration = struct {
+    uid: UniqueID,
     docs: DocString,
     full_qualified_name: FQN,
     backing_type: StandardType,
@@ -309,6 +318,7 @@ pub const EnumItem = struct {
 };
 
 pub const GenericCall = struct {
+    uid: UniqueID,
     docs: DocString,
     full_qualified_name: FQN,
     no_return: bool,
@@ -332,17 +342,31 @@ pub const Parameter = struct {
 };
 
 pub const ParameterRole = union(enum) {
+    pub const SliceRole = struct {
+        ptr: []const u8,
+        len: []const u8,
+    };
+
     /// This parameter is used as-is. This is the only valid role for parameters in `GenericCall.logic_inputs` and `GenericCall.logic_outputs`.
     default,
 
     /// This parameter communicates the error code of the call
     @"error",
 
+    ///  The parameter is a logic input parameter that is split into a `_ptr` and `_len` parameter.
+    input_slice: SliceRole,
+
     /// This parameter is the "pointer" property of an input parameter slice
     input_ptr: []const u8,
 
     /// This parameter is the "length" property of an input parameter slice
     input_len: []const u8,
+
+    /// This parameter is passed via an "out pointer" pattern.
+    output,
+
+    ///  The parameter is a logic output parameter that is split into a `_ptr` and `_len` parameter.
+    output_slice: SliceRole,
 
     /// This parameter is the "pointer" property of an output parameter slice
     output_ptr: []const u8,
@@ -352,6 +376,7 @@ pub const ParameterRole = union(enum) {
 };
 
 pub const Resource = struct {
+    uid: UniqueID,
     docs: DocString,
     full_qualified_name: FQN,
 };
@@ -359,9 +384,11 @@ pub const Resource = struct {
 pub const Error = struct {
     docs: DocString,
     name: []const u8,
+    value: u32,
 };
 
 pub const Constant = struct {
+    uid: UniqueID,
     docs: DocString,
     full_qualified_name: FQN,
     type: ?TypeIndex,

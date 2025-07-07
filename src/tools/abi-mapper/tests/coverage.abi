@@ -1,5 +1,10 @@
 
+namespace overlapped
+{
+    struct ARC {
 
+    }
+}
 
 namespace struct_transforms
 {
@@ -180,6 +185,162 @@ namespace syscalls
     }
 
     syscall SliceOutputsWithError
+    {
+        out f0: str;
+        out f1: bytestr;
+        out f2: bytebuf;
+        out f3: ?str;
+        out f4: ?bytestr;
+        out f5: ?bytebuf;
+        out f6: []u8;
+        out f7: []const u8;
+        out f8: ?[]u8;
+        out f9: ?[]const u8;
+
+        //? TODO: out f7: *[]u8;
+        //? TODO: out f9: *[]const u8;
+        //? TODO: out f10: ?*[]u8;
+        //? TODO: out f11: ?*[]const u8;
+
+        error InvalidOperation;
+    }
+}
+
+namespace async_calls 
+{
+    async_call Parameterless
+    {
+
+    }
+
+    async_call BasicInput
+    {
+        in a: u32;
+        in b: u32;
+    }
+
+    async_call SingleOutput
+    {
+        in a: u32;
+    }
+
+    async_call DoubleOutput
+    {
+        in a: u32;
+        in b: u32;
+    }
+
+    async_call OnlyError
+    {
+        error InvalidOperation;
+    }
+
+    async_call BasicInputWithError
+    {
+        in a: u32;
+        in b: u32;
+        error InvalidOperation;
+    }
+
+    async_call SingleOutputWithError
+    {
+        in a: u32;
+        error InvalidOperation;
+    }
+
+    async_call DoubleOutputWithError
+    {
+        in a: u32;
+        in b: u32;
+        error InvalidOperation;
+    }
+
+    async_call BasicInputOutput
+    {
+        in a: u32;
+        in b: u32;
+        out c: u32;
+    }
+
+    async_call BasicInputOutputWithError
+    {
+        in a: u32;
+        in b: u32;
+        out c: u32;
+        error InvalidOperation;
+    }
+
+    async_call DoubleInputOutput
+    {
+        in a: u32;
+        in b: u32;
+        out c: u32;
+        out d: u32;
+    }
+
+    async_call DoubleInputOutputWithError
+    {
+        in a: u32;
+        in b: u32;
+        out c: u32;
+        out d: u32;
+        error InvalidOperation;
+    }
+
+    async_call SliceInputs
+    {
+        in f0: str;
+        in f1: bytestr;
+        in f2: bytebuf;
+        in f3: []u8;
+        in f4: []const u8;
+        in f5: ?[]u8;
+        in f6: ?[]const u8;
+
+        //? TODO: field f7: *[]u8;
+        //? TODO: field f9: *[]const u8;
+        //? TODO: field f10: ?*[]u8;
+        //? TODO: field f11: ?*[]const u8;
+    }
+
+    async_call SliceInputsWithError
+    {
+        in f0: str;
+        in f1: bytestr;
+        in f2: bytebuf;
+        in f3: []u8;
+        in f4: []const u8;
+        in f5: ?[]u8;
+        in f6: ?[]const u8;
+
+        //? TODO: field f7: *[]u8;
+        //? TODO: field f9: *[]const u8;
+        //? TODO: field f10: ?*[]u8;
+        //? TODO: field f11: ?*[]const u8;
+
+        error InvalidOperation;
+    }
+
+    async_call SliceOutputs
+    {
+        out f0: str;
+        out f1: bytestr;
+        out f2: bytebuf;
+        out f3: ?str;
+        out f4: ?bytestr;
+        out f5: ?bytebuf;
+        out f6: []u8;
+        out f7: []const u8;
+        out f8: ?[]u8;
+        out f9: ?[]const u8;
+
+        //? TODO: in f7: *[]u8;
+        //? TODO: in f9: *[]const u8;
+        //? TODO: in f10: ?*[]u8;
+        //? TODO: in f11: ?*[]const u8;
+    }
+
+    async_call SliceOutputsWithError
     {
         out f0: str;
         out f1: bytestr;
