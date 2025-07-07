@@ -165,10 +165,13 @@ namespace syscalls
         out f0: str;
         out f1: bytestr;
         out f2: bytebuf;
-        out f3: []u8;
-        out f4: []const u8;
-        out f5: ?[]u8;
-        out f6: ?[]const u8;
+        out f3: ?str;
+        out f4: ?bytestr;
+        out f5: ?bytebuf;
+        out f6: []u8;
+        out f7: []const u8;
+        out f8: ?[]u8;
+        out f9: ?[]const u8;
 
         //? TODO: in f7: *[]u8;
         //? TODO: in f9: *[]const u8;
@@ -181,10 +184,13 @@ namespace syscalls
         out f0: str;
         out f1: bytestr;
         out f2: bytebuf;
-        out f3: []u8;
-        out f4: []const u8;
-        out f5: ?[]u8;
-        out f6: ?[]const u8;
+        out f3: ?str;
+        out f4: ?bytestr;
+        out f5: ?bytebuf;
+        out f6: []u8;
+        out f7: []const u8;
+        out f8: ?[]u8;
+        out f9: ?[]const u8;
 
         //? TODO: out f7: *[]u8;
         //? TODO: out f9: *[]const u8;

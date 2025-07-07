@@ -420,11 +420,11 @@ const Analyzer = struct {
 
     fn compute_native_items(ana: *Analyzer) !void {
         for (ana.syscalls.items) |*syscall| {
-            try ana.compute_native_params(syscall);
+            try ana.compute_native_params(syscall, .function_call);
         }
 
         for (ana.async_calls.items) |*syscall| {
-            try ana.compute_native_params(syscall);
+            try ana.compute_native_params(syscall, .structure);
         }
 
         for (ana.structs.items) |*container| {
@@ -436,7 +436,8 @@ const Analyzer = struct {
         }
     }
 
-    fn compute_native_params(ana: *Analyzer, call: *model.GenericCall) !void {
+    const NativeParamMode = enum { function_call, structure };
+    fn compute_native_params(ana: *Analyzer, call: *model.GenericCall, emit_mode: NativeParamMode) !void {
         std.debug.assert(call.native_inputs.len == 0);
         std.debug.assert(call.native_outputs.len == 0);
 
@@ -462,44 +463,162 @@ const Analyzer = struct {
                 no.clearAndFree();
             }
 
-            fn render(a: *Analyzer, list: *std.ArrayList(model.Parameter), params: []const model.Parameter) !void {
+            const RenderMode = enum { input, output };
+
+            fn render(a: *Analyzer, list: *std.ArrayList(model.Parameter), params: []const model.Parameter, mode: RenderMode) !void {
                 for (params) |param| {
-                    if (a.get_resolved_type(param.type).is_c_abi_compatible()) {
+                    const resolved = a.get_resolved_type(param.type);
+                    if (resolved.is_c_abi_compatible()) {
                         try list.append(param);
-                    } else {
-                        // TODO!
-                        std.log.err("implement type resolution for {}", .{a.get_resolved_type(param.type)});
+                        continue;
+                    }
+
+                    switch (resolved) {
+                        .well_known => |id| switch (id) {
+                            .bytestr, .bytebuf, .str => {
+                                try emit_slice(a, list, param.name, param.docs, .{
+                                    .ptr = .{
+                                        .alignment = null,
+                                        .is_const = (id != .bytebuf),
+                                        .size = .unknown,
+                                        .child = try a.map_model_type(.{ .well_known = .u8 }),
+                                    },
+                                }, mode);
+                            },
+                            else => unreachable, // all others are C-abi compatible
+                        },
+
+                        .ptr => |ptr| {
+                            std.debug.assert(ptr.size == .slice);
+                            try emit_slice(a, list, param.name, param.docs, .{
+                                .ptr = .{
+                                    .alignment = ptr.alignment,
+                                    .is_const = ptr.is_const,
+                                    .size = .unknown,
+                                    .child = ptr.child,
+                                },
+                            }, mode);
+                        },
+
+                        .optional => |inner_id| {
+                            const inner = a.get_resolved_type(inner_id);
+                            switch (inner) {
+                                .well_known => |id| switch (id) {
+                                    .bytestr, .bytebuf, .str => {
+                                        try emit_slice(a, list, param.name, param.docs, .{
+                                            .optional = try a.map_model_type(.{
+                                                .ptr = .{
+                                                    .alignment = null,
+                                                    .is_const = (id != .bytebuf),
+                                                    .size = .unknown,
+                                                    .child = try a.map_model_type(.{ .well_known = .u8 }),
+                                                },
+                                            }),
+                                        }, mode);
+                                    },
+                                    .anyptr, .anyfnptr => {
+                                        try list.append(param);
+                                    },
+                                    else => {
+                                        std.log.err("unsupported optional builtin type {}", .{inner});
+                                    },
+                                },
+                                .ptr => |ptr| switch (ptr.size) {
+                                    .one, .unknown => {
+                                        try list.append(param);
+                                    },
+                                    .slice => {
+                                        try emit_slice(a, list, param.name, param.docs, .{
+                                            .optional = try a.map_model_type(.{
+                                                .ptr = .{
+                                                    .alignment = ptr.alignment,
+                                                    .is_const = ptr.is_const,
+                                                    .size = .unknown,
+                                                    .child = ptr.child,
+                                                },
+                                            }),
+                                        }, mode);
+                                    },
+                                },
+                                else => {
+                                    std.log.err("unsupported optional type {}", .{inner});
+                                },
+                            }
+                        },
+
+                        else => {
+
+                            // TODO!
+                            std.log.err("implement type resolution for {}", .{a.get_resolved_type(param.type)});
+                        },
                     }
                 }
             }
+
+            fn emit_slice(
+                a: *Analyzer,
+                list: *std.ArrayList(model.Parameter),
+                basename: []const u8,
+                docs: model.DocString,
+                ptr_type: model.Type,
+                mode: RenderMode,
+            ) !void {
+                try list.append(.{
+                    .docs = docs,
+                    .name = try a.format("{s}_ptr", .{basename}),
+                    .type = try a.map_model_type(ptr_type),
+                    .role = switch (mode) {
+                        .input => .{ .input_ptr = basename },
+                        .output => .{ .output_ptr = basename },
+                    },
+                    .default = null,
+                });
+                try list.append(.{
+                    .docs = try a.allocator.dupe([]const u8, &.{
+                        try a.format("The number of elements referenced by {s}_ptr.", .{basename}),
+                    }),
+                    .name = try a.format("{s}_len", .{basename}),
+                    .type = try a.map_model_type(.{ .well_known = .usize }),
+                    .role = switch (mode) {
+                        .input => .{ .input_len = basename },
+                        .output => .{ .output_len = basename },
+                    },
+                    .default = null,
+                });
+            }
         };
 
-        try Helper.render(ana, &native_inputs, call.logic_inputs);
-        try Helper.render(ana, &native_outputs, call.logic_outputs);
+        try Helper.render(ana, &native_inputs, call.logic_inputs, .input);
+        try Helper.render(ana, &native_outputs, call.logic_outputs, .output);
 
-        if (call.errors.len > 0) {
-            // function has errors, append all output parameters to the inputs,
-            // then replace with error return value
+        switch (emit_mode) {
+            .function_call => {
+                if (call.errors.len > 0) {
+                    // function has errors, append all output parameters to the inputs,
+                    // then replace with error return value
 
-            try Helper.remap_outputs(ana, &native_inputs, &native_outputs);
+                    try Helper.remap_outputs(ana, &native_inputs, &native_outputs);
 
-            try native_outputs.append(.{
-                .name = "error_code",
-                .default = null,
-                .docs = &.{},
-                .role = .@"error",
-                .type = try ana.map_model_type(.{ .well_known = .u16 }),
-            });
-        } else if (native_outputs.items.len == 1) {
-            // function has a (true) single return value, we can keep that for C
+                    try native_outputs.append(.{
+                        .name = "error_code",
+                        .default = null,
+                        .docs = &.{},
+                        .role = .@"error",
+                        .type = try ana.map_model_type(.{ .well_known = .u16 }),
+                    });
+                } else if (native_outputs.items.len == 1) {
+                    // function has a (true) single return value, we can keep that for C
 
-        } else {
-            // function must return `void` as we cannot return more than a single value through C ABI.
-            // also convert all outputs to input parameters with pointers:
-            try Helper.remap_outputs(ana, &native_inputs, &native_outputs);
+                } else {
+                    // function must return `void` as we cannot return more than a single value through C ABI.
+                    // also convert all outputs to input parameters with pointers:
+                    try Helper.remap_outputs(ana, &native_inputs, &native_outputs);
+                }
+
+                std.debug.assert(native_outputs.items.len <= 1);
+            },
+            .structure => {},
         }
-
-        std.debug.assert(native_outputs.items.len <= 1);
 
         call.native_inputs = try native_inputs.toOwnedSlice();
         call.native_outputs = try native_outputs.toOwnedSlice();

@@ -163,7 +163,6 @@ pub const Type = union(enum) {
             },
             .external => true,
             .typedef => true,
-            .optional => false,
             .array => true,
             .uint => |bits| switch (bits) {
                 8, 16, 32, 64 => true,
@@ -177,6 +176,7 @@ pub const Type = union(enum) {
                 .one, .unknown => true,
                 .slice => false,
             },
+            .optional => false, // TODO: ?*T and ?[*]T are C-abi-compatible
             .fnptr => true,
 
             // TODO: These types should not exist anymore when C-ABI check is performed

@@ -572,9 +572,8 @@ namespace network {
             error   SystemResources;
             error   Timeout;
         }
-
     }
-
+    
     namespace tcp {
         /// Creates a new TCP socket.
         syscall create_socket {
