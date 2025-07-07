@@ -68,6 +68,23 @@ pub fn render_definition(writer: *CodeWriter, allocator: std.mem.Allocator, sche
     };
 
     try renderer.render_children(schema.root);
+
+    try writer.writeln("");
+
+    try writer.writeln(
+        \\/// Enumeration of all syscall numbers.
+        \\pub const Syscall_ID = enum(u32) {
+    );
+    {
+        writer.indent();
+        defer writer.dedent();
+
+        for (schema.syscalls) |syscall| {
+            try writer.println("{_} = {},", .{ fmt_fqn(syscall.full_qualified_name), @intFromEnum(syscall.uid) });
+        }
+    }
+    try writer.writeln("};");
+    try writer.writeln("");
 }
 
 pub fn render_kernel(writer: *CodeWriter, allocator: std.mem.Allocator, schema: model.Document) !void {
@@ -83,6 +100,8 @@ pub fn render_kernel(writer: *CodeWriter, allocator: std.mem.Allocator, schema: 
     try writer.write(
         \\const std = @import("std");
         \\const abi = @import("abi");
+        \\
+        \\pub const Syscall_ID = abi.Syscall_ID;
         \\
         \\/// This function creates a type that, when references,
         \\/// will export all ashet os systemcalls.
@@ -103,7 +122,7 @@ pub fn render_kernel(writer: *CodeWriter, allocator: std.mem.Allocator, schema: 
             defer writer.dedent();
 
             for (schema.syscalls) |syscall| {
-                try writer.print("pub export fn ashet_syscalls_{_}(", .{fmt_fqn(syscall.full_qualified_name)});
+                try writer.print("pub export fn {s}{_}(", .{ renderer.symbol_prefix, fmt_fqn(syscall.full_qualified_name) });
 
                 for (syscall.native_inputs, 0..) |input, index| {
                     if (index > 0)
@@ -201,36 +220,37 @@ pub fn render_kernel(writer: *CodeWriter, allocator: std.mem.Allocator, schema: 
                         if (syscall.logic_outputs.len > 0) {
                             std.debug.assert(syscall.logic_outputs.len == 1);
 
-                            for (syscall.native_inputs) |param| {
+                            for (syscall.logic_outputs) |param| {
                                 const param_type = schema.get_type(param.type).*;
+
                                 switch (param.role) {
-                                    .output => {
+                                    .default => {
                                         try writer.println("{}.* = __result;", .{
                                             fmt_id(param.name),
                                         });
                                     },
-                                    .output_ptr => {
+                                    .output_slice => |slice| {
                                         if (param_type == .optional) {
                                             try writer.println("{}.* = if(__result) |__slice| __slice.ptr else null;", .{
-                                                fmt_id(param.name),
+                                                fmt_id(slice.ptr),
+                                            });
+                                            try writer.println("{}.* = if(__result) |__slice| __slice.len else null;", .{
+                                                fmt_id(slice.len),
                                             });
                                         } else {
                                             try writer.println("{}.* = __result.ptr;", .{
-                                                fmt_id(param.name),
+                                                fmt_id(slice.ptr),
                                             });
-                                        }
-                                    },
-                                    .output_len => {
-                                        if (param_type == .optional) {
-                                            try writer.println("{}.* = if(__result) |__slice| __slice.len else 0;", .{
-                                                fmt_id(param.name),
-                                            });
-                                        } else {
                                             try writer.println("{}.* = __result.len;", .{
-                                                fmt_id(param.name),
+                                                fmt_id(slice.len),
                                             });
                                         }
                                     },
+
+                                    .output => unreachable,
+                                    .output_ptr => unreachable,
+                                    .output_len => unreachable,
+
                                     else => {},
                                 }
                             }
@@ -271,27 +291,41 @@ pub fn render_kernel(writer: *CodeWriter, allocator: std.mem.Allocator, schema: 
     }
     try writer.writeln("}");
     try writer.writeln("");
-
-    try writer.write(
-        \\/// Enumeration of all syscall numbers.
-        \\pub const Syscall_ID = enum(u32) {
-    );
-    {
-        writer.indent();
-        defer writer.dedent();
-
-        for (schema.syscalls) |syscall| {
-            try writer.println("{_} = {},", .{ fmt_fqn(syscall.full_qualified_name), @intFromEnum(syscall.uid) });
-        }
-    }
-    try writer.writeln("};");
-    try writer.writeln("");
 }
 
 pub fn render_userland(writer: *CodeWriter, allocator: std.mem.Allocator, schema: model.Document) !void {
     try render_header(writer);
-    _ = allocator;
-    _ = schema;
+
+    var renderer: ZigRenderer = .{
+        .allocator = allocator,
+        .writer = writer,
+        .schema = &schema,
+        .scope_prefix = "abi.",
+    };
+
+    try writer.write(
+        \\const std = @import("std");
+        \\const abi = @import("abi");
+        \\
+        \\pub const Syscall_ID = abi.Syscall_ID;
+        \\
+        \\fn __handle_unexpected(syscall: abi.Syscall_ID, error_code: u16) error{Unexpected} {
+        \\    std.debug.assert(error_code != 0);
+        \\    std.log.scoped(.ashet_syscalls).err("syscall {s} returned unexpected error code {}", .{ @tagName(syscall), error_code });
+        \\    return error.Unexpected;
+        \\}
+        \\
+        \\
+    );
+
+    try renderer.render_userland(schema.root);
+
+    try writer.writeln("");
+    try writer.writeln("");
+
+    for (schema.syscalls) |syscall| {
+        try renderer.render_syscall(&syscall, &.{}, .full_name);
+    }
 }
 
 pub fn render_stubs(writer: *CodeWriter, allocator: std.mem.Allocator, schema: model.Document) !void {
@@ -307,6 +341,211 @@ const ZigRenderer = struct {
     allocator: std.mem.Allocator,
     schema: *const model.Document,
     scope_prefix: []const u8,
+    symbol_prefix: []const u8 = "ashet_syscalls_",
+
+    fn render_userland(zr: *ZigRenderer, children: []const model.Declaration) Error!void {
+        for (children, 0..) |child, index| {
+            const is_first = (index == 0);
+
+            if (!is_first) {
+                try zr.writer.writeln("");
+            }
+
+            try zr.render_docs(child.docs);
+
+            switch (child.data) {
+                .namespace => {
+                    try zr.writer.println("pub const {} = struct {{", .{fmt_id(model.local_name(child.full_qualified_name))});
+
+                    {
+                        zr.writer.indent();
+                        defer zr.writer.dedent();
+
+                        try zr.render_userland(child.children);
+                    }
+
+                    try zr.writer.writeln("};");
+                },
+                .@"struct", .@"union", .@"enum", .bitstruct, .resource, .async_call, .constant, .typedef => {
+                    try zr.writer.println("pub const {} = {s}{};", .{
+                        fmt_id(model.local_name(child.full_qualified_name)),
+                        zr.scope_prefix,
+                        fmt_fqn(child.full_qualified_name),
+                    });
+                },
+
+                .syscall => |idx| try zr.render_userland_call(zr.schema.get_syscall(idx), child.children),
+            }
+        }
+    }
+
+    fn render_userland_call(zr: *ZigRenderer, syscall: *const model.GenericCall, children: []const model.Declaration) !void {
+        std.debug.assert(children.len == 0);
+
+        const writer = zr.writer;
+
+        const has_errors = (syscall.errors.len > 0);
+
+        try writer.println("pub fn {}(", .{
+            fmt_id(model.local_name(syscall.full_qualified_name)),
+        });
+
+        {
+            writer.indent();
+            defer writer.dedent();
+
+            for (syscall.logic_inputs) |input| {
+                try zr.render_docs(input.docs);
+                try writer.print("{}: {},", .{
+                    fmt_id(input.name),
+                    zr.fmt_type(input.type),
+                });
+                if (input.default) |default| {
+                    try writer.print(" // = {}", .{zr.fmt_value(default)});
+                }
+                try writer.writeln("");
+            }
+        }
+        try writer.write(") ");
+
+        if (has_errors) {
+            try writer.write("error{Unexpected");
+            for (syscall.errors) |err| {
+                try writer.print(",{}", .{fmt_id(err.name)});
+            }
+            try writer.write("}!");
+        }
+
+        if (syscall.logic_outputs.len == 1) {
+            const retval = syscall.logic_outputs[0];
+
+            try writer.print("{}", .{zr.fmt_type(retval.type)});
+        } else {
+            std.debug.assert(syscall.logic_outputs.len == 0);
+            try writer.write("void");
+        }
+
+        try writer.writeln(" {");
+
+        writer.indent();
+        {
+            var output_mode: enum { none, value, slice } = .none;
+
+            for (syscall.native_inputs) |param| {
+                switch (param.role) {
+                    .default => {},
+                    .output, .output_ptr, .output_len => {
+                        std.debug.assert(output_mode == .none or output_mode == .slice);
+                        if (param.role == .output) {
+                            output_mode = .value;
+                        } else {
+                            output_mode = .slice;
+                        }
+                        const ptr_type = zr.schema.get_type(param.type).*;
+                        std.debug.assert(ptr_type == .ptr);
+                        std.debug.assert(ptr_type.ptr.size == .one);
+                        std.debug.assert(ptr_type.ptr.is_const == false);
+
+                        try writer.println("var {}: {} = undefined;", .{
+                            fmt_local(param.name),
+                            zr.fmt_type(ptr_type.ptr.child),
+                        });
+                    },
+
+                    .input_ptr, .input_len => {},
+
+                    else => std.log.err("unsupported role: {}", .{param.role}),
+                }
+            }
+
+            try writer.println("const __result = {s}{_}(", .{
+                zr.symbol_prefix,
+                fmt_fqn(syscall.full_qualified_name),
+            });
+            writer.indent();
+
+            for (syscall.native_inputs) |param| {
+                const param_type = zr.schema.get_type(param.type).*;
+                switch (param.role) {
+                    .default => try writer.print("{}", .{fmt_id(param.name)}),
+                    .output, .output_ptr, .output_len => try writer.print("&{}", .{fmt_local(param.name)}),
+
+                    .input_ptr => |src_param| {
+                        if (param_type == .optional) {
+                            try writer.print("if({}) |__slice| __slice.ptr else null", .{fmt_id(src_param)});
+                        } else {
+                            try writer.print("{}.ptr", .{fmt_id(src_param)});
+                        }
+                    },
+                    .input_len => |src_param| {
+                        if (param_type == .optional) {
+                            try writer.print("if({}) |__slice| __slice.len else null,", .{fmt_id(src_param)});
+                        } else {
+                            try writer.print("{}.len", .{fmt_id(src_param)});
+                        }
+                    },
+
+                    else => std.log.err("unsupported role: {}", .{param.role}),
+                }
+
+                try writer.writeln(",");
+            }
+            writer.dedent();
+            try writer.writeln(");");
+
+            if (has_errors) {
+                try writer.writeln("switch(__result) {");
+                writer.indent();
+                try writer.writeln("0 => {},");
+                for (syscall.errors) |err| {
+                    try writer.println("{} => return error.{},", .{
+                        err.value,
+                        fmt_id(err.name),
+                    });
+                }
+                try writer.println("else => __handle_unexpected(.{_}, __result),", .{
+                    fmt_fqn(syscall.full_qualified_name),
+                });
+                writer.dedent();
+                try writer.writeln("}");
+            }
+
+            if (syscall.logic_outputs.len > 0) {
+                std.debug.assert(syscall.logic_outputs.len == 1);
+
+                const output = syscall.logic_outputs[0];
+
+                switch (output.role) {
+                    .default => if (has_errors) {
+                        try writer.println("return {};", .{fmt_local(output.name)});
+                    } else {
+                        try writer.writeln("return __result;");
+                    },
+                    .output_slice => |slice| {
+                        const param_type = zr.schema.get_type(output.type).*;
+                        if (param_type == .optional) {
+                            try writer.println("return if({}) |__ptr| __ptr[0..{}] else null;", .{
+                                fmt_local(slice.ptr),
+                                fmt_local(slice.len),
+                            });
+                        } else {
+                            try writer.println("return {}[0..{}];", .{
+                                fmt_local(slice.ptr),
+                                fmt_local(slice.len),
+                            });
+                        }
+                    },
+                    else => std.log.err("output {} role: {}", .{ zr.fmt_type(output.type), output.role }),
+                }
+            } else if (!has_errors) {
+                try writer.writeln("_ = __result;");
+            }
+        }
+
+        writer.dedent();
+
+        try writer.writeln("}");
+    }
 
     fn render_children(zr: *ZigRenderer, children: []const model.Declaration) Error!void {
         for (children, 0..) |child, index| {
@@ -340,18 +579,24 @@ const ZigRenderer = struct {
                 .constant => |idx| try zr.render_constant(zr.schema.get_constant(idx), child.children),
                 .typedef => |idx| try zr.render_typedef(zr.schema.get_type(idx).typedef, child.children),
 
-                .syscall => |idx| try zr.render_syscall(zr.schema.get_syscall(idx), child.children),
+                .syscall => |idx| try zr.render_syscall(zr.schema.get_syscall(idx), child.children, .local_name),
                 .async_call => |idx| try zr.render_async_call(zr.schema.get_async_call(idx), child.children),
             }
         }
     }
 
-    fn render_syscall(zr: *ZigRenderer, syscall: *const model.GenericCall, children: []const model.Declaration) !void {
+    fn render_syscall(zr: *ZigRenderer, syscall: *const model.GenericCall, children: []const model.Declaration, symbol_name: enum { full_name, local_name }) !void {
         std.debug.assert(children.len == 0);
 
-        try zr.writer.println("pub extern fn {}(", .{
-            fmt_id(model.local_name(syscall.full_qualified_name)),
-        });
+        switch (symbol_name) {
+            .local_name => try zr.writer.println("pub extern fn {}(", .{
+                fmt_id(model.local_name(syscall.full_qualified_name)),
+            }),
+            .full_name => try zr.writer.println("extern fn {s}{_}(", .{
+                zr.symbol_prefix,
+                fmt_fqn(syscall.full_qualified_name),
+            }),
+        }
 
         {
             zr.writer.indent();
@@ -609,15 +854,25 @@ const ZigRenderer = struct {
         return .{ .data = .{ zr, type_id } };
     }
 
-    fn format_type(pack: struct { *ZigRenderer, model.TypeIndex }, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    fn fmt_type_val(zr: *ZigRenderer, type_val: model.Type) std.fmt.Formatter(format_type_val) {
+        return .{ .data = .{ zr, type_val } };
+    }
 
+    fn format_type(pack: struct { *ZigRenderer, model.TypeIndex }, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
         const zr: *ZigRenderer, const type_id: model.TypeIndex = pack;
 
         const type_val = zr.schema.get_type(type_id);
 
-        switch (type_val.*) {
+        try format_type_val(.{ zr, type_val.* }, fmt, options, writer);
+    }
+
+    fn format_type_val(pack: struct { *ZigRenderer, model.Type }, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+
+        const zr: *ZigRenderer, const type_val: model.Type = pack;
+
+        switch (type_val) {
             .alias => |child| try writer.print("{}", .{zr.fmt_type(child)}),
 
             .well_known => |id| try writer.writeAll(switch (id) {
@@ -697,7 +952,7 @@ const ZigRenderer = struct {
             .uint => |size| try writer.print("u{}", .{size}),
             .int => |size| try writer.print("i{}", .{size}),
 
-            .fnptr, .external => try writer.print("<<{s}>>", .{@tagName(type_val.*)}),
+            .fnptr, .external => try writer.print("<<{s}>>", .{@tagName(type_val)}),
 
             .unknown_named_type, .unset_magic_type => @panic("invalid model"),
         }
@@ -740,4 +995,18 @@ fn format_fqn(fqn: []const []const u8, fmt: []const u8, options: std.fmt.FormatO
         }
         try writer.writeAll(name);
     }
+}
+
+fn fmt_local(id: []const u8) std.fmt.Formatter(format_local) {
+    return .{ .data = id };
+}
+
+fn format_local(id: []const u8, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+    var buf: [1024]u8 = undefined;
+
+    const local_id = try std.fmt.bufPrint(&buf, "_L_{s}", .{id});
+    _ = fmt;
+    _ = options;
+
+    try writer.print("{}", .{fmt_id(local_id)});
 }

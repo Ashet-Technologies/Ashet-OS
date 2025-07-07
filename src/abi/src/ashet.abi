@@ -1411,7 +1411,7 @@ namespace gui {
         syscall get_value {
             in    desktop: Desktop;
             in    mime: str;
-            in    value: *?[]const u8;
+            out   value: ?[]const u8;
             error OutOfMemory;
             error ConversionFailed;
             error InvalidHandle;

@@ -556,7 +556,9 @@ const Analyzer = struct {
                                 },
                                 .resource => {
                                     // TODO: How to handle optional system resources properly?
-                                    try list.append(param.*);
+                                    var copy = param.*;
+                                    copy.type = inner_id;
+                                    try list.append(copy);
                                 },
                                 else => {
                                     std.log.err("unsupported optional type {}", .{inner});
