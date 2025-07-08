@@ -31,6 +31,16 @@ inline fn print_strace(name: []const u8) void {
     strace.info("{s} from {}", .{ name, ashet.fmtCodeLocation(current) });
 }
 
+fn copy_slice(comptime T: type, maybe_buf: ?[]T, source: []const T) usize {
+    if (maybe_buf) |buf| {
+        const len = @min(buf.len, source.len);
+        @memcpy(buf[0..len], source[0..len]);
+        return len;
+    } else {
+        return source.len;
+    }
+}
+
 const callbacks = struct {
     pub inline fn before_syscall(sc: SystemCall) void {
         ashet.stackCheck();
@@ -95,11 +105,11 @@ pub const syscalls = struct {
             } else get_current_process();
         }
 
-        pub fn get_file_name(maybe_proc: ?abi.Process) [*:0]const u8 {
+        pub fn get_file_name(maybe_proc: ?abi.Process) []const u8 {
             const kproc = _resolve_maybe_proc(maybe_proc) catch |err| {
                 return @as([*:0]const u8, @errorName(err));
             };
-            return kproc.name.ptr;
+            return kproc.name;
         }
 
         pub fn get_base_address(maybe_proc: ?abi.Process) usize {
@@ -140,7 +150,7 @@ pub const syscalls = struct {
             }
         }
 
-        pub fn terminate(exit_code: abi.ExitCode) noreturn {
+        pub fn terminate(exit_code: abi.process.ExitCode) noreturn {
             const proc = get_current_process();
 
             proc.stay_resident = false;
@@ -168,23 +178,23 @@ pub const syscalls = struct {
                 ashet.scheduler.yield();
             }
 
-            pub fn exit(exit_code: abi.ExitCode) noreturn {
+            pub fn exit(exit_code: abi.process.ExitCode) noreturn {
                 ashet.scheduler.exit(@intFromEnum(exit_code));
             }
 
-            pub fn join(thr: abi.Thread) abi.ExitCode {
+            pub fn join(thr: abi.Thread) abi.process.ExitCode {
                 _ = thr;
                 @panic("not implemented yet");
             }
 
-            pub fn spawn(function: abi.ThreadFunction, arg: ?*anyopaque, stack_size: usize) ?abi.Thread {
+            pub fn spawn(function: abi.process.thread.ThreadFunction, arg: ?*anyopaque, stack_size: usize) error{SystemResources}!abi.Thread {
                 _ = function;
                 _ = arg;
                 _ = stack_size;
                 @panic("not implemented yet");
             }
 
-            pub fn kill(thr: abi.Thread, exit_code: abi.ExitCode) void {
+            pub fn kill(thr: abi.Thread, exit_code: abi.process.ExitCode) void {
                 _ = thr;
                 _ = exit_code;
                 @panic("not implemented yet");
@@ -208,13 +218,13 @@ pub const syscalls = struct {
         };
 
         pub const memory = struct {
-            pub fn allocate(size: usize, ptr_align: u8) ?[*]u8 {
+            pub fn allocate(size: usize, ptr_align: u8) error{SystemResource}![*]u8 {
                 const proc = get_current_process();
                 return proc.dynamic_allocator().rawAlloc(
                     size,
                     @enumFromInt(ptr_align),
                     @returnAddress(),
-                );
+                ) orelse return error.SystemResource;
             }
             pub fn release(mem: []u8, ptr_align: u8) void {
                 const proc = get_current_process();
@@ -311,19 +321,19 @@ pub const syscalls = struct {
     };
 
     pub const overlapped = struct {
-        pub fn schedule(async_call: *abi.ARC) error{ SystemResources, AlreadyScheduled }!void {
+        pub fn schedule(async_call: *abi.overlapped.ARC) error{ SystemResources, AlreadyScheduled }!void {
             return try ashet.overlapped.schedule(async_call);
         }
 
-        pub fn await_completion(completed: []*abi.ARC, options: abi.Await_Options) error{Unscheduled}!usize {
+        pub fn await_completion(completed: []*abi.overlapped.ARC, options: abi.Await_Options) error{Unscheduled}!usize {
             return try ashet.overlapped.await_completion(completed, options);
         }
 
-        pub fn await_completion_of(completed: []?*abi.ARC) error{ Unscheduled, InvalidOperation }!usize {
+        pub fn await_completion_of(completed: []?*abi.overlapped.ARC) error{ Unscheduled, InvalidOperation }!usize {
             return try ashet.overlapped.await_completion_of(completed);
         }
 
-        pub fn cancel(arc: *abi.ARC) error{ Unscheduled, Completed }!void {
+        pub fn cancel(arc: *abi.overlapped.ARC) error{ Unscheduled, Completed }!void {
             return try ashet.overlapped.cancel(arc);
         }
     };
@@ -493,9 +503,9 @@ pub const syscalls = struct {
             return handle.unsafe_cast(.window);
         }
 
-        pub fn get_window_title(window: abi.Window, out_title: *[]const u8) error{InvalidHandle}!void {
+        pub fn get_window_title(window: abi.Window, title_buf: ?[]u8) error{InvalidHandle}!usize {
             _, const win = try resolve_typed_resource(ashet.gui.Window, window.as_resource());
-            out_title.* = win.title;
+            return copy_slice(u8, title_buf, win.title);
         }
 
         pub fn get_window_size(window: abi.Window) error{InvalidHandle}!abi.Size {
@@ -631,10 +641,10 @@ pub const syscalls = struct {
         }
 
         /// Returns the name of the provided desktop.
-        pub fn get_desktop_name(desktop_handle: abi.Desktop) error{InvalidHandle}![*:0]const u8 {
+        pub fn get_desktop_name(desktop_handle: abi.Desktop, name_buf: ?[]u8) error{InvalidHandle}!usize {
             _, const desktop = try resolve_typed_resource(ashet.gui.Desktop, desktop_handle.as_resource());
 
-            return desktop.name.ptr;
+            return copy_slice(u8, name_buf, desktop.name);
         }
 
         /// Enumerates all available desktops.
@@ -740,21 +750,23 @@ pub const syscalls = struct {
             }
 
             /// Returns the current type present in the clipboard, if any.
-            pub fn get_type(desktop: abi.Desktop) ?[*:0]const u8 {
+            pub fn get_type(desktop: abi.Desktop, type_buf: ?[]u8) error{InvalidHandle}!usize {
                 _ = desktop;
+                _ = type_buf;
                 @panic("not implemented yet");
             }
 
             /// Returns the current clipboard value as the provided mime type.
             /// The os provides a conversion *if possible*, otherwise returns an error.
             /// The returned memory for `value` is owned by the process and must be freed with `ashet.process.memory.release`.
-            pub fn get_value(desktop: abi.Desktop, mime: []const u8, value: *?[]const u8) error{
+            pub fn get_value(desktop: abi.Desktop, mime: []const u8) error{
                 ConversionFailed,
-                OutOfMemory,
-            } {
+                SystemResources,
+                InvalidHandle,
+                ClipboardEmpty,
+            }![]const u8 {
                 _ = desktop;
                 _ = mime;
-                _ = value;
                 @panic("not implemented yet");
             }
         };
@@ -914,7 +926,7 @@ pub const syscalls = struct {
     pub const service = struct {
         /// Registers a new service `uuid` in the system.
         /// Takes an array of function pointers that will be provided for IPC and a service name to be advertised.
-        pub fn create(uuid: *const abi.UUID, funcs: []const abi.AbstractFunction, name: []const u8) error{
+        pub fn create(uuid: *const abi.UUID, funcs: []const *const anyopaque, name: []const u8) error{
             AlreadyRegistered,
             SystemResources,
         }!abi.Service {
@@ -932,8 +944,9 @@ pub const syscalls = struct {
         }
 
         /// Returns the name of the service.
-        pub fn get_name(svc: abi.Service) [*:0]const u8 {
+        pub fn get_name(svc: abi.Service, name_buf: ?[]u8) error{InvalidHandle}!usize {
             _ = svc;
+            _ = name_buf;
             @panic("not implemented yet!");
         }
 
@@ -944,7 +957,7 @@ pub const syscalls = struct {
         }
 
         /// Returns the functions registerd by the service.
-        pub fn get_functions(svc: abi.Service, funcs: ?[]abi.AbstractFunction) usize {
+        pub fn get_functions(svc: abi.Service, funcs: ?[]*const anyopaque) usize {
             _ = svc;
             _ = funcs;
             @panic("not implemented yet!");

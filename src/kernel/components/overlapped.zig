@@ -5,8 +5,8 @@ const ashet = @import("../main.zig");
 const astd = @import("ashet-std");
 const logger = std.log.scoped(.overlapped);
 
-pub const ARC = ashet.abi.ARC;
-const WaitIO = ashet.abi.WaitIO;
+pub const ARC = ashet.abi.overlapped.ARC;
+const WaitIO = ashet.abi.overlapped.WaitIO;
 
 const work_queue_count = 1;
 var next_work_queue: usize = 0;

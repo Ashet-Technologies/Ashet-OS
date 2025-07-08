@@ -77,11 +77,11 @@ pub fn build(b: *std.Build) void {
     const abi_mod = b.addModule("ashet-abi", .{ .root_source_file = abi_code });
     // abi_mod.addAnonymousImport("async_running_call", .{ .root_source_file = b.path("src/async_running_call.zig") });
     // abi_mod.addAnonymousImport("error_set", .{ .root_source_file = b.path("src/error_set.zig") });
-    // abi_mod.addAnonymousImport("platforms", .{ .root_source_file = b.path("src/platforms.zig") });
+    abi_mod.addAnonymousImport("platforms", .{ .root_source_file = b.path("src/platforms.zig") });
 
     _ = b.addModule("ashet-abi-provider", .{
         .root_source_file = provider_code,
-        .imports = &.{.{ .name = "api", .module = abi_mod }},
+        .imports = &.{.{ .name = "abi", .module = abi_mod }},
     });
 
     _ = b.addModule("ashet-abi-consumer", .{
@@ -101,13 +101,13 @@ pub fn build(b: *std.Build) void {
     check_consumer_code.addFileArg(consumer_code);
 
     const install_abi_code = b.addInstallFileWithDir(abi_code, .{ .custom = "binding/zig" }, "abi.zig");
-    // install_abi_code.step.dependOn(&check_abi_code.step);
+    install_abi_code.step.dependOn(&check_abi_code.step);
 
     const install_provider_code = b.addInstallFileWithDir(provider_code, .{ .custom = "binding/zig" }, "provider.zig");
-    // install_provider_code.step.dependOn(&check_provider_code.step);
+    install_provider_code.step.dependOn(&check_provider_code.step);
 
     const install_consumer_code = b.addInstallFileWithDir(consumer_code, .{ .custom = "binding/zig" }, "consumer.zig");
-    // install_consumer_code.step.dependOn(&check_consumer_code.step);
+    install_consumer_code.step.dependOn(&check_consumer_code.step);
 
     b.getInstallStep().dependOn(&install_abi_code.step);
     b.getInstallStep().dependOn(&install_provider_code.step);

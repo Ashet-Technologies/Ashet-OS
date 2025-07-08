@@ -1,363 +1,370 @@
 
-namespace overlapped
-{
-    struct ARC {
+const max_file_name_len = 120;
 
-    }
+struct FileInfo {
+    field name: [max_file_name_len]u8;
 }
 
-namespace struct_transforms
-{
-    struct Empty { }
 
-    struct BasicBuiltinTypes
-    {
-        field f0: anyptr;
-        field f1: anyfnptr;
+//? namespace overlapped
+//? {
+//?     struct ARC {
 
-        field f2: u8;
-        field f3: u16;
-        field f4: u32;
-        field f5: u64;
-        field f6: usize;
+//?     }
+//? }
 
-        field f7: i8;
-        field f8: i16;
-        field f9: i32;
-        field f10: i64;
-        field f11: isize;
+//? namespace struct_transforms
+//? {
+//?     struct Empty { }
 
-        field f12: f32;
-        field f13: f64;
+//?     struct BasicBuiltinTypes
+//?     {
+//?         field f0: anyptr;
+//?         field f1: anyfnptr;
 
-        field f14: bool;
-    }
+//?         field f2: u8;
+//?         field f3: u16;
+//?         field f4: u32;
+//?         field f5: u64;
+//?         field f6: usize;
 
-    struct SliceBuiltinTypes
-    {
-        field f0: str;
-        field f1: bytestr;
-        field f2: bytebuf;
-        field f3: []u8;
-        field f4: []const u8;
-        field f5: ?[]u8;
-        field f6: ?[]const u8;
+//?         field f7: i8;
+//?         field f8: i16;
+//?         field f9: i32;
+//?         field f10: i64;
+//?         field f11: isize;
 
-        //? TODO: field f7: *[]u8;
-        //? TODO: field f9: *[]const u8;
-        //? TODO: field f10: ?*[]u8;
-        //? TODO: field f11: ?*[]const u8;
-    }
-}
+//?         field f12: f32;
+//?         field f13: f64;
 
-namespace syscalls 
-{
-    syscall Parameterless
-    {
+//?         field f14: bool;
+//?     }
 
-    }
+//?     struct SliceBuiltinTypes
+//?     {
+//?         field f0: str;
+//?         field f1: bytestr;
+//?         field f2: bytebuf;
+//?         field f3: []u8;
+//?         field f4: []const u8;
+//?         field f5: ?[]u8;
+//?         field f6: ?[]const u8;
 
-    syscall BasicInput
-    {
-        in a: u32;
-        in b: u32;
-    }
+//?         //? TODO: field f7: *[]u8;
+//?         //? TODO: field f9: *[]const u8;
+//?         //? TODO: field f10: ?*[]u8;
+//?         //? TODO: field f11: ?*[]const u8;
+//?     }
+//? }
 
-    syscall SingleOutput
-    {
-        in a: u32;
-    }
+//? namespace syscalls 
+//? {
+//?     syscall Parameterless
+//?     {
 
-    syscall DoubleOutput
-    {
-        in a: u32;
-        in b: u32;
-    }
+//?     }
 
-    syscall OnlyError
-    {
-        error InvalidOperation;
-    }
+//?     syscall BasicInput
+//?     {
+//?         in a: u32;
+//?         in b: u32;
+//?     }
 
-    syscall BasicInputWithError
-    {
-        in a: u32;
-        in b: u32;
-        error InvalidOperation;
-    }
+//?     syscall SingleOutput
+//?     {
+//?         in a: u32;
+//?     }
 
-    syscall SingleOutputWithError
-    {
-        in a: u32;
-        error InvalidOperation;
-    }
+//?     syscall DoubleOutput
+//?     {
+//?         in a: u32;
+//?         in b: u32;
+//?     }
 
-    syscall DoubleOutputWithError
-    {
-        in a: u32;
-        in b: u32;
-        error InvalidOperation;
-    }
+//?     syscall OnlyError
+//?     {
+//?         error InvalidOperation;
+//?     }
 
-    syscall BasicInputOutput
-    {
-        in a: u32;
-        in b: u32;
-        out c: u32;
-    }
+//?     syscall BasicInputWithError
+//?     {
+//?         in a: u32;
+//?         in b: u32;
+//?         error InvalidOperation;
+//?     }
 
-    syscall BasicInputOutputWithError
-    {
-        in a: u32;
-        in b: u32;
-        out c: u32;
-        error InvalidOperation;
-    }
+//?     syscall SingleOutputWithError
+//?     {
+//?         in a: u32;
+//?         error InvalidOperation;
+//?     }
 
-    syscall DoubleInputOutput
-    {
-        in a: u32;
-        in b: u32;
-        out c: u32;
-        out d: u32;
-    }
+//?     syscall DoubleOutputWithError
+//?     {
+//?         in a: u32;
+//?         in b: u32;
+//?         error InvalidOperation;
+//?     }
 
-    syscall DoubleInputOutputWithError
-    {
-        in a: u32;
-        in b: u32;
-        out c: u32;
-        out d: u32;
-        error InvalidOperation;
-    }
+//?     syscall BasicInputOutput
+//?     {
+//?         in a: u32;
+//?         in b: u32;
+//?         out c: u32;
+//?     }
 
-    syscall SliceInputs
-    {
-        in f0: str;
-        in f1: bytestr;
-        in f2: bytebuf;
-        in f3: []u8;
-        in f4: []const u8;
-        in f5: ?[]u8;
-        in f6: ?[]const u8;
+//?     syscall BasicInputOutputWithError
+//?     {
+//?         in a: u32;
+//?         in b: u32;
+//?         out c: u32;
+//?         error InvalidOperation;
+//?     }
 
-        //? TODO: field f7: *[]u8;
-        //? TODO: field f9: *[]const u8;
-        //? TODO: field f10: ?*[]u8;
-        //? TODO: field f11: ?*[]const u8;
-    }
+//?     syscall DoubleInputOutput
+//?     {
+//?         in a: u32;
+//?         in b: u32;
+//?         out c: u32;
+//?         out d: u32;
+//?     }
 
-    syscall SliceInputsWithError
-    {
-        in f0: str;
-        in f1: bytestr;
-        in f2: bytebuf;
-        in f3: []u8;
-        in f4: []const u8;
-        in f5: ?[]u8;
-        in f6: ?[]const u8;
+//?     syscall DoubleInputOutputWithError
+//?     {
+//?         in a: u32;
+//?         in b: u32;
+//?         out c: u32;
+//?         out d: u32;
+//?         error InvalidOperation;
+//?     }
 
-        //? TODO: field f7: *[]u8;
-        //? TODO: field f9: *[]const u8;
-        //? TODO: field f10: ?*[]u8;
-        //? TODO: field f11: ?*[]const u8;
+//?     syscall SliceInputs
+//?     {
+//?         in f0: str;
+//?         in f1: bytestr;
+//?         in f2: bytebuf;
+//?         in f3: []u8;
+//?         in f4: []const u8;
+//?         in f5: ?[]u8;
+//?         in f6: ?[]const u8;
 
-        error InvalidOperation;
-    }
+//?         //? TODO: field f7: *[]u8;
+//?         //? TODO: field f9: *[]const u8;
+//?         //? TODO: field f10: ?*[]u8;
+//?         //? TODO: field f11: ?*[]const u8;
+//?     }
 
-    syscall SliceOutputs
-    {
-        out f0: str;
-        out f1: bytestr;
-        out f2: bytebuf;
-        out f3: ?str;
-        out f4: ?bytestr;
-        out f5: ?bytebuf;
-        out f6: []u8;
-        out f7: []const u8;
-        out f8: ?[]u8;
-        out f9: ?[]const u8;
+//?     syscall SliceInputsWithError
+//?     {
+//?         in f0: str;
+//?         in f1: bytestr;
+//?         in f2: bytebuf;
+//?         in f3: []u8;
+//?         in f4: []const u8;
+//?         in f5: ?[]u8;
+//?         in f6: ?[]const u8;
 
-        //? TODO: in f7: *[]u8;
-        //? TODO: in f9: *[]const u8;
-        //? TODO: in f10: ?*[]u8;
-        //? TODO: in f11: ?*[]const u8;
-    }
+//?         //? TODO: field f7: *[]u8;
+//?         //? TODO: field f9: *[]const u8;
+//?         //? TODO: field f10: ?*[]u8;
+//?         //? TODO: field f11: ?*[]const u8;
 
-    syscall SliceOutputsWithError
-    {
-        out f0: str;
-        out f1: bytestr;
-        out f2: bytebuf;
-        out f3: ?str;
-        out f4: ?bytestr;
-        out f5: ?bytebuf;
-        out f6: []u8;
-        out f7: []const u8;
-        out f8: ?[]u8;
-        out f9: ?[]const u8;
+//?         error InvalidOperation;
+//?     }
 
-        //? TODO: out f7: *[]u8;
-        //? TODO: out f9: *[]const u8;
-        //? TODO: out f10: ?*[]u8;
-        //? TODO: out f11: ?*[]const u8;
+//?     syscall SliceOutputs
+//?     {
+//?         out f0: str;
+//?         out f1: bytestr;
+//?         out f2: bytebuf;
+//?         out f3: ?str;
+//?         out f4: ?bytestr;
+//?         out f5: ?bytebuf;
+//?         out f6: []u8;
+//?         out f7: []const u8;
+//?         out f8: ?[]u8;
+//?         out f9: ?[]const u8;
 
-        error InvalidOperation;
-    }
-}
+//?         //? TODO: in f7: *[]u8;
+//?         //? TODO: in f9: *[]const u8;
+//?         //? TODO: in f10: ?*[]u8;
+//?         //? TODO: in f11: ?*[]const u8;
+//?     }
 
-namespace async_calls 
-{
-    async_call Parameterless
-    {
+//?     syscall SliceOutputsWithError
+//?     {
+//?         out f0: str;
+//?         out f1: bytestr;
+//?         out f2: bytebuf;
+//?         out f3: ?str;
+//?         out f4: ?bytestr;
+//?         out f5: ?bytebuf;
+//?         out f6: []u8;
+//?         out f7: []const u8;
+//?         out f8: ?[]u8;
+//?         out f9: ?[]const u8;
 
-    }
+//?         //? TODO: out f7: *[]u8;
+//?         //? TODO: out f9: *[]const u8;
+//?         //? TODO: out f10: ?*[]u8;
+//?         //? TODO: out f11: ?*[]const u8;
 
-    async_call BasicInput
-    {
-        in a: u32;
-        in b: u32;
-    }
+//?         error InvalidOperation;
+//?     }
+//? }
 
-    async_call SingleOutput
-    {
-        in a: u32;
-    }
+//? namespace async_calls 
+//? {
+//?     async_call Parameterless
+//?     {
 
-    async_call DoubleOutput
-    {
-        in a: u32;
-        in b: u32;
-    }
+//?     }
 
-    async_call OnlyError
-    {
-        error InvalidOperation;
-    }
+//?     async_call BasicInput
+//?     {
+//?         in a: u32;
+//?         in b: u32;
+//?     }
 
-    async_call BasicInputWithError
-    {
-        in a: u32;
-        in b: u32;
-        error InvalidOperation;
-    }
+//?     async_call SingleOutput
+//?     {
+//?         in a: u32;
+//?     }
 
-    async_call SingleOutputWithError
-    {
-        in a: u32;
-        error InvalidOperation;
-    }
+//?     async_call DoubleOutput
+//?     {
+//?         in a: u32;
+//?         in b: u32;
+//?     }
 
-    async_call DoubleOutputWithError
-    {
-        in a: u32;
-        in b: u32;
-        error InvalidOperation;
-    }
+//?     async_call OnlyError
+//?     {
+//?         error InvalidOperation;
+//?     }
 
-    async_call BasicInputOutput
-    {
-        in a: u32;
-        in b: u32;
-        out c: u32;
-    }
+//?     async_call BasicInputWithError
+//?     {
+//?         in a: u32;
+//?         in b: u32;
+//?         error InvalidOperation;
+//?     }
 
-    async_call BasicInputOutputWithError
-    {
-        in a: u32;
-        in b: u32;
-        out c: u32;
-        error InvalidOperation;
-    }
+//?     async_call SingleOutputWithError
+//?     {
+//?         in a: u32;
+//?         error InvalidOperation;
+//?     }
 
-    async_call DoubleInputOutput
-    {
-        in a: u32;
-        in b: u32;
-        out c: u32;
-        out d: u32;
-    }
+//?     async_call DoubleOutputWithError
+//?     {
+//?         in a: u32;
+//?         in b: u32;
+//?         error InvalidOperation;
+//?     }
 
-    async_call DoubleInputOutputWithError
-    {
-        in a: u32;
-        in b: u32;
-        out c: u32;
-        out d: u32;
-        error InvalidOperation;
-    }
+//?     async_call BasicInputOutput
+//?     {
+//?         in a: u32;
+//?         in b: u32;
+//?         out c: u32;
+//?     }
 
-    async_call SliceInputs
-    {
-        in f0: str;
-        in f1: bytestr;
-        in f2: bytebuf;
-        in f3: []u8;
-        in f4: []const u8;
-        in f5: ?[]u8;
-        in f6: ?[]const u8;
+//?     async_call BasicInputOutputWithError
+//?     {
+//?         in a: u32;
+//?         in b: u32;
+//?         out c: u32;
+//?         error InvalidOperation;
+//?     }
 
-        //? TODO: field f7: *[]u8;
-        //? TODO: field f9: *[]const u8;
-        //? TODO: field f10: ?*[]u8;
-        //? TODO: field f11: ?*[]const u8;
-    }
+//?     async_call DoubleInputOutput
+//?     {
+//?         in a: u32;
+//?         in b: u32;
+//?         out c: u32;
+//?         out d: u32;
+//?     }
 
-    async_call SliceInputsWithError
-    {
-        in f0: str;
-        in f1: bytestr;
-        in f2: bytebuf;
-        in f3: []u8;
-        in f4: []const u8;
-        in f5: ?[]u8;
-        in f6: ?[]const u8;
+//?     async_call DoubleInputOutputWithError
+//?     {
+//?         in a: u32;
+//?         in b: u32;
+//?         out c: u32;
+//?         out d: u32;
+//?         error InvalidOperation;
+//?     }
 
-        //? TODO: field f7: *[]u8;
-        //? TODO: field f9: *[]const u8;
-        //? TODO: field f10: ?*[]u8;
-        //? TODO: field f11: ?*[]const u8;
+//?     async_call SliceInputs
+//?     {
+//?         in f0: str;
+//?         in f1: bytestr;
+//?         in f2: bytebuf;
+//?         in f3: []u8;
+//?         in f4: []const u8;
+//?         in f5: ?[]u8;
+//?         in f6: ?[]const u8;
 
-        error InvalidOperation;
-    }
+//?         //? TODO: field f7: *[]u8;
+//?         //? TODO: field f9: *[]const u8;
+//?         //? TODO: field f10: ?*[]u8;
+//?         //? TODO: field f11: ?*[]const u8;
+//?     }
 
-    async_call SliceOutputs
-    {
-        out f0: str;
-        out f1: bytestr;
-        out f2: bytebuf;
-        out f3: ?str;
-        out f4: ?bytestr;
-        out f5: ?bytebuf;
-        out f6: []u8;
-        out f7: []const u8;
-        out f8: ?[]u8;
-        out f9: ?[]const u8;
+//?     async_call SliceInputsWithError
+//?     {
+//?         in f0: str;
+//?         in f1: bytestr;
+//?         in f2: bytebuf;
+//?         in f3: []u8;
+//?         in f4: []const u8;
+//?         in f5: ?[]u8;
+//?         in f6: ?[]const u8;
 
-        //? TODO: in f7: *[]u8;
-        //? TODO: in f9: *[]const u8;
-        //? TODO: in f10: ?*[]u8;
-        //? TODO: in f11: ?*[]const u8;
-    }
+//?         //? TODO: field f7: *[]u8;
+//?         //? TODO: field f9: *[]const u8;
+//?         //? TODO: field f10: ?*[]u8;
+//?         //? TODO: field f11: ?*[]const u8;
 
-    async_call SliceOutputsWithError
-    {
-        out f0: str;
-        out f1: bytestr;
-        out f2: bytebuf;
-        out f3: ?str;
-        out f4: ?bytestr;
-        out f5: ?bytebuf;
-        out f6: []u8;
-        out f7: []const u8;
-        out f8: ?[]u8;
-        out f9: ?[]const u8;
+//?         error InvalidOperation;
+//?     }
 
-        //? TODO: out f7: *[]u8;
-        //? TODO: out f9: *[]const u8;
-        //? TODO: out f10: ?*[]u8;
-        //? TODO: out f11: ?*[]const u8;
+//?     async_call SliceOutputs
+//?     {
+//?         out f0: str;
+//?         out f1: bytestr;
+//?         out f2: bytebuf;
+//?         out f3: ?str;
+//?         out f4: ?bytestr;
+//?         out f5: ?bytebuf;
+//?         out f6: []u8;
+//?         out f7: []const u8;
+//?         out f8: ?[]u8;
+//?         out f9: ?[]const u8;
 
-        error InvalidOperation;
-    }
-}
+//?         //? TODO: in f7: *[]u8;
+//?         //? TODO: in f9: *[]const u8;
+//?         //? TODO: in f10: ?*[]u8;
+//?         //? TODO: in f11: ?*[]const u8;
+//?     }
+
+//?     async_call SliceOutputsWithError
+//?     {
+//?         out f0: str;
+//?         out f1: bytestr;
+//?         out f2: bytebuf;
+//?         out f3: ?str;
+//?         out f4: ?bytestr;
+//?         out f5: ?bytebuf;
+//?         out f6: []u8;
+//?         out f7: []const u8;
+//?         out f8: ?[]u8;
+//?         out f9: ?[]const u8;
+
+//?         //? TODO: out f7: *[]u8;
+//?         //? TODO: out f9: *[]const u8;
+//?         //? TODO: out f10: ?*[]u8;
+//?         //? TODO: out f11: ?*[]const u8;
+
+//?         error InvalidOperation;
+//?     }
+//? }

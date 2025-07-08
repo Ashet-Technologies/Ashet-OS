@@ -724,22 +724,58 @@ const Analyzer = struct {
 
                 .optional => |child_idx| {
                     const child = ana.get_resolved_type(child_idx);
-                    if (child != .ptr or child.ptr.size != .slice)
-                        break :blk .keep;
-                    const ptr = &child.ptr;
-                    try helper.emit_slice(
-                        fld.name,
-                        fld.docs,
-                        .{
-                            .optional = try ana.map_model_type(.{ .ptr = .{
-                                .size = .unknown,
-                                .is_const = ptr.is_const,
-                                .alignment = ptr.alignment,
-                                .child = ptr.child,
-                            } }),
+                    switch (child) {
+                        .well_known => |id| switch (id) {
+                            .bytestr, .bytebuf, .str => {
+                                try native_fields.append(.{
+                                    .docs = fld.docs,
+                                    .name = try ana.format("{s}_ptr", .{fld.name}),
+                                    .type = try ana.map_model_type(.{
+                                        .optional = try ana.map_model_type(.{ .ptr = .{
+                                            .size = .unknown,
+                                            .is_const = (id != .bytebuf),
+                                            .alignment = null,
+                                            .child = try ana.map_model_type(.{ .well_known = .u8 }),
+                                        } }),
+                                    }),
+                                    .role = .{ .slice_ptr = fld.name },
+                                    .default = null,
+                                });
+                                try native_fields.append(.{
+                                    .docs = try ana.allocator.dupe([]const u8, &.{
+                                        try ana.format("The amount of bytes referenced by {s}_ptr.", .{fld.name}),
+                                    }),
+                                    .name = try ana.format("{s}_len", .{fld.name}),
+                                    .type = try ana.map_model_type(.{ .well_known = .usize }),
+                                    .role = .{ .slice_len = fld.name },
+                                    .default = null,
+                                });
+                                break :blk .discard;
+                            },
+
+                            else => break :blk .keep,
                         },
-                    );
-                    break :blk .discard;
+
+                        .ptr => |ptr| {
+                            if (ptr.size != .slice)
+                                break :blk .keep;
+                            try helper.emit_slice(
+                                fld.name,
+                                fld.docs,
+                                .{
+                                    .optional = try ana.map_model_type(.{ .ptr = .{
+                                        .size = .unknown,
+                                        .is_const = ptr.is_const,
+                                        .alignment = ptr.alignment,
+                                        .child = ptr.child,
+                                    } }),
+                                },
+                            );
+
+                            break :blk .discard;
+                        },
+                        else => break :blk .keep,
+                    }
                 },
 
                 .ptr => |ptr| switch (ptr.size) {

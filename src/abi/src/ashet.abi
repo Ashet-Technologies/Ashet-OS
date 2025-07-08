@@ -699,18 +699,18 @@ namespace fs {
     /// Also returns a `next` id that can be used to iterate over all filesystems.
     /// The `system` filesystem is guaranteed to be the first one.
     async_call GetFilesystemInfo {
-        in      fs:   FileSystemId;
-        out     info: FileSystemInfo;
-        out     next: FileSystemId;
+        in      fs_id: FileSystemId;
+        out     info:  FileSystemInfo;
+        out     next:  FileSystemId;
         error   DiskError;
         error   InvalidFileSystem;
     }
 
     /// opens a directory on a filesystem
     async_call OpenDrive {
-        in      fs:   FileSystemId;
-        in      path: str;
-        out     dir:  Directory;
+        in      fs_id: FileSystemId;
+        in      path:  str;
+        out     dir:   Directory;
         error   DiskError;
         error   FileNotFound;
         error   InvalidFileSystem;
@@ -968,9 +968,9 @@ namespace pipe {
 
     /// Writes elements from `data` into the given pipe.
     async_call Write {
-        in      pipe: Pipe;
+        in      handle: Pipe;
         /// Pointer to the first element. Length defines how many elements are to be transferred.
-        in      data: bytestr;
+        in      data:   bytestr;
         /// Distance between each element in `data`. Can be different from the pipes element size
         /// to allow sparse data to be transferred.
         /// If `0`, it will use the `object_size` property of the pipe.
@@ -983,7 +983,7 @@ namespace pipe {
 
     /// Reads elements from a pipe into `buffer`.
     async_call Read {
-        in      pipe: Pipe;
+        in      handle: Pipe;
         /// Points to the first element to be received.
         in      buffer: bytebuf;
         /// Distance between each element in `buffer`. Can be different from the pipes element size
@@ -1321,7 +1321,8 @@ namespace gui {
     /// Returns the name of the provided desktop.
     syscall get_desktop_name {
         in    desktop: Desktop;
-        out   name: str;
+        in    name_buf: ?[]u8;
+        out   name_len: usize;
         error InvalidHandle;
     }
 
@@ -1401,7 +1402,8 @@ namespace gui {
         /// Returns the current type present in the clipboard, if any.
         syscall get_type {
             in    desktop: Desktop;
-            out   type: ?str;
+            in    type_buf: ?[]u8;
+            out   type_len: usize;
             error InvalidHandle;
         }
 
@@ -1411,14 +1413,13 @@ namespace gui {
         syscall get_value {
             in    desktop: Desktop;
             in    mime: str;
-            out   value: ?[]const u8;
-            error OutOfMemory;
-            error ConversionFailed;
+            out   value: []const u8;
             error InvalidHandle;
+            error SystemResources;
+            error ConversionFailed;
+            error ClipboardEmpty;
         }
-
     }
-
 }
 
 namespace service {
@@ -1443,7 +1444,8 @@ namespace service {
     /// Returns the name of the service.
     syscall get_name {
         in    svc: Service;
-        out   name: str;
+        in    name_buf: ?[]u8;
+        out   name_len: usize;
         error InvalidHandle;
     }
 

@@ -181,7 +181,7 @@ const Instance = struct {
         const meta = instance.fs.readMetaData(enumCast(afs.ObjectHandle, file_handle)) catch |err| return try mapFileSystemError(err);
 
         return ashet.abi.FileInfo{
-            .name = std.mem.zeroes([120]u8),
+            .name = @splat(0),
             .size = meta.size,
             .attributes = .{ .directory = false },
             .creation_date = dateTimeFromTimestamp(meta.create_time),

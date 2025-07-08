@@ -12,13 +12,13 @@ build:
 
 [working-directory: 'src/kernel']
 build-kernel:
-    {{zig}} build -Dmachine=arm-ashet-hc
-    {{zig}} build -Dmachine=arm-ashet-vhc
-    {{zig}} build -Dmachine=arm-qemu-virt
-    {{zig}} build -Dmachine=rv32-qemu-virt
-    {{zig}} build -Dmachine=x86-pc-bios
-    {{zig}} build -Dmachine=x86-hosted-linux
-    {{zig}} build -Dmachine=x86-hosted-windows
+    {{zig}} build --prominent-compile-errors -freference-trace=10 -Dmachine=arm-ashet-hc
+    {{zig}} build --prominent-compile-errors -freference-trace=10 -Dmachine=arm-ashet-vhc
+    {{zig}} build --prominent-compile-errors -freference-trace=10 -Dmachine=arm-qemu-virt
+    {{zig}} build --prominent-compile-errors -freference-trace=10 -Dmachine=rv32-qemu-virt
+    {{zig}} build --prominent-compile-errors -freference-trace=10 -Dmachine=x86-pc-bios
+    {{zig}} build --prominent-compile-errors -freference-trace=10 -Dmachine=x86-hosted-linux
+    {{zig}} build --prominent-compile-errors -freference-trace=10 -Dmachine=x86-hosted-windows
 
 [working-directory: 'src/userland/apps/wiki']
 build-wiki:

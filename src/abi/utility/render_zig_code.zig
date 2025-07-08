@@ -60,6 +60,14 @@ fn render_header(writer: *CodeWriter) !void {
 pub fn render_definition(writer: *CodeWriter, allocator: std.mem.Allocator, schema: model.Document) !void {
     try render_header(writer);
 
+    try writer.writeln(
+        \\const std = @import("std");
+        \\
+        \\pub const platforms = @import("platforms");
+        \\
+        \\pub const Platform = platforms.Platform;
+    );
+
     var renderer: ZigRenderer = .{
         .allocator = allocator,
         .writer = writer,
@@ -703,9 +711,20 @@ const ZigRenderer = struct {
                 });
                 try zr.writer.writeln("    .inputs = .{");
                 for (arc.native_inputs) |field| {
-                    try zr.writer.println("        .{[0]} = {[0]},", .{
-                        fmt_id(field.name),
-                    });
+                    switch (field.role) {
+                        .default => try zr.writer.println("        .{[0]} = {[0]},", .{
+                            fmt_id(field.name),
+                        }),
+                        .input_ptr => |src_param| try zr.writer.println("        .{[0]} = {[1]}.ptr,", .{
+                            fmt_id(field.name),
+                            fmt_id(src_param),
+                        }),
+                        .input_len => |src_param| try zr.writer.println("        .{[0]} = {[1]}.len,", .{
+                            fmt_id(field.name),
+                            fmt_id(src_param),
+                        }),
+                        else => unreachable,
+                    }
                 }
                 try zr.writer.writeln("    },");
                 try zr.writer.writeln("    .outputs = undefined,");
@@ -805,15 +824,45 @@ const ZigRenderer = struct {
     }
 
     fn render_resource(zr: *ZigRenderer, container: *const model.Resource, children: []const model.Declaration) !void {
-        try zr.writer.println("pub const {} = enum(usize) {{", .{
+        const writer = zr.writer;
+
+        try writer.println("pub const {} = enum(usize) {{", .{
             fmt_id(model.local_name(container.full_qualified_name)),
         });
 
         {
-            zr.writer.indent();
-            defer zr.writer.dedent();
+            writer.indent();
+            defer writer.dedent();
 
-            try zr.writer.writeln("_,");
+            try writer.writeln("_,");
+
+            try writer.writeln("pub fn as_resource(self: @This()) SystemResource {");
+            writer.indent();
+            try writer.writeln("return @enumFromInt(@intFromEnum(self));");
+            writer.dedent();
+            try writer.writeln("}");
+            try writer.writeln("");
+            try writer.writeln("pub fn release(self: @This()) void {");
+            writer.indent();
+            try writer.writeln("resources.release(self.as_resource());");
+            writer.dedent();
+            try writer.writeln("}");
+            try writer.writeln("");
+            try writer.writeln("pub fn destroy_now(self: @This()) void {");
+            writer.indent();
+            try writer.writeln("resources.destroy(self.as_resource());");
+            writer.dedent();
+            try writer.writeln("}");
+            try writer.writeln("");
+            try writer.writeln("pub fn format(res: @This(), fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {");
+            writer.indent();
+            try writer.writeln("_ = fmt;");
+            try writer.writeln("_ = options;");
+            try writer.println("try writer.print(\"{}(0x{{X:0>8}})\", .{{ @intFromPtr(res) }});", .{
+                fmt_escapes(model.local_name(container.full_qualified_name)),
+            });
+            writer.dedent();
+            try writer.writeln("}");
 
             try zr.render_children(children);
         }
@@ -880,7 +929,7 @@ const ZigRenderer = struct {
                 .bool => "bool",
                 .noreturn => "noreturn",
                 .anyptr => "*anyopaque",
-                .anyfnptr => "*anyopaque", // TODO?
+                .anyfnptr => "*const anyopaque", // TODO?
                 .str => "[]const u8",
                 .bytestr => "[]const u8",
                 .bytebuf => "[]u8",
@@ -952,7 +1001,20 @@ const ZigRenderer = struct {
             .uint => |size| try writer.print("u{}", .{size}),
             .int => |size| try writer.print("i{}", .{size}),
 
-            .fnptr, .external => try writer.print("<<{s}>>", .{@tagName(type_val)}),
+            .fnptr => |fptr| {
+                try writer.writeAll("*const fn(");
+                for (fptr.parameters, 0..) |ptype, i| {
+                    if (i > 0) {
+                        try writer.writeAll(", ");
+                    }
+                    try writer.print("{}", .{zr.fmt_type(ptype)});
+                }
+                try writer.writeAll(") callconv(.c) ");
+
+                try writer.print("{}", .{zr.fmt_type(fptr.return_type)});
+            },
+
+            .external => try writer.print("<<{s}>>", .{@tagName(type_val)}),
 
             .unknown_named_type, .unset_magic_type => @panic("invalid model"),
         }
@@ -966,7 +1028,6 @@ const ZigRenderer = struct {
         const zr: *ZigRenderer, const value: model.Value = pack;
 
         _ = fmt;
-        _ = zr;
         _ = options;
 
         switch (value) {
@@ -978,7 +1039,22 @@ const ZigRenderer = struct {
 
             .int => |i| try writer.print("{}", .{i}),
 
-            .compound => try writer.print("<<{s}>>", .{@tagName(value)}),
+            .compound => |compound| {
+                try writer.writeAll(".{");
+
+                for (compound.fields.keys(), compound.fields.values(), 0..) |fld_name, fld_value, i| {
+                    if (i > 0) {
+                        try writer.writeAll(", ");
+                    }
+
+                    try writer.print(".{} = {}", .{
+                        fmt_id(fld_name),
+                        zr.fmt_value(fld_value),
+                    });
+                }
+
+                try writer.writeAll("}");
+            },
         }
     }
 };

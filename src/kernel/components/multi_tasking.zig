@@ -8,7 +8,7 @@ const loader = @import("loader.zig");
 
 const ProcessList = astd.DoublyLinkedList(void, .{ .tag = opaque {} });
 const ProcessNode = ProcessList.Node;
-const ExitCode = ashet.abi.ExitCode;
+const ExitCode = ashet.abi.process.ExitCode;
 
 var process_list: ProcessList = .{};
 

@@ -271,7 +271,7 @@ pub fn build(b: *std.Build) void {
     // Modules:
 
     const abi_json_mod = abi_dep.module("ashet-abi.json");
-    const abi_schema_mod = abi_dep.module("abi-schema");
+    const abi_parser_mod = abi_dep.module("abi-parser");
 
     const libashet_mod = module_dep.module("ashet");
 
@@ -294,7 +294,7 @@ pub fn build(b: *std.Build) void {
         .optimize = .Debug,
         .root_source_file = b.path("src/gen-binding.zig"),
     });
-    gen_binding_exe.root_module.addImport("abi-schema", abi_schema_mod);
+    gen_binding_exe.root_module.addImport("abi-parser", abi_parser_mod);
 
     const zig_binding = b.addRunArtifact(gen_binding_exe);
     zig_binding.addFileArg(abi_json_mod.root_source_file.?);
