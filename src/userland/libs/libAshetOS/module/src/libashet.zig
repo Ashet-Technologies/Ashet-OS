@@ -29,18 +29,18 @@ fn _start() callconv(.C) u32 {
             if (UnwrappedRes == u32) {
                 return unwrapped_res;
             } else if (UnwrappedRes == void) {
-                return @intFromEnum(abi.ExitCode.success);
+                return @intFromEnum(abi.process.ExitCode.success);
             } else {
                 @compileError("Return type of main must either be void, u32 or an error union that unwraps to void or u32!");
             }
         } else |err| {
             std.log.err("main() returned the following error code: {s}", .{@errorName(err)});
-            return @intFromEnum(abi.ExitCode.failure);
+            return @intFromEnum(abi.process.ExitCode.failure);
         }
     } else if (Res == u32) {
         return res;
     } else if (Res == void) {
-        return @intFromEnum(abi.ExitCode.success);
+        return @intFromEnum(abi.process.ExitCode.success);
     } else {
         @compileError("Return type of main must either be void, u32 or an error union that unwraps to void or u32!");
     }
@@ -109,7 +109,7 @@ pub const core = struct {
         write_panic_text(msg);
         write_panic_text("\r\n");
 
-        const base_address = process.get_base_address(null);
+        const base_address = process.get_base_address(null) catch 0;
         const proc_name = process.get_file_name(null);
 
         process.debug.log_writer(.critical).print("process base:  {s}:0x{X:0>8}\n", .{ proc_name, base_address }) catch {};
@@ -157,12 +157,12 @@ pub const core = struct {
 };
 
 pub const process = struct {
-    pub fn get_file_name(proc: ?abi.Process) [:0]const u8 {
-        return std.mem.sliceTo(userland.process.get_file_name(proc), 0);
+    pub fn get_file_name(proc: ?abi.Process) []const u8 {
+        return userland.process.get_file_name(proc) catch "<undefined>";
     }
 
-    pub fn get_base_address(proc: ?abi.Process) usize {
-        return userland.process.get_base_address(proc);
+    pub fn get_base_address(proc: ?abi.Process) !usize {
+        return try userland.process.get_base_address(proc);
     }
 
     pub fn get_arguments(proc: ?abi.Process, argv_buffer: []abi.SpawnProcessArg) []abi.SpawnProcessArg {
@@ -170,7 +170,7 @@ pub const process = struct {
         return argv_buffer[0..argv_len];
     }
 
-    pub fn terminate(exit_code: abi.ExitCode) noreturn {
+    pub fn terminate(exit_code: abi.process.ExitCode) noreturn {
         userland.process.terminate(exit_code);
     }
 

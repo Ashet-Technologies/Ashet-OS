@@ -156,7 +156,9 @@ pub fn render_kernel(writer: *CodeWriter, allocator: std.mem.Allocator, schema: 
 
                 const has_errors = (syscall.errors.len > 0);
 
-                if (syscall.native_outputs.len > 0) {
+                if (syscall.no_return) {
+                    try writer.write("noreturn");
+                } else if (syscall.native_outputs.len > 0) {
                     std.debug.assert(syscall.native_outputs.len == 1);
                     try writer.print("{}", .{renderer.fmt_type(syscall.native_outputs[0].type)});
                 } else {
@@ -422,21 +424,27 @@ const ZigRenderer = struct {
         }
         try writer.write(") ");
 
-        if (has_errors) {
-            try writer.write("error{Unexpected");
-            for (syscall.errors) |err| {
-                try writer.print(",{}", .{fmt_id(err.name)});
-            }
-            try writer.write("}!");
-        }
+        if (syscall.no_return) {
+            std.debug.assert(!has_errors);
 
-        if (syscall.logic_outputs.len == 1) {
-            const retval = syscall.logic_outputs[0];
-
-            try writer.print("{}", .{zr.fmt_type(retval.type)});
+            try writer.write("noreturn");
         } else {
-            std.debug.assert(syscall.logic_outputs.len == 0);
-            try writer.write("void");
+            if (has_errors) {
+                try writer.write("error{Unexpected");
+                for (syscall.errors) |err| {
+                    try writer.print(",{}", .{fmt_id(err.name)});
+                }
+                try writer.write("}!");
+            }
+
+            if (syscall.logic_outputs.len == 1) {
+                const retval = syscall.logic_outputs[0];
+
+                try writer.print("{}", .{zr.fmt_type(retval.type)});
+            } else {
+                std.debug.assert(syscall.logic_outputs.len == 0);
+                try writer.write("void");
+            }
         }
 
         try writer.writeln(" {");
@@ -634,7 +642,9 @@ const ZigRenderer = struct {
         }
         try zr.writer.write(") ");
 
-        if (syscall.native_outputs.len == 1) {
+        if (syscall.no_return) {
+            try zr.writer.write("noreturn");
+        } else if (syscall.native_outputs.len == 1) {
             const retval = syscall.native_outputs[0];
 
             try zr.writer.print("{}", .{zr.fmt_type(retval.type)});
