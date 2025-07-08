@@ -2379,10 +2379,10 @@ struct FileSystemInfo {
     /// binary infos about the file system
     field flags: Flags;
     /// user addressable file system identifier ('USB0', ...)
-    field name: [max_fs_name_len]u8;
+    field name: [8]u8; //? TODO: Use max_fs_name_len instead of 8
 
     /// string identifier of a file system driver ('FAT32', ...)
-    field filesystem: [max_fs_type_len]u8;
+    field filesystem: [32]u8; //? TODO: USe max_fs_type_len instead of 32
 
     bitstruct Flags : u16 {
         /// is the system boot disk
@@ -2400,7 +2400,7 @@ struct FileSystemInfo {
 
 struct FileInfo {
     /// The name of the file.
-    field name: [max_file_name_len]u8;
+    field name: [120]u8; //? TODO: Use max_file_name_len instead of hardcoded array size
     /// The size of the file in bytes.
     field size: u64;
     field attributes: FileAttributes;

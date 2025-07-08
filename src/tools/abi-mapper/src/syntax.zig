@@ -423,7 +423,9 @@ pub const Parser = struct {
                 return .{ .named = named_value };
             }
 
-            return error.UnexpectedToken;
+            return .{
+                .symbol_name = identifier,
+            };
         } else |_| {}
 
         // else: must be a number
@@ -519,33 +521,43 @@ pub const Parser = struct {
         }
 
         if (try parser.try_accept(.@"[")) |_| {
-            const maybe_array_size = if (parser.accept_value()) |array_size|
-                array_size
-            else |_|
-                null;
+            const DeclType = union(enum) {
+                basic,
+                unbound,
+                array: *const ValueNode,
+            };
 
-            const is_unbound = if (maybe_array_size != null)
-                false
-            else
-                (try parser.try_accept(.@"*")) != null;
+            const decl: DeclType = if (try parser.try_accept(.@"]")) |_|
+                .basic
+            else blk: {
+                if (try parser.try_accept(.@"*")) |_| {
+                    try parser.expect(.@"]");
+                    break :blk .unbound;
+                }
 
-            try parser.expect(.@"]");
+                const array_size = try parser.accept_value();
 
-            if (maybe_array_size) |array_size| {
-                std.debug.assert(is_unbound == false);
-                const child = try parser.accept_type();
-                return .{
-                    .array = .{
-                        .child = child,
-                        .size = array_size,
-                    },
-                };
-            } else {
-                return .{
-                    .pointer = try parser.accept_pointer(
-                        if (is_unbound) .unknown else .slice,
-                    ),
-                };
+                try parser.expect(.@"]");
+                break :blk .{ .array = array_size };
+            };
+
+            switch (decl) {
+                .array => |array_size| {
+                    const child = try parser.accept_type();
+                    return .{
+                        .array = .{
+                            .child = child,
+                            .size = array_size,
+                        },
+                    };
+                },
+                .basic, .unbound => {
+                    return .{
+                        .pointer = try parser.accept_pointer(
+                            if (decl == .unbound) .unknown else .slice,
+                        ),
+                    };
+                },
             }
         }
 
@@ -769,6 +781,7 @@ pub const ValueNode = union(enum) {
     uint: u64,
     named: NamedValue,
     compound: []const FieldInitNode,
+    symbol_name: []const u8,
 };
 
 pub const FieldInitNode = struct {

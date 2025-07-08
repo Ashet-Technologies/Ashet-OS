@@ -2,7 +2,7 @@
 const max_file_name_len = 120;
 
 struct FileInfo {
-    field name: [max_file_name_len]u8;
+    field name: [120]u8; //? TODO: Use max_file_name_len!
 }
 
 

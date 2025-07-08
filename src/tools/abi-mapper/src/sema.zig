@@ -300,13 +300,29 @@ const Analyzer = struct {
                     const collector = &@field(ana, collector_name);
 
                     for (collector.items, 1..) |item, index| {
-                        const item_name = try std.mem.join(ana.allocator, "_", item.full_qualified_name);
+                        var item_name: std.ArrayList(u8) = .init(ana.allocator);
+                        defer item_name.deinit();
+
+                        try item_name.ensureTotalCapacity(120);
+
+                        for (item.full_qualified_name, 0..) |local_name, i| {
+                            if (i > 0) {
+                                try item_name.append('_');
+                            }
+
+                            for (local_name, 0..) |c, j| {
+                                if (j > 0 and std.ascii.isUpper(c)) {
+                                    try item_name.append('_');
+                                }
+                                try item_name.append(std.ascii.toLower(c));
+                            }
+                        }
 
                         // TODO: Implement stable item id assignment!
 
                         try items.append(.{
                             .docs = &.{},
-                            .name = item_name,
+                            .name = try item_name.toOwnedSlice(),
                             .value = @intCast(index),
                         });
                     }
@@ -1507,7 +1523,18 @@ const Analyzer = struct {
             .array => |data| {
                 const child = try ana.map_type(data.child);
 
-                const size: u32 = 0; // TODO:  Implement resolution of named array sizes
+                const size_val = try ana.resolve_value(data.size);
+
+                const size: u32 = switch (size_val) {
+                    .int => |int| std.math.cast(u32, int) orelse blk: {
+                        std.log.err("TODO: Array size too large: {}", .{int});
+                        break :blk 0;
+                    },
+                    else => blk: {
+                        std.log.err("TODO: Invalid array size {}", .{size_val});
+                        break :blk 0;
+                    },
+                };
 
                 return .{
                     .array = .{
@@ -1578,6 +1605,10 @@ const Analyzer = struct {
                 .false => .{ .bool = false },
                 .true => .{ .bool = true },
                 .null => .null,
+            },
+            .symbol_name => |symbol_name| {
+                std.log.err("resolve symbol '{}'", .{std.zig.fmtEscapes(symbol_name)});
+                @panic("symbol resolution not done yet");
             },
             .uint => |int| .{ .int = int },
             .compound => |compound| {
