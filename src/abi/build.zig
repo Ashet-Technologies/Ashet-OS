@@ -70,9 +70,9 @@ pub fn build(b: *std.Build) void {
         &b.addInstallFileWithDir(b.path("docs/style.css"), .{ .custom = "docs" }, "style.css").step,
     );
 
-    const abi_code = convert_abi_file(b, render_zig_exe, abi_json, .definition);
-    const provider_code = convert_abi_file(b, render_zig_exe, abi_json, .kernel);
-    const consumer_code = convert_abi_file(b, render_zig_exe, abi_json, .userland);
+    const abi_code = convert_abi_file(b, render_zig_exe, abi_json, b.path("src/ports/zig.abi.zpatch"), .definition);
+    const provider_code = convert_abi_file(b, render_zig_exe, abi_json, null, .kernel);
+    const consumer_code = convert_abi_file(b, render_zig_exe, abi_json, null, .userland);
 
     const abi_mod = b.addModule("ashet-abi", .{ .root_source_file = abi_code });
     // abi_mod.addAnonymousImport("async_running_call", .{ .root_source_file = b.path("src/async_running_call.zig") });
@@ -114,10 +114,12 @@ pub fn build(b: *std.Build) void {
     b.getInstallStep().dependOn(&install_consumer_code.step);
 }
 
-pub fn convert_abi_file(b: *std.Build, render: *std.Build.Step.Compile, input: std.Build.LazyPath, mode: enum { userland, kernel, definition, stubs }) std.Build.LazyPath {
+pub fn convert_abi_file(b: *std.Build, render: *std.Build.Step.Compile, input: std.Build.LazyPath, patch: ?std.Build.LazyPath, mode: enum { userland, kernel, definition, stubs }) std.Build.LazyPath {
     const generate_core_abi = b.addRunArtifact(render);
     generate_core_abi.addArg(@tagName(mode));
     generate_core_abi.addFileArg(input);
     const abi_zig = generate_core_abi.addOutputFileArg(b.fmt("{s}.zig", .{@tagName(mode)}));
+    if (patch) |p|
+        generate_core_abi.addFileArg(p);
     return abi_zig;
 }

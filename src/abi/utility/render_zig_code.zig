@@ -3,12 +3,14 @@ const abi_parser = @import("abi-parser");
 
 const code_writer = @import("code_writer.zig");
 
+const patch_parser = @import("patch_parser.zig");
+
 const fmt_id = std.zig.fmtId;
 const fmt_escapes = std.zig.fmtEscapes;
 
 const model = abi_parser.model;
 
-const Mode = enum { userland, kernel, definition, stubs };
+const Mode = enum { userland, kernel, definition };
 
 const CodeWriter = code_writer.CodeWriter(std.fs.File.Writer);
 
@@ -20,12 +22,19 @@ pub fn main() !void {
 
     const argv = try std.process.argsAlloc(allocator);
 
-    if (argv.len != 4)
-        @panic("<exe> <mode> <input> <output>");
+    if (argv.len < 4 or argv.len > 5)
+        @panic("<exe> <mode> <input> <output> [<patch>]");
 
     const mode: Mode = std.meta.stringToEnum(Mode, argv[1]) orelse return error.InvalidMode;
 
     const json_txt = try std.fs.cwd().readFileAlloc(allocator, argv[2], 1 << 30);
+
+    const patch_code = if (argv.len > 4)
+        try std.fs.cwd().readFileAlloc(allocator, argv[4], 1 << 30)
+    else
+        "";
+
+    const patch_set: patch_parser.PatchSet = try patch_parser.parse(allocator, patch_code);
 
     const schema = try model.from_json_str(allocator, json_txt);
 
@@ -36,10 +45,9 @@ pub fn main() !void {
 
     const document = schema.value;
     switch (mode) {
-        .userland => try render_userland(&writer, allocator, document),
-        .kernel => try render_kernel(&writer, allocator, document),
-        .definition => try render_definition(&writer, allocator, document),
-        .stubs => try render_stubs(&writer, allocator, document),
+        .userland => try render_userland(&writer, allocator, document, patch_set),
+        .kernel => try render_kernel(&writer, allocator, document, patch_set),
+        .definition => try render_definition(&writer, allocator, document, patch_set),
     }
 
     try writer.flush();
@@ -57,7 +65,7 @@ fn render_header(writer: *CodeWriter) !void {
     );
 }
 
-pub fn render_definition(writer: *CodeWriter, allocator: std.mem.Allocator, schema: model.Document) !void {
+pub fn render_definition(writer: *CodeWriter, allocator: std.mem.Allocator, schema: model.Document, patch_set: patch_parser.PatchSet) !void {
     try render_header(writer);
 
     try writer.writeln(
@@ -73,9 +81,10 @@ pub fn render_definition(writer: *CodeWriter, allocator: std.mem.Allocator, sche
         .writer = writer,
         .schema = &schema,
         .scope_prefix = "",
+        .patch_set = patch_set,
     };
 
-    try renderer.render_children(schema.root);
+    try renderer.render_children(&.{}, schema.root);
 
     try writer.writeln("");
 
@@ -95,7 +104,7 @@ pub fn render_definition(writer: *CodeWriter, allocator: std.mem.Allocator, sche
     try writer.writeln("");
 }
 
-pub fn render_kernel(writer: *CodeWriter, allocator: std.mem.Allocator, schema: model.Document) !void {
+pub fn render_kernel(writer: *CodeWriter, allocator: std.mem.Allocator, schema: model.Document, patch_set: patch_parser.PatchSet) !void {
     try render_header(writer);
 
     var renderer: ZigRenderer = .{
@@ -103,6 +112,7 @@ pub fn render_kernel(writer: *CodeWriter, allocator: std.mem.Allocator, schema: 
         .writer = writer,
         .schema = &schema,
         .scope_prefix = "abi.",
+        .patch_set = patch_set,
     };
 
     try writer.write(
@@ -301,7 +311,7 @@ pub fn render_kernel(writer: *CodeWriter, allocator: std.mem.Allocator, schema: 
     try writer.writeln("");
 }
 
-pub fn render_userland(writer: *CodeWriter, allocator: std.mem.Allocator, schema: model.Document) !void {
+pub fn render_userland(writer: *CodeWriter, allocator: std.mem.Allocator, schema: model.Document, patch_set: patch_parser.PatchSet) !void {
     try render_header(writer);
 
     var renderer: ZigRenderer = .{
@@ -309,6 +319,7 @@ pub fn render_userland(writer: *CodeWriter, allocator: std.mem.Allocator, schema
         .writer = writer,
         .schema = &schema,
         .scope_prefix = "abi.",
+        .patch_set = patch_set,
     };
 
     try writer.write(
@@ -336,12 +347,6 @@ pub fn render_userland(writer: *CodeWriter, allocator: std.mem.Allocator, schema
     }
 }
 
-pub fn render_stubs(writer: *CodeWriter, allocator: std.mem.Allocator, schema: model.Document) !void {
-    _ = writer;
-    _ = allocator;
-    _ = schema;
-}
-
 const ZigRenderer = struct {
     const Error = CodeWriter.Error;
 
@@ -350,6 +355,7 @@ const ZigRenderer = struct {
     schema: *const model.Document,
     scope_prefix: []const u8,
     symbol_prefix: []const u8 = "ashet_syscalls_",
+    patch_set: patch_parser.PatchSet,
 
     fn render_userland(zr: *ZigRenderer, children: []const model.Declaration) Error!void {
         for (children, 0..) |child, index| {
@@ -555,7 +561,7 @@ const ZigRenderer = struct {
         try writer.writeln("}");
     }
 
-    fn render_children(zr: *ZigRenderer, children: []const model.Declaration) Error!void {
+    fn render_children(zr: *ZigRenderer, scope: model.FQN, children: []const model.Declaration) Error!void {
         for (children, 0..) |child, index| {
             const is_first = (index == 0);
 
@@ -573,7 +579,7 @@ const ZigRenderer = struct {
                         zr.writer.indent();
                         defer zr.writer.dedent();
 
-                        try zr.render_children(child.children);
+                        try zr.render_children(child.full_qualified_name, child.children);
                     }
 
                     try zr.writer.writeln("};");
@@ -590,6 +596,10 @@ const ZigRenderer = struct {
                 .syscall => |idx| try zr.render_syscall(zr.schema.get_syscall(idx), child.children, .local_name),
                 .async_call => |idx| try zr.render_async_call(zr.schema.get_async_call(idx), child.children),
             }
+        }
+
+        if (zr.patch_set.get(scope)) |patch| {
+            try zr.writer.writeln(patch.patch_code);
         }
     }
 
@@ -644,6 +654,11 @@ const ZigRenderer = struct {
         {
             zr.writer.indent();
             defer zr.writer.dedent();
+
+            try zr.writer.println("pub const arc_type: overlapped.ARC.Type = .{_};", .{
+                fmt_snake_fqn(arc.full_qualified_name),
+            });
+
             try zr.writer.writeln("");
             try zr.writer.writeln("pub const Inputs = extern struct {");
             for (arc.native_inputs) |field| {
@@ -682,6 +697,7 @@ const ZigRenderer = struct {
             try zr.writer.writeln("pub const Error = enum(u16) {");
             try zr.writer.writeln("    success = 0,");
             try zr.writer.writeln("};");
+            try zr.writer.writeln("");
 
             try zr.writer.writeln("arc: overlapped.ARC,");
             try zr.writer.writeln("inputs: Inputs,");
@@ -733,7 +749,7 @@ const ZigRenderer = struct {
             }
             try zr.writer.writeln("}");
 
-            try zr.render_children(children);
+            try zr.render_children(arc.full_qualified_name, children);
         }
 
         try zr.writer.writeln("};");
@@ -758,7 +774,7 @@ const ZigRenderer = struct {
                 try zr.writer.writeln(",");
             }
 
-            try zr.render_children(children);
+            try zr.render_children(container.full_qualified_name, children);
         }
 
         try zr.writer.writeln("};");
@@ -791,7 +807,7 @@ const ZigRenderer = struct {
                 }
             }
 
-            try zr.render_children(children);
+            try zr.render_children(container.full_qualified_name, children);
         }
 
         try zr.writer.writeln("};");
@@ -817,7 +833,7 @@ const ZigRenderer = struct {
                 .open => try zr.writer.writeln("_,"),
             }
 
-            try zr.render_children(children);
+            try zr.render_children(container.full_qualified_name, children);
         }
 
         try zr.writer.writeln("};");
@@ -864,7 +880,7 @@ const ZigRenderer = struct {
             writer.dedent();
             try writer.writeln("}");
 
-            try zr.render_children(children);
+            try zr.render_children(container.full_qualified_name, children);
         }
 
         try zr.writer.writeln("};");
@@ -1085,4 +1101,25 @@ fn format_local(id: []const u8, fmt: []const u8, options: std.fmt.FormatOptions,
     _ = options;
 
     try writer.print("{}", .{fmt_id(local_id)});
+}
+
+fn fmt_snake_fqn(fqn: []const []const u8) std.fmt.Formatter(format_snake_fqn) {
+    return .{ .data = fqn };
+}
+
+fn format_snake_fqn(fqn: []const []const u8, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+    _ = fmt;
+    _ = options;
+    for (fqn, 0..) |local_name, i| {
+        if (i > 0) {
+            try writer.writeByte('_');
+        }
+
+        for (local_name, 0..) |c, j| {
+            if (j > 0 and std.ascii.isUpper(c)) {
+                try writer.writeByte('_');
+            }
+            try writer.writeByte(std.ascii.toLower(c));
+        }
+    }
 }

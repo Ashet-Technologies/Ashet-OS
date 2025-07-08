@@ -107,7 +107,7 @@ pub const syscalls = struct {
 
         pub fn get_file_name(maybe_proc: ?abi.Process) []const u8 {
             const kproc = _resolve_maybe_proc(maybe_proc) catch |err| {
-                return @as([*:0]const u8, @errorName(err));
+                return @errorName(err);
             };
             return kproc.name;
         }

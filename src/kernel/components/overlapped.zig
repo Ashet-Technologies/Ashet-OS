@@ -87,7 +87,7 @@ const AsyncHandler = struct {
     }
 };
 
-const async_call_handlers = std.EnumArray(ashet.abi.ARC_Type, AsyncHandler).init(.{
+const async_call_handlers = std.EnumArray(ashet.abi.overlapped.ARC.Type, AsyncHandler).init(.{
     .clock_timer = AsyncHandler.wrap(ashet.time.schedule_timer),
     .datetime_alarm = AsyncHandler.wrap(ashet.time.schedule_alarm),
 

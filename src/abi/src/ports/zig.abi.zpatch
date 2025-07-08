@@ -1,0 +1,97 @@
+
+<patch SystemResource>
+  /// Casts the resource into a concrete type. Fails, if the type does not match.
+    pub fn cast(resource: SystemResource, comptime t: Type) error{ InvalidHandle, InvalidType }!t.to_type() {
+        var actual: Type = undefined;
+        if (resources.get_type(resource, &actual) != .ok)
+            return error.InvalidHandle;
+        if (actual != t)
+            return error.InvalidType;
+        return resource.unsafe_cast(t);
+    }
+
+    /// Casts the resource into a concrete type. Fails, if the type does not match.
+    pub fn unsafe_cast(resource: SystemResource, comptime t: Type) t.to_type() {
+        return @enumFromInt(@intFromEnum(resource));
+    }
+
+    // pub fn format(src: SystemResource, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+    //     _ = options;
+    //     if (fmt.len == 1 and fmt[0] == 'T') {
+    //         var src_type: Type = undefined;
+    //         if (resources.get_type(src, &src_type) == .ok) {
+    //             try writer.print("SystemResource(0x{X:0>8}, type={s})", .{ @intFromEnum(src), @tagName(src_type) });
+    //         } else {
+    //             try writer.print("SystemResource(0x{X:0>8}, bad handle)", .{@intFromEnum(src)});
+    //         }
+    //     } else {
+    //         try writer.print("SystemResource(0x{X:0>8})", .{@intFromEnum(src)});
+    //     }
+    // }
+</patch>
+<patch SystemResource.Type>
+  pub fn from_type(comptime T: type) Type {
+        return switch(T) {
+            Service => .service,
+            SharedMemory => .shared_memory,
+            Pipe => .pipe,
+            Process => .process,
+            Thread => .thread,
+            TcpSocket => .tcp_socket,
+            UdpSocket => .udp_socket,
+            File => .file,
+            Directory => .directory,
+            VideoOutput => .video_output,
+            Font => .font,
+            Framebuffer => .framebuffer,
+            Window => .window,
+            Widget => .widget,
+            Desktop => .desktop,
+            WidgetType => .widget_type,
+            SyncEvent => .sync_event,
+            Mutex => .mutex,
+        };  
+    }
+    pub fn to_type(comptime id: Type) type {
+        return switch(id) {
+            .service => Service,
+            .shared_memory => SharedMemory,
+            .pipe => Pipe,
+            .process => Process,
+            .thread => Thread,
+            .tcp_socket => TcpSocket,
+            .udp_socket => UdpSocket,
+            .file => File,
+            .directory => Directory,
+            .video_output => VideoOutput,
+            .font => Font,
+            .framebuffer => Framebuffer,
+            .window => Window,
+            .widget => Widget,
+            .desktop => Desktop,
+            .widget_type => WidgetType,
+            .sync_event => SyncEvent,
+            .mutex => Mutex,
+        };  
+    }
+</patch>
+<patch overlapped.ARC>
+  pub fn cast(arc: *ARC, comptime T: type) *T {
+        comptime std.debug.assert(is_arc(T));
+        std.debug.assert(arc.type == T.arc_type);
+        return @fieldParentPtr("arc", @as(*align(@alignOf(T)) ARC, @alignCast(arc)));
+    }
+
+    pub fn is_arc(comptime T: type) bool {
+        if (!@hasField(T, "arc")) return false;
+        if (std.meta.fieldInfo(T, .arc).type != ARC) return false;
+
+        if (!@hasDecl(T, "Inputs")) return false;
+        if (!@hasDecl(T, "Outputs")) return false;
+        if (!@hasDecl(T, "Error")) return false;
+        if (!@hasDecl(T, "arc_type")) return false;
+        if (@TypeOf(T.arc_type) != Type) return false;
+
+        return true;
+    }
+</patch>

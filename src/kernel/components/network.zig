@@ -482,8 +482,8 @@ const lwip = struct {
     };
 };
 
-pub const EndPoint = abi.EndPoint;
-pub const IP = abi.IP;
+pub const EndPoint = abi.network.EndPoint;
+pub const IP = abi.network.IP;
 
 fn mapIP(ip: IP) c.ip_addr_t {
     return switch (ip.type) {
