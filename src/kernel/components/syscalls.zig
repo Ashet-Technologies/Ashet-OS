@@ -20,7 +20,7 @@ pub var strace_enabled: std.enums.EnumSet(SystemCall) = std.enums.EnumSet(System
 
 pub fn get_address(syscall: SystemCall) usize {
     return switch (syscall) {
-        inline else => |call| return @intFromPtr(&@field(exports, "ashet_" ++ @tagName(call))),
+        inline else => |call| return @intFromPtr(&@field(exports, "ashet_syscalls_" ++ @tagName(call))),
     };
 }
 
@@ -69,8 +69,9 @@ pub const syscalls = struct {
                 const limit = @min(src.owners.len, owners.len);
                 var iter = src.owners.first;
                 for (0..limit) |i| {
-                    owners[i] = @ptrCast(iter.?.data.process); // TODO: Transform to handle here!
+                    owners[i] = undefined; // TODO! @ptrCast(iter.?.data.process); // TODO: Transform to handle here!
                     iter = iter.?.next;
+                    @panic("TODO: Fix this!");
                 }
                 return limit;
             } else {

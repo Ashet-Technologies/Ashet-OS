@@ -281,9 +281,9 @@ pub const process = struct {
 };
 
 pub const overlapped = struct {
-    pub const ARC = abi.ARC;
-    pub const Wait = abi.Await_Options.Wait;
-    pub const Thread_Affinity = abi.Await_Options.Thread_Affinity;
+    pub const ARC = abi.overlapped.ARC;
+    pub const Wait = abi.overlapped.Await_Options.Wait;
+    pub const Thread_Affinity = abi.overlapped.Await_Options.Thread_Affinity;
 
     // pub fn scheduleAndAwait(start_queue: ?*IOP, wait: WaitIO) ?*IOP {
     //     const result = abi.syscalls.@"ashet.overlapped.scheduleAndAwait"(start_queue, wait);
@@ -497,7 +497,7 @@ pub const fs = struct {
 
         pub fn openDrive(filesystem: abi.FileSystemId, path: []const u8) OpenDriveError!Directory {
             const out = try overlapped.performOne(abi.fs.OpenDrive, .{
-                .fs = filesystem,
+                .fs_id = filesystem,
                 .path_ptr = path.ptr,
                 .path_len = path.len,
             });

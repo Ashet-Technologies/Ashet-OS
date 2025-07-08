@@ -517,7 +517,7 @@ const ZigRenderer = struct {
                         fmt_id(err.name),
                     });
                 }
-                try writer.println("else => __handle_unexpected(.{_}, __result),", .{
+                try writer.println("else => return __handle_unexpected(.{_}, __result),", .{
                     fmt_fqn(syscall.full_qualified_name),
                 });
                 writer.dedent();
@@ -661,9 +661,10 @@ const ZigRenderer = struct {
 
             try zr.writer.writeln("");
             try zr.writer.writeln("pub const Inputs = extern struct {");
+
+            zr.writer.indent();
+            try zr.writer.println("pub const Overlapped = {};", .{fmt_fqn(arc.full_qualified_name)});
             for (arc.native_inputs) |field| {
-                zr.writer.indent();
-                defer zr.writer.dedent();
                 try zr.render_docs(field.docs);
                 try zr.writer.print("{}: {}", .{
                     fmt_id(field.name),
@@ -674,13 +675,14 @@ const ZigRenderer = struct {
                 }
                 try zr.writer.writeln(",");
             }
+            zr.writer.dedent();
             try zr.writer.writeln("};");
             try zr.writer.writeln("");
 
             try zr.writer.writeln("pub const Outputs = extern struct {");
+            zr.writer.indent();
+            try zr.writer.println("pub const Overlapped = {};", .{fmt_fqn(arc.full_qualified_name)});
             for (arc.native_outputs) |field| {
-                zr.writer.indent();
-                defer zr.writer.dedent();
                 try zr.render_docs(field.docs);
                 try zr.writer.print("{}: {}", .{
                     fmt_id(field.name),
@@ -691,19 +693,44 @@ const ZigRenderer = struct {
                 }
                 try zr.writer.writeln(",");
             }
+            zr.writer.dedent();
             try zr.writer.writeln("};");
             try zr.writer.writeln("");
 
-            try zr.writer.writeln("pub const Error = enum(u16) {");
+            try zr.writer.writeln("pub const ErrorCode = enum(u16) {");
             try zr.writer.writeln("    success = 0,");
+            for (arc.errors) |err| {
+                try zr.writer.println("    {} = {},", .{ fmt_id(err.name), err.value });
+            }
+            try zr.writer.writeln("    _,");
+            try zr.writer.writeln("};");
+            try zr.writer.writeln("pub const Error = error{");
+            for (arc.errors) |err| {
+                try zr.writer.println("    {},", .{fmt_id(err.name)});
+            }
             try zr.writer.writeln("};");
             try zr.writer.writeln("");
 
             try zr.writer.writeln("arc: overlapped.ARC,");
             try zr.writer.writeln("inputs: Inputs,");
             try zr.writer.writeln("outputs: Outputs,");
-            try zr.writer.writeln("@\"error\": Error,");
+            try zr.writer.writeln("error_code: ErrorCode,");
             try zr.writer.writeln("");
+
+            try zr.writer.writeln("pub fn new(inputs: Inputs) @This() {");
+            {
+                zr.writer.indent();
+                defer zr.writer.dedent();
+                try zr.writer.writeln("return .{");
+                try zr.writer.println("    .arc = .{{ .type = .{_}, .tag = 0 }},", .{
+                    fmt_snake_fqn(arc.full_qualified_name),
+                });
+                try zr.writer.writeln("    .inputs = inputs,");
+                try zr.writer.writeln("    .outputs = undefined,");
+                try zr.writer.writeln("    .error_code = .success,");
+                try zr.writer.writeln("};");
+            }
+            try zr.writer.writeln("}");
 
             try zr.writer.write("pub fn init(");
 
@@ -723,7 +750,7 @@ const ZigRenderer = struct {
                 try zr.writer.writeln("return .{");
 
                 try zr.writer.println("    .arc = .{{ .type = .{_}, .tag = 0 }},", .{
-                    fmt_fqn(arc.full_qualified_name),
+                    fmt_snake_fqn(arc.full_qualified_name),
                 });
                 try zr.writer.writeln("    .inputs = .{");
                 for (arc.native_inputs) |field| {
@@ -744,10 +771,52 @@ const ZigRenderer = struct {
                 }
                 try zr.writer.writeln("    },");
                 try zr.writer.writeln("    .outputs = undefined,");
-                try zr.writer.writeln("    .@\"error\" = .success,");
+                try zr.writer.writeln("    .error_code = .success,");
                 try zr.writer.writeln("};");
             }
             try zr.writer.writeln("}");
+
+            try zr.writer.writeln("");
+            try zr.writer.writeln("pub fn check_error(arc: @This()) !void {");
+            zr.writer.indent();
+            try zr.writer.writeln("return switch(arc.error_code) {");
+            zr.writer.indent();
+            try zr.writer.writeln(".success => {},");
+            for (arc.errors) |err| {
+                try zr.writer.println(".{} => error.{},", .{ fmt_id(err.name), fmt_id(err.name) });
+            }
+            try zr.writer.writeln("_ => error.Unexpected,");
+            zr.writer.dedent();
+            try zr.writer.writeln("};");
+            zr.writer.dedent();
+            try zr.writer.writeln("}");
+            try zr.writer.writeln("");
+            try zr.writer.writeln("pub fn from_arc(arc: *overlapped.ARC) *@This() {");
+            zr.writer.indent();
+            try zr.writer.println("std.debug.assert(arc.type == .{_});", .{
+                fmt_snake_fqn(arc.full_qualified_name),
+            });
+            try zr.writer.writeln("return @alignCast(@fieldParentPtr(\"arc\", arc));");
+            zr.writer.dedent();
+            try zr.writer.writeln("}");
+            try zr.writer.writeln("");
+            try zr.writer.writeln("pub fn set_ok(arc: *@This()) void {");
+            zr.writer.indent();
+            try zr.writer.writeln("arc.error_code = .success;");
+            zr.writer.dedent();
+            try zr.writer.writeln("}");
+            try zr.writer.writeln("");
+            try zr.writer.writeln("pub fn set_error(arc: *@This(), err: Error) void {");
+            zr.writer.indent();
+            try zr.writer.writeln("arc.error_code = switch(err) {");
+            for (arc.errors) |err| {
+                try zr.writer.println("error.{} => .{},", .{ fmt_id(err.name), fmt_id(err.name) });
+            }
+            try zr.writer.writeln("};");
+            try zr.writer.writeln("std.debug.assert(arc.error_code != .success);");
+            zr.writer.dedent();
+            try zr.writer.writeln("}");
+            try zr.writer.writeln("");
 
             try zr.render_children(arc.full_qualified_name, children);
         }
@@ -874,7 +943,7 @@ const ZigRenderer = struct {
             writer.indent();
             try writer.writeln("_ = fmt;");
             try writer.writeln("_ = options;");
-            try writer.println("try writer.print(\"{}(0x{{X:0>8}})\", .{{ @intFromPtr(res) }});", .{
+            try writer.println("try writer.print(\"{}(0x{{X:0>8}})\", .{{ @intFromEnum(res) }});", .{
                 fmt_escapes(model.local_name(container.full_qualified_name)),
             });
             writer.dedent();

@@ -118,8 +118,8 @@ pub const global_stats = struct {
     var running_count: usize = 0;
 };
 
-pub const ExitCode = ashet.abi.ExitCode;
-pub const ThreadFunction = ashet.abi.ThreadFunction;
+pub const ExitCode = ashet.abi.process.ExitCode;
+pub const ThreadFunction = ashet.abi.process.thread.ThreadFunction;
 
 pub const Stats = struct {
     times_scheduled: u32 = 0,

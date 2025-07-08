@@ -1840,8 +1840,12 @@ struct SpawnProcessArg {
     }
 
     union Value {
-        field text: str;
+        field text: String;
         field @"resource": SystemResource;
+    }
+
+    struct String {
+        field text: str;
     }
 }
 

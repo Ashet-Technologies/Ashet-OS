@@ -95,3 +95,656 @@
         return true;
     }
 </patch>
+<patch network.EndPoint>
+  pub fn new(ip: IP, port: u16) EndPoint {
+        return EndPoint{ .ip = ip, .port = port };
+    }
+</patch>
+<patch network.IP>
+  pub fn ipv4(addr: [4]u8) IP {
+        return IP{ .type = .ipv4, .addr = .{ .v4 = .{ .addr = addr } } };
+    }
+
+    pub fn ipv6(addr: [16]u8, zone: u8) IP {
+        return IP{ .type = .ipv6, .addr = .{ .v6 = .{ .addr = addr, .zone = zone } } };
+    }
+
+    pub fn format(ip: IP, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
+        switch (ip.type) {
+            .ipv4 => try ip.addr.v4.format(fmt, opt, writer),
+            .ipv6 => try ip.addr.v6.format(fmt, opt, writer),
+        }
+    }
+</patch>
+<patch network.IPv4>
+  pub fn format(ip: IPv4, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = opt;
+        try writer.print("{}.{}.{}.{}", .{
+            ip.addr[0],
+            ip.addr[1],
+            ip.addr[2],
+            ip.addr[3],
+        });
+    }
+</patch>
+<patch network.IPv6>
+  pub fn format(ip: IPv6, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = opt;
+        try writer.print("[{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}/{}]", .{
+            ip.addr[0],
+            ip.addr[1],
+            ip.addr[2],
+            ip.addr[3],
+            ip.addr[4],
+            ip.addr[5],
+            ip.addr[6],
+            ip.addr[7],
+            ip.addr[8],
+            ip.addr[9],
+            ip.addr[10],
+            ip.addr[11],
+            ip.addr[12],
+            ip.addr[13],
+            ip.addr[14],
+            ip.addr[15],
+            ip.zone,
+        });
+    }
+</patch>
+<patch FileInfo>
+  pub fn getName(fi: *const FileInfo) []const u8 {
+        return std.mem.sliceTo(&fi.name, 0);
+    }
+</patch>
+<patch FileSystemInfo>
+  pub fn getName(fi: *const FileInfo) []const u8 {
+        return std.mem.sliceTo(&fi.name, 0);
+    }
+
+    pub fn getFileSystem(fi: *const FileInfo) []const u8 {
+        return std.mem.sliceTo(&fi.filesystem, 0);
+    }
+</patch>
+<patch Point>
+
+
+    pub fn new(x: i16, y: i16) Point {
+        return Point{ .x = x, .y = y };
+    }
+
+    pub fn eql(a: Point, b: Point) bool {
+        return (a.x == b.x) and (a.y == b.y);
+    }
+
+    pub fn manhattenDistance(a: Point, b: Point) u16 {
+        return @abs(a.x - b.x) + @abs(a.y - b.y);
+    }
+
+    pub fn move_by(pt: Point, dx: i16, dy: i16) Point {
+        return new(
+            pt.x + dx,
+            pt.y + dy,
+        );
+    }
+
+    pub fn format(point: Point, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        try writer.print("Point({},{})", .{
+            point.x, point.y,
+        });
+    }
+</patch>
+<patch Size>
+
+    pub fn new(w: u16, h: u16) Size {
+        return Size{ .width = w, .height = h };
+    }
+
+    pub fn eql(a: Size, b: Size) bool {
+        return (a.width == b.width) and (a.height == b.height);
+    }
+
+    pub fn format(size: Size, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        try writer.print("Size({}x{})", .{
+            size.width,
+            size.height,
+        });
+    }
+</patch>
+<patch Rectangle>
+
+    pub fn new(pos: Point, siz: Size) Rectangle {
+        return Rectangle{
+            .x = pos.x,
+            .y = pos.y,
+            .width = siz.width,
+            .height = siz.height,
+        };
+    }
+
+    pub fn position(rect: Rectangle) Point {
+        return Point{ .x = rect.x, .y = rect.y };
+    }
+
+    pub fn size(rect: Rectangle) Size {
+        return Size{ .width = rect.width, .height = rect.height };
+    }
+
+    pub fn empty(rect: Rectangle) bool {
+        return (rect.width == 0) and (rect.height == 0);
+    }
+
+    pub fn contains(rect: Rectangle, pt: Point) bool {
+        return (pt.x >= rect.x) and
+            (pt.x < rect.x + @as(u15, @intCast(rect.width))) and
+            (pt.y >= rect.y) and
+            (pt.y < rect.y + @as(u15, @intCast(rect.height)));
+    }
+
+    pub fn containsRectangle(boundary: Rectangle, region: Rectangle) bool {
+        return boundary.contains(region.position()) and
+            boundary.contains(Point.new(region.x + @as(u15, @intCast(region.width)) - 1, region.y + @as(u15, @intCast(region.height)) - 1));
+    }
+
+    /// Returns true if `a` and `b` overlap.
+    pub fn intersects(a: Rectangle, b: Rectangle) bool {
+        return a.x + @as(u15, @intCast(a.width)) >= b.x and
+            a.y + @as(u15, @intCast(a.height)) >= b.y and
+            a.x <= b.x + @as(u15, @intCast(b.width)) and
+            a.y <= b.y + @as(u15, @intCast(b.height));
+    }
+
+    /// Returns the overlapping region of `a` and `b`.
+    pub fn overlap(a: Rectangle, b: Rectangle) Rectangle {
+        const _left = @max(a.left(), b.left());
+        const _right = @min(a.right(), b.right());
+        const _top = @max(a.top(), b.top());
+        const _bottom = @min(a.bottom(), b.bottom());
+
+        return .{
+            .x = _left,
+            .y = _top,
+            .width = @intCast(_right -| _left),
+            .height = @intCast(_bottom -| _top),
+        };
+    }
+
+    pub fn eql(a: Rectangle, b: Rectangle) bool {
+        return a.size().eql(b.size()) and a.position().eql(b.position());
+    }
+
+    pub fn top(rect: Rectangle) i16 {
+        return rect.y;
+    }
+    pub fn bottom(rect: Rectangle) i16 {
+        return rect.y + @as(u15, @intCast(rect.height));
+    }
+    pub fn left(rect: Rectangle) i16 {
+        return rect.x;
+    }
+    pub fn right(rect: Rectangle) i16 {
+        return rect.x +| @as(u15, @intCast(rect.width));
+    }
+
+    pub fn shrink(rect: Rectangle, amount: u15) Rectangle {
+        var copy = rect;
+        copy.x +|= amount;
+        copy.y +|= amount;
+        copy.width -|= 2 * amount;
+        copy.height -|= 2 * amount;
+        return copy;
+    }
+
+    pub fn grow(rect: Rectangle, amount: u15) Rectangle {
+        var copy = rect;
+        copy.x -|= amount;
+        copy.y -|= amount;
+        copy.width +|= 2 * amount;
+        copy.height +|= 2 * amount;
+        return copy;
+    }
+
+    pub fn format(rect: Rectangle, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        try writer.print("Rectangle({},{},{}x{})", .{
+            rect.x,
+            rect.y,
+            rect.width,
+            rect.height,
+        });
+    }
+
+    pub fn corner(rect: Rectangle, corner_id: Corner) Point {
+        const edge: u2 = @intFromEnum(corner_id);
+
+        var x: i16 = rect.x;
+        var y: i16 = rect.y;
+
+        x += @intCast(@intFromBool((edge & 1) != 0) * rect.width);
+        y += @intCast(@intFromBool((edge & 2) != 0) * rect.height);
+
+        return Point.new(x, y);
+    }
+
+    pub const Corner = enum(u2) {
+        // Encodes X/Y position in bits:
+        top_left = 0b00,
+        top_right = 0b01,
+        bottom_left = 0b10,
+        bottom_right = 0b11,
+    };
+</patch>
+
+<patch KeyboardModifiers>
+
+    pub fn format(mods: KeyboardModifiers, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+
+        var strings = std.BoundedArray([]const u8, 7){};
+
+        if (mods.shift) strings.appendAssumeCapacity("shift");
+        if (mods.alt) strings.appendAssumeCapacity("alt");
+        if (mods.ctrl) strings.appendAssumeCapacity("ctrl");
+        if (mods.shift_left) strings.appendAssumeCapacity("lshift");
+        if (mods.shift_right) strings.appendAssumeCapacity("rshift");
+        if (mods.ctrl_left) strings.appendAssumeCapacity("lctrl");
+        if (mods.ctrl_right) strings.appendAssumeCapacity("rctrl");
+        if (mods.alt_graph) strings.appendAssumeCapacity("alt_graph");
+
+        try writer.writeAll("Modifiers{");
+
+        if (strings.len > 0) {
+            try writer.writeAll(strings.buffer[0]);
+            for (strings.slice()[1..]) |item| {
+                try writer.writeAll(", ");
+                try writer.writeAll(item);
+            }
+        } else {
+            try writer.writeAll("none");
+        }
+        try writer.writeAll("}");
+    }
+</patch>
+<patch InputEvent>
+
+    pub fn format(evt: InputEvent, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        switch (evt.event_type) {
+            .key_press,
+            .key_release,
+            => {
+                try writer.print("InputEvent{{ .{s} = {} }}", .{ @tagName(evt.event_type), evt.keyboard });
+            },
+
+            .mouse_rel_motion,
+            .mouse_abs_motion,
+            .mouse_button_press,
+            .mouse_button_release,
+            => {
+                try writer.print("InputEvent{{ .{s} = {} }}", .{ @tagName(evt.event_type), evt.mouse });
+            },
+        }
+    }
+</patch>
+<patch Color>
+
+    /// Expands a color value to 8 bit with a linear mapping.
+    pub inline fn expand_channel(src_value: anytype) u8 {
+        const bits = @bitSizeOf(@TypeOf(src_value));
+        if (bits > 8)
+            @compileError("src_value must have 8 bits or less");
+
+        comptime var mask = ((1 << bits) - 1) << (8 - bits);
+
+        var pattern: u8 = @as(u8, src_value) << (8 - bits);
+        var result: u8 = 0;
+        inline while (mask != 0) {
+            result |= pattern;
+            mask >>= bits;
+            pattern >>= bits;
+        }
+
+        return result;
+    }
+    /// Compresses a color value from 8 bit to a smaller value.
+    pub inline fn compress_channel(src_value: u8, comptime T: type) T {
+        const bits = @bitSizeOf(T);
+        if (bits > 8)
+            @compileError("T must have 8 bits or less");
+        return @truncate(src_value >> (8 - bits));
+    }
+
+    pub fn eql(a: Color, b: Color) bool {
+        return @as(u8, @bitCast(a)) == @as(u8, @bitCast(b));
+    }
+
+    pub fn to_u8(c: Color) u8 {
+        return @bitCast(c);
+    }
+
+    pub fn from_u8(u: u8) Color {
+        return @bitCast(u);
+    }
+
+    pub fn from_html(comptime str: []const u8) Color {
+        if (std.mem.startsWith(u8, str, "#")) {
+            // RGB encoded color
+            switch (str.len - 1) {
+                3 => { // 4-bit RGB
+                    const r = std.fmt.parseInt(u4, str[1..2], 16) catch @compileError("invalid hex code");
+                    const g = std.fmt.parseInt(u4, str[2..3], 16) catch @compileError("invalid hex code");
+                    const b = std.fmt.parseInt(u4, str[3..4], 16) catch @compileError("invalid hex code");
+                    return Color.from_rgb(
+                        expand_channel(r),
+                        expand_channel(g),
+                        expand_channel(b),
+                    );
+                },
+                6 => { // 8-bit RGB
+                    const r = std.fmt.parseInt(u8, str[1..3], 16) catch @compileError("invalid hex code");
+                    const g = std.fmt.parseInt(u8, str[3..5], 16) catch @compileError("invalid hex code");
+                    const b = std.fmt.parseInt(u8, str[5..7], 16) catch @compileError("invalid hex code");
+                    return Color.from_rgb(r, g, b);
+                },
+                else => if ((str.len - 1) % 3) {
+                    @compileError("Color depth with more than 8 bit is not supported");
+                } else {
+                    @compileError("Color hex code must be a multiple of 3");
+                },
+            }
+        } else {
+            // Well-known color
+            @compileError("Named colors are not supported yet!");
+        }
+    }
+
+    pub fn from_rgb(r: u8, g: u8, b: u8) Color {
+        return Color{
+            .r = compress_channel(r, u2),
+            .g = compress_channel(g, u3),
+            .b = compress_channel(b, u3),
+        };
+    }
+
+    pub fn from_rgbf(r: f32, g: f32, b: f32) Color {
+        return Color{
+            .r = @intFromFloat(std.math.maxInt(u2) * std.math.clamp(r, 0.0, 1.0)),
+            .g = @intFromFloat(std.math.maxInt(u3) * std.math.clamp(g, 0.0, 1.0)),
+            .b = @intFromFloat(std.math.maxInt(u3) * std.math.clamp(b, 0.0, 1.0)),
+        };
+    }
+
+    pub fn to_rgb888(color: Color) RGB888 {
+        return .{
+            .r = expand_channel(color.r),
+            .g = expand_channel(color.g),
+            .b = expand_channel(color.b),
+        };
+    }
+
+    /// Converts the color to `0xFFRRGGBB`
+    pub fn to_argb8888(color: Color) ARGB8888 {
+        const exp = color.to_rgb888();
+        const value: u32 = 0xFF000000 |
+            @as(u32, exp.b) << 0 |
+            @as(u32, exp.g) << 8 |
+            @as(u32, exp.r) << 16;
+
+        return @enumFromInt(value);
+    }
+
+    /// Converts the color to `0xFFBBGGRR`
+    pub fn to_abgr8888(color: Color) ABGR8888 {
+        const exp = color.to_rgb888();
+        const value: u32 = 0xFF000000 |
+            @as(u32, exp.r) << 0 |
+            @as(u32, exp.g) << 8 |
+            @as(u32, exp.b) << 16;
+
+        return @enumFromInt(value);
+    }
+</patch>
+<patch MessageBoxEvent>
+
+    pub fn caption(ev: MessageBoxEvent) []const u8 {
+        return ev.caption_ptr[0..ev.caption_len];
+    }
+
+    pub fn message(ev: MessageBoxEvent) []const u8 {
+        return ev.message_ptr[0..ev.message_len];
+    }
+</patch>
+<patch DesktopNotificationEvent>
+
+    pub fn message(ev: DesktopNotificationEvent) []const u8 {
+        return ev.message_ptr[0..ev.message_len];
+    }
+</patch>
+<patch MessageBoxButtons>
+    pub fn format(buttons: MessageBoxButtons, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        const max_length = comptime "ok,cancel,yes,no,abort,retry,continue,ignore".len;
+
+        var buffer: [max_length]u8 = undefined;
+        var stream = std.io.fixedBufferStream(&buffer);
+
+        if (buttons.has_ok) {
+            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
+            stream.writer().writeAll("ok") catch unreachable;
+        }
+        if (buttons.has_cancel) {
+            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
+            stream.writer().writeAll("cancel") catch unreachable;
+        }
+        if (buttons.has_yes) {
+            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
+            stream.writer().writeAll("yes") catch unreachable;
+        }
+        if (buttons.has_no) {
+            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
+            stream.writer().writeAll("no") catch unreachable;
+        }
+        if (buttons.has_abort) {
+            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
+            stream.writer().writeAll("abort") catch unreachable;
+        }
+        if (buttons.has_retry) {
+            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
+            stream.writer().writeAll("retry") catch unreachable;
+        }
+        if (buttons.has_continue) {
+            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
+            stream.writer().writeAll("continue") catch unreachable;
+        }
+        if (buttons.has_ignore) {
+            if (stream.pos > 0) _ = stream.write(",") catch unreachable;
+            stream.writer().writeAll("ignore") catch unreachable;
+        }
+
+        if (stream.pos > 0) {
+            try writer.writeAll(stream.getWritten());
+        } else {
+            try writer.writeAll("none");
+        }
+    }
+
+</patch>
+<patch SpawnProcessArg>
+     /// Creates a new SpawnProcessArg that is a string.
+    pub fn string(text: []const u8) SpawnProcessArg {
+        return .{ .type = .string, .value = .{ .text = String.new(text) } };
+    }
+
+    /// Creates a new SpawnProcessArg that refers to a resource.
+    pub fn resource(handle: SystemResource) SpawnProcessArg {
+        return .{ .type = .resource, .value = .{ .resource = handle } };
+    }
+</patch>
+<patch SpawnProcessArg.String>
+
+        pub fn new(_slice: []const u8) String {
+            return .{ .text_ptr = _slice.ptr, .text_len = _slice.len };
+        }
+
+        pub fn slice(str: String) []const u8 {
+            return str.text_ptr[0..str.text_len];
+        }
+</patch>
+<patch Duration>
+
+    /// Constructs a duration from a nanosecond time span.
+    pub fn from_ns(ns: u64) Duration {
+        return @enumFromInt(ns);
+    }
+
+    /// Constructs a duration from a microsecond time span.
+    pub fn from_us(us: u64) Duration {
+        return @enumFromInt(us * std.time.ns_per_us);
+    }
+
+    /// Constructs a duration from a millisecond time span.
+    pub fn from_ms(ms: u64) Duration {
+        return @enumFromInt(ms * std.time.ns_per_ms);
+    }
+
+    /// Returns the duration in nanoseconds.
+    pub fn to_ns(dur: Duration) u64 {
+        return @intFromEnum(dur);
+    }
+
+    /// Returns the duration in microseconds.
+    pub fn to_us(dur: Duration) u64 {
+        return @intFromEnum(dur) / std.time.ns_per_us;
+    }
+
+    /// Returns the duration in milliseconds.
+    pub fn to_ms(dur: Duration) u64 {
+        return @intFromEnum(dur) / std.time.ns_per_ms;
+    }
+
+    pub fn lt(a: Duration, b: Duration) bool {
+        return @intFromEnum(a) < @intFromEnum(b);
+    }
+
+    pub fn gt(a: Duration, b: Duration) bool {
+        return @intFromEnum(a) > @intFromEnum(b);
+    }
+
+    pub fn format(dur: Duration, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = options;
+        const ns = dur.to_ns();
+
+        const Scale = struct {
+            unit: []const u8,
+            divider: u64,
+        };
+
+        const scales = [_]Scale{
+            .{ .unit = "week", .divider = std.time.ns_per_week },
+            .{ .unit = "d", .divider = std.time.ns_per_day },
+            .{ .unit = "m", .divider = std.time.ns_per_min },
+            .{ .unit = "h", .divider = std.time.ns_per_hour },
+            .{ .unit = "s", .divider = std.time.ns_per_s },
+            .{ .unit = "ms", .divider = std.time.ns_per_ms },
+            .{ .unit = "us", .divider = std.time.ns_per_us },
+            .{ .unit = "ns", .divider = 1 },
+        };
+
+        const selected_scale: Scale = if (fmt.len > 0)
+            comptime for (scales) |scale| {
+                if (std.mem.eql(u8, scale.unit, fmt))
+                    break scale;
+            } else @compileError(fmt ++ " is not a valid duration unit!")
+        else for (scales) |scale| {
+            if (ns >= scale.divider)
+                break scale;
+        } else scales[0];
+
+        const int_part = ns / selected_scale.divider;
+        if (selected_scale.divider > 1) {
+            const fract_part = ns % (1000 * selected_scale.divider);
+            try writer.print("{d}.{d:0>3} {s}", .{ int_part, fract_part, selected_scale.unit });
+        } else {
+            try writer.print("{d} {s}", .{ int_part, selected_scale.unit });
+        }
+    }
+</patch>
+<patch Absolute>
+
+    /// Returns the time between `newer` and `older`.
+    ///
+    /// NOTE: Asserts that `newer` happened after `older`.
+    pub fn time_since(newer: Absolute, older: Absolute) Duration {
+        return Duration.from_ns(
+            @intFromEnum(newer) - @intFromEnum(older),
+        );
+    }
+
+    /// Returns the nanoseconds since system startup.
+    pub fn ns_since_start(point: Absolute) u64 {
+        return @intFromEnum(point);
+    }
+
+    /// Returns the microseconds since system startup.
+    pub fn us_since_start(point: Absolute) u64 {
+        return @intFromEnum(point) / std.time.us_per_ms;
+    }
+
+    /// Returns the milliseconds since system startup.
+    pub fn ms_since_start(point: Absolute) u64 {
+        return @intFromEnum(point) / std.time.ns_per_ms;
+    }
+
+    /// Increments the time point by `delta`.
+    pub fn increment_by(abs: Absolute, delta: Duration) Absolute {
+        return @enumFromInt(@intFromEnum(abs) + @intFromEnum(delta));
+    }
+
+    pub fn lt(a: Absolute, b: Absolute) bool {
+        return @intFromEnum(a) < @intFromEnum(b);
+    }
+
+    pub fn gt(a: Absolute, b: Absolute) bool {
+        return @intFromEnum(a) > @intFromEnum(b);
+    }
+</patch>
+<patch DateTime>
+
+    pub fn as_unix_timestamp_ms(dt: DateTime) i64 {
+        return @intFromEnum(dt);
+    }
+
+    pub fn as_unix_timestamp_s(dt: DateTime) i64 {
+        return @divTrunc(@intFromEnum(dt), std.time.ms_per_s);
+    }
+
+    pub fn lt(a: DateTime, b: DateTime) bool {
+        return @intFromEnum(a) < @intFromEnum(b);
+    }
+
+    pub fn gt(a: DateTime, b: DateTime) bool {
+        return @intFromEnum(a) > @intFromEnum(b);
+    }
+</patch>
+<patch UUID>
+
+    /// Parses a UUID in the format
+    /// `3ad20402-1711-4bbc-b6c3-ff8a1da068c6`
+    /// and returns a pointer to it.
+    ///
+    /// You can generate UUIDs at
+    /// https://www.uuidgenerator.net/version4
+    pub fn constant(str: *const [36:0]u8) *const UUID {
+        _ = str;
+        unreachable;
+    }
+</patch>
