@@ -1937,12 +1937,12 @@ enum MessageBoxResult : u8 {
 }
 
 bitstruct MessageBoxButtons : u8 {
-    //? TODO: pub const ok: MessageBoxButtons = .{ .has_ok = true }
-    //? TODO: pub const ok_cancel: MessageBoxButtons = .{ .has_ok = true, .has_cancel = true }
-    //? TODO: pub const yes_no: MessageBoxButtons = .{ .has_yes = true, .has_no = true }
-    //? TODO: pub const yes_no_cancel: MessageBoxButtons = .{ .has_yes = true, .has_no = true, .has_cancel = true }
-    //? TODO: pub const retry_cancel: MessageBoxButtons = .{ .has_retry = true, .has_cancel = true }
-    //? TODO: pub const abort_retry_ignore: MessageBoxButtons = .{ .has_abort = true, .has_retry = true, .has_ignore = true }
+    const ok: MessageBoxButtons = .{ .has_ok = true };
+    const ok_cancel: MessageBoxButtons = .{ .has_ok = true, .has_cancel = true };
+    const yes_no: MessageBoxButtons = .{ .has_yes = true, .has_no = true };
+    const yes_no_cancel: MessageBoxButtons = .{ .has_yes = true, .has_no = true, .has_cancel = true };
+    const retry_cancel: MessageBoxButtons = .{ .has_retry = true, .has_cancel = true };
+    const abort_retry_ignore: MessageBoxButtons = .{ .has_abort = true, .has_retry = true, .has_ignore = true };
 
     field has_ok: bool = false;
     field has_cancel: bool = false;
@@ -2047,14 +2047,14 @@ struct MessageBoxEvent {
 
 /// An 8-bit RGB color value with a 233 encoding (2 bits R, 3 bits G, 3 bits B)
 bitstruct Color : u8 {
-    //? TODO: const black = from_rgb(0, 0, 0);
-    //? TODO: const white = from_rgb(255, 255, 255);
-    //? TODO: const red = from_rgb(255, 0, 0);
-    //? TODO: const lime = from_rgb(0, 255, 0);
-    //? TODO: const blue = from_rgb(0, 0, 255);
-    //? TODO: const cyan = from_rgb(0, 255, 255);
-    //? TODO: const magenta = from_rgb(255, 0, 255);
-    //? TODO: const yellow = from_rgb(255, 255, 0);
+    const black: Color = .{ .r = 0, .g = 0, .b = 0 };
+    const white: Color = .{ .r = 3, .g = 7, .b = 7 };
+    const red: Color = .{ .r = 3, .g = 0, .b = 0 };
+    const lime: Color = .{ .r = 0, .g = 7, .b = 0 };
+    const blue: Color = .{ .r = 0, .g = 0, .b = 7 };
+    const cyan: Color = .{ .r = 0, .g = 7, .b = 7 };
+    const magenta: Color = .{ .r = 3, .g = 0, .b = 7 };
+    const yellow: Color = .{ .r = 3, .g = 7, .b = 0 };
 
     field r: u2;
     field g: u3;
@@ -2337,15 +2337,15 @@ bitstruct KeyboardModifiers : u16 {
 }
 
 struct Point {
-    const zero = .{ .x = 0, .y = 0 };
+    const zero: Point = .{ .x = 0, .y = 0 };
 
     field x: i16;
     field y: i16;
 }
 
 struct Size {
-    const empty = .{ .width = 0, .height = 0 };
-    const max = .{ .width = 0xFFFF, .height = 0xFFFF };
+    const empty: Size = .{ .width = 0, .height = 0 };
+    const max: Size = .{ .width = 0xFFFF, .height = 0xFFFF };
 
     field width: u16;
     field height: u16;

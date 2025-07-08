@@ -292,6 +292,12 @@ pub const Parser = struct {
 
             .@"const" => blk: {
                 const name, _ = try parser.accept_identifier();
+
+                const maybe_type_node = if (try parser.try_accept(.@":")) |_|
+                    try parser.accept_type()
+                else
+                    null;
+
                 try parser.expect(.@"=");
                 const value = try parser.accept_value();
                 try parser.expect(.@";");
@@ -299,6 +305,7 @@ pub const Parser = struct {
                 break :blk .{
                     .@"const" = .{
                         .name = name,
+                        .type = maybe_type_node,
                         .value = value,
                     },
                 };
@@ -316,6 +323,7 @@ pub const Parser = struct {
                 break :blk .{
                     .item = .{
                         .name = name,
+                        .type = null,
                         .value = initial,
                     },
                 };
@@ -758,6 +766,7 @@ pub const DeclarationType = enum {
 
 pub const AssignmentNode = struct {
     name: []const u8,
+    type: ?*const TypeNode,
     value: ?*const ValueNode,
 };
 

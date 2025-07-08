@@ -914,7 +914,10 @@ const Analyzer = struct {
         const value = try ana.resolve_value(constant.value.?);
 
         // TODO: Implement explicit constant typing!
-        const type_id: ?model.TypeIndex = null;
+        const type_id: ?model.TypeIndex = if (constant.type) |type_node|
+            try ana.map_type(type_node)
+        else
+            null;
 
         const index = try ana.constants.append(.{
             .uid = try ana.get_uid(full_name),
