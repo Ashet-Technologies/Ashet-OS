@@ -292,7 +292,7 @@ pub fn build(b: *std.Build) void {
         .name = "gen_abi_binding",
         .target = b.graph.host,
         .optimize = .Debug,
-        .root_source_file = b.path("src/gen-binding.zig"),
+        .root_source_file = b.path("src/gen-libsyscall.zig"),
     });
     gen_binding_exe.root_module.addImport("abi-parser", abi_parser_mod);
 
@@ -302,7 +302,7 @@ pub fn build(b: *std.Build) void {
 
     const lib_build_dir = zig_binding.addOutputDirectoryArg("binding-library");
 
-    b.getInstallStep().dependOn(
+    debug_step.dependOn(
         &b.addInstallDirectory(.{
             .source_dir = lib_build_dir,
             .install_dir = .{ .custom = "libsyscall.build" },
@@ -312,34 +312,28 @@ pub fn build(b: *std.Build) void {
 
     const target = ashet_target.resolve_target(b);
 
-    // const libsyscall = b.addStaticLibrary(.{
-    //     .name = "AshetOS",
-    //     .target = target,
-    //     .optimize = .ReleaseSmall,
-    //     .root_source_file = b.path("src/libsyscall.zig"),
-    // });
-    // // libsyscall.root_module.addImport("abi", abi_mod);
-    // libsyscall.root_module.addImport("stubs", abi_import_mod);
-    // b.installArtifact(libsyscall);
+    const sub_build = b.addSystemCommand(&.{ b.graph.zig_exe, "build-lib" });
 
-    const sub_build = b.addSystemCommand(&.{ b.graph.zig_exe, "build" });
+    sub_build.addArg("-static");
+    sub_build.addArg("-fPIC");
+    sub_build.addArg("-O");
+    sub_build.addArg("ReleaseSmall");
+    sub_build.addArg("--name");
+    sub_build.addArg("libAshetOS");
+    sub_build.addArg("-target");
+    sub_build.addArg(target.query.zigTriple(b.allocator) catch @panic("oom"));
+    sub_build.addArg("-mcpu");
+    sub_build.addArg(target.query.serializeCpuAlloc(b.allocator) catch @panic("oom"));
 
-    sub_build.setCwd(lib_build_dir);
-    sub_build.addArg("--prefix");
-    const libsyscall_prefix = sub_build.addOutputDirectoryArg(
-        b.fmt("libsyscall.{s}", .{@tagName(ashet_target)}),
-    );
-    sub_build.addArg(b.fmt("-Dtarget={s}", .{@tagName(ashet_target)}));
+    switch (ashet_target) {
+        .arm => sub_build.addArg("-DPLATFORM_THUMB"),
+        .rv32 => sub_build.addArg("-DPLATFORM_RISCV32"),
+        .x86 => sub_build.addArg("-DPLATFORM_X86"),
+    }
 
-    b.getInstallStep().dependOn(
-        &b.addInstallDirectory(.{
-            .source_dir = libsyscall_prefix,
-            .install_dir = .{ .custom = "libsyscall.out" },
-            .install_subdir = ".",
-        }).step,
-    );
+    sub_build.addPrefixedFileArg("@", lib_build_dir.path(b, "assembly-files.rsp"));
 
-    const libsyscall_path = libsyscall_prefix.path(b, "lib/libAshetOS.a");
+    const libsyscall_path = sub_build.addPrefixedOutputFileArg("-femit-bin=", "libAshetOS.a");
 
     const debug_exe = b.addExecutable(.{
         .name = b.fmt("libAshetOS.{s}", .{@tagName(ashet_target)}),
