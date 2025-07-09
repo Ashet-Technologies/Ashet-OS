@@ -1,0 +1,11 @@
+.{
+    .name = .fast,
+    .version = "0.1.0",
+    .fingerprint = 0x256649c47c43b1fc,
+    .dependencies = .{},
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
