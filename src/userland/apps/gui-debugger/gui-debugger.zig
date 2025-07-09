@@ -8,7 +8,7 @@ const Point = ashet.abi.Point;
 
 pub fn main() !void {
     var argv_buffer: [8]ashet.abi.SpawnProcessArg = undefined;
-    const argv_len = ashet.userland.process.get_arguments(null, &argv_buffer);
+    const argv_len = try ashet.userland.process.get_arguments(null, &argv_buffer);
     const argv = argv_buffer[0..argv_len];
 
     std.debug.assert(argv.len == 2);
@@ -107,8 +107,8 @@ pub fn main() !void {
                     event.keyboard.pressed,
                     event.keyboard.scancode,
                     @tagName(event.keyboard.key),
-                    if (event.keyboard.text) |str|
-                        std.unicode.fmtUtf8(std.mem.sliceTo(str, 0))
+                    if (event.keyboard.text_ptr) |str|
+                        std.unicode.fmtUtf8(str[0..event.keyboard.text_len])
                     else
                         null,
                 });
@@ -201,7 +201,7 @@ fn paint(
         try key_table.property("Type", "{s}", .{@tagName(key_event.event_type.window)});
         try key_table.property("Scancode", "{}", .{key_event.scancode});
         try key_table.property("Key", "{s}", .{@tagName(key_event.key)});
-        try key_table.property("Text", "\"{?}\"", .{if (key_event.text) |text| std.unicode.fmtUtf8(std.mem.sliceTo(text, 0)) else null});
+        try key_table.property("Text", "\"{?}\"", .{if (key_event.text_ptr) |text| std.unicode.fmtUtf8(text[0..key_event.text_len]) else null});
         try key_table.property("Pressed", "{}", .{key_event.pressed});
         try key_table.property("Modifiers", "{}", .{key_event.modifiers});
     } else {

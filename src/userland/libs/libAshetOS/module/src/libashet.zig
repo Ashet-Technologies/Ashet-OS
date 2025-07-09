@@ -165,8 +165,8 @@ pub const process = struct {
         return try userland.process.get_base_address(proc);
     }
 
-    pub fn get_arguments(proc: ?abi.Process, argv_buffer: []abi.SpawnProcessArg) []abi.SpawnProcessArg {
-        const argv_len = userland.process.get_arguments(proc, argv_buffer);
+    pub fn get_arguments(proc: ?abi.Process, argv_buffer: []abi.SpawnProcessArg) ![]abi.SpawnProcessArg {
+        const argv_len = try userland.process.get_arguments(proc, argv_buffer);
         return argv_buffer[0..argv_len];
     }
 
@@ -203,7 +203,7 @@ pub const process = struct {
         fn globalAlloc(ctx: *anyopaque, len: usize, ptr_align: std.mem.Alignment, ret_addr: usize) ?[*]u8 {
             _ = ctx;
             _ = ret_addr;
-            return userland.process.memory.allocate(len, @intFromEnum(ptr_align));
+            return userland.process.memory.allocate(len, @intFromEnum(ptr_align)) catch return null;
         }
 
         /// Attempt to expand or shrink memory in place. `buf.len` must equal the

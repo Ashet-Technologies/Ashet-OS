@@ -11,7 +11,7 @@ pub fn main() !void {
     defer std.log.info("Good bye, GUI!", .{});
 
     var argv_buffer: [8]ashet.abi.SpawnProcessArg = undefined;
-    const argv_len = ashet.userland.process.get_arguments(null, &argv_buffer);
+    const argv_len = try ashet.userland.process.get_arguments(null, &argv_buffer);
     const argv = argv_buffer[0..argv_len];
 
     std.debug.assert(argv.len == 2);
@@ -102,8 +102,8 @@ pub fn main() !void {
                     event.keyboard.pressed,
                     event.keyboard.scancode,
                     @tagName(event.keyboard.key),
-                    if (event.keyboard.text) |str|
-                        std.unicode.fmtUtf8(std.mem.sliceTo(str, 0))
+                    if (event.keyboard.text_ptr) |str|
+                        std.unicode.fmtUtf8(str[0..event.keyboard.text_len])
                     else
                         null,
                 });

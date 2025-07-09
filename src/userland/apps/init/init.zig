@@ -11,7 +11,7 @@ pub fn main() !void {
     _ = try ashet.process.debug.log_writer(.notice).write("Init system says hello!\r\n");
 
     const apps_dir = try ashet.overlapped.performOne(abi.fs.OpenDrive, .{
-        .fs = .system,
+        .fs_id = .system,
         .path_ptr = "apps",
         .path_len = 4,
     });
@@ -20,7 +20,7 @@ pub fn main() !void {
     const shm_handle = try syscalls.shm.create(4096);
     defer shm_handle.release();
 
-    const shm = syscalls.shm.get_pointer(shm_handle)[0..syscalls.shm.get_length(shm_handle)];
+    const shm = (try syscalls.shm.get_pointer(shm_handle))[0..try syscalls.shm.get_length(shm_handle)];
     @memset(shm, 0x00);
     @memcpy(shm[0..22], "This is shared memory!");
 

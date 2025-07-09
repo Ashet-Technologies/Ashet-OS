@@ -486,31 +486,43 @@ const ZigRenderer = struct {
             });
             writer.indent();
 
-            for (syscall.native_inputs) |param| {
-                const param_type = zr.schema.get_type(param.type).*;
-                switch (param.role) {
-                    .default => try writer.print("{}", .{fmt_id(param.name)}),
-                    .output, .output_ptr, .output_len => try writer.print("&{}", .{fmt_local(param.name)}),
+            {
+                // TODO: Properly handle input_ptr, input_len slices!
 
-                    .input_ptr => |src_param| {
-                        if (param_type == .optional) {
-                            try writer.print("if({}) |__slice| __slice.ptr else null", .{fmt_id(src_param)});
-                        } else {
-                            try writer.print("{}.ptr", .{fmt_id(src_param)});
-                        }
-                    },
-                    .input_len => |src_param| {
-                        if (param_type == .optional) {
-                            try writer.print("if({}) |__slice| __slice.len else null,", .{fmt_id(src_param)});
-                        } else {
-                            try writer.print("{}.len", .{fmt_id(src_param)});
-                        }
-                    },
+                var last_ptr_slice: ?struct { []const u8, bool } = null;
 
-                    else => std.log.err("unsupported role: {}", .{param.role}),
+                for (syscall.native_inputs) |param| {
+                    const param_type = zr.schema.get_type(param.type).*;
+                    if (param.role != .input_len) {
+                        last_ptr_slice = null;
+                    }
+                    switch (param.role) {
+                        .default => try writer.print("{}", .{fmt_id(param.name)}),
+                        .output, .output_ptr, .output_len => try writer.print("&{}", .{fmt_local(param.name)}),
+
+                        .input_ptr => |src_param| {
+                            if (param_type == .optional) {
+                                try writer.print("if({}) |__slice| __slice.ptr else null", .{fmt_id(src_param)});
+                            } else {
+                                try writer.print("{}.ptr", .{fmt_id(src_param)});
+                            }
+                            last_ptr_slice = .{ src_param, param_type == .optional };
+                        },
+                        .input_len => |src_param| {
+                            std.debug.assert(last_ptr_slice != null);
+                            const name, const is_optional = last_ptr_slice.?;
+                            std.debug.assert(std.mem.eql(u8, name, src_param));
+                            if (is_optional) {
+                                try writer.print("if({}) |__slice| __slice.len else 0", .{fmt_id(src_param)});
+                            } else {
+                                try writer.print("{}.len", .{fmt_id(src_param)});
+                            }
+                        },
+
+                        else => std.log.err("unsupported role: {}", .{param.role}),
+                    }
+                    try writer.writeln(",");
                 }
-
-                try writer.writeln(",");
             }
             writer.dedent();
             try writer.writeln(");");
@@ -801,6 +813,26 @@ const ZigRenderer = struct {
             zr.writer.dedent();
             try zr.writer.writeln("}");
             try zr.writer.writeln("");
+
+            // TODO: Remap outputs into Zig-style types instead of using native-style types!
+            if (arc.native_outputs.len >= 1) {
+                try zr.writer.writeln("pub fn get_outputs(arc: *const @This()) !*const Outputs {");
+                zr.writer.indent();
+                try zr.writer.writeln("try arc.check_error();");
+                try zr.writer.writeln("return &arc.outputs;");
+                zr.writer.dedent();
+                try zr.writer.writeln("}");
+            }
+            if (arc.native_outputs.len == 1) {
+                try zr.writer.writeln("");
+                try zr.writer.println("pub fn get_output(arc: *const @This()) !*const @FieldType(Outputs, \"{s}\") {{", .{arc.native_outputs[0].name});
+                zr.writer.indent();
+                try zr.writer.writeln("try arc.check_error();");
+                try zr.writer.println("return &arc.outputs.{};", .{fmt_id(arc.native_outputs[0].name)});
+                zr.writer.dedent();
+                try zr.writer.writeln("}");
+            }
+            try zr.writer.writeln("");
             try zr.writer.writeln("pub fn from_arc(arc: *overlapped.ARC) *@This() {");
             zr.writer.indent();
             try zr.writer.println("std.debug.assert(arc.type == .{_});", .{
@@ -921,7 +953,7 @@ const ZigRenderer = struct {
     fn render_resource(zr: *ZigRenderer, container: *const model.Resource, children: []const model.Declaration) !void {
         const writer = zr.writer;
 
-        try writer.println("pub const {} = enum(usize) {{", .{
+        try writer.println("pub const {} = *opaque {{", .{
             fmt_id(model.local_name(container.full_qualified_name)),
         });
 
@@ -929,31 +961,29 @@ const ZigRenderer = struct {
             writer.indent();
             defer writer.dedent();
 
-            try writer.writeln("_,");
-
-            try writer.writeln("pub fn as_resource(self: @This()) SystemResource {");
+            try writer.writeln("pub fn as_resource(self: *@This()) SystemResource {");
             writer.indent();
-            try writer.writeln("return @enumFromInt(@intFromEnum(self));");
+            try writer.writeln("return @enumFromInt(@intFromPtr(self));");
             writer.dedent();
             try writer.writeln("}");
             try writer.writeln("");
-            try writer.writeln("pub fn release(self: @This()) void {");
+            try writer.writeln("pub fn release(self: *@This()) void {");
             writer.indent();
             try writer.writeln("resources.release(self.as_resource());");
             writer.dedent();
             try writer.writeln("}");
             try writer.writeln("");
-            try writer.writeln("pub fn destroy_now(self: @This()) void {");
+            try writer.writeln("pub fn destroy_now(self: *@This()) void {");
             writer.indent();
             try writer.writeln("resources.destroy(self.as_resource());");
             writer.dedent();
             try writer.writeln("}");
             try writer.writeln("");
-            try writer.writeln("pub fn format(res: @This(), fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {");
+            try writer.writeln("pub fn format(res: *@This(), fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {");
             writer.indent();
             try writer.writeln("_ = fmt;");
             try writer.writeln("_ = options;");
-            try writer.println("try writer.print(\"{}(0x{{X:0>8}})\", .{{ @intFromEnum(res) }});", .{
+            try writer.println("try writer.print(\"{}(0x{{X:0>8}})\", .{{ @intFromPtr(res) }});", .{
                 fmt_escapes(model.local_name(container.full_qualified_name)),
             });
             writer.dedent();

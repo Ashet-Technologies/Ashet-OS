@@ -7,8 +7,8 @@ optimize_kernel := "false"
 optimize_apps := "Debug"
 
 build:
-    {{zig}} build --summary none -Doptimize-kernel={{optimize_kernel}} -Doptimize-apps={{optimize_apps}} rv32-qemu-virt
-    {{zig}} build --summary none -Doptimize-kernel={{optimize_kernel}} -Doptimize-apps={{optimize_apps}}
+    {{zig}} build --prominent-compile-errors -freference-trace=10 --summary none -Doptimize-kernel={{optimize_kernel}} -Doptimize-apps={{optimize_apps}} rv32-qemu-virt
+    {{zig}} build --prominent-compile-errors -freference-trace=10 --summary none -Doptimize-kernel={{optimize_kernel}} -Doptimize-apps={{optimize_apps}}
 
 [working-directory: 'src/kernel']
 build-kernel:

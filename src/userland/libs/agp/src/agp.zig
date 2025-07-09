@@ -507,7 +507,7 @@ pub fn Decoder(Reader: type) type {
         }
 
         fn fetch_handle(dec: Dec, Handle: type) !Handle {
-            return @enumFromInt(
+            return @ptrFromInt(
                 try dec.reader.readInt(usize, .little),
             );
         }

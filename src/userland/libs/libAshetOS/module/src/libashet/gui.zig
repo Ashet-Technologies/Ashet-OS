@@ -48,10 +48,8 @@ pub fn create_window(desktop: Desktop, options: CreateWindowOptions) !ashet.abi.
     );
 }
 
-pub fn get_window_title(window: Window) error{ InvalidHandle, Unexpected }![]const u8 {
-    var title: []const u8 = undefined;
-    try ashet.userland.gui.get_window_title(window, &title);
-    return title;
+pub fn get_window_title(window: Window, buffer: ?[]u8) error{ InvalidHandle, Unexpected }!usize {
+    return try ashet.userland.gui.get_window_title(window, buffer);
 }
 
 pub fn get_window_size(window: Window) error{ InvalidHandle, Unexpected }!Size {

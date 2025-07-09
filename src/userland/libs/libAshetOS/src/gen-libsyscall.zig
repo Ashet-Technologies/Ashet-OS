@@ -64,7 +64,7 @@ fn render_syscall_object(writer: std.fs.File.Writer, syscall: abi_parser.Generic
         \\//
         \\
         \\#define SYSCALL_NAME {[name]_}
-        \\#define SYMBOL_NAME ashet_{[name]_}
+        \\#define SYMBOL_NAME ashet_syscalls_{[name]_}
         \\
         \\
     , .{ .name = fmt_fqn(syscall.full_qualified_name) });

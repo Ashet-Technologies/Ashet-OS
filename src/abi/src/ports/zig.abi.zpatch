@@ -2,32 +2,35 @@
 <patch SystemResource>
   /// Casts the resource into a concrete type. Fails, if the type does not match.
     pub fn cast(resource: SystemResource, comptime t: Type) error{ InvalidHandle, InvalidType }!t.to_type() {
-        var actual: Type = undefined;
-        if (resources.get_type(resource, &actual) != .ok)
-            return error.InvalidHandle;
-        if (actual != t)
-            return error.InvalidType;
-        return resource.unsafe_cast(t);
+        _ = resource;
+        @panic("TODO!");
+        // var actual: Type = undefined;
+        // if (resources.get_type(resource, &actual) != .ok)
+        //     return error.InvalidHandle;
+        // if (actual != t)
+        //     return error.InvalidType;
+        // return resource.unsafe_cast(t);
     }
 
     /// Casts the resource into a concrete type. Fails, if the type does not match.
     pub fn unsafe_cast(resource: SystemResource, comptime t: Type) t.to_type() {
-        return @enumFromInt(@intFromEnum(resource));
+        return @ptrFromInt(@intFromEnum(resource));
     }
 
-    // pub fn format(src: SystemResource, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-    //     _ = options;
-    //     if (fmt.len == 1 and fmt[0] == 'T') {
-    //         var src_type: Type = undefined;
-    //         if (resources.get_type(src, &src_type) == .ok) {
-    //             try writer.print("SystemResource(0x{X:0>8}, type={s})", .{ @intFromEnum(src), @tagName(src_type) });
-    //         } else {
-    //             try writer.print("SystemResource(0x{X:0>8}, bad handle)", .{@intFromEnum(src)});
-    //         }
-    //     } else {
-    //         try writer.print("SystemResource(0x{X:0>8})", .{@intFromEnum(src)});
-    //     }
-    // }
+    pub fn format(src: SystemResource, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = options;
+        if (fmt.len == 1 and fmt[0] == 'T') {
+            @panic("TODO!");
+            // var src_type: Type = undefined;
+            // if (resources.get_type(src, &src_type) == .ok) {
+            //     try writer.print("SystemResource(0x{X:0>8}, type={s})", .{ @intFromEnum(src), @tagName(src_type) });
+            // } else {
+            //     try writer.print("SystemResource(0x{X:0>8}, bad handle)", .{@intFromEnum(src)});
+            // }
+        } else {
+            try writer.print("SystemResource(0x{X:0>8})", .{@intFromEnum(src)});
+        }
+    }
 </patch>
 <patch SystemResource.Type>
   pub fn from_type(comptime T: type) Type {
