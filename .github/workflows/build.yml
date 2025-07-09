@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest]
         platform:
           - arm-ashet-vhc
           - arm-ashet-hc
@@ -20,7 +20,7 @@ jobs:
           - x86-hosted-linux
           - x86-pc-bios
 
-    runs-on: ubuntu-latest
+    runs-on: ${{matrix.os}}
 
     steps:
       - uses: actions/checkout@v4
@@ -30,17 +30,13 @@ jobs:
         with:
           version: "0.14.0"
 
-      - name: Setup Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
       - name: Build ${{ matrix.platform }}
         run: |
           zig build ${{ matrix.platform }}
 
       - name: Upload disk image
         uses: actions/upload-artifact@v4
+        if: ${{ matrix.os == 'ubuntu-latest' }}
         with:
           name: ${{ matrix.platform }}
           path: zig-out/${{ matrix.platform }}

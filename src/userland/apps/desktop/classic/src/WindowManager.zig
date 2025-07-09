@@ -264,7 +264,8 @@ fn map_input_event_to_window(wm: *WindowManager, window: *Window, mouse_point: P
                 .event_type = .{ .window = .key_press },
                 .key = event.keyboard.key,
                 .scancode = event.keyboard.scancode,
-                .text = event.keyboard.text,
+                .text_ptr = event.keyboard.text_ptr,
+                .text_len = event.keyboard.text_len,
                 .pressed = event.keyboard.pressed,
                 .modifiers = event.keyboard.modifiers,
             },
@@ -274,7 +275,8 @@ fn map_input_event_to_window(wm: *WindowManager, window: *Window, mouse_point: P
                 .event_type = .{ .window = .key_release },
                 .key = event.keyboard.key,
                 .scancode = event.keyboard.scancode,
-                .text = event.keyboard.text,
+                .text_ptr = event.keyboard.text_ptr,
+                .text_len = event.keyboard.text_len,
                 .pressed = event.keyboard.pressed,
                 .modifiers = event.keyboard.modifiers,
             },
@@ -452,6 +454,7 @@ pub fn render(wm: *WindowManager, q: *ashet.graphics.CommandQueue, theme: themes
 
             try q.fill_rect(Rectangle{ .x = window_rectangle.x + 1, .y = window_rectangle.y + 1, .width = title_width, .height = 9 }, style.title);
 
+            var title_buf: [128]u8 = undefined;
             try q.draw_text(
                 Point.new(
                     window_rectangle.x + 2,
@@ -459,7 +462,7 @@ pub fn render(wm: *WindowManager, q: *ashet.graphics.CommandQueue, theme: themes
                 ),
                 theme.title_font,
                 style.font,
-                window.get_title(),
+                window.get_title(&title_buf),
                 // TODO(fqu): title_width - 2,
             );
 
@@ -699,8 +702,9 @@ pub const Window = struct {
         };
     }
 
-    pub fn get_title(window: Window) []const u8 {
-        return ashet.gui.get_window_title(window.handle) catch unreachable;
+    pub fn get_title(window: Window, buffer: []u8) []const u8 {
+        const len = ashet.gui.get_window_title(window.handle, buffer) catch @panic("unexpected error");
+        return buffer[0..len];
     }
 
     // pub fn setTitle(window: *Window, text: []const u8) !void {
@@ -864,7 +868,8 @@ const MinimizedIterator = struct {
     fn next(iter: *MinimizedIterator) ?MinimizedWindow {
         const window = iter.inner.next() orelse return null;
 
-        const title = window.get_title();
+        var title_buf: [256]u8 = undefined;
+        const title = window.get_title(&title_buf);
         const width = @as(u15, @intCast(@min(6 * title.len + 2 + 11 + 10, 75)));
         defer iter.dx += (width + 4);
 

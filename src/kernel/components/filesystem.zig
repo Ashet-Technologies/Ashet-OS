@@ -200,12 +200,12 @@ const iop_handlers = struct {
     }
 
     fn fs_open_drive(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.OpenDrive.Inputs) fs_abi.OpenDrive.Error!fs_abi.OpenDrive.Outputs {
-        errdefer |err| logger.warn("fs_open_drive({}) => {}", .{ inputs.fs, err });
+        errdefer |err| logger.warn("fs_open_drive({}) => {}", .{ inputs.fs_id, err });
 
-        const disk_id = if (inputs.fs == .system)
+        const disk_id = if (inputs.fs_id == .system)
             sys_disk_index
         else
-            @intFromEnum(inputs.fs) - 1;
+            @intFromEnum(inputs.fs_id) - 1;
 
         if (!filesystems[disk_id].enabled) {
             return error.InvalidFileSystem;
@@ -225,7 +225,7 @@ const iop_handlers = struct {
     fn fs_open_dir(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.OpenDir.Inputs) fs_abi.OpenDir.Error!fs_abi.OpenDir.Outputs {
         errdefer |err| logger.warn("fs_open_dir('{s}') => {}", .{ inputs.path_ptr[0..inputs.path_len], err });
 
-        const ctx: *Directory = try resolve_dir(call, inputs.dir);
+        const ctx: *Directory = try resolve_dir(call, inputs.start_dir);
 
         const dri_dir = try ctx.fs.driver.openDirRelative(ctx.handle, inputs.path_ptr[0..inputs.path_len]);
         errdefer ctx.fs.driver.closeDir(dri_dir);
@@ -506,10 +506,10 @@ pub fn getFilesystemInfo(call: *ashet.overlapped.AsyncCall) void {
 }
 
 pub fn openDrive(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.OpenDrive.Inputs) void {
-    const disk_id = if (inputs.fs == .system)
+    const disk_id = if (inputs.fs_id == .system)
         sys_disk_index
     else
-        @intFromEnum(inputs.fs) - 1;
+        @intFromEnum(inputs.fs_id) - 1;
 
     if (!filesystems[disk_id].enabled) {
         return call.finalize(fs_abi.OpenDrive, error.InvalidFileSystem);
@@ -524,7 +524,7 @@ pub fn openDrive(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.OpenDrive.Inp
 }
 
 pub fn openDir(call: *ashet.overlapped.AsyncCall, inputs: fs_abi.OpenDir.Inputs) void {
-    _ = resolve_dir(call, inputs.dir) catch |err| {
+    _ = resolve_dir(call, inputs.start_dir) catch |err| {
         return call.finalize(fs_abi.OpenDir, err);
     };
 

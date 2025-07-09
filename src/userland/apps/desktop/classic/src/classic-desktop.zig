@@ -147,10 +147,8 @@ pub fn main() !void {
     var last_click_pos: ashet.abi.Point = ashet.abi.Point.zero;
     var last_click_time: ashet.clock.Absolute = .system_start;
 
-    var wait_input_event: ashet.input.GetEvent = .{ .inputs = .{} };
-    var wait_vsync_event: ashet.video.WaitForVBlank = .{ .inputs = .{
-        .output = @ptrCast(video_output),
-    } };
+    var wait_input_event: ashet.input.GetEvent = .init();
+    var wait_vsync_event: ashet.video.WaitForVBlank = .init(@ptrCast(video_output));
 
     try ashet.overlapped.schedule(&wait_input_event.arc);
     try ashet.overlapped.schedule(&wait_vsync_event.arc);

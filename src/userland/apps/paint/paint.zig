@@ -7,7 +7,7 @@ const Point = ashet.abi.Point;
 
 pub fn main() !void {
     var argv_buffer: [8]ashet.abi.SpawnProcessArg = undefined;
-    const argv = ashet.process.get_arguments(null, &argv_buffer);
+    const argv = try ashet.process.get_arguments(null, &argv_buffer);
 
     std.debug.assert(argv.len == 2);
     std.debug.assert(argv[0].type == .string);

@@ -8,7 +8,7 @@ const loader = @import("loader.zig");
 
 const ProcessList = astd.DoublyLinkedList(void, .{ .tag = opaque {} });
 const ProcessNode = ProcessList.Node;
-const ExitCode = ashet.abi.ExitCode;
+const ExitCode = ashet.abi.process.ExitCode;
 
 var process_list: ProcessList = .{};
 
@@ -152,7 +152,7 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
         error.SystemResources => |e| e,
     };
 
-    var completed: [1]*ashet.abi.ARC = .{&open_file.arc};
+    var completed: [1]*ashet.abi.overlapped.ARC = .{&open_file.arc};
     const count = ashet.overlapped.await_completion_with_context(
         context,
         &completed,

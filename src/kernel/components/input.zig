@@ -206,7 +206,8 @@ fn convert_raw_event(raw_event: raw.Event) ?Event {
                     .key_release },
                 .scancode = src_event.scancode,
                 .key = key_code,
-                .text = text_ptr,
+                .text_ptr = text_ptr,
+                .text_len = if (text_ptr) |ptr| std.mem.len(ptr) else 0,
                 .modifiers = modifiers,
                 .pressed = src_event.down,
             };

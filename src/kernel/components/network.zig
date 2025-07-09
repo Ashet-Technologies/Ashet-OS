@@ -482,8 +482,8 @@ const lwip = struct {
     };
 };
 
-pub const EndPoint = abi.EndPoint;
-pub const IP = abi.IP;
+pub const EndPoint = abi.network.EndPoint;
+pub const IP = abi.network.IP;
 
 fn mapIP(ip: IP) c.ip_addr_t {
     return switch (ip.type) {
@@ -601,7 +601,9 @@ pub const udp = struct {
             return call.finalize(abi_udp.Bind, err);
         };
 
-        call.finalize(abi_udp.Bind, .{});
+        call.finalize(abi_udp.Bind, .{
+            .endpoint = unreachable, // TODO: Fix this!
+        });
     }
 
     pub fn connect(call: *ashet.overlapped.AsyncCall, inputs: abi_udp.Connect.Inputs) void {
@@ -825,7 +827,7 @@ pub const tcp = struct {
         };
 
         if (lwip.tcp.bind(socket.pcb, &mapIP(inputs.bind_point.ip), inputs.bind_point.port)) {
-            return call.finalize(abi_tcp.Bind, .{ .bind_point = EndPoint{
+            return call.finalize(abi_tcp.Bind, .{ .bound_endpoint = EndPoint{
                 .ip = unmapIP(socket.pcb.local_ip),
                 .port = socket.pcb.local_port,
             } });

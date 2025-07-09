@@ -1,26 +1,21 @@
 .{
     .name = .abi_mapper,
     .version = "0.1.0",
+    .fingerprint = 0x3c748993ae3762c7,
     .dependencies = .{
-        // TODO: Figure out how to use this cpython fork with pip
-        // .cpython = .{
-        //     .url = "https://github.com/allyourcodebase/cpython/archive/04087f079f033bace60d650c05b6635be3141d54.tar.gz",
-        //     .hash = "1220bb14f07a3c8d05eeff3dc5048417e6c0180d417441e381a8d31e109319ecbe46",
-        // },
-        // .caseconverter = .{
-        //     .url = "https://files.pythonhosted.org/packages/76/d9/48a4f2bb0dbea1086836a25b64ba77f5ab23652a12f45d9bbd2fe3f13d35/case-converter-1.1.0.tar.gz",
-        //     // .hash = "2ed3fc6e3ffa8d601f9a31ffcbc8fbd19eaeb48671a79a8ef16394672824510e",
-        // },
-        // .lark = .{
-        //     .url = "https://files.pythonhosted.org/packages/2c/e1/804b6196b3fbdd0f8ba785fc62837b034782a891d6f663eea2f30ca23cfa/lark-1.1.9.tar.gz",
-        //     .hash = "12206c8ca5dcf35be56de53669a58ec550a7d80303773c73e8a701f014324a577b89",
-        // },
+        .ptk = .{
+            .url = "git+https://github.com/ikskuh/parser-toolkit.git#0d5e00d4830bca53d10fee5d562152f1329d5784",
+            .hash = "parser_toolkit-0.1.0-baYGPS1CEwDuQk1W_5QEfKF_BWU5lN4qb8kVZoQ6Id9k",
+        },
+        .args = .{
+            .url = "git+https://github.com/ikskuh/zig-args.git#9425b94c103a031777fdd272c555ce93a7dea581",
+            .hash = "args-0.0.0-CiLiqv_NAAC97fGpk9hS2K681jkiqPsWP6w3ucb_ctGH",
+        },
     },
     .paths = .{
         "build.zig",
         "build.zig.zon",
-        "minizig.lark",
-        "abi-mapper.py",
+        "src",
         "tests",
     },
 }

@@ -60,7 +60,7 @@ var clonebuffer: [@as(u32, max_size.width) * max_size.height]Color align(4) = un
 
 pub fn main() !void {
     var argv_buffer: [8]ashet.abi.SpawnProcessArg = undefined;
-    const argv = ashet.process.get_arguments(null, &argv_buffer);
+    const argv = try ashet.process.get_arguments(null, &argv_buffer);
 
     std.debug.assert(argv.len == 2);
     std.debug.assert(argv[0].type == .string);
@@ -98,15 +98,9 @@ pub fn main() !void {
 
     const frame_time = ashet.clock.Duration.from_us(std.time.us_per_s / 20);
 
-    var timer: ashet.clock.Timer = .{
-        .inputs = .{
-            .timeout = ashet.clock.monotonic(),
-        },
-    };
+    var timer: ashet.clock.Timer = .init(ashet.clock.monotonic());
 
-    var get_event: ashet.gui.GetWindowEvent = .{
-        .inputs = .{ .window = window },
-    };
+    var get_event: ashet.gui.GetWindowEvent = .init(window);
 
     var invalidated = false;
 

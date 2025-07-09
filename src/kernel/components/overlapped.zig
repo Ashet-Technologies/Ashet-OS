@@ -5,8 +5,8 @@ const ashet = @import("../main.zig");
 const astd = @import("ashet-std");
 const logger = std.log.scoped(.overlapped);
 
-pub const ARC = ashet.abi.ARC;
-const WaitIO = ashet.abi.WaitIO;
+pub const ARC = ashet.abi.overlapped.ARC;
+const WaitIO = ashet.abi.overlapped.WaitIO;
 
 const work_queue_count = 1;
 var next_work_queue: usize = 0;
@@ -87,7 +87,7 @@ const AsyncHandler = struct {
     }
 };
 
-const async_call_handlers = std.EnumArray(ashet.abi.ARC_Type, AsyncHandler).init(.{
+const async_call_handlers = std.EnumArray(ashet.abi.overlapped.ARC.Type, AsyncHandler).init(.{
     .clock_timer = AsyncHandler.wrap(ashet.time.schedule_timer),
     .datetime_alarm = AsyncHandler.wrap(ashet.time.schedule_alarm),
 
@@ -141,7 +141,7 @@ const async_call_handlers = std.EnumArray(ashet.abi.ARC_Type, AsyncHandler).init
 
     .draw_render = AsyncHandler.wrap(ashet.graphics.render_async),
 
-    .video_wait_for_vblank = AsyncHandler.wrap(ashet.video.wait_for_vblank_async),
+    .video_wait_for_v_blank = AsyncHandler.wrap(ashet.video.wait_for_vblank_async),
 });
 
 /// Schedules a new overlapped event from the current thread context.
@@ -445,7 +445,7 @@ pub const AsyncCall = struct {
         if (!comptime ARC.is_arc(T))
             @compileError("finalize_with_error requires an ARC instance!");
 
-        const expected_type: ashet.abi.ARC_Type = T.arc_type;
+        const expected_type: ashet.abi.overlapped.ARC.Type = T.arc_type;
         std.debug.assert(ac.arc.type == expected_type);
         if (result) |value| {
             const generic: *T = T.from_arc(ac.arc);
