@@ -11,8 +11,7 @@ pub fn main() !void {
     defer std.log.info("Good bye, GUI!", .{});
 
     var argv_buffer: [8]ashet.abi.SpawnProcessArg = undefined;
-    const argv_len = try ashet.userland.process.get_arguments(null, &argv_buffer);
-    const argv = argv_buffer[0..argv_len];
+    const argv = try ashet.process.get_arguments(null, &argv_buffer);
 
     std.debug.assert(argv.len == 2);
     std.debug.assert(argv[0].type == .string);

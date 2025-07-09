@@ -170,27 +170,27 @@ pub const CommandQueue = struct {
 
 pub fn get_system_font(font_name: []const u8) !Font {
     errdefer |e| logger.debug("failed to load font '{s}': {}", .{ font_name, e });
-    return try ashet.userland.draw.get_system_font(font_name);
+    return try ashet.abi.draw.get_system_font(font_name);
 }
 
 pub fn create_memory_framebuffer(size: Size) !Framebuffer {
-    return try ashet.userland.draw.create_memory_framebuffer(size);
+    return try ashet.abi.draw.create_memory_framebuffer(size);
 }
 
 pub fn create_video_framebuffer(output: *ashet.video.Output) !Framebuffer {
-    return try ashet.userland.draw.create_video_framebuffer(@ptrCast(output));
+    return try ashet.abi.draw.create_video_framebuffer(@ptrCast(output));
 }
 
 pub fn create_window_framebuffer(window: ashet.abi.Window) !Framebuffer {
-    return try ashet.userland.draw.create_window_framebuffer(window);
+    return try ashet.abi.draw.create_window_framebuffer(window);
 }
 
 pub fn get_framebuffer_memory(fb: Framebuffer) !ashet.abi.VideoMemory {
-    return try ashet.userland.draw.get_framebuffer_memory(fb);
+    return try ashet.abi.draw.get_framebuffer_memory(fb);
 }
 
 pub fn get_framebuffer_size(fb: Framebuffer) !ashet.abi.Size {
-    return try ashet.userland.draw.get_framebuffer_size(fb);
+    return try ashet.abi.draw.get_framebuffer_size(fb);
 }
 
 pub fn load_texture_file(file: ashet.fs.File) !Framebuffer {

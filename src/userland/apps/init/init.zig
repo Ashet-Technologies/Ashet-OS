@@ -4,7 +4,6 @@ const ashet = @import("ashet");
 pub usingnamespace ashet.core;
 
 const abi = ashet.abi;
-const syscalls = ashet.userland;
 const io = ashet.userland.io;
 
 pub fn main() !void {
@@ -17,10 +16,10 @@ pub fn main() !void {
     });
     defer apps_dir.dir.release();
 
-    const shm_handle = try syscalls.shm.create(4096);
+    const shm_handle = try abi.shm.create(4096);
     defer shm_handle.release();
 
-    const shm = (try syscalls.shm.get_pointer(shm_handle))[0..try syscalls.shm.get_length(shm_handle)];
+    const shm = (try abi.shm.get_pointer(shm_handle))[0..try abi.shm.get_length(shm_handle)];
     @memset(shm, 0x00);
     @memcpy(shm[0..22], "This is shared memory!");
 

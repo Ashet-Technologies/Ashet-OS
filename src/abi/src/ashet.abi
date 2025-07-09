@@ -1,4 +1,7 @@
 
+/// Enumeration of all syscall numbers.
+typedef Syscall_ID = <<syscall_enum:u32>>;
+
 /// The base type for all system resources.
 enum SystemResource : usize
 {

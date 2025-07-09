@@ -2,7 +2,6 @@ const std = @import("std");
 const builtin = @import("builtin");
 
 pub const abi = @import("ashet-abi");
-pub const userland = @import("ashet-abi-access");
 
 pub const graphics = @import("libashet/graphics.zig");
 pub const input = @import("libashet/input.zig");
@@ -158,25 +157,25 @@ pub const core = struct {
 
 pub const process = struct {
     pub fn get_file_name(proc: ?abi.Process) []const u8 {
-        return userland.process.get_file_name(proc) catch "<undefined>";
+        return abi.process.get_file_name(proc) catch "<undefined>";
     }
 
     pub fn get_base_address(proc: ?abi.Process) !usize {
-        return try userland.process.get_base_address(proc);
+        return try abi.process.get_base_address(proc);
     }
 
     pub fn get_arguments(proc: ?abi.Process, argv_buffer: []abi.SpawnProcessArg) ![]abi.SpawnProcessArg {
-        const argv_len = try userland.process.get_arguments(proc, argv_buffer);
+        const argv_len = try abi.process.get_arguments(proc, argv_buffer);
         return argv_buffer[0..argv_len];
     }
 
     pub fn terminate(exit_code: abi.process.ExitCode) noreturn {
-        userland.process.terminate(exit_code);
+        abi.process.terminate(exit_code);
     }
 
     pub const thread = struct {
         pub fn yield() void {
-            userland.process.thread.yield();
+            abi.process.thread.yield();
         }
     };
 
@@ -203,7 +202,7 @@ pub const process = struct {
         fn globalAlloc(ctx: *anyopaque, len: usize, ptr_align: std.mem.Alignment, ret_addr: usize) ?[*]u8 {
             _ = ctx;
             _ = ret_addr;
-            return userland.process.memory.allocate(len, @intFromEnum(ptr_align)) catch return null;
+            return abi.process.memory.allocate(len, @intFromEnum(ptr_align)) catch return null;
         }
 
         /// Attempt to expand or shrink memory in place. `buf.len` must equal the
@@ -253,7 +252,7 @@ pub const process = struct {
         fn globalFree(ctx: *anyopaque, buf: []u8, buf_align: std.mem.Alignment, ret_addr: usize) void {
             _ = ctx;
             _ = ret_addr;
-            return userland.process.memory.release(buf, @intFromEnum(buf_align));
+            return abi.process.memory.release(buf, @intFromEnum(buf_align));
         }
     };
 
@@ -271,11 +270,11 @@ pub const process = struct {
         }
 
         pub fn write_log(log_level: abi.LogLevel, message: []const u8) void {
-            userland.process.debug.write_log(log_level, message);
+            abi.process.debug.write_log(log_level, message);
         }
 
         pub fn breakpoint() void {
-            userland.process.debug.breakpoint();
+            abi.process.debug.breakpoint();
         }
     };
 };
@@ -293,16 +292,16 @@ pub const overlapped = struct {
     // }
 
     pub fn schedule(event: *ARC) !void {
-        try userland.overlapped.schedule(event);
+        try abi.overlapped.schedule(event);
     }
 
     pub fn await_completion(buffer: []*ARC, options: abi.Await_Options) ![]*ARC {
-        const count = try userland.overlapped.await_completion(buffer, options);
+        const count = try abi.overlapped.await_completion(buffer, options);
         return buffer[0..count];
     }
 
     pub fn await_completion_of(buffer: []?*ARC) !usize {
-        return try userland.overlapped.await_completion_of(buffer);
+        return try abi.overlapped.await_completion_of(buffer);
     }
 
     fn Awaited_Events_Enum(comptime Events: type) type {
@@ -362,7 +361,7 @@ pub const overlapped = struct {
     }
 
     pub fn cancel(event: *ARC) !void {
-        try userland.arcs.cancel(event);
+        try abi.arcs.cancel(event);
     }
 
     pub fn singleShot(op: anytype) !void {
@@ -716,7 +715,7 @@ pub const clock = struct {
     /// Returns the time since system startup.
     /// This clock is monotonically increasing.
     pub fn monotonic() Absolute {
-        return userland.clock.monotonic();
+        return abi.clock.monotonic();
     }
 
     pub const Timer = abi.clock.Timer;
@@ -728,6 +727,6 @@ pub const datetime = struct {
     pub const Alarm = abi.datetime.Alarm;
 
     pub fn now() DateTime {
-        return userland.datetime.now();
+        return abi.datetime.now();
     }
 };

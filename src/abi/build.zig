@@ -72,7 +72,7 @@ pub fn build(b: *std.Build) void {
 
     const abi_code = convert_abi_file(b, render_zig_exe, abi_json, b.path("src/ports/zig.abi.zpatch"), .definition);
     const provider_code = convert_abi_file(b, render_zig_exe, abi_json, null, .kernel);
-    const consumer_code = convert_abi_file(b, render_zig_exe, abi_json, null, .userland);
+    // const consumer_code = convert_abi_file(b, render_zig_exe, abi_json, null, .userland);
 
     const abi_mod = b.addModule("ashet-abi", .{ .root_source_file = abi_code });
     // abi_mod.addAnonymousImport("async_running_call", .{ .root_source_file = b.path("src/async_running_call.zig") });
@@ -84,10 +84,10 @@ pub fn build(b: *std.Build) void {
         .imports = &.{.{ .name = "abi", .module = abi_mod }},
     });
 
-    _ = b.addModule("ashet-abi-consumer", .{
-        .root_source_file = consumer_code,
-        .imports = &.{.{ .name = "abi", .module = abi_mod }},
-    });
+    // _ = b.addModule("ashet-abi-consumer", .{
+    //     .root_source_file = consumer_code,
+    //     .imports = &.{.{ .name = "abi", .module = abi_mod }},
+    // });
 
     _ = b.addModule("ashet-abi.json", .{ .root_source_file = abi_json });
 
@@ -97,8 +97,8 @@ pub fn build(b: *std.Build) void {
     const check_provider_code = b.addSystemCommand(&.{ b.graph.zig_exe, "ast-check" });
     check_provider_code.addFileArg(provider_code);
 
-    const check_consumer_code = b.addSystemCommand(&.{ b.graph.zig_exe, "ast-check" });
-    check_consumer_code.addFileArg(consumer_code);
+    // const check_consumer_code = b.addSystemCommand(&.{ b.graph.zig_exe, "ast-check" });
+    // check_consumer_code.addFileArg(consumer_code);
 
     const install_abi_code = b.addInstallFileWithDir(abi_code, .{ .custom = "binding/zig" }, "abi.zig");
     install_abi_code.step.dependOn(&check_abi_code.step);
@@ -106,15 +106,15 @@ pub fn build(b: *std.Build) void {
     const install_provider_code = b.addInstallFileWithDir(provider_code, .{ .custom = "binding/zig" }, "provider.zig");
     install_provider_code.step.dependOn(&check_provider_code.step);
 
-    const install_consumer_code = b.addInstallFileWithDir(consumer_code, .{ .custom = "binding/zig" }, "consumer.zig");
-    install_consumer_code.step.dependOn(&check_consumer_code.step);
+    // const install_consumer_code = b.addInstallFileWithDir(consumer_code, .{ .custom = "binding/zig" }, "consumer.zig");
+    // install_consumer_code.step.dependOn(&check_consumer_code.step);
 
     b.getInstallStep().dependOn(&install_abi_code.step);
     b.getInstallStep().dependOn(&install_provider_code.step);
-    b.getInstallStep().dependOn(&install_consumer_code.step);
+    // b.getInstallStep().dependOn(&install_consumer_code.step);
 }
 
-pub fn convert_abi_file(b: *std.Build, render: *std.Build.Step.Compile, input: std.Build.LazyPath, patch: ?std.Build.LazyPath, mode: enum { userland, kernel, definition, stubs }) std.Build.LazyPath {
+pub fn convert_abi_file(b: *std.Build, render: *std.Build.Step.Compile, input: std.Build.LazyPath, patch: ?std.Build.LazyPath, mode: enum { kernel, definition }) std.Build.LazyPath {
     const generate_core_abi = b.addRunArtifact(render);
     generate_core_abi.addArg(@tagName(mode));
     generate_core_abi.addFileArg(input);

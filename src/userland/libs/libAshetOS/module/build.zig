@@ -13,7 +13,6 @@ pub fn build(b: *std.Build) void {
     const agp_mod = agp_dep.module("agp");
 
     const abi_mod = abi_dep.module("ashet-abi");
-    const abi_access_mod = abi_dep.module("ashet-abi-consumer");
 
     _ = b.addModule("ashet", .{
         .root_source_file = b.path("src/libashet.zig"),
@@ -21,7 +20,6 @@ pub fn build(b: *std.Build) void {
             .{ .name = "agp", .module = agp_mod },
             .{ .name = "ashet-std", .module = std_mod },
             .{ .name = "ashet-abi", .module = abi_mod },
-            .{ .name = "ashet-abi-access", .module = abi_access_mod },
         },
     });
 }

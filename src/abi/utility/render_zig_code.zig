@@ -74,6 +74,14 @@ pub fn render_definition(writer: *CodeWriter, allocator: std.mem.Allocator, sche
         \\pub const platforms = @import("platforms");
         \\
         \\pub const Platform = platforms.Platform;
+        \\
+        \\fn __handle_unexpected(syscall: Syscall_ID, error_code: u16) error{Unexpected} {
+        \\    std.debug.assert(error_code != 0);
+        \\    std.log.scoped(.ashet_syscalls).err("syscall {s} returned unexpected error code {}", .{ @tagName(syscall), error_code });
+        \\    return error.Unexpected;
+        \\}
+        \\
+        \\
     );
 
     var renderer: ZigRenderer = .{
@@ -87,21 +95,11 @@ pub fn render_definition(writer: *CodeWriter, allocator: std.mem.Allocator, sche
     try renderer.render_children(&.{}, schema.root);
 
     try writer.writeln("");
-
-    try writer.writeln(
-        \\/// Enumeration of all syscall numbers.
-        \\pub const Syscall_ID = enum(u32) {
-    );
-    {
-        writer.indent();
-        defer writer.dedent();
-
-        for (schema.syscalls) |syscall| {
-            try writer.println("{_} = {},", .{ fmt_fqn(syscall.full_qualified_name), @intFromEnum(syscall.uid) });
-        }
-    }
-    try writer.writeln("};");
     try writer.writeln("");
+
+    for (schema.syscalls) |syscall| {
+        try renderer.render_syscall(&syscall, &.{}, .full_name);
+    }
 }
 
 pub fn render_kernel(writer: *CodeWriter, allocator: std.mem.Allocator, schema: model.Document, patch_set: patch_parser.PatchSet) !void {
@@ -327,8 +325,6 @@ pub fn render_userland(writer: *CodeWriter, allocator: std.mem.Allocator, schema
     try writer.write(
         \\const std = @import("std");
         \\const abi = @import("abi");
-        \\
-        \\pub const Syscall_ID = abi.Syscall_ID;
         \\
         \\fn __handle_unexpected(syscall: abi.Syscall_ID, error_code: u16) error{Unexpected} {
         \\    std.debug.assert(error_code != 0);
@@ -613,7 +609,9 @@ const ZigRenderer = struct {
                 .constant => |idx| try zr.render_constant(zr.schema.get_constant(idx), child.children),
                 .typedef => |idx| try zr.render_typedef(zr.schema.get_type(idx).typedef, child.children),
 
-                .syscall => |idx| try zr.render_syscall(zr.schema.get_syscall(idx), child.children, .local_name),
+                // .syscall => |idx| try zr.render_syscall(zr.schema.get_syscall(idx), child.children, .local_name),
+                .syscall => |idx| try zr.render_userland_call(zr.schema.get_syscall(idx), child.children),
+
                 .async_call => |idx| try zr.render_async_call(zr.schema.get_async_call(idx), child.children),
             }
         }
