@@ -1,15 +1,11 @@
 
 <patch SystemResource>
   /// Casts the resource into a concrete type. Fails, if the type does not match.
-    pub fn cast(resource: SystemResource, comptime t: Type) error{ InvalidHandle, InvalidType }!t.to_type() {
-        _ = resource;
-        @panic("TODO!");
-        // var actual: Type = undefined;
-        // if (resources.get_type(resource, &actual) != .ok)
-        //     return error.InvalidHandle;
-        // if (actual != t)
-        //     return error.InvalidType;
-        // return resource.unsafe_cast(t);
+    pub fn cast(resource: SystemResource, comptime t: Type) error{InvalidHandle,InvalidType,Unexpected}!t.to_type() {
+        const actual: Type = try resources.get_type(resource);
+        if (actual != t)
+            return error.InvalidType;
+        return resource.unsafe_cast(t);
     }
 
     /// Casts the resource into a concrete type. Fails, if the type does not match.
@@ -20,13 +16,11 @@
     pub fn format(src: SystemResource, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
         _ = options;
         if (fmt.len == 1 and fmt[0] == 'T') {
-            @panic("TODO!");
-            // var src_type: Type = undefined;
-            // if (resources.get_type(src, &src_type) == .ok) {
-            //     try writer.print("SystemResource(0x{X:0>8}, type={s})", .{ @intFromEnum(src), @tagName(src_type) });
-            // } else {
-            //     try writer.print("SystemResource(0x{X:0>8}, bad handle)", .{@intFromEnum(src)});
-            // }
+            if (resources.get_type(src)) |src_type| {
+                try writer.print("SystemResource(0x{X:0>8}, type={s})", .{ @intFromEnum(src), @tagName(src_type) });
+            } else |_| {
+                try writer.print("SystemResource(0x{X:0>8}, bad handle)", .{@intFromEnum(src)});
+            }
         } else {
             try writer.print("SystemResource(0x{X:0>8})", .{@intFromEnum(src)});
         }
