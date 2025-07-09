@@ -117,9 +117,9 @@ const patterns = blk: {
         .create(.identifier, match_identifier),
         .create(.identifier, match.sequenceOf(.{ match.literal("@\""), match.takeNoneOf("\"\n\r"), match.literal("\"") })),
 
-        .create(.doc_comment, match.sequenceOf(.{ match.literal("///"), match.takeNoneOf("\n") })),
+        .create(.doc_comment, match.sequenceOf(.{ match.literal("///"), match.takeNoneOf("\r\n") })),
         .create(.doc_comment, match.literal("///")),
-        .create(.comment, match.sequenceOf(.{ match.literal("//?"), match.takeNoneOf("\n") })),
+        .create(.comment, match.sequenceOf(.{ match.literal("//?"), match.takeNoneOf("\r\n") })),
         .create(.comment, match.literal("//?")),
 
         .create(.number, match.sequenceOf(.{ match.literal("0x"), match.hexadecimalNumber })),
