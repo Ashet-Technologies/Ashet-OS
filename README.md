@@ -83,9 +83,7 @@ The following list contains devices for which there is a planned port of Ashet O
 
 ## Contributing
 
-This project uses [Zig 0.14.0](https://ziglang.org/download/#release-0.14.0) to compile most of the sources.
-
-In addition, an installation of [Python 3](https://www.python.org/) is required right now.
+This project uses [Zig 0.14.1](https://ziglang.org/download/#release-0.14.1) to compile most of the sources.
 
 ### Compiling The Project
 

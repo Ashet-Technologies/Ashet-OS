@@ -3,20 +3,6 @@
     .version = "0.1.0",
     .fingerprint = 0x3c748993ae3762c7,
     .dependencies = .{
-        // TODO: Figure out how to use this cpython fork with pip
-        // .cpython = .{
-        //     .url = "git+https://github.com/allyourcodebase/cpython#1109b165347080c0c77e9fc6a6b644ed2d4031d6",
-        //     .hash = "cpython-3.11.5-2-WIrcCSNxLwTyRoAWjrdmNqgs00UaH7CTJJq34gCpkki1",
-        // },
-        // .caseconverter = .{
-        //     .url = "git+https://github.com/chrisdoherty4/python-case-converter#v1.2.0",
-        //     .hash = "N-V-__8AABOOAABhs5hMn108PKs4ylS3trMkL7S7sKD0YJId",
-        // },
-        // .lark = .{
-        //     .url = "git+https://github.com/lark-parser/lark#1.2.2",
-        //     .hash = "N-V-__8AAFsNEgC0RRBIj_wwWriBm_4bF2YAEC3mY0O2j5Yi",
-        // },
-
         .ptk = .{
             .url = "git+https://github.com/ikskuh/parser-toolkit.git#0d5e00d4830bca53d10fee5d562152f1329d5784",
             .hash = "parser_toolkit-0.1.0-baYGPS1CEwDuQk1W_5QEfKF_BWU5lN4qb8kVZoQ6Id9k",
@@ -29,8 +15,7 @@
     .paths = .{
         "build.zig",
         "build.zig.zon",
-        "minizig.lark",
-        "abi-mapper.py",
+        "src",
         "tests",
     },
 }

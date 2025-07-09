@@ -34,11 +34,6 @@ jobs:
         with:
           version: "0.14.0"
 
-      - name: Setup Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
       - name: Install QEMU
         uses: awalsh128/cache-apt-pkgs-action@latest
         with:
