@@ -29,13 +29,22 @@
 
         // Externel deps:
         .@"disk-image-step" = .{
-            .url = "git+https://github.com/zig-osdev/disk-image-step.git#f68f9c79f2c75f9221a714c1167a40e1498c38b1",
-            .hash = "dimmer-2.0.0-suxOkgUWAgBYnpg01cykNDYU2VJ8-zh86GJx6_f-48i9",
+            .url = "git+https://github.com/zig-osdev/disk-image-step.git?ref=main#481e0cef4d95ff02143bcf341e0e736fe48cdc35",
+            .hash = "dimmer-2.0.0-suxOkkpTAgCSq6i6S_hy-8uzQs2y4dUNdIUNuUcocPMR",
         },
 
         .limine = .{
             .url = "git+https://github.com/limine-bootloader/limine#7d2bf778c27067ba421e95154208c8b0f3bbf10f",
             .hash = "N-V-__8AAMtwRwCKBq7qOA8fC-65FS6rsg0WL6pmA7OQBAb1",
+        },
+        .zig_limine_install = .{
+            .url = "git+https://github.com/zig-osdev/zig-limine-install?ref=main#bb910c524525f0be568905fe028630ef65a905b3",
+            .hash = "zig_limine_install-0.0.0-vFWELZAUAABFVnKxToTab-B8VWxgy9S3B2Mnpq2aBFwp",
+        },
+        .ovmf = .{
+            .url = "https://github.com/osdev0/edk2-ovmf-nightly/releases/download/nightly-2025-06-14/edk2-ovmf.tar.xz",
+            .hash = "N-V-__8AAAAAVAFlVQwLye_IhivhaSQf5400URtaLZXg1e3S",
+            .lazy = true,
         },
     },
 }

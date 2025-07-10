@@ -38,20 +38,7 @@ pub fn build(b: *std.Build) void {
 
     const disk_image_dep = b.dependency("disk-image-step", .{ .release = true });
 
-    const limine_dep = b.dependency("limine", .{});
-
-    // Ext tools:
-
-    const limine_exe = b.addExecutable(.{
-        .name = "limine",
-        .target = b.resolveTargetQuery(.{}),
-        .optimize = .ReleaseSafe,
-    });
-    limine_exe.addCSourceFile(.{
-        .file = limine_dep.path("limine.c"),
-        .flags = &.{"-std=c99"},
-    });
-    limine_exe.linkLibC();
+    const limine_dep = b.dependency("zig_limine_install", .{ .target = b.graph.host, .optimize = .ReleaseSafe });
 
     // Build:
 
@@ -138,7 +125,16 @@ pub fn build(b: *std.Build) void {
     // Phase 3: Machine dependent root fs
     switch (machine) {
         .@"x86-pc-bios" => {
-            rootfs.copyFile(limine_dep.path("limine-bios.sys"), "/limine-bios.sys");
+            // BIOS Setup
+            rootfs.copyFile(limine_dep.namedLazyPath("limine-bios.sys"), "/limine-bios.sys");
+
+            // EFI Setup
+            {
+                rootfs.mkdir("/EFI");
+                rootfs.mkdir("/EFI/BOOT");
+                rootfs.copyFile(limine_dep.namedLazyPath("limine").path(b, "BOOTX64.EFI"), "/EFI/BOOT/BOOTX64.EFI");
+            }
+
             rootfs.copyFile(b.path("../../rootfs/pc-bios/limine.conf"), "/limine.conf");
             rootfs.copyFile(kernel_exe, "/ashet-os");
         },
@@ -202,28 +198,42 @@ pub fn build(b: *std.Build) void {
     const disk_image = switch (machine) {
         .@"x86-pc-bios" => blk: {
             const raw_disk_file = disk_image_tools.createDisk(40 * DiskBuildInterface.MiB, .{
-                .mbr_part_table = .{
-                    .bootloader = null, // will be installed by InstallBootloaderStep
-                    .partitions = .{
-                        &.{
-                            .type = .@"fat32-lba",
-                            .bootable = true,
-                            .data = .{ .vfat = .{
-                                .format = .fat32,
-                                .label = "AshetOS",
-                                .tree = rootfs.finalize(),
-                            } },
+                .gpt_part_table = .{
+                    .partitions = &.{
+                        .{
+                            .type = .{ .name = .@"bios-boot" },
+                            .name = "\"Legacy bootloader\"",
+                            .size = 0x8000,
+                            .offset = 0x5000,
+                            .data = .empty,
                         },
-                        null,
-                        null,
-                        null,
+                        .{
+                            .type = .{ .name = .@"efi-system" },
+                            .name = "\"EFI System Partition\"",
+                            .offset = 0xD000,
+                            // .size = 0x210_0000,
+                            .data = .{
+                                .vfat = .{
+                                    .format = .fat32,
+                                    .label = "AshetOS",
+                                    .tree = rootfs.finalize(),
+                                },
+                            },
+                        },
                     },
                 },
             });
 
-            const install_bootloader = InstallBootloaderStep.create(b, limine_exe.getEmittedBin(), raw_disk_file);
+            const limine_install_exe = limine_dep.artifact("limine-install");
 
-            break :blk std.Build.LazyPath{ .generated = .{ .file = install_bootloader.output_file } };
+            const add_limine_to_image = b.addRunArtifact(limine_install_exe);
+            add_limine_to_image.addArg("-i");
+            add_limine_to_image.addFileArg(raw_disk_file);
+            add_limine_to_image.addArg("-o");
+            const disk_file = add_limine_to_image.addOutputFileArg("image.bin");
+            add_limine_to_image.addArgs(&.{ "-p", "1" }); // set GPT partition index
+
+            break :blk disk_file;
         },
 
         else => disk_image_tools.createDisk(
