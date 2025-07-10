@@ -122,26 +122,6 @@ pub fn build(b: *std.Build) void {
         else => {},
     }
 
-    // Phase 3: Machine dependent root fs
-    switch (machine) {
-        .@"x86-pc-bios" => {
-            // BIOS Setup
-            rootfs.copyFile(limine_dep.namedLazyPath("limine-bios.sys"), "/limine-bios.sys");
-
-            // EFI Setup
-            {
-                rootfs.mkdir("/EFI");
-                rootfs.mkdir("/EFI/BOOT");
-                rootfs.copyFile(limine_dep.namedLazyPath("limine").path(b, "BOOTX64.EFI"), "/EFI/BOOT/BOOTX64.EFI");
-            }
-
-            rootfs.copyFile(b.path("../../rootfs/pc-bios/limine.conf"), "/limine.conf");
-            rootfs.copyFile(kernel_exe, "/ashet-os");
-        },
-
-        else => {},
-    }
-
     if (machine_info.rom_size) |rom_size| {
         const objcopy_kernel = b.addObjCopy(kernel_exe, .{
             .basename = "kernel.bin",
@@ -197,19 +177,46 @@ pub fn build(b: *std.Build) void {
     // Phase 5: Create disk
     const disk_image = switch (machine) {
         .@"x86-pc-bios" => blk: {
+            var esp_fs = DiskBuildInterface.FileSystemBuilder.init(b);
+            // BIOS Setup
+            esp_fs.copyFile(limine_dep.namedLazyPath("limine-bios.sys"), "/limine-bios.sys");
+
+            // EFI Setup
+            {
+                esp_fs.mkdir("/EFI");
+                esp_fs.mkdir("/EFI/BOOT");
+                esp_fs.copyFile(limine_dep.namedLazyPath("limine").path(b, "BOOTX64.EFI"), "/EFI/BOOT/BOOTX64.EFI");
+            }
+
+            esp_fs.copyFile(b.path("../../rootfs/pc-bios/limine.conf"), "/limine.conf");
+            esp_fs.copyFile(kernel_exe, "/ashet-os");
+
             const raw_disk_file = disk_image_tools.createDisk(40 * DiskBuildInterface.MiB, .{
                 .gpt_part_table = .{
                     .partitions = &.{
                         .{
                             .type = .{ .name = .@"bios-boot" },
-                            .name = "\"Legacy bootloader\"",
+                            .name = "Legacy bootloader",
                             .size = 0x8000,
                             .offset = 0x5000,
                             .data = .empty,
                         },
                         .{
                             .type = .{ .name = .@"efi-system" },
-                            .name = "\"EFI System Partition\"",
+                            .name = "EFI System Partition",
+                            .offset = 0xD000,
+                            .size = 2 * DiskBuildInterface.MiB,
+                            .data = .{
+                                .vfat = .{
+                                    .format = .fat32,
+                                    .label = "UEFI",
+                                    .tree = esp_fs.finalize(),
+                                },
+                            },
+                        },
+                        .{
+                            .type = .{ .guid = "1b279432-2c0a-4d6c-aa30-7edee4b7155f".* },
+                            .name = "Ashet OS",
                             .offset = 0xD000,
                             // .size = 0x210_0000,
                             .data = .{

@@ -15,6 +15,7 @@ pub fn build(b: *std.Build) void {
     // Options:
     const machine_id = b.option(Machine, "machine", "Selects the machine for which the kernel should be built.") orelse @panic("-Dmachine required!");
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
+    const validate_mode = b.option(bool, "no-emit-bin", "Disables installing the kernel and makes the build way quicker.") orelse false;
 
     // Target configuration:
     const platform_id = machine_id.get_platform();
@@ -272,7 +273,11 @@ pub fn build(b: *std.Build) void {
         kernel_exe.linkLibrary(libc);
     }
 
-    b.installArtifact(kernel_exe);
+    if (validate_mode) {
+        b.getInstallStep().dependOn(&kernel_exe.step);
+    } else {
+        b.installArtifact(kernel_exe);
+    }
 }
 
 const PlatformConfig = struct {

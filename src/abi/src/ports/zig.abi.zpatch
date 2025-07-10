@@ -733,6 +733,8 @@
     }
 </patch>
 <patch UUID>
+    pub const nil: @This() = .{ .bytes = @splat(0x00) };
+    pub const max: @This() = .{ .bytes = @splat(0xFF) };
 
     /// Parses a UUID in the format
     /// `3ad20402-1711-4bbc-b6c3-ff8a1da068c6`
@@ -743,5 +745,21 @@
     pub fn constant(str: *const [36:0]u8) *const UUID {
         _ = str;
         unreachable;
+    }
+
+    pub fn eql(lhs: @This(), rhs: @This()) bool {
+        return std.mem.eql(u8, &lhs.bytes, &rhs.bytes);
+    }
+
+    pub fn format(uuid: @This(), fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype)! void {
+        _ = fmt;
+        _ = options;
+        try writer.print("{{{x:0>8}-{x:0>4}-{x:0>4}-{x:0>4}-{x:0>12}}}", .{
+            std.mem.readInt(u32, uuid.bytes[0..4], .big),
+            std.mem.readInt(u16, uuid.bytes[4..6], .big),
+            std.mem.readInt(u16, uuid.bytes[6..8], .big),
+            std.mem.readInt(u16, uuid.bytes[8..10], .big),
+            std.mem.readInt(u48, uuid.bytes[10..16], .big),
+        });
     }
 </patch>

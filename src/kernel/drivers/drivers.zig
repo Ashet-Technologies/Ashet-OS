@@ -112,7 +112,7 @@ pub fn DriverIterator(comptime class: DriverClass) type {
 }
 
 fn ResolvedDriverInterface(comptime class: DriverClass) type {
-    return std.meta.fields(DriverInterface)[std.meta.fieldIndex(DriverInterface, @tagName(class)).?].type;
+    return @FieldType(DriverInterface, @tagName(class));
 }
 
 pub fn getDriverName(comptime class: DriverClass, intf: *ResolvedDriverInterface(class)) []const u8 {

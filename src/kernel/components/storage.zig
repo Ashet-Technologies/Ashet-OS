@@ -2,6 +2,9 @@ const std = @import("std");
 const ashet = @import("../main.zig");
 const logger = std.log.scoped(.storage);
 
+const mbr_part = @import("storage/mbr_part.zig");
+const gtp_part = @import("storage/gpt_part.zig");
+
 pub const BlockDevice = struct {
     pub const DeviceError = error{ Fault, Timeout, InvalidBlock, DeviceNotPresent };
     pub const ReadError = DeviceError || error{};
@@ -57,4 +60,56 @@ pub const BlockDevice = struct {
 
 pub fn enumerate() ashet.drivers.DriverIterator(.block) {
     return ashet.drivers.enumerate(.block);
+}
+
+pub fn scan_partition_tables() void {
+    var iter = enumerate();
+
+    while (iter.next()) |driver| {
+        if (!driver.isPresent())
+            continue;
+        logger.info("scanning {s} ...", .{driver.name});
+        if (detect_gpt_parts(driver)) |_| {
+            // successfully detected GPT partitions
+            continue;
+        } else |err| switch (err) {
+            // These errors are ok, as they signal that we either don't have a supported disk
+            // or the disk does not contain partitions
+            error.NoGptTable, error.UnsupportedBlockSize, error.DiskTooSmall => {},
+
+            error.UnsupportedGptRevision => {
+                logger.warn("skipping block device {s} partitions, contains unsupported GPT partition table", .{driver.name});
+                continue;
+            },
+            error.CorruptedGptTable => {
+                logger.err("skipping block device {s} partitions, contains corrupt GPT partition table", .{driver.name});
+                continue;
+            },
+
+            error.ReadError => {
+                logger.err("failed to read GPT partition table data", .{});
+                continue;
+            },
+        }
+
+        if (detect_mbr_parts(driver)) |_| {
+            // successfully detected GPT partitions
+            continue;
+        } else |err| switch (err) {
+            //
+        }
+    }
+}
+
+fn detect_mbr_parts(bd: *BlockDevice) !void {
+    //
+    _ = bd;
+}
+
+fn detect_gpt_parts(bd: *BlockDevice) !void {
+    var iter: gtp_part.Iterator = try .init(bd);
+
+    while (try iter.next()) |part| {
+        logger.info("partition found: {}", .{part});
+    }
 }
