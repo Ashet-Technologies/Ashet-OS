@@ -52,12 +52,12 @@
         },
 
         .network = .{
-            .url = "https://github.com/ikskuh/zig-network/archive/117d0d5d3ba2891ce4c8e3dfcd0c24a3976a46ce.tar.gz",
+            .url = "git+https://github.com/ikskuh/zig-network.git?ref=main#117d0d5d3ba2891ce4c8e3dfcd0c24a3976a46ce",
             .hash = "122033a766875fe3e349f81903e1ca33f47b5887a506b2916269d16a8576d607652b",
         },
         .vnc = .{
             .url = "https://github.com/ikskuh/zvnc/archive/7c051fdabe7486d3f01d4e66b8a4dace3ea714a2.tar.gz",
-            .hash = "1220c9d868d911539c3fb44aef66face2097fcc7b8f2e0aaff82cea6be397c9469e5",
+            .hash = "zvnc-0.0.0-AAAAAASFAADJ2GjZEVOcP7RK72b6ziCX_Me48uCq_4LO",
         },
         .@"foundation-libc" = .{
             .url = "https://github.com/Ashet-Technologies/deps/raw/refs/heads/main/foundation-libc-0.14.0-dev.tar.gz",
@@ -68,12 +68,12 @@
             .hash = "zfat-0.0.0-AAAAAMYlcABdh06Mn9CNk8Ccy_3bBFgJr8wo4jKza1q-",
         },
         .turtlefont = .{
-            .url = "https://github.com/ikskuh/turtlefont/archive/dbb4079434fd5444fcfb442a713ef5dd30ee0d98.tar.gz",
-            .hash = "1220221d68cd05d550696c9df1a86ae1afe8170d5c05616ade89e31c5cf76106e637",
+            .url = "git+https://github.com/ikskuh/turtlefont.git?ref=main#f88e8d2447475635e410c52ce798e8954b27d3df",
+            .hash = "turtlefont-0.1.0-TiRlD8JaAABrQ9oR7tgmhWRBIae7Esx4MLnUVyMsLbCR",
         },
         .xcvt = .{
             .url = "https://github.com/Ashet-Technologies/libxcvt-zig/archive/e2a73dc9b52c26499e8d4b4d79202c45db2461dd.tar.gz",
-            .hash = "1220099912cbd95a702fc56da87c43527b527fed84ae81e473bb1692cbe79ae69ed3",
+            .hash = "xorgcvt-0.1.0-AAAAAFVHAAAJmRLL2VpwL8VtqHxDUntSf-2EroHkc7sW",
         },
 
         // Wayland Support

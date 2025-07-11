@@ -454,8 +454,8 @@ const machine_info_map = std.EnumArray(Machine, MachineStartupConfig).init(.{
 
 const generic_qemu_flags = [_][]const u8{
     "-no-reboot", "-no-shutdown",
-    "-chardev",   "stdio,id=os-monitor,logfile=zig-out/serial.log,signal=off",
-    "-serial",    "chardev:os-monitor",
+    "-chardev", "stdio,id=os-monitor,logfile=zig-out/serial.log,signal=on", // "signal=on" is required to allow ctrl-c
+    "-serial",  "chardev:os-monitor",
     "-s",
 };
 

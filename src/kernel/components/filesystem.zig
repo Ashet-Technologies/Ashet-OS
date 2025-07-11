@@ -75,6 +75,10 @@ pub const Directory = struct {
     }
 };
 
+fn slice_name(buf: []const u8) []const u8 {
+    return buf[0 .. std.mem.indexOfScalar(u8, buf, 0) orelse buf.len];
+}
+
 var sys_disk_index: u32 = 0; // system disk index for disk named SYS:
 
 const FileSystem = struct {
@@ -95,12 +99,21 @@ pub fn initialize() void {
         fs.enabled = false;
     }
 
+    sys_disk_index = std.math.maxInt(u32);
+
+    var first_candidate: ?u32 = null;
+
     var index: usize = 0;
     var devices = storage.enumerate();
     while (devices.next()) |dev| {
         if (index >= max_drives) {
             logger.err("detected more than {} potential drives!", .{max_drives});
             break;
+        }
+
+        if (dev.tags.partitioned) {
+            logger.info("device {s} contains partitions, skipping", .{dev.name});
+            continue;
         }
 
         if (!dev.isPresent()) {
@@ -144,12 +157,30 @@ pub fn initialize() void {
             continue;
         };
 
-        if (index == 0) {
-            logger.info("SYS: is mapped to {s}:", .{dev.name});
+        if (dev.tags.root_fs) {
+            if (sys_disk_index != std.math.maxInt(u32)) {
+                logger.warn("Multiple root file systems found. New root file system is {s}:, previous file system was {s}:", .{
+                    dev.name,
+                    slice_name(&filesystems[sys_disk_index].name),
+                });
+            }
+            sys_disk_index = index;
+        }
+        if (first_candidate == null) {
+            first_candidate = index;
         }
 
         index += 1;
     }
+
+    if (sys_disk_index == std.math.maxInt(u32)) {
+        sys_disk_index = first_candidate orelse @panic("No os file system found!");
+        logger.warn("Could not determine explicit system fs directory, assuming file system {s}:", .{
+            slice_name(&filesystems[sys_disk_index].name),
+        });
+    }
+
+    logger.info("SYS: is mapped to {s}:", .{slice_name(&filesystems[sys_disk_index].name)});
 
     const driver_thread = ashet.scheduler.Thread.spawn(filesystemCoreLoop, null, .{
         .stack_size = 64 * 1024, // some space for copying data around

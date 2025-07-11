@@ -218,6 +218,9 @@ fn main() !void {
     log.info("initialize video...", .{});
     try video.initialize();
 
+    log.info("scan partition tables...", .{});
+    storage.scan_partition_tables();
+
     log.info("initialize filesystem...", .{});
     filesystem.initialize();
 

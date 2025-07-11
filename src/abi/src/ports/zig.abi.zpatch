@@ -733,6 +733,8 @@
     }
 </patch>
 <patch UUID>
+    pub const nil: @This() = .{ .bytes = @splat(0x00) };
+    pub const max: @This() = .{ .bytes = @splat(0xFF) };
 
     /// Parses a UUID in the format
     /// `3ad20402-1711-4bbc-b6c3-ff8a1da068c6`
@@ -740,8 +742,59 @@
     ///
     /// You can generate UUIDs at
     /// https://www.uuidgenerator.net/version4
-    pub fn constant(str: *const [36:0]u8) *const UUID {
-        _ = str;
-        unreachable;
+    pub fn constant(comptime str: *const [36:0]u8) *const UUID {
+        return comptime blk: {
+            const copy = parse(str) catch @panic(std.fmt.comptimePrint("'{s}' is not a valid UUID", .{str}));
+            break :blk &copy;
+        };
+    }
+
+    pub fn parse(str: []const u8) error{InvalidLength,InvalidCharacter}!UUID {
+        @setEvalBranchQuota(16384);
+
+        if(str.len != 36)
+            return error.InvalidLength;
+
+        const tl_hex = str[0..8];
+        if (str[8] != '-') return error.InvalidCharacter;
+        const tm_hex = str[9..13];
+        if (str[13] != '-') return error.InvalidCharacter;
+        const th_hex = str[14..18];
+        if (str[18] != '-') return error.InvalidCharacter;
+        const cs_hex = str[19..23];
+        if (str[23] != '-') return error.InvalidCharacter;
+        const node_hex = str[24..36];
+
+        const tl: u32 = try std.fmt.parseInt(u32, tl_hex, 16);
+        const tm: u16 = try std.fmt.parseInt(u16, tm_hex, 16);
+        const th: u16 = try std.fmt.parseInt(u16, th_hex, 16);
+        const cs: u16 = try std.fmt.parseInt(u16, cs_hex, 16);
+        const node: u48 = try std.fmt.parseInt(u48, node_hex, 16);
+
+        var uuid: [16]u8 = undefined;
+
+        std.mem.writeInt(u32, uuid[0..4], tl, .little);
+        std.mem.writeInt(u16, uuid[4..6], tm, .little);
+        std.mem.writeInt(u16, uuid[6..8], th, .little);
+        std.mem.writeInt(u16, uuid[8..10], cs, .big);
+        std.mem.writeInt(u48, uuid[10..16], node, .big);
+        
+        return .{ .bytes = uuid };
+    }
+
+    pub fn eql(lhs: *const @This(), rhs: *const @This()) bool {
+        return std.mem.eql(u8, &lhs.bytes, &rhs.bytes);
+    }
+
+    pub fn format(uuid: *const @This(), fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype)! void {
+        _ = fmt;
+        _ = options;
+        try writer.print("{{{x:0>8}-{x:0>4}-{x:0>4}-{x:0>4}-{x:0>12}}}", .{
+            std.mem.readInt(u32, uuid.bytes[0..4], .little),
+            std.mem.readInt(u16, uuid.bytes[4..6], .little),
+            std.mem.readInt(u16, uuid.bytes[6..8], .little),
+            std.mem.readInt(u16, uuid.bytes[8..10], .big),
+            std.mem.readInt(u48, uuid.bytes[10..16], .big),
+        });
     }
 </patch>

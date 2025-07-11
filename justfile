@@ -12,6 +12,8 @@ build:
 
 [working-directory: 'src/kernel']
 build-kernel:
+    {{zig}} build --prominent-compile-errors -freference-trace=10 -Dmachine=arm-ashet-hc -Dno-emit-bin
+
     {{zig}} build --prominent-compile-errors -freference-trace=10 -Dmachine=arm-ashet-hc
     {{zig}} build --prominent-compile-errors -freference-trace=10 -Dmachine=arm-ashet-vhc
     {{zig}} build --prominent-compile-errors -freference-trace=10 -Dmachine=arm-qemu-virt
