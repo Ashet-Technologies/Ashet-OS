@@ -28,9 +28,9 @@
         .dungeon = .{ .path = "../userland/apps/dungeon" },
 
         // Externel deps:
-        .@"disk-image-step" = .{
-            .url = "git+https://github.com/zig-osdev/disk-image-step.git?ref=main#481e0cef4d95ff02143bcf341e0e736fe48cdc35",
-            .hash = "dimmer-2.0.0-suxOkkpTAgCSq6i6S_hy-8uzQs2y4dUNdIUNuUcocPMR",
+        .dimmer = .{
+            .url = "git+https://github.com/zig-osdev/disk-image-step.git?ref=main#c0cbba5ed178382908d89a545ceee85ec2189da1",
+            .hash = "dimmer-2.0.0-suxOkmFTAgC_Xdvlp7T0N1U6B3BPtFU7W_MP96BKzzq7",
         },
 
         .limine = .{

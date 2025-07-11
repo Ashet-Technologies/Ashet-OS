@@ -177,7 +177,7 @@ pub const Iterator = struct {
 
             iter.part_index += 1;
 
-            if (partition.type_guid.eql(part_types.unused)) {
+            if (partition.type_guid.eql(&part_types.unused)) {
                 // skip unused parts
                 continue;
             }
