@@ -3,7 +3,7 @@ const ashet = @import("../main.zig");
 const logger = std.log.scoped(.storage);
 
 const mbr_part = @import("storage/mbr_part.zig");
-const gtp_part = @import("storage/gpt_part.zig");
+const gpt_part = @import("storage/gpt_part.zig");
 
 pub const Tags = packed struct(u8) {
     root_fs: bool,
@@ -114,34 +114,52 @@ pub fn scan_partition_tables() void {
             driver.tags.partitioned = true;
             continue;
         } else |err| switch (err) {
-            //
+            // These errors are ok, as they signal that we either don't have a supported disk
+            // or the disk does not contain partitions
+            error.NoMbrTable, error.UnsupportedBlockSize, error.DiskTooSmall => {},
+
+            error.ReadError => {
+                logger.err("failed to read GPT partition table data", .{});
+                continue;
+            },
+
+            error.OutOfMemory => {
+                logger.err("failed to allocate data for partition data, aborting scan.", .{});
+                return;
+            },
         }
     }
 }
 
 fn detect_mbr_parts(bd: *BlockDevice) !void {
-    //
-    _ = bd;
-}
-
-fn detect_gpt_parts(bd: *BlockDevice) !void {
-    var iter: gtp_part.Iterator = try .init(bd);
+    var iter: mbr_part.Iterator = try .init(bd);
 
     var index: u32 = 0;
     while (try iter.next()) |part| : (index += 1) {
         logger.info("partition found: {}", .{part});
-        logger.info("  {}", .{part.type_guid});
-        logger.info("  {X:0>2}", .{part.type_guid.bytes});
-        logger.info("  {}", .{gtp_part.part_types.ashet_rootfs});
-        logger.info("  {X:0>2}", .{gtp_part.part_types.ashet_rootfs.bytes});
 
-        if (part.type_guid.eql(gtp_part.part_types.bios_boot_partition)) {
+        const part_dev = try create_partition(bd, index, part.first_lba, part.last_lba - part.first_lba + 1);
+
+        if (part.part_type == .ashet_os) {
+            part_dev.driver.class.block.tags.root_fs = true;
+        }
+    }
+}
+
+fn detect_gpt_parts(bd: *BlockDevice) !void {
+    var iter: gpt_part.Iterator = try .init(bd);
+
+    var index: u32 = 0;
+    while (try iter.next()) |part| : (index += 1) {
+        logger.info("partition found: {}", .{part});
+
+        if (part.type_guid.eql(gpt_part.part_types.bios_boot_partition)) {
             logger.warn("skipping BIOS boot partition...", .{});
             continue;
         }
 
         const part_dev = try create_partition(bd, index, part.first_lba, part.last_lba - part.first_lba + 1);
-        if (part.type_guid.eql(gtp_part.part_types.ashet_rootfs)) {
+        if (part.type_guid.eql(gpt_part.part_types.ashet_rootfs)) {
             part_dev.driver.class.block.tags.root_fs = true;
         }
     }

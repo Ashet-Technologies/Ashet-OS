@@ -191,20 +191,12 @@ pub fn build(b: *std.Build) void {
             esp_fs.copyFile(b.path("../../rootfs/pc-bios/limine.conf"), "/limine.conf");
             esp_fs.copyFile(kernel_exe, "/ashet-os");
 
-            const raw_disk_file = disk_image_tools.createDisk(66 * DiskBuildInterface.MiB, .{
-                .gpt_part_table = .{
-                    .partitions = &.{
-                        .{
-                            .type = .{ .name = .@"bios-boot" },
-                            .name = "BIOS Bootloader",
-                            .size = 0x8000,
-                            .offset = 0x5000,
-                            .data = .empty,
-                        },
-                        .{
-                            .type = .{ .name = .@"efi-system" },
-                            .name = "EFI System",
-                            .offset = 0xD000,
+            const raw_disk_file = disk_image_tools.createDisk(67 * DiskBuildInterface.MiB, .{
+                .mbr_part_table = .{
+                    .partitions = .{
+                        &.{
+                            .type = .predefined( .@"fat32-lba"),
+                            .bootable = true,
                             .size = 33 * DiskBuildInterface.MiB,
                             .data = .{
                                 .vfat = .{
@@ -214,11 +206,8 @@ pub fn build(b: *std.Build) void {
                                 },
                             },
                         },
-                        .{
-                            .type = .{ .guid = "1b279432-2c0a-4d6c-aa30-7edee4b7155f".* },
-                            .name = "Ashet OS",
-                            .offset = 0x210D000,
-                            // .size = 0x210_0000,
+                        &.{
+                            .type = .id(0x7F), // "Reserved for individual use"
                             .data = .{
                                 .vfat = .{
                                     .format = .fat32,
@@ -227,8 +216,47 @@ pub fn build(b: *std.Build) void {
                                 },
                             },
                         },
+                        null,
+                        null,
                     },
                 },
+                // .gpt_part_table = .{
+                //     .partitions = &.{
+                //         .{
+                //             .type = .{ .name = .@"bios-boot" },
+                //             .name = "BIOS Bootloader",
+                //             .size = 0x8000,
+                //             .offset = 0x5000,
+                //             .data = .empty,
+                //         },
+                //         .{
+                //             .type = .{ .name = .@"efi-system" },
+                //             .name = "EFI System",
+                //             .offset = 0xD000,
+                //             .size = 33 * DiskBuildInterface.MiB,
+                //             .data = .{
+                //                 .vfat = .{
+                //                     .format = .fat32,
+                //                     .label = "UEFI",
+                //                     .tree = esp_fs.finalize(),
+                //                 },
+                //             },
+                //         },
+                //         .{
+                //             .type = .{ .guid = "1b279432-2c0a-4d6c-aa30-7edee4b7155f".* },
+                //             .name = "Ashet OS",
+                //             .offset = 0x210D000,
+                //             // .size = 0x210_0000,
+                //             .data = .{
+                //                 .vfat = .{
+                //                     .format = .fat32,
+                //                     .label = "AshetOS",
+                //                     .tree = rootfs.finalize(),
+                //                 },
+                //             },
+                //         },
+                //     },
+                // },
             });
 
             const limine_install_exe = limine_dep.artifact("limine-install");
@@ -238,7 +266,7 @@ pub fn build(b: *std.Build) void {
             add_limine_to_image.addFileArg(raw_disk_file);
             add_limine_to_image.addArg("-o");
             const disk_file = add_limine_to_image.addOutputFileArg("image.bin");
-            add_limine_to_image.addArgs(&.{ "-p", "1" }); // set GPT partition index
+            // add_limine_to_image.addArgs(&.{ "-p", "1" }); // set GPT partition index
 
             break :blk disk_file;
         },

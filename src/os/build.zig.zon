@@ -29,8 +29,8 @@
 
         // Externel deps:
         .dimmer = .{
-            .url = "git+https://github.com/zig-osdev/disk-image-step.git?ref=main#c0cbba5ed178382908d89a545ceee85ec2189da1",
-            .hash = "dimmer-2.0.0-suxOkmFTAgC_Xdvlp7T0N1U6B3BPtFU7W_MP96BKzzq7",
+            .url = "git+https://github.com/zig-osdev/disk-image-step.git?ref=main#c0411db63cfda4c42a502dda277fd10f4a751160",
+            .hash = "dimmer-2.0.0-suxOkghVAgCZxYfOd33arl5jOJrnL_8hoZEnCL86IXyX",
         },
 
         .limine = .{

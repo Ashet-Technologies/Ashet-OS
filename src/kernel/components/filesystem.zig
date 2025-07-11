@@ -101,6 +101,8 @@ pub fn initialize() void {
 
     sys_disk_index = std.math.maxInt(u32);
 
+    var first_candidate: ?u32 = null;
+
     var index: usize = 0;
     var devices = storage.enumerate();
     while (devices.next()) |dev| {
@@ -164,12 +166,18 @@ pub fn initialize() void {
             }
             sys_disk_index = index;
         }
+        if (first_candidate == null) {
+            first_candidate = index;
+        }
 
         index += 1;
     }
 
     if (sys_disk_index == std.math.maxInt(u32)) {
-        @panic("No os file system found!");
+        sys_disk_index = first_candidate orelse @panic("No os file system found!");
+        logger.warn("Could not determine explicit system fs directory, assuming file system {s}:", .{
+            slice_name(&filesystems[sys_disk_index].name),
+        });
     }
 
     logger.info("SYS: is mapped to {s}:", .{slice_name(&filesystems[sys_disk_index].name)});
