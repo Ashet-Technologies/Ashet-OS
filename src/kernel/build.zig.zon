@@ -52,8 +52,8 @@
         },
 
         .network = .{
-            .url = "git+https://github.com/ikskuh/zig-network.git?ref=main#8f6a156a547da4b20030effa40ecba8f63b467a1",
-            .hash = "network-0.1.0-Pm-AghMmAQBfWhIrEM1V3X8VsqiCbCh0CrqNdPVwQ3LG",
+            .url = "git+https://github.com/ikskuh/zig-network.git?ref=main#117d0d5d3ba2891ce4c8e3dfcd0c24a3976a46ce",
+            .hash = "122033a766875fe3e349f81903e1ca33f47b5887a506b2916269d16a8576d607652b",
         },
         .vnc = .{
             .url = "https://github.com/ikskuh/zvnc/archive/7c051fdabe7486d3f01d4e66b8a4dace3ea714a2.tar.gz",
