@@ -83,11 +83,14 @@ pub fn scan_partition_tables() void {
         if (detect_gpt_parts(driver)) |_| {
             // successfully detected GPT partitions
             driver.tags.partitioned = true;
+
             continue;
         } else |err| switch (err) {
             // These errors are ok, as they signal that we either don't have a supported disk
             // or the disk does not contain partitions
-            error.NoGptTable, error.UnsupportedBlockSize, error.DiskTooSmall => {},
+            error.NoGptTable, error.UnsupportedBlockSize, error.DiskTooSmall => |e| {
+                logger.info("skip GPT for {s}: {s}", .{ driver.name, @errorName(e) });
+            },
 
             error.UnsupportedGptRevision => {
                 logger.warn("skipping block device {s} partitions, contains unsupported GPT partition table", .{driver.name});
@@ -116,7 +119,9 @@ pub fn scan_partition_tables() void {
         } else |err| switch (err) {
             // These errors are ok, as they signal that we either don't have a supported disk
             // or the disk does not contain partitions
-            error.NoMbrTable, error.UnsupportedBlockSize, error.DiskTooSmall => {},
+            error.NoMbrTable, error.UnsupportedBlockSize, error.DiskTooSmall => |e| {
+                logger.info("skip MBR for {s}: {s}", .{ driver.name, @errorName(e) });
+            },
 
             error.ReadError => {
                 logger.err("failed to read GPT partition table data", .{});
@@ -143,6 +148,11 @@ fn detect_mbr_parts(bd: *BlockDevice) !void {
         if (part.part_type == .ashet_os) {
             part_dev.driver.class.block.tags.root_fs = true;
         }
+    }
+
+    if (index == 0) {
+        logger.warn("MBR table is empty? Maybe just a protective MBR?", .{});
+        return error.NoMbrTable;
     }
 }
 
