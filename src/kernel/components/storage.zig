@@ -201,19 +201,19 @@ const PartitionDevice = struct {
     base_block: u64,
 
     fn present(driver: *ashet.drivers.Driver) bool {
-        const part: *PartitionDevice = @fieldParentPtr("driver", driver);
+        const part: *PartitionDevice = @alignCast(@fieldParentPtr("driver", driver));
         return part.device.isPresent();
     }
 
     fn read(driver: *ashet.drivers.Driver, block: u64, data: []u8) ashet.storage.BlockDevice.ReadError!void {
-        const part: *PartitionDevice = @fieldParentPtr("driver", driver);
+        const part: *PartitionDevice = @alignCast(@fieldParentPtr("driver", driver));
         if (block >= part.driver.class.block.num_blocks)
             return error.InvalidBlock;
         return try part.device.readBlock(part.base_block + block, data);
     }
 
     fn write(driver: *ashet.drivers.Driver, block: u64, data: []const u8) ashet.storage.BlockDevice.WriteError!void {
-        const part: *PartitionDevice = @fieldParentPtr("driver", driver);
+        const part: *PartitionDevice = @alignCast(@fieldParentPtr("driver", driver));
         if (block >= part.driver.class.block.num_blocks)
             return error.InvalidBlock;
         return try part.device.writeBlock(part.base_block + block, data);
