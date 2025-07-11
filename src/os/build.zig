@@ -177,98 +177,120 @@ pub fn build(b: *std.Build) void {
     // Phase 5: Create disk
     const disk_image = switch (machine) {
         .@"x86-pc-bios" => blk: {
-            var esp_fs = DiskBuildInterface.FileSystemBuilder.init(b);
-            // BIOS Setup
-            esp_fs.copyFile(limine_dep.namedLazyPath("limine-bios.sys"), "/limine-bios.sys");
+            const bios_boot = true;
+            const uefi_boot = true;
+            const mbr_part = false;
 
-            // EFI Setup
-            {
-                esp_fs.mkdir("/EFI");
-                esp_fs.mkdir("/EFI/BOOT");
-                esp_fs.copyFile(limine_dep.namedLazyPath("limine").path(b, "BOOTX64.EFI"), "/EFI/BOOT/BOOTX64.EFI");
+            if (uefi_boot) {
+                std.debug.assert(mbr_part == false); // UEFI requires GPT!
+            }
+            std.debug.assert(uefi_boot or bios_boot); // We must have at least one boot strategy available
+
+            var boot_fs = DiskBuildInterface.FileSystemBuilder.init(b);
+
+            // BIOS Setup
+            if (bios_boot) {
+                boot_fs.copyFile(limine_dep.namedLazyPath("limine-bios.sys"), "/limine-bios.sys");
             }
 
-            esp_fs.copyFile(b.path("../../rootfs/pc-bios/limine.conf"), "/limine.conf");
-            esp_fs.copyFile(kernel_exe, "/ashet-os");
+            // EFI Setup
+            if (uefi_boot) {
+                boot_fs.mkdir("/EFI");
+                boot_fs.mkdir("/EFI/BOOT");
+                boot_fs.copyFile(limine_dep.namedLazyPath("limine").path(b, "BOOTX64.EFI"), "/EFI/BOOT/BOOTX64.EFI");
+            }
 
-            const raw_disk_file = disk_image_tools.createDisk(67 * DiskBuildInterface.MiB, .{
-                .mbr_part_table = .{
-                    .partitions = .{
-                        &.{
-                            .type = .predefined( .@"fat32-lba"),
-                            .bootable = true,
-                            .size = 33 * DiskBuildInterface.MiB,
-                            .data = .{
-                                .vfat = .{
-                                    .format = .fat32,
-                                    .label = "UEFI",
-                                    .tree = esp_fs.finalize(),
+            // Always required:
+            boot_fs.copyFile(b.path("../../rootfs/pc-bios/limine.conf"), "/limine.conf");
+            boot_fs.copyFile(kernel_exe, "/ashet-os");
+
+            const raw_disk_file = disk_image_tools.createDisk(67 * DiskBuildInterface.MiB, if (mbr_part)
+                .{
+                    .mbr_part_table = .{
+                        .partitions = .{
+                            &.{
+                                .type = .predefined(.@"fat32-lba"),
+                                .bootable = true,
+                                .size = 33 * DiskBuildInterface.MiB,
+                                .data = .{
+                                    .vfat = .{
+                                        .format = .fat32,
+                                        .label = "BOOT",
+                                        .tree = boot_fs.finalize(),
+                                    },
                                 },
                             },
-                        },
-                        &.{
-                            .type = .id(0x7F), // "Reserved for individual use"
-                            .data = .{
-                                .vfat = .{
-                                    .format = .fat32,
-                                    .label = "AshetOS",
-                                    .tree = rootfs.finalize(),
+                            &.{
+                                .type = .id(0x7F), // "Reserved for individual use"
+                                .data = .{
+                                    .vfat = .{
+                                        .format = .fat32,
+                                        .label = "AshetOS",
+                                        .tree = rootfs.finalize(),
+                                    },
                                 },
                             },
+                            null,
+                            null,
                         },
-                        null,
-                        null,
                     },
-                },
-                // .gpt_part_table = .{
-                //     .partitions = &.{
-                //         .{
-                //             .type = .{ .name = .@"bios-boot" },
-                //             .name = "BIOS Bootloader",
-                //             .size = 0x8000,
-                //             .offset = 0x5000,
-                //             .data = .empty,
-                //         },
-                //         .{
-                //             .type = .{ .name = .@"efi-system" },
-                //             .name = "EFI System",
-                //             .offset = 0xD000,
-                //             .size = 33 * DiskBuildInterface.MiB,
-                //             .data = .{
-                //                 .vfat = .{
-                //                     .format = .fat32,
-                //                     .label = "UEFI",
-                //                     .tree = esp_fs.finalize(),
-                //                 },
-                //             },
-                //         },
-                //         .{
-                //             .type = .{ .guid = "1b279432-2c0a-4d6c-aa30-7edee4b7155f".* },
-                //             .name = "Ashet OS",
-                //             .offset = 0x210D000,
-                //             // .size = 0x210_0000,
-                //             .data = .{
-                //                 .vfat = .{
-                //                     .format = .fat32,
-                //                     .label = "AshetOS",
-                //                     .tree = rootfs.finalize(),
-                //                 },
-                //             },
-                //         },
-                //     },
-                // },
-            });
+                }
+            else
+                .{
+                    .gpt_part_table = .{
+                        .partitions = &.{
+                            .{
+                                .type = .{ .name = .@"bios-boot" },
+                                .name = "BIOS Bootloader",
+                                .size = 0x8000,
+                                .offset = 0x5000,
+                                .data = .empty,
+                            },
+                            .{
+                                .type = .{ .name = .@"efi-system" },
+                                .name = "EFI System",
+                                .offset = 0xD000,
+                                .size = 33 * DiskBuildInterface.MiB,
+                                .data = .{
+                                    .vfat = .{
+                                        .format = .fat32,
+                                        .label = "UEFI",
+                                        .tree = boot_fs.finalize(),
+                                    },
+                                },
+                            },
+                            .{
+                                .type = .{ .guid = "1b279432-2c0a-4d6c-aa30-7edee4b7155f".* },
+                                .name = "Ashet OS",
+                                .offset = 0x210D000,
+                                // .size = 0x210_0000,
+                                .data = .{
+                                    .vfat = .{
+                                        .format = .fat32,
+                                        .label = "AshetOS",
+                                        .tree = rootfs.finalize(),
+                                    },
+                                },
+                            },
+                        },
+                    },
+                });
 
             const limine_install_exe = limine_dep.artifact("limine-install");
 
-            const add_limine_to_image = b.addRunArtifact(limine_install_exe);
-            add_limine_to_image.addArg("-i");
-            add_limine_to_image.addFileArg(raw_disk_file);
-            add_limine_to_image.addArg("-o");
-            const disk_file = add_limine_to_image.addOutputFileArg("image.bin");
-            // add_limine_to_image.addArgs(&.{ "-p", "1" }); // set GPT partition index
-
-            break :blk disk_file;
+            if (bios_boot) {
+                const add_limine_to_image = b.addRunArtifact(limine_install_exe);
+                add_limine_to_image.addArg("-i");
+                add_limine_to_image.addFileArg(raw_disk_file);
+                add_limine_to_image.addArg("-o");
+                const disk_file = add_limine_to_image.addOutputFileArg("image.bin");
+                if (!mbr_part) {
+                    add_limine_to_image.addArgs(&.{ "-p", "1" }); // set GPT partition index
+                }
+                break :blk disk_file;
+            } else {
+                break :blk raw_disk_file;
+            }
         },
 
         else => disk_image_tools.createDisk(
