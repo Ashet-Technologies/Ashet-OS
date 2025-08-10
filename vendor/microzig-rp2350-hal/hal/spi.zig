@@ -4,8 +4,8 @@ const peripherals = microzig.chip.peripherals;
 const SPI0_reg = peripherals.SPI0;
 const SPI1_reg = peripherals.SPI1;
 
-const gpio = @import("gpio.zig");
 const clocks = @import("clocks.zig");
+const dma = @import("dma.zig");
 const resets = @import("resets.zig");
 const time = @import("time.zig");
 const hw = @import("hw.zig");
@@ -85,7 +85,7 @@ pub const ConfigError = error{
 pub const SPI = enum(u1) {
     _,
 
-    fn get_regs(spi: SPI) *volatile SpiRegs {
+    pub inline fn get_regs(spi: SPI) *volatile SpiRegs {
         return switch (@intFromEnum(spi)) {
             0 => SPI0_reg,
             1 => SPI1_reg,
@@ -162,6 +162,17 @@ pub const SPI = enum(u1) {
         spi_regs.SSPCPSR.modify(.{ .CPSDVSR = 0 });
     }
 
+    pub fn set_slave(spi: SPI, slave: bool) void {
+        const regs = spi.get_regs();
+        // Disable SPI
+        regs.SSPCR1.modify(.{ .SSE = 0 });
+
+        regs.SSPCR1.modify(.{ .MS = @intFromBool(slave) });
+
+        // Re-enable SPI
+        regs.SSPCR1.modify(.{ .SSE = 1 });
+    }
+
     pub inline fn is_writable(spi: SPI) bool {
         return spi.get_regs().SSPSR.read().TNF == 1;
     }
@@ -173,6 +184,20 @@ pub const SPI = enum(u1) {
     fn validate_bitwidth(comptime PacketType: type) void {
         if (@bitSizeOf(PacketType) < 4 or @bitSizeOf(PacketType) > 16)
             @compileError("PacketType must be a datatype with a size between 4 and 16 bits inclusive");
+    }
+
+    pub fn tx(spi: SPI) dma.DMA_WriteTarget {
+        return .{
+            .dreq = if (@intFromEnum(spi) == 0) .spi0_tx else .spi1_tx,
+            .addr = @intFromPtr(&spi.get_regs().SSPDR),
+        };
+    }
+
+    pub fn rx(spi: SPI) dma.DMA_ReadTarget {
+        return .{
+            .dreq = if (@intFromEnum(spi) == 0) .spi0_rx else .spi1_rx,
+            .addr = @intFromPtr(&spi.get_regs().SSPDR),
+        };
     }
 
     const fifo_depth = 8;
@@ -266,6 +291,10 @@ pub const SPI = enum(u1) {
         }
     }
 
+    pub fn set_loopback_mode(spi: SPI, enabled: bool) void {
+        spi.get_regs().SSPCR1.modify(.{ .LBM = @intFromBool(enabled) });
+    }
+
     /// Write a number of packets and discard any data received back.
     ///
     /// PacketType specifies the bit width of each packet using any of
@@ -336,7 +365,7 @@ pub const SPI = enum(u1) {
     /// be 0, but some devices require a specific value here,
     /// e.g. SD cards expect 0xff
     ///
-    /// NOTE: This function is a vectored version of `write_blocking` and takes an array of arrays.
+    /// NOTE: This function is a vectored version of `read_blocking` and takes an array of arrays.
     ///       This pattern allows one to create better zero-copy send routines as message prefixes and
     ///       suffixes won't need to be concatenated/inserted to the original buffer, but can be managed
     ///       in a separate memory.

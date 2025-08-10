@@ -3,9 +3,11 @@ const logger = std.log.scoped(.ashet_hc);
 const ashet = @import("../../../../main.zig");
 const rp2350 = @import("rp2350");
 const hal = @import("rp2350-hal");
-const rp2350_regs = rp2350.devices.RP2350.peripherals;
+const rp2350_regs = rp2350.peripherals;
 
 const psram = @import("psram.zig");
+
+pub const hw_alloc = @import("hw_alloc.zig");
 
 const disk_image_start = 0x10800000;
 const disk_image_end = 0x11000000;
@@ -16,9 +18,6 @@ pub const clock_config = blk: {
     break :blk cfg;
 };
 
-pub const debug_uart = hal.uart.instance.UART0;
-pub const debug_uart_baud = 1_000_000;
-
 pub const machine_config = ashet.ports.MachineConfig{
     .load_sections = .{ .data = true, .bss = true },
     .memory_protection = null,
@@ -27,18 +26,8 @@ pub const machine_config = ashet.ports.MachineConfig{
     .initialize = initialize,
     .debug_write = debug_write,
     .get_linear_memory_region = get_linear_memory_region,
-    .halt = null,
-};
-
-const pinout = struct {
-    const debug_tx = hal.gpio.num(0);
-    const debug_rx = hal.gpio.num(1);
-    const xip_cs1 = hal.gpio.num(8);
-
-    // // bitbang interface:
-    // const dbg_sel = hal.gpio.num(9);
-    // const dbg_sck = hal.gpio.num(10);
-    // const dbg_sda = hal.gpio.num(11);
+    .halt = machine_halt,
+    .get_log_prefix = get_log_prefix,
 };
 
 const hw = struct {
@@ -63,18 +52,65 @@ fn get_tick_count_ms() u64 {
 }
 
 comptime {
-    std.debug.assert(@sizeOf(rp2350.devices.RP2350.VectorTable) >= @sizeOf(ashet.platform.profile.start.InterruptTable));
+    std.debug.assert(@sizeOf(rp2350.VectorTable) >= @sizeOf(ashet.platform.profile.start.InterruptTable));
 }
 
-var interrupt_table: rp2350.devices.RP2350.VectorTable align(128) = undefined;
+var interrupt_table_core0: rp2350.VectorTable align(256) = undefined;
+var interrupt_table_core1: rp2350.VectorTable align(256) = undefined;
+
+const videomem = struct {
+    extern var __rp2350_sram_bank1_start: anyopaque align(4);
+    extern var __rp2350_sram_bank1_end: anyopaque align(4);
+    extern const __rp2350_sram_bank1_load: anyopaque align(4);
+
+    extern var __rp2350_sram_bank2_start: anyopaque align(4);
+    extern var __rp2350_sram_bank2_end: anyopaque align(4);
+    extern const __rp2350_sram_bank2_load: anyopaque align(4);
+
+    extern var __rp2350_sram_bank3_start: anyopaque align(4);
+    extern var __rp2350_sram_bank3_end: anyopaque align(4);
+    extern const __rp2350_sram_bank3_load: anyopaque align(4);
+
+    fn init_bank(
+        start: *align(4) anyopaque,
+        end: *align(4) anyopaque,
+        load: *align(4) const anyopaque,
+    ) void {
+        const len_bytes = @intFromPtr(end) - @intFromPtr(start);
+        const len_words = @divExact(len_bytes, @sizeOf(u32));
+
+        const src = @as([*]const u32, @ptrCast(load));
+        const dst = @as([*]u32, @ptrCast(start));
+
+        @memcpy(dst[0..len_words], src[0..len_words]);
+    }
+
+    fn init() void {
+        init_bank(
+            &__rp2350_sram_bank1_start,
+            &__rp2350_sram_bank1_end,
+            &__rp2350_sram_bank1_load,
+        );
+        init_bank(
+            &__rp2350_sram_bank2_start,
+            &__rp2350_sram_bank2_end,
+            &__rp2350_sram_bank2_load,
+        );
+        init_bank(
+            &__rp2350_sram_bank3_start,
+            &__rp2350_sram_bank3_end,
+            &__rp2350_sram_bank3_load,
+        );
+    }
+};
 
 fn early_initialize() void {
     // Disable watch dog, reset all peripherials, and set the clocks and PLLs:
     hal.init_sequence(clock_config);
 
-    pinout.xip_cs1.set_function(.gpck_xip_cs_coresight_trace);
-    pinout.debug_tx.set_function(.uart_first);
-    pinout.debug_rx.set_function(.uart_first);
+    hw_alloc.pins.xip_cs1.set_function(.gpck);
+    hw_alloc.pins.debug_tx.set_function(.uart);
+    hw_alloc.pins.debug_rx.set_function(.uart);
     // pinout.dbg_sel.set_function(.sio);
     // pinout.dbg_sck.set_function(.sio);
     // pinout.dbg_sda.set_function(.sio);
@@ -86,18 +122,28 @@ fn early_initialize() void {
     // pinout.dbg_sck.put(0);
     // pinout.dbg_sda.put(0);
 
-    debug_uart.apply(.{
-        .baud_rate = debug_uart_baud,
+    hw_alloc.uart.debug.apply(.{
+        .baud_rate = hw_alloc.uart.debug_baud,
         .clock_config = clock_config,
     });
 
+    // Clear screen, start log:
+    hw_alloc.uart.debug.write_blocking(ashet.utils.ansi.clear_screen, .no_deadline) catch {};
+
     logger.info("Debug output ready.", .{});
 
-    // bitbang_write("Debug ready.\r\n");
+    logger.info("initialize video memory...", .{});
+    videomem.init();
 
+    logger.info("initialize PSRAM...", .{});
     psram.init() catch @panic("failed to initialize psram!");
+    {
+        const psram_base: [*]align(4096) u8 = @ptrCast(@alignCast(&__machine_linmem_start));
+        const psram_len = @intFromPtr(&__machine_linmem_end) - @intFromPtr(&__machine_linmem_start);
+        @memset(psram_base[0..psram_len], 0);
+    }
 
-    configure_interrupt_table();
+    configure_interrupt_table(&interrupt_table_core0);
 
     logger.info("Machine early initialize done.", .{});
     logger.info("sys_clk: {} Hz", .{comptime clock_config.sys.?.frequency()});
@@ -115,45 +161,122 @@ fn early_initialize() void {
 }
 
 var core1_ready: bool = false;
-var core1_stack: [128]u32 = undefined;
+var core1_stack: [1024]u32 = undefined;
 
-fn core1_main() linksection(".ramtext") void {
+fn configure_mpu_region(region: u3, rbar: ashet.platform.profile.peripherals.mpu.RBAR.Reg, rlar: ashet.platform.profile.peripherals.mpu.RLAR.Reg) void {
+    ashet.platform.profile.peripherals.mpu.rnr.write(.{
+        .region = region,
+    });
+
+    ashet.platform.profile.peripherals.mpu.rbar.write(rbar);
+    ashet.platform.profile.peripherals.mpu.rlar.write(rlar);
+}
+
+fn core1_main() linksection(".sram.bank0") void {
     logger.info("core1 launched.", .{});
 
-    configure_interrupt_table();
+    configure_interrupt_table(&interrupt_table_core1);
 
-    ashet.drivers.video.HSTX_DVI.start_backend(clock_config);
+    // DMA read and write win over CPU:
+    rp2350.peripherals.BUSCTRL.BUS_PRIORITY.write_default(.{
+        .DMA_W = 1,
+        .DMA_R = 1,
+        .PROC0 = 0,
+        .PROC1 = 0,
+    });
+
+    ashet.drivers.video.HSTX_DVI.init_backend(clock_config);
+
+    // TODO: Enable MPU protection so Core 1 can't access XIP 0 and XIP 1 memories.
+    //       These memories have too much latency to allow real-time operation.
+    if (false) {
+        configure_mpu_region(0, .{
+            .allow_execute = .no_execute,
+            .permissions = .read_write_sec,
+            .sharing = .non_shareable,
+            .base = .from_int(0x1000_0000),
+        }, .{
+            .enable = true,
+            .attribute_index = 0,
+            .limit = .from_int(0x11FF_FFFF),
+        });
+        configure_mpu_region(1, .{
+            .allow_execute = .when_accessible,
+            .permissions = .read_write_sec,
+            .sharing = .non_shareable,
+            .base = .from_int(0x2000_0000),
+        }, .{
+            .enable = true,
+            .attribute_index = 0,
+            .limit = .from_int(0x200F_FFFF),
+        });
+        configure_mpu_region(2, .{
+            .allow_execute = .no_execute,
+            .permissions = .read_write_sec,
+            .sharing = .non_shareable,
+            .base = .from_int(0x4000_0000),
+        }, .{
+            .enable = true,
+            .attribute_index = 1,
+            .limit = .from_int(0xFFFF_FFFF),
+        });
+
+        ashet.platform.profile.peripherals.mpu.mair[0].write(.{
+            .outer = .normal_non_cacheable,
+            .inner = .{ .memory = .non_cacheable },
+        });
+        ashet.platform.profile.peripherals.mpu.mair[1].write(.{
+            .outer = .device,
+            .inner = .{ .device = .ng_nr_ne },
+        });
+
+        ashet.platform.profile.peripherals.mpu.ctrl.write(.{
+            .enabled = true,
+            .fault_handler_protection = .disabled, // allow hardfault/memfault to access everything
+            .priviledged_access = .mpu_protected,
+        });
+    }
+
+    ashet.drivers.video.HSTX_DVI.start_backend();
 
     ashet.utils.volatile_write(bool, &core1_ready, true);
 
+    const busctrl = rp2350.peripherals.BUSCTRL;
+    busctrl.PERFCTR0.write(.{ .PERFCTR0 = 0 });
+    busctrl.PERFCTR1.write(.{ .PERFCTR1 = 0 });
+    busctrl.PERFSEL0.write(.{ .PERFSEL0 = .xip_main0_access_contested });
+    busctrl.PERFSEL1.write(.{ .PERFSEL1 = .xip_main1_access_contested });
+    busctrl.PERFCTR_EN.write(.{ .PERFCTR_EN = 1 });
+
     while (true) {
-        ashet.platform.profile.wfe();
+        ashet.platform.profile.wfi();
     }
 }
 
-fn configure_interrupt_table() void {
+inline fn configure_interrupt_table(core_local_table: *align(256) rp2350.VectorTable) void {
     // Remap interrupt table:
     {
         // Create default variant:
-        interrupt_table = .{
+        core_local_table.* = .{
             .initial_stack_pointer = @intFromPtr(ashet.platform.profile.start.initial_vector_table.initial_stack_pointer),
             .Reset = ashet.platform.profile.start.initial_vector_table.reset,
         };
 
         // Copy the original interrupt table into this one:
-        const alias: *ashet.platform.profile.start.InterruptTable = @ptrCast(&interrupt_table);
+        const alias: *ashet.platform.profile.start.InterruptTable = @ptrCast(core_local_table);
 
         alias.* = ashet.platform.profile.start.initial_vector_table.*;
     }
 
-    ashet.platform.profile.registers.system_control_block.vtor.write(.{
-        .table_offset = @truncate(@intFromPtr(&interrupt_table) >> 7),
-    });
+    ashet.platform.profile.peripherals.system_control_block.vtor.write_raw(@intFromPtr(core_local_table));
+
+    ashet.platform.profile.enable_fault_irq();
+    ashet.platform.profile.enable_interrupts();
 }
 
 fn initialize() !void {
     logger.info("cpuid: {s}", .{
-        ashet.platform.profile.registers.system_control_block.cpuid.read(),
+        ashet.platform.profile.peripherals.system_control_block.cpuid.read(),
     });
 
     logger.info("initialize SysTick...", .{});
@@ -163,8 +286,8 @@ fn initialize() !void {
     {
         hw.rtc = ashet.drivers.rtc.Dummy_RTC.init(1739025296 * std.time.ns_per_s);
 
-        hw.uart0 = try ashet.drivers.serial.RP2xxx.init(clock_config, hal.uart.instance.UART0, debug_uart_baud);
-        hw.uart1 = try ashet.drivers.serial.RP2xxx.init(clock_config, hal.uart.instance.UART1, 115_200);
+        hw.uart0 = try ashet.drivers.serial.RP2xxx.init(clock_config, hw_alloc.uart.debug, hw_alloc.uart.debug_baud);
+        // hw.uart1 = try ashet.drivers.serial.RP2xxx.init(clock_config, hal.uart.instance.UART1, 115_200);
 
         // hw.fb_video = ashet.drivers.video.Virtual_Video_Output.init();
 
@@ -178,7 +301,7 @@ fn initialize() !void {
 
     ashet.drivers.install(&hw.rtc.driver);
     ashet.drivers.install(&hw.uart0.driver);
-    ashet.drivers.install(&hw.uart1.driver);
+    // ashet.drivers.install(&hw.uart1.driver);
     ashet.drivers.install(&hw.hstx_video.driver);
     ashet.drivers.install(&hw.xip_flash.driver);
 
@@ -201,8 +324,11 @@ var mouse_buffer_index: usize = 0;
 var mouse_last_state: u8 = 0;
 
 fn uart0_irq_handler() callconv(.C) void {
+    const debug_uart = hw_alloc.uart.debug;
+    const reader = debug_uart.reader(.no_deadline);
+
     while (debug_uart.is_readable()) {
-        const byte = debug_uart.reader().readByte() catch unreachable;
+        const byte = reader.readByte() catch unreachable;
 
         mouse_buffer[mouse_buffer_index] = byte;
         mouse_buffer_index += 1;
@@ -251,11 +377,12 @@ fn uart0_irq_handler() callconv(.C) void {
 }
 
 fn debug_write(msg: []const u8) void {
-    debug_uart.write_blocking(msg, null) catch {};
+    const debug_uart = hw_alloc.uart.debug;
+    debug_uart.write_blocking(msg, .no_deadline) catch {};
 }
 
-extern const __machine_linmem_start: u8 align(4);
-extern const __machine_linmem_end: u8 align(4);
+extern var __machine_linmem_start: anyopaque align(4096);
+extern var __machine_linmem_end: anyopaque align(4096);
 
 fn get_linear_memory_region() ashet.memory.Range {
     const linmem_start = @intFromPtr(&__machine_linmem_start);
@@ -264,7 +391,7 @@ fn get_linear_memory_region() ashet.memory.Range {
 }
 
 const systick = struct {
-    const regs = ashet.platform.profile.registers.sys_tick;
+    const regs = ashet.platform.profile.peripherals.sys_tick;
 
     var total_count_ms: u64 = 0;
 
@@ -280,7 +407,7 @@ const systick = struct {
 
         regs.rvr.write(.{ .reload = @max(1, calib.ten_ms / 10) });
 
-        interrupt_table.SysTick = increment_clock_irq;
+        interrupt_table_core0.SysTick = increment_clock_irq;
 
         regs.csr.modify(.{
             .enabled = true,
@@ -335,6 +462,22 @@ const PICOBIN_BLOCK_MARKER_END = 0xab123579;
 //         }
 //     }
 // }
+
+fn get_log_prefix() []const u8 {
+    return switch (rp2350.peripherals.SIO.CPUID.read().CPUID & 1) {
+        0 => "core 0",
+        1 => "core 1",
+        else => unreachable,
+    };
+}
+
+fn get_interrupt_table() *rp2350.VectorTable {
+    return switch (rp2350.peripherals.SIO.CPUID.read().CPUID & 1) {
+        0 => &interrupt_table_core0,
+        1 => &interrupt_table_core1,
+        else => unreachable,
+    };
+}
 
 pub const IRQ = enum(u6) {
     TIMER0_IRQ_0 = 0,
@@ -391,7 +534,13 @@ pub const IRQ = enum(u6) {
     SPAREIRQ_IRQ_5 = 51,
 
     pub fn set_handler(comptime irq: IRQ, handler: ashet.platform.profile.FunctionPointer) void {
-        @field(interrupt_table, @tagName(irq)) = handler;
+        @field(get_interrupt_table(), @tagName(irq)) = handler;
+        ashet.platform.profile.isb();
+        ashet.platform.profile.dsb();
+    }
+
+    pub fn get_handler(comptime irq: IRQ) ?ashet.platform.profile.FunctionPointer {
+        return @field(get_interrupt_table(), @tagName(irq));
     }
 
     fn get_nvic_params(irq: IRQ) struct { usize, u32 } {
@@ -404,41 +553,41 @@ pub const IRQ = enum(u6) {
 
     pub fn is_enabled(irq: IRQ) bool {
         const group, const mask = irq.get_nvic_params();
-        return (ashet.platform.profile.registers.nvic.iser[group] & mask) != 0;
+        return (ashet.platform.profile.peripherals.nvic.iser[group] & mask) != 0;
     }
 
     pub fn enable(irq: IRQ) void {
         const group, const mask = irq.get_nvic_params();
-        ashet.platform.profile.registers.nvic.iser[group] = mask;
+        ashet.platform.profile.peripherals.nvic.iser[group] = mask;
     }
 
     pub fn disable(irq: IRQ) void {
         const group, const mask = irq.get_nvic_params();
-        ashet.platform.profile.registers.nvic.icer[group] = mask;
+        ashet.platform.profile.peripherals.nvic.icer[group] = mask;
     }
 
     pub fn is_pending(irq: IRQ) bool {
         const group, const mask = irq.get_nvic_params();
-        return (ashet.platform.profile.registers.nvic.ispr[group] & mask) != 0;
+        return (ashet.platform.profile.peripherals.nvic.ispr[group] & mask) != 0;
     }
 
     pub fn set_pending(irq: IRQ) void {
         const group, const mask = irq.get_nvic_params();
-        ashet.platform.profile.registers.nvic.ispr[group] = mask;
+        ashet.platform.profile.peripherals.nvic.ispr[group] = mask;
     }
 
     pub fn clear_pending(irq: IRQ) void {
         const group, const mask = irq.get_nvic_params();
-        ashet.platform.profile.registers.nvic.icpr[group] = mask;
+        ashet.platform.profile.peripherals.nvic.icpr[group] = mask;
     }
 
     pub fn is_active(irq: IRQ) bool {
         const group, const mask = irq.get_nvic_params();
-        return (ashet.platform.profile.registers.nvic.iabr[group] & mask) != 0;
+        return (ashet.platform.profile.peripherals.nvic.iabr[group] & mask) != 0;
     }
 
     pub fn trigger(irq: IRQ) void {
-        ashet.platform.profile.registers.nvic.stir.write_default(.{
+        ashet.platform.profile.peripherals.nvic.stir.write_default(.{
             .interrupt_id = @intFromEnum(irq),
         });
     }
@@ -450,19 +599,45 @@ pub const IRQ = enum(u6) {
         const group = index / 4;
         const offset = index % 4;
 
-        const values: [4]u8 = @bitCast(ashet.platform.profile.registers.nvic.ipr[group]);
+        const values: [4]u8 = @bitCast(ashet.platform.profile.peripherals.nvic.ipr[group]);
         return values[offset];
     }
 
-    pub fn set_priority(irq: IRQ, prio: u8) void {
+    pub const Priority = enum(u8) {
+        highest = 0,
+        normal = 128,
+        lowest = 255,
+        _,
+    };
+
+    pub fn set_priority(irq: IRQ, prio: Priority) void {
         comptime std.debug.assert(@import("builtin").cpu.arch.endian() == .little);
 
         const index = @intFromEnum(irq);
         const group = index / 4;
         const offset = index % 4;
 
-        var values: [4]u8 = @bitCast(ashet.platform.profile.registers.nvic.ipr[group]);
-        values[offset] = prio;
-        ashet.platform.profile.registers.nvic.ipr[group] = @bitCast(values);
+        var values: [4]u8 = @bitCast(ashet.platform.profile.peripherals.nvic.ipr[group]);
+        values[offset] = @intFromEnum(prio);
+        ashet.platform.profile.peripherals.nvic.ipr[group] = @bitCast(values);
     }
 };
+
+fn machine_halt() noreturn {
+    ashet.platform.profile.disable_interrupts();
+
+    debug_write("\r\nMACHINE HALT [");
+
+    switch (rp2350.peripherals.SIO.CPUID.read().CPUID) {
+        0 => debug_write("Core 0"),
+        1 => debug_write("Core 1"),
+        else => debug_write("WTf"),
+    }
+    debug_write("]\r\n");
+
+    ashet.platform.profile.bkpt(0);
+
+    while (true) {
+        ashet.platform.profile.wfe();
+    }
+}

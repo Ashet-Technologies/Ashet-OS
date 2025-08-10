@@ -28,6 +28,9 @@
         .mkicon = .{
             .path = "src/tools/mkicon",
         },
+        .elfstack = .{
+            .path = "vendor/elfstack",
+        },
         // .wikitool = .{
         //     .path = "src/tools/wikitool",
         // },

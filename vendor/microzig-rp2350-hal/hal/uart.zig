@@ -7,9 +7,9 @@ const UART1_reg = peripherals.UART1;
 
 const gpio = @import("gpio.zig");
 const clocks = @import("clocks.zig");
+const dma = @import("dma.zig");
 const resets = @import("resets.zig");
 const time = @import("time.zig");
-const dma = @import("dma.zig");
 
 const UartRegs = microzig.chip.types.peripherals.UART0;
 
@@ -142,18 +142,23 @@ pub const instance = struct {
 pub const UART = enum(u1) {
     _,
 
-    pub const Writer = std.io.GenericWriter(UART, TransmitError, generic_writer_fn);
-    pub const Reader = std.io.GenericReader(UART, ReceiveError, generic_reader_fn);
+    pub const UART_With_Timeout = struct {
+        instance: UART,
+        deadline: mdf.time.Deadline,
+    };
 
-    pub fn writer(uart: UART) Writer {
-        return .{ .context = uart };
+    pub const Writer = std.io.GenericWriter(UART_With_Timeout, TransmitError, generic_writer_fn);
+    pub const Reader = std.io.GenericReader(UART_With_Timeout, ReceiveError, generic_reader_fn);
+
+    pub fn writer(uart: UART, deadline: mdf.time.Deadline) Writer {
+        return .{ .context = .{ .instance = uart, .deadline = deadline } };
     }
 
-    pub fn reader(uart: UART) Reader {
-        return .{ .context = uart };
+    pub fn reader(uart: UART, deadline: mdf.time.Deadline) Reader {
+        return .{ .context = .{ .instance = uart, .deadline = deadline } };
     }
 
-    fn get_regs(uart: UART) *volatile UartRegs {
+    pub inline fn get_regs(uart: UART) *volatile UartRegs {
         return switch (@intFromEnum(uart)) {
             0 => UART0_reg,
             1 => UART1_reg,
@@ -227,12 +232,26 @@ pub const UART = enum(u1) {
         return (1 == uart.get_regs().UARTFR.read().BUSY);
     }
 
+    pub fn tx(uart: UART) dma.DMA_WriteTarget {
+        return .{
+            .dreq = if (@intFromEnum(uart) == 0) .uart0_tx else .uart1_tx,
+            .addr = @intFromPtr(&uart.get_regs().UARTDR),
+        };
+    }
+
+    pub fn rx(uart: UART) dma.DMA_ReadTarget {
+        return .{
+            .dreq = if (@intFromEnum(uart) == 0) .uart0_rx else .uart1_rx,
+            .addr = @intFromPtr(&uart.get_regs().UARTDR),
+        };
+    }
+
     /// Write bytes to uart TX line and block until transaction is complete.
     ///
     /// Note that this does NOT disable reception while this is happening,
     /// so if this takes too long the RX FIFO can potentially overflow.
-    pub fn write_blocking(uart: UART, payload: []const u8, timeout: ?mdf.time.Duration) TransmitError!void {
-        return try uart.writev_blocking(&.{payload}, timeout);
+    pub fn write_blocking(uart: UART, payload: []const u8, deadline: mdf.time.Deadline) TransmitError!void {
+        return try uart.writev_blocking(&.{payload}, deadline);
     }
 
     /// Write bytes to uart TX line and block until transaction is complete.
@@ -244,9 +263,8 @@ pub const UART = enum(u1) {
     ///
     /// Note that this does NOT disable reception while this is happening,
     /// so if this takes too long the RX FIFO can potentially overflow.
-    pub fn writev_blocking(uart: UART, payloads: []const []const u8, timeout: ?mdf.time.Duration) TransmitError!void {
+    pub fn writev_blocking(uart: UART, payloads: []const []const u8, deadline: mdf.time.Deadline) TransmitError!void {
         const uart_regs = uart.get_regs();
-        const deadline = mdf.time.Deadline.init_relative(time.get_time_since_boot(), timeout);
 
         var iter = microzig.utilities.Slice_Vector([]const u8).init(payloads).iterator();
         while (iter.next_chunk(null)) |payload| {
@@ -266,8 +284,8 @@ pub const UART = enum(u1) {
     }
 
     /// Wraps write_blocking() for use as a GenericWriter
-    fn generic_writer_fn(uart: UART, buffer: []const u8) TransmitError!usize {
-        try uart.write_blocking(buffer, null);
+    fn generic_writer_fn(uart: UART_With_Timeout, buffer: []const u8) TransmitError!usize {
+        try uart.instance.write_blocking(buffer, uart.deadline);
         return buffer.len;
     }
 
@@ -299,7 +317,6 @@ pub const UART = enum(u1) {
             .BE = 1,
             .PE = 1,
             .FE = 1,
-            .padding = 0,
         });
     }
 
@@ -325,8 +342,8 @@ pub const UART = enum(u1) {
     /// Returns a transaction error immediately if it occurs and doesn't
     /// complete the transaction. Errors are preserved for further inspection,
     /// so must be cleared with clear_errors() before another transaction is attempted.
-    pub fn read_blocking(uart: UART, buffer: []u8, timeout: ?mdf.time.Duration) ReceiveError!void {
-        return uart.readv_blocking(&.{buffer}, timeout);
+    pub fn read_blocking(uart: UART, buffer: []u8, deadline: mdf.time.Deadline) ReceiveError!void {
+        return uart.readv_blocking(&.{buffer}, deadline);
     }
 
     /// Read bytes from uart RX line and block until transaction is complete.
@@ -339,9 +356,7 @@ pub const UART = enum(u1) {
     /// Returns a transaction error immediately if it occurs and doesn't
     /// complete the transaction. Errors are preserved for further inspection,
     /// so must be cleared with clear_errors() before another transaction is attempted.
-    pub fn readv_blocking(uart: UART, buffers: []const []u8, timeout: ?mdf.time.Duration) ReceiveError!void {
-        const deadline = mdf.time.Deadline.init_relative(time.get_time_since_boot(), timeout);
-
+    pub fn readv_blocking(uart: UART, buffers: []const []u8, deadline: mdf.time.Deadline) ReceiveError!void {
         var iter = microzig.utilities.Slice_Vector([]u8).init(buffers).iterator();
         while (iter.next_chunk(null)) |buffer| {
             for (buffer) |*byte| {
@@ -354,15 +369,15 @@ pub const UART = enum(u1) {
     }
 
     /// Convenience function for waiting for a single byte to come across the RX line.
-    pub fn read_word(uart: UART, timeout: ?mdf.time.Duration) ReceiveError!u8 {
+    pub fn read_word(uart: UART, deadline: mdf.time.Deadline) ReceiveError!u8 {
         var byte: [1]u8 = undefined;
-        try uart.read_blocking(&byte, timeout);
+        try uart.read_blocking(&byte, deadline);
         return byte[0];
     }
 
     /// Wraps read_blocking() for use as a GenericReader
-    fn generic_reader_fn(uart: UART, buffer: []u8) ReceiveError!usize {
-        try uart.read_blocking(buffer, null);
+    fn generic_reader_fn(uart: UART_With_Timeout, buffer: []u8) ReceiveError!usize {
+        try uart.instance.read_blocking(buffer, uart.deadline);
         return buffer.len;
     }
 
@@ -442,10 +457,10 @@ var uart_logger: ?UART.Writer = null;
 ///
 /// Allows system logging over uart via:
 /// pub const microzig_options = .{
-///     .logFn = hal.uart.logFn,
+///     .logFn = hal.uart.log,
 /// };
 pub fn init_logger(uart: UART) void {
-    uart_logger = uart.writer();
+    uart_logger = uart.writer(.no_deadline);
     uart_logger.?.writeAll("\r\n================ STARTING NEW LOGGER ================\r\n") catch {};
 }
 
@@ -454,7 +469,7 @@ pub fn deinit_logger() void {
     uart_logger = null;
 }
 
-pub fn logFn(
+pub fn log(
     comptime level: std.log.Level,
     comptime scope: @TypeOf(.EnumLiteral),
     comptime format: []const u8,
@@ -473,4 +488,19 @@ pub fn logFn(
 
         uart.print(prefix ++ format ++ "\r\n", .{ seconds, microseconds } ++ args) catch {};
     }
+}
+
+var log_mutex: microzig.hal.mutex.Mutex = .{};
+
+/// This log function wraps `log` in a semaphore so that calls to it from
+/// different cores or interrupts don't collide.
+pub fn log_threadsafe(
+    comptime level: std.log.Level,
+    comptime scope: @TypeOf(.EnumLiteral),
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    log_mutex.lock();
+    log(level, scope, format, args);
+    log_mutex.unlock();
 }

@@ -24,6 +24,10 @@ build-kernel:
 build-wiki:
     zig-ashet build -Dtarget=rv32
 
+
+build-tools:
+    zig-ashet build tools 
+
 build-vhc:
     rm -rf zig-out/arm-ashet-vhc
     {{zig}} build --summary none -Doptimize-apps=ReleaseSmall arm-ashet-vhc
@@ -133,9 +137,12 @@ farcall:
 
 
 rp2350-build:
-    {{zig}} build -Doptimize-kernel arm-ashet-hc
+    {{zig}} build -Doptimize-kernel -Dmachine=arm-ashet-hc tools install 
     llvm-size zig-out/arm-ashet-hc/kernel.elf
-    arm-none-eabi-objdump -dS zig-out/arm-ashet-hc/kernel.elf  > /tmp/arm-ashet-hc.S
+
+    ./zig-out/bin/elfstack zig-out/arm-ashet-hc/kernel.elf > zig-out/arm-ashet-hc/kernel.elfstack.svg
+
+    arm-none-eabi-objdump -dS zig-out/arm-ashet-hc/kernel.elf  > zig-out/arm-ashet-hc/kernel.S
 
     # convert kernel image to UF2 file, family=rp2350_arm_s, offset=0M
     picotool uf2 convert \
@@ -160,6 +167,8 @@ rp2350-flash: rp2350-build
         --verify \
         --execute \
         zig-out/arm-ashet-hc/kernel.uf2
+
+rp2350-launch:  openocd-bootloader rp2350-flash 
 
 rp2350-upload-fs: rp2350-build
     picotool load \
@@ -186,9 +195,24 @@ rp2350-gdb:
         zig-out/arm-ashet-hc/kernel.elf 
 
 rp2350-monitor:
-    picocom --baud 115200 --quiet /dev/ttyUSB0
+    ./zig-out/bin/debug-filter \
+        --elf kernel=zig-out/arm-ashet-hc/kernel.elf \
+        picocom --quiet --baud 2000000 /dev/ashet.com1
 
 qemu-gdb target:
-    gdb \
+    arm-none-eabi-gdb \
         --command "scripts/gdb" \
         zig-out/{{target}}/kernel.elf 
+
+cmd_bootloader := "adapter speed 12000
+    init
+    reset halt
+    rp2xxx rom_api_call RB 2
+    resume
+    exit"
+openocd-bootloader:
+    openocd -s tcl \
+        -f interface/cmsis-dap.cfg \
+        -f target/rp2350.cfg \
+        -c '{{cmd_bootloader}}'
+    sleep 0.5

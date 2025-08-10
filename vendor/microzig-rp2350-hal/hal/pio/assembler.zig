@@ -16,7 +16,12 @@ pub const Define = struct {
 pub const Program = struct {
     name: []const u8,
     defines: []const Define,
+
+    /// Stores the raw instruction stream.
     instructions: []const u16,
+    /// For each instruction, stores the kind of relocation required on load.
+    relocations: []const Relocation,
+
     origin: ?u5,
     side_set: ?encoder.SideSet,
     wrap_target: ?u5,
@@ -25,6 +30,14 @@ pub const Program = struct {
     pub fn get_mask(program: Program) u32 {
         return (@as(u32, 1) << @as(u5, @intCast(program.instructions.len))) - 1;
     }
+};
+
+pub const Relocation = union(enum) {
+    /// Keep the instruction as-is.
+    none,
+
+    /// Add the program origin to the lower 5 bit of the instruction.
+    jmpslot,
 };
 
 pub const Output = struct {
@@ -72,6 +85,12 @@ pub const Diagnostics = struct {
     }
 };
 
+/// Creates a copy of a slice at comptime that is guaranteed to be immutable.
+fn comptime_copy(comptime T: type, comptime slice: []const T) []const T {
+    const arr: [slice.len]T = slice[0..slice.len].*;
+    return &arr;
+}
+
 pub fn assemble_impl(comptime chip: Chip, comptime source: []const u8, diags: *?Diagnostics, options: AssembleOptions) !Output {
     const tokens = try tokenizer.tokenize(chip, source, diags, options.tokenize);
     const encoder_output = try encoder.encode(chip, tokens.slice(), diags, options.encode);
@@ -87,9 +106,9 @@ pub fn assemble_impl(comptime chip: Chip, comptime source: []const u8, diags: *?
                     .name = define.name,
                     .value = define.value,
                 }) catch unreachable;
-            break :blk tmp.constSlice();
+            break :blk comptime_copy(Define, tmp.slice());
         },
-        .programs = programs.constSlice(),
+        .programs = comptime_copy(Program, programs.slice()),
     };
 }
 
@@ -97,7 +116,7 @@ fn format_compile_error(comptime message: []const u8, comptime source: []const u
     var line_str: []const u8 = "";
     var line_num: u32 = 1;
     var column: u32 = 0;
-    var line_it = std.mem.tokenize(u8, source, "\n\r");
+    var line_it = std.mem.tokenizeAny(u8, source, "\n\r");
     while (line_it.next()) |line| : (line_num += 1) {
         line_str = line_str ++ "\n" ++ line;
         if (line_it.index >= index) {
@@ -135,4 +154,31 @@ test "tokenizer and encoder" {
     std.testing.refAllDecls(tokenizer);
     std.testing.refAllDecls(@import("assembler/Expression.zig"));
     std.testing.refAllDecls(encoder);
+}
+
+test "comparison" {
+    std.testing.refAllDecls(@import("assembler/comparison_tests.zig"));
+}
+
+test "assemble" {
+    // Test that the assembler can compile a simple program
+    // this also verifies that the assemble function can be compiled
+    _ = comptime assemble(.RP2040, ".program testprog", .{})
+        .get_program_by_name("testprog");
+}
+
+test "format compile error" {
+    const result = comptime format_compile_error(
+        "invalid instruction",
+        ".program testprog\n bad",
+        19,
+    );
+    try std.testing.expectEqualStrings(
+        \\failed to assemble PIO code:
+        \\
+        \\ bad
+        \\ ^
+        \\ invalid instruction
+        \\
+    , result);
 }

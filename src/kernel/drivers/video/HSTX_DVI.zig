@@ -10,7 +10,7 @@ const hal = @import("rp2350-hal");
 
 const cvt = @import("cvt");
 
-const regz = rp2350.devices.RP2350.peripherals;
+const regz = rp2350.peripherals;
 
 const HSTX_DVI = @This();
 
@@ -41,9 +41,7 @@ const MODE_V_BACK_PORCH = video_timings.vbackporch();
 const MODE_V_ACTIVE_LINES = video_timings.vdisplay;
 const MODE_V_TOTAL_LINES = video_timings.vtotal;
 
-var framebuffer: [@as(usize, video_resolution.width) * video_resolution.height]Color align(4096) = undefined;
-
-const led_pin = hal.gpio.num(3);
+var framebuffer: [@as(usize, video_resolution.width) * video_resolution.height]Color align(4096) linksection(".sram.bank1") = undefined;
 
 driver: Driver,
 
@@ -105,15 +103,8 @@ pub fn init(comptime clock_config: hal.clocks.config.Global) !HSTX_DVI {
 }
 
 /// Starts the backin
-pub fn start_backend(comptime clock_config: hal.clocks.config.Global) void {
+pub fn init_backend(comptime clock_config: hal.clocks.config.Global) void {
     _ = clock_config;
-
-    // Claim the two channels
-    DMACH_PING.claim();
-    DMACH_PONG.claim();
-
-    led_pin.set_function(.sio);
-    led_pin.set_direction(.out);
 
     // Configure HSTX's TMDS encoder for RGB233
     hstx_ctrl.EXPAND_TMDS.write_default(.{
@@ -183,11 +174,11 @@ pub fn start_backend(comptime clock_config: hal.clocks.config.Global) void {
     // is already making progress.
 
     // Configure PING channel:
-    const ping_ch = DMACH_PING.get_regs();
+    const ping_ch = ashet.machine.hw_alloc.dma.hdmi_ping.get_regs();
     ping_ch.al1_ctrl.write(.{
         .EN = 1,
         .HIGH_PRIORITY = 0,
-        .DATA_SIZE = .SIZE_WORD,
+        .DATA_SIZE = .size_32,
 
         .INCR_READ = 1,
         .INCR_READ_REV = 0,
@@ -198,8 +189,8 @@ pub fn start_backend(comptime clock_config: hal.clocks.config.Global) void {
         .RING_SIZE = .RING_NONE,
         .RING_SEL = 0,
 
-        .CHAIN_TO = @intFromEnum(DMACH_PONG),
-        .TREQ_SEL = .HSTX,
+        .CHAIN_TO = @intFromEnum(ashet.machine.hw_alloc.dma.hdmi_pong),
+        .TREQ_SEL = .hstx,
 
         .IRQ_QUIET = 0,
         .BSWAP = 0,
@@ -211,11 +202,11 @@ pub fn start_backend(comptime clock_config: hal.clocks.config.Global) void {
         .AHB_ERROR = 0,
     });
 
-    const pong_ch = DMACH_PONG.get_regs();
+    const pong_ch = ashet.machine.hw_alloc.dma.hdmi_pong.get_regs();
     pong_ch.al1_ctrl.write(.{
         .EN = 1,
         .HIGH_PRIORITY = 0,
-        .DATA_SIZE = .SIZE_WORD,
+        .DATA_SIZE = .size_32,
 
         .INCR_READ = 1,
         .INCR_READ_REV = 0,
@@ -226,8 +217,8 @@ pub fn start_backend(comptime clock_config: hal.clocks.config.Global) void {
         .RING_SIZE = .RING_NONE,
         .RING_SEL = 0,
 
-        .CHAIN_TO = @intFromEnum(DMACH_PING),
-        .TREQ_SEL = .HSTX,
+        .CHAIN_TO = @intFromEnum(ashet.machine.hw_alloc.dma.hdmi_ping),
+        .TREQ_SEL = .hstx,
 
         .IRQ_QUIET = 0,
         .BSWAP = 0,
@@ -245,39 +236,34 @@ pub fn start_backend(comptime clock_config: hal.clocks.config.Global) void {
     ping_ch.write_addr = @intFromPtr(&hstx_fifo.FIFO);
     pong_ch.write_addr = @intFromPtr(&hstx_fifo.FIFO);
 
-    // Enable both IRQs on IRQ 0
-    regz.DMA.INTE0.write_raw(DMACH_PING_MASK | DMACH_PONG_MASK);
+    // Enable both IRQs on IRQ 1
+    regz.DMA.INTE1.write_raw(ashet.machine.hw_alloc.dma.hdmi_ping.mask() | ashet.machine.hw_alloc.dma.hdmi_pong.mask());
 
     // Acknowledge potential pending IRQs:
-    regz.DMA.INTS0.write_raw(DMACH_PING_MASK | DMACH_PONG_MASK);
+    regz.DMA.INTS1.write_raw(ashet.machine.hw_alloc.dma.hdmi_ping.mask() | ashet.machine.hw_alloc.dma.hdmi_pong.mask());
 
-    logger.info("INTE0: 0x{X:0>4}", .{regz.DMA.INTE0.read().INTE0});
-    logger.info("INTS0: 0x{X:0>4}", .{regz.DMA.INTS0.read().INTS0});
+    logger.info("INTE1: 0x{X:0>4}", .{regz.DMA.INTE1.read().INTE1});
+    logger.info("INTS1: 0x{X:0>4}", .{regz.DMA.INTS1.read().INTS1});
 
-    const irq = ashet.machine.IRQ.DMA_IRQ_0;
+    const irq = ashet.machine.IRQ.DMA_IRQ_1;
 
     irq.set_handler(dma_irq_handler);
+    irq.set_priority(.highest);
     irq.enable();
+}
 
-    // regz.BUSCTRL.BUS_PRIORITY.write_default(.{
-    //     // DMA read and write win over CPU:
-    //     .DMA_W = 1,
-    //     .DMA_R = 1,
-    //     .PROC0 = 0,
-    //     .PROC1 = 0,
-    // });
-
+pub inline fn start_backend() void {
     ashet.platform.profile.enable_interrupts();
 
     // Start transferring the PING to kick off the video generation:
-    regz.DMA.MULTI_CHAN_TRIGGER.write_raw(DMACH_PING_MASK);
+    regz.DMA.MULTI_CHAN_TRIGGER.write_raw(ashet.machine.hw_alloc.dma.hdmi_ping.mask());
 
     backend_ready = true;
 }
 
 fn kill_dma() void {
-    regz.DMA.INTE0.write_raw(0);
-    regz.DMA.INTS0.write_raw(DMACH_PING_MASK | DMACH_PONG_MASK);
+    regz.DMA.INTE1.write_raw(0);
+    regz.DMA.INTS1.write_raw(ashet.machine.hw_alloc.dma.hdmi_ping.mask() | ashet.machine.hw_alloc.dma.hdmi_pong.mask());
 }
 
 noinline fn dma_error(ch0: anytype, ch1: anytype) void {
@@ -292,9 +278,10 @@ noinline fn dma_timeout(mask: u16) void {
     logger.err("DMA CLICKS: {}", .{dma_clicks});
     logger.err("DMA TIMING: 0x{X:0>4}", .{mask});
 }
+
 var dma_clicks: u32 = 0;
 
-noinline fn dma_irq_handler() linksection(".ramtext.bank4") callconv(.C) void {
+noinline fn dma_irq_handler() linksection(".sram.bank3") callconv(.C) void {
     @setRuntimeSafety(false);
 
     dma_clicks += 1;
@@ -306,16 +293,22 @@ noinline fn dma_irq_handler() linksection(".ramtext.bank4") callconv(.C) void {
         return dma_error(ch0_stat, ch1_stat);
     }
 
-    const status = regz.DMA.INTS0.read();
-    if (status.INTS0 != 1 and status.INTS0 != 2) {
-        return dma_timeout(status.INTS0);
+    const status = regz.DMA.INTS1.read();
+    if (status.INTS1 != 1 and status.INTS1 != 2) {
+        return dma_timeout(status.INTS1);
     }
 
     // dma_pong indicates the channel that just finished, which is the one
     // we're about to reload.
-    const mask = if (dma_pong) DMACH_PONG_MASK else DMACH_PING_MASK;
+    const mask = if (dma_pong)
+        comptime ashet.machine.hw_alloc.dma.hdmi_pong.mask()
+    else
+        comptime ashet.machine.hw_alloc.dma.hdmi_ping.mask();
 
-    const ch = if (dma_pong) comptime DMACH_PONG.get_regs() else comptime DMACH_PING.get_regs();
+    const ch = if (dma_pong)
+        comptime ashet.machine.hw_alloc.dma.hdmi_pong.get_regs()
+    else
+        comptime ashet.machine.hw_alloc.dma.hdmi_ping.get_regs();
 
     regz.DMA.INTR.write_raw(mask);
 
@@ -339,23 +332,16 @@ noinline fn dma_irq_handler() linksection(".ramtext.bank4") callconv(.C) void {
     }
 
     v_scanline = (v_scanline + 1) % MODE_V_TOTAL_LINES;
-
-    if (v_scanline == 0) {
-        led_pin.put(0);
-    }
-    if (v_scanline == MODE_V_TOTAL_LINES / 2) {
-        led_pin.put(1);
-    }
 }
 
 inline fn set_read_transfer(regs: *volatile hal.dma.Channel.Regs, buffer: []const u32) void {
     regs.read_addr = @intFromPtr(buffer.ptr);
-    regs.trans_count.write(.{ .COUNT = @intCast(buffer.len), .MODE = .NORMAL });
+    regs.trans_count = @intCast(buffer.len);
 }
 
 inline fn set_read_transfer_raw(regs: *volatile hal.dma.Channel.Regs, ptr: *anyopaque, count: u28) void {
     regs.read_addr = @intFromPtr(ptr);
-    regs.trans_count.write(.{ .COUNT = count, .MODE = .NORMAL });
+    regs.trans_count = count;
 }
 
 fn instance(dri: *Driver) *HSTX_DVI {
@@ -403,7 +389,7 @@ const HSTX_CMD_NOP = (0xf << 12);
 // Lists are padded with NOPs to be >= HSTX FIFO size, to avoid DMA rapidly
 // pingponging and tripping up the IRQs.
 
-const vblank_line_vsync_off align(4) linksection(".data") = [_]u32{
+const vblank_line_vsync_off align(4) linksection(".sram.bank2") = [_]u32{
     HSTX_CMD_RAW_REPEAT | MODE_H_FRONT_PORCH,
     SYNC_V1_H1,
     HSTX_CMD_RAW_REPEAT | MODE_H_SYNC_WIDTH,
@@ -413,7 +399,7 @@ const vblank_line_vsync_off align(4) linksection(".data") = [_]u32{
     HSTX_CMD_NOP,
 };
 
-const vblank_line_vsync_on align(4) linksection(".data") = [_]u32{
+const vblank_line_vsync_on align(4) linksection(".sram.bank3") = [_]u32{
     HSTX_CMD_RAW_REPEAT | MODE_H_FRONT_PORCH,
     SYNC_V0_H1,
     HSTX_CMD_RAW_REPEAT | MODE_H_SYNC_WIDTH,
@@ -423,7 +409,7 @@ const vblank_line_vsync_on align(4) linksection(".data") = [_]u32{
     HSTX_CMD_NOP,
 };
 
-const vactive_line align(4) linksection(".data") = [_]u32{
+const vactive_line align(4) linksection(".sram.bank2") = [_]u32{
     HSTX_CMD_RAW_REPEAT | MODE_H_FRONT_PORCH,
     SYNC_V1_H1,
     HSTX_CMD_NOP,
@@ -437,12 +423,6 @@ const vactive_line align(4) linksection(".data") = [_]u32{
 
 // ----------------------------------------------------------------------------
 // DMA logic
-
-const DMACH_PING = hal.dma.channel(0);
-const DMACH_PONG = hal.dma.channel(1);
-
-const DMACH_PING_MASK: u16 = @as(u16, 1) << @intFromEnum(DMACH_PING);
-const DMACH_PONG_MASK: u16 = @as(u16, 1) << @intFromEnum(DMACH_PONG);
 
 // First we ping. Then we pong. Then... we ping again.
 var dma_pong = false;

@@ -33,7 +33,11 @@ pub const utils = struct {
     pub const mmio = @import("utils/mmio.zig");
     pub const fmt = @import("utils/fmt.zig");
 
-    pub inline fn volatile_read(comptime T: type, ptr: *volatile T) T {
+    pub const SpinLock = @import("utils/SpinLock.zig");
+
+    pub const ansi = @import("utils/ansi.zig");
+
+    pub inline fn volatile_read(comptime T: type, ptr: *const volatile T) T {
         return ptr.*;
     }
 
@@ -80,7 +84,7 @@ pub const log_levels = struct {
     pub var gui: LogLevel = .debug;
     pub var io: LogLevel = .info;
     pub var main: LogLevel = .debug;
-    pub var memory: LogLevel = .info;
+    pub var memory: LogLevel = .debug;
     pub var mprot: LogLevel = .info; // very noise modules!
     pub var multitasking: LogLevel = .debug;
     pub var network: LogLevel = .info;
@@ -158,12 +162,14 @@ fn kernelMain() noreturn {
     // much dynamic memory we have available:
 
     Debug.setTraceLoc(@src());
+    log.info("initialize linear memory...", .{});
     memory.initializeLinearMemory();
 
     // Initialize scheduler before HAL as it doesn't require anything except memory pages for thread
     // storage, queues and stacks.
 
     Debug.setTraceLoc(@src());
+    log.info("initialize scheduler...", .{});
     scheduler.initialize();
 
     full_panic = true;
@@ -242,8 +248,6 @@ fn main() !void {
 
     log.info("startup network...", .{});
     try network.start();
-
-    // try ui.start();
 
     {
         log.info("starting entry point thread...", .{});
@@ -484,6 +488,8 @@ fn kernel_log_once(comptime scope: @Type(.enum_literal)) void {
     T.print();
 }
 
+var log_exclusive_lock: utils.SpinLock = .init;
+
 fn kernel_log_fn(
     comptime message_level: std.log.Level,
     comptime scope: @Type(.enum_literal),
@@ -501,16 +507,16 @@ fn kernel_log_fn(
         kernel_log_once(scope);
     }
 
-    const color_code = if (ansi)
+    const color_code = comptime if (ansi)
         switch (message_level) {
-            .err => "\x1B[91m", // red
-            .warn => "\x1B[93m", // yellow
-            .info => "\x1B[97m", // white
-            .debug => "\x1B[90m", // gray
+            .err => utils.ansi.sgi(.fg_bright_red),
+            .warn => utils.ansi.sgi(.fg_bright_yellow),
+            .info => utils.ansi.sgi(.fg_bright_white),
+            .debug => utils.ansi.sgi(.fg_white),
         }
     else
         "";
-    const postfix = if (ansi) "\x1B[0m" else ""; // reset terminal properties
+    const postfix = comptime if (ansi) utils.ansi.sgi(.reset) else ""; // reset terminal properties
 
     const level_txt = comptime switch (message_level) {
         .err => "E",
@@ -524,10 +530,15 @@ fn kernel_log_fn(
         "unscoped";
 
     {
-        var cs = CriticalSection.enter();
-        defer cs.leave();
+        log_exclusive_lock.lock();
+        defer log_exclusive_lock.unlock();
 
         const now = time.Instant.now();
+
+        const machine_prefix = if (machine_config.get_log_prefix) |get_log_prefix|
+            get_log_prefix()
+        else
+            "";
 
         var counting_writer = std.io.countingWriter(Debug.writer());
 
@@ -535,9 +546,11 @@ fn kernel_log_fn(
 
         const now_ms: u64 = @intFromEnum(now);
         var writer = counting_writer.writer();
-        writer.print("{d: >6}.{d:0>3} [{s}] {s}: ", .{
+        writer.print("{d: >6}.{d:0>3}{s}{s} [{s}] {s}: ", .{
             now_ms / 1000,
             now_ms % 1000,
+            if (machine_prefix.len > 0) " " else "",
+            machine_prefix,
             level_txt,
             scope_tag,
         }) catch return;

@@ -1,13 +1,15 @@
 const std = @import("std");
 const logger = std.log.scoped(.ashet_hc_psram);
-const ashet = @import("../../../../../main.zig");
+const ashet = @import("../../../../main.zig");
 const machine = @import("ashet-hc.zig");
 
 const rp2350 = @import("rp2350");
 const hal = @import("rp2350-hal");
 
-const qmi_hw = rp2350.devices.RP2350.peripherals.QMI;
-const xip_ctrl_hw = rp2350.devices.RP2350.peripherals.XIP_CTRL;
+const qmi_hw = rp2350.peripherals.QMI;
+const xip_ctrl_hw = rp2350.peripherals.XIP_CTRL;
+
+const code_section = ".sram.bank0.xip_init";
 
 const RP2350_PSRAM_ID: u8 = 0x5D;
 
@@ -58,7 +60,7 @@ pub fn init() !void {
 ///          This function must fully execute from RAM and is not allowed to
 ///          access any flash-mapped content!
 ///
-noinline fn init_xip1(psram_size: usize) linksection(".ramtext") !u32 {
+noinline fn init_xip1(psram_size: usize) linksection(code_section) !u32 {
     {
         const intr_stash = save_and_disable_interrupts();
         defer restore_interrupts(intr_stash);
@@ -148,11 +150,15 @@ noinline fn init_xip1(psram_size: usize) linksection(".ramtext") !u32 {
 }
 
 ///
-/// WARNING: `noinline` and `linksection(".ramtext")` are necessary!
+/// WARNING: `noinline` and `linksection(".sram.bank0")` are necessary!
 ///          This function must fully execute from RAM and is not allowed to
 ///          access any flash-mapped content!
 ///
-noinline fn get_psram_size() linksection(".ramtext") u32 {
+fn get_psram_size() u32 {
+    return @call(.never_inline, @"get_psram_size@ramcode", .{});
+}
+
+export fn @"get_psram_size@ramcode"() linksection(code_section) u32 {
     var psram_size: usize = 0;
 
     const intr_stash = save_and_disable_interrupts();
@@ -235,7 +241,7 @@ noinline fn get_psram_size() linksection(".ramtext") u32 {
 ///          This function must fully execute from RAM and is not allowed to
 ///          access any flash-mapped content!
 ///
-noinline fn set_psram_timing() linksection(".ramcode") !void {
+noinline fn set_psram_timing() linksection(code_section) !void {
 
     // Get secs / cycle for the system clock - get before disabling interrupts.
     const sys_clk: comptime_int = comptime machine.clock_config.sys.?.frequency();
@@ -274,12 +280,12 @@ noinline fn set_psram_timing() linksection(".ramcode") !void {
     });
 }
 
-fn save_and_disable_interrupts() bool {
+fn save_and_disable_interrupts() linksection(code_section) bool {
     //
     return false;
 }
 
-fn restore_interrupts(old: bool) void {
+fn restore_interrupts(old: bool) linksection(code_section) void {
     _ = old;
 }
 

@@ -154,7 +154,9 @@ pub fn build(b: *std.Build) void {
         regz_run.addArg("svd");
 
         regz_run.addArg("--output_path"); // Write to a file
-        const rp2350_register_file = regz_run.addOutputFileArg("rp2350.zig");
+        const rp2350_register_dir = regz_run.addOutputDirectoryArg("rp2350-registers");
+
+        const rp2350_register_file = rp2350_register_dir.path(b, "RP2350.zig");
 
         {
             const patches = @import("port/machine/arm/ashet-hc/patches/rp2350_arm.zig").patches;

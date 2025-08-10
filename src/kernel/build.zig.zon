@@ -94,9 +94,8 @@
             // .url = "https://microzig.tech/downloads/microzig/0.13.2/tools/regz.tar.gz",
             // .hash = "1220186140b54b42fa13d3afaa05c177fe7ee065d14c7a8d58fb7ff59eb31f8bc51b",
 
-            .url = "https://github.com/Ashet-Technologies/deps/raw/refs/heads/main/regz-0.14.0-dev.tar.gz",
-            .hash = "tools_regz-0.0.0-H5A4rPJSBQBXq60B3k6yzYYKZt5nSZLKFwvLAVN5v6R2",
-
+            .url = "https://github.com/ZigEmbeddedGroup/microzig/releases/download/0.14.2/mz_tools_regz.tar.gz",
+            .hash = "mz_tools_regz-0.0.0-lIs8m9fBBgCKERvb0iDjtTqxa4E0ek52LeU2w1P5uuD6",
             .lazy = false,
         },
 

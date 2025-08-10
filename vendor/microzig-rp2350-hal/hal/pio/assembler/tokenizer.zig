@@ -87,7 +87,7 @@ pub fn Tokenizer(chip: Chip) type {
             , .{self.index});
 
             var printed_cursor = false;
-            var line_it = std.mem.tokenize(u8, self.source, "\n\r");
+            var line_it = std.mem.tokenizeAny(u8, self.source, "\n\r");
             while (line_it.next()) |line| {
                 try writer.print("{s}\n", .{line});
                 if (!printed_cursor and line_it.index > self.index) {
@@ -1368,10 +1368,10 @@ const expectEqual = std.testing.expectEqual;
 const expectEqualStrings = std.testing.expectEqualStrings;
 
 fn DirectiveTag(comptime chip: Chip) type {
-    return @typeInfo(Token(chip).Directive).Union.tag_type.?;
+    return @typeInfo(Token(chip).Directive).@"union".tag_type.?;
 }
 fn PayloadTag(comptime chip: Chip) type {
-    return @typeInfo(Token(chip).Instruction.Payload).Union.tag_type.?;
+    return @typeInfo(Token(chip).Instruction.Payload).@"union".tag_type.?;
 }
 
 fn expect_program(comptime chip: Chip, expected: []const u8, actual: Token(chip)) !void {
@@ -2114,11 +2114,11 @@ test "tokenize.instr.irq" {
     };
 
     const modes = std.StaticStringMap(ClearWait).initComptime(.{
-        .{ "", .{ .clear = false, .wait = false } },
-        .{ "set", .{ .clear = false, .wait = false } },
-        .{ "nowait", .{ .clear = false, .wait = false } },
-        .{ "wait", .{ .clear = false, .wait = true } },
-        .{ "clear", .{ .clear = true, .wait = false } },
+        .{ "", ClearWait{ .clear = false, .wait = false } },
+        .{ "set", ClearWait{ .clear = false, .wait = false } },
+        .{ "nowait", ClearWait{ .clear = false, .wait = false } },
+        .{ "wait", ClearWait{ .clear = false, .wait = true } },
+        .{ "clear", ClearWait{ .clear = true, .wait = false } },
     });
 
     inline for (comptime modes.keys(), comptime modes.values(), 0..) |key, value, num| {
@@ -2277,4 +2277,16 @@ test "tokenize.instr.comment with no whitespace" {
         .side_set = .{ .expression = "0x0" },
         .delay = .{ .expression = "1" },
     }, tokens.get(0));
+}
+
+test "format tokenizer" {
+    const test_tokenizer = Tokenizer(.RP2040).init("out 1");
+    const string = try std.fmt.allocPrint(std.testing.allocator, "{}", .{test_tokenizer});
+    defer std.testing.allocator.free(string);
+    try expectEqualStrings(
+        \\parser:
+        \\  index: 0
+        \\
+        \\out 1
+    ++ "\n\x1b[30;42;1m^\x1b[0m\n", string);
 }
