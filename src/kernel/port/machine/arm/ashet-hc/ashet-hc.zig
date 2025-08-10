@@ -42,6 +42,8 @@ const hw = struct {
     var hstx_video: ashet.drivers.video.HSTX_DVI = undefined;
 
     var xip_flash: ashet.drivers.block.Memory_Mapped_Flash = undefined;
+
+    var nic: ashet.drivers.network.ENC28J60 = undefined;
 };
 
 fn get_tick_count_ms() u64 {
@@ -144,6 +146,24 @@ fn early_initialize() void {
     }
 
     configure_interrupt_table(&interrupt_table_core0);
+    logger.info("initialize ethernet spi...", .{});
+    {
+        hw_alloc.spi.ethernet.apply(.{
+            .baud_rate = 1_000_000,
+            .clock_config = clock_config,
+        }) catch @panic("failed to initialize SPI");
+
+        hw_alloc.pins.eth_mosi_pin.set_function(.spi);
+        hw_alloc.pins.eth_miso_pin.set_function(.spi);
+        hw_alloc.pins.eth_sck_pin.set_function(.spi);
+        hw_alloc.pins.eth_cs_pin.set_function(.sio);
+        hw_alloc.pins.eth_irq_pin.set_function(.sio);
+
+        hw_alloc.pins.eth_irq_pin.set_direction(.in);
+
+        hw_alloc.pins.eth_cs_pin.put(1);
+        hw_alloc.pins.eth_cs_pin.set_direction(.out);
+    }
 
     logger.info("Machine early initialize done.", .{});
     logger.info("sys_clk: {} Hz", .{comptime clock_config.sys.?.frequency()});
@@ -297,6 +317,8 @@ fn initialize() !void {
             disk_image_start,
             disk_image_end - disk_image_start,
         );
+
+        hw.nic = try .init(spi0, .init(.{ 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF }), .{});
     }
 
     ashet.drivers.install(&hw.rtc.driver);
@@ -304,6 +326,7 @@ fn initialize() !void {
     // ashet.drivers.install(&hw.uart1.driver);
     ashet.drivers.install(&hw.hstx_video.driver);
     ashet.drivers.install(&hw.xip_flash.driver);
+    ashet.drivers.install(&hw.nic.driver);
 
     rp2350_regs.UART0.UARTIMSC.modify(.{
         .RXIM = 1,
@@ -640,4 +663,31 @@ fn machine_halt() noreturn {
     while (true) {
         ashet.platform.profile.wfe();
     }
+}
+
+const spi0: ashet.drivers.network.ENC28J60.HardwareInterface = .{
+    .param = undefined,
+    .vtable = &.{
+        .set_chipselect = spi0_set_chipselect,
+        .write = spi0_write,
+        .read = spi0_read,
+    },
+};
+
+fn spi0_set_chipselect(dri: *anyopaque, asserted: bool) void {
+    _ = dri;
+
+    // hal.time.sleep_us(1);
+    hw_alloc.pins.eth_cs_pin.put(if (asserted) 0 else 1);
+    // hal.time.sleep_us(1);
+}
+
+fn spi0_write(dri: *anyopaque, output: []const u8) void {
+    _ = dri;
+    hw_alloc.spi.ethernet.write_blocking(u8, output);
+}
+
+fn spi0_read(dri: *anyopaque, tx_byte: u8, input: []u8) void {
+    _ = dri;
+    hw_alloc.spi.ethernet.read_blocking(u8, tx_byte, input);
 }

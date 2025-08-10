@@ -52,6 +52,8 @@ pub const video = struct {
 pub const network = struct {
     /// Memory mapped virtio network device
     pub const Virtio_Net_Device = @import("network/Virtio_Net_Device.zig");
+
+    pub const ENC28J60 = @import("network/ENC28J60.zig");
 };
 
 pub const input = struct {

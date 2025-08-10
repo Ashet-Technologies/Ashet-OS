@@ -35,6 +35,8 @@ pub const utils = struct {
 
     pub const SpinLock = @import("utils/SpinLock.zig");
 
+    pub const FixedPool = @import("utils/fixed_pool.zig").FixedPool;
+
     pub const ansi = @import("utils/ansi.zig");
 
     pub inline fn volatile_read(comptime T: type, ptr: *const volatile T) T {
@@ -106,6 +108,7 @@ pub const log_levels = struct {
     pub var @"virtio-input": LogLevel = .info;
     pub var @"virtio-blog": LogLevel = .debug;
     pub var kbc: LogLevel = .info;
+    pub var enc28j60: LogLevel = .info;
 
     // external modules:
     pub var fatfs: LogLevel = .info;

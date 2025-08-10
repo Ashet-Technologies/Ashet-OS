@@ -33,7 +33,7 @@ pub fn build(b: *std.Build) void {
     const args_dep = b.dependency("args", .{});
     const network_dep = b.dependency("network", .{});
     const vnc_dep = b.dependency("vnc", .{});
-    const lwip_dep = b.dependency("lwip", .{ .target = kernel_target, .optimize = .ReleaseSafe });
+    const lwip_dep = b.dependency("lwip", .{ .target = kernel_target, .optimize = .ReleaseFast });
     const libc_dep = b.dependency("foundation-libc", .{
         .target = kernel_target,
         .optimize = optimize,
@@ -270,6 +270,7 @@ pub fn build(b: *std.Build) void {
         const libc = libc_dep.artifact("foundation");
 
         lwip_mod.addIncludePath(libc.getEmittedIncludeTree());
+
         zfat_mod.addIncludePath(libc.getEmittedIncludeTree());
 
         kernel_exe.linkLibrary(libc);

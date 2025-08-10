@@ -17,9 +17,14 @@ pub const pins = struct {
     pub const debug_tx: rp2350.gpio.Pin = rp2350.gpio.num(0);
     pub const debug_rx: rp2350.gpio.Pin = rp2350.gpio.num(1);
 
+    // 2..7
+
     pub const xip_cs1: rp2350.gpio.Pin = rp2350.gpio.num(8);
 
+    // 9
+
     pub const system_ready: rp2350.gpio.Pin = rp2350.gpio.num(10);
+    pub const eth_irq_pin: rp2350.gpio.Pin = rp2350.gpio.num(11); // yellow
 
     pub const hdmi_d0_p: rp2350.gpio.Pin = rp2350.gpio.num(12);
     pub const hdmi_d0_n: rp2350.gpio.Pin = rp2350.gpio.num(13);
@@ -30,14 +35,23 @@ pub const pins = struct {
     pub const hdmi_d2_p: rp2350.gpio.Pin = rp2350.gpio.num(18);
     pub const hdmi_d2_n: rp2350.gpio.Pin = rp2350.gpio.num(19);
 
+    pub const eth_miso_pin: rp2350.gpio.Pin = rp2350.gpio.num(20); // purple
+    pub const eth_cs_pin: rp2350.gpio.Pin = rp2350.gpio.num(21); // green
+    pub const eth_sck_pin: rp2350.gpio.Pin = rp2350.gpio.num(22); // blue
+    pub const eth_mosi_pin: rp2350.gpio.Pin = rp2350.gpio.num(23); // white
+
+    // 24...39
+
+    pub const prop_txf: rp2350.gpio.Pin = rp2350.gpio.num(36); // tx frame
+    pub const prop_rxf: rp2350.gpio.Pin = rp2350.gpio.num(37); // rx frame
+    // 38
+    pub const prop_rst: rp2350.gpio.Pin = rp2350.gpio.num(39);
     pub const prop_txd: rp2350.gpio.Pin = rp2350.gpio.num(40); // tx data
     pub const prop_rxd: rp2350.gpio.Pin = rp2350.gpio.num(41); // rx data
     pub const prop_cts: rp2350.gpio.Pin = rp2350.gpio.num(42); //
     pub const prop_rts: rp2350.gpio.Pin = rp2350.gpio.num(43); //
-    pub const prop_txf: rp2350.gpio.Pin = rp2350.gpio.num(36); // tx frame
-    pub const prop_rxf: rp2350.gpio.Pin = rp2350.gpio.num(37); // rx frame
 
-    pub const prop_rst: rp2350.gpio.Pin = rp2350.gpio.num(39);
+    // 44..47
 };
 
 pub const uart = struct {
@@ -59,4 +73,8 @@ pub const dma = struct {
 
     pub const prop_rx: rp2350.dma.Channel = rp2350.dma.channel(2);
     pub const prop_tx: rp2350.dma.Channel = rp2350.dma.channel(3);
+};
+
+pub const spi = struct {
+    pub const ethernet = rp2350.spi.instance.num(0);
 };

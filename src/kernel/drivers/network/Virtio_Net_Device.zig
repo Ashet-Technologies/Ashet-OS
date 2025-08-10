@@ -28,8 +28,8 @@ driver: Driver = .{
 receiveq: virtio.queue.VirtQ(queue_size) = undefined,
 transmitq: virtio.queue.VirtQ(queue_size) = undefined,
 
-receive_buffers: FixedPool(Buffer, queue_size) = .{},
-transmit_buffers: FixedPool(Buffer, queue_size) = .{},
+receive_buffers: ashet.utils.FixedPool(Buffer, queue_size) = .{},
+transmit_buffers: ashet.utils.FixedPool(Buffer, queue_size) = .{},
 
 pub fn init(allocator: std.mem.Allocator, index: usize, regs: *volatile virtio.ControlRegs) !*Virtio_Net_Device {
     _ = index;
@@ -40,7 +40,7 @@ pub fn init(allocator: std.mem.Allocator, index: usize, regs: *volatile virtio.C
     const negotiated_features = try regs.negotiateFeatures(virtio.FeatureSet.default
         .add(virtio.network.FeatureFlags.mtu) // we want to know the MTU
         .add(virtio.network.FeatureFlags.mrg_rxbuf) // we can use merged buffers, for legacy interface compat
-    // .add(virtio.network.FeatureFlags.mac) // use custom mac
+        // .add(virtio.network.FeatureFlags.mac) // use custom mac
         .add(virtio.network.FeatureFlags.status) // we want to know the real up/down status
     );
 
@@ -213,30 +213,4 @@ pub fn handleIncomingData(device: *Virtio_Net_Device) !void {
 
         nic.receive(packet);
     }
-}
-
-fn FixedPool(comptime T: type, comptime size: usize) type {
-    return struct {
-        const Self = @This();
-
-        items: [size]T = undefined,
-        maps: std.bit_set.StaticBitSet(size) = std.bit_set.StaticBitSet(size).initFull(),
-
-        pub fn alloc(pool: *Self) ?*T {
-            const index = pool.maps.findFirstSet() orelse return null;
-            pool.maps.unset(index);
-            return &pool.items[index];
-        }
-
-        pub fn get(pool: *Self, index: usize) *T {
-            std.debug.assert(index < size);
-            return &pool.items[index];
-        }
-
-        pub fn free(pool: *Self, item: *T) void {
-            const index = @divExact((@intFromPtr(item) -% @intFromPtr(&pool.items[0])), @sizeOf(T));
-            std.debug.assert(index < size);
-            pool.maps.set(index);
-        }
-    };
 }
