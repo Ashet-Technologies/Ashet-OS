@@ -219,6 +219,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "hello-gui", .exe = get_named_file(os_files, "apps/hello-gui.elf") },
             .{ .name = "classic", .exe = get_named_file(os_files, "apps/desktop/classic.elf") },
             .{ .name = "dungeon.ashex", .exe = get_named_file(os_files, "apps/dungeon.elf") },
+            .{ .name = "ntp-client.ashex", .exe = get_named_file(os_files, "apps/ntp-client.elf") },
         };
 
         var variables = Variables{

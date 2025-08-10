@@ -70,4 +70,6 @@ SECTIONS {
         *(.platform.*)
     } > platform_ram
 
+    __kernel_data_load = LOADADDR(.data);
+
 }

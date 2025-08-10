@@ -16,6 +16,7 @@ const app_packages = [_][]const u8{
     "test_behaviour",
     "desktop_classic",
     "dungeon",
+    "ntp_client",
     // TODO: Include "wiki" again,
 };
 

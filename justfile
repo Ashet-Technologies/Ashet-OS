@@ -197,6 +197,7 @@ rp2350-gdb:
 rp2350-monitor:
     ./zig-out/bin/debug-filter \
         --elf kernel=zig-out/arm-ashet-hc/kernel.elf \
+        --elf ntp-client.ashex=zig-out/arm-ashet-hc/apps/ntp-client.elf \
         picocom --quiet --baud 2000000 /dev/ashet.com1
 
 qemu-gdb target:
