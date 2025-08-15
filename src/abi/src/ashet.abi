@@ -2414,3 +2414,432 @@ struct FileInfo {
     field creation_date: DateTime;
     field modified_date: DateTime;
 }
+
+
+///
+/// The I/O namespace contains APIs to interface with external hardware like serial ports, I²C busses and so on.
+///
+namespace io {
+
+    ///
+    /// Functions and types related to serial busses like RS232, RS485 or similar.
+    ///
+    namespace serial {
+        enum SerialPortID : u32 {
+            ...
+        }
+
+        syscall enumerate {
+            in list: []SerialPortID;
+
+            out count: usize;
+        }
+
+        /// Queries information about the given serial port id.
+        syscall query_metadata {
+            in    id:       SerialPortID;
+            in    name_buf: ?[]u8;
+
+            out   name_len: usize;
+
+            /// The given id does not exist.
+            error NotFound;
+        }
+
+        resource SerialPort { }
+
+        syscall open {
+            in    id:     SerialPortID;
+            out   port:   SerialPort;
+
+            /// The given id does not exist.
+            error NotFound;
+
+            /// The resource is already opened.
+            error ResourceBusy;
+        }
+
+        ///
+        /// Changes the configuration of a serial port and returns the new configuration. 
+        /// 
+        /// This function can also be used to query the current configuration by requesting no changes.
+        /// 
+        async_call configure {
+            in  port: SerialPort;
+
+            in baud_rate:       ?u32;
+            in word_size:       ?u8;
+            in stop_bits:       ?StopBits;
+            in parity:          ?Parity;
+            in control_flow:    ?ControlFlow;
+            
+            /// Selects which software control flow words control the transmitter
+            /// activity.
+            ///
+            /// NOTE: This is usually the same as `sw_control_flow_tx`.
+            in sw_control_flow_rx: ?SoftwareControlFlow;
+            
+            /// Selects which software control flow words are transmitted when 
+            /// the own receive buffer is full.
+            ///
+            /// NOTE: This is usually the same as `sw_control_flow_rx`.
+            in sw_control_flow_tx: ?SoftwareControlFlow;
+
+            in acceptable_baud_error: f32; //? = 0.01;
+
+            out current_baud_rate:       u32;
+            out current_data_bits:       u8;
+            out current_stop_bits:       StopBits;
+            out current_parity:          Parity;
+            out current_control_flow:    ControlFlow;
+            out current_sw_control_flow_rx: SoftwareControlFlow;
+            out current_sw_control_flow_tx: SoftwareControlFlow;
+
+            error InvalidHandle;
+            
+            /// The actual baud rate diverges more than `acceptable_baud_error` from the requested baud rate.
+            error ImpreciseBaudRate;
+            
+            /// The requested word size is not supported by this serial port.
+            error UnsupportedDataBits;
+            
+            /// The requested number of stop bits is not supported by this serial port.
+            error UnsupportedStopBits;
+            
+            /// The requested parity is not supported by this serial port.
+            error UnsupportedParity;
+
+            /// The requested control flow (or its configuration) is not supported by this serial port.
+            error UnsupportedControlFlow;
+        }
+
+        /// Changes the output control lanes of the serial port.
+        async_call control {
+            in  port:    SerialPort;
+
+            /// The new state that should be applied for DTR (Data Terminal Ready).
+            in  dtr: ?bool;
+            
+            /// The new state that should be applied for RTS (Request To Send).
+            ///
+            /// NOTE: This is also called `RTR` when used for modern hardware control flow.
+            in  rts: ?bool;
+
+            error InvalidHandle;
+
+            /// The serial port does not support changing the control flow mode.
+            error Unsupported;
+
+            /// The control lanes cannot be changed as hardware control flow is active.
+            error ControlFlowActive;
+        }
+
+        /// Reads all control lanes of the serial port.
+        async_call query_control {
+            in  port:    SerialPort;
+
+            /// Data Terminal Ready
+            out dtr: bool;
+            
+            /// Data Carrier Detect
+            out dcd: bool;
+
+            /// Data Set Ready
+            out dsr: bool;
+
+            /// Ring Indicator
+            out ring: bool;
+
+            /// Request To Send
+            ///
+            /// NOTE: This is also called `RTR` when used for modern hardware control flow.
+            out rts: bool;
+
+            /// Clear To Send
+            out cts: bool;
+
+            error InvalidHandle;
+
+            /// The serial port does not support control flow lanes.
+            error Unsupported;
+        }
+
+        /// Writes data to the serial port.
+        async_call write {
+            in  port:    SerialPort;
+            in  data:    bytestr;
+
+            /// Number of words written
+            out written: usize; 
+
+            error InvalidHandle;
+            
+            /// The serial port uses a word size that needs more than 8 bits per word.
+            error WordSizeMismatch;
+        }
+
+        /// Reads data from a serial port.
+        async_call read {
+            in port: SerialPort;
+            in data: bytebuf;
+
+            /// Number of words read from the serial port.
+            out read: usize;
+
+            /// This contains the reason why not *all* data was read.
+            out stop_reason: SerialPortError;
+
+            error InvalidHandle;
+            
+            /// The serial port uses a word size that needs more than 8 bits per word.
+            error WordSizeMismatch;
+        }
+
+        ///
+        /// Sends a break signal.
+        ///
+        /// LEARN: A break signal means that the TX line is held *low* for a given
+        ///        duration larger than a single word. This way, the receiver can
+        ///        recognize an event that will be transferred "out of band" and 
+        ///        allows to send an event to the receiver.
+        ///        
+        ///        In DMX, this is used to signal the start of a new frame.
+        ///
+        async_call break {
+            in port:  SerialPort;
+
+            in duration: Duration;
+
+            error InvalidHandle;
+
+            /// The serial port does not support sending breaks.
+            error Unsupported;
+        }
+
+
+        enum SerialPortError : u8 {
+            item none = 0;
+            item break_detected = 1;
+            item parity_error = 2;
+        }
+        
+        enum StopBits : u8 {
+            item one = 1;
+            item one_and_half = 2;
+            item two = 3;
+        }
+
+        enum Parity : u8 {
+            /// No parity will be used.
+            item none = 0;
+            
+            /// The parity bit will contain a `1` if the sum of all data bits are even.
+            item even = 1;
+            
+            /// The parity bit will contain a `1` if the sum of all data bits are odd.
+            item odd = 2;
+            
+            /// The parity bit will always contain a `1`.
+            item mark = 3;
+            
+            /// The parity bit will always contain a `0`.
+            item space =  4;
+        }
+    
+        enum ControlFlow : u8 {
+            /// No explicit control flow is used.
+            item none = 0;
+
+            /// This mode is usually called the *hardware control flow* and uses two
+            /// signals that are connected cross-over between both communication partners.
+            ///
+            /// - `RTR` is an active-low signal called *Ready To Receive* which signals the
+            ///   opposite part that we can actually receive data right now. If the signal
+            ///   is high, the opposite part may not send data.
+            /// - `CTS` is an active-low signal called *Clear To Send* which receives the `RTR`
+            ///   signal from the opposite part. When this signal is low, our transmitter is
+            ///   allowed to send data. If the signal is high, the transmitter has to stop sending
+            ///   and a timeout may occur.
+            /// 
+            /// LORE: This is usually called RTS/CTS control flow, but
+            ///       in that configuration the RTS (request to send) signal
+            ///       is repurposed into a RTR (ready to receive) signal which
+            ///       tells the communication partner that you are able to receive
+            ///       data.
+            ///       In Ashet OS, the technically correct term is used as we don't
+            ///       use the legacy half-duplex control flow where a request to
+            ///       send is performed.
+            item rtr_cts = 1;
+
+            /// This mode is usually called *software control flow* and uses two special bytes
+            /// that can inhibit or allow transmitting bytes.
+            ///
+            /// The two special word are called `XON` (Transmitter On) and `XOFF` (Transmitter Off).
+            /// 
+            /// When a receiver receives the `XOFF` word, it turns off the sender after the current
+            /// byte has been processed. As soon as the `XON` word is received, the sender is allowed
+            /// to continue sending data.
+            /// 
+            /// `XON` and `XOFF` can be both sent by software or hardware.
+            ///
+            /// NOTE: Using this control flow prevents sending *raw binary* data, as `XON` and `XOFF`
+            ///       are regular data words that can be contained in the sent data.
+            ///       
+            ///       Thus, this control flow mode should only be used with textual data which does
+            ///       not conflict with the chosen control characters.
+            /// 
+            item xon_xoff = 2;
+        }
+
+        struct SoftwareControlFlow {
+            /// The data word which will turn on the transmitter.
+            ///
+            /// NOTE: This is usually the ASCII `DC1` character which is encoded as the value `0x11`.
+            ///
+            /// LORE: Serial ports usually support 5 to 8 data bits, but some serial ports
+            ///       can also use much higher word sizes. 
+            ///
+            ///       This is allows a future expansion to support word sizes up to 32 bits
+            ///       without breaking existing code.
+            field x_on:  u32 = 0x11; //? ASCII DC1 / XON
+
+            /// The data word which will turn off the transmitter.
+            ///
+            /// NOTE: This is usually the ASCII `DC3` character which is encoded as the value `0x13`.
+            ///
+            /// LORE: Serial ports usually support 5 to 8 data bits, but some serial ports
+            ///       can also use much higher word sizes. 
+            ///
+            ///       This is allows a future expansion to support word sizes up to 32 bits
+            ///       without breaking existing code.
+            field x_off: u32 = 0x13; //? ASCII DC3 / XOFF
+        }
+    }
+
+    ///
+    /// Functions and types related to the I²C bus.
+    ///
+    namespace i2c {
+        enum BusID : u32  {
+            ...
+        }
+
+        resource Bus { }
+
+        syscall open {
+            in id: BusID;
+
+            out bus: Bus;
+
+            /// The given id does not exist.
+            error NotFound;
+        }
+
+        /// Performs a sequence of I²C operations on the bus without interruption.
+        ///
+        /// This function allows to ping devices, read or write data from/to the devices.
+        ///
+        /// The operations are performed first-to-last without interruption. If an operation fails, the 
+        /// sequence will be aborted.
+        ///
+        /// LORE: This function was introduced instead of separate read and write functions, as it's
+        ///       sometimes necessary for certain I²C ICs (like EEPROMS) to have "atomic" read-after-write
+        ///       operations.
+        ///       
+        ///       As both a singular read and a singular write can be expressed as a batch of one operation,
+        ///       this is the only available function on the I²C bus.
+        ///
+        ///       **Example:**
+        ///       Typical I²C EEPROMS have an internally maintained "memory cursor" which is advanced for every
+        ///       read operation. All write operations will update the cursor also for read operations.
+        ///
+        ///       This means that in an OS context, where scheduling can interrupt our process, performing a split
+        ///       "update cursor" write operation and "read data" read operation can be interrupted by another process
+        ///       also scheduling writes inbetween. This means that after we've set up our memory cursor to the desired
+        ///       address another process would change that before we read and we'll read data from the wrong memory
+        ///       location.
+        ///
+        ///       To prevent such a situation, this batch interface was introduced.
+        ///       
+        async_call execute {
+            in bus: Bus;
+
+            /// A mutable sequence of I²C operations. Will be processed first-to last and
+            /// the pointed `Operation`s will be changed during
+            in sequence: []Operation;
+
+            error InvalidHandle;
+
+            /// An operation in the `sequence` contained an invalid address.
+            error InvalidAddress;
+
+            /// An error happened during processing. Read `sequence[].error` to see which operations failed.
+            error ExecutionFailed;
+        }
+
+        struct Operation {
+            /// The 7- or 10 bit device that should be addressed.
+            ///
+            /// NOTE: Values above `1023` will always make the batch execution fail.
+            field address: u16;
+
+            /// The kind of operation that should be performed.
+            field type: Type;
+
+            /// The data which should either be written or read.
+            ///
+            /// NOTE: If the `operation` is `BatchOp.read`, the buffer will 
+            ///       overwritten by the OS. All other operations treat this
+            ///       buffer as immutable.
+            field data: bytebuf;
+
+            /// The number of processed bytes inside `data`.
+            /// 
+            /// NOTE: This field can be left uninitialized and will be overwritten by the OS
+            ///       with the result of the operation.
+            ///       If the batch item wasn't scheduled, the resulting value will be zero.
+            field processed: usize = 0;
+
+            /// The error that happened when processing this batch item. On success, this will
+            /// be set to `Error.none`.
+            ///
+            /// NOTE: This field can be left uninitialized and will be overwritten by the OS
+            ///       with the result of the operation.
+            ///       If the batch item wasn't scheduled, the resulting value will be `Error.aborted`.
+            field @"error": Error;
+
+            enum Type : u8 {
+                /// The device will be addressed, but no read or write operation will be performed.
+                /// This can be used to detect if certain devices are present.
+                ///
+                /// NOTE: Success of this operation can be detected by the resulting error code.
+                item ping = 0;
+
+                /// Reads the given amount of bytes from the device.
+                item read = 1;
+
+                /// Writes the given amount of bytes to the device.
+                item write = 2;
+            }
+
+            enum Error : u8 {
+                /// This batch item was fully processed.
+                item none = 0;
+
+                /// No device did acknowledge the address.
+                item device_not_found = 1;
+
+                /// While writing the data, the device returned a NAK.
+                ///
+                /// NOTE: The ACK/NAK during the addressing phase is handled by `device_not_found`.
+                item no_acknowledge = 2;
+                
+                /// A previous batch item errored and this item wasn't executed at all.
+                item aborted = 3;
+
+                /// A bus participant did stretch the clock for too long.
+                item timeout = 4;
+            }
+        }   
+    }
+}

@@ -157,8 +157,14 @@ const Analyzer = struct {
         };
 
         const inserted = if (current_scope.children.get(name)) |existing_child| blk: {
-            if (scope_type != existing_child.type)
+            if (scope_type != existing_child.type) {
+                std.log.err("scope mismatch for scope {}: types {s} and {s} don't match", .{
+                    std.zig.fmtId(name),
+                    @tagName(scope_type),
+                    @tagName(existing_child.type),
+                });
                 @panic("scope mismatch");
+            }
             break :blk false;
         } else blk: {
             const child_scope: *Scope = try ana.allocator.create(Scope);
