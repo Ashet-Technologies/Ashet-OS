@@ -17,7 +17,12 @@ pub const pins = struct {
     pub const debug_tx: rp2350.gpio.Pin = rp2350.gpio.num(0);
     pub const debug_rx: rp2350.gpio.Pin = rp2350.gpio.num(1);
 
-    // 2..7
+    // 3
+
+    pub const i2c_sda: rp2350.gpio.Pin = rp2350.gpio.num(4);
+    pub const i2c_scl: rp2350.gpio.Pin = rp2350.gpio.num(5);
+
+    // 6..7
 
     pub const xip_cs1: rp2350.gpio.Pin = rp2350.gpio.num(8);
 
@@ -77,4 +82,8 @@ pub const dma = struct {
 
 pub const spi = struct {
     pub const ethernet = rp2350.spi.instance.num(0);
+};
+
+pub const i2c = struct {
+    pub const system_bus = rp2350.i2c.instance.I2C0;
 };

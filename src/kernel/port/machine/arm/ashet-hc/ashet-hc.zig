@@ -44,6 +44,8 @@ const hw = struct {
     var xip_flash: ashet.drivers.block.Memory_Mapped_Flash = undefined;
 
     var nic: ashet.drivers.network.ENC28J60 = undefined;
+
+    var global_i2c: ashet.drivers.i2c_device.RP2xxx_I2C_Device = undefined;
 };
 
 fn get_tick_count_ms() u64 {
@@ -60,52 +62,6 @@ comptime {
 var interrupt_table_core0: rp2350.VectorTable align(256) = undefined;
 var interrupt_table_core1: rp2350.VectorTable align(256) = undefined;
 
-const videomem = struct {
-    extern var __rp2350_sram_bank1_start: anyopaque align(4);
-    extern var __rp2350_sram_bank1_end: anyopaque align(4);
-    extern const __rp2350_sram_bank1_load: anyopaque align(4);
-
-    extern var __rp2350_sram_bank2_start: anyopaque align(4);
-    extern var __rp2350_sram_bank2_end: anyopaque align(4);
-    extern const __rp2350_sram_bank2_load: anyopaque align(4);
-
-    extern var __rp2350_sram_bank3_start: anyopaque align(4);
-    extern var __rp2350_sram_bank3_end: anyopaque align(4);
-    extern const __rp2350_sram_bank3_load: anyopaque align(4);
-
-    fn init_bank(
-        start: *align(4) anyopaque,
-        end: *align(4) anyopaque,
-        load: *align(4) const anyopaque,
-    ) void {
-        const len_bytes = @intFromPtr(end) - @intFromPtr(start);
-        const len_words = @divExact(len_bytes, @sizeOf(u32));
-
-        const src = @as([*]const u32, @ptrCast(load));
-        const dst = @as([*]u32, @ptrCast(start));
-
-        @memcpy(dst[0..len_words], src[0..len_words]);
-    }
-
-    fn init() void {
-        init_bank(
-            &__rp2350_sram_bank1_start,
-            &__rp2350_sram_bank1_end,
-            &__rp2350_sram_bank1_load,
-        );
-        init_bank(
-            &__rp2350_sram_bank2_start,
-            &__rp2350_sram_bank2_end,
-            &__rp2350_sram_bank2_load,
-        );
-        init_bank(
-            &__rp2350_sram_bank3_start,
-            &__rp2350_sram_bank3_end,
-            &__rp2350_sram_bank3_load,
-        );
-    }
-};
-
 fn early_initialize() void {
     // Disable watch dog, reset all peripherials, and set the clocks and PLLs:
     hal.init_sequence(clock_config);
@@ -113,6 +69,10 @@ fn early_initialize() void {
     hw_alloc.pins.xip_cs1.set_function(.gpck);
     hw_alloc.pins.debug_tx.set_function(.uart);
     hw_alloc.pins.debug_rx.set_function(.uart);
+
+    hw_alloc.pins.i2c_sda.set_function(.i2c);
+    hw_alloc.pins.i2c_scl.set_function(.i2c);
+
     // pinout.dbg_sel.set_function(.sio);
     // pinout.dbg_sck.set_function(.sio);
     // pinout.dbg_sda.set_function(.sio);
@@ -273,6 +233,57 @@ fn core1_main() linksection(".sram.bank0") void {
     }
 }
 
+fn initialize() !void {
+    logger.info("cpuid: {s}", .{
+        ashet.platform.profile.peripherals.system_control_block.cpuid.read(),
+    });
+
+    logger.info("initialize SysTick...", .{});
+    systick.init();
+
+    // Initialize devices and drivers:
+    {
+        hw.rtc = .init(1739025296 * std.time.ns_per_s);
+
+        hw.uart0 = try .init(clock_config, hw_alloc.uart.debug, hw_alloc.uart.debug_baud);
+        // hw.uart1 = try ashet.drivers.serial.RP2xxx.init(clock_config, hal.uart.instance.UART1, 115_200);
+
+        // hw.fb_video = ashet.drivers.video.Virtual_Video_Output.init();
+
+        hw.hstx_video = try .init(clock_config);
+
+        hw.xip_flash = .init(
+            disk_image_start,
+            disk_image_end - disk_image_start,
+        );
+
+        hw.nic = try .init(spi0, .init(.{ 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF }), .{});
+
+        hw.global_i2c = try .init(clock_config, hw_alloc.i2c.system_bus);
+    }
+
+    ashet.drivers.install(&hw.rtc.driver);
+    ashet.drivers.install(&hw.uart0.driver);
+    // ashet.drivers.install(&hw.uart1.driver);
+    ashet.drivers.install(&hw.hstx_video.driver);
+    ashet.drivers.install(&hw.xip_flash.driver);
+    ashet.drivers.install(&hw.nic.driver);
+    ashet.drivers.install(&hw.global_i2c.driver);
+
+    rp2350_regs.UART0.UARTIMSC.modify(.{
+        .RXIM = 1,
+    });
+    rp2350_regs.UART0.UARTIFLS.modify(.{
+        .RXIFLSEL = 0b000,
+    });
+
+    IRQ.UART0_IRQ.set_handler(uart0_irq_handler);
+
+    IRQ.UART0_IRQ.enable();
+
+    ashet.platform.profile.enable_interrupts();
+}
+
 inline fn configure_interrupt_table(core_local_table: *align(256) rp2350.VectorTable) void {
     // Remap interrupt table:
     {
@@ -291,54 +302,6 @@ inline fn configure_interrupt_table(core_local_table: *align(256) rp2350.VectorT
     ashet.platform.profile.peripherals.system_control_block.vtor.write_raw(@intFromPtr(core_local_table));
 
     ashet.platform.profile.enable_fault_irq();
-    ashet.platform.profile.enable_interrupts();
-}
-
-fn initialize() !void {
-    logger.info("cpuid: {s}", .{
-        ashet.platform.profile.peripherals.system_control_block.cpuid.read(),
-    });
-
-    logger.info("initialize SysTick...", .{});
-    systick.init();
-
-    // Initialize devices and drivers:
-    {
-        hw.rtc = ashet.drivers.rtc.Dummy_RTC.init(1739025296 * std.time.ns_per_s);
-
-        hw.uart0 = try ashet.drivers.serial.RP2xxx.init(clock_config, hw_alloc.uart.debug, hw_alloc.uart.debug_baud);
-        // hw.uart1 = try ashet.drivers.serial.RP2xxx.init(clock_config, hal.uart.instance.UART1, 115_200);
-
-        // hw.fb_video = ashet.drivers.video.Virtual_Video_Output.init();
-
-        hw.hstx_video = try ashet.drivers.video.HSTX_DVI.init(clock_config);
-
-        hw.xip_flash = ashet.drivers.block.Memory_Mapped_Flash.init(
-            disk_image_start,
-            disk_image_end - disk_image_start,
-        );
-
-        hw.nic = try .init(spi0, .init(.{ 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF }), .{});
-    }
-
-    ashet.drivers.install(&hw.rtc.driver);
-    ashet.drivers.install(&hw.uart0.driver);
-    // ashet.drivers.install(&hw.uart1.driver);
-    ashet.drivers.install(&hw.hstx_video.driver);
-    ashet.drivers.install(&hw.xip_flash.driver);
-    ashet.drivers.install(&hw.nic.driver);
-
-    rp2350_regs.UART0.UARTIMSC.modify(.{
-        .RXIM = 1,
-    });
-    rp2350_regs.UART0.UARTIFLS.modify(.{
-        .RXIFLSEL = 0b000,
-    });
-
-    IRQ.UART0_IRQ.set_handler(uart0_irq_handler);
-
-    IRQ.UART0_IRQ.enable();
-
     ashet.platform.profile.enable_interrupts();
 }
 
@@ -691,3 +654,49 @@ fn spi0_read(dri: *anyopaque, tx_byte: u8, input: []u8) void {
     _ = dri;
     hw_alloc.spi.ethernet.read_blocking(u8, tx_byte, input);
 }
+
+const videomem = struct {
+    extern var __rp2350_sram_bank1_start: anyopaque align(4);
+    extern var __rp2350_sram_bank1_end: anyopaque align(4);
+    extern const __rp2350_sram_bank1_load: anyopaque align(4);
+
+    extern var __rp2350_sram_bank2_start: anyopaque align(4);
+    extern var __rp2350_sram_bank2_end: anyopaque align(4);
+    extern const __rp2350_sram_bank2_load: anyopaque align(4);
+
+    extern var __rp2350_sram_bank3_start: anyopaque align(4);
+    extern var __rp2350_sram_bank3_end: anyopaque align(4);
+    extern const __rp2350_sram_bank3_load: anyopaque align(4);
+
+    fn init_bank(
+        start: *align(4) anyopaque,
+        end: *align(4) anyopaque,
+        load: *align(4) const anyopaque,
+    ) void {
+        const len_bytes = @intFromPtr(end) - @intFromPtr(start);
+        const len_words = @divExact(len_bytes, @sizeOf(u32));
+
+        const src = @as([*]const u32, @ptrCast(load));
+        const dst = @as([*]u32, @ptrCast(start));
+
+        @memcpy(dst[0..len_words], src[0..len_words]);
+    }
+
+    fn init() void {
+        init_bank(
+            &__rp2350_sram_bank1_start,
+            &__rp2350_sram_bank1_end,
+            &__rp2350_sram_bank1_load,
+        );
+        init_bank(
+            &__rp2350_sram_bank2_start,
+            &__rp2350_sram_bank2_end,
+            &__rp2350_sram_bank2_load,
+        );
+        init_bank(
+            &__rp2350_sram_bank3_start,
+            &__rp2350_sram_bank3_end,
+            &__rp2350_sram_bank3_load,
+        );
+    }
+};

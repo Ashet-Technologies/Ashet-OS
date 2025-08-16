@@ -113,7 +113,7 @@ pub fn main() !void {
         } else |err| {
             switch (err) {
                 error.FileNotFound => {},
-                else => |e| logger.warn("failed to open SYS:/etc7desktop/wallpaper.abm: {}", .{e}),
+                else => |e| logger.warn("failed to open SYS:/etc/desktop/wallpaper.abm: {}", .{e}),
             }
             break :blk null;
         }

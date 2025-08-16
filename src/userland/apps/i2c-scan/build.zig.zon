@@ -1,7 +1,7 @@
 .{
-    .name = .ntp_client,
+    .name = .i2c_scan,
     .version = "0.1.0",
-    .paths = .{ "build.zig", "build.zig.zon", "ntp-client.zig" },
+    .paths = .{ "build.zig", "build.zig.zon", "i2c-scan.zig" },
     .dependencies = .{
         .AshetOS = .{
             .path = "../../libs/libAshetOS",

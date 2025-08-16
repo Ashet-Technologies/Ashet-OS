@@ -67,6 +67,13 @@ pub const drivers = struct {
                         return error.Timeout;
                 }
             }
+
+            pub fn is_reached_by(deadline: Deadline, now: Absolute) bool {
+                if (deadline.deadline) |end| {
+                    return end.less_or_equal(now);
+                }
+                return false;
+            }
         };
     };
 };

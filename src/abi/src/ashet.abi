@@ -2429,35 +2429,35 @@ namespace io {
             ...
         }
 
-        syscall enumerate {
-            in list: []SerialPortID;
+    //?     syscall enumerate {
+    //?         in list: []SerialPortID;
 
-            out count: usize;
-        }
+    //?         out count: usize;
+    //?     }
 
-        /// Queries information about the given serial port id.
-        syscall query_metadata {
-            in    id:       SerialPortID;
-            in    name_buf: ?[]u8;
+    //?     /// Queries information about the given serial port id.
+    //?     syscall query_metadata {
+    //?         in    id:       SerialPortID;
+    //?         in    name_buf: ?[]u8;
 
-            out   name_len: usize;
+    //?         out   name_len: usize;
 
-            /// The given id does not exist.
-            error NotFound;
-        }
+    //?         /// The given id does not exist.
+    //?         error NotFound;
+    //?     }
 
         resource SerialPort { }
 
-        syscall open {
-            in    id:     SerialPortID;
-            out   port:   SerialPort;
+    //?     syscall open {
+    //?         in    id:     SerialPortID;
+    //?         out   port:   SerialPort;
 
-            /// The given id does not exist.
-            error NotFound;
+    //?         /// The given id does not exist.
+    //?         error NotFound;
 
-            /// The resource is already opened.
-            error ResourceBusy;
-        }
+    //?         /// The resource is already opened.
+    //?         error ResourceBusy;
+    //?     }
 
         ///
         /// Changes the configuration of a serial port and returns the new configuration. 
@@ -2467,25 +2467,25 @@ namespace io {
         async_call configure {
             in  port: SerialPort;
 
-            in baud_rate:       ?u32;
-            in word_size:       ?u8;
-            in stop_bits:       ?StopBits;
-            in parity:          ?Parity;
-            in control_flow:    ?ControlFlow;
+            //? TODO: in baud_rate:       ?u32;
+            //? TODO: in word_size:       ?u8;
+            //? TODO: in stop_bits:       ?StopBits;
+            //? TODO: in parity:          ?Parity;
+            //? TODO: in control_flow:    ?ControlFlow;
             
-            /// Selects which software control flow words control the transmitter
-            /// activity.
-            ///
-            /// NOTE: This is usually the same as `sw_control_flow_tx`.
-            in sw_control_flow_rx: ?SoftwareControlFlow;
+            //? TODO: /// Selects which software control flow words control the transmitter
+            //? TODO: /// activity.
+            //? TODO: ///
+            //? TODO: /// NOTE: This is usually the same as `sw_control_flow_tx`.
+            //? TODO: in sw_control_flow_rx: ?SoftwareControlFlow;
             
-            /// Selects which software control flow words are transmitted when 
-            /// the own receive buffer is full.
-            ///
-            /// NOTE: This is usually the same as `sw_control_flow_rx`.
-            in sw_control_flow_tx: ?SoftwareControlFlow;
+            //? TODO: /// Selects which software control flow words are transmitted when 
+            //? TODO: /// the own receive buffer is full.
+            //? TODO: ///
+            //? TODO: /// NOTE: This is usually the same as `sw_control_flow_rx`.
+            //? TODO: in sw_control_flow_tx: ?SoftwareControlFlow;
 
-            in acceptable_baud_error: f32; //? = 0.01;
+            in acceptable_baud_error: f32; //? 
 
             out current_baud_rate:       u32;
             out current_data_bits:       u8;
@@ -2517,13 +2517,13 @@ namespace io {
         async_call control {
             in  port:    SerialPort;
 
-            /// The new state that should be applied for DTR (Data Terminal Ready).
-            in  dtr: ?bool;
+            //? /// The new state that should be applied for DTR (Data Terminal Ready).
+            //? TODO: in  dtr: ?bool;
             
             /// The new state that should be applied for RTS (Request To Send).
             ///
-            /// NOTE: This is also called `RTR` when used for modern hardware control flow.
-            in  rts: ?bool;
+            //? /// NOTE: This is also called `RTR` when used for modern hardware control flow.
+            //? TODO: in  rts: ?bool;
 
             error InvalidHandle;
 
@@ -2724,6 +2724,23 @@ namespace io {
             ...
         }
 
+        syscall enumerate {
+            in list: ?[]BusID;
+
+            out count: usize;
+        }
+
+        /// Queries information about the given serial port id.
+        syscall query_metadata {
+            in    id:       BusID;
+            in    name_buf: ?[]u8;
+
+            out   name_len: usize;
+
+            /// The given id does not exist.
+            error NotFound;
+        }
+
         resource Bus { }
 
         syscall open {
@@ -2733,6 +2750,8 @@ namespace io {
 
             /// The given id does not exist.
             error NotFound;
+
+            error SystemResources;
         }
 
         /// Performs a sequence of I²C operations on the bus without interruption.
@@ -2761,17 +2780,26 @@ namespace io {
         ///
         ///       To prevent such a situation, this batch interface was introduced.
         ///       
-        async_call execute {
+        async_call Execute {
             in bus: Bus;
 
             /// A mutable sequence of I²C operations. Will be processed first-to last and
             /// the pointed `Operation`s will be changed during
             in sequence: []Operation;
 
+            /// The number of successfully processed elements from `sequence`.
+            /// 
+            /// On success, the call returns exactly the length of the sequence, otherwise
+            /// it returns the index of the element that failed.
+            out count: usize;
+
             error InvalidHandle;
 
             /// An operation in the `sequence` contained an invalid address.
             error InvalidAddress;
+
+            /// An operation that isn't `ping` was trying to process zero bytes.
+            error EmptyOperation;   
 
             /// An error happened during processing. Read `sequence[].error` to see which operations failed.
             error ExecutionFailed;
@@ -2839,6 +2867,9 @@ namespace io {
 
                 /// A bus participant did stretch the clock for too long.
                 item timeout = 4;
+
+                /// During the processing of the operation, a hardware error occurred.
+                item fault = 5; 
             }
         }   
     }

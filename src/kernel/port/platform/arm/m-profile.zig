@@ -2,19 +2,19 @@ const std = @import("std");
 const ashet = @import("../../../main.zig");
 const logger = std.log.scoped(.cortex_m);
 
-pub fn executing_isr() bool {
+pub inline fn executing_isr() bool {
     return peripherals.system_control_block.icsr.read().VECTACTIVE != 0;
 }
 
-pub fn enable_interrupts() void {
+pub inline fn enable_interrupts() void {
     asm volatile ("cpsie i");
 }
 
-pub fn disable_interrupts() void {
+pub inline fn disable_interrupts() void {
     asm volatile ("cpsid i");
 }
 
-pub fn are_interrupts_enabled() bool {
+pub inline fn are_interrupts_enabled() bool {
     // Read PRIMASK register. When bit 0 is 0, interrupts are enabled.
     // When bit 0 is 1, interrupts are disabled.
     var primask: u32 = undefined;
@@ -24,38 +24,39 @@ pub fn are_interrupts_enabled() bool {
     return (primask & 1) == 0;
 }
 
-pub fn enable_fault_irq() void {
+pub inline fn enable_fault_irq() void {
     asm volatile ("cpsie f");
 }
-pub fn disable_fault_irq() void {
+pub inline fn disable_fault_irq() void {
     asm volatile ("cpsid f");
 }
 
-pub fn nop() void {
+pub inline fn nop() void {
     asm volatile ("nop");
 }
-pub fn wfi() void {
+pub inline fn wfi() void {
     asm volatile ("wfi");
 }
-pub fn wfe() void {
+pub inline fn wfe() void {
     asm volatile ("wfe");
 }
-pub fn sev() void {
+pub inline fn sev() void {
     asm volatile ("sev");
 }
-pub fn isb() void {
+pub inline fn isb() void {
     asm volatile ("isb");
 }
-pub fn dsb() void {
+pub inline fn dsb() void {
     asm volatile ("dsb");
 }
-pub fn dmb() void {
+pub inline fn dmb() void {
     asm volatile ("dmb");
 }
-pub fn clrex() void {
+pub inline fn clrex() void {
     asm volatile ("clrex");
 }
-pub fn bkpt(id: u32) void {
+
+pub inline fn bkpt(id: u32) void {
     asm volatile ("bkpt %[id]"
         :
         : [id] "ri" (id),
@@ -63,8 +64,6 @@ pub fn bkpt(id: u32) void {
 }
 
 pub const start = struct {
-    //
-
     extern fn ashet_kernelMain() callconv(.C) noreturn;
 
     export fn _start() noreturn {

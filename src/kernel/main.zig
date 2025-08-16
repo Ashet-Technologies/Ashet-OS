@@ -26,27 +26,11 @@ pub const random = @import("components/random.zig");
 pub const sync = @import("components/sync.zig");
 pub const pipes = @import("components/pipes.zig");
 pub const ipc = @import("components/ipc.zig");
+pub const io = @import("components/io.zig");
 
 pub const ports = @import("port/targets.zig");
 
-pub const utils = struct {
-    pub const mmio = @import("utils/mmio.zig");
-    pub const fmt = @import("utils/fmt.zig");
-
-    pub const SpinLock = @import("utils/SpinLock.zig");
-
-    pub const FixedPool = @import("utils/fixed_pool.zig").FixedPool;
-
-    pub const ansi = @import("utils/ansi.zig");
-
-    pub inline fn volatile_read(comptime T: type, ptr: *const volatile T) T {
-        return ptr.*;
-    }
-
-    pub inline fn volatile_write(comptime T: type, ptr: *volatile T, value: T) void {
-        ptr.* = value;
-    }
-};
+pub const utils = @import("utils/utils.zig");
 
 pub const platform_id: ports.Platform = machine_info.platform_id;
 pub const machine_id: ports.Machine = machine_info.machine_id;
@@ -330,6 +314,7 @@ fn global_kernel_tick(_: ?*anyopaque) callconv(.C) u32 {
         video.tick();
         input.tick();
         time.tick();
+        io.i2c.tick();
         scheduler.yield();
     }
 }

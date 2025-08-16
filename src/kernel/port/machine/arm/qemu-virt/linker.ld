@@ -33,7 +33,7 @@ SECTIONS {
         __kernel_stack_end = .;
     } > dram
 
-    .data : AT (__kernel_flash_end){
+    .data : {
         __kernel_data_start = .;
 
         *(.data)
@@ -44,8 +44,8 @@ SECTIONS {
 
         . = ALIGN(4);
         __kernel_data_end = .;
-    } > dram
-
+    } > dram AT> flash
+ 
     .bss (NOLOAD) : {
         __kernel_bss_start = .;
 
@@ -65,4 +65,6 @@ SECTIONS {
         ASSERT(__machine_linmem_start < __machine_linmem_end, "RAM overflow");
 
     } > dram
+
+    __kernel_data_load = LOADADDR(.data);
 }

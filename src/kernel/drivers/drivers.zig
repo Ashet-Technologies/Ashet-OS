@@ -1,6 +1,7 @@
 const std = @import("std");
 const ashet = @import("../main.zig");
 const logger = std.log.scoped(.drivers);
+const builtin = @import("builtin");
 
 pub const block = struct {
     // pub const ata = @import("block-device/ata.zig");
@@ -67,7 +68,16 @@ pub const input = struct {
     pub const Host_SDL_Input = @import("input/Host_SDL_Input.zig");
 };
 
-var driver_lists = std.EnumArray(DriverClass, ?*Driver).initFill(null);
+pub const i2c_device = struct {
+    pub const RP2xxx_I2C_Device = @import("i2c_device/RP2xxx_I2C_Device.zig");
+};
+
+const DriverInstallation = struct {
+    head: ?*Driver = null,
+    count: usize = 0,
+};
+
+var driver_lists: std.EnumArray(DriverClass, DriverInstallation) = .initFill(.{});
 
 export var driver_lists_ptr = &driver_lists;
 
@@ -77,17 +87,41 @@ pub fn install(driver: *Driver) void {
 
     std.debug.assert(!ashet.memory.isPointerToKernelStack(driver));
 
-    const head = driver_lists.getPtr(driver.class);
-    driver.next = head.*;
-    head.* = driver;
+    const installation = driver_lists.getPtr(driver.class);
+
+    driver.next = installation.head;
+    installation.head = driver;
+    installation.count += 1;
 
     logger.info("installed {s} driver '{s}'", .{ @tagName(driver.class), driver.name });
+
+    if (builtin.mode == .Debug) {
+        var cnt: usize = 0;
+        var head = installation.head;
+        while (head) |item| {
+            head = item.next;
+            cnt += 1;
+        }
+        if (cnt != installation.count) {
+            std.log.err("Driver installation corrupted: Install count is {}, list length is {}", .{
+                installation.count,
+                cnt,
+            });
+            @panic("Driver installation corrupted");
+        }
+    }
 }
 
+/// Returns the
 pub fn first(comptime class: DriverClass) ?*ResolvedDriverInterface(class) {
-    const head = driver_lists.get(class) orelse return null;
+    const head = driver_lists.get(class).head orelse return null;
     std.debug.assert(head.class == class);
     return &@field(head.class, @tagName(class));
+}
+
+/// Returns the total count of installed drivers for a certain driver class.
+pub fn get_available_count(class: DriverClass) usize {
+    return driver_lists.get(class).count;
 }
 
 /// Returns an iterator that will return all devices currently registered for that `class`.
@@ -103,7 +137,7 @@ pub fn DriverIterator(comptime class: DriverClass) type {
         next_item: ?*Driver,
 
         pub fn init() Iterator {
-            return Iterator{ .next_item = driver_lists.get(class) };
+            return Iterator{ .next_item = driver_lists.get(class).head };
         }
 
         pub fn next(iter: *Iterator) ?*ResolvedDriverInterface(class) {
@@ -171,6 +205,7 @@ pub const DriverClass = enum {
     serial,
     network,
     filesystem,
+    i2c_device,
 };
 
 pub const DriverInterface = union(DriverClass) {
@@ -182,6 +217,7 @@ pub const DriverInterface = union(DriverClass) {
     serial: SerialPort,
     network: NetworkInterface,
     filesystem: FileSystemDriver,
+    i2c_device: I2C_Device,
 };
 
 pub fn resolveDriver(comptime class: DriverClass, ptr: *ResolvedDriverInterface(class)) *Driver {
@@ -210,6 +246,8 @@ pub const SoundDevice = struct {
     //
     dummy: u8,
 };
+
+pub const I2C_Device = ashet.io.i2c.Device;
 
 pub const InputDevice = struct {
     pollFn: *const fn (*Driver) void,
