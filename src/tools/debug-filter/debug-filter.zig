@@ -20,9 +20,11 @@ const ElfFile = struct {
     name: []const u8,
     path: []const u8,
 
-    file: std.fs.File,
-    dwarf: dwarf.DwarfInfo,
-    mem: MapResult,
+    lookup: *Lookup,
+
+    // file: std.fs.File,
+    // dwarf: dwarf.DwarfInfo,
+    // mem: MapResult,
 };
 
 const max_suffix_len = 3 + 8 * 2; // ":0x" + 8 hex encoded bytes
@@ -32,17 +34,54 @@ const ElfSet = std.StringArrayHashMap(ElfFile);
 fn renderElfData(allocator: std.mem.Allocator, elf_addr: u64, elf: *ElfFile, output: *std.io.BufferedWriter(4096, std.fs.File.Writer)) !void {
     const writer = output.writer();
 
-    if (getSymbolFromDwarf(u32, allocator, elf_addr, &elf.dwarf)) |symbol_info| {
-        defer symbol_info.deinit(allocator);
+    _ = allocator;
 
-        if (symbol_info.line_info) |line_info| {
-            try writer.print("[{s}:{d},{s}]", .{ line_info.file_name, line_info.line, symbol_info.symbol_name });
-        } else if (!std.mem.eql(u8, symbol_info.symbol_name, "???")) {
-            try writer.print("[{s}]", .{symbol_info.symbol_name});
-        }
-    } else |err| {
-        try writer.print("[ERROR:{s}]", .{@errorName(err)});
+    var path_buf: [4096]u8 = undefined;
+    var symbol_buf: [4096]u8 = undefined;
+    const maybe_symbol = elf.lookup.get_symbol(&symbol_buf, elf_addr);
+    const maybe_location = elf.lookup.get_location(&path_buf, elf_addr);
+
+    if (maybe_symbol == null and maybe_location == null) {
+        try writer.writeAll("[???]");
+        return;
     }
+
+    try writer.writeAll("[");
+
+    if (maybe_location) |location| {
+        if (location.file) |file| {
+            try writer.print("{s}", .{file});
+        }
+        if (location.line) |line| {
+            if (location.file != null) {
+                try writer.writeAll(":");
+            }
+            try writer.print("{}", .{line});
+            if (location.column) |column| {
+                try writer.print(":{}", .{column});
+            }
+        }
+    }
+    if (maybe_symbol != null and maybe_location != null) {
+        try writer.writeAll(" ");
+    }
+    if (maybe_symbol) |symbol| {
+        try writer.print("\"{}\"", .{std.zig.fmtEscapes(symbol)});
+    }
+
+    try writer.writeAll("]");
+
+    // if (getSymbolFromDwarf(u32, allocator, elf_addr, &elf.dwarf)) |symbol_info| {
+    //     defer symbol_info.deinit(allocator);
+
+    //     if (symbol_info.line_info) |line_info| {
+    //         try writer.print("[{s}:{d},{s}]", .{ line_info.file_name, line_info.line, symbol_info.symbol_name });
+    //     } else if (!std.mem.eql(u8, symbol_info.symbol_name, "???")) {
+    //         try writer.print("[{s}]", .{symbol_info.symbol_name});
+    //     }
+    // } else |err| {
+    //     try writer.print("[ERROR:{s}]", .{@errorName(err)});
+    // }
 }
 
 const ParseOut = struct {
@@ -265,9 +304,11 @@ pub fn main() !u8 {
                 .name = app_name,
                 .path = app_path,
 
-                .file = undefined,
-                .dwarf = undefined,
-                .mem = undefined,
+                .lookup = undefined,
+
+                // .file = undefined,
+                // .dwarf = undefined,
+                // .mem = undefined,
             });
             if (prev != null)
                 @panic("duplicate app!");
@@ -283,21 +324,24 @@ pub fn main() !u8 {
     }
 
     for (elves.values()) |*value| {
-        value.file = try std.fs.cwd().openFile(value.path, .{});
+        value.lookup = .create(value.path);
 
-        const mem, const info = try readElfDebugInfo(allocator, value.file);
-        value.dwarf = info;
-        value.mem = mem;
+        // value.file = try std.fs.cwd().openFile(value.path, .{});
+
+        // const mem, const info = try readElfDebugInfo(allocator, value.file);
+        // value.dwarf = info;
+        // value.mem = mem;
     }
     defer {
         for (elves.values()) |*value| {
-            value.dwarf.deinit(allocator);
-            if (is_windows) {
-                value.mem.deinit();
-                value.file.close();
-            } else {
-                std.posix.munmap(value.mem);
-            }
+            value.lookup.destroy();
+            // value.dwarf.deinit(allocator);
+            // if (is_windows) {
+            //     value.mem.deinit();
+            //     value.file.close();
+            // } else {
+            //     std.posix.munmap(value.mem);
+            // }
         }
     }
 
@@ -739,3 +783,102 @@ const PosixTermios = struct {
         return result;
     }
 };
+
+pub const Lookup = opaque {
+    pub fn create(path: []const u8) *Lookup {
+        return lookup_create(path.ptr, path.len);
+    }
+
+    pub fn destroy(obj: *Lookup) void {
+        lookup_destroy(obj);
+    }
+
+    pub fn get_location(obj: *Lookup, path_buf: []u8, addr: u64) ?Location {
+        var res: NativeLocation = .{
+            .file = .empty_from_buf(path_buf),
+            .column = 0,
+            .line = 0,
+        };
+        if (!lookup_location(obj, &res, addr))
+            return null;
+
+        std.debug.assert(res.file.ptr == path_buf.ptr);
+        std.debug.assert(res.file.len <= path_buf.len);
+
+        return .{
+            .file = res.file.slice(),
+            .column = if (res.column != 0) res.column else null,
+            .line = if (res.line != 0) res.line else null,
+        };
+    }
+
+    pub fn get_symbol(obj: *Lookup, sym_buf: []u8, addr: u64) ?[]u8 {
+        var res: NativeString = .empty_from_buf(sym_buf);
+        if (!lookup_symbol(obj, &res, addr))
+            return null;
+
+        std.debug.assert(res.ptr == sym_buf.ptr);
+        std.debug.assert(res.len <= sym_buf.len);
+
+        return res.slice();
+    }
+
+    extern fn lookup_create(path_ptr: [*]const u8, path_len: usize) *Lookup;
+
+    extern fn lookup_destroy(*Lookup) void;
+
+    extern fn lookup_location(*Lookup, *NativeLocation, addr: u64) bool;
+
+    extern fn lookup_symbol(*Lookup, *NativeString, addr: u64) bool;
+
+    pub const NativeLocation = extern struct {
+        file: NativeString,
+        line: u32,
+        column: u32,
+    };
+
+    const NativeString = extern struct {
+        ptr: [*]u8,
+        len: usize,
+        capacity: usize,
+
+        pub fn empty_from_buf(buf: []u8) NativeString {
+            return .{
+                .ptr = buf.ptr,
+                .len = 0,
+                .capacity = buf.len,
+            };
+        }
+
+        pub fn slice(ns: NativeString) []u8 {
+            return ns.ptr[0..ns.len];
+        }
+    };
+
+    pub const Location = struct {
+        file: ?[]const u8,
+        line: ?u32,
+        column: ?u32,
+    };
+};
+
+// const lut = Lookup.create("/home/felix/projects/ashet/ashet-os/zig-out/arm-ashet-hc/kernel.elf");
+// defer lut.destroy();
+
+// {
+//     var path_buf: [4096]u8 = undefined;
+//     const result = lut.get_location(&path_buf, 0x1001AB6D) orelse return 1;
+
+//     std.log.err("location: {?s}:{?}:{?}", .{
+//         result.file,
+//         result.line,
+//         result.column,
+//     });
+// }
+
+// {
+//     var symbol_buf: [4096]u8 = undefined;
+//     const location = lut.get_symbol(&symbol_buf, 0x1001AB6D) orelse return 2;
+
+//     std.log.err("symbol: {s}", .{location});
+// }
