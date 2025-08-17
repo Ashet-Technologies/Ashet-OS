@@ -74,20 +74,7 @@ fn early_initialize() void {
     hw_alloc.pins.debug_rx.set_function(.uart);
 
     hw_alloc.pins.i2c_sda.set_function(.i2c);
-    // hw_alloc.pins.i2c_sda.set_pull(.up);
     hw_alloc.pins.i2c_scl.set_function(.i2c);
-    // hw_alloc.pins.i2c_scl.set_pull(.up);
-
-    // pinout.dbg_sel.set_function(.sio);
-    // pinout.dbg_sck.set_function(.sio);
-    // pinout.dbg_sda.set_function(.sio);
-
-    // pinout.dbg_sel.set_direction(.out);
-    // pinout.dbg_sck.set_direction(.out);
-    // pinout.dbg_sda.set_direction(.out);
-    // pinout.dbg_sel.put(0);
-    // pinout.dbg_sck.put(0);
-    // pinout.dbg_sda.put(0);
 
     hw_alloc.uart.debug.apply(.{
         .baud_rate = hw_alloc.uart.debug_baud,
