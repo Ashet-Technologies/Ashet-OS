@@ -192,3 +192,10 @@ qemu-gdb target:
     gdb \
         --command "scripts/gdb" \
         zig-out/{{target}}/kernel.elf 
+
+
+
+[working-directory: 'src/website']
+website:
+    zig-0.14.1 build --prominent-compile-errors -freference-trace=10
+    

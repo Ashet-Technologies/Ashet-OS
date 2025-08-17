@@ -63,12 +63,19 @@ pub fn build(b: *std.Build) void {
         break :blk generate_core_abi.addOutputFileArg("ashet-os.html");
     };
 
-    b.getInstallStep().dependOn(
-        &b.addInstallFileWithDir(docs_html, .{ .custom = "docs" }, "index.html").step,
-    );
-    b.getInstallStep().dependOn(
-        &b.addInstallFileWithDir(b.path("docs/style.css"), .{ .custom = "docs" }, "style.css").step,
-    );
+    const create_docs_dir = b.addWriteFiles();
+    _ = create_docs_dir.addCopyFile(docs_html, "index.html");
+    _ = create_docs_dir.addCopyFile(b.path("docs/style.css"), "style.css");
+
+    const docs_dir = create_docs_dir.getDirectory();
+
+    b.addNamedLazyPath("html-docs", docs_dir);
+
+    b.getInstallStep().dependOn(&b.addInstallDirectory(.{
+        .source_dir = docs_dir,
+        .install_dir = .prefix,
+        .install_subdir = "docs",
+    }).step);
 
     const abi_code = convert_abi_file(b, render_zig_exe, abi_json, b.path("src/ports/zig.abi.zpatch"), .definition);
     const provider_code = convert_abi_file(b, render_zig_exe, abi_json, null, .kernel);

@@ -1,0 +1,13 @@
+.{
+    .name = .ashet_os_website,
+    .version = "0.1.0",
+    .fingerprint = 0xb3264fb3829d03ce,
+    .dependencies = .{
+        .abi = .{ .path = "../abi" },
+        .os = .{ .path = "../os" },
+        .kernel = .{ .path = "../kernel" },
+    },
+    .paths = .{
+        ".",
+    },
+}

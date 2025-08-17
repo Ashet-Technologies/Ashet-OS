@@ -22,7 +22,11 @@ const app_packages = [_][]const u8{
 pub fn build(b: *std.Build) void {
 
     // Options:
-    const machine = b.option(Machine, "machine", "What machine should AshetOS be built for?") orelse @panic("no machine defined!");
+    const machine = b.option(Machine, "machine", "What machine should AshetOS be built for?") orelse {
+        std.log.err("Target 'machine' must be defined!", .{});
+        b.invalid_user_input = true;
+        return;
+    };
     const optimize_kernel = b.option(bool, "optimize-kernel", "Should the kernel be optimized?") orelse false;
     const optimize_apps = b.option(std.builtin.OptimizeMode, "optimize-apps", "Optimization mode for the applications") orelse .Debug;
 
