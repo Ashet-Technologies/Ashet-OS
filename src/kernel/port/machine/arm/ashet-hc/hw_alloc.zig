@@ -17,12 +17,10 @@ pub const pins = struct {
     pub const debug_tx: rp2350.gpio.Pin = rp2350.gpio.num(0);
     pub const debug_rx: rp2350.gpio.Pin = rp2350.gpio.num(1);
 
-    // 3
+    // 2..5
 
-    pub const i2c_sda: rp2350.gpio.Pin = rp2350.gpio.num(4);
-    pub const i2c_scl: rp2350.gpio.Pin = rp2350.gpio.num(5);
-
-    // 6..7
+    pub const i2c_sda: rp2350.gpio.Pin = rp2350.gpio.num(6); // SDA1
+    pub const i2c_scl: rp2350.gpio.Pin = rp2350.gpio.num(7); // SCL1
 
     pub const xip_cs1: rp2350.gpio.Pin = rp2350.gpio.num(8);
 
@@ -85,5 +83,9 @@ pub const spi = struct {
 };
 
 pub const i2c = struct {
-    pub const system_bus = rp2350.i2c.instance.I2C0;
+    pub const system_bus = rp2350.i2c.instance.I2C1;
+};
+
+pub const i2c_addresses = struct {
+    pub const i2c_main_mux: rp2350.i2c.Address = .new(0x70);
 };

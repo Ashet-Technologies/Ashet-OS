@@ -156,11 +156,11 @@ pub fn tick() void {
         if (current_task == null) {
             const call, const bus_ptr = work_queue.dequeue() orelse return;
 
-            logger.debug("start task", .{});
-
             const bus: *Bus = @ptrCast(@alignCast(bus_ptr));
 
             const inputs = call.arc.cast(ExecuteCall).inputs;
+
+            logger.debug("start task ({} items)", .{inputs.sequence_len});
 
             current_task = .{
                 .call = call,
@@ -207,7 +207,12 @@ pub fn tick() void {
         // Fetch result or stop processing:
         const result = task.bus.device.get_result() orelse return;
 
-        logger.debug("complete op [{}] {s}: {}", .{ task.index, @tagName(op.type), result });
+        logger.debug("complete op [{}] {s}, err={s} / count={}", .{
+            task.index,
+            @tagName(op.type),
+            @tagName(result.@"error"),
+            result.processed,
+        });
 
         op.@"error" = result.@"error";
         op.processed = if (op.type != .ping)
@@ -237,7 +242,10 @@ pub fn tick() void {
         }
 
         if (completed) {
-            logger.debug("complete task", .{});
+            logger.debug("complete task {}/{} items", .{
+                task.index,
+                task.sequence.len,
+            });
             task.call.finalize(
                 ashet.abi.io.i2c.Execute,
                 .{ .count = task.index },

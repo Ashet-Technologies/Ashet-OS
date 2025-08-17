@@ -9,6 +9,8 @@ const psram = @import("psram.zig");
 
 pub const hw_alloc = @import("hw_alloc.zig");
 
+const Nested_I2C_Bus = @import("drivers/Nested_I2C_Bus.zig");
+
 const disk_image_start = 0x10800000;
 const disk_image_end = 0x11000000;
 
@@ -45,7 +47,8 @@ const hw = struct {
 
     var nic: ashet.drivers.network.ENC28J60 = undefined;
 
-    var global_i2c: ashet.drivers.i2c_device.RP2xxx_I2C_Device = undefined;
+    var system_i2c: Nested_I2C_Bus = undefined;
+    var expansion_i2c: [7]Nested_I2C_Bus = undefined;
 };
 
 fn get_tick_count_ms() u64 {
@@ -71,7 +74,9 @@ fn early_initialize() void {
     hw_alloc.pins.debug_rx.set_function(.uart);
 
     hw_alloc.pins.i2c_sda.set_function(.i2c);
+    // hw_alloc.pins.i2c_sda.set_pull(.up);
     hw_alloc.pins.i2c_scl.set_function(.i2c);
+    // hw_alloc.pins.i2c_scl.set_pull(.up);
 
     // pinout.dbg_sel.set_function(.sio);
     // pinout.dbg_sck.set_function(.sio);
@@ -138,6 +143,77 @@ fn early_initialize() void {
     }
 
     logger.info("core1 fully started", .{});
+}
+
+fn initialize() !void {
+    logger.info("cpuid: {s}", .{
+        ashet.platform.profile.peripherals.system_control_block.cpuid.read(),
+    });
+
+    logger.info("initialize SysTick...", .{});
+    systick.init();
+
+    // Initialize devices and drivers:
+    {
+        hw.rtc = .init(1739025296 * std.time.ns_per_s);
+
+        hw.uart0 = try .init(clock_config, hw_alloc.uart.debug, hw_alloc.uart.debug_baud);
+        // hw.uart1 = try ashet.drivers.serial.RP2xxx.init(clock_config, hal.uart.instance.UART1, 115_200);
+
+        // hw.fb_video = ashet.drivers.video.Virtual_Video_Output.init();
+
+        hw.hstx_video = try .init(clock_config);
+
+        hw.xip_flash = .init(
+            disk_image_start,
+            disk_image_end - disk_image_start,
+        );
+
+        hw.nic = try .init(spi0, .init(.{ 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF }), .{});
+
+        hw.system_i2c = try .init(.{
+            .clock_config = clock_config,
+            .i2c = hw_alloc.i2c.system_bus,
+            .mux = hw_alloc.i2c_addresses.i2c_main_mux,
+            .mask = 0x80,
+            .name = "System Bus",
+        });
+
+        inline for (&hw.expansion_i2c, 0..) |*slot, slot_id| {
+            const mask = (@as(u8, 1) << @as(u3, @intCast(slot_id)));
+            slot.* = try .init(.{
+                .clock_config = clock_config,
+                .i2c = hw_alloc.i2c.system_bus,
+                .mux = hw_alloc.i2c_addresses.i2c_main_mux,
+                .mask = mask,
+                .name = std.fmt.comptimePrint("Expansion Slot {}", .{slot_id}),
+            });
+        }
+    }
+
+    ashet.drivers.install(&hw.rtc.driver);
+    ashet.drivers.install(&hw.uart0.driver);
+    // ashet.drivers.install(&hw.uart1.driver);
+    ashet.drivers.install(&hw.hstx_video.driver);
+    ashet.drivers.install(&hw.xip_flash.driver);
+    ashet.drivers.install(&hw.nic.driver);
+    ashet.drivers.install(&hw.system_i2c.driver);
+    for (&hw.expansion_i2c) |*slot| {
+        ashet.drivers.install(&slot.driver);
+    }
+
+    rp2350_regs.UART0.UARTIMSC.modify(.{
+        .RXIM = 1,
+    });
+    rp2350_regs.UART0.UARTIFLS.modify(.{
+        .RXIFLSEL = 0b000,
+    });
+
+    IRQ.UART0_IRQ.set_handler(uart0_irq_handler);
+
+    IRQ.UART0_IRQ.enable();
+
+    ashet.platform.profile.enable_interrupts();
 }
 
 var core1_ready: bool = false;
@@ -231,57 +307,6 @@ fn core1_main() linksection(".sram.bank0") void {
     while (true) {
         ashet.platform.profile.wfi();
     }
-}
-
-fn initialize() !void {
-    logger.info("cpuid: {s}", .{
-        ashet.platform.profile.peripherals.system_control_block.cpuid.read(),
-    });
-
-    logger.info("initialize SysTick...", .{});
-    systick.init();
-
-    // Initialize devices and drivers:
-    {
-        hw.rtc = .init(1739025296 * std.time.ns_per_s);
-
-        hw.uart0 = try .init(clock_config, hw_alloc.uart.debug, hw_alloc.uart.debug_baud);
-        // hw.uart1 = try ashet.drivers.serial.RP2xxx.init(clock_config, hal.uart.instance.UART1, 115_200);
-
-        // hw.fb_video = ashet.drivers.video.Virtual_Video_Output.init();
-
-        hw.hstx_video = try .init(clock_config);
-
-        hw.xip_flash = .init(
-            disk_image_start,
-            disk_image_end - disk_image_start,
-        );
-
-        hw.nic = try .init(spi0, .init(.{ 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF }), .{});
-
-        hw.global_i2c = try .init(clock_config, hw_alloc.i2c.system_bus);
-    }
-
-    ashet.drivers.install(&hw.rtc.driver);
-    ashet.drivers.install(&hw.uart0.driver);
-    // ashet.drivers.install(&hw.uart1.driver);
-    ashet.drivers.install(&hw.hstx_video.driver);
-    ashet.drivers.install(&hw.xip_flash.driver);
-    ashet.drivers.install(&hw.nic.driver);
-    ashet.drivers.install(&hw.global_i2c.driver);
-
-    rp2350_regs.UART0.UARTIMSC.modify(.{
-        .RXIM = 1,
-    });
-    rp2350_regs.UART0.UARTIFLS.modify(.{
-        .RXIFLSEL = 0b000,
-    });
-
-    IRQ.UART0_IRQ.set_handler(uart0_irq_handler);
-
-    IRQ.UART0_IRQ.enable();
-
-    ashet.platform.profile.enable_interrupts();
 }
 
 inline fn configure_interrupt_table(core_local_table: *align(256) rp2350.VectorTable) void {

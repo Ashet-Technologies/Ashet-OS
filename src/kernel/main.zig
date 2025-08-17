@@ -83,6 +83,7 @@ pub const log_levels = struct {
     pub var video: LogLevel = .debug;
     pub var storage: LogLevel = .info; // very noise modules!
     pub var x86_vmm: LogLevel = .info; // very noise modules!
+    pub var i2c: LogLevel = .info;
 
     pub var wayland_display: LogLevel = .info;
 
@@ -93,6 +94,7 @@ pub const log_levels = struct {
     pub var @"virtio-blog": LogLevel = .debug;
     pub var kbc: LogLevel = .info;
     pub var enc28j60: LogLevel = .info;
+    pub var nested_i2c_device: LogLevel = .debug;
 
     // external modules:
     pub var fatfs: LogLevel = .info;
