@@ -28,6 +28,26 @@ pub fn build(b: *std.Build) void {
 
     const abi_dep = b.dependency("abi", .{});
 
+    const hyperdoc_dep = b.dependency("hyperdoc", .{});
+
+    const hyperdoc_mod = hyperdoc_dep.module("hyperdoc");
+
+    const wiki_conv_exe = b.addExecutable(.{
+        .name = "wiki-conv",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/wiki-conv.zig"),
+            .target = b.graph.host,
+            .optimize = .Debug,
+            .imports = &.{
+                .{ .name = "hyperdoc", .module = hyperdoc_mod },
+            },
+        }),
+    });
+
+    const conv_wiki_proc = b.addRunArtifact(wiki_conv_exe);
+    conv_wiki_proc.addDirectoryArg(b.path("../../rootfs/all-systems/wiki"));
+    const html_wiki_dir = conv_wiki_proc.addOutputDirectoryArg("wiki");
+
     const os_files = os_dep.namedWriteFiles("ashet-os");
 
     const disk_img = get_named_file(os_files, "disk.img");
@@ -38,9 +58,14 @@ pub fn build(b: *std.Build) void {
         .install_dir = .prefix,
         .install_subdir = "syscalls",
     }).step);
+    install_step.dependOn(&b.addInstallDirectory(.{
+        .source_dir = html_wiki_dir,
+        .install_dir = .prefix,
+        .install_subdir = "wiki",
+    }).step);
 
-    install_step.dependOn(&b.addInstallFile(b.path("src/CRT.png"), "try/img/crt.png").step);
-    install_step.dependOn(&b.addInstallFile(b.path("src/try.html"), "try/index.html").step);
+    install_step.dependOn(&b.addInstallFile(b.path("www/CRT.png"), "try/img/crt.png").step);
+    install_step.dependOn(&b.addInstallFile(b.path("www/try.html"), "try/index.html").step);
 
     install_step.dependOn(&b.addInstallFile(b.path("vendor/v86/libv86.js"), "try/v86/libv86.js").step);
     install_step.dependOn(&b.addInstallFile(b.path("vendor/v86/v86.wasm"), "try/v86/v86.wasm").step);
