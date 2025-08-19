@@ -1,0 +1,145 @@
+DAT
+
+' struct FIFO {
+'   buffer: *u8, // pointer to the fifo buffer
+'   config: *Config, // pointer to the fifo config
+' }
+' struct Config {
+'   wptr: u8,
+'   rptr: u8,
+'   limit: u16,
+' }
+'
+
+'
+' fifo_init(
+'   in fifo: *reg FIFO, 
+'   in fifo_address: *hub Config
+' )
+'
+fifo_init
+    RDLONG fifo_tmp, fifo_address
+    
+    ALTR fifo, #0
+    ADD fifo_tmp, PTRA  ' MODULE.RAM_BASE
+
+    ALTR fifo, #1
+    ADD fifo_address, #4
+
+    RET
+'
+' fifo_write_blocking(
+'   in  fifo:      *reg FIFO, 
+'   in  fifo_data: u8,
+' )
+' destroys C, Z
+'
+fifo_write_blocking
+    MODC _CLR WC
+    JMP #fifo_write_configurable
+
+'
+' fifo_write_nonblocking(
+'   in  fifo:      *reg FIFO, 
+'   in  fifo_data: u8,
+'   out Z:         flag,
+' )
+' Z=0 => write successful
+' Z=1 => write would block
+' destroys C
+'
+fifo_write_nonblocking
+    MODC _SET WC
+    JMP #fifo_write_configurable
+
+'
+' fifo_write_configurable(
+'   in  fifo:      *reg FIFO, 
+'   in  fifo_data: u8,
+'   in  C:         flag,
+'   out Z:         flag,
+' )
+' C=0 => blocking
+' C=1 => non-blocking
+' Z=0 => write successful
+' Z=1 => write would block
+'
+fifo_write_configurable
+    ALTS fifo, #FIFO_ALTx_CONFIG
+    RDLONG fifo_tmp, ALTERED
+    GETBYTE fifo_rptr,  fifo_tmp, #SLOT_RX_FIFO_RPTR_B
+    GETBYTE fifo_wptr,  fifo_tmp, #SLOT_RX_FIFO_WPTR_B
+    GETWORD fifo_limit, fifo_tmp, #SLOT_RX_FIFO_LIMIT_W
+
+    ' check if the FIFO would overflow:
+    SUB fifo_limit, #1 ' adjust to "last index" instead of "length"
+    INCMOD fifo_wptr, fifo_limit
+    CMP fifo_rptr, fifo_wptr WZ
+    IF_Z_AND_C  RET
+    IF_Z_AND_NC JMP #fifo_write_configurable
+    
+    ' write fifo_data to (fifo.BASE + fifo_wptr)
+    GETBYTE fifo_tmp,  fifo_tmp, #SLOT_RX_FIFO_WPTR_B
+    ALTS fifo, #FIFO_ALTx_BASE
+    ADD fifo_tmp, ALTERED
+    WRBYTE fifo_data, fifo_tmp
+
+    ' write back fifo_wptr
+    ALTS fifo, #FIFO_ALTx_CONFIG
+    MOV fifo_tmp, ALTERED
+    ADD fifo_tmp, #SLOT_RX_FIFO_WPTR_B
+    WRBYTE fifo_wptr, fifo_tmp
+
+#ifndef FIFO_MASTER_IMPL
+    COGATN #(1<<0) ' call the main controller
+#endif
+
+    RET 
+
+'
+' fifo_read_nonblocking(
+'   in  fifo:      *reg FIFO, 
+'   out fifo_data: u8,
+'   out Z:         flag,
+' )
+'
+' Z=0 => read successful
+' Z=1 => read would block
+'
+fifo_read_nonblocking
+    ALTS fifo, #FIFO_ALTx_CONFIG
+    RDLONG fifo_tmp, ALTERED
+    GETBYTE fifo_rptr,  fifo_tmp, #SLOT_RX_FIFO_RPTR_B
+    GETBYTE fifo_wptr,  fifo_tmp, #SLOT_RX_FIFO_WPTR_B
+    
+    CMP fifo_rptr, fifo_wptr WZ ' Check if FIFO is empty
+    IF_E RET
+
+    GETWORD fifo_limit, fifo_tmp, #SLOT_RX_FIFO_LIMIT_W
+
+    MOV fifo_tmp, fifo_rptr
+    
+    SUB fifo_limit, #1 ' adjust to "last index" instead of "length"
+    INCMOD fifo_tmp, fifo_limit
+
+    ALTS fifo, #FIFO_ALTx_BASE
+    ADD fifo_rptr, ALTERED
+    RDBYTE fifo_data, fifo_rptr
+
+    ALTS fifo, #FIFO_ALTx_CONFIG
+    MOV fifo_rptr, ALTERED
+    ADD fifo_rptr, #SLOT_RX_FIFO_RPTR_B
+    WRBYTE fifo_tmp, fifo_rptr
+
+    RET
+
+' public variables:
+fifo            LONG 0
+fifo_address    LONG 0
+fifo_data       LONG 0
+
+' private variables:
+fifo_tmp        LONG 0
+fifo_limit      LONG 0
+fifo_rptr       LONG 0
+fifo_wptr       LONG 0

@@ -283,9 +283,10 @@ pub fn init_backend(comptime clock_config: rp2350.clocks.config.Global) void {
     hw_alloc.dma.hdmi_ping.set_irq1_enabled(true);
     hw_alloc.dma.hdmi_pong.set_irq1_enabled(true);
 
-    ashet.machine.IRQ.DMA_IRQ_1.set_handler(handle_hstx_dma_irq);
-    ashet.machine.IRQ.DMA_IRQ_1.set_priority(.highest);
-    ashet.machine.IRQ.DMA_IRQ_1.enable();
+    const irq = hw_alloc.irq.video_dma;
+    irq.set_handler(handle_hstx_dma_irq);
+    irq.set_priority(.highest);
+    irq.enable();
 
     hw_alloc.pins.hdmi_d0_p.set_function(.hstx);
     hw_alloc.pins.hdmi_d0_n.set_function(.hstx);

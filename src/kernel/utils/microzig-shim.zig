@@ -49,7 +49,18 @@ pub const hal = @import("rp2350-hal");
 pub const drivers = struct {
     pub const time = struct {
         pub const Absolute = kernel.time.Instant;
-        pub const Duration = u64;
+
+        pub const Duration = enum(u64) {
+            _,
+
+            pub fn from_us(us: u64) Duration {
+                return @enumFromInt(us);
+            }
+
+            pub fn from_ms(ms: u64) Duration {
+                return from_us(1000 * ms);
+            }
+        };
 
         pub const Deadline = struct {
             pub const no_deadline: Deadline = .{ .deadline = null };
@@ -57,7 +68,7 @@ pub const drivers = struct {
             deadline: ?Absolute,
             pub fn init_relative(instant: kernel.time.Instant, timeout: ?Duration) Deadline {
                 return .{
-                    .deadline = if (timeout) |t| instant.add_ms(t) else null,
+                    .deadline = if (timeout) |t| instant.add_ms(@intFromEnum(t)) else null,
                 };
             }
 
@@ -75,6 +86,10 @@ pub const drivers = struct {
                 return false;
             }
         };
+
+        pub fn make_timeout_us(instant: kernel.time.Instant, us: u64) Deadline {
+            return .init_relative(instant, .from_us(us));
+        }
     };
 };
 

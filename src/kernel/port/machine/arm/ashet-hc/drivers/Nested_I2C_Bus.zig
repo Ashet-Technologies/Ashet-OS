@@ -12,7 +12,7 @@ const RP2xxx_I2C_Device = @This();
 
 const Result = ashet.io.i2c.Device.Result;
 
-const default_timeout = 1000; // ms
+const default_timeout: @import("microzig").drivers.time.Duration = .from_ms(1000);
 
 driver: Driver = .{
     .name = "Ashet I2C",
@@ -60,7 +60,7 @@ pub fn init(comptime config: Config) !RP2xxx_I2C_Device {
 
 fn setup_mux(driver: *RP2xxx_I2C_Device) bool {
     driver.i2c.write_blocking(driver.mux, &.{driver.mask}, default_timeout) catch |err| {
-        std.log.err("failed to update internal bus switch: {s}!", .{@errorName(err)});
+        logger.err("failed to update internal bus switch: {s}!", .{@errorName(err)});
         driver.last_op = .{
             .@"error" = .fault,
             .processed = 0,

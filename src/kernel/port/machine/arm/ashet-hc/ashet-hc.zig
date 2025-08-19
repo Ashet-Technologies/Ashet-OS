@@ -77,7 +77,7 @@ fn early_initialize() void {
     hw_alloc.pins.i2c_scl.set_function(.i2c);
 
     hw_alloc.uart.debug.apply(.{
-        .baud_rate = hw_alloc.uart.debug_baud,
+        .baud_rate = hw_alloc.cfg.debug_baud,
         .clock_config = clock_config,
     });
 
@@ -140,11 +140,13 @@ fn initialize() !void {
     logger.info("initialize SysTick...", .{});
     systick.init();
 
+    ashet.platform.profile.enable_interrupts();
+
     // Initialize devices and drivers:
     {
         hw.rtc = .init(1739025296 * std.time.ns_per_s);
 
-        hw.uart0 = try .init(clock_config, hw_alloc.uart.debug, hw_alloc.uart.debug_baud);
+        hw.uart0 = try .init(clock_config, hw_alloc.uart.debug, hw_alloc.cfg.debug_baud);
         // hw.uart1 = try ashet.drivers.serial.RP2xxx.init(clock_config, hal.uart.instance.UART1, 115_200);
 
         // hw.fb_video = ashet.drivers.video.Virtual_Video_Output.init();
@@ -176,6 +178,10 @@ fn initialize() !void {
                 .name = std.fmt.comptimePrint("Expansion Slot {}", .{slot_id}),
             });
         }
+
+        {
+            try propio.init_propeller2();
+        }
     }
 
     ashet.drivers.install(&hw.rtc.driver);
@@ -199,8 +205,6 @@ fn initialize() !void {
     IRQ.UART0_IRQ.set_handler(uart0_irq_handler);
 
     IRQ.UART0_IRQ.enable();
-
-    ashet.platform.profile.enable_interrupts();
 }
 
 var core1_ready: bool = false;
@@ -710,5 +714,62 @@ const videomem = struct {
             &__rp2350_sram_bank3_end,
             &__rp2350_sram_bank3_load,
         );
+    }
+};
+
+const propio = struct {
+    const p2boot = @import("p2boot.zig");
+    const protocol = @import("propio/protocol.zig");
+
+    const backplane_bootrom_checksum: []const u8 = blk: {
+        const raw_bootrom = @embedFile("propeller2.bin");
+        if (raw_bootrom.len % 4 != 0) @compileError("propeller2.bin must have a length divisible by 4!");
+        var checksummed_bootrom: [raw_bootrom.len + 4]u8 = undefined;
+
+        @memcpy(checksummed_bootrom[0..raw_bootrom.len], raw_bootrom);
+        var cs: u32 = 0x706F7250; // "Prop"
+        for (std.mem.bytesAsSlice(u32, raw_bootrom)) |item| {
+            const word = std.mem.littleToNative(u32, item);
+            cs -%= word;
+        }
+        std.mem.writeInt(u32, checksummed_bootrom[raw_bootrom.len..][0..4], cs, .little);
+
+        const immutable = checksummed_bootrom;
+        break :blk &immutable;
+    };
+
+    fn init_propeller2() !void {
+        logger.info("initialize Propeller 2 boot interface...", .{});
+
+        p2boot.init();
+
+        logger.info("reset Propeller 2 and catch bootloader...", .{});
+        for (0..6) |retry| {
+            if (p2boot.reset()) |_|
+                break
+            else |err| {
+                logger.warn("failed to reset propeller 2 {} times: {s}", .{ retry, @errorName(err) });
+                continue;
+            }
+        } else return error.P2ResetFailed;
+
+        logger.info("detected P2, loading {} bytes of bootrom...", .{
+            backplane_bootrom_checksum.len - 4,
+        });
+
+        try p2boot.launch(backplane_bootrom_checksum);
+
+        logger.info("code fully loaded, waiting for backplane ready.", .{});
+        p2boot.deinit();
+
+        {
+            var frame_buffer: [5]u8 = @splat(0);
+            const len = try protocol.receive_one_blocking(&frame_buffer);
+            logger.info("received handshake frame: {}", .{std.fmt.fmtSliceHexLower(frame_buffer[0..len])});
+            if (len != 1 or frame_buffer[0] != 0xFF)
+                return error.InvalidHandshake;
+        }
+
+        logger.info("Propeller 2 Backplane I/O ready.", .{});
     }
 };

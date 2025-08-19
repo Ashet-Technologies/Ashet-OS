@@ -41,7 +41,11 @@ const MODE_V_BACK_PORCH = video_timings.vbackporch();
 const MODE_V_ACTIVE_LINES = video_timings.vdisplay;
 const MODE_V_TOTAL_LINES = video_timings.vtotal;
 
-var framebuffer: [@as(usize, video_resolution.width) * video_resolution.height]Color align(4096) linksection(".sram.bank1") = undefined;
+const pixel_count = @as(usize, video_resolution.width) * video_resolution.height;
+
+var framebuffer: [pixel_count]Color align(4096) linksection(".sram.bank1") = @bitCast(
+    @as([pixel_count]u8, @embedFile("../../data/splash_640x480_rgb233.data").*),
+);
 
 driver: Driver,
 
@@ -83,9 +87,6 @@ pub fn init(comptime clock_config: hal.clocks.config.Global) !HSTX_DVI {
     logger.info("Clock Precision = {d:.2} %", .{
         100 * @as(f64, @floatFromInt(hstx_bit_clock)) / @as(f64, @floatFromInt(dvi_bit_clock)),
     });
-
-    var rng = std.Random.Xoroshiro128.init(10);
-    rng.random().bytes(std.mem.sliceAsBytes(&framebuffer));
 
     const vd: HSTX_DVI = .{
         .driver = .{
@@ -245,7 +246,7 @@ pub fn init_backend(comptime clock_config: hal.clocks.config.Global) void {
     logger.info("INTE1: 0x{X:0>4}", .{regz.DMA.INTE1.read().INTE1});
     logger.info("INTS1: 0x{X:0>4}", .{regz.DMA.INTS1.read().INTS1});
 
-    const irq = ashet.machine.IRQ.DMA_IRQ_1;
+    const irq = ashet.machine.hw_alloc.irq.video_dma;
 
     irq.set_handler(dma_irq_handler);
     irq.set_priority(.highest);

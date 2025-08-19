@@ -6,12 +6,19 @@
 //!
 const std = @import("std");
 
+const machine = @import("ashet-hc.zig");
 const rp2350 = @import("rp2350-hal");
 
 pub const clock_config = rp2350.clock_config;
 
-pub const propio_buffer_size = 256;
-pub const propio_buffer_count = 32;
+pub const cfg = struct {
+    pub const propio_buffer_size = 256;
+    pub const propio_buffer_count = 32;
+
+    pub const debug_baud = 2_000_000;
+    pub const propeller2_p2boot_baud = 500_000;
+    pub const propeller2_propio_baud = 5_000_000;
+};
 
 pub const pins = struct {
     pub const debug_tx: rp2350.gpio.Pin = rp2350.gpio.num(0);
@@ -57,17 +64,20 @@ pub const pins = struct {
     // 44..47
 };
 
+pub const irq = struct {
+    pub const propio_dma: machine.IRQ = .DMA_IRQ_0;
+    pub const propio_pio: machine.IRQ = .PIO0_IRQ_0;
+
+    pub const video_dma: machine.IRQ = .DMA_IRQ_1;
+};
+
 pub const uart = struct {
     pub const debug = rp2350.uart.instance.UART0;
-    pub const debug_baud = 2_000_000;
-
     pub const propeller2: rp2350.uart.UART = rp2350.uart.instance.UART1;
-    pub const propeller2_p2boot_baud = 500_000;
 };
 
 pub const pio = struct {
     pub const propio = rp2350.pio.num(0);
-    pub const propeller2_propio_baud = 5_000_000;
 };
 
 pub const dma = struct {
