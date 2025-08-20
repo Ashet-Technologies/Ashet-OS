@@ -1,5 +1,6 @@
 .{
-    .name = "agp",
+    .name = .agp,
+    .fingerprint = 0xccedf4592ae576f4,
     .version = "0.1.0",
     .dependencies = .{
         .abi = .{

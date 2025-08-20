@@ -12,15 +12,20 @@ pub fn build(b: *std.Build) void {
     const agp_mod = agp_dep.module("agp");
     const agp_swrast_mod = agp_swrast_dep.module("agp-swrast");
 
-    const exe = b.addExecutable(.{
-        .name = "agp-tester",
+    const agp_tester_mod = b.createModule(.{
         .target = target,
         .optimize = optimize,
         .root_source_file = b.path("src/agp-tester.zig"),
+        .imports = &.{
+            .{ .name = "agp", .module = agp_mod },
+            .{ .name = "agp-swrast", .module = agp_swrast_mod },
+        },
     });
 
-    exe.root_module.addImport("agp", agp_mod);
-    exe.root_module.addImport("agp-swrast", agp_swrast_mod);
+    const exe = b.addExecutable(.{
+        .name = "agp-tester",
+        .root_module = agp_tester_mod,
+    });
 
     b.installArtifact(exe);
 

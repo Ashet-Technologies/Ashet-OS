@@ -1,5 +1,6 @@
 .{
     .name = .extract_icon,
+    .fingerprint = 0x660db7271d2881cc,
     .version = "0.0.1",
     .paths = .{
         "build.zig",

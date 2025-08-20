@@ -13,14 +13,17 @@ pub fn build(b: *std.Build) void {
     });
     _ = ashex_mod;
 
-    const exe_tool = b.addExecutable(.{
-        .name = "ashet-exe",
+    const exe_tool_mod = b.createModule(.{
+        .root_source_file = b.path("src/exe-tool.zig"),
         .target = target,
         .optimize = optimize,
-        .root_source_file = b.path("src/exe-tool.zig"),
     });
+    exe_tool_mod.addImport("args", args_mod);
 
-    exe_tool.root_module.addImport("args", args_mod);
+    const exe_tool = b.addExecutable(.{
+        .name = "ashet-exe",
+        .root_module = exe_tool_mod,
+    });
 
     b.installArtifact(exe_tool);
 }
