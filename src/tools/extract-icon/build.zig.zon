@@ -12,8 +12,8 @@
             .hash = "args-0.0.0-CiLiqv_NAAC97fGpk9hS2K681jkiqPsWP6w3ucb_ctGH",
         },
         .zigimg = .{
-            .url = "https://github.com/der-teufel-programming/zigimg/archive/7de94de43737a0d6ff8cb8049f1b72110dfc3bfd.tar.gz",
-            .hash = "zigimg-0.1.0-AAAAAM5ZEAClgN5NBU0phadm-rnJE1r4kMiVUjsxoltr",
+            .url = "git+https://github.com/der-teufel-programming/zigimg.git#70a3abe922d65ec13b488b0890970edcf11e0006",
+            .hash = "zigimg-0.1.0-8_eo2oFJEwDQjDFXp7mdV7KXQiMIRAYCl7Y0z91NdxG2",
         },
         .@"ashet-abi" = .{
             .path = "../../abi",
