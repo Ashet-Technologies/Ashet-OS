@@ -1,5 +1,6 @@
 .{
-    .name = "agp-tester",
+    .name = .agp_tester,
+    .fingerprint = 0xd1f2147d4d43b79e,
     .version = "0.1.0",
     .dependencies = .{
         .agp = .{

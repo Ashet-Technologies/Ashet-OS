@@ -1,5 +1,6 @@
 .{
     .name = .agp_swrast,
+    .fingerprint = 0x817df63bca23e5ad,
     .version = "0.1.0",
     .dependencies = .{
         .abi = .{

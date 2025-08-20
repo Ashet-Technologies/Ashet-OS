@@ -97,15 +97,11 @@ pub const AshetSdk = struct {
 
         const file_name = b.fmt("{s}.ashex", .{options.name});
 
-        const exe = b.addExecutable(.{
-            .name = options.name,
+        const app_mod = b.createModule(.{
             .target = zig_target,
             .root_source_file = options.root_source_file,
-            .version = options.version,
             .optimize = options.optimize,
             .code_model = options.code_model,
-            .linkage = .static, // AshetOS ELF executables are statically linked, as Ashex uses a non-standard dynamic linking procedure.
-            .max_rss = options.max_rss,
             .link_libc = options.link_libc,
             .single_threaded = true, // AshetOS doesn't support multithreading in a modern sense
             .pic = true, // which need PIC code
@@ -114,6 +110,14 @@ pub const AshetSdk = struct {
             .omit_frame_pointer = options.omit_frame_pointer orelse false, // do not emit frame pointer by default
             .sanitize_thread = false,
             .error_tracing = options.error_tracing,
+        });
+
+        const exe = b.addExecutable(.{
+            .name = options.name,
+            .root_module = app_mod,
+            .version = options.version,
+            .linkage = .static, // AshetOS ELF executables are statically linked, as Ashex uses a non-standard dynamic linking procedure.
+            .max_rss = options.max_rss,
             .use_llvm = options.use_llvm,
             .use_lld = options.use_lld,
             .zig_lib_dir = options.zig_lib_dir,
@@ -287,14 +291,16 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(image_converter);
 
     // Build:
-
-    const gen_binding_exe = b.addExecutable(.{
-        .name = "gen_abi_binding",
+    const gen_binding_mod = b.createModule(.{
+        .root_source_file = b.path("src/gen-libsyscall.zig"),
         .target = b.graph.host,
         .optimize = .Debug,
-        .root_source_file = b.path("src/gen-libsyscall.zig"),
     });
-    gen_binding_exe.root_module.addImport("abi-parser", abi_parser_mod);
+    const gen_binding_exe = b.addExecutable(.{
+        .name = "gen_abi_binding",
+        .root_module = gen_binding_mod,
+    });
+    gen_binding_mod.addImport("abi-parser", abi_parser_mod);
 
     const zig_binding = b.addRunArtifact(gen_binding_exe);
     zig_binding.addFileArg(abi_json_mod.root_source_file.?);
@@ -335,12 +341,15 @@ pub fn build(b: *std.Build) void {
 
     const libsyscall_path = sub_build.addPrefixedOutputFileArg("-femit-bin=", "libAshetOS.a");
 
-    const debug_exe = b.addExecutable(.{
-        .name = b.fmt("libAshetOS.{s}", .{@tagName(ashet_target)}),
+    const debug_mod = b.createModule(.{
         .root_source_file = b.path("src/binding-test.zig"),
         .optimize = .ReleaseFast,
         .target = target,
         .pic = true,
+    });
+    const debug_exe = b.addExecutable(.{
+        .name = b.fmt("libAshetOS.{s}", .{@tagName(ashet_target)}),
+        .root_module = debug_mod,
         .linkage = .static,
     });
     debug_exe.pie = true;

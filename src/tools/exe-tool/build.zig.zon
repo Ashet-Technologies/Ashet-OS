@@ -1,5 +1,6 @@
 .{
     .name = .exe_tool,
+    .fingerprint = 0xc163c8c465d90973,
     .version = "0.1.0",
     .paths = .{
         "src",

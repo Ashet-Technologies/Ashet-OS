@@ -11,11 +11,14 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/afs.zig"),
     });
 
-    const afs_tool = b.addExecutable(.{
-        .name = "afs-tool",
+    const afs_tool_mod = b.createModule(.{
         .root_source_file = b.path("src/afs-tool.zig"),
         .target = target,
         .optimize = optimize,
+    });
+    const afs_tool = b.addExecutable(.{
+        .name = "afs-tool",
+        .root_module = afs_tool_mod,
     });
     afs_tool.root_module.addImport("afs", afs_mod);
     afs_tool.root_module.addImport("args", args_mod);

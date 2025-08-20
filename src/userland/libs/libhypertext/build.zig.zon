@@ -1,5 +1,6 @@
 .{
-    .name = "hypertext",
+    .name = .hypertext,
+    .fingerprint = 0x9f21381fc9225e01,
     .version = "0.0.0",
     .dependencies = .{
         .hyperdoc = .{
