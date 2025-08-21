@@ -136,6 +136,12 @@ farcall:
     llvm-objdump -d ./farcall | grep -F '<main>' -A20
     gdb ./farcall --quiet --command ./gdbscript
 
+[working-directory: 'src/tools/mkexp']
+mkexp:
+    {{zig}} build {{default_params}}
+    ./zig-out/bin/mkexp render-md
+    ./zig-out/bin/mkexp encode examples/quad-ps2.json | hexdump -C
+
 
 
 rp2350-build:
