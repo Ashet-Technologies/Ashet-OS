@@ -1,6 +1,10 @@
 const std = @import("std");
 const hyperdoc = @import("hyperdoc");
 
+const Config = struct {
+    root_path: []const u8,
+};
+
 pub fn main() !u8 {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
 
@@ -14,17 +18,21 @@ pub fn main() !u8 {
     var input_dir = try std.fs.cwd().openDir(argv[1], .{ .iterate = true });
     defer input_dir.close();
 
+    const config: Config = .{
+        .root_path = "/proxy/8080/wiki/",
+    };
+
     const root = try scan_folder(allocator, ".", input_dir);
 
     var toc: std.ArrayList(u8) = .init(allocator);
-    try render_toc(toc.writer(), root, 0);
+    try render_toc(config, toc.writer(), root, 0);
 
     try std.fs.cwd().deleteTree(argv[2]);
 
     var output_dir = try std.fs.cwd().makeOpenPath(argv[2], .{});
     defer output_dir.close();
 
-    try render_folder(input_dir, output_dir, toc.items, root);
+    try render_folder(config, input_dir, output_dir, toc.items, root);
 
     return 0;
 }
@@ -83,7 +91,7 @@ pub fn scan_folder(allocator: std.mem.Allocator, path: []const u8, dir: std.fs.D
                     };
 
                     const output_path = try std.fmt.allocPrint(allocator, "{s}.html", .{
-                        entry.name[0 .. entry.name.len - ext.len],
+                        child_path[0 .. child_path.len - ext.len],
                     });
 
                     try entries.append(.{
@@ -91,7 +99,7 @@ pub fn scan_folder(allocator: std.mem.Allocator, path: []const u8, dir: std.fs.D
                         .content = .{
                             .document = .{
                                 .output_path = output_path,
-                                .title = find_title(doc) orelse entry.name[0 .. entry.name.len - ext.len],
+                                .title = find_title(doc) orelse try allocator.dupe(u8, entry.name[0 .. entry.name.len - ext.len]),
                                 .contents = doc,
                             },
                         },
@@ -140,12 +148,12 @@ fn find_title(doc: hyperdoc.Document) ?[]const u8 {
     return null;
 }
 
-fn render_folder(input: std.fs.Dir, output: std.fs.Dir, toc: []const u8, folder: Folder) !void {
+fn render_folder(config: Config, input: std.fs.Dir, output: std.fs.Dir, toc: []const u8, folder: Folder) !void {
     for (folder.files) |entry| {
         switch (entry.content) {
             .folder => |subfolder| {
                 try output.makeDir(entry.path);
-                try render_folder(input, output, toc, subfolder);
+                try render_folder(config, input, output, toc, subfolder);
             },
 
             .copy => try std.fs.Dir.copyFile(
@@ -162,7 +170,7 @@ fn render_folder(input: std.fs.Dir, output: std.fs.Dir, toc: []const u8, folder:
 
                 var buffered_writer: BufferedWriter = .{ .unbuffered_writer = output_file.writer() };
 
-                try render_html(document.contents, toc, buffered_writer.writer());
+                try render_html(config, document.contents, toc, buffered_writer.writer());
 
                 try buffered_writer.flush();
             },
@@ -172,43 +180,32 @@ fn render_folder(input: std.fs.Dir, output: std.fs.Dir, toc: []const u8, folder:
 
 const BufferedWriter = std.io.BufferedWriter(8192, std.fs.File.Writer);
 
-fn render_html(doc: hyperdoc.Document, toc: []const u8, writer: BufferedWriter.Writer) !void {
+fn render_html(config: Config, doc: hyperdoc.Document, toc: []const u8, writer: BufferedWriter.Writer) !void {
     try writer.writeAll(
         \\<!doctype html>
         \\<html lang="en">
         \\  <head>
         \\    <meta charset="UTF-8">
+        \\
+    );
+
+    try writer.print("    <link rel=\"stylesheet\" href=\"{}\">\n", .{
+        fmt_url(config, "wiki.css"),
+    });
+
+    try writer.writeAll(
         \\    <style>
-        \\      * {
-        \\          margin: 0;
-        \\          padding: 0;
-        \\          box-sizing: border-box;
-        \\      }
-        \\      body { 
-        \\          display: grid;
-        \\          width: 100%;
-        \\          height: 100vh;
-        \\          grid-template-rows: 100%;
-        \\          grid-template-columns: 25rem auto;
-        \\          overflow: hidden;
-        \\      }
-        \\      nav {
-        \\          overflow: scroll;
-        \\      }
-        \\      main {
-        \\          overflow: scroll;
-        \\      }
         \\
     );
 
     for (0..10) |depth| {
         try writer.print(
-            \\      li[data-indent="{}"] {{
-            \\          margin-left: {}em;
+            \\      li[data-indent="{[0]}"] {{
+            \\          margin-left: {[0]}em;
             \\      }}
             \\
         ,
-            .{ depth, 2 * depth },
+            .{depth},
         );
     }
 
@@ -216,6 +213,9 @@ fn render_html(doc: hyperdoc.Document, toc: []const u8, writer: BufferedWriter.W
         \\    </style>
         \\  </head>
         \\  <body>
+        \\      <header>
+        \\          Ashet Wiki
+        \\      </header>
         \\      <nav>
         \\
     );
@@ -227,7 +227,7 @@ fn render_html(doc: hyperdoc.Document, toc: []const u8, writer: BufferedWriter.W
     );
 
     for (doc.contents) |block| {
-        try render_html_block(doc, block, writer);
+        try render_html_block(config, doc, block, writer);
     }
 
     try writer.writeAll(
@@ -238,7 +238,7 @@ fn render_html(doc: hyperdoc.Document, toc: []const u8, writer: BufferedWriter.W
     );
 }
 
-fn render_html_block(doc: hyperdoc.Document, block: hyperdoc.Block, writer: BufferedWriter.Writer) !void {
+fn render_html_block(config: Config, doc: hyperdoc.Document, block: hyperdoc.Block, writer: BufferedWriter.Writer) !void {
     switch (block) {
         .table_of_contents => {
             try writer.writeAll("  <ol>\n");
@@ -252,8 +252,8 @@ fn render_html_block(doc: hyperdoc.Document, block: hyperdoc.Block, writer: Buff
                     \\    <li><a href="#{s}">{s}</a></li>
                     \\
                 , .{
-                    heading.anchor, // TODO: Add escaping here
-                    heading.title, // TODO: Add escaping here
+                    fmt_attr(heading.anchor),
+                    fmt_html(heading.title),
                 });
             }
             try writer.writeAll("  </ol>\n");
@@ -266,14 +266,14 @@ fn render_html_block(doc: hyperdoc.Document, block: hyperdoc.Block, writer: Buff
             };
             try writer.print("  <h{} id=\"{s}\">{s}</h{[0]}>\n", .{
                 level,
-                heading.anchor, // TODO: Esacpe
-                heading.title,
+                fmt_attr(heading.anchor),
+                fmt_html(heading.title),
             });
         },
         .paragraph => |paragraph| {
             try writer.writeAll("  <p>");
             for (paragraph.contents) |span| {
-                try render_html_span(doc, span, writer);
+                try render_html_span(config, doc, span, writer);
             }
             try writer.writeAll("</p>\n");
         },
@@ -282,7 +282,7 @@ fn render_html_block(doc: hyperdoc.Document, block: hyperdoc.Block, writer: Buff
             for (ordered_list) |item| {
                 for (item.contents) |sub_block| {
                     try writer.writeAll("  <li>\n");
-                    try render_html_block(doc, sub_block, writer);
+                    try render_html_block(config, doc, sub_block, writer);
                     try writer.writeAll("  </li>\n");
                 }
             }
@@ -293,7 +293,7 @@ fn render_html_block(doc: hyperdoc.Document, block: hyperdoc.Block, writer: Buff
             for (unordered_list) |item| {
                 for (item.contents) |sub_block| {
                     try writer.writeAll("  <li>\n");
-                    try render_html_block(doc, sub_block, writer);
+                    try render_html_block(config, doc, sub_block, writer);
                     try writer.writeAll("  </li>\n");
                 }
             }
@@ -302,66 +302,112 @@ fn render_html_block(doc: hyperdoc.Document, block: hyperdoc.Block, writer: Buff
         .quote => |quote| {
             try writer.writeAll("  <blockquote>\n");
             for (quote.contents) |span| {
-                try render_html_span(doc, span, writer);
+                try render_html_span(config, doc, span, writer);
             }
             try writer.writeAll("  </blockquote>\n");
         },
         .preformatted => |preformatted| {
             try writer.writeAll("  <pre><code>");
             for (preformatted.contents) |span| {
-                try render_html_span(doc, span, writer);
+                try render_html_span(config, doc, span, writer);
             }
             try writer.writeAll("</code></pre>\n");
         },
         .image => |image| {
             try writer.print("  <img src=\"{s}\">\n", .{
-                image.path, // TODO: Escape
+                fmt_attr(image.path),
             });
         },
     }
 }
 
-fn render_html_span(doc: hyperdoc.Document, span: hyperdoc.Span, writer: BufferedWriter.Writer) !void {
+fn render_html_span(config: Config, doc: hyperdoc.Document, span: hyperdoc.Span, writer: BufferedWriter.Writer) !void {
     _ = doc;
     switch (span) {
-        .text => |text| {
-            try writer.print("{s}", .{text}); // TODO: Escape
-        },
-        .emphasis => |text| {
-            try writer.print("<em>{s}</em>", .{text}); // TODO: Escape
-        },
-        .monospace => |text| {
-            try writer.print("<code>{s}</code>", .{text}); // TODO: Escape
-        },
-        .link => |link| {
-            try writer.print("<a href=\"{s}\">{s}</a>", .{
-                link.href, // TODO: Escape
-                link.text, // TODO: Escape
-            });
-        },
+        .text => |text| try writer.print("{s}", .{fmt_html(text)}),
+        .emphasis => |text| try writer.print("<em>{s}</em>", .{fmt_html(text)}),
+        .monospace => |text| try writer.print("<code>{s}</code>", .{fmt_html(text)}),
+        .link => |link| try writer.print("<a href=\"{s}\">{s}</a>", .{
+            fmt_url(config, link.href),
+            fmt_html(link.text),
+        }),
     }
 }
 
-fn render_toc(writer: std.ArrayList(u8).Writer, folder: Folder, level: usize) !void {
+fn render_toc(config: Config, writer: std.ArrayList(u8).Writer, folder: Folder, level: usize) !void {
     for (folder.files) |entry| {
         switch (entry.content) {
             .folder => |subfolder| {
                 try writer.print("    <li data-indent=\"{}\">{s}</li>\n", .{
                     level,
-                    std.fs.path.basename(entry.path), // TODO: Escape
+                    fmt_html(std.fs.path.basename(entry.path)),
                 });
-                try render_toc(writer, subfolder, level + 1);
+                try render_toc(config, writer, subfolder, level + 1);
             },
 
             .copy => {},
 
             .document => |document| {
-                try writer.print("    <li data-indent=\"{}\"><a href=\"/{s}\">{s}</a></li>\n", .{
+                try writer.print("    <li data-indent=\"{}\"><a href=\"{s}\">{s}</a></li>\n", .{
                     level,
-                    document.output_path,
-                    document.title, // TODO: Escape
+                    fmt_url(config, document.output_path),
+                    fmt_html(document.title),
                 });
             },
         }
+    }
+}
+
+fn fmt_html(str: []const u8) std.fmt.Formatter(format_html_escape) {
+    return .{ .data = str };
+}
+
+fn fmt_attr(str: []const u8) std.fmt.Formatter(format_attr_escape) {
+    return .{ .data = str };
+}
+
+fn fmt_url(config: Config, url: []const u8) std.fmt.Formatter(format_url) {
+    return .{ .data = .{ config, url } };
+}
+
+fn format_html_escape(str: []const u8, fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
+    _ = fmt;
+    _ = opt;
+
+    try writer.writeAll(str); // TODO: Implement proper escaping
+}
+
+fn format_attr_escape(str: []const u8, fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
+    _ = fmt;
+    _ = opt;
+
+    try writer.writeAll(str); // TODO: Implement proper escaping
+}
+
+fn format_url(options: struct { Config, []const u8 }, fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
+    _ = fmt;
+    _ = opt;
+
+    const config, const url = options;
+
+    // TODO: Implement proper URL parsing and escaping
+
+    const wiki_prefix = "wiki:/";
+    if (std.mem.startsWith(u8, url, wiki_prefix)) {
+        // wiki url
+        try writer.writeAll(config.root_path);
+
+        const ext = std.fs.path.extension(url);
+
+        try writer.writeAll(url[wiki_prefix.len .. url.len - ext.len]);
+
+        try writer.writeAll(".html");
+    } else if (std.mem.indexOf(u8, url, "://") != null) {
+        // absolute url
+        try writer.writeAll(url);
+    } else {
+        // relative url
+        try writer.writeAll(config.root_path);
+        try writer.writeAll(url);
     }
 }

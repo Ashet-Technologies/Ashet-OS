@@ -66,6 +66,7 @@ pub fn build(b: *std.Build) void {
 
     install_step.dependOn(&b.addInstallFile(b.path("www/CRT.png"), "try/img/crt.png").step);
     install_step.dependOn(&b.addInstallFile(b.path("www/try.html"), "try/index.html").step);
+    install_step.dependOn(&b.addInstallFile(b.path("www/wiki.css"), "wiki/wiki.css").step);
 
     install_step.dependOn(&b.addInstallFile(b.path("vendor/v86/libv86.js"), "try/v86/libv86.js").step);
     install_step.dependOn(&b.addInstallFile(b.path("vendor/v86/v86.wasm"), "try/v86/v86.wasm").step);
