@@ -19,7 +19,7 @@ pub fn main() !u8 {
     defer input_dir.close();
 
     const config: Config = .{
-        .root_path = "/proxy/8080/wiki/",
+        .root_path = "/Ashet-OS/wiki/",
     };
 
     const root = try scan_folder(allocator, ".", input_dir);
