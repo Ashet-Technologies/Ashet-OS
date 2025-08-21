@@ -53,6 +53,7 @@ pub fn MmioRegister(comptime _Reg: type, comptime config: MmioConfig) type {
         pub const Int = @typeInfo(_Reg).@"struct".backing_integer.?;
 
         pub const access = config.access;
+        pub const underlying_type = Reg;
 
         const MmioReg = @This();
         comptime {

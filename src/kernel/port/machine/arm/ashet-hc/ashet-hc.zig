@@ -759,8 +759,13 @@ const propio = struct {
 
         try p2boot.launch(backplane_bootrom_checksum);
 
-        logger.info("code fully loaded, waiting for backplane ready.", .{});
+        logger.info("Propeller 2 launched.", .{});
         p2boot.deinit();
+
+        logger.info("Initializing PropIO interface....", .{});
+        try protocol.init();
+
+        logger.info("code fully loaded, waiting for backplane ready.", .{});
 
         {
             var frame_buffer: [5]u8 = @splat(0);

@@ -18,8 +18,8 @@ const rxf_pin = hw_alloc.pins.prop_rxf;
 const txd_pin = hw_alloc.pins.prop_txd;
 const txf_pin = hw_alloc.pins.prop_txf;
 
-const rx_dma_chan = hw_alloc.pins.prop_rx_dma;
-const tx_dma_chan = hw_alloc.pins.prop_tx_dma;
+const rx_dma_chan = hw_alloc.dma.prop_rx;
+const tx_dma_chan = hw_alloc.dma.prop_tx;
 
 const pio_clkdiv = @divExact(hw_alloc.clock_config.get_frequency(.clk_sys).?, 3 * hw_alloc.cfg.propeller2_propio_baud);
 
@@ -122,7 +122,7 @@ pub fn init() !void {
     rx_dma_chan.setup_transfer_raw(
         0, // we'll set that later!
         @intFromPtr(get_sub_word(pio.sm_get_rx_fifo(.sm0), 3)),
-        hw_alloc.propio_buffer_size,
+        hw_alloc.cfg.propio_buffer_size,
         .{
             .data_size = .size_8,
             .dreq = .pio0_rx0,
@@ -215,7 +215,7 @@ var current_dma_buffer: *RawFrame = undefined;
 
 fn prime_next_dma_transfer() void {
     const next_buffer = rxbuf_empty_queue.dequeue() orelse @panic("propio buffer queue underrun.");
-    std.debug.assert(next_buffer.len == hw_alloc.propio_buffer_size);
+    std.debug.assert(next_buffer.len == hw_alloc.cfg.propio_buffer_size);
     current_dma_buffer = next_buffer;
     microzig.chip.peripherals.DMA.CH2_AL2_WRITE_ADDR_TRIG.raw = @intFromPtr(current_dma_buffer);
 }
