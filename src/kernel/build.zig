@@ -1,4 +1,5 @@
 const std = @import("std");
+const shimizu_build = @import("shimizu");
 const abiBuild = @import("ashet-abi");
 const regz = @import("regz");
 const Platform = abiBuild.Platform;
@@ -58,6 +59,33 @@ pub fn build(b: *std.Build) void {
     const ashex_dep = b.dependency("ashex", .{});
     const xcvt_dep = b.dependency("xcvt", .{});
     const shimizu_dep = b.dependency("shimizu", .{});
+    const wayland_dep = b.dependency("wayland", .{});
+    const wayland_protocols_dep = b.dependency("wayland-protocols", .{});
+
+    const wayland_unstable_dir = shimizu_build.generateProtocolZig(shimizu_dep.builder, shimizu_dep.artifact("shimizu-scanner"), .{
+        .output_directory_name = "wayland-unstable",
+        .source_files = &.{
+            wayland_protocols_dep.path("unstable/xdg-decoration/xdg-decoration-unstable-v1.xml"),
+        },
+        .interface_versions = &.{
+            .{ .interface = "zxdg_decoration_manager_v1", .version = 1 },
+        },
+        .imports = &.{
+            .{ .file = wayland_dep.path("protocol/wayland.xml"), .import_string = "@import(\"core\")" },
+            .{ .file = wayland_protocols_dep.path("stable/xdg-shell/xdg-shell.xml"), .import_string = "@import(\"wayland-protocols\").xdg_shell" },
+        },
+    });
+    const wayland_unstable_module = b.addModule("wayland-unstable", .{
+        .root_source_file = wayland_unstable_dir.output_directory.?.path(b, "root.zig"),
+        .target = kernel_target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "wire", .module = shimizu_dep.module("wire") },
+            .{ .name = "core", .module = shimizu_dep.module("core") },
+            .{ .name = "wayland-protocols", .module = shimizu_dep.module("wayland-protocols") },
+        },
+    });
+
     const zigx_dep = b.dependency("zigx", .{});
 
     // Modules:
@@ -261,6 +289,7 @@ pub fn build(b: *std.Build) void {
 
         kernel_mod.addImport("shimizu", shimizu_mod);
         kernel_mod.addImport("wayland-protocols", wayland_protocols_mod);
+        kernel_mod.addImport("wayland-unstable", wayland_unstable_module);
 
         kernel_exe.linkage = .static;
         kernel_exe.linkLibC();

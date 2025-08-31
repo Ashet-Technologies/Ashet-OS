@@ -81,6 +81,14 @@
             .url = "https://codeberg.org/klaji/shimizu/archive/731c1fa2e848fab4c3831859d4e39f4b9ee773d8.tar.gz",
             .hash = "shimizu-0.0.0-irfMUfDaAgD9qU_8OTFR1V2EiDHggvpSoYyTMAj_ZlNO",
         },
+        .wayland = .{
+            .url = "https://gitlab.freedesktop.org/wayland/wayland/-/archive/1.23.1/wayland-1.23.1.tar.gz",
+            .hash = "N-V-__8AAJC3GAC2LeGXShVNoV0oWVW9T293JVzmx0kY5KVa",
+        },
+        .@"wayland-protocols" = .{
+            .url = "https://gitlab.freedesktop.org/wayland/wayland-protocols/-/archive/1.38/wayland-protocols-1.38.tar.gz",
+            .hash = "N-V-__8AAPSiCwBmhGfdDQlw65XlO55QP1pogBUo1ZeGUv_C",
+        },
 
         // X11 Support
         .zigx = .{
