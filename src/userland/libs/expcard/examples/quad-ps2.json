@@ -8,8 +8,7 @@
 
     "Properties": {
         "Requires Audio": false,
-        "Requires Video": false,
-        "Requires USB": false
+        "Requires Video": false
     },
 
     "Driver Interface": "none"

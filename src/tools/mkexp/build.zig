@@ -5,6 +5,7 @@ pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
 
     const args_mod = b.dependency("args", .{}).module("args");
+    const expcard_mod = b.dependency("expcard", .{}).module("expcard");
 
     const mkfont_exe = b.addExecutable(.{
         .name = "mkexp",
@@ -14,6 +15,7 @@ pub fn build(b: *std.Build) !void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "args", .module = args_mod },
+                .{ .name = "expcard", .module = expcard_mod },
             },
         }),
     });
