@@ -98,4 +98,5 @@ pub const i2c = struct {
 
 pub const i2c_addresses = struct {
     pub const i2c_main_mux: rp2350.i2c.Address = .new(0x70);
+    pub const expansion_eeprom: rp2350.i2c.Address = .new(0x57);
 };

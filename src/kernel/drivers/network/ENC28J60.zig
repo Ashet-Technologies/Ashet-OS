@@ -221,6 +221,11 @@ fn fetch_packets_err(device: *ENC28J60) !void {
 
     var packet_buffer: [ENC28J60.MAX_FRAMELEN]u8 = @splat(0);
     while (device.get_next_rx_packet()) |next_frame_length| {
+        if (next_frame_length >= packet_buffer.len) {
+            logger.err("discarding invalid rx packet of size {}", .{next_frame_length});
+            continue;
+        }
+
         device.read_rx_packet(packet_buffer[0..next_frame_length]);
 
         logger.debug("received {} bytes data on nic {s}", .{ next_frame_length, nic.getName() });
@@ -726,7 +731,7 @@ fn built_in_self_test(dev: *ENC28J60, mode: u8) !void {
         const op = dev.read_op(ENC28J60_READ_CTRL_REG, EBSTCON);
         if ((op & EBSTCON_BISTST) == 0)
             break;
-    } else return error.FailOne;
+    } else return error.SelfTestFailed;
 
     dev.clear_register_bit(EBSTCON, EBSTCON_TME);
 
@@ -755,18 +760,11 @@ fn built_in_self_test(dev: *ENC28J60, mode: u8) !void {
     // required to do one test pass is slightly greater than 327.68 μs.
     //
     {
-        var count: usize = 8;
-        while (true) {
+        for (0..8) |_| {
             hardware_platform_sleep_us(100);
-            count -= 1;
-            if (count == 0)
-                break;
             if ((dev.read_op(ENC28J60_READ_CTRL_REG, ECON1) & ECON1_DMAST) == 0)
                 break;
-        }
-
-        if (count == 0)
-            return error.FailTwo;
+        } else return error.DmaTestTimedOut;
     }
 
     dev.write_register_byte(EBSTCON, 0);
@@ -779,10 +777,10 @@ fn built_in_self_test(dev: *ENC28J60, mode: u8) !void {
     const ebstcs = dev.read_register_word(EBSTCS);
 
     if (edmacs != ebstcs)
-        return error.FailThree;
+        return error.DmaTestFailed;
 
     if ((mode == BIST_ADDRESS_FILL) and (0xF807 != edmacs))
-        return error.FailFour;
+        return error.DmaTestCheckoutMismatch;
 }
 
 fn phy_write(dev: *ENC28J60, address: u8, value: u16) error{PhyTimeout}!void {

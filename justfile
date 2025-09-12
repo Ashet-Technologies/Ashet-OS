@@ -6,6 +6,8 @@ optimize_apps := "Debug"
 
 default_params := "--prominent-compile-errors -freference-trace=10"
 
+DEBUG_PORT := "/dev/ttyACM2"
+
 build:
     {{zig}} build {{default_params}} --summary none -Doptimize-kernel={{optimize_kernel}} -Doptimize-apps={{optimize_apps}} rv32-qemu-virt
     {{zig}} build {{default_params}} --summary none -Doptimize-kernel={{optimize_kernel}} -Doptimize-apps={{optimize_apps}}
@@ -218,7 +220,7 @@ rp2350-monitor:
         --elf kernel=zig-out/arm-ashet-hc/kernel.elf \
         --elf ntp-client.ashex=zig-out/arm-ashet-hc/apps/ntp-client.elf \
         --elf i2c-scan.ashex=zig-out/arm-ashet-hc/apps/i2c-scan.elf \
-        picocom --quiet --baud 2000000 /dev/ashet.com1
+        picocom --quiet --baud 2000000 {{DEBUG_PORT}}
 
 qemu-gdb target:
     arm-none-eabi-gdb \

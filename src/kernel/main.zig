@@ -166,10 +166,8 @@ fn kernelMain() noreturn {
     log.info("entering checked main()", .{});
     main() catch {
         if (@errorReturnTrace()) |error_trace| {
-            if (builtin.os.tag != .freestanding) {
-                // hosted environment:
-                std.debug.dumpStackTrace(error_trace.*);
-            }
+            Debug.write("error return trace:\r\n");
+            Debug.printStackTrace("  ", error_trace, Debug.println);
         }
 
         @panic("system failure");

@@ -131,14 +131,14 @@ pub fn String(comptime len: comptime_int) type {
         text: [len]u8,
 
         /// Converts a comptime value into a string.
-        fn literal(comptime buffer: []const u8) @This() {
+        pub fn literal(comptime buffer: []const u8) @This() {
             var out: [len]u8 = @splat(0);
             @memcpy(out[0..buffer.len], buffer);
             return .{ .text = out };
         }
 
         /// Converts a runtime value into a string.
-        fn init(buffer: []const u8) error{Overflow}!@This() {
+        pub fn init(buffer: []const u8) error{Overflow}!@This() {
             if (buffer.len > len)
                 return error.Overflow;
             var out: [len]u8 = @splat(0);
@@ -147,7 +147,7 @@ pub fn String(comptime len: comptime_int) type {
         }
 
         /// Returns the filled part of the string.
-        fn slice(str: *@This()) []const u8 {
+        pub fn slice(str: *const @This()) []const u8 {
             return str.text[0 .. std.mem.indexOfScalar(u8, &str.text, 0) orelse str.text.len];
         }
     };

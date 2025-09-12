@@ -3,6 +3,7 @@ const logger = std.log.scoped(.ashet_hc);
 const ashet = @import("../../../../main.zig");
 const rp2350 = @import("rp2350");
 const hal = @import("rp2350-hal");
+const expcard = @import("expcard");
 const rp2350_regs = rp2350.peripherals;
 
 const psram = @import("psram.zig");
@@ -181,6 +182,8 @@ fn initialize() !void {
 
         {
             try propio.init_propeller2();
+
+            try backplane.scan_modules();
         }
     }
 
@@ -776,5 +779,105 @@ const propio = struct {
         }
 
         logger.info("Propeller 2 Backplane I/O ready.", .{});
+    }
+};
+
+const backplane = struct {
+    const Module = struct {
+        metadata: expcard.MetadataBlock,
+        firmware: ?expcard.FirmwareBlock,
+    };
+
+    var modules: [7]?*Module = @splat(null);
+
+    pub fn scan_modules() !void {
+
+        // TODO: Use DETECT pins of expansion slots to find out where cards are plugged in.
+
+        // just manually scan all the busses, we don't need the OS drivers here:
+        for (&modules, 0..7) |*mod, slot_index| {
+            mod.* = initialize_module(@intCast(slot_index)) catch |err| {
+                logger.err("failed to initialize expansion slot {}: {s}", .{ slot_index, @errorName(err) });
+                continue;
+            };
+        }
+    }
+
+    fn initialize_module(slot_index: u3) !?*Module {
+        const slot_mask: u8 = @as(u8, 1) << slot_index;
+
+        // select the proper subnet:
+        try hw_alloc.i2c.system_bus.write_blocking(hw_alloc.i2c_addresses.i2c_main_mux, std.mem.asBytes(&slot_mask), null);
+
+        // try poking the eeprom with the read address:
+        const read_addr: u16 = 0;
+        hw_alloc.i2c.system_bus.write_blocking(hw_alloc.i2c_addresses.expansion_eeprom, std.mem.asBytes(&read_addr), null) catch |err| switch (err) {
+            error.DeviceNotPresent => {
+                logger.warn("expansion slot {} has no EEPROM available", .{slot_index});
+                return null;
+            },
+
+            error.Timeout,
+            error.NoAcknowledge,
+            error.TargetAddressReserved,
+            error.NoData,
+            error.TxFifoFlushed,
+            error.UnknownAbort,
+            => |e| return e,
+        };
+
+        const metadata_block: expcard.MetadataBlock = blk: {
+            var header_block_data: [@sizeOf(expcard.MetadataBlock)]u8 = @splat(0);
+            try hw_alloc.i2c.system_bus.read_blocking(hw_alloc.i2c_addresses.expansion_eeprom, &header_block_data, null);
+            var fbs = std.io.fixedBufferStream(&header_block_data);
+
+            const block = try fbs.reader().readStructEndian(expcard.MetadataBlock, .little);
+
+            std.debug.assert(fbs.pos == header_block_data.len);
+
+            break :blk block;
+        };
+
+        if (!metadata_block.is_checksum_ok()) {
+            logger.warn("expansion slot {} available, but has invalid checksum. stored checksum: 0x{X:0>8}, actual checksum: expected checksum: 0x{X:0>8}", .{
+                slot_index,
+                metadata_block.@"CRC32 Checksum",
+                metadata_block.compute_checksum(),
+            });
+            return null;
+        }
+
+        logger.info("expansion slot {} has valid card:", .{slot_index});
+
+        logger.info("  Version:          {}", .{metadata_block.Version});
+        logger.info("  Vendor:           {} (\"{}\")", .{ metadata_block.@"Vendor ID", std.zig.fmtEscapes(metadata_block.@"Vendor Name".slice()) });
+        logger.info("  Product:          {} (\"{}\")", .{ metadata_block.@"Product ID", std.zig.fmtEscapes(metadata_block.@"Product Name".slice()) });
+        logger.info("  Serial Number:    \"{}\"", .{std.zig.fmtEscapes(metadata_block.@"Serial Number".slice())});
+        logger.info("  Properties:", .{});
+        logger.info("    Requires Audio: {}", .{metadata_block.Properties.@"Requires Audio"});
+        logger.info("    Requires Video: {}", .{metadata_block.Properties.@"Requires Video"});
+        logger.info("    Requires USB:   {}", .{metadata_block.Properties.@"Requires USB"});
+        logger.info("    Has Firmware:   {}", .{metadata_block.Properties.@"Has Firmware"});
+        logger.info("    Has Icons:      {}", .{metadata_block.Properties.@"Has Icons"});
+        logger.info("  Driver Interface: {}", .{metadata_block.@"Driver Interface"});
+
+        if (metadata_block.Version != 1) {
+            logger.warn("expansion slot {} available, but has unsupported version.", .{
+                slot_index,
+            });
+            return null;
+        }
+
+        // TODO: Implement the rest like firmware detection, driver loading, ...
+
+        const module_ptr = try ashet.memory.type_pool(Module).alloc();
+        errdefer ashet.memory.type_pool(Module).free(module_ptr);
+
+        module_ptr.* = .{
+            .metadata = metadata_block,
+            .firmware = null,
+        };
+
+        return module_ptr;
     }
 };

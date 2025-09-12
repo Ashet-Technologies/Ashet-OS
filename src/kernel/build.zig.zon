@@ -41,6 +41,10 @@
             .path = "../tools/exe-tool",
         },
 
+        .expcard = .{
+            .path = "../userland/libs/expcard",
+        },
+
         // locally vendored:
 
         .@"rp2xxx-hal" = .{ .path = "../../vendor/microzig-rp2350-hal" },
