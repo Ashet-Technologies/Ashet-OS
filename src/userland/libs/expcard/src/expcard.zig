@@ -3,20 +3,28 @@ const std = @import("std");
 pub const EEPROM_Image = extern struct {
     metadata: MetadataBlock,
 
-    reserved: [512]u8 = @splat(0),
+    reserved: [1536]u8 = @splat(0),
 
     firmware: FirmwareBlock align(2048),
 
     // icon: IconBlock align(1024),
 };
 
-pub const FirmwareBlock = extern struct {
-    data: [2048]u8 = @splat(0x00),
-};
-
 pub const MetadataBlock = extern struct {
-    @"Magic Number": u32 = 0xa0bbf5e9, // chosen by a fair dice roll
+    /// The magic number identifies the metadata block and marks it as a potential candidate.
+    /// LORE: The number was chosen to be `0xfbcc31ff` which encodes the Propeller 2 instruction `JNPAT #-1`.
+    ///
+    ///       This is a basic protection against using too small EEPROMs. These EEPROMs would return the data located
+    ///       at address 0 when reading from address 2048, and this would load the metadata block into the Propeller 2.
+    ///
+    ///       By executing a basic, yet unusual endless loop, the Cog would spin forever on the first instruction instead of
+    ///       trying to execute the metadata block as code. So if it may ever happen, we will just make that Cog spin in circles
+    ///       instead of executing complete garbage.
+    ///
+    @"Magic Number": u32 = 0xfbcc31ff,
     Version: u32 = 1, // only defined version right now
+
+    _reserved0: [8]u8 = @splat(0x00), // this makes the padding content well defined
 
     @"Vendor ID": u32 align(16),
     @"Product ID": u32,
@@ -24,13 +32,15 @@ pub const MetadataBlock = extern struct {
     Properties: Properties,
     @"Driver Interface": DriverInterface,
 
+    _reserved1: [96]u8 = @splat(0x00), // this makes the padding content well defined
+
     @"Driver Specific Data": String(128) align(128) = .literal(""),
 
     @"Vendor Name": String(64) align(256),
     @"Product Name": String(64) align(64),
     @"Serial Number": String(32) align(16),
 
-    _reserved: [60]u8 align(64) = @splat(0),
+    _reserved2: [92]u8 = @splat(0), // this makes the padding content well defined
 
     @"CRC32 Checksum": u32 = 0xFFFFFFFF, // CRC-32 ISO/HDLC (polynomial=0x04C11DB7, initial=0xffffffff, reflect_input=on, reflect_output=on, invert_output=on, reversed=no)
 
@@ -55,45 +65,63 @@ pub const MetadataBlock = extern struct {
     }
 };
 
-pub const IconConfig = packed struct(u8) {
-    pub const disabled: IconConfig = .{ .color_count = 0 };
-
-    color_count: u6,
-    _reserved: u2 = 0,
+///
+pub const FirmwareBlock = extern struct {
+    /// The Propeller 2 low-level driver code. This will be loaded into the corresponding
+    /// expansion module Cog and forms the interface between host system and expansion card.
+    data: [2048]u8 = @splat(0x00),
 };
 
-pub const RGB = extern struct { r: u8, g: u8, b: u8 };
-
+/// The icon block encodes up to three differently sized icons for the expansion card.
+///
+/// If present, the expansion can be nicely shown in a device explorer without having to
+/// have an icon present on disk.
 pub const IconBlock = extern struct {
-    pixels_16x16: [16 * 16]u8 = @splat(0x00),
-    pixels_24x24: [24 * 24]u8 = @splat(0x00),
-    pixels_32x32: [32 * 32]u8 = @splat(0x00),
+    /// The 16x16 pixel large icon.
+    pixels_16x16: IconData(16) = .{},
 
+    /// The 24x24 pixel large icon.
+    pixels_24x24: IconData(24) = .{},
+
+    /// The 32x32 pixel large icon.
+    pixels_32x32: IconData(32) = .{},
+
+    /// Configuration and metadata for the 16x16 pixel large icon.
     config_16x16: IconConfig = .disabled,
+
+    /// Configuration and metadata for the 24x24 pixel large icon.
     config_24x24: IconConfig = .disabled,
+
+    /// Configuration and metadata for the 32x32 pixel large icon.
     config_32x32: IconConfig = .disabled,
 
+    /// The shared color palette for up to 63 possible icon colors.
     palette: [63]RGB = @splat(.{ .r = 0, .g = 0, .b = 0 }),
 };
 
-comptime {
-    if (@sizeOf(IconBlock) != 0x0800) {
-        @compileLog(@sizeOf(IconBlock), 0x0800);
-    }
+/// Each entry is an index into the `palette` field.
+/// The index 0 is reserved and means the pixel is transparent.
+/// Every other possible value (1..63) is an
+pub fn IconData(comptime size: comptime_int) type {
+    return extern struct {
+        pixels: [size * size]u8 = @splat(0x00),
+    };
 }
 
-comptime {
-    if (@sizeOf(MetadataBlock) != 0x0200) {
-        @compileLog(@sizeOf(MetadataBlock), 0x0200);
-    }
-    if (@offsetOf(MetadataBlock, "CRC32 Checksum") != 0x01FC) {
-        @compileLog(@offsetOf(MetadataBlock, "CRC32 Checksum"), 0x01FC);
-    }
+/// The configuration metadata for an icon.
+pub const IconConfig = packed struct(u8) {
+    pub const disabled: IconConfig = .{ .color_count = 0 };
 
-    if (@sizeOf(IconBlock) != 0x0800) {
-        @compileLog(@sizeOf(IconBlock), 0x0800);
-    }
-}
+    /// The number of colors used in this item. Zero means the icon
+    /// would always be fully transparent as all color values would be
+    /// zero, thus, the icon is considered disabled.
+    color_count: u6,
+
+    _reserved: u2 = 0,
+};
+
+/// An 8 bit color in sRGB color space.
+pub const RGB = extern struct { r: u8, g: u8, b: u8 };
 
 /// A fixed-size, null-padded string with up to `len` bytes.
 pub fn String(comptime len: comptime_int) type {
@@ -180,7 +208,7 @@ pub fn dump_type(comptime T: type) void {
                 "",
                 "",
                 offset - last_end,
-                "*padding*",
+                "*reserved, must be zero*",
             });
         }
 
@@ -240,3 +268,30 @@ pub const json = struct {
         return meta;
     }
 };
+
+fn assert_size(comptime T: type, size: usize) void {
+    if (@sizeOf(T) == size)
+        return;
+
+    @compileLog(@sizeOf(T), size);
+}
+
+fn assert_offset(comptime T: type, comptime field: []const u8, offset: usize) void {
+    if (@offsetOf(T, field) == offset)
+        return;
+    @compileLog(@offsetOf(T, field), offset);
+}
+
+comptime {
+    assert_size(EEPROM_Image, 4096);
+
+    assert_offset(EEPROM_Image, "metadata", 0);
+    assert_offset(EEPROM_Image, "firmware", 2048);
+
+    assert_size(MetadataBlock, 512);
+    assert_offset(MetadataBlock, "CRC32 Checksum", 512 - 4);
+
+    assert_size(FirmwareBlock, 2048);
+
+    assert_size(IconBlock, 2048);
+}

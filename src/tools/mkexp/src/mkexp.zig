@@ -15,6 +15,7 @@ const CliOptions = struct {
 
     pub const shorthands = .{
         .h = "help",
+        .s = "size",
     };
 };
 
@@ -25,9 +26,20 @@ const CliVerb = union(enum) {
         // icon24: ?[]const u8 = null,
         // icon32: ?[]const u8 = null,
         output: []const u8 = "-",
+
+        pub const shorthands = .{
+            .o = "output",
+            .f = "firmware",
+        };
     },
     decode: struct {
-        //
+        json: bool = false,
+        output: []const u8 = "-",
+
+        pub const shorthands = .{
+            .b = "json",
+            .o = "output",
+        };
     },
     @"render-md": struct {},
 };
@@ -42,6 +54,33 @@ pub fn main() !u8 {
     defer cli.deinit();
 
     const verb = cli.verb orelse {
+        std.debug.print(
+            \\{s} [--help] [--size=<size>] <verb>
+            \\
+            \\Options:
+            \\  -h, --help              Prints this help
+            \\  -s, --size=32k|64k|128k Selects the size of the EEPROM image used to encode.
+            \\
+            \\Verbs:
+            \\  encode 
+            \\      Encodes an EEPROM image from 
+            \\
+            \\      -f, --firmware <path>   If given, embeds the given firmware binary inside the eeprom.
+            \\      -o, --output <path>     If given, renders the output file to <path> instead of stdout.
+            \\
+            \\  decode
+            \\      Decodes an EEPROM image and prints its contents to stdout.
+            \\      
+            \\      -j, --json              If given, will print the information as a re-encodable JSON file.
+            \\      -o, --output <path>     If given, renders the output file to <path> instead of stdout.
+            \\
+            \\  render-md
+            \\      Renders the EEPROM image description as markdown.
+            \\
+            \\
+        , .{
+            cli.executable_name orelse "mkexp",
+        });
         // TODO: Print usage
         return 1;
     };
