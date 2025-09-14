@@ -66,7 +66,7 @@ pub const log_levels = struct {
     pub var ashex_loader: LogLevel = .info;
     pub var drivers: LogLevel = .info;
     pub var elf_loader: LogLevel = .info;
-    pub var filesystem: LogLevel = .debug;
+    pub var filesystem: LogLevel = .warn;
     pub var gui: LogLevel = .debug;
     pub var io: LogLevel = .info;
     pub var main: LogLevel = .debug;
@@ -79,9 +79,12 @@ pub const log_levels = struct {
     pub var resources: LogLevel = .info;
     pub var scheduler: LogLevel = .debug;
     pub var ui: LogLevel = .debug;
+    pub var graphics: LogLevel = .warn;
     pub var input: LogLevel = .info;
     pub var video: LogLevel = .debug;
-    pub var storage: LogLevel = .info; // very noise modules!
+    pub var storage: LogLevel = .warn; // very noise modules!
+    pub var gpt_part: LogLevel = .warn; // very noise modules!
+    pub var mbr_part: LogLevel = .warn; // very noise modules!
     pub var x86_vmm: LogLevel = .info; // very noise modules!
     pub var i2c: LogLevel = .info;
 
@@ -94,6 +97,7 @@ pub const log_levels = struct {
     pub var @"virtio-blog": LogLevel = .debug;
     pub var kbc: LogLevel = .info;
     pub var enc28j60: LogLevel = .info;
+    pub var hstx_dvi: LogLevel = .info;
     pub var nested_i2c_device: LogLevel = .debug;
 
     // external modules:
@@ -517,9 +521,14 @@ fn kernel_log_fn(
     else
         "unscoped";
 
+    const is_in_isr = platform.isInInterruptContext();
+
     {
-        log_exclusive_lock.lock();
-        defer log_exclusive_lock.unlock();
+        if (!is_in_isr) log_exclusive_lock.lock();
+        defer if (!is_in_isr) log_exclusive_lock.unlock();
+
+        if (is_in_isr) Debug.write("<<");
+        defer if (is_in_isr) Debug.write(">>");
 
         const now = time.Instant.now();
 
