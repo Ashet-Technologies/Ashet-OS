@@ -784,22 +784,117 @@ const propio = struct {
 
 const backplane = struct {
     const Module = struct {
+        id: propio.protocol.ModuleID,
         metadata: expcard.MetadataBlock,
         firmware: ?expcard.FirmwareBlock,
     };
 
     var modules: [7]?*Module = @splat(null);
+    var worker_thread: *ashet.scheduler.Thread = undefined;
 
     pub fn scan_modules() !void {
 
         // TODO: Use DETECT pins of expansion slots to find out where cards are plugged in.
 
-        // just manually scan all the busses, we don't need the OS drivers here:
+        // Scan the I²C subnets to find potential expansion cards:
         for (&modules, 0..7) |*mod, slot_index| {
             mod.* = initialize_module(@intCast(slot_index)) catch |err| {
                 logger.err("failed to initialize expansion slot {}: {s}", .{ slot_index, @errorName(err) });
                 continue;
             };
+        }
+
+        // TODO: Find drivers and start modules here!
+
+        for (modules) |maybe_mod| {
+            const mod: *Module = maybe_mod orelse continue;
+
+            if (mod.metadata.@"Vendor ID" != 13) {
+                logger.warn("Unknown vendor {} for module {}", .{ mod.metadata.@"Vendor ID", mod.id });
+                continue;
+            }
+
+            if (mod.firmware == null) {
+                // TODO: Just search for drivers that can handle this module and load it.
+                logger.err("TODO: Implement driver search. No firmware for Module {}, VID {}, PID {}", .{
+                    mod.id,
+                    mod.metadata.@"Vendor ID",
+                    mod.metadata.@"Product ID",
+                });
+                continue;
+            }
+
+            const propio_mod: propio.protocol.Module = switch (mod.metadata.@"Product ID") {
+                1 => .{ // Quad PS/2 Module
+                    .code = &mod.firmware.?.data,
+                    .config = .{
+                        .tx_fifo0 = .{
+                            .base = 0,
+                            .limit = 8,
+                        },
+                        .rx_fifo0 = .{
+                            .base = 32,
+                            .limit = 8,
+                        },
+                    },
+                },
+
+                else => {
+                    logger.warn("Unknown product {} for module {}", .{ mod.metadata.@"Vendor ID", mod.id });
+                    continue;
+                },
+            };
+
+            // TODO: Implement the rest like firmware detection, driver loading, ...
+            logger.info("expansion slot {} has firmware, uploading to Propeller 2 @ 0x{X:0>6}...", .{ mod.id, mod.id.get_code_address() });
+
+            try propio.protocol.launch_module(mod.id, propio_mod);
+        }
+
+        const thread = try ashet.scheduler.Thread.spawn(process_propio_data, null, .{});
+        defer thread.detach();
+
+        thread.setName("PropIO") catch {};
+
+        thread.start() catch unreachable; // Won't ever be non-started here
+
+        worker_thread = thread;
+
+        logger.info("PropIO startup completed.", .{});
+    }
+
+    fn process_propio_data(_: ?*anyopaque) callconv(.c) noreturn {
+        var rx_frame_buf: [hw_alloc.cfg.propio_buffer_size]u8 = undefined;
+
+        var packet_count: usize = 0;
+
+        logger.info("PropIO worker ready.", .{});
+        while (true) {
+
+            // Consume all available propio packets one by one and dispatch them to the correct driver.
+            // Afterwards, yield the thread and wait for more packets.
+            while (true) {
+                logger.debug("try reading frame...", .{});
+                const maybe_len = propio.protocol.try_receive_one(&rx_frame_buf) catch |err| switch (err) {
+                    error.Overflow => unreachable, // rx_frame is guaranteed to be big enough
+                };
+
+                const len = maybe_len orelse break;
+
+                logger.info("got frame of {} bytes", .{len});
+
+                const rx_frame = rx_frame_buf[0..len];
+
+                logger.info("frame[{}]: {}", .{
+                    packet_count,
+                    std.fmt.fmtSliceHexLower(rx_frame),
+                });
+                packet_count += 1;
+            }
+
+            // TODO: This thread could be suspended and be woken up by the propio module.
+            //       This requires careful synchronization though, as the receiving part runs on the other core.
+            ashet.scheduler.yield();
         }
     }
 
@@ -810,7 +905,7 @@ const backplane = struct {
         try hw_alloc.i2c.system_bus.write_blocking(hw_alloc.i2c_addresses.i2c_main_mux, std.mem.asBytes(&slot_mask), null);
 
         // try poking the eeprom with the read address:
-        const read_addr: u16 = 0;
+        const read_addr: u16 = std.mem.nativeTo(u16, 0, .big);
         hw_alloc.i2c.system_bus.write_blocking(hw_alloc.i2c_addresses.expansion_eeprom, std.mem.asBytes(&read_addr), null) catch |err| switch (err) {
             error.DeviceNotPresent => {
                 logger.warn("expansion slot {} has no EEPROM available", .{slot_index});
@@ -868,16 +963,27 @@ const backplane = struct {
             return null;
         }
 
-        // TODO: Implement the rest like firmware detection, driver loading, ...
+        const module = try ashet.memory.type_pool(Module).alloc();
+        errdefer ashet.memory.type_pool(Module).free(module);
 
-        const module_ptr = try ashet.memory.type_pool(Module).alloc();
-        errdefer ashet.memory.type_pool(Module).free(module_ptr);
-
-        module_ptr.* = .{
+        module.* = .{
+            .id = @enumFromInt(slot_index + 1),
             .metadata = metadata_block,
             .firmware = null,
         };
 
-        return module_ptr;
+        if (module.metadata.Properties.@"Has Firmware") {
+            logger.info("expansion slot {} has firmware, loading from EEPROM...", .{slot_index});
+
+            module.firmware = .{};
+            errdefer module.firmware = null;
+
+            const firmware_addr: u16 = std.mem.nativeTo(u16, @offsetOf(expcard.EEPROM_Image, "firmware"), .big);
+
+            try hw_alloc.i2c.system_bus.write_blocking(hw_alloc.i2c_addresses.expansion_eeprom, std.mem.asBytes(&firmware_addr), null);
+            try hw_alloc.i2c.system_bus.read_blocking(hw_alloc.i2c_addresses.expansion_eeprom, &module.firmware.?.data, null);
+        }
+
+        return module;
     }
 };

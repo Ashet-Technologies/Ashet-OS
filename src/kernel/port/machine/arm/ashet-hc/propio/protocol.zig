@@ -21,8 +21,7 @@ pub fn receive_one_blocking(buffer: []u8) error{Overflow}!usize {
         if (try try_receive_one(buffer)) |len| {
             return len;
         }
-        asm volatile ("wfe");
-        continue;
+        asm volatile ("wfi");
     }
 }
 
