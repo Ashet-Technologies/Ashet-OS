@@ -787,6 +787,10 @@ const backplane = struct {
         id: propio.protocol.ModuleID,
         metadata: expcard.MetadataBlock,
         firmware: ?expcard.FirmwareBlock,
+        driver: ?*ashet.drivers.propio.Device,
+        propio_module: ashet.drivers.propio.Module = .{
+            .send_fn = send_fifo_data,
+        },
     };
 
     var modules: [7]?*Module = @splat(null);
@@ -849,6 +853,11 @@ const backplane = struct {
             logger.info("expansion slot {} has firmware, uploading to Propeller 2 @ 0x{X:0>6}...", .{ mod.id, mod.id.get_code_address() });
 
             try propio.protocol.launch_module(mod.id, propio_mod);
+
+            // TODO: Implement proper driver selection here!
+            const driver = try ashet.drivers.input.PropIO_PS2_Device.init(&mod.propio_module);
+            mod.driver = &driver.device;
+            ashet.drivers.install(&driver.generic.driver);
         }
 
         const thread = try ashet.scheduler.Thread.spawn(process_propio_data, null, .{});
@@ -917,11 +926,52 @@ const backplane = struct {
                 const pack: Pack = @bitCast(rx_frame[1]);
                 const data = rx_frame[2..];
 
-                logger.info("received FIFO data for module {}, fifo {}: '{}'", .{
-                    pack.module,
-                    pack.fifo,
-                    std.fmt.fmtSliceHexLower(data),
-                });
+                const module = modules[pack.module] orelse {
+                    // This should not happen as this means the backplane firmware
+                    // would've passed data in a non-initialized module.
+                    //
+                    // In any case, this would be a bug.
+
+                    logger.err("received FIFO data for uninitialized module {}, fifo {}: '{}'", .{
+                        pack.module,
+                        pack.fifo,
+                        std.fmt.fmtSliceHexLower(data),
+                    });
+                    return;
+                };
+
+                const driver = module.driver orelse {
+                    // This should not happen as this means the backplane firmware
+                    // somehow sent data to the FIFO even though the module has no driver
+                    // assigned and thus should not have started the module in the first place.
+
+                    logger.err("received FIFO data for driverless module {}, fifo {}: '{}'", .{
+                        pack.module,
+                        pack.fifo,
+                        std.fmt.fmtSliceHexLower(data),
+                    });
+                    return;
+                };
+
+                const fifo: ashet.drivers.propio.RxFifo = switch (pack.fifo) {
+                    0...3 => {
+                        logger.err("received FIFO data for TX FIFO in module {}, fifo {}: '{}'", .{
+                            pack.module,
+                            pack.fifo,
+                            std.fmt.fmtSliceHexLower(data),
+                        });
+                        return;
+                    },
+
+                    4...7 => @enumFromInt(@as(u2, @intCast(pack.fifo - 4))),
+                };
+
+                // logger.info("received FIFO data for module {}, fifo {}: '{}'", .{
+                //     pack.module,
+                //     pack.fifo,
+                //     std.fmt.fmtSliceHexLower(data),
+                // });
+                driver.notify_fifo_data(fifo, data);
             },
 
             .write_ram => {
@@ -1020,6 +1070,7 @@ const backplane = struct {
             .id = @enumFromInt(slot_index + 1),
             .metadata = metadata_block,
             .firmware = null,
+            .driver = null,
         };
 
         if (module.metadata.Properties.@"Has Firmware") {
@@ -1035,5 +1086,15 @@ const backplane = struct {
         }
 
         return module;
+    }
+
+    fn send_fifo_data(mod: *ashet.drivers.propio.Module, fifo: ashet.drivers.propio.TxFifo, data: []const u8) void {
+        const module: *Module = @alignCast(@fieldParentPtr("propio_module", mod));
+
+        propio.protocol.write_fifo(
+            module.id,
+            @enumFromInt(@intFromEnum(fifo)),
+            data,
+        );
     }
 };

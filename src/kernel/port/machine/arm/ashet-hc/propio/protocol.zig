@@ -74,7 +74,7 @@ pub fn write_ram(offset: u24, data: []const u8) !void {
     var buf: [3]u8 = undefined;
     std.mem.writeInt(u24, &buf, offset, .little);
 
-    try lowlevel.writev_frame_blocking(&.{
+    lowlevel.writev_frame_blocking(&.{
         &header(.write_ram, 4 + data.len),
         &buf,
         data,
@@ -82,20 +82,20 @@ pub fn write_ram(offset: u24, data: []const u8) !void {
 }
 
 pub fn start_core(core: ModuleID) !void {
-    try lowlevel.writev_frame_blocking(&.{
+    lowlevel.writev_frame_blocking(&.{
         &header(.start_module, 1),
         &.{@intFromEnum(core) - 1},
     });
 }
 
 pub fn stop_core(core: ModuleID) !void {
-    try lowlevel.writev_frame_blocking(&.{
+    lowlevel.writev_frame_blocking(&.{
         &header(.stop_module, 1),
         &.{@intFromEnum(core) - 1},
     });
 }
 
-pub fn write_fifo(slot: ModuleID, fifo: FifoId, data: []const u8) !void {
+pub fn write_fifo(slot: ModuleID, fifo: FifoId, data: []const u8) void {
     const SlotFifo = packed struct(u8) {
         fifo: u3,
         _reserved0: u1 = 0,
@@ -107,7 +107,7 @@ pub fn write_fifo(slot: ModuleID, fifo: FifoId, data: []const u8) !void {
         .fifo = @intFromEnum(fifo),
     });
 
-    try lowlevel.writev_frame_blocking(&.{
+    lowlevel.writev_frame_blocking(&.{
         &header(.write_fifo, 1 + data.len),
         &.{opcode},
         data,

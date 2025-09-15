@@ -66,6 +66,9 @@ pub const input = struct {
 
     pub const Host_VNC_Input = @import("input/Host_VNC_Input.zig");
     pub const Host_SDL_Input = @import("input/Host_SDL_Input.zig");
+
+    pub const Generic_PS2_Device = @import("input/Generic_PS2_Device.zig");
+    pub const PropIO_PS2_Device = @import("input/PropIO_PS2_Device.zig");
 };
 
 pub const i2c_device = struct {
@@ -473,3 +476,39 @@ pub fn installBuiltinDrivers() void {
     install(&filesystem.AshetFS.driver);
     install(&filesystem.VFAT.driver);
 }
+
+/// Types and functions related to the PropIO backplane
+/// system.
+pub const propio = struct {
+    pub const TxFifo = enum(u2) {
+        tx_fifo0 = 0,
+        tx_fifo1 = 1,
+        tx_fifo2 = 2,
+        tx_fifo3 = 3,
+    };
+
+    pub const RxFifo = enum(u2) {
+        rx_fifo0 = 0,
+        rx_fifo1 = 1,
+        rx_fifo2 = 2,
+        rx_fifo3 = 3,
+    };
+
+    /// Interface for devices that run via PropIO.
+    pub const Device = struct {
+        notify_fn: *const fn (*Device, RxFifo, []const u8) void,
+
+        /// Notifies the driver about new data inbound on a RX FIFO.
+        pub fn notify_fifo_data(dev: *Device, fifo: RxFifo, data: []const u8) void {
+            return dev.notify_fn(dev, fifo, data);
+        }
+    };
+
+    pub const Module = struct {
+        send_fn: *const fn (*Module, TxFifo, []const u8) void,
+
+        pub fn send(module: *Module, fifo: TxFifo, data: []const u8) void {
+            return module.send_fn(module, fifo, data);
+        }
+    };
+};

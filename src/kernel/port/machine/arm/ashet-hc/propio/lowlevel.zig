@@ -183,7 +183,7 @@ pub fn return_frame_raw(frame: []u8) void {
 /// Writes a single frame blockingly into the device.
 ///
 /// Must not have a DMA transfer active at the same time!
-pub fn writev_frame_blocking(slices: []const []const u8) !void {
+pub fn writev_frame_blocking(slices: []const []const u8) void {
     const Vec = microzig.utilities.Slice_Vector([]const u8);
     const vec = Vec.init(slices);
     const total_len = vec.size();

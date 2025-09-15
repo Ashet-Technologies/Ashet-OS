@@ -56,9 +56,15 @@ pub const Instant = enum(u64) {
 
 /// Deadlines based on the monotonic clock.
 pub const Deadline = struct {
+    pub const infinite: Deadline = .init_abs(@enumFromInt(std.math.maxInt(std.meta.Tag(Instant))));
+
     when: Instant,
 
     pub fn init_rel(timeout_ms: u32) Deadline {
+        return .{ .when = Instant.now().add_ms(timeout_ms) };
+    }
+
+    pub fn from_ms(timeout_ms: u32) Deadline {
         return .{ .when = Instant.now().add_ms(timeout_ms) };
     }
 
@@ -77,6 +83,12 @@ pub const Deadline = struct {
     pub fn wait(deadline: Deadline) void {
         while (!deadline.is_reached()) {
             //
+        }
+    }
+
+    pub fn check(deadline: Deadline) error{Timeout}!void {
+        if (deadline.is_reached()) {
+            return error.Timeout;
         }
     }
 };
