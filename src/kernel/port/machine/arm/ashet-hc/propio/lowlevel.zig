@@ -223,13 +223,15 @@ fn prime_next_dma_transfer() void {
 fn pio_rx_frame_end() callconv(.c) void {
     const count = current_dma_buffer.len - microzig.chip.peripherals.DMA.CH2_TRANS_COUNT.read().COUNT;
 
-    logger.info("end of frame after {} transfers: \"{}\"", .{
+    logger.debug("end of frame after {} transfers: \"{}\"", .{
         count,
         std.fmt.fmtSliceEscapeUpper(current_dma_buffer[0..count]),
     });
 
-    if (!rxbuf_received_queue.enqueue(current_dma_buffer[0..count]))
-        @panic("propio buffer queue overrun");
+    if (count > 0) {
+        if (!rxbuf_received_queue.enqueue(current_dma_buffer[0..count]))
+            @panic("propio buffer queue overrun");
+    }
 
     microzig.chip.peripherals.DMA.CHAN_ABORT.write(.{ .CHAN_ABORT = (1 << @intFromEnum(rx_dma_chan)) });
     while (microzig.chip.peripherals.DMA.CHAN_ABORT.read().CHAN_ABORT != 0) {
@@ -243,7 +245,7 @@ fn pio_rx_frame_end() callconv(.c) void {
 
 fn dma_tx_frame_end() callconv(.c) void {
     tx_dma_chan.acknowledge_irq0();
-    logger.info("DMA done.", .{});
+    logger.debug("DMA done.", .{});
 }
 
 const propio_rx_program = blk: {

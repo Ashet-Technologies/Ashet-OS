@@ -866,35 +866,85 @@ const backplane = struct {
     fn process_propio_data(_: ?*anyopaque) callconv(.c) noreturn {
         var rx_frame_buf: [hw_alloc.cfg.propio_buffer_size]u8 = undefined;
 
-        var packet_count: usize = 0;
-
         logger.info("PropIO worker ready.", .{});
         while (true) {
 
             // Consume all available propio packets one by one and dispatch them to the correct driver.
             // Afterwards, yield the thread and wait for more packets.
             while (true) {
-                logger.debug("try reading frame...", .{});
                 const maybe_len = propio.protocol.try_receive_one(&rx_frame_buf) catch |err| switch (err) {
                     error.Overflow => unreachable, // rx_frame is guaranteed to be big enough
                 };
 
                 const len = maybe_len orelse break;
-
-                logger.info("got frame of {} bytes", .{len});
+                std.debug.assert(len > 0);
 
                 const rx_frame = rx_frame_buf[0..len];
 
-                logger.info("frame[{}]: {}", .{
-                    packet_count,
-                    std.fmt.fmtSliceHexLower(rx_frame),
-                });
-                packet_count += 1;
+                handle_propio_frame(rx_frame) catch |err| {
+                    logger.warn("error {s} when processing propio frame '{}'", .{
+                        @errorName(err),
+                        std.fmt.fmtSliceHexLower(rx_frame),
+                    });
+                };
             }
 
             // TODO: This thread could be suspended and be woken up by the propio module.
             //       This requires careful synchronization though, as the receiving part runs on the other core.
             ashet.scheduler.yield();
+        }
+    }
+
+    fn handle_propio_frame(rx_frame: []const u8) !void {
+        const frame_type = std.meta.intToEnum(propio.protocol.types.FrameType, rx_frame[0]) catch {
+            logger.warn("received unknown frame from propio: '{}'", .{
+                std.fmt.fmtSliceHexLower(rx_frame),
+            });
+            return;
+        };
+
+        switch (frame_type) {
+            .write_fifo => {
+                if (rx_frame.len < 2)
+                    return error.InsufficientSize;
+
+                const Pack = packed struct(u8) {
+                    fifo: u3,
+                    _reserved0: u1,
+                    module: u3,
+                    _reserved1: u1,
+                };
+                const pack: Pack = @bitCast(rx_frame[1]);
+                const data = rx_frame[2..];
+
+                logger.info("received FIFO data for module {}, fifo {}: '{}'", .{
+                    pack.module,
+                    pack.fifo,
+                    std.fmt.fmtSliceHexLower(data),
+                });
+            },
+
+            .write_ram => {
+                if (rx_frame.len < 4)
+                    return error.InsufficientSize;
+
+                const addr = std.mem.readInt(u24, rx_frame[1..4], .little);
+
+                // TODO: Handle memory reads?
+                logger.warn("received unsupported memory read response at address 0x{X:0>6}: '{}'", .{
+                    addr,
+                    std.fmt.fmtSliceHexLower(rx_frame[4..]),
+                });
+            },
+
+            .nop,
+            .start_module,
+            .stop_module,
+            => {
+                logger.warn("received unsupported frame from propio: '{}'", .{
+                    std.fmt.fmtSliceHexLower(rx_frame),
+                });
+            },
         }
     }
 

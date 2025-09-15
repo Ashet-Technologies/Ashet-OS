@@ -100,6 +100,8 @@ pub const log_levels = struct {
     pub var hstx_dvi: LogLevel = .info;
     pub var nested_i2c_device: LogLevel = .debug;
 
+    pub var propio_lowlevel: LogLevel = .info;
+
     // external modules:
     pub var fatfs: LogLevel = .info;
     pub var agp_sw_rast: LogLevel = .info;

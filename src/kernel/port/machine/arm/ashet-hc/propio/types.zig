@@ -6,7 +6,6 @@ pub const FrameType = enum(u8) {
     write_ram = 2,
     start_module = 3,
     stop_module = 4,
-    set_leds = 5,
 };
 
 pub const ModuleID = enum(u3) {
