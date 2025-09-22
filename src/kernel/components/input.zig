@@ -3,6 +3,8 @@ const ashet = @import("../main.zig");
 const logger = std.log.scoped(.input);
 const astd = @import("ashet-std");
 
+const ConfigFileIterator = ashet.utils.ConfigFileIterator;
+
 // We're doing a "dumb" alias to the ABI event here, it already contains the event type:
 pub const Event = ashet.abi.InputEvent;
 
@@ -298,26 +300,24 @@ pub const keyboard = struct {
                 var mapping_list: []const Entry = &.{};
 
                 while (lines.next()) |line| {
-                    if (std.mem.startsWith(u8, line, "keymap")) {
-                        var items = std.mem.tokenizeAny(u8, line, " \t");
+                    const head = line.next().?;
 
-                        _ = items.next() orelse unreachable; // this is "scancode"
-
-                        const keycode_str = items.next() orelse @compileError("keymap requires a symbolic keycode: " ++ line);
+                    if (std.mem.eql(u8, head, "keymap")) {
+                        const keycode_str = line.next() orelse @compileError("keymap requires a symbolic keycode: " ++ line.buffer);
                         const keycode = std.meta.stringToEnum(KeyUsage, keycode_str) orelse @compileError("keymap requires a valid keycode: " ++ keycode_str);
 
                         var entry = Entry{ .keycode = keycode };
 
-                        entry.strings.normal = internAndMapOptionalString(items.next());
-                        entry.strings.shift = internAndMapOptionalString(items.next());
-                        entry.strings.alt_graph = internAndMapOptionalString(items.next());
-                        entry.strings.shift_alt_graph = internAndMapOptionalString(items.next());
+                        entry.strings.normal = internAndMapOptionalString(line.next());
+                        entry.strings.shift = internAndMapOptionalString(line.next());
+                        entry.strings.alt_graph = internAndMapOptionalString(line.next());
+                        entry.strings.shift_alt_graph = internAndMapOptionalString(line.next());
 
                         if (entry.strings.normal != null) {
                             mapping_list = mapping_list ++ [1]Entry{entry};
                         }
                     } else {
-                        @compileError("Invalid line in keyboard model definition: " ++ line);
+                        @compileError("Invalid line in keyboard model definition: " ++ line.buffer);
                     }
                 }
 
@@ -445,23 +445,4 @@ pub const keyboard = struct {
     //     }
     // };
 
-    const ConfigFileIterator = struct {
-        iter: std.mem.TokenIterator(u8, .any),
-
-        pub fn init(str: []const u8) ConfigFileIterator {
-            return .{
-                .iter = std.mem.tokenizeAny(u8, str, "\r\n"),
-            };
-        }
-
-        pub fn next(self: *ConfigFileIterator) ?[]const u8 {
-            while (self.iter.next()) |raw_line| {
-                const trimmed_line = std.mem.trim(u8, raw_line, " \t\r\n");
-                if (std.mem.startsWith(u8, trimmed_line, "#"))
-                    continue;
-                return trimmed_line;
-            }
-            return null;
-        }
-    };
 };

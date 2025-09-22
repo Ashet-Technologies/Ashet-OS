@@ -14,6 +14,9 @@ const Deadline = ashet.time.Deadline;
 
 const Generic_PS2_Device = @This();
 
+const ConfigFileIterator = ashet.utils.ConfigFileIterator;
+const KeyUsageCode = ashet.abi.KeyUsageCode;
+
 driver: Driver = .{
     .name = "Generic PS/2 Device",
     .class = .{
@@ -151,7 +154,8 @@ fn handle_keyboard(dri: *Generic_PS2_Device) !void {
                 try decoder.push(byte);
 
                 while (decoder.pull()) |event| {
-                    logger.info("keyboard event: {}", .{event});
+                    logger.debug("keyboard event: {}", .{event});
+                    ashet.input.push_raw_event(.{ .keyboard = event });
                 }
             }
         },
@@ -389,10 +393,7 @@ const MouseDecoder = struct {
     };
 };
 
-const KeyboardEvent = struct {
-    scancode: u16,
-    down: bool,
-};
+const KeyboardEvent = ashet.input.raw.KeyEvent;
 
 const KeyboardDecoderSCS1 = struct {
     state: State = .default,
@@ -416,7 +417,7 @@ const KeyboardDecoderSCS1 = struct {
                 } else {
                     const scancode = @as(u7, @truncate(input));
                     decoder.queue.writeItem(.{
-                        .scancode = scancode,
+                        .usage = @enumFromInt(scancode), // TODO: Implement PS/2 SCS1 this proper
                         .down = (scancode == input), // if different, the upper bit is set
                     }) catch return error.Overrun;
                 }
@@ -432,7 +433,7 @@ const KeyboardDecoderSCS1 = struct {
                     return;
                 logger.debug("scs1 e0 code: 0x{X:0>2}", .{scancode});
                 decoder.queue.writeItem(.{
-                    .scancode = @as(u8, 0x80) | scancode,
+                    .usage = @enumFromInt(@as(u8, 0x80) | scancode), // TODO: Implement PS/2 SCS1 this proper
                     .down = (scancode == input), // if different, the upper bit is set
                 }) catch return error.Overrun;
             },
@@ -447,7 +448,7 @@ const KeyboardDecoderSCS1 = struct {
 
                 logger.debug("scs1 e1 code: 0x{X:0>4}", .{scancode});
                 decoder.queue.writeItem(.{
-                    .scancode = scancode,
+                    .usage = @enumFromInt(scancode), // TODO: Implement PS/2 SCS1 this proper
                     .down = (input7 == input), // if different, the upper bit is set
                 }) catch return error.Overrun;
             },
@@ -463,6 +464,10 @@ const KeyboardDecoderSCS1 = struct {
 };
 
 const KeyboardDecoderSCS2 = struct {
+    const scancode_map = ScanCodeMap.compile(
+        @embedFile("../../data/keyboard/ps2/scs2"),
+    );
+
     state: State = .default,
     queue: std.fifo.LinearFifo(KeyboardEvent, .{ .Static = 4 }) = .init(),
     release_event: bool = false,
@@ -520,22 +525,23 @@ const KeyboardDecoderSCS2 = struct {
             decoder.release_event = false;
         }
 
-        const scancode: u16 = switch (tag) {
-            .bare => raw,
-            .e0 => @as(u16, 0x0100) | raw,
-            .e1 => |low| (@as(u16, low) << 8) | raw,
+        const maybe_usage = switch (tag) {
+            .bare => scancode_map.get_bare(raw),
+            .e0 => scancode_map.get_e0(raw),
+            .e1 => |low| scancode_map.get_e1((@as(u16, low) << 8) | raw),
         };
 
         switch (tag) {
-            .bare => logger.info("SCS2 BARE: 0x{X:0>2}", .{raw}),
-            .e0 => logger.info("SCS2 E0:   0x{X:0>2}", .{raw}),
-            .e1 => |second| logger.info("SCS2 E1:   0x{X:0>2}{X:0>2}", .{ raw, second }),
+            .bare => logger.info("SCS2 BARE: 0x{X:0>2} => {?}", .{ raw, maybe_usage }),
+            .e0 => logger.info("SCS2 E0:   0x{X:0>2} => {?}", .{ raw, maybe_usage }),
+            .e1 => |second| logger.info("SCS2 E1:   0x{X:0>2}{X:0>2} => {?}", .{ raw, second, maybe_usage }),
         }
-
-        decoder.queue.writeItem(.{
-            .scancode = scancode,
-            .down = !decoder.release_event,
-        }) catch return error.Overrun;
+        if (maybe_usage) |usage| {
+            decoder.queue.writeItem(.{
+                .usage = usage,
+                .down = !decoder.release_event,
+            }) catch return error.Overrun;
+        }
     }
 
     const State = union(enum) {
@@ -576,5 +582,96 @@ pub const StreamSource = struct {
 
             ashet.scheduler.yield(); // TODO: Is this okay?
         }
+    }
+};
+
+const ScanCodeMap = struct {
+    const LUT = struct {
+        scancode: u16,
+        usage: KeyUsageCode,
+    };
+
+    /// Direct lookup for the base level scan codes
+    bare: [256]?KeyUsageCode,
+
+    /// Ordered look up table for E0 codes:
+    e0: []const LUT,
+
+    /// Ordered look up table for E1 codes:
+    e1: []const LUT,
+
+    pub fn get_bare(scm: *const ScanCodeMap, code: u8) ?KeyUsageCode {
+        return scm.bare[code];
+    }
+
+    pub fn get_e0(scm: *const ScanCodeMap, code: u16) ?KeyUsageCode {
+        const index = std.sort.binarySearch(LUT, scm.e0, code, compare);
+        return if (index) |i|
+            scm.e0[i].usage
+        else
+            null;
+    }
+
+    pub fn get_e1(scm: *const ScanCodeMap, code: u16) ?KeyUsageCode {
+        const index = std.sort.binarySearch(LUT, scm.e1, code, compare);
+        return if (index) |i|
+            scm.e1[i].usage
+        else
+            null;
+    }
+
+    fn compare(where: u16, value: LUT) std.math.Order {
+        if (where < value.scancode) return .lt;
+        if (where > value.scancode) return .gt;
+        return .eq;
+    }
+
+    pub fn compile(comptime source: []const u8) ScanCodeMap {
+        @setEvalBranchQuota(50_000);
+        var line_iter: ConfigFileIterator = .init(source);
+
+        var bare: [256]?KeyUsageCode = @splat(null);
+        var e0: []const LUT = &.{};
+        var e1: []const LUT = &.{};
+
+        while (line_iter.next()) |line| {
+            const head = line.next().?;
+            if (std.mem.eql(u8, head, "scancode")) {
+                const key_str = line.next().?;
+                const key = std.fmt.parseInt(u8, key_str, 16) catch @compileError("invalid hex: " ++ key_str);
+                switch (key) {
+                    0xE0, 0xE1 => {
+                        const subkey_str = line.next().?;
+                        const subkey = std.fmt.parseInt(u16, subkey_str, 16) catch @compileError("invalid hex: " ++ subkey_str);
+
+                        const usage_str = line.next().?;
+                        const usage = std.meta.stringToEnum(KeyUsageCode, usage_str) orelse @compileError("undefined usage: " ++ usage_str);
+
+                        const lut: [1]LUT = .{.{
+                            .scancode = subkey,
+                            .usage = usage,
+                        }};
+
+                        switch (key) {
+                            0xE0 => e0 = e0 ++ lut,
+                            0xE1 => e1 = e1 ++ lut,
+                            else => unreachable,
+                        }
+                    },
+                    else => {
+                        if (bare[key] != null) @compileError("duplicate key");
+                        const usage_str = line.next().?;
+                        const usage = std.meta.stringToEnum(KeyUsageCode, usage_str) orelse @compileError("undefined usage: " ++ usage_str);
+                        bare[key] = usage;
+                    },
+                }
+            }
+        }
+
+        return .{
+            .bare = bare,
+            .e0 = e0,
+            .e1 = e1,
+        };
     }
 };

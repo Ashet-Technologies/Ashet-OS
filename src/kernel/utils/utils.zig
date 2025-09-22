@@ -7,6 +7,8 @@ pub const SpinLock = @import("SpinLock.zig");
 
 pub const FixedPool = @import("fixed_pool.zig").FixedPool;
 
+pub const ConfigFileIterator = @import("ConfigFileIterator.zig");
+
 pub const ansi = @import("ansi.zig");
 
 pub inline fn volatile_read(comptime T: type, ptr: *const volatile T) T {
