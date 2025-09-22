@@ -102,11 +102,10 @@ pub fn main() !void {
                 last_key_event = event.keyboard;
                 redraw_needed = true;
 
-                std.log.info("key {s}: pressed={}, scancode={}, key={s}, text='{?}'", .{
+                std.log.info("key {s}: pressed={}, usage={s}, text='{?}'", .{
                     @tagName(event.event_type)["key_".len..],
                     event.keyboard.pressed,
-                    event.keyboard.scancode,
-                    @tagName(event.keyboard.key),
+                    @tagName(event.keyboard.usage),
                     if (event.keyboard.text_ptr) |str|
                         std.unicode.fmtUtf8(str[0..event.keyboard.text_len])
                     else
@@ -199,8 +198,7 @@ fn paint(
     try key_table.hr();
     if (maybe_key_event) |key_event| {
         try key_table.property("Type", "{s}", .{@tagName(key_event.event_type.window)});
-        try key_table.property("Scancode", "{}", .{key_event.scancode});
-        try key_table.property("Key", "{s}", .{@tagName(key_event.key)});
+        try key_table.property("Usage", "{s}", .{@tagName(key_event.usage)});
         try key_table.property("Text", "\"{?}\"", .{if (key_event.text_ptr) |text| std.unicode.fmtUtf8(text[0..key_event.text_len]) else null});
         try key_table.property("Pressed", "{}", .{key_event.pressed});
         try key_table.property("Modifiers", "{}", .{key_event.modifiers});

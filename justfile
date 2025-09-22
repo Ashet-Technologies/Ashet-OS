@@ -6,7 +6,7 @@ optimize_apps := "Debug"
 
 default_params := "--prominent-compile-errors -freference-trace=10"
 
-DEBUG_PORT := "/dev/ttyACM1"
+DEBUG_PORT := "/dev/ttyACM2"
 
 build:
     {{zig}} build {{default_params}} --summary none -Doptimize-kernel={{optimize_kernel}} -Doptimize-apps={{optimize_apps}} rv32-qemu-virt

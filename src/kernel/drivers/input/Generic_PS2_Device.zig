@@ -430,7 +430,7 @@ const KeyboardDecoderSCS1 = struct {
                 // Check for fake shifts and ignore them
                 if (scancode == 0x2A or scancode == 0x36)
                     return;
-                logger.debug("e0 code: 0x{X:0>2}", .{scancode});
+                logger.debug("scs1 e0 code: 0x{X:0>2}", .{scancode});
                 decoder.queue.writeItem(.{
                     .scancode = @as(u8, 0x80) | scancode,
                     .down = (scancode == input), // if different, the upper bit is set
@@ -445,7 +445,7 @@ const KeyboardDecoderSCS1 = struct {
                 const input7 = @as(u7, @truncate(input));
                 const scancode = (@as(u16, input7) << 8) | low;
 
-                logger.debug("e1 code: 0x{X:0>4}", .{scancode});
+                logger.debug("scs1 e1 code: 0x{X:0>4}", .{scancode});
                 decoder.queue.writeItem(.{
                     .scancode = scancode,
                     .down = (input7 == input), // if different, the upper bit is set
@@ -499,7 +499,7 @@ const KeyboardDecoderSCS2 = struct {
                 if (input == 0x12 or input == 0x59)
                     return;
 
-                logger.debug("e0 code: 0x{X:0>2}", .{input});
+                logger.debug("scs2 e0 code: 0x{X:0>2}", .{input});
                 try decoder.process_key(input, .e0);
             },
 
@@ -508,7 +508,7 @@ const KeyboardDecoderSCS2 = struct {
             },
 
             .e1_stage2 => |low| {
-                logger.debug("e1 code: 0x{X:0>4}", .{input});
+                logger.debug("scs2 e1 code: 0x{X:0>4}", .{input});
                 try decoder.process_key(input, .{ .e1 = low });
             },
         }
@@ -527,9 +527,9 @@ const KeyboardDecoderSCS2 = struct {
         };
 
         switch (tag) {
-            .bare => logger.info("BARE: 0x{X:0>2}", .{raw}),
-            .e0 => logger.info("E0:   0x{X:0>2}", .{raw}),
-            .e1 => |second| logger.info("E1:   0x{X:0>2}{X:0>2}", .{ raw, second }),
+            .bare => logger.info("SCS2 BARE: 0x{X:0>2}", .{raw}),
+            .e0 => logger.info("SCS2 E0:   0x{X:0>2}", .{raw}),
+            .e1 => |second| logger.info("SCS2 E1:   0x{X:0>2}{X:0>2}", .{ raw, second }),
         }
 
         decoder.queue.writeItem(.{

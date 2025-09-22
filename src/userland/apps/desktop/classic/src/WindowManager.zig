@@ -95,7 +95,7 @@ pub fn handle_event(wm: *WindowManager, mouse_point: Point, input_event: ashet.i
 }
 
 fn handle_keyboard_event(wm: *WindowManager, mouse_point: Point, event: ashet.abi.KeyboardEvent) !bool {
-    if (event.key == .meta) {
+    if (event.usage == .left_gui or event.usage == .right_gui) {
         // swallow all access to meta into the UI. Windows never see the meta key!
         wm.meta_pressed = event.pressed;
         return true;
@@ -262,8 +262,7 @@ fn map_input_event_to_window(wm: *WindowManager, window: *Window, mouse_point: P
         .key_press => WindowEvent{
             .key_press = .{
                 .event_type = .{ .window = .key_press },
-                .key = event.keyboard.key,
-                .scancode = event.keyboard.scancode,
+                .usage = event.keyboard.usage,
                 .text_ptr = event.keyboard.text_ptr,
                 .text_len = event.keyboard.text_len,
                 .pressed = event.keyboard.pressed,
@@ -273,8 +272,7 @@ fn map_input_event_to_window(wm: *WindowManager, window: *Window, mouse_point: P
         .key_release => WindowEvent{
             .key_release = .{
                 .event_type = .{ .window = .key_release },
-                .key = event.keyboard.key,
-                .scancode = event.keyboard.scancode,
+                .usage = event.keyboard.usage,
                 .text_ptr = event.keyboard.text_ptr,
                 .text_len = event.keyboard.text_len,
                 .pressed = event.keyboard.pressed,

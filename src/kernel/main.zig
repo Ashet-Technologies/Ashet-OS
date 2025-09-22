@@ -330,7 +330,7 @@ pub const global_hotkeys = struct {
         if (!event.pressed)
             return false;
         if (event.modifiers.alt) {
-            switch (event.key) {
+            switch (event.usage) {
                 .f1 => @panic("F1 induced kernel panic"),
                 .f10 => scheduler.dumpStats(),
                 .f11 => network.dumpStats(),
