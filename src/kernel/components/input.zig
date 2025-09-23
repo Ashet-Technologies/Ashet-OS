@@ -260,13 +260,7 @@ pub fn getKeyboardModifiers() ashet.abi.KeyboardModifiers {
 pub const keyboard = struct {
     pub const KeyUsage = ashet.abi.KeyUsageCode;
 
-    // pub var model: *const Model = &models.pc105;
     pub var layout: *const Layout = &layouts.de;
-
-    // pub const models = struct {
-    //     pub const pc105 = Model.compile(@embedFile("../data/keyboard/models/pc105"));
-    //     pub const vnc = Model.compile(@embedFile("../data/keyboard/models/vnc"));
-    // };
 
     pub const layouts = struct {
         pub const de = Layout.compile(@embedFile("../data/keyboard/layouts/de"));
@@ -313,11 +307,11 @@ pub const keyboard = struct {
                         entry.strings.alt_graph = internAndMapOptionalString(line.next());
                         entry.strings.shift_alt_graph = internAndMapOptionalString(line.next());
 
-                        if (entry.strings.normal != null) {
+                        if (entry.strings.normal != null or entry.strings.shift != null or entry.strings.alt_graph != null or entry.strings.shift_alt_graph != null) {
                             mapping_list = mapping_list ++ [1]Entry{entry};
                         }
                     } else {
-                        @compileError("Invalid line in keyboard model definition: " ++ line.buffer);
+                        @compileError("Invalid line in keyboard layout definition: " ++ line.buffer);
                     }
                 }
 
@@ -367,13 +361,13 @@ pub const keyboard = struct {
             return storage[0..len :0];
         }
 
-        pub fn translate(self: Layout, key: KeyUsage, shift: bool, altgr: bool) ?[*:0]const u8 {
+        pub fn translate(self: Layout, key: KeyUsage, shift: bool, alt_graph: bool) ?[*:0]const u8 {
             const strings: Strings = self.mapping.get(key);
 
-            if (shift and altgr and strings.shift_alt_graph != null)
+            if (shift and alt_graph and strings.shift_alt_graph != null)
                 return strings.shift_alt_graph;
 
-            if (altgr and strings.alt_graph != null)
+            if (alt_graph and strings.alt_graph != null)
                 return strings.alt_graph;
 
             if (shift and strings.shift != null)
@@ -382,67 +376,4 @@ pub const keyboard = struct {
             return strings.normal;
         }
     };
-
-    // pub const Model = struct {
-    //     entries: []const ?KeyUsage,
-
-    //     pub fn compile(comptime source_def: []const u8) Model {
-    //         const mapping = comptime blk: {
-    //             const Entry = struct {
-    //                 scancode: u16,
-    //                 keycode: KeyUsage,
-    //             };
-
-    //             @setEvalBranchQuota(100_000);
-    //             var lines = ConfigFileIterator.init(source_def);
-
-    //             var mapping_list: []const Entry = &.{};
-    //             var limit = 0;
-
-    //             while (lines.next()) |line| {
-    //                 if (std.mem.startsWith(u8, line, "scancode")) {
-    //                     var items = std.mem.tokenizeAny(u8, line, " \t");
-
-    //                     _ = items.next() orelse unreachable; // this is "scancode"
-
-    //                     const scancode_str = items.next() orelse @compileError("scancode requires a numeric scancode: " ++ line);
-    //                     const keycode_str = items.next() orelse @compileError("scancode requires a symbolic keycode: " ++ line);
-
-    //                     const scancode = std.fmt.parseInt(u16, scancode_str, 0) catch @compileError("scancode requires a numeric scancode: " ++ scancode_str);
-    //                     const keycode = std.meta.stringToEnum(KeyUsage, keycode_str) orelse @compileError("scancode requires a valid keycode: " ++ keycode_str);
-
-    //                     mapping_list = mapping_list ++ [1]Entry{Entry{
-    //                         .scancode = scancode,
-    //                         .keycode = keycode,
-    //                     }};
-
-    //                     if (limit < scancode)
-    //                         limit = scancode;
-    //                 } else {
-    //                     @compileError("Invalid line in keyboard model definition: " ++ line);
-    //                 }
-    //             }
-
-    //             var mapping = [1]?KeyUsage{null} ** (limit + 1);
-    //             for (mapping_list) |item| {
-    //                 if (mapping[item.scancode] != null)
-    //                     @compileError(std.fmt.comptimePrint("Duplicate mapping for scancode {}!", .{item.scancode}));
-    //                 mapping[item.scancode] = item.keycode;
-    //             }
-
-    //             break :blk mapping;
-    //         };
-    //         return Model{
-    //             .entries = &mapping,
-    //         };
-    //     }
-
-    //     pub fn scancodeToKeycode(self: Model, scancode: u16) ?ashet.abi.KeyCode {
-    //         return if (scancode < self.entries.len)
-    //             self.entries[scancode]
-    //         else
-    //             null;
-    //     }
-    // };
-
 };

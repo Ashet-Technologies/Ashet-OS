@@ -345,6 +345,9 @@ pub const global_hotkeys = struct {
                         std.fmt.fmtIntSizeBin(memory.page_size * total_pages),
                         100 - (100 * free_pages) / total_pages,
                     });
+                    if (event.modifiers.shift) {
+                        memory.debug.dumpPageMap();
+                    }
                 },
 
                 else => {},

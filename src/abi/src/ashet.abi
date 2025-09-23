@@ -1859,7 +1859,7 @@ enum KeyUsageCode : u16 {
     item @"0" = 0x27;
 
     /// Keyboard Return (ENTER)
-    item return = 0x28;
+    item enter = 0x28;
 
     /// Keyboard ESCAPE
     item escape = 0x29;
@@ -1909,7 +1909,7 @@ enum KeyUsageCode : u16 {
     ///       Swedish: `,` `*`
     ///       Swiss: `$`, `£`
     ///       UK: `#` `~`
-    item hash_non_us = 0x32;
+    item non_us_hash = 0x32;
 
     /// Keyboard `;` and `:`
     /// NOTE: Typically remapped for other languages in the host system.
@@ -2124,7 +2124,7 @@ enum KeyUsageCode : u16 {
     ///       UK:              `\`  `|`
     ///       Brazil:          `\`  `|`
     /// NOTE: Typically near the Left-Shift key in AT-102 implementations.
-    item backslash_non_us = 0x64;
+    item non_us_backslash = 0x64;
 
     /// Keyboard Application
     /// NOTE: Windows key for Windows 95, and Compose.

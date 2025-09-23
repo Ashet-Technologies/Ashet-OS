@@ -27,7 +27,7 @@ keymap o           o        O       ø       Ø
 keymap p           p        P       þ       Þ
 keymap square_bracket_open  ü        Ü       ¨       ¨
 keymap square_bracket_close +        *       ~       ¯
-keymap return      <CR>
+keymap enter       <CR>
 keymap left_control
 keymap a           a        A       æ       Æ
 keymap s           s        S       ſ       ẞ
@@ -83,7 +83,7 @@ keymap kp_2        2
 keymap kp_3        3
 keymap kp_0        0
 keymap kp_period   ,
-keymap backslash_non_us  <        >       | 
+keymap non_us_backslash  <        >       | 
 keymap f11         
 keymap f12         
 keymap kp_enter    

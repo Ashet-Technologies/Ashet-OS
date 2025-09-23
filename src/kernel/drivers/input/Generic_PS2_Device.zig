@@ -169,8 +169,6 @@ fn handle_keyboard(dri: *Generic_PS2_Device) !void {
             unreachable;
         },
     }
-
-    try dri.write_command(.enable_scanning, init_deadline);
 }
 
 fn drain(dri: Generic_PS2_Device, timeout: Deadline) void {
@@ -513,7 +511,7 @@ const KeyboardDecoderSCS2 = struct {
             },
 
             .e1_stage2 => |low| {
-                logger.debug("scs2 e1 code: 0x{X:0>4}", .{input});
+                logger.debug("scs2 e1 code: 0x{X:0>2}{X:0>2}", .{ low, input });
                 try decoder.process_key(input, .{ .e1 = low });
             },
         }
@@ -532,9 +530,9 @@ const KeyboardDecoderSCS2 = struct {
         };
 
         switch (tag) {
-            .bare => logger.info("SCS2 BARE: 0x{X:0>2} => {?}", .{ raw, maybe_usage }),
-            .e0 => logger.info("SCS2 E0:   0x{X:0>2} => {?}", .{ raw, maybe_usage }),
-            .e1 => |second| logger.info("SCS2 E1:   0x{X:0>2}{X:0>2} => {?}", .{ raw, second, maybe_usage }),
+            .bare => logger.debug("SCS2 BARE: 0x{X:0>2} => {?}", .{ raw, maybe_usage }),
+            .e0 => logger.debug("SCS2 E0:   0x{X:0>2} => {?}", .{ raw, maybe_usage }),
+            .e1 => |second| logger.debug("SCS2 E1:   0x{X:0>2}{X:0>2} => {?}", .{ raw, second, maybe_usage }),
         }
         if (maybe_usage) |usage| {
             decoder.queue.writeItem(.{

@@ -61,10 +61,10 @@ scancode 54 square_bracket_open
 scancode 55 equals
 scancode 58 caps_lock
 scancode 59 right_shift
-scancode 5A return
+scancode 5A enter
 scancode 5B square_bracket_close
 scancode 5D backslash
-scancode 61 backslash_non_us
+scancode 61 non_us_backslash
 scancode 66 backspace
 scancode 69 kp_1
 scancode 6B kp_4
