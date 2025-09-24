@@ -40,7 +40,7 @@ pub fn main() !u8 {
 
     const ast_document = parser.accept_document() catch |err| {
         if (parser.bad_token) |bad_token| {
-            std.log.err("unexpected token at {}: found {}", .{
+            std.log.err("unexpected token at {f}: found {f}", .{
                 bad_token.location,
                 bad_token,
             });
@@ -52,14 +52,18 @@ pub fn main() !u8 {
 
     const analyzed_document: model.Document = try sema.analyze(allocator, ast_document);
 
-    var atomic_output = try std.fs.cwd().atomicFile(args.options.output, .{});
+    var atomic_buffer: [4096]u8 = undefined;
+    var atomic_output = try std.fs.cwd().atomicFile(
+        args.options.output,
+        .{ .write_buffer = &atomic_buffer },
+    );
     defer atomic_output.deinit();
     {
-        var buffered_writer = std.io.bufferedWriter(atomic_output.file.writer());
+        const output_writer = &atomic_output.file_writer.interface;
 
-        try model.to_json_str(analyzed_document, buffered_writer.writer());
+        try model.to_json_str(analyzed_document, output_writer);
 
-        try buffered_writer.flush();
+        try output_writer.flush();
     }
 
     try atomic_output.finish();

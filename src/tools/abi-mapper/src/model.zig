@@ -12,14 +12,14 @@ pub fn from_json_str(allocator: std.mem.Allocator, string: []const u8) !std.json
 }
 
 pub fn to_json_str(document: Document, writer: anytype) !void {
-    const options: std.json.StringifyOptions = .{
+    const options: std.json.Stringify.Options = .{
         .emit_nonportable_numbers_as_strings = false,
         .emit_null_optional_fields = true,
         .emit_strings_as_arrays = false,
         .escape_unicode = false,
         .whitespace = .indent_2,
     };
-    try std.json.stringify(document, options, writer);
+    try writer.print("{f}", .{std.json.fmt(document, options)});
 }
 
 /// A full qualified name is a name consisting of a sequence of namespaces and ending with the actual name.
