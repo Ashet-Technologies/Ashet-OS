@@ -309,7 +309,7 @@ inline fn configure_interrupt_table(core_local_table: *align(256) rp2350.VectorT
     {
         // Create default variant:
         core_local_table.* = .{
-            .initial_stack_pointer = @intFromPtr(ashet.platform.profile.start.initial_vector_table.initial_stack_pointer),
+            .initial_stack_pointer = ashet.platform.profile.start.initial_vector_table.initial_stack_pointer,
             .Reset = ashet.platform.profile.start.initial_vector_table.reset,
         };
 

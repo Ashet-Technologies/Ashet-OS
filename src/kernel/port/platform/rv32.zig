@@ -120,8 +120,9 @@ pub const start = struct {
             \\li      t0, 0x38
             \\csrc    mstatus, t0
             \\
-            \\j       hang
-            \\
+            \\1:
+            \\  wfi
+            \\  j 1b
         );
     }
 
