@@ -4,7 +4,7 @@ const kernel = @import("kernel");
 pub const chip = struct {
     const regz = @import("rp2350-chip");
 
-    pub const peripherals = regz.devices.RP2350.peripherals;
+    pub const peripherals = regz.peripherals;
 
     pub const types = regz.types;
 };
@@ -27,6 +27,17 @@ pub const config = struct {
     pub const chip_name = "RP2350";
 
     pub const cpu_name = "cortex_m33";
+
+    pub const ram_image = false;
+};
+
+pub const options = struct {
+    pub const hal = struct {
+        pub const bootmeta = struct {
+            pub const image_def_exe_security = .secure;
+            pub const next_block = null;
+        };
+    };
 };
 
 pub const board = struct {
@@ -38,13 +49,26 @@ pub const hal = @import("rp2350-hal");
 pub const drivers = struct {
     pub const time = struct {
         pub const Absolute = kernel.time.Instant;
-        pub const Duration = u64;
+
+        pub const Duration = enum(u64) {
+            _,
+
+            pub fn from_us(us: u64) Duration {
+                return @enumFromInt(us);
+            }
+
+            pub fn from_ms(ms: u64) Duration {
+                return from_us(1000 * ms);
+            }
+        };
 
         pub const Deadline = struct {
+            pub const no_deadline: Deadline = .{ .deadline = null };
+
             deadline: ?Absolute,
             pub fn init_relative(instant: kernel.time.Instant, timeout: ?Duration) Deadline {
                 return .{
-                    .deadline = if (timeout) |t| instant.add_ms(t) else null,
+                    .deadline = if (timeout) |t| instant.add_ms(@intFromEnum(t)) else null,
                 };
             }
 
@@ -54,7 +78,18 @@ pub const drivers = struct {
                         return error.Timeout;
                 }
             }
+
+            pub fn is_reached_by(deadline: Deadline, now: Absolute) bool {
+                if (deadline.deadline) |end| {
+                    return end.less_or_equal(now);
+                }
+                return false;
+            }
         };
+
+        pub fn make_timeout_us(instant: kernel.time.Instant, us: u64) Deadline {
+            return .init_relative(instant, .from_us(us));
+        }
     };
 };
 
@@ -248,4 +283,85 @@ pub const utilities = struct {
     }
 };
 
-pub const cpu = kernel.platform.profile;
+pub const cpu = struct {
+    pub const peripherals = struct {
+        pub const scb: *volatile extern struct {
+            VTOR: u32,
+        } = @ptrCast(kernel.platform.profile.peripherals.system_control_block.vtor);
+    };
+
+    pub const nop = kernel.platform.profile.nop;
+    pub const sev = kernel.platform.profile.sev;
+    pub const wfe = kernel.platform.profile.wfe;
+};
+
+pub const concurrency = struct {
+    pub const AtomicStaticBitSetError = error{NoAvailableBit};
+
+    /// Creates a statically sized BitSet type where operations are atomic.
+    /// Useful for managing a fixed pool of resources or flags concurrently.
+    /// `size` determines the number of bits available (0 to size-1).
+    pub fn AtomicStaticBitSet(comptime size: usize) type {
+        return struct {
+            const Size = size;
+            const BlockType = usize;
+            const BlockNum = (size + @bitSizeOf(BlockType) - 1) / @bitSizeOf(BlockType);
+            const Bit = std.math.Log2Int(BlockType);
+            const Self = @This();
+
+            blocks: [BlockNum]std.atomic.Value(BlockType) = .{std.atomic.Value(BlockType){ .raw = 0 }} ** BlockNum,
+
+            /// Sets the bit at `bit_index` to 1.
+            ///
+            /// Returns:
+            ///   `true` if the bit was successfully changed from 0 to 1 by this call.
+            ///   `false` if the bit was already 1.
+            pub inline fn set(self: *Self, bit_index: usize) bool {
+                std.debug.assert(bit_index < Size);
+                return self.blocks[block_index(bit_index)].bitSet(bit_offset(bit_index), .seq_cst) == 0;
+            }
+
+            /// Resets (clears) the bit at `bit_index` to 0.
+            ///
+            /// Returns:
+            ///   `true` if the bit was successfully changed from 1 to 0 by this call.
+            ///   `false` if the bit was already 0.
+            pub inline fn reset(self: *Self, bit_index: usize) bool {
+                std.debug.assert(bit_index < Size);
+                return self.blocks[block_index(bit_index)].bitReset(bit_offset(bit_index), .seq_cst) == 1;
+            }
+
+            /// Tests the value of the bit at `bit_index` without modifying it.
+            ///
+            /// Returns:
+            ///   `u1`: Returns 1 if the bit is set, 0 if the bit is clear.
+            pub inline fn test_bit(self: *Self, bit_index: usize) u1 {
+                std.debug.assert(bit_index < Size);
+                const mask: BlockType = @as(BlockType, 1) << bit_offset(bit_index);
+                return @intFromBool(self.blocks[block_index(bit_index)].load(.seq_cst) & mask != 0);
+            }
+
+            /// Finds the first available (0) bit, sets it to 1, and returns its index.
+            ///
+            /// Returns:
+            ///   The `usize` index of the bit that was successfully found and set.
+            ///   Returns `BitSetError.NoAvailableBit` if all bits were already set.
+            pub inline fn set_first_available(self: *Self) AtomicStaticBitSetError!usize {
+                for (0..Size) |bit_index| {
+                    if (self.set(bit_index)) {
+                        return bit_index;
+                    }
+                }
+                return AtomicStaticBitSetError.NoAvailableBit;
+            }
+
+            inline fn block_index(bit_index: usize) usize {
+                return bit_index / @bitSizeOf(BlockType);
+            }
+
+            inline fn bit_offset(bit_index: usize) Bit {
+                return @truncate(bit_index % @bitSizeOf(BlockType));
+            }
+        };
+    }
+};

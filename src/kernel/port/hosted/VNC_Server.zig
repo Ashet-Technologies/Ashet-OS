@@ -6,6 +6,8 @@ const logger = std.log.scoped(.host_vnc_server);
 
 const ashet = @import("../../main.zig");
 
+const x11 = @import("../../drivers/input/x11.zig");
+
 const VNC_Server = @This();
 
 allocator: std.mem.Allocator,
@@ -76,172 +78,201 @@ fn connection_handler(vd: *VNC_Server) !void {
         std.debug.print("protocol version:  {}\n", .{server.protocol_version});
         std.debug.print("shared connection: {}\n", .{server.shared_connection});
 
-        const Point = struct { x: u16, y: u16 };
-        var old_mouse: ?Point = null;
-        var old_button: u8 = 0;
-
         var request_arena = std.heap.ArenaAllocator.init(local_allocator);
         defer request_arena.deinit();
 
+        var session: Session_State = .{
+            .server = &server,
+            .new_framebuffer = new_framebuffer,
+            .old_framebuffer = old_framebuffer,
+        };
+
         while (try server.waitEvent()) |event| {
             _ = request_arena.reset(.retain_capacity);
-            const request_allocator = request_arena.allocator();
 
-            switch (event) {
-                .set_pixel_format => |pf| {
-                    logger.info("change pixel format to {}", .{pf});
-                }, // use internal handler
+            vd.handle_event(&session, request_arena.allocator(), event) catch |err| switch (err) {
+                error.ConnectionResetByPeer => break,
+                else => {
+                    logger.err("processing client event failed: {s}", .{@errorName(err)});
+                    return err;
+                },
+            };
+        }
+    }
+}
+const Point = struct { x: u16, y: u16 };
 
-                .framebuffer_update_request => |req| {
-                    {
-                        // vd.screen.backbuffer_lock.lock();
-                        // defer vd.screen.backbuffer_lock.unlock();
-                        @memcpy(new_framebuffer, vd.screen.backbuffer);
-                    }
+const Session_State = struct {
+    server: *vnc.Server,
 
-                    // logger.info("framebuffer update request: {}", .{in_req});
+    old_mouse: ?Point = null,
+    old_button: u8 = 0,
 
-                    var rectangles = std.ArrayList(vnc.UpdateRectangle).init(request_allocator);
-                    defer rectangles.deinit();
+    new_framebuffer: []ashet.abi.Color,
+    old_framebuffer: []ashet.abi.Color,
+};
 
-                    const incremental_support = true;
+fn handle_event(vd: *VNC_Server, state: *Session_State, request_allocator: std.mem.Allocator, event: vnc.ClientEvent) !void {
+    logger.debug("client event {}", .{event});
 
-                    if (incremental_support and req.incremental) {
+    switch (event) {
+        .set_pixel_format => |pf| {
+            logger.info("change pixel format to {}", .{pf});
+        }, // use internal handler
 
-                        // Compute differential update:
-                        var base: usize = req.y * vd.screen.width;
-                        var y: usize = 0;
-                        while (y < req.height) : (y += 1) {
-                            const old_scanline = old_framebuffer[base + req.x ..][0..req.width];
-                            const new_scanline = new_framebuffer[base + req.x ..][0..req.width];
+        .framebuffer_update_request => |req| {
+            {
+                // vd.screen.backbuffer_lock.lock();
+                // defer vd.screen.backbuffer_lock.unlock();
+                @memcpy(state.new_framebuffer, vd.screen.backbuffer);
+            }
 
-                            var first_diff: usize = old_scanline.len;
-                            var last_diff: usize = 0;
-                            for (old_scanline, new_scanline, 0..) |old, new, index| {
-                                if (old.eql(new)) {
-                                    first_diff = @min(first_diff, index);
-                                    last_diff = @max(last_diff, index);
-                                }
-                            }
+            // logger.info("framebuffer update request: {}", .{in_req});
 
-                            if (first_diff <= last_diff) {
-                                try rectangles.append(try vd.encode_screen_rect(
-                                    request_allocator,
-                                    .{
-                                        .x = @intCast(req.x + first_diff),
-                                        .y = @intCast(req.y + y),
-                                        .width = @intCast(last_diff - first_diff + 1),
-                                        .height = 1,
-                                    },
-                                    new_framebuffer,
-                                    server.pixel_format,
-                                ));
-                                // logger.debug("sending incremental update on scanline {} from {}...{}", .{
-                                //     req.y + y,
-                                //     req.x + first_diff,
-                                //     last_diff,
-                                // });
-                            }
+            var rectangles = std.ArrayList(vnc.UpdateRectangle).init(request_allocator);
+            defer rectangles.deinit();
 
-                            base += vd.screen.width;
+            const incremental_support = true;
+
+            if (incremental_support and req.incremental) {
+
+                // Compute differential update:
+                var base: usize = req.y * vd.screen.width;
+                var y: usize = 0;
+                while (y < req.height) : (y += 1) {
+                    const old_scanline = state.old_framebuffer[base + req.x ..][0..req.width];
+                    const new_scanline = state.new_framebuffer[base + req.x ..][0..req.width];
+
+                    var first_diff: usize = old_scanline.len;
+                    var last_diff: usize = 0;
+                    for (old_scanline, new_scanline, 0..) |old, new, index| {
+                        if (old.eql(new)) {
+                            first_diff = @min(first_diff, index);
+                            last_diff = @max(last_diff, index);
                         }
-                    } else {
-                        // Simple full screen update:
-                        try rectangles.append(try vd.encode_screen_rect(
-                            request_allocator,
-                            .{
-                                .x = req.x,
-                                .y = req.y,
-                                .width = req.width,
-                                .height = req.height,
-                            },
-                            new_framebuffer,
-                            server.pixel_format,
-                        ));
                     }
 
-                    if (rectangles.items.len == 0) {
+                    if (first_diff <= last_diff) {
                         try rectangles.append(try vd.encode_screen_rect(
                             request_allocator,
                             .{
-                                .x = req.x,
-                                .y = req.y,
-                                .width = 1,
+                                .x = @intCast(req.x + first_diff),
+                                .y = @intCast(req.y + y),
+                                .width = @intCast(last_diff - first_diff + 1),
                                 .height = 1,
                             },
-                            new_framebuffer,
-                            server.pixel_format,
+                            state.new_framebuffer,
+                            state.server.pixel_format,
                         ));
+                        // logger.debug("sending incremental update on scanline {} from {}...{}", .{
+                        //     req.y + y,
+                        //     req.x + first_diff,
+                        //     last_diff,
+                        // });
                     }
 
-                    // logger.debug("Respond to update request ({},{})+({}x{}) with {} updated rectangles", .{
-                    //     req.x,                req.y, req.width, req.height,
-                    //     rectangles.items.len,
-                    // });
-                    try server.sendFramebufferUpdate(rectangles.items);
+                    base += vd.screen.width;
+                }
+            } else {
+                // Simple full screen update:
+                try rectangles.append(try vd.encode_screen_rect(
+                    request_allocator,
+                    .{
+                        .x = req.x,
+                        .y = req.y,
+                        .width = req.width,
+                        .height = req.height,
+                    },
+                    state.new_framebuffer,
+                    state.server.pixel_format,
+                ));
+            }
 
-                    @memcpy(old_framebuffer, new_framebuffer);
-                },
+            if (rectangles.items.len == 0) {
+                try rectangles.append(try vd.encode_screen_rect(
+                    request_allocator,
+                    .{
+                        .x = req.x,
+                        .y = req.y,
+                        .width = 1,
+                        .height = 1,
+                    },
+                    state.new_framebuffer,
+                    state.server.pixel_format,
+                ));
+            }
 
-                .key_event => |ev| {
-                    var cs = ashet.CriticalSection.enter();
-                    defer cs.leave();
+            // logger.debug("Respond to update request ({},{})+({}x{}) with {} updated rectangles", .{
+            //     req.x,                req.y, req.width, req.height,
+            //     rectangles.items.len,
+            // });
+            try state.server.sendFramebufferUpdate(rectangles.items);
+
+            @memcpy(state.old_framebuffer, state.new_framebuffer);
+        },
+
+        .key_event => |ev| {
+            if (x11.keyFromKeySym(@intFromEnum(ev.key))) |usage| {
+                var cs = ashet.CriticalSection.enter();
+                defer cs.leave();
+
+                ashet.input.push_raw_event_from_irq(.{
+                    .keyboard = .{
+                        .usage = usage,
+                        .down = ev.down,
+                    },
+                });
+            } else {
+                logger.warn("unmapped x11 key sym: {}", .{@intFromEnum(ev.key)});
+            }
+        },
+
+        .pointer_event => |ptr| {
+            var cs = ashet.CriticalSection.enter();
+            defer cs.leave();
+
+            if (state.old_mouse) |prev| {
+                if (prev.x != ptr.x or prev.y != ptr.y) {
                     ashet.input.push_raw_event_from_irq(.{
-                        .keyboard = .{
-                            .down = ev.down,
-                            .scancode = @truncate(@intFromEnum(ev.key)),
+                        .mouse_abs_motion = .{
+                            .x = @intCast(ptr.x),
+                            .y = @intCast(ptr.y),
                         },
                     });
-                },
-
-                .pointer_event => |ptr| {
-                    var cs = ashet.CriticalSection.enter();
-                    defer cs.leave();
-
-                    if (old_mouse) |prev| {
-                        if (prev.x != ptr.x or prev.y != ptr.y) {
-                            ashet.input.push_raw_event_from_irq(.{
-                                .mouse_abs_motion = .{
-                                    .x = @intCast(ptr.x),
-                                    .y = @intCast(ptr.y),
-                                },
-                            });
-                        }
-                    }
-                    old_mouse = Point{
-                        .x = ptr.x,
-                        .y = ptr.y,
-                    };
-
-                    if (old_button != ptr.buttons) {
-                        for (0..7) |i| {
-                            const mask: u8 = @as(u8, 1) << @truncate(i);
-
-                            if ((old_button ^ ptr.buttons) & mask != 0) {
-                                ashet.input.push_raw_event_from_irq(.{
-                                    .mouse_button = .{
-                                        .button = switch (i) {
-                                            0 => .left,
-                                            1 => .middle,
-                                            2 => .right,
-                                            3 => .wheel_up,
-                                            4 => .wheel_down,
-                                            5 => .nav_previous,
-                                            6 => .nav_next,
-                                            else => std.debug.panic("unsupported VNC mouse button: {}", .{i}),
-                                        },
-                                        .down = (ptr.buttons & mask) != 0,
-                                    },
-                                });
-                            }
-                        }
-                        old_button = ptr.buttons;
-                    }
-                },
-
-                else => logger.warn("received unhandled event: {}", .{event}),
+                }
             }
-        }
+            state.old_mouse = Point{
+                .x = ptr.x,
+                .y = ptr.y,
+            };
+
+            if (state.old_button != ptr.buttons) {
+                for (0..7) |i| {
+                    const mask: u8 = @as(u8, 1) << @truncate(i);
+
+                    if ((state.old_button ^ ptr.buttons) & mask != 0) {
+                        ashet.input.push_raw_event_from_irq(.{
+                            .mouse_button = .{
+                                .button = switch (i) {
+                                    0 => .left,
+                                    1 => .middle,
+                                    2 => .right,
+                                    3 => .wheel_up,
+                                    4 => .wheel_down,
+                                    5 => .nav_previous,
+                                    6 => .nav_next,
+                                    else => std.debug.panic("unsupported VNC mouse button: {}", .{i}),
+                                },
+                                .down = (ptr.buttons & mask) != 0,
+                            },
+                        });
+                    }
+                }
+                state.old_button = ptr.buttons;
+            }
+        },
+
+        else => logger.warn("received unhandled event: {}", .{event}),
     }
 }
 

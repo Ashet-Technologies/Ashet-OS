@@ -17,7 +17,6 @@ pub const vendor = usb.vendor;
 pub const templates = usb.templates.DescriptorsConfigTemplates;
 pub const utils = usb.UsbUtils;
 
-const rom = @import("rom.zig");
 const resets = @import("resets.zig");
 
 pub const RP2XXX_MAX_ENDPOINTS_COUNT = 16;
@@ -48,7 +47,7 @@ pub const Dir = usb.types.Dir;
 pub const TransferType = usb.types.TransferType;
 pub const Endpoint = usb.types.Endpoint;
 
-pub const utf8ToUtf16Le = usb.utf8Toutf16Le;
+pub const utf8ToUtf16Le = usb.utf8ToUtf16Le;
 
 const BufferControlMmio = microzig.mmio.Mmio(@TypeOf(microzig.chip.peripherals.USB_DPRAM.EP0_IN_BUFFER_CONTROL).underlying_type);
 const EndpointControlMimo = microzig.mmio.Mmio(@TypeOf(peripherals.USB_DPRAM.EP1_IN_CONTROL).underlying_type);
@@ -256,7 +255,8 @@ pub fn F(comptime config: UsbConfig) type {
 
             const ep = hardware_endpoint_get_by_address(ep_addr);
 
-            _ = rom.memcpy(ep.data_buffer[0..buffer.len], buffer);
+            // TODO: please fixme: https://github.com/ZigEmbeddedGroup/microzig/issues/452
+            std.mem.copyForwards(u8, ep.data_buffer[0..buffer.len], buffer);
 
             // Configure the IN:
             const np: u1 = if (ep.next_pid_1) 1 else 0;
@@ -357,7 +357,7 @@ pub fn F(comptime config: UsbConfig) type {
             // which is, like, not _wrong_ but slightly awkward since it means
             // we can't just treat it as bytes. Instead, copy it out to a byte
             // array.
-            var setup_packet: [8]u8 = .{0} ** 8;
+            var setup_packet: [8]u8 = @splat(0);
             const spl: u32 = peripherals.USB_DPRAM.SETUP_PACKET_LOW.raw;
             const sph: u32 = peripherals.USB_DPRAM.SETUP_PACKET_HIGH.raw;
             @memcpy(setup_packet[0..4], std.mem.asBytes(&spl));

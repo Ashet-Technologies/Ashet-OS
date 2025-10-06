@@ -41,6 +41,10 @@
             .path = "../tools/exe-tool",
         },
 
+        .expcard = .{
+            .path = "../userland/libs/expcard",
+        },
+
         // locally vendored:
 
         .@"rp2xxx-hal" = .{ .path = "../../vendor/microzig-rp2350-hal" },
@@ -97,12 +101,11 @@
         },
 
         // External tooling:
-
-        // .@"tools/uf2" = .{
-        //     .url = "https://microzig.tech/downloads/microzig/0.13.2/tools/uf2.tar.gz",
-        //     .hash = "1220af8a6a2e1b789d9de505e81b0b37f82ec1bddf8be12b7bbaa83ecf34c5fe4ae1",
-        //     .lazy = false,
-        // },
+        .p2devsuite = .{
+            .url = "git+https://github.com/ikskuh/p2-devsuite.git#4aa03f279454ce7ac83300518cb9703619ae0572",
+            .hash = "p2_devsuite-0.0.0-JopzWDFfAADjUYTLJJwRo4SK3X8Ugiq6ENq8pbchAUqd",
+        },
+        
         .regz = .{
             .url = "https://github.com/ZigEmbeddedGroup/microzig/releases/download/0.14.4/mz_tools_regz.tar.gz",
             .hash = "mz_tools_regz-0.0.0-lIs8m6jOBgBXZYDL6BgMJVE2g5hB9fDmUKX4oUvZuVOr",

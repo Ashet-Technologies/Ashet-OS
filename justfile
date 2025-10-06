@@ -4,29 +4,37 @@ zig := "zig-0.14.1"
 optimize_kernel := "false"
 optimize_apps := "Debug"
 
+default_params := "--prominent-compile-errors -freference-trace=10"
+
+DEBUG_PORT := "/dev/ttyACM1"
+
 build:
-    {{zig}} build --prominent-compile-errors -freference-trace=10 --summary none -Doptimize-kernel={{optimize_kernel}} -Doptimize-apps={{optimize_apps}} rv32-qemu-virt
-    {{zig}} build --prominent-compile-errors -freference-trace=10 --summary none -Doptimize-kernel={{optimize_kernel}} -Doptimize-apps={{optimize_apps}}
+    {{zig}} build {{default_params}} --summary none -Doptimize-kernel={{optimize_kernel}} -Doptimize-apps={{optimize_apps}} rv32-qemu-virt
+    {{zig}} build {{default_params}} --summary none -Doptimize-kernel={{optimize_kernel}} -Doptimize-apps={{optimize_apps}}
 
 [working-directory: 'src/kernel']
 build-kernel:
-    {{zig}} build --prominent-compile-errors -freference-trace=10 -Dmachine=arm-ashet-hc -Dno-emit-bin
+    {{zig}} build {{default_params}} -Dmachine=arm-ashet-hc -Dno-emit-bin
 
-    {{zig}} build --prominent-compile-errors -freference-trace=10 -Dmachine=arm-ashet-hc
-    {{zig}} build --prominent-compile-errors -freference-trace=10 -Dmachine=arm-ashet-vhc
-    {{zig}} build --prominent-compile-errors -freference-trace=10 -Dmachine=arm-qemu-virt
-    {{zig}} build --prominent-compile-errors -freference-trace=10 -Dmachine=rv32-qemu-virt
-    {{zig}} build --prominent-compile-errors -freference-trace=10 -Dmachine=x86-pc-generic
-    {{zig}} build --prominent-compile-errors -freference-trace=10 -Dmachine=x86-hosted-linux
-    {{zig}} build --prominent-compile-errors -freference-trace=10 -Dmachine=x86-hosted-windows
+    {{zig}} build {{default_params}} -Dmachine=arm-ashet-hc
+    {{zig}} build {{default_params}} -Dmachine=arm-ashet-vhc
+    {{zig}} build {{default_params}} -Dmachine=arm-qemu-virt
+    {{zig}} build {{default_params}} -Dmachine=rv32-qemu-virt
+    {{zig}} build {{default_params}} -Dmachine=x86-pc-generic
+    {{zig}} build {{default_params}} -Dmachine=x86-hosted-linux
+    {{zig}} build {{default_params}} -Dmachine=x86-hosted-windows
 
 [working-directory: 'src/userland/apps/wiki']
 build-wiki:
-    zig-ashet build -Dtarget=rv32
+    {{zig}} build -Dtarget=rv32
+
+
+build-tools:
+    {{zig}} build {{default_params}} tools 
 
 build-vhc:
     rm -rf zig-out/arm-ashet-vhc
-    {{zig}} build --summary none -Doptimize-apps=ReleaseSmall arm-ashet-vhc
+    {{zig}} build {{default_params}} --summary none -Doptimize-apps=ReleaseSmall arm-ashet-vhc
     ./src/tools/exe-tool/zig-out/bin/ashet-exe dump zig-out/arm-ashet-vhc/apps/init.ashex -a > /tmp/init.ashex.txt
     ( \
         readelf --dynamic --section-headers --program-headers --wide --relocs --symbols --dyn-syms zig-out/arm-ashet-vhc/apps/init.elf ; \
@@ -34,18 +42,18 @@ build-vhc:
     ) > /tmp/dump.txt
 
 run-vhc: build-vhc
-    {{zig}} build --summary none -Dmachine=arm-ashet-vhc -Doptimize-apps=ReleaseSmall install run
+    {{zig}} build {{default_params}} --summary none -Dmachine=arm-ashet-vhc -Doptimize-apps=ReleaseSmall install run
 
 debug-vhc: build-vhc
-    {{zig}} build --summary none -Dmachine=arm-ashet-vhc -Doptimize-apps=ReleaseSmall install run -- -S ; stty sane
+    {{zig}} build {{default_params}} --summary none -Dmachine=arm-ashet-vhc -Doptimize-apps=ReleaseSmall install run -- -S ; stty sane
 
 [working-directory: 'src/tools/exe-tool']
 exe-tool:
-    {{zig}} build
+    {{zig}} build {{default_params}}
 
 [working-directory: 'src/tools/mkfont']
 mkfont:
-    {{zig}} build
+    {{zig}} build {{default_params}}
 
 test-mkfont: \
     (test-mkfont-face "mono-6") \
@@ -61,7 +69,7 @@ test-mkfont-face font: mkfont
 
 [working-directory: 'src/tools/mkicon']
 mkicon:
-    {{zig}} build
+    {{zig}} build {{default_params}}
 
 dump-libashet: \
     (dump-libashet-target "arm") \
@@ -70,7 +78,7 @@ dump-libashet: \
 
 [working-directory: 'src/userland/libs/libAshetOS']
 dump-libashet-target target:
-    {{zig}} build -Dtarget={{target}} install debug
+    {{zig}} build {{default_params}} -Dtarget={{target}} install debug
     llvm-readelf --dynamic \
         --section-headers \
         --program-headers \
@@ -95,7 +103,7 @@ dump-init: \
 
 [working-directory: 'src/userland/apps/init']
 dump-init-target target: (dump-libashet-target target) exe-tool
-    {{zig}} build -Dtarget={{target}} install
+    {{zig}} build {{default_params}} -Dtarget={{target}} install
 
     llvm-readelf --dynamic \
         --section-headers \
@@ -130,12 +138,21 @@ farcall:
     llvm-objdump -d ./farcall | grep -F '<main>' -A20
     gdb ./farcall --quiet --command ./gdbscript
 
+[working-directory: 'src/tools/mkexp']
+mkexp:
+    {{zig}} build {{default_params}}
+    ./zig-out/bin/mkexp render-md
+    ./zig-out/bin/mkexp encode examples/quad-ps2.json | hexdump -C
+
 
 
 rp2350-build:
-    {{zig}} build -Doptimize-kernel arm-ashet-hc
+    {{zig}} build {{default_params}} -Doptimize-kernel -Dmachine=arm-ashet-hc tools install 
     llvm-size zig-out/arm-ashet-hc/kernel.elf
-    arm-none-eabi-objdump -dS zig-out/arm-ashet-hc/kernel.elf  > /tmp/arm-ashet-hc.S
+
+    ./zig-out/bin/elfstack zig-out/arm-ashet-hc/kernel.elf > zig-out/arm-ashet-hc/kernel.elfstack.svg
+
+    arm-none-eabi-objdump -dS zig-out/arm-ashet-hc/kernel.elf  > zig-out/arm-ashet-hc/kernel.S
 
     # convert kernel image to UF2 file, family=rp2350_arm_s, offset=0M
     picotool uf2 convert \
@@ -161,6 +178,8 @@ rp2350-flash: rp2350-build
         --execute \
         zig-out/arm-ashet-hc/kernel.uf2
 
+rp2350-launch:  openocd-bootloader rp2350-flash 
+
 rp2350-upload-fs: rp2350-build
     picotool load \
         --update \
@@ -180,15 +199,43 @@ rp2350-openocd:
         -f target/rp2350.cfg \
         -c 'adapter speed 5000'
 
+
+rp2350-reset:
+    openocd -s tcl \
+        -f interface/cmsis-dap.cfg \
+        -f target/rp2350.cfg \
+        -c 'adapter speed 5000' \
+        -c 'init' \
+        -c 'reset halt' \
+        -c 'reset run' \
+        -c 'exit'
+
 rp2350-gdb:
     gdb \
         --command "scripts/gdb-rp2350" \
         zig-out/arm-ashet-hc/kernel.elf 
 
 rp2350-monitor:
-    picocom --baud 115200 --quiet /dev/ttyUSB0
+    ./zig-out/bin/debug-filter \
+        --elf kernel=zig-out/arm-ashet-hc/kernel.elf \
+        --elf ntp-client.ashex=zig-out/arm-ashet-hc/apps/ntp-client.elf \
+        --elf i2c-scan.ashex=zig-out/arm-ashet-hc/apps/i2c-scan.elf \
+        picocom --quiet --baud 2000000 {{DEBUG_PORT}}
 
 qemu-gdb target:
-    gdb \
+    arm-none-eabi-gdb \
         --command "scripts/gdb" \
         zig-out/{{target}}/kernel.elf 
+
+cmd_bootloader := "adapter speed 12000
+    init
+    reset halt
+    rp2xxx rom_api_call RB 2
+    resume
+    exit"
+openocd-bootloader:
+    openocd -s tcl \
+        -f interface/cmsis-dap.cfg \
+        -f target/rp2350.cfg \
+        -c '{{cmd_bootloader}}'
+    sleep 0.5

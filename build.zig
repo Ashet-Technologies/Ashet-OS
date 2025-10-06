@@ -38,6 +38,10 @@ const installed_tools: []const ToolDep = &.{
         .dependency = "mkfont",
         .artifacts = &.{"mkfont"},
     },
+    .{
+        .dependency = "elfstack",
+        .artifacts = &.{"elfstack"},
+    },
 };
 
 pub fn build(b: *std.Build) void {
@@ -62,6 +66,7 @@ pub fn build(b: *std.Build) void {
 
     // Steps:
     const test_step = b.step("test", "Runs the test suite");
+    const tools_step = b.step("tools", "Builds and installs the debug tools");
     const run_step = b.step("run", "Runs the OS on the machine provided with -Dmachine=...");
 
     const maybe_run_machine: ?Machine = if (maybe_run_target) |target|
@@ -91,7 +96,11 @@ pub fn build(b: *std.Build) void {
         const dep = b.dependency(tool_dep.dependency, .{});
         for (tool_dep.artifacts) |art_name| {
             const art = dep.artifact(art_name);
-            b.installArtifact(art);
+
+            const install = b.addInstallArtifact(art, .{});
+
+            b.getInstallStep().dependOn(&install.step);
+            tools_step.dependOn(&install.step);
         }
     }
 
@@ -102,9 +111,6 @@ pub fn build(b: *std.Build) void {
     // Build:
 
     const debugfilter = debugfilter_dep.artifact("debug-filter");
-
-    // Install the debug-filter executable so we can utilize it for debugging
-    b.installArtifact(debugfilter);
 
     var os_deps: std.EnumArray(Machine, *std.Build.Dependency) = .initUndefined();
     var os_rootfs: std.EnumArray(Machine, ?std.Build.LazyPath) = .initFill(null);
@@ -213,6 +219,8 @@ pub fn build(b: *std.Build) void {
             .{ .name = "hello-gui", .exe = get_named_file(os_files, "apps/hello-gui.elf") },
             .{ .name = "classic", .exe = get_named_file(os_files, "apps/desktop/classic.elf") },
             .{ .name = "dungeon.ashex", .exe = get_named_file(os_files, "apps/dungeon.elf") },
+            .{ .name = "ntp-client.ashex", .exe = get_named_file(os_files, "apps/ntp-client.elf") },
+            .{ .name = "i2c-scan.ashex", .exe = get_named_file(os_files, "apps/i2c-scan.elf") },
         };
 
         var variables = Variables{

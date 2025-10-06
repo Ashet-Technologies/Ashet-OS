@@ -12,7 +12,7 @@ enum SystemResource : usize
 
 /// All syscalls related to generic resource management.
 namespace resources {
-    
+
     /// Returns the type of the system resource.
     syscall get_type {
         in     @"resource": SystemResource;
@@ -63,7 +63,7 @@ namespace overlapped {
         /// The type of operation that is performed.
         field type: Type;
 
-        /// A user-specified pointer-sized field which 
+        /// A user-specified pointer-sized field which
         field tag: usize;
 
         typedef Type = <<async_call_enum:u32>>;
@@ -285,7 +285,7 @@ namespace process {
             ///
             /// NOTE: Passing 0 will never succeed.
             in    size:      usize;
-            
+
             /// The alignment
             in    ptr_align: u8;
 
@@ -576,7 +576,7 @@ namespace network {
             error   Timeout;
         }
     }
-    
+
     namespace tcp {
         /// Creates a new TCP socket.
         syscall create_socket {
@@ -1706,120 +1706,829 @@ enum FileMode : u8 {
     item create_always = 3;
 }
 
-enum KeyCode : u16 {
-    item escape = 1;
-    item @"1";
-    item @"2";
-    item @"3";
-    item @"4";
-    item @"5";
-    item @"6";
-    item @"7";
-    item @"8";
-    item @"9";
-    item @"0";
-    item minus;
-    item equal;
-    item backspace;
-    item tab;
-    item q;
-    item w;
-    item e;
-    item r;
-    item t;
-    item y;
-    item u;
-    item i;
-    item o;
-    item p;
-    item left_brace;
-    item right_brace;
-    item @"return";
-    item ctrl_left;
-    item a;
-    item s;
-    item d;
-    item f;
-    item g;
-    item h;
-    item j;
-    item k;
-    item l;
-    item semicolon;
-    item apostrophe;
-    item grave;
-    item shift_left;
-    item backslash;
-    item z;
-    item x;
-    item c;
-    item v;
-    item b;
-    item n;
-    item m;
-    item comma;
-    item dot;
-    item slash;
-    item shift_right;
-    item kp_asterisk;
-    item alt;
-    item space;
-    item caps_lock;
-    item f1;
-    item f2;
-    item f3;
-    item f4;
-    item f5;
-    item f6;
-    item f7;
-    item f8;
-    item f9;
-    item f10;
-    item num_lock;
-    item scroll_lock;
-    item kp_7;
-    item kp_8;
-    item kp_9;
-    item kp_minus;
-    item kp_4;
-    item kp_5;
-    item kp_6;
-    item kp_plus;
-    item kp_1;
-    item kp_2;
-    item kp_3;
-    item kp_0;
-    item kp_dot;
-    item jp_zenkakuhankaku;
-    item @"102nd";
-    item f11;
-    item f12;
-    item jp_ro;
-    item jp_katakana;
-    item jp_hiragana;
-    item jp_henkan;
-    item jp_katakana_hiragana;
-    item jp_muhenkan;
-    item jp_kp_comma;
-    item kp_enter;
-    item ctrl_right;
-    item kp_slash;
-    item print;
-    item alt_graph;
-    item linefeed;
-    item home;
-    item up;
-    item page_up;
-    item left;
-    item right;
-    item end;
-    item down;
-    item page_down;
-    item insert;
-    item delete;
-    item meta;
+///
+/// This is an enumeration of all well-known HID Keyboard/Keypad Page (0x07) usage codes for
+/// keys.
+///
+/// NOTE: These codes do not necessarily correlate with what's printed on the key, but what's
+///       printed on the same location of a typical US layout keyboard.
+///       Use key usage codes for when you're interested in the *location* of a key, not the
+///       its semantic meaning.
+///       For example, the typical `WASD` input scheme would be `ZQSD` on an AZERTY keyboard, but
+///       the locations would be the same.
+///
+/// LORE: This mapping was chosen as it's the most widespread standard key list. These codes
+///       are directly produced by both USB and Bluetooth keyboards and don't require any translation
+///       in these cases. Also HID is a widespread standard.
+///
+/// NOTE: The notes in this enumeration are taken verbatim from
+///       [HID Usage Tables, Version 1.6, Keyboard/Keypad Page (0x07)](https://usb.org/sites/default/files/hut1_6.pdf).
+///
+enum KeyUsageCode : u16 {
+    //? 01 Keyboard ErrorRollOver
+    //? 02 Keyboard POSTFail
+    //? 03 Keyboard ErrorUndefined
 
-    item unknown = 0xFFFF;
+    /// Keyboard `a` and `A`
+    /// NOTE: Typically remapped for other languages in the host system.
+    item a = 0x04;
+
+    /// Keyboard `b` and `B`
+    item b = 0x05;
+
+    /// Keyboard `c` and `C`
+    /// NOTE: Typically remapped for other languages in the host system.
+    item c = 0x06;
+
+    /// Keyboard `d` and `D`
+    item d = 0x07;
+
+    /// Keyboard `e` and `E`
+    item e = 0x08;
+
+    /// Keyboard `f` and `F`
+    item f = 0x09;
+
+    /// Keyboard `g` and `G`
+    item g = 0x0A;
+
+    /// Keyboard `h` and `H`
+    item h = 0x0B;
+
+    /// Keyboard `i` and `I`
+    item i = 0x0C;
+
+    /// Keyboard `j` and `J`
+    item j = 0x0D;
+
+    /// Keyboard `k` and `K`
+    item k = 0x0E;
+
+    /// Keyboard `l` and `L`
+    item l = 0x0F;
+
+    /// Keyboard `m` and `M`
+    /// NOTE: Typically remapped for other languages in the host system.
+    item m = 0x10;
+
+    /// Keyboard `n` and `N`
+    item n = 0x11;
+
+    /// Keyboard `o` and `O`
+    /// NOTE: Typically remapped for other languages in the host system.
+    item o = 0x12;
+
+    /// Keyboard `p` and `P`
+    /// NOTE: Typically remapped for other languages in the host system.
+    item p = 0x13;
+
+    /// Keyboard `q` and `Q`
+    /// NOTE: Typically remapped for other languages in the host system.
+    item q = 0x14;
+
+    /// Keyboard `r` and `R`
+    item r = 0x15;
+
+    /// Keyboard `s` and `S`
+    item s = 0x16;
+
+    /// Keyboard `t` and `T`
+    item t = 0x17;
+
+    /// Keyboard `u` and `U`
+    item u = 0x18;
+
+    /// Keyboard `v` and `V`
+    item v = 0x19;
+
+    /// Keyboard `w` and `W`
+    /// NOTE: Typically remapped for other languages in the host system.
+    item w = 0x1A;
+
+    /// Keyboard `x` and `X`
+    /// NOTE: Typically remapped for other languages in the host system.
+    item x = 0x1B;
+
+    /// Keyboard `y` and `Y`
+    /// NOTE: Typically remapped for other languages in the host system.
+    item y = 0x1C;
+
+    /// Keyboard `z` and `Z`
+    /// NOTE: Typically remapped for other languages in the host system.
+    item z = 0x1D;
+
+
+    /// Keyboard `1` and `!`
+    /// NOTE: Typically remapped for other languages in the host system.
+    item @"1" = 0x1E;
+
+    /// Keyboard `2` and `@`
+    /// NOTE: Typically remapped for other languages in the host system.
+    item @"2" = 0x1F;
+
+    /// Keyboard `3` and `#`
+    /// NOTE: Typically remapped for other languages in the host system.
+    item @"3" = 0x20;
+
+    /// Keyboard `4` and `$`
+    /// NOTE: Typically remapped for other languages in the host system.
+    item @"4" = 0x21;
+
+    /// Keyboard `5` and `%`
+    /// NOTE: Typically remapped for other languages in the host system.
+    item @"5" = 0x22;
+
+    /// Keyboard `6` and `∧`
+    /// NOTE: Typically remapped for other languages in the host system.
+    item @"6" = 0x23;
+
+    /// Keyboard `7` and `&`
+    /// NOTE: Typically remapped for other languages in the host system.
+    item @"7" = 0x24;
+
+    /// Keyboard `8` and `*`
+    /// NOTE: Typically remapped for other languages in the host system.
+    item @"8" = 0x25;
+
+    /// Keyboard `9` and `(`
+    /// NOTE: Typically remapped for other languages in the host system.
+    item @"9" = 0x26;
+
+    /// Keyboard `0` and `)`
+    /// NOTE: Typically remapped for other languages in the host system.
+    item @"0" = 0x27;
+
+    /// Keyboard Return (ENTER)
+    item enter = 0x28;
+
+    /// Keyboard ESCAPE
+    item escape = 0x29;
+
+    /// Keyboard DELETE (Backspace)
+    /// NOTE: Backs up the cursor one position, deleting a character as it goes.
+    item backspace = 0x2A;
+
+    /// Keyboard Tab
+    item tab = 0x2B;
+
+    /// Keyboard Spacebar
+    item space = 0x2C;
+
+    /// Keyboard `-` and `_`
+    item minus = 0x2D;
+
+    /// Keyboard `=` and `+`
+    /// NOTE: Typically remapped for other languages in the host system.
+    item equals = 0x2E;
+
+    /// Keyboard `[` and `{`
+    /// NOTE: Typically remapped for other languages in the host system.
+    item square_bracket_open = 0x2F;
+
+    /// Keyboard `]` and `}`
+    /// NOTE: Typically remapped for other languages in the host system.
+    item square_bracket_close = 0x30;
+
+    /// Keyboard `\\` and `|`
+    /// NOTE: Typically remapped for other languages in the host system.
+    item backslash = 0x31;
+
+    /// Keyboard Non-US `#` and `~`
+    /// NOTE: Typical language mappings:
+    ///       US: `\` `|`
+    ///       Belg: `µ` `\`` `£`
+    ///       French Canadian: `<` `}` `>`
+    ///       Danish: `'` `*`
+    ///       Dutch: `<` `>`
+    ///       French: `*` `µ`
+    ///       German: `#` `'`
+    ///       Italian: `ù` `§`
+    ///       LatinAmerica: `}` `\`` `]`
+    ///       Norwegian: `,` `*`
+    ///       Spain: `}` `Ç`
+    ///       Swedish: `,` `*`
+    ///       Swiss: `$`, `£`
+    ///       UK: `#` `~`
+    item non_us_hash = 0x32;
+
+    /// Keyboard `;` and `:`
+    /// NOTE: Typically remapped for other languages in the host system.
+    item semicolon = 0x33;
+
+    /// Keyboard `'` and `“`
+    /// NOTE: Typically remapped for other languages in the host system.
+    item apostrophe = 0x34;
+
+    /// Keyboard Grave Accent (`^`) and Tilde (`~`)
+    /// NOTE: Typically remapped for other languages in the host system.
+    item grave_accent = 0x35;
+
+    /// Keyboard `,` and `<`
+    /// NOTE: Typically remapped for other languages in the host system.
+    item comma = 0x36;
+
+    /// Keyboard `.` and `>`
+    /// NOTE: Typically remapped for other languages in the host system.
+    item period = 0x37;
+
+    /// Keyboard `/` and `?`
+    /// NOTE: Typically remapped for other languages in the host system.
+    item slash = 0x38;
+
+    /// Keyboard Caps Lock
+    /// NOTE: Implemented as a non-locking key; sent as member of an array.
+    item caps_lock = 0x39;
+
+    /// Keyboard F1
+    item f1 = 0x3A;
+
+    /// Keyboard F2
+    item f2 = 0x3B;
+
+    /// Keyboard F3
+    item f3 = 0x3C;
+
+    /// Keyboard F4
+    item f4 = 0x3D;
+
+    /// Keyboard F5
+    item f5 = 0x3E;
+
+    /// Keyboard F6
+    item f6 = 0x3F;
+
+    /// Keyboard F7
+    item f7 = 0x40;
+
+    /// Keyboard F8
+    item f8 = 0x41;
+
+    /// Keyboard F9
+    item f9 = 0x42;
+
+    /// Keyboard F10
+    item f10 = 0x43;
+
+    /// Keyboard F11
+    item f11 = 0x44;
+
+    /// Keyboard F12
+    item f12 = 0x45;
+
+    /// Keyboard PrintScreen
+    /// NOTE: Usage of keys is not modified by the state of the Control, Alt, Shift or Num Lock keys.
+    ///       That is, a key does not send extra codes to compensate for the state of any Control,
+    ///       Alt, Shift or Num Lock keys.
+    item print_screen = 0x46;
+
+    /// Keyboard Scroll Lock
+    /// NOTE: Implemented as a non-locking key; sent as member of an array.
+    item scroll_lock = 0x47;
+
+    /// Keyboard Pause
+    /// NOTE: Usage of keys is not modified by the state of the Control, Alt, Shift or Num Lock keys.
+    ///       That is, a key does not send extra codes to compensate for the state of any Control,
+    ///       Alt, Shift or Num Lock keys.
+    item pause = 0x48;
+
+    /// Keyboard Insert
+    /// NOTE: Usage of keys is not modified by the state of the Control, Alt, Shift or Num Lock keys.
+    ///       That is, a key does not send extra codes to compensate for the state of any Control,
+    ///       Alt, Shift or Num Lock keys.
+    item insert = 0x49;
+
+    /// Keyboard Home
+    /// NOTE: Usage of keys is not modified by the state of the Control, Alt, Shift or Num Lock keys.
+    ///       That is, a key does not send extra codes to compensate for the state of any Control,
+    ///       Alt, Shift or Num Lock keys.
+    item home = 0x4A;
+
+    /// Keyboard PageUp
+    /// NOTE: Usage of keys is not modified by the state of the Control, Alt, Shift or Num Lock keys.
+    ///       That is, a key does not send extra codes to compensate for the state of any Control,
+    ///       Alt, Shift or Num Lock keys.
+    item page_up = 0x4B;
+
+    /// Keyboard Delete Forward
+    /// NOTE: Usage of keys is not modified by the state of the Control, Alt, Shift or Num Lock keys.
+    ///       That is, a key does not send extra codes to compensate for the state of any Control,
+    ///       Alt, Shift or Num Lock keys.
+    /// NOTE: Deletes one character without changing position.
+    item delete = 0x4C;
+
+    /// Keyboard End
+    /// NOTE: Usage of keys is not modified by the state of the Control, Alt, Shift or Num Lock keys.
+    ///       That is, a key does not send extra codes to compensate for the state of any Control,
+    ///       Alt, Shift or Num Lock keys.
+    item end = 0x4D;
+
+    /// Keyboard PageDown
+    /// NOTE: Usage of keys is not modified by the state of the Control, Alt, Shift or Num Lock keys.
+    ///       That is, a key does not send extra codes to compensate for the state of any Control,
+    ///       Alt, Shift or Num Lock keys.
+    item page_down = 0x4E;
+
+    /// Keyboard RightArrow
+    /// NOTE: Usage of keys is not modified by the state of the Control, Alt, Shift or Num Lock keys.
+    ///       That is, a key does not send extra codes to compensate for the state of any Control,
+    ///       Alt, Shift or Num Lock keys.
+    item right_arrow = 0x4F;
+
+    /// Keyboard LeftArrow
+    /// NOTE: Usage of keys is not modified by the state of the Control, Alt, Shift or Num Lock keys.
+    ///       That is, a key does not send extra codes to compensate for the state of any Control,
+    ///       Alt, Shift or Num Lock keys.
+    item left_arrow = 0x50;
+
+    /// Keyboard DownArrow
+    /// NOTE: Usage of keys is not modified by the state of the Control, Alt, Shift or Num Lock keys.
+    ///       That is, a key does not send extra codes to compensate for the state of any Control,
+    ///       Alt, Shift or Num Lock keys.
+    item down_arrow = 0x51;
+
+    /// Keyboard UpArrow
+    /// NOTE: Usage of keys is not modified by the state of the Control, Alt, Shift or Num Lock keys.
+    ///       That is, a key does not send extra codes to compensate for the state of any Control,
+    ///       Alt, Shift or Num Lock keys.
+    item up_arrow = 0x52;
+
+    /// Keypad Num Lock and Clear
+    /// NOTE: Implemented as a non-locking key; sent as member of an array.
+    item num_lock = 0x53;
+
+    /// Keypad `/`
+    /// NOTE: Usage of keys is not modified by the state of the Control, Alt, Shift or Num Lock keys.
+    ///       That is, a key does not send extra codes to compensate for the state of any Control,
+    ///       Alt, Shift or Num Lock keys.
+    item kp_divide = 0x54;
+
+    /// Keypad `*`
+    item kp_multiply = 0x55;
+
+    /// Keypad `-`
+    item kp_subtract = 0x56;
+
+    /// Keypad `+`
+    item kp_add = 0x57;
+
+    /// Keypad ENTER
+    item kp_enter = 0x58;
+
+    /// Keypad `1` and End
+    item kp_1 = 0x59;
+
+    /// Keypad `2` and Down Arrow
+    item kp_2 = 0x5A;
+
+    /// Keypad `3` and PageDn
+    item kp_3 = 0x5B;
+
+    /// Keypad `4` and Left Arrow
+    item kp_4 = 0x5C;
+
+    /// Keypad `5`
+    item kp_5 = 0x5D;
+
+    /// Keypad `6` and Right Arrow
+    item kp_6 = 0x5E;
+
+    /// Keypad `7` and Home
+    item kp_7 = 0x5F;
+
+    /// Keypad `8` and Up Arrow
+    item kp_8 = 0x60;
+
+    /// Keypad `9` and PageUp
+    item kp_9 = 0x61;
+
+    /// Keypad `0` and Insert
+    item kp_0 = 0x62;
+
+    /// Keypad `.` and Delete
+    item kp_period = 0x63;
+
+    /// Keyboard Non-US `\\` and `|`
+    /// NOTE: Typical language mappings:
+    ///       Belg:            `<`  `\`  `>`
+    ///       French Canadian: `<`  `°`  `>`
+    ///       Danish:          `<`  `\`  `>`
+    ///       Dutch:           `]`  `|`  `[`
+    ///       French:          `<`  `>`
+    ///       German:          `<`  `|`  `>`
+    ///       Italian:         `<`  `>`
+    ///       Latin America:   `<`  `>`
+    ///       Norwegian:       `<`  `>`
+    ///       Spain:           `<`  `>`
+    ///       Swedish:         `<`  `|`  `>`
+    ///       Swiss:           `<`  `>`
+    ///       UK:              `\`  `|`
+    ///       Brazil:          `\`  `|`
+    /// NOTE: Typically near the Left-Shift key in AT-102 implementations.
+    item non_us_backslash = 0x64;
+
+    /// Keyboard Application
+    /// NOTE: Windows key for Windows 95, and Compose.
+    item application = 0x65;
+
+    /// Keyboard Power
+    item power = 0x66;
+
+    /// Keypad `=`
+    item kp_equals = 0x67;
+
+    /// Keyboard F13
+    item f13 = 0x68;
+
+    /// Keyboard F14
+    item f14 = 0x69;
+
+    /// Keyboard F15
+    item f15 = 0x6A;
+
+    /// Keyboard F16
+    item f16 = 0x6B;
+
+    /// Keyboard F17
+    item f17 = 0x6C;
+
+    /// Keyboard F18
+    item f18 = 0x6D;
+
+    /// Keyboard F19
+    item f19 = 0x6E;
+
+    /// Keyboard F20
+    item f20 = 0x6F;
+
+    /// Keyboard F21
+    item f21 = 0x70;
+
+    /// Keyboard F22
+    item f22 = 0x71;
+
+    /// Keyboard F23
+    item f23 = 0x72;
+
+    /// Keyboard F24
+    item f24 = 0x73;
+
+    /// Keyboard Execute
+    item execute = 0x74;
+
+    /// Keyboard Help
+    item help = 0x75;
+
+    /// Keyboard Menu
+    item menu = 0x76;
+
+    /// Keyboard Select
+    item select = 0x77;
+
+    /// Keyboard Stop
+    item stop = 0x78;
+
+    /// Keyboard Again
+    item again = 0x79;
+
+    /// Keyboard Undo
+    item undo = 0x7A;
+
+    /// Keyboard Cut
+    item cut = 0x7B;
+
+    /// Keyboard Copy
+    item copy = 0x7C;
+
+    /// Keyboard Paste
+    item paste = 0x7D;
+
+    /// Keyboard Find
+    item find = 0x7E;
+
+    /// Keyboard Mute
+    item mute = 0x7F;
+
+    /// Keyboard Volume Up
+    item volume_up = 0x80;
+
+    /// Keyboard Volume Down
+    item volume_down = 0x81;
+
+    /// Keyboard Locking Caps Lock
+    /// NOTE: Implemented as a locking key; sent as a toggle button.
+    ///       Available for legacy support; however, most systems should use the non-locking version of this key
+    item locking_caps_lock = 0x82;
+
+    /// Keyboard Locking Num Lock
+    /// NOTE: Implemented as a locking key; sent as a toggle button.
+    ///       Available for legacy support; however, most systems should use the non-locking version of this key
+    item locking_num_lock = 0x83;
+
+    /// Keyboard Locking Scroll Lock
+    /// NOTE: Implemented as a locking key; sent as a toggle button.
+    ///       Available for legacy support; however, most systems should use the non-locking version of this key
+    item locking_scroll_lock = 0x84;
+
+    /// Keypad Comma
+    /// NOTE: Keypad Comma is the appropriate usage for the Brazilian keypad period (`.`) key.
+    ///       This represents the closest possible match, and system software should do the correct
+    ///       mapping based on the current locale setting.
+    item kp_comma = 0x85;
+
+    /// Keypad Equal Sign
+    /// NOTE: Used on AS/400 keyboards.
+    item kp_equals_as400 = 0x86;
+
+
+    /// Keyboard International1
+    /// NOTE: Keyboard International1 should be identified via footnote as the appropriate usage for the Brazilian
+    ///       forward-slash (`/`) and question-mark (`?`) key.
+    ///       This usage should also be renamed to either "Keyboard Non-US `/` and `?`" or to "Keyboard International1"
+    ///       now that it's become clear that it does not only apply to Kanji keyboards anymore.
+    item international1 = 0x87;
+
+    /// Keyboard International2
+    item international2 = 0x88;
+
+    /// Keyboard International3
+    item international3 = 0x89;
+
+    /// Keyboard International4
+    item international4 = 0x8A;
+
+    /// Keyboard International5
+    item international5 = 0x8B;
+
+    /// Keyboard International6
+    item international6 = 0x8C;
+
+    /// Keyboard International7
+    /// NOTE: Toggle Double-Byte/Single-Byte mode
+    item international7 = 0x8D;
+
+    /// Keyboard International8
+    /// NOTE: Undefined, available for other Front End Language Processors.
+    item international8 = 0x8E;
+
+    /// Keyboard International9
+    /// NOTE: Undefined, available for other Front End Language Processors.
+    item international9 = 0x8F;
+
+    /// Keyboard LANG1
+    /// NOTE: Hangul/English toggle key. This usage is used as an input method editor control key on a Korean language keyboard.
+    item lang1 = 0x90;
+
+    /// Keyboard LANG2
+    /// NOTE: Hanja conversion key. This usage is used as an input method editor control key on a Korean language keyboard.
+    item lang2 = 0x91;
+
+    /// Keyboard LANG3
+    /// NOTE: Defines the Katakana key for Japanese USB word-processing keyboards.
+    item lang3 = 0x92;
+
+    /// Keyboard LANG4
+    /// NOTE: Defines the Hiragana key for Japanese USB word-processing keyboards.
+    item lang4 = 0x93;
+
+    /// Keyboard LANG5
+    /// NOTE: Defines the Zenkaku/Hankaku key for Japanese USB word-processing keyboards.
+    item lang5 = 0x94;
+
+    /// Keyboard LANG6
+    /// NOTE: Reserved for language-specific functions, such as Front End Processors and Input Method Editors.
+    item lang6 = 0x95;
+
+    /// Keyboard LANG7
+    /// NOTE: Reserved for language-specific functions, such as Front End Processors and Input Method Editors.
+    item lang7 = 0x96;
+
+    /// Keyboard LANG8
+    /// NOTE: Reserved for language-specific functions, such as Front End Processors and Input Method Editors.
+    item lang8 = 0x97;
+
+    /// Keyboard LANG9
+    /// NOTE: Reserved for language-specific functions, such as Front End Processors and Input Method Editors.
+    item lang9 = 0x98;
+
+
+
+    /// Keyboard Alternate Erase
+    /// NOTE: Example, Erase-Eaze™ key.
+    item alternate_erase = 0x99;
+
+    /// Keyboard SysReq/Attention
+    /// NOTE: Usage of keys is not modified by the state of the Control, Alt, Shift or Num Lock keys.
+    ///       That is, a key does not send extra codes to compensate for the state of any Control,
+    ///       Alt, Shift or Num Lock keys.
+    item term_sysreq_attention = 0x9A;
+
+    /// Keyboard Cancel
+    item term_cancel = 0x9B;
+
+    /// Keyboard Clear
+    item term_clear = 0x9C;
+
+    /// Keyboard Prior
+    item term_prior = 0x9D;
+
+    /// Keyboard Return
+    item term_return = 0x9E;
+
+    /// Keyboard Separator
+    item term_separator = 0x9F;
+
+    /// Keyboard Out
+    item term_out = 0xA0;
+
+    /// Keyboard Oper
+    item term_oper = 0xA1;
+
+    /// Keyboard Clear/Again
+    item term_clear_again = 0xA2;
+
+    /// Keyboard CrSel/Props
+    item term_crsel_props = 0xA3;
+
+    /// Keyboard ExSel
+    item term_exsel = 0xA4;
+
+    /// Keypad `00`
+    item kp_double_0 = 0xB0;
+
+    /// Keypad `000`
+    item kp_triple_0 = 0xB1;
+
+    /// Thousands Separator
+    /// NOTE: The symbol displayed will depend on the current locale settings
+    ///       of the operating system. For example, the US thousands separator would
+    ///       be a comma, and the decimal separator would be a period.
+    item kp_thousands_sep = 0xB2;
+
+    /// Decimal Separator
+    /// NOTE: The symbol displayed will depend on the current locale settings
+    ///       of the operating system. For example, the US thousands separator would
+    ///       be a comma, and the decimal separator would be a period.
+    item kp_decimal_sep = 0xB3;
+
+    /// Currency Unit
+    /// NOTE: The symbol displayed will depend on the current locale settings of the operating system.
+    ///       For example the US currency unit would be $ and the sub-unit would be ¢.
+    item kp_currency_unit = 0xB4;
+
+    /// Currency Sub-unit
+    /// NOTE: The symbol displayed will depend on the current locale settings of the operating system.
+    ///       For example the US currency unit would be $ and the sub-unit would be ¢.
+    item kp_currency_subunit = 0xB5;
+
+    /// Keypad `(`
+    item kp_round_bracket_open = 0xB6;
+
+    /// Keypad `)`
+    item kp_round_bracket_close = 0xB7;
+
+    /// Keypad `{`
+    item kp_curly_bracket_open = 0xB8;
+
+    /// Keypad `}`
+    item kp_curly_bracket_close = 0xB9;
+
+    /// Keypad Tab
+    item kp_tab = 0xBA;
+
+    /// Keypad Backspace
+    item kp_backspace = 0xBB;
+
+    /// Keypad `A`
+    item kp_a = 0xBC;
+
+    /// Keypad `B`
+    item kp_b = 0xBD;
+
+    /// Keypad `C`
+    item kp_c = 0xBE;
+
+    /// Keypad `D`
+    item kp_d = 0xBF;
+
+    /// Keypad `E`
+    item kp_e = 0xC0;
+
+    /// Keypad `F`
+    item kp_f = 0xC1;
+
+    /// Keypad XOR
+    item kp_logic_xor = 0xC2;
+
+    /// Keypad `∧`
+    item kp_logic_and = 0xC3;
+
+    /// Keypad %
+    item kp_percent = 0xC4;
+
+    /// Keypad `<`
+    item kp_less_than = 0xC5;
+
+    /// Keypad `>`
+    item kp_greater_than = 0xC6;
+
+    /// Keypad `&`
+    item kp_ampersand = 0xC7;
+
+    /// Keypad `&&`
+    item kp_double_ampersand = 0xC8;
+
+    /// Keypad `|`
+    item kp_pipe = 0xC9;
+
+    /// Keypad `||`
+    item kp_double_pipe = 0xCA;
+
+    /// Keypad `:`
+    item kp_colon = 0xCB;
+
+    /// Keypad `#`
+    item kp_hash = 0xCC;
+
+    /// Keypad Space
+    item kp_space = 0xCD;
+
+    /// Keypad `@`
+    item kp_at = 0xCE;
+
+    /// Keypad `!`
+    item kp_exlamation = 0xCF;
+
+    /// Keypad Memory Store
+    item kp_memory_store = 0xD0;
+
+    /// Keypad Memory Recall
+    item kp_memory_recall = 0xD1;
+
+    /// Keypad Memory Clear
+    item kp_memory_clear = 0xD2;
+
+    /// Keypad Memory Add
+    item kp_memory_add = 0xD3;
+
+    /// Keypad Memory Subtract
+    item kp_memory_subtract = 0xD4;
+
+    /// Keypad Memory Multiply
+    item kp_memory_multiply = 0xD5;
+
+    /// Keypad Memory Divide
+    item kp_memory_divide = 0xD6;
+
+    /// Keypad `+/-`
+    item kp_plus_minus = 0xD7;
+
+    /// Keypad Clear
+    item kp_clear = 0xD8;
+
+    /// Keypad Clear Entry
+    item kp_clear_entry = 0xD9;
+
+    /// Keypad Binary
+    item kp_binary = 0xDA;
+
+    /// Keypad Octal
+    item kp_octal = 0xDB;
+
+    /// Keypad Decimal
+    item kp_decimal = 0xDC;
+
+    /// Keypad Hexadecimal
+    item kp_hexadecimal = 0xDD;
+
+    /// Keyboard Left Control
+    item left_control = 0xE0;
+
+    /// Keyboard Left Shift
+    item left_shift = 0xE1;
+
+    /// Keyboard Left Alt
+    item left_alt = 0xE2;
+
+    /// Keyboard Left GUI
+    /// NOTE: Windows key for Windows 95, and Compose.
+    /// NOTE: Windowing environment key, examples are Microsoft® LEFT WIN key, Macintosh® LEFT APPLE key, Sun® LEFT META key.
+    item left_gui = 0xE3;
+
+    /// Keyboard Right Control
+    item right_control = 0xE4;
+
+    /// Keyboard Right Shift
+    item right_shift = 0xE5;
+
+    /// Keyboard Right Alt
+    item right_alt = 0xE6;
+
+    /// Keyboard Right GUI
+    /// NOTE: Windows key for Windows 95, and Compose.
+    /// NOTE: Windowing environment key, examples are Microsoft® RIGHT WIN key, Macintosh® RIGHT APPLE key, Sun® RIGHT META key.
+    item right_gui = 0xE7;
+
+    ...
 }
 
 enum MouseButton : u8 {
@@ -2308,16 +3017,28 @@ struct MouseEvent {
 struct KeyboardEvent {
     field event_type: SharedEventType; //? MUST BE FIRST!
 
-    /// The raw scancode for the key. Meaning depends on the layout;
-    /// represents kinda the physical position on the keyboard.
-    field scancode: u32;
+    /// The raw usage code for the key. Meaning depends on the layout;
+    /// kinda represents the physical position on the keyboard.
+    field usage: KeyUsageCode;
 
-    /// The virtual key, independent of layout. Represents the logical
-    /// function of the key.
-    field key: KeyCode;
-
-    /// If set, the pressed key combination has a mapping that produces
-    /// text input. UTF-8 encoded.
+    /// If set, the pressed key combination has a mapping in the current
+    /// keyboard layout that produces text input.
+    ///
+    /// NOTE: This doesn't necessarily contains printable codes, but can also contain
+    ///       combining characters like `U+0301` (Combining Acute Accent).
+    ///
+    /// NOTE: This isn't a true *composed* text input and cannot be directly used in a
+    ///       text field or such. This is primarily meant to be passed into an input
+    ///       method editor.
+    ///
+    /// LORE: This field isn't a perfect solution, but it's good enough for what we're trying to
+    ///       achieve: International text input.
+    ///       The idea of using combining characters for dead keys allows the IME to actually compose
+    ///       a sequence of `U+0301` (Combining Acute Accent), `U+0041` (Latin Capital Letter A) to be composed
+    ///       into `U+00C1` (Latin Capital Letter A With Acute) instead of emitting two codepoints.
+    ///
+    ///       This method is flexible enough to be future proof and expansible.
+    ///
     field text: ?str;
 
     /// The key in this event was pressed or released
@@ -2331,12 +3052,15 @@ bitstruct KeyboardModifiers : u16 {
     field shift: bool;
     field alt: bool;
     field ctrl: bool;
+    field gui: bool;
     field shift_left: bool;
     field shift_right: bool;
     field ctrl_left: bool;
     field ctrl_right: bool;
     field alt_graph: bool;
-    reserve u8 = 0;
+    field gui_left: bool;
+    field gui_right: bool;
+    reserve u5 = 0;
 }
 
 struct Point {
@@ -2413,4 +3137,464 @@ struct FileInfo {
     field attributes: FileAttributes;
     field creation_date: DateTime;
     field modified_date: DateTime;
+}
+
+
+///
+/// The I/O namespace contains APIs to interface with external hardware like serial ports, I²C busses and so on.
+///
+namespace io {
+
+    ///
+    /// Functions and types related to serial busses like RS232, RS485 or similar.
+    ///
+    namespace serial {
+        enum SerialPortID : u32 {
+            ...
+        }
+
+    //?     syscall enumerate {
+    //?         in list: []SerialPortID;
+
+    //?         out count: usize;
+    //?     }
+
+    //?     /// Queries information about the given serial port id.
+    //?     syscall query_metadata {
+    //?         in    id:       SerialPortID;
+    //?         in    name_buf: ?[]u8;
+
+    //?         out   name_len: usize;
+
+    //?         /// The given id does not exist.
+    //?         error NotFound;
+    //?     }
+
+        resource SerialPort { }
+
+    //?     syscall open {
+    //?         in    id:     SerialPortID;
+    //?         out   port:   SerialPort;
+
+    //?         /// The given id does not exist.
+    //?         error NotFound;
+
+    //?         /// The resource is already opened.
+    //?         error ResourceBusy;
+    //?     }
+
+        ///
+        /// Changes the configuration of a serial port and returns the new configuration.
+        ///
+        /// This function can also be used to query the current configuration by requesting no changes.
+        ///
+        async_call configure {
+            in  port: SerialPort;
+
+            //? TODO: in baud_rate:       ?u32;
+            //? TODO: in word_size:       ?u8;
+            //? TODO: in stop_bits:       ?StopBits;
+            //? TODO: in parity:          ?Parity;
+            //? TODO: in control_flow:    ?ControlFlow;
+
+            //? TODO: /// Selects which software control flow words control the transmitter
+            //? TODO: /// activity.
+            //? TODO: ///
+            //? TODO: /// NOTE: This is usually the same as `sw_control_flow_tx`.
+            //? TODO: in sw_control_flow_rx: ?SoftwareControlFlow;
+
+            //? TODO: /// Selects which software control flow words are transmitted when
+            //? TODO: /// the own receive buffer is full.
+            //? TODO: ///
+            //? TODO: /// NOTE: This is usually the same as `sw_control_flow_rx`.
+            //? TODO: in sw_control_flow_tx: ?SoftwareControlFlow;
+
+            in acceptable_baud_error: f32; //?
+
+            out current_baud_rate:       u32;
+            out current_data_bits:       u8;
+            out current_stop_bits:       StopBits;
+            out current_parity:          Parity;
+            out current_control_flow:    ControlFlow;
+            out current_sw_control_flow_rx: SoftwareControlFlow;
+            out current_sw_control_flow_tx: SoftwareControlFlow;
+
+            error InvalidHandle;
+
+            /// The actual baud rate diverges more than `acceptable_baud_error` from the requested baud rate.
+            error ImpreciseBaudRate;
+
+            /// The requested word size is not supported by this serial port.
+            error UnsupportedDataBits;
+
+            /// The requested number of stop bits is not supported by this serial port.
+            error UnsupportedStopBits;
+
+            /// The requested parity is not supported by this serial port.
+            error UnsupportedParity;
+
+            /// The requested control flow (or its configuration) is not supported by this serial port.
+            error UnsupportedControlFlow;
+        }
+
+        /// Changes the output control lanes of the serial port.
+        async_call control {
+            in  port:    SerialPort;
+
+            //? /// The new state that should be applied for DTR (Data Terminal Ready).
+            //? TODO: in  dtr: ?bool;
+
+            /// The new state that should be applied for RTS (Request To Send).
+            ///
+            //? /// NOTE: This is also called `RTR` when used for modern hardware control flow.
+            //? TODO: in  rts: ?bool;
+
+            error InvalidHandle;
+
+            /// The serial port does not support changing the control flow mode.
+            error Unsupported;
+
+            /// The control lanes cannot be changed as hardware control flow is active.
+            error ControlFlowActive;
+        }
+
+        /// Reads all control lanes of the serial port.
+        async_call query_control {
+            in  port:    SerialPort;
+
+            /// Data Terminal Ready
+            out dtr: bool;
+
+            /// Data Carrier Detect
+            out dcd: bool;
+
+            /// Data Set Ready
+            out dsr: bool;
+
+            /// Ring Indicator
+            out ring: bool;
+
+            /// Request To Send
+            ///
+            /// NOTE: This is also called `RTR` when used for modern hardware control flow.
+            out rts: bool;
+
+            /// Clear To Send
+            out cts: bool;
+
+            error InvalidHandle;
+
+            /// The serial port does not support control flow lanes.
+            error Unsupported;
+        }
+
+        /// Writes data to the serial port.
+        async_call write {
+            in  port:    SerialPort;
+            in  data:    bytestr;
+
+            /// Number of words written
+            out written: usize;
+
+            error InvalidHandle;
+
+            /// The serial port uses a word size that needs more than 8 bits per word.
+            error WordSizeMismatch;
+        }
+
+        /// Reads data from a serial port.
+        async_call read {
+            in port: SerialPort;
+            in data: bytebuf;
+
+            /// Number of words read from the serial port.
+            out read: usize;
+
+            /// This contains the reason why not *all* data was read.
+            out stop_reason: SerialPortError;
+
+            error InvalidHandle;
+
+            /// The serial port uses a word size that needs more than 8 bits per word.
+            error WordSizeMismatch;
+        }
+
+        ///
+        /// Sends a break signal.
+        ///
+        /// LEARN: A break signal means that the TX line is held *low* for a given
+        ///        duration larger than a single word. This way, the receiver can
+        ///        recognize an event that will be transferred "out of band" and
+        ///        allows to send an event to the receiver.
+        ///
+        ///        In DMX, this is used to signal the start of a new frame.
+        ///
+        async_call break {
+            in port:  SerialPort;
+
+            in duration: Duration;
+
+            error InvalidHandle;
+
+            /// The serial port does not support sending breaks.
+            error Unsupported;
+        }
+
+
+        enum SerialPortError : u8 {
+            item none = 0;
+            item break_detected = 1;
+            item parity_error = 2;
+        }
+
+        enum StopBits : u8 {
+            item one = 1;
+            item one_and_half = 2;
+            item two = 3;
+        }
+
+        enum Parity : u8 {
+            /// No parity will be used.
+            item none = 0;
+
+            /// The parity bit will contain a `1` if the sum of all data bits are even.
+            item even = 1;
+
+            /// The parity bit will contain a `1` if the sum of all data bits are odd.
+            item odd = 2;
+
+            /// The parity bit will always contain a `1`.
+            item mark = 3;
+
+            /// The parity bit will always contain a `0`.
+            item space =  4;
+        }
+
+        enum ControlFlow : u8 {
+            /// No explicit control flow is used.
+            item none = 0;
+
+            /// This mode is usually called the *hardware control flow* and uses two
+            /// signals that are connected cross-over between both communication partners.
+            ///
+            /// - `RTR` is an active-low signal called *Ready To Receive* which signals the
+            ///   opposite part that we can actually receive data right now. If the signal
+            ///   is high, the opposite part may not send data.
+            /// - `CTS` is an active-low signal called *Clear To Send* which receives the `RTR`
+            ///   signal from the opposite part. When this signal is low, our transmitter is
+            ///   allowed to send data. If the signal is high, the transmitter has to stop sending
+            ///   and a timeout may occur.
+            ///
+            /// LORE: This is usually called RTS/CTS control flow, but
+            ///       in that configuration the RTS (request to send) signal
+            ///       is repurposed into a RTR (ready to receive) signal which
+            ///       tells the communication partner that you are able to receive
+            ///       data.
+            ///       In Ashet OS, the technically correct term is used as we don't
+            ///       use the legacy half-duplex control flow where a request to
+            ///       send is performed.
+            item rtr_cts = 1;
+
+            /// This mode is usually called *software control flow* and uses two special bytes
+            /// that can inhibit or allow transmitting bytes.
+            ///
+            /// The two special word are called `XON` (Transmitter On) and `XOFF` (Transmitter Off).
+            ///
+            /// When a receiver receives the `XOFF` word, it turns off the sender after the current
+            /// byte has been processed. As soon as the `XON` word is received, the sender is allowed
+            /// to continue sending data.
+            ///
+            /// `XON` and `XOFF` can be both sent by software or hardware.
+            ///
+            /// NOTE: Using this control flow prevents sending *raw binary* data, as `XON` and `XOFF`
+            ///       are regular data words that can be contained in the sent data.
+            ///
+            ///       Thus, this control flow mode should only be used with textual data which does
+            ///       not conflict with the chosen control characters.
+            ///
+            item xon_xoff = 2;
+        }
+
+        struct SoftwareControlFlow {
+            /// The data word which will turn on the transmitter.
+            ///
+            /// NOTE: This is usually the ASCII `DC1` character which is encoded as the value `0x11`.
+            ///
+            /// LORE: Serial ports usually support 5 to 8 data bits, but some serial ports
+            ///       can also use much higher word sizes.
+            ///
+            ///       This is allows a future expansion to support word sizes up to 32 bits
+            ///       without breaking existing code.
+            field x_on:  u32 = 0x11; //? ASCII DC1 / XON
+
+            /// The data word which will turn off the transmitter.
+            ///
+            /// NOTE: This is usually the ASCII `DC3` character which is encoded as the value `0x13`.
+            ///
+            /// LORE: Serial ports usually support 5 to 8 data bits, but some serial ports
+            ///       can also use much higher word sizes.
+            ///
+            ///       This is allows a future expansion to support word sizes up to 32 bits
+            ///       without breaking existing code.
+            field x_off: u32 = 0x13; //? ASCII DC3 / XOFF
+        }
+    }
+
+    ///
+    /// Functions and types related to the I²C bus.
+    ///
+    namespace i2c {
+        enum BusID : u32  {
+            ...
+        }
+
+        syscall enumerate {
+            in list: ?[]BusID;
+
+            out count: usize;
+        }
+
+        /// Queries information about the given serial port id.
+        syscall query_metadata {
+            in    id:       BusID;
+            in    name_buf: ?[]u8;
+
+            out   name_len: usize;
+
+            /// The given id does not exist.
+            error NotFound;
+        }
+
+        resource Bus { }
+
+        syscall open {
+            in id: BusID;
+
+            out bus: Bus;
+
+            /// The given id does not exist.
+            error NotFound;
+
+            error SystemResources;
+        }
+
+        /// Performs a sequence of I²C operations on the bus without interruption.
+        ///
+        /// This function allows to ping devices, read or write data from/to the devices.
+        ///
+        /// The operations are performed first-to-last without interruption. If an operation fails, the
+        /// sequence will be aborted.
+        ///
+        /// LORE: This function was introduced instead of separate read and write functions, as it's
+        ///       sometimes necessary for certain I²C ICs (like EEPROMS) to have "atomic" read-after-write
+        ///       operations.
+        ///
+        ///       As both a singular read and a singular write can be expressed as a batch of one operation,
+        ///       this is the only available function on the I²C bus.
+        ///
+        ///       **Example:**
+        ///       Typical I²C EEPROMS have an internally maintained "memory cursor" which is advanced for every
+        ///       read operation. All write operations will update the cursor also for read operations.
+        ///
+        ///       This means that in an OS context, where scheduling can interrupt our process, performing a split
+        ///       "update cursor" write operation and "read data" read operation can be interrupted by another process
+        ///       also scheduling writes inbetween. This means that after we've set up our memory cursor to the desired
+        ///       address another process would change that before we read and we'll read data from the wrong memory
+        ///       location.
+        ///
+        ///       To prevent such a situation, this batch interface was introduced.
+        ///
+        async_call Execute {
+            in bus: Bus;
+
+            /// A mutable sequence of I²C operations. Will be processed first-to last and
+            /// the pointed `Operation`s will be changed during
+            in sequence: []Operation;
+
+            /// The number of successfully processed elements from `sequence`.
+            ///
+            /// On success, the call returns exactly the length of the sequence, otherwise
+            /// it returns the index of the element that failed.
+            out count: usize;
+
+            error InvalidHandle;
+
+            /// An operation in the `sequence` contained an invalid address.
+            error InvalidAddress;
+
+            /// An operation that isn't `ping` was trying to process zero bytes.
+            error EmptyOperation;
+
+            /// An error happened during processing. Read `sequence[].error` to see which operations failed.
+            error ExecutionFailed;
+        }
+
+        struct Operation {
+            /// The 7- or 10 bit device that should be addressed.
+            ///
+            /// NOTE: Values above `1023` will always make the batch execution fail.
+            field address: u16;
+
+            /// The kind of operation that should be performed.
+            field type: Type;
+
+            /// The data which should either be written or read.
+            ///
+            /// NOTE: If the `operation` is `BatchOp.read`, the buffer will
+            ///       overwritten by the OS. All other operations treat this
+            ///       buffer as immutable.
+            field data: bytebuf;
+
+            /// The number of processed bytes inside `data`.
+            ///
+            /// NOTE: This field can be left uninitialized and will be overwritten by the OS
+            ///       with the result of the operation.
+            ///       If the batch item wasn't scheduled, the resulting value will be zero.
+            field processed: usize = 0;
+
+            /// The error that happened when processing this batch item. On success, this will
+            /// be set to `Error.none`.
+            ///
+            /// NOTE: This field can be left uninitialized and will be overwritten by the OS
+            ///       with the result of the operation.
+            ///       If the batch item wasn't scheduled, the resulting value will be `Error.aborted`.
+            field @"error": Error;
+
+            enum Type : u8 {
+                /// The device will be addressed, but no read or write operation will be performed.
+                /// This can be used to detect if certain devices are present.
+                ///
+                /// NOTE: Success of this operation can be detected by the resulting error code.
+                item ping = 0;
+
+                /// Reads the given amount of bytes from the device.
+                item read = 1;
+
+                /// Writes the given amount of bytes to the device.
+                item write = 2;
+            }
+
+            enum Error : u8 {
+                /// This batch item was fully processed.
+                item none = 0;
+
+                /// No device did acknowledge the address.
+                item device_not_found = 1;
+
+                /// While writing the data, the device returned a NAK.
+                ///
+                /// NOTE: The ACK/NAK during the addressing phase is handled by `device_not_found`.
+                item no_acknowledge = 2;
+
+                /// A previous batch item errored and this item wasn't executed at all.
+                item aborted = 3;
+
+                /// A bus participant did stretch the clock for too long.
+                item timeout = 4;
+
+                /// During the processing of the operation, a hardware error occurred.
+                item fault = 5;
+            }
+        }
+    }
 }

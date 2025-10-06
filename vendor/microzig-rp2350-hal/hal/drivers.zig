@@ -5,6 +5,7 @@
 const std = @import("std");
 const microzig = @import("microzig");
 const hal = @import("../hal.zig");
+const mdf = microzig.drivers;
 
 const drivers = microzig.drivers.base;
 const time = microzig.drivers.time;
@@ -22,22 +23,26 @@ pub const I2C_Device = struct {
     pub const WriteError = Datagram_Device.WriteError;
     pub const ReadError = Datagram_Device.ReadError;
 
-    /// Selects I²C bus should be used.
+    /// Selects which I²C bus should be used.
     bus: hal.i2c.I2C,
 
     /// The address of our I²C device.
     address: hal.i2c.Address,
 
-    pub fn init(bus: hal.i2c.I2C, address: hal.i2c.Address) I2C_Device {
+    /// Default timeout duration
+    timeout: ?mdf.time.Duration = null,
+
+    pub fn init(bus: hal.i2c.I2C, address: hal.i2c.Address, timeout: ?mdf.time.Duration) I2C_Device {
         return .{
             .bus = bus,
             .address = address,
+            .timeout = timeout,
         };
     }
 
     pub fn datagram_device(dev: *I2C_Device) Datagram_Device {
         return .{
-            .object = dev,
+            .ptr = dev,
             .vtable = &vtable,
         };
     }
@@ -51,21 +56,29 @@ pub const I2C_Device = struct {
     }
 
     pub fn write(dev: I2C_Device, datagram: []const u8) !void {
-        try dev.bus.write_blocking(dev.address, datagram, null);
+        try dev.bus.write_blocking(dev.address, datagram, dev.timeout);
     }
 
     pub fn writev(dev: I2C_Device, datagrams: []const []const u8) !void {
-        try dev.bus.writev_blocking(dev.address, datagrams, null);
+        try dev.bus.writev_blocking(dev.address, datagrams, dev.timeout);
     }
 
     pub fn read(dev: I2C_Device, datagram: []u8) !usize {
-        try dev.bus.read_blocking(dev.address, datagram, null);
+        try dev.bus.read_blocking(dev.address, datagram, dev.timeout);
         return datagram.len;
     }
 
     pub fn readv(dev: I2C_Device, datagrams: []const []u8) !usize {
-        try dev.bus.readv_blocking(dev.address, datagrams, null);
+        try dev.bus.readv_blocking(dev.address, datagrams, dev.timeout);
         return microzig.utilities.Slice_Vector([]u8).init(datagrams).size();
+    }
+
+    pub fn write_then_read(dev: I2C_Device, src: []const u8, dst: []u8) !void {
+        try dev.bus.write_then_read_blocking(dev.address, src, dst, dev.timeout);
+    }
+
+    pub fn writev_then_readv(dev: I2C_Device, write_chunks: []const []const u8, read_chunks: []const []u8) !void {
+        try dev.bus.writev_then_readv_blocking(dev.address, write_chunks, read_chunks, dev.timeout);
     }
 
     const vtable = Datagram_Device.VTable{
@@ -73,6 +86,7 @@ pub const I2C_Device = struct {
         .disconnect_fn = null,
         .writev_fn = writev_fn,
         .readv_fn = readv_fn,
+        .writev_then_readv_fn = writev_then_readv_fn,
     };
 
     fn writev_fn(dd: *anyopaque, chunks: []const []const u8) WriteError!void {
@@ -81,13 +95,13 @@ pub const I2C_Device = struct {
             error.DeviceNotPresent,
             error.NoAcknowledge,
             error.TargetAddressReserved,
-            => return error.Unsupported,
+            => error.Unsupported,
 
             error.UnknownAbort,
             error.TxFifoFlushed,
-            => return error.IoError,
+            => error.IoError,
 
-            error.Timeout => return error.Timeout,
+            error.Timeout => error.Timeout,
             error.NoData => {},
         };
     }
@@ -98,14 +112,31 @@ pub const I2C_Device = struct {
             error.DeviceNotPresent,
             error.NoAcknowledge,
             error.TargetAddressReserved,
-            => return error.Unsupported,
+            => error.Unsupported,
 
             error.UnknownAbort,
             error.TxFifoFlushed,
-            => return error.IoError,
+            => error.IoError,
 
-            error.Timeout => return error.Timeout,
+            error.Timeout => error.Timeout,
             error.NoData => return 0,
+        };
+    }
+
+    fn writev_then_readv_fn(dd: *anyopaque, write_chunks: []const []const u8, read_chunks: []const []u8) (WriteError || ReadError)!void {
+        const dev: *I2C_Device = @ptrCast(@alignCast(dd));
+        return dev.writev_then_readv(write_chunks, read_chunks) catch |err| switch (err) {
+            error.DeviceNotPresent,
+            error.NoAcknowledge,
+            error.TargetAddressReserved,
+            => error.Unsupported,
+
+            error.UnknownAbort,
+            error.TxFifoFlushed,
+            => error.IoError,
+
+            error.Timeout => error.Timeout,
+            error.NoData => {},
         };
     }
 };
@@ -117,10 +148,13 @@ pub const SPI_Device = struct {
     pub const ConnectError = Datagram_Device.ConnectError;
     pub const WriteError = Datagram_Device.WriteError;
     pub const ReadError = Datagram_Device.ReadError;
+    pub const ChipSelect = struct {
+        pin: hal.gpio.Pin,
+        active_level: Digital_IO.State = .low,
+    };
 
     bus: hal.spi.SPI,
-    chip_select: hal.gpio.Pin,
-    active_level: Digital_IO.State,
+    chip_select: ?ChipSelect = null,
     rx_dummy_data: u8,
 
     pub const InitOptions = struct {
@@ -131,19 +165,16 @@ pub const SPI_Device = struct {
         rx_dummy_data: u8 = 0x00,
     };
 
-    pub fn init(
-        bus: hal.spi.SPI,
-        chip_select: hal.gpio.Pin,
-        options: InitOptions,
-    ) SPI_Device {
-        chip_select.set_function(.sio);
-        chip_select.set_direction(.out);
+    pub fn init(bus: hal.spi.SPI, chip_select: ChipSelect, rx_dummy_data: u8) SPI_Device {
+        if (chip_select) |cs| {
+            cs.pin.set_function(.sio);
+            cs.pin.set_direction(.out);
+        }
 
         var dev: SPI_Device = .{
             .bus = bus,
             .chip_select = chip_select,
-            .active_level = options.active_level,
-            .rx_dummy_data = options.rx_dummy_data,
+            .rx_dummy_data = rx_dummy_data,
         };
         // set the chip select to "deselect" the device
         dev.disconnect();
@@ -152,34 +183,37 @@ pub const SPI_Device = struct {
 
     pub fn datagram_device(dev: *SPI_Device) Datagram_Device {
         return .{
-            .object = dev,
+            .ptr = dev,
             .vtable = &vtable,
         };
     }
 
     pub fn connect(dev: SPI_Device) !void {
-        const actual_level = dev.chip_select.read();
+        if (dev.chip_select) |cs| {
+            const actual_level = cs.pin.read();
 
-        const target_level: u1 = switch (dev.active_level) {
-            .low => 0,
-            .high => 1,
-        };
+            const target_level: u1 = switch (cs.active_level) {
+                .low => 0,
+                .high => 1,
+            };
 
-        if (target_level == actual_level)
-            return error.DeviceBusy;
+            if (target_level == actual_level)
+                return error.DeviceBusy;
 
-        dev.chip_select.put(target_level);
+            cs.pin.put(target_level);
+        }
     }
 
     pub fn disconnect(dev: SPI_Device) void {
-        dev.chip_select.put(switch (dev.active_level) {
-            .low => 1,
-            .high => 0,
-        });
+        if (dev.chip_select) |cs|
+            cs.pin.put(switch (cs.active_level) {
+                .low => 1,
+                .high => 0,
+            });
     }
 
     pub fn write(dev: SPI_Device, datagrams: []const u8) !void {
-        dev.bus.writev_blocking(u8, datagrams);
+        dev.bus.write_blocking(u8, datagrams);
     }
 
     pub fn writev(dev: SPI_Device, datagrams: []const []const u8) !void {
@@ -244,7 +278,7 @@ pub const GPIO_Device = struct {
 
     pub fn digital_io(dio: *GPIO_Device) Digital_IO {
         return Digital_IO{
-            .object = dio,
+            .ptr = dio,
             .vtable = &vtable,
         };
     }
@@ -309,7 +343,7 @@ pub const ClockDevice = struct {
     pub fn clock_device(td: *ClockDevice) Clock_Device {
         _ = td;
         return Clock_Device{
-            .object = undefined,
+            .ptr = undefined,
             .vtable = &vtable,
         };
     }
@@ -321,5 +355,47 @@ pub const ClockDevice = struct {
         _ = td;
         const t = hal.time.get_time_since_boot().to_us();
         return @enumFromInt(t);
+    }
+};
+
+const Cyw43PioSpi = microzig.hal.cyw49_pio_spi.Cyw43PioSpi;
+const Cyw43_Spi = microzig.drivers.wireless.Cyw43_Spi;
+const Cyw43_Bus = microzig.drivers.wireless.Cyw43_Bus;
+const Cyw43_Runner = microzig.drivers.wireless.Cyw43_Runner;
+
+pub const CYW43_Pio_Device_Config = struct {
+    spi: hal.cyw49_pio_spi.Cyw43PioSpi_Config,
+    pwr_pin: hal.gpio.Pin,
+};
+
+// TODO: CYW43 top level struct just for testing purpose (please redesign)
+pub const CYW43_Pio_Device = struct {
+    const Self = @This();
+    pwr_pin: GPIO_Device = undefined,
+    cyw43_pio_spi: Cyw43PioSpi = undefined,
+    cyw43_spi: Cyw43_Spi = undefined,
+    cyw43_bus: Cyw43_Bus = undefined,
+    cyw43_runner: Cyw43_Runner = undefined,
+
+    pub fn init(this: *Self, config: CYW43_Pio_Device_Config) !void {
+        std.log.info("before gpio init", .{});
+
+        this.cyw43_pio_spi = try hal.cyw49_pio_spi.init(config.spi);
+        this.cyw43_spi = this.cyw43_pio_spi.cyw43_spi();
+
+        config.pwr_pin.set_function(.sio);
+        config.pwr_pin.set_direction(.out);
+        var pwr_gpio = GPIO_Device.init(config.pwr_pin);
+
+        this.cyw43_bus = .{ .pwr_pin = pwr_gpio.digital_io(), .spi = &this.cyw43_spi, .internal_delay_ms = hal.time.sleep_ms };
+        this.cyw43_runner = .{ .bus = &this.cyw43_bus, .internal_delay_ms = hal.time.sleep_ms };
+
+        try this.cyw43_runner.init();
+    }
+
+    pub fn test_loop(this: *Self) void {
+        while (true) {
+            this.cyw43_runner.run();
+        }
     }
 };

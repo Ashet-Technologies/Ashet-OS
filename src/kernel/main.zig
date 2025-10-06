@@ -26,21 +26,11 @@ pub const random = @import("components/random.zig");
 pub const sync = @import("components/sync.zig");
 pub const pipes = @import("components/pipes.zig");
 pub const ipc = @import("components/ipc.zig");
+pub const io = @import("components/io.zig");
 
 pub const ports = @import("port/targets.zig");
 
-pub const utils = struct {
-    pub const mmio = @import("utils/mmio.zig");
-    pub const fmt = @import("utils/fmt.zig");
-
-    pub inline fn volatile_read(comptime T: type, ptr: *volatile T) T {
-        return ptr.*;
-    }
-
-    pub inline fn volatile_write(comptime T: type, ptr: *volatile T, value: T) void {
-        ptr.* = value;
-    }
-};
+pub const utils = @import("utils/utils.zig");
 
 pub const platform_id: ports.Platform = machine_info.platform_id;
 pub const machine_id: ports.Machine = machine_info.machine_id;
@@ -76,11 +66,11 @@ pub const log_levels = struct {
     pub var ashex_loader: LogLevel = .info;
     pub var drivers: LogLevel = .info;
     pub var elf_loader: LogLevel = .info;
-    pub var filesystem: LogLevel = .debug;
+    pub var filesystem: LogLevel = .warn;
     pub var gui: LogLevel = .debug;
     pub var io: LogLevel = .info;
     pub var main: LogLevel = .debug;
-    pub var memory: LogLevel = .info;
+    pub var memory: LogLevel = .debug;
     pub var mprot: LogLevel = .info; // very noise modules!
     pub var multitasking: LogLevel = .debug;
     pub var network: LogLevel = .info;
@@ -89,10 +79,14 @@ pub const log_levels = struct {
     pub var resources: LogLevel = .info;
     pub var scheduler: LogLevel = .debug;
     pub var ui: LogLevel = .debug;
+    pub var graphics: LogLevel = .warn;
     pub var input: LogLevel = .info;
     pub var video: LogLevel = .debug;
-    pub var storage: LogLevel = .info; // very noise modules!
+    pub var storage: LogLevel = .warn; // very noise modules!
+    pub var gpt_part: LogLevel = .warn; // very noise modules!
+    pub var mbr_part: LogLevel = .warn; // very noise modules!
     pub var x86_vmm: LogLevel = .info; // very noise modules!
+    pub var i2c: LogLevel = .info;
 
     pub var wayland_display: LogLevel = .info;
 
@@ -102,6 +96,11 @@ pub const log_levels = struct {
     pub var @"virtio-input": LogLevel = .info;
     pub var @"virtio-blog": LogLevel = .debug;
     pub var kbc: LogLevel = .info;
+    pub var enc28j60: LogLevel = .info;
+    pub var hstx_dvi: LogLevel = .info;
+    pub var nested_i2c_device: LogLevel = .debug;
+
+    pub var propio_lowlevel: LogLevel = .info;
 
     // external modules:
     pub var fatfs: LogLevel = .info;
@@ -158,12 +157,14 @@ fn kernelMain() noreturn {
     // much dynamic memory we have available:
 
     Debug.setTraceLoc(@src());
+    log.info("initialize linear memory...", .{});
     memory.initializeLinearMemory();
 
     // Initialize scheduler before HAL as it doesn't require anything except memory pages for thread
     // storage, queues and stacks.
 
     Debug.setTraceLoc(@src());
+    log.info("initialize scheduler...", .{});
     scheduler.initialize();
 
     full_panic = true;
@@ -171,10 +172,8 @@ fn kernelMain() noreturn {
     log.info("entering checked main()", .{});
     main() catch {
         if (@errorReturnTrace()) |error_trace| {
-            if (builtin.os.tag != .freestanding) {
-                // hosted environment:
-                std.debug.dumpStackTrace(error_trace.*);
-            }
+            Debug.write("error return trace:\r\n");
+            Debug.printStackTrace("  ", error_trace, Debug.println);
         }
 
         @panic("system failure");
@@ -242,8 +241,6 @@ fn main() !void {
 
     log.info("startup network...", .{});
     try network.start();
-
-    // try ui.start();
 
     {
         log.info("starting entry point thread...", .{});
@@ -323,6 +320,7 @@ fn global_kernel_tick(_: ?*anyopaque) callconv(.C) u32 {
         video.tick();
         input.tick();
         time.tick();
+        io.i2c.tick();
         scheduler.yield();
     }
 }
@@ -332,7 +330,7 @@ pub const global_hotkeys = struct {
         if (!event.pressed)
             return false;
         if (event.modifiers.alt) {
-            switch (event.key) {
+            switch (event.usage) {
                 .f1 => @panic("F1 induced kernel panic"),
                 .f10 => scheduler.dumpStats(),
                 .f11 => network.dumpStats(),
@@ -347,6 +345,9 @@ pub const global_hotkeys = struct {
                         std.fmt.fmtIntSizeBin(memory.page_size * total_pages),
                         100 - (100 * free_pages) / total_pages,
                     });
+                    if (event.modifiers.shift) {
+                        memory.debug.dumpPageMap();
+                    }
                 },
 
                 else => {},
@@ -484,6 +485,8 @@ fn kernel_log_once(comptime scope: @Type(.enum_literal)) void {
     T.print();
 }
 
+var log_exclusive_lock: utils.SpinLock = .init;
+
 fn kernel_log_fn(
     comptime message_level: std.log.Level,
     comptime scope: @Type(.enum_literal),
@@ -501,16 +504,16 @@ fn kernel_log_fn(
         kernel_log_once(scope);
     }
 
-    const color_code = if (ansi)
+    const color_code = comptime if (ansi)
         switch (message_level) {
-            .err => "\x1B[91m", // red
-            .warn => "\x1B[93m", // yellow
-            .info => "\x1B[97m", // white
-            .debug => "\x1B[90m", // gray
+            .err => utils.ansi.sgi(.fg_bright_red),
+            .warn => utils.ansi.sgi(.fg_bright_yellow),
+            .info => utils.ansi.sgi(.fg_bright_white),
+            .debug => utils.ansi.sgi(.fg_white),
         }
     else
         "";
-    const postfix = if (ansi) "\x1B[0m" else ""; // reset terminal properties
+    const postfix = comptime if (ansi) utils.ansi.sgi(.reset) else ""; // reset terminal properties
 
     const level_txt = comptime switch (message_level) {
         .err => "E",
@@ -523,11 +526,23 @@ fn kernel_log_fn(
     else
         "unscoped";
 
+    const is_in_isr = platform.isInInterruptContext();
+
+    const needs_lock = machine_config.uses_hardware_multithreading;
+
     {
-        var cs = CriticalSection.enter();
-        defer cs.leave();
+        if (needs_lock and !is_in_isr) log_exclusive_lock.lock();
+        defer if (needs_lock and !is_in_isr) log_exclusive_lock.unlock();
+
+        if (is_in_isr) Debug.write("<<");
+        defer if (is_in_isr) Debug.write(">>");
 
         const now = time.Instant.now();
+
+        const machine_prefix = if (machine_config.get_log_prefix) |get_log_prefix|
+            get_log_prefix()
+        else
+            "";
 
         var counting_writer = std.io.countingWriter(Debug.writer());
 
@@ -535,9 +550,11 @@ fn kernel_log_fn(
 
         const now_ms: u64 = @intFromEnum(now);
         var writer = counting_writer.writer();
-        writer.print("{d: >6}.{d:0>3} [{s}] {s}: ", .{
+        writer.print("{d: >6}.{d:0>3}{s}{s} [{s}] {s}: ", .{
             now_ms / 1000,
             now_ms % 1000,
+            if (machine_prefix.len > 0) " " else "",
+            machine_prefix,
             level_txt,
             scope_tag,
         }) catch return;

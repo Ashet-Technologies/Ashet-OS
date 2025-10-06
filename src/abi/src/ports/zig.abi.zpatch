@@ -47,6 +47,8 @@
             WidgetType => .widget_type,
             SyncEvent => .sync_event,
             Mutex => .mutex,
+            io.serial.SerialPort => .io_serial_serial_port,
+            io.i2c.Bus => .io_i2c_bus,
         };  
     }
     pub fn to_type(comptime id: Type) type {
@@ -69,7 +71,9 @@
             .widget_type => WidgetType,
             .sync_event => SyncEvent,
             .mutex => Mutex,
-        };  
+            .io_serial_serial_port => io.serial.SerialPort,
+            .io_i2c_bus => io.i2c.Bus,
+        };
     }
 </patch>
 <patch overlapped.ARC>
@@ -796,5 +800,11 @@
             std.mem.readInt(u16, uuid.bytes[8..10], .big),
             std.mem.readInt(u48, uuid.bytes[10..16], .big),
         });
+    }
+</patch>
+<patch io.i2c>
+    /// Returns true if the I²C address is reserved.
+    pub fn is_reserved_address(addr: u10) bool {
+        return ((addr & 0x78) == 0) or ((addr & 0x78) == 0x78);
     }
 </patch>

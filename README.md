@@ -130,3 +130,5 @@ The results of the compilation are usually disk images, except for a machine bas
   - [RP2350 Datasheet](https://datasheets.raspberrypi.com/rp2350/rp2350-datasheet.pdf)
   - [W25Q128JV Datasheet](https://www.mouser.de/datasheet/2/949/w25q128jv_revf_03272018_plus-1489608.pdf)
 - [Arm® v8-M Architecture Reference Manual](https://developer.arm.com/documentation/ddi0553/latest/)
+- [Virtual I/O Device (VIRTIO) Version 1.3](https://docs.oasis-open.org/virtio/virtio/v1.3/virtio-v1.3.html)
+- [HID Usage Tables for Universal Serial Bus (USB) (Version 1.6)](https://usb.org/sites/default/files/hut1_6.pdf)

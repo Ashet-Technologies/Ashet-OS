@@ -3,6 +3,8 @@ const ashet = @import("../../main.zig");
 const logger = std.log.scoped(.@"virtio-input");
 const virtio = @import("virtio");
 
+const evdev = @import("evdev.zig");
+
 const Virtio_Input_Device = @This();
 const Driver = ashet.drivers.Driver;
 
@@ -192,19 +194,6 @@ fn getDeviceEvent(dev: *Virtio_Input_Device) ?virtio.input.Event {
     return evt;
 }
 
-fn mapToMouseButton(val: u16) ?ashet.abi.MouseButton {
-    return switch (val) {
-        272 => .left,
-        273 => .right,
-        274 => .middle,
-        275 => .nav_previous,
-        276 => .nav_next,
-        337 => .wheel_up,
-        336 => .wheel_down,
-        else => null,
-    };
-}
-
 fn poll(driver: *Driver) void {
     const device: *Virtio_Input_Device = driver.resolve(Virtio_Input_Device, "driver");
 
@@ -217,7 +206,7 @@ fn poll(driver: *Driver) void {
                 switch (event_type) {
                     .unset => {},
                     .cess_key => ashet.input.push_raw_event(.{ .keyboard = .{
-                        .scancode = evt.code,
+                        .usage = evdev.keyFromEvdev(evt.code) orelse continue,
                         .down = evt.value != 0,
                     } }),
                     else => logger.warn("unhandled keyboard event: {}", .{event_type}),
@@ -228,7 +217,7 @@ fn poll(driver: *Driver) void {
                     .unset => {},
                     .cess_key => {
                         ashet.input.push_raw_event(.{ .mouse_button = .{
-                            .button = mapToMouseButton(evt.code) orelse continue,
+                            .button = evdev.mouseFromEvdev(evt.code) orelse continue,
                             .down = (evt.value != 0),
                         } });
                     },

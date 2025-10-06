@@ -1,0 +1,14 @@
+
+
+[package]
+name = "lookup"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "lookup"
+crate-type = ["staticlib"]
+
+
+[dependencies]
+addr2line = "0.25.0"

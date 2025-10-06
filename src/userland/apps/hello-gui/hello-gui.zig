@@ -96,11 +96,10 @@ pub fn main() !void {
             },
 
             .key_press, .key_release => {
-                std.log.info("key {s}: pressed={}, scancode={}, key={s}, text='{?}'", .{
+                std.log.info("key {s}: pressed={}, usage={s}, text='{?}'", .{
                     @tagName(event.event_type)["key_".len..],
                     event.keyboard.pressed,
-                    event.keyboard.scancode,
-                    @tagName(event.keyboard.key),
+                    @tagName(event.keyboard.usage),
                     if (event.keyboard.text_ptr) |str|
                         std.unicode.fmtUtf8(str[0..event.keyboard.text_len])
                     else

@@ -531,11 +531,13 @@ pub const udp = struct {
             const socket = ashet.memory.type_pool(Socket).alloc() catch return error.SystemResources;
             errdefer ashet.memory.type_pool(Socket).free(socket);
 
-            const pcb = c.udp_new() orelse return error.SystemResources;
-            errdefer comptime unreachable;
+            socket.* = .{
+                .pcb = c.udp_new() orelse return error.SystemResources,
+            };
+            errdefer @compileError("can't return errors here!");
 
             // c.udp_arg(pcb, socket);
-            c.udp_recv(pcb, handleIncomingPacket, socket);
+            c.udp_recv(socket.pcb, handleIncomingPacket, socket);
 
             return socket;
         }

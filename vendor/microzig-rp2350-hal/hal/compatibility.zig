@@ -24,13 +24,10 @@ pub const arch: Arch = switch (chip) {
         @compileError(std.fmt.comptimePrint("Unsupported cpu for RP2040: \"{s}\"", .{microzig.config.cpu_name})),
     .RP2350 => if (std.mem.eql(u8, microzig.config.cpu_name, "cortex_m33"))
         .arm
-    else if (std.mem.eql(u8, microzig.config.cpu_name, "generic_rv32"))
+    else if (std.mem.eql(u8, microzig.config.cpu_name, "hazard3"))
         .riscv
     else
         @compileError(std.fmt.comptimePrint("Unsupported cpu for RP2350: \"{s}\"", .{microzig.config.cpu_name})),
 };
 
-pub const dma_channel_count = switch (chip) {
-    .RP2040 => 12,
-    .RP2350 => 16,
-};
+pub const has_rp2350b = chip == .RP2350 and @hasDecl(microzig.board, "has_rp2350b") and microzig.board.has_rp2350b;

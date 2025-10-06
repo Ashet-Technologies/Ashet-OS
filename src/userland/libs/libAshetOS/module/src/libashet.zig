@@ -557,150 +557,150 @@ pub const fs = struct {
     };
 };
 
-// pub const net = struct {
-//     pub const EndPoint = abi.EndPoint;
-//     pub const IP = abi.IP;
-//     pub const IPv4 = abi.IPv4;
-//     pub const IPv6 = abi.IPv6;
+pub const net = struct {
+    pub const EndPoint = abi.network.EndPoint;
+    pub const IP = abi.network.IP;
+    pub const IPv4 = abi.network.IPv4;
+    pub const IPv6 = abi.network.IPv6;
 
-//     pub const Tcp = struct {
-//         sock: abi.TcpSocket,
+    //     pub const Tcp = struct {
+    //         sock: abi.TcpSocket,
 
-//         pub fn open() !Tcp {
-//             var sock: abi.TcpSocket = undefined;
-//             try abi.tcp.CreateError.throw(abi.syscalls.@"ashet.network.tcp.createSocket"(&sock));
-//             return Tcp{ .sock = sock };
-//         }
+    //         pub fn open() !Tcp {
+    //             var sock: abi.TcpSocket = undefined;
+    //             try abi.tcp.CreateError.throw(abi.syscalls.@"ashet.network.tcp.createSocket"(&sock));
+    //             return Tcp{ .sock = sock };
+    //         }
 
-//         pub fn close(tcp: *Tcp) void {
-//             abi.syscalls.@"ashet.network.tcp.destroySocket"(tcp.sock);
-//             tcp.* = undefined;
-//         }
+    //         pub fn close(tcp: *Tcp) void {
+    //             abi.syscalls.@"ashet.network.tcp.destroySocket"(tcp.sock);
+    //             tcp.* = undefined;
+    //         }
 
-//         pub fn bind(tcp: *Tcp, endpoint: EndPoint) !EndPoint {
-//             const out = try overlapped.performOne(abi.tcp.Bind, .{
-//                 .socket = tcp.sock,
-//                 .bind_point = endpoint,
-//             });
-//             return out.bind_point;
-//         }
+    //         pub fn bind(tcp: *Tcp, endpoint: EndPoint) !EndPoint {
+    //             const out = try overlapped.performOne(abi.tcp.Bind, .{
+    //                 .socket = tcp.sock,
+    //                 .bind_point = endpoint,
+    //             });
+    //             return out.bind_point;
+    //         }
 
-//         pub fn connect(tcp: *Tcp, endpoint: EndPoint) !void {
-//             _ = try overlapped.performOne(abi.tcp.Connect, .{
-//                 .socket = tcp.sock,
-//                 .target = endpoint,
-//             });
-//         }
+    //         pub fn connect(tcp: *Tcp, endpoint: EndPoint) !void {
+    //             _ = try overlapped.performOne(abi.tcp.Connect, .{
+    //                 .socket = tcp.sock,
+    //                 .target = endpoint,
+    //             });
+    //         }
 
-//         pub fn write(tcp: *Tcp, data: []const u8) abi.tcp.Send.Error!usize {
-//             const out = try overlapped.performOne(abi.tcp.Send, .{
-//                 .socket = tcp.sock,
-//                 .data_ptr = data.ptr,
-//                 .data_len = data.len,
-//             });
-//             return out.bytes_sent;
-//         }
+    //         pub fn write(tcp: *Tcp, data: []const u8) abi.tcp.Send.Error!usize {
+    //             const out = try overlapped.performOne(abi.tcp.Send, .{
+    //                 .socket = tcp.sock,
+    //                 .data_ptr = data.ptr,
+    //                 .data_len = data.len,
+    //             });
+    //             return out.bytes_sent;
+    //         }
 
-//         pub fn read(tcp: *Tcp, buffer: []u8) abi.tcp.Receive.Error!usize {
-//             const out = try overlapped.performOne(abi.tcp.Receive, .{
-//                 .socket = tcp.sock,
-//                 .buffer_ptr = buffer.ptr,
-//                 .buffer_len = buffer.len,
-//                 .read_all = false, // emulate classic read
-//             });
-//             return out.bytes_received;
-//         }
+    //         pub fn read(tcp: *Tcp, buffer: []u8) abi.tcp.Receive.Error!usize {
+    //             const out = try overlapped.performOne(abi.tcp.Receive, .{
+    //                 .socket = tcp.sock,
+    //                 .buffer_ptr = buffer.ptr,
+    //                 .buffer_len = buffer.len,
+    //                 .read_all = false, // emulate classic read
+    //             });
+    //             return out.bytes_received;
+    //         }
 
-//         pub const Writer = std.io.Writer(*Tcp, abi.tcp.Send.Error, write);
-//         pub fn writer(tcp: *Tcp) Writer {
-//             return Writer{ .context = tcp };
-//         }
+    //         pub const Writer = std.io.Writer(*Tcp, abi.tcp.Send.Error, write);
+    //         pub fn writer(tcp: *Tcp) Writer {
+    //             return Writer{ .context = tcp };
+    //         }
 
-//         pub const Reader = std.io.Reader(*Tcp, abi.tcp.Receive.Error, read);
-//         pub fn reader(tcp: *Tcp) Reader {
-//             return Reader{ .context = tcp };
-//         }
-//     };
+    //         pub const Reader = std.io.Reader(*Tcp, abi.tcp.Receive.Error, read);
+    //         pub fn reader(tcp: *Tcp) Reader {
+    //             return Reader{ .context = tcp };
+    //         }
+    //     };
 
-//     pub const Udp = struct {
-//         const throw = abi.udp.BindError.throw;
+    pub const Udp = struct {
+        const throw = abi.udp.BindError.throw;
 
-//         sock: abi.UdpSocket,
+        sock: abi.UdpSocket,
 
-//         pub fn open() !Udp {
-//             var sock: abi.UdpSocket = undefined;
-//             try abi.udp.CreateError.throw(abi.syscalls.@"ashet.network.udp.createSocket"(&sock));
-//             return Udp{ .sock = sock };
-//         }
+        pub fn open() !Udp {
+            return Udp{
+                .sock = try abi.network.udp.create_socket(),
+            };
+        }
 
-//         pub fn close(udp: *Udp) void {
-//             abi.syscalls.@"ashet.network.udp.destroySocket"(udp.sock);
-//             udp.* = undefined;
-//         }
+        pub fn close(udp: *Udp) void {
+            udp.sock.release();
+            udp.* = undefined;
+        }
 
-//         pub fn bind(udp: Udp, ep: EndPoint) !EndPoint {
-//             const out = try overlapped.performOne(abi.udp.Bind, .{
-//                 .socket = udp.sock,
-//                 .bind_point = ep,
-//             });
-//             return out.bind_point;
-//         }
+        //         pub fn bind(udp: Udp, ep: EndPoint) !EndPoint {
+        //             const out = try overlapped.performOne(abi.udp.Bind, .{
+        //                 .socket = udp.sock,
+        //                 .bind_point = ep,
+        //             });
+        //             return out.bind_point;
+        //         }
 
-//         pub fn connect(udp: Udp, ep: EndPoint) !void {
-//             _ = try overlapped.performOne(abi.udp.Connect, .{
-//                 .socket = udp.sock,
-//                 .target = ep,
-//             });
-//         }
+        //         pub fn connect(udp: Udp, ep: EndPoint) !void {
+        //             _ = try overlapped.performOne(abi.udp.Connect, .{
+        //                 .socket = udp.sock,
+        //                 .target = ep,
+        //             });
+        //         }
 
-//         pub fn disconnect(udp: Udp) !void {
-//             _ = try overlapped.performOne(abi.udp.Disconnect, .{
-//                 .socket = udp.sock,
-//             });
-//         }
+        //         pub fn disconnect(udp: Udp) !void {
+        //             _ = try overlapped.performOne(abi.udp.Disconnect, .{
+        //                 .socket = udp.sock,
+        //             });
+        //         }
 
-//         pub fn send(udp: Udp, message: []const u8) !usize {
-//             if (message.len == 0)
-//                 return 0;
-//             const out = try overlapped.performOne(abi.udp.Send, .{
-//                 .socket = udp.sock,
-//                 .data_ptr = message.ptr,
-//                 .data_len = message.len,
-//             });
-//             return out.bytes_sent;
-//         }
+        //         pub fn send(udp: Udp, message: []const u8) !usize {
+        //             if (message.len == 0)
+        //                 return 0;
+        //             const out = try overlapped.performOne(abi.udp.Send, .{
+        //                 .socket = udp.sock,
+        //                 .data_ptr = message.ptr,
+        //                 .data_len = message.len,
+        //             });
+        //             return out.bytes_sent;
+        //         }
 
-//         pub fn sendTo(udp: Udp, target: EndPoint, message: []const u8) !usize {
-//             if (message.len == 0)
-//                 return 0;
-//             const out = try overlapped.performOne(abi.udp.SendTo, .{
-//                 .socket = udp.sock,
-//                 .receiver = target,
-//                 .data_ptr = message.ptr,
-//                 .data_len = message.len,
-//             });
-//             return out.bytes_sent;
-//         }
+        pub fn sendTo(udp: Udp, target: EndPoint, message: []const u8) !usize {
+            if (message.len == 0)
+                return 0;
+            const out = try overlapped.performOne(abi.network.udp.SendTo, .{
+                .socket = udp.sock,
+                .receiver = target,
+                .data_ptr = message.ptr,
+                .data_len = message.len,
+            });
+            return out.bytes_sent;
+        }
 
-//         pub fn receive(udp: Udp, data: []u8) !usize {
-//             var dummy: EndPoint = undefined;
-//             return try udp.receiveFrom(&dummy, data);
-//         }
+        //         pub fn receive(udp: Udp, data: []u8) !usize {
+        //             var dummy: EndPoint = undefined;
+        //             return try udp.receiveFrom(&dummy, data);
+        //         }
 
-//         pub fn receiveFrom(udp: Udp, sender: *EndPoint, data: []u8) !usize {
-//             if (data.len == 0)
-//                 return 0;
+        pub fn receiveFrom(udp: Udp, sender: *EndPoint, data: []u8) !usize {
+            if (data.len == 0)
+                return 0;
 
-//             const out = try overlapped.performOne(abi.udp.ReceiveFrom, .{
-//                 .socket = udp.sock,
-//                 .buffer_ptr = data.ptr,
-//                 .buffer_len = data.len,
-//             });
-//             sender.* = out.sender;
-//             return out.bytes_received;
-//         }
-//     };
-// };
+            const out = try overlapped.performOne(abi.network.udp.ReceiveFrom, .{
+                .socket = udp.sock,
+                .buffer_ptr = data.ptr,
+                .buffer_len = data.len,
+            });
+            sender.* = out.sender;
+            return out.bytes_received;
+        }
+    };
+};
 
 // pub const time = struct {
 //     pub fn nanoTimestamp() i128 {

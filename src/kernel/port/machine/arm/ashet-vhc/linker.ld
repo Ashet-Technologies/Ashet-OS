@@ -37,7 +37,7 @@ SECTIONS {
         __kernel_stack_end = .;
     } > sram
 
-    .data : AT (__kernel_flash_end){
+    .data : {
         __kernel_data_start = .;
 
         *(.data*)
@@ -45,7 +45,7 @@ SECTIONS {
 
         . = ALIGN(4);
         __kernel_data_end = .;
-    } > sram
+    } > sram AT> flash
 
     .bss (NOLOAD) : {
         __kernel_bss_start = .;
@@ -58,4 +58,6 @@ SECTIONS {
 
         . = ALIGN(4096);
     } > sram
+
+    __kernel_data_load = LOADADDR(.data);
 }

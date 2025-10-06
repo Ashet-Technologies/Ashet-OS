@@ -59,6 +59,7 @@ pub fn Encoder(comptime chip: Chip, comptime options: Options) type {
         const BoundedDefines = std.BoundedArray(DefineWithIndex, options.max_defines);
         const BoundedPrograms = std.BoundedArray(BoundedProgram, options.max_programs);
         const BoundedInstructions = std.BoundedArray(Instruction(chip), 32);
+        const BoundedRelocations = std.BoundedArray(assembler.Relocation, 32);
         const BoundedLabels = std.BoundedArray(Label, 32);
         const Label = struct {
             name: []const u8,
@@ -71,6 +72,7 @@ pub fn Encoder(comptime chip: Chip, comptime options: Options) type {
             defines: BoundedDefines,
             private_defines: BoundedDefines,
             instructions: BoundedInstructions,
+            relocations: BoundedRelocations,
             labels: BoundedLabels,
             origin: ?u5,
             side_set: ?SideSet,
@@ -99,6 +101,7 @@ pub fn Encoder(comptime chip: Chip, comptime options: Options) type {
                         break :blk defines_const.constSlice();
                     },
                     .instructions = @as([]const u16, @ptrCast(bounded.instructions.constSlice())),
+                    .relocations = @as([]const assembler.Relocation, @ptrCast(bounded.relocations.constSlice())),
                     .origin = bounded.origin,
                     .side_set = bounded.side_set,
                     .wrap_target = bounded.wrap_target,
@@ -181,20 +184,19 @@ pub fn Encoder(comptime chip: Chip, comptime options: Options) type {
 
                     break :outer error.DefineNotFound;
                 },
-                .expression => |expr_str| {
+                .expression => |expr_str| outer: {
                     const expr = try Expression.tokenize(expr_str, index, diags);
                     const result = try expr.evaluate(define_lists, diags);
                     if (result < 0 or result > std.math.maxInt(T)) {
                         diags.* = Diagnostics.init(
                             index,
                             "value of {} does not fit in a u{}",
-                            .{
-                                result, @bitSizeOf(T),
-                            },
+                            .{ result, @bitSizeOf(T) },
                         );
+                        break :outer error.TooBig;
                     }
 
-                    return @as(T, @intCast(result));
+                    break :outer @as(T, @intCast(result));
                 },
             };
         }
@@ -459,45 +461,60 @@ pub fn Encoder(comptime chip: Chip, comptime options: Options) type {
                 .payload = payload,
                 .delay_side_set = delay_side_set,
             });
+
+            program.relocations.append(switch (tag) {
+                .jmp => .jmpslot,
+                else => .none,
+            }) catch unreachable;
+
+            std.debug.assert(program.instructions.len == program.relocations.len);
         }
 
         fn calc_delay_side_set(
-            program_settings: ?SideSet,
+            sideset_settings: ?SideSet,
             side_set_opt: ?u5,
             delay_opt: ?u5,
         ) !u5 {
-            // TODO: error for side_set/delay collision
             const delay: u5 = if (delay_opt) |delay| delay else 0;
-            return if (program_settings) |settings|
-                if (settings.optional)
-                    if (side_set_opt) |side_set|
-                        0x10 | (side_set << @as(u3, 4) - settings.count) | delay
+            const bits_needed = std.math.log2_int_ceil(u6, @as(u6, delay) + 1);
+
+            return if (sideset_settings) |sideset|
+                if (sideset.optional)
+                    if (sideset.count + bits_needed > 4)
+                        error.SideSetDelayCollision
+                    else if (side_set_opt) |side_set|
+                        0x10 | (side_set << @as(u3, 4) - sideset.count) | delay
                     else
                         delay
+                else if (sideset.count + bits_needed > 5)
+                    error.SideSetDelayCollision
                 else
-                    (side_set_opt.? << @as(u3, 5) - settings.count) | delay
+                    (side_set_opt.? << @as(u3, 5) - sideset.count) | delay
             else
                 delay;
         }
 
         fn encode_instruction_body(self: *Self, program: *BoundedProgram, diags: *?Diagnostics) !void {
             // first scan through body for labels
-            var instr_index: u5 = program.origin orelse 0;
+            var instr_index: ?u5 = program.origin orelse 0;
             for (self.tokens[self.index..]) |token| {
                 switch (token.data) {
                     .label => |label| try program.labels.append(.{
                         .name = label.name,
                         .public = label.public,
-                        .index = instr_index,
+                        .index = instr_index.?,
                     }),
-                    .instruction, .word => instr_index += 1,
+                    .instruction, .word => {
+                        const result, const ov = @addWithOverflow(instr_index.?, 1);
+                        instr_index = if (ov != 0) null else result;
+                    },
                     .wrap_target => {
                         if (program.wrap_target != null) {
                             diags.* = Diagnostics.init(token.index, "wrap_target already set for this program", .{});
                             return error.WrapTargetAlreadySet;
                         }
 
-                        program.wrap_target = instr_index;
+                        program.wrap_target = instr_index.?;
                     },
                     .wrap => {
                         if (program.wrap != null) {
@@ -505,7 +522,7 @@ pub fn Encoder(comptime chip: Chip, comptime options: Options) type {
                             return error.WrapAlreadySet;
                         }
 
-                        program.wrap = instr_index - 1;
+                        program.wrap = if (instr_index) |idx| idx - 1 else 31;
                     },
                     .program => break,
                     else => unreachable, // invalid
@@ -539,10 +556,11 @@ pub fn Encoder(comptime chip: Chip, comptime options: Options) type {
 
             var program = BoundedProgram{
                 .name = program_token.data.program,
-                .defines = BoundedDefines.init(0) catch unreachable,
-                .private_defines = BoundedDefines.init(0) catch unreachable,
-                .instructions = BoundedInstructions.init(0) catch unreachable,
-                .labels = BoundedLabels.init(0) catch unreachable,
+                .defines = .{},
+                .private_defines = .{},
+                .instructions = .{},
+                .relocations = .{},
+                .labels = .{},
                 .side_set = null,
                 .origin = null,
                 .wrap_target = null,
@@ -680,6 +698,7 @@ pub fn Instruction(comptime chip: Chip) type {
 const expect = std.testing.expect;
 const expectEqual = std.testing.expectEqual;
 const expectEqualStrings = std.testing.expectEqualStrings;
+const expectError = std.testing.expectError;
 
 fn encode_bounded_output_impl(comptime chip: Chip, source: []const u8, diags: *?assembler.Diagnostics) !Encoder(chip, .{}).Output {
     const tokens = try tokenizer.tokenize(chip, source, diags, .{});
@@ -690,7 +709,7 @@ fn encode_bounded_output_impl(comptime chip: Chip, source: []const u8, diags: *?
 fn encode_bounded_output(comptime chip: Chip, source: []const u8) !Encoder(chip, .{}).Output {
     var diags: ?assembler.Diagnostics = null;
     return encode_bounded_output_impl(chip, source, &diags) catch |err| if (diags) |d| blk: {
-        std.log.err("error at index {}: {s}", .{ d.index, d.message.slice() });
+        std.log.info("error at index {}: {s}", .{ d.index, d.message.slice() });
         break :blk err;
     } else err;
 }
@@ -1021,6 +1040,14 @@ test "encode.evaluate.bit reversal" {
     try expectEqual(@as(i128, 0x80000000), output.global_defines.get(0).value);
 }
 
+test "encode.evaluate.value size" {
+    const bits = encode_bounded_output(.RP2040,
+        \\.program delay_too_big
+        \\nop [32]
+    );
+    try expectError(error.TooBig, bits);
+}
+
 test "encode.jmp.label" {
     const output = try encode_bounded_output(.RP2040,
         \\.program arst
@@ -1102,6 +1129,55 @@ test "encode.jmp.label origin" {
         try expectEqual(Token(.RP2040).Instruction.Jmp.Condition.always, instr.payload.jmp.condition);
         try expectEqual(@as(u5, 22), instr.payload.jmp.address);
     }
+}
+
+test "encode.error.sideset delay collision" {
+    const collision = encode_bounded_output(.RP2040,
+        \\.program sideset_delay_collision
+        \\.side_set 2
+        \\nop side 3 [8]
+    );
+    try expectError(error.SideSetDelayCollision, collision);
+
+    const collision2 = encode_bounded_output(.RP2040,
+        \\.program sideset_delay_collision
+        \\.side_set 1
+        \\nop side 3 [31]
+    );
+    try expectError(error.SideSetDelayCollision, collision2);
+
+    const collision3 = encode_bounded_output(.RP2040,
+        \\.program sideset_delay_collision
+        \\.side_set 1 opt
+        \\nop side 3 [31]
+    );
+    try expectError(error.SideSetDelayCollision, collision3);
+
+    _ = try encode_bounded_output(.RP2040,
+        \\.program sideset_delay_collision
+        \\.side_set 2
+        \\nop side 3 [7]
+    );
+
+    _ = try encode_bounded_output(.RP2040,
+        \\.program sideset_delay_collision
+        \\nop [31]
+    );
+}
+
+test "encode.error.sideset opt delay collision" {
+    const collision = encode_bounded_output(.RP2040,
+        \\.program sideset_delay_collision
+        \\.side_set 2, opt
+        \\nop side 3 [4]
+    );
+    try expectError(error.SideSetDelayCollision, collision);
+
+    _ = try encode_bounded_output(.RP2040,
+        \\.program sideset_delay_collision
+        \\.side_set 2, opt
+        \\nop side 3 [3]
+    );
 }
 
 //test "encode.error.duplicated program name" {}

@@ -42,12 +42,12 @@ fn writeSome(dri: *Driver, msg: []const u8, mode: WriteMode) usize {
     const dev = instance(dri);
 
     switch (mode) {
-        .blocking => dev.device.write_blocking(msg, null) catch @panic("failed to write uart"),
+        .blocking => dev.device.write_blocking(msg, .no_deadline) catch @panic("failed to write uart"),
 
         .only_fifo => for (msg, 0..) |char, i| {
             if (!dev.device.is_writeable())
                 return i;
-            dev.device.write_blocking(&.{char}, null) catch @panic("failed to write uart");
+            dev.device.write_blocking(&.{char}, .no_deadline) catch @panic("failed to write uart");
         },
     }
 

@@ -1,0 +1,16 @@
+{
+    "Vendor ID": 13,
+    "Product ID": 1,
+
+    "Vendor Name": "Ashet Technologies",
+    "Product Name": "Quad-Port PS/2 Expansion",
+    "Serial Number": "00000001",
+
+    "Properties": {
+        "Requires Audio": false,
+        "Requires Video": false,
+        "Requires USB": false
+    },
+
+    "Driver Interface": "none"
+}
