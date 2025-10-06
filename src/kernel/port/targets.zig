@@ -35,6 +35,11 @@ pub const MachineConfig = struct {
 
     /// Returns a machine-specific log prefix that is rendered after the time but before everything else
     get_log_prefix: ?fn () []const u8 = null,
+
+    /// If `true`, the machine uses another core for drivers and non-userland tasks.
+    /// This means that some mechanisms in the OS require locks that are usually not required
+    /// when running on a single core.
+    uses_hardware_multithreading: bool = false,
 };
 
 pub const MemoryProtectionConfig = struct {

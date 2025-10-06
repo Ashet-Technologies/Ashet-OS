@@ -63,7 +63,7 @@ const video_drivers_ctors = struct {
             ashet.drivers.install(&display.screen.driver);
 
             const thread = try ashet.scheduler.Thread.spawn(X11_Display.process_events_wrapper, display, .{
-                .stack_size = 1024 * 1024,
+                .stack_size = 8 * 1024 * 1024,
             });
             try thread.setName("x11.eventloop");
             try thread.start();
@@ -87,7 +87,7 @@ const video_drivers_ctors = struct {
             ashet.drivers.install(&display.screen.driver);
 
             const thread = try ashet.scheduler.Thread.spawn(Wayland_Display.process_events_wrapper, display, .{
-                .stack_size = 1024 * 1024,
+                .stack_size = 8 * 1024 * 1024,
             });
             try thread.setName("wayland.eventloop");
             try thread.start();
@@ -109,7 +109,7 @@ const video_drivers_ctors = struct {
             ashet.drivers.install(&display.screen.driver);
 
             const thread = try ashet.scheduler.Thread.spawn(Wayland_Display.process_events_wrapper, display, .{
-                .stack_size = 1024 * 1024,
+                .stack_size = 8 * 1024 * 1024,
             });
             try thread.setName("wayland.eventloop");
             try thread.start();

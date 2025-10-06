@@ -76,7 +76,7 @@ keymap kp_9        9
 keymap kp_subtract -
 keymap kp_4        4
 keymap kp_5        5
-keymap kp_6        5
+keymap kp_6        6
 keymap kp_add      +
 keymap kp_1        1
 keymap kp_2        2

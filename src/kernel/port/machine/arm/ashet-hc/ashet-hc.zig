@@ -31,6 +31,7 @@ pub const machine_config = ashet.ports.MachineConfig{
     .get_linear_memory_region = get_linear_memory_region,
     .halt = machine_halt,
     .get_log_prefix = get_log_prefix,
+    .uses_hardware_multithreading = true,
 };
 
 const hw = struct {

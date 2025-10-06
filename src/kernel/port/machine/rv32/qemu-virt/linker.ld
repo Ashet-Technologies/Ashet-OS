@@ -30,7 +30,7 @@ SECTIONS {
     .stack (NOLOAD) : {
         . = ALIGN(4096);
         PROVIDE(__kernel_stack_start = .);
-        . += 0x40000; 
+        . += 0x80000; 
         PROVIDE(__kernel_stack_end = .);
     } > dram
 

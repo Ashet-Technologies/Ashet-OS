@@ -528,9 +528,11 @@ fn kernel_log_fn(
 
     const is_in_isr = platform.isInInterruptContext();
 
+    const needs_lock = machine_config.uses_hardware_multithreading;
+
     {
-        if (!is_in_isr) log_exclusive_lock.lock();
-        defer if (!is_in_isr) log_exclusive_lock.unlock();
+        if (needs_lock and !is_in_isr) log_exclusive_lock.lock();
+        defer if (needs_lock and !is_in_isr) log_exclusive_lock.unlock();
 
         if (is_in_isr) Debug.write("<<");
         defer if (is_in_isr) Debug.write(">>");
