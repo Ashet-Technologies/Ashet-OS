@@ -1,6 +1,9 @@
 const std = @import("std");
 const shimizu = @import("shimizu");
 const wp = @import("wayland-protocols");
+const wu = @import("wayland-unstable");
+
+const zxdg_decoration_manager_v1 = wu.xdg_decoration_unstable_v1.zxdg_decoration_manager_v1;
 
 const ashet = @import("../../../../main.zig");
 const evdev = @import("../../../../drivers/input/evdev.zig");
@@ -21,6 +24,8 @@ wl_surface: wayland.wl_surface,
 
 xdg_surface: xdg_shell.xdg_surface,
 xdg_toplevel: xdg_shell.xdg_toplevel,
+
+xdg_decorations_manager: ?zxdg_decoration_manager_v1,
 
 wl_compositor: wayland.wl_compositor,
 has_wl_compositor: bool = false,
@@ -65,6 +70,7 @@ pub fn init(
         .wl_surface = undefined,
         .xdg_surface = undefined,
         .xdg_toplevel = undefined,
+        .xdg_decorations_manager = undefined,
         .wl_compositor = undefined,
         .xdg_wm_base = undefined,
         .wl_shm = undefined,
@@ -138,6 +144,11 @@ pub fn init(
     );
 
     try connection.setEventListener(server.xdg_toplevel, *bool, onXdgToplevelEvent, &server.running);
+
+    if (server.xdg_decorations_manager) |manager| {
+        const decorations = try manager.get_toplevel_decoration(connection, server.xdg_toplevel);
+        try decorations.set_mode(connection, .server_side);
+    }
 
     return server;
 }
@@ -253,6 +264,7 @@ fn onXdgSurfaceEvent(
         },
     }
 }
+
 /// An ARGB framebuffer
 pub const Framebuffers = struct {
     size: [2]u32,
@@ -459,8 +471,16 @@ fn onRegistryEvent(server: *Wayland_Display, connection: shimizu.Connection, reg
                     .wl_seat = wl_seat,
                 };
                 try connection.setEventListener(server.seat.?.wl_seat, *Seat, onWlSeatEvent, &server.seat.?);
+            } else if (shimizu.globalMatchesInterface(global, zxdg_decoration_manager_v1)) {
+                server.xdg_decorations_manager = try create_wayland_object(
+                    connection,
+                    registry,
+                    global,
+                    zxdg_decoration_manager_v1,
+                );
             }
         },
+
         else => {},
     }
 }
