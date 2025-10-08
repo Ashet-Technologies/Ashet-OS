@@ -50,7 +50,11 @@ pub const pins = struct {
     pub const eth_sck_pin: rp2350.gpio.Pin = rp2350.gpio.num(22); // blue
     pub const eth_mosi_pin: rp2350.gpio.Pin = rp2350.gpio.num(23); // white
 
-    // 24...39
+    // 24...31
+
+    pub const btn_user_2: rp2350.gpio.Pin = rp2350.gpio.num(32); // purple
+
+    // 33...39
 
     pub const prop_txf: rp2350.gpio.Pin = rp2350.gpio.num(36); // tx frame
     pub const prop_rxf: rp2350.gpio.Pin = rp2350.gpio.num(37); // rx frame

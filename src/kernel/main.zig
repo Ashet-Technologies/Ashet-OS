@@ -534,8 +534,10 @@ fn kernel_log_fn(
         if (needs_lock and !is_in_isr) log_exclusive_lock.lock();
         defer if (needs_lock and !is_in_isr) log_exclusive_lock.unlock();
 
-        if (is_in_isr) Debug.write("<<");
-        defer if (is_in_isr) Debug.write(">>");
+        const isr_prefix, const isr_suffix = if (is_in_isr)
+            .{ "<<", ">>" }
+        else
+            .{ "", "" };
 
         const now = time.Instant.now();
 
@@ -550,7 +552,8 @@ fn kernel_log_fn(
 
         const now_ms: u64 = @intFromEnum(now);
         var writer = counting_writer.writer();
-        writer.print("{d: >6}.{d:0>3}{s}{s} [{s}] {s}: ", .{
+        writer.print("{s}{d: >6}.{d:0>3}{s}{s} [{s}] {s}: ", .{
+            isr_prefix,
             now_ms / 1000,
             now_ms % 1000,
             if (machine_prefix.len > 0) " " else "",
@@ -560,7 +563,7 @@ fn kernel_log_fn(
         }) catch return;
 
         Debug.indent_writer(counting_writer.bytes_written).print(format, args) catch return;
-        Debug.writer().print(postfix ++ "\r\n", .{}) catch return;
+        Debug.writer().print(postfix ++ "{s}\r\n", .{isr_suffix}) catch return;
     }
 }
 
@@ -591,7 +594,7 @@ pub fn fmtCodeLocation(addr: usize) CodeLocation {
     return CodeLocation{ .pointer = addr };
 }
 
-fn halt() noreturn {
+pub fn halt() noreturn {
     if (machine_config.halt) |machine_halt| {
         std.log.err("triggering machine halt...", .{});
         machine_halt();

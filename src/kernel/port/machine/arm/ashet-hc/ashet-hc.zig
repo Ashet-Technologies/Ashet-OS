@@ -12,6 +12,8 @@ pub const hw_alloc = @import("hw_alloc.zig");
 
 const Nested_I2C_Bus = @import("drivers/Nested_I2C_Bus.zig");
 
+const HSTX_Driver = ashet.drivers.video.HSTX_DVI_2;
+
 const disk_image_start = 0x10800000;
 const disk_image_end = 0x11000000;
 
@@ -43,7 +45,7 @@ const hw = struct {
     var uart1: ashet.drivers.serial.RP2xxx = undefined;
 
     // var fb_video: ashet.drivers.video.Virtual_Video_Output = undefined;
-    var hstx_video: ashet.drivers.video.HSTX_DVI = undefined;
+    var hstx_video: HSTX_Driver = undefined;
 
     var xip_flash: ashet.drivers.block.Memory_Mapped_Flash = undefined;
 
@@ -67,6 +69,15 @@ comptime {
 var interrupt_table_core0: rp2350.VectorTable align(256) = undefined;
 var interrupt_table_core1: rp2350.VectorTable align(256) = undefined;
 
+pub fn wait_for_keypress() void {
+    while (hw_alloc.pins.btn_user_2.read() == 1) {
+        ashet.platform.profile.nop();
+    }
+    while (hw_alloc.pins.btn_user_2.read() == 0) {
+        ashet.platform.profile.nop();
+    }
+}
+
 fn early_initialize() void {
     // Disable watch dog, reset all peripherials, and set the clocks and PLLs:
     hal.init_sequence(clock_config);
@@ -77,6 +88,10 @@ fn early_initialize() void {
 
     hw_alloc.pins.i2c_sda.set_function(.i2c);
     hw_alloc.pins.i2c_scl.set_function(.i2c);
+
+    hw_alloc.pins.btn_user_2.set_function(.sio);
+    hw_alloc.pins.btn_user_2.set_direction(.in);
+    hw_alloc.pins.btn_user_2.set_pull(.up);
 
     hw_alloc.uart.debug.apply(.{
         .baud_rate = hw_alloc.cfg.debug_baud,
@@ -123,6 +138,17 @@ fn early_initialize() void {
     logger.info("sys_clk: {} Hz", .{comptime clock_config.sys.?.frequency()});
     logger.info("usb_clk: {} Hz", .{comptime clock_config.usb.?.frequency()});
 
+    // DMA read and write win over CPU:
+    rp2350.peripherals.BUSCTRL.BUS_PRIORITY.write_default(.{
+        .DMA_W = 1,
+        .DMA_R = 1,
+        .PROC0 = 0,
+        .PROC1 = 0,
+    });
+    while (rp2350.peripherals.BUSCTRL.BUS_PRIORITY_ACK.read().BUS_PRIORITY_ACK == 0) {
+        //
+    }
+
     logger.info("starting core 1...", .{});
 
     hal.multicore.launch_core1_with_stack(core1_main, &core1_stack);
@@ -131,7 +157,51 @@ fn early_initialize() void {
         //
     }
 
+    // memtest();
+
     logger.info("core1 fully started", .{});
+}
+
+noinline fn memtest() linksection(".sram.bank0") callconv(.c) void {
+    const base: [*]const volatile u32 = @ptrFromInt(0x2000_0000);
+    const offsets = [_]usize{
+        0x0010,
+        0x0002,
+        0x000A,
+        0x0008,
+        0x0004,
+        0x000C,
+        0x0000,
+    };
+
+    perfctr.setup(
+        .xip_main0_access_contested,
+        .xip_main1_access_contested,
+        .apb_access_contested,
+        .fastperi_access_contested,
+    );
+
+    while (hw_alloc.pins.btn_user_2.read() == 1) {
+        ashet.platform.profile.nop();
+    }
+
+    perfctr.start();
+
+    inline for (offsets) |off| {
+        asm volatile (""
+            :
+            : [inp] "r" (base[off]),
+        );
+    }
+
+    perfctr.stop();
+
+    while (hw_alloc.pins.btn_user_2.read() == 0) {
+        ashet.platform.profile.nop();
+    }
+
+    logger.info("addr       = 0x{X:0>8}", .{@intFromPtr(base)});
+    perfctr.dump();
 }
 
 fn initialize() !void {
@@ -212,7 +282,7 @@ fn initialize() !void {
 }
 
 var core1_ready: bool = false;
-var core1_stack: [1024]u32 = undefined;
+var core1_stack: [1024]u32 align(16) = undefined;
 
 fn configure_mpu_region(region: u3, rbar: ashet.platform.profile.peripherals.mpu.RBAR.Reg, rlar: ashet.platform.profile.peripherals.mpu.RLAR.Reg) void {
     ashet.platform.profile.peripherals.mpu.rnr.write(.{
@@ -228,19 +298,11 @@ fn core1_main() linksection(".sram.bank0") void {
 
     configure_interrupt_table(&interrupt_table_core1);
 
-    // DMA read and write win over CPU:
-    rp2350.peripherals.BUSCTRL.BUS_PRIORITY.write_default(.{
-        .DMA_W = 1,
-        .DMA_R = 1,
-        .PROC0 = 0,
-        .PROC1 = 0,
-    });
-
-    ashet.drivers.video.HSTX_DVI.init_backend(clock_config);
+    HSTX_Driver.init_backend(clock_config);
 
     // TODO: Enable MPU protection so Core 1 can't access XIP 0 and XIP 1 memories.
     //       These memories have too much latency to allow real-time operation.
-    if (false) {
+    if (false and HSTX_Driver == ashet.drivers.video.HSTX_DVI_2) {
         configure_mpu_region(0, .{
             .allow_execute = .no_execute,
             .permissions = .read_write_sec,
@@ -288,16 +350,13 @@ fn core1_main() linksection(".sram.bank0") void {
         });
     }
 
-    ashet.drivers.video.HSTX_DVI.start_backend();
-
     ashet.utils.volatile_write(bool, &core1_ready, true);
 
-    const busctrl = rp2350.peripherals.BUSCTRL;
-    busctrl.PERFCTR0.write(.{ .PERFCTR0 = 0 });
-    busctrl.PERFCTR1.write(.{ .PERFCTR1 = 0 });
-    busctrl.PERFSEL0.write(.{ .PERFSEL0 = .xip_main0_access_contested });
-    busctrl.PERFSEL1.write(.{ .PERFSEL1 = .xip_main1_access_contested });
-    busctrl.PERFCTR_EN.write(.{ .PERFCTR_EN = 1 });
+    // while (hw_alloc.pins.btn_user_2.read() == 1) {
+    //     ashet.platform.profile.nop();
+    // }
+
+    HSTX_Driver.start_backend();
 
     while (true) {
         ashet.platform.profile.wfi();
@@ -1097,5 +1156,52 @@ const backplane = struct {
             @enumFromInt(@intFromEnum(fifo)),
             data,
         );
+    }
+};
+
+pub const perfctr = struct {
+    const busctrl = rp2350.peripherals.BUSCTRL;
+
+    const Counter = @TypeOf(busctrl.PERFSEL0.direct_access.PERFSEL0);
+
+    pub fn setup(p0: Counter, p1: Counter, p2: Counter, p3: Counter) void {
+        stop();
+
+        @setRuntimeSafety(false);
+        busctrl.PERFSEL0.write(.{ .PERFSEL0 = @enumFromInt(@intFromEnum(p0)) });
+        busctrl.PERFSEL1.write(.{ .PERFSEL1 = @enumFromInt(@intFromEnum(p1)) });
+        busctrl.PERFSEL2.write(.{ .PERFSEL2 = @enumFromInt(@intFromEnum(p2)) });
+        busctrl.PERFSEL3.write(.{ .PERFSEL3 = @enumFromInt(@intFromEnum(p3)) });
+
+        reset();
+    }
+
+    pub fn reset() void {
+        stop();
+        busctrl.PERFCTR0.write(.{ .PERFCTR0 = 0 });
+        busctrl.PERFCTR1.write(.{ .PERFCTR1 = 0 });
+        busctrl.PERFCTR2.write(.{ .PERFCTR2 = 0 });
+        busctrl.PERFCTR3.write(.{ .PERFCTR3 = 0 });
+        ashet.platform.profile.dwt_unit.reset();
+    }
+
+    pub inline fn start() void {
+        std.debug.assert(busctrl.PERFCTR_EN.read().PERFCTR_EN == 0);
+        ashet.platform.profile.dwt_unit.start();
+        busctrl.PERFCTR_EN.write(.{ .PERFCTR_EN = 1 });
+    }
+
+    pub inline fn stop() void {
+        busctrl.PERFCTR_EN.write(.{ .PERFCTR_EN = 0 });
+        ashet.platform.profile.dwt_unit.stop();
+    }
+
+    pub fn dump() void {
+        const ctr = ashet.platform.profile.dwt_unit.read();
+        logger.info("Cycles     = {}", .{ctr});
+        logger.info("PERF0[{s}] = {}", .{ @tagName(busctrl.PERFSEL0.read().PERFSEL0), busctrl.PERFCTR0.read().PERFCTR0 });
+        logger.info("PERF1[{s}] = {}", .{ @tagName(busctrl.PERFSEL1.read().PERFSEL1), busctrl.PERFCTR1.read().PERFCTR1 });
+        logger.info("PERF2[{s}] = {}", .{ @tagName(busctrl.PERFSEL2.read().PERFSEL2), busctrl.PERFCTR2.read().PERFCTR2 });
+        logger.info("PERF3[{s}] = {}", .{ @tagName(busctrl.PERFSEL3.read().PERFSEL3), busctrl.PERFCTR3.read().PERFCTR3 });
     }
 };

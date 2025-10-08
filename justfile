@@ -6,7 +6,7 @@ optimize_apps := "Debug"
 
 default_params := "--prominent-compile-errors -freference-trace=10"
 
-DEBUG_PORT := "/dev/ttyACM1"
+DEBUG_PORT := "/dev/waveshare-BCD6EEABCD.0"
 
 build:
     {{zig}} build {{default_params}} --summary none -Doptimize-kernel={{optimize_kernel}} -Doptimize-apps={{optimize_apps}} rv32-qemu-virt
@@ -152,7 +152,7 @@ rp2350-build:
 
     ./zig-out/bin/elfstack zig-out/arm-ashet-hc/kernel.elf > zig-out/arm-ashet-hc/kernel.elfstack.svg
 
-    arm-none-eabi-objdump -dS zig-out/arm-ashet-hc/kernel.elf  > zig-out/arm-ashet-hc/kernel.S
+    arm-none-eabi-objdump -phdS zig-out/arm-ashet-hc/kernel.elf  > zig-out/arm-ashet-hc/kernel.S
 
     # convert kernel image to UF2 file, family=rp2350_arm_s, offset=0M
     picotool uf2 convert \

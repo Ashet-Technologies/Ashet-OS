@@ -20,6 +20,8 @@ const HSTX_DVI = @This();
 
 const Color = ashet.video.Color;
 
+const hstx_ctrl_hw = chip.HSTX_CTRL;
+
 const framebuffer_size: ashet.video.Resolution = .{
     .width = 640,
     .height = 400,
@@ -47,8 +49,8 @@ driver: Driver,
 pub fn init(comptime clock_config: rp2350.clocks.config.Global) !HSTX_DVI {
     _ = clock_config;
 
-    if (!backend_ready)
-        @panic("HSTX_DVI requires the backend to be started before initializing the driver!");
+    // if (!backend_ready)
+    //     @panic("HSTX_DVI requires the backend to be started before initializing the driver!");
 
     logger.info("Video Timings:", .{});
     logger.info(" Horizontal: {} {} {} {}", .{
@@ -124,10 +126,10 @@ fn flush(dri: *Driver) void {
 const dma_data0_section = ".sram.bank2";
 const dma_data1_section = ".sram.bank3";
 const dma_datax_section = ".sram.bank1";
-const dma_code_section = ".sram.bank1";
+const dma_code_section = ".sram.bank0";
 
 const img_framebuf_section = ".sram.bank1.noinit";
-const img_palette_section = ".sram.bank3";
+const img_palette_section = ".sram.bank1";
 
 // CVT 800x480: Pixel Clock = 29.5 MHz
 // https://tomverbeure.github.io/video_timings_calculator
@@ -153,7 +155,6 @@ pub fn init_backend(comptime clock_config: rp2350.clocks.config.Global) void {
         @compileError("System must run at 150 MHz to create the correct video timings!");
     }
 
-    const hstx_ctrl_hw = chip.HSTX_CTRL;
     // Configure HSTX's TMDS encoder for the used RGB color type:
     hstx_ctrl_hw.EXPAND_TMDS.write(.{
         .L2_NBITS = compute_tmds_nbits(.r),
@@ -327,7 +328,7 @@ var use_pong = false;
 
 var current_scanline_y: u32 = 0;
 
-var current_scanline_src: [*]Color = &framebuffer;
+var current_scanline_src: [*]align(4) Color = &framebuffer;
 
 inline fn set_dma_channel(regs: *volatile rp2350.dma.Channel.Regs, comptime T: type, slice: []const T) void {
     regs.read_addr = @intFromPtr(slice.ptr);
@@ -341,31 +342,38 @@ inline fn set_dma_channel(regs: *volatile rp2350.dma.Channel.Regs, comptime T: t
 }
 
 pub const stats = struct {
-    pub var irq_calls: u32 = 0;
-    pub var irq_cycles: u64 = 0;
+    // pub var irq_calls: u32 = 0;
+    // pub var irq_cycles: u64 = 0;
 
     inline fn start() void {
-        ashet.platform.profile.dwt_unit.reset();
-        ashet.platform.profile.dwt_unit.start();
+        // ashet.platform.profile.dwt_unit.reset();
+        // ashet.platform.profile.dwt_unit.start();
     }
 
     inline fn stop() void {
-        const ctr = ashet.platform.profile.dwt_unit.read();
-        ashet.platform.profile.dwt_unit.stop();
+        // const ctr = ashet.platform.profile.dwt_unit.read();
+        // ashet.platform.profile.dwt_unit.stop();
 
-        irq_calls += 1;
-        irq_cycles += ctr;
+        // irq_calls += 1;
+        // irq_cycles += ctr;
     }
 };
 
 fn handle_hstx_dma_irq() linksection(dma_code_section) callconv(.c) void {
     @setRuntimeSafety(false);
+    // @optimizeFor(.ReleaseFast);
 
     if (builtin.mode == .Debug) {
         @compileError("The HSTX/HDMI driver has to be compiled with a release mode, otherwise it will be too slow.");
     }
-    stats.start();
-    defer stats.stop();
+
+    // if (chip.HSTX_FIFO.STAT.read().EMPTY == 1) {
+    //     logger.err("FIFO UNDERFLOW at {}  {}", .{ v_scanline, vactive_cmdlist_state });
+    //     ashet.halt();
+    // }
+
+    // stats.start();
+    // defer stats.stop();
 
     const chan: rp2350.dma.Channel = if (use_pong)
         hw_alloc.dma.hdmi_pong
@@ -391,7 +399,7 @@ fn handle_hstx_dma_irq() linksection(dma_code_section) callconv(.c) void {
             comptime std.debug.assert(@mod(framebuffer_size.height, 2) == 0);
             const buf_id = current_scanline_y & 1;
 
-            const current_buffer: *Scanline, const next_buffer: *Scanline = if (buf_id != 0)
+            const current_buffer: *align(16) Scanline, const next_buffer: *align(16) Scanline = if (buf_id != 0)
                 .{ &scanline_odd_buffer, &scanline_even_buffer }
             else
                 .{ &scanline_even_buffer, &scanline_odd_buffer };
@@ -407,12 +415,22 @@ fn handle_hstx_dma_irq() linksection(dma_code_section) callconv(.c) void {
 
             // Expand the next scanline into memory:
             {
-                // this loop takes 2772 which is roughly 4.3 instructions per pixel.
-                // the theoretical optimum are 3 instructions per pixel (load, load, store) without any increment,
-                // so we're pretty good here.
-                for (next_buffer, current_scanline_src) |*d, s| {
-                    d.* = palette[@as(u8, @bitCast(s))];
-                }
+                // ashet.machine.perfctr.setup(
+                //     .sram8_access,
+                //     .sram8_access_contested,
+                //     .sram9_access,
+                //     .sram9_access_contested,
+                // );
+
+                // ashet.machine.perfctr.start();
+
+                // convert_scanline_basic(current_scanline_src, next_buffer);
+                // convert_scanline_minisimd(current_scanline_src, next_buffer);
+                _ = next_buffer;
+
+                // ashet.machine.perfctr.stop();
+
+                // ashet.machine.perfctr.dump();
             }
 
             current_scanline_src += framebuffer_size.width;
@@ -430,6 +448,58 @@ fn handle_hstx_dma_irq() linksection(dma_code_section) callconv(.c) void {
 
             vactive_cmdlist_state = .SCANOUT_CONTENT;
         },
+    }
+}
+
+inline fn convert_scanline_basic(
+    src: [*]Color,
+    dst: *Scanline,
+) void {
+
+    // this loop takes 2772 which is roughly 4.3 instructions per pixel.
+    // the theoretical optimum are 3 instructions per pixel (load, load, store) without any increment,
+    // so we're pretty good here.
+    for (dst, src) |*d, s| {
+        d.* = palette[@as(u8, @bitCast(s))];
+    }
+}
+
+/// This is a memory-access optimized version for scanline conversion,
+/// which reads 4 pixels at once, and writes them back in two writes.
+///
+/// This should reduce memory pressure on the system quite a lot.
+///
+/// It doesn't execute much faster than the 1 pixel variant (rougly 300 cycles less),
+/// but it decreases the chance of memory contestion.
+inline fn convert_scanline_minisimd(
+    raw_src: [*]align(4) Color,
+    raw_dst: *align(8) Scanline,
+) void {
+    comptime std.debug.assert((framebuffer_size.width % 4) == 0);
+
+    const Src = packed struct(u32) {
+        c0: u8,
+        c1: u8,
+        c2: u8,
+        c3: u8,
+    };
+    const Dst = packed struct(u64) {
+        c0: PaletteColor,
+        c1: PaletteColor,
+        c2: PaletteColor,
+        c3: PaletteColor,
+    };
+
+    const src: [*]Src = @ptrCast(raw_src);
+    const dst: *[framebuffer_size.width / 4]Dst = @ptrCast(raw_dst);
+
+    for (dst, src) |*d, s| {
+        d.* = Dst{
+            .c0 = palette[s.c0],
+            .c1 = palette[s.c1],
+            .c2 = palette[s.c2],
+            .c3 = palette[s.c3],
+        };
     }
 }
 

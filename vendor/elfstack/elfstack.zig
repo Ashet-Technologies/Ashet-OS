@@ -200,6 +200,8 @@ pub fn main() !u8 {
 
         try program_headers.append(pgm_header);
 
+        var title_buf: [1024]u8 = undefined;
+
         const flag_x = has_flag(pgm_header.p_flags, elf.PF_X);
         const flag_w = has_flag(pgm_header.p_flags, elf.PF_W);
         const flag_r = has_flag(pgm_header.p_flags, elf.PF_R);
@@ -260,6 +262,11 @@ pub fn main() !u8 {
             .width = 80,
             .height = v_full_height,
             .color = color,
+            .title = try std.fmt.bufPrint(&title_buf, "offset: 0x{X:0>8}\nsize:    0x{X:0>8} ({d:.2})\n", .{
+                vaddr,
+                memsz,
+                std.fmt.fmtIntSizeBin(memsz),
+            }),
         });
 
         if (filesz > 0) {
@@ -279,6 +286,11 @@ pub fn main() !u8 {
                 .width = x0b - 10,
                 .height = p_height,
                 .color = color,
+                .title = try std.fmt.bufPrint(&title_buf, "offset: 0x{X:0>8}\nsize:    0x{X:0>8} ({d:.2})\n", .{
+                    paddr,
+                    filesz,
+                    std.fmt.fmtIntSizeBin(filesz),
+                }),
             });
 
             var path_buffer: [256]u8 = undefined;
@@ -299,6 +311,12 @@ pub fn main() !u8 {
             try svg.path(path, .{
                 .fill = color,
                 .stroke = "none",
+                .title = try std.fmt.bufPrint(&title_buf, "from: 0x{X:0>8}\nto:      0x{X:0>8}\nsize:  0x{X:0>8} ({d:.2})\n", .{
+                    paddr,
+                    vaddr,
+                    filesz,
+                    std.fmt.fmtIntSizeBin(filesz),
+                }),
             });
 
             const path_top = try std.fmt.bufPrint(&path_buffer, "M {[x0b]} {[y0t]}" ++
@@ -406,26 +424,52 @@ const SvgWriter = struct {
         width: f64,
         height: f64,
         color: []const u8,
+        title: []const u8 = "",
     }) !void {
-        try svg.writer.print(
-            \\<rect x="{d}" y="{d}" width="{d}" height="{d}" fill="{s}"/>
-            \\
-        , .{
-            options.x, options.y, options.width, options.height, options.color,
-        });
+        const title = std.mem.trim(u8, options.title, " \r\n");
+        if (title.len > 0) {
+            try svg.writer.print(
+                \\<rect x="{d}" y="{d}" width="{d}" height="{d}" fill="{s}">
+                \\  <title>{s}</title>
+                \\</rect>
+                \\
+            , .{
+                options.x, options.y, options.width, options.height, options.color, title,
+            });
+        } else {
+            try svg.writer.print(
+                \\<rect x="{d}" y="{d}" width="{d}" height="{d}" fill="{s}"/>
+                \\
+            , .{
+                options.x, options.y, options.width, options.height, options.color,
+            });
+        }
     }
 
     pub fn path(svg: SvgWriter, nodes: []const u8, options: struct {
         fill: []const u8,
         stroke: []const u8,
         stroke_width: f64 = 0.0,
+        title: []const u8 = "",
     }) !void {
-        try svg.writer.print(
-            \\<path fill="{s}" stroke="{s}" stroke-width="{d}" d="{s}"/>
-            \\
-        , .{
-            options.fill, options.stroke, options.stroke_width, nodes,
-        });
+        const title = std.mem.trim(u8, options.title, " \r\n");
+        if (title.len > 0) {
+            try svg.writer.print(
+                \\<path fill="{s}" stroke="{s}" stroke-width="{d}" d="{s}">
+                \\  <title>{s}</title>
+                \\</path>
+                \\
+            , .{
+                options.fill, options.stroke, options.stroke_width, nodes, title,
+            });
+        } else {
+            try svg.writer.print(
+                \\<path fill="{s}" stroke="{s}" stroke-width="{d}" d="{s}"/>
+                \\
+            , .{
+                options.fill, options.stroke, options.stroke_width, nodes,
+            });
+        }
     }
 
     pub fn text(svg: SvgWriter, str: []const u8, x: f64, y: f64, options: struct {

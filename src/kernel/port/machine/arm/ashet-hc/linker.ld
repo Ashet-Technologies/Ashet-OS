@@ -2,8 +2,8 @@ MEMORY
 {
     flash  (RX) : ORIGIN = 0x10000000, LENGTH = 16M
     psram (RWX) : ORIGIN = 0x11000000, LENGTH = 8M
-    sram0  (RWX) : ORIGIN = 0x20000000, LENGTH = 256K - 0xB000 /* TODO: Fix this weirdness here when HSTX_DVI_2 driver is used */
-    sram1  (RWX) : ORIGIN = 0x20035000, LENGTH = 256K + 0xB000
+    sram0  (RWX) : ORIGIN = 0x20000000, LENGTH = 256K /*  - 0xB000 */ /* TODO: Fix this weirdness here when HSTX_DVI_2 driver is used */
+    sram1  (RWX) : ORIGIN = 0x20040000, LENGTH = 256K /*  + 0xB000 */
     sram2  (RWX) : ORIGIN = 0x20080000, LENGTH = 4K
     sram3  (RWX) : ORIGIN = 0x20081000, LENGTH = 4K
 }
@@ -19,35 +19,38 @@ SECTIONS {
 
     __kernel_flash_start = .;
 
-    .text : {
+    .text : ALIGN(512K) {
         KEEP(*(.text.vector_table*))
         KEEP(*(.text.image_def*))
-        *(.text*)
+        *(SORT_BY_ALIGNMENT(.text*))
     } > flash
 
-    .rodata : {
-        . = ALIGN(4);
-        *(.rodata*)
+    .rodata : ALIGN(512K) {
+        . = ALIGN(16);
+        *(SORT_BY_ALIGNMENT(.rodata*))
     } > flash
 
-    .ARM.extab : {
+    .ARM.extab : ALIGN(64K) {
         *(.ARM.extab* .gnu.linkonce.armextab.*)
     } > flash
-
-    .ARM.exidx : {
+    
+    .ARM.exidx : ALIGN(64K) {
         *(.ARM.exidx* .gnu.linkonce.armexidx.*)
     } > flash
 
-    . = ALIGN(4);
+    . = ALIGN(524288);
 
    __kernel_flash_end = . ;
 
     .stack (NOLOAD) : {
         . = ALIGN(4096);
         __kernel_stack_start = .;
-        . += 0x8000; 
+        . += 0x4000; 
         __kernel_stack_end = .;
     } > sram0
+
+    /* align the flash lma to 64K */
+    ._flash_lma_align0 (NOLOAD) : { . = ALIGN(64K); } > flash
 
     .data : {
         __kernel_data_start = .;
@@ -80,11 +83,16 @@ SECTIONS {
         . = ALIGN(4096);
     } > sram0
 
+    /* align the flash lma to 64K */
+    ._flash_lma_align1 (NOLOAD) : { . = ALIGN(64K); } > flash
 
     .sram.bank1.noload (NOLOAD) :
     {
         KEEP(*(.sram.bank1.noload .sram.bank1.noload.*))
-    } > sram1 AT> flash
+    } > sram1
+
+    /* align the flash lma to 64K */
+    ._flash_lma_align2 (NOLOAD) : { . = ALIGN(64K); } > flash
 
     .sram.bank1 :
     {
@@ -95,6 +103,9 @@ SECTIONS {
         __rp2350_sram_bank1_end = .;
     } > sram1 AT> flash
 
+    /* align the flash lma to 64K */
+    ._flash_lma_align3 (NOLOAD) : { . = ALIGN(64K); } > flash
+
     .sram.bank2 :
     {
         . = ALIGN(4);
@@ -103,6 +114,9 @@ SECTIONS {
         . = ALIGN(4);
         __rp2350_sram_bank2_end = .;
     } > sram2 AT> flash
+
+    /* align the flash lma to 64K */
+    ._flash_lma_align4 (NOLOAD) : { . = ALIGN(64K); } > flash
 
     .sram.bank3 :
     {
