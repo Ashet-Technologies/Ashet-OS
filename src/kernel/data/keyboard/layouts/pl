@@ -1,0 +1,104 @@
+# keymapping:
+#      <key code>  <normal> <shift> <altgr> <shift+algr>
+keymap escape      
+keymap 1           1        !       ≠       ¡
+keymap 2           2        @       ²       ¿
+keymap 3           3        #       ³       £
+keymap 4           4        $       ¢       ¼
+keymap 5           5        %       €       ‰
+keymap 6           6        ^       ½       ∧
+keymap 7           7        &       §       ≈
+keymap 8           8        *       ·       ¾
+keymap 9           9        (       «       ±
+keymap 0           0        )       »       °
+keymap minus       -        _       –       —
+keymap equals      =        +       ¸       ˛
+keymap backspace   
+keymap tab         <TAB>
+keymap q           q        Q       π       Ω
+keymap w           w        W       œ       Œ
+keymap e           e        E       ę       Ę
+keymap r           r        R       ©       ®
+keymap t           t        T       ß       ™
+keymap y           y        Y       ←       ¥
+keymap u           u        U       ↓       ↑
+keymap i           i        I       →       ↔
+keymap o           o        O       ó       Ó
+keymap p           p        P       þ       Þ
+keymap square_bracket_open  [        {       °       ¯
+keymap square_bracket_close ]        }       °       ¯
+keymap enter       <CR>
+keymap left_control
+keymap a           a        A       ą       Ą
+keymap s           s        S       ś       Ś
+keymap d           d        D       ð       Ð
+keymap f           f        F       æ       Æ
+keymap g           g        G       ŋ       Ŋ
+keymap h           h        H       ’       •
+keymap j           j        J       ə       Ə
+keymap k           k        K       …       /
+keymap l           l        L       ł       Ł
+keymap semicolon   ;        :       '       ˝
+keymap apostrophe  '        "       ^       ˇ
+keymap grave_accent `        ~       ¬      ∨
+keymap left_shift  
+keymap backslash   \        |       `       ˘
+keymap z           z        Z       ż       Ż
+keymap x           x        X       ź       Ź
+keymap c           c        C       ć       Ć
+keymap v           v        V       „       ‘
+keymap b           b        B       ”       “
+keymap n           n        N       ń       Ń
+keymap m           m        M       µ       ∞
+keymap comma       ,        <       ≤       ×
+keymap period      .        >       ≥       ÷
+keymap slash       /        ?       ̣       ˙
+keymap right_shift
+keymap kp_multiply *
+keymap left_alt    
+keymap space       <SPACE> <NBSPACE>
+keymap caps_lock   
+keymap f1          
+keymap f2          
+keymap f3          
+keymap f4          
+keymap f5          
+keymap f6          
+keymap f7          
+keymap f8          
+keymap f9          
+keymap f10         
+keymap num_lock    
+keymap scroll_lock 
+keymap kp_7        7
+keymap kp_8        8
+keymap kp_9        9
+keymap kp_subtract -
+keymap kp_4        4
+keymap kp_5        5
+keymap kp_6        6
+keymap kp_add      +
+keymap kp_1        1
+keymap kp_2        2
+keymap kp_3        3
+keymap kp_0        0
+keymap kp_period   ,
+keymap non_us_backslash  <        >       | 
+keymap f11         
+keymap f12         
+keymap kp_enter    
+keymap right_control  
+keymap kp_divide    /
+keymap print_screen       
+keymap right_alt
+
+keymap home        
+keymap up_arrow          
+keymap page_up     
+keymap left_arrow        
+keymap right_arrow       
+keymap end         
+keymap down_arrow        
+keymap page_down   
+keymap insert      
+keymap delete      
