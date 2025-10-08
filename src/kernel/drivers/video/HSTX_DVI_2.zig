@@ -248,8 +248,8 @@ pub fn init_backend(comptime clock_config: rp2350.clocks.config.Global) void {
 
     hw_alloc.dma.hdmi_ping.setup_transfer_raw(
         @intFromPtr(&chip.HSTX_FIFO.FIFO),
-        @intFromPtr(&fifo_chunks.vblank_interval_lines),
-        fifo_chunks.vblank_interval_lines.len,
+        @intFromPtr(&fifo_chunks.non_image_data),
+        fifo_chunks.non_image_data.len,
         .{
             .trigger = false,
             .data_size = .size_32,
@@ -263,8 +263,8 @@ pub fn init_backend(comptime clock_config: rp2350.clocks.config.Global) void {
     );
     hw_alloc.dma.hdmi_pong.setup_transfer_raw(
         @intFromPtr(&chip.HSTX_FIFO.FIFO),
-        @intFromPtr(&fifo_chunks.vblank_interval_lines),
-        fifo_chunks.vblank_interval_lines.len,
+        @intFromPtr(&fifo_chunks.non_image_data),
+        fifo_chunks.non_image_data.len,
         .{
             .trigger = false,
             .data_size = .size_32,
@@ -297,7 +297,13 @@ pub fn init_backend(comptime clock_config: rp2350.clocks.config.Global) void {
     hw_alloc.pins.hdmi_d1_n.set_function(.hstx);
     hw_alloc.pins.hdmi_d2_p.set_function(.hstx);
     hw_alloc.pins.hdmi_d2_n.set_function(.hstx);
+
+    debug_pin.set_function(.sio);
+    debug_pin.set_direction(.out);
+    debug_pin.put(0);
 }
+
+const debug_pin = rp2350.gpio.num(10);
 
 pub fn start_backend() linksection(".sram.bank0") void {
     ashet.platform.enableInterrupts();
@@ -309,24 +315,9 @@ pub fn start_backend() linksection(".sram.bank0") void {
 
 const Scanline: type = [framebuffer_size.width]PaletteColor;
 
-const ActiveScanlineState = enum {
-    SCANOUT_CONTENT,
-    SCANOUT_INTERPAD,
-};
-
-var vactive_cmdlist_state: ActiveScanlineState = .SCANOUT_CONTENT;
-
-// A ping and a pong are cued up initially, so the first time we enter this
-// handler it is to cue up the second ping after the first ping has completed.
-// This is the third scanline overall (-> =2 because zero-based).
-var v_scanline: u32 = 2;
-
-var scanline_even_buffer: Scanline align(16) linksection(dma_data0_section) = undefined;
-var scanline_odd_buffer: Scanline align(16) linksection(dma_data1_section) = undefined;
+var v_scanline: u32 = 0;
 
 var use_pong = false;
-
-var current_scanline_y: u32 = 0;
 
 var current_scanline_src: [*]align(4) Color = &framebuffer;
 
@@ -367,6 +358,9 @@ fn handle_hstx_dma_irq() linksection(dma_code_section) callconv(.c) void {
         @compileError("The HSTX/HDMI driver has to be compiled with a release mode, otherwise it will be too slow.");
     }
 
+    debug_pin.put(1);
+    defer debug_pin.put(0);
+
     // if (chip.HSTX_FIFO.STAT.read().EMPTY == 1) {
     //     logger.err("FIFO UNDERFLOW at {}  {}", .{ v_scanline, vactive_cmdlist_state });
     //     ashet.halt();
@@ -385,69 +379,56 @@ fn handle_hstx_dma_irq() linksection(dma_code_section) callconv(.c) void {
 
     const ch = chan.get_regs();
 
-    const blanking_width = timings.vertical.front_porch + timings.vertical.sync_width + timings.vertical.back_porch;
+    if (v_scanline >= framebuffer_size.height) {
+        // we've sent the full image so we now transfer the whole letterbox + vblank section:
+        set_dma_channel(ch, HstxFifoItem, fifo_chunks.even_image_line.as_hstx_slice());
+        v_scanline = 0;
+    } else {
+        comptime std.debug.assert(@mod(framebuffer_size.height, 2) == 0);
+        const buf_id = v_scanline & 1;
 
-    if (v_scanline < blanking_width) {
-        set_dma_channel(ch, HstxFifoItem, &fifo_chunks.vblank_interval_lines);
-        v_scanline = blanking_width;
-    } else if (v_scanline < blanking_width + letterbox_margin.height) {
-        set_dma_channel(ch, HstxFifoItem, fifo_chunks.letterbox_lines_with_prefix);
-        v_scanline = blanking_width + letterbox_margin.height;
-        vactive_cmdlist_state = .SCANOUT_CONTENT;
-    } else switch (vactive_cmdlist_state) {
-        .SCANOUT_CONTENT => {
-            comptime std.debug.assert(@mod(framebuffer_size.height, 2) == 0);
-            const buf_id = current_scanline_y & 1;
+        const current_buffer: *align(16) fifo_chunks.ImageLine, const next_buffer: *align(16) fifo_chunks.ImageLine = if (buf_id != 0)
+            .{ &fifo_chunks.odd_image_line, &fifo_chunks.even_image_line }
+        else
+            .{ &fifo_chunks.even_image_line, &fifo_chunks.odd_image_line };
 
-            const current_buffer: *align(16) Scanline, const next_buffer: *align(16) Scanline = if (buf_id != 0)
-                .{ &scanline_odd_buffer, &scanline_even_buffer }
-            else
-                .{ &scanline_even_buffer, &scanline_odd_buffer };
+        set_dma_channel(
+            ch,
+            HstxFifoItem,
+            current_buffer.as_hstx_slice(),
+        );
 
-            set_dma_channel(ch, PaletteColor, current_buffer);
-            vactive_cmdlist_state = .SCANOUT_INTERPAD;
+        v_scanline += 1;
+        if (v_scanline == framebuffer_size.height) {
+            current_scanline_src = &framebuffer;
+            set_dma_channel(
+                ch,
+                HstxFifoItem,
+                &fifo_chunks.non_image_data,
+            );
+        }
 
-            current_scanline_y += 1;
-            if (current_scanline_y == framebuffer_size.height) {
-                current_scanline_y = 0;
-                current_scanline_src = &framebuffer;
-            }
+        // Expand the next scanline into memory:
+        {
+            // ashet.machine.perfctr.setup(
+            //     .sram8_access,
+            //     .sram8_access_contested,
+            //     .sram9_access,
+            //     .sram9_access_contested,
+            // );
 
-            // Expand the next scanline into memory:
-            {
-                // ashet.machine.perfctr.setup(
-                //     .sram8_access,
-                //     .sram8_access_contested,
-                //     .sram9_access,
-                //     .sram9_access_contested,
-                // );
+            // ashet.machine.perfctr.start();
 
-                // ashet.machine.perfctr.start();
+            // convert_scanline_basic(current_scanline_src, &next_buffer.data);
+            convert_scanline_minisimd(current_scanline_src, &next_buffer.data);
+            // _ = next_buffer;
 
-                // convert_scanline_basic(current_scanline_src, next_buffer);
-                // convert_scanline_minisimd(current_scanline_src, next_buffer);
-                _ = next_buffer;
+            // ashet.machine.perfctr.stop();
 
-                // ashet.machine.perfctr.stop();
+            // ashet.machine.perfctr.dump();
+        }
 
-                // ashet.machine.perfctr.dump();
-            }
-
-            current_scanline_src += framebuffer_size.width;
-        },
-        .SCANOUT_INTERPAD => {
-            if (current_scanline_y == 0) {
-                // we've reached the last line of the image, so transfer the rest of the line plus the whole letterbox at once:
-                set_dma_channel(ch, HstxFifoItem, fifo_chunks.letterbox_lines_with_suffix);
-                v_scanline = 0;
-            } else {
-                // we're still inside the full image:
-                set_dma_channel(ch, HstxFifoItem, &fifo_chunks.content_interpad_lines);
-                v_scanline += 1;
-            }
-
-            vactive_cmdlist_state = .SCANOUT_CONTENT;
-        },
+        current_scanline_src += framebuffer_size.width;
     }
 }
 
@@ -683,31 +664,51 @@ comptime {
 }
 
 const fifo_chunks = struct {
-    const vblank_interval_lines linksection(dma_data0_section) = (snippets.vsync_off ** timings.vertical.front_porch ++
+    const ImageLine = extern struct {
+        comptime {
+            // This code assumes that the emitted palette color is perfectly reinterpretable as an array of u32
+            std.debug.assert(@mod(@sizeOf(Scanline), 4) == 0);
+
+            std.debug.assert(@offsetOf(@This(), "prefix") == 0);
+            std.debug.assert(std.mem.isAligned(@offsetOf(@This(), "data"), 8));
+            std.debug.assert(std.mem.isAligned(@offsetOf(@This(), "suffix"), 4));
+            std.debug.assert(@sizeOf(@This()) == @offsetOf(@This(), "suffix") + 8);
+        }
+
+        pub fn as_hstx_slice(line: *const ImageLine) *const [@divExact(@sizeOf(@This()), 4)]HstxFifoItem {
+            return @ptrCast(line);
+        }
+
+        prefix: [10]HstxFifoItem = .{
+            .cmd(.raw_repeat, timings.horizontal.front_porch),
+            .sync(SYNC_V1_H1),
+            .cmd(.raw_repeat, timings.horizontal.sync_width),
+            .sync(SYNC_V1_H0),
+            .cmd(.raw_repeat, timings.horizontal.back_porch),
+            .sync(SYNC_V1_H1),
+            .cmd(.nop, 0),
+            .cmd(.tmds_repeat, letterbox_margin.width),
+            .value(@bitCast(letterbox_color)),
+            .cmd(.tmds, framebuffer_size.width),
+        },
+        data: Scanline = undefined,
+        suffix: [2]HstxFifoItem = .{
+            .cmd(.tmds_repeat, letterbox_margin.width),
+            .value(@bitCast(letterbox_color)),
+        },
+    };
+
+    const non_image_data linksection(dma_datax_section) = ([0]HstxFifoItem{} ++
+        snippets.letterbox_line ** letterbox_margin.height ++
+        snippets.vsync_off ** timings.vertical.front_porch ++
         snippets.vsync_on ** timings.vertical.sync_width ++
-        snippets.vsync_off ** timings.vertical.back_porch);
+        snippets.vsync_off ** timings.vertical.back_porch ++
+        snippets.letterbox_line ** letterbox_margin.height ++
+        [0]HstxFifoItem{});
 
-    // the "full chunk" is a concatenation of "prefix, suffix, letterbox, prefix".
-    // this allows us to cut out parts of the sequence we need more than once without having
-    // to allocate duplicate memory.
-    const _fullchunk linksection(dma_datax_section) = snippets.img_suffix ++ snippets.letterbox_line ** letterbox_margin.height ++ snippets.img_prefix;
+    var even_image_line: ImageLine align(16) linksection(dma_data1_section) = .{};
 
-    // this is the top letterbox + the first prefix before the image
-    const letterbox_lines_with_prefix = _fullchunk[snippets.img_suffix.len..];
-
-    // this is the suffix of an intermediate line followed by the prefix for the next line
-    const content_interpad_lines = snippets.img_suffix ++ snippets.img_prefix;
-
-    // this is the last image line suffix followed by the bottom letterbox
-    const letterbox_lines_with_suffix = _fullchunk[0 .. _fullchunk.len - snippets.img_prefix.len];
-
-    comptime {
-        const hstx_fifo_size = 8;
-        std.debug.assert(vblank_interval_lines.len >= hstx_fifo_size);
-        std.debug.assert(letterbox_lines_with_suffix.len >= hstx_fifo_size);
-        std.debug.assert(letterbox_lines_with_prefix.len >= hstx_fifo_size);
-        std.debug.assert(content_interpad_lines.len >= hstx_fifo_size);
-    }
+    var odd_image_line: ImageLine align(16) linksection(dma_data0_section) = .{};
 
     const snippets = struct {
         // A full horizontal line, with vsync off (front or back porch)
@@ -739,26 +740,6 @@ const fifo_chunks = struct {
             .cmd(.raw_repeat, timings.horizontal.back_porch),
             .sync(SYNC_V1_H1),
             .cmd(.tmds_repeat, timings.horizontal.active_items),
-            .value(@bitCast(letterbox_color)),
-        };
-
-        // the prefix of a horizontal line before the image contents.
-        const img_prefix linksection(".discard") = [_]HstxFifoItem{
-            .cmd(.raw_repeat, timings.horizontal.front_porch),
-            .sync(SYNC_V1_H1),
-            .cmd(.raw_repeat, timings.horizontal.sync_width),
-            .sync(SYNC_V1_H0),
-            .cmd(.raw_repeat, timings.horizontal.back_porch),
-            .sync(SYNC_V1_H1),
-            .cmd(.tmds_repeat, letterbox_margin.width),
-            .value(@bitCast(letterbox_color)),
-            .cmd(.tmds, framebuffer_size.width),
-            // DMA inserts the framebuffer pixels here!
-        };
-
-        // the suffix of a horizontal line after the image contents.
-        const img_suffix linksection(".discard") = [_]HstxFifoItem{
-            .cmd(.tmds_repeat, letterbox_margin.width),
             .value(@bitCast(letterbox_color)),
         };
     };

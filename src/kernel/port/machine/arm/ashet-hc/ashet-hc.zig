@@ -157,6 +157,8 @@ fn early_initialize() void {
         //
     }
 
+    wait_for_keypress();
+
     // memtest();
 
     logger.info("core1 fully started", .{});
