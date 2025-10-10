@@ -157,53 +157,9 @@ fn early_initialize() void {
         //
     }
 
-    wait_for_keypress();
-
     // memtest();
 
     logger.info("core1 fully started", .{});
-}
-
-noinline fn memtest() linksection(".sram.bank0") callconv(.c) void {
-    const base: [*]const volatile u32 = @ptrFromInt(0x2000_0000);
-    const offsets = [_]usize{
-        0x0010,
-        0x0002,
-        0x000A,
-        0x0008,
-        0x0004,
-        0x000C,
-        0x0000,
-    };
-
-    perfctr.setup(
-        .xip_main0_access_contested,
-        .xip_main1_access_contested,
-        .apb_access_contested,
-        .fastperi_access_contested,
-    );
-
-    while (hw_alloc.pins.btn_user_2.read() == 1) {
-        ashet.platform.profile.nop();
-    }
-
-    perfctr.start();
-
-    inline for (offsets) |off| {
-        asm volatile (""
-            :
-            : [inp] "r" (base[off]),
-        );
-    }
-
-    perfctr.stop();
-
-    while (hw_alloc.pins.btn_user_2.read() == 0) {
-        ashet.platform.profile.nop();
-    }
-
-    logger.info("addr       = 0x{X:0>8}", .{@intFromPtr(base)});
-    perfctr.dump();
 }
 
 fn initialize() !void {

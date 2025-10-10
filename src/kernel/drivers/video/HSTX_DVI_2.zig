@@ -85,8 +85,8 @@ pub fn init(comptime clock_config: rp2350.clocks.config.Global) !HSTX_DVI {
     //     100 * @as(f64, @floatFromInt(hstx_bit_clock)) / @as(f64, @floatFromInt(dvi_bit_clock)),
     // });
 
-    var rng = std.Random.Xoroshiro128.init(10);
-    rng.random().bytes(std.mem.sliceAsBytes(&framebuffer));
+    // var rng = std.Random.Xoroshiro128.init(10);
+    // rng.random().bytes(std.mem.sliceAsBytes(&framebuffer));
 
     const vd: HSTX_DVI = .{
         .driver = .{
@@ -332,24 +332,6 @@ inline fn set_dma_channel(regs: *volatile rp2350.dma.Channel.Regs, comptime T: t
     }
 }
 
-pub const stats = struct {
-    // pub var irq_calls: u32 = 0;
-    // pub var irq_cycles: u64 = 0;
-
-    inline fn start() void {
-        // ashet.platform.profile.dwt_unit.reset();
-        // ashet.platform.profile.dwt_unit.start();
-    }
-
-    inline fn stop() void {
-        // const ctr = ashet.platform.profile.dwt_unit.read();
-        // ashet.platform.profile.dwt_unit.stop();
-
-        // irq_calls += 1;
-        // irq_cycles += ctr;
-    }
-};
-
 fn handle_hstx_dma_irq() linksection(dma_code_section) callconv(.c) void {
     @setRuntimeSafety(false);
     // @optimizeFor(.ReleaseFast);
@@ -365,9 +347,6 @@ fn handle_hstx_dma_irq() linksection(dma_code_section) callconv(.c) void {
     //     logger.err("FIFO UNDERFLOW at {}  {}", .{ v_scanline, vactive_cmdlist_state });
     //     ashet.halt();
     // }
-
-    // stats.start();
-    // defer stats.stop();
 
     const chan: rp2350.dma.Channel = if (use_pong)
         hw_alloc.dma.hdmi_pong
@@ -409,24 +388,8 @@ fn handle_hstx_dma_irq() linksection(dma_code_section) callconv(.c) void {
         }
 
         // Expand the next scanline into memory:
-        {
-            // ashet.machine.perfctr.setup(
-            //     .sram8_access,
-            //     .sram8_access_contested,
-            //     .sram9_access,
-            //     .sram9_access_contested,
-            // );
-
-            // ashet.machine.perfctr.start();
-
-            // convert_scanline_basic(current_scanline_src, &next_buffer.data);
-            convert_scanline_minisimd(current_scanline_src, &next_buffer.data);
-            // _ = next_buffer;
-
-            // ashet.machine.perfctr.stop();
-
-            // ashet.machine.perfctr.dump();
-        }
+        // convert_scanline_basic(current_scanline_src, &next_buffer.data);
+        convert_scanline_minisimd(current_scanline_src, &next_buffer.data);
 
         current_scanline_src += framebuffer_size.width;
     }
@@ -484,7 +447,9 @@ inline fn convert_scanline_minisimd(
     }
 }
 
-const palette: [256]PaletteColor align(256) linksection(img_palette_section) = .{
+const palette: *const [256]PaletteColor = &palette_storage;
+
+const palette_storage: [256]PaletteColor align(256) linksection(img_palette_section) = .{
     .from_hex(0x000000), .from_hex(0x040404), .from_hex(0x080808), .from_hex(0x0c0c0c), .from_hex(0x101010), .from_hex(0x141414), .from_hex(0x181818), .from_hex(0x1c1c1c),
     .from_hex(0x202020), .from_hex(0x242424), .from_hex(0x282828), .from_hex(0x2c2c2c), .from_hex(0x303030), .from_hex(0x343434), .from_hex(0x383838), .from_hex(0x3c3c3c),
     .from_hex(0x414141), .from_hex(0x454545), .from_hex(0x494949), .from_hex(0x4d4d4d), .from_hex(0x515151), .from_hex(0x555555), .from_hex(0x595959), .from_hex(0x5d5d5d),
