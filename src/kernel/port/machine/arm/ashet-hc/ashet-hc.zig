@@ -56,10 +56,12 @@ const hw = struct {
 };
 
 fn get_tick_count_ms() u64 {
-    var cs = ashet.CriticalSection.enter();
-    defer cs.leave();
+    // var cs = ashet.CriticalSection.enter();
+    // defer cs.leave();
 
-    return systick.total_count_ms;
+    // return systick.total_count_ms;
+
+    return @intFromEnum(hal.time.get_time_since_boot()) / 1000;
 }
 
 comptime {
@@ -105,7 +107,9 @@ fn early_initialize() void {
         @memset(psram_base[0..psram_len], 0);
     }
 
+    logger.info("initialize interrupt tables...", .{});
     configure_interrupt_table(&interrupt_table_core0);
+
     logger.info("initialize ethernet spi...", .{});
     {
         hw_alloc.spi.ethernet.apply(.{
@@ -147,8 +151,6 @@ fn early_initialize() void {
     while (ashet.utils.volatile_read(bool, &core1_ready) == false) {
         //
     }
-
-    // memtest();
 
     logger.info("core1 fully started", .{});
 }
@@ -241,9 +243,9 @@ fn core1_main() linksection(".sram.bank0") void {
 
     HSTX_Driver.init_backend(clock_config);
 
-    // TODO: Enable MPU protection so Core 1 can't access XIP 0 and XIP 1 memories.
-    //       These memories have too much latency to allow real-time operation.
-    if (false and HSTX_Driver == ashet.drivers.video.HSTX_DVI_2) {
+    // Enable MPU protection so Core 1 can't access XIP 0 and XIP 1 memories.
+    // These memories have too much latency to allow real-time operation.
+    {
         configure_mpu_region(0, .{
             .allow_execute = .no_execute,
             .permissions = .read_write_sec,
