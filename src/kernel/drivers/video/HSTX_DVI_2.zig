@@ -216,27 +216,27 @@ pub fn init_backend(comptime clock_config: rp2350.clocks.config.Global) void {
     const HstxBit = @TypeOf(hstx_ctrl_hw.BIT0);
     const hstx_ctrl_bits: *volatile [8]HstxBit = @ptrCast(&hstx_ctrl_hw.BIT0);
 
-    hstx_ctrl_bits[2].write(.{ .CLK = 1, .INV = 0, .SEL_P = 0, .SEL_N = 0 });
-    hstx_ctrl_bits[3].write(.{ .CLK = 1, .INV = 1, .SEL_P = 0, .SEL_N = 0 });
-    for (0..3) |lane| {
+    hstx_ctrl_bits[0].write(.{ .CLK = 1, .INV = 1, .SEL_P = 0, .SEL_N = 0 });
+    hstx_ctrl_bits[1].write(.{ .CLK = 1, .INV = 0, .SEL_P = 0, .SEL_N = 0 });
+    inline for (0..3) |lane| {
         // For each TMDS lane, assign it to the correct GPIO pair based on the
         // desired pinout:
-        const lane_to_output_bit: [3]usize = .{ 0, 6, 4 };
+        const lane_to_output_bit: [3]usize = .{ 2, 4, 6 };
         const bit = lane_to_output_bit[lane];
         // Output even bits during first half of each HSTX cycle, and odd bits
         // during second half. The shifter advances by two bits each cycle.
 
         // The two halves of each pair get identical data, but one pin is inverted.
-        hstx_ctrl_bits[bit + 0].write(.{
-            .SEL_P = @intCast(10 * lane),
-            .SEL_N = @intCast(10 * lane + 1),
-            .INV = 0,
-            .CLK = 0,
-        });
-        hstx_ctrl_bits[bit + 1].write(.{
+        hstx_ctrl_bits[bit + 0].write(comptime .{
             .SEL_P = @intCast(10 * lane),
             .SEL_N = @intCast(10 * lane + 1),
             .INV = 1,
+            .CLK = 0,
+        });
+        hstx_ctrl_bits[bit + 1].write(comptime .{
+            .SEL_P = @intCast(10 * lane),
+            .SEL_N = @intCast(10 * lane + 1),
+            .INV = 0,
             .CLK = 0,
         });
     }

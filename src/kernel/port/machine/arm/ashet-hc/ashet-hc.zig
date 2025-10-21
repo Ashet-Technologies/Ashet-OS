@@ -29,7 +29,7 @@ pub const machine_config = ashet.ports.MachineConfig{
     .early_initialize = early_initialize,
     .get_tick_count_ms = get_tick_count_ms,
     .initialize = initialize,
-    .debug_write = debug_write,
+    .debug_write = debug_log.local_write,
     .get_linear_memory_region = get_linear_memory_region,
     .halt = machine_halt,
     .get_log_prefix = get_log_prefix,
@@ -69,37 +69,28 @@ comptime {
 var interrupt_table_core0: rp2350.VectorTable align(256) = undefined;
 var interrupt_table_core1: rp2350.VectorTable align(256) = undefined;
 
-pub fn wait_for_keypress() void {
-    while (hw_alloc.pins.btn_user_2.read() == 1) {
-        ashet.platform.profile.nop();
-    }
-    while (hw_alloc.pins.btn_user_2.read() == 0) {
-        ashet.platform.profile.nop();
-    }
-}
-
 fn early_initialize() void {
     // Disable watch dog, reset all peripherials, and set the clocks and PLLs:
     hal.init_sequence(clock_config);
 
     hw_alloc.pins.xip_cs1.set_function(.gpck);
-    hw_alloc.pins.debug_tx.set_function(.uart);
-    hw_alloc.pins.debug_rx.set_function(.uart);
 
     hw_alloc.pins.i2c_sda.set_function(.i2c);
     hw_alloc.pins.i2c_scl.set_function(.i2c);
 
-    hw_alloc.pins.btn_user_2.set_function(.sio);
-    hw_alloc.pins.btn_user_2.set_direction(.in);
-    hw_alloc.pins.btn_user_2.set_pull(.up);
-
-    hw_alloc.uart.debug.apply(.{
-        .baud_rate = hw_alloc.cfg.debug_baud,
-        .clock_config = clock_config,
-    });
+    debug_log.init() catch {
+        // this is ... unfortunate and definitly a bug,
+        // but we can't even print something yet, so we're
+        // just going into a hang loop:
+        while (true) {
+            ashet.platform.profile.wfe();
+        }
+    };
 
     // Clear screen, start log:
-    hw_alloc.uart.debug.write_blocking(ashet.utils.ansi.clear_screen, .no_deadline) catch {};
+
+    debug_log.write(0, ashet.utils.ansi.clear_screen);
+    debug_log.write(1, ashet.utils.ansi.clear_screen);
 
     logger.info("Debug output ready.", .{});
 
@@ -176,9 +167,6 @@ fn initialize() !void {
     {
         hw.rtc = .init(1739025296 * std.time.ns_per_s);
 
-        hw.uart0 = try .init(clock_config, hw_alloc.uart.debug, hw_alloc.cfg.debug_baud);
-        // hw.uart1 = try ashet.drivers.serial.RP2xxx.init(clock_config, hal.uart.instance.UART1, 115_200);
-
         // hw.fb_video = ashet.drivers.video.Virtual_Video_Output.init();
 
         hw.hstx_video = try .init(clock_config);
@@ -188,7 +176,8 @@ fn initialize() !void {
             disk_image_end - disk_image_start,
         );
 
-        hw.nic = try .init(spi0, .init(.{ 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF }), .{});
+        // TODO: Implement a driver for the ENC424J600
+        // hw.nic = try .init(spi0, .init(.{ 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF }), .{});
 
         hw.system_i2c = try .init(.{
             .clock_config = clock_config,
@@ -214,29 +203,23 @@ fn initialize() !void {
 
             try backplane.scan_modules();
         }
+
+        // FIXME: The UARTs must be initialized *after* the Propeller 2 right now
+        //        as we're using UART1 to bootstrap the Propeller.
+        hw.uart0 = try .init(clock_config, hw_alloc.uart.com1, hw_alloc.cfg.default_baud);
+        hw.uart1 = try .init(clock_config, hw_alloc.uart.com2, hw_alloc.cfg.default_baud);
     }
 
     ashet.drivers.install(&hw.rtc.driver);
     ashet.drivers.install(&hw.uart0.driver);
-    // ashet.drivers.install(&hw.uart1.driver);
+    ashet.drivers.install(&hw.uart1.driver);
     ashet.drivers.install(&hw.hstx_video.driver);
     ashet.drivers.install(&hw.xip_flash.driver);
-    ashet.drivers.install(&hw.nic.driver);
+    // ashet.drivers.install(&hw.nic.driver);
     ashet.drivers.install(&hw.system_i2c.driver);
     for (&hw.expansion_i2c) |*slot| {
         ashet.drivers.install(&slot.driver);
     }
-
-    rp2350_regs.UART0.UARTIMSC.modify(.{
-        .RXIM = 1,
-    });
-    rp2350_regs.UART0.UARTIFLS.modify(.{
-        .RXIFLSEL = 0b000,
-    });
-
-    IRQ.UART0_IRQ.set_handler(uart0_irq_handler);
-
-    IRQ.UART0_IRQ.enable();
 }
 
 var core1_ready: bool = false;
@@ -310,10 +293,6 @@ fn core1_main() linksection(".sram.bank0") void {
 
     ashet.utils.volatile_write(bool, &core1_ready, true);
 
-    // while (hw_alloc.pins.btn_user_2.read() == 1) {
-    //     ashet.platform.profile.nop();
-    // }
-
     HSTX_Driver.start_backend();
 
     while (true) {
@@ -340,68 +319,6 @@ inline fn configure_interrupt_table(core_local_table: *align(256) rp2350.VectorT
 
     ashet.platform.profile.enable_fault_irq();
     ashet.platform.profile.enable_interrupts();
-}
-
-var mouse_buffer: [3]u8 = undefined;
-var mouse_buffer_index: usize = 0;
-var mouse_last_state: u8 = 0;
-
-fn uart0_irq_handler() callconv(.C) void {
-    const debug_uart = hw_alloc.uart.debug;
-    const reader = debug_uart.reader(.no_deadline);
-
-    while (debug_uart.is_readable()) {
-        const byte = reader.readByte() catch unreachable;
-
-        mouse_buffer[mouse_buffer_index] = byte;
-        mouse_buffer_index += 1;
-
-        if (mouse_buffer_index == 3) {
-            const bmask: u8 = mouse_buffer[0] & 0b111;
-            const dx: i8 = @bitCast(mouse_buffer[1]);
-            const dy: i8 = @bitCast(mouse_buffer[2]);
-
-            if (bmask != mouse_last_state) {
-                const buttons = [3]struct { ashet.abi.MouseButton, u8 }{
-                    .{ .left, 0x01 },
-                    .{ .right, 0x02 },
-                    .{ .middle, 0x04 },
-                };
-                for (buttons) |group| {
-                    const button, const mask = group;
-
-                    const old = (mouse_last_state & mask);
-                    const now = (bmask & mask);
-
-                    if (old != now) {
-                        ashet.input.push_raw_event_from_irq(.{
-                            .mouse_button = .{
-                                .button = button,
-                                .down = (now != 0),
-                            },
-                        });
-                    }
-                }
-
-                mouse_last_state = bmask;
-            }
-            if (dx != 0 or dy != 0) {
-                ashet.input.push_raw_event_from_irq(.{
-                    .mouse_rel_motion = .{
-                        .dx = dx,
-                        .dy = -dy, // somehow inverted
-                    },
-                });
-            }
-
-            mouse_buffer_index = 0;
-        }
-    }
-}
-
-fn debug_write(msg: []const u8) void {
-    const debug_uart = hw_alloc.uart.debug;
-    debug_uart.write_blocking(msg, .no_deadline) catch {};
 }
 
 extern var __machine_linmem_start: anyopaque align(4096);
@@ -455,36 +372,6 @@ export const image_def align(64) linksection(".text.image_def") = [_]u32{
 
 const PICOBIN_BLOCK_MARKER_START = 0xffffded3;
 const PICOBIN_BLOCK_MARKER_END = 0xab123579;
-
-// pub fn bitbang_write(data: []const u8) linksection(".ramcode") void {
-//     @setRuntimeSafety(false);
-
-//     const sck_mask = comptime pinout.dbg_sck.mask();
-//     const sda_mask = comptime pinout.dbg_sda.mask();
-//     const sel_mask = comptime pinout.dbg_sel.mask();
-
-//     for (data) |byte| {
-//         rp2350_regs.SIO.GPIO_OUT_SET.write_raw(sel_mask); // SEL=H
-//         defer rp2350_regs.SIO.GPIO_OUT_CLR.write_raw(sel_mask); // SEL=L
-
-//         var shift = byte;
-//         for (0..8) |_| {
-//             if ((shift & 0x80) != 0) {
-//                 rp2350_regs.SIO.GPIO_OUT_SET.write_raw(sda_mask);
-//             } else {
-//                 rp2350_regs.SIO.GPIO_OUT_CLR.write_raw(sda_mask);
-//             }
-
-//             rp2350_regs.SIO.GPIO_OUT_SET.write_raw(sck_mask);
-
-//             asm volatile ("nop");
-//             asm volatile ("nop");
-//             rp2350_regs.SIO.GPIO_OUT_CLR.write_raw(sck_mask);
-
-//             shift <<= 1;
-//         }
-//     }
-// }
 
 fn get_log_prefix() []const u8 {
     return switch (rp2350.peripherals.SIO.CPUID.read().CPUID & 1) {
@@ -649,47 +536,15 @@ pub const IRQ = enum(u6) {
 fn machine_halt() noreturn {
     ashet.platform.profile.disable_interrupts();
 
-    debug_write("\r\nMACHINE HALT [");
+    debug_log.local_write("\r\nCORE HALT\r\n");
 
-    switch (rp2350.peripherals.SIO.CPUID.read().CPUID) {
-        0 => debug_write("Core 0"),
-        1 => debug_write("Core 1"),
-        else => debug_write("WTf"),
-    }
-    debug_write("]\r\n");
+    // TODO: Implement proper "machine halt" by stopping everything.
 
     ashet.platform.profile.bkpt(0);
 
     while (true) {
         ashet.platform.profile.wfe();
     }
-}
-
-const spi0: ashet.drivers.network.ENC28J60.HardwareInterface = .{
-    .param = undefined,
-    .vtable = &.{
-        .set_chipselect = spi0_set_chipselect,
-        .write = spi0_write,
-        .read = spi0_read,
-    },
-};
-
-fn spi0_set_chipselect(dri: *anyopaque, asserted: bool) void {
-    _ = dri;
-
-    // hal.time.sleep_us(1);
-    hw_alloc.pins.eth_cs_pin.put(if (asserted) 0 else 1);
-    // hal.time.sleep_us(1);
-}
-
-fn spi0_write(dri: *anyopaque, output: []const u8) void {
-    _ = dri;
-    hw_alloc.spi.ethernet.write_blocking(u8, output);
-}
-
-fn spi0_read(dri: *anyopaque, tx_byte: u8, input: []u8) void {
-    _ = dri;
-    hw_alloc.spi.ethernet.read_blocking(u8, tx_byte, input);
 }
 
 const videomem = struct {
@@ -1161,5 +1016,97 @@ pub const perfctr = struct {
         logger.info("PERF1[{s}] = {}", .{ @tagName(busctrl.PERFSEL1.read().PERFSEL1), busctrl.PERFCTR1.read().PERFCTR1 });
         logger.info("PERF2[{s}] = {}", .{ @tagName(busctrl.PERFSEL2.read().PERFSEL2), busctrl.PERFCTR2.read().PERFCTR2 });
         logger.info("PERF3[{s}] = {}", .{ @tagName(busctrl.PERFSEL3.read().PERFSEL3), busctrl.PERFCTR3.read().PERFCTR3 });
+    }
+};
+
+const debug_log = struct {
+    const debug_tx_code = blk: {
+        @setEvalBranchQuota(20_000);
+        break :blk hal.pio.assemble(
+            \\.program debug_tx
+            \\
+            \\.wrap_target
+            \\  pull                            ; fetch data. blocks.
+            \\  set pins, 0                     ; send start bit
+            \\  set x, 7                        ; set bit counter
+            \\bitloop:
+            \\  out pins, 1                     ; send data bits
+            \\  jmp x-- bitloop                 ; loop until all 8 data bits are sent
+            \\  set pins, 1                     ; set line to idle, also send stop bit
+            \\.wrap
+            \\
+        , .{});
+    };
+
+    const pio = hw_alloc.pio.debuglog;
+    const debug_tx_pgm = debug_tx_code.get_program_by_name("debug_tx");
+
+    fn init() !void {
+        comptime std.debug.assert(pio == .pio1);
+        hw_alloc.pins.debug_core0_tx.set_function(.pio1);
+        hw_alloc.pins.debug_core1_tx.set_function(.pio1);
+
+        // we first must set up the GPIOBASE, otherwise the pins are fucked up:
+        pio.get_regs().GPIOBASE.write_raw(16);
+
+        try pio.sm_load_and_start_program(.sm0, debug_tx_pgm, .{
+            .clkdiv = .{ .int = 25, .frac = 0 }, // 1 MBaud
+            .pin_mappings = .{
+                .out = .single(hw_alloc.pins.debug_core0_tx),
+                .set = .single(hw_alloc.pins.debug_core0_tx),
+                .in_base = null,
+            },
+            .exec = .{},
+            .shift = .{
+                .autopull = false,
+                .out_shiftdir = .right,
+
+                .join_tx = true,
+
+                .pull_threshold = 8,
+            },
+        });
+
+        try pio.sm_load_and_start_program(.sm1, debug_tx_pgm, .{
+            .clkdiv = .{ .int = 25, .frac = 0 }, // 1 MBaud
+            .pin_mappings = .{
+                .out = .single(hw_alloc.pins.debug_core1_tx),
+                .set = .single(hw_alloc.pins.debug_core1_tx),
+                .in_base = null,
+            },
+            .exec = .{},
+            .shift = .{
+                .autopull = false,
+                .out_shiftdir = .right,
+
+                .join_tx = true,
+
+                .pull_threshold = 8,
+            },
+        });
+
+        try pio.sm_set_pin(.sm0, hw_alloc.pins.debug_core0_tx, 1, 1);
+        try pio.sm_set_pin(.sm1, hw_alloc.pins.debug_core1_tx, 1, 1);
+
+        try pio.sm_set_pindir(.sm0, hw_alloc.pins.debug_core0_tx, 1, .out);
+        try pio.sm_set_pindir(.sm1, hw_alloc.pins.debug_core1_tx, 1, .out);
+
+        pio.sm_set_enabled(.sm0, true);
+        pio.sm_set_enabled(.sm1, true);
+    }
+
+    fn write(port: u1, data: []const u8) void {
+        const sm: hal.pio.StateMachine = switch (port) {
+            0 => .sm0,
+            1 => .sm1,
+        };
+        for (data) |byte| {
+            pio.sm_blocking_write(sm, byte);
+        }
+    }
+
+    /// Writes to the debug port for Core 0 or Core 1, depending on which core is executing.
+    fn local_write(msg: []const u8) void {
+        write(@truncate(rp2350.peripherals.SIO.CPUID.read().CPUID), msg);
     }
 };
