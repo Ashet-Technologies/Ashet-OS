@@ -477,9 +477,9 @@
 
     pub fn from_rgbf(r: f32, g: f32, b: f32) Color {
         return Color{
-            .r = @intFromFloat(std.math.maxInt(u2) * std.math.clamp(r, 0.0, 1.0)),
-            .g = @intFromFloat(std.math.maxInt(u3) * std.math.clamp(g, 0.0, 1.0)),
-            .b = @intFromFloat(std.math.maxInt(u3) * std.math.clamp(b, 0.0, 1.0)),
+            .r = @intFromFloat(std.math.maxInt(u2) * std.math.clamp(r, 0.0, 1.0) + 0.5),
+            .g = @intFromFloat(std.math.maxInt(u3) * std.math.clamp(g, 0.0, 1.0) + 0.5),
+            .b = @intFromFloat(std.math.maxInt(u3) * std.math.clamp(b, 0.0, 1.0) + 0.5),
         };
     }
 

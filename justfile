@@ -187,11 +187,14 @@ rp2350-upload-fs: rp2350-build
         zig-out/arm-ashet-hc/disk.uf2
 
 rp2350-load: rp2350-build
-    openocd -s tcl \
-        -f interface/cmsis-dap.cfg \
-        -f target/rp2350.cfg \
-        -c 'adapter speed 5000' \
-        -c "program zig-out/arm-ashet-hc/kernel.elf verify reset exit"
+    arm-none-eabi-gdb \
+        --command scripts/gdb-flash-rp2350 \
+        zig-out/arm-ashet-hc/kernel.elf
+# openocd -s tcl \
+#     -f interface/cmsis-dap.cfg \
+#     -f target/rp2350.cfg \
+#     -c 'adapter speed 5000' \
+#     -c "program zig-out/arm-ashet-hc/kernel.elf verify reset exit"
 
 rp2350-openocd:
     openocd -s tcl \

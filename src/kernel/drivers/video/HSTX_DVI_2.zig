@@ -447,41 +447,28 @@ inline fn convert_scanline_minisimd(
     }
 }
 
+/// LORE: This is a **pointer** to the actual color palette.
+///       A bug in Zig 0.14.1 creates an implicit array copy when indexing an array like `array[i]` directly.
+///       By using an indirection through a pointer, we're still getting the correct optimized behaviour,
+///       but the implicit copy is prevented.
+///       The problem with the implicit copy is that it's stored in `.rodata`, and thus the external XIP0 flash
+///       memory, which has too much latencies to be accessed in the HSTX interrupt handler.
 const palette: *const [256]PaletteColor = &palette_storage;
 
-const palette_storage: [256]PaletteColor align(256) linksection(img_palette_section) = .{
-    .from_hex(0x000000), .from_hex(0x040404), .from_hex(0x080808), .from_hex(0x0c0c0c), .from_hex(0x101010), .from_hex(0x141414), .from_hex(0x181818), .from_hex(0x1c1c1c),
-    .from_hex(0x202020), .from_hex(0x242424), .from_hex(0x282828), .from_hex(0x2c2c2c), .from_hex(0x303030), .from_hex(0x343434), .from_hex(0x383838), .from_hex(0x3c3c3c),
-    .from_hex(0x414141), .from_hex(0x454545), .from_hex(0x494949), .from_hex(0x4d4d4d), .from_hex(0x515151), .from_hex(0x555555), .from_hex(0x595959), .from_hex(0x5d5d5d),
-    .from_hex(0x616161), .from_hex(0x656565), .from_hex(0x696969), .from_hex(0x6d6d6d), .from_hex(0x717171), .from_hex(0x757575), .from_hex(0x797979), .from_hex(0x7d7d7d),
-    .from_hex(0x828282), .from_hex(0x868686), .from_hex(0x8a8a8a), .from_hex(0x8e8e8e), .from_hex(0x929292), .from_hex(0x969696), .from_hex(0x9a9a9a), .from_hex(0x9e9e9e),
-    .from_hex(0xa2a2a2), .from_hex(0xa6a6a6), .from_hex(0xaaaaaa), .from_hex(0xaeaeae), .from_hex(0xb2b2b2), .from_hex(0xb6b6b6), .from_hex(0xbababa), .from_hex(0xbebebe),
-    .from_hex(0xc3c3c3), .from_hex(0xc7c7c7), .from_hex(0xcbcbcb), .from_hex(0xcfcfcf), .from_hex(0xd3d3d3), .from_hex(0xd7d7d7), .from_hex(0xdbdbdb), .from_hex(0xdfdfdf),
-    .from_hex(0xe3e3e3), .from_hex(0xe7e7e7), .from_hex(0xebebeb), .from_hex(0xefefef), .from_hex(0xf3f3f3), .from_hex(0xf7f7f7), .from_hex(0xfbfbfb), .from_hex(0xffffff),
-    .from_hex(0x1f1515), .from_hex(0x1f1d15), .from_hex(0x1a1f15), .from_hex(0x151f17), .from_hex(0x151f1f), .from_hex(0x15171f), .from_hex(0x1a151f), .from_hex(0x1f151d),
-    .from_hex(0x3f2a2a), .from_hex(0x3f3a2a), .from_hex(0x353f2a), .from_hex(0x2a3f2f), .from_hex(0x2a3f3f), .from_hex(0x2a2f3f), .from_hex(0x352a3f), .from_hex(0x3f2a3a),
-    .from_hex(0x5f3f3f), .from_hex(0x5f573f), .from_hex(0x4f5f3f), .from_hex(0x3f5f47), .from_hex(0x3f5f5f), .from_hex(0x3f475f), .from_hex(0x4f3f5f), .from_hex(0x5f3f57),
-    .from_hex(0x7f5454), .from_hex(0x7f7454), .from_hex(0x6a7f54), .from_hex(0x547f5f), .from_hex(0x547f7f), .from_hex(0x545f7f), .from_hex(0x6a547f), .from_hex(0x7f5474),
-    .from_hex(0x9f6a6a), .from_hex(0x9f926a), .from_hex(0x849f6a), .from_hex(0x6a9f77), .from_hex(0x6a9f9f), .from_hex(0x6a779f), .from_hex(0x846a9f), .from_hex(0x9f6a92),
-    .from_hex(0xbf7f7f), .from_hex(0xbfaf7f), .from_hex(0x9fbf7f), .from_hex(0x7fbf8f), .from_hex(0x7fbfbf), .from_hex(0x7f8fbf), .from_hex(0x9f7fbf), .from_hex(0xbf7faf),
-    .from_hex(0xdf9494), .from_hex(0xdfcc94), .from_hex(0xb9df94), .from_hex(0x94dfa7), .from_hex(0x94dfdf), .from_hex(0x94a7df), .from_hex(0xb994df), .from_hex(0xdf94cc),
-    .from_hex(0xffa9a9), .from_hex(0xffe9a9), .from_hex(0xd4ffa9), .from_hex(0xa9ffbf), .from_hex(0xa9ffff), .from_hex(0xa9bfff), .from_hex(0xd4a9ff), .from_hex(0xffa9e9),
-    .from_hex(0x1f0a0a), .from_hex(0x1f1a0a), .from_hex(0x151f0a), .from_hex(0x0a1f0f), .from_hex(0x0a1f1f), .from_hex(0x0a0f1f), .from_hex(0x150a1f), .from_hex(0x1f0a1a),
-    .from_hex(0x3f1515), .from_hex(0x3f3515), .from_hex(0x2a3f15), .from_hex(0x153f1f), .from_hex(0x153f3f), .from_hex(0x151f3f), .from_hex(0x2a153f), .from_hex(0x3f1535),
-    .from_hex(0x5f1f1f), .from_hex(0x5f4f1f), .from_hex(0x3f5f1f), .from_hex(0x1f5f2f), .from_hex(0x1f5f5f), .from_hex(0x1f2f5f), .from_hex(0x3f1f5f), .from_hex(0x5f1f4f),
-    .from_hex(0x7f2a2a), .from_hex(0x7f6a2a), .from_hex(0x547f2a), .from_hex(0x2a7f3f), .from_hex(0x2a7f7f), .from_hex(0x2a3f7f), .from_hex(0x542a7f), .from_hex(0x7f2a6a),
-    .from_hex(0x9f3535), .from_hex(0x9f8435), .from_hex(0x6a9f35), .from_hex(0x359f4f), .from_hex(0x359f9f), .from_hex(0x354f9f), .from_hex(0x6a359f), .from_hex(0x9f3584),
-    .from_hex(0xbf3f3f), .from_hex(0xbf9f3f), .from_hex(0x7fbf3f), .from_hex(0x3fbf5f), .from_hex(0x3fbfbf), .from_hex(0x3f5fbf), .from_hex(0x7f3fbf), .from_hex(0xbf3f9f),
-    .from_hex(0xdf4a4a), .from_hex(0xdfb94a), .from_hex(0x94df4a), .from_hex(0x4adf6f), .from_hex(0x4adfdf), .from_hex(0x4a6fdf), .from_hex(0x944adf), .from_hex(0xdf4ab9),
-    .from_hex(0xff5454), .from_hex(0xffd454), .from_hex(0xa9ff54), .from_hex(0x54ff7f), .from_hex(0x54ffff), .from_hex(0x547fff), .from_hex(0xa954ff), .from_hex(0xff54d4),
-    .from_hex(0x1f0000), .from_hex(0x1f1700), .from_hex(0x0f1f00), .from_hex(0x001f07), .from_hex(0x001f1f), .from_hex(0x00071f), .from_hex(0x0f001f), .from_hex(0x1f0017),
-    .from_hex(0x3f0000), .from_hex(0x3f2f00), .from_hex(0x1f3f00), .from_hex(0x003f0f), .from_hex(0x003f3f), .from_hex(0x000f3f), .from_hex(0x1f003f), .from_hex(0x3f002f),
-    .from_hex(0x5f0000), .from_hex(0x5f4700), .from_hex(0x2f5f00), .from_hex(0x005f17), .from_hex(0x005f5f), .from_hex(0x00175f), .from_hex(0x2f005f), .from_hex(0x5f0047),
-    .from_hex(0x7f0000), .from_hex(0x7f5f00), .from_hex(0x3f7f00), .from_hex(0x007f1f), .from_hex(0x007f7f), .from_hex(0x001f7f), .from_hex(0x3f007f), .from_hex(0x7f005f),
-    .from_hex(0x9f0000), .from_hex(0x9f7700), .from_hex(0x4f9f00), .from_hex(0x009f27), .from_hex(0x009f9f), .from_hex(0x00279f), .from_hex(0x4f009f), .from_hex(0x9f0077),
-    .from_hex(0xbf0000), .from_hex(0xbf8f00), .from_hex(0x5fbf00), .from_hex(0x00bf2f), .from_hex(0x00bfbf), .from_hex(0x002fbf), .from_hex(0x5f00bf), .from_hex(0xbf008f),
-    .from_hex(0xdf0000), .from_hex(0xdfa700), .from_hex(0x6fdf00), .from_hex(0x00df37), .from_hex(0x00dfdf), .from_hex(0x0037df), .from_hex(0x6f00df), .from_hex(0xdf00a7),
-    .from_hex(0xff0000), .from_hex(0xffbf00), .from_hex(0x7fff00), .from_hex(0x00ff3f), .from_hex(0x00ffff), .from_hex(0x003fff), .from_hex(0x7f00ff), .from_hex(0xff00bf),
+const palette_storage: [256]PaletteColor align(256) linksection(img_palette_section) = blk: {
+    @setEvalBranchQuota(10_000);
+
+    // Compute the initial palette from the actual color definition by converting the palette index
+    // into the 8 bit color value, then expanding it to the "true color rgb",
+    // and store it into the palette backing.
+    var pal: [256]PaletteColor = undefined;
+    for (&pal, 0..) |*true_color, index| {
+        const index8: u8 = @intCast(index);
+        const color: Color = @bitCast(index8);
+        const rgb = color.to_rgb888();
+        true_color.* = .from_rgb(rgb.r, rgb.g, rgb.b);
+    }
+    break :blk pal;
 };
 
 const RGB555 = packed struct(u16) {
@@ -497,10 +484,14 @@ const RGB555 = packed struct(u16) {
             r: u8,
         };
         const hex: Hex = @bitCast(val);
+        return from_rgb(hex.r, hex.g, hex.b);
+    }
+
+    pub fn from_rgb(r: u8, g: u8, b: u8) RGB555 {
         return .{
-            .r = @intCast(hex.r >> 3),
-            .g = @intCast(hex.g >> 3),
-            .b = @intCast(hex.b >> 3),
+            .r = @intCast(r >> 3),
+            .g = @intCast(g >> 3),
+            .b = @intCast(b >> 3),
         };
     }
 };
@@ -513,9 +504,9 @@ const RGB888x = packed struct(u32) {
 
     pub fn from_hex(val: u24) RGB888x {
         const Hex = packed struct(u24) {
-            b: u8,
-            g: u8,
             r: u8,
+            g: u8,
+            b: u8,
         };
         const hex: Hex = @bitCast(val);
         return .{
@@ -523,6 +514,9 @@ const RGB888x = packed struct(u32) {
             .g = hex.g,
             .b = hex.b,
         };
+    }
+    pub fn from_rgb(r: u8, g: u8, b: u8) RGB555 {
+        return .{ .r = r, .g = g, .b = b };
     }
 };
 
@@ -622,10 +616,6 @@ const HstxFifoItem = packed struct(u32) {
 
 comptime {
     std.debug.assert(@bitSizeOf(HstxFifoItem) == 32);
-}
-
-comptime {
-    // @compileLog(vblank_interval_lines);
 }
 
 const fifo_chunks = struct {
