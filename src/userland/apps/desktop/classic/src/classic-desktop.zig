@@ -204,7 +204,7 @@ pub fn main() !void {
                         }
 
                         try render_queue.draw_text(
-                            desktop_icon.bounds.corner(.bottom_left).move_by(0, 1),
+                            desktop_icon.bounds.corner(.bottom_left).move_by(0, 2),
                             default_font,
                             Color.black,
                             desktop_icon.app.get_display_name(),

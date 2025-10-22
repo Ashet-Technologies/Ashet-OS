@@ -862,12 +862,12 @@ const MinimizedIterator = struct {
     dx: i16,
     dy: i16,
     inner: WindowIterator,
+    title_buf: [256]u8 = undefined,
 
     fn next(iter: *MinimizedIterator) ?MinimizedWindow {
         const window = iter.inner.next() orelse return null;
 
-        var title_buf: [256]u8 = undefined;
-        const title = window.get_title(&title_buf);
+        const title = window.get_title(&iter.title_buf);
         const width = @as(u15, @intCast(@min(6 * title.len + 2 + 11 + 10, 75)));
         defer iter.dx += (width + 4);
 
