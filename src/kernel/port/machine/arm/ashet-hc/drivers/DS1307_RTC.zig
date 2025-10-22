@@ -68,11 +68,11 @@ pub fn init() !DS1307_RTC {
     }
 
     const dt: dateconv.DateTime = .{
-        .year = 2000 + @as(i32, regs.year),
-        .month = regs.month,
-        .day = regs.date,
+        .year = 2000 + @as(i32, regs.get_year()),
+        .month = regs.get_month(),
+        .day = regs.get_date(),
         .hour = regs.get_hours(),
-        .minute = regs.minutes,
+        .minute = regs.get_minutes(),
         .second = regs.get_seconds(),
     };
 
@@ -128,6 +128,10 @@ const RTC_Registers = extern struct {
         return bcd_to_dec(rtc.seconds.seconds_bcd);
     }
 
+    fn get_minutes(rtc: RTC_Registers) u8 {
+        return bcd_to_dec(rtc.minutes);
+    }
+
     fn get_hours(rtc: RTC_Registers) u8 {
         return switch (rtc.hours.control.mode) {
             .@"24h" => bcd_to_dec(rtc.hours.@"24h".hour),
@@ -136,6 +140,18 @@ const RTC_Registers = extern struct {
                 .PM => @as(u8, 12),
             },
         };
+    }
+
+    fn get_date(rtc: RTC_Registers) u8 {
+        return bcd_to_dec(rtc.date);
+    }
+
+    fn get_month(rtc: RTC_Registers) u8 {
+        return bcd_to_dec(rtc.month);
+    }
+
+    fn get_year(rtc: RTC_Registers) u8 {
+        return bcd_to_dec(rtc.year);
     }
 
     fn bcd_to_dec(bcd: u8) u8 {
