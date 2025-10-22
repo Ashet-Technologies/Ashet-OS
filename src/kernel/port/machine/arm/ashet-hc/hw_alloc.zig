@@ -113,8 +113,10 @@ pub const i2c = struct {
 };
 
 pub const i2c_addresses = struct {
-    pub const i2c_main_mux: rp2350.i2c.Address = .new(0x70);
     pub const expansion_eeprom: rp2350.i2c.Address = .new(0x57);
+
+    pub const ds1306_rtc: rp2350.i2c.Address = .new(0x68);
+    pub const i2c_main_mux: rp2350.i2c.Address = .new(0x70);
 };
 
 pub const adc_channels = struct {

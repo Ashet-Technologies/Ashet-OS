@@ -11,6 +11,7 @@ const psram = @import("psram.zig");
 pub const hw_alloc = @import("hw_alloc.zig");
 
 const Nested_I2C_Bus = @import("drivers/Nested_I2C_Bus.zig");
+const DS1307_RTC = @import("drivers/DS1307_RTC.zig");
 
 const HSTX_Driver = ashet.drivers.video.HSTX_DVI_2;
 
@@ -39,12 +40,11 @@ pub const machine_config = ashet.ports.MachineConfig{
 const hw = struct {
     //! list of fixed hardware components
 
-    var rtc: ashet.drivers.rtc.Dummy_RTC = undefined;
+    var rtc: DS1307_RTC = undefined;
 
     var uart0: ashet.drivers.serial.RP2xxx = undefined;
     var uart1: ashet.drivers.serial.RP2xxx = undefined;
 
-    // var fb_video: ashet.drivers.video.Virtual_Video_Output = undefined;
     var hstx_video: HSTX_Driver = undefined;
 
     var xip_flash: ashet.drivers.block.Memory_Mapped_Flash = undefined;
@@ -167,10 +167,6 @@ fn initialize() !void {
 
     // Initialize devices and drivers:
     {
-        hw.rtc = .init(1739025296 * std.time.ns_per_s);
-
-        // hw.fb_video = ashet.drivers.video.Virtual_Video_Output.init();
-
         hw.hstx_video = try .init(clock_config);
 
         hw.xip_flash = .init(
@@ -200,6 +196,10 @@ fn initialize() !void {
             });
         }
 
+        // must be initialized *after* I2C system
+        hw.rtc = try .init();
+
+        // must be initialized *after* I2C system
         {
             try propio.init_propeller2();
 
