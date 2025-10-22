@@ -976,8 +976,12 @@ const backplane = struct {
 
 pub const perfctr = struct {
     const busctrl = rp2350.peripherals.BUSCTRL;
+    const xip = rp2350.peripherals.XIP_CTRL;
 
     const Counter = @TypeOf(busctrl.PERFSEL0.direct_access.PERFSEL0);
+
+    var ctr_hit: u32 = 0;
+    var ctr_acc: u32 = 0;
 
     pub fn setup(p0: Counter, p1: Counter, p2: Counter, p3: Counter) void {
         stop();
@@ -997,6 +1001,8 @@ pub const perfctr = struct {
         busctrl.PERFCTR1.write(.{ .PERFCTR1 = 0 });
         busctrl.PERFCTR2.write(.{ .PERFCTR2 = 0 });
         busctrl.PERFCTR3.write(.{ .PERFCTR3 = 0 });
+        xip.CTR_HIT.integer_access = 0;
+        xip.CTR_ACC.integer_access = 0;
         ashet.platform.profile.dwt_unit.reset();
     }
 
@@ -1007,6 +1013,8 @@ pub const perfctr = struct {
     }
 
     pub inline fn stop() void {
+        ctr_hit = xip.CTR_HIT.integer_access;
+        ctr_acc = xip.CTR_ACC.integer_access;
         busctrl.PERFCTR_EN.write(.{ .PERFCTR_EN = 0 });
         ashet.platform.profile.dwt_unit.stop();
     }
@@ -1014,6 +1022,7 @@ pub const perfctr = struct {
     pub fn dump() void {
         const ctr = ashet.platform.profile.dwt_unit.read();
         logger.info("Cycles     = {}", .{ctr});
+        logger.info("XIP Stats  = {} (hits: {}, misses: {})", .{ ctr_acc, ctr_hit, ctr_acc -| ctr_hit });
         logger.info("PERF0[{s}] = {}", .{ @tagName(busctrl.PERFSEL0.read().PERFSEL0), busctrl.PERFCTR0.read().PERFCTR0 });
         logger.info("PERF1[{s}] = {}", .{ @tagName(busctrl.PERFSEL1.read().PERFSEL1), busctrl.PERFCTR1.read().PERFCTR1 });
         logger.info("PERF2[{s}] = {}", .{ @tagName(busctrl.PERFSEL2.read().PERFSEL2), busctrl.PERFCTR2.read().PERFCTR2 });
