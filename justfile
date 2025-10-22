@@ -200,7 +200,7 @@ rp2350-openocd:
     openocd -s tcl \
         -f interface/cmsis-dap.cfg \
         -f target/rp2350.cfg \
-        -c 'adapter speed 5000'
+        -c 'adapter speed 12000'
 
 
 rp2350-reset:
