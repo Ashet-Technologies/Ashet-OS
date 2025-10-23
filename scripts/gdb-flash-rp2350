@@ -1,7 +1,3 @@
-# Disable pagination so the user isn't asked if GDB is scrolling
-set pagination off
-set height unlimited
-
 # connect to OpenOCD
 target extended-remote localhost:3333
 

@@ -188,6 +188,7 @@ rp2350-upload-fs: rp2350-build
 
 rp2350-load: rp2350-build
     arm-none-eabi-gdb \
+        --batch \
         --command scripts/gdb-flash-rp2350 \
         zig-out/arm-ashet-hc/kernel.elf
 # openocd -s tcl \
@@ -214,7 +215,8 @@ rp2350-reset:
         -c 'exit'
 
 rp2350-gdb:
-    gdb \
+    arm-none-eabi-gdb \
+        -ex 'set pagination off' \
         --command "scripts/gdb-rp2350" \
         zig-out/arm-ashet-hc/kernel.elf 
 

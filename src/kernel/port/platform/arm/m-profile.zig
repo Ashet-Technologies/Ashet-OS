@@ -1401,10 +1401,38 @@ pub const peripherals = struct {
 
 /// Data Watchpoint & Trace Unit
 pub const dwt_unit = struct {
-    const DWT_CTRL = packed struct(u32) { cnt_ena: bool, pad: u31 };
+    const m33_base = 0xE0000000;
 
-    const dwt_ctrl: *volatile DWT_CTRL = @ptrFromInt(0xE0001000);
-    const dwt_cyccnt: *volatile u32 = @ptrFromInt(0xE0001004);
+    const DWT_CTRL = packed struct(u32) { cnt_ena: bool, pad: u31 };
+    const DEMCR = packed struct(u32) {
+        VC_CORERESET: bool,
+        _reserved0: u3,
+        VC_MMERR: bool,
+        VC_NOCPERR: bool,
+        VC_CHKERR: bool,
+        VC_STATERR: bool,
+        VC_BUSERR: bool,
+        VC_INTERR: bool,
+        VC_HARDERR: bool,
+        VC_SFERR: bool,
+        _reserved1: u4,
+        MON_EN: bool,
+        MON_PEND: bool,
+        MON_STEP: bool,
+        MON_REQ: bool,
+        SDME: bool,
+        _reserved2: u3,
+        TRCENA: bool,
+        _reserved3: u7,
+    };
+
+    const demcr: *volatile DEMCR = @ptrFromInt(m33_base + 0x0edfc);
+    const dwt_ctrl: *volatile DWT_CTRL = @ptrFromInt(m33_base + 0x1000);
+    const dwt_cyccnt: *volatile u32 = @ptrFromInt(m33_base + 0x1004);
+
+    pub inline fn init() void {
+        demcr.TRCENA = true;
+    }
 
     pub inline fn start() void {
         dwt_ctrl.cnt_ena = true;

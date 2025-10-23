@@ -1,5 +1,5 @@
 const std = @import("std");
-const kernel = @import("kernel");
+pub const kernel = @import("kernel");
 
 comptime {
     _ = kernel;

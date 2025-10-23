@@ -781,6 +781,26 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
                 var utf8_view = try std.unicode.Utf8View.init(text);
                 var codepoints = utf8_view.iterator();
 
+                // const perfctr = @import("root").kernel.machine.perfctr;
+
+                // perfctr.setup(
+                //     .xip_main0_access,
+                //     .xip_main0_stall_upstream,
+                //     .xip_main1_access,
+                //     .xip_main1_stall_upstream,
+                // );
+                // perfctr.start();
+                // defer {
+                //     perfctr.stop();
+
+                //     logger.info("Render stats for a {s} font, rendering {} bytes ('{'}')", .{
+                //         @tagName(sw.font.*),
+                //         text.len,
+                //         std.zig.fmtEscapes(text),
+                //     });
+                //     perfctr.dump();
+                // }
+
                 switch (sw.font.*) {
                     .bitmap => |bitmap_font| {
                         const fallback_glyph = bitmap_font.getGlyph('�') orelse bitmap_font.getGlyph('?');
@@ -792,6 +812,38 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
                             const glyph: fonts.BitmapFont.Glyph = bitmap_font.getGlyph(char) orelse fallback_glyph orelse continue;
 
                             if (sw.dx + glyph.advance >= 0) {
+
+                                // var startpos = sw.fb.get_cursor();
+                                // startpos.move(sw.dx + glyph.offset_x, sw.dy + glyph.offset_y);
+
+                                // const stride = (glyph.height + 7) / 8;
+
+                                // var gy: u15 = 0;
+                                // while (gy < glyph.height) : (gy += 1) {
+                                //     const mask = @as(u8, 1) << @truncate(gy);
+
+                                //     var row_ptr = glyph.bits.ptr + (gy / 8);
+
+                                //     var gx: u15 = 0;
+                                //     x_loop: while (gx < glyph.width) : (gx += 1) {
+                                //         if (sw.dx + gx > sw.limit) {
+                                //             break :x_loop;
+                                //         }
+                                //         const bits = row_ptr[0];
+                                //         if ((bits & mask) != 0) {
+                                //             sw.fb.set_pixel(
+                                //                 Point.new(
+                                //                     sw.dx + glyph.offset_x + gx,
+                                //                     sw.dy + glyph.offset_y + gy,
+                                //                 ),
+                                //                 sw.color,
+                                //             );
+                                //         }
+
+                                //         row_ptr += stride;
+                                //     }
+                                // }
+
                                 var data_ptr = glyph.bits.ptr;
 
                                 var gx: u15 = 0;
