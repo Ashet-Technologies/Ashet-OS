@@ -711,8 +711,32 @@ const backplane = struct {
                             .base = 0,
                             .limit = 8,
                         },
-                        .rx_fifo0 = .{
+                        .tx_fifo1 = .{
+                            .base = 16,
+                            .limit = 8,
+                        },
+                        .tx_fifo2 = .{
                             .base = 32,
+                            .limit = 8,
+                        },
+                        .tx_fifo3 = .{
+                            .base = 48,
+                            .limit = 8,
+                        },
+                        .rx_fifo0 = .{
+                            .base = 64,
+                            .limit = 8,
+                        },
+                        .rx_fifo1 = .{
+                            .base = 80,
+                            .limit = 8,
+                        },
+                        .rx_fifo2 = .{
+                            .base = 96,
+                            .limit = 8,
+                        },
+                        .rx_fifo3 = .{
+                            .base = 112,
                             .limit = 8,
                         },
                     },
@@ -982,6 +1006,7 @@ pub const perfctr = struct {
 
     var ctr_hit: u32 = 0;
     var ctr_acc: u32 = 0;
+    var duration: u64 = 0;
 
     pub fn setup(p0: Counter, p1: Counter, p2: Counter, p3: Counter) void {
         stop();
@@ -991,6 +1016,8 @@ pub const perfctr = struct {
         busctrl.PERFSEL1.write(.{ .PERFSEL1 = @enumFromInt(@intFromEnum(p1)) });
         busctrl.PERFSEL2.write(.{ .PERFSEL2 = @enumFromInt(@intFromEnum(p2)) });
         busctrl.PERFSEL3.write(.{ .PERFSEL3 = @enumFromInt(@intFromEnum(p3)) });
+
+        ashet.platform.profile.dwt_unit.init();
 
         reset();
     }
@@ -1008,6 +1035,7 @@ pub const perfctr = struct {
 
     pub inline fn start() void {
         std.debug.assert(busctrl.PERFCTR_EN.read().PERFCTR_EN == 0);
+        duration = @intFromEnum(hal.time.get_time_since_boot());
         ashet.platform.profile.dwt_unit.start();
         busctrl.PERFCTR_EN.write(.{ .PERFCTR_EN = 1 });
     }
@@ -1017,11 +1045,13 @@ pub const perfctr = struct {
         ctr_acc = xip.CTR_ACC.integer_access;
         busctrl.PERFCTR_EN.write(.{ .PERFCTR_EN = 0 });
         ashet.platform.profile.dwt_unit.stop();
+        duration = @intFromEnum(hal.time.get_time_since_boot()) -| duration;
     }
 
     pub fn dump() void {
         const ctr = ashet.platform.profile.dwt_unit.read();
         logger.info("Cycles     = {}", .{ctr});
+        logger.info("Duration   = {} us", .{duration});
         logger.info("XIP Stats  = {} (hits: {}, misses: {})", .{ ctr_acc, ctr_hit, ctr_acc -| ctr_hit });
         logger.info("PERF0[{s}] = {}", .{ @tagName(busctrl.PERFSEL0.read().PERFSEL0), busctrl.PERFCTR0.read().PERFCTR0 });
         logger.info("PERF1[{s}] = {}", .{ @tagName(busctrl.PERFSEL1.read().PERFSEL1), busctrl.PERFCTR1.read().PERFCTR1 });
