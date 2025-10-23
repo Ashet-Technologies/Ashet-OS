@@ -1,0 +1,16 @@
+.{
+    .name = .sermon,
+    .version = "0.1.0",
+    .fingerprint = 0xa4f02da28928e1c8,
+    .paths = .{"."},
+    .dependencies = .{
+        .args = .{
+            .url = "git+https://github.com/ikskuh/zig-args.git#9425b94c103a031777fdd272c555ce93a7dea581",
+            .hash = "args-0.0.0-CiLiqv_NAAC97fGpk9hS2K681jkiqPsWP6w3ucb_ctGH",
+        },
+        .serial = .{
+            .url = "git+https://github.com/ZigEmbeddedGroup/serial.git#ad338133eda8d86332718bbdc58c641a66307c84",
+            .hash = "serial-0.0.1-PoeRzI20AABcp4FffI6HXKOL6LcGPKmeqfN4Bna4-YYm",
+        },
+    },
+}

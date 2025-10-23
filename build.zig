@@ -42,6 +42,10 @@ const installed_tools: []const ToolDep = &.{
         .dependency = "elfstack",
         .artifacts = &.{"elfstack"},
     },
+    .{
+        .dependency = "sermon",
+        .artifacts = &.{"sermon"},
+    },
 };
 
 pub fn build(b: *std.Build) void {

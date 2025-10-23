@@ -31,6 +31,9 @@
         .elfstack = .{
             .path = "vendor/elfstack",
         },
+        .sermon = .{
+            .path = "src/tools/sermon",
+        },
         // .wikitool = .{
         //     .path = "src/tools/wikitool",
         // },
