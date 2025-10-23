@@ -756,7 +756,9 @@ const backplane = struct {
             // TODO: Implement proper driver selection here!
             const driver = try ashet.drivers.input.PropIO_PS2_Device.init(&mod.propio_module);
             mod.driver = &driver.device;
-            ashet.drivers.install(&driver.generic.driver);
+            for (&driver.slots) |*slot| {
+                ashet.drivers.install(&slot.generic.driver);
+            }
         }
 
         const thread = try ashet.scheduler.Thread.spawn(process_propio_data, null, .{});

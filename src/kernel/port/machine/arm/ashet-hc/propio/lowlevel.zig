@@ -162,24 +162,6 @@ pub fn return_frame_raw(frame: []u8) void {
     std.debug.assert(rxbuf_empty_queue.enqueue(@ptrCast(frame.ptr)));
 }
 
-// /// Writes a single frame blockingly into the device.
-// ///
-// /// Must not have a DMA transfer active at the same time!
-// pub fn writev_frame_blocking(slices: []const []const u8) !void {
-//     const Vec = microzig.utilities.Slice_Vector([]const u8);
-//     const vec = Vec.init(slices);
-//     const total_len = vec.size();
-
-//     pio.sm_blocking_write(tx_sm, total_len - 1);
-
-//     var iter = vec.iterator();
-//     while (iter.next_chunk(null)) |chunk| {
-//         for (chunk) |item| {
-//             pio.sm_blocking_write(tx_sm, item);
-//         }
-//     }
-// }
-
 /// Writes a single frame blockingly into the device.
 ///
 /// Must not have a DMA transfer active at the same time!
@@ -188,28 +170,46 @@ pub fn writev_frame_blocking(slices: []const []const u8) void {
     const vec = Vec.init(slices);
     const total_len = vec.size();
 
-    tx_dma_chan.wait_for_finish_blocking();
-
     pio.sm_blocking_write(tx_sm, total_len - 1);
 
     var iter = vec.iterator();
     while (iter.next_chunk(null)) |chunk| {
-        tx_dma_chan.setup_transfer_raw(
-            @intFromPtr(get_sub_word(pio.sm_get_tx_fifo(tx_sm), 0)),
-            @intFromPtr(chunk.ptr),
-            chunk.len,
-            .{
-                .data_size = .size_8,
-                .dreq = .pio0_tx1,
-                .enable = true,
-                .read_increment = true,
-                .write_increment = false,
-                .trigger = true,
-            },
-        );
-        tx_dma_chan.wait_for_finish_blocking();
+        for (chunk) |item| {
+            pio.sm_blocking_write(tx_sm, item);
+        }
     }
 }
+
+// /// Writes a single frame blockingly into the device.
+// ///
+// /// Must not have a DMA transfer active at the same time!
+// pub fn writev_frame_blocking(slices: []const []const u8) void {
+//     const Vec = microzig.utilities.Slice_Vector([]const u8);
+//     const vec = Vec.init(slices);
+//     const total_len = vec.size();
+
+//     tx_dma_chan.wait_for_finish_blocking();
+
+//     pio.sm_blocking_write(tx_sm, total_len - 1);
+
+//     var iter = vec.iterator();
+//     while (iter.next_chunk(null)) |chunk| {
+//         tx_dma_chan.setup_transfer_raw(
+//             @intFromPtr(get_sub_word(pio.sm_get_tx_fifo(tx_sm), 0)),
+//             @intFromPtr(chunk.ptr),
+//             chunk.len,
+//             .{
+//                 .data_size = .size_8,
+//                 .dreq = .pio0_tx1,
+//                 .enable = true,
+//                 .read_increment = true,
+//                 .write_increment = false,
+//                 .trigger = true,
+//             },
+//         );
+//         tx_dma_chan.wait_for_finish_blocking();
+//     }
+// }
 
 var current_dma_buffer: *RawFrame = undefined;
 
