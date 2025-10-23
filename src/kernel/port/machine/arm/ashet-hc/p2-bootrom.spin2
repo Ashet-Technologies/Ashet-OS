@@ -189,7 +189,7 @@ DAT
 
     MOV fifo, #.slot_fifo
     CALL #fifo_read_nonblocking
-    IF_Z JMP #.scan_loop_skip     ' would block, FIFO has no data.
+    IF_Z JMP #.scan_fifo_loop     ' would block, FIFO has no data.
 
     WAITX ##PROPIO_FRO_ON_DELAY
     DRVL #PROPIO_FRO ' mark the beginning of a new frame
@@ -212,6 +212,8 @@ DAT
     WAITX ##PROPIO_FRO_OFF_DELAY
     DRVH #PROPIO_FRO ' end the current frame
     WAITX ##PROPIO_FRO_POST_DELAY
+
+    JMP #.scan_fifo_loop ' loop up to see if we have more FIFOs enabled
 
   .scan_loop_skip
 
