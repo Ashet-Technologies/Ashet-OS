@@ -131,7 +131,6 @@ const Slot = struct {
         // execute everything at once
         {
             var deadline: ashet.time.Deadline = .init_rel(250 * @as(u32, dev.index));
-
             while (!deadline.is_reached()) {
                 ashet.scheduler.yield();
             }
@@ -142,12 +141,16 @@ const Slot = struct {
             // will hang the driver on a crash.
             dev.inbound_data = .init();
 
-            dev.generic.run() catch |err| {
-                logger.err("PS/2 driver crashed: {s}", .{@errorName(err)});
+            dev.generic.run() catch |err| switch (err) {
+                error.NoDevice => {
+                    // this is ok, we're just trying to initialize a new device later on
+                },
+                else => |e| {
+                    logger.err("PS/2 driver crashed: {s}", .{@errorName(e)});
+                },
             };
 
             var deadline: ashet.time.Deadline = .init_rel(1000);
-
             while (!deadline.is_reached()) {
                 ashet.scheduler.yield();
             }

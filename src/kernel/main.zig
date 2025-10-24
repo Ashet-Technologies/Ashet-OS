@@ -100,7 +100,17 @@ pub const log_levels = struct {
     pub var hstx_dvi: LogLevel = .info;
     pub var nested_i2c_device: LogLevel = .debug;
 
+    pub var generic_ps2: LogLevel = .info;
+
+    pub var ds1306: LogLevel = .info;
+
+    // home computer:
+    pub var propio: LogLevel = .warn;
     pub var propio_lowlevel: LogLevel = .info;
+    pub var propio_ps2: LogLevel = .warn;
+    pub var p2boot: LogLevel = .warn;
+    pub var ashet_hc: LogLevel = .info;
+    pub var ashet_hc_psram: LogLevel = .info;
 
     // external modules:
     pub var fatfs: LogLevel = .info;

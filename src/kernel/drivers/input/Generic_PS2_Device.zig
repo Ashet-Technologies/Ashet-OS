@@ -29,6 +29,8 @@ driver: Driver = .{
 input: *StreamSource,
 output: *StreamSink,
 
+const IO_Error = error{ NoAcknowledge, Timeout, DeviceError };
+
 fn poll(driver: *Driver) void {
     const dev: *Generic_PS2_Device = @fieldParentPtr("driver", driver);
     _ = dev;
@@ -44,23 +46,26 @@ pub fn init(
     };
 }
 
-pub fn run(dri: *Generic_PS2_Device) !void {
-    logger.info("reset device...", .{});
-    try dri.write_command(.reset, .from_ms(1000));
+pub fn run(dri: *Generic_PS2_Device) (error{NoDevice} || IO_Error)!void {
+    logger.debug("reset device...", .{});
+    dri.write_command(.reset, .from_ms(1000)) catch |err| switch (err) {
+        error.Timeout => return error.NoDevice,
+        error.NoAcknowledge, error.DeviceError => |e| return e,
+    };
 
     const reset_resp = try dri.read_byte(.from_ms(1000));
-    logger.info("response to reset: 0x{X:0>2}", .{reset_resp});
+    logger.debug("response to reset: 0x{X:0>2}", .{reset_resp});
 
     dri.drain(.from_ms(10));
 
-    logger.info("detect device type...", .{});
+    logger.debug("detect device type...", .{});
     const maybe_device_type = try dri.detect_device_type(.from_ms(1000));
     const device_type = maybe_device_type orelse {
         logger.err("could not determine device type!", .{});
         return;
     };
 
-    logger.info("  device type = {}", .{device_type});
+    logger.info("detected PS/2 device of type {}", .{device_type});
 
     if (device_type.isMouse()) {
         try dri.handle_mouse();
@@ -71,7 +76,7 @@ pub fn run(dri: *Generic_PS2_Device) !void {
     }
 }
 
-fn handle_mouse(dri: *Generic_PS2_Device) !void {
+fn handle_mouse(dri: *Generic_PS2_Device) IO_Error!void {
     const init_deadline: Deadline = .from_ms(2500);
     try dri.write_command(.set_defaults, init_deadline);
     try dri.write_command(.enable_scanning, init_deadline);
@@ -83,7 +88,12 @@ fn handle_mouse(dri: *Generic_PS2_Device) !void {
     while (true) {
         const byte = try dri.read_byte(.infinite);
 
-        try decoder.push(byte);
+        decoder.push(byte) catch |err| switch (err) {
+            // can't overrun as we push one byte, and process all generated
+            // events. a single byte can only generate up to 3 events and the
+            // queue is 4 events long.
+            error.Overrun => unreachable,
+        };
 
         while (decoder.pull()) |event| {
             logger.debug("mouse event: {}", .{event});
@@ -92,7 +102,7 @@ fn handle_mouse(dri: *Generic_PS2_Device) !void {
     }
 }
 
-fn handle_keyboard(dri: *Generic_PS2_Device) !void {
+fn handle_keyboard(dri: *Generic_PS2_Device) IO_Error!void {
     const init_deadline: Deadline = .from_ms(3000);
 
     try dri.write_command(.set_defaults, init_deadline);
@@ -104,7 +114,7 @@ fn handle_keyboard(dri: *Generic_PS2_Device) !void {
     try dri.write_byte(0x00, init_deadline); // get scancode set
     const scancode_ack = try dri.read_byte(init_deadline);
     if (scancode_ack != 0xFA) {
-        logger.info("scancode set query failed: 0x{X:0>2}", .{scancode_ack});
+        logger.warn("scancode set query failed: 0x{X:0>2}", .{scancode_ack});
         while (true) {
             const byte = try dri.read_byte(.infinite);
             logger.warn("unsupported keyboard byte 0x{X:0>}", .{byte});
@@ -113,7 +123,7 @@ fn handle_keyboard(dri: *Generic_PS2_Device) !void {
     }
 
     const scancode_set = try dri.read_byte(init_deadline);
-    logger.info("active scancode set: 0x{X:0>2}", .{scancode_set});
+    logger.info("keyboard uses active scancode set: 0x{X:0>2}", .{scancode_set});
 
     switch (scancode_set) {
         inline 1, 2, 3 => |scs| {
@@ -130,7 +140,12 @@ fn handle_keyboard(dri: *Generic_PS2_Device) !void {
             while (true) {
                 const byte = try dri.read_byte(.infinite);
 
-                try decoder.push(byte);
+                decoder.push(byte) catch |err| switch (err) {
+                    // can't overrun as we push one byte, and process all generated
+                    // events. a single byte can only generate up to 1 event and the
+                    // queue is 4 events long.
+                    error.Overrun => unreachable,
+                };
 
                 while (decoder.pull()) |event| {
                     logger.debug("keyboard event: {}", .{event});
@@ -140,7 +155,7 @@ fn handle_keyboard(dri: *Generic_PS2_Device) !void {
         },
 
         else => {
-            logger.info("unsupported scancode set: 0x{X:0>2}", .{scancode_ack});
+            logger.warn("unsupported scancode set: 0x{X:0>2}", .{scancode_ack});
             while (true) {
                 const byte = try dri.read_byte(.infinite);
                 logger.warn("unsupported keyboard byte 0x{X:0>}", .{byte});
@@ -182,13 +197,13 @@ fn write_byte(dri: Generic_PS2_Device, data: u8, timeout: Deadline) error{Timeou
     try dri.output.write(&.{data}, timeout);
 }
 
-fn write_command(dri: Generic_PS2_Device, cmd: Command, timeout: Deadline) error{ Timeout, NoResponse, NoAcknowledge }!void {
+fn write_command(dri: Generic_PS2_Device, cmd: Command, timeout: Deadline) IO_Error!void {
     for (0..3) |_| {
-        logger.info("write {}", .{cmd});
+        logger.debug("write {}", .{cmd});
         try dri.write_byte(@intFromEnum(cmd), timeout);
 
         const response: Response = @enumFromInt(try dri.read_byte(timeout));
-        logger.info("  got {}", .{response});
+        logger.debug("  got {}", .{response});
 
         switch (response) {
             .ack => return,
@@ -199,7 +214,8 @@ fn write_command(dri: Generic_PS2_Device, cmd: Command, timeout: Deadline) error
         }
     }
 
-    return error.NoResponse;
+    // This is actually a device error as we didn't receive either ACK or RESEND, but we also didn't timeout
+    return error.DeviceError;
 }
 
 pub const Command = enum(u8) {
