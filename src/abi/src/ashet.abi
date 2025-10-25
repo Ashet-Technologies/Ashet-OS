@@ -2757,20 +2757,73 @@ struct MessageBoxEvent {
     enum RequestID : u16 { ... }
 }
 
-/// An 8-bit RGB color value with a 233 encoding (2 bits R, 3 bits G, 3 bits B)
+///
+/// An 8-bit color value with a specialized encoding suitable for embedding
+/// a practical set of 256 colors.
+/// 
+/// The color encoding is basically a HSV (hue, saturation, value) color with 8 bits, using
+/// 3 bits for the hue, 3 bits for the value and 2 bits for the saturation.
+///
+/// Naively mapping out the values to the HSV values has two problems though:
+/// 1. A value of 0 maps all colors to black, meaning that we would have 64 different
+///    types of blacks, which all would encode have the rgb value `(0, 0, 0)`.
+/// 2. A saturation of 0 maps all colors to gray, effectively ignoring the hue.
+///    This creates the situation that in addition to having 64 blacks, we would also
+///    have each gray tone 8 times, wasting even more encoding space.
+///
+/// To address these two problems, the color scheme uses a modified mapping:
+///
+/// - `hue` is used without special interpretation.
+/// - `value` maps to a range of `[1:8]` instead of `[0:7]`, allowing 8 different
+///   values that are all not black.
+/// - `saturation` is used without special interpretation except for zero:
+///   If the `saturation` field is zero, `hue` and `value` are interpreted together as a 6 bit
+///   integer storing the brightness of gray.
+///
+/// This yields a color space which has the following properties:
+/// 
+/// - 64 true gray levels ranging from black to white.
+/// - 8 different hues (red, yellow, lime, green, cyan, blue, purple, magenta).
+/// - 3 different levels of saturation for each non-gray color.
+/// - black maps to `0x00` (but white does not map to `0xFF`).
+/// 
+/// This means we have all 256 colors mapped to a distinct, meaningful color that still allows
+/// programmatic conversion from and to the color without the need of a look-up table that
+/// would require searching the correct color.
+///
+/// NOTE: This color encoding shall be referred to as "Ashet HSV".
+///
+/// LORE: This color encoding was developed over the course of several days, playing around with 
+///       many different encodings.
+///       The color encodings/palettes were tested on a diverse set of images, including game screenshots,
+///       photographs, artificial images, vector graphics and so on.
+///       
+///       The "Ashet HSV" encoding showed the best visual matches for most pictures, allowing both visual
+///       fidelity on the color side, but also allowing both bright and dark images to work really well.
+/// 
 bitstruct Color : u8 {
-    const black: Color = .{ .r = 0, .g = 0, .b = 0 };
-    const white: Color = .{ .r = 3, .g = 7, .b = 7 };
-    const red: Color = .{ .r = 3, .g = 0, .b = 0 };
-    const lime: Color = .{ .r = 0, .g = 7, .b = 0 };
-    const blue: Color = .{ .r = 0, .g = 0, .b = 7 };
-    const cyan: Color = .{ .r = 0, .g = 7, .b = 7 };
-    const magenta: Color = .{ .r = 3, .g = 0, .b = 7 };
-    const yellow: Color = .{ .r = 3, .g = 7, .b = 0 };
+    const black:   Color = .{ .hue = 0, .value = 0, .saturation = 0 };
+    const white:   Color = .{ .hue = 7, .value = 7, .saturation = 0 };
+    const red:     Color = .{ .hue = 0, .value = 7, .saturation = 3 };
+    const yellow:  Color = .{ .hue = 1, .value = 7, .saturation = 3 };
+    const lime:    Color = .{ .hue = 2, .value = 7, .saturation = 3 };
+    const green:   Color = .{ .hue = 3, .value = 7, .saturation = 3 };
+    const cyan:    Color = .{ .hue = 4, .value = 7, .saturation = 3 };
+    const blue:    Color = .{ .hue = 5, .value = 7, .saturation = 3 };
+    const purple:  Color = .{ .hue = 6, .value = 7, .saturation = 3 };
+    const magenta: Color = .{ .hue = 7, .value = 7, .saturation = 3 };
 
-    field r: u2;
-    field g: u3;
-    field b: u3;
+    /// The hue of the color, encoded as 0 = 0° (red), 7 = 315° (magenta).
+    field hue: u3;
+
+    /// The value of the color, with 0 = 12.5% brightness and 7 = 100% brightness. 
+    field value: u3;
+
+    /// The saturation of the color, encoded as 0 = desaturated, and 3 = fully saturated.
+    ///
+    /// NOTE: The value is encoded as the uppermost 2 bits, so a check if saturation is 0 can be
+    ///       performed by doing a less-than operation interpreting the color as an integer.
+    field saturation: u2;
 
     struct RGB888 {
         field r: u8;

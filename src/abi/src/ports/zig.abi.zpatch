@@ -396,33 +396,6 @@
     }
 </patch>
 <patch Color>
-
-    /// Expands a color value to 8 bit with a linear mapping.
-    pub inline fn expand_channel(src_value: anytype) u8 {
-        const bits = @bitSizeOf(@TypeOf(src_value));
-        if (bits > 8)
-            @compileError("src_value must have 8 bits or less");
-
-        comptime var mask = ((1 << bits) - 1) << (8 - bits);
-
-        var pattern: u8 = @as(u8, src_value) << (8 - bits);
-        var result: u8 = 0;
-        inline while (mask != 0) {
-            result |= pattern;
-            mask >>= bits;
-            pattern >>= bits;
-        }
-
-        return result;
-    }
-    /// Compresses a color value from 8 bit to a smaller value.
-    pub inline fn compress_channel(src_value: u8, comptime T: type) T {
-        const bits = @bitSizeOf(T);
-        if (bits > 8)
-            @compileError("T must have 8 bits or less");
-        return @truncate(src_value >> (8 - bits));
-    }
-
     pub fn eql(a: Color, b: Color) bool {
         return @as(u8, @bitCast(a)) == @as(u8, @bitCast(b));
     }
@@ -444,9 +417,9 @@
                     const g = std.fmt.parseInt(u4, str[2..3], 16) catch @compileError("invalid hex code");
                     const b = std.fmt.parseInt(u4, str[3..4], 16) catch @compileError("invalid hex code");
                     return Color.from_rgb(
-                        expand_channel(r),
-                        expand_channel(g),
-                        expand_channel(b),
+                        (@as(u8, r) << 4) | r,
+                        (@as(u8, r) << 4) | g,
+                        (@as(u8, r) << 4) | b,
                     );
                 },
                 6 => { // 8-bit RGB
@@ -467,28 +440,60 @@
         }
     }
 
+    pub fn from_gray(gray: u6) Color {
+        const gray8: u8 = gray;
+        return @bitCast(gray8);
+    }
+
+    fn fcast(v: anytype) f32 {
+        return @floatFromInt(v);
+    }
+
     pub fn from_rgb(r: u8, g: u8, b: u8) Color {
-        return Color{
-            .r = compress_channel(r, u2),
-            .g = compress_channel(g, u3),
-            .b = compress_channel(b, u3),
+        const maxc: u8 = @max(r, g, b);
+        const minc: u8 = @min(r, g, b);
+        const delta: u8 = maxc - minc;
+
+        const v: u8 = maxc;
+
+        if (delta == 0) {
+            // gray: hue undefined → 0, saturation 0
+            return from_gray(@truncate(v >> 2));
+        }
+
+        // Avoid division by zero if all components are 0.
+        const s: u2 = if (maxc != 0)
+            @intCast((std.math.maxInt(u2) * @as(u16, delta)) / maxc)
+        else
+            0;
+
+        const h: f32 = if (maxc == r) 
+            (fcast(g) - fcast(b)) / fcast(delta)            // between yellow & magenta
+        else if (maxc == g) 
+            2 + (fcast(b) - fcast(r)) / fcast(delta)        // between cyan & yellow
+        else 
+            4 + (fcast(r) - fcast(g)) / fcast(delta);       // between magenta & cyan
+
+        const h360 = @mod(60 * h, 360);              // to degrees
+
+        return .{
+            .hue = @intFromFloat(@mod(8 * h360 / 360 + 0.5, std.math.maxInt(u3))),
+            .saturation = s,
+            .value = @truncate(v >> 5),
         };
     }
 
     pub fn from_rgbf(r: f32, g: f32, b: f32) Color {
-        return Color{
-            .r = @intFromFloat(std.math.maxInt(u2) * std.math.clamp(r, 0.0, 1.0) + 0.5),
-            .g = @intFromFloat(std.math.maxInt(u3) * std.math.clamp(g, 0.0, 1.0) + 0.5),
-            .b = @intFromFloat(std.math.maxInt(u3) * std.math.clamp(b, 0.0, 1.0) + 0.5),
-        };
+        return from_rgb(
+            @intFromFloat(std.math.maxInt(u8) * std.math.clamp(r, 0.0, 1.0) + 0.5),
+            @intFromFloat(std.math.maxInt(u8) * std.math.clamp(g, 0.0, 1.0) + 0.5),
+            @intFromFloat(std.math.maxInt(u8) * std.math.clamp(b, 0.0, 1.0) + 0.5),
+        );
     }
 
     pub fn to_rgb888(color: Color) RGB888 {
-        return .{
-            .r = expand_channel(color.r),
-            .g = expand_channel(color.g),
-            .b = expand_channel(color.b),
-        };
+        _=color;
+        @panic("TODO: Color.to_rgb888");
     }
 
     /// Converts the color to `0xFFRRGGBB`
