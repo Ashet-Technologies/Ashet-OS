@@ -474,6 +474,10 @@
 
         // Avoid division by zero if all components are 0.
         const s: u2 = @intCast(((@as(u16, std.math.maxInt(u2)) * delta) + maxc / 2) / maxc);
+        if(s == 0) {
+            // Color is too desaturated for the palette, we need to map it to grayscale:
+            return from_gray(@truncate(v_raw >> 2));
+        }
 
         const h: f32 = if (maxc == r) 
             (fcast(g) - fcast(b)) / fcast(delta)            // between yellow & magenta
