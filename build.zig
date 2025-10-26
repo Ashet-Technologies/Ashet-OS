@@ -405,7 +405,7 @@ const machine_info_map = std.EnumArray(RunTarget, MachineStartupConfig).init(.{
             "-drive",   "if=ide,index=0,format=raw,file=${DISK}",
             "--device", "isa-debug-exit",
             "-vga", "none", // disable standard VGA
-            "--device", "VGA,xres=800,yres=480,xmax=800,ymax=480,edid=true", // replace with customized VGA and limited resolution
+            "--device", "VGA,xres=640,yres=400,xmax=640,ymax=400,edid=true", // replace with customized VGA and limited resolution
         },
     },
     .@"x86-pc-generic-uefi" = .{
@@ -416,7 +416,7 @@ const machine_info_map = std.EnumArray(RunTarget, MachineStartupConfig).init(.{
             "-drive",   "if=ide,node-name=disk,index=0,format=raw,file=${DISK}",
             "-device",  "isa-debug-exit",
             "-vga", "none", // disable standard VGA
-            "-device", "VGA,xres=800,yres=480,xmax=800,ymax=480,edid=true", // replace with customized VGA and limited resolution
+            "-device", "VGA,xres=640,yres=400,xmax=640,ymax=400,edid=true", // replace with customized VGA and limited resolution
             "-drive",  "if=pflash,unit=0,format=raw,readonly=on,file=${OVMF_CODE_X64}",
             "-drive",  "if=pflash,unit=1,format=raw,file=${OVMF_VARS_X64}",
         },
@@ -429,7 +429,7 @@ const machine_info_map = std.EnumArray(RunTarget, MachineStartupConfig).init(.{
             "-m",      "32M",
             "-netdev", "user,id=hostnet",
             "-object", "filter-dump,id=hostnet-dump,netdev=hostnet,file=ashet-os.pcap",
-            "-device", "virtio-gpu-device,id=screen,xres=800,yres=480",
+            "-device", "virtio-gpu-device,id=screen,xres=640,yres=400",
             "-device", "virtio-keyboard-device",
             "-device", "virtio-mouse-device",
             "-device", "virtio-net-device,netdev=hostnet,mac=52:54:00:12:34:56",
@@ -445,7 +445,7 @@ const machine_info_map = std.EnumArray(RunTarget, MachineStartupConfig).init(.{
             "-m",      "32M",
             "-netdev", "user,id=hostnet",
             "-object", "filter-dump,id=hostnet-dump,netdev=hostnet,file=ashet-os.pcap",
-            "-device", "virtio-gpu-device,xres=800,yres=480",
+            "-device", "virtio-gpu-device,xres=640,yres=400",
             "-device", "virtio-keyboard-device",
             "-device", "virtio-mouse-device",
             "-device", "virtio-net-device,netdev=hostnet,mac=52:54:00:12:34:56",
@@ -460,7 +460,7 @@ const machine_info_map = std.EnumArray(RunTarget, MachineStartupConfig).init(.{
             "-m",      "8M",
             "-kernel", "${KERNEL}",
             "-drive",  "format=raw,node-name=disk,file=${DISK}",
-            "-device", "virtio-gpu-device,xres=800,yres=480",
+            "-device", "virtio-gpu-device,xres=640,yres=400",
             "-device", "virtio-keyboard-device",
             "-device", "virtio-mouse-device",
             "-device", "virtio-blk-device,drive=disk",
@@ -483,9 +483,9 @@ const machine_info_map = std.EnumArray(RunTarget, MachineStartupConfig).init(.{
         },
 
         .hosted_video_setup = .init(.{
-            .headless = &.{"video;vnc;800;480;0.0.0.0;5900"},
-            .gtk = &.{"video;auto-window;800;480"},
-            .sdl = &.{"video;sdl;800;480"},
+            .headless = &.{"video;vnc;640;400;0.0.0.0;5900"},
+            .gtk = &.{"video;auto-window;640;400"},
+            .sdl = &.{"video;sdl;640;400"},
             .cocoa = &.{},
         }),
     },
@@ -497,9 +497,9 @@ const machine_info_map = std.EnumArray(RunTarget, MachineStartupConfig).init(.{
         },
 
         .hosted_video_setup = .init(.{
-            .headless = &.{"video;vnc;800;480;0.0.0.0;5900"},
-            .gtk = &.{"video;win;800;480"},
-            .sdl = &.{"video;sdl;800;480"},
+            .headless = &.{"video;vnc;640;400;0.0.0.0;5900"},
+            .gtk = &.{"video;win;640;400"},
+            .sdl = &.{"video;sdl;640;400"},
             .cocoa = &.{},
         }),
     },
