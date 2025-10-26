@@ -456,14 +456,8 @@
 
         const v_raw: u8 = maxc;
 
-        std.debug.print("r:{}, g:{}, b:{}, maxc:{}, minc:{}, delta:{}\n", .{ 
-            r,g,b,
-            maxc, minc, delta,
-        });
-
         if (delta == 0) {
             // gray: hue undefined → 0, saturation 0
-            std.debug.print("grayscale: {} => {}\n", .{ v_raw, v_raw >> 2});
             return from_gray(@truncate(v_raw >> 2));
         }
 
@@ -479,7 +473,7 @@
         std.debug.assert(maxc != 0);
 
         // Avoid division by zero if all components are 0.
-        const s: u2 = @intCast((std.math.maxInt(u2) * @as(u16, delta)) / maxc);
+        const s: u2 = @intCast(((@as(u16, std.math.maxInt(u2)) * delta) + maxc / 2) / maxc);
 
         const h: f32 = if (maxc == r) 
             (fcast(g) - fcast(b)) / fcast(delta)            // between yellow & magenta
@@ -492,13 +486,6 @@
         // mod as the each integer number is in the center, not at the start of
         // the hue range.
         const h8 = @mod(@round(8 * h / 6), std.math.maxInt(u3) + 1);
-
-        // std.debug.print("({},{},{}) => {d:.2}, {d:.2}, {d:.2} => {d:.8}, {}\n", .{
-        //     r,g,b,
-        //     h,s,v,
-        //     h8,
-        //     @as(u3, @intFromFloat(h8)),
-        // });
 
         std.debug.assert(s != 0);
         return .{

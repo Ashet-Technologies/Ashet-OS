@@ -140,7 +140,7 @@ test "color from_rgb, to_rgb bijection" {
 
         const rgb = before.to_rgb888();
 
-        std.debug.print("index: {}, color: {}, rgb: {}\n", .{ index, before, rgb });
+        // std.debug.print("index: {}, color: {}, rgb: {}\n", .{ index, before, rgb });
 
         const after = Color.from_rgb(rgb.r, rgb.g, rgb.b);
 
