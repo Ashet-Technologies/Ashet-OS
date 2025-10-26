@@ -6,12 +6,6 @@ const Platform = abiBuild.Platform;
 
 pub const Machine = @import("port/machine_id.zig").MachineID;
 
-fn create_embedded_resource(b: *std.Build, path: []const u8) *std.Build.Module {
-    return b.createModule(.{
-        .root_source_file = b.path(path),
-    });
-}
-
 pub fn build(b: *std.Build) void {
     // Options:
     const machine_id = b.option(Machine, "machine", "Selects the machine for which the kernel should be built.") orelse @panic("-Dmachine required!");
@@ -27,6 +21,7 @@ pub fn build(b: *std.Build) void {
     const kernel_target = b.resolveTargetQuery(machine_config.target);
 
     // Dependencies:
+    const mkicon_dep = b.dependency("mkicon", .{});
     const abi_dep = b.dependency("ashet-abi", .{});
     const virtio_dep = b.dependency("virtio", .{});
     const ashet_fs_dep = b.dependency("ashet_fs", .{});
@@ -114,6 +109,14 @@ pub fn build(b: *std.Build) void {
 
     // Build:
 
+    const mkicon_exe = mkicon_dep.artifact("mkicon");
+
+    const convert_splashscreen = b.addRunArtifact(mkicon_exe);
+    convert_splashscreen.addArgs(&.{ "--geometry", "256x128" });
+    convert_splashscreen.addArgs(&.{ "--format", "raw" });
+    convert_splashscreen.addFileArg(b.path("../../assets/images/bootsplash.png"));
+    const bootsplash_path = convert_splashscreen.addPrefixedOutputFileArg("--output=", "splashscreen-256x128.raw");
+
     const machine_info_module = blk: {
         const machine_info = renderMachineInfo(
             b,
@@ -161,6 +164,9 @@ pub fn build(b: *std.Build) void {
             .{ .name = "network", .module = network_mod },
             .{ .name = "x11", .module = zig_mod },
             // .{ .name = "sdl", .module = options.modules.sd
+
+            // data
+            .{ .name = "splashscreen-256x128.raw", .module = b.createModule(.{ .root_source_file = bootsplash_path }) },
         },
     });
 

@@ -45,6 +45,10 @@
             .path = "../userland/libs/expcard",
         },
 
+        .mkicon = .{
+            .path = "../tools/mkicon",
+        },
+
         // locally vendored:
 
         .@"rp2xxx-hal" = .{ .path = "../../vendor/microzig-rp2350-hal" },
@@ -105,7 +109,7 @@
             .url = "git+https://github.com/ikskuh/p2-devsuite.git#4aa03f279454ce7ac83300518cb9703619ae0572",
             .hash = "p2_devsuite-0.0.0-JopzWDFfAADjUYTLJJwRo4SK3X8Ugiq6ENq8pbchAUqd",
         },
-        
+
         .regz = .{
             .url = "https://github.com/ZigEmbeddedGroup/microzig/releases/download/0.14.4/mz_tools_regz.tar.gz",
             .hash = "mz_tools_regz-0.0.0-lIs8m6jOBgBXZYDL6BgMJVE2g5hB9fDmUKX4oUvZuVOr",

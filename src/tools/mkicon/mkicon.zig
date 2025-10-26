@@ -14,13 +14,20 @@ fn isTransparent(c: zigimg.color.Colorf32) bool {
     return c.a < 0.5;
 }
 
+pub const Format = enum {
+    raw,
+    abm,
+};
+
 const CliOptions = struct {
     geometry: ?[]const u8 = null,
     output: ?[]const u8 = null,
+    format: Format = .abm,
 
     pub const shorthands = .{
         .g = "geometry",
         .o = "output",
+        .f = "format",
     };
 };
 
@@ -161,24 +168,33 @@ pub fn main() !u8 {
     var buffered_writer = std.io.bufferedWriter(out_file.writer());
     var writer = buffered_writer.writer();
 
-    try writer.writeInt(u32, 0x48198b74, .little);
-    try writer.writeInt(u16, @as(u16, @intCast(raw_image.width)), .little);
-    try writer.writeInt(u16, @as(u16, @intCast(raw_image.height)), .little);
-    try writer.writeInt(u16, if (has_transparency) @as(u16, 0x0001) else 0x0000, .little); // flags, enable transparency
-    try writer.writeInt(u8, palette_size, .little); // palette size
-    try writer.writeInt(u8, transparency_key.to_u8(), .little); // transparent
+    switch (cli.options.format) {
+        .abm => {
+            try writer.writeInt(u32, 0x48198b74, .little);
+            try writer.writeInt(u16, @as(u16, @intCast(raw_image.width)), .little);
+            try writer.writeInt(u16, @as(u16, @intCast(raw_image.height)), .little);
+            try writer.writeInt(u16, if (has_transparency) @as(u16, 0x0001) else 0x0000, .little); // flags, enable transparency
+            try writer.writeInt(u8, palette_size, .little); // palette size
+            try writer.writeInt(u8, transparency_key.to_u8(), .little); // transparent
 
-    try writer.writeAll(bitmap);
+            try writer.writeAll(bitmap);
 
-    // for (palette) |color| {
-    //     const rgb565 = zigimg.color.Rgb565.fromU32Rgba(color.toU32Rgba());
-    //     const abi_color = abi.Color{
-    //         .r = rgb565.r,
-    //         .g = rgb565.g,
-    //         .b = rgb565.b,
-    //     };
-    //     try writer.writeInt(u16, abi_color.toU16(), .little);
-    // }
+            // for (palette) |color| {
+            //     const rgb565 = zigimg.color.Rgb565.fromU32Rgba(color.toU32Rgba());
+            //     const abi_color = abi.Color{
+            //         .r = rgb565.r,
+            //         .g = rgb565.g,
+            //         .b = rgb565.b,
+            //     };
+            //     try writer.writeInt(u16, abi_color.toU16(), .little);
+            // }
+
+        },
+
+        .raw => {
+            try writer.writeAll(bitmap);
+        },
+    }
 
     try buffered_writer.flush();
 

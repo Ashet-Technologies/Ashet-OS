@@ -33,9 +33,16 @@ fn cast_to_fb(src: *const [framebuffer_item_cnt]u8) [framebuffer_item_cnt]Color 
     return @bitCast(src.*);
 }
 
-pub var framebuffer: [framebuffer_item_cnt]Color align(4096) linksection(img_framebuf_section) = cast_to_fb(
-    @embedFile("../../data/splash_640x400_hsv332m.data"),
-);
+pub var framebuffer: [framebuffer_item_cnt]Color align(4096) linksection(img_framebuf_section) = blk: {
+    var fb: [framebuffer_item_cnt]Color align(4) = @splat(ashet.video.defaults.border_color);
+    ashet.video.load_splash_screen(.{
+        .base = &fb,
+        .width = framebuffer_size.width,
+        .height = framebuffer_size.height,
+        .stride = framebuffer_size.width,
+    });
+    break :blk fb;
+};
 
 const PaletteColor = RGB555;
 // const PaletteColor = RGB888x;
@@ -297,13 +304,7 @@ pub fn init_backend(comptime clock_config: rp2350.clocks.config.Global) void {
     hw_alloc.pins.hdmi_d1_n.set_function(.hstx);
     hw_alloc.pins.hdmi_d2_p.set_function(.hstx);
     hw_alloc.pins.hdmi_d2_n.set_function(.hstx);
-
-    debug_pin.set_function(.sio);
-    debug_pin.set_direction(.out);
-    debug_pin.put(0);
 }
-
-const debug_pin = rp2350.gpio.num(10);
 
 pub fn start_backend() linksection(".sram.bank0") void {
     ashet.platform.enableInterrupts();
@@ -337,11 +338,8 @@ fn handle_hstx_dma_irq() linksection(dma_code_section) callconv(.c) void {
     // @optimizeFor(.ReleaseFast);
 
     if (builtin.mode == .Debug) {
-        @compileError("The HSTX/HDMI driver has to be compiled with a release mode, otherwise it will be too slow.");
+        @panic("The HSTX/HDMI driver has to be compiled with a release mode, otherwise it will be too slow.");
     }
-
-    debug_pin.put(1);
-    defer debug_pin.put(0);
 
     // if (chip.HSTX_FIFO.STAT.read().EMPTY == 1) {
     //     logger.err("FIFO UNDERFLOW at {}  {}", .{ v_scanline, vactive_cmdlist_state });
