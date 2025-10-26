@@ -454,18 +454,32 @@
         const minc: u8 = @min(r, g, b);
         const delta: u8 = maxc - minc;
 
-        const v: u8 = maxc;
+        const v_raw: u8 = maxc;
+
+        std.debug.print("r:{}, g:{}, b:{}, maxc:{}, minc:{}, delta:{}\n", .{ 
+            r,g,b,
+            maxc, minc, delta,
+        });
 
         if (delta == 0) {
             // gray: hue undefined → 0, saturation 0
-            return from_gray(@truncate(v >> 2));
+            std.debug.print("grayscale: {} => {}\n", .{ v_raw, v_raw >> 2});
+            return from_gray(@truncate(v_raw >> 2));
         }
 
+        // we must check for "black" **after** the  grayscale test as 
+        // grayscale has a higher precision than colors
+        if(v_raw < 0x10) {
+            // everything below this threshold is black
+            return .{.hue=0,.saturation=0,.value=0};
+        }
+
+        const v1to8: u3 = @intCast(((v_raw - 0x10) >> 5));
+
+        std.debug.assert(maxc != 0);
+
         // Avoid division by zero if all components are 0.
-        const s: u2 = if (maxc != 0)
-            @intCast((std.math.maxInt(u2) * @as(u16, delta)) / maxc)
-        else
-            0;
+        const s: u2 = @intCast((std.math.maxInt(u2) * @as(u16, delta)) / maxc);
 
         const h: f32 = if (maxc == r) 
             (fcast(g) - fcast(b)) / fcast(delta)            // between yellow & magenta
@@ -474,12 +488,23 @@
         else 
             4 + (fcast(r) - fcast(g)) / fcast(delta);       // between magenta & cyan
 
-        const h360 = @mod(60 * h, 360);              // to degrees
+        // h is [0, 6), we need [0, 8). WE also need to round here before doing the 
+        // mod as the each integer number is in the center, not at the start of
+        // the hue range.
+        const h8 = @mod(@round(8 * h / 6), std.math.maxInt(u3) + 1);
 
+        // std.debug.print("({},{},{}) => {d:.2}, {d:.2}, {d:.2} => {d:.8}, {}\n", .{
+        //     r,g,b,
+        //     h,s,v,
+        //     h8,
+        //     @as(u3, @intFromFloat(h8)),
+        // });
+
+        std.debug.assert(s != 0);
         return .{
-            .hue = @intFromFloat(@mod(8 * h360 / 360 + 0.5, std.math.maxInt(u3))),
+            .hue = @intFromFloat(h8),
             .saturation = s,
-            .value = @truncate(v >> 5),
+            .value = @intCast(v1to8),
         };
     }
 
@@ -491,9 +516,49 @@
         );
     }
 
-    pub fn to_rgb888(color: Color) RGB888 {
-        _=color;
-        @panic("TODO: Color.to_rgb888");
+    /// Convert HSV → RGB (h in degrees; s, v in [0,1]).
+    /// Returns RGB in the same float type T you pass (f16/f32/f64).
+    pub fn to_rgb888(color: Color) RGB888 {        
+        // const h = color.hue;
+        // const s = color.saturation;
+        // const v = color.value;
+
+        // When saturation is zero it's gray; hue is irrelevant.
+        if (color.saturation == 0) {
+            const raw: u8 = @bitCast(color);
+            std.debug.assert(raw < 64);
+            const gray6: u6 = @truncate(raw);
+            const gray8: u8 = expand_channel(gray6);
+            return .init(gray8, gray8, gray8);
+        }
+
+        const h: f32 = 360 * fcast(color.hue) / 8.0;
+        const v: f32 = (1 + fcast(color.value)) / 8.0;
+        const s: f32 = fcast(color.saturation) / 3.0;
+
+        const C: f32 = v * s;            // chrom
+        const hp: f32 = h / 60;          // sector index in [0,6)
+        const k: f32 = hp - 2 * @floor(hp / 2); // hp mod 2 in [0,2)
+        const X: f32 = C * (1 - @abs(k - 1));
+        const m: f32 = v - C;
+
+
+        const i: i32 = @intFromFloat(@floor(hp)); // 0..5
+        const  rp: f32, const  gp: f32, const bp: f32 = switch (i) {
+            0 => .{ C, X, 0 },
+            1 => .{ X, C, 0 },
+            2 => .{ 0, C, X },
+            3 => .{ 0, X, C },
+            4 => .{ X, 0, C },
+            5 => .{ C, 0, X },
+            else => unreachable,
+        };
+
+        return .{
+            .r = @intFromFloat(255 * (rp + m)),
+            .g = @intFromFloat(255 * (gp + m)),
+            .b = @intFromFloat(255 * (bp + m)),
+        };
     }
 
     /// Converts the color to `0xFFRRGGBB`
@@ -516,6 +581,87 @@
             @as(u32, exp.b) << 16;
 
         return @enumFromInt(value);
+    }
+
+
+    pub fn format(color: Color, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+
+        if(color.saturation == 0) {
+            const gray: u8 = @bitCast(color);
+            try writer.print("Color(gray={})", .{gray});
+        }
+        else {
+            const h_names = [8][]const u8 {
+                "  0",
+                " 45",
+                " 90",
+                "135",
+                "180",
+                "225",
+                "270",
+                "315",
+            };
+            const s_names = [3][]const u8 {
+                " 33.3",
+                " 66.6",
+                "100.0",
+            };
+            const v_names = [8][]const u8 {
+                " 12.5",
+                " 25.0",
+                " 37.5",
+                " 50.0",
+                " 62.5",
+                " 75.0",
+                " 87.5",
+                "100.0",
+            };
+            try writer.print("Color(h={s}°, s={s}%, v={s}%)", .{
+                h_names[color.hue],
+                s_names[color.saturation - 1],
+                v_names[color.value],
+            });
+        }
+    }
+
+    /// Expands a color value to 8 bit with a linear mapping.
+    pub inline fn expand_channel(src_value: anytype) u8 {
+        const bits = @bitSizeOf(@TypeOf(src_value));
+        if (bits > 8)
+            @compileError("src_value must have 8 bits or less");
+
+        comptime var mask = ((1 << bits) - 1) << (8 - bits);
+
+        var pattern: u8 = @as(u8, src_value) << (8 - bits);
+        var result: u8 = 0;
+        inline while (mask != 0) {
+            result |= pattern;
+            mask >>= bits;
+            pattern >>= bits;
+        }
+
+        return result;
+    }
+
+    /// Compresses a color value from 8 bit to a smaller value.
+    pub inline fn compress_channel(src_value: u8, comptime T: type) T {
+        const bits = @bitSizeOf(T);
+        if (bits > 8)
+            @compileError("T must have 8 bits or less");
+        return @truncate(src_value >> (8 - bits));
+    }
+</patch>
+<patch Color.RGB888>
+    pub fn init(r: u8, g: u8, b: u8) RGB888 {
+        return .{ .r = r, .g = g, .b = b };
+    }
+
+    pub fn format(color: RGB888, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        try writer.print("#{X:0>2}{X:0>2}{X:0>2}", .{ color.r, color.g, color.b });
     }
 </patch>
 <patch MessageBoxEvent>

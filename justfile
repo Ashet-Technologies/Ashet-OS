@@ -28,6 +28,9 @@ build-kernel:
 build-wiki:
     {{zig}} build -Dtarget=rv32
 
+[working-directory: 'src/abi']
+abi-test:
+    {{zig}} build test
 
 build-tools:
     {{zig}} build {{default_params}} tools 
