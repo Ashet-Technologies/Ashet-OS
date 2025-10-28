@@ -31,6 +31,13 @@ const DebugSections = struct {
     debug_frame: ?[]const u8 = null,
 };
 
+const SymbolEntry = struct {
+    name: []const u8,
+    value: u64,
+    size: u64,
+    info: u8,
+};
+
 const ElfFile = struct {
     const max_name_len: usize = 128;
 
@@ -604,6 +611,7 @@ pub fn readElfDebugInfo(allocator: std.mem.Allocator, elf_file: std.fs.File) !st
     map_result: MapResult,
     dwarf_info: dwarf.DwarfInfo,
     address_width: BitWidth,
+    symbols: []SymbolEntry,
 } {
     const elf = std.elf;
     const map_result = try mapWholeFile(elf_file);
@@ -628,17 +636,19 @@ pub fn readElfDebugInfo(allocator: std.mem.Allocator, elf_file: std.fs.File) !st
 
     var sections = DebugSections{};
     var width: BitWidth = undefined;
+    var symbol_entries = std.ArrayList(SymbolEntry).init(allocator);
+    errdefer symbol_entries.deinit();
 
     switch (mapped_mem[elf.EI_CLASS]) {
         elf.ELFCLASS32 => {
             width = .bits32;
             const hdr: *const elf.Elf32_Ehdr = @ptrCast(@alignCast(mapped_mem.ptr));
-            try populateSections32(mapped_mem, hdr, &sections);
+            try populateSections32(allocator, mapped_mem, hdr, &sections, &symbol_entries);
         },
         elf.ELFCLASS64 => {
             width = .bits64;
             const hdr: *const elf.Elf64_Ehdr = @ptrCast(@alignCast(mapped_mem.ptr));
-            try populateSections64(mapped_mem, hdr, &sections);
+            try populateSections64(allocator, mapped_mem, hdr, &sections, &symbol_entries);
         },
         else => return error.InvalidElfClass,
     }
@@ -666,10 +676,13 @@ pub fn readElfDebugInfo(allocator: std.mem.Allocator, elf_file: std.fs.File) !st
         .bits64 => try dwarf.openDwarfDebugInfo(&di, u64, allocator),
     }
 
+    const symbols_slice = try symbol_entries.toOwnedSlice();
+
     return .{
         .map_result = map_result,
         .dwarf_info = di,
         .address_width = width,
+        .symbols = symbols_slice,
     };
 }
 
@@ -710,7 +723,13 @@ fn chopSlice(ptr: []const u8, offset: u64, size: u64) error{Overflow}![]const u8
     return ptr[start..end];
 }
 
-fn populateSections32(mapped_mem: []const u8, hdr: *const std.elf.Elf32_Ehdr, sections: *DebugSections) !void {
+fn populateSections32(
+    allocator: std.mem.Allocator,
+    mapped_mem: []const u8,
+    hdr: *const std.elf.Elf32_Ehdr,
+    sections: *DebugSections,
+    symbol_entries: *std.ArrayList(SymbolEntry),
+) !void {
     const shoff = std.math.cast(usize, hdr.e_shoff) orelse return error.Overflow;
     const shnum = std.math.cast(usize, hdr.e_shnum) orelse return error.Overflow;
     const shentsize = std.math.cast(usize, hdr.e_shentsize) orelse return error.Overflow;
@@ -724,10 +743,16 @@ fn populateSections32(mapped_mem: []const u8, hdr: *const std.elf.Elf32_Ehdr, se
     const str_hdr = shdrs[hdr.e_shstrndx];
     const header_strings = try chopSlice(mapped_mem, @as(u64, str_hdr.sh_offset), @as(u64, str_hdr.sh_size));
 
-    try populateSectionsCommon(mapped_mem, header_strings, sections, shdrs);
+    try populateSectionsCommon(std.elf.Elf32_Shdr, allocator, mapped_mem, header_strings, sections, symbol_entries, shdrs);
 }
 
-fn populateSections64(mapped_mem: []const u8, hdr: *const std.elf.Elf64_Ehdr, sections: *DebugSections) !void {
+fn populateSections64(
+    allocator: std.mem.Allocator,
+    mapped_mem: []const u8,
+    hdr: *const std.elf.Elf64_Ehdr,
+    sections: *DebugSections,
+    symbol_entries: *std.ArrayList(SymbolEntry),
+) !void {
     const shoff = std.math.cast(usize, hdr.e_shoff) orelse return error.Overflow;
     const shnum = std.math.cast(usize, hdr.e_shnum) orelse return error.Overflow;
     const shentsize = std.math.cast(usize, hdr.e_shentsize) orelse return error.Overflow;
@@ -741,14 +766,17 @@ fn populateSections64(mapped_mem: []const u8, hdr: *const std.elf.Elf64_Ehdr, se
     const str_hdr = shdrs[hdr.e_shstrndx];
     const header_strings = try chopSlice(mapped_mem, str_hdr.sh_offset, str_hdr.sh_size);
 
-    try populateSectionsCommon(mapped_mem, header_strings, sections, shdrs);
+    try populateSectionsCommon(std.elf.Elf64_Shdr, allocator, mapped_mem, header_strings, sections, symbol_entries, shdrs);
 }
 
 fn populateSectionsCommon(
+    comptime ShdrType: type,
+    allocator: std.mem.Allocator,
     mapped_mem: []const u8,
     header_strings: []const u8,
     sections: *DebugSections,
-    shdrs: anytype,
+    symbol_entries: *std.ArrayList(SymbolEntry),
+    shdrs: []const ShdrType,
 ) !void {
     for (shdrs) |shdr| {
         if (shdr.sh_type == std.elf.SHT_NULL) continue;
@@ -785,7 +813,73 @@ fn populateSectionsCommon(
             sections.debug_names = slice;
         } else if (std.mem.eql(u8, name, ".debug_frame")) {
             sections.debug_frame = slice;
+        } else if (shdr.sh_type == std.elf.SHT_SYMTAB or shdr.sh_type == std.elf.SHT_DYNSYM) {
+            try collectSymbolEntries(allocator, mapped_mem, shdrs, shdr, slice, symbol_entries);
         }
+    }
+}
+
+fn collectSymbolEntries(
+    allocator: std.mem.Allocator,
+    mapped_mem: []const u8,
+    shdrs: anytype,
+    shdr: anytype,
+    section_data: []const u8,
+    symbol_entries: *std.ArrayList(SymbolEntry),
+) !void {
+    if (comptime @TypeOf(shdr) == std.elf.Elf32_Shdr) {
+        try collectSymbolEntriesTyped(allocator, mapped_mem, shdrs, shdr, section_data, symbol_entries, std.elf.Elf32_Sym);
+    } else {
+        try collectSymbolEntriesTyped(allocator, mapped_mem, shdrs, shdr, section_data, symbol_entries, std.elf.Elf64_Sym);
+    }
+}
+
+fn collectSymbolEntriesTyped(
+    allocator: std.mem.Allocator,
+    mapped_mem: []const u8,
+    shdrs: anytype,
+    shdr: anytype,
+    section_data: []const u8,
+    symbol_entries: *std.ArrayList(SymbolEntry),
+    comptime SymType: type,
+) !void {
+    _ = allocator;
+
+    const entsize = std.math.cast(usize, shdr.sh_entsize) orelse return error.InvalidDebugInfo;
+    if (entsize == 0 or entsize != @sizeOf(SymType)) return error.InvalidDebugInfo;
+
+    const symbol_count = std.math.cast(usize, shdr.sh_size / shdr.sh_entsize) orelse return error.InvalidDebugInfo;
+    if (symbol_count == 0) return;
+
+    if (section_data.len < symbol_count * entsize) return error.InvalidDebugInfo;
+
+    const raw_symbols = @as([*]const SymType, @ptrCast(@alignCast(section_data.ptr)))[0..symbol_count];
+
+    const str_index = std.math.cast(usize, shdr.sh_link) orelse return error.InvalidDebugInfo;
+    if (str_index >= shdrs.len) return error.InvalidDebugInfo;
+    const str_hdr = shdrs[str_index];
+    const str_offset = std.math.cast(u64, str_hdr.sh_offset) orelse return error.Overflow;
+    const str_size = std.math.cast(u64, str_hdr.sh_size) orelse return error.Overflow;
+    const strings = try chopSlice(mapped_mem, str_offset, str_size);
+
+    for (raw_symbols) |sym| {
+        if (sym.st_shndx == std.elf.SHN_UNDEF) continue;
+
+        const name_off = std.math.cast(usize, sym.st_name) orelse continue;
+        if (name_off >= strings.len) continue;
+
+        const name = std.mem.sliceTo(strings[name_off..], 0);
+        if (name.len == 0) continue;
+
+        const value = std.math.cast(u64, sym.st_value) orelse continue;
+        const size = std.math.cast(u64, sym.st_size) orelse continue;
+
+        try symbol_entries.append(.{
+            .name = name,
+            .value = value,
+            .size = size,
+            .info = sym.st_info,
+        });
     }
 }
 
@@ -853,6 +947,7 @@ pub const Lookup = struct {
     map_result: MapResult,
     dwarf_info: dwarf.DwarfInfo,
     address_width: BitWidth,
+    symbols: []SymbolEntry,
 
     pub const Location = struct {
         file: ?[]const u8,
@@ -865,14 +960,13 @@ pub const Lookup = struct {
             const file = try std.fs.cwd().openFile(path, .{});
             break :blk try readElfDebugInfo(allocator, file);
         };
-        errdefer {
-            elf_info.dwarf_info.deinit(allocator);
-            if (is_windows) {
-                elf_info.map_result.deinit();
-            } else {
-                std.posix.munmap(elf_info.map_result);
-            }
-        }
+        errdefer allocator.free(elf_info.symbols);
+        errdefer elf_info.dwarf_info.deinit(allocator);
+        errdefer if (is_windows) {
+            elf_info.map_result.deinit();
+        } else {
+            std.posix.munmap(elf_info.map_result);
+        };
 
         const self = try allocator.create(Lookup);
         self.* = .{
@@ -880,11 +974,13 @@ pub const Lookup = struct {
             .map_result = elf_info.map_result,
             .dwarf_info = elf_info.dwarf_info,
             .address_width = elf_info.address_width,
+            .symbols = elf_info.symbols,
         };
         return self;
     }
 
     pub fn destroy(self: *Lookup) void {
+        self.allocator.free(self.symbols);
         self.dwarf_info.deinit(self.allocator);
         if (is_windows) {
             self.map_result.deinit();
@@ -936,11 +1032,64 @@ pub const Lookup = struct {
     }
 
     pub fn get_symbol(self: *Lookup, sym_buf: []u8, addr: u64) ?[]u8 {
-        const name = self.dwarf_info.getSymbolName(addr) orelse return null;
-        if (name.len > sym_buf.len) return null;
+        if (self.dwarf_info.getSymbolName(addr)) |name| {
+            if (name.len > sym_buf.len) return null;
+            @memcpy(sym_buf[0..name.len], name);
+            return sym_buf[0..name.len];
+        }
 
-        @memcpy(sym_buf[0..name.len], name);
-        return sym_buf[0..name.len];
+        if (self.findSymbolName(addr)) |fallback_name| {
+            if (fallback_name.len > sym_buf.len) return null;
+            @memcpy(sym_buf[0..fallback_name.len], fallback_name);
+            return sym_buf[0..fallback_name.len];
+        }
+
+        return null;
+    }
+
+    fn findSymbolName(self: *Lookup, addr: u64) ?[]const u8 {
+        var best_index: ?usize = null;
+        var best_value: u64 = 0;
+        var best_is_func = false;
+
+        for (self.symbols, 0..) |entry, idx| {
+            if (entry.value == 0) continue;
+            if (addr < entry.value) continue;
+
+            var range_end: u64 = std.math.maxInt(u64);
+            if (entry.size != 0) {
+                range_end = std.math.add(u64, entry.value, entry.size) catch continue;
+            } else {
+                var next_value: ?u64 = null;
+                for (self.symbols) |other| {
+                    if (other.value <= entry.value) continue;
+                    next_value = if (next_value) |current|
+                        if (other.value < current) other.value else current
+                    else
+                        other.value;
+                }
+                range_end = next_value orelse std.math.add(u64, entry.value, 1) catch std.math.maxInt(u64);
+            }
+
+            if (addr >= range_end) continue;
+
+            const entry_type = entry.info & 0x0f;
+            const is_func = entry_type == std.elf.STT_FUNC;
+
+            if (best_index == null or
+                (is_func and !best_is_func) or
+                (is_func == best_is_func and entry.value > best_value))
+            {
+                best_index = idx;
+                best_value = entry.value;
+                best_is_func = is_func;
+            }
+        }
+
+        if (best_index) |idx| {
+            return self.symbols[idx].name;
+        }
+        return null;
     }
 };
 
