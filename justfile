@@ -32,6 +32,26 @@ build-wiki:
 abi-test:
     {{zig}} build test
 
+[working-directory: 'src/tools/debug-filter']
+debug-filter:
+    echo "building..."
+    {{zig}} build install test
+    
+    echo "testing..."
+    ./zig-out/bin/debug-filter --elf main=../../../zig-out/bin/sermon echo 'main:0x0106da60'
+    ./zig-out/bin/debug-filter --elf main=../../../zig-out/bin/sermon echo 'main:0x01071a90'
+    ./zig-out/bin/debug-filter --elf main=../../../zig-out/bin/elfstack echo 'main:0x0112f550'
+    ./zig-out/bin/debug-filter --elf i2c=../../../zig-out/arm-ashet-hc/apps/i2c-scan.elf echo 'i2c:0x00049bb8'
+    ./zig-out/bin/debug-filter \
+        --elf one=../../../zig-out/bin/sermon \
+        --elf two=../../../zig-out/bin/elfstack \
+        echo -e 'one:0x0106da60' '\n' 'two:0x0112f550'
+    ./zig-out/bin/debug-filter \
+        --elf one=../../../zig-out/bin/sermon \
+        --elf two=../../../zig-out/bin/elfstack \
+        --elf i2c=../../../zig-out/arm-ashet-hc/apps/i2c-scan.elf \
+        echo -e 'one:0x0106da60' '\n' 'two:0x0112f550' '\n' 'i2c:0x00049bb8'
+
 build-tools:
     {{zig}} build {{default_params}} tools 
 

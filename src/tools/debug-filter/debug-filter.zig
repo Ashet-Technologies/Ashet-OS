@@ -14,6 +14,23 @@ const is_windows = @import("builtin").os.tag == .windows;
 
 const page_size = std.heap.page_size_min;
 
+const BitWidth = enum { bits32, bits64 };
+
+const DebugSections = struct {
+    debug_info: ?[]const u8 = null,
+    debug_abbrev: ?[]const u8 = null,
+    debug_str: ?[]const u8 = null,
+    debug_str_offsets: ?[]const u8 = null,
+    debug_line: ?[]const u8 = null,
+    debug_line_str: ?[]const u8 = null,
+    debug_ranges: ?[]const u8 = null,
+    debug_loclists: ?[]const u8 = null,
+    debug_rnglists: ?[]const u8 = null,
+    debug_addr: ?[]const u8 = null,
+    debug_names: ?[]const u8 = null,
+    debug_frame: ?[]const u8 = null,
+};
+
 const ElfFile = struct {
     const max_name_len: usize = 128;
 
@@ -92,7 +109,7 @@ const ParseOut = struct {
 fn parsePollResult(
     elves: ElfSet,
     line_buffer: RingBuffer,
-    bit_width: enum { bits32, bits64 },
+    bit_width: BitWidth,
 ) ?ParseOut {
     var suffix: [RingBuffer.max_item_count]u8 = undefined;
     line_buffer.copy_to(&suffix); // will be filled back to front!
@@ -147,10 +164,8 @@ test "parsePollResult bits32 hit" {
 
     try empty_elves.put("basic", .{
         .name = "basic",
-        .mem = undefined,
-        .dwarf = undefined,
-        .file = undefined,
         .path = undefined,
+        .lookup = undefined,
     });
 
     var rb = RingBuffer{};
@@ -172,10 +187,8 @@ test "parsePollResult bits64 hit" {
 
     try empty_elves.put("basic", .{
         .name = "basic",
-        .dwarf = undefined,
-        .mem = undefined,
-        .file = undefined,
         .path = undefined,
+        .lookup = undefined,
     });
 
     var rb = RingBuffer{};
@@ -197,10 +210,8 @@ test "parsePollResult bits32 missing" {
 
     try empty_elves.put("basic", .{
         .name = "basic",
-        .dwarf = undefined,
-        .mem = undefined,
-        .file = undefined,
         .path = undefined,
+        .lookup = undefined,
     });
 
     var rb = RingBuffer{};
@@ -219,10 +230,8 @@ test "parsePollResult bits64 missing" {
 
     try empty_elves.put("basic", .{
         .name = "basic",
-        .dwarf = undefined,
-        .mem = undefined,
-        .file = undefined,
         .path = undefined,
+        .lookup = undefined,
     });
 
     var rb = RingBuffer{};
@@ -323,26 +332,19 @@ pub fn main() !u8 {
         @panic("missing application cli!");
     }
 
-    for (elves.values()) |*value| {
-        value.lookup = .create(value.path);
-
-        // value.file = try std.fs.cwd().openFile(value.path, .{});
-
-        // const mem, const info = try readElfDebugInfo(allocator, value.file);
-        // value.dwarf = info;
-        // value.mem = mem;
-    }
+    var created_lookups = std.ArrayList(*Lookup).init(allocator);
     defer {
-        for (elves.values()) |*value| {
-            value.lookup.destroy();
-            // value.dwarf.deinit(allocator);
-            // if (is_windows) {
-            //     value.mem.deinit();
-            //     value.file.close();
-            // } else {
-            //     std.posix.munmap(value.mem);
-            // }
+        for (created_lookups.items) |lookup| {
+            lookup.destroy();
         }
+    }
+    defer created_lookups.deinit();
+
+    for (elves.values()) |*value| {
+        const lookup = try Lookup.create(allocator, value.path);
+        errdefer lookup.destroy();
+        try created_lookups.append(lookup);
+        value.lookup = lookup;
     }
 
     // Backup termios settings so the a crashing or force-killed application
@@ -572,120 +574,103 @@ const MapResult = if (is_windows) struct {
 } else []align(page_size) const u8;
 
 fn mapWholeFile(file: std.fs.File) !MapResult {
-    {
-        const file_len = std.math.cast(usize, try file.getEndPos()) orelse std.math.maxInt(usize);
-        if (is_windows) {
-            const mapping = try windows.createMapping(file);
-            const mapped_view = try windows.mapView(mapping, file_len);
-            const mapped_mem = @as([*]align(page_size) const u8, @ptrCast(@alignCast(mapped_view)))[0..file_len];
-            return .{
-                .mapping_handle = mapping,
-                .mem = mapped_mem,
-            };
-        } else {
-            defer file.close();
+    const file_len = std.math.cast(usize, try file.getEndPos()) orelse std.math.maxInt(usize);
+    defer file.close();
 
-            const mapped_mem = try std.posix.mmap(
-                null,
-                file_len,
-                std.posix.PROT.READ,
-                .{ .TYPE = .SHARED },
-                file.handle,
-                0,
-            );
-            errdefer std.posix.munmap(mapped_mem);
-
-            return mapped_mem;
-        }
+    if (is_windows) {
+        const mapping = try windows.createMapping(file);
+        const mapped_view = try windows.mapView(mapping, file_len);
+        const mapped_mem = @as([*]align(page_size) const u8, @ptrCast(@alignCast(mapped_view)))[0..file_len];
+        return .{
+            .mapping_handle = mapping,
+            .mem = mapped_mem,
+        };
     }
+
+    const mapped_mem = try std.posix.mmap(
+        null,
+        file_len,
+        std.posix.PROT.READ,
+        .{ .TYPE = .SHARED },
+        file.handle,
+        0,
+    );
+    errdefer std.posix.munmap(mapped_mem);
+
+    return mapped_mem;
 }
 
-pub fn readElfDebugInfo(allocator: std.mem.Allocator, elf_file: std.fs.File) !struct { MapResult, dwarf.DwarfInfo } {
+pub fn readElfDebugInfo(allocator: std.mem.Allocator, elf_file: std.fs.File) !struct {
+    map_result: MapResult,
+    dwarf_info: dwarf.DwarfInfo,
+    address_width: BitWidth,
+} {
     const elf = std.elf;
-    {
-        const map_result = try mapWholeFile(elf_file);
-        const mapped_mem = if (is_windows) map_result.mem else map_result;
-        const hdr: *const elf.Elf32_Ehdr = @ptrCast(&mapped_mem[0]);
-        if (!std.mem.eql(u8, hdr.e_ident[0..4], elf.MAGIC)) return error.InvalidElfMagic;
-        if (hdr.e_ident[elf.EI_VERSION] != 1) return error.InvalidElfVersion;
-
-        const endian: std.builtin.Endian = switch (hdr.e_ident[elf.EI_DATA]) {
-            elf.ELFDATA2LSB => .little,
-            elf.ELFDATA2MSB => .big,
-            else => return error.InvalidElfEndian,
-        };
-        std.debug.assert(endian == .little); // this is our own debug info
-
-        const shoff = hdr.e_shoff;
-        const str_section_off = shoff + @as(u64, hdr.e_shentsize) * @as(u64, hdr.e_shstrndx);
-        const str_shdr = @as(*const elf.Elf32_Shdr, @ptrCast(@alignCast(&mapped_mem[std.math.cast(usize, str_section_off) orelse return error.Overflow])));
-        const header_strings = mapped_mem[str_shdr.sh_offset .. str_shdr.sh_offset + str_shdr.sh_size];
-        const shdrs = @as([*]const elf.Elf32_Shdr, @ptrCast(@alignCast(&mapped_mem[shoff])))[0..hdr.e_shnum];
-
-        var opt_debug_info: ?[]const u8 = null;
-        var opt_debug_abbrev: ?[]const u8 = null;
-        var opt_debug_str: ?[]const u8 = null;
-        var opt_debug_str_offsets: ?[]const u8 = null;
-        var opt_debug_line: ?[]const u8 = null;
-        var opt_debug_line_str: ?[]const u8 = null;
-        var opt_debug_ranges: ?[]const u8 = null;
-        var opt_debug_loclists: ?[]const u8 = null;
-        var opt_debug_rnglists: ?[]const u8 = null;
-        var opt_debug_addr: ?[]const u8 = null;
-        var opt_debug_names: ?[]const u8 = null;
-        var opt_debug_frame: ?[]const u8 = null;
-
-        for (shdrs) |*shdr| {
-            if (shdr.sh_type == elf.SHT_NULL) continue;
-
-            const name = std.mem.sliceTo(header_strings[shdr.sh_name..], 0);
-            if (std.mem.eql(u8, name, ".debug_info")) {
-                opt_debug_info = try chopSlice(mapped_mem, shdr.sh_offset, shdr.sh_size);
-            } else if (std.mem.eql(u8, name, ".debug_abbrev")) {
-                opt_debug_abbrev = try chopSlice(mapped_mem, shdr.sh_offset, shdr.sh_size);
-            } else if (std.mem.eql(u8, name, ".debug_str")) {
-                opt_debug_str = try chopSlice(mapped_mem, shdr.sh_offset, shdr.sh_size);
-            } else if (std.mem.eql(u8, name, ".debug_str_offsets")) {
-                opt_debug_str_offsets = try chopSlice(mapped_mem, shdr.sh_offset, shdr.sh_size);
-            } else if (std.mem.eql(u8, name, ".debug_line")) {
-                opt_debug_line = try chopSlice(mapped_mem, shdr.sh_offset, shdr.sh_size);
-            } else if (std.mem.eql(u8, name, ".debug_line_str")) {
-                opt_debug_line_str = try chopSlice(mapped_mem, shdr.sh_offset, shdr.sh_size);
-            } else if (std.mem.eql(u8, name, ".debug_ranges")) {
-                opt_debug_ranges = try chopSlice(mapped_mem, shdr.sh_offset, shdr.sh_size);
-            } else if (std.mem.eql(u8, name, ".debug_loclists")) {
-                opt_debug_loclists = try chopSlice(mapped_mem, shdr.sh_offset, shdr.sh_size);
-            } else if (std.mem.eql(u8, name, ".debug_rnglists")) {
-                opt_debug_rnglists = try chopSlice(mapped_mem, shdr.sh_offset, shdr.sh_size);
-            } else if (std.mem.eql(u8, name, ".debug_addr")) {
-                opt_debug_addr = try chopSlice(mapped_mem, shdr.sh_offset, shdr.sh_size);
-            } else if (std.mem.eql(u8, name, ".debug_names")) {
-                opt_debug_names = try chopSlice(mapped_mem, shdr.sh_offset, shdr.sh_size);
-            } else if (std.mem.eql(u8, name, ".debug_frame")) {
-                opt_debug_frame = try chopSlice(mapped_mem, shdr.sh_offset, shdr.sh_size);
-            }
+    const map_result = try mapWholeFile(elf_file);
+    errdefer {
+        if (is_windows) {
+            map_result.deinit();
+        } else {
+            std.posix.munmap(map_result);
         }
-
-        var di: dwarf.DwarfInfo = .{
-            .endian = endian,
-            .debug_info = opt_debug_info orelse return error.MissingDebugInfo,
-            .debug_abbrev = opt_debug_abbrev orelse return error.MissingDebugInfo,
-            .debug_str = opt_debug_str orelse return error.MissingDebugInfo,
-            .debug_str_offsets = opt_debug_str_offsets,
-            .debug_line = opt_debug_line orelse return error.MissingDebugInfo,
-            .debug_line_str = opt_debug_line_str,
-            .debug_ranges = opt_debug_ranges,
-            .debug_loclists = opt_debug_loclists,
-            .debug_rnglists = opt_debug_rnglists,
-            .debug_addr = opt_debug_addr,
-            .debug_names = opt_debug_names,
-            .debug_frame = opt_debug_frame,
-        };
-
-        try dwarf.openDwarfDebugInfo(&di, u32, allocator);
-
-        return .{ map_result, di };
     }
+
+    const mapped_mem: []align(page_size) const u8 = if (is_windows) map_result.mem else map_result;
+    if (mapped_mem.len < elf.EI_NIDENT) return error.InvalidElfMagic;
+    if (!std.mem.eql(u8, mapped_mem[0..4], elf.MAGIC)) return error.InvalidElfMagic;
+    if (mapped_mem[elf.EI_VERSION] != 1) return error.InvalidElfVersion;
+
+    const endian: std.builtin.Endian = switch (mapped_mem[elf.EI_DATA]) {
+        elf.ELFDATA2LSB => .little,
+        elf.ELFDATA2MSB => .big,
+        else => return error.InvalidElfEndian,
+    };
+
+    var sections = DebugSections{};
+    var width: BitWidth = undefined;
+
+    switch (mapped_mem[elf.EI_CLASS]) {
+        elf.ELFCLASS32 => {
+            width = .bits32;
+            const hdr: *const elf.Elf32_Ehdr = @ptrCast(@alignCast(mapped_mem.ptr));
+            try populateSections32(mapped_mem, hdr, &sections);
+        },
+        elf.ELFCLASS64 => {
+            width = .bits64;
+            const hdr: *const elf.Elf64_Ehdr = @ptrCast(@alignCast(mapped_mem.ptr));
+            try populateSections64(mapped_mem, hdr, &sections);
+        },
+        else => return error.InvalidElfClass,
+    }
+
+    std.debug.assert(endian == .little); // this is our own debug info
+
+    var di: dwarf.DwarfInfo = .{
+        .endian = endian,
+        .debug_info = sections.debug_info orelse return error.MissingDebugInfo,
+        .debug_abbrev = sections.debug_abbrev orelse return error.MissingDebugInfo,
+        .debug_str = sections.debug_str orelse return error.MissingDebugInfo,
+        .debug_str_offsets = sections.debug_str_offsets,
+        .debug_line = sections.debug_line orelse return error.MissingDebugInfo,
+        .debug_line_str = sections.debug_line_str,
+        .debug_ranges = sections.debug_ranges,
+        .debug_loclists = sections.debug_loclists,
+        .debug_rnglists = sections.debug_rnglists,
+        .debug_addr = sections.debug_addr,
+        .debug_names = sections.debug_names,
+        .debug_frame = sections.debug_frame,
+    };
+
+    switch (width) {
+        .bits32 => try dwarf.openDwarfDebugInfo(&di, u32, allocator),
+        .bits64 => try dwarf.openDwarfDebugInfo(&di, u64, allocator),
+    }
+
+    return .{
+        .map_result = map_result,
+        .dwarf_info = di,
+        .address_width = width,
+    };
 }
 
 const SymbolInfo = struct {
@@ -723,6 +708,85 @@ fn chopSlice(ptr: []const u8, offset: u64, size: u64) error{Overflow}![]const u8
     const start = std.math.cast(usize, offset) orelse return error.Overflow;
     const end = start + (std.math.cast(usize, size) orelse return error.Overflow);
     return ptr[start..end];
+}
+
+fn populateSections32(mapped_mem: []const u8, hdr: *const std.elf.Elf32_Ehdr, sections: *DebugSections) !void {
+    const shoff = std.math.cast(usize, hdr.e_shoff) orelse return error.Overflow;
+    const shnum = std.math.cast(usize, hdr.e_shnum) orelse return error.Overflow;
+    const shentsize = std.math.cast(usize, hdr.e_shentsize) orelse return error.Overflow;
+    if (shentsize != @sizeOf(std.elf.Elf32_Shdr)) return error.InvalidDebugInfo;
+    const sh_table_size = std.math.mul(usize, shentsize, shnum) catch return error.Overflow;
+    if (shoff > mapped_mem.len or shoff + sh_table_size > mapped_mem.len) return error.InvalidDebugInfo;
+
+    const shdrs = @as([*]const std.elf.Elf32_Shdr, @ptrCast(@alignCast(mapped_mem[shoff..].ptr)))[0..shnum];
+
+    if (hdr.e_shstrndx >= shdrs.len) return error.InvalidDebugInfo;
+    const str_hdr = shdrs[hdr.e_shstrndx];
+    const header_strings = try chopSlice(mapped_mem, @as(u64, str_hdr.sh_offset), @as(u64, str_hdr.sh_size));
+
+    try populateSectionsCommon(mapped_mem, header_strings, sections, shdrs);
+}
+
+fn populateSections64(mapped_mem: []const u8, hdr: *const std.elf.Elf64_Ehdr, sections: *DebugSections) !void {
+    const shoff = std.math.cast(usize, hdr.e_shoff) orelse return error.Overflow;
+    const shnum = std.math.cast(usize, hdr.e_shnum) orelse return error.Overflow;
+    const shentsize = std.math.cast(usize, hdr.e_shentsize) orelse return error.Overflow;
+    if (shentsize != @sizeOf(std.elf.Elf64_Shdr)) return error.InvalidDebugInfo;
+    const sh_table_size = std.math.mul(usize, shentsize, shnum) catch return error.Overflow;
+    if (shoff > mapped_mem.len or shoff + sh_table_size > mapped_mem.len) return error.InvalidDebugInfo;
+
+    const shdrs = @as([*]const std.elf.Elf64_Shdr, @ptrCast(@alignCast(mapped_mem[shoff..].ptr)))[0..shnum];
+
+    if (hdr.e_shstrndx >= shdrs.len) return error.InvalidDebugInfo;
+    const str_hdr = shdrs[hdr.e_shstrndx];
+    const header_strings = try chopSlice(mapped_mem, str_hdr.sh_offset, str_hdr.sh_size);
+
+    try populateSectionsCommon(mapped_mem, header_strings, sections, shdrs);
+}
+
+fn populateSectionsCommon(
+    mapped_mem: []const u8,
+    header_strings: []const u8,
+    sections: *DebugSections,
+    shdrs: anytype,
+) !void {
+    for (shdrs) |shdr| {
+        if (shdr.sh_type == std.elf.SHT_NULL) continue;
+
+        const name_off = std.math.cast(usize, shdr.sh_name) orelse return error.InvalidDebugInfo;
+        if (name_off >= header_strings.len) return error.InvalidDebugInfo;
+
+        const name = std.mem.sliceTo(header_strings[name_off..], 0);
+        const offset = std.math.cast(u64, shdr.sh_offset) orelse return error.Overflow;
+        const size = std.math.cast(u64, shdr.sh_size) orelse return error.Overflow;
+        const slice = try chopSlice(mapped_mem, offset, size);
+
+        if (std.mem.eql(u8, name, ".debug_info")) {
+            sections.debug_info = slice;
+        } else if (std.mem.eql(u8, name, ".debug_abbrev")) {
+            sections.debug_abbrev = slice;
+        } else if (std.mem.eql(u8, name, ".debug_str")) {
+            sections.debug_str = slice;
+        } else if (std.mem.eql(u8, name, ".debug_str_offsets")) {
+            sections.debug_str_offsets = slice;
+        } else if (std.mem.eql(u8, name, ".debug_line")) {
+            sections.debug_line = slice;
+        } else if (std.mem.eql(u8, name, ".debug_line_str")) {
+            sections.debug_line_str = slice;
+        } else if (std.mem.eql(u8, name, ".debug_ranges")) {
+            sections.debug_ranges = slice;
+        } else if (std.mem.eql(u8, name, ".debug_loclists")) {
+            sections.debug_loclists = slice;
+        } else if (std.mem.eql(u8, name, ".debug_rnglists")) {
+            sections.debug_rnglists = slice;
+        } else if (std.mem.eql(u8, name, ".debug_addr")) {
+            sections.debug_addr = slice;
+        } else if (std.mem.eql(u8, name, ".debug_names")) {
+            sections.debug_names = slice;
+        } else if (std.mem.eql(u8, name, ".debug_frame")) {
+            sections.debug_frame = slice;
+        }
+    }
 }
 
 const Termios = if (@import("builtin").os.tag == .windows)
@@ -784,82 +848,100 @@ const PosixTermios = struct {
     }
 };
 
-pub const Lookup = opaque {
-    pub fn create(path: []const u8) *Lookup {
-        return lookup_create(path.ptr, path.len);
-    }
-
-    pub fn destroy(obj: *Lookup) void {
-        lookup_destroy(obj);
-    }
-
-    pub fn get_location(obj: *Lookup, path_buf: []u8, addr: u64) ?Location {
-        var res: NativeLocation = .{
-            .file = .empty_from_buf(path_buf),
-            .column = 0,
-            .line = 0,
-        };
-        if (!lookup_location(obj, &res, addr))
-            return null;
-
-        std.debug.assert(res.file.ptr == path_buf.ptr);
-        std.debug.assert(res.file.len <= path_buf.len);
-
-        return .{
-            .file = res.file.slice(),
-            .column = if (res.column != 0) res.column else null,
-            .line = if (res.line != 0) res.line else null,
-        };
-    }
-
-    pub fn get_symbol(obj: *Lookup, sym_buf: []u8, addr: u64) ?[]u8 {
-        var res: NativeString = .empty_from_buf(sym_buf);
-        if (!lookup_symbol(obj, &res, addr))
-            return null;
-
-        std.debug.assert(res.ptr == sym_buf.ptr);
-        std.debug.assert(res.len <= sym_buf.len);
-
-        return res.slice();
-    }
-
-    extern fn lookup_create(path_ptr: [*]const u8, path_len: usize) *Lookup;
-
-    extern fn lookup_destroy(*Lookup) void;
-
-    extern fn lookup_location(*Lookup, *NativeLocation, addr: u64) bool;
-
-    extern fn lookup_symbol(*Lookup, *NativeString, addr: u64) bool;
-
-    pub const NativeLocation = extern struct {
-        file: NativeString,
-        line: u32,
-        column: u32,
-    };
-
-    const NativeString = extern struct {
-        ptr: [*]u8,
-        len: usize,
-        capacity: usize,
-
-        pub fn empty_from_buf(buf: []u8) NativeString {
-            return .{
-                .ptr = buf.ptr,
-                .len = 0,
-                .capacity = buf.len,
-            };
-        }
-
-        pub fn slice(ns: NativeString) []u8 {
-            return ns.ptr[0..ns.len];
-        }
-    };
+pub const Lookup = struct {
+    allocator: std.mem.Allocator,
+    map_result: MapResult,
+    dwarf_info: dwarf.DwarfInfo,
+    address_width: BitWidth,
 
     pub const Location = struct {
         file: ?[]const u8,
         line: ?u32,
         column: ?u32,
     };
+
+    pub fn create(allocator: std.mem.Allocator, path: []const u8) !*Lookup {
+        var elf_info = blk: {
+            const file = try std.fs.cwd().openFile(path, .{});
+            break :blk try readElfDebugInfo(allocator, file);
+        };
+        errdefer {
+            elf_info.dwarf_info.deinit(allocator);
+            if (is_windows) {
+                elf_info.map_result.deinit();
+            } else {
+                std.posix.munmap(elf_info.map_result);
+            }
+        }
+
+        const self = try allocator.create(Lookup);
+        self.* = .{
+            .allocator = allocator,
+            .map_result = elf_info.map_result,
+            .dwarf_info = elf_info.dwarf_info,
+            .address_width = elf_info.address_width,
+        };
+        return self;
+    }
+
+    pub fn destroy(self: *Lookup) void {
+        self.dwarf_info.deinit(self.allocator);
+        if (is_windows) {
+            self.map_result.deinit();
+        } else {
+            std.posix.munmap(self.map_result);
+        }
+        self.allocator.destroy(self);
+    }
+
+    pub fn get_location(self: *Lookup, path_buf: []u8, addr: u64) ?Location {
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+        const local_allocator = arena.allocator();
+
+        const symbol_info = switch (self.address_width) {
+            .bits32 => getSymbolFromDwarf(u32, local_allocator, addr, &self.dwarf_info),
+            .bits64 => getSymbolFromDwarf(u64, local_allocator, addr, &self.dwarf_info),
+        } catch |err| switch (err) {
+            error.MissingDebugInfo, error.InvalidDebugInfo => return null,
+            else => return null,
+        };
+        defer symbol_info.deinit(local_allocator);
+
+        const line_info = symbol_info.line_info orelse return null;
+        if (line_info.file_name.len > path_buf.len) return null;
+
+        @memcpy(path_buf[0..line_info.file_name.len], line_info.file_name);
+        const file_slice = path_buf[0..line_info.file_name.len];
+
+        var line_opt: ?u32 = null;
+        if (line_info.line != 0) {
+            if (std.math.cast(u32, line_info.line)) |line| {
+                line_opt = line;
+            }
+        }
+
+        var column_opt: ?u32 = null;
+        if (line_info.column != 0) {
+            if (std.math.cast(u32, line_info.column)) |column| {
+                column_opt = column;
+            }
+        }
+
+        return .{
+            .file = if (file_slice.len != 0) file_slice else null,
+            .line = line_opt,
+            .column = column_opt,
+        };
+    }
+
+    pub fn get_symbol(self: *Lookup, sym_buf: []u8, addr: u64) ?[]u8 {
+        const name = self.dwarf_info.getSymbolName(addr) orelse return null;
+        if (name.len > sym_buf.len) return null;
+
+        @memcpy(sym_buf[0..name.len], name);
+        return sym_buf[0..name.len];
+    }
 };
 
 // const lut = Lookup.create("/home/felix/projects/ashet/ashet-os/zig-out/arm-ashet-hc/kernel.elf");
