@@ -44,6 +44,7 @@ debug-filter:
     ./zig-out/bin/debug-filter --elf i2c=../../../zig-out/arm-ashet-hc/apps/i2c-scan.elf echo 'i2c:0x0002013d' # definition.io.i2c.open
     ./zig-out/bin/debug-filter --elf i2c=../../../zig-out/arm-ashet-hc/apps/i2c-scan.elf echo 'i2c:0x00049bb8' # std.options
     ./zig-out/bin/debug-filter --elf i2c=../../../zig-out/arm-ashet-hc/apps/i2c-scan.elf echo 'i2c:0x0004e754' # builtin.target
+    ./zig-out/bin/debug-filter --elf i2c=../../../zig-out/arm-ashet-hc/apps/i2c-scan.elf echo 'i2c:0x0004ea93' # builtin.target
     ./zig-out/bin/debug-filter \
         --elf one=../../../zig-out/bin/sermon \
         --elf two=../../../zig-out/bin/elfstack \
