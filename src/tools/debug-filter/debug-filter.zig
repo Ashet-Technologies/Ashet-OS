@@ -333,12 +333,12 @@ pub fn main() !u8 {
     }
 
     var created_lookups = std.ArrayList(*Lookup).init(allocator);
+    defer created_lookups.deinit();
     defer {
         for (created_lookups.items) |lookup| {
             lookup.destroy();
         }
     }
-    defer created_lookups.deinit();
 
     for (elves.values()) |*value| {
         const lookup = try Lookup.create(allocator, value.path);
