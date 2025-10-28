@@ -61,11 +61,9 @@ const max_suffix_len = 3 + 8 * 2; // ":0x" + 8 hex encoded bytes
 
 const ElfSet = std.StringArrayHashMap(ElfFile);
 
-fn renderElfData(allocator: std.mem.Allocator, elf_addr: u64, elf: *ElfFile, output: *std.io.BufferedWriter(4096, std.fs.File.Writer)) !void {
+/// Writes symbol, source location, and section information for the given address.
+fn render_elf_data(elf_addr: u64, elf: *ElfFile, output: *std.io.BufferedWriter(4096, std.fs.File.Writer)) !void {
     const writer = output.writer();
-
-    _ = allocator;
-
     var path_buf: [4096]u8 = undefined;
     var symbol_buf: [4096]u8 = undefined;
     const maybe_symbol = elf.lookup.get_symbol(&symbol_buf, elf_addr);
@@ -111,7 +109,7 @@ fn renderElfData(allocator: std.mem.Allocator, elf_addr: u64, elf: *ElfFile, out
 
     try writer.writeAll("]");
 
-    // if (getSymbolFromDwarf(u32, allocator, elf_addr, &elf.dwarf)) |symbol_info| {
+    // if (get_symbol_from_dwarf(u32, allocator, elf_addr, &elf.dwarf)) |symbol_info| {
     //     defer symbol_info.deinit(allocator);
 
     //     if (symbol_info.line_info) |line_info| {
@@ -129,7 +127,8 @@ const ParseOut = struct {
     addr: u64,
 };
 
-fn parsePollResult(
+/// Tries to parse the trailing `:<addr>` portion from the buffered line output.
+fn parse_poll_result(
     elves: ElfSet,
     line_buffer: RingBuffer,
     bit_width: BitWidth,
@@ -177,8 +176,8 @@ test "parsePollResult empty ring" {
 
     const rb = RingBuffer{};
 
-    try std.testing.expect(parsePollResult(empty_elves, rb, .bits32) == null);
-    try std.testing.expect(parsePollResult(empty_elves, rb, .bits64) == null);
+    try std.testing.expect(parse_poll_result(empty_elves, rb, .bits32) == null);
+    try std.testing.expect(parse_poll_result(empty_elves, rb, .bits64) == null);
 }
 
 test "parsePollResult bits32 hit" {
@@ -194,8 +193,8 @@ test "parsePollResult bits32 hit" {
     var rb = RingBuffer{};
     rb.push_slice("basic:0xAABBCCDD");
 
-    const bits32_result = parsePollResult(empty_elves, rb, .bits32);
-    const bits64_result = parsePollResult(empty_elves, rb, .bits64);
+    const bits32_result = parse_poll_result(empty_elves, rb, .bits32);
+    const bits64_result = parse_poll_result(empty_elves, rb, .bits64);
 
     try std.testing.expect(bits32_result != null);
     try std.testing.expect(bits64_result == null);
@@ -217,8 +216,8 @@ test "parsePollResult bits64 hit" {
     var rb = RingBuffer{};
     rb.push_slice("basic:0xAABBCCDD00112233");
 
-    const bits32_result = parsePollResult(empty_elves, rb, .bits32);
-    const bits64_result = parsePollResult(empty_elves, rb, .bits64);
+    const bits32_result = parse_poll_result(empty_elves, rb, .bits32);
+    const bits64_result = parse_poll_result(empty_elves, rb, .bits64);
 
     try std.testing.expect(bits32_result == null);
     try std.testing.expect(bits64_result != null);
@@ -240,8 +239,8 @@ test "parsePollResult bits32 missing" {
     var rb = RingBuffer{};
     rb.push_slice("bas1c:0xAABBCCDD");
 
-    const bits32_result = parsePollResult(empty_elves, rb, .bits32);
-    const bits64_result = parsePollResult(empty_elves, rb, .bits64);
+    const bits32_result = parse_poll_result(empty_elves, rb, .bits32);
+    const bits64_result = parse_poll_result(empty_elves, rb, .bits64);
 
     try std.testing.expect(bits32_result == null);
     try std.testing.expect(bits64_result == null);
@@ -260,15 +259,15 @@ test "parsePollResult bits64 missing" {
     var rb = RingBuffer{};
     rb.push_slice("bas1ic:0xAABBCCDD00112233");
 
-    const bits32_result = parsePollResult(empty_elves, rb, .bits32);
-    const bits64_result = parsePollResult(empty_elves, rb, .bits64);
+    const bits32_result = parse_poll_result(empty_elves, rb, .bits32);
+    const bits64_result = parse_poll_result(empty_elves, rb, .bits64);
 
     try std.testing.expect(bits32_result == null);
     try std.testing.expect(bits64_result == null);
 }
 
-fn consumePollResult(
-    allocator: std.mem.Allocator,
+/// Reads poller output, forwards it, and augments recognized addresses with metadata.
+fn consume_poll_result(
     elves: ElfSet,
     output: *std.io.BufferedWriter(4096, std.fs.File.Writer),
     line_buffer: *RingBuffer,
@@ -293,15 +292,16 @@ fn consumePollResult(
                 continue;
             }
 
-            if (parsePollResult(elves, line_buffer.*, .bits32)) |result| {
-                try renderElfData(allocator, result.addr, result.elf, output);
-            } else if (parsePollResult(elves, line_buffer.*, .bits64)) |result| {
-                try renderElfData(allocator, result.addr, result.elf, output);
+            if (parse_poll_result(elves, line_buffer.*, .bits32)) |result| {
+                try render_elf_data(result.addr, result.elf, output);
+            } else if (parse_poll_result(elves, line_buffer.*, .bits64)) |result| {
+                try render_elf_data(result.addr, result.elf, output);
             }
         }
     }
 }
 
+/// Entry point for the debug-filter executable.
 pub fn main() !u8 {
     const allocator = std.heap.c_allocator;
 
@@ -375,7 +375,7 @@ pub fn main() !u8 {
     const terminal_config_backup = try Termios.read();
     defer terminal_config_backup.apply() catch |err| std.log.err("failed to re-apply terminal settings: {}", .{err});
 
-    const term = try spawnAndFilterSubprocess(elves, app_argv, allocator);
+    const term = try spawn_and_filter_subprocess(elves, app_argv, allocator);
     switch (term) {
         .Exited => |code| return code,
         .Signal => |signal| {
@@ -395,7 +395,8 @@ pub fn main() !u8 {
     return 0;
 }
 
-fn spawnAndFilterSubprocess(elves: ElfSet, app_argv: []const []const u8, allocator: std.mem.Allocator) !std.process.Child.Term {
+/// Runs the target process and streams its stdio through the filter pipeline.
+fn spawn_and_filter_subprocess(elves: ElfSet, app_argv: []const []const u8, allocator: std.mem.Allocator) !std.process.Child.Term {
     var proc = std.process.Child.init(app_argv, allocator);
 
     proc.stdin_behavior = .Inherit;
@@ -404,7 +405,7 @@ fn spawnAndFilterSubprocess(elves: ElfSet, app_argv: []const []const u8, allocat
 
     try proc.spawn();
 
-    filterAndForwardStdio(allocator, elves, &proc) catch |err| {
+    filter_and_forward_stdio(allocator, elves, &proc) catch |err| {
         std.log.err("failed to forward stdio: {}", .{err});
         return try proc.kill();
     };
@@ -412,7 +413,8 @@ fn spawnAndFilterSubprocess(elves: ElfSet, app_argv: []const []const u8, allocat
     return try proc.wait();
 }
 
-fn filterAndForwardStdio(allocator: std.mem.Allocator, elves: ElfSet, proc: *std.process.Child) !void {
+/// Polls the child process output streams and forwards them to stdout/stderr.
+fn filter_and_forward_stdio(allocator: std.mem.Allocator, elves: ElfSet, proc: *std.process.Child) !void {
     var poller = std.io.poll(allocator, enum { stdout, stderr }, .{
         .stdout = proc.stdout.?,
         .stderr = proc.stderr.?,
@@ -426,15 +428,13 @@ fn filterAndForwardStdio(allocator: std.mem.Allocator, elves: ElfSet, proc: *std
     var stderr_buffered_writer = std.io.bufferedWriter(std.io.getStdErr().writer());
 
     while (try poller.poll()) {
-        try consumePollResult(
-            allocator,
+        try consume_poll_result(
             elves,
             &stdout_buffered_writer,
             &stdout_line_buffer,
             poller.fifo(.stdout),
         );
-        try consumePollResult(
-            allocator,
+        try consume_poll_result(
             elves,
             &stderr_buffered_writer,
             &stderr_line_buffer,
@@ -452,6 +452,7 @@ const RingBuffer = struct {
     data: [max_item_count]u8 = .{0} ** max_item_count,
     next_element: usize = 0,
 
+    /// Stores a single byte in the ring buffer.
     pub fn push(rb: *RingBuffer, byte: u8) void {
         rb.data[rb.next_element] = byte;
         rb.next_element += 1;
@@ -460,21 +461,21 @@ const RingBuffer = struct {
         }
     }
 
+    /// Stores all bytes from the provided slice in FIFO order.
     pub fn push_slice(rb: *RingBuffer, slice: []const u8) void {
         for (slice) |byte| {
             rb.push(byte);
         }
     }
 
-    /// Returns the `index`th last element
+    /// Returns the `index`th most recent element.
     pub fn get(rb: RingBuffer, index: usize) u8 {
         std.debug.assert(index < rb.data.len);
         const actual_index = (rb.data.len + rb.next_element - 1 - index) % rb.data.len;
         return rb.data[actual_index];
     }
 
-    /// Copy the ring buffer to the `slice` with the latest element in the ring is
-    /// the last element in the slice.
+    /// Copies the ring contents into `array`, placing the newest element last.
     pub fn copy_to(rb: RingBuffer, array: *[max_item_count]u8) void {
         for (0..rb.data.len) |i| {
             const rb_index = (rb.next_element + i) % rb.data.len;
@@ -530,6 +531,7 @@ const dwarf = @import("lib/adjusted-dwarf.zig");
 const windows = struct {
     const win = std.os.windows;
 
+    /// Declares the Windows API for creating a file mapping.
     extern "kernel32" fn CreateFileMappingA(
         hFile: win.HANDLE,
         lpFileMappingAttributes: ?*anyopaque,
@@ -539,6 +541,7 @@ const windows = struct {
         lpName: ?win.LPCSTR,
     ) ?win.HANDLE;
 
+    /// Declares the Windows API for mapping a view of a file.
     extern "kernel32" fn MapViewOfFile(
         hFileMappingObject: win.HANDLE,
         dwDesiredAccess: win.DWORD,
@@ -547,13 +550,15 @@ const windows = struct {
         dwNumberOfBytesToMap: win.SIZE_T,
     ) ?win.LPVOID;
 
+    /// Declares the Windows API for unmapping a view of a file.
     extern "kernel32" fn UnmapViewOfFile(
         lpBaseAddress: win.LPCVOID,
     ) win.BOOL;
 
     const Handle = win.HANDLE;
 
-    fn createMapping(file: std.fs.File) !Handle {
+    /// Creates a read-only mapping for the provided file.
+    fn create_mapping(file: std.fs.File) !Handle {
         const mapping = CreateFileMappingA(
             file.handle,
             null,
@@ -568,7 +573,8 @@ const windows = struct {
 
     const FILE_MAP_READ = 4;
 
-    fn mapView(mapping: Handle, size: usize) !*anyopaque {
+    /// Maps a read-only view of the file mapping into memory.
+    fn map_view(mapping: Handle, size: usize) !*anyopaque {
         const view = MapViewOfFile(
             mapping,
             FILE_MAP_READ,
@@ -580,7 +586,8 @@ const windows = struct {
         return view.?;
     }
 
-    fn unmapView(addr: *const anyopaque) !void {
+    /// Unmaps a previously mapped view from memory.
+    fn unmap_view(addr: *const anyopaque) !void {
         const res = UnmapViewOfFile(addr);
         if (res == 0) return error.UnmapFailed;
     }
@@ -590,19 +597,21 @@ const MapResult = if (is_windows) struct {
     mapping_handle: windows.Handle,
     mem: []align(page_size) const u8,
 
+    /// Releases the memory mapping and associated OS handle.
     fn deinit(self: MapResult) void {
-        windows.unmapView(@ptrCast(self.mem.ptr)) catch {};
+        windows.unmap_view(@ptrCast(self.mem.ptr)) catch {};
         std.os.windows.CloseHandle(self.mapping_handle);
     }
 } else []align(page_size) const u8;
 
-fn mapWholeFile(file: std.fs.File) !MapResult {
+/// Maps the entire file into memory and returns the mapping result.
+fn map_whole_file(file: std.fs.File) !MapResult {
     const file_len = std.math.cast(usize, try file.getEndPos()) orelse std.math.maxInt(usize);
     defer file.close();
 
     if (is_windows) {
-        const mapping = try windows.createMapping(file);
-        const mapped_view = try windows.mapView(mapping, file_len);
+        const mapping = try windows.create_mapping(file);
+        const mapped_view = try windows.map_view(mapping, file_len);
         const mapped_mem = @as([*]align(page_size) const u8, @ptrCast(@alignCast(mapped_view)))[0..file_len];
         return .{
             .mapping_handle = mapping,
@@ -623,7 +632,8 @@ fn mapWholeFile(file: std.fs.File) !MapResult {
     return mapped_mem;
 }
 
-pub fn readElfDebugInfo(allocator: std.mem.Allocator, elf_file: std.fs.File) !struct {
+/// Loads DWARF debug information and symbol metadata from the provided ELF file.
+pub fn read_elf_debug_info(allocator: std.mem.Allocator, elf_file: std.fs.File) !struct {
     map_result: MapResult,
     dwarf_info: dwarf.DwarfInfo,
     address_width: BitWidth,
@@ -631,7 +641,7 @@ pub fn readElfDebugInfo(allocator: std.mem.Allocator, elf_file: std.fs.File) !st
     sections: []SectionEntry,
 } {
     const elf = std.elf;
-    const map_result = try mapWholeFile(elf_file);
+    const map_result = try map_whole_file(elf_file);
     errdefer {
         if (is_windows) {
             map_result.deinit();
@@ -662,12 +672,12 @@ pub fn readElfDebugInfo(allocator: std.mem.Allocator, elf_file: std.fs.File) !st
         elf.ELFCLASS32 => {
             width = .bits32;
             const hdr: *const elf.Elf32_Ehdr = @ptrCast(@alignCast(mapped_mem.ptr));
-            try populateSections32(allocator, mapped_mem, hdr, &sections, &symbol_entries, &section_entries);
+            try populate_sections32(mapped_mem, hdr, &sections, &symbol_entries, &section_entries);
         },
         elf.ELFCLASS64 => {
             width = .bits64;
             const hdr: *const elf.Elf64_Ehdr = @ptrCast(@alignCast(mapped_mem.ptr));
-            try populateSections64(allocator, mapped_mem, hdr, &sections, &symbol_entries, &section_entries);
+            try populate_sections64(mapped_mem, hdr, &sections, &symbol_entries, &section_entries);
         },
         else => return error.InvalidElfClass,
     }
@@ -711,14 +721,10 @@ const SymbolInfo = struct {
     symbol_name: []const u8 = "",
     compile_unit_name: []const u8 = "???",
     line_info: ?dwarf.LineInfo = null,
-
-    fn deinit(si: SymbolInfo, allocator: std.mem.Allocator) void {
-        _ = allocator;
-        _ = si;
-    }
 };
 
-fn getSymbolFromDwarf(comptime Address: type, allocator: std.mem.Allocator, address: u64, di: *dwarf.DwarfInfo) !SymbolInfo {
+/// Retrieves symbol and line information for the given address.
+fn get_symbol_from_dwarf(comptime Address: type, allocator: std.mem.Allocator, address: u64, di: *dwarf.DwarfInfo) !SymbolInfo {
     if (di.findCompileUnit(address)) |compile_unit| {
         return .{
             .symbol_name = di.getSymbolName(address) orelse "???",
@@ -738,14 +744,15 @@ fn getSymbolFromDwarf(comptime Address: type, allocator: std.mem.Allocator, addr
     }
 }
 
-fn chopSlice(ptr: []const u8, offset: u64, size: u64) error{Overflow}![]const u8 {
+/// Returns a slice starting at `offset` with the provided `size`.
+fn chop_slice(ptr: []const u8, offset: u64, size: u64) error{Overflow}![]const u8 {
     const start = std.math.cast(usize, offset) orelse return error.Overflow;
     const end = start + (std.math.cast(usize, size) orelse return error.Overflow);
     return ptr[start..end];
 }
 
-fn populateSections32(
-    allocator: std.mem.Allocator,
+/// Gathers debug sections and symbols from the 32-bit ELF header.
+fn populate_sections32(
     mapped_mem: []const u8,
     hdr: *const std.elf.Elf32_Ehdr,
     sections: *DebugSections,
@@ -763,13 +770,13 @@ fn populateSections32(
 
     if (hdr.e_shstrndx >= shdrs.len) return error.InvalidDebugInfo;
     const str_hdr = shdrs[hdr.e_shstrndx];
-    const header_strings = try chopSlice(mapped_mem, @as(u64, str_hdr.sh_offset), @as(u64, str_hdr.sh_size));
+    const header_strings = try chop_slice(mapped_mem, @as(u64, str_hdr.sh_offset), @as(u64, str_hdr.sh_size));
 
-    try populateSectionsCommon(std.elf.Elf32_Shdr, allocator, mapped_mem, header_strings, sections, symbol_entries, section_entries, shdrs);
+    try populate_sections_common(std.elf.Elf32_Shdr, mapped_mem, header_strings, sections, symbol_entries, section_entries, shdrs);
 }
 
-fn populateSections64(
-    allocator: std.mem.Allocator,
+/// Gathers debug sections and symbols from the 64-bit ELF header.
+fn populate_sections64(
     mapped_mem: []const u8,
     hdr: *const std.elf.Elf64_Ehdr,
     sections: *DebugSections,
@@ -787,14 +794,14 @@ fn populateSections64(
 
     if (hdr.e_shstrndx >= shdrs.len) return error.InvalidDebugInfo;
     const str_hdr = shdrs[hdr.e_shstrndx];
-    const header_strings = try chopSlice(mapped_mem, str_hdr.sh_offset, str_hdr.sh_size);
+    const header_strings = try chop_slice(mapped_mem, str_hdr.sh_offset, str_hdr.sh_size);
 
-    try populateSectionsCommon(std.elf.Elf64_Shdr, allocator, mapped_mem, header_strings, sections, symbol_entries, section_entries, shdrs);
+    try populate_sections_common(std.elf.Elf64_Shdr, mapped_mem, header_strings, sections, symbol_entries, section_entries, shdrs);
 }
 
-fn populateSectionsCommon(
+/// Shared implementation for extracting sections and symbols from the section headers.
+fn populate_sections_common(
     comptime ShdrType: type,
-    allocator: std.mem.Allocator,
     mapped_mem: []const u8,
     header_strings: []const u8,
     sections: *DebugSections,
@@ -802,7 +809,6 @@ fn populateSectionsCommon(
     section_entries: *std.ArrayList(SectionEntry),
     shdrs: []const ShdrType,
 ) !void {
-    _ = allocator;
     for (shdrs) |shdr| {
         if (shdr.sh_type == std.elf.SHT_NULL) continue;
 
@@ -823,7 +829,7 @@ fn populateSectionsCommon(
 
         const has_file_data = shdr.sh_type != std.elf.SHT_NOBITS;
         const slice = if (has_file_data)
-            try chopSlice(mapped_mem, std.math.cast(u64, shdr.sh_offset) orelse return error.Overflow, size)
+            try chop_slice(mapped_mem, std.math.cast(u64, shdr.sh_offset) orelse return error.Overflow, size)
         else
             null;
 
@@ -852,12 +858,13 @@ fn populateSectionsCommon(
         } else if (std.mem.eql(u8, name, ".debug_frame")) {
             if (slice) |data| sections.debug_frame = data;
         } else if (shdr.sh_type == std.elf.SHT_SYMTAB or shdr.sh_type == std.elf.SHT_DYNSYM) {
-            if (slice) |data| try collectSymbolEntries(mapped_mem, shdrs, shdr, data, symbol_entries);
+            if (slice) |data| try collect_symbol_entries(mapped_mem, shdrs, shdr, data, symbol_entries);
         }
     }
 }
 
-fn collectSymbolEntries(
+/// Collects symbol table entries and stores them in `symbol_entries`.
+fn collect_symbol_entries(
     mapped_mem: []const u8,
     shdrs: anytype,
     shdr: anytype,
@@ -865,13 +872,14 @@ fn collectSymbolEntries(
     symbol_entries: *std.ArrayList(SymbolEntry),
 ) !void {
     if (comptime @TypeOf(shdr) == std.elf.Elf32_Shdr) {
-        try collectSymbolEntriesTyped(mapped_mem, shdrs, shdr, section_data, symbol_entries, std.elf.Elf32_Sym);
+        try collect_symbol_entries_typed(mapped_mem, shdrs, shdr, section_data, symbol_entries, std.elf.Elf32_Sym);
     } else {
-        try collectSymbolEntriesTyped(mapped_mem, shdrs, shdr, section_data, symbol_entries, std.elf.Elf64_Sym);
+        try collect_symbol_entries_typed(mapped_mem, shdrs, shdr, section_data, symbol_entries, std.elf.Elf64_Sym);
     }
 }
 
-fn collectSymbolEntriesTyped(
+/// Type-specific implementation for copying symbol table data into memory.
+fn collect_symbol_entries_typed(
     mapped_mem: []const u8,
     shdrs: anytype,
     shdr: anytype,
@@ -894,7 +902,7 @@ fn collectSymbolEntriesTyped(
     const str_hdr = shdrs[str_index];
     const str_offset = std.math.cast(u64, str_hdr.sh_offset) orelse return error.Overflow;
     const str_size = std.math.cast(u64, str_hdr.sh_size) orelse return error.Overflow;
-    const strings = try chopSlice(mapped_mem, str_offset, str_size);
+    const strings = try chop_slice(mapped_mem, str_offset, str_size);
 
     for (raw_symbols) |sym| {
         if (sym.st_shndx == std.elf.SHN_UNDEF) continue;
@@ -923,10 +931,12 @@ else
     PosixTermios;
 
 const WindowsTermios = struct {
+    /// Returns a placeholder terminal configuration on Windows.
     pub fn read() !Termios {
         return .{};
     }
 
+    /// No-ops for terminal configuration on Windows.
     pub fn apply(ios: Termios) !void {
         _ = ios;
     }
@@ -935,6 +945,7 @@ const WindowsTermios = struct {
 const PosixTermios = struct {
     settings: [3]?std.posix.termios,
 
+    /// Captures stdin/stdout/stderr terminal settings if available.
     pub fn read() !Termios {
         return .{
             .settings = .{
@@ -953,6 +964,8 @@ const PosixTermios = struct {
             },
         };
     }
+
+    /// Restores previously captured terminal state where possible.
     pub fn apply(ios: Termios) !void {
         var result: std.posix.TermiosSetError!void = {};
 
@@ -990,10 +1003,11 @@ pub const Lookup = struct {
         column: ?u32,
     };
 
+    /// Loads an ELF debug lookup from the given file path.
     pub fn create(allocator: std.mem.Allocator, path: []const u8) !*Lookup {
         var elf_info = blk: {
             const file = try std.fs.cwd().openFile(path, .{});
-            break :blk try readElfDebugInfo(allocator, file);
+            break :blk try read_elf_debug_info(allocator, file);
         };
         errdefer allocator.free(elf_info.symbols);
         errdefer allocator.free(elf_info.sections);
@@ -1016,6 +1030,7 @@ pub const Lookup = struct {
         return self;
     }
 
+    /// Releases all resources associated with the lookup.
     pub fn destroy(self: *Lookup) void {
         self.allocator.free(self.symbols);
         self.allocator.free(self.sections);
@@ -1028,19 +1043,19 @@ pub const Lookup = struct {
         self.allocator.destroy(self);
     }
 
+    /// Resolves a source location for an address, storing the file path in `path_buf`.
     pub fn get_location(self: *Lookup, path_buf: []u8, addr: u64) ?Location {
         var arena = std.heap.ArenaAllocator.init(self.allocator);
         defer arena.deinit();
         const local_allocator = arena.allocator();
 
         const symbol_info = switch (self.address_width) {
-            .bits32 => getSymbolFromDwarf(u32, local_allocator, addr, &self.dwarf_info),
-            .bits64 => getSymbolFromDwarf(u64, local_allocator, addr, &self.dwarf_info),
+            .bits32 => get_symbol_from_dwarf(u32, local_allocator, addr, &self.dwarf_info),
+            .bits64 => get_symbol_from_dwarf(u64, local_allocator, addr, &self.dwarf_info),
         } catch |err| switch (err) {
             error.MissingDebugInfo, error.InvalidDebugInfo => return null,
             else => return null,
         };
-        defer symbol_info.deinit(local_allocator);
 
         const line_info = symbol_info.line_info orelse return null;
         if (line_info.file_name.len > path_buf.len) return null;
@@ -1069,6 +1084,7 @@ pub const Lookup = struct {
         };
     }
 
+    /// Resolves the best matching symbol name for the given address.
     pub fn get_symbol(self: *Lookup, sym_buf: []u8, addr: u64) ?[]u8 {
         if (self.dwarf_info.getSymbolName(addr)) |name| {
             if (name.len > sym_buf.len) return null;
@@ -1076,7 +1092,7 @@ pub const Lookup = struct {
             return sym_buf[0..name.len];
         }
 
-        if (self.findSymbolName(addr)) |fallback_name| {
+        if (self.find_symbol_name(addr)) |fallback_name| {
             if (fallback_name.len > sym_buf.len) return null;
             @memcpy(sym_buf[0..fallback_name.len], fallback_name);
             return sym_buf[0..fallback_name.len];
@@ -1085,11 +1101,13 @@ pub const Lookup = struct {
         return null;
     }
 
+    /// Resolves the section name containing the given address.
     pub fn get_section(self: *Lookup, addr: u64) ?[]const u8 {
-        return self.findSectionName(addr);
+        return self.find_section_name(addr);
     }
 
-    fn findSymbolName(self: *Lookup, addr: u64) ?[]const u8 {
+    /// Finds the closest symbol based on address ordering and type.
+    fn find_symbol_name(self: *Lookup, addr: u64) ?[]const u8 {
         var best_index: ?usize = null;
         var best_value: u64 = 0;
         var best_is_func = false;
@@ -1134,7 +1152,8 @@ pub const Lookup = struct {
         return null;
     }
 
-    fn findSectionName(self: *Lookup, addr: u64) ?[]const u8 {
+    /// Finds the section containing the specified address.
+    fn find_section_name(self: *Lookup, addr: u64) ?[]const u8 {
         var best_index: ?usize = null;
         var best_addr: u64 = 0;
 
