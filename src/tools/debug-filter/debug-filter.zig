@@ -38,6 +38,12 @@ const SymbolEntry = struct {
     info: u8,
 };
 
+const SectionEntry = struct {
+    name: []const u8,
+    addr: u64,
+    size: u64,
+};
+
 const ElfFile = struct {
     const max_name_len: usize = 128;
 
@@ -64,13 +70,16 @@ fn renderElfData(allocator: std.mem.Allocator, elf_addr: u64, elf: *ElfFile, out
     var symbol_buf: [4096]u8 = undefined;
     const maybe_symbol = elf.lookup.get_symbol(&symbol_buf, elf_addr);
     const maybe_location = elf.lookup.get_location(&path_buf, elf_addr);
+    const maybe_section = elf.lookup.get_section(elf_addr);
 
-    if (maybe_symbol == null and maybe_location == null) {
+    if (maybe_symbol == null and maybe_location == null and maybe_section == null) {
         try writer.writeAll("[???]");
         return;
     }
 
     try writer.writeAll("[");
+
+    var wrote_anything = false;
 
     if (maybe_location) |location| {
         if (location.file) |file| {
@@ -85,12 +94,19 @@ fn renderElfData(allocator: std.mem.Allocator, elf_addr: u64, elf: *ElfFile, out
                 try writer.print(":{}", .{column});
             }
         }
+        wrote_anything = true;
     }
-    if (maybe_symbol != null and maybe_location != null) {
-        try writer.writeAll(" ");
-    }
+
     if (maybe_symbol) |symbol| {
+        if (wrote_anything) try writer.writeAll(" ");
         try writer.print("\"{}\"", .{std.zig.fmtEscapes(symbol)});
+        wrote_anything = true;
+    }
+
+    if (maybe_section) |section| {
+        if (wrote_anything) try writer.writeAll(" ");
+        try writer.print("in \"{}\"", .{std.zig.fmtEscapes(section)});
+        wrote_anything = true;
     }
 
     try writer.writeAll("]");
@@ -612,6 +628,7 @@ pub fn readElfDebugInfo(allocator: std.mem.Allocator, elf_file: std.fs.File) !st
     dwarf_info: dwarf.DwarfInfo,
     address_width: BitWidth,
     symbols: []SymbolEntry,
+    sections: []SectionEntry,
 } {
     const elf = std.elf;
     const map_result = try mapWholeFile(elf_file);
@@ -638,17 +655,19 @@ pub fn readElfDebugInfo(allocator: std.mem.Allocator, elf_file: std.fs.File) !st
     var width: BitWidth = undefined;
     var symbol_entries = std.ArrayList(SymbolEntry).init(allocator);
     errdefer symbol_entries.deinit();
+    var section_entries = std.ArrayList(SectionEntry).init(allocator);
+    errdefer section_entries.deinit();
 
     switch (mapped_mem[elf.EI_CLASS]) {
         elf.ELFCLASS32 => {
             width = .bits32;
             const hdr: *const elf.Elf32_Ehdr = @ptrCast(@alignCast(mapped_mem.ptr));
-            try populateSections32(allocator, mapped_mem, hdr, &sections, &symbol_entries);
+            try populateSections32(allocator, mapped_mem, hdr, &sections, &symbol_entries, &section_entries);
         },
         elf.ELFCLASS64 => {
             width = .bits64;
             const hdr: *const elf.Elf64_Ehdr = @ptrCast(@alignCast(mapped_mem.ptr));
-            try populateSections64(allocator, mapped_mem, hdr, &sections, &symbol_entries);
+            try populateSections64(allocator, mapped_mem, hdr, &sections, &symbol_entries, &section_entries);
         },
         else => return error.InvalidElfClass,
     }
@@ -677,12 +696,14 @@ pub fn readElfDebugInfo(allocator: std.mem.Allocator, elf_file: std.fs.File) !st
     }
 
     const symbols_slice = try symbol_entries.toOwnedSlice();
+    const sections_slice = try section_entries.toOwnedSlice();
 
     return .{
         .map_result = map_result,
         .dwarf_info = di,
         .address_width = width,
         .symbols = symbols_slice,
+        .sections = sections_slice,
     };
 }
 
@@ -729,6 +750,7 @@ fn populateSections32(
     hdr: *const std.elf.Elf32_Ehdr,
     sections: *DebugSections,
     symbol_entries: *std.ArrayList(SymbolEntry),
+    section_entries: *std.ArrayList(SectionEntry),
 ) !void {
     const shoff = std.math.cast(usize, hdr.e_shoff) orelse return error.Overflow;
     const shnum = std.math.cast(usize, hdr.e_shnum) orelse return error.Overflow;
@@ -743,7 +765,7 @@ fn populateSections32(
     const str_hdr = shdrs[hdr.e_shstrndx];
     const header_strings = try chopSlice(mapped_mem, @as(u64, str_hdr.sh_offset), @as(u64, str_hdr.sh_size));
 
-    try populateSectionsCommon(std.elf.Elf32_Shdr, allocator, mapped_mem, header_strings, sections, symbol_entries, shdrs);
+    try populateSectionsCommon(std.elf.Elf32_Shdr, allocator, mapped_mem, header_strings, sections, symbol_entries, section_entries, shdrs);
 }
 
 fn populateSections64(
@@ -752,6 +774,7 @@ fn populateSections64(
     hdr: *const std.elf.Elf64_Ehdr,
     sections: *DebugSections,
     symbol_entries: *std.ArrayList(SymbolEntry),
+    section_entries: *std.ArrayList(SectionEntry),
 ) !void {
     const shoff = std.math.cast(usize, hdr.e_shoff) orelse return error.Overflow;
     const shnum = std.math.cast(usize, hdr.e_shnum) orelse return error.Overflow;
@@ -766,7 +789,7 @@ fn populateSections64(
     const str_hdr = shdrs[hdr.e_shstrndx];
     const header_strings = try chopSlice(mapped_mem, str_hdr.sh_offset, str_hdr.sh_size);
 
-    try populateSectionsCommon(std.elf.Elf64_Shdr, allocator, mapped_mem, header_strings, sections, symbol_entries, shdrs);
+    try populateSectionsCommon(std.elf.Elf64_Shdr, allocator, mapped_mem, header_strings, sections, symbol_entries, section_entries, shdrs);
 }
 
 fn populateSectionsCommon(
@@ -776,8 +799,10 @@ fn populateSectionsCommon(
     header_strings: []const u8,
     sections: *DebugSections,
     symbol_entries: *std.ArrayList(SymbolEntry),
+    section_entries: *std.ArrayList(SectionEntry),
     shdrs: []const ShdrType,
 ) !void {
+    _ = allocator;
     for (shdrs) |shdr| {
         if (shdr.sh_type == std.elf.SHT_NULL) continue;
 
@@ -785,42 +810,54 @@ fn populateSectionsCommon(
         if (name_off >= header_strings.len) return error.InvalidDebugInfo;
 
         const name = std.mem.sliceTo(header_strings[name_off..], 0);
-        const offset = std.math.cast(u64, shdr.sh_offset) orelse return error.Overflow;
+        const addr = std.math.cast(u64, shdr.sh_addr) orelse return error.Overflow;
         const size = std.math.cast(u64, shdr.sh_size) orelse return error.Overflow;
-        const slice = try chopSlice(mapped_mem, offset, size);
+
+        if ((shdr.sh_flags & std.elf.SHF_ALLOC) != 0 and size != 0) {
+            try section_entries.append(.{
+                .name = name,
+                .addr = addr,
+                .size = size,
+            });
+        }
+
+        const has_file_data = shdr.sh_type != std.elf.SHT_NOBITS;
+        const slice = if (has_file_data)
+            try chopSlice(mapped_mem, std.math.cast(u64, shdr.sh_offset) orelse return error.Overflow, size)
+        else
+            null;
 
         if (std.mem.eql(u8, name, ".debug_info")) {
-            sections.debug_info = slice;
+            if (slice) |data| sections.debug_info = data;
         } else if (std.mem.eql(u8, name, ".debug_abbrev")) {
-            sections.debug_abbrev = slice;
+            if (slice) |data| sections.debug_abbrev = data;
         } else if (std.mem.eql(u8, name, ".debug_str")) {
-            sections.debug_str = slice;
+            if (slice) |data| sections.debug_str = data;
         } else if (std.mem.eql(u8, name, ".debug_str_offsets")) {
-            sections.debug_str_offsets = slice;
+            if (slice) |data| sections.debug_str_offsets = data;
         } else if (std.mem.eql(u8, name, ".debug_line")) {
-            sections.debug_line = slice;
+            if (slice) |data| sections.debug_line = data;
         } else if (std.mem.eql(u8, name, ".debug_line_str")) {
-            sections.debug_line_str = slice;
+            if (slice) |data| sections.debug_line_str = data;
         } else if (std.mem.eql(u8, name, ".debug_ranges")) {
-            sections.debug_ranges = slice;
+            if (slice) |data| sections.debug_ranges = data;
         } else if (std.mem.eql(u8, name, ".debug_loclists")) {
-            sections.debug_loclists = slice;
+            if (slice) |data| sections.debug_loclists = data;
         } else if (std.mem.eql(u8, name, ".debug_rnglists")) {
-            sections.debug_rnglists = slice;
+            if (slice) |data| sections.debug_rnglists = data;
         } else if (std.mem.eql(u8, name, ".debug_addr")) {
-            sections.debug_addr = slice;
+            if (slice) |data| sections.debug_addr = data;
         } else if (std.mem.eql(u8, name, ".debug_names")) {
-            sections.debug_names = slice;
+            if (slice) |data| sections.debug_names = data;
         } else if (std.mem.eql(u8, name, ".debug_frame")) {
-            sections.debug_frame = slice;
+            if (slice) |data| sections.debug_frame = data;
         } else if (shdr.sh_type == std.elf.SHT_SYMTAB or shdr.sh_type == std.elf.SHT_DYNSYM) {
-            try collectSymbolEntries(allocator, mapped_mem, shdrs, shdr, slice, symbol_entries);
+            if (slice) |data| try collectSymbolEntries(mapped_mem, shdrs, shdr, data, symbol_entries);
         }
     }
 }
 
 fn collectSymbolEntries(
-    allocator: std.mem.Allocator,
     mapped_mem: []const u8,
     shdrs: anytype,
     shdr: anytype,
@@ -828,14 +865,13 @@ fn collectSymbolEntries(
     symbol_entries: *std.ArrayList(SymbolEntry),
 ) !void {
     if (comptime @TypeOf(shdr) == std.elf.Elf32_Shdr) {
-        try collectSymbolEntriesTyped(allocator, mapped_mem, shdrs, shdr, section_data, symbol_entries, std.elf.Elf32_Sym);
+        try collectSymbolEntriesTyped(mapped_mem, shdrs, shdr, section_data, symbol_entries, std.elf.Elf32_Sym);
     } else {
-        try collectSymbolEntriesTyped(allocator, mapped_mem, shdrs, shdr, section_data, symbol_entries, std.elf.Elf64_Sym);
+        try collectSymbolEntriesTyped(mapped_mem, shdrs, shdr, section_data, symbol_entries, std.elf.Elf64_Sym);
     }
 }
 
 fn collectSymbolEntriesTyped(
-    allocator: std.mem.Allocator,
     mapped_mem: []const u8,
     shdrs: anytype,
     shdr: anytype,
@@ -843,8 +879,6 @@ fn collectSymbolEntriesTyped(
     symbol_entries: *std.ArrayList(SymbolEntry),
     comptime SymType: type,
 ) !void {
-    _ = allocator;
-
     const entsize = std.math.cast(usize, shdr.sh_entsize) orelse return error.InvalidDebugInfo;
     if (entsize == 0 or entsize != @sizeOf(SymType)) return error.InvalidDebugInfo;
 
@@ -948,6 +982,7 @@ pub const Lookup = struct {
     dwarf_info: dwarf.DwarfInfo,
     address_width: BitWidth,
     symbols: []SymbolEntry,
+    sections: []SectionEntry,
 
     pub const Location = struct {
         file: ?[]const u8,
@@ -961,6 +996,7 @@ pub const Lookup = struct {
             break :blk try readElfDebugInfo(allocator, file);
         };
         errdefer allocator.free(elf_info.symbols);
+        errdefer allocator.free(elf_info.sections);
         errdefer elf_info.dwarf_info.deinit(allocator);
         errdefer if (is_windows) {
             elf_info.map_result.deinit();
@@ -975,12 +1011,14 @@ pub const Lookup = struct {
             .dwarf_info = elf_info.dwarf_info,
             .address_width = elf_info.address_width,
             .symbols = elf_info.symbols,
+            .sections = elf_info.sections,
         };
         return self;
     }
 
     pub fn destroy(self: *Lookup) void {
         self.allocator.free(self.symbols);
+        self.allocator.free(self.sections);
         self.dwarf_info.deinit(self.allocator);
         if (is_windows) {
             self.map_result.deinit();
@@ -1047,6 +1085,10 @@ pub const Lookup = struct {
         return null;
     }
 
+    pub fn get_section(self: *Lookup, addr: u64) ?[]const u8 {
+        return self.findSectionName(addr);
+    }
+
     fn findSymbolName(self: *Lookup, addr: u64) ?[]const u8 {
         var best_index: ?usize = null;
         var best_value: u64 = 0;
@@ -1088,6 +1130,33 @@ pub const Lookup = struct {
 
         if (best_index) |idx| {
             return self.symbols[idx].name;
+        }
+        return null;
+    }
+
+    fn findSectionName(self: *Lookup, addr: u64) ?[]const u8 {
+        var best_index: ?usize = null;
+        var best_addr: u64 = 0;
+
+        for (self.sections, 0..) |entry, idx| {
+            const start = entry.addr;
+            const size = entry.size;
+
+            if (size == 0) {
+                if (addr != start) continue;
+            } else {
+                const end = std.math.add(u64, start, size) catch continue;
+                if (addr < start or addr >= end) continue;
+            }
+
+            if (best_index == null or start > best_addr) {
+                best_index = idx;
+                best_addr = start;
+            }
+        }
+
+        if (best_index) |idx| {
+            return self.sections[idx].name;
         }
         return null;
     }
