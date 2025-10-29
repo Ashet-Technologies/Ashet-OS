@@ -251,7 +251,7 @@ rp2350-monitor:
         --elf kernel=zig-out/arm-ashet-hc/kernel.elf \
         --elf ntp-client.ashex=zig-out/arm-ashet-hc/apps/ntp-client.elf \
         --elf i2c-scan.ashex=zig-out/arm-ashet-hc/apps/i2c-scan.elf \
-        picocom --quiet --baud 2000000 {{DEBUG_PORT}}
+        ./zig-out/bin/sermon --baud 2000000 {{DEBUG_PORT}}
 
 qemu-gdb target:
     arm-none-eabi-gdb \

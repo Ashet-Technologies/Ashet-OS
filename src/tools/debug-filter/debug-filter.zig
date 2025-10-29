@@ -44,13 +44,113 @@ const SectionEntry = struct {
     size: u64,
 };
 
+const ReloadableLookup = struct {
+    allocator: std.mem.Allocator,
+    path: []const u8,
+    lookup: *Lookup,
+    mutex: std.Thread.Mutex = .{},
+    last_stat: ?std.fs.File.Stat,
+    last_stat_check_ms: ?i64 = null,
+    last_error_ms: ?i64 = null,
+
+    const check_interval_ms: i64 = 200;
+    const error_interval_ms: i64 = 1_000;
+
+    pub fn create(allocator: std.mem.Allocator, path: []const u8) !*ReloadableLookup {
+        const path_copy = try allocator.dupe(u8, path);
+        errdefer allocator.free(path_copy);
+
+        const lookup = try Lookup.create(allocator, path);
+        errdefer lookup.destroy();
+
+        const self = try allocator.create(ReloadableLookup);
+        self.* = .{
+            .allocator = allocator,
+            .path = path_copy,
+            .lookup = lookup,
+            .last_stat = std.fs.cwd().statFile(path) catch null,
+        };
+        return self;
+    }
+
+    pub fn destroy(self: *ReloadableLookup) void {
+        self.lookup.destroy();
+        self.allocator.free(self.path);
+        self.allocator.destroy(self);
+    }
+
+    pub fn lock(self: *ReloadableLookup) void {
+        self.mutex.lock();
+    }
+
+    pub fn unlock(self: *ReloadableLookup) void {
+        self.mutex.unlock();
+    }
+
+    pub fn refreshLocked(self: *ReloadableLookup, force: bool) !void {
+        const now_ms = std.time.milliTimestamp();
+
+        if (!force) {
+            if (self.last_stat_check_ms) |last| {
+                if (now_ms - last < check_interval_ms)
+                    return;
+            }
+        }
+        self.last_stat_check_ms = now_ms;
+
+        const stat = std.fs.cwd().statFile(self.path) catch |err| {
+            self.logReloadIssue(now_ms, "stat", err);
+            self.last_stat = null;
+            return;
+        };
+
+        if (self.last_stat) |last| {
+            if (!statsDiffer(last, stat))
+                return;
+        }
+
+        const new_lookup = Lookup.create(self.allocator, self.path) catch |err| {
+            switch (err) {
+                error.OutOfMemory => return err,
+                else => {
+                    self.logReloadIssue(now_ms, "read", err);
+                    return;
+                },
+            }
+        };
+        errdefer new_lookup.destroy();
+
+        const old_lookup = self.lookup;
+        self.lookup = new_lookup;
+        self.last_stat = stat;
+        self.last_error_ms = null;
+        old_lookup.destroy();
+    }
+
+    fn statsDiffer(previous: std.fs.File.Stat, current: std.fs.File.Stat) bool {
+        return previous.inode != current.inode or
+            previous.size != current.size or
+            previous.mtime != current.mtime;
+    }
+
+    fn logReloadIssue(self: *ReloadableLookup, now_ms: i64, action: []const u8, err: anyerror) void {
+        if (self.last_error_ms) |last| {
+            if (now_ms - last < error_interval_ms)
+                return;
+        }
+
+        self.last_error_ms = now_ms;
+        std.log.warn("failed to {s} elf \"{s}\"; keeping existing debug info: {s}", .{ action, self.path, @errorName(err) });
+    }
+};
+
 const ElfFile = struct {
     const max_name_len: usize = 128;
 
     name: []const u8,
     path: []const u8,
 
-    lookup: *Lookup,
+    lookup: *ReloadableLookup,
 
     // file: std.fs.File,
     // dwarf: dwarf.DwarfInfo,
@@ -66,9 +166,17 @@ fn render_elf_data(elf_addr: u64, elf: *ElfFile, output: *std.io.BufferedWriter(
     const writer = output.writer();
     var path_buf: [4096]u8 = undefined;
     var symbol_buf: [4096]u8 = undefined;
-    const maybe_symbol = elf.lookup.get_symbol(&symbol_buf, elf_addr);
-    const maybe_location = elf.lookup.get_location(&path_buf, elf_addr);
-    const maybe_section = elf.lookup.get_section(elf_addr);
+    const resource = elf.lookup;
+
+    resource.lock();
+    defer resource.unlock();
+
+    try resource.refreshLocked(false);
+    const lookup = resource.lookup;
+
+    const maybe_symbol = lookup.get_symbol(&symbol_buf, elf_addr);
+    const maybe_location = lookup.get_location(&path_buf, elf_addr);
+    const maybe_section = lookup.get_section(elf_addr);
 
     if (maybe_symbol == null and maybe_location == null and maybe_section == null) {
         try writer.writeAll("[???]");
@@ -339,7 +447,7 @@ pub fn main() !u8 {
         @panic("missing application cli!");
     }
 
-    var created_lookups = std.ArrayList(*Lookup).init(allocator);
+    var created_lookups = std.ArrayList(*ReloadableLookup).init(allocator);
     defer created_lookups.deinit();
     defer {
         for (created_lookups.items) |lookup| {
@@ -348,7 +456,7 @@ pub fn main() !u8 {
     }
 
     for (elves.values()) |*value| {
-        const lookup = try Lookup.create(allocator, value.path);
+        const lookup = try ReloadableLookup.create(allocator, value.path);
         errdefer lookup.destroy();
         try created_lookups.append(lookup);
         value.lookup = lookup;
@@ -411,7 +519,10 @@ fn filter_and_forward_stdio(allocator: std.mem.Allocator, elves: ElfSet, proc: *
     var stdout_buffered_writer = std.io.bufferedWriter(std.io.getStdOut().writer());
     var stderr_buffered_writer = std.io.bufferedWriter(std.io.getStdErr().writer());
 
+    try refresh_all_elves(elves);
+
     while (try poller.poll()) {
+        try refresh_all_elves(elves);
         try consume_poll_result(
             elves,
             &stdout_buffered_writer,
@@ -428,6 +539,18 @@ fn filter_and_forward_stdio(allocator: std.mem.Allocator, elves: ElfSet, proc: *
 
     try stdout_buffered_writer.flush();
     try stderr_buffered_writer.flush();
+}
+
+fn refresh_all_elves(elves: ElfSet) !void {
+    for (elves.values()) |value| {
+        const resource = value.lookup;
+        resource.lock();
+        resource.refreshLocked(false) catch |err| {
+            resource.unlock();
+            return err;
+        };
+        resource.unlock();
+    }
 }
 
 const RingBuffer = struct {
