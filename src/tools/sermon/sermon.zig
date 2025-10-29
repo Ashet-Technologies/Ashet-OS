@@ -201,10 +201,13 @@ const IoOptions = switch (builtin.os.tag) {
         const VTIME = 5;
         const VMIN = 6;
 
-        termios: std.posix.termios,
+        termios: ?std.posix.termios,
 
         fn configureOutputUncooked(file: std.fs.File) !IoOptions {
-            const original = try std.posix.tcgetattr(file.handle);
+            const original = std.posix.tcgetattr(file.handle) catch |err| switch (err) {
+                error.NotATerminal => return .{ .termios = null },
+                else => |e| return e,
+            };
 
             var settings = original;
 
@@ -219,7 +222,10 @@ const IoOptions = switch (builtin.os.tag) {
             settings.lflag.ECHOCTL = false;
             settings.lflag.ECHOKE = false;
 
-            try std.posix.tcsetattr(file.handle, .NOW, settings);
+            std.posix.tcsetattr(file.handle, .NOW, settings) catch |err| switch (err) {
+                error.NotATerminal => return .{ .termios = original },
+                else => |e| return e,
+            };
 
             return IoOptions{
                 .termios = original,
@@ -254,7 +260,9 @@ const IoOptions = switch (builtin.os.tag) {
         }
 
         fn restore(options: IoOptions, file: std.fs.File) !void {
-            try std.posix.tcsetattr(file.handle, .NOW, options.termios);
+            if (options.termios) |termios| {
+                try std.posix.tcsetattr(file.handle, .NOW, termios);
+            }
         }
     },
 };

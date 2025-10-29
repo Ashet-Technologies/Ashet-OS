@@ -13,7 +13,6 @@ pub fn build(b: *std.Build) !void {
         .link_libc = true,
     });
 
-    debugfilter_mod.addObjectFile(b.path("lookup/target/debug/liblookup.a"));
     debugfilter_mod.linkSystemLibrary("unwind", .{});
 
     const exe = b.addExecutable(.{
