@@ -108,18 +108,6 @@ fn render_elf_data(elf_addr: u64, elf: *ElfFile, output: *std.io.BufferedWriter(
     }
 
     try writer.writeAll("]");
-
-    // if (get_symbol_from_dwarf(u32, allocator, elf_addr, &elf.dwarf)) |symbol_info| {
-    //     defer symbol_info.deinit(allocator);
-
-    //     if (symbol_info.line_info) |line_info| {
-    //         try writer.print("[{s}:{d},{s}]", .{ line_info.file_name, line_info.line, symbol_info.symbol_name });
-    //     } else if (!std.mem.eql(u8, symbol_info.symbol_name, "???")) {
-    //         try writer.print("[{s}]", .{symbol_info.symbol_name});
-    //     }
-    // } else |err| {
-    //     try writer.print("[ERROR:{s}]", .{@errorName(err)});
-    // }
 }
 
 const ParseOut = struct {
@@ -337,10 +325,6 @@ pub fn main() !u8 {
                 .path = app_path,
 
                 .lookup = undefined,
-
-                // .file = undefined,
-                // .dwarf = undefined,
-                // .mem = undefined,
             });
             if (prev != null)
                 @panic("duplicate app!");
@@ -1180,24 +1164,3 @@ pub const Lookup = struct {
         return null;
     }
 };
-
-// const lut = Lookup.create("/home/felix/projects/ashet/ashet-os/zig-out/arm-ashet-hc/kernel.elf");
-// defer lut.destroy();
-
-// {
-//     var path_buf: [4096]u8 = undefined;
-//     const result = lut.get_location(&path_buf, 0x1001AB6D) orelse return 1;
-
-//     std.log.err("location: {?s}:{?}:{?}", .{
-//         result.file,
-//         result.line,
-//         result.column,
-//     });
-// }
-
-// {
-//     var symbol_buf: [4096]u8 = undefined;
-//     const location = lut.get_symbol(&symbol_buf, 0x1001AB6D) orelse return 2;
-
-//     std.log.err("symbol: {s}", .{location});
-// }
