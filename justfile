@@ -270,3 +270,4 @@ openocd-bootloader:
         -f target/rp2350.cfg \
         -c '{{cmd_bootloader}}'
     sleep 0.5
+

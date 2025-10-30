@@ -105,9 +105,9 @@
         },
 
         // External tooling:
-        .p2devsuite = .{
-            .url = "git+https://github.com/ikskuh/p2-devsuite.git#4aa03f279454ce7ac83300518cb9703619ae0572",
-            .hash = "p2_devsuite-0.0.0-JopzWDFfAADjUYTLJJwRo4SK3X8Ugiq6ENq8pbchAUqd",
+        .propan = .{
+            .url = "git+https://github.com/Nerdgruppe/propeller2-wg.git#619d788e3d3f4cab6323cc1960a07f2de4e4d538",
+            .hash = "propeller2_wg-0.0.0-hlK46pIyDAB9C53esQUmvEe3q4NcIY4Td_8ynaWIRWHP",
         },
 
         .regz = .{

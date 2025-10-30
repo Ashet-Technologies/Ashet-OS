@@ -56,7 +56,7 @@ pub fn main() !u8 {
 
     {
         const output_cfg = try IoOptions.configureOutputUncooked(output);
-        defer output_cfg.restore(output) catch |err| std.log.err("we fucked up. failed to restore settings for stdin: {s}. Try resetting/restarting your terminal!", .{@errorName(err)});
+        defer output_cfg.restore(output) catch |err| std.log.err("we fucked up. failed to restore settings for stdout: {s}. Try resetting/restarting your terminal!", .{@errorName(err)});
 
         var any_run_ok = false;
         var reconnect_msg_printed = false;

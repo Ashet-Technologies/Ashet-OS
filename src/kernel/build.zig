@@ -181,11 +181,11 @@ pub fn build(b: *std.Build) void {
         const regz_dep = b.dependency("regz", .{
             .optimize = .ReleaseSafe,
         });
-        const p2devsuite_dep = b.dependency("p2devsuite", .{
+        const propan_dep = b.dependency("propan", .{
             .optimize = .ReleaseSafe,
         });
 
-        const flexspin_exe = p2devsuite_dep.artifact("flexspin");
+        const propan_exe = propan_dep.artifact("propan");
         const regz_exe = regz_dep.artifact("regz");
 
         const regz_run = b.addRunArtifact(regz_exe);
@@ -251,9 +251,12 @@ pub fn build(b: *std.Build) void {
         kernel_mod.addImport("rp2350-hal", hal_mod);
         kernel_mod.addImport("microzig", microzig_shim_mod);
 
-        const p2_bootrom_bin = flexspin_compile(b, flexspin_exe, b.path("port/machine/arm/ashet-hc/p2-bootrom.spin2"));
+        const p2_bootrom_asm = b.addRunArtifact(propan_exe);
+        p2_bootrom_asm.addArg("--format=flat");
+        p2_bootrom_asm.addFileArg(b.path("port/machine/arm/ashet-hc/p2-bootrom.propan"));
+        const p2_bootrom_bin = p2_bootrom_asm.addPrefixedOutputFileArg("--output=", "p2-bootrom.bin");
 
-        kernel_mod.addImport("propeller2.bin", p2_bootrom_bin);
+        kernel_mod.addImport("propeller2.bin", b.createModule(.{ .root_source_file = p2_bootrom_bin }));
     }
 
     const start_file = if (machine_id.is_hosted())
@@ -537,23 +540,4 @@ fn serialize_patches(b: *std.Build, patches: []const regz.patch.Patch) []const u
     }
 
     return buf.toOwnedSlice() catch @panic("OOM");
-}
-
-fn flexspin_compile(b: *std.Build, flexspin: *std.Build.Step.Compile, source_file: std.Build.LazyPath) *std.Build.Module {
-    const convert = b.addRunArtifact(flexspin);
-
-    convert.addFileInput(b.path("port/machine/arm/ashet-hc/propio/include/fifo.h"));
-    convert.addFileInput(b.path("port/machine/arm/ashet-hc/propio/include/fifo.impl"));
-
-    convert.addArg("-2");
-    convert.addArg("-q");
-    convert.addArg("-I");
-    convert.addDirectoryArg(b.path("port/machine/arm/ashet-hc/propio/include"));
-    convert.addFileArg(source_file);
-    convert.addArg("-o");
-    const bin_file = convert.addOutputFileArg("propeller2.bin");
-
-    return b.createModule(.{
-        .root_source_file = bin_file,
-    });
 }
