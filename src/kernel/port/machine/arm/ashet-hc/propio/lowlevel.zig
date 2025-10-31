@@ -121,11 +121,16 @@ pub fn init() !void {
 
     rx_dma_chan.setup_transfer_raw(
         0, // we'll set that later!
-        @intFromPtr(get_sub_word(pio.sm_get_rx_fifo(.sm0), 3)),
+        @intFromPtr(get_sub_word(pio.sm_get_rx_fifo(rx_sm), 3)),
         hw_alloc.cfg.propio_buffer_size,
         .{
             .data_size = .size_8,
-            .dreq = .pio0_rx0,
+            .dreq = switch (rx_sm) {
+                .sm0 => .pio0_rx0,
+                .sm1 => .pio0_rx1,
+                .sm2 => .pio0_rx2,
+                .sm3 => .pio0_rx3,
+            },
             .enable = true,
             .read_increment = false,
             .write_increment = true,
@@ -214,6 +219,8 @@ pub fn writev_frame_blocking(slices: []const []const u8) void {
 var current_dma_buffer: *RawFrame = undefined;
 
 fn prime_next_dma_transfer() void {
+    comptime std.debug.assert(hw_alloc.dma.prop_rx == rp2350.dma.channel(2));
+
     const next_buffer = rxbuf_empty_queue.dequeue() orelse @panic("propio buffer queue underrun.");
     std.debug.assert(next_buffer.len == hw_alloc.cfg.propio_buffer_size);
     current_dma_buffer = next_buffer;
@@ -221,6 +228,8 @@ fn prime_next_dma_transfer() void {
 }
 
 fn pio_rx_frame_end() callconv(.c) void {
+    comptime std.debug.assert(hw_alloc.dma.prop_rx == rp2350.dma.channel(2));
+
     const count = current_dma_buffer.len - microzig.chip.peripherals.DMA.CH2_TRANS_COUNT.read().COUNT;
 
     logger.debug("end of frame after {} transfers: \"{}\"", .{

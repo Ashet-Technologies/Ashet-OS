@@ -58,6 +58,8 @@ pub fn main() !u8 {
         const output_cfg = try IoOptions.configureOutputUncooked(output);
         defer output_cfg.restore(output) catch |err| std.log.err("we fucked up. failed to restore settings for stdout: {s}. Try resetting/restarting your terminal!", .{@errorName(err)});
 
+        // TODO: Add signal handler to allow graceful shutdown here.
+
         var any_run_ok = false;
         var reconnect_msg_printed = false;
         var any_run_executed = false;

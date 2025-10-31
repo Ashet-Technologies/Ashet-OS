@@ -146,17 +146,17 @@ pub fn main() !u8 {
 
     const palette_size: u8 = 0;
 
-    const transparency_key: Color = if (has_transparency)
+    const transparency_key: ?Color = if (has_transparency)
         Color.from_u8(@intCast(
             transparency_keys.toggleFirstSet() orelse @panic("Requires transparency, but all 256 colors are used. We can't find a key!"),
         ))
     else
-        undefined;
+        null;
 
-    if (has_transparency) {
+    if (transparency_key) |tkey| {
         for (bitmap, transparent_pixels) |*pixel, transparent| {
             if (transparent) {
-                pixel.* = transparency_key.to_u8();
+                pixel.* = tkey.to_u8();
             }
         }
     }
@@ -175,7 +175,7 @@ pub fn main() !u8 {
             try writer.writeInt(u16, @as(u16, @intCast(raw_image.height)), .little);
             try writer.writeInt(u16, if (has_transparency) @as(u16, 0x0001) else 0x0000, .little); // flags, enable transparency
             try writer.writeInt(u8, palette_size, .little); // palette size
-            try writer.writeInt(u8, transparency_key.to_u8(), .little); // transparent
+            try writer.writeInt(u8, (transparency_key orelse Color.from_u8(0)).to_u8(), .little); // transparent
 
             try writer.writeAll(bitmap);
 

@@ -3,7 +3,7 @@ const ashet = @import("../../../../../main.zig");
 
 const dateconv = @import("dateconv.zig");
 
-const logger = std.log.scoped(.ds1306);
+const logger = std.log.scoped(.ds1307);
 
 const machine = @import("../ashet-hc.zig");
 const rp2350 = @import("rp2350");
@@ -33,10 +33,10 @@ pub fn init() !DS1307_RTC {
     try i2c.write_blocking(machine.hw_alloc.i2c_addresses.i2c_main_mux, &.{0x80}, null);
 
     // Select the first register in the RTC:
-    try i2c.write_blocking(machine.hw_alloc.i2c_addresses.ds1306_rtc, &.{0x00}, null);
+    try i2c.write_blocking(machine.hw_alloc.i2c_addresses.ds1307_rtc, &.{0x00}, null);
 
     var regs: RTC_Registers = undefined;
-    try i2c.read_blocking(machine.hw_alloc.i2c_addresses.ds1306_rtc, std.mem.asBytes(&regs), null);
+    try i2c.read_blocking(machine.hw_alloc.i2c_addresses.ds1307_rtc, std.mem.asBytes(&regs), null);
 
     if (regs.seconds.clock == .halted) {
         regs = .{
@@ -59,7 +59,7 @@ pub fn init() !DS1307_RTC {
         logger.warn("uninitialized rtc, resetting to {}", .{regs});
 
         // Select the first register in the RTC:
-        try i2c.writev_blocking(machine.hw_alloc.i2c_addresses.ds1306_rtc, &.{
+        try i2c.writev_blocking(machine.hw_alloc.i2c_addresses.ds1307_rtc, &.{
             &.{0x00},
             std.mem.asBytes(&regs),
         }, null);
@@ -135,9 +135,12 @@ const RTC_Registers = extern struct {
     fn get_hours(rtc: RTC_Registers) u8 {
         return switch (rtc.hours.control.mode) {
             .@"24h" => bcd_to_dec(rtc.hours.@"24h".hour),
-            .@"am/pm" => bcd_to_dec(rtc.hours.@"am/pm".hour) + switch (rtc.hours.@"am/pm".half) {
-                .AM => @as(u8, 0),
-                .PM => @as(u8, 12),
+            .@"am/pm" => blk: {
+                const hour_12 = bcd_to_dec(rtc.hours.@"am/pm".hour);
+                break :blk switch (rtc.hours.@"am/pm".half) {
+                    .AM => if (hour_12 == 12) 0 else hour_12,
+                    .PM => if (hour_12 == 12) 12 else hour_12 + 12,
+                };
             },
         };
     }

@@ -49,15 +49,10 @@ const PaletteColor = RGB555;
 
 const letterbox_color = [1]PaletteColor{.from_hex(0x7E2553)} ** @divExact(@sizeOf(u32), @sizeOf(PaletteColor));
 
-var backend_ready = false;
-
 driver: Driver,
 
 pub fn init(comptime clock_config: rp2350.clocks.config.Global) !HSTX_DVI {
     _ = clock_config;
-
-    // if (!backend_ready)
-    //     @panic("HSTX_DVI requires the backend to be started before initializing the driver!");
 
     logger.info("Video Timings:", .{});
     logger.info(" Horizontal: {} {} {} {}", .{
@@ -310,8 +305,6 @@ pub fn start_backend() linksection(".sram.bank0") void {
     ashet.platform.enableInterrupts();
 
     rp2350.dma.multi_channel_trigger(&.{hw_alloc.dma.hdmi_ping});
-
-    backend_ready = true;
 }
 
 const Scanline: type = [framebuffer_size.width]PaletteColor;
@@ -513,7 +506,7 @@ const RGB888x = packed struct(u32) {
             .b = hex.b,
         };
     }
-    pub fn from_rgb(r: u8, g: u8, b: u8) RGB555 {
+    pub fn from_rgb(r: u8, g: u8, b: u8) RGB888x {
         return .{ .r = r, .g = g, .b = b };
     }
 };

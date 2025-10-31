@@ -179,7 +179,7 @@
         return (a.x == b.x) and (a.y == b.y);
     }
 
-    pub fn manhattenDistance(a: Point, b: Point) u16 {
+    pub fn manhattanDistance(a: Point, b: Point) u16 {
         return @abs(a.x - b.x) + @abs(a.y - b.y);
     }
 
@@ -242,22 +242,22 @@
 
     pub fn contains(rect: Rectangle, pt: Point) bool {
         return (pt.x >= rect.x) and
-            (pt.x < rect.x + @as(u15, @intCast(rect.width))) and
+            (pt.x < rect.x +| @as(i16, @intCast(rect.width))) and
             (pt.y >= rect.y) and
-            (pt.y < rect.y + @as(u15, @intCast(rect.height)));
+            (pt.y < rect.y +| @as(i16, @intCast(rect.height)));
     }
 
     pub fn containsRectangle(boundary: Rectangle, region: Rectangle) bool {
         return boundary.contains(region.position()) and
-            boundary.contains(Point.new(region.x + @as(u15, @intCast(region.width)) - 1, region.y + @as(u15, @intCast(region.height)) - 1));
+            boundary.contains(Point.new(region.x +| @as(i16, @intCast(region.width)) - 1, region.y +| @as(i16, @intCast(region.height)) - 1));
     }
 
     /// Returns true if `a` and `b` overlap.
     pub fn intersects(a: Rectangle, b: Rectangle) bool {
-        return a.x + @as(u15, @intCast(a.width)) >= b.x and
-            a.y + @as(u15, @intCast(a.height)) >= b.y and
-            a.x <= b.x + @as(u15, @intCast(b.width)) and
-            a.y <= b.y + @as(u15, @intCast(b.height));
+        return a.x +| @as(i16, @intCast(a.width)) >= b.x and
+            a.y +| @as(i16, @intCast(a.height)) >= b.y and
+            a.x <= b.x +| @as(i16, @intCast(b.width)) and
+            a.y <= b.y +| @as(i16, @intCast(b.height));
     }
 
     /// Returns the overlapping region of `a` and `b`.
@@ -283,13 +283,13 @@
         return rect.y;
     }
     pub fn bottom(rect: Rectangle) i16 {
-        return rect.y + @as(u15, @intCast(rect.height));
+        return rect.y + @as(i16, @intCast(rect.height));
     }
     pub fn left(rect: Rectangle) i16 {
         return rect.x;
     }
     pub fn right(rect: Rectangle) i16 {
-        return rect.x +| @as(u15, @intCast(rect.width));
+        return rect.x +| @as(i16, @intCast(rect.width));
     }
 
     pub fn shrink(rect: Rectangle, amount: u15) Rectangle {
@@ -348,7 +348,7 @@
         _ = fmt;
         _ = options;
 
-        var strings = std.BoundedArray([]const u8, 7){};
+        var strings = std.BoundedArray([]const u8, 8){};
 
         if (mods.shift) strings.appendAssumeCapacity("shift");
         if (mods.alt) strings.appendAssumeCapacity("alt");
@@ -418,8 +418,8 @@
                     const b = std.fmt.parseInt(u4, str[3..4], 16) catch @compileError("invalid hex code");
                     return Color.from_rgb(
                         (@as(u8, r) << 4) | r,
-                        (@as(u8, r) << 4) | g,
-                        (@as(u8, r) << 4) | b,
+                        (@as(u8, g) << 4) | g,
+                        (@as(u8, b) << 4) | b,
                     );
                 },
                 6 => { // 8-bit RGB
@@ -449,6 +449,8 @@
         return @floatFromInt(v);
     }
 
+    /// Creates a color from an 8-bit RGB value.
+    /// NOTE: This operation is inherently lossy.
     pub fn from_rgb(r: u8, g: u8, b: u8) Color {
         const maxc: u8 = @max(r, g, b);
         const minc: u8 = @min(r, g, b);
@@ -507,13 +509,8 @@
         );
     }
 
-    /// Convert HSV → RGB (h in degrees; s, v in [0,1]).
-    /// Returns RGB in the same float type T you pass (f16/f32/f64).
+    /// Converts the color into an RGB value with 8 bit per channel.
     pub fn to_rgb888(color: Color) RGB888 {        
-        // const h = color.hue;
-        // const s = color.saturation;
-        // const v = color.value;
-
         // When saturation is zero it's gray; hue is irrelevant.
         if (color.saturation == 0) {
             const raw: u8 = @bitCast(color);
@@ -839,7 +836,7 @@
 
     /// Returns the microseconds since system startup.
     pub fn us_since_start(point: Absolute) u64 {
-        return @intFromEnum(point) / std.time.us_per_ms;
+        return @intFromEnum(point) / std.time.ns_per_us;
     }
 
     /// Returns the milliseconds since system startup.

@@ -317,7 +317,7 @@ pub fn main() !void {
                         if (selected_app_icon == app.index) double_click_handler: {
                             // We clicked the same app again, let's see if it was a double click:
 
-                            const pixel_since_last_click = cursor.position.manhattenDistance(last_click_pos);
+                            const pixel_since_last_click = cursor.position.manhattanDistance(last_click_pos);
                             logger.debug("pixel since: {}", .{pixel_since_last_click});
                             if (pixel_since_last_click > 4) {
                                 // too much jitter

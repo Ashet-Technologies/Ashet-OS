@@ -545,11 +545,8 @@ fn refresh_all_elves(elves: ElfSet) !void {
     for (elves.values()) |value| {
         const resource = value.lookup;
         resource.lock();
-        resource.refreshLocked(false) catch |err| {
-            resource.unlock();
-            return err;
-        };
-        resource.unlock();
+        defer resource.unlock();
+        try resource.refreshLocked(false);
     }
 }
 

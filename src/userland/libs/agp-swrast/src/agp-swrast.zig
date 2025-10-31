@@ -848,7 +848,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
 
                                 var gx: u15 = 0;
                                 while (gx < glyph.width) : (gx += 1) {
-                                    if (sw.dx + gx > sw.limit) {
+                                    if (sw.dx + gx >= sw.limit) {
                                         break :render_loop;
                                     }
 

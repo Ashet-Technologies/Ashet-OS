@@ -125,6 +125,11 @@ fn handle_keyboard(dri: *Generic_PS2_Device) IO_Error!void {
     const scancode_set = try dri.read_byte(init_deadline);
     logger.info("keyboard uses active scancode set: 0x{X:0>2}", .{scancode_set});
 
+    // Enable scanning, for good measure.
+    // It didn't seem to be necessary in practise, but to adhere to the protocol
+    // it should be done:
+    try dri.write_command(.enable_scanning, init_deadline);
+
     switch (scancode_set) {
         inline 1, 2, 3 => |scs| {
 
@@ -155,7 +160,7 @@ fn handle_keyboard(dri: *Generic_PS2_Device) IO_Error!void {
         },
 
         else => {
-            logger.warn("unsupported scancode set: 0x{X:0>2}", .{scancode_ack});
+            logger.warn("unsupported scancode set: 0x{X:0>2}", .{scancode_set});
             while (true) {
                 const byte = try dri.read_byte(.infinite);
                 logger.warn("unsupported keyboard byte 0x{X:0>}", .{byte});

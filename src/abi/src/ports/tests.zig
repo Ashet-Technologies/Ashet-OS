@@ -35,16 +35,6 @@ test "color rgb to hsv conversion" {
     try expect_eql_color(.{ .hue = 0, .value = 6, .saturation = 3 }, .from_rgb(0xDF, 0, 0)); //  87.5%
     try expect_eql_color(.{ .hue = 0, .value = 7, .saturation = 3 }, .from_rgb(0xFF, 0, 0)); // 100.0%
 
-    // test value conversion:
-    try expect_eql_color(.{ .hue = 0, .value = 0, .saturation = 3 }, .from_rgb(31, 0, 0));
-    try expect_eql_color(.{ .hue = 0, .value = 1, .saturation = 3 }, .from_rgb(63, 0, 0));
-    try expect_eql_color(.{ .hue = 0, .value = 2, .saturation = 3 }, .from_rgb(95, 0, 0));
-    try expect_eql_color(.{ .hue = 0, .value = 3, .saturation = 3 }, .from_rgb(127, 0, 0));
-    try expect_eql_color(.{ .hue = 0, .value = 4, .saturation = 3 }, .from_rgb(159, 0, 0));
-    try expect_eql_color(.{ .hue = 0, .value = 5, .saturation = 3 }, .from_rgb(191, 0, 0));
-    try expect_eql_color(.{ .hue = 0, .value = 6, .saturation = 3 }, .from_rgb(220, 0, 0));
-    try expect_eql_color(.{ .hue = 0, .value = 7, .saturation = 3 }, .from_rgb(255, 0, 0));
-
     // test hue conversion:
     try expect_eql_color(.{ .hue = 0, .value = 7, .saturation = 3 }, .from_rgb(255, 0, 0));
     try expect_eql_color(.{ .hue = 1, .value = 7, .saturation = 3 }, .from_rgb(255, 191, 0));
@@ -103,16 +93,6 @@ test "color hsv to rgb conversion" {
     try expect_eql_rgb(rgb(0xBF, 0, 0), .{ .hue = 0, .value = 5, .saturation = 3 }); //  75.0%
     try expect_eql_rgb(rgb(0xDF, 0, 0), .{ .hue = 0, .value = 6, .saturation = 3 }); //  87.5%
     try expect_eql_rgb(rgb(0xFF, 0, 0), .{ .hue = 0, .value = 7, .saturation = 3 }); // 100.0%
-
-    // test value conversion:
-    try expect_eql_rgb(rgb(31, 0, 0), .{ .hue = 0, .value = 0, .saturation = 3 });
-    try expect_eql_rgb(rgb(63, 0, 0), .{ .hue = 0, .value = 1, .saturation = 3 });
-    try expect_eql_rgb(rgb(95, 0, 0), .{ .hue = 0, .value = 2, .saturation = 3 });
-    try expect_eql_rgb(rgb(127, 0, 0), .{ .hue = 0, .value = 3, .saturation = 3 });
-    try expect_eql_rgb(rgb(159, 0, 0), .{ .hue = 0, .value = 4, .saturation = 3 });
-    try expect_eql_rgb(rgb(191, 0, 0), .{ .hue = 0, .value = 5, .saturation = 3 });
-    try expect_eql_rgb(rgb(223, 0, 0), .{ .hue = 0, .value = 6, .saturation = 3 });
-    try expect_eql_rgb(rgb(255, 0, 0), .{ .hue = 0, .value = 7, .saturation = 3 });
 
     // test hue conversion:
     try expect_eql_rgb(rgb(255, 0, 0), .{ .hue = 0, .value = 7, .saturation = 3 });
