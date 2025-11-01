@@ -2,8 +2,8 @@ MEMORY
 {
     flash  (RX) : ORIGIN = 0x10000000, LENGTH = 16M
     psram (RWX) : ORIGIN = 0x11000000, LENGTH = 8M
-    sram0  (RWX) : ORIGIN = 0x20000000, LENGTH = 256K /*  - 0xB000 */ /* TODO: Fix this weirdness here when HSTX_DVI_2 driver is used */
-    sram1  (RWX) : ORIGIN = 0x20040000, LENGTH = 256K /*  + 0xB000 */
+    sram0  (RWX) : ORIGIN = 0x20000000, LENGTH = 256K
+    sram1  (RWX) : ORIGIN = 0x20040000, LENGTH = 256K
     sram2  (RWX) : ORIGIN = 0x20080000, LENGTH = 4K
     sram3  (RWX) : ORIGIN = 0x20081000, LENGTH = 4K
 }

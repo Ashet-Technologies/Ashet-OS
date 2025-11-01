@@ -185,6 +185,7 @@ fn netif_output(netif_c: [*c]c.netif, pbuf_c: [*c]c.pbuf) callconv(.C) c.err_t {
     // }
 
     // TODO: lock_interrupts();
+    //defer  unlock_interrupts();
 
     logger.debug("sending {} bytes via {s}...", .{ pbuf.tot_len, netif.name });
 
@@ -206,7 +207,6 @@ fn netif_output(netif_c: [*c]c.netif, pbuf_c: [*c]c.pbuf) callconv(.C) c.err_t {
         logger.err("failed to allocate network packet!", .{});
     }
 
-    // TODO: unlock_interrupts();
     return c.ERR_OK;
 }
 
