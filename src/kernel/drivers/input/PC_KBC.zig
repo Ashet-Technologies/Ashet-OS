@@ -216,7 +216,7 @@ pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleIni
                     try chan.writeCommand(DeviceMessage.init_common(.set_defaults));
 
                     try chan.writeCommand(DeviceMessage.init_keyboard(.select_scancode_set));
-                    try chan.writeData(0x01); // select scancode set 1
+                    try chan.writeData(0x02); // select scancode set 2
 
                     try chan.writeCommand(DeviceMessage.init_common(.enable_scanning));
 
@@ -641,7 +641,7 @@ const RESEND = 0xFE;
 
 const Decoder = union(enum) {
     mouse: ps2.MouseDecoder,
-    keyboard: ps2.KeyboardDecoderSCS1,
+    keyboard: ps2.KeyboardDecoderSCS2,
 
     pub fn feed(decoder: *Decoder, input: u8) void {
         switch (decoder.*) {
