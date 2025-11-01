@@ -400,11 +400,11 @@
         return @as(u8, @bitCast(a)) == @as(u8, @bitCast(b));
     }
 
-    pub fn to_u8(c: Color) u8 {
+    pub inline fn to_u8(c: Color) u8 {
         return @bitCast(c);
     }
 
-    pub fn from_u8(u: u8) Color {
+    pub inline fn from_u8(u: u8) Color {
         return @bitCast(u);
     }
 

@@ -276,6 +276,23 @@ fn handle_event(vd: *VNC_Server, state: *Session_State, request_allocator: std.m
     }
 }
 
+const vnc_lut: [256]vnc.Color = blk: {
+    @setEvalBranchQuota(10_000);
+    var _lut: [256]vnc.Color = undefined;
+    for (&_lut, 0..) |*pixel, index| {
+        const color: ashet.abi.Color = .from_u8(@intCast(index));
+
+        const rgb = color.to_rgb888();
+
+        pixel.* = vnc.Color{
+            .r = @as(f32, @floatFromInt(rgb.r)) / 255.0,
+            .g = @as(f32, @floatFromInt(rgb.g)) / 255.0,
+            .b = @as(f32, @floatFromInt(rgb.b)) / 255.0,
+        };
+    }
+    break :blk _lut;
+};
+
 fn encode_screen_rect(
     vd: VNC_Server,
     allocator: std.mem.Allocator,
@@ -299,13 +316,7 @@ fn encode_screen_rect(
 
                 const color_8 = framebuffer[offset];
 
-                const rgb = color_8.to_rgb888();
-
-                break :blk vnc.Color{
-                    .r = @as(f32, @floatFromInt(rgb.r)) / 255.0,
-                    .g = @as(f32, @floatFromInt(rgb.g)) / 255.0,
-                    .b = @as(f32, @floatFromInt(rgb.b)) / 255.0,
-                };
+                break :blk vnc_lut[color_8.to_u8()];
             } else vnc.Color{ .r = 1.0, .g = 0.0, .b = 1.0 };
 
             var buf: [8]u8 = undefined;
