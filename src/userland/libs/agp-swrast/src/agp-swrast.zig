@@ -83,7 +83,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
             };
         }
 
-        pub fn execute(rast: *Rast, cmd: agp.Command) void {
+        pub fn execute(rast: *Rast, cmd: agp.Command) !void {
             switch (cmd) {
                 .clear => |data| rast.clear(data.color),
 

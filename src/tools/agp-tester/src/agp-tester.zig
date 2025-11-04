@@ -2,7 +2,7 @@ const std = @import("std");
 const agp = @import("agp");
 const agp_swrast = @import("agp-swrast");
 
-const ColorIndex = agp.ColorIndex;
+const ColorIndex = agp.Color;
 
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -10,18 +10,18 @@ pub fn main() !void {
 
     try verify_encoder_decoder(arena.allocator());
 
-    try render_example_image("swrast.pgm", "overdraw.pgm", "sequence.pgm");
+    try render_example_image(arena.allocator(), "swrast.pgm", "overdraw.pgm", "sequence.pgm");
 }
 
-fn render_example_image(path: []const u8, overdraw_path: ?[]const u8, sequence_path: ?[]const u8) !void {
+fn render_example_image(allocator: std.mem.Allocator, path: []const u8, overdraw_path: ?[]const u8, sequence_path: ?[]const u8) !void {
     const width = 480;
     const height = 320;
 
-    const black: ColorIndex = @enumFromInt(0);
-    const red: ColorIndex = @enumFromInt(1);
-    const green: ColorIndex = @enumFromInt(2);
-    const blue: ColorIndex = @enumFromInt(3);
-    const white: ColorIndex = @enumFromInt(4);
+    const black: ColorIndex = .black;
+    const red: ColorIndex = .red;
+    const green: ColorIndex = .green;
+    const blue: ColorIndex = .blue;
+    const white: ColorIndex = .white;
 
     if (false)
         _ = .{ black, red, green, blue, white };
@@ -128,29 +128,13 @@ fn render_example_image(path: []const u8, overdraw_path: ?[]const u8, sequence_p
         break :blk fbs.getWritten();
     };
 
-    const Color = extern struct {
-        r: u8,
-        g: u8,
-        b: u8,
-
-        comptime {
-            if (@sizeOf(@This()) != 3)
-                @compileError("Color must be exactly 3 bytes!");
-        }
-
-        fn new(r: u8, g: u8, b: u8) @This() {
-            return .{ .r = r, .g = g, .b = b };
-        }
-    };
-
-    const Palette = std.enums.EnumArray(ColorIndex, Color);
-    var palette = Palette.initFill(Color.new(0xFF, 0x00, 0x0FF));
-
-    palette.set(black, Color.new(0x00, 0x00, 0x00));
-    palette.set(red, Color.new(0xFF, 0x00, 0x00));
-    palette.set(green, Color.new(0x00, 0xFF, 0x00));
-    palette.set(blue, Color.new(0x00, 0x00, 0xFF));
-    palette.set(white, Color.new(0xFF, 0xFF, 0xFF));
+    const Color = agp.Color.RGB888;
+    comptime {
+        std.debug.assert(@sizeOf(Color) == 3);
+        std.debug.assert(@offsetOf(Color, "r") == 0);
+        std.debug.assert(@offsetOf(Color, "g") == 1);
+        std.debug.assert(@offsetOf(Color, "b") == 2);
+    }
 
     var pixel_buffer: [width * height]Color = undefined;
     var attrs_buffer: [width * height]Color = undefined;
@@ -159,7 +143,6 @@ fn render_example_image(path: []const u8, overdraw_path: ?[]const u8, sequence_p
     // Render image:
     {
         const Backend = struct {
-            palette: *Palette,
             framebuffer: []Color,
             attributes: []Color,
             next_color_id: *u8,
@@ -176,9 +159,21 @@ fn render_example_image(path: []const u8, overdraw_path: ?[]const u8, sequence_p
                 };
             }
 
+            pub fn resolve_font(back: @This(), font: agp.Font) error{InvalidFont}!*const agp_swrast.fonts.FontInstance {
+                _ = back;
+                _ = font;
+                return error.InvalidFont;
+            }
+
+            pub fn copy_pixels(back: @This(), cursor: Cursor, pixels: []const agp.Color) void {
+                _ = cursor;
+                _ = pixels;
+                @panic("ohno");
+            }
+
             pub fn emit_pixels(back: @This(), cursor: agp_swrast.PixelCursor(.row_major), color_index: ColorIndex, count: u16) void {
                 std.debug.assert(@as(usize, cursor.x) + count <= back.width);
-                const color = back.palette.get(color_index);
+                const color = color_index.to_rgb888();
                 @memset(
                     back.framebuffer[cursor.offset..][0..count],
                     color,
@@ -188,21 +183,22 @@ fn render_example_image(path: []const u8, overdraw_path: ?[]const u8, sequence_p
                     cnt.g = back.next_color_id.*;
                 }
                 std.debug.print("emit(Point({}, {}), color={}, count={}, index={})\n", .{
-                    cursor.x,                  cursor.y,
-                    @intFromEnum(color_index), count,
+                    cursor.x,             cursor.y,
+                    color_index.to_u8(),  count,
                     back.next_color_id.*,
                 });
                 back.next_color_id.* +%= 1;
             }
         };
 
-        const Rasterizer = agp_swrast.Rasterizer(Backend, .{
+        const Rasterizer = agp_swrast.Rasterizer(.{
+            .backend_type = Backend,
+            .framebuffer_type = null,
             .pixel_layout = .row_major,
         });
 
         var next_color_id: u8 = 0;
         var rasterizer = Rasterizer.init(.{
-            .palette = &palette,
             .framebuffer = &pixel_buffer,
             .attributes = &attrs_buffer,
             .next_color_id = &next_color_id,
@@ -213,10 +209,11 @@ fn render_example_image(path: []const u8, overdraw_path: ?[]const u8, sequence_p
 
         var fbs = std.io.fixedBufferStream(cmd_stream);
 
-        var decoder = agp.decoder(fbs.reader());
+        var decoder = agp.decoder(allocator, fbs.reader());
+        defer decoder.deinit();
 
         while (try decoder.next()) |cmd| {
-            rasterizer.execute(cmd);
+            try rasterizer.execute(cmd);
         }
     }
 
@@ -231,14 +228,14 @@ fn render_example_image(path: []const u8, overdraw_path: ?[]const u8, sequence_p
     // Writeout overdraw
     if (overdraw_path) |_overdraw_path| {
         const overdraw_gradient = [_]Color{
-            Color.new(0xFF, 0x00, 0xFF), // this would mean clear has failed
-            Color.new(0x00, 0x00, 0x00), // no draw (clear)
-            Color.new(0xFF, 0xFF, 0xFF), // 0x overdraw
-            Color.new(0x3c, 0xeb, 0x0c), // 1x overdraw
-            Color.new(0x6e, 0xae, 0x09), // 2x overdraw
-            Color.new(0x9e, 0x74, 0x06), // 3x overdraw
-            Color.new(0xcf, 0x3a, 0x03), // 4x overdraw
-            Color.new(0xff, 0x00, 0x00), // 5x overdraw
+            .{ .r = 0xFF, .g = 0x00, .b = 0xFF }, // this would mean clear has failed
+            .{ .r = 0x00, .g = 0x00, .b = 0x00 }, // no draw (clear)
+            .{ .r = 0xFF, .g = 0xFF, .b = 0xFF }, // 0x overdraw
+            .{ .r = 0x3c, .g = 0xeb, .b = 0x0c }, // 1x overdraw
+            .{ .r = 0x6e, .g = 0xae, .b = 0x09 }, // 2x overdraw
+            .{ .r = 0x9e, .g = 0x74, .b = 0x06 }, // 3x overdraw
+            .{ .r = 0xcf, .g = 0x3a, .b = 0x03 }, // 4x overdraw
+            .{ .r = 0xff, .g = 0x00, .b = 0x00 }, // 5x overdraw
         };
 
         var overdraw_buffer = attrs_buffer;
@@ -254,74 +251,74 @@ fn render_example_image(path: []const u8, overdraw_path: ?[]const u8, sequence_p
     }
     if (sequence_path) |_seq_path| {
         const seq_palette = [_]Color{
-            Color.new(0xaa, 0x00, 0x55),
-            Color.new(0xff, 0x55, 0x55),
-            Color.new(0xaa, 0x55, 0x55),
-            Color.new(0x55, 0xff, 0xaa),
-            Color.new(0x00, 0x55, 0xff),
-            Color.new(0x55, 0x55, 0x55),
-            Color.new(0xff, 0x00, 0x55),
-            Color.new(0xff, 0xff, 0x00),
-            Color.new(0x55, 0x55, 0x00),
-            Color.new(0xff, 0xaa, 0xaa),
-            Color.new(0x00, 0xff, 0x00),
-            Color.new(0x55, 0xff, 0xff),
-            Color.new(0xff, 0x55, 0xff),
-            Color.new(0x55, 0xaa, 0xff),
-            Color.new(0xff, 0xaa, 0x55),
-            Color.new(0x00, 0x00, 0xff),
-            Color.new(0xaa, 0x00, 0xaa),
-            Color.new(0x55, 0x00, 0x00),
-            Color.new(0x00, 0xaa, 0xff),
-            Color.new(0xff, 0x00, 0xff),
-            Color.new(0x00, 0xaa, 0xaa),
-            Color.new(0xaa, 0x00, 0x00),
-            Color.new(0xff, 0x00, 0xaa),
-            Color.new(0x55, 0xaa, 0x00),
-            Color.new(0x55, 0x00, 0xaa),
-            Color.new(0x55, 0xaa, 0xaa),
-            Color.new(0xaa, 0xff, 0x00),
-            Color.new(0x00, 0xff, 0x55),
-            Color.new(0xaa, 0xaa, 0x00),
-            Color.new(0x55, 0x00, 0x55),
-            Color.new(0xaa, 0x55, 0xaa),
-            Color.new(0xff, 0x00, 0x00),
-            Color.new(0x55, 0x55, 0xff),
-            Color.new(0xff, 0xaa, 0x00),
-            Color.new(0xff, 0xff, 0x55),
-            Color.new(0xaa, 0x00, 0xff),
-            Color.new(0xff, 0x55, 0x00),
-            Color.new(0xaa, 0xff, 0xaa),
-            Color.new(0x00, 0x55, 0xaa),
-            Color.new(0x00, 0x55, 0x55),
-            Color.new(0xaa, 0xff, 0xff),
-            Color.new(0x00, 0x55, 0x00),
-            Color.new(0xaa, 0x55, 0x00),
-            Color.new(0xaa, 0xaa, 0xff),
-            Color.new(0x00, 0xaa, 0x00),
-            Color.new(0x00, 0xff, 0xaa),
-            Color.new(0xff, 0xff, 0xaa),
-            Color.new(0xff, 0xaa, 0xff),
-            Color.new(0xaa, 0xaa, 0xaa),
-            Color.new(0x00, 0xff, 0xff),
-            Color.new(0x55, 0xff, 0x55),
-            Color.new(0x00, 0x00, 0xaa),
-            Color.new(0xaa, 0xaa, 0x55),
-            Color.new(0x55, 0xaa, 0x55),
-            Color.new(0x00, 0xaa, 0x55),
-            Color.new(0xaa, 0x55, 0xff),
-            Color.new(0x55, 0xff, 0x00),
-            Color.new(0xaa, 0xff, 0x55),
-            Color.new(0xff, 0x55, 0xaa),
-            Color.new(0x55, 0x55, 0xaa),
-            Color.new(0x00, 0x00, 0x55),
-            Color.new(0x55, 0x00, 0xff),
+            .{ .r = 0xaa, .g = 0x00, .b = 0x55 },
+            .{ .r = 0xff, .g = 0x55, .b = 0x55 },
+            .{ .r = 0xaa, .g = 0x55, .b = 0x55 },
+            .{ .r = 0x55, .g = 0xff, .b = 0xaa },
+            .{ .r = 0x00, .g = 0x55, .b = 0xff },
+            .{ .r = 0x55, .g = 0x55, .b = 0x55 },
+            .{ .r = 0xff, .g = 0x00, .b = 0x55 },
+            .{ .r = 0xff, .g = 0xff, .b = 0x00 },
+            .{ .r = 0x55, .g = 0x55, .b = 0x00 },
+            .{ .r = 0xff, .g = 0xaa, .b = 0xaa },
+            .{ .r = 0x00, .g = 0xff, .b = 0x00 },
+            .{ .r = 0x55, .g = 0xff, .b = 0xff },
+            .{ .r = 0xff, .g = 0x55, .b = 0xff },
+            .{ .r = 0x55, .g = 0xaa, .b = 0xff },
+            .{ .r = 0xff, .g = 0xaa, .b = 0x55 },
+            .{ .r = 0x00, .g = 0x00, .b = 0xff },
+            .{ .r = 0xaa, .g = 0x00, .b = 0xaa },
+            .{ .r = 0x55, .g = 0x00, .b = 0x00 },
+            .{ .r = 0x00, .g = 0xaa, .b = 0xff },
+            .{ .r = 0xff, .g = 0x00, .b = 0xff },
+            .{ .r = 0x00, .g = 0xaa, .b = 0xaa },
+            .{ .r = 0xaa, .g = 0x00, .b = 0x00 },
+            .{ .r = 0xff, .g = 0x00, .b = 0xaa },
+            .{ .r = 0x55, .g = 0xaa, .b = 0x00 },
+            .{ .r = 0x55, .g = 0x00, .b = 0xaa },
+            .{ .r = 0x55, .g = 0xaa, .b = 0xaa },
+            .{ .r = 0xaa, .g = 0xff, .b = 0x00 },
+            .{ .r = 0x00, .g = 0xff, .b = 0x55 },
+            .{ .r = 0xaa, .g = 0xaa, .b = 0x00 },
+            .{ .r = 0x55, .g = 0x00, .b = 0x55 },
+            .{ .r = 0xaa, .g = 0x55, .b = 0xaa },
+            .{ .r = 0xff, .g = 0x00, .b = 0x00 },
+            .{ .r = 0x55, .g = 0x55, .b = 0xff },
+            .{ .r = 0xff, .g = 0xaa, .b = 0x00 },
+            .{ .r = 0xff, .g = 0xff, .b = 0x55 },
+            .{ .r = 0xaa, .g = 0x00, .b = 0xff },
+            .{ .r = 0xff, .g = 0x55, .b = 0x00 },
+            .{ .r = 0xaa, .g = 0xff, .b = 0xaa },
+            .{ .r = 0x00, .g = 0x55, .b = 0xaa },
+            .{ .r = 0x00, .g = 0x55, .b = 0x55 },
+            .{ .r = 0xaa, .g = 0xff, .b = 0xff },
+            .{ .r = 0x00, .g = 0x55, .b = 0x00 },
+            .{ .r = 0xaa, .g = 0x55, .b = 0x00 },
+            .{ .r = 0xaa, .g = 0xaa, .b = 0xff },
+            .{ .r = 0x00, .g = 0xaa, .b = 0x00 },
+            .{ .r = 0x00, .g = 0xff, .b = 0xaa },
+            .{ .r = 0xff, .g = 0xff, .b = 0xaa },
+            .{ .r = 0xff, .g = 0xaa, .b = 0xff },
+            .{ .r = 0xaa, .g = 0xaa, .b = 0xaa },
+            .{ .r = 0x00, .g = 0xff, .b = 0xff },
+            .{ .r = 0x55, .g = 0xff, .b = 0x55 },
+            .{ .r = 0x00, .g = 0x00, .b = 0xaa },
+            .{ .r = 0xaa, .g = 0xaa, .b = 0x55 },
+            .{ .r = 0x55, .g = 0xaa, .b = 0x55 },
+            .{ .r = 0x00, .g = 0xaa, .b = 0x55 },
+            .{ .r = 0xaa, .g = 0x55, .b = 0xff },
+            .{ .r = 0x55, .g = 0xff, .b = 0x00 },
+            .{ .r = 0xaa, .g = 0xff, .b = 0x55 },
+            .{ .r = 0xff, .g = 0x55, .b = 0xaa },
+            .{ .r = 0x55, .g = 0x55, .b = 0xaa },
+            .{ .r = 0x00, .g = 0x00, .b = 0x55 },
+            .{ .r = 0x55, .g = 0x00, .b = 0xff },
         };
 
         var seq_buffer = attrs_buffer;
         for (&seq_buffer) |*pix| {
             pix.* = if (pix.r <= 1)
-                Color.new(0, 0, 0) // background or faulty pixels
+                .{ .r = 0, .g = 0, .b = 0 } // background or faulty pixels
             else
                 seq_palette[pix.g % seq_palette.len];
         }
@@ -335,7 +332,7 @@ fn render_example_image(path: []const u8, overdraw_path: ?[]const u8, sequence_p
 }
 
 fn verify_encoder_decoder(allocator: std.mem.Allocator) !void {
-    var rand_engine = std.rand.DefaultPrng.init(0x1337);
+    var rand_engine: std.Random.DefaultPrng = .init(0x1337);
     const rng = rand_engine.random();
 
     const rand_buffer = try allocator.alloc(u8, 8192);
@@ -368,7 +365,9 @@ fn verify_encoder_decoder(allocator: std.mem.Allocator) !void {
 
     {
         var fbs = std.io.fixedBufferStream(encoded_cmd_stream);
-        var decoder = agp.decoder(fbs.reader());
+        var decoder = agp.decoder(allocator, fbs.reader());
+        defer decoder.deinit();
+
         for (output_cmd_stream) |*cmd| {
             cmd.* = if (try decoder.next()) |in|
                 in
@@ -384,7 +383,7 @@ fn verify_encoder_decoder(allocator: std.mem.Allocator) !void {
     }
 }
 
-fn rand_cmd(rng: std.rand.Random, buffer_range: []const u8) agp.Command {
+fn rand_cmd(rng: std.Random, buffer_range: []const u8) agp.Command {
     const cmd_id = rng.enumValue(agp.CommandByte);
     switch (cmd_id) {
         inline else => |tag| {
@@ -400,12 +399,14 @@ fn rand_cmd(rng: std.rand.Random, buffer_range: []const u8) agp.Command {
                         break :blk buffer_range[start..end];
                     },
 
-                    agp.ColorIndex => @enumFromInt(rng.int(u8)),
+                    agp.Color => @bitCast(rng.int(u8)),
                     agp.Font => @ptrFromInt(rng.int(usize)),
                     agp.Framebuffer => @ptrFromInt(rng.int(usize)),
-                    agp.Bitmap => @ptrFromInt(rng.int(usize)),
+                    *const agp.Bitmap => @ptrFromInt(rng.int(usize)),
 
-                    else => rng.int(fld.type),
+                    u8, u16, i16 => rng.int(fld.type),
+
+                    else => @compileError("unsupported type: " ++ @typeName(fld.type)),
                 };
             }
 
