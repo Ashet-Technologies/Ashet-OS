@@ -174,14 +174,14 @@ pub fn main() !void {
                     const fwd = Vec2.unitX.rotate(raycaster.camera_rotation).scale(0.1);
                     const right = Vec2.unitY.rotate(raycaster.camera_rotation).scale(0.1);
 
-                    switch (event.keyboard.key) {
+                    switch (event.keyboard.usage) {
                         .escape => return,
 
-                        .up => raycaster.camera_position = raycaster.camera_position.add(fwd),
-                        .down => raycaster.camera_position = raycaster.camera_position.sub(fwd),
+                        .up_arrow => raycaster.camera_position = raycaster.camera_position.add(fwd),
+                        .down_arrow => raycaster.camera_position = raycaster.camera_position.sub(fwd),
 
-                        .left => raycaster.camera_position = raycaster.camera_position.sub(right),
-                        .right => raycaster.camera_position = raycaster.camera_position.add(right),
+                        .left_arrow => raycaster.camera_position = raycaster.camera_position.sub(right),
+                        .right_arrow => raycaster.camera_position = raycaster.camera_position.add(right),
 
                         .page_up => raycaster.camera_rotation -= 0.1,
                         .page_down => raycaster.camera_rotation += 0.1,

@@ -6,12 +6,18 @@ pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const exe = b.addExecutable(.{
-        .name = "debug-filter",
+    const debugfilter_mod = b.createModule(.{
         .root_source_file = b.path("debug-filter.zig"),
         .target = target,
         .optimize = optimize,
         .link_libc = true,
+    });
+
+    debugfilter_mod.linkSystemLibrary("unwind", .{});
+
+    const exe = b.addExecutable(.{
+        .name = "debug-filter",
+        .root_module = debugfilter_mod,
     });
 
     const args_mod = b.dependency("args", .{}).module("args");

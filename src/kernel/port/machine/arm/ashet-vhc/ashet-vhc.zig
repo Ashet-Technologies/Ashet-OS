@@ -38,12 +38,12 @@ var interrupt_table: ashet.platform.profile.start.InterruptTable align(128) = as
 
 fn initialize() !void {
     logger.info("cpuid: {s}", .{
-        ashet.platform.profile.registers.system_control_block.cpuid.read(),
+        ashet.platform.profile.peripherals.system_control_block.cpuid.read(),
     });
 
     // Remap interrupt table:
-    ashet.platform.profile.registers.system_control_block.vtor.write(.{
-        .table_offset = @truncate(@intFromPtr(&interrupt_table) >> 7),
+    ashet.platform.profile.peripherals.system_control_block.vtor.write(.{
+        .table_offset = .from_ptr(&interrupt_table),
     });
 
     logger.info("initialize SysTick...", .{});
@@ -101,7 +101,7 @@ fn getLinearMemoryRegion() ashet.memory.Range {
 }
 
 const systick = struct {
-    const regs = ashet.platform.profile.registers.sys_tick;
+    const regs = ashet.platform.profile.peripherals.sys_tick;
 
     var total_count_ms: u64 = 0;
 

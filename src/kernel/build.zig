@@ -6,12 +6,6 @@ const Platform = abiBuild.Platform;
 
 pub const Machine = @import("port/machine_id.zig").MachineID;
 
-fn create_embedded_resource(b: *std.Build, path: []const u8) *std.Build.Module {
-    return b.createModule(.{
-        .root_source_file = b.path(path),
-    });
-}
-
 pub fn build(b: *std.Build) void {
     // Options:
     const machine_id = b.option(Machine, "machine", "Selects the machine for which the kernel should be built.") orelse @panic("-Dmachine required!");
@@ -27,6 +21,7 @@ pub fn build(b: *std.Build) void {
     const kernel_target = b.resolveTargetQuery(machine_config.target);
 
     // Dependencies:
+    const mkicon_dep = b.dependency("mkicon", .{});
     const abi_dep = b.dependency("ashet-abi", .{});
     const virtio_dep = b.dependency("virtio", .{});
     const ashet_fs_dep = b.dependency("ashet_fs", .{});
@@ -34,7 +29,7 @@ pub fn build(b: *std.Build) void {
     const args_dep = b.dependency("args", .{});
     const network_dep = b.dependency("network", .{});
     const vnc_dep = b.dependency("vnc", .{});
-    const lwip_dep = b.dependency("lwip", .{ .target = kernel_target, .optimize = .ReleaseSafe });
+    const lwip_dep = b.dependency("lwip", .{ .target = kernel_target, .optimize = .ReleaseFast });
     const libc_dep = b.dependency("foundation-libc", .{
         .target = kernel_target,
         .optimize = optimize,
@@ -87,6 +82,7 @@ pub fn build(b: *std.Build) void {
     });
 
     const zigx_dep = b.dependency("zigx", .{});
+    const expcard_dep = b.dependency("expcard", .{});
 
     // Modules:
 
@@ -109,8 +105,17 @@ pub fn build(b: *std.Build) void {
     const shimizu_mod = shimizu_dep.module("shimizu");
     const wayland_protocols_mod = shimizu_dep.module("wayland-protocols");
     const zig_mod = zigx_dep.module("x");
+    const expcard_mod = expcard_dep.module("expcard");
 
     // Build:
+
+    const mkicon_exe = mkicon_dep.artifact("mkicon");
+
+    const convert_splashscreen = b.addRunArtifact(mkicon_exe);
+    convert_splashscreen.addArgs(&.{ "--geometry", "256x128" });
+    convert_splashscreen.addArgs(&.{ "--format", "raw" });
+    convert_splashscreen.addFileArg(b.path("../../assets/images/bootsplash.png"));
+    const bootsplash_path = convert_splashscreen.addPrefixedOutputFileArg("--output=", "splashscreen-256x128.raw");
 
     const machine_info_module = blk: {
         const machine_info = renderMachineInfo(
@@ -153,11 +158,15 @@ pub fn build(b: *std.Build) void {
             .{ .name = "turtlefont", .module = turtlefont_mod },
             .{ .name = "ashex", .module = ashex_mod },
             .{ .name = "cvt", .module = xcvt_mod },
+            .{ .name = "expcard", .module = expcard_mod },
 
             // only required on hosted instances:
             .{ .name = "network", .module = network_mod },
             .{ .name = "x11", .module = zig_mod },
             // .{ .name = "sdl", .module = options.modules.sd
+
+            // data
+            .{ .name = "splashscreen-256x128.raw", .module = b.createModule(.{ .root_source_file = bootsplash_path }) },
         },
     });
 
@@ -172,17 +181,22 @@ pub fn build(b: *std.Build) void {
         const regz_dep = b.dependency("regz", .{
             .optimize = .ReleaseSafe,
         });
+        const propan_dep = b.dependency("propan", .{
+            .optimize = .ReleaseSafe,
+        });
 
+        const propan_exe = propan_dep.artifact("propan");
         const regz_exe = regz_dep.artifact("regz");
 
         const regz_run = b.addRunArtifact(regz_exe);
-
         regz_run.addArg("--microzig");
         regz_run.addArg("--format");
         regz_run.addArg("svd");
 
         regz_run.addArg("--output_path"); // Write to a file
-        const rp2350_register_file = regz_run.addOutputFileArg("rp2350.zig");
+        const rp2350_register_dir = regz_run.addOutputDirectoryArg("rp2350-registers");
+
+        const rp2350_register_file = rp2350_register_dir.path(b, "RP2350.zig");
 
         {
             const patches = @import("port/machine/arm/ashet-hc/patches/rp2350_arm.zig").patches;
@@ -235,6 +249,14 @@ pub fn build(b: *std.Build) void {
         microzig_shim_mod.addImport("rp2350-hal", hal_mod);
 
         kernel_mod.addImport("rp2350-hal", hal_mod);
+        kernel_mod.addImport("microzig", microzig_shim_mod);
+
+        const p2_bootrom_asm = b.addRunArtifact(propan_exe);
+        p2_bootrom_asm.addArg("--format=flat");
+        p2_bootrom_asm.addFileArg(b.path("port/machine/arm/ashet-hc/p2-bootrom.propan"));
+        const p2_bootrom_bin = p2_bootrom_asm.addPrefixedOutputFileArg("--output=", "p2-bootrom.bin");
+
+        kernel_mod.addImport("propeller2.bin", b.createModule(.{ .root_source_file = p2_bootrom_bin }));
     }
 
     const start_file = if (machine_id.is_hosted())
@@ -297,6 +319,7 @@ pub fn build(b: *std.Build) void {
         const libc = libc_dep.artifact("foundation");
 
         lwip_mod.addIncludePath(libc.getEmittedIncludeTree());
+
         zfat_mod.addIncludePath(libc.getEmittedIncludeTree());
 
         kernel_exe.linkLibrary(libc);

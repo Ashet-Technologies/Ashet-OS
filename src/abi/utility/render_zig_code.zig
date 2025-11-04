@@ -1186,13 +1186,12 @@ fn fmt_fqn(fqn: []const []const u8) std.fmt.Formatter(format_fqn) {
     return .{ .data = fqn };
 }
 
-fn format_fqn(fqn: []const []const u8, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-    _ = options;
+fn format_fqn(fqn: []const []const u8, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
     for (fqn, 0..) |name, i| {
         if (i > 0) {
             try writer.writeAll(if (fmt.len > 0) fmt else ".");
         }
-        try writer.writeAll(name);
+        try std.zig.fmtId(name).format(fmt, options, writer);
     }
 }
 

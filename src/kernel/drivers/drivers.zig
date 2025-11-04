@@ -1,6 +1,7 @@
 const std = @import("std");
 const ashet = @import("../main.zig");
 const logger = std.log.scoped(.drivers);
+const builtin = @import("builtin");
 
 pub const block = struct {
     // pub const ata = @import("block-device/ata.zig");
@@ -45,6 +46,7 @@ pub const video = struct {
     pub const Host_SDL_Output = @import("video/Host_SDL_Output.zig");
     pub const ILI9488 = @import("video/ILI9488.zig");
     pub const HSTX_DVI = @import("video/HSTX_DVI.zig");
+    pub const HSTX_DVI_2 = @import("video/HSTX_DVI_2.zig");
     pub const Multiboot_Framebuffer = @import("video/Multiboot_Framebuffer.zig");
     pub const Memory_Mapped_Framebuffer = @import("video/Memory_Mapped_Framebuffer.zig");
 };
@@ -52,6 +54,8 @@ pub const video = struct {
 pub const network = struct {
     /// Memory mapped virtio network device
     pub const Virtio_Net_Device = @import("network/Virtio_Net_Device.zig");
+
+    pub const ENC28J60 = @import("network/ENC28J60.zig");
 };
 
 pub const input = struct {
@@ -63,9 +67,21 @@ pub const input = struct {
 
     pub const Host_VNC_Input = @import("input/Host_VNC_Input.zig");
     pub const Host_SDL_Input = @import("input/Host_SDL_Input.zig");
+
+    pub const Generic_PS2_Device = @import("input/Generic_PS2_Device.zig");
+    pub const PropIO_PS2_Device = @import("input/PropIO_PS2_Device.zig");
 };
 
-var driver_lists = std.EnumArray(DriverClass, ?*Driver).initFill(null);
+pub const i2c_device = struct {
+    pub const RP2xxx_I2C_Device = @import("i2c_device/RP2xxx_I2C_Device.zig");
+};
+
+const DriverInstallation = struct {
+    head: ?*Driver = null,
+    count: usize = 0,
+};
+
+var driver_lists: std.EnumArray(DriverClass, DriverInstallation) = .initFill(.{});
 
 export var driver_lists_ptr = &driver_lists;
 
@@ -75,17 +91,41 @@ pub fn install(driver: *Driver) void {
 
     std.debug.assert(!ashet.memory.isPointerToKernelStack(driver));
 
-    const head = driver_lists.getPtr(driver.class);
-    driver.next = head.*;
-    head.* = driver;
+    const installation = driver_lists.getPtr(driver.class);
+
+    driver.next = installation.head;
+    installation.head = driver;
+    installation.count += 1;
 
     logger.info("installed {s} driver '{s}'", .{ @tagName(driver.class), driver.name });
+
+    if (builtin.mode == .Debug) {
+        var cnt: usize = 0;
+        var head = installation.head;
+        while (head) |item| {
+            head = item.next;
+            cnt += 1;
+        }
+        if (cnt != installation.count) {
+            std.log.err("Driver installation corrupted: Install count is {}, list length is {}", .{
+                installation.count,
+                cnt,
+            });
+            @panic("Driver installation corrupted");
+        }
+    }
 }
 
+/// Returns the
 pub fn first(comptime class: DriverClass) ?*ResolvedDriverInterface(class) {
-    const head = driver_lists.get(class) orelse return null;
+    const head = driver_lists.get(class).head orelse return null;
     std.debug.assert(head.class == class);
     return &@field(head.class, @tagName(class));
+}
+
+/// Returns the total count of installed drivers for a certain driver class.
+pub fn get_available_count(class: DriverClass) usize {
+    return driver_lists.get(class).count;
 }
 
 /// Returns an iterator that will return all devices currently registered for that `class`.
@@ -101,7 +141,7 @@ pub fn DriverIterator(comptime class: DriverClass) type {
         next_item: ?*Driver,
 
         pub fn init() Iterator {
-            return Iterator{ .next_item = driver_lists.get(class) };
+            return Iterator{ .next_item = driver_lists.get(class).head };
         }
 
         pub fn next(iter: *Iterator) ?*ResolvedDriverInterface(class) {
@@ -169,6 +209,7 @@ pub const DriverClass = enum {
     serial,
     network,
     filesystem,
+    i2c_device,
 };
 
 pub const DriverInterface = union(DriverClass) {
@@ -180,6 +221,7 @@ pub const DriverInterface = union(DriverClass) {
     serial: SerialPort,
     network: NetworkInterface,
     filesystem: FileSystemDriver,
+    i2c_device: I2C_Device,
 };
 
 pub fn resolveDriver(comptime class: DriverClass, ptr: *ResolvedDriverInterface(class)) *Driver {
@@ -208,6 +250,8 @@ pub const SoundDevice = struct {
     //
     dummy: u8,
 };
+
+pub const I2C_Device = ashet.io.i2c.Device;
 
 pub const InputDevice = struct {
     pollFn: *const fn (*Driver) void,
@@ -433,3 +477,39 @@ pub fn installBuiltinDrivers() void {
     install(&filesystem.AshetFS.driver);
     install(&filesystem.VFAT.driver);
 }
+
+/// Types and functions related to the PropIO backplane
+/// system.
+pub const propio = struct {
+    pub const TxFifo = enum(u2) {
+        tx_fifo0 = 0,
+        tx_fifo1 = 1,
+        tx_fifo2 = 2,
+        tx_fifo3 = 3,
+    };
+
+    pub const RxFifo = enum(u2) {
+        rx_fifo0 = 0,
+        rx_fifo1 = 1,
+        rx_fifo2 = 2,
+        rx_fifo3 = 3,
+    };
+
+    /// Interface for devices that run via PropIO.
+    pub const Device = struct {
+        notify_fn: *const fn (*Device, RxFifo, []const u8) void,
+
+        /// Notifies the driver about new data inbound on a RX FIFO.
+        pub fn notify_fifo_data(dev: *Device, fifo: RxFifo, data: []const u8) void {
+            return dev.notify_fn(dev, fifo, data);
+        }
+    };
+
+    pub const Module = struct {
+        send_fn: *const fn (*Module, TxFifo, []const u8) void,
+
+        pub fn send(module: *Module, fifo: TxFifo, data: []const u8) void {
+            return module.send_fn(module, fifo, data);
+        }
+    };
+};

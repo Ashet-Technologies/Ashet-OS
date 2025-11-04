@@ -1,0 +1,107 @@
+# Bare Scan Codes
+scancode 01 f9
+scancode 03 f5
+scancode 04 f3
+scancode 05 f1
+scancode 06 f2
+scancode 07 f12
+scancode 09 f10
+scancode 0A f8
+scancode 0B f6
+scancode 0C f4
+scancode 0D tab
+scancode 0E grave_accent
+scancode 11 left_alt
+scancode 12 left_shift
+scancode 14 left_control
+scancode 15 q
+scancode 16 1
+scancode 1A z
+scancode 1B s
+scancode 1C a
+scancode 1D w
+scancode 1E 2
+scancode 21 c
+scancode 22 x
+scancode 23 d
+scancode 24 e
+scancode 25 4
+scancode 26 3
+scancode 29 space
+scancode 2A v
+scancode 2B f
+scancode 2C t
+scancode 2D r
+scancode 2E 5
+scancode 31 n
+scancode 32 b
+scancode 33 h
+scancode 34 g
+scancode 35 y
+scancode 36 6
+scancode 3A m
+scancode 3B j
+scancode 3C u
+scancode 3D 7
+scancode 3E 8
+scancode 41 comma
+scancode 42 k
+scancode 43 i
+scancode 44 o
+scancode 45 0
+scancode 46 9
+scancode 49 period
+scancode 4A slash
+scancode 4B l
+scancode 4C semicolon
+scancode 4D p
+scancode 4E minus
+scancode 52 apostrophe
+scancode 54 square_bracket_open
+scancode 55 equals
+scancode 58 caps_lock
+scancode 59 right_shift
+scancode 5A enter
+scancode 5B square_bracket_close
+scancode 5D backslash
+scancode 61 non_us_backslash
+scancode 66 backspace
+scancode 69 kp_1
+scancode 6B kp_4
+scancode 6C kp_7
+scancode 70 kp_0
+scancode 71 kp_period
+scancode 72 kp_2
+scancode 73 kp_5
+scancode 74 kp_6
+scancode 75 kp_8
+scancode 76 escape
+scancode 77 num_lock
+scancode 78 f11
+scancode 79 kp_add
+scancode 7A kp_3
+scancode 7B kp_subtract
+scancode 7C kp_multiply
+scancode 7D kp_9
+scancode 7E scroll_lock
+scancode 83 f7
+
+# E0 Scan Codes
+scancode E0 11 right_alt
+scancode E0 14 right_control
+scancode E0 4A kp_divide
+scancode E0 5A kp_enter
+scancode E0 69 end
+scancode E0 6B left_arrow
+scancode E0 6C home
+scancode E0 70 insert
+scancode E0 71 delete
+scancode E0 72 down_arrow
+scancode E0 74 right_arrow
+scancode E0 75 up_arrow
+scancode E0 7A page_down
+scancode E0 7C print_screen
+scancode E0 7D page_up
+
+# E1 Scan Codes
+scancode E1 1477 pause

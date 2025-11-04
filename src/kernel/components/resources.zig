@@ -506,6 +506,9 @@ pub fn InstanceType(comptime type_enum: TypeId) type {
         .desktop => ashet.gui.Desktop,
         .widget => ashet.gui.Widget,
         .widget_type => ashet.gui.WidgetType,
+
+        .io_serial_serial_port => ashet.io.serial.SerialPort,
+        .io_i2c_bus => ashet.io.i2c.Bus,
     };
 }
 

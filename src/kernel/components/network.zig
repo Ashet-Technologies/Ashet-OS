@@ -185,6 +185,7 @@ fn netif_output(netif_c: [*c]c.netif, pbuf_c: [*c]c.pbuf) callconv(.C) c.err_t {
     // }
 
     // TODO: lock_interrupts();
+    //defer  unlock_interrupts();
 
     logger.debug("sending {} bytes via {s}...", .{ pbuf.tot_len, netif.name });
 
@@ -206,7 +207,6 @@ fn netif_output(netif_c: [*c]c.netif, pbuf_c: [*c]c.pbuf) callconv(.C) c.err_t {
         logger.err("failed to allocate network packet!", .{});
     }
 
-    // TODO: unlock_interrupts();
     return c.ERR_OK;
 }
 
@@ -531,11 +531,13 @@ pub const udp = struct {
             const socket = ashet.memory.type_pool(Socket).alloc() catch return error.SystemResources;
             errdefer ashet.memory.type_pool(Socket).free(socket);
 
-            const pcb = c.udp_new() orelse return error.SystemResources;
-            errdefer comptime unreachable;
+            socket.* = .{
+                .pcb = c.udp_new() orelse return error.SystemResources,
+            };
+            errdefer @compileError("can't return errors here!");
 
             // c.udp_arg(pcb, socket);
-            c.udp_recv(pcb, handleIncomingPacket, socket);
+            c.udp_recv(socket.pcb, handleIncomingPacket, socket);
 
             return socket;
         }

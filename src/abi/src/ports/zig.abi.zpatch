@@ -47,6 +47,8 @@
             WidgetType => .widget_type,
             SyncEvent => .sync_event,
             Mutex => .mutex,
+            io.serial.SerialPort => .io_serial_serial_port,
+            io.i2c.Bus => .io_i2c_bus,
         };  
     }
     pub fn to_type(comptime id: Type) type {
@@ -69,7 +71,9 @@
             .widget_type => WidgetType,
             .sync_event => SyncEvent,
             .mutex => Mutex,
-        };  
+            .io_serial_serial_port => io.serial.SerialPort,
+            .io_i2c_bus => io.i2c.Bus,
+        };
     }
 </patch>
 <patch overlapped.ARC>
@@ -175,7 +179,7 @@
         return (a.x == b.x) and (a.y == b.y);
     }
 
-    pub fn manhattenDistance(a: Point, b: Point) u16 {
+    pub fn manhattanDistance(a: Point, b: Point) u16 {
         return @abs(a.x - b.x) + @abs(a.y - b.y);
     }
 
@@ -238,22 +242,22 @@
 
     pub fn contains(rect: Rectangle, pt: Point) bool {
         return (pt.x >= rect.x) and
-            (pt.x < rect.x + @as(u15, @intCast(rect.width))) and
+            (pt.x < rect.x +| @as(i16, @intCast(rect.width))) and
             (pt.y >= rect.y) and
-            (pt.y < rect.y + @as(u15, @intCast(rect.height)));
+            (pt.y < rect.y +| @as(i16, @intCast(rect.height)));
     }
 
     pub fn containsRectangle(boundary: Rectangle, region: Rectangle) bool {
         return boundary.contains(region.position()) and
-            boundary.contains(Point.new(region.x + @as(u15, @intCast(region.width)) - 1, region.y + @as(u15, @intCast(region.height)) - 1));
+            boundary.contains(Point.new(region.x +| @as(i16, @intCast(region.width)) - 1, region.y +| @as(i16, @intCast(region.height)) - 1));
     }
 
     /// Returns true if `a` and `b` overlap.
     pub fn intersects(a: Rectangle, b: Rectangle) bool {
-        return a.x + @as(u15, @intCast(a.width)) >= b.x and
-            a.y + @as(u15, @intCast(a.height)) >= b.y and
-            a.x <= b.x + @as(u15, @intCast(b.width)) and
-            a.y <= b.y + @as(u15, @intCast(b.height));
+        return a.x +| @as(i16, @intCast(a.width)) >= b.x and
+            a.y +| @as(i16, @intCast(a.height)) >= b.y and
+            a.x <= b.x +| @as(i16, @intCast(b.width)) and
+            a.y <= b.y +| @as(i16, @intCast(b.height));
     }
 
     /// Returns the overlapping region of `a` and `b`.
@@ -279,13 +283,13 @@
         return rect.y;
     }
     pub fn bottom(rect: Rectangle) i16 {
-        return rect.y + @as(u15, @intCast(rect.height));
+        return rect.y + @as(i16, @intCast(rect.height));
     }
     pub fn left(rect: Rectangle) i16 {
         return rect.x;
     }
     pub fn right(rect: Rectangle) i16 {
-        return rect.x +| @as(u15, @intCast(rect.width));
+        return rect.x +| @as(i16, @intCast(rect.width));
     }
 
     pub fn shrink(rect: Rectangle, amount: u15) Rectangle {
@@ -344,7 +348,7 @@
         _ = fmt;
         _ = options;
 
-        var strings = std.BoundedArray([]const u8, 7){};
+        var strings = std.BoundedArray([]const u8, 8){};
 
         if (mods.shift) strings.appendAssumeCapacity("shift");
         if (mods.alt) strings.appendAssumeCapacity("alt");
@@ -392,42 +396,15 @@
     }
 </patch>
 <patch Color>
-
-    /// Expands a color value to 8 bit with a linear mapping.
-    pub inline fn expand_channel(src_value: anytype) u8 {
-        const bits = @bitSizeOf(@TypeOf(src_value));
-        if (bits > 8)
-            @compileError("src_value must have 8 bits or less");
-
-        comptime var mask = ((1 << bits) - 1) << (8 - bits);
-
-        var pattern: u8 = @as(u8, src_value) << (8 - bits);
-        var result: u8 = 0;
-        inline while (mask != 0) {
-            result |= pattern;
-            mask >>= bits;
-            pattern >>= bits;
-        }
-
-        return result;
-    }
-    /// Compresses a color value from 8 bit to a smaller value.
-    pub inline fn compress_channel(src_value: u8, comptime T: type) T {
-        const bits = @bitSizeOf(T);
-        if (bits > 8)
-            @compileError("T must have 8 bits or less");
-        return @truncate(src_value >> (8 - bits));
-    }
-
     pub fn eql(a: Color, b: Color) bool {
         return @as(u8, @bitCast(a)) == @as(u8, @bitCast(b));
     }
 
-    pub fn to_u8(c: Color) u8 {
+    pub inline fn to_u8(c: Color) u8 {
         return @bitCast(c);
     }
 
-    pub fn from_u8(u: u8) Color {
+    pub inline fn from_u8(u: u8) Color {
         return @bitCast(u);
     }
 
@@ -440,9 +417,9 @@
                     const g = std.fmt.parseInt(u4, str[2..3], 16) catch @compileError("invalid hex code");
                     const b = std.fmt.parseInt(u4, str[3..4], 16) catch @compileError("invalid hex code");
                     return Color.from_rgb(
-                        expand_channel(r),
-                        expand_channel(g),
-                        expand_channel(b),
+                        (@as(u8, r) << 4) | r,
+                        (@as(u8, g) << 4) | g,
+                        (@as(u8, b) << 4) | b,
                     );
                 },
                 6 => { // 8-bit RGB
@@ -463,27 +440,112 @@
         }
     }
 
+    pub fn from_gray(gray: u6) Color {
+        const gray8: u8 = gray;
+        return @bitCast(gray8);
+    }
+
+    fn fcast(v: anytype) f32 {
+        return @floatFromInt(v);
+    }
+
+    /// Creates a color from an 8-bit RGB value.
+    /// NOTE: This operation is inherently lossy.
     pub fn from_rgb(r: u8, g: u8, b: u8) Color {
-        return Color{
-            .r = compress_channel(r, u2),
-            .g = compress_channel(g, u3),
-            .b = compress_channel(b, u3),
+        const maxc: u8 = @max(r, g, b);
+        const minc: u8 = @min(r, g, b);
+        const delta: u8 = maxc - minc;
+
+        const v_raw: u8 = maxc;
+
+        if (delta == 0) {
+            // gray: hue undefined → 0, saturation 0
+            return from_gray(@truncate(v_raw >> 2));
+        }
+
+        // we must check for "black" **after** the  grayscale test as 
+        // grayscale has a higher precision than colors
+        if(v_raw < 0x10) {
+            // everything below this threshold is black
+            return .{.hue=0,.saturation=0,.value=0};
+        }
+
+        const v1to8: u3 = @intCast(((v_raw - 0x10) >> 5));
+
+        std.debug.assert(maxc != 0);
+
+        // Avoid division by zero if all components are 0.
+        const s: u2 = @intCast(((@as(u16, std.math.maxInt(u2)) * delta) + maxc / 2) / maxc);
+        if(s == 0) {
+            // Color is too desaturated for the palette, we need to map it to grayscale:
+            return from_gray(@truncate(v_raw >> 2));
+        }
+
+        const h: f32 = if (maxc == r) 
+            (fcast(g) - fcast(b)) / fcast(delta)            // between yellow & magenta
+        else if (maxc == g) 
+            2 + (fcast(b) - fcast(r)) / fcast(delta)        // between cyan & yellow
+        else 
+            4 + (fcast(r) - fcast(g)) / fcast(delta);       // between magenta & cyan
+
+        // h is [0, 6), we need [0, 8). WE also need to round here before doing the 
+        // mod as the each integer number is in the center, not at the start of
+        // the hue range.
+        const h8 = @mod(@round(8 * h / 6), std.math.maxInt(u3) + 1);
+
+        std.debug.assert(s != 0);
+        return .{
+            .hue = @intFromFloat(h8),
+            .saturation = s,
+            .value = @intCast(v1to8),
         };
     }
 
     pub fn from_rgbf(r: f32, g: f32, b: f32) Color {
-        return Color{
-            .r = @intFromFloat(std.math.maxInt(u2) * std.math.clamp(r, 0.0, 1.0)),
-            .g = @intFromFloat(std.math.maxInt(u3) * std.math.clamp(g, 0.0, 1.0)),
-            .b = @intFromFloat(std.math.maxInt(u3) * std.math.clamp(b, 0.0, 1.0)),
-        };
+        return from_rgb(
+            @intFromFloat(std.math.maxInt(u8) * std.math.clamp(r, 0.0, 1.0) + 0.5),
+            @intFromFloat(std.math.maxInt(u8) * std.math.clamp(g, 0.0, 1.0) + 0.5),
+            @intFromFloat(std.math.maxInt(u8) * std.math.clamp(b, 0.0, 1.0) + 0.5),
+        );
     }
 
-    pub fn to_rgb888(color: Color) RGB888 {
+    /// Converts the color into an RGB value with 8 bit per channel.
+    pub fn to_rgb888(color: Color) RGB888 {        
+        // When saturation is zero it's gray; hue is irrelevant.
+        if (color.saturation == 0) {
+            const raw: u8 = @bitCast(color);
+            std.debug.assert(raw < 64);
+            const gray6: u6 = @truncate(raw);
+            const gray8: u8 = expand_channel(gray6);
+            return .init(gray8, gray8, gray8);
+        }
+
+        const h: f32 = 360 * fcast(color.hue) / 8.0;
+        const v: f32 = (1 + fcast(color.value)) / 8.0;
+        const s: f32 = fcast(color.saturation) / 3.0;
+
+        const C: f32 = v * s;            // chrom
+        const hp: f32 = h / 60;          // sector index in [0,6)
+        const k: f32 = hp - 2 * @floor(hp / 2); // hp mod 2 in [0,2)
+        const X: f32 = C * (1 - @abs(k - 1));
+        const m: f32 = v - C;
+
+
+        const i: i32 = @intFromFloat(@floor(hp)); // 0..5
+        const  rp: f32, const  gp: f32, const bp: f32 = switch (i) {
+            0 => .{ C, X, 0 },
+            1 => .{ X, C, 0 },
+            2 => .{ 0, C, X },
+            3 => .{ 0, X, C },
+            4 => .{ X, 0, C },
+            5 => .{ C, 0, X },
+            else => unreachable,
+        };
+
         return .{
-            .r = expand_channel(color.r),
-            .g = expand_channel(color.g),
-            .b = expand_channel(color.b),
+            .r = @intFromFloat(255 * (rp + m)),
+            .g = @intFromFloat(255 * (gp + m)),
+            .b = @intFromFloat(255 * (bp + m)),
         };
     }
 
@@ -507,6 +569,87 @@
             @as(u32, exp.b) << 16;
 
         return @enumFromInt(value);
+    }
+
+
+    pub fn format(color: Color, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+
+        if(color.saturation == 0) {
+            const gray: u8 = @bitCast(color);
+            try writer.print("Color(gray={})", .{gray});
+        }
+        else {
+            const h_names = [8][]const u8 {
+                "  0",
+                " 45",
+                " 90",
+                "135",
+                "180",
+                "225",
+                "270",
+                "315",
+            };
+            const s_names = [3][]const u8 {
+                " 33.3",
+                " 66.6",
+                "100.0",
+            };
+            const v_names = [8][]const u8 {
+                " 12.5",
+                " 25.0",
+                " 37.5",
+                " 50.0",
+                " 62.5",
+                " 75.0",
+                " 87.5",
+                "100.0",
+            };
+            try writer.print("Color(h={s}°, s={s}%, v={s}%)", .{
+                h_names[color.hue],
+                s_names[color.saturation - 1],
+                v_names[color.value],
+            });
+        }
+    }
+
+    /// Expands a color value to 8 bit with a linear mapping.
+    pub inline fn expand_channel(src_value: anytype) u8 {
+        const bits = @bitSizeOf(@TypeOf(src_value));
+        if (bits > 8)
+            @compileError("src_value must have 8 bits or less");
+
+        comptime var mask = ((1 << bits) - 1) << (8 - bits);
+
+        var pattern: u8 = @as(u8, src_value) << (8 - bits);
+        var result: u8 = 0;
+        inline while (mask != 0) {
+            result |= pattern;
+            mask >>= bits;
+            pattern >>= bits;
+        }
+
+        return result;
+    }
+
+    /// Compresses a color value from 8 bit to a smaller value.
+    pub inline fn compress_channel(src_value: u8, comptime T: type) T {
+        const bits = @bitSizeOf(T);
+        if (bits > 8)
+            @compileError("T must have 8 bits or less");
+        return @truncate(src_value >> (8 - bits));
+    }
+</patch>
+<patch Color.RGB888>
+    pub fn init(r: u8, g: u8, b: u8) RGB888 {
+        return .{ .r = r, .g = g, .b = b };
+    }
+
+    pub fn format(color: RGB888, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
+        try writer.print("#{X:0>2}{X:0>2}{X:0>2}", .{ color.r, color.g, color.b });
     }
 </patch>
 <patch MessageBoxEvent>
@@ -693,7 +836,7 @@
 
     /// Returns the microseconds since system startup.
     pub fn us_since_start(point: Absolute) u64 {
-        return @intFromEnum(point) / std.time.us_per_ms;
+        return @intFromEnum(point) / std.time.ns_per_us;
     }
 
     /// Returns the milliseconds since system startup.
@@ -796,5 +939,11 @@
             std.mem.readInt(u16, uuid.bytes[8..10], .big),
             std.mem.readInt(u48, uuid.bytes[10..16], .big),
         });
+    }
+</patch>
+<patch io.i2c>
+    /// Returns true if the I²C address is reserved.
+    pub fn is_reserved_address(addr: u10) bool {
+        return ((addr & 0x78) == 0) or ((addr & 0x78) == 0x78);
     }
 </patch>

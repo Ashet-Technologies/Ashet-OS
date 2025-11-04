@@ -113,7 +113,7 @@ pub fn main() !void {
         } else |err| {
             switch (err) {
                 error.FileNotFound => {},
-                else => |e| logger.warn("failed to open SYS:/etc7desktop/wallpaper.abm: {}", .{e}),
+                else => |e| logger.warn("failed to open SYS:/etc/desktop/wallpaper.abm: {}", .{e}),
             }
             break :blk null;
         }
@@ -204,7 +204,7 @@ pub fn main() !void {
                         }
 
                         try render_queue.draw_text(
-                            desktop_icon.bounds.corner(.bottom_left).move_by(0, 1),
+                            desktop_icon.bounds.corner(.bottom_left).move_by(0, 2),
                             default_font,
                             Color.black,
                             desktop_icon.app.get_display_name(),
@@ -317,7 +317,7 @@ pub fn main() !void {
                         if (selected_app_icon == app.index) double_click_handler: {
                             // We clicked the same app again, let's see if it was a double click:
 
-                            const pixel_since_last_click = cursor.position.manhattenDistance(last_click_pos);
+                            const pixel_since_last_click = cursor.position.manhattanDistance(last_click_pos);
                             logger.debug("pixel since: {}", .{pixel_since_last_click});
                             if (pixel_since_last_click > 4) {
                                 // too much jitter

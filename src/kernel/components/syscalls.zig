@@ -9,6 +9,8 @@ const ashet_abi_v2_impl = @import("ashet-abi-impl");
 
 pub const SystemCall = ashet_abi_v2_impl.Syscall_ID;
 
+const copy_slice = ashet.utils.copy_slice;
+
 comptime {
     // Force exports into existence:
     _ = exports;
@@ -29,16 +31,6 @@ inline fn print_strace(name: []const u8) void {
     var current = it.next() orelse @returnAddress();
     current = it.next() orelse current;
     strace.info("{s} from {}", .{ name, ashet.fmtCodeLocation(current) });
-}
-
-fn copy_slice(comptime T: type, maybe_buf: ?[]T, source: []const T) usize {
-    if (maybe_buf) |buf| {
-        const len = @min(buf.len, source.len);
-        @memcpy(buf[0..len], source[0..len]);
-        return len;
-    } else {
-        return source.len;
-    }
 }
 
 const callbacks = struct {
@@ -963,6 +955,34 @@ pub const syscalls = struct {
             _ = funcs;
             @panic("not implemented yet!");
         }
+    };
+
+    pub const io = struct {
+        // pub const serial = struct {
+        //     pub fn enumerate()1 void {}
+        //     pub fn query_metadata() void {}
+        //     pub fn open() void {}
+        // };
+
+        pub const i2c = struct {
+            pub fn enumerate(list: ?[]ashet.abi.io.i2c.BusID) usize {
+                return ashet.io.i2c.enumerate(list);
+            }
+
+            pub fn query_metadata(id: ashet.abi.io.i2c.BusID, name_buf: ?[]u8) error{NotFound}!usize {
+                return try ashet.io.i2c.query_metadata(id, name_buf);
+            }
+
+            pub fn open(id: ashet.abi.io.i2c.BusID) error{ SystemResources, NotFound }!ashet.abi.io.i2c.Bus {
+                const proc = get_current_process();
+
+                const bus = try ashet.io.i2c.Bus.open(id);
+
+                const handle = try ashet.resources.add_to_process(proc, &bus.system_resource);
+
+                return handle.unsafe_cast(.io_i2c_bus);
+            }
+        };
     };
 };
 

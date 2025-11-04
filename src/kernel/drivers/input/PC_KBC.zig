@@ -9,12 +9,16 @@ const ashet = @import("../../main.zig");
 const logger = std.log.scoped(.kbc);
 const x86 = ashet.ports.platforms.x86;
 
+const ps2 = @import("ps2.zig");
+
 const PC_KBC = @This();
 const Driver = ashet.drivers.Driver;
 const CpuState = x86.idt.CpuState;
 
+const Generic_PS2_Device = @import("Generic_PS2_Device.zig");
+
 var global_channels = std.EnumSet(Channel){};
-var global_devices = std.EnumArray(Channel, ?DeviceType).initFill(null);
+var global_devices = std.EnumArray(Channel, ?ps2.DeviceType).initFill(null);
 var global_decoders = std.EnumArray(Channel, Decoder).initFill(undefined);
 
 driver: Driver = .{
@@ -27,7 +31,7 @@ driver: Driver = .{
 },
 
 channels: *std.EnumSet(Channel) = &global_channels,
-devices: *std.EnumArray(Channel, ?DeviceType) = &global_devices,
+devices: *std.EnumArray(Channel, ?ps2.DeviceType) = &global_devices,
 decoders: *std.EnumArray(Channel, Decoder) = &global_decoders,
 
 /// This routine roughly follows the steps described in
@@ -212,7 +216,7 @@ pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleIni
                     try chan.writeCommand(DeviceMessage.init_common(.set_defaults));
 
                     try chan.writeCommand(DeviceMessage.init_keyboard(.select_scancode_set));
-                    try chan.writeData(0x01); // select scancode set 1
+                    try chan.writeData(0x02); // select scancode set 2
 
                     try chan.writeCommand(DeviceMessage.init_common(.enable_scanning));
 
@@ -252,48 +256,6 @@ pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleIni
     return kbc;
 }
 
-const DeviceType = enum(u16) {
-    standard_mouse = 0x00, // Standard PS/2 mouse
-    wheel_mouse = 0x03, // Mouse with scroll wheel
-    extended_mouse = 0x04, // 5-button mouse
-    mf2_keyboard_v0 = 0x83AB, // MF2 keybaord
-    mf2_keyboard_v1 = 0xC1AB, // MF2 keybaord
-    short_keyboard = 0x84AB, // IBM ThinkPads, Spacesaver keyboards, many other "short" keyboards
-    keyboard_ncd_97 = 0x85AB, // NCD N-97 keyboard, 122-Key Host Connect(ed) Keyboard
-    keyboard_122 = 0x86AB, // 122-key keyboards
-    jap_keyboard_g = 0x90AB, // Japanese "G" keyboards
-    jap_keyboard_p = 0x91AB, // Japanese "P" keyboards
-    jap_keyboard_a = 0x92AB, // Japanese "A" keyboards
-    keyboard_ncd_sun = 0xA1AC, // NCD Sun layout keyboard
-
-    unknown = 0xFFFF,
-    _,
-
-    pub fn isMouse(dt: DeviceType) bool {
-        return switch (dt) {
-            .standard_mouse => true,
-            .wheel_mouse => true,
-            .extended_mouse => true,
-            else => false,
-        };
-    }
-
-    pub fn isKeyboard(dt: DeviceType) bool {
-        return switch (dt) {
-            .mf2_keyboard_v0 => true,
-            .mf2_keyboard_v1 => true,
-            .short_keyboard => true,
-            .keyboard_ncd_97 => true,
-            .keyboard_122 => true,
-            .jap_keyboard_g => true,
-            .jap_keyboard_p => true,
-            .jap_keyboard_a => true,
-            .keyboard_ncd_sun => true,
-            else => false,
-        };
-    }
-};
-
 fn feedDataTo(chan: Channel) void {
     const device = global_devices.get(chan) orelse {
         logger.err("spurious data feed for unset device on {s} channel", .{@tagName(chan)});
@@ -314,11 +276,7 @@ fn feedDataTo(chan: Channel) void {
     };
     // logger.debug("{s}: 0x{X:0>2}", .{ @tagName(chan), data });
 
-    if (device.isKeyboard()) {
-        global_decoders.getPtr(chan).keyboard.feed(data);
-    } else if (device.isMouse()) {
-        global_decoders.getPtr(chan).mouse.feed(data);
-    }
+    global_decoders.getPtr(chan).feed(data);
 }
 
 fn handleKeyboardInterrupt(state: *CpuState) void {
@@ -409,7 +367,7 @@ const Channel = enum {
         return error.Timeout;
     }
 
-    pub fn detectDeviceType(chan: Channel) !?DeviceType {
+    pub fn detectDeviceType(chan: Channel) !?ps2.DeviceType {
         try chan.writeCommand(DeviceMessage.init_common(.disable_scanning));
         try chan.writeCommand(DeviceMessage.init_common(.identify));
 
@@ -418,7 +376,7 @@ const Channel = enum {
 
         const device_id = @as(u16, @bitCast([2]u8{ lo, hi }));
 
-        return @as(DeviceType, @enumFromInt(device_id));
+        return @enumFromInt(device_id);
     }
 };
 
@@ -681,149 +639,23 @@ const PortTestResult = enum(u8) {
 const ACK = 0xFA;
 const RESEND = 0xFE;
 
-const Decoder = union {
-    mouse: MouseDecoder,
-    keyboard: KeyboardDecoder,
-};
+const Decoder = union(enum) {
+    mouse: ps2.MouseDecoder,
+    keyboard: ps2.KeyboardDecoderSCS2,
 
-const MouseDecoder = struct {
-    state: State = .default,
+    pub fn feed(decoder: *Decoder, input: u8) void {
+        switch (decoder.*) {
+            inline else => |*dec| {
+                dec.push(input) catch |err| switch (err) {
+                    error.Overrun => {
+                        logger.err("{s}: event buffer overrun!", .{@tagName(decoder.*)});
+                    },
+                };
 
-    current: MouseHeader = MouseHeader{
-        .left = false,
-        .right = false,
-        .middle = false,
-        .x_sign = false,
-        .y_sign = false,
-        .x_overflow = false,
-        .y_overflow = false,
-    },
-
-    pub fn feed(decoder: *MouseDecoder, input: u8) void {
-        switch (decoder.state) {
-            .default => {
-                const header = @as(MouseHeader, @bitCast(input));
-                if (header.always_set) {
-                    decoder.state = .fetch_x;
-
-                    if (header.left != decoder.current.left) {
-                        ashet.input.push_raw_event_from_irq(.{
-                            .mouse_button = .{ .button = .left, .down = header.left },
-                        });
-                    }
-                    if (header.right != decoder.current.right) {
-                        ashet.input.push_raw_event_from_irq(.{
-                            .mouse_button = .{ .button = .right, .down = header.right },
-                        });
-                    }
-                    if (header.middle != decoder.current.middle) {
-                        ashet.input.push_raw_event_from_irq(.{
-                            .mouse_button = .{ .button = .middle, .down = header.middle },
-                        });
-                    }
-                    decoder.current = header;
+                while (dec.pull()) |ev| {
+                    ashet.input.push_raw_event_from_irq(ev);
                 }
-            },
-
-            .fetch_x => {
-                const dx = @as(i8, @bitCast(input));
-                decoder.state = .{ .fetch_y = dx };
-            },
-
-            .fetch_y => |dx| {
-                const dy = @as(i8, @bitCast(input));
-
-                if ((dx != 0 or dy != 0) and !decoder.current.x_overflow and !decoder.current.y_overflow) {
-                    ashet.input.push_raw_event_from_irq(.{
-                        // PC mouse is using inverted Y
-                        .mouse_rel_motion = .{ .dx = dx, .dy = -dy },
-                    });
-                }
-
-                decoder.state = .default;
             },
         }
     }
-
-    const State = union(enum) {
-        default,
-        fetch_x,
-        fetch_y: i9,
-    };
-
-    const MouseHeader = packed struct(u8) {
-        left: bool,
-        right: bool,
-        middle: bool,
-        always_set: bool = true,
-        x_sign: bool,
-        y_sign: bool,
-        x_overflow: bool,
-        y_overflow: bool,
-    };
-};
-
-const KeyboardDecoder = struct {
-    state: State = .default,
-
-    pub fn feed(decoder: *KeyboardDecoder, input: u8) void {
-        switch (decoder.state) {
-            .default => {
-                if (input == 0xE0) {
-                    decoder.state = .e0;
-                } else if (input == 0xE1) {
-                    decoder.state = .e1;
-                } else {
-                    const scancode = @as(u7, @truncate(input));
-                    ashet.input.push_raw_event_from_irq(.{
-                        .keyboard = .{
-                            .scancode = scancode,
-                            .down = (scancode == input), // if different, the upper bit is set
-                        },
-                    });
-                }
-            },
-
-            .e0 => {
-                defer decoder.state = .default;
-
-                const scancode = @as(u7, @truncate(input));
-
-                // Check for fake shifts and ignore them
-                if (scancode == 0x2A or scancode == 0x36)
-                    return;
-                logger.debug("e0 code: 0x{X:0>2}", .{scancode});
-                ashet.input.push_raw_event_from_irq(.{
-                    .keyboard = .{
-                        .scancode = @as(u8, 0x80) | scancode,
-                        .down = (scancode == input), // if different, the upper bit is set
-                    },
-                });
-            },
-
-            .e1 => {
-                decoder.state = .{ .e1_stage2 = input };
-            },
-
-            .e1_stage2 => |low| {
-                const input7 = @as(u7, @truncate(input));
-                const scancode = (@as(u16, input7) << 8) | low;
-
-                logger.debug("e1 code: 0x{X:0>4}", .{scancode});
-                ashet.input.push_raw_event_from_irq(.{
-                    .keyboard = .{
-                        .scancode = scancode,
-                        .down = (input7 == input), // if different, the upper bit is set
-                    },
-                });
-            },
-        }
-    }
-
-    const State = union(enum) {
-        default,
-        e0,
-        e1,
-        e1_stage2: u8,
-    };
 };

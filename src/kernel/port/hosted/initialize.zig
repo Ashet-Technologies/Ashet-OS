@@ -137,9 +137,6 @@ pub fn initialize(comptime video_drivers: std.StaticStringMap(VideoDriverCtor)) 
                     res_y,
                 );
 
-                // TODO: This has to be solved differently
-                ashet.input.keyboard.model = &ashet.input.keyboard.models.vnc;
-
                 ashet.drivers.install(&server.screen.driver);
             } else if (std.mem.eql(u8, device_type, "sdl")) {
                 if (sdl_enabled) {

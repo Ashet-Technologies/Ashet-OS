@@ -108,25 +108,29 @@ pub const start = struct {
         @panic("unhandled trap");
     }
 
-    comptime {
-        asm (
-            \\.section .text._start
-            \\.global _start
-            \\_start:
-            \\  la   sp, __kernel_stack_end // defined in linker script 
+    export fn _start() linksection(".text._start") callconv(.naked) noreturn {
+        asm volatile (
+            \\la      sp, __kernel_stack_end // defined in linker script 
             \\
-            \\  la     t0, handleTrap
-            \\  csrw   mtvec, t0
+            \\la      t0, handleTrap
+            \\csrw    mtvec, t0
             \\
-            \\  call ashet_kernelMain
+            \\call    ashet_kernelMain
             \\
-            \\  li      t0, 0x38
-            \\  csrc    mstatus, t0
+            \\li      t0, 0x38
+            \\csrc    mstatus, t0
             \\
-            \\hang:
+            \\1:
             \\  wfi
-            \\  j hang
-            \\
+            \\  j 1b
+        );
+    }
+
+    export fn hang() callconv(.naked) noreturn {
+        asm volatile (
+            \\1:
+            \\  wfi
+            \\  j 1b
         );
     }
 };

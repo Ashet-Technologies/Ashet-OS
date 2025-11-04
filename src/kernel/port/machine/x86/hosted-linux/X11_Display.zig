@@ -6,6 +6,8 @@
 //!
 const std = @import("std");
 const x11 = @import("x11");
+const x11_input = @import("../../../../drivers/input/x11.zig");
+const evdev = @import("../../../../drivers/input/evdev.zig");
 
 const ashet = @import("../../../../main.zig");
 
@@ -371,14 +373,27 @@ fn handle_key_event(server: *X11_Display, event: x11.Event.Key, is_press: bool) 
 
     // Adjust "key code" to "scancode" by adjusting to "min_keycode".
     // On Xpra, Escape maps to "9" and "min_keycode" is 8, which maps to "1" which is the expected value.
+    const min_keycode = server.setup.fixed().min_keycode;
+    if (event.keycode < min_keycode) {
+        logger.warn("received invalid keycode: expected at least {}, but received {}", .{
+            min_keycode,
+            event.keycode,
+        });
+        return;
+    }
+
     const scancode: u16 = event.keycode - server.setup.fixed().min_keycode;
 
-    ashet.input.push_raw_event(.{
-        .keyboard = .{
-            .scancode = scancode,
-            .down = is_press,
-        },
-    });
+    if (evdev.keyFromEvdev(scancode)) |usage| {
+        ashet.input.push_raw_event(.{
+            .keyboard = .{
+                .usage = usage,
+                .down = is_press,
+            },
+        });
+    } else {
+        logger.warn("received unknown evdev keycode: {}", .{scancode});
+    }
 }
 
 fn handle_mouse_button_event(server: *X11_Display, event: x11.Event.KeyOrButtonOrMotion, is_press: bool) !void {

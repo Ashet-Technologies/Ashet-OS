@@ -142,6 +142,15 @@ const async_call_handlers = std.EnumArray(ashet.abi.overlapped.ARC.Type, AsyncHa
     .draw_render = AsyncHandler.wrap(ashet.graphics.render_async),
 
     .video_wait_for_v_blank = AsyncHandler.wrap(ashet.video.wait_for_vblank_async),
+
+    .io_serial_configure = AsyncHandler.todo("io_serial_configure"),
+    .io_serial_control = AsyncHandler.todo("io_serial_control"),
+    .io_serial_query_control = AsyncHandler.todo("io_serial_query_control"),
+    .io_serial_write = AsyncHandler.todo("io_serial_write"),
+    .io_serial_read = AsyncHandler.todo("io_serial_read"),
+    .io_serial_break = AsyncHandler.todo("io_serial_break"),
+
+    .io_i2c_execute = AsyncHandler.wrap(ashet.io.i2c.execute_async),
 });
 
 /// Schedules a new overlapped event from the current thread context.

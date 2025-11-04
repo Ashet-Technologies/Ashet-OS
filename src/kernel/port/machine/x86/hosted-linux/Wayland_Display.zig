@@ -6,6 +6,7 @@ const wu = @import("wayland-unstable");
 const zxdg_decoration_manager_v1 = wu.xdg_decoration_unstable_v1.zxdg_decoration_manager_v1;
 
 const ashet = @import("../../../../main.zig");
+const evdev = @import("../../../../drivers/input/evdev.zig");
 
 const logger = std.log.scoped(.wayland_display);
 
@@ -543,17 +544,9 @@ fn onPointerCallback(seat: *Seat, connection: shimizu.Connection, wl_pointer: wa
         .button => |button| blk: {
             logger.debug("pointer.button({})", .{button});
 
-            const mouse_button: ashet.abi.MouseButton = switch (button.button) {
-                // See https://github.com/torvalds/linux/blob/master/include/uapi/linux/input-event-codes.h#L762
-                0x110 => .left,
-                0x111 => .right,
-                0x112 => .middle,
-                0x115, 0x114 => .nav_next,
-                0x116, 0x113 => .nav_previous,
-                else => {
-                    logger.warn("unsupported mouse button: 0x{X:0>3}", .{button.button});
-                    break :blk;
-                },
+            const mouse_button: ashet.abi.MouseButton = evdev.mouseFromEvdev(button.button) orelse {
+                logger.warn("unsupported mouse button: 0x{X:0>3}", .{button.button});
+                break :blk;
             };
 
             ashet.input.push_raw_event(.{
@@ -616,15 +609,15 @@ fn onKeyboardCallback(seat: *Seat, connection: shimizu.Connection, wl_keyboard: 
         .key => |k| {
             logger.debug("keyboard.key({})", .{k});
 
-            if (std.math.cast(u16, k.key)) |scancode| {
+            if (evdev.keyFromEvdev(k.key)) |scancode| {
                 ashet.input.push_raw_event(.{
                     .keyboard = .{
-                        .scancode = scancode,
+                        .usage = scancode,
                         .down = (k.state == .pressed),
                     },
                 });
             } else {
-                logger.err("received invalid scancode 0x{X:0>8}", .{k.key});
+                logger.err("received unknown scancode 0x{X:0>8}", .{k.key});
             }
         },
         else => {

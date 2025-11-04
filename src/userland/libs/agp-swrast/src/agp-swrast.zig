@@ -781,6 +781,26 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
                 var utf8_view = try std.unicode.Utf8View.init(text);
                 var codepoints = utf8_view.iterator();
 
+                // const perfctr = @import("root").kernel.machine.perfctr;
+
+                // perfctr.setup(
+                //     .xip_main0_access,
+                //     .xip_main0_stall_upstream,
+                //     .xip_main1_access,
+                //     .xip_main1_stall_upstream,
+                // );
+                // perfctr.start();
+                // defer {
+                //     perfctr.stop();
+
+                //     logger.info("Render stats for a {s} font, rendering {} bytes ('{'}')", .{
+                //         @tagName(sw.font.*),
+                //         text.len,
+                //         std.zig.fmtEscapes(text),
+                //     });
+                //     perfctr.dump();
+                // }
+
                 switch (sw.font.*) {
                     .bitmap => |bitmap_font| {
                         const fallback_glyph = bitmap_font.getGlyph('�') orelse bitmap_font.getGlyph('?');
@@ -792,33 +812,116 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
                             const glyph: fonts.BitmapFont.Glyph = bitmap_font.getGlyph(char) orelse fallback_glyph orelse continue;
 
                             if (sw.dx + glyph.advance >= 0) {
-                                var data_ptr = glyph.bits.ptr;
 
-                                var gx: u15 = 0;
-                                while (gx < glyph.width) : (gx += 1) {
-                                    if (sw.dx + gx > sw.limit) {
-                                        break :render_loop;
+                                // var startpos = sw.fb.get_cursor();
+                                // startpos.move(sw.dx + glyph.offset_x, sw.dy + glyph.offset_y);
+
+                                // const stride = (glyph.height + 7) / 8;
+
+                                // var gy: u15 = 0;
+                                // while (gy < glyph.height) : (gy += 1) {
+                                //     const mask = @as(u8, 1) << @truncate(gy);
+
+                                //     var row_ptr = glyph.bits.ptr + (gy / 8);
+
+                                //     var gx: u15 = 0;
+                                //     x_loop: while (gx < glyph.width) : (gx += 1) {
+                                //         if (sw.dx + gx > sw.limit) {
+                                //             break :x_loop;
+                                //         }
+                                //         const bits = row_ptr[0];
+                                //         if ((bits & mask) != 0) {
+                                //             sw.fb.set_pixel(
+                                //                 Point.new(
+                                //                     sw.dx + glyph.offset_x + gx,
+                                //                     sw.dy + glyph.offset_y + gy,
+                                //                 ),
+                                //                 sw.color,
+                                //             );
+                                //         }
+
+                                //         row_ptr += stride;
+                                //     }
+                                // }
+
+                                const glyph_height_usize: usize = @intCast(glyph.height);
+                                const stride = (glyph_height_usize + 7) / 8;
+                                const dx_i32: i32 = @intCast(sw.dx);
+                                const dy_i32: i32 = @intCast(sw.dy);
+                                const offset_x_i32: i32 = @as(i32, glyph.offset_x);
+                                const offset_y_i32: i32 = @as(i32, glyph.offset_y);
+                                const base_x = dx_i32 + offset_x_i32;
+                                const base_y = dy_i32 + offset_y_i32;
+
+                                const clip = sw.fb.clip_rect;
+                                const clip_x0: i32 = @intCast(clip.x);
+                                const clip_y0: i32 = @intCast(clip.y);
+                                const clip_width_i32: i32 = @intCast(clip.width);
+                                const clip_height_i32: i32 = @intCast(clip.height);
+                                const clip_x1 = clip_x0 + clip_width_i32;
+                                const clip_y1 = clip_y0 + clip_height_i32;
+
+                                const limit_x: i32 = @intCast(sw.limit);
+
+                                const Flush = struct {
+                                    fn run(sw_ptr: *ScreenWriter, y: i32, start: *?i32, length: *u16) void {
+                                        if (length.* == 0)
+                                            return;
+
+                                        const run_start = start.*.?;
+                                        var cursor = sw_ptr.fb.get_cursor();
+                                        std.debug.assert(cursor.move(@intCast(run_start), @intCast(y)));
+                                        sw_ptr.fb.emit(cursor, sw_ptr.color, length.*);
+
+                                        start.* = null;
+                                        length.* = 0;
                                     }
+                                };
 
-                                    var bits: u8 = undefined;
+                                var row: u16 = 0;
+                                while (row < glyph.height) : (row += 1) {
+                                    const row_i32: i32 = @intCast(row);
+                                    const y = base_y + row_i32;
+                                    if (y < clip_y0 or y >= clip_y1)
+                                        continue;
 
-                                    var gy: u15 = 0;
-                                    while (gy < glyph.height) : (gy += 1) {
-                                        if ((gy % 8) == 0) {
-                                            bits = data_ptr[0];
-                                            data_ptr += 1;
+                                    const row_usize: usize = @intCast(row);
+                                    const row_byte_index = row_usize / 8;
+                                    const bit_index: u3 = @truncate(row);
+                                    const bit_mask: u8 = @as(u8, 1) << bit_index;
+
+                                    var run_start: ?i32 = null;
+                                    var run_length: u16 = 0;
+
+                                    var col: u16 = 0;
+                                    while (col < glyph.width) : (col += 1) {
+                                        const col_i32: i32 = @intCast(col);
+                                        const baseline_x = dx_i32 + col_i32;
+                                        if (baseline_x >= limit_x) {
+                                            Flush.run(sw, y, &run_start, &run_length);
+                                            break :render_loop;
                                         }
 
-                                        if ((bits & (@as(u8, 1) << @as(u3, @truncate(gy)))) != 0) {
-                                            sw.fb.set_pixel(
-                                                Point.new(
-                                                    sw.dx + glyph.offset_x + gx,
-                                                    sw.dy + glyph.offset_y + gy,
-                                                ),
-                                                sw.color,
-                                            );
+                                        const x = base_x + col_i32;
+                                        const col_usize: usize = @intCast(col);
+                                        const byte_index = col_usize * stride + row_byte_index;
+                                        const column_byte = glyph.bits[byte_index];
+                                        const bit_set = (column_byte & bit_mask) != 0;
+                                        const inside_clip = (x >= clip_x0 and x < clip_x1);
+
+                                        if (bit_set and inside_clip) {
+                                            if (run_length == 0) {
+                                                run_start = x;
+                                                run_length = 1;
+                                            } else {
+                                                run_length += 1;
+                                            }
+                                        } else {
+                                            Flush.run(sw, y, &run_start, &run_length);
                                         }
                                     }
+
+                                    Flush.run(sw, y, &run_start, &run_length);
                                 }
                             } else {}
 

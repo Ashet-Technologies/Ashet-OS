@@ -32,6 +32,14 @@ pub const MachineConfig = struct {
 
     /// If set, the machine has a way to stop execution beyond running in loops until someone pulls the plug.
     halt: ?fn () noreturn,
+
+    /// Returns a machine-specific log prefix that is rendered after the time but before everything else
+    get_log_prefix: ?fn () []const u8 = null,
+
+    /// If `true`, the machine uses another core for drivers and non-userland tasks.
+    /// This means that some mechanisms in the OS require locks that are usually not required
+    /// when running on a single core.
+    uses_hardware_multithreading: bool = false,
 };
 
 pub const MemoryProtectionConfig = struct {
@@ -40,7 +48,7 @@ pub const MemoryProtectionConfig = struct {
     update: fn (ashet.memory.Range, ashet.memory.protection.Protection) void,
     get_protection: fn (address: usize) ashet.memory.protection.Protection,
     get_info: ?fn (address: usize) ashet.memory.protection.AddressInfo,
-    ensure_accessible_slice: fn(slice:[]const u8) void,
+    ensure_accessible_slice: fn (slice: []const u8) void,
 };
 
 pub const platforms = struct {
