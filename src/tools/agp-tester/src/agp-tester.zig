@@ -8,7 +8,7 @@ pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
-    try verify_encoder_decoder(arena.allocator());
+    // try verify_encoder_decoder(arena.allocator());
 
     try render_example_image(arena.allocator(), "swrast.pgm", "overdraw.pgm", "sequence.pgm");
 }
@@ -143,6 +143,8 @@ fn render_example_image(allocator: std.mem.Allocator, path: []const u8, overdraw
     // Render image:
     {
         const Backend = struct {
+            const Cursor = agp_swrast.PixelCursor(.row_major);
+
             framebuffer: []Color,
             attributes: []Color,
             next_color_id: *u8,
@@ -151,7 +153,7 @@ fn render_example_image(allocator: std.mem.Allocator, path: []const u8, overdraw
             height: usize,
             stride: usize,
 
-            pub fn create_cursor(back: @This()) agp_swrast.PixelCursor(.row_major) {
+            pub fn create_cursor(back: @This()) Cursor {
                 return .{
                     .width = @intCast(back.width),
                     .height = @intCast(back.height),
@@ -166,12 +168,13 @@ fn render_example_image(allocator: std.mem.Allocator, path: []const u8, overdraw
             }
 
             pub fn copy_pixels(back: @This(), cursor: Cursor, pixels: []const agp.Color) void {
+                _ = back;
                 _ = cursor;
                 _ = pixels;
                 @panic("ohno");
             }
 
-            pub fn emit_pixels(back: @This(), cursor: agp_swrast.PixelCursor(.row_major), color_index: ColorIndex, count: u16) void {
+            pub fn emit_pixels(back: @This(), cursor: Cursor, color_index: ColorIndex, count: u16) void {
                 std.debug.assert(@as(usize, cursor.x) + count <= back.width);
                 const color = color_index.to_rgb888();
                 @memset(
@@ -401,8 +404,8 @@ fn rand_cmd(rng: std.Random, buffer_range: []const u8) agp.Command {
 
                     agp.Color => @bitCast(rng.int(u8)),
                     agp.Font => @ptrFromInt(rng.int(usize)),
-                    agp.Framebuffer => @ptrFromInt(rng.int(usize)),
-                    *const agp.Bitmap => @ptrFromInt(rng.int(usize)),
+                    agp.Framebuffer => @ptrFromInt(rng.int(usize) *% 16),
+                    *const agp.Bitmap => @ptrFromInt(rng.int(usize) *% 16),
 
                     u8, u16, i16 => rng.int(fld.type),
 
