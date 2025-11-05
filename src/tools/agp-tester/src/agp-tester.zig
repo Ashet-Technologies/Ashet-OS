@@ -2,6 +2,8 @@ const std = @import("std");
 const agp = @import("agp");
 const agp_swrast = @import("agp-swrast");
 
+const gif = @import("gif.zig");
+
 const ColorIndex = agp.Color;
 
 const mono_6_font: agp.Font = @constCast(@ptrCast(&@as(u8, 0)));
@@ -13,10 +15,22 @@ pub fn main() !void {
 
     // try verify_encoder_decoder(arena.allocator());
 
-    try render_example_image(arena.allocator(), "swrast.pgm", "overdraw.pgm", "sequence.pgm");
+    try render_example_image(
+        arena.allocator(),
+        "swrast.pgm",
+        "overdraw.pgm",
+        "sequence.pgm",
+        "commands.gif",
+    );
 }
 
-fn render_example_image(allocator: std.mem.Allocator, path: []const u8, overdraw_path: ?[]const u8, sequence_path: ?[]const u8) !void {
+fn render_example_image(
+    allocator: std.mem.Allocator,
+    path: []const u8,
+    overdraw_path: ?[]const u8,
+    sequence_path: ?[]const u8,
+    commands_path: []const u8,
+) !void {
     const width = 480;
     const height = 320;
 
@@ -146,6 +160,14 @@ fn render_example_image(allocator: std.mem.Allocator, path: []const u8, overdraw
     var attrs_buffer: [width * height]Color = undefined;
     @memset(&attrs_buffer, Color{ .r = 0, .g = 0, .b = 0 });
 
+    var cmd_preview: [width * height]agp.Color = undefined;
+    @memset(&cmd_preview, .from_gray(32));
+
+    var gif_file = try std.fs.cwd().createFile(commands_path, .{});
+    defer gif_file.close();
+
+    var gif_img: gif.GIF_Encoder = try .start(gif_file.writer().any(), width, height, 3);
+
     // Render image:
     {
         const Backend = struct {
@@ -153,6 +175,8 @@ fn render_example_image(allocator: std.mem.Allocator, path: []const u8, overdraw
 
             framebuffer: []Color,
             attributes: []Color,
+            command_preview: []agp.Color,
+            gif_img: *gif.GIF_Encoder,
 
             width: usize,
             height: usize,
@@ -195,7 +219,9 @@ fn render_example_image(allocator: std.mem.Allocator, path: []const u8, overdraw
             }
 
             pub fn emit_pixels(back: *@This(), cursor: Cursor, color_index: ColorIndex, count: u16) void {
+                std.debug.assert(count > 0);
                 std.debug.assert(@as(usize, cursor.x) + count <= back.width);
+
                 const color = color_index.to_rgb888();
                 @memset(
                     back.framebuffer[cursor.offset..][0..count],
@@ -205,6 +231,20 @@ fn render_example_image(allocator: std.mem.Allocator, path: []const u8, overdraw
                     cnt.r +|= 1;
                     cnt.g = back.next_color_id;
                 }
+
+                // const back_color: agp.Color = .from_rgb(
+                //     255 - color.r,
+                //     255 - color.g,
+                //     255 - color.b,
+                // );
+
+                // @memset(back.command_preview, back_color);
+                @memset(
+                    back.command_preview[cursor.offset..][0..count],
+                    color_index,
+                );
+                back.gif_img.add_frame(back.command_preview) catch @panic("i/o error");
+
                 std.debug.print("emit(Point({}, {}), color={}, count={}, index={})\n", .{
                     cursor.x,            cursor.y,
                     color_index.to_u8(), count,
@@ -240,6 +280,8 @@ fn render_example_image(allocator: std.mem.Allocator, path: []const u8, overdraw
         var backend: Backend = .{
             .framebuffer = &pixel_buffer,
             .attributes = &attrs_buffer,
+            .command_preview = &cmd_preview,
+            .gif_img = &gif_img,
             .width = width,
             .height = height,
             .stride = width,
@@ -258,6 +300,8 @@ fn render_example_image(allocator: std.mem.Allocator, path: []const u8, overdraw
             try rasterizer.execute(cmd);
         }
     }
+
+    try gif_img.end();
 
     // Writeout image:
     {
