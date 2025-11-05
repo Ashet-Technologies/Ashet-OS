@@ -14,13 +14,17 @@ pub fn build(b: *std.Build) void {
         .shared = false,
         .with_implot = true,
         .backend = .glfw_opengl3,
+        .target = target,
+        .optimize = optimize,
     });
 
     const zglfw_dep = b.dependency("zglfw", .{
         .target = target,
     });
 
-    const zopengl_dep = b.dependency("zopengl", .{});
+    const zopengl_dep = b.dependency("zopengl", .{
+        .target = target,
+    });
 
     const editor_mod = b.addModule("gui-editor", .{
         .root_source_file = b.path("src/gui-editor.zig"),
