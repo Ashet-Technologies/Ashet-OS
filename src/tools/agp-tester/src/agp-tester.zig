@@ -4,6 +4,9 @@ const agp_swrast = @import("agp-swrast");
 
 const ColorIndex = agp.Color;
 
+const mono_6_font: agp.Font = @constCast(@ptrCast(&@as(u8, 0)));
+const sans_var_font: agp.Font = @constCast(@ptrCast(&@as(u8, 0)));
+
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -124,6 +127,9 @@ fn render_example_image(allocator: std.mem.Allocator, path: []const u8, overdraw
                 190,
                 blue,
             );
+
+            try enc.draw_text(100, 230, mono_6_font, .purple, "Hello, World!");
+            try enc.draw_text(100, 250, sans_var_font, .cyan, "Hello, World!");
         }
         break :blk fbs.getWritten();
     };
@@ -147,11 +153,15 @@ fn render_example_image(allocator: std.mem.Allocator, path: []const u8, overdraw
 
             framebuffer: []Color,
             attributes: []Color,
-            next_color_id: *u8,
 
             width: usize,
             height: usize,
             stride: usize,
+
+            cache_line_size: usize,
+
+            next_color_id: u8 = 0,
+            last_offset: usize = std.math.maxInt(usize),
 
             pub fn create_cursor(back: @This()) Cursor {
                 return .{
@@ -163,7 +173,17 @@ fn render_example_image(allocator: std.mem.Allocator, path: []const u8, overdraw
 
             pub fn resolve_font(back: @This(), font: agp.Font) error{InvalidFont}!*const agp_swrast.fonts.FontInstance {
                 _ = back;
-                _ = font;
+
+                @setEvalBranchQuota(10_000);
+                const mono_6 = comptime agp_swrast.fonts.FontInstance.load(@embedFile("mono-6.font"), .{}) catch unreachable;
+                const sans_var = comptime agp_swrast.fonts.FontInstance.load(@embedFile("sans.font"), .{ .size = 20 }) catch unreachable;
+
+                comptime std.debug.assert(mono_6 == .bitmap);
+                comptime std.debug.assert(sans_var == .vector);
+
+                if (font == mono_6_font) return &mono_6;
+                if (font == sans_var_font) return &sans_var;
+
                 return error.InvalidFont;
             }
 
@@ -174,7 +194,7 @@ fn render_example_image(allocator: std.mem.Allocator, path: []const u8, overdraw
                 @panic("ohno");
             }
 
-            pub fn emit_pixels(back: @This(), cursor: Cursor, color_index: ColorIndex, count: u16) void {
+            pub fn emit_pixels(back: *@This(), cursor: Cursor, color_index: ColorIndex, count: u16) void {
                 std.debug.assert(@as(usize, cursor.x) + count <= back.width);
                 const color = color_index.to_rgb888();
                 @memset(
@@ -183,32 +203,51 @@ fn render_example_image(allocator: std.mem.Allocator, path: []const u8, overdraw
                 );
                 for (back.attributes[cursor.offset..][0..count]) |*cnt| {
                     cnt.r +|= 1;
-                    cnt.g = back.next_color_id.*;
+                    cnt.g = back.next_color_id;
                 }
                 std.debug.print("emit(Point({}, {}), color={}, count={}, index={})\n", .{
-                    cursor.x,             cursor.y,
-                    color_index.to_u8(),  count,
-                    back.next_color_id.*,
+                    cursor.x,            cursor.y,
+                    color_index.to_u8(), count,
+                    back.next_color_id,
                 });
-                back.next_color_id.* +%= 1;
+                back.next_color_id +%= 1;
+
+                const new_offset = cursor.offset + count;
+                if (back.last_offset != std.math.maxInt(usize)) {
+                    const delta: isize = @bitCast(new_offset -% back.last_offset);
+
+                    const current_cache_line = @divTrunc(new_offset, back.cache_line_size);
+                    const previous_cache_line = @divTrunc(back.last_offset, back.cache_line_size);
+
+                    if (delta != 0) {
+                        std.debug.print("  discontiuation detected, jump by {} bytes from {} to {}\n", .{ delta, back.last_offset, new_offset });
+                    }
+                    if (current_cache_line != previous_cache_line) {
+                        std.debug.print("  cache miss detected, switches from CL{} to CL{}\n", .{ previous_cache_line, current_cache_line });
+                    }
+                }
+
+                back.last_offset = new_offset;
             }
         };
 
         const Rasterizer = agp_swrast.Rasterizer(.{
-            .backend_type = Backend,
+            .backend_type = *Backend,
             .framebuffer_type = null,
             .pixel_layout = .row_major,
         });
 
-        var next_color_id: u8 = 0;
-        var rasterizer = Rasterizer.init(.{
+        var backend: Backend = .{
             .framebuffer = &pixel_buffer,
             .attributes = &attrs_buffer,
-            .next_color_id = &next_color_id,
             .width = width,
             .height = height,
             .stride = width,
-        });
+
+            // configurable:
+            .cache_line_size = 8, // RP2350 XIP Cache
+        };
+        var rasterizer = Rasterizer.init(&backend);
 
         var fbs = std.io.fixedBufferStream(cmd_stream);
 
