@@ -7,7 +7,7 @@ const gif = @import("gif.zig");
 const ColorIndex = agp.Color;
 
 const mono_6_font: agp.Font = @constCast(@ptrCast(&@as(u8, 0)));
-const sans_var_font: agp.Font = @constCast(@ptrCast(&@as(u8, 0)));
+const sans_var_font: agp.Font = @constCast(@ptrCast(&@as(u8, 1)));
 
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -187,6 +187,11 @@ fn render_example_image(
             next_color_id: u8 = 0,
             last_offset: usize = std.math.maxInt(usize),
 
+            max_allowed_fwd_skip: u16 = 8, // report discontiuations when more than 8 pixels are skipped
+
+            cache_misses: usize = 0,
+            discontinuations: usize = 0,
+
             pub fn create_cursor(back: @This()) Cursor {
                 return .{
                     .width = @intCast(back.width),
@@ -200,7 +205,7 @@ fn render_example_image(
 
                 @setEvalBranchQuota(10_000);
                 const mono_6 = comptime agp_swrast.fonts.FontInstance.load(@embedFile("mono-6.font"), .{}) catch unreachable;
-                const sans_var = comptime agp_swrast.fonts.FontInstance.load(@embedFile("sans.font"), .{ .size = 20 }) catch unreachable;
+                const sans_var = comptime agp_swrast.fonts.FontInstance.load(@embedFile("sans.font"), .{ .size = 12 }) catch unreachable;
 
                 comptime std.debug.assert(mono_6 == .bitmap);
                 comptime std.debug.assert(sans_var == .vector);
@@ -259,11 +264,13 @@ fn render_example_image(
                     const current_cache_line = @divTrunc(new_offset, back.cache_line_size);
                     const previous_cache_line = @divTrunc(back.last_offset, back.cache_line_size);
 
-                    if (delta != 0) {
+                    if (delta < 0 or delta > back.max_allowed_fwd_skip) {
                         std.debug.print("  discontiuation detected, jump by {} bytes from {} to {}\n", .{ delta, back.last_offset, new_offset });
+                        back.cache_misses += 1;
                     }
-                    if (current_cache_line != previous_cache_line) {
+                    if (current_cache_line != previous_cache_line and current_cache_line != (previous_cache_line + 1)) {
                         std.debug.print("  cache miss detected, switches from CL{} to CL{}\n", .{ previous_cache_line, current_cache_line });
+                        back.discontinuations += 1;
                     }
                 }
 
@@ -299,6 +306,9 @@ fn render_example_image(
         while (try decoder.next()) |cmd| {
             try rasterizer.execute(cmd);
         }
+
+        std.debug.print("cache misses:     {}\n", .{backend.cache_misses});
+        std.debug.print("discontinuations: {}\n", .{backend.discontinuations});
     }
 
     try gif_img.end();
