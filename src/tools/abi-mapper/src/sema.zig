@@ -158,7 +158,7 @@ const Analyzer = struct {
 
         const inserted = if (current_scope.children.get(name)) |existing_child| blk: {
             if (scope_type != existing_child.type) {
-                std.log.err("scope mismatch for scope {}: types {s} and {s} don't match", .{
+                std.log.err("scope mismatch for scope {f}: types {s} and {s} don't match", .{
                     std.zig.fmtId(name),
                     @tagName(scope_type),
                     @tagName(existing_child.type),
