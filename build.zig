@@ -46,6 +46,14 @@ const installed_tools: []const ToolDep = &.{
         .dependency = "sermon",
         .artifacts = &.{"sermon"},
     },
+    .{
+        .dependency = "gui_designer",
+        .artifacts = &.{ "gui-editor", "gui-compiler" },
+    },
+    .{
+        .dependency = "agp_tester",
+        .artifacts = &.{"agp-tester"},
+    },
 };
 
 pub fn build(b: *std.Build) void {

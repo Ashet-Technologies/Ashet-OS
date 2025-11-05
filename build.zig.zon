@@ -34,6 +34,12 @@
         .sermon = .{
             .path = "src/tools/sermon",
         },
+        .gui_designer = .{
+            .path = "src/tools/gui-designer",
+        },
+        .agp_tester = .{
+            .path = "src/tools/agp-tester",
+        },
         // .wikitool = .{
         //     .path = "src/tools/wikitool",
         // },
