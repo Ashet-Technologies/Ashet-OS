@@ -812,32 +812,77 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
                             const glyph: fonts.BitmapFont.Glyph = bitmap_font.getGlyph(char) orelse fallback_glyph orelse continue;
 
                             if (sw.dx + glyph.advance >= 0) {
-                                // var startpos = sw.fb.get_cursor();
-                                // std.debug.assert(startpos.move(@intCast(sw.dx + glyph.offset_x), @intCast(sw.dy + glyph.offset_y)));
-
                                 const row_stride = (glyph.height + 7) / 8;
+
+                                var row_cursor = sw.fb.get_cursor();
+                                std.debug.assert(row_cursor.move(@intCast(sw.dx + glyph.offset_x), @intCast(sw.dy + glyph.offset_y)));
 
                                 var gy: u15 = 0;
                                 while (gy < glyph.height) : (gy += 1) {
-                                    const row_ptr = glyph.bits.ptr + row_stride * gy;
+                                    var row_ptr = glyph.bits.ptr + row_stride * gy;
 
-                                    var gx: u15 = 0;
-                                    while (gx < glyph.width) : (gx += 1) {
-                                        const mask = @as(u8, 1) << @truncate(gx);
-                                        if (sw.dx + gx > sw.limit) {
-                                            break;
+                                    const SpanEmitter = struct {
+                                        sw: *ScreenWriter,
+                                        emit_pos: Cursor,
+                                        scan_pos: Cursor,
+                                        count: u16 = 0,
+
+                                        fn put(span: *@This()) bool {
+                                            const delta = span.scan_pos.shift_right(1);
+                                            span.count += delta;
+                                            return (delta != 0);
                                         }
-                                        const bits = row_ptr[gx / 8];
-                                        if ((bits & mask) != 0) {
-                                            sw.fb.set_pixel(
-                                                Point.new(
-                                                    sw.dx + glyph.offset_x + gx,
-                                                    sw.dy + glyph.offset_y + gy,
-                                                ),
-                                                sw.color,
-                                            );
+
+                                        fn skip(span: *@This()) bool {
+                                            span.flush();
+                                            const cnt = span.scan_pos.shift_right(1);
+                                            std.debug.assert(cnt == span.emit_pos.shift_right(1));
+                                            return (cnt != 0);
+                                        }
+
+                                        fn flush(span: *@This()) void {
+                                            if (span.count > 0) {
+                                                span.sw.fb.emit(span.emit_pos, span.sw.color, span.count);
+                                                std.debug.assert(span.emit_pos.shift_right(span.count) == span.count);
+                                                span.count = 0;
+                                            }
+                                        }
+                                    };
+
+                                    {
+                                        var emitter: SpanEmitter = .{
+                                            .sw = sw,
+                                            .emit_pos = row_cursor,
+                                            .scan_pos = row_cursor,
+                                        };
+                                        defer emitter.flush();
+
+                                        var gx: u15 = 0;
+                                        var mask: u8 = 1;
+                                        var bits: u8 = row_ptr[0];
+                                        while (gx < glyph.width) : (gx += 1) {
+                                            if (sw.dx + gx > sw.limit) {
+                                                break;
+                                            }
+
+                                            const ok = if ((bits & mask) != 0)
+                                                emitter.put()
+                                            else
+                                                emitter.skip();
+                                            if (!ok)
+                                                break;
+
+                                            mask <<= 1; // TODO: we can also use bigger types for mask/bits here to reduce the number of loads necessary.
+                                            if (mask == 0) {
+                                                row_ptr += 1;
+                                                mask = 1;
+                                                bits = row_ptr[0];
+                                            }
                                         }
                                     }
+
+                                    if (row_cursor.shift_down(1) != 1)
+                                        break;
                                 }
                             }
 
