@@ -186,8 +186,8 @@ pub const BitmapFont = struct {
 
         const width = std.mem.readInt(u8, encoded_glyph[0..1], .little);
         const height = std.mem.readInt(u8, encoded_glyph[1..2], .little);
-        const stride = (height + 7) / 8;
-        const size = width * stride;
+        const row_stride = (width + 7) / 8;
+        const size = row_stride * height;
 
         return Glyph{
             .advance = meta.advance,

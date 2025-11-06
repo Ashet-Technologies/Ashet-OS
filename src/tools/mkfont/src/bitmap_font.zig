@@ -113,8 +113,8 @@ pub fn generate(
         const shrink_dx = @min(cell_x1 - cell_x0, min_x - cell_x0);
         const shrink_dy = @min(cell_y1 - cell_y0, min_y - cell_y0);
 
-        const column_stride = vpixels_to_bytes(height);
-        const byte_size = width * column_stride;
+        const row_stride = bits_to_bytes(width);
+        const byte_size = row_stride * height;
 
         const bits = try glyph_bitmap_arena.allocator().alloc(u8, byte_size);
         @memset(bits, 0);
@@ -123,8 +123,8 @@ pub fn generate(
                 for (min_x..max_x) |x| {
                     const gx = x - min_x;
                     const gy = y - min_y;
-                    const index = gx * column_stride + (gy / 8);
-                    const bit: u3 = @intCast(gy % 8);
+                    const index = gy * row_stride + (gx / 8);
+                    const bit: u3 = @intCast(gx % 8);
                     const mask: u8 = @as(u8, 1) << bit;
 
                     const pix = get_pixel(image, x, y);
@@ -169,8 +169,8 @@ pub fn generate(
                 const writer = fbs.writer();
 
                 for (0..width) |x| {
-                    const byte_index = x * column_stride + (y / 8);
-                    const bit: u3 = @intCast(y % 8);
+                    const byte_index = y * row_stride + (x / 8);
+                    const bit: u3 = @intCast(x % 8);
                     const mask: u8 = @as(u8, 1) << bit;
 
                     if ((bits[byte_index] & mask) != 0) {
@@ -225,7 +225,7 @@ pub fn generate(
         var base_offset: u32 = 0;
         for (font.glyphs.keys()) |codepoint| {
             const glyph_bitmap = glyph_bitmaps.get(codepoint).?;
-            std.debug.assert(glyph_bitmap.bits.len == glyph_bitmap.width * vpixels_to_bytes(glyph_bitmap.height));
+            std.debug.assert(glyph_bitmap.bits.len == glyph_bitmap.height * bits_to_bytes(glyph_bitmap.width));
 
             const encoded_glyph_size: u32 = @intCast(4 + glyph_bitmap.bits.len);
 
@@ -259,8 +259,8 @@ pub fn generate(
     }
 }
 
-fn vpixels_to_bytes(vpix: usize) usize {
-    return (vpix + 7) / 8;
+fn bits_to_bytes(bits: usize) usize {
+    return (bits + 7) / 8;
 }
 
 fn get_pixel(img: *const zigimg.Image, x: usize, y: usize) zigimg.color.Colorf32 {
