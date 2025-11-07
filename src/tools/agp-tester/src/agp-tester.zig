@@ -17,7 +17,7 @@ pub fn main() !void {
 
     try render_example_image(
         arena.allocator(),
-        "swrast.pgm",
+        "swrast.gif",
         "overdraw.pgm",
         "sequence.pgm",
         "commands.gif",
@@ -156,7 +156,7 @@ fn render_example_image(
         std.debug.assert(@offsetOf(Color, "b") == 2);
     }
 
-    var pixel_buffer: [width * height]Color = undefined;
+    var pixel_buffer: [width * height]agp.Color = undefined;
     var attrs_buffer: [width * height]Color = undefined;
     @memset(&attrs_buffer, Color{ .r = 0, .g = 0, .b = 0 });
 
@@ -173,7 +173,7 @@ fn render_example_image(
         const Backend = struct {
             const Cursor = agp_swrast.PixelCursor(.row_major);
 
-            framebuffer: []Color,
+            framebuffer: []agp.Color,
             attributes: []Color,
             command_preview: []agp.Color,
             gif_img: *gif.GIF_Encoder,
@@ -227,10 +227,9 @@ fn render_example_image(
                 std.debug.assert(count > 0);
                 std.debug.assert(@as(usize, cursor.x) + count <= back.width);
 
-                const color = color_index.to_rgb888();
                 @memset(
                     back.framebuffer[cursor.offset..][0..count],
-                    color,
+                    color_index,
                 );
                 for (back.attributes[cursor.offset..][0..count]) |*cnt| {
                     cnt.r +|= 1;
@@ -314,13 +313,8 @@ fn render_example_image(
     try gif_img.end();
 
     // Writeout image:
-    {
-        var file = try std.fs.cwd().createFile(path, .{});
-        defer file.close();
+    try gif.write_to_file_path(std.fs.cwd(), path, width, height, &pixel_buffer);
 
-        try file.writer().print("P6 {} {} 255\n", .{ width, height });
-        try file.writeAll(std.mem.asBytes(&pixel_buffer));
-    }
     // Writeout overdraw
     if (overdraw_path) |_overdraw_path| {
         const overdraw_gradient = [_]Color{

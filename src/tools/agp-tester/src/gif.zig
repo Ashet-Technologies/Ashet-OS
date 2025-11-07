@@ -68,6 +68,24 @@ pub fn main() !void {
     std.debug.print("Wrote {s} ({d}x{d}, {d} frames)\n", .{ out_path, width, height, frame_count });
 }
 
+pub fn write_to_file_path(dir: std.fs.Dir, path: []const u8, width: u16, height: u16, pixels: []const agp.Color) !void {
+    var file = try dir.createFile(path, .{ .truncate = true });
+    defer file.close();
+
+    try write_to_file(file, width, height, pixels);
+}
+
+pub fn write_to_file(file: std.fs.File, width: u16, height: u16, pixels: []const agp.Color) !void {
+    var encoder: GIF_Encoder = try .start(
+        file.writer().any(),
+        width,
+        height,
+        0,
+    );
+    try encoder.add_frame(pixels);
+    try encoder.end();
+}
+
 // ---------------- GIF Writer (progressive, no seeking) ----------------
 
 pub const GIF_Encoder = struct {
