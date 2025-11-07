@@ -289,7 +289,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
 
             // horizontal
             const start_unclipped = @min(x0, x1); // inclusive
-            const end_unclipped = @max(x0, x1); // inclusive
+            const end_unclipped = @max(x0, x1) +| 1; // exclusive
 
             const start = rast.clamp_coord(start_unclipped, .x_axis);
             const end = rast.clamp_coord(end_unclipped, .x_axis);
@@ -324,7 +324,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
 
             // horizontal
             const start_unclipped = @min(y0, y1); // inclusive
-            const end_unclipped = @max(y0, y1); // inclusive
+            const end_unclipped = @max(y0, y1) +| 1; // exclusive
 
             const start = rast.clamp_coord(start_unclipped, .y_axis);
             const end = rast.clamp_coord(end_unclipped, .y_axis);
@@ -374,7 +374,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
                     }
 
                     // bottom line:
-                    if (rect.height > 1 and bottom == rect.bottom() - 1) {
+                    if (rect.height > 1 and bottom == rect.bottom()) {
                         std.debug.assert(cursor.move(paint_rect.x, bottom));
                         rast.emit(cursor, color, paint_rect.width);
                     }
@@ -390,7 +390,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
                     }
 
                     // right line:
-                    if (rect.height > 2 and right == rect.right() - 1) {
+                    if (rect.height > 2 and right == rect.right()) {
                         std.debug.assert(cursor.move(right, paint_rect.y + 1));
                         rast.emit(cursor, color, 1);
                         for (1..rect.height - 2) |_| {

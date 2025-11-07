@@ -263,9 +263,9 @@
     /// Returns the overlapping region of `a` and `b`.
     pub fn overlap(a: Rectangle, b: Rectangle) Rectangle {
         const _left = @max(a.left(), b.left());
-        const _right = @min(a.right(), b.right());
+        const _right = @min(a.right(), b.right()) +| 1;
         const _top = @max(a.top(), b.top());
-        const _bottom = @min(a.bottom(), b.bottom());
+        const _bottom = @min(a.bottom(), b.bottom()) +| 1;
 
         return .{
             .x = _left,
@@ -283,13 +283,13 @@
         return rect.y;
     }
     pub fn bottom(rect: Rectangle) i16 {
-        return rect.y + @as(i16, @intCast(rect.height));
+        return rect.y + @as(i16, @intCast(rect.height)) -| 1;
     }
     pub fn left(rect: Rectangle) i16 {
         return rect.x;
     }
     pub fn right(rect: Rectangle) i16 {
-        return rect.x +| @as(i16, @intCast(rect.width));
+        return rect.x +| @as(i16, @intCast(rect.width)) -| 1;
     }
 
     pub fn shrink(rect: Rectangle, amount: u15) Rectangle {

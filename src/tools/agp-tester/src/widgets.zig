@@ -30,10 +30,30 @@ const default_theme: Theme = .{
 
     .text_color = .white,
 
+    .title_font = mono_6_font,
+
     .window_active = .{
-        //
+        .background = .from_hsv(theme_hue, 1, 1),
+        .border_normal = .from_hsv(.yellow, 2, 8),
+        .border_bright = .from_hsv(theme_hue, theme_sat, theme_val -| 2),
+        .border_dark = .black,
+
+        .title_bar = .from_hsv(theme_hue, theme_sat, theme_val),
+        .title_color = .from_hsv(.yellow, 1, 8),
+
+        .close_button_background = .red,
     },
-    .window_inactive = undefined,
+    .window_inactive = .{
+        .background = .from_hsv(theme_hue, 1, 1),
+        .border_normal = .from_hsv(.yellow, 2, 5),
+        .border_bright = .from_hsv(theme_hue, theme_sat, theme_val -| 2),
+        .border_dark = .black,
+
+        .title_bar = .from_hsv(theme_hue, theme_sat -| 1, theme_val -| 1),
+        .title_color = .from_gray(0x30),
+
+        .close_button_background = .from_hsv(.red, 2, 5),
+    },
 };
 
 const icon_7x7: agp.Bitmap = .{
@@ -105,15 +125,34 @@ pub fn render_demo(
         try draw.window(.{
             .bounds = .{
                 .x = 50,
-                .y = 50,
-                .width = 400,
-                .height = 250,
+                .y = 20,
+                .width = 200,
+                .height = 150,
+            },
+            .title = "Inactive Window",
+            .icon = &icon_7x7,
+            .active = false,
+            .buttons = .{
+                .minimize = .hidden,
+                .maximize = .hidden,
+                .close = .visible,
+                .resize = .hidden,
+            },
+        });
+
+        try draw.window(.{
+            .bounds = .{
+                .x = 100,
+                .y = 80,
+                .width = 200,
+                .height = 150,
             },
             .title = "GUI Demo",
-            .icon = icon_7x7,
+            .icon = &icon_7x7,
+            .active = true,
             .buttons = .{
                 .minimize = .visible,
-                .maximiize = .visible,
+                .maximize = .visible,
                 .close = .visible,
                 .resize = .visible,
             },
@@ -121,8 +160,8 @@ pub fn render_demo(
 
         try draw.button(.{
             .bounds = .{
-                .x = 100,
-                .y = 100,
+                .x = 155,
+                .y = 198,
                 .width = 50,
                 .height = 15,
             },
@@ -131,8 +170,8 @@ pub fn render_demo(
 
         try draw.button(.{
             .bounds = .{
-                .x = 160,
-                .y = 100,
+                .x = 210,
+                .y = 198,
                 .width = 22,
                 .height = 15,
             },
@@ -141,8 +180,8 @@ pub fn render_demo(
 
         try draw.tool_button(.{
             .bounds = .{
-                .x = 100,
-                .y = 80,
+                .x = 103,
+                .y = 95,
                 .width = 12,
                 .height = 12,
             },
@@ -151,9 +190,9 @@ pub fn render_demo(
 
         try draw.hscrollbar(.{
             .bounds = .{
-                .x = 100,
-                .y = 120,
-                .width = 200,
+                .x = 102,
+                .y = 217,
+                .width = 186,
                 .height = 11,
             },
             .slider_pos = 0,
@@ -162,10 +201,10 @@ pub fn render_demo(
 
         try draw.vscrollbar(.{
             .bounds = .{
-                .x = 300,
-                .y = 50,
+                .x = 287,
+                .y = 94,
                 .width = 11,
-                .height = 70,
+                .height = 124,
             },
             .slider_pos = 0,
             .slider_height = 33,
@@ -200,18 +239,18 @@ const Theme = struct {
     window_active: WindowTheme,
     window_inactive: WindowTheme,
 
+    title_font: agp.Font,
+
     pub const WindowTheme = struct {
         background: Color,
 
+        title_bar: Color,
         title_color: Color,
-        title_font: agp.Font,
 
-        border_normal: Color,
-        border_inner: Color,
-        border_dark: Color,
-        border_bright: Color,
+        border_normal: Color, // window rectangle
+        border_dark: Color, // bottom-right border
+        border_bright: Color, // top-left border
 
-        title_button_background: Color,
         close_button_background: Color,
     };
 };
@@ -229,7 +268,7 @@ const Draw = struct {
         try draw.enc.draw_line(
             rect.left(),
             rect.top(),
-            rect.right() -| 1,
+            rect.right(),
             rect.top(),
             draw.theme.border_bright,
         );
@@ -237,7 +276,7 @@ const Draw = struct {
             rect.left(),
             rect.top() +| 1,
             rect.left(),
-            rect.bottom() -| 1,
+            rect.bottom(),
             draw.theme.border_bright,
         );
         try draw.enc.draw_rect(
@@ -248,17 +287,17 @@ const Draw = struct {
             draw.theme.border_normal,
         );
         try draw.enc.draw_line(
-            rect.right() -| 1,
+            rect.right(),
             rect.top() +| 1,
-            rect.right() -| 1,
-            rect.bottom() -| 1,
+            rect.right(),
+            rect.bottom(),
             draw.theme.border_dark,
         );
         try draw.enc.draw_line(
             rect.left() +| 1,
-            rect.bottom() -| 1,
+            rect.bottom(),
             rect.right(),
-            rect.bottom() -| 1,
+            rect.bottom(),
             draw.theme.border_dark,
         );
         try draw.enc.fill_rect(
@@ -295,21 +334,21 @@ const Draw = struct {
             rect.left(),
             rect.top() +| 1,
             rect.left(),
-            rect.bottom() -| 1,
+            rect.bottom(),
             draw.theme.border_bright,
         );
         try draw.enc.draw_line(
-            rect.right() -| 1,
+            rect.right(),
             rect.top() +| 1,
-            rect.right() -| 1,
-            rect.bottom() -| 1,
+            rect.right(),
+            rect.bottom(),
             draw.theme.border_dark,
         );
         try draw.enc.draw_line(
             rect.left(),
-            rect.bottom() -| 1,
+            rect.bottom(),
             rect.right(),
-            rect.bottom() -| 1,
+            rect.bottom(),
             draw.theme.border_dark,
         );
         try draw.enc.fill_rect(
@@ -358,13 +397,13 @@ const Draw = struct {
             rect.left() +| 10,
             rect.top() +| 1,
             rect.left() +| 10,
-            rect.bottom() -| 1,
+            rect.bottom(),
             draw.theme.menu_border,
         );
 
         try draw.tool_button(.{
             .bounds = .{
-                .x = rect.right() -| 10,
+                .x = rect.right() -| 9,
                 .y = rect.top() +| 1,
                 .width = 9,
                 .height = 9,
@@ -373,10 +412,10 @@ const Draw = struct {
         });
 
         try draw.enc.draw_line(
-            rect.right() -| 11,
+            rect.right() -| 10,
             rect.top() +| 1,
-            rect.right() -| 11,
-            rect.bottom() -| 1,
+            rect.right() -| 10,
+            rect.bottom(),
             draw.theme.menu_border,
         );
 
@@ -391,7 +430,7 @@ const Draw = struct {
         });
 
         var delta: u15 = 0;
-        while (delta < opt.slider_width - 5) : (delta += 2) {
+        while (delta <= opt.slider_width - 5) : (delta += 2) {
             try draw.enc.draw_line(
                 rect.left() +| 13 +| opt.slider_pos + delta,
                 rect.top() +| 3,
@@ -430,7 +469,7 @@ const Draw = struct {
         try draw.enc.draw_line(
             rect.left() +| 1,
             rect.top() +| 10,
-            rect.right() -| 1,
+            rect.right(),
             rect.top() +| 10,
             draw.theme.menu_border,
         );
@@ -438,7 +477,7 @@ const Draw = struct {
         try draw.tool_button(.{
             .bounds = .{
                 .x = rect.left() +| 1,
-                .y = rect.bottom() -| 10,
+                .y = rect.bottom() -| 9,
                 .width = 9,
                 .height = 9,
             },
@@ -447,9 +486,9 @@ const Draw = struct {
 
         try draw.enc.draw_line(
             rect.left() +| 1,
-            rect.bottom() -| 11,
+            rect.bottom() -| 10,
             rect.right() -| 1,
-            rect.bottom() -| 11,
+            rect.bottom() -| 10,
             draw.theme.menu_border,
         );
 
@@ -464,7 +503,7 @@ const Draw = struct {
         });
 
         var delta: u15 = 0;
-        while (delta < opt.slider_height - 5) : (delta += 2) {
+        while (delta <= opt.slider_height - 5) : (delta += 2) {
             try draw.enc.draw_line(
                 rect.left() +| 3,
                 rect.top() +| 13 +| opt.slider_pos + delta,
@@ -480,8 +519,227 @@ const Draw = struct {
         title: []const u8,
         icon: ?*const agp.Bitmap,
         buttons: ButtonMask = .{},
+        active: bool,
     }) !void {
-        const rect = opt.bounds;
+        const theme = if (opt.active) draw.theme.window_active else draw.theme.window_inactive;
+        const rect = opt.bounds.shrink(1);
+
+        try draw.enc.draw_line(
+            opt.bounds.left(),
+            opt.bounds.top(),
+            opt.bounds.right(),
+            opt.bounds.top(),
+            theme.border_bright,
+        );
+        try draw.enc.draw_line(
+            opt.bounds.left(),
+            opt.bounds.top() +| 1,
+            opt.bounds.left(),
+            opt.bounds.bottom(),
+            theme.border_bright,
+        );
+
+        try draw.enc.draw_line(
+            opt.bounds.left() +| 1,
+            opt.bounds.bottom(),
+            opt.bounds.right(),
+            opt.bounds.bottom(),
+            theme.border_dark,
+        );
+        try draw.enc.draw_line(
+            opt.bounds.right(),
+            opt.bounds.top() +| 1,
+            opt.bounds.right(),
+            opt.bounds.bottom() -| 1,
+            theme.border_dark,
+        );
+
+        try draw.enc.draw_rect(
+            rect.left(),
+            rect.top(),
+            rect.width,
+            rect.height,
+            theme.border_normal,
+        );
+
+        try draw.enc.draw_rect(
+            rect.left() +| 1,
+            rect.top() +| 1,
+            rect.width -| 2,
+            rect.height -| 2,
+            draw.theme.menu_border,
+        );
+
+        try draw.enc.fill_rect(
+            rect.left() +| 2,
+            rect.top() +| 2,
+            rect.width -| 4,
+            9,
+            theme.title_bar,
+        );
+
+        try draw.enc.draw_line(
+            rect.left() +| 2,
+            rect.top() +| 11,
+            rect.right() -| 2,
+            rect.top() +| 11,
+            draw.theme.menu_border,
+        );
+
+        try draw.enc.draw_line(
+            rect.left() +| 1,
+            rect.top() +| 12,
+            rect.right() -| 1,
+            rect.top() +| 12,
+            theme.border_normal,
+        );
+
+        try draw.enc.draw_line(
+            rect.left() +| 2,
+            rect.top() +| 13,
+            rect.right() -| 2,
+            rect.top() +| 13,
+            draw.theme.menu_border,
+        );
+
+        if (opt.title.len > 0) {
+            try draw.enc.draw_text(
+                rect.left() +| 4,
+                rect.top() +| 4,
+                draw.theme.title_font,
+                theme.title_color,
+                opt.title,
+            );
+        }
+
+        try draw.enc.fill_rect(
+            rect.left() +| 2,
+            rect.top() +| 14,
+            rect.width -| 4,
+            rect.height -| 16,
+            theme.background,
+        );
+
+        var btn_pos: i16 = rect.right() -| 1;
+        if (opt.buttons.close != .hidden) {
+            btn_pos -= 10;
+
+            try draw.enc.draw_line(
+                btn_pos,
+                rect.top() +| 2,
+                btn_pos,
+                rect.top() +| 10,
+                draw.theme.menu_border,
+            );
+            try draw.enc.fill_rect(
+                btn_pos +| 1,
+                rect.top() +| 2,
+                9,
+                9,
+                theme.close_button_background,
+            );
+            try draw.enc.blit_bitmap(
+                btn_pos +| 3,
+                rect.top() +| 4,
+                &close_button,
+            );
+        }
+
+        if (opt.buttons.maximize != .hidden) {
+            btn_pos -= 10;
+
+            try draw.enc.draw_line(
+                btn_pos,
+                rect.top() +| 2,
+                btn_pos,
+                rect.top() +| 10,
+                draw.theme.menu_border,
+            );
+            try draw.enc.blit_bitmap(
+                btn_pos +| 2,
+                rect.top() +| 3,
+                &maximize_icon,
+            );
+        }
+
+        if (opt.buttons.minimize != .hidden) {
+            btn_pos -= 10;
+
+            try draw.enc.draw_line(
+                btn_pos,
+                rect.top() +| 2,
+                btn_pos,
+                rect.top() +| 10,
+                draw.theme.menu_border,
+            );
+            try draw.enc.blit_bitmap(
+                btn_pos +| 2,
+                rect.top() +| 3,
+                &minimize_icon,
+            );
+        }
+
+        if (btn_pos != rect.right() -| 1) {
+            btn_pos -= 1;
+            try draw.enc.draw_line(
+                btn_pos,
+                rect.top() +| 1,
+                btn_pos,
+                rect.top() +| 11,
+                theme.border_normal,
+            );
+            btn_pos -= 1;
+            try draw.enc.draw_line(
+                btn_pos,
+                rect.top() +| 1,
+                btn_pos,
+                rect.top() +| 11,
+                draw.theme.menu_border,
+            );
+        }
+
+        if (opt.buttons.resize != .hidden) {
+            try draw.enc.draw_line(
+                rect.right() -| 11,
+                rect.bottom() -| 11,
+                rect.right() -| 2,
+                rect.bottom() -| 11,
+                draw.theme.menu_border,
+            );
+            try draw.enc.draw_line(
+                rect.right() -| 10,
+                rect.bottom() -| 10,
+                rect.right() -| 1,
+                rect.bottom() -| 10,
+                theme.border_normal,
+            );
+            try draw.enc.draw_line(
+                rect.right() -| 11,
+                rect.bottom() -| 10,
+                rect.right() -| 11,
+                rect.bottom() -| 2,
+                draw.theme.menu_border,
+            );
+            try draw.enc.draw_line(
+                rect.right() -| 10,
+                rect.bottom() -| 9,
+                rect.right() -| 10,
+                rect.bottom() -| 1,
+                theme.border_normal,
+            );
+            try draw.enc.fill_rect(
+                rect.right() -| 9,
+                rect.bottom() -| 9,
+                9,
+                9,
+                theme.title_bar,
+            );
+            try draw.enc.blit_bitmap(
+                rect.right() - 8,
+                rect.bottom() -| 8,
+                &resize_icon,
+            );
+        }
     }
 
     pub const ButtonState = enum {
@@ -576,6 +834,89 @@ const Draw = struct {
             break :blk &bmp;
         },
     };
+
+    const maximize_icon: agp.Bitmap = genbmp(.white,
+        \\xxxxxxx
+        \\x     x
+        \\xxxxxxx
+        \\x     x
+        \\x     x
+        \\x     x
+        \\xxxxxxx
+    );
+
+    const minimize_icon: agp.Bitmap = genbmp(.white,
+        \\
+        \\
+        \\
+        \\
+        \\
+        \\
+        \\ xxxxx
+    );
+
+    const resize_icon: agp.Bitmap = genbmp(.white,
+        \\xxx
+        \\x x
+        \\xxxxxxx
+        \\  x   x
+        \\  x   x
+        \\  x   x
+        \\  xxxxx
+    );
+
+    const close_button: agp.Bitmap = genbmp(.white,
+        \\x   x
+        \\ x x
+        \\  x
+        \\ x x
+        \\x   x
+    );
+
+    fn genbmp(color: Color, pattern: []const u8) agp.Bitmap {
+        var width = 0;
+        var height = 1;
+
+        var len = 0;
+        for (pattern) |c| {
+            if (c == '\n') {
+                len = 0;
+                height += 1;
+            } else {
+                len += 1;
+                width = @max(width, len);
+            }
+        }
+
+        const tkey: Color = if (color == Color.magenta) Color.red else Color.magenta;
+
+        var pixels: [width * height]Color = @splat(tkey);
+        {
+            var x = 0;
+            var y = 0;
+            for (pattern) |c| {
+                if (c == '\n') {
+                    x = 0;
+                    y += 1;
+                } else {
+                    if (c != ' ')
+                        pixels[y * width + x] = color;
+                    x += 1;
+                }
+            }
+        }
+
+        const const_pixels align(4) = pixels;
+
+        return .{
+            .has_transparency = true,
+            .transparency_key = .magenta,
+            .width = width,
+            .height = height,
+            .stride = width,
+            .pixels = &const_pixels,
+        };
+    }
 };
 
 pub fn write_agp(
