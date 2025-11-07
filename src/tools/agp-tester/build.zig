@@ -6,9 +6,11 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const abi_dep = b.dependency("abi", .{});
     const agp_dep = b.dependency("agp", .{});
     const agp_swrast_dep = b.dependency("agp_swrast", .{});
 
+    const abi_mod = abi_dep.module("ashet-abi");
     const agp_mod = agp_dep.module("agp");
     const agp_swrast_mod = agp_swrast_dep.module("agp-swrast");
 
@@ -21,6 +23,7 @@ pub fn build(b: *std.Build) void {
 
     exe.root_module.addImport("agp", agp_mod);
     exe.root_module.addImport("agp-swrast", agp_swrast_mod);
+    exe.root_module.addImport("abi", abi_mod);
 
     b.installArtifact(exe);
 

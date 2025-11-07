@@ -15,13 +15,18 @@ pub fn main() !void {
 
     // try verify_encoder_decoder(arena.allocator());
 
-    try render_example_image(
+    try @import("widgets.zig").render_demo(
         arena.allocator(),
-        "swrast.gif",
-        "overdraw.pgm",
-        "sequence.pgm",
-        "commands.gif",
+        "widgets.gif",
     );
+
+    // try render_example_image(
+    //     arena.allocator(),
+    //     "swrast.gif",
+    //     "overdraw.pgm",
+    //     "sequence.pgm",
+    //     "commands.gif",
+    // );
 }
 
 fn render_example_image(

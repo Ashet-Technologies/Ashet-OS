@@ -408,6 +408,50 @@
         return @bitCast(u);
     }
 
+    pub const Hue = enum(u3) {
+        red = 0,
+        yellow = 1,
+        lime = 2,
+        green = 3,
+        cyan = 4,
+        blue = 5,
+        purple = 6,
+        magenta = 7,
+    };
+
+    pub fn from_gray(gray: u6) Color {
+        const gray8: u8 = gray;
+        return @bitCast(gray8);
+    }
+
+    // 
+    //
+    // `value` can go from 0 to 8
+    pub fn from_hsv(hue: Hue, saturation: u2, value: u4) Color {
+        std.debug.assert(value <= 8);
+        if(saturation == 0 or value == 0) {
+            // Just expand "value" into a linear grayscale value:
+            const gray_lut: [9]u6 = .{
+                0x00,
+                0x08,
+                0x10,
+                0x18,
+                0x20,
+                0x27,
+                0x2F,
+                0x37,
+                0x3F,
+            };
+            return .from_gray(gray_lut[value]);
+        }
+        std.debug.assert(saturation > 0 and value > 0);
+        return .{
+            .hue = @intFromEnum(hue),
+            .saturation = saturation,
+            .value = @intCast(value - 1),
+        };
+    }
+
     pub fn from_html(comptime str: []const u8) Color {
         if (std.mem.startsWith(u8, str, "#")) {
             // RGB encoded color
@@ -438,11 +482,6 @@
             // Well-known color
             @compileError("Named colors are not supported yet!");
         }
-    }
-
-    pub fn from_gray(gray: u6) Color {
-        const gray8: u8 = gray;
-        return @bitCast(gray8);
     }
 
     fn fcast(v: anytype) f32 {

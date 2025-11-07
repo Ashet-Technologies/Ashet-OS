@@ -679,7 +679,9 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
         }
 
         fn blit_pixels(rast: Rast, cursor: Cursor, pixels: []const Color) void {
-            return rast.backend.copy_pixels(cursor, pixels);
+            if (pixels.len > 0) {
+                rast.backend.copy_pixels(cursor, pixels);
+            }
         }
 
         fn clamp(value: anytype, min: anytype, max: anytype) @TypeOf(value, min, max) {
