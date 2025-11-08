@@ -178,6 +178,7 @@ pub fn render_demo(
             .text = "Ok",
         });
 
+        // TODO: Implement proper toolbar drawing
         try draw.tool_button(.{
             .bounds = .{
                 .x = 103,
@@ -187,6 +188,37 @@ pub fn render_demo(
             },
             .icon = &icon_8x8,
         });
+
+        try draw.radiobutton(.{
+            .pos = .new(105, 110),
+            .text = "Fetch",
+            .checked = false,
+        });
+        try draw.radiobutton(.{
+            .pos = .new(105, 121),
+            .text = "Unpack",
+            .checked = false,
+        });
+        try draw.radiobutton(.{
+            .pos = .new(105, 132),
+            .text = "Install",
+            .checked = true,
+        });
+
+        try draw.hrule(.new(105, 144), 100);
+
+        try draw.checkbox(.{
+            .pos = .new(105, 148),
+            .text = "Confirm on exit",
+            .checked = false,
+        });
+        try draw.checkbox(.{
+            .pos = .new(105, 159),
+            .text = "Animations",
+            .checked = true,
+        });
+
+        try draw.hrule(.new(105, 171), 100);
 
         try draw.hscrollbar(.{
             .bounds = .{
@@ -259,6 +291,88 @@ const Draw = struct {
     enc: agp.Encoder(std.io.FixedBufferStream([]u8).Writer),
     theme: Theme,
 
+    fn rstrip(text: []const u8) []const u8 {
+        return std.mem.trimRight(u8, text, " \r\n\t");
+    }
+
+    pub fn radiobutton(draw: Draw, opt: struct {
+        pos: Point,
+        font: agp.Font = mono_8_font,
+        text: []const u8 = "",
+        checked: bool,
+    }) !void {
+        const icon = if (opt.checked)
+            &checked_radio_icon
+        else
+            &unchecked_radio_icon;
+
+        try draw.enc.blit_bitmap(
+            opt.pos.x,
+            opt.pos.y,
+            icon,
+        );
+
+        const text = rstrip(opt.text);
+        if (text.len > 0) {
+            try draw.enc.draw_text(
+                opt.pos.x +| @as(i16, @intCast(icon.width)) +| 3,
+                opt.pos.y + 1,
+                opt.font,
+                draw.theme.text_color,
+                text,
+            );
+        }
+    }
+
+    pub fn checkbox(draw: Draw, opt: struct {
+        pos: Point,
+        font: agp.Font = mono_8_font,
+        text: []const u8 = "",
+        checked: bool,
+    }) !void {
+        const icon = if (opt.checked)
+            &checked_box_icon
+        else
+            &unchecked_box_icon;
+
+        try draw.enc.blit_bitmap(
+            opt.pos.x,
+            opt.pos.y,
+            icon,
+        );
+
+        const text = rstrip(opt.text);
+        if (text.len > 0) {
+            try draw.enc.draw_text(
+                opt.pos.x +| @as(i16, @intCast(icon.width)) +| 3,
+                opt.pos.y + 1,
+                opt.font,
+                draw.theme.text_color,
+                text,
+            );
+        }
+    }
+
+    /// The hrule extends ±1 from pos on Y
+    pub fn hrule(draw: Draw, pos: Point, width: u16) !void {
+        const x1 = pos.x;
+        const x2: i16 = pos.x +| @as(i16, @intCast(width));
+
+        try draw.enc.draw_line(x1, pos.y -| 1, x2, pos.y -| 1, draw.theme.border_bright);
+        try draw.enc.set_pixel(x1, pos.y, draw.theme.border_bright);
+        try draw.enc.draw_line(x1 +| 1, pos.y, x2 -| 1, pos.y, draw.theme.border_normal);
+        try draw.enc.set_pixel(x2, pos.y, draw.theme.border_dark);
+        try draw.enc.draw_line(x1, pos.y +| 1, x2, pos.y +| 1, draw.theme.border_dark);
+    }
+
+    // pub fn textbox(draw: Draw, opt: struct {
+    //     bounds: Rectangle,
+    //     font: agp.Font = mono_8_font,
+    //     text: []const u8 = "",
+    // }) !void {
+
+    // }
+
     pub fn button(draw: Draw, opt: struct {
         bounds: Rectangle,
         font: agp.Font = mono_8_font,
@@ -307,13 +421,15 @@ const Draw = struct {
             rect.height -| 4,
             draw.theme.widget_background,
         );
-        if (opt.text.len > 0) {
+
+        const text = rstrip(opt.text);
+        if (text.len > 0) {
             try draw.enc.draw_text(
                 rect.left() +| 5,
                 rect.top() +| 4,
                 opt.font,
                 draw.theme.text_color,
-                opt.text,
+                text,
             );
         }
     }
@@ -882,6 +998,76 @@ const Draw = struct {
         \\x   x
     );
 
+    const unchecked_radio_icon: agp.Bitmap = genicon(.{
+        .B = default_theme.border_bright,
+        .N = default_theme.border_normal,
+        .D = default_theme.border_dark,
+        ._ = default_theme.widget_background,
+    },
+        \\  NNNNN
+        \\ NNDDDBN
+        \\NND____NN
+        \\ND_____BN
+        \\ND_____BN
+        \\ND_____BN
+        \\NN____BNN
+        \\ NNBBBNN
+        \\  NNNNN
+    );
+
+    const checked_radio_icon: agp.Bitmap = genicon(.{
+        .B = default_theme.border_bright,
+        .N = default_theme.border_normal,
+        .D = default_theme.border_dark,
+        ._ = default_theme.widget_background,
+        .I = default_theme.text_color,
+    },
+        \\  NNNNN
+        \\ NNDDDBN
+        \\NND____NN
+        \\ND_III_BN
+        \\ND_III_BN
+        \\ND_III_BN
+        \\NN____BNN
+        \\ NNBBBNN
+        \\  NNNNN
+    );
+
+    const unchecked_box_icon: agp.Bitmap = genicon(.{
+        .B = default_theme.border_bright,
+        .N = default_theme.border_normal,
+        .D = default_theme.border_dark,
+        ._ = default_theme.widget_background,
+    },
+        \\NNNNNNNNN
+        \\NDDDDDDDN
+        \\ND_____BN
+        \\ND_____BN
+        \\ND_____BN
+        \\ND_____BN
+        \\ND_____BN
+        \\NBBBBBBBN
+        \\NNNNNNNNN
+    );
+
+    const checked_box_icon: agp.Bitmap = genicon(.{
+        .B = default_theme.border_bright,
+        .N = default_theme.border_normal,
+        .D = default_theme.border_dark,
+        ._ = default_theme.widget_background,
+        .I = default_theme.text_color,
+    },
+        \\NNNNNNNNN
+        \\NDDDDDDDN
+        \\ND_____BN
+        \\ND_I_I_BN
+        \\ND__I__BN
+        \\ND_I_I_BN
+        \\ND_____BN
+        \\NBBBBBBBN
+        \\NNNNNNNNN
+    );
+
     fn genbmp(color: Color, pattern: []const u8) agp.Bitmap {
         var width = 0;
         var height = 1;
@@ -919,7 +1105,62 @@ const Draw = struct {
 
         return .{
             .has_transparency = true,
-            .transparency_key = .magenta,
+            .transparency_key = tkey,
+            .width = width,
+            .height = height,
+            .stride = width,
+            .pixels = &const_pixels,
+        };
+    }
+
+    fn genicon(comptime color_map: anytype, pattern: []const u8) agp.Bitmap {
+        const width, const height, const tkey = comptime blk: {
+            var width = 0;
+            var height = 1;
+            var len = 0;
+            var used_colors: std.StaticBitSet(256) = .initFull();
+
+            for (pattern) |c| {
+                if (c == '\n') {
+                    len = 0;
+                    height += 1;
+                } else {
+                    if (c != ' ') {
+                        const color: Color = @field(color_map, &.{c});
+                        used_colors.unset(color.to_u8());
+                    }
+                    len += 1;
+                    width = @max(width, len);
+                }
+            }
+            break :blk .{
+                width,
+                height,
+                Color.from_u8(@intCast(used_colors.toggleFirstSet().?)),
+            };
+        };
+
+        var pixels: [width * height]Color = @splat(tkey);
+        {
+            var x = 0;
+            var y = 0;
+            inline for (pattern) |c| {
+                if (c == '\n') {
+                    x = 0;
+                    y += 1;
+                } else {
+                    if (c != ' ')
+                        pixels[y * width + x] = @field(color_map, &.{c});
+                    x += 1;
+                }
+            }
+        }
+
+        const const_pixels align(4) = pixels;
+
+        return .{
+            .has_transparency = true,
+            .transparency_key = tkey,
             .width = width,
             .height = height,
             .stride = width,
