@@ -111,7 +111,7 @@ pub fn render_demo(
     allocator: std.mem.Allocator,
     path: []const u8,
 ) !void {
-    var cmd_buffer: [2048]u8 = undefined;
+    var cmd_buffer: [4096]u8 = undefined;
 
     const desktop_color: Color = .from_hsv(.green, 1, 2);
 
@@ -145,7 +145,7 @@ pub fn render_demo(
                 .x = 100,
                 .y = 80,
                 .width = 200,
-                .height = 150,
+                .height = 168,
             },
             .title = "GUI Demo",
             .icon = &icon_7x7,
@@ -158,10 +158,32 @@ pub fn render_demo(
             },
         });
 
+        try draw.hscrollbar(.{
+            .bounds = .{
+                .x = 102,
+                .y = 235,
+                .width = 186,
+                .height = 11,
+            },
+            .slider_pos = 0,
+            .slider_width = 33,
+        });
+
+        try draw.vscrollbar(.{
+            .bounds = .{
+                .x = 287,
+                .y = 94,
+                .width = 11,
+                .height = 142,
+            },
+            .slider_pos = 0,
+            .slider_height = 33,
+        });
+
         try draw.button(.{
             .bounds = .{
                 .x = 155,
-                .y = 198,
+                .y = 215,
                 .width = 50,
                 .height = 15,
             },
@@ -171,7 +193,7 @@ pub fn render_demo(
         try draw.button(.{
             .bounds = .{
                 .x = 210,
-                .y = 198,
+                .y = 215,
                 .width = 22,
                 .height = 15,
             },
@@ -250,38 +272,29 @@ pub fn render_demo(
             .text = "Hello!",
         });
 
-        try draw.hscrollbar(.{
+        try draw.progressbar(.{
             .bounds = .{
-                .x = 102,
-                .y = 217,
-                .width = 186,
-                .height = 11,
+                .x = 105,
+                .y = 194,
+                .width = 80,
+                .height = 15,
             },
-            .slider_pos = 0,
-            .slider_width = 33,
+            .value = 666,
+            .limit = 1337,
+            .display = .relative,
         });
 
-        try draw.vscrollbar(.{
+        try draw.progressbar(.{
             .bounds = .{
-                .x = 287,
-                .y = 94,
-                .width = 11,
-                .height = 124,
+                .x = 188,
+                .y = 194,
+                .width = 80,
+                .height = 15,
             },
-            .slider_pos = 0,
-            .slider_height = 33,
+            .value = 666,
+            .limit = 1337,
+            .display = .absolute,
         });
-
-        // try enc.draw_line(
-        //     100,
-        //     60,
-        //     200,
-        //     60,
-        //     .white,
-        // );
-
-        // try enc.draw_text(100, 230, mono_6_font, .purple, "Hello, World!");
-        // try enc.draw_text(100, 250, sans_var_font, .cyan, "Hello, World!");
     }
 
     try write_agp(allocator, path, fbs.getWritten(), desktop_color);
@@ -515,6 +528,72 @@ const Draw = struct {
                 text,
             );
         }
+    }
+
+    pub const ProgressDisplay = enum {
+        none,
+        relative,
+        absolute,
+    };
+
+    pub fn progressbar(draw: Draw, opt: struct {
+        bounds: Rectangle,
+
+        value: u32,
+        limit: u32,
+
+        font: agp.Font = mono_8_font,
+        display: ProgressDisplay,
+    }) !void {
+        const rect = opt.bounds;
+
+        try draw.panel(.{
+            .bounds = rect,
+            .style = .sunken,
+        });
+
+        try draw.enc.fill_rect(
+            rect.left() +| 2,
+            rect.top() +| 2,
+            rect.width -| 4,
+            rect.height -| 4,
+            draw.theme.widget_background,
+        );
+
+        const fill_level: u16 = @intCast((((rect.width -| 6) *| opt.value +| opt.limit / 2) / opt.limit));
+        if (fill_level > 0) {
+            try draw.enc.fill_rect(
+                opt.bounds.left() +| 3,
+                opt.bounds.top() +| 3,
+                fill_level,
+                opt.bounds.height -| 6,
+                draw.theme.border_normal,
+            );
+        }
+
+        // buffer has enough space to fill "{maxInt(u32)}/{maxInt(u32)}"
+        var buffer: [21]u8 = undefined;
+        const text = switch (opt.display) {
+            .none => return,
+
+            .relative => std.fmt.bufPrint(&buffer, "{}%", .{
+                (100 *| opt.value +| opt.limit / 2) / opt.limit,
+            }) catch unreachable,
+
+            .absolute => std.fmt.bufPrint(&buffer, "{}/{}", .{
+                opt.value,
+                opt.limit,
+            }) catch unreachable,
+        };
+        std.debug.assert(text.len > 0);
+
+        try draw.enc.draw_text(
+            rect.left() +| @as(i16, @intCast((rect.width - 6 * text.len) / 2)),
+            rect.top() +| 4,
+            opt.font,
+            draw.theme.text_color,
+            text,
+        );
     }
 
     pub fn button(draw: Draw, opt: struct {
