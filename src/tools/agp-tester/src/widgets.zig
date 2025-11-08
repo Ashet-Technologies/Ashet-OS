@@ -268,7 +268,7 @@ const Draw = struct {
         try draw.enc.draw_line(
             rect.left(),
             rect.top(),
-            rect.right(),
+            rect.right() -| 1,
             rect.top(),
             draw.theme.border_bright,
         );
@@ -276,7 +276,7 @@ const Draw = struct {
             rect.left(),
             rect.top() +| 1,
             rect.left(),
-            rect.bottom(),
+            rect.bottom() -| 1,
             draw.theme.border_bright,
         );
         try draw.enc.draw_rect(
@@ -602,9 +602,18 @@ const Draw = struct {
             draw.theme.menu_border,
         );
 
+        if (opt.icon) |icon| {
+            std.debug.assert(icon.height <= 7);
+            try draw.enc.blit_bitmap(
+                rect.left() +| 3,
+                rect.top() +| 3,
+                icon,
+            );
+        }
+
         if (opt.title.len > 0) {
             try draw.enc.draw_text(
-                rect.left() +| 4,
+                rect.left() +| 4 +| if (opt.icon) |icon| @as(i16, @intCast(icon.width)) +| 1 else 0,
                 rect.top() +| 4,
                 draw.theme.title_font,
                 theme.title_color,
