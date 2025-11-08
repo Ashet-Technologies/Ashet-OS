@@ -178,6 +178,26 @@ pub fn render_demo(
             .text = "Ok",
         });
 
+        try draw.panel(.{
+            .bounds = .{
+                .x = 225,
+                .y = 110,
+                .width = 50,
+                .height = 30,
+            },
+            .style = .sunken,
+        });
+
+        try draw.panel(.{
+            .bounds = .{
+                .x = 225,
+                .y = 150,
+                .width = 50,
+                .height = 30,
+            },
+            .style = .raised,
+        });
+
         // TODO: Implement proper toolbar drawing
         try draw.tool_button(.{
             .bounds = .{
@@ -219,6 +239,16 @@ pub fn render_demo(
         });
 
         try draw.hrule(.new(105, 171), 100);
+
+        try draw.textbox(.{
+            .bounds = .{
+                .x = 105,
+                .y = 176,
+                .width = 100,
+                .height = 15,
+            },
+            .text = "Hello!",
+        });
 
         try draw.hscrollbar(.{
             .bounds = .{
@@ -365,13 +395,127 @@ const Draw = struct {
         try draw.enc.draw_line(x1, pos.y +| 1, x2, pos.y +| 1, draw.theme.border_dark);
     }
 
-    // pub fn textbox(draw: Draw, opt: struct {
-    //     bounds: Rectangle,
-    //     font: agp.Font = mono_8_font,
-    //     text: []const u8 = "",
-    // }) !void {
+    pub const PanelStyle = enum { sunken, raised };
+    pub fn panel(draw: Draw, opt: struct {
+        bounds: Rectangle,
+        style: PanelStyle,
+    }) !void {
+        const rect = opt.bounds;
+        switch (opt.style) {
+            .raised => {
+                try draw.enc.draw_line(
+                    rect.left(),
+                    rect.top(),
+                    rect.right(),
+                    rect.top(),
+                    draw.theme.border_bright,
+                );
 
-    // }
+                try draw.enc.draw_line(
+                    rect.left(),
+                    rect.top(),
+                    rect.left(),
+                    rect.bottom() -| 1,
+                    draw.theme.border_bright,
+                );
+
+                try draw.enc.draw_line(
+                    rect.left(),
+                    rect.bottom(),
+                    rect.right(),
+                    rect.bottom(),
+                    draw.theme.border_dark,
+                );
+
+                try draw.enc.draw_line(
+                    rect.right(),
+                    rect.top() +| 1,
+                    rect.right(),
+                    rect.bottom() -| 1,
+                    draw.theme.border_dark,
+                );
+
+                try draw.enc.draw_rect(
+                    rect.x +| 1,
+                    rect.y +| 1,
+                    rect.width -| 2,
+                    rect.height -| 2,
+                    draw.theme.border_normal,
+                );
+            },
+
+            .sunken => {
+                try draw.enc.draw_rect(
+                    rect.x,
+                    rect.y,
+                    rect.width,
+                    rect.height,
+                    draw.theme.border_normal,
+                );
+
+                try draw.enc.draw_line(
+                    rect.left() +| 1,
+                    rect.top() +| 1,
+                    rect.right() -| 2,
+                    rect.top() +| 1,
+                    draw.theme.border_dark,
+                );
+                try draw.enc.draw_line(
+                    rect.left() +| 1,
+                    rect.top() +| 2,
+                    rect.left() +| 1,
+                    rect.bottom() -| 2,
+                    draw.theme.border_dark,
+                );
+
+                try draw.enc.draw_line(
+                    rect.right() -| 1,
+                    rect.top() +| 1,
+                    rect.right() -| 1,
+                    rect.bottom() -| 2,
+                    draw.theme.border_bright,
+                );
+
+                try draw.enc.draw_line(
+                    rect.left() +| 1,
+                    rect.bottom() -| 1,
+                    rect.right() -| 1,
+                    rect.bottom() -| 1,
+                    draw.theme.border_bright,
+                );
+            },
+        }
+    }
+
+    pub fn textbox(draw: Draw, opt: struct {
+        bounds: Rectangle,
+        font: agp.Font = mono_8_font,
+        text: []const u8,
+    }) !void {
+        try draw.panel(.{
+            .bounds = opt.bounds,
+            .style = .sunken,
+        });
+
+        try draw.enc.fill_rect(
+            opt.bounds.left() +| 2,
+            opt.bounds.top() +| 2,
+            opt.bounds.width -| 4,
+            opt.bounds.height -| 4,
+            draw.theme.widget_background,
+        );
+
+        const text = rstrip(opt.text);
+        if (text.len > 0) {
+            try draw.enc.draw_text(
+                opt.bounds.left() +| 4,
+                opt.bounds.top() +| 4,
+                opt.font,
+                draw.theme.text_color,
+                text,
+            );
+        }
+    }
 
     pub fn button(draw: Draw, opt: struct {
         bounds: Rectangle,
@@ -1025,9 +1169,9 @@ const Draw = struct {
         \\  NNNNN
         \\ NNDDDBN
         \\NND____NN
+        \\ND__II_BN
         \\ND_III_BN
-        \\ND_III_BN
-        \\ND_III_BN
+        \\ND_II__BN
         \\NN____BNN
         \\ NNBBBNN
         \\  NNNNN
