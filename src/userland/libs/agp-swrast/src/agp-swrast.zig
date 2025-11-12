@@ -148,12 +148,12 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
 
                 .blit_bitmap => |data| rast.blit_bitmap(
                     Point.new(data.x, data.y),
-                    data.bitmap,
+                    &data.bitmap,
                 ),
                 .blit_partial_bitmap => |data| rast.blit_partial_bitmap(
                     Rectangle.new(Point.new(data.x, data.y), Size.new(data.width, data.height)),
                     Point.new(data.src_x, data.src_y),
-                    data.bitmap,
+                    &data.bitmap,
                 ),
             }
         }

@@ -9,21 +9,27 @@ pub fn build(b: *std.Build) void {
     const abi_dep = b.dependency("abi", .{});
     const agp_dep = b.dependency("agp", .{});
     const agp_swrast_dep = b.dependency("agp_swrast", .{});
+    const widgets_dep = b.dependency("widgets", .{});
 
     const abi_mod = abi_dep.module("ashet-abi");
     const agp_mod = agp_dep.module("agp");
     const agp_swrast_mod = agp_swrast_dep.module("agp-swrast");
+    const widgets_mod = widgets_dep.module("draw");
 
     const exe = b.addExecutable(.{
         .name = "agp-tester",
-        .target = target,
-        .optimize = optimize,
-        .root_source_file = b.path("src/agp-tester.zig"),
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = optimize,
+            .root_source_file = b.path("src/agp-tester.zig"),
+            .imports = &.{
+                .{ .name = "agp", .module = agp_mod },
+                .{ .name = "agp-swrast", .module = agp_swrast_mod },
+                .{ .name = "abi", .module = abi_mod },
+                .{ .name = "widgets-draw", .module = widgets_mod },
+            },
+        }),
     });
-
-    exe.root_module.addImport("agp", agp_mod);
-    exe.root_module.addImport("agp-swrast", agp_swrast_mod);
-    exe.root_module.addImport("abi", abi_mod);
 
     b.installArtifact(exe);
 

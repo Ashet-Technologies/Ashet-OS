@@ -12,6 +12,9 @@
         .agp_swrast = .{
             .path = "../../userland/libs/agp-swrast",
         },
+        .widgets = .{
+            .path = "../../userland/apps/widgets",
+        },
     },
     .paths = .{
         "build.zig",
