@@ -110,17 +110,15 @@
         return IP{ .type = .ipv6, .addr = .{ .v6 = .{ .addr = addr, .zone = zone } } };
     }
 
-    pub fn format(ip: IP, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(ip: IP, writer: *std.Io.Writer) !void {
         switch (ip.type) {
-            .ipv4 => try ip.addr.v4.format(fmt, opt, writer),
-            .ipv6 => try ip.addr.v6.format(fmt, opt, writer),
+            .ipv4 => try ip.addr.v4.format(writer),
+            .ipv6 => try ip.addr.v6.format(writer),
         }
     }
 </patch>
 <patch network.IPv4>
-  pub fn format(ip: IPv4, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = opt;
+  pub fn format(ip: IPv4, writer: *std.Io.Writer) !void {
         try writer.print("{}.{}.{}.{}", .{
             ip.addr[0],
             ip.addr[1],
@@ -130,9 +128,7 @@
     }
 </patch>
 <patch network.IPv6>
-  pub fn format(ip: IPv6, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = opt;
+  pub fn format(ip: IPv6, writer: *std.Io.Writer) !void {
         try writer.print("[{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}/{}]", .{
             ip.addr[0],
             ip.addr[1],
@@ -190,9 +186,7 @@
         );
     }
 
-    pub fn format(point: Point, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(point: Point, writer: *std.Io.Writer) !void {
         try writer.print("Point({},{})", .{
             point.x, point.y,
         });
@@ -208,9 +202,7 @@
         return (a.width == b.width) and (a.height == b.height);
     }
 
-    pub fn format(size: Size, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(size: Size, writer: *std.Io.Writer) !void {
         try writer.print("Size({}x{})", .{
             size.width,
             size.height,
@@ -310,9 +302,7 @@
         return copy;
     }
 
-    pub fn format(rect: Rectangle, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(rect: Rectangle, writer: *std.Io.Writer) !void {
         try writer.print("Rectangle({},{},{}x{})", .{
             rect.x,
             rect.y,
@@ -344,10 +334,7 @@
 
 <patch KeyboardModifiers>
 
-    pub fn format(mods: KeyboardModifiers, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(mods: KeyboardModifiers, writer: *std.Io.Writer) !void {
         var strings = std.BoundedArray([]const u8, 8){};
 
         if (mods.shift) strings.appendAssumeCapacity("shift");
@@ -375,9 +362,7 @@
 </patch>
 <patch InputEvent>
 
-    pub fn format(evt: InputEvent, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(evt: InputEvent, writer: *std.Io.Writer) !void {
         switch (evt.event_type) {
             .key_press,
             .key_release,
@@ -572,10 +557,7 @@
     }
 
 
-    pub fn format(color: Color, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(color: Color, writer: *std.Io.Writer) !void {
         if(color.saturation == 0) {
             const gray: u8 = @bitCast(color);
             try writer.print("Color(gray={})", .{gray});
@@ -646,9 +628,7 @@
         return .{ .r = r, .g = g, .b = b };
     }
 
-    pub fn format(color: RGB888, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(color: RGB888, writer: *std.Io.Writer) !void {
         try writer.print("#{X:0>2}{X:0>2}{X:0>2}", .{ color.r, color.g, color.b });
     }
 </patch>
@@ -669,9 +649,7 @@
     }
 </patch>
 <patch MessageBoxButtons>
-    pub fn format(buttons: MessageBoxButtons, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(buttons: MessageBoxButtons, writer: *std.Io.Writer) !void {
         const max_length = comptime "ok,cancel,yes,no,abort,retry,continue,ignore".len;
 
         var buffer: [max_length]u8 = undefined;
@@ -929,9 +907,7 @@
         return std.mem.eql(u8, &lhs.bytes, &rhs.bytes);
     }
 
-    pub fn format(uuid: *const @This(), fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype)! void {
-        _ = fmt;
-        _ = options;
+    pub fn format(uuid: *const @This(), writer: *std.Io.Writer)! void {
         try writer.print("{{{x:0>8}-{x:0>4}-{x:0>4}-{x:0>4}-{x:0>12}}}", .{
             std.mem.readInt(u32, uuid.bytes[0..4], .little),
             std.mem.readInt(u16, uuid.bytes[4..6], .little),

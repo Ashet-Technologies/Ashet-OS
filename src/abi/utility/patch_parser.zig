@@ -34,8 +34,10 @@ pub fn parse(allocator: std.mem.Allocator, patch_code: []const u8) !PatchSet {
     errdefer patches.deinit(arena.allocator());
 
     var current_target: ?[]const u8 = null;
-    var current_patch: std.ArrayList(u8) = .init(arena.allocator());
+    var current_patch: std.Io.Writer.Allocating = .init(arena.allocator());
     defer current_patch.deinit();
+
+    const writer = &current_patch.writer;
 
     var lines = std.mem.splitScalar(u8, patch_code, '\n');
 
@@ -64,8 +66,8 @@ pub fn parse(allocator: std.mem.Allocator, patch_code: []const u8) !PatchSet {
                 return error.DuplicatePatch;
             }
         } else if (current_target != null) {
-            try current_patch.appendSlice(line);
-            try current_patch.append('\n');
+            try writer.writeAll(line);
+            try writer.writeByte('\n');
         } else if (line.len > 0) {
             return error.CodeOutsidePatch;
         }
