@@ -5,12 +5,12 @@
     .paths = .{"."},
     .dependencies = .{
         .args = .{
-            .url = "git+https://github.com/ikskuh/zig-args.git#9425b94c103a031777fdd272c555ce93a7dea581",
-            .hash = "args-0.0.0-CiLiqv_NAAC97fGpk9hS2K681jkiqPsWP6w3ucb_ctGH",
+            .url = "git+https://github.com/ikskuh/zig-args.git#e060ac80c244e9675471b6d213b22ddc83cc8f98",
+            .hash = "args-0.0.0-CiLiqo_RAADz2TiHUzG5-0Mk7IZHR-h1SZgUrb_k4c7d",
         },
         .serial = .{
-            .url = "git+https://github.com/ZigEmbeddedGroup/serial.git#ad338133eda8d86332718bbdc58c641a66307c84",
-            .hash = "serial-0.0.1-PoeRzI20AABcp4FffI6HXKOL6LcGPKmeqfN4Bna4-YYm",
+            .url = "git+https://github.com/ZigEmbeddedGroup/serial.git#fbd7389ff8bbc9fa362aa74081588755b5d028a0",
+            .hash = "serial-0.0.1-PoeRzF60AAAN8Iu0yXTIX-t3DVzsnmN7vWHKM2HA2Zbq",
         },
     },
 }

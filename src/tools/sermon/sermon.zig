@@ -34,13 +34,13 @@ pub fn main() !u8 {
     defer cli.deinit();
 
     if (cli.options.help) {
-        try print_help(cli.executable_name, std.io.getStdOut());
+        try print_help(cli.executable_name, .stdout());
         return 0;
     }
 
     const port_path = switch (cli.positionals.len) {
         0 => {
-            try print_help(cli.executable_name, std.io.getStdErr());
+            try print_help(cli.executable_name, .stderr());
             return 1;
         },
 
@@ -51,12 +51,22 @@ pub fn main() !u8 {
         },
     };
 
-    const output = std.io.getStdOut();
-    const stderr = std.io.getStdErr();
+    const output_file: std.fs.File = .stdout();
+    const stderr_file: std.fs.File = .stderr();
+
+    var stderr_buff: [1024]u8 = undefined;
+    var stderr_writer = stderr_file.writer(&stderr_buff);
+    const stderr = &stderr_writer.interface;
+    defer stderr.flush() catch {};
+
+    var output_buff: [1024]u8 = undefined;
+    var output_writer = output_file.writer(&output_buff);
+    const output = &output_writer.interface;
+    defer output.flush() catch {};
 
     {
-        const output_cfg = try IoOptions.configureOutputUncooked(output);
-        defer output_cfg.restore(output) catch |err| std.log.err("we fucked up. failed to restore settings for stdout: {s}. Try resetting/restarting your terminal!", .{@errorName(err)});
+        const output_cfg = try IoOptions.configureOutputUncooked(output_file);
+        defer output_cfg.restore(output_file) catch |err| std.log.err("we fucked up. failed to restore settings for stdout: {s}. Try resetting/restarting your terminal!", .{@errorName(err)});
 
         // TODO: Add signal handler to allow graceful shutdown here.
 
@@ -67,7 +77,7 @@ pub fn main() !u8 {
         var spinner: Spinner = .ascii;
 
         while (true) {
-            const stream_result = stream_port(output, any_run_executed, port_path, .{
+            const stream_result = stream_port(output_file, any_run_executed, port_path, .{
                 .baud_rate = cli.options.baud,
                 .parity = cli.options.parity,
                 .stop_bits = cli.options.@"stop-bits",
@@ -88,19 +98,19 @@ pub fn main() !u8 {
                 switch (err) {
                     error.FileNotFound => {
                         if (!any_run_ok and !reconnect_msg_printed) {
-                            try std.io.getStdErr().writer().print("waiting for {s}...\r\n", .{
+                            try stderr.print("waiting for {s}...\r\n", .{
                                 port_path,
                             });
                             reconnect_msg_printed = true;
                         }
-                        try output.writer().print("\r{s}\r", .{
+                        try output.print("\r{s}\r", .{
                             spinner.next(),
                         });
                     },
 
                     else => |e| {
                         try output.writeAll("\n");
-                        try std.io.getStdErr().writer().print("failed to stream data from {s}: {s}\r\n", .{
+                        try stderr.print("failed to stream data from {s}: {s}\r\n", .{
                             port_path,
                             @errorName(e),
                         });
@@ -109,7 +119,7 @@ pub fn main() !u8 {
                 }
             }
 
-            std.time.sleep(100 * std.time.ns_per_ms);
+            std.Thread.sleep(100 * std.time.ns_per_ms);
         }
     }
 
@@ -171,12 +181,15 @@ fn stream_port(output: std.fs.File, print_connect_msg: bool, port_path: []const 
 }
 
 fn usage_error(comptime fmt: []const u8, args: anytype) u8 {
-    std.io.getStdErr().writer().print("usage error: " ++ fmt ++ "\n", args) catch {};
+    var stderr = std.fs.File.stderr().writer(&.{});
+    stderr.interface.print("usage error: " ++ fmt ++ "\n", args) catch {};
     return 1;
 }
 
 fn print_help(exe_name: ?[]const u8, stream: std.fs.File) !void {
-    try arg_parser.printHelp(CliArguments, exe_name orelse "sermon", stream.writer());
+    var file_writer = stream.writer(&.{});
+    try arg_parser.printHelp(CliArguments, exe_name orelse "sermon", &file_writer.interface);
+    try file_writer.interface.flush();
 }
 
 const IoOptions = switch (builtin.os.tag) {
@@ -229,7 +242,7 @@ const IoOptions = switch (builtin.os.tag) {
                 else => |e| return e,
             };
 
-            return IoOptions{
+            return .{
                 .termios = original,
             };
         }
@@ -250,15 +263,23 @@ const IoOptions = switch (builtin.os.tag) {
 
             try std.posix.tcsetattr(file.handle, .NOW, settings);
 
-            _ = try std.posix.fcntl(file.handle, std.posix.F.SETFL, try std.posix.fcntl(file.handle, std.posix.F.GETFL, 0) | std.posix.system.IN.NONBLOCK);
+            _ = try std.posix.fcntl(
+                file.handle,
+                std.posix.F.SETFL,
+                try std.posix.fcntl(file.handle, std.posix.F.GETFL, 0) | std.posix.system.IN.NONBLOCK,
+            );
 
-            return IoOptions{
+            return .{
                 .termios = original,
             };
         }
 
         fn configureSerialNonBlocking(file: std.fs.File) !void {
-            _ = try std.posix.fcntl(file.handle, std.posix.F.SETFL, try std.posix.fcntl(file.handle, std.posix.F.GETFL, 0) | std.posix.system.IN.NONBLOCK);
+            _ = try std.posix.fcntl(
+                file.handle,
+                std.posix.F.SETFL,
+                try std.posix.fcntl(file.handle, std.posix.F.GETFL, 0) | std.posix.system.IN.NONBLOCK,
+            );
         }
 
         fn restore(options: IoOptions, file: std.fs.File) !void {
