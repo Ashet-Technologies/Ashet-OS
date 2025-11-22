@@ -16,8 +16,8 @@
             .hash = "args-0.0.0-CiLiqo_RAADz2TiHUzG5-0Mk7IZHR-h1SZgUrb_k4c7d",
         },
         .zigimg = .{
-            .url = "git+https://github.com/der-teufel-programming/zigimg.git#70a3abe922d65ec13b488b0890970edcf11e0006",
-            .hash = "zigimg-0.1.0-8_eo2oFJEwDQjDFXp7mdV7KXQiMIRAYCl7Y0z91NdxG2",
+            .url = "git+https://github.com/der-teufel-programming/zigimg.git#43c00da45d10d61cfcfa1728e7c2f7d3b9b5fccd",
+            .hash = "zigimg-0.1.0-8_eo2pwZFgBlPOIhzPyQeF-UJnKuna2JyljvZpQ5dch7",
         },
         .turtlefont = .{
             .url = "git+https://github.com/ikskuh/turtlefont?ref=main#f88e8d2447475635e410c52ce798e8954b27d3df",
