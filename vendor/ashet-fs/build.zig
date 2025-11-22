@@ -23,4 +23,17 @@ pub fn build(b: *std.Build) void {
     afs_tool.root_module.addImport("afs", afs_mod);
     afs_tool.root_module.addImport("args", args_mod);
     b.installArtifact(afs_tool);
+
+    const afs_test = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("test/testsuite.zig"),
+            .target = target,
+            .imports = &.{
+                .{ .name = "afs", .module = afs_mod },
+            },
+        }),
+    });
+    const afs_test_run = b.addRunArtifact(afs_test);
+    const test_step = b.step("test", "Run the testsuite");
+    test_step.dependOn(&afs_test_run.step);
 }
