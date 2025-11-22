@@ -1,8 +1,13 @@
 .{
     .name = .elfstack,
-
+    .fingerprint = 0xe818371762d8d9ff,
     .version = "0.1.0",
     .dependencies = .{
         //
+    },
+    .paths = .{
+        "build.zig.zon",
+        "build.zig",
+        "elfstack.zig",
     },
 }

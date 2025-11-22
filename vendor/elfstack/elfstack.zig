@@ -42,19 +42,29 @@ pub fn main() !u8 {
     var input_file = try std.fs.cwd().openFile("zig-out/arm-ashet-hc/kernel.elf", .{});
     defer input_file.close();
 
+    var input_file_reader = input_file.reader(&.{});
+
     const output_to_stdout = std.mem.eql(u8, cli_options.output, "-");
+
+    var output_buffer: [1024]u8 = undefined;
     var output_disk_file: std.fs.AtomicFile = undefined;
-    const svg: SvgWriter = if (output_to_stdout)
-        .{ .writer = std.io.getStdOut().writer() }
-    else blk: {
-        output_disk_file = try std.fs.cwd().atomicFile(cli_options.output, .{});
-        break :blk .{ .writer = output_disk_file.file.writer() };
+    var stdout_writer: std.fs.File.Writer = undefined;
+
+    const svg: SvgWriter = if (output_to_stdout) blk: {
+        stdout_writer = std.fs.File.stdout().writer(&output_buffer);
+        break :blk .{ .writer = &stdout_writer.interface };
+    } else blk: {
+        output_disk_file = try std.fs.cwd().atomicFile(
+            cli_options.output,
+            .{ .write_buffer = &output_buffer },
+        );
+        break :blk .{ .writer = &output_disk_file.file_writer.interface };
     };
 
     defer if (output_to_stdout)
         output_disk_file.deinit();
 
-    var header = try elf.Header.read(&input_file);
+    var header = try elf.Header.read(&input_file_reader.interface);
 
     switch (cli_options.bits) {
         .@"32" => if (header.is_64) {
@@ -177,9 +187,9 @@ pub fn main() !u8 {
         "#00FFBF",
     };
 
-    var program_headers: std.ArrayList(elf.Elf64_Phdr) = .init(allocator);
+    var program_headers: std.ArrayList(elf.Elf64_Phdr) = .empty;
 
-    var pgm_headers = header.program_header_iterator(&input_file);
+    var pgm_headers = header.iterateProgramHeaders(&input_file_reader);
     while (try pgm_headers.next()) |pgm_header| {
         if (pgm_header.p_type != elf.PT_LOAD)
             continue;
@@ -198,7 +208,7 @@ pub fn main() !u8 {
             }
         }
 
-        try program_headers.append(pgm_header);
+        try program_headers.append(allocator, pgm_header);
 
         var title_buf: [1024]u8 = undefined;
 
@@ -262,10 +272,10 @@ pub fn main() !u8 {
             .width = 80,
             .height = v_full_height,
             .color = color,
-            .title = try std.fmt.bufPrint(&title_buf, "offset: 0x{X:0>8}\nsize:    0x{X:0>8} ({d:.2})\n", .{
+            .title = try std.fmt.bufPrint(&title_buf, "offset: 0x{X:0>8}\nsize:    0x{X:0>8} ({Bi:.2})\n", .{
                 vaddr,
                 memsz,
-                std.fmt.fmtIntSizeBin(memsz),
+                memsz,
             }),
         });
 
@@ -286,10 +296,10 @@ pub fn main() !u8 {
                 .width = x0b - 10,
                 .height = p_height,
                 .color = color,
-                .title = try std.fmt.bufPrint(&title_buf, "offset: 0x{X:0>8}\nsize:    0x{X:0>8} ({d:.2})\n", .{
+                .title = try std.fmt.bufPrint(&title_buf, "offset: 0x{X:0>8}\nsize:    0x{X:0>8} ({Bi:.2})\n", .{
                     paddr,
                     filesz,
-                    std.fmt.fmtIntSizeBin(filesz),
+                    filesz,
                 }),
             });
 
@@ -311,11 +321,11 @@ pub fn main() !u8 {
             try svg.path(path, .{
                 .fill = color,
                 .stroke = "none",
-                .title = try std.fmt.bufPrint(&title_buf, "from: 0x{X:0>8}\nto:      0x{X:0>8}\nsize:  0x{X:0>8} ({d:.2})\n", .{
+                .title = try std.fmt.bufPrint(&title_buf, "from: 0x{X:0>8}\nto:      0x{X:0>8}\nsize:  0x{X:0>8} ({Bi:.2})\n", .{
                     paddr,
                     vaddr,
                     filesz,
-                    std.fmt.fmtIntSizeBin(filesz),
+                    filesz,
                 }),
             });
 
@@ -354,6 +364,8 @@ pub fn main() !u8 {
 
     if (!output_to_stdout) {
         try output_disk_file.finish();
+    } else {
+        try stdout_writer.interface.flush();
     }
 
     return 0;
@@ -395,7 +407,7 @@ const LayoutInfo = struct {
 };
 
 const SvgWriter = struct {
-    writer: std.fs.File.Writer,
+    writer: *std.Io.Writer,
 
     pub fn write_header(svg: SvgWriter, width: u32, height: u32) !void {
         try svg.writer.print(
