@@ -361,7 +361,7 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
                         framebuffer,
                     );
                 },
-                else => rasterizer.execute(cmd),
+                else => try rasterizer.execute(cmd),
             }
         }
     }

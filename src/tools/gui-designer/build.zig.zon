@@ -24,8 +24,18 @@
             .hash = "system_sdk-0.3.0-dev-alwUNnYaaAJAtIdE2fg4NQfDqEKs7QCXy_qYukAOBfmF",
             .lazy = true,
         },
+
         .abi = .{
             .path = "../../abi",
+        },
+        .agp = .{
+            .path = "../../userland/libs/agp",
+        },
+        .agp_swrast = .{
+            .path = "../../userland/libs/agp-swrast",
+        },
+        .widgets = .{
+            .path = "../../userland/apps/widgets",
         },
     },
     .paths = .{ "build.zig", "build.zig.zon", "src" },
