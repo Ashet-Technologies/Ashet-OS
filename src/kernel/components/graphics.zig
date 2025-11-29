@@ -253,7 +253,7 @@ fn load_system_font(dir: libashet.fs.Directory, info: ashet.abi.FileInfo) !void 
     errdefer ashet.memory.static_memory_allocator.free(font_name);
 
     logger.info("Loading system font '{s}'...", .{font_name});
-    errdefer |err| logger.err("failed to load font: {s}", .{@errorName(err)});
+    errdefer |err| logger.err("failed to load font '{s}': {s}", .{ font_name, @errorName(err) });
 
     const font_size = std.math.cast(usize, info.size) orelse return error.FileTooBig;
 
@@ -279,6 +279,8 @@ pub fn get_system_font(font_name: []const u8) error{FileNotFound}!*Font {
     return system_fonts.getPtr(font_name) orelse return error.FileNotFound;
 }
 
+var render_temp_buffer: std.heap.ArenaAllocator = .init(ashet.memory.page_allocator);
+
 fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.Inputs) ashet.abi.draw.Render.Error!ashet.abi.draw.Render.Outputs {
     const fb = ashet.resources.resolve(Framebuffer, call.resource_owner, inputs.target.as_resource()) catch |err| return switch (err) {
         error.InvalidHandle,
@@ -292,12 +294,14 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
 
     // Validate code before drawing:
     {
-        var static_heap: [256]u8 = undefined;
-        var fba: std.heap.FixedBufferAllocator = .init(&static_heap);
+        _ = render_temp_buffer.reset(.retain_capacity);
 
-        var decoder = agp.decoder(fba.allocator(), fbs.reader());
+        var decoder = agp.decoder(render_temp_buffer.allocator(), fbs.reader());
         while (true) {
-            const maybe_cmd = decoder.next() catch return error.BadCode;
+            const maybe_cmd = decoder.next() catch |err| {
+                logger.warn("failed to decode AGP: {s}", .{@errorName(err)});
+                return error.BadCode;
+            };
             if (maybe_cmd == null)
                 break;
         }
@@ -307,8 +311,7 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
 
     // Now render to the framebuffer:
     {
-        var static_heap: [256]u8 = undefined;
-        var fba: std.heap.FixedBufferAllocator = .init(&static_heap);
+        _ = render_temp_buffer.reset(.retain_capacity);
 
         const Rasterizer = agp_swrast.Rasterizer(.{
             .backend_type = *Framebuffer,
@@ -318,7 +321,7 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
 
         var rasterizer = Rasterizer.init(fb);
 
-        var decoder = agp.decoder(fba.allocator(), fbs.reader());
+        var decoder = agp.decoder(render_temp_buffer.allocator(), fbs.reader());
         while (decoder.next() catch unreachable) |cmd| {
             // logger.debug("execute {s}: {}", .{ @tagName(cmd), cmd });
             switch (cmd) {
