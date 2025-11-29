@@ -670,15 +670,15 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
         }
 
         /// Returns an unset cursor to the backing framebuffer.
-        fn get_cursor(rast: Rast) Cursor {
+        inline fn get_cursor(rast: Rast) Cursor {
             return rast.backend.create_cursor();
         }
 
-        fn emit(rast: Rast, cursor: Cursor, color: Color, count: u16) void {
+        inline fn emit(rast: Rast, cursor: Cursor, color: Color, count: u16) void {
             return rast.backend.emit_pixels(cursor, color, count);
         }
 
-        fn blit_pixels(rast: Rast, cursor: Cursor, pixels: []const Color) void {
+        inline fn blit_pixels(rast: Rast, cursor: Cursor, pixels: []const Color) void {
             if (pixels.len > 0) {
                 rast.backend.copy_pixels(cursor, pixels);
             }
