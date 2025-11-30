@@ -122,7 +122,7 @@ pub const CommandQueue = struct {
     pub fn draw_horizontal_line(cq: *CommandQueue, left: Point, length: u16, color: Color) !void {
         try cq.draw_line(
             left,
-            Point.new(left.x + @as(u15, @intCast(length)), left.y),
+            Point.new(left.x + @as(u15, @intCast(length -| 1)), left.y),
             color,
         );
     }
@@ -130,7 +130,7 @@ pub const CommandQueue = struct {
     pub fn draw_vertical_line(cq: *CommandQueue, top: Point, length: u16, color: Color) !void {
         try cq.draw_line(
             top,
-            Point.new(top.x, top.y + @as(u15, @intCast(length))),
+            Point.new(top.x, top.y + @as(u15, @intCast(length -| 1))),
             color,
         );
     }
