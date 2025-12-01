@@ -40,7 +40,7 @@ pub fn main() !void {
     const palette_window = try ashet.gui.create_window(
         desktop,
         .{
-            .title = "Dragon Craft - Palette",
+            .title = "Palette",
             .min_size = palette_window_size,
             .max_size = palette_window_size,
             .initial_size = palette_window_size,
@@ -82,10 +82,36 @@ pub fn main() !void {
             try ashet.overlapped.schedule(&get_draw_event.arc);
 
             switch (event.event_type) {
-                .mouse_button_press => if (event.mouse.button == .left) {
-                    painting = true;
-                    mouse_prev = Point.new(event.mouse.x, event.mouse.y);
-                    // std.log.info("start painting at {}", .{mouse_prev});
+                .key_press => {
+                    update_color_from_key(event.keyboard, &draw_color);
+                    try render_palette(&command_queue, palette_framebuffer, draw_color);
+                },
+                .mouse_button_press => switch (event.mouse.button) {
+                    .left => {
+                        painting = true;
+                        mouse_prev = Point.new(event.mouse.x, event.mouse.y);
+                        // std.log.info("start painting at {}", .{mouse_prev});
+                    },
+
+                    .nav_previous => {
+                        draw_color = .from_u8(dec_row(draw_color.to_u8()));
+                        try render_palette(&command_queue, palette_framebuffer, draw_color);
+                    },
+                    .nav_next => {
+                        draw_color = .from_u8(inc_row(draw_color.to_u8()));
+                        try render_palette(&command_queue, palette_framebuffer, draw_color);
+                    },
+
+                    .wheel_down => {
+                        draw_color = .from_u8(draw_color.to_u8() -% color_per_row);
+                        try render_palette(&command_queue, palette_framebuffer, draw_color);
+                    },
+                    .wheel_up => {
+                        draw_color = .from_u8(draw_color.to_u8() +% color_per_row);
+                        try render_palette(&command_queue, palette_framebuffer, draw_color);
+                    },
+
+                    else => {},
                 },
                 .mouse_button_release => if (event.mouse.button == .left) {
                     painting = false;
@@ -114,18 +140,60 @@ pub fn main() !void {
             try ashet.overlapped.schedule(&get_palette_event.arc);
 
             switch (event.event_type) {
-                .mouse_button_press => if (event.mouse.button == .left) {
-                    const x: u8 = @intCast(@divFloor(event.mouse.x, color_size));
-                    const y: u8 = @intCast(@divFloor(event.mouse.y, color_size));
-
-                    draw_color = .from_u8(color_per_row * y + x);
-
+                .key_press => {
+                    update_color_from_key(event.keyboard, &draw_color);
                     try render_palette(&command_queue, palette_framebuffer, draw_color);
+                },
+                .mouse_button_press => switch (event.mouse.button) {
+                    .left => {
+                        const x: u8 = @intCast(@divFloor(event.mouse.x, color_size));
+                        const y: u8 = @intCast(@divFloor(event.mouse.y, color_size));
+
+                        draw_color = .from_u8(color_per_row * y + x);
+
+                        try render_palette(&command_queue, palette_framebuffer, draw_color);
+                    },
+
+                    .nav_previous => {
+                        draw_color = .from_u8(dec_row(draw_color.to_u8()));
+                        try render_palette(&command_queue, palette_framebuffer, draw_color);
+                    },
+                    .nav_next => {
+                        draw_color = .from_u8(inc_row(draw_color.to_u8()));
+                        try render_palette(&command_queue, palette_framebuffer, draw_color);
+                    },
+
+                    .wheel_down => {
+                        draw_color = .from_u8(draw_color.to_u8() -% color_per_row);
+                        try render_palette(&command_queue, palette_framebuffer, draw_color);
+                    },
+                    .wheel_up => {
+                        draw_color = .from_u8(draw_color.to_u8() +% color_per_row);
+                        try render_palette(&command_queue, palette_framebuffer, draw_color);
+                    },
+
+                    else => {},
                 },
                 else => {},
             }
         }
     }
+}
+
+fn update_color_from_key(event: ashet.abi.KeyboardEvent, color: *Color) void {
+    const src = color.to_u8();
+
+    const dst = switch (event.usage) {
+        .up_arrow => src -% color_per_row,
+        .down_arrow => src +% color_per_row,
+        .left_arrow => dec_row(src),
+        .right_arrow => inc_row(src),
+        .page_up => src -% 8 * color_per_row,
+        .page_down => src +% 8 * color_per_row,
+        else => src,
+    };
+
+    color.* = .from_u8(dst);
 }
 
 fn render_palette(cq: *ashet.graphics.CommandQueue, fb: ashet.graphics.Framebuffer, selection: Color) !void {
@@ -160,3 +228,23 @@ fn is_bright(color: Color) bool {
     const rgb = color.to_rgb888();
     return (@as(u16, rgb.r) + rgb.g + rgb.b) > (3 * 255 / 2);
 }
+
+fn inc_row(in: u8) u8 {
+    var c: ColorRowCol = @bitCast(in);
+    c.row +%= 1;
+    return @bitCast(c);
+}
+
+fn dec_row(in: u8) u8 {
+    var c: ColorRowCol = @bitCast(in);
+    c.row -%= 1;
+    return @bitCast(c);
+}
+
+const ColorRowCol = packed struct(u8) {
+    const Row = std.meta.Int(.unsigned, std.math.log2_int(u8, color_per_row));
+    const Column = std.meta.Int(.unsigned, std.math.log2_int(u8, color_per_column));
+
+    row: Row,
+    column: Column,
+};
