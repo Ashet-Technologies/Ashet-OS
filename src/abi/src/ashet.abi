@@ -495,6 +495,7 @@ namespace network {
             in      socket: UdpSocket;
             in      bind_point: EndPoint;
             out     endpoint: EndPoint;
+            error   IllegalArgument;
             error   AddressInUse;
             error   IllegalValue;
             error   InvalidHandle;
@@ -506,6 +507,7 @@ namespace network {
             in      target: EndPoint;
             error   AlreadyConnected;
             error   AlreadyConnecting;
+            error   AddressInUse;
             error   BufferError;
             error   IllegalArgument;
             error   IllegalValue;
