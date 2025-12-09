@@ -12,7 +12,6 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
         .link_libc = true,
     });
-    root_mod.addImport("args", args_mod);
 
     debugfilter_mod.linkSystemLibrary("unwind", .{});
 

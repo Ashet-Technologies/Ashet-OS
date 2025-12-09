@@ -162,8 +162,7 @@ const max_suffix_len = 3 + 8 * 2; // ":0x" + 8 hex encoded bytes
 const ElfSet = std.StringArrayHashMap(ElfFile);
 
 /// Writes symbol, source location, and section information for the given address.
-fn render_elf_data(elf_addr: u64, elf: *ElfFile, output: *std.io.BufferedWriter(4096, std.fs.File.Writer)) !void {
-    const writer = output.writer();
+fn render_elf_data(elf_addr: u64, elf: *ElfFile, writer: *std.Io.Writer) !void {
     var path_buf: [4096]u8 = undefined;
     var symbol_buf: [4096]u8 = undefined;
     const resource = elf.lookup;
@@ -205,13 +204,13 @@ fn render_elf_data(elf_addr: u64, elf: *ElfFile, output: *std.io.BufferedWriter(
 
     if (maybe_symbol) |symbol| {
         if (wrote_anything) try writer.writeAll(" ");
-        try writer.print("\"{}\"", .{std.zig.fmtEscapes(symbol)});
+        try writer.print("\"{f}\"", .{std.zig.fmtString(symbol)});
         wrote_anything = true;
     }
 
     if (maybe_section) |section| {
         if (wrote_anything) try writer.writeAll(" ");
-        try writer.print("in \"{}\"", .{std.zig.fmtEscapes(section)});
+        try writer.print("in \"{f}\"", .{std.zig.fmtString(section)});
         wrote_anything = true;
     }
 
@@ -365,22 +364,23 @@ test "parsePollResult bits64 missing" {
 /// Reads poller output, forwards it, and augments recognized addresses with metadata.
 fn consume_poll_result(
     elves: ElfSet,
-    output: *std.io.BufferedWriter(4096, std.fs.File.Writer),
+    output: *std.fs.File.Writer,
     line_buffer: *RingBuffer,
-    fifo: *std.io.PollFifo,
+    reader: *std.Io.Reader,
 ) !void {
+    const writer = &output.interface;
     var chunk: [64]u8 = undefined;
     while (true) {
-        const input_len = fifo.read(&chunk);
+        const input_len = try reader.readSliceShort(&chunk);
         if (input_len == 0)
             return;
 
         for (chunk[0..input_len]) |byte| {
             line_buffer.push(byte);
-            try output.writer().writeByte(byte);
+            try writer.writeByte(byte);
 
             if (byte == '\n') {
-                try output.flush();
+                try writer.flush();
                 continue;
             }
 
@@ -389,9 +389,9 @@ fn consume_poll_result(
             }
 
             if (parse_poll_result(elves, line_buffer.*, .bits32)) |result| {
-                try render_elf_data(result.addr, result.elf, output);
+                try render_elf_data(result.addr, result.elf, writer);
             } else if (parse_poll_result(elves, line_buffer.*, .bits64)) |result| {
-                try render_elf_data(result.addr, result.elf, output);
+                try render_elf_data(result.addr, result.elf, writer);
             }
         }
     }
@@ -447,8 +447,8 @@ pub fn main() !u8 {
         @panic("missing application cli!");
     }
 
-    var created_lookups = std.ArrayList(*ReloadableLookup).init(allocator);
-    defer created_lookups.deinit();
+    var created_lookups: std.ArrayList(*ReloadableLookup) = .empty;
+    defer created_lookups.deinit(allocator);
     defer {
         for (created_lookups.items) |lookup| {
             lookup.destroy();
@@ -458,7 +458,7 @@ pub fn main() !u8 {
     for (elves.values()) |*value| {
         const lookup = try ReloadableLookup.create(allocator, value.path);
         errdefer lookup.destroy();
-        try created_lookups.append(lookup);
+        try created_lookups.append(allocator, lookup);
         value.lookup = lookup;
     }
 
@@ -507,17 +507,19 @@ fn spawn_and_filter_subprocess(elves: ElfSet, app_argv: []const []const u8, allo
 
 /// Polls the child process output streams and forwards them to stdout/stderr.
 fn filter_and_forward_stdio(allocator: std.mem.Allocator, elves: ElfSet, proc: *std.process.Child) !void {
-    var poller = std.io.poll(allocator, enum { stdout, stderr }, .{
+    var poller = std.Io.poll(allocator, enum { stdout, stderr }, .{
         .stdout = proc.stdout.?,
         .stderr = proc.stderr.?,
     });
     defer poller.deinit();
 
-    var stdout_line_buffer = RingBuffer{};
-    var stderr_line_buffer = RingBuffer{};
+    var stdout_line_buffer: RingBuffer = .{};
+    var stderr_line_buffer: RingBuffer = .{};
 
-    var stdout_buffered_writer = std.io.bufferedWriter(std.io.getStdOut().writer());
-    var stderr_buffered_writer = std.io.bufferedWriter(std.io.getStdErr().writer());
+    var stdout_buffer: [4096]u8 = undefined;
+    var stderr_buffer: [4096]u8 = undefined;
+    var stdout_buffered_writer = std.fs.File.stdout().writer(&stdout_buffer);
+    var stderr_buffered_writer = std.fs.File.stderr().writer(&stderr_buffer);
 
     try refresh_all_elves(elves);
 
@@ -527,18 +529,18 @@ fn filter_and_forward_stdio(allocator: std.mem.Allocator, elves: ElfSet, proc: *
             elves,
             &stdout_buffered_writer,
             &stdout_line_buffer,
-            poller.fifo(.stdout),
+            poller.reader(.stdout),
         );
         try consume_poll_result(
             elves,
             &stderr_buffered_writer,
             &stderr_line_buffer,
-            poller.fifo(.stderr),
+            poller.reader(.stderr),
         );
     }
 
-    try stdout_buffered_writer.flush();
-    try stderr_buffered_writer.flush();
+    try stdout_buffered_writer.interface.flush();
+    try stderr_buffered_writer.interface.flush();
 }
 
 fn refresh_all_elves(elves: ElfSet) !void {
@@ -590,7 +592,7 @@ const RingBuffer = struct {
 };
 
 test "RingBuffer get" {
-    var rb = RingBuffer{};
+    var rb: RingBuffer = .{};
 
     try std.testing.expect(rb.get(0) == 0);
     try std.testing.expect(rb.get(1) == 0);
@@ -620,7 +622,7 @@ test "RingBuffer get" {
 }
 
 test "RingBuffer copy_to" {
-    var rb = RingBuffer{};
+    var rb: RingBuffer = .{};
 
     rb.push_slice(&.{ 10, 20, 30, 40, 50, 60, 70, 80 });
 
@@ -767,9 +769,9 @@ pub fn read_elf_debug_info(allocator: std.mem.Allocator, elf_file: std.fs.File) 
 
     var sections = DebugSections{};
     var width: BitWidth = undefined;
-    var symbol_entries = std.ArrayList(SymbolEntry).init(allocator);
+    var symbol_entries: std.array_list.Managed(SymbolEntry) = .init(allocator);
     errdefer symbol_entries.deinit();
-    var section_entries = std.ArrayList(SectionEntry).init(allocator);
+    var section_entries: std.array_list.Managed(SectionEntry) = .init(allocator);
     errdefer section_entries.deinit();
 
     switch (mapped_mem[elf.EI_CLASS]) {
@@ -860,8 +862,8 @@ fn populate_sections32(
     mapped_mem: []const u8,
     hdr: *const std.elf.Elf32_Ehdr,
     sections: *DebugSections,
-    symbol_entries: *std.ArrayList(SymbolEntry),
-    section_entries: *std.ArrayList(SectionEntry),
+    symbol_entries: *std.array_list.Managed(SymbolEntry),
+    section_entries: *std.array_list.Managed(SectionEntry),
 ) !void {
     const shoff = std.math.cast(usize, hdr.e_shoff) orelse return error.Overflow;
     const shnum = std.math.cast(usize, hdr.e_shnum) orelse return error.Overflow;
@@ -884,8 +886,8 @@ fn populate_sections64(
     mapped_mem: []const u8,
     hdr: *const std.elf.Elf64_Ehdr,
     sections: *DebugSections,
-    symbol_entries: *std.ArrayList(SymbolEntry),
-    section_entries: *std.ArrayList(SectionEntry),
+    symbol_entries: *std.array_list.Managed(SymbolEntry),
+    section_entries: *std.array_list.Managed(SectionEntry),
 ) !void {
     const shoff = std.math.cast(usize, hdr.e_shoff) orelse return error.Overflow;
     const shnum = std.math.cast(usize, hdr.e_shnum) orelse return error.Overflow;
@@ -909,8 +911,8 @@ fn populate_sections_common(
     mapped_mem: []const u8,
     header_strings: []const u8,
     sections: *DebugSections,
-    symbol_entries: *std.ArrayList(SymbolEntry),
-    section_entries: *std.ArrayList(SectionEntry),
+    symbol_entries: *std.array_list.Managed(SymbolEntry),
+    section_entries: *std.array_list.Managed(SectionEntry),
     shdrs: []const ShdrType,
 ) !void {
     for (shdrs) |shdr| {
@@ -973,7 +975,7 @@ fn collect_symbol_entries(
     shdrs: anytype,
     shdr: anytype,
     section_data: []const u8,
-    symbol_entries: *std.ArrayList(SymbolEntry),
+    symbol_entries: *std.array_list.Managed(SymbolEntry),
 ) !void {
     if (comptime @TypeOf(shdr) == std.elf.Elf32_Shdr) {
         try collect_symbol_entries_typed(mapped_mem, shdrs, shdr, section_data, symbol_entries, std.elf.Elf32_Sym);
@@ -988,7 +990,7 @@ fn collect_symbol_entries_typed(
     shdrs: anytype,
     shdr: anytype,
     section_data: []const u8,
-    symbol_entries: *std.ArrayList(SymbolEntry),
+    symbol_entries: *std.array_list.Managed(SymbolEntry),
     comptime SymType: type,
 ) !void {
     const entsize = std.math.cast(usize, shdr.sh_entsize) orelse return error.InvalidDebugInfo;
