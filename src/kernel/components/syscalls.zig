@@ -578,10 +578,15 @@ pub const syscalls = struct {
         pub fn create_widget(window: abi.Window, uuid: *const abi.UUID) error{
             SystemResources,
             WidgetNotFound,
+            InvalidHandle,
         }!abi.Widget {
-            _ = window;
-            _ = uuid;
-            not_implemented_yet(@src());
+            const kproc, const win = try resolve_typed_resource(ashet.gui.Window, window.as_resource());
+
+            const widget = try ashet.gui.Widget.create(win, uuid);
+            errdefer widget.destroy();
+
+            const handle = try ashet.resources.add_to_process(kproc, &widget.system_resource);
+            return handle.unsafe_cast(.widget);
         }
 
         /// Moves and resizes a widget in one.

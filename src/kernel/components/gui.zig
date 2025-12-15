@@ -17,6 +17,7 @@ const WindowDesktopLinkList = astd.DoublyLinkedList(WindowDesktopLink, .{});
 const WindowDesktopLinkNode = WindowDesktopLinkList.Node;
 
 const DesktopList = astd.DoublyLinkedList(void, .{ .tag = opaque {} });
+const WidgetList = astd.DoublyLinkedList(void, .{ .tag = opaque {} });
 
 var all_desktops: DesktopList = .{};
 
@@ -141,6 +142,7 @@ pub const Desktop = struct {
             },
         });
     }
+
     fn notify_invalidate_window(desktop: *Desktop, window: *Window, area: Rectangle) void {
         const window_handle = ashet.resources.get_handle(desktop.server_process, &window.system_resource) orelse {
             logger.warn("failed to send notify_invalidate_window notification: window does not exist anymore!", .{});
@@ -207,6 +209,9 @@ pub const Window = struct {
     event_queue: astd.RingBuffer(ashet.abi.WindowEvent, event_queue_len) = .{},
     event_awaiter: ?*ashet.overlapped.AsyncCall = null,
 
+    // Widget management:
+    widgets: WidgetList = .empty,
+
     fn from_node(node: *WindowDesktopLinkNode) *Window {
         return @fieldParentPtr("desktop", node);
     }
@@ -259,6 +264,17 @@ pub const Window = struct {
 
     fn _notify_destroy(window: *Window) void {
         const desktop: *Desktop = window.desktop.data.desktop;
+
+        while (window.widgets.last) |tail_widget| {
+            const widget: *Widget = Widget.from_link(tail_widget);
+            std.debug.assert(widget.window == window);
+
+            widget.destroy();
+
+            // destroy must remove the widget from the list of widgets inside
+            // this window, so we add a safety check for this:
+            std.debug.assert(!window.widgets.contains(tail_widget));
+        }
 
         // Invoke the handler process before removing it from the desktop.
         // this operation must happen as long as the window is still an "alive" resource:
@@ -320,14 +336,69 @@ pub const Window = struct {
 };
 
 pub const Widget = struct {
-    pub const Destructor = ashet.resources.Destructor(@This(), _internal_destroy);
+    pub const Destructor = ashet.resources.DestructorWithNotification(@This(), _internal_destroy, _notify_destroy);
+
     system_resource: ashet.resources.SystemResource = .{ .type = .widget },
+
+    associated_memory: std.heap.ArenaAllocator,
+
+    window: *Window,
+    window_link: WidgetList.Node = .{ .data = {} },
+
+    type: *WidgetType,
+
+    widget_data: []u8,
 
     pub const destroy = Destructor.destroy;
 
+    pub fn create(
+        owner: *Window,
+        uuid: *const UUID,
+    ) error{ SystemResources, WidgetNotFound }!*Widget {
+        const widget_type = WidgetType.registry.get(uuid.*) orelse return error.WidgetNotFound;
+
+        const widget = ashet.memory.type_pool(Widget).alloc() catch return error.SystemResources;
+        errdefer ashet.memory.type_pool(Widget).free(widget);
+
+        widget.* = .{
+            .associated_memory = std.heap.ArenaAllocator.init(ashet.memory.allocator),
+            .window = owner,
+            .type = widget_type,
+
+            .widget_data = undefined,
+        };
+        errdefer widget.associated_memory.deinit();
+
+        widget.widget_data = widget.associated_memory.allocator().alignedAlloc(u8, 16, widget_type.widget_data_size) catch return error.SystemResources;
+        @memset(widget.widget_data, 0);
+
+        owner.widgets.append(&widget.window_link);
+        errdefer owner.widgets.remove(&widget.window_link);
+
+        try widget_type.process_event(widget, .add_ownership, .{
+            .event_type = .create,
+        });
+
+        return widget;
+    }
+
+    fn from_link(link: *WidgetList.Node) *Widget {
+        return @fieldParentPtr("window_link", link);
+    }
+
+    fn _notify_destroy(widget: *Widget) void {
+        widget.type.process_event(widget, .default, .{
+            .event_type = .destroy,
+        });
+
+        widget.window.widgets.remove(&widget.window_link);
+    }
+
     fn _internal_destroy(widget: *Widget) void {
-        _ = widget;
-        @panic("Not implemented yet!");
+        std.debug.assert(!widget.window.widgets.contains(&widget.window_link));
+
+        widget.associated_memory.deinit();
+        ashet.memory.type_pool(Widget).free(widget);
     }
 };
 
@@ -340,7 +411,7 @@ pub const WidgetType = struct {
     server_process: *ashet.multi_tasking.Process,
 
     uuid: UUID,
-    data_size: usize,
+    widget_data_size: usize,
     flags: ashet.abi.WidgetDescriptor.Flags,
     handle_event: ashet.abi.WidgetEventHandler,
 
@@ -363,7 +434,7 @@ pub const WidgetType = struct {
         widget_type.* = .{
             .server_process = server_process,
             .uuid = descriptor.uuid,
-            .data_size = descriptor.data_size,
+            .widget_data_size = descriptor.data_size,
             .flags = descriptor.flags,
             .handle_event = descriptor.handle_event,
         };
@@ -381,6 +452,33 @@ pub const WidgetType = struct {
         std.debug.assert(registry.swapRemove(widget_type.uuid));
 
         ashet.memory.type_pool(WidgetType).free(widget_type);
+    }
+
+    const ProcessEventMode = enum { default, add_ownership };
+
+    pub fn process_event(widget_type: *WidgetType, widget: *Widget, comptime mode: ProcessEventMode, event: ashet.abi.WidgetEvent) switch (mode) {
+        .default => void,
+        .add_ownership => error{SystemResources}!void,
+    } {
+        const type_handle = ashet.resources.get_handle(widget_type.server_process, &widget_type.system_resource) orelse @panic("process_event called for a process that does not own the widget type");
+
+        const widget_handle = switch (mode) {
+            .add_ownership => try ashet.resources.add_to_process(widget_type.server_process, &widget.system_resource),
+            .default => ashet.resources.get_handle(widget_type.server_process, &widget.system_resource) orelse {
+                logger.warn("failed to process widget notification: widget does not exist anymore!", .{});
+                return;
+            },
+        };
+
+        ashet.multi_tasking.call_inside_process(
+            widget_type.server_process,
+            widget_type.handle_event,
+            .{
+                type_handle.unsafe_cast(.widget_type),
+                widget_handle.unsafe_cast(.widget),
+                &event,
+            },
+        );
     }
 };
 
