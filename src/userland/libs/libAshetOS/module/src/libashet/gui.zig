@@ -5,9 +5,12 @@ const logger = std.log.scoped(.gui);
 
 const Size = ashet.abi.Size;
 
+pub const UUID = ashet.abi.UUID;
+
 pub const Desktop = ashet.abi.Desktop;
 pub const Window = ashet.abi.Window;
 pub const Widget = ashet.abi.Widget;
+pub const WidgetType = ashet.abi.WidgetType;
 
 pub const WindowFlags = ashet.abi.WindowFlags;
 pub const WidgetNotifyEvent = ashet.abi.WidgetNotifyEvent;
@@ -118,4 +121,34 @@ pub const WindowEvent = union(ashet.abi.WindowEvent.Type) {
             .window_resized = null,
         });
     }
+};
+
+pub fn create_widget(window: Window, uuid: *const UUID) !Widget {
+    return try ashet.abi.gui.create_widget(window, uuid);
+}
+
+pub const widgets = struct {
+    pub const label = UUID.constant("53b8be36-969a-46a3-bdf5-e3d197890219");
+
+    pub const button = UUID.constant("782ccd0e-bae4-4093-93fe-12c1f86ff43c");
+
+    pub const panel = UUID.constant("1fa5b237-0bda-48d1-b95a-fcf80616318b");
+
+    pub const picture_box = UUID.constant("bb33e7a1-74ad-4040-a248-0015ba6b9dac");
+
+    pub const progress_bar = UUID.constant("b96290a9-542f-45f5-9e37-1ce9084fc0e3");
+
+    pub const group_box = UUID.constant("b96bc6a2-6df0-4f76-962a-4af18fdf3548");
+
+    pub const text_box = UUID.constant("02eddbc3-b882-41e9-8aba-10d12b451e11");
+
+    pub const multi_line_text_box = UUID.constant("84d40a1a-04ab-4e00-ae93-6e91e6b3d10a");
+
+    pub const vertical_scroll_bar = UUID.constant("d1c52f74-e9b8-4067-8bb6-fe01c49d97ae");
+
+    pub const horizontal_scroll_bar = UUID.constant("2899397f-ede2-46e9-8458-1eea29c81fa1");
+
+    pub const check_box = UUID.constant("051c6bff-d491-4e5a-8b77-6f4244da52ee");
+
+    pub const radio_button = UUID.constant("4f18fde6-944c-494f-a55c-ba11f45fcfa3");
 };

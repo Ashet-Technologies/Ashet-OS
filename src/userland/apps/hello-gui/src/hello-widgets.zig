@@ -3,8 +3,12 @@ const ashet = @import("ashet");
 
 pub usingnamespace ashet.core;
 
+const UUID = ashet.abi.UUID;
 const Size = ashet.abi.Size;
 const Point = ashet.abi.Point;
+
+const button_uuid = UUID.constant("782ccd0e-bae4-4093-93fe-12c1f86ff43c");
+const label_uuid = UUID.constant("53b8be36-969a-46a3-bdf5-e3d197890219");
 
 pub fn main() !void {
     var argv_buffer: [8]ashet.abi.SpawnProcessArg = undefined;
@@ -30,6 +34,15 @@ pub fn main() !void {
     defer window.destroy_now();
     std.log.info("created window: {}", .{window});
 
+    const inc_button = try ashet.gui.create_widget(window, ashet.gui.widgets.button);
+    defer inc_button.release();
+
+    const count_label = try ashet.gui.create_widget(window, ashet.gui.widgets.label);
+    defer count_label.release();
+
+    const dec_button = try ashet.gui.create_widget(window, ashet.gui.widgets.button);
+    defer dec_button.release();
+
     main_loop: while (true) {
         const event = try ashet.gui.get_window_event(window);
 
@@ -37,7 +50,7 @@ pub fn main() !void {
             .window_close => break :main_loop,
 
             .widget_notify => |notify| {
-                std.log.info("widget notify widget={*}, type={}, data={{ {}, {}, {}, {} }}", .{
+                std.log.info("widget notify widget={}, type={}, data={{ {}, {}, {}, {} }}", .{
                     notify.widget,
                     notify.type,
                     notify.data[0],
