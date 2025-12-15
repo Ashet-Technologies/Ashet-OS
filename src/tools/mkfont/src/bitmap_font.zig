@@ -120,13 +120,15 @@ pub fn generate(
             .offset_y = @intCast(shrink_dy),
         });
 
-        for (min_y..max_y) |y| {
-            for (min_x..max_x) |x| {
-                const gx = x - min_x;
-                const gy = y - min_y;
+        if (width > 0 and height > 0) {
+            for (min_y..max_y) |y| {
+                for (min_x..max_x) |x| {
+                    const gx = x - min_x;
+                    const gy = y - min_y;
 
-                const pix = get_pixel(image, x, y);
-                out_glyph.set_pixel(gx, gy, .from_bool(is_glyph_body(select_pixels, pix)));
+                    const pix = get_pixel(image, x, y);
+                    out_glyph.set_pixel(gx, gy, .from_bool(is_glyph_body(select_pixels, pix)));
+                }
             }
         }
 
