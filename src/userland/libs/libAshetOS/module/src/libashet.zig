@@ -1,6 +1,8 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+pub const utility = @import("utility.zig");
+
 pub const abi = @import("ashet-abi");
 
 pub const graphics = @import("libashet/graphics.zig");

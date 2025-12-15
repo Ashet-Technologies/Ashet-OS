@@ -7,12 +7,19 @@ pub fn build(b: *std.Build) void {
 
     const sdk = AshetOS.init(b, "AshetOS", .{ .target = target });
 
-    const app = sdk.addApp(.{
-        .name = "hello-gui",
+    const fb_app = sdk.addApp(.{
+        .name = "hello-fb",
         .target = target,
         .optimize = optimize,
-        .root_source_file = b.path("hello-gui.zig"),
+        .root_source_file = b.path("src/hello-framebuffer.zig"),
     });
+    sdk.installApp(fb_app, .{});
 
-    sdk.installApp(app, .{});
+    const widgets_app = sdk.addApp(.{
+        .name = "hello-widgets",
+        .target = target,
+        .optimize = optimize,
+        .root_source_file = b.path("src/hello-widgets.zig"),
+    });
+    sdk.installApp(widgets_app, .{});
 }

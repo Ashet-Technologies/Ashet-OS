@@ -228,7 +228,8 @@ pub fn build(b: *std.Build) void {
         const apps: []const AppDef = &.{
             .{ .name = "init", .exe = get_named_file(os_files, "apps/init.elf") },
             .{ .name = "hello-world", .exe = get_named_file(os_files, "apps/hello-world.elf") },
-            .{ .name = "hello-gui", .exe = get_named_file(os_files, "apps/hello-gui.elf") },
+            .{ .name = "hello-widgets", .exe = get_named_file(os_files, "apps/hello-widgets.elf") },
+            .{ .name = "hello-fb", .exe = get_named_file(os_files, "apps/hello-fb.elf") },
             .{ .name = "classic", .exe = get_named_file(os_files, "apps/desktop/classic.elf") },
             .{ .name = "dungeon.ashex", .exe = get_named_file(os_files, "apps/dungeon.elf") },
             .{ .name = "ntp-client.ashex", .exe = get_named_file(os_files, "apps/ntp-client.elf") },
