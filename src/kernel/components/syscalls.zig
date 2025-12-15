@@ -418,9 +418,15 @@ pub const syscalls = struct {
         }
 
         /// Creates a new framebuffer that allows painting into a widget.
-        pub fn create_widget_framebuffer(widget: abi.Widget) error{ SystemResources, InvalidHandle }!abi.Framebuffer {
-            _ = widget;
-            @panic("not implemented  yet!");
+        pub fn create_widget_framebuffer(widget_handle: abi.Widget) error{ SystemResources, InvalidHandle }!abi.Framebuffer {
+            const proc, const output = try resolve_typed_resource(ashet.gui.Widget, widget_handle.as_resource());
+
+            const fb = try ashet.graphics.Framebuffer.create_widget(output);
+            errdefer fb.destroy();
+
+            const handle = try ashet.resources.add_to_process(proc, &fb.system_resource);
+
+            return handle.unsafe_cast(.framebuffer);
         }
 
         /// Returns the type of a framebuffer object.
@@ -590,11 +596,9 @@ pub const syscalls = struct {
         }
 
         /// Moves and resizes a widget in one.
-        pub fn place_widget(widget: abi.Widget, position: abi.Point, size: abi.Size) void {
-            _ = widget;
-            _ = position;
-            _ = size;
-            not_implemented_yet(@src());
+        pub fn place_widget(widget: abi.Widget, bounds: abi.Rectangle) error{InvalidHandle}!abi.Rectangle {
+            _, const wid = try resolve_typed_resource(ashet.gui.Widget, widget.as_resource());
+            return wid.place(bounds);
         }
 
         /// Triggers the `control` event of the widget with the given `message` as a payload.

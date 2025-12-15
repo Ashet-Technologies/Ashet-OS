@@ -26,9 +26,9 @@ pub fn main() !void {
         desktop,
         .{
             .title = "GUI Widgets Demo",
-            .min_size = Size.new(100, 100),
+            .min_size = Size.new(100, 80),
             .max_size = Size.new(300, 200),
-            .initial_size = Size.new(200, 150),
+            .initial_size = Size.new(100, 80),
         },
     );
     defer window.destroy_now();
@@ -42,6 +42,10 @@ pub fn main() !void {
 
     const dec_button = try ashet.gui.create_widget(window, ashet.gui.widgets.button);
     defer dec_button.release();
+
+    _ = try ashet.gui.place_widget(inc_button, .{ .x = 10, .y = 10, .width = 80, .height = 19 });
+    _ = try ashet.gui.place_widget(count_label, .{ .x = 10, .y = 31, .width = 80, .height = 18 });
+    _ = try ashet.gui.place_widget(dec_button, .{ .x = 10, .y = 51, .width = 80, .height = 19 });
 
     main_loop: while (true) {
         const event = try ashet.gui.get_window_event(window);

@@ -248,6 +248,7 @@ pub const Window = struct {
         });
 
         window.pixels = window.associated_memory.allocator().alignedAlloc(ashet.abi.Color, 4, @as(u32, window.max_size.width) * window.max_size.height) catch return error.SystemResources;
+        @memset(window.pixels, .white);
 
         window.title = window.associated_memory.allocator().dupeZ(u8, title) catch return error.SystemResources;
 
@@ -300,12 +301,16 @@ pub const Window = struct {
 
     /// Invalidates the complete window and notifies the owning desktop that it should handle this.
     pub fn invalidate_full(window: *Window) void {
-        const desktop: *Desktop = window.desktop.data.desktop;
-
-        desktop.notify_invalidate_window(window, Rectangle.new(
+        window.invalidate_region(.new(
             Point.zero,
             window.size,
         ));
+    }
+
+    /// Invalidates a region of the window and notifies the owning desktop that this part should be drawn.
+    pub fn invalidate_region(window: *Window, region: Rectangle) void {
+        const desktop: *Desktop = window.desktop.data.desktop;
+        desktop.notify_invalidate_window(window, region);
     }
 
     pub fn post_event(window: *Window, event: ashet.abi.WindowEvent) void {
@@ -338,15 +343,20 @@ pub const Window = struct {
 pub const Widget = struct {
     pub const Destructor = ashet.resources.DestructorWithNotification(@This(), _internal_destroy, _notify_destroy);
 
+    // static data
     system_resource: ashet.resources.SystemResource = .{ .type = .widget },
-
     associated_memory: std.heap.ArenaAllocator,
+    type: *WidgetType,
 
+    // window integration
     window: *Window,
     window_link: WidgetList.Node = .{ .data = {} },
 
-    type: *WidgetType,
+    // visuals
+    bounds: Rectangle,
+    pixels: []align(4) ashet.abi.Color,
 
+    // type-specific data
     widget_data: []u8,
 
     pub const destroy = Destructor.destroy;
@@ -365,12 +375,17 @@ pub const Widget = struct {
             .window = owner,
             .type = widget_type,
 
+            .bounds = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
+
+            .pixels = undefined,
             .widget_data = undefined,
         };
         errdefer widget.associated_memory.deinit();
 
         widget.widget_data = widget.associated_memory.allocator().alignedAlloc(u8, 16, widget_type.widget_data_size) catch return error.SystemResources;
         @memset(widget.widget_data, 0);
+
+        widget.pixels = widget.associated_memory.allocator().alignedAlloc(ashet.abi.Color, 4, 0) catch return error.SystemResources;
 
         owner.widgets.append(&widget.window_link);
         errdefer owner.widgets.remove(&widget.window_link);
@@ -382,7 +397,7 @@ pub const Widget = struct {
         return widget;
     }
 
-    fn from_link(link: *WidgetList.Node) *Widget {
+    pub fn from_link(link: *WidgetList.Node) *Widget {
         return @fieldParentPtr("window_link", link);
     }
 
@@ -399,6 +414,94 @@ pub const Widget = struct {
 
         widget.associated_memory.deinit();
         ashet.memory.type_pool(Widget).free(widget);
+    }
+
+    /// Places the widget into a new location on the owning window.
+    /// Invokes the widget server and emits necessary resize events.
+    ///
+    /// Returns the new actual location of the widget.
+    pub fn place(widget: *Widget, desired_bounds: Rectangle) Rectangle {
+        const previous = widget.bounds;
+
+        const resize_requested = !previous.size().eql(desired_bounds.size());
+
+        widget.bounds = desired_bounds;
+        if (resize_requested) {
+            widget.type.process_event(widget, .default, .{
+                .event_type = .resized,
+            });
+        }
+
+        const resize_granted = resize_requested and !previous.size().eql(widget.bounds.size());
+
+        const was_moved = !previous.position().eql(desired_bounds.position());
+
+        logger.info("{*} resized from {} to {}", .{ widget, previous, widget.bounds });
+
+        if (resize_granted) {
+            // Resize the internal pixel buffer to new size:
+            const allocator = widget.associated_memory.allocator();
+
+            const new_size = @as(usize, widget.bounds.width) * @as(usize, widget.bounds.height);
+            if (widget.pixels.len < new_size) {
+                // we don't have enough storage for the new resized widget,
+                // so we have to get more memory:
+                if (!allocator.resize(widget.pixels, new_size)) {
+                    if (allocator.realloc(widget.pixels, new_size)) |new_pixels| {
+                        widget.pixels = new_pixels;
+                    } else |_| {
+                        // we failed to reallocate the new pixel buffer.
+                        // this means the resize operation is failing as it
+                        // would out of memory. to prevent a crash, just accept
+                        // that the resize can't happen right now and revert it.
+
+                        logger.err("failed to resize widget {*} from {} to {}: out of memory", .{
+                            widget,
+                            previous.size(),
+                            widget.bounds.size(),
+                        });
+
+                        widget.bounds.width = previous.width;
+                        widget.bounds.height = previous.height;
+                    }
+                }
+            }
+        }
+        const was_resized = !previous.size().eql(widget.bounds.size());
+
+        if (was_resized) {
+            // the widget was resized, which means its pixel contents aren't correctly rendered
+            // anymore.
+            @memset(widget.pixels, .black);
+            widget.type.process_event(widget, .default, .{
+                // TODO: Rendering is asynchronous, how can we handle this here?
+                //       the paint even must be processed synchronously, but the rendering
+                //       can take some time and might conflict with other schedulings.
+                .event_type = .paint,
+            });
+        }
+
+        if (was_moved) {
+            // If we moved the widget, we have to invalidate both the previous and the new
+            // location:
+            widget.window.invalidate_region(previous);
+            widget.window.invalidate_region(widget.bounds);
+        } else if (was_resized) {
+            // If we only resized the widget, we can just invalidate the bigger of the two
+            // areas
+            std.debug.assert(widget.bounds.x == previous.x);
+            std.debug.assert(widget.bounds.y == previous.y);
+            widget.window.invalidate_region(.{
+                .x = widget.bounds.x,
+                .y = widget.bounds.y,
+                .width = @max(widget.bounds.width, previous.width),
+                .height = @max(widget.bounds.height, previous.height),
+            });
+        } else {
+            std.debug.assert(widget.bounds.eql(previous));
+        }
+
+        return widget.bounds;
     }
 };
 

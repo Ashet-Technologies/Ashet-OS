@@ -98,6 +98,17 @@ pub const Framebuffer = struct {
         return fb;
     }
 
+    pub fn create_widget(widget: *ashet.gui.Widget) error{SystemResources}!*Framebuffer {
+        const fb = ashet.memory.type_pool(Framebuffer).alloc() catch return error.SystemResources;
+        errdefer ashet.memory.type_pool(Framebuffer).free(fb);
+
+        fb.* = .{
+            .type = .{ .widget = widget },
+        };
+
+        return fb;
+    }
+
     pub const destroy = Destructor.destroy;
 
     fn _internal_destroy(fb: *Framebuffer) void {
@@ -108,7 +119,7 @@ pub const Framebuffer = struct {
             },
             .video => {},
             .window => {},
-            .widget => @panic("Framebuffer(.widget).destroy Not implemented yet!"),
+            .widget => {},
         }
         ashet.memory.type_pool(Framebuffer).free(fb);
     }
@@ -118,7 +129,7 @@ pub const Framebuffer = struct {
             .memory => {}, // no-op, nothing to invalidate
             .video => |video| video.output.flush(),
             .window => |win| win.invalidate_full(),
-            .widget => @panic("Framebuffer(.widget).invalidate Not implemented yet!"),
+            .widget => |widget| widget.window.invalidate_region(widget.bounds),
         }
     }
 
@@ -132,7 +143,7 @@ pub const Framebuffer = struct {
             .memory => |bmp| .{ bmp.width, bmp.height, bmp.stride },
             .video => |video| .{ video.memory.width, video.memory.height, video.memory.stride },
             .window => |win| .{ win.size.width, win.size.height, win.max_size.width },
-            .widget => @panic("Framebuffer(.widget).create_cursor Not implemented yet!"),
+            .widget => |widget| .{ widget.bounds.width, widget.bounds.height, widget.bounds.width },
         };
         return .{
             .width = width,
@@ -146,7 +157,7 @@ pub const Framebuffer = struct {
             .memory => |bmp| bmp.pixels,
             .video => |video| video.memory.base,
             .window => |win| win.pixels.ptr,
-            .widget => @panic("Framebuffer(.widget).emit_pixels Not implemented yet!"),
+            .widget => |widget| widget.pixels.ptr,
         };
 
         @memset(framebuffer[cursor.offset..][0..count], color);
@@ -157,7 +168,7 @@ pub const Framebuffer = struct {
             .memory => |bmp| bmp.pixels,
             .video => |video| video.memory.base,
             .window => |win| win.pixels.ptr,
-            .widget => @panic("Framebuffer(.widget).fetch_pixels Not implemented yet!"),
+            .widget => |widget| widget.pixels.ptr,
         };
         // logger.info("{s} {*} {*}", .{ @tagName(fb.type), framebuffer, pixels });
         // logger.info("{any}", .{framebuffer[cursor.offset..][0..pixels.len]});
@@ -169,7 +180,7 @@ pub const Framebuffer = struct {
             .memory => |bmp| bmp.pixels,
             .video => |video| video.memory.base,
             .window => |win| win.pixels.ptr,
-            .widget => @panic("Framebuffer(.widget).copy_pixels Not implemented yet!"),
+            .widget => |widget| widget.pixels.ptr,
         };
         @memcpy(framebuffer[cursor.offset..][0..pixels.len], pixels);
     }
@@ -281,6 +292,12 @@ pub fn get_system_font(font_name: []const u8) error{FileNotFound}!*Font {
 
 var render_temp_buffer: std.heap.ArenaAllocator = .init(ashet.memory.page_allocator);
 
+const Rasterizer = agp_swrast.Rasterizer(.{
+    .backend_type = *Framebuffer,
+    .framebuffer_type = *Framebuffer,
+    .pixel_layout = .row_major,
+});
+
 fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.Inputs) ashet.abi.draw.Render.Error!ashet.abi.draw.Render.Outputs {
     const fb = ashet.resources.resolve(Framebuffer, call.resource_owner, inputs.target.as_resource()) catch |err| return switch (err) {
         error.InvalidHandle,
@@ -313,12 +330,6 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
     {
         _ = render_temp_buffer.reset(.retain_capacity);
 
-        const Rasterizer = agp_swrast.Rasterizer(.{
-            .backend_type = *Framebuffer,
-            .framebuffer_type = *Framebuffer,
-            .pixel_layout = .row_major,
-        });
-
         var rasterizer = Rasterizer.init(fb);
 
         var decoder = agp.decoder(render_temp_buffer.allocator(), fbs.reader());
@@ -349,6 +360,17 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
                         ),
                         framebuffer,
                     );
+                    switch (framebuffer.type) {
+                        .widget => @panic("TODO: Implement partial blitting of widget framebuffer"),
+                        .window => |window| try blit_widget_data(
+                            &rasterizer,
+                            window,
+                            Point.new(blit_framebuffer.x, blit_framebuffer.y),
+                            .zero,
+                            framebuffer.get_size(),
+                        ),
+                        .video, .memory => {},
+                    }
                 },
                 .blit_partial_framebuffer => |blit_framebuffer| {
                     const framebuffer = ashet.resources.resolve(Framebuffer, call.resource_owner, blit_framebuffer.framebuffer.as_resource()) catch |err| switch (err) {
@@ -363,6 +385,17 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
                         Point.new(blit_framebuffer.src_x, blit_framebuffer.src_y),
                         framebuffer,
                     );
+                    switch (framebuffer.type) {
+                        .widget => @panic("TODO: Implement partial blitting of widget framebuffer"),
+                        .window => |window| try blit_widget_data(
+                            &rasterizer,
+                            window,
+                            Point.new(blit_framebuffer.x, blit_framebuffer.y),
+                            Point.new(blit_framebuffer.src_x, blit_framebuffer.src_y),
+                            Size.new(blit_framebuffer.width, blit_framebuffer.height),
+                        ),
+                        .video, .memory => {},
+                    }
                 },
                 else => try rasterizer.execute(cmd),
             }
@@ -381,4 +414,59 @@ pub fn render_async(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Re
         ashet.abi.draw.Render,
         render_sync(call, inputs),
     );
+}
+
+fn blit_widget_data(
+    rast: *Rasterizer,
+    window: *ashet.gui.Window,
+    target_pos: Point,
+    source_pos: Point,
+    size: Size,
+) !void {
+    if (window.widgets.len == 0)
+        return;
+
+    // logger.info("blit widgets from {}/{} to  {}", .{
+    //     source_pos,
+    //     size,
+    //     target_pos,
+    // });
+
+    var iter = window.widgets.first;
+    while (iter) |node| : (iter = node.next) {
+        const widget = ashet.gui.Widget.from_link(node);
+
+        // logger.info("blit widget {*} @ {}", .{ widget, widget.bounds });
+
+        const dx = widget.bounds.x -| source_pos.x;
+        const dy = widget.bounds.y -| source_pos.y;
+        const sw = @min(size.width, widget.bounds.width);
+        const sh = @min(size.height, widget.bounds.height);
+        if (sw > 0 and sh > 0) {
+            const dest: Rectangle = .{
+                .x = target_pos.x +| dx,
+                .y = target_pos.y +| dy,
+                .width = sw,
+                .height = sh,
+            };
+            const src: Point = .new(@max(-dx, 0), @max(-dy, 0));
+
+            const bmp: agp.Bitmap = .{
+                .has_transparency = false,
+                .transparency_key = undefined,
+                .stride = widget.bounds.width,
+                .width = widget.bounds.width,
+                .height = widget.bounds.height,
+                .pixels = widget.pixels.ptr,
+            };
+
+            // logger.info("blit widget {*} @ {}: {} {}", .{ widget, widget.bounds, dest, src });
+            // rast.fill_rect(dest, .purple);
+            rast.blit_partial_bitmap(dest, src, &bmp);
+        } else {
+            // logger.info("skip widget {*} @ {}: {}, {}, {},  {}", .{ widget, widget.bounds, dx, dy, sw, sh });
+        }
+    }
+
+    // @panic("TODO: Implement blitting of widgets.");
 }

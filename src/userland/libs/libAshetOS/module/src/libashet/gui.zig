@@ -4,6 +4,8 @@ const ashet = @import("../libashet.zig");
 const logger = std.log.scoped(.gui);
 
 const Size = ashet.abi.Size;
+const Point = ashet.abi.Point;
+const Rectangle = ashet.abi.Rectangle;
 
 pub const UUID = ashet.abi.UUID;
 
@@ -125,6 +127,10 @@ pub const WindowEvent = union(ashet.abi.WindowEvent.Type) {
 
 pub fn create_widget(window: Window, uuid: *const UUID) !Widget {
     return try ashet.abi.gui.create_widget(window, uuid);
+}
+
+pub fn place_widget(widget: Widget, bounds: Rectangle) !Rectangle {
+    return try ashet.abi.gui.place_widget(widget, bounds);
 }
 
 pub const widgets = struct {

@@ -1279,10 +1279,18 @@ namespace gui {
     }
 
     /// Moves and resizes a widget in one.
+    ///
+    /// NOTE: The position of a widget is unrestricted, but it's size
+    ///       may be restricted by the selected widget type.
     syscall place_widget {
         in    widget: Widget;
-        in    position: Point;
-        in    size: Size;
+
+        /// The desired position and size of the widget.
+        in    desired: Rectangle;
+
+        /// The actual position and size of the widget after the operation.
+        out   actual: Rectangle;
+
         error InvalidHandle;
     }
 
@@ -2574,7 +2582,7 @@ bitstruct CreateWindowFlags : u32 {
     reserve u31 = 0;
 }
 
-typedef WidgetEventHandler = fnptr (Widget, *const WidgetEvent) void;
+typedef WidgetEventHandler = fnptr (WidgetType, Widget, *const WidgetEvent) void;
 
 
 struct WidgetDescriptor {
@@ -2988,6 +2996,7 @@ union WidgetEvent {
 
         //? widget specific:
 
+        //? TODO: Implement ResizedArgs with "desired size, actual size"
         /// The widget was resized with a call to `place_widget`.
         ///
         /// NOTE: This event will not fire if the widget was only moved.

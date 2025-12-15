@@ -4,6 +4,9 @@ const ashet = @import("ashet");
 pub usingnamespace ashet.core;
 
 const abi = ashet.abi;
+const Size = abi.Size;
+const Point = abi.Point;
+const Rectangle = abi.Rectangle;
 const UUID = abi.UUID;
 const Widget = abi.Widget;
 const WidgetType = abi.WidgetType;
@@ -59,7 +62,34 @@ pub const Label = struct {
 
     pub fn handle_event(widget_type: WidgetType, widget: Widget, event: *const WidgetEvent) callconv(.c) void {
         _ = widget_type;
+
         std.log.info("Label.handle_event({}, {})", .{ widget, event.event_type });
+        switch (event.event_type) {
+            .create, .paint => {
+                const fb = ashet.graphics.create_widget_framebuffer(widget) catch return;
+                defer fb.release();
+
+                const size = ashet.graphics.get_framebuffer_size(fb) catch Size.empty;
+
+                std.log.info("Label size: {}", .{size});
+
+                // ashet.graphics.render(
+                //     fb,
+                //     &.{
+                //         0x00, 0xFF, // clear
+                //         0x03, // draw line
+                //         0x05, 0x00, // x0
+                //         0x05, 0x00, // y0
+                //         0x1A, 0x00, // x1
+                //         0x0A, 0x00, // y1
+                //         0x80, // color
+                //     },
+                //     true,
+                // ) catch |err| std.log.err("failed to draw: {s}", .{@errorName(err)});
+            },
+
+            else => {},
+        }
     }
 };
 

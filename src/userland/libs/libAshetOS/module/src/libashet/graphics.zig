@@ -185,6 +185,10 @@ pub fn create_window_framebuffer(window: ashet.abi.Window) !Framebuffer {
     return try ashet.abi.draw.create_window_framebuffer(window);
 }
 
+pub fn create_widget_framebuffer(widget: ashet.abi.Widget) !Framebuffer {
+    return try ashet.abi.draw.create_widget_framebuffer(widget);
+}
+
 pub fn get_framebuffer_memory(fb: Framebuffer) !ashet.abi.VideoMemory {
     return try ashet.abi.draw.get_framebuffer_memory(fb);
 }
