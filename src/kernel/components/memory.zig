@@ -377,7 +377,7 @@ pub const page_allocator = std.mem.Allocator{
 // 0x80040000: 00000000 684a0920 00000000 00000000 ptr, vtable, first, end_index
 //      ptr=0
 //      vtable=0x20094a68
-var general_purpose_allocator_instance = std.heap.ArenaAllocator.init(page_allocator);
+var general_purpose_allocator_instance = std.heap.ArenaAllocator.init(page_allocator); // TODO: Implement general purpose allocator here!
 var page_allocator_instance: PageAllocator = .{};
 
 const PageAllocator = struct {

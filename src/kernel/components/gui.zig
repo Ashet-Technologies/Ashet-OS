@@ -8,6 +8,8 @@ const Size = ashet.abi.Size;
 const Rectangle = ashet.abi.Rectangle;
 const CreateWindowFlags = ashet.abi.CreateWindowFlags;
 
+const UUID = ashet.abi.UUID;
+
 const WindowDesktopLink = struct {
     desktop: *Desktop,
 };
@@ -331,13 +333,54 @@ pub const Widget = struct {
 
 pub const WidgetType = struct {
     pub const Destructor = ashet.resources.Destructor(@This(), _internal_destroy);
+
+    pub var registry: std.AutoArrayHashMapUnmanaged(UUID, *WidgetType) = .empty;
+
     system_resource: ashet.resources.SystemResource = .{ .type = .widget_type },
+    server_process: *ashet.multi_tasking.Process,
+
+    uuid: UUID,
+    data_size: usize,
+    flags: ashet.abi.WidgetDescriptor.Flags,
+    handle_event: ashet.abi.WidgetEventHandler,
 
     pub const destroy = Destructor.destroy;
 
+    pub fn create(
+        server_process: *ashet.multi_tasking.Process,
+        descriptor: *const ashet.abi.WidgetDescriptor,
+    ) error{ SystemResources, AlreadyRegistered }!*WidgetType {
+        const gop = registry.getOrPut(ashet.memory.allocator, descriptor.uuid) catch |err| switch (err) {
+            error.OutOfMemory => return error.SystemResources,
+        };
+        if (gop.found_existing)
+            return error.AlreadyRegistered;
+        errdefer _ = registry.swapRemove(descriptor.uuid);
+
+        const widget_type = ashet.memory.type_pool(WidgetType).alloc() catch return error.SystemResources;
+        errdefer ashet.memory.type_pool(WidgetType).free(widget_type);
+
+        widget_type.* = .{
+            .server_process = server_process,
+            .uuid = descriptor.uuid,
+            .data_size = descriptor.data_size,
+            .flags = descriptor.flags,
+            .handle_event = descriptor.handle_event,
+        };
+
+        gop.value_ptr.* = widget_type;
+
+        return widget_type;
+    }
+
     fn _internal_destroy(widget_type: *WidgetType) void {
-        _ = widget_type;
-        @panic("Not implemented yet!");
+        // TODO: Assert that no widgets of this type exist anymore / kill these widgets
+
+        // Removal of the registry must succeed, as otherwise
+        // we have a double-free situation or another registry corruption.
+        std.debug.assert(registry.swapRemove(widget_type.uuid));
+
+        ashet.memory.type_pool(WidgetType).free(widget_type);
     }
 };
 

@@ -18,6 +18,7 @@ const app_packages = [_][]const u8{
     "dungeon",
     "ntp_client",
     "i2c_scan",
+    "widgets",
     // TODO: Include "wiki" again,
 };
 

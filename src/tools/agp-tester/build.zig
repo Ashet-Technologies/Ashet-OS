@@ -9,7 +9,9 @@ pub fn build(b: *std.Build) void {
     const abi_dep = b.dependency("abi", .{});
     const agp_dep = b.dependency("agp", .{});
     const agp_swrast_dep = b.dependency("agp_swrast", .{});
-    const widgets_dep = b.dependency("widgets", .{});
+    const widgets_dep = b.dependency("widgets", .{
+        .target = .x86,
+    });
 
     const abi_mod = abi_dep.module("ashet-abi");
     const agp_mod = agp_dep.module("agp");

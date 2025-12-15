@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const ashet = @import("../main.zig");
 const abi = @import("ashet-abi");
+const logger = std.log.scoped(.syscalls);
 
 const strace = std.log.scoped(.strace);
 
@@ -31,6 +32,14 @@ inline fn print_strace(name: []const u8) void {
     var current = it.next() orelse @returnAddress();
     current = it.next() orelse current;
     strace.info("{s} from {}", .{ name, ashet.fmtCodeLocation(current) });
+}
+
+noinline fn not_implemented_yet(location: std.builtin.SourceLocation) noreturn {
+    logger.err("{s}:{}:{}: TODO: syscall {s}/{s} not implemented yet", .{
+        location.file,   location.line,    location.column,
+        location.module, location.fn_name,
+    });
+    @panic("Syscall not implemented yet!");
 }
 
 const callbacks = struct {
@@ -177,20 +186,20 @@ pub const syscalls = struct {
 
             pub fn join(thr: abi.Thread) abi.process.ExitCode {
                 _ = thr;
-                @panic("not implemented yet");
+                not_implemented_yet(@src());
             }
 
             pub fn spawn(function: abi.process.thread.ThreadFunction, arg: ?*anyopaque, stack_size: usize) error{SystemResources}!abi.Thread {
                 _ = function;
                 _ = arg;
                 _ = stack_size;
-                @panic("not implemented yet");
+                not_implemented_yet(@src());
             }
 
             pub fn kill(thr: abi.Thread, exit_code: abi.process.ExitCode) void {
                 _ = thr;
                 _ = exit_code;
-                @panic("not implemented yet");
+                not_implemented_yet(@src());
             }
         };
 
@@ -233,32 +242,32 @@ pub const syscalls = struct {
             /// Queries all owned resources by a process.
             pub fn enumerate_processes(processes: ?[]abi.Process) usize {
                 _ = processes;
-                @panic("not done yet");
+                not_implemented_yet(@src());
             }
 
             /// Queries all owned resources by a process.
             pub fn query_owned_resources(owner: abi.Process, reslist: ?[]abi.SystemResource) usize {
                 _ = owner;
                 _ = reslist;
-                @panic("not done yet");
+                not_implemented_yet(@src());
             }
 
             /// Returns the total number of bytes the process takes up in RAM.
             pub fn query_total_memory_usage(proc: abi.Process) usize {
                 _ = proc;
-                @panic("not done yet");
+                not_implemented_yet(@src());
             }
 
             /// Returns the number of dynamically allocated bytes for this process.
             pub fn query_dynamic_memory_usage(proc: abi.Process) usize {
                 _ = proc;
-                @panic("not done yet");
+                not_implemented_yet(@src());
             }
 
             /// Returns the number of total memory objects this process has right now.
             pub fn query_active_allocation_count(proc: abi.Process) usize {
                 _ = proc;
-                @panic("not done yet");
+                not_implemented_yet(@src());
             }
         };
     };
@@ -303,13 +312,13 @@ pub const syscalls = struct {
         pub fn get_palette(output: abi.VideoOutput, palette: *[abi.palette_size]abi.Color) error{InvalidHandle}!void {
             _ = output;
             _ = palette;
-            @panic("not implemented yet");
+            not_implemented_yet(@src());
         }
 
         pub fn set_palette(output: abi.VideoOutput, palette: *const [abi.palette_size]abi.Color) error{ InvalidHandle, Unsupported } {
             _ = output;
             _ = palette;
-            @panic("not implemented yet");
+            not_implemented_yet(@src());
         }
     };
 
@@ -366,7 +375,7 @@ pub const syscalls = struct {
         /// Returns true if the given font is a system-owned font.
         pub fn is_system_font(font: abi.Font) bool {
             _ = font;
-            @panic("not implemented  yet!");
+            not_implemented_yet(@src());
         }
 
         // Framebuffer management:
@@ -446,7 +455,7 @@ pub const syscalls = struct {
         pub fn invalidate_framebuffer(framebuffer: abi.Framebuffer, rect: abi.Rectangle) void {
             _ = framebuffer;
             _ = rect;
-            @panic("not implemented  yet!");
+            not_implemented_yet(@src());
         }
 
         // Drawing:
@@ -461,8 +470,14 @@ pub const syscalls = struct {
             AlreadyRegistered,
             SystemResources,
         }!abi.WidgetType {
-            _ = desc;
-            @panic("not implemented yet");
+            const kproc = get_current_process();
+
+            const widget_type = try ashet.gui.WidgetType.create(kproc, desc);
+            errdefer widget_type.destroy();
+
+            const handle = try ashet.resources.add_to_process(kproc, &widget_type.system_resource);
+
+            return handle.unsafe_cast(.widget_type);
         }
 
         // Window API:
@@ -537,21 +552,21 @@ pub const syscalls = struct {
         pub fn resize_window(window: abi.Window, size: abi.Size) void {
             _ = window;
             _ = size;
-            @panic("not implemented yet");
+            not_implemented_yet(@src());
         }
 
         /// Changes a window title.
         pub fn set_window_title(window: abi.Window, title: []const u8) void {
             _ = window;
             _ = title;
-            @panic("not implemented yet");
+            not_implemented_yet(@src());
         }
 
         /// Notifies the desktop that a window wants attention from the user.
         /// This could just pop the window to the front, make it blink, show a small notification, ...
         pub fn mark_window_urgent(window: abi.Window) void {
             _ = window;
-            @panic("not implemented yet");
+            not_implemented_yet(@src());
         }
 
         // TODO: gui.app_menu
@@ -566,7 +581,7 @@ pub const syscalls = struct {
         }!abi.Widget {
             _ = window;
             _ = uuid;
-            @panic("not implemented yet");
+            not_implemented_yet(@src());
         }
 
         /// Moves and resizes a widget in one.
@@ -574,7 +589,7 @@ pub const syscalls = struct {
             _ = widget;
             _ = position;
             _ = size;
-            @panic("not implemented yet");
+            not_implemented_yet(@src());
         }
 
         /// Triggers the `control` event of the widget with the given `message` as a payload.
@@ -583,7 +598,7 @@ pub const syscalls = struct {
         } {
             _ = widget;
             _ = message;
-            @panic("not implemented yet");
+            not_implemented_yet(@src());
         }
 
         /// Triggers the `widget_notify` event of the `Window` that owns `widget` with `event` as the payload.
@@ -592,7 +607,7 @@ pub const syscalls = struct {
         } {
             _ = widget;
             _ = event;
-            @panic("not implemented yet");
+            not_implemented_yet(@src());
         }
 
         /// Returns WidgetType-associated "opaque" data for this widget.
@@ -603,7 +618,7 @@ pub const syscalls = struct {
         /// The size of this must be known and cannot be queried.
         pub fn get_widget_data(widget: abi.Widget) [*]align(16) u8 {
             _ = widget;
-            @panic("not implemented yet");
+            not_implemented_yet(@src());
         }
 
         // Context Menu API:
@@ -673,7 +688,7 @@ pub const syscalls = struct {
         pub fn enumerate_desktop_windows(desktop: abi.Desktop, windows: ?[]abi.Window) error{InvalidHandle}!usize {
             _ = desktop;
             _ = windows;
-            @panic("not implemented yet");
+            not_implemented_yet(@src());
         }
 
         /// Returns desktop-associated "opaque" data for this window.
@@ -703,7 +718,7 @@ pub const syscalls = struct {
             _ = source;
             _ = request_id;
             _ = result;
-            @panic("not implemented yet");
+            not_implemented_yet(@src());
         }
 
         /// Posts an event into the window event queue so the window owner
@@ -729,7 +744,7 @@ pub const syscalls = struct {
             _ = desktop;
             _ = message;
             _ = severity;
-            @panic("not implemented yet");
+            not_implemented_yet(@src());
         }
 
         pub const clipboard = struct {
@@ -739,14 +754,14 @@ pub const syscalls = struct {
                 _ = desktop;
                 _ = mime;
                 _ = value;
-                @panic("not implemented yet");
+                not_implemented_yet(@src());
             }
 
             /// Returns the current type present in the clipboard, if any.
             pub fn get_type(desktop: abi.Desktop, type_buf: ?[]u8) error{InvalidHandle}!usize {
                 _ = desktop;
                 _ = type_buf;
-                @panic("not implemented yet");
+                not_implemented_yet(@src());
             }
 
             /// Returns the current clipboard value as the provided mime type.
@@ -760,7 +775,7 @@ pub const syscalls = struct {
             }![]const u8 {
                 _ = desktop;
                 _ = mime;
-                @panic("not implemented yet");
+                not_implemented_yet(@src());
             }
         };
     };
@@ -851,19 +866,19 @@ pub const syscalls = struct {
         }!abi.Pipe {
             _ = object_size;
             _ = fifo_length;
-            @panic("not implemented yet");
+            not_implemented_yet(@src());
         }
 
         /// Returns the length of the pipe-internal FIFO in elements.
         pub fn get_fifo_length(pip: abi.Pipe) usize {
             _ = pip;
-            @panic("not implemented yet");
+            not_implemented_yet(@src());
         }
 
         /// Returns the size of the objects stored in the pipe.
         pub fn get_object_size(pip: abi.Pipe) usize {
             _ = pip;
-            @panic("not implemented yet");
+            not_implemented_yet(@src());
         }
     };
 
@@ -871,36 +886,36 @@ pub const syscalls = struct {
         /// Creates a new `SyncEvent` object that can be used to synchronize
         /// different processes.
         pub fn create_event() error{SystemResources}!abi.SyncEvent {
-            @panic("not implemented yet");
+            not_implemented_yet(@src());
         }
 
         /// Completes one `WaitForEvent` IOP waiting for the given event.
         pub fn notify_one(evt: abi.SyncEvent) void {
             _ = evt;
-            @panic("not implemented yet");
+            not_implemented_yet(@src());
         }
 
         /// Completes all `WaitForEvent` IOP waiting for the given event.
         pub fn notify_all(evt: abi.SyncEvent) void {
             _ = evt;
-            @panic("not implemented yet");
+            not_implemented_yet(@src());
         }
 
         /// Creates a new mutual exclusion.
         pub fn create_mutex() error{SystemResources}!abi.Mutex {
-            @panic("not implemented yet");
+            not_implemented_yet(@src());
         }
 
         /// Tries to lock a mutex and returns if it was successful.
         pub fn try_lock(mutex: abi.Mutex) bool {
             _ = mutex;
-            @panic("not implemented yet");
+            not_implemented_yet(@src());
         }
 
         /// Unlocks a mutual exclusion. Completes a single `Lock` IOP if it exists.
         pub fn unlock(mutex: abi.Mutex) void {
             _ = mutex;
-            @panic("not implemented yet");
+            not_implemented_yet(@src());
         }
     };
 
@@ -926,34 +941,34 @@ pub const syscalls = struct {
             _ = uuid;
             _ = funcs;
             _ = name;
-            @panic("not implemented yet!");
+            not_implemented_yet(@src());
         }
 
         /// Enumerates all registered services.
         pub fn enumerate(uuid: *const abi.UUID, services: ?[]abi.Service) usize {
             _ = uuid;
             _ = services;
-            @panic("not implemented yet!");
+            not_implemented_yet(@src());
         }
 
         /// Returns the name of the service.
         pub fn get_name(svc: abi.Service, name_buf: ?[]u8) error{InvalidHandle}!usize {
             _ = svc;
             _ = name_buf;
-            @panic("not implemented yet!");
+            not_implemented_yet(@src());
         }
 
         /// Returns the process that created this service.
         pub fn get_process(svc: abi.Service) abi.Process {
             _ = svc;
-            @panic("not implemented yet!");
+            not_implemented_yet(@src());
         }
 
         /// Returns the functions registerd by the service.
         pub fn get_functions(svc: abi.Service, funcs: ?[]*const anyopaque) usize {
             _ = svc;
             _ = funcs;
-            @panic("not implemented yet!");
+            not_implemented_yet(@src());
         }
     };
 

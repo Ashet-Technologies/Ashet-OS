@@ -25,7 +25,7 @@ pub fn build(b: *std.Build) void {
     const sdk = AshetOS.init(b, "AshetOS", .{ .target = target });
 
     const app = sdk.addApp(.{
-        .name = "standard",
+        .name = "widgets",
         .target = target,
         .optimize = optimize,
         .root_source_file = b.path("src/standard-widgets.zig"),

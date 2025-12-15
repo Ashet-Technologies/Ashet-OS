@@ -87,6 +87,7 @@ pub const log_levels = struct {
     pub var mbr_part: LogLevel = .warn; // very noise modules!
     pub var x86_vmm: LogLevel = .info; // very noise modules!
     pub var i2c: LogLevel = .info;
+    pub var syscalls: LogLevel = .debug;
 
     pub var wayland_display: LogLevel = .info;
 
@@ -117,6 +118,7 @@ pub const log_levels = struct {
     pub var agp_sw_rast: LogLevel = .info;
 
     // platforms:
+    pub var hosted: LogLevel = .debug;
 
     // platforms.x86:
     pub var idt: LogLevel = .debug;
