@@ -1,5 +1,10 @@
 const std = @import("std");
 const abi = @import("abi");
+const ashet = @import("ashet");
+
+pub fn main() !void {
+    //
+}
 
 const UUID = abi.UUID;
 const Widget = abi.Widget;

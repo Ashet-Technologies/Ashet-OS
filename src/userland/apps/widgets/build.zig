@@ -2,7 +2,7 @@ const std = @import("std");
 const AshetOS = @import("AshetOS");
 
 pub fn build(b: *std.Build) void {
-    // const target = AshetOS.standardTargetOption(b);
+    const target = AshetOS.standardTargetOption(b);
     const optimize = b.standardOptimizeOption(.{});
 
     const agp_dep = b.dependency("agp", .{});
@@ -22,14 +22,14 @@ pub fn build(b: *std.Build) void {
 
     _ = draw_mod;
 
-    // const sdk = AshetOS.init(b, "AshetOS", .{ .target = target });
+    const sdk = AshetOS.init(b, "AshetOS", .{ .target = target });
 
-    // const app = sdk.addApp(.{
-    //     .name = "standard",
-    //     .target = target,
-    //     .optimize = optimize,
-    //     .root_source_file = b.path("src/standard-widgets.zig"),
-    // });
+    const app = sdk.addApp(.{
+        .name = "standard",
+        .target = target,
+        .optimize = optimize,
+        .root_source_file = b.path("src/standard-widgets.zig"),
+    });
 
-    // sdk.installApp(app, .{});
+    sdk.installApp(app, .{});
 }
