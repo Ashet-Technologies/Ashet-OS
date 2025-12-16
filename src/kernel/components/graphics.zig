@@ -30,7 +30,7 @@ pub const Bitmap = struct {
 };
 
 pub const Framebuffer = struct {
-    const Cursor = agp_swrast.PixelCursor(.row_major);
+    const Cursor = agp_swrast.PixelCursor;
     pub const Destructor = ashet.resources.Destructor(@This(), _internal_destroy);
 
     pub const VideoOut = struct {
@@ -295,7 +295,6 @@ var render_temp_buffer: std.heap.ArenaAllocator = .init(ashet.memory.page_alloca
 const Rasterizer = agp_swrast.Rasterizer(.{
     .backend_type = *Framebuffer,
     .framebuffer_type = *Framebuffer,
-    .pixel_layout = .row_major,
 });
 
 fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.Inputs) ashet.abi.draw.Render.Error!ashet.abi.draw.Render.Outputs {

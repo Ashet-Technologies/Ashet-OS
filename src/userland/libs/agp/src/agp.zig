@@ -35,9 +35,8 @@ pub const CommandByte = enum(u8) {
     draw_text = 0x06,
     blit_bitmap = 0x07,
     blit_framebuffer = 0x08,
-    update_color = 0x09,
-    blit_partial_bitmap = 0x0A,
-    blit_partial_framebuffer = 0x0B,
+    blit_partial_bitmap = 0x09,
+    blit_partial_framebuffer = 0x0A,
 };
 
 pub fn encoder(enc: anytype) Encoder(@TypeOf(enc)) {
@@ -108,12 +107,6 @@ pub fn Encoder(Writer: type) type {
                     data.x,
                     data.y,
                     data.framebuffer,
-                ),
-                .update_color => |data| try enc.update_color(
-                    data.index,
-                    data.r,
-                    data.g,
-                    data.b,
                 ),
                 .blit_partial_bitmap => |data| try enc.blit_partial_bitmap(
                     data.x,
@@ -258,20 +251,6 @@ pub fn Encoder(Writer: type) type {
             try enc.enc_coord(x);
             try enc.enc_coord(y);
             try enc.enc_handle(Framebuffer, framebuffer);
-        }
-
-        pub fn update_color(
-            enc: Enc,
-            index: Color,
-            r: u8,
-            g: u8,
-            b: u8,
-        ) EncError!void {
-            try enc.enc_cmd(.update_color);
-            try enc.enc_color(index);
-            try enc.enc_int(u8, r);
-            try enc.enc_int(u8, g);
-            try enc.enc_int(u8, b);
         }
 
         pub fn blit_partial_bitmap(
@@ -464,14 +443,6 @@ pub fn Decoder(Reader: type) type {
                         .framebuffer = try dec.fetch_handle(Framebuffer),
                     },
                 },
-                .update_color => .{
-                    .update_color = .{
-                        .index = try dec.fetch_color(),
-                        .r = try dec.fetch_int(u8),
-                        .g = try dec.fetch_int(u8),
-                        .b = try dec.fetch_int(u8),
-                    },
-                },
                 .blit_partial_bitmap => .{
                     .blit_partial_bitmap = .{
                         .x = try dec.fetch_coord(),
@@ -563,7 +534,6 @@ pub const Command = union(CommandByte) {
         .draw_text = DrawText,
         .blit_bitmap = BlitBitmap,
         .blit_framebuffer = BlitFramebuffer,
-        .update_color = UpdateColor,
         .blit_partial_bitmap = BlitPartialBitmap,
         .blit_partial_framebuffer = BlitPartialFramebuffer,
     });
@@ -577,7 +547,6 @@ pub const Command = union(CommandByte) {
     draw_text: DrawText,
     blit_bitmap: BlitBitmap,
     blit_framebuffer: BlitFramebuffer,
-    update_color: UpdateColor,
     blit_partial_bitmap: BlitPartialBitmap,
     blit_partial_framebuffer: BlitPartialFramebuffer,
 
@@ -640,13 +609,6 @@ pub const Command = union(CommandByte) {
         x: i16,
         y: i16,
         framebuffer: Framebuffer,
-    };
-
-    pub const UpdateColor = struct {
-        index: Color,
-        r: u8,
-        g: u8,
-        b: u8,
     };
 
     pub const BlitPartialBitmap = struct {

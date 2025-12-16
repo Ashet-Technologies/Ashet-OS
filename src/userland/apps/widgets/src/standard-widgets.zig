@@ -127,9 +127,7 @@ pub const Button = struct {
 
         switch (event.event_type) {
             .create, .paint => {
-                const bounds = ashet.gui.get_widget_bounds(widget) catch return;
-
-                draw(widget, bounds, "Click me", null) catch |err| {
+                draw(widget, "Click me", null) catch |err| {
                     std.log.err("failed to draw: {s}", .{@errorName(err)});
                 };
             },
@@ -137,9 +135,14 @@ pub const Button = struct {
             else => {},
         }
     }
-    fn draw(widget: Widget, rect: Rectangle, full_text: []const u8, font: ?ashet.graphics.Font) !void {
+
+    fn draw(widget: Widget, full_text: []const u8, font: ?ashet.graphics.Font) !void {
         const fb = ashet.graphics.create_widget_framebuffer(widget) catch return;
         defer fb.release();
+
+        const size = try ashet.graphics.get_framebuffer_size(fb);
+
+        const rect: Rectangle = .new(.zero, size);
 
         const cq = &render_queue;
         cq.reset();
