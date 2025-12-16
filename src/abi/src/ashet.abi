@@ -1306,10 +1306,12 @@ namespace gui {
 
     enum WidgetNotifyID : u32 { ... }
 
-    /// Triggers the `widget_notify` event of the `Window` that owns `widget` with `event` as the payload.
+    /// Puts a `widget_notify` event into the event queue of the `Window` that owns `widget`.
+    /// The parameters are passed as a `WidgetNotifyEvent` to the event queue.
     syscall notify_owner {
         in    widget: Widget;
-        in    event: WidgetNotifyEvent;
+        in    type:   WidgetNotifyID;
+        in    params: *const [4]usize;
         error SystemResources;
         error InvalidHandle;
     }

@@ -614,9 +614,9 @@ pub const syscalls = struct {
         }
 
         /// Triggers the `widget_notify` event of the `Window` that owns `widget` with `event` as the payload.
-        pub fn notify_owner(widget: abi.Widget, event: abi.WidgetNotifyEvent) error{ InvalidHandle, SystemResources }!void {
+        pub fn notify_owner(widget: abi.Widget, notify: ashet.abi.gui.WidgetNotifyID, params: *const [4]usize) error{ InvalidHandle, SystemResources }!void {
             _, const wid = try resolve_typed_resource(ashet.gui.Widget, widget.as_resource());
-            wid.notify_owner(event);
+            wid.notify_owner(notify, params.*);
         }
 
         /// Returns WidgetType-associated "opaque" data for this widget.

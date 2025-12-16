@@ -581,7 +581,7 @@ pub const Window = struct {
                 // If that is the case, we can immediatly finish the awaiter
                 // with the event we're handling.
                 event_awaiter.finalize(ashet.abi.gui.GetWindowEvent, .{
-                    .event = event,
+                    .event = patch_window_event(event_awaiter, event),
                 });
                 window.event_awaiter = null;
                 return;
@@ -721,11 +721,17 @@ pub const Widget = struct {
     /// Puts `event` into its window event queue.
     ///
     /// NOTE: This function patches `event.event_type` to `.widget_notify` before passing it to the event queue.
-    pub fn notify_owner(widget: *Widget, event: ashet.abi.WidgetNotifyEvent) void {
-        var evt = event;
-        evt.event_type = .widget_notify;
+    pub fn notify_owner(widget: *Widget, notify: ashet.abi.gui.WidgetNotifyID, params: [4]usize) void {
         widget.window.post_event_direct(.{
-            .widget_notify = evt,
+            .widget_notify = .{
+                .event_type = .widget_notify,
+
+                // HACK: This is a dirty hack where store the widget pointer inside the queue until the unwrap. Very special special casing here. See patch_window_event for counter-action.
+                .widget = @ptrCast(widget),
+
+                .type = notify,
+                .data = params,
+            },
         });
     }
 
@@ -898,6 +904,23 @@ pub const WidgetType = struct {
     }
 };
 
+fn patch_window_event(call: *ashet.overlapped.AsyncCall, event: ashet.abi.WindowEvent) ashet.abi.WindowEvent {
+    var clone = event;
+    switch (clone.event_type) {
+        // HACK: Undoes the hack from Widget.notify_owner
+        .widget_notify => {
+            // Unpatch the widget pointer into the proper resource handle again:
+            const widget: *Widget = @ptrCast(@alignCast(clone.widget_notify.widget));
+            const handle = ashet.resources.get_handle(call.resource_owner, &widget.system_resource) orelse {
+                @panic("HACK: The widget pointer/handle hack failed. Was GetWindowEvent called from another process than the one creating the widget?!");
+            };
+            clone.widget_notify.widget = handle.unsafe_cast(.widget);
+        },
+        else => {},
+    }
+    return clone;
+}
+
 pub fn schedule_get_window_event(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.gui.GetWindowEvent.Inputs) void {
     const window: *Window = ashet.resources.resolve(Window, call.resource_owner, inputs.window.as_resource()) catch |err| {
         return call.finalize(ashet.abi.gui.GetWindowEvent, switch (err) {
@@ -919,7 +942,7 @@ pub fn schedule_get_window_event(call: *ashet.overlapped.AsyncCall, inputs: ashe
     if (window.event_queue.pull()) |ready_event| {
         // The event queue had an event for us, let's consume it and process it:
         return call.finalize(ashet.abi.gui.GetWindowEvent, .{
-            .event = ready_event,
+            .event = patch_window_event(call, ready_event),
         });
     } else {
         // The event queue is empty and we don't have an event ready,

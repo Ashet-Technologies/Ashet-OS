@@ -43,9 +43,9 @@ pub fn main() !void {
     const dec_button = try ashet.gui.create_widget(window, ashet.gui.widgets.Button.uuid);
     defer dec_button.release();
 
-    _ = try ashet.gui.place_widget(inc_button, .{ .x = 10, .y = 10, .width = 80, .height = 15 });
+    _ = try ashet.gui.place_widget(inc_button, .{ .x = 10, .y = 10, .width = 80, .height = 19 });
     _ = try ashet.gui.place_widget(count_label, .{ .x = 10, .y = 31, .width = 80, .height = 18 });
-    _ = try ashet.gui.place_widget(dec_button, .{ .x = 10, .y = 51, .width = 80, .height = 15 });
+    _ = try ashet.gui.place_widget(dec_button, .{ .x = 10, .y = 51, .width = 80, .height = 19 });
 
     try ashet.gui.control_widget(inc_button, ashet.gui.widgets.Button.set_text, .{
         @intFromPtr("Increment"),
@@ -61,11 +61,14 @@ pub fn main() !void {
         0,
     });
 
-    try ashet.gui.control_widget(count_label, ashet.gui.widgets.Label.set_text, .{
-        @intFromPtr("0"),
-        "0".len,
-        0,
-        0,
+    try set_label_int(count_label, 0);
+
+    var counter: i32 = 0;
+
+    std.log.info("created  {} {} {}", .{
+        inc_button,
+        count_label,
+        dec_button,
     });
 
     main_loop: while (true) {
@@ -83,9 +86,31 @@ pub fn main() !void {
                     notify.data[2],
                     notify.data[3],
                 });
+
+                if (notify.widget == inc_button) {
+                    counter +|= 1;
+                    try set_label_int(count_label, counter);
+                } else if (notify.widget == dec_button) {
+                    counter -|= 1;
+                    try set_label_int(count_label, counter);
+                } else {
+                    std.log.err("unknown widget!?", .{});
+                }
             },
 
             else => {},
         }
     }
+}
+
+fn set_label_int(label: ashet.gui.Widget, number: i32) !void {
+    var buffer: [32]u8 = undefined;
+    const text = std.fmt.bufPrint(&buffer, "{}", .{number}) catch unreachable;
+
+    try ashet.gui.control_widget(label, ashet.gui.widgets.Label.set_text, .{
+        @intFromPtr(text.ptr),
+        text.len,
+        0,
+        0,
+    });
 }

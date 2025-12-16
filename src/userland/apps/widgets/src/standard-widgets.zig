@@ -147,8 +147,14 @@ fn WidgetWrapper(comptime WidgetImpl: type) type {
                 },
 
                 else => {
-                    // TODO: Implement the other messages
-                    std.log.info("{s}.handle_event({}, {}): unhandled event", .{ @typeName(WidgetImpl), widget, event.event_type });
+                    if (@hasDecl(WidgetImpl, "handle_event")) {
+                        wrapper.impl.handle_event(event.*) catch |err| {
+                            std.log.err("failed to handle event {} for {s}: {s}", .{ event.event_type, @typeName(WidgetImpl), @errorName(err) });
+                        };
+                    } else {
+                        // TODO: Implement the other messages
+                        std.log.info("{s}.handle_event({}, {}): unhandled event", .{ @typeName(WidgetImpl), widget, event.event_type });
+                    }
                 },
             }
         }
@@ -250,6 +256,46 @@ pub const Button = struct {
             },
 
             else => return error.UnknownControl,
+        }
+    }
+
+    fn handle_event(button: *Button, event: ashet.gui.WidgetEvent) !void {
+        switch (event.event_type) {
+            .click => {
+                try ashet.gui.notify_owner(
+                    WidgetWrapper(Button).from_impl(button).widget,
+                    ashet.gui.widgets.Button.clicked,
+                    .{ 0, 0, 0, 0 },
+                );
+            },
+
+            // Ignore standard mouse events:
+            .mouse_enter,
+            .mouse_leave,
+            .mouse_button_press,
+            .mouse_button_release,
+            .mouse_hover,
+            .mouse_motion,
+            .scroll,
+            => {},
+
+            .key_press, .key_release => {},
+
+            .focus_enter, .focus_leave => {},
+
+            // ignored events:
+            .resized => {},
+
+            .clipboard_copy, .clipboard_cut, .clipboard_paste => {}, // TODO: These should be unreachable
+
+            .drag_enter, .drag_leave, .drag_over, .drag_drop => {}, // TODO: These should be unreachable
+
+            .context_menu_request => {}, // TODO: These should be unreachable
+
+            // Implemented in the wrapper
+            .paint, .control, .create, .destroy => unreachable,
+
+            _ => {},
         }
     }
 

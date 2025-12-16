@@ -13,6 +13,7 @@ pub const Desktop = ashet.abi.Desktop;
 pub const Window = ashet.abi.Window;
 pub const Widget = ashet.abi.Widget;
 pub const WidgetType = ashet.abi.WidgetType;
+pub const WidgetEvent = ashet.abi.WidgetEvent;
 pub const WidgetDescriptor = ashet.abi.WidgetDescriptor;
 pub const WidgetControlMessage = ashet.abi.WidgetControlMessage;
 
@@ -148,6 +149,10 @@ pub fn control_widget(widget: Widget, control: ControlMessage, params: [4]usize)
         .type = control,
         .params = params,
     });
+}
+
+pub fn notify_owner(widget: Widget, notify: NotifyEvent, params: [4]usize) !void {
+    return ashet.abi.gui.notify_owner(widget, notify, &params);
 }
 
 pub fn register_widget_type(desc: WidgetDescriptor) !WidgetType {
