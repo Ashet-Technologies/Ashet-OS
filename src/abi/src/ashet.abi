@@ -1294,6 +1294,8 @@ namespace gui {
         error InvalidHandle;
     }
 
+    enum WidgetControlID : u32 { ... }
+
     /// Triggers the `control` event of the widget with the given `message` as a payload.
     syscall control_widget {
         in    widget: Widget;
@@ -1301,6 +1303,8 @@ namespace gui {
         error SystemResources;
         error InvalidHandle;
     }
+
+    enum WidgetNotifyID : u32 { ... }
 
     /// Triggers the `widget_notify` event of the `Window` that owns `widget` with `event` as the payload.
     syscall notify_owner {
@@ -2634,7 +2638,7 @@ struct WidgetControlMessage {
 
     /// The widget-specific type of the control message.
     /// Could be something like `get_property`, `set_property`, `set_text`, ...
-    field type: u32;
+    field type: gui.WidgetControlID;
 
     /// Generic parameters that can be passed to the widget.
     field params: [4]usize;
@@ -2647,7 +2651,7 @@ struct WidgetNotifyEvent {
 
     /// The widget-specific type of event.
     /// Could be something like `text_changed`, `clicked`, `checked_changed`, ...
-    field type: u32;
+    field type: gui.WidgetNotifyID;
 
     /// Generic data associated with the event.
     field data: [4]usize;

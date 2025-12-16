@@ -61,6 +61,13 @@ pub fn main() !void {
         0,
     });
 
+    try ashet.gui.control_widget(count_label, ashet.gui.widgets.Label.set_text, .{
+        @intFromPtr("0"),
+        "0".len,
+        0,
+        0,
+    });
+
     main_loop: while (true) {
         const event = try ashet.gui.get_window_event(window);
 

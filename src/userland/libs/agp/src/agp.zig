@@ -220,6 +220,11 @@ pub fn Encoder(Writer: type) type {
             text: []const u8,
         ) (EncError || error{Overflow})!void {
             const len = std.math.cast(u16, text.len) orelse return error.Overflow;
+
+            // Skip encoding if nothing would be drawn anyways
+            if (len == 0)
+                return;
+
             try enc.enc_cmd(.draw_text);
             try enc.enc_coord(x);
             try enc.enc_coord(y);
@@ -235,6 +240,11 @@ pub fn Encoder(Writer: type) type {
             y: i16,
             bitmap: *const Bitmap,
         ) EncError!void {
+
+            // Skip encoding if nothing would be drawn anyways
+            if (bitmap.width == 0 or bitmap.height == 0)
+                return;
+
             try enc.enc_cmd(.blit_bitmap);
             try enc.enc_coord(x);
             try enc.enc_coord(y);
@@ -263,6 +273,12 @@ pub fn Encoder(Writer: type) type {
             src_y: i16,
             bitmap: *const Bitmap,
         ) EncError!void {
+            // Skip encoding if nothing would be drawn anyways
+            if (bitmap.width == 0 or bitmap.height == 0)
+                return;
+            if (width == 0 or height == 0)
+                return;
+
             try enc.enc_cmd(.blit_partial_bitmap);
             try enc.enc_coord(x);
             try enc.enc_coord(y);
@@ -318,6 +334,8 @@ pub fn Encoder(Writer: type) type {
         }
 
         fn enc_bitmap(enc: Enc, bmp: *const Bitmap) !void {
+            std.debug.assert(bmp.width > 0 and bmp.height > 0);
+
             try enc.enc_int(u8, if (bmp.has_transparency) @as(u8, 1) else 0);
 
             if (bmp.has_transparency) {

@@ -552,7 +552,7 @@ pub const Widget = struct {
     pixels: []align(4) ashet.abi.Color,
 
     // type-specific data
-    widget_data: []u8,
+    widget_data: []align(16) u8,
 
     pub const destroy = Destructor.destroy;
 

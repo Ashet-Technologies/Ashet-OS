@@ -625,14 +625,13 @@ pub const syscalls = struct {
         /// like internal state and such.
         ///
         /// The size of this must be known and cannot be queried.
-        pub fn get_widget_data(widget: abi.Widget) [*]align(16) u8 {
-            _ = widget;
-            not_implemented_yet(@src());
+        pub fn get_widget_data(widget: abi.Widget) error{InvalidHandle}![*]align(16) u8 {
+            _, const wid = try resolve_typed_resource(ashet.gui.Widget, widget.as_resource());
+            return wid.widget_data.ptr;
         }
 
         pub fn get_widget_bounds(widget_handle: abi.Widget) error{InvalidHandle}!abi.Rectangle {
             _, const widget = try resolve_typed_resource(ashet.gui.Widget, widget_handle.as_resource());
-
             return widget.bounds;
         }
 

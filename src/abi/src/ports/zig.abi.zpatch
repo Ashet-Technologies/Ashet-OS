@@ -986,3 +986,13 @@
         return ((addr & 0x78) == 0) or ((addr & 0x78) == 0x78);
     }
 </patch>
+<patch gui.WidgetControlID>
+    pub fn from_int(value: u32) WidgetControlID {
+        return @enumFromInt(value);
+    }
+</patch>
+<patch gui.WidgetNotifyID>
+    pub fn from_int(value: u32) WidgetNotifyID {
+        return @enumFromInt(value);
+    }
+</patch>

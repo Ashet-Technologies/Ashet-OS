@@ -69,36 +69,78 @@ pub const Label = struct {
     pub const uuid = ashet.gui.widgets.Label.uuid;
 
     widget: Widget,
+    text: std.ArrayListUnmanaged(u8) = .empty,
 
     pub fn handle_event(widget_type: WidgetType, widget: Widget, event: *const WidgetEvent) callconv(.c) void {
+        const label_ptr = ashet.abi.gui.get_widget_data(widget) catch |err| {
+            std.log.err("failed to fetch widget data: {s}", .{@errorName(err)});
+            return;
+        };
+        const label: *Label = @ptrCast(label_ptr);
         _ = widget_type;
 
         std.log.info("Label.handle_event({}, {})", .{ widget, event.event_type });
-        switch (event.event_type) {
-            .create, .paint => {
-                const fb = ashet.graphics.create_widget_framebuffer(widget) catch return;
-                defer fb.release();
+        init: switch (event.event_type) {
+            .create => {
+                label.* = .{ .widget = widget };
+                continue :init .paint;
+            },
+            .destroy => {
+                label.text.deinit(ashet.process.mem.allocator());
+                label.* = undefined;
+            },
 
-                const size = ashet.graphics.get_framebuffer_size(fb) catch Size.empty;
+            .paint => {
+                label.paint() catch |err| {
+                    std.log.err("failed to paint label: {s}", .{@errorName(err)});
+                };
+            },
 
-                std.log.info("Label size: {}", .{size});
-
-                const cq = &render_queue;
-                cq.reset();
-                cq.clear(theme.window_active.background) catch {};
-                cq.draw_text(
-                    .new(1, 1),
-                    theme.widget_font,
-                    theme.text_color,
-                    "Hello, World!",
-                ) catch {};
-
-                cq.submit(fb, .{}) catch |err| {
-                    std.log.err("failed to draw: {s}", .{@errorName(err)});
+            .control => {
+                label.control(event.control) catch |err| {
+                    std.log.err("failed to control label: {s}", .{@errorName(err)});
                 };
             },
 
             else => {},
+        }
+    }
+
+    fn paint(label: *Label) !void {
+        const fb = ashet.graphics.create_widget_framebuffer(label.widget) catch return;
+        defer fb.release();
+
+        const cq = &render_queue;
+        cq.reset();
+        try cq.clear(theme.window_active.background);
+        try cq.draw_text(
+            .new(1, 1),
+            theme.widget_font,
+            theme.text_color,
+            label.text.items,
+        );
+
+        try cq.submit(fb, .{});
+    }
+
+    fn control(label: *Label, msg: ashet.abi.WidgetControlMessage) !void {
+        switch (msg.type) {
+            ashet.gui.widgets.Label.set_text => {
+                const ptr: [*]const u8 = @ptrFromInt(msg.params[0]);
+                const text = ptr[0..msg.params[1]];
+
+                try label.text.ensureTotalCapacity(ashet.process.mem.allocator(), text.len);
+
+                label.text.clearRetainingCapacity();
+                label.text.appendSliceAssumeCapacity(text);
+
+                try label.paint();
+            },
+            ashet.gui.widgets.Label.set_alignment => {
+                return error.Unimplemented;
+            },
+
+            else => return error.UnknownControl,
         }
     }
 };

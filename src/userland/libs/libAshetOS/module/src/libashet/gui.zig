@@ -137,26 +137,13 @@ pub fn get_widget_bounds(widget: Widget) !Rectangle {
     return try ashet.abi.gui.get_widget_bounds(widget);
 }
 
-pub const ControlMessage = enum(u32) {
-    _,
-
-    pub fn from_int(int: u32) ControlMessage {
-        return @enumFromInt(int);
-    }
-};
-
-pub const NotifyEvent = enum(u32) {
-    _,
-
-    pub fn from_int(int: u32) NotifyEvent {
-        return @enumFromInt(int);
-    }
-};
+pub const ControlMessage = ashet.abi.gui.WidgetControlID;
+pub const NotifyEvent = ashet.abi.gui.WidgetNotifyID;
 
 pub fn control_widget(widget: Widget, control: ControlMessage, params: [4]usize) !void {
     try ashet.abi.gui.control_widget(widget, .{
         .event_type = undefined,
-        .type = @intFromEnum(control),
+        .type = control,
         .params = params,
     });
 }
