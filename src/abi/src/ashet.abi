@@ -1322,6 +1322,13 @@ namespace gui {
         error InvalidHandle;
     }
 
+    /// Returns the current location and size of the provided widget.
+    syscall get_widget_bounds {
+        in    widget: Widget;
+        out   bounds: Rectangle;
+        error InvalidHandle;
+    }
+
     /// Creates a new desktop with the given name.
     syscall create_desktop {
         /// User-visible name of the desktop.

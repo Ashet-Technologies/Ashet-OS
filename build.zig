@@ -50,10 +50,10 @@ const installed_tools: []const ToolDep = &.{
         .dependency = "gui_designer",
         .artifacts = &.{ "gui-editor", "gui-compiler" },
     },
-    .{
-        .dependency = "agp_tester",
-        .artifacts = &.{"agp-tester"},
-    },
+    // .{
+    //     .dependency = "agp_tester",
+    //     .artifacts = &.{"agp-tester"},
+    // },
 };
 
 pub fn build(b: *std.Build) void {
@@ -234,6 +234,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "dungeon.ashex", .exe = get_named_file(os_files, "apps/dungeon.elf") },
             .{ .name = "ntp-client.ashex", .exe = get_named_file(os_files, "apps/ntp-client.elf") },
             .{ .name = "i2c-scan.ashex", .exe = get_named_file(os_files, "apps/i2c-scan.elf") },
+            .{ .name = "widgets.ashex", .exe = get_named_file(os_files, "apps/widgets.elf") },
         };
 
         var variables = Variables{

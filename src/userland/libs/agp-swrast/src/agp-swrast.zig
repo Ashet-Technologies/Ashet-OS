@@ -384,7 +384,8 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
                         std.debug.assert(cursor.move(paint_rect.x, paint_rect.y + 1));
                         rast.emit(cursor, color, 1);
                         for (1..rect.height - 2) |_| {
-                            std.debug.assert(cursor.shift_down(1) == 1);
+                            if (cursor.shift_down(1) != 1)
+                                break;
                             rast.emit(cursor, color, 1);
                         }
                     }
@@ -394,7 +395,8 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
                         std.debug.assert(cursor.move(right, paint_rect.y + 1));
                         rast.emit(cursor, color, 1);
                         for (1..rect.height - 2) |_| {
-                            std.debug.assert(cursor.shift_down(1) == 1);
+                            if (cursor.shift_down(1) != 1)
+                                break;
                             rast.emit(cursor, color, 1);
                         }
                     }

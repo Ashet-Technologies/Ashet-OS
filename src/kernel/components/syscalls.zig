@@ -324,15 +324,21 @@ pub const syscalls = struct {
 
     pub const overlapped = struct {
         pub fn schedule(async_call: *abi.overlapped.ARC) error{ SystemResources, AlreadyScheduled }!void {
-            return try ashet.overlapped.schedule(async_call);
+            const proc = get_current_process();
+
+            return try ashet.overlapped.schedule_with_context(proc, &proc.async_context, async_call);
         }
 
         pub fn await_completion(completed: []*abi.overlapped.ARC, options: abi.Await_Options) error{Unscheduled}!usize {
-            return try ashet.overlapped.await_completion(completed, options);
+            const proc = get_current_process();
+
+            return try ashet.overlapped.await_completion_with_context(&proc.async_context, completed, options);
         }
 
         pub fn await_completion_of(completed: []?*abi.overlapped.ARC) error{ Unscheduled, InvalidOperation }!usize {
-            return try ashet.overlapped.await_completion_of(completed);
+            const proc = get_current_process();
+
+            return try ashet.overlapped.await_completion_of_with_context(&proc.async_context, completed);
         }
 
         pub fn cancel(arc: *abi.overlapped.ARC) error{ Unscheduled, Completed }!void {
@@ -628,6 +634,12 @@ pub const syscalls = struct {
         pub fn get_widget_data(widget: abi.Widget) [*]align(16) u8 {
             _ = widget;
             not_implemented_yet(@src());
+        }
+
+        pub fn get_widget_bounds(widget_handle: abi.Widget) error{InvalidHandle}!abi.Rectangle {
+            _, const widget = try resolve_typed_resource(ashet.gui.Widget, widget_handle.as_resource());
+
+            return widget.bounds;
         }
 
         // Context Menu API:

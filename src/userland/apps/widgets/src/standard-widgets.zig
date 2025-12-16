@@ -1,6 +1,8 @@
 const std = @import("std");
 const ashet = @import("ashet");
 
+const draw_lib = @import("draw.zig");
+
 pub usingnamespace ashet.core;
 
 const abi = ashet.abi;
@@ -12,8 +14,22 @@ const Widget = abi.Widget;
 const WidgetType = abi.WidgetType;
 const WidgetEvent = abi.WidgetEvent;
 
+var render_queue: ashet.graphics.CommandQueue = ashet.graphics.CommandQueue.init(ashet.process.mem.allocator()) catch unreachable;
+
+var theme: draw_lib.Theme = undefined;
+
 pub fn main() !void {
     errdefer |err| std.log.err("Failed to setup standard widgets: {s}", .{@errorName(err)});
+
+    theme = .create_default(.{
+        .hue = .purple,
+        .saturation = 2,
+        .value = 4,
+        .border = .yellow,
+        .menu_font = try ashet.graphics.get_system_font("sans-6"),
+        .title_font = try ashet.graphics.get_system_font("sans-6"),
+        .widget_font = try ashet.graphics.get_system_font("mono-8"),
+    });
 
     const button_type = try ashet.abi.gui.register_widget_type(&.{
         .uuid = Button.uuid.*,
@@ -73,19 +89,19 @@ pub const Label = struct {
 
                 std.log.info("Label size: {}", .{size});
 
-                // ashet.graphics.render(
-                //     fb,
-                //     &.{
-                //         0x00, 0xFF, // clear
-                //         0x03, // draw line
-                //         0x05, 0x00, // x0
-                //         0x05, 0x00, // y0
-                //         0x1A, 0x00, // x1
-                //         0x0A, 0x00, // y1
-                //         0x80, // color
-                //     },
-                //     true,
-                // ) catch |err| std.log.err("failed to draw: {s}", .{@errorName(err)});
+                const cq = &render_queue;
+                cq.reset();
+                cq.clear(.from_gray(0x30)) catch {};
+                cq.draw_text(
+                    .new(1, 1),
+                    theme.widget_font,
+                    .black,
+                    "Hello, World!",
+                ) catch {};
+
+                cq.submit(fb, .{}) catch |err| {
+                    std.log.err("failed to draw: {s}", .{@errorName(err)});
+                };
             },
 
             else => {},
@@ -108,6 +124,66 @@ pub const Button = struct {
     pub fn handle_event(widget_type: WidgetType, widget: Widget, event: *const WidgetEvent) callconv(.c) void {
         _ = widget_type;
         std.log.info("Button.handle_event({*}, {})", .{ widget, event.event_type });
+
+        switch (event.event_type) {
+            .create, .paint => {
+                const bounds = ashet.gui.get_widget_bounds(widget) catch return;
+
+                draw(widget, bounds, "Click me", null) catch |err| {
+                    std.log.err("failed to draw: {s}", .{@errorName(err)});
+                };
+            },
+
+            else => {},
+        }
+    }
+    fn draw(widget: Widget, rect: Rectangle, full_text: []const u8, font: ?ashet.graphics.Font) !void {
+        const fb = ashet.graphics.create_widget_framebuffer(widget) catch return;
+        defer fb.release();
+
+        const cq = &render_queue;
+        cq.reset();
+
+        try cq.draw_line(
+            .new(rect.left(), rect.top()),
+            .new(rect.right() -| 1, rect.top()),
+            theme.border_bright,
+        );
+        try cq.draw_line(
+            .new(rect.left(), rect.top() +| 1),
+            .new(rect.left(), rect.bottom() -| 1),
+            theme.border_bright,
+        );
+        try cq.draw_rect(
+            rect.shrink(1),
+            theme.border_normal,
+        );
+        try cq.draw_line(
+            .new(rect.right(), rect.top() +| 1),
+            .new(rect.right(), rect.bottom()),
+            theme.border_dark,
+        );
+        try cq.draw_line(
+            .new(rect.left() +| 1, rect.bottom()),
+            .new(rect.right(), rect.bottom()),
+            theme.border_dark,
+        );
+        try cq.fill_rect(
+            rect.shrink(2),
+            theme.widget_background,
+        );
+
+        const text = rstrip(full_text);
+        if (text.len > 0) {
+            try cq.draw_text(
+                .new(rect.left() +| 5, rect.top() +| 4),
+                font orelse theme.widget_font,
+                theme.text_color,
+                text,
+            );
+        }
+
+        try cq.submit(fb, .{});
     }
 };
 
@@ -264,3 +340,7 @@ pub const Button = struct {
 
 //     widget: Widget,
 // };
+
+fn rstrip(text: []const u8) []const u8 {
+    return std.mem.trimRight(u8, text, " \r\n\t");
+}

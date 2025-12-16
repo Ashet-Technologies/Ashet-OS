@@ -133,6 +133,10 @@ pub fn place_widget(widget: Widget, bounds: Rectangle) !Rectangle {
     return try ashet.abi.gui.place_widget(widget, bounds);
 }
 
+pub fn get_widget_bounds(widget: Widget) !Rectangle {
+    return try ashet.abi.gui.get_widget_bounds(widget);
+}
+
 pub const widgets = struct {
     pub const label = UUID.constant("53b8be36-969a-46a3-bdf5-e3d197890219");
 

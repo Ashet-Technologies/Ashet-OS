@@ -1,6 +1,7 @@
 const std = @import("std");
-const abi = @import("abi");
-const agp = @import("agp");
+const ashet = @import("ashet");
+const abi = ashet.abi;
+const agp = ashet.graphics.agp;
 const agp_swrast = @import("agp-swrast");
 
 const Color = agp.Color;
@@ -22,9 +23,9 @@ pub const Theme = struct {
     window_active: WindowTheme,
     window_inactive: WindowTheme,
 
-    title_font: agp.Font,
-    menu_font: agp.Font,
-    widget_font: agp.Font,
+    title_font: ashet.graphics.Font,
+    menu_font: ashet.graphics.Font,
+    widget_font: ashet.graphics.Font,
 
     pub const WindowTheme = struct {
         background: Color,

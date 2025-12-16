@@ -327,7 +327,10 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
     fbs.reset();
 
     // Now render to the framebuffer:
-    {
+
+    const target_size = fb.get_size();
+
+    if (target_size.width > 0 and target_size.height > 0) {
         _ = render_temp_buffer.reset(.retain_capacity);
 
         var rasterizer = Rasterizer.init(fb);

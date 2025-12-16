@@ -43,9 +43,9 @@ pub fn main() !void {
     const dec_button = try ashet.gui.create_widget(window, ashet.gui.widgets.button);
     defer dec_button.release();
 
-    _ = try ashet.gui.place_widget(inc_button, .{ .x = 10, .y = 10, .width = 80, .height = 19 });
+    _ = try ashet.gui.place_widget(inc_button, .{ .x = 10, .y = 10, .width = 80, .height = 15 });
     _ = try ashet.gui.place_widget(count_label, .{ .x = 10, .y = 31, .width = 80, .height = 18 });
-    _ = try ashet.gui.place_widget(dec_button, .{ .x = 10, .y = 51, .width = 80, .height = 19 });
+    _ = try ashet.gui.place_widget(dec_button, .{ .x = 10, .y = 51, .width = 80, .height = 15 });
 
     main_loop: while (true) {
         const event = try ashet.gui.get_window_event(window);
