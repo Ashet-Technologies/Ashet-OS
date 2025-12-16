@@ -34,18 +34,32 @@ pub fn main() !void {
     defer window.destroy_now();
     std.log.info("created window: {}", .{window});
 
-    const inc_button = try ashet.gui.create_widget(window, ashet.gui.widgets.button);
+    const inc_button = try ashet.gui.create_widget(window, ashet.gui.widgets.Button.uuid);
     defer inc_button.release();
 
-    const count_label = try ashet.gui.create_widget(window, ashet.gui.widgets.label);
+    const count_label = try ashet.gui.create_widget(window, ashet.gui.widgets.Label.uuid);
     defer count_label.release();
 
-    const dec_button = try ashet.gui.create_widget(window, ashet.gui.widgets.button);
+    const dec_button = try ashet.gui.create_widget(window, ashet.gui.widgets.Button.uuid);
     defer dec_button.release();
 
     _ = try ashet.gui.place_widget(inc_button, .{ .x = 10, .y = 10, .width = 80, .height = 15 });
     _ = try ashet.gui.place_widget(count_label, .{ .x = 10, .y = 31, .width = 80, .height = 18 });
     _ = try ashet.gui.place_widget(dec_button, .{ .x = 10, .y = 51, .width = 80, .height = 15 });
+
+    try ashet.gui.control_widget(inc_button, ashet.gui.widgets.Button.set_text, .{
+        @intFromPtr("Increment"),
+        "Increment".len,
+        0,
+        0,
+    });
+
+    try ashet.gui.control_widget(dec_button, ashet.gui.widgets.Button.set_text, .{
+        @intFromPtr("Decrement"),
+        "Decrement".len,
+        0,
+        0,
+    });
 
     main_loop: while (true) {
         const event = try ashet.gui.get_window_event(window);

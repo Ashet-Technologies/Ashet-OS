@@ -66,13 +66,7 @@ pub fn main() !void {
 }
 
 pub const Label = struct {
-    pub const uuid = ashet.gui.widgets.label;
-    pub const ControlMessage = enum(u32) {
-        set_text,
-        set_alignment,
-    };
-
-    pub const NotifyEvent = enum(u32) {};
+    pub const uuid = ashet.gui.widgets.Label.uuid;
 
     widget: Widget,
 
@@ -110,14 +104,7 @@ pub const Label = struct {
 };
 
 pub const Button = struct {
-    pub const uuid = ashet.gui.widgets.button;
-    pub const ControlMessage = enum(u32) {
-        set_text,
-    };
-
-    pub const NotifyEvent = enum(u32) {
-        clicked,
-    };
+    pub const uuid = ashet.gui.widgets.Button.uuid;
 
     widget: Widget,
 

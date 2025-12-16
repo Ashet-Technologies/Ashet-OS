@@ -608,21 +608,15 @@ pub const syscalls = struct {
         }
 
         /// Triggers the `control` event of the widget with the given `message` as a payload.
-        pub fn control_widget(widget: abi.Widget, message: abi.WidgetControlMessage) error{
-            SystemResources,
-        } {
-            _ = widget;
-            _ = message;
-            not_implemented_yet(@src());
+        pub fn control_widget(widget: abi.Widget, message: abi.WidgetControlMessage) error{ InvalidHandle, SystemResources }!void {
+            _, const wid = try resolve_typed_resource(ashet.gui.Widget, widget.as_resource());
+            wid.control(message);
         }
 
         /// Triggers the `widget_notify` event of the `Window` that owns `widget` with `event` as the payload.
-        pub fn notify_owner(widget: abi.Widget, event: abi.WidgetNotifyEvent) error{
-            SystemResources,
-        } {
-            _ = widget;
-            _ = event;
-            not_implemented_yet(@src());
+        pub fn notify_owner(widget: abi.Widget, event: abi.WidgetNotifyEvent) error{ InvalidHandle, SystemResources }!void {
+            _, const wid = try resolve_typed_resource(ashet.gui.Widget, widget.as_resource());
+            wid.notify_owner(event);
         }
 
         /// Returns WidgetType-associated "opaque" data for this widget.

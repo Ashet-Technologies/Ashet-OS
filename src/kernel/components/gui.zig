@@ -343,9 +343,6 @@ pub const Window = struct {
         //         key_press and key_release happen without changing the focused widget, and only when
         //         space or return key were pressed without any other key interrupting.
 
-        // TODO: Implement a focus/blur event type for widgets, so they receive notification when
-        //       the focus changes.
-
         // TODO: Implement the ".scroll" widget event
         //       This is probably best done by removing scroll buttons from the mouse_button_press, mouse_button_release event
         //       and implement it as a separate axis (scroll_h, scroll_v).
@@ -391,6 +388,16 @@ pub const Window = struct {
                 window.update_hovered_widget(maybe_hovered_widget, event.mouse);
                 std.debug.assert(window.hovered_widget == maybe_hovered_widget);
 
+                if (event.event_type == .mouse_button_press and event.mouse.button == .left) {
+                    if (maybe_hovered_widget) |widget| {
+                        if (widget.type.flags.focusable) {
+                            window.update_focused_widget(widget);
+                        }
+                    } else {
+                        window.update_focused_widget(null);
+                    }
+                }
+
                 if (maybe_hovered_widget) |widget| {
                     // If we have a widget, the event will be forwarded to the
                     // widget server and won't show up in the window queue:
@@ -424,6 +431,31 @@ pub const Window = struct {
         }
 
         window.post_event_direct(event);
+    }
+
+    fn update_focused_widget(window: *Window, maybe_new_widget: ?*Widget) void {
+        if (maybe_new_widget) |new_widget| {
+            if (!new_widget.type.flags.focusable)
+                return;
+        }
+
+        const maybe_old_widget: ?*Widget = window.focused_widget;
+        if (maybe_old_widget == maybe_new_widget)
+            return;
+
+        if (maybe_old_widget) |old_widget| {
+            old_widget.process_event(.{
+                .event_type = .focus_leave,
+            });
+        }
+
+        window.focused_widget = maybe_new_widget;
+
+        if (maybe_new_widget) |new_widget| {
+            new_widget.process_event(.{
+                .event_type = .focus_enter,
+            });
+        }
     }
 
     fn update_hovered_widget(window: *Window, maybe_new_widget: ?*Widget, mouse_event: ashet.abi.MouseEvent) void {
@@ -565,6 +597,10 @@ pub const Widget = struct {
     }
 
     fn _notify_destroy(widget: *Widget) void {
+        if (widget.window.focused_widget == widget) {
+            widget.window.update_focused_widget(null);
+        }
+
         widget.type.process_event(widget, .default, .{
             .event_type = .destroy,
         });
@@ -585,6 +621,26 @@ pub const Widget = struct {
     /// so the widget won't be created inside the widget server process.
     pub fn process_event(widget: *Widget, event: ashet.abi.WidgetEvent) void {
         widget.type.process_event(widget, .default, event);
+    }
+
+    /// Sends the "control" event to the widget.
+    ///
+    /// NOTE: This function patches the `message.event_type` field to `.control` before forwarding it.
+    pub fn control(widget: *Widget, message: ashet.abi.WidgetControlMessage) void {
+        var msg = message;
+        msg.event_type = .control;
+        widget.process_event(.{ .control = msg });
+    }
+
+    /// Puts `event` into its window event queue.
+    ///
+    /// NOTE: This function patches `event.event_type` to `.widget_notify` before passing it to the event queue.
+    pub fn notify_owner(widget: *Widget, event: ashet.abi.WidgetNotifyEvent) void {
+        var evt = event;
+        evt.event_type = .widget_notify;
+        widget.window.post_event_direct(.{
+            .widget_notify = evt,
+        });
     }
 
     /// Places the widget into a new location on the owning window.
