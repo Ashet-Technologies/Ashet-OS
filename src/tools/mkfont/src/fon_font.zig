@@ -240,7 +240,7 @@ pub fn generate(
         _ => unreachable,
     }
 
-    try bmp_font_gen.render(file, builder, .{
+    try bmp_font_gen.render(allocator, file, builder, .{
         .line_height = @intCast(fontheader.dfAscent),
     });
 }

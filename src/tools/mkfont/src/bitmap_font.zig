@@ -132,51 +132,35 @@ pub fn generate(
             }
         }
 
-        var fmt: [8]u8 = undefined;
-        const len = std.unicode.utf8Encode(codepoint, &fmt) catch @panic("implementation bug");
+        // var fmt: [8]u8 = undefined;
+        // const len = std.unicode.utf8Encode(codepoint, &fmt) catch @panic("implementation bug");
 
-        std.log.debug("U+{X:0>5} ('{}') => w={} h={} dx={} dy={} bits={}", .{
-            codepoint,
-            std.unicode.fmtUtf8(fmt[0..len]),
-            width,
-            height,
-            shrink_dx,
-            shrink_dy,
-            std.fmt.fmtSliceHexUpper(out_glyph.bits),
-        });
-        std.log.debug("  x0={} x1={} y0={} y1={}", .{
-            cell_x0,
-            cell_x1,
-            cell_y0,
-            cell_y1,
-        });
-        std.log.debug("  x0={} x1={} y0={} y1={}", .{
-            min_x,
-            max_x,
-            min_y,
-            max_y,
-        });
+        // std.debug.print("U+{X:0>5} ('{}') => w={} h={} dx={} dy={} bits={}\n", .{
+        //     codepoint,
+        //     std.unicode.fmtUtf8(fmt[0..len]),
+        //     width,
+        //     height,
+        //     shrink_dx,
+        //     shrink_dy,
+        //     std.fmt.fmtSliceHexUpper(out_glyph.bits),
+        // });
+        // std.debug.print("  x0={} x1={} y0={} y1={}\n", .{
+        //     cell_x0,
+        //     cell_x1,
+        //     cell_y0,
+        //     cell_y1,
+        // });
+        // std.debug.print("  x0={} x1={} y0={} y1={}\n", .{
+        //     min_x,
+        //     max_x,
+        //     min_y,
+        //     max_y,
+        // });
 
-        var dump_buffer: [128]u8 = undefined;
-        if (dump_buffer.len >= width) {
-            for (0..height) |y| {
-                var fbs = std.io.fixedBufferStream(&dump_buffer);
-                const writer = fbs.writer();
-                for (0..width) |x| {
-                    switch (out_glyph.get_pixel(x, y)) {
-                        .set => writer.writeByte('X') catch {},
-                        .unset => writer.writeByte(' ') catch {},
-                    }
-                }
-
-                std.log.debug("|{s}|", .{fbs.getWritten()});
-            }
-
-            std.log.debug("", .{});
-        }
+        // out_glyph.dump("  ");
     }
 
-    try bmp_font_gen.render(file, builder, .{
+    try bmp_font_gen.render(allocator, file, builder, .{
         .line_height = font.line_height,
     });
 }

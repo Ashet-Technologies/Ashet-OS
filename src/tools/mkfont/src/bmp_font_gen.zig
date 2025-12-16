@@ -131,7 +131,7 @@ pub const Glyph = struct {
     }
 
     pub fn dump(glyph: Glyph, prefix: []const u8) void {
-        std.debug.print("{s}: {}x{} +({},{}), +={}\n", .{
+        std.debug.print("{s}: bitmap {}x{} @ ({},{}), advance {}\n", .{
             prefix,
             glyph.width,
             glyph.height,
@@ -201,9 +201,10 @@ pub const Builder = struct {
             return error.DuplicateKey;
 
         const glyph = try arena.create(Glyph);
-        defer arena.destroy(glyph);
+        errdefer arena.destroy(glyph);
 
         const bits = try arena.alloc(u8, byte_size);
+        errdefer arena.free(bits);
         @memset(bits, 0);
 
         glyph.* = .{
@@ -222,10 +223,23 @@ pub const Builder = struct {
 };
 
 pub fn render(
+    allocator: std.mem.Allocator,
     file: std.fs.File,
     font: Builder,
     info: FontInfo,
 ) !void {
+
+    // Assert that the provided font is actually sorted:
+    {
+        const count = font.glyphs.count();
+        const codepoints = font.glyphs.keys();
+        if (count > 1) {
+            for (codepoints[0 .. count - 1], codepoints[1..]) |low, high| {
+                std.debug.assert(low < high);
+            }
+        }
+    }
+
     const writer = file.writer();
 
     // Write file header:
@@ -248,8 +262,8 @@ pub fn render(
         try writer.writeInt(u32, meta_value, .little);
     }
 
-    // var glyph_sizes: std.AutoArrayHashMap(u21, struct { u32, usize }) = .init(allocator);
-    // defer glyph_sizes.deinit();
+    var glyph_sizes: std.AutoArrayHashMap(u21, struct { u32, usize }) = .init(allocator);
+    defer glyph_sizes.deinit();
 
     // Write `glyph_offsets` array:
     {
@@ -262,7 +276,7 @@ pub fn render(
 
             try writer.writeInt(u32, base_offset, .little);
 
-            // try glyph_sizes.put(codepoint, .{ base_offset, encoded_glyph_size });
+            try glyph_sizes.put(codepoint, .{ base_offset, encoded_glyph_size });
 
             base_offset += encoded_glyph_size;
         }
@@ -270,13 +284,25 @@ pub fn render(
 
     // Write `glyphs` data array:
     {
-        // const start = try writer.context.getPos();
+        const start = try writer.context.getPos();
         for (font.glyphs.keys()) |codepoint| {
-            // const expected_offset, const expected_size = glyph_sizes.get(codepoint).?;
+            const expected_offset, const expected_size = glyph_sizes.get(codepoint).?;
             const glyph_bitmap = font.glyphs.get(codepoint).?;
 
-            // const offset = try writer.context.getPos();
-            // std.debug.assert(offset - start == expected_offset);
+            const offset = try writer.context.getPos();
+            std.debug.assert(offset - start == expected_offset);
+
+            // std.debug.print("emit '{u}' to 0x{X:0>4}/0x{X:0>4}: {} {} {} {} '{}'\n", .{
+            //     codepoint,
+            //     offset,
+            //     expected_offset,
+            //     glyph_bitmap.width,
+            //     glyph_bitmap.height,
+            //     glyph_bitmap.offset_x,
+            //     glyph_bitmap.offset_y,
+            //     std.fmt.fmtSliceHexLower(glyph_bitmap.bits),
+            // });
+            // font.glyphs.get(codepoint).?.dump("  ");
 
             try writer.writeInt(u8, glyph_bitmap.width, .little);
             try writer.writeInt(u8, glyph_bitmap.height, .little);
@@ -284,8 +310,8 @@ pub fn render(
             try writer.writeInt(i8, glyph_bitmap.offset_y, .little);
             try writer.writeAll(glyph_bitmap.bits);
 
-            // const end = try writer.context.getPos();
-            // std.debug.assert(end - offset == expected_size);
+            const end = try writer.context.getPos();
+            std.debug.assert(end - offset == expected_size);
         }
     }
 }
