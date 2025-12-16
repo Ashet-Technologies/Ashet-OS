@@ -91,11 +91,11 @@ pub const Label = struct {
 
                 const cq = &render_queue;
                 cq.reset();
-                cq.clear(.from_gray(0x30)) catch {};
+                cq.clear(theme.window_active.background) catch {};
                 cq.draw_text(
                     .new(1, 1),
                     theme.widget_font,
-                    .black,
+                    theme.text_color,
                     "Hello, World!",
                 ) catch {};
 
@@ -146,6 +146,7 @@ pub const Button = struct {
 
         const cq = &render_queue;
         cq.reset();
+        cq.clear(theme.window_active.background) catch {};
 
         try cq.draw_line(
             .new(rect.left(), rect.top()),
