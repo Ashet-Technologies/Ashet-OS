@@ -13,11 +13,13 @@ pub const Desktop = ashet.abi.Desktop;
 pub const Window = ashet.abi.Window;
 pub const Widget = ashet.abi.Widget;
 pub const WidgetType = ashet.abi.WidgetType;
+pub const WidgetDescriptor = ashet.abi.WidgetDescriptor;
+pub const WidgetControlMessage = ashet.abi.WidgetControlMessage;
 
 pub const WindowFlags = ashet.abi.WindowFlags;
-pub const WidgetNotifyEvent = ashet.abi.WidgetNotifyEvent;
 pub const KeyboardEvent = ashet.abi.KeyboardEvent;
 pub const MouseEvent = ashet.abi.MouseEvent;
+pub const WidgetNotifyEvent = ashet.abi.WidgetNotifyEvent;
 
 pub const GetWindowEvent = ashet.abi.gui.GetWindowEvent;
 
@@ -146,6 +148,10 @@ pub fn control_widget(widget: Widget, control: ControlMessage, params: [4]usize)
         .type = control,
         .params = params,
     });
+}
+
+pub fn register_widget_type(desc: WidgetDescriptor) !WidgetType {
+    return try ashet.abi.gui.register_widget_type(&desc);
 }
 
 pub const widgets = struct {

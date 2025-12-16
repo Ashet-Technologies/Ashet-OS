@@ -14,7 +14,9 @@ const Widget = abi.Widget;
 const WidgetType = abi.WidgetType;
 const WidgetEvent = abi.WidgetEvent;
 
-var render_queue: ashet.graphics.CommandQueue = ashet.graphics.CommandQueue.init(ashet.process.mem.allocator()) catch unreachable;
+const CommandQueue = ashet.graphics.CommandQueue;
+
+var render_queue: CommandQueue = CommandQueue.init(ashet.process.mem.allocator()) catch unreachable;
 
 var theme: draw_lib.Theme = undefined;
 
@@ -31,32 +33,10 @@ pub fn main() !void {
         .widget_font = try ashet.graphics.get_system_font("mono-8"),
     });
 
-    const button_type = try ashet.abi.gui.register_widget_type(&.{
-        .uuid = Button.uuid.*,
-        .data_size = @sizeOf(Button),
-        .flags = .{
-            .focusable = true,
-            .context_menu = false,
-            .hit_test_visible = true,
-            .allow_drop = false,
-            .clipboard_sensitive = false,
-        },
-        .handle_event = Button.handle_event,
-    });
+    const button_type = try register_widget_type(Button);
     defer button_type.destroy_now();
 
-    const label_type = try ashet.abi.gui.register_widget_type(&.{
-        .uuid = Label.uuid.*,
-        .data_size = @sizeOf(Label),
-        .flags = .{
-            .focusable = true,
-            .context_menu = false,
-            .hit_test_visible = true,
-            .allow_drop = false,
-            .clipboard_sensitive = false,
-        },
-        .handle_event = Label.handle_event,
-    });
+    const label_type = try register_widget_type(Label);
     defer label_type.destroy_now();
 
     // TODO: Implement TSR
@@ -65,53 +45,142 @@ pub fn main() !void {
     }
 }
 
+fn register_widget_type(comptime WidgetImpl: type) !ashet.gui.WidgetType {
+    const Wrapper = WidgetWrapper(WidgetImpl);
+    return try ashet.gui.register_widget_type(.{
+        .uuid = Wrapper.uuid.*,
+        .data_size = @sizeOf(Wrapper),
+        .flags = Wrapper.flags,
+        .handle_event = Wrapper.handle_event,
+    });
+}
+
+fn WidgetWrapper(comptime WidgetImpl: type) type {
+    return struct {
+        const Wrapper = @This();
+
+        pub const uuid: *const UUID = WidgetImpl.uuid;
+        pub const flags: ashet.gui.WidgetDescriptor.Flags = WidgetImpl.flags;
+
+        impl: WidgetImpl,
+        widget: Widget,
+        framebuffer: ?ashet.graphics.Framebuffer,
+
+        pub fn from_impl(impl: *WidgetImpl) *Wrapper {
+            return @fieldParentPtr("impl", impl);
+        }
+
+        /// Invalidates the widget and forces a repaint before the next display.
+        pub fn invalidate(wrapper: *Wrapper) !void {
+            // TODO: Only invalidate the widget here instead of force-repainting!
+            try wrapper.paint();
+        }
+
+        fn paint(wrapper: *Wrapper) !void {
+            const fb = wrapper.framebuffer orelse blk: {
+                wrapper.framebuffer = ashet.graphics.create_widget_framebuffer(wrapper.widget) catch |err| {
+                    std.log.err("failed to create widget framebuffer: {s}", .{@errorName(err)});
+                    return;
+                };
+                break :blk wrapper.framebuffer.?;
+            };
+
+            const size = try ashet.graphics.get_framebuffer_size(fb);
+
+            const cq = &render_queue;
+            cq.reset();
+
+            try wrapper.impl.paint(cq, size);
+
+            try cq.submit(fb, .{});
+        }
+
+        fn control(wrapper: *Wrapper, message: ashet.gui.WidgetControlMessage) !void {
+            // TODO: Implement auto-magic control functions with parameter unwrapping
+            try wrapper.impl.control(message);
+        }
+
+        fn handle_event(widget_type: WidgetType, widget: Widget, event: *const WidgetEvent) callconv(.c) void {
+            _ = widget_type;
+
+            const data_ptr = ashet.abi.gui.get_widget_data(widget) catch |err| {
+                std.log.err("failed to fetch widget data: {s}", .{@errorName(err)});
+                return;
+            };
+            const wrapper: *Wrapper = @ptrCast(data_ptr);
+
+            init: switch (event.event_type) {
+                .create => {
+                    wrapper.* = .{
+                        .widget = widget,
+                        .framebuffer = ashet.graphics.create_widget_framebuffer(widget) catch null,
+                        .impl = WidgetImpl.init(widget),
+                    };
+                    if (wrapper.framebuffer == null) {
+                        std.log.err("failed to initialize widget framebuffer.", .{});
+                        // TODO: Return error code: widget could not be created!
+                    }
+
+                    // TODO: Move the below into the GUI framework, as this is true for every widget:
+                    // Each widget must be drawn after creation:
+                    wrapper.invalidate() catch |err| {
+                        std.log.err("failed to invalidate {s}: {s}", .{ @typeName(WidgetImpl), @errorName(err) });
+                    };
+
+                    continue :init .paint; // widgets should be drawn at least once
+                },
+
+                .destroy => {
+                    wrapper.impl.deinit();
+                    if (wrapper.framebuffer) |fb| {
+                        fb.release();
+                    }
+                    wrapper.* = undefined;
+                },
+
+                .paint => wrapper.paint() catch |err| {
+                    std.log.err("failed to paint {s}: {s}", .{ @typeName(WidgetImpl), @errorName(err) });
+                },
+
+                .control => wrapper.control(event.control) catch |err| {
+                    std.log.err("failed to control {s}: {s}", .{ @typeName(WidgetImpl), @errorName(err) });
+                },
+
+                else => {
+                    // TODO: Implement the other messages
+                    std.log.info("{s}.handle_event({}, {}): unhandled event", .{ @typeName(WidgetImpl), widget, event.event_type });
+                },
+            }
+        }
+    };
+}
+
 pub const Label = struct {
     pub const uuid = ashet.gui.widgets.Label.uuid;
 
-    widget: Widget,
+    pub const flags: ashet.gui.WidgetDescriptor.Flags = .{
+        .focusable = false,
+        .context_menu = false,
+        .hit_test_visible = false,
+        .allow_drop = false,
+        .clipboard_sensitive = false,
+    };
+
     text: std.ArrayListUnmanaged(u8) = .empty,
 
-    pub fn handle_event(widget_type: WidgetType, widget: Widget, event: *const WidgetEvent) callconv(.c) void {
-        const label_ptr = ashet.abi.gui.get_widget_data(widget) catch |err| {
-            std.log.err("failed to fetch widget data: {s}", .{@errorName(err)});
-            return;
-        };
-        const label: *Label = @ptrCast(label_ptr);
-        _ = widget_type;
-
-        std.log.info("Label.handle_event({}, {})", .{ widget, event.event_type });
-        init: switch (event.event_type) {
-            .create => {
-                label.* = .{ .widget = widget };
-                continue :init .paint;
-            },
-            .destroy => {
-                label.text.deinit(ashet.process.mem.allocator());
-                label.* = undefined;
-            },
-
-            .paint => {
-                label.paint() catch |err| {
-                    std.log.err("failed to paint label: {s}", .{@errorName(err)});
-                };
-            },
-
-            .control => {
-                label.control(event.control) catch |err| {
-                    std.log.err("failed to control label: {s}", .{@errorName(err)});
-                };
-            },
-
-            else => {},
-        }
+    fn init(widget: Widget) Label {
+        _ = widget;
+        return .{};
     }
 
-    fn paint(label: *Label) !void {
-        const fb = ashet.graphics.create_widget_framebuffer(label.widget) catch return;
-        defer fb.release();
+    fn deinit(label: *Label) void {
+        label.text.deinit(ashet.process.mem.allocator());
+        label.* = undefined;
+    }
 
-        const cq = &render_queue;
-        cq.reset();
+    fn paint(label: *Label, cq: *CommandQueue, size: Size) !void {
+        _ = size;
+
         try cq.clear(theme.window_active.background);
         try cq.draw_text(
             .new(1, 1),
@@ -119,8 +188,6 @@ pub const Label = struct {
             theme.text_color,
             label.text.items,
         );
-
-        try cq.submit(fb, .{});
     }
 
     fn control(label: *Label, msg: ashet.abi.WidgetControlMessage) !void {
@@ -134,7 +201,7 @@ pub const Label = struct {
                 label.text.clearRetainingCapacity();
                 label.text.appendSliceAssumeCapacity(text);
 
-                try label.paint();
+                try WidgetWrapper(Label).from_impl(label).invalidate();
             },
             ashet.gui.widgets.Label.set_alignment => {
                 return error.Unimplemented;
@@ -148,34 +215,46 @@ pub const Label = struct {
 pub const Button = struct {
     pub const uuid = ashet.gui.widgets.Button.uuid;
 
-    widget: Widget,
+    pub const flags: ashet.gui.WidgetDescriptor.Flags = .{
+        .focusable = true,
+        .context_menu = false,
+        .hit_test_visible = true,
+        .allow_drop = false,
+        .clipboard_sensitive = false,
+    };
 
-    pub fn handle_event(widget_type: WidgetType, widget: Widget, event: *const WidgetEvent) callconv(.c) void {
-        _ = widget_type;
-        std.log.info("Button.handle_event({*}, {})", .{ widget, event.event_type });
+    text: std.ArrayListUnmanaged(u8) = .empty,
 
-        switch (event.event_type) {
-            .create, .paint => {
-                draw(widget, "Click me", null) catch |err| {
-                    std.log.err("failed to draw: {s}", .{@errorName(err)});
-                };
+    fn init(widget: Widget) Button {
+        _ = widget;
+        return .{};
+    }
+
+    fn deinit(button: *Button) void {
+        button.text.deinit(ashet.process.mem.allocator());
+        button.* = undefined;
+    }
+
+    fn control(button: *Button, msg: ashet.abi.WidgetControlMessage) !void {
+        switch (msg.type) {
+            ashet.gui.widgets.Button.set_text => {
+                const ptr: [*]const u8 = @ptrFromInt(msg.params[0]);
+                const text = ptr[0..msg.params[1]];
+
+                try button.text.ensureTotalCapacity(ashet.process.mem.allocator(), text.len);
+
+                button.text.clearRetainingCapacity();
+                button.text.appendSliceAssumeCapacity(text);
+
+                try WidgetWrapper(Button).from_impl(button).invalidate();
             },
 
-            else => {},
+            else => return error.UnknownControl,
         }
     }
 
-    fn draw(widget: Widget, full_text: []const u8, font: ?ashet.graphics.Font) !void {
-        const fb = ashet.graphics.create_widget_framebuffer(widget) catch return;
-        defer fb.release();
-
-        const size = try ashet.graphics.get_framebuffer_size(fb);
-
+    fn paint(button: *Button, cq: *CommandQueue, size: Size) !void {
         const rect: Rectangle = .new(.zero, size);
-
-        const cq = &render_queue;
-        cq.reset();
-        cq.clear(theme.window_active.background) catch {};
 
         try cq.draw_line(
             .new(rect.left(), rect.top()),
@@ -206,17 +285,15 @@ pub const Button = struct {
             theme.widget_background,
         );
 
-        const text = rstrip(full_text);
+        const text = rstrip(button.text.items);
         if (text.len > 0) {
             try cq.draw_text(
                 .new(rect.left() +| 5, rect.top() +| 4),
-                font orelse theme.widget_font,
+                theme.widget_font, // TODO: How to make font customizable?
                 theme.text_color,
                 text,
             );
         }
-
-        try cq.submit(fb, .{});
     }
 };
 
