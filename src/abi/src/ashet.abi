@@ -2905,6 +2905,14 @@ union WidgetEvent {
 
         /// The user clicked on the widget with the primary mouse button
         /// or pressed the return or space bar button on the keyboard.
+        ///
+        /// NOTE: A click with the mouse is valid when, and only when:
+        ///       `mouse_button_down` and `mouse_button_up` with the left mouse button happen on the
+        ///       same widget. The hovered widget *may* change in between the mouse down and mouse up,
+        ///       but the click will still be recognized.
+        /// NOTE: A click with the keyboard is valid when, and only when:
+        ///       `key_press` and `key_release` happen without changing the focused widget, and only when
+        ///       the focus giving key (space, return, ...) was pressed without any other key interrupting.
         item click = 3;
 
         //? keyboard input:

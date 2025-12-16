@@ -225,6 +225,9 @@ pub const Window = struct {
     /// A marker that stores which widget was pressed with the primary mouse button
     mouse_clicked_widget: ?*Widget = null,
 
+    /// A marker that stores which widget was pressed with a clickable key
+    keyboard_clicked_widget: ?struct { *Widget, ashet.abi.KeyUsageCode } = null,
+
     fn from_node(node: *WindowDesktopLinkNode) *Window {
         return @fieldParentPtr("desktop", node);
     }
@@ -336,16 +339,6 @@ pub const Window = struct {
     ///
     pub fn post_event(window: *Window, event: ashet.abi.WindowEvent) void {
 
-        // TODO: Implement ".click" widget event.
-        //       This event is a bit more tricky as it needs tracking which widget was clicked.
-        //       A click with the mouse is valid when, and only when:
-        //         mouse_button_down and mouse_button_up with the left mouse button happen on the
-        //         same widget. The hovered widget *may* change in between the mouse down and mouse up,
-        //         but the click will still be recognized.
-        //       A click with the keyboard is valid when, and only when:
-        //         key_press and key_release happen without changing the focused widget, and only when
-        //         space or return key were pressed without any other key interrupting.
-
         // TODO: Implement the ".scroll" widget event
         //       This is probably best done by removing scroll buttons from the mouse_button_press, mouse_button_release event
         //       and implement it as a separate axis (scroll_h, scroll_v).
@@ -357,10 +350,10 @@ pub const Window = struct {
             .widget_notify => {},
 
             // Keyboard events go through the focused widget (if any):
-            .key_press, .key_release => if (window.focused_widget) |widget| {
-                // Focused widgets just receive the keyboard event,
-                // and the window won't see them:
-                widget.process_event(.{
+            .key_press, .key_release => if (window.focused_widget) |focused_widget| {
+                std.debug.assert(focused_widget.type.flags.focusable);
+
+                const key_event: ashet.abi.WidgetEvent = .{
                     .keyboard = .{
                         .event_type = .{ .widget = switch (event.event_type) {
                             .key_press => .key_press,
@@ -373,7 +366,37 @@ pub const Window = struct {
                         .pressed = event.keyboard.pressed,
                         .modifiers = event.keyboard.modifiers,
                     },
-                });
+                };
+
+                if (event.event_type == .key_press) {
+                    if (is_clicking_key(key_event.keyboard.usage)) {
+                        // Only prime a potential click is if the key is clicking and the event is a key-down event:
+                        window.keyboard_clicked_widget = .{ focused_widget, key_event.keyboard.usage };
+                    } else {
+                        // if any other key is pressed, we reset the primer.
+                        window.keyboard_clicked_widget = null;
+                    }
+                }
+
+                // Focused widgets just receive the keyboard event,
+                // and the window won't see them:
+                focused_widget.process_event(key_event);
+
+                if (event.event_type == .key_release) {
+                    if (window.keyboard_clicked_widget) |_pack| {
+                        const clicked_widget, const source_key = _pack;
+
+                        if (clicked_widget == focused_widget and event.keyboard.usage == source_key) {
+                            // If we have a primed key click, and we have a key release of the
+                            // same key that primed our focus change, we can trigger the click event:
+                            focused_widget.process_event(.{ .event_type = .click });
+                        }
+                    }
+
+                    // any key release will reset the primer:
+                    window.keyboard_clicked_widget = null;
+                }
+
                 return;
             },
 
@@ -425,9 +448,7 @@ pub const Window = struct {
                                     window.update_focused_widget(clicked_widget);
                                 }
 
-                                clicked_widget.process_event(.{
-                                    .event_type = .click,
-                                });
+                                clicked_widget.process_event(.{ .event_type = .click });
                             }
                         }
                     }
@@ -470,6 +491,9 @@ pub const Window = struct {
         const maybe_old_widget: ?*Widget = window.focused_widget;
         if (maybe_old_widget == maybe_new_widget)
             return;
+
+        // Any focus change kills the current keyboard click state:
+        window.keyboard_clicked_widget = null;
 
         if (maybe_old_widget) |old_widget| {
             std.debug.assert(old_widget.type.flags.focusable);
@@ -564,6 +588,17 @@ pub const Window = struct {
             logger.warn("window event queue is full, dropping event {?}", .{window.event_queue.pull()});
         }
         window.event_queue.push(event);
+    }
+
+    fn is_clicking_key(usage: ashet.abi.KeyUsageCode) bool {
+        // TODO: Make this somehow configurable?
+        return switch (usage) {
+            .space => true,
+            .enter => true,
+            .kp_enter => true,
+
+            else => false,
+        };
     }
 };
 
