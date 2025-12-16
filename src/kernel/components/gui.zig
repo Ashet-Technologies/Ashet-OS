@@ -222,6 +222,9 @@ pub const Window = struct {
     /// The widget which is currently hovered by the mouse
     hovered_widget: ?*Widget = null,
 
+    /// A marker that stores which widget was pressed with the primary mouse button
+    mouse_clicked_widget: ?*Widget = null,
+
     fn from_node(node: *WindowDesktopLinkNode) *Window {
         return @fieldParentPtr("desktop", node);
     }
@@ -388,27 +391,53 @@ pub const Window = struct {
                 window.update_hovered_widget(maybe_hovered_widget, event.mouse);
                 std.debug.assert(window.hovered_widget == maybe_hovered_widget);
 
-                if (event.event_type == .mouse_button_press and event.mouse.button == .left) {
-                    if (maybe_hovered_widget) |widget| {
-                        if (widget.type.flags.focusable) {
-                            window.update_focused_widget(widget);
-                        }
-                    } else {
-                        window.update_focused_widget(null);
-                    }
+                // TODO: Left mouse button is inaccessible. Must be refactored into "primary" and "secondary" for UI instead of "left", "right".
+                const click_mouse_button: ashet.abi.MouseButton = .left;
+
+                if (event.event_type == .mouse_button_press and event.mouse.button == click_mouse_button) {
+                    // handle primary mouse button down potentially initiating a click event.
+                    // we always set the `mouse_clicked_widget`, no matter if we actually clicked one or not.
+                    // this way, we can't forget to update the variable in case it is `null` and a `mouse_button_release` event
+                    // would accidently fire.
+
+                    // TODO: This state can be advanced for drag'n'drop elements when we also track the start/drag position:
+                    window.mouse_clicked_widget = maybe_hovered_widget;
                 }
 
                 if (maybe_hovered_widget) |widget| {
                     // If we have a widget, the event will be forwarded to the
-                    // widget server and won't show up in the window queue:
+                    // widget server and must be swallowed later, so it doesn't show up in the window queue:
                     widget.process_event(derive_mouse_event(widget, event.mouse, switch (event.event_type) {
                         .mouse_motion => .mouse_motion,
                         .mouse_button_press => .mouse_button_press,
                         .mouse_button_release => .mouse_button_release,
                         else => unreachable,
                     }));
-                    return;
                 }
+
+                if (event.event_type == .mouse_button_release and event.mouse.button == click_mouse_button) {
+                    if (maybe_hovered_widget) |hovered_widget| {
+                        if (window.mouse_clicked_widget) |clicked_widget| {
+                            if (hovered_widget == clicked_widget) {
+                                // Focusable widgets should always be focused on a click *before* the
+                                // actual click event:
+                                if (clicked_widget.type.flags.focusable) {
+                                    window.update_focused_widget(clicked_widget);
+                                }
+
+                                clicked_widget.process_event(.{
+                                    .event_type = .click,
+                                });
+                            }
+                        }
+                    }
+                    // always reset the clicked widget to `null`, so the click operation is finalized:
+                    window.mouse_clicked_widget = null;
+                }
+
+                // Consume the event if we have a widget hovered:
+                if (maybe_hovered_widget != null)
+                    return;
             },
 
             // Mouse enter isn't relevant for widget management
@@ -435,8 +464,7 @@ pub const Window = struct {
 
     fn update_focused_widget(window: *Window, maybe_new_widget: ?*Widget) void {
         if (maybe_new_widget) |new_widget| {
-            if (!new_widget.type.flags.focusable)
-                return;
+            std.debug.assert(new_widget.type.flags.focusable);
         }
 
         const maybe_old_widget: ?*Widget = window.focused_widget;
@@ -444,6 +472,7 @@ pub const Window = struct {
             return;
 
         if (maybe_old_widget) |old_widget| {
+            std.debug.assert(old_widget.type.flags.focusable);
             old_widget.process_event(.{
                 .event_type = .focus_leave,
             });
@@ -452,6 +481,7 @@ pub const Window = struct {
         window.focused_widget = maybe_new_widget;
 
         if (maybe_new_widget) |new_widget| {
+            std.debug.assert(new_widget.type.flags.focusable);
             new_widget.process_event(.{
                 .event_type = .focus_enter,
             });
@@ -465,11 +495,13 @@ pub const Window = struct {
             // a different widget previously.
 
             if (maybe_old_widget) |old_widget| {
+                std.debug.assert(old_widget.type.flags.hit_test_visible);
                 old_widget.process_event(
                     derive_mouse_event(old_widget, mouse_event, .mouse_leave),
                 );
             }
             if (maybe_new_widget) |new_widget| {
+                std.debug.assert(new_widget.type.flags.hit_test_visible);
                 new_widget.process_event(
                     derive_mouse_event(new_widget, mouse_event, .mouse_enter),
                 );
@@ -597,6 +629,16 @@ pub const Widget = struct {
     }
 
     fn _notify_destroy(widget: *Widget) void {
+        if (widget.window.hovered_widget == widget) {
+            widget.window.update_hovered_widget(null, .{
+                .event_type = undefined,
+                .button = .none,
+                .x = widget.bounds.x,
+                .y = widget.bounds.x,
+                .dx = 0,
+                .dy = 0,
+            });
+        }
         if (widget.window.focused_widget == widget) {
             widget.window.update_focused_widget(null);
         }
