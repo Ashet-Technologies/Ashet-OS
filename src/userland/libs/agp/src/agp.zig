@@ -101,7 +101,7 @@ pub fn Encoder(Writer: type) type {
                 .blit_bitmap => |data| try enc.blit_bitmap(
                     data.x,
                     data.y,
-                    data.bitmap,
+                    &data.bitmap,
                 ),
                 .blit_framebuffer => |data| try enc.blit_framebuffer(
                     data.x,
@@ -115,7 +115,7 @@ pub fn Encoder(Writer: type) type {
                     data.height,
                     data.src_x,
                     data.src_y,
-                    data.bitmap,
+                    &data.bitmap,
                 ),
                 .blit_partial_framebuffer => |data| try enc.blit_partial_framebuffer(
                     data.x,
@@ -486,6 +486,7 @@ pub fn Decoder(Reader: type) type {
             };
         }
 
+        /// NOTE: Returned bitmap is valid until next call to any `fetch_*` function.
         fn fetch_bitmap(dec: *Dec) !Bitmap {
             const flags = try dec.fetch_int(u8);
 

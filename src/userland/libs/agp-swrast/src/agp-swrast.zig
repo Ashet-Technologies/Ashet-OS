@@ -698,7 +698,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
                             const glyph: fonts.BitmapFont.Glyph = bitmap_font.getGlyph(char) orelse fallback_glyph orelse continue;
 
                             if (sw.dx + glyph.advance >= 0) {
-                                const row_stride = (glyph.height + 7) / 8;
+                                const row_stride = (glyph.width + 7) / 8;
 
                                 const px: i16 = @intCast(sw.dx + glyph.offset_x);
                                 const py: i16 = @intCast(sw.dy + glyph.offset_y);

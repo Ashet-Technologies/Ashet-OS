@@ -270,11 +270,11 @@ fn render_example_image(
 
                     if (delta < 0 or delta > back.max_allowed_fwd_skip) {
                         std.debug.print("  discontiuation detected, jump by {} bytes from {} to {}\n", .{ delta, back.last_offset, new_offset });
-                        back.cache_misses += 1;
+                        back.discontinuations += 1;
                     }
                     if (current_cache_line != previous_cache_line and current_cache_line != (previous_cache_line + 1)) {
                         std.debug.print("  cache miss detected, switches from CL{} to CL{}\n", .{ previous_cache_line, current_cache_line });
-                        back.discontinuations += 1;
+                        back.cache_misses += 1;
                     }
                 }
 
