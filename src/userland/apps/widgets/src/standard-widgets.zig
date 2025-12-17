@@ -187,14 +187,18 @@ pub const Label = struct {
     }
 
     fn paint(label: *Label, cq: *CommandQueue, size: Size) !void {
-        _ = size;
-
         try cq.clear(theme.window_active.background);
-        try cq.draw_text(
-            .new(1, 1),
+
+        try draw_aligned_text(
+            cq,
+            .new(.new(1, 1), .new(size.width -| 2, size.height -| 2)),
             theme.widget_font,
             theme.text_color,
             label.text.items,
+            .{
+                .vertical = .middle,
+                .horizontal = .middle,
+            },
         );
     }
 
@@ -335,11 +339,16 @@ pub const Button = struct {
 
         const text = rstrip(button.text.items);
         if (text.len > 0) {
-            try cq.draw_text(
-                .new(rect.left() +| 5, rect.top() +| 4),
+            try draw_aligned_text(
+                cq,
+                .{ .x = rect.left() +| 5, .y = rect.top() +| 4, .width = rect.width -| 10, .height = rect.height -| 8 },
                 theme.widget_font, // TODO: How to make font customizable?
                 theme.text_color,
                 text,
+                .{
+                    .horizontal = .middle,
+                    .vertical = .middle,
+                },
             );
         }
     }
@@ -501,4 +510,41 @@ pub const Button = struct {
 
 fn rstrip(text: []const u8) []const u8 {
     return std.mem.trimRight(u8, text, " \r\n\t");
+}
+
+const Alignment = enum {
+    near,
+    middle,
+    far,
+
+    fn compute(al: Alignment, aligned_size: u16, available_size: u16) i16 {
+        return @intCast(switch (al) {
+            .near => 0,
+            .middle => (available_size -| aligned_size) / 2,
+            .far => available_size -| aligned_size,
+        });
+    }
+};
+
+fn draw_aligned_text(
+    cq: *CommandQueue,
+    bounds: Rectangle,
+    font: ashet.graphics.Font,
+    color: ashet.graphics.Color,
+    text: []const u8,
+    options: struct {
+        vertical: Alignment,
+        horizontal: Alignment,
+    },
+) !void {
+    const size = try ashet.graphics.measure_text_size(font, text);
+    try cq.draw_text(
+        .new(
+            bounds.x + options.horizontal.compute(size.width, bounds.width),
+            bounds.y + options.horizontal.compute(size.height, bounds.height),
+        ),
+        font,
+        color,
+        text,
+    );
 }

@@ -379,15 +379,14 @@ pub const syscalls = struct {
         }
 
         /// Returns true if the given font is a system-owned font.
-        pub fn is_system_font(font: abi.Font) bool {
-            _ = font;
-            not_implemented_yet(@src());
+        pub fn is_system_font(font_handle: abi.Font) error{InvalidHandle}!bool {
+            _, const font = try resolve_typed_resource(ashet.graphics.Font, font_handle.as_resource());
+            return font.system_font;
         }
 
-        pub fn measure_text_size(font: abi.Font, text: []const u8) error{InvalidHandle}!abi.Size {
-            _ = font;
-            _ = text;
-            not_implemented_yet(@src());
+        pub fn measure_text_size(font_handle: abi.Font, text: []const u8) error{InvalidHandle}!abi.Size {
+            _, const font = try resolve_typed_resource(ashet.graphics.Font, font_handle.as_resource());
+            return font.measure_text_size(text);
         }
 
         // Framebuffer management:

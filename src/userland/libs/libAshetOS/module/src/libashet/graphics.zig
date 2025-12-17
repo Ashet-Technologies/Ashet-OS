@@ -173,6 +173,10 @@ pub fn get_system_font(font_name: []const u8) !Font {
     return try ashet.abi.draw.get_system_font(font_name);
 }
 
+pub fn measure_text_size(font: Font, text: []const u8) !Size {
+    return try ashet.abi.draw.measure_text_size(font, text);
+}
+
 pub fn create_memory_framebuffer(size: Size) !Framebuffer {
     return try ashet.abi.draw.create_memory_framebuffer(size);
 }

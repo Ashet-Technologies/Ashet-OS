@@ -236,6 +236,22 @@ pub const Font = struct {
         ashet.memory.allocator.free(font.raw_data);
         ashet.memory.type_pool(Font).free(font);
     }
+
+    pub fn measure_text_size(font: *const Font, text: []const u8) Size {
+        const line_height = font.font_data.line_height();
+
+        var height: u16 = 0;
+        var width: u16 = 0;
+
+        var lines = std.mem.splitScalar(u8, text, '\n');
+        while (lines.next()) |line| {
+            const line_width = font.font_data.measure_width(line);
+            width = @max(line_width, width);
+            height += line_height;
+        }
+
+        return .new(width, height);
+    }
 };
 
 var system_fonts: std.StringArrayHashMap(Font) = undefined;
