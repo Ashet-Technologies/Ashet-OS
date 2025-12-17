@@ -442,47 +442,52 @@ fn blit_widget_data(
     if (window.widgets.len == 0)
         return;
 
-    // logger.info("blit widgets from {}/{} to  {}", .{
-    //     source_pos,
-    //     size,
-    //     target_pos,
-    // });
-
     var iter = window.widgets.first;
     while (iter) |node| : (iter = node.next) {
         const widget = ashet.gui.Widget.from_link(node);
 
-        // logger.info("blit widget {*} @ {}", .{ widget, widget.bounds });
+        // Compute the enclosing edges:
+        const left_edge = @max(source_pos.x, widget.bounds.x);
+        const top_edge = @max(source_pos.x, widget.bounds.y);
+        const right_edge = @min(@as(i32, source_pos.x) + size.width, @as(i32, widget.bounds.x) + widget.bounds.width);
+        const bottom_edge = @min(@as(i32, source_pos.y) + size.height, @as(i32, widget.bounds.y) + widget.bounds.height);
 
-        const dx = widget.bounds.x -| source_pos.x;
-        const dy = widget.bounds.y -| source_pos.y;
-        const sw = @min(size.width, widget.bounds.width);
-        const sh = @min(size.height, widget.bounds.height);
-        if (sw > 0 and sh > 0) {
-            const dest: Rectangle = .{
-                .x = target_pos.x +| dx,
-                .y = target_pos.y +| dy,
-                .width = sw,
-                .height = sh,
-            };
-            const src: Point = .new(@max(-dx, 0), @max(-dy, 0));
+        // Skip the widget completely if it isn't included in the partial update:
+        if (right_edge <= left_edge) continue;
+        if (bottom_edge <= top_edge) continue;
 
-            const bmp: agp.Bitmap = .{
-                .has_transparency = false,
-                .transparency_key = undefined,
-                .stride = widget.bounds.width,
-                .width = widget.bounds.width,
-                .height = widget.bounds.height,
-                .pixels = widget.pixels.ptr,
-            };
+        const width: u16 = @intCast(right_edge - left_edge);
+        const height: u16 = @intCast(bottom_edge - top_edge);
 
-            // logger.info("blit widget {*} @ {}: {} {}", .{ widget, widget.bounds, dest, src });
-            // rast.fill_rect(dest, .purple);
-            rast.blit_partial_bitmap(dest, src, &bmp);
-        } else {
-            // logger.info("skip widget {*} @ {}: {}, {}, {},  {}", .{ widget, widget.bounds, dx, dy, sw, sh });
-        }
+        const dst_dx = @max(0, left_edge - source_pos.x);
+        const dst_dy = @max(0, top_edge - source_pos.y);
+
+        const src_dx = @max(0, left_edge - widget.bounds.x);
+        const src_dy = @max(0, top_edge - widget.bounds.y);
+
+        std.debug.assert(width <= size.width);
+        std.debug.assert(height <= size.height);
+
+        std.debug.assert(width <= widget.bounds.width);
+        std.debug.assert(height <= widget.bounds.height);
+
+        const dest: Rectangle = .{
+            .x = target_pos.x +| dst_dx,
+            .y = target_pos.y +| dst_dy,
+            .width = width,
+            .height = height,
+        };
+        const src: Point = .new(src_dx, src_dy);
+
+        const bmp: agp.Bitmap = .{
+            .has_transparency = false,
+            .transparency_key = undefined,
+            .stride = widget.bounds.width,
+            .width = widget.bounds.width,
+            .height = widget.bounds.height,
+            .pixels = widget.pixels.ptr,
+        };
+
+        rast.blit_partial_bitmap(dest, src, &bmp);
     }
-
-    // @panic("TODO: Implement blitting of widgets.");
 }
