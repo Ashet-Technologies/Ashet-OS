@@ -132,8 +132,6 @@ pub const Draw = struct {
         else
             draw.icons.get(.unchecked_radio_icon);
 
-        std.log.info("{}", .{icon});
-
         try draw.enc.blit_bitmap(
             opt.pos.x,
             opt.pos.y,
@@ -345,7 +343,12 @@ pub const Draw = struct {
             draw.theme.widget_background,
         );
 
-        const fill_level: u16 = @intCast((((rect.width -| 6) *| opt.value +| opt.limit / 2) / opt.limit));
+        const bar_width = (rect.width -| 6);
+        const fill_level: u16 = if (opt.limit != 0)
+            @intCast(((bar_width *| opt.value +| opt.limit / 2) / opt.limit))
+        else
+            bar_width;
+
         if (fill_level > 0) {
             try draw.enc.fill_rect(
                 opt.bounds.left() +| 3,
@@ -868,7 +871,7 @@ pub const Draw = struct {
                 theme.title_bar,
             );
             try draw.enc.blit_bitmap(
-                rect.right() - 8,
+                rect.right() -| 8,
                 rect.bottom() -| 8,
                 &resize_icon,
             );

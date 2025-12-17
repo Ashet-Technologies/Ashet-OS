@@ -739,6 +739,10 @@ pub const Widget = struct {
     /// Invokes the widget server and emits necessary resize events.
     ///
     /// Returns the new actual location of the widget.
+    ///
+    /// NOTE: When resizing fails due to out-of-memory constraints, the widget will be moved, but not resized.
+    ///       This is fine, as we return the new bounds and the user could revert that if they actually need
+    ///       atomic updates.
     pub fn place(widget: *Widget, desired_bounds: Rectangle) Rectangle {
         const previous = widget.bounds;
 

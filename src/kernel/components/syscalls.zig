@@ -1032,7 +1032,7 @@ fn resolve_typed_resource(comptime Resource: type, handle: ashet.resources.Handl
 }
 
 fn resolve_process_handle(handle: ashet.resources.Handle) error{ InvalidHandle, DeadProcess }!struct { *ashet.multi_tasking.Process, *ashet.multi_tasking.Process } {
-    const kproc, const uproc = try resolve_process_handle(handle);
+    const kproc, const uproc = try resolve_typed_resource(ashet.multi_tasking.Process, handle);
     if (uproc.is_zombie())
         return error.DeadProcess;
     return .{ kproc, uproc };
