@@ -559,7 +559,7 @@ pub const syscalls = struct {
         pub fn set_window_size(window: abi.Window, size: abi.Size) error{InvalidHandle}!abi.Size {
             _, const win = try resolve_typed_resource(ashet.gui.Window, window.as_resource());
             win.size = abi.Size.new(
-                std.math.clamp(size.width, win.min_size.height, win.max_size.width),
+                std.math.clamp(size.width, win.min_size.width, win.max_size.width),
                 std.math.clamp(size.height, win.min_size.height, win.max_size.height),
             );
             return win.size;
