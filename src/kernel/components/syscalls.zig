@@ -326,19 +326,19 @@ pub const syscalls = struct {
         pub fn schedule(async_call: *abi.overlapped.ARC) error{ SystemResources, AlreadyScheduled }!void {
             const proc = get_current_process();
 
-            return try ashet.overlapped.schedule_with_context(proc, &proc.async_context, async_call);
+            return try ashet.overlapped.schedule(proc, &proc.async_context, async_call);
         }
 
         pub fn await_completion(completed: []*abi.overlapped.ARC, options: abi.Await_Options) error{Unscheduled}!usize {
             const proc = get_current_process();
 
-            return try ashet.overlapped.await_completion_with_context(&proc.async_context, completed, options);
+            return try ashet.overlapped.await_completion(&proc.async_context, completed, options);
         }
 
         pub fn await_completion_of(completed: []?*abi.overlapped.ARC) error{ Unscheduled, InvalidOperation }!usize {
             const proc = get_current_process();
 
-            return try ashet.overlapped.await_completion_of_with_context(&proc.async_context, completed);
+            return try ashet.overlapped.await_completion_of(&proc.async_context, completed);
         }
 
         pub fn cancel(arc: *abi.overlapped.ARC) error{ Unscheduled, Completed }!void {

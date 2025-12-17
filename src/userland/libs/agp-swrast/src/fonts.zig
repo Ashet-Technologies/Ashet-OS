@@ -62,7 +62,7 @@ pub const BitmapFont = struct {
     ///   //    height: u8,  // 255 must be enough for everyone
     ///   //    offset_x: i8, // offset of the glyph to the base point
     ///   //    offset_y: i8, // offset of the glyph to the base point
-    ///   //    bits: [(height+7)/8 * width]u8, // column-major bitmap
+    ///   //    bits: [(width+7)/8 * height]u8, // row-major bitmap (LSB=left, MSB=right)
     ///   // }
     /// }
     /// ```
@@ -147,7 +147,7 @@ pub const BitmapFont = struct {
         height: u8, // 255 must be enough for everyone
         offset_x: i8, // offset of the glyph to the base point
         offset_y: i8, // offset of the glyph to the base point
-        bits: []const u8, // column-major bitmap ((height+7)/8 * width)
+        bits: []const u8, // row-major bitmap ((height+7)/8 * width)
     };
 
     pub fn getGlyphIndex(font: BitmapFont, codepoint: u21) ?usize {
