@@ -54,9 +54,9 @@ pub const Theme = struct {
         const theme_sat = opt.saturation;
         const theme_val = opt.value;
         return .{
-            .border_dark = .from_hsv(theme_hue, theme_sat, theme_val - 1),
+            .border_dark = .from_hsv(theme_hue, theme_sat, theme_val -| 1),
             .border_normal = .from_hsv(theme_hue, theme_sat, theme_val),
-            .border_bright = .from_hsv(theme_hue, theme_sat, theme_val + 1),
+            .border_bright = .from_hsv(theme_hue, theme_sat, theme_val +| 1),
 
             .panel_background = .blue,
             .widget_background = .from_hsv(theme_hue, theme_sat -| 1, theme_val -| 2),

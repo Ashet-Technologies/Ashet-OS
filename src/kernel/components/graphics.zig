@@ -363,7 +363,6 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
                         framebuffer,
                     );
                     switch (framebuffer.type) {
-                        .widget => @panic("TODO: Implement partial blitting of widget framebuffer"),
                         .window => |window| try blit_widget_data(
                             &rasterizer,
                             window,
@@ -371,7 +370,7 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
                             .zero,
                             framebuffer.get_size(),
                         ),
-                        .video, .memory => {},
+                        .widget, .video, .memory => {},
                     }
                 },
                 .blit_partial_framebuffer => |blit_framebuffer| {
@@ -388,7 +387,6 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
                         framebuffer,
                     );
                     switch (framebuffer.type) {
-                        .widget => @panic("TODO: Implement partial blitting of widget framebuffer"),
                         .window => |window| try blit_widget_data(
                             &rasterizer,
                             window,
@@ -396,7 +394,7 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
                             Point.new(blit_framebuffer.src_x, blit_framebuffer.src_y),
                             Size.new(blit_framebuffer.width, blit_framebuffer.height),
                         ),
-                        .video, .memory => {},
+                        .widget, .video, .memory => {},
                     }
                 },
                 else => try rasterizer.execute(cmd),

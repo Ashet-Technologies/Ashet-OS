@@ -396,6 +396,17 @@
     }
 </patch>
 <patch Color>
+    pub const Hue = enum(u3) {
+        red = 0,
+        yellow = 1,
+        lime = 2,
+        green = 3,
+        cyan = 4,
+        blue = 5,
+        purple = 6,
+        magenta = 7,
+    };
+
     pub fn eql(a: Color, b: Color) bool {
         return @as(u8, @bitCast(a)) == @as(u8, @bitCast(b));
     }
@@ -408,25 +419,18 @@
         return @bitCast(u);
     }
 
-    pub const Hue = enum(u3) {
-        red = 0,
-        yellow = 1,
-        lime = 2,
-        green = 3,
-        cyan = 4,
-        blue = 5,
-        purple = 6,
-        magenta = 7,
-    };
-
+    /// Creates a color from a 6 bit grayscale.
     pub fn from_gray(gray: u6) Color {
         const gray8: u8 = gray;
         return @bitCast(gray8);
     }
 
-    // 
-    //
-    // `value` can go from 0 to 8
+    /// Creates a color from an HSV tuple.
+    /// - `hue` selects the color
+    /// - `saturation` selects the color intensity between 0 = gray and 3 = full intensity
+    /// - `value` selects the brightness of the color between 0 = black and 8 = full brightness
+    /// 
+    /// NOTE: Asserts that `0 <= value <= 8`.
     pub fn from_hsv(hue: Hue, saturation: u2, value: u4) Color {
         std.debug.assert(value <= 8);
         if(saturation == 0 or value == 0) {

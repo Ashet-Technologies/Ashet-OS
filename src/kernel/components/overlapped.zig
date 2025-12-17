@@ -778,5 +778,5 @@ fn count_with_threadaffinity(queue: CallQueue, thread_filter: ?*ashet.scheduler.
         }
     }
 
-    return 1;
+    return count;
 }

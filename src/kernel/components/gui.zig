@@ -678,7 +678,7 @@ pub const Widget = struct {
                 .event_type = undefined,
                 .button = .none,
                 .x = widget.bounds.x,
-                .y = widget.bounds.x,
+                .y = widget.bounds.y,
                 .dx = 0,
                 .dy = 0,
             });
@@ -774,7 +774,7 @@ pub const Widget = struct {
                         // would out of memory. to prevent a crash, just accept
                         // that the resize can't happen right now and revert it.
 
-                        logger.err("failed to resize widget {*} from {} to {}: out of memory", .{
+                        logger.warn("failed to resize widget {*} from {} to {}: out of memory", .{
                             widget,
                             previous.size(),
                             widget.bounds.size(),

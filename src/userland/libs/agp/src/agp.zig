@@ -500,7 +500,7 @@ pub fn Decoder(Reader: type) type {
             const height = try dec.fetch_size();
             const stride = try dec.fetch_int(usize);
 
-            const size = height * stride;
+            const size = height * stride * @sizeOf(Color);
 
             try dec.heap.resize(size);
             try dec.reader.readNoEof(dec.heap.items[0..size]);

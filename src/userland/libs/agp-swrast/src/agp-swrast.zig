@@ -712,7 +712,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
                                         var mask: u8 = 1;
                                         var bits: u8 = row_ptr[0];
                                         while (gx < glyph.width) : (gx += 1) {
-                                            if (sw.dx + gx > sw.limit) {
+                                            if (sw.dx + gx >= sw.limit) {
                                                 break;
                                             }
 

@@ -7,9 +7,6 @@ const UUID = ashet.abi.UUID;
 const Size = ashet.abi.Size;
 const Point = ashet.abi.Point;
 
-const button_uuid = UUID.constant("782ccd0e-bae4-4093-93fe-12c1f86ff43c");
-const label_uuid = UUID.constant("53b8be36-969a-46a3-bdf5-e3d197890219");
-
 pub fn main() !void {
     var argv_buffer: [8]ashet.abi.SpawnProcessArg = undefined;
     const argv = try ashet.process.get_arguments(null, &argv_buffer);

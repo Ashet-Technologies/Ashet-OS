@@ -23,6 +23,8 @@ var theme: draw_lib.Theme = undefined;
 pub fn main() !void {
     errdefer |err| std.log.err("Failed to setup standard widgets: {s}", .{@errorName(err)});
 
+    // TODO: Load theme from disk via common implementation shared between desktop server and
+    //       widget server.
     theme = .create_default(.{
         .hue = .purple,
         .saturation = 2,
