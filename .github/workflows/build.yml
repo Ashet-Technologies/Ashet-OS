@@ -32,7 +32,7 @@ jobs:
 
       - name: Build ${{ matrix.platform }}
         run: |
-          zig build ${{ matrix.platform }} || find .zig-cache/ -name dependencies.zig -exec echo '{}' ';'  -exec cat '{}' ';'
+          zig build ${{ matrix.platform }}
 
       - name: Upload disk image
         uses: actions/upload-artifact@v4
