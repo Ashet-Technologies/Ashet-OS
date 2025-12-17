@@ -1079,6 +1079,18 @@ namespace draw {
         error InvalidHandle;
     }
 
+    /// Measures the size of a text string.
+    /// 
+    /// NOTE: This function accepts strings using the LF line separator
+    ///       and will return the height of all lines and the width of 
+    ///       the longest line.
+    syscall measure_text_size {
+        in    font: Font;
+        in    text: str;
+        out   size: Size;
+        error InvalidHandle;
+    }
+
     /// Creates a new in-memory framebuffer that can be used for offscreen painting.
     syscall create_memory_framebuffer {
         in    size: Size;

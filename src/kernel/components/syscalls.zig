@@ -384,6 +384,12 @@ pub const syscalls = struct {
             not_implemented_yet(@src());
         }
 
+        pub fn measure_text_size(font: abi.Font, text: []const u8) error{InvalidHandle}!abi.Size {
+            _ = font;
+            _ = text;
+            not_implemented_yet(@src());
+        }
+
         // Framebuffer management:
 
         /// Creates a new in-memory framebuffer that can be used for offscreen painting.
@@ -1044,6 +1050,10 @@ fn get_current_thread() *ashet.scheduler.Thread {
 
 var current_process_overwrite: ?*ashet.multi_tasking.Process = null;
 
+/// TODO: This function is broken as a virtual process overwrite is still per-thread
+///       and not globally.
+///       Any call to `yield()` in this context will also overwrite the process
+///       which is unrelated to our local overwrite.
 fn get_current_process() *ashet.multi_tasking.Process {
     const kproc = current_process_overwrite orelse get_current_thread().get_process();
     if (kproc.is_zombie())
