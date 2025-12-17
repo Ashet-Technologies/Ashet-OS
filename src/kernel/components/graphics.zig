@@ -448,7 +448,7 @@ fn blit_widget_data(
 
         // Compute the enclosing edges:
         const left_edge = @max(source_pos.x, widget.bounds.x);
-        const top_edge = @max(source_pos.x, widget.bounds.y);
+        const top_edge = @max(source_pos.y, widget.bounds.y);
         const right_edge = @min(@as(i32, source_pos.x) + size.width, @as(i32, widget.bounds.x) + widget.bounds.width);
         const bottom_edge = @min(@as(i32, source_pos.y) + size.height, @as(i32, widget.bounds.y) + widget.bounds.height);
 

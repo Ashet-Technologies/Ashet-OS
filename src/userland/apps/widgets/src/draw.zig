@@ -364,9 +364,12 @@ pub const Draw = struct {
         const text = switch (opt.display) {
             .none => return,
 
-            .relative => std.fmt.bufPrint(&buffer, "{}%", .{
-                (100 *| opt.value +| opt.limit / 2) / opt.limit,
-            }) catch unreachable,
+            .relative => if (opt.limit > 0)
+                std.fmt.bufPrint(&buffer, "{}%", .{
+                    (100 *| opt.value +| opt.limit / 2) / opt.limit,
+                }) catch unreachable
+            else
+                "~",
 
             .absolute => std.fmt.bufPrint(&buffer, "{}/{}", .{
                 opt.value,

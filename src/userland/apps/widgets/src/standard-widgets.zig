@@ -541,7 +541,7 @@ fn draw_aligned_text(
     try cq.draw_text(
         .new(
             bounds.x + options.horizontal.compute(size.width, bounds.width),
-            bounds.y + options.horizontal.compute(size.height, bounds.height),
+            bounds.y + options.vertical.compute(size.height, bounds.height),
         ),
         font,
         color,
