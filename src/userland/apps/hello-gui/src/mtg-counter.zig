@@ -22,10 +22,8 @@ pub fn main() !void {
     const window = try ashet.gui.create_window(
         desktop,
         .{
-            .title = "GUI Widgets Demo",
-            .min_size = Size.new(100, 80),
-            .max_size = Size.new(300, 200),
-            .initial_size = Size.new(100, 80),
+            .title = "MTG Counter",
+            .initial_size = Size.new(82, 50),
         },
     );
     defer window.destroy_now();
@@ -40,20 +38,20 @@ pub fn main() !void {
     const dec_button = try ashet.gui.create_widget(window, ashet.gui.widgets.Button.uuid);
     defer dec_button.release();
 
-    _ = try ashet.gui.place_widget(inc_button, .{ .x = 10, .y = 10, .width = 80, .height = 19 });
-    _ = try ashet.gui.place_widget(count_label, .{ .x = 10, .y = 31, .width = 80, .height = 18 });
-    _ = try ashet.gui.place_widget(dec_button, .{ .x = 10, .y = 51, .width = 80, .height = 19 });
+    _ = try ashet.gui.place_widget(inc_button, .{ .x = 42, .y = 22, .width = 30, .height = 18 });
+    _ = try ashet.gui.place_widget(count_label, .{ .x = 10, .y = 10, .width = 62, .height = 8 });
+    _ = try ashet.gui.place_widget(dec_button, .{ .x = 10, .y = 22, .width = 30, .height = 18 });
 
     try ashet.gui.control_widget(inc_button, ashet.gui.widgets.Button.set_text, .{
-        @intFromPtr("Increment"),
-        "Increment".len,
+        @intFromPtr("+"),
+        "+".len,
         0,
         0,
     });
 
     try ashet.gui.control_widget(dec_button, ashet.gui.widgets.Button.set_text, .{
-        @intFromPtr("Decrement"),
-        "Decrement".len,
+        @intFromPtr("-"),
+        "-".len,
         0,
         0,
     });

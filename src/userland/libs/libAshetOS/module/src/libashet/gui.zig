@@ -32,26 +32,26 @@ pub fn post_window_event(window: Window, event: ashet.abi.WindowEvent) !void {
     try ashet.abi.gui.post_window_event(window, event);
 }
 
-pub const CreateWindowOptions = struct {
-    min_size: Size,
-    max_size: Size,
-    initial_size: Size,
-    title: []const u8,
-    popup: bool = false,
-};
-
 pub const DesktopCreateOptions = ashet.abi.DesktopDescriptor;
 
 pub fn create_desktop(name: []const u8, options: DesktopCreateOptions) !ashet.abi.Desktop {
     return try ashet.abi.gui.create_desktop(name, &options);
 }
 
+pub const CreateWindowOptions = struct {
+    min_size: ?Size = null,
+    max_size: ?Size = null,
+    initial_size: Size,
+    title: []const u8,
+    popup: bool = false,
+};
+
 pub fn create_window(desktop: Desktop, options: CreateWindowOptions) !ashet.abi.Window {
     return try ashet.abi.gui.create_window(
         desktop,
         options.title,
-        options.min_size,
-        options.max_size,
+        options.min_size orelse options.initial_size,
+        options.max_size orelse options.initial_size,
         options.initial_size,
         .{
             .popup = options.popup,

@@ -16,10 +16,10 @@ pub fn build(b: *std.Build) void {
     sdk.installApp(fb_app, .{});
 
     const widgets_app = sdk.addApp(.{
-        .name = "hello-widgets",
+        .name = "mtg-counter",
         .target = target,
         .optimize = optimize,
-        .root_source_file = b.path("src/hello-widgets.zig"),
+        .root_source_file = b.path("src/mtg-counter.zig"),
     });
     sdk.installApp(widgets_app, .{});
 }
