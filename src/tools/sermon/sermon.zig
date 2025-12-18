@@ -55,7 +55,7 @@ pub fn main() !u8 {
     const stderr = std.io.getStdErr();
 
     const output_cfg = try IoOptions.configureOutputUncooked(output);
-    defer output_cfg.restore(output) catch |err| std.log.err("we fucked up. failed to restore settings for stdout: {s}. Try resetting/restarting your terminal!", .{@errorName(err)});
+    defer output_cfg.restore(output) catch |err| std.log.err("failed to restore terminal settings for stdout: {s}. Try resetting/restarting your terminal!", .{@errorName(err)});
 
     // TODO: Add signal handler to allow graceful shutdown here.
 
