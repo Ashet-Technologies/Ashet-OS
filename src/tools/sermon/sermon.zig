@@ -54,66 +54,64 @@ pub fn main() !u8 {
     const output = std.io.getStdOut();
     const stderr = std.io.getStdErr();
 
-    {
-        const output_cfg = try IoOptions.configureOutputUncooked(output);
-        defer output_cfg.restore(output) catch |err| std.log.err("we fucked up. failed to restore settings for stdout: {s}. Try resetting/restarting your terminal!", .{@errorName(err)});
+    const output_cfg = try IoOptions.configureOutputUncooked(output);
+    defer output_cfg.restore(output) catch |err| std.log.err("we fucked up. failed to restore settings for stdout: {s}. Try resetting/restarting your terminal!", .{@errorName(err)});
 
-        // TODO: Add signal handler to allow graceful shutdown here.
+    // TODO: Add signal handler to allow graceful shutdown here.
 
-        var any_run_ok = false;
-        var reconnect_msg_printed = false;
-        var any_run_executed = false;
+    var any_run_ok = false;
+    var reconnect_msg_printed = false;
+    var any_run_executed = false;
 
-        var spinner: Spinner = .ascii;
+    var spinner: Spinner = .ascii;
 
-        while (true) {
-            const stream_result = stream_port(output, any_run_executed, port_path, .{
-                .baud_rate = cli.options.baud,
-                .parity = cli.options.parity,
-                .stop_bits = cli.options.@"stop-bits",
-                .word_size = cli.options.@"word-size",
-                .handshake = cli.options.handshake,
-            });
+    while (true) {
+        const stream_result = stream_port(output, any_run_executed, port_path, .{
+            .baud_rate = cli.options.baud,
+            .parity = cli.options.parity,
+            .stop_bits = cli.options.@"stop-bits",
+            .word_size = cli.options.@"word-size",
+            .handshake = cli.options.handshake,
+        });
 
-            // Unconditionally reset any modifications done to graphics of the terminal:
-            try output.writeAll("\x1B[0m");
+        // Unconditionally reset any modifications done to graphics of the terminal:
+        try output.writeAll("\x1B[0m");
 
-            any_run_executed = true;
-            if (stream_result) |_| {
-                // ok
-                any_run_ok = true;
-                reconnect_msg_printed = false;
-                try stderr.writeAll("<<disconnected>>\r\n");
-            } else |err| {
-                switch (err) {
-                    error.FileNotFound => {
-                        if (!any_run_ok and !reconnect_msg_printed) {
-                            try std.io.getStdErr().writer().print("waiting for {s}...\r\n", .{
-                                port_path,
-                            });
-                            reconnect_msg_printed = true;
-                        }
-                        try output.writer().print("\r{s}\r", .{
-                            spinner.next(),
-                        });
-                    },
-
-                    else => |e| {
-                        try output.writeAll("\n");
-                        try std.io.getStdErr().writer().print("failed to stream data from {s}: {s}\r\n", .{
+        any_run_executed = true;
+        if (stream_result) |_| {
+            // ok
+            any_run_ok = true;
+            reconnect_msg_printed = false;
+            try stderr.writeAll("<<disconnected>>\r\n");
+        } else |err| {
+            switch (err) {
+                error.FileNotFound => {
+                    if (!any_run_ok and !reconnect_msg_printed) {
+                        try std.io.getStdErr().writer().print("waiting for {s}...\r\n", .{
                             port_path,
-                            @errorName(e),
                         });
-                        return 1;
-                    },
-                }
-            }
+                        reconnect_msg_printed = true;
+                    }
+                    try output.writer().print("\r{s}\r", .{
+                        spinner.next(),
+                    });
+                },
 
-            std.time.sleep(100 * std.time.ns_per_ms);
+                else => |e| {
+                    try output.writeAll("\n");
+                    try std.io.getStdErr().writer().print("failed to stream data from {s}: {s}\r\n", .{
+                        port_path,
+                        @errorName(e),
+                    });
+                    return 1;
+                },
+            }
         }
+
+        std.time.sleep(100 * std.time.ns_per_ms);
     }
 
-    return 0;
+    comptime unreachable;
 }
 
 const Spinner = struct {
