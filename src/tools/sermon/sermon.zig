@@ -181,20 +181,35 @@ fn print_help(exe_name: ?[]const u8, stream: std.fs.File) !void {
 
 const IoOptions = switch (builtin.os.tag) {
     .windows => struct {
-        fn configureTtyNonBlocking(file: std.fs.File) !IoOptions {
-            _ = file;
-            @compileError("no windows support yet!");
-        }
+        // https://learn.microsoft.com/en-us/windows/console/getconsolemode
 
-        fn configureSerialNonBlocking(file: std.fs.File) !void {
-            _ = file;
-            @compileError("no windows support yet!");
+        const DWORD = std.os.windows.DWORD;
+        const kernel32 = std.os.windows.kernel32;
+
+        const ENABLE_PROCESSED_OUTPUT = 0x0001;
+        const ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004;
+
+        restore_mode: ?DWORD,
+
+        fn configureOutputUncooked(file: std.fs.File) !IoOptions {
+            var mode: DWORD = 0;
+            if (kernel32.GetConsoleMode(file.handle, &mode) != 0) {
+                const new_mode = mode | ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+
+                if (kernel32.SetConsoleMode(file.handle, new_mode) == 0)
+                    return error.ConsoleConfigFailed;
+
+                return .{ .restore_mode = mode };
+            } else {
+                return .{ .restore_mode = null };
+            }
         }
 
         fn restore(options: IoOptions, file: std.fs.File) !void {
-            _ = options;
-            _ = file;
-            @compileError("no windows support yet!");
+            if (options.restore_mode) |old_mode| {
+                if (kernel32.SetConsoleMode(file.handle, old_mode) == 0)
+                    return error.ConsoleConfigFailed;
+            }
         }
     },
 
@@ -232,33 +247,6 @@ const IoOptions = switch (builtin.os.tag) {
             return IoOptions{
                 .termios = original,
             };
-        }
-
-        fn configureTtyNonBlocking(file: std.fs.File) !IoOptions {
-            const original = try std.posix.tcgetattr(file.handle);
-
-            var settings = original;
-
-            settings.iflag = std.posix.tc_iflag_t{ .IGNBRK = true }; // Ignore BREAK condition on input.
-            settings.oflag = std.posix.tc_oflag_t{}; // no magic enabled
-            // settings.cflag |= 0; // unchanged
-            settings.lflag = std.posix.tc_lflag_t{}; // no magic enabled
-
-            // make read() nonblocking:
-            settings.cc[VMIN] = 1;
-            settings.cc[VTIME] = 0;
-
-            try std.posix.tcsetattr(file.handle, .NOW, settings);
-
-            _ = try std.posix.fcntl(file.handle, std.posix.F.SETFL, try std.posix.fcntl(file.handle, std.posix.F.GETFL, 0) | std.posix.system.IN.NONBLOCK);
-
-            return IoOptions{
-                .termios = original,
-            };
-        }
-
-        fn configureSerialNonBlocking(file: std.fs.File) !void {
-            _ = try std.posix.fcntl(file.handle, std.posix.F.SETFL, try std.posix.fcntl(file.handle, std.posix.F.GETFL, 0) | std.posix.system.IN.NONBLOCK);
         }
 
         fn restore(options: IoOptions, file: std.fs.File) !void {
