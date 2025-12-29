@@ -17,8 +17,33 @@ const Framebuffer = ashet.graphics.Framebuffer;
 const GRID: usize = 4;
 const TARGET: u16 = 2048;
 
+// Tiny move animation
+const ANIM_FRAMES: u8 = 8; // set to 4 or 8
+const ANIM_FRAME_DELAY_NS: u64 = 12_000_000; // ~12ms per frame
+
 const Overlay = enum { none, win, game_over };
 const Direction = enum { left, right, up, down };
+
+fn u8ToUsize(v: u8) usize {
+    return @as(usize, @intCast(v));
+}
+
+const MoveAnim = struct {
+    value: u16,
+    sx: u8,
+    sy: u8,
+    ex: u8,
+    ey: u8,
+};
+
+const MovePlan = struct {
+    dst: [GRID][GRID]u16 = .{ .{ 0, 0, 0, 0 }, .{ 0, 0, 0, 0 }, .{ 0, 0, 0, 0 }, .{ 0, 0, 0, 0 } },
+    gain: u32 = 0,
+    moves: [16]MoveAnim = undefined,
+    moves_len: u8 = 0,
+    changed: bool = false,
+    reached_target: bool = false,
+};
 
 const Layout = struct {
     top_bar_h: u16,
@@ -38,6 +63,7 @@ const Game = struct {
     board: [GRID][GRID]u16 = .{ .{ 0, 0, 0, 0 }, .{ 0, 0, 0, 0 }, .{ 0, 0, 0, 0 }, .{ 0, 0, 0, 0 } },
     score: u32 = 0,
     overlay: Overlay = .none,
+    won: bool = false,
 
     prng: std.Random.DefaultPrng,
 
@@ -53,6 +79,7 @@ const Game = struct {
         self.board = .{ .{ 0, 0, 0, 0 }, .{ 0, 0, 0, 0 }, .{ 0, 0, 0, 0 }, .{ 0, 0, 0, 0 } };
         self.score = 0;
         self.overlay = .none;
+        self.won = false;
         _ = self.spawnTile();
         _ = self.spawnTile();
     }
@@ -85,13 +112,6 @@ const Game = struct {
         return true;
     }
 
-    fn hasWon(self: *const Game) bool {
-        for (0..GRID) |y| for (0..GRID) |x| {
-            if (self.board[y][x] >= TARGET) return true;
-        };
-        return false;
-    }
-
     fn anyMovesPossible(self: *const Game) bool {
         // any empty
         for (0..GRID) |y| for (0..GRID) |x| {
@@ -110,97 +130,31 @@ const Game = struct {
         return false;
     }
 
-    fn reverse4(line: [GRID]u16) [GRID]u16 {
-        return .{ line[3], line[2], line[1], line[0] };
+    fn updateGameOver(self: *Game) void {
+        if (!self.anyMovesPossible()) self.overlay = .game_over;
     }
 
-    fn processLineLeft(line_in: [GRID]u16, gained: *u32) [GRID]u16 {
-        var temp: [GRID]u16 = .{ 0, 0, 0, 0 };
-        var cnt: usize = 0;
+    fn applyMovePlan(self: *Game, plan: *const MovePlan) void {
+        self.board = plan.dst;
+        self.score += plan.gain;
 
-        for (line_in) |v| {
-            if (v != 0) {
-                temp[cnt] = v;
-                cnt += 1;
-            }
+        _ = self.spawnTile();
+
+        if (!self.won and plan.reached_target) {
+            self.won = true;
+            self.overlay = .win; // shown once; dismissed on next move
         }
 
-        var out: [GRID]u16 = .{ 0, 0, 0, 0 };
-        var oi: usize = 0;
-        var i: usize = 0;
-
-        while (i < cnt) : (i += 1) {
-            if (i + 1 < cnt and temp[i] == temp[i + 1]) {
-                const merged: u16 = temp[i] * 2;
-                out[oi] = merged;
-                gained.* += merged;
-                oi += 1;
-                i += 1; // skip next
-            } else {
-                out[oi] = temp[i];
-                oi += 1;
-            }
-        }
-
-        return out;
-    }
-
-    pub fn move(self: *Game, dir: Direction) bool {
-        if (self.overlay != .none) return false;
-
-        var changed = false;
-        var gained: u32 = 0;
-
-        switch (dir) {
-            .left, .right => {
-                for (0..GRID) |y| {
-                    const in0: [GRID]u16 = self.board[y];
-
-                    const in_line = if (dir == .left) in0 else reverse4(in0);
-                    const out_line = processLineLeft(in_line, &gained);
-                    const out0 = if (dir == .left) out_line else reverse4(out_line);
-
-                    if (!std.mem.eql(u16, &in0, &out0)) changed = true;
-                    self.board[y] = out0;
-                }
-            },
-            .up, .down => {
-                for (0..GRID) |x| {
-                    var in0: [GRID]u16 = .{ 0, 0, 0, 0 };
-                    for (0..GRID) |y| in0[y] = self.board[y][x];
-
-                    const in_line = if (dir == .up) in0 else reverse4(in0);
-                    const out_line = processLineLeft(in_line, &gained);
-                    const out0 = if (dir == .up) out_line else reverse4(out_line);
-
-                    if (!std.mem.eql(u16, &in0, &out0)) changed = true;
-                    for (0..GRID) |y| self.board[y][x] = out0[y];
-                }
-            },
-        }
-
-        if (changed) {
-            self.score += gained;
-            _ = self.spawnTile();
-
-            if (self.hasWon()) {
-                self.overlay = .win;
-            } else if (!self.anyMovesPossible()) {
-                self.overlay = .game_over;
-            }
-        } else {
-            // even if the attempted move didn’t change the board, we can be stuck
-            if (!self.anyMovesPossible()) self.overlay = .game_over;
-        }
-
-        return changed;
+        self.updateGameOver();
     }
 };
 
 fn computeLayout(size: Size) Layout {
     const margin: u16 = 10;
     const gap: u16 = 6;
-    const top_bar_h: u16 = 8 + 8 + 12; // two text lines + padding
+
+    // score line (mono-8) + tutorial line (mono-6) + padding
+    const top_bar_h: u16 = 30;
 
     const avail_w: u16 = size.width -| (margin * 2);
     const avail_h: u16 = size.height -| (margin * 2 + top_bar_h);
@@ -237,7 +191,7 @@ fn textWidthMono8(text: []const u8) u16 {
     return @as(u16, @intCast(text.len)) * 5;
 }
 
-fn drawCenteredText(q: *ashet.graphics.CommandQueue, rect: Rectangle, font: Font, color: Color, text: []const u8) !void {
+fn drawCenteredTextMono8(q: *ashet.graphics.CommandQueue, rect: Rectangle, font: Font, color: Color, text: []const u8) !void {
     const tw: i32 = @intCast(textWidthMono8(text));
     const th: i32 = 8;
 
@@ -246,8 +200,8 @@ fn drawCenteredText(q: *ashet.graphics.CommandQueue, rect: Rectangle, font: Font
     const rw: i32 = @intCast(rect.width);
     const rh: i32 = @intCast(rect.height);
 
-    const px: i32 = rx + @divTrunc((rw - tw), 2);
-    const py: i32 = ry + @divTrunc((rh - th), 2);
+    const px: i32 = rx + @divFloor((rw - tw), 2);
+    const py: i32 = ry + @divFloor((rh - th), 2);
 
     try q.draw_text(.{
         .x = @as(i16, @intCast(px)),
@@ -256,7 +210,6 @@ fn drawCenteredText(q: *ashet.graphics.CommandQueue, rect: Rectangle, font: Font
 }
 
 fn tileBg(v: u16) Color {
-    // good-enough palette-ish mapping using HTML -> Ashet Color conversion
     return switch (v) {
         0 => Color.from_html("#2f3143"),
         2 => Color.from_html("#eee4da"),
@@ -278,7 +231,21 @@ fn tileTextColor(v: u16) Color {
     return if (v <= 4) ashet.graphics.known_colors.black else ashet.graphics.known_colors.white;
 }
 
-fn paint(q: *ashet.graphics.CommandQueue, size: Size, fb: Framebuffer, font: Font, game: *const Game) !void {
+const AnimRender = struct {
+    moves: []const MoveAnim,
+    frame: u8, // 1..total
+    total: u8,
+};
+
+fn paint(
+    q: *ashet.graphics.CommandQueue,
+    size: Size,
+    fb: Framebuffer,
+    font_main: Font,
+    font_tutorial: Font,
+    game: *const Game,
+    anim: ?AnimRender,
+) !void {
     q.reset();
 
     const layout = computeLayout(size);
@@ -286,16 +253,22 @@ fn paint(q: *ashet.graphics.CommandQueue, size: Size, fb: Framebuffer, font: Fon
     // background
     try q.clear(ashet.graphics.known_colors.dim_gray);
 
-    // header
+    // header (no "2048" title - window decorations already show it)
     {
         var buf: [64]u8 = undefined;
-        const title = "2048";
         const score_line = try std.fmt.bufPrint(&buf, "Score: {}", .{game.score});
-        try q.draw_text(.{ .x = @as(i16, @intCast(layout.margin)), .y = 6 }, font, ashet.graphics.known_colors.white, title);
-        try q.draw_text(.{ .x = @as(i16, @intCast(layout.margin)), .y = 6 + 10 }, font, ashet.graphics.known_colors.bright_gray, score_line);
+
         try q.draw_text(
-            .{ .x = @as(i16, @intCast(layout.margin)), .y = 6 + 20 },
-            font,
+            .{ .x = @as(i16, @intCast(layout.margin)), .y = 6 },
+            font_main,
+            ashet.graphics.known_colors.bright_gray,
+            score_line,
+        );
+
+        // tutorial line uses mono-6
+        try q.draw_text(
+            .{ .x = @as(i16, @intCast(layout.margin)), .y = 6 + 12 },
+            font_tutorial,
             ashet.graphics.known_colors.gray,
             "Arrows/WASD/Numpad to move, R restart",
         );
@@ -305,24 +278,68 @@ fn paint(q: *ashet.graphics.CommandQueue, size: Size, fb: Framebuffer, font: Fon
     try q.fill_rect(layout.board_rect, Color.from_html("#3c3a32"));
     try q.draw_rect(layout.board_rect, ashet.graphics.known_colors.black);
 
-    // cells
+    // During animation, we draw stationary tiles from the *current* board, except tiles that move out.
+    var moving_from: [GRID][GRID]bool = .{
+        .{ false, false, false, false },
+        .{ false, false, false, false },
+        .{ false, false, false, false },
+        .{ false, false, false, false },
+    };
+
+    if (anim) |a| {
+        for (a.moves) |m| {
+            moving_from[u8ToUsize(m.sy)][u8ToUsize(m.sx)] = true;
+        }
+    }
+
+    // cells + stationary tiles
     for (0..GRID) |y| {
         for (0..GRID) |x| {
-            const v = game.board[y][x];
+            const base_v = game.board[y][x];
             const r = layout.cellRect(x, y);
 
-            try q.fill_rect(r, tileBg(v));
+            const draw_v: u16 = if (base_v != 0 and !moving_from[y][x]) base_v else 0;
+
+            try q.fill_rect(r, tileBg(draw_v));
             try q.draw_rect(r, Color.from_html("#1b1b1b"));
 
-            if (v != 0) {
+            if (draw_v != 0) {
                 var nbuf: [16]u8 = undefined;
-                const s = try std.fmt.bufPrint(&nbuf, "{}", .{v});
-                try drawCenteredText(q, r, font, tileTextColor(v), s);
+                const s = try std.fmt.bufPrint(&nbuf, "{}", .{draw_v});
+                try drawCenteredTextMono8(q, r, font_main, tileTextColor(draw_v), s);
             }
         }
     }
 
-    // overlay
+    // moving tiles on top
+    if (anim) |a| {
+        const f: i32 = @intCast(a.frame);
+        const t: i32 = @intCast(a.total);
+
+        for (a.moves) |m| {
+            const sr = layout.cellRect(u8ToUsize(m.sx), u8ToUsize(m.sy));
+            const er = layout.cellRect(u8ToUsize(m.ex), u8ToUsize(m.ey));
+
+            const sx: i32 = sr.x;
+            const sy: i32 = sr.y;
+            const ex: i32 = er.x;
+            const ey: i32 = er.y;
+
+            const ix: i16 = @as(i16, @intCast(sx + @divFloor((ex - sx) * f, t)));
+            const iy: i16 = @as(i16, @intCast(sy + @divFloor((ey - sy) * f, t)));
+
+            const r: Rectangle = .{ .x = ix, .y = iy, .width = layout.cell, .height = layout.cell };
+
+            try q.fill_rect(r, tileBg(m.value));
+            try q.draw_rect(r, Color.from_html("#1b1b1b"));
+
+            var nbuf: [16]u8 = undefined;
+            const s = try std.fmt.bufPrint(&nbuf, "{}", .{m.value});
+            try drawCenteredTextMono8(q, r, font_main, tileTextColor(m.value), s);
+        }
+    }
+
+    // overlay (win is non-blocking; game-over blocks moves until R)
     if (game.overlay != .none) {
         const full: Rectangle = .{ .x = 0, .y = 0, .width = size.width, .height = size.height };
         try q.fill_rect(full, Color.from_html("#2f3143"));
@@ -332,7 +349,12 @@ fn paint(q: *ashet.graphics.CommandQueue, size: Size, fb: Framebuffer, font: Fon
             .game_over => "GAME OVER",
             .none => "",
         };
-        const line2 = "Press R to restart";
+
+        const line2 = switch (game.overlay) {
+            .win => "Continue playing, R restart",
+            .game_over => "Press R to restart",
+            .none => "",
+        };
 
         const center_box: Rectangle = .{
             .x = @as(i16, @intCast((size.width -| 220) / 2)),
@@ -347,11 +369,93 @@ fn paint(q: *ashet.graphics.CommandQueue, size: Size, fb: Framebuffer, font: Fon
         const l1: Rectangle = .{ .x = center_box.x, .y = center_box.y + 14, .width = center_box.width, .height = 16 };
         const l2: Rectangle = .{ .x = center_box.x, .y = center_box.y + 40, .width = center_box.width, .height = 16 };
 
-        try drawCenteredText(q, l1, font, ashet.graphics.known_colors.white, line1);
-        try drawCenteredText(q, l2, font, ashet.graphics.known_colors.bright_gray, line2);
+        try drawCenteredTextMono8(q, l1, font_main, ashet.graphics.known_colors.white, line1);
+        try drawCenteredTextMono8(q, l2, font_main, ashet.graphics.known_colors.bright_gray, line2);
     }
 
     try q.submit(fb, .{});
+}
+
+fn coordFor(dir: Direction, line: usize, p: usize) struct { x: u8, y: u8 } {
+    // p is in "forward" order (towards the move direction)
+    return switch (dir) {
+        .left => .{ .x = @as(u8, @intCast(p)), .y = @as(u8, @intCast(line)) },
+        .right => .{ .x = @as(u8, @intCast(3 - p)), .y = @as(u8, @intCast(line)) },
+        .up => .{ .x = @as(u8, @intCast(line)), .y = @as(u8, @intCast(p)) },
+        .down => .{ .x = @as(u8, @intCast(line)), .y = @as(u8, @intCast(3 - p)) },
+    };
+}
+
+fn addMove(plan: *MovePlan, dir: Direction, line: usize, src_p: usize, dst_p: usize, value: u16) void {
+    const s = coordFor(dir, line, src_p);
+    const d = coordFor(dir, line, dst_p);
+    if (s.x == d.x and s.y == d.y) return; // not moving
+    const idx: usize = @intCast(plan.moves_len);
+    if (idx >= plan.moves.len) return; // should never happen
+    plan.moves[idx] = .{ .value = value, .sx = s.x, .sy = s.y, .ex = d.x, .ey = d.y };
+    plan.moves_len += 1;
+}
+
+fn setDst(plan: *MovePlan, dir: Direction, line: usize, dst_p: usize, value: u16) void {
+    const c = coordFor(dir, line, dst_p);
+    plan.dst[@as(usize, @intCast(c.y))][@as(usize, @intCast(c.x))] = value;
+    if (value >= TARGET) plan.reached_target = true;
+}
+
+fn makeMovePlan(board: *const [GRID][GRID]u16, dir: Direction) MovePlan {
+    var plan: MovePlan = .{};
+    // dst already zeroed by default init
+
+    for (0..GRID) |line| {
+        var pos: [GRID]u8 = undefined;
+        var val: [GRID]u16 = undefined;
+        var n: usize = 0;
+
+        // collect tiles in forward order
+        for (0..GRID) |p| {
+            const c = coordFor(dir, line, p);
+            const v = board[@as(usize, @intCast(c.y))][@as(usize, @intCast(c.x))];
+            if (v != 0) {
+                pos[n] = @as(u8, @intCast(p));
+                val[n] = v;
+                n += 1;
+            }
+        }
+
+        var out_p: usize = 0;
+        var i: usize = 0;
+        while (i < n) {
+            const v = val[i];
+            if (i + 1 < n and val[i + 1] == v) {
+                // merge
+                const merged: u16 = v * 2;
+                plan.gain += merged;
+                plan.changed = true;
+
+                addMove(&plan, dir, line, pos[i], out_p, v);
+                addMove(&plan, dir, line, pos[i + 1], out_p, v);
+                setDst(&plan, dir, line, out_p, merged);
+
+                out_p += 1;
+                i += 2;
+            } else {
+                if (pos[i] != out_p) plan.changed = true;
+                addMove(&plan, dir, line, pos[i], out_p, v);
+                setDst(&plan, dir, line, out_p, v);
+                out_p += 1;
+                i += 1;
+            }
+        }
+    }
+
+    return plan;
+}
+
+fn sleepNs(delta_ns: u64) !void {
+    const now = ashet.abi.clock.monotonic();
+    const now_ns: u64 = @intFromEnum(now);
+    const timeout: ashet.abi.Absolute = @enumFromInt(now_ns + delta_ns);
+    _ = try ashet.overlapped.performOne(ashet.abi.clock.Timer, .{ .timeout = timeout });
 }
 
 fn usageToAction(usage: ashet.abi.KeyUsageCode) ?union(enum) { move: Direction, restart: void } {
@@ -382,7 +486,7 @@ pub fn main() !void {
         desktop,
         .{
             .title = "2048",
-            .min_size = Size.new(220, 260),
+            .min_size = Size.new(220, 220),
             .max_size = Size.new(900, 900),
             .initial_size = Size.new(256, 256),
         },
@@ -395,8 +499,11 @@ pub fn main() !void {
     var command_queue = try ashet.graphics.CommandQueue.init(ashet.process.mem.allocator());
     defer command_queue.deinit();
 
-    const font = try ashet.graphics.get_system_font("mono-8");
-    defer font.release();
+    const font_main = try ashet.graphics.get_system_font("mono-8");
+    defer font_main.release();
+
+    const font_tutorial = try ashet.graphics.get_system_font("mono-6");
+    defer font_tutorial.release();
 
     // seed PRNG from monotonic clock
     const mono = ashet.abi.clock.monotonic();
@@ -408,8 +515,10 @@ pub fn main() !void {
         &command_queue,
         ashet.gui.get_window_size(window) catch unreachable,
         framebuffer,
-        font,
+        font_main,
+        font_tutorial,
         &game,
+        null,
     );
 
     main_loop: while (true) {
@@ -428,8 +537,10 @@ pub fn main() !void {
                     &command_queue,
                     ashet.gui.get_window_size(window) catch unreachable,
                     framebuffer,
-                    font,
+                    font_main,
+                    font_tutorial,
                     &game,
+                    null,
                 );
             },
 
@@ -445,9 +556,41 @@ pub fn main() !void {
                             repaint = true;
                         },
                         .move => |dir| {
-                            // if overlay is up, ignore moves (restart still works)
-                            _ = game.move(dir);
-                            repaint = true;
+                            if (game.overlay == .game_over) {
+                                // only restart allowed
+                                repaint = false;
+                            } else {
+                                // win overlay is non-blocking; dismiss it on next move
+                                if (game.overlay == .win) game.overlay = .none;
+
+                                const plan = makeMovePlan(&game.board, dir);
+
+                                if (!plan.changed) {
+                                    game.updateGameOver();
+                                    repaint = true;
+                                } else {
+                                    const size = ashet.gui.get_window_size(window) catch unreachable;
+                                    const mv_len: usize = @intCast(plan.moves_len);
+                                    const mv_slice = plan.moves[0..mv_len];
+
+                                    var f: u8 = 1;
+                                    while (f <= ANIM_FRAMES) : (f += 1) {
+                                        try paint(
+                                            &command_queue,
+                                            size,
+                                            framebuffer,
+                                            font_main,
+                                            font_tutorial,
+                                            &game,
+                                            .{ .moves = mv_slice, .frame = f, .total = ANIM_FRAMES },
+                                        );
+                                        try sleepNs(ANIM_FRAME_DELAY_NS);
+                                    }
+
+                                    game.applyMovePlan(&plan);
+                                    repaint = true;
+                                }
+                            }
                         },
                     }
                 }
@@ -457,13 +600,14 @@ pub fn main() !void {
                         &command_queue,
                         ashet.gui.get_window_size(window) catch unreachable,
                         framebuffer,
-                        font,
+                        font_main,
+                        font_tutorial,
                         &game,
+                        null,
                     );
                 }
             },
 
-            // ignore key releases and other events
             else => {},
         }
     }
