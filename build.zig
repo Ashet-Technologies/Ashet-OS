@@ -235,6 +235,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "ntp-client.ashex", .exe = get_named_file(os_files, "apps/ntp-client.elf") },
             .{ .name = "i2c-scan.ashex", .exe = get_named_file(os_files, "apps/i2c-scan.elf") },
             .{ .name = "widgets.ashex", .exe = get_named_file(os_files, "apps/widgets.elf") },
+            .{ .name = "2048.ashex", .exe = get_named_file(os_files, "apps/2048.elf") },
         };
 
         var variables = Variables{
