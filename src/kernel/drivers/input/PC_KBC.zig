@@ -425,7 +425,7 @@ const Deadline = ashet.time.Deadline;
 
 fn delayPortRead() void {
     for (0..1_000) |_| {
-        asm volatile ("" ::: "memory");
+        asm volatile ("" ::: .{ .memory = true });
     }
 }
 
@@ -558,10 +558,7 @@ const CommandByte = packed struct(u8) {
     scancode_translation_mode: bool, // 6: First PS/2 port translation (1 = enabled, 0 = disabled)
     reserved: u1, // 7: must be zero
 
-    pub fn format(self: CommandByte, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = opt;
-
+    pub fn format(self: CommandByte, writer: *std.Io.Writer) !void {
         try writer.writeAll("CommandByte{ ");
 
         try writer.print("primary clk={s}, ", .{@tagName(self.primary_clk_enable)});

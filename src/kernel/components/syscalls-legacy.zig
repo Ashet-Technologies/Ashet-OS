@@ -49,7 +49,7 @@ pub fn getCurrentProcess() *ashet.multi_tasking.Process {
 }
 
 const impls = struct {
-    export fn @"ashet.video.acquire"() callconv(.C) bool {
+    export fn @"ashet.video.acquire"() callconv(.c) bool {
         if (ashet.multi_tasking.exclusive_video_controller == null) {
             ashet.multi_tasking.exclusive_video_controller = getCurrentProcess();
             return true;
@@ -58,39 +58,39 @@ const impls = struct {
         }
     }
 
-    export fn @"ashet.video.release"() callconv(.C) void {
+    export fn @"ashet.video.release"() callconv(.c) void {
         if (getCurrentProcess().isExclusiveVideoController()) {
             ashet.multi_tasking.exclusive_video_controller = null;
         }
     }
 
-    export fn @"ashet.video.setBorder"(color: abi.ColorIndex) callconv(.C) void {
+    export fn @"ashet.video.setBorder"(color: abi.ColorIndex) callconv(.c) void {
         if (!getCurrentProcess().isExclusiveVideoController()) {
             videoExclusiveWarning();
         }
         ashet.video.setBorder(color);
     }
 
-    export fn @"ashet.video.getVideoMemory"() callconv(.C) [*]align(4) abi.ColorIndex {
+    export fn @"ashet.video.getVideoMemory"() callconv(.c) [*]align(4) abi.ColorIndex {
         if (!getCurrentProcess().isExclusiveVideoController()) {
             videoExclusiveWarning();
         }
         return ashet.video.getVideoMemory().ptr;
     }
 
-    export fn @"ashet.video.getPaletteMemory"() callconv(.C) *[abi.palette_size]abi.Color {
+    export fn @"ashet.video.getPaletteMemory"() callconv(.c) *[abi.palette_size]abi.Color {
         if (!getCurrentProcess().isExclusiveVideoController()) {
             videoExclusiveWarning();
         }
         return ashet.video.getPaletteMemory();
     }
 
-    export fn @"ashet.video.getPalette"(outpal: *[abi.palette_size]abi.Color) callconv(.C) void {
+    export fn @"ashet.video.getPalette"(outpal: *[abi.palette_size]abi.Color) callconv(.c) void {
         const palmem = ashet.video.getPaletteMemory();
         outpal.* = palmem.*;
     }
 
-    export fn @"ashet.video.setResolution"(w: u16, h: u16) callconv(.C) void {
+    export fn @"ashet.video.setResolution"(w: u16, h: u16) callconv(.c) void {
         if (!getCurrentProcess().isExclusiveVideoController()) {
             videoExclusiveWarning();
         }
@@ -103,15 +103,15 @@ const impls = struct {
         );
     }
 
-    export fn @"ashet.video.getMaxResolution"() callconv(.C) abi.Size {
+    export fn @"ashet.video.getMaxResolution"() callconv(.c) abi.Size {
         return ashet.video.getMaxResolution();
     }
 
-    export fn @"ashet.video.getResolution"() callconv(.C) abi.Size {
+    export fn @"ashet.video.getResolution"() callconv(.c) abi.Size {
         return ashet.video.getResolution();
     }
 
-    export fn @"ashet.ui.getSystemFont"(font_name_ptr: [*]const u8, font_name_len: usize, font_data_ptr: *[*]const u8, font_data_len: *usize) callconv(.C) abi.GetSystemFontError.Enum {
+    export fn @"ashet.ui.getSystemFont"(font_name_ptr: [*]const u8, font_name_len: usize, font_data_ptr: *[*]const u8, font_data_len: *usize) callconv(.c) abi.GetSystemFontError.Enum {
         _ = font_name_ptr;
         _ = font_name_len;
         _ = font_data_ptr;

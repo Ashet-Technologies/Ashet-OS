@@ -4,7 +4,7 @@ const gui = @import("ashet-gui");
 
 const ColorIndex = ashet.abi.ColorIndex;
 
-pub usingnamespace ashet.core;
+pub const std_options = ashet.core.std_options;
 
 const MainWindow = struct {
     panel_a: gui.Widget = gui.Panel.new(5, 5, 172, 57), // 0

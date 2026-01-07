@@ -152,9 +152,7 @@ const Align = enum {
         size: u16,
         limit: u16,
 
-        pub fn format(formatter: PosFormatter, fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-            _ = fmt;
-            _ = opt;
+        pub fn format(formatter: PosFormatter, writer: *std.Io.Writer) !void {
             switch (formatter.alignment) {
                 .near, .margin => try writer.print("{}", .{formatter.pos}),
                 .far => {
@@ -173,9 +171,7 @@ const Align = enum {
         size: u16,
         limit: u16,
 
-        pub fn format(formatter: SizeFormatter, fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-            _ = fmt;
-            _ = opt;
+        pub fn format(formatter: SizeFormatter, writer: *std.Io.Writer) !void {
             switch (formatter.alignment) {
                 .near, .far => try writer.print("{}", .{formatter.size}),
                 .margin => {

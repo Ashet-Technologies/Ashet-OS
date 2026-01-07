@@ -96,7 +96,7 @@ pub fn init(
         .put_image_chunk_height = put_image_chunk_height,
         .put_image_msg_buffer = try allocator.alignedAlloc(
             u8,
-            4, // alignment
+            .@"4", // alignment
             x11.put_image.getLen(4 * @as(u18, window_width) * put_image_chunk_height),
         ),
 
@@ -241,7 +241,7 @@ pub fn init(
     return server;
 }
 
-pub fn process_events_wrapper(server_ptr: ?*anyopaque) callconv(.C) u32 {
+pub fn process_events_wrapper(server_ptr: ?*anyopaque) callconv(.c) u32 {
     const server: *X11_Display = @ptrCast(@alignCast(server_ptr.?));
 
     server.process_events() catch |err| {

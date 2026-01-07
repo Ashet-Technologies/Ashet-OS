@@ -1009,8 +1009,8 @@ pub const DwarfInfo = struct {
                     fixed_reader.seek = ranges_offset;
 
                     while (true) {
-                        const begin_addr = try in.readInt(usize, di.endian);
-                        const end_addr = try in.readInt(usize, di.endian);
+                        const begin_addr = try in.takeInt(usize, di.endian);
+                        const end_addr = try in.takeInt(usize, di.endian);
                         if (begin_addr == 0 and end_addr == 0) {
                             break;
                         }

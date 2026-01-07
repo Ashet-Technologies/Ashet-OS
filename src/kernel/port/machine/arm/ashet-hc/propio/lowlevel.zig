@@ -244,7 +244,7 @@ fn pio_rx_frame_end() callconv(.c) void {
 
     microzig.chip.peripherals.DMA.CHAN_ABORT.write(.{ .CHAN_ABORT = (1 << @intFromEnum(rx_dma_chan)) });
     while (microzig.chip.peripherals.DMA.CHAN_ABORT.read().CHAN_ABORT != 0) {
-        asm volatile ("" ::: "memory");
+        asm volatile ("" ::: .{ .memory = true });
     }
 
     pio.get_regs().IRQ.raw = 0x01; // acknowledge

@@ -52,9 +52,7 @@ pub const Address = enum(u7) {
         return ((value & 0x78) == 0) or ((value & 0x78) == 0x78);
     }
 
-    pub fn format(addr: Address, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(addr: Address, writer: *std.Io.Writer) !void {
         try writer.print("I2C(0x{X:0>2})", .{@intFromEnum(addr)});
     }
 };

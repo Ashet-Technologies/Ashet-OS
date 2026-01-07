@@ -126,9 +126,9 @@ fn transform_bitmap_glyph_map(allocator: std.mem.Allocator, raw_map: std.json.Va
         const json_value = kv.value_ptr.*;
 
         if ((std.unicode.utf8CountCodepoints(key_str) catch 0) != 1) {
-            std.log.err("invalid glyph codepoint: '{}' ({})", .{
+            std.log.err("invalid glyph codepoint: '{f}' ({X})", .{
                 std.unicode.fmtUtf8(key_str),
-                std.fmt.fmtSliceHexUpper(key_str),
+                key_str,
             });
             return error.InvalidKey;
         }
@@ -147,9 +147,9 @@ fn transform_bitmap_glyph_map(allocator: std.mem.Allocator, raw_map: std.json.Va
 
         const gop = try output.getOrPut(codepoint);
         if (gop.found_existing) {
-            std.log.err("duplicate glyph codepoint: '{}' ({})", .{
+            std.log.err("duplicate glyph codepoint: '{f}' ({X})", .{
                 std.unicode.fmtUtf8(key_str),
-                std.fmt.fmtSliceHexUpper(key_str),
+                key_str,
             });
             return error.DuplicateKey;
         }
@@ -174,9 +174,9 @@ fn transform_turtle_glyph_map(allocator: std.mem.Allocator, raw_map: std.json.Va
         const json_value = kv.value_ptr.*;
 
         if ((std.unicode.utf8CountCodepoints(key_str) catch 0) != 1) {
-            std.log.err("invalid glyph codepoint: '{}' ({})", .{
+            std.log.err("invalid glyph codepoint: '{f}' ({X})", .{
                 std.unicode.fmtUtf8(key_str),
-                std.fmt.fmtSliceHexUpper(key_str),
+                key_str,
             });
             return error.InvalidKey;
         }
@@ -191,9 +191,9 @@ fn transform_turtle_glyph_map(allocator: std.mem.Allocator, raw_map: std.json.Va
 
         const gop = try output.getOrPut(codepoint);
         if (gop.found_existing) {
-            std.log.err("duplicate glyph codepoint: '{}' ({})", .{
+            std.log.err("duplicate glyph codepoint: '{f}' ({X})", .{
                 std.unicode.fmtUtf8(key_str),
-                std.fmt.fmtSliceHexUpper(key_str),
+                key_str,
             });
             return error.DuplicateKey;
         }

@@ -41,35 +41,35 @@ pub const Code = enum(u32) {
 /// Signatures of all public bootrom functions
 pub const signatures = struct {
     /// Returns the 32 bit pointer into the ROM if found or NULL otherwise
-    const rom_table_lookup = fn (table: [*]const u16, code: u32) callconv(.C) *anyopaque;
+    const rom_table_lookup = fn (table: [*]const u16, code: u32) callconv(.c) *anyopaque;
     /// Signature for popcount32: Return a count of the number of 1 bits in value
-    const popcount32 = fn (value: u32) callconv(.C) u32;
+    const popcount32 = fn (value: u32) callconv(.c) u32;
     /// Signature for reverse32: Return the bits of value in the reverse order
-    const reverse32 = fn (value: u32) callconv(.C) u32;
+    const reverse32 = fn (value: u32) callconv(.c) u32;
     /// Signature for clz32: Return the number of consecutive high order 0 bits of value
-    const clz32 = fn (value: u32) callconv(.C) u32;
+    const clz32 = fn (value: u32) callconv(.c) u32;
     /// Signature for ctz32: Return the number of consecutive low order 0 bits of value
-    const ctz32 = fn (value: u32) callconv(.C) u32;
+    const ctz32 = fn (value: u32) callconv(.c) u32;
     /// Signature of memset: Sets n bytes start at ptr to the value c and returns ptr
-    const memset = fn (ptr: [*]u8, c: u8, n: u32) callconv(.C) [*]u8;
+    const memset = fn (ptr: [*]u8, c: u8, n: u32) callconv(.c) [*]u8;
     /// Signature of memset4: Sets n bytes start at ptr to the value c and returns ptr;
     /// must be word (32-bit) aligned!
-    const memset4 = fn (ptr: [*]u32, c: u8, n: u32) callconv(.C) [*]u32;
+    const memset4 = fn (ptr: [*]u32, c: u8, n: u32) callconv(.c) [*]u32;
     /// Signature of memcpy: Copies n bytes starting at src to dest and returns dest.
     /// The results are undefined if the regions overlap.
-    const memcpy = fn (dest: [*]u8, src: [*]const u8, n: u32) callconv(.C) [*]u8;
+    const memcpy = fn (dest: [*]u8, src: [*]const u8, n: u32) callconv(.c) [*]u8;
     /// Signature of memcpy44: Copies n bytes starting at src to dest and returns dest;
     /// must be word (32-bit) aligned!
-    const memcpy44 = fn (dest: [*]u32, src: [*]const u32, n: u32) callconv(.C) [*]u8;
+    const memcpy44 = fn (dest: [*]u32, src: [*]const u32, n: u32) callconv(.c) [*]u8;
     /// Signature of connect_internal_flash: Restore all QSPI pad controls to their
     /// default state, and connect the SSI to the QSPI pads
-    const connect_internal_flash = fn () callconv(.C) void;
+    const connect_internal_flash = fn () callconv(.c) void;
     /// Signature of flash_exit_xip: First set up the SSI for serial-mode operations,
     /// then issue the fixed XIP exit sequence described in Section 2.8.1.2. Note that
     /// the bootrom code uses the IO forcing logic to drive the CS pin, which must be
     /// cleared before returning the SSI to XIP mode (e.g. by a call to _flash_flush_cache).
     /// This function configures the SSI with a fixed SCK clock divisor of /6.
-    const flash_exit_xip = fn () callconv(.C) void;
+    const flash_exit_xip = fn () callconv(.c) void;
     /// Signature of flash_range_erase: Erase a count bytes, starting at addr (offset from
     /// start of flash). Optionally, pass a block erase command e.g. D8h block erase,
     /// and the size of the block erased by this command — this function will use the
@@ -80,30 +80,30 @@ pub const signatures = struct {
         count: usize,
         block_size: u32,
         block_cmd: u8,
-    ) callconv(.C) void;
+    ) callconv(.c) void;
     /// Signature of flash_range_program: Program data to a range of flash addresses
     /// starting at addr (offset from the start of flash) and count bytes in size.
     /// addr must be aligned to a 256-byte boundary, and count must be a multiple of 256.
-    const flash_range_program = fn (addr: u32, data: [*]const u8, count: usize) callconv(.C) void;
+    const flash_range_program = fn (addr: u32, data: [*]const u8, count: usize) callconv(.c) void;
     /// Signature of flash_flush_cache: Flush and enable the XIP cache. Also clears the IO
     /// forcing on QSPI CSn, so that the SSI can drive the flash chip select as normal.
-    const flash_flush_cache = fn () callconv(.C) void;
+    const flash_flush_cache = fn () callconv(.c) void;
     /// Signature of flash_enter_cmd_xip: Configure the SSI to generate
     /// a standard 03h serial read command, with 24 address bits, upon each XIP access.
     /// This is a very slow XIP configuration, but is very widely supported.
     /// The debugger calls this function after performing a flash erase/programming operation,
     /// so that the freshly-programmed code and data is visible to the debug host,
     /// without having to know exactly what kind of flash device is connected.
-    const flash_enter_cmd_xip = fn () callconv(.C) void;
+    const flash_enter_cmd_xip = fn () callconv(.c) void;
     /// Signature of debug_trampoline: Simple debugger trampoline for break-on-return.
     /// This methods helps the debugger call ROM routines without setting hardware breakpoints.
     /// The function address is passed in r7 and args are passed through r0 … r3 as per ABI.
     /// This method does not return but executes a BKPT #0 at the end
-    const debug_trampoline = fn () callconv(.C) void;
+    const debug_trampoline = fn () callconv(.c) void;
     /// Signature of debug_trampoline_end: This is the address of the final BKPT #0 instruction
     /// of debug_trampoline. This can be compared with the program counter to detect
     /// completion of the debug_trampoline call.
-    const debug_trampoline_end = fn () callconv(.C) void;
+    const debug_trampoline_end = fn () callconv(.c) void;
     /// Signature of reset_to_usb_boot: Resets the RP2040 and uses the watchdog facility
     /// to re-start in BOOTSEL mode:
     /// - gpio_activity_pin_mask is provided to enable an "activity light" via
@@ -115,11 +115,11 @@ pub const signatures = struct {
     ///   - 0 To enable both interfaces (as per a cold boot)
     ///   - 1 To disable the USB Mass Storage Interface (see Section 2.8.4)
     ///   - 2 To disable the USB PICOBOOT Interface (see Section 2.8.5)
-    const reset_to_usb_boot = fn (gpio_activity_mask: u32, disable_interface_mask: u32) callconv(.C) noreturn;
+    const reset_to_usb_boot = fn (gpio_activity_mask: u32, disable_interface_mask: u32) callconv(.c) noreturn;
     /// Signature of wait_for_vector: This is the method that is entered by core 1 on reset to wait
     /// to be launched by core 0. There are few cases where you should call this method (resetting
     /// core 1 is much better). This method does not return and should only ever be called on core 1.
-    const wait_for_vector = fn () callconv(.C) noreturn;
+    const wait_for_vector = fn () callconv(.c) noreturn;
 };
 
 /// Return a bootrom lookup code based on two ASCII characters

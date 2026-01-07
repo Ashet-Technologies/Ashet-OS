@@ -5,7 +5,7 @@ const gui = @import("ashet-gui");
 const system_assets = @import("system-assets");
 const astd = @import("ashet-std");
 
-pub usingnamespace ashet.core;
+pub const std_options = ashet.core.std_options;
 
 const MainWindow = struct {
     interface: gui.Interface,

@@ -12,8 +12,8 @@ pub fn validate(font: schema.BitmapFontFile) !bool {
     for (0x20..0x7F) |codepoint| {
         const ascii: u7 = @intCast(codepoint);
         if (!font.glyphs.contains(ascii)) {
-            std.log.warn("Font is missing printable ASCII character '{}' (0x{X:0>2})", .{
-                std.zig.fmtEscapes(&.{ascii}),
+            std.log.warn("Font is missing printable ASCII character '{f}' (0x{X:0>2})", .{
+                std.zig.fmtString(&.{ascii}),
                 ascii,
             });
         }
@@ -24,7 +24,7 @@ pub fn validate(font: schema.BitmapFontFile) !bool {
 
 pub fn generate(
     allocator: std.mem.Allocator,
-    file: std.fs.File,
+    file_writer: *std.fs.File.Writer,
     root_dir: std.fs.Dir,
     font: *schema.BitmapFontFile,
 ) !void {
@@ -140,14 +140,14 @@ pub fn generate(
         var fmt: [8]u8 = undefined;
         const len = std.unicode.utf8Encode(codepoint, &fmt) catch @panic("implementation bug");
 
-        std.log.debug("U+{X:0>5} ('{}') => w={} h={} dx={} dy={} bits={}", .{
+        std.log.debug("U+{X:0>5} ('{f}') => w={} h={} dx={} dy={} bits={X}", .{
             codepoint,
             std.unicode.fmtUtf8(fmt[0..len]),
             width,
             height,
             shrink_dx,
             shrink_dy,
-            std.fmt.fmtSliceHexUpper(bits),
+            bits,
         });
         std.log.debug("  x0={} x1={} y0={} y1={}", .{
             cell_x0,
@@ -195,7 +195,7 @@ pub fn generate(
         });
     }
 
-    const writer = file.writer();
+    const writer = &file_writer.interface;
 
     // Write file header:
     try writer.writeInt(u32, 0xcb3765be, .little);
@@ -239,12 +239,13 @@ pub fn generate(
 
     // Write `glyphs` data array:
     {
-        const start = try writer.context.getPos();
+        try writer.flush();
+        const start = file_writer.pos;
         for (font.glyphs.keys()) |codepoint| {
             const expected_offset, const expected_size = glyph_sizes.get(codepoint).?;
             const glyph_bitmap = glyph_bitmaps.get(codepoint).?;
 
-            const offset = try writer.context.getPos();
+            const offset = file_writer.pos;
             std.debug.assert(offset - start == expected_offset);
 
             try writer.writeInt(u8, glyph_bitmap.width, .little);
@@ -253,7 +254,8 @@ pub fn generate(
             try writer.writeInt(i8, glyph_bitmap.offset_y, .little);
             try writer.writeAll(glyph_bitmap.bits);
 
-            const end = try writer.context.getPos();
+            try writer.flush();
+            const end = file_writer.pos;
             std.debug.assert(end - offset == expected_size);
         }
     }
@@ -309,7 +311,8 @@ const ImageCache = struct {
             var file = try ic.root.openFile(path, .{});
             defer file.close();
 
-            gop.value_ptr.* = try zigimg.Image.fromFile(ic.arena.allocator(), &file);
+            var image_read_buff: [zigimg.io.DEFAULT_BUFFER_SIZE]u8 = undefined;
+            gop.value_ptr.* = try zigimg.Image.fromFile(ic.arena.allocator(), file, &image_read_buff);
         }
         return gop.value_ptr;
     }

@@ -2,7 +2,7 @@ const std = @import("std");
 const ashet = @import("ashet");
 const gui = @import("ashet-gui");
 
-pub usingnamespace ashet.core;
+pub const std_options = ashet.core.std_options;
 
 pub fn main() !void {
     try gui.init();

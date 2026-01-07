@@ -1,7 +1,10 @@
 const std = @import("std");
 const ashet = @import("ashet");
 
-pub usingnamespace ashet.core;
+pub const std_options = ashet.core.std_options;
+comptime {
+    _ = ashet.core;
+}
 
 const abi = ashet.abi;
 const io = ashet.userland.io;

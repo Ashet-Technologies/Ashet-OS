@@ -304,10 +304,10 @@ pub fn build(b: *std.Build) void {
 
         run_step.dependOn(&vm_runner.step);
     } else {
-        var fail_msg: std.ArrayList(u8) = .init(b.allocator);
+        var fail_msg: std.Io.Writer.Allocating = .init(b.allocator);
         defer fail_msg.deinit();
 
-        const writer = fail_msg.writer();
+        const writer = &fail_msg.writer;
 
         writer.writeAll(
             \\To use 'zig build run', please pass a machine to -Dmachine=<...>.

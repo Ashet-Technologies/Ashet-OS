@@ -423,7 +423,7 @@ pub const Thread = struct {
             global_stats.running_count -= 1;
         }
 
-        logger.info("killing thread {}", .{thread});
+        logger.info("killing thread {f}", .{thread});
 
         std.debug.assert(thread.process_link.data.thread == thread);
         const proc = thread.process_link.data.process;
@@ -478,9 +478,7 @@ pub const Thread = struct {
         }
     }
 
-    pub fn format(self: *const Thread, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(self: *const Thread, writer: *std.Io.Writer) !void {
         if (@import("builtin").mode == .Debug) {
             try writer.print("Thread(0x{X:0>8}, name={s}, ep=0x{X:0>8})", .{
                 @intFromPtr(self),

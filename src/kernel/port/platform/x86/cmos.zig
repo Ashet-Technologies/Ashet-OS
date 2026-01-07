@@ -99,9 +99,7 @@ pub const BCD = packed struct(u8) {
         return 10 * hi + lo;
     }
 
-    pub fn format(bcd: BCD, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(bcd: BCD, writer: *std.Io.Writer) !void {
         try writer.print("{d}{d}", .{ bcd.hi, bcd.lo });
     }
 };

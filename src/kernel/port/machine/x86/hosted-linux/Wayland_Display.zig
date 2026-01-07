@@ -153,7 +153,7 @@ pub fn init(
     return server;
 }
 
-pub fn process_events_wrapper(server_ptr: ?*anyopaque) callconv(.C) u32 {
+pub fn process_events_wrapper(server_ptr: ?*anyopaque) callconv(.c) u32 {
     const server: *Wayland_Display = @ptrCast(@alignCast(server_ptr.?));
 
     server.process_events() catch |err| {

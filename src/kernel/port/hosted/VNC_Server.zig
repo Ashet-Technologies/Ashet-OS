@@ -62,11 +62,13 @@ fn connection_handler(vd: *VNC_Server) !void {
 
         const client = try vd.socket.accept();
 
+        var read_buffer: [1024]u8 = undefined;
+        var write_buffer: [1024]u8 = undefined;
         var server = try vnc.Server.open(std.heap.page_allocator, client, .{
             .screen_width = vd.screen.width,
             .screen_height = vd.screen.height,
             .desktop_name = "Ashet OS",
-        });
+        }, .{ .reader = &read_buffer, .writer = &write_buffer });
         defer server.close();
 
         const new_framebuffer = try local_allocator.dupe(ashet.abi.Color, vd.screen.backbuffer);
@@ -129,8 +131,8 @@ fn handle_event(vd: *VNC_Server, state: *Session_State, request_allocator: std.m
 
             // logger.info("framebuffer update request: {}", .{in_req});
 
-            var rectangles = std.ArrayList(vnc.UpdateRectangle).init(request_allocator);
-            defer rectangles.deinit();
+            var rectangles: std.ArrayList(vnc.UpdateRectangle) = .empty;
+            defer rectangles.deinit(request_allocator);
 
             const incremental_support = true;
 
@@ -153,7 +155,7 @@ fn handle_event(vd: *VNC_Server, state: *Session_State, request_allocator: std.m
                     }
 
                     if (first_diff <= last_diff) {
-                        try rectangles.append(try vd.encode_screen_rect(
+                        try rectangles.append(request_allocator, try vd.encode_screen_rect(
                             request_allocator,
                             .{
                                 .x = @intCast(req.x + first_diff),
@@ -175,7 +177,7 @@ fn handle_event(vd: *VNC_Server, state: *Session_State, request_allocator: std.m
                 }
             } else {
                 // Simple full screen update:
-                try rectangles.append(try vd.encode_screen_rect(
+                try rectangles.append(request_allocator, try vd.encode_screen_rect(
                     request_allocator,
                     .{
                         .x = req.x,
@@ -189,7 +191,7 @@ fn handle_event(vd: *VNC_Server, state: *Session_State, request_allocator: std.m
             }
 
             if (rectangles.items.len == 0) {
-                try rectangles.append(try vd.encode_screen_rect(
+                try rectangles.append(request_allocator, try vd.encode_screen_rect(
                     request_allocator,
                     .{
                         .x = req.x,
@@ -241,7 +243,7 @@ fn handle_event(vd: *VNC_Server, state: *Session_State, request_allocator: std.m
                     });
                 }
             }
-            state.old_mouse = Point{
+            state.old_mouse = .{
                 .x = ptr.x,
                 .y = ptr.y,
             };
@@ -300,7 +302,7 @@ fn encode_screen_rect(
     framebuffer: []const ashet.abi.Color,
     pixel_format: vnc.PixelFormat,
 ) !vnc.UpdateRectangle {
-    var fb = std.ArrayList(u8).init(allocator);
+    var fb: std.Io.Writer.Allocating = .init(allocator);
     defer fb.deinit();
 
     var y: usize = 0;
@@ -321,7 +323,7 @@ fn encode_screen_rect(
 
             var buf: [8]u8 = undefined;
             const bits = pixel_format.encode(&buf, color);
-            try fb.appendSlice(bits);
+            try fb.writer.writeAll(bits);
         }
     }
 

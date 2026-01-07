@@ -17,7 +17,7 @@ pub const is_hosted = builtin.is_test or (builtin.target.os.tag != .other and bu
 //     }
 // }
 
-fn _start() callconv(.C) u32 {
+fn _start() callconv(.c) u32 {
     const res = @import("root").main();
     const Res = @TypeOf(res);
 
@@ -258,7 +258,7 @@ pub const process = struct {
 
     pub const debug = struct {
         pub const WriteError = error{};
-        pub const LogWriter = std.io.Writer(abi.LogLevel, WriteError, _write_log);
+        pub const LogWriter = std.Io.GenericWriter(abi.LogLevel, WriteError, _write_log);
 
         pub fn log_writer(log_level: abi.LogLevel) LogWriter {
             return .{ .context = log_level };
@@ -407,7 +407,7 @@ pub const fs = struct {
 
         pub fn close(file: *File) void {
             _ = overlapped.performOne(abi.fs.CloseFile, .{ .file = file.handle }) catch |err| {
-                std.log.scoped(.filesystem).err("failed to close file handle {}: {s}", .{ file.handle, @errorName(err) });
+                std.log.scoped(.filesystem).err("failed to close file handle {f}: {s}", .{ file.handle, @errorName(err) });
                 return;
             };
             file.* = undefined;
@@ -518,7 +518,7 @@ pub const fs = struct {
 
         pub fn close(dir: *Directory) void {
             _ = overlapped.performOne(abi.fs.CloseDir, .{ .dir = dir.handle }) catch |err| {
-                std.log.scoped(.filesystem).err("failed to close directory handle {}: {s}", .{ dir.handle, @errorName(err) });
+                std.log.scoped(.filesystem).err("failed to close directory handle {f}: {s}", .{ dir.handle, @errorName(err) });
                 return;
             };
 

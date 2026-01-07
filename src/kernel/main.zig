@@ -146,7 +146,7 @@ comptime {
     _ = syscalls;
 }
 
-fn ashet_kernelMain() callconv(.C) noreturn {
+fn ashet_kernelMain() callconv(.c) noreturn {
     // trampoline into kernelMain() to have full stack tracing.
     kernelMain();
 }
@@ -281,7 +281,7 @@ fn main() !void {
     log.warn("All threads stopped. System is now halting.", .{});
 }
 
-fn threaded_kernel_init_unchecked(_: ?*anyopaque) callconv(.C) u32 {
+fn threaded_kernel_init_unchecked(_: ?*anyopaque) callconv(.c) u32 {
     threaded_kernel_init() catch |err| {
         std.log.err("failed to initialize kernel: {s}", .{@errorName(err)});
         if (@errorReturnTrace()) |trace|
@@ -325,7 +325,7 @@ fn threaded_kernel_init() !void {
 
 /// This function runs to keep certain kernel tasks alive and
 /// working.
-fn global_kernel_tick(_: ?*anyopaque) callconv(.C) u32 {
+fn global_kernel_tick(_: ?*anyopaque) callconv(.c) u32 {
     while (true) {
         video.tick();
         input.tick();
@@ -348,11 +348,11 @@ pub const global_hotkeys = struct {
                     const total_pages = memory.debug.getPageCount();
                     const free_pages = memory.debug.getFreePageCount();
 
-                    log.info("current memory usage: {}/{} pages free, {:.3}/{:.3} used, {}% used", .{
+                    log.info("current memory usage: {}/{} pages free, {Bi:.3}/{Bi:.3} used, {}% used", .{
                         free_pages,
                         total_pages,
-                        std.fmt.fmtIntSizeBin(memory.page_size * (total_pages - free_pages)),
-                        std.fmt.fmtIntSizeBin(memory.page_size * total_pages),
+                        memory.page_size * (total_pages - free_pages),
+                        memory.page_size * total_pages,
                         100 - (100 * free_pages) / total_pages,
                     });
                     if (event.modifiers.shift) {
@@ -367,7 +367,7 @@ pub const global_hotkeys = struct {
     }
 };
 
-extern fn hang() callconv(.C) noreturn;
+extern fn hang() callconv(.c) noreturn;
 
 pub const Debug = struct {
     var trace_loc: std.builtin.SourceLocation = undefined;
@@ -381,7 +381,7 @@ pub const Debug = struct {
         machine_config.debug_write(bytes);
         return bytes.len;
     }
-    const Writer = std.io.Writer(void, Error, writeWithErr);
+    const Writer = std.Io.GenericWriter(void, Error, writeWithErr);
 
     fn write_with_indent(indent: usize, bytes: []const u8) Error!usize {
         const indent_part: [8]u8 = .{' '} ** 8;
@@ -403,7 +403,7 @@ pub const Debug = struct {
 
         return bytes.len;
     }
-    const IndentWriter = std.io.Writer(usize, Error, write_with_indent);
+    const IndentWriter = std.Io.GenericWriter(usize, Error, write_with_indent);
 
     pub fn writer() Writer {
         return .{ .context = {} };
@@ -434,7 +434,7 @@ pub const Debug = struct {
             frame_index = (frame_index + 1) % stack_trace.instruction_addresses.len;
         }) {
             const return_address = stack_trace.instruction_addresses[frame_index];
-            print_fn("{s}[{}] {}", .{ prefix, frame_index, fmtCodeLocation(return_address) });
+            print_fn("{s}[{}] {f}", .{ prefix, frame_index, fmtCodeLocation(return_address) });
         }
 
         if (stack_trace.index > stack_trace.instruction_addresses.len) {
@@ -556,13 +556,10 @@ fn kernel_log_fn(
         else
             "";
 
-        var counting_writer = std.io.countingWriter(Debug.writer());
-
         Debug.writer().writeAll(color_code) catch return;
 
         const now_ms: u64 = @intFromEnum(now);
-        var writer = counting_writer.writer();
-        writer.print("{s}{d: >6}.{d:0>3}{s}{s} [{s}] {s}: ", .{
+        Debug.writer().print("{s}{d: >6}.{d:0>3}{s}{s} [{s}] {s}: ", .{
             isr_prefix,
             now_ms / 1000,
             now_ms % 1000,
@@ -571,8 +568,18 @@ fn kernel_log_fn(
             level_txt,
             scope_tag,
         }) catch return;
+        var count: std.Io.Writer.Discarding = .init(&.{});
+        count.writer.print("{s}{d: >6}.{d:0>3}{s}{s} [{s}] {s}: ", .{
+            isr_prefix,
+            now_ms / 1000,
+            now_ms % 1000,
+            if (machine_prefix.len > 0) " " else "",
+            machine_prefix,
+            level_txt,
+            scope_tag,
+        }) catch unreachable;
 
-        Debug.indent_writer(counting_writer.bytes_written).print(format, args) catch return;
+        Debug.indent_writer(count.fullCount()).print(format, args) catch return;
         Debug.writer().print(postfix ++ "{s}\r\n", .{isr_suffix}) catch return;
     }
 }
@@ -580,10 +587,7 @@ fn kernel_log_fn(
 pub const CodeLocation = struct {
     pointer: usize,
 
-    pub fn format(codeloc: CodeLocation, fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = opt;
-
+    pub fn format(codeloc: CodeLocation, writer: *std.Io.Writer) !void {
         var iter = multi_tasking.processIterator();
         while (iter.next()) |proc| {
             const process_memory = proc.executable_memory orelse continue;
@@ -601,7 +605,7 @@ pub const CodeLocation = struct {
 };
 
 pub fn fmtCodeLocation(addr: usize) CodeLocation {
-    return CodeLocation{ .pointer = addr };
+    return .{ .pointer = addr };
 }
 
 pub fn halt() noreturn {
@@ -655,9 +659,9 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
     const current_thread = scheduler.Thread.current();
 
     if (maybe_return_address) |return_address| {
-        Debug.print("    panic return address: {}\r\n\r\n", .{fmtCodeLocation(return_address)});
+        Debug.print("    panic return address: {f}\r\n\r\n", .{fmtCodeLocation(return_address)});
     }
-    Debug.print(" function return address: {}\r\n\r\n", .{fmtCodeLocation(@returnAddress())});
+    Debug.print(" function return address: {f}\r\n\r\n", .{fmtCodeLocation(@returnAddress())});
 
     if (maybe_error_trace) |error_trace| {
         Debug.write("error return trace:\r\n");
@@ -724,7 +728,7 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
         var index: usize = 0;
         var it = std.debug.StackIterator.init(@returnAddress(), null);
         while (it.next()) |addr| : (index += 1) {
-            Debug.print("{d: >4}: {}\r\n", .{ index, fmtCodeLocation(addr) });
+            Debug.print("{d: >4}: {f}\r\n", .{ index, fmtCodeLocation(addr) });
 
             // if (current_thread) |thread| {
             //     if (thread.process) |proc| {

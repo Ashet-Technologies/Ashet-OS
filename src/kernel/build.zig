@@ -104,7 +104,7 @@ pub fn build(b: *std.Build) void {
     const xcvt_mod = xcvt_dep.module("cvt");
     const shimizu_mod = shimizu_dep.module("shimizu");
     const wayland_protocols_mod = shimizu_dep.module("wayland-protocols");
-    const zig_mod = zigx_dep.module("x");
+    const zig_mod = zigx_dep.module("x11");
     const expcard_mod = expcard_dep.module("expcard");
 
     // Build:
@@ -266,19 +266,21 @@ pub fn build(b: *std.Build) void {
 
     const kernel_exe = b.addExecutable(.{
         .name = "kernel",
-        .root_source_file = start_file,
-        .target = kernel_target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = start_file,
+            .target = kernel_target,
+            .optimize = optimize,
+        }),
     });
 
     if (machine_id == .@"arm-ashet-hc" and optimize == .Debug) {
         std.debug.print("arm-ashet-hc has no C sanitization enabled in Debug mode!\nSee https://github.com/ziglang/zig/issues/23052 and https://github.com/ziglang/zig/issues/23216 for more details!\n", .{});
-        kernel_exe.root_module.sanitize_c = false;
+        kernel_exe.root_module.sanitize_c = .off;
     }
 
     if (kernel_target.result.cpu.arch.isThumb()) {
         // Disable LTO on arm as it fails hard on the linker:
-        kernel_exe.want_lto = false;
+        kernel_exe.lto = .none;
     }
 
     kernel_exe.step.dependOn(machine_info_module.root_source_file.?.generated.file.step);
@@ -508,35 +510,36 @@ fn renderMachineInfo(
     // machine_spec: *const build_targets.MachineSpec,
     // platform_spec: *const build_targets.PlatformSpec,
 ) ![]const u8 {
-    var stream = std.ArrayList(u8).init(b.allocator);
+    var stream: std.Io.Writer.Allocating = .init(b.allocator);
     defer stream.deinit();
 
-    const writer = stream.writer();
+    const writer = &stream.writer;
 
     try writer.writeAll("//! This is a machine-generated description of the Ashet OS target machine.\n\n");
 
-    try writer.print("pub const machine_id = .{};\n", .{
+    try writer.print("pub const machine_id = .{f};\n", .{
         std.zig.fmtId(@tagName(machine_id)),
     });
-    try writer.print("pub const machine_name = \"{}\";\n", .{
-        std.zig.fmtEscapes(machine_id.get_display_name()),
+    try writer.print("pub const machine_name = \"{f}\";\n", .{
+        std.zig.fmtString(machine_id.get_display_name()),
     });
-    try writer.print("pub const platform_id = .{};\n", .{
+    try writer.print("pub const platform_id = .{f};\n", .{
         std.zig.fmtId(@tagName(platform_id)),
     });
-    try writer.print("pub const platform_name = \"{}\";\n", .{
-        std.zig.fmtEscapes(platform_id.get_display_name()),
+    try writer.print("pub const platform_name = \"{f}\";\n", .{
+        std.zig.fmtString(platform_id.get_display_name()),
     });
 
     return try stream.toOwnedSlice();
 }
 
 fn serialize_patches(b: *std.Build, patches: []const regz.patch.Patch) []const u8 {
-    var buf = std.ArrayList(u8).init(b.allocator);
+    var buf: std.Io.Writer.Allocating = .init(b.allocator);
+    defer buf.deinit();
 
     for (patches) |patch| {
-        std.json.stringify(patch, .{}, buf.writer()) catch @panic("OOM");
-        buf.writer().writeByte('\n') catch @panic("OOM");
+        std.json.Stringify.value(patch, .{}, &buf.writer) catch @panic("OOM");
+        buf.writer.writeByte('\n') catch @panic("OOM");
     }
 
     return buf.toOwnedSlice() catch @panic("OOM");

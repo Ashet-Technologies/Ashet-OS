@@ -178,5 +178,5 @@ fn volatileRead(ptr: *volatile u16) u16 {
 }
 
 inline fn memorySideEffects() void {
-    asm volatile ("" ::: "memory");
+    asm volatile ("" ::: .{ .memory = true });
 }

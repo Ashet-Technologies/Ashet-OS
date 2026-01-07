@@ -282,7 +282,7 @@ noinline fn dma_timeout(mask: u16) void {
 
 var dma_clicks: u32 = 0;
 
-noinline fn dma_irq_handler() linksection(".sram.bank3") callconv(.C) void {
+noinline fn dma_irq_handler() linksection(".sram.bank3") callconv(.c) void {
     @setRuntimeSafety(false);
 
     dma_clicks += 1;

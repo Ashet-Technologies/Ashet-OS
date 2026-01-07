@@ -335,7 +335,7 @@ fn render_example_image(path: []const u8, overdraw_path: ?[]const u8, sequence_p
 }
 
 fn verify_encoder_decoder(allocator: std.mem.Allocator) !void {
-    var rand_engine = std.rand.DefaultPrng.init(0x1337);
+    var rand_engine = std.Random.DefaultPrng.init(0x1337);
     const rng = rand_engine.random();
 
     const rand_buffer = try allocator.alloc(u8, 8192);
@@ -347,10 +347,10 @@ fn verify_encoder_decoder(allocator: std.mem.Allocator) !void {
     }
 
     const encoded_cmd_stream = blk: {
-        var stream = std.ArrayList(u8).init(allocator);
+        var stream: std.Io.Writer.Allocating = .init(allocator);
         defer stream.deinit();
 
-        var encoder = agp.encoder(stream.writer());
+        var encoder = agp.encoder(&stream.writer);
 
         for (input_cmd_stream) |cmd| {
             try encoder.encode(cmd);
@@ -368,7 +368,7 @@ fn verify_encoder_decoder(allocator: std.mem.Allocator) !void {
 
     {
         var fbs = std.io.fixedBufferStream(encoded_cmd_stream);
-        var decoder = agp.decoder(fbs.reader());
+        var decoder = agp.decoder(allocator, fbs.reader());
         for (output_cmd_stream) |*cmd| {
             cmd.* = if (try decoder.next()) |in|
                 in
@@ -384,11 +384,11 @@ fn verify_encoder_decoder(allocator: std.mem.Allocator) !void {
     }
 }
 
-fn rand_cmd(rng: std.rand.Random, buffer_range: []const u8) agp.Command {
+fn rand_cmd(rng: std.Random, buffer_range: []const u8) agp.Command {
     const cmd_id = rng.enumValue(agp.CommandByte);
     switch (cmd_id) {
         inline else => |tag| {
-            const Cmd = agp.Command.type_map.get(tag);
+            const Cmd = agp.Command.type_map(tag);
 
             var cmd: Cmd = undefined;
 
@@ -400,7 +400,7 @@ fn rand_cmd(rng: std.rand.Random, buffer_range: []const u8) agp.Command {
                         break :blk buffer_range[start..end];
                     },
 
-                    agp.ColorIndex => @enumFromInt(rng.int(u8)),
+                    agp.Color => @bitCast(rng.int(u8)),
                     agp.Font => @ptrFromInt(rng.int(usize)),
                     agp.Framebuffer => @ptrFromInt(rng.int(usize)),
                     agp.Bitmap => @ptrFromInt(rng.int(usize)),

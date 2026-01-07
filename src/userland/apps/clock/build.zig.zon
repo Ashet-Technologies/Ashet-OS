@@ -1,6 +1,8 @@
 .{
-    .name = "clock",
+    .name = .clock,
     .version = "0.1.0",
+    .fingerprint = 0xbe7bbe9280beea7b,
+
     .paths = .{ "build.zig", "build.zig.zon", "clock.zig" },
     .dependencies = .{
         .AshetOS = .{

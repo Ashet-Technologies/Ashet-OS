@@ -11,7 +11,7 @@
 const std = @import("std");
 const ashet = @import("ashet");
 
-pub usingnamespace ashet.core;
+pub const std_options = ashet.core.std_options;
 
 // TODO: Resolve "pool.ntp.org" as soon as we have proper DNS support!
 // A pool.ntp.org. 2m06s   131.188.3.221
@@ -57,13 +57,13 @@ pub fn main() !void {
             std.log.info("  peer clock stratum     = .{s}", .{@tagName(response.peer_clock_stratum)});
             std.log.info("  polling interval       = {}", .{response.polling_interval});
             std.log.info("  peer clock precision   = {}", .{response.peer_clock_precision});
-            std.log.info("  root delay             = {d}", .{response.root_delay});
-            std.log.info("  root dispersion        = {d}", .{response.root_dispersion});
+            std.log.info("  root delay             = {f}", .{response.root_delay});
+            std.log.info("  root dispersion        = {f}", .{response.root_dispersion});
             std.log.info("  reference id           = {d}", .{response.reference_id});
-            std.log.info("  reference timestamp    = {d}", .{response.reference_timestamp});
-            std.log.info("  origin timestamp       = {d}", .{response.origin_timestamp});
-            std.log.info("  receive timestamp      = {d}", .{response.receive_timestamp});
-            std.log.info("  transmit timestamp     = {d}", .{response.transmit_timestamp});
+            std.log.info("  reference timestamp    = {f}", .{response.reference_timestamp});
+            std.log.info("  origin timestamp       = {f}", .{response.origin_timestamp});
+            std.log.info("  receive timestamp      = {f}", .{response.receive_timestamp});
+            std.log.info("  transmit timestamp     = {f}", .{response.transmit_timestamp});
             std.log.info("", .{});
 
             // 1 Jan 1970
@@ -201,8 +201,8 @@ const NtpShort = packed struct(u32) {
         return secs + frac / std.math.maxInt(u16);
     }
 
-    pub fn format(ts: NtpShort, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-        try std.fmt.formatType(ts.get_seconds(), fmt, opt, writer, 1);
+    pub fn format(ts: NtpShort, writer: *std.Io.Writer) !void {
+        try writer.print("{}", .{ts.get_seconds()});
     }
 };
 
@@ -219,7 +219,7 @@ const NtpTimestamp = extern struct {
         return secs + frac / std.math.maxInt(u32);
     }
 
-    pub fn format(ts: NtpTimestamp, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-        try std.fmt.formatType(ts.get_seconds(), fmt, opt, writer, 1);
+    pub fn format(ts: NtpTimestamp, writer: *std.Io.Writer) !void {
+        try writer.print("{}", .{ts.get_seconds()});
     }
 };

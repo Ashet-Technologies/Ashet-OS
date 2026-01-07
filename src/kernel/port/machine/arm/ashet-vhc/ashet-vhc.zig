@@ -126,7 +126,7 @@ const systick = struct {
         });
     }
 
-    fn increment_clock_irq() callconv(.C) void {
+    fn increment_clock_irq() callconv(.c) void {
         total_count_ms +%= 1;
     }
 };

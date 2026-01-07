@@ -23,9 +23,7 @@ pub const SystemResource = struct {
         return @alignCast(@fieldParentPtr("system_resource", src));
     }
 
-    pub fn format(src: *const SystemResource, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(src: *const SystemResource, writer: *std.Io.Writer) !void {
         try writer.print("SystemResource(0x{X:0>8}, type={s}, owners={d})", .{
             @intFromPtr(src),
             @tagName(src.type),

@@ -53,10 +53,7 @@ pub fn init(offset: usize, length: usize) error{InvalidDevice}!CFI_NOR_Flash {
 const FmtCursedVoltage = struct {
     value: u8,
 
-    pub fn format(volts: FmtCursedVoltage, fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = opt;
-
+    pub fn format(volts: FmtCursedVoltage, writer: *std.Io.Writer) !void {
         if (volts.value == 0) {
             try writer.writeAll("-");
         } else {
@@ -72,7 +69,7 @@ const FmtCursedVoltage = struct {
 /// low nibble is the tenths digit, bcd encoded
 /// high nibble is the voltage, integer encoded
 fn fmtCursedVoltage(value: u8) FmtCursedVoltage {
-    return FmtCursedVoltage{ .value = value };
+    return .{ .value = value };
 }
 
 pub fn CfiDeviceImpl(comptime InterfaceWidth: type) type {

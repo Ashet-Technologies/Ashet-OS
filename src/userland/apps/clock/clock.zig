@@ -5,7 +5,7 @@ const Color = ashet.abi.Color;
 const Size = ashet.abi.Size;
 const Point = ashet.abi.Point;
 
-pub usingnamespace ashet.core;
+pub const std_options = ashet.core.std_options;
 
 const window_size = Size.new(47, 47);
 
@@ -19,7 +19,7 @@ pub fn main() !void {
 
     const desktop = try argv[1].value.resource.cast(.desktop);
 
-    std.log.info("using desktop {}", .{desktop});
+    std.log.info("using desktop {f}", .{desktop});
 
     const window = try ashet.gui.create_window(
         desktop,

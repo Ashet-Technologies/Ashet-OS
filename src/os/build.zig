@@ -7,17 +7,17 @@ const kernel_package = @import("kernel");
 const Machine = kernel_package.Machine;
 
 const app_packages = [_][]const u8{
-    "hello_world",
-    "hello_gui",
-    "gui_debugger",
-    "clock",
-    "paint",
+    // "hello_world",
+    // "hello_gui",
+    // "gui_debugger",
+    // "clock",
+    // "paint",
     "init",
-    "test_behaviour",
-    "desktop_classic",
-    "dungeon",
-    "ntp_client",
-    "i2c_scan",
+    // "test_behaviour",
+    // "desktop_classic",
+    // "dungeon",
+    // "ntp_client",
+    // "i2c_scan",
     // TODO: Include "wiki" again,
 };
 
@@ -38,7 +38,8 @@ pub fn build(b: *std.Build) void {
     });
     const assets_dep = b.dependency("assets", .{});
 
-    const disk_image_dep = b.dependency("dimmer", .{ .release = true });
+    // const disk_image_dep = b.dependency("dimmer", .{ .release = true });
+    const disk_image_dep = b.dependency("dimmer", .{});
 
     const limine_dep = b.dependency("zig_limine_install", .{ .target = b.graph.host, .optimize = .ReleaseSafe });
 

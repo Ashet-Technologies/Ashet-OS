@@ -132,7 +132,7 @@ fn read_block(dri: *Driver, block: u64, buffer: []u8) ReadError!void {
     device.vq.waitSettled();
 
     // Add memory "fence" to notify compiler that buffer has changed
-    asm volatile ("" ::: "memory");
+    asm volatile ("" ::: .{ .memory = true });
 
     std.debug.assert(footer.status != .initial);
 

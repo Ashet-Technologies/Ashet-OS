@@ -229,7 +229,7 @@ fn await_completion_internal(context: *Context, completed: []?*ARC, mode: AwaitM
                 arc.* = undefined;
             }
 
-            logger.debug("await completion from {?}", .{awaiter_node.data.filter_thread});
+            logger.debug("await completion from {?f}", .{awaiter_node.data.filter_thread});
 
             var count: usize = 0;
             gather_loop: while (count < completed.len) {
@@ -242,7 +242,7 @@ fn await_completion_internal(context: *Context, completed: []?*ARC, mode: AwaitM
                     completed[count] = call.arc;
                     count += 1;
 
-                    logger.debug("returning {s} to userland from {}", .{ @tagName(call.arc.type), thread });
+                    logger.debug("returning {s} to userland from {f}", .{ @tagName(call.arc.type), thread });
 
                     call.destroy();
                 } else {
@@ -261,7 +261,7 @@ fn await_completion_internal(context: *Context, completed: []?*ARC, mode: AwaitM
                             break :gather_loop,
                     }
 
-                    logger.debug("suspend {} and wait for completion...", .{thread});
+                    logger.debug("suspend {f} and wait for completion...", .{thread});
 
                     {
                         context.awaiters.append(&awaiter_node);
@@ -271,7 +271,7 @@ fn await_completion_internal(context: *Context, completed: []?*ARC, mode: AwaitM
                         thread.@"suspend"();
                     }
 
-                    logger.debug("resumed {} from awaiting completion", .{thread});
+                    logger.debug("resumed {f} from awaiting completion", .{thread});
                 }
             }
             logger.debug("await yielded {} items", .{count});
@@ -729,7 +729,7 @@ pub fn enqueue_background_task(call: *AsyncCall, handler: *const Background_Work
     work_queues[i].enqueue(call, @constCast(handler));
 }
 
-fn background_worker_loop(context: ?*anyopaque) callconv(.C) u32 {
+fn background_worker_loop(context: ?*anyopaque) callconv(.c) u32 {
     const q: *WorkQueue = @ptrCast(@alignCast(context.?));
 
     logger.info("overlapped background worker ready.", .{});
@@ -740,7 +740,7 @@ fn background_worker_loop(context: ?*anyopaque) callconv(.C) u32 {
         while (q.dequeue()) |work_item| {
             const call, const ctx = work_item;
 
-            const worker: *const Background_Worker = @alignCast(@ptrCast(ctx));
+            const worker: *const Background_Worker = @ptrCast(@alignCast(ctx));
 
             logger.debug("execute overlapped call .{s}", .{@tagName(call.arc.type)});
             worker(&overlapped_context, call);

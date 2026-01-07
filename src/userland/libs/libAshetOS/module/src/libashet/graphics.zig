@@ -59,15 +59,11 @@ pub fn render(target: Framebuffer, command_sequence: []const u8, auto_invalidate
 }
 
 pub const CommandQueue = struct {
-    const WriteError = error{OutOfMemory};
-    const Writer = std.io.Writer(*CommandQueue, WriteError, raw_append);
-    const Encoder = agp.Encoder(Writer);
-
-    data: std.ArrayList(u8),
+    data: std.Io.Writer.Allocating,
 
     pub fn init(allocator: std.mem.Allocator) !CommandQueue {
         return .{
-            .data = std.ArrayList(u8).init(allocator),
+            .data = .init(allocator),
         };
     }
 
@@ -81,7 +77,7 @@ pub const CommandQueue = struct {
         reset: bool = true,
     };
     pub fn submit(cq: *CommandQueue, fb: ashet.abi.Framebuffer, options: SubmitOptions) !void {
-        try render(fb, cq.data.items, options.mode == .invalidate);
+        try render(fb, cq.data.written(), options.mode == .invalidate);
         if (options.reset)
             cq.reset();
     }
@@ -90,13 +86,8 @@ pub const CommandQueue = struct {
         cq.data.shrinkRetainingCapacity(0);
     }
 
-    fn raw_append(cq: *CommandQueue, data: []const u8) WriteError!usize {
-        try cq.data.appendSlice(data);
-        return data.len;
-    }
-
-    fn encoder(cq: *CommandQueue) Encoder {
-        return .{ .writer = .{ .context = cq } };
+    fn encoder(cq: *CommandQueue) agp.Encoder {
+        return agp.encoder(&cq.data.writer);
     }
 
     pub fn encode(cq: *CommandQueue, cmd: agp.Command) !void {
@@ -220,7 +211,7 @@ pub fn load_bitmap_file(allocator: std.mem.Allocator, file: ashet.fs.File) !Bitm
 pub fn load_bitmap_file_at(allocator: std.mem.Allocator, file: ashet.fs.File, abs_offset: u64) !Bitmap {
     const header = try abm.read_header(file, abs_offset);
 
-    const buffer = try allocator.alignedAlloc(Color, 4, @as(u32, header.width) * header.height);
+    const buffer = try allocator.alignedAlloc(Color, .@"4", @as(u32, header.width) * header.height);
     errdefer allocator.free(buffer);
 
     try abm.read_pixels(file, abs_offset, header, .{
@@ -253,7 +244,7 @@ pub const abm = struct {
             @field(header, fld.name) = std.mem.littleToNative(fld.type, @field(header, fld.name));
         }
 
-        logger.info("header: 0x{X:0>8} size={}x{}, palette={}, key={}, flags={}", .{
+        logger.info("header: 0x{X:0>8} size={}x{}, palette={}, key={f}, flags={}", .{
             header.magic,
             header.width,
             header.height,

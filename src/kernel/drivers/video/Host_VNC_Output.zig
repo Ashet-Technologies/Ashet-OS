@@ -31,7 +31,7 @@ pub fn init(
 ) !Host_VNC_Output {
     const fb = try std.heap.page_allocator.alignedAlloc(
         Color,
-        ashet.memory.page_size,
+        .fromByteUnits(ashet.memory.page_size),
         2 * @as(u32, width) * @as(u32, height),
     );
     errdefer std.heap.page_allocator.free(fb);

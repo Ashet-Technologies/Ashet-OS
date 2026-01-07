@@ -161,55 +161,93 @@ const RTC_Registers = extern struct {
         return 10 * (bcd >> 4) + (bcd & 0x0F);
     }
 
-    pub fn format(regs: RTC_Registers, comptime fmt_str: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        const Format = enum { T, D, DT, any };
-        const fmt: Format = if (fmt_str.len == 0)
-            .any
-        else
-            std.meta.stringToEnum(Format, fmt_str) orelse @compileError("fmt must be {T}, {D}, {DT} or {}");
+    pub const Format = enum { T, D, DT };
+    pub fn fmt(regs: RTC_Registers, f: Format) RegFmt {
+        return .{ .regs = regs, .format = f };
+    }
 
+    const RegFmt = struct {
+        regs: RTC_Registers,
+        fmt: Format,
+
+        pub fn format(self: RegFmt, writer: *std.Io.Writer) !void {
+            if (self.regs.seconds.clock == .halted) {
+                try writer.writeAll("[STOPPED]");
+                return;
+            }
+
+            if (self.fmt != .T) {
+                try writer.print("{X:0>2}.{X:0>2}.20{X:0>2}/{d}", .{
+                    self.regs.date,
+                    self.regs.month,
+                    self.regs.year,
+                    self.regs.day_of_week,
+                });
+            }
+
+            if (self.fmt != .D) {
+                if (self.fmt != .T) {
+                    try writer.writeAll(" ");
+                }
+
+                switch (self.regs.hours.control.mode) {
+                    .@"24h" => try writer.print("{X:0>2}:{X:0>2}:{X:0>2}", .{
+                        self.regs.hours.@"24h".hour,
+                        self.regs.minutes,
+                        self.regs.seconds.seconds_bcd,
+                    }),
+                    .@"am/pm" => try writer.print("{X:0>2} {s}:{X:0>2}:{X:0>2}", .{
+                        self.regs.hours.@"am/pm".hour,
+                        @tagName(self.regs.hours.@"am/pm".half),
+                        self.regs.minutes,
+                        self.regs.seconds.seconds_bcd,
+                    }),
+                }
+            }
+
+            if (self.fmt == .any) {
+                try writer.print("; SWE={}; OUT={}; RS={s} ", .{
+                    self.regs.control.square_wave_enable,
+                    self.regs.control.output_control,
+                    @tagName(self.regs.control.rate_select),
+                });
+            }
+        }
+    };
+
+    pub fn format(regs: RTC_Registers, writer: *std.Io.Writer) !void {
         if (regs.seconds.clock == .halted) {
             try writer.writeAll("[STOPPED]");
             return;
         }
 
-        if (fmt != .T) {
-            try writer.print("{X:0>2}.{X:0>2}.20{X:0>2}/{d}", .{
-                regs.date,
-                regs.month,
-                regs.year,
-                regs.day_of_week,
-            });
+        try writer.print("{X:0>2}.{X:0>2}.20{X:0>2}/{d}", .{
+            regs.date,
+            regs.month,
+            regs.year,
+            regs.day_of_week,
+        });
+
+        try writer.writeAll(" ");
+
+        switch (regs.hours.control.mode) {
+            .@"24h" => try writer.print("{X:0>2}:{X:0>2}:{X:0>2}", .{
+                regs.hours.@"24h".hour,
+                regs.minutes,
+                regs.seconds.seconds_bcd,
+            }),
+            .@"am/pm" => try writer.print("{X:0>2} {s}:{X:0>2}:{X:0>2}", .{
+                regs.hours.@"am/pm".hour,
+                @tagName(regs.hours.@"am/pm".half),
+                regs.minutes,
+                regs.seconds.seconds_bcd,
+            }),
         }
 
-        if (fmt != .D) {
-            if (fmt != .T) {
-                try writer.writeAll(" ");
-            }
-
-            switch (regs.hours.control.mode) {
-                .@"24h" => try writer.print("{X:0>2}:{X:0>2}:{X:0>2}", .{
-                    regs.hours.@"24h".hour,
-                    regs.minutes,
-                    regs.seconds.seconds_bcd,
-                }),
-                .@"am/pm" => try writer.print("{X:0>2} {s}:{X:0>2}:{X:0>2}", .{
-                    regs.hours.@"am/pm".hour,
-                    @tagName(regs.hours.@"am/pm".half),
-                    regs.minutes,
-                    regs.seconds.seconds_bcd,
-                }),
-            }
-        }
-
-        if (fmt == .any) {
-            try writer.print("; SWE={}; OUT={}; RS={s} ", .{
-                regs.control.square_wave_enable,
-                regs.control.output_control,
-                @tagName(regs.control.rate_select),
-            });
-        }
-
-        _ = options;
+        try writer.print("; SWE={}; OUT={}; RS={s} ", .{
+            regs.control.square_wave_enable,
+            regs.control.output_control,
+            @tagName(regs.control.rate_select),
+        });
     }
 };

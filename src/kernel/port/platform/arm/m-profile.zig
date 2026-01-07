@@ -64,7 +64,7 @@ pub inline fn bkpt(comptime id: u32) void {
 }
 
 pub const start = struct {
-    extern fn ashet_kernelMain() callconv(.C) noreturn;
+    extern fn ashet_kernelMain() callconv(.c) noreturn;
 
     export fn _start() noreturn {
         // Force instantiation of vector table:
@@ -121,9 +121,9 @@ pub const start = struct {
         xpsr: u32,
     };
 
-    fn make_fault_handler(comptime handler: *const fn (context: *ContextStateFrame) callconv(.C) void) *const fn () callconv(.C) void {
+    fn make_fault_handler(comptime handler: *const fn (context: *ContextStateFrame) callconv(.c) void) *const fn () callconv(.c) void {
         return struct {
-            fn invoke() callconv(.C) void {
+            fn invoke() callconv(.c) void {
                 // See this article on how we use that:
                 // https://interrupt.memfault.com/blog/cortex-m-hardfault-debug
                 asm volatile (
@@ -145,7 +145,7 @@ pub const start = struct {
         }.invoke;
     }
 
-    fn default_hard_fault_handler(context: *ContextStateFrame) callconv(.C) void {
+    fn default_hard_fault_handler(context: *ContextStateFrame) callconv(.c) void {
         const hfsr = peripherals.system_control_block.hfsr.read();
 
         logger.err("Hard Fault:", .{});
@@ -168,7 +168,7 @@ pub const start = struct {
         @panic("hard fault");
     }
 
-    fn default_bus_fault_handler(context: *ContextStateFrame) callconv(.C) void {
+    fn default_bus_fault_handler(context: *ContextStateFrame) callconv(.c) void {
         const bfsr = peripherals.system_control_block.bfsr.read();
 
         logger.err("Bus Fault:", .{});
@@ -198,7 +198,7 @@ pub const start = struct {
         @panic("bus fault");
     }
 
-    fn default_usage_fault_handler(context: *ContextStateFrame) callconv(.C) void {
+    fn default_usage_fault_handler(context: *ContextStateFrame) callconv(.c) void {
         const ufsr = peripherals.system_control_block.ufsr.read();
 
         logger.err("Usage Fault:", .{});
@@ -226,7 +226,7 @@ pub const start = struct {
 
     fn panic_handler(comptime msg: []const u8) FunctionPointer {
         return struct {
-            fn do_panic() callconv(.C) noreturn {
+            fn do_panic() callconv(.c) noreturn {
                 ashet.Debug.println("panic: {s}", .{msg});
                 @panic(msg);
             }
@@ -236,12 +236,12 @@ pub const start = struct {
     export fn hang() noreturn {
         while (true) {
             // burn cycles:
-            asm volatile ("" ::: "memory");
+            asm volatile ("" ::: .{ .memory = true });
         }
     }
 };
 
-pub const FunctionPointer = *const fn () callconv(.C) void;
+pub const FunctionPointer = *const fn () callconv(.c) void;
 
 pub fn LeftAlignedRegister(comptime T: type) type {
     const align_bits: u5 = 32 - @bitSizeOf(T);
@@ -431,23 +431,14 @@ pub const peripherals = struct {
                 _,
             },
 
-            pub fn format(self: @This(), comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-                _ = options;
+            const Cpuid = @This();
+            const CpuidFmt = struct {
+                    cpuid: Cpuid,
+                    fmt: enum {hex, string, fields},
 
-                const fmt_ok = (fmt.len == 1) and switch (fmt[0]) {
-                    'n', 's', 'f' => true,
-                    else => false,
-                };
-                if (!fmt_ok)
-                    @compileError(
-                        \\Invalid format specifier for Arm CPUID. Legal options are:
-                        \\ - 'n': Numeric display as a hexadecimal value
-                        \\ - 's': Displays as a string representation
-                        \\ - 'f': Displays as separate fields
-                    );
-
-                switch (fmt[0]) {
-                    's' => {
+                    pub fn format(self: CpuidFmt, writer: *std.Io.Writer) !void {
+                        switch (self.fmt) {
+                    .string => {
                         try writer.print("{s} {s} {d}n{d}n", .{
                             @tagName(self.implementer),
                             @tagName(self.part_number),
@@ -455,21 +446,35 @@ pub const peripherals = struct {
                             self.revision,
                         });
                     },
-                    'n' => {
-                        try writer.print("CPUID(0x{X:0>8})", .{@as(u32, @bitCast(self))});
+                    .hex => {
+                        try writer.print("CPUID(0x{X:0>8})", .{@as(u32, @bitCast(self.cpuid))});
                     },
-                    'f' => {
-                        try writer.print("CPUID()", .{
-                            self.implementer,
-                            self.part_number,
-                            self.variant,
-                            self.revision,
+                    .fields => {
+                        try writer.print("CPUID({}, {}, {}, {})", .{
+                            self.cpuid.implementer,
+                            self.cpuid.part_number,
+                            self.cpuid.variant,
+                            self.cpuid.revision,
                         });
                     },
 
-                    else => unreachable,
                 }
+                    }
+                };
+            
+
+            pub fn fmtHex(self: @This()) CpuidFmt {
+                return .{.cpuid = self, .fmt = .hex};
             }
+
+            pub fn fmtString(self: @This()) CpuidFmt {
+                return .{.cpuid = self, .fmt = .string};
+            }
+
+            pub fn fmtFields(self: @This()) CpuidFmt {
+                return .{.cpuid = self, .fmt = .fields};
+            }
+            
         }, .{ .access = .read_only });
 
         /// Interrupt Control and State Register

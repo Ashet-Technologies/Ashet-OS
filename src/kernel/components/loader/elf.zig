@@ -17,7 +17,7 @@ fn missingSection(name: []const u8) error{BadExecutable} {
     return error.BadExecutable;
 }
 
-fn dynamic_resolver(a: u32, b: u32, c: u32, d: u32) callconv(.C) void {
+fn dynamic_resolver(a: u32, b: u32, c: u32, d: u32) callconv(.c) void {
     logger.info("a = {}", .{a});
     logger.info("b = {}", .{b});
     logger.info("c = {}", .{c});
@@ -214,7 +214,7 @@ pub fn load(file: *libashet.fs.File, allocator: std.mem.Allocator) !loader.Loade
             const PltGot = extern struct {
                 unused: u32,
                 arg: u32,
-                loader: *const fn (u32, u32, u32, u32) callconv(.C) void,
+                loader: *const fn (u32, u32, u32, u32) callconv(.c) void,
             };
 
             var pltgot_val: *PltGot = @ptrFromInt(process_base + pltgot);

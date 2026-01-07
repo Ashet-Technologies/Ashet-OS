@@ -52,7 +52,7 @@ pub const Desktop = struct {
     name: [:0]const u8,
 
     window_data_size: usize,
-    handle_event: *const fn (ashet.abi.Desktop, *const ashet.abi.DesktopEvent) callconv(.C) void,
+    handle_event: *const fn (ashet.abi.Desktop, *const ashet.abi.DesktopEvent) callconv(.c) void,
 
     pub fn create(
         server_process: *ashet.multi_tasking.Process,
@@ -233,14 +233,14 @@ pub const Window = struct {
         };
         errdefer window.associated_memory.deinit();
 
-        window.window_data = window.associated_memory.allocator().alignedAlloc(u8, 16, desktop.window_data_size) catch return error.SystemResources;
+        window.window_data = window.associated_memory.allocator().alignedAlloc(u8, .@"16", desktop.window_data_size) catch return error.SystemResources;
         @memset(window.window_data, 0);
 
         logger.info("create window ({},{})", .{
             window.max_size.width, window.max_size.height,
         });
 
-        window.pixels = window.associated_memory.allocator().alignedAlloc(ashet.abi.Color, 4, @as(u32, window.max_size.width) * window.max_size.height) catch return error.SystemResources;
+        window.pixels = window.associated_memory.allocator().alignedAlloc(ashet.abi.Color, .@"4", @as(u32, window.max_size.width) * window.max_size.height) catch return error.SystemResources;
 
         window.title = window.associated_memory.allocator().dupeZ(u8, title) catch return error.SystemResources;
 

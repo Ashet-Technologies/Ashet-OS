@@ -365,8 +365,12 @@ pub const Process = struct {
 
         process.name = if (options.name) |name|
             try process.memory_arena.allocator().dupeZ(u8, name)
-        else
-            try std.fmt.allocPrintZ(process.memory_arena.allocator(), "Process(0x{X:0>8})", .{@intFromPtr(process)});
+        else blk: {
+            var writer: std.Io.Writer.Allocating = .init(process.memory_arena.allocator());
+            defer writer.deinit();
+            try writer.writer.print("Process(0x{X:0>8})", .{@intFromPtr(process)});
+            break :blk try writer.toOwnedSliceSentinel(0);
+        };
 
         // we do actually own ourselves (*_*)
         const raw_handle = try ashet.resources.add_to_process(process, &process.system_resource);
@@ -375,8 +379,8 @@ pub const Process = struct {
         process_list.append(&process.list_item);
         errdefer process_list.remove(&process.list_item);
 
-        logger.debug("create(\"{}\") => {}", .{
-            std.zig.fmtEscapes(process.name),
+        logger.debug("create(\"{f}\") => {f}", .{
+            std.zig.fmtString(process.name),
             process,
         });
 
@@ -388,7 +392,7 @@ pub const Process = struct {
 
     /// Kills the thread and deletes it afterwards. This will invalidate all resource handles!
     fn _internal_destroy(proc: *Process) void {
-        logger.debug("destroy({})", .{proc});
+        logger.debug("destroy({f})", .{proc});
 
         if (!proc.is_zombie()) {
             proc.kill(ExitCode.killed);
@@ -502,15 +506,13 @@ pub const Process = struct {
         return proc.memory_arena.allocator();
     }
 
-    pub fn format(proc: *const Process, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(proc: *const Process, writer: *std.Io.Writer) !void {
         if (proc.is_zombie()) {
-            try writer.print("Process(0x{X:0>8}, \"{}\", <zombie>)", .{ @intFromPtr(proc), std.zig.fmtEscapes(proc.name) });
+            try writer.print("Process(0x{X:0>8}, \"{f}\", <zombie>)", .{ @intFromPtr(proc), std.zig.fmtString(proc.name) });
         } else {
-            try writer.print("Process(0x{X:0>8}, \"{}\", base=0x{X:0>8})", .{
+            try writer.print("Process(0x{X:0>8}, \"{f}\", base=0x{X:0>8})", .{
                 @intFromPtr(proc),
-                std.zig.fmtEscapes(proc.name),
+                std.zig.fmtString(proc.name),
                 if (proc.executable_memory) |mem| @intFromPtr(mem.ptr) else 0,
             });
         }
@@ -544,12 +546,12 @@ pub fn debug_dump() void {
     while (iter) |proc_node| : (iter = proc_node.next) {
         const proc: *Process = @fieldParentPtr("list_item", proc_node);
 
-        logger.info("- {}", .{proc});
+        logger.info("- {f}", .{proc});
 
         for (0..proc.resource_handles.bit_map.capacity()) |i| {
             if (proc.resource_handles.bit_map.isSet(i) == false) {
                 const item = proc.resource_handles.owners.at(i);
-                logger.info("  - {} => {}", .{
+                logger.info("  - {f} => {f}", .{
                     item.data.handle,
                     item.data.resource,
                 });

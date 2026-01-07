@@ -1,7 +1,7 @@
 const std = @import("std");
 const ashet = @import("ashet");
 
-pub usingnamespace ashet.core;
+pub const std_options = ashet.core.std_options;
 
 const Size = ashet.abi.Size;
 const Point = ashet.abi.Point;
@@ -19,7 +19,7 @@ pub fn main() !void {
 
     const desktop = try argv[1].value.resource.cast(.desktop);
 
-    std.log.info("using desktop {}", .{desktop});
+    std.log.info("using desktop {f}", .{desktop});
 
     const window = try ashet.gui.create_window(
         desktop,
@@ -32,12 +32,12 @@ pub fn main() !void {
     );
     defer window.destroy_now();
 
-    std.log.info("created window: {}", .{window});
+    std.log.info("created window: {f}", .{window});
 
     const framebuffer = try ashet.graphics.create_window_framebuffer(window);
     defer framebuffer.release();
 
-    std.log.info("created framebuffer: {}", .{framebuffer});
+    std.log.info("created framebuffer: {f}", .{framebuffer});
 
     var command_queue = try ashet.graphics.CommandQueue.init(ashet.process.mem.allocator());
     defer command_queue.deinit();
@@ -96,7 +96,7 @@ pub fn main() !void {
             },
 
             .key_press, .key_release => {
-                std.log.info("key {s}: pressed={}, usage={s}, text='{?}'", .{
+                std.log.info("key {s}: pressed={}, usage={s}, text='{?f}'", .{
                     @tagName(event.event_type)["key_".len..],
                     event.keyboard.pressed,
                     @tagName(event.keyboard.usage),

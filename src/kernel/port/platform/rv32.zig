@@ -20,7 +20,7 @@ pub const scheduler = struct {
 };
 
 pub const start = struct {
-    export fn handleTrap() align(4) callconv(.C) noreturn {
+    export fn handleTrap() align(4) callconv(.c) noreturn {
         const trap_reason = csr.ControlStatusRegister.read(.mcause);
         const trap_location = csr.ControlStatusRegister.read(.mepc);
         const trap_status = csr.ControlStatusRegister.read(.mstatus);
@@ -153,7 +153,7 @@ noinline fn readHwCounter() u64 {
         \\  sw t1, 0(%[ptr])
         :
         : [ptr] "r" (&res),
-        : "{t0}", "{t1}", "{t2}"
+        : .{ .@"{t0}" = true, .@"{t1}" = true, .@"{t2}" = true }
     );
     return res;
 }

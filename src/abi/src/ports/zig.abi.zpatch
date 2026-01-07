@@ -13,17 +13,16 @@
         return @ptrFromInt(@intFromEnum(resource));
     }
 
-    pub fn format(src: SystemResource, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = options;
-        if (fmt.len == 1 and fmt[0] == 'T') {
-            if (resources.get_type(src)) |src_type| {
-                try writer.print("SystemResource(0x{X:0>8}, type={s})", .{ @intFromEnum(src), @tagName(src_type) });
-            } else |_| {
-                try writer.print("SystemResource(0x{X:0>8}, bad handle)", .{@intFromEnum(src)});
-            }
-        } else {
-            try writer.print("SystemResource(0x{X:0>8})", .{@intFromEnum(src)});
+    pub fn formatType(src: SystemResource, writer: *std.Io.Writer) !void {
+        if (resources.get_type(src)) |src_type| {
+            try writer.print("SystemResource(0x{X:0>8}, type={s})", .{ @intFromEnum(src), @tagName(src_type) });
+        } else |_| {
+            try writer.print("SystemResource(0x{X:0>8}, bad handle)", .{@intFromEnum(src)});
         }
+    }
+
+    pub fn format(src: SystemResource, writer: *std.Io.Writer) !void {
+        try writer.print("SystemResource(0x{X:0>8})", .{@intFromEnum(src)});
     }
 </patch>
 <patch SystemResource.Type>
@@ -335,7 +334,8 @@
 <patch KeyboardModifiers>
 
     pub fn format(mods: KeyboardModifiers, writer: *std.Io.Writer) !void {
-        var strings = std.BoundedArray([]const u8, 8){};
+        var strings_buffer: [8][]const u8 = undefined;
+        var strings: std.ArrayList([]const u8) = .initBuffer(&strings_buffer);
 
         if (mods.shift) strings.appendAssumeCapacity("shift");
         if (mods.alt) strings.appendAssumeCapacity("alt");
@@ -348,9 +348,9 @@
 
         try writer.writeAll("Modifiers{");
 
-        if (strings.len > 0) {
-            try writer.writeAll(strings.buffer[0]);
-            for (strings.slice()[1..]) |item| {
+        if (strings.items.len > 0) {
+            try writer.writeAll(strings.items[0]);
+            for (strings.items[1..]) |item| {
                 try writer.writeAll(", ");
                 try writer.writeAll(item);
             }
@@ -757,44 +757,64 @@
         return @intFromEnum(a) > @intFromEnum(b);
     }
 
-    pub fn format(dur: Duration, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = options;
-        const ns = dur.to_ns();
+    pub const Unit = enum {
+        week,
+        d,
+        m,
+        h,
+        s,
+        ms,
+        us,
+        ns,
+    };
 
-        const Scale = struct {
-            unit: []const u8,
-            divider: u64,
-        };
-
-        const scales = [_]Scale{
-            .{ .unit = "week", .divider = std.time.ns_per_week },
-            .{ .unit = "d", .divider = std.time.ns_per_day },
-            .{ .unit = "m", .divider = std.time.ns_per_min },
-            .{ .unit = "h", .divider = std.time.ns_per_hour },
-            .{ .unit = "s", .divider = std.time.ns_per_s },
-            .{ .unit = "ms", .divider = std.time.ns_per_ms },
-            .{ .unit = "us", .divider = std.time.ns_per_us },
-            .{ .unit = "ns", .divider = 1 },
-        };
-
-        const selected_scale: Scale = if (fmt.len > 0)
-            comptime for (scales) |scale| {
-                if (std.mem.eql(u8, scale.unit, fmt))
-                    break scale;
-            } else @compileError(fmt ++ " is not a valid duration unit!")
-        else for (scales) |scale| {
-            if (ns >= scale.divider)
-                break scale;
-        } else scales[0];
-
-        const int_part = ns / selected_scale.divider;
-        if (selected_scale.divider > 1) {
-            const fract_part = ns % (1000 * selected_scale.divider);
-            try writer.print("{d}.{d:0>3} {s}", .{ int_part, fract_part, selected_scale.unit });
-        } else {
-            try writer.print("{d} {s}", .{ int_part, selected_scale.unit });
-        }
+    pub fn fmt(dur: Duration, unit: ?Unit) DurationFmt {
+        return .{ .dur = dur, .unit = unit };
     }
+
+    const DurationFmt = struct {
+        dur: Duration,
+        unit: ?Unit,
+
+
+        pub fn format(self: DurationFmt, writer: *std.Io.Writer) !void {
+            const ns = self.dur.to_ns();
+
+            const Scale = struct {
+                unit: Unit,
+                divider: u64,
+            };
+
+            const scales = [_]Scale{
+                .{ .unit = .week, .divider = std.time.ns_per_week },
+                .{ .unit = .d, .divider = std.time.ns_per_day },
+                .{ .unit = .m, .divider = std.time.ns_per_min },
+                .{ .unit = .h, .divider = std.time.ns_per_hour },
+                .{ .unit = .s, .divider = std.time.ns_per_s },
+                .{ .unit = .ms, .divider = std.time.ns_per_ms },
+                .{ .unit = .us, .divider = std.time.ns_per_us },
+                .{ .unit = .ns, .divider = 1 },
+            };
+
+            const selected_scale: Scale = if (self.unit) |unit|
+                for (scales) |scale| {
+                    if (scale.unit == unit)
+                        break scale;
+                }
+            else for (scales) |scale| {
+                if (ns >= scale.divider)
+                    break scale;
+            } else scales[0];
+
+            const int_part = ns / selected_scale.divider;
+            if (selected_scale.divider > 1) {
+                const fract_part = ns % (1000 * selected_scale.divider);
+                try writer.print("{d}.{d:0>3} {s}", .{ int_part, fract_part, @tagName(selected_scale.unit) });
+            } else {
+                try writer.print("{d} {s}", .{ int_part, @tagName(selected_scale.unit) });
+            }
+        }
+    };
 </patch>
 <patch Absolute>
 

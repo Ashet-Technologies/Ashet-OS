@@ -50,13 +50,8 @@ const TokenType = enum {
     whitespace,
     comment,
 
-    pub fn format(tt: TokenType, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-
-        var buf: [64]u8 = undefined;
-        const str = try std.fmt.bufPrint(&buf, ".{}", .{std.zig.fmtId(@tagName(tt))});
-
-        try std.fmt.formatBuf(str, opt, writer);
+    pub fn format(tt: TokenType, writer: *std.Io.Writer) !void {
+        try writer.print(".{f}", .{std.zig.fmtId(@tagName(tt))});
     }
 };
 

@@ -264,6 +264,7 @@ pub const keyboard = struct {
 
     pub const layouts = struct {
         pub const de = Layout.compile(@embedFile("../data/keyboard/layouts/de"));
+        pub const pl = Layout.compile(@embedFile("../data/keyboard/layouts/pl"));
     };
 
     pub const Layout = struct {

@@ -18,7 +18,7 @@ pub const mmio = struct {
 pub const interrupt = struct {
     pub const Handler = kernel.platform.profile.FunctionPointer;
 
-    pub fn unhandled() callconv(.C) void {
+    pub fn unhandled() callconv(.c) void {
         @panic("unhandled unknown interrupt");
     }
 };

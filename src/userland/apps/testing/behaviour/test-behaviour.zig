@@ -1,7 +1,7 @@
 const std = @import("std");
 const ashet = @import("ashet");
 
-pub usingnamespace ashet.core;
+pub const std_options = ashet.core.std_options;
 
 const abi = ashet.abi;
 
@@ -16,8 +16,8 @@ pub fn main() !void {
     std.log.info("arg count: {}", .{argv_len});
     for (argv, 0..) |arg, index| {
         switch (arg.type) {
-            .string => std.log.info("  arg {}: \"{}\"", .{ index, std.zig.fmtEscapes(arg.value.text.slice()) }),
-            .resource => std.log.info("  arg {}: {T}", .{ index, arg.value.resource }),
+            .string => std.log.info("  arg {}: \"{f}\"", .{ index, std.zig.fmtString(arg.value.text.slice()) }),
+            .resource => std.log.info("  arg {}: {f}", .{ index, std.fmt.alt(arg.value.resource, .formatType) }),
         }
     }
 
@@ -30,8 +30,8 @@ pub fn main() !void {
 
         const shm = (try abi.shm.get_pointer(shm_handle))[0..try abi.shm.get_length(shm_handle)];
 
-        std.log.info("received \"{}\" via shm", .{
-            std.zig.fmtEscapes(std.mem.sliceTo(shm, 0)),
+        std.log.info("received \"{f}\" via shm", .{
+            std.zig.fmtString(std.mem.sliceTo(shm, 0)),
         });
     }
 }
