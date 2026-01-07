@@ -36,7 +36,6 @@ pub fn build(b: *std.Build) void {
         .single_threaded = true,
     });
     const zfat_dep = b.dependency("zfat", .{
-        .@"no-libc" = true,
         .target = kernel_target,
         .optimize = optimize,
         .max_long_name_len = @as(u8, 121),
@@ -320,9 +319,27 @@ pub fn build(b: *std.Build) void {
     } else {
         const libc = libc_dep.artifact("foundation");
 
-        lwip_mod.addIncludePath(libc.getEmittedIncludeTree());
+        const genfile_exe = b.addExecutable(.{
+            .name = "genfile",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("build-utils/genfile.zig"),
+                .target = b.graph.host,
+                .optimize = .Debug,
+            }),
+        });
 
-        zfat_mod.addIncludePath(libc.getEmittedIncludeTree());
+        const gen_libc_txt = b.addRunArtifact(genfile_exe);
+        gen_libc_txt.addPrefixedDirectoryArg("include_dir=", libc.getEmittedIncludeTree());
+        gen_libc_txt.addPrefixedDirectoryArg("sys_include_dir=", libc.getEmittedIncludeTree());
+        gen_libc_txt.addPrefixedDirectoryArg("crt_dir=", libc.getEmittedBinDirectory());
+
+        gen_libc_txt.addArg("msvc_lib_dir=");
+        gen_libc_txt.addArg("kernel32_lib_dir=");
+        gen_libc_txt.addArg("gcc_dir=");
+
+        const libc_txt_path = gen_libc_txt.captureStdOut();
+
+        kernel_exe.setLibCFile(libc_txt_path);
 
         kernel_exe.linkLibrary(libc);
     }

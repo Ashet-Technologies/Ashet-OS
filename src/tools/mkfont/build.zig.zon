@@ -22,7 +22,7 @@
         .turtlefont = .{
             // .url = "git+https://github.com/ikskuh/turtlefont?ref=main#f88e8d2447475635e410c52ce798e8954b27d3df",
             // .hash = "turtlefont-0.1.0-TiRlD8JaAABrQ9oR7tgmhWRBIae7Esx4MLnUVyMsLbCR",
-            .path = "../../../../turtlefont",
+            .path = "../../../upgrade-0.15.2/turtlefont",
         },
     },
 }

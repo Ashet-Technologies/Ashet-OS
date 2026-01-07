@@ -66,7 +66,7 @@
         .vnc = .{
             // .url = "git+https://github.com/ikskuh/zvnc.git#1d4753358b63ffcfdc475b51fa24c2e5a8ca92b7",
             // .hash = "zvnc-0.0.0-AAAAAPqEAACiXOGonZTKjBPHkwIEYnai0ZOr8ktKV6_f",
-            .path = "../../../zvnc",
+            .path = "../../upgrade-0.15.2/zvnc",
         },
         .@"foundation-libc" = .{
             .url = "https://github.com/Ashet-Technologies/deps/raw/refs/heads/main/foundation-libc-0.15.0.tar.gz",
@@ -75,7 +75,7 @@
         .zfat = .{
             // .url = "https://github.com/ZigEmbeddedGroup/zfat/archive/8f3e7fe2c8b15eaac83092fb52ab0ed30ee98f47.tar.gz",
             // .hash = "zfat-0.0.0-AAAAAMYlcABdh06Mn9CNk8Ccy_3bBFgJr8wo4jKza1q-",
-            .path = "../../../../zfat",
+            .path = "../../upgrade-0.15.2/zfat",
         },
         .turtlefont = .{
             .url = "git+https://github.com/ikskuh/turtlefont.git?ref=main#f88e8d2447475635e410c52ce798e8954b27d3df",
@@ -110,7 +110,7 @@
         .propan = .{
             // .url = "git+https://github.com/Nerdgruppe/propeller2-wg.git#619d788e3d3f4cab6323cc1960a07f2de4e4d538",
             // .hash = "propeller2_wg-0.0.0-hlK46pIyDAB9C53esQUmvEe3q4NcIY4Td_8ynaWIRWHP",
-            .path = "../../../propeller2-wg",
+            .path = "../../upgrade-0.15.2/propeller2-wg",
         },
 
         .regz = .{
