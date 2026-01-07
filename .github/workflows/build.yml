@@ -42,3 +42,31 @@ jobs:
           path: zig-out/${{ matrix.platform }}
           if-no-files-found: warn
           retention-days: 7
+
+  tools:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    runs-on: ${{matrix.os}}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: "0.14.1"
+
+      - name: Build Tools
+        run: |
+          zig build tools
+
+      - name: Upload tools
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}
+          path: zig-out
+          if-no-files-found: warn
+          retention-days: 7

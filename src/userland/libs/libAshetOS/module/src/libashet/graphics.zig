@@ -122,7 +122,7 @@ pub const CommandQueue = struct {
     pub fn draw_horizontal_line(cq: *CommandQueue, left: Point, length: u16, color: Color) !void {
         try cq.draw_line(
             left,
-            Point.new(left.x + @as(u15, @intCast(length)), left.y),
+            Point.new(left.x + @as(u15, @intCast(length -| 1)), left.y),
             color,
         );
     }
@@ -130,7 +130,7 @@ pub const CommandQueue = struct {
     pub fn draw_vertical_line(cq: *CommandQueue, top: Point, length: u16, color: Color) !void {
         try cq.draw_line(
             top,
-            Point.new(top.x, top.y + @as(u15, @intCast(length))),
+            Point.new(top.x, top.y + @as(u15, @intCast(length -| 1))),
             color,
         );
     }
@@ -173,6 +173,10 @@ pub fn get_system_font(font_name: []const u8) !Font {
     return try ashet.abi.draw.get_system_font(font_name);
 }
 
+pub fn measure_text_size(font: Font, text: []const u8) !Size {
+    return try ashet.abi.draw.measure_text_size(font, text);
+}
+
 pub fn create_memory_framebuffer(size: Size) !Framebuffer {
     return try ashet.abi.draw.create_memory_framebuffer(size);
 }
@@ -183,6 +187,10 @@ pub fn create_video_framebuffer(output: *ashet.video.Output) !Framebuffer {
 
 pub fn create_window_framebuffer(window: ashet.abi.Window) !Framebuffer {
     return try ashet.abi.draw.create_window_framebuffer(window);
+}
+
+pub fn create_widget_framebuffer(widget: ashet.abi.Widget) !Framebuffer {
+    return try ashet.abi.draw.create_widget_framebuffer(widget);
 }
 
 pub fn get_framebuffer_memory(fb: Framebuffer) !ashet.abi.VideoMemory {

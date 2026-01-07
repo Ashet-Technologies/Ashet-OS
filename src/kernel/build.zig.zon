@@ -106,8 +106,8 @@
 
         // External tooling:
         .propan = .{
-            .url = "git+https://github.com/Nerdgruppe/propeller2-wg.git#619d788e3d3f4cab6323cc1960a07f2de4e4d538",
-            .hash = "propeller2_wg-0.0.0-hlK46pIyDAB9C53esQUmvEe3q4NcIY4Td_8ynaWIRWHP",
+            .url = "git+https://github.com/Nerdgruppe/propeller2-wg.git#fa04dd87c1fe80a5e2caf8e4c4bf6760fe117a63",
+            .hash = "propeller2_wg-0.0.0-hlK46lcyDABa91k7lw0_qiIvoyg6Iy2gmK3wpyrpSxGk",
         },
 
         .regz = .{

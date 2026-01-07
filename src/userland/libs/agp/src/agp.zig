@@ -35,9 +35,8 @@ pub const CommandByte = enum(u8) {
     draw_text = 0x06,
     blit_bitmap = 0x07,
     blit_framebuffer = 0x08,
-    update_color = 0x09,
-    blit_partial_bitmap = 0x0A,
-    blit_partial_framebuffer = 0x0B,
+    blit_partial_bitmap = 0x09,
+    blit_partial_framebuffer = 0x0A,
 };
 
 pub fn encoder(enc: anytype) Encoder(@TypeOf(enc)) {
@@ -102,18 +101,12 @@ pub fn Encoder(Writer: type) type {
                 .blit_bitmap => |data| try enc.blit_bitmap(
                     data.x,
                     data.y,
-                    data.bitmap,
+                    &data.bitmap,
                 ),
                 .blit_framebuffer => |data| try enc.blit_framebuffer(
                     data.x,
                     data.y,
                     data.framebuffer,
-                ),
-                .update_color => |data| try enc.update_color(
-                    data.index,
-                    data.r,
-                    data.g,
-                    data.b,
                 ),
                 .blit_partial_bitmap => |data| try enc.blit_partial_bitmap(
                     data.x,
@@ -122,7 +115,7 @@ pub fn Encoder(Writer: type) type {
                     data.height,
                     data.src_x,
                     data.src_y,
-                    data.bitmap,
+                    &data.bitmap,
                 ),
                 .blit_partial_framebuffer => |data| try enc.blit_partial_framebuffer(
                     data.x,
@@ -227,6 +220,11 @@ pub fn Encoder(Writer: type) type {
             text: []const u8,
         ) (EncError || error{Overflow})!void {
             const len = std.math.cast(u16, text.len) orelse return error.Overflow;
+
+            // Skip encoding if nothing would be drawn anyways
+            if (len == 0)
+                return;
+
             try enc.enc_cmd(.draw_text);
             try enc.enc_coord(x);
             try enc.enc_coord(y);
@@ -234,8 +232,6 @@ pub fn Encoder(Writer: type) type {
             try enc.enc_color(color);
             try enc.enc_int(u16, len);
             try enc.writer.writeAll(text);
-            // try enc.enc_ptr([*]const u8, text.ptr);
-            // try enc.enc_int(u16, len);
         }
 
         pub fn blit_bitmap(
@@ -244,10 +240,15 @@ pub fn Encoder(Writer: type) type {
             y: i16,
             bitmap: *const Bitmap,
         ) EncError!void {
+
+            // Skip encoding if nothing would be drawn anyways
+            if (bitmap.width == 0 or bitmap.height == 0)
+                return;
+
             try enc.enc_cmd(.blit_bitmap);
             try enc.enc_coord(x);
             try enc.enc_coord(y);
-            try enc.enc_ptr(*const Bitmap, bitmap);
+            try enc.enc_bitmap(bitmap);
         }
 
         pub fn blit_framebuffer(
@@ -262,20 +263,6 @@ pub fn Encoder(Writer: type) type {
             try enc.enc_handle(Framebuffer, framebuffer);
         }
 
-        pub fn update_color(
-            enc: Enc,
-            index: Color,
-            r: u8,
-            g: u8,
-            b: u8,
-        ) EncError!void {
-            try enc.enc_cmd(.update_color);
-            try enc.enc_color(index);
-            try enc.enc_int(u8, r);
-            try enc.enc_int(u8, g);
-            try enc.enc_int(u8, b);
-        }
-
         pub fn blit_partial_bitmap(
             enc: Enc,
             x: i16,
@@ -286,6 +273,12 @@ pub fn Encoder(Writer: type) type {
             src_y: i16,
             bitmap: *const Bitmap,
         ) EncError!void {
+            // Skip encoding if nothing would be drawn anyways
+            if (bitmap.width == 0 or bitmap.height == 0)
+                return;
+            if (width == 0 or height == 0)
+                return;
+
             try enc.enc_cmd(.blit_partial_bitmap);
             try enc.enc_coord(x);
             try enc.enc_coord(y);
@@ -293,7 +286,7 @@ pub fn Encoder(Writer: type) type {
             try enc.enc_size(height);
             try enc.enc_coord(src_x);
             try enc.enc_coord(src_y);
-            try enc.enc_ptr(*const Bitmap, bitmap);
+            try enc.enc_bitmap(bitmap);
         }
 
         pub fn blit_partial_framebuffer(
@@ -336,12 +329,24 @@ pub fn Encoder(Writer: type) type {
             try enc.writer.writeInt(Int, value, .little);
         }
 
-        fn enc_ptr(enc: Enc, Pointer: type, value: Pointer) !void {
-            try enc.writer.writeInt(usize, @intFromPtr(value), .little);
-        }
-
         fn enc_cmd(enc: Enc, cmd: CommandByte) !void {
             try enc.writer.writeInt(u8, @intFromEnum(cmd), .little);
+        }
+
+        fn enc_bitmap(enc: Enc, bmp: *const Bitmap) !void {
+            std.debug.assert(bmp.width > 0 and bmp.height > 0);
+
+            try enc.enc_int(u8, if (bmp.has_transparency) @as(u8, 1) else 0);
+
+            if (bmp.has_transparency) {
+                try enc.enc_color(bmp.transparency_key);
+            }
+
+            try enc.enc_size(bmp.width);
+            try enc.enc_size(bmp.height);
+            try enc.enc_int(usize, bmp.stride);
+
+            try enc.writer.writeAll(std.mem.sliceAsBytes(bmp.pixels[0 .. bmp.height * bmp.stride]));
         }
     };
 }
@@ -351,7 +356,7 @@ pub fn Decoder(Reader: type) type {
         const Dec = @This();
 
         reader: Reader,
-        heap: std.ArrayList(u8),
+        heap: std.ArrayListAligned(u8, 16),
 
         pub const NextError = error{ InvalidCommand, EndOfStream, OutOfMemory } || Reader.Error;
 
@@ -429,7 +434,6 @@ pub fn Decoder(Reader: type) type {
                         const y = try dec.fetch_coord();
                         const font = try dec.fetch_handle(Font);
                         const color = try dec.fetch_color();
-                        // const text_ptr = try dec.fetch_ptr([*]const u8);
                         const text_len = try dec.fetch_int(u16);
 
                         try dec.heap.resize(text_len + 1);
@@ -445,26 +449,16 @@ pub fn Decoder(Reader: type) type {
                         };
                     },
                 },
-                .blit_bitmap => .{
-                    .blit_bitmap = .{
-                        .x = try dec.fetch_coord(),
-                        .y = try dec.fetch_coord(),
-                        .bitmap = try dec.fetch_ptr(*const Bitmap),
-                    },
-                },
+                .blit_bitmap => .{ .blit_bitmap = .{
+                    .x = try dec.fetch_coord(),
+                    .y = try dec.fetch_coord(),
+                    .bitmap = try dec.fetch_bitmap(),
+                } },
                 .blit_framebuffer => .{
                     .blit_framebuffer = .{
                         .x = try dec.fetch_coord(),
                         .y = try dec.fetch_coord(),
                         .framebuffer = try dec.fetch_handle(Framebuffer),
-                    },
-                },
-                .update_color => .{
-                    .update_color = .{
-                        .index = try dec.fetch_color(),
-                        .r = try dec.fetch_int(u8),
-                        .g = try dec.fetch_int(u8),
-                        .b = try dec.fetch_int(u8),
                     },
                 },
                 .blit_partial_bitmap => .{
@@ -475,7 +469,7 @@ pub fn Decoder(Reader: type) type {
                         .height = try dec.fetch_size(),
                         .src_x = try dec.fetch_coord(),
                         .src_y = try dec.fetch_coord(),
-                        .bitmap = try dec.fetch_ptr(*const Bitmap),
+                        .bitmap = try dec.fetch_bitmap(),
                     },
                 },
                 .blit_partial_framebuffer => .{
@@ -489,6 +483,36 @@ pub fn Decoder(Reader: type) type {
                         .framebuffer = try dec.fetch_handle(Framebuffer),
                     },
                 },
+            };
+        }
+
+        /// NOTE: Returned bitmap is valid until next call to any `fetch_*` function.
+        fn fetch_bitmap(dec: *Dec) !Bitmap {
+            const flags = try dec.fetch_int(u8);
+
+            const has_transparency = (flags & 1) != 0;
+
+            const tkey: Color = if (has_transparency)
+                try dec.fetch_color()
+            else
+                .black;
+
+            const width = try dec.fetch_size();
+            const height = try dec.fetch_size();
+            const stride = try dec.fetch_int(usize);
+
+            const size = height * stride * @sizeOf(Color);
+
+            try dec.heap.resize(size);
+            try dec.reader.readNoEof(dec.heap.items[0..size]);
+
+            return .{
+                .has_transparency = has_transparency,
+                .transparency_key = tkey,
+                .width = width,
+                .height = height,
+                .stride = stride,
+                .pixels = @ptrCast(dec.heap.items.ptr),
             };
         }
 
@@ -515,12 +539,6 @@ pub fn Decoder(Reader: type) type {
         fn fetch_int(dec: Dec, Int: type) !Int {
             return try dec.reader.readInt(Int, .little);
         }
-
-        fn fetch_ptr(dec: Dec, Pointer: type) !Pointer {
-            return @ptrFromInt(
-                @as(usize, @intCast(try dec.reader.readInt(usize, .little))),
-            );
-        }
     };
 }
 
@@ -535,7 +553,6 @@ pub const Command = union(CommandByte) {
         .draw_text = DrawText,
         .blit_bitmap = BlitBitmap,
         .blit_framebuffer = BlitFramebuffer,
-        .update_color = UpdateColor,
         .blit_partial_bitmap = BlitPartialBitmap,
         .blit_partial_framebuffer = BlitPartialFramebuffer,
     });
@@ -549,7 +566,6 @@ pub const Command = union(CommandByte) {
     draw_text: DrawText,
     blit_bitmap: BlitBitmap,
     blit_framebuffer: BlitFramebuffer,
-    update_color: UpdateColor,
     blit_partial_bitmap: BlitPartialBitmap,
     blit_partial_framebuffer: BlitPartialFramebuffer,
 
@@ -605,20 +621,13 @@ pub const Command = union(CommandByte) {
     pub const BlitBitmap = struct {
         x: i16,
         y: i16,
-        bitmap: *const Bitmap,
+        bitmap: Bitmap,
     };
 
     pub const BlitFramebuffer = struct {
         x: i16,
         y: i16,
         framebuffer: Framebuffer,
-    };
-
-    pub const UpdateColor = struct {
-        index: Color,
-        r: u8,
-        g: u8,
-        b: u8,
     };
 
     pub const BlitPartialBitmap = struct {
@@ -628,7 +637,7 @@ pub const Command = union(CommandByte) {
         height: u16,
         src_x: i16,
         src_y: i16,
-        bitmap: *const Bitmap,
+        bitmap: Bitmap,
     };
 
     pub const BlitPartialFramebuffer = struct {

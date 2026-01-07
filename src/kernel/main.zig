@@ -66,7 +66,7 @@ pub const log_levels = struct {
     pub var ashex_loader: LogLevel = .info;
     pub var drivers: LogLevel = .info;
     pub var elf_loader: LogLevel = .info;
-    pub var filesystem: LogLevel = .warn;
+    pub var filesystem: LogLevel = .info;
     pub var gui: LogLevel = .debug;
     pub var io: LogLevel = .info;
     pub var main: LogLevel = .debug;
@@ -79,7 +79,7 @@ pub const log_levels = struct {
     pub var resources: LogLevel = .info;
     pub var scheduler: LogLevel = .debug;
     pub var ui: LogLevel = .debug;
-    pub var graphics: LogLevel = .warn;
+    pub var graphics: LogLevel = .info;
     pub var input: LogLevel = .info;
     pub var video: LogLevel = .debug;
     pub var storage: LogLevel = .warn; // very noise modules!
@@ -87,6 +87,7 @@ pub const log_levels = struct {
     pub var mbr_part: LogLevel = .warn; // very noise modules!
     pub var x86_vmm: LogLevel = .info; // very noise modules!
     pub var i2c: LogLevel = .info;
+    pub var syscalls: LogLevel = .debug;
 
     pub var wayland_display: LogLevel = .info;
 
@@ -117,6 +118,7 @@ pub const log_levels = struct {
     pub var agp_sw_rast: LogLevel = .info;
 
     // platforms:
+    pub var hosted: LogLevel = .debug;
 
     // platforms.x86:
     pub var idt: LogLevel = .debug;

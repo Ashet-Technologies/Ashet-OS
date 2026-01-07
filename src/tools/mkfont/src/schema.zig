@@ -30,6 +30,15 @@ pub fn load(allocator: std.mem.Allocator, text: []const u8) !Document {
                 .glyphs = try transform_bitmap_glyph_map(result.parsed.arena.allocator(), bitmap.glyphs),
             },
         },
+        .ttf => |ttf| .{ .ttf = ttf },
+        .fon => |fon| .{
+            .fon = .{
+                .file = fon.file,
+                .id = fon.id,
+                .index = fon.index,
+                .encoding = try transform_encoding_map(fon.encoding),
+            },
+        },
     };
 
     return result;
@@ -47,12 +56,42 @@ pub const Document = struct {
 };
 
 pub const Body = union(enum) {
-
     // Contains a bitmap font composed of one or more image files
     bitmap: BitmapFontFile,
 
-    // Just a file path, turtle fonts are self-contained
+    // Just an array of glyphs with TurtleFont code.
     turtle: TurtleFontFile,
+
+    /// A TTF file
+    ttf: TtfFontFile,
+
+    /// A FON file
+    fon: FonFontFile,
+};
+
+pub const TtfFontFile = struct {
+    /// Path to the font file.
+    file: []const u8,
+
+    /// Index of the font inside the TTF file that shall be converted.
+    font_index: u16 = 0,
+
+    /// The line height in pixels for the output font.
+    line_height: u8,
+
+    /// A string containing the glyphs to add to the font
+    /// in addition to the base ASCII subset.
+    glyphs: []const u8,
+};
+
+pub const FonFontFile = struct {
+    /// Path to the font file.
+    file: []const u8,
+
+    id: ?u16,
+    index: ?u16,
+
+    encoding: [256]?u21,
 };
 
 pub const BitmapFontFile = struct {
@@ -94,11 +133,21 @@ pub const TurtleFontFile = struct {
 };
 
 const JsonRootNode = union(enum) {
-    // Contains a bitmap font composed of one or more image files
     bitmap: JsonBitmapFontFile,
-
-    // Just a file path, turtle fonts are self-contained
     turtle: JsonTurtleFontFile,
+    ttf: TtfFontFile,
+    fon: JsonFonFontFile,
+};
+
+pub const JsonFonFontFile = struct {
+    /// Path to the font file.
+    file: []const u8,
+
+    id: ?u16 = null,
+
+    index: ?u16 = null,
+
+    encoding: std.json.Value,
 };
 
 const JsonBitmapFontFile = struct {
@@ -110,6 +159,56 @@ const JsonBitmapFontFile = struct {
 const JsonTurtleFontFile = struct {
     glyphs: std.json.Value,
 };
+
+fn transform_encoding_map(raw_map: std.json.Value) ![256]?u21 {
+    if (raw_map != .object)
+        return error.InvalidGlyphObject;
+    const map = &raw_map.object;
+
+    var output: [256]?u21 = @splat(null);
+
+    var iter = map.iterator();
+    while (iter.next()) |kv| {
+        const key_str = kv.key_ptr.*;
+        const json_value = kv.value_ptr.*;
+
+        const index = std.fmt.parseInt(u8, key_str, 0) catch {
+            std.log.err("invalid encoding index: '{}'", .{
+                std.unicode.fmtUtf8(key_str),
+            });
+            return error.InvalidKey;
+        };
+
+        const codepoint: u21 = switch (json_value) {
+            .integer => |int| std.math.cast(u21, int) orelse {
+                std.log.err("codepoint out of range: {}", .{
+                    int,
+                });
+                return error.InvalidCodePoint;
+            },
+            .string => |str| std.fmt.parseInt(u21, str, 0) catch {
+                std.log.err("codepoint out of range: '{}'", .{
+                    std.unicode.fmtUtf8(str),
+                });
+                return error.InvalidCodePoint;
+            },
+            else => {
+                std.log.err("invalid codepoint: {s}", .{
+                    @tagName(json_value),
+                });
+                return error.InvalidCodePoint;
+            },
+        };
+
+        if (!std.unicode.utf8ValidCodepoint(codepoint)) {
+            return error.InvalidCodePoint;
+        }
+
+        output[index] = codepoint;
+    }
+
+    return output;
+}
 
 fn transform_bitmap_glyph_map(allocator: std.mem.Allocator, raw_map: std.json.Value) !std.AutoArrayHashMap(u21, BitmapFontFile.Glyph) {
     if (raw_map != .object)

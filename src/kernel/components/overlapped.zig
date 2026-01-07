@@ -153,14 +153,8 @@ const async_call_handlers = std.EnumArray(ashet.abi.overlapped.ARC.Type, AsyncHa
     .io_i2c_execute = AsyncHandler.wrap(ashet.io.i2c.execute_async),
 });
 
-/// Schedules a new overlapped event from the current thread context.
-pub fn schedule(event: *ARC) error{ SystemResources, AlreadyScheduled }!void {
-    const thread, const context = get_context();
-    return schedule_with_context(thread.get_process(), context, event);
-}
-
 /// Schedules a new overlapped event from the given thread and context.
-pub fn schedule_with_context(resource_owner: *ashet.multi_tasking.Process, context: *Context, event: *ARC) error{ SystemResources, AlreadyScheduled }!void {
+pub fn schedule(resource_owner: *ashet.multi_tasking.Process, context: *Context, event: *ARC) error{ SystemResources, AlreadyScheduled }!void {
     const call = try AsyncCall.create(
         context,
         event,
@@ -177,24 +171,15 @@ pub fn schedule_with_context(resource_owner: *ashet.multi_tasking.Process, conte
     handler.call(call);
 }
 
-pub fn await_completion(completed: []*ARC, options: ashet.abi.Await_Options) error{Unscheduled}!usize {
-    _, const context = get_context();
-    return await_completion_with_context(context, completed, options);
-}
-
-pub fn await_completion_of(completed: []?*ARC) error{ Unscheduled, InvalidOperation }!usize {
-    _, const context = get_context();
-    return await_completion_of_with_context(context, completed);
-}
-
-pub fn await_completion_with_context(context: *Context, completed: []*ARC, options: ashet.abi.Await_Options) error{Unscheduled}!usize {
+pub fn await_completion(context: *Context, completed: []*ARC, options: ashet.abi.Await_Options) error{Unscheduled}!usize {
+    comptime std.debug.assert(@sizeOf([]?*ARC) == @sizeOf([]*ARC));
     return await_completion_internal(context, @ptrCast(completed), .{ .any = options }) catch |err| switch (err) {
         error.Unscheduled => |e| return e,
         error.InvalidOperation => unreachable,
     };
 }
 
-pub fn await_completion_of_with_context(context: *Context, completed: []?*ARC) error{ Unscheduled, InvalidOperation }!usize {
+pub fn await_completion_of(context: *Context, completed: []?*ARC) error{ Unscheduled, InvalidOperation }!usize {
     return await_completion_internal(context, completed, .given) catch |err| switch (err) {
         error.Unscheduled, error.InvalidOperation => |e| return e,
     };
@@ -778,5 +763,5 @@ fn count_with_threadaffinity(queue: CallQueue, thread_filter: ?*ashet.scheduler.
         }
     }
 
-    return 1;
+    return count;
 }

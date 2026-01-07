@@ -1,0 +1,10 @@
+.{
+    .name = ._2048,
+    .version = "0.1.0",
+    .paths = .{ "build.zig", "build.zig.zon", "clock.zig" },
+    .dependencies = .{
+        .AshetOS = .{
+            .path = "../../libs/libAshetOS",
+        },
+    },
+}

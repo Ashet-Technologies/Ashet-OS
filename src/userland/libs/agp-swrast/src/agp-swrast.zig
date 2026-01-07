@@ -1,3 +1,6 @@
+//!
+//! Implementation of a software rasterizer for row-major framebuffers.
+//!
 const std = @import("std");
 const agp = @import("agp");
 const ashet = @import("ashet-abi");
@@ -16,26 +19,9 @@ const Font = agp.Font;
 const Framebuffer = agp.Framebuffer;
 const Bitmap = agp.Bitmap;
 
-pub const PixelLayout = enum {
-    /// This pixel layout stores the pixels in a row-major
-    /// order.
-    ///
-    /// This means, the pixels are layed out horizontally
-    /// left-to-right in memory.
-    row_major,
-
-    /// This pixel layout stores the pixels in a column-major
-    /// order.
-    ///
-    /// This means, the pixels are layed out vertically
-    /// top-to-bottom in memory.
-    column_major,
-};
-
 pub const RasterizerOptions = struct {
     backend_type: type,
     framebuffer_type: ?type,
-    pixel_layout: PixelLayout,
     blit_buffer_size: comptime_int = 64,
 };
 
@@ -64,7 +50,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
 
         const FramebufferType = (_options.framebuffer_type orelse @compileError(","));
 
-        pub const Cursor = PixelCursor(options.pixel_layout);
+        pub const Cursor = PixelCursor;
         pub const options = _options;
 
         backend: Backend,
@@ -83,7 +69,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
             };
         }
 
-        pub fn execute(rast: *Rast, cmd: agp.Command) void {
+        pub fn execute(rast: *Rast, cmd: agp.Command) !void {
             switch (cmd) {
                 .clear => |data| rast.clear(data.color),
 
@@ -121,13 +107,6 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
                     data.text,
                 ),
 
-                .update_color => |data| rast.update_color(
-                    data.index,
-                    data.r,
-                    data.g,
-                    data.b,
-                ),
-
                 .blit_framebuffer => |data| if (_options.framebuffer_type) |_| {
                     const fb: FramebufferType = try rast.backend.resolve_framebuffer(data.framebuffer);
                     rast.blit_framebuffer(Point.new(data.x, data.y), fb);
@@ -148,52 +127,26 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
 
                 .blit_bitmap => |data| rast.blit_bitmap(
                     Point.new(data.x, data.y),
-                    data.bitmap,
+                    &data.bitmap,
                 ),
                 .blit_partial_bitmap => |data| rast.blit_partial_bitmap(
                     Rectangle.new(Point.new(data.x, data.y), Size.new(data.width, data.height)),
                     Point.new(data.src_x, data.src_y),
-                    data.bitmap,
+                    &data.bitmap,
                 ),
             }
-        }
-        pub fn update_color(
-            rast: Rast,
-            index: Color,
-            r: u8,
-            g: u8,
-            b: u8,
-        ) void {
-            _ = rast;
-            _ = index;
-            _ = r;
-            _ = g;
-            _ = b;
-            logger.info("Rasterizer.update_color()", .{});
         }
 
         pub fn clear(
             rast: Rast,
             color: Color,
         ) void {
-            var cursor = rast.get_cursor();
-            std.debug.assert(cursor.move(0, 0));
-            switch (options.pixel_layout) {
-                .row_major => {
-                    rast.emit(cursor, color, cursor.width);
-                    for (1..cursor.height) |_| {
-                        std.debug.assert(cursor.shift_down(1) == 1);
-                        rast.emit(cursor, color, cursor.width);
-                    }
-                },
-                .column_major => {
-                    rast.emit(cursor, color, cursor.height);
-                    for (1..cursor.width) |_| {
-                        std.debug.assert(cursor.shift_right(1) == 1);
-                        rast.emit(cursor, color, cursor.height);
-                    }
-                },
-            }
+            rast.fill_rect(.{
+                .x = @intCast(rast.clip_rect.x),
+                .y = @intCast(rast.clip_rect.y),
+                .width = rast.clip_rect.width,
+                .height = rast.clip_rect.height,
+            }, color);
         }
 
         pub fn set_clip_rect(
@@ -283,13 +236,12 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
         /// Optimized version of line drawing for horizontal lines.
         /// Takes the pixel layout into account to emit optimized code.
         fn draw_horizontal_line(rast: Rast, x0: i16, x1: i16, y: i16, color: Color) void {
-            var cursor = rast.get_cursor();
             if (y < rast.clip_rect.y or @as(isize, y) - rast.clip_rect.y >= rast.clip_rect.height)
                 return;
 
             // horizontal
             const start_unclipped = @min(x0, x1); // inclusive
-            const end_unclipped = @max(x0, x1); // inclusive
+            const end_unclipped = @max(x0, x1) +| 1; // exclusive
 
             const start = rast.clamp_coord(start_unclipped, .x_axis);
             const end = rast.clamp_coord(end_unclipped, .x_axis);
@@ -297,34 +249,20 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
             if (end <= start)
                 return; // zero length
 
-            const length = (end - start);
-
-            std.debug.assert(cursor.move(start, @intCast(y)));
-
-            switch (options.pixel_layout) {
-                .row_major => {
-                    rast.emit(cursor, color, length);
-                },
-                .column_major => {
-                    rast.emit(cursor, color, 1);
-                    for (1..length) |_| {
-                        std.debug.assert(cursor.shift_down(1) == 1);
-                        rast.emit(cursor, color, 1);
-                    }
-                },
+            for (start..end) |x| {
+                rast.set_pixel(.new(@intCast(x), y), color);
             }
         }
 
         /// Optimized version of line drawing for vertical lines.
         /// Takes the pixel layout into account to emit optimized code.
         fn draw_vertical_line(rast: Rast, x: i16, y0: i16, y1: i16, color: Color) void {
-            var cursor = rast.get_cursor();
             if (x < rast.clip_rect.x or @as(isize, x) - rast.clip_rect.x >= rast.clip_rect.width)
                 return;
 
             // horizontal
             const start_unclipped = @min(y0, y1); // inclusive
-            const end_unclipped = @max(y0, y1); // inclusive
+            const end_unclipped = @max(y0, y1) +| 1; // exclusive
 
             const start = rast.clamp_coord(start_unclipped, .y_axis);
             const end = rast.clamp_coord(end_unclipped, .y_axis);
@@ -332,21 +270,8 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
             if (end <= start)
                 return; // zero length
 
-            const length = (end - start);
-
-            std.debug.assert(cursor.move(@intCast(x), start));
-
-            switch (options.pixel_layout) {
-                .row_major => {
-                    rast.emit(cursor, color, 1);
-                    for (1..length) |_| {
-                        std.debug.assert(cursor.shift_down(1) == 1);
-                        rast.emit(cursor, color, 1);
-                    }
-                },
-                .column_major => {
-                    rast.emit(cursor, color, length);
-                },
+            for (start..end) |y| {
+                rast.set_pixel(.new(x, @intCast(y)), color);
             }
         }
 
@@ -364,42 +289,15 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
             const right = paint_rect.x + paint_rect.width - 1;
             const bottom = paint_rect.y + paint_rect.height - 1;
 
-            var cursor = rast.get_cursor();
-            switch (options.pixel_layout) {
-                .row_major => {
-                    // top line:
-                    if (paint_rect.y == rect.y) {
-                        std.debug.assert(cursor.move(paint_rect.x, paint_rect.y));
-                        rast.emit(cursor, color, paint_rect.width);
-                    }
-
-                    // bottom line:
-                    if (rect.height > 1 and bottom == rect.bottom() - 1) {
-                        std.debug.assert(cursor.move(paint_rect.x, bottom));
-                        rast.emit(cursor, color, paint_rect.width);
-                    }
-
-                    // left line:
-                    if (rect.height > 2 and paint_rect.x == rect.x) {
-                        std.debug.assert(cursor.move(paint_rect.x, paint_rect.y + 1));
-                        rast.emit(cursor, color, 1);
-                        for (1..rect.height - 2) |_| {
-                            std.debug.assert(cursor.shift_down(1) == 1);
-                            rast.emit(cursor, color, 1);
-                        }
-                    }
-
-                    // right line:
-                    if (rect.height > 2 and right == rect.right() - 1) {
-                        std.debug.assert(cursor.move(right, paint_rect.y + 1));
-                        rast.emit(cursor, color, 1);
-                        for (1..rect.height - 2) |_| {
-                            std.debug.assert(cursor.shift_down(1) == 1);
-                            rast.emit(cursor, color, 1);
-                        }
-                    }
-                },
-                .column_major => @compileError("not implemented yet!"),
+            rast.draw_horizontal_line(@intCast(paint_rect.x), @intCast(right), @intCast(paint_rect.y), color);
+            if (paint_rect.y != bottom) {
+                rast.draw_horizontal_line(@intCast(paint_rect.x), @intCast(right), @intCast(bottom), color);
+            }
+            if (paint_rect.height > 2) {
+                rast.draw_vertical_line(@intCast(paint_rect.x), @intCast(paint_rect.y +| 1), @intCast(bottom -| 1), color);
+                if (paint_rect.y != bottom) {
+                    rast.draw_vertical_line(@intCast(right), @intCast(paint_rect.y +| 1), @intCast(bottom -| 1), color);
+                }
             }
         }
 
@@ -412,24 +310,13 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
             if (paint_rect.is_empty())
                 return;
 
-            var cursor = rast.get_cursor();
-            std.debug.assert(cursor.move(paint_rect.x, paint_rect.y));
-            switch (options.pixel_layout) {
-                .row_major => {
-                    rast.emit(cursor, color, paint_rect.width);
-                    for (1..paint_rect.height) |_| {
-                        std.debug.assert(cursor.shift_down(1) == 1);
-                        rast.emit(cursor, color, paint_rect.width);
-                    }
-                },
-
-                .column_major => {
-                    rast.emit(cursor, color, paint_rect.height);
-                    for (1..paint_rect.width) |_| {
-                        std.debug.assert(cursor.shift_right(1) == 1);
-                        rast.emit(cursor, color, paint_rect.height);
-                    }
-                },
+            for (0..paint_rect.height) |dy| {
+                for (0..paint_rect.width) |dx| {
+                    rast.set_pixel(
+                        .new(@intCast(paint_rect.x + dx), @intCast(paint_rect.y + dy)),
+                        color,
+                    );
+                }
             }
         }
 
@@ -511,9 +398,6 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
             rect: Rectangle,
         };
         fn blit_generic_data(rast: Rast, target_pos: Point, source_pos: Point, optional_size: ?Size, framebuffer: anytype, transparency_key: ?Color) void {
-            if (_options.pixel_layout != PixelLayout.row_major)
-                @compileError("unsupported");
-
             var src_cursor: Cursor = framebuffer.create_cursor();
             var dst_cursor: Cursor = rast.get_cursor();
 
@@ -670,16 +554,18 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
         }
 
         /// Returns an unset cursor to the backing framebuffer.
-        fn get_cursor(rast: Rast) Cursor {
+        inline fn get_cursor(rast: Rast) Cursor {
             return rast.backend.create_cursor();
         }
 
-        fn emit(rast: Rast, cursor: Cursor, color: Color, count: u16) void {
+        inline fn emit(rast: Rast, cursor: Cursor, color: Color, count: u16) void {
             return rast.backend.emit_pixels(cursor, color, count);
         }
 
-        fn blit_pixels(rast: Rast, cursor: Cursor, pixels: []const Color) void {
-            return rast.backend.copy_pixels(cursor, pixels);
+        inline fn blit_pixels(rast: Rast, cursor: Cursor, pixels: []const Color) void {
+            if (pixels.len > 0) {
+                rast.backend.copy_pixels(cursor, pixels);
+            }
         }
 
         fn clamp(value: anytype, min: anytype, max: anytype) @TypeOf(value, min, max) {
@@ -805,125 +691,45 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
                     .bitmap => |bitmap_font| {
                         const fallback_glyph = bitmap_font.getGlyph('�') orelse bitmap_font.getGlyph('?');
 
-                        render_loop: while (codepoints.nextCodepoint()) |char| {
+                        while (codepoints.nextCodepoint()) |char| {
                             if (sw.dx >= sw.limit) {
                                 break;
                             }
                             const glyph: fonts.BitmapFont.Glyph = bitmap_font.getGlyph(char) orelse fallback_glyph orelse continue;
 
                             if (sw.dx + glyph.advance >= 0) {
+                                const row_stride = (glyph.width + 7) / 8;
 
-                                // var startpos = sw.fb.get_cursor();
-                                // startpos.move(sw.dx + glyph.offset_x, sw.dy + glyph.offset_y);
+                                const px: i16 = @intCast(sw.dx + glyph.offset_x);
+                                const py: i16 = @intCast(sw.dy + glyph.offset_y);
 
-                                // const stride = (glyph.height + 7) / 8;
+                                var gy: u15 = 0;
+                                while (gy < glyph.height) : (gy += 1) {
+                                    var row_ptr = glyph.bits.ptr + row_stride * gy;
 
-                                // var gy: u15 = 0;
-                                // while (gy < glyph.height) : (gy += 1) {
-                                //     const mask = @as(u8, 1) << @truncate(gy);
-
-                                //     var row_ptr = glyph.bits.ptr + (gy / 8);
-
-                                //     var gx: u15 = 0;
-                                //     x_loop: while (gx < glyph.width) : (gx += 1) {
-                                //         if (sw.dx + gx > sw.limit) {
-                                //             break :x_loop;
-                                //         }
-                                //         const bits = row_ptr[0];
-                                //         if ((bits & mask) != 0) {
-                                //             sw.fb.set_pixel(
-                                //                 Point.new(
-                                //                     sw.dx + glyph.offset_x + gx,
-                                //                     sw.dy + glyph.offset_y + gy,
-                                //                 ),
-                                //                 sw.color,
-                                //             );
-                                //         }
-
-                                //         row_ptr += stride;
-                                //     }
-                                // }
-
-                                const glyph_height_usize: usize = @intCast(glyph.height);
-                                const stride = (glyph_height_usize + 7) / 8;
-                                const dx_i32: i32 = @intCast(sw.dx);
-                                const dy_i32: i32 = @intCast(sw.dy);
-                                const offset_x_i32: i32 = @as(i32, glyph.offset_x);
-                                const offset_y_i32: i32 = @as(i32, glyph.offset_y);
-                                const base_x = dx_i32 + offset_x_i32;
-                                const base_y = dy_i32 + offset_y_i32;
-
-                                const clip = sw.fb.clip_rect;
-                                const clip_x0: i32 = @intCast(clip.x);
-                                const clip_y0: i32 = @intCast(clip.y);
-                                const clip_width_i32: i32 = @intCast(clip.width);
-                                const clip_height_i32: i32 = @intCast(clip.height);
-                                const clip_x1 = clip_x0 + clip_width_i32;
-                                const clip_y1 = clip_y0 + clip_height_i32;
-
-                                const limit_x: i32 = @intCast(sw.limit);
-
-                                const Flush = struct {
-                                    fn run(sw_ptr: *ScreenWriter, y: i32, start: *?i32, length: *u16) void {
-                                        if (length.* == 0)
-                                            return;
-
-                                        const run_start = start.*.?;
-                                        var cursor = sw_ptr.fb.get_cursor();
-                                        std.debug.assert(cursor.move(@intCast(run_start), @intCast(y)));
-                                        sw_ptr.fb.emit(cursor, sw_ptr.color, length.*);
-
-                                        start.* = null;
-                                        length.* = 0;
-                                    }
-                                };
-
-                                var row: u16 = 0;
-                                while (row < glyph.height) : (row += 1) {
-                                    const row_i32: i32 = @intCast(row);
-                                    const y = base_y + row_i32;
-                                    if (y < clip_y0 or y >= clip_y1)
-                                        continue;
-
-                                    const row_usize: usize = @intCast(row);
-                                    const row_byte_index = row_usize / 8;
-                                    const bit_index: u3 = @truncate(row);
-                                    const bit_mask: u8 = @as(u8, 1) << bit_index;
-
-                                    var run_start: ?i32 = null;
-                                    var run_length: u16 = 0;
-
-                                    var col: u16 = 0;
-                                    while (col < glyph.width) : (col += 1) {
-                                        const col_i32: i32 = @intCast(col);
-                                        const baseline_x = dx_i32 + col_i32;
-                                        if (baseline_x >= limit_x) {
-                                            Flush.run(sw, y, &run_start, &run_length);
-                                            break :render_loop;
-                                        }
-
-                                        const x = base_x + col_i32;
-                                        const col_usize: usize = @intCast(col);
-                                        const byte_index = col_usize * stride + row_byte_index;
-                                        const column_byte = glyph.bits[byte_index];
-                                        const bit_set = (column_byte & bit_mask) != 0;
-                                        const inside_clip = (x >= clip_x0 and x < clip_x1);
-
-                                        if (bit_set and inside_clip) {
-                                            if (run_length == 0) {
-                                                run_start = x;
-                                                run_length = 1;
-                                            } else {
-                                                run_length += 1;
+                                    {
+                                        var gx: u15 = 0;
+                                        var mask: u8 = 1;
+                                        var bits: u8 = row_ptr[0];
+                                        while (gx < glyph.width) : (gx += 1) {
+                                            if (sw.dx + gx >= sw.limit) {
+                                                break;
                                             }
-                                        } else {
-                                            Flush.run(sw, y, &run_start, &run_length);
+
+                                            if ((bits & mask) != 0) {
+                                                sw.fb.set_pixel(.new(px + gx, py + gy), sw.color);
+                                            }
+
+                                            mask <<= 1; // TODO: we can also use bigger types for mask/bits here to reduce the number of loads necessary.
+                                            if (mask == 0) {
+                                                row_ptr += 1;
+                                                mask = 1;
+                                                bits = row_ptr[0];
+                                            }
                                         }
                                     }
-
-                                    Flush.run(sw, y, &run_start, &run_length);
                                 }
-                            } else {}
+                            }
 
                             sw.dx += glyph.advance;
                         }
@@ -974,7 +780,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
 ///
 /// This allows us to use the same source for both data structures.
 const BitmapWrap = struct {
-    const Cursor = PixelCursor(.row_major);
+    const Cursor = PixelCursor;
 
     bmp: *const Bitmap,
 
@@ -998,127 +804,105 @@ const BitmapWrap = struct {
 ///
 /// It initializes to an undefined position and must explicitly be initialized
 /// after construction with a call to `.move()` to set the initial position.
-pub fn PixelCursor(comptime _layout: PixelLayout) type {
-    return struct {
-        const Cursor = @This();
+pub const PixelCursor = struct {
+    const Cursor = @This();
 
-        pub const layout = _layout;
+    // constraints:
 
-        // constraints:
+    /// Horizontal height of the target in pixels.
+    width: u16,
 
-        /// Horizontal height of the target in pixels.
-        width: u16,
+    /// Vertical size of the target in pixels.
+    height: u16,
 
-        /// Vertical size of the target in pixels.
-        height: u16,
+    /// Distance between two scanlines in abstract "units".
+    stride: usize,
 
-        /// Distance between two scanlines in abstract "units".
-        stride: usize,
+    // position:
 
-        // position:
+    /// The current offset into the framebuffer in "units".
+    offset: usize = undefined,
 
-        /// The current offset into the framebuffer in "units".
-        offset: usize = undefined,
+    /// Distance to the left edge of the target.
+    x: u16 = undefined,
 
-        /// Distance to the left edge of the target.
-        x: u16 = undefined,
+    /// Distance to the top edge of the target.
+    y: u16 = undefined,
 
-        /// Distance to the top edge of the target.
-        y: u16 = undefined,
+    /// Moves the cursor to (x, y) and returns `true` if inside bounds.
+    pub fn move(pc: *Cursor, x: usize, y: usize) bool {
+        defer pc.check_consistency();
 
-        /// Moves the cursor to (x, y) and returns `true` if inside bounds.
-        pub fn move(pc: *Cursor, x: usize, y: usize) bool {
-            defer pc.check_consistency();
+        // logger.debug("move({},{}) @ ({},{})", .{
+        //     pc.x,
+        //     pc.y,
+        //     pc.width,
+        //     pc.height,
+        // });
 
-            // logger.debug("move({},{}) @ ({},{})", .{
-            //     pc.x,
-            //     pc.y,
-            //     pc.width,
-            //     pc.height,
-            // });
+        if (x >= pc.width or y >= pc.height)
+            return false;
+        pc.x = @intCast(x);
+        pc.y = @intCast(y);
+        pc.offset = pc.stride * y + x;
+        return true;
+    }
 
-            if (x >= pc.width or y >= pc.height)
-                return false;
-            pc.x = @intCast(x);
-            pc.y = @intCast(y);
-            switch (layout) {
-                .row_major => pc.offset = pc.stride * y + x,
-                .column_major => pc.offset = pc.stride * x + y,
-            }
-            return true;
-        }
+    /// Moves the cursor `count` elements to the left and returns the number of
+    /// actual pixels moved.
+    pub fn shift_left(pc: *Cursor, count: u16) u16 {
+        defer pc.check_consistency();
 
-        /// Moves the cursor `count` elements to the left and returns the number of
-        /// actual pixels moved.
-        pub fn shift_left(pc: *Cursor, count: u16) u16 {
-            defer pc.check_consistency();
+        const delta = @min(pc.x, count);
+        pc.x -= delta;
+        pc.offset -= delta;
+        return delta;
+    }
 
-            const delta = @min(pc.x, count);
-            pc.x -= delta;
-            switch (layout) {
-                .row_major => pc.offset -= delta,
-                .column_major => pc.offset -= pc.stride * delta,
-            }
-            return delta;
-        }
+    /// Moves the cursor `count` elements to the right and returns the number of
+    /// actual pixels moved.
+    pub fn shift_right(pc: *Cursor, count: u16) u16 {
+        defer pc.check_consistency();
 
-        /// Moves the cursor `count` elements to the right and returns the number of
-        /// actual pixels moved.
-        pub fn shift_right(pc: *Cursor, count: u16) u16 {
-            defer pc.check_consistency();
+        const delta = @min(pc.width - pc.x, count);
+        pc.x += delta;
+        pc.offset += delta;
+        return delta;
+    }
 
-            const delta = @min(pc.width - pc.x, count);
-            pc.x += delta;
-            switch (layout) {
-                .row_major => pc.offset += delta,
-                .column_major => pc.offset += pc.stride * delta,
-            }
-            return delta;
-        }
+    /// Moves the cursor `count` elements upwards and returns the number of
+    /// actual pixels moved.
+    pub fn shift_up(pc: *Cursor, count: u16) u16 {
+        defer pc.check_consistency();
 
-        /// Moves the cursor `count` elements upwards and returns the number of
-        /// actual pixels moved.
-        pub fn shift_up(pc: *Cursor, count: u16) u16 {
-            defer pc.check_consistency();
+        const delta = @min(pc.y, count);
+        pc.offset -= pc.stride * delta;
+        pc.y -= delta;
+        return delta;
+    }
 
-            const delta = @min(pc.y, count);
-            switch (layout) {
-                .row_major => pc.offset -= pc.stride * delta,
-                .column_major => pc.offset -= delta,
-            }
-            pc.y -= delta;
-            return delta;
-        }
+    /// Moves the cursor `count` elements downwards and returns the number of
+    /// actual pixels moved.
+    pub fn shift_down(pc: *Cursor, count: u16) u16 {
+        defer pc.check_consistency();
 
-        /// Moves the cursor `count` elements downwards and returns the number of
-        /// actual pixels moved.
-        pub fn shift_down(pc: *Cursor, count: u16) u16 {
-            defer pc.check_consistency();
+        const delta = @min(pc.height - pc.y, count);
+        pc.offset += pc.stride * delta;
+        pc.y += delta;
+        return delta;
+    }
 
-            const delta = @min(pc.height - pc.y, count);
-            switch (layout) {
-                .row_major => pc.offset += pc.stride * delta,
-                .column_major => pc.offset += delta,
-            }
-            pc.y += delta;
-            return delta;
-        }
-
-        /// Performs a Debug-only consistency check which
-        inline fn check_consistency(pc: Cursor) void {
-            // logger.debug("({},{}) < ({}x{})", .{
-            //     pc.x,
-            //     pc.y,
-            //     pc.width,
-            //     pc.height,
-            // });
-            std.debug.assert(pc.x <= pc.width);
-            std.debug.assert(pc.y <= pc.height);
-            const offset = switch (layout) {
-                .row_major => pc.stride * pc.y + pc.x,
-                .column_major => pc.stride * pc.x + pc.y,
-            };
-            std.debug.assert(pc.offset == offset);
-        }
-    };
-}
+    /// Performs a Debug-only consistency check which
+    inline fn check_consistency(pc: Cursor) void {
+        // logger.debug("({},{}) < ({}x{})", .{
+        //     pc.x,
+        //     pc.y,
+        //     pc.width,
+        //     pc.height,
+        // });
+        std.debug.assert(pc.x <= pc.width);
+        std.debug.assert(pc.y <= pc.height);
+        const offset = pc.stride * pc.y + pc.x;
+        std.debug.assert(pc.offset == offset);
+    }
+};

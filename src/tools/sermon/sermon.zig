@@ -54,66 +54,64 @@ pub fn main() !u8 {
     const output = std.io.getStdOut();
     const stderr = std.io.getStdErr();
 
-    {
-        const output_cfg = try IoOptions.configureOutputUncooked(output);
-        defer output_cfg.restore(output) catch |err| std.log.err("we fucked up. failed to restore settings for stdout: {s}. Try resetting/restarting your terminal!", .{@errorName(err)});
+    const output_cfg = try IoOptions.configureOutputUncooked(output);
+    defer output_cfg.restore(output) catch |err| std.log.err("failed to restore terminal settings for stdout: {s}. Try resetting/restarting your terminal!", .{@errorName(err)});
 
-        // TODO: Add signal handler to allow graceful shutdown here.
+    // TODO: Add signal handler to allow graceful shutdown here.
 
-        var any_run_ok = false;
-        var reconnect_msg_printed = false;
-        var any_run_executed = false;
+    var any_run_ok = false;
+    var reconnect_msg_printed = false;
+    var any_run_executed = false;
 
-        var spinner: Spinner = .ascii;
+    var spinner: Spinner = .ascii;
 
-        while (true) {
-            const stream_result = stream_port(output, any_run_executed, port_path, .{
-                .baud_rate = cli.options.baud,
-                .parity = cli.options.parity,
-                .stop_bits = cli.options.@"stop-bits",
-                .word_size = cli.options.@"word-size",
-                .handshake = cli.options.handshake,
-            });
+    while (true) {
+        const stream_result = stream_port(output, any_run_executed, port_path, .{
+            .baud_rate = cli.options.baud,
+            .parity = cli.options.parity,
+            .stop_bits = cli.options.@"stop-bits",
+            .word_size = cli.options.@"word-size",
+            .handshake = cli.options.handshake,
+        });
 
-            // Unconditionally reset any modifications done to graphics of the terminal:
-            try output.writeAll("\x1B[0m");
+        // Unconditionally reset any modifications done to graphics of the terminal:
+        try output.writeAll("\x1B[0m");
 
-            any_run_executed = true;
-            if (stream_result) |_| {
-                // ok
-                any_run_ok = true;
-                reconnect_msg_printed = false;
-                try stderr.writeAll("<<disconnected>>\r\n");
-            } else |err| {
-                switch (err) {
-                    error.FileNotFound => {
-                        if (!any_run_ok and !reconnect_msg_printed) {
-                            try std.io.getStdErr().writer().print("waiting for {s}...\r\n", .{
-                                port_path,
-                            });
-                            reconnect_msg_printed = true;
-                        }
-                        try output.writer().print("\r{s}\r", .{
-                            spinner.next(),
-                        });
-                    },
-
-                    else => |e| {
-                        try output.writeAll("\n");
-                        try std.io.getStdErr().writer().print("failed to stream data from {s}: {s}\r\n", .{
+        any_run_executed = true;
+        if (stream_result) |_| {
+            // ok
+            any_run_ok = true;
+            reconnect_msg_printed = false;
+            try stderr.writeAll("<<disconnected>>\r\n");
+        } else |err| {
+            switch (err) {
+                error.FileNotFound => {
+                    if (!any_run_ok and !reconnect_msg_printed) {
+                        try std.io.getStdErr().writer().print("waiting for {s}...\r\n", .{
                             port_path,
-                            @errorName(e),
                         });
-                        return 1;
-                    },
-                }
-            }
+                        reconnect_msg_printed = true;
+                    }
+                    try output.writer().print("\r{s}\r", .{
+                        spinner.next(),
+                    });
+                },
 
-            std.time.sleep(100 * std.time.ns_per_ms);
+                else => |e| {
+                    try output.writeAll("\n");
+                    try std.io.getStdErr().writer().print("failed to stream data from {s}: {s}\r\n", .{
+                        port_path,
+                        @errorName(e),
+                    });
+                    return 1;
+                },
+            }
         }
+
+        std.time.sleep(100 * std.time.ns_per_ms);
     }
 
-    return 0;
+    comptime unreachable;
 }
 
 const Spinner = struct {
@@ -181,20 +179,35 @@ fn print_help(exe_name: ?[]const u8, stream: std.fs.File) !void {
 
 const IoOptions = switch (builtin.os.tag) {
     .windows => struct {
-        fn configureTtyNonBlocking(file: std.fs.File) !IoOptions {
-            _ = file;
-            @compileError("no windows support yet!");
-        }
+        // https://learn.microsoft.com/en-us/windows/console/getconsolemode
 
-        fn configureSerialNonBlocking(file: std.fs.File) !void {
-            _ = file;
-            @compileError("no windows support yet!");
+        const DWORD = std.os.windows.DWORD;
+        const kernel32 = std.os.windows.kernel32;
+
+        const ENABLE_PROCESSED_OUTPUT = 0x0001;
+        const ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004;
+
+        restore_mode: ?DWORD,
+
+        fn configureOutputUncooked(file: std.fs.File) !IoOptions {
+            var mode: DWORD = 0;
+            if (kernel32.GetConsoleMode(file.handle, &mode) != 0) {
+                const new_mode = mode | ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+
+                if (kernel32.SetConsoleMode(file.handle, new_mode) == 0)
+                    return error.ConsoleConfigFailed;
+
+                return .{ .restore_mode = mode };
+            } else {
+                return .{ .restore_mode = null };
+            }
         }
 
         fn restore(options: IoOptions, file: std.fs.File) !void {
-            _ = options;
-            _ = file;
-            @compileError("no windows support yet!");
+            if (options.restore_mode) |old_mode| {
+                if (kernel32.SetConsoleMode(file.handle, old_mode) == 0)
+                    return error.ConsoleConfigFailed;
+            }
         }
     },
 
@@ -232,33 +245,6 @@ const IoOptions = switch (builtin.os.tag) {
             return IoOptions{
                 .termios = original,
             };
-        }
-
-        fn configureTtyNonBlocking(file: std.fs.File) !IoOptions {
-            const original = try std.posix.tcgetattr(file.handle);
-
-            var settings = original;
-
-            settings.iflag = std.posix.tc_iflag_t{ .IGNBRK = true }; // Ignore BREAK condition on input.
-            settings.oflag = std.posix.tc_oflag_t{}; // no magic enabled
-            // settings.cflag |= 0; // unchanged
-            settings.lflag = std.posix.tc_lflag_t{}; // no magic enabled
-
-            // make read() nonblocking:
-            settings.cc[VMIN] = 1;
-            settings.cc[VTIME] = 0;
-
-            try std.posix.tcsetattr(file.handle, .NOW, settings);
-
-            _ = try std.posix.fcntl(file.handle, std.posix.F.SETFL, try std.posix.fcntl(file.handle, std.posix.F.GETFL, 0) | std.posix.system.IN.NONBLOCK);
-
-            return IoOptions{
-                .termios = original,
-            };
-        }
-
-        fn configureSerialNonBlocking(file: std.fs.File) !void {
-            _ = try std.posix.fcntl(file.handle, std.posix.F.SETFL, try std.posix.fcntl(file.handle, std.posix.F.GETFL, 0) | std.posix.system.IN.NONBLOCK);
         }
 
         fn restore(options: IoOptions, file: std.fs.File) !void {

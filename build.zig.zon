@@ -34,13 +34,19 @@
         .sermon = .{
             .path = "src/tools/sermon",
         },
+        .gui_designer = .{
+            .path = "src/tools/gui-designer",
+        },
+        .agp_tester = .{
+            .path = "src/tools/agp-tester",
+        },
         // .wikitool = .{
         //     .path = "src/tools/wikitool",
         // },
 
         .depz = .{
-            .url = "git+https://codeberg.org/Der_Teufel/depz.git#abdfdec197d68720d38d445aaec48f3fe13115d0",
-            .hash = "depz-0.1.0-AAAAAM0VAAD5Kv2E6gM53kI1t9IIsW3OzgezKHzEq7B4",
+            .url = "git+https://codeberg.org/Der_Teufel/depz.git#b7041a9f0b535c70d70439aa15bc8cfbf359d2c2",
+            .hash = "depz-0.1.0-AAAAADMWAADGaaICqczZivLrwNCUK6hPvTuKUYzcwnhT",
         },
 
         // UEFI firmware for running x86 QEMU systems with UEFI

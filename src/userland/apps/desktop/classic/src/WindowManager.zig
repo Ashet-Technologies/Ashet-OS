@@ -581,6 +581,42 @@ pub fn invalidate_window(wm: *WindowManager, window_handle: ashet.abi.Window, ar
     ));
 }
 
+/// Updates a windows client_rectangle and emits the necessary
+/// window events as well as the set_window_size call.
+fn safe_resize_window(wm: *WindowManager, window: *Window, client_rectangle: Rectangle) void {
+    if (window.client_rectangle.x != client_rectangle.x or window.client_rectangle.y != client_rectangle.y) {
+        window.pushEvent(.window_moved);
+    }
+    if (window.client_rectangle.width != client_rectangle.width or window.client_rectangle.height != client_rectangle.height) {
+        window.pushEvent(.window_resized);
+    }
+
+    window.client_rectangle = client_rectangle;
+
+    const resize_ok = ashet.gui.set_window_size(window.handle, Size.new(
+        window.client_rectangle.width,
+        window.client_rectangle.height,
+    ));
+    if (resize_ok) |new_size| {
+        if (new_size.width != window.client_rectangle.width or new_size.height != window.client_rectangle.height) {
+            logger.warn("failed to resize window to {}x{}: clamped to {}x{}", .{
+                window.client_rectangle.width,
+                window.client_rectangle.height,
+                new_size.width,
+                new_size.height,
+            });
+        }
+    } else |err| {
+        logger.warn("failed to resize window to {}x{}: {s}", .{
+            window.client_rectangle.width,
+            window.client_rectangle.height,
+            @errorName(err),
+        });
+    }
+
+    wm.damage_tracking.invalidate_screen();
+}
+
 pub fn restore_window(wm: *WindowManager, window: *Window) void {
 
     // first, invalidate all regions
@@ -589,12 +625,12 @@ pub fn restore_window(wm: *WindowManager, window: *Window) void {
         wm.damage_tracking.invalidate_region(minmin.bounds);
     }
 
-    window.client_rectangle = window.saved_restore_location;
-
     // then maximize the window. The invalidation will ensure
     // the now maximized window will be undrawn
     window.flags.minimized = false;
     window.pushEvent(.window_restore);
+
+    wm.safe_resize_window(window, window.saved_restore_location);
 }
 
 pub fn minimize_window(wm: *WindowManager, window: *Window) void {
@@ -622,11 +658,7 @@ pub fn maximize_window(wm: *WindowManager, window: *Window) void {
         window.saved_restore_location = window.client_rectangle;
     }
 
-    window.client_rectangle = wm.maximized_window_rect;
-    window.pushEvent(.window_moved);
-    window.pushEvent(.window_resized);
-
-    wm.damage_tracking.invalidate_screen();
+    wm.safe_resize_window(window, wm.maximized_window_rect);
 }
 
 /// Windows can be resized if their minimum size and maximum size differ

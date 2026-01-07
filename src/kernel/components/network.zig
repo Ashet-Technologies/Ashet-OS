@@ -442,7 +442,7 @@ fn wrap_lwip_call(comptime func: anytype, comptime error_set: []const LWIP_Error
                 if (return_code == @intFromEnum(err))
                     return @field(anyerror, @errorName(err.to_zig_error()));
             }
-            std.log.err("{} returned unexpected error code {}", .{ &func, return_code });
+            std.log.err("{} returned unexpected error code {}", .{ ashet.fmtCodeLocation(@intFromPtr(&func)), return_code });
             @panic("unexpected return value from LWIP!");
         }
 
@@ -474,11 +474,28 @@ const lwip = struct {
         const write = wrap_lwip_call(c.tcp_write, &.{.mem}).invoke;
     };
     const udp = struct {
-        const bind = wrap_lwip_call(c.udp_bind, &.{}).invoke;
-        const connect = wrap_lwip_call(c.udp_connect, &.{}).invoke;
+        const bind = wrap_lwip_call(c.udp_bind, &.{
+            .arg,
+            .use,
+        }).invoke;
+        const bind_netif = c.udp_bind_netif;
+        const connect = wrap_lwip_call(c.udp_connect, &.{
+            .use,
+            .arg,
+        }).invoke;
         const disconnect = c.udp_disconnect;
-        const send = wrap_lwip_call(c.udp_send, &.{}).invoke;
-        const sendto = wrap_lwip_call(c.udp_sendto, &.{}).invoke;
+        const send = wrap_lwip_call(c.udp_send, &.{
+            .arg,
+            .mem,
+            .rte,
+            .val,
+        }).invoke;
+        const sendto = wrap_lwip_call(c.udp_sendto, &.{
+            .arg,
+            .mem,
+            .rte,
+            .val,
+        }).invoke;
     };
 };
 
@@ -613,7 +630,7 @@ pub const udp = struct {
             return call.finalize(abi_udp.Connect, err);
         };
         lwip.udp.connect(socket.pcb, &mapIP(inputs.target.ip), inputs.target.port) catch |err| {
-            return ashet.io.finalize(abi_udp.Connect, err);
+            return call.finalize(abi_udp.Connect, err);
         };
         call.finalize(abi_udp.Connect, .{});
     }

@@ -495,6 +495,7 @@ namespace network {
             in      socket: UdpSocket;
             in      bind_point: EndPoint;
             out     endpoint: EndPoint;
+            error   IllegalArgument;
             error   AddressInUse;
             error   IllegalValue;
             error   InvalidHandle;
@@ -506,6 +507,7 @@ namespace network {
             in      target: EndPoint;
             error   AlreadyConnected;
             error   AlreadyConnecting;
+            error   AddressInUse;
             error   BufferError;
             error   IllegalArgument;
             error   IllegalValue;
@@ -1077,6 +1079,18 @@ namespace draw {
         error InvalidHandle;
     }
 
+    /// Measures the size of a text string.
+    /// 
+    /// NOTE: This function accepts strings using the LF line separator
+    ///       and will return the height of all lines and the width of 
+    ///       the longest line.
+    syscall measure_text_size {
+        in    font: Font;
+        in    text: str;
+        out   size: Size;
+        error InvalidHandle;
+    }
+
     /// Creates a new in-memory framebuffer that can be used for offscreen painting.
     syscall create_memory_framebuffer {
         in    size: Size;
@@ -1277,12 +1291,22 @@ namespace gui {
     }
 
     /// Moves and resizes a widget in one.
+    ///
+    /// NOTE: The position of a widget is unrestricted, but it's size
+    ///       may be restricted by the selected widget type.
     syscall place_widget {
         in    widget: Widget;
-        in    position: Point;
-        in    size: Size;
+
+        /// The desired position and size of the widget.
+        in    desired: Rectangle;
+
+        /// The actual position and size of the widget after the operation.
+        out   actual: Rectangle;
+
         error InvalidHandle;
     }
+
+    enum WidgetControlID : u32 { ... }
 
     /// Triggers the `control` event of the widget with the given `message` as a payload.
     syscall control_widget {
@@ -1292,10 +1316,14 @@ namespace gui {
         error InvalidHandle;
     }
 
-    /// Triggers the `widget_notify` event of the `Window` that owns `widget` with `event` as the payload.
+    enum WidgetNotifyID : u32 { ... }
+
+    /// Puts a `widget_notify` event into the event queue of the `Window` that owns `widget`.
+    /// The parameters are passed as a `WidgetNotifyEvent` to the event queue.
     syscall notify_owner {
         in    widget: Widget;
-        in    event: WidgetNotifyEvent;
+        in    type:   WidgetNotifyID;
+        in    params: *const [4]usize;
         error SystemResources;
         error InvalidHandle;
     }
@@ -1309,6 +1337,13 @@ namespace gui {
     syscall get_widget_data {
         in    widget: Widget;
         out   data: [*]align(16) u8;
+        error InvalidHandle;
+    }
+
+    /// Returns the current location and size of the provided widget.
+    syscall get_widget_bounds {
+        in    widget: Widget;
+        out   bounds: Rectangle;
         error InvalidHandle;
     }
 
@@ -2572,7 +2607,7 @@ bitstruct CreateWindowFlags : u32 {
     reserve u31 = 0;
 }
 
-typedef WidgetEventHandler = fnptr (Widget, *const WidgetEvent) void;
+typedef WidgetEventHandler = fnptr (WidgetType, Widget, *const WidgetEvent) void;
 
 
 struct WidgetDescriptor {
@@ -2617,7 +2652,7 @@ struct WidgetControlMessage {
 
     /// The widget-specific type of the control message.
     /// Could be something like `get_property`, `set_property`, `set_text`, ...
-    field type: u32;
+    field type: gui.WidgetControlID;
 
     /// Generic parameters that can be passed to the widget.
     field params: [4]usize;
@@ -2630,7 +2665,7 @@ struct WidgetNotifyEvent {
 
     /// The widget-specific type of event.
     /// Could be something like `text_changed`, `clicked`, `checked_changed`, ...
-    field type: u32;
+    field type: gui.WidgetNotifyID;
 
     /// Generic data associated with the event.
     field data: [4]usize;
@@ -2884,6 +2919,14 @@ union WidgetEvent {
 
         /// The user clicked on the widget with the primary mouse button
         /// or pressed the return or space bar button on the keyboard.
+        ///
+        /// NOTE: A click with the mouse is valid when, and only when:
+        ///       `mouse_button_down` and `mouse_button_up` with the left mouse button happen on the
+        ///       same widget. The hovered widget *may* change in between the mouse down and mouse up,
+        ///       but the click will still be recognized.
+        /// NOTE: A click with the keyboard is valid when, and only when:
+        ///       `key_press` and `key_release` happen without changing the focused widget, and only when
+        ///       the focus giving key (space, return, ...) was pressed without any other key interrupting.
         item click = 3;
 
         //? keyboard input:
@@ -2986,6 +3029,7 @@ union WidgetEvent {
 
         //? widget specific:
 
+        //? TODO: Implement ResizedArgs with "desired size, actual size"
         /// The widget was resized with a call to `place_widget`.
         ///
         /// NOTE: This event will not fire if the widget was only moved.
