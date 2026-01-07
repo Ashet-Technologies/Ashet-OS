@@ -146,7 +146,7 @@ const IPFormatter = struct {
 fn netif_status_callback(netif_c: [*c]c.netif) callconv(.c) void {
     const netif: *c.netif = netif_c;
 
-    logger.info("netif status changed ip to {}", .{IPFormatter.new(netif.ip_addr)});
+    logger.info("netif status changed ip to {f}", .{IPFormatter.new(netif.ip_addr)});
 }
 
 fn netif_init(netif_c: [*c]c.netif) callconv(.c) c.err_t {
@@ -211,7 +211,7 @@ pub fn start() !void {
     var index: usize = 0;
     var nics = ashet.drivers.enumerate(.network);
     while (nics.next()) |nic| : (index += 1) {
-        logger.info("initializing NetworkInterface '{c}{d}' (MAC={})...", .{ nic.interface.prefix(), index, nic.address });
+        logger.info("initializing NetworkInterface '{c}{d}' (MAC={f})...", .{ nic.interface.prefix(), index, nic.address });
 
         const netif = &nic.netif;
 
@@ -257,7 +257,7 @@ pub fn start() !void {
 pub fn dumpStats() void {
     var nics = ashet.drivers.enumerate(.network);
     while (nics.next()) |nic| {
-        logger.info("nic {s}: up={} link={} ip={} netmask={} gateway={} dhcp={}", .{
+        logger.info("nic {s}: up={} link={} ip={f} netmask={f} gateway={f} dhcp={}", .{
             nic.netif.name,
             (nic.netif.flags & c.NETIF_FLAG_UP) != 0,
             (nic.netif.flags & c.NETIF_FLAG_LINK_UP) != 0,
@@ -859,7 +859,7 @@ pub const tcp = struct {
         // err: An unused error code, always ERR_OK currently ;-)
         std.debug.assert(err == c.ERR_OK);
 
-        logger.debug("tcp: connected(arg={f}, pcb={?*}, err={!})", .{ socket, pcb, lwipTry(err) });
+        logger.debug("tcp: connected(arg={*}, pcb={*}, err={!})", .{ socket, pcb, lwipTry(err) });
 
         socket.connected = true;
         socket.op = null;

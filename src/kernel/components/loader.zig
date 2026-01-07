@@ -22,7 +22,7 @@ pub fn load(
     format: BinaryFormat,
 ) !LoadedExecutable {
     return switch (format) {
-        .elf => try elf.load(file, allocator),
+        .elf => return error.Unsupported, // TODO(0.15): try elf.load(file, allocator),
         .ashex => try ashex.load(file, allocator),
     };
 }

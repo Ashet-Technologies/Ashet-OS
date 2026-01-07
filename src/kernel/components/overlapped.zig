@@ -169,7 +169,7 @@ pub fn schedule_with_context(resource_owner: *ashet.multi_tasking.Process, conte
     );
     errdefer call.destroy();
 
-    logger.debug("dispatching {s} from {}", .{ @tagName(event.type), resource_owner });
+    logger.debug("dispatching {t} from {f}", .{ event.type, resource_owner });
 
     context.in_flight.append(&call.owner_link);
 

@@ -186,9 +186,9 @@ pub const Driver = struct {
 
     fn validate(dri: *Driver, comptime class: DriverClass) void {
         if (dri.class != class) {
-            logger.err("bad driver {}", .{ashet.CodeLocation{ .pointer = @intFromPtr(dri) }});
+            logger.err("bad driver {f}", .{ashet.CodeLocation{ .pointer = @intFromPtr(dri) }});
             logger.err("expected class {s}, but found {s}", .{ comptime @tagName(class), @tagName(dri.class) });
-            logger.err("driver data: {}", .{dri.*});
+            logger.err("driver data: {any}", .{dri.*});
             @panic("driver corrupted");
         }
     }

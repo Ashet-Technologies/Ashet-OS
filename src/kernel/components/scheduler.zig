@@ -340,7 +340,7 @@ pub const Thread = struct {
         if (thread.isStarted())
             return error.AlreadyStarted;
 
-        logger.info("enqueuing {} with stack size {}", .{ thread, thread.stack_memory.len });
+        logger.info("enqueuing {*} with stack size {}", .{ thread, thread.stack_memory.len });
 
         thread.flags.started = true;
         enqueueThread(&wait_queue, thread);
@@ -598,7 +598,7 @@ fn performSwitch(from: *Thread, to: *Thread) void {
     ashet_scheduler_switchTasks();
 
     if (delete_previous_thread) |true_previous| {
-        logger.info("delete previous thread ('{s}', {}).", .{ true_previous.getName(), ashet.CodeLocation{ .pointer = true_previous.debug_info.entry_point } });
+        logger.info("delete previous thread ('{s}', {f}).", .{ true_previous.getName(), ashet.CodeLocation{ .pointer = true_previous.debug_info.entry_point } });
         delete_previous_thread = null;
 
         // If the previous thread was marked for deletion, we can

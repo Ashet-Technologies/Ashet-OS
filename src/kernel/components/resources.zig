@@ -630,7 +630,7 @@ pub fn resolve(
 
 /// Returns the handle for `resource` if `process` owns `resource`, otherwise `null`.
 pub fn get_handle(process: *ashet.multi_tasking.Process, resource: *SystemResource) ?Handle {
-    logger.debug("get_resource_handle({}, {}, zombie={})", .{ process, resource, process.is_zombie() });
+    logger.debug("get_resource_handle({f}, {f}, zombie={})", .{ process, resource, process.is_zombie() });
     // if (process.is_zombie())
     //     return null;
 
@@ -648,11 +648,11 @@ pub fn get_handle(process: *ashet.multi_tasking.Process, resource: *SystemResour
 /// If the resource is already owned by `process`, nothing will be done and the handle will be returned.
 pub fn add_to_process(process: *ashet.multi_tasking.Process, resource: *SystemResource) error{SystemResources}!Handle {
     if (get_handle(process, resource)) |handle| {
-        logger.debug("add_to_process({}, {}) => existing: {}", .{ process, resource, handle });
+        logger.debug("add_to_process({f}, {f}) => existing: {f}", .{ process, resource, handle });
         return handle;
     }
 
-    logger.debug("add_to_process({}, {}) => add new", .{ process, resource });
+    logger.debug("add_to_process({f}, {f}) => add new", .{ process, resource });
     // ashet.multi_tasking.debug_dump();
 
     std.debug.assert(process.is_zombie() == false);
@@ -669,14 +669,14 @@ pub fn add_to_process(process: *ashet.multi_tasking.Process, resource: *SystemRe
     };
     resource.owners.append(info.ownership);
 
-    logger.debug("  handle: {}", .{info.handle});
+    logger.debug("  handle: {f}", .{info.handle});
 
     return info.handle;
 }
 
 /// Removes the system `resource` from a `process`.
 pub fn remove_from_process(process: *ashet.multi_tasking.Process, resource: *SystemResource) void {
-    logger.debug("drop_resource_ownership({}, {}, zombie={})", .{ process, resource, process.is_zombie() });
+    logger.debug("drop_resource_ownership({f}, {f}, zombie={})", .{ process, resource, process.is_zombie() });
     // if (process.is_zombie()) {
     //     // Zombies don't own anything, they're dead.
     //     std.debug.assert(get_handle(process, resource) == null);
@@ -685,7 +685,7 @@ pub fn remove_from_process(process: *ashet.multi_tasking.Process, resource: *Sys
     // }
 
     const handle = get_handle(process, resource) orelse {
-        logger.debug("drop_resource_ownership: {} was not owned by {}", .{ resource, process });
+        logger.debug("drop_resource_ownership: {f} was not owned by {f}", .{ resource, process });
         return;
     };
 
@@ -696,7 +696,7 @@ pub fn remove_from_process(process: *ashet.multi_tasking.Process, resource: *Sys
         defer std.debug.assert(resource.owners.len == previous_count - 1);
 
         const resource_index: usize = process.resource_handles.index_from_handle(handle) catch |err| {
-            logger.err("resource was not owned by process {}: {s}", .{ process, @errorName(err) });
+            logger.err("resource was not owned by process {f}: {s}", .{ process, @errorName(err) });
             @panic("kernel bug: get_handle() yields resource, but index_from_handle does not.");
         };
 
@@ -706,7 +706,7 @@ pub fn remove_from_process(process: *ashet.multi_tasking.Process, resource: *Sys
         std.debug.assert(ownership.data.handle == handle);
         std.debug.assert(ownership.data.resource == resource);
 
-        logger.debug("remove process {} from resource {}", .{ process, resource });
+        logger.debug("remove process {f} from resource {f}", .{ process, resource });
         resource.owners.remove(ownership);
 
         ownership.* = undefined;
@@ -725,7 +725,7 @@ pub fn remove_from_process(process: *ashet.multi_tasking.Process, resource: *Sys
 
 /// Immediatly destroys the system resource and invalidates all handles.
 pub fn destroy(resource: *SystemResource) void {
-    logger.debug("destroy {}", .{resource});
+    logger.debug("destroy {f}", .{resource});
 
     // If the resource has a early destroy notification, send it:
     switch (resource.type) {
@@ -740,7 +740,7 @@ pub fn destroy(resource: *SystemResource) void {
     }
 
     // Unlink resource from all processes:
-    logger.debug("unlink resource {}", .{resource});
+    logger.debug("unlink resource {f}", .{resource});
     var it = resource.owners.first;
     while (it) |node| {
         it = node.next;
@@ -754,7 +754,7 @@ pub fn destroy(resource: *SystemResource) void {
     }
     std.debug.assert(resource.owners.len == 0);
 
-    logger.debug("destruct {}", .{resource});
+    logger.debug("destruct {f}", .{resource});
 
     switch (resource.type) {
         inline else => |type_id| {
@@ -768,7 +768,7 @@ pub fn destroy(resource: *SystemResource) void {
 
 /// Removes all resources from the process.
 pub fn unlink_process(process: *ashet.multi_tasking.Process, unlink_self: bool) void {
-    logger.debug("unlink_process({})", .{process});
+    logger.debug("unlink_process({f})", .{process});
 
     // logger.info("before unlink:", .{});
     // ashet.multi_tasking.debug_dump();

@@ -30,7 +30,7 @@ pub fn init(
 
     try server_sock.listen();
 
-    logger.info("Host Screen VNC Server available at {!}", .{
+    logger.info("Host Screen VNC Server available at {!f}", .{
         server_sock.getLocalEndPoint(),
     });
 
@@ -93,7 +93,7 @@ fn connection_handler(vd: *VNC_Server) !void {
             _ = request_arena.reset(.retain_capacity);
 
             vd.handle_event(&session, request_arena.allocator(), event) catch |err| switch (err) {
-                error.ConnectionResetByPeer => break,
+                // TODO(0.15.2): Fix this by checking the actual server error instead of ReadFailed! error.ConnectionResetByPeer => break,
                 else => {
                     logger.err("processing client event failed: {s}", .{@errorName(err)});
                     return err;
@@ -119,7 +119,7 @@ fn handle_event(vd: *VNC_Server, state: *Session_State, request_allocator: std.m
 
     switch (event) {
         .set_pixel_format => |pf| {
-            logger.info("change pixel format to {}", .{pf});
+            logger.info("change pixel format to {f}", .{pf});
         }, // use internal handler
 
         .framebuffer_update_request => |req| {

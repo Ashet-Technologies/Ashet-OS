@@ -39,7 +39,7 @@ pub fn load(file: *libashet.fs.File, allocator: std.mem.Allocator) !loader.Loade
 
         var header_fbs = std.io.fixedBufferStream(&header_chunk);
 
-        logger.debug("ashex header: {}", .{std.fmt.fmtSliceHexUpper(&header_chunk)});
+        logger.debug("ashex header: {X}", .{&header_chunk});
 
         const reader = header_fbs.reader();
 
@@ -130,7 +130,7 @@ pub fn load(file: *libashet.fs.File, allocator: std.mem.Allocator) !loader.Loade
         header.icon_offset, header.icon_size,
     });
 
-    const process_memory = try allocator.alignedAlloc(u8, ashet.memory.page_size, header.vmem_size);
+    const process_memory = try allocator.alignedAlloc(u8, .fromByteUnits(ashet.memory.page_size), header.vmem_size);
     errdefer allocator.free(process_memory);
 
     const process_base = @intFromPtr(process_memory.ptr);

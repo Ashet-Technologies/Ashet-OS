@@ -487,7 +487,7 @@ fn kernel_log_once(comptime scope: @Type(.enum_literal)) void {
             if (triggered)
                 return;
             triggered = true; // must be set before the log to prevent recursion
-            std.log.warn("log scope .{} has no explicit filter in root.log_levels", .{
+            std.log.warn("log scope .{f} has no explicit filter in root.log_levels", .{
                 std.zig.fmtId(@tagName(scope)),
             });
         }

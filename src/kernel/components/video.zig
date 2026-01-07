@@ -123,7 +123,7 @@ pub fn initialize() !void {
 
             const output = &video_outputs[index];
 
-            logger.info("found video output {}: {}", .{
+            logger.info("found video output {}: {f}", .{
                 index,
                 output.get_resolution(),
             });

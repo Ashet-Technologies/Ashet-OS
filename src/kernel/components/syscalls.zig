@@ -30,7 +30,7 @@ inline fn print_strace(name: []const u8) void {
     var it = std.debug.StackIterator.init(@returnAddress(), null);
     var current = it.next() orelse @returnAddress();
     current = it.next() orelse current;
-    strace.info("{s} from {}", .{ name, ashet.fmtCodeLocation(current) });
+    strace.info("{s} from {f}", .{ name, ashet.fmtCodeLocation(current) });
 }
 
 const callbacks = struct {

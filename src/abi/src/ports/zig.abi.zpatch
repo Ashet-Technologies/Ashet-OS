@@ -96,9 +96,14 @@
     }
 </patch>
 <patch network.EndPoint>
-  pub fn new(ip: IP, port: u16) EndPoint {
+    pub fn new(ip: IP, port: u16) EndPoint {
         return EndPoint{ .ip = ip, .port = port };
     }
+
+    pub fn format(ep: EndPoint, writer: *std.Io.Writer) !void {
+        try writer.print("{f}:{d}", .{ ep.ip, ep.port });
+    }
+
 </patch>
 <patch network.IP>
   pub fn ipv4(addr: [4]u8) IP {

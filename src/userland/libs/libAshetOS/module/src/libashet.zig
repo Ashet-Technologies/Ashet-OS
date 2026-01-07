@@ -398,9 +398,10 @@ pub const fs = struct {
         pub const StatError = abi.fs.StatFile.Error || GenericError;
         pub const EmptyError = error{};
 
-        pub const Reader = std.io.Reader(*File, ReadError, streamRead);
-        pub const Writer = std.io.Writer(*File, WriteError, streamWrite);
-        pub const SeekableStream = std.io.SeekableStream(*File, EmptyError, EmptyError, seekTo, seekBy, getPos, getEndPos);
+        // TODO: Refactor this to use a good new interface
+        // pub const Reader = std.io.Reader(*File, ReadError, streamRead);
+        // pub const Writer = std.io.Writer(*File, WriteError, streamWrite);
+        // pub const SeekableStream = std.io.SeekableStream(*File, EmptyError, EmptyError, seekTo, seekBy, getPos, getEndPos);
 
         handle: abi.File,
         offset: u64,
@@ -483,9 +484,9 @@ pub const fs = struct {
             return Writer{ .context = self };
         }
 
-        pub fn seekableStream(self: *File) SeekableStream {
-            return SeekableStream{ .context = self };
-        }
+        // pub fn seekableStream(self: *File) SeekableStream {
+        //     return SeekableStream{ .context = self };
+        // }
     };
 
     pub const Directory = struct {

@@ -368,7 +368,7 @@ pub const Process = struct {
         else blk: {
             var writer: std.Io.Writer.Allocating = .init(process.memory_arena.allocator());
             defer writer.deinit();
-            try writer.writer.print("Process(0x{X:0>8})", .{@intFromPtr(process)});
+            writer.writer.print("Process(0x{X:0>8})", .{@intFromPtr(process)}) catch break :blk "Unknown";
             break :blk try writer.toOwnedSliceSentinel(0);
         };
 
@@ -433,7 +433,7 @@ pub const Process = struct {
 
     /// Kills the process, stops all threads, and releases of its resources.
     pub fn kill(proc: *Process, exit_code: ExitCode) void {
-        logger.debug("kill({}, {})", .{ proc, @intFromEnum(exit_code) });
+        logger.debug("kill({f}, {})", .{ proc, @intFromEnum(exit_code) });
         std.debug.assert(!proc.is_zombie());
 
         proc.exit_code = exit_code;
