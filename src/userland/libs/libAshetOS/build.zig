@@ -48,6 +48,7 @@ pub fn init(b: *std.Build, dependency_name: []const u8, args: struct {
         .owning_builder = b,
         .dependency = dep,
 
+        .libc_file = dep.namedLazyPath("libc.txt"),
         .ashex_tool_exe = dep.artifact("ashet-exe"),
         .ashet_module = dep.module("ashet"),
         .linker_script = dep.path("application.ld"),
@@ -71,6 +72,8 @@ pub const AshetSdk = struct {
 
     ashex_tool_exe: *std.Build.Step.Compile,
     mkicon_exe: *std.Build.Step.Compile,
+
+    libc_file: std.Build.LazyPath,
 
     syscall_library: std.Build.LazyPath,
     ashet_module: *std.Build.Module,
@@ -119,6 +122,8 @@ pub const AshetSdk = struct {
             .zig_lib_dir = options.zig_lib_dir,
             .win32_manifest = null,
         });
+
+        exe.setLibCFile(sdk.libc_file);
 
         // if (zig_target.result.cpu.arch.isThumb()) {
         //     // Disable LTO on arm as it fails hard
@@ -254,7 +259,6 @@ pub const ExecutableOptions = struct {
 };
 
 pub fn build(b: *std.Build) void {
-
     // Targets:
     const debug_step = b.step("debug", "Installs a debug executable for disassembly");
 
@@ -288,6 +292,15 @@ pub fn build(b: *std.Build) void {
 
     // Build:
 
+    const genfile_exe = b.addExecutable(.{
+        .name = "genfile",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/genfile.zig"),
+            .target = b.graph.host,
+            .optimize = .Debug,
+        }),
+    });
+
     const gen_binding_exe = b.addExecutable(.{
         .name = "gen_abi_binding",
         .target = b.graph.host,
@@ -312,8 +325,33 @@ pub fn build(b: *std.Build) void {
 
     const target = ashet_target.resolve_target(b);
 
-    const sub_build = b.addSystemCommand(&.{ b.graph.zig_exe, "build-lib" });
+    // Libraries
+    const libc = b.addStaticLibrary(.{
+        .name = "c",
+        .root_module = b.createModule(.{
+            .target = target,
+            .optimize = .ReleaseSafe,
+            .root_source_file = b.path("libc/src/libc.zig"),
+            .single_threaded = true,
+        }),
+    });
+    libc.root_module.addIncludePath(b.path("libc/include/"));
+    libc.root_module.addIncludePath(b.path("libc/sys_include/"));
+    b.installArtifact(libc);
 
+    const gen_libc_file = b.addRunArtifact(genfile_exe);
+    gen_libc_file.addPrefixedDirectoryArg("include_dir=", b.path("libc/include/"));
+    gen_libc_file.addPrefixedDirectoryArg("sys_include_dir=", b.path("libc/sys_include/"));
+    gen_libc_file.addPrefixedDirectoryArg("crt_dir=", b.path("libc/crt0")); // TODO: The directory that contains `crt1.o` or `crt2.o`.
+    gen_libc_file.addArg("msvc_lib_dir="); // Not required
+    gen_libc_file.addArg("kernel32_lib_dir="); // Not required
+    gen_libc_file.addArg("gcc_dir="); // Not required
+
+    const libc_txt_path = gen_libc_file.captureStdOut();
+
+    b.addNamedLazyPath("libc.txt", libc_txt_path);
+
+    const sub_build = b.addSystemCommand(&.{ b.graph.zig_exe, "build-lib" });
     sub_build.addArg("-static");
     sub_build.addArg("-fPIC");
     sub_build.addArg("-O");
