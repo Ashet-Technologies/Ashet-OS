@@ -87,10 +87,10 @@ pub fn CfiDeviceImpl(comptime InterfaceWidth: type) type {
             logger.info("extended_query          = 0x{X:0>4}", .{extended_query});
             logger.info("alt_vendor              = 0x{X:0>4}", .{readRegister(base, u16, regs.alt_vendor)});
             logger.info("alt_extended_query      = 0x{X:0>4}", .{readRegister(base, u16, regs.alt_extended_query)});
-            logger.info("vcc_lower_voltage       = {}", .{fmtCursedVoltage(readRegister(base, u8, regs.vcc_lower_voltage))});
-            logger.info("vcc_upper_voltage       = {}", .{fmtCursedVoltage(readRegister(base, u8, regs.vcc_upper_voltage))});
-            logger.info("vpp_lower_voltage       = {}", .{fmtCursedVoltage(readRegister(base, u8, regs.vpp_lower_voltage))});
-            logger.info("vpp_upper_voltage       = {}", .{fmtCursedVoltage(readRegister(base, u8, regs.vpp_upper_voltage))});
+            logger.info("vcc_lower_voltage       = {f}", .{fmtCursedVoltage(readRegister(base, u8, regs.vcc_lower_voltage))});
+            logger.info("vcc_upper_voltage       = {f}", .{fmtCursedVoltage(readRegister(base, u8, regs.vcc_upper_voltage))});
+            logger.info("vpp_lower_voltage       = {f}", .{fmtCursedVoltage(readRegister(base, u8, regs.vpp_lower_voltage))});
+            logger.info("vpp_upper_voltage       = {f}", .{fmtCursedVoltage(readRegister(base, u8, regs.vpp_upper_voltage))});
             logger.info("device_density          = 2^{d}", .{readRegister(base, u8, regs.device_density)});
             logger.info("bus_interface           = 0x{X:0>4}", .{readRegister(base, u16, regs.bus_interface)});
             logger.info("multi_byte_write_size   = 2^{d}", .{readRegister(base, u16, regs.multi_byte_write_size)});

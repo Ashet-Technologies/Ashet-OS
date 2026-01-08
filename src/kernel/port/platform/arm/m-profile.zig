@@ -433,48 +433,45 @@ pub const peripherals = struct {
 
             const Cpuid = @This();
             const CpuidFmt = struct {
-                    cpuid: Cpuid,
-                    fmt: enum {hex, string, fields},
+                cpuid: Cpuid,
+                fmt: enum { hex, string, fields },
 
-                    pub fn format(self: CpuidFmt, writer: *std.Io.Writer) !void {
-                        switch (self.fmt) {
-                    .string => {
-                        try writer.print("{s} {s} {d}n{d}n", .{
-                            @tagName(self.implementer),
-                            @tagName(self.part_number),
-                            self.variant,
-                            self.revision,
-                        });
-                    },
-                    .hex => {
-                        try writer.print("CPUID(0x{X:0>8})", .{@as(u32, @bitCast(self.cpuid))});
-                    },
-                    .fields => {
-                        try writer.print("CPUID({}, {}, {}, {})", .{
-                            self.cpuid.implementer,
-                            self.cpuid.part_number,
-                            self.cpuid.variant,
-                            self.cpuid.revision,
-                        });
-                    },
-
-                }
+                pub fn format(self: CpuidFmt, writer: *std.Io.Writer) !void {
+                    switch (self.fmt) {
+                        .string => {
+                            try writer.print("{s} {s} {d}n{d}n", .{
+                                @tagName(self.cpuid.implementer),
+                                @tagName(self.cpuid.part_number),
+                                self.cpuid.variant,
+                                self.cpuid.revision,
+                            });
+                        },
+                        .hex => {
+                            try writer.print("CPUID(0x{X:0>8})", .{@as(u32, @bitCast(self.cpuid))});
+                        },
+                        .fields => {
+                            try writer.print("CPUID({}, {}, {}, {})", .{
+                                self.cpuid.implementer,
+                                self.cpuid.part_number,
+                                self.cpuid.variant,
+                                self.cpuid.revision,
+                            });
+                        },
                     }
-                };
-            
+                }
+            };
 
             pub fn fmtHex(self: @This()) CpuidFmt {
-                return .{.cpuid = self, .fmt = .hex};
+                return .{ .cpuid = self, .fmt = .hex };
             }
 
             pub fn fmtString(self: @This()) CpuidFmt {
-                return .{.cpuid = self, .fmt = .string};
+                return .{ .cpuid = self, .fmt = .string };
             }
 
             pub fn fmtFields(self: @This()) CpuidFmt {
-                return .{.cpuid = self, .fmt = .fields};
+                return .{ .cpuid = self, .fmt = .fields };
             }
-            
         }, .{ .access = .read_only });
 
         /// Interrupt Control and State Register

@@ -37,8 +37,8 @@ fn get_tick_count_ms() u64 {
 var interrupt_table: ashet.platform.profile.start.InterruptTable align(128) = ashet.platform.profile.start.initial_vector_table.*;
 
 fn initialize() !void {
-    logger.info("cpuid: {s}", .{
-        ashet.platform.profile.peripherals.system_control_block.cpuid.read(),
+    logger.info("cpuid: {f}", .{
+        ashet.platform.profile.peripherals.system_control_block.cpuid.read().fmtString(),
     });
 
     // Remap interrupt table:

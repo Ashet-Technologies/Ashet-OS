@@ -27,11 +27,11 @@ pub const start = struct {
 
         logger.err("trap happened. trap code:    0x{X:0>8}", .{trap_reason});
         logger.err("               trap address: 0x{X:0>8}", .{trap_location});
-        logger.err("                             {}", .{ashet.fmtCodeLocation(trap_location)});
+        logger.err("                             {f}", .{ashet.fmtCodeLocation(trap_location)});
         logger.err("               trap status:  0x{X:0>8}", .{trap_status});
 
         const mstatus: csr.MStatus = @bitCast(trap_status);
-        logger.err("                             {}", .{ashet.utils.fmt.@"struct"(mstatus)});
+        logger.err("                             {f}", .{ashet.utils.fmt.@"struct"(mstatus)});
 
         if (trap_reason >= 0x8000_0000) {
             // asynchronous
@@ -153,8 +153,7 @@ noinline fn readHwCounter() u64 {
         \\  sw t1, 0(%[ptr])
         :
         : [ptr] "r" (&res),
-        : .{ .@"{t0}" = true, .@"{t1}" = true, .@"{t2}" = true }
-    );
+        : .{ .@"{t0}" = true, .@"{t1}" = true, .@"{t2}" = true });
     return res;
 }
 

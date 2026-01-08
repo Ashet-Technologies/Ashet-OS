@@ -405,7 +405,7 @@ pub const fs = struct {
             interface: std.Io.Reader,
 
             fn stream_data(intf: *std.Io.Reader, w: *std.Io.Writer, limit: std.Io.Limit) std.Io.Reader.StreamError!usize {
-                const r: *Reader = @fieldParentPtr("interface", intf);
+                const r: *Reader = @alignCast(@fieldParentPtr("interface", intf));
                 const file: File = .from_handle(r.handle);
 
                 const dest = limit.slice(try w.writableSliceGreedy(1));
