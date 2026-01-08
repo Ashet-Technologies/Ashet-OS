@@ -1,0 +1,15 @@
+.{
+    .name = .mqjs,
+    .fingerprint = 0xeb25510e67a6f94b,
+    .version = "2026.1.4",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+    },
+    .dependencies = .{
+        .upstream = .{
+            .url = "git+https://github.com/bellard/mquickjs.git#767e5db54241f0b53193a04aea193c823a9e3121",
+            .hash = "N-V-__8AAH_KDgAc_2J3w461iC-aXVoZUUf3cikp2GONAVnb",
+        },
+    },
+}
