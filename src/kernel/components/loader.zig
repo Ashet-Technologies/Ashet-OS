@@ -12,8 +12,14 @@ pub const elf = @import("loader/elf.zig");
 pub const ashex = @import("loader/ashex.zig");
 
 pub const BinaryFormat = enum {
-    elf,
+    // elf,
     ashex,
+};
+
+pub const LoadError = error{
+    BadExecutable,
+    SystemResources,
+    DiskError,
 };
 
 pub fn load(
@@ -22,7 +28,21 @@ pub fn load(
     format: BinaryFormat,
 ) !LoadedExecutable {
     return switch (format) {
-        .elf => return error.Unsupported, // TODO(0.15): try elf.load(file, allocator),
-        .ashex => try ashex.load(file, allocator),
+        // TODO(0.15): .elf => return error.Unsupported,  try elf.load(file, allocator),
+        .ashex => ashex.load(file, allocator) catch |err| switch (err) {
+            error.SystemResources => error.SystemResources,
+            error.DiskError => error.DiskError,
+
+            error.AshexInvalidExecutable,
+            error.AshexUnsupportedVersion,
+            error.AshexMachineMismatch,
+            error.AshexPlatformMismatch,
+            error.AshexNoSectionData,
+            error.AshexCorruptedFile,
+            error.AshexInvalidRelocation,
+            error.AshexUnsupportedSyscall,
+            error.AshexInvalidSyscallIndex,
+            => error.BadExecutable,
+        },
     };
 }

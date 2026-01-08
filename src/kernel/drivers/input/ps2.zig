@@ -1,4 +1,5 @@
 const std = @import("std");
+const astd = @import("ashet-std");
 
 const ashet = @import("../../main.zig");
 
@@ -65,7 +66,7 @@ pub const MouseDecoder = struct {
         .y_overflow = false,
     },
 
-    queue: std.fifo.LinearFifo(MouseEvent, .{ .Static = 4 }) = .init(),
+    queue: astd.RingBuffer(MouseEvent, 4) = .{},
 
     pub fn drain(decoder: *MouseDecoder) void {
         while (decoder.pull()) |_| {}
@@ -79,19 +80,25 @@ pub const MouseDecoder = struct {
                     defer decoder.current = header;
 
                     if (header.left != decoder.current.left) {
-                        decoder.queue.writeItem(.{
+                        if (decoder.queue.full())
+                            return error.Overrun;
+                        decoder.queue.push(.{
                             .mouse_button = .{ .button = .left, .down = header.left },
-                        }) catch return error.Overrun;
+                        });
                     }
                     if (header.right != decoder.current.right) {
-                        decoder.queue.writeItem(.{
+                        if (decoder.queue.full())
+                            return error.Overrun;
+                        decoder.queue.push(.{
                             .mouse_button = .{ .button = .right, .down = header.right },
-                        }) catch return error.Overrun;
+                        });
                     }
                     if (header.middle != decoder.current.middle) {
-                        decoder.queue.writeItem(.{
+                        if (decoder.queue.full())
+                            return error.Overrun;
+                        decoder.queue.push(.{
                             .mouse_button = .{ .button = .middle, .down = header.middle },
-                        }) catch return error.Overrun;
+                        });
                     }
                     decoder.state = .fetch_x;
                 }
@@ -105,10 +112,12 @@ pub const MouseDecoder = struct {
             .fetch_y => |dx| {
                 const dy = @as(i8, @bitCast(input));
                 if ((dx != 0 or dy != 0) and !decoder.current.x_overflow and !decoder.current.y_overflow) {
-                    decoder.queue.writeItem(.{
+                    if (decoder.queue.full())
+                        return error.Overrun;
+                    decoder.queue.push(.{
                         // PC mouse is using inverted Y
                         .mouse_rel_motion = .{ .dx = dx, .dy = -dy },
-                    }) catch return error.Overrun;
+                    });
                 }
                 decoder.state = .default;
             },
@@ -116,7 +125,7 @@ pub const MouseDecoder = struct {
     }
 
     pub fn pull(decoder: *MouseDecoder) ?MouseEvent {
-        return decoder.queue.readItem();
+        return decoder.queue.pull();
     }
 
     const State = union(enum) {
@@ -219,7 +228,7 @@ pub const KeyboardDecoderSCS2 = struct {
     );
 
     state: State = .default,
-    queue: std.fifo.LinearFifo(KeyboardEvent, .{ .Static = 4 }) = .init(),
+    queue: astd.RingBuffer(KeyboardEvent, 4) = .{},
     release_event: bool = false,
 
     pub fn drain(decoder: *KeyboardDecoderSCS2) void {
@@ -227,7 +236,7 @@ pub const KeyboardDecoderSCS2 = struct {
     }
 
     pub fn pull(decoder: *KeyboardDecoderSCS2) ?KeyboardEvent {
-        return decoder.queue.readItem();
+        return decoder.queue.pull();
     }
 
     pub fn push(decoder: *KeyboardDecoderSCS2, input: u8) error{Overrun}!void {
@@ -287,10 +296,12 @@ pub const KeyboardDecoderSCS2 = struct {
             .e1 => |second| logger.debug("SCS2 E1:   0x{X:0>2}{X:0>2} => {?}", .{ raw, second, maybe_usage }),
         }
         if (maybe_usage) |usage| {
-            decoder.queue.writeItem(.{ .keyboard = .{
+            if (decoder.queue.full())
+                return error.Overrun;
+            decoder.queue.push(.{ .keyboard = .{
                 .usage = usage,
                 .down = !decoder.release_event,
-            } }) catch return error.Overrun;
+            } });
         }
     }
 

@@ -42,36 +42,11 @@ pub fn call_inside_process(
 }
 
 pub const SpawnBlockingError = error{
-    Overflow,
     OutOfMemory,
 
     SystemResources,
     DiskError,
-    InvalidHandle,
-    EndOfStream,
-    InvalidElfMagic,
-    InvalidElfVersion,
-    InvalidElfEndian,
-    InvalidElfClass,
-    InvalidEndian,
-    InvalidBitSize,
-    InvalidMachine,
-    NoCode,
     BadExecutable,
-    InvalidPltRel,
-    MissingSymbol,
-    UnsupportedRelocation,
-    UnalignedProgramHeader,
-    InvalidAshexExecutable,
-    AshexMachineMismatch,
-    AshexPlatformMismatch,
-    AshexUnsupportedVersion,
-    AshexNoData,
-    AshexCorruptedFile,
-    AshexUnsupportedSyscall,
-    AshexInvalidRelocation,
-    AshexInvalidSyscallIndex,
-    Unexpected,
 };
 
 pub fn spawn_blocking(
@@ -81,7 +56,7 @@ pub fn spawn_blocking(
 ) SpawnBlockingError!*Process {
     const process = try ashet.multi_tasking.Process.create(.{
         .stay_resident = false,
-        .name = proc_name,
+        .name = proc_name, // TODO(0.15.2): Copy the name into the process
     });
     errdefer process.kill(.killed);
 
@@ -106,7 +81,9 @@ pub fn spawn_blocking(
     );
     errdefer thread.kill();
 
-    try thread.setName(proc_name);
+    thread.setName(proc_name) catch {
+        logger.err("TODO(0.15.2): Remove setName() error possibility but truncate errors", .{});
+    };
 
     thread.start() catch |err| switch (err) {
         error.AlreadyStarted => unreachable,
@@ -192,10 +169,9 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
     const local_resource_handle = try ashet.resources.add_to_process(bg_process, &kernel_file_handle.system_resource);
     defer ashet.resources.remove_from_process(bg_process, &kernel_file_handle.system_resource);
 
-    var file_handle: libashet.fs.File = .{
-        .handle = local_resource_handle.unsafe_cast(.file),
-        .offset = 0,
-    };
+    var file_handle: libashet.fs.File = .from_handle(
+        local_resource_handle.unsafe_cast(.file),
+    );
 
     const proc = spawn_blocking(
         exe_name,
@@ -206,38 +182,8 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
 
         error.SystemResources,
         error.DiskError,
-        error.InvalidHandle,
-        => |e| e,
-
-        error.EndOfStream,
-        error.InvalidElfMagic,
-        error.InvalidElfVersion,
-        error.InvalidElfEndian,
-        error.InvalidElfClass,
-        error.InvalidEndian,
-        error.InvalidBitSize,
-        error.InvalidMachine,
-        error.NoCode,
         error.BadExecutable,
-        error.InvalidPltRel,
-        error.MissingSymbol,
-        error.UnsupportedRelocation,
-        error.UnalignedProgramHeader,
-        error.Overflow,
-
-        error.InvalidAshexExecutable,
-        error.AshexMachineMismatch,
-        error.AshexPlatformMismatch,
-        error.AshexUnsupportedVersion,
-        error.AshexNoData,
-        error.AshexCorruptedFile,
-        error.AshexUnsupportedSyscall,
-        error.AshexInvalidRelocation,
-        error.AshexInvalidSyscallIndex,
-        => error.BadExecutable,
-
-        error.Unexpected,
-        => unreachable,
+        => |e| e,
     };
     errdefer proc.kill(.killed);
 

@@ -711,14 +711,14 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
     if (@import("builtin").mode == .Debug) {
         if (scheduler.Thread.current()) |thread| {
             Debug.print("current thread:\r\n", .{});
-            Debug.print("  [!] {}\r\n\r\n", .{thread});
+            Debug.print("  [!] {f}\r\n\r\n", .{thread});
         }
 
         Debug.write("waiting threads:\r\n");
         var index: usize = 0;
         var queue = scheduler.ThreadIterator.init();
         while (queue.next()) |thread| : (index += 1) {
-            Debug.print("  [{}] {}\r\n", .{ index, thread });
+            Debug.print("  [{d}] {f}\r\n", .{ index, thread });
         }
         Debug.write("\r\n");
     }

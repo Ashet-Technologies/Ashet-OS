@@ -39,7 +39,7 @@ pub fn create(allocator: std.mem.Allocator, driver_name: []const u8, config: Con
         std.mem.doNotOptimizeAway(x);
     }
 
-    const vmem = try allocator.alignedAlloc(Color, ashet.memory.page_size, framebuffer.width * framebuffer.height);
+    const vmem = try allocator.alignedAlloc(Color, .fromByteUnits(ashet.memory.page_size), framebuffer.width * framebuffer.height);
     errdefer allocator.free(vmem);
 
     var driver = Memory_Mapped_Framebuffer{

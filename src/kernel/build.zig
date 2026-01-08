@@ -36,6 +36,7 @@ pub fn build(b: *std.Build) void {
         .single_threaded = true,
     });
     const zfat_dep = b.dependency("zfat", .{
+        .libc = true,
         .target = kernel_target,
         .optimize = optimize,
         .max_long_name_len = @as(u8, 121),
@@ -332,7 +333,6 @@ pub fn build(b: *std.Build) void {
         gen_libc_txt.addPrefixedDirectoryArg("include_dir=", libc.getEmittedIncludeTree());
         gen_libc_txt.addPrefixedDirectoryArg("sys_include_dir=", libc.getEmittedIncludeTree());
         gen_libc_txt.addPrefixedDirectoryArg("crt_dir=", libc.getEmittedBinDirectory());
-
         gen_libc_txt.addArg("msvc_lib_dir=");
         gen_libc_txt.addArg("kernel32_lib_dir=");
         gen_libc_txt.addArg("gcc_dir=");
@@ -340,6 +340,7 @@ pub fn build(b: *std.Build) void {
         const libc_txt_path = gen_libc_txt.captureStdOut();
 
         kernel_exe.setLibCFile(libc_txt_path);
+        kernel_exe.linkLibC();
 
         kernel_exe.linkLibrary(libc);
     }

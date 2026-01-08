@@ -23,93 +23,62 @@ const max_syscall_name_length = blk: {
 
 const max_syscall_count = std.enums.values(ashet.syscalls.SystemCall).len;
 
-pub fn load(file: *libashet.fs.File, allocator: std.mem.Allocator) !loader.LoadedExecutable {
-    const expected_machine: ashex.FileType, const expected_platform: ashex.Platform = switch (system_arch) {
-        .riscv32 => .{ .machine32_le, .riscv32 },
-        .x86 => .{ .machine32_le, .x86 },
-        .arm, .thumb => .{ .machine32_le, .arm32 },
-        else => @compileError("Unsupported machine type: " ++ @tagName(system_arch)),
-    };
+pub const LoadError = error{
+    SystemResources,
+    DiskError,
 
+    AshexInvalidExecutable,
+    AshexUnsupportedVersion,
+
+    /// The file is valid, but not for our machine type.
+    AshexMachineMismatch,
+
+    /// The file is valid, but not for our platform.
+    AshexPlatformMismatch,
+
+    /// The file is valid, but has no non-zero data sections.
+    AshexNoSectionData,
+
+    /// The file contains an invalid relocation
+    AshexInvalidRelocation,
+
+    /// The file contains sections that load outside the memory boundary
+    AshexCorruptedFile,
+
+    /// The file contains an unknown syscall
+    AshexUnsupportedSyscall,
+
+    /// The file contains a relocation referencing an out-of-bounds index into the syscall table
+    AshexInvalidSyscallIndex,
+};
+
+pub fn load(file: *libashet.fs.File, allocator: std.mem.Allocator) LoadError!loader.LoadedExecutable {
+    return load_unchecked(file, allocator) catch |err| switch (err) {
+        error.EndOfStream, error.ReadFailed, error.WriteFailed => error.DiskError,
+        error.OutOfMemory => error.SystemResources,
+        else => |e| e,
+    };
+}
+
+fn load_unchecked(file: *libashet.fs.File, allocator: std.mem.Allocator) (LoadError || error{ EndOfStream, ReadFailed, WriteFailed, OutOfMemory })!loader.LoadedExecutable {
     const header = blk: {
         var header_chunk: [512]u8 = undefined;
+        const header_len = file.read(0, &header_chunk) catch |err| switch (err) {
+            error.Unexpected => unreachable, // We're never having an error code mismatch, as we're in the kernel iteself
+            error.InvalidHandle => unreachable, // we can guarantee this
+            error.DiskError => return error.ReadFailed,
+            error.SystemResources => return error.SystemResources,
+        };
 
-        if (try file.read(0, &header_chunk) != 512)
-            return error.InvalidAshexExecutable;
-
-        var header_fbs = std.io.fixedBufferStream(&header_chunk);
+        if (header_len != 512)
+            return error.AshexInvalidExecutable;
 
         logger.debug("ashex header: {X}", .{&header_chunk});
 
-        const reader = header_fbs.reader();
-
-        var magic: [4]u8 = undefined;
-        try reader.readNoEof(&magic);
-        if (!std.mem.eql(u8, &magic, &ashex.file_magic))
-            return error.InvalidAshexExecutable;
-
-        const file_version = try reader.readInt(u8, .little);
-        if (file_version != 0) {
-            logger.err("version mismatch. expected {}, but found {}", .{
-                0,
-                file_version,
-            });
-            return error.AshexUnsupportedVersion;
-        }
-
-        const file_type = try reader.readInt(u8, .little);
-        if (file_type != @intFromEnum(expected_machine)) {
-            logger.err("machine mismatch. expected {}, but found {}", .{
-                @intFromEnum(expected_machine),
-                file_type,
-            });
-            return error.AshexMachineMismatch;
-        }
-
-        const file_platform = try reader.readInt(u8, .little);
-        if (file_platform != @intFromEnum(expected_platform)) {
-            logger.err("platform mismatch. expected {}, but found {}", .{
-                @intFromEnum(expected_platform),
-                file_platform,
-            });
-            return error.AshexPlatformMismatch;
-        }
-
-        try reader.skipBytes(1, .{});
-
-        const header: ashex.Header = .{
-            .icon_size = try reader.readInt(u32, .little),
-            .icon_offset = try reader.readInt(u32, .little),
-
-            .vmem_size = try reader.readInt(u32, .little),
-            .entry_point = try reader.readInt(u32, .little),
-
-            .syscall_offset = try reader.readInt(u32, .little),
-            .syscall_count = try reader.readInt(u32, .little),
-
-            .load_header_offset = try reader.readInt(u32, .little),
-            .load_header_count = try reader.readInt(u32, .little),
-
-            .bss_header_offset = try reader.readInt(u32, .little),
-            .bss_header_count = try reader.readInt(u32, .little),
-
-            .relocation_offset = try reader.readInt(u32, .little),
-            .relocation_count = try reader.readInt(u32, .little),
+        break :blk parse_header(&header_chunk) catch |err| switch (err) {
+            error.EndOfStream => unreachable,
+            else => |e| return e,
         };
-
-        const actual_checksum: u32 = std.hash.Crc32.hash(header_chunk[0..508]);
-        const header_checksum: u32 = std.mem.readInt(u32, header_chunk[508..512], .little);
-
-        if (actual_checksum != header_checksum) {
-            logger.err("checksum mismatch! header encodes 0x{X:0>8}, but header block has checksum 0x{X:0>8}", .{
-                header_checksum,
-                actual_checksum,
-            });
-            return error.InvalidAshexExecutable;
-        }
-        logger.debug("computed checksum: 0x{X:0>8}, stored checksum: 0x{X:0>8}", .{ actual_checksum, header_checksum });
-
-        break :blk header;
     };
 
     logger.debug("vmem_size   = 0x{X:0>8}", .{header.vmem_size});
@@ -136,34 +105,31 @@ pub fn load(file: *libashet.fs.File, allocator: std.mem.Allocator) !loader.Loade
     const process_base = @intFromPtr(process_memory.ptr);
 
     if (header.load_header_count == 0)
-        return error.AshexNoData;
+        return error.AshexNoSectionData;
+
+    var read_buffer: [512]u8 = undefined;
 
     {
-        try file.seekableStream().seekTo(header.load_header_offset);
-
-        var buffered_reader = std.io.bufferedReaderSize(512, file.reader());
-        const reader = buffered_reader.reader();
+        var reader = file.reader(&read_buffer, header.load_header_offset);
 
         for (0..header.load_header_count) |_| {
-            const vmem_offset = try reader.readInt(u32, .little);
-            const size = try reader.readInt(u32, .little);
+            const vmem_offset = try reader.interface.takeInt(u32, .little);
+            const size = try reader.interface.takeInt(u32, .little);
 
             if (vmem_offset + size > process_memory.len)
                 return error.AshexCorruptedFile;
 
-            try reader.readNoEof(process_memory[vmem_offset..][0..size]);
+            var writer: std.Io.Writer = .fixed(process_memory[vmem_offset..][0..size]);
+            try reader.interface.streamExact(&writer, size);
         }
     }
 
     if (header.bss_header_count > 0) {
-        try file.seekableStream().seekTo(header.bss_header_offset);
-
-        var buffered_reader = std.io.bufferedReaderSize(512, file.reader());
-        const reader = buffered_reader.reader();
+        var reader = file.reader(&read_buffer, header.bss_header_offset);
 
         for (0..header.bss_header_count) |_| {
-            const vmem_offset = try reader.readInt(u32, .little);
-            const size = try reader.readInt(u32, .little);
+            const vmem_offset = try reader.interface.takeInt(u32, .little);
+            const size = try reader.interface.takeInt(u32, .little);
 
             if (vmem_offset + size > process_memory.len)
                 return error.AshexCorruptedFile;
@@ -175,24 +141,22 @@ pub fn load(file: *libashet.fs.File, allocator: std.mem.Allocator) !loader.Loade
     var syscall_mapping_buffer: [max_syscall_count]usize = undefined;
     const syscall_mapping = syscall_mapping_buffer[0..header.syscall_count];
     if (syscall_mapping.len > 0) {
-        try file.seekableStream().seekTo(header.syscall_offset);
-
-        var buffered_reader = std.io.bufferedReaderSize(512, file.reader());
-        const reader = buffered_reader.reader();
+        var reader = file.reader(&read_buffer, header.syscall_offset);
 
         for (syscall_mapping) |*function_addr| {
             var syscall_name_buffer: [max_syscall_name_length]u8 = undefined;
 
-            const name_len = try reader.readInt(u16, .little);
+            const name_len = try reader.interface.takeInt(u16, .little);
             if (name_len > syscall_name_buffer.len)
                 return error.AshexUnsupportedSyscall;
 
-            const name = syscall_name_buffer[0..name_len];
-            try reader.readNoEof(name);
+            var writer: std.Io.Writer = .fixed(syscall_name_buffer[0..name_len]);
+            try reader.interface.streamExact(&writer, name_len);
+            const name = writer.buffered();
 
             const syscall_id = std.meta.stringToEnum(ashet.syscalls.SystemCall, name) orelse {
-                logger.err("could not find syscall '{}'", .{
-                    std.zig.fmtEscapes(name),
+                logger.err("could not find syscall \"{f}\"", .{
+                    std.zig.fmtString(name),
                 });
                 return error.AshexUnsupportedSyscall;
             };
@@ -202,24 +166,21 @@ pub fn load(file: *libashet.fs.File, allocator: std.mem.Allocator) !loader.Loade
     }
 
     if (header.relocation_count > 0) {
-        try file.seekableStream().seekTo(header.relocation_offset);
-
-        var buffered_reader = std.io.bufferedReaderSize(512, file.reader());
-        const reader = buffered_reader.reader();
+        var reader = file.reader(&read_buffer, header.relocation_offset);
 
         for (0..header.relocation_count) |_| {
             // Fetch fields:
-            const offset: u32 = try reader.readInt(u32, .little);
-            const raw_type = try reader.readInt(u16, .little);
+            const offset: u32 = try reader.interface.takeInt(u32, .little);
+            const raw_type = try reader.interface.takeInt(u16, .little);
             const reloc_type: ashex.RelocationType = @bitCast(raw_type);
 
             const syscall_index: u16 = if (reloc_type.syscall != .unused)
-                try reader.readInt(u16, .little)
+                try reader.interface.takeInt(u16, .little)
             else
                 0;
 
             const addend: i32 = if (reloc_type.addend != .unused)
-                try reader.readInt(i32, .little)
+                try reader.interface.takeInt(i32, .little)
             else
                 0;
 
@@ -279,6 +240,84 @@ pub fn load(file: *libashet.fs.File, allocator: std.mem.Allocator) !loader.Loade
         .process_memory = process_memory,
         .entry_point = process_base + header.entry_point,
     };
+}
+
+fn parse_header(header_chunk: *const [512]u8) !ashex.Header {
+    const expected_machine: ashex.FileType, const expected_platform: ashex.Platform = switch (system_arch) {
+        .riscv32 => .{ .machine32_le, .riscv32 },
+        .x86 => .{ .machine32_le, .x86 },
+        .arm, .thumb => .{ .machine32_le, .arm32 },
+        else => @compileError("Unsupported machine type: " ++ @tagName(system_arch)),
+    };
+
+    var reader: std.Io.Reader = .fixed(header_chunk);
+
+    const magic = try reader.takeArray(4);
+    if (!std.mem.eql(u8, magic, &ashex.file_magic))
+        return error.AshexInvalidExecutable;
+
+    const actual_checksum: u32 = std.hash.Crc32.hash(header_chunk[0..508]);
+    const header_checksum: u32 = std.mem.readInt(u32, header_chunk[508..512], .little);
+
+    if (actual_checksum != header_checksum) {
+        logger.err("checksum mismatch! header encodes 0x{X:0>8}, but header block has checksum 0x{X:0>8}", .{
+            header_checksum,
+            actual_checksum,
+        });
+        return error.AshexInvalidExecutable;
+    }
+    logger.debug("computed checksum: 0x{X:0>8}, stored checksum: 0x{X:0>8}", .{ actual_checksum, header_checksum });
+
+    const file_version = try reader.takeInt(u8, .little);
+    if (file_version != 0) {
+        logger.err("version mismatch. expected {}, but found {}", .{
+            0,
+            file_version,
+        });
+        return error.AshexUnsupportedVersion;
+    }
+
+    const file_type = try reader.takeInt(u8, .little);
+    if (file_type != @intFromEnum(expected_machine)) {
+        logger.err("machine mismatch. expected {}, but found {}", .{
+            @intFromEnum(expected_machine),
+            file_type,
+        });
+        return error.AshexMachineMismatch;
+    }
+
+    const file_platform = try reader.takeInt(u8, .little);
+    if (file_platform != @intFromEnum(expected_platform)) {
+        logger.err("platform mismatch. expected {}, but found {}", .{
+            @intFromEnum(expected_platform),
+            file_platform,
+        });
+        return error.AshexPlatformMismatch;
+    }
+
+    try reader.discardAll(1);
+
+    const header: ashex.Header = .{
+        .icon_size = try reader.takeInt(u32, .little),
+        .icon_offset = try reader.takeInt(u32, .little),
+
+        .vmem_size = try reader.takeInt(u32, .little),
+        .entry_point = try reader.takeInt(u32, .little),
+
+        .syscall_offset = try reader.takeInt(u32, .little),
+        .syscall_count = try reader.takeInt(u32, .little),
+
+        .load_header_offset = try reader.takeInt(u32, .little),
+        .load_header_count = try reader.takeInt(u32, .little),
+
+        .bss_header_offset = try reader.takeInt(u32, .little),
+        .bss_header_count = try reader.takeInt(u32, .little),
+
+        .relocation_offset = try reader.takeInt(u32, .little),
+        .relocation_count = try reader.takeInt(u32, .little),
+    };
+
+    return header;
 }
 
 fn expand(comptime T: type, src: anytype) std.meta.Int(@typeInfo(@TypeOf(src)).Int.signedness, @bitSizeOf(T)) {
