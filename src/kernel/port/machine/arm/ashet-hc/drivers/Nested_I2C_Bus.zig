@@ -118,7 +118,7 @@ fn from_device(dev: *I2C_Device) *RP2xxx_I2C_Device {
     return ashet.drivers.Driver.resolve(dri, RP2xxx_I2C_Device, "driver");
 }
 
-fn map_err(result: hal.i2c.TransactionError!void) ashet.abi.io.i2c.Operation.Error {
+fn map_err(result: hal.i2c.Error!void) ashet.abi.io.i2c.Operation.Error {
     return if (result) |_|
         .none
     else |err| switch (err) {

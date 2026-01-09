@@ -123,7 +123,6 @@ pub inline fn disable() void {
         .PAUSE_DBG1 = 0,
         .ENABLE = 1,
         .TRIGGER = 0,
-        .reserved30 = 0,
     });
 }
 

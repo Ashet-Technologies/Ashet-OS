@@ -156,8 +156,8 @@ fn early_initialize() void {
 }
 
 fn initialize() !void {
-    logger.info("cpuid: {s}", .{
-        ashet.platform.profile.peripherals.system_control_block.cpuid.read(),
+    logger.info("cpuid: {f}", .{
+        ashet.platform.profile.peripherals.system_control_block.cpuid.read().fmtString(),
     });
 
     logger.info("initialize SysTick...", .{});
@@ -648,7 +648,7 @@ const propio = struct {
         {
             var frame_buffer: [5]u8 = @splat(0);
             const len = try protocol.receive_one_blocking(&frame_buffer);
-            logger.info("received handshake frame: {}", .{std.fmt.fmtSliceHexLower(frame_buffer[0..len])});
+            logger.info("received handshake frame: {x}", .{frame_buffer[0..len]});
             if (len != 1 or frame_buffer[0] != 0xFF)
                 return error.InvalidHandshake;
         }
@@ -792,9 +792,9 @@ const backplane = struct {
                 const rx_frame = rx_frame_buf[0..len];
 
                 handle_propio_frame(rx_frame) catch |err| {
-                    logger.warn("error {s} when processing propio frame '{}'", .{
+                    logger.warn("error {s} when processing propio frame '{x}'", .{
                         @errorName(err),
-                        std.fmt.fmtSliceHexLower(rx_frame),
+                        rx_frame,
                     });
                 };
             }
@@ -807,8 +807,8 @@ const backplane = struct {
 
     fn handle_propio_frame(rx_frame: []const u8) !void {
         const frame_type = std.meta.intToEnum(propio.protocol.types.FrameType, rx_frame[0]) catch {
-            logger.warn("received unknown frame from propio: '{}'", .{
-                std.fmt.fmtSliceHexLower(rx_frame),
+            logger.warn("received unknown frame from propio: '{x}'", .{
+                rx_frame,
             });
             return;
         };
@@ -833,10 +833,10 @@ const backplane = struct {
                     //
                     // In any case, this would be a bug.
 
-                    logger.err("received FIFO data for uninitialized module {}, fifo {}: '{}'", .{
+                    logger.err("received FIFO data for uninitialized module {}, fifo {}: '{x}'", .{
                         pack.module,
                         pack.fifo,
-                        std.fmt.fmtSliceHexLower(data),
+                        data,
                     });
                     return;
                 };
@@ -846,20 +846,20 @@ const backplane = struct {
                     // somehow sent data to the FIFO even though the module has no driver
                     // assigned and thus should not have started the module in the first place.
 
-                    logger.err("received FIFO data for driverless module {}, fifo {}: '{}'", .{
+                    logger.err("received FIFO data for driverless module {}, fifo {}: '{x}'", .{
                         pack.module,
                         pack.fifo,
-                        std.fmt.fmtSliceHexLower(data),
+                        data,
                     });
                     return;
                 };
 
                 const fifo: ashet.drivers.propio.RxFifo = switch (pack.fifo) {
                     0...3 => {
-                        logger.err("received FIFO data for TX FIFO in module {}, fifo {}: '{}'", .{
+                        logger.err("received FIFO data for TX FIFO in module {}, fifo {}: '{x}'", .{
                             pack.module,
                             pack.fifo,
-                            std.fmt.fmtSliceHexLower(data),
+                            data,
                         });
                         return;
                     },
@@ -882,9 +882,9 @@ const backplane = struct {
                 const addr = std.mem.readInt(u24, rx_frame[1..4], .little);
 
                 // TODO: Handle memory reads?
-                logger.warn("received unsupported memory read response at address 0x{X:0>6}: '{}'", .{
+                logger.warn("received unsupported memory read response at address 0x{X:0>6}: '{x}'", .{
                     addr,
-                    std.fmt.fmtSliceHexLower(rx_frame[4..]),
+                    rx_frame[4..],
                 });
             },
 
@@ -892,8 +892,8 @@ const backplane = struct {
             .start_module,
             .stop_module,
             => {
-                logger.warn("received unsupported frame from propio: '{}'", .{
-                    std.fmt.fmtSliceHexLower(rx_frame),
+                logger.warn("received unsupported frame from propio: '{x}'", .{
+                    rx_frame,
                 });
             },
         }
@@ -946,9 +946,9 @@ const backplane = struct {
         logger.info("expansion slot {} has valid card:", .{slot_index});
 
         logger.info("  Version:          {}", .{metadata_block.Version});
-        logger.info("  Vendor:           {} (\"{}\")", .{ metadata_block.@"Vendor ID", std.zig.fmtEscapes(metadata_block.@"Vendor Name".slice()) });
-        logger.info("  Product:          {} (\"{}\")", .{ metadata_block.@"Product ID", std.zig.fmtEscapes(metadata_block.@"Product Name".slice()) });
-        logger.info("  Serial Number:    \"{}\"", .{std.zig.fmtEscapes(metadata_block.@"Serial Number".slice())});
+        logger.info("  Vendor:           {} (\"{f}\")", .{ metadata_block.@"Vendor ID", std.zig.fmtString(metadata_block.@"Vendor Name".slice()) });
+        logger.info("  Product:          {} (\"{f}\")", .{ metadata_block.@"Product ID", std.zig.fmtString(metadata_block.@"Product Name".slice()) });
+        logger.info("  Serial Number:    \"{f}\"", .{std.zig.fmtString(metadata_block.@"Serial Number".slice())});
         logger.info("  Properties:", .{});
         logger.info("    Requires Audio: {}", .{metadata_block.Properties.@"Requires Audio"});
         logger.info("    Requires Video: {}", .{metadata_block.Properties.@"Requires Video"});

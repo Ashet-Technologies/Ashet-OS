@@ -1,7 +1,6 @@
 const std = @import("std");
 const shimizu_build = @import("shimizu");
 const abiBuild = @import("ashet-abi");
-const regz = @import("regz");
 const Platform = abiBuild.Platform;
 
 pub const Machine = @import("port/machine_id.zig").MachineID;
@@ -189,7 +188,6 @@ pub fn build(b: *std.Build) void {
         const regz_exe = regz_dep.artifact("regz");
 
         const regz_run = b.addRunArtifact(regz_exe);
-        regz_run.addArg("--microzig");
         regz_run.addArg("--format");
         regz_run.addArg("svd");
 
@@ -198,25 +196,8 @@ pub fn build(b: *std.Build) void {
 
         const rp2350_register_file = rp2350_register_dir.path(b, "RP2350.zig");
 
-        {
-            const patches = @import("port/machine/arm/ashet-hc/patches/rp2350_arm.zig").patches;
-
-            if (patches.len > 0) {
-                // write patches to file
-                const patch_ndjson = serialize_patches(
-                    b,
-                    patches,
-                );
-                const write_file_step = b.addWriteFiles();
-                const patch_file = write_file_step.add(
-                    "patch.ndjson",
-                    patch_ndjson,
-                );
-
-                regz_run.addArg("--patch_path");
-                regz_run.addFileArg(patch_file);
-            }
-        }
+        regz_run.addArg("--patch_path");
+        regz_run.addFileArg(b.path("port/machine/arm/ashet-hc/patches/rp2350.zon"));
 
         regz_run.addFileArg(b.path("port/machine/arm/ashet-hc/rp2350.svd"));
 
@@ -242,6 +223,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = hal_dep.path("hal.zig"),
             .imports = &.{
                 .{ .name = "microzig", .module = microzig_shim_mod },
+                .{ .name = "bounded-array", .module = microzig_shim_mod },
             },
         });
 
@@ -549,16 +531,4 @@ fn renderMachineInfo(
     });
 
     return try stream.toOwnedSlice();
-}
-
-fn serialize_patches(b: *std.Build, patches: []const regz.patch.Patch) []const u8 {
-    var buf: std.Io.Writer.Allocating = .init(b.allocator);
-    defer buf.deinit();
-
-    for (patches) |patch| {
-        std.json.Stringify.value(patch, .{}, &buf.writer) catch @panic("OOM");
-        buf.writer.writeByte('\n') catch @panic("OOM");
-    }
-
-    return buf.toOwnedSlice() catch @panic("OOM");
 }

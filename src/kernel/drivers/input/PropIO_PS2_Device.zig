@@ -2,6 +2,7 @@
 //! This is a driver for PS/2 devices running over PropIO.
 //!
 const std = @import("std");
+const astd = @import("ashet-std");
 const ashet = @import("../../main.zig");
 
 const logger = std.log.scoped(.propio_ps2);
@@ -93,7 +94,7 @@ const Slot = struct {
     data_source: Generic_PS2_Device.StreamSource = .{
         .read_available_fn = read_available_module_data,
     },
-    inbound_data: std.fifo.LinearFifo(u8, .{ .Static = 16 }) = .init(),
+    inbound_data: astd.RingBuffer(u8, 16) = .{},
 
     fn write_module_data(sink: *Generic_PS2_Device.StreamSink, data: []const u8, deadline: ashet.time.Deadline) error{Timeout}!void {
         const dev: *Slot = @fieldParentPtr("data_sink", sink);
@@ -111,16 +112,20 @@ const Slot = struct {
     fn read_available_module_data(source: *Generic_PS2_Device.StreamSource, data: []u8) usize {
         const dev: *Slot = @fieldParentPtr("data_source", source);
 
-        return dev.inbound_data.read(data);
+        for (data, 0..) |*byte, len| {
+            byte.* = dev.inbound_data.pull() orelse return len;
+        }
+        return data.len;
     }
 
     fn process_fifo_data(slot: *Slot, data: []const u8) void {
-        const writable = slot.inbound_data.writableLength();
-        const written = @min(writable, data.len);
-        if (written < data.len) {
-            logger.err("PS/2 RX buffer overrun by {} bytes", .{data.len - written});
+        for (data, 0..) |byte, i| {
+            if (slot.inbound_data.full()) {
+                logger.err("PS/2 RX buffer overrun by {} bytes", .{data.len - i});
+                break;
+            }
+            slot.inbound_data.push(byte);
         }
-        slot.inbound_data.writeAssumeCapacity(data[0..written]);
         // TODO: Wakeup PS/2 thread
     }
 
@@ -139,7 +144,7 @@ const Slot = struct {
         while (true) {
             // Reset the driver FIFO before each restart, so we don't have spurious data which
             // will hang the driver on a crash.
-            dev.inbound_data = .init();
+            dev.inbound_data = .{};
 
             dev.generic.run() catch |err| switch (err) {
                 error.NoDevice => {

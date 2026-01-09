@@ -171,7 +171,7 @@ pub fn return_frame_raw(frame: []u8) void {
 ///
 /// Must not have a DMA transfer active at the same time!
 pub fn writev_frame_blocking(slices: []const []const u8) void {
-    const Vec = microzig.utilities.Slice_Vector([]const u8);
+    const Vec = microzig.utilities.SliceVector([]const u8);
     const vec = Vec.init(slices);
     const total_len = vec.size();
 
@@ -232,9 +232,9 @@ fn pio_rx_frame_end() callconv(.c) void {
 
     const count = current_dma_buffer.len - microzig.chip.peripherals.DMA.CH2_TRANS_COUNT.read().COUNT;
 
-    logger.debug("end of frame after {} transfers: \"{}\"", .{
+    logger.debug("end of frame after {} transfers: \"{X}\"", .{
         count,
-        std.fmt.fmtSliceEscapeUpper(current_dma_buffer[0..count]),
+        current_dma_buffer[0..count],
     });
 
     if (count > 0) {

@@ -148,14 +148,14 @@ pub const MouseDecoder = struct {
 
 pub const KeyboardDecoderSCS1 = struct {
     state: State = .default,
-    queue: std.fifo.LinearFifo(KeyboardEvent, .{ .Static = 4 }) = .init(),
+    queue: astd.RingBuffer(KeyboardEvent, 4) = .{},
 
     pub fn drain(decoder: *KeyboardDecoderSCS1) void {
         while (decoder.pull()) |_| {}
     }
 
     pub fn pull(decoder: *KeyboardDecoderSCS1) ?KeyboardEvent {
-        return decoder.queue.readItem();
+        return decoder.queue.pull();
     }
 
     pub fn push(decoder: *KeyboardDecoderSCS1, input: u8) error{Overrun}!void {
@@ -167,12 +167,14 @@ pub const KeyboardDecoderSCS1 = struct {
                     decoder.state = .e1;
                 } else {
                     const scancode = @as(u7, @truncate(input));
-                    decoder.queue.writeItem(.{
+                    if (decoder.queue.full())
+                        return error.Overrun;
+                    decoder.queue.push(.{
                         .keyboard = .{
                             .usage = @enumFromInt(scancode), // TODO: Implement PS/2 SCS1 this proper
                             .down = (scancode == input), // if different, the upper bit is set
                         },
-                    }) catch return error.Overrun;
+                    });
                 }
             },
 
@@ -185,12 +187,14 @@ pub const KeyboardDecoderSCS1 = struct {
                 if (scancode == 0x2A or scancode == 0x36)
                     return;
                 logger.debug("scs1 e0 code: 0x{X:0>2}", .{scancode});
-                decoder.queue.writeItem(.{
+                if (decoder.queue.full())
+                    return error.Overrun;
+                decoder.queue.push(.{
                     .keyboard = .{
                         .usage = @enumFromInt(@as(u8, 0x80) | scancode), // TODO: Implement PS/2 SCS1 this proper
                         .down = (scancode == input), // if different, the upper bit is set
                     },
-                }) catch return error.Overrun;
+                });
             },
 
             .e1 => {
@@ -204,12 +208,14 @@ pub const KeyboardDecoderSCS1 = struct {
                 const scancode = (@as(u16, input7) << 8) | low;
 
                 logger.debug("scs1 e1 code: 0x{X:0>4}", .{scancode});
-                decoder.queue.writeItem(.{
+                if (decoder.queue.full())
+                    return error.Overrun;
+                decoder.queue.push(.{
                     .keyboard = .{
                         .usage = @enumFromInt(scancode), // TODO: Implement PS/2 SCS1 this proper
                         .down = (input7 == input), // if different, the upper bit is set
                     },
-                }) catch return error.Overrun;
+                });
             },
         }
     }

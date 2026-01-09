@@ -56,7 +56,7 @@ pub fn init() !DS1307_RTC {
                 .square_wave_enable = false,
             },
         };
-        logger.warn("uninitialized rtc, resetting to {}", .{regs});
+        logger.warn("uninitialized rtc, resetting to {f}", .{regs});
 
         // Select the first register in the RTC:
         try i2c.writev_blocking(machine.hw_alloc.i2c_addresses.ds1307_rtc, &.{
@@ -64,7 +64,7 @@ pub fn init() !DS1307_RTC {
             std.mem.asBytes(&regs),
         }, null);
     } else {
-        logger.info("time from rtc: {}", .{regs});
+        logger.info("time from rtc: {f}", .{regs});
     }
 
     const dt: dateconv.DateTime = .{
@@ -77,7 +77,7 @@ pub fn init() !DS1307_RTC {
     };
 
     const unix_timestamp: i128 = dateconv.datetimeToUnix(dt) catch blk: {
-        logger.err("failed to convert rtc time to posix timestamp: {}", .{regs});
+        logger.err("failed to convert rtc time to posix timestamp: {f}", .{regs});
         break :blk 1761124200;
     };
 
