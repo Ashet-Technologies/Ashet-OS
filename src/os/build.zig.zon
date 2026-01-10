@@ -33,7 +33,7 @@
         .dimmer = .{
             // .url = "git+https://github.com/zig-osdev/disk-image-step.git#ae3791d19800317595e21bf82012eb181c2d9284",
             // .hash = "dimmer-2.0.0-suxOki9aAgDdvXlwlG0dfHsTW64U5wrqM57E52BZhhKi",
-            .path = "../../../disk-image-step",
+            .path = "../../upgrade-0.15.2/disk-image-step",
         },
 
         .limine = .{
