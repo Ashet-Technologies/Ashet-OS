@@ -2,7 +2,7 @@ const builtin = @import("builtin");
 const std = @import("std");
 const debug = std.debug;
 const fs = std.fs;
-const io = std.io;
+const io = std.Io;
 const mem = std.mem;
 const math = std.math;
 const leb = std.leb;
@@ -1137,12 +1137,12 @@ pub const DwarfInfo = struct {
         // var stream = io.fixedBufferStream(di.debug_line);
         var stream: io.Reader = .fixed(di.debug_line);
         const in = &stream;
-        const seekable = &stream.seekableStream();
 
         const compile_unit_cwd = try compile_unit.die.getAttrString(di, AT.comp_dir, di.debug_line_str, compile_unit);
         const line_info_offset = try compile_unit.die.getAttrSecOffset(AT.stmt_list);
-
-        try seekable.seekTo(line_info_offset);
+        const line_info_offset_usize = std.math.cast(usize, line_info_offset) orelse return error.Overflow;
+        if (line_info_offset_usize > stream.end) return badDwarf();
+        stream.seek = line_info_offset_usize;
 
         var is_64: bool = undefined;
         const unit_length = try readUnitLength(in, di.endian, &is_64);
@@ -1151,7 +1151,7 @@ pub const DwarfInfo = struct {
         }
         const next_offset = unit_length + (if (is_64) @as(usize, 12) else @as(usize, 4));
 
-        const version = try in.readInt(u16, di.endian);
+        const version = try in.takeInt(u16, di.endian);
         if (version < 2) return badDwarf();
 
         var addr_size: u8 = if (is_64) 8 else 4;
@@ -1194,20 +1194,20 @@ pub const DwarfInfo = struct {
         defer tmp_arena.deinit();
         const arena = tmp_arena.allocator();
 
-        var include_directories = std.ArrayList(FileEntry).init(arena);
-        var file_entries = std.ArrayList(FileEntry).init(arena);
+        var include_directories = std.array_list.Managed(FileEntry).init(arena);
+        var file_entries = std.array_list.Managed(FileEntry).init(arena);
 
         if (version < 5) {
             try include_directories.append(.{ .path = compile_unit_cwd });
 
             while (true) {
-                const dir = try in.readUntilDelimiterAlloc(arena, 0, math.maxInt(usize));
+                const dir = try readDelimiter(arena, in, 0);
                 if (dir.len == 0) break;
                 try include_directories.append(.{ .path = dir });
             }
 
             while (true) {
-                const file_name = try in.readUntilDelimiterAlloc(arena, 0, math.maxInt(usize));
+                const file_name = try readDelimiter(arena, in, 0);
                 if (file_name.len == 0) break;
                 const dir_index = try in.takeLeb128(u32);
                 const mtime = try in.takeLeb128(u64);
@@ -1265,7 +1265,7 @@ pub const DwarfInfo = struct {
             }
 
             var file_ent_fmt_buf: [10]FileEntFmt = undefined;
-            const file_name_entry_format_count = try in.readByte();
+            const file_name_entry_format_count = try in.takeByte();
             if (file_name_entry_format_count > file_ent_fmt_buf.len) return badDwarf();
             for (file_ent_fmt_buf[0..file_name_entry_format_count]) |*ent_fmt| {
                 ent_fmt.* = .{
@@ -1310,17 +1310,21 @@ pub const DwarfInfo = struct {
             version,
         );
 
-        try seekable.seekTo(prog_start_offset);
+        const prog_start_offset_usize = std.math.cast(usize, prog_start_offset) orelse return error.Overflow;
+        if (prog_start_offset_usize > stream.end) return badDwarf();
+        stream.seek = prog_start_offset_usize;
 
         const next_unit_pos = line_info_offset + next_offset;
+        const next_unit_pos_usize = std.math.cast(usize, next_unit_pos) orelse return error.Overflow;
+        if (next_unit_pos_usize > stream.end) return badDwarf();
 
-        while ((try seekable.getPos()) < next_unit_pos) {
-            const opcode = try in.readByte();
+        while (stream.seek < next_unit_pos_usize) {
+            const opcode = try in.takeByte();
 
             if (opcode == LNS.extended_op) {
                 const op_size = try in.takeLeb128(u64);
                 if (op_size < 1) return badDwarf();
-                const sub_op = try in.readByte();
+                const sub_op = try in.takeByte();
                 switch (sub_op) {
                     LNE.end_sequence => {
                         prog.end_sequence = true;
@@ -1328,11 +1332,11 @@ pub const DwarfInfo = struct {
                         prog.reset();
                     },
                     LNE.set_address => {
-                        const addr = try in.readInt(Address, di.endian);
+                        const addr = try in.takeInt(Address, di.endian);
                         prog.address = addr;
                     },
                     LNE.define_file => {
-                        const path = try in.readUntilDelimiterAlloc(arena, 0, math.maxInt(usize));
+                        const path = try readDelimiter(arena, in, 0);
                         const dir_index = try in.takeLeb128(u32);
                         const mtime = try in.takeLeb128(u64);
                         const size = try in.takeLeb128(u64);
@@ -1344,8 +1348,8 @@ pub const DwarfInfo = struct {
                         });
                     },
                     else => {
-                        const fwd_amt = math.cast(isize, op_size - 1) orelse return badDwarf();
-                        try seekable.seekBy(fwd_amt);
+                        const fwd_amt = math.cast(usize, op_size - 1) orelse return badDwarf();
+                        try in.discardAll(fwd_amt);
                     },
                 }
             } else if (opcode >= opcode_base) {
@@ -1390,14 +1394,14 @@ pub const DwarfInfo = struct {
                         prog.address += inc_addr;
                     },
                     LNS.fixed_advance_pc => {
-                        const arg = try in.readInt(u16, di.endian);
+                        const arg = try in.takeInt(u16, di.endian);
                         prog.address += arg;
                     },
                     LNS.set_prologue_end => {},
                     else => {
                         if (opcode - 1 >= standard_opcode_lengths.len) return badDwarf();
                         const len_bytes = standard_opcode_lengths[opcode - 1];
-                        try seekable.seekBy(len_bytes);
+                        try in.discardAll(@as(usize, len_bytes));
                     },
                 }
             }
