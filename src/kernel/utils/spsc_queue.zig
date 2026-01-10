@@ -15,6 +15,12 @@ pub fn SpScQueue(comptime T: type, comptime cap: usize) type {
         tail: u32 = 0,
         items: [cap]T = undefined,
 
+        pub inline fn is_empty(q: *const Queue) bool {
+            const head = volatile_load(u32, &q.head);
+            const tail = volatile_load(u32, &q.tail);
+            return head == tail;
+        }
+
         pub inline fn is_full(q: *const Queue) bool {
             const head = volatile_load(u32, &q.head);
             const tail = volatile_load(u32, &q.tail);
