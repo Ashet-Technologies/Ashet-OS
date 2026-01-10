@@ -126,13 +126,26 @@ pub fn build(b: *std.Build) void {
     }
 
     if (machine_info.rom_size) |rom_size| {
+        const resize_exe = b.addExecutable(.{
+            .name = "resize-bin",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("utils/padbin.zig"),
+                .target = b.graph.host,
+                .optimize = .Debug,
+            }),
+        });
+
         const objcopy_kernel = b.addObjCopy(kernel_exe, .{
             .basename = "kernel.bin",
             .format = .bin,
-            .pad_to = rom_size,
         });
 
-        const kernel_bin = objcopy_kernel.getOutput();
+        const short_kernel_bin = objcopy_kernel.getOutput();
+
+        const resize_kernel = b.addRunArtifact(resize_exe);
+        resize_kernel.addFileArg(short_kernel_bin);
+        const kernel_bin = resize_kernel.addOutputFileArg("kernel.bin");
+        resize_kernel.addArg(b.fmt("{}", .{rom_size}));
 
         _ = result_files.addCopyFile(kernel_bin, "kernel.bin");
 

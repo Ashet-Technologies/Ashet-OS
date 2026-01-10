@@ -369,13 +369,10 @@ fn consume_poll_result(
     reader: *std.Io.Reader,
 ) !void {
     const writer = &output.interface;
-    var chunk: [64]u8 = undefined;
-    while (true) {
-        const input_len = try reader.readSliceShort(&chunk);
-        if (input_len == 0)
-            return;
-
-        for (chunk[0..input_len]) |byte| {
+    while (reader.bufferedLen() != 0) {
+        const buffered = reader.buffered();
+        const chunk = buffered[0..@min(buffered.len, 64)];
+        for (chunk) |byte| {
             line_buffer.push(byte);
             try writer.writeByte(byte);
 
@@ -394,6 +391,7 @@ fn consume_poll_result(
                 try render_elf_data(result.addr, result.elf, writer);
             }
         }
+        reader.toss(chunk.len);
     }
 }
 

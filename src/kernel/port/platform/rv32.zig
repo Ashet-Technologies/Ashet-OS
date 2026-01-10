@@ -94,6 +94,14 @@ pub const start = struct {
                 0x0000_0030...0x0000_003F => "reserved for future custom use",
                 else => "reserved for future standard use",
             }});
+
+            if (trap_reason == 0x0000_0003) {
+                // Breakpoint:
+                while (true) {
+                    // HALT
+                    asm volatile ("" ::: .{ .memory = true });
+                }
+            }
         }
 
         // TODO(fqu): Reimplement this
