@@ -6,8 +6,8 @@ const PLACEHOLDER = 0 // placeholder for augment/set/...
 
 const PROPIO_RXD = 63 // RP2350.0, green
 const PROPIO_TXD = 62 // RP2350.1, yellow
-const PROPIO_RTS = 61 // RP2350.2, blue
-const PROPIO_CTS = 60 // RP2350.3, purple
+const PROPIO_RXH = 61 // RP2350.2, blue
+const PROPIO_TXH = 60 // RP2350.3, purple
 const PROPIO_FRI = 59 // RP2350.4, brown
 const PROPIO_FRO = 58 // RP2350.5, red
 
@@ -85,7 +85,7 @@ _start:
     // first thing we have to do is deasserting CTS
     // so the upstream won't spuriously already send
     // data here,
-    DRVH PROPIO_CTS
+    DRVH PROPIO_RXH
 
     HUBSET  0xF0
             // %0000000_E_DDDDDD_MMMMMMMMMM_PPPP_CC_SS
@@ -124,7 +124,7 @@ _start:
 
     // assert CTS and signal that we're ready
     // to receive data
-    DRVL PROPIO_CTS
+    DRVL PROPIO_RXH
 
     // then notify the host that we bootet
     // successfully and are ready to receive
@@ -244,12 +244,13 @@ var .slot_fifo_id:     LONG 0
 var .slot_fifo:        LONG 0, 0 // base addr, config ptr
   
   
-var propio_out_data: LONG 0
+var propio_out_data:   LONG 0
 
 propio_tx_byte:
-          RDPIN INA, PROPIO_TXD :wc 
-    if(c)  JMP propio_tx_byte                // poll if transmitter busy
-    return WYPIN propio_out_data, PROPIO_TXD // send byte 
+           RDPIN  INA, PROPIO_TXD :wc         // c  = "UART transmitter busy"
+           TESTP  PROPIO_TXH      :orc        // c |= "Receiver is not ready to receive"
+    if(c)  JMP    propio_tx_byte              // wait until both of the above are clear
+    return WYPIN  propio_out_data, PROPIO_TXD // send byte
 
   
 propio_init:
@@ -257,11 +258,11 @@ propio_init:
 
     // configure sender
     DRVH PROPIO_FRO // we don't want to transmit a frame atm
-    DIRL PROPIO_RTS // when low, we can send data
+    DIRL PROPIO_TXH // when low, we can send data
     
     // configure receiver inputs:
     DIRL PROPIO_FRI // when high, a frame is incoming
-    DRVL PROPIO_CTS // we're always clear to receive right now
+    DRVL PROPIO_RXH // we're always clear to receive right now
 
     // configure smart pin
     DIRL PROPIO_RXD // turn off smart pin
@@ -297,10 +298,11 @@ propio_send_ready:
     DRVL  PROPIO_FRO // mark the beginning of a new frame
     WAITX aug(PROPIO_FRO_ON_DELAY)
     
-    WYPIN 0xFF, PROPIO_TXD // "Southbridge Ready"
+    MOV   propio_out_data, 0xFF // "Southbridge Ready"
+    CALL  propio_tx_byte
 
     WAITX aug(PROPIO_FRO_OFF_DELAY)
-    DRVH PROPIO_FRO // end the current frame
+    DRVH  PROPIO_FRO // end the current frame
     WAITX aug(PROPIO_FRO_OFF_DELAY)
     RET 
 

@@ -763,17 +763,21 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
     halt();
 }
 
-export fn ashet_lockInterrupts(were_enabled: *bool) void {
-    were_enabled.* = platform.areInterruptsEnabled();
-    if (were_enabled.*) {
-        platform.disableInterrupts();
-    }
+export fn ashet_lockInterrupts(enable_on_leave: *bool) void {
+    const cs: CriticalSection = .enter();
+
+    enable_on_leave.* = switch (cs) {
+        .unchanged_on_leave => false,
+        .enable_on_leave => true,
+    };
 }
 
-export fn ashet_unlockInterrupts(enable: bool) void {
-    if (enable) {
-        platform.enableInterrupts();
-    }
+export fn ashet_unlockInterrupts(enable_on_leave: bool) void {
+    const cs: CriticalSection = switch (enable_on_leave) {
+        false => .unchanged_on_leave,
+        true => .enable_on_leave,
+    };
+    cs.leave();
 }
 
 export fn ashet_rand() u32 {
@@ -781,18 +785,25 @@ export fn ashet_rand() u32 {
     return 4; // chose by a fair dice roll
 }
 
-pub const CriticalSection = struct {
-    restore: bool,
+/// A critical section is a tiny helper that allows
+/// a code section to be protected against interruption.
+pub const CriticalSection = enum(u1) {
+    unchanged_on_leave = 0,
+    enable_on_leave = 1,
 
     pub fn enter() CriticalSection {
-        var cs = CriticalSection{ .restore = undefined };
-        ashet_lockInterrupts(&cs.restore);
-        return cs;
+        const were_enabled = platform.areInterruptsEnabled();
+        if (were_enabled) {
+            platform.disableInterrupts();
+        }
+        return if (were_enabled) .enable_on_leave else .unchanged_on_leave;
     }
 
-    pub fn leave(cs: *CriticalSection) void {
-        ashet_unlockInterrupts(cs.restore);
-        cs.* = undefined;
+    pub fn leave(cs: CriticalSection) void {
+        switch (cs) {
+            .unchanged_on_leave => {},
+            .enable_on_leave => platform.enableInterrupts(),
+        }
     }
 };
 
