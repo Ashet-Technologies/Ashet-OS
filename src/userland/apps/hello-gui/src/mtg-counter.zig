@@ -17,7 +17,7 @@ pub fn main() !void {
 
     const desktop = try argv[1].value.resource.cast(.desktop);
     defer desktop.release();
-    std.log.info("using desktop {}", .{desktop});
+    std.log.info("using desktop {f}", .{desktop});
 
     const window = try ashet.gui.create_window(
         desktop,
@@ -27,7 +27,7 @@ pub fn main() !void {
         },
     );
     defer window.destroy_now();
-    std.log.info("created window: {}", .{window});
+    std.log.info("created window: {f}", .{window});
 
     const inc_button = try ashet.gui.create_widget(window, ashet.gui.widgets.Button.uuid);
     defer inc_button.release();
@@ -60,7 +60,7 @@ pub fn main() !void {
 
     var counter: i32 = 0;
 
-    std.log.info("created  {} {} {}", .{
+    std.log.info("created  {f} {f} {f}", .{
         inc_button,
         count_label,
         dec_button,
@@ -73,7 +73,7 @@ pub fn main() !void {
             .window_close => break :main_loop,
 
             .widget_notify => |notify| {
-                std.log.info("widget notify widget={}, type={}, data={{ {}, {}, {}, {} }}", .{
+                std.log.info("widget notify widget={f}, type={}, data={{ {}, {}, {}, {} }}", .{
                     notify.widget,
                     notify.type,
                     notify.data[0],

@@ -70,7 +70,7 @@ pub fn main() !void {
 
     try ashet.overlapped.schedule(&get_draw_event.arc);
     try ashet.overlapped.schedule(&get_palette_event.arc);
-    try command_queue.submit(framebuffer, .{});
+    try command_queue.submit(draw_framebuffer, .{});
 
     var painting: bool = false;
     var mouse_prev: Point = undefined;

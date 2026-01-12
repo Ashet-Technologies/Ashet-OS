@@ -437,7 +437,7 @@ fn wrap_lwip_call(comptime func: anytype, comptime error_set: []const LWIP_Error
                 if (return_code == @intFromEnum(err))
                     return @field(anyerror, @errorName(err.to_zig_error()));
             }
-            std.log.err("{} returned unexpected error code {}", .{ ashet.fmtCodeLocation(@intFromPtr(&func)), return_code });
+            std.log.err("{f} returned unexpected error code {}", .{ ashet.fmtCodeLocation(@intFromPtr(&func)), return_code });
             @panic("unexpected return value from LWIP!");
         }
 

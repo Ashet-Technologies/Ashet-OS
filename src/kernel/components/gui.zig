@@ -323,7 +323,257 @@ pub const Window = struct {
         ));
     }
 
+    /// Invalidates a region of the window and notifies the owning desktop that this part should be drawn.
+    pub fn invalidate_region(window: *Window, region: Rectangle) void {
+        const desktop: *Desktop = window.desktop.data.desktop;
+        desktop.notify_invalidate_window(window, region);
+    }
+
+    ///
+    /// Posts an event to the window.
+    ///
+    /// If the event affects a widget, the widget will process the event. If no widget is suitable
+    /// to handle the event, the event will be posted into the window event queue.
+    ///
+    /// NOTE: This function finalizes the GetWindowEvent awaiter.
+    ///
     pub fn post_event(window: *Window, event: ashet.abi.WindowEvent) void {
+
+        // TODO: Implement the ".scroll" widget event
+        //       This is probably best done by removing scroll buttons from the mouse_button_press, mouse_button_release event
+        //       and implement it as a separate axis (scroll_h, scroll_v).
+        //
+
+        switch (event.event_type) {
+
+            // This event should not be put into 'post_event' but into post_event_direct.
+            // It's still kinda fine, but we'll emit a safety log:
+            .widget_notify => {
+                logger.err("Window received unexpected .widget_notify event inside post_event().", .{});
+            },
+
+            // Keyboard events go through the focused widget (if any):
+            .key_press, .key_release => if (window.focused_widget) |focused_widget| {
+                std.debug.assert(focused_widget.type.flags.focusable);
+
+                const key_event: ashet.abi.WidgetEvent = .{
+                    .keyboard = .{
+                        .event_type = .{ .widget = switch (event.event_type) {
+                            .key_press => .key_press,
+                            .key_release => .key_release,
+                            else => unreachable,
+                        } },
+                        .usage = event.keyboard.usage,
+                        .text_ptr = event.keyboard.text_ptr,
+                        .text_len = event.keyboard.text_len,
+                        .pressed = event.keyboard.pressed,
+                        .modifiers = event.keyboard.modifiers,
+                    },
+                };
+
+                if (event.event_type == .key_press) {
+                    if (is_clicking_key(key_event.keyboard.usage)) {
+                        // Only prime a potential click is if the key is clicking and the event is a key-down event:
+                        window.keyboard_clicked_widget = .{ focused_widget, key_event.keyboard.usage };
+                    } else {
+                        // if any other key is pressed, we reset the primer.
+                        window.keyboard_clicked_widget = null;
+                    }
+                }
+
+                // Focused widgets just receive the keyboard event,
+                // and the window won't see them:
+                focused_widget.process_event(key_event);
+
+                if (event.event_type == .key_release) {
+                    if (window.keyboard_clicked_widget) |_pack| {
+                        const clicked_widget, const source_key = _pack;
+
+                        if (clicked_widget == focused_widget and event.keyboard.usage == source_key) {
+                            // If we have a primed key click, and we have a key release of the
+                            // same key that primed our focus change, we can trigger the click event:
+                            focused_widget.process_event(.{ .event_type = .click });
+                        }
+                    }
+
+                    // any key release will reset the primer:
+                    window.keyboard_clicked_widget = null;
+                }
+
+                return;
+            },
+
+            // Mouse input events must be forwarded to the widgets:
+            .mouse_motion,
+            .mouse_button_press,
+            .mouse_button_release,
+            => {
+                const pos: Point = .new(event.mouse.x, event.mouse.y);
+
+                // Get the widget from the mouse position, and update the hovered state.
+                // This must be done through the function as we have to inform both previous
+                // and new widget about the state change:
+                const maybe_hovered_widget: ?*Widget = window.widget_from_pos(pos);
+                window.update_hovered_widget(maybe_hovered_widget, event.mouse);
+                std.debug.assert(window.hovered_widget == maybe_hovered_widget);
+
+                // TODO: Left mouse button is inaccessible. Must be refactored into "primary" and "secondary" for UI instead of "left", "right".
+                const click_mouse_button: ashet.abi.MouseButton = .left;
+
+                if (event.event_type == .mouse_button_press and event.mouse.button == click_mouse_button) {
+                    // handle primary mouse button down potentially initiating a click event.
+                    // we always set the `mouse_clicked_widget`, no matter if we actually clicked one or not.
+                    // this way, we can't forget to update the variable in case it is `null` and a `mouse_button_release` event
+                    // would accidently fire.
+
+                    // TODO: This state can be advanced for drag'n'drop elements when we also track the start/drag position:
+                    window.mouse_clicked_widget = maybe_hovered_widget;
+                }
+
+                if (maybe_hovered_widget) |widget| {
+                    // If we have a widget, the event will be forwarded to the
+                    // widget server and must be swallowed later, so it doesn't show up in the window queue:
+                    widget.process_event(derive_mouse_event(widget, event.mouse, switch (event.event_type) {
+                        .mouse_motion => .mouse_motion,
+                        .mouse_button_press => .mouse_button_press,
+                        .mouse_button_release => .mouse_button_release,
+                        else => unreachable,
+                    }));
+                }
+
+                if (event.event_type == .mouse_button_release and event.mouse.button == click_mouse_button) {
+                    if (maybe_hovered_widget) |hovered_widget| {
+                        if (window.mouse_clicked_widget) |clicked_widget| {
+                            if (hovered_widget == clicked_widget) {
+                                // Focusable widgets should always be focused on a click *before* the
+                                // actual click event:
+                                if (clicked_widget.type.flags.focusable) {
+                                    window.update_focused_widget(clicked_widget);
+                                }
+
+                                clicked_widget.process_event(.{ .event_type = .click });
+                            }
+                        }
+                    }
+                    // always reset the clicked widget to `null`, so the click operation is finalized:
+                    window.mouse_clicked_widget = null;
+                }
+
+                // Consume the event if we have a widget hovered:
+                if (maybe_hovered_widget != null)
+                    return;
+            },
+
+            // Mouse enter isn't relevant for widget management
+            .mouse_enter => {},
+
+            // but mouse_leave must set the hovered widget to null, and
+            // optionally send the correct widget event:
+            .mouse_leave => window.update_hovered_widget(null, event.mouse),
+
+            // Window events affect the window directly and won't be noticed
+            // at all by widgets:
+            .window_close,
+            .window_minimize,
+            .window_restore,
+            .window_moving,
+            .window_moved,
+            .window_resizing,
+            .window_resized,
+            => {},
+        }
+
+        window.post_event_direct(event);
+    }
+
+    fn update_focused_widget(window: *Window, maybe_new_widget: ?*Widget) void {
+        if (maybe_new_widget) |new_widget| {
+            std.debug.assert(new_widget.type.flags.focusable);
+        }
+
+        const maybe_old_widget: ?*Widget = window.focused_widget;
+        if (maybe_old_widget == maybe_new_widget)
+            return;
+
+        // Any focus change kills the current keyboard click state:
+        if (window.keyboard_clicked_widget) |keyboard_clicked_widget| {
+            // If we have a keyboard-clicked widget, it must be the one we've
+            // currently focused.
+            // Otherwise we have an implementation bug
+            std.debug.assert(keyboard_clicked_widget[0] == maybe_old_widget);
+        }
+        window.keyboard_clicked_widget = null;
+
+        if (maybe_old_widget) |old_widget| {
+            std.debug.assert(old_widget.type.flags.focusable);
+            old_widget.process_event(.{
+                .event_type = .focus_leave,
+            });
+        }
+
+        window.focused_widget = maybe_new_widget;
+
+        if (maybe_new_widget) |new_widget| {
+            std.debug.assert(new_widget.type.flags.focusable);
+            new_widget.process_event(.{
+                .event_type = .focus_enter,
+            });
+        }
+    }
+
+    fn update_hovered_widget(window: *Window, maybe_new_widget: ?*Widget, mouse_event: ashet.abi.MouseEvent) void {
+        const maybe_old_widget: ?*Widget = window.hovered_widget;
+        if (maybe_old_widget != maybe_new_widget) {
+            // We have detected a change of focus. The mouse hovered
+            // a different widget previously.
+
+            if (maybe_old_widget) |old_widget| {
+                std.debug.assert(old_widget.type.flags.hit_test_visible);
+                old_widget.process_event(
+                    derive_mouse_event(old_widget, mouse_event, .mouse_leave),
+                );
+            }
+            if (maybe_new_widget) |new_widget| {
+                std.debug.assert(new_widget.type.flags.hit_test_visible);
+                new_widget.process_event(
+                    derive_mouse_event(new_widget, mouse_event, .mouse_enter),
+                );
+            }
+        }
+        window.hovered_widget = maybe_new_widget;
+    }
+
+    /// Derives a new Widget mouse event from a window mouse event.
+    /// This changes the type of the event and adjusts the (x,y) position relative to the widget position.
+    fn derive_mouse_event(widget: *Widget, mouse_event: ashet.abi.MouseEvent, event_type: ashet.abi.WidgetEvent.Type) ashet.abi.WidgetEvent {
+        var evt = mouse_event;
+        evt.event_type = .{ .widget = event_type };
+        evt.x -|= widget.bounds.x;
+        evt.y -|= widget.bounds.y;
+        return .{ .mouse = evt };
+    }
+
+    /// Gets a widget from the given position.
+    fn widget_from_pos(window: *Window, pos: Point) ?*Widget {
+        // Iterate top-to-bottom so we get the uppermost widget first:
+        var iter = window.widgets.last;
+        while (iter) |node| : (iter = node.prev) {
+            const widget = Widget.from_link(node);
+
+            if (!widget.type.flags.hit_test_visible)
+                continue;
+
+            if (widget.bounds.contains(pos))
+                return widget;
+        }
+        return null;
+    }
+
+    ///
+    /// Posts an event directly into the window event queue and finalizes the GetWindowEvent awaiter.
+    ///
+    /// NOTE: This function bypasses any widget handling!
+    pub fn post_event_direct(window: *Window, event: ashet.abi.WindowEvent) void {
         if (window.event_queue.empty()) {
             // If the window event queue is empty, there are no pending events and we're the first
             // event to be pushed.
@@ -403,10 +653,10 @@ pub const Widget = struct {
         };
         errdefer widget.associated_memory.deinit();
 
-        widget.widget_data = widget.associated_memory.allocator().alignedAlloc(u8, 16, widget_type.widget_data_size) catch return error.SystemResources;
+        widget.widget_data = widget.associated_memory.allocator().alignedAlloc(u8, .@"16", widget_type.widget_data_size) catch return error.SystemResources;
         @memset(widget.widget_data, 0);
 
-        widget.pixels = widget.associated_memory.allocator().alignedAlloc(ashet.abi.Color, 4, 0) catch return error.SystemResources;
+        widget.pixels = widget.associated_memory.allocator().alignedAlloc(ashet.abi.Color, .@"4", 0) catch return error.SystemResources;
 
         owner.widgets.append(&widget.window_link);
         errdefer owner.widgets.remove(&widget.window_link);
@@ -509,7 +759,7 @@ pub const Widget = struct {
 
         const was_moved = !previous.position().eql(desired_bounds.position());
 
-        logger.info("{*} resized from {} to {}", .{ widget, previous, widget.bounds });
+        logger.info("{*} resized from {f} to {f}", .{ widget, previous, widget.bounds });
 
         if (resize_granted) {
             // Resize the internal pixel buffer to new size:
@@ -528,7 +778,7 @@ pub const Widget = struct {
                         // would out of memory. to prevent a crash, just accept
                         // that the resize can't happen right now and revert it.
 
-                        logger.warn("failed to resize widget {*} from {} to {}: out of memory", .{
+                        logger.warn("failed to resize widget {*} from {f} to {f}: out of memory", .{
                             widget,
                             previous.size(),
                             widget.bounds.size(),
