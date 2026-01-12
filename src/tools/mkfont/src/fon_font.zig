@@ -30,7 +30,7 @@ pub fn validate(font: schema.FonFontFile) !bool {
 
 pub fn generate(
     allocator: std.mem.Allocator,
-    file: std.fs.File,
+    file_writer: *std.fs.File.Writer,
     root_dir: std.fs.Dir,
     font: *schema.FonFontFile,
 ) !void {
@@ -53,7 +53,7 @@ pub fn generate(
     const header = sliceToStruct(NE_Header, fon_data[lfanew..][0..packedStructSize(NE_Header)]);
 
     if (!std.mem.eql(u8, &header.sig, "NE")) {
-        logger.err("file is not a NE file. expected 'NE' but found \"{}\"", .{std.fmt.fmtSliceEscapeUpper(&header.sig)});
+        logger.err("file is not a NE file. expected 'NE' but found \"{f}\"", .{std.ascii.hexEscape(&header.sig, .upper)});
         return error.InvalidData;
     }
 
@@ -64,17 +64,16 @@ pub fn generate(
     }
 
     const font_info: FontInfo = search_loop: {
-        var res_table_stream = std.io.fixedBufferStream(fon_data[res_table_off..]);
-        const reader = res_table_stream.reader();
+        var reader: std.Io.Reader = .fixed(fon_data[res_table_off..]);
 
-        const alignment_shift_count = try reader.readInt(u16, .little);
+        const alignment_shift_count = try reader.takeInt(u16, .little);
         if (alignment_shift_count >= @bitSizeOf(u32))
             return error.InvalidData;
 
         const page_size: u32 = @as(u32, 1) << @intCast(alignment_shift_count);
 
         while (true) {
-            const type_id = try reader.readInt(u16, .little);
+            const type_id = try reader.takeInt(u16, .little);
             if (type_id == 0) {
                 logger.err("No matching fonts found", .{});
                 return error.FontNotFound;
@@ -87,18 +86,18 @@ pub fn generate(
             const res_type: ResourceType = @enumFromInt(type_id & 0x7FFF);
 
             logger.debug("type:  0x{X:0>4} / {}", .{ type_id & 0x7FFF, res_type });
-            const resource_count = try reader.readInt(u16, .little);
+            const resource_count = try reader.takeInt(u16, .little);
             logger.debug("count: {}", .{resource_count});
-            _ = try reader.readInt(u32, .little);
+            _ = try reader.takeInt(u32, .little);
 
             for (0..resource_count) |res_index| {
                 logger.debug("  Res {}:", .{res_index});
 
-                const file_offset_page = try reader.readInt(u16, .little);
-                const resource_length_page = try reader.readInt(u16, .little);
-                const resource_flags = try reader.readInt(u16, .little);
-                const resource_id = try reader.readInt(u16, .little);
-                _ = try reader.readInt(u32, .little);
+                const file_offset_page = try reader.takeInt(u16, .little);
+                const resource_length_page = try reader.takeInt(u16, .little);
+                const resource_flags = try reader.takeInt(u16, .little);
+                const resource_id = try reader.takeInt(u16, .little);
+                _ = try reader.takeInt(u32, .little);
 
                 logger.debug("    offset={} size={} flags=0x{X:0>4} id={}", .{
                     page_size * file_offset_page,
@@ -172,11 +171,10 @@ pub fn generate(
     switch (fontheader.dfVersion) {
         .win2 => {
             logger.info("win2 font", .{});
-            var fbs = std.io.fixedBufferStream(fnt_data[fontheader_size..]);
-            const reader = fbs.reader();
+            var reader: std.Io.Reader = .fixed(fnt_data[fontheader_size..]);
             for (0..char_count) |index| {
-                const width = try reader.readInt(u16, .little);
-                const offset = try reader.readInt(u16, .little);
+                const width = try reader.takeInt(u16, .little);
+                const offset = try reader.takeInt(u16, .little);
 
                 if (width > fontheader.dfMaxWidth) {
                     logger.info("char[{}] exceeds max width of {} px: has width of {} px", .{
@@ -228,11 +226,10 @@ pub fn generate(
         },
         .win3 => {
             logger.info("win3 font", .{});
-            var fbs = std.io.fixedBufferStream(fnt_data[fontheader_size..]);
-            const reader = fbs.reader();
+            var reader: std.Io.Reader = .fixed(fnt_data[fontheader_size..]);
             for (0..char_count) |index| {
-                const width = try reader.readInt(u16, .little);
-                const offset = try reader.readInt(u32, .little);
+                const width = try reader.takeInt(u16, .little);
+                const offset = try reader.takeInt(u32, .little);
                 logger.info("char[{}] = {}px, +{}byte", .{ index, width, offset });
             }
             @panic("Win3 fonts not implemented yet!");
@@ -240,7 +237,7 @@ pub fn generate(
         _ => unreachable,
     }
 
-    try bmp_font_gen.render(allocator, file, builder, .{
+    try bmp_font_gen.render(allocator, file_writer, builder, .{
         .line_height = @intCast(fontheader.dfAscent),
     });
 }

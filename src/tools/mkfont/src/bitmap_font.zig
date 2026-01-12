@@ -160,7 +160,7 @@ pub fn generate(
         // out_glyph.dump("  ");
     }
 
-    try bmp_font_gen.render(allocator, &file_writer.interface, builder, .{
+    try bmp_font_gen.render(allocator, file_writer, builder, .{
         .line_height = font.line_height,
     });
 }

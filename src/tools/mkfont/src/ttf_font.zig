@@ -22,7 +22,7 @@ pub fn validate(font: schema.TtfFontFile) !bool {
 
 pub fn generate(
     allocator: std.mem.Allocator,
-    file: std.fs.File,
+    file_writer: *std.fs.File.Writer,
     root_dir: std.fs.Dir,
     font: *schema.TtfFontFile,
 ) !void {
@@ -87,7 +87,7 @@ pub fn generate(
         }
     }
 
-    try file.writeAll("hello");
+    try file_writer.interface.writeAll("hello");
 
     @panic("not implemented yet");
 }
