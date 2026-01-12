@@ -1,4 +1,5 @@
 const std = @import("std");
+const ashet = @import("../../../../../main.zig");
 const logger = std.log.scoped(.propio_lowlevel);
 const microzig = @import("microzig");
 const rp2350 = microzig.hal;
@@ -18,6 +19,9 @@ const rxf_pin = hw_alloc.pins.prop_rxf;
 const txd_pin = hw_alloc.pins.prop_txd;
 const txf_pin = hw_alloc.pins.prop_txf;
 
+const txh_pin = hw_alloc.pins.prop_txh;
+const rxh_pin = hw_alloc.pins.prop_rxh;
+
 const rx_dma_chan = hw_alloc.dma.prop_rx;
 const tx_dma_chan = hw_alloc.dma.prop_tx;
 
@@ -30,15 +34,30 @@ var rxbuf_received_queue: SpScQueue([]u8, hw_alloc.cfg.propio_buffer_count) = .e
 
 var rxbuf_buffer: [hw_alloc.cfg.propio_buffer_count]RawFrame = undefined;
 
+const Handshake = enum(u1) {
+    allow_transmission = 0,
+    inhibit_transmission = 1,
+};
+
+fn set_rx_handshake(handshake: Handshake) void {
+    rxh_pin.put(@intFromEnum(handshake));
+}
+
 pub fn init() !void {
     rx_dma_chan.claim() catch @panic("dma channel conflict!");
     tx_dma_chan.claim() catch @panic("dma channel conflict!");
 
     rxd_pin.set_function(.pio0);
     rxf_pin.set_function(.pio0);
+    rxh_pin.set_function(.sio);
 
     txd_pin.set_function(.pio0);
     txf_pin.set_function(.pio0);
+    txh_pin.set_function(.sio);
+
+    txh_pin.set_direction(.in);
+    rxh_pin.set_direction(.out);
+    set_rx_handshake(.inhibit_transmission);
 
     // Shift the used pins by 16 (we use pins in the upper range)
     pio.get_regs().GPIOBASE.write(.{ .GPIOBASE = 1 });
@@ -151,6 +170,8 @@ pub fn init() !void {
 
     hw_alloc.irq.propio_pio.enable();
     hw_alloc.irq.propio_dma.enable();
+
+    set_rx_handshake(.allow_transmission);
 }
 
 /// Fetches a single frame if available from the receive queue.
@@ -163,8 +184,14 @@ pub fn get_available_frame_raw() ?[]u8 {
 pub fn return_frame_raw(frame: []u8) void {
     std.debug.assert(frame.len > 0 and frame.len <= hw_alloc.cfg.propio_buffer_size);
 
-    // can't fail as the queues can't yield more than queue capacity buffers.
+    const cs: ashet.CriticalSection = .enter();
+    defer cs.leave();
+
+    // Can't fail as the queues can't yield more than queue capacity buffers.
     std.debug.assert(rxbuf_empty_queue.enqueue(@ptrCast(frame.ptr)));
+
+    // Unconditionally allow receiption of packets again after the buffer has been enqueued:
+    set_rx_handshake(.allow_transmission);
 }
 
 /// Writes a single frame blockingly into the device.
@@ -221,7 +248,16 @@ var current_dma_buffer: *RawFrame = undefined;
 fn prime_next_dma_transfer() void {
     comptime std.debug.assert(hw_alloc.dma.prop_rx == rp2350.dma.channel(2));
 
+    const cs: ashet.CriticalSection = .enter();
+    defer cs.leave();
+
     const next_buffer = rxbuf_empty_queue.dequeue() orelse @panic("propio buffer queue underrun.");
+    if (rxbuf_empty_queue.is_empty()) {
+        // If the next DMA transfer would not have a packet to store it's data to,
+        // we disable handshaking so the propeller would not send further data:
+        set_rx_handshake(.inhibit_transmission);
+    }
+
     std.debug.assert(next_buffer.len == hw_alloc.cfg.propio_buffer_size);
     current_dma_buffer = next_buffer;
     microzig.chip.peripherals.DMA.CH2_AL2_WRITE_ADDR_TRIG.raw = @intFromPtr(current_dma_buffer);

@@ -1,6 +1,6 @@
 {
   "design_size": {
-    "width": 400,
+    "width": 380,
     "height": 300
   },
   "min_size": {
@@ -13,7 +13,7 @@
   },
   "widgets": [
     {
-      "identifier": "",
+      "identifier": "ToolBox",
       "bounds": {
         "x": 0,
         "y": 0,
@@ -31,11 +31,11 @@
       "properties": {}
     },
     {
-      "identifier": "",
+      "identifier": "ColorBox",
       "bounds": {
         "x": 0,
         "y": 240,
-        "width": 400,
+        "width": 380,
         "height": 60
       },
       "anchor": {
@@ -49,7 +49,7 @@
       "properties": {}
     },
     {
-      "identifier": "",
+      "identifier": "SecondaryColor",
       "bounds": {
         "x": 20,
         "y": 270,
@@ -67,7 +67,7 @@
       "properties": {}
     },
     {
-      "identifier": "",
+      "identifier": "PrimaryColor",
       "bounds": {
         "x": 10,
         "y": 260,
@@ -85,7 +85,7 @@
       "properties": {}
     },
     {
-      "identifier": "",
+      "identifier": "Color0",
       "bounds": {
         "x": 50,
         "y": 250,
@@ -103,7 +103,7 @@
       "properties": {}
     },
     {
-      "identifier": "",
+      "identifier": "Color4",
       "bounds": {
         "x": 50,
         "y": 272,
@@ -121,7 +121,7 @@
       "properties": {}
     },
     {
-      "identifier": "",
+      "identifier": "Color1",
       "bounds": {
         "x": 70,
         "y": 250,
@@ -139,7 +139,7 @@
       "properties": {}
     },
     {
-      "identifier": "",
+      "identifier": "Color5",
       "bounds": {
         "x": 70,
         "y": 272,
@@ -157,7 +157,7 @@
       "properties": {}
     },
     {
-      "identifier": "",
+      "identifier": "Color2",
       "bounds": {
         "x": 90,
         "y": 250,
@@ -175,7 +175,7 @@
       "properties": {}
     },
     {
-      "identifier": "",
+      "identifier": "Color6",
       "bounds": {
         "x": 90,
         "y": 272,
@@ -193,7 +193,7 @@
       "properties": {}
     },
     {
-      "identifier": "",
+      "identifier": "Color3",
       "bounds": {
         "x": 110,
         "y": 250,
@@ -211,7 +211,7 @@
       "properties": {}
     },
     {
-      "identifier": "",
+      "identifier": "Color7",
       "bounds": {
         "x": 110,
         "y": 272,
@@ -223,6 +223,24 @@
         "bottom": true,
         "left": true,
         "right": false
+      },
+      "visible": true,
+      "class": "Panel",
+      "properties": {}
+    },
+    {
+      "identifier": "DrawSurface",
+      "bounds": {
+        "x": 60,
+        "y": 0,
+        "width": 320,
+        "height": 240
+      },
+      "anchor": {
+        "top": true,
+        "bottom": true,
+        "left": true,
+        "right": true
       },
       "visible": true,
       "class": "Panel",

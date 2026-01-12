@@ -120,6 +120,7 @@ pub fn main() !void {
 
         if (completed.contains(.get_event)) {
             const event = get_event.outputs.event;
+
             switch (event.event_type) {
                 .mouse_leave => {
                     move_enable = false;

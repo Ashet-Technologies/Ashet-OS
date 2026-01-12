@@ -53,6 +53,17 @@ const video_drivers: std.StaticStringMap(hosted.VideoDriverCtor) = .initComptime
 });
 
 const video_drivers_ctors = struct {
+    fn get_wayland_scale() u8 {
+        var buffer: [64]u8 = undefined;
+        var fba: std.heap.FixedBufferAllocator = .init(&buffer);
+
+        const string = std.process.getEnvVarOwned(fba.allocator(), "ASHET_WAYLAND_SCALE") catch return 1;
+
+        const scale = std.fmt.parseInt(u8, string, 10) catch return 1;
+
+        return @max(1, scale);
+    }
+
     fn x11(options: hosted.VideoDriverOptions) !void { // "video:x11:<width>:<height>"
 
         if (X11_Display.init(
@@ -84,6 +95,7 @@ const video_drivers_ctors = struct {
             options.video_out_index,
             options.res_x,
             options.res_y,
+            get_wayland_scale(),
         )) |display| {
             ashet.drivers.install(&display.screen.driver);
 
@@ -106,6 +118,7 @@ const video_drivers_ctors = struct {
             options.video_out_index,
             options.res_x,
             options.res_y,
+            get_wayland_scale(),
         )) |display| {
             ashet.drivers.install(&display.screen.driver);
 

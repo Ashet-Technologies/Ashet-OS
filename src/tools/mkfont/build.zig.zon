@@ -24,5 +24,10 @@
             // .hash = "turtlefont-0.1.0-TiRlD8JaAABrQ9oR7tgmhWRBIae7Esx4MLnUVyMsLbCR",
             .path = "../../../upgrade-0.15.2/turtlefont",
         },
+
+        .stb = .{
+            .url = "git+https://github.com/nothings/stb.git#f1c79c02822848a9bed4315b12c8c8f3761e1296",
+            .hash = "N-V-__8AABQ7TgCnPlp8MP4YA8znrjd6E-ZjpF1rvrS8J_2I",
+        },
     },
 }

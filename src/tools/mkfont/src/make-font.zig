@@ -4,6 +4,8 @@ const args_parser = @import("args");
 const schema = @import("schema.zig");
 const bitmap_font = @import("bitmap_font.zig");
 const vector_font = @import("vector_font.zig");
+const fon_font = @import("fon_font.zig");
+const ttf_font = @import("ttf_font.zig");
 
 pub const CliOptions = struct {
     output: []const u8 = "",
@@ -41,6 +43,8 @@ pub fn main() !u8 {
     const font_ok = switch (document.data) {
         .bitmap => |bitmap| try bitmap_font.validate(bitmap),
         .turtle => |vector| try vector_font.validate(vector),
+        .ttf => |ttf| try ttf_font.validate(ttf),
+        .fon => |fon| try fon_font.validate(fon),
     };
 
     if (!font_ok) {
@@ -58,8 +62,10 @@ pub fn main() !u8 {
     defer output_file.deinit();
 
     switch (document.data) {
-        .bitmap => |*bitmap| try bitmap_font.generate(allocator, &output_file.file_writer, rel_dir, bitmap),
-        .turtle => |*vector| try vector_font.generate(allocator, &output_file.file_writer, rel_dir, vector),
+        .bitmap => |*data| try bitmap_font.generate(allocator, &output_file.file_writer, rel_dir, data),
+        .turtle => |*data| try vector_font.generate(allocator, &output_file.file_writer, rel_dir, data),
+        .ttf => |*data| try ttf_font.generate(allocator, &output_file.file_writer, rel_dir, data),
+        .fon => |*data| try fon_font.generate(allocator, &output_file.file_writer, rel_dir, data),
     }
 
     try output_file.finish();

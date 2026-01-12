@@ -194,20 +194,35 @@ fn print_help(exe_name: ?[]const u8, stream: std.fs.File) !void {
 
 const IoOptions = switch (builtin.os.tag) {
     .windows => struct {
-        fn configureTtyNonBlocking(file: std.fs.File) !IoOptions {
-            _ = file;
-            @compileError("no windows support yet!");
-        }
+        // https://learn.microsoft.com/en-us/windows/console/getconsolemode
 
-        fn configureSerialNonBlocking(file: std.fs.File) !void {
-            _ = file;
-            @compileError("no windows support yet!");
+        const DWORD = std.os.windows.DWORD;
+        const kernel32 = std.os.windows.kernel32;
+
+        const ENABLE_PROCESSED_OUTPUT = 0x0001;
+        const ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004;
+
+        restore_mode: ?DWORD,
+
+        fn configureOutputUncooked(file: std.fs.File) !IoOptions {
+            var mode: DWORD = 0;
+            if (kernel32.GetConsoleMode(file.handle, &mode) != 0) {
+                const new_mode = mode | ENABLE_PROCESSED_OUTPUT | ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+
+                if (kernel32.SetConsoleMode(file.handle, new_mode) == 0)
+                    return error.ConsoleConfigFailed;
+
+                return .{ .restore_mode = mode };
+            } else {
+                return .{ .restore_mode = null };
+            }
         }
 
         fn restore(options: IoOptions, file: std.fs.File) !void {
-            _ = options;
-            _ = file;
-            @compileError("no windows support yet!");
+            if (options.restore_mode) |old_mode| {
+                if (kernel32.SetConsoleMode(file.handle, old_mode) == 0)
+                    return error.ConsoleConfigFailed;
+            }
         }
     },
 

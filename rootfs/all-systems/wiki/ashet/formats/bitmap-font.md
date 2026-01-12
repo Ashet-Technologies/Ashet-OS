@@ -30,6 +30,6 @@ struct Glyph
   height: u8,  // 255 must be enough for everyone
   offset_x: i8, // offset of the glyph to the base point
   offset_y: i8, // offset of the glyph to the base point
-  bits: [(height+7)/8 * width]u8, // column-major bitmap, LSB=Top to MSB=Bottom
+  bits: [(width+7)/8 * height]u8, // row-major bitmap, LSB=Left to MSB=Right
 }
 ```

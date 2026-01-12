@@ -120,7 +120,7 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
         .mode = .open_existing,
     });
 
-    ashet.overlapped.schedule_with_context(
+    ashet.overlapped.schedule(
         call.resource_owner,
         context,
         &open_file.arc,
@@ -129,17 +129,13 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
         error.SystemResources => |e| e,
     };
 
-    var completed: [1]*ashet.abi.overlapped.ARC = .{&open_file.arc};
-    const count = ashet.overlapped.await_completion_with_context(
+    var completed: [1]?*ashet.abi.overlapped.ARC = .{&open_file.arc};
+    const count = ashet.overlapped.await_completion_of(
         context,
         &completed,
-        .{
-            .thread_affinity = .all_threads,
-            .wait = .wait_one,
-            // TODO(fqu): .preselected = true,
-        },
     ) catch |err| return switch (err) {
         error.Unscheduled => unreachable,
+        error.InvalidOperation => unreachable,
     };
     std.debug.assert(count == 1);
     std.debug.assert(completed[0] == &open_file.arc);

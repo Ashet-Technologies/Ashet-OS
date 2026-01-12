@@ -1,0 +1,10 @@
+max_allowed_fwd_skip = 8
+cache_line_size      = 8
+
+baseline/25f828d84d:
+    cache misses:     875
+    discontinuations: 866
+
+baseline/3eaa827b26:
+    cache misses:     875
+    discontinuations: 866

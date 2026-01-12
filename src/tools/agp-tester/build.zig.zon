@@ -1,13 +1,19 @@
 .{
     .name = .agp_tester,
-    .fingerprint = 0xd1f2147d4d43b79e,
+    .fingerprint = 0xd1f2147de8f599fb,
     .version = "0.1.0",
     .dependencies = .{
+        .abi = .{
+            .path = "../../abi",
+        },
         .agp = .{
             .path = "../../userland/libs/agp",
         },
         .agp_swrast = .{
             .path = "../../userland/libs/agp-swrast",
+        },
+        .widgets = .{
+            .path = "../../userland/apps/widgets",
         },
     },
     .paths = .{

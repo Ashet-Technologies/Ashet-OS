@@ -7,9 +7,6 @@ const Size = ashet.abi.Size;
 const Point = ashet.abi.Point;
 
 pub fn main() !void {
-    std.log.info("Hello, GUI!", .{});
-    defer std.log.info("Good bye, GUI!", .{});
-
     var argv_buffer: [8]ashet.abi.SpawnProcessArg = undefined;
     const argv = try ashet.process.get_arguments(null, &argv_buffer);
 
@@ -24,7 +21,7 @@ pub fn main() !void {
     const window = try ashet.gui.create_window(
         desktop,
         .{
-            .title = "Hello GUI",
+            .title = "GUI Framebuffer Demo",
             .min_size = Size.new(100, 100),
             .max_size = Size.new(300, 200),
             .initial_size = Size.new(200, 150),

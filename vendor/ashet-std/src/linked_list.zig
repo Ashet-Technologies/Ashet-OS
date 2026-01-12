@@ -77,6 +77,8 @@ pub fn DoublyLinkedList(comptime T: type, comptime options: LinkedListOptions) t
             } = no_list_sentinel,
         };
 
+        pub const empty: List = .{};
+
         first: ?*Node = null,
         last: ?*Node = null,
         len: usize = 0,

@@ -30,7 +30,7 @@ pub const Bitmap = struct {
 };
 
 pub const Framebuffer = struct {
-    const Cursor = agp_swrast.PixelCursor(.row_major);
+    const Cursor = agp_swrast.PixelCursor;
     pub const Destructor = ashet.resources.Destructor(@This(), _internal_destroy);
 
     pub const VideoOut = struct {
@@ -98,6 +98,17 @@ pub const Framebuffer = struct {
         return fb;
     }
 
+    pub fn create_widget(widget: *ashet.gui.Widget) error{SystemResources}!*Framebuffer {
+        const fb = ashet.memory.type_pool(Framebuffer).alloc() catch return error.SystemResources;
+        errdefer ashet.memory.type_pool(Framebuffer).free(fb);
+
+        fb.* = .{
+            .type = .{ .widget = widget },
+        };
+
+        return fb;
+    }
+
     pub const destroy = Destructor.destroy;
 
     fn _internal_destroy(fb: *Framebuffer) void {
@@ -108,7 +119,7 @@ pub const Framebuffer = struct {
             },
             .video => {},
             .window => {},
-            .widget => @panic("Framebuffer(.widget).destroy Not implemented yet!"),
+            .widget => {},
         }
         ashet.memory.type_pool(Framebuffer).free(fb);
     }
@@ -118,7 +129,7 @@ pub const Framebuffer = struct {
             .memory => {}, // no-op, nothing to invalidate
             .video => |video| video.output.flush(),
             .window => |win| win.invalidate_full(),
-            .widget => @panic("Framebuffer(.widget).invalidate Not implemented yet!"),
+            .widget => |widget| widget.window.invalidate_region(widget.bounds),
         }
     }
 
@@ -132,7 +143,7 @@ pub const Framebuffer = struct {
             .memory => |bmp| .{ bmp.width, bmp.height, bmp.stride },
             .video => |video| .{ video.memory.width, video.memory.height, video.memory.stride },
             .window => |win| .{ win.size.width, win.size.height, win.max_size.width },
-            .widget => @panic("Framebuffer(.widget).create_cursor Not implemented yet!"),
+            .widget => |widget| .{ widget.bounds.width, widget.bounds.height, widget.bounds.width },
         };
         return .{
             .width = width,
@@ -146,7 +157,7 @@ pub const Framebuffer = struct {
             .memory => |bmp| bmp.pixels,
             .video => |video| video.memory.base,
             .window => |win| win.pixels.ptr,
-            .widget => @panic("Framebuffer(.widget).emit_pixels Not implemented yet!"),
+            .widget => |widget| widget.pixels.ptr,
         };
 
         @memset(framebuffer[cursor.offset..][0..count], color);
@@ -157,7 +168,7 @@ pub const Framebuffer = struct {
             .memory => |bmp| bmp.pixels,
             .video => |video| video.memory.base,
             .window => |win| win.pixels.ptr,
-            .widget => @panic("Framebuffer(.widget).fetch_pixels Not implemented yet!"),
+            .widget => |widget| widget.pixels.ptr,
         };
         // logger.info("{s} {*} {*}", .{ @tagName(fb.type), framebuffer, pixels });
         // logger.info("{any}", .{framebuffer[cursor.offset..][0..pixels.len]});
@@ -169,7 +180,7 @@ pub const Framebuffer = struct {
             .memory => |bmp| bmp.pixels,
             .video => |video| video.memory.base,
             .window => |win| win.pixels.ptr,
-            .widget => @panic("Framebuffer(.widget).copy_pixels Not implemented yet!"),
+            .widget => |widget| widget.pixels.ptr,
         };
         @memcpy(framebuffer[cursor.offset..][0..pixels.len], pixels);
     }
@@ -225,6 +236,22 @@ pub const Font = struct {
         ashet.memory.allocator.free(font.raw_data);
         ashet.memory.type_pool(Font).free(font);
     }
+
+    pub fn measure_text_size(font: *const Font, text: []const u8) Size {
+        const line_height = font.font_data.line_height();
+
+        var height: u16 = 0;
+        var width: u16 = 0;
+
+        var lines = std.mem.splitScalar(u8, text, '\n');
+        while (lines.next()) |line| {
+            const line_width = font.font_data.measure_width(line);
+            width = @max(line_width, width);
+            height += line_height;
+        }
+
+        return .new(width, height);
+    }
 };
 
 var system_fonts: std.StringArrayHashMap(Font) = undefined;
@@ -253,7 +280,7 @@ fn load_system_font(dir: libashet.fs.Directory, info: ashet.abi.FileInfo) !void 
     errdefer ashet.memory.static_memory_allocator.free(font_name);
 
     logger.info("Loading system font '{s}'...", .{font_name});
-    errdefer |err| logger.err("failed to load font: {s}", .{@errorName(err)});
+    errdefer |err| logger.err("failed to load font '{s}': {s}", .{ font_name, @errorName(err) });
 
     const font_size = std.math.cast(usize, info.size) orelse return error.FileTooBig;
 
@@ -279,6 +306,13 @@ pub fn get_system_font(font_name: []const u8) error{FileNotFound}!*Font {
     return system_fonts.getPtr(font_name) orelse return error.FileNotFound;
 }
 
+var render_temp_buffer: std.heap.ArenaAllocator = .init(ashet.memory.page_allocator);
+
+const Rasterizer = agp_swrast.Rasterizer(.{
+    .backend_type = *Framebuffer,
+    .framebuffer_type = *Framebuffer,
+});
+
 fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.Inputs) ashet.abi.draw.Render.Error!ashet.abi.draw.Render.Outputs {
     const fb = ashet.resources.resolve(Framebuffer, call.resource_owner, inputs.target.as_resource()) catch |err| return switch (err) {
         error.InvalidHandle,
@@ -292,12 +326,14 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
 
     // Validate code before drawing:
     {
-        var static_heap: [256]u8 = undefined;
-        var fba: std.heap.FixedBufferAllocator = .init(&static_heap);
+        _ = render_temp_buffer.reset(.retain_capacity);
 
-        var decoder = agp.decoder(fba.allocator(), fbs.reader());
+        var decoder = agp.decoder(render_temp_buffer.allocator(), fbs.reader());
         while (true) {
-            const maybe_cmd = decoder.next() catch return error.BadCode;
+            const maybe_cmd = decoder.next() catch |err| {
+                logger.warn("failed to decode AGP: {s}", .{@errorName(err)});
+                return error.BadCode;
+            };
             if (maybe_cmd == null)
                 break;
         }
@@ -306,19 +342,15 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
     fbs.reset();
 
     // Now render to the framebuffer:
-    {
-        var static_heap: [256]u8 = undefined;
-        var fba: std.heap.FixedBufferAllocator = .init(&static_heap);
 
-        const Rasterizer = agp_swrast.Rasterizer(.{
-            .backend_type = *Framebuffer,
-            .framebuffer_type = *Framebuffer,
-            .pixel_layout = .row_major,
-        });
+    const target_size = fb.get_size();
+
+    if (target_size.width > 0 and target_size.height > 0) {
+        _ = render_temp_buffer.reset(.retain_capacity);
 
         var rasterizer = Rasterizer.init(fb);
 
-        var decoder = agp.decoder(fba.allocator(), fbs.reader());
+        var decoder = agp.decoder(render_temp_buffer.allocator(), fbs.reader());
         while (decoder.next() catch unreachable) |cmd| {
             // logger.debug("execute {s}: {}", .{ @tagName(cmd), cmd });
             switch (cmd) {
@@ -346,6 +378,16 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
                         ),
                         framebuffer,
                     );
+                    switch (framebuffer.type) {
+                        .window => |window| try blit_widget_data(
+                            &rasterizer,
+                            window,
+                            Point.new(blit_framebuffer.x, blit_framebuffer.y),
+                            .zero,
+                            framebuffer.get_size(),
+                        ),
+                        .widget, .video, .memory => {},
+                    }
                 },
                 .blit_partial_framebuffer => |blit_framebuffer| {
                     const framebuffer = ashet.resources.resolve(Framebuffer, call.resource_owner, blit_framebuffer.framebuffer.as_resource()) catch |err| switch (err) {
@@ -360,8 +402,18 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
                         Point.new(blit_framebuffer.src_x, blit_framebuffer.src_y),
                         framebuffer,
                     );
+                    switch (framebuffer.type) {
+                        .window => |window| try blit_widget_data(
+                            &rasterizer,
+                            window,
+                            Point.new(blit_framebuffer.x, blit_framebuffer.y),
+                            Point.new(blit_framebuffer.src_x, blit_framebuffer.src_y),
+                            Size.new(blit_framebuffer.width, blit_framebuffer.height),
+                        ),
+                        .widget, .video, .memory => {},
+                    }
                 },
-                else => rasterizer.execute(cmd),
+                else => try rasterizer.execute(cmd),
             }
         }
     }
@@ -378,4 +430,64 @@ pub fn render_async(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Re
         ashet.abi.draw.Render,
         render_sync(call, inputs),
     );
+}
+
+fn blit_widget_data(
+    rast: *Rasterizer,
+    window: *ashet.gui.Window,
+    target_pos: Point,
+    source_pos: Point,
+    size: Size,
+) !void {
+    if (window.widgets.len == 0)
+        return;
+
+    var iter = window.widgets.first;
+    while (iter) |node| : (iter = node.next) {
+        const widget = ashet.gui.Widget.from_link(node);
+
+        // Compute the enclosing edges:
+        const left_edge = @max(source_pos.x, widget.bounds.x);
+        const top_edge = @max(source_pos.y, widget.bounds.y);
+        const right_edge = @min(@as(i32, source_pos.x) + size.width, @as(i32, widget.bounds.x) + widget.bounds.width);
+        const bottom_edge = @min(@as(i32, source_pos.y) + size.height, @as(i32, widget.bounds.y) + widget.bounds.height);
+
+        // Skip the widget completely if it isn't included in the partial update:
+        if (right_edge <= left_edge) continue;
+        if (bottom_edge <= top_edge) continue;
+
+        const width: u16 = @intCast(right_edge - left_edge);
+        const height: u16 = @intCast(bottom_edge - top_edge);
+
+        const dst_dx = @max(0, left_edge - source_pos.x);
+        const dst_dy = @max(0, top_edge - source_pos.y);
+
+        const src_dx = @max(0, left_edge - widget.bounds.x);
+        const src_dy = @max(0, top_edge - widget.bounds.y);
+
+        std.debug.assert(width <= size.width);
+        std.debug.assert(height <= size.height);
+
+        std.debug.assert(width <= widget.bounds.width);
+        std.debug.assert(height <= widget.bounds.height);
+
+        const dest: Rectangle = .{
+            .x = target_pos.x +| dst_dx,
+            .y = target_pos.y +| dst_dy,
+            .width = width,
+            .height = height,
+        };
+        const src: Point = .new(src_dx, src_dy);
+
+        const bmp: agp.Bitmap = .{
+            .has_transparency = false,
+            .transparency_key = undefined,
+            .stride = widget.bounds.width,
+            .width = widget.bounds.width,
+            .height = widget.bounds.height,
+            .pixels = widget.pixels.ptr,
+        };
+
+        rast.blit_partial_bitmap(dest, src, &bmp);
+    }
 }

@@ -1,6 +1,8 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+pub const utility = @import("utility.zig");
+
 pub const abi = @import("ashet-abi");
 
 pub const graphics = @import("libashet/graphics.zig");
@@ -156,6 +158,22 @@ pub const core = struct {
 };
 
 pub const process = struct {
+    pub fn spawn(
+        dir: fs.Directory,
+        path: []const u8,
+        args: []const abi.SpawnProcessArg,
+    ) !abi.Process {
+        var op: abi.process.Spawn = .init(
+            dir.handle,
+            path,
+            args,
+        );
+
+        try overlapped.singleShot(&op);
+
+        return op.outputs.process;
+    }
+
     pub fn get_file_name(proc: ?abi.Process) []const u8 {
         return abi.process.get_file_name(proc) catch "<undefined>";
     }

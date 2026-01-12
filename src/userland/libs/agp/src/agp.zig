@@ -35,9 +35,8 @@ pub const CommandByte = enum(u8) {
     draw_text = 0x06,
     blit_bitmap = 0x07,
     blit_framebuffer = 0x08,
-    update_color = 0x09,
-    blit_partial_bitmap = 0x0A,
-    blit_partial_framebuffer = 0x0B,
+    blit_partial_bitmap = 0x09,
+    blit_partial_framebuffer = 0x0A,
 };
 
 pub fn encoder(enc: *std.Io.Writer) Encoder {
@@ -53,85 +52,81 @@ pub const Encoder = struct {
 
     writer: *std.Io.Writer,
 
+        writer: Writer,
+
     pub fn encode(enc: Encoder, cmd: Command) (EncError || error{Overflow})!void {
         switch (cmd) {
             .clear => |data| try enc.clear(data.color),
 
-            .set_clip_rect => |data| try enc.set_clip_rect(
-                data.x,
-                data.y,
-                data.width,
-                data.height,
-            ),
-            .set_pixel => |data| try enc.set_pixel(
-                data.x,
-                data.y,
-                data.color,
-            ),
-            .draw_line => |data| try enc.draw_line(
-                data.x1,
-                data.y1,
-                data.x2,
-                data.y2,
-                data.color,
-            ),
-            .draw_rect => |data| try enc.draw_rect(
-                data.x,
-                data.y,
-                data.width,
-                data.height,
-                data.color,
-            ),
-            .fill_rect => |data| try enc.fill_rect(
-                data.x,
-                data.y,
-                data.width,
-                data.height,
-                data.color,
-            ),
-            .draw_text => |data| try enc.draw_text(
-                data.x,
-                data.y,
-                data.font,
-                data.color,
-                data.text,
-            ),
-            .blit_bitmap => |data| try enc.blit_bitmap(
-                data.x,
-                data.y,
-                data.bitmap,
-            ),
-            .blit_framebuffer => |data| try enc.blit_framebuffer(
-                data.x,
-                data.y,
-                data.framebuffer,
-            ),
-            .update_color => |data| try enc.update_color(
-                data.index,
-                data.r,
-                data.g,
-                data.b,
-            ),
-            .blit_partial_bitmap => |data| try enc.blit_partial_bitmap(
-                data.x,
-                data.y,
-                data.width,
-                data.height,
-                data.src_x,
-                data.src_y,
-                data.bitmap,
-            ),
-            .blit_partial_framebuffer => |data| try enc.blit_partial_framebuffer(
-                data.x,
-                data.y,
-                data.width,
-                data.height,
-                data.src_x,
-                data.src_y,
-                data.framebuffer,
-            ),
+                .set_clip_rect => |data| try enc.set_clip_rect(
+                    data.x,
+                    data.y,
+                    data.width,
+                    data.height,
+                ),
+                .set_pixel => |data| try enc.set_pixel(
+                    data.x,
+                    data.y,
+                    data.color,
+                ),
+                .draw_line => |data| try enc.draw_line(
+                    data.x1,
+                    data.y1,
+                    data.x2,
+                    data.y2,
+                    data.color,
+                ),
+                .draw_rect => |data| try enc.draw_rect(
+                    data.x,
+                    data.y,
+                    data.width,
+                    data.height,
+                    data.color,
+                ),
+                .fill_rect => |data| try enc.fill_rect(
+                    data.x,
+                    data.y,
+                    data.width,
+                    data.height,
+                    data.color,
+                ),
+                .draw_text => |data| try enc.draw_text(
+                    data.x,
+                    data.y,
+                    data.font,
+                    data.color,
+                    data.text,
+                ),
+                .blit_bitmap => |data| try enc.blit_bitmap(
+                    data.x,
+                    data.y,
+                    &data.bitmap,
+                ),
+                .blit_framebuffer => |data| try enc.blit_framebuffer(
+                    data.x,
+                    data.y,
+                    data.framebuffer,
+                ),
+                .blit_partial_bitmap => |data| try enc.blit_partial_bitmap(
+                    data.x,
+                    data.y,
+                    data.width,
+                    data.height,
+                    data.src_x,
+                    data.src_y,
+                    &data.bitmap,
+                ),
+                .blit_partial_framebuffer => |data| try enc.blit_partial_framebuffer(
+                    data.x,
+                    data.y,
+                    data.width,
+                    data.height,
+                    data.src_x,
+                    data.src_y,
+                    data.framebuffer,
+                ),
+            }
         }
-    }
 
     pub fn clear(
         enc: Encoder,
@@ -215,37 +210,45 @@ pub const Encoder = struct {
         try enc.enc_color(color);
     }
 
-    pub fn draw_text(
-        enc: Encoder,
-        x: i16,
-        y: i16,
-        font: Font,
-        color: Color,
-        text: []const u8,
-    ) (EncError || error{Overflow})!void {
-        const len = std.math.cast(u16, text.len) orelse return error.Overflow;
-        try enc.enc_cmd(.draw_text);
-        try enc.enc_coord(x);
-        try enc.enc_coord(y);
-        try enc.enc_handle(Font, font);
-        try enc.enc_color(color);
-        try enc.enc_int(u16, len);
-        try enc.writer.writeAll(text);
-        // try enc.enc_ptr([*]const u8, text.ptr);
-        // try enc.enc_int(u16, len);
-    }
+        pub fn draw_text(
+            enc: Encoder,
+            x: i16,
+            y: i16,
+            font: Font,
+            color: Color,
+            text: []const u8,
+        ) (EncError || error{Overflow})!void {
+            const len = std.math.cast(u16, text.len) orelse return error.Overflow;
 
-    pub fn blit_bitmap(
-        enc: Encoder,
-        x: i16,
-        y: i16,
-        bitmap: *const Bitmap,
-    ) EncError!void {
-        try enc.enc_cmd(.blit_bitmap);
-        try enc.enc_coord(x);
-        try enc.enc_coord(y);
-        try enc.enc_ptr(*const Bitmap, bitmap);
-    }
+            // Skip encoding if nothing would be drawn anyways
+            if (len == 0)
+                return;
+
+            try enc.enc_cmd(.draw_text);
+            try enc.enc_coord(x);
+            try enc.enc_coord(y);
+            try enc.enc_handle(Font, font);
+            try enc.enc_color(color);
+            try enc.enc_int(u16, len);
+            try enc.writer.writeAll(text);
+        }
+
+        pub fn blit_bitmap(
+            enc: Encoder,
+            x: i16,
+            y: i16,
+            bitmap: *const Bitmap,
+        ) EncError!void {
+
+            // Skip encoding if nothing would be drawn anyways
+            if (bitmap.width == 0 or bitmap.height == 0)
+                return;
+
+            try enc.enc_cmd(.blit_bitmap);
+            try enc.enc_coord(x);
+            try enc.enc_coord(y);
+            try enc.enc_bitmap(bitmap);
+        }
 
     pub fn blit_framebuffer(
         enc: Encoder,
@@ -259,39 +262,31 @@ pub const Encoder = struct {
         try enc.enc_handle(Framebuffer, framebuffer);
     }
 
-    pub fn update_color(
-        enc: Encoder,
-        index: Color,
-        r: u8,
-        g: u8,
-        b: u8,
-    ) EncError!void {
-        try enc.enc_cmd(.update_color);
-        try enc.enc_color(index);
-        try enc.enc_int(u8, r);
-        try enc.enc_int(u8, g);
-        try enc.enc_int(u8, b);
-    }
+        pub fn blit_partial_bitmap(
+            enc: Encoder,
+            x: i16,
+            y: i16,
+            width: u16,
+            height: u16,
+            src_x: i16,
+            src_y: i16,
+            bitmap: *const Bitmap,
+        ) EncError!void {
+            // Skip encoding if nothing would be drawn anyways
+            if (bitmap.width == 0 or bitmap.height == 0)
+                return;
+            if (width == 0 or height == 0)
+                return;
 
-    pub fn blit_partial_bitmap(
-        enc: Encoder,
-        x: i16,
-        y: i16,
-        width: u16,
-        height: u16,
-        src_x: i16,
-        src_y: i16,
-        bitmap: *const Bitmap,
-    ) EncError!void {
-        try enc.enc_cmd(.blit_partial_bitmap);
-        try enc.enc_coord(x);
-        try enc.enc_coord(y);
-        try enc.enc_size(width);
-        try enc.enc_size(height);
-        try enc.enc_coord(src_x);
-        try enc.enc_coord(src_y);
-        try enc.enc_ptr(*const Bitmap, bitmap);
-    }
+            try enc.enc_cmd(.blit_partial_bitmap);
+            try enc.enc_coord(x);
+            try enc.enc_coord(y);
+            try enc.enc_size(width);
+            try enc.enc_size(height);
+            try enc.enc_coord(src_x);
+            try enc.enc_coord(src_y);
+            try enc.enc_bitmap(bitmap);
+        }
 
     pub fn blit_partial_framebuffer(
         enc: Encoder,
@@ -333,21 +328,38 @@ pub const Encoder = struct {
         try enc.writer.writeInt(Int, value, .little);
     }
 
-    fn enc_ptr(enc: Encoder, Pointer: type, value: Pointer) !void {
-        try enc.writer.writeInt(usize, @intFromPtr(value), .little);
-    }
+        fn enc_ptr(enc: Enc, Pointer: type, value: Pointer) !void {
+            try enc.writer.writeInt(usize, @intFromPtr(value), .little);
+        }
 
-    fn enc_cmd(enc: Encoder, cmd: CommandByte) !void {
-        try enc.writer.writeInt(u8, @intFromEnum(cmd), .little);
-    }
-};
+        fn enc_cmd(enc: Encoder, cmd: CommandByte) !void {
+            try enc.writer.writeInt(u8, @intFromEnum(cmd), .little);
+        }
+
+        fn enc_bitmap(enc: Encoder, bmp: *const Bitmap) !void {
+            std.debug.assert(bmp.width > 0 and bmp.height > 0);
+
+            try enc.enc_int(u8, if (bmp.has_transparency) @as(u8, 1) else 0);
+
+            if (bmp.has_transparency) {
+                try enc.enc_color(bmp.transparency_key);
+            }
+
+            try enc.enc_size(bmp.width);
+            try enc.enc_size(bmp.height);
+            try enc.enc_int(usize, bmp.stride);
+
+            try enc.writer.writeAll(std.mem.sliceAsBytes(bmp.pixels[0 .. bmp.height * bmp.stride]));
+        }
+    };
+}
 
 pub fn Decoder(Reader: type) type {
     return struct {
         const Dec = @This();
 
         reader: Reader,
-        heap: std.array_list.Managed(u8),
+        heap: std.array_list.AlignedManaged(u8, .@"16"),
 
         pub const NextError = error{ InvalidCommand, EndOfStream, OutOfMemory } || Reader.Error;
 
@@ -441,13 +453,11 @@ pub fn Decoder(Reader: type) type {
                         };
                     },
                 },
-                .blit_bitmap => .{
-                    .blit_bitmap = .{
-                        .x = try dec.fetch_coord(),
-                        .y = try dec.fetch_coord(),
-                        .bitmap = try dec.fetch_ptr(*const Bitmap),
-                    },
-                },
+                .blit_bitmap => .{ .blit_bitmap = .{
+                    .x = try dec.fetch_coord(),
+                    .y = try dec.fetch_coord(),
+                    .bitmap = try dec.fetch_bitmap(),
+                } },
                 .blit_framebuffer => .{
                     .blit_framebuffer = .{
                         .x = try dec.fetch_coord(),
@@ -471,7 +481,7 @@ pub fn Decoder(Reader: type) type {
                         .height = try dec.fetch_size(),
                         .src_x = try dec.fetch_coord(),
                         .src_y = try dec.fetch_coord(),
-                        .bitmap = try dec.fetch_ptr(*const Bitmap),
+                        .bitmap = try dec.fetch_bitmap(),
                     },
                 },
                 .blit_partial_framebuffer => .{
@@ -485,6 +495,36 @@ pub fn Decoder(Reader: type) type {
                         .framebuffer = try dec.fetch_handle(Framebuffer),
                     },
                 },
+            };
+        }
+
+        /// NOTE: Returned bitmap is valid until next call to any `fetch_*` function.
+        fn fetch_bitmap(dec: *Dec) !Bitmap {
+            const flags = try dec.fetch_int(u8);
+
+            const has_transparency = (flags & 1) != 0;
+
+            const tkey: Color = if (has_transparency)
+                try dec.fetch_color()
+            else
+                .black;
+
+            const width = try dec.fetch_size();
+            const height = try dec.fetch_size();
+            const stride = try dec.fetch_int(usize);
+
+            const size = height * stride * @sizeOf(Color);
+
+            try dec.heap.resize(size);
+            try dec.reader.readNoEof(dec.heap.items[0..size]);
+
+            return .{
+                .has_transparency = has_transparency,
+                .transparency_key = tkey,
+                .width = width,
+                .height = height,
+                .stride = stride,
+                .pixels = @ptrCast(dec.heap.items.ptr),
             };
         }
 
@@ -532,7 +572,6 @@ pub const Command = union(CommandByte) {
             .draw_text => DrawText,
             .blit_bitmap => BlitBitmap,
             .blit_framebuffer => BlitFramebuffer,
-            .update_color => UpdateColor,
             .blit_partial_bitmap => BlitPartialBitmap,
             .blit_partial_framebuffer => BlitPartialFramebuffer,
         };
@@ -547,7 +586,6 @@ pub const Command = union(CommandByte) {
     draw_text: DrawText,
     blit_bitmap: BlitBitmap,
     blit_framebuffer: BlitFramebuffer,
-    update_color: UpdateColor,
     blit_partial_bitmap: BlitPartialBitmap,
     blit_partial_framebuffer: BlitPartialFramebuffer,
 
@@ -603,20 +641,13 @@ pub const Command = union(CommandByte) {
     pub const BlitBitmap = struct {
         x: i16,
         y: i16,
-        bitmap: *const Bitmap,
+        bitmap: Bitmap,
     };
 
     pub const BlitFramebuffer = struct {
         x: i16,
         y: i16,
         framebuffer: Framebuffer,
-    };
-
-    pub const UpdateColor = struct {
-        index: Color,
-        r: u8,
-        g: u8,
-        b: u8,
     };
 
     pub const BlitPartialBitmap = struct {
@@ -626,7 +657,7 @@ pub const Command = union(CommandByte) {
         height: u16,
         src_x: i16,
         src_y: i16,
-        bitmap: *const Bitmap,
+        bitmap: Bitmap,
     };
 
     pub const BlitPartialFramebuffer = struct {

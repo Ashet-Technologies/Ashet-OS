@@ -2,6 +2,8 @@ const std = @import("std");
 const schema = @import("schema.zig");
 const zigimg = @import("zigimg");
 
+const bmp_font_gen = @import("bmp_font_gen.zig");
+
 pub fn validate(font: schema.BitmapFontFile) !bool {
     var ok = true;
     if (font.defaults.index != null) {
@@ -54,11 +56,8 @@ pub fn generate(
 
     // Compute all output files:
 
-    var glyph_bitmaps: std.AutoArrayHashMap(u21, Bitmap) = .init(allocator);
-    defer glyph_bitmaps.deinit();
-
-    var glyph_bitmap_arena: std.heap.ArenaAllocator = .init(allocator);
-    defer glyph_bitmap_arena.deinit();
+    var builder: bmp_font_gen.Builder = .init(allocator);
+    defer builder.deinit();
 
     for (font.glyphs.keys(), font.glyphs.values()) |codepoint, glyph| {
         const image_file = glyph.image_file orelse font.defaults.image_file orelse @panic("missing validation");
@@ -113,156 +112,57 @@ pub fn generate(
         const shrink_dx = @min(cell_x1 - cell_x0, min_x - cell_x0);
         const shrink_dy = @min(cell_y1 - cell_y0, min_y - cell_y0);
 
-        const column_stride = vpixels_to_bytes(height);
-        const byte_size = width * column_stride;
+        const out_glyph = try builder.add(codepoint, .{
+            .advance = glyph.advance orelse font.defaults.advance orelse @panic("missing validation!"),
+            .width = width,
+            .height = height,
+            .offset_x = @intCast(shrink_dx),
+            .offset_y = @intCast(shrink_dy),
+        });
 
-        const bits = try glyph_bitmap_arena.allocator().alloc(u8, byte_size);
-        @memset(bits, 0);
         if (width > 0 and height > 0) {
             for (min_y..max_y) |y| {
                 for (min_x..max_x) |x| {
                     const gx = x - min_x;
                     const gy = y - min_y;
-                    const index = gx * column_stride + (gy / 8);
-                    const bit: u3 = @intCast(gy % 8);
-                    const mask: u8 = @as(u8, 1) << bit;
 
                     const pix = get_pixel(image, x, y);
-                    if (is_glyph_body(select_pixels, pix)) {
-                        bits[index] |= mask;
-                    }
+                    out_glyph.set_pixel(gx, gy, .from_bool(is_glyph_body(select_pixels, pix)));
                 }
             }
-        } else {
-            std.debug.assert(bits.len == 0);
         }
 
-        var fmt: [8]u8 = undefined;
-        const len = std.unicode.utf8Encode(codepoint, &fmt) catch @panic("implementation bug");
+        // var fmt: [8]u8 = undefined;
+        // const len = std.unicode.utf8Encode(codepoint, &fmt) catch @panic("implementation bug");
 
-        std.log.debug("U+{X:0>5} ('{f}') => w={} h={} dx={} dy={} bits={X}", .{
-            codepoint,
-            std.unicode.fmtUtf8(fmt[0..len]),
-            width,
-            height,
-            shrink_dx,
-            shrink_dy,
-            bits,
-        });
-        std.log.debug("  x0={} x1={} y0={} y1={}", .{
-            cell_x0,
-            cell_x1,
-            cell_y0,
-            cell_y1,
-        });
-        std.log.debug("  x0={} x1={} y0={} y1={}", .{
-            min_x,
-            max_x,
-            min_y,
-            max_y,
-        });
+        // std.debug.print("U+{X:0>5} ('{}') => w={} h={} dx={} dy={} bits={}\n", .{
+        //     codepoint,
+        //     std.unicode.fmtUtf8(fmt[0..len]),
+        //     width,
+        //     height,
+        //     shrink_dx,
+        //     shrink_dy,
+        //     std.fmt.fmtSliceHexUpper(out_glyph.bits),
+        // });
+        // std.debug.print("  x0={} x1={} y0={} y1={}\n", .{
+        //     cell_x0,
+        //     cell_x1,
+        //     cell_y0,
+        //     cell_y1,
+        // });
+        // std.debug.print("  x0={} x1={} y0={} y1={}\n", .{
+        //     min_x,
+        //     max_x,
+        //     min_y,
+        //     max_y,
+        // });
 
-        var dump_buffer: [128]u8 = undefined;
-        if (dump_buffer.len >= width) {
-            for (0..height) |y| {
-                var fbs = std.io.fixedBufferStream(&dump_buffer);
-                const writer = fbs.writer();
-
-                for (0..width) |x| {
-                    const byte_index = x * column_stride + (y / 8);
-                    const bit: u3 = @intCast(y % 8);
-                    const mask: u8 = @as(u8, 1) << bit;
-
-                    if ((bits[byte_index] & mask) != 0) {
-                        writer.writeByte('X') catch {};
-                    } else {
-                        writer.writeByte(' ') catch {};
-                    }
-                }
-
-                std.log.debug("|{s}|", .{fbs.getWritten()});
-            }
-
-            std.log.debug("", .{});
-        }
-
-        try glyph_bitmaps.put(codepoint, .{
-            .width = @intCast(width),
-            .height = @intCast(height),
-            .offset_x = @intCast(shrink_dx),
-            .offset_y = @intCast(shrink_dy),
-            .bits = bits,
-        });
+        // out_glyph.dump("  ");
     }
 
-    const writer = &file_writer.interface;
-
-    // Write file header:
-    try writer.writeInt(u32, 0xcb3765be, .little);
-    try writer.writeInt(u32, font.line_height, .little);
-    try writer.writeInt(u32, @intCast(font.glyphs.count()), .little);
-
-    // Write `glyph_meta` array:
-    for (font.glyphs.keys(), font.glyphs.values()) |codepoint, glyph| {
-        const Meta = packed struct(u32) {
-            codepoint: u24,
-            advance: u8,
-        };
-        const meta: Meta = .{
-            .codepoint = codepoint,
-            .advance = glyph.advance orelse font.defaults.advance orelse @panic("missing validation!"),
-        };
-        const meta_value: u32 = @bitCast(meta);
-
-        try writer.writeInt(u32, meta_value, .little);
-    }
-
-    var glyph_sizes: std.AutoArrayHashMap(u21, struct { u32, usize }) = .init(allocator);
-    defer glyph_sizes.deinit();
-
-    // Write `glyph_offsets` array:
-    {
-        var base_offset: u32 = 0;
-        for (font.glyphs.keys()) |codepoint| {
-            const glyph_bitmap = glyph_bitmaps.get(codepoint).?;
-            std.debug.assert(glyph_bitmap.bits.len == glyph_bitmap.width * vpixels_to_bytes(glyph_bitmap.height));
-
-            const encoded_glyph_size: u32 = @intCast(4 + glyph_bitmap.bits.len);
-
-            try writer.writeInt(u32, base_offset, .little);
-
-            try glyph_sizes.put(codepoint, .{ base_offset, encoded_glyph_size });
-
-            base_offset += encoded_glyph_size;
-        }
-    }
-
-    // Write `glyphs` data array:
-    {
-        try writer.flush();
-        const start = file_writer.pos;
-        for (font.glyphs.keys()) |codepoint| {
-            const expected_offset, const expected_size = glyph_sizes.get(codepoint).?;
-            const glyph_bitmap = glyph_bitmaps.get(codepoint).?;
-
-            const offset = file_writer.pos;
-            std.debug.assert(offset - start == expected_offset);
-
-            try writer.writeInt(u8, glyph_bitmap.width, .little);
-            try writer.writeInt(u8, glyph_bitmap.height, .little);
-            try writer.writeInt(i8, glyph_bitmap.offset_x, .little);
-            try writer.writeInt(i8, glyph_bitmap.offset_y, .little);
-            try writer.writeAll(glyph_bitmap.bits);
-
-            try writer.flush();
-            const end = file_writer.pos;
-            std.debug.assert(end - offset == expected_size);
-        }
-    }
-}
-
-fn vpixels_to_bytes(vpix: usize) usize {
-    return (vpix + 7) / 8;
+    try bmp_font_gen.render(allocator, &file_writer.interface, builder, .{
+        .line_height = font.line_height,
+    });
 }
 
 fn get_pixel(img: *const zigimg.Image, x: usize, y: usize) zigimg.color.Colorf32 {
@@ -280,17 +180,6 @@ fn is_glyph_body(selector: schema.BitmapFontFile.SelectPixel, pix: zigimg.color.
         .black => (gray_level <= 0.5),
     };
 }
-
-const Bitmap = struct {
-    // Actual glyph size
-    width: u8,
-    height: u8,
-    // delta to glyph top-left
-    offset_x: i8,
-    offset_y: i8,
-    // column-major bitmap, LSB=Top to MSB=Bottom
-    bits: []u8,
-};
 
 const ImageCache = struct {
     arena: std.heap.ArenaAllocator,
