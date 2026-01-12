@@ -3,7 +3,7 @@ const ashet = @import("ashet");
 
 const draw_lib = @import("draw.zig");
 
-pub usingnamespace ashet.core;
+pub const std_options = ashet.core.std_options;
 
 const abi = ashet.abi;
 const Size = abi.Size;

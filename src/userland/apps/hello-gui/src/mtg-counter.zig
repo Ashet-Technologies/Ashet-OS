@@ -1,7 +1,7 @@
 const std = @import("std");
 const ashet = @import("ashet");
 
-pub usingnamespace ashet.core;
+pub const std_options = ashet.core.std_options;
 
 const UUID = ashet.abi.UUID;
 const Size = ashet.abi.Size;
