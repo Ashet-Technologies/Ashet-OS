@@ -253,8 +253,9 @@ rp2350-monitor:
         --elf i2c-scan.ashex=zig-out/arm-ashet-hc/apps/i2c-scan.elf \
         ./zig-out/bin/sermon --baud 2000000 {{DEBUG_PORT}}
 
+# arm-none-eabi-gdb \
 qemu-gdb target:
-    arm-none-eabi-gdb \
+    riscv32-elf-gdb \
         --command "scripts/gdb" \
         zig-out/{{target}}/kernel.elf 
 

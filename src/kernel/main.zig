@@ -154,6 +154,13 @@ fn ashet_kernelMain() callconv(.c) noreturn {
 }
 
 fn kernelMain() noreturn {
+    // First thing to do: Set up the stack smashing guard to a hardcoded
+    // value instead of initializing it with .data/.rodata initialization.
+    //
+    // this is necessary as the compiler will emit code that will load
+    // this value in every preamble in debug builds.
+    __stack_chk_guard = __stack_chk_guard_init;
+
     Debug.setTraceLoc(@src());
     memory.loadKernelMemory(machine_config.load_sections);
 
@@ -826,3 +833,11 @@ export fn memchr(buf: ?[*]const c_char, ch: c_int, len: usize) ?[*]c_char {
 test {
     _ = resources;
 }
+
+export fn __ashet_os_panic(msg: [*]const u8, len: usize, ra: usize) noreturn {
+    panic(msg[0..len], null, ra);
+}
+
+const __stack_chk_guard_init: usize = @truncate(0x125710640cadd0ac);
+
+export var __stack_chk_guard: usize = __stack_chk_guard_init;
