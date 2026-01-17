@@ -1263,26 +1263,31 @@ fn write_ashex_file(
     }
 
     if (icon_data != null) {
+        std.debug.assert(writer.buffered().len == 0);
         try file_writer.seekTo(icon_offset_pos);
         try writer.writeInt(u32, @intCast(icon_offset), endian);
         try writer.flush();
     }
     if (syscalls_offset != 0) {
+        std.debug.assert(writer.buffered().len == 0);
         try file_writer.seekTo(syscalls_offset_pos);
         try writer.writeInt(u32, @intCast(syscalls_offset), endian);
         try writer.flush();
     }
     if (load_headers_offset != 0) {
+        std.debug.assert(writer.buffered().len == 0);
         try file_writer.seekTo(load_headers_offset_pos);
         try writer.writeInt(u32, @intCast(load_headers_offset), endian);
         try writer.flush();
     }
     if (bss_headers_offset != 0) {
+        std.debug.assert(writer.buffered().len == 0);
         try file_writer.seekTo(bss_headers_offset_pos);
         try writer.writeInt(u32, @intCast(bss_headers_offset), endian);
         try writer.flush();
     }
     if (relocations_offset != 0) {
+        std.debug.assert(writer.buffered().len == 0);
         try file_writer.seekTo(relocations_offset_pos);
         try writer.writeInt(u32, @intCast(relocations_offset), endian);
         try writer.flush();
@@ -1291,15 +1296,18 @@ fn write_ashex_file(
     // Patch checksum:
     {
         var header_block: [508]u8 = undefined;
-        var file_reader = file.reader(&.{});
-        try file_reader.seekTo(0);
-        try file_reader.interface.readSliceAll(&header_block);
-        try file_writer.seekTo(508);
-        try writer.writeInt(
+        const len = try file.preadAll(&header_block, 0);
+        std.debug.assert(len == header_block.len);
+
+        var blob: [4]u8 = @splat(0);
+
+        std.mem.writeInt(
             u32,
+            &blob,
             std.hash.Crc32.hash(&header_block),
             endian,
         );
+        try file.pwriteAll(&blob, header_block.len);
     }
 }
 
