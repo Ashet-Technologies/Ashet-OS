@@ -838,6 +838,26 @@ export fn __ashet_os_panic(msg: [*]const u8, len: usize, ra: usize) noreturn {
     panic(msg[0..len], null, ra);
 }
 
+// The following code is necessary to manage the compiler_rt stack checking.
+// In debug builds, Zig inserts a stack smashing guard which protects us against
+// evil. The problem is:
+// We "smash" the stack in "loadKernelMemory" by initializing the "__stack_chk_guard" variable
+// from compiler_rt and thus the function will always fail as it has a false-positive detection
+// triggered.
+//
+// Luckily, the variable is exported as weak in compiler_rt, and we can overwrite it with our own,
+// which we initialize manually with an immediate value before calling any other function.
+
 const __stack_chk_guard_init: usize = @truncate(0x125710640cadd0ac);
 
-export var __stack_chk_guard: usize = __stack_chk_guard_init;
+var __stack_chk_guard: usize = __stack_chk_guard_init;
+
+comptime {
+    if (builtin.os.tag == .freestanding) {
+        @export(&__stack_chk_guard, .{
+            .name = "__stack_chk_guard",
+            .linkage = .strong,
+            .visibility = .default,
+        });
+    }
+}
