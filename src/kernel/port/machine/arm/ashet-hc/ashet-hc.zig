@@ -703,42 +703,39 @@ const backplane = struct {
                 continue;
             }
 
+            const FifoAllocator = struct {
+                offset: u16 = 0,
+
+                pub fn alloc(fa: *@This(), size: u16) propio.protocol.FifoConfig {
+                    const base = fa.offset;
+                    fa.offset +%= size;
+                    std.debug.assert(fa.offset == 0 or fa.offset >= base);
+                    return .{
+                        .base = base,
+                        .limit = size,
+                    };
+                }
+            };
+
+            var alloc: FifoAllocator = .{};
+
+            const downstream_size = 1000; // host never writes that much
+            const upstream_size = 12000; // have a huge ass buffer for when the OS lags
+
+            comptime std.debug.assert(4 * downstream_size + 4 * upstream_size <= (1 << 16));
+
             const propio_mod: propio.protocol.Module = switch (mod.metadata.@"Product ID") {
                 1 => .{ // Quad PS/2 Module
                     .code = &mod.firmware.?.data,
                     .config = .{
-                        .tx_fifo0 = .{
-                            .base = 0,
-                            .limit = 8,
-                        },
-                        .tx_fifo1 = .{
-                            .base = 16,
-                            .limit = 8,
-                        },
-                        .tx_fifo2 = .{
-                            .base = 32,
-                            .limit = 8,
-                        },
-                        .tx_fifo3 = .{
-                            .base = 48,
-                            .limit = 8,
-                        },
-                        .rx_fifo0 = .{
-                            .base = 64,
-                            .limit = 8,
-                        },
-                        .rx_fifo1 = .{
-                            .base = 80,
-                            .limit = 8,
-                        },
-                        .rx_fifo2 = .{
-                            .base = 96,
-                            .limit = 8,
-                        },
-                        .rx_fifo3 = .{
-                            .base = 112,
-                            .limit = 8,
-                        },
+                        .tx_fifo0 = alloc.alloc(downstream_size),
+                        .tx_fifo1 = alloc.alloc(downstream_size),
+                        .tx_fifo2 = alloc.alloc(downstream_size),
+                        .tx_fifo3 = alloc.alloc(downstream_size),
+                        .rx_fifo0 = alloc.alloc(upstream_size),
+                        .rx_fifo1 = alloc.alloc(upstream_size),
+                        .rx_fifo2 = alloc.alloc(upstream_size),
+                        .rx_fifo3 = alloc.alloc(upstream_size),
                     },
                 },
 
