@@ -1,0 +1,14 @@
+.{
+    .name = .mqjs,
+    .fingerprint = 0xeb25510e1a54d4fa,
+    .version = "0.1.0",
+    .paths = .{ "build.zig", "build.zig.zon", "src" },
+    .dependencies = .{
+        .AshetOS = .{
+            .path = "../../libs/libAshetOS",
+        },
+        .mqjs = .{
+            .path = "../../../../vendor/mqjs",
+        },
+    },
+}
