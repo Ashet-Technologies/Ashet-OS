@@ -83,6 +83,16 @@ const debug_mode = builtin.mode == .Debug;
 
 const canary_size = ashet.memory.page_size;
 
+/// If this is true, the kernel will fill the stack of a thread with a pseudorandom pattern
+/// on init and will probe the stack usage on task switch.
+///
+/// This pattern will allow us detecting both stack smashing as well as general stack usage.
+const use_stack_pattern_probing = true;
+
+/// This size determines how many bytes of the stack canary must be intact before the kernel
+/// considers the stack overflown.
+const stack_pattern_probing_redzone_size = 128;
+
 const scheduler_cc: std.builtin.CallingConvention = switch (builtin.cpu.arch) {
     .x86 => if (builtin.os.tag == .windows)
         .{ .x86_win = .{} }
@@ -179,6 +189,8 @@ pub const Thread = struct {
 
     process_link: ashet.multi_tasking.ProcessThreadList.Node,
 
+    canary_warning: bool = false,
+
     /// Returns a pointer to the current thread.
     pub fn current() ?*Thread {
         return current_thread;
@@ -228,6 +240,12 @@ pub const Thread = struct {
                 .has_canary = use_canary,
             },
         };
+
+        if (use_stack_pattern_probing) {
+            // must happen before we enable the canary, otherwise we'll get an immediate crash!
+
+            thread.initialize_canary();
+        }
 
         if (use_canary) {
             // make the stack canary forbidden:
@@ -295,6 +313,8 @@ pub const Thread = struct {
 
         global_stats.total_count += 1;
 
+        logger.info("Created thread {f}, stack memory=0x{X:0>8}", .{ thread, @intFromPtr(thread.stack_memory.ptr) });
+
         return thread;
     }
 
@@ -340,7 +360,7 @@ pub const Thread = struct {
         if (thread.isStarted())
             return error.AlreadyStarted;
 
-        logger.info("enqueuing {*} with stack size {}", .{ thread, thread.stack_memory.len });
+        logger.info("enqueuing {f} with stack size {}", .{ thread, thread.stack_memory.len });
 
         thread.flags.started = true;
         enqueueThread(&wait_queue, thread);
@@ -489,6 +509,54 @@ pub const Thread = struct {
             try writer.print("Thread(0x{X:0>8})", .{@intFromPtr(self)});
         }
     }
+
+    const CanaryPrng = std.Random.Xoroshiro128;
+
+    fn initialize_canary(thread: *Thread) void {
+        // We just use the threads pointer to seed the PRNG,
+        // as it's a unique value per thread *and* it's a stable value:
+        var rng: CanaryPrng = .init(@intFromPtr(thread));
+
+        // Just fill the whole stack with a u64 pattern:
+        const stack_as_u64 = std.mem.bytesAsSlice(u64, thread.stack_memory);
+        for (stack_as_u64) |*element| {
+            element.* = rng.next();
+        }
+    }
+
+    /// Returns the number of used bytes on the stack:
+    fn check_canary(thread: *Thread) usize {
+
+        // We just use the threads pointer to seed the PRNG,
+        // as it's a unique value per thread *and* it's a stable value:
+        var rng: CanaryPrng = .init(@intFromPtr(thread));
+
+        // Just fill the whole stack with a u64 pattern:
+        const stack_as_u64 = std.mem.bytesAsSlice(u64, thread.stack_memory);
+        const untouched_canaries = for (stack_as_u64, 0..) |element, i| {
+            if (element != rng.next()) {
+                break i;
+            }
+        } else stack_as_u64.len;
+
+        const untouched_stack_bytes = @sizeOf(u64) * untouched_canaries;
+
+        if (untouched_stack_bytes <= stack_pattern_probing_redzone_size) {
+            std.log.err("detected stack smashing/overflow for thread {f}. Remaining safe stack bytes: {Bi}", .{ thread, untouched_stack_bytes });
+
+            // TODO: We can actually safely shut the thread down
+            @panic("stack overflow");
+        }
+
+        if (thread.canary_warning == false) {
+            if (untouched_stack_bytes < thread.stack_memory.len / 10) {
+                std.log.warn("stack level warning for thread {f}: Remaining safe stack bytes {Bi} is less than 10% of stack size", .{ thread, untouched_stack_bytes });
+                thread.canary_warning = true;
+            }
+        }
+
+        return thread.stack_memory.len - untouched_stack_bytes;
+    }
 };
 
 pub const ThreadIterator = struct {
@@ -561,6 +629,11 @@ pub fn start() void {
     std.debug.assert(current_thread == null);
 
     current_thread = getKernelThread();
+    if (use_stack_pattern_probing) {
+        // we have to pre-seed the kernel stack as well, as otherwise we'll get
+        // an immediate crash in the performSwitch below:
+        current_thread.?.initialize_canary();
+    }
 
     // save state to kernel thread and jump into first queued thread
     performSwitch(getKernelThread(), fetchThread(&wait_queue) orelse {
@@ -575,10 +648,10 @@ pub fn start() void {
 var delete_previous_thread: ?*Thread = null;
 
 fn performSwitch(from: *Thread, to: *Thread) void {
-    // logger.debug("switch thread from 0x{X:0>8} (esp=0x{X:0>8}) to 0x{X:0>8} (esp=0x{X:0>8})", .{
-    //     @ptrToInt(from), from.sp,
-    //     @ptrToInt(to),   to.sp,
-    // });
+    logger.debug("switch thread from 0x{X:0>8} (name=\"{f}\", sp=0x{X:0>8}) to 0x{X:0>8} (name=\"{f}\", sp=0x{X:0>8})", .{
+        @intFromPtr(from), std.zig.fmtString(from.getName()), from.sp,
+        @intFromPtr(to),   std.zig.fmtString(to.getName()),   to.sp,
+    });
 
     std.debug.assert(current_thread.? == from);
 
@@ -589,6 +662,10 @@ fn performSwitch(from: *Thread, to: *Thread) void {
     }
     to.stats.schedule_time = now;
     to.stats.times_scheduled += 1;
+
+    if (use_stack_pattern_probing) {
+        _ = from.check_canary();
+    }
 
     // Prepare task switch:
     ashet_scheduler_save_thread = from;
