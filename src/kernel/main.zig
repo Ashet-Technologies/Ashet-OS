@@ -77,7 +77,7 @@ pub const log_levels = struct {
     pub var overlapped: LogLevel = .info; // very noise modules!
     pub var page_allocator: LogLevel = .debug;
     pub var resources: LogLevel = .info;
-    pub var scheduler: LogLevel = .debug;
+    pub var scheduler: LogLevel = .info;
     pub var ui: LogLevel = .debug;
     pub var graphics: LogLevel = .info;
     pub var input: LogLevel = .info;
@@ -251,7 +251,7 @@ fn main() !void {
     log.info("spawn kernel main thread...", .{});
     {
         const thread = try scheduler.Thread.spawn(global_kernel_tick, null, .{
-            .stack_size = 32 * 1024,
+            .stack_size = 3 * 1024 * 1024,
         });
         try thread.setName("os.tick");
         try thread.start();
