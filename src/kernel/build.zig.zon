@@ -114,7 +114,7 @@
         },
 
         .regz = .{
-            .url = "https://github.com/Ashet-Technologies/deps/raw/1ae80cff07bc09be9744d560f8e73abdc4e183d9/regz-0.15.2.tar.gz",
+            .url = "https://github.com/Ashet-Technologies/deps/raw/5ee40b64012181eb25e6e85c254e59d8929d1575/regz-0.15.2.tar.gz",
             .hash = "mz_tools_regz-0.0.0-lIs8m2hkBgCKgV9mrHi_O8AeDy76rWTvT9rwMrcgWe_j",
         },
     },
