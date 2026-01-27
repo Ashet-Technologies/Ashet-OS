@@ -26,7 +26,7 @@ pub fn load(
     file: *libashet.fs.File,
     allocator: std.mem.Allocator,
     format: BinaryFormat,
-) !LoadedExecutable {
+) LoadError!LoadedExecutable {
     return switch (format) {
         // TODO(0.15): .elf => return error.Unsupported,  try elf.load(file, allocator),
         .ashex => ashex.load(file, allocator) catch |err| switch (err) {
