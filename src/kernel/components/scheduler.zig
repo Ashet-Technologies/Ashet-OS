@@ -109,13 +109,31 @@ comptime {
 
 pub fn dumpStats() void {
     logger.info("stat dump:", .{});
+
     if (current_thread) |thread| {
-        if (debug_mode) {
-            logger.info("  current thread: ip=0x{X:0>8}, ep=0x{X:0>8}, name={s}", .{ thread.ip, thread.debug_info.entry_point, thread.getName() });
-        } else {
-            logger.info("  current thread: ip=0x{X:0>8}", .{thread.ip});
+        logger.info("active thread:", .{});
+
+        logger.info("  [-] {f}, stack usage={Bi:.3}, stack size={Bi}", .{
+            thread,
+            if (use_stack_pattern_probing) thread.check_canary() else 0,
+            thread.stack_memory.len,
+        });
+    }
+
+    logger.info("waiting threads:", .{});
+    {
+        var index: usize = 0;
+        var queue = ThreadIterator.init();
+        while (queue.next()) |thread| : (index += 1) {
+            logger.info("  [{d}] {f}, stack usage={Bi:.3}, stack size={Bi}", .{
+                index,
+                thread,
+                if (use_stack_pattern_probing) thread.check_canary() else 0,
+                thread.stack_memory.len,
+            });
         }
     }
+
     logger.info("  total:     {}", .{global_stats.total_count});
     logger.info("  waiting:   {}", .{wait_queue.len});
     logger.info("  suspended: {}", .{global_stats.suspended_count});
