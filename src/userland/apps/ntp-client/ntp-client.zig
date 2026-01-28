@@ -12,6 +12,7 @@ const std = @import("std");
 const ashet = @import("ashet");
 
 pub const std_options = ashet.core.std_options;
+pub const panic = ashet.core.panic;
 
 // TODO: Resolve "pool.ntp.org" as soon as we have proper DNS support!
 // A pool.ntp.org. 2m06s   131.188.3.221

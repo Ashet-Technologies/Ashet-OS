@@ -2,6 +2,7 @@ const std = @import("std");
 const ashet = @import("ashet");
 
 pub const std_options = ashet.core.std_options;
+pub const panic = ashet.core.panic;
 
 const logger = std.log.scoped(.desktop);
 const abi = ashet.abi;

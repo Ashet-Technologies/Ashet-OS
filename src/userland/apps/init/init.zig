@@ -2,9 +2,7 @@ const std = @import("std");
 const ashet = @import("ashet");
 
 pub const std_options = ashet.core.std_options;
-comptime {
-    _ = ashet.core;
-}
+pub const panic = ashet.core.panic;
 
 const abi = ashet.abi;
 const io = ashet.userland.io;

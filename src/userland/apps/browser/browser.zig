@@ -25,6 +25,7 @@ var main_window: MainWindow = undefined;
 const ColorIndex = ashet.abi.ColorIndex;
 
 pub const std_options = ashet.core.std_options;
+pub const panic = ashet.core.panic;
 
 // var tb_url_field_backing: [64]u8 = undefined;
 // var tb_passwd_backing: [64]u8 = undefined;

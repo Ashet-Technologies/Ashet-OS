@@ -4,6 +4,7 @@ const ashet = @import("ashet");
 const draw_lib = @import("draw.zig");
 
 pub const std_options = ashet.core.std_options;
+pub const panic = ashet.core.panic;
 
 const abi = ashet.abi;
 const Size = abi.Size;

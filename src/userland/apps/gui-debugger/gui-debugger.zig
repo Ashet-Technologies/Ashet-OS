@@ -2,6 +2,7 @@ const std = @import("std");
 const ashet = @import("ashet");
 
 pub const std_options = ashet.core.std_options;
+pub const panic = ashet.core.panic;
 
 const Size = ashet.abi.Size;
 const Point = ashet.abi.Point;

@@ -6,6 +6,7 @@ const Size = ashet.abi.Size;
 const Point = ashet.abi.Point;
 
 pub const std_options = ashet.core.std_options;
+pub const panic = ashet.core.panic;
 
 const window_size = Size.new(47, 47);
 

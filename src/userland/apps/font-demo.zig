@@ -3,6 +3,7 @@ const ashet = @import("ashet");
 const gui = @import("ashet-gui");
 
 pub const std_options = ashet.core.std_options;
+pub const panic = ashet.core.panic;
 
 pub fn main() !void {
     try gui.init();

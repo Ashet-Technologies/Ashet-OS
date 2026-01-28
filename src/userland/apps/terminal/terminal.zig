@@ -6,6 +6,7 @@ const system_assets = @import("system-assets");
 const astd = @import("ashet-std");
 
 pub const std_options = ashet.core.std_options;
+pub const panic = ashet.core.panic;
 
 const MainWindow = struct {
     interface: gui.Interface,

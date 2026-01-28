@@ -2,6 +2,7 @@ const std = @import("std");
 const ashet = @import("ashet");
 
 pub const std_options = ashet.core.std_options;
+pub const panic = ashet.core.panic;
 
 pub fn main() !void {
     ashet.debug.write("Hello from App!\r\n");
