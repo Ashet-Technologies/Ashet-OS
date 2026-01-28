@@ -81,7 +81,7 @@ const target = @import("builtin").target.cpu.arch;
 
 const debug_mode = builtin.mode == .Debug;
 
-const canary_size = ashet.memory.page_size;
+const redzone_size = ashet.memory.page_size;
 
 /// If this is true, the kernel will fill the stack of a thread with a pseudorandom pattern
 /// on init and will probe the stack usage on task switch.
@@ -104,7 +104,7 @@ const scheduler_cc: std.builtin.CallingConvention = switch (builtin.cpu.arch) {
 };
 
 comptime {
-    std.debug.assert(std.mem.isAligned(canary_size, ashet.memory.page_size));
+    std.debug.assert(std.mem.isAligned(redzone_size, ashet.memory.page_size));
 }
 
 pub fn dumpStats() void {
@@ -179,8 +179,9 @@ pub const Thread = struct {
         started: bool = false,
         finished: bool = false,
         detached: bool = false,
-        has_canary: bool = false,
-        padding: u27 = 0,
+        has_redzone: bool = false,
+        canary_warning: bool = false,
+        padding: u26 = 0,
     };
 
     pub const default_stack_size = 32768;
@@ -207,8 +208,6 @@ pub const Thread = struct {
 
     process_link: ashet.multi_tasking.ProcessThreadList.Node,
 
-    canary_warning: bool = false,
-
     /// Returns a pointer to the current thread.
     pub fn current() ?*Thread {
         return current_thread;
@@ -224,11 +223,11 @@ pub const Thread = struct {
     /// **NOTE:** When choosing `stack_size`, one should remember that it will also include the management structures
     /// for the thread
     pub fn spawn(func: ThreadFunction, arg: ?*anyopaque, options: ThreadSpawnOptions) error{OutOfMemory}!*Thread {
-        const use_canary = ashet.memory.protection.is_enabled();
+        const use_redzone = ashet.memory.protection.is_enabled();
 
         // the canary requires a single page at the "bottom" of the stack:
-        const additional_stack_size: usize = if (use_canary)
-            canary_size
+        const additional_stack_size: usize = if (use_redzone)
+            redzone_size
         else
             0;
 
@@ -255,22 +254,21 @@ pub const Thread = struct {
                 .process = thread_proc,
             } },
             .flags = .{
-                .has_canary = use_canary,
+                .has_redzone = use_redzone,
             },
         };
 
-        if (use_stack_pattern_probing) {
-            // must happen before we enable the canary, otherwise we'll get an immediate crash!
+        if (use_redzone) {
+            // make the stack canary forbidden:
+            ashet.memory.protection.change(ashet.memory.Range.from_slice(
+                stack_memory[0..redzone_size],
+            ), .forbidden);
+        }
 
+        if (use_stack_pattern_probing) {
             thread.initialize_canary();
         }
 
-        if (use_canary) {
-            // make the stack canary forbidden:
-            ashet.memory.protection.change(ashet.memory.Range.from_slice(
-                stack_memory[0..canary_size],
-            ), .forbidden);
-        }
         errdefer comptime @compileError("No failures allowed after setting the stack canary.");
 
         thread_proc.threads.append(&thread.process_link);
@@ -471,10 +469,10 @@ pub const Thread = struct {
             proc.kill(.success);
         }
 
-        if (thread.flags.has_canary) {
+        if (thread.flags.has_redzone) {
             // make the stack canary writable again:
             ashet.memory.protection.change(ashet.memory.Range.from_slice(
-                thread.stack_memory[0..canary_size],
+                thread.stack_memory[0..redzone_size],
             ), .read_write);
         }
 
@@ -530,13 +528,20 @@ pub const Thread = struct {
 
     const CanaryPrng = std.Random.Xoroshiro128;
 
+    fn get_mutable_stack_view(thread: *Thread) []u8 {
+        return if (thread.flags.has_redzone)
+            thread.stack_memory[redzone_size..]
+        else
+            thread.stack_memory;
+    }
+
     fn initialize_canary(thread: *Thread) void {
         // We just use the threads pointer to seed the PRNG,
         // as it's a unique value per thread *and* it's a stable value:
         var rng: CanaryPrng = .init(@intFromPtr(thread));
 
         // Just fill the whole stack with a u64 pattern:
-        const stack_as_u64 = std.mem.bytesAsSlice(u64, thread.stack_memory);
+        const stack_as_u64 = std.mem.bytesAsSlice(u64, thread.get_mutable_stack_view());
         for (stack_as_u64) |*element| {
             element.* = rng.next();
         }
@@ -549,8 +554,10 @@ pub const Thread = struct {
         // as it's a unique value per thread *and* it's a stable value:
         var rng: CanaryPrng = .init(@intFromPtr(thread));
 
+        const stack_memory = thread.get_mutable_stack_view();
+
         // Just fill the whole stack with a u64 pattern:
-        const stack_as_u64 = std.mem.bytesAsSlice(u64, thread.stack_memory);
+        const stack_as_u64 = std.mem.bytesAsSlice(u64, stack_memory);
         const untouched_canaries = for (stack_as_u64, 0..) |element, i| {
             if (element != rng.next()) {
                 break i;
@@ -561,19 +568,18 @@ pub const Thread = struct {
 
         if (untouched_stack_bytes <= stack_pattern_probing_redzone_size) {
             std.log.err("detected stack smashing/overflow for thread {f}. Remaining safe stack bytes: {Bi}", .{ thread, untouched_stack_bytes });
-
             // TODO: We can actually safely shut the thread down
             @panic("stack overflow");
         }
 
-        if (thread.canary_warning == false) {
-            if (untouched_stack_bytes < thread.stack_memory.len / 10) {
+        if (thread.flags.canary_warning == false) {
+            if (untouched_stack_bytes < stack_memory.len / 10) {
                 std.log.warn("stack level warning for thread {f}: Remaining safe stack bytes {Bi} is less than 10% of stack size", .{ thread, untouched_stack_bytes });
-                thread.canary_warning = true;
+                thread.flags.canary_warning = true;
             }
         }
 
-        return thread.stack_memory.len - untouched_stack_bytes;
+        return stack_memory.len - untouched_stack_bytes;
     }
 };
 
