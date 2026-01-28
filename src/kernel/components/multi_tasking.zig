@@ -56,7 +56,7 @@ pub fn spawn_blocking(
 ) SpawnBlockingError!*Process {
     const process = try ashet.multi_tasking.Process.create(.{
         .stay_resident = false,
-        .name = proc_name, // TODO(0.15.2): Copy the name into the process
+        .name = proc_name,
     });
     errdefer process.kill(.killed);
 
@@ -169,6 +169,7 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
         local_resource_handle.unsafe_cast(.file),
     );
 
+    logger.err("spawn process with name: {s} => {s}", .{ raw_basename, exe_name });
     const proc = spawn_blocking(
         exe_name,
         &file_handle,
@@ -307,12 +308,8 @@ pub const Process = struct {
 
         process.name = if (options.name) |name|
             try process.memory_arena.allocator().dupeZ(u8, name)
-        else blk: {
-            var writer: std.Io.Writer.Allocating = .init(process.memory_arena.allocator());
-            defer writer.deinit();
-            writer.writer.print("Process(0x{X:0>8})", .{@intFromPtr(process)}) catch break :blk "Unknown";
-            break :blk try writer.toOwnedSliceSentinel(0);
-        };
+        else
+            std.fmt.allocPrintSentinel(process.memory_arena.allocator(), "Process(0x{X:0>8})", .{@intFromPtr(process)}, 0) catch "Unknown";
 
         // we do actually own ourselves (*_*)
         const raw_handle = try ashet.resources.add_to_process(process, &process.system_resource);

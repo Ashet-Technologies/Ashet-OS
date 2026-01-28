@@ -87,7 +87,7 @@ const redzone_size = ashet.memory.page_size;
 /// on init and will probe the stack usage on task switch.
 ///
 /// This pattern will allow us detecting both stack smashing as well as general stack usage.
-const use_stack_pattern_probing = true;
+pub var use_stack_pattern_probing = false;
 
 /// This size determines how many bytes of the stack canary must be intact before the kernel
 /// considers the stack overflown.
@@ -534,9 +534,6 @@ pub const Thread = struct {
     }
 
     fn initialize_canary(thread: *Thread) void {
-        if (!use_stack_pattern_probing)
-            return;
-
         // We just use the threads pointer to seed the PRNG,
         // as it's a unique value per thread *and* it's a stable value:
         var rng: CanaryPrng = .init(@intFromPtr(thread));
