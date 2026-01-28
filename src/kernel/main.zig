@@ -465,6 +465,8 @@ pub fn stackCheck() void {
     if (scheduler.Thread.current()) |thread| {
         stack_start = @intFromPtr(thread.stack_memory.ptr);
         stack_end = stack_start + thread.stack_memory.len;
+
+        _ = thread.check_canary();
     }
 
     if (sp > stack_end) {

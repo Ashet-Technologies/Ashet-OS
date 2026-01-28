@@ -115,7 +115,7 @@ pub fn dumpStats() void {
 
         logger.info("  [-] {f}, stack usage={Bi:.3}, stack size={Bi}", .{
             thread,
-            if (use_stack_pattern_probing) thread.check_canary() else 0,
+            thread.check_canary(),
             thread.stack_memory.len,
         });
     }
@@ -128,7 +128,7 @@ pub fn dumpStats() void {
             logger.info("  [{d}] {f}, stack usage={Bi:.3}, stack size={Bi}", .{
                 index,
                 thread,
-                if (use_stack_pattern_probing) thread.check_canary() else 0,
+                thread.check_canary(),
                 thread.stack_memory.len,
             });
         }
@@ -265,9 +265,7 @@ pub const Thread = struct {
             ), .forbidden);
         }
 
-        if (use_stack_pattern_probing) {
-            thread.initialize_canary();
-        }
+        thread.initialize_canary();
 
         errdefer comptime @compileError("No failures allowed after setting the stack canary.");
 
@@ -536,6 +534,9 @@ pub const Thread = struct {
     }
 
     fn initialize_canary(thread: *Thread) void {
+        if (!use_stack_pattern_probing)
+            return;
+
         // We just use the threads pointer to seed the PRNG,
         // as it's a unique value per thread *and* it's a stable value:
         var rng: CanaryPrng = .init(@intFromPtr(thread));
@@ -548,7 +549,9 @@ pub const Thread = struct {
     }
 
     /// Returns the number of used bytes on the stack:
-    fn check_canary(thread: *Thread) usize {
+    pub fn check_canary(thread: *Thread) usize {
+        if (!use_stack_pattern_probing)
+            return 0;
 
         // We just use the threads pointer to seed the PRNG,
         // as it's a unique value per thread *and* it's a stable value:
@@ -653,11 +656,10 @@ pub fn start() void {
     std.debug.assert(current_thread == null);
 
     current_thread = getKernelThread();
-    if (use_stack_pattern_probing) {
-        // we have to pre-seed the kernel stack as well, as otherwise we'll get
-        // an immediate crash in the performSwitch below:
-        current_thread.?.initialize_canary();
-    }
+
+    // we have to pre-seed the kernel stack as well, as otherwise we'll get
+    // an immediate crash in the performSwitch below:
+    current_thread.?.initialize_canary();
 
     // save state to kernel thread and jump into first queued thread
     performSwitch(getKernelThread(), fetchThread(&wait_queue) orelse {
@@ -687,9 +689,7 @@ fn performSwitch(from: *Thread, to: *Thread) void {
     to.stats.schedule_time = now;
     to.stats.times_scheduled += 1;
 
-    if (use_stack_pattern_probing) {
-        _ = from.check_canary();
-    }
+    _ = from.check_canary();
 
     // Prepare task switch:
     ashet_scheduler_save_thread = from;
