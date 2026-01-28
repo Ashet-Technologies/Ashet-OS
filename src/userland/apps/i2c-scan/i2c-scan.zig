@@ -11,6 +11,9 @@ const i2c = ashet.abi.io.i2c;
 
 pub const std_options = ashet.core.std_options;
 pub const panic = ashet.core.panic;
+comptime {
+    _ = ashet.core;
+}
 
 pub fn main() !void {
     var bus_list: [32]i2c.BusID = undefined;

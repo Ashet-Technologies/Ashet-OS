@@ -7,6 +7,9 @@ const astd = @import("ashet-std");
 
 pub const std_options = ashet.core.std_options;
 pub const panic = ashet.core.panic;
+comptime {
+    _ = ashet.core;
+}
 
 const MainWindow = struct {
     interface: gui.Interface,

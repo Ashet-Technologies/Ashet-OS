@@ -6,6 +6,9 @@ const ColorIndex = ashet.abi.ColorIndex;
 
 pub const std_options = ashet.core.std_options;
 pub const panic = ashet.core.panic;
+comptime {
+    _ = ashet.core;
+}
 
 const MainWindow = struct {
     panel_a: gui.Widget = gui.Panel.new(5, 5, 172, 57), // 0

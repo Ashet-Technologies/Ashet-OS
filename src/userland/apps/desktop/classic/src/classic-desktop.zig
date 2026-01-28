@@ -3,6 +3,9 @@ const ashet = @import("ashet");
 
 pub const std_options = ashet.core.std_options;
 pub const panic = ashet.core.panic;
+comptime {
+    _ = ashet.core;
+}
 
 const logger = std.log.scoped(.desktop);
 const abi = ashet.abi;
