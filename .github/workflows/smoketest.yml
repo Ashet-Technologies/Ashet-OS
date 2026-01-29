@@ -34,7 +34,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-        submodules: true
+        with:
+          submodules: true
 
       - name: Setup Zig
         uses: mlugg/setup-zig@v2
