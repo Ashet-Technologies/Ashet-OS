@@ -6,8 +6,8 @@ const gif = @import("gif.zig");
 
 const ColorIndex = agp.Color;
 
-const mono_6_font: agp.Font = @constCast(@ptrCast(&@as(u8, 0)));
-const sans_var_font: agp.Font = @constCast(@ptrCast(&@as(u8, 1)));
+const mono_6_font: agp.Font = @ptrCast(@constCast(&@as(u8, 0)));
+const sans_var_font: agp.Font = @ptrCast(@constCast(&@as(u8, 1)));
 
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -320,9 +320,6 @@ fn render_example_image(
     // Writeout image:
     try gif.write_to_file_path(std.fs.cwd(), path, width, height, &pixel_buffer);
 
-        try file.writer().print("P6 {} {} 255\n", .{ width, height });
-        try file.writeAll(std.mem.asBytes(&pixel_buffer));
-    }
     // Writeout overdraw
     if (overdraw_path) |_overdraw_path| {
         const overdraw_gradient = [_]Color{

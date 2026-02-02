@@ -61,7 +61,7 @@ pub fn main() !u8 {
         break :blk .{ .writer = &output_disk_file.file_writer.interface };
     };
 
-    defer if (output_to_stdout)
+    defer if (!output_to_stdout)
         output_disk_file.deinit();
 
     var header = try elf.Header.read(&input_file_reader.interface);

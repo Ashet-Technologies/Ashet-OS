@@ -1254,11 +1254,6 @@ fn write_ashex_file(
             }
         }
 
-        if (icon_data) |icon| {
-            try align_writer(&file_writer, 512);
-            try writer.writeAll(icon);
-        }
-
         try writer.flush();
     }
 

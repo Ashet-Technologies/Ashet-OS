@@ -836,8 +836,8 @@
             const scales = [_]Scale{
                 .{ .unit = .week, .divider = std.time.ns_per_week },
                 .{ .unit = .d, .divider = std.time.ns_per_day },
-                .{ .unit = .m, .divider = std.time.ns_per_min },
                 .{ .unit = .h, .divider = std.time.ns_per_hour },
+                .{ .unit = .m, .divider = std.time.ns_per_min },
                 .{ .unit = .s, .divider = std.time.ns_per_s },
                 .{ .unit = .ms, .divider = std.time.ns_per_ms },
                 .{ .unit = .us, .divider = std.time.ns_per_us },

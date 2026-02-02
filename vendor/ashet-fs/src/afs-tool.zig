@@ -18,7 +18,7 @@ pub fn main() !u8 {
     defer stderr.flush() catch {};
 
     var stdout_buff: [1024]u8 = undefined;
-    var stdout_writer = std.fs.File.stderr().writer(&stdout_buff);
+    var stdout_writer = std.fs.File.stdout().writer(&stdout_buff);
     stdout = &stdout_writer.interface;
     defer stdout.flush() catch {};
 
