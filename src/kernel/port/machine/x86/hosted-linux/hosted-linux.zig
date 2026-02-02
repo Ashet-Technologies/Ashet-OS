@@ -47,10 +47,9 @@ fn initialize() !void {
 
 const video_drivers: std.StaticStringMap(hosted.VideoDriverCtor) = .initComptime(.{
     // TODO: Re-enable hosted video drivers
-    // .{ "x11", video_drivers_ctors.x11 },
+    .{ "x11", video_drivers_ctors.x11 },
     .{ "wayland", video_drivers_ctors.wayland },
-    .{ "auto-window", video_drivers_ctors.wayland },
-    // .{ "auto-window", video_drivers_ctors.auto },
+    .{ "auto-window", video_drivers_ctors.auto },
 });
 
 const video_drivers_ctors = struct {
