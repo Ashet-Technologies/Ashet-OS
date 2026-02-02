@@ -975,7 +975,7 @@
         return std.mem.eql(u8, &lhs.bytes, &rhs.bytes);
     }
 
-    pub fn format(uuid: *const @This(), writer: *std.Io.Writer)! void {
+    pub fn format(uuid: *const @This(), writer: *std.Io.Writer) !void {
         try writer.print("{{{x:0>8}-{x:0>4}-{x:0>4}-{x:0>4}-{x:0>12}}}", .{
             std.mem.readInt(u32, uuid.bytes[0..4], .little),
             std.mem.readInt(u16, uuid.bytes[4..6], .little),

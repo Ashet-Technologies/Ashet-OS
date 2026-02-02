@@ -437,7 +437,7 @@ pub fn Decoder(Reader: type) type {
                         // const text_ptr = try dec.fetch_ptr([*]const u8);
                         const text_len = try dec.fetch_int(u16);
 
-                        try dec.heap.resize(text_len + 1);
+                        try dec.heap.resize(text_len +| 1);
                         try dec.reader.readNoEof(dec.heap.items[0..text_len]);
                         dec.heap.items[text_len] = 0;
 
