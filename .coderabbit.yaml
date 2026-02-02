@@ -33,3 +33,5 @@ reviews:
     github-checks:
       enabled: true
       timeout_ms: 420000 # 7 minutes
+  path_filters:
+    - "!vendor/microzig-rp2350-hal/**"
