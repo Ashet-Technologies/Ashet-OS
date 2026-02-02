@@ -64,22 +64,20 @@
             .hash = "network-0.1.0-Pm-Agl8xAQBmkwohveGOfTk4zQnuqDs0Ptfbms4KP5Ce",
         },
         .vnc = .{
-            // .url = "git+https://github.com/ikskuh/zvnc.git#1d4753358b63ffcfdc475b51fa24c2e5a8ca92b7",
-            // .hash = "zvnc-0.0.0-AAAAAPqEAACiXOGonZTKjBPHkwIEYnai0ZOr8ktKV6_f",
-            .path = "../../upgrade-0.15.2/zvnc",
+            .url = "git+https://github.com/ikskuh/zvnc.git#12152538d1dfaec0621c5492323e47508c841215",
+            .hash = "zvnc-0.0.0-imcTheOLAAA1d1oXWZmfnvEQKvepo8iuIt-E2jZO7PiR",
         },
         .@"foundation-libc" = .{
             .url = "https://github.com/Ashet-Technologies/deps/raw/refs/heads/main/foundation-libc-0.15.0.tar.gz",
             .hash = "foundationlibc-0.0.0-LAEuPBSUAAALxr9rsAHYDP21d2KTAd_3tCP_5vO4ap16",
         },
         .zfat = .{
-            // .url = "https://github.com/ZigEmbeddedGroup/zfat/archive/8f3e7fe2c8b15eaac83092fb52ab0ed30ee98f47.tar.gz",
-            // .hash = "zfat-0.0.0-AAAAAMYlcABdh06Mn9CNk8Ccy_3bBFgJr8wo4jKza1q-",
-            .path = "../../upgrade-0.15.2/zfat",
+            .url = "git+https://github.com/ZigEmbeddedGroup/zfat.git#0571b0d8c8cc4fcb037a1d5e7ea5666cb2f83ddf",
+            .hash = "zfat-0.15.0-SNNK9RRqcgCLQ5mjXghbB6mokzcHORsGnY7GtbfOt2k3",
         },
         .turtlefont = .{
-            .url = "git+https://github.com/ikskuh/turtlefont.git?ref=main#f88e8d2447475635e410c52ce798e8954b27d3df",
-            .hash = "turtlefont-0.1.0-TiRlD8JaAABrQ9oR7tgmhWRBIae7Esx4MLnUVyMsLbCR",
+            .url = "git+https://github.com/ikskuh/turtlefont.git?#ff599916181027b20dab62d4ccb6579b8761bdaf",
+            .hash = "turtlefont-0.1.0-TiRlDy9aAADzzrPYB51cDWDsqOQtZ41Af25bHfzWaNgr",
         },
         .xcvt = .{
             .url = "git+https://github.com/der-teufel-programming/libxcvt-zig.git#d6f46a645f49327a6e30d05dd9bd7e5d026354e1",
@@ -108,9 +106,8 @@
 
         // External tooling:
         .propan = .{
-            // .url = "git+https://github.com/Nerdgruppe/propeller2-wg.git#619d788e3d3f4cab6323cc1960a07f2de4e4d538",
-            // .hash = "propeller2_wg-0.0.0-hlK46pIyDAB9C53esQUmvEe3q4NcIY4Td_8ynaWIRWHP",
-            .path = "../../upgrade-0.15.2/propeller2-wg",
+            .url = "git+https://github.com/Nerdgruppe/propeller2-wg.git#acb54672a593414349df4c4198af52b68e27756b",
+            .hash = "propeller2_wg-0.0.0-hlK46lZRDABATFri59nreUt671QjSJjqKrd9TlgnB3uG",
         },
 
         .regz = .{
