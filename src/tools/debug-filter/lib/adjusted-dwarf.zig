@@ -535,6 +535,7 @@ fn readDelimiter(
     var writer: io.Writer.Allocating = .init(allocator);
     defer writer.deinit();
     _ = try in_stream.streamDelimiter(&writer.writer, delimiter);
+    if ((try in_stream.takeByte()) != delimiter) return badDwarf();
     return try writer.toOwnedSlice();
 }
 
