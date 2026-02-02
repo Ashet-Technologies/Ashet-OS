@@ -596,10 +596,13 @@ fn onPointerCallback(server: *Wayland_Display, connection: *shimizu.Connection, 
             const scale: i24 = @intCast(server.get_content_scale());
 
             if (scale > 0) {
+                const dx: i24 = @intCast((server.window_width -| @abs(scale) * server.screen.width) / 2);
+                const dy: i24 = @intCast((server.window_height -| @abs(scale) * server.screen.height) / 2);
+
                 ashet.input.push_raw_event(.{
                     .mouse_abs_motion = .{
-                        .x = @intCast(@divFloor(motion.surface_x.integer, scale)),
-                        .y = @intCast(@divFloor(motion.surface_y.integer, scale)),
+                        .x = @intCast(@divFloor(motion.surface_x.integer -| dx, scale)),
+                        .y = @intCast(@divFloor(motion.surface_y.integer -| dy, scale)),
                     },
                 });
             }
