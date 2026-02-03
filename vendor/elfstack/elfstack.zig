@@ -42,7 +42,8 @@ pub fn main() !u8 {
     var input_file = try std.fs.cwd().openFile("zig-out/arm-ashet-hc/kernel.elf", .{});
     defer input_file.close();
 
-    var input_file_reader = input_file.reader(&.{});
+    var read_buffer: [1024]u8 = undefined;
+    var input_file_reader = input_file.reader(&read_buffer);
 
     const output_to_stdout = std.mem.eql(u8, cli_options.output, "-");
 

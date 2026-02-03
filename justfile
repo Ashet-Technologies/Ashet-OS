@@ -1,5 +1,5 @@
 
-zig := "zig-0.14.1"
+zig := "zig-0.15.2"
 
 optimize_kernel := "false"
 optimize_apps := "Debug"
