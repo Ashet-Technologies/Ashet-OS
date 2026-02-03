@@ -913,9 +913,10 @@ const backplane = struct {
                 return null;
             },
 
+            error.IllegalAddress => @panic("kernel tried to use illegal I²C address!"),
+
             error.Timeout,
             error.NoAcknowledge,
-            error.TargetAddressReserved,
             error.NoData,
             error.TxFifoFlushed,
             error.UnknownAbort,

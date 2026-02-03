@@ -58,19 +58,41 @@ pub const drivers = struct {
                 NoAcknowledge,
                 Timeout,
                 NoData,
-                TargetAddressReserved,
+                // TargetAddressReserved,
                 UnknownAbort,
+                IllegalAddress,
             };
 
             pub const Address = enum(u7) {
+                pub const Error = error{
+                    GeneralCall,
+                    CBUSAddress,
+                    ReservedFormat,
+                    ReservedFuture,
+                    HighSpeedMaster,
+                    TenBitSlave,
+                };
+
+                general_call = 0,
+
                 _,
 
                 pub fn new(in: u7) Address {
                     return @enumFromInt(in);
                 }
 
-                pub fn check_reserved(addr: Address) !void {
-                    _ = addr; // TODO(0.15.2): Implement this?
+                pub fn check_reserved(addr: Address) Address.Error!void {
+                    const value: u7 = @intFromEnum(addr);
+                    switch (value) {
+                        0b0000000 => return error.GeneralCall,
+                        0b0000001 => return error.CBUSAddress,
+                        0b0000010 => return error.ReservedFormat,
+                        0b0000011 => return error.ReservedFuture,
+                        0b0001000...0b0001111 => return error.HighSpeedMaster,
+                        0b1111000...0b1111011 => return error.TenBitSlave,
+                        0b1111100...0b1111111 => return error.ReservedFuture,
+                        else => return,
+                    }
                 }
             };
         };

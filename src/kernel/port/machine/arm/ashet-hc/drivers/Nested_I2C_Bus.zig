@@ -126,7 +126,13 @@ fn map_err(result: hal.i2c.Error!void) ashet.abi.io.i2c.Operation.Error {
         error.NoAcknowledge => .no_acknowledge,
         error.Timeout => .timeout,
         error.NoData => unreachable,
-        error.TargetAddressReserved, error.TxFifoFlushed, error.UnknownAbort => blk: {
+
+        error.IllegalAddress => {
+            logger.warn("i2c operation on reserved hw address: {t}", .{err});
+            return .reserved_address;
+        },
+
+        error.TxFifoFlushed, error.UnknownAbort => blk: {
             logger.err("i2c hardware failure: {s}", .{@errorName(err)});
             break :blk .fault;
         },

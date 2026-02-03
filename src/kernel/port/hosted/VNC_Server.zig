@@ -89,12 +89,44 @@ fn connection_handler(vd: *VNC_Server) !void {
             .old_framebuffer = old_framebuffer,
         };
 
-        while (try server.waitEvent()) |event| {
+        request_loop: while (try server.waitEvent()) |event| {
             _ = request_arena.reset(.retain_capacity);
 
             vd.handle_event(&session, request_arena.allocator(), event) catch |err| switch (err) {
                 // TODO(0.15.2): Fix this by checking the actual server error instead of ReadFailed! error.ConnectionResetByPeer => break,
-                else => {
+                error.WriteFailed => {
+                    switch (server.socket_writer.err.?) {
+                        error.ConnectionResetByPeer => {
+                            logger.warn("VNC client disconnected.", .{});
+                            break :request_loop;
+                        },
+                        error.SystemResources,
+                        error.BrokenPipe,
+                        error.SocketNotConnected,
+                        error.WouldBlock,
+                        error.AccessDenied,
+                        error.Unexpected,
+                        error.FileNotFound,
+                        error.NameTooLong,
+                        error.SymLinkLoop,
+                        error.NotDir,
+                        error.MessageTooBig,
+                        error.AddressFamilyNotSupported,
+                        error.NetworkSubsystemFailed,
+                        error.FileDescriptorNotASocket,
+                        error.AddressNotAvailable,
+                        error.FastOpenAlreadyInProgress,
+                        error.NetworkUnreachable,
+                        error.ConnectionRefused,
+                        error.UnreachableAddress,
+                        => {
+                            logger.err("processing client event failed: {s}", .{@errorName(err)});
+                            return err;
+                        },
+                    }
+                },
+
+                error.Overflow, error.OutOfMemory => {
                     logger.err("processing client event failed: {s}", .{@errorName(err)});
                     return err;
                 },

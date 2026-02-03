@@ -85,6 +85,7 @@ pub fn main() !void {
                         .aborted => 'A',
                         .timeout => 'T',
                         .fault => 'F',
+                        .reserved_address => 'R',
                     }),
                 });
             }
