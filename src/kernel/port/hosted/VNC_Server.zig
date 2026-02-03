@@ -50,6 +50,20 @@ pub fn init(
     return server;
 }
 
+const indexed8_pixel_format: vnc.PixelFormat = .{
+    .bpp = 8,
+    .depth = 8,
+    .big_endian = 0,
+    .true_color = 0,
+    //
+    .red_max = 0,
+    .green_max = 0,
+    .blue_max = 0,
+    .red_shift = 0,
+    .green_shift = 0,
+    .blue_shift = 0,
+};
+
 fn connection_handler(vd: *VNC_Server) !void {
     if (builtin.single_threaded)
         @compileError("Cannot use VNC_Server in single-threaded environment!");
@@ -62,7 +76,9 @@ fn connection_handler(vd: *VNC_Server) !void {
 
         const client = try vd.socket.accept();
 
-        logger.info("VNC connection from {!f} inbound", .{client.getRemoteEndPoint()});
+        const remote_endpoint = client.getRemoteEndPoint();
+        logger.info("VNC connection {!f} connected", .{remote_endpoint});
+        defer logger.info("VNC connection {!f} disconnected", .{remote_endpoint});
 
         var read_buffer: [1024]u8 = undefined;
         var write_buffer: [1024]u8 = undefined;
@@ -70,6 +86,7 @@ fn connection_handler(vd: *VNC_Server) !void {
             .screen_width = vd.screen.width,
             .screen_height = vd.screen.height,
             .desktop_name = "Ashet OS",
+            .pixel_format = indexed8_pixel_format,
         }, .{ .reader = &read_buffer, .writer = &write_buffer });
         defer server.close();
 
@@ -91,8 +108,45 @@ fn connection_handler(vd: *VNC_Server) !void {
             .old_framebuffer = old_framebuffer,
         };
 
-        request_loop: while (try server.waitEvent()) |event| {
+        request_loop: while (true) {
             _ = request_arena.reset(.retain_capacity);
+
+            const maybe_event = server.waitEvent() catch |err| switch (err) {
+                error.ReadFailed => {
+                    const sock_err = server.socket_reader.err.?;
+                    switch (sock_err) {
+                        error.ConnectionResetByPeer => {
+                            logger.warn("VNC client disconnected.", .{});
+                            break :request_loop;
+                        },
+                        error.SystemResources,
+                        error.ConnectionTimedOut,
+                        error.SocketNotConnected,
+                        error.WouldBlock,
+                        error.Unexpected,
+                        error.MessageTooBig,
+                        error.NetworkSubsystemFailed,
+                        error.SocketNotBound,
+                        error.ConnectionRefused,
+                        => {
+                            logger.err("processing client event failed: {t}", .{err});
+                            return err;
+                        },
+                    }
+                },
+                error.EndOfStream => {
+                    logger.warn("VNC client disconnected.", .{});
+                    break :request_loop;
+                },
+                error.OutOfMemory, error.ProtocolViolation => {
+                    logger.err("processing client event failed: {t}", .{err});
+                    return err;
+                },
+            };
+            const event = maybe_event orelse {
+                logger.warn("VNC client disconnected.", .{});
+                break :request_loop;
+            };
 
             vd.handle_event(&session, request_arena.allocator(), event) catch |err| switch (err) {
                 error.WriteFailed => {
@@ -149,6 +203,8 @@ const Session_State = struct {
 
     new_framebuffer: []ashet.abi.Color,
     old_framebuffer: []ashet.abi.Color,
+
+    sent_color_map: bool = false,
 };
 
 fn handle_event(vd: *VNC_Server, state: *Session_State, request_allocator: std.mem.Allocator, event: vnc.ClientEvent) !void {
@@ -164,6 +220,11 @@ fn handle_event(vd: *VNC_Server, state: *Session_State, request_allocator: std.m
                 // vd.screen.backbuffer_lock.lock();
                 // defer vd.screen.backbuffer_lock.unlock();
                 @memcpy(state.new_framebuffer, vd.screen.backbuffer);
+            }
+
+            if (state.server.pixel_format.is_indexed() and !state.sent_color_map) {
+                try state.server.sendSetColorMapEntries(0, &vnc_lut);
+                state.sent_color_map = true;
             }
 
             // logger.info("framebuffer update request: {}", .{in_req});
@@ -342,25 +403,48 @@ fn encode_screen_rect(
     var fb: std.Io.Writer.Allocating = .init(allocator);
     defer fb.deinit();
 
-    var y: usize = 0;
-    while (y < rect.height) : (y += 1) {
-        var x: usize = 0;
-        while (x < rect.width) : (x += 1) {
-            const px = x + rect.x;
-            const py = y + rect.y;
+    if (pixel_format.true_color != 0) {
+        var y: usize = 0;
+        while (y < rect.height) : (y += 1) {
+            var x: usize = 0;
+            while (x < rect.width) : (x += 1) {
+                const px = x + rect.x;
+                const py = y + rect.y;
 
-            const color = if (px < vd.screen.width and py < vd.screen.height) blk: {
-                const offset = py * vd.screen.width + px;
-                std.debug.assert(offset < framebuffer.len);
+                const color = if (px < vd.screen.width and py < vd.screen.height) blk: {
+                    const offset = py * vd.screen.width + px;
+                    std.debug.assert(offset < framebuffer.len);
 
-                const color_8 = framebuffer[offset];
+                    const color_8 = framebuffer[offset];
 
-                break :blk vnc_lut[color_8.to_u8()];
-            } else vnc.Color{ .r = 1.0, .g = 0.0, .b = 1.0 };
+                    break :blk vnc_lut[color_8.to_u8()];
+                } else vnc.Color{ .r = 1.0, .g = 0.0, .b = 1.0 };
 
-            var buf: [8]u8 = undefined;
-            const bits = pixel_format.encode(&buf, color);
-            try fb.writer.writeAll(bits);
+                var buf: [8]u8 = undefined;
+                const bits = pixel_format.encode(&buf, color);
+                try fb.writer.writeAll(bits);
+            }
+        }
+    } else {
+        if (pixel_format.depth != 8) @panic("only 8 bpp encoded colors are supported.");
+        var y: usize = 0;
+        while (y < rect.height) : (y += 1) {
+            var x: usize = 0;
+            while (x < rect.width) : (x += 1) {
+                const px = x + rect.x;
+                const py = y + rect.y;
+
+                const color: u8 = if (px < vd.screen.width and py < vd.screen.height) blk: {
+                    const offset = py * vd.screen.width + px;
+                    std.debug.assert(offset < framebuffer.len);
+
+                    const color_8 = framebuffer[offset];
+
+                    break :blk color_8.to_u8();
+                } else 0x00;
+
+                try fb.writer.writeInt(u8, color, .little);
+            }
         }
     }
 
