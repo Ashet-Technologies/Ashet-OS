@@ -7,6 +7,8 @@ const Driver = ashet.drivers.Driver;
 const Color = ashet.abi.Color;
 const Resolution = ashet.abi.Size;
 
+const VNC_Server = @import("../../port/hosted/VNC_Server.zig");
+
 backbuffer_lock: std.Thread.Mutex = .{},
 
 backbuffer: []Color,
@@ -66,4 +68,10 @@ fn flush(driver: *Driver) void {
 
     @memcpy(vd.backbuffer, vd.frontbuffer);
     vd.backbuffer_dirty = true;
+
+    vd.vnc_server().notify_flush();
+}
+
+fn vnc_server(output: *Host_VNC_Output) *VNC_Server {
+    return @fieldParentPtr("screen", output);
 }

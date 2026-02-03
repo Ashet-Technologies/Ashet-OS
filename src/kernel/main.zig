@@ -119,6 +119,7 @@ pub const log_levels = struct {
 
     // platforms:
     pub var hosted: LogLevel = .debug;
+    pub var host_vnc_server: LogLevel = .info;
 
     // platforms.x86:
     pub var idt: LogLevel = .debug;

@@ -16,6 +16,10 @@ socket: network.Socket,
 screen: ashet.drivers.video.Host_VNC_Output,
 input: ashet.drivers.input.Host_VNC_Input,
 
+/// Guards the `current_session` field access.
+session_lock: std.Thread.Mutex = .{},
+current_session: ?*Session_State = null,
+
 pub fn init(
     allocator: std.mem.Allocator,
     endpoint: network.EndPoint,
@@ -107,6 +111,18 @@ fn connection_handler(vd: *VNC_Server) !void {
             .new_framebuffer = new_framebuffer,
             .old_framebuffer = old_framebuffer,
         };
+
+        // Now store the session thread-safe into the server:
+        {
+            vd.session_lock.lock();
+            vd.current_session = &session;
+            vd.session_lock.unlock();
+        }
+        defer {
+            vd.session_lock.lock();
+            vd.current_session = null;
+            vd.session_lock.unlock();
+        }
 
         request_loop: while (true) {
             _ = request_arena.reset(.retain_capacity);
@@ -205,9 +221,139 @@ const Session_State = struct {
     old_framebuffer: []ashet.abi.Color,
 
     sent_color_map: bool = false,
+    sent_full_update: bool = false,
+
+    // Guards all socket writes on the VNC server and all of the following fields:
+    write_lock: std.Thread.Mutex = .{},
+
+    incremental_update_request: ?vnc.ClientEvent.FramebufferUpdateRequest = null,
+
+    // end of write_lock guard.
 };
 
+/// Notifies the VNC_Server of a flush event of the screen device.
+/// This allows us to hold back incremental updates until new content arrives.
+pub fn notify_flush(vd: *VNC_Server) void {
+    vd.session_lock.lock();
+    defer vd.session_lock.unlock();
+
+    const session = vd.current_session orelse return;
+
+    session.write_lock.lock();
+    defer session.write_lock.unlock();
+
+    const incremental_update_req = session.incremental_update_request orelse return;
+
+    var local_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer local_arena.deinit();
+
+    vd.send_incremental_update(
+        session,
+        local_arena.allocator(),
+        incremental_update_req,
+    ) catch |err| {
+        logger.err("failed to send incremental update: {t}", .{err});
+    };
+}
+
+fn send_incremental_update(vd: *VNC_Server, state: *Session_State, request_allocator: std.mem.Allocator, req: vnc.ClientEvent.FramebufferUpdateRequest) !void {
+    {
+        // vd.screen.backbuffer_lock.lock();
+        // defer vd.screen.backbuffer_lock.unlock();
+        @memcpy(state.new_framebuffer, vd.screen.backbuffer);
+    }
+
+    if (state.server.pixel_format.is_indexed() and !state.sent_color_map) {
+        // This message should not be sent by the server until after the
+        // client has sent at least one FramebufferUpdateRequest, and only when
+        // the agreed pixel format uses a color map.
+        try state.server.sendSetColorMapEntries(0, &vnc_lut);
+        state.sent_color_map = true;
+    }
+
+    // logger.info("framebuffer update request: {}", .{in_req});
+
+    var rectangles: std.ArrayList(vnc.UpdateRectangle) = .empty;
+    defer rectangles.deinit(request_allocator);
+
+    if (req.incremental and state.sent_full_update) {
+        // Compute differential update:
+        var base: usize = req.y * vd.screen.width;
+        var y: usize = 0;
+        while (y < req.height) : (y += 1) {
+            const old_scanline = state.old_framebuffer[base + req.x ..][0..req.width];
+            const new_scanline = state.new_framebuffer[base + req.x ..][0..req.width];
+
+            var first_diff: usize = old_scanline.len;
+            var last_diff: usize = 0;
+            for (old_scanline, new_scanline, 0..) |old, new, index| {
+                if (!old.eql(new)) {
+                    first_diff = @min(first_diff, index);
+                    last_diff = @max(last_diff, index);
+                }
+            }
+
+            if (first_diff <= last_diff) {
+                try rectangles.append(request_allocator, try vd.encode_screen_rect(
+                    request_allocator,
+                    .{
+                        .x = @intCast(req.x + first_diff),
+                        .y = @intCast(req.y + y),
+                        .width = @intCast(last_diff - first_diff + 1),
+                        .height = 1,
+                    },
+                    state.new_framebuffer,
+                    state.server.pixel_format,
+                ));
+                // logger.debug("sending incremental update on scanline {} from {}...{}", .{
+                //     req.y + y,
+                //     req.x + first_diff,
+                //     last_diff,
+                // });
+            }
+
+            base += vd.screen.width;
+        }
+
+        if (rectangles.items.len == 0) {
+            // Just keep the request alive and try again next time:
+            return;
+        }
+    } else {
+        // Simple full screen update:
+        try rectangles.append(request_allocator, try vd.encode_screen_rect(
+            request_allocator,
+            .{
+                .x = req.x,
+                .y = req.y,
+                .width = req.width,
+                .height = req.height,
+            },
+            state.new_framebuffer,
+            state.server.pixel_format,
+        ));
+        state.sent_full_update = true;
+    }
+
+    // If we're ever coming around here, we'll have at least a single rectangle to update:
+    std.debug.assert(rectangles.items.len > 0);
+
+    logger.debug("Respond to update request ({},{})+({}x{}) with {} updated rectangles", .{
+        req.x,                req.y, req.width, req.height,
+        rectangles.items.len,
+    });
+
+    try state.server.sendFramebufferUpdate(rectangles.items);
+
+    state.incremental_update_request = null;
+
+    @memcpy(state.old_framebuffer, state.new_framebuffer);
+}
+
 fn handle_event(vd: *VNC_Server, state: *Session_State, request_allocator: std.mem.Allocator, event: vnc.ClientEvent) !void {
+    state.write_lock.lock();
+    defer state.write_lock.unlock();
+
     logger.debug("client event {}", .{event});
 
     switch (event) {
@@ -216,99 +362,10 @@ fn handle_event(vd: *VNC_Server, state: *Session_State, request_allocator: std.m
         }, // use internal handler
 
         .framebuffer_update_request => |req| {
-            {
-                // vd.screen.backbuffer_lock.lock();
-                // defer vd.screen.backbuffer_lock.unlock();
-                @memcpy(state.new_framebuffer, vd.screen.backbuffer);
-            }
-
-            if (state.server.pixel_format.is_indexed() and !state.sent_color_map) {
-                try state.server.sendSetColorMapEntries(0, &vnc_lut);
-                state.sent_color_map = true;
-            }
-
-            // logger.info("framebuffer update request: {}", .{in_req});
-
-            var rectangles: std.ArrayList(vnc.UpdateRectangle) = .empty;
-            defer rectangles.deinit(request_allocator);
-
-            const incremental_support = true;
-
-            if (incremental_support and req.incremental) {
-
-                // Compute differential update:
-                var base: usize = req.y * vd.screen.width;
-                var y: usize = 0;
-                while (y < req.height) : (y += 1) {
-                    const old_scanline = state.old_framebuffer[base + req.x ..][0..req.width];
-                    const new_scanline = state.new_framebuffer[base + req.x ..][0..req.width];
-
-                    var first_diff: usize = old_scanline.len;
-                    var last_diff: usize = 0;
-                    for (old_scanline, new_scanline, 0..) |old, new, index| {
-                        if (!old.eql(new)) {
-                            first_diff = @min(first_diff, index);
-                            last_diff = @max(last_diff, index);
-                        }
-                    }
-
-                    if (first_diff <= last_diff) {
-                        try rectangles.append(request_allocator, try vd.encode_screen_rect(
-                            request_allocator,
-                            .{
-                                .x = @intCast(req.x + first_diff),
-                                .y = @intCast(req.y + y),
-                                .width = @intCast(last_diff - first_diff + 1),
-                                .height = 1,
-                            },
-                            state.new_framebuffer,
-                            state.server.pixel_format,
-                        ));
-                        // logger.debug("sending incremental update on scanline {} from {}...{}", .{
-                        //     req.y + y,
-                        //     req.x + first_diff,
-                        //     last_diff,
-                        // });
-                    }
-
-                    base += vd.screen.width;
-                }
-            } else {
-                // Simple full screen update:
-                try rectangles.append(request_allocator, try vd.encode_screen_rect(
-                    request_allocator,
-                    .{
-                        .x = req.x,
-                        .y = req.y,
-                        .width = req.width,
-                        .height = req.height,
-                    },
-                    state.new_framebuffer,
-                    state.server.pixel_format,
-                ));
-            }
-
-            if (rectangles.items.len == 0) {
-                try rectangles.append(request_allocator, try vd.encode_screen_rect(
-                    request_allocator,
-                    .{
-                        .x = req.x,
-                        .y = req.y,
-                        .width = 1,
-                        .height = 1,
-                    },
-                    state.new_framebuffer,
-                    state.server.pixel_format,
-                ));
-            }
-
-            // logger.debug("Respond to update request ({},{})+({}x{}) with {} updated rectangles", .{
-            //     req.x,                req.y, req.width, req.height,
-            //     rectangles.items.len,
-            // });
-            try state.server.sendFramebufferUpdate(rectangles.items);
-
-            @memcpy(state.old_framebuffer, state.new_framebuffer);
+            _ = vd;
+            _ = request_allocator;
+            state.incremental_update_request = req;
+            // try vd.send_incremental_update(state, request_allocator, req);
         },
 
         .key_event => |ev| {

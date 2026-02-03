@@ -64,8 +64,8 @@
             .hash = "network-0.1.0-Pm-Agl8xAQBmkwohveGOfTk4zQnuqDs0Ptfbms4KP5Ce",
         },
         .vnc = .{
-            .url = "git+https://github.com/ikskuh/zvnc.git#7db7b4e538da7f7ec2afb4645fa0dda6121793c9",
-            .hash = "zvnc-0.0.0-imcThX-NAAC-WvqvbSEchqhnih5LtFkBvUEQEw8QoY2n",
+            .url = "git+https://github.com/ikskuh/zvnc.git#2b95855f0f348563e599db42acfeec5a8db230fb",
+            .hash = "zvnc-0.0.0-imcThRuRAAAuAawQaXqZ_bPaTBIqGQNkrwy3m1JC-1b3",
         },
         .@"foundation-libc" = .{
             .url = "https://github.com/Ashet-Technologies/deps/raw/refs/heads/main/foundation-libc-0.15.0.tar.gz",
