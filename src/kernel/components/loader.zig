@@ -8,11 +8,9 @@ pub const LoadedExecutable = struct {
     entry_point: usize,
 };
 
-pub const elf = @import("loader/elf.zig");
 pub const ashex = @import("loader/ashex.zig");
 
 pub const BinaryFormat = enum {
-    // elf,
     ashex,
 };
 
@@ -28,7 +26,6 @@ pub fn load(
     format: BinaryFormat,
 ) LoadError!LoadedExecutable {
     return switch (format) {
-        // TODO(0.15): .elf => return error.Unsupported,  try elf.load(file, allocator),
         .ashex => ashex.load(file, allocator) catch |err| switch (err) {
             error.SystemResources => error.SystemResources,
             error.DiskError => error.DiskError,

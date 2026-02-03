@@ -93,7 +93,6 @@ fn connection_handler(vd: *VNC_Server) !void {
             _ = request_arena.reset(.retain_capacity);
 
             vd.handle_event(&session, request_arena.allocator(), event) catch |err| switch (err) {
-                // TODO(0.15.2): Fix this by checking the actual server error instead of ReadFailed! error.ConnectionResetByPeer => break,
                 error.WriteFailed => {
                     switch (server.socket_writer.err.?) {
                         error.ConnectionResetByPeer => {
