@@ -62,6 +62,8 @@ fn connection_handler(vd: *VNC_Server) !void {
 
         const client = try vd.socket.accept();
 
+        logger.info("VNC connection from {!f} inbound", .{client.getRemoteEndPoint()});
+
         var read_buffer: [1024]u8 = undefined;
         var write_buffer: [1024]u8 = undefined;
         var server = try vnc.Server.open(std.heap.page_allocator, client, .{
@@ -94,13 +96,17 @@ fn connection_handler(vd: *VNC_Server) !void {
 
             vd.handle_event(&session, request_arena.allocator(), event) catch |err| switch (err) {
                 error.WriteFailed => {
-                    switch (server.socket_writer.err.?) {
+                    const sock_err = server.socket_writer.err.?;
+                    switch (sock_err) {
                         error.ConnectionResetByPeer => {
                             logger.warn("VNC client disconnected.", .{});
                             break :request_loop;
                         },
+                        error.BrokenPipe => {
+                            logger.warn("VNC client disconnected: {t}", .{sock_err});
+                            break :request_loop;
+                        },
                         error.SystemResources,
-                        error.BrokenPipe,
                         error.SocketNotConnected,
                         error.WouldBlock,
                         error.AccessDenied,
@@ -179,7 +185,7 @@ fn handle_event(vd: *VNC_Server, state: *Session_State, request_allocator: std.m
                     var first_diff: usize = old_scanline.len;
                     var last_diff: usize = 0;
                     for (old_scanline, new_scanline, 0..) |old, new, index| {
-                        if (old.eql(new)) {
+                        if (!old.eql(new)) {
                             first_diff = @min(first_diff, index);
                             last_diff = @max(last_diff, index);
                         }
