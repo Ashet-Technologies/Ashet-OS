@@ -320,16 +320,14 @@ pub const debug = struct {
         //     writer.print("{X:0>4}: {b:0>32}\r\n", .{ index, item }) catch {};
         // }
 
-        writer.print("free ram: {} ({}/{} pages)\r\n", .{ fmt_mem_size(free_memory), free_memory / page_size, page_manager.pageCount() }) catch {};
+        writer.print("free ram: {f} ({}/{} pages)\r\n", .{ fmt_mem_size(free_memory), free_memory / page_size, page_manager.pageCount() }) catch {};
     }
 
-    fn fmt_mem_size(size: usize) std.fmt.Formatter(format_mem_size) {
+    fn fmt_mem_size(size: usize) std.fmt.Alt(usize, format_mem_size) {
         return .{ .data = size };
     }
 
-    fn format_mem_size(size: usize, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    fn format_mem_size(size: usize, writer: *std.Io.Writer) !void {
         const Unit = struct {
             base: u64,
             name: []const u8,

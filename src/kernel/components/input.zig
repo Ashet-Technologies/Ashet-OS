@@ -264,6 +264,7 @@ pub const keyboard = struct {
 
     pub const layouts = struct {
         pub const de = Layout.compile(@embedFile("../data/keyboard/layouts/de"));
+        pub const pl = Layout.compile(@embedFile("../data/keyboard/layouts/pl"));
     };
 
     pub const Layout = struct {
@@ -362,7 +363,7 @@ pub const keyboard = struct {
         }
 
         pub fn translate(self: Layout, key: KeyUsage, shift: bool, alt_graph: bool) ?[*:0]const u8 {
-            const strings: Strings = self.mapping.get(key);
+            const strings: *const Strings = self.mapping.getPtrConst(key);
 
             if (shift and alt_graph and strings.shift_alt_graph != null)
                 return strings.shift_alt_graph;

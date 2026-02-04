@@ -16,7 +16,7 @@ const logger = std.log.scoped(.@"splash screen");
 const libashet = @import("ashet");
 const Icon = @import("ui.zig").desktop.Icon;
 
-pub fn run(_: ?*anyopaque) callconv(.C) u32 {
+pub fn run(_: ?*anyopaque) callconv(.c) u32 {
     const thread = ashet.scheduler.Thread.current() orelse {
         logger.err("splash screen must be run in a thread.", .{});
         return 1;

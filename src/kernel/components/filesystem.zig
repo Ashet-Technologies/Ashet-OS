@@ -200,7 +200,7 @@ pub fn initialize() void {
 fn resolve_dir(call: *ashet.overlapped.AsyncCall, dir: ashet.abi.Directory) error{InvalidHandle}!*Directory {
     const owner = call.resource_owner;
     return ashet.resources.resolve(Directory, owner, dir.as_resource()) catch |err| {
-        logger.warn("process {} used invalid file handle {}: {s}", .{ owner, dir, @errorName(err) });
+        logger.warn("process {f} used invalid file handle {f}: {s}", .{ owner, dir, @errorName(err) });
         return error.InvalidHandle;
     };
 }
@@ -208,7 +208,7 @@ fn resolve_dir(call: *ashet.overlapped.AsyncCall, dir: ashet.abi.Directory) erro
 fn resolve_file(call: *ashet.overlapped.AsyncCall, dir: ashet.abi.File) error{InvalidHandle}!*File {
     const owner = call.resource_owner;
     return ashet.resources.resolve(File, owner, dir.as_resource()) catch |err| {
-        logger.warn("process {} used invalid file handle {}: {s}", .{ owner, dir, @errorName(err) });
+        logger.warn("process {f} used invalid file handle {f}: {s}", .{ owner, dir, @errorName(err) });
         return error.InvalidHandle;
     };
 }
@@ -395,7 +395,7 @@ const iop_handlers = struct {
     }
 };
 
-fn filesystemCoreLoop(_: ?*anyopaque) callconv(.C) noreturn {
+fn filesystemCoreLoop(_: ?*anyopaque) callconv(.c) noreturn {
     const abi = ashet.abi;
 
     while (true) {

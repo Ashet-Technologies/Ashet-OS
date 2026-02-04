@@ -4,7 +4,11 @@
 const std = @import("std");
 const ashet = @import("ashet");
 
-pub usingnamespace ashet.core;
+pub const std_options = ashet.core.std_options;
+pub const panic = ashet.core.panic;
+comptime {
+    _ = ashet.core;
+}
 
 const Size = ashet.abi.Size;
 const Point = ashet.abi.Point;

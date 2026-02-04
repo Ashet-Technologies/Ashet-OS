@@ -2,7 +2,7 @@
     .name = .ashet_os,
     .version = "0.1.0",
     .fingerprint = 0xb942c958e6b84c9b,
-    .minimum_zig_version = "0.14.0",
+    .minimum_zig_version = "0.15.2",
     .dependencies = .{
         .os = .{
             .path = "src/os",

@@ -351,7 +351,7 @@ const GPU = struct {
 
         const stride = @divExact(calcStrideBytes(width, 32), @sizeOf(u32));
 
-        const frame_backing = try allocator.alignedAlloc(u32, @alignOf(u32), height * stride);
+        const frame_backing = try allocator.alignedAlloc(u32, .of(u32), height * stride);
         errdefer allocator.free(frame_backing);
 
         try gpu.resourceAttachBacking(res_id, std.mem.sliceAsBytes(frame_backing));

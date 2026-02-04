@@ -349,12 +349,11 @@ pub fn ZStringArrayHashMapUnmanaged(comptime T: type) type {
     return std.array_hash_map.ArrayHashMapUnmanaged([:0]const u8, T, ZStringContext, true);
 }
 
-pub fn save_design(window: Window, unbuffered_stream: anytype) !void {
-    var buffered_writer = std.io.bufferedWriter(unbuffered_stream);
-
-    var json = std.json.writeStream(buffered_writer.writer(), .{
-        .whitespace = .indent_2,
-    });
+pub fn save_design(window: Window, stream: *std.Io.Writer) !void {
+    var json: std.json.Stringify = .{
+        .options = .{ .whitespace = .indent_2 },
+        .writer = stream,
+    };
 
     try json.beginObject();
 
@@ -414,7 +413,7 @@ pub fn save_design(window: Window, unbuffered_stream: anytype) !void {
 
     try json.endObject();
 
-    try buffered_writer.flush();
+    try stream.flush();
 }
 
 pub const Document = struct {
@@ -427,10 +426,7 @@ pub const Document = struct {
     }
 };
 
-pub fn load_design(stream: anytype, allocator: std.mem.Allocator, metadata: *const Metadata) !Document {
-    var buffered_reader = std.io.bufferedReader(stream);
-    const reader = buffered_reader.reader();
-
+pub fn load_design(reader: *std.Io.Reader, allocator: std.mem.Allocator, metadata: *const Metadata) !Document {
     const JWidget = struct {
         identifier: []const u8 = "",
         bounds: Rectangle,
@@ -449,7 +445,7 @@ pub fn load_design(stream: anytype, allocator: std.mem.Allocator, metadata: *con
         widgets: []const JWidget,
     };
 
-    var jreader = std.json.reader(allocator, reader);
+    var jreader: std.json.Reader = .init(allocator, reader);
     defer jreader.deinit();
 
     const jdesign = try std.json.parseFromTokenSource(JDesign, allocator, &jreader, .{});

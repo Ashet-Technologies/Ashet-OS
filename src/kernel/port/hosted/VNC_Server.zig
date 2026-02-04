@@ -16,6 +16,10 @@ socket: network.Socket,
 screen: ashet.drivers.video.Host_VNC_Output,
 input: ashet.drivers.input.Host_VNC_Input,
 
+/// Guards the `current_session` field access.
+session_lock: std.Thread.Mutex = .{},
+current_session: ?*Session_State = null,
+
 pub fn init(
     allocator: std.mem.Allocator,
     endpoint: network.EndPoint,
@@ -30,7 +34,7 @@ pub fn init(
 
     try server_sock.listen();
 
-    logger.info("Host Screen VNC Server available at {!}", .{
+    logger.info("Host Screen VNC Server available at {!f}", .{
         server_sock.getLocalEndPoint(),
     });
 
@@ -50,6 +54,20 @@ pub fn init(
     return server;
 }
 
+const indexed8_pixel_format: vnc.PixelFormat = .{
+    .bpp = 8,
+    .depth = 8,
+    .big_endian = 0,
+    .true_color = 0,
+    //
+    .red_max = 0,
+    .green_max = 0,
+    .blue_max = 0,
+    .red_shift = 0,
+    .green_shift = 0,
+    .blue_shift = 0,
+};
+
 fn connection_handler(vd: *VNC_Server) !void {
     if (builtin.single_threaded)
         @compileError("Cannot use VNC_Server in single-threaded environment!");
@@ -62,11 +80,18 @@ fn connection_handler(vd: *VNC_Server) !void {
 
         const client = try vd.socket.accept();
 
+        const remote_endpoint = client.getRemoteEndPoint();
+        logger.info("VNC connection {!f} connected", .{remote_endpoint});
+        defer logger.info("VNC connection {!f} disconnected", .{remote_endpoint});
+
+        var read_buffer: [1024]u8 = undefined;
+        var write_buffer: [1024]u8 = undefined;
         var server = try vnc.Server.open(std.heap.page_allocator, client, .{
             .screen_width = vd.screen.width,
             .screen_height = vd.screen.height,
             .desktop_name = "Ashet OS",
-        });
+            .pixel_format = indexed8_pixel_format,
+        }, .{ .reader = &read_buffer, .writer = &write_buffer });
         defer server.close();
 
         const new_framebuffer = try local_allocator.dupe(ashet.abi.Color, vd.screen.backbuffer);
@@ -87,12 +112,96 @@ fn connection_handler(vd: *VNC_Server) !void {
             .old_framebuffer = old_framebuffer,
         };
 
-        while (try server.waitEvent()) |event| {
+        // Now store the session thread-safe into the server:
+        {
+            vd.session_lock.lock();
+            vd.current_session = &session;
+            vd.session_lock.unlock();
+        }
+        defer {
+            vd.session_lock.lock();
+            vd.current_session = null;
+            vd.session_lock.unlock();
+        }
+
+        request_loop: while (true) {
             _ = request_arena.reset(.retain_capacity);
 
+            const maybe_event = server.waitEvent() catch |err| switch (err) {
+                error.ReadFailed => {
+                    const sock_err = server.socket_reader.err.?;
+                    switch (sock_err) {
+                        error.ConnectionResetByPeer => {
+                            logger.warn("VNC client disconnected.", .{});
+                            break :request_loop;
+                        },
+                        error.SystemResources,
+                        error.ConnectionTimedOut,
+                        error.SocketNotConnected,
+                        error.WouldBlock,
+                        error.Unexpected,
+                        error.MessageTooBig,
+                        error.NetworkSubsystemFailed,
+                        error.SocketNotBound,
+                        error.ConnectionRefused,
+                        => {
+                            logger.err("processing client event failed: {t}", .{err});
+                            return err;
+                        },
+                    }
+                },
+                error.EndOfStream => {
+                    logger.warn("VNC client disconnected.", .{});
+                    break :request_loop;
+                },
+                error.OutOfMemory, error.ProtocolViolation => {
+                    logger.err("processing client event failed: {t}", .{err});
+                    return err;
+                },
+            };
+            const event = maybe_event orelse {
+                logger.warn("VNC client disconnected.", .{});
+                break :request_loop;
+            };
+
             vd.handle_event(&session, request_arena.allocator(), event) catch |err| switch (err) {
-                error.ConnectionResetByPeer => break,
-                else => {
+                error.WriteFailed => {
+                    const sock_err = server.socket_writer.err.?;
+                    switch (sock_err) {
+                        error.ConnectionResetByPeer => {
+                            logger.warn("VNC client disconnected.", .{});
+                            break :request_loop;
+                        },
+                        error.BrokenPipe => {
+                            logger.warn("VNC client disconnected: {t}", .{sock_err});
+                            break :request_loop;
+                        },
+                        error.SystemResources,
+                        error.SocketNotConnected,
+                        error.WouldBlock,
+                        error.AccessDenied,
+                        error.Unexpected,
+                        error.FileNotFound,
+                        error.NameTooLong,
+                        error.SymLinkLoop,
+                        error.NotDir,
+                        error.MessageTooBig,
+                        error.AddressFamilyNotSupported,
+                        error.NetworkSubsystemFailed,
+                        error.FileDescriptorNotASocket,
+                        error.AddressNotAvailable,
+                        error.FastOpenAlreadyInProgress,
+                        error.NetworkUnreachable,
+                        error.ConnectionRefused,
+                        error.UnreachableAddress,
+                        => {
+                            logger.err("processing client event failed: {s}", .{@errorName(err)});
+                            return err;
+                        },
+                    }
+                },
+
+                error.Overflow, error.OutOfMemory => {
                     logger.err("processing client event failed: {s}", .{@errorName(err)});
                     return err;
                 },
@@ -110,105 +219,153 @@ const Session_State = struct {
 
     new_framebuffer: []ashet.abi.Color,
     old_framebuffer: []ashet.abi.Color,
+
+    sent_color_map: bool = false,
+    sent_full_update: bool = false,
+
+    // Guards all socket writes on the VNC server and all of the following fields:
+    write_lock: std.Thread.Mutex = .{},
+
+    incremental_update_request: ?vnc.ClientEvent.FramebufferUpdateRequest = null,
+
+    // end of write_lock guard.
 };
 
-fn handle_event(vd: *VNC_Server, state: *Session_State, request_allocator: std.mem.Allocator, event: vnc.ClientEvent) !void {
-    logger.debug("client event {}", .{event});
+/// Notifies the VNC_Server of a flush event of the screen device.
+/// This allows us to hold back incremental updates until new content arrives.
+pub fn notify_flush(vd: *VNC_Server) void {
+    vd.session_lock.lock();
+    defer vd.session_lock.unlock();
 
-    switch (event) {
-        .set_pixel_format => |pf| {
-            logger.info("change pixel format to {}", .{pf});
-        }, // use internal handler
+    const session = vd.current_session orelse return;
 
-        .framebuffer_update_request => |req| {
-            {
-                // vd.screen.backbuffer_lock.lock();
-                // defer vd.screen.backbuffer_lock.unlock();
-                @memcpy(state.new_framebuffer, vd.screen.backbuffer);
-            }
+    session.write_lock.lock();
+    defer session.write_lock.unlock();
 
-            // logger.info("framebuffer update request: {}", .{in_req});
+    const incremental_update_req = session.incremental_update_request orelse return;
 
-            var rectangles = std.ArrayList(vnc.UpdateRectangle).init(request_allocator);
-            defer rectangles.deinit();
+    var local_arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer local_arena.deinit();
 
-            const incremental_support = true;
+    vd.send_incremental_update(
+        session,
+        local_arena.allocator(),
+        incremental_update_req,
+    ) catch |err| {
+        logger.err("failed to send incremental update: {t}", .{err});
+    };
+}
 
-            if (incremental_support and req.incremental) {
+fn send_incremental_update(vd: *VNC_Server, state: *Session_State, request_allocator: std.mem.Allocator, req: vnc.ClientEvent.FramebufferUpdateRequest) !void {
+    {
+        // vd.screen.backbuffer_lock.lock();
+        // defer vd.screen.backbuffer_lock.unlock();
+        @memcpy(state.new_framebuffer, vd.screen.backbuffer);
+    }
 
-                // Compute differential update:
-                var base: usize = req.y * vd.screen.width;
-                var y: usize = 0;
-                while (y < req.height) : (y += 1) {
-                    const old_scanline = state.old_framebuffer[base + req.x ..][0..req.width];
-                    const new_scanline = state.new_framebuffer[base + req.x ..][0..req.width];
+    if (state.server.pixel_format.is_indexed() and !state.sent_color_map) {
+        // This message should not be sent by the server until after the
+        // client has sent at least one FramebufferUpdateRequest, and only when
+        // the agreed pixel format uses a color map.
+        try state.server.sendSetColorMapEntries(0, &vnc_lut);
+        state.sent_color_map = true;
+    }
 
-                    var first_diff: usize = old_scanline.len;
-                    var last_diff: usize = 0;
-                    for (old_scanline, new_scanline, 0..) |old, new, index| {
-                        if (old.eql(new)) {
-                            first_diff = @min(first_diff, index);
-                            last_diff = @max(last_diff, index);
-                        }
-                    }
+    // logger.info("framebuffer update request: {}", .{in_req});
 
-                    if (first_diff <= last_diff) {
-                        try rectangles.append(try vd.encode_screen_rect(
-                            request_allocator,
-                            .{
-                                .x = @intCast(req.x + first_diff),
-                                .y = @intCast(req.y + y),
-                                .width = @intCast(last_diff - first_diff + 1),
-                                .height = 1,
-                            },
-                            state.new_framebuffer,
-                            state.server.pixel_format,
-                        ));
-                        // logger.debug("sending incremental update on scanline {} from {}...{}", .{
-                        //     req.y + y,
-                        //     req.x + first_diff,
-                        //     last_diff,
-                        // });
-                    }
+    var rectangles: std.ArrayList(vnc.UpdateRectangle) = .empty;
+    defer rectangles.deinit(request_allocator);
 
-                    base += vd.screen.width;
+    if (req.incremental and state.sent_full_update) {
+        // Compute differential update:
+        var base: usize = req.y * vd.screen.width;
+        var y: usize = 0;
+        while (y < req.height) : (y += 1) {
+            const old_scanline = state.old_framebuffer[base + req.x ..][0..req.width];
+            const new_scanline = state.new_framebuffer[base + req.x ..][0..req.width];
+
+            var first_diff: usize = old_scanline.len;
+            var last_diff: usize = 0;
+            for (old_scanline, new_scanline, 0..) |old, new, index| {
+                if (!old.eql(new)) {
+                    first_diff = @min(first_diff, index);
+                    last_diff = @max(last_diff, index);
                 }
-            } else {
-                // Simple full screen update:
-                try rectangles.append(try vd.encode_screen_rect(
-                    request_allocator,
-                    .{
-                        .x = req.x,
-                        .y = req.y,
-                        .width = req.width,
-                        .height = req.height,
-                    },
-                    state.new_framebuffer,
-                    state.server.pixel_format,
-                ));
             }
 
-            if (rectangles.items.len == 0) {
-                try rectangles.append(try vd.encode_screen_rect(
+            if (first_diff <= last_diff) {
+                try rectangles.append(request_allocator, try vd.encode_screen_rect(
                     request_allocator,
                     .{
-                        .x = req.x,
-                        .y = req.y,
-                        .width = 1,
+                        .x = @intCast(req.x + first_diff),
+                        .y = @intCast(req.y + y),
+                        .width = @intCast(last_diff - first_diff + 1),
                         .height = 1,
                     },
                     state.new_framebuffer,
                     state.server.pixel_format,
                 ));
+                // logger.debug("sending incremental update on scanline {} from {}...{}", .{
+                //     req.y + y,
+                //     req.x + first_diff,
+                //     last_diff,
+                // });
             }
 
-            // logger.debug("Respond to update request ({},{})+({}x{}) with {} updated rectangles", .{
-            //     req.x,                req.y, req.width, req.height,
-            //     rectangles.items.len,
-            // });
-            try state.server.sendFramebufferUpdate(rectangles.items);
+            base += vd.screen.width;
+        }
 
-            @memcpy(state.old_framebuffer, state.new_framebuffer);
+        if (rectangles.items.len == 0) {
+            // Just keep the request alive and try again next time:
+            return;
+        }
+    } else {
+        // Simple full screen update:
+        try rectangles.append(request_allocator, try vd.encode_screen_rect(
+            request_allocator,
+            .{
+                .x = req.x,
+                .y = req.y,
+                .width = req.width,
+                .height = req.height,
+            },
+            state.new_framebuffer,
+            state.server.pixel_format,
+        ));
+        state.sent_full_update = true;
+    }
+
+    // If we're ever coming around here, we'll have at least a single rectangle to update:
+    std.debug.assert(rectangles.items.len > 0);
+
+    logger.debug("Respond to update request ({},{})+({}x{}) with {} updated rectangles", .{
+        req.x,                req.y, req.width, req.height,
+        rectangles.items.len,
+    });
+
+    try state.server.sendFramebufferUpdate(rectangles.items);
+
+    state.incremental_update_request = null;
+
+    @memcpy(state.old_framebuffer, state.new_framebuffer);
+}
+
+fn handle_event(vd: *VNC_Server, state: *Session_State, request_allocator: std.mem.Allocator, event: vnc.ClientEvent) !void {
+    state.write_lock.lock();
+    defer state.write_lock.unlock();
+
+    logger.debug("client event {}", .{event});
+
+    switch (event) {
+        .set_pixel_format => |pf| {
+            logger.info("change pixel format to {f}", .{pf});
+        }, // use internal handler
+
+        .framebuffer_update_request => |req| {
+            _ = vd;
+            _ = request_allocator;
+            state.incremental_update_request = req;
+            // try vd.send_incremental_update(state, request_allocator, req);
         },
 
         .key_event => |ev| {
@@ -241,7 +398,7 @@ fn handle_event(vd: *VNC_Server, state: *Session_State, request_allocator: std.m
                     });
                 }
             }
-            state.old_mouse = Point{
+            state.old_mouse = .{
                 .x = ptr.x,
                 .y = ptr.y,
             };
@@ -300,28 +457,51 @@ fn encode_screen_rect(
     framebuffer: []const ashet.abi.Color,
     pixel_format: vnc.PixelFormat,
 ) !vnc.UpdateRectangle {
-    var fb = std.ArrayList(u8).init(allocator);
+    var fb: std.Io.Writer.Allocating = .init(allocator);
     defer fb.deinit();
 
-    var y: usize = 0;
-    while (y < rect.height) : (y += 1) {
-        var x: usize = 0;
-        while (x < rect.width) : (x += 1) {
-            const px = x + rect.x;
-            const py = y + rect.y;
+    if (pixel_format.true_color != 0) {
+        var y: usize = 0;
+        while (y < rect.height) : (y += 1) {
+            var x: usize = 0;
+            while (x < rect.width) : (x += 1) {
+                const px = x + rect.x;
+                const py = y + rect.y;
 
-            const color = if (px < vd.screen.width and py < vd.screen.height) blk: {
-                const offset = py * vd.screen.width + px;
-                std.debug.assert(offset < framebuffer.len);
+                const color = if (px < vd.screen.width and py < vd.screen.height) blk: {
+                    const offset = py * vd.screen.width + px;
+                    std.debug.assert(offset < framebuffer.len);
 
-                const color_8 = framebuffer[offset];
+                    const color_8 = framebuffer[offset];
 
-                break :blk vnc_lut[color_8.to_u8()];
-            } else vnc.Color{ .r = 1.0, .g = 0.0, .b = 1.0 };
+                    break :blk vnc_lut[color_8.to_u8()];
+                } else vnc.Color{ .r = 1.0, .g = 0.0, .b = 1.0 };
 
-            var buf: [8]u8 = undefined;
-            const bits = pixel_format.encode(&buf, color);
-            try fb.appendSlice(bits);
+                var buf: [8]u8 = undefined;
+                const bits = pixel_format.encode(&buf, color);
+                try fb.writer.writeAll(bits);
+            }
+        }
+    } else {
+        if (pixel_format.depth != 8) @panic("only 8 bpp encoded colors are supported.");
+        var y: usize = 0;
+        while (y < rect.height) : (y += 1) {
+            var x: usize = 0;
+            while (x < rect.width) : (x += 1) {
+                const px = x + rect.x;
+                const py = y + rect.y;
+
+                const color: u8 = if (px < vd.screen.width and py < vd.screen.height) blk: {
+                    const offset = py * vd.screen.width + px;
+                    std.debug.assert(offset < framebuffer.len);
+
+                    const color_8 = framebuffer[offset];
+
+                    break :blk color_8.to_u8();
+                } else 0x00;
+
+                try fb.writer.writeInt(u8, color, .little);
+            }
         }
     }
 

@@ -212,9 +212,7 @@ pub const Info = extern struct {
         framebuffer: bool,
         _reserved: u19,
 
-        pub fn format(flags: Flags, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-            _ = fmt;
-            _ = options;
+        pub fn format(flags: Flags, writer: *std.Io.Writer) !void {
             try writer.writeAll("{");
 
             var any = false;
@@ -432,9 +430,7 @@ pub const Info = extern struct {
         std.debug.assert(@offsetOf(@This(), "framebuffer") == 88);
     }
 
-    pub fn format(value: Info, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(value: Info, writer: *std.Io.Writer) !void {
         try writer.writeAll("MultibootInfo{");
 
         if (value.flags.mem) {

@@ -1,7 +1,11 @@
 const std = @import("std");
 const ashet = @import("ashet");
 
-pub usingnamespace ashet.core;
+pub const std_options = ashet.core.std_options;
+pub const panic = ashet.core.panic;
+comptime {
+    _ = ashet.core;
+}
 
 const logger = std.log.scoped(.desktop);
 const abi = ashet.abi;
@@ -67,7 +71,7 @@ pub fn main() !void {
     const default_font = try ashet.graphics.get_system_font("sans-6");
     defer default_font.release();
 
-    const current_theme = themes.Theme{
+    const current_theme: themes.Theme = .{
         .title_font = default_font,
         .dark = ashet.graphics.known_colors.dark_gray,
         .active_window = .{
@@ -121,8 +125,10 @@ pub fn main() !void {
     defer if (maybe_wallpaper) |fb|
         fb.release();
 
+    var damage_tracking_buffer: [8]Rectangle = undefined;
     var damage_tracking = DamageTracking.init(
         Rectangle.new(Point.zero, fb_size),
+        &damage_tracking_buffer,
     );
 
     window_manager = WindowManager.init(&damage_tracking);
@@ -396,12 +402,12 @@ const Cursor = struct {
     }
 };
 
-fn handle_desktop_event(desktop: abi.Desktop, event: *const abi.DesktopEvent) callconv(.C) void {
+fn handle_desktop_event(desktop: abi.Desktop, event: *const abi.DesktopEvent) callconv(.c) void {
     // std.log.debug("handle desktop event of type {s}", .{@tagName(event.event_type)});
     switch (event.event_type) {
         .create_window => {
             const window = event.create_window.window;
-            std.log.info("handle_desktop_event.create_window({})", .{window});
+            std.log.info("handle_desktop_event.create_window({f})", .{window});
             window_manager.create_window(window) catch |err| {
                 logger.err("failed to handle window creation: {s}", .{@errorName(err)});
             };
@@ -409,7 +415,7 @@ fn handle_desktop_event(desktop: abi.Desktop, event: *const abi.DesktopEvent) ca
 
         .destroy_window => {
             const window = event.destroy_window.window;
-            std.log.info("handle_desktop_event.destroy_window({})", .{window});
+            std.log.info("handle_desktop_event.destroy_window({f})", .{window});
 
             window_manager.destroy_window(window);
         },
@@ -422,10 +428,10 @@ fn handle_desktop_event(desktop: abi.Desktop, event: *const abi.DesktopEvent) ca
         },
 
         .show_message_box => {
-            std.log.info("handle_desktop_event.show_message_box(request_id=0x{X:0>4}, caption='{}', message='{}', icon={s}, buttons='{}')", .{
+            std.log.info("handle_desktop_event.show_message_box(request_id=0x{X:0>4}, caption='{f}', message='{f}', icon={s}, buttons='{f}')", .{
                 @intFromEnum(event.show_message_box.request_id),
-                std.zig.fmtEscapes(event.show_message_box.caption()),
-                std.zig.fmtEscapes(event.show_message_box.message()),
+                std.zig.fmtString(event.show_message_box.caption()),
+                std.zig.fmtString(event.show_message_box.message()),
                 @tagName(event.show_message_box.icon),
                 event.show_message_box.buttons,
             });
@@ -434,8 +440,8 @@ fn handle_desktop_event(desktop: abi.Desktop, event: *const abi.DesktopEvent) ca
         },
 
         .show_notification => {
-            std.log.info("handle_desktop_event.show_notification(message='{}', severity={s})", .{
-                std.zig.fmtEscapes(event.show_notification.message()),
+            std.log.info("handle_desktop_event.show_notification(message='{f}', severity={s})", .{
+                std.zig.fmtString(event.show_notification.message()),
                 @tagName(event.show_notification.severity),
             });
 

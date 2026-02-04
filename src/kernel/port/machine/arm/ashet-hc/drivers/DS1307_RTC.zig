@@ -56,7 +56,7 @@ pub fn init() !DS1307_RTC {
                 .square_wave_enable = false,
             },
         };
-        logger.warn("uninitialized rtc, resetting to {}", .{regs});
+        logger.warn("uninitialized rtc, resetting to {f}", .{regs});
 
         // Select the first register in the RTC:
         try i2c.writev_blocking(machine.hw_alloc.i2c_addresses.ds1307_rtc, &.{
@@ -64,7 +64,7 @@ pub fn init() !DS1307_RTC {
             std.mem.asBytes(&regs),
         }, null);
     } else {
-        logger.info("time from rtc: {}", .{regs});
+        logger.info("time from rtc: {f}", .{regs});
     }
 
     const dt: dateconv.DateTime = .{
@@ -77,7 +77,7 @@ pub fn init() !DS1307_RTC {
     };
 
     const unix_timestamp: i128 = dateconv.datetimeToUnix(dt) catch blk: {
-        logger.err("failed to convert rtc time to posix timestamp: {}", .{regs});
+        logger.err("failed to convert rtc time to posix timestamp: {f}", .{regs});
         break :blk 1761124200;
     };
 
@@ -161,55 +161,39 @@ const RTC_Registers = extern struct {
         return 10 * (bcd >> 4) + (bcd & 0x0F);
     }
 
-    pub fn format(regs: RTC_Registers, comptime fmt_str: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        const Format = enum { T, D, DT, any };
-        const fmt: Format = if (fmt_str.len == 0)
-            .any
-        else
-            std.meta.stringToEnum(Format, fmt_str) orelse @compileError("fmt must be {T}, {D}, {DT} or {}");
-
+    pub fn format(regs: RTC_Registers, writer: *std.Io.Writer) !void {
         if (regs.seconds.clock == .halted) {
             try writer.writeAll("[STOPPED]");
             return;
         }
 
-        if (fmt != .T) {
-            try writer.print("{X:0>2}.{X:0>2}.20{X:0>2}/{d}", .{
-                regs.date,
-                regs.month,
-                regs.year,
-                regs.day_of_week,
-            });
+        try writer.print("{X:0>2}.{X:0>2}.20{X:0>2}/{d}", .{
+            regs.date,
+            regs.month,
+            regs.year,
+            regs.day_of_week,
+        });
+
+        try writer.writeAll(" ");
+
+        switch (regs.hours.control.mode) {
+            .@"24h" => try writer.print("{X:0>2}:{X:0>2}:{X:0>2}", .{
+                regs.hours.@"24h".hour,
+                regs.minutes,
+                regs.seconds.seconds_bcd,
+            }),
+            .@"am/pm" => try writer.print("{X:0>2} {s}:{X:0>2}:{X:0>2}", .{
+                regs.hours.@"am/pm".hour,
+                @tagName(regs.hours.@"am/pm".half),
+                regs.minutes,
+                regs.seconds.seconds_bcd,
+            }),
         }
 
-        if (fmt != .D) {
-            if (fmt != .T) {
-                try writer.writeAll(" ");
-            }
-
-            switch (regs.hours.control.mode) {
-                .@"24h" => try writer.print("{X:0>2}:{X:0>2}:{X:0>2}", .{
-                    regs.hours.@"24h".hour,
-                    regs.minutes,
-                    regs.seconds.seconds_bcd,
-                }),
-                .@"am/pm" => try writer.print("{X:0>2} {s}:{X:0>2}:{X:0>2}", .{
-                    regs.hours.@"am/pm".hour,
-                    @tagName(regs.hours.@"am/pm".half),
-                    regs.minutes,
-                    regs.seconds.seconds_bcd,
-                }),
-            }
-        }
-
-        if (fmt == .any) {
-            try writer.print("; SWE={}; OUT={}; RS={s} ", .{
-                regs.control.square_wave_enable,
-                regs.control.output_control,
-                @tagName(regs.control.rate_select),
-            });
-        }
-
-        _ = options;
+        try writer.print("; SWE={}; OUT={}; RS={s} ", .{
+            regs.control.square_wave_enable,
+            regs.control.output_control,
+            @tagName(regs.control.rate_select),
+        });
     }
 };

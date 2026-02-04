@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         platform:
           - arm-ashet-vhc
           - arm-ashet-hc
@@ -28,7 +28,7 @@ jobs:
       - name: Setup Zig
         uses: mlugg/setup-zig@v2
         with:
-          version: "0.14.1"
+          version: "0.15.2"
 
       - name: Build ${{ matrix.platform }}
         run: |
@@ -47,7 +47,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
 
     runs-on: ${{matrix.os}}
 
@@ -57,7 +57,7 @@ jobs:
       - name: Setup Zig
         uses: mlugg/setup-zig@v2
         with:
-          version: "0.14.1"
+          version: "0.15.2"
 
       - name: Build Tools
         run: |

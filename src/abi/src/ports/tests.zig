@@ -8,7 +8,7 @@ fn expect_eql_color(expected: Color, actual: Color) error{TestExpectedEqual}!voi
     if (eql)
         return;
 
-    std.debug.print("Expected {} (H={}, S={}, V={}), found {} (H={}, S={}, V={})\n", .{
+    std.debug.print("Expected {f} (H={}, S={}, V={}), found {f} (H={}, S={}, V={})\n", .{
         expected, expected.hue, expected.saturation, expected.value,
         actual,   actual.hue,   actual.saturation,   actual.value,
     });
@@ -62,7 +62,7 @@ fn expect_eql_rgb(expected: Color.RGB888, actual: Color) error{TestExpectedEqual
     if (eql)
         return;
 
-    std.debug.print("Expected {}, found {} (H={}, S={}, V={})\n", .{
+    std.debug.print("Expected {f}, found {f} (H={}, S={}, V={})\n", .{
         expected,
         actual_rgb,
         actual.hue,
@@ -125,7 +125,7 @@ test "color from_rgb, to_rgb bijection" {
         const after = Color.from_rgb(rgb.r, rgb.g, rgb.b);
 
         expect_eql_color(before, after) catch |err| {
-            std.debug.print("index={}, rgb={}, before={}, after={}\n", .{
+            std.debug.print("index={}, rgb={f}, before={f}, after={f}\n", .{
                 index,
                 rgb,
                 before,

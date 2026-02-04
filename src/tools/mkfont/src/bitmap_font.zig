@@ -14,8 +14,8 @@ pub fn validate(font: schema.BitmapFontFile) !bool {
     for (0x20..0x7F) |codepoint| {
         const ascii: u7 = @intCast(codepoint);
         if (!font.glyphs.contains(ascii)) {
-            std.log.warn("Font is missing printable ASCII character '{}' (0x{X:0>2})", .{
-                std.zig.fmtEscapes(&.{ascii}),
+            std.log.warn("Font is missing printable ASCII character '{f}' (0x{X:0>2})", .{
+                std.zig.fmtString(&.{ascii}),
                 ascii,
             });
         }
@@ -26,7 +26,7 @@ pub fn validate(font: schema.BitmapFontFile) !bool {
 
 pub fn generate(
     allocator: std.mem.Allocator,
-    file: std.fs.File,
+    file_writer: *std.fs.File.Writer,
     root_dir: std.fs.Dir,
     font: *schema.BitmapFontFile,
 ) !void {
@@ -160,7 +160,7 @@ pub fn generate(
         // out_glyph.dump("  ");
     }
 
-    try bmp_font_gen.render(allocator, file, builder, .{
+    try bmp_font_gen.render(allocator, file_writer, builder, .{
         .line_height = font.line_height,
     });
 }
@@ -200,7 +200,8 @@ const ImageCache = struct {
             var file = try ic.root.openFile(path, .{});
             defer file.close();
 
-            gop.value_ptr.* = try zigimg.Image.fromFile(ic.arena.allocator(), &file);
+            var image_read_buff: [zigimg.io.DEFAULT_BUFFER_SIZE]u8 = undefined;
+            gop.value_ptr.* = try zigimg.Image.fromFile(ic.arena.allocator(), file, &image_read_buff);
         }
         return gop.value_ptr;
     }

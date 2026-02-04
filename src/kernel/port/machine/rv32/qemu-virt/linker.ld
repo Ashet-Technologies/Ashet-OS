@@ -34,7 +34,7 @@ SECTIONS {
         PROVIDE(__kernel_stack_end = .);
     } > dram
 
-    .data : AT (__kernel_flash_end){
+    .data : {
         __kernel_data_start = .;
 
         *(.data)
@@ -45,7 +45,7 @@ SECTIONS {
 
         . = ALIGN(4);
         __kernel_data_end = .;
-    } > dram
+    } > dram AT> flash
 
     .bss (NOLOAD) : {
         __kernel_bss_start = .;

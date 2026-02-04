@@ -37,10 +37,7 @@ pub const MAC = struct {
         return MAC{ .tuple = v };
     }
 
-    pub fn format(mac: MAC, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(mac: MAC, writer: *std.Io.Writer) !void {
         try writer.print("{X:0>2}:{X:0>2}:{X:0>2}:{X:0>2}:{X:0>2}:{X:0>2}", .{
             mac.tuple[0],
             mac.tuple[1],
@@ -141,20 +138,18 @@ const IPFormatter = struct {
         return IPFormatter{ .addr = addr };
     }
 
-    pub fn format(addr: IPFormatter, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = opt;
+    pub fn format(addr: IPFormatter, writer: *std.Io.Writer) !void {
         try writer.writeAll(std.mem.sliceTo(c.ip4addr_ntoa(@as(*const c.ip4_addr_t, @ptrCast(&addr.addr))), 0));
     }
 };
 
-fn netif_status_callback(netif_c: [*c]c.netif) callconv(.C) void {
+fn netif_status_callback(netif_c: [*c]c.netif) callconv(.c) void {
     const netif: *c.netif = netif_c;
 
-    logger.info("netif status changed ip to {}", .{IPFormatter.new(netif.ip_addr)});
+    logger.info("netif status changed ip to {f}", .{IPFormatter.new(netif.ip_addr)});
 }
 
-fn netif_init(netif_c: [*c]c.netif) callconv(.C) c.err_t {
+fn netif_init(netif_c: [*c]c.netif) callconv(.c) c.err_t {
     const netif: *c.netif = netif_c;
     const nic: *NetworkInterface = @fieldParentPtr("netif", netif);
 
@@ -169,7 +164,7 @@ fn netif_init(netif_c: [*c]c.netif) callconv(.C) c.err_t {
     return c.ERR_OK;
 }
 
-fn netif_output(netif_c: [*c]c.netif, pbuf_c: [*c]c.pbuf) callconv(.C) c.err_t {
+fn netif_output(netif_c: [*c]c.netif, pbuf_c: [*c]c.pbuf) callconv(.c) c.err_t {
     const netif: *c.netif = netif_c;
     const pbuf: *c.pbuf = pbuf_c;
     const nic: *NetworkInterface = @fieldParentPtr("netif", netif);
@@ -216,7 +211,7 @@ pub fn start() !void {
     var index: usize = 0;
     var nics = ashet.drivers.enumerate(.network);
     while (nics.next()) |nic| : (index += 1) {
-        logger.info("initializing NetworkInterface '{c}{d}' (MAC={})...", .{ nic.interface.prefix(), index, nic.address });
+        logger.info("initializing NetworkInterface '{c}{d}' (MAC={f})...", .{ nic.interface.prefix(), index, nic.address });
 
         const netif = &nic.netif;
 
@@ -262,7 +257,7 @@ pub fn start() !void {
 pub fn dumpStats() void {
     var nics = ashet.drivers.enumerate(.network);
     while (nics.next()) |nic| {
-        logger.info("nic {s}: up={} link={} ip={} netmask={} gateway={} dhcp={}", .{
+        logger.info("nic {s}: up={} link={} ip={f} netmask={f} gateway={f} dhcp={}", .{
             nic.netif.name,
             (nic.netif.flags & c.NETIF_FLAG_UP) != 0,
             (nic.netif.flags & c.NETIF_FLAG_LINK_UP) != 0,
@@ -274,7 +269,7 @@ pub fn dumpStats() void {
     }
 }
 
-fn networkThread(_: ?*anyopaque) callconv(.C) u32 {
+fn networkThread(_: ?*anyopaque) callconv(.c) u32 {
     while (true) {
         var nics = ashet.drivers.enumerate(.network);
         while (nics.next()) |nic| {
@@ -442,7 +437,7 @@ fn wrap_lwip_call(comptime func: anytype, comptime error_set: []const LWIP_Error
                 if (return_code == @intFromEnum(err))
                     return @field(anyerror, @errorName(err.to_zig_error()));
             }
-            std.log.err("{} returned unexpected error code {}", .{ ashet.fmtCodeLocation(@intFromPtr(&func)), return_code });
+            std.log.err("{f} returned unexpected error code {}", .{ ashet.fmtCodeLocation(@intFromPtr(&func)), return_code });
             @panic("unexpected return value from LWIP!");
         }
 
@@ -573,13 +568,13 @@ pub const udp = struct {
         fn resolve(call: *ashet.overlapped.AsyncCall, dir: ashet.abi.UdpSocket) error{InvalidHandle}!*Socket {
             const owner = call.resource_owner;
             return ashet.resources.resolve(Socket, owner, dir.as_resource()) catch |err| {
-                logger.warn("process {} used invalid socket handle {}: {s}", .{ owner, dir, @errorName(err) });
+                logger.warn("process {f} used invalid socket handle {f}: {s}", .{ owner, dir, @errorName(err) });
                 return error.InvalidHandle;
             };
         }
     };
 
-    fn handleIncomingPacket(arg: ?*anyopaque, pcb_c: [*c]c.udp_pcb, pbuf_c: [*c]c.pbuf, addr_c: [*c]const c.ip_addr_t, port: u16) callconv(.C) void {
+    fn handleIncomingPacket(arg: ?*anyopaque, pcb_c: [*c]c.udp_pcb, pbuf_c: [*c]c.pbuf, addr_c: [*c]const c.ip_addr_t, port: u16) callconv(.c) void {
         const socket = Socket.from_callback(arg);
         const pcb: *c.udp_pcb = pcb_c;
         const pbuf: *c.pbuf = pbuf_c;
@@ -602,7 +597,7 @@ pub const udp = struct {
 
         const sender = EndPoint.new(unmapIP(addr.*), port);
 
-        logger.debug("received some data via udp: {} bytes from {}", .{ limited_len, sender });
+        logger.debug("received some data via udp: {} bytes from {f}", .{ limited_len, sender });
 
         socket.receive_iop = null;
         call.finalize(abi_udp.ReceiveFrom, .{
@@ -800,12 +795,12 @@ pub const tcp = struct {
     fn resolve_socket(call: *ashet.overlapped.AsyncCall, dir: ashet.abi.TcpSocket) error{InvalidHandle}!*Socket {
         const owner = call.resource_owner;
         return ashet.resources.resolve(Socket, owner, dir.as_resource()) catch |err| {
-            logger.warn("process {} used invalid socket handle {}: {s}", .{ owner, dir, @errorName(err) });
+            logger.warn("process {f} used invalid socket handle {f}: {s}", .{ owner, dir, @errorName(err) });
             return error.InvalidHandle;
         };
     }
 
-    fn tcpErrCallback(arg: ?*anyopaque, err: c.err_t) callconv(.C) void {
+    fn tcpErrCallback(arg: ?*anyopaque, err: c.err_t) callconv(.c) void {
         const sock = Socket.from_callback(arg);
 
         logger.err("tcp: err(arg={*}, err={!})", .{ arg, lwipTry(err) });
@@ -873,7 +868,7 @@ pub const tcp = struct {
         }
     }
 
-    fn tcpConnectedCallback(arg: ?*anyopaque, pcb_c: [*c]c.tcp_pcb, err: c.err_t) callconv(.C) c.err_t {
+    fn tcpConnectedCallback(arg: ?*anyopaque, pcb_c: [*c]c.tcp_pcb, err: c.err_t) callconv(.c) c.err_t {
         const pcb: *c.tcp_pcb = pcb_c;
         const socket = Socket.from_callback(arg);
         const event = socket.op.?.connect;
@@ -881,7 +876,7 @@ pub const tcp = struct {
         // err: An unused error code, always ERR_OK currently ;-)
         std.debug.assert(err == c.ERR_OK);
 
-        logger.debug("tcp: connected(arg={}, pcb={?*}, err={!})", .{ socket, pcb, lwipTry(err) });
+        logger.debug("tcp: connected(arg={*}, pcb={*}, err={!})", .{ socket, pcb, lwipTry(err) });
 
         socket.connected = true;
         socket.op = null;
@@ -943,7 +938,7 @@ pub const tcp = struct {
         }
     }
 
-    fn tcpSentCallback(arg: ?*anyopaque, pcb_c: [*c]c.tcp_pcb, sent: u16) callconv(.C) c.err_t {
+    fn tcpSentCallback(arg: ?*anyopaque, pcb_c: [*c]c.tcp_pcb, sent: u16) callconv(.c) c.err_t {
         const pcb: *c.tcp_pcb = pcb_c;
         const socket = Socket.from_callback(arg);
 
@@ -986,7 +981,7 @@ pub const tcp = struct {
 
     // Sets the callback function that will be called when new data arrives. The callback function will be passed a NULL pbuf to indicate that the remote host has closed the connection.
     // If the callback function returns ERR_OK or ERR_ABRT it must have freed the pbuf, otherwise it must not have freed it.
-    fn tcpRecvCallback(arg: ?*anyopaque, pcb_c: [*c]c.tcp_pcb, pbuf_c: [*c]c.pbuf, err: c.err_t) callconv(.C) c.err_t {
+    fn tcpRecvCallback(arg: ?*anyopaque, pcb_c: [*c]c.tcp_pcb, pbuf_c: [*c]c.pbuf, err: c.err_t) callconv(.c) c.err_t {
         const pcb: *c.tcp_pcb = pcb_c;
         const socket = Socket.from_callback(arg);
 

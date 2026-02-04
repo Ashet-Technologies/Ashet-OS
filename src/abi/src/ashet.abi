@@ -3691,6 +3691,9 @@ namespace io {
 
                 /// During the processing of the operation, a hardware error occurred.
                 item fault = 5;
+
+                /// The operation would've operated on a reserved I2C address.
+                item reserved_address = 6;
             }
         }
     }

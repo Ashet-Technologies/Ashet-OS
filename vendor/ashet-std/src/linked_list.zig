@@ -501,9 +501,7 @@ pub fn DoublyLinkedList(comptime T: type, comptime options: LinkedListOptions) t
         const Addr = struct {
             ptr: ?*const anyopaque,
 
-            pub fn format(addr: Addr, fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-                _ = fmt;
-                _ = opt;
+            pub fn format(addr: Addr, writer: *std.Io.Writer) !void {
                 if (addr.ptr) |ptr| {
                     try writer.print("0x{X:0>8}", .{
                         @intFromPtr(ptr),

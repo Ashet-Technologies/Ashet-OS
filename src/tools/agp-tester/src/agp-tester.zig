@@ -6,8 +6,8 @@ const gif = @import("gif.zig");
 
 const ColorIndex = agp.Color;
 
-const mono_6_font: agp.Font = @constCast(@ptrCast(&@as(u8, 0)));
-const sans_var_font: agp.Font = @constCast(@ptrCast(&@as(u8, 1)));
+const mono_6_font: agp.Font = @ptrCast(@constCast(&@as(u8, 0)));
+const sans_var_font: agp.Font = @ptrCast(@constCast(&@as(u8, 1)));
 
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -439,10 +439,10 @@ fn verify_encoder_decoder(allocator: std.mem.Allocator) !void {
     }
 
     const encoded_cmd_stream = blk: {
-        var stream = std.ArrayList(u8).init(allocator);
+        var stream: std.Io.Writer.Allocating = .init(allocator);
         defer stream.deinit();
 
-        var encoder = agp.encoder(stream.writer());
+        var encoder = agp.encoder(&stream.writer);
 
         for (input_cmd_stream) |cmd| {
             try encoder.encode(cmd);
@@ -482,7 +482,7 @@ fn rand_cmd(rng: std.Random, buffer_range: []const u8) agp.Command {
     const cmd_id = rng.enumValue(agp.CommandByte);
     switch (cmd_id) {
         inline else => |tag| {
-            const Cmd = agp.Command.type_map.get(tag);
+            const Cmd = agp.Command.type_map(tag);
 
             var cmd: Cmd = undefined;
 

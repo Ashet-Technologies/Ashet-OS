@@ -173,7 +173,7 @@ fn transform_encoding_map(raw_map: std.json.Value) ![256]?u21 {
         const json_value = kv.value_ptr.*;
 
         const index = std.fmt.parseInt(u8, key_str, 0) catch {
-            std.log.err("invalid encoding index: '{}'", .{
+            std.log.err("invalid encoding index: '{f}'", .{
                 std.unicode.fmtUtf8(key_str),
             });
             return error.InvalidKey;
@@ -187,7 +187,7 @@ fn transform_encoding_map(raw_map: std.json.Value) ![256]?u21 {
                 return error.InvalidCodePoint;
             },
             .string => |str| std.fmt.parseInt(u21, str, 0) catch {
-                std.log.err("codepoint out of range: '{}'", .{
+                std.log.err("codepoint out of range: '{f}'", .{
                     std.unicode.fmtUtf8(str),
                 });
                 return error.InvalidCodePoint;
@@ -225,9 +225,9 @@ fn transform_bitmap_glyph_map(allocator: std.mem.Allocator, raw_map: std.json.Va
         const json_value = kv.value_ptr.*;
 
         if ((std.unicode.utf8CountCodepoints(key_str) catch 0) != 1) {
-            std.log.err("invalid glyph codepoint: '{}' ({})", .{
+            std.log.err("invalid glyph codepoint: '{f}' ({X})", .{
                 std.unicode.fmtUtf8(key_str),
-                std.fmt.fmtSliceHexUpper(key_str),
+                key_str,
             });
             return error.InvalidKey;
         }
@@ -246,9 +246,9 @@ fn transform_bitmap_glyph_map(allocator: std.mem.Allocator, raw_map: std.json.Va
 
         const gop = try output.getOrPut(codepoint);
         if (gop.found_existing) {
-            std.log.err("duplicate glyph codepoint: '{}' ({})", .{
+            std.log.err("duplicate glyph codepoint: '{f}' ({X})", .{
                 std.unicode.fmtUtf8(key_str),
-                std.fmt.fmtSliceHexUpper(key_str),
+                key_str,
             });
             return error.DuplicateKey;
         }
@@ -273,9 +273,9 @@ fn transform_turtle_glyph_map(allocator: std.mem.Allocator, raw_map: std.json.Va
         const json_value = kv.value_ptr.*;
 
         if ((std.unicode.utf8CountCodepoints(key_str) catch 0) != 1) {
-            std.log.err("invalid glyph codepoint: '{}' ({})", .{
+            std.log.err("invalid glyph codepoint: '{f}' ({X})", .{
                 std.unicode.fmtUtf8(key_str),
-                std.fmt.fmtSliceHexUpper(key_str),
+                key_str,
             });
             return error.InvalidKey;
         }
@@ -290,9 +290,9 @@ fn transform_turtle_glyph_map(allocator: std.mem.Allocator, raw_map: std.json.Va
 
         const gop = try output.getOrPut(codepoint);
         if (gop.found_existing) {
-            std.log.err("duplicate glyph codepoint: '{}' ({})", .{
+            std.log.err("duplicate glyph codepoint: '{f}' ({X})", .{
                 std.unicode.fmtUtf8(key_str),
-                std.fmt.fmtSliceHexUpper(key_str),
+                key_str,
             });
             return error.DuplicateKey;
         }

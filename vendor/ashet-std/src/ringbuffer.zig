@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
+/// A non-thread-safe ring buffer implementation
 pub fn RingBuffer(comptime T: type, comptime cap: comptime_int) type {
     const IndexType = if (cap <= 0x40)
         u8
@@ -78,6 +79,17 @@ pub fn RingBuffer(comptime T: type, comptime cap: comptime_int) type {
             std.debug.assert((buffer.write - buffer.read) <= buffer.items.len);
         }
     };
+}
+
+test "validate capacity" {
+    var buffer: RingBuffer(usize, 23) = .{};
+
+    for (0..buffer.items.len) |i| {
+        buffer.push(i);
+    }
+    for (0..buffer.items.len) |i| {
+        try std.testing.expectEqual(i, buffer.pull());
+    }
 }
 
 test RingBuffer {

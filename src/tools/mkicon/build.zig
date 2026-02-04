@@ -11,9 +11,11 @@ pub fn build(b: *std.Build) void {
 
     const exe = b.addExecutable(.{
         .name = "mkicon",
-        .root_source_file = b.path("mkicon.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("mkicon.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     exe.root_module.addImport("zigimg", zigimg_mod);
     exe.root_module.addImport("ashet-abi", abi_mod);
@@ -32,13 +34,18 @@ pub const Converter = struct {
     pub fn create(builder: *std.Build, dep: *std.Build.Dependency) Converter {
         const exe = dep.artifact("mkicon");
 
-        return Converter{
+        return .{
             .exe = exe,
             .builder = builder,
         };
     }
 
-    pub fn convert(conv: Converter, source: std.Build.LazyPath, basename: []const u8, options: ConvertOptions) std.Build.LazyPath {
+    pub fn convert(
+        conv: Converter,
+        source: std.Build.LazyPath,
+        basename: []const u8,
+        options: ConvertOptions,
+    ) std.Build.LazyPath {
         const mkicon = conv.builder.addRunArtifact(conv.exe);
 
         mkicon.addFileArg(source);

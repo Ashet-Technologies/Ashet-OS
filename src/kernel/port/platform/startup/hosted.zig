@@ -22,6 +22,6 @@ export fn hang() noreturn {
     @breakpoint();
     while (true) {
         // burn cycles:
-        asm volatile ("" ::: "memory");
+        asm volatile ("" ::: .{ .memory = true });
     }
 }

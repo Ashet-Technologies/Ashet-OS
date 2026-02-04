@@ -47,7 +47,9 @@ pub fn read(dri: *Driver, block_num: u64, buffer: []u8) BlockDevice.ReadError!vo
 
     const offset = 512 * block_num;
     disk.file.seekTo(offset) catch return error.Fault;
-    disk.file.reader().readNoEof(buffer) catch return error.Fault;
+    const len = disk.file.readAll(buffer) catch return error.Fault;
+    if (len != buffer.len)
+        return error.Fault;
 }
 
 pub fn write(dri: *Driver, block_num: u64, buffer: []const u8) BlockDevice.WriteError!void {

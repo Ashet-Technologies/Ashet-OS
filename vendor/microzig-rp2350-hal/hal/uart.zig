@@ -44,7 +44,7 @@ pub const ConfigError = error{
 
 pub const Config = struct {
     clock_config: clocks.config.Global,
-    baud_rate: u32,
+    baud_rate: u32 = 115200,
     word_bits: WordBits = .eight,
     stop_bits: StopBits = .one,
     parity: Parity = .none,
@@ -62,6 +62,8 @@ pub const ReceiveError = error{
     FramingError,
     Timeout,
 };
+
+pub const ReceiveBlockingError = ReceiveError || error{Timeout};
 
 pub const ErrorStates = packed struct(u4) {
     overrun_error: bool = false,
@@ -246,6 +248,37 @@ pub const UART = enum(u1) {
         };
     }
 
+    /// Enables/disables interrupts for a given UART.
+    pub inline fn set_interrupts_enabled(uart: UART, enable: struct {
+        rim: ?bool = null,
+        ctsm: ?bool = null,
+        dcdm: ?bool = null,
+        dsrm: ?bool = null,
+        rx: ?bool = null,
+        tx: ?bool = null,
+        rt: ?bool = null,
+        fe: ?bool = null,
+        pe: ?bool = null,
+        be: ?bool = null,
+        oe: ?bool = null,
+    }) void {
+        const uart_regs = uart.get_regs();
+        const reg = uart_regs.UARTIMSC.read();
+        uart_regs.UARTIMSC.write(.{
+            .RIMIM = if (enable.rim) |e| @intFromBool(e) else reg.RIMIM,
+            .CTSMIM = if (enable.ctsm) |e| @intFromBool(e) else reg.CTSMIM,
+            .DCDMIM = if (enable.dcdm) |e| @intFromBool(e) else reg.DCDMIM,
+            .DSRMIM = if (enable.dsrm) |e| @intFromBool(e) else reg.DSRMIM,
+            .TXIM = if (enable.tx) |e| @intFromBool(e) else reg.TXIM,
+            .RXIM = if (enable.rx) |e| @intFromBool(e) else reg.RXIM,
+            .RTIM = if (enable.rt) |e| @intFromBool(e) else reg.RTIM,
+            .FEIM = if (enable.fe) |e| @intFromBool(e) else reg.FEIM,
+            .PEIM = if (enable.pe) |e| @intFromBool(e) else reg.PEIM,
+            .BEIM = if (enable.be) |e| @intFromBool(e) else reg.BEIM,
+            .OEIM = if (enable.oe) |e| @intFromBool(e) else reg.OEIM,
+        });
+    }
+
     /// Write bytes to uart TX line and block until transaction is complete.
     ///
     /// Note that this does NOT disable reception while this is happening,
@@ -266,7 +299,7 @@ pub const UART = enum(u1) {
     pub fn writev_blocking(uart: UART, payloads: []const []const u8, deadline: mdf.time.Deadline) TransmitError!void {
         const uart_regs = uart.get_regs();
 
-        var iter = microzig.utilities.Slice_Vector([]const u8).init(payloads).iterator();
+        var iter = microzig.utilities.SliceVector([]const u8).init(payloads).iterator();
         while (iter.next_chunk(null)) |payload| {
             var offset: usize = uart.prime_tx_fifo(payload);
             while (offset < payload.len) {
@@ -357,7 +390,7 @@ pub const UART = enum(u1) {
     /// complete the transaction. Errors are preserved for further inspection,
     /// so must be cleared with clear_errors() before another transaction is attempted.
     pub fn readv_blocking(uart: UART, buffers: []const []u8, deadline: mdf.time.Deadline) ReceiveError!void {
-        var iter = microzig.utilities.Slice_Vector([]u8).init(buffers).iterator();
+        var iter = microzig.utilities.SliceVector([]u8).init(buffers).iterator();
         while (iter.next_chunk(null)) |buffer| {
             for (buffer) |*byte| {
                 while (!uart.is_readable()) {
@@ -369,14 +402,20 @@ pub const UART = enum(u1) {
     }
 
     /// Convenience function for waiting for a single byte to come across the RX line.
-    pub fn read_word(uart: UART, deadline: mdf.time.Deadline) ReceiveError!u8 {
+    pub fn read_word_blocking(uart: UART, deadline: mdf.time.Deadline) ReceiveBlockingError!u8 {
         var byte: [1]u8 = undefined;
         try uart.read_blocking(&byte, deadline);
         return byte[0];
     }
 
+    /// Read a single byte from the RX line if available otherwise returns `null`.
+    pub fn read_word(uart: UART) ReceiveError!?u8 {
+        if (!uart.is_readable()) return null;
+        return try uart.read_rx_fifo_with_error_check();
+    }
+
     /// Wraps read_blocking() for use as a GenericReader
-    fn generic_reader_fn(uart: UART_With_Timeout, buffer: []u8) ReceiveError!usize {
+    fn generic_reader_fn(uart: UART_With_Timeout, buffer: []u8) ReceiveBlockingError!usize {
         try uart.instance.read_blocking(buffer, uart.deadline);
         return buffer.len;
     }
@@ -423,8 +462,8 @@ pub const UART = enum(u1) {
             break :baud_fbrd 0;
         } else @as(u6, @intCast(((@as(u7, @truncate(baud_rate_div))) + 1) / 2));
 
-        uart_regs.UARTIBRD.write(.{ .BAUD_DIVINT = baud_ibrd, .padding = 0 });
-        uart_regs.UARTFBRD.write(.{ .BAUD_DIVFRAC = baud_fbrd, .padding = 0 });
+        uart_regs.UARTIBRD.write(.{ .BAUD_DIVINT = baud_ibrd });
+        uart_regs.UARTFBRD.write(.{ .BAUD_DIVFRAC = baud_fbrd });
 
         // PL011 needs a (dummy) LCR_H write to latch in the divisors.
         // We don't want to actually change LCR_H contents here.

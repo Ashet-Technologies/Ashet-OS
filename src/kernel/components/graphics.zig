@@ -51,7 +51,7 @@ pub const Framebuffer = struct {
     pub fn create_memory(width: u16, height: u16) error{SystemResources}!*Framebuffer {
         const stride: usize = std.mem.alignForward(usize, width, 4);
 
-        const back_buffer = ashet.memory.allocator.alignedAlloc(Color, 4, stride * height) catch return error.SystemResources;
+        const back_buffer = ashet.memory.allocator.alignedAlloc(Color, .@"4", stride * height) catch return error.SystemResources;
         errdefer ashet.memory.allocator.free(back_buffer);
 
         const fb = ashet.memory.type_pool(Framebuffer).alloc() catch return error.SystemResources;

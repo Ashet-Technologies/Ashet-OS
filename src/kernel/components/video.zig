@@ -123,7 +123,7 @@ pub fn initialize() !void {
 
             const output = &video_outputs[index];
 
-            logger.info("found video output {}: {}", .{
+            logger.info("found video output {}: {f}", .{
                 index,
                 output.get_resolution(),
             });
@@ -215,7 +215,7 @@ pub const defaults = struct {
         .width = 256,
         .height = 128,
         .stride = 256,
-        .base = @constCast(@ptrCast(@alignCast(@embedFile("splashscreen-256x128.raw")))),
+        .base = @ptrCast(@alignCast(@constCast(@embedFile("splashscreen-256x128.raw")))),
     };
 
     /// The default border color if the screen is downscaled

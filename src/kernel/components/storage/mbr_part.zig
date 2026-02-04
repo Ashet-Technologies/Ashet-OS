@@ -64,9 +64,7 @@ pub const CHS = packed struct(u24) {
         };
     }
 
-    pub fn format(chs: CHS, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(chs: CHS, writer: *std.Io.Writer) !void {
         try writer.print("CHS({}:{}:{})", .{
             chs.cylinder, chs.head, chs.sector,
         });

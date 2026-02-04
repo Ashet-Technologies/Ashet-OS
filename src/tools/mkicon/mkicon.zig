@@ -57,7 +57,8 @@ pub fn main() !u8 {
 
     // std.log.info("processing {s}", .{input_file_name});
 
-    var raw_image = try zigimg.Image.fromFilePath(arena.allocator(), input_file_name);
+    var raw_image_buffer: [zigimg.io.DEFAULT_BUFFER_SIZE]u8 = undefined;
+    var raw_image = try zigimg.Image.fromFilePath(arena.allocator(), input_file_name, &raw_image_buffer);
     if (raw_image.width != size[0] or raw_image.height != size[1]) {
         std.debug.panic("image must be {}x{}", .{ size[0], size[1] });
     }
@@ -165,8 +166,9 @@ pub fn main() !u8 {
     var out_file = try std.fs.cwd().createFile(output_file_name, .{});
     defer out_file.close();
 
-    var buffered_writer = std.io.bufferedWriter(out_file.writer());
-    var writer = buffered_writer.writer();
+    var out_file_buffer: [2048]u8 = undefined;
+    var out_file_writer = out_file.writer(&out_file_buffer);
+    const writer = &out_file_writer.interface;
 
     switch (cli.options.format) {
         .abm => {
@@ -196,7 +198,7 @@ pub fn main() !u8 {
         },
     }
 
-    try buffered_writer.flush();
+    try writer.flush();
 
     return 0;
 }

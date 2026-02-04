@@ -14,7 +14,7 @@ pub const SharedMemory = struct {
         errdefer ashet.memory.type_pool(SharedMemory).free(shm);
 
         shm.* = .{
-            .buffer = try ashet.memory.allocator.alignedAlloc(u8, alignment, size),
+            .buffer = try ashet.memory.allocator.alignedAlloc(u8, .fromByteUnits(alignment), size),
         };
 
         return shm;

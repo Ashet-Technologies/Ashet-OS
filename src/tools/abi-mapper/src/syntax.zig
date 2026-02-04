@@ -50,13 +50,8 @@ const TokenType = enum {
     whitespace,
     comment,
 
-    pub fn format(tt: TokenType, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-
-        var buf: [64]u8 = undefined;
-        const str = try std.fmt.bufPrint(&buf, ".{}", .{std.zig.fmtId(@tagName(tt))});
-
-        try std.fmt.formatBuf(str, opt, writer);
+    pub fn format(tt: TokenType, writer: *std.Io.Writer) !void {
+        try writer.print(".{f}", .{std.zig.fmtId(@tagName(tt))});
     }
 };
 
@@ -150,22 +145,22 @@ pub const Parser = struct {
     named_types: std.StringArrayHashMapUnmanaged(*TypeNode) = .empty,
 
     pub fn accept_document(parser: *Parser) !Document {
-        var doc: std.ArrayList(Node) = .init(parser.allocator);
-        defer doc.deinit();
+        var doc: std.ArrayList(Node) = .empty;
+        defer doc.deinit(parser.allocator);
 
         while (try parser.core.peek() != null) {
             const node = try parser.accept_node();
-            try doc.append(node);
+            try doc.append(parser.allocator, node);
         }
 
         return .{
-            .nodes = try doc.toOwnedSlice(),
+            .nodes = try doc.toOwnedSlice(parser.allocator),
         };
     }
 
     fn accept_node(parser: *Parser) !Node {
-        var docs: std.ArrayList([]const u8) = .init(parser.allocator);
-        defer docs.deinit();
+        var docs: std.ArrayList([]const u8) = .empty;
+        defer docs.deinit(parser.allocator);
 
         while (parser.accept(.doc_comment)) |token| {
             std.debug.assert(token.type == .doc_comment);
@@ -174,7 +169,7 @@ pub const Parser = struct {
 
             const comment = token.text[3..];
 
-            try docs.append(comment);
+            try docs.append(parser.allocator, comment);
         } else |_| {}
 
         const tok = try parser.accept_any(&.{
@@ -220,14 +215,14 @@ pub const Parser = struct {
 
                 try parser.expect(.@"{");
 
-                var children: std.ArrayList(Node) = .init(parser.allocator);
-                defer children.deinit();
+                var children: std.ArrayList(Node) = .empty;
+                defer children.deinit(parser.allocator);
 
                 while (true) {
                     if (try parser.try_accept(.@"}")) |_|
                         break;
 
-                    const child = try children.addOne();
+                    const child = try children.addOne(parser.allocator);
                     errdefer _ = children.pop();
 
                     child.* = try parser.accept_node();
@@ -248,7 +243,7 @@ pub const Parser = struct {
                             => |tag| @field(DeclarationType, @tagName(tag)),
                             else => unreachable,
                         },
-                        .children = try children.toOwnedSlice(),
+                        .children = try children.toOwnedSlice(parser.allocator),
                     },
                 };
             },
@@ -368,7 +363,7 @@ pub const Parser = struct {
         };
 
         return .{
-            .doc_comment = try docs.toOwnedSlice(),
+            .doc_comment = try docs.toOwnedSlice(parser.allocator),
             .location = tok.location,
             .type = node_type,
         };
@@ -393,8 +388,8 @@ pub const Parser = struct {
             // compound type
             try parser.expect(.@"{");
 
-            var children: std.ArrayList(FieldInitNode) = .init(parser.allocator);
-            defer children.deinit();
+            var children: std.ArrayList(FieldInitNode) = .empty;
+            defer children.deinit(parser.allocator);
 
             if (try parser.try_accept(.@"}")) |_| {
                 // done
@@ -405,7 +400,7 @@ pub const Parser = struct {
                     try parser.expect(.@"=");
                     const value = try parser.accept_value();
 
-                    try children.append(.{
+                    try children.append(parser.allocator, .{
                         .location = tok.location,
                         .name = name,
                         .value = value,
@@ -419,7 +414,7 @@ pub const Parser = struct {
             }
 
             return .{
-                .compound = try children.toOwnedSlice(),
+                .compound = try children.toOwnedSlice(parser.allocator),
             };
         }
 
@@ -570,8 +565,8 @@ pub const Parser = struct {
         }
 
         if (try parser.try_accept(.fnptr)) |_| {
-            var params: std.ArrayList(*const TypeNode) = .init(parser.allocator);
-            defer params.deinit();
+            var params: std.ArrayList(*const TypeNode) = .empty;
+            defer params.deinit(parser.allocator);
 
             try parser.expect(.@"(");
             blk: {
@@ -580,7 +575,7 @@ pub const Parser = struct {
                 while (true) {
                     const param = try parser.accept_type();
 
-                    try params.append(param);
+                    try params.append(parser.allocator, param);
 
                     if (try parser.try_accept(.@")")) |_|
                         break :blk;
@@ -593,7 +588,7 @@ pub const Parser = struct {
 
             return .{
                 .fnptr = .{
-                    .parameters = try params.toOwnedSlice(),
+                    .parameters = try params.toOwnedSlice(parser.allocator),
                     .return_type = return_type,
                 },
             };
@@ -669,7 +664,7 @@ pub const Parser = struct {
 
         const maybe_next = parser.core.nextToken() catch |err| switch (err) {
             error.UnexpectedCharacter => {
-                std.log.err("unexpected character at {}", .{parser.core.tokenizer.current_location});
+                std.log.err("unexpected character at {f}", .{parser.core.tokenizer.current_location});
                 return error.UnexpectedCharacter;
             },
         };

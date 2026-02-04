@@ -1,7 +1,6 @@
 const std = @import("std");
 const shimizu_build = @import("shimizu");
 const abiBuild = @import("ashet-abi");
-const regz = @import("regz");
 const Platform = abiBuild.Platform;
 
 pub const Machine = @import("port/machine_id.zig").MachineID;
@@ -36,7 +35,7 @@ pub fn build(b: *std.Build) void {
         .single_threaded = true,
     });
     const zfat_dep = b.dependency("zfat", .{
-        .@"no-libc" = true,
+        .libc = true,
         .target = kernel_target,
         .optimize = optimize,
         .max_long_name_len = @as(u8, 121),
@@ -104,7 +103,7 @@ pub fn build(b: *std.Build) void {
     const xcvt_mod = xcvt_dep.module("cvt");
     const shimizu_mod = shimizu_dep.module("shimizu");
     const wayland_protocols_mod = shimizu_dep.module("wayland-protocols");
-    const zig_mod = zigx_dep.module("x");
+    const zig_mod = zigx_dep.module("x11");
     const expcard_mod = expcard_dep.module("expcard");
 
     // Build:
@@ -189,7 +188,6 @@ pub fn build(b: *std.Build) void {
         const regz_exe = regz_dep.artifact("regz");
 
         const regz_run = b.addRunArtifact(regz_exe);
-        regz_run.addArg("--microzig");
         regz_run.addArg("--format");
         regz_run.addArg("svd");
 
@@ -198,25 +196,8 @@ pub fn build(b: *std.Build) void {
 
         const rp2350_register_file = rp2350_register_dir.path(b, "RP2350.zig");
 
-        {
-            const patches = @import("port/machine/arm/ashet-hc/patches/rp2350_arm.zig").patches;
-
-            if (patches.len > 0) {
-                // write patches to file
-                const patch_ndjson = serialize_patches(
-                    b,
-                    patches,
-                );
-                const write_file_step = b.addWriteFiles();
-                const patch_file = write_file_step.add(
-                    "patch.ndjson",
-                    patch_ndjson,
-                );
-
-                regz_run.addArg("--patch_path");
-                regz_run.addFileArg(patch_file);
-            }
-        }
+        regz_run.addArg("--patch_path");
+        regz_run.addFileArg(b.path("port/machine/arm/ashet-hc/patches/rp2350.zon"));
 
         regz_run.addFileArg(b.path("port/machine/arm/ashet-hc/rp2350.svd"));
 
@@ -242,6 +223,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = hal_dep.path("hal.zig"),
             .imports = &.{
                 .{ .name = "microzig", .module = microzig_shim_mod },
+                .{ .name = "bounded-array", .module = microzig_shim_mod },
             },
         });
 
@@ -266,19 +248,21 @@ pub fn build(b: *std.Build) void {
 
     const kernel_exe = b.addExecutable(.{
         .name = "kernel",
-        .root_source_file = start_file,
-        .target = kernel_target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = start_file,
+            .target = kernel_target,
+            .optimize = optimize,
+        }),
     });
 
     if (machine_id == .@"arm-ashet-hc" and optimize == .Debug) {
         std.debug.print("arm-ashet-hc has no C sanitization enabled in Debug mode!\nSee https://github.com/ziglang/zig/issues/23052 and https://github.com/ziglang/zig/issues/23216 for more details!\n", .{});
-        kernel_exe.root_module.sanitize_c = false;
+        kernel_exe.root_module.sanitize_c = .off;
     }
 
     if (kernel_target.result.cpu.arch.isThumb()) {
         // Disable LTO on arm as it fails hard on the linker:
-        kernel_exe.want_lto = false;
+        kernel_exe.lto = .none;
     }
 
     kernel_exe.step.dependOn(machine_info_module.root_source_file.?.generated.file.step);
@@ -318,9 +302,27 @@ pub fn build(b: *std.Build) void {
     } else {
         const libc = libc_dep.artifact("foundation");
 
-        lwip_mod.addIncludePath(libc.getEmittedIncludeTree());
+        const genfile_exe = b.addExecutable(.{
+            .name = "genfile",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("build-utils/genfile.zig"),
+                .target = b.graph.host,
+                .optimize = .Debug,
+            }),
+        });
 
-        zfat_mod.addIncludePath(libc.getEmittedIncludeTree());
+        const gen_libc_txt = b.addRunArtifact(genfile_exe);
+        gen_libc_txt.addPrefixedDirectoryArg("include_dir=", libc.getEmittedIncludeTree());
+        gen_libc_txt.addPrefixedDirectoryArg("sys_include_dir=", libc.getEmittedIncludeTree());
+        gen_libc_txt.addPrefixedDirectoryArg("crt_dir=", libc.getEmittedBinDirectory());
+        gen_libc_txt.addArg("msvc_lib_dir=");
+        gen_libc_txt.addArg("kernel32_lib_dir=");
+        gen_libc_txt.addArg("gcc_dir=");
+
+        const libc_txt_path = gen_libc_txt.captureStdOut();
+
+        kernel_exe.setLibCFile(libc_txt_path);
+        kernel_exe.linkLibC();
 
         kernel_exe.linkLibrary(libc);
     }
@@ -480,11 +482,7 @@ const arm_cortex_m33: std.Target.Query = .{
     .cpu_model = .{
         .explicit = &std.Target.arm.cpu.cortex_m33,
     },
-    .cpu_features_sub = std.Target.arm.featureSet(&.{
-        // Disable GPU in kernel
-        .slowfpvfmx,
-        .slowfpvmlx,
-    }),
+    .cpu_features_sub = std.Target.arm.featureSet(&.{}),
 };
 
 const generic_rv32: std.Target.Query = .{
@@ -508,36 +506,25 @@ fn renderMachineInfo(
     // machine_spec: *const build_targets.MachineSpec,
     // platform_spec: *const build_targets.PlatformSpec,
 ) ![]const u8 {
-    var stream = std.ArrayList(u8).init(b.allocator);
+    var stream: std.Io.Writer.Allocating = .init(b.allocator);
     defer stream.deinit();
 
-    const writer = stream.writer();
+    const writer = &stream.writer;
 
     try writer.writeAll("//! This is a machine-generated description of the Ashet OS target machine.\n\n");
 
-    try writer.print("pub const machine_id = .{};\n", .{
+    try writer.print("pub const machine_id = .{f};\n", .{
         std.zig.fmtId(@tagName(machine_id)),
     });
-    try writer.print("pub const machine_name = \"{}\";\n", .{
-        std.zig.fmtEscapes(machine_id.get_display_name()),
+    try writer.print("pub const machine_name = \"{f}\";\n", .{
+        std.zig.fmtString(machine_id.get_display_name()),
     });
-    try writer.print("pub const platform_id = .{};\n", .{
+    try writer.print("pub const platform_id = .{f};\n", .{
         std.zig.fmtId(@tagName(platform_id)),
     });
-    try writer.print("pub const platform_name = \"{}\";\n", .{
-        std.zig.fmtEscapes(platform_id.get_display_name()),
+    try writer.print("pub const platform_name = \"{f}\";\n", .{
+        std.zig.fmtString(platform_id.get_display_name()),
     });
 
     return try stream.toOwnedSlice();
-}
-
-fn serialize_patches(b: *std.Build, patches: []const regz.patch.Patch) []const u8 {
-    var buf = std.ArrayList(u8).init(b.allocator);
-
-    for (patches) |patch| {
-        std.json.stringify(patch, .{}, buf.writer()) catch @panic("OOM");
-        buf.writer().writeByte('\n') catch @panic("OOM");
-    }
-
-    return buf.toOwnedSlice() catch @panic("OOM");
 }

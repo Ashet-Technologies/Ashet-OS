@@ -32,7 +32,7 @@ const WindowEvent = union(ashet.abi.WindowEvent.Type) {
     window_resized,
 };
 
-const WindowList = std.DoublyLinkedList(void);
+const WindowList = std.DoublyLinkedList;
 const WindowNode = WindowList.Node;
 
 meta_pressed: bool = false,
@@ -699,7 +699,7 @@ const MouseAction = union(enum) {
 };
 
 pub const Window = struct {
-    node: WindowList.Node = .{ .data = {} },
+    node: WindowList.Node = .{},
 
     handle: ashet.abi.Window,
 
@@ -777,11 +777,29 @@ pub const Window = struct {
         return rel_event;
     }
 
-    const ButtonCollection = std.BoundedArray(WindowButton, std.enums.values(ButtonEvent).len);
+    const ButtonCollection = struct {
+        buttons: [std.enums.values(ButtonEvent).len]WindowButton,
+        count: usize,
+
+        const empty: ButtonCollection = .{
+            .buttons = undefined,
+            .count = 0,
+        };
+
+        fn slice(bc: *const ButtonCollection) []const WindowButton {
+            return bc.buttons[0..bc.count];
+        }
+
+        fn append(bc: *ButtonCollection, button: WindowButton) void {
+            std.debug.assert(bc.count < bc.buttons.len);
+            bc.buttons[bc.count] = button;
+            bc.count += 1;
+        }
+    };
 
     pub fn get_buttons(window: *const Window) ButtonCollection {
         const rectangle = window.screenRectangle();
-        var buttons = ButtonCollection{};
+        var buttons: ButtonCollection = .empty;
 
         var top_row = Rectangle{
             .x = rectangle.x +| @as(u15, @intCast(rectangle.width)) -| 11,
@@ -790,24 +808,24 @@ pub const Window = struct {
             .height = 11,
         };
 
-        buttons.appendAssumeCapacity(WindowButton{ .bounds = top_row, .event = .close });
+        buttons.append(.{ .bounds = top_row, .event = .close });
 
         if (window.manager.can_window_maximize(window)) {
             top_row.x -= 10;
             if (window.manager.is_window_maximized(window)) {
-                buttons.appendAssumeCapacity(WindowButton{ .bounds = top_row, .event = .restore });
+                buttons.append(.{ .bounds = top_row, .event = .restore });
             } else {
-                buttons.appendAssumeCapacity(WindowButton{ .bounds = top_row, .event = .maximize });
+                buttons.append(.{ .bounds = top_row, .event = .maximize });
             }
         }
         if (window.manager.can_window_minimize(window)) {
             top_row.x -= 10;
-            buttons.appendAssumeCapacity(WindowButton{ .bounds = top_row, .event = .minimize });
+            buttons.append(.{ .bounds = top_row, .event = .minimize });
         }
 
         if (window.manager.is_window_resizable(window) and !window.is_maximized()) {
-            buttons.appendAssumeCapacity(WindowButton{
-                .bounds = Rectangle{
+            buttons.append(.{
+                .bounds = .{
                     .x = rectangle.x + @as(u15, @intCast(rectangle.width)) - 11,
                     .y = rectangle.y + @as(u15, @intCast(rectangle.height)) - 11,
                     .width = 11,

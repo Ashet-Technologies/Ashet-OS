@@ -13,17 +13,16 @@
         return @ptrFromInt(@intFromEnum(resource));
     }
 
-    pub fn format(src: SystemResource, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = options;
-        if (fmt.len == 1 and fmt[0] == 'T') {
-            if (resources.get_type(src)) |src_type| {
-                try writer.print("SystemResource(0x{X:0>8}, type={s})", .{ @intFromEnum(src), @tagName(src_type) });
-            } else |_| {
-                try writer.print("SystemResource(0x{X:0>8}, bad handle)", .{@intFromEnum(src)});
-            }
-        } else {
-            try writer.print("SystemResource(0x{X:0>8})", .{@intFromEnum(src)});
+    pub fn formatType(src: SystemResource, writer: *std.Io.Writer) !void {
+        if (resources.get_type(src)) |src_type| {
+            try writer.print("SystemResource(0x{X:0>8}, type={s})", .{ @intFromEnum(src), @tagName(src_type) });
+        } else |_| {
+            try writer.print("SystemResource(0x{X:0>8}, bad handle)", .{@intFromEnum(src)});
         }
+    }
+
+    pub fn format(src: SystemResource, writer: *std.Io.Writer) !void {
+        try writer.print("SystemResource(0x{X:0>8})", .{@intFromEnum(src)});
     }
 </patch>
 <patch SystemResource.Type>
@@ -97,9 +96,14 @@
     }
 </patch>
 <patch network.EndPoint>
-  pub fn new(ip: IP, port: u16) EndPoint {
+    pub fn new(ip: IP, port: u16) EndPoint {
         return EndPoint{ .ip = ip, .port = port };
     }
+
+    pub fn format(ep: EndPoint, writer: *std.Io.Writer) !void {
+        try writer.print("{f}:{d}", .{ ep.ip, ep.port });
+    }
+
 </patch>
 <patch network.IP>
   pub fn ipv4(addr: [4]u8) IP {
@@ -110,17 +114,15 @@
         return IP{ .type = .ipv6, .addr = .{ .v6 = .{ .addr = addr, .zone = zone } } };
     }
 
-    pub fn format(ip: IP, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(ip: IP, writer: *std.Io.Writer) !void {
         switch (ip.type) {
-            .ipv4 => try ip.addr.v4.format(fmt, opt, writer),
-            .ipv6 => try ip.addr.v6.format(fmt, opt, writer),
+            .ipv4 => try ip.addr.v4.format(writer),
+            .ipv6 => try ip.addr.v6.format(writer),
         }
     }
 </patch>
 <patch network.IPv4>
-  pub fn format(ip: IPv4, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = opt;
+  pub fn format(ip: IPv4, writer: *std.Io.Writer) !void {
         try writer.print("{}.{}.{}.{}", .{
             ip.addr[0],
             ip.addr[1],
@@ -130,9 +132,7 @@
     }
 </patch>
 <patch network.IPv6>
-  pub fn format(ip: IPv6, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = opt;
+  pub fn format(ip: IPv6, writer: *std.Io.Writer) !void {
         try writer.print("[{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}:{X:0>2}{X:0>2}/{}]", .{
             ip.addr[0],
             ip.addr[1],
@@ -190,9 +190,7 @@
         );
     }
 
-    pub fn format(point: Point, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(point: Point, writer: *std.Io.Writer) !void {
         try writer.print("Point({},{})", .{
             point.x, point.y,
         });
@@ -208,9 +206,7 @@
         return (a.width == b.width) and (a.height == b.height);
     }
 
-    pub fn format(size: Size, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(size: Size, writer: *std.Io.Writer) !void {
         try writer.print("Size({}x{})", .{
             size.width,
             size.height,
@@ -310,9 +306,7 @@
         return copy;
     }
 
-    pub fn format(rect: Rectangle, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(rect: Rectangle, writer: *std.Io.Writer) !void {
         try writer.print("Rectangle({},{},{}x{})", .{
             rect.x,
             rect.y,
@@ -344,11 +338,9 @@
 
 <patch KeyboardModifiers>
 
-    pub fn format(mods: KeyboardModifiers, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
-
-        var strings = std.BoundedArray([]const u8, 8){};
+    pub fn format(mods: KeyboardModifiers, writer: *std.Io.Writer) !void {
+        var strings_buffer: [8][]const u8 = undefined;
+        var strings: std.ArrayList([]const u8) = .initBuffer(&strings_buffer);
 
         if (mods.shift) strings.appendAssumeCapacity("shift");
         if (mods.alt) strings.appendAssumeCapacity("alt");
@@ -361,9 +353,9 @@
 
         try writer.writeAll("Modifiers{");
 
-        if (strings.len > 0) {
-            try writer.writeAll(strings.buffer[0]);
-            for (strings.slice()[1..]) |item| {
+        if (strings.items.len > 0) {
+            try writer.writeAll(strings.items[0]);
+            for (strings.items[1..]) |item| {
                 try writer.writeAll(", ");
                 try writer.writeAll(item);
             }
@@ -375,9 +367,7 @@
 </patch>
 <patch InputEvent>
 
-    pub fn format(evt: InputEvent, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(evt: InputEvent, writer: *std.Io.Writer) !void {
         switch (evt.event_type) {
             .key_press,
             .key_release,
@@ -615,10 +605,7 @@
     }
 
 
-    pub fn format(color: Color, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(color: Color, writer: *std.Io.Writer) !void {
         if(color.saturation == 0) {
             const gray: u8 = @bitCast(color);
             try writer.print("Color(gray={})", .{gray});
@@ -689,9 +676,7 @@
         return .{ .r = r, .g = g, .b = b };
     }
 
-    pub fn format(color: RGB888, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(color: RGB888, writer: *std.Io.Writer) !void {
         try writer.print("#{X:0>2}{X:0>2}{X:0>2}", .{ color.r, color.g, color.b });
     }
 </patch>
@@ -712,9 +697,7 @@
     }
 </patch>
 <patch MessageBoxButtons>
-    pub fn format(buttons: MessageBoxButtons, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(buttons: MessageBoxButtons, writer: *std.Io.Writer) !void {
         const max_length = comptime "ok,cancel,yes,no,abort,retry,continue,ignore".len;
 
         var buffer: [max_length]u8 = undefined;
@@ -822,44 +805,64 @@
         return @intFromEnum(a) > @intFromEnum(b);
     }
 
-    pub fn format(dur: Duration, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = options;
-        const ns = dur.to_ns();
+    pub const Unit = enum {
+        week,
+        d,
+        m,
+        h,
+        s,
+        ms,
+        us,
+        ns,
+    };
 
-        const Scale = struct {
-            unit: []const u8,
-            divider: u64,
-        };
-
-        const scales = [_]Scale{
-            .{ .unit = "week", .divider = std.time.ns_per_week },
-            .{ .unit = "d", .divider = std.time.ns_per_day },
-            .{ .unit = "m", .divider = std.time.ns_per_min },
-            .{ .unit = "h", .divider = std.time.ns_per_hour },
-            .{ .unit = "s", .divider = std.time.ns_per_s },
-            .{ .unit = "ms", .divider = std.time.ns_per_ms },
-            .{ .unit = "us", .divider = std.time.ns_per_us },
-            .{ .unit = "ns", .divider = 1 },
-        };
-
-        const selected_scale: Scale = if (fmt.len > 0)
-            comptime for (scales) |scale| {
-                if (std.mem.eql(u8, scale.unit, fmt))
-                    break scale;
-            } else @compileError(fmt ++ " is not a valid duration unit!")
-        else for (scales) |scale| {
-            if (ns >= scale.divider)
-                break scale;
-        } else scales[0];
-
-        const int_part = ns / selected_scale.divider;
-        if (selected_scale.divider > 1) {
-            const fract_part = ns % (1000 * selected_scale.divider);
-            try writer.print("{d}.{d:0>3} {s}", .{ int_part, fract_part, selected_scale.unit });
-        } else {
-            try writer.print("{d} {s}", .{ int_part, selected_scale.unit });
-        }
+    pub fn fmt(dur: Duration, unit: ?Unit) DurationFmt {
+        return .{ .dur = dur, .unit = unit };
     }
+
+    const DurationFmt = struct {
+        dur: Duration,
+        unit: ?Unit,
+
+
+        pub fn format(self: DurationFmt, writer: *std.Io.Writer) !void {
+            const ns = self.dur.to_ns();
+
+            const Scale = struct {
+                unit: Unit,
+                divider: u64,
+            };
+
+            const scales = [_]Scale{
+                .{ .unit = .week, .divider = std.time.ns_per_week },
+                .{ .unit = .d, .divider = std.time.ns_per_day },
+                .{ .unit = .h, .divider = std.time.ns_per_hour },
+                .{ .unit = .m, .divider = std.time.ns_per_min },
+                .{ .unit = .s, .divider = std.time.ns_per_s },
+                .{ .unit = .ms, .divider = std.time.ns_per_ms },
+                .{ .unit = .us, .divider = std.time.ns_per_us },
+                .{ .unit = .ns, .divider = 1 },
+            };
+
+            const selected_scale: Scale = if (self.unit) |unit|
+                for (scales) |scale| {
+                    if (scale.unit == unit)
+                        break scale;
+                }
+            else for (scales) |scale| {
+                if (ns >= scale.divider)
+                    break scale;
+            } else scales[0];
+
+            const int_part = ns / selected_scale.divider;
+            if (selected_scale.divider > 1) {
+                const fract_part = ns % (1000 * selected_scale.divider);
+                try writer.print("{d}.{d:0>3} {s}", .{ int_part, fract_part, @tagName(selected_scale.unit) });
+            } else {
+                try writer.print("{d} {s}", .{ int_part, @tagName(selected_scale.unit) });
+            }
+        }
+    };
 </patch>
 <patch Absolute>
 
@@ -972,9 +975,7 @@
         return std.mem.eql(u8, &lhs.bytes, &rhs.bytes);
     }
 
-    pub fn format(uuid: *const @This(), fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype)! void {
-        _ = fmt;
-        _ = options;
+    pub fn format(uuid: *const @This(), writer: *std.Io.Writer) !void {
         try writer.print("{{{x:0>8}-{x:0>4}-{x:0>4}-{x:0>4}-{x:0>12}}}", .{
             std.mem.readInt(u32, uuid.bytes[0..4], .little),
             std.mem.readInt(u16, uuid.bytes[4..6], .little),

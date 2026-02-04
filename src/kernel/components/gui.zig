@@ -55,7 +55,7 @@ pub const Desktop = struct {
     name: [:0]const u8,
 
     window_data_size: usize,
-    handle_event: *const fn (ashet.abi.Desktop, *const ashet.abi.DesktopEvent) callconv(.C) void,
+    handle_event: *const fn (ashet.abi.Desktop, *const ashet.abi.DesktopEvent) callconv(.c) void,
 
     pub fn create(
         server_process: *ashet.multi_tasking.Process,
@@ -256,14 +256,14 @@ pub const Window = struct {
         };
         errdefer window.associated_memory.deinit();
 
-        window.window_data = window.associated_memory.allocator().alignedAlloc(u8, 16, desktop.window_data_size) catch return error.SystemResources;
+        window.window_data = window.associated_memory.allocator().alignedAlloc(u8, .@"16", desktop.window_data_size) catch return error.SystemResources;
         @memset(window.window_data, 0);
 
         logger.info("create window ({},{})", .{
             window.max_size.width, window.max_size.height,
         });
 
-        window.pixels = window.associated_memory.allocator().alignedAlloc(ashet.abi.Color, 4, @as(u32, window.max_size.width) * window.max_size.height) catch return error.SystemResources;
+        window.pixels = window.associated_memory.allocator().alignedAlloc(ashet.abi.Color, .@"4", @as(u32, window.max_size.width) * window.max_size.height) catch return error.SystemResources;
         @memset(window.pixels, .from_hsv(.purple, 1, 1)); // TODO: Set obnoxious color here to force a default or allow passing a default via window parameters
 
         window.title = window.associated_memory.allocator().dupeZ(u8, title) catch return error.SystemResources;
@@ -653,10 +653,10 @@ pub const Widget = struct {
         };
         errdefer widget.associated_memory.deinit();
 
-        widget.widget_data = widget.associated_memory.allocator().alignedAlloc(u8, 16, widget_type.widget_data_size) catch return error.SystemResources;
+        widget.widget_data = widget.associated_memory.allocator().alignedAlloc(u8, .@"16", widget_type.widget_data_size) catch return error.SystemResources;
         @memset(widget.widget_data, 0);
 
-        widget.pixels = widget.associated_memory.allocator().alignedAlloc(ashet.abi.Color, 4, 0) catch return error.SystemResources;
+        widget.pixels = widget.associated_memory.allocator().alignedAlloc(ashet.abi.Color, .@"4", 0) catch return error.SystemResources;
 
         owner.widgets.append(&widget.window_link);
         errdefer owner.widgets.remove(&widget.window_link);
@@ -759,7 +759,7 @@ pub const Widget = struct {
 
         const was_moved = !previous.position().eql(desired_bounds.position());
 
-        logger.info("{*} resized from {} to {}", .{ widget, previous, widget.bounds });
+        logger.info("{*} resized from {f} to {f}", .{ widget, previous, widget.bounds });
 
         if (resize_granted) {
             // Resize the internal pixel buffer to new size:
@@ -778,7 +778,7 @@ pub const Widget = struct {
                         // would out of memory. to prevent a crash, just accept
                         // that the resize can't happen right now and revert it.
 
-                        logger.warn("failed to resize widget {*} from {} to {}: out of memory", .{
+                        logger.warn("failed to resize widget {*} from {f} to {f}: out of memory", .{
                             widget,
                             previous.size(),
                             widget.bounds.size(),

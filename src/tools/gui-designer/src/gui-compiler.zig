@@ -20,8 +20,10 @@ pub const CliOptions = struct {
 };
 
 fn usage_fault(comptime fmt: []const u8, params: anytype) !noreturn {
-    const stderr = std.io.getStdErr();
-    try stderr.writer().print("gui-compiler: " ++ fmt, params);
+    var stderr_buffer: [1024]u8 = undefined;
+    var stderr_writer = std.fs.File.stderr().writer(&stderr_buffer);
+    try stderr_writer.interface.print("gui-compiler: " ++ fmt, params);
+    try stderr_writer.interface.flush();
     std.process.exit(1);
 }
 
@@ -52,17 +54,25 @@ pub fn main() !u8 {
         const file = try std.fs.cwd().openFile(cli.positionals[0], .{});
         defer file.close();
 
-        document = try model.load_design(file.reader(), document.allocator, metadata);
+        var file_buffer: [2048]u8 = undefined;
+        var file_reader = file.reader(&file_buffer);
+
+        document = try model.load_design(
+            &file_reader.interface,
+            document.allocator,
+            metadata,
+        );
     }
 
-    try render_to_file(document, std.io.getStdOut());
+    try render_to_file(document, .stdout());
 
     return 0;
 }
 
-pub fn render_to_file(document: Document, stream: std.fs.File) !void {
-    var buffered_writer = std.io.bufferedWriter(stream.writer());
-    const writer = buffered_writer.writer();
+pub fn render_to_file(document: Document, file: std.fs.File) !void {
+    var file_buffer: [4096]u8 = undefined;
+    var file_writer = file.writer(&file_buffer);
+    const writer = &file_writer.interface;
 
     try writer.writeAll(
         \\// This is auto-generated code!
@@ -85,17 +95,17 @@ pub fn render_to_file(document: Document, stream: std.fs.File) !void {
         const h_align: Align = .from_anchor(anchor.left, anchor.right);
 
         try writer.writeAll("    {\n");
-        try writer.print("        const x: i16 = {};\n", .{h_align.format_pos(widget.bounds.x, widget.bounds.width, design_size.width)});
-        try writer.print("        const y: i16 = {};\n", .{v_align.format_pos(widget.bounds.y, widget.bounds.height, design_size.height)});
-        try writer.print("        const width: u16 = {};\n", .{h_align.format_size(widget.bounds.x, widget.bounds.width, design_size.width)});
-        try writer.print("        const height: u16 = {};\n", .{v_align.format_size(widget.bounds.y, widget.bounds.height, design_size.height)});
+        try writer.print("        const x: i16 = {f};\n", .{h_align.format_pos(widget.bounds.x, widget.bounds.width, design_size.width)});
+        try writer.print("        const y: i16 = {f};\n", .{v_align.format_pos(widget.bounds.y, widget.bounds.height, design_size.height)});
+        try writer.print("        const width: u16 = {f};\n", .{h_align.format_size(widget.bounds.x, widget.bounds.width, design_size.width)});
+        try writer.print("        const height: u16 = {f};\n", .{v_align.format_size(widget.bounds.y, widget.bounds.height, design_size.height)});
 
-        try writer.print("        try target.draw_widget(.{{ .x = x, .y = y, .width = width, .height = height }}, .{}, ", .{
+        try writer.print("        try target.draw_widget(.{{ .x = x, .y = y, .width = width, .height = height }}, .{f}, ", .{
             std.zig.fmtId(widget.class.name),
         });
 
         if (name.len > 0) {
-            try writer.print("layout.{}", .{
+            try writer.print("layout.{f}", .{
                 std.zig.fmtId(name),
             });
         } else {
@@ -111,7 +121,7 @@ pub fn render_to_file(document: Document, stream: std.fs.File) !void {
         \\
     );
 
-    try buffered_writer.flush();
+    try writer.flush();
 }
 
 const Align = enum {
@@ -152,9 +162,7 @@ const Align = enum {
         size: u16,
         limit: u16,
 
-        pub fn format(formatter: PosFormatter, fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-            _ = fmt;
-            _ = opt;
+        pub fn format(formatter: PosFormatter, writer: *std.Io.Writer) !void {
             switch (formatter.alignment) {
                 .near, .margin => try writer.print("{}", .{formatter.pos}),
                 .far => {
@@ -173,9 +181,7 @@ const Align = enum {
         size: u16,
         limit: u16,
 
-        pub fn format(formatter: SizeFormatter, fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-            _ = fmt;
-            _ = opt;
+        pub fn format(formatter: SizeFormatter, writer: *std.Io.Writer) !void {
             switch (formatter.alignment) {
                 .near, .far => try writer.print("{}", .{formatter.size}),
                 .margin => {

@@ -1,5 +1,6 @@
 .{
-    .name = "virtio",
+    .name = .virtio,
+    .fingerprint = 0x3675eff762ff056,
     .version = "0.1.0",
     .paths = .{
         "build.zig",

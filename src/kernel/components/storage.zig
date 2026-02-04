@@ -48,9 +48,9 @@ pub const BlockDevice = struct {
     pub fn writeBlock(dev: *BlockDevice, block_num: u64, buffer: []const u8) WriteError!void {
         std.debug.assert(block_num < dev.num_blocks);
         std.debug.assert(buffer.len == dev.block_size);
-        logger.debug("write block {}: {}", .{
+        logger.debug("write block {}: {X}", .{
             block_num,
-            std.fmt.fmtSliceHexUpper(buffer),
+            buffer,
         });
         return dev.writeFn(ashet.drivers.resolveDriver(.block, dev), block_num, buffer);
     }
@@ -64,7 +64,7 @@ pub const BlockDevice = struct {
         const driver = ashet.drivers.resolveDriver(.block, dev);
 
         const result = dev.readFn(driver, block_num, buffer);
-        logger.debug("... => {}", .{std.fmt.fmtSliceHexUpper(buffer)});
+        logger.debug("... => {X}", .{buffer});
         return result;
     }
 };

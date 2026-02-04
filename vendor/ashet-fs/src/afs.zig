@@ -160,7 +160,7 @@ pub const FileSystem = struct {
     root_directory: DirectoryHandle,
 
     pub fn init(bd: BlockDevice) !FileSystem {
-        var fs = FileSystem{
+        var fs: FileSystem = .{
             .device = bd,
             .version = undefined,
             .size = undefined,

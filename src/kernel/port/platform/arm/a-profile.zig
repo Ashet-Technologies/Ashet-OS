@@ -15,27 +15,27 @@ pub fn are_interrupts_enabled() bool {
 }
 
 pub const start = struct {
-    export fn _arm_except_Undef() callconv(.C) noreturn {
+    export fn _arm_except_Undef() callconv(.c) noreturn {
         @panic("Undefined Instruction");
     }
 
-    export fn _arm_except_SVC() callconv(.C) noreturn {
+    export fn _arm_except_SVC() callconv(.c) noreturn {
         @panic("Supervisor Call (SVC)");
     }
 
-    export fn _arm_except_PrefAbort() callconv(.C) noreturn {
+    export fn _arm_except_PrefAbort() callconv(.c) noreturn {
         @panic("Prefetch Abort");
     }
 
-    export fn _arm_except_DataAbort() callconv(.C) noreturn {
+    export fn _arm_except_DataAbort() callconv(.c) noreturn {
         @panic("Data Abort");
     }
 
-    export fn _arm_except_IRQ() callconv(.C) noreturn {
+    export fn _arm_except_IRQ() callconv(.c) noreturn {
         @panic("Interrupt (IRQ)");
     }
 
-    export fn _arm_except_FIQ() callconv(.C) noreturn {
+    export fn _arm_except_FIQ() callconv(.c) noreturn {
         @panic("Fast Interrupt (FIQ)");
     }
 

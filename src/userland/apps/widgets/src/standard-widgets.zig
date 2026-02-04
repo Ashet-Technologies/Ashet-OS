@@ -3,7 +3,11 @@ const ashet = @import("ashet");
 
 const draw_lib = @import("draw.zig");
 
-pub usingnamespace ashet.core;
+pub const std_options = ashet.core.std_options;
+pub const panic = ashet.core.panic;
+comptime {
+    _ = ashet.core;
+}
 
 const abi = ashet.abi;
 const Size = abi.Size;
@@ -155,7 +159,7 @@ fn WidgetWrapper(comptime WidgetImpl: type) type {
                         };
                     } else {
                         // TODO: Implement the other messages
-                        std.log.info("{s}.handle_event({}, {}): unhandled event", .{ @typeName(WidgetImpl), widget, event.event_type });
+                        std.log.info("{s}.handle_event({f}, {}): unhandled event", .{ @typeName(WidgetImpl), widget, event.event_type });
                     }
                 },
             }

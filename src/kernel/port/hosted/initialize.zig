@@ -40,7 +40,7 @@ pub fn get_tick_count_ms() u64 {
 }
 
 fn badKernelOption(option: []const u8, comptime reason: []const u8, args: anytype) noreturn {
-    std.log.err("bad command line interface: component '{}': " ++ reason, .{std.zig.fmtEscapes(option)} ++ args);
+    std.log.err("bad command line interface: component '{f}': " ++ reason, .{std.zig.fmtString(option)} ++ args);
     std.process.exit(1);
 }
 
@@ -202,7 +202,7 @@ fn display_from_sdl_window_id(id: u32) ?*SDL_Display {
     return SDL_Display.from_window(window);
 }
 
-fn handle_SDL_events(ptr: ?*anyopaque) callconv(.C) u32 {
+fn handle_SDL_events(ptr: ?*anyopaque) callconv(.c) u32 {
     errdefer |err| {
         logger.err("SDL event loop crashed: {s}", .{@errorName(err)});
         std.os.exit(1);

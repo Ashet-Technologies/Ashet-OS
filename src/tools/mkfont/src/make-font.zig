@@ -57,14 +57,15 @@ pub fn main() !u8 {
     );
     defer rel_dir.close();
 
-    var output_file = try std.fs.cwd().atomicFile(cli.options.output, .{});
+    var output_buff: [1024]u8 = undefined;
+    var output_file = try std.fs.cwd().atomicFile(cli.options.output, .{ .write_buffer = &output_buff });
     defer output_file.deinit();
 
     switch (document.data) {
-        .bitmap => |*data| try bitmap_font.generate(allocator, output_file.file, rel_dir, data),
-        .turtle => |*data| try vector_font.generate(allocator, output_file.file, rel_dir, data),
-        .ttf => |*data| try ttf_font.generate(allocator, output_file.file, rel_dir, data),
-        .fon => |*data| try fon_font.generate(allocator, output_file.file, rel_dir, data),
+        .bitmap => |*data| try bitmap_font.generate(allocator, &output_file.file_writer, rel_dir, data),
+        .turtle => |*data| try vector_font.generate(allocator, &output_file.file_writer, rel_dir, data),
+        .ttf => |*data| try ttf_font.generate(allocator, &output_file.file_writer, rel_dir, data),
+        .fon => |*data| try fon_font.generate(allocator, &output_file.file_writer, rel_dir, data),
     }
 
     try output_file.finish();
@@ -73,7 +74,7 @@ pub fn main() !u8 {
 }
 
 fn usage_error(mistake: []const u8) !noreturn {
-    const stderr = std.io.getStdErr().writer();
-    try stderr.print("Usage error: {s}\n", .{mistake});
+    var stderr = std.fs.File.stderr().writer(&.{});
+    try stderr.interface.print("Usage error: {s}\n", .{mistake});
     std.process.exit(1);
 }

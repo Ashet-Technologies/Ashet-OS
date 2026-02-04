@@ -19,7 +19,7 @@ pub const is_hosted = builtin.is_test or (builtin.target.os.tag != .other and bu
 //     }
 // }
 
-fn _start() callconv(.C) u32 {
+fn _start() callconv(.c) u32 {
     const res = @import("root").main();
     const Res = @TypeOf(res);
 
@@ -276,7 +276,7 @@ pub const process = struct {
 
     pub const debug = struct {
         pub const WriteError = error{};
-        pub const LogWriter = std.io.Writer(abi.LogLevel, WriteError, _write_log);
+        pub const LogWriter = std.Io.GenericWriter(abi.LogLevel, WriteError, _write_log);
 
         pub fn log_writer(log_level: abi.LogLevel) LogWriter {
             return .{ .context = log_level };
@@ -416,16 +416,48 @@ pub const fs = struct {
         pub const StatError = abi.fs.StatFile.Error || GenericError;
         pub const EmptyError = error{};
 
-        pub const Reader = std.io.Reader(*File, ReadError, streamRead);
-        pub const Writer = std.io.Writer(*File, WriteError, streamWrite);
-        pub const SeekableStream = std.io.SeekableStream(*File, EmptyError, EmptyError, seekTo, seekBy, getPos, getEndPos);
+        pub const Reader = struct {
+            err: ?ReadError = null,
+            handle: abi.File,
+            offset: u64,
+            interface: std.Io.Reader,
+
+            fn stream_data(intf: *std.Io.Reader, w: *std.Io.Writer, limit: std.Io.Limit) std.Io.Reader.StreamError!usize {
+                const r: *Reader = @alignCast(@fieldParentPtr("interface", intf));
+                const file: File = .from_handle(r.handle);
+
+                const dest = limit.slice(try w.writableSliceGreedy(1));
+
+                if (file.read(r.offset, dest)) |count| {
+                    if (count == 0)
+                        return error.EndOfStream;
+                    w.advance(count);
+                    r.offset += count;
+                    r.err = null;
+                    return count;
+                } else |err| {
+                    r.err = err;
+                    return error.ReadFailed;
+                }
+            }
+        };
+
+        pub const Writer = struct {
+            err: ?WriteError = null,
+            handle: abi.File,
+            offset: u64,
+            interface: std.Io.Writer,
+        };
 
         handle: abi.File,
-        offset: u64,
+
+        pub fn from_handle(handle: abi.File) File {
+            return .{ .handle = handle };
+        }
 
         pub fn close(file: *File) void {
             _ = overlapped.performOne(abi.fs.CloseFile, .{ .file = file.handle }) catch |err| {
-                std.log.scoped(.filesystem).err("failed to close file handle {}: {s}", .{ file.handle, @errorName(err) });
+                std.log.scoped(.filesystem).err("failed to close file handle {f}: {s}", .{ file.handle, @errorName(err) });
                 return;
             };
             file.* = undefined;
@@ -433,18 +465,6 @@ pub const fs = struct {
 
         pub fn flush(file: *File) !void {
             _ = try overlapped.performOne(abi.fs.file.Flush, .{ .file = file.handle });
-        }
-
-        fn streamRead(file: *File, buffer: []u8) ReadError!usize {
-            const count = try file.read(file.offset, buffer);
-            file.offset += count;
-            return count;
-        }
-
-        fn streamWrite(file: *File, buffer: []const u8) WriteError!usize {
-            const count = try file.write(file.offset, buffer);
-            file.offset += count;
-            return count;
         }
 
         pub fn read(file: File, offset: u64, buffer: []u8) ReadError!usize {
@@ -474,35 +494,32 @@ pub const fs = struct {
             return out.info;
         }
 
-        fn seekTo(file: *File, pos: u64) !void {
-            file.offset = pos;
+        pub fn reader(self: *File, buffer: []u8, offset: u64) Reader {
+            return Reader{
+                .handle = self.handle,
+                .offset = offset,
+                .interface = .{
+                    .buffer = buffer,
+                    .seek = 0,
+                    .end = 0,
+                    .vtable = comptime &.{
+                        .stream = Reader.stream_data,
+                    },
+                },
+            };
         }
 
-        fn seekBy(file: *File, delta: i64) !void {
-            _ = file;
-            _ = delta;
-            @panic("not implemented yet");
-        }
-
-        fn getPos(file: *File) EmptyError!u64 {
-            return file.offset;
-        }
-
-        fn getEndPos(file: *File) EmptyError!u64 {
-            _ = file;
-            @panic("not implemented");
-        }
-
-        pub fn reader(self: *File) Reader {
-            return Reader{ .context = self };
-        }
-
-        pub fn writer(self: *File) Writer {
-            return Writer{ .context = self };
-        }
-
-        pub fn seekableStream(self: *File) SeekableStream {
-            return SeekableStream{ .context = self };
+        pub fn writer(self: *File, buffer: []u8, offset: u64) Writer {
+            return Writer{
+                .handle = self.handle,
+                .offset = offset,
+                .interface = .{
+                    .buffer = buffer,
+                    .vtable = comptime &.{
+                        //
+                    },
+                },
+            };
         }
     };
 
@@ -536,7 +553,7 @@ pub const fs = struct {
 
         pub fn close(dir: *Directory) void {
             _ = overlapped.performOne(abi.fs.CloseDir, .{ .dir = dir.handle }) catch |err| {
-                std.log.scoped(.filesystem).err("failed to close directory handle {}: {s}", .{ dir.handle, @errorName(err) });
+                std.log.scoped(.filesystem).err("failed to close directory handle {f}: {s}", .{ dir.handle, @errorName(err) });
                 return;
             };
 
@@ -567,10 +584,7 @@ pub const fs = struct {
                 .access = access,
                 .mode = mode,
             });
-            return File{
-                .handle = out.handle,
-                .offset = 0,
-            };
+            return .from_handle(out.handle);
         }
     };
 };

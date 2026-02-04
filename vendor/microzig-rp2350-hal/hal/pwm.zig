@@ -5,8 +5,7 @@ const pins = microzig.hal.pins;
 
 const compatibility = @import("compatibility.zig");
 const has_rp2350b = compatibility.has_rp2350b;
-
-const log = std.log.scoped(.pwm);
+const hw = @import("hw.zig");
 
 pub const Config = struct {};
 
@@ -21,6 +20,11 @@ pub const Channel = enum(u1) { a, b };
 
 pub const Slice = enum(u32) {
     _,
+
+    /// Access slice specific registers directly.
+    pub fn get_registers(self: Slice) *volatile Regs {
+        return get_regs(@intFromEnum(self));
+    }
 
     /// Set the wrap value for the slice.  This is the number of pwm clock
     /// cycles that the slice will count to before wrapping.
@@ -59,6 +63,16 @@ pub const Slice = enum(u32) {
     }
 };
 
+/// Return PWM associated with the pin number.
+/// Does not set the gpio function (must be done separately)
+/// e.g. rp2xxx.gpio.num(pin_num).set_function(.pwm)
+pub fn get_pwm(pinnum: u9) Pwm {
+    const tmp_num: u32 = if (pinnum > 15) pinnum - 16 else pinnum;
+    const slice_num: u32 = tmp_num >> 1;
+    const chan: Channel = @enumFromInt(tmp_num & 1);
+    return .{ .channel = chan, .slice_number = slice_num };
+}
+
 // An instance of Pwm corresponds to one of the channels
 //
 // There are eight pwm instances on RP2040 and RP2350A and
@@ -94,6 +108,18 @@ pub const Pwm = struct {
     }
 };
 
+/// Enable in parallel using the PWM EN register (which aliases to the individual slice CSR_EN bits)
+pub fn set_en_bits(en_mask: u32) void {
+    const set_reg: *volatile u32 = hw.set_alias_raw(&microzig.chip.peripherals.PWM.EN);
+    set_reg.* = en_mask;
+}
+
+/// Disable in parallel using the PWM EN register (which aliases to the individual slice CSR_EN bits)
+pub fn unset_en_bits(en_mask: u32) void {
+    const clear_reg: *volatile u32 = hw.clear_alias_raw(&microzig.chip.peripherals.PWM.EN);
+    clear_reg.* = en_mask;
+}
+
 pub const ClkDivMode = enum(u2) {
     free_running,
     b_high,
@@ -115,7 +141,6 @@ const Regs = extern struct {
 ///   slice - the slice to set
 ///   phase_correct - true to enable phase correct mode, false to disable it
 pub fn set_slice_phase_correct(slice: u32, phase_correct: bool) void {
-    log.debug("PWM{} set phase correct: {}", .{ slice, phase_correct });
     get_regs(slice).csr.modify(.{
         .PH_CORRECT = @intFromBool(phase_correct),
     });
@@ -128,7 +153,6 @@ pub fn set_slice_phase_correct(slice: u32, phase_correct: bool) void {
 ///   integer - the integer part of the clock divider
 ///   fraction - the fractional part of the clock divider
 pub fn set_slice_clk_div(slice: u32, integer: u8, fraction: u4) void {
-    log.debug("PWM{} set clk div: {}.{}", .{ slice, integer, fraction });
     get_regs(slice).div.modify(.{
         .INT = integer,
         .FRAC = fraction,
@@ -141,7 +165,6 @@ pub fn set_slice_clk_div(slice: u32, integer: u8, fraction: u4) void {
 ///   slice - the slice to set
 ///   mode - the clock divider mode
 pub fn set_slice_clk_div_mode(slice: u32, mode: ClkDivMode) void {
-    log.debug("PWM{} set clk div mode: {}", .{ slice, mode });
     get_regs(slice).csr.modify(.{
         .DIVMODE = @intFromEnum(mode),
     });
@@ -175,7 +198,6 @@ pub fn set_channel_inversion(
 ///   slice - the slice to set
 ///   wrap - the wrap value
 pub fn set_slice_wrap(slice: u32, wrap: u16) void {
-    log.debug("PWM{} set wrap: {}", .{ slice, wrap });
     get_regs(slice).top.raw = wrap;
 }
 
@@ -194,7 +216,6 @@ pub fn set_channel_level(
     channel: Channel,
     level: u16,
 ) void {
-    log.debug("PWM{} {} set level: {}", .{ slice, channel, level });
     switch (channel) {
         .a => get_regs(slice).cc.modify(.{ .A = level }),
         .b => get_regs(slice).cc.modify(.{ .B = level }),

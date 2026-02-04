@@ -1,7 +1,11 @@
 const std = @import("std");
 const ashet = @import("ashet");
 
-pub usingnamespace ashet.core;
+pub const std_options = ashet.core.std_options;
+pub const panic = ashet.core.panic;
+comptime {
+    _ = ashet.core;
+}
 
 const abi = ashet.abi;
 const io = ashet.userland.io;
@@ -30,7 +34,7 @@ pub fn main() !void {
     );
     defer behaviour_proc.release();
 
-    std.log.info("spawned behaviour process: {}", .{behaviour_proc});
+    std.log.info("spawned behaviour process: {f}", .{behaviour_proc});
 
     const widgets_proc = try ashet.process.spawn(
         apps_dir,
@@ -39,7 +43,7 @@ pub fn main() !void {
     );
     defer widgets_proc.release();
 
-    std.log.info("spawned widgets service: {}", .{widgets_proc});
+    std.log.info("spawned widgets service: {f}", .{widgets_proc});
 
     const desktop_proc = try ashet.process.spawn(
         apps_dir,
@@ -48,7 +52,7 @@ pub fn main() !void {
     );
     defer desktop_proc.release();
 
-    std.log.info("spawned desktop process: {}", .{desktop_proc});
+    std.log.info("spawned desktop process: {f}", .{desktop_proc});
 
     // TODO: await spawned process to exit, then print contents of shm!
 

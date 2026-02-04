@@ -14,9 +14,7 @@ pub const FreqFormatter = struct {
 
     freq_hz: u64,
 
-    pub fn format(ff: FreqFormatter, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-
+    pub fn formatNumber(ff: FreqFormatter, options: std.fmt.Number, writer: anytype) !void {
         var buffer: [std.math.log10_int(@as(u64, std.math.maxInt(u64))) + 2]u8 = undefined;
 
         const int_str = std.fmt.bufPrint(&buffer, "{d}", .{ff.freq_hz}) catch unreachable;
@@ -62,17 +60,17 @@ fn expect_fmt(expected: []const u8, comptime fmt: []const u8, args: anytype) !vo
 }
 
 test freq {
-    try expect_fmt("0 Hz", "{}", .{freq(0)});
-    try expect_fmt("123 Hz", "{}", .{freq(123)});
-    try expect_fmt("123.456 kHz", "{}", .{freq(123_456)});
-    try expect_fmt("123.456789 MHz", "{}", .{freq(123_456_789)});
-    try expect_fmt("123.456789101 GHz", "{}", .{freq(123_456_789_101)});
+    try expect_fmt("0 Hz", "{d}", .{freq(0)});
+    try expect_fmt("123 Hz", "{d}", .{freq(123)});
+    try expect_fmt("123.456 kHz", "{d}", .{freq(123_456)});
+    try expect_fmt("123.456789 MHz", "{d}", .{freq(123_456_789)});
+    try expect_fmt("123.456789101 GHz", "{d}", .{freq(123_456_789_101)});
 
-    try expect_fmt("0 Hz", "{:.2}", .{freq(0)});
-    try expect_fmt("123 Hz", "{:.2}", .{freq(123)});
-    try expect_fmt("123.45 kHz", "{:.2}", .{freq(123_456)});
-    try expect_fmt("123.45 MHz", "{:.2}", .{freq(123_456_789)});
-    try expect_fmt("123.45 GHz", "{:.2}", .{freq(123_456_789_101)});
+    try expect_fmt("0 Hz", "{d:.2}", .{freq(0)});
+    try expect_fmt("123 Hz", "{d:.2}", .{freq(123)});
+    try expect_fmt("123.45 kHz", "{d:.2}", .{freq(123_456)});
+    try expect_fmt("123.45 MHz", "{d:.2}", .{freq(123_456_789)});
+    try expect_fmt("123.45 GHz", "{d:.2}", .{freq(123_456_789_101)});
 }
 
 pub fn @"struct"(value: anytype) StructFormatter(@TypeOf(value)) {
@@ -95,17 +93,14 @@ pub fn StructFormatter(comptime T: type) type {
     return struct {
         value: T,
 
-        pub fn format(sf: @This(), fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-            _ = fmt;
-            _ = options;
-
+        pub fn format(sf: @This(), writer: *std.Io.Writer) !void {
             try writer.print("{s}{{", .{@typeName(T)});
 
             inline for (filtered_fields, 0..) |fld, i| {
                 if (i > 0)
                     try writer.writeAll(",");
 
-                try writer.print(" {}={}", .{
+                try writer.print(" {f}={}", .{
                     std.zig.fmtId(fld.name),
                     @field(sf.value, fld.name),
                 });

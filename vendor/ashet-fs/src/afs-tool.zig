@@ -4,23 +4,36 @@ const args_parser = @import("args");
 
 var verbose: bool = true;
 
+var stderr: *std.Io.Writer = undefined;
+var stdout: *std.Io.Writer = undefined;
+
 pub fn main() !u8 {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    var stderr_buff: [1024]u8 = undefined;
+    var stderr_writer = std.fs.File.stderr().writer(&stderr_buff);
+    stderr = &stderr_writer.interface;
+    defer stderr.flush() catch {};
+
+    var stdout_buff: [1024]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(&stdout_buff);
+    stdout = &stdout_writer.interface;
+    defer stdout.flush() catch {};
+
     var cli = args_parser.parseWithVerbForCurrentProcess(CliOptions, CliVerb, allocator, .print) catch return 1;
     defer cli.deinit();
 
     if (cli.options.help) {
-        try usage(std.io.getStdOut());
+        try usage(stdout);
         return 0;
     }
 
     verbose = cli.options.verbose;
 
     const image_file_name = cli.options.image orelse {
-        try std.io.getStdErr().writeAll("Missing option --image!\n");
+        try stderr.writeAll("Missing option --image!\n");
         return 1;
     };
 
@@ -30,7 +43,7 @@ pub fn main() !u8 {
     const image_file_stat = try image_file.stat();
 
     if (image_file_stat.size % @sizeOf(Block) != 0) {
-        try std.io.getStdErr().writeAll("Image file does not have a size that is a multiple of 512!\n");
+        try stderr.writeAll("Image file does not have a size that is a multiple of 512!\n");
         return 1;
     }
 
@@ -40,12 +53,12 @@ pub fn main() !u8 {
     };
 
     if (block_device.block_count < 8) {
-        try std.io.getStdErr().writeAll("Image file is too small. Requires at least 4096 bytes size.\n");
+        try stderr.writeAll("Image file is too small. Requires at least 4096 bytes size.\n");
         return 1;
     }
 
     const verb: CliVerb = cli.verb orelse {
-        try usage(std.io.getStdErr());
+        try usage(stderr);
         return 1;
     };
 
@@ -55,7 +68,7 @@ pub fn main() !u8 {
         }
 
         afs.format(block_device.interface(), std.time.nanoTimestamp()) catch |err| {
-            try std.io.getStdErr().writeAll(switch (err) {
+            try stderr.writeAll(switch (err) {
                 error.DeviceTooSmall => "error: the device does not contain enough blocks.\n",
                 error.OperationTimeout => "error: disk timeout.\n",
                 error.DeviceError => "error: i/o failure\n",
@@ -76,7 +89,7 @@ pub fn main() !u8 {
     }
 
     var fs = FileSystem.init(block_device.interface()) catch |err| {
-        try std.io.getStdErr().writeAll(switch (err) {
+        try stderr.writeAll(switch (err) {
             error.OperationTimeout => "error: operation timeout\n",
             error.WriteProtected => unreachable,
             error.NoFilesystem => "error: image does not contain a file system\n",
@@ -86,8 +99,6 @@ pub fn main() !u8 {
         });
         return 1;
     };
-
-    var stdout = std.io.getStdOut();
 
     switch (verb) {
         .ls => |opt| {
@@ -101,7 +112,7 @@ pub fn main() !u8 {
                 fs.root_directory;
 
             if (opt.list) {
-                try stdout.writer().print("{s: <10} | {s: <19} | {s: <19} | {s: <10} | {s}\n", .{
+                try stdout.print("{s: <10} | {s: <19} | {s: <19} | {s: <10} | {s}\n", .{
                     "flags",
                     "cdate",
                     "mdate",
@@ -123,11 +134,11 @@ pub fn main() !u8 {
 
                     var sizeBuf: [64]u8 = undefined;
                     const size_str = if (opt.human)
-                        try std.fmt.bufPrint(&sizeBuf, "{d:5.2}", .{std.fmt.fmtIntSizeBin(meta.size)})
+                        try std.fmt.bufPrint(&sizeBuf, "{Bi:5.2}", .{meta.size})
                     else
                         try std.fmt.bufPrint(&sizeBuf, "{d}", .{meta.size});
 
-                    try stdout.writer().print("0x{X:0>8} | {} | {} | {s: >10} | {s}\n", .{
+                    try stdout.print("0x{X:0>8} | {f} | {f} | {s: >10} | {s}\n", .{
                         meta.flags,
                         DateTime{ .ts = meta.create_time },
                         DateTime{ .ts = meta.modify_time },
@@ -214,13 +225,12 @@ pub fn main() !u8 {
 const DateTime = struct {
     ts: i128,
 
-    pub fn format(dt: DateTime, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
-
+    pub fn format(dt: DateTime, writer: *std.Io.Writer) !void {
         const epoch = std.time.epoch;
 
-        const esecs = epoch.EpochSeconds{ .secs = @as(u64, @intCast(@divTrunc(dt.ts, std.time.ns_per_s))) };
+        const esecs: epoch.EpochSeconds = .{
+            .secs = @intCast(@divTrunc(dt.ts, std.time.ns_per_s)),
+        };
 
         const eday = esecs.getEpochDay();
         const dsecs = esecs.getDaySeconds();
@@ -275,7 +285,7 @@ fn resolvePath(fs: *FileSystem, path: []const u8, comptime expected: EntryType) 
 
     var current_dir = fs.root_directory;
 
-    var splitter = std.mem.tokenize(u8, path, "/");
+    var splitter = std.mem.tokenizeScalar(u8, path, '/');
 
     if (splitter.next()) |first_element| {
         var next_element: ?[]const u8 = first_element;
@@ -304,17 +314,16 @@ fn resolvePath(fs: *FileSystem, path: []const u8, comptime expected: EntryType) 
 fn printTreeListingRecursive(fs: *FileSystem, dir: afs.DirectoryHandle, depth: usize, limit: usize) !void {
     const indent = 3 * depth;
 
-    var stdout = std.io.getStdOut();
     if (depth >= limit) {
-        try stdout.writer().writeByteNTimes(' ', indent);
-        try stdout.writer().writeAll("...\n");
+        try stdout.splatByteAll(' ', indent);
+        try stdout.writeAll("...\n");
         return;
     }
 
     var iter = try fs.iterate(dir);
     while (try iter.next()) |entry| {
-        try stdout.writer().writeByteNTimes(' ', indent);
-        try stdout.writer().print("- {s}", .{entry.name()});
+        try stdout.splatByteAll(' ', indent);
+        try stdout.print("- {s}", .{entry.name()});
         switch (entry.handle) {
             .file => try stdout.writeAll("\n"),
             .directory => |subdir| {
@@ -389,13 +398,11 @@ const CliVerb = union(enum) {
 };
 
 fn usageError(msg: []const u8) !u8 {
-    try std.io.getStdErr().writer().print("error: {s}\n", .{msg});
+    try stderr.print("error: {s}\n", .{msg});
     return 1;
 }
 
-fn usage(stream: std.fs.File) !void {
-    const writer = stream.writer();
-
+fn usage(writer: *std.Io.Writer) !void {
     try writer.writeAll(
         \\afs-tool [-v] [-i <image>] <action> <args…>
         \\
@@ -442,6 +449,7 @@ fn usage(stream: std.fs.File) !void {
         \\    into the filesystem as the initial root contents.
         \\
     );
+    try writer.flush();
 }
 
 const FileSystem = afs.FileSystem;
@@ -455,29 +463,35 @@ const BlockDevice = struct {
     block_count: u32,
 
     pub fn interface(bd: *BD) afs.BlockDevice {
-        return afs.BlockDevice{
+        return .{
             .object = bd,
             .vtable = &vtable,
         };
     }
 
     fn fromCtx(ctx: *anyopaque) *BD {
-        return @as(*BD, @ptrCast(@alignCast(ctx)));
+        return @ptrCast(@alignCast(ctx));
     }
 
     fn getBlockCount(ctx: *anyopaque) u32 {
         return fromCtx(ctx).block_count;
     }
+
+    const log = std.log.scoped(.image);
+
     fn writeBlock(ctx: *anyopaque, offset: u32, block: *const Block) !void {
         // std.debug.print("write block {}:\n", .{offset});
         const bd = fromCtx(ctx);
 
-        bd.file.seekTo(512 * offset) catch |err| {
-            std.log.scoped(.image).err("{s}", .{@errorName(err)});
+        var file_writer = bd.file.writer(&.{});
+        const writer = &file_writer.interface;
+
+        file_writer.seekTo(512 * offset) catch |err| {
+            log.err("{s}", .{@errorName(err)});
             return error.DeviceError;
         };
-        bd.file.writer().writeAll(block) catch |err| {
-            std.log.scoped(.image).err("{s}", .{@errorName(err)});
+        writer.writeAll(block) catch |err| {
+            log.err("{s}", .{@errorName(err)});
             return error.DeviceError;
         };
     }
@@ -486,17 +500,20 @@ const BlockDevice = struct {
         // std.debug.print("read block {}\n", .{offset});
         const bd = fromCtx(ctx);
 
-        bd.file.seekTo(512 * offset) catch |err| {
-            std.log.scoped(.image).err("{s}", .{@errorName(err)});
+        var file_reader = bd.file.reader(&.{});
+        const reader = &file_reader.interface;
+
+        file_reader.seekTo(512 * offset) catch |err| {
+            log.err("{s}", .{@errorName(err)});
             return error.DeviceError;
         };
-        bd.file.reader().readNoEof(block) catch |err| {
-            std.log.scoped(.image).err("{s}", .{@errorName(err)});
+        reader.readSliceAll(block) catch |err| {
+            log.err("{s}", .{@errorName(err)});
             return error.DeviceError;
         };
     }
 
-    const vtable = afs.BlockDevice.VTable{
+    const vtable: afs.BlockDevice.VTable = .{
         .getBlockCountFn = getBlockCount,
         .writeBlockFn = writeBlock,
         .readBlockFn = readBlock,
@@ -509,7 +526,7 @@ fn copyDirectoryToDisk(fs: *FileSystem, src_dir: std.fs.Dir, target_dir: afs.Dir
     while (try iter.next()) |_entry| {
         const entry: std.fs.Dir.Entry = _entry;
 
-        var realpath_buffer: [std.fs.MAX_PATH_BYTES]u8 = undefined;
+        var realpath_buffer: [std.fs.max_path_bytes]u8 = undefined;
 
         if (verbose) {
             std.log.info("copying {s}...", .{

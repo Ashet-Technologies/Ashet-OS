@@ -1,5 +1,6 @@
 .{
     .name = .ashet_gui,
+    .fingerprint = 0xdb2c5b408954f2d6,
     .version = "0.0.0",
     .dependencies = .{
         .AshetOS = .{

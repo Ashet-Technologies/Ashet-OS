@@ -73,12 +73,12 @@ pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleIni
     {
         try kbc.writeCommand(.read_cmd_byte);
         const conf_byte = try kbc.readData();
-        var cmd_byte = @as(CommandByte, @bitCast(conf_byte));
-        logger.debug("old config: {}", .{cmd_byte});
+        var cmd_byte: CommandByte = @bitCast(conf_byte);
+        logger.debug("old config: {f}", .{cmd_byte});
         cmd_byte.primary_irq_enabled = false;
         cmd_byte.secondary_irq_enabled = false;
         cmd_byte.scancode_translation_mode = false;
-        logger.debug("new config: {}", .{cmd_byte});
+        logger.debug("new config: {f}", .{cmd_byte});
         try kbc.writeCommand(.write_cmd_byte);
         try kbc.writeData(@as(u8, @bitCast(cmd_byte)));
     }
@@ -176,9 +176,9 @@ pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleIni
                 else => |e| return e,
             };
             if (chan.readData()) |response| {
-                logger.debug("{s} reset response: 0x{X:0>2}", .{ @tagName(chan), response });
+                logger.debug("{t} reset response: 0x{X:0>2}", .{ chan, response });
             } else |err| {
-                logger.debug("{s} reset response: {!}", .{ @tagName(chan), err });
+                logger.debug("{t} reset response: {t}", .{ chan, err });
                 kbc.channels.remove(chan);
             }
             flushData();
@@ -241,14 +241,14 @@ pub fn init() error{ Timeout, NoAcknowledge, SelfTestFailed, NoDevice, DoubleIni
     logger.debug("enable irq configuration...", .{});
     {
         try kbc.writeCommand(.read_cmd_byte);
-        var cmd_byte = @as(CommandByte, @bitCast(try kbc.readData()));
-        logger.debug("old config: {}", .{cmd_byte});
+        var cmd_byte: CommandByte = @bitCast(try kbc.readData());
+        logger.debug("old config: {f}", .{cmd_byte});
         cmd_byte.primary_clk_enable = .enabled;
         cmd_byte.primary_irq_enabled = (kbc.devices.get(.primary) != null);
         cmd_byte.secondary_clk_enable = .enabled;
         cmd_byte.secondary_irq_enabled = (kbc.devices.get(.secondary) != null);
         cmd_byte.scancode_translation_mode = false;
-        logger.debug("new config: {}", .{cmd_byte});
+        logger.debug("new config: {f}", .{cmd_byte});
         try kbc.writeCommand(.write_cmd_byte);
         try kbc.writeData(@as(u8, @bitCast(cmd_byte)));
     }
@@ -425,7 +425,7 @@ const Deadline = ashet.time.Deadline;
 
 fn delayPortRead() void {
     for (0..1_000) |_| {
-        asm volatile ("" ::: "memory");
+        asm volatile ("" ::: .{ .memory = true });
     }
 }
 
@@ -558,10 +558,7 @@ const CommandByte = packed struct(u8) {
     scancode_translation_mode: bool, // 6: First PS/2 port translation (1 = enabled, 0 = disabled)
     reserved: u1, // 7: must be zero
 
-    pub fn format(self: CommandByte, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = opt;
-
+    pub fn format(self: CommandByte, writer: *std.Io.Writer) !void {
         try writer.writeAll("CommandByte{ ");
 
         try writer.print("primary clk={s}, ", .{@tagName(self.primary_clk_enable)});

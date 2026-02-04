@@ -110,7 +110,7 @@ pub fn execute_async(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.io.i2c
     const owner = call.resource_owner;
 
     const bus = ashet.resources.resolve(Bus, owner, inputs.bus.as_resource()) catch |err| {
-        logger.warn("process {} used invalid file handle {}: {s}", .{ owner, inputs.bus, @errorName(err) });
+        logger.warn("process {f} used invalid bus handle {f}: {s}", .{ owner, inputs.bus, @errorName(err) });
         return call.finalize(ExecuteCall, error.InvalidHandle);
     };
 

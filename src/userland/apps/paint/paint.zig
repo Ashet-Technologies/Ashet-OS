@@ -1,7 +1,11 @@
 const std = @import("std");
 const ashet = @import("ashet");
 
-pub usingnamespace ashet.core;
+pub const std_options = ashet.core.std_options;
+pub const panic = ashet.core.panic;
+comptime {
+    _ = ashet.core;
+}
 
 const Point = ashet.abi.Point;
 const Color = ashet.abi.Color;
@@ -21,6 +25,8 @@ pub fn main() !void {
     std.debug.assert(argv[1].type == .resource);
 
     const desktop = try argv[1].value.resource.cast(.desktop);
+
+    std.log.info("using desktop {f}", .{desktop});
 
     const draw_window = try ashet.gui.create_window(
         desktop,
@@ -68,6 +74,7 @@ pub fn main() !void {
 
     try ashet.overlapped.schedule(&get_draw_event.arc);
     try ashet.overlapped.schedule(&get_palette_event.arc);
+    try command_queue.submit(draw_framebuffer, .{});
 
     var painting: bool = false;
     var mouse_prev: Point = undefined;

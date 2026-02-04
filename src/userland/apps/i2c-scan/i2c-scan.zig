@@ -9,7 +9,11 @@ const ashet = @import("ashet");
 
 const i2c = ashet.abi.io.i2c;
 
-pub usingnamespace ashet.core;
+pub const std_options = ashet.core.std_options;
+pub const panic = ashet.core.panic;
+comptime {
+    _ = ashet.core;
+}
 
 pub fn main() !void {
     var bus_list: [32]i2c.BusID = undefined;
@@ -20,8 +24,8 @@ pub fn main() !void {
         var bus_name_buf: [256]u8 = @splat(0);
 
         const bus_name_len = try i2c.query_metadata(bus_id, &bus_name_buf);
-        std.log.info("I²C Bus \"{}\" ({})", .{
-            std.zig.fmtEscapes(bus_name_buf[0..bus_name_len]),
+        std.log.info("I²C Bus \"{f}\" ({})", .{
+            std.zig.fmtString(bus_name_buf[0..bus_name_len]),
             bus_id,
         });
 
@@ -68,9 +72,7 @@ pub fn main() !void {
             }
 
             var row_buf: [256]u8 = undefined;
-            var fbs = std.io.fixedBufferStream(&row_buf);
-
-            const writer = fbs.writer();
+            var writer: std.Io.Writer = .fixed(&row_buf);
 
             try writer.print("0x{x}_ |", .{addr >> 4});
 
@@ -83,12 +85,13 @@ pub fn main() !void {
                         .aborted => 'A',
                         .timeout => 'T',
                         .fault => 'F',
+                        .reserved_address => 'R',
                     }),
                 });
             }
             try writer.writeAll(" |");
 
-            std.log.info("{s}", .{fbs.getWritten()});
+            std.log.info("{s}", .{writer.buffered()});
         }
     }
 }

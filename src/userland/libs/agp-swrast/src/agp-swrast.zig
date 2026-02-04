@@ -645,7 +645,7 @@ pub fn Rasterizer(comptime _options: RasterizerOptions) type {
 
         pub const ScreenWriter = struct {
             pub const Error = error{InvalidUtf8};
-            pub const Writer = std.io.Writer(*ScreenWriter, Error, write);
+            pub const Writer = std.Io.GenericWriter(*ScreenWriter, Error, write);
 
             const VectorRasterizer = turtlefont.Rasterizer(*ScreenWriter, Color, writeVectorPixel);
 

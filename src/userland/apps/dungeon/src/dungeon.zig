@@ -2,7 +2,11 @@ const std = @import("std");
 const ashet = @import("ashet");
 const Vec2 = @import("Vector2.zig");
 
-pub usingnamespace ashet.core;
+pub const std_options = ashet.core.std_options;
+pub const panic = ashet.core.panic;
+comptime {
+    _ = ashet.core;
+}
 
 const Size = ashet.abi.Size;
 
@@ -68,7 +72,7 @@ pub fn main() !void {
 
     const desktop = try argv[1].value.resource.cast(.desktop);
 
-    std.log.info("using desktop {}", .{desktop});
+    std.log.info("using desktop {f}", .{desktop});
 
     try load_textures();
 

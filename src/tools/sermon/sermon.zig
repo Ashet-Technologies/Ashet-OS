@@ -34,13 +34,13 @@ pub fn main() !u8 {
     defer cli.deinit();
 
     if (cli.options.help) {
-        try print_help(cli.executable_name, std.io.getStdOut());
+        try print_help(cli.executable_name, .stdout());
         return 0;
     }
 
     const port_path = switch (cli.positionals.len) {
         0 => {
-            try print_help(cli.executable_name, std.io.getStdErr());
+            try print_help(cli.executable_name, .stderr());
             return 1;
         },
 
@@ -51,67 +51,79 @@ pub fn main() !u8 {
         },
     };
 
-    const output = std.io.getStdOut();
-    const stderr = std.io.getStdErr();
+    const output_file: std.fs.File = .stdout();
+    const stderr_file: std.fs.File = .stderr();
 
-    const output_cfg = try IoOptions.configureOutputUncooked(output);
-    defer output_cfg.restore(output) catch |err| std.log.err("failed to restore terminal settings for stdout: {s}. Try resetting/restarting your terminal!", .{@errorName(err)});
+    var stderr_buff: [1024]u8 = undefined;
+    var stderr_writer = stderr_file.writer(&stderr_buff);
+    const stderr = &stderr_writer.interface;
+    defer stderr.flush() catch {};
 
-    // TODO: Add signal handler to allow graceful shutdown here.
+    var output_buff: [1024]u8 = undefined;
+    var output_writer = output_file.writer(&output_buff);
+    const output = &output_writer.interface;
+    defer output.flush() catch {};
 
-    var any_run_ok = false;
-    var reconnect_msg_printed = false;
-    var any_run_executed = false;
+    {
+        const output_cfg = try IoOptions.configureOutputUncooked(output_file);
+        defer output_cfg.restore(output_file) catch |err| std.log.err("we fucked up. failed to restore settings for stdout: {s}. Try resetting/restarting your terminal!", .{@errorName(err)});
 
-    var spinner: Spinner = .ascii;
+        // TODO: Add signal handler to allow graceful shutdown here.
 
-    while (true) {
-        const stream_result = stream_port(output, any_run_executed, port_path, .{
-            .baud_rate = cli.options.baud,
-            .parity = cli.options.parity,
-            .stop_bits = cli.options.@"stop-bits",
-            .word_size = cli.options.@"word-size",
-            .handshake = cli.options.handshake,
-        });
+        var any_run_ok = false;
+        var reconnect_msg_printed = false;
+        var any_run_executed = false;
 
-        // Unconditionally reset any modifications done to graphics of the terminal:
-        try output.writeAll("\x1B[0m");
+        var spinner: Spinner = .ascii;
 
-        any_run_executed = true;
-        if (stream_result) |_| {
-            // ok
-            any_run_ok = true;
-            reconnect_msg_printed = false;
-            try stderr.writeAll("<<disconnected>>\r\n");
-        } else |err| {
-            switch (err) {
-                error.FileNotFound => {
-                    if (!any_run_ok and !reconnect_msg_printed) {
-                        try std.io.getStdErr().writer().print("waiting for {s}...\r\n", .{
-                            port_path,
+        while (true) {
+            const stream_result = stream_port(output_file, any_run_executed, port_path, .{
+                .baud_rate = cli.options.baud,
+                .parity = cli.options.parity,
+                .stop_bits = cli.options.@"stop-bits",
+                .word_size = cli.options.@"word-size",
+                .handshake = cli.options.handshake,
+            });
+
+            // Unconditionally reset any modifications done to graphics of the terminal:
+            try output.writeAll("\x1B[0m");
+
+            any_run_executed = true;
+            if (stream_result) |_| {
+                // ok
+                any_run_ok = true;
+                reconnect_msg_printed = false;
+                try stderr.writeAll("<<disconnected>>\r\n");
+            } else |err| {
+                switch (err) {
+                    error.FileNotFound => {
+                        if (!any_run_ok and !reconnect_msg_printed) {
+                            try stderr.print("waiting for {s}...\r\n", .{
+                                port_path,
+                            });
+                            reconnect_msg_printed = true;
+                        }
+                        try output.print("\r{s}\r", .{
+                            spinner.next(),
                         });
-                        reconnect_msg_printed = true;
-                    }
-                    try output.writer().print("\r{s}\r", .{
-                        spinner.next(),
-                    });
-                },
+                    },
 
-                else => |e| {
-                    try output.writeAll("\n");
-                    try std.io.getStdErr().writer().print("failed to stream data from {s}: {s}\r\n", .{
-                        port_path,
-                        @errorName(e),
-                    });
-                    return 1;
-                },
+                    else => |e| {
+                        try output.writeAll("\n");
+                        try stderr.print("failed to stream data from {s}: {s}\r\n", .{
+                            port_path,
+                            @errorName(e),
+                        });
+                        return 1;
+                    },
+                }
             }
-        }
 
-        std.time.sleep(100 * std.time.ns_per_ms);
+            std.Thread.sleep(100 * std.time.ns_per_ms);
+        }
     }
 
-    comptime unreachable;
+    return 0;
 }
 
 const Spinner = struct {
@@ -169,12 +181,15 @@ fn stream_port(output: std.fs.File, print_connect_msg: bool, port_path: []const 
 }
 
 fn usage_error(comptime fmt: []const u8, args: anytype) u8 {
-    std.io.getStdErr().writer().print("usage error: " ++ fmt ++ "\n", args) catch {};
+    var stderr = std.fs.File.stderr().writer(&.{});
+    stderr.interface.print("usage error: " ++ fmt ++ "\n", args) catch {};
     return 1;
 }
 
 fn print_help(exe_name: ?[]const u8, stream: std.fs.File) !void {
-    try arg_parser.printHelp(CliArguments, exe_name orelse "sermon", stream.writer());
+    var file_writer = stream.writer(&.{});
+    try arg_parser.printHelp(CliArguments, exe_name orelse "sermon", &file_writer.interface);
+    try file_writer.interface.flush();
 }
 
 const IoOptions = switch (builtin.os.tag) {
@@ -242,9 +257,44 @@ const IoOptions = switch (builtin.os.tag) {
                 else => |e| return e,
             };
 
-            return IoOptions{
+            return .{
                 .termios = original,
             };
+        }
+
+        fn configureTtyNonBlocking(file: std.fs.File) !IoOptions {
+            const original = try std.posix.tcgetattr(file.handle);
+
+            var settings = original;
+
+            settings.iflag = std.posix.tc_iflag_t{ .IGNBRK = true }; // Ignore BREAK condition on input.
+            settings.oflag = std.posix.tc_oflag_t{}; // no magic enabled
+            // settings.cflag |= 0; // unchanged
+            settings.lflag = std.posix.tc_lflag_t{}; // no magic enabled
+
+            // make read() nonblocking:
+            settings.cc[VMIN] = 1;
+            settings.cc[VTIME] = 0;
+
+            try std.posix.tcsetattr(file.handle, .NOW, settings);
+
+            _ = try std.posix.fcntl(
+                file.handle,
+                std.posix.F.SETFL,
+                try std.posix.fcntl(file.handle, std.posix.F.GETFL, 0) | std.posix.system.IN.NONBLOCK,
+            );
+
+            return .{
+                .termios = original,
+            };
+        }
+
+        fn configureSerialNonBlocking(file: std.fs.File) !void {
+            _ = try std.posix.fcntl(
+                file.handle,
+                std.posix.F.SETFL,
+                try std.posix.fcntl(file.handle, std.posix.F.GETFL, 0) | std.posix.system.IN.NONBLOCK,
+            );
         }
 
         fn restore(options: IoOptions, file: std.fs.File) !void {

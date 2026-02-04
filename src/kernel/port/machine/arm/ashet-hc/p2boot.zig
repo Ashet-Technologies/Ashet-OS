@@ -3,6 +3,8 @@ const logger = std.log.scoped(.p2boot);
 
 const ChunkingWriter = @import("p2boot/ChunkingWriter.zig");
 
+const ashet = @import("../../../../main.zig");
+const microzig = @import("microzig");
 const rp2350 = @import("rp2350-hal");
 
 const hw_alloc = @import("hw_alloc.zig");
@@ -50,7 +52,7 @@ pub fn reset() !void {
 
     try reader.streamUntilDelimiter(fbs.writer(), '\n', null);
 
-    logger.info("received '{'}' from P2", .{std.zig.fmtEscapes(fbs.getWritten())});
+    logger.info("received \"{f}\" from P2", .{std.zig.fmtString(fbs.getWritten())});
 
     if (!std.mem.eql(u8, fbs.getWritten(), "Prop_Ver G\r")) {
         logger.err("no southbridge detected!", .{});
@@ -70,19 +72,21 @@ pub fn clock_init() !void {
 pub fn launch(buffer: []const u8) !void {
     try hw_alloc.uart.propeller2.write_blocking("> Prop_Txt 0 0 0 0 ", .no_deadline);
     {
-        var chunk_writer: ChunkingWriter = .{ .uart = hw_alloc.uart.propeller2 };
-        var reader = std.io.fixedBufferStream(buffer);
+        var write_buffer: [ChunkingWriter.chunk_size]u8 = undefined;
+        var chunk_writer: ChunkingWriter = .init(hw_alloc.uart.propeller2, &write_buffer);
 
-        try std.base64.standard.Encoder.encodeFromReaderToWriter(
-            chunk_writer.writer(),
-            reader.reader(),
+        try std.base64.standard.Encoder.encodeWriter(
+            &chunk_writer.writer,
+            buffer,
         );
+
+        try chunk_writer.writer.flush();
     }
 
     try hw_alloc.uart.propeller2.write_blocking(" ?\r", .no_deadline);
 
     logger.info("await response...", .{});
-    const response = try hw_alloc.uart.propeller2.read_word(rp2350.time.deadline_in_ms(150));
+    const response = try read_word_timeout(hw_alloc.uart.propeller2, rp2350.time.deadline_in_ms(150));
     switch (response) {
         '.' => {},
         '!' => {
@@ -93,5 +97,13 @@ pub fn launch(buffer: []const u8) !void {
             logger.err("unexpected response from Prop_Txt: 0x{X:0>8}!", .{response});
             return error.LoadFailed;
         },
+    }
+}
+
+fn read_word_timeout(uart: rp2350.uart.UART, timeout: microzig.drivers.time.Deadline) rp2350.uart.ReceiveError!u8 {
+    while (true) {
+        if (try uart.read_word()) |word|
+            return word;
+        try timeout.check(ashet.time.Instant.now());
     }
 }

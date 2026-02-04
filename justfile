@@ -1,5 +1,5 @@
 
-zig := "zig-0.14.1"
+zig := "zig-0.15.2"
 
 optimize_kernel := "false"
 optimize_apps := "Debug"
@@ -196,7 +196,7 @@ rp2350-build:
         zig-out/arm-ashet-hc/disk.uf2 \
         --verbose
 
-rp2350-flash: rp2350-build
+rp2350-upload: rp2350-build
     picotool load \
         --family 0xe48bff59 \
         --update \
@@ -204,7 +204,7 @@ rp2350-flash: rp2350-build
         --execute \
         zig-out/arm-ashet-hc/kernel.uf2
 
-rp2350-launch:  openocd-bootloader rp2350-flash 
+rp2350-launch:  openocd-bootloader rp2350-upload 
 
 rp2350-upload-fs: rp2350-build
     picotool load \
@@ -212,7 +212,7 @@ rp2350-upload-fs: rp2350-build
         --verify \
         zig-out/arm-ashet-hc/disk.uf2
 
-rp2350-load: rp2350-build
+rp2350-flash: rp2350-build
     arm-none-eabi-gdb \
         --batch \
         --command scripts/gdb-flash-rp2350 \
@@ -253,8 +253,9 @@ rp2350-monitor:
         --elf i2c-scan.ashex=zig-out/arm-ashet-hc/apps/i2c-scan.elf \
         ./zig-out/bin/sermon --baud 2000000 {{DEBUG_PORT}}
 
+# arm-none-eabi-gdb \
 qemu-gdb target:
-    arm-none-eabi-gdb \
+    riscv32-elf-gdb \
         --command "scripts/gdb" \
         zig-out/{{target}}/kernel.elf 
 

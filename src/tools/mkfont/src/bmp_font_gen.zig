@@ -224,7 +224,7 @@ pub const Builder = struct {
 
 pub fn render(
     allocator: std.mem.Allocator,
-    file: std.fs.File,
+    file_writer: *std.fs.File.Writer,
     font: Builder,
     info: FontInfo,
 ) !void {
@@ -240,7 +240,7 @@ pub fn render(
         }
     }
 
-    const writer = file.writer();
+    const writer = &file_writer.interface;
 
     // Write file header:
     try writer.writeInt(u32, 0xcb3765be, .little);
@@ -284,12 +284,12 @@ pub fn render(
 
     // Write `glyphs` data array:
     {
-        const start = try writer.context.getPos();
+        const start = file_writer.pos + writer.buffered().len;
         for (font.glyphs.keys()) |codepoint| {
             const expected_offset, const expected_size = glyph_sizes.get(codepoint).?;
             const glyph_bitmap = font.glyphs.get(codepoint).?;
 
-            const offset = try writer.context.getPos();
+            const offset = file_writer.pos + writer.buffered().len;
             std.debug.assert(offset - start == expected_offset);
 
             // std.debug.print("emit '{u}' to 0x{X:0>4}/0x{X:0>4}: {} {} {} {} '{}'\n", .{
@@ -310,7 +310,7 @@ pub fn render(
             try writer.writeInt(i8, glyph_bitmap.offset_y, .little);
             try writer.writeAll(glyph_bitmap.bits);
 
-            const end = try writer.context.getPos();
+            const end = file_writer.pos + writer.buffered().len;
             std.debug.assert(end - offset == expected_size);
         }
     }
