@@ -196,7 +196,7 @@ rp2350-build:
         zig-out/arm-ashet-hc/disk.uf2 \
         --verbose
 
-rp2350-flash: rp2350-build
+rp2350-upload: rp2350-build
     picotool load \
         --family 0xe48bff59 \
         --update \
@@ -204,7 +204,7 @@ rp2350-flash: rp2350-build
         --execute \
         zig-out/arm-ashet-hc/kernel.uf2
 
-rp2350-launch:  openocd-bootloader rp2350-flash 
+rp2350-launch:  openocd-bootloader rp2350-upload 
 
 rp2350-upload-fs: rp2350-build
     picotool load \
@@ -212,7 +212,7 @@ rp2350-upload-fs: rp2350-build
         --verify \
         zig-out/arm-ashet-hc/disk.uf2
 
-rp2350-load: rp2350-build
+rp2350-flash: rp2350-build
     arm-none-eabi-gdb \
         --batch \
         --command scripts/gdb-flash-rp2350 \
