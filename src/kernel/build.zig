@@ -482,11 +482,7 @@ const arm_cortex_m33: std.Target.Query = .{
     .cpu_model = .{
         .explicit = &std.Target.arm.cpu.cortex_m33,
     },
-    .cpu_features_sub = std.Target.arm.featureSet(&.{
-        // Disable GPU in kernel
-        .slowfpvfmx,
-        .slowfpvmlx,
-    }),
+    .cpu_features_sub = std.Target.arm.featureSet(&.{}),
 };
 
 const generic_rv32: std.Target.Query = .{
