@@ -87,7 +87,7 @@ const redzone_size = ashet.memory.page_size;
 /// on init and will probe the stack usage on task switch.
 ///
 /// This pattern will allow us detecting both stack smashing as well as general stack usage.
-pub var use_stack_pattern_probing = false;
+pub var use_live_stack_pattern_probing = false;
 
 /// This size determines how many bytes of the stack canary must be intact before the kernel
 /// considers the stack overflown.
@@ -115,7 +115,7 @@ pub fn dumpStats() void {
 
         logger.info("  [-] {f}, stack usage={Bi:.3}, stack size={Bi}", .{
             thread,
-            thread.check_canary(),
+            thread.get_stack_usage(),
             thread.stack_memory.len,
         });
     }
@@ -128,7 +128,7 @@ pub fn dumpStats() void {
             logger.info("  [{d}] {f}, stack usage={Bi:.3}, stack size={Bi}", .{
                 index,
                 thread,
-                thread.check_canary(),
+                thread.get_stack_usage(),
                 thread.stack_memory.len,
             });
         }
@@ -533,10 +533,15 @@ pub const Thread = struct {
             thread.stack_memory;
     }
 
-    fn initialize_canary(thread: *Thread) void {
+    /// Creates a new, unique-per-thread PRNG to generate canary values:
+    fn init_prng(thread: *Thread) CanaryPrng {
         // We just use the threads pointer to seed the PRNG,
         // as it's a unique value per thread *and* it's a stable value:
-        var rng: CanaryPrng = .init(@intFromPtr(thread));
+        return .init(@intFromPtr(thread));
+    }
+
+    fn initialize_canary(thread: *Thread) void {
+        var rng = thread.init_prng();
 
         // Just fill the whole stack with a u64 pattern:
         const stack_as_u64 = std.mem.bytesAsSlice(u64, thread.get_mutable_stack_view());
@@ -545,14 +550,14 @@ pub const Thread = struct {
         }
     }
 
-    /// Returns the number of used bytes on the stack:
-    pub fn check_canary(thread: *Thread) usize {
-        if (!use_stack_pattern_probing)
-            return 0;
-
-        // We just use the threads pointer to seed the PRNG,
-        // as it's a unique value per thread *and* it's a stable value:
-        var rng: CanaryPrng = .init(@intFromPtr(thread));
+    /// Computes the stack usage for the thread by checking if the stack memory aligns
+    /// with what we've seeded into it in 'initialize_canary'.
+    ///
+    /// As we're comparing entities of u64, it's very unlikely an application will ever
+    /// hit a pseudorandom u64 pattern perfectly, so we use that as a test
+    /// to see how much of the stack memory is still intact.
+    pub fn get_stack_usage(thread: *Thread) usize {
+        var rng = thread.init_prng();
 
         const stack_memory = thread.get_mutable_stack_view();
 
@@ -580,6 +585,16 @@ pub const Thread = struct {
         }
 
         return stack_memory.len - untouched_stack_bytes;
+    }
+
+    /// Returns the number of used bytes on the stack:
+    pub inline fn check_canary(thread: *Thread) void {
+        if (!use_live_stack_pattern_probing)
+            return;
+
+        // Just querying the stack usage will perform the safety checks for the thread
+        // anyways:
+        _ = thread.get_stack_usage();
     }
 };
 
@@ -686,7 +701,7 @@ fn performSwitch(from: *Thread, to: *Thread) void {
     to.stats.schedule_time = now;
     to.stats.times_scheduled += 1;
 
-    _ = from.check_canary();
+    from.check_canary();
 
     // Prepare task switch:
     ashet_scheduler_save_thread = from;

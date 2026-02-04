@@ -353,8 +353,8 @@ pub const global_hotkeys = struct {
             switch (event.usage) {
                 .f1 => @panic("F1 induced kernel panic"),
                 .f9 => {
-                    scheduler.use_stack_pattern_probing = !scheduler.use_stack_pattern_probing;
-                    if (scheduler.use_stack_pattern_probing) {
+                    scheduler.use_live_stack_pattern_probing = !scheduler.use_live_stack_pattern_probing;
+                    if (scheduler.use_live_stack_pattern_probing) {
                         std.log.warn("stack pattern probing enabled! expect slowdowns!", .{});
                     } else {
                         std.log.warn("stack pattern probing disabled!", .{});
