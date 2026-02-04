@@ -46,7 +46,7 @@ namespace resources {
         in @"resource": SystemResource;
     }
 
-    /// Immediatly destroys the resource and releases its memory.
+    /// immediately destroys the resource and releases its memory.
     ///
     /// NOTE: This will *always* destroy the resource, even if it's
     ///       also owned by another process.
@@ -347,21 +347,42 @@ namespace process {
     }
 }
 
+/// This namespace contains functions and types related to a monotonic time base.
+///
+/// NOTE: Functions inside this namespace are useful for measuring time or awaiting
+///       timeouts.
 namespace clock {
+    /// Time in nanoseconds since system startup.
+    enum Absolute : u64 {
+        item system_start = 0;
+        ...
+    }
+
+    /// A duration in nanoseconds.
+    enum Duration : u64 {
+        ...
+    }
+
     /// Returns the time in nanoseconds since system startup.
-    /// This clock is monotonically increasing.
+    ///
+    /// NOTE: This clock never goes backwards (non-decreasing).
+    ///
+    /// NOTE: The returned value is expressed in nanoseconds, but the underlying hardware
+    ///       may have a coarser resolution. In that case the value advances in steps.
     syscall monotonic {
         out time: Absolute;
     }
 
-    /// Returns when `clock.monotonic()` is at least `timeout`.
+    /// Completes when `clock.monotonic() >= deadline`.
+    ///
+    /// NOTE: The timer completes immediately if `deadline` is already reached.
     async_call Timer {
-        /// Monotonic timestamp in nanoseconds until the operation completes.
-        in timeout: Absolute;
+        /// Monotonic timestamp in nanoseconds at which the operation completes.
+        in deadline: Absolute;
     }
 }
 
-/// This namespace groups functions related to wall clock and calendar operations.
+/// This namespace contains functions and types related to wall clock and calendar operations.
 ///
 /// NOTE: Leap seconds are implemented by stretching the last millisecond of a day
 ///       by an additional second, so the millisecond 23:59:59.999 is 1001 ms long.
@@ -478,7 +499,7 @@ namespace datetime {
         error InvalidValue;
     }
 
-    /// Completes when `datetime.now()` is bigger than `when`.
+    /// Completes when `datetime.now() >= when`.
     /// 
     /// NOTE: A call to `set` may trigger all active alarm calls that
     ///       are now satisfied.
@@ -698,36 +719,36 @@ namespace datetime {
     /// Enumeration of the variants how missing wall clock times will be resolved. 
     enum MissingTimeAdjustment : u8 {
         /// The time is not adjusted, but rejected and yields an error.
-        field reject = 0;
+        item reject = 0;
 
         /// The time is adjusted to the first possible past point in time.
         /// EXAMPLE: `02:30:00.000` is mapped to `01:59:59.999`.
-        field past = 1;
+        item past = 1;
 
         /// The time is adjusted to the first possible future point in time.
         /// EXAMPLE: `02:30:00.000` is mapped to `03:00:00.000`.
-        field future = 2;
+        item future = 2;
 
         /// The time is adjusted to the closest possible point in time.
         /// EXAMPLE: `02:29:00.000` is mapped to `01:59:59.999`.
         /// EXAMPLE: `02:30:00.000` is mapped to `03:00:00.000`.
         /// EXAMPLE: `02:31:00.000` is mapped to `03:00:00.000`.
-        field closer = 3;
+        item closer = 3;
     }
 
     /// Enumeration of the variants how a wall clock time that can occur multiple times
     /// is handled.
     enum DuplicateTimeOccurrence : u8 {
         /// The time is not adjusted, but rejected and yields an error.
-        field reject = 0;
+        item reject = 0;
 
         /// If the time is ambiguous, assume the earlier variant.
         /// EXAMPLE: `02:30` is 2.5 hours past midnight.
-        field earlier = 1;
+        item earlier = 1;
 
         /// If the time is ambiguous, assume the later variant.
         /// EXAMPLE: `02:30` is 3.5 hours past midnight.
-        field later = 2;
+        item later = 2;
     }
 }
 
@@ -1927,18 +1948,8 @@ struct UUID {
     field bytes: [16]u8;
 }
 
-/// Time in nanoseconds since system startup.
-enum Absolute : u64 {
-    item system_start = 0;
-    ...
-}
-
-/// A duration in nanoseconds.
-enum Duration : u64 { ... }
-
-
 enum PipeMode : u8 {
-    /// Completes immediatly even if no elements could be processed.
+    /// Completes immediately even if no elements could be processed.
     item nonblocking = 0;
     /// Returns when at least one element could be processed.
     item at_least_one = 1;
@@ -3773,7 +3784,7 @@ namespace io {
         async_call break {
             in port:  SerialPort;
 
-            in duration: Duration;
+            in duration: clock.Duration;
 
             error InvalidHandle;
 
