@@ -11,9 +11,58 @@ enum SystemResource : usize
 }
 
 /// All syscalls related to generic resource management.
+///
+/// - Resources are created through various calls in the kernel api, but their
+///   lifetime and availability is managed through calls inside this namespace.
+/// - After creation, a resource is strongly bound to the process that created the
+///   resource.
+/// - When a resource is destroyed, it becomes unusable from userland.
+/// - As long as a resource is strongly bound to at least a single process, it is
+///   not automatically destroyed.
+/// - As soon as a resource has no strong bindings anymore, it is destroyed by the kernel.
+/// - A process can only access the resources bound to the process.
+/// - In addition to strong bindings, weak bindings also exist.
+/// - Weak bindings allow a process access to a resource, but don't keep the resource alive.
+/// - This allows processes to access resources they don't own.
+/// - Resources can be tethered to other resources.
+/// - If a tethered resource is destroyed, the associated resource is also destroyed. 
+///
+/// NOTE: Every kernel object the userland can interact with is a resource.
+///
+/// NOTE: If a resource is destroyed by any means (zero strong bindings, manual destruction, tethering),
+///       it destroys all resources tethered to it (i.e. where it is the `source`).
+///       This may lead to a cascade called "tether chain".
+///
+/// NOTE: Tethering can form cycles. This allows resources to be tightly bound together and if one
+///       resource dies, the other one also dies.
+///
+/// NOTE: The order in which tether destruction is executed is unspecified. Implementors must not assume
+///       any order of destruction.
+///
+/// NOTE: Tethering does not affect resource lifetimes. A tether will never keep
+///       other resources alive. Tethers are removed if the `target` resource is destroyed
+///       and all of its tether effects are resolved.
+///
+/// LORE: Originally, Ashet OS had no concept of bindings, but only of ownership.
+///       But this quickly lead to problems like "the desktop server also owns the window
+///       so even if the application releases the window, it is not destroyed".
+///       Cycles like this could only be resolved by an explicit call to `destroy` instead
+///       of `release`. But this yields brittle code that expects correct application shutdown.
+///       In cases of crashes, the resource would only be released, but not destroyed.
+///       The idea of allowing a process to access a resource, but not keeping it alive solves
+///       this problem completely and also allows some other patterns to work well.
+/// 
+/// LORE: The idea of resource tethering came after the idea of bindings.
+///       Tethering allows resolving a problem most other operating systems have, which is:
+///       What happens if a thread dies unexpectedly.
+///       In operating systems without tethering, the application has to monitor the threads
+///       and if a thread dies, it has to manually clean up the resources of that thread
+///       assuming it has properly registered the resources in a global management structure.
+///       With tethering, we can tether the lifetime of a file handle to the lifetime of its 
+///       owning thread, meaning: If the thread dies, the file is closed.
+///       As this is a very useful property, i've decided to implement it as a broader general
+///       concept instead of tying it to threads only.
 namespace resources {
-    //? TODO: Introduce the concept of strong/weak resources.
-
     /// Returns the type of the system resource.
     syscall get_type {
         in     @"resource": SystemResource;
@@ -21,38 +70,214 @@ namespace resources {
         error  InvalidHandle;
     }
 
-    /// Returns the current owner of this resource.
-    syscall get_owners {
-        in     @"resource": SystemResource;
-        in     owners:      ?[]process.Process;
-        out    count: usize;
+    /// Immediately destroys the resource and releases its memory.
+    ///
+    /// NOTE: This will *always* destroy the resource, even if it's
+    ///       still strongly bound by a process.
+    ///
+    /// NOTE: This immediately triggers tether chains and destroys
+    ///       all tethered resources as well.
+    ///
+    /// NOTE: `destroy` always succeeds; destroying an invalid or already-destroyed handle is a no-op.
+    syscall destroy {
+        in @"resource": SystemResource;
     }
 
-    /// Adds the process to the owners of this resource, so the process
-    /// can safely access it without fear of having a use-after-free.
-    syscall send_to_process {
+    /// Defines the possible kinds of bind operations we have.
+    enum BindOperation : u8
+    {
+        /// The resource shall be unbound from the process.
+        item unbind = 0;
+
+        /// The resource will be bound strongly to the process.
+        item strong = 1;
+
+        /// The resource will be bound weakly to the process.
+        item weak = 2;
+
+        /// This operation ensures that the binding is at least `weak`,
+        /// but may never be downgraded from `strong`.
+        ///
+        /// This gives the ability to ensure a process can definitely access a resource
+        /// without force-downgrading it to a `weak` binding if the process already has
+        /// a `strong` binding.
+        item at_least_weak = 3;
+    }
+
+    /// Binds a resource to a process.
+    ///
+    /// The success of this operation allows `target` to access `resource`, and optionally
+    /// gain/lose a strong binding of the resource.
+    ///
+    /// NOTE: This function can be used to up/downgrade the binding of a resource.
+    ///
+    /// NOTE: If `binding` is `unbind`, the resource is instead unbound from the process and
+    ///       may be released.
+    ///
+    ///       If all strong bindings of a resource are removed, the resource will be destroyed.
+    ///
+    /// NOTE: The following operations are idempotent:
+    ///       - `binding=weak` when already bound weak.
+    ///       - `binding=strong` when already bound strong.
+    ///       - `binding=unbind` when not bound.
+    ///       - `binding=at_least_weak` when already bound weak or strong.
+    syscall bind {
         in    @"resource": SystemResource;
-        in    target:      process.Process;
-        error DeadProcess;
+
+        /// The process which the resource should be bound to. If `null`, uses the current process.
+        in    target:      ?process.Process;
+
+        /// The type of binding operation that shall be performed.
+        in    binding:     BindOperation;
+
+        /// The resource or process handle was invalid.
         error InvalidHandle;
+
+        /// The `target` process is dead, but still has an alive handle.
+        /// NOTE: Cannot happen when `binding` is `unbind`.
+        error ZombieProcess;
+
+        /// The system ran out of resources when handling the request.
+        /// NOTE: Cannot happen when `binding` is `unbind`.
         error SystemResources;
     }
 
-    /// Drops the ownership of the resource for the current process.
-    /// If no owner remains, the resource will be destroyed and it's
-    /// memory will be released.
-    /// The handle must be assumed invalid for this process after
-    /// this function returns.
-    syscall release {
-        in @"resource": SystemResource;
+
+    /// Defines the possible kinds of binding a resource can have.
+    enum Binding : u8
+    {
+        /// The resource is not bound to the process.
+        /// This means the process cannot access the resource and also does not keep
+        /// the resource alive.
+        item unbound = 0;
+
+        /// The resource is strongly bound to the process.
+        /// As long as a single strong binding exists, the resource is
+        /// valid. 
+        item strong = 1;
+
+        /// The resource is weakly bound to the process.
+        /// This means the process can access the resource, but does not
+        /// keep the resource alive.
+        item weak = 2;
     }
 
-    /// immediately destroys the resource and releases its memory.
+    /// Returns the binding for a resource on a process.
+    syscall get_binding {
+        in  @"resource": SystemResource;
+
+        /// The process for which the resource binding shall be queried. If `null`, uses the current process.
+        in  target:      ?process.Process;
+
+        /// The kind of binding the resource has on `target`. 
+        out binding: Binding;
+
+        /// The resource or process handle was invalid.
+        error InvalidHandle;
+    }
+
+    /// Returns the current bindings of a resource.
     ///
-    /// NOTE: This will *always* destroy the resource, even if it's
-    ///       also owned by another process.
-    syscall destroy {
-        in @"resource": SystemResource;
+    /// NOTE: The order in which processes and bindings are returned are not guaranteed to be
+    ///       stable between two calls.
+    ///
+    /// NOTE: When `processes` is `null`, `bindings` can be used to count strong vs weak bindings.
+    ///
+    /// NOTE: When `resource` is the currently executing process, that process is always returned
+    ///       in `processes`.
+    syscall get_bindings {
+        /// The resource which should be queried.
+        in     @"resource": SystemResource;
+        
+        /// If not `null`, will receive the process handles that have a binding
+        /// on `resource`.
+        ///
+        /// NOTE: The process handles will be bound to the calling process with `BindOperation.at_least_weak`
+        ///       to ensure resource access.
+        in     processes:   ?[]process.Process;
+
+        /// If not `null`, will receive the binding types of all bindings on `resource`.
+        /// If `processes` is also provided, `bindings[i]` corresponds to `processes[i]`.
+        /// Otherwise, the order is unspecified.
+        ///
+        /// NOTE: No value written in this will ever be `unbound`.
+        in     bindings:    ?[]Binding;
+
+        /// The number of bindings for the resource if `processes` and `bindings` is `null`.
+        /// Otherwise the number of elements written to `processes` and/or `bindings`.
+        ///
+        /// NOTE: If `processes` and `bindings` have different lengths, `min(processes.len, bindings.len)` is chosen.
+        out    count: usize;
+
+        /// The resource or process handle was invalid.
+        error InvalidHandle;
+
+        /// The system ran out of resources when handling the request.
+        error SystemResources;
+    }
+
+    /// Defines the possible ways of how a resource is tethered to another resource. 
+    enum TetherMode : u8
+    {
+        /// The resources are not tethered.
+        item untethered = 0;
+        
+        /// If the source resource is destroyed, the target resource will be destroyed as well.
+        item strong = 1;
+    }
+
+    /// Binds the lifetime of the 'target' resource to the lifetime of the 'source' resource.
+    ///
+    /// If `mode` is `strong` and the `source` resource is destroyed, the `target` resource
+    /// will implicitly be destroyed as well. 
+    syscall tether {
+        /// The resource which destruction will trigger the tether event.
+        in  source: SystemResource;
+
+        /// The resource that will receive the tether event.
+        in  target: SystemResource;
+
+        /// The kind of tethering performed.
+        in  mode: TetherMode;
+
+        /// One of the resource handles was invalid.
+        error  InvalidHandle;
+
+        /// The system ran out of resources when handling the request.
+        error  SystemResources;
+    }
+
+    /// Queries the tethering between two resources.
+    syscall get_tether {
+        /// The resource which destruction will trigger the tether event.
+        in  source: SystemResource;
+
+        /// The resource that will receive the tether event.
+        in  target: SystemResource;
+
+        /// The kind of tethering performed between the two resources.
+        out mode: TetherMode;
+
+        /// One of the resource handles was invalid.
+        error  InvalidHandle;
+    }
+
+    //? TODO: Potentially define get_tethers?
+
+    /// An anchor is a system resource without any properties or functions
+    /// besides the basic properties of resources.
+    ///
+    /// Anchors can be used as groups for tether objects or as tokens passed
+    /// between processes.
+    resource Anchor {   }
+
+    /// Creates a new `Anchor` resource.
+    syscall create_anchor {
+        /// The newly created anchor.
+        out anchor: Anchor;
+
+        /// The system ran out of resources when handling the request.
+        error  SystemResources;
     }
 }
 
@@ -376,15 +601,19 @@ namespace process {
     }
 
     namespace monitor {
-        /// Queries all owned resources by a process.
+        /// Queries all process resources.
         syscall enumerate_processes {
+            /// NOTE: The process handles will be bound to the calling process with the `at_least_weak` binding
+            ///       to ensure access.
             in  processes: ?[]Process;
             out count: usize;
         }
 
-        /// Queries all owned resources by a process.
-        syscall query_owned_resources {
+        /// Queries all bound resources by a process.
+        syscall query_bound_resources {
             in  owner: Process;
+            /// NOTE: The resource handles will be bound to the calling process with the `at_least_weak` binding
+            ///       to ensure access.
             in  reslist: ?[]SystemResource;
             out count: usize;
             error InvalidHandle;
