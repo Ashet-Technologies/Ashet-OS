@@ -5,6 +5,7 @@ const rp2350 = @import("rp2350");
 const hal = @import("rp2350-hal");
 const expcard = @import("expcard");
 const rp2350_regs = rp2350.peripherals;
+const microzig_shim = @import("microzig");
 
 const psram = @import("psram.zig");
 
@@ -74,6 +75,16 @@ var interrupt_table_core1: rp2350.VectorTable align(256) = undefined;
 fn early_initialize() void {
     // Disable watch dog, reset all peripherials, and set the clocks and PLLs:
     hal.init_sequence(clock_config);
+
+    // enable the DCP and FPU as well:
+    // see: https://developer.arm.com/documentation/100235/0004/the-cortex-m33-peripherals/system-control-block/coprocessor-access-control-register?lang=en
+    // see: RP2350 Datasheet §3.6. Cortex-M33 Coprocessors
+    microzig_shim.cpu.peripherals.scb.CPACR.modify(.{
+        .CP0 = .full_access, // RPI GPIOC
+        .CP4 = .full_access, // RPI Double Co-Processor
+        .CP10 = .full_access, // Arm FPU
+        .CP11 = .full_access, // Arm FPU
+    });
 
     hw_alloc.pins.xip_cs1.set_function(.gpck);
 

@@ -37,7 +37,7 @@ pub const options = struct {
             pub const image_def_exe_security = .secure;
             pub const next_block = null;
         };
-        pub const use_dcp = true;
+        pub const use_dcp = false; // TODO: Enable support for fp64
     };
     pub const cpu = struct {
         pub const enable_fpu = false;
