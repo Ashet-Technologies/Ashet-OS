@@ -252,7 +252,7 @@ fn main() !void {
     log.info("spawn kernel main thread...", .{});
     {
         const thread = try scheduler.Thread.spawn(global_kernel_tick, null, .{
-            .stack_size = 3 * 1024 * 1024,
+            .stack_size = 32 * 1024,
         });
         try thread.setName("os.tick");
         try thread.start();
