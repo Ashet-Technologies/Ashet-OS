@@ -361,21 +361,188 @@ namespace clock {
     }
 }
 
+/// This namespace groups functions related to wall clock and calendar operations.
+///
+/// LORE: The decision to use minute offsets instead of seconds is that
+///       there is no real reason to support this level of precision,
+///       as all current real time zones are only having quarter-hour
+///       steps. Minutes allow a higher precision than that, but are not
+///       unnecessarily high.
 namespace datetime {
-    /// Get a calendar timestamp relative to UTC 1970-01-01.
-    /// Precision of timing depends on the hardware.
-    /// The return value is signed because it is possible to have a date that is
-    /// before the epoch.
-    syscall now {
-        out datetime: DateTime;
+    //?
+    //? Basic date/time management and query
+    //?
+
+    /// Encodes a packed structure that encodes a calendar date + wall clock time
+    /// into a single integer.
+    ///
+    /// NOTE: A DateTime value is always in the UTC time zone.
+    ///
+    /// NOTE: This type isn't a monotonic type but has holes inside.
+    ///       It is still organized in a way that it's trivially sortable by
+    ///       comparison as a signed integer.
+    bitstruct DateTime : i64 {
+        /// The number of milliseconds inside the encoded day.
+        ///
+        /// RANGE: 0 to 86,399,999
+        ///
+        /// LORE: Millisecond precision was chosen as it's the smallest
+        ///       discrete time step in SI prefix units that fits into a u32
+        ///       value.
+        field milliseconds_of_day: u32;
+
+        /// The number of days since the epoch, which is the `2000-01-01`.
+        ///
+        /// RANGE: 2000-01-01 = 0
+        ///
+        /// LORE: The epoch was chosen to be the first january of 2000 as for
+        ///       a non-UNIX timestamp system it doesn't necessarily make sense
+        ///       to use the same epoch.
+        ///       Using 2000 as the base year is kinda fun though, as it's a leap
+        ///       year.
+        field days_since_epoch: i32;
     }
 
-    /// Sleeps until `datetime.now()` returns a point in  time that comes after `when`.
+    /// Returns the current date/time value.
+    ///
+    /// NOTE: Precision of timing depends on the current hardware,
+    ///       but should always be at least in seconds precision.
+    syscall now {
+        /// The current date and time of the system.
+        out dt: DateTime;
+    }
+
+    /// Updates the systems current date/time value.
+    syscall set  {
+        /// The new date and time of the system.
+        in    dt: DateTime;
+
+        /// The DateTime value does not encode a valid number of seconds.
+        error InvalidValue;
+    }
+
+    /// Sleeps until `datetime.now()` returns a point in time that comes after `when`.
     async_call Alarm {
         /// Earliest possible date time of when the alarm triggers.
         in when: DateTime;
     }
 
+    //?
+    //? Timezone Management
+    //?
+
+    /// Sets the current local time zone offset to UTC.
+    syscall set_timezone_offset
+    {
+        /// The offset of the local time to UTC in minutes.
+        ///
+        /// RANGE: -1440 - 1440
+        in    minutes: i16;
+
+        /// The provided 'minutes' offset was not in the legal range.
+        error OutOfRange;
+    }
+
+    /// Gets the current local time zone offset to UTC.
+    syscall get_timezone_offset
+    {
+        /// The offset of the local time to UTC in minutes.
+        ///
+        /// RANGE: -1440 - 1440
+        out minutes: i16;
+    }
+
+    /// Loads a "timezone data" file according to the [tz database](https://en.wikipedia.org/wiki/Tz_database).
+    ///
+    /// This allows setting the automatic update of the current local time zone offset according to
+    /// the rules encoded in the timezone data.
+    ///
+    /// LORE: The decision to use tzdata was pretty simple: It's a standardized format
+    ///       that has proven over time and solves pretty much all of our issues already
+    ///       in a good way.
+    syscall load_timezone_data
+    {
+        /// The binary blob of the timezone data file.
+        in data: bytestr;
+
+        /// The system is out of resources and cannot load the timezone data.
+        error SystemResources;
+
+        /// The data is not a valid timezone data file.
+        error InvalidData;
+    }
+
+    //?
+    //? Gregorian Calendar APIs
+    //?
+
+    /// A structure encoding a date in the [Proleptic Gregorian calendar](https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar),
+    /// which means it can encodes dates prior to 1582.
+    ///
+    /// LORE: This structure isn't a necessity for the kernel API, but is introduces
+    ///       as a way of saving code size and memory, as most western applications
+    ///       will use the Gregorian calendar, so it makes sense to share the implementation
+    ///       for a conversion from/to `DateTime` in the kernel.
+    struct GregorianDate {
+        /// RANGE: -32768 - 32767
+        field year: i16;
+
+        /// RANGE: 1-12
+        field month: u8;
+
+        /// RANGE: 1-31
+        field day: u8;
+
+        /// RANGE: 0-23
+        field hour: u8;
+
+        /// RANGE: 0-59
+        field minute: u8;
+
+        /// RANGE: 0-59
+        field second: u8;
+
+        /// RANGE: 0-999
+        field millis: u16;
+    }
+
+    /// Converts a gregorian date into a DateTime.
+    syscall from_gregorian  {
+        /// The gregorian date that shall be converted into a date time.
+        in  gregorian:    GregorianDate;
+
+        /// The offset to UTC in minutes for the date.
+        /// NOTE: Use 0 for UTC.
+        in  local_offset: i16;
+
+        /// The resulting datetime value for `gregorian`.
+        out dt:           DateTime;
+
+        /// The gregorian date contains an invalidly specified date.
+        error InvalidValue;
+
+        /// The local time zone offset is not in the legal range.
+        error OutOfRange;
+    }
+
+    /// Converts a DateTime value into a gregorian date.
+    syscall to_gregorian  {
+        /// The DateTime value that shall be converted into a gregorian date.
+        in  dt:           DateTime;
+
+        /// The offset to UTC in minutes for the date.
+        /// NOTE: Use 0 for UTC.
+        in  local_offset: i16;
+
+        /// The resulting gregorian date.
+        out gregorian:    GregorianDate;
+
+        /// The date/time value contains an invalid value.
+        error InvalidValue;
+
+        /// The local time zone offset is not in the legal range.
+        error OutOfRange;
+    }
 }
 
 namespace video {
@@ -1080,9 +1247,9 @@ namespace draw {
     }
 
     /// Measures the size of a text string.
-    /// 
+    ///
     /// NOTE: This function accepts strings using the LF line separator
-    ///       and will return the height of all lines and the width of 
+    ///       and will return the height of all lines and the width of
     ///       the longest line.
     syscall measure_text_size {
         in    font: Font;
@@ -1572,15 +1739,6 @@ const max_file_name_len = 120;
 
 struct UUID {
     field bytes: [16]u8;
-}
-
-
-/// A date-and-time type encoding the time point in question as a
-/// Unix timestamp in milliseconds
-enum DateTime : i64 {
-    /// 1970-01-01 00:00
-    item epoch = 0;
-    ...
 }
 
 /// Time in nanoseconds since system startup.
@@ -2795,7 +2953,7 @@ struct MessageBoxEvent {
 ///
 /// An 8-bit color value with a specialized encoding suitable for embedding
 /// a practical set of 256 colors.
-/// 
+///
 /// The color encoding is basically a HSV (hue, saturation, value) color with 8 bits, using
 /// 3 bits for the hue, 3 bits for the value and 2 bits for the saturation.
 ///
@@ -2816,26 +2974,26 @@ struct MessageBoxEvent {
 ///   integer storing the brightness of gray.
 ///
 /// This yields a color space which has the following properties:
-/// 
+///
 /// - 64 true gray levels ranging from black to white.
 /// - 8 different hues (red, yellow, lime, green, cyan, blue, purple, magenta).
 /// - 3 different levels of saturation for each non-gray color.
 /// - black maps to `0x00` (but white does not map to `0xFF`).
-/// 
+///
 /// This means we have all 256 colors mapped to a distinct, meaningful color that still allows
 /// programmatic conversion from and to the color without the need of a look-up table that
 /// would require searching the correct color.
 ///
 /// NOTE: This color encoding shall be referred to as "Ashet HSV".
 ///
-/// LORE: This color encoding was developed over the course of several days, playing around with 
+/// LORE: This color encoding was developed over the course of several days, playing around with
 ///       many different encodings.
 ///       The color encodings/palettes were tested on a diverse set of images, including game screenshots,
 ///       photographs, artificial images, vector graphics and so on.
-///       
+///
 ///       The "Ashet HSV" encoding showed the best visual matches for most pictures, allowing both visual
 ///       fidelity on the color side, but also allowing both bright and dark images to work really well.
-/// 
+///
 bitstruct Color : u8 {
     const black:   Color = .{ .hue = 0, .value = 0, .saturation = 0 };
     const white:   Color = .{ .hue = 7, .value = 7, .saturation = 0 };
@@ -2851,7 +3009,7 @@ bitstruct Color : u8 {
     /// The hue of the color, encoded as 0 = 0° (red), 7 = 315° (magenta).
     field hue: u3;
 
-    /// The value of the color, with 0 = 12.5% brightness and 7 = 100% brightness. 
+    /// The value of the color, with 0 = 12.5% brightness and 7 = 100% brightness.
     field value: u3;
 
     /// The saturation of the color, encoded as 0 = desaturated, and 3 = fully saturated.
@@ -3232,8 +3390,8 @@ struct FileInfo {
     /// The size of the file in bytes.
     field size: u64;
     field attributes: FileAttributes;
-    field creation_date: DateTime;
-    field modified_date: DateTime;
+    field creation_date: datetime.DateTime;
+    field modified_date: datetime.DateTime;
 }
 
 
