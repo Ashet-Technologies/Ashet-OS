@@ -354,7 +354,7 @@ namespace clock {
         out time: Absolute;
     }
 
-    /// Sleeps until `clock.monotonic()` returns at least `timeout`.
+    /// Returns when `clock.monotonic()` is at least `timeout`.
     async_call Timer {
         /// Monotonic timestamp in nanoseconds until the operation completes.
         in timeout: Absolute;
@@ -363,11 +363,47 @@ namespace clock {
 
 /// This namespace groups functions related to wall clock and calendar operations.
 ///
+/// NOTE: Leap seconds are implemented by stretching the last millisecond of a day
+///       by an additional second, so the millisecond 23:59:59.999 is 1001 ms long.
+///       The encoded `DateTime` value does not gain an extra representable millisecond;
+///       the duration of the final millisecond is extended by the kernel when applicable.
+///
+/// NOTE: Ashet OS uses [Coordinated Universal Time (UTC)](https://en.wikipedia.org/wiki/Coordinated_Universal_Time), not [International Atomic Time (TAI)](https://en.wikipedia.org/wiki/International_Atomic_Time).
+///
+/// NOTE: The local time offset is always in minutes relative to the UTC time.
+///       This means that it is computed by `local = utc + offset`.
+///       As an example, consider `Europe/Berlin` (Winter), which is UTC+01:00:
+///       - `offset = 60`
+///       - `local = utc   + 60`
+///       - `utc   = local - 60`
+///
+/// NOTE: By default, the kernel uses UTC. Use `set_timezone_offset` or `load_timezone_data` to change that.
+///
+///
+/// NOTE: The kernel maintains the local time zone in exactly one of two mutually exclusive modes:
+///       - Manual fixed offset (configured via `set_timezone_offset`)
+///       - Rule-based offset from tzdata (configured via `load_timezone_data`)
+///       The most recently invoked of these two syscalls selects the active mode.
+///
 /// LORE: The decision to use minute offsets instead of seconds is that
 ///       there is no real reason to support this level of precision,
 ///       as all current real time zones are only having quarter-hour
 ///       steps. Minutes allow a higher precision than that, but are not
 ///       unnecessarily high.
+///
+/// LORE: Leap seconds are explicitly not part of the kernel API to keep the API
+///       simple and predictable.
+///       Having to consider leap seconds in each and every API will break more programs
+///       than the OS pretending they don't exist on the API boundary.
+///       There are two typical implementations for this behaviour:
+///       - Leap smearing: The seconds of a day with a leap second are ever so slightly slower/faster,
+///         so at the end of the day, the switch from 23:59:59 to 00:00:00 will be "steadily" (with
+///         just a tiny fraction of pace difference).
+///       - Duplicate second: The time between the wall clock displaying 23:59:59 and 00:00:00 is
+///         two seconds instead of one. This means that the last second is taking twice as long as
+///         a standard second.
+///       For Ashet OS, which uses millisecond precision, the decision is to just make the last
+///       millisecond of the day (23:59:59.999) be 1001 ms long.
 namespace datetime {
     //?
     //? Basic date/time management and query
@@ -376,11 +412,20 @@ namespace datetime {
     /// Encodes a packed structure that encodes a calendar date + wall clock time
     /// into a single integer.
     ///
-    /// NOTE: A DateTime value is always in the UTC time zone.
+    /// NOTE: A DateTime value is always a UTC value.
     ///
-    /// NOTE: This type isn't a monotonic type but has holes inside.
-    ///       It is still organized in a way that it's trivially sortable by
-    ///       comparison as a signed integer.
+    /// NOTE: The DateTime value is only valid when the `milliseconds_of_day` field
+    ///       is in the defined range between 0 and 86,399,999 (both inclusive).
+    ///
+    ///       For any value outside that range the DateTime value is considered *invalid*.
+    ///
+    /// NOTE: DateTime values form a *discrete linear order*; the encoding is an *injective*,
+    ///       *strictly monotone order-embedding* into `i64`, whose image is a *gapped (non-contiguous) subset*;
+    ///       decoding is a *partial function* on `i64`.
+    ///
+    ///       This means not all `i64` values are valid DateTime values,
+    ///       but we can trivially compare them as `i64` as the values
+    ///       compare naturally (earlier points in time are smaller ints).
     bitstruct DateTime : i64 {
         /// The number of milliseconds inside the encoded day.
         ///
@@ -395,7 +440,7 @@ namespace datetime {
         ///
         /// RANGE: 2000-01-01 = 0
         ///
-        /// LORE: The epoch was chosen to be the first january of 2000 as for
+        /// LORE: The epoch was chosen to be the first January of 2000 as for
         ///       a non-UNIX timestamp system it doesn't necessarily make sense
         ///       to use the same epoch.
         ///       Using 2000 as the base year is kinda fun though, as it's a leap
@@ -405,33 +450,63 @@ namespace datetime {
 
     /// Returns the current date/time value.
     ///
+    /// NOTE: The value returned by `now` may not be steady nor continuous.
+    ///       As the wall clock can be adjusted by `set`, the value returned
+    ///       by `now` can change abruptly, both in negative and positive
+    ///       direction.
+    ///
     /// NOTE: Precision of timing depends on the current hardware,
     ///       but should always be at least in seconds precision.
+    ///
+    /// NOTE: During a leap second adjustment, the final millisecond of a day
+    ///       (23:59:59.999) may be extended, so repeated calls to `now` may
+    ///       return the same `DateTime` value for longer than 1 ms.
     syscall now {
         /// The current date and time of the system.
         out dt: DateTime;
     }
 
-    /// Updates the systems current date/time value.
+    /// Updates the system's current date/time value.
+    ///
+    /// NOTE: Invoking `set` will make the value returned by `now` immediately jump
+    ///       to the newly set value.
     syscall set  {
         /// The new date and time of the system.
         in    dt: DateTime;
 
-        /// The DateTime value does not encode a valid number of seconds.
+        /// Returned when `dt` does not encode a valid DateTime.
         error InvalidValue;
     }
 
-    /// Sleeps until `datetime.now()` returns a point in time that comes after `when`.
+    /// Completes when `datetime.now()` is bigger than `when`.
+    /// 
+    /// NOTE: A call to `set` may trigger all active alarm calls that
+    ///       are now satisfied.
     async_call Alarm {
         /// Earliest possible date time of when the alarm triggers.
         in when: DateTime;
+
+        /// Returned when `when` does not encode a valid DateTime.
+        error InvalidValue;
     }
 
     //?
     //? Timezone Management
     //?
 
-    /// Sets the current local time zone offset to UTC.
+    /// Gets the current offset between local time and UTC.
+    syscall get_timezone_offset
+    {
+        /// The offset of the local time to UTC in minutes.
+        ///
+        /// RANGE: -1440 - 1440
+        ///
+        /// NOTE: In tzdata mode, this returns the offset that applies at `datetime.now()`
+        ///       and may change over time as time zone rules change.
+        out minutes: i16;
+    }
+
+    /// Sets the current offset between local time and UTC.
     syscall set_timezone_offset
     {
         /// The offset of the local time to UTC in minutes.
@@ -440,16 +515,7 @@ namespace datetime {
         in    minutes: i16;
 
         /// The provided 'minutes' offset was not in the legal range.
-        error OutOfRange;
-    }
-
-    /// Gets the current local time zone offset to UTC.
-    syscall get_timezone_offset
-    {
-        /// The offset of the local time to UTC in minutes.
-        ///
-        /// RANGE: -1440 - 1440
-        out minutes: i16;
+        error InvalidZoneOffset;
     }
 
     /// Loads a "timezone data" file according to the [tz database](https://en.wikipedia.org/wiki/Tz_database).
@@ -462,7 +528,12 @@ namespace datetime {
     ///       in a good way.
     syscall load_timezone_data
     {
-        /// The binary blob of the timezone data file.
+        /// The binary TZif blob of the timezone data file.
+        ///
+        /// NOTE: [RFC 8536](https://datatracker.ietf.org/doc/html/rfc8536) specifies the
+        ///       format accepted by this syscall.
+        ///
+        /// NOTE: TODO: Specify exact supported version and features of TZif.
         in data: bytestr;
 
         /// The system is out of resources and cannot load the timezone data.
@@ -472,18 +543,37 @@ namespace datetime {
         error InvalidData;
     }
 
+    /// Queries the timezone offset for a given point in time.
+    ///
+    /// NOTE: This function returns either:
+    ///       - the fixed manual offset set via `set_timezone_offset` (Manual mode), or
+    ///       - the `dt`-dependent offset determined from tzdata (Tzdata mode).
+    syscall get_timezone_offset_at
+    {
+        /// The point in time to query the zone offset for.
+        in    dt:      DateTime;
+        
+        /// The local time offset in minutes.
+        out   minutes: i16;
+
+        /// Returned when `dt` does not encode a valid DateTime.
+        error InvalidValue;
+    }
+
     //?
     //? Gregorian Calendar APIs
     //?
 
     /// A structure encoding a date in the [Proleptic Gregorian calendar](https://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar),
-    /// which means it can encodes dates prior to 1582.
+    /// which means it can encode dates prior to 1582.
     ///
-    /// LORE: This structure isn't a necessity for the kernel API, but is introduces
+    /// LORE: This structure isn't a necessity for the kernel API, but is introduced
     ///       as a way of saving code size and memory, as most western applications
     ///       will use the Gregorian calendar, so it makes sense to share the implementation
     ///       for a conversion from/to `DateTime` in the kernel.
     struct GregorianDate {
+        /// The astronomical year of the date.
+        /// NOTE:  This means that `year = 0` means 1 BCE.
         /// RANGE: -32768 - 32767
         field year: i16;
 
@@ -500,6 +590,7 @@ namespace datetime {
         field minute: u8;
 
         /// RANGE: 0-59
+        /// NOTE: 60 is *not allowed*. See the note on `datetime` for more information.
         field second: u8;
 
         /// RANGE: 0-999
@@ -513,6 +604,7 @@ namespace datetime {
 
         /// The offset to UTC in minutes for the date.
         /// NOTE: Use 0 for UTC.
+        /// RANGE: -1440 - 1440
         in  local_offset: i16;
 
         /// The resulting datetime value for `gregorian`.
@@ -522,7 +614,7 @@ namespace datetime {
         error InvalidValue;
 
         /// The local time zone offset is not in the legal range.
-        error OutOfRange;
+        error InvalidZoneOffset;
     }
 
     /// Converts a DateTime value into a gregorian date.
@@ -532,6 +624,7 @@ namespace datetime {
 
         /// The offset to UTC in minutes for the date.
         /// NOTE: Use 0 for UTC.
+        /// RANGE: -1440 - 1440
         in  local_offset: i16;
 
         /// The resulting gregorian date.
@@ -541,7 +634,100 @@ namespace datetime {
         error InvalidValue;
 
         /// The local time zone offset is not in the legal range.
+        error InvalidZoneOffset;
+
+        /// `dt` points to a year not representable by `GregorianDate`.
         error OutOfRange;
+    }
+
+    /// Converts a date/time value into the current local gregorian date.
+    ///
+    /// NOTE: This function utilizes the current time zone information and
+    ///       may have a dynamic offset to UTC.
+    syscall to_gregorian_local {
+        /// The DateTime value that shall be converted into a gregorian date.
+        in dt: DateTime;
+
+        /// The local date.
+        out gregorian:  GregorianDate;
+
+        /// The date/time value contains an invalid value.
+        error InvalidValue;
+
+        /// `dt` points to a year not representable by `GregorianDate`.
+        error OutOfRange;
+    }
+
+    /// Converts a local gregorian date/time into a generic date/time value.
+    ///
+    /// NOTE: This function utilizes the current time zone information and
+    ///       may have a dynamic offset to UTC.
+    ///
+    /// NOTE: If the local time is non-existent, `occurrence` is ignored.
+    ///       If the local time is ambiguous, `adjustment` is ignored.
+    syscall from_gregorian_local {
+        /// The gregorian date in the local time zone.
+        in  gregorian: GregorianDate;
+
+        /// How to handle a well-formed local wall clock time that cannot be mapped
+        /// to a UTC timestamp because it does not exist in the current time zone rules.
+        ///
+        /// NOTE: This may happen due to daylight saving time or similar rules.
+        in  adjustment: MissingTimeAdjustment;
+
+        /// How to resolve ambiguities when a wall clock time appears multiple times.
+        ///
+        /// NOTE: This may happen due to daylight saving time or similar rules.
+        in  occurrence: DuplicateTimeOccurrence;
+
+        /// The date/time value representing the given date. 
+        out dt: DateTime;
+
+        /// The gregorian date contains an invalidly specified date.
+        error InvalidValue;
+
+        /// The gregorian time maps a non-existing wall clock time and
+        /// `adjustment` was `reject`.
+        error NonexistentLocalTime;
+
+        /// The gregorian time maps an ambiguous wall clock time and
+        /// `occurrence` was `reject`.
+        error AmbiguousLocalTime;
+    }
+
+    /// Enumeration of the variants how missing wall clock times will be resolved. 
+    enum MissingTimeAdjustment : u8 {
+        /// The time is not adjusted, but rejected and yields an error.
+        field reject = 0;
+
+        /// The time is adjusted to the first possible past point in time.
+        /// EXAMPLE: `02:30:00.000` is mapped to `01:59:59.999`.
+        field past = 1;
+
+        /// The time is adjusted to the first possible future point in time.
+        /// EXAMPLE: `02:30:00.000` is mapped to `03:00:00.000`.
+        field future = 2;
+
+        /// The time is adjusted to the closest possible point in time.
+        /// EXAMPLE: `02:29:00.000` is mapped to `01:59:59.999`.
+        /// EXAMPLE: `02:30:00.000` is mapped to `03:00:00.000`.
+        /// EXAMPLE: `02:31:00.000` is mapped to `03:00:00.000`.
+        field closer = 3;
+    }
+
+    /// Enumeration of the variants how a wall clock time that can occur multiple times
+    /// is handled.
+    enum DuplicateTimeOccurrence : u8 {
+        /// The time is not adjusted, but rejected and yields an error.
+        field reject = 0;
+
+        /// If the time is ambiguous, assume the earlier variant.
+        /// EXAMPLE: `02:30` is 2.5 hours past midnight.
+        field earlier = 1;
+
+        /// If the time is ambiguous, assume the later variant.
+        /// EXAMPLE: `02:30` is 3.5 hours past midnight.
+        field later = 2;
     }
 }
 
