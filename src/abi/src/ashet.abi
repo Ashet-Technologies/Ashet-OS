@@ -269,7 +269,7 @@ namespace resources {
     ///
     /// Anchors can be used as groups for tether objects or as tokens passed
     /// between processes.
-    resource Anchor {   }
+    resource Anchor { }
 
     /// Creates a new `Anchor` resource.
     syscall create_anchor {
@@ -281,124 +281,237 @@ namespace resources {
     }
 }
 
+/// This namespace is related to asynchronous running (sys)calls, which
+/// is the heart of the operating system I/O.
+///
+/// All system calls in Ashet OS are non-blocking except `process.yield`,
+/// `overlapped.await_any` and `overlapped.await_any_of`.
+/// This means that all regular system calls will return as soon as possible
+/// without ever waiting on external events or other operations.
+///
+/// But as each operating system requires slow/blocking operations, Ashet OS
+/// provides a single way of handling long-running operations:
+///
+/// The Asynchronously Running system Call (ARC).
+///
+/// Each ARC represents an operation that might not complete immediately, and must
+/// be scheduled to the kernel.
+/// Later on, the ARC is returned from the kernel in an await operation or cancelled.
+///
+/// NOTE: Completion may also be observed via `cancel` returning `error.Completed`.
+///
+/// NOTE: This concept is typically called *completion queue*.
+///
+/// NOTE: The `ARC` structure must always be embedded in the associated structure type
+///       for `ARC.type`, as the kernel will cast the pointer to the `ARC` structure
+///       to the associated structure type.
+///
+/// NOTE: Between `schedule` and the await or cancel of the ARC, the userland
+///       must keep the scheduled `ARC` object and the struct containing valid and unchanged.
+///
+///       The kernel will modify the `output` and `error` fields of the ARC enclosing structure.
+///
+/// NOTE: If the owning process is destroyed, all scheduled ARCs of that process are implicitly
+///       cancelled (best-effort) and removed from the kernel; they will not be returned to userland.
+///
+/// NOTE: Completion delivery is exactly-once.
+///       If `cancel` returns `Completed`, the operation will not be returned by `await_any` / `await_any_of`.
+///       If an operation was returned by an await syscall, later `cancel` will return `Unscheduled`.
 namespace overlapped {
-    struct Await_Options {
-        field wait: Wait;
-        field thread_affinity: Thread_Affinity;
-
-        enum Thread_Affinity : u8 {
-            /// Waits for ARCs scheduled from *any* thread in the current process.
-            item all_threads;
-
-            /// Waits for ARCs scheduled from *this* thread.
-            item this_thread;
-        }
-
-        enum Wait : u8 {
-            /// Don't wait for any additional calls to complete, just return
-            /// whatever was completed in the meantime.
-            item dont_block = 0;
-
-            /// Wait for at least a single call to complete operation.
-            item wait_one = 1;
-
-            /// Wait until all scheduled operations have completed.
-            ///
-            /// This will only wait so long until either
-            /// a) all scheduled ops are stored into the result array
-            /// or
-            /// b) the result array is full
-            ///
-            /// NOTE: If `thread_affinity` is `.all_threads`, other threads can still
-            ///       schedule more operations and make this function block longer.
-            item wait_all = 2;
-
-        }
-    }
-
-
     /// Handle to an asynchronously running (system) call.
+    ///
+    /// NOTE: This struct must always be embedded in the associated
+    ///       structure for `ARC.type` at the offset 0.
+    ///
+    ///       The kernel will derive the actual structure type from `ARC.type`
+    ///       and will cast a pointer to an `ARC` into the actual call structure type.
     struct ARC
     {
         /// The type of operation that is performed.
+        ///
+        /// NOTE: This field is never changed by the kernel. 
         field type: Type;
 
-        /// A user-specified pointer-sized field which
-        field tag: usize;
+        /// A user-specified array of pointer-sized fields which may
+        /// contain userland information associated with the ARC.
+        ///
+        /// NOTE: This is primarily meant for event loop systems so
+        ///       they can associate their own data structures with
+        ///       ARCs returned from `await_any`.
+        ///
+        /// NOTE: This field is never changed by the kernel.
+        field tag: [3]usize;
 
         typedef Type = <<async_call_enum:u32>>;
     }
 
-    /// Starts new asynchronous operations.
+    /// Starts a new asynchronous operation.
     ///
     /// NOTE: Until the operation has successfully completed or was
     ///       cancelled, the ARC structure must be considered owned
     ///       by the kernel and must not be changed from userspace.
-    ///       It can also change its contents spuriously until the
-    ///       operation is returned to userland.
     ///
+    ///       The kernel may modify the enclosing structure's `output` and `error` fields
+    ///       while scheduled. The kernel never modifies `ARC.type` and `ARC.tag`.
+    ///
+    /// NOTE: When scheduling an ARC, the kernel associates the calling
+    ///       thread with the operation, so the awaiter can choose whether
+    ///       to await only its own thread's ARCs or not.
     syscall schedule {
-        in      @"async_call": *ARC;
+        /// The call that should be scheduled.
+        in      @"arc": *ARC;
+
+        /// Returned when the kernel already has an active async operation
+        /// with the same address.
         error   AlreadyScheduled;
+
         error   SystemResources;
-    }
-
-    /// Awaits one or more scheduled asynchronous operations and returns the
-    /// number of `completed` elements.
-    ///
-    /// The kernel will fill out `completed` up to the returned number of elements.
-    /// All other values are undefined.
-    ///
-    /// NOTE: For blocking operations, this function will suspend the current
-    ///       thread until the request has been completed.
-    ///
-    /// RELATES: @ref await_completion_of
-    syscall await_completion {
-        in     completed:       []*ARC;
-        in     options:         Await_Options;
-        out    completed_count: usize;
-        error  Unscheduled;
-    }
-
-    /// Awaits one or more explictic asynchronous operations and returns the
-    /// number of `events` elements.
-    ///
-    /// The kernel will only await elements provided in `events` and all of those events must
-    /// not be awaited by another `await_completion_of`.
-    ///
-    /// When the function returns, `events` will have all completed events unchanged, and all
-    /// unfinished events set to `null`. This way, a simple check via index can be done instead of
-    /// the need for iteration of `events` to find what was finished.
-    ///
-    /// NOTE: This syscall will always return as soon as a single event has finished.
-    ///
-    /// NOTE: It is invalid to await the same operation with two concurrent calls to `await_completion_of`.
-    ///
-    /// NOTE: Elements awaited with this function will be guaranteed to not be returned by
-    ///       another concurrent call to `await_completion`.
-    ///
-    /// NOTE: For blocking operations, this function will suspend the current
-    ///       thread until the request has been completed.
-    ///
-    /// RELATES: @ref await_completion
-    syscall await_completion_of {
-        in      events: []?*ARC;
-        error   InvalidOperation;
-        error   Unscheduled;
-        out     completed_count: usize;
     }
 
     /// Cancels an asynchronous call.
     ///
-    /// NOTE: If the operation has already completed, an error will be returned saying so.
+    /// NOTE: Cancellation leaves the operation in an undefined state. This means
+    ///       that cancellation isn't necessarily atomic and writes may have been
+    ///       performed halfway, nearly completely or not at all.
     ///
-    /// NOTE: The cancelled operation will not be returned by `await` anymore.
+    ///       Example: A tiled renderer may have completed all draw commands for
+    ///                half of the picture tiles when being cancelled.
+    ///                In comparison, a linear renderer would have performed
+    ///                half of the commands on the whole picture.
+    ///
+    /// NOTE: If the operation has already completed, an error will be returned.
+    ///
+    /// NOTE: A cancelled operation cannot be awaited anymore.
+    ///
+    /// NOTE: On success or the `Completed` error, the operation will not
+    ///       be owned by the kernel anymore and cannot be awaited anymore by
+    ///       `await_any` or `await_any_of`.
     syscall cancel {
-        in      aop: *ARC;
+        /// The operation to cancel.
+        in      arc: *ARC;
+        
+        /// Returned when the ARC has already run to completion.
+        ///
+        /// NOTE: This means the operation was not cancelled because it already completed
+        ///       with or without an error. Userland should handle this case gracefully.
+        ///
+        /// NOTE: If this error is returned, the operation will not be owned by the kernel anymore
+        ///       and shall be treated as if it was returned from `await_any` or `await_any_of` as
+        ///       completed.
         error   Completed;
-        error   Unscheduled;
+
+        /// The kernel does not know the `arc` operation.
+        error   Unscheduled;    
     }
 
+    enum Thread_Affinity : u8 {
+        /// Waits for ARCs scheduled from *any* thread in the current process.
+        item all_threads = 0;
+
+        /// Waits for ARCs scheduled from *this* thread.
+        item this_thread = 1;
+    }
+
+    enum BlockMode : u8 {
+        /// Don't wait for any additional calls to complete, just return
+        /// whatever was completed in the meantime.
+        ///
+        /// NOTE: This mode does NOT suspend or yield the current thread
+        ///       and keeps the active time slice. So spinning with this mode
+        ///       without other yield points will lock up the system!
+        item dont_block = 0;
+
+        /// Wait for at least a single call to complete operation.
+        item wait_one = 1;
+
+        /// Wait until all scheduled operations have completed.
+        ///
+        /// This will only wait so long until either
+        /// a) all scheduled ops are stored into the result array
+        /// or
+        /// b) the result array is full
+        ///
+        /// NOTE: If `thread_affinity` is `.all_threads`, other threads can still
+        ///       schedule more operations and make this function block longer.
+        item wait_all = 2;
+    }
+
+    /// Awaits some scheduled asynchronous operations and returns the
+    /// number of `completed` elements.
+    ///
+    /// The kernel will fill `completed` up to the returned number of elements.
+    /// All other values are left untouched.
+    ///
+    /// NOTE: For blocking operations, this function will suspend the current
+    ///       thread until the request has been completed. This means that other
+    ///       threads can continue their work.
+    ///
+    /// NOTE: If `completed.len` is zero, the operation will never suspend and 
+    ///       immediately return zero for `completed_count`.
+    ///
+    /// NOTE: The completed ARCs are not owned by the kernel anymore and may be scheduled again.
+    syscall await_any {
+        /// A caller-provided array which will be filled with pointers to
+        /// the completed ARCs.
+        /// NOTE: Kernel will only touch the first `completed_count` elements and
+        ///       keeps the rest unchanged.
+        in     completed:       []*ARC;
+        
+        /// Defines how the operation will suspend.
+        in     block_mode:      BlockMode;
+
+        /// Defines the thread affinity for the await option.
+        /// This allows awaiting ARCs that were scheduled by the calling thread
+        /// and ignoring all others.
+        in     thread_affinity: Thread_Affinity;
+
+        /// The number of elements filled into `completed` by the kernel.
+        out    completed_count: usize;
+    }
+
+    /// Awaits one or more ARCs from a set and returns the number of completed operations.
+    ///
+    /// The kernel will only await elements provided in `events` and all of those events must
+    /// not be awaited by another `await_any_of`.
+    ///
+    /// When the call returns, the kernel will have partitioned events into two parts:
+    /// - The head (`events[0..completed_count]`) elements will be completed.
+    /// - The tail (`events[completed_count..]`) elements are still in progress.
+    ///
+    /// This allows the caller to invoke the syscall again later with the tail part of the
+    /// array in order to await the rest.
+    ///
+    /// NOTE: This syscall will always return as soon as a single event has finished.
+    ///
+    /// NOTE: It is invalid to await the same operation with two concurrent calls to `await_any_of`.
+    ///
+    /// NOTE: Elements awaited with this function will be guaranteed to not be returned by
+    ///       a concurrent call to `await_any`.
+    ///
+    /// NOTE: This function will suspend the current thread and yield to other threads
+    ///       if, and only if none of the events are completed.
+    ///
+    /// NOTE: The order in which the elements in `events` will be partitioned by the kernel
+    ///       is implementation-defined and must not be assumed to have any meaningful order.
+    ///
+    /// NOTE: The completed ARCs are not owned by the kernel anymore and may be scheduled again.
+    syscall await_any_of {
+        /// A pre-filled list of events that shall be awaited.
+        /// On completion of the call, this list will be reordered by the kernel into
+        /// two halves, the first `completed_count` containing the completed events.
+        in      events: []*ARC;
+
+        /// The number of ARCs completed inside `events`.
+        out     completed_count: usize;
+        
+        /// Another `await_any_of` already awaits an event from `events`.
+        error   InvalidOperation;
+
+        /// The kernel does not know an operation inside `events`.
+        /// When this error is returned, no ARCs will be removed from the completion queue
+        /// and `events` is left unmodified.
+        error   Unscheduled;
+    }
 }
 
 /// Syscalls related to processes
