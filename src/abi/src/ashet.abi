@@ -514,26 +514,110 @@ namespace overlapped {
     }
 }
 
-/// Syscalls related to processes
+/// Syscalls related to processes, threads and execution control.
 namespace process {
+    /// A process is first and foremost a context for resource resolution.
+    ///
+    /// In addition to that, each process has an additional initial thread
+    /// that is created and launched with `Spawn`.
+    ///
+    /// Resources in threads are always resolved in regard to their owning
+    /// process.
+    ///
+    /// A process has two states:
+    /// - Active: The process is loaded and not terminated yet.
+    /// - Zombie: The process resource still exists, but the process itself is already terminated.
+    ///
+    /// When a process is terminated or killed, all associated threads are exited, and all bound resources
+    /// are unbound. This may trigger the destruction of these resources.
+    ///
+    /// In addition to that, a termination reason is stored informing observers of the process
+    /// how the process was terminated.
+    ///
+    /// If a process terminates itself, it can provide a hint if it was successfully terminated ("clean exit")
+    /// or if it failed ("error during execution").
+    ///
+    /// A process becomes Zombie on termination and remains until its `Process` resource is destroyed.
+    /// Destroying the Process resource reaps the zombie and frees remaining bookkeeping.
+    ///
+    /// NOTE: Destroying an active process resource will terminate the process and immediately reap the
+    ///       zombie.
+    /// 
+    /// NOTE: A process may have zero associated threads, but still be active. This means it exists
+    ///       and still may keep resources alive, but it cannot act anymore.
+    ///
+    /// LORE: Ashet OS only has a single boolean for communicating success or failure to the outside.
+    ///       This was chosen as most applications in the wild either use `EXIT_SUCCESS (0)` or `EXIT_FAILURE (1)`
+    ///       in C libraries anyways and don't use the exit code to communicate meaning.
+    ///       If a more complex communication to the outside is required, there are better options like pipes or shared memory
+    ///       passed into the process.
     resource Process { }
 
+    /// A thread is the base unit of execution.
+    ///
+    /// Each thread operates concurrently to the other threads
+    /// in a cooperative manner:
+    ///
+    /// This means that threads voluntarily yield execution to the
+    /// OS scheduler in order to let other threads do their work.
+    ///
+    /// NOTE: A thread is always associated with a process and syscalls
+    ///       invoked by a thread resolve resources always in regard to
+    ///       that process.
+    ///
+    /// LORE: In contrast to other operating systems, threads do not expose
+    ///       a success/failure state.
+    ///       This was chosen as applications can use internal signalling
+    ///       to better communicate failure/success than having a single integer
+    ///       for that.
     resource Thread { }
 
-    enum ExitCode : u32 {
-        item success = 0;
-        item failure = 1;
-        ...
-        item killed = 0xFFFFFFFF;
+    /// Terminates the current process and marks it as "controlled exit".
+    syscall terminate {
+        /// Provides the information if the process terminated successfully or not.
+        in success: bool;
+        noreturn;
     }
 
-    struct SpawnProcessArg {
+    /// Terminates a given process and marks it as "killed".
+    ///
+    /// NOTE: A killed process is never considered successful as it was terminated
+    ///       from the outside.
+    ///
+    /// NOTE: If the current process is passed, this function will not return.
+    syscall kill {
+        /// The process that should be killed.
+        in    target: Process;
+
+        /// `target` is not a valid process resource.
+        error InvalidHandle;
+    }
+
+
+    /// An argument passed to a process.
+    struct SpawnArg {
+        /// The associated name of the argument.
+        field name: str;
+
+        /// The type of the argument.
         field type: Type;
+
+        /// The associated value for `type`.
         field value: Value;
 
         enum Type : u8 {
-            item string = 0;
-            item @"resource" = 1;
+            /// The argument is a mere flag and carries no value.
+            /// Its existence itself already carries semantics.
+            item flag = 0;
+            
+            /// The argument has a string value associated.
+            /// NOTE: `Value.text` is active.
+            item string = 1;
+            
+            /// The argument has a resource value associated.
+            /// NOTE: The spawned process receives a strong binding for the passed resource.
+            /// NOTE: `Value.resource` is active.
+            item @"resource" = 2;
         }
 
         union Value {
@@ -546,54 +630,26 @@ namespace process {
         }
     }
 
-
-    /// Returns a pointer to the file name of the process.
-    syscall get_file_name {
-        in    target:    ?Process;
-        out   file_name: str;
-        error InvalidHandle;
-    }
-
-    /// Returns the base address of the process.
-    syscall get_base_address {
-        in    target: ?Process;
-        out   base_address: usize;
-        error InvalidHandle;
-    }
-
-    /// Returns the arguments that were passed to this process in `Spawn`.
-    syscall get_arguments {
-        in    target: ?Process;
-        in    argv:   ?[]SpawnProcessArg;
-        out   count:  usize;
-        error InvalidHandle;
-    }
-
-    /// Terminates the current process with the given exit code
-    syscall terminate {
-        in exit_code: ExitCode;
-        noreturn;
-    }
-
-    /// Terminates a foreign process.
-    /// If the current process is passed, this function will not return
-    syscall kill {
-        in    target: Process;
-        error InvalidHandle;
-    }
-
-    /// Spawns a new process
+    /// Spawns a new process.
     async_call Spawn {
         /// Relative base directory for `path`.
         in      dir: fs.Directory;
+        
         /// File name of the executable relative to `dir`.
         in      path: str;
+
         /// The arguments passed to the process.
-        /// If a `SystemResource` is passed, it will receive the created process as a owning process.
-        /// It is safe to release the resource in this process as soon as this operation returns.
-        in      argv: []const SpawnProcessArg;
+        /// It is safe to release the resource binding to the current process as soon as this operation returns.
+        ///
+        /// NOTE: The kernel will perform a copy of all strings inside `schedule`, so it is safe to 
+        ///       reuse the string memory after the schedule operation is performed.
+        ///
+        ///       This prevents unwanted use-after-free by the kernel.
+        in      arguments: []const SpawnArg;
+
         /// Handle to the spawned process.
         out     process: Process;
+        
         error   BadExecutable;
         error   DiskError;
         error   FileNotFound;
@@ -602,44 +658,258 @@ namespace process {
         error   SystemResources;
     }
 
+    enum TerminationReason : u8 {
+        /// The process terminated properly through a call to `terminate`.
+        item regular_exit = 0;
+
+        /// The process was killed with `kill`.
+        item killed = 1;
+
+        /// The process was shut down by the kernel in order to protect the system
+        /// from a crash.
+        /// This may include execution of invalid instructions, division by zero or
+        /// other platform illegal behaviour.
+        item faulted = 2;
+    }
+
+    /// Completes when the given process terminates.
+    ///
+    /// NOTE: The call will immediatly complete if `target` is already terminated.
+    ///
+    /// NOTE: Awaiting termination of the same process multiple times is idempotent.
+    ///
+    /// NOTE: Multiple `WaitForTermination` operations can be scheduled at once and
+    ///       will all complete when the process terminates.
+    async_call WaitForTermination {
+        in    target:    Process;
+
+        /// The reason why the process was terminated.
+        out   reason:    TerminationReason;
+
+        /// Contains the value passed to `terminate.success` or `false` if
+        /// not terminated by `terminate`.
+        out   successful: bool;
+
+        /// `target` is not a valid process resource.
+        error InvalidHandle;
+    }
+
+    /// Returns the arguments that were passed to this process in `Spawn`.
+    syscall get_arguments {
+        /// The process for which the arguments shall be returned.
+        /// If `null` is passed, the current process will be queried.
+        in    target: ?Process;
+        
+        /// A constant slice of the process' arguments.
+        ///
+        /// NOTE: The returned memory and all interior pointers are valid as long
+        ///       as the `target` process resource is not destroyed.
+        ///
+        /// NOTE: If an argument refers to a `SystemResource`, the resource will be bound
+        ///       to the calling process with a `at_least_weak` bind operation to ensure
+        ///       resource access.
+        out   argv:   []const SpawnArg;
+        
+        /// `target` is not a valid process resource.
+        error InvalidHandle;
+
+        error SystemResources;
+    }
+
+
+    /// Returns a pointer to the file name of the process.
+    syscall get_file_name {
+        /// The process for which the file name shall be returned.
+        /// If `null` is passed, the current process will be queried.
+        in    target:    ?Process;
+
+        /// The file name of the process passed to `Spawn` or the empty string if no
+        /// file name exists.
+        ///
+        /// NOTE: This is only the basename of the file and not the full path as 
+        ///       the information about the path is not helpful without the associated
+        ///       directory handle.
+        ///
+        /// NOTE: The returned memory and all interior pointers are valid as long
+        ///       as the `target` process resource is not destroyed.
+        out   file_name: str;
+
+        /// `target` is not a valid process resource.
+        error InvalidHandle;
+    }
+
+    /// Returns the base address of the process.
+    ///
+    /// This is the address at which the executable image is loaded and relocated to.
+    syscall get_base_address {
+        /// The process for which the base address shall be returned.
+        /// If `null` is passed, the current process will be queried.
+        in    target: ?Process;
+
+        /// The base address of the process.
+        out   base_address: usize;
+
+        /// `target` is not a valid process resource.
+        error InvalidHandle;
+    }
+
     namespace thread {
         /// Returns control to the scheduler. Returns when the scheduler
         /// schedules the process again.
         syscall yield {
         }
 
-        /// Terminates the current thread.
-        syscall exit {
-            in      exit_code: ExitCode;
-            noreturn;
+        /// Gets the resource handle for the currently executing thread.
+        syscall get_current {
+            /// The handle to the current thread.
+            /// NOTE: This handle is ensured to be at least weakly bound to the current process.
+            out handle: Thread;
+
+            error SystemResources;
         }
 
-        /// Waits for the thread to exit and returns its return code.
-        syscall join {
-            in    _param0: Thread;
-            out   exit_code: ExitCode;
+        /// Gets the process for a given thread.
+        syscall get_process {
+            /// The handle for which the process shall be queried.
+            /// If `null`, will yield the process for the current thread.
+            in handle: ?Thread;
+
+            /// The handle to the process owning `handle`.
+            /// NOTE: This handle is ensured to be at least weakly bound to the current process.
+            out proc: Process;
+
+            /// `handle` is not a valid thread resource.
             error InvalidHandle;
+
+            error SystemResources;
+        }
+
+        /// Terminates the current thread without returning from the thread function.
+        ///
+        /// NOTE: This does not perform any stack unwinding and no code will be executed
+        ///       after a call to this function.
+        ///
+        /// NOTE: Exiting a thread stops the execution, but it does not destroy or release the
+        ///       thread resource.
+        syscall exit {
+            noreturn;
         }
 
         /// Defines the signature of a thread entry point.
         /// The parameter is the `arg` value passed to `spawn`.
-        /// The return value is the exit code of the thread.
-        typedef ThreadFunction = fnptr (?anyptr) u32;
+        typedef ThreadFunction = fnptr (?anyptr) void;
 
         /// Spawns a new thread with `function` passing `arg` to it.
-        /// If `stack_size` is not 0, will create a stack with the given size.
+        ///
+        /// NOTE: A spawned thread will always be associated with the current
+        ///       process.
         syscall spawn {
+            /// The target process for which the thread shall be spawned.
+            /// If `null`, will use the current process.
+            ///
+            /// NOTE: Spawning a thread in a foreign process is a valid strategy for daemons
+            ///       and IPC services, but the implementor has to keep in mind that
+            ///       the memory for `function` and all of the code it invokes has to outlive
+            ///       the threads lifetime.
+            ///       This can be ensured by tethering the `target` thread to the owner of the 
+            ///       memory so it is automatically killed if the memory is returned to the OS.
+            in    target: ?Process;
+
+            /// The function that the thread will execute.
             in    function:   ThreadFunction;
+            
+            /// The argument passed to `function`.
             in    arg:        ?anyptr;
+
+            /// The kernel will allocate at least this amount of bytes for the threads stack.
+            /// If zero is passed, the kernel will chose an implementation-defined amount of
+            /// stack for the thread.
+            ///
+            /// NOTE: There is no guarantee that the stack won't be larger than `stack_size`
+            ///       bytes.
             in    stack_size: usize;
-            out   thread: Thread;
+
+            /// The thread that was created.
+            /// NOTE: This thread handle will be bound to the calling process with the `at_least_weak` bind operation
+            ///       to ensure access.
+            /// NOTE: The created thread will live logically inside the `target` process.
+            out   thread:     Thread;
+
+            /// `target` is not a valid process resource.
+            error InvalidHandle;
+
+            /// The `target` process is dead, but still has an alive handle.
+            /// NOTE: Cannot happen when `binding` is `unbind`.
+            error ZombieProcess;
+
             error SystemResources;
         }
 
-        /// Kills the given thread with `exit_code`.
+        /// Kills the given thread.
+        ///
+        /// This is equivalent to the `target` thread executing `exit`, but triggered
+        /// from the outside.
+        ///
+        /// NOTE: This does not perform any stack unwinding and no code will be executed
+        ///       in the `target` thread after a call to this function.
+        ///
+        /// NOTE: Passing in the current thread as `target` will make this function behave
+        ///       like `exit` and it won't return.
+        ///
+        /// NOTE: Killing a thread stops the execution, but it does not destroy or release the
+        ///       thread resource.
         syscall kill {
             in    target:    Thread;
-            in    exit_code: ExitCode;
+            error InvalidHandle;
+        }
+
+        /// Waits for the thread to exit.
+        ///
+        /// NOTE: The operation will complete immediately if `target` is already exited.
+        ///
+        /// NOTE: Awaiting the exit of the same thread multiple times is idempotent.
+        ///
+        /// NOTE: Multiple `WaitForExit` operations can be scheduled at once and
+        ///       will all complete when the thread exits.
+        async_call WaitForExit {
+            in    target:    Thread;
+
+            /// Informs how the thread exited:
+            /// - `true`: The thread exited by its thread function returning normally.
+            /// - `false`: The thread exited by invoking `exit` or `kill`.
+            out   regular_exit: bool;
+
+            error InvalidHandle;
+        }
+
+        /// Suspends the execution of a thread.
+        ///
+        /// This means that a thread won't be scheduled for execution
+        /// until it is resumed.
+        ///
+        /// NOTE: If `target` is the current thread, this syscall
+        ///       also yields implicitly and the syscall will
+        ///       return when the thread is resumed.
+        syscall suspend {
+            /// The thread that shall be suspended.
+            /// If this value is `null`, the current thread will be suspended.
+            in    target:    ?Thread;
+
+            /// Returned when `target` is not a valid thread resource.
+            error InvalidHandle;
+        }
+
+        /// Resumes the execution of a thread.
+        ///
+        /// This means that the thread will be scheduled by the
+        /// operating system and continues execution.
+        ///
+        /// NOTE: Resuming an already active thread is idempotent and does nothing. 
+        syscall resume {
+            /// The thread that should be resumed.
+            in    target:    Thread;
+
+            /// Returned when `target` is not a valid thread resource.
             error InvalidHandle;
         }
     }
@@ -661,6 +931,7 @@ namespace process {
 
         /// Stops the process and allows debugging.
         syscall breakpoint {
+            //? TODO: Define semantics of a breakpoint
         }
     }
 
@@ -700,7 +971,7 @@ namespace process {
             out   memory:    [*]u8;
 
             /// Is returned when the system is out of memory.
-            error SystemResource;
+            error SystemResources;
         }
 
         /// Returns previously allocated memory back to the process heap.
@@ -714,42 +985,65 @@ namespace process {
     }
 
     namespace monitor {
+
         /// Queries all process resources.
         syscall enumerate_processes {
-            /// NOTE: The process handles will be bound to the calling process with the `at_least_weak` binding
+            /// NOTE: The process handles will be bound to the calling process with the `at_least_weak` bind operation
             ///       to ensure access.
             in  processes: ?[]Process;
+
             out count: usize;
+
+            error SystemResources;
         }
 
         /// Queries all bound resources by a process.
         syscall query_bound_resources {
             in  owner: Process;
-            /// NOTE: The resource handles will be bound to the calling process with the `at_least_weak` binding
+
+            /// NOTE: The return resources will be bound to the calling process with the `at_least_weak` bind operation
             ///       to ensure access.
             in  reslist: ?[]SystemResource;
+            
+
             out count: usize;
+
+            /// `owner` is not a valid process resource.
             error InvalidHandle;
+
+            error SystemResources;
         }
 
         /// Returns the total number of bytes the process takes up in RAM.
         syscall query_total_memory_usage {
             in  proc: Process;
-            out count: usize;
+
+            /// The total number of bytes the process currently allocates in RAM.
+            out size: usize;
+
+            /// `owner` is not a valid process resource.
             error InvalidHandle;
         }
 
         /// Returns the number of dynamically allocated bytes for this process.
         syscall query_dynamic_memory_usage {
             in  proc: Process;
-            out count: usize;
+
+            /// The total number of heap bytes the process currently allocates in RAM.
+            out size: usize;
+
+            /// `owner` is not a valid process resource.
             error InvalidHandle;
         }
 
         /// Returns the number of total memory objects this process has right now.
         syscall query_active_allocation_count {
             in  proc: Process;
+
+            /// The total number of heap allocations the process currently has active.
             out count: usize;
+
+            /// `owner` is not a valid process resource.
             error InvalidHandle;
         }
     }
