@@ -3285,75 +3285,179 @@ namespace shm {
     }
 }
 
-//? TODO: Review this namespace.
+/// This namespace contains items related to data pipes.
 namespace pipe {
 
+    /// A pipe is a two-ended, one-directional communication
+    /// channel which can either transport data streams or packets.
+    ///
+    /// Pipes can be synchronous or buffered:
+    /// - A synchronous pipe can only transfer data if a `Read` and a `Write` are active
+    ///   at the same time.
+    /// - A buffered pipe has an internal memory which can store some elements
+    ///   and makes `Read` and `Write` independent of each other.
+    ///
+    /// NOTE: Pipes will never transfer partial elements.
+    ///
+    /// NOTE: If multiple `Read` and `Write` operations are scheduled, the kernel
+    ///       will process them in a FIFO manner.
+    ///       This means that no interleaving between multiple `Write` operations will happen.
+    ///
+    /// NOTE: If a pipe is synchronous, a `Read` or `Write` operation can only complete
+    ///       when a concurrent opposite operation is active.
+    ///       The kernel will transfer the data directly from a `Write` operation into the
+    ///       buffer of a `Read` operation without storing elements in kernel memory.
+    ///
+    /// NOTE: If a pipe is synchronous, and a `Read` uses `PipeMode.at_least_one`, it will
+    ///       consume the maximum possible amount of elements from a single `Write`, but will
+    ///       not merge data from multiple `Write` operations.
+    ///
+    /// NOTE: If a pipe is buffered, and a `Read` operation uses `PipeMode.at_least_one`, the
+    ///       operation will consume a maximum of `fifo_length` elements, even if `Read.buffer`
+    ///       could store more elements.
+    ///
+    /// NOTE: The `PipeMode` of a `Read` or `Write` operation only affects the operation itself
+    ///       and will never affect other concurrently scheduled operations.
     resource Pipe { }
 
-    enum PipeMode : u8 {
-        /// Completes immediately even if no elements could be processed.
-        item nonblocking = 0;
-        /// Returns when at least one element could be processed.
-        item at_least_one = 1;
-        /// Returns only when all elements are processed.
-        item all = 2;
-    }
-
-    /// Spawns a new pipe with `fifo_length` elements of `object_size` bytes.
+    /// Creates a new pipe with `fifo_length` elements of `element_size` bytes.
     /// If `fifo_length` is 0, the pipe is synchronous and can only send data
-    /// if a `read` call is active. Otherwise, up to `fifo_length` elements can be
+    /// if a `Read` call is active. Otherwise, up to `fifo_length` elements can be
     /// stored in a FIFO.
     syscall create {
-        in    object_size: usize;
+        /// The size of the primitives in bytes the pipe operates on. Each element
+        /// transferred by the pipe has this size.
+        ///
+        /// NOTE: An elements size of 1 is making the pipe byte-oriented.
+        ///       This can be mentally seen as data streaming instead of
+        ///       packet oriented transmission.
+        ///
+        /// NOTE: An elements size of 0 is illegal and returns an error.
+        in    element_size: usize;
+
+        /// The number of elements that can be buffered inside the pipe before
+        /// making `Write` blocking.
+        ///
+        /// Passing 0 here makes the pipe a synchronous pipe,
+        /// any other value makes the pipe buffered.
         in    fifo_length: usize;
-        error SystemResources;
+
+        /// The newly created pipe resource.
         out   handle: Pipe;
+
+        error SystemResources;
+
+        /// Returned when `element_size == 0`.
+        error InvalidSize;
     }
 
     /// Returns the length of the pipe-internal FIFO in elements.
     syscall get_fifo_length {
+        /// The pipe which should be queried.
         in    handle: Pipe;
+
+        /// The length of the FIFO in elements.
         out   length: usize;
+
+        /// `handle` is not a valid pipe resource.
         error InvalidHandle;
     }
 
-    /// Returns the size of the objects stored in the pipe.
-    syscall get_object_size {
+    /// Returns the size of the elements stored in the pipe.
+    syscall get_element_size {
+        /// The pipe which should be queried.
         in    handle: Pipe;
+
+        /// The size of the elements in bytes.
         out   size: usize;
+
+        /// `handle` is not a valid pipe resource.
         error InvalidHandle;
+    }
+
+    enum PipeMode : u8 {
+        /// Completes immediately even if no elements could be processed.
+        /// NOTE: This means that `Read.count` or `Write.count` can be zero after completion.
+        item nonblocking = 0;
+
+        /// Returns when at least one element could be processed.
+        /// NOTE: This means that `Read.count` or `Write.count` is at least one after completion
+        ///       unless `data` or `buffer` do not hold a single element.
+        item at_least_one = 1;
+
+        /// Returns only when all elements are processed.
+        /// NOTE: This means that `Read.count` or `Write.count` are at the maximum possible value
+        ///       derived from `stride` and `data.len`/`buffer.len`.
+        item all = 2;
     }
 
     /// Writes elements from `data` into the given pipe.
+    ///
+    /// NOTE: The number of elements inside `data` is computed by `(data.len - element_size + 1) / stride`.
     async_call Write {
-        in      handle: Pipe;
+        in    handle: Pipe;
+
         /// Pointer to the first element. Length defines how many elements are to be transferred.
-        in      data:   bytestr;
-        /// Distance between each element in `data`. Can be different from the pipes element size
-        /// to allow sparse data to be transferred.
-        /// If `0`, it will use the `object_size` property of the pipe.
-        in      stride: usize;
+        ///
+        /// NOTE: If `data.len < element_size`, the operation transfers 0 elements and completes
+        ///       immediately.
+        in    data:   bytestr;
+
+        /// Distance in bytes between each element in `data`. Can be different from the pipe's element
+        /// size to allow sparse data to be transferred.
+        ///
+        /// NOTE: If `0` is passed, `stride` will be set to the `element_size` property of the pipe.
+        ///
+        /// NOTE: It is legal to pass a `stride` smaller than `element_size`. This will copy elements
+        ///       which are overlapping.
+        in    stride: usize;
+
         /// Defines how the write should operate.
-        in      mode: PipeMode;
-        /// Numbert of elements written into the pipe.
-        out     count: usize;
+        in    mode: PipeMode;
+
+        /// Number of elements written into the pipe.
+        out   count: usize;
+
+        /// `handle` is not a valid pipe resource.
+        error InvalidHandle;
     }
 
     /// Reads elements from a pipe into `buffer`.
+    ///
+    /// NOTE: The max. number of elements written to `buffer` is computed by `(buffer.len - element_size + 1) / stride`.
     async_call Read {
         in      handle: Pipe;
+
         /// Points to the first element to be received.
+        ///
+        /// NOTE: The kernel will only write chunks of `element_size` in steps of `stride` bytes.
+        ///       It will not write any other part of the buffer.
+        ///
+        /// NOTE: `BufferSize` is returned if `buffer.len < element_size`.
         in      buffer: bytebuf;
-        /// Distance between each element in `buffer`. Can be different from the pipes element size
+
+        /// Distance between each element in `buffer`. Can be different from the pipe's element size
         /// to allow sparse data to be transferred.
-        /// If `0`, it will use the `object_size` property of the pipe.
+        ///
+        /// NOTE: If `0` is passed, `stride` will be set to the `element_size` property of the pipe.
+        ///
+        /// NOTE: It is legal to pass a `stride` smaller than `element_size`. This will write elements
+        ///       which are overlapping inside `buffer`. If this is the case, only the last element
+        ///       written is complete.
         in      stride: usize;
+
         /// Defines how the read should operate.
         in      mode: PipeMode;
-        /// Number of elements read.
-        out     count: usize;
-    }
 
+        /// Number of elements written to `buffer`.
+        out     count: usize;
+
+        /// `handle` is not a valid pipe resource.
+        error InvalidHandle;
+
+        /// `buffer.len` is smaller than `element_size`.
+        error BufferSize;
+    }
 }
 
 //? TODO: Review this namespace.
