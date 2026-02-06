@@ -585,6 +585,8 @@ namespace process {
     ///       from the outside.
     ///
     /// NOTE: If the current process is passed, this function will not return.
+    ///
+    /// NOTE: If the `target` process is already terminated, this operation is idempotent.
     syscall kill {
         /// The process that should be killed.
         in    target: Process;
@@ -631,6 +633,11 @@ namespace process {
     }
 
     /// Spawns a new process.
+    ///
+    /// NOTE: The kernel will perform a copy of all strings inside `overlapped.schedule`, so it is safe to 
+    ///       reuse the string memory after the operation is successfully scheduled.
+    ///
+    ///       This prevents unwanted use-after-free by the kernel.
     async_call Spawn {
         /// Relative base directory for `path`.
         in      dir: fs.Directory;
@@ -640,11 +647,6 @@ namespace process {
 
         /// The arguments passed to the process.
         /// It is safe to release the resource binding to the current process as soon as this operation returns.
-        ///
-        /// NOTE: The kernel will perform a copy of all strings inside `schedule`, so it is safe to 
-        ///       reuse the string memory after the schedule operation is performed.
-        ///
-        ///       This prevents unwanted use-after-free by the kernel.
         in      arguments: []const SpawnArg;
 
         /// Handle to the spawned process.
@@ -674,7 +676,7 @@ namespace process {
 
     /// Completes when the given process terminates.
     ///
-    /// NOTE: The call will immediatly complete if `target` is already terminated.
+    /// NOTE: The call will immediately complete if `target` is already terminated.
     ///
     /// NOTE: Awaiting termination of the same process multiple times is idempotent.
     ///
@@ -706,7 +708,7 @@ namespace process {
         ///       as the `target` process resource is not destroyed.
         ///
         /// NOTE: If an argument refers to a `SystemResource`, the resource will be bound
-        ///       to the calling process with a `at_least_weak` bind operation to ensure
+        ///       to the calling process with an `at_least_weak` bind operation to ensure
         ///       resource access.
         out   argv:   []const SpawnArg;
         
@@ -764,8 +766,6 @@ namespace process {
             /// The handle to the current thread.
             /// NOTE: This handle is ensured to be at least weakly bound to the current process.
             out handle: Thread;
-
-            error SystemResources;
         }
 
         /// Gets the process for a given thread.
@@ -781,6 +781,9 @@ namespace process {
             /// `handle` is not a valid thread resource.
             error InvalidHandle;
 
+            /// The system ran out of resources when handling the request.
+            ///
+            /// NOTE: This error can only when `handle` is not `null`.
             error SystemResources;
         }
 
@@ -839,7 +842,6 @@ namespace process {
             error InvalidHandle;
 
             /// The `target` process is dead, but still has an alive handle.
-            /// NOTE: Cannot happen when `binding` is `unbind`.
             error ZombieProcess;
 
             error SystemResources;
@@ -858,6 +860,8 @@ namespace process {
         ///
         /// NOTE: Killing a thread stops the execution, but it does not destroy or release the
         ///       thread resource.
+        ///
+        /// NOTE: Killing an already exited thread is idempotent.
         syscall kill {
             in    target:    Thread;
             error InvalidHandle;
@@ -897,6 +901,9 @@ namespace process {
 
             /// Returned when `target` is not a valid thread resource.
             error InvalidHandle;
+
+            /// `target` is a thread that already exited.
+            error ThreadStopped;
         }
 
         /// Resumes the execution of a thread.
@@ -911,27 +918,61 @@ namespace process {
 
             /// Returned when `target` is not a valid thread resource.
             error InvalidHandle;
+
+            /// `target` is a thread that already exited.
+            error ThreadStopped;
         }
     }
 
     namespace debug {
         enum LogLevel : u8 {
+            /// The log message is about a critical, terminating error. The process or thread usually
+            /// cannot continue after such a log message.
             item critical = 0;
+            
+            /// The log message is about a non-critical error. This means the process is not terminating
+            /// due to the error, but it might still be relevant to the user.
             item err = 1;
+            
+            /// The log message is not an error, but informs about things that might still be relevant
+            /// to understand higher level failures like exceeded retries or failed connections.
             item warn = 2;
+            
+            /// The log message informs the user about regular operations.
+            /// Nothing critical shall be logged with this level.
             item notice = 3;
+            
+            /// The log message is only useful for debugging the process.
             item debug = 4;
         }
 
         /// Writes to the system debug log.
         syscall write_log {
-            in      log_level: LogLevel;
-            in      message: str;
+            /// The level of severity this log message has.
+            in log_level: LogLevel;
+
+            /// The message that shall be printed.
+            /// NOTE: `message` must be terminated with a `LF` to append a new line.
+            ///       Log messages will be concatenated without a joining symbol,
+            ///       so without a `LF` character, all log messages would appear on the same line.
+            in message: str;
         }
 
         /// Stops the process and allows debugging.
+        ///
+        /// When this syscall returns, the process will continue execution normally.
+        ///
+        /// NOTE: If the kernel has debugging disabled, this operation may be a no-op.
+        ///
+        /// LORE: This syscall is explicitly left under-defined as the debugging style
+        ///       may change over time. At the time of writing (2026-02-06), this basically
+        ///       just triggers a hardware breakpoint which will crash the kernel if no
+        ///       hardware debugger is attached.
+        ///       As this is designed as a low-level debug facility, it is fine for development
+        ///       and semantics can later be improved.
+        ///       The important part is that the syscall takes no arguments and returns neither
+        ///       a value nor an error.
         syscall breakpoint {
-            //? TODO: Define semantics of a breakpoint
         }
     }
 
@@ -959,56 +1000,81 @@ namespace process {
             /// The size of the allocated memory block in bytes.
             ///
             /// NOTE: Passing 0 will never succeed.
+            ///
+            /// NOTE: The kernel ensures at least `size` bytes will be
+            ///       usable in the returned `memory`.
             in    size:      usize;
 
-            /// The alignment
-            in    ptr_align: u8;
+            /// The alignment of the pointer encoded as the number of 
+            /// left-shifts on a one.
+            ///
+            /// This gives us a safer encoding as we only accept powers of two
+            /// anyways.
+            ///
+            /// RANGE: 0 .. 12
+            in    alignment_shift: u8;
 
             /// A non-`null` pointer that points to exactly @ref size bytes.
             ///
             /// NOTE: In practise, this might point to more than @ref size bytes,
             ///       but the code must not assume *any* excess bytes may exist.
-            out   memory:    [*]u8;
+            out   pointer:    [*]u8;
 
             /// Is returned when the system is out of memory.
             error SystemResources;
         }
 
         /// Returns previously allocated memory back to the process heap.
+        ///
+        /// NOTE: If `pointer` is not exactly a pointer previously returned by `allocate.pointer`,
+        ///       the behaviour is undefined and could corrupt the system.
+        ///
+        /// NOTE: If `pointer` is released multiple times, the behaviour is undefined
+        ///       and could corrupt the system.
         syscall release {
-            /// The complete chunk of memory previously allocated with @ref allocate.
-            in      mem: []u8;
-
-            /// The alignment that was passed to @ref allocate.ptr_align previously.
-            in      ptr_align: u8;
+            /// The exact pointer previously returned in `allocate.pointer`.
+            in      pointer: [*]u8;
         }
     }
 
     namespace monitor {
-
-        /// Queries all process resources.
+        /// Queries all existing process resources.
+        ///
+        /// NOTE: The order of processes is not necessarily stable between calls.
         syscall enumerate_processes {
+            /// An array that, if not `null`, will receive the list of processes available.
+            ///
             /// NOTE: The process handles will be bound to the calling process with the `at_least_weak` bind operation
             ///       to ensure access.
             in  processes: ?[]Process;
 
+            /// The number of elements written inside `processes` or the total number of processes if `processes` is `null`.
+            ///
+            /// NOTE: If `processes` is not null, not more than `processes.len` is returned.
             out count: usize;
 
             error SystemResources;
         }
 
         /// Queries all bound resources by a process.
+        ///
+        /// NOTE: The order of resources is not necessarily stable between calls.
         syscall query_bound_resources {
-            in  owner: Process;
+            /// The process for which the resources should be queried.
+            in  proc: Process;
 
+            /// An array that, if not `null`, will receive the list of resources available.
+            ///
             /// NOTE: The return resources will be bound to the calling process with the `at_least_weak` bind operation
             ///       to ensure access.
             in  reslist: ?[]SystemResource;
             
-
+            /// The number of elements written to `reslist` or the total number of resources if `reslist` is `null`.
+            ///
+            /// NOTE: If `reslist` is not null, not more than `reslist.len` is returned.
             out count: usize;
 
-            /// `owner` is not a valid process resource.
+            /// `proc` is not a valid process resource.
             error InvalidHandle;
 
             error SystemResources;
@@ -1021,7 +1087,7 @@ namespace process {
             /// The total number of bytes the process currently allocates in RAM.
             out size: usize;
 
-            /// `owner` is not a valid process resource.
+            /// `proc` is not a valid process resource.
             error InvalidHandle;
         }
 
@@ -1032,7 +1098,7 @@ namespace process {
             /// The total number of heap bytes the process currently allocates in RAM.
             out size: usize;
 
-            /// `owner` is not a valid process resource.
+            /// `proc` is not a valid process resource.
             error InvalidHandle;
         }
 
@@ -1043,7 +1109,7 @@ namespace process {
             /// The total number of heap allocations the process currently has active.
             out count: usize;
 
-            /// `owner` is not a valid process resource.
+            /// `proc` is not a valid process resource.
             error InvalidHandle;
         }
     }
