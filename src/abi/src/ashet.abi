@@ -3460,59 +3460,111 @@ namespace pipe {
     }
 }
 
-//? TODO: Review this namespace.
+/// This namespace contains items related to synchronization between multiple threads.
 namespace sync {
-    resource SyncEvent { }
-
+    /// A mutex implements an object which can be locked and unlocked.
+    ///
+    /// NOTE: As Ashet OS is cooperatively scheduled, it is not necessary to guard an access/operation
+    ///       with a mutex without a scheduler yield.
+    ///       This means using a mutex is only sensible when access to a certain resource should be guarded
+    ///       over scheduler yield points.
+    ///
+    /// LORE: In contrast to most other operating systems, a mutex in Ashet OS isn't tied
+    ///       to a thread or a process, but is a regular system resource that can be passed
+    ///       around and can be shared between several processes and threads.
+    ///
+    ///       This means that the concept of a "recursive mutex" doesn't make sense, as a mutex
+    ///       has no knowledge of the locking thread.
     resource Mutex { }
 
-    /// Creates a new `SyncEvent` object that can be used to synchronize
-    /// different processes.
-    syscall create_event {
-        out    event: SyncEvent;
-        error  SystemResources;
-    }
-
-    /// Completes one `WaitForEvent` IOP waiting for the given event.
-    syscall notify_one {
-        in    event: SyncEvent;
-        error InvalidHandle;
-    }
-
-    /// Completes all `WaitForEvent` IOP waiting for the given event.
-    syscall notify_all {
-        in    event: SyncEvent;
-        error InvalidHandle;
-    }
-
-    /// Waits for the given `SyncEvent` to be notified.
-    async_call WaitForEvent {
-        in    event: SyncEvent;
-        error InvalidHandle;
-    }
-
-    /// Creates a new mutual exclusion.
+    /// Creates a new mutex.
     syscall create_mutex {
-        error   SystemResources;
-        out    mutex: Mutex;
+        out   mutex: Mutex;
+
+        error SystemResources;
     }
 
     /// Tries to lock a mutex and returns if it was successful.
     syscall try_lock {
+        /// The mutex that shall be locked.
         in    mutex: Mutex;
+
+        /// `true` if the lock was successful, `false` otherwise.
         out   is_locked: bool;
+
+        /// `mutex` is not a valid mutex resource.
         error InvalidHandle;
     }
 
-    /// Unlocks a mutual exclusion. Completes a single `Lock` IOP if it exists.
+    /// Unlocks a mutex.
+    ///
+    /// Completes the oldest pending `Lock` operation if one exists.
     syscall unlock {
         in    mutex: Mutex;
+
+        /// `mutex` is not a valid mutex resource.
         error InvalidHandle;
     }
 
     /// Locks a mutex. Will complete once the mutex is locked.
     async_call Lock {
+        /// The mutex that shall be locked.
         in    mutex: Mutex;
+
+        /// `mutex` is not a valid mutex resource.
+        error InvalidHandle;
+    }
+
+    /// A sync-event is an edge-triggered notification mechanism that
+    /// can synchronize multiple actors.
+    resource SyncEvent { }
+
+    /// Creates a new `SyncEvent` object that can be used to synchronize
+    /// different processes.
+    syscall create_event {
+        /// The created SyncEvent resource.
+        out    event: SyncEvent;
+        error  SystemResources;
+    }
+
+    /// Completes the oldest pending `WaitForEvent` operation waiting for the given event.
+    ///
+    /// NOTE: If currently no `WaitForEvent` operation is pending on `event`,
+    ///       the notification is lost.
+    syscall notify_one {
+        /// The event that shall be notified.
+        in    event: SyncEvent;
+
+        /// `true` if the notification completed a pending `WaitForEvent` operation, otherwise `false`.
+        out   received:  bool;
+
+        /// `event` is not a valid sync event.
+        error InvalidHandle;
+    }
+
+    /// Completes all `WaitForEvent` operations waiting for the given event.
+    ///
+    /// NOTE: If currently no `WaitForEvent` operation is pending on `event`,
+    ///       the notification is lost.
+    syscall notify_all {
+        /// The event that shall be notified.
+        in    event: SyncEvent;
+
+        /// The number of completed `WaitForEvent` operations.
+        ///
+        /// NOTE: If `received == 0`, the notification was lost.
+        out   received:  usize;
+
+        /// `event` is not a valid sync event.
+        error InvalidHandle;
+    }
+
+    /// Waits for the given `SyncEvent` to be notified.
+    async_call WaitForEvent {
+        /// The event which shall be awaited.
+        in    event: SyncEvent;
+
+        /// `event` is not a valid sync event.
         error InvalidHandle;
     }
 }
