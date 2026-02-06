@@ -671,6 +671,43 @@ namespace process {
         error   SystemResources;
     }
 
+    /// Creates a new, empty daemon process.
+    ///
+    /// NOTE: The created process will be of `ProcessKind.daemon`.
+    ///
+    /// NOTE: The kernel will not create a main thread for the process.
+    syscall create_empty_process {
+        /// The arguments passed to the process.
+        /// It is safe to release the resource binding to the current process as soon as this syscall returns.
+        ///
+        /// NOTE: The kernel copies all argument strings and stores them in the process object before returning,
+        ///       so the caller may reuse/free argument memory immediately after the syscall returns.
+        in      arguments: []const SpawnArg;
+
+        /// Size of the memory allocated for the process.
+        ///
+        /// NOTE: The memory allocated by the kernel will not have well-defined contents.
+        ///       The kernel may zero the memory, or just assign it without change.
+        ///       Userland must not assume contents of the memory without previously writing it.
+        ///
+        /// NOTE: This address for this memory will be returned by `get_base_address`.
+        ///
+        /// NOTE: The kernel may allocate more than the requested memory. Userland must assume
+        ///       exactly `image_size` are valid and may not write beyond `image_size`
+        ///       bytes after the address returned by `get_base_address`.
+        ///
+        /// NOTE: If `0` is passed, no memory will be allocated and `get_base_address` will return an error.
+        in      image_size: usize;
+
+        /// Handle to the created process.
+        out     process: Process;
+
+        /// A handle in `arguments` is not a valid resource handle.
+        error   InvalidHandle;
+
+        error   SystemResources;
+    }
+
     enum TerminationReason : u8 {
         /// The process terminated properly through a call to `terminate`.
         item regular_exit = 0;
@@ -756,6 +793,8 @@ namespace process {
     /// Returns the base address of the process.
     ///
     /// This is the address at which the executable image is loaded and relocated to.
+    ///
+    /// NOTE: The memory is valid until the process is terminated.
     syscall get_base_address {
         /// The process for which the base address shall be returned.
         /// If `null` is passed, the current process will be used.
@@ -766,6 +805,9 @@ namespace process {
 
         /// `target` is not a valid process resource.
         error InvalidHandle;
+
+        /// `target` process has no assigned memory region.
+        error NoMemory;
     }
 
     /// Enumeration of the different process kinds that exist.
