@@ -1752,7 +1752,6 @@ namespace video {
 
 /// This namespace contains items related to entropy management.
 namespace random {
-
     /// Fills `data` with random bytes.
     ///
     /// This call never waits. Bytes are generated from the kernel DRBG.
@@ -4507,8 +4506,7 @@ namespace io {
         }
 
         syscall enumerate {
-            in list: []SerialPortID;
-
+            in list: ?[]SerialPortID;
             out count: usize;
         }
 
@@ -4544,23 +4542,23 @@ namespace io {
         async_call configure {
             in  port: SerialPort;
 
-            //? TODO: in baud_rate:       ?u32;
-            //? TODO: in word_size:       ?u8;
-            //? TODO: in stop_bits:       ?StopBits;
-            //? TODO: in parity:          ?Parity;
-            //? TODO: in control_flow:    ?ControlFlow;
+            in baud_rate:       ?u32;
+            in word_size:       ?u8;
+            in stop_bits:       ?StopBits;
+            in parity:          ?Parity;
+            in control_flow:    ?ControlFlow;
 
-            //? TODO: /// Selects which software control flow words control the transmitter
-            //? TODO: /// activity.
-            //? TODO: ///
-            //? TODO: /// NOTE: This is usually the same as `sw_control_flow_tx`.
-            //? TODO: in sw_control_flow_rx: ?SoftwareControlFlow;
+            /// Selects which software control flow words control the transmitter
+            /// activity.
+            ///
+            /// NOTE: This is usually the same as `sw_control_flow_tx`.
+            in sw_control_flow_rx: ?SoftwareControlFlow;
 
-            //? TODO: /// Selects which software control flow words are transmitted when
-            //? TODO: /// the own receive buffer is full.
-            //? TODO: ///
-            //? TODO: /// NOTE: This is usually the same as `sw_control_flow_rx`.
-            //? TODO: in sw_control_flow_tx: ?SoftwareControlFlow;
+            /// Selects which software control flow words are transmitted when
+            /// the own receive buffer is full.
+            ///
+            /// NOTE: This is usually the same as `sw_control_flow_rx`.
+            in sw_control_flow_tx: ?SoftwareControlFlow;
 
             in acceptable_baud_error: f32;
 
@@ -4594,13 +4592,13 @@ namespace io {
         async_call control {
             in  port:    SerialPort;
 
-            //? /// The new state that should be applied for DTR (Data Terminal Ready).
-            //? TODO: in  dtr: ?bool;
+            /// The new state that should be applied for DTR (Data Terminal Ready).
+            in  dtr: ?bool;
 
             /// The new state that should be applied for RTS (Request To Send).
             ///
-            //? /// NOTE: This is also called `RTR` when used for modern hardware control flow.
-            //? TODO: in  rts: ?bool;
+            /// NOTE: This is also called `RTR` when used for modern hardware control flow.
+            in  rts: ?bool;
 
             error InvalidHandle;
 
@@ -4642,7 +4640,7 @@ namespace io {
         }
 
         /// Writes data to the serial port.
-        async_call write {
+        async_call Write {
             in  port:    SerialPort;
             in  data:    bytestr;
 
@@ -4656,7 +4654,7 @@ namespace io {
         }
 
         /// Reads data from a serial port.
-        async_call read {
+        async_call Read {
             in port: SerialPort;
             in data: bytebuf;
 
@@ -4682,7 +4680,7 @@ namespace io {
         ///
         ///        In DMX, this is used to signal the start of a new frame.
         ///
-        async_call break {
+        async_call Break {
             in port:  SerialPort;
 
             in duration: clock.Duration;
@@ -4698,6 +4696,7 @@ namespace io {
             item none = 0;
             item break_detected = 1;
             item parity_error = 2;
+            item framing_error = 3;
         }
 
         enum StopBits : u8 {
@@ -4710,10 +4709,10 @@ namespace io {
             /// No parity will be used.
             item none = 0;
 
-            /// The parity bit will contain a `1` if the sum of all data bits are even.
+            /// The parity bit will contain a `0` if the sum of all data bits are even.
             item even = 1;
 
-            /// The parity bit will contain a `1` if the sum of all data bits are odd.
+            /// The parity bit will contain a `0` if the sum of all data bits are odd.
             item odd = 2;
 
             /// The parity bit will always contain a `1`.
@@ -4807,7 +4806,7 @@ namespace io {
             out count: usize;
         }
 
-        /// Queries information about the given serial port id.
+        /// Queries information about the given I²C bus id.
         syscall query_metadata {
             in    id:       BusID;
             in    name_buf: ?[]u8;
@@ -4861,7 +4860,7 @@ namespace io {
             in bus: Bus;
 
             /// A mutable sequence of I²C operations. Will be processed first-to last and
-            /// the pointed `Operation`s will be changed during
+            /// the pointed `Operation`s will be changed during execution to report results.
             in sequence: []Operation;
 
             /// The number of successfully processed elements from `sequence`.
