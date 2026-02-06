@@ -1673,6 +1673,11 @@ namespace datetime {
 
 //? TODO: Review this namespace.
 namespace video {
+    //? TODO: I guess i could make the VideoOutput resource not have a video memory exposed, but only provide
+    //?       an async call "WritePixels" which can download a buffer into a video card/framebuffer/whatever.
+    //?       I can also offer a MemoryMapping over a VideoOutput, which exposes a back or frontbuffer, a flush
+    //?       method and a way of getting the pixel data. The creation of this may fail.
+
     resource VideoOutput { }
 
     /// Index of the systems video outputs.
