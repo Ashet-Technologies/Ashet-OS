@@ -1671,6 +1671,7 @@ namespace datetime {
     }
 }
 
+//? TODO: Review this namespace.
 namespace video {
     resource VideoOutput { }
 
@@ -1744,24 +1745,38 @@ namespace video {
     }
 }
 
+/// This namespace contains items related to entropy management.
 namespace random {
-    /// Fills the provided pointer with random bytes from the entropy pool.
+
+    /// Fills `data` with random bytes.
     ///
-    /// If the entropy pool runs out of entropy bits, this call does not block
-    /// and draw bytes from the pool.
+    /// This call never waits. Bytes are generated from the kernel DRBG.
+    /// If the DRBG cannot be (re)seeded due to insufficient newly collected entropy,
+    /// output is still produced (possibly without reseeding).
+    ///
+    /// NOTE: Do not use this for key generation unless the system guarantees
+    ///       the DRBG has been seeded at least once (see `GetStrictRandom`).
     syscall get_soft_random {
+        /// The buffer that should be filled with random bytes.
         in data: bytebuf;
     }
 
-    /// Fills the provided buffer with given length amount of random bytes.
+    /// Fills `data` with random bytes, but only after the kernel DRBG is seeded.
     ///
-    /// This call blocks until the entropy pool has enough entropy to fill
-    /// an entire hash to draw from.
+    /// This async call completes once the entropy pool reached the minimum seeding
+    /// threshold, then generates bytes from the kernel DRBG.
+    ///
+    /// NOTE: May take a substantial amount of time on systems with weak entropy sources.
     async_call GetStrictRandom {
+        /// The buffer that should be filled with random bytes.
         in data: bytebuf;
     }
+
+    //? TODO: add "add entropy" syscall
 }
 
+//? TODO: Rework this namespace into using InputGroups, DeviceIds, ...
+//? TODO: Review this namespace.
 namespace input {
     union InputEvent {
         field event_type: Type;
@@ -2644,6 +2659,7 @@ namespace input {
     }
 }
 
+//? TODO: Review this namespace.
 namespace network {
     enum IP_Type : u8 {
         item ipv4;
@@ -2862,6 +2878,7 @@ namespace network {
 
 }
 
+//? TODO: Review this namespace.
 /// A file or directory on Ashet OS can be named with any legal UTF-8 sequence
 /// that does not contain `/` and `:`. It is recommended to only create file names
 /// that are actually typeable on the operating system tho.
@@ -3226,32 +3243,49 @@ namespace fs {
 
 }
 
+/// This namespace contains items related to shared memory objects.
 namespace shm {
+    /// A shared memory object which, for its livetime, provides
+    /// a memory region which can be read and modified.
+    ///
+    /// NOTE: The memory region is valid until the resource is destroyed.
     resource SharedMemory { }
 
     /// Constructs a new shared memory object with `size` bytes of memory.
-    /// Shared memory can be written by all processes without any memory protection.
+    /// Shared memory 1can be written without any memory protection.
+    ///
+    /// NOTE: The shared memory region will not be initialized by the kernel
+    ///       so the content after creation is unspecified.
+    ///       It should be set to the desired contents by the initial creator.
     syscall create {
+        /// Number of bytes for the shared memory region.
+        /// The operation will fail when `0` is passed.
         in    size: usize;
+
+        /// The created shared memory object.
         out   handle: SharedMemory;
+
+        /// Returned when `size` is 0.
+        error InvalidSize;
+
         error SystemResources;
     }
 
-    /// Returns the number of bytes inside the given shared memory object.
-    syscall get_length {
+    /// Returns the memory region for the shared memory object.
+    ///
+    /// NOTE: The memory returned by this function is valid until the `handle` object is destroyed.
+    syscall get_memory {
         in    handle: SharedMemory;
-        out   length: usize;
-        error InvalidHandle;
-    }
 
-    /// Returns a pointer to the shared memory.
-    syscall get_pointer {
-        in    handle: SharedMemory;
-        out   pointer: [*]align(16) u8;
+        /// The memory region of the shared memory object.
+        out   memory: []align(16) u8;
+
+        /// The `handle` is not a valid shared memory object.
         error InvalidHandle;
     }
 }
 
+//? TODO: Review this namespace.
 namespace pipe {
 
     resource Pipe { }
@@ -3322,6 +3356,7 @@ namespace pipe {
 
 }
 
+//? TODO: Review this namespace.
 namespace sync {
     resource SyncEvent { }
 
@@ -3378,6 +3413,7 @@ namespace sync {
     }
 }
 
+//? TODO: Review this namespace.
 namespace draw {
     resource Font { }
 
@@ -3526,6 +3562,7 @@ namespace draw {
 
 }
 
+//? TODO: Review this namespace.
 namespace gui {
     resource Window { }
 
@@ -4248,6 +4285,7 @@ namespace gui {
     }
 }
 
+//? TODO: Review this namespace.
 namespace service {
     resource Service { }
 
@@ -4293,6 +4331,7 @@ namespace service {
     }
 }
 
+//? TODO: Review this namespace.
 ///
 /// The I/O namespace contains APIs to interface with external hardware like serial ports, I²C busses and so on.
 ///
@@ -4306,35 +4345,35 @@ namespace io {
             ...
         }
 
-    //?     syscall enumerate {
-    //?         in list: []SerialPortID;
+        syscall enumerate {
+            in list: []SerialPortID;
 
-    //?         out count: usize;
-    //?     }
+            out count: usize;
+        }
 
-    //?     /// Queries information about the given serial port id.
-    //?     syscall query_metadata {
-    //?         in    id:       SerialPortID;
-    //?         in    name_buf: ?[]u8;
+        /// Queries information about the given serial port id.
+        syscall query_metadata {
+            in    id:       SerialPortID;
+            in    name_buf: ?[]u8;
 
-    //?         out   name_len: usize;
+            out   name_len: usize;
 
-    //?         /// The given id does not exist.
-    //?         error NotFound;
-    //?     }
+            /// The given id does not exist.
+            error NotFound;
+        }
 
         resource SerialPort { }
 
-    //?     syscall open {
-    //?         in    id:     SerialPortID;
-    //?         out   port:   SerialPort;
+        syscall open {
+            in    id:     SerialPortID;
+            out   port:   SerialPort;
 
-    //?         /// The given id does not exist.
-    //?         error NotFound;
+            /// The given id does not exist.
+            error NotFound;
 
-    //?         /// The resource is already opened.
-    //?         error ResourceBusy;
-    //?     }
+            /// The resource is already opened.
+            error ResourceBusy;
+        }
 
         ///
         /// Changes the configuration of a serial port and returns the new configuration.
@@ -4362,7 +4401,7 @@ namespace io {
             //? TODO: /// NOTE: This is usually the same as `sw_control_flow_rx`.
             //? TODO: in sw_control_flow_tx: ?SoftwareControlFlow;
 
-            in acceptable_baud_error: f32; //?
+            in acceptable_baud_error: f32;
 
             out current_baud_rate:       u32;
             out current_data_bits:       u8;
