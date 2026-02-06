@@ -25,7 +25,7 @@ enum SystemResource : usize
 /// - Weak bindings allow a process access to a resource, but don't keep the resource alive.
 /// - This allows processes to access resources they don't own.
 /// - Resources can be tethered to other resources.
-/// - If a tethered resource is destroyed, the associated resource is also destroyed. 
+/// - If a tethered resource is destroyed, the associated resource is also destroyed.
 ///
 /// NOTE: Every kernel object the userland can interact with is a resource.
 ///
@@ -51,14 +51,14 @@ enum SystemResource : usize
 ///       In cases of crashes, the resource would only be released, but not destroyed.
 ///       The idea of allowing a process to access a resource, but not keeping it alive solves
 ///       this problem completely and also allows some other patterns to work well.
-/// 
+///
 /// LORE: The idea of resource tethering came after the idea of bindings.
 ///       Tethering allows resolving a problem most other operating systems have, which is:
 ///       What happens if a thread dies unexpectedly.
 ///       In operating systems without tethering, the application has to monitor the threads
 ///       and if a thread dies, it has to manually clean up the resources of that thread
 ///       assuming it has properly registered the resources in a global management structure.
-///       With tethering, we can tether the lifetime of a file handle to the lifetime of its 
+///       With tethering, we can tether the lifetime of a file handle to the lifetime of its
 ///       owning thread, meaning: If the thread dies, the file is closed.
 ///       As this is a very useful property, i've decided to implement it as a broader general
 ///       concept instead of tying it to threads only.
@@ -153,7 +153,7 @@ namespace resources {
 
         /// The resource is strongly bound to the process.
         /// As long as a single strong binding exists, the resource is
-        /// valid. 
+        /// valid.
         item strong = 1;
 
         /// The resource is weakly bound to the process.
@@ -169,7 +169,7 @@ namespace resources {
         /// The process for which the resource binding shall be queried. If `null`, uses the current process.
         in  target:      ?process.Process;
 
-        /// The kind of binding the resource has on `target`. 
+        /// The kind of binding the resource has on `target`.
         out binding: Binding;
 
         /// The resource or process handle was invalid.
@@ -188,7 +188,7 @@ namespace resources {
     syscall get_bindings {
         /// The resource which should be queried.
         in     @"resource": SystemResource;
-        
+
         /// If not `null`, will receive the process handles that have a binding
         /// on `resource`.
         ///
@@ -216,12 +216,12 @@ namespace resources {
         error SystemResources;
     }
 
-    /// Defines the possible ways of how a resource is tethered to another resource. 
+    /// Defines the possible ways of how a resource is tethered to another resource.
     enum TetherMode : u8
     {
         /// The resources are not tethered.
         item untethered = 0;
-        
+
         /// If the source resource is destroyed, the target resource will be destroyed as well.
         item strong = 1;
     }
@@ -229,7 +229,7 @@ namespace resources {
     /// Binds the lifetime of the 'target' resource to the lifetime of the 'source' resource.
     ///
     /// If `mode` is `strong` and the `source` resource is destroyed, the `target` resource
-    /// will implicitly be destroyed as well. 
+    /// will implicitly be destroyed as well.
     syscall tether {
         /// The resource which destruction will trigger the tether event.
         in  source: SystemResource;
@@ -284,7 +284,7 @@ namespace resources {
 /// This namespace is related to asynchronous running (sys)calls, which
 /// is the heart of the operating system I/O.
 ///
-/// All system calls in Ashet OS are non-blocking except `process.yield`,
+/// All system calls in Ashet OS are non-blocking except `process.thread.yield`,
 /// `overlapped.await_any` and `overlapped.await_any_of`.
 /// This means that all regular system calls will return as soon as possible
 /// without ever waiting on external events or other operations.
@@ -311,7 +311,7 @@ namespace resources {
 ///
 ///       The kernel will modify the `output` and `error` fields of the ARC enclosing structure.
 ///
-/// NOTE: If the owning process is destroyed, all scheduled ARCs of that process are implicitly
+/// NOTE: If the owning process is terminated, all scheduled ARCs of that process are implicitly
 ///       cancelled (best-effort) and removed from the kernel; they will not be returned to userland.
 ///
 /// NOTE: Completion delivery is exactly-once.
@@ -329,7 +329,7 @@ namespace overlapped {
     {
         /// The type of operation that is performed.
         ///
-        /// NOTE: This field is never changed by the kernel. 
+        /// NOTE: This field is never changed by the kernel.
         field type: Type;
 
         /// A user-specified array of pointer-sized fields which may
@@ -389,7 +389,7 @@ namespace overlapped {
     syscall cancel {
         /// The operation to cancel.
         in      arc: *ARC;
-        
+
         /// Returned when the ARC has already run to completion.
         ///
         /// NOTE: This means the operation was not cancelled because it already completed
@@ -401,7 +401,7 @@ namespace overlapped {
         error   Completed;
 
         /// The kernel does not know the `arc` operation.
-        error   Unscheduled;    
+        error   Unscheduled;
     }
 
     enum Thread_Affinity : u8 {
@@ -446,7 +446,7 @@ namespace overlapped {
     ///       thread until the request has been completed. This means that other
     ///       threads can continue their work.
     ///
-    /// NOTE: If `completed.len` is zero, the operation will never suspend and 
+    /// NOTE: If `completed.len` is zero, the operation will never suspend and
     ///       immediately return zero for `completed_count`.
     ///
     /// NOTE: The completed ARCs are not owned by the kernel anymore and may be scheduled again.
@@ -456,7 +456,7 @@ namespace overlapped {
         /// NOTE: Kernel will only touch the first `completed_count` elements and
         ///       keeps the rest unchanged.
         in     completed:       []*ARC;
-        
+
         /// Defines how the operation will suspend.
         in     block_mode:      BlockMode;
 
@@ -503,7 +503,7 @@ namespace overlapped {
 
         /// The number of ARCs completed inside `events`.
         out     completed_count: usize;
-        
+
         /// Another `await_any_of` already awaits an event from `events`.
         error   InvalidOperation;
 
@@ -542,9 +542,17 @@ namespace process {
     ///
     /// NOTE: Destroying an active process resource will terminate the process and immediately reap the
     ///       zombie.
-    /// 
-    /// NOTE: A process may have zero associated threads, but still be active. This means it exists
-    ///       and still may keep resources alive, but it cannot act anymore.
+    ///
+    /// NOTE: A process may be of two kinds:
+    ///       - regular
+    ///       - daemon
+    ///       A daemon process may have zero associated foreground threads, but still be active. If it has
+    ///       zero threads total, it can keep resources alive but cannot execute code until a new thread is
+    ///       spawned into it.
+    ///
+    /// NOTE: A regular process is terminated when its last foreground thread is exited.
+    ///       If all foreground threads have exited without calling `terminate`, the process
+    ///       is terminated with `TerminationReason.regular_exit` and `success = true`.
     ///
     /// LORE: Ashet OS only has a single boolean for communicating success or failure to the outside.
     ///       This was chosen as most applications in the wild either use `EXIT_SUCCESS (0)` or `EXIT_FAILURE (1)`
@@ -611,11 +619,11 @@ namespace process {
             /// The argument is a mere flag and carries no value.
             /// Its existence itself already carries semantics.
             item flag = 0;
-            
+
             /// The argument has a string value associated.
             /// NOTE: `Value.text` is active.
             item string = 1;
-            
+
             /// The argument has a resource value associated.
             /// NOTE: The spawned process receives a strong binding for the passed resource.
             /// NOTE: `Value.resource` is active.
@@ -632,16 +640,19 @@ namespace process {
         }
     }
 
-    /// Spawns a new process.
+    /// Spawns a new regular process.
     ///
-    /// NOTE: The kernel will perform a copy of all strings inside `overlapped.schedule`, so it is safe to 
+    /// NOTE: The kernel will perform a copy of all strings inside `overlapped.schedule`, so it is safe to
     ///       reuse the string memory after the operation is successfully scheduled.
     ///
     ///       This prevents unwanted use-after-free by the kernel.
+    ///
+    /// NOTE: `Spawn` will create a single initial thread, the main thread. This thread is a
+    ///       foreground thread which will use the executables entry point as its thread function.
     async_call Spawn {
         /// Relative base directory for `path`.
         in      dir: fs.Directory;
-        
+
         /// File name of the executable relative to `dir`.
         in      path: str;
 
@@ -651,7 +662,7 @@ namespace process {
 
         /// Handle to the spawned process.
         out     process: Process;
-        
+
         error   BadExecutable;
         error   DiskError;
         error   FileNotFound;
@@ -688,8 +699,11 @@ namespace process {
         /// The reason why the process was terminated.
         out   reason:    TerminationReason;
 
-        /// Contains the value passed to `terminate.success` or `false` if
-        /// not terminated by `terminate`.
+        /// Contains the success of the process termination.
+        /// This value is:
+        /// - The value passed to `terminate.success`.
+        /// - True if terminated by all foreground threads exiting.
+        /// - `false` otherwise.
         out   successful: bool;
 
         /// `target` is not a valid process resource.
@@ -699,9 +713,9 @@ namespace process {
     /// Returns the arguments that were passed to this process in `Spawn`.
     syscall get_arguments {
         /// The process for which the arguments shall be returned.
-        /// If `null` is passed, the current process will be queried.
+        /// If `null` is passed, the current process will be used.
         in    target: ?Process;
-        
+
         /// A constant slice of the process' arguments.
         ///
         /// NOTE: The returned memory and all interior pointers are valid as long
@@ -711,24 +725,23 @@ namespace process {
         ///       to the calling process with an `at_least_weak` bind operation to ensure
         ///       resource access.
         out   argv:   []const SpawnArg;
-        
+
         /// `target` is not a valid process resource.
         error InvalidHandle;
 
         error SystemResources;
     }
 
-
     /// Returns a pointer to the file name of the process.
     syscall get_file_name {
         /// The process for which the file name shall be returned.
-        /// If `null` is passed, the current process will be queried.
+        /// If `null` is passed, the current process will be used.
         in    target:    ?Process;
 
         /// The file name of the process passed to `Spawn` or the empty string if no
         /// file name exists.
         ///
-        /// NOTE: This is only the basename of the file and not the full path as 
+        /// NOTE: This is only the basename of the file and not the full path as
         ///       the information about the path is not helpful without the associated
         ///       directory handle.
         ///
@@ -745,11 +758,53 @@ namespace process {
     /// This is the address at which the executable image is loaded and relocated to.
     syscall get_base_address {
         /// The process for which the base address shall be returned.
-        /// If `null` is passed, the current process will be queried.
+        /// If `null` is passed, the current process will be used.
         in    target: ?Process;
 
         /// The base address of the process.
         out   base_address: usize;
+
+        /// `target` is not a valid process resource.
+        error InvalidHandle;
+    }
+
+    /// Enumeration of the different process kinds that exist.
+    enum ProcessKind : u8 {
+        /// A regular process is automatically terminated when all foreground threads have exited.
+        item regular = 0;
+
+        /// A daemon process does not automatically exit when all foreground threads have exited.
+        /// It stays alive until it is explicitly terminated.
+        item daemon = 1;
+    }
+
+    /// Changes the kind of a process.
+    ///
+    /// NOTE: If a process is changed to `ProcessKind.regular` and has no active foreground
+    ///       threads, the process is automatically terminated and this function may not return.
+    syscall set_kind {
+        /// The process for which the kind shall be updated.
+        /// If `null` is passed, the current process will be used.
+        in  target:   ?Process;
+
+        /// The new kind of the `target` process.
+        in  new_kind: ProcessKind;
+
+        /// `target` is not a valid process resource.
+        error InvalidHandle;
+
+        /// The `target` process is dead, but still has an alive handle.
+        error ZombieProcess;
+    }
+
+    /// Queries the kind of a process.
+    syscall get_kind {
+        /// The process for which the kind shall be returned.
+        /// If `null` is passed, the current process will be used.
+        in  target:   ?Process;
+
+        /// The kind of the `target` process.
+        out kind: ProcessKind;
 
         /// `target` is not a valid process resource.
         error InvalidHandle;
@@ -802,6 +857,21 @@ namespace process {
         /// The parameter is the `arg` value passed to `spawn`.
         typedef ThreadFunction = fnptr (?anyptr) void;
 
+        /// Enumeration of the available thread kinds.
+        enum ThreadKind : u8 {
+            /// A foreground thread keeps a regular process alive.
+            ///
+            /// As long as a single foreground thread exists, a process is not
+            /// automatically terminated.
+            item foreground = 0;
+
+            /// A background thread does not keep a regular process alive.
+            ///
+            /// This means that all background threads are automatically exited
+            /// when the owning process is terminated.
+            item background = 1;
+        }
+
         /// Spawns a new thread with `function` passing `arg` to it.
         ///
         /// NOTE: A spawned thread will always be associated with the current
@@ -814,13 +884,13 @@ namespace process {
             ///       and IPC services, but the implementor has to keep in mind that
             ///       the memory for `function` and all of the code it invokes has to outlive
             ///       the threads lifetime.
-            ///       This can be ensured by tethering the `target` thread to the owner of the 
+            ///       This can be ensured by tethering the `target` thread to the owner of the
             ///       memory so it is automatically killed if the memory is returned to the OS.
             in    target: ?Process;
 
             /// The function that the thread will execute.
             in    function:   ThreadFunction;
-            
+
             /// The argument passed to `function`.
             in    arg:        ?anyptr;
 
@@ -831,6 +901,9 @@ namespace process {
             /// NOTE: There is no guarantee that the stack won't be larger than `stack_size`
             ///       bytes.
             in    stack_size: usize;
+
+            /// The kind of thread that is created.
+            in    kind:       ThreadKind;
 
             /// The thread that was created.
             /// NOTE: This thread handle will be bound to the calling process with the `at_least_weak` bind operation
@@ -879,7 +952,7 @@ namespace process {
             in    target:    Thread;
 
             /// Informs how the thread exited:
-            /// - `true`: The thread exited by its thread function returning normally.
+            /// - `true`: The thread exited by its thread function returning.
             /// - `false`: The thread exited by invoking `exit` or `kill`.
             out   regular_exit: bool;
 
@@ -911,10 +984,46 @@ namespace process {
         /// This means that the thread will be scheduled by the
         /// operating system and continues execution.
         ///
-        /// NOTE: Resuming an already active thread is idempotent and does nothing. 
+        /// NOTE: Resuming an already active thread is idempotent and does nothing.
         syscall resume {
             /// The thread that should be resumed.
             in    target:    Thread;
+
+            /// Returned when `target` is not a valid thread resource.
+            error InvalidHandle;
+
+            /// `target` is a thread that already exited.
+            error ThreadStopped;
+        }
+
+        /// Changes the kind of a thread after creation.
+        ///
+        /// NOTE: If the last foreground thread of a regular process is changed
+        ///       to `ThreadKind.background`, the process will be terminated and
+        ///       this syscall may not return.
+        syscall set_kind {
+            /// The thread that shall be updated.
+            /// If this value is `null`, the current thread will be updated.
+            in    target:    ?Thread;
+
+            /// The new kind this thread is.
+            in    kind:      ThreadKind;
+
+            /// Returned when `target` is not a valid thread resource.
+            error InvalidHandle;
+
+            /// `target` is a thread that already exited.
+            error ThreadStopped;
+        }
+
+        /// Queries the thread kind.
+        syscall get_kind {
+            /// The thread that shall be queried.
+            /// If this value is `null`, the current thread will be queried.
+            in    target:    ?Thread;
+
+            /// The kind of thread `target` is.
+            out   kind:      ThreadKind;
 
             /// Returned when `target` is not a valid thread resource.
             error InvalidHandle;
@@ -929,19 +1038,19 @@ namespace process {
             /// The log message is about a critical, terminating error. The process or thread usually
             /// cannot continue after such a log message.
             item critical = 0;
-            
+
             /// The log message is about a non-critical error. This means the process is not terminating
             /// due to the error, but it might still be relevant to the user.
             item err = 1;
-            
+
             /// The log message is not an error, but informs about things that might still be relevant
             /// to understand higher level failures like exceeded retries or failed connections.
             item warn = 2;
-            
+
             /// The log message informs the user about regular operations.
             /// Nothing critical shall be logged with this level.
             item notice = 3;
-            
+
             /// The log message is only useful for debugging the process.
             item debug = 4;
         }
@@ -1005,7 +1114,7 @@ namespace process {
             ///       usable in the returned `memory`.
             in    size:      usize;
 
-            /// The alignment of the pointer encoded as the number of 
+            /// The alignment of the pointer encoded as the number of
             /// left-shifts on a one.
             ///
             /// This gives us a safer encoding as we only accept powers of two
@@ -1068,7 +1177,7 @@ namespace process {
             /// NOTE: The return resources will be bound to the calling process with the `at_least_weak` bind operation
             ///       to ensure access.
             in  reslist: ?[]SystemResource;
-            
+
             /// The number of elements written to `reslist` or the total number of resources if `reslist` is `null`.
             ///
             /// NOTE: If `reslist` is not null, not more than `reslist.len` is returned.
@@ -1268,7 +1377,7 @@ namespace datetime {
     }
 
     /// Completes when `datetime.now() >= when`.
-    /// 
+    ///
     /// NOTE: A call to `set` may trigger all active alarm calls that
     ///       are now satisfied.
     async_call Alarm {
@@ -1341,7 +1450,7 @@ namespace datetime {
     {
         /// The point in time to query the zone offset for.
         in    dt:      DateTime;
-        
+
         /// The local time offset in minutes.
         out   minutes: i16;
 
@@ -1469,7 +1578,7 @@ namespace datetime {
         /// NOTE: This may happen due to daylight saving time or similar rules.
         in  occurrence: DuplicateTimeOccurrence;
 
-        /// The date/time value representing the given date. 
+        /// The date/time value representing the given date.
         out dt: DateTime;
 
         /// The gregorian date contains an invalidly specified date.
@@ -1484,7 +1593,7 @@ namespace datetime {
         error AmbiguousLocalTime;
     }
 
-    /// Enumeration of the variants how missing wall clock times will be resolved. 
+    /// Enumeration of the variants how missing wall clock times will be resolved.
     enum MissingTimeAdjustment : u8 {
         /// The time is not adjusted, but rejected and yields an error.
         item reject = 0;
@@ -4606,7 +4715,7 @@ namespace io {
 
 //?
 //? Global Types
-//? 
+//?
 
 
 struct Point {
