@@ -1687,25 +1687,6 @@ namespace video {
         ...
     }
 
-    struct VideoMemory {
-        /// Pointer to the first pixel of the first scanline.
-        ///
-        /// Each scanline is `.stride` elements separated from
-        /// each other and contains `width` valid elements.
-        ///
-        /// There are `height` total scanlines available.
-        field base: [*]align(4) Color;
-
-        /// Length of a scanline.
-        field stride: usize;
-
-        /// Number of valid elements in a scanline
-        field width: u16;
-
-        /// Number of valid scanlines.
-        field height: u16;
-    }
-
     /// Returns a list of all video outputs.
     ///
     /// If `ids` is `null`, the total number of available outputs is returned;
@@ -1732,21 +1713,138 @@ namespace video {
         error InvalidHandle;
     }
 
+    /// Completes when the video output has fully scanned out an image and is now performing the v-blanking.
+    ///
+    /// This allows frame-synchronized presentation of video data.
+    ///
+    /// NOTE: All scheduled `WaitForVBlank` operations complete at the start of the next vblank period.
+    async_call WaitForVBlank {
+        in      output: VideoOutput;
+        error   InvalidHandle;
+    }
+
+    /// Specifies how `WritePixels` will upload the pixels.
+    enum PresentMode : u8 {
+        /// The pixel data is written immediately.
+        ///
+        /// NOTE: This mode will immediatly upload the pixel data and
+        ///       will not await a vblank period. This means the upload
+        ///       is likely to create visual glitches or tearing.
+        item immediate = 0;
+
+        /// The kernel implicitly waits for the vblank period of the
+        /// scanout before writing the pixel data.
+        ///
+        /// NOTE: This mode is best-effort, and does not guarantee the
+        ///       video data is uploaded tearing-free.
+        item vblank = 1;
+    }
+
+    /// Uploads pixels to a video output.
+    ///
+    /// LORE: Originally, we had the abiltiy to directly get a pointer
+    ///       to the video outputs buffer.
+    ///       As convenient as it is, it implicitly imposed the requirement
+    ///       for the kernel to potentially allocate a pixel buffer if the
+    ///       video output cannot actually provide the video memory inside
+    ///       the systems main memory.
+    ///
+    ///       This forced the kernel to periodically upload an allocated buffer
+    ///       to external video devices, which is both inefficient and error prone.
+    ///
+    ///       This syscall + `Buffer` sidestep this problem by making the access of a
+    ///       memory-mapped video memory failible without removing the ability for a generic
+    ///       upload procedure.
+    async_call WritePixels {
+        /// The output which should receive the pixel data.
+        in    output:      VideoOutput;
+
+        /// The portion of the video buffer that should be updated.
+        in    destination: Rectangle;
+
+        /// The pixel data that should be uploaded.
+        /// Each scanline starts at `y * stride` elements apart and the buffer must contain
+        /// at least `destination.height` scanlines.
+        in    pixels:      []const Color;
+
+        /// The length of a scanline in `pixels`.
+        in    stride:      usize;
+
+        /// Determines when to perform the pixel data write.
+        in    mode:        PresentMode;
+
+        /// `output` is not a valid video output resource.
+        error InvalidHandle;
+
+        /// `pixels.len` is less than `stride * destination.height`.
+        error BufferSize;
+
+        /// `stride` is less than `destination.width`.
+        error InvalidStride;
+
+        /// `destination` is outside the actual video buffer resolution.
+        error InvalidRegion;
+    }
+
+    resource Buffer { }
+
+    enum BufferKind : u8 {
+        /// `Present` is a no-op.
+        item front_buffer = 0;
+
+        /// Requires `Present` to make the changes visible.
+        item back_buffer = 0;
+    }
+
+    syscall create_buffer {
+        in output: VideoOutput;
+        in requested_kind: BufferKind;
+
+        out buffer: Buffer;
+
+        error InvalidHandle;
+        error Unsupported;
+        error SystemResources;
+    }
+
+    /// Applies the changes inside `buffer` and guarantees they
+    /// are visible afterwards.
+    async_call Present
+    {
+        in    buffer: Buffer;
+
+        /// Determines when to perform the pixel data update.
+        in    mode:        PresentMode;
+
+        error InvalidHandle;
+    }
+
+    struct VideoMemory {
+        /// Pointer to the first pixel of the first scanline.
+        ///
+        /// Each scanline is `.stride` elements separated from
+        /// each other and contains `width` valid elements.
+        ///
+        /// There are `height` total scanlines available.
+        field base: [*]align(4) Color;
+
+        /// Length of a scanline.
+        field stride: usize;
+
+        /// Number of valid elements in a scanline
+        field width: u16;
+
+        /// Number of valid scanlines.
+        field height: u16;
+    }
+
     /// Returns a pointer to linear video memory, row-major.
     /// Pixels rows will have a stride of the current video buffer width.
     /// The first pixel in the memory is the top-left pixel.
     syscall get_video_memory {
-        in     output: VideoOutput;
+        in     output: Buffer;
         out    memory: VideoMemory;
         error  InvalidHandle;
-    }
-
-    /// Completes when the video output has fully scanned out an image and is now performing the v-blanking.
-    ///
-    /// This allows frame-synchronized presentation of video data.
-    async_call WaitForVBlank {
-        in      output: VideoOutput;
-        error   InvalidHandle;
     }
 }
 
@@ -4690,7 +4788,6 @@ namespace io {
             /// The serial port does not support sending breaks.
             error Unsupported;
         }
-
 
         enum SerialPortError : u8 {
             item none = 0;
