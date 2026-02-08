@@ -2006,13 +2006,484 @@ namespace random {
     //? TODO: add "add entropy" syscall
 }
 
-//? TODO: Rework this namespace into using InputGroups, DeviceIds, ...
-//? TODO: Review this namespace.
+///
+/// Input devices, input groups, and input event delivery.
+///
+/// The kernel exposes input in two ways:
+/// - **Input groups**: loss-tolerant, bounded, strictly ordered queues.
+/// - **Device waits**: edge-triggered fanout waits that do not buffer and may be lossy.
+///
+/// LORE: Input groups exist so userland can define *which* devices it wants to consume,
+///       while still retaining a strong ordering across multiple devices inside that group.
+///       The previous "global merged queue" model made it hard to correctly split input
+///       between unrelated consumers.
+///
+///
+/// Event fusing rules:
+///
+/// LORE: To reduce event pressure and avoid jitter, the kernel may fuse continuous events inside
+///       group queues without changing the final reconstructed state.
+///
+/// Rules:
+/// - Only continuous events may be fused (e.g. relative motion, absolute motion, wheel, analog axis).
+/// - Discrete events are never fused (e.g. key press/release, button press/release, text input).
+/// - Fusing never combines different devices and never combines different event types.
+/// - Fusing occurs only inside group queues and does not add a fixed input latency.
+/// - A fused event uses the timestamp of the last fused constituent.
+///
+//? TODO: Expose/standardize the exact fusing window (e.g. ~40ms) if userland ever needs it.
 namespace input {
-    union InputEvent {
-        field event_type: Type;
-        field mouse: MouseEvent;
-        field keyboard: KeyboardEvent;
+    ///
+    /// Opaque identifier for an input device.
+    ///
+    /// Device ids are allocated by the kernel when devices are added (system start or hotplug)
+    /// and are dropped when the device is removed/unplugged.
+    ///
+    /// The ids are not assigned in a stable manner, this means the same device will receive a
+    /// different device id if removed and readded later. Also kernel enumeration at system
+    /// start has no specified order and devices will not have a stable id.
+    ///
+    /// NOTE: A `DeviceId` obtained from `enumerate_devices` is only guaranteed to be valid only
+    ///       until the calling thread yields to the scheduler.
+    ///       After a yield, any syscall using that `DeviceId` may fail with `InvalidDevice` when
+    ///       the device was removed.
+    ///
+    /// NOTE: Devices are not system resources. They do not have ownership semantics.
+    ///
+    /// LORE: It doesn't make sense to handle devices as system resources as they can be
+    ///       potentially removed at runtime by external means and holding such a resource
+    ///       afterwards would make the resource invalid anyways. Destroying a device resource
+    ///       would also have no semantic meaning, as the physical device would still be plugged
+    ///       into the system.
+    ///
+    enum DeviceId : u32 {
+        /// Special value used when an event has no originating device.
+        ///
+        /// NOTE: This value is only used as `InputEvent.device` for group-injected events.
+        ///       It is not a valid target for `GetDeviceEvent` or `emit_device_event`.
+        item synthetic = 0;
+
+        ...
+    }
+
+    /// Enumerates all currently available input devices.
+    ///
+    /// If `ids` is `null`, the total number of available devices is returned;
+    /// otherwise, up to `ids.len` elements are written into the provided array
+    /// and the number of written elements is returned.
+    ///
+    /// NOTE: Returned ids are only guaranteed to be valid until the calling thread yields.
+    syscall enumerate_devices {
+        in  ids:   ?[]DeviceId;
+        out count: usize;
+    }
+
+
+    /// Describes the broad class of an input device.
+    enum DeviceClass : u8 {
+        item unknown  = 0;
+        item keyboard = 1;
+        item mouse    = 2;
+        item gamepad  = 3;
+        item joystick = 4;
+        item @"3d_mouse" = 5;
+        ...
+    }
+
+    /// Describes the transport/protocol of an input device.
+    enum DeviceProtocol : u8 {
+        item unknown   = 0;
+        item usb       = 1;
+        item bluetooth = 2;
+        item serial    = 3;
+        item bitbang   = 4;
+        item network   = 5;
+        ...
+    }
+
+    /// Capability flags of an input device.
+    bitstruct DeviceCapabilities : u16 {
+        /// Device can emit HID-style key usage codes.
+        field keys: bool;
+
+        /// Device provides relative pointer motion events.
+        field rel_pointer: bool;
+
+        /// Device provides absolute pointer position events.
+        field abs_pointer: bool;
+
+        reserve u13 = 0;
+    }
+
+    /// A structure describing an input device.
+    struct DeviceDescriptor {
+        field class:         DeviceClass;
+        field protocol:      DeviceProtocol;
+        field capabilities:  DeviceCapabilities;
+
+        /// Number of relative analog axes.
+        ///
+        /// NOTE: This includes axes like accelerometer axes, which have zero
+        ///       output at rest, and only emit data when changed.
+        ///       Same rate of change = Same value.
+        field rel_axes_cnt: u16;
+
+        /// Number of absolute analog axes.
+        ///
+        /// NOTE: The value for these axes will be normalized by the kernel.
+        ///
+        /// NOTE: This includes axes like joysticks which have a zero position,
+        ///       only only change their reported value in a reproducible manner.
+        ///       Same position = Same value.
+        field abs_axes_cnt: u16;
+
+        /// Number of non-keyboard digital buttons the device provides.
+        ///
+        /// NOTE: This includes buttons like A/B/X/Y or Start/Select.
+        field digital_button_count: u16;
+
+        /// The vendor id of the device.
+        /// NOTE: This value shall be interpreted depending on `protocol`.
+        /// NOTE: `vendor_id` may be set to `0xFFFF` if not applicable.
+        field vendor_id:     u16;
+
+        /// The product id of the device.
+        /// NOTE: This value shall be interpreted depending on `protocol`.
+        /// NOTE: `product_id` may be set to `0xFFFF` if not applicable.
+        field product_id:    u16;
+    }
+
+    /// Queries metadata about an input device.
+    ///
+    /// If `name_buf` is `null`, no name is written but `name_len` is still returned.
+    /// If `unique_id_buf` is `null`, no unique id is written but `unique_id_len` is still returned.
+    ///
+    /// NOTE: `unique_id` is an optional, implementation-defined identifier that can be used by
+    ///       applications to recognize devices again across hotplug.
+    ///
+    ///       It may be empty if the kernel cannot provide one.
+    ///
+    syscall query_device_metadata {
+        in  id:            DeviceId;
+        in  name_buf:      ?[]u8;
+        in  unique_id_buf: ?[]u8;
+
+        /// If not `null`, the kernel will fill this structure with metadata for the device.
+        in  descriptor:    ?*DeviceDescriptor;
+
+        out name_len:      usize;
+        out unique_id_len: usize;
+
+        /// `id` is not valid anymore (e.g. device removed) or was never valid.
+        error InvalidDevice;
+    }
+
+
+    /// Waits for the next event emitted by a specific device.
+    ///
+    /// This operation is **edge-triggered**:
+    /// - it does not buffer events,
+    /// - it may be lossy under high pressure,
+    /// - if multiple events occur between yields, intermediate events may be missed.
+    ///
+    /// NOTE: Any number of concurrent `GetDeviceEvent` operations may be scheduled for the
+    ///       same device; they will all complete with the same next event.
+    ///       A subsequent device event requires re-scheduling a new `GetDeviceEvent`.
+    async_call GetDeviceEvent {
+        in  device: DeviceId;
+        out event:  InputEvent;
+
+        /// `device` is not valid anymore (e.g. device removed) or was never valid.
+        error InvalidDevice;
+
+        /// `device` is `DeviceId.synthetic`.
+        error BadDevice;
+    }
+
+    /// Emits a synthetic event *as if a real device had emitted it*.
+    ///
+    /// This updates the internal device state immediately and completes pending `GetDeviceEvent`
+    /// operations for that device.
+    ///
+    /// The kernel sets:
+    /// - `InputEvent.device = device`
+    /// - `InputEvent.flags.synthetic = true`
+    /// - `InputEvent.timestamp = clock.now()` (implementation-defined moment during the syscall)
+    ///
+    /// NOTE: This operation does not depend on any input groups existing.
+    ///       If the device is present in groups, the event is enqueued into those group queues.
+    syscall emit_device_event {
+        in device:  DeviceId;
+        in payload: InputEventPayload;
+
+        /// `device` is not valid anymore (e.g. device removed) or was never valid.
+        error InvalidDevice;
+
+        /// `device` is `DeviceId.synthetic`.
+        error BadDevice;
+    }
+
+    /// Queries the current state of a device for a batch of `queries`.
+    ///
+    /// The kernel fills `queries[i].value` for each entry.
+    ///
+    /// NOTE: Unsupported `which` values produce a sane default (0 / centered).
+    syscall query_device_state {
+        in device:  DeviceId;
+        in queries: []StateQuery;
+
+        /// `device` is not valid anymore (e.g. device removed) or was never valid.
+        error InvalidDevice;
+
+        /// `queries[i].what` contains an unknown value.
+        error InvalidValue;
+    }
+
+    /// A userland-owned input event queue which merges events from 0..n devices.
+    ///
+    /// The queue length is fixed at creation time.
+    ///
+    /// NOTE: An input group with zero devices may still receive events through
+    ///       synthetic event injection.
+    ///
+    /// NOTE: If a device is removed, it is implicitly removed from all groups.
+    resource InputGroup { }
+
+    /// Creates a new input group with a fixed event queue size.
+    ///
+    /// NOTE: The queue is bounded. If it becomes full, the kernel will drop the
+    ///       oldest queued events so the newest events are kept intact.
+    ///
+    /// NOTE: Dropped events are reported through `GetEvent.dropped_since_last`.
+    syscall create_group {
+        /// Maximum number of events buffered by this group.
+        ///
+        /// NOTE: If `queue_size` is zero, the group will never buffer events.
+        ///       `GetEvent` will still work but will only ever complete on newly arriving events.
+        in  queue_size: usize;
+
+        out group: InputGroup;
+
+        error SystemResources;
+    }
+
+    /// Adds a device to an input group.
+    ///
+    /// NOTE: A device can participate in 0..n groups at the same time.
+    ///       Each emitted device event is enqueued once into each group that contains the device.
+    syscall add_device {
+        in group:  InputGroup;
+        in device: DeviceId;
+
+        /// `group` is not a valid input group resource.
+        error InvalidHandle;
+
+        /// `device` is not valid anymore (e.g. device removed) or was never valid.
+        error InvalidDevice;
+    }
+
+    /// Removes a device from an input group.
+    ///
+    /// NOTE: Removing a device does not purge already queued events originating from that device.
+    ///       Those events remain ordered relative to all other queued events.
+    syscall remove_device {
+        in group:  InputGroup;
+        in device: DeviceId;
+
+        /// `group` is not a valid input group resource.
+        error InvalidHandle;
+
+        /// `device` is not valid anymore (e.g. device removed) or was never valid.
+        error InvalidDevice;
+    }
+
+
+    /// Enumerates the devices that are currently part of an input group.
+    ///
+    /// If `devices` is `null`, the total number of devices in the group is returned;
+    /// otherwise, up to `devices.len` elements are written into the provided array.
+    syscall enumerate_group_devices {
+        in  group:   InputGroup;
+        in  devices: ?[]DeviceId;
+        out count:   usize;
+
+        /// `group` is not a valid input group resource.
+        error InvalidHandle;
+    }
+
+    /// Enumerates the input groups that currently contain the given device.
+    ///
+    /// If `groups` is `null`, the total number of groups containing the device is returned;
+    /// otherwise, up to `groups.len` elements are written into the provided array.
+    ///
+    /// NOTE: This returns only groups that are visible to the calling process.
+    ///
+    /// NOTE: The group resources returned in `groups` will bound to the calling process with
+    ///       the `at_least_weak` bind operation to ensure access.
+    syscall enumerate_device_groups {
+        in  device: DeviceId;
+        in  groups: ?[]InputGroup;
+        out count:  usize;
+
+        /// `device` is not valid anymore (e.g. device removed) or was never valid.
+        error InvalidDevice;
+
+        error SystemResources;
+    }
+
+
+
+    /// Waits for the next queued event from an input group.
+    ///
+    /// The operation completes when:
+    /// - the group queue is non-empty, or
+    /// - a new event arrives for the group.
+    ///
+    /// NOTE: If events are already available, this operation completes immediately.
+    ///
+    /// NOTE: Only a single `GetEvent` operation may be scheduled per group at a time.
+    ///       This enforces strict, non-duplicating consumption and preserves ordering.
+    ///
+    /// NOTE: The group maintains a drop counter which increments whenever the queue is full
+    ///       and an event must be dropped.
+    ///       Each completion returns the number of dropped events since the last successful
+    ///       dequeue/completion and resets that counter to zero.
+    ///
+    /// LORE: The queue is "newest-wins": on overflow, oldest events are discarded so the most
+    ///       recent user input remains available.
+    ///
+    /// LORE: The group state is updated only when an event *leaves* the queue:
+    ///       - a regular head-pop (returned by `GetEvent`), or
+    ///       - an overflow head-pop (dropped due to overflow).
+    ///       Events that are merely queued do not affect group state.
+    ///
+    async_call GetEvent {
+        in  group: InputGroup;
+
+        out event: InputEvent;
+
+        /// Number of events dropped since the last successful dequeue from this group.
+        out dropped_since_last: u32;
+
+        /// `group` is not a valid input group handle.
+        error InvalidHandle;
+
+        /// A `GetEvent` operation for `group` is already scheduled.
+        error NonExclusiveAccess;
+    }
+
+    /// Pushes a synthetic event into a group.
+    ///
+    /// The injected event is appended to the back of the group queue (same ordering rule as
+    /// device-emitted events). The kernel sets:
+    /// - `InputEvent.device = DeviceId.synthetic`
+    /// - `InputEvent.flags.synthetic = true`
+    /// - `InputEvent.timestamp = clock.now()`
+    ///
+    /// NOTE: This operation is atomic: it either enqueues the event or returns an error.
+    ///
+    /// If `force` is `false`, the syscall fails with `Overflow` if enqueueing would drop
+    /// an event due to a full queue.
+    ///
+    /// If `force` is `true`, the syscall behaves like a hardware event with newest-wins overflow,
+    /// except it is marked synthetic.
+    syscall queue_event {
+        in group:  InputGroup;
+        in payload: InputEventPayload;
+        in force:  bool;
+
+        /// `group` is not a valid input group resource.
+        error InvalidHandle;
+
+        /// Returned when `force == false` and enqueueing would drop an existing queued event.
+        error Overflow;
+    }
+
+    /// Queries the current fused/accumulated state of a group for a batch of `queries`.
+    ///
+    /// NOTE: The fused state includes only devices that can meaningfully contribute to the queried item.
+    ///       Non-applicable devices are ignored.
+    ///
+    /// NOTE: Group state is updated only when events leave the queue (returned or dropped),
+    ///       so userland state reconstruction from the event stream is equivalent unless events are dropped.
+    syscall query_group_state {
+        in group:   InputGroup;
+        in queries: []StateQuery;
+
+        /// `group` is not a valid input group resource.
+        error InvalidHandle;
+
+        /// `queries[i].what` contains an unknown value.
+        error InvalidValue;
+    }
+
+    /// A single state query item.
+    ///
+    /// The kernel reads `what` and `which`, and writes `value`.
+    ///
+    /// NOTE: All values are returned as i16:
+    /// - Digital inputs: 0 (inactive) or 1 (active) for a device; for a group, the sum of all
+    ///   pressed contributors (so >1 is possible).
+    /// - Absolute axes: normalized [-32767..32767] for a device; for a group, summed and clamped.
+    ///
+    struct StateQuery {
+        /// Defines what kind of input should be queried.
+        field what:  Item;
+
+        /// Defines which instance of `what` should be queried.
+        field which: u16;
+
+        /// Output value filled by the kernel.
+        field value: i16;
+
+        /// Selects which state component is queried.
+        enum Item : u16 {
+            /// `which` is a `KeyUsageCode`.
+            item keyboard_key = 0;
+
+            /// `which` is a `MouseButton` value.
+            item mouse_button = 1;
+
+            /// `which` is a per-device button index (matches `InputEvent.Button.button`).
+            item control_button = 2;
+
+            /// `which` is a per-device absolute axis index (matches `InputEvent.AbsAxis.axis`).
+            item abs_axis = 3;
+
+            /// Absolute pointer X (normalized i16). `which` must be zero.
+            item pointer_x = 4;
+
+            /// Absolute pointer Y (normalized i16). `which` must be zero.
+            item pointer_y = 5;
+        }
+    }
+
+    /// Flags attached to an input event.
+    bitstruct EventFlags : u16 {
+        /// Set for events that did not originate from a device driver.
+        field synthetic: bool;
+
+        reserve u15 = 0;
+    }
+
+    /// An input event as delivered to userland.
+    struct InputEvent {
+        /// The type of event that was emitted.
+        field type: Type;
+
+        /// Timestamp from the moment the kernel receives the event in its input subsystem.
+        ///
+        /// NOTE: Multiple events may share the same timestamp due to timer resolution and internal handling.
+        field timestamp: clock.Absolute;
+
+        /// The originating device id or `DeviceId.synthetic` if none.
+        field device: DeviceId;
+
+        /// Event flags.
+        field flags: EventFlags;
+
+        /// The event payload.
+        field payload: Payload;
 
         enum Type : u16 {
             item key_press = 0;
@@ -2022,9 +2493,149 @@ namespace input {
             item mouse_abs_motion = 3;
             item mouse_button_press = 4;
             item mouse_button_release = 5;
+            item mouse_wheel = 6;
+
+            item digital_button_press = 7;
+            item digital_button_release = 8;
+
+            item rel_axis_motion = 9;
+            item abs_axis_motion = 10;
+
+            ...
+        }
+
+        union Payload {
+            field keyboard:         Keyboard;
+
+            field mouse_rel_motion: MouseRelMotion;
+            field mouse_abs_motion: MouseAbsMotion;
+            field mouse_button:     MouseButton;
+            field mouse_wheel:      MouseWheel;
+
+            field digital_button:   Button;
+
+            field rel_axis:         RelAxis;
+            field abs_axis:         AbsAxis;
+        }
+
+        /// Relative motion delta in device units (implementation-defined).
+        ///
+        /// NOTE: Consecutive relative motion events may be fused inside group queues.
+        struct MouseRelMotion {
+            /// Relative position delta in the horizontal axis.
+            /// Positive values move to the right.
+            field dx: i16;
+
+            /// Relative position delta in the vertical axis.
+            /// Positive values move downwards.
+            field dy: i16;
+        }
+
+        /// Absolute pointer position on each axis in normalized i16:
+        /// - -32767 == -1.0
+        /// -      0 ==  0.0
+        /// -  32767 == +1.0
+        ///
+        /// NOTE: Consecutive absolute motion events may be fused inside group queues.
+        struct MouseAbsMotion {
+            /// Absolute position in the horizontal axis.
+            /// `-32767` is the left edge, `32767` is the right edge.
+            field x: i16;
+
+            /// Absolute position in the vertical axis.
+            /// `-32767` is the top edge, `32767` is the bottom edge.
+            field y: i16;
+        }
+
+        struct MouseButton {
+            /// Which mouse button was pressed/released.
+            field button: input.MouseButton;
+        }
+
+        /// Wheel delta (implementation-defined units).
+        ///
+        /// NOTE: Consecutive wheel events in the same direction may be fused inside group queues.
+        struct MouseWheel {
+            field dx: i16;
+            field dy: i16;
+        }
+
+        struct Keyboard {
+            /// The raw usage code for the key. Meaning depends on the layout;
+            /// kinda represents the physical position on the keyboard.
+            field usage: KeyUsageCode;
+
+            /// If set, the pressed key combination has a mapping in the current
+            /// keyboard layout that produces text input.
+            ///
+            /// NOTE: This doesn't necessarily contains printable codes, but can also contain
+            ///       combining characters like `U+0301` (Combining Acute Accent).
+            ///
+            /// NOTE: This isn't a true *composed* text input and cannot be directly used in a
+            ///       text field or such. This is primarily meant to be passed into an input
+            ///       method editor.
+            ///
+            /// NOTE: The lifetime of this pointer can be assumed valid until a keyboard layout
+            ///       change is performed.
+            ///
+            /// LORE: This field isn't a perfect solution, but it's good enough for what we're trying to
+            ///       achieve: International text input.
+            ///       The idea of using combining characters for dead keys allows the IME to actually compose
+            ///       a sequence of `U+0301` (Combining Acute Accent), `U+0041` (Latin Capital Letter A) to be composed
+            ///       into `U+00C1` (Latin Capital Letter A With Acute) instead of emitting two codepoints.
+            ///
+            ///       This method is flexible enough to be future proof and expansible.
+            ///
+            field text: ?str;
+
+            /// The key in this event was pressed or released
+            field pressed: bool;
+
+            /// The modifier keys currently active
+            field modifiers: KeyboardModifiers;
+        }
+
+        /// A non-keyboard digital button event (e.g. gamepad button).
+        ///
+        /// NOTE: `button` is an implementation-defined per-device index.
+        struct Button {
+            /// Defines which digital button was pressed/released.
+            field button:     u16;
+        }
+
+        /// An absolute analog axis event (e.g. joystick axis).
+        ///
+        /// NOTE: `axis` is an implementation-defined per-device index.
+        /// NOTE: `value` uses normalized i16:
+        ///       -32767 == -1.0, 0 == 0.0, 32767 == +1.0
+        struct AbsAxis {
+            /// Defines which axis has changed.
+            field axis:       u16;
+            field value:      i16;
+        }
+
+        /// A relative analog axis event (e.g. accelerometer axis).
+        ///
+        /// NOTE: `axis` is an implementation-defined per-device index.
+        ///
+        /// NOTE: Consecutive relative axis events in the same direction may be fused inside group queues.
+        struct RelAxis {
+            /// Defines which axis has changed.
+            field axis:       u16;
+            field delta:      i16;
         }
     }
 
+    enum MouseButton : u8 {
+        item none = 0;
+        item left = 1;
+        item right = 2;
+        item middle = 3;
+        item nav_previous = 4;
+        item nav_next = 5;
+    }
+
+    /// Keyboard modifier state accompanying key events.
     bitstruct KeyboardModifiers : u16 {
         field shift: bool;
         field alt: bool;
@@ -2038,30 +2649,6 @@ namespace input {
         field gui_left: bool;
         field gui_right: bool;
         reserve u5 = 0;
-    }
-
-
-    //? TODO: Implement the idea of "input devices" which can be queried
-    //?       and waited for in batches (wait for one even from several
-    //?       devices in an input group)
-
-    /// Waits for an input event and completes when any input was done.
-    async_call GetEvent {
-        out   event: InputEvent;
-        error InProgress;
-        error NonExclusiveAccess;
-    }
-
-
-    enum MouseButton : u8 {
-        item none = 0;
-        item left = 1;
-        item right = 2;
-        item middle = 3;
-        item nav_previous = 4;
-        item nav_next = 5;
-        item wheel_down = 6;
-        item wheel_up = 7;
     }
 
     ///
@@ -5303,55 +5890,4 @@ bitstruct Color : u8 {
 
 struct UUID {
     field bytes: [16]u8;
-}
-
-/// Event structures shared between different event groups
-union SharedEventType  {
-    field input: input.InputEvent.Type;
-    field widget: gui.WidgetEvent.Type;
-    field window: gui.WindowEvent.Type;
-}
-
-struct MouseEvent {
-    field event_type: SharedEventType; //? MUST BE FIRST!
-
-    field x: i16;
-    field y: i16;
-    field dx: i16;
-    field dy: i16;
-    field button: input.MouseButton;
-}
-
-struct KeyboardEvent {
-    field event_type: SharedEventType; //? MUST BE FIRST!
-
-    /// The raw usage code for the key. Meaning depends on the layout;
-    /// kinda represents the physical position on the keyboard.
-    field usage: input.KeyUsageCode;
-
-    /// If set, the pressed key combination has a mapping in the current
-    /// keyboard layout that produces text input.
-    ///
-    /// NOTE: This doesn't necessarily contains printable codes, but can also contain
-    ///       combining characters like `U+0301` (Combining Acute Accent).
-    ///
-    /// NOTE: This isn't a true *composed* text input and cannot be directly used in a
-    ///       text field or such. This is primarily meant to be passed into an input
-    ///       method editor.
-    ///
-    /// LORE: This field isn't a perfect solution, but it's good enough for what we're trying to
-    ///       achieve: International text input.
-    ///       The idea of using combining characters for dead keys allows the IME to actually compose
-    ///       a sequence of `U+0301` (Combining Acute Accent), `U+0041` (Latin Capital Letter A) to be composed
-    ///       into `U+00C1` (Latin Capital Letter A With Acute) instead of emitting two codepoints.
-    ///
-    ///       This method is flexible enough to be future proof and expansible.
-    ///
-    field text: ?str;
-
-    /// The key in this event was pressed or released
-    field pressed: bool;
-
-    /// The modifier keys currently active
-    field modifiers: input.KeyboardModifiers;
 }
