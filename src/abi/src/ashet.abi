@@ -669,7 +669,7 @@ namespace process {
         out     process: Process;
 
         error   BadExecutable;
-        error   DiskError;
+        error   IoError;
         error   FileNotFound;
         error   InvalidHandle;
         error   InvalidPath;
@@ -3707,7 +3707,7 @@ namespace network {
 //? TODO: Review this namespace.
 /// A file or directory on Ashet OS can be named with any legal UTF-8 sequence
 /// that does not contain `/` and `:`. It is recommended to only create file names
-/// that are actually typeable on the operating system tho.
+/// that are actually typeable on the operating system though.
 ///
 /// There are some special file names:
 /// - `.` is the "current directory" selector and does not add to the path.
@@ -3753,10 +3753,11 @@ namespace fs {
     const max_fs_type_len = 32;
 
     /// The maximum number of bytes in a file name.
-    /// This is chosen to be a power of two, and reasonably long.
+    ///
     /// As some programs use sha256 checksums and 64 bytes are enough to store
     /// a hex-encoded 256 bit sequence:
     /// - `114ac2caf8fefad1116dbfb1bd68429f68e9e088b577c9b3f5a3ff0fe77ec886`
+    ///
     /// This should also enough for most reasonable file names in the wild.
     const max_file_name_len = 120;
 
@@ -3831,12 +3832,31 @@ namespace fs {
         field modified_date: datetime.DateTime;
     }
 
-
-    resource File { }
-
+    /// A directory is a group of files and other directories in a file system.
     resource Directory { }
 
-    //? TODO: Implement the idea of a "file system location", a type that binds a directory + relative path together
+    /// A file is a handle to a binary data storage that is stored
+    /// in a file system.
+    ///
+    /// Files are byte-addressed.
+    resource File { }
+
+    /// A file system location is a fusion of a directory handle with
+    /// an associated relative path.
+    ///
+    /// A location can be opened/used similar to how a `(dir, filename)` pair
+    /// can be used.
+    ///
+    /// LORE: This type was introduced as a solution on how to pass file names
+    ///       over a command line interface into an application.
+    ///       As Ashet OS prefers relative paths to known directory handles over
+    ///       absolute paths, a shell still needs the ability to pass non-existing
+    ///       locations for parameters like `--output=…`.
+    ///       Thus, the `Location` type was introduced which fuses a directory together
+    ///       with a relative path.
+    resource Location { }
+
+    //? TODO: Add operations for locations
 
     /// Finds a file system by name
     syscall find_filesystem {
@@ -3846,7 +3866,7 @@ namespace fs {
 
     /// Flushes all open files to disk.
     async_call Sync {
-        error   DiskError;
+        error   IoError;
     }
 
     /// Gets information about a file system.
@@ -3856,7 +3876,7 @@ namespace fs {
         in      fs_id: FileSystemId;
         out     info:  FileSystemInfo;
         out     next:  FileSystemId;
-        error   DiskError;
+        error   IoError;
         error   InvalidFileSystem;
     }
 
@@ -3865,12 +3885,11 @@ namespace fs {
         in      fs_id: FileSystemId;
         in      path:  str;
         out     dir:   Directory;
-        error   DiskError;
+        error   IoError;
         error   FileNotFound;
         error   InvalidFileSystem;
         error   InvalidPath;
         error   NotADir;
-        error   SystemFdQuotaExceeded;
         error   SystemResources;
     }
 
@@ -3879,12 +3898,11 @@ namespace fs {
         in      start_dir: Directory;
         in      path:      str;
         out     dir:       Directory;
-        error   DiskError;
+        error   IoError;
         error   FileNotFound;
         error   InvalidHandle;
         error   InvalidPath;
         error   NotADir;
-        error   SystemFdQuotaExceeded;
         error   SystemResources;
     }
 
@@ -3894,21 +3912,44 @@ namespace fs {
         error   InvalidHandle;
     }
 
-    /// resets the directory iterator to the starting point
-    async_call ResetDirEnumeration {
-        in      dir: Directory;
-        error   DiskError;
+    /// A directory enumerator allows enumerating elements inside
+    /// of a directory.
+    ///
+    /// NOTE: A directory enumerator is not unwindable/resettable
+    ///       as it's typically simpler to destroy the enumerator
+    ///       and create a new one than maintaining stateful directory
+    ///       content tracking.
+    resource DirEnumerator { }
+
+    syscall create_enumerator {
+        in dir: Dir;
+
+        out enumerator: DirEnumerator;
+
+        /// `dir` is not a valid directory resource.
         error   InvalidHandle;
+
         error   SystemResources;
     }
 
-    /// returns the info for the current file or "eof", and advances the iterator to the next entry if possible
-    async_call EnumerateDir {
-        in      dir:  Directory;
-        out     eof:  bool;
-        out     info: FileInfo;
-        error   DiskError;
+    /// This operation returns the FileInfo for the next file or directory inside
+    /// the `enumerator`.
+    async_call GetNextDirItem {
+        in      enumerator: DirEnumerator;
+        out     info:       FileInfo;
+
+        /// Returned when the enumerator reached the end of the directory.
+        ///
+        /// NOTE: The `enumerator` resource can be destroyed after this error is
+        ///       returned as there is no way to unwind an enumerator resource.
+        error   EndOfDirectory;
+
         error   InvalidHandle;
+
+        /// The enumerator failed to advance to the next item as the underlying
+        /// filesystem failed.
+        error   IoError;
+
         error   SystemResources;
     }
 
@@ -3917,7 +3958,7 @@ namespace fs {
         in      dir:     Directory;
         in      path:    str;
         in      recurse: bool;
-        error   DiskError;
+        error   IoError;
         error   FileNotFound;
         error   InvalidHandle;
         error   InvalidPath;
@@ -3930,7 +3971,7 @@ namespace fs {
         in      path:    str;
         in      mkopen:  bool;
         out     new_dir: Directory;
-        error   DiskError;
+        error   IoError;
         error   Exists;
         error   InvalidHandle;
         error   InvalidPath;
@@ -3941,7 +3982,7 @@ namespace fs {
         in      dir: Directory;
         in      path: str;
         out     info: FileInfo;
-        error   DiskError;
+        error   IoError;
         error   FileNotFound;
         error   InvalidHandle;
         error   InvalidPath;
@@ -3953,7 +3994,7 @@ namespace fs {
         in      src_dir: Directory;
         in      src_path: str;
         in      dst_path: str;
-        error   DiskError;
+        error   IoError;
         error   Exists;
         error   FileNotFound;
         error   InvalidHandle;
@@ -3967,7 +4008,7 @@ namespace fs {
         in      src_path: str;
         in      dst_dir: Directory;
         in      dst_path: str;
-        error   DiskError;
+        error   IoError;
         error   Exists;
         error   FileNotFound;
         error   InvalidHandle;
@@ -3981,7 +4022,7 @@ namespace fs {
         in      src_path: str;
         in      dst_dir: Directory;
         in      dst_path: str;
-        error   DiskError;
+        error   IoError;
         error   Exists;
         error   FileNotFound;
         error   InvalidHandle;
@@ -3996,14 +4037,12 @@ namespace fs {
         in      access: FileAccess;
         in      mode: FileMode;
         out     handle: File;
-        error   DiskError;
-        error   Exists;
+        error   IoError;
         error   FileAlreadyExists;
         error   FileNotFound;
         error   InvalidHandle;
         error   InvalidPath;
         error   NoSpaceLeft;
-        error   SystemFdQuotaExceeded;
         error   SystemResources;
         error   WriteProtected;
     }
@@ -4011,7 +4050,7 @@ namespace fs {
     /// closes the handle and flushes the file.
     async_call CloseFile {
         in      file: File;
-        error   DiskError;
+        error   IoError;
         error   InvalidHandle;
         error   SystemResources;
     }
@@ -4019,7 +4058,7 @@ namespace fs {
     /// makes sure this file is safely stored to mass storage device
     async_call FlushFile {
         in      file: File;
-        error   DiskError;
+        error   IoError;
         error   InvalidHandle;
         error   SystemResources;
     }
@@ -4030,7 +4069,7 @@ namespace fs {
         in      offset: u64;
         in      buffer: bytebuf;
         out     count: usize;
-        error   DiskError;
+        error   IoError;
         error   InvalidHandle;
         error   SystemResources;
     }
@@ -4041,7 +4080,7 @@ namespace fs {
         in      offset: u64;
         in      buffer: bytestr;
         out     count: usize;
-        error   DiskError;
+        error   IoError;
         error   InvalidHandle;
         error   NoSpaceLeft;
         error   SystemResources;
@@ -4052,7 +4091,7 @@ namespace fs {
     async_call StatFile {
         in      file: File;
         out     info: FileInfo;
-        error   DiskError;
+        error   IoError;
         error   InvalidHandle;
         error   SystemResources;
     }
@@ -4061,12 +4100,11 @@ namespace fs {
     async_call Resize {
         in      file: File;
         in      length: u64;
-        error   DiskError;
+        error   IoError;
         error   InvalidHandle;
         error   NoSpaceLeft;
         error   SystemResources;
     }
-
 }
 
 /// This namespace contains items related to shared memory objects.
