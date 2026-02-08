@@ -1276,6 +1276,11 @@ namespace process {
 /// NOTE: Functions inside this namespace are useful for measuring time or awaiting
 ///       timeouts.
 namespace clock {
+    //? TODO: Consider making `Absolute` based on a 960 kHz timer instead of a
+    //?       1 MHz/GHz timer precision. This would allow having a global unique
+    //?       "audio clock compatible" time base in the system, allowing perfect
+    //?       syntonization and correlation of different OS events.
+
     /// Time in nanoseconds since system startup.
     enum Absolute : u64 {
         item system_start = 0;
@@ -1958,6 +1963,18 @@ namespace video {
         /// `buffer` is not a valid buffer mapping resource.
         error  InvalidHandle;
     }
+}
+
+//? TODO: Review this namespace.
+namespace audio {
+//? TODO: Write this namespace.
+//?
+//?       Your primary interface for audio streams is the ability to enqueue PCM/MIDI/ChipWrites at certain sample positions relative to your stream start.
+//?
+//?       Later PCM schedules stop previous PCMs at exactly that sample, so only a single PCM data stream is active per logical audio stream.
+//?       MIDI should be obvious.
+//?       ChipWrites implements native support for audio chips like a MOS 6581 or AY-3-8910 where you can sample-precisely schedule register
+//?       writes to your audio chips to create multi-channel-multi-tier audio creations.
 }
 
 /// This namespace contains items related to entropy management.
@@ -3718,6 +3735,9 @@ namespace sync {
 
         /// `mutex` is not a valid mutex resource.
         error InvalidHandle;
+
+        //? TODO: Consider "NotLocked" error to make it possible to detect
+        //?       programming errors
     }
 
     /// Locks a mutex. Will complete once the mutex is locked.
