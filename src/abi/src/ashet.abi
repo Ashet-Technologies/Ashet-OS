@@ -2052,6 +2052,10 @@ namespace input {
     ///
     /// NOTE: Devices are not system resources. They do not have ownership semantics.
     ///
+    /// NOTE: Device ids are allocated by the kernel in a monotonic manner, so it takes around
+    ///       4 billion plug/unplug operations until a device id is reused again.
+    ///       This will take a while.
+    ///
     /// LORE: It doesn't make sense to handle devices as system resources as they can be
     ///       potentially removed at runtime by external means and holding such a resource
     ///       afterwards would make the resource invalid anyways. Destroying a device resource
@@ -2505,6 +2509,8 @@ namespace input {
 
             item rel_axis_motion = 9;
             item abs_axis_motion = 10;
+
+            //? TODO: touch_down, touch_up, touch_move
 
             ...
         }
@@ -4392,15 +4398,11 @@ namespace sync {
     }
 }
 
-//? TODO: Review this namespace.
+/// This namespace contains items related to graphics rendering.
 namespace draw {
+    /// A font is required to render text and defines how
+    /// glyphs are drawn.
     resource Font { }
-
-    enum FontType : u32 {
-        item bitmap = 0;
-        item vector = 1;
-        ...
-    }
 
     /// A framebuffer is something that can be drawn on.
     resource Framebuffer { }
@@ -4422,26 +4424,58 @@ namespace draw {
         item widget = 3;
     }
 
-    /// Returns the font data for the given font name, if any.
+    /// Returns the font for the given font name, if any.
+    ///
+    /// NOTE: System fonts are fonts that are either embedded in the kernel or
+    ///       automatically loaded from the `SYS:/system/fonts` folder on
+    ///       boot.
+    ///
+    /// NOTE: The returned resource can be unbound, but cannot be destroyed.
+    ///       A `resources.destroy` operation will unbind the font resource from all
+    ///       processes, effectively invalidating this userland handle.
+    ///
+    ///       The underlying kernel resource won't be destroyed.
     syscall get_system_font {
+        /// The name of the system font.
         in    font_name: str;
+
+        //? TODO: Add a way to hint font sizes for vector fonts.
+
+        /// The resource handle of the system font.
         out   handle: Font;
+
+        /// No system font with the given name exists.
         error FileNotFound;
+
         error SystemResources;
     }
 
     /// Creates a new custom font from the given data.
     syscall create_font {
+        /// The encoded font data for a bitmap or vector format.
+        ///
+        /// TODO: Specify which font formats are allowed.
         in    data: bytestr;
+
+        //? TODO: Add a way to hint font sizes for vector fonts.
+
+        /// A font resource that represents the font inside `data`.
         out   handle: Font;
+
+        /// `data` does not encode a valid font.
         error InvalidData;
+
         error SystemResources;
     }
 
     /// Returns true if the given font is a system-owned font.
     syscall is_system_font {
         in    font: Font;
+
+        /// `true` if `font` is a system font resource, otherwise `false`.
         out   system_font: bool;
+
+        /// `font` is not a valid font resource.
         error InvalidHandle;
     }
 
@@ -4454,61 +4488,107 @@ namespace draw {
         in    font: Font;
         in    text: str;
         out   size: Size;
+
+        /// `font` is not a valid font resource.
         error InvalidHandle;
     }
 
-    /// Creates a new in-memory framebuffer that can be used for offscreen painting.
+    /// Creates a new in-memory framebuffer that can be used for off-screen painting.
+    ///
+    /// NOTE: The contents of the newly created framebuffer are unspecified.
     syscall create_memory_framebuffer {
+        /// The size of the created framebuffer in pixels.
         in    size: Size;
+
         out   handle: Framebuffer;
+
+        /// Returned when `size.width` or `size.height` are zero.
+        error InvalidSize;
+
         error SystemResources;
     }
 
     /// Creates a new framebuffer based off a video output. Can be used to output pixels
     /// to the screen.
+    ///
+    /// NOTE: The returned `handle` is destroyed automatically when `output`
+    ///       is destroyed.
     syscall create_video_framebuffer {
         in    output: video.VideoOutput;
         out   handle: Framebuffer;
+
+        /// `output` is not a valid video output resource.
         error InvalidHandle;
+
         error SystemResources;
     }
 
     /// Creates a new framebuffer that allows painting into a GUI window.
+    ///
+    /// NOTE: The returned `handle` is destroyed automatically when `window`
+    ///       is destroyed.
     syscall create_window_framebuffer {
         in    window: gui.Window;
         out   handle: Framebuffer;
+
+        /// `window` is not a valid window resource.
         error InvalidHandle;
+
         error SystemResources;
     }
 
     /// Creates a new framebuffer that allows painting into a widget.
+    ///
+    /// NOTE: The returned `handle` is destroyed automatically when `widget`
+    ///       is destroyed.
     syscall create_widget_framebuffer {
         in    widget: gui.Widget;
         out   handle: Framebuffer;
+
+        /// `widget` is not a valid widget resource.
         error InvalidHandle;
+
         error SystemResources;
     }
 
     /// Returns the type of a framebuffer object.
     syscall get_framebuffer_type {
         in     fb: Framebuffer;
+
+        /// The type of framebuffer `fb` is.
         out    type: FramebufferType;
+
+        /// `fb` is not a valid framebuffer resource.
         error  InvalidHandle;
     }
 
     /// Returns the size of a framebuffer object.
     syscall get_framebuffer_size {
         in    fb: Framebuffer;
+
+        /// The size of the framebuffer in pixels.
         out   size: Size;
+
+        /// `fb` is not a valid framebuffer resource.
         error InvalidHandle;
     }
 
-    /// Returns the video memory for a *memory* framebuffer.
-    /// Other framebuffer types are not allowed to be passed.
+    /// Returns the video memory for a memory framebuffer.
+    ///
+    /// NOTE: The returned memory is stable and valid until the `fb` is destroyed.
+    ///
+    /// NOTE: Any framebuffer except memory framebuffers cannot have
+    ///       memory mappings.
     syscall get_framebuffer_memory {
         in    fb: Framebuffer;
+
+        /// The descriptor of the pixel memory that forms the contents of `fb`.
         out   memory: video.VideoMemory;
+
+        /// `fb` is not a valid framebuffer resource.
         error InvalidHandle;
+
+        /// `fb` is not a framebuffer created with `create_memory_framebuffer`.
         error Unsupported;
     }
 
@@ -4516,29 +4596,51 @@ namespace draw {
     /// perform an update action if necessary.
     syscall invalidate_framebuffer {
         in fb: Framebuffer;
+
+        /// The area of the framebuffer that has changed.
+        ///
+        /// NOTE: `area` is limited to the actual bounds of the framebuffer.
+        ///
+        /// NOTE: If `area.width` or `area.height` are zero, nothing will be invalidated.
         in area: Rectangle;
+
+        /// `fb` is not a valid framebuffer resource.
+        error InvalidHandle;
     }
 
     /// Renders the provided Ashet Graphics Protocol `sequence` into `target` framebuffer.
     ///
-    /// The function will run asynchronously and will return as soon as the rendering is done.
+    /// The operation will complete when rendering is done.
     ///
-    /// NOTE: On machines without hardware acceleration, this syscall might be completed synchronously.
+    /// NOTE: On machines without hardware acceleration, this operation might be
+    ///       completed synchronously.
     async_call Render {
         /// The framebuffer which should be drawn to.
         in      target: Framebuffer;
+
         /// The AGP code that defines the drawing.
+        ///
+        /// NOTE: The kernel will validate the code inside `overlapped.schedule` and
+        ///       immediately complete the operation with `BadCode` if `sequence`
+        ///       is not a valid AGP command sequence.
+        ///
+        /// NOTE: The kernel will create an ephemeral copy of the code inside `overlapped.schedule`
+        ///       if the operation will not be completed immediately.
         in      sequence: bytestr;
+
         /// If the target framebuffer is invalidatable, it is automatically invalidated after the completion
         /// of the command sequence, ensuring presentation of the contents.
         ///
         /// This is useful when painting into widgets or windows to ensure the window manager
         /// actually sees the changes as soon as they are done, reducing graphics pipeline latency.
         in      auto_invalidate: bool;
+
+        /// `sequence` is not a valid AGP command sequence.
         error   BadCode;
+
+        /// `target` is not a valid framebuffer resource.
         error   InvalidHandle;
     }
-
 }
 
 //? TODO: Review this namespace.
