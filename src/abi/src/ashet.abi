@@ -2033,6 +2033,8 @@ namespace random {
 ///
 //? TODO: Expose/standardize the exact fusing window (e.g. ~40ms) if userland ever needs it.
 namespace input {
+    //? TODO: Add system call to upload a new potential keyboard layout.
+
     ///
     /// Opaque identifier for an input device.
     ///
@@ -2043,7 +2045,7 @@ namespace input {
     /// different device id if removed and readded later. Also kernel enumeration at system
     /// start has no specified order and devices will not have a stable id.
     ///
-    /// NOTE: A `DeviceId` obtained from `enumerate_devices` is only guaranteed to be valid only
+    /// NOTE: A `DeviceId` obtained from `enumerate_devices` is guaranteed to be valid only
     ///       until the calling thread yields to the scheduler.
     ///       After a yield, any syscall using that `DeviceId` may fail with `InvalidDevice` when
     ///       the device was removed.
@@ -2133,7 +2135,7 @@ namespace input {
         /// NOTE: The value for these axes will be normalized by the kernel.
         ///
         /// NOTE: This includes axes like joysticks which have a zero position,
-        ///       only only change their reported value in a reproducible manner.
+        ///       only change their reported value in a reproducible manner.
         ///       Same position = Same value.
         field abs_axes_cnt: u16;
 
@@ -2189,6 +2191,9 @@ namespace input {
     /// NOTE: Any number of concurrent `GetDeviceEvent` operations may be scheduled for the
     ///       same device; they will all complete with the same next event.
     ///       A subsequent device event requires re-scheduling a new `GetDeviceEvent`.
+    ///
+    /// NOTE: If the device is removed for a pending `GetDeviceEvent` operation, it is
+    ///       aborted with `error.Cancelled`.
     async_call GetDeviceEvent {
         in  device: DeviceId;
         out event:  InputEvent;
@@ -2258,11 +2263,13 @@ namespace input {
     syscall create_group {
         /// Maximum number of events buffered by this group.
         ///
-        /// NOTE: If `queue_size` is zero, the group will never buffer events.
-        ///       `GetEvent` will still work but will only ever complete on newly arriving events.
+        /// NOTE: If `queue_size` is zero, an error will be returned.
         in  queue_size: usize;
 
         out group: InputGroup;
+
+        /// `queue_size` is zero.
+        error InvalidValue;
 
         error SystemResources;
     }
@@ -2318,7 +2325,7 @@ namespace input {
     ///
     /// NOTE: This returns only groups that are visible to the calling process.
     ///
-    /// NOTE: The group resources returned in `groups` will bound to the calling process with
+    /// NOTE: The group resources returned in `groups` will be bound to the calling process with
     ///       the `at_least_weak` bind operation to ensure access.
     syscall enumerate_device_groups {
         in  device: DeviceId;
@@ -2330,8 +2337,6 @@ namespace input {
 
         error SystemResources;
     }
-
-
 
     /// Waits for the next queued event from an input group.
     ///
@@ -2568,7 +2573,7 @@ namespace input {
             /// If set, the pressed key combination has a mapping in the current
             /// keyboard layout that produces text input.
             ///
-            /// NOTE: This doesn't necessarily contains printable codes, but can also contain
+            /// NOTE: This doesn't necessarily contain printable codes, but can also contain
             ///       combining characters like `U+0301` (Combining Acute Accent).
             ///
             /// NOTE: This isn't a true *composed* text input and cannot be directly used in a
@@ -2584,12 +2589,9 @@ namespace input {
             ///       a sequence of `U+0301` (Combining Acute Accent), `U+0041` (Latin Capital Letter A) to be composed
             ///       into `U+00C1` (Latin Capital Letter A With Acute) instead of emitting two codepoints.
             ///
-            ///       This method is flexible enough to be future proof and expansible.
+            ///       This method is flexible enough to be future-proof and extensible.
             ///
             field text: ?str;
-
-            /// The key in this event was pressed or released
-            field pressed: bool;
 
             /// The modifier keys currently active
             field modifiers: KeyboardModifiers;
@@ -2783,7 +2785,7 @@ namespace input {
         /// NOTE: Typically remapped for other languages in the host system.
         item @"5" = 0x22;
 
-        /// Keyboard `6` and `∧`
+        /// Keyboard `6` and `^`
         /// NOTE: Typically remapped for other languages in the host system.
         item @"6" = 0x23;
 
@@ -2860,11 +2862,11 @@ namespace input {
         /// NOTE: Typically remapped for other languages in the host system.
         item semicolon = 0x33;
 
-        /// Keyboard `'` and `“`
+        /// Keyboard `'` and `"`
         /// NOTE: Typically remapped for other languages in the host system.
         item apostrophe = 0x34;
 
-        /// Keyboard Grave Accent (`^`) and Tilde (`~`)
+        /// Keyboard Grave Accent (`\``) and Tilde (`~`)
         /// NOTE: Typically remapped for other languages in the host system.
         item grave_accent = 0x35;
 
@@ -3401,7 +3403,7 @@ namespace input {
         item kp_at = 0xCE;
 
         /// Keypad `!`
-        item kp_exlamation = 0xCF;
+        item kp_exclamation = 0xCF;
 
         /// Keypad Memory Store
         item kp_memory_store = 0xD0;
