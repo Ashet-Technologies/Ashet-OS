@@ -298,6 +298,8 @@ namespace resources {
 /// be scheduled to the kernel.
 /// Later on, the ARC is returned from the kernel in an await operation or cancelled.
 ///
+/// NOTE: Overlapped operations that are cancelled before completion return `error.Cancelled`.
+///
 /// NOTE: Completion may also be observed via `cancel` returning `error.Completed`.
 ///
 /// NOTE: This concept is typically called *completion queue*.
@@ -317,6 +319,9 @@ namespace resources {
 /// NOTE: Completion delivery is exactly-once.
 ///       If `cancel` returns `Completed`, the operation will not be returned by `await_any` / `await_any_of`.
 ///       If an operation was returned by an await syscall, later `cancel` will return `Unscheduled`.
+///
+/// NOTE: If an overlapped operation has a system resource as an input, and the system resource is destroyed
+///       during the operation, the operation is cancelled.
 namespace overlapped {
     /// Handle to an asynchronously running (system) call.
     ///
@@ -1671,15 +1676,8 @@ namespace datetime {
     }
 }
 
-//? TODO: Review this namespace.
+/// This namespace contains items related to presenting video data.
 namespace video {
-    //? TODO: I guess i could make the VideoOutput resource not have a video memory exposed, but only provide
-    //?       an async call "WritePixels" which can download a buffer into a video card/framebuffer/whatever.
-    //?       I can also offer a MemoryMapping over a VideoOutput, which exposes a back or frontbuffer, a flush
-    //?       method and a way of getting the pixel data. The creation of this may fail.
-
-    resource VideoOutput { }
-
     /// Index of the systems video outputs.
     enum VideoOutputID : u8 {
         /// The primary video output
@@ -1697,19 +1695,36 @@ namespace video {
         out count: usize;
     }
 
+    /// The video output resource is an exclusive access token to a
+    /// video output.
+    ///
+    /// It allows updating the displayed pixel data and waiting for the
+    /// vertical blanking interval of the display data.
+    resource VideoOutput { }
+
     /// Acquire exclusive access to a video output.
     syscall acquire {
         in    output_id: VideoOutputID;
+
+        /// The resource created from `output_id`.
         out   output:    VideoOutput;
-        error NotAvailable;
-        error NotFound;
+
+        /// Exclusive access is already held for the video output identified by `output_id`.
+        error AlreadyExists;
+
+        /// `output_id` is not a valid video output id.
+        error InvalidId;
+
         error SystemResources;
     }
 
-    /// Returns the current resolution
+    /// Returns the resolution of `output` in pixels.
     syscall get_resolution {
         in    output:     VideoOutput;
+
         out   resolution: Size;
+
+        /// `output` is not a valid video output resource.
         error InvalidHandle;
     }
 
@@ -1717,9 +1732,14 @@ namespace video {
     ///
     /// This allows frame-synchronized presentation of video data.
     ///
-    /// NOTE: All scheduled `WaitForVBlank` operations complete at the start of the next vblank period.
+    /// NOTE: All scheduled `WaitForVBlank` operations complete at the start of the next vertical blanking period.
+    ///
+    ///       This means that a schedule during the current vertical blanking period does not immediately complete
+    ///       the operation, but delays by nearly a full frame.
     async_call WaitForVBlank {
         in      output: VideoOutput;
+
+        /// `output` is not a valid video output resource.
         error   InvalidHandle;
     }
 
@@ -1727,13 +1747,15 @@ namespace video {
     enum PresentMode : u8 {
         /// The pixel data is written immediately.
         ///
-        /// NOTE: This mode will immediatly upload the pixel data and
-        ///       will not await a vblank period. This means the upload
-        ///       is likely to create visual glitches or tearing.
+        /// NOTE: This mode will immediately upload the pixel data and
+        ///       will not await a vertical blanking period. This means the
+        ///       upload is likely to create visual glitches or tearing.
         item immediate = 0;
 
-        /// The kernel implicitly waits for the vblank period of the
-        /// scanout before writing the pixel data.
+        /// The kernel attempts a tearing free upload of the pixel data.
+        ///
+        /// This means the kernel attempts to align the upload with the
+        /// vertical blanking period.
         ///
         /// NOTE: This mode is best-effort, and does not guarantee the
         ///       video data is uploaded tearing-free.
@@ -1742,7 +1764,10 @@ namespace video {
 
     /// Uploads pixels to a video output.
     ///
-    /// LORE: Originally, we had the abiltiy to directly get a pointer
+    /// NOTE: If `destination` would update a zero-sized area (`width` or `height` is zero),
+    ///       the operation is a no-op and completes immediately.
+    ///
+    /// LORE: Originally, we had the ability to directly get a pointer
     ///       to the video outputs buffer.
     ///       As convenient as it is, it implicitly imposed the requirement
     ///       for the kernel to potentially allocate a pixel buffer if the
@@ -1753,7 +1778,7 @@ namespace video {
     ///       to external video devices, which is both inefficient and error prone.
     ///
     ///       This syscall + `Buffer` sidestep this problem by making the access of a
-    ///       memory-mapped video memory failible without removing the ability for a generic
+    ///       memory-mapped video memory fallible without removing the ability for a generic
     ///       upload procedure.
     async_call WritePixels {
         /// The output which should receive the pixel data.
@@ -1762,12 +1787,17 @@ namespace video {
         /// The portion of the video buffer that should be updated.
         in    destination: Rectangle;
 
-        /// The pixel data that should be uploaded.
-        /// Each scanline starts at `y * stride` elements apart and the buffer must contain
-        /// at least `destination.height` scanlines.
+        /// Pointer to the top-left pixel of `destination`.
+        ///
+        /// NOTE: The order inside this array is row-major.
+        ///       This means that `pixels[1]` is the pixel at `(destination.x + 1, destination.y)`
+        ///       and `pixels[stride]` is the pixel at `(destination.x, destination.y + 1)`.
+        ///
+        /// NOTE: Each scanline starts at `y * stride` elements apart and the buffer must contain
+        ///       at least `destination.height` scanlines.
         in    pixels:      []const Color;
 
-        /// The length of a scanline in `pixels`.
+        /// The length of a scanline in `pixels` in elements.
         in    stride:      usize;
 
         /// Determines when to perform the pixel data write.
@@ -1776,7 +1806,11 @@ namespace video {
         /// `output` is not a valid video output resource.
         error InvalidHandle;
 
-        /// `pixels.len` is less than `stride * destination.height`.
+        /// Returned when `pixels` does not hold enough pixels to update `destination`.
+        ///
+        /// This means that `pixels.len` is less than `stride * max(0, destination.height - 1) + destination.width`.
+        ///
+        /// NOTE: This error is only returned if `destination.height > 0`.
         error BufferSize;
 
         /// `stride` is less than `destination.width`.
@@ -1786,39 +1820,108 @@ namespace video {
         error InvalidRegion;
     }
 
-    resource Buffer { }
+    /// A buffer mapping provides a memory-mapped view into a
+    /// front- or backbuffer of a video output.
+    ///
+    /// This allows uploading pixel data without the need for a `WritePixels` operation.
+    ///
+    /// NOTE: Not every `VideoOutput` supports a buffer mapping.
+    resource BufferMapping { }
 
     enum BufferKind : u8 {
-        /// `Present` is a no-op.
+        /// A front buffer uses the same data as the scanout mechanism.
+        /// This means that any write to this buffer is *directly* visible
+        /// as soon as the video output scans out the written pixel locations.
+        ///
+        /// NOTE: This means that writes may produce tearing or other visual
+        ///       glitches.
+        ///
+        /// NOTE: `Present` is not required to make the changes visible.
         item front_buffer = 0;
 
-        /// Requires `Present` to make the changes visible.
-        item back_buffer = 0;
+        /// A back buffer is a second buffer that is not used for scanning out
+        /// pixel data.
+        ///
+        /// This means that writes to a back buffer will never appear on the
+        /// video output unless the buffer is swapped/copied to the front buffer.
+        ///
+        /// To perform this copy/swap, the `Present` operation shall be used.
+        ///
+        /// NOTE: It is possible, but not recommended to perform a manual copy
+        ///       from a back buffer mapping to a front buffer mapping.
+        item back_buffer = 1;
     }
 
-    syscall create_buffer {
+    /// Creates a memory mapping for the front or the back buffer of a video output.
+    ///
+    /// NOTE: Not every video output supports memory mappings at all. Some video outputs
+    ///       only support a single mode of memory mapping.
+    ///
+    ///       The supported combinations are:
+    ///       - No mapping support.
+    ///       - Only front buffer.
+    ///       - Only back buffer.
+    ///       - Both front and back buffer.
+    ///
+    ///       When a buffer type is not supported, `Unsupported` is returned.
+    ///
+    /// NOTE: There can be only a single mapping for the front and the back buffer.
+    ///       This means for each video output, a maximum of two `BufferMapping` resources
+    ///       can exist.
+    ///
+    /// NOTE: A buffer mapping is implicitly destroyed when its associated video output is
+    ///       destroyed. This is necessary as the destruction of the video output resource
+    ///       revokes access to the video device, and thus also revokes access through memory
+    ///       mappings.
+    syscall create_buffer_mapping {
         in output: VideoOutput;
+
+        /// Which buffer should be mapped.
         in requested_kind: BufferKind;
 
-        out buffer: Buffer;
+        out buffer: BufferMapping;
 
+        /// `output` is not a valid video output resource.
         error InvalidHandle;
+
+        /// The requested buffer type is not supported by the `output` device.
         error Unsupported;
+
+        /// A buffer mapping for the `requested_kind` of the video output
+        /// already exists.
+        error AlreadyExists;
+
         error SystemResources;
     }
 
     /// Applies the changes inside `buffer` and guarantees they
     /// are visible afterwards.
+    ///
+    /// NOTE: For a front buffer, no data movement will happen, but
+    ///       `mode` may still make `Present` await the next vertical blanking
+    ///       period.
+    ///
+    /// NOTE: It is not specified if a `Present` for a back buffer is performing a
+    ///       buffer swap operation or a buffer copy operation.
+    ///
+    /// NOTE: If `mode == PresentMode.immediate` and `buffer` is a front buffer, the
+    ///       operation completes immediately.
     async_call Present
     {
-        in    buffer: Buffer;
+        /// The buffer mapping that shall be presented.
+        in    buffer: BufferMapping;
 
         /// Determines when to perform the pixel data update.
         in    mode:        PresentMode;
 
+        /// `buffer` is not a valid buffer mapping resource.
         error InvalidHandle;
     }
 
+    /// A descriptor of memory-accessible pixel buffer.
+    ///
+    /// It is laid out row-major and `base[0]` is the top-left pixel
+    /// of the mapped image.
     struct VideoMemory {
         /// Pointer to the first pixel of the first scanline.
         ///
@@ -1828,7 +1931,7 @@ namespace video {
         /// There are `height` total scanlines available.
         field base: [*]align(4) Color;
 
-        /// Length of a scanline.
+        /// Length of a scanline in elements.
         field stride: usize;
 
         /// Number of valid elements in a scanline
@@ -1839,11 +1942,20 @@ namespace video {
     }
 
     /// Returns a pointer to linear video memory, row-major.
-    /// Pixels rows will have a stride of the current video buffer width.
-    /// The first pixel in the memory is the top-left pixel.
+    ///
+    /// NOTE: The pointer inside `memory` is only valid until the next `Present` operation
+    ///       for any front or back buffer mapping for the associated video output or until
+    ///       the buffer mapping is destroyed.
+    ///
+    ///       This requires careful management and it is not recommended to share different
+    ///       `BufferMapping` resources with other actors.
     syscall get_video_memory {
-        in     output: Buffer;
+        in     buffer: BufferMapping;
+
+        /// The descriptor of the memory mapped video buffer.
         out    memory: VideoMemory;
+
+        /// `buffer` is not a valid buffer mapping resource.
         error  InvalidHandle;
     }
 }
