@@ -3699,9 +3699,7 @@ namespace network {
             error   SystemResources;
             error   Timeout;
         }
-
     }
-
 }
 
 /// A file or directory on Ashet OS can be named with any legal UTF-8 sequence
