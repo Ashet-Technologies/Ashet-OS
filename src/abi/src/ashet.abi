@@ -370,6 +370,11 @@ namespace overlapped {
         /// with the same address.
         error   AlreadyScheduled;
 
+        //? TODO: Consider "InProgress" or "Conflict" as a new error which
+        //?       would be returned when an ARC cannot be scheduled due to conflicts
+        //?       instead of going through the whole overlapped dance just to return
+        //?       error.InProgress.
+
         error   SystemResources;
     }
 
@@ -6136,11 +6141,11 @@ namespace service {
     /// NOTE: As interface resources are hold both by the service and the consumer, an interface is
     ///       always tied to the lifetime of to the creating process. This ensures that when the process
     ///       is terminated, the interface resource will be destroyed.
-    ///         
+    ///
     ///       This is not done through the tethering interface, but through a dedicated mechanism that
     ///       ensures correctness.
     resource Interface { }
-    
+
     /// Defines the type of argument and the potential transformations the
     /// kernel performs when passing the argument between caller and callee.
     enum MarshalType : u2 {
@@ -6184,8 +6189,8 @@ namespace service {
     ///
     /// NOTE: For function signatures, `outputs[1..]` must be set to
     ///       `MarshalType.unused`.
-    /// 
-    /// NOTE: For both `inputs` and `outputs`: As soon as an index in the 
+    ///
+    /// NOTE: For both `inputs` and `outputs`: As soon as an index in the
     ///       array is `MarshalType.unused`, all following items must also be
     ///       `MarshalType.unused`.
     bitstruct FunctionSignature : u32 {
@@ -6205,7 +6210,7 @@ namespace service {
     ///
     /// NOTE: Request tokens are valid globally and may be passed between processes.
     enum RequestToken : u32 { ... }
-    
+
     /// The signature of the asynchronous request handler function registered by an interface.
     ///
     /// **Parameters:**
@@ -6268,7 +6273,7 @@ namespace service {
     ///       published with `register`.
     syscall create {
         /// The unique identifier of the interface.
-        /// 
+        ///
         /// This UUID defines the contract this interface implements.
         ///
         /// NOTE: The kernel copies the UUID object internally.
@@ -6306,7 +6311,7 @@ namespace service {
 
         /// The asynchronous request handler.
         ///
-        /// NOTE: All asynchronous requests go through the same function handler, and 
+        /// NOTE: All asynchronous requests go through the same function handler, and
         ///       dispatch must happen in userland.
         ///
         ///       The kernel ensures that argument marshalling will be properly performed,
@@ -6317,7 +6322,7 @@ namespace service {
 
         /// The asynchronous cancellation handler.
         ///
-        /// NOTE: All cancellation requests go through the same function handler, and 
+        /// NOTE: All cancellation requests go through the same function handler, and
         ///       dispatch must happen in userland.
         ///
         /// NOTE: May be `null` even if `async_signatures.len > 0`.
@@ -6421,12 +6426,12 @@ namespace service {
     /// 6. Kernel optionally marshals the output resource.
     syscall invoke {
         in    interface: Interface;
-        
+
         /// Index of the function which shall be invoked.
         in    function: u8;
 
         /// The arguments passed to `function`.
-        /// 
+        ///
         /// NOTE: The kernel will perform marshalling as defined in the function signature.
         ///
         /// NOTE: The kernel will validate that all unused arguments are zero.
@@ -6458,7 +6463,7 @@ namespace service {
         /// Returned in the following cases:
         /// - The invoked function returns a resource handle, but this
         ///   resource handle was neither valid nor zero.
-        /// - The invoked function return value is unused, but the 
+        /// - The invoked function return value is unused, but the
         ///   function returned a non-zero value.
         ///
         /// LORE: This error is sadly the best way to handle implementation bugs
@@ -6481,12 +6486,12 @@ namespace service {
     /// 6. Kernel context-switches back and returns the ARC to the caller.
     async_call Invoke {
         in    interface: Interface;
-        
+
         /// Index of the asynchronous operation that shall be invoked.
         in    operation: u8;
 
         /// The arguments passed to `operation`.
-        /// 
+        ///
         /// NOTE: The kernel will perform marshalling as defined in the operation signature.
         ///
         /// NOTE: The kernel will validate that all unused arguments are zero.
@@ -6503,7 +6508,7 @@ namespace service {
 
         /// `interface` is not a valid interface resource.
         error InvalidHandle;
-        
+
         /// `operation` does not exist.
         error InvalidFunction;
 
