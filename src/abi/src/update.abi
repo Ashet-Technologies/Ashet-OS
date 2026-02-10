@@ -1,0 +1,240 @@
+/// The service namespace implements a kernel-mediated Object Request Broker (ORB).
+///
+/// It allows processes to register "Interfaces" consisting of functions that can be
+/// called by other processes.
+///
+/// KEY FEATURES:
+/// - **Hybrid Invocation**: Services can support synchronous (blocking) and/or
+///   asynchronous (overlapped) invocation models.
+/// - **Type Safety**: The kernel validates that the caller passes the correct number and types
+///   of arguments (integers vs resources).
+/// - **Resource Marshalling**: Resources passed to/from services are automatically
+///   bound to the receiver's process.
+/// - **Context Switching**: The kernel switches the "Resource Context" of the executing thread
+///   to the Service's owning process during the execution of the handler.
+namespace service {
+    resource Service { }
+
+    /// A 128-bit Universally Unique Identifier for an interface.
+    struct UUID {
+        field bytes: [16]u8;
+    }
+
+    /// Defines the type of a parameter or return value.
+    enum ArgType : u2 {
+        /// A raw integer, pointer, or boolean.
+        /// The kernel passes this value through unmodified.
+        item raw = 0;
+
+        /// A system resource handle.
+        ///
+        /// MARSHALLING rules:
+        /// - **Caller -> Service**: Kernel validates the caller owns the handle, then creates
+        ///   a temporary `at_least_weak` binding for the Service process.
+        /// - **Service -> Caller**: Kernel validates the Service owns the handle, then creates
+        ///   a permanent `strong` binding for the Caller process (transferring ownership/access).
+        item resource = 1;
+
+        /// The argument slot is unused.
+        item none = 2;
+    }
+
+    /// Describes the signature of a single service function.
+    ///
+    /// The signature supports up to 8 inputs and 8 outputs.
+    bitstruct FunctionSignature : u64 {
+        /// The number of input arguments (0..8).
+        field argc_in: u4;
+
+        /// The number of output values (0..8).
+        field argc_out: u4;
+
+        /// The types of the 8 input arguments (packed 2 bits each).
+        /// Index 0 is the LSB.
+        field inputs: u16;
+
+        /// The types of the 8 output values (packed 2 bits each).
+        /// Index 0 is the LSB.
+        field outputs: u16;
+
+        reserve u24 = 0;
+    }
+
+    /// Describes a full service interface.
+    struct InterfaceDescriptor {
+        /// The unique contract identifier.
+        field uuid: UUID;
+
+        /// Pointer to an array of signatures.
+        field signatures: []const FunctionSignature;
+    }
+
+    /// A handle used by the service to identify a pending asynchronous request.
+    enum RequestHandle : u32 { ... }
+
+    /// The signature of the asynchronous request handler function registered by the service.
+    ///
+    /// **Parameters:**
+    /// 1. `context`: The opaque pointer registered with the service.
+    /// 2. `req`: The handle to the incoming request.
+    /// 3. `func_index`: The index of the function being called.
+    /// 4. `args`: Pointer to the 8 input arguments provided by the caller.
+    ///
+    /// **Behavior:**
+    /// The handler should store the `req` and `args` (if needed) and return immediately.
+    /// The operation is completed later via `complete_request`.
+    typedef AsyncHandler = fnptr(?*anyopaque, RequestHandle, u16, *const [8]usize) void;
+
+    /// Registers a new service instance in the system.
+    ///
+    /// NOTE: A service may provide `vtable` (for sync calls), `async_handler` (for async calls),
+    ///       or both. If a method is not supported by the provided handlers, the kernel returns
+    ///       `Unsupported` to the caller.
+    syscall register {
+        /// The interface contract this service implements.
+        in    interface: InterfaceDescriptor;
+
+        /// The synchronous implementation functions (vtable).
+        /// If `null`, synchronous `invoke` calls will fail.
+        in    vtable: ?[]const anyfnptr;
+
+        /// The asynchronous request handler.
+        /// If `null`, `async_call Invoke` will fail.
+        in    async_handler: ?AsyncHandler;
+
+        /// The opaque context pointer ("this") passed to the functions.
+        in    context: ?*anyopaque;
+
+        /// A human-readable name for debugging/enumeration.
+        in    name: str;
+
+        /// The created service resource.
+        out   svc: Service;
+
+        error SystemResources;
+    }
+
+    /// Invokes a service function synchronously.
+    ///
+    /// **Execution Flow:**
+    /// 1. Kernel validates arguments against signature.
+    /// 2. Kernel context-switches to Service process.
+    /// 3. Kernel marshals input resources.
+    /// 4. Kernel calls `vtable[func_index]`.
+    /// 5. Kernel marshals output resources.
+    /// 6. Kernel context-switches back.
+    syscall invoke {
+        in    svc: Service;
+        in    func_index: u16;
+        in    args: [8]usize;
+
+        out   results: [8]usize;
+
+        error InvalidHandle;
+        error InvalidFunction;
+        error InvalidArg;
+
+        /// The service does not support synchronous invocation.
+        error Unsupported;
+    }
+
+    /// Invokes a service function asynchronously.
+    ///
+    /// **Execution Flow:**
+    /// 1. Kernel validates arguments against signature.
+    /// 2. Kernel allocates an internal Request State.
+    /// 3. Kernel context-switches to Service process (temporarily).
+    /// 4. Kernel marshals input resources.
+    /// 5. Kernel calls `async_handler`.
+    /// 6. Kernel context-switches back and returns the ARC to the caller.
+    async_call Invoke {
+        in    svc: Service;
+        in    func_index: u16;
+        in    args: [8]usize;
+
+        /// The results of the operation.
+        /// Filled by the kernel when the service calls `complete_request`.
+        out   results: [8]usize;
+
+        error InvalidHandle;
+        error InvalidFunction;
+        error InvalidArg;
+
+        /// The service does not support asynchronous invocation.
+        error Unsupported;
+
+        /// The service's pending request queue is full.
+        error SystemResources;
+    }
+
+    /// Completes a pending asynchronous request (called by the Service).
+    ///
+    /// This consumes the `req` handle and wakes the caller (completing their ARC).
+    syscall complete_request {
+        /// The request handle passed to `AsyncHandler`.
+        in    req: RequestHandle;
+
+        /// The return values/resources.
+        ///
+        /// NOTE: Resources in this array will be marshalled to the caller.
+        in    results: [8]usize;
+
+        /// `req` is not a valid pending request.
+        error InvalidHandle;
+    }
+
+    /// Rejects/Fails a pending asynchronous request (called by the Service).
+    ///
+    /// This completes the caller's ARC with a generic `RequestFailed` error (or similar).
+    syscall fail_request {
+        in    req: RequestHandle;
+
+        /// `req` is not a valid pending request.
+        error InvalidHandle;
+    }
+}
+
+
+//? Okay, so some comments to clarify what i want to rework:
+
+//? first of all, the kernel is actually able to stack-switch the current's thread resource context, which is already heavily used in the GUI module.
+
+//? So the "DLL" claim is not quite correct here. but also not fully wrong :P
+
+//? what i want to change is:
+
+//? make functions "generic" on the API surface, and add the ability to auto-transition between caller and callee, and, even better: automatically bind resources to the callee if necessary.
+
+//? the idea here is that you define a "signature" structure, both for query/discovery but also for registration.
+
+//? this signature is composed of:
+//? - UUID
+//? - Number of functions
+//? - Parameter count of functions
+//? - Parameter types (raw, resource)
+
+//? The number of generic parameters will be limited from 0..8 (inclusive) "usize" values.
+
+//? Each function also takes a ctx pointer. The caller invokes the function with the resource itself as a parameter. The kernel will then proxy and call the actual function with a service-bound context value.
+
+//? A usize might be interpreted as a resource handle.
+
+//? This allows the following things:
+//? - way more safety against programming mistakes (good, it's not security)
+//? - kernel can "thunk" or otherwise replace the functions as it knows the physical signature
+//? - kernel can transfer resource ownerships on call
+//? - kernel can patch thread association on call
+
+//? this should actually resolve most of the woes we have with the current design
+
+//? You know what we both totally ignored? supporting our own overlapped operations in the service!
+
+//? We can have "syscall invoke" (synchronous) and "async_call Invoke" (overlapped) and the called process must explicitly complete the operarion with "service.complete_invoke" or something.
+
+//? the async ops are even simpler:
+
+//? we just pass a number to the async op, and the service can register a "schedule" fnptr in the "register" syscall. as soon as that fn is available, the service can receive async operations which it can complete.
+
+//? signature has 8 ins, 8 outs. (we need at least one out anyways for sync calls as well!)
+
+//? damn, that sounds funky.

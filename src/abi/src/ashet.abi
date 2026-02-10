@@ -3837,8 +3837,6 @@ namespace fs {
 
         /// The number of ids written to `list`, or the total count if `list` is `null`.
         out count: usize;
-
-        error SystemResources;
     }
 
     /// Finds a filesystem by name.
@@ -3853,6 +3851,9 @@ namespace fs {
 
         /// No filesystem exists with the given name.
         error NotFound;
+
+        /// `name` does not conform to the name rules for filesystems.
+        error InvalidName;
     }
 
     struct FileSystemInfo {
@@ -3867,14 +3868,14 @@ namespace fs {
         /// Encoding:
         /// - UTF-8
         /// - NUL-padded (first NUL determines length, otherwise full array).
-        field name: [8]u8; //? TODO: Use max_fs_name_len instead of 8
+        field name: [max_fs_name_len]u8;
 
         /// String identifier of a file system driver (e.g. `FAT32`, `NFS`, ...)
         ///
         /// Encoding:
         /// - UTF-8
         /// - NUL-padded (first NUL determines length, otherwise full array).
-        field filesystem: [32]u8; //? TODO: USe max_fs_type_len instead of 32
+        field filesystem: [max_fs_type_len]u8;
 
         bitstruct Flags : u16 {
             /// This is the system boot filesystem.
@@ -3901,6 +3902,8 @@ namespace fs {
         error SystemResources;
     }
 
+    //? TODO: a way to query free space / capacity (if you want userland UIs to show disk usage without filesystem-specific driver calls)
+
     /// A directory is a group of files and other directories in a file system.
     resource Directory { }
 
@@ -3921,7 +3924,7 @@ namespace fs {
         /// The requested entry does not exist.
         error   FileNotFound;
 
-        /// The given filesystem id does not exist.
+        /// The given filesystem id did not exist when scheduling the operation.
         error   InvalidFileSystem;
 
         /// The given `path` is syntactically invalid.
@@ -3929,6 +3932,10 @@ namespace fs {
 
         /// The requested entry exists but is not a directory.
         error   NotADir;
+
+        /// The underlying filesystem of `fs_id` was removed
+        /// during the creation of the directory.
+        error Gone;
 
         error   SystemResources;
     }
@@ -4077,7 +4084,7 @@ namespace fs {
 
     /// Creates a directory enumerator for `dir`.
     syscall create_enumerator {
-        in dir: Dir;
+        in dir: Directory;
 
         out enumerator: DirEnumerator;
 
@@ -4186,7 +4193,7 @@ namespace fs {
         ///
         /// If `mkopen` is true, `new_dir` receives an opened handle to the created directory.
         /// If `mkopen` is false, `new_dir` is returned as `null`.
-        out     new_dir: `Directory;
+        out     new_dir: ?Directory;
 
         /// The underlying storage subsystem had an I/O failure.
         error IoError;
@@ -4236,6 +4243,9 @@ namespace fs {
         /// The given `path` is syntactically invalid.
         error InvalidPath;
 
+        /// A path traversal expected a directory, but found a non-directory entry.
+        error NotADir;
+
         error SystemResources;
     }
 
@@ -4267,10 +4277,10 @@ namespace fs {
         /// The source entry does not exist.
         error FileNotFound;
 
-        /// `src_dir` is not a valid directory resource.
+        /// `dir` is not a valid directory resource.
         error InvalidHandle;
 
-        /// The underlying filesystem of `src_dir` was removed.
+        /// The underlying filesystem of `dir` was removed.
         error Gone;
 
         /// A passed path is syntactically invalid.
@@ -4511,8 +4521,8 @@ namespace fs {
         /// NOTE: This is only ever less than `buffer.len` if the
         ///       read operation would read over the end of the file.
         ///
-        ///       If that is the case `count` is computed as:
-        ///       `count = file_size -| offset.
+        ///       If that is the case, `count` is computed as:
+        ///       `count = file_size -| offset`.
         out     count: usize;
 
         /// The underlying storage subsystem had an I/O failure.
@@ -4547,8 +4557,8 @@ namespace fs {
         /// NOTE: This is only ever less than `buffer.len` if the
         ///       write operation would write over the end of the file.
         ///
-        ///       If that is the case `count` is computed as:
-        ///       `count = file_size -| offset.
+        ///       If that is the case, `count` is computed as:
+        ///       `count = file_size -| offset`.
         out     count: usize;
 
         /// The underlying storage subsystem had an I/O failure.
@@ -4779,6 +4789,9 @@ namespace fs {
 
         /// The requested entry exists but is not a file.
         error NotAFile;
+
+        /// A path traversal expected a directory, but found a non-directory entry.
+        error NotADir;
 
         /// There is not enough free space on the filesystem.
         error NoSpaceLeft;
