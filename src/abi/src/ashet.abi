@@ -6102,48 +6102,352 @@ namespace gui {
     }
 }
 
-//? TODO: Review this namespace.
+/// The service namespace implements a kernel-mediated Object Request Broker (ORB).
+///
+/// It allows processes to register "Interfaces" consisting of functions that can be
+/// called by other processes.
+///
+/// KEY FEATURES:
+/// - **Hybrid Invocation**:    Interfaces can support synchronous (blocking) and/or
+///                             asynchronous (overlapped) invocation models.
+/// - **Type Safety**:          The kernel validates that the caller passes the correct number and types
+///                             of arguments (integers vs resources).
+/// - **Resource Marshalling**: Resources passed to/from interfaces are automatically
+///                             bound to the receiver's process.
+/// - **Context Switching**:    The kernel switches the "Resource Context" of the executing thread
+///                             to the Interface's owning process during the execution of the handler.
 namespace service {
-    resource Service { }
+    /// An interface is a collection of synchronous functions and overlapped operations.
+    ///
+    /// Calling the functions will directly invoke an associated function in the creating
+    /// process.
+    ///
+    /// Calling an overlapped operation will trigger the creating process which eventually
+    /// completes the operation.
+    ///
+    /// Each interface is uniquely identified by a UUID which allows identification of the
+    /// interface and asserts the contract for the semantics of the functions and overlapped ops.
+    ///
+    /// In addition to the UUID, each interface has a signature that asserts the compatibility
+    /// between the producer and the consumer of the interface.
+    ///
+    /// Interfaces can have up to 256 functions and overlapped operations each, with each
+    /// function having up to 8 input values and a single return value, and overlapped operations
+    /// having up to 8 input and 8 output values.
+    ///
+    /// NOTE: As interface resources are hold both by the service and the consumer, an interface is
+    ///       always tied to the lifetime of to the creating process. This ensures that when the process
+    ///       is terminated, the interface resource will be destroyed.
+    ///         
+    ///       This is not done through the tethering interface, but through a dedicated mechanism that
+    ///       ensures correctness.
+    resource Interface { }
 
-    /// Registers a new service `uuid` in the system.
-    /// Takes an array of function pointers that will be provided for IPC and a service name to be advertised.
+    /// Defines the signature of a function or overlapped operation.
+    ///
+    /// NOTE: For function signatures, `outputs[1..8]` must be set to
+    ///       `MarshalType.unused`.
+    /// 
+    /// NOTE: For both `inputs` and `outputs`: As soon as an index in the 
+    ///       array is `MarshalType.unused`, all following items must also be
+    ///       `MarshalType.unused`.
+    bitstruct FunctionSignature : u32 {
+        /// Defines the number and type of the input arguments.
+        /// `inputs[0]` is the first argument, `input[7]` is the eighth argument.
+        field inputs:  [8]MarshalType;
+
+        /// Defines the number and type of the result values.
+        /// `outputs[0]` is the first result, `outputs[7]` is the eighth result.
+        ///
+        /// NOTE: Only `outputs[0]` may be set for functions. Overlapped operations
+        ///       can use all eight values.
+        field outputs: [8]MarshalType;
+
+        /// Defines the type of argument and the potential transformations the
+        /// kernel performs when passing the argument between caller and callee.
+        enum MarshalType : u2 {
+            /// The argument/result is unused.
+            /// Unused values must be set to zero or otherwise the call/return is invalid.
+            item unused = 0;
+
+            /// This value is reserved and should not be used.
+            item reserved = 1;
+
+            /// The value is passed unmodified by the kernel.
+            /// NOTE: This value should be used for integers, enumerations,
+            ///       raw pointers and so on.
+            item raw = 2;
+
+            /// The value passed is a system resource.
+            /// 
+            /// MARSHALLING rules:
+            /// - **Caller -> Interface**: Kernel validates the caller owns the handle, then creates
+            ///   a `at_least_weak` binding for the Interface process.
+            /// - **Interface -> Caller**: Kernel validates the Interface owns the handle, then creates
+            ///   a permanent `strong` binding for the caller process (transferring ownership/access).
+            item resource = 3;
+        }
+    }
+
+    /// A handle used by the interface to identify a pending asynchronous request.
+    enum RequestHandle : u32 { ... }
+    
+    /// The signature of the asynchronous request handler function registered by the interface.
+    ///
+    /// **Parameters:**
+    /// 1. `context`:   The opaque pointer associated with the interface.
+    /// 2. `request`:   The handle to the incoming request.
+    /// 3. `function`:  The index of the function being called.
+    /// 4. `arguments`: Pointer to the 8 input arguments provided by the caller.
+    ///
+    /// **Behavior:**
+    /// The handler should store the `req` and `args` (if needed) and return immediately.
+    /// The operation is completed later via `complete_request`.
+    typedef AsyncHandler = fnptr(context: ?*anyopaque, request: RequestHandle, function: u8, arguments: *const [8]usize) void;
+
+    /// The signature of a synchronous function call registered in an interface.
+    ///
+    /// **Parameters:**
+    /// 1. `context`: The opaque pointer associated with the interface.
+    /// 2. `args`: Pointer to the 8 input arguments provided by the caller.
+    ///
+    /// The function may or may not return a value depending on it's signature.
+    ///
+    /// If the signature does not define a return value, the function must return zero.
+    typedef Function = fnptr(context: ?*anyopaque, args: *const [8]usize) usize;
+
+    /// Creates a new interface that can be invoked by other processes.
+    ///
+    /// NOTE: After creation, the interface is not yet discoverable with `enumerate`.
+    ///       This way, private interfaces can be passed between processes.
+    ///
+    /// NOTE: If an interface should be available as a system service, it must be
+    ///       published with `register`.
     syscall create {
+        /// The unique identifier of the interface.
+        /// 
+        /// This UUID defines the contract this interface implements.
         in    uuid: *const UUID;
-        in    funcs: []const anyfnptr;
+
+        /// A human-readable name for enumeration and debugging.
         in    name: str;
-        out   svc: Service;
-        error AlreadyRegistered;
+
+        /// Defines the signatures and count of synchronous function calls in the interface.
+        ///
+        /// NOTE: The kernel will create an internal copy of this array, so userland
+        ///       can reuse the memory freely after this call.
+        field sync_signatures: []const FunctionSignature;
+
+        /// Defines the signatures and count of overlapped operations in the interface.
+        ///
+        /// NOTE: The kernel will create an internal copy of this array, so userland
+        ///       can reuse the memory freely after this call.
+        field async_signatures: []const FunctionSignature;
+
+        /// The opaque context pointer ("this") passed to the functions in `vtable` and the `async_handler`.
+        ///
+        /// NOTE: This can be used to implement a stateful interface that allows a process to create
+        ///       the same interface more than once and still have context which of the interfaces were
+        ///       called.
+        in    context: ?*anyopaque;
+
+        /// The synchronous implementation functions (vtable).
+        ///
+        /// NOTE: Must have the same number of elements as `sync_signatures`.
+        ///
+        /// NOTE: The kernel will create an internal copy of this array, so userland
+        ///       can reuse the memory freely after this call.
+        /// 
+        /// NOTE: If no synchronous functions are supported, a zero-lengthed array can be passed.
+        in    vtable: []const Function;
+
+        /// The asynchronous request handler.
+        ///
+        /// NOTE: All synchronous requests go through the same function handler, and 
+        ///       dispatch must happen in userland.
+        ///
+        ///       The kernel ensures that argument marshalling will be properly performed,
+        ///       and function will never be out of range for the interface.
+        ///
+        /// NOTE: May be `null` if, and only if, `async_signatures.len == 0`.
+        in    async_handler: ?AsyncHandler;
+
+        /// The created interface resource.
+        out   interface: Interface;
+
+        error SystemResources;
+    }
+
+    /// Returns the UUID of the interface.
+    syscall get_name {
+        in    interface: Interface;
+        out   uuid:      UUID;
+
+        /// `interface` is not a valid interface resource.
+        error InvalidHandle;
+    }
+
+    /// Returns the name of the interface.
+    syscall get_name {
+        in    interface: Interface;
+        in    name_buf: ?[]u8;
+
+        /// If `name_buf` is null, the total length of the name.
+        /// If `name_buf` is not null, the number of bytes written to `name_buf`.
+        out   name_len: usize;
+
+        /// `interface` is not a valid interface resource.
+        error InvalidHandle;
+    }
+
+    /// Registers an interface as a systemwide service.
+    ///
+    /// All registered interfaces can be discovered through `enumerate`.
+    ///
+    /// NOTE: Revoking the registration is not possible by design. To unpublish
+    ///       a service, the interface resource must be destroyed.
+    syscall register {
+        /// The interface that shall be published.
+        in interface: Interface;
+
+        /// `interface` is not a valid interface resource.
+        error InvalidHandle;
+
         error SystemResources;
     }
 
     /// Enumerates all registered services.
     syscall enumerate {
-        in  uuid: *const UUID;
-        in  services: ?[]Service;
+        /// If not `null`, the enumeration returns only interfaces
+        /// with the given unique identifier.
+        /// If `null` will enumerate all interfaces.
+        in  uuid: ?*const UUID;
+
+        /// If not `null`, the kernel will write the registered interfaces to this array.
+        ///
+        /// NOTE: The interface handles will be bound to the calling process with `BindOperation.at_least_weak`
+        ///       to ensure resource access.
+        in  services: ?[]Interface;
+
+        /// Number of elements written to `services` or total number of registered
+        /// interfaces.
         out count: usize;
     }
 
-    /// Returns the name of the service.
-    syscall get_name {
-        in    svc: Service;
-        in    name_buf: ?[]u8;
-        out   name_len: usize;
+    /// Invokes an interface function synchronously.
+    ///
+    /// **Execution Flow:**
+    /// 1. Kernel validates arguments against signature.
+    /// 2. Kernel marshals input resources.
+    /// 3. Kernel context-switches to interface process.
+    /// 4. Kernel calls `vtable[func_index]`.
+    /// 5. Kernel context-switches back.
+    /// 6. Kernel optionally marshals the output resource.
+    syscall invoke {
+        in    interface: Interface;
+        
+        /// Index of the function which shall be invoked.
+        in    function: u8;
+
+        /// The arguments passed to `function`.
+        /// 
+        /// NOTE: The kernel will perform marshalling as defined in the function signature.
+        ///
+        /// NOTE: The kernel will validate that all unused arguments are zero.
+        in    arguments: [8]usize;
+
+        /// The return value of the function.
+        out   result: usize;
+
+        /// `interface` is not a valid interface resource.
+        error InvalidHandle;
+
+        /// `function` does not exist.
+        error InvalidFunction;
+
+        /// The kernel validation of the arguments failed.
+        ///
+        /// This can have two reasons:
+        /// - An unused argument is non-zero.
+        /// - A resource argument is not a valid resource handle.
+        error InvalidArg;
+
+        error SystemResources;
+    }
+
+    /// Schedules an overlapped interface operation.
+    ///
+    /// **Execution Flow:**
+    /// 1. Kernel validates arguments against signature.
+    /// 2. Kernel allocates an internal Request State.
+    /// 3. Kernel marshals input resources.
+    /// 4. Kernel context-switches to Interface process (temporarily).
+    /// 5. Kernel calls `async_handler`.
+    /// 6. Kernel context-switches back and returns the ARC to the caller.
+    async_call Invoke {
+        in    interface: Interface;
+        
+        /// Index of the asynchronous operation that shall be invoked.
+        in    operation: u8;
+
+        /// The arguments passed to `operation`.
+        /// 
+        /// NOTE: The kernel will perform marshalling as defined in the operation signature.
+        ///
+        /// NOTE: The kernel will validate that all unused arguments are zero.
+        in    arguments: [8]usize;
+
+        /// The results of the operation.
+        ///
+        /// NOTE: Filled by the kernel when the interface implementor calls `complete_request`.
+        out   results: [8]usize;
+
+        /// `interface` is not a valid interface resource.
+        error InvalidHandle;
+        
+        /// `operation` does not exist.
+        error InvalidFunction;
+
+        /// The kernel validation of the arguments failed.
+        ///
+        /// This can have two reasons:
+        /// - An unused argument is non-zero.
+        /// - A resource argument is not a valid resource handle.
+        error InvalidArg;
+
+        /// The operation was failed by a call to `fail_request`.
+        error RequestFailed;
+
+        error SystemResources;
+    }
+
+    /// Completes a pending asynchronous request (called by the interface implementor).
+    ///
+    /// NOTE: This consumes the `request` token and wakes the caller (completing their ARC).
+    syscall complete_request {
+        /// The request handle passed to `AsyncHandler`.
+        in    request: RequestHandle;
+
+        /// The return values/resources.
+        ///
+        /// NOTE: Resources in this array will be marshalled to the caller as specified
+        ///       in the operation signature.
+        in    results: [8]usize;
+
+        /// `request` is not a valid pending request.
         error InvalidHandle;
     }
 
-    /// Returns the process that created this service.
-    syscall get_process {
-        in  svc: Service;
-        out process: process.Process;
-        error InvalidHandle;
-    }
+    /// Rejects/fails a pending asynchronous request (called by the interface implementor).
+    ///
+    /// This completes the caller's ARC with a generic `RequestFailed` error.
+    ///
+    /// NOTE: This consumes the `request` token and wakes the caller (completing their ARC).
+    syscall fail_request {
+        /// The request handle passed to `AsyncHandler`.
+        in    request: RequestHandle;
 
-    /// Returns the functions registerd by the service.
-    syscall get_functions {
-        in    svc: Service;
-        in    funcs: ?[]anyfnptr;
-        out   count: usize;
+        /// `request` is not a valid pending request.
         error InvalidHandle;
     }
 }
