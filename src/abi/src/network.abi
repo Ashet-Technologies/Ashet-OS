@@ -42,12 +42,12 @@ struct IP {
     }
 }
 
-/// An endpoint defines a connetion target for TCP and UDP connections.
+/// An endpoint defines a connection target for TCP and UDP connections.
 /// It is a tuple formed of an IP address and a port.
 struct EndPoint {
     /// IP address of the connection endpoint.
     field ip: IP;
-    
+
     /// The port number of the connection endpoint.
     ///
     /// NOTE: Uses host byte order.
@@ -55,15 +55,26 @@ struct EndPoint {
 }
 
 ///
+/// TODO: Write about the general idea of network interfaces.
 ///
 /// TODO: Talk about kernel subsystems being enabled/disabled and what each subsystem
 ///       is supposed to to.
+///
+/// TODO: Write how routing works in Ashet OS.
+///
 namespace link {
     /// Unique identifier of a network interface.
     ///
     /// NOTE: Interface ids are allocated in a monotonically increasing
     ///       way, and will be stable until a network interface is removed
     ///       from the kernel.
+    ///
+    /// NOTE: Id allocation will never allocate any of the named values inside this
+    ///       enumeration.
+    ///
+    /// NOTE: Interface ids received from any kernel syscall or overlapped operation
+    ///       are ephemeral and are only guaranteed to be valid until the next yielding
+    ///       syscall.
     ///
     /// NOTE: Except `loopback`, the enumeration order of interfaces is unspecified
     ///       and the ids cannot be assumed stable between reboots.
@@ -75,9 +86,11 @@ namespace link {
         /// This way, sockets can be bound to a local interface
         /// and communicate without affecting any external systems.
         ///
-        /// NOTE: The loopback interface has the IP addresses `127.0.0./8`
+        /// NOTE: The loopback interface has the IP addresses `127.0.0.1/8`
         ///       and `::1/128` by default.
-        /// TODO: Loopback also requires routing rules.
+        ///
+        ///       The kernel also adds a default connected route for these
+        ///       two addresses.
         item loopback = 0;
 
         /// A sentinel value that can be used to annotate the absence of a
@@ -87,6 +100,9 @@ namespace link {
         ///       information, but is a required "workaround" for IPv6
         ///       scopes to be able to encode that an IP address isn't
         ///       scoped to a specific interface.
+        ///
+        /// NOTE: Using this on all APIs that don't explicitly mention it yields
+        ///       the error `InvalidInterface`.
         item any = 0xFFFFFFFF;
 
         ...
@@ -117,7 +133,7 @@ namespace link {
         field dhcp4: bool;
         field dhcp6: bool;
 
-        reserve u28;
+        reserve u28 = 0;
     }
 
     struct InterfaceDescription {
@@ -246,6 +262,10 @@ namespace link {
 
         /// The prefix of the address. Defines which prefix is
         /// reachable through the interface directly without routing.
+        ///
+        /// NOTE: Must be ≤ 32 for IPv4.
+        ///
+        /// NOTE: must be ≤ 128 for IPv6.
         field prefix_len: u8;
 
         /// The origin of the IP address.
@@ -258,6 +278,8 @@ namespace link {
         ///
         /// After this timestamp is reached by `clock.monotonic`, the IP address
         /// will be automatically removed by the kernel.
+        ///
+        /// NOTE: The kernel will also automatically remove the associated connected route.
         ///
         /// NOTE: If an IP address should not expire, pass `clock.Absolute.infinity`.
         field valid_until: clock.Absolute;
@@ -283,7 +305,11 @@ namespace link {
     /// Adds a new IP address to an interface.
     ///
     /// NOTE: This operation will implicitly add a new route to the routing
-    ///       table with (`interface`, `binding.address`, `binding.prefix_len`).
+    ///       table based off (`interface`, `binding.address`, `binding.prefix_len`).
+    ///
+    ///       The route will use the prefix derived from `binding.address` and will
+    ///       set the `IPv6.scope` for the `Route.network` to `InterfaceId.any`.
+    ///
     ///       This route will have `RouteOrigin.connected`.
     ///
     /// NOTE: This operation is upserting on `binding.address` and will
@@ -300,7 +326,7 @@ namespace link {
 
         /// The binding specification for the IP address.
         in binding: AddressBinding;
-        
+
         /// `interface` is not a valid interface id (anymore).
         error InvalidInterface;
 
@@ -313,6 +339,8 @@ namespace link {
         /// - `binding.address` is not valid.
         /// - `binding.prefix_len` cannot be applied to `binding.address`.
         /// - `binding.valid_until` is in the past.
+        /// - `binding.address.addr.ipv6.scope` is not `interface` for link-local IPv6 addresses.
+        /// - `binding.address.addr.ipv6.scope` is not `InterfaceId.any` for non-link-local IPv6 addresses.
         error InvalidValue;
 
         /// There was an i/o error that lead to the failure of this operation.
@@ -324,7 +352,7 @@ namespace link {
     /// Removes an address from the interface.
     ///
     /// NOTE: This operation will implicitly remove the connected route from the routing
-    ///       table with the key (`interface`, `address`, `RouteOrigin.connected`).
+    ///       table with the key (`interface`, prefix address derived from `address`, `RouteOrigin.connected`).
     ///
     /// NOTE: This is an asynchronous call as adding IP addresses may require
     ///       communication with the NIC to set up filters. This could take
@@ -337,8 +365,11 @@ namespace link {
         ///
         /// NOTE: As for each address, only a single binding can exist, we just need
         ///       the address to remove the IP binding.
+        ///
+        /// NOTE: If this is an IPv6 address, `scope` must match the rules for valid IPv6
+        ///       addressed and `scope` must be either `interface` or `InterfaceId.any`.
         in address: IP;
-        
+
         /// `interface` is not a valid interface id (anymore).
         error InvalidInterface;
 
@@ -352,5 +383,281 @@ namespace link {
         error IoError;
 
         error SystemResources;
+    }
+
+    //? Routing
+
+    /// Enumeration of potential origins for routes.
+    enum RouteOrigin : u8 {
+        /// The route was manually created with `add_route`.
+        item manual = 0;
+
+        /// The route was created by the DHCPv4 network subsystem.
+        item dhcp4 = 1;
+
+        /// The route was created by the DHCPv6 network subsystem.
+        item dhcp6 = 2;
+
+        /// The route was created by the SLAAC network subsystem.
+        item slaac = 3;
+
+        /// The route was created by the kernel through configuration files.
+        item autoconfig = 4;
+
+        /// The route was created by the kernel when adding an IP address
+        /// to a network interface.
+        item connected = 5;
+    }
+
+    /// A route describes rules on where to send IP packets.
+    ///
+    /// A route is valid if:
+    /// - `network.type` is `gateway.type`.
+    /// - `prefix_len` is valid for `network.type`.
+    /// - `valid_until` is in the future.
+    /// - If the route is an IPv6 route:
+    ///   - `network.scope` is `InterfaceId.any`.
+    ///   - `gateway.scope` is `interface` for all link-local addresses.
+    ///   - `gateway.scope` is `InterfaceId.any` for all other addresses.
+    struct Route {
+        /// Defines the target network for this route.
+        ///
+        /// NOTE: This value is only semantically valuable together with `prefix_len`.
+        ///
+        /// NOTE: For IPv6, `scope` must be set to `InterfaceId.any` to prevent conflicting
+        ///       definitions with `interface`.
+        field network: IP;
+
+        /// Defines how many bits of the IP in `network` identify the target network.
+        ///
+        /// NOTE: Must be ≤ 32 for IPv4.
+        ///
+        /// NOTE: must be ≤ 128 for IPv6.
+        field prefix_len: u8;
+
+        /// Defines where the next-hop for the target network is and
+        /// sends the packets this way.
+        ///
+        /// NOTE: If set to the unspecified IP (`0.0.0.0` or `::`), the
+        ///       route defines an on-link route and target addresses should
+        ///       be discovered via neighbor discovery (ARP for IPv4, NDP for IPv6).
+        ///
+        /// NOTE: If not set to an unspecified IP, the address must be a valid
+        ///       unicast address.
+        ///
+        /// NOTE: If gateway is a link-local IPv6 address, the `scope` must be the
+        ///       `interface` of the route.
+        ///
+        /// NOTE: `gateway.type` must match `network.type`.
+        field gateway: IP;
+
+        /// The interface that will be used for sending the packets to the target network.
+        field interface: InterfaceId;
+
+        /// The priority is a tie-breaker for when multiple rules would match
+        /// with the same prefix, but different interfaces.
+        ///
+        /// Higher priorities win.
+        ///
+        /// NOTE: When two routes with the same prefix and priority match,
+        ///       the first inserted route is taken.
+        field priority: u16;
+
+        /// The source system that added this route to the routing table.
+        ///
+        /// NOTE: `add_route` will ignore the value and will always add a route
+        ///       with `RouteOrigin.manual`.
+        field origin: RouteOrigin;
+
+        /// The lifetime of the route.
+        ///
+        /// After this timestamp is reached by `clock.monotonic`, the route
+        /// will be automatically removed by the kernel.
+        ///
+        /// NOTE: If a route should not expire, pass `clock.Absolute.infinity`.
+        field valid_until: clock.Absolute;
+    }
+
+    /// Enumerates the routing table.
+    ///
+    /// NOTE: The table is returned ordered longest to shortest prefix,
+    ///       highest-to-lowest priority, then retains insertion order.
+    ///
+    /// LORE: Enumerating routes ordered is cheap for the kernel as it
+    ///       has to keep the table ordered in-memory anyways for efficient
+    ///       evaluation, and thus we can expose this property into userland.
+    syscall enumerate_routes {
+        /// Buffer that shall receive the list of routes or `null` if the
+        /// total amount of routes should be queried.
+        in  routes: ?[]Route;
+
+        /// If `routes` is not `null`, returns the number of elements written to `routes`,
+        /// otherwise it returns the total number of routes.
+        out count: usize;
+    }
+
+    /// Adds a new route to the routing table.
+    syscall add_route {
+        /// The route to be added.
+        in route: Route;
+
+        /// The route is not valid.
+        ///
+        /// See `Route` documentation for validation rules.
+        error InvalidValue;
+
+        /// Another route for the same target network exists on the same interface.
+        ///
+        /// This means that another route with (`route.interface`, `route.network`, `route.prefix_len`, `route.gateway`) exists.
+        error Conflict;
+
+        /// `route.interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        error SystemResources;
+    }
+
+    /// Removes an existing route from the routing table.
+    ///
+    /// NOTE: Removing a non-existent route is idempotent and does nothing.
+    syscall remove_route {
+        /// The route to delete.
+        ///
+        /// NOTE: When selecting which rules should be deleted, `route.priority`,
+        ///       `route.origin`, `route.valid_until` are ignored.
+        in route: Route;
+
+        /// The route is not valid.
+        ///
+        /// See `Route` documentation for validation rules.
+        error InvalidValue;
+
+        /// `route.interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+    }
+
+    //? Link state
+
+    enum LinkState : u8 {
+        /// The network interface has not recognized any connection.
+        item down = 0;
+
+        /// The network interface is connected to the network.
+        item up = 1;
+    }
+
+    /// Queries the current link state of a network interface.
+    syscall get_link_state {
+        in  interface: InterfaceId;
+
+        /// Current state of the link.
+        out state: LinkState;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+    }
+
+    /// Completes when a link changes its state.
+    async_call WaitForLinkState {
+        /// The interface for which a link state shall be awaited.
+        in interface: InterfaceId;
+
+        /// If not `null`, the operation completes when the link becomes `desired`.
+        /// Otherwise, the operation completes on the next interface state change.
+        in desired: ?LinkState;
+
+        /// The new link state.
+        out current: LinkState;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// The underlying `interface` was removed during this operation.
+        error Gone;
+    }
+
+    /// Sends an ICMP or ICMPv6 echo request.
+    ///
+    /// NOTE: This can be used to test if a host is reachable.
+    async_call Ping {
+        /// The interface that shall send the ping message.
+        ///
+        /// NOTE: May be `InterfaceId.any` to use the routing table
+        ///       to determine which interface and gateway shall be used.
+        in interface: InterfaceId;
+
+        /// The IP that should be tested.
+        ///
+        /// NOTE: `target.type` decides which underlying protocol shall be used.
+        in target: IP;
+
+        /// Maximum number of hops before the operation times out.
+        in ttl: u8;
+
+        /// The deadline for the operation.
+        ///
+        /// The operation returns the `Timeout` error when `timeout` is smaller than `clock.monotonic()`.
+        ///
+        /// LORE: In contrast to many other overlapped operations, a `Ping` would potentially
+        ///       never complete and it's an expected outcome that no response is received.
+        ///       Thus, the general rule of "no timeouts in overlapped operations" is broken
+        ///       here on purpose.
+        in timeout: clock.Absolute;
+
+        /// The payload of the ICMP/ICMPv6 echo request that is sent with the message.
+        ///
+        /// NOTE: This buffer must stay valid until the end of the operation.
+        in payload_request: bytestr;
+
+        /// The payload of the ICMP/ICMPv6 echo response that may be received.
+        ///
+        /// NOTE: This buffer must stay valid until the end of the operation.
+        ///
+        /// NOTE: `payload_response.len` must not be smaller than `payload_request.len`.
+        ///
+        /// NOTE: This buffer will only include the echoed payload.
+        in payload_response: bytebuf;
+
+        /// The IP address which finally answered our echo request.
+        ///
+        /// NOTE: For responses from link-local IPv6 addresses, `IPv6.scope` is set
+        ///       to the interface that received the echo response.
+        out responder: IP;
+
+        /// The timestamp when the kernel received the echo reply.
+        out received_at: clock.Absolute;
+
+        /// Actual number of bytes sent from `payload_request`.
+        ///
+        /// NOTE: This may be smaller than `payload_request.len` when the message is truncated.
+        out request_len: usize;
+
+        /// Number of bytes received from `responder`.
+        out response_len: usize;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// The underlying `interface` was removed during this operation.
+        error Gone;
+
+        /// No response was received until `timeout`.
+        error Timeout;
+
+        /// The ping operation yielded an ICMP error instead of an ICMP echo.
+        error IcmpError;
+
+        /// The kernel does not know a route to `target`.
+        error MissingRoute;
+
+        /// A parameter was badly specified.
+        ///
+        /// This may be due to:
+        /// - `payload_request.len` > `payload_response.len`.
+        /// - `target` is an link-local IPv6 address with a `scope` that is not `interface`.
+        error InvalidValue;
+
+        /// There was an i/o error that lead to the failure of this operation.
+        error IoError;
     }
 }

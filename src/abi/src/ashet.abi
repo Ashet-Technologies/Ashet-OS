@@ -1292,7 +1292,7 @@ namespace clock {
         item system_start = 0;
 
         /// The very last point of system runtime that can be expressed in Ashet OS.
-        /// 
+        ///
         /// LORE: This is a bit over 580 years of system runtime, which
         ///       is sufficient to fully cover the lifetime of the electronics,
         ///       users and probably even countries and societies.
