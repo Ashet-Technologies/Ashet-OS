@@ -60,6 +60,29 @@ struct EndPoint {
 /// TODO: Talk about kernel subsystems being enabled/disabled and what each subsystem
 ///       is supposed to to.
 ///
+/// Kernel Subsystems
+/// =================
+///
+/// IPv4: The kernel's built-in IPv4 stack.
+///     This subsystem implements a regular IPv4 stack. If disabled, this interface
+///     won't allow IPv4 operation through kernel interfaces anymore.
+///
+///     NOTE: Disabling the IPv4 stack for an interface will remove all IPv4 addresses
+///           and routes for this interface.
+/// IPv6:
+///     This subsystem implements a regular IPv6 stack. If disabled, this interface
+///     won't allow IPv6 operation through kernel interfaces anymore.
+///
+///     NOTE: Disabling the IPv6 stack for an interface will remove all IPv6 addresses
+///           and routes for this interface.
+///
+/// DHCPv4:
+/// TODO: Write subsystem docs
+///
+/// DHCPv6:
+/// TODO: Write subsystem docs
+///
+///
 /// TODO: Write how routing works in Ashet OS.
 ///
 namespace link {
@@ -346,6 +369,9 @@ namespace link {
         /// There was an i/o error that lead to the failure of this operation.
         error IoError;
 
+        /// The IPv4 or IPv6 network subsystem is disabled and the address type can't be used on this interface.
+        error SubsystemDisabled;
+
         error SystemResources;
     }
 
@@ -357,6 +383,13 @@ namespace link {
     /// NOTE: This is an asynchronous call as adding IP addresses may require
     ///       communication with the NIC to set up filters. This could take
     ///       some time and thus, the operation was made overlapped.
+    ///
+    /// NOTE: If `address` does not exist on `interface`, the operation does nothing.
+    ///
+    /// LORE: This operation has no subsystem failure possible as removing an address
+    ///       is idempotent for non-existing addresses, thus there's no reason to
+    ///       care for this error. The final outcome is the same: The address doesn't
+    ///       exist on the interface.
     async_call RemoveAddress {
         /// The interface which should have an address removed.
         in interface: InterfaceId;
@@ -514,12 +547,20 @@ namespace link {
         /// `route.interface` is not a valid interface id (anymore).
         error InvalidInterface;
 
+        /// The IPv4 or IPv6 network subsystem is disabled and the `route.network` type can't be used on `route.interface`.
+        error SubsystemDisabled;
+
         error SystemResources;
     }
 
     /// Removes an existing route from the routing table.
     ///
     /// NOTE: Removing a non-existent route is idempotent and does nothing.
+    ///
+    /// LORE: This syscall has no subsystem failure possible as removing a route
+    ///       is idempotent for non-existing routes, thus there's no reason to
+    ///       care for this error. The final outcome is the same: The route doesn't
+    ///       exist on the interface anymore.
     syscall remove_route {
         /// The route to delete.
         ///
@@ -656,6 +697,9 @@ namespace link {
         /// - `payload_request.len` > `payload_response.len`.
         /// - `target` is an link-local IPv6 address with a `scope` that is not `interface`.
         error InvalidValue;
+
+        /// The IPv4 or IPv6 network subsystem is disabled and the `target` type can't be used on the effective interface.
+        error SubsystemDisabled;
 
         /// There was an i/o error that lead to the failure of this operation.
         error IoError;
