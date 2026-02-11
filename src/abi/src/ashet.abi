@@ -1288,7 +1288,17 @@ namespace clock {
 
     /// Time in nanoseconds since system startup.
     enum Absolute : u64 {
+        /// The very first time point measurable. Nothing can happen before this point.
         item system_start = 0;
+
+        /// The very last point of system runtime that can be expressed in Ashet OS.
+        /// 
+        /// LORE: This is a bit over 580 years of system runtime, which
+        ///       is sufficient to fully cover the lifetime of the electronics,
+        ///       users and probably even countries and societies.
+        ///       Not quite infinity, but close enough for the computer it's running on.
+        item infinity = 0xFFFF_FFFF_FFFF_FFFF;
+
         ...
     }
 

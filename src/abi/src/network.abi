@@ -1,0 +1,356 @@
+
+/// An address of the IPv4 internet protocol.
+struct IPv4 {
+    /// The four bytes of the IP address.
+    ///
+    /// NOTE: This is a u32 that is always encoded in network byte order.
+    field addr: [4]u8 ; //? TODO: align(4)
+}
+
+/// An address of the IPv6 internet protocol.
+struct IPv6 {
+    /// The 16 bytes of the IP address.
+    ///
+    /// NOTE: This is always encoded in network byte order.
+    field addr: [16]u8; //? TODO: align(4)
+
+    /// The interface for which this IP address is valid.
+    ///
+    /// NOTE: For non-link-local addresses, scope must be `link.InterfaceId.any`.
+    field scope: link.InterfaceId;
+}
+
+/// A polymorphic IP address that can be both IPv4 or IPv6.
+struct IP {
+    /// Defines which field of `addr` is active.
+    field type: Type;
+
+    /// Union of the possible address types.
+    field addr: AnyAddr;
+
+    enum Type : u8 {
+        item ipv4 = 0;
+        item ipv6 = 1;
+    }
+
+    union AnyAddr {
+        /// Active when `IP.type == Type.ipv4`.
+        field v4: IPv4;
+
+        /// Active when `IP.type == Type.ipv6`.
+        field v6: IPv6;
+    }
+}
+
+/// An endpoint defines a connetion target for TCP and UDP connections.
+/// It is a tuple formed of an IP address and a port.
+struct EndPoint {
+    /// IP address of the connection endpoint.
+    field ip: IP;
+    
+    /// The port number of the connection endpoint.
+    ///
+    /// NOTE: Uses host byte order.
+    field port: u16;
+}
+
+///
+///
+/// TODO: Talk about kernel subsystems being enabled/disabled and what each subsystem
+///       is supposed to to.
+namespace link {
+    /// Unique identifier of a network interface.
+    ///
+    /// NOTE: Interface ids are allocated in a monotonically increasing
+    ///       way, and will be stable until a network interface is removed
+    ///       from the kernel.
+    ///
+    /// NOTE: Except `loopback`, the enumeration order of interfaces is unspecified
+    ///       and the ids cannot be assumed stable between reboots.
+    enum InterfaceId : u32 {
+        /// The loopback interface is a virtual interface
+        /// that makes all sent packets be received by the same
+        /// interface again.
+        ///
+        /// This way, sockets can be bound to a local interface
+        /// and communicate without affecting any external systems.
+        ///
+        /// NOTE: The loopback interface has the IP addresses `127.0.0./8`
+        ///       and `::1/128` by default.
+        /// TODO: Loopback also requires routing rules.
+        item loopback = 0;
+
+        /// A sentinel value that can be used to annotate the absence of a
+        /// specific interface.
+        ///
+        /// NOTE: This is not a true interface that can be used to query
+        ///       information, but is a required "workaround" for IPv6
+        ///       scopes to be able to encode that an IP address isn't
+        ///       scoped to a specific interface.
+        item any = 0xFFFFFFFF;
+
+        ...
+    }
+
+    /// Enumeration of all supported network interface types.
+    enum InterfaceType : u8 {
+        /// The interface is supported by the kernel, but the type
+        /// of network interface does not fit any of the other categories.
+        item unknown = 0;
+
+        /// The interface is a loopback interface.
+        item loopback = 1;
+
+        /// The interface is an ethernet interface.
+        item ethernet = 2;
+
+        /// The interface is virtual and is controlled by
+        /// a software.
+        item virtual = 3;
+    }
+
+    /// A bit set of several subsystems that the kernel
+    /// can provide per interface.
+    bitstruct SubsystemSet : u32 {
+        field ipv4: bool;
+        field ipv6: bool;
+        field dhcp4: bool;
+        field dhcp6: bool;
+
+        reserve u28;
+    }
+
+    struct InterfaceDescription {
+        /// The type of this network interface.
+        field type: InterfaceType;
+
+        /// The display name of the network interface.
+        ///
+        /// NOTE: The lifetime of this string is bound to the lifetime
+        ///       of the network interface. Assume it is only valid between
+        ///       obtaining the interface description from the kernel and the
+        ///       next thread yield.
+        field name: str;
+
+        /// Name of the NIC vendor or an empty string if unknown.
+        ///
+        /// NOTE: The lifetime of this string is bound to the lifetime
+        ///       of the network interface. Assume it is only valid between
+        ///       obtaining the interface description from the kernel and the
+        ///       next thread yield.
+        field vendor: str;
+
+        /// The maximum bandwidth this interface can theoretically achieve
+        /// in bits per second.
+        ///
+        /// NOTE: For the loopback interface, this value is always zero.
+        ///
+        /// NOTE: For virtual interfaces, the driver shall set this value
+        ///       to either a real value or zero, if no upper bound is known.
+        field max_bandwidth: u64;
+
+        /// The current bandwidth this interface has negotiated with the
+        /// connected network in bits per second.
+        ///
+        /// NOTE: If zero, the value cannot be determined for one of several reasons:
+        ///       - The link is down.
+        ///       - The driver has no way to query the current bandwidth.
+        ///       - There is no physically realistic value (e.g. for virtual or loopback interfaces).
+        field current_bandwidth: u64;
+
+        /// The set of currently enabled kernel subsystems.
+        field enabled_subsystems: SubsystemSet;
+    }
+
+    /// Enumerates the currently available network interfaces.
+    syscall enumerate_interfaces {
+        /// Buffer that shall receive the list of interfaces or `null` if the
+        /// total amount of interfaces should be queried.
+        in  list: ?[]InterfaceId;
+
+        /// If `list` is not `null`, returns the number of elements written to `list`,
+        /// otherwise it returns the total number of currently available interfaces.
+        out count: usize;
+    }
+
+    /// Queries the description of an interface.
+    syscall get_description {
+        in  interface: InterfaceId;
+
+        out description: InterfaceDescription;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+    }
+
+    /// Enables or disables kernel subsystems for an interface.
+    ///
+    /// NOTE: The two sets `enable` and `disable` must be disjoint and
+    ///       must not contain overlapping subsystems.
+    syscall control_subsystems {
+        /// The interface for which kernel subsystems should be enabled
+        /// or disabled.
+        in interface: InterfaceId;
+
+        /// Every subsystem in this set will be started.
+        in enable: SubsystemSet;
+
+        /// Every subsystem in this set will be stopped.
+        in disable: SubsystemSet;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// `enable` and `disable` are overlapping sets and conflict
+        /// in their semantics.
+        error InvalidValue;
+    }
+
+    /// Queries the currently enabled subsystems for the given
+    /// interface.
+    syscall get_subsystems {
+        in  interface: InterfaceId;
+
+        /// The set of all enabled network subsystems for `interface`.
+        out enabled: SubsystemSet;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+    }
+
+    //? IP Addressing
+
+    /// Enumeration of potential sources for IP addresses.
+    enum AddressOrigin : u8 {
+        /// The IP address was manually added with `AddAddress`.
+        item manual = 0;
+
+        /// The IP address was assigned by the DHCPv4 network subsystem.
+        item dhcp4 = 1;
+
+        /// The IP address was assigned by the DHCPv6 network subsystem.
+        item dhcp6 = 2;
+
+        /// The IP address was assigned by the SLAAC network subsystem.
+        item slaac = 3;
+
+        /// The IP address was assigned automatically by the kernel through
+        /// configuration files.
+        item autoconfig = 4;
+    }
+
+    /// A binding of an IP address to a network interface.
+    struct AddressBinding {
+        /// The IP address that is bound.
+        field address: IP;
+
+        /// The prefix of the address. Defines which prefix is
+        /// reachable through the interface directly without routing.
+        field prefix_len: u8;
+
+        /// The origin of the IP address.
+        ///
+        /// NOTE: `AddAddress` will ignore this field and always
+        ///       use `AddressOrigin.manual`.
+        field origin: AddressOrigin;
+
+        /// The lifetime of the IP address.
+        ///
+        /// After this timestamp is reached by `clock.monotonic`, the IP address
+        /// will be automatically removed by the kernel.
+        ///
+        /// NOTE: If an IP address should not expire, pass `clock.Absolute.infinity`.
+        field valid_until: clock.Absolute;
+    }
+
+    /// Enumerates the currently available IP addresses for an interface.
+    syscall enumerate_addresses {
+        /// The interface to query.
+        in  interface: InterfaceId;
+
+        /// Buffer that shall receive the list of address bindings or `null` if the
+        /// total amount of bindings should be queried.
+        in  bindings: ?[]AddressBinding;
+
+        /// If `bindings` is not `null`, returns the number of elements written to `bindings`,
+        /// otherwise it returns the total number of currently available bindings.
+        out count: usize;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+    }
+
+    /// Adds a new IP address to an interface.
+    ///
+    /// NOTE: This operation will implicitly add a new route to the routing
+    ///       table with (`interface`, `binding.address`, `binding.prefix_len`).
+    ///       This route will have `RouteOrigin.connected`.
+    ///
+    /// NOTE: This operation is upserting on `binding.address` and will
+    ///       replace the properties of the current address with those from
+    ///       `binding`.
+    ///       This will also update the connected route in the routing table.
+    ///
+    /// NOTE: This is an asynchronous call as adding IP addresses may require
+    ///       communication with the NIC to set up filters. This could take
+    ///       some time and thus, the operation was made overlapped.
+    async_call AddAddress {
+        /// The interface which should receive a new IP binding.
+        in interface: InterfaceId;
+
+        /// The binding specification for the IP address.
+        in binding: AddressBinding;
+        
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// The underlying `interface` was removed during this operation.
+        error Gone;
+
+        /// Binding is not a valid value.
+        ///
+        /// This could be due to the following reasons:
+        /// - `binding.address` is not valid.
+        /// - `binding.prefix_len` cannot be applied to `binding.address`.
+        /// - `binding.valid_until` is in the past.
+        error InvalidValue;
+
+        /// There was an i/o error that lead to the failure of this operation.
+        error IoError;
+
+        error SystemResources;
+    }
+
+    /// Removes an address from the interface.
+    ///
+    /// NOTE: This operation will implicitly remove the connected route from the routing
+    ///       table with the key (`interface`, `address`, `RouteOrigin.connected`).
+    ///
+    /// NOTE: This is an asynchronous call as adding IP addresses may require
+    ///       communication with the NIC to set up filters. This could take
+    ///       some time and thus, the operation was made overlapped.
+    async_call RemoveAddress {
+        /// The interface which should have an address removed.
+        in interface: InterfaceId;
+
+        /// The address that shall be removed.
+        ///
+        /// NOTE: As for each address, only a single binding can exist, we just need
+        ///       the address to remove the IP binding.
+        in address: IP;
+        
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// The underlying `interface` was removed during this operation.
+        error Gone;
+
+        /// `address` is not valid.
+        error InvalidValue;
+
+        /// There was an i/o error that lead to the failure of this operation.
+        error IoError;
+
+        error SystemResources;
+    }
+}
