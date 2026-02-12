@@ -78,9 +78,16 @@ struct EndPoint {
 ///
 /// DHCPv4:
 /// TODO: Write subsystem docs
+///     This subsystem automatically performs DHCP management for the interface.
+///     If enabled, the kernel automatically requests and refreshes DHCP leases,
+///     and manages the routes.
+///
+///     NOTE: This subsystem is disabled by default.
 ///
 /// DHCPv6:
 /// TODO: Write subsystem docs
+///
+///     NOTE: This subsystem is disabled by default.
 ///
 ///
 /// TODO: Write how routing works in Ashet OS.
@@ -701,7 +708,435 @@ namespace link {
         /// The IPv4 or IPv6 network subsystem is disabled and the `target` type can't be used on the effective interface.
         error SubsystemDisabled;
 
+        /// `interface` is down and cannot send any data.
+        error LinkDown;
+
         /// There was an i/o error that lead to the failure of this operation.
         error IoError;
+
+        error SystemResources;
     }
+}
+
+/// Everything related to DHCP management for IPv4.
+namespace dhcp4 {
+
+    /// NOTE: These options are defined in RFC 2132.
+    enum OptionCode : u8 {
+        //? TODO: Add documentation for all options including their contents and size constraints based on the information from RFC 2132.
+
+        item pad = 0;
+        item subnet_mask = 1;
+        item time_offset = 2;
+        item router = 3;
+
+        item domain_name_server = 6;
+        
+        item ip_address_lease_time = 51;
+
+        item server_identifier = 54;
+
+        item renewal_time_value = 58;
+
+        item rebinding_time_value = 59;
+
+        item end = 255;
+        //? TODO: fill out the rest of the options and document their meaning and use
+        ...
+    }
+
+    /// A DHCP option.
+    struct Option {
+        /// The type of option 
+        field code: OptionCode;
+
+        /// The value of the option.
+        ///
+        /// NOTE: Maximum length of `value` is 255.
+        ///
+        /// NOTE: The length of the value must match the legal values for `code`.
+        ///
+        /// NOTE: The lifetime of this value for fields in a lease is documented on `Lease` itself.
+        ///
+        /// NOTE: Options passed to `RequestLease` will be copied by the kernel in the schedule operation.
+        field value: []const u8; 
+    }
+
+    /// A DHCP lease.
+    ///
+    /// NOTE: Any pointer to an array inside the lease is valid until one of the invalidation events occur:
+    ///       - The interface for the lease is removed from the kernel.
+    ///       - The lease is automatically refreshed by the kernel (may only happen if the dhcp4 subsystem is enabled).
+    ///       - A `ReleaseLease` is scheduled for the owning interface.
+    ///       - A `RequestLease` completes for the owning interface.
+    ///       
+    ///       These events can only happen during a scheduler yield, so the pointers may be dead
+    ///       when the thread yields.
+    ///       
+    ///       In general, an application should not hold onto `Lease` information for longer
+    ///       than technically necessary.
+    struct Lease {
+        /// The server that issued the DHCP lease.
+        ///
+        /// NOTE: This is either the value sent with `OptionCode.server_identifier`
+        ///       or if the option does not exist, the IP from which the DHCPACK was sent.
+        field server: IPv4;
+
+        /// The address issued by the DHCP server.
+        ///
+        /// NOTE: If the lease is acquired with DHCPINFORM this value will be the
+        ///       unspecified address (`0.0.0.0`).
+        field address: IPv4;
+        
+        /// The prefix length of the network for `address`.
+        ///
+        /// NOTE: This value is derived from the value sent with `OptionCode.subnet_mask`
+        ///       or 32 if the option is not present.
+        ///
+        /// NOTE: If the lease is acquired with DHCPINFORM this value will be zero.
+        field prefix_len: u8;
+
+        /// The list of announced routers by the DHCP server.
+        /// 
+        /// NOTE: This list will be derived from the value sent with `OptionCode.router`.
+        ///
+        /// NOTE: The lifetime of this array is documented on `Lease` itself.
+        field routers: []const IPv4; 
+
+        /// The list of DNS servers provided by the DHCP server.
+        /// 
+        /// NOTE: This list will be derived from the value sent with `OptionCode.domain_name_server`.
+        ///
+        /// NOTE: The lifetime of this array is documented on `Lease` itself.
+        field dns_servers: []const IPv4;
+
+        /// The complete list of options sent by the DHCP server.
+        ///
+        /// NOTE: The order inside this array is the same as it was sent by the server.
+        ///
+        /// NOTE: The lifetime of this array is documented on `Lease` itself.
+        ///
+        /// NOTE: The kernel will remove all options with `OptionCode.pad` and `OptionCode.end`.
+        field options: []const Option;
+
+        /// The timestamp when the kernel applied the DHCPACK message that issued
+        /// this lease.
+        field issued_at: clock.Absolute;
+        
+        /// The timestamp when the lease should be renewed (T1).
+        ///
+        /// NOTE: If the lease was created by `DHCPINFORM`, the value will be set to
+        ///       `clock.Absolute.infinity`.
+        ///
+        /// NOTE: If present, will be set from `OptionCode.renewal_time_value`, otherwise
+        ///       will use the default value of 50% of the total lease time.
+        ///
+        /// NOTE: If no lease time can be derived, `clock.Absolute.infinity` is used.
+        field renew_at: clock.Absolute;
+
+        /// The timestamp when the lease should be rebound (T2).
+        ///
+        /// NOTE: If the lease was created by `DHCPINFORM`, the value will be set to
+        ///       `clock.Absolute.infinity`.
+        ///
+        /// NOTE: If present, will be set from `OptionCode.rebinding_time_value`, otherwise
+        ///       will use the default value of 87.5% of the total lease time.
+        ///
+        /// NOTE: If no lease time can be derived, `clock.Absolute.infinity` is used.
+        field rebind_at: clock.Absolute;
+
+        /// The timestamp after which the lease is not valid anymore.
+        ///
+        /// NOTE: If the lease was created by `DHCPINFORM`, the value will be set to
+        ///       `clock.Absolute.infinity`.
+        ///
+        /// NOTE: If present, will be set from `OptionCode.ip_address_lease_time`, otherwise
+        ///       will be set to the requested address lease time if present in `RequestLease.options`,
+        ///       or otherwise will be set to `clock.Absolute.infinity` to mark that no lease time was
+        ///       issued.
+        field valid_until: clock.Absolute; //? when does the lease expire
+    }
+
+    /// Enumerations of how the kernel will handle the received lease of `RequestLease`.
+    enum AutoUpdateMode : u8 {
+        /// The kernel will not do anything with the received lease.
+        ///
+        /// NOTE: This can be used to perform a DHCP request without directly changing network
+        ///       configuration.
+        item disabled = 0;
+
+        /// The kernel will only use the `Lease.address` and `Lease.prefix_len` to 
+        /// perform an automatic `link.AddAddress` operation on `RequestLease.interface`.
+        ///
+        /// This includes:
+        /// - Automatic adding/updating of the received IP address to `interface`.
+        /// - Automatic creation/update of the connected route for `interface`.
+        item address_only = 1;
+
+        /// In addition to the effects of `address_only`, the kernel will also upsert
+        /// a route to the network `0.0.0.0/0` through `RequestLease.interface` for 
+        /// all received routers.
+        ///
+        /// If multiple routers are advertised, the `Route.priority` will be staged 
+        /// such that the last router has priority 1 and each previous router will
+        /// have a priority 1 higher.
+        ///
+        /// This means that the first advertised router has the highest priority (which is
+        /// set to the number of routers).
+        item address_and_route = 2;
+
+        /// In addition to the effects of `address_only`, the kernel will also upsert
+        /// the received DNS servers associated with `RequestLease.interface`.
+        item full = 3;
+    }
+
+    /// Requests new DHCP lease. Completes when at least a single server has successfully
+    /// provided a DHCP lease or the operation timed out.
+    ///
+    /// NOTE: Only a single `RequestLease` or `ReleaseLease` operation can be active per `interface` at the
+    ///       same time.
+    ///
+    /// NOTE: The kernel will always use the first successful DHCPACK when multiple options are available.
+    ///
+    /// NOTE: When multiple DHCPOFFER messages are received, the kernel will perform the DHCPREQUEST process
+    ///       in parallel for each received option unless a DHCPACK was already received.
+    async_call RequestLease {
+        /// The network interface that shall perform the DHCP request.
+        in interface: link.InterfaceId;
+
+        /// The deadline until which the whole operation has to be completed.
+        ///
+        /// LORE: In contrast to many other overlapped operations, a `RequestLease` would potentially
+        ///       never complete and it's an expected outcome that no response is received.
+        ///       Thus, the general rule of "no timeouts in overlapped operations" is broken
+        ///       here on purpose.
+        in deadline: clock.Absolute;
+
+        /// The unicast address of the DHCP server that shall be used to obtain the DHCP lease.
+        ///
+        /// NOTE: When the unspecified address (0.0.0.0) is passed,
+        ///       the kernel will perform a broadcast to discover potential DHCP servers.
+        in server: IPv4;
+
+        /// Additional options to send with the request.
+        /// 
+        /// NOTE: The kernel omits any of its own options if `options` contains at least
+        ///       one option with the same `Option.code`.
+        ///
+        ///       This allows userland to overwrite all potentially kernel-provided options.
+        ///
+        /// NOTE: The kernel will copy the options array in `overlapped.schedule`. 
+        ///       This means the user can use the memory after successful scheduling.
+        ///
+        /// NOTE: The options in this array will be sent in exactly this order *after*
+        ///       the kernel-sent options.
+        ///
+        ///       This allows userland to emit multiple instances of the same option
+        ///       code (some encodings support this); the kernel transmits as-is.
+        ///
+        /// NOTE: The kernel will never merge any values of this array.
+        in options: []const Option;
+        
+        /// If `true`, the kernel will perform a DHCPINFORM process instead of a the regular
+        /// DHCPDISCOVER/DHCPREQUEST process.
+        ///
+        /// This allows querying local network configuration even with a non-DHCP configured IP address.
+        ///
+        /// NOTE: This requires that we already have a statically configured IP address.
+        ///
+        /// NOTE: If `server` is the unspecified address (`0.0.0.0`), the kernel will send a 
+        ///       broadcast message for each configured IPv4 addresses for `interface`.
+        in inform_only: bool;
+
+        /// Defines how the kernel will update `interface` when the request is successful.
+        /// 
+        /// NOTE: If the dhcp4 subsystem is enabled, this option is ignored and the kernel will
+        ///       handle the results like it would've performed an automatic/timed DHCP request/renew.
+        ///
+        ///       This means the operation can be used as a force-refresh the DHCP lease.
+        ///
+        /// NOTE: If the dhcp4 subsystem is disabled, setting this option does not imply the
+        ///       kernel will perform automatic renewal or rebinding of the DHCP lease.
+        in update_mode: AutoUpdateMode;
+
+        /// The lease provided by the server.
+        ///
+        /// NOTE: If `inform_only` is `true`, `lease.address` is `0.0.0.0`
+        ///       and `lease.prefix_len` is zero.
+        out lease: Lease;
+        
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// The underlying `interface` was removed during this operation.
+        error Gone;
+
+        /// No response was received until `deadline`.
+        error Timeout;
+
+        /// An invalid value was passed as a parameter.
+        /// 
+        /// This may be due to:
+        /// - `server` is neither the unspecified address nor a valid unicast address.
+        /// - `options` contains an invalid DHCP option.
+        /// - `deadline` is not in the future.
+        error InvalidValue;
+
+        /// Another `RequestLease` or `ReleaseLease` operation is in progress for `interface`.
+        ///
+        /// NOTE: This error may "spuriously" happen when the dhcp4 subsystem is enabled
+        ///       and currently performs an internal DHCP operation.
+        error InProgress;
+        
+        /// The DHCP server offered an address that is not ours, but reachable
+        /// through `interface`.
+        /// 
+        /// NOTE: This error implies the kernel has responeded with DHCPDECLINE.
+        error AddressConflict;
+
+        /// All available DHCP servers have rejected our request with `DHCPNAK`.
+        error Rejected;
+
+        /// The kernel does not know a route to `server`.
+        ///
+        /// NOTE: This error can only happen when `server` is not unspecified.
+        error MissingRoute;
+
+        /// The kernel cannot send the DHCPINFORM message as `interface` has no
+        /// assigned IPv4 address.
+        error MissingSourceAddress;
+
+        /// The IPv4 subsystem is disabled on `interface`.
+        error SubsystemDisabled;
+
+        /// `interface` is down and cannot send any data.
+        error LinkDown;
+
+        /// There was an i/o error that lead to the failure of this operation.
+        error IoError;
+
+        error SystemResources;
+    }
+
+    /// Releases current lease, idempotent if none exists.
+    ///
+    /// NOTE: Only a single `RequestLease` or `ReleaseLease` operation can be active per `interface` at the
+    ///       same time.
+    ///
+    /// NOTE: This operation will implicitly disable the dhcp4 subsystem as otherwise
+    ///       the subsystem would immediatly try to request a new DHCP lease and `ReleaseLease`
+    ///       would be just an implicit `RequestLease` operation.
+    async_call ReleaseLease {
+        /// The interface for which a lease should be released.
+        in interface: link.InterfaceId;
+
+        /// If `true` will remove the kernel-managed lease object even in
+        /// the case of a communication error.
+        ///
+        /// NOTE: Each error code that will still remove the release
+        ///       documents this.
+        ///
+        /// NOTE: If `force` is set, the scheduling implicitly cancels an
+        ///       active `RequestLease` operation.
+        in force: bool;
+        
+        /// The deadline until which the whole operation has to be completed.
+        ///
+        /// LORE: In contrast to many other overlapped operations, a `RequestLease` would potentially
+        ///       never complete and it's an expected outcome that no response is received.
+        ///       Thus, the general rule of "no timeouts in overlapped operations" is broken
+        ///       here on purpose.
+        in deadline: clock.Absolute;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// The underlying `interface` was removed during this operation.
+        error Gone;
+
+        /// No response was received until `deadline`.
+        ///
+        /// NOTE: The leases was still removed when `force` was set.
+        error Timeout;
+
+        /// Another `RequestLease` or `ReleaseLease` operation is in progress for `interface`.
+        ///
+        /// NOTE: This error cannot happen when `force` is set.
+        error InProgress;
+
+        /// An invalid value was passed as a parameter.
+        /// 
+        /// This may be due to:
+        /// - `deadline` is not in the future.
+        error InvalidValue;
+
+        /// The IPv4 subsystem is disabled on `interface`.
+        ///
+        /// NOTE: This error implies that the interface won't have any lease anyways.
+        error SubsystemDisabled;
+
+        /// `interface` is down and cannot send any data.
+        ///
+        /// NOTE: This error informs the caller that the kernel cannot
+        ///       send the DHCPRELEASE message.
+        ///
+        /// NOTE: The leases was still removed when `force` was set.
+        error LinkDown;
+
+        /// There was an i/o error that lead to the failure of this operation.
+        ///
+        /// NOTE: The leases was still removed when `force` was set.
+        error IoError;
+
+        error SystemResources;
+    }
+
+    /// Returns current lease or NotAvailable if none exists
+    syscall get_info {
+        /// Interface for which the lease shall be queried.
+        in  interface: link.InterfaceId;
+        
+        /// The current lease the kernel stores for `interface`. 
+        out info: Lease;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// The kernel currently has no lease associated with `interface`.
+        error NotAvailable;
+
+        /// The IPv4 subsystem is disabled on `interface`.
+        error SubsystemDisabled;
+    }
+
+    /// Completes when new lease was set, old lease was released or expired.
+    ///
+    /// NOTE: Multiple `WaitForUpdate` can be issued which will all complete at the
+    ///       same time when the status changes.
+    async_call WaitForUpdate {
+        /// The interface for which a new DHCP state shall be awaited.
+        in  interface: link.InterfaceId;
+
+        /// The new lease or `null` if the lease was removed.
+        out info: ?Lease;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// The underlying `interface` was removed during this operation.
+        error Gone;
+
+        error SystemResources;
+    }
+}
+
+namespace dhcp6 {
+    //? TODO: Design the DHCPv6 kernel API
+}
+
+namespace dns {
+    //? TODO: Design the DNS kernel API
+    
+    //? TODO: Keep in mind that DNS servers can be globally set or associated with an
+    //?       interface. Also DNS servers have a lifetime as well.
 }

@@ -133,34 +133,15 @@ namespace network.link {
 
     //? DHCP control
 
-    async_call RequestDhcp4Lease {
-        in interface: InterfaceId;
-        error InvalidHandle, Gone, Unsupported, SystemResources, Timeout, IoError;
-    }
-
     async_call RequestDhcp6Lease {
         in interface: InterfaceId;
         error InvalidHandle, Gone, Unsupported, SystemResources, Timeout, IoError;
-    }
-
-    struct Dhcp4Info {
-        field address: IP;
-        field prefix_len: u8;
-        field router: ?IP;
-        field dns_servers: []IP;
-        field valid_until: clock.Absolute;
     }
 
     struct Dhcp6Info {
         field addresses: []IP;
         field dns_servers: []IP;
         field valid_until: clock.Absolute;
-    }
-
-    syscall get_dhcp4_info {
-        in  interface: InterfaceId;
-        out info: Dhcp4Info;
-        error InvalidHandle, Gone, Unsupported;
     }
 
     syscall get_dhcp6_info {
