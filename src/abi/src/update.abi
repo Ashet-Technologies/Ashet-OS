@@ -126,29 +126,366 @@ Ashet OS networking model (current intent):
   - Destroying interfaces yields error.Gone to dependents.
 
 
-namespace network.link {
+namespace dhcp6 {
 
-    /// IP addressing
-
-
-    //? DHCP control
-
-    async_call RequestDhcp6Lease {
-        in interface: InterfaceId;
-        error InvalidHandle, Gone, Unsupported, SystemResources, Timeout, IoError;
+    enum OptionCode : u16 {
+        item clientid = 1;
+        item serverid = 2;
+        item ia_na = 3;
+        item ia_ta = 4;
+        item ia_addr = 5;
+        item oro = 6;
+        item preference = 7;
+        item elapsed_time = 8;
+        item relay_message = 9;
+        item unicast = 12;
+        item status_code = 13;
+        item rapid_commit = 14;
+        item user_class = 15;
+        item vendor_class = 16;
+        item vendor_opts = 17;
+        item interface_id = 18;
+        item reconfigure_msg = 19;
+        item reconfigure_accept = 20;
+        item dns_recursive_name_server = 23;
+        item domain_search_list = 24;
+        item ia_pd = 25;
+        item iaprefix = 26;
+        ...
     }
 
-    struct Dhcp6Info {
-        field addresses: []IP;
-        field dns_servers: []IP;
+    struct Option {
+        field code: OptionCode;
+        field value: []const u8;
+    }
+
+    bitstruct RequestKind : u8 {
+        field addresses: bool;
+        field prefixes: bool;
+        reserve u6 = 0;
+    }
+
+    struct IaAddress {
+        field address: IPv6;
+        field preferred_until: clock.Absolute;
         field valid_until: clock.Absolute;
     }
 
-    syscall get_dhcp6_info {
-        in  interface: InterfaceId;
-        out info: Dhcp6Info;
-        error InvalidHandle, Gone, Unsupported;
+    struct IaPrefix {
+        field prefix: IPv6;
+        field prefix_len: u8;
+        field preferred_until: clock.Absolute;
+        field valid_until: clock.Absolute;
     }
 
+    struct IdentityAssociationNA {
+        field iaid: u32;
+        field renew_at: clock.Absolute;
+        field rebind_at: clock.Absolute;
+        field addresses: []const IaAddress;
+    }
 
+    struct IdentityAssociationPD {
+        field iaid: u32;
+        field renew_at: clock.Absolute;
+        field rebind_at: clock.Absolute;
+        field prefixes: []const IaPrefix;
+    }
+
+    struct Lease {
+        field server: IPv6;
+        field server_duid: []const u8;
+        field client_duid: []const u8;
+
+        field ia_na: []const IdentityAssociationNA;
+        field ia_pd: []const IdentityAssociationPD;
+
+        field dns_servers: []const IPv6;
+        field options: []const Option;
+
+        field issued_at: clock.Absolute;
+        field renew_at: clock.Absolute;
+        field rebind_at: clock.Absolute;
+        field valid_until: clock.Absolute;
+    }
+
+    enum AutoUpdateMode : u8 {
+        item disabled = 0;
+        item addresses_only = 1;
+        item prefixes_only = 2;
+        item addresses_and_prefixes = 3;
+        item full = 4;
+    }
+
+    async_call RequestLease {
+        in  interface: link.InterfaceId;
+        in  deadline: clock.Absolute;
+        in  server: IPv6;
+        in  request: RequestKind;
+        in  options: []const Option;
+        in  information_only: bool;
+        in  update_mode: AutoUpdateMode;
+
+        out lease: Lease;
+
+        error InvalidInterface, Gone, Timeout, InvalidValue, InProgress, AddressConflict, Rejected, MissingRoute, MissingSourceAddress, SubsystemDisabled, LinkDown, IoError, SystemResources;
+    }
+
+    async_call ReleaseLease {
+        in interface: link.InterfaceId;
+        in force: bool;
+        in deadline: clock.Absolute;
+
+        error InvalidInterface, Gone, Timeout, InvalidValue, InProgress, SubsystemDisabled, LinkDown, IoError, SystemResources;
+    }
+
+    syscall get_info {
+        in  interface: link.InterfaceId;
+        out info: Lease;
+
+        error InvalidInterface, NotAvailable, SubsystemDisabled;
+    }
+
+    async_call WaitForUpdate {
+        in  interface: link.InterfaceId;
+        out info: ?Lease;
+
+        error InvalidInterface, Gone, SystemResources;
+    }
+}
+
+
+/// IPv6 Stateless Address Autoconfiguration (SLAAC).
+namespace slaac {
+
+    enum Mode : u8 {
+        item disabled = 0;
+        item enabled = 1;
+    }
+
+    enum Origin : u8 {
+        item slaac = 0;
+    }
+
+    enum AddrKind : u8 {
+        item stable = 0;
+        item temporary = 1;
+    }
+
+    bitstruct Flags : u8 {
+        field managed: bool;
+        field other_config: bool;
+        field on_link: bool;
+        field autonomous: bool;
+        reserve u4 = 0;
+    }
+
+    struct Prefix {
+        field prefix: IPv6;
+        field prefix_len: u8;
+        field valid_until: clock.Absolute;
+        field preferred_until: clock.Absolute;
+        field flags: Flags;
+        field received_at: clock.Absolute;
+    }
+
+    struct Router {
+        field address: IPv6;
+        field hop_limit: u8;
+        field mtu: u32;
+        field reachable_time_ms: u32;
+        field retrans_time_ms: u32;
+        field flags: Flags;
+        field received_at: clock.Absolute;
+        field valid_until: clock.Absolute;
+    }
+
+    struct Config {
+        field enabled: Mode;
+        field add_stable: bool;
+        field add_temporary: bool;
+        field stable_kind: AddrKind;
+        field temp_kind: AddrKind;
+        field prefer_temporary: bool;
+    }
+
+    struct Status {
+        field enabled: Mode;
+        field last_update: clock.Absolute;
+        field managed: bool;
+        field other_config: bool;
+    }
+
+    enum UpdateKind : u8 {
+        item router = 0;
+        item prefix = 1;
+        item status = 2;
+    }
+
+    struct Update {
+        field kind: UpdateKind;
+        field interface: link.InterfaceId;
+        field router: Router;
+        field prefix: Prefix;
+        field status: Status;
+    }
+
+    syscall get_config {
+        in  interface: link.InterfaceId;
+        out config: Config;
+        error InvalidInterface;
+    }
+
+    syscall set_config {
+        in interface: link.InterfaceId;
+        in config: Config;
+        error InvalidInterface, InvalidValue;
+    }
+
+    syscall get_status {
+        in  interface: link.InterfaceId;
+        out status: Status;
+        error InvalidInterface, SubsystemDisabled;
+    }
+
+    syscall enumerate_routers {
+        in  interface: link.InterfaceId;
+        in  routers: ?[]Router;
+        out count: usize;
+        error InvalidInterface, SubsystemDisabled;
+    }
+
+    syscall enumerate_prefixes {
+        in  interface: link.InterfaceId;
+        in  prefixes: ?[]Prefix;
+        out count: usize;
+        error InvalidInterface, SubsystemDisabled;
+    }
+
+    async_call Refresh {
+        in interface: link.InterfaceId;
+        in deadline: clock.Absolute;
+        error InvalidInterface, Gone, Timeout, InvalidValue, SubsystemDisabled, LinkDown, IoError, SystemResources;
+    }
+
+    syscall flush {
+        in interface: link.InterfaceId;
+        in keep_addresses: bool;
+        error InvalidInterface, SubsystemDisabled;
+    }
+
+    async_call WaitForUpdate {
+        in  interface: link.InterfaceId;
+        out update: Update;
+        error InvalidInterface, Gone, SystemResources;
+    }
+}
+
+/// Neighbor discovery / neighbor cache (ARP for IPv4, NDP for IPv6).
+namespace neighborhood {
+
+    enum Protocol : u8 {
+        item arp = 0;
+        item ndp = 1;
+        item any = 2;
+    }
+
+    enum Origin : u8 {
+        item manual = 0;
+        item learned = 1;
+        item autoconfig = 2;
+    }
+
+    enum State : u8 {
+        item incomplete = 0;
+        item reachable  = 1;
+        item stale      = 2;
+        item delay      = 3;
+        item probe      = 4;
+        item failed     = 5;
+        item permanent  = 6;
+    }
+
+    bitstruct EntryFlags : u8 {
+        field is_router: bool;
+        field is_proxy: bool;
+        reserve u6 = 0;
+    }
+
+    struct Entry {
+        field protocol: Protocol;
+        field interface: link.InterfaceId;
+        field ip: IP;
+        field link_address: LinkAddress;
+        field state: State;
+        field origin: Origin;
+        field flags: EntryFlags;
+        field last_updated: clock.Absolute;
+        field valid_until: clock.Absolute;
+    }
+
+    enum UpdateKind : u8 {
+        item added   = 0;
+        item removed = 1;
+        item changed = 2;
+        item expired = 3;
+        item flushed = 4;
+    }
+
+    struct Update {
+        field kind: UpdateKind;
+        field entry: Entry;
+    }
+
+    syscall enumerate_entries {
+        in  interface: link.InterfaceId;
+        in  protocol: Protocol;
+        in  entries: ?[]Entry;
+        out count: usize;
+        error InvalidInterface, InvalidValue;
+    }
+
+    syscall get_entry {
+        in  interface: link.InterfaceId;
+        in  protocol: Protocol;
+        in  ip: IP;
+        out entry: Entry;
+        error InvalidInterface, InvalidValue, NotAvailable;
+    }
+
+    syscall add_entry {
+        in entry: Entry;
+        in replace: bool;
+        error InvalidInterface, InvalidValue, Conflict, SystemResources;
+    }
+
+    syscall remove_entry {
+        in interface: link.InterfaceId;
+        in protocol: Protocol;
+        in ip: IP;
+        error InvalidInterface, InvalidValue;
+    }
+
+    syscall flush_entries {
+        in interface: link.InterfaceId;
+        in protocol: Protocol;
+        in keep_manual: bool;
+        error InvalidInterface, InvalidValue;
+    }
+
+    async_call Resolve {
+        in interface: link.InterfaceId;
+        in protocol: Protocol;
+        in target: IP;
+        in deadline: clock.Absolute;
+        out entry: Entry;
+        error InvalidInterface, Gone, Timeout, InvalidValue, SubsystemDisabled, LinkDown, IoError, SystemResources;
+    }
+
+    async_call WaitForUpdate {
+        in  interface: link.InterfaceId;
+        in  protocol: Protocol;
+        out update: Update;
+        error InvalidInterface, Gone, SystemResources;
+    }
 }

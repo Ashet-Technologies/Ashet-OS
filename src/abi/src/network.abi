@@ -147,12 +147,205 @@ namespace link {
         /// The interface is a loopback interface.
         item loopback = 1;
 
-        /// The interface is an ethernet interface.
+        /// The interface is an Ethernet (IEEE 802.3) interface.
         item ethernet = 2;
 
-        /// The interface is virtual and is controlled by
-        /// a software.
+        /// The interface is virtual and is controlled by software.
         item virtual = 3;
+
+        /// The interface is a WLAN (IEEE 802.11) interface.
+        item wifi = 4;
+
+        /// The interface is based on IEEE 802.15.4 (e.g. 6LoWPAN/Thread/Zigbee-style links).
+        item ieee_802_15_4 = 5;
+
+        /// The interface is Bluetooth-based (e.g. PAN/BNEP or IPv6-over-BLE/IPSP).
+        item bluetooth = 6;
+
+        /// The interface is point-to-point (e.g. PPP/SLIP). Usually has no meaningful link-layer address.
+        item point_to_point = 7;
+
+        /// The interface is InfiniBand-based (IPoIB).
+        item infiniband = 8;
+
+        /// The interface is a Wireless Body Area Network (WBAN), typically IEEE 802.15.6.
+        ///
+        /// NOTE: The underlying PHY may be narrowband, UWB, or body-coupled (HBC),
+        ///       depending on the device.
+        item wban = 9;
+    }
+
+    /// The physical address of a network interface.
+    ///
+    /// NOTE: This isn't just a MAC address, but it can hold several
+    ///       different types of address.
+
+    struct PhysicalAddress {
+        /// Length of the physical address in bytes.
+        field len: u8;
+
+        /// The type of the physical address. Specifies how `bytes` are interpreted.
+        field type: Type;
+
+        /// Describes how the address value was assigned/generated (if known).
+        ///
+        /// NOTE: This is intentionally generic. For example, Bluetooth LE privacy
+        ///       addresses (static/resolvable/non-resolvable) can be mapped onto
+        ///       the `random_*` variants here.
+        field assignment: Assignment;
+
+        /// Reserved. Must be zero.
+        field _reserved0: u8 = 0;
+
+        /// Contains the bytes of the physical address.
+        ///
+        /// NOTE: The first `len` bytes are valid. All bytes beyond the
+        ///       first `len` bytes must be zero.
+        ///
+        /// NOTE: These bytes must be interpreted according to `type`.
+        field bytes: [20]u8;
+
+        /// Describes how a physical address was assigned/generated.
+        ///
+        /// NOTE: This is determined by the kernel in a best-effort fashion, and
+        ///       may be `unknown` even if the address format is known.
+        enum Assignment: u8 {
+            /// The kernel does not know how this address was assigned.
+            item unknown = 0;
+
+            /// Universally administered / externally assigned identifier.
+            ///
+            /// NOTE: For EUI-48/EUI-64 this typically means IEEE-assigned (U/L bit = 0).
+            item universal = 1;
+
+            /// Locally administered identifier (not globally assigned).
+            ///
+            /// NOTE: For EUI-48/EUI-64 this typically means U/L bit = 1.
+            item local = 2;
+
+            /// Randomly generated but expected to remain stable for long periods
+            /// (until reconfigured/reset).
+            ///
+            /// NOTE: Bluetooth LE "Static Random Address" maps here.
+            item random_stable = 3;
+
+            /// Randomly generated and expected to rotate over time for privacy.
+            ///
+            /// NOTE: Wi-Fi MAC randomization and Bluetooth LE "Non-Resolvable Private Address" map here.
+            item random_rotating = 4;
+
+            /// Randomly generated and expected to rotate, but can be mapped back to a stable
+            /// identity by peers that possess a shared secret / resolver.
+            ///
+            /// NOTE: Bluetooth LE "Resolvable Private Address" maps here.
+            item random_rotating_resolvable = 5;
+        }
+
+        /// Enumeration of possible types for physical link addresses.
+        enum Type: u8 {
+            /// Special marker that encodes `?PhysicalAddress == null`.
+            ///
+            /// NOTE: `absent` means the `PhysicalAddress` exists in a logical sense, but is empty.
+            ///       `null` means the `PhysicalAddress` value itself is absent/missing.
+            ///
+            /// NOTE: All addresses of this type are empty (zero bytes long).
+            ///
+            /// NOTE: A `PhysicalAddress` `null` value must be fully zeroed out:
+            ///       - `len = 0`
+            ///       - `assignment = Assignment.unknown`
+            ///       - `_reserved0 = 0`
+            ///       - `bytes = {0} ** 20`.
+            item null = 0;
+
+            /// This type marks an absent physical address.
+            ///
+            /// This typically means the associated interface does not support physical addresses at all.
+            ///
+            /// NOTE: All addresses of this type are empty (zero bytes long).
+            ///
+            /// NOTE: This is a special case to handle links that have no address,
+            ///       but without introducing "out of band" communication for absent
+            ///       physical addresses.
+            ///
+            /// NOTE: This is distinct from `null` in that a `PhysicalAddress` exists but is empty,
+            ///       while `null` means the `PhysicalAddress` value does not exist.
+            ///
+            /// NOTE: For `absent`, the struct must satisfy:
+            ///       - `len = 0`
+            ///       - `assignment = Assignment.unknown`
+            ///       - `_reserved0 = 0`
+            ///       - `bytes = {0} ** 20`.
+            item absent = 1;
+
+            /// A physical address is available, but the kernel cannot represent the type of address.
+            ///
+            /// NOTE: Any `len` may be valid for this kind of physical address.
+            item unknown = 2;
+
+            /// An address from the EUI-48 namespace. This is typically known as a MAC address.
+            ///
+            /// NOTE: These addresses are typically used with Ethernet or WLAN interfaces.
+            ///
+            /// NOTE: `PhysicalAddress.len` must be `6`.
+            ///
+            /// NOTE: See RFC 9542 for more information on this address type.
+            item eui_48 = 3;
+
+            /// An address from the EUI-64 namespace. This is typically known as a MAC address.
+            ///
+            /// NOTE: These addresses are typically used with 802.15.4 based protocols (e.g. ZigBee).
+            ///
+            /// NOTE: `PhysicalAddress.len` must be `8`.
+            ///
+            /// NOTE: See RFC 9542 for more information on this address type.
+            item eui_64 = 4;
+
+            /// An IPoIB (IP over InfiniBand) link-layer address.
+            ///
+            /// NOTE: This is the 20-byte "link-layer address" used by IPoIB for IPv4/ARP
+            ///       and for IPv6 Neighbor Discovery source/target link-layer address options.
+            ///
+            /// Layout (network byte order):
+            /// - byte 0:   Reserved flags (must be zero on send; ignore on receive)
+            /// - bytes 1-3: Queue Pair Number (QPN, 24-bit)
+            /// - bytes 4-19: Port GID (16 bytes)
+            ///
+            /// NOTE: This address is not guaranteed to be stable across reboots or even
+            ///       network interface resets because the QPN may change.
+            ///
+            /// NOTE: In IPv6 Neighbor Discovery, the on-wire option is padded to 24 bytes
+            ///       total; the extra padding is not part of this 20-byte address.
+            ///
+            ///       See RFC 4391, Section 9.1.1 and Section 9.3.
+            ///
+            /// NOTE: `PhysicalAddress.len` must be `20`.
+            item infiniband = 5;
+
+            /// A local WBAN link-layer identifier.
+            ///
+            /// NOTE: `PhysicalAddress.len` must be `2`.
+            ///
+            /// Interpretation:
+            /// - byte 0: WBAN / BAN identifier (local scope)
+            /// - byte 1: Node identifier within that WBAN
+            ///
+            /// NOTE: This is not a standalone IEEE-defined 16-bit address format.
+            ///       It is a packing of the IEEE 802.15.6 WBAN_ID + Node_ID fields.
+            ///
+            /// NOTE: This address is *not* globally unique. It is only meaningful within
+            ///       the given interface's WBAN.
+            ///
+            /// NOTE: This is intended to cover IEEE 802.15.6 style WBAN links, including
+            ///       Human Body Communication (HBC) PHY variants.
+            item wban_local = 6;
+
+            /// IEEE 802.15.4 short address (16-bit).
+            ///
+            /// NOTE: `PhysicalAddress.len` must be `2`.
+            ///
+            /// NOTE: The value logically encodes a `u16` in big endian format.
+            item ieee_802_15_4_short = 7;
+        }
     }
 
     /// A bit set of several subsystems that the kernel
@@ -718,6 +911,15 @@ namespace link {
     }
 }
 
+/// Neighbor discovery / neighbor cache (ARP for IPv4, NDP for IPv6).
+namespace neighborhood {
+    //? TODO: Spec out this namespace
+}
+
+namespace slaac {
+    //? TODO: Spec out this namespace
+}
+
 /// Everything related to DHCP management for IPv4.
 namespace dhcp4 {
 
@@ -731,7 +933,7 @@ namespace dhcp4 {
         item router = 3;
 
         item domain_name_server = 6;
-        
+
         item ip_address_lease_time = 51;
 
         item server_identifier = 54;
@@ -747,7 +949,7 @@ namespace dhcp4 {
 
     /// A DHCP option.
     struct Option {
-        /// The type of option 
+        /// The type of option
         field code: OptionCode;
 
         /// The value of the option.
@@ -759,7 +961,7 @@ namespace dhcp4 {
         /// NOTE: The lifetime of this value for fields in a lease is documented on `Lease` itself.
         ///
         /// NOTE: Options passed to `RequestLease` will be copied by the kernel in the schedule operation.
-        field value: []const u8; 
+        field value: []const u8;
     }
 
     /// A DHCP lease.
@@ -769,10 +971,10 @@ namespace dhcp4 {
     ///       - The lease is automatically refreshed by the kernel (may only happen if the dhcp4 subsystem is enabled).
     ///       - A `ReleaseLease` is scheduled for the owning interface.
     ///       - A `RequestLease` completes for the owning interface.
-    ///       
+    ///
     ///       These events can only happen during a scheduler yield, so the pointers may be dead
     ///       when the thread yields.
-    ///       
+    ///
     ///       In general, an application should not hold onto `Lease` information for longer
     ///       than technically necessary.
     struct Lease {
@@ -787,7 +989,7 @@ namespace dhcp4 {
         /// NOTE: If the lease is acquired with DHCPINFORM this value will be the
         ///       unspecified address (`0.0.0.0`).
         field address: IPv4;
-        
+
         /// The prefix length of the network for `address`.
         ///
         /// NOTE: This value is derived from the value sent with `OptionCode.subnet_mask`
@@ -797,14 +999,14 @@ namespace dhcp4 {
         field prefix_len: u8;
 
         /// The list of announced routers by the DHCP server.
-        /// 
+        ///
         /// NOTE: This list will be derived from the value sent with `OptionCode.router`.
         ///
         /// NOTE: The lifetime of this array is documented on `Lease` itself.
-        field routers: []const IPv4; 
+        field routers: []const IPv4;
 
         /// The list of DNS servers provided by the DHCP server.
-        /// 
+        ///
         /// NOTE: This list will be derived from the value sent with `OptionCode.domain_name_server`.
         ///
         /// NOTE: The lifetime of this array is documented on `Lease` itself.
@@ -822,7 +1024,7 @@ namespace dhcp4 {
         /// The timestamp when the kernel applied the DHCPACK message that issued
         /// this lease.
         field issued_at: clock.Absolute;
-        
+
         /// The timestamp when the lease should be renewed (T1).
         ///
         /// NOTE: If the lease was created by `DHCPINFORM`, the value will be set to
@@ -865,7 +1067,7 @@ namespace dhcp4 {
         ///       configuration.
         item disabled = 0;
 
-        /// The kernel will only use the `Lease.address` and `Lease.prefix_len` to 
+        /// The kernel will only use the `Lease.address` and `Lease.prefix_len` to
         /// perform an automatic `link.AddAddress` operation on `RequestLease.interface`.
         ///
         /// This includes:
@@ -874,10 +1076,10 @@ namespace dhcp4 {
         item address_only = 1;
 
         /// In addition to the effects of `address_only`, the kernel will also upsert
-        /// a route to the network `0.0.0.0/0` through `RequestLease.interface` for 
+        /// a route to the network `0.0.0.0/0` through `RequestLease.interface` for
         /// all received routers.
         ///
-        /// If multiple routers are advertised, the `Route.priority` will be staged 
+        /// If multiple routers are advertised, the `Route.priority` will be staged
         /// such that the last router has priority 1 and each previous router will
         /// have a priority 1 higher.
         ///
@@ -919,13 +1121,13 @@ namespace dhcp4 {
         in server: IPv4;
 
         /// Additional options to send with the request.
-        /// 
+        ///
         /// NOTE: The kernel omits any of its own options if `options` contains at least
         ///       one option with the same `Option.code`.
         ///
         ///       This allows userland to overwrite all potentially kernel-provided options.
         ///
-        /// NOTE: The kernel will copy the options array in `overlapped.schedule`. 
+        /// NOTE: The kernel will copy the options array in `overlapped.schedule`.
         ///       This means the user can use the memory after successful scheduling.
         ///
         /// NOTE: The options in this array will be sent in exactly this order *after*
@@ -936,7 +1138,7 @@ namespace dhcp4 {
         ///
         /// NOTE: The kernel will never merge any values of this array.
         in options: []const Option;
-        
+
         /// If `true`, the kernel will perform a DHCPINFORM process instead of a the regular
         /// DHCPDISCOVER/DHCPREQUEST process.
         ///
@@ -944,12 +1146,12 @@ namespace dhcp4 {
         ///
         /// NOTE: This requires that we already have a statically configured IP address.
         ///
-        /// NOTE: If `server` is the unspecified address (`0.0.0.0`), the kernel will send a 
+        /// NOTE: If `server` is the unspecified address (`0.0.0.0`), the kernel will send a
         ///       broadcast message for each configured IPv4 addresses for `interface`.
         in inform_only: bool;
 
         /// Defines how the kernel will update `interface` when the request is successful.
-        /// 
+        ///
         /// NOTE: If the dhcp4 subsystem is enabled, this option is ignored and the kernel will
         ///       handle the results like it would've performed an automatic/timed DHCP request/renew.
         ///
@@ -964,7 +1166,7 @@ namespace dhcp4 {
         /// NOTE: If `inform_only` is `true`, `lease.address` is `0.0.0.0`
         ///       and `lease.prefix_len` is zero.
         out lease: Lease;
-        
+
         /// `interface` is not a valid interface id (anymore).
         error InvalidInterface;
 
@@ -975,7 +1177,7 @@ namespace dhcp4 {
         error Timeout;
 
         /// An invalid value was passed as a parameter.
-        /// 
+        ///
         /// This may be due to:
         /// - `server` is neither the unspecified address nor a valid unicast address.
         /// - `options` contains an invalid DHCP option.
@@ -987,10 +1189,10 @@ namespace dhcp4 {
         /// NOTE: This error may "spuriously" happen when the dhcp4 subsystem is enabled
         ///       and currently performs an internal DHCP operation.
         error InProgress;
-        
+
         /// The DHCP server offered an address that is not ours, but reachable
         /// through `interface`.
-        /// 
+        ///
         /// NOTE: This error implies the kernel has responeded with DHCPDECLINE.
         error AddressConflict;
 
@@ -1039,7 +1241,7 @@ namespace dhcp4 {
         /// NOTE: If `force` is set, the scheduling implicitly cancels an
         ///       active `RequestLease` operation.
         in force: bool;
-        
+
         /// The deadline until which the whole operation has to be completed.
         ///
         /// LORE: In contrast to many other overlapped operations, a `RequestLease` would potentially
@@ -1065,7 +1267,7 @@ namespace dhcp4 {
         error InProgress;
 
         /// An invalid value was passed as a parameter.
-        /// 
+        ///
         /// This may be due to:
         /// - `deadline` is not in the future.
         error InvalidValue;
@@ -1095,8 +1297,8 @@ namespace dhcp4 {
     syscall get_info {
         /// Interface for which the lease shall be queried.
         in  interface: link.InterfaceId;
-        
-        /// The current lease the kernel stores for `interface`. 
+
+        /// The current lease the kernel stores for `interface`.
         out info: Lease;
 
         /// `interface` is not a valid interface id (anymore).
@@ -1136,7 +1338,7 @@ namespace dhcp6 {
 
 namespace dns {
     //? TODO: Design the DNS kernel API
-    
+
     //? TODO: Keep in mind that DNS servers can be globally set or associated with an
     //?       interface. Also DNS servers have a lifetime as well.
 }
