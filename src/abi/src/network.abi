@@ -179,7 +179,6 @@ namespace link {
     ///
     /// NOTE: This isn't just a MAC address, but it can hold several
     ///       different types of address.
-
     struct PhysicalAddress {
         /// Length of the physical address in bytes.
         field len: u8;
@@ -363,6 +362,9 @@ namespace link {
         /// The type of this network interface.
         field type: InterfaceType;
 
+        /// The physical address this interface has.
+        field address: PhysicalAddress;
+
         /// The display name of the network interface.
         ///
         /// NOTE: The lifetime of this string is bound to the lifetime
@@ -420,6 +422,34 @@ namespace link {
 
         /// `interface` is not a valid interface id (anymore).
         error InvalidInterface;
+    }
+
+    /// Queries the physical address for the interface.
+    syscall get_physical_address {
+        in  interface: InterfaceId;
+
+        out address: PhysicalAddress;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+    }
+
+    /// Attempts to change the physical address for an interface.
+    async_call SetPhysicalAddress {
+        in  interface: InterfaceId;
+
+        in  address: PhysicalAddress;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// The underlying `interface` was removed during this operation.
+        error Gone;
+
+        /// The interface does not allow changing its physical address.
+        error Unsupported;
+
+        error SystemResources;
     }
 
     /// Enables or disables kernel subsystems for an interface.
