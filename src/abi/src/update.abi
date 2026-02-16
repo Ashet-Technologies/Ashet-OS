@@ -257,19 +257,6 @@ namespace dhcp6 {
 
 /// IPv6 Stateless Address Autoconfiguration (SLAAC).
 namespace slaac {
-    enum AddrKind : u8 {
-        item stable = 0;
-        item temporary = 1;
-    }
-
-    bitstruct Flags : u8 {
-        field managed: bool;
-        field other_config: bool;
-        field on_link: bool;
-        field autonomous: bool;
-        reserve u4 = 0;
-    }
-
     struct Prefix {
         field prefix: IPv6;
         field prefix_len: u8;
@@ -277,6 +264,12 @@ namespace slaac {
         field preferred_until: clock.Absolute;
         field flags: Flags;
         field received_at: clock.Absolute;
+
+        bitstruct Flags : u8 {
+            field on_link: bool;
+            field autonomous: bool;
+            reserve u6 = 0;
+        }
     }
 
     struct Router {
@@ -288,6 +281,13 @@ namespace slaac {
         field flags: Flags;
         field received_at: clock.Absolute;
         field valid_until: clock.Absolute;
+
+
+        bitstruct Flags : u8 {
+            field managed: bool;
+            field other_config: bool;
+            reserve u6 = 0;
+        }
     }
 
     enum StableAddrMethod : u8 {
