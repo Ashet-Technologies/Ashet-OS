@@ -96,6 +96,11 @@ struct EndPoint {
 ///
 ///     NOTE: This subsystem is disabled by default.
 ///
+/// SLAAC:
+/// TODO: Write subsystem docs
+///
+///     NOTE: This subsystem is enabled by default.
+///
 ///
 /// TODO: Write how routing works in Ashet OS.
 ///
@@ -361,8 +366,9 @@ namespace link {
         field ipv6: bool;
         field dhcp4: bool;
         field dhcp6: bool;
+        field slaac: bool;
 
-        reserve u28 = 0;
+        reserve u27 = 0;
     }
 
     struct InterfaceDescription {
@@ -1351,8 +1357,11 @@ namespace neighborhood {
 
         error SystemResources;
     }
+
+    //? TODO: Add async_call WaitForUpdate when a proper model for the wait operation was found.
 }
 
+/// IPv6 Stateless Address Autoconfiguration (SLAAC).
 namespace slaac {
     //? TODO: Spec out this namespace
 }

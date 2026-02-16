@@ -257,16 +257,6 @@ namespace dhcp6 {
 
 /// IPv6 Stateless Address Autoconfiguration (SLAAC).
 namespace slaac {
-
-    enum Mode : u8 {
-        item disabled = 0;
-        item enabled = 1;
-    }
-
-    enum Origin : u8 {
-        item slaac = 0;
-    }
-
     enum AddrKind : u8 {
         item stable = 0;
         item temporary = 1;
@@ -300,34 +290,33 @@ namespace slaac {
         field valid_until: clock.Absolute;
     }
 
+    enum StableAddrMethod : u8 {
+      /// Don't generate an address at all.
+      item none = 0;
+
+      item eui64 = 1;
+
+      /// RFC 7217
+      item stable_privacy = 2;
+    }
+
+    enum TempAddrMethod : u8{
+      /// Don't generate an address at all.
+      item none = 0;
+
+      item rfc4941 = 1;
+    }
+
     struct Config {
-        field enabled: Mode;
-        field add_stable: bool;
-        field add_temporary: bool;
-        field stable_kind: AddrKind;
-        field temp_kind: AddrKind;
+        field stable_method: StableAddrMethod;
+        field temp_method: TempAddrMethod;
         field prefer_temporary: bool;
     }
 
     struct Status {
-        field enabled: Mode;
         field last_update: clock.Absolute;
         field managed: bool;
         field other_config: bool;
-    }
-
-    enum UpdateKind : u8 {
-        item router = 0;
-        item prefix = 1;
-        item status = 2;
-    }
-
-    struct Update {
-        field kind: UpdateKind;
-        field interface: link.InterfaceId;
-        field router: Router;
-        field prefix: Prefix;
-        field status: Status;
     }
 
     syscall get_config {
@@ -374,11 +363,7 @@ namespace slaac {
         error InvalidInterface, SubsystemDisabled;
     }
 
-    async_call WaitForUpdate {
-        in  interface: link.InterfaceId;
-        out update: Update;
-        error InvalidInterface, Gone, SystemResources;
-    }
+    //? TODO: Add "async_call WaitForUpdate" when a proper model was found,.
 }
 
 namespace neighborhood {
