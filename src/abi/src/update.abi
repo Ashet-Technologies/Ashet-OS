@@ -383,4 +383,24 @@ namespace slaac {
 
 namespace neighborhood {
 
+    /// Enumerates the ways the kernel can update/edit the list of neighbours.
+    enum UpdateKind : u8 {
+        item added   = 0;
+        item removed = 1;
+        item changed = 2;
+        item expired = 3;
+        item flushed = 4;
+    }
+
+    /// Waits until the kernel updates/edits the list of neighbors.
+    async_call WaitForUpdate {
+        in  interface: link.InterfaceId;
+
+        /// NOTE: Cannot be `IP.Type.any`.
+        in  protocol: IP.Type;
+        out kind: UpdateKind;
+        out entry: Entry;
+
+        error InvalidInterface, Gone, SystemResources, SubsystemDisabled;
+    }
 }

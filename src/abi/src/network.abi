@@ -950,11 +950,9 @@ namespace link {
 
 /// Neighbor discovery / neighbor cache (ARP for IPv4, NDP for IPv6).
 namespace neighborhood {
-    //? TODO: Spec out this namespace
-
-    /// Enumerates potential origins for a network neighbour.
+    /// Enumerates potential origins for a network neighbor.
     enum Origin : u8 {
-        /// The neighbour was manually created with `add_neighbor`.
+        /// The neighbor was manually created with `add_neighbor`.
         item manual = 0;
 
         /// The neighbor was discovered by the kernel through an ARP/NDP request.
@@ -968,12 +966,11 @@ namespace neighborhood {
     /// A neighbor is the mapping of an IP address to a physical address.
     ///
     /// The following invariants apply to the timestamp values:
-    /// TODO!!!!
-    /// - `known_since`
-    /// - ``
-    /// last_updated
-    /// reachable_until
-    /// expires_after
+    /// - `last_updated`  >= `known_since`
+    /// - `expires_after` >= `known_since`
+    /// - `fresh_until`   >= `known_since`
+    /// - `fresh_until`   <= `expires_after`
+    /// - `fresh_until`   >= `last_updated` if `state == State.reachable`
     struct Neighbor {
         /// The interface on which the neighbor was discovered.
         field interface: link.InterfaceId;
@@ -983,6 +980,8 @@ namespace neighborhood {
         /// NOTE: Depending on `ip.type`, the following protocols were used for discovery:
         ///       - IPv4: ARP
         ///       - IPv6: NDP
+        ///
+        /// NOTE: If this IP is a link-local IPv6 ip, its scope must be equal to `interface`.
         field ip: IP;
 
         /// The physical address that was discovered.
@@ -1025,17 +1024,17 @@ namespace neighborhood {
         ///
         /// NOTE: For IPv6/NDP, this is derived from the ReachableTime.
         ///
-        /// NOTE: As long as `state == State.reachable`, this value is strictly bigger
+        /// NOTE: As long as `state == State.reachable`, this value is never less
         ///       than `last_updated`.
         ///
         /// NOTE: When `clock.monotonic` returns a value bigger than this, the neighbor has
         ///       become stale.
-        ///       This means the neighbor isn't strictly valid anymore, but the kernel assumes
+        ///       This means the neighbor isn't necessarily valid anymore, but the kernel assumes
         ///       it's still usable.
         ///       The effect of this is that the kernel will still attempt to directly communicate
         ///       with the neighbor without awaiting a neighbor discovery, but it will trigger
         ///       an asynchronous re-discovery to ensure the neighbor still exists.
-        field reachable_until: clock.Absolute;
+        field fresh_until: clock.Absolute;
 
         /// The drop-dead time after which this neighbor is killed.
         ///
@@ -1047,16 +1046,14 @@ namespace neighborhood {
         bitstruct Flags : u8 {
             /// This neighbor is believed to be an IPv6 capable router on the link.
             ///
-            /// TODO: Describe this flag better.
-            ///
-            /// NOTE: This value may change over time depending on the communications on the network.
+            /// NOTE: This value may change over time based on observed communications on the network.
             ///
             /// NOTE: For IPv4 neighbors, this value is always `false`.
             field is_router: bool;
 
             /// This neighbor is proxied through network segments.
             ///
-            /// TODO: Describe this flag better.
+            /// Set only when the kernel knows ND proxying is in effect for this mapping (e.g., learned through ND-proxy mechanisms / configuration). Otherwise the value is false.
             ///
             /// NOTE: For IPv4 neighbors, this value is always `false`.
             field is_proxy: bool;
@@ -1064,19 +1061,37 @@ namespace neighborhood {
             reserve u6 = 0;
         }
 
-        /// Enumeration of potential states a neighbor have.
+        /// Enumeration of potential states a neighbor has.
+        ///
+        /// NOTE: The numeric value of a state is a "usefulness" order and
+        ///       is used by `enumerate_neighbors` to filter states.
         enum State : u8 {
             /// The neighbor is actively reachable and valid.
+            ///
+            /// This means the kernel will immediately use the physical address without performing
+            /// a request first.
+            ///
+            /// NOTE: When `clock.monotonic` returns a value bigger than `fresh_until`, the kernel
+            ///       will perform an automatic background discovery of the neighbor to check if
+            ///       neighbor is still valid.
             ///
             /// NOTE: When this state is active, `Neighbor.physical.type` is never `link.PhysicalAddress.Type.null`.
             item reachable  = 0;
 
             /// A neighbor discovery was executed and the neighbor could not be found.
             ///
+            /// NOTE: This means the kernel will return an error for operations using this
+            ///       neighbor address until `clock.monotonic` reaches `expires_after`.
+            ///
+            ///       The next request after the `expires_after` is reached will trigger a new discovery process.
+            ///
             /// NOTE: When this state is active, `Neighbor.physical.type` is `link.PhysicalAddress.Type.null`.
             item failed     = 1;
 
             /// The neighbor was requested, but isn't `reachable` nor `failed` yet.
+            ///
+            /// NOTE: This state is only set until the kernel has performed the first discovery.
+            ///       It does not represent the background discovery.
             ///
             /// NOTE: When this state is active, `Neighbor.physical.type` is `link.PhysicalAddress.Type.null`.
             item resolving  = 2;
@@ -1091,7 +1106,8 @@ namespace neighborhood {
 
         /// Defines for which IP protocols the neighbors should be returned.
         ///
-        /// NOTE: If `IP.Type.any` is passed, both IPv4 and IPv6 neighbors are returned.
+        /// NOTE: If `IP.Type.any` is passed, both IPv4 and IPv6 neighbors are returned,
+        ///       assuming the corresponding subsystem is enabled.
         in  protocol: IP.Type;
 
         /// A buffer that receives the neighbors of `interface` or `null` to query
@@ -1109,7 +1125,14 @@ namespace neighborhood {
         /// the total number of neighbors returned by the query.
         out count: usize;
 
-        error InvalidInterface, InvalidValue, SubsystemDisabled;
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// Returned when `interface` is not `link.InterfaceId.any` and:
+        /// - `protocol` is `IP.Type.ipv4` and the ipv4 subsystem is disabled for `interface`.
+        /// - `protocol` is `IP.Type.ipv6` and the ipv6 subsystem is disabled for `interface`.
+        /// - `protocol` is `IP.Type.any` and both the ipv4 and ipv6 subsystem are disabled for `interface`.
+        error SubsystemDisabled;
     }
 
     /// Queries a single neighbor.
@@ -1122,24 +1145,76 @@ namespace neighborhood {
         in  interface: link.InterfaceId;
 
         /// The IP address to query.
+        ///
+        /// NOTE: If `interface` is not `link.InterfaceId.any` and this IP is a link-local IPv6 ip,
+        ///       its scope must be equal to `interface`.
+        ///
+        /// NOTE: If `interface` is `link.InterfaceId.any` and this IP is a link-local IPv6 ip,
+        ///       its scope is used for `interface`.
         in  ip: IP;
 
-        /// The neighbour entry for `ip`.
+        /// The neighbor entry for `ip`.
         out neighbor: Neighbor;
 
-        error InvalidInterface, InvalidValue, NotAvailable, Conflict;
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// `ip` is an IPv6 address, but the scope is not suitable for `interface`.
+        error InvalidValue;
+
+        /// The requested neighbor is not available in the neighborhood.
+        error NotAvailable;
+
+        /// The `ip` is available on more than one `interface`.
+        ///
+        /// NOTE: This error can only happen when `interface` is `link.InterfaceId.any`.
+        error Conflict;
+
+        /// Returned when the associated subsystem of `ip.type` is disabled for `interface`.
+        /// NOTE: Can never be returned if `interface == link.InterfaceId.any`. If no interface
+        ///       with an enabled subsystem for `ip.type` has `ip`, `NotAvailable` is returned.”
+        error SubsystemDisabled;
     }
 
     /// Adds a new static neighbor to the neighborhood.
+    ///
+    /// NOTE: The kernel will do the following transformations on `neighbor`:
+    /// - `neighbor.state = Neighbor.State.reachable` if `neighbor.physical.type != link.PhysicalAddress.Type.null`
+    /// - `neighbor.state = Neighbor.State.failed` if `neighbor.physical.type == link.PhysicalAddress.Type.null`
+    /// - `neighbor.origin = Origin.manual`
+    /// - `neighbor.known_since = clock.monotonic()`
+    /// - `neighbor.last_updated = clock.monotonic()`
+    /// - `neighbor.fresh_until = neighbor.expires_after`
+    ///
+    /// NOTE: `neighbor` will be validated *after* the transformations are applied.
     syscall add_neighbor {
-        /// The neighbor to add
+        /// The neighbor to add.
+
         in neighbor: Neighbor;
 
         /// Defines that if a neighbor with the same IP already exists,
         /// it is implicitly replaced with `neighbor`.
         in upsert: bool;
 
-        error InvalidInterface, InvalidValue, Conflict, SystemResources;
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// The neighbor does not encode a correct value.
+        ///
+        /// In addition to the general validity rules of `Neighbor`, the following rules apply:
+        /// - `neighbor.interface` must not be `link.InterfaceId.any`.
+        /// - `neighbor.ip` must be a valid IP address.
+        /// - `neighbor.ip.scope` must be `neighbor.interface` if `neighbor.ip` is a link-local IPv6 address.
+        /// - `neighbor.expires_after` must not be in the past.
+        error InvalidValue;
+
+        /// `upsert` is `false` and a neighbor with `neighbor.ip` already exists.
+        error Conflict;
+
+        /// Returned when the associated subsystem of `neighbor.ip.type` is disabled for `neighbor.interface`.
+        error SubsystemDisabled;
+
+        error SystemResources;
     }
 
     /// Removes a single neighbor from the neighborhood.
@@ -1150,24 +1225,57 @@ namespace neighborhood {
     ///
     /// NOTE: If no neighbor with `ip` exists, this syscall is idempotent.
     syscall remove_neighbor {
-        /// The interface for which the neighnor should be removed.
+        /// The interface for which the neighbor should be removed.
         in interface: link.InterfaceId;
 
         /// The neighbor to be removed.
+        ///
+        /// NOTE: If this IP is a link-local IPv6 ip, its scope must be equal to `interface`.
         in ip: IP;
 
-        /// Guardrail to prevent accidential removal of neighbors created
+        /// Guardrail to prevent accidental removal of neighbors created
         /// through neighbor discovery.
         in include_learned: bool;
 
-        error InvalidInterface, InvalidValue, Forbidden;
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// `ip` is an IPv6 address, but the scope is not suitable for `interface`.
+        error InvalidValue;
+
+        /// If `include_learned` is `false` and the neighbor to remove has
+        /// `Neighbor.origin == Origin.learned`.
+        ///
+        /// NOTE: Will never happen if no neighbor with `ip` exists.
+        error Forbidden;
+
+        /// Returned when:
+        /// - `ip.type` is `IP.Type.ipv4` and the ipv4 subsystem is disabled for `interface`.
+        /// - `ip.type` is `IP.Type.ipv6` and the ipv6 subsystem is disabled for `interface`.
+        error SubsystemDisabled;
     }
 
+    /// Invalidates the neighbor table for `interface` and removes all items for `protocol`.
     syscall flush_neighbors {
+        /// The interface for which the neighborhood should be flushed.
+        /// If `link.InterfaceId.any` is passed, all neighborhoods for all interfaces are flushed.
         in interface: link.InterfaceId;
-        in protocol: Protocol;
+
+        /// Defines for which IP protocols the neighbors should be flushed.
+        ///
+        /// NOTE: If `IP.Type.any` is passed, both IPv4 and IPv6 neighbors are flushed,
+        ///       assuming the corresponding subsystem is enabled.
+        in protocol: IP.Type;
+
+        /// If `true`, will only remove the neighbors with `Neighbor.origin == Origin.learned`.
         in keep_manual: bool;
-        error InvalidInterface, InvalidValue;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// Returned when the associated subsystem of `protocol` is disabled for `interface`
+        /// and `interface` is not `link.InterfaceId.any`.
+        error SubsystemDisabled;
     }
 
     /// Resolves an IP address the the associated physical address.
@@ -1177,7 +1285,7 @@ namespace neighborhood {
     ///
     ///       This is to prevent flooding the network with requests.
     ///
-    ///       `flood` overwrites this behaviour.
+    ///       `flood` overwrites this behavior.
     ///
     /// NOTE: Not every schedule of a resolve triggers a new discovery.
     ///       The kernel is free to fuse several scheduled `Resolve`
@@ -1195,19 +1303,21 @@ namespace neighborhood {
         /// NOTE: The following protocols will be used depending on `target.type`:
         ///       - IPv4: ARP
         ///       - IPv6: NDP
+        ///
+        /// NOTE: If this IP is a link-local IPv6 ip, its scope must be equal to `interface`.
         in target: IP;
 
         /// The deadline for the operation.
         ///
         /// The operation returns the `Timeout` error when `deadline` is smaller than `clock.monotonic()`.
         ///
-        /// LORE: In contrast to many other overlapped operations, a `Ping` would potentially
+        /// LORE: In contrast to many other overlapped operations, a `Resolve` would potentially
         ///       never complete and it's an expected outcome that no response is received.
         ///       Thus, the general rule of "no timeouts in overlapped operations" is broken
         ///       here on purpose.
         in deadline: clock.Absolute;
 
-        /// Overwrites the kernels internal flood protection and immediatly starts
+        /// Overwrites the kernels internal flood protection and immediately starts
         /// sending a request.
         ///
         /// NOTE: Setting `flood` disables the internal fusing and the kernel will trigger
@@ -1217,28 +1327,29 @@ namespace neighborhood {
         /// The information received by the resolver.
         out neighbor: Neighbor;
 
-        error InvalidInterface, Gone, Timeout, InvalidValue, NoRoute, SubsystemDisabled, LinkDown, IoError, SystemResources;
-    }
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
 
-    /// Enumerates the ways the kernel can update/edit the list of neighbours.
-    enum UpdateKind : u8 {
-        item added   = 0;
-        item removed = 1;
-        item changed = 2;
-        item expired = 3;
-        item flushed = 4;
-    }
+        /// The underlying `interface` was removed during this operation.
+        error Gone;
 
-    /// Waits until the kernel updates/edits the list of neighbors.
-    async_call WaitForUpdate {
-        in  interface: link.InterfaceId;
+        /// No response was received until `deadline`.
+        error Timeout;
 
-        /// NOTE: Cannot be `IP.Type.any`.
-        in  protocol: IP.Type;
-        out kind: UpdateKind;
-        out entry: Entry;
+        /// `target` was an invalid IP or
+        /// `target` is a link-local IPv6 address with `target.scope != interface`.
+        error InvalidValue;
 
-        error InvalidInterface, Gone, SystemResources, SubsystemDisabled;
+        /// The associated subsystem for `target.type` is disabled on `interface`.
+        error SubsystemDisabled;
+
+        /// `interface` is down and cannot send any data.
+        error LinkDown;
+
+        /// There was an i/o error that lead to the failure of this operation.
+        error IoError;
+
+        error SystemResources;
     }
 }
 
