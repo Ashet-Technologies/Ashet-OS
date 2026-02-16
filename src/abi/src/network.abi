@@ -23,6 +23,8 @@ struct IPv6 {
 /// A polymorphic IP address that can be both IPv4 or IPv6.
 struct IP {
     /// Defines which field of `addr` is active.
+    ///
+    /// NOTE: Must be `Type.ipv4` or `Type.ipv6`.
     field type: Type;
 
     /// Union of the possible address types.
@@ -31,6 +33,11 @@ struct IP {
     enum Type : u8 {
         item ipv4 = 0;
         item ipv6 = 1;
+
+        /// Not a concrete type of IP type, but a sentinel different
+        /// kernel APIs use for defining that they don't scope a syscall or
+        /// a operation to a specific IP type.
+        item any  = 255;
     }
 
     union AnyAddr {
@@ -944,6 +951,295 @@ namespace link {
 /// Neighbor discovery / neighbor cache (ARP for IPv4, NDP for IPv6).
 namespace neighborhood {
     //? TODO: Spec out this namespace
+
+    /// Enumerates potential origins for a network neighbour.
+    enum Origin : u8 {
+        /// The neighbour was manually created with `add_neighbor`.
+        item manual = 0;
+
+        /// The neighbor was discovered by the kernel through an ARP/NDP request.
+        item learned = 1;
+
+        /// The IP address was created automatically by the kernel through
+        /// configuration files.
+        item autoconfig = 2;
+    }
+
+    /// A neighbor is the mapping of an IP address to a physical address.
+    ///
+    /// The following invariants apply to the timestamp values:
+    /// TODO!!!!
+    /// - `known_since`
+    /// - ``
+    /// last_updated
+    /// reachable_until
+    /// expires_after
+    struct Neighbor {
+        /// The interface on which the neighbor was discovered.
+        field interface: link.InterfaceId;
+
+        /// The IP address that identifies the neighbor.
+        ///
+        /// NOTE: Depending on `ip.type`, the following protocols were used for discovery:
+        ///       - IPv4: ARP
+        ///       - IPv6: NDP
+        field ip: IP;
+
+        /// The physical address that was discovered.
+        ///
+        /// NOTE: This value is an optional `link.PhysicalAddress` with the following rules:
+        ///       - If `state` is `State.reachable`, `physical.type` is never `link.PhysicalAddress.Type.null`.
+        ///       - Else, the `physical.type` always is `link.PhysicalAddress.Type.null`.
+        field physical: link.PhysicalAddress;
+
+        /// The state defines if a neighbor is usable or not.
+        ///
+        /// NOTE: Can never have a higher numeric value than `enumerate_neighbors.max_state`
+        ///       when received through enumeration.
+        field state: State;
+
+        /// The source which discovered the neighbor.
+        ///
+        /// NOTE: When the neighbor is added with `add_neighbor`, this value is ignored
+        ///       and `Origin.manual` is used.
+        field origin: Origin;
+
+        /// Flags storing additional information about this neighbor.
+        field flags: Flags;
+
+        /// The timestamp when this neighbor entry was added to the list.
+        ///
+        /// NOTE: This field allows computing the age of the neighbor.
+        ///
+        /// NOTE: The other timestamps will always be at least `known_since`.
+        field known_since: clock.Absolute;
+
+        /// The timestamp when this neighbor entry was refreshed last.
+        ///
+        /// NOTE: This allows deriving a liveness for the neighbor.
+        field last_updated: clock.Absolute;
+
+        /// The timestamp until which this neighbor is assumed to be valid.
+        ///
+        /// NOTE: For IPv4/ARP, the lifetime is computed from a kernel configuration.
+        ///
+        /// NOTE: For IPv6/NDP, this is derived from the ReachableTime.
+        ///
+        /// NOTE: As long as `state == State.reachable`, this value is strictly bigger
+        ///       than `last_updated`.
+        ///
+        /// NOTE: When `clock.monotonic` returns a value bigger than this, the neighbor has
+        ///       become stale.
+        ///       This means the neighbor isn't strictly valid anymore, but the kernel assumes
+        ///       it's still usable.
+        ///       The effect of this is that the kernel will still attempt to directly communicate
+        ///       with the neighbor without awaiting a neighbor discovery, but it will trigger
+        ///       an asynchronous re-discovery to ensure the neighbor still exists.
+        field reachable_until: clock.Absolute;
+
+        /// The drop-dead time after which this neighbor is killed.
+        ///
+        /// NOTE: The kernel will automatically remove the entry as soon
+        ///       as `clock.monotonic` reaches this value.
+        field expires_after: clock.Absolute;
+
+        /// Flags that further specify the neighbors state.
+        bitstruct Flags : u8 {
+            /// This neighbor is believed to be an IPv6 capable router on the link.
+            ///
+            /// TODO: Describe this flag better.
+            ///
+            /// NOTE: This value may change over time depending on the communications on the network.
+            ///
+            /// NOTE: For IPv4 neighbors, this value is always `false`.
+            field is_router: bool;
+
+            /// This neighbor is proxied through network segments.
+            ///
+            /// TODO: Describe this flag better.
+            ///
+            /// NOTE: For IPv4 neighbors, this value is always `false`.
+            field is_proxy: bool;
+
+            reserve u6 = 0;
+        }
+
+        /// Enumeration of potential states a neighbor have.
+        enum State : u8 {
+            /// The neighbor is actively reachable and valid.
+            ///
+            /// NOTE: When this state is active, `Neighbor.physical.type` is never `link.PhysicalAddress.Type.null`.
+            item reachable  = 0;
+
+            /// A neighbor discovery was executed and the neighbor could not be found.
+            ///
+            /// NOTE: When this state is active, `Neighbor.physical.type` is `link.PhysicalAddress.Type.null`.
+            item failed     = 1;
+
+            /// The neighbor was requested, but isn't `reachable` nor `failed` yet.
+            ///
+            /// NOTE: When this state is active, `Neighbor.physical.type` is `link.PhysicalAddress.Type.null`.
+            item resolving  = 2;
+        }
+    }
+
+    /// Enumerates the currently known neighborhood for an interface.
+    syscall enumerate_neighbors {
+        /// The interface for which we want to receive the neighbors
+        /// or `link.InterfaceId.any` to enumerate the neighbors of all interfaces.
+        in  interface: link.InterfaceId;
+
+        /// Defines for which IP protocols the neighbors should be returned.
+        ///
+        /// NOTE: If `IP.Type.any` is passed, both IPv4 and IPv6 neighbors are returned.
+        in  protocol: IP.Type;
+
+        /// A buffer that receives the neighbors of `interface` or `null` to query
+        /// the total amount of neighbors.
+        in  neighbors: ?[]Neighbor;
+
+        /// Defines the maximum integer state value this enumeration returns.
+        /// This effectively allows filtering the returned list for:
+        /// - `Neighbor.State.reachable`: Only reachable entries are returned. This is the "true" neighborhood as currently known.
+        /// - `Neighbor.State.failed`:    Only entries with a well-defined state are returned. This also yields knowledge about who is currently not our neighbor.
+        /// - `Neighbor.State.resolving`: All entries are returned. This allows querying if we're currently searching for a specific neighbor.
+        in  max_state: Neighbor.State;
+
+        /// The number of items written to `neighbors` if not `null`, otherwise
+        /// the total number of neighbors returned by the query.
+        out count: usize;
+
+        error InvalidInterface, InvalidValue, SubsystemDisabled;
+    }
+
+    /// Queries a single neighbor.
+    ///
+    /// NOTE: `neighbor.state` must be queried to check reachability for a given
+    ///       IP, as the neighbor might have any possible state.
+    syscall get_neighbor {
+        /// The interface for which the neighbor should be queried, or
+        /// or `link.InterfaceId.any` to query the neighbor on all interfaces.
+        in  interface: link.InterfaceId;
+
+        /// The IP address to query.
+        in  ip: IP;
+
+        /// The neighbour entry for `ip`.
+        out neighbor: Neighbor;
+
+        error InvalidInterface, InvalidValue, NotAvailable, Conflict;
+    }
+
+    /// Adds a new static neighbor to the neighborhood.
+    syscall add_neighbor {
+        /// The neighbor to add
+        in neighbor: Neighbor;
+
+        /// Defines that if a neighbor with the same IP already exists,
+        /// it is implicitly replaced with `neighbor`.
+        in upsert: bool;
+
+        error InvalidInterface, InvalidValue, Conflict, SystemResources;
+    }
+
+    /// Removes a single neighbor from the neighborhood.
+    ///
+    /// NOTE: If the neighbor with `ip` was created through
+    ///       neighbor discovery, `include_learned` must be
+    ///       set, otherwise `Forbidden` is returned as an error.
+    ///
+    /// NOTE: If no neighbor with `ip` exists, this syscall is idempotent.
+    syscall remove_neighbor {
+        /// The interface for which the neighnor should be removed.
+        in interface: link.InterfaceId;
+
+        /// The neighbor to be removed.
+        in ip: IP;
+
+        /// Guardrail to prevent accidential removal of neighbors created
+        /// through neighbor discovery.
+        in include_learned: bool;
+
+        error InvalidInterface, InvalidValue, Forbidden;
+    }
+
+    syscall flush_neighbors {
+        in interface: link.InterfaceId;
+        in protocol: Protocol;
+        in keep_manual: bool;
+        error InvalidInterface, InvalidValue;
+    }
+
+    /// Resolves an IP address the the associated physical address.
+    ///
+    /// NOTE: The kernel will potentially delay sending ARP/NDP requests
+    ///       until an internal timeout has elapsed.
+    ///
+    ///       This is to prevent flooding the network with requests.
+    ///
+    ///       `flood` overwrites this behaviour.
+    ///
+    /// NOTE: Not every schedule of a resolve triggers a new discovery.
+    ///       The kernel is free to fuse several scheduled `Resolve`
+    ///       operations for the same (`interface`, `target`) groups.
+    ///
+    ///       `deadline` is still respected for each individual operation.
+    ///
+    ///       This does not apply to operations that have `flood` set.
+    async_call Resolve {
+        /// The interface which should query its network for the physical address.
+        in interface: link.InterfaceId;
+
+        /// The IP for which the physical address should be resolved.
+        ///
+        /// NOTE: The following protocols will be used depending on `target.type`:
+        ///       - IPv4: ARP
+        ///       - IPv6: NDP
+        in target: IP;
+
+        /// The deadline for the operation.
+        ///
+        /// The operation returns the `Timeout` error when `deadline` is smaller than `clock.monotonic()`.
+        ///
+        /// LORE: In contrast to many other overlapped operations, a `Ping` would potentially
+        ///       never complete and it's an expected outcome that no response is received.
+        ///       Thus, the general rule of "no timeouts in overlapped operations" is broken
+        ///       here on purpose.
+        in deadline: clock.Absolute;
+
+        /// Overwrites the kernels internal flood protection and immediatly starts
+        /// sending a request.
+        ///
+        /// NOTE: Setting `flood` disables the internal fusing and the kernel will trigger
+        ///       many ARP/NDP requests.
+        in flood: bool;
+
+        /// The information received by the resolver.
+        out neighbor: Neighbor;
+
+        error InvalidInterface, Gone, Timeout, InvalidValue, NoRoute, SubsystemDisabled, LinkDown, IoError, SystemResources;
+    }
+
+    /// Enumerates the ways the kernel can update/edit the list of neighbours.
+    enum UpdateKind : u8 {
+        item added   = 0;
+        item removed = 1;
+        item changed = 2;
+        item expired = 3;
+        item flushed = 4;
+    }
+
+    /// Waits until the kernel updates/edits the list of neighbors.
+    async_call WaitForUpdate {
+        in  interface: link.InterfaceId;
+
+        /// NOTE: Cannot be `IP.Type.any`.
+        in  protocol: IP.Type;
+        out kind: UpdateKind;
+        out entry: Entry;
+
+        error InvalidInterface, Gone, SystemResources, SubsystemDisabled;
+    }
 }
 
 namespace slaac {
