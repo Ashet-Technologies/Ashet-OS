@@ -1363,7 +1363,489 @@ namespace neighborhood {
 
 /// IPv6 Stateless Address Autoconfiguration (SLAAC).
 namespace slaac {
-    //? TODO: Spec out this namespace
+
+    //? TODO: Add support for RFC 4191 ( Default Router Preferences and More-Specific Routes)
+
+    /// Represents a single Prefix Information Option (PIO) learned from an IPv6 Router Advertisement.
+    ///
+    /// NOTE: The following invariants apply to the timestamp types:
+    ///       - `preferred_until` >= `received_at`
+    ///       - `updated_at`      >= `received_at`
+    ///       - `valid_until`     >= `received_at`
+    ///       - `valid_until`     >= `preferred_until`
+    ///       - `valid_until`     >= `updated_at`
+    struct Prefix {
+        /// The router that announced the prefix.
+        ///
+        /// NOTE: This address is typically a link-local address with the associated interface for `IPv6.scope`.
+        ///
+        /// NOTE: If router is link-local, `router.scope` must be the associated interface.
+        field router: IPv6;
+
+        /// The prefix announced by the router.
+        ///
+        /// NOTE: `prefix.scope` must be `link.InterfaceId.any`.
+        ///
+        /// NOTE: All bits beyond `prefix_len` are zeroed out to enable determinism.
+        field prefix: IPv6;
+
+        /// The number of bits inside `prefix` that are part of the prefix.
+        /// NOTE: Can be between 0 and 128 inclusive.
+        field prefix_len: u8;
+
+        /// Defines additional information for this prefix.
+        field flags: Flags;
+
+        /// The timestamp when the kernel initially received this prefix.
+        field received_at: clock.Absolute;
+
+        /// The timestamp when the kernel last received this prefix.
+        field updated_at: clock.Absolute;
+
+        /// Timestamp until which the kernel will prefer this prefix and derived IP addresses.
+        ///
+        /// NOTE: The prefix is still valid until `valid_until`, but the network stack should choose
+        ///       another prefix if possible.
+        field preferred_until: clock.Absolute;
+
+        /// Timestamp at which the kernel will drop the prefix.
+        field valid_until: clock.Absolute;
+
+        bitstruct Flags : u8 {
+            /// The prefix is reachable directly through this interface without
+            /// the need of a gateway.
+            ///
+            /// NOTE: If the slaac subsystem is enabled on the associated interface, the kernel will
+            ///       automatically add (or upsert) a on-link prefix route for this prefix with:
+            ///       - `link.Route.network`     set to `Prefix.prefix`.
+            ///       - `link.Route.prefix_len`  set to `Prefix.prefix_len`.
+            ///       - `link.Route.gateway`     set to the unspecified address (`::`).
+            ///       - `link.Route.interface`   set to the associated interface of the `Prefix`.
+            ///       - `link.Route.priority`    set to `0`.
+            ///       - `link.Route.origin`      set to `link.RouteOrigin.slaac`.
+            ///       - `link.Route.valid_until` set to a value depending on the context.
+            ///
+            ///       If multiple `Prefix` entries exist for the same
+            ///       (`interface`, `prefix`, `prefix_len`) (i.e. advertised by different routers),
+            ///       the derived on-link prefix route remains present as long as at least one matching
+            ///       `Prefix` entry with `on_link = true` is still valid.
+            ///
+            ///       The kernel sets `link.Route.valid_until` to the maximum `valid_until`
+            ///       across all currently valid matching `Prefix` entries with `on_link = true`.
+            ///
+            ///       If the set of matching prefixes changes (update/expiry/flush),
+            ///       the kernel recomputes `link.Route.valid_until` accordingly and removes the
+            ///       derived route once no matching prefixes remain.
+            ///
+            /// NOTE: The kernel will only create/update routes with `link.Route.origin = link.RouteOrigin.slaac`
+            ///       and will not modify routes of other origins.
+            field on_link: bool;
+
+            /// The interface shall automatically derive IP addresses from the prefix.
+            ///
+            /// NOTE: See `Config` on how this bit will be used.
+            ///
+            /// NOTE: The kernel will automatically derive addresses from the prefix when the slaac subsystem
+            ///       is enabled and `prefix_len` is 64.
+            ///
+            ///       The derived addresses will be added with `link.AddressBinding.origin`
+            ///       set to `link.AddressOrigin.slaac`.
+            ///
+            ///       If multiple matching `Prefix` entries exist for the same
+            ///       (`interface`, `prefix`, `prefix_len`) with `autonomous = true`,
+            ///       the kernel sets `link.AddressBinding.valid_until` to the maximum `valid_until`
+            ///       across all currently valid matching entries, and recomputes it on
+            ///       update/expiry/flush. The address is removed once no matching prefixes remain.
+            ///
+            /// NOTE: The kernel will only create/update address bindings with `link.AddressBinding.origin = link.AddressOrigin.slaac`
+            ///       and will not modify address bindings of other origins.
+            field autonomous: bool;
+
+            reserve u6 = 0;
+        }
+    }
+
+    /// Represents the router identity from a single Router Advertisement.
+    /// Also contains neighborhood discovery parameters sent with the Router Advertisement.
+    ///
+    /// NOTE: The following invariants apply to the timestamp types:
+    ///       - `valid_until` >= `received_at`
+    ///       - `valid_until` >= `updated_at`
+    ///       - `updated_at`  >= `received_at`
+    struct Router {
+        /// The address of the discovered router.
+        ///
+        /// NOTE: If the slaac subsystem is enabled for the interface, a default route
+        ///       will be upserted that uses `address` as the next-hop:
+        ///
+        ///       - `link.Route.network`     set to the unspecified address (`::`).
+        ///       - `link.Route.prefix_len`  set to `0`.
+        ///       - `link.Route.gateway`     set to `Router.address`.
+        ///       - `link.Route.interface`   set to the associated interface for this router.
+        ///       - `link.Route.priority`    set to `0`.
+        ///       - `link.Route.valid_until` set to `Router.valid_until`.
+        ///       - `link.Route.origin`      set to `link.RouteOrigin.slaac`.
+        ///
+        /// NOTE: If this IP is a link-local IPv6 IP, its scope must be equal to associated interface.
+        ///
+        /// NOTE: The kernel will only create/update routes with `link.Route.origin = link.RouteOrigin.slaac`
+        ///       and will not modify routes of other origins.
+        field address: IPv6;
+
+        /// The max. number of hops for outbound packets via this router.
+        ///
+        /// NOTE: 0 means the router did not advertise a hop limit and the
+        ///       actual value is unknown.
+        field hop_limit: u8;
+
+        /// The MTU for the link.
+        ///
+        /// NOTE: 0 means the router did not advertise an MTU and the
+        ///       actual value is unknown.
+        field mtu: u32;
+
+        /// The time in milliseconds a neighbor should be considered reachable.
+        ///
+        /// NOTE: If zero, a default value shall be used (typically 30 seconds).
+        ///
+        /// NOTE: This value affects how `neighborhood.Neighbor.fresh_until` is derived.
+        field reachable_time_ms: u32;
+
+        /// Time between retransmitted Neighbor Solicitation messages in milliseconds.
+        ///
+        /// This affects neighbor discovery retries (including DAD).
+        ///
+        /// NOTE: If zero, the router did not specify a value and the kernel uses its default.
+        field retrans_time_ms: u32;
+
+        /// Defines additional information for this router.
+        field flags: Flags;
+
+        /// The timestamp at which the kernel received this Router Advertisement.
+        field received_at: clock.Absolute;
+
+        /// The timestamp when the kernel last received this Router Advertisement.
+        field updated_at: clock.Absolute;
+
+        /// The timestamp at which the kernel will automatically remove the router.
+        field valid_until: clock.Absolute;
+
+        bitstruct Flags : u8 {
+            /// If set, defines that DHCPv6 shall be used to obtain addresses.
+            ///
+            /// NOTE: If set, and the dhcp6 subsystem is enabled for the interface, the kernel
+            ///       will automatically perform the DHCPv6 requests when the Router Advertisement
+            ///       is received.
+            field managed: bool;
+
+            /// If set, defines that additional configuration like DNS servers shall be obtained through
+            /// DHCPv6.
+            ///
+            /// NOTE: If set, and the dhcp6 subsystem is enabled for the interface, the kernel
+            ///       will automatically perform the DHCPv6 requests when the Router Advertisement
+            ///       is received.
+            field other_config: bool;
+
+            reserve u6 = 0;
+        }
+    }
+
+    //? Configuration:
+
+    /// Enumeration of potential methods for stable address generation.
+    ///
+    /// NOTE: Addresses generated with these methods are reboot-safe
+    ///       and will be stable for the system.
+    enum StableAddressGeneration : u8 {
+        /// Don't generate an address at all.
+        item none = 0;
+
+        /// Derives stable addresses from the physical link address.
+        ///
+        /// NOTE: This method is best-effort and may use other sources to
+        ///       generate reboot-stable IDs for the interface.
+        item eui64 = 1;
+
+        /// Derives stable addresses in a privacy-preserving manner using a
+        /// stable secret on the system.
+        item rfc7217 = 2;
+    }
+
+    /// Enumeration of potential methods for temporary address generation.
+    ///
+    /// NOTE: Addresses generated with these methods are ephemeral and may
+    ///       be rotated after a certain time.
+    enum TemporaryAddressGeneration : u8{
+        /// Don't generate an address at all.
+        item none = 0;
+
+        /// Temporary addresses are generated in a (pseudo) random pattern.
+        item rfc8981 = 1;
+    }
+
+    /// SLAAC configuration for an interface.
+    struct Config {
+        /// The currently used stable address generation method to automatically derive
+        /// addresses when requested.
+        ///
+        /// NOTE: The default values is `StableAddressGeneration.eui64` unless
+        ///       changed by a kernel configuration.
+        field stable_method: StableAddressGeneration;
+
+        /// The currently used temporary address generation method to automatically derive
+        /// addresses when requested.
+        ///
+        /// NOTE: The default values is `TemporaryAddressGeneration.none` unless
+        ///       changed by a kernel configuration.
+        field temp_method: TemporaryAddressGeneration;
+    }
+
+    /// Queries the currently enabled configuration for the given interface.
+    ///
+    /// NOTE: This syscall will also work when the slaac subsystem is disabled,
+    ///       to enable setting a policy before activating the subsystem.
+    syscall get_config {
+        /// The interface for which the configuration shall be returned.
+        in  interface: link.InterfaceId;
+
+        /// The currently active configuration.
+        out config: Config;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+    }
+
+    /// Changes the currently enabled configuration for the given interface.
+    ///
+    /// NOTE: This will not re-generate addresses derived with the previous configuration.
+    ///
+    /// NOTE: This syscall will also work when the slaac subsystem is disabled,
+    ///       to enable setting a policy before activating the subsystem.
+    syscall set_config {
+        /// The interface for which the SLAAC configuration shall be updated.
+        in interface: link.InterfaceId;
+
+        /// The new configuration, replacing the previous one.
+        in config: Config;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+    }
+
+    //? Status Query:
+
+    /// A summary of the SLAAC status for an interface.
+    struct Status {
+        /// The timestamp when the kernel last received a Router Advertisement
+        /// or a `Router`/`Prefix` expired.
+        field last_update: clock.Absolute;
+
+        /// Additional boolean properties
+        field flags: Flags;
+
+        bitstruct Flags : u16 {
+            /// `true` if at least a single `Prefix.flags.on_link` is set.
+            field on_link: bool;
+
+            /// `true` if at least a single `Prefix.flags.autonomous` is set.
+            field autonomous: bool;
+
+            /// `true` if at least a single `Router.flags.managed` is set.
+            field managed: bool;
+
+            /// `true` if at least a single `Router.flags.other_config` is set.
+            field other_config: bool;
+
+            reserve u12 = 0;
+        }
+    }
+
+    /// A quick status query to get the current SLAAC status.
+    ///
+    /// LORE: This syscall primarily exists to prevent userland
+    ///       to enumerate all properties just to learn some trivial
+    ///       information.
+    syscall get_status {
+        /// The interface for which the status shall be queried.
+        in    interface: link.InterfaceId;
+
+        /// The current status of `interface`.
+        out   status: Status;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// Returned when the SLAAC subsystem of `interface` is disabled.
+        error SubsystemDisabled;
+    }
+
+    //? Queries:
+
+    /// Enumerates the routers learned through SLAAC for `interface`.
+    syscall enumerate_routers {
+        /// The interface for which the routers shall be queried.
+        in    interface: link.InterfaceId;
+
+        /// A buffer that will receive the enumerated routers.
+        ///
+        /// NOTE: If `null`, no routers will be enumerated, but only the total
+        ///       count is returned.
+        in    routers: ?[]Router;
+
+        /// Total number of available routers.
+        ///
+        /// NOTE: If smaller than `routers.len`, the elements for `routers[count..]` will
+        ///       be left unchanged.
+        out   count: usize;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// Returned when the SLAAC subsystem of `interface` is disabled.
+        error SubsystemDisabled;
+    }
+
+    /// Enumerates the prefixes learned through SLAAC for `interface`.
+    syscall enumerate_prefixes {
+        /// The interface for which the prefixes shall be queried.
+        in    interface: link.InterfaceId;
+
+        /// A buffer that will receive the enumerated prefixes.
+        ///
+        /// NOTE: If `null`, no prefixes will be enumerated, but only the total
+        ///       count is returned.
+        in    prefixes: ?[]Prefix;
+
+        /// Total number of available prefixes.
+        ///
+        /// NOTE: If smaller than `prefixes.len`, the elements for `prefixes[count..]` will
+        ///       be left unchanged.
+        out   count: usize;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// Returned when the SLAAC subsystem of `interface` is disabled.
+        error SubsystemDisabled;
+    }
+
+    /// Defines what parts to flush.
+    bitstruct FlushMode : u8 {
+        /// If `true`, removes all routers from the selected interface.
+        ///
+        /// NOTE: This implies that all "default" routes added for this
+        ///       interface through the SLAAC subsystem will also be removed.
+        field routers: bool;
+
+        /// If `true`, removes all prefixes from the selected interface.
+        ///
+        /// NOTE: This implies that all on-link prefix routes added for this
+        ///       interface through the SLAAC subsystem will also be removed.
+        field prefixes: bool;
+
+        reserve u6 = 0;
+    }
+
+    /// Flushes the SLAAC state for a given interface.
+    ///
+    /// NOTE: A flush counts as an "update event" and will change the
+    ///       `Status.last_update` field to `clock.monotonic()`.
+    syscall flush {
+        /// The interface for which the SLAAC state shall be flushed.
+        in    interface: link.InterfaceId;
+
+        /// Defines how to flush the state.
+        ///
+        /// NOTE: If all bits inside mode are zero, `InvalidValue` is returned.
+        in    mode: FlushMode;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// Returned when the SLAAC subsystem of `interface` is disabled.
+        error SubsystemDisabled;
+
+        /// All bits inside `mode` were zero.
+        error InvalidValue;
+    }
+
+    /// Forces the refresh of the router advertisements by sending a
+    /// Router Solicitation.
+    ///
+    /// NOTE: The operation will complete when at least a single Router Advertisement
+    ///       was received.
+    ///
+    /// NOTE: Not every schedule of a refresh triggers a new Router Solicitation.
+    ///       The kernel is free to fuse several scheduled `Refresh`
+    ///       operations for the same `interface`.
+    ///
+    ///       `deadline` is still respected for each individual operation.
+    ///
+    /// NOTE: If `interface` has no suitable link-local address available, the kernel
+    ///       will send the Router Solicitation from the unspecified address (`::`).
+    ///       If multiple suitable addresses are available, the kernel will choose
+    ///       one in a stable manner: The source address will be the same until the
+    ///       address bindings of `interface` change.
+    async_call Refresh {
+        /// The interface for which the SLAAC state shall be refreshed.
+        in    interface: link.InterfaceId;
+
+        /// The deadline for the operation.
+        ///
+        /// The operation returns the `Timeout` error when `deadline` is smaller than `clock.monotonic()`.
+        ///
+        /// LORE: In contrast to many other overlapped operations, a `Refresh` would potentially
+        ///       never complete and it's an expected outcome that no response is received.
+        ///       Thus, the general rule of "no timeouts in overlapped operations" is broken
+        ///       here on purpose.
+        in    deadline: clock.Absolute;
+
+        /// The new status of `interface`.
+        out   status: Status;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// The underlying `interface` was removed during this operation.
+        error Gone;
+
+        /// No response was received until `deadline`.
+        error Timeout;
+
+        /// `deadline` is not in the future.
+        error InvalidValue;
+
+        /// Returned when the SLAAC subsystem of `interface` is disabled.
+        error SubsystemDisabled;
+
+        /// `interface` is down and cannot send any data.
+        error LinkDown;
+
+        /// There was an i/o error that lead to the failure of this operation.
+        error IoError;
+
+        error SystemResources;
+    }
+
+    /// This operation completes when `Status.last_update` changes.
+    async_call WaitForUpdate {
+        /// The interface for which an update shall be awaited.
+        in    interface: link.InterfaceId;
+
+        /// The new SLAAC status of `interface`.
+        out   new_status: Status;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// The underlying `interface` was removed during this operation.
+        error Gone;
+
+        /// Returned when the SLAAC subsystem of `interface` is disabled.
+        error SubsystemDisabled;
+
+        error SystemResources;
+    }
 }
 
 /// Everything related to DHCP management for IPv4.

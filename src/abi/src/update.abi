@@ -126,6 +126,12 @@ Ashet OS networking model (current intent):
   - Destroying interfaces yields error.Gone to dependents.
 
 
+namespace link {
+
+    //? TODO:        field prefer_temporary: bool;
+
+}
+
 namespace dhcp6 {
 
     enum OptionCode : u16 {
@@ -254,117 +260,6 @@ namespace dhcp6 {
     }
 }
 
-
-/// IPv6 Stateless Address Autoconfiguration (SLAAC).
-namespace slaac {
-    struct Prefix {
-        field prefix: IPv6;
-        field prefix_len: u8;
-        field valid_until: clock.Absolute;
-        field preferred_until: clock.Absolute;
-        field flags: Flags;
-        field received_at: clock.Absolute;
-
-        bitstruct Flags : u8 {
-            field on_link: bool;
-            field autonomous: bool;
-            reserve u6 = 0;
-        }
-    }
-
-    struct Router {
-        field address: IPv6;
-        field hop_limit: u8;
-        field mtu: u32;
-        field reachable_time_ms: u32;
-        field retrans_time_ms: u32;
-        field flags: Flags;
-        field received_at: clock.Absolute;
-        field valid_until: clock.Absolute;
-
-
-        bitstruct Flags : u8 {
-            field managed: bool;
-            field other_config: bool;
-            reserve u6 = 0;
-        }
-    }
-
-    enum StableAddrMethod : u8 {
-      /// Don't generate an address at all.
-      item none = 0;
-
-      item eui64 = 1;
-
-      /// RFC 7217
-      item stable_privacy = 2;
-    }
-
-    enum TempAddrMethod : u8{
-      /// Don't generate an address at all.
-      item none = 0;
-
-      item rfc4941 = 1;
-    }
-
-    struct Config {
-        field stable_method: StableAddrMethod;
-        field temp_method: TempAddrMethod;
-        field prefer_temporary: bool;
-    }
-
-    struct Status {
-        field last_update: clock.Absolute;
-        field managed: bool;
-        field other_config: bool;
-    }
-
-    syscall get_config {
-        in  interface: link.InterfaceId;
-        out config: Config;
-        error InvalidInterface;
-    }
-
-    syscall set_config {
-        in interface: link.InterfaceId;
-        in config: Config;
-        error InvalidInterface, InvalidValue;
-    }
-
-    syscall get_status {
-        in  interface: link.InterfaceId;
-        out status: Status;
-        error InvalidInterface, SubsystemDisabled;
-    }
-
-    syscall enumerate_routers {
-        in  interface: link.InterfaceId;
-        in  routers: ?[]Router;
-        out count: usize;
-        error InvalidInterface, SubsystemDisabled;
-    }
-
-    syscall enumerate_prefixes {
-        in  interface: link.InterfaceId;
-        in  prefixes: ?[]Prefix;
-        out count: usize;
-        error InvalidInterface, SubsystemDisabled;
-    }
-
-    async_call Refresh {
-        in interface: link.InterfaceId;
-        in deadline: clock.Absolute;
-        error InvalidInterface, Gone, Timeout, InvalidValue, SubsystemDisabled, LinkDown, IoError, SystemResources;
-    }
-
-    syscall flush {
-        in interface: link.InterfaceId;
-        in keep_addresses: bool;
-        error InvalidInterface, SubsystemDisabled;
-    }
-
-    //? TODO: Add "async_call WaitForUpdate" when a proper model was found,.
-}
 
 namespace neighborhood {
 
