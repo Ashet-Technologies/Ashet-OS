@@ -97,9 +97,9 @@ pub const Iterator = struct {
         const header = &header_block.header;
 
         if (!std.mem.eql(u8, &header.signature, &header_signature)) {
-            logger.info("Expected GPT signature '{}', but found '{}'.", .{
-                std.fmt.fmtSliceEscapeUpper(&header_signature),
-                std.fmt.fmtSliceEscapeUpper(&header.signature),
+            logger.info("Expected GPT signature '{f}', but found '{f}'.", .{
+                std.ascii.hexEscape(&header_signature, .upper),
+                std.ascii.hexEscape(&header.signature, .upper),
             });
             return error.NoGptTable;
         }

@@ -30,11 +30,11 @@ SECTIONS {
     .stack (NOLOAD) : {
         . = ALIGN(4096);
         PROVIDE(__kernel_stack_start = .);
-        . += 0x40000; 
+        . += 0x80000; 
         PROVIDE(__kernel_stack_end = .);
     } > dram
 
-    .data : AT (__kernel_flash_end){
+    .data : {
         __kernel_data_start = .;
 
         *(.data)
@@ -45,7 +45,7 @@ SECTIONS {
 
         . = ALIGN(4);
         __kernel_data_end = .;
-    } > dram
+    } > dram AT> flash
 
     .bss (NOLOAD) : {
         __kernel_bss_start = .;
@@ -69,5 +69,7 @@ SECTIONS {
         *(.platform)
         *(.platform.*)
     } > platform_ram
+
+    __kernel_data_load = LOADADDR(.data);
 
 }

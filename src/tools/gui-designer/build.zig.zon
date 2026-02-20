@@ -4,29 +4,37 @@
     .fingerprint = 0xfef11d76541676bb,
     .dependencies = .{
         .args = .{
-            .url = "git+https://github.com/ikskuh/zig-args.git#9425b94c103a031777fdd272c555ce93a7dea581",
-            .hash = "args-0.0.0-CiLiqv_NAAC97fGpk9hS2K681jkiqPsWP6w3ucb_ctGH",
+            .url = "git+https://github.com/ikskuh/zig-args.git#e060ac80c244e9675471b6d213b22ddc83cc8f98",
+            .hash = "args-0.0.0-CiLiqo_RAADz2TiHUzG5-0Mk7IZHR-h1SZgUrb_k4c7d",
         },
         .zgui = .{
-            .url = "git+https://github.com/Ashet-Technologies/zgui#6e7e305ab39ac6e6494423bee58cb732ae65b3aa",
-            .hash = "zgui-0.6.0-dev--L6sZFWIaADckoGQwWeNBSX7CvoI70NHvQuEYurofylI",
-            // .path = "../../../../../forks/zgui",
+            .url = "git+https://github.com/zig-gamedev/zgui.git#22b4073ad83c76263ef0953ee5eb598fbe87ca61",
+            .hash = "zgui-0.6.0-dev--L6sZID3bQDqUsQtFWckeC3aEOwRdN3OFRPuK3XO1mUv",
         },
         .zglfw = .{
-            .url = "git+https://github.com/zig-gamedev/zglfw.git#dcb1dae7d4a90f88b70dbae73300ab9b19fb250c",
-            .hash = "zglfw-0.10.0-dev-zgVDNJmZIQCIiO_94Sp5jqrPtz4Eumk3bDcxS7dSZfIj",
+            .url = "git+https://github.com/zig-gamedev/zglfw.git#d9c06187e8b23e91b2ba6865d265e4213e5e7d09",
+            .hash = "zglfw-0.10.0-dev-zgVDNC64IQCeL-_eVOA27Wa50WVitrJswOZVvgcXmIsy",
         },
         .zopengl = .{
-            .url = "git+https://github.com/zig-gamedev/zopengl.git#67cd98449c9b766086531115f0ec6c4ace095af7",
-            .hash = "zopengl-0.6.0-dev-AAAAAAtUCADc6Ew_wTmTl_LRe3Z2lLK6WraJuGhT0bmj",
+            .url = "git+https://github.com/zig-gamedev/zopengl.git#526f868b84d24dcbbf97a20fbcca17418f0708c5",
+            .hash = "zopengl-0.6.0-dev-5-tnz-G3CwB-4D72AAxsMmXZR_k8nwASrWcdo8CBVnoc",
         },
         .system_sdk = .{
-            .url = "git+https://github.com/zig-gamedev/system_sdk.git#c0dbf11cdc17da5904ea8a17eadc54dee26567ec",
-            .hash = "system_sdk-0.3.0-dev-alwUNnYaaAJAtIdE2fg4NQfDqEKs7QCXy_qYukAOBfmF",
-            .lazy = true,
+            .url = "git+https://github.com/zig-gamedev/system_sdk.git#777e76828f05d5d223df47a4c0de95ae4efde884",
+            .hash = "system_sdk-0.3.0-dev-alwUNqAaaALJ5VoZImZo3n6prezBnQnrpziun3ZeZwcp",
         },
+
         .abi = .{
             .path = "../../abi",
+        },
+        .agp = .{
+            .path = "../../userland/libs/agp",
+        },
+        .agp_swrast = .{
+            .path = "../../userland/libs/agp-swrast",
+        },
+        .widgets = .{
+            .path = "../../userland/apps/widgets",
         },
     },
     .paths = .{ "build.zig", "build.zig.zon", "src" },

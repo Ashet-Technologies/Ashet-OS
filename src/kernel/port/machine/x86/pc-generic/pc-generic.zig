@@ -83,7 +83,7 @@ var kernel_options: KernelOptions = .{};
 var cli_ok: bool = true;
 
 fn printCliError(err: args.Error) !void {
-    logger.err("invalid cli argument: {}", .{err});
+    logger.err("invalid cli argument: {f}", .{err});
     cli_ok = false;
 }
 
@@ -160,18 +160,18 @@ fn initialize() !void {
 
     if (mbheader.flags.boot_loader_name) {
         x86.vmm.ensure_accessible_obj(&mbheader.boot_loader_name[0]);
-        logger.info("system bootloader: '{}'", .{
-            std.zig.fmtEscapes(std.mem.sliceTo(mbheader.boot_loader_name, 0)),
+        logger.info("system bootloader: \"{f}\"", .{
+            std.zig.fmtString(std.mem.sliceTo(mbheader.boot_loader_name, 0)),
         });
     }
 
-    logger.info("bootloader flags: {}", .{mbheader.flags});
+    logger.info("bootloader flags: {f}", .{mbheader.flags});
 
     kernel_options = if (mbheader.flags.cmdline) blk: {
         x86.vmm.ensure_accessible_obj(&mbheader.cmdline[0]);
 
         const cli_string = std.mem.sliceTo(mbheader.cmdline, 0);
-        logger.info("kernel commandline: '{}'", .{std.zig.fmtEscapes(cli_string)});
+        logger.info("kernel commandline: \"{f}\"", .{std.zig.fmtString(cli_string)});
 
         var temp_buffer: [4096]u8 = undefined;
 
@@ -179,7 +179,7 @@ fn initialize() !void {
         var fba = std.heap.FixedBufferAllocator.init(&temp_buffer);
 
         const opt = args.parse(KernelOptions, &iter, fba.allocator(), .{ .forward = printCliError }) catch |err| {
-            logger.err("failed to parse kernel command line: {s}", .{@errorName(err)});
+            logger.err("failed to parse kernel command line: {t}", .{err});
             break :blk KernelOptions{};
         };
         if (!cli_ok) {
@@ -204,16 +204,16 @@ fn initialize() !void {
 
         for (modules, 0..) |mod, index| {
             x86.vmm.ensure_accessible_obj(&mod.cmdline[0]);
-            logger.info("  [{}] = {{ lo=0x{X:0>8}, hi=0x{X:0>8}, cmdline='{}' }}", .{
+            logger.info("  [{}] = {{ lo=0x{X:0>8}, hi=0x{X:0>8}, cmdline=\"{f}\" }}", .{
                 index,
                 mod.module_lo,
                 mod.module_hi,
-                std.zig.fmtEscapes(std.mem.sliceTo(mod.cmdline, 0)),
+                std.zig.fmtString(std.mem.sliceTo(mod.cmdline, 0)),
             });
         }
     }
 
-    logger.info("multiboot info: {}", .{mbheader});
+    logger.info("multiboot info: {f}", .{mbheader});
 
     logger.debug("initialize VBE...", .{});
     if (ashet.drivers.video.Multiboot_Framebuffer.init(ashet.memory.allocator, mbheader)) |fbdev| {

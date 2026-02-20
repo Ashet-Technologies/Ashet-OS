@@ -14,13 +14,17 @@ pub fn build(b: *std.Build) void {
         .shared = false,
         .with_implot = true,
         .backend = .glfw_opengl3,
+        .target = target,
+        .optimize = optimize,
     });
 
     const zglfw_dep = b.dependency("zglfw", .{
         .target = target,
     });
 
-    const zopengl_dep = b.dependency("zopengl", .{});
+    const zopengl_dep = b.dependency("zopengl", .{
+        .target = target,
+    });
 
     const editor_mod = b.addModule("gui-editor", .{
         .root_source_file = b.path("src/gui-editor.zig"),
@@ -44,11 +48,7 @@ pub fn build(b: *std.Build) void {
         .root_module = editor_mod,
     });
 
-    if (target.result.os.tag == .linux) {
-        if (b.lazyDependency("system_sdk", .{})) |system_sdk| {
-            editor_exe.addLibraryPath(system_sdk.path("linux/lib/x86_64-linux-gnu"));
-        }
-    }
+    install_system_sdk(b, target, editor_exe.root_module);
 
     b.installArtifact(editor_exe);
 
@@ -72,4 +72,30 @@ pub fn build(b: *std.Build) void {
     run_editor.addFileArg(b.path("current.gui.json"));
 
     run_step.dependOn(&run_editor.step);
+}
+
+fn install_system_sdk(b: *std.Build, target: std.Build.ResolvedTarget, module: *std.Build.Module) void {
+    const system_sdk = b.dependency("system_sdk", .{});
+
+    switch (target.result.os.tag) {
+        .windows => {
+            if (target.result.cpu.arch.isX86()) {
+                if (target.result.abi.isGnu() or target.result.abi.isMusl()) {
+                    module.addLibraryPath(system_sdk.path("windows/lib/x86_64-windows-gnu"));
+                }
+            }
+        },
+        .macos => {
+            module.addLibraryPath(system_sdk.path("macos12/usr/lib"));
+            module.addFrameworkPath(system_sdk.path("macos12/System/Library/Frameworks"));
+        },
+        .linux => {
+            if (target.result.cpu.arch.isX86()) {
+                module.addLibraryPath(system_sdk.path("linux/lib/x86_64-linux-gnu"));
+            } else if (target.result.cpu.arch == .aarch64) {
+                module.addLibraryPath(system_sdk.path("linux/lib/aarch64-linux-gnu"));
+            }
+        },
+        else => {},
+    }
 }

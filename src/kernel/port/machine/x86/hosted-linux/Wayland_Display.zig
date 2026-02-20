@@ -1,8 +1,12 @@
 const std = @import("std");
 const shimizu = @import("shimizu");
 const wp = @import("wayland-protocols");
+const wu = @import("wayland-unstable");
+
+const zxdg_decoration_manager_v1 = wu.xdg_decoration_unstable_v1.zxdg_decoration_manager_v1;
 
 const ashet = @import("../../../../main.zig");
+const evdev = @import("../../../../drivers/input/evdev.zig");
 
 const logger = std.log.scoped(.wayland_display);
 
@@ -20,6 +24,8 @@ wl_surface: wayland.wl_surface,
 
 xdg_surface: xdg_shell.xdg_surface,
 xdg_toplevel: xdg_shell.xdg_toplevel,
+
+xdg_decorations_manager: ?zxdg_decoration_manager_v1,
 
 wl_compositor: wayland.wl_compositor,
 has_wl_compositor: bool = false,
@@ -44,11 +50,15 @@ running: bool = true,
 screen: ashet.drivers.video.Host_VNC_Output,
 // input: ashet.drivers.input.Host_SDL_Input,
 
+window_width: u31,
+window_height: u31,
+
 pub fn init(
     allocator: std.mem.Allocator,
     index: usize,
     width: u16,
     height: u16,
+    initial_scale: u8,
 ) !*Wayland_Display {
     const server = try allocator.create(Wayland_Display);
     errdefer allocator.destroy(server);
@@ -60,10 +70,14 @@ pub fn init(
         .screen = try .init(width, height),
         // .input = ashet.drivers.input.Host_SDL_Input.init(),
 
+        .window_width = @max(1, initial_scale) * width,
+        .window_height = @max(1, initial_scale) * height,
+
         .connection = undefined,
         .wl_surface = undefined,
         .xdg_surface = undefined,
         .xdg_toplevel = undefined,
+        .xdg_decorations_manager = undefined,
         .wl_compositor = undefined,
         .xdg_wm_base = undefined,
         .wl_shm = undefined,
@@ -81,7 +95,7 @@ pub fn init(
     };
     errdefer server.connection.close();
 
-    const connection = server.connection.connection();
+    const connection = &server.connection.connection;
 
     const display = server.connection.getDisplay();
     const registry = try display.get_registry(connection);
@@ -132,16 +146,21 @@ pub fn init(
     // allocate a some framebuffers for rendering to
     server.swap_chain = .{ .wl_shm = server.wl_shm };
     errdefer server.swap_chain.deinit(
-        server.connection.connection(),
+        &server.connection.connection,
         allocator,
     );
 
-    try connection.setEventListener(server.xdg_toplevel, *bool, onXdgToplevelEvent, &server.running);
+    try connection.setEventListener(server.xdg_toplevel, *Wayland_Display, onXdgToplevelEvent, server);
+
+    if (server.xdg_decorations_manager) |manager| {
+        const decorations = try manager.get_toplevel_decoration(connection, server.xdg_toplevel);
+        try decorations.set_mode(connection, .server_side);
+    }
 
     return server;
 }
 
-pub fn process_events_wrapper(server_ptr: ?*anyopaque) callconv(.C) u32 {
+pub fn process_events_wrapper(server_ptr: ?*anyopaque) callconv(.c) u32 {
     const server: *Wayland_Display = @ptrCast(@alignCast(server_ptr.?));
 
     server.process_events() catch |err| {
@@ -155,9 +174,10 @@ pub fn process_events(server: *Wayland_Display) !void {
     while (server.running) {
         if (server.should_render) {
             const framebuffer = try server.swap_chain.mapBuffer(
-                server.connection.connection(),
+                &server.connection.connection,
                 server.allocator,
-                (@as(u31, @sizeOf(Pixel)) * server.screen.width) * server.screen.height,
+                // (@as(u31, @sizeOf(Pixel)) * server.screen.width) * server.screen.height,
+                @sizeOf(Pixel) * server.window_width * server.window_height,
             );
             errdefer server.swap_chain.unmapBuffer(framebuffer);
 
@@ -165,21 +185,21 @@ pub fn process_events(server: *Wayland_Display) !void {
 
             server.copyFromDriver(pixels);
 
-            const frame_callback = try server.wl_surface.frame(server.connection.connection());
-            try server.connection.connection().setEventListener(frame_callback, *bool, onWlCallbackSetTrue, &server.should_render);
+            const frame_callback = try server.wl_surface.frame(&server.connection.connection);
+            try server.connection.connection.setEventListener(frame_callback, *bool, onWlCallbackSetTrue, &server.should_render);
 
             const wl_buffer = try server.swap_chain.sendBuffer(
-                server.connection.connection(),
+                &server.connection.connection,
                 framebuffer,
-                server.screen.width,
-                server.screen.height,
-                server.screen.width * @sizeOf(Pixel),
+                server.window_width,
+                server.window_height,
+                server.window_width * @sizeOf(Pixel),
                 .argb8888,
             );
 
-            try server.wl_surface.attach(server.connection.connection(), wl_buffer, 0, 0);
-            try server.wl_surface.damage(server.connection.connection(), 0, 0, std.math.maxInt(i32), std.math.maxInt(i32));
-            try server.wl_surface.commit(server.connection.connection());
+            try server.wl_surface.attach(&server.connection.connection, wl_buffer, 0, 0);
+            try server.wl_surface.damage(&server.connection.connection, 0, 0, std.math.maxInt(i32), std.math.maxInt(i32));
+            try server.wl_surface.commit(&server.connection.connection);
 
             server.should_render = false;
             server.frame_count += 1;
@@ -189,7 +209,7 @@ pub fn process_events(server: *Wayland_Display) !void {
         // try server.connection.recv();
 
         wait_loop: while (true) {
-            try server.connection.flushSendBuffers();
+            _ = try server.connection.flushSendBuffers();
             // TODO: switch to std.posix.recvmsg: https://github.com/ziglang/zig/issues/20660
             const bytes_read = std.os.linux.recvmsg(
                 server.connection.socket,
@@ -219,29 +239,72 @@ pub fn process_events(server: *Wayland_Display) !void {
     std.process.exit(0);
 }
 
+const palette_lut: [256]Pixel = blk: {
+    @setEvalBranchQuota(10_000);
+    var palette: [256]Pixel = undefined;
+    for (&palette, 0..) |*rgb, index| {
+        const index8: u8 = @intCast(index);
+        const color: ashet.abi.Color = @bitCast(index8);
+        rgb.* = color.to_argb8888();
+    }
+
+    break :blk palette;
+};
+
+fn get_content_scale(server: *Wayland_Display) u32 {
+    const content_w: u32 = server.screen.width;
+    const content_h: u32 = server.screen.height;
+    const window_w = server.window_width;
+    const window_h = server.window_height;
+
+    const scale_x = window_w / content_w;
+    const scale_y = window_h / content_h;
+
+    return @min(scale_x, scale_y);
+}
+
 fn copyFromDriver(server: *Wayland_Display, pixels: []Pixel) void {
-    const copy_w = server.screen.width;
-    const copy_h = server.screen.height;
+    // Clear the buffer to black for letterboxing
+    @memset(pixels, @enumFromInt(0xFF000000));
+
+    const content_w: u32 = server.screen.width;
+    const content_h: u32 = server.screen.height;
+    const window_w = server.window_width;
+    const window_h = server.window_height;
+
+    const scale = server.get_content_scale();
+    if (scale == 0)
+        return; // Window is smaller than content, do not render.
+
+    const scaled_w = content_w * scale;
+    const scaled_h = content_h * scale;
+
+    std.debug.assert(scaled_w <= window_w);
+    std.debug.assert(scaled_h <= window_h);
+
+    const offset_x = (window_w - scaled_w) / 2;
+    const offset_y = (window_h - scaled_h) / 2;
+
+    std.debug.assert(2 * offset_x + scaled_w <= window_w);
+    std.debug.assert(2 * offset_y + scaled_h <= window_h);
 
     var src_ptr: [*]const ashet.abi.Color = server.screen.backbuffer.ptr;
-    var dst_ptr: [*]Pixel = pixels.ptr;
+    var dst_ptr: [*]Pixel = pixels.ptr + window_w * offset_y + offset_x;
 
-    for (0..copy_h) |_| {
-        const src_row = src_ptr[0..copy_w];
-        const dst_row = dst_ptr[0..copy_w];
-
-        for (dst_row, src_row) |*d, s| {
-            d.* = s.to_argb8888();
+    for (0..content_h) |_| {
+        for (0..scale) |_| {
+            for (dst_ptr[0..scaled_w], 0..) |*pixel, x| {
+                pixel.* = palette_lut[src_ptr[x / scale].to_u8()];
+            }
+            dst_ptr += server.window_width;
         }
-
         src_ptr += server.screen.width;
-        dst_ptr += server.screen.width;
     }
 }
 
 fn onXdgSurfaceEvent(
     surface_configured: *bool,
-    connection: shimizu.Connection,
+    connection: *shimizu.Connection,
     xdg_surface: xdg_shell.xdg_surface,
     event: xdg_shell.xdg_surface.Event,
 ) !void {
@@ -252,6 +315,7 @@ fn onXdgSurfaceEvent(
         },
     }
 }
+
 /// An ARGB framebuffer
 pub const Framebuffers = struct {
     size: [2]u32,
@@ -359,8 +423,8 @@ fn renderGradient(framebuffer: []Pixel, fb_size: [2]u32, frame_count: u32) void 
 pub const Pixel = ashet.abi.Color.ARGB8888;
 
 fn onXdgToplevelEvent(
-    running: *bool,
-    connection: shimizu.Connection,
+    server: *Wayland_Display,
+    connection: *shimizu.Connection,
     xdg_toplevel: xdg_shell.xdg_toplevel,
     event: xdg_shell.xdg_toplevel.Event,
 ) !void {
@@ -368,14 +432,22 @@ fn onXdgToplevelEvent(
     _ = connection;
 
     switch (event) {
-        .close => running.* = false,
+        .close => server.running = false,
+        .configure => |cfg| {
+            if (cfg.width > 0) {
+                server.window_width = @intCast(cfg.width);
+            }
+            if (cfg.height > 0) {
+                server.window_height = @intCast(cfg.height);
+            }
+        },
         else => {},
     }
 }
 
 fn onXdgWmBaseEvent(
     _: void,
-    connection: shimizu.Connection,
+    connection: *shimizu.Connection,
     xdg_wm_base: xdg_shell.xdg_wm_base,
     event: xdg_shell.xdg_wm_base.Event,
 ) !void {
@@ -388,7 +460,7 @@ fn onXdgWmBaseEvent(
 
 fn onWlCallbackSetTrue(
     bool_ptr: *bool,
-    connection: shimizu.Connection,
+    connection: *shimizu.Connection,
     wl_callback: shimizu.core.wl_callback,
     event: shimizu.core.wl_callback.Event,
 ) !void {
@@ -399,7 +471,7 @@ fn onWlCallbackSetTrue(
     bool_ptr.* = true;
 }
 
-fn create_wayland_object(connection: shimizu.Connection, registry: wayland.wl_registry, global: wayland.wl_registry.Event.Global, comptime T: type) !T {
+fn create_wayland_object(connection: *shimizu.Connection, registry: wayland.wl_registry, global: wayland.wl_registry.Event.Global, comptime T: type) !T {
     const obj_id = try registry.bind(
         connection,
         global.name,
@@ -416,7 +488,7 @@ const Seat = struct {
     wl_keyboard: ?wayland.wl_keyboard = null,
 };
 
-fn onRegistryEvent(server: *Wayland_Display, connection: shimizu.Connection, registry: wayland.wl_registry, event: wayland.wl_registry.Event) !void {
+fn onRegistryEvent(server: *Wayland_Display, connection: *shimizu.Connection, registry: wayland.wl_registry, event: wayland.wl_registry.Event) !void {
     switch (event) {
         .global => |global| {
             if (shimizu.globalMatchesInterface(global, wayland.wl_compositor)) {
@@ -457,14 +529,23 @@ fn onRegistryEvent(server: *Wayland_Display, connection: shimizu.Connection, reg
                 server.seat = .{
                     .wl_seat = wl_seat,
                 };
-                try connection.setEventListener(server.seat.?.wl_seat, *Seat, onWlSeatEvent, &server.seat.?);
+                try connection.setEventListener(server.seat.?.wl_seat, *Wayland_Display, onWlSeatEvent, server);
+            } else if (shimizu.globalMatchesInterface(global, zxdg_decoration_manager_v1)) {
+                server.xdg_decorations_manager = try create_wayland_object(
+                    connection,
+                    registry,
+                    global,
+                    zxdg_decoration_manager_v1,
+                );
             }
         },
+
         else => {},
     }
 }
 
-fn onWlSeatEvent(seat: *Seat, connection: shimizu.Connection, wl_seat: wayland.wl_seat, event: wayland.wl_seat.Event) !void {
+fn onWlSeatEvent(server: *Wayland_Display, connection: *shimizu.Connection, wl_seat: wayland.wl_seat, event: wayland.wl_seat.Event) !void {
+    const seat = &server.seat.?;
     switch (event) {
         .capabilities => |capabilities| {
             if (capabilities.capabilities.keyboard) {
@@ -485,7 +566,7 @@ fn onWlSeatEvent(seat: *Seat, connection: shimizu.Connection, wl_seat: wayland.w
                 logger.info("has pointer", .{});
                 if (seat.wl_pointer == null) {
                     seat.wl_pointer = try wl_seat.get_pointer(connection);
-                    try connection.setEventListener(seat.wl_pointer.?, *Seat, onPointerCallback, seat);
+                    try connection.setEventListener(seat.wl_pointer.?, *Wayland_Display, onPointerCallback, server);
                 }
             } else {
                 logger.info("has no more pointer", .{});
@@ -499,8 +580,7 @@ fn onWlSeatEvent(seat: *Seat, connection: shimizu.Connection, wl_seat: wayland.w
     }
 }
 
-fn onPointerCallback(seat: *Seat, connection: shimizu.Connection, wl_pointer: wayland.wl_pointer, event: wayland.wl_pointer.Event) !void {
-    _ = seat;
+fn onPointerCallback(server: *Wayland_Display, connection: *shimizu.Connection, wl_pointer: wayland.wl_pointer, event: wayland.wl_pointer.Event) !void {
     _ = connection;
     _ = wl_pointer;
     switch (event) {
@@ -513,27 +593,26 @@ fn onPointerCallback(seat: *Seat, connection: shimizu.Connection, wl_pointer: wa
         .motion => |motion| {
             logger.debug("pointer.motion({})", .{motion});
 
-            ashet.input.push_raw_event(.{
-                .mouse_abs_motion = .{
-                    .x = @intCast(motion.surface_x.integer),
-                    .y = @intCast(motion.surface_y.integer),
-                },
-            });
+            const scale: i24 = @intCast(server.get_content_scale());
+
+            if (scale > 0) {
+                const dx: i24 = @intCast((server.window_width -| @abs(scale) * server.screen.width) / 2);
+                const dy: i24 = @intCast((server.window_height -| @abs(scale) * server.screen.height) / 2);
+
+                ashet.input.push_raw_event(.{
+                    .mouse_abs_motion = .{
+                        .x = @intCast(@divFloor(motion.surface_x.integer -| dx, scale)),
+                        .y = @intCast(@divFloor(motion.surface_y.integer -| dy, scale)),
+                    },
+                });
+            }
         },
         .button => |button| blk: {
             logger.debug("pointer.button({})", .{button});
 
-            const mouse_button: ashet.abi.MouseButton = switch (button.button) {
-                // See https://github.com/torvalds/linux/blob/master/include/uapi/linux/input-event-codes.h#L762
-                0x110 => .left,
-                0x111 => .right,
-                0x112 => .middle,
-                0x115, 0x114 => .nav_next,
-                0x116, 0x113 => .nav_previous,
-                else => {
-                    logger.warn("unsupported mouse button: 0x{X:0>3}", .{button.button});
-                    break :blk;
-                },
+            const mouse_button: ashet.abi.MouseButton = evdev.mouseFromEvdev(button.button) orelse {
+                logger.warn("unsupported mouse button: 0x{X:0>3}", .{button.button});
+                break :blk;
             };
 
             ashet.input.push_raw_event(.{
@@ -576,7 +655,7 @@ fn onPointerCallback(seat: *Seat, connection: shimizu.Connection, wl_pointer: wa
     }
 }
 
-fn onKeyboardCallback(seat: *Seat, connection: shimizu.Connection, wl_keyboard: wayland.wl_keyboard, event: wayland.wl_keyboard.Event) !void {
+fn onKeyboardCallback(seat: *Seat, connection: *shimizu.Connection, wl_keyboard: wayland.wl_keyboard, event: wayland.wl_keyboard.Event) !void {
     _ = seat;
     _ = connection;
     _ = wl_keyboard;
@@ -596,15 +675,15 @@ fn onKeyboardCallback(seat: *Seat, connection: shimizu.Connection, wl_keyboard: 
         .key => |k| {
             logger.debug("keyboard.key({})", .{k});
 
-            if (std.math.cast(u16, k.key)) |scancode| {
+            if (evdev.keyFromEvdev(k.key)) |scancode| {
                 ashet.input.push_raw_event(.{
                     .keyboard = .{
-                        .scancode = scancode,
+                        .usage = scancode,
                         .down = (k.state == .pressed),
                     },
                 });
             } else {
-                logger.err("received invalid scancode 0x{X:0>8}", .{k.key});
+                logger.err("received unknown scancode 0x{X:0>8}", .{k.key});
             }
         },
         else => {

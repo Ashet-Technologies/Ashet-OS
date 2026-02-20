@@ -57,10 +57,24 @@ pub fn init(allocator: std.mem.Allocator, index: usize, regs: *volatile virtio.C
     return vd;
 }
 
+const palette_lut: [256]u32 = blk: {
+    @setEvalBranchQuota(10_000);
+    var palette: [256]u32 = undefined;
+    for (&palette, 0..) |*rgb, index| {
+        const index8: u8 = @intCast(index);
+        const color: Color = @bitCast(index8);
+        rgb.* = @intFromEnum(color.to_abgr8888());
+    }
+
+    break :blk palette;
+};
+
 inline fn pal(vd: *Virtio_GPU_Device, color: Color) u32 {
     _ = vd;
+
     @setRuntimeSafety(false);
-    return @intFromEnum(color.to_abgr8888());
+    return palette_lut[color.to_u8()];
+    // return @intFromEnum(color.to_abgr8888());
 }
 
 fn get_properties(driver: *Driver) ashet.video.DeviceProperties {
@@ -337,7 +351,7 @@ const GPU = struct {
 
         const stride = @divExact(calcStrideBytes(width, 32), @sizeOf(u32));
 
-        const frame_backing = try allocator.alignedAlloc(u32, @alignOf(u32), height * stride);
+        const frame_backing = try allocator.alignedAlloc(u32, .of(u32), height * stride);
         errdefer allocator.free(frame_backing);
 
         try gpu.resourceAttachBacking(res_id, std.mem.sliceAsBytes(frame_backing));

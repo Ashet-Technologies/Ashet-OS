@@ -1,5 +1,6 @@
 .{
     .name = .ashet_std,
+    .fingerprint = 0xa7a91d10321dae0a,
     .version = "0.1.0",
     .paths = .{
         "src",

@@ -7,11 +7,11 @@ const Location = syntax.Location;
 pub fn analyze(allocator: std.mem.Allocator, document: syntax.Document) !model.Document {
     var analyzer: Analyzer = .{
         .allocator = allocator,
-        .scope_stack = .init(allocator),
+        .scope_stack = .empty,
         .scope_map = .init(allocator),
-        .errors = .init(allocator),
+        .errors = .empty,
 
-        .root = .init(allocator),
+        .root = .empty,
         .structs = .init(allocator),
         .unions = .init(allocator),
         .enums = .init(allocator),
@@ -53,7 +53,7 @@ pub fn analyze(allocator: std.mem.Allocator, document: syntax.Document) !model.D
     // analyzer.validate_constraints();
 
     return .{
-        .root = try analyzer.root.toOwnedSlice(),
+        .root = try analyzer.root.toOwnedSlice(analyzer.allocator),
 
         .structs = try analyzer.structs.toOwnedSlice(),
         .unions = try analyzer.unions.toOwnedSlice(),
@@ -152,13 +152,19 @@ const Analyzer = struct {
         const current_name = ana.current_scope_name();
 
         const current_scope = ana.scope_map.get(current_name) orelse {
-            std.log.err("current scope: {s}", .{current_name});
+            std.log.err("current scope: {f}", .{dotJoin(current_name)});
             @panic("BUG: No current scope found!");
         };
 
         const inserted = if (current_scope.children.get(name)) |existing_child| blk: {
-            if (scope_type != existing_child.type)
+            if (scope_type != existing_child.type) {
+                std.log.err("scope mismatch for scope {f}: types {s} and {s} don't match", .{
+                    std.zig.fmtId(name),
+                    @tagName(scope_type),
+                    @tagName(existing_child.type),
+                });
                 @panic("scope mismatch");
+            }
             break :blk false;
         } else blk: {
             const child_scope: *Scope = try ana.allocator.create(Scope);
@@ -172,7 +178,7 @@ const Analyzer = struct {
             break :blk true;
         };
 
-        try ana.scope_stack.append(name);
+        try ana.scope_stack.append(ana.allocator, name);
 
         const scope = current_scope.children.get(name).?;
 
@@ -194,7 +200,7 @@ const Analyzer = struct {
     }
 
     fn map(ana: *Analyzer, doc: syntax.Document) error{OutOfMemory}!void {
-        try ana.root.resize(doc.nodes.len);
+        try ana.root.resize(ana.allocator, doc.nodes.len);
         for (ana.root.items, doc.nodes) |*out, node| {
             out.* = ana.map_node(node) catch |err| switch (err) {
                 // swallow silently here, all nodes are independent from each other
@@ -260,9 +266,9 @@ const Analyzer = struct {
                     continue :element_resolution;
                 }
             }
-            std.log.err("no candidate found for type {s} at {s}!", .{
-                unknown_type.local_qualified_name,
-                unknown_type.declared_scope,
+            std.log.err("no candidate found for type {f} at {f}!", .{
+                dotJoin(unknown_type.local_qualified_name),
+                dotJoin(unknown_type.declared_scope),
             });
         }
     }
@@ -287,8 +293,8 @@ const Analyzer = struct {
             //     @tagName(magic_type.size),
             // });
 
-            var items: std.ArrayList(model.EnumItem) = .init(ana.allocator);
-            defer items.deinit();
+            var items: std.ArrayList(model.EnumItem) = .empty;
+            defer items.deinit(ana.allocator);
 
             switch (magic_type.kind) {
                 inline else => |tag| {
@@ -300,29 +306,29 @@ const Analyzer = struct {
                     const collector = &@field(ana, collector_name);
 
                     for (collector.items, 1..) |item, index| {
-                        var item_name: std.ArrayList(u8) = .init(ana.allocator);
-                        defer item_name.deinit();
+                        var item_name: std.ArrayList(u8) = .empty;
+                        defer item_name.deinit(ana.allocator);
 
-                        try item_name.ensureTotalCapacity(120);
+                        try item_name.ensureTotalCapacity(ana.allocator, 120);
 
                         for (item.full_qualified_name, 0..) |local_name, i| {
                             if (i > 0) {
-                                try item_name.append('_');
+                                try item_name.append(ana.allocator, '_');
                             }
 
                             for (local_name, 0..) |c, j| {
                                 if (j > 0 and std.ascii.isUpper(c)) {
-                                    try item_name.append('_');
+                                    try item_name.append(ana.allocator, '_');
                                 }
-                                try item_name.append(std.ascii.toLower(c));
+                                try item_name.append(ana.allocator, std.ascii.toLower(c));
                             }
                         }
 
                         // TODO: Implement stable item id assignment!
 
-                        try items.append(.{
+                        try items.append(ana.allocator, .{
                             .docs = &.{},
-                            .name = try item_name.toOwnedSlice(),
+                            .name = try item_name.toOwnedSlice(ana.allocator),
                             .value = @intCast(index),
                         });
                     }
@@ -336,7 +342,7 @@ const Analyzer = struct {
                 .docs = type_def.docs,
                 .full_qualified_name = type_def.full_qualified_name,
                 .kind = .closed,
-                .items = try items.toOwnedSlice(),
+                .items = try items.toOwnedSlice(ana.allocator),
             });
 
             type_ref.* = .{ .@"enum" = enum_id };
@@ -468,15 +474,15 @@ const Analyzer = struct {
         std.debug.assert(call.native_inputs.len == 0);
         std.debug.assert(call.native_outputs.len == 0);
 
-        var native_inputs: std.ArrayList(model.Parameter) = .init(ana.allocator);
-        defer native_inputs.deinit();
+        var native_inputs: std.ArrayList(model.Parameter) = .empty;
+        defer native_inputs.deinit(ana.allocator);
 
-        var native_outputs: std.ArrayList(model.Parameter) = .init(ana.allocator);
-        defer native_outputs.deinit();
+        var native_outputs: std.ArrayList(model.Parameter) = .empty;
+        defer native_outputs.deinit(ana.allocator);
 
         const Helper = struct {
             fn remap_outputs(a: *Analyzer, ni: *std.ArrayList(model.Parameter), no: *std.ArrayList(model.Parameter)) !void {
-                try ni.ensureUnusedCapacity(no.items.len);
+                try ni.ensureUnusedCapacity(a.allocator, no.items.len);
                 for (no.items) |item| {
                     var copy = item;
                     copy.type = try a.map_model_type(.{ .ptr = .{
@@ -490,7 +496,7 @@ const Analyzer = struct {
                     }
                     ni.appendAssumeCapacity(copy);
                 }
-                no.clearAndFree();
+                no.clearAndFree(a.allocator);
             }
 
             const RenderMode = enum { input, output };
@@ -499,7 +505,7 @@ const Analyzer = struct {
                 for (params) |*param| {
                     const resolved = a.get_resolved_type(param.type);
                     if (resolved.is_c_abi_compatible()) {
-                        try list.append(param.*);
+                        try list.append(a.allocator, param.*);
                         continue;
                     }
 
@@ -547,7 +553,7 @@ const Analyzer = struct {
                                         }, mode);
                                     },
                                     .anyptr, .anyfnptr => {
-                                        try list.append(param.*);
+                                        try list.append(a.allocator, param.*);
                                     },
                                     else => {
                                         std.log.err("unsupported optional builtin type {}", .{inner});
@@ -555,7 +561,7 @@ const Analyzer = struct {
                                 },
                                 .ptr => |ptr| switch (ptr.size) {
                                     .one, .unknown => {
-                                        try list.append(param.*);
+                                        try list.append(a.allocator, param.*);
                                     },
                                     .slice => {
                                         try emit_slice(a, list, param, .{
@@ -571,7 +577,7 @@ const Analyzer = struct {
                                     },
                                 },
                                 .resource => {
-                                    try list.append(param.*);
+                                    try list.append(a.allocator, param.*);
                                 },
                                 else => {
                                     std.log.err("unsupported optional type {}", .{inner});
@@ -603,7 +609,7 @@ const Analyzer = struct {
                     .output => .{ .output_slice = .{ .ptr = ptr_name, .len = len_name } },
                 };
 
-                try list.append(.{
+                try list.append(a.allocator, .{
                     .docs = param.docs,
                     .name = ptr_name,
                     .type = try a.map_model_type(ptr_type),
@@ -613,7 +619,7 @@ const Analyzer = struct {
                     },
                     .default = null,
                 });
-                try list.append(.{
+                try list.append(a.allocator, .{
                     .docs = try a.allocator.dupe([]const u8, &.{
                         try a.format("The number of elements referenced by {s}_ptr.", .{param.name}),
                     }),
@@ -640,7 +646,7 @@ const Analyzer = struct {
 
                     try Helper.remap_outputs(ana, &native_inputs, &native_outputs);
 
-                    try native_outputs.append(.{
+                    try native_outputs.append(ana.allocator, .{
                         .name = "error_code",
                         .default = null,
                         .docs = &.{},
@@ -661,15 +667,15 @@ const Analyzer = struct {
             .structure => {},
         }
 
-        call.native_inputs = try native_inputs.toOwnedSlice();
-        call.native_outputs = try native_outputs.toOwnedSlice();
+        call.native_inputs = try native_inputs.toOwnedSlice(ana.allocator);
+        call.native_outputs = try native_outputs.toOwnedSlice(ana.allocator);
     }
 
     fn compute_native_fields(ana: *Analyzer, container: *model.Struct) !void {
         std.debug.assert(container.native_fields.len == 0);
 
-        var native_fields: std.ArrayList(model.StructField) = .init(ana.allocator);
-        defer native_fields.deinit();
+        var native_fields: std.ArrayList(model.StructField) = .empty;
+        defer native_fields.deinit(ana.allocator);
 
         const Helper = struct {
             ana: *Analyzer,
@@ -681,14 +687,14 @@ const Analyzer = struct {
                 docs: model.DocString,
                 ptr_type: model.Type,
             ) !void {
-                try h.nf.append(.{
+                try h.nf.append(h.ana.allocator, .{
                     .docs = docs,
                     .name = try h.ana.format("{s}_ptr", .{basename}),
                     .type = try h.ana.map_model_type(ptr_type),
                     .role = .{ .slice_ptr = basename },
                     .default = null,
                 });
-                try h.nf.append(.{
+                try h.nf.append(h.ana.allocator, .{
                     .docs = try h.ana.allocator.dupe([]const u8, &.{
                         try h.ana.format("The number of elements referenced by {s}_ptr.", .{basename}),
                     }),
@@ -708,7 +714,7 @@ const Analyzer = struct {
             const forward: enum { keep, discard } = blk: switch (fld_type) {
                 .well_known => |id| switch (id) {
                     .bytestr, .bytebuf, .str => {
-                        try native_fields.append(.{
+                        try native_fields.append(ana.allocator, .{
                             .docs = fld.docs,
                             .name = try ana.format("{s}_ptr", .{fld.name}),
                             .type = try ana.map_model_type(.{ .ptr = .{
@@ -720,7 +726,7 @@ const Analyzer = struct {
                             .role = .{ .slice_ptr = fld.name },
                             .default = null,
                         });
-                        try native_fields.append(.{
+                        try native_fields.append(ana.allocator, .{
                             .docs = try ana.allocator.dupe([]const u8, &.{
                                 try ana.format("The amount of bytes referenced by {s}_ptr.", .{fld.name}),
                             }),
@@ -740,7 +746,7 @@ const Analyzer = struct {
                     switch (child) {
                         .well_known => |id| switch (id) {
                             .bytestr, .bytebuf, .str => {
-                                try native_fields.append(.{
+                                try native_fields.append(ana.allocator, .{
                                     .docs = fld.docs,
                                     .name = try ana.format("{s}_ptr", .{fld.name}),
                                     .type = try ana.map_model_type(.{
@@ -754,7 +760,7 @@ const Analyzer = struct {
                                     .role = .{ .slice_ptr = fld.name },
                                     .default = null,
                                 });
-                                try native_fields.append(.{
+                                try native_fields.append(ana.allocator, .{
                                     .docs = try ana.allocator.dupe([]const u8, &.{
                                         try ana.format("The amount of bytes referenced by {s}_ptr.", .{fld.name}),
                                     }),
@@ -822,11 +828,11 @@ const Analyzer = struct {
             };
 
             if (forward == .keep) {
-                try native_fields.append(fld);
+                try native_fields.append(ana.allocator, fld);
             }
         }
 
-        container.native_fields = try native_fields.toOwnedSlice();
+        container.native_fields = try native_fields.toOwnedSlice(ana.allocator);
     }
 
     fn fatal_error(ana: *Analyzer, location: Location, comptime fmt: []const u8, args: anytype) error{ OutOfMemory, FatalAnalysisError } {
@@ -837,10 +843,10 @@ const Analyzer = struct {
     fn emit_error(ana: *Analyzer, location: Location, comptime fmt: []const u8, args: anytype) error{OutOfMemory}!void {
         const msg = try std.fmt.allocPrint(
             ana.allocator,
-            "{}: " ++ fmt,
+            "{f}: " ++ fmt,
             .{location} ++ args,
         );
-        try ana.errors.append(msg);
+        try ana.errors.append(ana.allocator, msg);
     }
 
     fn emit_unexpected_node(ana: *Analyzer, node: syntax.Node) !void {
@@ -853,7 +859,7 @@ const Analyzer = struct {
     };
 
     fn map_node(ana: *Analyzer, node: syntax.Node) MapError!model.Declaration {
-        errdefer std.log.err("failed to map node at {}", .{node.location});
+        errdefer std.log.err("failed to map node at {f}", .{node.location});
 
         return switch (node.type) {
             .declaration => try ana.map_decl(node),
@@ -1003,14 +1009,17 @@ const Analyzer = struct {
 
         const doc_comment = try ana.map_doc_comment(node.doc_comment);
 
-        var children: std.ArrayList(model.Declaration) = .init(ana.allocator);
-        defer children.deinit();
+        var children: std.ArrayList(model.Declaration) = .empty;
+        defer children.deinit(ana.allocator);
 
         for (decl.children) |src| {
             if (!src.is_declaration())
                 continue;
             switch (src.type) {
-                .declaration, .typedef, .@"const" => try children.append(try ana.map_node(src)),
+                .declaration, .typedef, .@"const" => try children.append(
+                    ana.allocator,
+                    try ana.map_node(src),
+                ),
                 else => unreachable,
             }
         }
@@ -1059,7 +1068,7 @@ const Analyzer = struct {
         return .{
             .full_qualified_name = full_name,
             .docs = doc_comment,
-            .children = try children.toOwnedSlice(),
+            .children = try children.toOwnedSlice(ana.allocator),
             .data = data,
         };
     }
@@ -1474,8 +1483,8 @@ const Analyzer = struct {
             },
 
             .named => |data| {
-                var fqn: std.ArrayList([]const u8) = .init(ana.allocator);
-                defer fqn.deinit();
+                var fqn: std.ArrayList([]const u8) = .empty;
+                defer fqn.deinit(ana.allocator);
 
                 var iter = std.mem.splitScalar(u8, data, '.');
 
@@ -1485,7 +1494,7 @@ const Analyzer = struct {
                         // try ana.emit_error();
                         // continue;
                     }
-                    try fqn.append(part);
+                    try fqn.append(ana.allocator, part);
                 }
 
                 std.debug.assert(fqn.items.len > 0);
@@ -1493,7 +1502,7 @@ const Analyzer = struct {
                 return .{
                     .unknown_named_type = .{
                         .declared_scope = try ana.allocator.dupe([]const u8, ana.current_scope_name()),
-                        .local_qualified_name = try fqn.toOwnedSlice(),
+                        .local_qualified_name = try fqn.toOwnedSlice(ana.allocator),
                     },
                 };
             },
@@ -1545,10 +1554,10 @@ const Analyzer = struct {
             },
 
             .fnptr => |data| {
-                var params: std.ArrayList(model.TypeIndex) = .init(ana.allocator);
-                defer params.deinit();
+                var params: std.ArrayList(model.TypeIndex) = .empty;
+                defer params.deinit(ana.allocator);
 
-                try params.resize(data.parameters.len);
+                try params.resize(ana.allocator, data.parameters.len);
 
                 for (params.items, data.parameters) |*out, dst| {
                     out.* = try ana.map_type(dst);
@@ -1558,7 +1567,7 @@ const Analyzer = struct {
 
                 return .{
                     .fnptr = .{
-                        .parameters = try params.toOwnedSlice(),
+                        .parameters = try params.toOwnedSlice(ana.allocator),
                         .return_type = return_type,
                     },
                 };
@@ -1607,7 +1616,7 @@ const Analyzer = struct {
                 .null => .null,
             },
             .symbol_name => |symbol_name| {
-                std.log.err("resolve symbol '{}'", .{std.zig.fmtEscapes(symbol_name)});
+                std.log.err("resolve symbol '{f}'", .{std.zig.fmtString(symbol_name)});
                 @panic("symbol resolution not done yet");
             },
             .uint => |int| .{ .int = int },
@@ -1771,15 +1780,24 @@ const Analyzer = struct {
         }
     }
 
-    fn make_collector(ana: *Analyzer, comptime T: type, comptime name_field: []const u8, comptime error_fmt: []const u8) NamedItemCollector(T, name_field, error_fmt) {
+    fn make_collector(
+        ana: *Analyzer,
+        comptime T: type,
+        comptime name_field: []const u8,
+        comptime error_fmt: []const u8,
+    ) NamedItemCollector(T, name_field, error_fmt) {
         return .{
             .ana = ana,
-            .fields = .init(ana.allocator),
+            .fields = .empty,
             .defined = .init(ana.allocator),
         };
     }
 
-    fn NamedItemCollector(comptime T: type, comptime name_field: []const u8, comptime error_fmt: []const u8) type {
+    fn NamedItemCollector(
+        comptime T: type,
+        comptime name_field: []const u8,
+        comptime error_fmt: []const u8,
+    ) type {
         std.debug.assert(@hasField(T, name_field));
         return struct {
             ana: *Analyzer,
@@ -1788,7 +1806,7 @@ const Analyzer = struct {
 
             pub fn append(col: *@This(), location: Location, item: T) !void {
                 const maybe_name: ?[]const u8 = @field(item, name_field);
-                try col.fields.append(item);
+                try col.fields.append(col.ana.allocator, item);
 
                 if (maybe_name) |name| {
                     if (try col.defined.fetchPut(name, {}) != null) {
@@ -1798,7 +1816,7 @@ const Analyzer = struct {
             }
 
             pub fn resolve(col: *@This()) ![]T {
-                const result = try col.fields.toOwnedSlice();
+                const result = try col.fields.toOwnedSlice(col.ana.allocator);
                 col.defined.clearAndFree();
                 return result;
             }
@@ -1834,7 +1852,7 @@ fn Collector(comptime I: type) type {
             defer col.from_list(list);
 
             const index = list.items.len;
-            try list.append(item);
+            try list.append(col.allocator, item);
             return .from_int(index);
         }
 
@@ -1842,11 +1860,11 @@ fn Collector(comptime I: type) type {
             var list = col.to_list();
             defer col.from_list(list);
 
-            return try list.toOwnedSlice();
+            return try list.toOwnedSlice(col.allocator);
         }
 
         fn to_list(col: *Collect) std.ArrayList(Item) {
-            return .{ .allocator = col.allocator, .capacity = col.capacity, .items = col.items };
+            return .{ .capacity = col.capacity, .items = col.items };
         }
 
         fn from_list(col: *Collect, list: std.ArrayList(Item)) void {
@@ -1861,3 +1879,19 @@ fn convert_enum(comptime T: type, src: anytype) T {
         inline else => |tag| @field(T, @tagName(tag)),
     };
 }
+
+fn dotJoin(data: []const []const u8) DotJoin {
+    return .{ .data = data };
+}
+
+const DotJoin = struct {
+    data: []const []const u8,
+
+    pub fn format(self: DotJoin, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+        if (self.data.len == 0) return;
+        try writer.writeAll(self.data[0]);
+        for (self.data[1..]) |str| {
+            try writer.print(".{s}", .{str});
+        }
+    }
+};

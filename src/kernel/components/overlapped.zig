@@ -142,16 +142,19 @@ const async_call_handlers = std.EnumArray(ashet.abi.overlapped.ARC.Type, AsyncHa
     .draw_render = AsyncHandler.wrap(ashet.graphics.render_async),
 
     .video_wait_for_v_blank = AsyncHandler.wrap(ashet.video.wait_for_vblank_async),
+
+    .io_serial_configure = AsyncHandler.todo("io_serial_configure"),
+    .io_serial_control = AsyncHandler.todo("io_serial_control"),
+    .io_serial_query_control = AsyncHandler.todo("io_serial_query_control"),
+    .io_serial_write = AsyncHandler.todo("io_serial_write"),
+    .io_serial_read = AsyncHandler.todo("io_serial_read"),
+    .io_serial_break = AsyncHandler.todo("io_serial_break"),
+
+    .io_i2c_execute = AsyncHandler.wrap(ashet.io.i2c.execute_async),
 });
 
-/// Schedules a new overlapped event from the current thread context.
-pub fn schedule(event: *ARC) error{ SystemResources, AlreadyScheduled }!void {
-    const thread, const context = get_context();
-    return schedule_with_context(thread.get_process(), context, event);
-}
-
 /// Schedules a new overlapped event from the given thread and context.
-pub fn schedule_with_context(resource_owner: *ashet.multi_tasking.Process, context: *Context, event: *ARC) error{ SystemResources, AlreadyScheduled }!void {
+pub fn schedule(resource_owner: *ashet.multi_tasking.Process, context: *Context, event: *ARC) error{ SystemResources, AlreadyScheduled }!void {
     const call = try AsyncCall.create(
         context,
         event,
@@ -160,7 +163,7 @@ pub fn schedule_with_context(resource_owner: *ashet.multi_tasking.Process, conte
     );
     errdefer call.destroy();
 
-    logger.debug("dispatching {s} from {}", .{ @tagName(event.type), resource_owner });
+    logger.debug("dispatching {t} from {f}", .{ event.type, resource_owner });
 
     context.in_flight.append(&call.owner_link);
 
@@ -168,24 +171,15 @@ pub fn schedule_with_context(resource_owner: *ashet.multi_tasking.Process, conte
     handler.call(call);
 }
 
-pub fn await_completion(completed: []*ARC, options: ashet.abi.Await_Options) error{Unscheduled}!usize {
-    _, const context = get_context();
-    return await_completion_with_context(context, completed, options);
-}
-
-pub fn await_completion_of(completed: []?*ARC) error{ Unscheduled, InvalidOperation }!usize {
-    _, const context = get_context();
-    return await_completion_of_with_context(context, completed);
-}
-
-pub fn await_completion_with_context(context: *Context, completed: []*ARC, options: ashet.abi.Await_Options) error{Unscheduled}!usize {
+pub fn await_completion(context: *Context, completed: []*ARC, options: ashet.abi.Await_Options) error{Unscheduled}!usize {
+    comptime std.debug.assert(@sizeOf([]?*ARC) == @sizeOf([]*ARC));
     return await_completion_internal(context, @ptrCast(completed), .{ .any = options }) catch |err| switch (err) {
         error.Unscheduled => |e| return e,
         error.InvalidOperation => unreachable,
     };
 }
 
-pub fn await_completion_of_with_context(context: *Context, completed: []?*ARC) error{ Unscheduled, InvalidOperation }!usize {
+pub fn await_completion_of(context: *Context, completed: []?*ARC) error{ Unscheduled, InvalidOperation }!usize {
     return await_completion_internal(context, completed, .given) catch |err| switch (err) {
         error.Unscheduled, error.InvalidOperation => |e| return e,
     };
@@ -220,7 +214,7 @@ fn await_completion_internal(context: *Context, completed: []?*ARC, mode: AwaitM
                 arc.* = undefined;
             }
 
-            logger.debug("await completion from {?}", .{awaiter_node.data.filter_thread});
+            logger.debug("await completion from {?f}", .{awaiter_node.data.filter_thread});
 
             var count: usize = 0;
             gather_loop: while (count < completed.len) {
@@ -233,7 +227,7 @@ fn await_completion_internal(context: *Context, completed: []?*ARC, mode: AwaitM
                     completed[count] = call.arc;
                     count += 1;
 
-                    logger.debug("returning {s} to userland from {}", .{ @tagName(call.arc.type), thread });
+                    logger.debug("returning {s} to userland from {f}", .{ @tagName(call.arc.type), thread });
 
                     call.destroy();
                 } else {
@@ -252,7 +246,7 @@ fn await_completion_internal(context: *Context, completed: []?*ARC, mode: AwaitM
                             break :gather_loop,
                     }
 
-                    logger.debug("suspend {} and wait for completion...", .{thread});
+                    logger.debug("suspend {f} and wait for completion...", .{thread});
 
                     {
                         context.awaiters.append(&awaiter_node);
@@ -262,7 +256,7 @@ fn await_completion_internal(context: *Context, completed: []?*ARC, mode: AwaitM
                         thread.@"suspend"();
                     }
 
-                    logger.debug("resumed {} from awaiting completion", .{thread});
+                    logger.debug("resumed {f} from awaiting completion", .{thread});
                 }
             }
             logger.debug("await yielded {} items", .{count});
@@ -720,7 +714,7 @@ pub fn enqueue_background_task(call: *AsyncCall, handler: *const Background_Work
     work_queues[i].enqueue(call, @constCast(handler));
 }
 
-fn background_worker_loop(context: ?*anyopaque) callconv(.C) u32 {
+fn background_worker_loop(context: ?*anyopaque) callconv(.c) u32 {
     const q: *WorkQueue = @ptrCast(@alignCast(context.?));
 
     logger.info("overlapped background worker ready.", .{});
@@ -731,7 +725,7 @@ fn background_worker_loop(context: ?*anyopaque) callconv(.C) u32 {
         while (q.dequeue()) |work_item| {
             const call, const ctx = work_item;
 
-            const worker: *const Background_Worker = @alignCast(@ptrCast(ctx));
+            const worker: *const Background_Worker = @ptrCast(@alignCast(ctx));
 
             logger.debug("execute overlapped call .{s}", .{@tagName(call.arc.type)});
             worker(&overlapped_context, call);
@@ -769,5 +763,5 @@ fn count_with_threadaffinity(queue: CallQueue, thread_filter: ?*ashet.scheduler.
         }
     }
 
-    return 1;
+    return count;
 }

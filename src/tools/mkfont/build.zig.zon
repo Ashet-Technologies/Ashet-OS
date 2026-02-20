@@ -12,16 +12,21 @@
             .path = "../../abi",
         },
         .args = .{
-            .url = "git+https://github.com/ikskuh/zig-args.git#9425b94c103a031777fdd272c555ce93a7dea581",
-            .hash = "args-0.0.0-CiLiqv_NAAC97fGpk9hS2K681jkiqPsWP6w3ucb_ctGH",
+            .url = "git+https://github.com/ikskuh/zig-args.git#e060ac80c244e9675471b6d213b22ddc83cc8f98",
+            .hash = "args-0.0.0-CiLiqo_RAADz2TiHUzG5-0Mk7IZHR-h1SZgUrb_k4c7d",
         },
         .zigimg = .{
-            .url = "https://github.com/der-teufel-programming/zigimg/archive/7de94de43737a0d6ff8cb8049f1b72110dfc3bfd.tar.gz",
-            .hash = "zigimg-0.1.0-AAAAAM5ZEAClgN5NBU0phadm-rnJE1r4kMiVUjsxoltr",
+            .url = "git+https://github.com/zigimg/zigimg.git#5c3173ac34b01a26c5a17433bc0b649560d59fc9",
+            .hash = "zigimg-0.1.0-8_eo2vEZFgC7DMbELUPb27zG2Xo2J4m6FDJs5ODzNKEb",
         },
         .turtlefont = .{
-            .url = "git+https://github.com/ikskuh/turtlefont?ref=main#f88e8d2447475635e410c52ce798e8954b27d3df",
-            .hash = "turtlefont-0.1.0-TiRlD8JaAABrQ9oR7tgmhWRBIae7Esx4MLnUVyMsLbCR",
+            .url = "git+https://github.com/ikskuh/turtlefont.git?#ff599916181027b20dab62d4ccb6579b8761bdaf",
+            .hash = "turtlefont-0.1.0-TiRlDy9aAADzzrPYB51cDWDsqOQtZ41Af25bHfzWaNgr",
+        },
+
+        .stb = .{
+            .url = "git+https://github.com/nothings/stb.git#f1c79c02822848a9bed4315b12c8c8f3761e1296",
+            .hash = "N-V-__8AABQ7TgCnPlp8MP4YA8znrjd6E-ZjpF1rvrS8J_2I",
         },
     },
 }

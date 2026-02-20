@@ -26,21 +26,11 @@ pub const random = @import("components/random.zig");
 pub const sync = @import("components/sync.zig");
 pub const pipes = @import("components/pipes.zig");
 pub const ipc = @import("components/ipc.zig");
+pub const io = @import("components/io.zig");
 
 pub const ports = @import("port/targets.zig");
 
-pub const utils = struct {
-    pub const mmio = @import("utils/mmio.zig");
-    pub const fmt = @import("utils/fmt.zig");
-
-    pub inline fn volatile_read(comptime T: type, ptr: *volatile T) T {
-        return ptr.*;
-    }
-
-    pub inline fn volatile_write(comptime T: type, ptr: *volatile T, value: T) void {
-        ptr.* = value;
-    }
-};
+pub const utils = @import("utils/utils.zig");
 
 pub const platform_id: ports.Platform = machine_info.platform_id;
 pub const machine_id: ports.Machine = machine_info.machine_id;
@@ -76,23 +66,28 @@ pub const log_levels = struct {
     pub var ashex_loader: LogLevel = .info;
     pub var drivers: LogLevel = .info;
     pub var elf_loader: LogLevel = .info;
-    pub var filesystem: LogLevel = .debug;
+    pub var filesystem: LogLevel = .info;
     pub var gui: LogLevel = .debug;
     pub var io: LogLevel = .info;
     pub var main: LogLevel = .debug;
-    pub var memory: LogLevel = .info;
+    pub var memory: LogLevel = .debug;
     pub var mprot: LogLevel = .info; // very noise modules!
     pub var multitasking: LogLevel = .debug;
     pub var network: LogLevel = .info;
     pub var overlapped: LogLevel = .info; // very noise modules!
     pub var page_allocator: LogLevel = .debug;
     pub var resources: LogLevel = .info;
-    pub var scheduler: LogLevel = .debug;
+    pub var scheduler: LogLevel = .info;
     pub var ui: LogLevel = .debug;
+    pub var graphics: LogLevel = .info;
     pub var input: LogLevel = .info;
     pub var video: LogLevel = .debug;
-    pub var storage: LogLevel = .info; // very noise modules!
+    pub var storage: LogLevel = .warn; // very noise modules!
+    pub var gpt_part: LogLevel = .warn; // very noise modules!
+    pub var mbr_part: LogLevel = .warn; // very noise modules!
     pub var x86_vmm: LogLevel = .info; // very noise modules!
+    pub var i2c: LogLevel = .info;
+    pub var syscalls: LogLevel = .debug;
 
     pub var wayland_display: LogLevel = .info;
 
@@ -102,12 +97,29 @@ pub const log_levels = struct {
     pub var @"virtio-input": LogLevel = .info;
     pub var @"virtio-blog": LogLevel = .debug;
     pub var kbc: LogLevel = .info;
+    pub var enc28j60: LogLevel = .info;
+    pub var hstx_dvi: LogLevel = .info;
+    pub var nested_i2c_device: LogLevel = .debug;
+
+    pub var generic_ps2: LogLevel = .info;
+
+    pub var ds1306: LogLevel = .info;
+
+    // home computer:
+    pub var propio: LogLevel = .warn;
+    pub var propio_lowlevel: LogLevel = .info;
+    pub var propio_ps2: LogLevel = .warn;
+    pub var p2boot: LogLevel = .warn;
+    pub var ashet_hc: LogLevel = .info;
+    pub var ashet_hc_psram: LogLevel = .info;
 
     // external modules:
     pub var fatfs: LogLevel = .info;
     pub var agp_sw_rast: LogLevel = .info;
 
     // platforms:
+    pub var hosted: LogLevel = .debug;
+    pub var host_vnc_server: LogLevel = .info;
 
     // platforms.x86:
     pub var idt: LogLevel = .debug;
@@ -137,12 +149,19 @@ comptime {
     _ = syscalls;
 }
 
-fn ashet_kernelMain() callconv(.C) noreturn {
+fn ashet_kernelMain() callconv(.c) noreturn {
     // trampoline into kernelMain() to have full stack tracing.
     kernelMain();
 }
 
 fn kernelMain() noreturn {
+    // First thing to do: Set up the stack smashing guard to a hardcoded
+    // value instead of initializing it with .data/.rodata initialization.
+    //
+    // this is necessary as the compiler will emit code that will load
+    // this value in every preamble in debug builds.
+    __stack_chk_guard = __stack_chk_guard_init;
+
     Debug.setTraceLoc(@src());
     memory.loadKernelMemory(machine_config.load_sections);
 
@@ -158,12 +177,14 @@ fn kernelMain() noreturn {
     // much dynamic memory we have available:
 
     Debug.setTraceLoc(@src());
+    log.info("initialize linear memory...", .{});
     memory.initializeLinearMemory();
 
     // Initialize scheduler before HAL as it doesn't require anything except memory pages for thread
     // storage, queues and stacks.
 
     Debug.setTraceLoc(@src());
+    log.info("initialize scheduler...", .{});
     scheduler.initialize();
 
     full_panic = true;
@@ -171,10 +192,8 @@ fn kernelMain() noreturn {
     log.info("entering checked main()", .{});
     main() catch {
         if (@errorReturnTrace()) |error_trace| {
-            if (builtin.os.tag != .freestanding) {
-                // hosted environment:
-                std.debug.dumpStackTrace(error_trace.*);
-            }
+            Debug.write("error return trace:\r\n");
+            Debug.printStackTrace("  ", error_trace, Debug.println);
         }
 
         @panic("system failure");
@@ -243,8 +262,6 @@ fn main() !void {
     log.info("startup network...", .{});
     try network.start();
 
-    // try ui.start();
-
     {
         log.info("starting entry point thread...", .{});
 
@@ -274,7 +291,7 @@ fn main() !void {
     log.warn("All threads stopped. System is now halting.", .{});
 }
 
-fn threaded_kernel_init_unchecked(_: ?*anyopaque) callconv(.C) u32 {
+fn threaded_kernel_init_unchecked(_: ?*anyopaque) callconv(.c) u32 {
     threaded_kernel_init() catch |err| {
         std.log.err("failed to initialize kernel: {s}", .{@errorName(err)});
         if (@errorReturnTrace()) |trace|
@@ -318,11 +335,12 @@ fn threaded_kernel_init() !void {
 
 /// This function runs to keep certain kernel tasks alive and
 /// working.
-fn global_kernel_tick(_: ?*anyopaque) callconv(.C) u32 {
+fn global_kernel_tick(_: ?*anyopaque) callconv(.c) u32 {
     while (true) {
         video.tick();
         input.tick();
         time.tick();
+        io.i2c.tick();
         scheduler.yield();
     }
 }
@@ -332,21 +350,32 @@ pub const global_hotkeys = struct {
         if (!event.pressed)
             return false;
         if (event.modifiers.alt) {
-            switch (event.key) {
+            switch (event.usage) {
                 .f1 => @panic("F1 induced kernel panic"),
+                .f9 => {
+                    scheduler.use_live_stack_pattern_probing = !scheduler.use_live_stack_pattern_probing;
+                    if (scheduler.use_live_stack_pattern_probing) {
+                        std.log.warn("stack pattern probing enabled! expect slowdowns!", .{});
+                    } else {
+                        std.log.warn("stack pattern probing disabled!", .{});
+                    }
+                },
                 .f10 => scheduler.dumpStats(),
                 .f11 => network.dumpStats(),
                 .f12 => {
                     const total_pages = memory.debug.getPageCount();
                     const free_pages = memory.debug.getFreePageCount();
 
-                    log.info("current memory usage: {}/{} pages free, {:.3}/{:.3} used, {}% used", .{
+                    log.info("current memory usage: {}/{} pages free, {Bi:.3}/{Bi:.3} used, {}% used", .{
                         free_pages,
                         total_pages,
-                        std.fmt.fmtIntSizeBin(memory.page_size * (total_pages - free_pages)),
-                        std.fmt.fmtIntSizeBin(memory.page_size * total_pages),
+                        memory.page_size * (total_pages - free_pages),
+                        memory.page_size * total_pages,
                         100 - (100 * free_pages) / total_pages,
                     });
+                    if (event.modifiers.shift) {
+                        memory.debug.dumpPageMap();
+                    }
                 },
 
                 else => {},
@@ -356,7 +385,7 @@ pub const global_hotkeys = struct {
     }
 };
 
-extern fn hang() callconv(.C) noreturn;
+extern fn hang() callconv(.c) noreturn;
 
 pub const Debug = struct {
     var trace_loc: std.builtin.SourceLocation = undefined;
@@ -370,7 +399,7 @@ pub const Debug = struct {
         machine_config.debug_write(bytes);
         return bytes.len;
     }
-    const Writer = std.io.Writer(void, Error, writeWithErr);
+    const Writer = std.Io.GenericWriter(void, Error, writeWithErr);
 
     fn write_with_indent(indent: usize, bytes: []const u8) Error!usize {
         const indent_part: [8]u8 = .{' '} ** 8;
@@ -392,7 +421,7 @@ pub const Debug = struct {
 
         return bytes.len;
     }
-    const IndentWriter = std.io.Writer(usize, Error, write_with_indent);
+    const IndentWriter = std.Io.GenericWriter(usize, Error, write_with_indent);
 
     pub fn writer() Writer {
         return .{ .context = {} };
@@ -423,7 +452,7 @@ pub const Debug = struct {
             frame_index = (frame_index + 1) % stack_trace.instruction_addresses.len;
         }) {
             const return_address = stack_trace.instruction_addresses[frame_index];
-            print_fn("{s}[{}] {}", .{ prefix, frame_index, fmtCodeLocation(return_address) });
+            print_fn("{s}[{}] {f}", .{ prefix, frame_index, fmtCodeLocation(return_address) });
         }
 
         if (stack_trace.index > stack_trace.instruction_addresses.len) {
@@ -445,6 +474,8 @@ pub fn stackCheck() void {
     if (scheduler.Thread.current()) |thread| {
         stack_start = @intFromPtr(thread.stack_memory.ptr);
         stack_end = stack_start + thread.stack_memory.len;
+
+        _ = thread.check_canary();
     }
 
     if (sp > stack_end) {
@@ -476,13 +507,15 @@ fn kernel_log_once(comptime scope: @Type(.enum_literal)) void {
             if (triggered)
                 return;
             triggered = true; // must be set before the log to prevent recursion
-            std.log.warn("log scope .{} has no explicit filter in root.log_levels", .{
+            std.log.warn("log scope .{f} has no explicit filter in root.log_levels", .{
                 std.zig.fmtId(@tagName(scope)),
             });
         }
     };
     T.print();
 }
+
+var log_exclusive_lock: utils.SpinLock = .init;
 
 fn kernel_log_fn(
     comptime message_level: std.log.Level,
@@ -501,16 +534,16 @@ fn kernel_log_fn(
         kernel_log_once(scope);
     }
 
-    const color_code = if (ansi)
+    const color_code = comptime if (ansi)
         switch (message_level) {
-            .err => "\x1B[91m", // red
-            .warn => "\x1B[93m", // yellow
-            .info => "\x1B[97m", // white
-            .debug => "\x1B[90m", // gray
+            .err => utils.ansi.sgi(.fg_bright_red),
+            .warn => utils.ansi.sgi(.fg_bright_yellow),
+            .info => utils.ansi.sgi(.fg_bright_white),
+            .debug => utils.ansi.sgi(.fg_white),
         }
     else
         "";
-    const postfix = if (ansi) "\x1B[0m" else ""; // reset terminal properties
+    const postfix = comptime if (ansi) utils.ansi.sgi(.reset) else ""; // reset terminal properties
 
     const level_txt = comptime switch (message_level) {
         .err => "E",
@@ -523,37 +556,58 @@ fn kernel_log_fn(
     else
         "unscoped";
 
+    const is_in_isr = platform.isInInterruptContext();
+
+    const needs_lock = machine_config.uses_hardware_multithreading;
+
     {
-        var cs = CriticalSection.enter();
-        defer cs.leave();
+        if (needs_lock and !is_in_isr) log_exclusive_lock.lock();
+        defer if (needs_lock and !is_in_isr) log_exclusive_lock.unlock();
+
+        const isr_prefix, const isr_suffix = if (is_in_isr)
+            .{ "<<", ">>" }
+        else
+            .{ "", "" };
 
         const now = time.Instant.now();
 
-        var counting_writer = std.io.countingWriter(Debug.writer());
+        const machine_prefix = if (machine_config.get_log_prefix) |get_log_prefix|
+            get_log_prefix()
+        else
+            "";
 
         Debug.writer().writeAll(color_code) catch return;
 
         const now_ms: u64 = @intFromEnum(now);
-        var writer = counting_writer.writer();
-        writer.print("{d: >6}.{d:0>3} [{s}] {s}: ", .{
+        Debug.writer().print("{s}{d: >6}.{d:0>3}{s}{s} [{s}] {s}: ", .{
+            isr_prefix,
             now_ms / 1000,
             now_ms % 1000,
+            if (machine_prefix.len > 0) " " else "",
+            machine_prefix,
             level_txt,
             scope_tag,
         }) catch return;
+        var count: std.Io.Writer.Discarding = .init(&.{});
+        count.writer.print("{s}{d: >6}.{d:0>3}{s}{s} [{s}] {s}: ", .{
+            isr_prefix,
+            now_ms / 1000,
+            now_ms % 1000,
+            if (machine_prefix.len > 0) " " else "",
+            machine_prefix,
+            level_txt,
+            scope_tag,
+        }) catch unreachable;
 
-        Debug.indent_writer(counting_writer.bytes_written).print(format, args) catch return;
-        Debug.writer().print(postfix ++ "\r\n", .{}) catch return;
+        Debug.indent_writer(count.fullCount()).print(format, args) catch return;
+        Debug.writer().print(postfix ++ "{s}\r\n", .{isr_suffix}) catch return;
     }
 }
 
 pub const CodeLocation = struct {
     pointer: usize,
 
-    pub fn format(codeloc: CodeLocation, fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = opt;
-
+    pub fn format(codeloc: CodeLocation, writer: *std.Io.Writer) !void {
         var iter = multi_tasking.processIterator();
         while (iter.next()) |proc| {
             const process_memory = proc.executable_memory orelse continue;
@@ -571,10 +625,10 @@ pub const CodeLocation = struct {
 };
 
 pub fn fmtCodeLocation(addr: usize) CodeLocation {
-    return CodeLocation{ .pointer = addr };
+    return .{ .pointer = addr };
 }
 
-fn halt() noreturn {
+pub fn halt() noreturn {
     if (machine_config.halt) |machine_halt| {
         std.log.err("triggering machine halt...", .{});
         machine_halt();
@@ -625,9 +679,9 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
     const current_thread = scheduler.Thread.current();
 
     if (maybe_return_address) |return_address| {
-        Debug.print("    panic return address: {}\r\n\r\n", .{fmtCodeLocation(return_address)});
+        Debug.print("    panic return address: {f}\r\n\r\n", .{fmtCodeLocation(return_address)});
     }
-    Debug.print(" function return address: {}\r\n\r\n", .{fmtCodeLocation(@returnAddress())});
+    Debug.print(" function return address: {f}\r\n\r\n", .{fmtCodeLocation(@returnAddress())});
 
     if (maybe_error_trace) |error_trace| {
         Debug.write("error return trace:\r\n");
@@ -677,14 +731,14 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
     if (@import("builtin").mode == .Debug) {
         if (scheduler.Thread.current()) |thread| {
             Debug.print("current thread:\r\n", .{});
-            Debug.print("  [!] {}\r\n\r\n", .{thread});
+            Debug.print("  [!] {f}\r\n\r\n", .{thread});
         }
 
         Debug.write("waiting threads:\r\n");
         var index: usize = 0;
         var queue = scheduler.ThreadIterator.init();
         while (queue.next()) |thread| : (index += 1) {
-            Debug.print("  [{}] {}\r\n", .{ index, thread });
+            Debug.print("  [{d}] {f}\r\n", .{ index, thread });
         }
         Debug.write("\r\n");
     }
@@ -694,7 +748,7 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
         var index: usize = 0;
         var it = std.debug.StackIterator.init(@returnAddress(), null);
         while (it.next()) |addr| : (index += 1) {
-            Debug.print("{d: >4}: {}\r\n", .{ index, fmtCodeLocation(addr) });
+            Debug.print("{d: >4}: {f}\r\n", .{ index, fmtCodeLocation(addr) });
 
             // if (current_thread) |thread| {
             //     if (thread.process) |proc| {
@@ -731,17 +785,21 @@ pub fn panic(message: []const u8, maybe_error_trace: ?*std.builtin.StackTrace, m
     halt();
 }
 
-export fn ashet_lockInterrupts(were_enabled: *bool) void {
-    were_enabled.* = platform.areInterruptsEnabled();
-    if (were_enabled.*) {
-        platform.disableInterrupts();
-    }
+export fn ashet_lockInterrupts(enable_on_leave: *bool) void {
+    const cs: CriticalSection = .enter();
+
+    enable_on_leave.* = switch (cs) {
+        .unchanged_on_leave => false,
+        .enable_on_leave => true,
+    };
 }
 
-export fn ashet_unlockInterrupts(enable: bool) void {
-    if (enable) {
-        platform.enableInterrupts();
-    }
+export fn ashet_unlockInterrupts(enable_on_leave: bool) void {
+    const cs: CriticalSection = switch (enable_on_leave) {
+        false => .unchanged_on_leave,
+        true => .enable_on_leave,
+    };
+    cs.leave();
 }
 
 export fn ashet_rand() u32 {
@@ -749,18 +807,25 @@ export fn ashet_rand() u32 {
     return 4; // chose by a fair dice roll
 }
 
-pub const CriticalSection = struct {
-    restore: bool,
+/// A critical section is a tiny helper that allows
+/// a code section to be protected against interruption.
+pub const CriticalSection = enum(u1) {
+    unchanged_on_leave = 0,
+    enable_on_leave = 1,
 
     pub fn enter() CriticalSection {
-        var cs = CriticalSection{ .restore = undefined };
-        ashet_lockInterrupts(&cs.restore);
-        return cs;
+        const were_enabled = platform.areInterruptsEnabled();
+        if (were_enabled) {
+            platform.disableInterrupts();
+        }
+        return if (were_enabled) .enable_on_leave else .unchanged_on_leave;
     }
 
-    pub fn leave(cs: *CriticalSection) void {
-        ashet_unlockInterrupts(cs.restore);
-        cs.* = undefined;
+    pub fn leave(cs: CriticalSection) void {
+        switch (cs) {
+            .unchanged_on_leave => {},
+            .enable_on_leave => platform.enableInterrupts(),
+        }
     }
 };
 
@@ -778,4 +843,32 @@ export fn memchr(buf: ?[*]const c_char, ch: c_int, len: usize) ?[*]c_char {
 
 test {
     _ = resources;
+}
+
+export fn __ashet_os_panic(msg: [*]const u8, len: usize, ra: usize) noreturn {
+    panic(msg[0..len], null, ra);
+}
+
+// The following code is necessary to manage the compiler_rt stack checking.
+// In debug builds, Zig inserts a stack smashing guard which protects us against
+// evil. The problem is:
+// We "smash" the stack in "loadKernelMemory" by initializing the "__stack_chk_guard" variable
+// from compiler_rt and thus the function will always fail as it has a false-positive detection
+// triggered.
+//
+// Luckily, the variable is exported as weak in compiler_rt, and we can overwrite it with our own,
+// which we initialize manually with an immediate value before calling any other function.
+
+const __stack_chk_guard_init: usize = @truncate(0x125710640cadd0ac);
+
+var __stack_chk_guard: usize = __stack_chk_guard_init;
+
+comptime {
+    if (builtin.os.tag == .freestanding) {
+        @export(&__stack_chk_guard, .{
+            .name = "__stack_chk_guard",
+            .linkage = .strong,
+            .visibility = .default,
+        });
+    }
 }

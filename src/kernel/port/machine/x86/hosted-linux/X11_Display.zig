@@ -6,6 +6,7 @@
 //!
 const std = @import("std");
 const x11 = @import("x11");
+const evdev = @import("../../../../drivers/input/evdev.zig");
 
 const ashet = @import("../../../../main.zig");
 
@@ -17,13 +18,15 @@ allocator: std.mem.Allocator,
 index: usize,
 
 // x11 stuff:
+socket_read_buffer: []u8,
+socket_write_buffer: []u8,
+socket_reader: x11.Stream15.Reader,
+socket_writer: x11.Stream15.Writer,
+source: x11.Source,
+sink: x11.RequestSink,
+setup: x11.Setup,
+depth: x11.Depth,
 
-double_buf: x11.DoubleBuffer,
-
-sock: std.posix.socket_t,
-setup: x11.ConnectSetup,
-
-sequence: u16 = 0,
 window_id: x11.Window,
 
 bg_gc_id: x11.GraphicsContext,
@@ -47,21 +50,33 @@ pub fn init(
 ) !*X11_Display {
     try x11.wsaStartup();
 
-    const display = x11.getDisplay();
-
-    const parsed_display = x11.parseDisplay(display) catch |err| {
-        logger.err("invalid display '{s}': {s}", .{ display, @errorName(err) });
-        std.process.exit(0xff);
-    };
-
-    const sock = x11.connect(display, parsed_display) catch |err| {
-        logger.err("failed to connect to display '{s}': {s}", .{ display, @errorName(err) });
-        std.process.exit(0xff);
-    };
-    errdefer x11.disconnect(sock);
-
     const server = try allocator.create(X11_Display);
     errdefer allocator.destroy(server);
+
+    const io_buffer_size = std.mem.alignForward(usize, 1000, std.heap.page_size_min);
+
+    const socket_read_buffer = try allocator.alloc(u8, io_buffer_size);
+    errdefer allocator.free(socket_read_buffer);
+    const socket_write_buffer = try allocator.alloc(u8, io_buffer_size);
+    errdefer allocator.free(socket_write_buffer);
+
+    var socket_reader, const used_auth = try x11.draft.connect(socket_read_buffer);
+    errdefer x11.disconnect(socket_reader.getStream());
+    _ = used_auth;
+
+    const setup = try x11.readSetupSuccess(socket_reader.interface());
+    var setup_source = x11.Source.initFinishSetup(socket_reader.interface(), &setup);
+    const screen = try x11.draft.readSetupDynamic(&setup_source, &setup, .{}) orelse {
+        logger.err("no screen?", .{});
+        std.process.exit(0xff);
+    };
+
+    const depth = x11.Depth.init(screen.root_depth) orelse {
+        logger.err("unsupported root depth {}", .{screen.root_depth});
+        std.process.exit(0xff);
+    };
+
+    const socket_writer = x11.socketWriter(socket_reader.getStream(), socket_write_buffer);
 
     const put_image_chunk_height: u16 = blk: {
         const static_overhead = x11.put_image.getLen(0);
@@ -86,160 +101,83 @@ pub fn init(
         .screen = try .init(window_width, window_height),
         // .input = ashet.drivers.input.Host_SDL_Input.init(),
 
-        .double_buf = try x11.DoubleBuffer.init(
-            std.mem.alignForward(usize, 1000, std.heap.page_size_min),
-            .{ .memfd_name = "ZigX11DoubleBuffer" },
-        ),
+        .socket_read_buffer = socket_read_buffer,
+        .socket_write_buffer = socket_write_buffer,
+        .socket_reader = socket_reader,
+        .socket_writer = socket_writer,
+        .source = undefined,
+        .sink = undefined,
+        .setup = setup,
+        .depth = depth,
 
         .put_image_chunk_height = put_image_chunk_height,
         .put_image_msg_buffer = try allocator.alignedAlloc(
             u8,
-            4, // alignment
-            x11.put_image.getLen(4 * @as(u18, window_width) * put_image_chunk_height),
+            .@"4", // alignment
+            @as(usize, window_width) * @as(usize, put_image_chunk_height) * 4,
         ),
-
-        .sock = sock,
-        .setup = undefined,
 
         .window_id = .none,
         .bg_gc_id = .none,
     };
-    logger.info("read buffer capacity is {}", .{server.double_buf.half_len});
-
-    const setup_reply_len: u16 = blk: {
-        if (try x11.getAuthFilename(allocator)) |auth_filename| {
-            defer auth_filename.deinit(allocator);
-            if (try server.connectSetupAuth(parsed_display.display_num, auth_filename.str)) |reply_len|
-                break :blk reply_len;
-        }
-
-        // Try no authentication
-        logger.debug("trying no auth", .{});
-        var msg_buf: [x11.connect_setup.getLen(0, 0)]u8 = undefined;
-        if (try server.connectSetup(
-            &msg_buf,
-            .{ .ptr = undefined, .len = 0 },
-            .{ .ptr = undefined, .len = 0 },
-        )) |reply_len| {
-            break :blk reply_len;
-        }
-
-        logger.err("the X server rejected our connect setup message", .{});
-        std.process.exit(0xff);
-    };
-
-    const connect_setup = x11.ConnectSetup{
-        .buf = try allocator.allocWithOptions(u8, setup_reply_len, 4, null),
-    };
-    logger.debug("connect setup reply is {} bytes", .{connect_setup.buf.len});
-    try x11.readFull(SocketReader{ .context = sock }, connect_setup.buf);
-
-    server.setup = connect_setup;
+    server.source = x11.Source.initAfterSetup(server.socket_reader.interface());
+    server.sink = .{ .writer = &server.socket_writer.interface };
 
     @memset(server.screen.frontbuffer, ashet.abi.Color.blue);
     @memset(server.screen.backbuffer, ashet.abi.Color.red);
 
-    errdefer std.posix.shutdown(server.sock, .both) catch {};
+    const base_resource = server.setup.resource_id_base;
 
-    const screen = blk: {
-        const fixed = server.setup.fixed();
+    server.window_id = base_resource.add(0).window();
+    try server.sink.CreateWindow(.{
+        .window_id = server.window_id,
+        .parent_window_id = screen.root,
+        .depth = 0, // inherit from the parent
+        .x = 0,
+        .y = 0,
+        .width = window_width,
+        .height = window_height,
+        .border_width = 0,
+        .class = .input_output,
+        .visual_id = screen.root_visual,
+    }, .{
+        .bg_pixel = 0xaabbccdd,
+        .event_mask = .{
+            .KeyPress = 1,
+            .KeyRelease = 1,
+            .ButtonPress = 1,
+            .ButtonRelease = 1,
+            .EnterWindow = 1,
+            .LeaveWindow = 1,
+            .PointerMotion = 1,
+            .PointerMotionHint = 0,
+            .Button1Motion = 0,
+            .Button2Motion = 0,
+            .Button3Motion = 0,
+            .Button4Motion = 0,
+            .Button5Motion = 0,
+            .ButtonMotion = 0,
+            .KeymapState = 1,
+            .Exposure = 1,
+        },
+    });
 
-        inline for (@typeInfo(@TypeOf(fixed.*)).@"struct".fields) |field| {
-            logger.debug("{s}: {any}", .{ field.name, @field(fixed, field.name) });
-        }
-
-        logger.debug("vendor: {s}", .{try server.setup.getVendorSlice(fixed.vendor_len)});
-        const format_list_offset = x11.ConnectSetup.getFormatListOffset(fixed.vendor_len);
-        const format_list_limit = x11.ConnectSetup.getFormatListLimit(format_list_offset, fixed.format_count);
-        logger.debug("fmt list off={} limit={}", .{ format_list_offset, format_list_limit });
-        const formats = try server.setup.getFormatList(format_list_offset, format_list_limit);
-        for (formats, 0..) |format, i| {
-            logger.debug("  format[{}] depth={:3} bpp={:3} scanpad={:3}", .{ i, format.depth, format.bits_per_pixel, format.scanline_pad });
-        }
-
-        const screen = server.setup.getFirstScreenPtr(format_list_limit);
-        inline for (@typeInfo(@TypeOf(screen.*)).@"struct".fields) |field| {
-            logger.debug("SCREEN 0| {s}: {any}", .{ field.name, @field(screen, field.name) });
-        }
-
-        break :blk screen;
-    };
-
-    // TODO: maybe need to call conn.setup.verify or something?
-
-    const base_resource = server.setup.fixed().resource_id_base;
-
-    server.window_id = base_resource.asWindow();
-    {
-        var msg_buf: [x11.create_window.max_len]u8 = undefined;
-        const len = x11.create_window.serialize(&msg_buf, .{
-            .window_id = server.window_id,
-            .parent_window_id = screen.root,
-            .depth = 24, // we don't care, just inherit from the parent
-            .x = 0,
-            .y = 0,
-            .width = window_width,
-            .height = window_height,
-            .border_width = 0, // TODO: what is this?
-            .class = .input_output,
-            .visual_id = screen.root_visual,
-        }, .{
-            //            .bg_pixmap = .copy_from_parent,
-            .bg_pixel = 0xaabbccdd,
-            //            //.border_pixmap =
-            //            .border_pixel = 0x01fa8ec9,
-            //            .bit_gravity = .north_west,
-            //            .win_gravity = .east,
-            //            .backing_store = .when_mapped,
-            //            .backing_planes = 0x1234,
-            //            .backing_pixel = 0xbbeeeeff,
-            //            .override_redirect = true,
-            //            .save_under = true,
-            .event_mask = .{
-                .key_press = 1,
-                .key_release = 1,
-                .button_press = 1,
-                .button_release = 1,
-                .enter_window = 1,
-                .leave_window = 1,
-                .pointer_motion = 1,
-                .pointer_motion_hint = 0, //  WHAT THIS DO?
-                .button1_motion = 0, //   WHAT THIS DO?
-                .button2_motion = 0, //   WHAT THIS DO?
-                .button3_motion = 0, //   WHAT THIS DO?
-                .button4_motion = 0, //   WHAT THIS DO?
-                .button5_motion = 0, //   WHAT THIS DO?
-                .button_motion = 0, //   WHAT THIS DO?
-                .keymap_state = 1,
-                .exposure = 1,
-            },
-            //            .dont_propagate = 1,
-        });
-        try server.sendOne(msg_buf[0..len]);
-    }
-
-    server.bg_gc_id = base_resource.add(1).asGraphicsContext();
-    {
-        var msg_buf: [x11.create_gc.max_len]u8 = undefined;
-        const len = x11.create_gc.serialize(&msg_buf, .{
-            .gc_id = server.bg_gc_id,
-            .drawable_id = server.window_id.asDrawable(),
-        }, .{
+    server.bg_gc_id = base_resource.add(1).graphicsContext();
+    try server.sink.CreateGc(
+        server.bg_gc_id,
+        server.window_id.drawable(),
+        .{
             .foreground = screen.black_pixel,
-        });
-        try server.sendOne(msg_buf[0..len]);
-    }
+        },
+    );
 
-    {
-        var msg: [x11.map_window.len]u8 = undefined;
-        x11.map_window.serialize(&msg, server.window_id);
-        try server.sendOne(&msg);
-    }
+    try server.sink.MapWindow(server.window_id);
+    try server.sink.writer.flush();
 
     return server;
 }
 
-pub fn process_events_wrapper(server_ptr: ?*anyopaque) callconv(.C) u32 {
+pub fn process_events_wrapper(server_ptr: ?*anyopaque) callconv(.c) u32 {
     const server: *X11_Display = @ptrCast(@alignCast(server_ptr.?));
 
     server.process_events() catch |err| {
@@ -251,16 +189,18 @@ pub fn process_events_wrapper(server_ptr: ?*anyopaque) callconv(.C) u32 {
 }
 
 pub fn process_events(server: *X11_Display) !void {
-    var buf = server.double_buf.contiguousReadBuffer();
     while (server.running) {
 
         // Wait for socket ready:
         while (true) {
             try server.render_on_demand();
 
+            if (server.source.reader.seek < server.source.reader.end)
+                break;
+
             var pfd: [1]std.posix.pollfd = .{
                 .{
-                    .fd = server.sock,
+                    .fd = server.socket_reader.getStream().handle,
                     .events = std.posix.POLL.IN,
                     .revents = 0,
                 },
@@ -273,118 +213,145 @@ pub fn process_events(server: *X11_Display) !void {
             ashet.scheduler.yield();
         }
 
-        {
-            const recv_buf = buf.nextReadBuffer();
-            if (recv_buf.len == 0) {
-                logger.err("buffer size {} not big enough!", .{buf.half_len});
-                return error.BufferSize;
-            }
-            const len = try x11.readSock(server.sock, recv_buf, 0);
-            if (len == 0) {
+        const msg_kind = server.source.readKind() catch |err| switch (err) {
+            error.EndOfStream => {
                 logger.info("X server connection closed", .{});
                 server.running = false;
                 return;
-            }
-            buf.reserve(len);
-        }
+            },
+            else => return err,
+        };
 
-        while (true) {
-            const data = buf.nextReservedBuffer();
-            if (data.len < 32)
-                break;
-            const msg_len = x11.parseMsgLen(data[0..32].*);
-            if (data.len < msg_len)
-                break;
-            buf.release(msg_len);
-            //buf.resetIfEmpty();
-            switch (x11.serverMsgTaggedUnion(@alignCast(data.ptr))) {
-                .err => |msg| {
-                    logger.err("{}", .{msg});
-                    return error.X11Error;
-                },
-                .reply => |msg| {
-                    logger.warn("todo: handle a reply message {}", .{msg});
-                    return error.TodoHandleReplyMessage;
-                },
-                .key_press => |msg| {
-                    logger.debug("key_press: keycode={}", .{msg});
-                    try server.handle_key_event(msg.*, true);
-                },
-                .key_release => |msg| {
-                    logger.debug("key_release: keycode={}", .{msg});
-                    try server.handle_key_event(msg.*, false);
-                },
-                .button_press => |msg| {
-                    logger.debug("button_press: {}", .{msg});
-                    try server.handle_mouse_button_event(msg.*, true);
-                },
-                .button_release => |msg| {
-                    logger.debug("button_release: {}", .{msg});
-                    try server.handle_mouse_button_event(msg.*, false);
-                },
-                .enter_notify => |msg| {
-                    logger.info("enter_window: {}", .{msg});
-                },
-                .leave_notify => |msg| {
-                    logger.info("leave_window: {}", .{msg});
-                },
-                .motion_notify => |msg| {
-                    // too much logging
-                    logger.debug("pointer_motion: {}", .{msg});
-                    try server.handle_mouse_motion_event(msg.*);
-                },
-                .keymap_notify => |msg| {
-                    logger.info("keymap_state: {}", .{msg});
-                },
-                .expose => |msg| {
-                    logger.debug("expose: {}", .{msg});
-                    try server.force_render();
-                },
-                .mapping_notify => |msg| {
-                    logger.info("mapping_notify: {}", .{msg});
-                },
-                .no_exposure => |msg| std.debug.panic("unexpected no_exposure {}", .{msg}),
-                .unhandled => |msg| {
-                    logger.warn("todo: server msg {}", .{msg});
-                    return error.UnhandledServerMsg;
-                },
-                .map_notify,
-                .reparent_notify,
-                .configure_notify,
-                => unreachable, // did not register for these
-            }
+        switch (msg_kind) {
+            .Error => {
+                const msg = try server.source.read2(.Error);
+                logger.err("{f}", .{msg});
+                return error.X11Error;
+            },
+            .Reply => {
+                const msg = try server.source.read2(.Reply);
+                logger.warn("todo: handle a reply message sequence={} words={} flex={}", .{
+                    msg.sequence,
+                    msg.word_count,
+                    msg.flexible,
+                });
+                try server.source.discardRemaining();
+                return error.TodoHandleReplyMessage;
+            },
+            .KeyPress => {
+                const msg = try server.source.read2(.KeyPress);
+                logger.debug("key_press: keycode={}", .{msg.keycode});
+                try server.handle_key_event(msg.keycode, true);
+            },
+            .KeyRelease => {
+                const msg = try server.source.read2(.KeyRelease);
+                logger.debug("key_release: keycode={}", .{msg.keycode});
+                try server.handle_key_event(msg.keycode, false);
+            },
+            .ButtonPress => {
+                const msg = try server.source.read2(.ButtonPress);
+                logger.debug("button_press: {}", .{msg});
+                try server.handle_mouse_button_event(msg.button, true);
+            },
+            .ButtonRelease => {
+                const msg = try server.source.read2(.ButtonRelease);
+                logger.debug("button_release: {}", .{msg});
+                try server.handle_mouse_button_event(msg.button, false);
+            },
+            .EnterNotify => {
+                const msg = try server.source.read2(.EnterNotify);
+                logger.info("enter_window: {}", .{msg});
+            },
+            .LeaveNotify => {
+                const msg = try server.source.read2(.LeaveNotify);
+                logger.info("leave_window: {}", .{msg});
+            },
+            .MotionNotify => {
+                const msg = try server.source.read2(.MotionNotify);
+                logger.debug("pointer_motion: {}", .{msg});
+                try server.handle_mouse_motion_event(msg.event_x, msg.event_y);
+            },
+            .KeymapNotify => {
+                const msg = try server.source.read2(.KeymapNotify);
+                logger.info("keymap_state: {}", .{msg});
+            },
+            .Expose => {
+                const msg = try server.source.read2(.Expose);
+                logger.debug("expose: {}", .{msg});
+                try server.force_render();
+            },
+            .MappingNotify => {
+                const msg = try server.source.read2(.MappingNotify);
+                logger.info("mapping_notify: {}", .{msg});
+            },
+            .NoExposure => {
+                const msg = try server.source.read2(.NoExposure);
+                std.debug.panic("unexpected no_exposure {}", .{msg});
+            },
+            .GenericEvent => {
+                const msg = try server.source.read2(.GenericEvent);
+                logger.warn("todo: server msg generic_event opcode_base={} type={} words={}", .{
+                    msg.ext_opcode_base,
+                    msg.type,
+                    msg.word_count,
+                });
+                try server.source.discardRemaining();
+                return error.UnhandledServerMsg;
+            },
+            .UnknownCoreEvent, .ExtensionEvent => |value| {
+                logger.warn("todo: server msg {}", .{value});
+                return error.UnhandledServerMsg;
+            },
+            .MapNotify, .ReparentNotify, .ConfigureNotify => unreachable, // did not register for these
+            else => |tag| {
+                logger.warn("todo: server msg {s}", .{@tagName(tag)});
+                return error.UnhandledServerMsg;
+            },
         }
     }
 }
 
-fn handle_mouse_motion_event(server: *X11_Display, event: x11.Event.KeyOrButtonOrMotion) !void {
+fn handle_mouse_motion_event(server: *X11_Display, event_x: i16, event_y: i16) !void {
     _ = server;
     ashet.input.push_raw_event(.{
         .mouse_abs_motion = .{
-            .x = event.event_x,
-            .y = event.event_y,
+            .x = event_x,
+            .y = event_y,
         },
     });
 }
 
-fn handle_key_event(server: *X11_Display, event: x11.Event.Key, is_press: bool) !void {
+fn handle_key_event(server: *X11_Display, keycode: u8, is_press: bool) !void {
 
     // Adjust "key code" to "scancode" by adjusting to "min_keycode".
     // On Xpra, Escape maps to "9" and "min_keycode" is 8, which maps to "1" which is the expected value.
-    const scancode: u16 = event.keycode - server.setup.fixed().min_keycode;
+    const min_keycode = server.setup.min_keycode;
+    if (keycode < min_keycode) {
+        logger.warn("received invalid keycode: expected at least {}, but received {}", .{
+            min_keycode,
+            keycode,
+        });
+        return;
+    }
 
-    ashet.input.push_raw_event(.{
-        .keyboard = .{
-            .scancode = scancode,
-            .down = is_press,
-        },
-    });
+    const scancode: u16 = @as(u16, keycode) - server.setup.min_keycode;
+
+    if (evdev.keyFromEvdev(scancode)) |usage| {
+        ashet.input.push_raw_event(.{
+            .keyboard = .{
+                .usage = usage,
+                .down = is_press,
+            },
+        });
+    } else {
+        logger.warn("received unknown evdev keycode: {}", .{scancode});
+    }
 }
 
-fn handle_mouse_button_event(server: *X11_Display, event: x11.Event.KeyOrButtonOrMotion, is_press: bool) !void {
+fn handle_mouse_button_event(server: *X11_Display, button: u8, is_press: bool) !void {
     _ = server;
 
-    const mouse_button: ashet.abi.MouseButton = switch (event.detail) {
+    const mouse_button: ashet.abi.MouseButton = switch (button) {
         // See https://github.com/torvalds/linux/blob/master/include/uapi/linux/input-event-codes.h#L762
         1 => .left,
         2 => .middle,
@@ -394,7 +361,7 @@ fn handle_mouse_button_event(server: *X11_Display, event: x11.Event.KeyOrButtonO
         6, 8 => .nav_previous,
         7, 9 => .nav_next,
         else => {
-            logger.warn("unsupported mouse button: {d}", .{event.detail});
+            logger.warn("unsupported mouse button: {d}", .{button});
             return;
         },
     };
@@ -437,22 +404,21 @@ fn force_render(server: *X11_Display) !void {
         //     chunk_pixels,
         // });
 
-        comptime std.debug.assert(std.mem.isAligned(x11.put_image.data_offset, 4));
-        const pixel_data: []u32 = @ptrCast(@alignCast(server.put_image_msg_buffer[x11.put_image.data_offset..][0..chunk_size]));
+        const chunk_size_usize: usize = @intCast(chunk_size);
+        const pixel_bytes = server.put_image_msg_buffer[0..chunk_size_usize];
+        const pixel_data: []u32 = @ptrCast(@alignCast(pixel_bytes));
 
-        std.debug.assert(pixel_data.len == @divExact(chunk_size, 4));
+        std.debug.assert(pixel_data.len == @divExact(chunk_size_usize, 4));
 
-        const msg_len = x11.put_image.getLen(chunk_size);
-        x11.put_image.serializeNoDataCopy(server.put_image_msg_buffer.ptr, chunk_size, .{
-            .drawable_id = server.window_id.asDrawable(),
-            .depth = 24,
+        const pad_len = try server.sink.PutImageStart(chunk_size, .{
             .format = .z_pixmap,
+            .drawable = server.window_id.drawable(),
             .gc_id = server.bg_gc_id,
-            .x = 0,
-            .y = @intCast(base_y),
             .width = server.screen.width,
             .height = chunk_height,
-            .left_pad = 0,
+            .x = 0,
+            .y = @intCast(base_y),
+            .depth = server.depth,
         });
 
         for (pixel_data, source_pixels[0..chunk_pixels]) |*out, in| {
@@ -460,133 +426,8 @@ fn force_render(server: *X11_Display) !void {
         }
         source_pixels += chunk_pixels;
 
-        try server.sendOne(server.put_image_msg_buffer[0..msg_len]);
+        try server.sink.writer.writeAll(pixel_bytes);
+        try server.sink.PutImageFinish(pad_len);
     }
-}
-
-const SocketReader = std.io.Reader(std.posix.socket_t, std.posix.RecvFromError, recv_some_data);
-
-fn recv_some_data(sock: std.posix.socket_t, buffer: []u8) std.posix.RecvFromError!usize {
-    return x11.readSock(sock, buffer, 0);
-}
-
-fn sendOne(server: *X11_Display, data: []const u8) !void {
-    try server.sendNoSequencing(data);
-    server.sequence +%= 1;
-}
-
-fn sendNoSequencing(server: *X11_Display, data: []const u8) !void {
-    const sent = try x11.writeSock(server.sock, data, 0);
-    if (sent != data.len) {
-        logger.err("send {} only sent {}\n", .{ data.len, sent });
-        return error.DidNotSendAllData;
-    }
-}
-
-fn connectSetupMaxAuth(
-    server: *X11_Display,
-    comptime max_auth_len: usize,
-    auth_name: x11.Slice(u16, [*]const u8),
-    auth_data: x11.Slice(u16, [*]const u8),
-) !?u16 {
-    var buf: [x11.connect_setup.auth_offset + max_auth_len]u8 = undefined;
-    const len = x11.connect_setup.getLen(auth_name.len, auth_data.len);
-    if (len > max_auth_len)
-        return error.AuthTooBig;
-    return server.connectSetup(buf[0..len], auth_name, auth_data);
-}
-
-fn connectSetup(
-    server: *X11_Display,
-    msg: []u8,
-    auth_name: x11.Slice(u16, [*]const u8),
-    auth_data: x11.Slice(u16, [*]const u8),
-) !?u16 {
-    std.debug.assert(msg.len == x11.connect_setup.getLen(auth_name.len, auth_data.len));
-
-    x11.connect_setup.serialize(msg.ptr, 11, 0, auth_name, auth_data);
-    try server.sendNoSequencing(msg);
-
-    const reader: SocketReader = .{
-        .context = server.sock,
-    };
-
-    const connect_setup_header = try x11.readConnectSetupHeader(reader, .{});
-    switch (connect_setup_header.status) {
-        .failed => {
-            logger.err("connect setup failed, version={}.{}, reason='{s}'", .{
-                connect_setup_header.proto_major_ver,
-                connect_setup_header.proto_minor_ver,
-                connect_setup_header.readFailReason(reader),
-            });
-            return error.ConnectSetupFailed;
-        },
-        .authenticate => {
-            logger.err("AUTHENTICATE! not implemented", .{});
-            return error.NotImplemetned;
-        },
-        .success => {
-            // TODO: check version?
-            logger.debug("SUCCESS! version {}.{}", .{ connect_setup_header.proto_major_ver, connect_setup_header.proto_minor_ver });
-            return connect_setup_header.getReplyLen();
-        },
-        else => |status| {
-            logger.err("Error: expected 0, 1 or 2 as first byte of connect setup reply, but got {}", .{status});
-            return error.MalformedXReply;
-        },
-    }
-}
-
-fn connectSetupAuth(
-    server: *X11_Display,
-    display_num: ?u32,
-    auth_filename: []const u8,
-) !?u16 {
-    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    // TODO: test bad auth
-    // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    //if (try connectSetupMaxAuth(sock, 1000, .{ .ptr = "wat", .len = 3}, .{ .ptr = undefined, .len = 0})) |_|
-    //    @panic("todo");
-
-    const auth_mapped = try x11.MappedFile.init(auth_filename, .{});
-    defer auth_mapped.unmap();
-
-    var auth_filter = x11.AuthFilter{
-        .addr = .{ .family = .wild, .data = &[0]u8{} },
-        .display_num = display_num,
-    };
-
-    var addr_buf: [x11.max_sock_filter_addr]u8 = undefined;
-    if (auth_filter.applySocket(server.sock, &addr_buf)) {
-        logger.debug("applied address filter {}", .{auth_filter.addr});
-    } else |err| {
-        // not a huge deal, we'll just try all auth methods
-        logger.warn("failed to apply socket to auth filter with {s}", .{@errorName(err)});
-    }
-
-    var auth_it = x11.AuthIterator{ .mem = auth_mapped.mem };
-    while (auth_it.next() catch {
-        logger.warn("auth file '{s}' is invalid", .{auth_filename});
-        return null;
-    }) |entry| {
-        if (auth_filter.isFiltered(auth_mapped.mem, entry)) |reason| {
-            logger.debug("ignoring auth because {s} does not match: {}", .{ @tagName(reason), entry.fmt(auth_mapped.mem) });
-            continue;
-        }
-        const name = entry.name(auth_mapped.mem);
-        const data = entry.data(auth_mapped.mem);
-        const name_x = x11.Slice(u16, [*]const u8){
-            .ptr = name.ptr,
-            .len = @intCast(name.len),
-        };
-        const data_x = x11.Slice(u16, [*]const u8){
-            .ptr = data.ptr,
-            .len = @intCast(data.len),
-        };
-        logger.debug("trying auth {}", .{entry.fmt(auth_mapped.mem)});
-        if (try server.connectSetupMaxAuth(1000, name_x, data_x)) |reply_len|
-            return reply_len;
-    }
-
-    return null;
+    try server.sink.writer.flush();
 }

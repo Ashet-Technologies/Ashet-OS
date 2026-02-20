@@ -4,12 +4,12 @@
     .fingerprint = 0x3c748993ae3762c7,
     .dependencies = .{
         .ptk = .{
-            .url = "git+https://github.com/ikskuh/parser-toolkit.git#0d5e00d4830bca53d10fee5d562152f1329d5784",
-            .hash = "parser_toolkit-0.1.0-baYGPS1CEwDuQk1W_5QEfKF_BWU5lN4qb8kVZoQ6Id9k",
+            .url = "git+https://github.com/ikskuh/parser-toolkit.git#62e0a3dca3632bb361df59407b2d7805280ab1b9",
+            .hash = "parser_toolkit-0.1.0-baYGPUVCEwBaVmu09ORh0lLlVjRaJ489TdSIdTa_8VWg",
         },
         .args = .{
-            .url = "git+https://github.com/ikskuh/zig-args.git#9425b94c103a031777fdd272c555ce93a7dea581",
-            .hash = "args-0.0.0-CiLiqv_NAAC97fGpk9hS2K681jkiqPsWP6w3ucb_ctGH",
+            .url = "git+https://github.com/ikskuh/zig-args.git#e060ac80c244e9675471b6d213b22ddc83cc8f98",
+            .hash = "args-0.0.0-CiLiqo_RAADz2TiHUzG5-0Mk7IZHR-h1SZgUrb_k4c7d",
         },
     },
     .paths = .{

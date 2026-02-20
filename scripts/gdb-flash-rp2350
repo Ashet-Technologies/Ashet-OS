@@ -1,0 +1,14 @@
+# connect to OpenOCD
+target extended-remote localhost:3333
+
+# reset device and halt
+monitor reset halt 
+
+# upload the application
+load
+
+# reset the device and launch
+monitor reset 
+
+# leave gdb
+quit

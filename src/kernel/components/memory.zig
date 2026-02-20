@@ -70,6 +70,7 @@ extern const __kernel_stack_start: anyopaque align(4);
 extern const __kernel_stack_end: anyopaque align(4);
 extern const __kernel_flash_start: anyopaque align(4);
 extern const __kernel_flash_end: anyopaque align(4);
+extern const __kernel_data_load: anyopaque align(4);
 extern const __kernel_data_start: anyopaque align(4);
 extern const __kernel_data_end: anyopaque align(4);
 extern const __kernel_bss_start: anyopaque align(4);
@@ -142,7 +143,7 @@ pub fn loadKernelMemory(comptime sections: MemorySections) void {
         ashet.Debug.setTraceLoc(@src());
 
         // const flash_start = @ptrToInt(&__kernel_flash_start);
-        const flash_end = @intFromPtr(&__kernel_flash_end);
+        const data_load = @intFromPtr(&__kernel_data_load);
         const data_start = @intFromPtr(&__kernel_data_start);
         const data_end = @intFromPtr(&__kernel_data_end);
 
@@ -151,7 +152,7 @@ pub fn loadKernelMemory(comptime sections: MemorySections) void {
         ashet.Debug.setTraceLoc(@src());
 
         // // logger.debug("flash_start = 0x{X:0>8}", .{flash_start});
-        logger.debug("flash_end   = 0x{X:0>8}", .{flash_end});
+        logger.debug("data_load   = 0x{X:0>8}", .{data_load});
         logger.debug("data_start  = 0x{X:0>8}", .{data_start});
         logger.debug("data_end    = 0x{X:0>8}", .{data_end});
         logger.debug("data_size   = 0x{X:0>8}", .{data_size});
@@ -160,7 +161,7 @@ pub fn loadKernelMemory(comptime sections: MemorySections) void {
 
         @memcpy(
             @as([*]volatile u32, @ptrFromInt(data_start))[0 .. data_size / 4],
-            @as([*]volatile u32, @ptrFromInt(flash_end))[0 .. data_size / 4],
+            @as([*]volatile u32, @ptrFromInt(data_load))[0 .. data_size / 4],
         );
 
         ashet.Debug.setTraceLoc(@src());
@@ -319,16 +320,14 @@ pub const debug = struct {
         //     writer.print("{X:0>4}: {b:0>32}\r\n", .{ index, item }) catch {};
         // }
 
-        writer.print("free ram: {} ({}/{} pages)\r\n", .{ fmt_mem_size(free_memory), free_memory / page_size, page_manager.pageCount() }) catch {};
+        writer.print("free ram: {f} ({}/{} pages)\r\n", .{ fmt_mem_size(free_memory), free_memory / page_size, page_manager.pageCount() }) catch {};
     }
 
-    fn fmt_mem_size(size: usize) std.fmt.Formatter(format_mem_size) {
+    fn fmt_mem_size(size: usize) std.fmt.Alt(usize, format_mem_size) {
         return .{ .data = size };
     }
 
-    fn format_mem_size(size: usize, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    fn format_mem_size(size: usize, writer: *std.Io.Writer) !void {
         const Unit = struct {
             base: u64,
             name: []const u8,
@@ -376,7 +375,7 @@ pub const page_allocator = std.mem.Allocator{
 // 0x80040000: 00000000 684a0920 00000000 00000000 ptr, vtable, first, end_index
 //      ptr=0
 //      vtable=0x20094a68
-var general_purpose_allocator_instance = std.heap.ArenaAllocator.init(page_allocator);
+var general_purpose_allocator_instance = std.heap.ArenaAllocator.init(page_allocator); // TODO: Implement general purpose allocator here!
 var page_allocator_instance: PageAllocator = .{};
 
 const PageAllocator = struct {

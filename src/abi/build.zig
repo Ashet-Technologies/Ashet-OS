@@ -7,9 +7,7 @@ pub const Platform = ports.Platform;
 const AbiConverter = @import("abi_mapper").Converter;
 
 pub fn build(b: *std.Build) void {
-    const debug = b.step("debug", "Installs the generated ABI V2 files");
-
-    _ = debug;
+    const test_step = b.step("test", "Runs the unit tests for the ABI types");
 
     // generate and export the new v2 module:
     const abi_mapper_dep = b.dependency("abi_mapper", .{});
@@ -104,6 +102,22 @@ pub fn build(b: *std.Build) void {
 
     b.getInstallStep().dependOn(&install_abi_code.step);
     b.getInstallStep().dependOn(&install_provider_code.step);
+
+    const abi_tests_mod = b.createModule(.{
+        .root_source_file = b.path("src/ports/tests.zig"),
+        .target = b.graph.host,
+        .optimize = .Debug,
+        .imports = &.{
+            .{ .name = "abi", .module = abi_mod },
+        },
+    });
+
+    const abi_tests_exe = b.addTest(.{
+        .root_module = abi_tests_mod,
+    });
+
+    const abi_tests_run = b.addRunArtifact(abi_tests_exe);
+    test_step.dependOn(&abi_tests_run.step);
 }
 
 pub fn convert_abi_file(b: *std.Build, render: *std.Build.Step.Compile, input: std.Build.LazyPath, patch: ?std.Build.LazyPath, mode: enum { kernel, definition }) std.Build.LazyPath {

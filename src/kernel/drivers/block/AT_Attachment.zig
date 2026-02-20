@@ -183,7 +183,7 @@ fn setupParameters(device: AT_Attachment, lba: u24, blockCount: u8) void {
 
 fn readData(device: AT_Attachment) u16 {
     while (device.status().busy) {
-        asm volatile ("" ::: "memory");
+        asm volatile ("" ::: .{ .memory = true });
     }
     return x86.in(u16, device.ports.data);
 }

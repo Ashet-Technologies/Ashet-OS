@@ -2,7 +2,11 @@ const std = @import("std");
 const ashet = @import("ashet");
 const Vec2 = @import("Vector2.zig");
 
-pub usingnamespace ashet.core;
+pub const std_options = ashet.core.std_options;
+pub const panic = ashet.core.panic;
+comptime {
+    _ = ashet.core;
+}
 
 const Size = ashet.abi.Size;
 
@@ -68,7 +72,7 @@ pub fn main() !void {
 
     const desktop = try argv[1].value.resource.cast(.desktop);
 
-    std.log.info("using desktop {}", .{desktop});
+    std.log.info("using desktop {f}", .{desktop});
 
     try load_textures();
 
@@ -120,6 +124,7 @@ pub fn main() !void {
 
         if (completed.contains(.get_event)) {
             const event = get_event.outputs.event;
+
             switch (event.event_type) {
                 .mouse_leave => {
                     move_enable = false;
@@ -174,14 +179,14 @@ pub fn main() !void {
                     const fwd = Vec2.unitX.rotate(raycaster.camera_rotation).scale(0.1);
                     const right = Vec2.unitY.rotate(raycaster.camera_rotation).scale(0.1);
 
-                    switch (event.keyboard.key) {
+                    switch (event.keyboard.usage) {
                         .escape => return,
 
-                        .up => raycaster.camera_position = raycaster.camera_position.add(fwd),
-                        .down => raycaster.camera_position = raycaster.camera_position.sub(fwd),
+                        .up_arrow => raycaster.camera_position = raycaster.camera_position.add(fwd),
+                        .down_arrow => raycaster.camera_position = raycaster.camera_position.sub(fwd),
 
-                        .left => raycaster.camera_position = raycaster.camera_position.sub(right),
-                        .right => raycaster.camera_position = raycaster.camera_position.add(right),
+                        .left_arrow => raycaster.camera_position = raycaster.camera_position.sub(right),
+                        .right_arrow => raycaster.camera_position = raycaster.camera_position.add(right),
 
                         .page_up => raycaster.camera_rotation -= 0.1,
                         .page_down => raycaster.camera_rotation += 0.1,

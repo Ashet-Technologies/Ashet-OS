@@ -42,36 +42,11 @@ pub fn call_inside_process(
 }
 
 pub const SpawnBlockingError = error{
-    Overflow,
     OutOfMemory,
 
     SystemResources,
     DiskError,
-    InvalidHandle,
-    EndOfStream,
-    InvalidElfMagic,
-    InvalidElfVersion,
-    InvalidElfEndian,
-    InvalidElfClass,
-    InvalidEndian,
-    InvalidBitSize,
-    InvalidMachine,
-    NoCode,
     BadExecutable,
-    InvalidPltRel,
-    MissingSymbol,
-    UnsupportedRelocation,
-    UnalignedProgramHeader,
-    InvalidAshexExecutable,
-    AshexMachineMismatch,
-    AshexPlatformMismatch,
-    AshexUnsupportedVersion,
-    AshexNoData,
-    AshexCorruptedFile,
-    AshexUnsupportedSyscall,
-    AshexInvalidRelocation,
-    AshexInvalidSyscallIndex,
-    Unexpected,
 };
 
 pub fn spawn_blocking(
@@ -106,7 +81,9 @@ pub fn spawn_blocking(
     );
     errdefer thread.kill();
 
-    try thread.setName(proc_name);
+    thread.setName(proc_name) catch {
+        logger.err("TODO(0.15.2): Remove setName() error possibility but truncate errors", .{});
+    };
 
     thread.start() catch |err| switch (err) {
         error.AlreadyStarted => unreachable,
@@ -143,7 +120,7 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
         .mode = .open_existing,
     });
 
-    ashet.overlapped.schedule_with_context(
+    ashet.overlapped.schedule(
         call.resource_owner,
         context,
         &open_file.arc,
@@ -152,17 +129,13 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
         error.SystemResources => |e| e,
     };
 
-    var completed: [1]*ashet.abi.overlapped.ARC = .{&open_file.arc};
-    const count = ashet.overlapped.await_completion_with_context(
+    var completed: [1]?*ashet.abi.overlapped.ARC = .{&open_file.arc};
+    const count = ashet.overlapped.await_completion_of(
         context,
         &completed,
-        .{
-            .thread_affinity = .all_threads,
-            .wait = .wait_one,
-            // TODO(fqu): .preselected = true,
-        },
     ) catch |err| return switch (err) {
         error.Unscheduled => unreachable,
+        error.InvalidOperation => unreachable,
     };
     std.debug.assert(count == 1);
     std.debug.assert(completed[0] == &open_file.arc);
@@ -192,11 +165,11 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
     const local_resource_handle = try ashet.resources.add_to_process(bg_process, &kernel_file_handle.system_resource);
     defer ashet.resources.remove_from_process(bg_process, &kernel_file_handle.system_resource);
 
-    var file_handle: libashet.fs.File = .{
-        .handle = local_resource_handle.unsafe_cast(.file),
-        .offset = 0,
-    };
+    var file_handle: libashet.fs.File = .from_handle(
+        local_resource_handle.unsafe_cast(.file),
+    );
 
+    logger.err("spawn process with name: {s} => {s}", .{ raw_basename, exe_name });
     const proc = spawn_blocking(
         exe_name,
         &file_handle,
@@ -206,38 +179,8 @@ fn spawn_background(context: *ashet.overlapped.Context, call: *ashet.overlapped.
 
         error.SystemResources,
         error.DiskError,
-        error.InvalidHandle,
-        => |e| e,
-
-        error.EndOfStream,
-        error.InvalidElfMagic,
-        error.InvalidElfVersion,
-        error.InvalidElfEndian,
-        error.InvalidElfClass,
-        error.InvalidEndian,
-        error.InvalidBitSize,
-        error.InvalidMachine,
-        error.NoCode,
         error.BadExecutable,
-        error.InvalidPltRel,
-        error.MissingSymbol,
-        error.UnsupportedRelocation,
-        error.UnalignedProgramHeader,
-        error.Overflow,
-
-        error.InvalidAshexExecutable,
-        error.AshexMachineMismatch,
-        error.AshexPlatformMismatch,
-        error.AshexUnsupportedVersion,
-        error.AshexNoData,
-        error.AshexCorruptedFile,
-        error.AshexUnsupportedSyscall,
-        error.AshexInvalidRelocation,
-        error.AshexInvalidSyscallIndex,
-        => error.BadExecutable,
-
-        error.Unexpected,
-        => unreachable,
+        => |e| e,
     };
     errdefer proc.kill(.killed);
 
@@ -366,7 +309,7 @@ pub const Process = struct {
         process.name = if (options.name) |name|
             try process.memory_arena.allocator().dupeZ(u8, name)
         else
-            try std.fmt.allocPrintZ(process.memory_arena.allocator(), "Process(0x{X:0>8})", .{@intFromPtr(process)});
+            std.fmt.allocPrintSentinel(process.memory_arena.allocator(), "Process(0x{X:0>8})", .{@intFromPtr(process)}, 0) catch "Unknown";
 
         // we do actually own ourselves (*_*)
         const raw_handle = try ashet.resources.add_to_process(process, &process.system_resource);
@@ -375,8 +318,8 @@ pub const Process = struct {
         process_list.append(&process.list_item);
         errdefer process_list.remove(&process.list_item);
 
-        logger.debug("create(\"{}\") => {}", .{
-            std.zig.fmtEscapes(process.name),
+        logger.debug("create(\"{f}\") => {f}", .{
+            std.zig.fmtString(process.name),
             process,
         });
 
@@ -388,7 +331,7 @@ pub const Process = struct {
 
     /// Kills the thread and deletes it afterwards. This will invalidate all resource handles!
     fn _internal_destroy(proc: *Process) void {
-        logger.debug("destroy({})", .{proc});
+        logger.debug("destroy({f})", .{proc});
 
         if (!proc.is_zombie()) {
             proc.kill(ExitCode.killed);
@@ -429,7 +372,7 @@ pub const Process = struct {
 
     /// Kills the process, stops all threads, and releases of its resources.
     pub fn kill(proc: *Process, exit_code: ExitCode) void {
-        logger.debug("kill({}, {})", .{ proc, @intFromEnum(exit_code) });
+        logger.debug("kill({f}, {})", .{ proc, @intFromEnum(exit_code) });
         std.debug.assert(!proc.is_zombie());
 
         proc.exit_code = exit_code;
@@ -502,15 +445,13 @@ pub const Process = struct {
         return proc.memory_arena.allocator();
     }
 
-    pub fn format(proc: *const Process, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(proc: *const Process, writer: *std.Io.Writer) !void {
         if (proc.is_zombie()) {
-            try writer.print("Process(0x{X:0>8}, \"{}\", <zombie>)", .{ @intFromPtr(proc), std.zig.fmtEscapes(proc.name) });
+            try writer.print("Process(0x{X:0>8}, \"{f}\", <zombie>)", .{ @intFromPtr(proc), std.zig.fmtString(proc.name) });
         } else {
-            try writer.print("Process(0x{X:0>8}, \"{}\", base=0x{X:0>8})", .{
+            try writer.print("Process(0x{X:0>8}, \"{f}\", base=0x{X:0>8})", .{
                 @intFromPtr(proc),
-                std.zig.fmtEscapes(proc.name),
+                std.zig.fmtString(proc.name),
                 if (proc.executable_memory) |mem| @intFromPtr(mem.ptr) else 0,
             });
         }
@@ -544,12 +485,12 @@ pub fn debug_dump() void {
     while (iter) |proc_node| : (iter = proc_node.next) {
         const proc: *Process = @fieldParentPtr("list_item", proc_node);
 
-        logger.info("- {}", .{proc});
+        logger.info("- {f}", .{proc});
 
         for (0..proc.resource_handles.bit_map.capacity()) |i| {
             if (proc.resource_handles.bit_map.isSet(i) == false) {
                 const item = proc.resource_handles.owners.at(i);
-                logger.info("  - {} => {}", .{
+                logger.info("  - {f} => {f}", .{
                     item.data.handle,
                     item.data.resource,
                 });

@@ -179,17 +179,18 @@ fn loadPalette(vga: VGA, palette: [256]Color) void {
 }
 
 fn loadFixedPalette(vga: VGA) void {
+    @setEvalBranchQuota(10_000);
     _ = vga;
 
     x86.out(u8, PALETTE_INDEX, 0); // tell the VGA that palette data is coming.
-    for (0..256) |index| {
-        const color: Color = @bitCast(@as(u8, @intCast(index)));
+    inline for (0..256) |index| {
+        const color: Color = comptime .from_u8(@intCast(index));
 
-        const rgb = color.to_rgb888();
+        const rgb = comptime color.to_rgb888();
 
-        const r6 = Color.compress_channel(rgb.r, u6);
-        const g6 = Color.compress_channel(rgb.g, u6);
-        const b6 = Color.compress_channel(rgb.b, u6);
+        const r6 = comptime Color.compress_channel(rgb.r, u6);
+        const g6 = comptime Color.compress_channel(rgb.g, u6);
+        const b6 = comptime Color.compress_channel(rgb.b, u6);
 
         x86.out(u8, PALETTE_DATA, r6);
         x86.out(u8, PALETTE_DATA, g6);

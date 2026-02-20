@@ -83,7 +83,7 @@ The following list contains devices for which there is a planned port of Ashet O
 
 ## Contributing
 
-This project uses [Zig 0.14.1](https://ziglang.org/download/#release-0.14.1) to compile most of the sources.
+This project uses [Zig 0.15.2](https://ziglang.org/download/#release-0.15.2) to compile most of the sources.
 
 ### Compiling The Project
 
@@ -123,10 +123,12 @@ The results of the compilation are usually disk images, except for a machine bas
 - [GCC Documentation](https://gcc.gnu.org/onlinedocs/gcc/index.html)
   - [How to Use Inline Assembly Language in C Code](https://gcc.gnu.org/onlinedocs/gcc/Using-Assembly-Language-with-C.html)
 - [Zig](https://ziglang.org/)
-  - [Zig 0.14 Language Reference](https://ziglang.org/documentation/0.14.0/)
-  - [Zig 0.14 StandarD Library Documentation](https://ziglang.org/documentation/0.14.0/std/)
+  - [Zig 0.15.2 Language Reference](https://ziglang.org/documentation/0.15.2/)
+  - [Zig 0.15.2 Standard Library Documentation](https://ziglang.org/documentation/0.15.2/std/)
 - [QEMU Documentation](https://www.qemu.org/docs/master/system/introduction.html)
 - [RP2350](https://www.raspberrypi.com/products/rp2350/)
   - [RP2350 Datasheet](https://datasheets.raspberrypi.com/rp2350/rp2350-datasheet.pdf)
   - [W25Q128JV Datasheet](https://www.mouser.de/datasheet/2/949/w25q128jv_revf_03272018_plus-1489608.pdf)
 - [Arm® v8-M Architecture Reference Manual](https://developer.arm.com/documentation/ddi0553/latest/)
+- [Virtual I/O Device (VIRTIO) Version 1.3](https://docs.oasis-open.org/virtio/virtio/v1.3/virtio-v1.3.html)
+- [HID Usage Tables for Universal Serial Bus (USB) (Version 1.6)](https://usb.org/sites/default/files/hut1_6.pdf)

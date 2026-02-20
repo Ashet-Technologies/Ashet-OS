@@ -20,7 +20,7 @@ pub fn build(b: *std.Build) void {
 
     const assets = b.path("../../assets");
 
-    const rootfs = RootFS{
+    const rootfs: RootFS = .{
         .write_file = b.addNamedWriteFiles("assets"),
         .b = b,
         .font_exe = mkfont_exe,

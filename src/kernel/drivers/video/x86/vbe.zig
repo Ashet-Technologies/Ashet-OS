@@ -277,10 +277,7 @@ pub fn BCD(comptime Backing: type) type {
     return extern struct {
         raw_value: Backing,
 
-        pub fn format(bcd: @This(), comptime fmt: []const u8, opts: std.fmt.FormatOptions, writer: anytype) !void {
-            _ = fmt;
-            _ = opts;
-
+        pub fn format(bcd: @This(), writer: *std.Io.Writer) !void {
             comptime var i = 2 * @sizeOf(Backing);
             inline while (i > 0) {
                 i -= 1;
@@ -299,9 +296,7 @@ pub fn FarPtr(comptime T: type) type {
             return @as(T, @ptrFromInt((@as(usize, fp.segment) << 4) + @as(usize, fp.offset)));
         }
 
-        pub fn format(fp: @This(), comptime fmt: []const u8, opts: std.fmt.FormatOptions, writer: anytype) !void {
-            _ = fmt;
-            _ = opts;
+        pub fn format(fp: @This(), writer: *std.Io.Writer) !void {
             try writer.print("{X:0>4}:{X:0>4}", .{ fp.segment, fp.offset });
         }
     };

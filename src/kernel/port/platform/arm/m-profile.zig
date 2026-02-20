@@ -2,19 +2,19 @@ const std = @import("std");
 const ashet = @import("../../../main.zig");
 const logger = std.log.scoped(.cortex_m);
 
-pub fn executing_isr() bool {
-    return registers.system_control_block.icsr.read().VECTACTIVE != 0;
+pub inline fn executing_isr() bool {
+    return peripherals.system_control_block.icsr.read().VECTACTIVE != 0;
 }
 
-pub fn enable_interrupts() void {
+pub inline fn enable_interrupts() void {
     asm volatile ("cpsie i");
 }
 
-pub fn disable_interrupts() void {
+pub inline fn disable_interrupts() void {
     asm volatile ("cpsid i");
 }
 
-pub fn are_interrupts_enabled() bool {
+pub inline fn are_interrupts_enabled() bool {
     // Read PRIMASK register. When bit 0 is 0, interrupts are enabled.
     // When bit 0 is 1, interrupts are disabled.
     var primask: u32 = undefined;
@@ -24,49 +24,54 @@ pub fn are_interrupts_enabled() bool {
     return (primask & 1) == 0;
 }
 
-pub fn enable_fault_irq() void {
+pub inline fn enable_fault_irq() void {
     asm volatile ("cpsie f");
 }
-pub fn disable_fault_irq() void {
+pub inline fn disable_fault_irq() void {
     asm volatile ("cpsid f");
 }
 
-pub fn nop() void {
+pub inline fn nop() void {
     asm volatile ("nop");
 }
-pub fn wfi() void {
+pub inline fn wfi() void {
     asm volatile ("wfi");
 }
-pub fn wfe() void {
+pub inline fn wfe() void {
     asm volatile ("wfe");
 }
-pub fn sev() void {
+pub inline fn sev() void {
     asm volatile ("sev");
 }
-pub fn isb() void {
+pub inline fn isb() void {
     asm volatile ("isb");
 }
-pub fn dsb() void {
+pub inline fn dsb() void {
     asm volatile ("dsb");
 }
-pub fn dmb() void {
+pub inline fn dmb() void {
     asm volatile ("dmb");
 }
-pub fn clrex() void {
+pub inline fn clrex() void {
     asm volatile ("clrex");
 }
 
-pub const start = struct {
-    //
+pub inline fn bkpt(comptime id: u32) void {
+    asm volatile ("bkpt %[id]"
+        :
+        : [id] "i" (id),
+    );
+}
 
-    extern fn ashet_kernelMain() callconv(.C) noreturn;
+pub const start = struct {
+    extern fn ashet_kernelMain() callconv(.c) noreturn;
 
     export fn _start() noreturn {
         // Force instantiation of vector table:
         _ = cortexM_initial_vector_table;
 
         // We want the hardfault to be split into smaller parts:
-        registers.system_control_block.shcsr.modify(.{
+        peripherals.system_control_block.shcsr.modify(.{
             .memfault_enabled = true,
             .busfault_enabled = true,
             .usagefault_enabled = true,
@@ -81,7 +86,7 @@ pub const start = struct {
         initial_stack_pointer: *anyopaque, // "Exception 0" => initial stack pointer value
         reset: FunctionPointer, // Exception 1
         nmi: FunctionPointer = panic_handler("nmi"), // Exception 2
-        hard_fault: FunctionPointer = panic_handler("hard_fault"), // Exception 3
+        hard_fault: FunctionPointer = make_fault_handler(default_hard_fault_handler), // Exception 3
         mem_manage: FunctionPointer = panic_handler("mem_manage"), // Exception 4
         bus_fault: FunctionPointer = make_fault_handler(default_bus_fault_handler), // Exception 5
         usage_fault: FunctionPointer = make_fault_handler(default_usage_fault_handler), // Exception 6
@@ -100,7 +105,7 @@ pub const start = struct {
 
     pub const initial_vector_table = &cortexM_initial_vector_table;
 
-    export const cortexM_initial_vector_table: InterruptTable linksection(".text.vector_table") = .{
+    export const cortexM_initial_vector_table: InterruptTable align(256) linksection(".text.vector_table") = .{
         .initial_stack_pointer = &__kernel_stack_end,
         .reset = _start,
     };
@@ -116,9 +121,9 @@ pub const start = struct {
         xpsr: u32,
     };
 
-    fn make_fault_handler(comptime handler: *const fn (context: *ContextStateFrame) callconv(.C) void) *const fn () callconv(.C) void {
+    fn make_fault_handler(comptime handler: *const fn (context: *ContextStateFrame) callconv(.c) void) *const fn () callconv(.c) void {
         return struct {
-            fn invoke() callconv(.C) void {
+            fn invoke() callconv(.c) void {
                 // See this article on how we use that:
                 // https://interrupt.memfault.com/blog/cortex-m-hardfault-debug
                 asm volatile (
@@ -140,8 +145,31 @@ pub const start = struct {
         }.invoke;
     }
 
-    fn default_bus_fault_handler(context: *ContextStateFrame) callconv(.C) void {
-        const bfsr = registers.system_control_block.bfsr.read();
+    fn default_hard_fault_handler(context: *ContextStateFrame) callconv(.c) void {
+        const hfsr = peripherals.system_control_block.hfsr.read();
+
+        logger.err("Hard Fault:", .{});
+        logger.err("  context                         =  r0:0x{X:0>8}  r1:0x{X:0>8}  r2:0x{X:0>8}    r3:0x{X:0>8}", .{
+            context.r0,
+            context.r1,
+            context.r2,
+            context.r3,
+        });
+        logger.err("                                    r12:0x{X:0>8}  lr:0x{X:0>8}  ra:0x{X:0>8}  xpsr:0x{X:0>8}", .{
+            context.r12,
+            context.lr,
+            context.return_address,
+            context.xpsr,
+        });
+        logger.err("  debug event = {}", .{hfsr.DEBUGEVT});
+        logger.err("       forced = {}", .{hfsr.FORCED});
+        logger.err(" vector fetch = {}", .{hfsr.VECTTBL});
+
+        @panic("hard fault");
+    }
+
+    fn default_bus_fault_handler(context: *ContextStateFrame) callconv(.c) void {
+        const bfsr = peripherals.system_control_block.bfsr.read();
 
         logger.err("Bus Fault:", .{});
         logger.err("  context                         =  r0:0x{X:0>8}  r1:0x{X:0>8}  r2:0x{X:0>8}    r3:0x{X:0>8}", .{
@@ -157,19 +185,21 @@ pub const start = struct {
             context.xpsr,
         });
         logger.err("  instruction bus error           = {}", .{bfsr.instruction_bus_error});
-        logger.err("  precice data bus error          = {}", .{bfsr.precice_data_bus_error});
-        logger.err("  imprecice data bus error        = {}", .{bfsr.imprecice_data_bus_error});
+        logger.err("  precise data bus error          = {}", .{bfsr.precise_data_bus_error});
+        logger.err("  imprecise data bus error        = {}", .{bfsr.imprecise_data_bus_error});
         logger.err("  unstacking exception error      = {}", .{bfsr.unstacking_exception_error});
         logger.err("  exception stacking error        = {}", .{bfsr.exception_stacking_error});
         logger.err("  busfault address register valid = {}", .{bfsr.busfault_address_register_valid});
         if (bfsr.busfault_address_register_valid) {
-            const address = registers.system_control_block.bfar.read().ADDRESS;
+            const address = peripherals.system_control_block.bfar.read().ADDRESS;
             logger.err("    busfault address register = 0x{X:0>8}", .{address});
         }
+
+        @panic("bus fault");
     }
 
-    fn default_usage_fault_handler(context: *ContextStateFrame) callconv(.C) void {
-        const ufsr = registers.system_control_block.ufsr.read();
+    fn default_usage_fault_handler(context: *ContextStateFrame) callconv(.c) void {
+        const ufsr = peripherals.system_control_block.ufsr.read();
 
         logger.err("Usage Fault:", .{});
         logger.err("  context                         =  r0:0x{X:0>8}  r1:0x{X:0>8}  r2:0x{X:0>8}    r3:0x{X:0>8}", .{
@@ -196,7 +226,7 @@ pub const start = struct {
 
     fn panic_handler(comptime msg: []const u8) FunctionPointer {
         return struct {
-            fn do_panic() callconv(.C) noreturn {
+            fn do_panic() callconv(.c) noreturn {
                 ashet.Debug.println("panic: {s}", .{msg});
                 @panic(msg);
             }
@@ -206,14 +236,31 @@ pub const start = struct {
     export fn hang() noreturn {
         while (true) {
             // burn cycles:
-            asm volatile ("" ::: "memory");
+            asm volatile ("" ::: .{ .memory = true });
         }
     }
 };
 
-pub const FunctionPointer = *const fn () callconv(.C) void;
+pub const FunctionPointer = *const fn () callconv(.c) void;
 
-pub const registers = struct {
+pub fn LeftAlignedRegister(comptime T: type) type {
+    const align_bits: u5 = 32 - @bitSizeOf(T);
+    return enum(T) {
+        pub const alignment = (1 << align_bits);
+
+        _,
+
+        pub fn from_ptr(ptr: *align(alignment) anyopaque) @This() {
+            return @enumFromInt(@as(T, @truncate(@intFromPtr(ptr) >> align_bits)));
+        }
+
+        pub fn from_int(ptr: usize) @This() {
+            return @enumFromInt(@as(T, @truncate(ptr >> align_bits)));
+        }
+    };
+}
+
+pub const peripherals = struct {
     const MmioRegister = ashet.utils.mmio.MmioRegister;
     const mmioRegister = ashet.utils.mmio.mmioRegister;
 
@@ -384,44 +431,46 @@ pub const registers = struct {
                 _,
             },
 
-            pub fn format(self: @This(), comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-                _ = options;
+            const Cpuid = @This();
+            const CpuidFmt = struct {
+                cpuid: Cpuid,
+                fmt: enum { hex, string, fields },
 
-                const fmt_ok = (fmt.len == 1) and switch (fmt[0]) {
-                    'n', 's', 'f' => true,
-                    else => false,
-                };
-                if (!fmt_ok)
-                    @compileError(
-                        \\Invalid format specifier for Arm CPUID. Legal options are:
-                        \\ - 'n': Numeric display as a hexadecimal value
-                        \\ - 's': Displays as a string representation
-                        \\ - 'f': Displays as separate fields
-                    );
-
-                switch (fmt[0]) {
-                    's' => {
-                        try writer.print("{s} {s} {d}n{d}n", .{
-                            @tagName(self.implementer),
-                            @tagName(self.part_number),
-                            self.variant,
-                            self.revision,
-                        });
-                    },
-                    'n' => {
-                        try writer.print("CPUID(0x{X:0>8})", .{@as(u32, @bitCast(self))});
-                    },
-                    'f' => {
-                        try writer.print("CPUID()", .{
-                            self.implementer,
-                            self.part_number,
-                            self.variant,
-                            self.revision,
-                        });
-                    },
-
-                    else => unreachable,
+                pub fn format(self: CpuidFmt, writer: *std.Io.Writer) !void {
+                    switch (self.fmt) {
+                        .string => {
+                            try writer.print("{s} {s} {d}n{d}n", .{
+                                @tagName(self.cpuid.implementer),
+                                @tagName(self.cpuid.part_number),
+                                self.cpuid.variant,
+                                self.cpuid.revision,
+                            });
+                        },
+                        .hex => {
+                            try writer.print("CPUID(0x{X:0>8})", .{@as(u32, @bitCast(self.cpuid))});
+                        },
+                        .fields => {
+                            try writer.print("CPUID({}, {}, {}, {})", .{
+                                self.cpuid.implementer,
+                                self.cpuid.part_number,
+                                self.cpuid.variant,
+                                self.cpuid.revision,
+                            });
+                        },
+                    }
                 }
+            };
+
+            pub fn fmtHex(self: @This()) CpuidFmt {
+                return .{ .cpuid = self, .fmt = .hex };
+            }
+
+            pub fn fmtString(self: @This()) CpuidFmt {
+                return .{ .cpuid = self, .fmt = .string };
+            }
+
+            pub fn fmtFields(self: @This()) CpuidFmt {
+                return .{ .cpuid = self, .fmt = .fields };
             }
         }, .{ .access = .read_only });
 
@@ -550,7 +599,7 @@ pub const registers = struct {
             /// 0 = code
             /// 1 = SRAM.
             /// In implementations bit[29] is sometimes called the TBLBASE bit.
-            table_offset: u25, // [31:7], RW
+            table_offset: LeftAlignedRegister(u25), // [31:7], RW
         }, .{});
 
         /// Application Interrupt and Reset Control Register
@@ -823,14 +872,14 @@ pub const registers = struct {
             ///     0 = no precise data bus error
             ///     1 = a data bus error has occurred, and the PC value stacked for the exception return points to the instruction that caused the fault.
             /// When the processor sets this bit is 1, it writes the faulting address to the BFAR.
-            precice_data_bus_error: bool, // [1], RW
+            precise_data_bus_error: bool, // [1], RW
 
             /// Imprecise data bus error:
             ///     0 = no imprecise data bus error
             ///     1 = a data bus error has occurred, but the return address in the stack frame is not related to the instruction that caused the error.
             /// When the processor sets this bit to 1, it does not write a fault address to the BFAR.
             /// This is an asynchronous fault. Therefore, if it is detected when the priority of the current process is higher than the BusFault priority, the BusFault becomes pending and becomes active only when the processor returns from all higher priority processes. If a precise fault occurs before the processor enters the handler for the imprecise BusFault, the handler detects both IMPRECISERR set to 1 and one of the precise fault status bits set to 1.
-            imprecice_data_bus_error: bool, // [2], RW
+            imprecise_data_bus_error: bool, // [2], RW
 
             /// BusFault on unstacking for a return from exception:
             ///     0 = no unstacking fault
@@ -1143,13 +1192,13 @@ pub const registers = struct {
         // 0xE000ED94  MPU_CTRL     RW  Privileged  0x00000000  MPU Control Register
         // 0xE000ED98  MPU_RNR      RW  Privileged  0x00000000  MPU Region Number Register
         // 0xE000ED9C  MPU_RBAR     RW  Privileged  0x00000000  MPU Region Base Address Register
-        // 0xE000EDA0  MPU_RASR     RW  Privileged  0x00000000  MPU Region Attribute and Size Register
+        // 0xE000EDA0  MPU_RLAR     RW  Privileged  0x00000000  MPU Region Attribute and Size Register
         // 0xE000EDA4  MPU_RBAR_A1  RW  Privileged  0x00000000  Alias of RBAR, see MPU Region Base Address Register
-        // 0xE000EDA8  MPU_RASR_A1  RW  Privileged  0x00000000  Alias of RASR, see MPU Region Attribute and Size Register
+        // 0xE000EDA8  MPU_RLAR_A1  RW  Privileged  0x00000000  Alias of RASR, see MPU Region Attribute and Size Register
         // 0xE000EDAC  MPU_RBAR_A2  RW  Privileged  0x00000000  Alias of RBAR, see MPU Region Base Address Register
-        // 0xE000EDB0  MPU_RASR_A2  RW  Privileged  0x00000000  Alias of RASR, see MPU Region Attribute and Size Register
+        // 0xE000EDB0  MPU_RLAR_A2  RW  Privileged  0x00000000  Alias of RASR, see MPU Region Attribute and Size Register
         // 0xE000EDB4  MPU_RBAR_A3  RW  Privileged  0x00000000  Alias of RBAR, see MPU Region Base Address Register
-        // 0xE000EDB8  MPU_RASR_A3  RW  Privileged  0x00000000  Alias of RASR, see MPU Region Attribute and Size Register
+        // 0xE000EDB8  MPU_RLAR_A3  RW  Privileged  0x00000000  Alias of RASR, see MPU Region Attribute and Size Register
 
         /// MPU Type Register
         const @"type" = mmioRegister(0xE000ED90, packed struct(u32) {
@@ -1171,7 +1220,7 @@ pub const registers = struct {
         }, .{ .access = .read_only });
 
         /// MPU Control Register
-        const ctrl = mmioRegister(0xE000ED94, packed struct(u32) {
+        pub const ctrl = mmioRegister(0xE000ED94, packed struct(u32) {
             enabled: bool, // [0]
 
             /// Enables the operation of MPU during hard fault, NMI, and FAULTMASK handlers.
@@ -1196,7 +1245,7 @@ pub const registers = struct {
                 default_memory_map = 1,
             },
 
-            _reserved: u29, // [31:3]
+            _reserved: u29 = 0, // [31:3]
         }, .{});
 
         /// MPU Region Number Register
@@ -1207,13 +1256,13 @@ pub const registers = struct {
         /// However you can change the region number by writing to the MPU RBAR with the VALID bit set to 1, see MPU Region Base Address Register.
         ///
         /// This write updates the value of the REGION field.
-        const rnr = mmioRegister(0xE000ED98, packed struct(u32) {
+        pub const rnr = mmioRegister(0xE000ED98, packed struct(u32) {
             /// Indicates the MPU region referenced by the MPU_RBAR and MPU_RASR registers.
             ///
             /// The MPU supports 8 memory regions, so the permitted values of this field are 0-7.
             region: u8, // [7:0]
 
-            _reserved: u24, // [31:8]
+            _reserved: u24 = 0, // [31:8]
         }, .{});
 
         ///  MPU Region Base Address Register
@@ -1221,114 +1270,108 @@ pub const registers = struct {
         ///
         /// Write MPU_RBAR with the VALID bit set to 1 to change the current region number and update the MPU_RNR. The bit assignments are:
         pub const RBAR = MmioRegister(packed struct(u32) {
-            /// MPU region field:
-            /// For the behavior on writes, see the description of the VALID field.
-            ///
-            /// On reads, returns the current region number, as specified by the RNR.
-            region: u3, // [2:0]
+            allow_execute: enum(u1) { when_accessible = 0, no_execute = 1 },
+            permissions: enum(u2) {
+                /// Read/write by privileged code only.
+                read_write_sec = 0b00,
+                /// Read/write by any privilege level.
+                read_write_all = 0b01,
+                /// Read-only by privileged code only.
+                read_only_sec = 0b10,
+                /// Read-only by any privilege level.
+                read_only_all = 0b11,
+            },
 
-            /// MPU Region Number valid bit:
-            ///
-            /// Write:
-            ///     0 = MPU_RNR not changed, and the processor:
-            ///         updates the base address for the region specified in the MPU_RNR
-            ///         ignores the value of the REGION field
-            ///
-            ///     1 = the processor:
-            ///         updates the value of the MPU_RNR to the value of the REGION field
-            ///         updates the base address for the region specified in the REGION field.
-            ///
-            /// Always reads as zero.
-            valid: bool, // [3]
+            sharing: enum(u2) {
+                /// Non-shareable.
+                non_shareable = 0b00,
+                /// UNPREDICTABLE.
+                // unpredictable = 0b01,
+                /// Outer shareable.
+                outer_shareable = 0b10,
+                /// Inner Shareable.
+                inner_shareable = 0b11,
+            },
 
-            /// The ADDR field
-            /// The ADDR field is bits[31:N] of the MPU_RBAR. The region size, as specified by the SIZE field in the MPU_RASR, defines the value of N:
-            ///
-            /// N = Log2(Region size in bytes),
-            ///
-            /// If the region size is configured to 4GB, in the MPU_RASR, there is no valid ADDR field. In this case, the region occupies the complete memory map, and the base address is 0x00000000.
-            ///
-            /// The base address is aligned to the size of the region. For example, a 64KB region must be aligned on a multiple of 64KB, for example, at 0x00010000 or 0x00020000.
-            address: u28,
+            base: LeftAlignedRegister(u27),
         }, .{});
 
-        /// MPU Region Base Address Register
+        /// MPU Region Limit Address Register
+        /// The MPU_RLAR defines the limit address of the MPU region selected by the MPU_RNR.
         ///
-        /// The MPU_RASR defines the region size and memory attributes of the MPU region specified by the MPU_RNR, and enables that region and any subregions. See the register summary in Table 4.38 for its attributes.
-        ///
-        /// MPU_RASR is accessible using word or halfword accesses:
-        ///
-        /// the most significant halfword holds the region attributes
-        ///
-        /// the least significant halfword holds the region size and the region and subregion enable bits.
-        ///
-        /// https://developer.arm.com/documentation/dui0552/a/cortex-m3-peripherals/optional-memory-protection-unit/mpu-access-permission-attributes?lang=en
-        pub const RASR = MmioRegister(packed struct(u32) {
+        /// In an implementation with the Security Extension, this register is banked between Security states.
+        pub const RLAR = MmioRegister(packed struct(u32) {
             enable: bool, // [0]
 
-            /// SIZE field values
-            /// The SIZE field defines the size of the MPU memory region specified by the RNR. as follows:
+            /// Attribute index. Associates a set of attributes in the MPU_MAIR0 and MPU_MAIR1 fields.
+            attribute_index: u3,
+
+            _reserved: u1 = 0,
+
+            /// Limit address. Contains bits[31:5] of the upper inclusive limit of the selected MPU memory region.
             ///
-            /// (Region size in bytes) = 2(SIZE+1)
-            ///
-            /// The smallest permitted region size is 32B, corresponding to a SIZE value of 4.
-            ///
-            ///     SIZE value    | Region size | Value of N | Note
-            ///     --------------+-------------+------------+-----------------------
-            ///     0b00100 (4)   | 32B         | 5          | Minimum permitted size
-            ///     0b01001 (9)   | 1KB         | 10         | -
-            ///     0b10011 (19)  | 1MB         | 20         | -
-            ///     0b11101 (29)  | 1GB         | 30         | -
-            ///     0b11111 (31)  | 4GB         | 32         | Maximum possible size
-            ///
-            size: u5, // [5:1]
-
-            reserved: u2, // [7:6]
-
-            ///Subregion disable bits. For each bit in this field:
-            /// 0 = corresponding sub-region is enabled
-            /// 1 = corresponding sub-region is disabled.
-            ///
-            /// See Subregions for more information.
-            ///
-            /// Region sizes of 128 bytes and less do not support subregions. When writing the attributes for such a region, write the SRD field as 0x00.
-            subregion_disabled: u8, // [15:8]
-
-            b: bool, // [16]
-            c: bool, // [17]
-
-            /// Shareable bit, see Table 4.45.
-            sharable: bool, // [18]
-
-            tex: u3, // [21:19]
-
-            _reserved1: u2, // [23:22]
-
-            /// Access permission field, see Table 4.47.
-            access_permissions: AccessPermission, // [26:24]
-
-            _reserved2: u1, // [27]
-
-            ///Instruction access disable bit:
-            ///     0 = instruction fetches enabled
-            ///     1 = instruction fetches disabled.
-            execute_disable: bool,
-
-            _reserved3: u3, // [31:29]
+            /// This value is postfixed with 0x1F to provide the limit address to be checked against.
+            limit: LeftAlignedRegister(u27),
         }, .{});
 
-        /// AP[2:0]     Privileged permissions  Unprivileged permissions    Description
-        /// 000         No access               No access                   All accesses generate a permission fault
-        /// 001         RW                      No access                   Access from privileged software only
-        /// 010         RW                      RO                          Writes by unprivileged software generate a permission fault
-        /// 011         RW                      RW                          Full access
-        /// 100         Unpredictable           Unpredictable               Reserved
-        /// 101         RO                      No access                   Reads by privileged software only
-        /// 110         RO                      RO                          Read only, by privileged or unprivileged software
-        /// 111         RO                      RO                          Read only, by privileged or unprivileged software
-        pub const AccessPermission = enum(u3) {
-            no_access = 0b000,
-        };
+        pub const MAIR = MmioRegister(packed struct(u8) {
+            inner: packed union {
+                /// Device attributes. Specifies the memory attributes for Device.The possible values of this field are:
+                device: enum(u4) {
+                    /// Used to access memory mapped peripherals.
+                    /// All accesses to Device-nGnRnE memory occur in program order. All regions are assumed to be shared.
+                    ng_nr_ne = 0b00_00,
+                    /// Used to access memory mapped peripherals.Weaker ordering than Device-nGnRnE.
+                    ng_nr_e = 0b01_00,
+                    /// Used to access memory mapped peripherals.Weaker ordering than Device-nGnRE.
+                    n_gre = 0b10_00,
+                    /// Used to access memory mapped peripherals.Weaker ordering than Device-nGRE.
+                    gre = 0b11_00,
+                },
+                memory: enum(u4) {
+                    writethrough_transient_ro = 0b0010,
+                    writethrough_transient_wo = 0b0001,
+                    writethrough_transient_rw = 0b0011,
+
+                    non_cacheable = 0b0100,
+
+                    writeback_transient_ro = 0b0110,
+                    writeback_transient_wo = 0b0101,
+                    writeback_transient_rw = 0b0111,
+
+                    writethrough_nontransient_ro = 0b1010,
+                    writethrough_nontransient_wo = 0b1001,
+                    writethrough_nontransient_rw = 0b1011,
+
+                    writeback_nontransient_ro = 0b1110,
+                    writeback_nontransient_wo = 0b1101,
+                    writeback_nontransient_rw = 0b1111,
+                },
+            },
+
+            outer: enum(u4) {
+                // Device memory. In this case, refer to MPU Memory Attribute Indirection Registers 0 and 1.
+                device = 0b0000,
+
+                normal_writethrough_transient_ro = 0b0010,
+                normal_writethrough_transient_wo = 0b0001,
+                normal_writethrough_transient_rw = 0b0011,
+
+                normal_non_cacheable = 0b0100,
+
+                normal_writeback_transient_ro = 0b0110,
+                normal_writeback_transient_wo = 0b0101,
+                normal_writeback_transient_rw = 0b0111,
+
+                normal_writethrough_nontransient_ro = 0b1010,
+                normal_writethrough_nontransient_wo = 0b1001,
+                normal_writethrough_nontransient_rw = 0b1011,
+
+                normal_writeback_nontransient_ro = 0b1110,
+                normal_writeback_nontransient_wo = 0b1101,
+                normal_writeback_nontransient_rw = 0b1111,
+            },
+        }, .{});
 
         /// MPU Region Base Address Register
         pub const rbar: *volatile RBAR = @ptrFromInt(0xE000ED9C);
@@ -1343,15 +1386,69 @@ pub const registers = struct {
         pub const rbar_a3: *volatile RBAR = @ptrFromInt(0xE000EDB4);
 
         /// Alias of RBAR, see MPU Region Base Address Register
-        pub const rasr: *volatile RASR = @ptrFromInt(0xE000EDA0);
+        pub const rlar: *volatile RLAR = @ptrFromInt(0xE000EDA0);
 
         /// Alias of RASR, see MPU Region Attribute and Size Register
-        pub const rasr_a1: *volatile RASR = @ptrFromInt(0xE000EDA8);
+        pub const rlar_a1: *volatile RLAR = @ptrFromInt(0xE000EDA8);
 
         /// Alias of RBAR, see MPU Region Base Address Register
-        pub const rasr_a2: *volatile RASR = @ptrFromInt(0xE000EDB0);
+        pub const rlar_a2: *volatile RLAR = @ptrFromInt(0xE000EDB0);
 
         /// Alias of RASR, see MPU Region Attribute and Size Register
-        pub const rasr_a3: *volatile RASR = @ptrFromInt(0xE000EDB8);
+        pub const rlar_a3: *volatile RLAR = @ptrFromInt(0xE000EDB8);
+
+        pub const mair: *volatile [8]MAIR = @ptrFromInt(0xE000EDC0);
     };
+};
+
+/// Data Watchpoint & Trace Unit
+pub const dwt_unit = struct {
+    const m33_base = 0xE0000000;
+
+    const DWT_CTRL = packed struct(u32) { cnt_ena: bool, pad: u31 };
+    const DEMCR = packed struct(u32) {
+        VC_CORERESET: bool,
+        _reserved0: u3,
+        VC_MMERR: bool,
+        VC_NOCPERR: bool,
+        VC_CHKERR: bool,
+        VC_STATERR: bool,
+        VC_BUSERR: bool,
+        VC_INTERR: bool,
+        VC_HARDERR: bool,
+        VC_SFERR: bool,
+        _reserved1: u4,
+        MON_EN: bool,
+        MON_PEND: bool,
+        MON_STEP: bool,
+        MON_REQ: bool,
+        SDME: bool,
+        _reserved2: u3,
+        TRCENA: bool,
+        _reserved3: u7,
+    };
+
+    const demcr: *volatile DEMCR = @ptrFromInt(m33_base + 0x0edfc);
+    const dwt_ctrl: *volatile DWT_CTRL = @ptrFromInt(m33_base + 0x1000);
+    const dwt_cyccnt: *volatile u32 = @ptrFromInt(m33_base + 0x1004);
+
+    pub inline fn init() void {
+        demcr.TRCENA = true;
+    }
+
+    pub inline fn start() void {
+        dwt_ctrl.cnt_ena = true;
+    }
+
+    pub inline fn stop() void {
+        dwt_ctrl.cnt_ena = false;
+    }
+
+    pub inline fn reset() void {
+        dwt_cyccnt.* = 0;
+    }
+
+    pub inline fn read() u32 {
+        return dwt_cyccnt.*;
+    }
 };

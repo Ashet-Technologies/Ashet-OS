@@ -14,13 +14,20 @@ fn isTransparent(c: zigimg.color.Colorf32) bool {
     return c.a < 0.5;
 }
 
+pub const Format = enum {
+    raw,
+    abm,
+};
+
 const CliOptions = struct {
     geometry: ?[]const u8 = null,
     output: ?[]const u8 = null,
+    format: Format = .abm,
 
     pub const shorthands = .{
         .g = "geometry",
         .o = "output",
+        .f = "format",
     };
 };
 
@@ -50,7 +57,8 @@ pub fn main() !u8 {
 
     // std.log.info("processing {s}", .{input_file_name});
 
-    var raw_image = try zigimg.Image.fromFilePath(arena.allocator(), input_file_name);
+    var raw_image_buffer: [zigimg.io.DEFAULT_BUFFER_SIZE]u8 = undefined;
+    var raw_image = try zigimg.Image.fromFilePath(arena.allocator(), input_file_name, &raw_image_buffer);
     if (raw_image.width != size[0] or raw_image.height != size[1]) {
         std.debug.panic("image must be {}x{}", .{ size[0], size[1] });
     }
@@ -139,17 +147,17 @@ pub fn main() !u8 {
 
     const palette_size: u8 = 0;
 
-    const transparency_key: Color = if (has_transparency)
+    const transparency_key: ?Color = if (has_transparency)
         Color.from_u8(@intCast(
             transparency_keys.toggleFirstSet() orelse @panic("Requires transparency, but all 256 colors are used. We can't find a key!"),
         ))
     else
-        undefined;
+        null;
 
-    if (has_transparency) {
+    if (transparency_key) |tkey| {
         for (bitmap, transparent_pixels) |*pixel, transparent| {
             if (transparent) {
-                pixel.* = transparency_key.to_u8();
+                pixel.* = tkey.to_u8();
             }
         }
     }
@@ -158,29 +166,39 @@ pub fn main() !u8 {
     var out_file = try std.fs.cwd().createFile(output_file_name, .{});
     defer out_file.close();
 
-    var buffered_writer = std.io.bufferedWriter(out_file.writer());
-    var writer = buffered_writer.writer();
+    var out_file_buffer: [2048]u8 = undefined;
+    var out_file_writer = out_file.writer(&out_file_buffer);
+    const writer = &out_file_writer.interface;
 
-    try writer.writeInt(u32, 0x48198b74, .little);
-    try writer.writeInt(u16, @as(u16, @intCast(raw_image.width)), .little);
-    try writer.writeInt(u16, @as(u16, @intCast(raw_image.height)), .little);
-    try writer.writeInt(u16, if (has_transparency) @as(u16, 0x0001) else 0x0000, .little); // flags, enable transparency
-    try writer.writeInt(u8, palette_size, .little); // palette size
-    try writer.writeInt(u8, transparency_key.to_u8(), .little); // transparent
+    switch (cli.options.format) {
+        .abm => {
+            try writer.writeInt(u32, 0x48198b74, .little);
+            try writer.writeInt(u16, @as(u16, @intCast(raw_image.width)), .little);
+            try writer.writeInt(u16, @as(u16, @intCast(raw_image.height)), .little);
+            try writer.writeInt(u16, if (has_transparency) @as(u16, 0x0001) else 0x0000, .little); // flags, enable transparency
+            try writer.writeInt(u8, palette_size, .little); // palette size
+            try writer.writeInt(u8, (transparency_key orelse Color.from_u8(0)).to_u8(), .little); // transparent
 
-    try writer.writeAll(bitmap);
+            try writer.writeAll(bitmap);
 
-    // for (palette) |color| {
-    //     const rgb565 = zigimg.color.Rgb565.fromU32Rgba(color.toU32Rgba());
-    //     const abi_color = abi.Color{
-    //         .r = rgb565.r,
-    //         .g = rgb565.g,
-    //         .b = rgb565.b,
-    //     };
-    //     try writer.writeInt(u16, abi_color.toU16(), .little);
-    // }
+            // for (palette) |color| {
+            //     const rgb565 = zigimg.color.Rgb565.fromU32Rgba(color.toU32Rgba());
+            //     const abi_color = abi.Color{
+            //         .r = rgb565.r,
+            //         .g = rgb565.g,
+            //         .b = rgb565.b,
+            //     };
+            //     try writer.writeInt(u16, abi_color.toU16(), .little);
+            // }
 
-    try buffered_writer.flush();
+        },
+
+        .raw => {
+            try writer.writeAll(bitmap);
+        },
+    }
+
+    try writer.flush();
 
     return 0;
 }

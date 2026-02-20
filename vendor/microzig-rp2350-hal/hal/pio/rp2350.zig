@@ -41,9 +41,14 @@ pub const Pio = enum(u2) {
     pub const add_program_at_offset_unlocked = PioImpl.add_program_at_offset_unlocked;
     pub const add_program = PioImpl.add_program;
     pub const claim_unused_state_machine = PioImpl.claim_unused_state_machine;
+    pub const set_input_sync_bypass = PioImpl.set_input_sync_bypass;
     pub const get_sm_regs = PioImpl.get_sm_regs;
     pub const get_irq_regs = PioImpl.get_irq_regs;
     pub const sm_set_clkdiv = PioImpl.sm_set_clkdiv;
+    pub fn get_gpio_base(self: Pio) u32 {
+        // Base is either 0 or 16
+        return 0x10 & self.get_regs().GPIOBASE.raw;
+    }
     pub const sm_set_exec_options = PioImpl.sm_set_exec_options;
 
     pub fn sm_set_shift_options(self: Pio, sm: common.StateMachine, options: common.ShiftOptions(.RP2350)) void {
@@ -63,7 +68,6 @@ pub const Pio = enum(u2) {
 
             .FJOIN_RX_GET = @intFromBool(options.fjoin_rx_get),
             .FJOIN_RX_PUT = @intFromBool(options.fjoin_rx_put),
-            .reserved14 = 0,
             .IN_COUNT = options.in_count,
         });
     }
@@ -86,7 +90,7 @@ pub const Pio = enum(u2) {
     pub fn sm_clear_fifos(self: Pio, sm: common.StateMachine) void {
         const sm_regs = self.get_sm_regs(sm);
         const xor_shiftctrl = hw.xor_alias(&sm_regs.shiftctrl);
-        const mask = .{
+        const mask = @TypeOf(common.PIO0.SM0_SHIFTCTRL).underlying_type{
             .FJOIN_TX = 1,
             .FJOIN_RX = 1,
 
@@ -99,7 +103,6 @@ pub const Pio = enum(u2) {
 
             .FJOIN_RX_GET = 0,
             .FJOIN_RX_PUT = 0,
-            .reserved14 = 0,
             .IN_COUNT = 0,
         };
 
@@ -115,4 +118,9 @@ pub const Pio = enum(u2) {
     pub const sm_init = PioImpl.sm_init;
     pub const sm_exec = PioImpl.sm_exec;
     pub const sm_load_and_start_program = PioImpl.sm_load_and_start_program;
+
+    pub const sm_exec_set_x = PioImpl.sm_exec_set_x;
+    pub const sm_exec_set_y = PioImpl.sm_exec_set_y;
+    pub const sm_exec_set_pindir = PioImpl.sm_exec_set_pindir;
+    pub const sm_exec_jmp = PioImpl.sm_exec_jmp;
 };

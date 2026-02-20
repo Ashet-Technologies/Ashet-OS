@@ -7,6 +7,8 @@ const Driver = ashet.drivers.Driver;
 const Color = ashet.abi.Color;
 const Resolution = ashet.abi.Size;
 
+const VNC_Server = @import("../../port/hosted/VNC_Server.zig");
+
 backbuffer_lock: std.Thread.Mutex = .{},
 
 backbuffer: []Color,
@@ -31,7 +33,7 @@ pub fn init(
 ) !Host_VNC_Output {
     const fb = try std.heap.page_allocator.alignedAlloc(
         Color,
-        ashet.memory.page_size,
+        .fromByteUnits(ashet.memory.page_size),
         2 * @as(u32, width) * @as(u32, height),
     );
     errdefer std.heap.page_allocator.free(fb);
@@ -66,4 +68,10 @@ fn flush(driver: *Driver) void {
 
     @memcpy(vd.backbuffer, vd.frontbuffer);
     vd.backbuffer_dirty = true;
+
+    vd.vnc_server().notify_flush();
+}
+
+fn vnc_server(output: *Host_VNC_Output) *VNC_Server {
+    return @fieldParentPtr("screen", output);
 }

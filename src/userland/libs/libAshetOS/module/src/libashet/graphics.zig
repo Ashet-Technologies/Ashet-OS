@@ -59,15 +59,11 @@ pub fn render(target: Framebuffer, command_sequence: []const u8, auto_invalidate
 }
 
 pub const CommandQueue = struct {
-    const WriteError = error{OutOfMemory};
-    const Writer = std.io.Writer(*CommandQueue, WriteError, raw_append);
-    const Encoder = agp.Encoder(Writer);
-
-    data: std.ArrayList(u8),
+    data: std.Io.Writer.Allocating,
 
     pub fn init(allocator: std.mem.Allocator) !CommandQueue {
         return .{
-            .data = std.ArrayList(u8).init(allocator),
+            .data = .init(allocator),
         };
     }
 
@@ -81,7 +77,7 @@ pub const CommandQueue = struct {
         reset: bool = true,
     };
     pub fn submit(cq: *CommandQueue, fb: ashet.abi.Framebuffer, options: SubmitOptions) !void {
-        try render(fb, cq.data.items, options.mode == .invalidate);
+        try render(fb, cq.data.written(), options.mode == .invalidate);
         if (options.reset)
             cq.reset();
     }
@@ -90,13 +86,8 @@ pub const CommandQueue = struct {
         cq.data.shrinkRetainingCapacity(0);
     }
 
-    fn raw_append(cq: *CommandQueue, data: []const u8) WriteError!usize {
-        try cq.data.appendSlice(data);
-        return data.len;
-    }
-
-    fn encoder(cq: *CommandQueue) Encoder {
-        return .{ .writer = .{ .context = cq } };
+    fn encoder(cq: *CommandQueue) agp.Encoder {
+        return agp.encoder(&cq.data.writer);
     }
 
     pub fn encode(cq: *CommandQueue, cmd: agp.Command) !void {
@@ -122,7 +113,7 @@ pub const CommandQueue = struct {
     pub fn draw_horizontal_line(cq: *CommandQueue, left: Point, length: u16, color: Color) !void {
         try cq.draw_line(
             left,
-            Point.new(left.x + @as(u15, @intCast(length)), left.y),
+            Point.new(left.x + @as(u15, @intCast(length -| 1)), left.y),
             color,
         );
     }
@@ -130,7 +121,7 @@ pub const CommandQueue = struct {
     pub fn draw_vertical_line(cq: *CommandQueue, top: Point, length: u16, color: Color) !void {
         try cq.draw_line(
             top,
-            Point.new(top.x, top.y + @as(u15, @intCast(length))),
+            Point.new(top.x, top.y + @as(u15, @intCast(length -| 1))),
             color,
         );
     }
@@ -173,6 +164,10 @@ pub fn get_system_font(font_name: []const u8) !Font {
     return try ashet.abi.draw.get_system_font(font_name);
 }
 
+pub fn measure_text_size(font: Font, text: []const u8) !Size {
+    return try ashet.abi.draw.measure_text_size(font, text);
+}
+
 pub fn create_memory_framebuffer(size: Size) !Framebuffer {
     return try ashet.abi.draw.create_memory_framebuffer(size);
 }
@@ -183,6 +178,10 @@ pub fn create_video_framebuffer(output: *ashet.video.Output) !Framebuffer {
 
 pub fn create_window_framebuffer(window: ashet.abi.Window) !Framebuffer {
     return try ashet.abi.draw.create_window_framebuffer(window);
+}
+
+pub fn create_widget_framebuffer(widget: ashet.abi.Widget) !Framebuffer {
+    return try ashet.abi.draw.create_widget_framebuffer(widget);
 }
 
 pub fn get_framebuffer_memory(fb: Framebuffer) !ashet.abi.VideoMemory {
@@ -220,7 +219,7 @@ pub fn load_bitmap_file(allocator: std.mem.Allocator, file: ashet.fs.File) !Bitm
 pub fn load_bitmap_file_at(allocator: std.mem.Allocator, file: ashet.fs.File, abs_offset: u64) !Bitmap {
     const header = try abm.read_header(file, abs_offset);
 
-    const buffer = try allocator.alignedAlloc(Color, 4, @as(u32, header.width) * header.height);
+    const buffer = try allocator.alignedAlloc(Color, .@"4", @as(u32, header.width) * header.height);
     errdefer allocator.free(buffer);
 
     try abm.read_pixels(file, abs_offset, header, .{
@@ -253,7 +252,7 @@ pub const abm = struct {
             @field(header, fld.name) = std.mem.littleToNative(fld.type, @field(header, fld.name));
         }
 
-        logger.info("header: 0x{X:0>8} size={}x{}, palette={}, key={}, flags={}", .{
+        logger.info("header: 0x{X:0>8} size={}x{}, palette={}, key={f}, flags={}", .{
             header.magic,
             header.width,
             header.height,

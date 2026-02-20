@@ -38,6 +38,22 @@ const installed_tools: []const ToolDep = &.{
         .dependency = "mkfont",
         .artifacts = &.{"mkfont"},
     },
+    .{
+        .dependency = "elfstack",
+        .artifacts = &.{"elfstack"},
+    },
+    .{
+        .dependency = "sermon",
+        .artifacts = &.{"sermon"},
+    },
+    .{
+        .dependency = "gui_designer",
+        .artifacts = &.{ "gui-editor", "gui-compiler" },
+    },
+    // .{
+    //     .dependency = "agp_tester",
+    //     .artifacts = &.{"agp-tester"},
+    // },
 };
 
 pub fn build(b: *std.Build) void {
@@ -62,6 +78,7 @@ pub fn build(b: *std.Build) void {
 
     // Steps:
     const test_step = b.step("test", "Runs the test suite");
+    const tools_step = b.step("tools", "Builds and installs the debug tools");
     const run_step = b.step("run", "Runs the OS on the machine provided with -Dmachine=...");
 
     const maybe_run_machine: ?Machine = if (maybe_run_target) |target|
@@ -91,7 +108,11 @@ pub fn build(b: *std.Build) void {
         const dep = b.dependency(tool_dep.dependency, .{});
         for (tool_dep.artifacts) |art_name| {
             const art = dep.artifact(art_name);
-            b.installArtifact(art);
+
+            const install = b.addInstallArtifact(art, .{});
+
+            b.getInstallStep().dependOn(&install.step);
+            tools_step.dependOn(&install.step);
         }
     }
 
@@ -102,9 +123,6 @@ pub fn build(b: *std.Build) void {
     // Build:
 
     const debugfilter = debugfilter_dep.artifact("debug-filter");
-
-    // Install the debug-filter executable so we can utilize it for debugging
-    b.installArtifact(debugfilter);
 
     var os_deps: std.EnumArray(Machine, *std.Build.Dependency) = .initUndefined();
     var os_rootfs: std.EnumArray(Machine, ?std.Build.LazyPath) = .initFill(null);
@@ -210,9 +228,14 @@ pub fn build(b: *std.Build) void {
         const apps: []const AppDef = &.{
             .{ .name = "init", .exe = get_named_file(os_files, "apps/init.elf") },
             .{ .name = "hello-world", .exe = get_named_file(os_files, "apps/hello-world.elf") },
-            .{ .name = "hello-gui", .exe = get_named_file(os_files, "apps/hello-gui.elf") },
+            .{ .name = "mtg-counter", .exe = get_named_file(os_files, "apps/mtg-counter.elf") },
+            .{ .name = "hello-fb", .exe = get_named_file(os_files, "apps/hello-fb.elf") },
             .{ .name = "classic", .exe = get_named_file(os_files, "apps/desktop/classic.elf") },
             .{ .name = "dungeon.ashex", .exe = get_named_file(os_files, "apps/dungeon.elf") },
+            .{ .name = "ntp-client.ashex", .exe = get_named_file(os_files, "apps/ntp-client.elf") },
+            .{ .name = "i2c-scan.ashex", .exe = get_named_file(os_files, "apps/i2c-scan.elf") },
+            .{ .name = "widgets.ashex", .exe = get_named_file(os_files, "apps/widgets.elf") },
+            .{ .name = "2048.ashex", .exe = get_named_file(os_files, "apps/2048.elf") },
         };
 
         var variables = Variables{
@@ -292,10 +315,10 @@ pub fn build(b: *std.Build) void {
 
         run_step.dependOn(&vm_runner.step);
     } else {
-        var fail_msg: std.ArrayList(u8) = .init(b.allocator);
+        var fail_msg: std.Io.Writer.Allocating = .init(b.allocator);
         defer fail_msg.deinit();
 
-        const writer = fail_msg.writer();
+        const writer = &fail_msg.writer;
 
         writer.writeAll(
             \\To use 'zig build run', please pass a machine to -Dmachine=<...>.
@@ -393,7 +416,7 @@ const machine_info_map = std.EnumArray(RunTarget, MachineStartupConfig).init(.{
             "-drive",   "if=ide,index=0,format=raw,file=${DISK}",
             "--device", "isa-debug-exit",
             "-vga", "none", // disable standard VGA
-            "--device", "VGA,xres=800,yres=480,xmax=800,ymax=480,edid=true", // replace with customized VGA and limited resolution
+            "--device", "VGA,xres=640,yres=400,xmax=640,ymax=400,edid=true", // replace with customized VGA and limited resolution
         },
     },
     .@"x86-pc-generic-uefi" = .{
@@ -404,7 +427,7 @@ const machine_info_map = std.EnumArray(RunTarget, MachineStartupConfig).init(.{
             "-drive",   "if=ide,node-name=disk,index=0,format=raw,file=${DISK}",
             "-device",  "isa-debug-exit",
             "-vga", "none", // disable standard VGA
-            "-device", "VGA,xres=800,yres=480,xmax=800,ymax=480,edid=true", // replace with customized VGA and limited resolution
+            "-device", "VGA,xres=640,yres=400,xmax=640,ymax=400,edid=true", // replace with customized VGA and limited resolution
             "-drive",  "if=pflash,unit=0,format=raw,readonly=on,file=${OVMF_CODE_X64}",
             "-drive",  "if=pflash,unit=1,format=raw,file=${OVMF_VARS_X64}",
         },
@@ -417,7 +440,7 @@ const machine_info_map = std.EnumArray(RunTarget, MachineStartupConfig).init(.{
             "-m",      "32M",
             "-netdev", "user,id=hostnet",
             "-object", "filter-dump,id=hostnet-dump,netdev=hostnet,file=ashet-os.pcap",
-            "-device", "virtio-gpu-device,id=screen,xres=800,yres=480",
+            "-device", "virtio-gpu-device,id=screen,xres=640,yres=400",
             "-device", "virtio-keyboard-device",
             "-device", "virtio-mouse-device",
             "-device", "virtio-net-device,netdev=hostnet,mac=52:54:00:12:34:56",
@@ -433,7 +456,7 @@ const machine_info_map = std.EnumArray(RunTarget, MachineStartupConfig).init(.{
             "-m",      "32M",
             "-netdev", "user,id=hostnet",
             "-object", "filter-dump,id=hostnet-dump,netdev=hostnet,file=ashet-os.pcap",
-            "-device", "virtio-gpu-device,xres=800,yres=480",
+            "-device", "virtio-gpu-device,xres=640,yres=400",
             "-device", "virtio-keyboard-device",
             "-device", "virtio-mouse-device",
             "-device", "virtio-net-device,netdev=hostnet,mac=52:54:00:12:34:56",
@@ -448,7 +471,7 @@ const machine_info_map = std.EnumArray(RunTarget, MachineStartupConfig).init(.{
             "-m",      "8M",
             "-kernel", "${KERNEL}",
             "-drive",  "format=raw,node-name=disk,file=${DISK}",
-            "-device", "virtio-gpu-device,xres=800,yres=480",
+            "-device", "virtio-gpu-device,xres=640,yres=400",
             "-device", "virtio-keyboard-device",
             "-device", "virtio-mouse-device",
             "-device", "virtio-blk-device,drive=disk",
@@ -471,9 +494,9 @@ const machine_info_map = std.EnumArray(RunTarget, MachineStartupConfig).init(.{
         },
 
         .hosted_video_setup = .init(.{
-            .headless = &.{"video;vnc;800;480;0.0.0.0;5900"},
-            .gtk = &.{"video;auto-window;800;480"},
-            .sdl = &.{"video;sdl;800;480"},
+            .headless = &.{"video;vnc;640;400;0.0.0.0;5900"},
+            .gtk = &.{"video;auto-window;640;400"},
+            .sdl = &.{"video;sdl;640;400"},
             .cocoa = &.{},
         }),
     },
@@ -485,9 +508,9 @@ const machine_info_map = std.EnumArray(RunTarget, MachineStartupConfig).init(.{
         },
 
         .hosted_video_setup = .init(.{
-            .headless = &.{"video;vnc;800;480;0.0.0.0;5900"},
-            .gtk = &.{"video;win;800;480"},
-            .sdl = &.{"video;sdl;800;480"},
+            .headless = &.{"video;vnc;640;400;0.0.0.0;5900"},
+            .gtk = &.{"video;win;640;400"},
+            .sdl = &.{"video;sdl;640;400"},
             .cocoa = &.{},
         }),
     },

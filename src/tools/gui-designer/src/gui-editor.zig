@@ -24,8 +24,10 @@ pub const CliOptions = struct {
 };
 
 fn usage_fault(comptime fmt: []const u8, params: anytype) !noreturn {
-    const stderr = std.io.getStdErr();
-    try stderr.writer().print("gui-editor: " ++ fmt, params);
+    var stderr_buffer: [1024]u8 = undefined;
+    var stderr_writer = std.fs.File.stderr().writer(&stderr_buffer);
+    try stderr_writer.interface.print("gui-editor: " ++ fmt, params);
+    try stderr_writer.interface.flush();
     std.process.exit(1);
 }
 
@@ -55,7 +57,14 @@ pub fn main() !u8 {
             const file = try std.fs.cwd().openFile(cli.positionals[0], .{});
             defer file.close();
 
-            document = try model.load_design(file.reader(), document.allocator, metadata);
+            var file_buffer: [2048]u8 = undefined;
+            var file_reader = file.reader(&file_buffer);
+
+            document = try model.load_design(
+                &file_reader.interface,
+                document.allocator,
+                metadata,
+            );
 
             break :blk cli.positionals[0];
         },
@@ -125,7 +134,7 @@ pub fn main() !u8 {
 
         // std.debug.print("fb={any} win={any} {d};{d}\n", .{ fb_size, win_size, scale_x, scale_y });
 
-        zgui.backend.newFrame(@intCast(fb_size[0]), @intCast(fb_size[1]), scale_x, scale_y);
+        zgui.backend.newFrame(@intCast(fb_size[0]), @intCast(fb_size[1]));
 
         editor.handle_gui() catch |err| switch (err) {
             error.AppExit => break,
@@ -843,7 +852,7 @@ pub const Editor = struct {
     }
 
     fn setup_dockspace(editor: *Editor) void {
-        const dockspace_id = zgui.DockSpaceOverViewport(0, zgui.getMainViewport(), .{ .auto_hide_tab_bar = true });
+        const dockspace_id = zgui.dockSpaceOverViewport(0, zgui.getMainViewport(), .{ .auto_hide_tab_bar = true });
 
         if (editor.dock_layout_setup_done)
             return;
@@ -878,10 +887,12 @@ pub const Editor = struct {
             _ = zgui.menuItem("Restore", .{});
 
             if (zgui.menuItem("Save", .{})) {
-                var result_file = try std.fs.cwd().atomicFile("current.gui.json", .{});
+                var file_buffer: [2048]u8 = undefined;
+
+                var result_file = try std.fs.cwd().atomicFile("current.gui.json", .{ .write_buffer = &file_buffer });
                 defer result_file.deinit();
 
-                try model.save_design(editor.document.window, result_file.file.writer());
+                try model.save_design(editor.document.window, &result_file.file_writer.interface);
 
                 try result_file.finish();
             }

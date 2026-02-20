@@ -1,5 +1,5 @@
 const std = @import("std");
-const kernel = @import("kernel");
+pub const kernel = @import("kernel");
 
 comptime {
     _ = kernel;
@@ -9,9 +9,11 @@ pub const std_options = kernel.std_options;
 
 extern fn ashet_kernelMain() void;
 
-// pub const panic = kernel.panic;
+pub const panic = kernel.panic;
 
 pub fn main() !void {
+    std.debug.maybeEnableSegfaultHandler();
+
     ashet_kernelMain();
 }
 
@@ -20,6 +22,6 @@ export fn hang() noreturn {
     @breakpoint();
     while (true) {
         // burn cycles:
-        asm volatile ("" ::: "memory");
+        asm volatile ("" ::: .{ .memory = true });
     }
 }

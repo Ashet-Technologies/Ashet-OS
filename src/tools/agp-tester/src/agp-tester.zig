@@ -2,26 +2,48 @@ const std = @import("std");
 const agp = @import("agp");
 const agp_swrast = @import("agp-swrast");
 
-const ColorIndex = agp.ColorIndex;
+const gif = @import("gif.zig");
+
+const ColorIndex = agp.Color;
+
+const mono_6_font: agp.Font = @ptrCast(@constCast(&@as(u8, 0)));
+const sans_var_font: agp.Font = @ptrCast(@constCast(&@as(u8, 1)));
 
 pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
-    try verify_encoder_decoder(arena.allocator());
+    // try verify_encoder_decoder(arena.allocator());
 
-    try render_example_image("swrast.pgm", "overdraw.pgm", "sequence.pgm");
+    try @import("widgets.zig").render_demo(
+        arena.allocator(),
+        "widgets.gif",
+    );
+
+    // try render_example_image(
+    //     arena.allocator(),
+    //     "swrast.gif",
+    //     "overdraw.pgm",
+    //     "sequence.pgm",
+    //     "commands.gif",
+    // );
 }
 
-fn render_example_image(path: []const u8, overdraw_path: ?[]const u8, sequence_path: ?[]const u8) !void {
+fn render_example_image(
+    allocator: std.mem.Allocator,
+    path: []const u8,
+    overdraw_path: ?[]const u8,
+    sequence_path: ?[]const u8,
+    commands_path: []const u8,
+) !void {
     const width = 480;
     const height = 320;
 
-    const black: ColorIndex = @enumFromInt(0);
-    const red: ColorIndex = @enumFromInt(1);
-    const green: ColorIndex = @enumFromInt(2);
-    const blue: ColorIndex = @enumFromInt(3);
-    const white: ColorIndex = @enumFromInt(4);
+    const black: ColorIndex = .black;
+    const red: ColorIndex = .red;
+    const green: ColorIndex = .green;
+    const blue: ColorIndex = .blue;
+    const white: ColorIndex = .white;
 
     if (false)
         _ = .{ black, red, green, blue, white };
@@ -124,51 +146,58 @@ fn render_example_image(path: []const u8, overdraw_path: ?[]const u8, sequence_p
                 190,
                 blue,
             );
+
+            try enc.draw_text(100, 230, mono_6_font, .purple, "Hello, World!");
+            try enc.draw_text(100, 250, sans_var_font, .cyan, "Hello, World!");
         }
         break :blk fbs.getWritten();
     };
 
-    const Color = extern struct {
-        r: u8,
-        g: u8,
-        b: u8,
+    const Color = agp.Color.RGB888;
+    comptime {
+        std.debug.assert(@sizeOf(Color) == 3);
+        std.debug.assert(@offsetOf(Color, "r") == 0);
+        std.debug.assert(@offsetOf(Color, "g") == 1);
+        std.debug.assert(@offsetOf(Color, "b") == 2);
+    }
 
-        comptime {
-            if (@sizeOf(@This()) != 3)
-                @compileError("Color must be exactly 3 bytes!");
-        }
-
-        fn new(r: u8, g: u8, b: u8) @This() {
-            return .{ .r = r, .g = g, .b = b };
-        }
-    };
-
-    const Palette = std.enums.EnumArray(ColorIndex, Color);
-    var palette = Palette.initFill(Color.new(0xFF, 0x00, 0x0FF));
-
-    palette.set(black, Color.new(0x00, 0x00, 0x00));
-    palette.set(red, Color.new(0xFF, 0x00, 0x00));
-    palette.set(green, Color.new(0x00, 0xFF, 0x00));
-    palette.set(blue, Color.new(0x00, 0x00, 0xFF));
-    palette.set(white, Color.new(0xFF, 0xFF, 0xFF));
-
-    var pixel_buffer: [width * height]Color = undefined;
+    var pixel_buffer: [width * height]agp.Color = undefined;
     var attrs_buffer: [width * height]Color = undefined;
     @memset(&attrs_buffer, Color{ .r = 0, .g = 0, .b = 0 });
+
+    var cmd_preview: [width * height]agp.Color = undefined;
+    @memset(&cmd_preview, .from_gray(32));
+
+    var gif_file = try std.fs.cwd().createFile(commands_path, .{});
+    defer gif_file.close();
+
+    var gif_img: gif.GIF_Encoder = try .start(gif_file.writer().any(), width, height, 3);
 
     // Render image:
     {
         const Backend = struct {
-            palette: *Palette,
-            framebuffer: []Color,
+            const Cursor = agp_swrast.PixelCursor(.row_major);
+
+            framebuffer: []agp.Color,
             attributes: []Color,
-            next_color_id: *u8,
+            command_preview: []agp.Color,
+            gif_img: *gif.GIF_Encoder,
 
             width: usize,
             height: usize,
             stride: usize,
 
-            pub fn create_cursor(back: @This()) agp_swrast.PixelCursor(.row_major) {
+            cache_line_size: usize,
+
+            next_color_id: u8 = 0,
+            last_offset: usize = std.math.maxInt(usize),
+
+            max_allowed_fwd_skip: u16 = 8, // report discontiuations when more than 8 pixels are skipped
+
+            cache_misses: usize = 0,
+            discontinuations: usize = 0,
+
+            pub fn create_cursor(back: @This()) Cursor {
                 return .{
                     .width = @intCast(back.width),
                     .height = @intCast(back.height),
@@ -176,69 +205,132 @@ fn render_example_image(path: []const u8, overdraw_path: ?[]const u8, sequence_p
                 };
             }
 
-            pub fn emit_pixels(back: @This(), cursor: agp_swrast.PixelCursor(.row_major), color_index: ColorIndex, count: u16) void {
+            pub fn resolve_font(back: @This(), font: agp.Font) error{InvalidFont}!*const agp_swrast.fonts.FontInstance {
+                _ = back;
+
+                @setEvalBranchQuota(10_000);
+                const mono_6 = comptime agp_swrast.fonts.FontInstance.load(@embedFile("mono-6.font"), .{}) catch unreachable;
+                const sans_var = comptime agp_swrast.fonts.FontInstance.load(@embedFile("sans.font"), .{ .size = 12 }) catch unreachable;
+
+                comptime std.debug.assert(mono_6 == .bitmap);
+                comptime std.debug.assert(sans_var == .vector);
+
+                if (font == mono_6_font) return &mono_6;
+                if (font == sans_var_font) return &sans_var;
+
+                return error.InvalidFont;
+            }
+
+            pub fn copy_pixels(back: @This(), cursor: Cursor, pixels: []const agp.Color) void {
+                _ = back;
+                _ = cursor;
+                _ = pixels;
+                @panic("ohno");
+            }
+
+            pub fn emit_pixels(back: *@This(), cursor: Cursor, color_index: ColorIndex, count: u16) void {
+                std.debug.assert(count > 0);
                 std.debug.assert(@as(usize, cursor.x) + count <= back.width);
-                const color = back.palette.get(color_index);
+
                 @memset(
                     back.framebuffer[cursor.offset..][0..count],
-                    color,
+                    color_index,
                 );
                 for (back.attributes[cursor.offset..][0..count]) |*cnt| {
                     cnt.r +|= 1;
-                    cnt.g = back.next_color_id.*;
+                    cnt.g = back.next_color_id;
                 }
+
+                // const back_color: agp.Color = .from_rgb(
+                //     255 - color.r,
+                //     255 - color.g,
+                //     255 - color.b,
+                // );
+
+                // @memset(back.command_preview, back_color);
+                @memset(
+                    back.command_preview[cursor.offset..][0..count],
+                    color_index,
+                );
+                back.gif_img.add_frame(back.command_preview) catch @panic("i/o error");
+
                 std.debug.print("emit(Point({}, {}), color={}, count={}, index={})\n", .{
-                    cursor.x,                  cursor.y,
-                    @intFromEnum(color_index), count,
-                    back.next_color_id.*,
+                    cursor.x,            cursor.y,
+                    color_index.to_u8(), count,
+                    back.next_color_id,
                 });
-                back.next_color_id.* +%= 1;
+                back.next_color_id +%= 1;
+
+                const new_offset = cursor.offset + count;
+                if (back.last_offset != std.math.maxInt(usize)) {
+                    const delta: isize = @bitCast(new_offset -% back.last_offset);
+
+                    const current_cache_line = @divTrunc(new_offset, back.cache_line_size);
+                    const previous_cache_line = @divTrunc(back.last_offset, back.cache_line_size);
+
+                    if (delta < 0 or delta > back.max_allowed_fwd_skip) {
+                        std.debug.print("  discontiuation detected, jump by {} bytes from {} to {}\n", .{ delta, back.last_offset, new_offset });
+                        back.discontinuations += 1;
+                    }
+                    if (current_cache_line != previous_cache_line and current_cache_line != (previous_cache_line + 1)) {
+                        std.debug.print("  cache miss detected, switches from CL{} to CL{}\n", .{ previous_cache_line, current_cache_line });
+                        back.cache_misses += 1;
+                    }
+                }
+
+                back.last_offset = new_offset;
             }
         };
 
-        const Rasterizer = agp_swrast.Rasterizer(Backend, .{
+        const Rasterizer = agp_swrast.Rasterizer(.{
+            .backend_type = *Backend,
+            .framebuffer_type = null,
             .pixel_layout = .row_major,
         });
 
-        var next_color_id: u8 = 0;
-        var rasterizer = Rasterizer.init(.{
-            .palette = &palette,
+        var backend: Backend = .{
             .framebuffer = &pixel_buffer,
             .attributes = &attrs_buffer,
-            .next_color_id = &next_color_id,
+            .command_preview = &cmd_preview,
+            .gif_img = &gif_img,
             .width = width,
             .height = height,
             .stride = width,
-        });
+
+            // configurable:
+            .cache_line_size = 8, // RP2350 XIP Cache
+        };
+        var rasterizer = Rasterizer.init(&backend);
 
         var fbs = std.io.fixedBufferStream(cmd_stream);
 
-        var decoder = agp.decoder(fbs.reader());
+        var decoder = agp.decoder(allocator, fbs.reader());
+        defer decoder.deinit();
 
         while (try decoder.next()) |cmd| {
-            rasterizer.execute(cmd);
+            try rasterizer.execute(cmd);
         }
+
+        std.debug.print("cache misses:     {}\n", .{backend.cache_misses});
+        std.debug.print("discontinuations: {}\n", .{backend.discontinuations});
     }
+
+    try gif_img.end();
 
     // Writeout image:
-    {
-        var file = try std.fs.cwd().createFile(path, .{});
-        defer file.close();
+    try gif.write_to_file_path(std.fs.cwd(), path, width, height, &pixel_buffer);
 
-        try file.writer().print("P6 {} {} 255\n", .{ width, height });
-        try file.writeAll(std.mem.asBytes(&pixel_buffer));
-    }
     // Writeout overdraw
     if (overdraw_path) |_overdraw_path| {
         const overdraw_gradient = [_]Color{
-            Color.new(0xFF, 0x00, 0xFF), // this would mean clear has failed
-            Color.new(0x00, 0x00, 0x00), // no draw (clear)
-            Color.new(0xFF, 0xFF, 0xFF), // 0x overdraw
-            Color.new(0x3c, 0xeb, 0x0c), // 1x overdraw
-            Color.new(0x6e, 0xae, 0x09), // 2x overdraw
-            Color.new(0x9e, 0x74, 0x06), // 3x overdraw
-            Color.new(0xcf, 0x3a, 0x03), // 4x overdraw
-            Color.new(0xff, 0x00, 0x00), // 5x overdraw
+            .{ .r = 0xFF, .g = 0x00, .b = 0xFF }, // this would mean clear has failed
+            .{ .r = 0x00, .g = 0x00, .b = 0x00 }, // no draw (clear)
+            .{ .r = 0xFF, .g = 0xFF, .b = 0xFF }, // 0x overdraw
+            .{ .r = 0x3c, .g = 0xeb, .b = 0x0c }, // 1x overdraw
+            .{ .r = 0x6e, .g = 0xae, .b = 0x09 }, // 2x overdraw
+            .{ .r = 0x9e, .g = 0x74, .b = 0x06 }, // 3x overdraw
+            .{ .r = 0xcf, .g = 0x3a, .b = 0x03 }, // 4x overdraw
+            .{ .r = 0xff, .g = 0x00, .b = 0x00 }, // 5x overdraw
         };
 
         var overdraw_buffer = attrs_buffer;
@@ -254,74 +346,74 @@ fn render_example_image(path: []const u8, overdraw_path: ?[]const u8, sequence_p
     }
     if (sequence_path) |_seq_path| {
         const seq_palette = [_]Color{
-            Color.new(0xaa, 0x00, 0x55),
-            Color.new(0xff, 0x55, 0x55),
-            Color.new(0xaa, 0x55, 0x55),
-            Color.new(0x55, 0xff, 0xaa),
-            Color.new(0x00, 0x55, 0xff),
-            Color.new(0x55, 0x55, 0x55),
-            Color.new(0xff, 0x00, 0x55),
-            Color.new(0xff, 0xff, 0x00),
-            Color.new(0x55, 0x55, 0x00),
-            Color.new(0xff, 0xaa, 0xaa),
-            Color.new(0x00, 0xff, 0x00),
-            Color.new(0x55, 0xff, 0xff),
-            Color.new(0xff, 0x55, 0xff),
-            Color.new(0x55, 0xaa, 0xff),
-            Color.new(0xff, 0xaa, 0x55),
-            Color.new(0x00, 0x00, 0xff),
-            Color.new(0xaa, 0x00, 0xaa),
-            Color.new(0x55, 0x00, 0x00),
-            Color.new(0x00, 0xaa, 0xff),
-            Color.new(0xff, 0x00, 0xff),
-            Color.new(0x00, 0xaa, 0xaa),
-            Color.new(0xaa, 0x00, 0x00),
-            Color.new(0xff, 0x00, 0xaa),
-            Color.new(0x55, 0xaa, 0x00),
-            Color.new(0x55, 0x00, 0xaa),
-            Color.new(0x55, 0xaa, 0xaa),
-            Color.new(0xaa, 0xff, 0x00),
-            Color.new(0x00, 0xff, 0x55),
-            Color.new(0xaa, 0xaa, 0x00),
-            Color.new(0x55, 0x00, 0x55),
-            Color.new(0xaa, 0x55, 0xaa),
-            Color.new(0xff, 0x00, 0x00),
-            Color.new(0x55, 0x55, 0xff),
-            Color.new(0xff, 0xaa, 0x00),
-            Color.new(0xff, 0xff, 0x55),
-            Color.new(0xaa, 0x00, 0xff),
-            Color.new(0xff, 0x55, 0x00),
-            Color.new(0xaa, 0xff, 0xaa),
-            Color.new(0x00, 0x55, 0xaa),
-            Color.new(0x00, 0x55, 0x55),
-            Color.new(0xaa, 0xff, 0xff),
-            Color.new(0x00, 0x55, 0x00),
-            Color.new(0xaa, 0x55, 0x00),
-            Color.new(0xaa, 0xaa, 0xff),
-            Color.new(0x00, 0xaa, 0x00),
-            Color.new(0x00, 0xff, 0xaa),
-            Color.new(0xff, 0xff, 0xaa),
-            Color.new(0xff, 0xaa, 0xff),
-            Color.new(0xaa, 0xaa, 0xaa),
-            Color.new(0x00, 0xff, 0xff),
-            Color.new(0x55, 0xff, 0x55),
-            Color.new(0x00, 0x00, 0xaa),
-            Color.new(0xaa, 0xaa, 0x55),
-            Color.new(0x55, 0xaa, 0x55),
-            Color.new(0x00, 0xaa, 0x55),
-            Color.new(0xaa, 0x55, 0xff),
-            Color.new(0x55, 0xff, 0x00),
-            Color.new(0xaa, 0xff, 0x55),
-            Color.new(0xff, 0x55, 0xaa),
-            Color.new(0x55, 0x55, 0xaa),
-            Color.new(0x00, 0x00, 0x55),
-            Color.new(0x55, 0x00, 0xff),
+            .{ .r = 0xaa, .g = 0x00, .b = 0x55 },
+            .{ .r = 0xff, .g = 0x55, .b = 0x55 },
+            .{ .r = 0xaa, .g = 0x55, .b = 0x55 },
+            .{ .r = 0x55, .g = 0xff, .b = 0xaa },
+            .{ .r = 0x00, .g = 0x55, .b = 0xff },
+            .{ .r = 0x55, .g = 0x55, .b = 0x55 },
+            .{ .r = 0xff, .g = 0x00, .b = 0x55 },
+            .{ .r = 0xff, .g = 0xff, .b = 0x00 },
+            .{ .r = 0x55, .g = 0x55, .b = 0x00 },
+            .{ .r = 0xff, .g = 0xaa, .b = 0xaa },
+            .{ .r = 0x00, .g = 0xff, .b = 0x00 },
+            .{ .r = 0x55, .g = 0xff, .b = 0xff },
+            .{ .r = 0xff, .g = 0x55, .b = 0xff },
+            .{ .r = 0x55, .g = 0xaa, .b = 0xff },
+            .{ .r = 0xff, .g = 0xaa, .b = 0x55 },
+            .{ .r = 0x00, .g = 0x00, .b = 0xff },
+            .{ .r = 0xaa, .g = 0x00, .b = 0xaa },
+            .{ .r = 0x55, .g = 0x00, .b = 0x00 },
+            .{ .r = 0x00, .g = 0xaa, .b = 0xff },
+            .{ .r = 0xff, .g = 0x00, .b = 0xff },
+            .{ .r = 0x00, .g = 0xaa, .b = 0xaa },
+            .{ .r = 0xaa, .g = 0x00, .b = 0x00 },
+            .{ .r = 0xff, .g = 0x00, .b = 0xaa },
+            .{ .r = 0x55, .g = 0xaa, .b = 0x00 },
+            .{ .r = 0x55, .g = 0x00, .b = 0xaa },
+            .{ .r = 0x55, .g = 0xaa, .b = 0xaa },
+            .{ .r = 0xaa, .g = 0xff, .b = 0x00 },
+            .{ .r = 0x00, .g = 0xff, .b = 0x55 },
+            .{ .r = 0xaa, .g = 0xaa, .b = 0x00 },
+            .{ .r = 0x55, .g = 0x00, .b = 0x55 },
+            .{ .r = 0xaa, .g = 0x55, .b = 0xaa },
+            .{ .r = 0xff, .g = 0x00, .b = 0x00 },
+            .{ .r = 0x55, .g = 0x55, .b = 0xff },
+            .{ .r = 0xff, .g = 0xaa, .b = 0x00 },
+            .{ .r = 0xff, .g = 0xff, .b = 0x55 },
+            .{ .r = 0xaa, .g = 0x00, .b = 0xff },
+            .{ .r = 0xff, .g = 0x55, .b = 0x00 },
+            .{ .r = 0xaa, .g = 0xff, .b = 0xaa },
+            .{ .r = 0x00, .g = 0x55, .b = 0xaa },
+            .{ .r = 0x00, .g = 0x55, .b = 0x55 },
+            .{ .r = 0xaa, .g = 0xff, .b = 0xff },
+            .{ .r = 0x00, .g = 0x55, .b = 0x00 },
+            .{ .r = 0xaa, .g = 0x55, .b = 0x00 },
+            .{ .r = 0xaa, .g = 0xaa, .b = 0xff },
+            .{ .r = 0x00, .g = 0xaa, .b = 0x00 },
+            .{ .r = 0x00, .g = 0xff, .b = 0xaa },
+            .{ .r = 0xff, .g = 0xff, .b = 0xaa },
+            .{ .r = 0xff, .g = 0xaa, .b = 0xff },
+            .{ .r = 0xaa, .g = 0xaa, .b = 0xaa },
+            .{ .r = 0x00, .g = 0xff, .b = 0xff },
+            .{ .r = 0x55, .g = 0xff, .b = 0x55 },
+            .{ .r = 0x00, .g = 0x00, .b = 0xaa },
+            .{ .r = 0xaa, .g = 0xaa, .b = 0x55 },
+            .{ .r = 0x55, .g = 0xaa, .b = 0x55 },
+            .{ .r = 0x00, .g = 0xaa, .b = 0x55 },
+            .{ .r = 0xaa, .g = 0x55, .b = 0xff },
+            .{ .r = 0x55, .g = 0xff, .b = 0x00 },
+            .{ .r = 0xaa, .g = 0xff, .b = 0x55 },
+            .{ .r = 0xff, .g = 0x55, .b = 0xaa },
+            .{ .r = 0x55, .g = 0x55, .b = 0xaa },
+            .{ .r = 0x00, .g = 0x00, .b = 0x55 },
+            .{ .r = 0x55, .g = 0x00, .b = 0xff },
         };
 
         var seq_buffer = attrs_buffer;
         for (&seq_buffer) |*pix| {
             pix.* = if (pix.r <= 1)
-                Color.new(0, 0, 0) // background or faulty pixels
+                .{ .r = 0, .g = 0, .b = 0 } // background or faulty pixels
             else
                 seq_palette[pix.g % seq_palette.len];
         }
@@ -335,7 +427,7 @@ fn render_example_image(path: []const u8, overdraw_path: ?[]const u8, sequence_p
 }
 
 fn verify_encoder_decoder(allocator: std.mem.Allocator) !void {
-    var rand_engine = std.rand.DefaultPrng.init(0x1337);
+    var rand_engine: std.Random.DefaultPrng = .init(0x1337);
     const rng = rand_engine.random();
 
     const rand_buffer = try allocator.alloc(u8, 8192);
@@ -347,10 +439,10 @@ fn verify_encoder_decoder(allocator: std.mem.Allocator) !void {
     }
 
     const encoded_cmd_stream = blk: {
-        var stream = std.ArrayList(u8).init(allocator);
+        var stream: std.Io.Writer.Allocating = .init(allocator);
         defer stream.deinit();
 
-        var encoder = agp.encoder(stream.writer());
+        var encoder = agp.encoder(&stream.writer);
 
         for (input_cmd_stream) |cmd| {
             try encoder.encode(cmd);
@@ -368,7 +460,9 @@ fn verify_encoder_decoder(allocator: std.mem.Allocator) !void {
 
     {
         var fbs = std.io.fixedBufferStream(encoded_cmd_stream);
-        var decoder = agp.decoder(fbs.reader());
+        var decoder = agp.decoder(allocator, fbs.reader());
+        defer decoder.deinit();
+
         for (output_cmd_stream) |*cmd| {
             cmd.* = if (try decoder.next()) |in|
                 in
@@ -384,11 +478,11 @@ fn verify_encoder_decoder(allocator: std.mem.Allocator) !void {
     }
 }
 
-fn rand_cmd(rng: std.rand.Random, buffer_range: []const u8) agp.Command {
+fn rand_cmd(rng: std.Random, buffer_range: []const u8) agp.Command {
     const cmd_id = rng.enumValue(agp.CommandByte);
     switch (cmd_id) {
         inline else => |tag| {
-            const Cmd = agp.Command.type_map.get(tag);
+            const Cmd = agp.Command.type_map(tag);
 
             var cmd: Cmd = undefined;
 
@@ -400,12 +494,14 @@ fn rand_cmd(rng: std.rand.Random, buffer_range: []const u8) agp.Command {
                         break :blk buffer_range[start..end];
                     },
 
-                    agp.ColorIndex => @enumFromInt(rng.int(u8)),
+                    agp.Color => @bitCast(rng.int(u8)),
                     agp.Font => @ptrFromInt(rng.int(usize)),
-                    agp.Framebuffer => @ptrFromInt(rng.int(usize)),
-                    agp.Bitmap => @ptrFromInt(rng.int(usize)),
+                    agp.Framebuffer => @ptrFromInt(rng.int(usize) *% 16),
+                    *const agp.Bitmap => @ptrFromInt(rng.int(usize) *% 16),
 
-                    else => rng.int(fld.type),
+                    u8, u16, i16 => rng.int(fld.type),
+
+                    else => @compileError("unsupported type: " ++ @typeName(fld.type)),
                 };
             }
 

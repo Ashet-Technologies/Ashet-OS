@@ -62,8 +62,7 @@ pub fn areInterruptsEnabled() bool {
         \\pop %[res]
         : [res] "=r" (-> registers.EFLAGS),
         :
-        : "stack"
-    );
+        : .{});
     return flags.interrupt_enable; // 9th bit is "interrupts are enabled"
 }
 
@@ -147,8 +146,7 @@ fn rdtsc() u64 {
         : [a] "={edx}" (a),
           [b] "={eax}" (b),
         :
-        : "ecx"
-    );
+        : .{ .ecx = true });
     return (@as(u64, a) << 32) | b;
 }
 

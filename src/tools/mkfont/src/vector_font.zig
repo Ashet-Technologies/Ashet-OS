@@ -8,21 +8,24 @@ pub fn validate(font: schema.TurtleFontFile) !bool {
     for (0x20..0x7F) |codepoint| {
         const ascii: u7 = @intCast(codepoint);
         if (!font.glyphs.contains(ascii)) {
-            std.log.warn("Font is missing printable ASCII character '{}' (0x{X:0>2})", .{
-                std.zig.fmtEscapes(&.{ascii}),
+            std.log.warn("Font is missing printable ASCII character '{f}' (0x{X:0>2})", .{
+                std.zig.fmtString(&.{ascii}),
                 ascii,
             });
         }
     }
 
+    var null_buffer: [256]u8 = undefined;
+    var null_writer: std.Io.Writer.Discarding = .init(&null_buffer);
+
     for (font.glyphs.keys(), font.glyphs.values()) |codepoint, glyph| {
-        _ = turtlefont.FontCompiler.compileGlyphScript(glyph.script, std.io.null_writer) catch |err| {
+        _ = turtlefont.FontCompiler.compileGlyphScript(glyph.script, &null_writer.writer) catch |err| {
             ok = false;
 
             var cpname: [8]u8 = undefined;
             const len = try std.unicode.utf8Encode(codepoint, &cpname);
 
-            std.log.warn("Bad glyph script for codepoint U+{X:0>5} ('{}'): {}", .{
+            std.log.warn("Bad glyph script for codepoint U+{X:0>5} ('{f}'): {}", .{
                 codepoint,
                 std.unicode.fmtUtf8(cpname[0..len]),
                 err,
@@ -35,7 +38,7 @@ pub fn validate(font: schema.TurtleFontFile) !bool {
 
 pub fn generate(
     allocator: std.mem.Allocator,
-    file: std.fs.File,
+    file_writer: *std.fs.File.Writer,
     root_dir: std.fs.Dir,
     font: *schema.TurtleFontFile,
 ) !void {
@@ -52,8 +55,7 @@ pub fn generate(
         .glyphs = &font.glyphs,
     });
 
-    var buffered_writer = std.io.bufferedWriter(file.writer());
-    const writer = buffered_writer.writer();
+    const writer = &file_writer.interface;
 
     // Glyphs:
     try writer.writeInt(u32, 0x4c2b8688, .little);
@@ -62,10 +64,11 @@ pub fn generate(
     var run_offset: u32 = 0;
 
     for (font.glyphs.keys(), font.glyphs.values()) |codepoint, glyph| {
-        var counter = std.io.countingWriter(std.io.null_writer);
+        var counter_buff: [256]u8 = undefined;
+        var counter: std.Io.Writer.Discarding = .init(&counter_buff);
         const meta = turtlefont.FontCompiler.compileGlyphScript(
             glyph.script,
-            counter.writer(),
+            &counter.writer,
         ) catch @panic("bad validation");
 
         try writer.writeInt(u32, @as(u32, @bitCast(turtlefont.CodepointAdvancePair{
@@ -74,7 +77,7 @@ pub fn generate(
         })), .little);
         try writer.writeInt(u32, run_offset, .little);
 
-        run_offset += @as(u32, @intCast(counter.bytes_written));
+        run_offset += @as(u32, @intCast(counter.fullCount()));
     }
 
     for (font.glyphs.values()) |glyph| {
@@ -83,6 +86,4 @@ pub fn generate(
             writer,
         ) catch @panic("bad validation");
     }
-
-    try buffered_writer.flush();
 }

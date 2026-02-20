@@ -1,0 +1,11 @@
+.{
+    .name = .expcard,
+    .version = "0.0.1",
+    .fingerprint = 0x6d119490e80c8d14,
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+    .dependencies = .{},
+}

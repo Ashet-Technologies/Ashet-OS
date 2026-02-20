@@ -29,61 +29,60 @@ pub const RelocationType = packed struct(u16) {
         };
     }
 
-    pub fn format(rtype: RelocationType, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        var buffer: [128]u8 = undefined;
-
-        const string = if (std.mem.eql(u8, fmt, "c"))
-            try std.fmt.bufPrint(&buffer, "{s}{}{}{}{}{}", .{
-                switch (rtype.size) {
-                    .word8 => "u8",
-                    .word16 => "u16",
-                    .word32 => "u32",
-                    .word64 => "u64",
-                },
-                std.fmt.Formatter(fmt_rel_field_always){ .data = .{ '@', rtype.self } },
-                std.fmt.Formatter(fmt_rel_field_always){ .data = .{ 'A', rtype.addend } },
-                std.fmt.Formatter(fmt_rel_field_always){ .data = .{ 'B', rtype.base } },
-                std.fmt.Formatter(fmt_rel_field_always){ .data = .{ 'O', rtype.offset } },
-                std.fmt.Formatter(fmt_rel_field_always){ .data = .{ 'S', rtype.syscall } },
-            })
-        else if (std.mem.eql(u8, fmt, "ns")) blk: {
-            var stream = std.io.fixedBufferStream(&buffer);
-            if (rtype.self != .unused) {
-                if (stream.pos > 0)
-                    try stream.writer().writeAll(" ");
-                try stream.writer().print("{s}@", .{fld_to_str(rtype.self)});
-            }
-            if (rtype.addend != .unused) {
-                if (stream.pos > 0)
-                    try stream.writer().writeAll(" ");
-                try stream.writer().print("{s}A", .{fld_to_str(rtype.addend)});
-            }
-            if (rtype.base != .unused) {
-                if (stream.pos > 0)
-                    try stream.writer().writeAll(" ");
-                try stream.writer().print("{s}B", .{fld_to_str(rtype.base)});
-            }
-            if (rtype.offset != .unused) {
-                if (stream.pos > 0)
-                    try stream.writer().writeAll(" ");
-                try stream.writer().print("{s}O", .{fld_to_str(rtype.offset)});
-            }
-            if (rtype.syscall != .unused) {
-                if (stream.pos > 0)
-                    try stream.writer().writeAll(" ");
-                try stream.writer().print("{s}S", .{fld_to_str(rtype.syscall)});
-            }
-            break :blk stream.getWritten();
-        } else try std.fmt.bufPrint(&buffer, "{s}{}{}{}{}{}", .{
+    pub fn format(rtype: RelocationType, writer: *std.Io.Writer) !void {
+        try writer.print("{s}{f}{f}{f}{f}{f}", .{
             @tagName(rtype.size),
-            std.fmt.Formatter(fmt_rel_field){ .data = .{ '@', rtype.self } },
-            std.fmt.Formatter(fmt_rel_field){ .data = .{ 'A', rtype.addend } },
-            std.fmt.Formatter(fmt_rel_field){ .data = .{ 'B', rtype.base } },
-            std.fmt.Formatter(fmt_rel_field){ .data = .{ 'O', rtype.offset } },
-            std.fmt.Formatter(fmt_rel_field){ .data = .{ 'S', rtype.syscall } },
+            rtype.self.fmt('@'),
+            rtype.addend.fmt('A'),
+            rtype.base.fmt('B'),
+            rtype.offset.fmt('O'),
+            rtype.syscall.fmt('S'),
         });
+    }
 
-        try std.fmt.formatBuf(string, options, writer);
+    pub fn fmtC(rtype: RelocationType, writer: *std.Io.Writer) !void {
+        try writer.print("{s}{f}{f}{f}{f}{f}", .{
+            switch (rtype.size) {
+                .word8 => "u8",
+                .word16 => "u16",
+                .word32 => "u32",
+                .word64 => "u64",
+            },
+            rtype.self.fmtAlways('@'),
+            rtype.addend.fmtAlways('A'),
+            rtype.base.fmtAlways('B'),
+            rtype.offset.fmtAlways('O'),
+            rtype.syscall.fmtAlways('S'),
+        });
+    }
+
+    pub fn fmtNs(rtype: RelocationType, writer: *std.Io.Writer) !void {
+        var written: bool = false;
+        if (rtype.self != .unused) {
+            if (written) try writer.writeAll(" ");
+            try writer.print("{s}@", .{fld_to_str(rtype.self)});
+            written = true;
+        }
+        if (rtype.addend != .unused) {
+            if (written) try writer.writeAll(" ");
+            try writer.print("{s}A", .{fld_to_str(rtype.addend)});
+            written = true;
+        }
+        if (rtype.base != .unused) {
+            if (written) try writer.writeAll(" ");
+            try writer.print("{s}B", .{fld_to_str(rtype.base)});
+            written = true;
+        }
+        if (rtype.offset != .unused) {
+            if (written) try writer.writeAll(" ");
+            try writer.print("{s}O", .{fld_to_str(rtype.offset)});
+            written = true;
+        }
+        if (rtype.syscall != .unused) {
+            if (written) try writer.writeAll(" ");
+            try writer.print("{s}S", .{fld_to_str(rtype.syscall)});
+            written = true;
+        }
     }
 };
 
@@ -98,6 +97,38 @@ pub const RelocationField = enum(u2) {
     unused = 0b00,
     add = 0b10,
     subtract = 0b11,
+
+    fn fmt(rf: RelocationField, name: u7) RelFieldFmt {
+        return .{ .rf = rf, .name = name };
+    }
+    fn fmtAlways(rf: RelocationField, name: u7) std.fmt.Alt(RelFieldFmt, RelFieldFmt.formatAlways) {
+        return .{ .rf = rf, .name = name };
+    }
+
+    const RelFieldFmt = struct {
+        rf: RelocationField,
+        name: u7,
+
+        pub fn format(self: RelFieldFmt, writer: *std.Io.Writer) !void {
+            if (self.rf == .unused)
+                return;
+            try writer.print("{c}{c}", .{
+                @as(u7, if (self.rf == .add) '+' else '-'),
+                self.name,
+            });
+        }
+
+        pub fn formatAlways(self: RelFieldFmt, writer: *std.Io.Writer) !void {
+            if (self.rf == .unused) {
+                try writer.writeAll("  ");
+                return;
+            }
+            try writer.print("{c}{c}", .{
+                @as(u7, if (self.rf == .add) '+' else '-'),
+                self.name,
+            });
+        }
+    };
 };
 
 pub const Header = struct {
@@ -126,10 +157,8 @@ pub const Relocation = struct {
     offset: u32,
     addend: i32,
 
-    pub fn format(relocation: Relocation, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
-        try writer.print("Relocation(type={}, addend={}, offset=0x{X:0>8}, syscall={})", .{
+    pub fn format(relocation: Relocation, writer: *std.Io.Writer) !void {
+        try writer.print("Relocation(type={f}, addend={}, offset=0x{X:0>8}, syscall={})", .{
             relocation.type,
             relocation.addend,
             relocation.offset,
@@ -137,30 +166,6 @@ pub const Relocation = struct {
         });
     }
 };
-
-fn fmt_rel_field(val: struct { u7, RelocationField }, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-    if (val[1] == .unused)
-        return;
-    _ = fmt;
-    _ = options;
-    try writer.print("{c}{c}", .{
-        @as(u7, if (val[1] == .add) '+' else '-'),
-        val[0],
-    });
-}
-
-fn fmt_rel_field_always(val: struct { u7, RelocationField }, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-    if (val[1] == .unused) {
-        try writer.writeAll("  ");
-        return;
-    }
-    _ = fmt;
-    _ = options;
-    try writer.print("{c}{c}", .{
-        @as(u7, if (val[1] == .add) '+' else '-'),
-        val[0],
-    });
-}
 
 pub const PatchType = enum(u32) {
     patch_syscall = 0x01,

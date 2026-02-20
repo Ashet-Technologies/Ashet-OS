@@ -1,0 +1,19 @@
+.{
+    .name = .mkexp,
+    .version = "0.0.1",
+    .fingerprint = 0xb258bfeaff374fec,
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+    .dependencies = .{
+        .args = .{
+            .url = "git+https://github.com/ikskuh/zig-args.git#e060ac80c244e9675471b6d213b22ddc83cc8f98",
+            .hash = "args-0.0.0-CiLiqo_RAADz2TiHUzG5-0Mk7IZHR-h1SZgUrb_k4c7d",
+        },
+        .expcard = .{
+            .path = "../../userland/libs/expcard",
+        },
+    },
+}

@@ -7,15 +7,17 @@
 const std = @import("std");
 const microzig = @import("microzig");
 const mdf = microzig.drivers;
+const drivers = mdf.base;
 const peripherals = microzig.chip.peripherals;
 const I2C0 = peripherals.I2C0;
 const I2C1 = peripherals.I2C1;
 
-const gpio = @import("gpio.zig");
 const clocks = @import("clocks.zig");
-const resets = @import("resets.zig");
+const dma = @import("dma");
 const time = @import("time.zig");
 const hw = @import("hw.zig");
+
+pub const slave = @import("i2c_slave.zig");
 
 const I2cRegs = microzig.chip.types.peripherals.I2C0;
 
@@ -25,48 +27,9 @@ pub const Config = struct {
     baud_rate: u32 = 100_000,
 };
 
-///
-/// 7-bit I²C address, without the read/write bit.
-///
-pub const Address = enum(u7) {
-    /// The general call addresses all devices on the bus using the I²C address 0.
-    pub const general_call: Address = @enumFromInt(0x00);
-
-    _,
-
-    pub fn new(addr: u7) Address {
-        var a = @as(Address, @enumFromInt(addr));
-        std.debug.assert(!a.is_reserved());
-        return a;
-    }
-
-    ///
-    /// Returns `true` if the Address is a reserved I²C address.
-    ///
-    /// Reserved addresses are ones that match `0b0000XXX` or `0b1111XXX`.
-    ///
-    /// See more here: https://www.i2c-bus.org/addressing/
-    pub fn is_reserved(addr: Address) bool {
-        const value: u7 = @intFromEnum(addr);
-        return ((value & 0x78) == 0) or ((value & 0x78) == 0x78);
-    }
-
-    pub fn format(addr: Address, fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
-        try writer.print("I2C(0x{X:0>2})", .{@intFromEnum(addr)});
-    }
-};
-
-pub const TransactionError = error{
-    DeviceNotPresent,
-    NoAcknowledge,
-    Timeout,
-    TargetAddressReserved,
-    NoData,
-    TxFifoFlushed,
-    UnknownAbort,
-};
+pub const Address = drivers.I2C_Device.Address;
+pub const AddressError = drivers.I2C_Device.Address.Error;
+pub const Error = drivers.I2C_Device.Error || error{TxFifoFlushed};
 
 pub const ConfigError = error{
     UnsupportedBaudRate,
@@ -109,8 +72,8 @@ fn translate_baudrate(baud_rate: u32, freq_in: u32) ConfigError!TimingRegisterVa
     // that means the input clock frequency is too low (not granular enough).
     // This also serves as a nice sanity check that we're still in spec no matter
     // the baud rate.
-    const scl_low_ns = (1_000_000_000 / freq_in) * scl_lcnt_with_additions;
-    const scl_high_ns = (1_000_000_000 / freq_in) * scl_hcnt_with_additions;
+    const scl_low_ns: u64 = @as(u64, scl_lcnt_with_additions) * 1_000_000_000 / freq_in;
+    const scl_high_ns: u64 = @as(u64, scl_hcnt_with_additions) * 1_000_000_000 / freq_in;
     switch (baud_rate) {
         1...100_000 => {
             const i2c_normal_scl_low_min_ns = 4700;
@@ -171,16 +134,22 @@ fn translate_baudrate(baud_rate: u32, freq_in: u32) ConfigError!TimingRegisterVa
     if ((sda_tx_hold_count > scl_lcnt - 2) or (sda_tx_hold_count > std.math.maxInt(u16))) return ConfigError.HoldCountViolation;
 
     return .{
-        .scl_hcnt = @as(u16, @intCast(scl_hcnt)),
-        .scl_lcnt = @as(u16, @intCast(scl_lcnt)),
-        .sda_tx_hold_count = @as(u16, @intCast(sda_tx_hold_count)),
+        .scl_hcnt = @intCast(scl_hcnt),
+        .scl_lcnt = @intCast(scl_lcnt),
+        .sda_tx_hold_count = @intCast(sda_tx_hold_count),
         .spklen = spklen,
     };
 }
 
 test "i2c.translate_baudrate" {
-    try std.testing.expectEqualDeep(TimingRegisterValues{ .scl_hcnt = 486, .scl_lcnt = 749, .sda_tx_hold_count = 38, .spklen = 7 }, translate_baudrate(100_000, 125_000_000));
-    try std.testing.expectEqualDeep(TimingRegisterValues{ .scl_hcnt = 112, .scl_lcnt = 186, .sda_tx_hold_count = 38, .spklen = 7 }, translate_baudrate(400_000, 125_000_000));
+    try std.testing.expectEqualDeep(
+        TimingRegisterValues{ .scl_hcnt = 486, .scl_lcnt = 749, .sda_tx_hold_count = 38, .spklen = 7 },
+        translate_baudrate(100_000, 125_000_000),
+    );
+    try std.testing.expectEqualDeep(
+        TimingRegisterValues{ .scl_hcnt = 112, .scl_lcnt = 186, .sda_tx_hold_count = 38, .spklen = 7 },
+        translate_baudrate(400_000, 125_000_000),
+    );
     try std.testing.expectError(ConfigError.UnsupportedBaudRate, translate_baudrate(0, 125_000_000));
     // Taken directly from Table 450 to confirm our calculations match the datasheet's expectations
     try std.testing.expectError(ConfigError.InputFreqTooLow, translate_baudrate(100_000, 2_600_000));
@@ -209,7 +178,7 @@ pub const instance = struct {
 pub const I2C = enum(u1) {
     _,
 
-    fn get_regs(i2c: I2C) *volatile I2cRegs {
+    pub inline fn get_regs(i2c: I2C) *volatile I2cRegs {
         return switch (@intFromEnum(i2c)) {
             0 => I2C0,
             1 => I2C1,
@@ -221,7 +190,6 @@ pub const I2C = enum(u1) {
             .ENABLE = .DISABLED,
             .ABORT = .DISABLE,
             .TX_CMD_BLOCK = .NOT_BLOCKED,
-            .padding = 0,
         });
     }
 
@@ -230,7 +198,6 @@ pub const I2C = enum(u1) {
             .ENABLE = .ENABLED,
             .ABORT = .DISABLE,
             .TX_CMD_BLOCK = .NOT_BLOCKED,
-            .padding = 0,
         });
     }
 
@@ -241,7 +208,7 @@ pub const I2C = enum(u1) {
     /// - TX_EMPTY_CTRL is always enabled for easy detection of TX finished
     /// - TX and RX FIFO detection thresholds set to 1, this makes polling for TX finished/RX ready much simpler
     /// - DREQ signalling is always enabled, harmless if DMA isn't configured to listen for this
-    pub fn apply(i2c: I2C, comptime config: Config) ConfigError!void {
+    pub fn apply(i2c: I2C, comptime config: Config) void {
         i2c.disable();
         const regs = i2c.get_regs();
         regs.IC_CON.write(.{
@@ -255,23 +222,24 @@ pub const I2C = enum(u1) {
             .STOP_DET_IFADDRESSED = @enumFromInt(0),
             .RX_FIFO_FULL_HLD_CTRL = @enumFromInt(0),
             .STOP_DET_IF_MASTER_ACTIVE = 0,
-            .padding = 0,
         });
 
         // TX and RX FIFO thresholds
-        regs.IC_RX_TL.write(.{ .RX_TL = 0, .padding = 0 });
-        regs.IC_TX_TL.write(.{ .TX_TL = 0, .padding = 0 });
+        regs.IC_RX_TL.write(.{ .RX_TL = 0 });
+        regs.IC_TX_TL.write(.{ .TX_TL = 0 });
 
         // DREQ signal control
         regs.IC_DMA_CR.write(.{
             .RDMAE = .ENABLED,
             .TDMAE = .ENABLED,
-            .padding = 0,
         });
 
         const peripheral_block_freq = (comptime config.clock_config.get_frequency(.clk_sys)) orelse @compileError("clk_sys must be set for I²C");
+
+        const timings = comptime translate_baudrate(config.baud_rate, peripheral_block_freq) catch @compileError("baud_rate is not possible with the provided clock_config");
+
         // set_baudrate() enables I2C block before returning
-        try i2c.set_baudrate(config.baud_rate, peripheral_block_freq);
+        i2c.set_computed_baudrate(timings);
     }
 
     /// Disables I2C, returns peripheral registers to reset state.
@@ -286,13 +254,23 @@ pub const I2C = enum(u1) {
     /// pin rise/fall time as that is board specific, so actual baud rates may be
     /// slightly lower than specified.
     pub fn set_baudrate(i2c: I2C, baud_rate: u32, freq_in: u32) ConfigError!void {
-        const reg_vals = try translate_baudrate(baud_rate, freq_in);
+        const timings = try translate_baudrate(baud_rate, freq_in);
+        i2c.set_computed_baudrate(timings);
+    }
+
+    /// Configures I2C to run at a specified baud rate given a peripheral clock frequency.
+    ///
+    /// Validates configuration to ensure it's both within I2C spec, and the peripheral
+    /// block's configuration capabilities. Note that this does NOT take into account
+    /// pin rise/fall time as that is board specific, so actual baud rates may be
+    /// slightly lower than specified.
+    pub fn set_computed_baudrate(i2c: I2C, timings: TimingRegisterValues) void {
         i2c.disable();
         const regs = i2c.get_regs();
-        regs.IC_FS_SCL_HCNT.write(.{ .IC_FS_SCL_HCNT = reg_vals.scl_hcnt, .padding = 0 });
-        regs.IC_FS_SCL_LCNT.write(.{ .IC_FS_SCL_LCNT = reg_vals.scl_lcnt, .padding = 0 });
-        regs.IC_FS_SPKLEN.write(.{ .IC_FS_SPKLEN = reg_vals.spklen, .padding = 0 });
-        regs.IC_SDA_HOLD.modify(.{ .IC_SDA_TX_HOLD = reg_vals.sda_tx_hold_count });
+        regs.IC_FS_SCL_HCNT.write(.{ .IC_FS_SCL_HCNT = timings.scl_hcnt });
+        regs.IC_FS_SCL_LCNT.write(.{ .IC_FS_SCL_LCNT = timings.scl_lcnt });
+        regs.IC_FS_SPKLEN.write(.{ .IC_FS_SPKLEN = timings.spklen });
+        regs.IC_SDA_HOLD.modify(.{ .IC_SDA_TX_HOLD = timings.sda_tx_hold_count });
         i2c.enable();
     }
 
@@ -305,18 +283,25 @@ pub const I2C = enum(u1) {
         return i2c.get_regs().IC_RXFLR.read().RXFLR;
     }
 
-    fn set_address(i2c: I2C, addr: Address) void {
+    // TODO: Could move the check into read/write and remove this struct
+    pub const Allow_Reserved = enum { allow_general, allow_reserved, dont_allow_reserved };
+    fn set_address(i2c: I2C, addr: Address, allow_reserved: Allow_Reserved) Error!void {
+        if (allow_reserved == .dont_allow_reserved)
+            addr.check_reserved() catch return Error.IllegalAddress
+        else if (allow_reserved == .allow_general)
+            addr.check_reserved() catch |err| if (err != AddressError.GeneralCall)
+                return Error.IllegalAddress;
+
         i2c.disable();
         i2c.get_regs().IC_TAR.write(.{
             .IC_TAR = @intFromEnum(addr),
             .GC_OR_START = .GENERAL_CALL,
             .SPECIAL = .DISABLED,
-            .padding = 0,
         });
         i2c.enable();
     }
 
-    fn check_and_clear_abort(i2c: I2C) TransactionError!void {
+    fn check_and_clear_abort(i2c: I2C) Error!void {
         const regs = i2c.get_regs();
         const abort_reason = regs.IC_TX_ABRT_SOURCE.read();
         if (@as(u32, @bitCast(abort_reason)) != 0) {
@@ -327,16 +312,17 @@ pub const I2C = enum(u1) {
 
             if (abort_reason.ABRT_7B_ADDR_NOACK == .ACTIVE) {
                 // Address byte wasn't acknowledged by any targets on the bus
-                return TransactionError.DeviceNotPresent;
+                return Error.DeviceNotPresent;
             } else if (abort_reason.ABRT_TXDATA_NOACK == .ABRT_TXDATA_NOACK_GENERATED) {
                 // Address byte was acknowledged, but a data byte wasn't
-                return TransactionError.NoAcknowledge;
+                return Error.NoAcknowledge;
             } else if (abort_reason.TX_FLUSH_CNT > 0) {
-                // A previous abort caused the TX FIFO to be flusehed
-                return TransactionError.TxFifoFlushed;
+                // A previous abort caused the TX FIFO to be flushed
+                //
+                return Error.TxFifoFlushed;
             } else {
                 std.log.err("Unknown abort reason, IC_TX_ABRT_SOURCE=0x{X}", .{@as(u32, @bitCast(abort_reason))});
-                return TransactionError.UnknownAbort;
+                return Error.UnknownAbort;
             }
         }
     }
@@ -362,12 +348,26 @@ pub const I2C = enum(u1) {
         _ = regs.IC_CLR_STOP_DET.read();
     }
 
+    pub fn tx(i2c: I2C) dma.DMA_WriteTarget {
+        return .{
+            .dreq = if (@intFromEnum(i2c) == 0) .i2c0_tx else .i2c1_tx,
+            .addr = @intFromPtr(&i2c.get_regs().IC_DATA_CMD),
+        };
+    }
+
+    pub fn rx(i2c: I2C) dma.DMA_ReadTarget {
+        return .{
+            .dreq = if (@intFromEnum(i2c) == 0) .i2c0_rx else .i2c1_rx,
+            .addr = @intFromPtr(&i2c.get_regs().IC_DATA_CMD),
+        };
+    }
+
     /// Attempts to write number of bytes provided to target device and blocks until one of the following occurs:
     /// - Bytes have been transmitted successfully
     /// - An error occurs and the transaction is aborted
     /// - The transaction times out (a null for timeout blocks indefinitely)
     ///
-    pub fn write_blocking(i2c: I2C, addr: Address, data: []const u8, timeout: ?mdf.time.Duration) TransactionError!void {
+    pub fn write_blocking(i2c: I2C, addr: Address, data: []const u8, timeout: ?mdf.time.Duration) Error!void {
         return i2c.writev_blocking(addr, &.{data}, timeout);
     }
 
@@ -381,17 +381,15 @@ pub const I2C = enum(u1) {
     ///       suffixes won't need to be concatenated/inserted to the original buffer, but can be managed
     ///       in a separate memory.
     ///
-    pub fn writev_blocking(i2c: I2C, addr: Address, chunks: []const []const u8, timeout: ?mdf.time.Duration) TransactionError!void {
-        if (addr.is_reserved())
-            return TransactionError.TargetAddressReserved;
+    pub fn writev_blocking(i2c: I2C, addr: Address, chunks: []const []const u8, timeout: ?mdf.time.Duration) Error!void {
+        try i2c.set_address(addr, .allow_general);
 
-        const write_vec = microzig.utilities.Slice_Vector([]const u8).init(chunks);
+        const write_vec = microzig.utilities.SliceVector([]const u8).init(chunks);
         if (write_vec.size() == 0)
-            return TransactionError.NoData;
+            return Error.NoData;
 
         var deadline = mdf.time.Deadline.init_relative(time.get_time_since_boot(), timeout);
 
-        i2c.set_address(addr);
         const regs = i2c.get_regs();
 
         defer i2c.ensure_stop_condition(deadline);
@@ -407,9 +405,8 @@ pub const I2C = enum(u1) {
                 .DAT = element.value,
 
                 .FIRST_DATA_BYTE = .INACTIVE,
-                .padding = 0,
             });
-            // If an abort occurrs, the TX/RX FIFO is flushed, and subsequent writes to IC_DATA_CMD
+            // If an abort occurs, the TX/RX FIFO is flushed, and subsequent writes to IC_DATA_CMD
             // are ignored. If things work as expected, the TX FIFO gets drained naturally.
             // This makes it okay to poll on this and check for an abort after.
             // Note that this WILL loop infinitely if called when I2C is uninitialized and no
@@ -438,7 +435,7 @@ pub const I2C = enum(u1) {
 
         try i2c.check_and_clear_abort();
         if (timed_out)
-            return TransactionError.Timeout;
+            return Error.Timeout;
     }
 
     /// Attempts to read number of bytes in provided slice from target device and blocks until one of the following occurs:
@@ -446,8 +443,8 @@ pub const I2C = enum(u1) {
     /// - An error occurs and the transaction is aborted
     /// - The transaction times out (a null for timeout blocks indefinitely)
     ///
-    pub fn read_blocking(i2c: I2C, addr: Address, dst: []u8, timeout: ?mdf.time.Duration) TransactionError!void {
-        return try i2c.readv_blocking(addr, &.{dst}, timeout);
+    pub fn read_blocking(i2c: I2C, addr: Address, dst: []u8, timeout: ?mdf.time.Duration) Error!void {
+        return i2c.readv_blocking(addr, &.{dst}, timeout);
     }
 
     /// Attempts to read number of bytes in provided slice from target device and blocks until one of the following occurs:
@@ -460,17 +457,15 @@ pub const I2C = enum(u1) {
     ///       suffixes won't need to be concatenated/inserted to the original buffer, but can be managed
     ///       in a separate memory.
     ///
-    pub fn readv_blocking(i2c: I2C, addr: Address, chunks: []const []u8, timeout: ?mdf.time.Duration) TransactionError!void {
-        if (addr.is_reserved())
-            return TransactionError.TargetAddressReserved;
+    pub fn readv_blocking(i2c: I2C, addr: Address, chunks: []const []u8, timeout: ?mdf.time.Duration) Error!void {
+        try i2c.set_address(addr, .dont_allow_reserved);
 
-        const read_vec = microzig.utilities.Slice_Vector([]u8).init(chunks);
+        const read_vec = microzig.utilities.SliceVector([]u8).init(chunks);
         if (read_vec.size() == 0)
-            return TransactionError.NoData;
+            return Error.NoData;
 
         const deadline = mdf.time.Deadline.init_relative(time.get_time_since_boot(), timeout);
 
-        i2c.set_address(addr);
         const regs = i2c.get_regs();
 
         defer i2c.ensure_stop_condition(deadline);
@@ -486,7 +481,6 @@ pub const I2C = enum(u1) {
                 .DAT = 0,
 
                 .FIRST_DATA_BYTE = .INACTIVE,
-                .padding = 0,
             });
 
             while (true) {
@@ -499,7 +493,7 @@ pub const I2C = enum(u1) {
             }
 
             if (timed_out)
-                return TransactionError.Timeout;
+                return Error.Timeout;
 
             element.value_ptr.* = regs.IC_DATA_CMD.read().DAT;
         }
@@ -512,36 +506,35 @@ pub const I2C = enum(u1) {
     /// - The transaction times out (a null for timeout blocks indefinitely)
     ///
     /// This is useful for the common scenario of writing an address to a target device, and then immediately reading bytes from that address
-    pub fn write_then_read_blocking(i2c: I2C, addr: Address, src: []const u8, dst: []u8, timeout: ?mdf.time.Duration) TransactionError!void {
+    pub fn write_then_read_blocking(i2c: I2C, addr: Address, src: []const u8, dst: []u8, timeout: ?mdf.time.Duration) Error!void {
         return i2c.writev_then_readv_blocking(addr, &.{src}, &.{dst}, timeout);
     }
 
-    /// Attempts to write number of bytes provided to target device and then immediately read bytes following a repeated
-    /// start command (or Start + Stop if repeated start is disabled). Blocks until one of the following occurs:
+    /// Attempts to write number of bytes provided to target device and then immediately read bytes
+    /// following a repeated start command (or Start + Stop if repeated start is disabled). Blocks
+    /// until one of the following occurs:
     /// - Bytes have been transmitted and read successfully
     /// - An error occurs and the transaction is aborted
     /// - The transaction times out (a null for timeout blocks indefinitely)
     ///
-    /// This is useful for the common scenario of writing an address to a target device, and then immediately reading bytes from that address
+    /// This is useful for the common scenario of writing an address to a target device, and then
+    /// immediately reading bytes from that address
     ///
-    /// NOTE: This function is a vectored version of `read_blocking` and takes an array of arrays.
-    ///       This pattern allows one to create better zero-copy send routines as message prefixes and
-    ///       suffixes won't need to be concatenated/inserted to the original buffer, but can be managed
-    ///       in a separate memory.
+    /// NOTE: This function is a vectored `writev_blocking` and `readv_blocking` and takes an array
+    ///       of arrays. This pattern allows one to create better zero-copy send routines as message
+    ///       prefixes and suffixes won't need to be concatenated/inserted to the original buffer,
+    ///       but can be managed in a separate memory.
     ///
-    pub fn writev_then_readv_blocking(i2c: I2C, addr: Address, write_chunks: []const []const u8, read_chunks: []const []u8, timeout: ?mdf.time.Duration) TransactionError!void {
-        if (addr.is_reserved())
-            return TransactionError.TargetAddressReserved;
+    pub fn writev_then_readv_blocking(i2c: I2C, addr: Address, write_chunks: []const []const u8, read_chunks: []const []u8, timeout: ?mdf.time.Duration) Error!void {
+        try i2c.set_address(addr, .dont_allow_reserved);
 
-        const write_vec = microzig.utilities.Slice_Vector([]const u8).init(write_chunks);
-        const read_vec = microzig.utilities.Slice_Vector([]u8).init(read_chunks);
+        const write_vec = microzig.utilities.SliceVector([]const u8).init(write_chunks);
+        const read_vec = microzig.utilities.SliceVector([]u8).init(read_chunks);
 
         if (write_vec.size() == 0)
-            return TransactionError.NoData;
+            return Error.NoData;
+        const deadline = mdf.time.Deadline.init_relative(time.get_time_since_boot(), timeout);
 
-        const deadline = mdf.time.Deadline.init_relative(timeout);
-
-        i2c.set_address(addr);
         const regs = i2c.get_regs();
 
         defer i2c.ensure_stop_condition(deadline);
@@ -550,7 +543,7 @@ pub const I2C = enum(u1) {
 
         // Write provided bytes to device
         var write_iter = write_vec.iterator();
-        send_loop: while (write_iter.next_element()) |element| {
+        while (write_iter.next_element()) |element| {
             regs.IC_DATA_CMD.write(.{
                 .RESTART = @enumFromInt(0),
                 .STOP = @enumFromInt(0),
@@ -558,9 +551,8 @@ pub const I2C = enum(u1) {
                 .DAT = element.value,
 
                 .FIRST_DATA_BYTE = .INACTIVE,
-                .padding = 0,
             });
-            // If an abort occurrs, the TX/RX FIFO is flushed, and subsequent writes to IC_DATA_CMD
+            // If an abort occurs, the TX/RX FIFO is flushed, and subsequent writes to IC_DATA_CMD
             // are ignored. If things work as expected, the TX FIFO gets drained naturally.
             // This makes it okay to poll on this and check for an abort after.
             // Note that this WILL loop infinitely if called when I2C is uninitialized and no
@@ -574,11 +566,11 @@ pub const I2C = enum(u1) {
             }
             try i2c.check_and_clear_abort();
             if (timed_out)
-                break :send_loop;
+                break;
         }
 
         if (timed_out)
-            return TransactionError.Timeout;
+            return Error.Timeout;
 
         // Read back requested bytes immediately following a repeated start
         var read_iter = read_vec.iterator();
@@ -590,7 +582,6 @@ pub const I2C = enum(u1) {
                 .DAT = 0,
 
                 .FIRST_DATA_BYTE = .INACTIVE,
-                .padding = 0,
             });
 
             while (true) {
@@ -608,6 +599,6 @@ pub const I2C = enum(u1) {
         }
 
         if (timed_out)
-            return TransactionError.Timeout;
+            return Error.Timeout;
     }
 };

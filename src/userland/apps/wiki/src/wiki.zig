@@ -8,7 +8,11 @@ const MainWindow = @import("ui.zig");
 
 var main_window: MainWindow = undefined;
 
-pub usingnamespace ashet.core;
+pub const std_options = ashet.core.std_options;
+pub const panic = ashet.core.panic;
+comptime {
+    _ = ashet.core;
+}
 
 const Window = ashet.gui.Window;
 const Framebuffer = ashet.graphics.Framebuffer;

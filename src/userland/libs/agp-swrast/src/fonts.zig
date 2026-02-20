@@ -62,7 +62,7 @@ pub const BitmapFont = struct {
     ///   //    height: u8,  // 255 must be enough for everyone
     ///   //    offset_x: i8, // offset of the glyph to the base point
     ///   //    offset_y: i8, // offset of the glyph to the base point
-    ///   //    bits: [(height+7)/8 * width]u8, // column-major bitmap
+    ///   //    bits: [(width+7)/8 * height]u8, // row-major bitmap (LSB=left, MSB=right)
     ///   // }
     /// }
     /// ```
@@ -131,8 +131,8 @@ pub const BitmapFont = struct {
 
             const width = std.mem.readInt(u8, encoded_glyph[0..1], .little);
             const height = std.mem.readInt(u8, encoded_glyph[1..2], .little);
-            const stride = (height + 7) / 8;
-            const size = width * stride;
+            const stride = (width + 7) / 8;
+            const size = height * stride;
 
             if (encoded_glyph.len < 4 + size)
                 return error.InvalidFont;
@@ -147,7 +147,7 @@ pub const BitmapFont = struct {
         height: u8, // 255 must be enough for everyone
         offset_x: i8, // offset of the glyph to the base point
         offset_y: i8, // offset of the glyph to the base point
-        bits: []const u8, // column-major bitmap ((height+7)/8 * width)
+        bits: []const u8, // row-major bitmap ((height+7)/8 * width)
     };
 
     pub fn getGlyphIndex(font: BitmapFont, codepoint: u21) ?usize {
@@ -186,8 +186,8 @@ pub const BitmapFont = struct {
 
         const width = std.mem.readInt(u8, encoded_glyph[0..1], .little);
         const height = std.mem.readInt(u8, encoded_glyph[1..2], .little);
-        const stride = (height + 7) / 8;
-        const size = width * stride;
+        const row_stride = (width + 7) / 8;
+        const size = row_stride * height;
 
         return Glyph{
             .advance = meta.advance,

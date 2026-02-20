@@ -39,7 +39,7 @@ pub fn create(allocator: std.mem.Allocator, driver_name: []const u8, config: Con
         std.mem.doNotOptimizeAway(x);
     }
 
-    const vmem = try allocator.alignedAlloc(Color, ashet.memory.page_size, framebuffer.width * framebuffer.height);
+    const vmem = try allocator.alignedAlloc(Color, .fromByteUnits(ashet.memory.page_size), framebuffer.width * framebuffer.height);
     errdefer allocator.free(vmem);
 
     var driver = Memory_Mapped_Framebuffer{
@@ -220,14 +220,24 @@ pub const Config = struct {
 
             inline fn write(ptr: [*]u8, color: Color) void {
                 @setRuntimeSafety(false);
-
-                const rgb = color.to_rgb888();
-
-                const pixel: Pixel = (@as(Pixel, rgb.r) << rshift) |
-                    (@as(Pixel, rgb.g) << gshift) |
-                    (@as(Pixel, rgb.b) << bshift);
+                const pixel: Pixel = lut[color.to_u8()];
                 std.mem.writeInt(Pixel, ptr[0 .. (@typeInfo(Pixel).int.bits + 7) / 8], pixel, .little);
             }
+
+            const lut: [256]Pixel = blk: {
+                @setEvalBranchQuota(10_000);
+                var _lut: [256]Pixel = undefined;
+                for (&_lut, 0..) |*pixel, index| {
+                    const color: Color = .from_u8(@intCast(index));
+
+                    const rgb = color.to_rgb888();
+
+                    pixel.* = (@as(Pixel, rgb.r) << rshift) |
+                        (@as(Pixel, rgb.g) << gshift) |
+                        (@as(Pixel, rgb.b) << bshift);
+                }
+                break :blk _lut;
+            };
         }.flush;
     }
 };

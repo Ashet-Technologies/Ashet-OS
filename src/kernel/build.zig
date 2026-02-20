@@ -1,15 +1,9 @@
 const std = @import("std");
+const shimizu_build = @import("shimizu");
 const abiBuild = @import("ashet-abi");
-const regz = @import("regz");
 const Platform = abiBuild.Platform;
 
 pub const Machine = @import("port/machine_id.zig").MachineID;
-
-fn create_embedded_resource(b: *std.Build, path: []const u8) *std.Build.Module {
-    return b.createModule(.{
-        .root_source_file = b.path(path),
-    });
-}
 
 pub fn build(b: *std.Build) void {
     // Options:
@@ -26,6 +20,7 @@ pub fn build(b: *std.Build) void {
     const kernel_target = b.resolveTargetQuery(machine_config.target);
 
     // Dependencies:
+    const mkicon_dep = b.dependency("mkicon", .{});
     const abi_dep = b.dependency("ashet-abi", .{});
     const virtio_dep = b.dependency("virtio", .{});
     const ashet_fs_dep = b.dependency("ashet_fs", .{});
@@ -33,14 +28,14 @@ pub fn build(b: *std.Build) void {
     const args_dep = b.dependency("args", .{});
     const network_dep = b.dependency("network", .{});
     const vnc_dep = b.dependency("vnc", .{});
-    const lwip_dep = b.dependency("lwip", .{ .target = kernel_target, .optimize = .ReleaseSafe });
+    const lwip_dep = b.dependency("lwip", .{ .target = kernel_target, .optimize = .ReleaseFast });
     const libc_dep = b.dependency("foundation-libc", .{
         .target = kernel_target,
         .optimize = optimize,
         .single_threaded = true,
     });
     const zfat_dep = b.dependency("zfat", .{
-        .@"no-libc" = true,
+        .libc = true,
         .target = kernel_target,
         .optimize = optimize,
         .max_long_name_len = @as(u8, 121),
@@ -58,7 +53,35 @@ pub fn build(b: *std.Build) void {
     const ashex_dep = b.dependency("ashex", .{});
     const xcvt_dep = b.dependency("xcvt", .{});
     const shimizu_dep = b.dependency("shimizu", .{});
+    const wayland_dep = b.dependency("wayland", .{});
+    const wayland_protocols_dep = b.dependency("wayland-protocols", .{});
+
+    const wayland_unstable_dir = shimizu_build.generateProtocolZig(shimizu_dep.builder, shimizu_dep.artifact("shimizu-scanner"), .{
+        .output_directory_name = "wayland-unstable",
+        .source_files = &.{
+            wayland_protocols_dep.path("unstable/xdg-decoration/xdg-decoration-unstable-v1.xml"),
+        },
+        .interface_versions = &.{
+            .{ .interface = "zxdg_decoration_manager_v1", .version = 1 },
+        },
+        .imports = &.{
+            .{ .file = wayland_dep.path("protocol/wayland.xml"), .import_string = "@import(\"core\")" },
+            .{ .file = wayland_protocols_dep.path("stable/xdg-shell/xdg-shell.xml"), .import_string = "@import(\"wayland-protocols\").xdg_shell" },
+        },
+    });
+    const wayland_unstable_module = b.addModule("wayland-unstable", .{
+        .root_source_file = wayland_unstable_dir.output_directory.?.path(b, "root.zig"),
+        .target = kernel_target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "wire", .module = shimizu_dep.module("wire") },
+            .{ .name = "core", .module = shimizu_dep.module("core") },
+            .{ .name = "wayland-protocols", .module = shimizu_dep.module("wayland-protocols") },
+        },
+    });
+
     const zigx_dep = b.dependency("zigx", .{});
+    const expcard_dep = b.dependency("expcard", .{});
 
     // Modules:
 
@@ -80,9 +103,18 @@ pub fn build(b: *std.Build) void {
     const xcvt_mod = xcvt_dep.module("cvt");
     const shimizu_mod = shimizu_dep.module("shimizu");
     const wayland_protocols_mod = shimizu_dep.module("wayland-protocols");
-    const zig_mod = zigx_dep.module("x");
+    const zig_mod = zigx_dep.module("x11");
+    const expcard_mod = expcard_dep.module("expcard");
 
     // Build:
+
+    const mkicon_exe = mkicon_dep.artifact("mkicon");
+
+    const convert_splashscreen = b.addRunArtifact(mkicon_exe);
+    convert_splashscreen.addArgs(&.{ "--geometry", "256x128" });
+    convert_splashscreen.addArgs(&.{ "--format", "raw" });
+    convert_splashscreen.addFileArg(b.path("../../assets/images/bootsplash.png"));
+    const bootsplash_path = convert_splashscreen.addPrefixedOutputFileArg("--output=", "splashscreen-256x128.raw");
 
     const machine_info_module = blk: {
         const machine_info = renderMachineInfo(
@@ -125,11 +157,15 @@ pub fn build(b: *std.Build) void {
             .{ .name = "turtlefont", .module = turtlefont_mod },
             .{ .name = "ashex", .module = ashex_mod },
             .{ .name = "cvt", .module = xcvt_mod },
+            .{ .name = "expcard", .module = expcard_mod },
 
             // only required on hosted instances:
             .{ .name = "network", .module = network_mod },
             .{ .name = "x11", .module = zig_mod },
             // .{ .name = "sdl", .module = options.modules.sd
+
+            // data
+            .{ .name = "splashscreen-256x128.raw", .module = b.createModule(.{ .root_source_file = bootsplash_path }) },
         },
     });
 
@@ -144,37 +180,24 @@ pub fn build(b: *std.Build) void {
         const regz_dep = b.dependency("regz", .{
             .optimize = .ReleaseSafe,
         });
+        const propan_dep = b.dependency("propan", .{
+            .optimize = .ReleaseSafe,
+        });
 
+        const propan_exe = propan_dep.artifact("propan");
         const regz_exe = regz_dep.artifact("regz");
 
         const regz_run = b.addRunArtifact(regz_exe);
-
-        regz_run.addArg("--microzig");
         regz_run.addArg("--format");
         regz_run.addArg("svd");
 
         regz_run.addArg("--output_path"); // Write to a file
-        const rp2350_register_file = regz_run.addOutputFileArg("rp2350.zig");
+        const rp2350_register_dir = regz_run.addOutputDirectoryArg("rp2350-registers");
 
-        {
-            const patches = @import("port/machine/arm/ashet-hc/patches/rp2350_arm.zig").patches;
+        const rp2350_register_file = rp2350_register_dir.path(b, "RP2350.zig");
 
-            if (patches.len > 0) {
-                // write patches to file
-                const patch_ndjson = serialize_patches(
-                    b,
-                    patches,
-                );
-                const write_file_step = b.addWriteFiles();
-                const patch_file = write_file_step.add(
-                    "patch.ndjson",
-                    patch_ndjson,
-                );
-
-                regz_run.addArg("--patch_path");
-                regz_run.addFileArg(patch_file);
-            }
-        }
+        regz_run.addArg("--patch_path");
+        regz_run.addFileArg(b.path("port/machine/arm/ashet-hc/patches/rp2350.zon"));
 
         regz_run.addFileArg(b.path("port/machine/arm/ashet-hc/rp2350.svd"));
 
@@ -200,6 +223,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = hal_dep.path("hal.zig"),
             .imports = &.{
                 .{ .name = "microzig", .module = microzig_shim_mod },
+                .{ .name = "bounded-array", .module = microzig_shim_mod },
             },
         });
 
@@ -207,6 +231,14 @@ pub fn build(b: *std.Build) void {
         microzig_shim_mod.addImport("rp2350-hal", hal_mod);
 
         kernel_mod.addImport("rp2350-hal", hal_mod);
+        kernel_mod.addImport("microzig", microzig_shim_mod);
+
+        const p2_bootrom_asm = b.addRunArtifact(propan_exe);
+        p2_bootrom_asm.addArg("--format=flat");
+        p2_bootrom_asm.addFileArg(b.path("port/machine/arm/ashet-hc/p2-bootrom.propan"));
+        const p2_bootrom_bin = p2_bootrom_asm.addPrefixedOutputFileArg("--output=", "p2-bootrom.bin");
+
+        kernel_mod.addImport("propeller2.bin", b.createModule(.{ .root_source_file = p2_bootrom_bin }));
     }
 
     const start_file = if (machine_id.is_hosted())
@@ -216,19 +248,21 @@ pub fn build(b: *std.Build) void {
 
     const kernel_exe = b.addExecutable(.{
         .name = "kernel",
-        .root_source_file = start_file,
-        .target = kernel_target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = start_file,
+            .target = kernel_target,
+            .optimize = optimize,
+        }),
     });
 
     if (machine_id == .@"arm-ashet-hc" and optimize == .Debug) {
         std.debug.print("arm-ashet-hc has no C sanitization enabled in Debug mode!\nSee https://github.com/ziglang/zig/issues/23052 and https://github.com/ziglang/zig/issues/23216 for more details!\n", .{});
-        kernel_exe.root_module.sanitize_c = false;
+        kernel_exe.root_module.sanitize_c = .off;
     }
 
     if (kernel_target.result.cpu.arch.isThumb()) {
         // Disable LTO on arm as it fails hard on the linker:
-        kernel_exe.want_lto = false;
+        kernel_exe.lto = .none;
     }
 
     kernel_exe.step.dependOn(machine_info_module.root_source_file.?.generated.file.step);
@@ -261,14 +295,34 @@ pub fn build(b: *std.Build) void {
 
         kernel_mod.addImport("shimizu", shimizu_mod);
         kernel_mod.addImport("wayland-protocols", wayland_protocols_mod);
+        kernel_mod.addImport("wayland-unstable", wayland_unstable_module);
 
         kernel_exe.linkage = .static;
         kernel_exe.linkLibC();
     } else {
         const libc = libc_dep.artifact("foundation");
 
-        lwip_mod.addIncludePath(libc.getEmittedIncludeTree());
-        zfat_mod.addIncludePath(libc.getEmittedIncludeTree());
+        const genfile_exe = b.addExecutable(.{
+            .name = "genfile",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("build-utils/genfile.zig"),
+                .target = b.graph.host,
+                .optimize = .Debug,
+            }),
+        });
+
+        const gen_libc_txt = b.addRunArtifact(genfile_exe);
+        gen_libc_txt.addPrefixedDirectoryArg("include_dir=", libc.getEmittedIncludeTree());
+        gen_libc_txt.addPrefixedDirectoryArg("sys_include_dir=", libc.getEmittedIncludeTree());
+        gen_libc_txt.addPrefixedDirectoryArg("crt_dir=", libc.getEmittedBinDirectory());
+        gen_libc_txt.addArg("msvc_lib_dir=");
+        gen_libc_txt.addArg("kernel32_lib_dir=");
+        gen_libc_txt.addArg("gcc_dir=");
+
+        const libc_txt_path = gen_libc_txt.captureStdOut();
+
+        kernel_exe.setLibCFile(libc_txt_path);
+        kernel_exe.linkLibC();
 
         kernel_exe.linkLibrary(libc);
     }
@@ -428,11 +482,7 @@ const arm_cortex_m33: std.Target.Query = .{
     .cpu_model = .{
         .explicit = &std.Target.arm.cpu.cortex_m33,
     },
-    .cpu_features_sub = std.Target.arm.featureSet(&.{
-        // Disable GPU in kernel
-        .slowfpvfmx,
-        .slowfpvmlx,
-    }),
+    .cpu_features_sub = std.Target.arm.featureSet(&.{}),
 };
 
 const generic_rv32: std.Target.Query = .{
@@ -456,36 +506,25 @@ fn renderMachineInfo(
     // machine_spec: *const build_targets.MachineSpec,
     // platform_spec: *const build_targets.PlatformSpec,
 ) ![]const u8 {
-    var stream = std.ArrayList(u8).init(b.allocator);
+    var stream: std.Io.Writer.Allocating = .init(b.allocator);
     defer stream.deinit();
 
-    const writer = stream.writer();
+    const writer = &stream.writer;
 
     try writer.writeAll("//! This is a machine-generated description of the Ashet OS target machine.\n\n");
 
-    try writer.print("pub const machine_id = .{};\n", .{
+    try writer.print("pub const machine_id = .{f};\n", .{
         std.zig.fmtId(@tagName(machine_id)),
     });
-    try writer.print("pub const machine_name = \"{}\";\n", .{
-        std.zig.fmtEscapes(machine_id.get_display_name()),
+    try writer.print("pub const machine_name = \"{f}\";\n", .{
+        std.zig.fmtString(machine_id.get_display_name()),
     });
-    try writer.print("pub const platform_id = .{};\n", .{
+    try writer.print("pub const platform_id = .{f};\n", .{
         std.zig.fmtId(@tagName(platform_id)),
     });
-    try writer.print("pub const platform_name = \"{}\";\n", .{
-        std.zig.fmtEscapes(platform_id.get_display_name()),
+    try writer.print("pub const platform_name = \"{f}\";\n", .{
+        std.zig.fmtString(platform_id.get_display_name()),
     });
 
     return try stream.toOwnedSlice();
-}
-
-fn serialize_patches(b: *std.Build, patches: []const regz.patch.Patch) []const u8 {
-    var buf = std.ArrayList(u8).init(b.allocator);
-
-    for (patches) |patch| {
-        std.json.stringify(patch, .{}, buf.writer()) catch @panic("OOM");
-        buf.writer().writeByte('\n') catch @panic("OOM");
-    }
-
-    return buf.toOwnedSlice() catch @panic("OOM");
 }

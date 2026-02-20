@@ -20,18 +20,18 @@ pub const scheduler = struct {
 };
 
 pub const start = struct {
-    export fn handleTrap() align(4) callconv(.C) noreturn {
+    export fn handleTrap() align(4) callconv(.c) noreturn {
         const trap_reason = csr.ControlStatusRegister.read(.mcause);
         const trap_location = csr.ControlStatusRegister.read(.mepc);
         const trap_status = csr.ControlStatusRegister.read(.mstatus);
 
         logger.err("trap happened. trap code:    0x{X:0>8}", .{trap_reason});
         logger.err("               trap address: 0x{X:0>8}", .{trap_location});
-        logger.err("                             {}", .{ashet.fmtCodeLocation(trap_location)});
+        logger.err("                             {f}", .{ashet.fmtCodeLocation(trap_location)});
         logger.err("               trap status:  0x{X:0>8}", .{trap_status});
 
         const mstatus: csr.MStatus = @bitCast(trap_status);
-        logger.err("                             {}", .{ashet.utils.fmt.@"struct"(mstatus)});
+        logger.err("                             {f}", .{ashet.utils.fmt.@"struct"(mstatus)});
 
         if (trap_reason >= 0x8000_0000) {
             // asynchronous
@@ -94,6 +94,14 @@ pub const start = struct {
                 0x0000_0030...0x0000_003F => "reserved for future custom use",
                 else => "reserved for future standard use",
             }});
+
+            if (trap_reason == 0x0000_0003) {
+                // Breakpoint:
+                while (true) {
+                    // HALT
+                    asm volatile ("" ::: .{ .memory = true });
+                }
+            }
         }
 
         // TODO(fqu): Reimplement this
@@ -108,25 +116,29 @@ pub const start = struct {
         @panic("unhandled trap");
     }
 
-    comptime {
-        asm (
-            \\.section .text._start
-            \\.global _start
-            \\_start:
-            \\  la   sp, __kernel_stack_end // defined in linker script 
+    export fn _start() linksection(".text._start") callconv(.naked) noreturn {
+        asm volatile (
+            \\la      sp, __kernel_stack_end // defined in linker script 
             \\
-            \\  la     t0, handleTrap
-            \\  csrw   mtvec, t0
+            \\la      t0, handleTrap
+            \\csrw    mtvec, t0
             \\
-            \\  call ashet_kernelMain
+            \\call    ashet_kernelMain
             \\
-            \\  li      t0, 0x38
-            \\  csrc    mstatus, t0
+            \\li      t0, 0x38
+            \\csrc    mstatus, t0
             \\
-            \\hang:
+            \\1:
             \\  wfi
-            \\  j hang
-            \\
+            \\  j 1b
+        );
+    }
+
+    export fn hang() callconv(.naked) noreturn {
+        asm volatile (
+            \\1:
+            \\  wfi
+            \\  j 1b
         );
     }
 };
@@ -149,8 +161,7 @@ noinline fn readHwCounter() u64 {
         \\  sw t1, 0(%[ptr])
         :
         : [ptr] "r" (&res),
-        : "{t0}", "{t1}", "{t2}"
-    );
+        : .{ .@"{t0}" = true, .@"{t1}" = true, .@"{t2}" = true });
     return res;
 }
 

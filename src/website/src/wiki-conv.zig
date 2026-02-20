@@ -24,15 +24,17 @@ pub fn main() !u8 {
 
     const root = try scan_folder(allocator, ".", input_dir);
 
-    var toc: std.ArrayList(u8) = .init(allocator);
-    try render_toc(config, toc.writer(), root, 0);
+    var toc: std.Io.Writer.Allocating = .init(allocator);
+    defer toc.deinit();
+
+    try render_toc(config, &toc.writer, root, 0);
 
     try std.fs.cwd().deleteTree(argv[2]);
 
     var output_dir = try std.fs.cwd().makeOpenPath(argv[2], .{});
     defer output_dir.close();
 
-    try render_folder(config, input_dir, output_dir, toc.items, root);
+    try render_folder(config, input_dir, output_dir, toc.written(), root);
 
     return 0;
 }
@@ -61,8 +63,8 @@ const Document = struct {
 pub fn scan_folder(allocator: std.mem.Allocator, path: []const u8, dir: std.fs.Dir) !Folder {
     var iter = dir.iterate();
 
-    var entries: std.ArrayList(Folder.Item) = .init(allocator);
-    defer entries.deinit();
+    var entries: std.ArrayList(Folder.Item) = .empty;
+    defer entries.deinit(allocator);
 
     while (try iter.next()) |entry| {
         const child_path = try std.fs.path.join(allocator, &.{ path, entry.name });
@@ -94,7 +96,7 @@ pub fn scan_folder(allocator: std.mem.Allocator, path: []const u8, dir: std.fs.D
                         child_path[0 .. child_path.len - ext.len],
                     });
 
-                    try entries.append(.{
+                    try entries.append(allocator, .{
                         .path = child_path,
                         .content = .{
                             .document = .{
@@ -108,7 +110,7 @@ pub fn scan_folder(allocator: std.mem.Allocator, path: []const u8, dir: std.fs.D
                     // copy file
                     std.log.err("copy {s}", .{child_path});
 
-                    try entries.append(.{
+                    try entries.append(allocator, .{
                         .path = child_path,
                         .content = .copy,
                     });
@@ -120,7 +122,7 @@ pub fn scan_folder(allocator: std.mem.Allocator, path: []const u8, dir: std.fs.D
                 var sub_dir = try dir.openDir(entry.name, .{ .iterate = true });
                 defer sub_dir.close();
 
-                try entries.append(.{
+                try entries.append(allocator, .{
                     .path = child_path,
                     .content = .{
                         .folder = try scan_folder(allocator, child_path, sub_dir),
@@ -133,7 +135,7 @@ pub fn scan_folder(allocator: std.mem.Allocator, path: []const u8, dir: std.fs.D
     }
 
     return .{
-        .files = try entries.toOwnedSlice(),
+        .files = try entries.toOwnedSlice(allocator),
     };
 }
 
@@ -168,19 +170,18 @@ fn render_folder(config: Config, input: std.fs.Dir, output: std.fs.Dir, toc: []c
                 var output_file = try output.createFile(document.output_path, .{ .exclusive = true });
                 defer output_file.close();
 
-                var buffered_writer: BufferedWriter = .{ .unbuffered_writer = output_file.writer() };
+                var buffer: [8192]u8 = undefined;
+                var file_writer = output_file.writer(&buffer);
 
-                try render_html(config, document.contents, toc, buffered_writer.writer());
+                try render_html(config, document.contents, toc, &file_writer.interface);
 
-                try buffered_writer.flush();
+                try file_writer.interface.flush();
             },
         }
     }
 }
 
-const BufferedWriter = std.io.BufferedWriter(8192, std.fs.File.Writer);
-
-fn render_html(config: Config, doc: hyperdoc.Document, toc: []const u8, writer: BufferedWriter.Writer) !void {
+fn render_html(config: Config, doc: hyperdoc.Document, toc: []const u8, writer: *std.Io.Writer) !void {
     try writer.writeAll(
         \\<!doctype html>
         \\<html lang="en">
@@ -189,7 +190,7 @@ fn render_html(config: Config, doc: hyperdoc.Document, toc: []const u8, writer: 
         \\
     );
 
-    try writer.print("    <link rel=\"stylesheet\" href=\"{}\">\n", .{
+    try writer.print("    <link rel=\"stylesheet\" href=\"{f}\">\n", .{
         fmt_url(config, "wiki.css"),
     });
 
@@ -238,7 +239,7 @@ fn render_html(config: Config, doc: hyperdoc.Document, toc: []const u8, writer: 
     );
 }
 
-fn render_html_block(config: Config, doc: hyperdoc.Document, block: hyperdoc.Block, writer: BufferedWriter.Writer) !void {
+fn render_html_block(config: Config, doc: hyperdoc.Document, block: hyperdoc.Block, writer: *std.Io.Writer) !void {
     switch (block) {
         .table_of_contents => {
             try writer.writeAll("  <ol>\n");
@@ -249,7 +250,7 @@ fn render_html_block(config: Config, doc: hyperdoc.Document, block: hyperdoc.Blo
                 };
 
                 try writer.print(
-                    \\    <li><a href="#{s}">{s}</a></li>
+                    \\    <li><a href="#{f}">{f}</a></li>
                     \\
                 , .{
                     fmt_attr(heading.anchor),
@@ -264,7 +265,7 @@ fn render_html_block(config: Config, doc: hyperdoc.Document, block: hyperdoc.Blo
                 .chapter => 2,
                 .section => 3,
             };
-            try writer.print("  <h{} id=\"{s}\">{s}</h{[0]}>\n", .{
+            try writer.print("  <h{} id=\"{f}\">{f}</h{[0]}>\n", .{
                 level,
                 fmt_attr(heading.anchor),
                 fmt_html(heading.title),
@@ -314,31 +315,31 @@ fn render_html_block(config: Config, doc: hyperdoc.Document, block: hyperdoc.Blo
             try writer.writeAll("</code></pre>\n");
         },
         .image => |image| {
-            try writer.print("  <img src=\"{s}\">\n", .{
+            try writer.print("  <img src=\"{f}\">\n", .{
                 fmt_attr(image.path),
             });
         },
     }
 }
 
-fn render_html_span(config: Config, doc: hyperdoc.Document, span: hyperdoc.Span, writer: BufferedWriter.Writer) !void {
+fn render_html_span(config: Config, doc: hyperdoc.Document, span: hyperdoc.Span, writer: *std.Io.Writer) !void {
     _ = doc;
     switch (span) {
-        .text => |text| try writer.print("{s}", .{fmt_html(text)}),
-        .emphasis => |text| try writer.print("<em>{s}</em>", .{fmt_html(text)}),
-        .monospace => |text| try writer.print("<code>{s}</code>", .{fmt_html(text)}),
-        .link => |link| try writer.print("<a href=\"{s}\">{s}</a>", .{
+        .text => |text| try writer.print("{f}", .{fmt_html(text)}),
+        .emphasis => |text| try writer.print("<em>{f}</em>", .{fmt_html(text)}),
+        .monospace => |text| try writer.print("<code>{f}</code>", .{fmt_html(text)}),
+        .link => |link| try writer.print("<a href=\"{f}\">{f}</a>", .{
             fmt_url(config, link.href),
             fmt_html(link.text),
         }),
     }
 }
 
-fn render_toc(config: Config, writer: std.ArrayList(u8).Writer, folder: Folder, level: usize) !void {
+fn render_toc(config: Config, writer: *std.Io.Writer, folder: Folder, level: usize) !void {
     for (folder.files) |entry| {
         switch (entry.content) {
             .folder => |subfolder| {
-                try writer.print("    <li data-indent=\"{}\">{s}</li>\n", .{
+                try writer.print("    <li data-indent=\"{}\">{f}</li>\n", .{
                     level,
                     fmt_html(std.fs.path.basename(entry.path)),
                 });
@@ -348,7 +349,7 @@ fn render_toc(config: Config, writer: std.ArrayList(u8).Writer, folder: Folder, 
             .copy => {},
 
             .document => |document| {
-                try writer.print("    <li data-indent=\"{}\"><a href=\"{s}\">{s}</a></li>\n", .{
+                try writer.print("    <li data-indent=\"{}\"><a href=\"{f}\">{f}</a></li>\n", .{
                     level,
                     fmt_url(config, document.output_path),
                     fmt_html(document.title),
@@ -358,36 +359,27 @@ fn render_toc(config: Config, writer: std.ArrayList(u8).Writer, folder: Folder, 
     }
 }
 
-fn fmt_html(str: []const u8) std.fmt.Formatter(format_html_escape) {
+fn fmt_html(str: []const u8) std.fmt.Formatter([]const u8, format_html_escape) {
     return .{ .data = str };
 }
 
-fn fmt_attr(str: []const u8) std.fmt.Formatter(format_attr_escape) {
+fn fmt_attr(str: []const u8) std.fmt.Formatter([]const u8, format_attr_escape) {
     return .{ .data = str };
 }
 
-fn fmt_url(config: Config, url: []const u8) std.fmt.Formatter(format_url) {
+fn fmt_url(config: Config, url: []const u8) std.fmt.Formatter(struct { Config, []const u8 }, format_url) {
     return .{ .data = .{ config, url } };
 }
 
-fn format_html_escape(str: []const u8, fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-    _ = fmt;
-    _ = opt;
-
+fn format_html_escape(str: []const u8, writer: *std.Io.Writer) std.Io.Writer.Error!void {
     try writer.writeAll(str); // TODO: Implement proper escaping
 }
 
-fn format_attr_escape(str: []const u8, fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-    _ = fmt;
-    _ = opt;
-
+fn format_attr_escape(str: []const u8, writer: *std.Io.Writer) std.Io.Writer.Error!void {
     try writer.writeAll(str); // TODO: Implement proper escaping
 }
 
-fn format_url(options: struct { Config, []const u8 }, fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-    _ = fmt;
-    _ = opt;
-
+fn format_url(options: struct { Config, []const u8 }, writer: *std.Io.Writer) std.Io.Writer.Error!void {
     const config, const url = options;
 
     // TODO: Implement proper URL parsing and escaping

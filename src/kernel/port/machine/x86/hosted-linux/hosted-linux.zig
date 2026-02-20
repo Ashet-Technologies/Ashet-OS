@@ -52,6 +52,17 @@ const video_drivers: std.StaticStringMap(hosted.VideoDriverCtor) = .initComptime
 });
 
 const video_drivers_ctors = struct {
+    fn get_wayland_scale() u8 {
+        var buffer: [64]u8 = undefined;
+        var fba: std.heap.FixedBufferAllocator = .init(&buffer);
+
+        const string = std.process.getEnvVarOwned(fba.allocator(), "ASHET_WAYLAND_SCALE") catch return 1;
+
+        const scale = std.fmt.parseInt(u8, string, 10) catch return 1;
+
+        return @max(1, scale);
+    }
+
     fn x11(options: hosted.VideoDriverOptions) !void { // "video:x11:<width>:<height>"
 
         if (X11_Display.init(
@@ -63,7 +74,7 @@ const video_drivers_ctors = struct {
             ashet.drivers.install(&display.screen.driver);
 
             const thread = try ashet.scheduler.Thread.spawn(X11_Display.process_events_wrapper, display, .{
-                .stack_size = 1024 * 1024,
+                .stack_size = 8 * 1024 * 1024,
             });
             try thread.setName("x11.eventloop");
             try thread.start();
@@ -83,11 +94,12 @@ const video_drivers_ctors = struct {
             options.video_out_index,
             options.res_x,
             options.res_y,
+            get_wayland_scale(),
         )) |display| {
             ashet.drivers.install(&display.screen.driver);
 
             const thread = try ashet.scheduler.Thread.spawn(Wayland_Display.process_events_wrapper, display, .{
-                .stack_size = 1024 * 1024,
+                .stack_size = 8 * 1024 * 1024,
             });
             try thread.setName("wayland.eventloop");
             try thread.start();
@@ -105,11 +117,12 @@ const video_drivers_ctors = struct {
             options.video_out_index,
             options.res_x,
             options.res_y,
+            get_wayland_scale(),
         )) |display| {
             ashet.drivers.install(&display.screen.driver);
 
             const thread = try ashet.scheduler.Thread.spawn(Wayland_Display.process_events_wrapper, display, .{
-                .stack_size = 1024 * 1024,
+                .stack_size = 8 * 1024 * 1024,
             });
             try thread.setName("wayland.eventloop");
             try thread.start();

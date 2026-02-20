@@ -7,6 +7,8 @@ const Diagnostics = assembler.Diagnostics;
 const Expression = @import("Expression.zig");
 const Chip = @import("../../chip.zig").Chip;
 
+const BoundedArray = @import("bounded-array").BoundedArray;
+
 pub const Options = struct {
     capacity: u32 = 256,
 };
@@ -16,8 +18,8 @@ pub fn tokenize(
     source: []const u8,
     diags: *?assembler.Diagnostics,
     comptime options: Options,
-) !std.BoundedArray(Token(chip), options.capacity) {
-    var tokens = std.BoundedArray(Token(chip), options.capacity).init(0) catch unreachable;
+) !BoundedArray(Token(chip), options.capacity) {
+    var tokens = BoundedArray(Token(chip), options.capacity).init(0) catch unreachable;
     var tokenizer = Tokenizer(chip).init(source);
     while (try tokenizer.next(diags)) |token|
         try tokens.append(token);
@@ -34,12 +36,8 @@ pub const Value = union(enum) {
 
     pub fn format(
         value: Value,
-        comptime fmt: []const u8,
-        options: std.fmt.FormatOptions,
-        writer: anytype,
+        writer: *std.Io.Writer,
     ) !void {
-        _ = fmt;
-        _ = options;
         switch (value) {
             .string => |str| try writer.print("\"{s}\"", .{str}),
             .expression => |expr| try writer.print("{s}", .{expr}),
@@ -72,13 +70,8 @@ pub fn Tokenizer(chip: Chip) type {
 
         pub fn format(
             self: Self,
-            comptime fmt: []const u8,
-            options: std.fmt.FormatOptions,
-            writer: anytype,
+            writer: *std.Io.Writer,
         ) !void {
-            _ = fmt;
-            _ = options;
-
             try writer.print(
                 \\parser:
                 \\  index: {}
@@ -87,11 +80,11 @@ pub fn Tokenizer(chip: Chip) type {
             , .{self.index});
 
             var printed_cursor = false;
-            var line_it = std.mem.tokenize(u8, self.source, "\n\r");
+            var line_it = std.mem.tokenizeAny(u8, self.source, "\n\r");
             while (line_it.next()) |line| {
                 try writer.print("{s}\n", .{line});
                 if (!printed_cursor and line_it.index > self.index) {
-                    try writer.writeByteNTimes(' ', line.len - (line_it.index - self.index));
+                    try writer.splatByteAll(' ', line.len - (line_it.index - self.index));
                     try writer.writeAll("\x1b[30;42;1m^\x1b[0m\n");
                     printed_cursor = true;
                 }
@@ -617,11 +610,11 @@ pub fn Tokenizer(chip: Chip) type {
         }
 
         /// get the lowercase of a string, returns an error if it's too big
-        fn lowercase_bounded(comptime max_size: usize, str: []const u8) TokenizeError!std.BoundedArray(u8, max_size) {
+        fn lowercase_bounded(comptime max_size: usize, str: []const u8) TokenizeError!BoundedArray(u8, max_size) {
             if (str.len > max_size)
                 return error.TooBig;
 
-            var ret = std.BoundedArray(u8, max_size).init(0) catch unreachable;
+            var ret = BoundedArray(u8, max_size).init(0) catch unreachable;
             for (str) |c|
                 try ret.append(std.ascii.toLower(c));
 
@@ -1143,7 +1136,7 @@ pub fn Token(comptime chip: Chip) type {
             instruction: Instruction,
         },
 
-        pub const Tag = std.meta.Tag(std.meta.FieldType(Token(chip), .data));
+        pub const Tag = std.meta.Tag(@FieldType(Token(chip), "data"));
 
         pub const Label = struct {
             name: []const u8,
@@ -1368,10 +1361,10 @@ const expectEqual = std.testing.expectEqual;
 const expectEqualStrings = std.testing.expectEqualStrings;
 
 fn DirectiveTag(comptime chip: Chip) type {
-    return @typeInfo(Token(chip).Directive).Union.tag_type.?;
+    return @typeInfo(Token(chip).Directive).@"union".tag_type.?;
 }
 fn PayloadTag(comptime chip: Chip) type {
-    return @typeInfo(Token(chip).Instruction.Payload).Union.tag_type.?;
+    return @typeInfo(Token(chip).Instruction.Payload).@"union".tag_type.?;
 }
 
 fn expect_program(comptime chip: Chip, expected: []const u8, actual: Token(chip)) !void {
@@ -1683,7 +1676,7 @@ fn expect_instr_irq(comptime chip: Chip, expected: ExpectedIrqInstr(chip), actua
     }
 }
 
-fn bounded_tokenize(comptime chip: Chip, source: []const u8) !std.BoundedArray(Token(chip), 256) {
+fn bounded_tokenize(comptime chip: Chip, source: []const u8) !BoundedArray(Token(chip), 256) {
     var diags: ?assembler.Diagnostics = null;
     return tokenize(chip, source, &diags, .{}) catch |err| if (diags) |d| blk: {
         std.log.err("error with chip {s} at index {}: {s}", .{ @tagName(chip), d.index, d.message.slice() });
@@ -2114,11 +2107,11 @@ test "tokenize.instr.irq" {
     };
 
     const modes = std.StaticStringMap(ClearWait).initComptime(.{
-        .{ "", .{ .clear = false, .wait = false } },
-        .{ "set", .{ .clear = false, .wait = false } },
-        .{ "nowait", .{ .clear = false, .wait = false } },
-        .{ "wait", .{ .clear = false, .wait = true } },
-        .{ "clear", .{ .clear = true, .wait = false } },
+        .{ "", ClearWait{ .clear = false, .wait = false } },
+        .{ "set", ClearWait{ .clear = false, .wait = false } },
+        .{ "nowait", ClearWait{ .clear = false, .wait = false } },
+        .{ "wait", ClearWait{ .clear = false, .wait = true } },
+        .{ "clear", ClearWait{ .clear = true, .wait = false } },
     });
 
     inline for (comptime modes.keys(), comptime modes.values(), 0..) |key, value, num| {
@@ -2277,4 +2270,16 @@ test "tokenize.instr.comment with no whitespace" {
         .side_set = .{ .expression = "0x0" },
         .delay = .{ .expression = "1" },
     }, tokens.get(0));
+}
+
+test "format tokenizer" {
+    const test_tokenizer = Tokenizer(.RP2040).init("out 1");
+    const string = try std.fmt.allocPrint(std.testing.allocator, "{f}", .{test_tokenizer});
+    defer std.testing.allocator.free(string);
+    try expectEqualStrings(
+        \\parser:
+        \\  index: 0
+        \\
+        \\out 1
+    ++ "\n\x1b[30;42;1m^\x1b[0m\n", string);
 }

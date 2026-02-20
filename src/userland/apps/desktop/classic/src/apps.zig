@@ -26,10 +26,10 @@ pub const App = struct {
 
 var default_icon: ashet.graphics.Framebuffer = undefined;
 
-var list: std.ArrayList(App) = undefined;
+var list: std.array_list.Managed(App) = undefined;
 
 pub fn init() !void {
-    list = std.ArrayList(App).init(ashet.process.mem.allocator());
+    list = .init(ashet.process.mem.allocator());
 
     {
         var desktop_dir = try ashet.fs.Directory.openDrive(.system, "system/icons");

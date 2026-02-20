@@ -50,7 +50,7 @@ export fn handle_interrupt(cpu: *CpuState) *CpuState {
                 0x1F => "Reserved",
                 else => "Unknown",
             })});
-            logger.err("{}", .{cpu});
+            logger.err("{f}", .{cpu});
 
             if (cpu.interrupt == 0x0D) {
                 // GPF
@@ -87,7 +87,7 @@ export fn handle_interrupt(cpu: *CpuState) *CpuState {
             if (irqHandlers[cpu.interrupt - 0x20]) |handler| {
                 handler(cpu);
             } else {
-                logger.warn("Unhandled IRQ{}:\n{}", .{ cpu.interrupt - 0x20, cpu });
+                logger.warn("Unhandled IRQ{}:\n{f}", .{ cpu.interrupt - 0x20, cpu });
             }
 
             if (cpu.interrupt >= 0x28) {
@@ -96,7 +96,7 @@ export fn handle_interrupt(cpu: *CpuState) *CpuState {
             PIC.primary.notifyEndOfInterrupt();
         },
         else => {
-            logger.err("Unhandled interrupt:\n{}", .{cpu});
+            logger.err("Unhandled interrupt:\n{f}", .{cpu});
 
             @panic("Unhandled exception!");
             // while (true) {
@@ -220,9 +220,7 @@ pub const CpuState = packed struct {
     esp: u32,
     ss: u32,
 
-    pub fn format(cpu: CpuState, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
+    pub fn format(cpu: CpuState, writer: *std.Io.Writer) !void {
         try writer.print("  EAX={X:0>8} EBX={X:0>8} ECX={X:0>8} EDX={X:0>8}\r\n", .{ cpu.eax, cpu.ebx, cpu.ecx, cpu.edx });
         try writer.print("  ESI={X:0>8} EDI={X:0>8} EBP={X:0>8} EIP={X:0>8}\r\n", .{ cpu.esi, cpu.edi, cpu.ebp, cpu.eip });
         try writer.print("  INT={X:0>2}       ERR={X:0>8}  CS={X:0>8} FLG={X:0>8}\r\n", .{ cpu.interrupt, cpu.errorcode, cpu.cs, cpu.eflags });
@@ -254,7 +252,7 @@ const Descriptor = packed struct(u64) {
     enabled: bool, // 47 P Gibt an, ob dieser Eintrag benutzt wird.
     offset1: u16, // 48-63 Offset 16-31
 
-    pub fn init(offset: ?*const fn () callconv(.Naked) void, selector: u16, _type: InterruptType, bits: InterruptBits, privilege: u2, enabled: bool) Descriptor {
+    pub fn init(offset: ?*const fn () callconv(.naked) void, selector: u16, _type: InterruptType, bits: InterruptBits, privilege: u2, enabled: bool) Descriptor {
         const offset_val = @intFromPtr(offset);
         return Descriptor{
             .offset0 = @as(u16, @truncate(offset_val & 0xFFFF)),
@@ -268,7 +266,7 @@ const Descriptor = packed struct(u64) {
     }
 };
 
-export fn common_isr_handler() callconv(.Naked) void {
+export fn common_isr_handler() callconv(.naked) void {
     asm volatile (
         \\
         // Increment interrupt nesting counter so we can detect that we're in
@@ -321,9 +319,9 @@ export fn common_isr_handler() callconv(.Naked) void {
     );
 }
 
-fn getInterruptStub(comptime i: u32) *const fn () callconv(.Naked) void {
+fn getInterruptStub(comptime i: u32) *const fn () callconv(.naked) void {
     const Wrapper = struct {
-        fn stub_with_zero() callconv(.Naked) void {
+        fn stub_with_zero() callconv(.naked) void {
             asm volatile (
             // this handler has no error code pushed by the cpu, so we have to
                 \\ pushl $0
@@ -333,7 +331,7 @@ fn getInterruptStub(comptime i: u32) *const fn () callconv(.Naked) void {
                 : [nr] "n" (i),
             );
         }
-        fn stub_with_errorcode() callconv(.Naked) void {
+        fn stub_with_errorcode() callconv(.naked) void {
             asm volatile (
             // error code was already pushed by cpu already
                 \\ pushl %[nr]
