@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+
+<html lang="en">
+	<head>
+		<title>Ashet OS</title>
+		<meta charset="UTF-8">
+
+		<link rel="stylesheet" href="theme.css">
+	</head>
+	<body>
+		<header class="panel">
+			<h1>Ashet OS</h1>
+			<hr>
+			<nav>
+				<ul>
+					<li><a href="#start">Start</a></li>
+					<li><a href="#wiki">Wiki</a></li>
+					<li><a href="#syscalls">Kernel Interface</a></li>
+					<li><a href="#livedemo">Live Demo</a></li>
+				</ul>
+			</nav>
+			<div class="flex-spacer"></div>
+			<search>
+				<input type="search" name="query" placeholder="Search…">
+			</search>
+		</header>
+		<main id="start" class="panel markup-container">
+			<p>Welcome to the Ashet OS system documentation!</p>
+		</main>
+		<main id="wiki">
+			<nav class="panel">
+				<ul class="treeview">
+					<li class="file" data-indent="0"><a href="/Ashet-OS/wiki/./welcome.html">Ashet System Wiki</a></li>
+					<li class="file" data-indent="0"><a href="/Ashet-OS/wiki/./demo.html">demo</a></li>
+					<li class="folder" data-indent="0">ashet</li>
+					<li class="folder" data-indent="1">apps</li>
+					<li class="file" data-indent="2"><a href="/Ashet-OS/wiki/./ashet/apps/settings.html">SysAdvance Settings & Updates</a></li>
+					<li class="file" data-indent="2"><a href="/Ashet-OS/wiki/./ashet/apps/spreadsheet.html">Calc Spreadsheet Software</a></li>
+					<li class="file" data-indent="2"><a href="/Ashet-OS/wiki/./ashet/apps/dungeon.html">Dungeon</a></li>
+					<li class="file" data-indent="2"><a href="/Ashet-OS/wiki/./ashet/apps/wiki.html">Hyper Wiki</a></li>
+					<li class="file" data-indent="2"><a href="/Ashet-OS/wiki/./ashet/apps/music.html">Grammophone Music Player</a></li>
+					<li class="file" data-indent="2"><a href="/Ashet-OS/wiki/./ashet/apps/paint.html">Dragon Craft Picture Editor</a></li>
+					<li class="file" data-indent="2"><a href="/Ashet-OS/wiki/./ashet/apps/io.html">I/O Access</a></li>
+					<li class="file" data-indent="2"><a href="/Ashet-OS/wiki/./ashet/apps/lola-run.html">LoLa Run! Scripting Environment</a></li>
+					<li class="file" data-indent="2"><a href="/Ashet-OS/wiki/./ashet/apps/chat.html">Telegraph Chat</a></li>
+					<li class="file" data-indent="2"><a href="/Ashet-OS/wiki/./ashet/apps/commander.html">Shepard File Commander</a></li>
+					<li class="file" data-indent="2"><a href="/Ashet-OS/wiki/./ashet/apps/browser.html">Gateway Internet Browser</a></li>
+					<li class="file" data-indent="2"><a href="/Ashet-OS/wiki/./ashet/apps/editor.html">Craftworks Code Editor</a></li>
+					<li class="file" data-indent="2"><a href="/Ashet-OS/wiki/./ashet/apps/terminal.html">Connex Terminal Software</a></li>
+					<li class="folder" data-indent="1">formats</li>
+					<li class="file" data-indent="2"><a href="/Ashet-OS/wiki/./ashet/formats/hyperdoc.html">HyperDocument File Format</a></li>
+					<li class="folder" data-indent="1">desktop</li>
+					<li class="file" data-indent="2"><a href="/Ashet-OS/wiki/./ashet/desktop/wallpapers.html">Custom Wallpapers</a></li>
+					<li class="folder" data-indent="1">daemon</li>
+					<li class="file" data-indent="2"><a href="/Ashet-OS/wiki/./ashet/daemon/shell.html">Shell Server</a></li>
+					<li class="file" data-indent="2"><a href="/Ashet-OS/wiki/./ashet/daemon/asm.html">Assembly Language Server</a></li>
+					<li class="file" data-indent="2"><a href="/Ashet-OS/wiki/./ashet/daemon/lola.html">LoLa Language Server</a></li>
+					<li class="file" data-indent="2"><a href="/Ashet-OS/wiki/./ashet/daemon/psi.html">Psi Language Server</a></li>
+					<li class="folder" data-indent="1">os</li>
+					<li class="file" data-indent="2"><a href="/Ashet-OS/wiki/./ashet/os/graphics.html">Ashet OS Graphics Subsystem</a></li>
+					<li class="file" data-indent="2"><a href="/Ashet-OS/wiki/./ashet/os/fileformats.html">File Formats used in Ashet OS</a></li>
+					<li class="file" data-indent="2"><a href="/Ashet-OS/wiki/./ashet/os/filesystem.html">Ashet File System</a></li>
+					<li class="folder" data-indent="0">tutorials</li>
+					<li class="folder" data-indent="1">lola</li>
+					<li class="file" data-indent="2"><a href="/Ashet-OS/wiki/./tutorials/lola/01-intro.html">Introduction</a></li>
+				</ul>
+			</nav>
+			<article class="panel markup-container">
+				<h1>HyperDocument File Format</h1>
+				<ol>
+					<li><a href="#">HyperDocument File Format</a></li>
+					<li><a href="#intro">Introduction</a></li>
+					<li><a href="#structure">Structure</a></li>
+				</ol>
+				<h2>Introduction</h2>
+				<p>The HyperDocument file format is meant to descibe rich text files that link between each other.</p>
+				<h2>Structure</h2>
+				<p>The structure of HyperDocument files is pretty simple. Each file starts with a <code>hdoc "1.0"</code>
+					sequence that will mark both "magic number" and format version.</p>
+				<p>After the header, an arbitrary number of block elements follows.Each block can be considered similar to a paragraph in text documents, but isn't necessarily only a pure text element. The following blocks types are available:</p>
+				<ul>
+					<li>
+						<p><code>h1</code>, <code>h2</code>, <code>h3</code>
+						- First, second and third level headings</p>
+					</li>
+					<li>
+						<p><code>toc</code>
+						- A table of contents</p>
+					</li>
+					<li>
+						<p><code>p</code>
+						- A regular, plain text paragraph</p>
+					</li>
+					<li>
+						<p><code>quote</code>
+						- A block quote</p>
+					</li>
+					<li>
+						<p><code>enumerate</code>
+						- An ordered list, using numbering</p>
+					</li>
+					<li>
+						<p><code>itemize</code>
+						- An unordered list, using bullet points</p>
+					</li>
+					<li>
+						<p><code>pre</code>
+						- A preformatted block of text, optionally with a language tag</p>
+					</li>
+					<li>
+						<p><code>image</code>
+						- A picture that is inserted into the document.</p>
+					</li>
+				</ul>
+				<p>The <code>p</code>, <code>quote</code>
+					and <code>pre</code>
+					blocks contain a sequence of non-nested spans. The following span types are available:</p>
+				<ul>
+					<li>
+						<p><code>span</code>
+						- Regular, unformatted plain text</p>
+					</li>
+					<li>
+						<p><code>emph</code>
+						- Emphasises text</p>
+					</li>
+					<li>
+						<p><code>mono</code>
+						- Monospaced font</p>
+					</li>
+					<li>
+						<p><code>link</code>
+						- Plain text with a hyperlink.</p>
+					</li>
+				</ul>
+				<p>The blocks <code>enumerate</code>
+					and <code>itemize</code>
+					contain elements of type <code>item</code>.
+					Each of those items contain a list of blocks.</p>
+			</article>
+		</main>
+		<main id="syscalls">
+			<nav class="panel breakcrumbs">
+				<ul class="breakcrumbs">
+					<li><a href="">ashet</a></li>
+					<li><a href="">process</a></li>
+					<li><a href="">thread</a></li>
+					<li><a href="">ThreadFunction</a></li>
+				</ul>
+			</nav>
+
+			<article class="panel docs-container ">
+				<h1>namespace: ashet.process</h1>
+				<section>
+					<h2>Documentation</h2>
+					<div class="doc-regular"><p>Syscalls related to processes</p></div>
+				</section>
+				<section>
+					<h2>Namespaces</h2>
+					<ul>
+						<li><a href="#ashet.process.thread">thread</a></li>
+						<li><a href="#ashet.process.debug">debug</a></li>
+						<li><a href="#ashet.process.memory">memory</a></li>
+						<li><a href="#ashet.process.monitor">monitor</a></li>
+					</ul>
+				</section>
+				<section>
+					<h2>Types</h2>
+					<ul>
+						<li><a href="#ashet.process.ExitCode">ExitCode</a></li>
+					</ul>
+				</section>
+				<section>
+					<h2>System Calls</h2>
+					<dl>
+						<div>
+							<dt><code><span class="tok-kw">syscall</span>
+							<a href="#ashet.process.get_file_name"><span class="tok-name">get_file_name</span></a>(<span class="tok-kw">in</span>
+							<span class="tok-name">target</span>: ?<a href="#ashet.Process"><span class="tok-type">Process</span></a>, <span class="tok-kw">out</span>
+							<span class="tok-name">file_name</span>: <span class="tok-type">str</span>)</code></dt>
+							<dd><div class="doc-regular"><p>Returns a pointer to the file name of the process.</p></div></dd>
+						</div>
+						<div>
+							<dt><code><span class="tok-kw">syscall</span>
+							<a href="#ashet.process.get_base_address"><span class="tok-name">get_base_address</span></a>(<span class="tok-kw">in</span>
+							<span class="tok-name">target</span>: ?<a href="#ashet.Process"><span class="tok-type">Process</span></a>, <span class="tok-kw">out</span>
+							<span class="tok-name">base_address</span>: <span class="tok-type">usize</span>)</code></dt>
+							<dd><div class="doc-regular"><p>Returns the base address of the process.</p></div></dd>
+						</div>
+						<div>
+							<dt><code><span class="tok-kw">syscall</span>
+							<a href="#ashet.process.get_arguments"><span class="tok-name">get_arguments</span></a>(<span class="tok-kw">in</span>
+							<span class="tok-name">target</span>: ?<a href="#ashet.Process"><span class="tok-type">Process</span></a>, <span class="tok-kw">in</span>
+							<span class="tok-name">argv</span>: ?[]<a href="#ashet.SpawnProcessArg"><span class="tok-type">SpawnProcessArg</span></a>, <span class="tok-kw">out</span>
+							<span class="tok-name">count</span>: <span class="tok-type">usize</span>)</code></dt>
+							<dd><div class="doc-regular"><p>Returns the arguments that were passed to this process in <code>Spawn</code>.</p></div></dd>
+						</div>
+						<div>
+							<dt><code><span class="tok-kw">syscall</span>
+							<a href="#ashet.process.terminate"><span class="tok-name">terminate</span></a>(<span class="tok-kw">in</span>
+							<span class="tok-name">exit_code</span>: <a href="#ashet.process.ExitCode"><span class="tok-type">process.ExitCode</span></a>) <span class="tok-kw">noreturn</span></code></dt>
+							<dd><div class="doc-regular"><p>Terminates the current process with the given exit code</p></div></dd>
+						</div>
+						<div>
+							<dt><code><span class="tok-kw">syscall</span>
+							<a href="#ashet.process.kill"><span class="tok-name">kill</span></a>(<span class="tok-kw">in</span>
+							<span class="tok-name">target</span>: <a href="#ashet.Process"><span class="tok-type">Process</span></a>)</code></dt>
+							<dd><div class="doc-regular"><p>Terminates a foreign process.
+								If the current process is passed, this function will not return</p></div></dd>
+						</div>
+					</dl>
+				</section>
+				<section>
+					<h2>Asynchronous Operations</h2>
+					<dl>
+						<div>
+							<dt><code><span class="tok-kw">async_call</span>
+							<a href="#ashet.process.Spawn"><span class="tok-name">Spawn</span></a>(<span class="tok-kw">in</span>
+							<span class="tok-name">dir</span>: <a href="#ashet.Directory"><span class="tok-type">Directory</span></a>, <span class="tok-kw">in</span>
+							<span class="tok-name">path</span>: <span class="tok-type">str</span>, <span class="tok-kw">in</span>
+							<span class="tok-name">argv</span>: []<span class="tok-kw">const</span>
+							<a href="#ashet.SpawnProcessArg"><span class="tok-type">SpawnProcessArg</span></a>, <span class="tok-kw">out</span>
+							<span class="tok-name">process</span>: <a href="#ashet.Process"><span class="tok-type">Process</span></a>)</code></dt>
+							<dd><div class="doc-regular"><p>Spawns a new process</p></div></dd>
+						</div>
+					</dl>
+				</section>
+			</article>
+		</main>
+		<main id="livedemo" class="panel">
+		</main>
+	</body>
+</html>

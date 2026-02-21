@@ -1,0 +1,264 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+/*************************************************
+ * Layout                                        *
+ *************************************************/
+
+body {
+    display: flex;
+    flex-direction: column;
+
+    gap: 1rem;
+    padding: 1rem;
+    
+    min-height: 100vh; /* ensure the body covers at least the whole screen */
+}
+
+header {
+    background-color: red;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 0.25rem;
+    gap: 1rem;
+}
+
+header ul {
+    display: flex;
+    flex-direction: row;
+    gap: 0.5rem;
+}
+
+header ul li {
+    display: inline-block;
+}
+
+header hr {
+    width: 1px;
+    display: block;
+    align-self: stretch;
+}
+
+header search {
+    width: 17em;
+    display: flex;
+    flex-direction: row;
+}
+
+header search input {
+    flex: 1;
+}
+
+main {
+    /* background-color: lime; */
+}
+
+main:not(:target) {
+    display: none !important;
+}
+
+main#wiki {
+    display: grid;
+
+    grid-template-columns: min-content auto;
+    grid-template-rows: max-content;
+
+    gap: 1rem;
+}
+
+main#syscalls {
+    display: grid;
+
+    grid-template-columns: 100%;
+    grid-template-rows: auto;
+
+    gap: 1rem;
+}
+
+main#livedemo {
+    flex: 1; /* make the live demo always be a screen-covering part*/
+}
+
+/*************************************************
+ * Styling                                       *
+ *************************************************/
+
+.panel {
+    padding: 0.5rem;
+    border: 2px ridge silver;
+    background-color: #EEE;
+    box-shadow: black 4px 4px 8px;
+}
+
+.panel.breakcrumbs {
+    padding: 0;
+}
+
+ul.breakcrumbs {
+    display: block;    
+}
+
+ul.breakcrumbs li {
+    padding: 0;
+    display: inline-block;
+    list-style: none;
+}
+
+ul.breakcrumbs li a {
+    padding: 0.5rem;
+    display: inline-block;
+}
+
+ul.breakcrumbs li:hover {
+    background-color: silver;
+}
+
+ul.breakcrumbs li:not(:first-of-type)::before {
+    position: relative;
+    left: -0.25em;
+    width: 0;
+    content: '.';
+    display: inline-block;
+    background-color: unset;
+    pointer-events: none;
+    text-align: center;
+}
+
+
+/*************************************************
+ * Tree View                                     *
+ *************************************************/
+
+ul.treeview {
+    padding-left: 1em;
+}
+
+ul.treeview li {
+    list-style-type: "❓";
+    white-space: nowrap;
+}
+
+ul.treeview li.folder {
+    list-style-type: "📂";
+    /* 📁 📂*/
+}
+
+ul.treeview li.file {
+    list-style-type: "📄";
+    /*📃📄📝📰🗎*/
+}
+
+ul.treeview li[data-indent="0"] {
+    margin-left: 0em;
+}
+
+ul.treeview li[data-indent="1"] {
+    margin-left: 1em;
+}
+
+ul.treeview li[data-indent="2"] {
+    margin-left: 2em;
+}
+
+ul.treeview li[data-indent="3"] {
+    margin-left: 3em;
+}
+
+ul.treeview li[data-indent="4"] {
+    margin-left: 4em;
+}
+
+ul.treeview li[data-indent="5"] {
+    margin-left: 5em;
+}
+
+ul.treeview li[data-indent="6"] {
+    margin-left: 6em;
+}
+
+ul.treeview li[data-indent="7"] {
+    margin-left: 7em;
+}
+
+ul.treeview li[data-indent="8"] {
+    margin-left: 8em;
+}
+
+ul.treeview li[data-indent="9"] {
+    margin-left: 9em;
+}
+
+div.flex-spacer {
+    flex: 1;
+    visibility: hidden;
+}
+
+/*************************************************
+ * Markdown Theming                              *
+ *************************************************/
+
+.markup-container {
+    /* TODO */
+}
+
+/*************************************************
+ * Code Doc Theming                              *
+ *************************************************/
+
+.docs-container {
+    /* TODO */
+}
+
+.docs-container h1 {
+    border-bottom: 1px dashed;
+    margin-bottom: 1em;
+}
+
+.docs-container h2 {
+    border-bottom: 1px solid;
+    margin-top: 1em;
+    margin-bottom: 0.5em;
+}
+
+.docs-container ul {
+    column-width: 15em;
+    margin-left: 2em;
+}
+
+.docs-container dl {
+    display: grid;
+    gap: 0.5em;
+    grid-template-columns: 100%;
+}
+
+.docs-container dl>div {
+    border: 1px solid;
+    padding: 0.5em;
+    border-color: #373737;
+}
+
+.docs-container dl dd p {
+    margin-left: 2rem;
+    margin-top: 0.5em;
+    margin-bottom: 0.5em;
+}
+
+/*************************************************
+ * Syntax Highlighting                           *
+ *************************************************/
+
+code .tok-kw {
+    color: blue;
+}
+
+code .tok-type {
+    color: slateblue;
+}
+
+code .tok-name {
+    color: purple;
+}
