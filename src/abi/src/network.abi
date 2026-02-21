@@ -586,7 +586,14 @@ namespace link {
     /// NOTE: This is an asynchronous call as adding IP addresses may require
     ///       communication with the NIC to set up filters. This could take
     ///       some time and thus, the operation was made overlapped.
+
     async_call AddAddress {
+        //? TODO:   Add a "force: bool" parameter and a new "error NetworkConflict" (ARP/DAD conflict)
+        //? Detail: IPv6 requires DAD (Neighbor Solicitation for the derived IP) before the address
+        //?         is fully usable. If DAD fails (someone else has the IP), the address must be marked
+        //?         as duplicated and not used.
+
+
         /// The interface which should receive a new IP binding.
         in interface: InterfaceId;
 
