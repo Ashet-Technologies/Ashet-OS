@@ -1,0 +1,286 @@
+
+//? Pending: namespace gui
+//? Pending: namespace io.serial
+//? Pending: namespace io.i2c
+
+
+namespace  link;
+enum       Interface : u16 { any = 0, ... }
+struct     InterfaceDescription { /* type, name, vendor, bandwidth, mtu, mac, ... */ }
+syscall    enumerate_interfaces { /* standard pattern */ }
+syscall    set_default_gateway { in ?Interface, IP }
+syscall    get_default_gateway { out ?Interface, out IP }
+syscall    set_dhcp_enabled { in Interface, in v4: ?bool; in v6: ?bool }
+syscall    get_dhcp_enabled { in Interface, out v4: bool; out v6: bool }
+syscall    get_description { in Interface, out InterfaceDescription }
+struct     Binding { type: IP_Type, value: union { ipv4: struct { addr: IPv4, mask: IPv4 },  ipv6: IPv6 } }
+syscall    enumerate_addresses { in Interface, in bindings: ?[]Binding; out count; }
+async_call AddAdress { in Interface, in Binding } (might require communication to external NICs)
+async_call RemoveAdress { in Interface, in Binding } (might require communication to external NICs)
+async_call Ping { in ?Interface; in IP; in ttl: u16; payload: bytebuf; out answer: IP; out duration: clock.Duration; out hops: u32; count: usize }
+async_call RequestDhcp4Lease { in Interface; ... }
+async_call RequestDhcp6Lease { in Interface; ... }
+syscall    get_dhcp4_info { in Interface; ... }
+syscall    get_dhcp6_info { in Interface; ... }
+
+namespace  raw;
+resource   RawSocket { }
+syscall    create_raw_socket { in Interface }
+async_call ReceivePacket { in RawSocket; in bytebuf; out usize; out when: clock.Absolute; }
+async_call SendPacket { in RawSocket; in bytestr; }
+
+
+Ashet OS networking model (current intent):
+
+- Interfaces:
+  - Interface IDs are u32, monotonic, stable per boot, never reused.
+  - Validity is ephemeral (until next yield).
+  - Interface disappearance yields error.Gone on dependent objects.
+  - Interfaces are composite objects (link + IP + routing + DHCP).
+  - Subsystems (IPv4, IPv6, DHCP, etc.) can be individually enabled/disabled.
+
+- Addressing:
+  - Multiple IPv4 and IPv6 addresses per interface.
+  - Address model is (IP address + prefix_len) for both v4 and v6.
+  - Adding an address implicitly creates a connected route.
+  - Addresses have mandatory lifetimes; AddAddress is upserting.
+  - Address metadata includes origin (manual, dhcpv4, dhcpv6, slaac, autoconfig).
+
+- Routing:
+  - Explicit routing table is exposed.
+  - Routes are (dest prefix, gateway?, interface, priority).
+  - Routes have origin and optional lifetime.
+  - Kernel auto-manages DHCP/SLAAC routes unless subsystem disabled.
+  - No special “default gateway” concept; defaults are 0/0 or ::/0 routes.
+  - Route resolution: longest prefix, then priority, then insertion order.
+
+- Socket ↔ interface binding:
+  - UDP/TCP sockets must bind to an IP; may also bind to an interface.
+  - Interface binding is a hard restriction.
+  - Address-only bind uses routing dynamically.
+  - Address+interface bind errors if no matching route exists.
+  - Raw sockets must always bind to exactly one interface.
+
+- Ports:
+  - Port scope is (IP, port, interface).
+  - Same IP+port allowed on different interfaces.
+  - No port reuse semantics (no SO_REUSE* equivalents).
+
+- Async operation model:
+  - One in-flight Send and one in-flight Receive per socket.
+  - UDP/TCP Bind and UDP Connect/Disconnect are synchronous.
+  - TCP Connect is async; multiple concurrent connects allowed (Happy Eyeballs).
+  - Accept is async; multiple accepts allowed on a listener.
+
+- TCP:
+  - Separate TcpListener and TcpSocket resources.
+  - Only full Disconnect is exposed (no half-close).
+  - Receive is byte-stream only, with read_all flag.
+  - Send requires buffer to stay valid until completion.
+  - Partial send/receive only occurs on FIN/RST.
+  - partial_reason enum distinguishes regular/short/FIN/RST.
+
+- UDP:
+  - One receive == exactly one datagram.
+  - Unified ReceiveFrom with optional peer filtering.
+  - Truncation is allowed; return written size + actual datagram size.
+  - Packet metadata includes arrival time and interface.
+  - ICMP errors are surfaced.
+
+- ICMP handling:
+  - Hard ICMP errors fail in-flight ops.
+  - Soft ICMP errors latch on the socket.
+  - Small FIFO of latched ICMP errors is kept.
+  - Details queried via get_last_icmp_error.
+
+- DNS:
+  - Two APIs:
+    - High-level resolve (A/AAAA only).
+    - Low-level record query.
+  - Always async.
+  - Parallel querying of multiple DNS servers.
+  - Kernel caching allowed; no_cache flag bypasses it.
+  - Per-interface DNS via interface-associated servers.
+
+- Raw sockets:
+  - Two kinds: Ethernet-level and IP-level (v4/v6).
+  - Ingress only; no interception.
+  - Raw sockets are observers, not interceptors.
+  - Ethernet raw sees full frames.
+  - IP raw parses/builds IP headers.
+  - Filtering supported.
+
+- Ping:
+  - ICMP Echo only.
+  - Single probe per call.
+  - Optional interface binding.
+  - Caller supplies TTL and timeout.
+
+- Errors:
+  - Shared base networking error vocabulary.
+  - Precision over convenience.
+  - Driver errors collapsed into IoError.
+
+- Resource teardown:
+  - Destroying sockets cancels ops immediately, no protocol close.
+  - Destroying interfaces yields error.Gone to dependents.
+
+
+namespace link {
+
+    //? TODO:        field prefer_temporary: bool;
+
+}
+
+namespace dhcp6 {
+
+    enum OptionCode : u16 {
+        item clientid = 1;
+        item serverid = 2;
+        item ia_na = 3;
+        item ia_ta = 4;
+        item ia_addr = 5;
+        item oro = 6;
+        item preference = 7;
+        item elapsed_time = 8;
+        item relay_message = 9;
+        item unicast = 12;
+        item status_code = 13;
+        item rapid_commit = 14;
+        item user_class = 15;
+        item vendor_class = 16;
+        item vendor_opts = 17;
+        item interface_id = 18;
+        item reconfigure_msg = 19;
+        item reconfigure_accept = 20;
+        item dns_recursive_name_server = 23;
+        item domain_search_list = 24;
+        item ia_pd = 25;
+        item iaprefix = 26;
+        ...
+    }
+
+    struct Option {
+        field code: OptionCode;
+        field value: []const u8;
+    }
+
+    bitstruct RequestKind : u8 {
+        field addresses: bool;
+        field prefixes: bool;
+        reserve u6 = 0;
+    }
+
+    struct IaAddress {
+        field address: IPv6;
+        field preferred_until: clock.Absolute;
+        field valid_until: clock.Absolute;
+    }
+
+    struct IaPrefix {
+        field prefix: IPv6;
+        field prefix_len: u8;
+        field preferred_until: clock.Absolute;
+        field valid_until: clock.Absolute;
+    }
+
+    struct IdentityAssociationNA {
+        field iaid: u32;
+        field renew_at: clock.Absolute;
+        field rebind_at: clock.Absolute;
+        field addresses: []const IaAddress;
+    }
+
+    struct IdentityAssociationPD {
+        field iaid: u32;
+        field renew_at: clock.Absolute;
+        field rebind_at: clock.Absolute;
+        field prefixes: []const IaPrefix;
+    }
+
+    struct Lease {
+        field server: IPv6;
+        field server_duid: []const u8;
+        field client_duid: []const u8;
+
+        field ia_na: []const IdentityAssociationNA;
+        field ia_pd: []const IdentityAssociationPD;
+
+        field dns_servers: []const IPv6;
+        field options: []const Option;
+
+        field issued_at: clock.Absolute;
+        field renew_at: clock.Absolute;
+        field rebind_at: clock.Absolute;
+        field valid_until: clock.Absolute;
+    }
+
+    enum AutoUpdateMode : u8 {
+        item disabled = 0;
+        item addresses_only = 1;
+        item prefixes_only = 2;
+        item addresses_and_prefixes = 3;
+        item full = 4;
+    }
+
+    async_call RequestLease {
+        in  interface: link.InterfaceId;
+        in  deadline: clock.Absolute;
+        in  server: IPv6;
+        in  request: RequestKind;
+        in  options: []const Option;
+        in  information_only: bool;
+        in  update_mode: AutoUpdateMode;
+
+        out lease: Lease;
+
+        error InvalidInterface, Gone, Timeout, InvalidValue, InProgress, AddressConflict, Rejected, MissingRoute, MissingSourceAddress, SubsystemDisabled, LinkDown, IoError, SystemResources;
+    }
+
+    async_call ReleaseLease {
+        in interface: link.InterfaceId;
+        in force: bool;
+        in deadline: clock.Absolute;
+
+        error InvalidInterface, Gone, Timeout, InvalidValue, InProgress, SubsystemDisabled, LinkDown, IoError, SystemResources;
+    }
+
+    syscall get_info {
+        in  interface: link.InterfaceId;
+        out info: Lease;
+
+        error InvalidInterface, NotAvailable, SubsystemDisabled;
+    }
+
+    async_call WaitForUpdate {
+        in  interface: link.InterfaceId;
+        out info: ?Lease;
+
+        error InvalidInterface, Gone, SystemResources;
+    }
+}
+
+
+namespace neighborhood {
+
+    /// Enumerates the ways the kernel can update/edit the list of neighbours.
+    enum UpdateKind : u8 {
+        item added   = 0;
+        item removed = 1;
+        item changed = 2;
+        item expired = 3;
+        item flushed = 4;
+    }
+
+    /// Waits until the kernel updates/edits the list of neighbors.
+    async_call WaitForUpdate {
+        in  interface: link.InterfaceId;
+
+        /// NOTE: Cannot be `IP.Type.any`.
+        in  protocol: IP.Type;
+        out kind: UpdateKind;
+        out entry: Entry;
+
+        error InvalidInterface, Gone, SystemResources, SubsystemDisabled;
+    }
+}

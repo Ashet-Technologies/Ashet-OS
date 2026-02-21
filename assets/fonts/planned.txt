@@ -7,3 +7,5 @@ planned:
   https://font.gohu.org/
   https://terminus-font.sourceforge.net/
   https://int10h.org/oldschool-pc-fonts/
+  https://en.wikipedia.org/wiki/Hershey_fonts
+  

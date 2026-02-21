@@ -1,0 +1,2279 @@
+
+/// An address of the IPv4 internet protocol.
+struct IPv4 {
+    /// The four bytes of the IP address.
+    ///
+    /// NOTE: This is a u32 that is always encoded in network byte order.
+    field addr: [4]u8 ; //? TODO: align(4)
+}
+
+/// An address of the IPv6 internet protocol.
+struct IPv6 {
+    /// The 16 bytes of the IP address.
+    ///
+    /// NOTE: This is always encoded in network byte order.
+    field addr: [16]u8; //? TODO: align(4)
+
+    /// The interface for which this IP address is valid.
+    ///
+    /// NOTE: For non-link-local addresses, scope must be `link.InterfaceId.any`.
+    field scope: link.InterfaceId;
+}
+
+/// A polymorphic IP address that can be both IPv4 or IPv6.
+struct IP {
+    /// Defines which field of `addr` is active.
+    ///
+    /// NOTE: Must be `Type.ipv4` or `Type.ipv6`.
+    field type: Type;
+
+    /// Union of the possible address types.
+    field addr: AnyAddr;
+
+    enum Type : u8 {
+        item ipv4 = 0;
+        item ipv6 = 1;
+
+        /// Not a concrete type of IP type, but a sentinel different
+        /// kernel APIs use for defining that they don't scope a syscall or
+        /// a operation to a specific IP type.
+        item any  = 255;
+    }
+
+    union AnyAddr {
+        /// Active when `IP.type == Type.ipv4`.
+        field v4: IPv4;
+
+        /// Active when `IP.type == Type.ipv6`.
+        field v6: IPv6;
+    }
+}
+
+/// An endpoint defines a connection target for TCP and UDP connections.
+/// It is a tuple formed of an IP address and a port.
+struct EndPoint {
+    /// IP address of the connection endpoint.
+    field ip: IP;
+
+    /// The port number of the connection endpoint.
+    ///
+    /// NOTE: Uses host byte order.
+    field port: u16;
+}
+
+///
+/// TODO: Write about the general idea of network interfaces.
+///
+/// TODO: Talk about kernel subsystems being enabled/disabled and what each subsystem
+///       is supposed to to.
+///
+/// Kernel Subsystems
+/// =================
+///
+/// IPv4: The kernel's built-in IPv4 stack.
+///     This subsystem implements a regular IPv4 stack. If disabled, this interface
+///     won't allow IPv4 operation through kernel interfaces anymore.
+///
+///     NOTE: Disabling the IPv4 stack for an interface will remove all IPv4 addresses
+///           and routes for this interface.
+/// IPv6:
+///     This subsystem implements a regular IPv6 stack. If disabled, this interface
+///     won't allow IPv6 operation through kernel interfaces anymore.
+///
+///     NOTE: Disabling the IPv6 stack for an interface will remove all IPv6 addresses
+///           and routes for this interface.
+///
+/// DHCPv4:
+/// TODO: Write subsystem docs
+///     This subsystem automatically performs DHCP management for the interface.
+///     If enabled, the kernel automatically requests and refreshes DHCP leases,
+///     and manages the routes.
+///
+///     NOTE: This subsystem is disabled by default.
+///
+/// DHCPv6:
+/// TODO: Write subsystem docs
+///
+///     NOTE: This subsystem is disabled by default.
+///
+/// SLAAC:
+/// TODO: Write subsystem docs
+///
+///     NOTE: This subsystem is enabled by default.
+///
+///
+/// TODO: Write how routing works in Ashet OS.
+///
+namespace link {
+    /// Unique identifier of a network interface.
+    ///
+    /// NOTE: Interface ids are allocated in a monotonically increasing
+    ///       way, and will be stable until a network interface is removed
+    ///       from the kernel.
+    ///
+    /// NOTE: Id allocation will never allocate any of the named values inside this
+    ///       enumeration.
+    ///
+    /// NOTE: Interface ids received from any kernel syscall or overlapped operation
+    ///       are ephemeral and are only guaranteed to be valid until the next yielding
+    ///       syscall.
+    ///
+    /// NOTE: Except `loopback`, the enumeration order of interfaces is unspecified
+    ///       and the ids cannot be assumed stable between reboots.
+    enum InterfaceId : u32 {
+        /// The loopback interface is a virtual interface
+        /// that makes all sent packets be received by the same
+        /// interface again.
+        ///
+        /// This way, sockets can be bound to a local interface
+        /// and communicate without affecting any external systems.
+        ///
+        /// NOTE: The loopback interface has the IP addresses `127.0.0.1/8`
+        ///       and `::1/128` by default.
+        ///
+        ///       The kernel also adds a default connected route for these
+        ///       two addresses.
+        item loopback = 0;
+
+        /// A sentinel value that can be used to annotate the absence of a
+        /// specific interface.
+        ///
+        /// NOTE: This is not a true interface that can be used to query
+        ///       information, but is a required "workaround" for IPv6
+        ///       scopes to be able to encode that an IP address isn't
+        ///       scoped to a specific interface.
+        ///
+        /// NOTE: Using this on all APIs that don't explicitly mention it yields
+        ///       the error `InvalidInterface`.
+        item any = 0xFFFFFFFF;
+
+        ...
+    }
+
+    /// Enumeration of all supported network interface types.
+    enum InterfaceType : u8 {
+        /// The interface is supported by the kernel, but the type
+        /// of network interface does not fit any of the other categories.
+        item unknown = 0;
+
+        /// The interface is a loopback interface.
+        item loopback = 1;
+
+        /// The interface is an Ethernet (IEEE 802.3) interface.
+        item ethernet = 2;
+
+        /// The interface is virtual and is controlled by software.
+        item virtual = 3;
+
+        /// The interface is a WLAN (IEEE 802.11) interface.
+        item wifi = 4;
+
+        /// The interface is based on IEEE 802.15.4 (e.g. 6LoWPAN/Thread/Zigbee-style links).
+        item ieee_802_15_4 = 5;
+
+        /// The interface is Bluetooth-based (e.g. PAN/BNEP or IPv6-over-BLE/IPSP).
+        item bluetooth = 6;
+
+        /// The interface is point-to-point (e.g. PPP/SLIP). Usually has no meaningful link-layer address.
+        item point_to_point = 7;
+
+        /// The interface is InfiniBand-based (IPoIB).
+        item infiniband = 8;
+
+        /// The interface is a Wireless Body Area Network (WBAN), typically IEEE 802.15.6.
+        ///
+        /// NOTE: The underlying PHY may be narrowband, UWB, or body-coupled (HBC),
+        ///       depending on the device.
+        item wban = 9;
+    }
+
+    /// The physical address of a network interface.
+    ///
+    /// NOTE: This isn't just a MAC address, but it can hold several
+    ///       different types of address.
+    struct PhysicalAddress {
+        /// Length of the physical address in bytes.
+        field len: u8;
+
+        /// The type of the physical address. Specifies how `bytes` are interpreted.
+        field type: Type;
+
+        /// Describes how the address value was assigned/generated (if known).
+        ///
+        /// NOTE: This is intentionally generic. For example, Bluetooth LE privacy
+        ///       addresses (static/resolvable/non-resolvable) can be mapped onto
+        ///       the `random_*` variants here.
+        field assignment: Assignment;
+
+        /// Reserved. Must be zero.
+        field _reserved0: u8 = 0;
+
+        /// Contains the bytes of the physical address.
+        ///
+        /// NOTE: The first `len` bytes are valid. All bytes beyond the
+        ///       first `len` bytes must be zero.
+        ///
+        /// NOTE: These bytes must be interpreted according to `type`.
+        field bytes: [20]u8;
+
+        /// Describes how a physical address was assigned/generated.
+        ///
+        /// NOTE: This is determined by the kernel in a best-effort fashion, and
+        ///       may be `unknown` even if the address format is known.
+        enum Assignment: u8 {
+            /// The kernel does not know how this address was assigned.
+            item unknown = 0;
+
+            /// Universally administered / externally assigned identifier.
+            ///
+            /// NOTE: For EUI-48/EUI-64 this typically means IEEE-assigned (U/L bit = 0).
+            item universal = 1;
+
+            /// Locally administered identifier (not globally assigned).
+            ///
+            /// NOTE: For EUI-48/EUI-64 this typically means U/L bit = 1.
+            item local = 2;
+
+            /// Randomly generated but expected to remain stable for long periods
+            /// (until reconfigured/reset).
+            ///
+            /// NOTE: Bluetooth LE "Static Random Address" maps here.
+            item random_stable = 3;
+
+            /// Randomly generated and expected to rotate over time for privacy.
+            ///
+            /// NOTE: Wi-Fi MAC randomization and Bluetooth LE "Non-Resolvable Private Address" map here.
+            item random_rotating = 4;
+
+            /// Randomly generated and expected to rotate, but can be mapped back to a stable
+            /// identity by peers that possess a shared secret / resolver.
+            ///
+            /// NOTE: Bluetooth LE "Resolvable Private Address" maps here.
+            item random_rotating_resolvable = 5;
+        }
+
+        /// Enumeration of possible types for physical link addresses.
+        enum Type: u8 {
+            /// Special marker that encodes `?PhysicalAddress == null`.
+            ///
+            /// NOTE: `absent` means the `PhysicalAddress` exists in a logical sense, but is empty.
+            ///       `null` means the `PhysicalAddress` value itself is absent/missing.
+            ///
+            /// NOTE: All addresses of this type are empty (zero bytes long).
+            ///
+            /// NOTE: A `PhysicalAddress` `null` value must be fully zeroed out:
+            ///       - `len = 0`
+            ///       - `assignment = Assignment.unknown`
+            ///       - `_reserved0 = 0`
+            ///       - `bytes = {0} ** 20`.
+            item null = 0;
+
+            /// This type marks an absent physical address.
+            ///
+            /// This typically means the associated interface does not support physical addresses at all.
+            ///
+            /// NOTE: All addresses of this type are empty (zero bytes long).
+            ///
+            /// NOTE: This is a special case to handle links that have no address,
+            ///       but without introducing "out of band" communication for absent
+            ///       physical addresses.
+            ///
+            /// NOTE: This is distinct from `null` in that a `PhysicalAddress` exists but is empty,
+            ///       while `null` means the `PhysicalAddress` value does not exist.
+            ///
+            /// NOTE: For `absent`, the struct must satisfy:
+            ///       - `len = 0`
+            ///       - `assignment = Assignment.unknown`
+            ///       - `_reserved0 = 0`
+            ///       - `bytes = {0} ** 20`.
+            item absent = 1;
+
+            /// A physical address is available, but the kernel cannot represent the type of address.
+            ///
+            /// NOTE: Any `len` may be valid for this kind of physical address.
+            item unknown = 2;
+
+            /// An address from the EUI-48 namespace. This is typically known as a MAC address.
+            ///
+            /// NOTE: These addresses are typically used with Ethernet or WLAN interfaces.
+            ///
+            /// NOTE: `PhysicalAddress.len` must be `6`.
+            ///
+            /// NOTE: See RFC 9542 for more information on this address type.
+            item eui_48 = 3;
+
+            /// An address from the EUI-64 namespace. This is typically known as a MAC address.
+            ///
+            /// NOTE: These addresses are typically used with 802.15.4 based protocols (e.g. ZigBee).
+            ///
+            /// NOTE: `PhysicalAddress.len` must be `8`.
+            ///
+            /// NOTE: See RFC 9542 for more information on this address type.
+            item eui_64 = 4;
+
+            /// An IPoIB (IP over InfiniBand) link-layer address.
+            ///
+            /// NOTE: This is the 20-byte "link-layer address" used by IPoIB for IPv4/ARP
+            ///       and for IPv6 Neighbor Discovery source/target link-layer address options.
+            ///
+            /// Layout (network byte order):
+            /// - byte 0:   Reserved flags (must be zero on send; ignore on receive)
+            /// - bytes 1-3: Queue Pair Number (QPN, 24-bit)
+            /// - bytes 4-19: Port GID (16 bytes)
+            ///
+            /// NOTE: This address is not guaranteed to be stable across reboots or even
+            ///       network interface resets because the QPN may change.
+            ///
+            /// NOTE: In IPv6 Neighbor Discovery, the on-wire option is padded to 24 bytes
+            ///       total; the extra padding is not part of this 20-byte address.
+            ///
+            ///       See RFC 4391, Section 9.1.1 and Section 9.3.
+            ///
+            /// NOTE: `PhysicalAddress.len` must be `20`.
+            item infiniband = 5;
+
+            /// A local WBAN link-layer identifier.
+            ///
+            /// NOTE: `PhysicalAddress.len` must be `2`.
+            ///
+            /// Interpretation:
+            /// - byte 0: WBAN / BAN identifier (local scope)
+            /// - byte 1: Node identifier within that WBAN
+            ///
+            /// NOTE: This is not a standalone IEEE-defined 16-bit address format.
+            ///       It is a packing of the IEEE 802.15.6 WBAN_ID + Node_ID fields.
+            ///
+            /// NOTE: This address is *not* globally unique. It is only meaningful within
+            ///       the given interface's WBAN.
+            ///
+            /// NOTE: This is intended to cover IEEE 802.15.6 style WBAN links, including
+            ///       Human Body Communication (HBC) PHY variants.
+            item wban_local = 6;
+
+            /// IEEE 802.15.4 short address (16-bit).
+            ///
+            /// NOTE: `PhysicalAddress.len` must be `2`.
+            ///
+            /// NOTE: The value logically encodes a `u16` in big endian format.
+            item ieee_802_15_4_short = 7;
+        }
+    }
+
+    /// A bit set of several subsystems that the kernel
+    /// can provide per interface.
+    bitstruct SubsystemSet : u32 {
+        field ipv4: bool;
+        field ipv6: bool;
+        field dhcp4: bool;
+        field dhcp6: bool;
+        field slaac: bool;
+
+        reserve u27 = 0;
+    }
+
+    struct InterfaceDescription {
+        /// The type of this network interface.
+        field type: InterfaceType;
+
+        /// The physical address this interface has.
+        field address: PhysicalAddress;
+
+        /// The display name of the network interface.
+        ///
+        /// NOTE: The lifetime of this string is bound to the lifetime
+        ///       of the network interface. Assume it is only valid between
+        ///       obtaining the interface description from the kernel and the
+        ///       next thread yield.
+        field name: str;
+
+        /// Name of the NIC vendor or an empty string if unknown.
+        ///
+        /// NOTE: The lifetime of this string is bound to the lifetime
+        ///       of the network interface. Assume it is only valid between
+        ///       obtaining the interface description from the kernel and the
+        ///       next thread yield.
+        field vendor: str;
+
+        /// The maximum bandwidth this interface can theoretically achieve
+        /// in bits per second.
+        ///
+        /// NOTE: For the loopback interface, this value is always zero.
+        ///
+        /// NOTE: For virtual interfaces, the driver shall set this value
+        ///       to either a real value or zero, if no upper bound is known.
+        field max_bandwidth: u64;
+
+        /// The current bandwidth this interface has negotiated with the
+        /// connected network in bits per second.
+        ///
+        /// NOTE: If zero, the value cannot be determined for one of several reasons:
+        ///       - The link is down.
+        ///       - The driver has no way to query the current bandwidth.
+        ///       - There is no physically realistic value (e.g. for virtual or loopback interfaces).
+        field current_bandwidth: u64;
+
+        /// The set of currently enabled kernel subsystems.
+        field enabled_subsystems: SubsystemSet;
+    }
+
+    /// Enumerates the currently available network interfaces.
+    syscall enumerate_interfaces {
+        /// Buffer that shall receive the list of interfaces or `null` if the
+        /// total amount of interfaces should be queried.
+        in  list: ?[]InterfaceId;
+
+        /// If `list` is not `null`, returns the number of elements written to `list`,
+        /// otherwise it returns the total number of currently available interfaces.
+        out count: usize;
+    }
+
+    /// Queries the description of an interface.
+    syscall get_description {
+        in  interface: InterfaceId;
+
+        out description: InterfaceDescription;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+    }
+
+    /// Queries the physical address for the interface.
+    syscall get_physical_address {
+        in  interface: InterfaceId;
+
+        out address: PhysicalAddress;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+    }
+
+    /// Attempts to change the physical address for an interface.
+    async_call SetPhysicalAddress {
+        in  interface: InterfaceId;
+
+        in  address: PhysicalAddress;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// The underlying `interface` was removed during this operation.
+        error Gone;
+
+        /// The interface does not allow changing its physical address.
+        error Unsupported;
+
+        error SystemResources;
+    }
+
+    /// Enables or disables kernel subsystems for an interface.
+    ///
+    /// NOTE: The two sets `enable` and `disable` must be disjoint and
+    ///       must not contain overlapping subsystems.
+    syscall control_subsystems {
+        /// The interface for which kernel subsystems should be enabled
+        /// or disabled.
+        in interface: InterfaceId;
+
+        /// Every subsystem in this set will be started.
+        in enable: SubsystemSet;
+
+        /// Every subsystem in this set will be stopped.
+        in disable: SubsystemSet;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// `enable` and `disable` are overlapping sets and conflict
+        /// in their semantics.
+        error InvalidValue;
+    }
+
+    /// Queries the currently enabled subsystems for the given
+    /// interface.
+    syscall get_subsystems {
+        in  interface: InterfaceId;
+
+        /// The set of all enabled network subsystems for `interface`.
+        out enabled: SubsystemSet;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+    }
+
+    //? IP Addressing
+
+    /// Enumeration of potential sources for IP addresses.
+    enum AddressOrigin : u8 {
+        /// The IP address was manually added with `AddAddress`.
+        item manual = 0;
+
+        /// The IP address was assigned by the DHCPv4 network subsystem.
+        item dhcp4 = 1;
+
+        /// The IP address was assigned by the DHCPv6 network subsystem.
+        item dhcp6 = 2;
+
+        /// The IP address was assigned by the SLAAC network subsystem.
+        item slaac = 3;
+
+        /// The IP address was assigned automatically by the kernel through
+        /// configuration files.
+        item autoconfig = 4;
+    }
+
+    /// A binding of an IP address to a network interface.
+    struct AddressBinding {
+        /// The IP address that is bound.
+        field address: IP;
+
+        /// The prefix of the address. Defines which prefix is
+        /// reachable through the interface directly without routing.
+        ///
+        /// NOTE: Must be ≤ 32 for IPv4.
+        ///
+        /// NOTE: must be ≤ 128 for IPv6.
+        field prefix_len: u8;
+
+        /// The origin of the IP address.
+        ///
+        /// NOTE: `AddAddress` will ignore this field and always
+        ///       use `AddressOrigin.manual`.
+        field origin: AddressOrigin;
+
+        /// The lifetime of the IP address.
+        ///
+        /// After this timestamp is reached by `clock.monotonic`, the IP address
+        /// will be automatically removed by the kernel.
+        ///
+        /// NOTE: The kernel will also automatically remove the associated connected route.
+        ///
+        /// NOTE: If an IP address should not expire, pass `clock.Absolute.infinity`.
+        field valid_until: clock.Absolute;
+    }
+
+    /// Enumerates the currently available IP addresses for an interface.
+    syscall enumerate_addresses {
+        /// The interface to query.
+        in  interface: InterfaceId;
+
+        /// Buffer that shall receive the list of address bindings or `null` if the
+        /// total amount of bindings should be queried.
+        in  bindings: ?[]AddressBinding;
+
+        /// If `bindings` is not `null`, returns the number of elements written to `bindings`,
+        /// otherwise it returns the total number of currently available bindings.
+        out count: usize;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+    }
+
+    /// Adds a new IP address to an interface.
+    ///
+    /// NOTE: This operation will implicitly add a new route to the routing
+    ///       table based off (`interface`, `binding.address`, `binding.prefix_len`).
+    ///
+    ///       The route will use the prefix derived from `binding.address` and will
+    ///       set the `IPv6.scope` for the `Route.network` to `InterfaceId.any`.
+    ///
+    ///       This route will have `RouteOrigin.connected`.
+    ///
+    /// NOTE: This operation is upserting on `binding.address` and will
+    ///       replace the properties of the current address with those from
+    ///       `binding`.
+    ///       This will also update the connected route in the routing table.
+    ///
+    /// NOTE: This is an asynchronous call as adding IP addresses may require
+    ///       communication with the NIC to set up filters. This could take
+    ///       some time and thus, the operation was made overlapped.
+
+    async_call AddAddress {
+        //? TODO:   Add a "force: bool" parameter and a new "error NetworkConflict" (ARP/DAD conflict)
+        //? Detail: IPv6 requires DAD (Neighbor Solicitation for the derived IP) before the address
+        //?         is fully usable. If DAD fails (someone else has the IP), the address must be marked
+        //?         as duplicated and not used.
+
+
+        /// The interface which should receive a new IP binding.
+        in interface: InterfaceId;
+
+        /// The binding specification for the IP address.
+        in binding: AddressBinding;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// The underlying `interface` was removed during this operation.
+        error Gone;
+
+        /// Binding is not a valid value.
+        ///
+        /// This could be due to the following reasons:
+        /// - `binding.address` is not valid.
+        /// - `binding.prefix_len` cannot be applied to `binding.address`.
+        /// - `binding.valid_until` is in the past.
+        /// - `binding.address.addr.ipv6.scope` is not `interface` for link-local IPv6 addresses.
+        /// - `binding.address.addr.ipv6.scope` is not `InterfaceId.any` for non-link-local IPv6 addresses.
+        error InvalidValue;
+
+        /// There was an i/o error that lead to the failure of this operation.
+        error IoError;
+
+        /// The IPv4 or IPv6 network subsystem is disabled and the address type can't be used on this interface.
+        error SubsystemDisabled;
+
+        error SystemResources;
+    }
+
+    /// Removes an address from the interface.
+    ///
+    /// NOTE: This operation will implicitly remove the connected route from the routing
+    ///       table with the key (`interface`, prefix address derived from `address`, `RouteOrigin.connected`).
+    ///
+    /// NOTE: This is an asynchronous call as adding IP addresses may require
+    ///       communication with the NIC to set up filters. This could take
+    ///       some time and thus, the operation was made overlapped.
+    ///
+    /// NOTE: If `address` does not exist on `interface`, the operation does nothing.
+    ///
+    /// LORE: This operation has no subsystem failure possible as removing an address
+    ///       is idempotent for non-existing addresses, thus there's no reason to
+    ///       care for this error. The final outcome is the same: The address doesn't
+    ///       exist on the interface.
+    async_call RemoveAddress {
+        /// The interface which should have an address removed.
+        in interface: InterfaceId;
+
+        /// The address that shall be removed.
+        ///
+        /// NOTE: As for each address, only a single binding can exist, we just need
+        ///       the address to remove the IP binding.
+        ///
+        /// NOTE: If this is an IPv6 address, `scope` must match the rules for valid IPv6
+        ///       addressed and `scope` must be either `interface` or `InterfaceId.any`.
+        in address: IP;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// The underlying `interface` was removed during this operation.
+        error Gone;
+
+        /// `address` is not valid.
+        error InvalidValue;
+
+        /// There was an i/o error that lead to the failure of this operation.
+        error IoError;
+
+        error SystemResources;
+    }
+
+    //? Routing
+
+    /// Enumeration of potential origins for routes.
+    enum RouteOrigin : u8 {
+        /// The route was manually created with `add_route`.
+        item manual = 0;
+
+        /// The route was created by the DHCPv4 network subsystem.
+        item dhcp4 = 1;
+
+        /// The route was created by the DHCPv6 network subsystem.
+        item dhcp6 = 2;
+
+        /// The route was created by the SLAAC network subsystem.
+        item slaac = 3;
+
+        /// The route was created by the kernel through configuration files.
+        item autoconfig = 4;
+
+        /// The route was created by the kernel when adding an IP address
+        /// to a network interface.
+        item connected = 5;
+    }
+
+    /// A route describes rules on where to send IP packets.
+    ///
+    /// A route is valid if:
+    /// - `network.type` is `gateway.type`.
+    /// - `prefix_len` is valid for `network.type`.
+    /// - `valid_until` is in the future.
+    /// - If the route is an IPv6 route:
+    ///   - `network.scope` is `InterfaceId.any`.
+    ///   - `gateway.scope` is `interface` for all link-local addresses.
+    ///   - `gateway.scope` is `InterfaceId.any` for all other addresses.
+    struct Route {
+        /// Defines the target network for this route.
+        ///
+        /// NOTE: This value is only semantically valuable together with `prefix_len`.
+        ///
+        /// NOTE: For IPv6, `scope` must be set to `InterfaceId.any` to prevent conflicting
+        ///       definitions with `interface`.
+        field network: IP;
+
+        /// Defines how many bits of the IP in `network` identify the target network.
+        ///
+        /// NOTE: Must be ≤ 32 for IPv4.
+        ///
+        /// NOTE: must be ≤ 128 for IPv6.
+        field prefix_len: u8;
+
+        /// Defines where the next-hop for the target network is and
+        /// sends the packets this way.
+        ///
+        /// NOTE: If set to the unspecified IP (`0.0.0.0` or `::`), the
+        ///       route defines an on-link route and target addresses should
+        ///       be discovered via neighbor discovery (ARP for IPv4, NDP for IPv6).
+        ///
+        /// NOTE: If not set to an unspecified IP, the address must be a valid
+        ///       unicast address.
+        ///
+        /// NOTE: If gateway is a link-local IPv6 address, the `scope` must be the
+        ///       `interface` of the route.
+        ///
+        /// NOTE: `gateway.type` must match `network.type`.
+        field gateway: IP;
+
+        /// The interface that will be used for sending the packets to the target network.
+        field interface: InterfaceId;
+
+        /// The priority is a tie-breaker for when multiple rules would match
+        /// with the same prefix, but different interfaces.
+        ///
+        /// Higher priorities win.
+        ///
+        /// NOTE: When two routes with the same prefix and priority match,
+        ///       the first inserted route is taken.
+        field priority: u16;
+
+        /// The source system that added this route to the routing table.
+        ///
+        /// NOTE: `add_route` will ignore the value and will always add a route
+        ///       with `RouteOrigin.manual`.
+        field origin: RouteOrigin;
+
+        /// The lifetime of the route.
+        ///
+        /// After this timestamp is reached by `clock.monotonic`, the route
+        /// will be automatically removed by the kernel.
+        ///
+        /// NOTE: If a route should not expire, pass `clock.Absolute.infinity`.
+        field valid_until: clock.Absolute;
+    }
+
+    /// Enumerates the routing table.
+    ///
+    /// NOTE: The table is returned ordered longest to shortest prefix,
+    ///       highest-to-lowest priority, then retains insertion order.
+    ///
+    /// LORE: Enumerating routes ordered is cheap for the kernel as it
+    ///       has to keep the table ordered in-memory anyways for efficient
+    ///       evaluation, and thus we can expose this property into userland.
+    syscall enumerate_routes {
+        /// Buffer that shall receive the list of routes or `null` if the
+        /// total amount of routes should be queried.
+        in  routes: ?[]Route;
+
+        /// If `routes` is not `null`, returns the number of elements written to `routes`,
+        /// otherwise it returns the total number of routes.
+        out count: usize;
+    }
+
+    /// Adds a new route to the routing table.
+    syscall add_route {
+        /// The route to be added.
+        in route: Route;
+
+        /// The route is not valid.
+        ///
+        /// See `Route` documentation for validation rules.
+        error InvalidValue;
+
+        /// Another route for the same target network exists on the same interface.
+        ///
+        /// This means that another route with (`route.interface`, `route.network`, `route.prefix_len`, `route.gateway`) exists.
+        error Conflict;
+
+        /// `route.interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// The IPv4 or IPv6 network subsystem is disabled and the `route.network` type can't be used on `route.interface`.
+        error SubsystemDisabled;
+
+        error SystemResources;
+    }
+
+    /// Removes an existing route from the routing table.
+    ///
+    /// NOTE: Removing a non-existent route is idempotent and does nothing.
+    ///
+    /// LORE: This syscall has no subsystem failure possible as removing a route
+    ///       is idempotent for non-existing routes, thus there's no reason to
+    ///       care for this error. The final outcome is the same: The route doesn't
+    ///       exist on the interface anymore.
+    syscall remove_route {
+        /// The route to delete.
+        ///
+        /// NOTE: When selecting which rules should be deleted, `route.priority`,
+        ///       `route.origin`, `route.valid_until` are ignored.
+        in route: Route;
+
+        /// The route is not valid.
+        ///
+        /// See `Route` documentation for validation rules.
+        error InvalidValue;
+
+        /// `route.interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+    }
+
+    //? Link state
+
+    enum LinkState : u8 {
+        /// The network interface has not recognized any connection.
+        item down = 0;
+
+        /// The network interface is connected to the network.
+        item up = 1;
+    }
+
+    /// Queries the current link state of a network interface.
+    syscall get_link_state {
+        in  interface: InterfaceId;
+
+        /// Current state of the link.
+        out state: LinkState;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+    }
+
+    /// Completes when a link changes its state.
+    async_call WaitForLinkState {
+        /// The interface for which a link state shall be awaited.
+        in interface: InterfaceId;
+
+        /// If not `null`, the operation completes when the link becomes `desired`.
+        /// Otherwise, the operation completes on the next interface state change.
+        in desired: ?LinkState;
+
+        /// The new link state.
+        out current: LinkState;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// The underlying `interface` was removed during this operation.
+        error Gone;
+    }
+
+    /// Sends an ICMP or ICMPv6 echo request.
+    ///
+    /// NOTE: This can be used to test if a host is reachable.
+    async_call Ping {
+        /// The interface that shall send the ping message.
+        ///
+        /// NOTE: May be `InterfaceId.any` to use the routing table
+        ///       to determine which interface and gateway shall be used.
+        in interface: InterfaceId;
+
+        /// The IP that should be tested.
+        ///
+        /// NOTE: `target.type` decides which underlying protocol shall be used.
+        in target: IP;
+
+        /// Maximum number of hops before the operation times out.
+        in ttl: u8;
+
+        /// The deadline for the operation.
+        ///
+        /// The operation returns the `Timeout` error when `timeout` is smaller than `clock.monotonic()`.
+        ///
+        /// LORE: In contrast to many other overlapped operations, a `Ping` would potentially
+        ///       never complete and it's an expected outcome that no response is received.
+        ///       Thus, the general rule of "no timeouts in overlapped operations" is broken
+        ///       here on purpose.
+        in timeout: clock.Absolute;
+
+        /// The payload of the ICMP/ICMPv6 echo request that is sent with the message.
+        ///
+        /// NOTE: This buffer must stay valid until the end of the operation.
+        in payload_request: bytestr;
+
+        /// The payload of the ICMP/ICMPv6 echo response that may be received.
+        ///
+        /// NOTE: This buffer must stay valid until the end of the operation.
+        ///
+        /// NOTE: `payload_response.len` must not be smaller than `payload_request.len`.
+        ///
+        /// NOTE: This buffer will only include the echoed payload.
+        in payload_response: bytebuf;
+
+        /// The IP address which finally answered our echo request.
+        ///
+        /// NOTE: For responses from link-local IPv6 addresses, `IPv6.scope` is set
+        ///       to the interface that received the echo response.
+        out responder: IP;
+
+        /// The timestamp when the kernel received the echo reply.
+        out received_at: clock.Absolute;
+
+        /// Actual number of bytes sent from `payload_request`.
+        ///
+        /// NOTE: This may be smaller than `payload_request.len` when the message is truncated.
+        out request_len: usize;
+
+        /// Number of bytes received from `responder`.
+        out response_len: usize;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// The underlying `interface` was removed during this operation.
+        error Gone;
+
+        /// No response was received until `timeout`.
+        error Timeout;
+
+        /// The ping operation yielded an ICMP error instead of an ICMP echo.
+        error IcmpError;
+
+        /// The kernel does not know a route to `target`.
+        error MissingRoute;
+
+        /// A parameter was badly specified.
+        ///
+        /// This may be due to:
+        /// - `payload_request.len` > `payload_response.len`.
+        /// - `target` is an link-local IPv6 address with a `scope` that is not `interface`.
+        error InvalidValue;
+
+        /// The IPv4 or IPv6 network subsystem is disabled and the `target` type can't be used on the effective interface.
+        error SubsystemDisabled;
+
+        /// `interface` is down and cannot send any data.
+        error LinkDown;
+
+        /// There was an i/o error that lead to the failure of this operation.
+        error IoError;
+
+        error SystemResources;
+    }
+}
+
+/// Neighbor discovery / neighbor cache (ARP for IPv4, NDP for IPv6).
+namespace neighborhood {
+    /// Enumerates potential origins for a network neighbor.
+    enum Origin : u8 {
+        /// The neighbor was manually created with `add_neighbor`.
+        item manual = 0;
+
+        /// The neighbor was discovered by the kernel through an ARP/NDP request.
+        item learned = 1;
+
+        /// The IP address was created automatically by the kernel through
+        /// configuration files.
+        item autoconfig = 2;
+    }
+
+    /// A neighbor is the mapping of an IP address to a physical address.
+    ///
+    /// The following invariants apply to the timestamp values:
+    /// - `last_updated`  >= `known_since`
+    /// - `expires_after` >= `known_since`
+    /// - `fresh_until`   >= `known_since`
+    /// - `fresh_until`   <= `expires_after`
+    /// - `fresh_until`   >= `last_updated` if `state == State.reachable`
+    struct Neighbor {
+        /// The interface on which the neighbor was discovered.
+        field interface: link.InterfaceId;
+
+        /// The IP address that identifies the neighbor.
+        ///
+        /// NOTE: Depending on `ip.type`, the following protocols were used for discovery:
+        ///       - IPv4: ARP
+        ///       - IPv6: NDP
+        ///
+        /// NOTE: If this IP is a link-local IPv6 ip, its scope must be equal to `interface`.
+        field ip: IP;
+
+        /// The physical address that was discovered.
+        ///
+        /// NOTE: This value is an optional `link.PhysicalAddress` with the following rules:
+        ///       - If `state` is `State.reachable`, `physical.type` is never `link.PhysicalAddress.Type.null`.
+        ///       - Else, the `physical.type` always is `link.PhysicalAddress.Type.null`.
+        field physical: link.PhysicalAddress;
+
+        /// The state defines if a neighbor is usable or not.
+        ///
+        /// NOTE: Can never have a higher numeric value than `enumerate_neighbors.max_state`
+        ///       when received through enumeration.
+        field state: State;
+
+        /// The source which discovered the neighbor.
+        ///
+        /// NOTE: When the neighbor is added with `add_neighbor`, this value is ignored
+        ///       and `Origin.manual` is used.
+        field origin: Origin;
+
+        /// Flags storing additional information about this neighbor.
+        field flags: Flags;
+
+        /// The timestamp when this neighbor entry was added to the list.
+        ///
+        /// NOTE: This field allows computing the age of the neighbor.
+        ///
+        /// NOTE: The other timestamps will always be at least `known_since`.
+        field known_since: clock.Absolute;
+
+        /// The timestamp when this neighbor entry was refreshed last.
+        ///
+        /// NOTE: This allows deriving a liveness for the neighbor.
+        field last_updated: clock.Absolute;
+
+        /// The timestamp until which this neighbor is assumed to be valid.
+        ///
+        /// NOTE: For IPv4/ARP, the lifetime is computed from a kernel configuration.
+        ///
+        /// NOTE: For IPv6/NDP, this is derived from the ReachableTime.
+        ///
+        /// NOTE: As long as `state == State.reachable`, this value is never less
+        ///       than `last_updated`.
+        ///
+        /// NOTE: When `clock.monotonic` returns a value bigger than this, the neighbor has
+        ///       become stale.
+        ///       This means the neighbor isn't necessarily valid anymore, but the kernel assumes
+        ///       it's still usable.
+        ///       The effect of this is that the kernel will still attempt to directly communicate
+        ///       with the neighbor without awaiting a neighbor discovery, but it will trigger
+        ///       an asynchronous re-discovery to ensure the neighbor still exists.
+        field fresh_until: clock.Absolute;
+
+        /// The drop-dead time after which this neighbor is killed.
+        ///
+        /// NOTE: The kernel will automatically remove the entry as soon
+        ///       as `clock.monotonic` reaches this value.
+        field expires_after: clock.Absolute;
+
+        /// Flags that further specify the neighbors state.
+        bitstruct Flags : u8 {
+            /// This neighbor is believed to be an IPv6 capable router on the link.
+            ///
+            /// NOTE: This value may change over time based on observed communications on the network.
+            ///
+            /// NOTE: For IPv4 neighbors, this value is always `false`.
+            field is_router: bool;
+
+            /// This neighbor is proxied through network segments.
+            ///
+            /// Set only when the kernel knows ND proxying is in effect for this mapping (e.g., learned through ND-proxy mechanisms / configuration). Otherwise the value is false.
+            ///
+            /// NOTE: For IPv4 neighbors, this value is always `false`.
+            field is_proxy: bool;
+
+            reserve u6 = 0;
+        }
+
+        /// Enumeration of potential states a neighbor has.
+        ///
+        /// NOTE: The numeric value of a state is a "usefulness" order and
+        ///       is used by `enumerate_neighbors` to filter states.
+        enum State : u8 {
+            /// The neighbor is actively reachable and valid.
+            ///
+            /// This means the kernel will immediately use the physical address without performing
+            /// a request first.
+            ///
+            /// NOTE: When `clock.monotonic` returns a value bigger than `fresh_until`, the kernel
+            ///       will perform an automatic background discovery of the neighbor to check if
+            ///       neighbor is still valid.
+            ///
+            /// NOTE: When this state is active, `Neighbor.physical.type` is never `link.PhysicalAddress.Type.null`.
+            item reachable  = 0;
+
+            /// A neighbor discovery was executed and the neighbor could not be found.
+            ///
+            /// NOTE: This means the kernel will return an error for operations using this
+            ///       neighbor address until `clock.monotonic` reaches `expires_after`.
+            ///
+            ///       The next request after the `expires_after` is reached will trigger a new discovery process.
+            ///
+            /// NOTE: When this state is active, `Neighbor.physical.type` is `link.PhysicalAddress.Type.null`.
+            item failed     = 1;
+
+            /// The neighbor was requested, but isn't `reachable` nor `failed` yet.
+            ///
+            /// NOTE: This state is only set until the kernel has performed the first discovery.
+            ///       It does not represent the background discovery.
+            ///
+            /// NOTE: When this state is active, `Neighbor.physical.type` is `link.PhysicalAddress.Type.null`.
+            item resolving  = 2;
+        }
+    }
+
+    /// Enumerates the currently known neighborhood for an interface.
+    syscall enumerate_neighbors {
+        /// The interface for which we want to receive the neighbors
+        /// or `link.InterfaceId.any` to enumerate the neighbors of all interfaces.
+        in  interface: link.InterfaceId;
+
+        /// Defines for which IP protocols the neighbors should be returned.
+        ///
+        /// NOTE: If `IP.Type.any` is passed, both IPv4 and IPv6 neighbors are returned,
+        ///       assuming the corresponding subsystem is enabled.
+        in  protocol: IP.Type;
+
+        /// A buffer that receives the neighbors of `interface` or `null` to query
+        /// the total amount of neighbors.
+        in  neighbors: ?[]Neighbor;
+
+        /// Defines the maximum integer state value this enumeration returns.
+        /// This effectively allows filtering the returned list for:
+        /// - `Neighbor.State.reachable`: Only reachable entries are returned. This is the "true" neighborhood as currently known.
+        /// - `Neighbor.State.failed`:    Only entries with a well-defined state are returned. This also yields knowledge about who is currently not our neighbor.
+        /// - `Neighbor.State.resolving`: All entries are returned. This allows querying if we're currently searching for a specific neighbor.
+        in  max_state: Neighbor.State;
+
+        /// The number of items written to `neighbors` if not `null`, otherwise
+        /// the total number of neighbors returned by the query.
+        out count: usize;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// Returned when `interface` is not `link.InterfaceId.any` and:
+        /// - `protocol` is `IP.Type.ipv4` and the ipv4 subsystem is disabled for `interface`.
+        /// - `protocol` is `IP.Type.ipv6` and the ipv6 subsystem is disabled for `interface`.
+        /// - `protocol` is `IP.Type.any` and both the ipv4 and ipv6 subsystem are disabled for `interface`.
+        error SubsystemDisabled;
+    }
+
+    /// Queries a single neighbor.
+    ///
+    /// NOTE: `neighbor.state` must be queried to check reachability for a given
+    ///       IP, as the neighbor might have any possible state.
+    syscall get_neighbor {
+        /// The interface for which the neighbor should be queried, or
+        /// or `link.InterfaceId.any` to query the neighbor on all interfaces.
+        in  interface: link.InterfaceId;
+
+        /// The IP address to query.
+        ///
+        /// NOTE: If `interface` is not `link.InterfaceId.any` and this IP is a link-local IPv6 ip,
+        ///       its scope must be equal to `interface`.
+        ///
+        /// NOTE: If `interface` is `link.InterfaceId.any` and this IP is a link-local IPv6 ip,
+        ///       its scope is used for `interface`.
+        in  ip: IP;
+
+        /// The neighbor entry for `ip`.
+        out neighbor: Neighbor;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// `ip` is an IPv6 address, but the scope is not suitable for `interface`.
+        error InvalidValue;
+
+        /// The requested neighbor is not available in the neighborhood.
+        error NotAvailable;
+
+        /// The `ip` is available on more than one `interface`.
+        ///
+        /// NOTE: This error can only happen when `interface` is `link.InterfaceId.any`.
+        error Conflict;
+
+        /// Returned when the associated subsystem of `ip.type` is disabled for `interface`.
+        /// NOTE: Can never be returned if `interface == link.InterfaceId.any`. If no interface
+        ///       with an enabled subsystem for `ip.type` has `ip`, `NotAvailable` is returned.”
+        error SubsystemDisabled;
+    }
+
+    /// Adds a new static neighbor to the neighborhood.
+    ///
+    /// NOTE: The kernel will do the following transformations on `neighbor`:
+    /// - `neighbor.state = Neighbor.State.reachable` if `neighbor.physical.type != link.PhysicalAddress.Type.null`
+    /// - `neighbor.state = Neighbor.State.failed` if `neighbor.physical.type == link.PhysicalAddress.Type.null`
+    /// - `neighbor.origin = Origin.manual`
+    /// - `neighbor.known_since = clock.monotonic()`
+    /// - `neighbor.last_updated = clock.monotonic()`
+    /// - `neighbor.fresh_until = neighbor.expires_after`
+    ///
+    /// NOTE: `neighbor` will be validated *after* the transformations are applied.
+    syscall add_neighbor {
+        /// The neighbor to add.
+
+        in neighbor: Neighbor;
+
+        /// Defines that if a neighbor with the same IP already exists,
+        /// it is implicitly replaced with `neighbor`.
+        in upsert: bool;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// The neighbor does not encode a correct value.
+        ///
+        /// In addition to the general validity rules of `Neighbor`, the following rules apply:
+        /// - `neighbor.interface` must not be `link.InterfaceId.any`.
+        /// - `neighbor.ip` must be a valid IP address.
+        /// - `neighbor.ip.scope` must be `neighbor.interface` if `neighbor.ip` is a link-local IPv6 address.
+        /// - `neighbor.expires_after` must not be in the past.
+        error InvalidValue;
+
+        /// `upsert` is `false` and a neighbor with `neighbor.ip` already exists.
+        error Conflict;
+
+        /// Returned when the associated subsystem of `neighbor.ip.type` is disabled for `neighbor.interface`.
+        error SubsystemDisabled;
+
+        error SystemResources;
+    }
+
+    /// Removes a single neighbor from the neighborhood.
+    ///
+    /// NOTE: If the neighbor with `ip` was created through
+    ///       neighbor discovery, `include_learned` must be
+    ///       set, otherwise `Forbidden` is returned as an error.
+    ///
+    /// NOTE: If no neighbor with `ip` exists, this syscall is idempotent.
+    syscall remove_neighbor {
+        /// The interface for which the neighbor should be removed.
+        in interface: link.InterfaceId;
+
+        /// The neighbor to be removed.
+        ///
+        /// NOTE: If this IP is a link-local IPv6 ip, its scope must be equal to `interface`.
+        in ip: IP;
+
+        /// Guardrail to prevent accidental removal of neighbors created
+        /// through neighbor discovery.
+        in include_learned: bool;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// `ip` is an IPv6 address, but the scope is not suitable for `interface`.
+        error InvalidValue;
+
+        /// If `include_learned` is `false` and the neighbor to remove has
+        /// `Neighbor.origin == Origin.learned`.
+        ///
+        /// NOTE: Will never happen if no neighbor with `ip` exists.
+        error Forbidden;
+
+        /// Returned when:
+        /// - `ip.type` is `IP.Type.ipv4` and the ipv4 subsystem is disabled for `interface`.
+        /// - `ip.type` is `IP.Type.ipv6` and the ipv6 subsystem is disabled for `interface`.
+        error SubsystemDisabled;
+    }
+
+    /// Invalidates the neighbor table for `interface` and removes all items for `protocol`.
+    syscall flush_neighbors {
+        /// The interface for which the neighborhood should be flushed.
+        /// If `link.InterfaceId.any` is passed, all neighborhoods for all interfaces are flushed.
+        in interface: link.InterfaceId;
+
+        /// Defines for which IP protocols the neighbors should be flushed.
+        ///
+        /// NOTE: If `IP.Type.any` is passed, both IPv4 and IPv6 neighbors are flushed,
+        ///       assuming the corresponding subsystem is enabled.
+        in protocol: IP.Type;
+
+        /// If `true`, will only remove the neighbors with `Neighbor.origin == Origin.learned`.
+        in keep_manual: bool;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// Returned when the associated subsystem of `protocol` is disabled for `interface`
+        /// and `interface` is not `link.InterfaceId.any`.
+        error SubsystemDisabled;
+    }
+
+    /// Resolves an IP address the the associated physical address.
+    ///
+    /// NOTE: The kernel will potentially delay sending ARP/NDP requests
+    ///       until an internal timeout has elapsed.
+    ///
+    ///       This is to prevent flooding the network with requests.
+    ///
+    ///       `flood` overwrites this behavior.
+    ///
+    /// NOTE: Not every schedule of a resolve triggers a new discovery.
+    ///       The kernel is free to fuse several scheduled `Resolve`
+    ///       operations for the same (`interface`, `target`) groups.
+    ///
+    ///       `deadline` is still respected for each individual operation.
+    ///
+    ///       This does not apply to operations that have `flood` set.
+    async_call Resolve {
+        /// The interface which should query its network for the physical address.
+        in interface: link.InterfaceId;
+
+        /// The IP for which the physical address should be resolved.
+        ///
+        /// NOTE: The following protocols will be used depending on `target.type`:
+        ///       - IPv4: ARP
+        ///       - IPv6: NDP
+        ///
+        /// NOTE: If this IP is a link-local IPv6 ip, its scope must be equal to `interface`.
+        in target: IP;
+
+        /// The deadline for the operation.
+        ///
+        /// The operation returns the `Timeout` error when `deadline` is smaller than `clock.monotonic()`.
+        ///
+        /// LORE: In contrast to many other overlapped operations, a `Resolve` would potentially
+        ///       never complete and it's an expected outcome that no response is received.
+        ///       Thus, the general rule of "no timeouts in overlapped operations" is broken
+        ///       here on purpose.
+        in deadline: clock.Absolute;
+
+        /// Overwrites the kernels internal flood protection and immediately starts
+        /// sending a request.
+        ///
+        /// NOTE: Setting `flood` disables the internal fusing and the kernel will trigger
+        ///       many ARP/NDP requests.
+        in flood: bool;
+
+        /// The information received by the resolver.
+        out neighbor: Neighbor;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// The underlying `interface` was removed during this operation.
+        error Gone;
+
+        /// No response was received until `deadline`.
+        error Timeout;
+
+        /// `target` was an invalid IP or
+        /// `target` is a link-local IPv6 address with `target.scope != interface`.
+        error InvalidValue;
+
+        /// The associated subsystem for `target.type` is disabled on `interface`.
+        error SubsystemDisabled;
+
+        /// `interface` is down and cannot send any data.
+        error LinkDown;
+
+        /// There was an i/o error that lead to the failure of this operation.
+        error IoError;
+
+        error SystemResources;
+    }
+
+    //? TODO: Add async_call WaitForUpdate when a proper model for the wait operation was found.
+}
+
+/// IPv6 Stateless Address Autoconfiguration (SLAAC).
+namespace slaac {
+
+    //? TODO: Add support for RFC 4191 ( Default Router Preferences and More-Specific Routes)
+
+    /// Represents a single Prefix Information Option (PIO) learned from an IPv6 Router Advertisement.
+    ///
+    /// NOTE: The following invariants apply to the timestamp types:
+    ///       - `preferred_until` >= `received_at`
+    ///       - `updated_at`      >= `received_at`
+    ///       - `valid_until`     >= `received_at`
+    ///       - `valid_until`     >= `preferred_until`
+    ///       - `valid_until`     >= `updated_at`
+    struct Prefix {
+        /// The router that announced the prefix.
+        ///
+        /// NOTE: This address is typically a link-local address with the associated interface for `IPv6.scope`.
+        ///
+        /// NOTE: If router is link-local, `router.scope` must be the associated interface.
+        field router: IPv6;
+
+        /// The prefix announced by the router.
+        ///
+        /// NOTE: `prefix.scope` must be `link.InterfaceId.any`.
+        ///
+        /// NOTE: All bits beyond `prefix_len` are zeroed out to enable determinism.
+        field prefix: IPv6;
+
+        /// The number of bits inside `prefix` that are part of the prefix.
+        /// NOTE: Can be between 0 and 128 inclusive.
+        field prefix_len: u8;
+
+        /// Defines additional information for this prefix.
+        field flags: Flags;
+
+        /// The timestamp when the kernel initially received this prefix.
+        field received_at: clock.Absolute;
+
+        /// The timestamp when the kernel last received this prefix.
+        field updated_at: clock.Absolute;
+
+        /// Timestamp until which the kernel will prefer this prefix and derived IP addresses.
+        ///
+        /// NOTE: The prefix is still valid until `valid_until`, but the network stack should choose
+        ///       another prefix if possible.
+        field preferred_until: clock.Absolute;
+
+        /// Timestamp at which the kernel will drop the prefix.
+        field valid_until: clock.Absolute;
+
+        bitstruct Flags : u8 {
+            /// The prefix is reachable directly through this interface without
+            /// the need of a gateway.
+            ///
+            /// NOTE: If the slaac subsystem is enabled on the associated interface, the kernel will
+            ///       automatically add (or upsert) a on-link prefix route for this prefix with:
+            ///       - `link.Route.network`     set to `Prefix.prefix`.
+            ///       - `link.Route.prefix_len`  set to `Prefix.prefix_len`.
+            ///       - `link.Route.gateway`     set to the unspecified address (`::`).
+            ///       - `link.Route.interface`   set to the associated interface of the `Prefix`.
+            ///       - `link.Route.priority`    set to `0`.
+            ///       - `link.Route.origin`      set to `link.RouteOrigin.slaac`.
+            ///       - `link.Route.valid_until` set to a value depending on the context.
+            ///
+            ///       If multiple `Prefix` entries exist for the same
+            ///       (`interface`, `prefix`, `prefix_len`) (i.e. advertised by different routers),
+            ///       the derived on-link prefix route remains present as long as at least one matching
+            ///       `Prefix` entry with `on_link = true` is still valid.
+            ///
+            ///       The kernel sets `link.Route.valid_until` to the maximum `valid_until`
+            ///       across all currently valid matching `Prefix` entries with `on_link = true`.
+            ///
+            ///       If the set of matching prefixes changes (update/expiry/flush),
+            ///       the kernel recomputes `link.Route.valid_until` accordingly and removes the
+            ///       derived route once no matching prefixes remain.
+            ///
+            /// NOTE: The kernel will only create/update routes with `link.Route.origin = link.RouteOrigin.slaac`
+            ///       and will not modify routes of other origins.
+            field on_link: bool;
+
+            /// The interface shall automatically derive IP addresses from the prefix.
+            ///
+            /// NOTE: See `Config` on how this bit will be used.
+            ///
+            /// NOTE: The kernel will automatically derive addresses from the prefix when the slaac subsystem
+            ///       is enabled and `prefix_len` is 64.
+            ///
+            ///       The derived addresses will be added with `link.AddressBinding.origin`
+            ///       set to `link.AddressOrigin.slaac`.
+            ///
+            ///       If multiple matching `Prefix` entries exist for the same
+            ///       (`interface`, `prefix`, `prefix_len`) with `autonomous = true`,
+            ///       the kernel sets `link.AddressBinding.valid_until` to the maximum `valid_until`
+            ///       across all currently valid matching entries, and recomputes it on
+            ///       update/expiry/flush. The address is removed once no matching prefixes remain.
+            ///
+            /// NOTE: The kernel will only create/update address bindings with `link.AddressBinding.origin = link.AddressOrigin.slaac`
+            ///       and will not modify address bindings of other origins.
+            field autonomous: bool;
+
+            reserve u6 = 0;
+        }
+    }
+
+    /// Represents the router identity from a single Router Advertisement.
+    /// Also contains neighborhood discovery parameters sent with the Router Advertisement.
+    ///
+    /// NOTE: The following invariants apply to the timestamp types:
+    ///       - `valid_until` >= `received_at`
+    ///       - `valid_until` >= `updated_at`
+    ///       - `updated_at`  >= `received_at`
+    struct Router {
+        /// The address of the discovered router.
+        ///
+        /// NOTE: If the slaac subsystem is enabled for the interface, a default route
+        ///       will be upserted that uses `address` as the next-hop:
+        ///
+        ///       - `link.Route.network`     set to the unspecified address (`::`).
+        ///       - `link.Route.prefix_len`  set to `0`.
+        ///       - `link.Route.gateway`     set to `Router.address`.
+        ///       - `link.Route.interface`   set to the associated interface for this router.
+        ///       - `link.Route.priority`    set to `0`.
+        ///       - `link.Route.valid_until` set to `Router.valid_until`.
+        ///       - `link.Route.origin`      set to `link.RouteOrigin.slaac`.
+        ///
+        /// NOTE: If this IP is a link-local IPv6 IP, its scope must be equal to associated interface.
+        ///
+        /// NOTE: The kernel will only create/update routes with `link.Route.origin = link.RouteOrigin.slaac`
+        ///       and will not modify routes of other origins.
+        field address: IPv6;
+
+        /// The max. number of hops for outbound packets via this router.
+        ///
+        /// NOTE: 0 means the router did not advertise a hop limit and the
+        ///       actual value is unknown.
+        field hop_limit: u8;
+
+        /// The MTU for the link.
+        ///
+        /// NOTE: 0 means the router did not advertise an MTU and the
+        ///       actual value is unknown.
+        field mtu: u32;
+
+        /// The time in milliseconds a neighbor should be considered reachable.
+        ///
+        /// NOTE: If zero, a default value shall be used (typically 30 seconds).
+        ///
+        /// NOTE: This value affects how `neighborhood.Neighbor.fresh_until` is derived.
+        field reachable_time_ms: u32;
+
+        /// Time between retransmitted Neighbor Solicitation messages in milliseconds.
+        ///
+        /// This affects neighbor discovery retries (including DAD).
+        ///
+        /// NOTE: If zero, the router did not specify a value and the kernel uses its default.
+        field retrans_time_ms: u32;
+
+        /// Defines additional information for this router.
+        field flags: Flags;
+
+        /// The timestamp at which the kernel received this Router Advertisement.
+        field received_at: clock.Absolute;
+
+        /// The timestamp when the kernel last received this Router Advertisement.
+        field updated_at: clock.Absolute;
+
+        /// The timestamp at which the kernel will automatically remove the router.
+        field valid_until: clock.Absolute;
+
+        bitstruct Flags : u8 {
+            /// If set, defines that DHCPv6 shall be used to obtain addresses.
+            ///
+            /// NOTE: If set, and the dhcp6 subsystem is enabled for the interface, the kernel
+            ///       will automatically perform the DHCPv6 requests when the Router Advertisement
+            ///       is received.
+            field managed: bool;
+
+            /// If set, defines that additional configuration like DNS servers shall be obtained through
+            /// DHCPv6.
+            ///
+            /// NOTE: If set, and the dhcp6 subsystem is enabled for the interface, the kernel
+            ///       will automatically perform the DHCPv6 requests when the Router Advertisement
+            ///       is received.
+            field other_config: bool;
+
+            reserve u6 = 0;
+        }
+    }
+
+    //? Configuration:
+
+    /// Enumeration of potential methods for stable address generation.
+    ///
+    /// NOTE: Addresses generated with these methods are reboot-safe
+    ///       and will be stable for the system.
+    enum StableAddressGeneration : u8 {
+        /// Don't generate an address at all.
+        item none = 0;
+
+        /// Derives stable addresses from the physical link address.
+        ///
+        /// NOTE: This method is best-effort and may use other sources to
+        ///       generate reboot-stable IDs for the interface.
+        item eui64 = 1;
+
+        /// Derives stable addresses in a privacy-preserving manner using a
+        /// stable secret on the system.
+        item rfc7217 = 2;
+    }
+
+    /// Enumeration of potential methods for temporary address generation.
+    ///
+    /// NOTE: Addresses generated with these methods are ephemeral and may
+    ///       be rotated after a certain time.
+    enum TemporaryAddressGeneration : u8{
+        /// Don't generate an address at all.
+        item none = 0;
+
+        /// Temporary addresses are generated in a (pseudo) random pattern.
+        item rfc8981 = 1;
+    }
+
+    /// SLAAC configuration for an interface.
+    struct Config {
+        /// The currently used stable address generation method to automatically derive
+        /// addresses when requested.
+        ///
+        /// NOTE: The default values is `StableAddressGeneration.eui64` unless
+        ///       changed by a kernel configuration.
+        field stable_method: StableAddressGeneration;
+
+        /// The currently used temporary address generation method to automatically derive
+        /// addresses when requested.
+        ///
+        /// NOTE: The default values is `TemporaryAddressGeneration.none` unless
+        ///       changed by a kernel configuration.
+        field temp_method: TemporaryAddressGeneration;
+    }
+
+    /// Queries the currently enabled configuration for the given interface.
+    ///
+    /// NOTE: This syscall will also work when the slaac subsystem is disabled,
+    ///       to enable setting a policy before activating the subsystem.
+    syscall get_config {
+        /// The interface for which the configuration shall be returned.
+        in  interface: link.InterfaceId;
+
+        /// The currently active configuration.
+        out config: Config;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+    }
+
+    /// Changes the currently enabled configuration for the given interface.
+    ///
+    /// NOTE: This will not re-generate addresses derived with the previous configuration.
+    ///
+    /// NOTE: This syscall will also work when the slaac subsystem is disabled,
+    ///       to enable setting a policy before activating the subsystem.
+    syscall set_config {
+        /// The interface for which the SLAAC configuration shall be updated.
+        in interface: link.InterfaceId;
+
+        /// The new configuration, replacing the previous one.
+        in config: Config;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+    }
+
+    //? Status Query:
+
+    /// A summary of the SLAAC status for an interface.
+    struct Status {
+        /// The timestamp when the kernel last received a Router Advertisement
+        /// or a `Router`/`Prefix` expired.
+        field last_update: clock.Absolute;
+
+        /// Additional boolean properties
+        field flags: Flags;
+
+        bitstruct Flags : u16 {
+            /// `true` if at least a single `Prefix.flags.on_link` is set.
+            field on_link: bool;
+
+            /// `true` if at least a single `Prefix.flags.autonomous` is set.
+            field autonomous: bool;
+
+            /// `true` if at least a single `Router.flags.managed` is set.
+            field managed: bool;
+
+            /// `true` if at least a single `Router.flags.other_config` is set.
+            field other_config: bool;
+
+            reserve u12 = 0;
+        }
+    }
+
+    /// A quick status query to get the current SLAAC status.
+    ///
+    /// LORE: This syscall primarily exists to prevent userland
+    ///       to enumerate all properties just to learn some trivial
+    ///       information.
+    syscall get_status {
+        /// The interface for which the status shall be queried.
+        in    interface: link.InterfaceId;
+
+        /// The current status of `interface`.
+        out   status: Status;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// Returned when the SLAAC subsystem of `interface` is disabled.
+        error SubsystemDisabled;
+    }
+
+    //? Queries:
+
+    /// Enumerates the routers learned through SLAAC for `interface`.
+    syscall enumerate_routers {
+        /// The interface for which the routers shall be queried.
+        in    interface: link.InterfaceId;
+
+        /// A buffer that will receive the enumerated routers.
+        ///
+        /// NOTE: If `null`, no routers will be enumerated, but only the total
+        ///       count is returned.
+        in    routers: ?[]Router;
+
+        /// Total number of available routers.
+        ///
+        /// NOTE: If smaller than `routers.len`, the elements for `routers[count..]` will
+        ///       be left unchanged.
+        out   count: usize;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// Returned when the SLAAC subsystem of `interface` is disabled.
+        error SubsystemDisabled;
+    }
+
+    /// Enumerates the prefixes learned through SLAAC for `interface`.
+    syscall enumerate_prefixes {
+        /// The interface for which the prefixes shall be queried.
+        in    interface: link.InterfaceId;
+
+        /// A buffer that will receive the enumerated prefixes.
+        ///
+        /// NOTE: If `null`, no prefixes will be enumerated, but only the total
+        ///       count is returned.
+        in    prefixes: ?[]Prefix;
+
+        /// Total number of available prefixes.
+        ///
+        /// NOTE: If smaller than `prefixes.len`, the elements for `prefixes[count..]` will
+        ///       be left unchanged.
+        out   count: usize;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// Returned when the SLAAC subsystem of `interface` is disabled.
+        error SubsystemDisabled;
+    }
+
+    /// Defines what parts to flush.
+    bitstruct FlushMode : u8 {
+        /// If `true`, removes all routers from the selected interface.
+        ///
+        /// NOTE: This implies that all "default" routes added for this
+        ///       interface through the SLAAC subsystem will also be removed.
+        field routers: bool;
+
+        /// If `true`, removes all prefixes from the selected interface.
+        ///
+        /// NOTE: This implies that all on-link prefix routes added for this
+        ///       interface through the SLAAC subsystem will also be removed.
+        field prefixes: bool;
+
+        reserve u6 = 0;
+    }
+
+    /// Flushes the SLAAC state for a given interface.
+    ///
+    /// NOTE: A flush counts as an "update event" and will change the
+    ///       `Status.last_update` field to `clock.monotonic()`.
+    syscall flush {
+        /// The interface for which the SLAAC state shall be flushed.
+        in    interface: link.InterfaceId;
+
+        /// Defines how to flush the state.
+        ///
+        /// NOTE: If all bits inside mode are zero, `InvalidValue` is returned.
+        in    mode: FlushMode;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// Returned when the SLAAC subsystem of `interface` is disabled.
+        error SubsystemDisabled;
+
+        /// All bits inside `mode` were zero.
+        error InvalidValue;
+    }
+
+    /// Forces the refresh of the router advertisements by sending a
+    /// Router Solicitation.
+    ///
+    /// NOTE: The operation will complete when at least a single Router Advertisement
+    ///       was received.
+    ///
+    /// NOTE: Not every schedule of a refresh triggers a new Router Solicitation.
+    ///       The kernel is free to fuse several scheduled `Refresh`
+    ///       operations for the same `interface`.
+    ///
+    ///       `deadline` is still respected for each individual operation.
+    ///
+    /// NOTE: If `interface` has no suitable link-local address available, the kernel
+    ///       will send the Router Solicitation from the unspecified address (`::`).
+    ///       If multiple suitable addresses are available, the kernel will choose
+    ///       one in a stable manner: The source address will be the same until the
+    ///       address bindings of `interface` change.
+    async_call Refresh {
+        /// The interface for which the SLAAC state shall be refreshed.
+        in    interface: link.InterfaceId;
+
+        /// The deadline for the operation.
+        ///
+        /// The operation returns the `Timeout` error when `deadline` is smaller than `clock.monotonic()`.
+        ///
+        /// LORE: In contrast to many other overlapped operations, a `Refresh` would potentially
+        ///       never complete and it's an expected outcome that no response is received.
+        ///       Thus, the general rule of "no timeouts in overlapped operations" is broken
+        ///       here on purpose.
+        in    deadline: clock.Absolute;
+
+        /// The new status of `interface`.
+        out   status: Status;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// The underlying `interface` was removed during this operation.
+        error Gone;
+
+        /// No response was received until `deadline`.
+        error Timeout;
+
+        /// `deadline` is not in the future.
+        error InvalidValue;
+
+        /// Returned when the SLAAC subsystem of `interface` is disabled.
+        error SubsystemDisabled;
+
+        /// `interface` is down and cannot send any data.
+        error LinkDown;
+
+        /// There was an i/o error that lead to the failure of this operation.
+        error IoError;
+
+        error SystemResources;
+    }
+
+    /// This operation completes when `Status.last_update` changes.
+    async_call WaitForUpdate {
+        /// The interface for which an update shall be awaited.
+        in    interface: link.InterfaceId;
+
+        /// The new SLAAC status of `interface`.
+        out   new_status: Status;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// The underlying `interface` was removed during this operation.
+        error Gone;
+
+        /// Returned when the SLAAC subsystem of `interface` is disabled.
+        error SubsystemDisabled;
+
+        error SystemResources;
+    }
+}
+
+/// Everything related to DHCP management for IPv4.
+namespace dhcp4 {
+
+    /// NOTE: These options are defined in RFC 2132.
+    enum OptionCode : u8 {
+        //? TODO: Add documentation for all options including their contents and size constraints based on the information from RFC 2132.
+
+        item pad = 0;
+        item subnet_mask = 1;
+        item time_offset = 2;
+        item router = 3;
+
+        item domain_name_server = 6;
+
+        item ip_address_lease_time = 51;
+
+        item server_identifier = 54;
+
+        item renewal_time_value = 58;
+
+        item rebinding_time_value = 59;
+
+        item end = 255;
+        //? TODO: fill out the rest of the options and document their meaning and use
+        ...
+    }
+
+    /// A DHCP option.
+    struct Option {
+        /// The type of option
+        field code: OptionCode;
+
+        /// The value of the option.
+        ///
+        /// NOTE: Maximum length of `value` is 255.
+        ///
+        /// NOTE: The length of the value must match the legal values for `code`.
+        ///
+        /// NOTE: The lifetime of this value for fields in a lease is documented on `Lease` itself.
+        ///
+        /// NOTE: Options passed to `RequestLease` will be copied by the kernel in the schedule operation.
+        field value: []const u8;
+    }
+
+    /// A DHCP lease.
+    ///
+    /// NOTE: Any pointer to an array inside the lease is valid until one of the invalidation events occur:
+    ///       - The interface for the lease is removed from the kernel.
+    ///       - The lease is automatically refreshed by the kernel (may only happen if the dhcp4 subsystem is enabled).
+    ///       - A `ReleaseLease` is scheduled for the owning interface.
+    ///       - A `RequestLease` completes for the owning interface.
+    ///
+    ///       These events can only happen during a scheduler yield, so the pointers may be dead
+    ///       when the thread yields.
+    ///
+    ///       In general, an application should not hold onto `Lease` information for longer
+    ///       than technically necessary.
+    struct Lease {
+        /// The server that issued the DHCP lease.
+        ///
+        /// NOTE: This is either the value sent with `OptionCode.server_identifier`
+        ///       or if the option does not exist, the IP from which the DHCPACK was sent.
+        field server: IPv4;
+
+        /// The address issued by the DHCP server.
+        ///
+        /// NOTE: If the lease is acquired with DHCPINFORM this value will be the
+        ///       unspecified address (`0.0.0.0`).
+        field address: IPv4;
+
+        /// The prefix length of the network for `address`.
+        ///
+        /// NOTE: This value is derived from the value sent with `OptionCode.subnet_mask`
+        ///       or 32 if the option is not present.
+        ///
+        /// NOTE: If the lease is acquired with DHCPINFORM this value will be zero.
+        field prefix_len: u8;
+
+        /// The list of announced routers by the DHCP server.
+        ///
+        /// NOTE: This list will be derived from the value sent with `OptionCode.router`.
+        ///
+        /// NOTE: The lifetime of this array is documented on `Lease` itself.
+        field routers: []const IPv4;
+
+        /// The list of DNS servers provided by the DHCP server.
+        ///
+        /// NOTE: This list will be derived from the value sent with `OptionCode.domain_name_server`.
+        ///
+        /// NOTE: The lifetime of this array is documented on `Lease` itself.
+        field dns_servers: []const IPv4;
+
+        /// The complete list of options sent by the DHCP server.
+        ///
+        /// NOTE: The order inside this array is the same as it was sent by the server.
+        ///
+        /// NOTE: The lifetime of this array is documented on `Lease` itself.
+        ///
+        /// NOTE: The kernel will remove all options with `OptionCode.pad` and `OptionCode.end`.
+        field options: []const Option;
+
+        /// The timestamp when the kernel applied the DHCPACK message that issued
+        /// this lease.
+        field issued_at: clock.Absolute;
+
+        /// The timestamp when the lease should be renewed (T1).
+        ///
+        /// NOTE: If the lease was created by `DHCPINFORM`, the value will be set to
+        ///       `clock.Absolute.infinity`.
+        ///
+        /// NOTE: If present, will be set from `OptionCode.renewal_time_value`, otherwise
+        ///       will use the default value of 50% of the total lease time.
+        ///
+        /// NOTE: If no lease time can be derived, `clock.Absolute.infinity` is used.
+        field renew_at: clock.Absolute;
+
+        /// The timestamp when the lease should be rebound (T2).
+        ///
+        /// NOTE: If the lease was created by `DHCPINFORM`, the value will be set to
+        ///       `clock.Absolute.infinity`.
+        ///
+        /// NOTE: If present, will be set from `OptionCode.rebinding_time_value`, otherwise
+        ///       will use the default value of 87.5% of the total lease time.
+        ///
+        /// NOTE: If no lease time can be derived, `clock.Absolute.infinity` is used.
+        field rebind_at: clock.Absolute;
+
+        /// The timestamp after which the lease is not valid anymore.
+        ///
+        /// NOTE: If the lease was created by `DHCPINFORM`, the value will be set to
+        ///       `clock.Absolute.infinity`.
+        ///
+        /// NOTE: If present, will be set from `OptionCode.ip_address_lease_time`, otherwise
+        ///       will be set to the requested address lease time if present in `RequestLease.options`,
+        ///       or otherwise will be set to `clock.Absolute.infinity` to mark that no lease time was
+        ///       issued.
+        field valid_until: clock.Absolute; //? when does the lease expire
+    }
+
+    /// Enumerations of how the kernel will handle the received lease of `RequestLease`.
+    enum AutoUpdateMode : u8 {
+        /// The kernel will not do anything with the received lease.
+        ///
+        /// NOTE: This can be used to perform a DHCP request without directly changing network
+        ///       configuration.
+        item disabled = 0;
+
+        /// The kernel will only use the `Lease.address` and `Lease.prefix_len` to
+        /// perform an automatic `link.AddAddress` operation on `RequestLease.interface`.
+        ///
+        /// This includes:
+        /// - Automatic adding/updating of the received IP address to `interface`.
+        /// - Automatic creation/update of the connected route for `interface`.
+        item address_only = 1;
+
+        /// In addition to the effects of `address_only`, the kernel will also upsert
+        /// a route to the network `0.0.0.0/0` through `RequestLease.interface` for
+        /// all received routers.
+        ///
+        /// If multiple routers are advertised, the `Route.priority` will be staged
+        /// such that the last router has priority 1 and each previous router will
+        /// have a priority 1 higher.
+        ///
+        /// This means that the first advertised router has the highest priority (which is
+        /// set to the number of routers).
+        item address_and_route = 2;
+
+        /// In addition to the effects of `address_only`, the kernel will also upsert
+        /// the received DNS servers associated with `RequestLease.interface`.
+        item full = 3;
+    }
+
+    /// Requests new DHCP lease. Completes when at least a single server has successfully
+    /// provided a DHCP lease or the operation timed out.
+    ///
+    /// NOTE: Only a single `RequestLease` or `ReleaseLease` operation can be active per `interface` at the
+    ///       same time.
+    ///
+    /// NOTE: The kernel will always use the first successful DHCPACK when multiple options are available.
+    ///
+    /// NOTE: When multiple DHCPOFFER messages are received, the kernel will perform the DHCPREQUEST process
+    ///       in parallel for each received option unless a DHCPACK was already received.
+    async_call RequestLease {
+        /// The network interface that shall perform the DHCP request.
+        in interface: link.InterfaceId;
+
+        /// The deadline until which the whole operation has to be completed.
+        ///
+        /// LORE: In contrast to many other overlapped operations, a `RequestLease` would potentially
+        ///       never complete and it's an expected outcome that no response is received.
+        ///       Thus, the general rule of "no timeouts in overlapped operations" is broken
+        ///       here on purpose.
+        in deadline: clock.Absolute;
+
+        /// The unicast address of the DHCP server that shall be used to obtain the DHCP lease.
+        ///
+        /// NOTE: When the unspecified address (0.0.0.0) is passed,
+        ///       the kernel will perform a broadcast to discover potential DHCP servers.
+        in server: IPv4;
+
+        /// Additional options to send with the request.
+        ///
+        /// NOTE: The kernel omits any of its own options if `options` contains at least
+        ///       one option with the same `Option.code`.
+        ///
+        ///       This allows userland to overwrite all potentially kernel-provided options.
+        ///
+        /// NOTE: The kernel will copy the options array in `overlapped.schedule`.
+        ///       This means the user can use the memory after successful scheduling.
+        ///
+        /// NOTE: The options in this array will be sent in exactly this order *after*
+        ///       the kernel-sent options.
+        ///
+        ///       This allows userland to emit multiple instances of the same option
+        ///       code (some encodings support this); the kernel transmits as-is.
+        ///
+        /// NOTE: The kernel will never merge any values of this array.
+        in options: []const Option;
+
+        /// If `true`, the kernel will perform a DHCPINFORM process instead of a the regular
+        /// DHCPDISCOVER/DHCPREQUEST process.
+        ///
+        /// This allows querying local network configuration even with a non-DHCP configured IP address.
+        ///
+        /// NOTE: This requires that we already have a statically configured IP address.
+        ///
+        /// NOTE: If `server` is the unspecified address (`0.0.0.0`), the kernel will send a
+        ///       broadcast message for each configured IPv4 addresses for `interface`.
+        in inform_only: bool;
+
+        /// Defines how the kernel will update `interface` when the request is successful.
+        ///
+        /// NOTE: If the dhcp4 subsystem is enabled, this option is ignored and the kernel will
+        ///       handle the results like it would've performed an automatic/timed DHCP request/renew.
+        ///
+        ///       This means the operation can be used as a force-refresh the DHCP lease.
+        ///
+        /// NOTE: If the dhcp4 subsystem is disabled, setting this option does not imply the
+        ///       kernel will perform automatic renewal or rebinding of the DHCP lease.
+        in update_mode: AutoUpdateMode;
+
+        /// The lease provided by the server.
+        ///
+        /// NOTE: If `inform_only` is `true`, `lease.address` is `0.0.0.0`
+        ///       and `lease.prefix_len` is zero.
+        out lease: Lease;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// The underlying `interface` was removed during this operation.
+        error Gone;
+
+        /// No response was received until `deadline`.
+        error Timeout;
+
+        /// An invalid value was passed as a parameter.
+        ///
+        /// This may be due to:
+        /// - `server` is neither the unspecified address nor a valid unicast address.
+        /// - `options` contains an invalid DHCP option.
+        /// - `deadline` is not in the future.
+        error InvalidValue;
+
+        /// Another `RequestLease` or `ReleaseLease` operation is in progress for `interface`.
+        ///
+        /// NOTE: This error may "spuriously" happen when the dhcp4 subsystem is enabled
+        ///       and currently performs an internal DHCP operation.
+        error InProgress;
+
+        /// The DHCP server offered an address that is not ours, but reachable
+        /// through `interface`.
+        ///
+        /// NOTE: This error implies the kernel has responeded with DHCPDECLINE.
+        error AddressConflict;
+
+        /// All available DHCP servers have rejected our request with `DHCPNAK`.
+        error Rejected;
+
+        /// The kernel does not know a route to `server`.
+        ///
+        /// NOTE: This error can only happen when `server` is not unspecified.
+        error MissingRoute;
+
+        /// The kernel cannot send the DHCPINFORM message as `interface` has no
+        /// assigned IPv4 address.
+        error MissingSourceAddress;
+
+        /// The IPv4 subsystem is disabled on `interface`.
+        error SubsystemDisabled;
+
+        /// `interface` is down and cannot send any data.
+        error LinkDown;
+
+        /// There was an i/o error that lead to the failure of this operation.
+        error IoError;
+
+        error SystemResources;
+    }
+
+    /// Releases current lease, idempotent if none exists.
+    ///
+    /// NOTE: Only a single `RequestLease` or `ReleaseLease` operation can be active per `interface` at the
+    ///       same time.
+    ///
+    /// NOTE: This operation will implicitly disable the dhcp4 subsystem as otherwise
+    ///       the subsystem would immediatly try to request a new DHCP lease and `ReleaseLease`
+    ///       would be just an implicit `RequestLease` operation.
+    async_call ReleaseLease {
+        /// The interface for which a lease should be released.
+        in interface: link.InterfaceId;
+
+        /// If `true` will remove the kernel-managed lease object even in
+        /// the case of a communication error.
+        ///
+        /// NOTE: Each error code that will still remove the release
+        ///       documents this.
+        ///
+        /// NOTE: If `force` is set, the scheduling implicitly cancels an
+        ///       active `RequestLease` operation.
+        in force: bool;
+
+        /// The deadline until which the whole operation has to be completed.
+        ///
+        /// LORE: In contrast to many other overlapped operations, a `RequestLease` would potentially
+        ///       never complete and it's an expected outcome that no response is received.
+        ///       Thus, the general rule of "no timeouts in overlapped operations" is broken
+        ///       here on purpose.
+        in deadline: clock.Absolute;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// The underlying `interface` was removed during this operation.
+        error Gone;
+
+        /// No response was received until `deadline`.
+        ///
+        /// NOTE: The leases was still removed when `force` was set.
+        error Timeout;
+
+        /// Another `RequestLease` or `ReleaseLease` operation is in progress for `interface`.
+        ///
+        /// NOTE: This error cannot happen when `force` is set.
+        error InProgress;
+
+        /// An invalid value was passed as a parameter.
+        ///
+        /// This may be due to:
+        /// - `deadline` is not in the future.
+        error InvalidValue;
+
+        /// The IPv4 subsystem is disabled on `interface`.
+        ///
+        /// NOTE: This error implies that the interface won't have any lease anyways.
+        error SubsystemDisabled;
+
+        /// `interface` is down and cannot send any data.
+        ///
+        /// NOTE: This error informs the caller that the kernel cannot
+        ///       send the DHCPRELEASE message.
+        ///
+        /// NOTE: The leases was still removed when `force` was set.
+        error LinkDown;
+
+        /// There was an i/o error that lead to the failure of this operation.
+        ///
+        /// NOTE: The leases was still removed when `force` was set.
+        error IoError;
+
+        error SystemResources;
+    }
+
+    /// Returns current lease or NotAvailable if none exists
+    syscall get_info {
+        /// Interface for which the lease shall be queried.
+        in  interface: link.InterfaceId;
+
+        /// The current lease the kernel stores for `interface`.
+        out info: Lease;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// The kernel currently has no lease associated with `interface`.
+        error NotAvailable;
+
+        /// The IPv4 subsystem is disabled on `interface`.
+        error SubsystemDisabled;
+    }
+
+    /// Completes when new lease was set, old lease was released or expired.
+    ///
+    /// NOTE: Multiple `WaitForUpdate` can be issued which will all complete at the
+    ///       same time when the status changes.
+    async_call WaitForUpdate {
+        /// The interface for which a new DHCP state shall be awaited.
+        in  interface: link.InterfaceId;
+
+        /// The new lease or `null` if the lease was removed.
+        out info: ?Lease;
+
+        /// `interface` is not a valid interface id (anymore).
+        error InvalidInterface;
+
+        /// The underlying `interface` was removed during this operation.
+        error Gone;
+
+        error SystemResources;
+    }
+}
+
+namespace dhcp6 {
+    //? TODO: Design the DHCPv6 kernel API
+}
+
+namespace dns {
+    //? TODO: Design the DNS kernel API
+
+    //? TODO: Keep in mind that DNS servers can be globally set or associated with an
+    //?       interface. Also DNS servers have a lifetime as well.
+}
