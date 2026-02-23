@@ -81,8 +81,15 @@ main#syscalls {
 }
 
 main#livedemo {
-    flex: 1;
     /* make the live demo always be a screen-covering part*/
+    flex: 1;
+
+    display: grid;
+
+    grid-template-columns: 100%;
+    grid-template-rows: min-content 1fr min-content;
+
+    gap: 1rem;
 }
 
 /*************************************************
@@ -284,7 +291,8 @@ code .tok-name {
     margin-top: 1em;
 }
 
-.markup-container :is(p, ul, ol) {
+/* Paragraph */
+.markup-container :is(p, ul, ol, table) {
     line-height: 125%;
     margin-block: 0.75em;
 }
@@ -332,7 +340,7 @@ code .tok-name {
     left: 0;
     top: 0;
     height: 100%;
-    
+
     width: var(--hdoc-callout-bar-width);
     font-size: var(--hdoc-callout-icon-size);
     align-items: center;
@@ -340,12 +348,12 @@ code .tok-name {
     border-left: 3px solid var(--hdoc-callout-color);
 }
 
-.markup-container .hdoc-admonition.hdoc-quote::before  {
+.markup-container .hdoc-admonition.hdoc-quote::before {
     display: block;
     content: '❝';
 }
 
-.markup-container .hdoc-admonition.hdoc-quote::after  {
+.markup-container .hdoc-admonition.hdoc-quote::after {
     display: block;
     content: '❞';
     text-align: right;
@@ -358,13 +366,13 @@ code .tok-name {
     font-size: 75%;
 }
 
-.markup-container .hdoc-admonition.hdoc-spoiler > * {
+.markup-container .hdoc-admonition.hdoc-spoiler>* {
     filter: blur(6px);
     transition: filter 120ms ease;
 }
 
-.markup-container .hdoc-admonition.hdoc-spoiler:hover > *,
-.markup-container .hdoc-admonition.hdoc-spoiler:focus > * {
+.markup-container .hdoc-admonition.hdoc-spoiler:hover>*,
+.markup-container .hdoc-admonition.hdoc-spoiler:focus>* {
     filter: none;
     transition: filter 120ms ease;
 }
@@ -379,7 +387,7 @@ code .tok-name {
 
 .markup-container pre {
     display: block;
-    border: 1px solid black;
+    border: 1px solid gray;
     padding: 0.5em;
 }
 
@@ -392,8 +400,133 @@ code .tok-name {
     min-width: 100%;
 }
 
-.markup-container table tr,
-.markup-container table th,
-.markup-container table td  {
+.markup-container table thead :is(th),
+.markup-container table tbody :is(tr, th, td) {
+    border: 1px solid gray;
+}
+
+.markup-container table :is(th, td) {
+    padding: 0.25rem;
+}
+
+
+.markup-container table :is(th, td) p {
+    margin-block: 1.25em;
+    margin-block-start: 0;
+    margin-block-end: 0;
+}
+
+
+.markup-container table th[scope="row"] {
+    border-right: 1px solid gray;
+    text-align: left;
+}
+
+.markup-container table th[scope="rowgroup"] {
+    padding-top: 1rem;
+    text-align: left;
+}
+
+.markup-container table tr:has(th[scope="rowgroup"]) td {
+    border-right: 1px solid silver;
+}
+
+.markup-container table tr:has(th[scope="rowgroup"]) th {
+    border-left: 1px solid silver;
+}
+
+.markup-container table thead th,
+.markup-container table tbody tr:nth-of-type(even) {
+    background-color: rgba(0, 0, 0, 5%);
+}
+
+.markup-container table thead td.top-left {
+    visibility: hidden;
+}
+
+/*************************************************
+ * Live Demo                                     *
+ *************************************************/
+
+.toolbar {
+    display: flex;
+    flex-direction: row;
+    gap: 0.5rem;
+}
+
+.toolbar button {
+    height: 2rem;
+    padding: 2pt;
+    border: 2px outset silver;
+    background-color: #DDD;
+}
+
+.toolbar button:active {
+    border: 2px inset silver;
+}
+
+.toolbar button:is(:hover, :focus) {
+    background-color: #EEE;
+}
+
+.toolbar button:is(:active) {
+    background-color: #FFF;
+}
+
+.toolbar button svg {
+    width: 100%;
+    height: 100%;
+}
+
+.console {
+    min-height: 180pt;
+}
+
+/* textarea.console {
+    resize: none;
+
+    overflow: scroll;
+
+    height: 12em;
+    padding: 0.25rem;
+
+    background-color: #000;
+    color: #FFF;
+
+    width: 100%;
+    tab-size: 2em;
+
     border: 1px solid black;
+} */
+
+.monitor-parent {
+    display: grid;
+
+    align-items: center;
+    justify-items: center;
+
+    overflow: auto;
+    position: relative;
+}
+
+.monitor {
+    border: 3px inset silver;
+    max-width: 100%;
+}
+
+#emulator_status {
+    display: flex;
+    flex-direction: column;
+
+    position: absolute;
+    left: 0.5rem;
+    top: 0.5rem;
+}
+
+#emulator_status li {
+    list-style: none;
+}
+
+#emulator_status li label {
+    font-family: monospace;
 }
