@@ -382,3 +382,18 @@ code .tok-name {
     border: 1px solid black;
     padding: 0.5em;
 }
+
+.markup-container figure {
+    text-align: center;
+}
+
+.markup-container table {
+    border-collapse: collapse;
+    min-width: 100%;
+}
+
+.markup-container table tr,
+.markup-container table th,
+.markup-container table td  {
+    border: 1px solid black;
+}
