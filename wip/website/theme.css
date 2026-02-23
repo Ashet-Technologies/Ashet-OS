@@ -14,8 +14,9 @@ body {
 
     gap: 1rem;
     padding: 1rem;
-    
-    min-height: 100vh; /* ensure the body covers at least the whole screen */
+
+    min-height: 100vh;
+    /* ensure the body covers at least the whole screen */
 }
 
 header {
@@ -80,14 +81,16 @@ main#syscalls {
 }
 
 main#livedemo {
-    flex: 1; /* make the live demo always be a screen-covering part*/
+    flex: 1;
+    /* make the live demo always be a screen-covering part*/
 }
 
 /*************************************************
  * Styling                                       *
  *************************************************/
 
-.panel {
+.panel,
+.hdoc-admonition {
     padding: 0.5rem;
     border: 2px ridge silver;
     background-color: #EEE;
@@ -99,7 +102,7 @@ main#livedemo {
 }
 
 ul.breakcrumbs {
-    display: block;    
+    display: block;
 }
 
 ul.breakcrumbs li {
@@ -198,14 +201,6 @@ div.flex-spacer {
 }
 
 /*************************************************
- * Markdown Theming                              *
- *************************************************/
-
-.markup-container {
-    /* TODO */
-}
-
-/*************************************************
  * Code Doc Theming                              *
  *************************************************/
 
@@ -261,4 +256,129 @@ code .tok-type {
 
 code .tok-name {
     color: purple;
+}
+
+/*************************************************
+ * Markdown Theming                              *
+ *************************************************/
+
+* {
+    --hdoc-callout-bar-width: 3rem;
+    --hdoc-callout-icon-size: 1.5rem;
+}
+
+.markup-container {
+    /* TODO */
+}
+
+.markup-container ul,
+.markup-container ol {
+    margin-left: 1.5em;
+}
+
+.markup-container h1~p.hdoc-doc-meta {
+    opacity: 50%;
+}
+
+.markup-container :is(h2, h3, h4, h5, h6) {
+    margin-top: 1em;
+}
+
+.markup-container :is(p, ul, ol) {
+    line-height: 125%;
+    margin-block: 0.75em;
+}
+
+.hdoc-tip {
+    --hdoc-callout-icon: "💡";
+    --hdoc-callout-color: green;
+    --hdoc-callout-bg: #ecfdf5;
+}
+
+.hdoc-note {
+    --hdoc-callout-icon: "ℹ️";
+    --hdoc-callout-color: cornflowerblue;
+    --hdoc-callout-bg: #eff6ff;
+}
+
+.hdoc-warning {
+    --hdoc-callout-icon: "⚠️";
+    --hdoc-callout-color: gold;
+    --hdoc-callout-bg: #fffbeb;
+}
+
+.hdoc-danger {
+    --hdoc-callout-icon: "🛑";
+    --hdoc-callout-color: crimson;
+    --hdoc-callout-bg: #fef2f2;
+}
+
+.markup-container .hdoc-admonition {
+    margin-block: 1em;
+    position: relative;
+
+}
+
+.markup-container :is(.hdoc-tip, .hdoc-note, .hdoc-warning, .hdoc-danger) {
+    background-color: var(--hdoc-callout-bg);
+    padding-left: var(--hdoc-callout-bar-width);
+}
+
+
+.markup-container :is(.hdoc-tip, .hdoc-note, .hdoc-warning, .hdoc-danger)::before {
+    display: flex;
+    content: var(--hdoc-callout-icon);
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    
+    width: var(--hdoc-callout-bar-width);
+    font-size: var(--hdoc-callout-icon-size);
+    align-items: center;
+    justify-content: center;
+    border-left: 3px solid var(--hdoc-callout-color);
+}
+
+.markup-container .hdoc-admonition.hdoc-quote::before  {
+    display: block;
+    content: '❝';
+}
+
+.markup-container .hdoc-admonition.hdoc-quote::after  {
+    display: block;
+    content: '❞';
+    text-align: right;
+}
+
+.markup-container .hdoc-admonition.hdoc-spoiler::before {
+    display: block;
+    content: "Spoiler! (hover to reveal)";
+    opacity: 50%;
+    font-size: 75%;
+}
+
+.markup-container .hdoc-admonition.hdoc-spoiler > * {
+    filter: blur(6px);
+    transition: filter 120ms ease;
+}
+
+.markup-container .hdoc-admonition.hdoc-spoiler:hover > *,
+.markup-container .hdoc-admonition.hdoc-spoiler:focus > * {
+    filter: none;
+    transition: filter 120ms ease;
+}
+
+.markup-container .hdoc-footnotes {
+    font-size: 75%;
+}
+
+.markup-container .hdoc-footnotes ol li {
+    list-style-type: decimal;
+}
+
+.markup-container pre {
+    display: block;
+    border: 1px solid black;
+    padding: 0.5em;
 }

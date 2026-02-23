@@ -66,6 +66,188 @@
 				</ul>
 			</nav>
 			<article class="panel markup-container">
+<h1>HyperDoc 2.0 Examples</h1>
+  <p class="hdoc-doc-meta">By Felix "xq" Queißner - +2025-12-17T13:45:00+01:00</p>
+</header>
+<nav aria-label="Table of contents">
+  <ol>
+    <li><a href="#paragraphs">Paragraphs and Inline Text</a></li>
+    <li><a href="#lists">Lists</a>
+      <ol>
+        <li><a href="#hdoc-auto-9">Unordered Lists</a></li>
+        <li><a href="#ol">Ordered Lists</a></li>
+      </ol>
+    </li>
+    <li><a href="#admonitions">Admonitions</a></li>
+    <li><a href="#literals">Literal and Preformatted Blocks</a></li>
+    <li><a href="#media">Figures</a></li>
+    <li><a href="#dates">Dates and Times</a></li>
+    <li><a href="#hdoc-auto-29">References</a></li>
+    <li><a href="#table-ref">Tables</a></li>
+  </ol>
+</nav>
+<h2 id="paragraphs">§1 Paragraphs and Inline Text</h2>
+<p id="p-basic">This paragraph shows plain text mixed with <em>emphasis</em>, <s>strike-through</s>, and <code class="hdoc-code">monospaced</code> spans.</p>
+<p lang="de">Dieser Absatz zeigt das Attribut <code class="hdoc-code">lang</code> auf Blockebene.</p>
+<p>This paragraph uses a string literal body instead of a list.</p>
+<p>Inline scripts support <code class="hdoc-code" data-syntax="zig">const version = "2.0";</code> as well as sub/superscripts like H<sub>2</sub>O and x<sup>2</sup>.</p>
+<p>Links can target <a href="#fig-diagram">other blocks</a> or external <a href="https://ashet.computer">resources</a>.</p>
+<div class="hdoc-footnotes">
+</div>
+<h2 id="lists">§2 Lists</h2>
+<h3 id="hdoc-auto-9">§2.1 Unordered Lists</h3>
+<ul>
+  <li>
+    <p>Apples</p>
+  </li>
+  <li>
+    <p>Bananas</p>
+  </li>
+  <li>
+    <p>em{Cucumbers} with inline markup.</p>
+  </li>
+</ul>
+<h3 id="ol">§2.2 Ordered Lists</h3>
+<ol start="3">
+  <li>
+    <p>Start counting at three.</p>
+  </li>
+  <li>
+    <p>Continue with a string item.</p>
+  </li>
+  <li>
+    <p>Finish the sequence.</p>
+  </li>
+</ol>
+<h2 id="admonitions">§3 Admonitions</h2>
+<div class="hdoc-admonition hdoc-tip">
+  <p>Tips provide actionable hints<sup class="hdoc-footnote-ref hdoc-footnote"><a href="#hdoc-footnote-1">1</a></sup>.</p>
+  <p>Tips can also include multiple paragraphs and even lists:</p>
+  <ul>
+    <li>
+      <p>Item 1</p>
+    </li>
+    <li>
+      <p>Item 2</p>
+    </li>
+  </ul>
+</div>
+<div class="hdoc-admonition hdoc-note">
+  <p>Notes highlight supportive information.</p>
+</div>
+<div class="hdoc-admonition hdoc-warning">
+  <p>Warnings call out risky behavior<sup class="hdoc-footnote-ref hdoc-footnote"><a href="#hdoc-footnote-2">2</a></sup>.</p>
+</div>
+<div class="hdoc-admonition hdoc-danger">
+  <p>Danger paragraphs emphasize critical hazards<sup class="hdoc-footnote-ref hdoc-footnote"><a href="#hdoc-footnote-2">2</a></sup>.</p>
+</div>
+<div class="hdoc-admonition hdoc-quote">
+  <p>Quotes include sourced or emphasized wording.</p>
+  <p>- Unknown author</p>
+</div>
+<div class="hdoc-admonition hdoc-spoiler">
+  <p>Spoilers hide key story information until revealed.</p>
+</div>
+<div class="hdoc-footnotes">
+  <ol class="hdoc-footnote-list hdoc-footnote" start="1">
+    <li id="hdoc-footnote-1">You can also write footnotes this way</li>
+    <li id="hdoc-footnote-2">You can even share the same footnote in multiple locations.</li>
+  </ol>
+</div>
+<h2 id="literals">§4 Literal and Preformatted Blocks</h2>
+<p>Literal blocks keep exact content and skip parsing, so characters like \{ \} are not special.
+They are introduced by a trailing colon.
+You can capture snippets without escaping anything.</p>
+<pre id="code-sample"><code class="hdoc-code" data-syntax="zig"><span class="line">test {</span>
+<span class="line">    const message = "HyperDoc";</span>
+<span class="line">    const answer = <code class="hdoc-code" data-syntax="zig">42</code>;</span>
+<span class="line">}</span>
+</code></pre>
+<h2 id="media">§5 Figures</h2>
+<p>The image below has a caption, alt text, and a relative asset path.</p>
+<figure id="fig-diagram">
+  <img src="./assets/diagram.svg" alt="Diagram showing a HyperDoc example">
+  <figcaption>HyperDoc is centered inside a rounded rectangle.</figcaption>
+</figure>
+<h2 id="dates">§6 Dates and Times</h2>
+<p>The event was announced on <time datetime="+2025-12-17">+2025-12-17</time> at <time datetime="13:45:00Z">13:45 Z</time>. A combined timestamp looks like <time datetime="+2025-12-17T13:45:00Z">+2025-12-17T13:45:00Z</time>.</p>
+<h2 id="hdoc-auto-29">§7 References</h2>
+<p>In chapter <a href="#paragraphs">1. Paragraphs and Inline Text</a> we've read about how we can format paragraphs. This chapter here teaches about references.</p>
+<p>References to another chapter can use the numeric value (like <a href="#ol">2.2.</a>), use only the name (like <a href="#table-ref">Tables</a>) or we can use a <a href="#table-ref">custom name like with regular links</a>.</p>
+<h2 id="table-ref">§8 Tables</h2>
+<p>See the dedicated tables example file for row groups and colspan usage.</p>
+<table id="inventory">
+  <thead>
+    <tr>
+      <th scope="col"></th>
+      <th scope="col">
+        <p>Item</p>
+      </th>
+      <th scope="col">
+        <p>Quantity</p>
+      </th>
+      <th scope="col">
+        <p>Notes</p>
+      </th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td></td>
+      <th scope="rowgroup" colspan="3">Fresh Produce</th>
+    </tr>
+    <tr>
+      <th scope="row">Fruit</th>
+      <td>
+        <p>Apples</p>
+      </td>
+      <td>
+        <p>12</p>
+      </td>
+      <td>
+        <p>Delivered on <time datetime="+2025-02-08">+2025-02-08</time>.</p>
+      </td>
+    </tr>
+    <tr>
+      <th scope="row">Vegetables</th>
+      <td>
+        <p>Carrots</p>
+      </td>
+      <td>
+        <p>7</p>
+      </td>
+      <td>
+        <p>Store at <time datetime="08:00:00Z">08:00 Z</time>.</p>
+      </td>
+    </tr>
+    <tr>
+      <td></td>
+      <th scope="rowgroup" colspan="3">Pantry</th>
+    </tr>
+    <tr>
+      <th scope="row">Dry Goods</th>
+      <td>
+        <p>Rice</p>
+      </td>
+      <td>
+        <p>3</p>
+      </td>
+      <td>
+        <p>Packed on <time datetime="+2025-02-08T08:00:00Z">+2025-02-08 08:00:00 Z</time>.</p>
+      </td>
+    </tr>
+    <tr>
+      <th scope="row">Bulk</th>
+      <td colspan="2">
+        <p>This cell spans two columns.</p>
+      </td>
+      <td>
+        <p>Requires label</p>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
 				<h1>HyperDocument File Format</h1>
 				<ol>
 					<li><a href="#">HyperDocument File Format</a></li>
