@@ -4,19 +4,6 @@ const kernel_package = @import("kernel");
 
 const Machine = kernel_package.Machine;
 
-// - os.ashet.computer
-//     - Landing Page: /
-//         - Overview
-//         - Links to sub pages
-//     - Syscall Documentation: /syscalls
-//     - Live Demo: /try
-//         - Live Demo
-//         - x86 Build
-//         - x86 Disk Image
-//         - x86.js Setup
-//     - Kernel Documentation: /kernel
-//         - Autodocs
-
 pub fn build(b: *std.Build) void {
     const install_step = b.getInstallStep();
 
@@ -56,7 +43,7 @@ pub fn build(b: *std.Build) void {
 
     const disk_img = get_named_file(os_files, "disk.img");
 
-    install_step.dependOn(&b.addInstallFile(disk_img, "try/images/livedemo.img").step);
+    install_step.dependOn(&b.addInstallFile(disk_img, "livedemo/images/livedemo.img").step);
     // install_step.dependOn(&b.addInstallDirectory(.{
     //     .source_dir = abi_dep.namedLazyPath("html-docs"),
     //     .install_dir = .prefix,
@@ -68,14 +55,13 @@ pub fn build(b: *std.Build) void {
         .install_subdir = "",
     }).step);
 
-    // install_step.dependOn(&b.addInstallFile(b.path("www/CRT.png"), "try/img/crt.png").step);
-    // install_step.dependOn(&b.addInstallFile(b.path("www/try.html"), "try/index.html").step);
-    install_step.dependOn(&b.addInstallFile(b.path("www/theme.css"), "theme.css").step);
+    install_step.dependOn(&b.addInstallDirectory(.{ .source_dir = b.path("www/"), .install_dir = .prefix, .install_subdir = "" }).step);
 
-    install_step.dependOn(&b.addInstallFile(b.path("vendor/v86/libv86.js"), "livedemo/v86/libv86.js").step);
-    install_step.dependOn(&b.addInstallFile(b.path("vendor/v86/v86.wasm"), "livedemo/v86/v86.wasm").step);
-    install_step.dependOn(&b.addInstallFile(b.path("vendor/bios/seabios.bin"), "livedemo/bios/seabios.bin").step);
-    install_step.dependOn(&b.addInstallFile(b.path("vendor/bios/vgabios.bin"), "livedemo/bios/vgabios.bin").step);
+    // Vendored Libraries:
+    install_step.dependOn(&b.addInstallDirectory(.{ .source_dir = b.path("vendor/v86/"), .install_dir = .prefix, .install_subdir = "livedemo/v86" }).step);
+    install_step.dependOn(&b.addInstallDirectory(.{ .source_dir = b.path("vendor/bios/"), .install_dir = .prefix, .install_subdir = "livedemo/bios" }).step);
+    install_step.dependOn(&b.addInstallDirectory(.{ .source_dir = b.path("vendor/xterm/"), .install_dir = .prefix, .install_subdir = "livedemo/xterm" }).step);
+    install_step.dependOn(&b.addInstallDirectory(.{ .source_dir = b.path("vendor/xterm-fit/"), .install_dir = .prefix, .install_subdir = "livedemo/xterm-fit" }).step);
 }
 
 fn get_optional_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) ?std.Build.LazyPath {
