@@ -1,4 +1,5 @@
 const std = @import("std");
+const hdoc = @import("hyperdoc");
 
 const templates = struct {
     const body = @embedFile("templates.body");
@@ -18,10 +19,14 @@ pub fn main() !void {
 
     const wiki_root = argv[2];
 
-    _ = wiki_root;
+    var wiki_dir = try std.fs.cwd().openDir(wiki_root, .{ .iterate = true });
+    defer wiki_dir.close();
 
     try render_root_page(output_dir);
+
     try render_live_demo(output_dir);
+
+    try wiki.render(output_dir, wiki_dir, allocator);
 }
 
 pub fn render_root_page(output_dir: std.fs.Dir) !void {
@@ -42,6 +47,238 @@ pub fn render_live_demo(output_dir: std.fs.Dir) !void {
         .nesting = 1,
     });
 }
+
+const wiki = struct {
+    const Config = struct {
+        base_nesting: usize,
+    };
+
+    const Folder = struct {
+        files: []Item,
+        nesting: usize,
+
+        pub const Item = struct {
+            path: []const u8,
+            content: Content,
+        };
+
+        pub const Content = union(enum) {
+            folder: Folder,
+            document: Document,
+            copy,
+        };
+    };
+
+    const Document = struct {
+        output_path: []const u8,
+        title: []const u8,
+        contents: hdoc.Document,
+    };
+
+    fn render(output_dir: std.fs.Dir, wiki_src_dir: std.fs.Dir, allocator: std.mem.Allocator) !void {
+        const cfg: Config = .{
+            .base_nesting = 1,
+        };
+
+        const root = try scan_folder(allocator, ".", wiki_src_dir, 1);
+
+        var toc: std.Io.Writer.Allocating = .init(allocator);
+        defer toc.deinit();
+
+        try render_toc(cfg, &toc.writer, root, 0);
+
+        var wiki_dst_dir = try output_dir.makeOpenPath("wiki", .{});
+        defer wiki_dst_dir.close();
+
+        try render_folder(cfg, wiki_src_dir, wiki_dst_dir, toc.written(), root);
+    }
+
+    fn render_folder(config: Config, input: std.fs.Dir, output: std.fs.Dir, toc: []const u8, folder: Folder) !void {
+        for (folder.files) |entry| {
+            switch (entry.content) {
+                .folder => |subfolder| {
+                    try output.makeDir(entry.path);
+                    try render_folder(config, input, output, toc, subfolder);
+                },
+
+                .copy => try std.fs.Dir.copyFile(
+                    input,
+                    entry.path,
+                    output,
+                    entry.path,
+                    .{},
+                ),
+
+                .document => |document| {
+                    var output_file = try output.createFile(document.output_path, .{ .exclusive = true });
+                    defer output_file.close();
+
+                    var buffer: [8192]u8 = undefined;
+                    var file_writer = output_file.writer(&buffer);
+
+                    try render_html(config, document, toc, &file_writer.interface);
+
+                    try file_writer.interface.flush();
+                },
+            }
+        }
+    }
+
+    fn render_html(config: Config, doc: Document, toc: []const u8, writer: *std.Io.Writer) !void {
+        var source = std.Io.Reader.fixed("page content");
+
+        _ = config;
+        _ = toc;
+
+        try render_page(writer, &source, .{
+            .title = doc.title,
+            .nesting = 1, // TODO + wiki page nesting
+        });
+    }
+
+    fn render_toc(config: Config, writer: *std.Io.Writer, folder: Folder, level: usize) !void {
+        for (folder.files) |entry| {
+            switch (entry.content) {
+                .folder => |subfolder| {
+                    try writer.print("    <li data-indent=\"{}\">{f}</li>\n", .{
+                        level,
+                        fmt_html(std.fs.path.basename(entry.path)),
+                    });
+                    try render_toc(config, writer, subfolder, level + 1);
+                },
+
+                .copy => {},
+
+                .document => |document| {
+                    try writer.print("    <li data-indent=\"{}\"><a href=\"{f}\">{f}</a></li>\n", .{
+                        level,
+                        fmt_url(config, document.output_path),
+                        fmt_html(document.title),
+                    });
+                },
+            }
+        }
+    }
+
+    pub fn scan_folder(allocator: std.mem.Allocator, path: []const u8, dir: std.fs.Dir, nesting: usize) !Folder {
+        var iter = dir.iterate();
+
+        var entries: std.ArrayList(Folder.Item) = .empty;
+        defer entries.deinit(allocator);
+
+        while (try iter.next()) |entry| {
+            const child_path = try std.fs.path.join(allocator, &.{ path, entry.name });
+
+            switch (entry.kind) {
+                .file => {
+                    const ext = std.fs.path.extension(entry.name);
+                    if (std.mem.eql(u8, ext, ".hdoc")) {
+
+                        // convert hyperdoc
+                        std.log.err("conv {s}", .{child_path});
+
+                        const hdoc_text = try dir.readFileAlloc(allocator, entry.name, 1 << 24);
+                        defer allocator.free(hdoc_text);
+
+                        var diags: hdoc.Diagnostics = .init(allocator);
+                        defer diags.deinit();
+
+                        const doc = hdoc.parse(allocator, hdoc_text, &diags) catch |err| switch (err) {
+                            error.OutOfMemory => |e| return e,
+
+                            error.SyntaxError, error.MalformedDocument, error.UnsupportedVersion, error.InvalidUtf8 => {
+                                for (diags.items.items) |diag| {
+                                    std.log.err("failed to parse {s}:{}:{}: {f}", .{
+                                        child_path,
+                                        diag.location.line,
+                                        diag.location.column,
+                                        diag.code,
+                                    });
+                                }
+                                return error.BadFile;
+                            },
+                        };
+
+                        const output_path = try std.fmt.allocPrint(allocator, "{s}.html", .{
+                            child_path[0 .. child_path.len - ext.len],
+                        });
+
+                        try entries.append(allocator, .{
+                            .path = child_path,
+                            .content = .{
+                                .document = .{
+                                    .output_path = output_path,
+                                    .title = if (doc.title) |title|
+                                        title.simple
+                                    else
+                                        try allocator.dupe(u8, entry.name[0 .. entry.name.len - ext.len]),
+                                    .contents = doc,
+                                },
+                            },
+                        });
+                    } else {
+                        // copy file
+                        std.log.err("copy {s}", .{child_path});
+
+                        try entries.append(allocator, .{
+                            .path = child_path,
+                            .content = .copy,
+                        });
+                    }
+                },
+                .directory => {
+                    std.log.err("dir {s}", .{child_path});
+
+                    var sub_dir = try dir.openDir(entry.name, .{ .iterate = true });
+                    defer sub_dir.close();
+
+                    try entries.append(allocator, .{
+                        .path = child_path,
+                        .content = .{
+                            .folder = try scan_folder(allocator, child_path, sub_dir, nesting + 1),
+                        },
+                    });
+                },
+
+                else => @panic("unsupported entry type"),
+            }
+        }
+
+        return .{
+            .nesting = nesting,
+            .files = try entries.toOwnedSlice(allocator),
+        };
+    }
+
+    fn fmt_url(config: Config, url: []const u8) std.fmt.Formatter(struct { Config, []const u8 }, format_url) {
+        return .{ .data = .{ config, url } };
+    }
+
+    fn format_url(options: struct { Config, []const u8 }, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+        const config, const url = options;
+
+        // TODO: Implement proper URL parsing and escaping
+
+        const wiki_prefix = "wiki:/";
+        if (std.mem.startsWith(u8, url, wiki_prefix)) {
+            // wiki url
+            try writer.splatBytesAll("../", config.base_nesting);
+
+            const ext = std.fs.path.extension(url);
+
+            try writer.writeAll(url[wiki_prefix.len .. url.len - ext.len]);
+
+            try writer.writeAll(".html");
+        } else if (std.mem.indexOf(u8, url, "://") != null) {
+            // absolute url
+            try writer.writeAll(url);
+        } else {
+            // relative url
+            try writer.splatBytesAll("../", config.base_nesting);
+            try writer.writeAll(url);
+        }
+    }
+};
 
 pub const RenderOptions = struct {
     header: ?*std.Io.Reader = null,
@@ -123,4 +360,20 @@ pub fn render_page(target: *std.Io.Writer, source: *std.Io.Reader, options: Rend
     }
 
     try target.flush();
+}
+
+fn fmt_html(str: []const u8) std.fmt.Formatter([]const u8, format_html_escape) {
+    return .{ .data = str };
+}
+
+fn fmt_attr(str: []const u8) std.fmt.Formatter([]const u8, format_attr_escape) {
+    return .{ .data = str };
+}
+
+fn format_html_escape(str: []const u8, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+    try writer.writeAll(str); // TODO: Implement proper escaping
+}
+
+fn format_attr_escape(str: []const u8, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+    try writer.writeAll(str); // TODO: Implement proper escaping
 }
