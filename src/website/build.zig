@@ -35,6 +35,8 @@ pub fn build(b: *std.Build) void {
     });
 
     const conv_wiki_proc = b.addRunArtifact(website_gen_exe);
+    conv_wiki_proc.has_side_effects = true;
+
     const html_wiki_dir = conv_wiki_proc.addOutputDirectoryArg("wiki");
 
     conv_wiki_proc.addDirectoryArg(b.path("../../rootfs/all-systems/wiki"));

@@ -81,6 +81,8 @@ const wiki = struct {
     fn render(output_dir: std.fs.Dir, wiki_src_dir: std.fs.Dir, allocator: std.mem.Allocator) !void {
         const root = try scan_folder(allocator, ".", wiki_src_dir, 0);
 
+        try output_dir.deleteTree("wiki");
+
         var wiki_dst_dir = try output_dir.makeOpenPath("wiki", .{});
         defer wiki_dst_dir.close();
 
@@ -200,7 +202,7 @@ const wiki = struct {
                     if (std.mem.eql(u8, ext, ".hdoc")) {
 
                         // convert hyperdoc
-                        std.log.err("conv {s}", .{child_path});
+                        std.log.info("conv {s}", .{child_path});
 
                         const hdoc_text = try dir.readFileAlloc(allocator, entry.name, 1 << 24);
                         defer allocator.free(hdoc_text);
@@ -245,7 +247,7 @@ const wiki = struct {
                         });
                     } else {
                         // copy file
-                        std.log.err("copy {s}", .{child_path});
+                        std.log.info("copy {s}", .{child_path});
 
                         try entries.append(allocator, .{
                             .path = child_path,
@@ -254,7 +256,7 @@ const wiki = struct {
                     }
                 },
                 .directory => {
-                    std.log.err("dir {s}", .{child_path});
+                    std.log.info("dir {s}", .{child_path});
 
                     var sub_dir = try dir.openDir(entry.name, .{ .iterate = true });
                     defer sub_dir.close();
@@ -270,6 +272,31 @@ const wiki = struct {
                 else => @panic("unsupported entry type"),
             }
         }
+
+        std.sort.block(Folder.Item, entries.items, {}, struct {
+            fn lt(_: void, lhs: Folder.Item, rhs: Folder.Item) bool {
+                if (lhs.content == .copy and rhs.content == .copy) {
+                    return std.mem.lessThan(u8, lhs.path, rhs.path);
+                }
+
+                if (lhs.content == .copy) { // just move copy items to the start
+                    return true;
+                }
+
+                return std.ascii.lessThanIgnoreCase(
+                    name_of(lhs),
+                    name_of(rhs),
+                );
+            }
+
+            fn name_of(item: Folder.Item) []const u8 {
+                return switch (item.content) {
+                    .copy => "",
+                    .document => |doc| doc.title,
+                    .folder => std.fs.path.basename(item.path),
+                };
+            }
+        }.lt);
 
         return .{
             .nesting = nesting,

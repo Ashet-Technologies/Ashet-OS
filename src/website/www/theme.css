@@ -66,6 +66,11 @@ main#wiki {
     gap: 1rem;
 }
 
+
+main#wiki nav {
+    align-self: start;
+}
+
 main#syscalls {
     display: grid;
 
@@ -265,12 +270,13 @@ code .tok-name {
  *************************************************/
 
 * {
+    --markup-block-spacing: 0.75em;
     --hdoc-callout-bar-width: 3rem;
     --hdoc-callout-icon-size: 1.5rem;
 }
 
 .markup-container {
-    /* TODO */
+    overflow-x: auto;
 }
 
 .markup-container ul,
@@ -323,12 +329,16 @@ code .tok-name {
 .markup-container .hdoc-admonition {
     margin-block: 1em;
     position: relative;
-
 }
 
 .markup-container :is(.hdoc-tip, .hdoc-note, .hdoc-warning, .hdoc-danger) {
     background-color: var(--hdoc-callout-bg);
     padding-left: var(--hdoc-callout-bar-width);
+    position: relative;
+    min-height: var(--hdoc-callout-bar-width);
+
+    padding-top: 0.25em;
+    padding-bottom: 0.25em;
 }
 
 
@@ -388,6 +398,7 @@ code .tok-name {
     display: block;
     border: 1px solid gray;
     padding: 0.5em;
+    overflow-x: auto;
 }
 
 .markup-container figure {
