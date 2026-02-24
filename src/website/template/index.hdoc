@@ -1,0 +1,5 @@
+hdoc(version="1.0");
+
+p {
+    Welcome to the Ashet OS system documentation!
+}

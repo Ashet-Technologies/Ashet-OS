@@ -8,8 +8,8 @@
         .kernel = .{ .path = "../kernel" },
 
         .hyperdoc = .{
-            .url = "git+https://github.com/Ashet-Technologies/hyperdoc.git#4b673429ae9668213992db43bc9b9158d1924b42",
-            .hash = "hyperdoc-0.1.0-nnPEq-LDAADToTXxWF55g42avVDqk1Sdmihm-2qSwK7g",
+            .url = "git+https://github.com/Ashet-Technologies/hyperdoc.git#7c5dc392b99be4c728ad1bfd057398a6b939845d",
+            .hash = "hyperdoc-0.1.0-nnPEq-F6CABHfHgu3TyNaHHp1HqIKzAdXFskgBRH_MGy",
         },
     },
     .paths = .{

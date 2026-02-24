@@ -26,52 +26,56 @@ pub fn build(b: *std.Build) void {
         .machine = Machine.@"x86-pc-generic",
     });
 
-    const abi_dep = b.dependency("abi", .{});
+    // const abi_dep = b.dependency("abi", .{});
 
     const hyperdoc_dep = b.dependency("hyperdoc", .{});
 
     const hyperdoc_mod = hyperdoc_dep.module("hyperdoc");
 
-    const wiki_conv_exe = b.addExecutable(.{
-        .name = "wiki-conv",
+    const website_gen_exe = b.addExecutable(.{
+        .name = "website-gen",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/wiki-conv.zig"),
+            .root_source_file = b.path("src/website-gen.zig"),
             .target = b.graph.host,
             .optimize = .Debug,
             .imports = &.{
                 .{ .name = "hyperdoc", .module = hyperdoc_mod },
+                .{ .name = "templates.body", .module = embedFile(b, "template/index.html") },
+                .{ .name = "templates.livedemo.head", .module = embedFile(b, "template/livedemo.head.html") },
+                .{ .name = "templates.livedemo.body", .module = embedFile(b, "template/livedemo.body.html") },
             },
         }),
     });
 
-    const conv_wiki_proc = b.addRunArtifact(wiki_conv_exe);
-    conv_wiki_proc.addDirectoryArg(b.path("../../rootfs/all-systems/wiki"));
+    const conv_wiki_proc = b.addRunArtifact(website_gen_exe);
     const html_wiki_dir = conv_wiki_proc.addOutputDirectoryArg("wiki");
+
+    conv_wiki_proc.addDirectoryArg(b.path("../../rootfs/all-systems/wiki"));
 
     const os_files = os_dep.namedWriteFiles("ashet-os");
 
     const disk_img = get_named_file(os_files, "disk.img");
 
     install_step.dependOn(&b.addInstallFile(disk_img, "try/images/livedemo.img").step);
-    install_step.dependOn(&b.addInstallDirectory(.{
-        .source_dir = abi_dep.namedLazyPath("html-docs"),
-        .install_dir = .prefix,
-        .install_subdir = "syscalls",
-    }).step);
+    // install_step.dependOn(&b.addInstallDirectory(.{
+    //     .source_dir = abi_dep.namedLazyPath("html-docs"),
+    //     .install_dir = .prefix,
+    //     .install_subdir = "syscalls",
+    // }).step);
     install_step.dependOn(&b.addInstallDirectory(.{
         .source_dir = html_wiki_dir,
         .install_dir = .prefix,
-        .install_subdir = "wiki",
+        .install_subdir = "",
     }).step);
 
-    install_step.dependOn(&b.addInstallFile(b.path("www/CRT.png"), "try/img/crt.png").step);
-    install_step.dependOn(&b.addInstallFile(b.path("www/try.html"), "try/index.html").step);
-    install_step.dependOn(&b.addInstallFile(b.path("www/wiki.css"), "wiki/wiki.css").step);
+    // install_step.dependOn(&b.addInstallFile(b.path("www/CRT.png"), "try/img/crt.png").step);
+    // install_step.dependOn(&b.addInstallFile(b.path("www/try.html"), "try/index.html").step);
+    install_step.dependOn(&b.addInstallFile(b.path("www/theme.css"), "theme.css").step);
 
-    install_step.dependOn(&b.addInstallFile(b.path("vendor/v86/libv86.js"), "try/v86/libv86.js").step);
-    install_step.dependOn(&b.addInstallFile(b.path("vendor/v86/v86.wasm"), "try/v86/v86.wasm").step);
-    install_step.dependOn(&b.addInstallFile(b.path("vendor/bios/seabios.bin"), "try/bios/seabios.bin").step);
-    install_step.dependOn(&b.addInstallFile(b.path("vendor/bios/vgabios.bin"), "try/bios/vgabios.bin").step);
+    install_step.dependOn(&b.addInstallFile(b.path("vendor/v86/libv86.js"), "livedemo/v86/libv86.js").step);
+    install_step.dependOn(&b.addInstallFile(b.path("vendor/v86/v86.wasm"), "livedemo/v86/v86.wasm").step);
+    install_step.dependOn(&b.addInstallFile(b.path("vendor/bios/seabios.bin"), "livedemo/bios/seabios.bin").step);
+    install_step.dependOn(&b.addInstallFile(b.path("vendor/bios/vgabios.bin"), "livedemo/bios/vgabios.bin").step);
 }
 
 fn get_optional_named_file(write_files: *std.Build.Step.WriteFile, sub_path: []const u8) ?std.Build.LazyPath {
@@ -112,4 +116,8 @@ fn path_eql(lhs: []const u8, rhs: []const u8) bool {
             return false;
     }
     return true;
+}
+
+fn embedFile(b: *std.Build, path: []const u8) *std.Build.Module {
+    return b.createModule(.{ .root_source_file = b.path(path) });
 }
