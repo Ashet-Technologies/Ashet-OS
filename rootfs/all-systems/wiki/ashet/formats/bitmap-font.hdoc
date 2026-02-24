@@ -1,0 +1,62 @@
+hdoc(version="2.0", title="Bitmap Fonts (.font)", lang="en");
+
+title { Bitmap Fonts (\mono{.font}) }
+
+p {
+  The bitmap font format stores pre-rasterized glyphs in a compact binary layout.
+  All integer fields are little-endian.
+}
+
+p {
+  A file contains a header, a sorted glyph metadata table, a glyph offset table,
+  and one contiguous glyph payload area.
+  Offsets are relative to the start of the payload area.
+}
+
+p {
+  Each glyph encodes a bitmap with row-major packing:
+  one row uses \mono{(width + 7) / 8} bytes, and within each byte bit 0 is the leftmost pixel.
+  A set bit means foreground pixel, an unset bit means transparent/background pixel.
+}
+
+h1(id="encoding") { Data Encoding }
+
+pre(syntax="zig"):
+| const GlyphMeta = packed struct(u32) {
+|   codepoint: u24, // Unicode codepoint, strictly increasing in table order
+|   advance: u8,    // horizontal advance after rendering this glyph
+| };
+| 
+| const EncodedGlyph = struct {
+|   width: u8,
+|   height: u8,
+|   offset_x: i8, // glyph top-left X relative to glyph origin/baseline anchor
+|   offset_y: i8, // glyph top-left Y relative to glyph origin/baseline anchor
+|   bits: [((width + 7) / 8) * height]u8, // row-major, LSB=left, MSB=right
+| };
+| 
+| const BitmapFontFile = struct {
+|   magic: u32 = 0xcb3765be,
+|   line_height: u32, // Height of the font in pixels till the next line
+|   glyph_count: u32, 
+| 
+|   // Contains meta-data about all available glyphs.
+|   // Code points must be sorted in ascending order so a binary search can be employed
+|   // to find the expected code point.
+|   glyph_meta: [glyph_count]GlyphMeta,
+|   glyph_offsets: [glyph_count]u32, // byte offsets into glyph_blob
+| 
+|   // Concatenation of `glyph_count` EncodedGlyph payloads.
+|   // Payload i starts at glyph_blob[glyph_offsets[i]..].
+|   glyph_blob: [*]u8,
+| };
+
+h1(id="constraints") { Constraints }
+
+ul {
+  li { p { \mono{magic} must be \mono{0xcb3765be}. } }
+  li { p { \mono{glyph_meta} entries are sorted by strictly increasing \mono{codepoint}. } }
+  li { p { Every \mono{codepoint} must fit in \mono{u21}. } }
+  li { p { For each referenced glyph payload, at least 4 bytes of header plus packed bitmap bytes must be present. } }
+}
+

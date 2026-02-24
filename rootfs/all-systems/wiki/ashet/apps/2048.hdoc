@@ -1,0 +1,13 @@
+hdoc(version="2.0");
+
+title { 2048 }
+
+p {
+    2048 is a port of the \link(uri="https://en.wikipedia.org/wiki/2048_(video_game)") { famous video game } to Ashet OS.
+}
+
+h1 { Controls }
+
+p {
+    TODO: Write about the controls of 2048.
+}

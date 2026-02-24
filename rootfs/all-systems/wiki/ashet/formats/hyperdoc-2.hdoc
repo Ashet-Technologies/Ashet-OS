@@ -1,0 +1,154 @@
+hdoc(version="2.0", lang="en", author="Felix \"xq\" Queißner", date="2025-12-17T13:45:00+01:00");
+
+warning {
+    p { TODO: Rewrite this document to be explaining instead of showing }
+}
+
+title { HyperDoc 2.0 Examples }
+
+toc(depth="2") {}
+
+h1(id="paragraphs") { Paragraphs and Inline Text }
+
+p(id="p-basic") {
+  This paragraph shows plain text mixed with \em{emphasis}, \strike{strike-through}, and \mono{monospaced} spans.
+}
+
+p(lang="de") {
+  Dieser Absatz zeigt das Attribut \mono{lang} auf Blockebene.
+}
+
+p "This paragraph uses a string literal body instead of a list."
+
+p {
+  Inline scripts support \mono(syntax="zig"){const version = "2.0";} as well as sub/superscripts like H\sub{2}O and x\sup{2}.
+}
+
+p {
+  Links can target \ref(ref="fig-diagram"){other blocks} or external \link(uri="https://ashet.computer"){resources}.
+}
+
+footnotes;
+
+h1(id="lists") { Lists }
+
+h2 { Unordered Lists }
+
+ul {
+  li { p { Apples } }
+  li "Bananas"
+  li { p { em{Cucumbers} with inline markup. } }
+}
+
+h2(id="ol") { Ordered Lists }
+
+ol(first="3") {
+  li { p { Start counting at three. } }
+  li "Continue with a string item."
+  li { p { Finish the sequence. } }
+}
+
+h1(id="admonitions") "Admonitions"
+tip {
+  p { Tips provide actionable hints\footnote{You can also write footnotes this way}. }
+  p { Tips can also include multiple paragraphs and even lists: }
+  ul {
+    li "Item 1"
+    li "Item 2"
+  }
+}
+
+note "Notes highlight supportive information."
+
+warning {
+  p { Warnings call out risky behavior\footnote(key="shared"){You can even share the same footnote in multiple locations.,}. }
+}
+
+danger {
+  p { Danger paragraphs emphasize critical hazards\footnote(ref="shared");. }
+}
+
+quote {
+  p "Quotes include sourced or emphasized wording."
+  p { - Unknown author }
+}
+
+spoiler "Spoilers hide key story information until revealed."
+
+footnotes;
+
+h1(id="literals") { Literal and Preformatted Blocks }
+
+p:
+| Literal blocks keep exact content and skip parsing, so characters like \{ \} are not special.
+| They are introduced by a trailing colon.
+| You can capture snippets without escaping anything.
+
+pre(id="code-sample", syntax="zig") {test {
+    const message = "HyperDoc";
+    const answer = \mono(syntax="zig"){42};
+}
+}
+
+h1(id="media") { Figures }
+
+p {
+  The image below has a caption, alt text, and a relative asset path. 
+}
+
+img(id="fig-diagram", alt="Diagram showing a HyperDoc example", path="./assets/diagram.svg") {
+  HyperDoc is centered inside a rounded rectangle.
+}
+
+h1(id="dates") { Dates and Times }
+
+p {
+  The event was announced on \date(fmt="long"){2025-12-17} at \time(fmt="short"){13:45:00Z}.
+  A combined timestamp looks like \datetime(fmt="iso"){2025-12-17T13:45:00Z}.
+}
+
+h1 "References"
+
+p {
+  In chapter \ref(ref="paragraphs"); we've read about how we can format paragraphs.
+  This chapter here teaches about references.
+}
+
+p {
+  References to another chapter can use the numeric value (like \ref(ref="ol", fmt="index");), use only the name (like \ref(ref="table-ref",fmt="name");) or we can use a \ref(ref="table-ref"){custom name like with regular links}.
+}
+
+h1(id="table-ref") { Tables }
+
+p {
+  See the dedicated tables example file for row groups and colspan usage.
+}
+
+table(id="inventory") {
+  columns {
+    td "Item"
+    td "Quantity"
+    td "Notes"
+  }
+  group { Fresh Produce }
+  row(title="Fruit") {
+    td "Apples"
+    td "12"
+    td { p { Delivered on \date(fmt="short"){2025-02-08}. } }
+  }
+  row(title="Vegetables") {
+    td "Carrots"
+    td "7"
+    td { p { Store at \time(fmt="rough"){08:00:00Z}. } }
+  }
+  group { Pantry }
+  row(title="Dry Goods") {
+    td "Rice"
+    td "3"
+    td { p { Packed on \datetime(fmt="relative"){2025-02-08T08:00:00Z}. } }
+  }
+  row(title="Bulk") {
+    td(colspan="2") { p { This cell spans two columns. } }
+    td "Requires label"
+  }
+}

@@ -1,0 +1,18 @@
+hdoc(version="2.0", title="Dungeon");
+
+title { Dungeon }
+
+p {
+    Dungeon is a basic raycasting demo showcasing how to implement games with
+    software-based rendering.
+}
+
+h1 { Controls }
+
+p {
+    Dungeon can be controlled via both the mouse and the keyboard.   
+}
+
+p {
+    TODO: Write about the controls of dungeon.
+}
