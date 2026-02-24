@@ -50,7 +50,9 @@ pub fn render_live_demo(output_dir: std.fs.Dir) !void {
 
 const wiki = struct {
     const Config = struct {
+        allocator: std.mem.Allocator,
         base_nesting: usize,
+        root: Folder,
     };
 
     const Folder = struct {
@@ -70,35 +72,31 @@ const wiki = struct {
     };
 
     const Document = struct {
+        nesting: usize,
         output_path: []const u8,
         title: []const u8,
         contents: hdoc.Document,
     };
 
     fn render(output_dir: std.fs.Dir, wiki_src_dir: std.fs.Dir, allocator: std.mem.Allocator) !void {
-        const cfg: Config = .{
-            .base_nesting = 1,
-        };
-
-        const root = try scan_folder(allocator, ".", wiki_src_dir, 1);
-
-        var toc: std.Io.Writer.Allocating = .init(allocator);
-        defer toc.deinit();
-
-        try render_toc(cfg, &toc.writer, root, 0);
+        const root = try scan_folder(allocator, ".", wiki_src_dir, 0);
 
         var wiki_dst_dir = try output_dir.makeOpenPath("wiki", .{});
         defer wiki_dst_dir.close();
 
-        try render_folder(cfg, wiki_src_dir, wiki_dst_dir, toc.written(), root);
+        try render_folder(.{
+            .allocator = allocator,
+            .base_nesting = 1,
+            .root = root,
+        }, wiki_src_dir, wiki_dst_dir, root);
     }
 
-    fn render_folder(config: Config, input: std.fs.Dir, output: std.fs.Dir, toc: []const u8, folder: Folder) !void {
+    fn render_folder(config: Config, input: std.fs.Dir, output: std.fs.Dir, folder: Folder) !void {
         for (folder.files) |entry| {
             switch (entry.content) {
                 .folder => |subfolder| {
                     try output.makeDir(entry.path);
-                    try render_folder(config, input, output, toc, subfolder);
+                    try render_folder(config, input, output, subfolder);
                 },
 
                 .copy => try std.fs.Dir.copyFile(
@@ -116,7 +114,7 @@ const wiki = struct {
                     var buffer: [8192]u8 = undefined;
                     var file_writer = output_file.writer(&buffer);
 
-                    try render_html(config, document, toc, &file_writer.interface);
+                    try render_html(config, document, &file_writer.interface);
 
                     try file_writer.interface.flush();
                 },
@@ -124,34 +122,60 @@ const wiki = struct {
         }
     }
 
-    fn render_html(config: Config, doc: Document, toc: []const u8, writer: *std.Io.Writer) !void {
-        var source = std.Io.Reader.fixed("page content");
+    fn render_html(config: Config, doc: Document, writer: *std.Io.Writer) !void {
+        var wiki_page: std.Io.Writer.Allocating = .init(config.allocator);
+        defer wiki_page.deinit();
 
-        _ = config;
-        _ = toc;
+        const wiki_writer = &wiki_page.writer;
+
+        try wiki_writer.writeAll(
+            \\<main id="wiki">
+            \\  <nav class="panel">
+            \\    <ul class="treeview">
+        );
+
+        try render_toc(.{
+            .allocator = config.allocator,
+            .base_nesting = doc.nesting,
+            .root = config.root,
+        }, wiki_writer, config.root);
+
+        try wiki_writer.writeAll(
+            \\  </ul>
+            \\</nav>
+            \\<article class="panel markup-container">
+        );
+        try wiki_writer.print("<p>{s}</p>", .{doc.title});
+
+        try wiki_writer.writeAll(
+            \\  </article>
+            \\</main>
+        );
+
+        var source = std.Io.Reader.fixed(wiki_page.written());
 
         try render_page(writer, &source, .{
             .title = doc.title,
-            .nesting = 1, // TODO + wiki page nesting
+            .nesting = 1 + doc.nesting,
         });
     }
 
-    fn render_toc(config: Config, writer: *std.Io.Writer, folder: Folder, level: usize) !void {
+    fn render_toc(config: Config, writer: *std.Io.Writer, folder: Folder) !void {
         for (folder.files) |entry| {
             switch (entry.content) {
                 .folder => |subfolder| {
-                    try writer.print("    <li data-indent=\"{}\">{f}</li>\n", .{
-                        level,
+                    try writer.print("    <li class=\"folder\" data-indent=\"{}\">{f}</li>\n", .{
+                        subfolder.nesting,
                         fmt_html(std.fs.path.basename(entry.path)),
                     });
-                    try render_toc(config, writer, subfolder, level + 1);
+                    try render_toc(config, writer, subfolder);
                 },
 
                 .copy => {},
 
                 .document => |document| {
-                    try writer.print("    <li data-indent=\"{}\"><a href=\"{f}\">{f}</a></li>\n", .{
-                        level,
+                    try writer.print("    <li class=\"file\" data-indent=\"{}\"><a href=\"{f}\">{f}</a></li>\n", .{
+                        document.nesting + 1,
                         fmt_url(config, document.output_path),
                         fmt_html(document.title),
                     });
@@ -187,6 +211,7 @@ const wiki = struct {
                             error.OutOfMemory => |e| return e,
 
                             error.SyntaxError, error.MalformedDocument, error.UnsupportedVersion, error.InvalidUtf8 => {
+                                std.log.err("failed to parse {s}: {t}", .{ child_path, err });
                                 for (diags.items.items) |diag| {
                                     std.log.err("failed to parse {s}:{}:{}: {f}", .{
                                         child_path,
@@ -207,6 +232,7 @@ const wiki = struct {
                             .path = child_path,
                             .content = .{
                                 .document = .{
+                                    .nesting = nesting,
                                     .output_path = output_path,
                                     .title = if (doc.title) |title|
                                         title.simple

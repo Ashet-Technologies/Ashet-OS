@@ -1,20 +1,20 @@
-hdoc "1.0"
+hdoc(version="2.0", title="File Formats", lang="en");
 
-h1 "" "File Formats used in Ashet OS"
+title { File Formats used in Ashet OS }
 
-h2 "bitmap" "Ashet Bitmap (.abm)"
+h2(id="bitmap") { Ashet Bitmap (\mono{.abm}) }
 
-pre "zig" {
-  span "struct {\n"
-  span "  magic: u32 = 0x48198b74,\n"
-  span "  width: u16,\n"
-  span "  height: u16,\n"
-  span "  flags: u16,       // 1=USE_TRANSPARENCY\n"
-  span "  pal: u8,          // \"number of colors in the palette\", 0=all colors used\n"
-  span "  transparency: u8, // color index which is used for \"transparent\", usually 0xFF\n"
-  span "\n"
-  span "  pixels: [width*height]u8,\n"
-  span "\n"
-  span "  palette: [(pal==0 ? 256 : pal)]u16,\n"
-  span "}\n"
-}
+pre(syntax="zig"):
+| struct {
+|   magic: u32 = 0x48198b74,
+|   width: u16,
+|   height: u16,
+|   flags: u16,       // 1=USE_TRANSPARENCY
+|   pal: u8,          // \"number of colors in the palette\", 0=all colors used
+|   transparency: u8, // color index which is used for \"transparent\", usually 0xFF
+| 
+|   pixels: [width*height]u8,
+| 
+|   palette: [(pal==0 ? 256 : pal)]u16,
+| }
+
