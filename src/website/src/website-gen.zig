@@ -145,7 +145,8 @@ const wiki = struct {
             \\</nav>
             \\<article class="panel markup-container">
         );
-        try wiki_writer.print("<p>{s}</p>", .{doc.title});
+
+        try hdoc.render.html5(doc.contents, wiki_writer);
 
         try wiki_writer.writeAll(
             \\  </article>

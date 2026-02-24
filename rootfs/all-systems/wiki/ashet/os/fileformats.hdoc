@@ -2,7 +2,7 @@ hdoc(version="2.0", title="File Formats", lang="en");
 
 title { File Formats used in Ashet OS }
 
-h2(id="bitmap") { Ashet Bitmap (\mono{.abm}) }
+h1(id="bitmap") { Ashet Bitmap (\mono{.abm}) }
 
 pre(syntax="zig"):
 | struct {

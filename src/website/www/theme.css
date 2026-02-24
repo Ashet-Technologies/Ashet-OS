@@ -19,8 +19,7 @@ body {
     /* ensure the body covers at least the whole screen */
 }
 
-header {
-    background-color: red;
+body>header {
     display: flex;
     flex-direction: row;
     align-items: center;
@@ -28,29 +27,29 @@ header {
     gap: 1rem;
 }
 
-header ul {
+body>header ul {
     display: flex;
     flex-direction: row;
     gap: 0.5rem;
 }
 
-header ul li {
+body>header ul li {
     display: inline-block;
 }
 
-header hr {
+body>header hr {
     width: 1px;
     display: block;
     align-self: stretch;
 }
 
-header search {
+body>header search {
     width: 17em;
     display: flex;
     flex-direction: row;
 }
 
-header search input {
+body>header search input {
     flex: 1;
 }
 
@@ -281,6 +280,10 @@ code .tok-name {
 
 .markup-container h1~p.hdoc-doc-meta {
     opacity: 50%;
+}
+
+.markup-container header {
+    border-bottom: 1px dashed black;
 }
 
 .markup-container :is(h2, h3, h4, h5, h6) {
