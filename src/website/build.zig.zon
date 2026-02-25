@@ -6,6 +6,7 @@
         .abi = .{ .path = "../abi" },
         .os = .{ .path = "../os" },
         .kernel = .{ .path = "../kernel" },
+        .abi_mapper = .{ .path = "../tools/abi-mapper" },
 
         .hyperdoc = .{
             .url = "git+https://github.com/Ashet-Technologies/hyperdoc.git#470b9cc37b43c89d97618dcb619a6eb9d803f683",

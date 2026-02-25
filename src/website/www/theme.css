@@ -104,30 +104,30 @@ main#livedemo {
     box-shadow: black 4px 4px 8px;
 }
 
-.panel.breakcrumbs {
+.panel.breadcrumbs {
     padding: 0;
 }
 
-ul.breakcrumbs {
+ul.breadcrumbs {
     display: block;
 }
 
-ul.breakcrumbs li {
+ul.breadcrumbs li {
     padding: 0;
     display: inline-block;
     list-style: none;
 }
 
-ul.breakcrumbs li a {
+ul.breadcrumbs li a {
     padding: 0.5rem;
     display: inline-block;
 }
 
-ul.breakcrumbs li:hover {
+ul.breadcrumbs li:hover {
     background-color: silver;
 }
 
-ul.breakcrumbs li:not(:first-of-type)::before {
+ul.breadcrumbs li:not(:first-of-type)::before {
     position: relative;
     left: -0.25em;
     width: 0;

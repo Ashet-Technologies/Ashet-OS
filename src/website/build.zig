@@ -13,11 +13,14 @@ pub fn build(b: *std.Build) void {
         .machine = Machine.@"x86-pc-generic",
     });
 
-    // const abi_dep = b.dependency("abi", .{});
-
+    const abi_dep = b.dependency("abi", .{});
+    const abi_mapper_dep = b.dependency("abi_mapper", .{});
     const hyperdoc_dep = b.dependency("hyperdoc", .{});
 
     const hyperdoc_mod = hyperdoc_dep.module("hyperdoc");
+    const abi_parser_mod = abi_mapper_dep.module("abi-parser");
+
+    const ashet_abi_json = abi_dep.namedLazyPath("ashet-abi.json");
 
     const website_gen_exe = b.addExecutable(.{
         .name = "website-gen",
@@ -27,6 +30,8 @@ pub fn build(b: *std.Build) void {
             .optimize = .Debug,
             .imports = &.{
                 .{ .name = "hyperdoc", .module = hyperdoc_mod },
+                .{ .name = "abi-mapper", .module = abi_parser_mod },
+
                 .{ .name = "templates.body", .module = embedFile(b, "template/index.html") },
                 .{ .name = "templates.livedemo.head", .module = embedFile(b, "template/livedemo.head.html") },
                 .{ .name = "templates.livedemo.body", .module = embedFile(b, "template/livedemo.body.html") },
@@ -40,6 +45,7 @@ pub fn build(b: *std.Build) void {
     const html_wiki_dir = conv_wiki_proc.addOutputDirectoryArg("wiki");
 
     conv_wiki_proc.addDirectoryArg(b.path("../../rootfs/all-systems/wiki"));
+    conv_wiki_proc.addFileArg(ashet_abi_json);
 
     const os_files = os_dep.namedWriteFiles("ashet-os");
 

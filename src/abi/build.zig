@@ -87,6 +87,7 @@ pub fn build(b: *std.Build) void {
     });
 
     _ = b.addModule("ashet-abi.json", .{ .root_source_file = abi_json });
+    b.addNamedLazyPath("ashet-abi.json", abi_json);
 
     const check_abi_code = b.addSystemCommand(&.{ b.graph.zig_exe, "ast-check" });
     check_abi_code.addFileArg(abi_code);
