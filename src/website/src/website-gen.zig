@@ -61,13 +61,10 @@ const wiki = struct {
 
         pub const Item = struct {
             path: []const u8,
-            content: Content,
-        };
 
-        pub const Content = union(enum) {
-            folder: Folder,
-            document: Document,
-            copy,
+            folder: ?Folder,
+            document: ?Document,
+            copy: bool,
         };
     };
 
@@ -95,31 +92,31 @@ const wiki = struct {
 
     fn render_folder(config: Config, input: std.fs.Dir, output: std.fs.Dir, folder: Folder) !void {
         for (folder.files) |entry| {
-            switch (entry.content) {
-                .folder => |subfolder| {
-                    try output.makeDir(entry.path);
-                    try render_folder(config, input, output, subfolder);
-                },
-
-                .copy => try std.fs.Dir.copyFile(
+            if (entry.copy) {
+                try std.fs.Dir.copyFile(
                     input,
                     entry.path,
                     output,
                     entry.path,
                     .{},
-                ),
+                );
+            }
 
-                .document => |document| {
-                    var output_file = try output.createFile(document.output_path, .{ .exclusive = true });
-                    defer output_file.close();
+            if (entry.folder) |subfolder| {
+                try output.makeDir(entry.path);
+                try render_folder(config, input, output, subfolder);
+            }
 
-                    var buffer: [8192]u8 = undefined;
-                    var file_writer = output_file.writer(&buffer);
+            if (entry.document) |document| {
+                var output_file = try output.createFile(document.output_path, .{ .exclusive = true });
+                defer output_file.close();
 
-                    try render_html(config, document, &file_writer.interface);
+                var buffer: [8192]u8 = undefined;
+                var file_writer = output_file.writer(&buffer);
 
-                    try file_writer.interface.flush();
-                },
+                try render_html(config, document, &file_writer.interface);
+
+                try file_writer.interface.flush();
             }
         }
     }
@@ -165,24 +162,30 @@ const wiki = struct {
 
     fn render_toc(config: Config, writer: *std.Io.Writer, folder: Folder) !void {
         for (folder.files) |entry| {
-            switch (entry.content) {
-                .folder => |subfolder| {
-                    try writer.print("    <li class=\"folder\" data-indent=\"{}\">{f}</li>\n", .{
+            var class_name: []const u8 = "";
+            if (entry.document != null)
+                class_name = "file";
+
+            if (entry.folder != null)
+                class_name = "folder";
+
+            if (entry.document) |document| {
+                try writer.print("    <li class=\"{s}\" data-indent=\"{}\"><a href=\"{f}\">{f}</a></li>\n", .{
+                    class_name,
+                    document.nesting + 1,
+                    fmt_url(config, document.output_path),
+                    fmt_html(document.title),
+                });
+            }
+            if (entry.folder) |subfolder| {
+                if (entry.document == null) {
+                    try writer.print("    <li class=\"{s}\" data-indent=\"{}\">{f}</li>\n", .{
+                        class_name,
                         subfolder.nesting,
                         fmt_html(std.fs.path.basename(entry.path)),
                     });
-                    try render_toc(config, writer, subfolder);
-                },
-
-                .copy => {},
-
-                .document => |document| {
-                    try writer.print("    <li class=\"file\" data-indent=\"{}\"><a href=\"{f}\">{f}</a></li>\n", .{
-                        document.nesting + 1,
-                        fmt_url(config, document.output_path),
-                        fmt_html(document.title),
-                    });
-                },
+                }
+                try render_toc(config, writer, subfolder);
             }
         }
     }
@@ -233,16 +236,16 @@ const wiki = struct {
 
                         try entries.append(allocator, .{
                             .path = child_path,
-                            .content = .{
-                                .document = .{
-                                    .nesting = nesting,
-                                    .output_path = output_path,
-                                    .title = if (doc.title) |title|
-                                        title.simple
-                                    else
-                                        try allocator.dupe(u8, entry.name[0 .. entry.name.len - ext.len]),
-                                    .contents = doc,
-                                },
+                            .copy = false,
+                            .folder = null,
+                            .document = .{
+                                .nesting = nesting,
+                                .output_path = output_path,
+                                .title = if (doc.title) |title|
+                                    title.simple
+                                else
+                                    try allocator.dupe(u8, entry.name[0 .. entry.name.len - ext.len]),
+                                .contents = doc,
                             },
                         });
                     } else {
@@ -251,7 +254,9 @@ const wiki = struct {
 
                         try entries.append(allocator, .{
                             .path = child_path,
-                            .content = .copy,
+                            .copy = true,
+                            .folder = null,
+                            .document = null,
                         });
                     }
                 },
@@ -263,9 +268,9 @@ const wiki = struct {
 
                     try entries.append(allocator, .{
                         .path = child_path,
-                        .content = .{
-                            .folder = try scan_folder(allocator, child_path, sub_dir, nesting + 1),
-                        },
+                        .copy = false,
+                        .document = null,
+                        .folder = try scan_folder(allocator, child_path, sub_dir, nesting + 1),
                     });
                 },
 
@@ -273,16 +278,52 @@ const wiki = struct {
             }
         }
 
+        for (entries.items) |*maybe_folder| {
+            if (maybe_folder.folder == null)
+                continue;
+            std.debug.assert(maybe_folder.document == null);
+
+            const folder_name = std.fs.path.basename(maybe_folder.path);
+
+            for (entries.items) |*maybe_doc| {
+                if (maybe_doc.document == null) continue;
+
+                const doc_name = std.fs.path.basename(maybe_doc.path);
+                const doc_ext = std.fs.path.extension(doc_name);
+
+                const base_name = doc_name[0 .. doc_name.len - doc_ext.len];
+
+                if (!std.mem.eql(u8, folder_name, base_name))
+                    continue;
+
+                std.debug.assert(maybe_doc.folder == null);
+
+                maybe_folder.document = maybe_doc.document;
+                maybe_doc.document = null;
+
+                std.log.info("fusing folder {s} and document {s}", .{ maybe_folder.path, maybe_doc.path });
+            }
+        }
+
+        // Clean all useless items from the list:
+        {
+            var i: usize = 0;
+            while (i < entries.items.len) {
+                const entry = &entries.items[i];
+
+                // Keep everything with content:
+                if (entry.copy or entry.document != null or entry.folder != null) {
+                    i += 1;
+                    continue;
+                } else {
+                    // Drop empty items:
+                    _ = entries.swapRemove(i);
+                }
+            }
+        }
+
         std.sort.block(Folder.Item, entries.items, {}, struct {
             fn lt(_: void, lhs: Folder.Item, rhs: Folder.Item) bool {
-                if (lhs.content == .copy and rhs.content == .copy) {
-                    return std.mem.lessThan(u8, lhs.path, rhs.path);
-                }
-
-                if (lhs.content == .copy) { // just move copy items to the start
-                    return true;
-                }
-
                 return std.ascii.lessThanIgnoreCase(
                     name_of(lhs),
                     name_of(rhs),
@@ -290,11 +331,10 @@ const wiki = struct {
             }
 
             fn name_of(item: Folder.Item) []const u8 {
-                return switch (item.content) {
-                    .copy => "",
-                    .document => |doc| doc.title,
-                    .folder => std.fs.path.basename(item.path),
-                };
+                return if (item.document) |doc|
+                    doc.title
+                else
+                    std.fs.path.basename(item.path);
             }
         }.lt);
 
