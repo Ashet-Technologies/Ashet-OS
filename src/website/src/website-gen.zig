@@ -49,7 +49,21 @@ fn load_abi_model(allocator: std.mem.Allocator, dir: std.fs.Dir, json_path: []co
 }
 
 pub fn render_root_page(output_dir: std.fs.Dir) !void {
-    var reader = std.Io.Reader.fixed("<p>Hello, World!</p>");
+    var reader = std.Io.Reader.fixed(
+        \\<main class="panel markup-container">
+        \\  <header>
+        \\    <h1>Operating System Documentation</h1>
+        \\  </header>
+        \\  <p>
+        \\      This documentation provides several different entrypoints into the system documentation:
+        \\  </p>
+        \\  <ul>
+        \\      <li><a href="livedemo/">Live Demo</a> - Try out Ashet OS in the browser</li>
+        \\      <li><a href="wiki/">OS Wiki</a> - This is shipped on the system itself through the <a href="wiki/ashet/apps/vaporware/wiki.html">HyperWiki</a> application.</li>
+        \\      <li><a href="syscalls/">Kernel Interface Documentation</a> - Documents the full interface to the kernel, including all syscalls and data types.</li>
+        \\  </ul>
+        \\</main>
+    );
 
     try render_page_file(output_dir, "index.html", &reader, .{
         .title = "Documentation",

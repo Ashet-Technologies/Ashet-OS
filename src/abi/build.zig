@@ -31,17 +31,6 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(render_zig_exe);
 
-    const render_docs_exe = b.addExecutable(.{
-        .name = "render-docs",
-        .root_module = b.createModule(.{
-            .target = b.graph.host,
-            .optimize = .Debug,
-            .root_source_file = b.path("utility/render_html.zig"),
-            .imports = &.{.{ .name = "abi-parser", .module = abi_parser_mod }},
-        }),
-    });
-    b.installArtifact(render_docs_exe);
-
     const abi_json = blk: {
         const abi_v2_def = b.path("src/ashet.abi");
         const abi_id_db = b.path("db/abi-id-db.json");
@@ -54,26 +43,6 @@ pub fn build(b: *std.Build) void {
     const install_json = b.addInstallFile(abi_json, "ashet-abi.json");
 
     b.getInstallStep().dependOn(&install_json.step);
-
-    const docs_html = blk: {
-        const generate_core_abi = b.addRunArtifact(render_docs_exe);
-        generate_core_abi.addFileArg(abi_json);
-        break :blk generate_core_abi.addOutputFileArg("ashet-os.html");
-    };
-
-    const create_docs_dir = b.addWriteFiles();
-    _ = create_docs_dir.addCopyFile(docs_html, "index.html");
-    _ = create_docs_dir.addCopyFile(b.path("docs/style.css"), "style.css");
-
-    const docs_dir = create_docs_dir.getDirectory();
-
-    b.addNamedLazyPath("html-docs", docs_dir);
-
-    b.getInstallStep().dependOn(&b.addInstallDirectory(.{
-        .source_dir = docs_dir,
-        .install_dir = .prefix,
-        .install_subdir = "docs",
-    }).step);
 
     const abi_code = convert_abi_file(b, render_zig_exe, abi_json, b.path("src/ports/zig.abi.zpatch"), .definition);
     const provider_code = convert_abi_file(b, render_zig_exe, abi_json, null, .kernel);

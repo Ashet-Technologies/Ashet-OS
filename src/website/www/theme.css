@@ -15,8 +15,10 @@ body {
     gap: 1rem;
     padding: 1rem;
 
-    min-height: 100vh;
     /* ensure the body covers at least the whole screen */
+    min-height: 100vh;
+
+    font-family: sans-serif;
 }
 
 body>header {
