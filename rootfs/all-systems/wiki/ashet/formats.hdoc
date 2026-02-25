@@ -4,6 +4,7 @@ title { File Formats used in Ashet OS }
 
 ul {
     li { p { \link(uri="wiki:formats/bitmap.hdoc") "Ashet Bitmap" } }
+    li { p { \link(uri="wiki:formats/exe-format.hdoc") "Ashet Executable Format" } }
     li { p { \link(uri="wiki:formats/turtle-font.hdoc") "Turtle Font Format" } }
     li { p { \link(uri="wiki:formats/bitmap-font.hdoc") "Bitmap Font Format" } }
     li { p { \link(uri="wiki:formats/hyperdoc-1.hdoc") "HyperDoc 1.0" } }
