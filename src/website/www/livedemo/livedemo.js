@@ -16,13 +16,10 @@ const fsizeFormat = new Intl.NumberFormat("en", {
 
 class AshetTerminal extends Terminal {
     constructor(options) {
-        console.log("original options:", options)
         options.rows = 10;
         options.fontSize = 10;
         options.disableStdin = true;
-        console.log("new options:", options)
         super(options);
-
 
         this.fitAddon = new FitAddon.FitAddon();
         super.loadAddon(this.fitAddon);
@@ -68,9 +65,15 @@ class DownloadProgress {
 }
 
 function launch_emulator() {
+    let livedemo_root = document.getElementById("livedemo");
+    let launch_button = document.getElementById("launch_button");
     let emulator_status = document.getElementById("emulator_status");
     let serial_console = document.getElementById("serial_console");
     let screen_container = document.getElementById("screen_container");
+
+    let run_button = document.getElementById("run_button");
+    let pause_button = document.getElementById("pause_button");
+    let restart_button = document.getElementById("restart_button");
 
     // let term = new Terminal({
     // 	rows: 10
@@ -102,7 +105,11 @@ function launch_emulator() {
             xterm_lib: AshetTerminal,
             container: serial_console,
         },
+
+        log_level: -1,
     });
+
+    console.log("launched emulator:", emulator);
 
 
     // export type Event =
@@ -134,8 +141,8 @@ function launch_emulator() {
         "emulator-ready",
         "emulator-started",
         "emulator-stopped",
+        "mouse-enable",
     ]) {
-        let copy = evt;
         emulator.add_listener(evt, (event) => console.log("event", evt, event));
     }
 
@@ -158,8 +165,26 @@ function launch_emulator() {
         emulator_status.style.display = 'none';
     }
 
+    function onEmulatorStarted() {
+        run_button.disabled = true;
+        restart_button.disabled = false;
+        pause_button.disabled = false;
+    }
+
+    function onEmulatorStopped() {
+        run_button.disabled = false;
+        restart_button.disabled = true;
+        pause_button.disabled = true;
+    }
+
     emulator.add_listener('download-progress', update_progress);
     emulator.add_listener('emulator-ready', onEmulatorReady);
+    emulator.add_listener('emulator-started', onEmulatorStarted);
+    emulator.add_listener('emulator-stopped', onEmulatorStopped);
+
+    screen_container.addEventListener('mousedown', () => {
+        emulator.lock_mouse();
+    });
 
     window.start_vm = function () {
         emulator.run();
@@ -172,4 +197,8 @@ function launch_emulator() {
     window.restart_vm = function () {
         emulator.restart();
     };
+
+    // Ensure we're making the screen and status visible,
+    // and hide the launch button:
+    livedemo_root.classList.add("launched");
 }

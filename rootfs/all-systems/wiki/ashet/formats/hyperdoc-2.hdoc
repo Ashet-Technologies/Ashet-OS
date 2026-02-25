@@ -37,7 +37,7 @@ h2 { Unordered Lists }
 ul {
   li { p { Apples } }
   li "Bananas"
-  li { p { em{Cucumbers} with inline markup. } }
+  li { p { \em{Cucumbers} with inline markup. } }
 }
 
 h2(id="ol") { Ordered Lists }

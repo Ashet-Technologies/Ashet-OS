@@ -55,10 +55,6 @@ body>header search input {
     flex: 1;
 }
 
-main {
-    /* background-color: lime; */
-}
-
 main#wiki {
     display: grid;
 
@@ -473,21 +469,26 @@ code .tok-name {
     background-color: #DDD;
 }
 
-.toolbar button:active {
+.toolbar button:not(:disabled):active {
     border: 2px inset silver;
-}
-
-.toolbar button:is(:hover, :focus) {
-    background-color: #EEE;
-}
-
-.toolbar button:is(:active) {
     background-color: #FFF;
+}
+
+.toolbar button:not(:disabled):is(:hover, :focus) {
+    background-color: #EEE;
 }
 
 .toolbar button svg {
     width: 100%;
     height: 100%;
+}
+
+.toolbar button:disabled {
+    background-color: gray;
+}
+
+.toolbar button:disabled svg {
+    fill: silver;
 }
 
 .console {
@@ -541,4 +542,19 @@ code .tok-name {
 
 #emulator_status li label {
     font-family: monospace;
+}
+
+button#launch_button {
+    border: 1px solid black;
+    border-radius: 100%;
+    width: 15%;
+}
+
+#livedemo:not(.launched) #screen_container,
+#livedemo:not(.launched) #emulator_status {
+    display: none;
+}
+
+#livedemo.launched button#launch_button {
+    display: none;
 }
