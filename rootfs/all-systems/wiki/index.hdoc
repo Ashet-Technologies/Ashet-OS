@@ -24,26 +24,26 @@ p {
 h1(id="index") { Starting Points }
 
 
-h3(id="generic") { Generic }
+h2(id="generic") { Generic }
 
 ul {
-  li { p { link "wiki:/ashet/os"              "Ashet OS Documentation" } }
+  li { p { \link(uri="wiki:/ashet/os")              "Ashet OS Documentation" } }
 }
 
 h2 { Applications }
 ul {
-  li { p { link "wiki:/ashet/apps/music.hdoc"       "Grammophone"  } }
-  li { p { link "wiki:/ashet/apps/commander.hdoc"   "Shepard"      } }
-  li { p { link "wiki:/ashet/apps/chat.hdoc"        "Telegraph"    } }
-  li { p { link "wiki:/ashet/apps/browser.hdoc"     "Gateway"      } }
-  li { p { link "wiki:/ashet/apps/wiki.hdoc"        "Hyper Wiki"   } }
-  li { p { link "wiki:/ashet/apps/terminal.hdoc"    "Connex"       } }
-  li { p { link "wiki:/ashet/apps/editor.hdoc"      "Craftworks"   } }
-  li { p { link "wiki:/ashet/apps/paint.hdoc"       "Dragon Craft" } }
-  li { p { link "wiki:/ashet/apps/io.hdoc"          "I/O"          } }
-  li { p { link "wiki:/ashet/apps/settings.hdoc"    "SysAdvance"   } }
-  li { p { link "wiki:/ashet/apps/lola-run.hdoc"    "LoLa Run!"    } }
-  li { p { link "wiki:/ashet/apps/spreadsheet.hdoc" "Calc"         } }
+  li { p { \link(uri="wiki:/ashet/apps/music.hdoc")       "Grammophone"  } }
+  li { p { \link(uri="wiki:/ashet/apps/commander.hdoc")   "Shepard"      } }
+  li { p { \link(uri="wiki:/ashet/apps/chat.hdoc")        "Telegraph"    } }
+  li { p { \link(uri="wiki:/ashet/apps/browser.hdoc")     "Gateway"      } }
+  li { p { \link(uri="wiki:/ashet/apps/wiki.hdoc")        "Hyper Wiki"   } }
+  li { p { \link(uri="wiki:/ashet/apps/terminal.hdoc")    "Connex"       } }
+  li { p { \link(uri="wiki:/ashet/apps/editor.hdoc")      "Craftworks"   } }
+  li { p { \link(uri="wiki:/ashet/apps/paint.hdoc")       "Dragon Craft" } }
+  li { p { \link(uri="wiki:/ashet/apps/io.hdoc")          "I/O"          } }
+  li { p { \link(uri="wiki:/ashet/apps/settings.hdoc")    "SysAdvance"   } }
+  li { p { \link(uri="wiki:/ashet/apps/lola-run.hdoc")    "LoLa Run!"    } }
+  li { p { \link(uri="wiki:/ashet/apps/spreadsheet.hdoc") "Calc"         } }
 }
 
 h2 { Games }

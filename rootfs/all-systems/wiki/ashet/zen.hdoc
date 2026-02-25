@@ -1,0 +1,36 @@
+hdoc(version="2.0", title="Philosophy", lang="en");
+
+p {
+  Ashet OS is not your regular daily-driver OS. It is meant to provide two core values:
+}
+
+ul {
+  li "Education"
+  li "Fun"
+}
+
+p {
+  It is meant to invite for \em{tinkering}, \em{changing}, \em{hacking} your machine, your OS, your software, ...
+}
+
+h1(id="os-zen") { OS Zen }
+
+p {
+  Consider this some basic hints on which ideas lead to the design decisions in the OS:
+}
+
+ul {
+  li "Protect against programmers mistakes, but not against programmers intent."
+  li "Challenge everything. Think in first principles, reinvent everything."
+  li "Unix and Windows are not the only operating systems. Look left and right of your daily path, you may find good ideas here and there."
+  li "User experience matters more than you think."
+  li "Accessibility cannot be added well in hindsight."
+}
+
+h1(id="design-goals") { Design Goals }
+
+ul {
+  li { p { Make an operating system that \em{COULD} be used as a daily driver. } }
+  li "Try to find new, exciting ways of doing things."
+  li "Simple enough to be grasped by a single person."
+}
