@@ -292,7 +292,7 @@ code .tok-name {
 }
 
 /* Paragraph */
-.markup-container :is(p, ul, ol, table) {
+.markup-container :is(p, ul, ol, table, pre) {
     line-height: 125%;
     margin-block: 0.75em;
 }
