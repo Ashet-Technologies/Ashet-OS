@@ -254,12 +254,15 @@ pub fn scan_folder(allocator: std.mem.Allocator, path: []const u8, dir: std.fs.D
             if (!std.mem.eql(u8, folder_name, base_name))
                 continue;
 
-            std.debug.assert(maybe_doc.folder == null);
+            if (maybe_doc.folder != null) {
+                std.debug.panic("mismatch for {s} and {s}", .{ maybe_folder.path, maybe_doc.path });
+            }
 
             maybe_folder.document = maybe_doc.document;
             maybe_doc.document = null;
 
             std.log.info("fusing folder {s} and document {s}", .{ maybe_folder.path, maybe_doc.path });
+            break;
         }
     }
 
