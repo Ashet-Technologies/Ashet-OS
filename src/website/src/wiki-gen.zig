@@ -103,7 +103,13 @@ fn render_html(config: Config, doc: Document, writer: *std.Io.Writer) !void {
         \\<article class="panel markup-container">
     );
 
-    try hdoc.render.html5(doc.contents, wiki_writer);
+    try hdoc.render.html5(doc.contents, wiki_writer, .{
+        .rewrite_uri_ctx = @constCast(&config),
+        .rewrite_uri_fn = rewrite_wiki_url,
+
+        .rewrite_img_ctx = @constCast(&config),
+        .rewrite_img_fn = rewrite_img_url,
+    });
 
     try wiki_writer.writeAll(
         \\  </article>
@@ -116,6 +122,32 @@ fn render_html(config: Config, doc: Document, writer: *std.Io.Writer) !void {
         .title = doc.title,
         .nesting = 1 + doc.nesting,
     });
+}
+
+fn rewrite_wiki_url(ctx: ?*anyopaque, url: []const u8, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+    const config: *const Config = @ptrCast(@alignCast(ctx.?));
+
+    // TODO: Implement proper URL parsing and escaping
+
+    const wiki_prefix = "wiki:/";
+    if (std.mem.startsWith(u8, url, wiki_prefix)) {
+        // wiki url
+        try writer.splatBytesAll("../", config.base_nesting - 1);
+
+        const ext = std.fs.path.extension(url);
+
+        try writer.writeAll(url[wiki_prefix.len .. url.len - ext.len]);
+
+        try writer.writeAll(".html");
+    } else {
+        try writer.print("{f}", .{fmt_url(url, config.base_nesting)});
+    }
+}
+
+fn rewrite_img_url(ctx: ?*anyopaque, url: []const u8, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+    _ = ctx;
+    std.log.err("TODO: Implement image rewriting for '{s}'", .{url});
+    try writer.writeAll(url);
 }
 
 fn render_toc(config: Config, writer: *std.Io.Writer, folder: Folder) !void {
@@ -131,7 +163,7 @@ fn render_toc(config: Config, writer: *std.Io.Writer, folder: Folder) !void {
             try writer.print("    <li class=\"{s}\" data-indent=\"{}\"><a href=\"{f}\">{f}</a></li>\n", .{
                 class_name,
                 document.nesting + 1,
-                fmt_wiki_url(config, document.output_path),
+                fmt_url(document.output_path, config.base_nesting),
                 fmt_html(document.title),
             });
         }
@@ -303,28 +335,4 @@ pub fn scan_folder(allocator: std.mem.Allocator, path: []const u8, dir: std.fs.D
         .nesting = nesting,
         .files = try entries.toOwnedSlice(allocator),
     };
-}
-
-fn fmt_wiki_url(config: Config, url: []const u8) std.fmt.Formatter(struct { Config, []const u8 }, format_wiki_url) {
-    return .{ .data = .{ config, url } };
-}
-
-fn format_wiki_url(options: struct { Config, []const u8 }, writer: *std.Io.Writer) std.Io.Writer.Error!void {
-    const config, const url = options;
-
-    // TODO: Implement proper URL parsing and escaping
-
-    const wiki_prefix = "wiki:/";
-    if (std.mem.startsWith(u8, url, wiki_prefix)) {
-        // wiki url
-        try writer.splatBytesAll("../", config.base_nesting);
-
-        const ext = std.fs.path.extension(url);
-
-        try writer.writeAll(url[wiki_prefix.len .. url.len - ext.len]);
-
-        try writer.writeAll(".html");
-    } else {
-        try writer.print("{f}", .{fmt_url(url, config.base_nesting)});
-    }
 }
