@@ -32,29 +32,11 @@ ul {
 
 h2 { Applications }
 ul {
-  li { p { \link(uri="wiki:/ashet/apps/music.hdoc")       "Grammophone"  } }
-  li { p { \link(uri="wiki:/ashet/apps/commander.hdoc")   "Shepard"      } }
-  li { p { \link(uri="wiki:/ashet/apps/chat.hdoc")        "Telegraph"    } }
-  li { p { \link(uri="wiki:/ashet/apps/browser.hdoc")     "Gateway"      } }
-  li { p { \link(uri="wiki:/ashet/apps/wiki.hdoc")        "Hyper Wiki"   } }
-  li { p { \link(uri="wiki:/ashet/apps/terminal.hdoc")    "Connex"       } }
-  li { p { \link(uri="wiki:/ashet/apps/editor.hdoc")      "Craftworks"   } }
-  li { p { \link(uri="wiki:/ashet/apps/paint.hdoc")       "Dragon Craft" } }
-  li { p { \link(uri="wiki:/ashet/apps/io.hdoc")          "I/O"          } }
-  li { p { \link(uri="wiki:/ashet/apps/settings.hdoc")    "SysAdvance"   } }
-  li { p { \link(uri="wiki:/ashet/apps/lola-run.hdoc")    "LoLa Run!"    } }
-  li { p { \link(uri="wiki:/ashet/apps/spreadsheet.hdoc") "Calc"         } }
+  li { p { \link(uri="wiki:/ashet/apps/mtg-counter.hdoc")       "MTG Counter"  } }
 }
 
 h2 { Games }
 ul {
   li { p { \link(uri="wiki:/ashet/apps/dungeon.hdoc") "Dungeon" } }
-}
-
-h2 { Daemons }
-ul {
-  li { p { \link(uri="wiki:/ashet/daemon/psi.hdoc") "Psi Language Server"       } }
-  li { p { \link(uri="wiki:/ashet/daemon/lola.hdoc") "LoLa Language Server"      } }
-  li { p { \link(uri="wiki:/ashet/daemon/asm.hdoc") "Assembly Language Server"  } }
-  li { p { \link(uri="wiki:/ashet/daemon/shell.hdoc") "Shell Server"              } }
+  li { p { \link(uri="wiki:/ashet/apps/2048.hdoc")    "2048" } }
 }

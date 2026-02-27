@@ -1,0 +1,20 @@
+hdoc(version="2.0", title="MTG Counter");
+
+title { MTG Counter }
+
+p {
+    Because every good OS needs a counter for Magic the Gathering!
+}
+
+p {
+    This application is fairly simple: It provides two buttons and a numeric display.
+    Pressing the \mono{+} button increments the number by one, pressing the \mono{-}
+    button decrements the number by one.
+}
+
+h1 { Background }
+
+p {
+    The MTG Counter was called "widgets-demo" before and implemented the first successful
+    application using the reworked the GUI design in Ashet OS that utilized widgets.
+}
