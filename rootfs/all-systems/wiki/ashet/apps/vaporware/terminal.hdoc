@@ -22,11 +22,11 @@ ul {
     li "Basic rendering of ANSI escape sequences (colors, cursor movement)"
     li {
         p { Supported transports: }
+
         ul {
-            li { p { \link(url="https://en.wikipedia.org/wiki/Serial_port"){Serial Ports} } }
-            li { p { \link(url="https://en.wikipedia.org/wiki/User_Datagram_Protocol"){UDP} } }
-            li { p { \link(url="https://en.wikipedia.org/wiki/Transmission_Control_Protocol"){TCP} } }
+            li { p { \link(uri="https://en.wikipedia.org/wiki/Serial_port"){Serial Ports} } }
+            li { p { \link(uri="https://en.wikipedia.org/wiki/User_Datagram_Protocol"){UDP} } }
+            li { p { \link(uri="https://en.wikipedia.org/wiki/Transmission_Control_Protocol"){TCP} } }
         }
     }
 }
-

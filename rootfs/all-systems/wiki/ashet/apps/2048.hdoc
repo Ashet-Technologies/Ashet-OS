@@ -11,3 +11,75 @@ h1 { Controls }
 p {
     TODO: Write about the controls of 2048.
 }
+
+h1 { Background }
+
+p {
+    This implementation of the game was fully vibe-coded inside ChatGPT with GPT 5.2 (Thinking). This was done in an attempt to evaluate
+    the capabilities of newly released AI model. The results were rather impressive.
+}
+
+p {
+    The model was prompted three times, where one time it responded with some clarifying questions, and the second response already had
+    a working game implementation. The third prompt requested to implement animation support and streamline some user interface parts.
+}
+
+h2 { Prompts }
+
+h3 { First Prompt }
+
+pre:
+| i've attached a small hello-world like program for graphical applications,
+| and the file containing the CommandQueue structure.
+| I've also attached the kernel api definition containing basically all necessary enums.
+|
+| Implement a "2048" style game for Ashet OS.
+|
+| Do not assume much about the code structure, and if something is unclear, ask me
+| about it before you write any code.
+
+p {
+    In addition to that, the \mono{hello-framebuffer.zig} application source code, \mono{graphics.zig} (userland bindings for AGP) as
+    well as the \mono{ashet.abi} file (kernel interface description) were attached.
+    These files provide information on how to write a really basic application, what rendering ops are available and how the kernel surface
+    looks like.
+}
+
+h3 { Second Prompt }
+
+p {
+    The model then processed the data, and a asked a hand ful of clarifying questions. These were answered with this:
+}
+
+pre:
+| 1. mono-8 is a good font with 8 pixels height and 5 pixels width pet char.
+| 2. Use a std.Random.DefaultPrng
+| 3. Use an in-game overlay
+| 4. arrow keys, wasd, numpad, and R for restart
+
+p {
+    After this prompt was evaluated, the model yielded a fully working implementation of 2048. The only touch-ups that were required
+    where two missing \link(uri="https://ziglang.org/documentation/0.15.2/#divTrunc"){\mono{@divTrunc}} calls (which even seasoned
+    Zig programmers will often forget), as well as fixing a tiny hallucination that the \mono{ashet.clock.monotonic} syscall
+    would be returning an error.
+}
+
+h3 { Third Prompt }
+
+p{
+    The game was playable, but it to really enjoy it, some minor polishing was needed. The third prompt was this:
+}
+
+pre:
+| okay, i had to some fixes in Color.from_html, and adjust the default window size to 256x256.
+|
+| I've attached the working, compiling version here. changes i want to have:
+| - tiny move animation with 4 or 8 frames
+| - allow playing after winning
+| - remove the "2048" title in the window (we have window decorations!)
+| - use mono-6 font for the tutorial text line
+
+p {
+    This resulted in again a working version of the game with the requested changes applied, and the three bugs were re-introduced
+    again (as the model was unaware they were fixed). No other bugs except for these three were obviously present in the code.
+}

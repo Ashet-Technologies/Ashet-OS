@@ -11,7 +11,24 @@ warning {
 h1 "Planned Features"
 
 p {
-    
+    The Unified Action Center (UAC) is meant to be the central point for Ashet OS configuration.
+    It should enable configuration of system behaviour, defaults, file associations and other settings.
 }
 
+p {
+    The main differentiator to other OS-wide settings applications is that the UAC is meant to allow
+    not only pre-defined actions, but also allow actions to be defined through scripts. This way, a highly
+    custom user experience can be achieved.
+}
 
+note {
+    p {
+        The idea for the UAC was inspired by \link(uri="https://9p.io/wiki/plan9/using_plumbing/index.html"){Plan 9 plumbing}, which
+        also allows defining arbitrary actions for a selected text string.
+    }
+    p {
+        In Ashet OS, the vision is deeper and should also allow defining actions for drag'n'drop, automatic conversion
+        between source and destination types, but without putting to much load onto the user. Thus, a set of predefined
+        rules shall be selectable for actions so users don't have to touch code just to configure file associations.
+    }
+}
