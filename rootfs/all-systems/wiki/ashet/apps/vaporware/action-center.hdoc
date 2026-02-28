@@ -1,9 +1,17 @@
-hdoc(version="2.0", title="Hyper Wiki");
+hdoc(version="2.0", title="Unified Action Center");
 
-title { Hyper Wiki }
+title { Unified Action Center }
 
 warning {
   p { \em{Vaporware Notice!} }
   p { This application is \link(uri="https://en.wikipedia.org/wiki/Vaporware"){vaporware}
   and does not exist right now. }
 }
+
+h1 "Planned Features"
+
+p {
+    
+}
+
+

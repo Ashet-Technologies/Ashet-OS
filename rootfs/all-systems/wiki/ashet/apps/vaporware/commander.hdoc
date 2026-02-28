@@ -1,3 +1,34 @@
 hdoc(version="2.0", title="Shepard File Commander");
 
 title { Shepard File Commander }
+
+warning {
+  p { \em{Vaporware Notice!} }
+  p { This application is \link(uri="https://en.wikipedia.org/wiki/Vaporware"){vaporware}
+  and does not exist right now. }
+}
+
+h1 "Planned Features"
+
+p {
+    Shepard is meant to be a simple \link(uri="https://en.wikipedia.org/wiki/File_manager#Orthodox_file_managers"){commander-style}
+    file manager with two panels side-by-side.
+}
+
+p {
+    Shepard will roughly have these features:
+}
+
+ul {
+    li "Typical file/directory operations (copy, rename, move, delete, …)"
+    li "Two-panel configuration"
+    li "Virtual \"root\" directory showing the available file systems"
+}
+
+
+note {
+    p {
+        The name was chosen as a homage to \link(uri="https://en.wikipedia.org/wiki/Mass_Effect"){Mass Effect},
+        where the main character is \em{Commander Shepard}.
+    }
+}
