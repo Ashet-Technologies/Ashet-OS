@@ -4,6 +4,7 @@ const abi_parser = @import("abi-mapper");
 
 const templates = struct {
     const body = @embedFile("templates.body");
+    const index = @embedFile("templates.index");
     const livedemo_head = @embedFile("templates.livedemo.head");
     const livedemo_body = @embedFile("templates.livedemo.body");
 };
@@ -32,7 +33,7 @@ pub fn main() !void {
     const abi_model = try load_abi_model(allocator, std.fs.cwd(), abi_json_path);
     defer abi_model.deinit();
 
-    try render_root_page(output_dir);
+    try render_root_page(allocator, output_dir);
 
     try render_live_demo(output_dir);
 
@@ -48,22 +49,26 @@ fn load_abi_model(allocator: std.mem.Allocator, dir: std.fs.Dir, json_path: []co
     return try abi_parser.model.from_json_str(allocator, json_text);
 }
 
-pub fn render_root_page(output_dir: std.fs.Dir) !void {
-    var reader = std.Io.Reader.fixed(
+pub fn render_root_page(allocator: std.mem.Allocator, output_dir: std.fs.Dir) !void {
+    var doc: hdoc.Document = try hdoc.parse(allocator, templates.index, null);
+    defer doc.deinit();
+
+    var writer: std.Io.Writer.Allocating = .init(allocator);
+    defer writer.deinit();
+
+    try writer.writer.writeAll(
         \\<main class="panel markup-container">
-        \\  <header>
-        \\    <h1>Operating System Documentation</h1>
-        \\  </header>
-        \\  <p>
-        \\      This documentation provides several different entrypoints into the system documentation:
-        \\  </p>
-        \\  <ul>
-        \\      <li><a href="livedemo/">Live Demo</a> - Try out Ashet OS in the browser</li>
-        \\      <li><a href="wiki/">OS Wiki</a> - This is shipped on the system itself through the <a href="wiki/ashet/apps/vaporware/wiki.html">HyperWiki</a> application.</li>
-        \\      <li><a href="syscalls/">Kernel Interface Documentation</a> - Documents the full interface to the kernel, including all syscalls and data types.</li>
-        \\  </ul>
-        \\</main>
+        \\
     );
+
+    try hdoc.render.html5(doc, &writer.writer, .{});
+
+    try writer.writer.writeAll(
+        \\</main>
+        \\
+    );
+
+    var reader: std.Io.Reader = .fixed(writer.written());
 
     try render_page_file(output_dir, "index.html", &reader, .{
         .title = "Documentation",

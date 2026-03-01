@@ -1,5 +1,18 @@
-hdoc(version="1.0");
+hdoc(version="2.0");
+
+title { Operating System Documentation }
+
+warning {
+    p { Ashet OS is still work-in-progress and this documentation reflects the current working state. }
+    p { Empty, wrong or broken documents are to be expected. This documentation is maintained as best-effort. }
+}
 
 p {
-    Welcome to the Ashet OS system documentation!
+    This documentation provides several different entrypoints into the system documentation:
+}
+
+ul {
+    li { p { \link(uri="livedemo/"){Live Demo} - Try out Ashet OS in the browser } }
+    li { p { \link(uri="wiki/"){OS Wiki} - This is shipped on the system itself through the \link(uri="wiki/ashet/apps/vaporware/wiki.html"){HyperWiki} application. } }
+    li { p { \link(uri="syscalls/"){Kernel Interface Documentation} - Documents the full interface to the kernel, including all syscalls and data types. } }
 }

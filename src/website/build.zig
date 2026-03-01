@@ -35,6 +35,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "templates.body", .module = embedFile(b, "template/index.html") },
                 .{ .name = "templates.livedemo.head", .module = embedFile(b, "template/livedemo.head.html") },
                 .{ .name = "templates.livedemo.body", .module = embedFile(b, "template/livedemo.body.html") },
+                .{ .name = "templates.index", .module = embedFile(b, "template/index.hdoc") },
             },
         }),
     });
