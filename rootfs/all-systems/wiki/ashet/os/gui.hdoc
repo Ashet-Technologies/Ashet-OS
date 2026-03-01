@@ -1,0 +1,66 @@
+hdoc(version="2.0", title="GUI", lang="en");
+
+title { Graphical User Interface }
+
+h1 "Concepts" 
+
+p {
+    The OS uses several different concepts tied together to form a coherent
+    graphical user experience.
+}
+
+h2 "Windows"
+
+p {
+    A \em{window} is the logical unit of graphical interaction. It's a 2D surface which
+    may contain widgets (user controls) and graphical contents.
+}
+
+h2 "Desktops"
+
+p {
+    A \em{desktop} is a container for windows. It is managed by a so called \em{Desktop Server}
+    which presents the windows one way or another to the users.
+}
+
+h2 "Widgets"
+
+p {
+    A \em{widget} is an atomic logical building block of user interfaces. Typical widgets are:
+}
+
+ul {
+    li "Buttons"
+    li "Text boxes"
+    li "Scrollbars"
+    li "Checkboxes"
+    li "Radio buttons"
+    li "…"
+}
+
+h2 "Desktop Servers"
+
+p {
+    A \em{desktop server} is an application that presents windows of a desktop to the user.
+}
+
+h2 "Widget Servers"
+
+p {
+    A \em{widget server} is an application that provides different widget types to the operating system.
+    These widget types can then be instantiated by applications to build their graphical interfaces.
+}
+
+h1 "Strengths"
+
+p {
+    One large strength of this design is the decoupling between logic (application creates windows and widgets)
+    and the presentation layer (Widget Server defines interaction, Desktop Server defines presentation).
+}
+
+p {
+    This allows a strong modularity and flexibility, ultimately allowing higher accessibility by giving the users
+    the chance to exchange the widgets in the applications on their system by a version more suitable for them.
+    This may include having tight screen reader integration, magnified fonts, or literally a non-rendered UI that 
+    is displayed black for users that are completely blind.
+}

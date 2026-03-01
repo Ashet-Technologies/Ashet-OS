@@ -259,6 +259,10 @@ qemu-gdb target:
         --command "scripts/gdb" \
         zig-out/{{target}}/kernel.elf 
 
+[working-directory: 'src/website']
+website:
+    {{zig}} build --prominent-compile-errors -freference-trace=10
+    
 cmd_bootloader := "adapter speed 12000
     init
     reset halt
@@ -271,4 +275,3 @@ openocd-bootloader:
         -f target/rp2350.cfg \
         -c '{{cmd_bootloader}}'
     sleep 0.5
-

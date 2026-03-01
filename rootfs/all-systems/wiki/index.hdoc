@@ -1,0 +1,42 @@
+hdoc(version="2.0", lang="en");
+
+title { Ashet System Wiki }
+
+h1(id="welcome") { Welcome! }
+
+quote {
+  p { You have successfully opened the Wiki of Ashet OS. }
+}
+
+p {
+  The Ashet Operating System comes with a built-in wiki application that provides documentation for the OS 
+  and its applications. It also contains tutorials on how to create your own applications, both cross-compiled 
+  as well as self-hosted on your own machine.
+}
+
+
+p {
+  But this wiki is not only for documenting Ashet OS!
+  You can also use it for your own notes and plans. The wiki is not write-protected in any case, so feel free 
+  to add your own comments to the official documentation.
+}
+
+h1(id="index") { Starting Points }
+
+
+h2(id="generic") { Generic }
+
+ul {
+  li { p { \link(uri="wiki:/ashet/os.hdoc")              "Ashet OS Documentation" } }
+}
+
+h2 { Applications }
+ul {
+  li { p { \link(uri="wiki:/ashet/apps/mtg-counter.hdoc")       "MTG Counter"  } }
+}
+
+h2 { Games }
+ul {
+  li { p { \link(uri="wiki:/ashet/apps/dungeon.hdoc") "Dungeon" } }
+  li { p { \link(uri="wiki:/ashet/apps/2048.hdoc")    "2048" } }
+}

@@ -1,0 +1,597 @@
+hdoc(version="2.0", title="ABI Description Format (.abi)", lang="en");
+
+title { ABI Description Format (\mono{.abi}) }
+
+toc(depth="2") {}
+
+h1(id="overview") { Overview }
+
+p {
+  The Ashet ABI Description Format, often referred to as Ashet IDL, is a small, declarative language used to describe the public ABI surface of the Ashet system.
+  It defines:
+}
+
+ul {
+  li "ABI-stable types (structs, unions, enums, bitstructs)."
+  li "ABI-visible resources (opaque handles)."
+  li "System call and asynchronous call signatures."
+  li "Constants and type aliases."
+  li "Documentation strings attached to every declaration."
+}
+
+p {
+  The \mono{abi-mapper} tool consumes these files, validates them, and then derives a normalized, C-compatible representation for tooling and bindings.
+}
+
+h1(id="purpose") { Purpose }
+
+p { The format exists to solve several problems at once: }
+
+ol {
+  li {
+    p {
+      \em{Single source of truth}.
+      ABI definitions should not be duplicated across languages or tooling.
+      The IDL is the canonical definition used by generators, analyzers, and documentation.
+    }
+  }
+  li {
+    p {
+      \em{Stable ABI contracts}.
+      Types and call signatures must remain stable across versions.
+      By keeping definitions in a simple, analyzable format, changes are explicit and reviewable.
+    }
+  }
+  li {
+    p {
+      \em{Language-neutral modeling}.
+      The language is small and avoids host-language features.
+      This makes it easier to generate bindings for C, Zig, Rust, or custom tooling.
+    }
+  }
+  li {
+    p {
+      \em{Deterministic C ABI lowering}.
+      Slices, strings, optionals, and multi-return calls must be expressed in a way that can reliably lower to C-compatible forms.
+    }
+  }
+  li {
+    p {
+      \em{Human readability}.
+      Documentation is part of the format, making the ABI itself self-describing.
+    }
+  }
+}
+
+h1(id="syntax") { Syntax }
+
+h2(id="syntax-structure") { Informal Structure }
+
+p {
+  An IDL file is a sequence of declarations and their children.
+  Declarations are nested within namespaces, and each declaration may contain child nodes that describe its fields, items, parameters, or errors.
+}
+
+p { Key features: }
+
+ul {
+  li { p { \mono{Doc comments} use \mono{///} and attach to the next node. } }
+  li { p { \mono{Line comments} use \mono{//?} and are ignored by the parser. } }
+  li { p { \mono{Identifiers} are ASCII and may include dots (\mono{.}) for scoped names. If a name includes special characters or keywords, escape it using \mono{@"..."}. } }
+}
+
+h2(id="syntax-examples") { Small Examples }
+
+p { Namespace with an enum: }
+
+pre(syntax="abi"):
+| /// Process-related declarations.
+| namespace process {
+|     /// Exit status codes.
+|     enum ExitCode : u32 {
+|         item success = 0;
+|         item failure = 1;
+|         ...
+|     }
+| }
+
+p { Syscall with inputs, outputs, and errors: }
+
+pre(syntax="abi"):
+| /// Returns a process file name.
+| syscall get_file_name {
+|     in target: ?Process;
+|     out file_name: str;
+|     error InvalidHandle;
+| }
+
+h2(id="syntax-grammar") { Grammar (EBNF-style) }
+
+pre(syntax="text"):
+| Document        = { Node } ;
+|
+| Node            = DocComment* ( Declaration
+|                               | Field
+|                               | In
+|                               | Out
+|                               | EnumItem
+|                               | Error
+|                               | Reserve
+|                               | TypeDef
+|                               | Const
+|                               | Ellipse
+|                               | NoReturn ) ;
+|
+| DocComment      = "///" { any-char-except-newline } newline ;
+| Comment         = "//?" { any-char-except-newline } newline ;
+|
+| Declaration     = ("namespace" | "struct" | "union" | "enum" | "bitstruct" |
+|                    "syscall" | "async_call" | "resource")
+|                   Identifier [ ":" Type ] "{" { Node } "}" ;
+|
+| Field           = "field" Identifier ":" Type [ "=" Value ] ";" ;
+| In              = "in" Identifier ":" Type [ "=" Value ] ";" ;
+| Out             = "out" Identifier ":" Type [ "=" Value ] ";" ;
+| EnumItem        = "item" Identifier [ "=" Value ] ";" ;
+| Error           = "error" Identifier ";" ;
+| Reserve         = "reserve" Type "=" Value ";" ;
+| NoReturn        = "noreturn" ";" ;
+| Ellipse         = "..." ;
+|
+| TypeDef         = "typedef" Identifier "=" Type ";" ;
+| Const           = "const" Identifier [ ":" Type ] "=" Value ";" ;
+|
+| Type            = MagicType
+|                 | "?" Type
+|                 | "*" PointerType
+|                 | "[" "]" PointerType
+|                 | "[" "*" "]" PointerType
+|                 | "[" Value "]" Type
+|                 | "fnptr" "(" [ Type { "," Type } ] ")" Type
+|                 | BuiltinType
+|                 | SignedIntType
+|                 | UnsignedIntType
+|                 | Identifier ;
+|
+| PointerType     = [ "const" ] [ "align" "(" Number ")" ] Type ;
+|
+| MagicType       = "<<" Identifier ":" MagicSize ">>" ;
+| MagicSize       = "u8" | "u16" | "u32" | "u64" | "usize" ;
+|
+| BuiltinType     = "void" | "bool" | "noreturn" | "anyptr" | "anyfnptr" |
+|                   "str" | "bytestr" | "bytebuf" | "usize" | "isize" |
+|                   "f32" | "f64" ;
+| SignedIntType   = "i" Number ;
+| UnsignedIntType = "u" Number ;
+|
+| Value           = Number
+|                 | Identifier
+|                 | "true" | "false" | "null"
+|                 | "." "{" [ "." Identifier "=" Value { "," "." Identifier "=" Value } ] "}" ;
+|
+| Identifier      = { letter | digit | "_" | "." } | "@\"" { any-char-except-quote-or-newline } "\"" ;
+| Number          = decimal | hex | binary ;
+
+h2(id="syntax-context-rules") { Context Rules (Summary) }
+
+p {
+  The grammar lists all node types, but not all nodes are legal everywhere.
+  The key rules are:
+}
+
+ul {
+  li { p { \mono{field} appears only inside \mono{struct}, \mono{union}, or \mono{bitstruct}. } }
+  li { p { \mono{item} and \mono{...} appear only inside \mono{enum}. } }
+  li { p { \mono{in}, \mono{out}, \mono{error}, and \mono{noreturn} appear only inside \mono{syscall} or \mono{async_call}. } }
+  li { p { \mono{reserve} appears only inside \mono{bitstruct}. } }
+  li { p { \mono{typedef} and \mono{const} are top-level declarations, including inside namespaces. } }
+}
+
+h1(id="semantics") { Semantics }
+
+h2(id="namespaces") { Namespaces and Fully-Qualified Names }
+
+p {
+  Namespaces provide hierarchical structure.
+  Every declaration acquires a fully-qualified name based on its namespace nesting.
+  You can reference types by:
+}
+
+ul {
+  li "Local name within the same namespace."
+  li { p { Qualified name using dot notation (for example, \mono{process.ExitCode}). } }
+}
+
+p { Example: }
+
+pre(syntax="abi"):
+| namespace fs {
+|     struct Path { field data: str; }
+| }
+|
+| namespace process {
+|     // Refers to fs.Path by qualified name.
+|     syscall spawn {
+|         in path: fs.Path;
+|     }
+| }
+
+h2(id="doc-comments") { Doc Comments }
+
+ul {
+  li { p { \mono{///} lines are collected and attached to the next node. } }
+  li "Empty leading and trailing lines are trimmed."
+  li "Common indentation is removed so multi-line blocks align cleanly."
+}
+
+p { Example: }
+
+pre(syntax="abi"):
+| /// Returns the base address of the process.
+| ///
+| /// This value is constant while the process is alive.
+| syscall get_base_address {
+|     in target: ?Process;
+|     out base_address: usize;
+| }
+
+h2(id="decl-struct") { struct }
+
+ul {
+  li "A list of named field entries."
+  li "Fields may have defaults."
+  li "Order is preserved and meaningful for layout and ABI."
+}
+
+p { Example: }
+
+pre(syntax="abi"):
+| struct Point {
+|     field x: i32;
+|     field y: i32;
+| }
+
+h2(id="decl-union") { union }
+
+ul {
+  li "A list of named field entries."
+  li "Fields cannot have default values."
+  li "Union layout is a C-style overlapping representation."
+}
+
+p { Example: }
+
+pre(syntax="abi"):
+| union AnyAddr {
+|     field v4: IPv4;
+|     field v6: IPv6;
+| }
+
+h2(id="decl-enum") { enum }
+
+ul {
+  li { p { Requires an integer subtype (for example, \mono{: u32}). } }
+  li "Items may specify explicit values."
+  li { p { \mono{...} marks the enum as open, indicating more values may exist outside this file. } }
+}
+
+p { Example: }
+
+pre(syntax="abi"):
+| enum ExitCode : u32 {
+|     item success = 0;
+|     item failure = 1;
+|     ...
+| }
+
+h2(id="decl-bitstruct") { bitstruct }
+
+ul {
+  li { p { Requires an integer subtype (for example, \mono{: u16}). } }
+  li "Fields are packed in order into the backing integer."
+  li { p { \mono{reserve} creates unnamed padding bits. } }
+  li "All fields must have known bit widths."
+  li "Total bit width must match the backing type exactly."
+}
+
+p { Example: }
+
+pre(syntax="abi"):
+| bitstruct FileAttributes : u16 {
+|     field directory: bool;
+|     reserve u15 = 0;
+| }
+
+h2(id="decl-calls") { syscall and async_call }
+
+ul {
+  li "Define call signatures."
+  li { p { \mono{in} parameters are inputs; \mono{out} parameters are outputs. } }
+  li { p { \mono{error} entries define possible error codes. } }
+  li { p { \mono{noreturn} marks a call as not returning and forbids outputs. } }
+}
+
+p { Example: }
+
+pre(syntax="abi"):
+| syscall terminate {
+|     in exit_code: ExitCode;
+|     noreturn;
+| }
+
+h2(id="decl-resource") { resource }
+
+ul {
+  li "Declares an opaque handle type."
+  li "Treated as a distinct ABI type for safety and clarity."
+}
+
+p { Example: }
+
+pre(syntax="abi"):
+| resource File { }
+| resource Process { }
+
+h2(id="decl-typedef") { typedef }
+
+ul {
+  li "Creates an alias name for an existing type."
+  li "Used to introduce convenient names or to reify magic types."
+}
+
+p { Example: }
+
+pre(syntax="abi"):
+| typedef ThreadFunction = fnptr (?anyptr) u32;
+
+h2(id="decl-const") { const }
+
+ul {
+  li "Declares a constant value."
+  li "A type annotation is optional."
+  li "Values can be integers, booleans, null, or compound initializers."
+}
+
+p { Example: }
+
+pre(syntax="abi"):
+| const page_size: usize = 4096;
+
+h1(id="type-system") { Type System }
+
+h2(id="builtin-types") { Built-In Types }
+
+p {
+  The built-in (well-known) types are the core primitives the format understands:
+}
+
+ul {
+  li { p { \em{Primitives}: \mono{void}, \mono{bool}, \mono{noreturn} } }
+  li { p { \em{Pointers}: \mono{anyptr} (opaque data pointer), \mono{anyfnptr} (opaque function pointer) } }
+  li { p { \em{Strings and buffers}: \mono{str} (immutable UTF-8 string), \mono{bytestr} (immutable byte string), \mono{bytebuf} (mutable byte buffer) } }
+  li { p { \em{Integers}: \mono{usize}, \mono{isize}, \mono{u8/u16/u32/u64}, \mono{i8/i16/i32/i64}, and arbitrary \mono{uN}/\mono{iN} } }
+  li { p { \em{Floats}: \mono{f32}, \mono{f64} } }
+}
+
+p { Important size rules: }
+
+ul {
+  li { p { \mono{usize}/\mono{isize} match pointer size. } }
+  li { p { \mono{str}, \mono{bytestr}, and \mono{bytebuf} are represented as a pointer and length pair. } }
+  li { p { \mono{bool} is 1 bit in bitstructs and 1 byte in normal layouts. } }
+}
+
+h2(id="user-defined-types") { User-Defined Types }
+
+ul {
+  li { p { \mono{struct}, \mono{union}, \mono{enum}, \mono{bitstruct}, and \mono{resource} are all named and referenced by their identifiers or qualified names. } }
+  li "Type names are resolved within namespace scopes."
+}
+
+h2(id="type-forms") { Pointers, Slices, Arrays, and Optionals }
+
+p { Pointer forms: }
+
+ul {
+  li { p { \mono{*T}: pointer to one element. } }
+  li { p { \mono{*const T}: pointer to a constant element. } }
+  li { p { \mono{*const align(8) T}: pointer with explicit alignment requirement. } }
+}
+
+p { Slice forms: }
+
+ul {
+  li { p { \mono{[]T}: slice (pointer and length). } }
+  li { p { \mono{[*]T}: unknown-length pointer (no length in the type). } }
+}
+
+p { Arrays: }
+
+ul {
+  li { p { \mono{[N]T}: fixed-size array (N is an integer value). } }
+}
+
+p { Optionals: }
+
+ul {
+  li { p { \mono{?T}: nullable and optional wrapper. } }
+}
+
+p { Function pointers: }
+
+ul {
+  li { p { \mono{fnptr (A, B, C) R}: function pointer taking parameters \mono{A}, \mono{B}, \mono{C}, returning \mono{R}. } }
+}
+
+p { Examples: }
+
+pre(syntax="abi"):
+| field data: []const u8;        // slice of bytes
+| field ptr: [*]u8;              // unknown-length pointer
+| field buf: [128]u8;            // fixed-size array
+| field callback: fnptr (u32) u32;
+| field maybe_handle: ?Process;  // optional resource
+
+h2(id="magic-types") { Magic Types (<<...>>) }
+
+p {
+  Magic types are a special expansion mechanism.
+  They are only used via \mono{typedef} and expand into enums that enumerate declarations of a given kind.
+}
+
+p { Supported kinds: }
+
+ul {
+  li "struct_enum"
+  li "union_enum"
+  li "enum_enum"
+  li "bitstruct_enum"
+  li "syscall_enum"
+  li "async_call_enum"
+  li "resource_enum"
+  li "constant_enum"
+}
+
+p {
+  Each magic type requires a size (\mono{u8}, \mono{u16}, \mono{u32}, \mono{u64}, \mono{usize}).
+  The analyzer generates a concrete enum, with items derived from fully-qualified names of all declarations of that kind.
+}
+
+p { Example: }
+
+pre(syntax="abi"):
+| /// Enumeration of all syscall numbers.
+| typedef Syscall_ID = <<syscall_enum:u32>>;
+
+h1(id="c-abi-lowering") { C ABI Lowering }
+
+p {
+  The ABI mapper derives a native C-compatible form from the logical IDL definitions.
+  The transformation is deterministic and documented here so tooling can target it consistently.
+}
+
+h2(id="lowering-slices") { Slice Lowering }
+
+p {
+  Slices (\mono{[]T}) and string and buffer types are always lowered to pointer and length pairs in C ABI:
+}
+
+ul {
+  li { p { Logical: \mono{name: []T} } }
+  li { p { Native: \mono{name_ptr: *T} (or \mono{*const T} if the logical type is immutable) and \mono{name_len: usize}. } }
+}
+
+p { This applies to: }
+
+ul {
+  li { p { \mono{[]T} } }
+  li { p { \mono{str}, \mono{bytestr}, \mono{bytebuf} } }
+  li "Optional slices and optional string and buffer types"
+}
+
+p { Example: }
+
+pre(syntax="abi"):
+| syscall read {
+|     in buffer: []u8;
+|     out count: usize;
+| }
+
+p { Lowered inputs: }
+
+ul {
+  li { p { \mono{buffer_ptr: *u8} } }
+  li { p { \mono{buffer_len: usize} } }
+}
+
+h2(id="lowering-optionals") { Optional Lowering }
+
+p {
+  Optionals that are already C-compatible are kept as-is, for example optional pointers or optional resources.
+  Optional slices and optional string and buffer types are lowered with the optional applied to the pointer only; the length remains a plain \mono{usize}.
+}
+
+p { Example: }
+
+pre(syntax="abi"):
+| in owners: ?[]Process;
+
+p { Lowers to: }
+
+ul {
+  li { p { \mono{owners_ptr: ?*Process} } }
+  li { p { \mono{owners_len: usize} } }
+}
+
+p { Example: }
+
+pre(syntax="abi"):
+| in file_name: ?str;
+
+p { Lowers to: }
+
+ul {
+  li { p { \mono{file_name_ptr: ?*const u8} } }
+  li { p { \mono{file_name_len: usize} } }
+}
+
+h2(id="lowering-syscall-return") { Syscall Return and Value Lowering }
+
+p { Syscalls follow these rules to ensure a C-compatible signature: }
+
+ol {
+  li {
+    p {
+      Errors present (\mono{error} entries exist):
+      all logical outputs become input pointers (\mono{out} parameters are passed as \mono{*T}), and the function returns a single \mono{u16} error code (\mono{0} is success, non-zero is an error).
+    }
+  }
+  li {
+    p {
+      No errors and exactly one output:
+      that output is returned directly as the C return value.
+    }
+  }
+  li {
+    p {
+      No errors and multiple outputs:
+      outputs become input pointers and the function returns \mono{void}.
+    }
+  }
+}
+
+p { This gives a single, predictable ABI signature in all cases. }
+
+h2(id="lowering-async") { Async Call Lowering }
+
+p {
+  Async calls are lowered similarly for slices and optionals, but do not use syscall return remapping.
+  Their outputs remain outputs in the native representation, which is treated as a structure-like ABI (useful for async operation records rather than direct C call signatures).
+}
+
+h2(id="lowering-struct-fields") { Struct Field Lowering }
+
+p { Struct fields undergo slice lowering in-place: }
+
+ul {
+  li { p { \mono{str}, \mono{bytestr}, \mono{bytebuf} become \mono{*_ptr} plus \mono{*_len}. } }
+  li { p { \mono{[]T} becomes \mono{*_ptr} plus \mono{*_len}. } }
+  li { p { Optional slices become \mono{?*_ptr} plus \mono{*_len}. } }
+}
+
+p { Union fields are not transformed; unions must already be C-ABI compatible. }
+
+p { Example: }
+
+pre(syntax="abi"):
+| struct FileInfo {
+|     field name: str;
+|     field data: []const u8;
+| }
+
+p { Lowered fields: }
+
+ul {
+  li { p { \mono{name_ptr: *const u8}, \mono{name_len: usize} } }
+  li { p { \mono{data_ptr: *const u8}, \mono{data_len: usize} } }
+}

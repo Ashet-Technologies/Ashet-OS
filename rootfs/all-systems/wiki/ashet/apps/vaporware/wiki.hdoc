@@ -1,0 +1,33 @@
+hdoc(version="2.0", title="Hyper Wiki");
+
+title { Hyper Wiki }
+
+warning {
+  p { \em{Vaporware Notice!} }
+  p { This application is \link(uri="https://en.wikipedia.org/wiki/Vaporware"){vaporware}
+  and does not exist right now. }
+}
+
+h1 "Planned Features"
+
+p {
+    HyperWiki is planned to display and edit the contents of this wiki. Its purpose is to both
+    provide documentation for the applications, operating system and hardware of the current system,
+    but also serve as a personal note editing system.
+}
+
+note {
+  p {
+    Whether HyperWiki will gain \link(uri="https://en.wikipedia.org/wiki/WYSIWYG"){WYSIWYG}
+    editing depends on the implementation complexity of such an editor. It would be really
+    nice to have this, though!
+  }
+}
+
+note {
+  p {
+    The inspiration for HyperWiki was mainly drawn from the
+    \link(uri="https://en.wikipedia.org/wiki/Microsoft_Compiled_HTML_Help"){Microsoft Compiled HTML Help (CHM)}
+    system shipped with Windows since 1997.
+  }
+}

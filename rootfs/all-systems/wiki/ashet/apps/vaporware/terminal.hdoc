@@ -1,0 +1,32 @@
+hdoc(version="2.0", title="Connex Terminal Software");
+
+title { Connex Terminal Software }
+
+warning {
+  p { \em{Vaporware Notice!} }
+  p { This application is \link(uri="https://en.wikipedia.org/wiki/Vaporware"){vaporware}
+  and does not exist right now. }
+}
+
+h1 "Planned Features"
+
+p {
+    Connex is meant to be a multi-channel terminal application that allows connecting to several targets.
+}
+
+p {
+    It will roughly have these features:
+}
+
+ul {
+    li "Basic rendering of ANSI escape sequences (colors, cursor movement)"
+    li {
+        p { Supported transports: }
+
+        ul {
+            li { p { \link(uri="https://en.wikipedia.org/wiki/Serial_port"){Serial Ports} } }
+            li { p { \link(uri="https://en.wikipedia.org/wiki/User_Datagram_Protocol"){UDP} } }
+            li { p { \link(uri="https://en.wikipedia.org/wiki/Transmission_Control_Protocol"){TCP} } }
+        }
+    }
+}

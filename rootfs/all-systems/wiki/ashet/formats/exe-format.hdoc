@@ -1,0 +1,151 @@
+hdoc(version="2.0", title="Ashet Executable Format (.ashex)", lang="en");
+
+title { Ashet Executable Format (\mono{.ashex}) }
+
+p {
+  \mono{.ashex} is the native executable container used by Ashet OS.
+  It is designed for direct, low-overhead loading in the kernel.
+}
+
+h1(id="overview") { Overview }
+
+ul {
+  li "Little-endian 32-bit format (current file type: machine32_le)."
+  li "Fixed 512-byte header with CRC32 checksum."
+  li "Offset/count pairs for syscall table, load sections, zeroed sections, and relocations."
+  li "Optional embedded icon payload (commonly an ABM bitmap)."
+}
+
+h1(id="header") { Header Block }
+
+p {
+  The file starts with a 512-byte header.
+  Bytes \mono{0..507} are checksummed with CRC32 (ISO HDLC), and the checksum is written at \mono{508..511}.
+}
+
+pre(syntax="zig"):
+| const Platform = enum(u8) {
+|   riscv32 = 0,
+|   arm32 = 1,
+|   x86 = 2,
+| };
+| 
+| const FileType = enum(u8) {
+|   machine32_le = 0,
+| };
+| 
+| const HeaderV0 = struct {
+|   magic: [4]u8 = .{ 'A', 'S', 'H', 'X' },
+|   version: u8 = 0,
+|   file_type: FileType, // currently always machine32_le
+|   platform: Platform,
+|   _padding0: u8 = 0,
+| 
+|   icon_size: u32,
+|   icon_offset: u32, // absolute file offset, 0 if icon_size == 0
+| 
+|   vmem_size: u32,   // total virtual memory to allocate for the process image
+|   entry_point: u32, // offset within process virtual memory
+| 
+|   syscall_offset: u32,   syscall_count: u32,
+|   load_header_offset: u32, load_header_count: u32,
+|   bss_header_offset: u32,  bss_header_count: u32,
+|   relocation_offset: u32,  relocation_count: u32,
+| 
+|   _reserved: [452]u8, // currently filled with 0xFF
+|   checksum_crc32: u32, // CRC32 over bytes 0..507
+| };
+
+h1(id="layout") { File Layout }
+
+p {
+  Payload sections are written in this order, each aligned to a 512-byte boundary:
+  icon, load headers, BSS headers, syscalls, relocations.
+  Alignment padding bytes are currently \mono{0xFF}.
+}
+
+pre(syntax="text"):
+| +------------------------------+
+| | 512-byte header              |
+| +------------------------------+
+| | icon bytes (optional)        |
+| +------------------------------+
+| | load headers + load data     |
+| +------------------------------+
+| | bss headers                  |
+| +------------------------------+
+| | syscall table                |
+| +------------------------------+
+| | relocations                  |
+| +------------------------------+
+
+h1(id="records") { Record Encodings }
+
+pre(syntax="zig"):
+| const LoadRecord = struct {
+|   vmem_offset: u32,
+|   size: u32,
+|   data: [size]u8,
+| };
+| 
+| const BssRecord = struct {
+|   vmem_offset: u32,
+|   size: u32,
+| };
+| 
+| const SyscallRecord = struct {
+|   name_len: u16,
+|   name: [name_len]u8, // syscall name bytes
+| };
+
+pre(syntax="zig"):
+| const RelocationSize = enum(u2) {
+|   word8 = 0,
+|   word16 = 1,
+|   word32 = 2,
+|   word64 = 3,
+| };
+| 
+| const RelocationField = enum(u2) {
+|   unused = 0b00,
+|   add = 0b10,
+|   subtract = 0b11,
+| };
+| 
+| const RelocationType = packed struct(u16) {
+|   size: RelocationSize,
+|   self: RelocationField,
+|   addend: RelocationField,
+|   base: RelocationField,
+|   offset: RelocationField,
+|   syscall: RelocationField,
+|   _padding: u4 = 0,
+| };
+| 
+| const RelocationRecord = struct {
+|   offset: u32, // process-memory offset to patch
+|   typ: RelocationType,
+|   syscall_index: if (typ.syscall != .unused) u16 else void,
+|   addend: if (typ.addend != .unused) i32 else void,
+| };
+
+h1(id="reloc-semantics") { Relocation Semantics }
+
+p {
+  A relocation computes a new value by conditionally adding or subtracting fields selected by
+  \mono{RelocationType}: current value at patch site (\mono{self}), encoded \mono{addend},
+  process base address (\mono{base}), relocation \mono{offset}, and resolved syscall address
+  (\mono{syscall}).
+}
+
+p {
+  The current kernel loader supports \mono{word32} relocations.
+}
+
+h1(id="notes") { Notes }
+
+ul {
+  li "All numeric fields are little-endian."
+  li "Offsets in header fields are absolute file offsets."
+  li "The kernel validates magic, version, platform, file type, and header checksum before loading."
+}

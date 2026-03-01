@@ -1,4 +1,50 @@
-hdoc "1.0"
+hdoc(version="2.0", title="Dungeon");
 
-h1 "" "Dungeon"
+title { Dungeon }
 
+p {
+    Dungeon is a basic raycasting demo showcasing how to implement games with
+    software-based rendering.
+}
+
+h1 { Controls }
+
+p {
+    Dungeon can be controlled via both the mouse and the keyboard.   
+}
+
+table {
+    columns {
+        td "Input"
+        td "Action"
+    }
+    group "Keyboard"
+
+    row { td "Left"       td "Turn left"     }
+    row { td "Right"      td "Turn right"    }
+
+    row { td "Up"         td "Move forward"  }
+    row { td "Down"       td "Move backward" }
+
+    row { td "Page Up"    td "Rotate left"   }
+    row { td "Page Down"  td "Rotate right"  }
+
+    row { td "Escape"     td "Exit the game" }
+
+    group "Mouse"
+
+    row { td "Left Button + Motion"  td "Rotate camera" }
+    row { td "Right Button + Motion" td "Move forward/backward" } 
+}
+
+note {
+    p {
+        The original source code of Dungeon was derived from the demo \link(uri="https://demozoo.org/productions/230575/"){Burn It Down}
+        by xq which was published at \link(uri="https://demozoo.org/parties/3782/"){Nordlicht 2019} demo party.
+    }
+    p {
+        Implementing demo effects on that "platform" was incredibly resource constraint by only having 2 chunks of RAM with 32 kB each.
+        This implied that all effects had to be computed on the fly, and the original source code filled the screen in a column-major manner,
+        filling the columns left-to-right, each column is rendered bottom-to-top.
+    }
+}

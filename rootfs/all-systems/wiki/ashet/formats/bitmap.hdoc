@@ -1,0 +1,54 @@
+hdoc(version="2.0", title="Ashet Bitmap (.abm)", lang="en");
+
+title { Ashet Bitmap (\mono{.abm}) }
+
+p {
+  Ashet Bitmap (\mono{.abm}) stores 8-bit indexed pixels in a simple uncompressed layout.
+  Color indices always refer to the fixed Ashet OS system palette.
+  All integer fields are little-endian.
+}
+
+p {
+  The pixel payload is row-major and always contains exactly
+  \mono{width * height} bytes.
+  If transparency is enabled, every pixel equal to \mono{transparency_key}
+  is treated as transparent.
+}
+
+p {
+  During conversion, transparent source pixels (alpha < 0.5) are remapped to one chosen
+  \mono{transparency_key} index.
+  That key is selected from currently unused color indices among opaque pixels.
+}
+
+h1(id="encoding") { Data Encoding }
+
+pre(syntax="zig"):
+| const AbmFlags = packed struct(u16) {
+|   use_transparency: bool, // bit 0
+|   _reserved: u15 = 0,
+| };
+| 
+| const AbmHeader = extern struct {
+|   magic: u32 = 0x48198b74,
+|   width: u16,
+|   height: u16,
+|   flags: AbmFlags,
+|   palette_size: u8,     // reserved, must be 0
+|   transparency_key: u8, // meaningful when flags.use_transparency = true
+| };
+| 
+| const AbmFile = struct {
+|   header: AbmHeader,
+|   pixels: [header.width * header.height]u8,
+| };
+
+h1(id="constraints") { Constraints }
+
+ul {
+  li { p { \mono{magic} must be \mono{0x48198b74}. } }
+  li { p { File size must be at least \mono{12 + width * height} bytes. } }
+  li { p { \mono{palette_size} is reserved and must be \mono{0}. } }
+  li { p { \mono{flags.use_transparency} controls whether \mono{transparency_key} is active. } }
+  li { p { \mono{mkicon} fails to encode transparent images if all 256 indices are already used by opaque pixels. } }
+}

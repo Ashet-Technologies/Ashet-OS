@@ -1,0 +1,30 @@
+hdoc(version="2.0", title="Telegraph Chat");
+
+title { Telegraph Chat }
+
+warning {
+  p { \em{Vaporware Notice!} }
+  p { This application is \link(uri="https://en.wikipedia.org/wiki/Vaporware"){vaporware}
+  and does not exist right now. }
+}
+
+h1 "Planned Features"
+
+p {
+    Telegraph is meant to be a chat application allowing users of Ashet OS to communicate with each
+    other in a private conversation (one-to-one) or in group conversations (group chats).
+}
+
+note {
+    p { It is not yet decided which chat protocol Telegraph should use. }
+
+    p { Potential candidates are: }
+
+    ul {
+        li { p { \link(uri="https://en.wikipedia.org/wiki/IRC"){IRC} } }
+        li { p { \link(uri="https://en.wikipedia.org/wiki/Matrix_(protocol)"){Matrix} (unlikely as the complexity is fairly high) } }
+        li { p { \link(uri="https://en.wikipedia.org/wiki/XMPP"){Matrix} (unlikely as the complexity is fairly high) } }
+        li { p { \link(uri="https://en.wikipedia.org/wiki/SIMPLE_(instant_messaging_protocol)"){SIP/SIMPLE} (would have meme factor) } }
+        li "Some custom protocol"
+    }
+}

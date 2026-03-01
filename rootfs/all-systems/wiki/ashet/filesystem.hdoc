@@ -1,0 +1,70 @@
+hdoc(version="2.0", title="File System", lang="en");
+
+h1(id="paths") { Paths }
+
+p {
+  Ashet OS utilizes UNIX-like file paths in combination with a DOS-style drive identifier.
+  For example, \mono{SYS:wiki/ashet/filesystem.hdoc} would be the path of this file.
+}
+
+p {
+  Paths start with an uppercase drive name separated by \mono{:} from the first folder name.
+  Folders are separated by \mono{/}.
+  The last element of the path is either a file or a directory name.
+  All previous elements must be folder names.
+}
+
+p { There are some restrictions on path formatting: }
+
+ul {
+  li "A path must not be empty."
+  li "A path must be encoded in valid UTF-8."
+  li "A file or folder name must not be longer than 120 characters."
+  li "A file or folder name must not contain any ASCII control characters."
+  li "A file or folder name must not contain a backslash character, to prevent confusion with Windows or DOS paths."
+  li { p { There must be no leading \mono{/} before the first folder. } }
+  li { p { There must be no double \mono{//} in any component. } }
+}
+
+h1(id="hierarchy") { Filesystem Hierarchy }
+
+pre(syntax="text"):
+| SYS:/
+| |- apps/
+| |  |- init.ashex
+| |  |- ...
+| |  '- ${app_name}.ashex
+| |- system/
+| |  |- os.cfg
+| |  |- fonts/
+| |  |  |- mono-6.font
+| |  |  |- mono-8.font
+| |  |  |- sans-6.font
+| |  |  |- sans.font
+| |  |  '- ...
+| |  |- icons/
+| |  |  '- ...
+| |  '- ...
+| |- etc/
+| |  |- desktop/
+| |  |  '- wallpaper.abm
+| |  '- readme
+| |- wiki/
+| |  |- index.hdoc
+| |  '- ...
+| '- docs/
+|    '- filesystem.txt
+
+p {
+  \mono{SYS:/apps/<app_name>.ashex}
+  is an Ashet executable file that will be loaded at a relocatable address in memory.
+  It contains code, icon data, and embedded files of the application.
+}
+
+pre(syntax="zig"):
+| extern struct {
+|   bitmap: [32 * 32]u8,
+|   palette: [15]u16,
+| }
+
+p { Color values are either 0 for transparent or 1...15 for the colors. }

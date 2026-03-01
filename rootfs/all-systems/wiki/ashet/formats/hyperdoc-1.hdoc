@@ -1,0 +1,54 @@
+hdoc(version="2.0", title="HyperDoc (Version 1)", lang="en");
+
+warning {
+  p { \em{Deprecation Note!} }
+  p { HyperDoc 1.0 is now deprecated and the documentation is just for legacy reasons. }
+}
+
+h1 "Introduction"
+
+p {
+  The HyperDocument file format is meant to describe rich text files that link between each other.
+}
+
+h1 "Structure"
+
+p {
+  The structure of HyperDocument files is pretty simple. Each file starts with a
+  \mono "hdoc \"1.0\""
+  sequence that will mark both "magic number" and format version.
+}
+
+p {
+  After the header, an arbitrary number of block elements follows.
+  Each block can be considered similar to a paragraph in text documents, but isn't necessarily only a pure text element. 
+  The following blocks types are available:
+}
+
+ul {
+  li { p { \mono "h1", \mono "h2", \mono "h3" - First, second and third level headings } }
+  li { p { \mono "toc"  - A table of contents } }
+  li { p { \mono "p"  - A regular, plain text paragraph } }
+  li { p { \mono "quote"  - A block quote } }
+  li { p { \mono "enumerate"  - An ordered list, using numbering } }
+  li { p { \mono "itemize"  - An unordered list, using bullet points } }
+  li { p { \mono "pre"  - A preformatted block of text, optionally with a language tag } }
+  li { p { \mono "image"  - A picture that is inserted into the document. } }
+}
+
+p {
+  The \mono "p", \mono "quote" and \mono "pre" blocks contain a sequence of non-nested spans.
+  The following span types are available:
+}
+
+ul {
+  li { p { \mono "span" - Regular, unformatted plain text } }
+  li { p { \mono "emph" - Emphasises text } }
+  li { p { \mono "mono" - Monospaced font } }
+  li { p { \mono "link" - Plain text with a hyperlink. } }
+}
+
+p {
+  The blocks \mono "enumerate"  and \mono "itemize" contain elements of type \mono "item".
+  Each of those items contain a list of blocks.
+}

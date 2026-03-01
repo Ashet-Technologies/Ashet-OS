@@ -1,0 +1,19 @@
+.{
+    .name = .ashet_os_website,
+    .version = "0.1.0",
+    .fingerprint = 0xb3264fb3829d03ce,
+    .dependencies = .{
+        .abi = .{ .path = "../abi" },
+        .os = .{ .path = "../os" },
+        .kernel = .{ .path = "../kernel" },
+        .abi_mapper = .{ .path = "../tools/abi-mapper" },
+
+        .hyperdoc = .{
+            .url = "git+https://github.com/Ashet-Technologies/hyperdoc.git#c21b0cddbe067f936b72de86d66b0ac3307b3032",
+            .hash = "hyperdoc-0.1.0-nnPEq4B_CADQazYUZvHk_NzK9QioNn9kHCC-cBBNcSGv",
+        },
+    },
+    .paths = .{
+        ".",
+    },
+}

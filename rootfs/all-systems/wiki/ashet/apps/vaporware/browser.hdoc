@@ -1,0 +1,59 @@
+hdoc(version="2.0", title="Gateway Internet Browser");
+
+title { Gateway Internet Browser }
+
+warning {
+  p { \em{Vaporware Notice!} }
+  p { This application is \link(uri="https://en.wikipedia.org/wiki/Vaporware"){vaporware}
+  and does not exist right now. }
+}
+
+h1 "Planned Features"
+
+p {
+    Gateway is meant to be a \link(uri="https://www.ilyameerovich.com/gemini-the-small-internet/"){small internet}
+    browser, not a \link(uri="https://en.wikipedia.org/wiki/World_Wide_Web"){web} browser.
+}
+
+p {
+    This means that that Gateway will allow accessing pages, lay out their contents in a basic manner and
+    provide hyperlinks between documents. What it won't do is applying server-given styling (CSS) or
+    logic (JavaScript).
+}
+
+p {
+    Gateway will roughly have these features:
+}
+
+ul {
+    li "User-configurable styling per host"
+    li "Favorites"
+    li "Document Outline for quick navigation"
+    li {
+        p "Document Formats"
+        ul {
+            li "Plain Text"
+            li { p { \link(uri="../../formats/hyperdoc-2.hdoc"){HyperDoc 2.0} } }
+            li { p { \link(uri="https://geminiprotocol.net/docs/gemtext-specification.gmi"){Gemini Text} } }
+            li { p { \link(uri="https://en.wikipedia.org/wiki/Gopher_(protocol)#Source_code_of_a_menu"){Gopher Menus} } }
+            li { p { Document-like \link(uri="https://en.wikipedia.org/wiki/HTML"){HTML} (No CSS, no JS, just basic document layouts) } }
+            li { p { Maybe \link(uri="https://commonmark.org/"){CommonMark} } }
+        }
+    }
+    li {
+        p "Protocols"
+        ul {
+            li { p { \link(uri="https://geminiprotocol.net/"){Gemini protocol}. } }
+            li { p { \link(uri="https://en.wikipedia.org/wiki/Gopher_(protocol)"){Gopher protocol}. } }
+            li { p { \link(uri="https://en.wikipedia.org/wiki/HTTP"){HTTP protocol}. } }
+            li { p { Maybe \link(uri="https://github.com/Ashet-Technologies/hackvr-turbo/"){HackVR} } }
+        }
+    }
+    li {
+        p "Configurable TLS settings"
+        ul {
+            li { p { First-class client certificates } }
+            li { p { \link(uri="https://en.wikipedia.org/wiki/Trust_on_first_use"){TOFU} or \link(uri="https://en.wikipedia.org/wiki/Certificate_authority"){CA} authentication } }
+        }
+    }
+}

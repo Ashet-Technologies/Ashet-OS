@@ -1,0 +1,11 @@
+hdoc(version="2.0", title="Operating System", lang="en");
+
+title { Ashet Operating System }
+
+h1 "Overview"
+
+p {
+    Ashet OS is a cooperatively scheduled operating system using a
+    single flat memory space (no virtual memory) which allows the OS
+    to run on many small platforms.
+}

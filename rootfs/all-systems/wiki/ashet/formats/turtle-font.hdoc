@@ -1,0 +1,77 @@
+hdoc(version="2.0", title="Turtle Fonts (.font)", lang="en");
+
+title { Turtle Fonts (\mono{.font}) }
+
+p {
+  Turtle fonts store vector glyphs as compact command streams.
+  All integer fields are little-endian.
+}
+
+p {
+  The file starts with a glyph index. Each index entry stores the Unicode codepoint,
+  the glyph advance, and an offset into the shared glyph code blob.
+}
+
+p {
+  Glyph code is a bytecode stream of drawing commands.
+  Each stream is terminated by an \mono{end} command (\mono{0x00}).
+}
+
+h1(id="encoding") { Data Encoding }
+
+pre(syntax="zig"):
+| const CodepointAdvancePair = packed struct(u32) {
+|   codepoint: u24, // Unicode codepoint
+|   advance: u8,    // horizontal advance
+| };
+| 
+| const GlyphIndexEntry = struct {
+|   oap: CodepointAdvancePair,
+|   offset: u32, // byte offset into glyph_code
+| };
+| 
+| const TurtleFontFile = struct {
+|   magic: u32 = 0x4c2b8688,
+|   glyph_count: u32,
+|   glyph_index: [glyph_count]GlyphIndexEntry, // sorted by codepoint
+|   glyph_code: [*]u8, // concatenated glyph command streams
+| };
+
+h1(id="glyph-code") { Glyph Code Encoding }
+
+p {
+  Glyph code uses single-byte opcodes.
+  The low nibble stores the command id and the high nibble is zero.
+}
+
+pre(syntax="zig"):
+| const CommandId = enum(u4) {
+|   end = 0,      // 0x00, terminates one glyph stream
+|   move_rel = 1, // then (i8 dx, i8 dy)
+|   move_abs = 2, // then (i8 x,  i8 y)
+|   line_rel = 3, // then (i8 dx, i8 dy)
+|   line_abs = 4, // then (i8 x,  i8 y)
+|   point = 5,    // no coordinates
+| };
+| 
+| const EncodedCommand = packed struct(u8) {
+|   cmd: CommandId,
+|   pad: u4 = 0,
+| };
+
+p {
+  Relative commands update the current pen position by delta.
+  Absolute commands set the pen position directly.
+  \mono{line_*} draws from previous position to current position, and \mono{point}
+  draws a dot at the current position.
+}
+
+h1(id="constraints") { Constraints }
+
+ul {
+  li { p { \mono{magic} must be \mono{0x4c2b8688}. } }
+  li { p { \mono{glyph_index} should be sorted by increasing codepoint for binary search lookup. } }
+  li { p { Every codepoint must fit into \mono{u21}. } }
+  li { p { Every glyph offset is relative to the start of \mono{glyph_code}. } }
+  li { p { Each glyph stream must contain an \mono{end} command byte (\mono{0x00}) before end-of-file. } }
+}

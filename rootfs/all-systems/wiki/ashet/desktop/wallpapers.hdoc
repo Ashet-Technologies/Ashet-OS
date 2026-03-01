@@ -1,9 +1,8 @@
-hdoc "1.0"
-
-h1 "" "Custom Wallpapers"
+hdoc(version="2.0", title="Custom Wallpapers");
 
 p {
-  span "To use a customized wallpaper, put an Ashet Bitmap in your desktop resolution at "
-  code "SYS:/etc/desktop/wallpaper.abm"
-  span ". The desktop manager will then pick it up and show it as the background image."
+  To use a customized wallpaper, put an Ashet Bitmap in your desktop resolution at
+  \mono{SYS:/etc/desktop/wallpaper.abm}.
+  
+  The desktop manager will then pick it up and show it as the background image.
 }
