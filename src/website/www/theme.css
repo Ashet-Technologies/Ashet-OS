@@ -385,7 +385,8 @@ code .tok-name {
 }
 
 .markup-container .hdoc-admonition.hdoc-spoiler:hover>*,
-.markup-container .hdoc-admonition.hdoc-spoiler:focus>* {
+.markup-container .hdoc-admonition.hdoc-spoiler:focus-within>*
+.markup-container .hdoc-admonition.hdoc-spoiler[tabindex="0"]:focus>* {
     filter: none;
     transition: filter 120ms ease;
 }

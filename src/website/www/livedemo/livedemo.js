@@ -149,7 +149,7 @@ function launch_emulator() {
     const progressMap = {}
 
     function update_progress(event) {
-        emulator_status.style.display = undefined;
+        emulator_status.style.display = "";
 
         let progress = progressMap[event.file_index];
         if (progress == null) {

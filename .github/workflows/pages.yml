@@ -2,7 +2,7 @@ name: Deploy os.ashet.computer
 
 on:
   push:
-    branches: ["master", "work/os_website"]
+    branches: ["master"]
   workflow_dispatch:
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
