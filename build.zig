@@ -50,6 +50,10 @@ const installed_tools: []const ToolDep = &.{
         .dependency = "gui_designer",
         .artifacts = &.{ "gui-editor", "gui-compiler" },
     },
+    .{
+        .dependency = "emulator",
+        .artifacts = &.{ "emulator.wasm", "emulator" },
+    },
     // .{
     //     .dependency = "agp_tester",
     //     .artifacts = &.{"agp-tester"},

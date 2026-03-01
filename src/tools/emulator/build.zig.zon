@@ -1,0 +1,7 @@
+.{
+    .name = .emulator,
+    .version = "0.0.1",
+    .minimum_zig_version = "0.15.2",
+    .paths = .{""},
+    .fingerprint = 0x9c696d3fa0d72f0c,
+}
