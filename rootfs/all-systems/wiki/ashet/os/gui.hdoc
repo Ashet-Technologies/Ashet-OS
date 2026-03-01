@@ -12,7 +12,7 @@ p {
 h2 "Windows"
 
 p {
-    A \em{window} is logical unit of graphical interaction. It's a 2D surface which
+    A \em{window} is the logical unit of graphical interaction. It's a 2D surface which
     may contain widgets (user controls) and graphical contents.
 }
 

@@ -38,7 +38,7 @@ namespace resources {
     }
 
     /// Drops the ownership of the resource for the current process.
-    /// If no owner remains, the resource will be destroyed and it's
+    /// If no owner remains, the resource will be destroyed and its
     /// memory will be released.
     /// The handle must be assumed invalid for this process after
     /// this function returns.
@@ -46,7 +46,7 @@ namespace resources {
         in @"resource": SystemResource;
     }
 
-    /// Immediatly destroys the resource and releases its memory.
+    /// Immediately destroys the resource and releases its memory.
     ///
     /// NOTE: This will *always* destroy the resource, even if it's
     ///       also owned by another process.
@@ -63,7 +63,7 @@ namespace overlapped {
         /// The type of operation that is performed.
         field type: Type;
 
-        /// A user-specified pointer-sized field which
+        /// A pointer-sized field which is freely available to the userland.
         field tag: usize;
 
         typedef Type = <<async_call_enum:u32>>;
@@ -100,7 +100,7 @@ namespace overlapped {
         error  Unscheduled;
     }
 
-    /// Awaits one or more explictic asynchronous operations and returns the
+    /// Awaits one or more explicit asynchronous operations and returns the
     /// number of `events` elements.
     ///
     /// The kernel will only await elements provided in `events` and all of those events must
@@ -132,7 +132,7 @@ namespace overlapped {
     ///
     /// NOTE: If the operation has already completed, an error will be returned saying so.
     ///
-    /// NOTE: The cancelled operation will not be returned by `await` anymore.
+    /// NOTE: The cancelled operation will not be returned by `await_completion` or `await_completion_of` anymore.
     syscall cancel {
         in      aop: *ARC;
         error   Completed;
@@ -261,7 +261,7 @@ namespace process {
     }
 
     ///
-    /// Each process has it's own memory heap managed by the kernel. This removes the
+    /// Each process has its own memory heap managed by the kernel. This removes the
     /// requirement that each process has to ship their own memory allocator and the kernel
     /// may choose a system-optimal allocation strategy.
     ///
@@ -270,12 +270,12 @@ namespace process {
     ///       has their own virtual memory space and the os can do "append only"-style memory
     ///       management.
     ///
-    ///       The problem with this design is that it requires a memory manangement unit that
+    ///       The problem with this design is that it requires a memory management unit that
     ///       supports virtual memory, and usually works with page granularity. This means
     ///       the smallest chunk of memory a process can allocate is a single page, usually 4096 bytes.
     ///
     ///       For the systems we target, this is 0.5‰ of the total system memory assuming 8 MiB of RAM.
-    ///       Thus, Ashet OS provides a finer grained kernel memory allocator which internally allows sharing
+    ///       Thus, Ashet OS provides a finer-grained kernel memory allocator which internally allows sharing
     ///       allocations in a much finer process memory assignments than chunks of 4096 bytes.
     ///
     namespace memory {
@@ -1080,9 +1080,9 @@ namespace draw {
     }
 
     /// Measures the size of a text string.
-    /// 
+    ///
     /// NOTE: This function accepts strings using the LF line separator
-    ///       and will return the height of all lines and the width of 
+    ///       and will return the height of all lines and the width of
     ///       the longest line.
     syscall measure_text_size {
         in    font: Font;
@@ -1292,7 +1292,7 @@ namespace gui {
 
     /// Moves and resizes a widget in one.
     ///
-    /// NOTE: The position of a widget is unrestricted, but it's size
+    /// NOTE: The position of a widget is unrestricted, but its size
     ///       may be restricted by the selected widget type.
     syscall place_widget {
         in    widget: Widget;
@@ -1551,7 +1551,7 @@ resource Mutex { }
 const max_fs_name_len = 8;
 
 /// The maximum number of bytes in a file system type name.
-/// Chosen to be a power of two, and long enough to accomodate typical names:
+/// Chosen to be a power of two, and long enough to accommodate typical names:
 /// - `FAT16`
 /// - `FAT32`
 /// - `exFAT`
@@ -1567,7 +1567,7 @@ const max_fs_type_len = 32;
 /// As some programs use sha256 checksums and 64 bytes are enough to store
 /// a hex-encoded 256 bit sequence:
 /// - `114ac2caf8fefad1116dbfb1bd68429f68e9e088b577c9b3f5a3ff0fe77ec886`
-/// This should also enough for most reasonable file names in the wild.
+/// This should also be enough for most reasonable file names in the wild.
 const max_file_name_len = 120;
 
 struct UUID {
@@ -2795,7 +2795,7 @@ struct MessageBoxEvent {
 ///
 /// An 8-bit color value with a specialized encoding suitable for embedding
 /// a practical set of 256 colors.
-/// 
+///
 /// The color encoding is basically a HSV (hue, saturation, value) color with 8 bits, using
 /// 3 bits for the hue, 3 bits for the value and 2 bits for the saturation.
 ///
@@ -2816,26 +2816,26 @@ struct MessageBoxEvent {
 ///   integer storing the brightness of gray.
 ///
 /// This yields a color space which has the following properties:
-/// 
+///
 /// - 64 true gray levels ranging from black to white.
 /// - 8 different hues (red, yellow, lime, green, cyan, blue, purple, magenta).
 /// - 3 different levels of saturation for each non-gray color.
 /// - black maps to `0x00` (but white does not map to `0xFF`).
-/// 
+///
 /// This means we have all 256 colors mapped to a distinct, meaningful color that still allows
 /// programmatic conversion from and to the color without the need of a look-up table that
 /// would require searching the correct color.
 ///
 /// NOTE: This color encoding shall be referred to as "Ashet HSV".
 ///
-/// LORE: This color encoding was developed over the course of several days, playing around with 
+/// LORE: This color encoding was developed over the course of several days, playing around with
 ///       many different encodings.
 ///       The color encodings/palettes were tested on a diverse set of images, including game screenshots,
 ///       photographs, artificial images, vector graphics and so on.
-///       
+///
 ///       The "Ashet HSV" encoding showed the best visual matches for most pictures, allowing both visual
 ///       fidelity on the color side, but also allowing both bright and dark images to work really well.
-/// 
+///
 bitstruct Color : u8 {
     const black:   Color = .{ .hue = 0, .value = 0, .saturation = 0 };
     const white:   Color = .{ .hue = 7, .value = 7, .saturation = 0 };
@@ -2851,7 +2851,7 @@ bitstruct Color : u8 {
     /// The hue of the color, encoded as 0 = 0° (red), 7 = 315° (magenta).
     field hue: u3;
 
-    /// The value of the color, with 0 = 12.5% brightness and 7 = 100% brightness. 
+    /// The value of the color, with 0 = 12.5% brightness and 7 = 100% brightness.
     field value: u3;
 
     /// The saturation of the color, encoded as 0 = desaturated, and 3 = fully saturated.
@@ -3495,7 +3495,7 @@ namespace io {
             /// This mode is usually called *software control flow* and uses two special bytes
             /// that can inhibit or allow transmitting bytes.
             ///
-            /// The two special word are called `XON` (Transmitter On) and `XOFF` (Transmitter Off).
+            /// The two special words are called `XON` (Transmitter On) and `XOFF` (Transmitter Off).
             ///
             /// When a receiver receives the `XOFF` word, it turns off the sender after the current
             /// byte has been processed. As soon as the `XON` word is received, the sender is allowed
@@ -3583,19 +3583,19 @@ namespace io {
         /// sequence will be aborted.
         ///
         /// LORE: This function was introduced instead of separate read and write functions, as it's
-        ///       sometimes necessary for certain I²C ICs (like EEPROMS) to have "atomic" read-after-write
+        ///       sometimes necessary for certain I²C ICs (like EEPROMs) to have "atomic" read-after-write
         ///       operations.
         ///
         ///       As both a singular read and a singular write can be expressed as a batch of one operation,
         ///       this is the only available function on the I²C bus.
         ///
         ///       **Example:**
-        ///       Typical I²C EEPROMS have an internally maintained "memory cursor" which is advanced for every
+        ///       Typical I²C EEPROMs have an internally maintained "memory cursor" which is advanced for every
         ///       read operation. All write operations will update the cursor also for read operations.
         ///
         ///       This means that in an OS context, where scheduling can interrupt our process, performing a split
         ///       "update cursor" write operation and "read data" read operation can be interrupted by another process
-        ///       also scheduling writes inbetween. This means that after we've set up our memory cursor to the desired
+        ///       also scheduling writes in between. This means that after we've set up our memory cursor to the desired
         ///       address another process would change that before we read and we'll read data from the wrong memory
         ///       location.
         ///
@@ -3604,8 +3604,8 @@ namespace io {
         async_call Execute {
             in bus: Bus;
 
-            /// A mutable sequence of I²C operations. Will be processed first-to last and
-            /// the pointed `Operation`s will be changed during
+            /// A mutable sequence of I²C operations. Will be processed first-to-last and
+            /// the pointed `Operation`s will be changed during their execution.
             in sequence: []Operation;
 
             /// The number of successfully processed elements from `sequence`.
@@ -3637,8 +3637,8 @@ namespace io {
 
             /// The data which should either be written or read.
             ///
-            /// NOTE: If the `operation` is `BatchOp.read`, the buffer will
-            ///       overwritten by the OS. All other operations treat this
+            /// NOTE: If the operation is `Type.read`, the buffer will
+            ///       be overwritten by the OS. All other operations treat this
             ///       buffer as immutable.
             field data: bytebuf;
 

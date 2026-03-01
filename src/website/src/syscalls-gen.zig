@@ -596,7 +596,7 @@ const PageRenderer = struct {
             .bool => |val| try writer.print("{}", .{val}),
             .int => |int| try writer.print("{}", .{int}),
             .string => |text| try writer.print("\"{f}\"", .{std.zig.fmtString(text)}),
-            .compound => try writer.writeAll("&lt;TODO%gt;"),
+            .compound => try writer.writeAll("&lt;TODO&gt;"),
         }
     }
 

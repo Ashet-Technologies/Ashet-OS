@@ -9,7 +9,7 @@ quote {
 }
 
 p {
-  The Ashet Operating System comes with a builtin wiki software that provides documentation for the OS 
+  The Ashet Operating System comes with a built-in wiki application that provides documentation for the OS 
   and its applications. It also contains tutorials on how to create your own applications, both cross-compiled 
   as well as self-hosted on your own machine.
 }

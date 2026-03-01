@@ -11,7 +11,7 @@ warning {
 h1 "Planned Features"
 
 p {
-    HyperWiki is planned to display and edit the contents of this wiki. It's purpose is to both
+    HyperWiki is planned to display and edit the contents of this wiki. Its purpose is to both
     provide documentation for the applications, operating system and hardware of the current system,
     but also serve as a personal note editing system.
 }
@@ -26,7 +26,7 @@ note {
 
 note {
   p {
-    The inspiration for HyperWiki was mainly the drawn from the
+    The inspiration for HyperWiki was mainly drawn from the
     \link(uri="https://en.wikipedia.org/wiki/Microsoft_Compiled_HTML_Help"){Microsoft Compiled HTML Help (CHM)}
     system shipped with Windows since 1997.
   }

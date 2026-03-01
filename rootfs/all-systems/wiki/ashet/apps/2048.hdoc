@@ -59,7 +59,7 @@ pre:
 
 p {
     After this prompt was evaluated, the model yielded a fully working implementation of 2048. The only touch-ups that were required
-    where two missing \link(uri="https://ziglang.org/documentation/0.15.2/#divTrunc"){\mono{@divTrunc}} calls (which even seasoned
+    are two missing \link(uri="https://ziglang.org/documentation/0.15.2/#divTrunc"){\mono{@divTrunc}} calls (which even seasoned
     Zig programmers will often forget), as well as fixing a tiny hallucination that the \mono{ashet.clock.monotonic} syscall
     would be returning an error.
 }
@@ -67,7 +67,7 @@ p {
 h3 { Third Prompt }
 
 p{
-    The game was playable, but it to really enjoy it, some minor polishing was needed. The third prompt was this:
+    The game was playable, but not really enjoyable, some minor polishing was needed. The third prompt was this:
 }
 
 pre:
