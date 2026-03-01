@@ -362,8 +362,28 @@ const PageRenderer = struct {
             },
             .constant => |index| {
                 const item = html.schema.constants[@intFromEnum(index)];
-                _ = item;
-                try html.writer.writeAll("<p>TODO: Implement constant</p>\n");
+
+                try html.writer.writeAll("<section>\n");
+
+                try html.writer.print("<h2>Definition</h2>\n", .{});
+
+                try html.writer.writeAll("<code>");
+
+                try html.writer.print("<span class=\"tok-kw\">const</span> <span class=\"tok-name\">{f}</span>", .{
+                    std.zig.fmtId(item.full_qualified_name[item.full_qualified_name.len - 1]),
+                });
+                if (item.type) |item_type_id| {
+                    try html.writer.print(": <span class=\"tok-type\">{f}</span>", .{
+                        html.fmt_type(item_type_id),
+                    });
+                }
+                try html.writer.print(" = {f};", .{
+                    html.fmt_value(item.value),
+                });
+
+                try html.writer.writeAll("</code>");
+
+                try html.writer.writeAll("</section>\n");
             },
             .typedef => |index| {
                 const item = html.schema.types[@intFromEnum(index)];
