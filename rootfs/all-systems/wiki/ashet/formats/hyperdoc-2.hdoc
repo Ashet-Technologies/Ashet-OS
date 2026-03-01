@@ -96,7 +96,7 @@ p {
   The image below has a caption, alt text, and a relative asset path. 
 }
 
-img(id="fig-diagram", alt="Diagram showing a HyperDoc example", path="./assets/diagram.svg") {
+img(id="fig-diagram", alt="Diagram showing a HyperDoc example", path="example.png") {
   HyperDoc is centered inside a rounded rectangle.
 }
 

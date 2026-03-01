@@ -55,6 +55,11 @@ body>header search input {
     flex: 1;
 }
 
+header>.site-title {
+    font-size: 2em;
+    font-weight: bold;
+}
+
 main#wiki {
     display: grid;
 
@@ -457,6 +462,10 @@ code .tok-name {
     visibility: hidden;
 }
 
+.markup-container img {
+    max-width: 100%;
+}
+
 /*************************************************
  * Live Demo                                     *
  *************************************************/
@@ -552,14 +561,27 @@ code .tok-name {
 button#launch_button {
     border: 1px solid black;
     border-radius: 100%;
-    width: 15%;
+    width: 6rem;
+
+    margin-left: auto;
+    margin-right: auto;
+    display: block;
+
+    background-color: white;
 }
+
+button#launch_button ~ p {
+    font-size: 75%;
+    max-width: 20em;
+    margin-top: 1em;
+    text-align: center;
+} 
 
 #livedemo:not(.launched) #screen_container,
 #livedemo:not(.launched) #emulator_status {
     display: none;
 }
 
-#livedemo.launched button#launch_button {
+#livedemo.launched .hide-when-launched {
     display: none;
 }

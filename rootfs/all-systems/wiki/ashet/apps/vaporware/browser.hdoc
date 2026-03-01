@@ -33,7 +33,7 @@ ul {
         p "Document Formats"
         ul {
             li "Plain Text"
-            li { p { \link(uri="wiki:/ashet/formats/hyperdoc-2.hdoc"){HyperDoc 2.0} } }
+            li { p { \link(uri="../../formats/hyperdoc-2.hdoc"){HyperDoc 2.0} } }
             li { p { \link(uri="https://geminiprotocol.net/docs/gemtext-specification.gmi"){Gemini Text} } }
             li { p { \link(uri="https://en.wikipedia.org/wiki/Gopher_(protocol)#Source_code_of_a_menu"){Gopher Menus} } }
             li { p { Document-like \link(uri="https://en.wikipedia.org/wiki/HTML"){HTML} (No CSS, no JS, just basic document layouts) } }

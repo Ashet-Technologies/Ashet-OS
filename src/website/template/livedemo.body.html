@@ -11,15 +11,24 @@
 		</button>
 	</nav>
 	<div class="panel monitor-parent">
-		<div id="screen_container" class="monitor">
-			<div style="white-space: pre; font: 14px monospace; line-height: 14px">Dummy</div>
+		<noscript class="markup-container" style="padding: 20px">
+			<div class="hdoc-admonition hdoc-warning" role="alert">
+			<p>The live demo requires JavaScript to be enabled.</p>
+			</div>
+		</noscript>
+		<div id="screen_container" class="hide-without-js monitor">
+			<div style="white-space: pre; font: 14px monospace; line-height: 14px; display: none"></div>
 			<canvas style="display: none"></canvas>
 		</div>
-		<ul id="emulator_status">
+		<ul id="emulator_status" class="hide-without-js">
 		</ul>
-		<button id="launch_button" title="Start Emulator" aria-label="Start Emulator" onclick="launch_emulator()">
-			<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8,5.14V19.14L19,12.14L8,5.14Z"/></svg>
-		</button>
+		<div class="hide-without-js hide-when-launched">
+			<button id="launch_button" title="Start Emulator" aria-label="Start Emulator" onclick="launch_emulator()">
+				<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M8,5.14V19.14L19,12.14L8,5.14Z"/></svg>
+			</button>
+			<p><span style="font-weight: bold">NOTE:</span>
+			Launching the Live Demo will download around 80 MiB of data!</p>
+		</div>
 	</div>
 	<div class="panel">
 		<!-- <textarea id="serial_console" class="console" readonly>Booting...
