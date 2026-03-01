@@ -27,7 +27,7 @@ h1(id="index") { Starting Points }
 h2(id="generic") { Generic }
 
 ul {
-  li { p { \link(uri="wiki:/ashet/os")              "Ashet OS Documentation" } }
+  li { p { \link(uri="wiki:/ashet/os.hdoc")              "Ashet OS Documentation" } }
 }
 
 h2 { Applications }

@@ -124,6 +124,22 @@ fn render_html(config: Config, doc: Document, writer: *std.Io.Writer) !void {
     });
 }
 
+fn write_mapped_filename(writer: *std.Io.Writer, path: []const u8) !void {
+    const ext = std.fs.path.extension(path);
+
+    try writer.writeAll(path[0 .. path.len - ext.len]);
+    try writer.writeAll(map_wiki_extension(ext));
+}
+
+fn map_wiki_extension(ext: []const u8) []const u8 {
+    return if (std.mem.eql(u8, ext, ".hdoc"))
+        ".html"
+    else if (std.mem.eql(u8, ext, ".abm"))
+        ".gif"
+    else
+        ext;
+}
+
 fn rewrite_wiki_url(ctx: ?*anyopaque, url: []const u8, writer: *std.Io.Writer) std.Io.Writer.Error!void {
     const config: *const Config = @ptrCast(@alignCast(ctx.?));
 
@@ -133,21 +149,19 @@ fn rewrite_wiki_url(ctx: ?*anyopaque, url: []const u8, writer: *std.Io.Writer) s
     if (std.mem.startsWith(u8, url, wiki_prefix)) {
         // wiki url
         try writer.splatBytesAll("../", config.base_nesting - 1);
-
-        const ext = std.fs.path.extension(url);
-
-        try writer.writeAll(url[wiki_prefix.len .. url.len - ext.len]);
-
-        try writer.writeAll(".html");
+        try write_mapped_filename(writer, url[wiki_prefix.len..]);
+    } else if (std.mem.indexOfScalar(u8, url, ':') == null) {
+        // relative url still requires mapping of path names
+        try write_mapped_filename(writer, url);
     } else {
         try writer.print("{f}", .{fmt_url(url, config.base_nesting)});
     }
 }
 
 fn rewrite_img_url(ctx: ?*anyopaque, url: []const u8, writer: *std.Io.Writer) std.Io.Writer.Error!void {
-    _ = ctx;
     std.log.err("TODO: Implement image rewriting for '{s}'", .{url});
-    try writer.writeAll(url);
+
+    try rewrite_wiki_url(ctx, url, writer);
 }
 
 fn render_toc(config: Config, writer: *std.Io.Writer, folder: Folder) !void {

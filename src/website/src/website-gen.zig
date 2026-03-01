@@ -188,7 +188,7 @@ fn format_url(options: struct { []const u8, usize }, writer: *std.Io.Writer) std
 
     // TODO: Implement proper URL parsing and escaping
 
-    if (std.mem.indexOf(u8, url, "://") != null) {
+    if (std.mem.indexOf(u8, url, ":") != null) {
         // absolute url
         try writer.writeAll(url);
     } else {
