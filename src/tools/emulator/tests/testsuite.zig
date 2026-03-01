@@ -8,4 +8,7 @@ test {
     };
 
     try system.step(10);
+
+    _ = emu.System.bus_read;
+    _ = emu.System.bus_write;
 }
