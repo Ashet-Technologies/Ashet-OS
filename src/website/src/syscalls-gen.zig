@@ -579,6 +579,7 @@ const PageRenderer = struct {
                 .@"enum" => |index| try self.html.fmt_known_type(writer, self.html.schema.enums[@intFromEnum(index)]),
                 .bitstruct => |index| try self.html.fmt_known_type(writer, self.html.schema.bitstructs[@intFromEnum(index)]),
                 .resource => |index| try self.html.fmt_known_type(writer, self.html.schema.resources[@intFromEnum(index)]),
+                .typedef => |alias| try self.html.fmt_known_type(writer, alias),
 
                 .optional => |child| try writer.print("?{f}", .{self.html.fmt_type(child)}),
                 .array => |array| try writer.print("[{}]{f}", .{ array.size, self.html.fmt_type(array.child) }),
@@ -602,10 +603,24 @@ const PageRenderer = struct {
 
                     try writer.print("{f}", .{self.html.fmt_type(ptr.child)});
                 },
-                .fnptr,
+
+                .fnptr => |fnptr| {
+                    try writer.writeAll("<span class=\"tok-kw\">fnptr</span> (");
+
+                    for (fnptr.parameters, 0..) |param, index| {
+                        if (index > 0)
+                            try writer.writeAll(", ");
+                        try writer.print("<span class=\"tok-kw\">{f}</span>", .{
+                            self.html.fmt_type(param),
+                        });
+                    }
+
+                    try writer.print(") {f}", .{
+                        self.html.fmt_type(fnptr.return_type),
+                    });
+                },
 
                 .external,
-                .typedef,
                 => try writer.writeAll("&lt;TODO&gt;"),
 
                 .unknown_named_type => @panic("invalid schema!"),
