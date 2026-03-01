@@ -367,7 +367,7 @@ const PageRenderer = struct {
 
                 try html.writer.print("<h2>Definition</h2>\n", .{});
 
-                try html.writer.writeAll("<code>");
+                try html.writer.writeAll("<pre><code>");
 
                 try html.writer.print("<span class=\"tok-kw\">const</span> <span class=\"tok-name\">{f}</span>", .{
                     std.zig.fmtId(item.full_qualified_name[item.full_qualified_name.len - 1]),
@@ -381,7 +381,7 @@ const PageRenderer = struct {
                     html.fmt_value(item.value),
                 });
 
-                try html.writer.writeAll("</code>");
+                try html.writer.writeAll("</code></pre>");
 
                 try html.writer.writeAll("</section>\n");
             },
@@ -642,12 +642,31 @@ const PageRenderer = struct {
     }
 
     fn format_value(value: model.Value, writer: *std.Io.Writer) !void {
+        return format_value_inner(value, writer, 1);
+    }
+
+    fn format_value_inner(value: model.Value, writer: *std.Io.Writer, nesting: usize) !void {
+        const indent = 4;
         switch (value) {
             .null => try writer.writeAll("<span class=\"tok-kw\">null</span>"),
             .bool => |val| try writer.print("{}", .{val}),
             .int => |int| try writer.print("{}", .{int}),
             .string => |text| try writer.print("\"{f}\"", .{std.zig.fmtString(text)}),
-            .compound => try writer.writeAll("&lt;TODO&gt;"),
+            .compound => |compound| {
+                try writer.writeAll(".{");
+                for (compound.fields.keys(), compound.fields.values()) |key, field| {
+                    try writer.writeAll("\n");
+                    try writer.splatByteAll(' ', indent * nesting);
+
+                    try writer.print(".<span class=\"tok-name\">{f}</span> = ", .{
+                        std.zig.fmtId(key),
+                    });
+
+                    try format_value_inner(field, writer, nesting + 1);
+                    try writer.writeAll(",");
+                }
+                try writer.writeAll("\n}");
+            },
         }
     }
 

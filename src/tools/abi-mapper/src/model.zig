@@ -422,7 +422,7 @@ pub const CompoundType = struct {
         errdefer compound.fields.deinit();
 
         while (true) {
-            const name_token: std.json.Token = try source.nextAllocMax(allocator, .alloc_if_needed, options.max_value_len.?);
+            const name_token: std.json.Token = try source.nextAllocMax(allocator, .alloc_always, options.max_value_len.?);
             const field_name = switch (name_token) {
                 inline .string, .allocated_string => |slice| slice,
 
