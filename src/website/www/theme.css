@@ -214,10 +214,6 @@ div.flex-spacer {
  * Code Doc Theming                              *
  *************************************************/
 
-.docs-container {
-    /* TODO */
-}
-
 .docs-container h1 {
     border-bottom: 1px dashed;
     margin-bottom: 1em;
