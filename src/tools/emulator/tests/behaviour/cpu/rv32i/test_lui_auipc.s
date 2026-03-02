@@ -6,7 +6,7 @@
 # Expected results at EBREAK:
 #   x1 = 0x12345000 (LUI)
 #   x2 = 0x12345678 (LUI + ADDI)
-#   x3 = 0x00001008 (AUIPC at PC=0x08 with imm=0x1000)
+#   x3 = 0x0000100C (AUIPC at PC=0x0C with imm=0x1000)
 .section .text
 .globl _start
 _start:

@@ -187,11 +187,11 @@ fn jsonToU32(val: std.json.Value) ?u32 {
         else
             null,
 
-        .number_string => |str| {
-            if (std.fmt.parseInt(u32, str, 10) catch null) |value| {
+        .string, .number_string => |str| {
+            if (std.fmt.parseInt(u32, str, 0) catch null) |value| {
                 return value;
             }
-            if (std.fmt.parseInt(i32, str, 10) catch null) |value| {
+            if (std.fmt.parseInt(i32, str, 0) catch null) |value| {
                 return @bitCast(value);
             }
             return null;
