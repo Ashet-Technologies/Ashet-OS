@@ -1,0 +1,10 @@
+{
+    "name": "ADDI: load immediate into register",
+    "march": "rv32imc",
+    "ram_size": 0,
+    "initial_regs": {},
+    "expected_regs": {
+        "x1": 42
+    },
+    "expected_debug": ""
+}

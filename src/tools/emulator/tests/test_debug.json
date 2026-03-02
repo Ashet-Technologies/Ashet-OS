@@ -1,0 +1,8 @@
+{
+    "name": "Debug output: write bytes to serial",
+    "march": "rv32imc",
+    "ram_size": 4,
+    "initial_regs": {},
+    "expected_regs": {},
+    "expected_debug": [72, 105, 10]
+}

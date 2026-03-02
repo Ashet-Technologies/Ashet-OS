@@ -1,0 +1,10 @@
+{
+    "name": "BLTU: unsigned comparison branch",
+    "march": "rv32i",
+    "ram_size": 0,
+    "initial_regs": {},
+    "expected_regs": {
+        "x3": 1
+    },
+    "expected_debug": ""
+}

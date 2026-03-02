@@ -40,6 +40,8 @@ A linear, row-major framebuffer with 8 bit per pixel, using the Ashet OS color p
 
 ### Video Control
 
+Allows controlling the video output.
+
 ```
 +0x00/4   FLUSH       W   Write 1 to mark framebuffer as ready to present.
                           The emulator presents the framebuffer on its next display tick
@@ -51,11 +53,15 @@ A linear, row-major framebuffer with 8 bit per pixel, using the Ashet OS color p
 
 ### Debug Output
 
+Provides a simple, "don't care" debug logging facility.
+
 ```
 +0x00/1   TX          W   Write byte (low 8 bits). Always accepted immediately, no flow control.
 ```
 
 ### Keyboard
+
+A basic peripheral that provides HID Usage Codes to the emulated system.
 
 ```
 +0x00/4   STATUS      R   Bit 0 = at least one entry waiting in FIFO
@@ -67,6 +73,8 @@ A linear, row-major framebuffer with 8 bit per pixel, using the Ashet OS color p
 
 ### Mouse
 
+A basic pointing device that provides absolute inputs.
+
 ```
 +0x00/4   X           R   Absolute X, clamped 0-639
 +0x04/4   Y           R   Absolute Y, clamped 0-399
@@ -74,6 +82,8 @@ A linear, row-major framebuffer with 8 bit per pixel, using the Ashet OS color p
 ```
 
 ### Timer / RTC
+
+A timer + rtc unit providing the current execution time as well as the wall clock (UTC).
 
 ```
 ; Monotonic - microseconds elapsed since emulator start
@@ -97,6 +107,10 @@ This means reading MTIME_LO/RTC_LO first, then MTIME_HI/RTC/HI second is always 
 ```
 
 ### Block Device
+
+A block device that can either read or write a single block at a time.
+
+Uses a shared 512 byte large buffer to operate on.
 
 ```
 +0x000/4    STATUS      R   Bit 0 = device present

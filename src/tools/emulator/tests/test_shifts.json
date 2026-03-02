@@ -1,0 +1,14 @@
+{
+    "name": "Shift instructions",
+    "march": "rv32imc",
+    "ram_size": 0,
+    "initial_regs": {},
+    "expected_regs": {
+        "x3": 40,
+        "x4": 2,
+        "x5": 3758096384,
+        "x6": 20,
+        "x7": 5
+    },
+    "expected_debug": ""
+}

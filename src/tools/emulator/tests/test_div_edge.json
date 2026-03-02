@@ -1,0 +1,12 @@
+{
+    "name": "M-extension: signed division edge cases",
+    "march": "rv32im",
+    "ram_size": 0,
+    "initial_regs": {},
+    "expected_regs": {
+        "x3": 2147483648,
+        "x4": 0,
+        "x5": 2147483648
+    },
+    "expected_debug": ""
+}

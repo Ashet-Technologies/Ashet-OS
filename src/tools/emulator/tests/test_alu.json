@@ -1,0 +1,16 @@
+{
+    "name": "ALU: register-register operations",
+    "march": "rv32imc",
+    "ram_size": 0,
+    "initial_regs": {},
+    "expected_regs": {
+        "x1": 10,
+        "x2": 20,
+        "x3": 30,
+        "x4": 4294967286,
+        "x5": 0,
+        "x6": 30,
+        "x7": 20
+    },
+    "expected_debug": ""
+}

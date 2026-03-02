@@ -1,0 +1,12 @@
+{
+    "name": "LUI and AUIPC",
+    "march": "rv32imc",
+    "ram_size": 0,
+    "initial_regs": {},
+    "expected_regs": {
+        "x1": 305397760,
+        "x2": 305419896,
+        "x3": 4108
+    },
+    "expected_debug": ""
+}

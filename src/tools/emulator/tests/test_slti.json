@@ -1,0 +1,12 @@
+{
+    "name": "SLTI and SLTIU",
+    "march": "rv32i",
+    "ram_size": 0,
+    "initial_regs": {},
+    "expected_regs": {
+        "x1": 4294967291,
+        "x2": 1,
+        "x3": 0
+    },
+    "expected_debug": ""
+}
