@@ -25,8 +25,243 @@ pub fn to_json_str(document: Document, writer: anytype) !void {
 /// A full qualified name is a name consisting of a sequence of namespaces and ending with the actual name.
 pub const FQN = []const []const u8;
 
-/// A documentation string is a sequence of text lines.
-pub const DocString = []const []const u8;
+/// A documentation comment with structured content.
+pub const DocComment = struct {
+    sections: []const Section,
+
+    pub const empty: DocComment = .{ .sections = &.{} };
+
+    pub const Section = struct {
+        kind: Kind,
+        blocks: []const Block,
+
+        pub const Kind = enum {
+            main,
+            note,
+            warning,
+            lore,
+            example,
+            deprecated,
+            decision,
+        };
+    };
+
+    pub const Block = union(enum) {
+        paragraph: Paragraph,
+        unordered_list: UnorderedList,
+        ordered_list: OrderedList,
+        code_block: CodeBlock,
+
+        pub const Paragraph = struct {
+            content: []const Inline,
+        };
+
+        pub const UnorderedList = struct {
+            items: []const []const Inline,
+        };
+
+        pub const OrderedList = struct {
+            items: []const []const Inline,
+        };
+
+        pub const CodeBlock = struct {
+            syntax: ?[]const u8,
+            content: []const u8,
+        };
+
+        pub fn jsonStringify(block: Block, jws: anytype) !void {
+            try jws.beginObject();
+            switch (block) {
+                .paragraph => |p| {
+                    try jws.objectField("type");
+                    try jws.write("paragraph");
+                    try jws.objectField("content");
+                    try jws.write(p.content);
+                },
+                .unordered_list => |ul| {
+                    try jws.objectField("type");
+                    try jws.write("unordered_list");
+                    try jws.objectField("items");
+                    try jws.write(ul.items);
+                },
+                .ordered_list => |ol| {
+                    try jws.objectField("type");
+                    try jws.write("ordered_list");
+                    try jws.objectField("items");
+                    try jws.write(ol.items);
+                },
+                .code_block => |cb| {
+                    try jws.objectField("type");
+                    try jws.write("code_block");
+                    try jws.objectField("syntax");
+                    try jws.write(cb.syntax);
+                    try jws.objectField("content");
+                    try jws.write(cb.content);
+                },
+            }
+            try jws.endObject();
+        }
+
+        pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) std.json.ParseError(@TypeOf(source.*))!Block {
+            const dynamic = try std.json.innerParse(std.json.Value, allocator, source, options);
+            return block_from_value(allocator, dynamic) catch return error.UnexpectedToken;
+        }
+    };
+
+    pub const Inline = union(enum) {
+        text: Text,
+        code: Code,
+        emphasis: Emphasis,
+        ref: Ref,
+        link: Link,
+
+        pub const Text = struct { value: []const u8 };
+        pub const Code = struct { value: []const u8 };
+        pub const Emphasis = struct { content: []const Inline };
+        pub const Ref = struct { fqn: []const u8 };
+        pub const Link = struct { url: []const u8, content: []const Inline };
+
+        pub fn jsonStringify(inl: Inline, jws: anytype) !void {
+            try jws.beginObject();
+            switch (inl) {
+                .text => |t| {
+                    try jws.objectField("type");
+                    try jws.write("text");
+                    try jws.objectField("value");
+                    try jws.write(t.value);
+                },
+                .code => |c| {
+                    try jws.objectField("type");
+                    try jws.write("code");
+                    try jws.objectField("value");
+                    try jws.write(c.value);
+                },
+                .emphasis => |e| {
+                    try jws.objectField("type");
+                    try jws.write("emphasis");
+                    try jws.objectField("content");
+                    try jws.write(e.content);
+                },
+                .ref => |r| {
+                    try jws.objectField("type");
+                    try jws.write("ref");
+                    try jws.objectField("fqn");
+                    try jws.write(r.fqn);
+                },
+                .link => |l| {
+                    try jws.objectField("type");
+                    try jws.write("link");
+                    try jws.objectField("url");
+                    try jws.write(l.url);
+                    try jws.objectField("content");
+                    try jws.write(l.content);
+                },
+            }
+            try jws.endObject();
+        }
+
+        pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) std.json.ParseError(@TypeOf(source.*))!Inline {
+            const dynamic = try std.json.innerParse(std.json.Value, allocator, source, options);
+            return inline_from_value(allocator, dynamic) catch return error.UnexpectedToken;
+        }
+    };
+};
+
+fn block_from_value(allocator: std.mem.Allocator, value: std.json.Value) !DocComment.Block {
+    const obj = switch (value) {
+        .object => |o| o,
+        else => return error.UnexpectedToken,
+    };
+    const type_str = switch (obj.get("type") orelse return error.UnexpectedToken) {
+        .string => |s| s,
+        else => return error.UnexpectedToken,
+    };
+    if (std.mem.eql(u8, type_str, "paragraph")) {
+        const cv = obj.get("content") orelse return error.UnexpectedToken;
+        return .{ .paragraph = .{ .content = try inline_array_from_value(allocator, cv) } };
+    } else if (std.mem.eql(u8, type_str, "unordered_list")) {
+        const iv = obj.get("items") orelse return error.UnexpectedToken;
+        return .{ .unordered_list = .{ .items = try inline_array_array_from_value(allocator, iv) } };
+    } else if (std.mem.eql(u8, type_str, "ordered_list")) {
+        const iv = obj.get("items") orelse return error.UnexpectedToken;
+        return .{ .ordered_list = .{ .items = try inline_array_array_from_value(allocator, iv) } };
+    } else if (std.mem.eql(u8, type_str, "code_block")) {
+        const syntax_v = obj.get("syntax");
+        const syntax: ?[]const u8 = if (syntax_v) |sv| switch (sv) {
+            .string => |s| s,
+            .null => null,
+            else => return error.UnexpectedToken,
+        } else null;
+        const content = switch (obj.get("content") orelse return error.UnexpectedToken) {
+            .string => |s| s,
+            else => return error.UnexpectedToken,
+        };
+        return .{ .code_block = .{ .syntax = syntax, .content = content } };
+    }
+    return error.UnexpectedToken;
+}
+
+fn inline_from_value(allocator: std.mem.Allocator, value: std.json.Value) !DocComment.Inline {
+    const obj = switch (value) {
+        .object => |o| o,
+        else => return error.UnexpectedToken,
+    };
+    const type_str = switch (obj.get("type") orelse return error.UnexpectedToken) {
+        .string => |s| s,
+        else => return error.UnexpectedToken,
+    };
+    if (std.mem.eql(u8, type_str, "text")) {
+        return .{ .text = .{ .value = switch (obj.get("value") orelse return error.UnexpectedToken) {
+            .string => |s| s,
+            else => return error.UnexpectedToken,
+        } } };
+    } else if (std.mem.eql(u8, type_str, "code")) {
+        return .{ .code = .{ .value = switch (obj.get("value") orelse return error.UnexpectedToken) {
+            .string => |s| s,
+            else => return error.UnexpectedToken,
+        } } };
+    } else if (std.mem.eql(u8, type_str, "emphasis")) {
+        const cv = obj.get("content") orelse return error.UnexpectedToken;
+        return .{ .emphasis = .{ .content = try inline_array_from_value(allocator, cv) } };
+    } else if (std.mem.eql(u8, type_str, "ref")) {
+        return .{ .ref = .{ .fqn = switch (obj.get("fqn") orelse return error.UnexpectedToken) {
+            .string => |s| s,
+            else => return error.UnexpectedToken,
+        } } };
+    } else if (std.mem.eql(u8, type_str, "link")) {
+        const url = switch (obj.get("url") orelse return error.UnexpectedToken) {
+            .string => |s| s,
+            else => return error.UnexpectedToken,
+        };
+        const cv = obj.get("content") orelse return error.UnexpectedToken;
+        return .{ .link = .{ .url = url, .content = try inline_array_from_value(allocator, cv) } };
+    }
+    return error.UnexpectedToken;
+}
+
+fn inline_array_from_value(allocator: std.mem.Allocator, value: std.json.Value) ![]const DocComment.Inline {
+    const arr = switch (value) {
+        .array => |a| a,
+        else => return error.UnexpectedToken,
+    };
+    const result = try allocator.alloc(DocComment.Inline, arr.items.len);
+    for (arr.items, 0..) |item, i| {
+        result[i] = try inline_from_value(allocator, item);
+    }
+    return result;
+}
+
+fn inline_array_array_from_value(allocator: std.mem.Allocator, value: std.json.Value) ![]const []const DocComment.Inline {
+    const arr = switch (value) {
+        .array => |a| a,
+        else => return error.UnexpectedToken,
+    };
+    const result = try allocator.alloc([]const DocComment.Inline, arr.items.len);
+    for (arr.items, 0..) |item, i| {
+        result[i] = try inline_array_from_value(allocator, item);
+    }
+    return result;
+}
 
 /// Returns the last item of the full qualified name.
 pub fn local_name(fqn: FQN) []const u8 {
@@ -93,7 +328,7 @@ pub const ConstantIndex = GenericIndex(Constant, "constants");
 pub const TypeIndex = GenericIndex(Type, "types");
 
 pub const Declaration = struct {
-    docs: DocString,
+    docs: DocComment,
     full_qualified_name: FQN,
     children: []const Declaration,
     data: Data,
@@ -242,20 +477,20 @@ pub const ArrayType = struct {
 pub const TypeId = std.meta.Tag(Type);
 
 pub const ExternalType = struct {
-    docs: DocString,
+    docs: DocComment,
     full_qualified_name: FQN,
     alias: []const u8,
 };
 
 pub const TypeDefition = struct {
-    docs: DocString,
+    docs: DocComment,
     full_qualified_name: FQN,
     alias: TypeIndex,
 };
 
 pub const BitStruct = struct {
     uid: UniqueID,
-    docs: DocString,
+    docs: DocComment,
     full_qualified_name: FQN,
     backing_type: StandardType,
     bit_count: u8,
@@ -264,7 +499,7 @@ pub const BitStruct = struct {
 };
 
 pub const BitStructField = struct {
-    docs: DocString,
+    docs: DocComment,
     name: ?[]const u8, // null is reserved
     type: TypeIndex,
     default: ?Value,
@@ -275,14 +510,14 @@ pub const BitStructField = struct {
 
 pub const Struct = struct {
     uid: UniqueID,
-    docs: DocString,
+    docs: DocComment,
     full_qualified_name: FQN,
     logic_fields: []const StructField,
     native_fields: []const StructField,
 };
 
 pub const StructField = struct {
-    docs: DocString,
+    docs: DocComment,
     name: []const u8,
     type: TypeIndex,
     default: ?Value,
@@ -298,7 +533,7 @@ pub const StructFieldRole = union(enum) {
 
 pub const Enumeration = struct {
     uid: UniqueID,
-    docs: DocString,
+    docs: DocComment,
     full_qualified_name: FQN,
     backing_type: StandardType,
     kind: Kind,
@@ -312,14 +547,14 @@ pub const Enumeration = struct {
 };
 
 pub const EnumItem = struct {
-    docs: DocString,
+    docs: DocComment,
     name: []const u8,
     value: i65,
 };
 
 pub const GenericCall = struct {
     uid: UniqueID,
-    docs: DocString,
+    docs: DocComment,
     full_qualified_name: FQN,
     no_return: bool,
 
@@ -333,7 +568,7 @@ pub const GenericCall = struct {
 };
 
 pub const Parameter = struct {
-    docs: DocString,
+    docs: DocComment,
     name: []const u8,
     type: TypeIndex,
     default: ?Value,
@@ -377,19 +612,19 @@ pub const ParameterRole = union(enum) {
 
 pub const Resource = struct {
     uid: UniqueID,
-    docs: DocString,
+    docs: DocComment,
     full_qualified_name: FQN,
 };
 
 pub const Error = struct {
-    docs: DocString,
+    docs: DocComment,
     name: []const u8,
     value: u32,
 };
 
 pub const Constant = struct {
     uid: UniqueID,
-    docs: DocString,
+    docs: DocComment,
     full_qualified_name: FQN,
     type: ?TypeIndex,
     value: Value,

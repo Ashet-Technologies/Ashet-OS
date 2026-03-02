@@ -1,6 +1,7 @@
 const std = @import("std");
 const model = @import("model.zig");
 const syntax = @import("syntax.zig");
+const doc_comment_parser = @import("doc_comment.zig");
 
 const Location = syntax.Location;
 
@@ -327,7 +328,7 @@ const Analyzer = struct {
                         // TODO: Implement stable item id assignment!
 
                         try items.append(ana.allocator, .{
-                            .docs = &.{},
+                            .docs = .empty,
                             .name = try item_name.toOwnedSlice(ana.allocator),
                             .value = @intCast(index),
                         });
@@ -620,9 +621,9 @@ const Analyzer = struct {
                     .default = null,
                 });
                 try list.append(a.allocator, .{
-                    .docs = try a.allocator.dupe([]const u8, &.{
+                    .docs = try a.synthetic_doc(
                         try a.format("The number of elements referenced by {s}_ptr.", .{param.name}),
-                    }),
+                    ),
                     .name = len_name,
                     .type = try a.map_model_type(.{ .well_known = .usize }),
                     .role = switch (mode) {
@@ -649,7 +650,7 @@ const Analyzer = struct {
                     try native_outputs.append(ana.allocator, .{
                         .name = "error_code",
                         .default = null,
-                        .docs = &.{},
+                        .docs = .empty,
                         .role = .@"error",
                         .type = try ana.map_model_type(.{ .well_known = .u16 }),
                     });
@@ -684,7 +685,7 @@ const Analyzer = struct {
             fn emit_slice(
                 h: @This(),
                 basename: []const u8,
-                docs: model.DocString,
+                docs: model.DocComment,
                 ptr_type: model.Type,
             ) !void {
                 try h.nf.append(h.ana.allocator, .{
@@ -695,9 +696,9 @@ const Analyzer = struct {
                     .default = null,
                 });
                 try h.nf.append(h.ana.allocator, .{
-                    .docs = try h.ana.allocator.dupe([]const u8, &.{
+                    .docs = try h.ana.synthetic_doc(
                         try h.ana.format("The number of elements referenced by {s}_ptr.", .{basename}),
-                    }),
+                    ),
                     .name = try h.ana.format("{s}_len", .{basename}),
                     .type = try h.ana.map_model_type(.{ .well_known = .usize }),
                     .role = .{ .slice_len = basename },
@@ -727,9 +728,9 @@ const Analyzer = struct {
                             .default = null,
                         });
                         try native_fields.append(ana.allocator, .{
-                            .docs = try ana.allocator.dupe([]const u8, &.{
+                            .docs = try ana.synthetic_doc(
                                 try ana.format("The amount of bytes referenced by {s}_ptr.", .{fld.name}),
-                            }),
+                            ),
                             .name = try ana.format("{s}_len", .{fld.name}),
                             .type = try ana.map_model_type(.{ .well_known = .usize }),
                             .role = .{ .slice_len = fld.name },
@@ -761,9 +762,9 @@ const Analyzer = struct {
                                     .default = null,
                                 });
                                 try native_fields.append(ana.allocator, .{
-                                    .docs = try ana.allocator.dupe([]const u8, &.{
+                                    .docs = try ana.synthetic_doc(
                                         try ana.format("The amount of bytes referenced by {s}_ptr.", .{fld.name}),
-                                    }),
+                                    ),
                                     .name = try ana.format("{s}_len", .{fld.name}),
                                     .type = try ana.map_model_type(.{ .well_known = .usize }),
                                     .role = .{ .slice_len = fld.name },
@@ -884,7 +885,7 @@ const Analyzer = struct {
         const full_name, const scope = try ana.push_scope(typedef.name, .typedef);
         defer ana.pop_scope();
 
-        const doc_comment = try ana.allocator.dupe([]const u8, node.doc_comment);
+        const doc_comment = try ana.map_doc_comment(node.doc_comment);
 
         const alias_id = try ana.map_type(typedef.alias);
 
@@ -912,7 +913,7 @@ const Analyzer = struct {
         const full_name, const scope = try ana.push_scope(constant.name, .constant);
         defer ana.pop_scope();
 
-        const doc_comment = try ana.allocator.dupe([]const u8, node.doc_comment);
+        const doc_comment = try ana.map_doc_comment(node.doc_comment);
 
         const value = try ana.resolve_value(constant.value.?);
 
@@ -942,63 +943,25 @@ const Analyzer = struct {
 
     const NodeInfo = struct {
         full_name: model.FQN,
-        docs: model.DocString,
+        docs: model.DocComment,
         sub_type: ?model.StandardType,
         location: Location,
     };
 
-    /// Strips empty heads and tails, then left-aligns a doc comment
-    fn map_doc_comment(ana: *Analyzer, doc_comment: []const []const u8) !model.DocString {
-        const ws = " ";
+    /// Parses a raw doc comment into a structured DocComment.
+    fn map_doc_comment(ana: *Analyzer, raw_lines: []const []const u8) !model.DocComment {
+        return doc_comment_parser.parse(ana.allocator, raw_lines);
+    }
 
-        var output = try ana.allocator.dupe([]const u8, doc_comment);
-
-        // right-trim all lines
-        for (output) |*item| {
-            item.* = std.mem.trimRight(u8, item.*, ws);
-        }
-
-        // trim empty heads:
-        while (output.len > 0 and output[0].len == 0) {
-            output = output[1..];
-        }
-
-        // trim empty tails:
-        while (output.len > 0 and output[output.len - 1].len == 0) {
-            output = output[0 .. output.len - 1];
-        }
-
-        // Determine common whitespace prefix length:
-        var common_prefix_len: usize = std.math.maxInt(usize);
-        for (output) |line| {
-            if (line.len == 0)
-                continue;
-
-            const prefix_len = for (line, 0..) |c, i| {
-                if (std.mem.indexOfScalar(u8, ws, c) == null)
-                    break i;
-            } else unreachable; // lines are non-empty, and they must contain at least a non-space char
-
-            common_prefix_len = @min(common_prefix_len, prefix_len);
-        }
-
-        // trim common prefix:
-        for (output) |*line| {
-            if (line.len == 0)
-                continue;
-
-            const prefix = line.*[0..common_prefix_len];
-
-            // Prefix must be only whitespace:
-            std.debug.assert(for (prefix) |c| {
-                if (std.mem.indexOfScalar(u8, ws, c) == null)
-                    break false;
-            } else true);
-
-            line.* = line.*[common_prefix_len..];
-        }
-
-        return output;
+    /// Creates a synthetic one-paragraph DocComment from a plain text string.
+    fn synthetic_doc(ana: *Analyzer, text: []const u8) !model.DocComment {
+        const inlines = try ana.allocator.alloc(model.DocComment.Inline, 1);
+        inlines[0] = .{ .text = .{ .value = text } };
+        const blocks = try ana.allocator.alloc(model.DocComment.Block, 1);
+        blocks[0] = .{ .paragraph = .{ .content = inlines } };
+        const sections = try ana.allocator.alloc(model.DocComment.Section, 1);
+        sections[0] = .{ .kind = .main, .blocks = blocks };
+        return .{ .sections = sections };
     }
 
     fn map_decl(ana: *Analyzer, node: syntax.Node) !model.Declaration {

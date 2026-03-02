@@ -4,6 +4,7 @@ const args_parser = @import("args");
 pub const syntax = @import("syntax.zig");
 pub const model = @import("model.zig");
 pub const sema = @import("sema.zig");
+pub const doc_comment = @import("doc_comment.zig");
 
 const CliOptions = struct {
     output: []const u8 = "",

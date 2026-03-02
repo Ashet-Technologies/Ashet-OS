@@ -35,6 +35,17 @@ pub fn build(b: *std.Build) void {
     const output_file = convert_test_file.addPrefixedOutputFileArg("--output=", "coverage.json");
 
     test_step.dependOn(&b.addInstallFile(output_file, "test/coverage.json").step);
+
+    const doc_parser_mod = b.createModule(.{
+        .root_source_file = b.path("tests/doc_parser.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "abi-parser", .module = abi_parser_mod },
+        },
+    });
+    const doc_parser_tests = b.addTest(.{ .root_module = doc_parser_mod });
+    test_step.dependOn(&b.addRunArtifact(doc_parser_tests).step);
 }
 
 pub const Converter = struct {
