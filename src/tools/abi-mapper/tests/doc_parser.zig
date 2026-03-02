@@ -3,6 +3,13 @@ const abi_parser = @import("abi-parser");
 const doc_comment_parser = abi_parser.doc_comment;
 const DocComment = abi_parser.model.DocComment;
 
+// from json
+
+test "empty doc comment from json" {
+    var comment = try std.json.parseFromSlice(DocComment, std.testing.allocator, "{ \"sections\": [] }", .{});
+    defer comment.deinit();
+}
+
 // ── Empty / blank ────────────────────────────────────────────────────────────
 
 test "empty input returns empty DocComment" {

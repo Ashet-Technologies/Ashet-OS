@@ -54,8 +54,7 @@ pub const Converter = struct {
 
     pub fn get_json_dump(cc: Converter, id_database: std.Build.LazyPath, input: std.Build.LazyPath) std.Build.LazyPath {
         const generate_json = cc.b.addRunArtifact(cc.executable);
-        // TODO: generate_json.addPrefixedFileArg("--id-db=", id_database);
-        _ = id_database;
+        generate_json.addPrefixedFileArg("--id-db=", id_database);
         const abi_json = generate_json.addPrefixedOutputFileArg("--output=", "abi.json");
         generate_json.addFileArg(input);
         return abi_json;

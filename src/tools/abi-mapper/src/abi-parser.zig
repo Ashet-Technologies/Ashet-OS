@@ -8,6 +8,7 @@ pub const doc_comment = @import("doc_comment.zig");
 
 const CliOptions = struct {
     output: []const u8 = "",
+    @"id-db": []const u8 = "",
 };
 
 pub fn main() !u8 {
@@ -51,7 +52,24 @@ pub fn main() !u8 {
         return err;
     };
 
-    const analyzed_document: model.Document = try sema.analyze(allocator, ast_document);
+    // Load UID database if --id-db was specified
+    const id_db_path = args.options.@"id-db";
+    var uid_database: ?sema.uid_db.UidDatabase = if (id_db_path.len > 0)
+        try sema.uid_db.UidDatabase.load(allocator, id_db_path)
+    else
+        null;
+    defer if (uid_database) |*db| db.deinit();
+
+    const analyzed_document: model.Document = try sema.analyze(
+        allocator,
+        ast_document,
+        if (uid_database != null) &uid_database.? else null,
+    );
+
+    // Save UID database back if it was loaded
+    if (uid_database != null and id_db_path.len > 0) {
+        try uid_database.?.save(id_db_path);
+    }
 
     var atomic_buffer: [4096]u8 = undefined;
     var atomic_output = try std.fs.cwd().atomicFile(

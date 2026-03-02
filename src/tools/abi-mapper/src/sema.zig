@@ -2,10 +2,11 @@ const std = @import("std");
 const model = @import("model.zig");
 const syntax = @import("syntax.zig");
 const doc_comment_parser = @import("doc_comment.zig");
+pub const uid_db = @import("uid_db.zig");
 
 const Location = syntax.Location;
 
-pub fn analyze(allocator: std.mem.Allocator, document: syntax.Document) !model.Document {
+pub fn analyze(allocator: std.mem.Allocator, document: syntax.Document, uid_database: ?*uid_db.UidDatabase) !model.Document {
     var analyzer: Analyzer = .{
         .allocator = allocator,
         .scope_stack = .empty,
@@ -22,6 +23,8 @@ pub fn analyze(allocator: std.mem.Allocator, document: syntax.Document) !model.D
         .resources = .init(allocator),
         .constants = .init(allocator),
         .types = .init(allocator),
+
+        .uid_db = uid_database,
     };
 
     try analyzer.scope_map.put(&.{}, &analyzer.root_scope);
@@ -51,7 +54,7 @@ pub fn analyze(allocator: std.mem.Allocator, document: syntax.Document) !model.D
 
     // TODO: Implement garbage collection for unreferenced things
 
-    // analyzer.validate_constraints();
+    try analyzer.validate_constraints();
 
     return .{
         .root = try analyzer.root.toOwnedSlice(analyzer.allocator),
@@ -118,6 +121,7 @@ const Analyzer = struct {
     types: Collector(model.TypeIndex),
 
     uid_base: u32 = 1,
+    uid_db: ?*uid_db.UidDatabase = null,
 
     const Scope = struct {
         parent: ?*Scope,
@@ -138,8 +142,19 @@ const Analyzer = struct {
     };
 
     /// Returns a unique ID based on the `fqn` of the object.
+    /// When a UID database is present, IDs are stable across re-runs for a
+    /// given FQN.  Without a database, IDs are sequentially assigned.
     fn get_uid(ana: *Analyzer, fqn: model.FQN) error{OutOfMemory}!model.UniqueID {
-        _ = fqn; // TODO: Implement derivation from FQN and a UID database.
+        if (ana.uid_db) |db| {
+            var key: std.ArrayList(u8) = .empty;
+            defer key.deinit(ana.allocator);
+            for (fqn, 0..) |part, i| {
+                if (i > 0) try key.append(ana.allocator, '.');
+                try key.appendSlice(ana.allocator, part);
+            }
+            const uid_val = try db.get_or_assign(key.items);
+            return @enumFromInt(uid_val);
+        }
         const uid: model.UniqueID = @enumFromInt(ana.uid_base);
         ana.uid_base += 1;
         return uid;
@@ -257,9 +272,18 @@ const Analyzer = struct {
                         .bitstruct => |index| .{ .bitstruct = index },
                         .resource => |index| .{ .resource = index },
                         .typedef => |index| .{ .alias = index },
-                        .syscall => @panic("TODO: Invalid type reference!"),
-                        .async_call => @panic("TODO: Invalid type reference!"),
-                        .constant => @panic("TODO: Invalid type reference!"),
+                        .syscall => blk: {
+                            try ana.emit_error(Location.empty, "type reference '{f}' resolves to a syscall, which cannot be used as a type", .{dotJoin(unknown_type.local_qualified_name)});
+                            break :blk .{ .well_known = .void };
+                        },
+                        .async_call => blk: {
+                            try ana.emit_error(Location.empty, "type reference '{f}' resolves to an async_call, which cannot be used as a type", .{dotJoin(unknown_type.local_qualified_name)});
+                            break :blk .{ .well_known = .void };
+                        },
+                        .constant => blk: {
+                            try ana.emit_error(Location.empty, "type reference '{f}' resolves to a constant, which cannot be used as a type", .{dotJoin(unknown_type.local_qualified_name)});
+                            break :blk .{ .well_known = .void };
+                        },
                     };
 
                     // std.log.debug("    ! candidate found {s} ({s})!", .{ sub_scope.name, @tagName(sub_scope.type) });
@@ -267,7 +291,7 @@ const Analyzer = struct {
                     continue :element_resolution;
                 }
             }
-            std.log.err("no candidate found for type {f} at {f}!", .{
+            try ana.emit_error(Location.empty, "unknown type '{f}' referenced from scope '{f}'", .{
                 dotJoin(unknown_type.local_qualified_name),
                 dotJoin(unknown_type.declared_scope),
             });
@@ -306,7 +330,7 @@ const Analyzer = struct {
 
                     const collector = &@field(ana, collector_name);
 
-                    for (collector.items, 1..) |item, index| {
+                    for (collector.items) |item| {
                         var item_name: std.ArrayList(u8) = .empty;
                         defer item_name.deinit(ana.allocator);
 
@@ -325,12 +349,10 @@ const Analyzer = struct {
                             }
                         }
 
-                        // TODO: Implement stable item id assignment!
-
                         try items.append(ana.allocator, .{
                             .docs = .empty,
                             .name = try item_name.toOwnedSlice(ana.allocator),
-                            .value = @intCast(index),
+                            .value = @intCast(@intFromEnum(item.uid)),
                         });
                     }
                 },
@@ -398,16 +420,19 @@ const Analyzer = struct {
 
             const expected_size = bitstruct.backing_type.size_in_bits().?;
 
-            // std.log.err("bitstruct {s}", .{bitstruct.full_qualified_name});
-
             var struct_size: u8 = 0;
+            var has_error = false;
             for (@constCast(bitstruct.fields)) |*field| {
                 const field_type = ana.get_resolved_type(field.type);
-                const maybe_type_size = get_type_bit_size(field_type);
-                // std.log.err("  {?s} => {} ({?} bits)", .{ field.name, field_type, maybe_type_size });
+                const maybe_type_size = ana.get_type_bit_size(field_type);
 
                 const type_size = maybe_type_size orelse {
-                    @panic("TODO: error report for 'type not bit-packable'");
+                    try ana.emit_error(Location.empty, "bitstruct '{s}': field '{s}' has a type that cannot be packed into bits", .{
+                        model.local_name(bitstruct.full_qualified_name),
+                        field.name orelse "<reserved>",
+                    });
+                    has_error = true;
+                    continue;
                 };
 
                 field.bit_shift = struct_size;
@@ -416,16 +441,26 @@ const Analyzer = struct {
                 struct_size += type_size;
             }
 
-            if (struct_size > expected_size) {
-                @panic("TODO: error reporting for 'fields too big'");
-            } else if (struct_size < expected_size) {
-                @panic("TODO: error reporting for 'fields too little'");
+            if (!has_error) {
+                if (struct_size > expected_size) {
+                    try ana.emit_error(Location.empty, "bitstruct '{s}': fields occupy {d} bits but backing type has {d} bits (too large)", .{
+                        model.local_name(bitstruct.full_qualified_name),
+                        struct_size,
+                        expected_size,
+                    });
+                } else if (struct_size < expected_size) {
+                    try ana.emit_error(Location.empty, "bitstruct '{s}': fields occupy {d} bits but backing type has {d} bits (use 'reserve' to add padding)", .{
+                        model.local_name(bitstruct.full_qualified_name),
+                        struct_size,
+                        expected_size,
+                    });
+                }
             }
         }
     }
 
     /// `tvalue` must be fully resolved and must not be any type alias
-    fn get_type_bit_size(tvalue: model.Type) ?u8 {
+    fn get_type_bit_size(ana: *Analyzer, tvalue: model.Type) ?u8 {
         return switch (tvalue) {
             .alias => unreachable,
             .typedef => unreachable,
@@ -437,8 +472,8 @@ const Analyzer = struct {
 
             .well_known => |stdtype| stdtype.size_in_bits(),
 
-            .@"enum" => @panic("TODO"),
-            .bitstruct => @panic("TODO"),
+            .@"enum" => |idx| ana.enums.get(idx).backing_type.size_in_bits(),
+            .bitstruct => |idx| ana.bitstructs.get(idx).bit_count,
 
             .fnptr => null,
             .ptr => null,
@@ -505,7 +540,7 @@ const Analyzer = struct {
             fn render(a: *Analyzer, list: *std.ArrayList(model.Parameter), params: []model.Parameter, mode: RenderMode) !void {
                 for (params) |*param| {
                     const resolved = a.get_resolved_type(param.type);
-                    if (resolved.is_c_abi_compatible()) {
+                    if (resolved.is_c_abi_compatible(a.types.items)) {
                         try list.append(a.allocator, param.*);
                         continue;
                     }
@@ -587,9 +622,10 @@ const Analyzer = struct {
                         },
 
                         else => {
-
-                            // TODO!
-                            std.log.err("implement type resolution for {}", .{a.get_resolved_type(param.type)});
+                            try a.emit_error(Location.empty, "parameter '{s}' has type '{s}' which cannot appear in a native call signature", .{
+                                param.name,
+                                @tagName(a.get_resolved_type(param.type)),
+                            });
                         },
                     }
                 }
@@ -820,7 +856,7 @@ const Analyzer = struct {
                 .fnptr => .keep,
                 .uint, .int => .keep,
                 .array => .keep,
-                .typedef => .keep, // TODO: Check if slice!
+                .typedef => unreachable, // get_resolved_type always resolves through typedefs
                 .external => .keep,
 
                 .alias => unreachable,
@@ -917,7 +953,6 @@ const Analyzer = struct {
 
         const value = try ana.resolve_value(constant.value.?);
 
-        // TODO: Implement explicit constant typing!
         const type_id: ?model.TypeIndex = if (constant.type) |type_node|
             try ana.map_type(type_node)
         else
@@ -1175,8 +1210,12 @@ const Analyzer = struct {
                 },
 
                 .@"error" => |data| {
+                    // Build FQN for this error: [syscall_fqn..., error_name]
+                    const error_fqn = try std.mem.concat(ana.allocator, []const u8, &.{ info.full_name, &.{data} });
+                    defer ana.allocator.free(error_fqn);
+                    const error_uid = try ana.get_uid(error_fqn);
                     try errors.append(child.location, .{
-                        .value = @intCast(errors.fields.items.len + 1), // TODO: Implement fqn + error name based caching in database file
+                        .value = @intFromEnum(error_uid),
                         .docs = try ana.map_doc_comment(child.doc_comment),
                         .name = data,
                     });
@@ -1454,9 +1493,8 @@ const Analyzer = struct {
 
                 while (iter.next()) |part| {
                     if (part.len == 0) {
-                        @panic("TODO: Empty parts!");
-                        // try ana.emit_error();
-                        // continue;
+                        try ana.emit_error(Location.empty, "empty identifier segment in type name '{s}'", .{data});
+                        continue;
                     }
                     try fqn.append(ana.allocator, part);
                 }
@@ -1500,11 +1538,11 @@ const Analyzer = struct {
 
                 const size: u32 = switch (size_val) {
                     .int => |int| std.math.cast(u32, int) orelse blk: {
-                        std.log.err("TODO: Array size too large: {}", .{int});
+                        try ana.emit_error(Location.empty, "array size {d} is too large (maximum is {d})", .{ int, std.math.maxInt(u32) });
                         break :blk 0;
                     },
                     else => blk: {
-                        std.log.err("TODO: Invalid array size {}", .{size_val});
+                        try ana.emit_error(Location.empty, "array size must be an integer, not a {s}", .{@tagName(size_val)});
                         break :blk 0;
                     },
                 };
@@ -1636,7 +1674,21 @@ const Analyzer = struct {
         }
     }
 
-    fn validate_constraints(ana: *Analyzer) void {
+    fn find_param_by_name(params: []const model.Parameter, name: []const u8) ?model.Parameter {
+        for (params) |p| {
+            if (std.mem.eql(u8, p.name, name)) return p;
+        }
+        return null;
+    }
+
+    fn find_field_by_name(fields: []const model.StructField, name: []const u8) ?model.StructField {
+        for (fields) |f| {
+            if (std.mem.eql(u8, f.name, name)) return f;
+        }
+        return null;
+    }
+
+    fn validate_constraints(ana: *Analyzer) !void {
         for (ana.syscalls.items) |sc| {
             // native calls must have either a return value
             // or none.
@@ -1662,18 +1714,42 @@ const Analyzer = struct {
             }
 
             for (sc.native_inputs) |inp| {
-                std.debug.assert(ana.get_resolved_type(inp.type).is_c_abi_compatible());
+                std.debug.assert(ana.get_resolved_type(inp.type).is_c_abi_compatible(ana.types.items));
 
                 // inputs cannot be the error role
                 std.debug.assert(inp.role != .@"error");
 
-                // TODO: Assert that referenced parameters exist, and that they have the right pointer type
+                switch (inp.role) {
+                    .default, .output => {},
+                    .input_slice, .output_slice => unreachable, // slices are split into ptr+len in native params
+                    .@"error" => unreachable, // asserted above
+                    .input_ptr => |ref_name| {
+                        if (find_param_by_name(sc.logic_inputs, ref_name) == null) {
+                            try ana.emit_error(Location.empty, "native input '{s}' (input_ptr) references unknown logic input '{s}'", .{ inp.name, ref_name });
+                        }
+                    },
+                    .input_len => |ref_name| {
+                        if (find_param_by_name(sc.logic_inputs, ref_name) == null) {
+                            try ana.emit_error(Location.empty, "native input '{s}' (input_len) references unknown logic input '{s}'", .{ inp.name, ref_name });
+                        }
+                    },
+                    .output_ptr => |ref_name| {
+                        if (find_param_by_name(sc.logic_outputs, ref_name) == null) {
+                            try ana.emit_error(Location.empty, "native input '{s}' (output_ptr) references unknown logic output '{s}'", .{ inp.name, ref_name });
+                        }
+                    },
+                    .output_len => |ref_name| {
+                        if (find_param_by_name(sc.logic_outputs, ref_name) == null) {
+                            try ana.emit_error(Location.empty, "native input '{s}' (output_len) references unknown logic output '{s}'", .{ inp.name, ref_name });
+                        }
+                    },
+                }
             }
 
             var has_error_output = false;
             const needs_error_output = (sc.errors.len > 0);
             for (sc.native_outputs) |outp| {
-                std.debug.assert(ana.get_resolved_type(outp.type).is_c_abi_compatible());
+                std.debug.assert(ana.get_resolved_type(outp.type).is_c_abi_compatible(ana.types.items));
                 switch (outp.role) {
                     .default => {},
                     .@"error" => {
@@ -1681,11 +1757,27 @@ const Analyzer = struct {
                         std.debug.assert(needs_error_output);
                         has_error_output = true;
                     },
-                    .input_len, .input_ptr => {
-                        // TODO: Assert that referenced parameters exist, and that they have the right pointer type
+                    .input_slice, .output_slice => unreachable,
+                    .output => {},
+                    .input_len => |ref_name| {
+                        if (find_param_by_name(sc.logic_inputs, ref_name) == null) {
+                            try ana.emit_error(Location.empty, "native output '{s}' (input_len) references unknown logic input '{s}'", .{ outp.name, ref_name });
+                        }
                     },
-                    .output_len, .output_ptr => {
-                        // TODO: Assert that referenced parameters exist, and that they have the right pointer type
+                    .input_ptr => |ref_name| {
+                        if (find_param_by_name(sc.logic_inputs, ref_name) == null) {
+                            try ana.emit_error(Location.empty, "native output '{s}' (input_ptr) references unknown logic input '{s}'", .{ outp.name, ref_name });
+                        }
+                    },
+                    .output_len => |ref_name| {
+                        if (find_param_by_name(sc.logic_outputs, ref_name) == null) {
+                            try ana.emit_error(Location.empty, "native output '{s}' (output_len) references unknown logic output '{s}'", .{ outp.name, ref_name });
+                        }
+                    },
+                    .output_ptr => |ref_name| {
+                        if (find_param_by_name(sc.logic_outputs, ref_name) == null) {
+                            try ana.emit_error(Location.empty, "native output '{s}' (output_ptr) references unknown logic output '{s}'", .{ outp.name, ref_name });
+                        }
                     },
                 }
             }
@@ -1701,7 +1793,7 @@ const Analyzer = struct {
             }
             for (un.native_fields) |fld| {
                 std.debug.assert(fld.role == .default);
-                std.debug.assert(ana.get_resolved_type(fld.type).is_c_abi_compatible());
+                std.debug.assert(ana.get_resolved_type(fld.type).is_c_abi_compatible(ana.types.items));
             }
         }
 
@@ -1713,11 +1805,18 @@ const Analyzer = struct {
             for (str.native_fields) |fld| {
                 switch (fld.role) {
                     .default => {},
-                    .slice_len, .slice_ptr => {
-                        // TODO: Assert the referenced slice exists
+                    .slice_ptr => |ref_name| {
+                        if (find_field_by_name(str.logic_fields, ref_name) == null) {
+                            try ana.emit_error(Location.empty, "native field '{s}' (slice_ptr) references unknown logic field '{s}'", .{ fld.name, ref_name });
+                        }
+                    },
+                    .slice_len => |ref_name| {
+                        if (find_field_by_name(str.logic_fields, ref_name) == null) {
+                            try ana.emit_error(Location.empty, "native field '{s}' (slice_len) references unknown logic field '{s}'", .{ fld.name, ref_name });
+                        }
                     },
                 }
-                std.debug.assert(ana.get_resolved_type(fld.type).is_c_abi_compatible());
+                std.debug.assert(ana.get_resolved_type(fld.type).is_c_abi_compatible(ana.types.items));
             }
         }
 

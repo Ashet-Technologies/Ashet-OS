@@ -239,7 +239,7 @@ fn inline_from_value(allocator: std.mem.Allocator, value: std.json.Value) !DocCo
     return error.UnexpectedToken;
 }
 
-fn inline_array_from_value(allocator: std.mem.Allocator, value: std.json.Value) ![]const DocComment.Inline {
+fn inline_array_from_value(allocator: std.mem.Allocator, value: std.json.Value) error{ OutOfMemory, UnexpectedToken }![]const DocComment.Inline {
     const arr = switch (value) {
         .array => |a| a,
         else => return error.UnexpectedToken,
@@ -384,7 +384,7 @@ pub const Type = union(enum) {
     /// to be reified into `enum MyName : u32 { item … }
     unset_magic_type: MagicType,
 
-    pub fn is_c_abi_compatible(t: Type) bool {
+    pub fn is_c_abi_compatible(t: Type, types: []const Type) bool {
         return switch (t) {
             .@"struct" => true,
             .@"union" => true,
@@ -417,10 +417,20 @@ pub const Type = union(enum) {
                 .one, .unknown => true,
                 .slice => false,
             },
-            .optional => false, // TODO: ?*T and ?[*]T are C-abi-compatible
+            .optional => |inner_idx| blk: {
+                // ?*T and ?[*]T are C-ABI compatible (represented as nullable pointers)
+                const inner = types[@intFromEnum(inner_idx)];
+                break :blk switch (inner) {
+                    .ptr => |ptr| switch (ptr.size) {
+                        .one, .unknown => true,
+                        .slice => false,
+                    },
+                    else => false,
+                };
+            },
             .fnptr => true,
 
-            // TODO: These types should not exist anymore when C-ABI check is performed
+            // These types should not exist anymore when C-ABI check is performed
             .alias => true,
             .unknown_named_type => false,
             .unset_magic_type => false,
