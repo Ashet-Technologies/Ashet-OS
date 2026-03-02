@@ -950,7 +950,8 @@ const Analyzer = struct {
 
     /// Parses a raw doc comment into a structured DocComment.
     fn map_doc_comment(ana: *Analyzer, raw_lines: []const []const u8) !model.DocComment {
-        return doc_comment_parser.parse(ana.allocator, raw_lines);
+        var arena = std.heap.ArenaAllocator.init(ana.allocator);
+        return doc_comment_parser.parse_into_arena(&arena, raw_lines);
     }
 
     /// Creates a synthetic one-paragraph DocComment from a plain text string.

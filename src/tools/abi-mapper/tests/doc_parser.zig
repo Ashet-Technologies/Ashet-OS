@@ -3,43 +3,33 @@ const abi_parser = @import("abi-parser");
 const doc_comment_parser = abi_parser.doc_comment;
 const DocComment = abi_parser.model.DocComment;
 
-// Helper: parse raw lines (as produced by the tokenizer after stripping `///`)
-// Lines with `/// text` produce `" text"` (one leading space).
-// Lines with `///` (empty doc line) produce `""`.
-fn parse(arena: std.mem.Allocator, lines: []const []const u8) !DocComment {
-    return doc_comment_parser.parse(arena, lines);
-}
-
 // ── Empty / blank ────────────────────────────────────────────────────────────
 
 test "empty input returns empty DocComment" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
+    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{});
+    defer parsed.deinit();
 
-    const result = try parse(arena.allocator(), &.{});
-    try std.testing.expectEqual(@as(usize, 0), result.sections.len);
+    try std.testing.expectEqual(@as(usize, 0), parsed.comment.sections.len);
 }
 
 test "only blank lines returns empty DocComment" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
+    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{ "", "", "" });
+    defer parsed.deinit();
 
-    const result = try parse(arena.allocator(), &.{ "", "", "" });
-    try std.testing.expectEqual(@as(usize, 0), result.sections.len);
+    try std.testing.expectEqual(@as(usize, 0), parsed.comment.sections.len);
 }
 
 // ── Paragraphs ───────────────────────────────────────────────────────────────
 
 test "simple paragraph" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
+    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{" Hello, world!"});
+    defer parsed.deinit();
 
-    const result = try parse(arena.allocator(), &.{" Hello, world!"});
-    try std.testing.expectEqual(@as(usize, 1), result.sections.len);
-    try std.testing.expectEqual(DocComment.Section.Kind.main, result.sections[0].kind);
-    try std.testing.expectEqual(@as(usize, 1), result.sections[0].blocks.len);
+    try std.testing.expectEqual(@as(usize, 1), parsed.comment.sections.len);
+    try std.testing.expectEqual(DocComment.Section.Kind.main, parsed.comment.sections[0].kind);
+    try std.testing.expectEqual(@as(usize, 1), parsed.comment.sections[0].blocks.len);
 
-    const block = result.sections[0].blocks[0];
+    const block = parsed.comment.sections[0].blocks[0];
     try std.testing.expect(block == .paragraph);
     try std.testing.expectEqual(@as(usize, 1), block.paragraph.content.len);
     try std.testing.expect(block.paragraph.content[0] == .text);
@@ -47,18 +37,16 @@ test "simple paragraph" {
 }
 
 test "multi-line paragraph joined with space" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    const result = try parse(arena.allocator(), &.{
+    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{
         " First line",
         " second line",
         " third line",
     });
-    try std.testing.expectEqual(@as(usize, 1), result.sections.len);
-    try std.testing.expectEqual(@as(usize, 1), result.sections[0].blocks.len);
+    defer parsed.deinit();
 
-    const block = result.sections[0].blocks[0];
+    try std.testing.expectEqual(@as(usize, 1), parsed.comment.sections[0].blocks.len);
+
+    const block = parsed.comment.sections[0].blocks[0];
     try std.testing.expect(block == .paragraph);
     try std.testing.expectEqual(@as(usize, 1), block.paragraph.content.len);
     try std.testing.expectEqualStrings(
@@ -68,38 +56,34 @@ test "multi-line paragraph joined with space" {
 }
 
 test "blank line separates paragraphs" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    const result = try parse(arena.allocator(), &.{
+    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{
         " First paragraph.",
         "",
         " Second paragraph.",
     });
-    try std.testing.expectEqual(@as(usize, 1), result.sections.len);
-    try std.testing.expectEqual(@as(usize, 2), result.sections[0].blocks.len);
-    try std.testing.expect(result.sections[0].blocks[0] == .paragraph);
-    try std.testing.expect(result.sections[0].blocks[1] == .paragraph);
+    defer parsed.deinit();
+
+    try std.testing.expectEqual(@as(usize, 2), parsed.comment.sections[0].blocks.len);
+    try std.testing.expect(parsed.comment.sections[0].blocks[0] == .paragraph);
+    try std.testing.expect(parsed.comment.sections[0].blocks[1] == .paragraph);
 
     try std.testing.expectEqualStrings(
         "First paragraph.",
-        result.sections[0].blocks[0].paragraph.content[0].text.value,
+        parsed.comment.sections[0].blocks[0].paragraph.content[0].text.value,
     );
     try std.testing.expectEqualStrings(
         "Second paragraph.",
-        result.sections[0].blocks[1].paragraph.content[0].text.value,
+        parsed.comment.sections[0].blocks[1].paragraph.content[0].text.value,
     );
 }
 
 // ── Inline elements ──────────────────────────────────────────────────────────
 
 test "inline code span" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
+    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{" Call `foo()` now."});
+    defer parsed.deinit();
 
-    const result = try parse(arena.allocator(), &.{" Call `foo()` now."});
-    const content = result.sections[0].blocks[0].paragraph.content;
-
+    const content = parsed.comment.sections[0].blocks[0].paragraph.content;
     try std.testing.expectEqual(@as(usize, 3), content.len);
     try std.testing.expect(content[0] == .text);
     try std.testing.expectEqualStrings("Call ", content[0].text.value);
@@ -110,12 +94,10 @@ test "inline code span" {
 }
 
 test "cross-reference @`fqn`" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
+    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{" See @`foo.bar.Baz` for details."});
+    defer parsed.deinit();
 
-    const result = try parse(arena.allocator(), &.{" See @`foo.bar.Baz` for details."});
-    const content = result.sections[0].blocks[0].paragraph.content;
-
+    const content = parsed.comment.sections[0].blocks[0].paragraph.content;
     try std.testing.expectEqual(@as(usize, 3), content.len);
     try std.testing.expect(content[0] == .text);
     try std.testing.expectEqualStrings("See ", content[0].text.value);
@@ -126,12 +108,10 @@ test "cross-reference @`fqn`" {
 }
 
 test "emphasis *text*" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
+    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{" This is *important* text."});
+    defer parsed.deinit();
 
-    const result = try parse(arena.allocator(), &.{" This is *important* text."});
-    const content = result.sections[0].blocks[0].paragraph.content;
-
+    const content = parsed.comment.sections[0].blocks[0].paragraph.content;
     try std.testing.expectEqual(@as(usize, 3), content.len);
     try std.testing.expect(content[0] == .text);
     try std.testing.expectEqualStrings("This is ", content[0].text.value);
@@ -143,13 +123,10 @@ test "emphasis *text*" {
 }
 
 test "escape sequences suppress special syntax" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
+    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{" Escape: \\`not code\\`."});
+    defer parsed.deinit();
 
-    // \` prevents inline code, \* prevents emphasis
-    const result = try parse(arena.allocator(), &.{" Escape: \\`not code\\`."});
-    const content = result.sections[0].blocks[0].paragraph.content;
-
+    const content = parsed.comment.sections[0].blocks[0].paragraph.content;
     // None of the nodes should be a .code span
     for (content) |item| {
         try std.testing.expect(item != .code);
@@ -163,12 +140,10 @@ test "escape sequences suppress special syntax" {
 }
 
 test "titled link [display](url)" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
+    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{" See [the docs](https://example.com/docs)."});
+    defer parsed.deinit();
 
-    const result = try parse(arena.allocator(), &.{" See [the docs](https://example.com/docs)."});
-    const content = result.sections[0].blocks[0].paragraph.content;
-
+    const content = parsed.comment.sections[0].blocks[0].paragraph.content;
     try std.testing.expectEqual(@as(usize, 3), content.len);
     try std.testing.expect(content[0] == .text);
     try std.testing.expectEqualStrings("See ", content[0].text.value);
@@ -181,12 +156,10 @@ test "titled link [display](url)" {
 }
 
 test "autolink <https://...>" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
+    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{" Visit <https://example.com>."});
+    defer parsed.deinit();
 
-    const result = try parse(arena.allocator(), &.{" Visit <https://example.com>."});
-    const content = result.sections[0].blocks[0].paragraph.content;
-
+    const content = parsed.comment.sections[0].blocks[0].paragraph.content;
     try std.testing.expectEqual(@as(usize, 3), content.len);
     try std.testing.expect(content[0] == .text);
     try std.testing.expectEqualStrings("Visit ", content[0].text.value);
@@ -199,12 +172,10 @@ test "autolink <https://...>" {
 }
 
 test "autolink <mailto:...>" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
+    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{" Mail <mailto:foo@example.com> us."});
+    defer parsed.deinit();
 
-    const result = try parse(arena.allocator(), &.{" Mail <mailto:foo@example.com> us."});
-    const content = result.sections[0].blocks[0].paragraph.content;
-
+    const content = parsed.comment.sections[0].blocks[0].paragraph.content;
     try std.testing.expectEqual(@as(usize, 3), content.len);
     try std.testing.expect(content[1] == .link);
     try std.testing.expectEqualStrings("mailto:foo@example.com", content[1].link.url);
@@ -213,19 +184,18 @@ test "autolink <mailto:...>" {
 // ── Admonitions ──────────────────────────────────────────────────────────────
 
 test "NOTE admonition starts new section" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    const result = try parse(arena.allocator(), &.{
+    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{
         " Main text.",
         "",
         " NOTE: This is a note.",
     });
-    try std.testing.expectEqual(@as(usize, 2), result.sections.len);
-    try std.testing.expectEqual(DocComment.Section.Kind.main, result.sections[0].kind);
-    try std.testing.expectEqual(DocComment.Section.Kind.note, result.sections[1].kind);
+    defer parsed.deinit();
 
-    const note_content = result.sections[1].blocks[0].paragraph.content;
+    try std.testing.expectEqual(@as(usize, 2), parsed.comment.sections.len);
+    try std.testing.expectEqual(DocComment.Section.Kind.main, parsed.comment.sections[0].kind);
+    try std.testing.expectEqual(DocComment.Section.Kind.note, parsed.comment.sections[1].kind);
+
+    const note_content = parsed.comment.sections[1].blocks[0].paragraph.content;
     try std.testing.expectEqualStrings("This is a note.", note_content[0].text.value);
 }
 
@@ -241,67 +211,62 @@ test "all admonition kinds are recognized" {
     };
 
     for (cases) |c| {
-        var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-        defer arena.deinit();
-
         var buf: [64]u8 = undefined;
         const line = try std.fmt.bufPrint(&buf, " {s}: test text", .{c.tag});
-        const result = try parse(arena.allocator(), &.{line});
 
-        try std.testing.expectEqual(@as(usize, 1), result.sections.len);
-        try std.testing.expectEqual(c.kind, result.sections[0].kind);
+        var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{line});
+        defer parsed.deinit();
+
+        try std.testing.expectEqual(@as(usize, 1), parsed.comment.sections.len);
+        try std.testing.expectEqual(c.kind, parsed.comment.sections[0].kind);
     }
 }
 
 test "admonition with empty body starts section" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    const result = try parse(arena.allocator(), &.{
+    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{
         " NOTE:",
         " Text on the next line.",
     });
-    try std.testing.expectEqual(@as(usize, 1), result.sections.len);
-    try std.testing.expectEqual(DocComment.Section.Kind.note, result.sections[0].kind);
-    try std.testing.expectEqual(@as(usize, 1), result.sections[0].blocks.len);
+    defer parsed.deinit();
+
+    try std.testing.expectEqual(@as(usize, 1), parsed.comment.sections.len);
+    try std.testing.expectEqual(DocComment.Section.Kind.note, parsed.comment.sections[0].kind);
+    try std.testing.expectEqual(@as(usize, 1), parsed.comment.sections[0].blocks.len);
     try std.testing.expectEqualStrings(
         "Text on the next line.",
-        result.sections[0].blocks[0].paragraph.content[0].text.value,
+        parsed.comment.sections[0].blocks[0].paragraph.content[0].text.value,
     );
 }
 
 test "multiple admonition sections" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    const result = try parse(arena.allocator(), &.{
+    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{
         " Main description.",
         "",
         " NOTE: Important note.",
         "",
         " WARNING: Be careful.",
     });
-    try std.testing.expectEqual(@as(usize, 3), result.sections.len);
-    try std.testing.expectEqual(DocComment.Section.Kind.main, result.sections[0].kind);
-    try std.testing.expectEqual(DocComment.Section.Kind.note, result.sections[1].kind);
-    try std.testing.expectEqual(DocComment.Section.Kind.warning, result.sections[2].kind);
+    defer parsed.deinit();
+
+    try std.testing.expectEqual(@as(usize, 3), parsed.comment.sections.len);
+    try std.testing.expectEqual(DocComment.Section.Kind.main, parsed.comment.sections[0].kind);
+    try std.testing.expectEqual(DocComment.Section.Kind.note, parsed.comment.sections[1].kind);
+    try std.testing.expectEqual(DocComment.Section.Kind.warning, parsed.comment.sections[2].kind);
 }
 
 // ── Lists ────────────────────────────────────────────────────────────────────
 
 test "unordered list" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    const result = try parse(arena.allocator(), &.{
+    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{
         " - First item",
         " - Second item",
         " - Third item",
     });
-    try std.testing.expectEqual(@as(usize, 1), result.sections.len);
-    try std.testing.expectEqual(@as(usize, 1), result.sections[0].blocks.len);
+    defer parsed.deinit();
 
-    const block = result.sections[0].blocks[0];
+    try std.testing.expectEqual(@as(usize, 1), parsed.comment.sections[0].blocks.len);
+
+    const block = parsed.comment.sections[0].blocks[0];
     try std.testing.expect(block == .unordered_list);
     try std.testing.expectEqual(@as(usize, 3), block.unordered_list.items.len);
     try std.testing.expectEqualStrings("First item", block.unordered_list.items[0][0].text.value);
@@ -310,18 +275,16 @@ test "unordered list" {
 }
 
 test "ordered list" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    const result = try parse(arena.allocator(), &.{
+    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{
         " 1. First",
         " 2. Second",
         " 3. Third",
     });
-    try std.testing.expectEqual(@as(usize, 1), result.sections.len);
-    try std.testing.expectEqual(@as(usize, 1), result.sections[0].blocks.len);
+    defer parsed.deinit();
 
-    const block = result.sections[0].blocks[0];
+    try std.testing.expectEqual(@as(usize, 1), parsed.comment.sections[0].blocks.len);
+
+    const block = parsed.comment.sections[0].blocks[0];
     try std.testing.expect(block == .ordered_list);
     try std.testing.expectEqual(@as(usize, 3), block.ordered_list.items.len);
     try std.testing.expectEqualStrings("First", block.ordered_list.items[0][0].text.value);
@@ -330,15 +293,14 @@ test "ordered list" {
 }
 
 test "list item continuation line" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    const result = try parse(arena.allocator(), &.{
+    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{
         " - First item",
         "   continues here",
         " - Second item",
     });
-    const block = result.sections[0].blocks[0];
+    defer parsed.deinit();
+
+    const block = parsed.comment.sections[0].blocks[0];
     try std.testing.expect(block == .unordered_list);
     try std.testing.expectEqual(@as(usize, 2), block.unordered_list.items.len);
     // The two continuation lines are joined with a space
@@ -350,54 +312,47 @@ test "list item continuation line" {
 }
 
 test "paragraph after list" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    const result = try parse(arena.allocator(), &.{
+    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{
         " - Item one",
         " - Item two",
         "",
         " Trailing paragraph.",
     });
-    try std.testing.expectEqual(@as(usize, 1), result.sections.len);
-    try std.testing.expectEqual(@as(usize, 2), result.sections[0].blocks.len);
-    try std.testing.expect(result.sections[0].blocks[0] == .unordered_list);
-    try std.testing.expect(result.sections[0].blocks[1] == .paragraph);
+    defer parsed.deinit();
+
+    try std.testing.expectEqual(@as(usize, 2), parsed.comment.sections[0].blocks.len);
+    try std.testing.expect(parsed.comment.sections[0].blocks[0] == .unordered_list);
+    try std.testing.expect(parsed.comment.sections[0].blocks[1] == .paragraph);
 }
 
 // ── Code fences ──────────────────────────────────────────────────────────────
 
 test "code fence without syntax hint" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    const result = try parse(arena.allocator(), &.{
+    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{
         " ```",
         " some code",
         " more code",
         " ```",
     });
-    try std.testing.expectEqual(@as(usize, 1), result.sections.len);
-    try std.testing.expectEqual(@as(usize, 1), result.sections[0].blocks.len);
+    defer parsed.deinit();
 
-    const block = result.sections[0].blocks[0];
+    try std.testing.expectEqual(@as(usize, 1), parsed.comment.sections[0].blocks.len);
+
+    const block = parsed.comment.sections[0].blocks[0];
     try std.testing.expect(block == .code_block);
     try std.testing.expectEqual(@as(?[]const u8, null), block.code_block.syntax);
     try std.testing.expectEqualStrings("some code\nmore code", block.code_block.content);
 }
 
 test "code fence with syntax hint" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    const result = try parse(arena.allocator(), &.{
+    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{
         " ```zig",
         " const x = 42;",
         " ```",
     });
-    try std.testing.expectEqual(@as(usize, 1), result.sections.len);
+    defer parsed.deinit();
 
-    const block = result.sections[0].blocks[0];
+    const block = parsed.comment.sections[0].blocks[0];
     try std.testing.expect(block == .code_block);
     try std.testing.expect(block.code_block.syntax != null);
     try std.testing.expectEqualStrings("zig", block.code_block.syntax.?);
@@ -405,10 +360,7 @@ test "code fence with syntax hint" {
 }
 
 test "code fence preceded and followed by text" {
-    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
-    defer arena.deinit();
-
-    const result = try parse(arena.allocator(), &.{
+    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{
         " Before.",
         "",
         " ```",
@@ -417,9 +369,10 @@ test "code fence preceded and followed by text" {
         "",
         " After.",
     });
-    try std.testing.expectEqual(@as(usize, 1), result.sections.len);
-    try std.testing.expectEqual(@as(usize, 3), result.sections[0].blocks.len);
-    try std.testing.expect(result.sections[0].blocks[0] == .paragraph);
-    try std.testing.expect(result.sections[0].blocks[1] == .code_block);
-    try std.testing.expect(result.sections[0].blocks[2] == .paragraph);
+    defer parsed.deinit();
+
+    try std.testing.expectEqual(@as(usize, 3), parsed.comment.sections[0].blocks.len);
+    try std.testing.expect(parsed.comment.sections[0].blocks[0] == .paragraph);
+    try std.testing.expect(parsed.comment.sections[0].blocks[1] == .code_block);
+    try std.testing.expect(parsed.comment.sections[0].blocks[2] == .paragraph);
 }
