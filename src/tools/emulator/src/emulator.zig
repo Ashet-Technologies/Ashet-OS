@@ -1,4 +1,5 @@
 const std = @import("std");
+const logger = std.log.scoped(.rv32_emulator);
 
 /// A fully emulated system combining a RV32IMC CPU core with a memory bus
 /// that maps ROM, MMIO peripherals, and RAM according to the Ashet OS
@@ -7,22 +8,9 @@ pub const System = struct {
     cpu: Cpu,
     rom: []align(4) const u8,
     ram: []align(4) u8,
-    debug_writer: DebugWriter,
+    debug_writer: *std.Io.Writer,
 
-    pub const DebugWriter = struct {
-        context: *anyopaque,
-        write_fn: *const fn (context: *anyopaque, byte: u8) void,
-
-        /// A no-op writer for contexts where debug output should be discarded.
-        pub const null_writer: DebugWriter = .{
-            .context = undefined,
-            .write_fn = &struct {
-                fn f(_: *anyopaque, _: u8) void {}
-            }.f,
-        };
-    };
-
-    pub fn init(rom: []align(4) const u8, ram: []align(4) u8, debug_writer: DebugWriter) System {
+    pub fn init(rom: []align(4) const u8, ram: []align(4) u8, debug_writer: *std.Io.Writer) System {
         return .{
             .cpu = Cpu.init(),
             .rom = rom,
@@ -130,7 +118,9 @@ pub const System = struct {
             0x41 => {
                 if (size != .u8 or offset != 0)
                     return error.InvalidSize;
-                system.debug_writer.write_fn(system.debug_writer.context, @truncate(value));
+                system.debug_writer.writeByte(@truncate(value)) catch |err| {
+                    logger.err("failed to write debug output: {t}", .{err});
+                };
             },
             // Keyboard (read-only)
             0x42 => return error.WriteProtected,

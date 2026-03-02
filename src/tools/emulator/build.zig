@@ -64,11 +64,11 @@ pub fn build(b: *std.Build) void {
     // Only enabled when a RISC-V cross-compiler is found on PATH.
     // -----------------------------------------------------------------------
     const gcc = b.findProgram(
-        &.{ "riscv64-unknown-elf-gcc", "riscv32-unknown-elf-gcc", "riscv64-linux-gnu-gcc" },
+        &.{ "riscv64-unknown-elf-gcc", "riscv32-unknown-elf-gcc", "riscv64-linux-gnu-gcc", "riscv64-elf-gcc", "riscv32-elf-gcc", "riscv64-gnu-gcc" },
         &.{},
     ) catch null;
     const objcopy = b.findProgram(
-        &.{ "riscv64-unknown-elf-objcopy", "riscv32-unknown-elf-objcopy", "riscv64-linux-gnu-objcopy" },
+        &.{ "riscv64-unknown-elf-objcopy", "riscv32-unknown-elf-objcopy", "riscv64-linux-gnu-objcopy","riscv64-elf-objcopy", "riscv32-elf-objcopy", "riscv64-gnu-objcopy", "llvm-objcopy" },
         &.{},
     ) catch null;
 

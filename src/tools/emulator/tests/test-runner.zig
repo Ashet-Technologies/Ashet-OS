@@ -32,7 +32,7 @@ pub fn main() !void {
     defer allocator.free(rom_raw);
 
     const padded_len = (rom_raw.len + 3) & ~@as(usize, 3);
-    const rom_buf = try allocator.alignedAlloc(u8, 4, padded_len);
+    const rom_buf = try allocator.alignedAlloc(u8, .@"4", padded_len);
     defer allocator.free(rom_buf);
     @memcpy(rom_buf[0..rom_raw.len], rom_raw);
     @memset(rom_buf[rom_raw.len..], 0);
@@ -59,20 +59,20 @@ pub fn main() !void {
         else => 4,
     } else 4;
 
-    const ram_buf = try allocator.alignedAlloc(u8, 4, ram_size);
+    const ram_buf = try allocator.alignedAlloc(u8, .@"4", ram_size);
     defer allocator.free(ram_buf);
     @memset(ram_buf, 0);
 
     // -----------------------------------------------------------------------
     // Set up debug capture
     // -----------------------------------------------------------------------
-    var debug_capture = DebugCapture.init(allocator);
+    var debug_capture: std.Io.Writer.Allocating = .init(allocator);
     defer debug_capture.deinit();
 
     // -----------------------------------------------------------------------
     // Initialize system and apply initial register state
     // -----------------------------------------------------------------------
-    var system = emu.System.init(rom_buf, ram_buf, debug_capture.writer());
+    var system = emu.System.init(rom_buf, ram_buf, &debug_capture.writer);
 
     if (root.get("initial_regs")) |regs_val| {
         if (regs_val == .object) {
@@ -144,7 +144,7 @@ pub fn main() !void {
         };
         defer if (expected_debug) |d| allocator.free(d);
 
-        const actual_debug = debug_capture.captured();
+        const actual_debug = debug_capture.written();
         const expected = expected_debug orelse &[_]u8{};
 
         if (!std.mem.eql(u8, actual_debug, expected)) {
@@ -180,7 +180,23 @@ fn parseRegName(name: []const u8) ?u5 {
 /// representation, matching how the emulator stores register contents.
 fn jsonToU32(val: std.json.Value) ?u32 {
     return switch (val) {
-        .integer => |i| @bitCast(@as(i32, @intCast(i))),
+        .integer => |i| if (std.math.cast(u32, i)) |value|
+            value
+        else if (std.math.cast(i32, i)) |value|
+            @bitCast(value)
+        else
+            null,
+
+        .number_string => |str| {
+            if (std.fmt.parseInt(u32, str, 10) catch null) |value| {
+                return value;
+            }
+            if (std.fmt.parseInt(i32, str, 10) catch null) |value| {
+                return @bitCast(value);
+            }
+            return null;
+        },
+
         else => null,
     };
 }
@@ -241,7 +257,7 @@ const DebugCapture = struct {
             .context = @ptrCast(self),
             .write_fn = &struct {
                 fn f(ctx: *anyopaque, byte: u8) void {
-                    const cap: *DebugCapture = @alignCast(@ptrCast(ctx));
+                    const cap: *DebugCapture = @ptrCast(@alignCast(ctx));
                     cap.data.append(byte) catch {};
                 }
             }.f,

@@ -5,35 +5,9 @@ const emu = @import("emulator");
 // Test helpers
 // ---------------------------------------------------------------------------
 
-/// Captures bytes written to the debug output peripheral so tests can
-/// verify serial output without needing OS-level I/O.
-const DebugCapture = struct {
-    buf: [256]u8 = undefined,
-    len: usize = 0,
-
-    fn writer(self: *DebugCapture) emu.System.DebugWriter {
-        return .{
-            .context = @ptrCast(self),
-            .write_fn = &struct {
-                fn f(ctx: *anyopaque, byte: u8) void {
-                    const cap: *DebugCapture = @alignCast(@ptrCast(ctx));
-                    if (cap.len < cap.buf.len) {
-                        cap.buf[cap.len] = byte;
-                        cap.len += 1;
-                    }
-                }
-            }.f,
-        };
-    }
-
-    fn captured(self: *const DebugCapture) []const u8 {
-        return self.buf[0..self.len];
-    }
-};
-
 /// Create a System loaded with the given ROM binary and a fixed-size RAM,
 /// running until EBREAK or an error. Returns the system for register inspection.
-fn run_program(comptime rom: []const u8, ram: []align(4) u8, debug: *DebugCapture) !emu.System {
+fn run_program(comptime rom: []const u8, ram: []align(4) u8, debug: *std.Io.Writer) !emu.System {
     // Pad the ROM to 4-byte alignment at compile time. Using a const struct
     // field so the address is available at runtime (comptime vars cannot be
     // referenced at runtime in Zig 0.15+).
@@ -47,7 +21,7 @@ fn run_program(comptime rom: []const u8, ram: []align(4) u8, debug: *DebugCaptur
     };
     const aligned_rom: []align(4) const u8 = &S.padded;
 
-    var system = emu.System.init(aligned_rom, ram, debug.writer());
+    var system = emu.System.init(aligned_rom, ram, debug);
 
     // Run up to 10000 instructions — any test should complete well within that.
     const result = system.step(10000);
@@ -60,13 +34,15 @@ fn run_program(comptime rom: []const u8, ram: []align(4) u8, debug: *DebugCaptur
 }
 
 fn run_program_no_ram(comptime rom: []const u8) !emu.System {
-    var debug = DebugCapture{};
+    var debug_output: [512]u8 = undefined;
+    var debug: std.Io.Writer = .fixed(&debug_output);
     var ram_backing: [4]u8 align(4) = [_]u8{0} ** 4;
     return run_program(rom, ram_backing[0..0], &debug);
 }
 
 fn run_program_with_ram(comptime rom: []const u8, ram: []align(4) u8) !emu.System {
-    var debug = DebugCapture{};
+    var debug_output: [512]u8 = undefined;
+    var debug: std.Io.Writer = .fixed(&debug_output);
     return run_program(rom, ram, &debug);
 }
 
@@ -197,7 +173,8 @@ test "Compressed: c.li, c.mv, c.add, c.slli, c.ebreak" {
 // ---------------------------------------------------------------------------
 
 test "Debug output: write bytes to serial" {
-    var debug = DebugCapture{};
+    var debug_output: [512]u8 = undefined;
+    var debug: std.Io.Writer = .fixed(&debug_output);
     var ram_backing: [4]u8 align(4) = [_]u8{0} ** 4;
 
     const rom_data = @embedFile("test_debug.bin");
@@ -210,7 +187,7 @@ test "Debug output: write bytes to serial" {
         };
     };
 
-    var system = emu.System.init(@as([]align(4) const u8, &S.padded), &ram_backing, debug.writer());
+    var system = emu.System.init(@as([]align(4) const u8, &S.padded), &ram_backing, &debug);
 
     const result = system.step(10000);
     if (result) |_| {
@@ -219,7 +196,7 @@ test "Debug output: write bytes to serial" {
         error.Ebreak => {},
         else => return err,
     }
-    try std.testing.expectEqualStrings("Hi\n", debug.captured());
+    try std.testing.expectEqualStrings("Hi\n", debug.buffered());
 }
 
 // ---------------------------------------------------------------------------
@@ -261,7 +238,8 @@ test "ECALL raises error" {
     const rom = [_]u8{
         0x73, 0x00, 0x00, 0x00, // ecall
     };
-    var debug = DebugCapture{};
+    var debug_output: [512]u8 = undefined;
+    var debug: std.Io.Writer = .fixed(&debug_output);
     var ram_backing: [4]u8 align(4) = [_]u8{0} ** 4;
     const result = run_program(&rom, &ram_backing, &debug);
     try std.testing.expectError(error.Ecall, result);
@@ -272,7 +250,8 @@ test "Illegal instruction raises error" {
     const rom = [_]u8{
         0x00, 0x00, 0x00, 0x00,
     };
-    var debug = DebugCapture{};
+    var debug_output: [512]u8 = undefined;
+    var debug: std.Io.Writer = .fixed(&debug_output);
     var ram_backing: [4]u8 align(4) = [_]u8{0} ** 4;
     const result = run_program(&rom, &ram_backing, &debug);
     try std.testing.expectError(error.IllegalInstruction, result);
