@@ -140,6 +140,16 @@ const asm_tests = [_]AsmTest{
     .{ .path = "tests/behaviour/cpu/rv32i/test_mem.s", .target = rv32i },
     .{ .path = "tests/behaviour/cpu/rv32i/test_shifts.s", .target = rv32i },
     .{ .path = "tests/behaviour/cpu/rv32i/test_slti.s", .target = rv32i },
+    .{ .path = "tests/behaviour/cpu/rv32i/test_bge.s", .target = rv32i },
+    .{ .path = "tests/behaviour/cpu/rv32i/test_bgeu.s", .target = rv32i },
+    .{ .path = "tests/behaviour/cpu/rv32i/test_fence.s", .target = rv32i },
+    .{ .path = "tests/behaviour/cpu/rv32i/test_jalr_lsb.s", .target = rv32i },
+    .{ .path = "tests/behaviour/cpu/rv32i/test_overflow.s", .target = rv32i },
+    .{ .path = "tests/behaviour/cpu/rv32i/test_shift_edge.s", .target = rv32i },
+    .{ .path = "tests/behaviour/cpu/rv32i/test_neg_imm.s", .target = rv32i },
+    .{ .path = "tests/behaviour/cpu/rv32i/test_integration.s", .target = rv32i },
+    .{ .path = "tests/behaviour/cpu/rv32i/test_ram_stress.s", .target = rv32i },
+    .{ .path = "tests/behaviour/cpu/rv32i/test_stack.s", .target = rv32i },
 
     // M extension:
     .{ .path = "tests/behaviour/cpu/rv32im/test_div_edge.s", .target = rv32im },

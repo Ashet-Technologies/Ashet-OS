@@ -103,3 +103,63 @@ test "Illegal instruction raises error" {
     const result = run_program(&rom, &ram_backing, &debug);
     try std.testing.expectError(error.IllegalInstruction, result);
 }
+
+// ---------------------------------------------------------------------------
+// Unaligned access fault tests
+// ---------------------------------------------------------------------------
+
+test "Unaligned LH faults" {
+    // lui x1, 0x80000; addi x1, x1, 1; lh x2, 0(x1); ebreak
+    // Load halfword from 0x80000001 (odd address) => fault
+    const rom = [_]u8{
+        0xB7, 0x00, 0x00, 0x80, // lui x1, 0x80000
+        0x93, 0x00, 0x10, 0x00, // addi x1, x1, 1
+        0x03, 0x91, 0x00, 0x00, // lh x2, 0(x1)
+        0x73, 0x00, 0x10, 0x00, // ebreak
+    };
+    var ram_backing: [16]u8 align(4) = [_]u8{0} ** 16;
+    const result = run_program_with_ram(&rom, &ram_backing);
+    try std.testing.expectError(error.LoadAccessFault, result);
+}
+
+test "Unaligned LW faults" {
+    // lui x1, 0x80000; addi x1, x1, 2; lw x2, 0(x1); ebreak
+    // Load word from 0x80000002 (not 4-aligned) => fault
+    const rom = [_]u8{
+        0xB7, 0x00, 0x00, 0x80, // lui x1, 0x80000
+        0x93, 0x00, 0x20, 0x00, // addi x1, x1, 2
+        0x03, 0xA1, 0x00, 0x00, // lw x2, 0(x1)
+        0x73, 0x00, 0x10, 0x00, // ebreak
+    };
+    var ram_backing: [16]u8 align(4) = [_]u8{0} ** 16;
+    const result = run_program_with_ram(&rom, &ram_backing);
+    try std.testing.expectError(error.LoadAccessFault, result);
+}
+
+test "Unaligned SH faults" {
+    // lui x1, 0x80000; addi x1, x1, 3; sh x0, 0(x1); ebreak
+    // Store halfword to 0x80000003 (odd address) => fault
+    const rom = [_]u8{
+        0xB7, 0x00, 0x00, 0x80, // lui x1, 0x80000
+        0x93, 0x00, 0x30, 0x00, // addi x1, x1, 3
+        0x23, 0x90, 0x00, 0x00, // sh x0, 0(x1)
+        0x73, 0x00, 0x10, 0x00, // ebreak
+    };
+    var ram_backing: [16]u8 align(4) = [_]u8{0} ** 16;
+    const result = run_program_with_ram(&rom, &ram_backing);
+    try std.testing.expectError(error.StoreAccessFault, result);
+}
+
+test "Unaligned SW faults" {
+    // lui x1, 0x80000; addi x1, x1, 1; sw x0, 0(x1); ebreak
+    // Store word to 0x80000001 (not 4-aligned) => fault
+    const rom = [_]u8{
+        0xB7, 0x00, 0x00, 0x80, // lui x1, 0x80000
+        0x93, 0x00, 0x10, 0x00, // addi x1, x1, 1
+        0x23, 0xA0, 0x00, 0x00, // sw x0, 0(x1)
+        0x73, 0x00, 0x10, 0x00, // ebreak
+    };
+    var ram_backing: [16]u8 align(4) = [_]u8{0} ** 16;
+    const result = run_program_with_ram(&rom, &ram_backing);
+    try std.testing.expectError(error.StoreAccessFault, result);
+}
