@@ -1,3 +1,17 @@
+// {
+//     "name": "M-extension: multiply and divide",
+//     "march": "rv32imc",
+//     "ram_size": 0,
+//     "initial_regs": {},
+//     "expected_regs": {
+//         "x3": 200,
+//         "x4": 2,
+//         "x5": 0,
+//         "x6": 5,
+//         "x7": 4294967295
+//     },
+//     "expected_debug": ""
+// }
 # Test M-extension multiply/divide instructions.
 # Assemble and convert to raw binary with:
 #   riscv64-unknown-elf-gcc -march=rv32imc -mabi=ilp32 -nostdlib -Ttext=0x0 -o test_mul.elf test_mul.s

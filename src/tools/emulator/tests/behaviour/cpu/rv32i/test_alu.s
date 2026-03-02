@@ -1,11 +1,19 @@
-# Test various ALU operations.
-# Assemble and convert to raw binary with:
-#   riscv64-unknown-elf-gcc -march=rv32imc -mabi=ilp32 -nostdlib -Ttext=0x0 -o test_alu.elf test_alu.s
-#   riscv64-unknown-elf-objcopy -O binary test_alu.elf test_alu.bin
-#
-# Expected results at EBREAK:
-#   x1 = 10, x2 = 20, x3 = 30 (ADD), x4 = -10 as u32 (SUB),
-#   x5 = 0 (AND 10&20), x6 = 30 (OR 10|20), x7 = 20 (XOR 10^30)
+// {
+//     "name": "ALU: register-register operations",
+//     "march": "rv32imc",
+//     "ram_size": 0,
+//     "initial_regs": {},
+//     "expected_regs": {
+//         "x1": 10,
+//         "x2": 20,
+//         "x3": 30,
+//         "x4": -10,
+//         "x5": 0,
+//         "x6": 30,
+//         "x7": 20
+//     },
+//     "expected_debug": ""
+// }
 .section .text
 .globl _start
 _start:

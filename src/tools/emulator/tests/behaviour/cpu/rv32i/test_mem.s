@@ -1,8 +1,20 @@
-# Test load/store instructions using RAM at 0x80000000.
-# Assemble and convert to raw binary with:
-#   riscv64-unknown-elf-gcc -march=rv32imc -mabi=ilp32 -nostdlib -Ttext=0x0 -o test_mem.elf test_mem.s
-#   riscv64-unknown-elf-objcopy -O binary test_mem.elf test_mem.bin
-#
+// {
+//     "name": "Load/store with RAM",
+//     "march": "rv32imc",
+//     "ram_size": 1024,
+//     "initial_regs": {},
+//     "expected_regs": {
+//         "x1": "0x80000000",
+//         "x2": "0xDEADBEEF",
+//         "x3": "0xDEADBEEF",
+//         "x4": "0xFFFFFFEF",
+//         "x5": "0x000000EF",
+//         "x6": "0x000000BE",
+//         "x7": "0x000000AD",
+//         "x8": "0x000000DE"
+//     },
+//     "expected_debug": ""
+// }
 # Expected results at EBREAK:
 #   x3 = 0xDEADBEEF (SW/LW round-trip)
 #   x4 = 0xFFFFFFEF (LB sign-extends 0xEF)
@@ -16,4 +28,7 @@ _start:
     lw   x3, 0(x1)           # x3 should be 0xDEADBEEF
     lb   x4, 0(x1)           # x4 = sign_extend(0xEF) = 0xFFFFFFEF
     lbu  x5, 0(x1)           # x5 = 0x000000EF
+    lbu  x6, 1(x1)           # x5 = 0x000000BE
+    lbu  x7, 2(x1)           # x5 = 0x000000AD
+    lbu  x8, 3(x1)           # x5 = 0x000000DE
     ebreak

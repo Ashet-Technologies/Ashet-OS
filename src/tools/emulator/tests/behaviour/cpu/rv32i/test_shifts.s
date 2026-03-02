@@ -1,8 +1,17 @@
-# Test shift instructions (SLL, SRL, SRA, SLLI, SRLI, SRAI).
-# Assemble and convert to raw binary with:
-#   riscv64-unknown-elf-gcc -march=rv32imc -mabi=ilp32 -nostdlib -Ttext=0x0 -o test_shifts.elf test_shifts.s
-#   riscv64-unknown-elf-objcopy -O binary test_shifts.elf test_shifts.bin
-#
+// {
+//     "name": "Shift instructions",
+//     "march": "rv32imc",
+//     "ram_size": 0,
+//     "initial_regs": {},
+//     "expected_regs": {
+//         "x3": "0x28",
+//         "x4": "0x02",
+//         "x5": "0xE0000000",
+//         "x6": "0x14",
+//         "x7": "0x05"
+//     },
+//     "expected_debug": ""
+// }
 # Expected results at EBREAK:
 #   x3 = 0x28 (10 << 2 = 40)
 #   x4 = 0x02 (10 >> 2 = 2)

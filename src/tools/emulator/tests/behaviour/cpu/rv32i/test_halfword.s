@@ -1,11 +1,14 @@
-# Test SH, LH, LHU (halfword store and load).
-# Assemble with:
-#   riscv64-unknown-elf-gcc -march=rv32i -mabi=ilp32 -nostdlib -Ttext=0x0 -o test_halfword.elf test_halfword.s
-#   riscv64-unknown-elf-objcopy -O binary test_halfword.elf test_halfword.bin
-#
-# Expected:
-#   x3 = 0xFFFFFFFF (LH sign-extends 0xFFFF)
-#   x4 = 0x0000FFFF (LHU zero-extends 0xFFFF)
+// {
+//     "name": "Half-word store and load",
+//     "march": "rv32i",
+//     "ram_size": 1024,
+//     "initial_regs": {},
+//     "expected_regs": {
+//         "x3": "0xFFFFFFFF",
+//         "x4": "0x0000FFFF"
+//     },
+//     "expected_debug": ""
+// }
 .section .text
 .globl _start
 _start:

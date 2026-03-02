@@ -1,3 +1,15 @@
+// {
+//     "name": "M-extension: signed division edge cases",
+//     "march": "rv32im",
+//     "ram_size": 0,
+//     "initial_regs": {},
+//     "expected_regs": {
+//         "x3": 2147483648,
+//         "x4": 0,
+//         "x5": 2147483648
+//     },
+//     "expected_debug": ""
+// }
 # Test M-extension division/remainder edge cases.
 # Assemble with:
 #   riscv64-unknown-elf-gcc -march=rv32im -mabi=ilp32 -nostdlib -Ttext=0x0 -o test_div_edge.elf test_div_edge.s

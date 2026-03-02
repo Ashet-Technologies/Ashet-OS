@@ -1,8 +1,15 @@
-# Test JAL and JALR instructions.
-# Assemble and convert to raw binary with:
-#   riscv64-unknown-elf-gcc -march=rv32imc -mabi=ilp32 -nostdlib -Ttext=0x0 -o test_jal.elf test_jal.s
-#   riscv64-unknown-elf-objcopy -O binary test_jal.elf test_jal.bin
-#
+// {
+//     "name": "JAL and JALR",
+//     "march": "rv32imc",
+//     "ram_size": 0,
+//     "initial_regs": {},
+//     "expected_regs": {
+//         "x1": 4,
+//         "x10": 99,
+//         "x11": 20
+//     },
+//     "expected_debug": ""
+// }
 # Expected results at EBREAK:
 #   x1 (ra) = address of instruction after JAL (0x04)
 #   x10 = 99

@@ -1,8 +1,15 @@
-# Test LUI and AUIPC instructions.
-# Assemble and convert to raw binary with:
-#   riscv64-unknown-elf-gcc -march=rv32imc -mabi=ilp32 -nostdlib -Ttext=0x0 -o test_lui_auipc.elf test_lui_auipc.s
-#   riscv64-unknown-elf-objcopy -O binary test_lui_auipc.elf test_lui_auipc.bin
-#
+// {
+//     "name": "LUI and AUIPC",
+//     "march": "rv32imc",
+//     "ram_size": 0,
+//     "initial_regs": {},
+//     "expected_regs": {
+//         "x1": "0x12345000",
+//         "x2": "0x12345678",
+//         "x3": "0x0000100C"
+//     },
+//     "expected_debug": ""
+// }
 # Expected results at EBREAK:
 #   x1 = 0x12345000 (LUI)
 #   x2 = 0x12345678 (LUI + ADDI)

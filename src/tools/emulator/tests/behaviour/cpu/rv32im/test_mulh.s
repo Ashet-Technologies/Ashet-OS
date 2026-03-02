@@ -1,3 +1,15 @@
+// {
+//     "name": "M-extension: MULH, MULHU, MULHSU",
+//     "march": "rv32im",
+//     "ram_size": 0,
+//     "initial_regs": {},
+//     "expected_regs": {
+//         "x3": 4294967295,
+//         "x4": 1,
+//         "x5": 4294967295
+//     },
+//     "expected_debug": ""
+// }
 # Test MULH, MULHU, MULHSU (upper 32 bits of 64-bit products).
 # Assemble with:
 #   riscv64-unknown-elf-gcc -march=rv32im -mabi=ilp32 -nostdlib -Ttext=0x0 -o test_mulh.elf test_mulh.s

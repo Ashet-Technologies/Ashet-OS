@@ -1,10 +1,15 @@
-# Test branch instructions.
-# Assemble and convert to raw binary with:
-#   riscv64-unknown-elf-gcc -march=rv32imc -mabi=ilp32 -nostdlib -Ttext=0x0 -o test_branch.elf test_branch.s
-#   riscv64-unknown-elf-objcopy -O binary test_branch.elf test_branch.bin
-#
-# Expected results at EBREAK:
-#   x1 = 1 (BEQ taken), x2 = 1 (BNE taken), x3 = 1 (BLT taken)
+// {
+//     "name": "Branch instructions: BEQ, BNE, BLT",
+//     "march": "rv32imc",
+//     "ram_size": 0,
+//     "initial_regs": {},
+//     "expected_regs": {
+//         "x1": 1,
+//         "x2": 1,
+//         "x3": 1
+//     },
+//     "expected_debug": ""
+// }
 .section .text
 .globl _start
 _start:

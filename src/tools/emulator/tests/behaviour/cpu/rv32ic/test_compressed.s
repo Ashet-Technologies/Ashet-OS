@@ -1,3 +1,17 @@
+// {
+//     "name": "Compressed: c.li, c.mv, c.add, c.slli, c.ebreak",
+//     "march": "rv32imc",
+//     "ram_size": 0,
+//     "initial_regs": {},
+//     "expected_regs": {
+//         "x10": 7,
+//         "x11": 4294967293,
+//         "x12": 7,
+//         "x13": 14,
+//         "x14": 28
+//     },
+//     "expected_debug": ""
+// }
 # Test RV32C compressed instructions.
 # GAS automatically emits compressed encodings when -march=rv32imc is set
 # and the instruction is eligible for compression.

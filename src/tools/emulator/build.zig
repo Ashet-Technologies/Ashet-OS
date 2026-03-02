@@ -2,6 +2,7 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Runs the test suite");
+    const debug_step = b.step("debug", "Installs all intermediate files of the test suite");
 
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
@@ -86,7 +87,7 @@ pub fn build(b: *std.Build) void {
     });
 
     for (asm_tests) |t| {
-        const asm_step = addAsmTestSteps(b, t, extract_header_comment_exe, runner_exe);
+        const asm_step = addAsmTestSteps(b, t, extract_header_comment_exe, runner_exe, debug_step);
         test_step.dependOn(asm_step);
     }
 }
@@ -129,21 +130,21 @@ const AsmTest = struct {
 
 const asm_tests = [_]AsmTest{
     // RV32I core instruction set:
-    .{ .path = "tests/behaviour/cpu/rv32i/test_addi.s", .target = rv32imc },
-    .{ .path = "tests/behaviour/cpu/rv32i/test_alu.s", .target = rv32imc },
+    .{ .path = "tests/behaviour/cpu/rv32i/test_addi.s", .target = rv32i },
+    .{ .path = "tests/behaviour/cpu/rv32i/test_alu.s", .target = rv32i },
     .{ .path = "tests/behaviour/cpu/rv32i/test_bltu.s", .target = rv32i },
-    .{ .path = "tests/behaviour/cpu/rv32i/test_branch.s", .target = rv32imc },
+    .{ .path = "tests/behaviour/cpu/rv32i/test_branch.s", .target = rv32i },
     .{ .path = "tests/behaviour/cpu/rv32i/test_halfword.s", .target = rv32i },
-    .{ .path = "tests/behaviour/cpu/rv32i/test_jal.s", .target = rv32imc },
-    .{ .path = "tests/behaviour/cpu/rv32i/test_lui_auipc.s", .target = rv32imc },
-    .{ .path = "tests/behaviour/cpu/rv32i/test_mem.s", .target = rv32imc },
-    .{ .path = "tests/behaviour/cpu/rv32i/test_shifts.s", .target = rv32imc },
+    .{ .path = "tests/behaviour/cpu/rv32i/test_jal.s", .target = rv32i },
+    .{ .path = "tests/behaviour/cpu/rv32i/test_lui_auipc.s", .target = rv32i },
+    .{ .path = "tests/behaviour/cpu/rv32i/test_mem.s", .target = rv32i },
+    .{ .path = "tests/behaviour/cpu/rv32i/test_shifts.s", .target = rv32i },
     .{ .path = "tests/behaviour/cpu/rv32i/test_slti.s", .target = rv32i },
 
     // M extension:
     .{ .path = "tests/behaviour/cpu/rv32im/test_div_edge.s", .target = rv32im },
     .{ .path = "tests/behaviour/cpu/rv32im/test_mul.s", .target = rv32im },
-    .{ .path = "tests/behaviour/cpu/rv32im/test_mulh.s", .target = rv32imc },
+    .{ .path = "tests/behaviour/cpu/rv32im/test_mulh.s", .target = rv32im },
 
     // C extension:
     .{ .path = "tests/behaviour/cpu/rv32ic/test_compressed.s", .target = rv32imc },
@@ -160,6 +161,7 @@ fn addAsmTestSteps(
     testcase: AsmTest,
     extract_header_comment_exe: *std.Build.Step.Compile,
     runner_exe: *std.Build.Step.Compile,
+    debug_step: *std.Build.Step,
 ) *std.Build.Step {
     const name_with_ext = std.fs.path.basename(testcase.path);
     const name = name_with_ext[0 .. name_with_ext.len - std.fs.path.extension(name_with_ext).len];
@@ -212,6 +214,15 @@ fn addAsmTestSteps(
     const run_cmd = b.addRunArtifact(runner_exe);
     run_cmd.addFileArg(bin_file);
     run_cmd.addFileArg(json_file);
+
+    // Optional: Install debug files:
+    const dir: std.Build.InstallDir = .{
+        .custom = b.fmt("tests/behaviour/{s}", .{name}),
+    };
+
+    debug_step.dependOn(&b.addInstallFileWithDir(elf_file, dir, b.fmt("{s}.elf", .{name})).step);
+    debug_step.dependOn(&b.addInstallFileWithDir(bin_file, dir, b.fmt("{s}.bin", .{name})).step);
+    debug_step.dependOn(&b.addInstallFileWithDir(json_file, dir, b.fmt("{s}.json", .{name})).step);
 
     return &run_cmd.step;
 }

@@ -1,12 +1,15 @@
-# Test SLTI and SLTIU instructions.
-# Assemble with:
-#   riscv64-unknown-elf-gcc -march=rv32i -mabi=ilp32 -nostdlib -Ttext=0x0 -o test_slti.elf test_slti.s
-#   riscv64-unknown-elf-objcopy -O binary test_slti.elf test_slti.bin
-#
-# Expected:
-#   x1 = 0xFFFFFFFB (-5)
-#   x2 = 1 (SLTI: -5 < 0 signed)
-#   x3 = 0 (SLTIU: 0xFFFFFFFB > 0 unsigned)
+// {
+//     "name": "SLTI and SLTIU",
+//     "march": "rv32i",
+//     "ram_size": 0,
+//     "initial_regs": {},
+//     "expected_regs": {
+//         "x1": -5,
+//         "x2": 1,
+//         "x3": 0
+//     },
+//     "expected_debug": ""
+// }
 .section .text
 .globl _start
 _start:
