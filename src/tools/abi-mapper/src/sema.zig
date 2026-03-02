@@ -1714,7 +1714,12 @@ const Analyzer = struct {
             }
 
             for (sc.native_inputs) |inp| {
-                std.debug.assert(ana.get_resolved_type(inp.type).is_c_abi_compatible(ana.types.items));
+                if (!ana.get_resolved_type(inp.type).is_c_abi_compatible(ana.types.items)) {
+                    std.debug.panic("unexpected non-compatible type for native input {s}.{s}", .{
+                        sc.full_qualified_name[sc.full_qualified_name.len - 1],
+                        inp.name,
+                    });
+                }
 
                 // inputs cannot be the error role
                 std.debug.assert(inp.role != .@"error");
@@ -1829,7 +1834,8 @@ const Analyzer = struct {
                 switch (fld_type) {
                     .well_known => |id| std.debug.assert(id.size_in_bits() != null),
                     .@"enum", .bitstruct => {},
-                    else => unreachable,
+                    .uint, .int => {},
+                    else => std.debug.panic("Unsupported bit type: {t}", .{fld_type}),
                 }
 
                 std.debug.assert(fld.bit_count != null);

@@ -1018,10 +1018,13 @@ const ZigRenderer = struct {
         });
     }
 
-    fn render_docs(zr: *ZigRenderer, docs: model.DocString) !void {
-        for (docs) |line| {
-            try zr.writer.println("/// {s}", .{line});
-        }
+    fn render_docs(zr: *ZigRenderer, docs: model.DocComment) !void {
+        _=zr;
+        _=docs;
+        // TODO: COnsider if it's worth to include the doc strings inside the generated zig code
+        // for (docs) |line| {
+        //     try zr.writer.println("/// {s}", .{line});
+        // }
     }
 
     fn fmt_type(zr: *ZigRenderer, type_id: model.TypeIndex) ZigTypeFmt {

@@ -425,6 +425,11 @@ pub const Type = union(enum) {
                         .one, .unknown => true,
                         .slice => false,
                     },
+                    .resource => true, // resources are also represented as nullable pointers in C-ABI
+                    .well_known => |id| switch(id) {
+                         .anyptr, .anyfnptr => true,
+                         else => false,
+                    },
                     else => false,
                 };
             },
