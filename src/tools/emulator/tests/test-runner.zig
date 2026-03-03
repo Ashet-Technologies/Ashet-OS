@@ -72,7 +72,9 @@ pub fn main() !void {
     // -----------------------------------------------------------------------
     // Initialize system and apply initial register state
     // -----------------------------------------------------------------------
-    var system = emu.System.init(rom_buf, ram_buf, &debug_capture.writer);
+    var debug_output = emu.DebugOutput.init(&debug_capture.writer);
+    var system = emu.System.init(rom_buf, ram_buf);
+    system.mmio.map(0x41, debug_output.peripheral());
 
     if (root.get("initial_regs")) |regs_val| {
         if (regs_val == .object) {

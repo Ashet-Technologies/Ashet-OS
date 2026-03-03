@@ -10,7 +10,10 @@
       "Bash(riscv64-unknown-elf-objdump -d -M no-aliases test_mem.elf)",
       "Bash(xxd)",
       "Bash(ls)",
-      "Bash(zig build test)"
+      "Bash(zig build test)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(zig build test --summary all)",
+      "Bash(grep -c '^test ' /workspaces/ashet-os/src/tools/emulator/tests/testsuite.zig /workspaces/ashet-os/src/tools/emulator/tests/peripherals/*.zig)"
     ]
   }
 }

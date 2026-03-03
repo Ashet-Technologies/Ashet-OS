@@ -8,14 +8,14 @@ pub const System = struct {
     cpu: Cpu,
     rom: []align(4) const u8,
     ram: []align(4) u8,
-    debug_writer: *std.Io.Writer,
+    mmio: MmioPageTable,
 
-    pub fn init(rom: []align(4) const u8, ram: []align(4) u8, debug_writer: *std.Io.Writer) System {
+    pub fn init(rom: []align(4) const u8, ram: []align(4) u8) System {
         return .{
-            .cpu = Cpu.init(),
+            .cpu = .{},
             .rom = rom,
             .ram = ram,
-            .debug_writer = debug_writer,
+            .mmio = .{},
         };
     }
 
@@ -74,68 +74,20 @@ pub const System = struct {
         }
     }
 
-    /// Route an MMIO read to the correct peripheral based on the page number
-    /// within the MMIO window. Bits [19:12] of the address select the
-    /// peripheral, bits [11:0] become the register offset within that peripheral.
+    /// Route an MMIO read to the correct peripheral via the page table.
     fn mmio_read(system: *System, address: u32, comptime size: MemAccessSize) BusError!size.get_type() {
-        _ = system;
-        const page = (address >> 12) & 0xFF;
-        switch (page) {
-            // Framebuffer: pages 0x00..0x3D (250,000 bytes)
-            0x00...0x3D => return error.Unmapped, // TODO: framebuffer read
-            // Video Control
-            0x40 => return error.Unmapped, // TODO: VCTRL
-            // Debug Output (write-only)
-            0x41 => return error.Unmapped,
-            // Keyboard
-            0x42 => return error.Unmapped, // TODO: KBD
-            // Mouse
-            0x43 => return error.Unmapped, // TODO: MOUSE
-            // Timer / RTC
-            0x44 => return error.Unmapped, // TODO: TIMER
-            // System Info
-            0x45 => return error.Unmapped, // TODO: SYSINFO
-            // Block Device 0
-            0x46 => return error.Unmapped, // TODO: BLOCK0
-            // Block Device 1
-            0x47 => return error.Unmapped, // TODO: BLOCK1
-            else => return error.Unmapped,
-        }
+        const page: u8 = @truncate((address >> 12) & 0xFF);
+        const entry = system.mmio.pages[page] orelse return error.Unmapped;
+        const offset: u32 = (@as(u32, page) - @as(u32, entry.base_page)) << 12 | (address & 0xFFF);
+        return entry.peri.read(offset, size);
     }
 
-    /// Route an MMIO write to the correct peripheral. Same page-based dispatch
-    /// as mmio_read. The debug output peripheral at page 0x41 is implemented
-    /// inline here — it accepts single-byte writes to offset 0x00.
+    /// Route an MMIO write to the correct peripheral via the page table.
     fn mmio_write(system: *System, address: u32, comptime size: MemAccessSize, value: size.get_type()) BusError!void {
-        const page = (address >> 12) & 0xFF;
-        const offset: u12 = @truncate(address);
-        switch (page) {
-            // Framebuffer: pages 0x00..0x3D
-            0x00...0x3D => return error.Unmapped, // TODO: framebuffer write
-            // Video Control
-            0x40 => return error.Unmapped, // TODO: VCTRL
-            // Debug Output: single-byte TX register at offset 0
-            0x41 => {
-                if (size != .u8 or offset != 0)
-                    return error.InvalidSize;
-                system.debug_writer.writeByte(@truncate(value)) catch |err| {
-                    logger.err("failed to write debug output: {t}", .{err});
-                };
-            },
-            // Keyboard (read-only)
-            0x42 => return error.WriteProtected,
-            // Mouse (read-only)
-            0x43 => return error.WriteProtected,
-            // Timer / RTC (read-only)
-            0x44 => return error.WriteProtected,
-            // System Info (read-only)
-            0x45 => return error.WriteProtected,
-            // Block Device 0
-            0x46 => return error.Unmapped, // TODO: BLOCK0
-            // Block Device 1
-            0x47 => return error.Unmapped, // TODO: BLOCK1
-            else => return error.Unmapped,
-        }
+        const page: u8 = @truncate((address >> 12) & 0xFF);
+        const entry = system.mmio.pages[page] orelse return error.Unmapped;
+        const offset: u32 = (@as(u32, page) - @as(u32, entry.base_page)) << 12 | (address & 0xFFF);
+        return entry.peri.write(offset, size, value);
     }
 };
 
@@ -151,15 +103,8 @@ pub const System = struct {
 /// `System` bus interface, keeping the core itself platform-independent.
 pub const Cpu = struct {
     /// x0 is not stored — it is always zero. Index 0 here is x1.
-    regs: [31]u32,
-    pc: u32,
-
-    pub fn init() Cpu {
-        return .{
-            .regs = [_]u32{0} ** 31,
-            .pc = 0,
-        };
-    }
+    regs: [31]u32 = [_]u32{0} ** 31,
+    pc: u32 = 0,
 
     /// Read a general-purpose register. Returns 0 for x0.
     pub inline fn read_reg(self: *const Cpu, reg: u5) u32 {
@@ -979,12 +924,12 @@ pub const BusError = error{
     WriteProtected,
 };
 
-pub const Peripheral = struct {
-    /// Bus function access
-    vtable: *const VTable,
+// ============================================================================
+// Peripheral Interface
+// ============================================================================
 
-    /// Size of the peripheral in bytes.
-    size: u32,
+pub const Peripheral = struct {
+    vtable: *const VTable,
 
     pub const VTable = struct {
         read8_fn: *const fn (peri: *Peripheral, offset: u32) BusError!u8,
@@ -995,4 +940,491 @@ pub const Peripheral = struct {
         write16_fn: *const fn (peri: *Peripheral, offset: u32, value: u16) BusError!void,
         write32_fn: *const fn (peri: *Peripheral, offset: u32, value: u32) BusError!void,
     };
+
+    /// Bridge from comptime MemAccessSize to runtime vtable dispatch.
+    pub fn read(self: *Peripheral, offset: u32, comptime size: MemAccessSize) BusError!size.get_type() {
+        return switch (size) {
+            .u8 => self.vtable.read8_fn(self, offset),
+            .u16 => self.vtable.read16_fn(self, offset),
+            .u32 => self.vtable.read32_fn(self, offset),
+        };
+    }
+
+    pub fn write(self: *Peripheral, offset: u32, comptime size: MemAccessSize, value: size.get_type()) BusError!void {
+        return switch (size) {
+            .u8 => self.vtable.write8_fn(self, offset, value),
+            .u16 => self.vtable.write16_fn(self, offset, value),
+            .u32 => self.vtable.write32_fn(self, offset, value),
+        };
+    }
+
+    /// Generate a VTable for a concrete peripheral type T.
+    /// T must embed a `peri: Peripheral` field and implement:
+    ///   fn busRead(self: *T, comptime size: MemAccessSize, offset: u32) BusError!size.get_type()
+    ///   fn busWrite(self: *T, comptime size: MemAccessSize, offset: u32, value: size.get_type()) BusError!void
+    pub fn makeVTable(comptime T: type) VTable {
+        return .{
+            .read8_fn = &struct {
+                fn f(p: *Peripheral, offset: u32) BusError!u8 {
+                    const self: *T = @fieldParentPtr("peri", p);
+                    return self.busRead(.u8, offset);
+                }
+            }.f,
+            .read16_fn = &struct {
+                fn f(p: *Peripheral, offset: u32) BusError!u16 {
+                    const self: *T = @fieldParentPtr("peri", p);
+                    return self.busRead(.u16, offset);
+                }
+            }.f,
+            .read32_fn = &struct {
+                fn f(p: *Peripheral, offset: u32) BusError!u32 {
+                    const self: *T = @fieldParentPtr("peri", p);
+                    return self.busRead(.u32, offset);
+                }
+            }.f,
+            .write8_fn = &struct {
+                fn f(p: *Peripheral, offset: u32, value: u8) BusError!void {
+                    const self: *T = @fieldParentPtr("peri", p);
+                    return self.busWrite(.u8, offset, value);
+                }
+            }.f,
+            .write16_fn = &struct {
+                fn f(p: *Peripheral, offset: u32, value: u16) BusError!void {
+                    const self: *T = @fieldParentPtr("peri", p);
+                    return self.busWrite(.u16, offset, value);
+                }
+            }.f,
+            .write32_fn = &struct {
+                fn f(p: *Peripheral, offset: u32, value: u32) BusError!void {
+                    const self: *T = @fieldParentPtr("peri", p);
+                    return self.busWrite(.u32, offset, value);
+                }
+            }.f,
+        };
+    }
+};
+
+// ============================================================================
+// MMIO Page Table
+// ============================================================================
+
+pub const MmioPageTable = struct {
+    pub const Entry = struct {
+        peri: *Peripheral,
+        base_page: u8,
+    };
+
+    pages: [256]?Entry = [_]?Entry{null} ** 256,
+
+    pub fn map(self: *MmioPageTable, page: u8, peri: *Peripheral) void {
+        self.pages[page] = .{ .peri = peri, .base_page = page };
+    }
+
+    pub fn mapRange(self: *MmioPageTable, start_page: u8, count: u8, peri: *Peripheral) void {
+        for (0..count) |i| {
+            self.pages[start_page + @as(u8, @intCast(i))] = .{ .peri = peri, .base_page = start_page };
+        }
+    }
+};
+
+// ============================================================================
+// Peripheral Implementations
+// ============================================================================
+
+pub const DebugOutput = struct {
+    peri: Peripheral,
+    writer: *std.Io.Writer,
+
+    const vtable = Peripheral.makeVTable(DebugOutput);
+
+    pub fn init(writer: *std.Io.Writer) DebugOutput {
+        return .{
+            .peri = .{ .vtable = &vtable },
+            .writer = writer,
+        };
+    }
+
+    pub fn peripheral(self: *DebugOutput) *Peripheral {
+        return &self.peri;
+    }
+
+    fn busRead(_: *DebugOutput, comptime size: MemAccessSize, _: u32) BusError!size.get_type() {
+        return error.Unmapped;
+    }
+
+    fn busWrite(self: *DebugOutput, comptime size: MemAccessSize, offset: u32, value: size.get_type()) BusError!void {
+        if (size != .u8) {
+            if (offset == 0) return error.InvalidSize;
+            return error.Unmapped;
+        }
+        if (offset != 0) return error.Unmapped;
+        self.writer.writeByte(@truncate(value)) catch |err| {
+            logger.err("failed to write debug output: {}", .{err});
+        };
+    }
+};
+
+pub const SystemInfo = struct {
+    peri: Peripheral,
+    ram_size: u32,
+
+    const vtable = Peripheral.makeVTable(SystemInfo);
+
+    pub fn init(ram_size: u32) SystemInfo {
+        return .{
+            .peri = .{ .vtable = &vtable },
+            .ram_size = ram_size,
+        };
+    }
+
+    pub fn peripheral(self: *SystemInfo) *Peripheral {
+        return &self.peri;
+    }
+
+    fn busRead(self: *SystemInfo, comptime size: MemAccessSize, offset: u32) BusError!size.get_type() {
+        if (offset != 0) return error.Unmapped;
+        if (size != .u32) return error.InvalidSize;
+        return self.ram_size;
+    }
+
+    fn busWrite(_: *SystemInfo, comptime _: MemAccessSize, _: u32, _: anytype) BusError!void {
+        return error.WriteProtected;
+    }
+};
+
+pub const Timer = struct {
+    peri: Peripheral = .{ .vtable = &vtable },
+    mtime_us: u64 = 0,
+    rtc_s: u64 = 0,
+    mtime_hi_latch: u32 = 0,
+    rtc_hi_latch: u32 = 0,
+
+    const vtable = Peripheral.makeVTable(Timer);
+
+    pub fn peripheral(self: *Timer) *Peripheral {
+        return &self.peri;
+    }
+
+    /// Called by the host to update the current time.
+    pub fn setTime(self: *Timer, mtime_us: u64, rtc_s: u64) void {
+        self.mtime_us = mtime_us;
+        self.rtc_s = rtc_s;
+    }
+
+    fn busRead(self: *Timer, comptime size: MemAccessSize, offset: u32) BusError!size.get_type() {
+        if (size != .u32) return error.InvalidSize;
+        return switch (offset) {
+            0x00 => blk: {
+                self.mtime_hi_latch = @truncate(self.mtime_us >> 32);
+                break :blk @truncate(self.mtime_us);
+            },
+            0x04 => self.mtime_hi_latch,
+            0x10 => blk: {
+                self.rtc_hi_latch = @truncate(self.rtc_s >> 32);
+                break :blk @truncate(self.rtc_s);
+            },
+            0x14 => self.rtc_hi_latch,
+            else => return error.Unmapped,
+        };
+    }
+
+    fn busWrite(_: *Timer, comptime _: MemAccessSize, _: u32, _: anytype) BusError!void {
+        return error.WriteProtected;
+    }
+};
+
+pub const VideoControl = struct {
+    peri: Peripheral = .{ .vtable = &vtable },
+    flush_requested: bool = false,
+
+    const vtable = Peripheral.makeVTable(VideoControl);
+
+    pub fn peripheral(self: *VideoControl) *Peripheral {
+        return &self.peri;
+    }
+
+    pub fn isFlushRequested(self: *const VideoControl) bool {
+        return self.flush_requested;
+    }
+
+    pub fn ackFlush(self: *VideoControl) void {
+        self.flush_requested = false;
+    }
+
+    fn busRead(_: *VideoControl, comptime size: MemAccessSize, _: u32) BusError!size.get_type() {
+        return error.Unmapped;
+    }
+
+    fn busWrite(self: *VideoControl, comptime size: MemAccessSize, offset: u32, value: size.get_type()) BusError!void {
+        if (offset != 0) return error.Unmapped;
+        if (size != .u32) return error.InvalidSize;
+        self.flush_requested = (value != 0);
+    }
+};
+
+pub const Framebuffer = struct {
+    pub const WIDTH = 640;
+    pub const HEIGHT = 400;
+    pub const BUFFER_SIZE = 256_000;
+    pub const PAGE_COUNT = 0x3E; // 62 pages (0x00 through 0x3D)
+
+    peri: Peripheral = .{ .vtable = &vtable },
+    buffer: [BUFFER_SIZE]u8 = [_]u8{0} ** BUFFER_SIZE,
+
+    const vtable = Peripheral.makeVTable(Framebuffer);
+
+    pub fn peripheral(self: *Framebuffer) *Peripheral {
+        return &self.peri;
+    }
+
+    pub fn pixels(self: *Framebuffer) *[BUFFER_SIZE]u8 {
+        return &self.buffer;
+    }
+
+    pub fn pixelsConst(self: *const Framebuffer) *const [BUFFER_SIZE]u8 {
+        return &self.buffer;
+    }
+
+    fn busRead(self: *Framebuffer, comptime size: MemAccessSize, offset: u32) BusError!size.get_type() {
+        const bytes = comptime size.byte_count();
+        if (offset + bytes > BUFFER_SIZE) return error.Unmapped;
+        return std.mem.readInt(size.get_type(), self.buffer[offset..][0..bytes], .little);
+    }
+
+    fn busWrite(self: *Framebuffer, comptime size: MemAccessSize, offset: u32, value: size.get_type()) BusError!void {
+        const bytes = comptime size.byte_count();
+        if (offset + bytes > BUFFER_SIZE) return error.Unmapped;
+        std.mem.writeInt(size.get_type(), self.buffer[offset..][0..bytes], value, .little);
+    }
+};
+
+pub const Keyboard = struct {
+    pub const FIFO_SIZE = 16;
+    pub const KeyState = enum(u1) { up = 0, down = 1 };
+
+    peri: Peripheral = .{ .vtable = &vtable },
+    fifo: [FIFO_SIZE]u32 = [_]u32{0} ** FIFO_SIZE,
+    head: u8 = 0,
+    tail: u8 = 0,
+    count: u8 = 0,
+    /// Last enqueued event for deduplication. Consecutive identical events
+    /// (same key + same state) are coalesced.
+    last_event: ?u32 = null,
+
+    const vtable = Peripheral.makeVTable(Keyboard);
+
+    pub fn peripheral(self: *Keyboard) *Peripheral {
+        return &self.peri;
+    }
+
+    /// Push a key event. Returns false if FIFO is full.
+    /// Deduplicates: if the event is identical to the last pushed event,
+    /// it is silently accepted but not enqueued.
+    pub fn pushKey(self: *Keyboard, usage: u16, state: KeyState) bool {
+        const entry: u32 = (@as(u32, @intFromEnum(state)) << 31) | @as(u32, usage);
+
+        // Deduplicate: identical to last event → accept but don't enqueue
+        if (self.last_event == entry) return true;
+
+        if (self.count >= FIFO_SIZE) return false;
+
+        self.last_event = entry;
+        self.fifo[self.tail] = entry;
+        self.tail = @intCast((@as(u16, self.tail) + 1) % FIFO_SIZE);
+        self.count += 1;
+        return true;
+    }
+
+    fn popEntry(self: *Keyboard) u32 {
+        if (self.count == 0) return 0;
+        const entry = self.fifo[self.head];
+        self.head = @intCast((@as(u16, self.head) + 1) % FIFO_SIZE);
+        self.count -= 1;
+        return entry;
+    }
+
+    fn busRead(self: *Keyboard, comptime size: MemAccessSize, offset: u32) BusError!size.get_type() {
+        if (size != .u32) return error.InvalidSize;
+        return switch (offset) {
+            0x00 => @as(u32, if (self.count > 0) 1 else 0),
+            0x04 => self.popEntry(),
+            else => return error.Unmapped,
+        };
+    }
+
+    fn busWrite(_: *Keyboard, comptime _: MemAccessSize, _: u32, _: anytype) BusError!void {
+        return error.WriteProtected;
+    }
+};
+
+pub const Mouse = struct {
+    peri: Peripheral = .{ .vtable = &vtable },
+    x: u32 = 0,
+    y: u32 = 0,
+    buttons: u32 = 0,
+
+    const vtable = Peripheral.makeVTable(Mouse);
+
+    pub fn peripheral(self: *Mouse) *Peripheral {
+        return &self.peri;
+    }
+
+    pub fn setState(self: *Mouse, x: i32, y: i32, buttons: u32) void {
+        self.x = @intCast(std.math.clamp(x, 0, 639));
+        self.y = @intCast(std.math.clamp(y, 0, 399));
+        self.buttons = buttons;
+    }
+
+    fn busRead(self: *Mouse, comptime size: MemAccessSize, offset: u32) BusError!size.get_type() {
+        if (size != .u32) return error.InvalidSize;
+        return switch (offset) {
+            0x00 => self.x,
+            0x04 => self.y,
+            0x08 => self.buttons,
+            else => return error.Unmapped,
+        };
+    }
+
+    fn busWrite(_: *Mouse, comptime _: MemAccessSize, _: u32, _: anytype) BusError!void {
+        return error.WriteProtected;
+    }
+};
+
+pub const BlockDevice = struct {
+    pub const BLOCK_SIZE = 512;
+    pub const BUFFER_OFFSET = 0x100;
+
+    pub const Command = enum(u32) {
+        read = 1,
+        write = 2,
+        clear_error = 3,
+        _,
+    };
+
+    pub const Request = struct {
+        is_write: bool,
+        lba: u32,
+    };
+
+    peri: Peripheral,
+    present: bool,
+    busy: bool,
+    err_flag: bool,
+    block_count: u32,
+    lba: u32,
+    buffer: [BLOCK_SIZE]u8,
+    pending_request: ?Request,
+    /// Whether getPendingRequest has already been called for the current request.
+    request_consumed: bool,
+
+    const vtable = Peripheral.makeVTable(BlockDevice);
+
+    pub fn init(present: bool, block_count: u32) BlockDevice {
+        return .{
+            .peri = .{ .vtable = &vtable },
+            .present = present,
+            .busy = false,
+            .err_flag = false,
+            .block_count = if (present) block_count else 0,
+            .lba = 0,
+            .buffer = [_]u8{0} ** BLOCK_SIZE,
+            .pending_request = null,
+            .request_consumed = false,
+        };
+    }
+
+    pub fn peripheral(self: *BlockDevice) *Peripheral {
+        return &self.peri;
+    }
+
+    /// Check if there is a pending request. Returns it exactly once, then null.
+    pub fn getPendingRequest(self: *BlockDevice) ?Request {
+        if (self.request_consumed) return null;
+        if (self.pending_request) |req| {
+            self.request_consumed = true;
+            return req;
+        }
+        return null;
+    }
+
+    pub fn transferBuffer(self: *BlockDevice) *[BLOCK_SIZE]u8 {
+        return &self.buffer;
+    }
+
+    pub fn complete(self: *BlockDevice, success: bool) error{NoPendingRequest}!void {
+        if (self.pending_request == null) return error.NoPendingRequest;
+        self.busy = false;
+        self.err_flag = !success;
+        self.pending_request = null;
+        self.request_consumed = false;
+    }
+
+    fn isBufferAccessible(self: *const BlockDevice) bool {
+        return self.present and !self.busy and !self.err_flag;
+    }
+
+    fn busRead(self: *BlockDevice, comptime size: MemAccessSize, offset: u32) BusError!size.get_type() {
+        // Buffer region
+        if (offset >= BUFFER_OFFSET and offset < BUFFER_OFFSET + BLOCK_SIZE) {
+            if (!self.isBufferAccessible()) return error.Unmapped;
+            const buf_off = offset - BUFFER_OFFSET;
+            const bytes = comptime size.byte_count();
+            if (buf_off + bytes > BLOCK_SIZE) return error.Unmapped;
+            return std.mem.readInt(size.get_type(), self.buffer[buf_off..][0..bytes], .little);
+        }
+        // Register region: u32 only
+        if (size != .u32) return error.InvalidSize;
+        return switch (offset) {
+            0x00 => @as(u32, @intFromBool(self.present)) |
+                (@as(u32, @intFromBool(self.busy)) << 1) |
+                (@as(u32, @intFromBool(self.err_flag)) << 2),
+            0x04 => self.block_count,
+            0x08 => self.lba,
+            else => return error.Unmapped,
+        };
+    }
+
+    fn busWrite(self: *BlockDevice, comptime size: MemAccessSize, offset: u32, value: size.get_type()) BusError!void {
+        // Buffer region
+        if (offset >= BUFFER_OFFSET and offset < BUFFER_OFFSET + BLOCK_SIZE) {
+            if (!self.isBufferAccessible()) return error.Unmapped;
+            const buf_off = offset - BUFFER_OFFSET;
+            const bytes = comptime size.byte_count();
+            if (buf_off + bytes > BLOCK_SIZE) return error.Unmapped;
+            std.mem.writeInt(size.get_type(), self.buffer[buf_off..][0..bytes], value, .little);
+            return;
+        }
+        // Register region: u32 only
+        if (size != .u32) return error.InvalidSize;
+        switch (offset) {
+            0x00, 0x04 => return error.WriteProtected,
+            0x08 => {
+                if (!self.present) return;
+                self.lba = value;
+            },
+            0x0C => {
+                if (!self.present or self.busy) return;
+                const cmd: Command = @enumFromInt(value);
+                switch (cmd) {
+                    .read => {
+                        self.busy = true;
+                        self.err_flag = false;
+                        self.pending_request = .{ .is_write = false, .lba = self.lba };
+                        self.request_consumed = false;
+                    },
+                    .write => {
+                        self.busy = true;
+                        self.err_flag = false;
+                        self.pending_request = .{ .is_write = true, .lba = self.lba };
+                        self.request_consumed = false;
+                    },
+                    .clear_error => {
+                        self.err_flag = false;
+                    },
+                    _ => {},
+                }
+            },
+            else => return error.Unmapped,
+        }
+    }
 };
