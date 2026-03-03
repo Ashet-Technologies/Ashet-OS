@@ -40,6 +40,9 @@
         .agp_tester = .{
             .path = "src/tools/agp-tester",
         },
+        .abi_mapper = .{
+            .path = "src/tools/abi-mapper",
+        },
         // .wikitool = .{
         //     .path = "src/tools/wikitool",
         // },
