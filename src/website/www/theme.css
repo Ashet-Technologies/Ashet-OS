@@ -242,6 +242,10 @@ div.flex-spacer {
     border-color: #373737;
 }
 
+.docs-container dl>div:target {
+    background-color: #e0d9ea;
+}
+
 .docs-container dl dd p {
     margin-left: 2rem;
     margin-top: 0.5em;

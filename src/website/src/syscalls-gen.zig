@@ -125,7 +125,7 @@ const PageRenderer = struct {
         if (!decl.docs.is_empty()) {
             try html.writer.writeAll("<section>\n");
             try html.writer.print("<h2>Documentation</h2>\n", .{});
-            try html.writer.print("{f}\n", .{fmt_docs(decl.docs)});
+            try html.writer.print("{f}\n", .{fmt_docs(decl.docs, html.scope_fqn.len - 1)});
             try html.writer.writeAll("</section>\n");
         }
 
@@ -138,7 +138,10 @@ const PageRenderer = struct {
 
                 try html.begin_dl();
                 for (item.logic_fields) |field| {
-                    try html.writer.writeAll("<div>\n");
+                    try html.writer.print("<div id=\"{f}.{s}\">\n", .{
+                        fmt_fqn(item.full_qualified_name),
+                        field.name,
+                    });
 
                     try html.writer.print("<dt><code>{s}: {f}", .{
                         field.name,
@@ -152,7 +155,7 @@ const PageRenderer = struct {
                     try html.writer.writeAll("</code></dt>");
 
                     if (!field.docs.is_empty()) {
-                        try html.writer.print("<dd>{f}</dd>\n", .{fmt_docs(field.docs)});
+                        try html.writer.print("<dd>{f}</dd>\n", .{fmt_docs(field.docs, html.scope_fqn.len - 1)});
                     }
 
                     try html.writer.writeAll("</div>\n");
@@ -167,12 +170,14 @@ const PageRenderer = struct {
                 try html.begin_dl();
                 for (item.logic_fields) |field| {
                     try html.dl_item(
+                        item.full_qualified_name,
+                        field.name,
                         "{s}: {f}",
                         "{f}",
                         .{
                             field.name,
                             html.fmt_type(field.type),
-                            fmt_docs(field.docs),
+                            fmt_docs(field.docs, html.scope_fqn.len - 1),
                         },
                     );
                 }
@@ -188,18 +193,22 @@ const PageRenderer = struct {
                 try html.begin_dl();
                 for (enumeration.items) |item| {
                     try html.dl_item(
+                        enumeration.full_qualified_name,
+                        item.name,
                         "{s} = {}",
                         "{f}",
                         .{
                             item.name,
                             item.value,
-                            fmt_docs(item.docs),
+                            fmt_docs(item.docs, html.scope_fqn.len - 1),
                         },
                     );
                 }
 
                 switch (enumeration.kind) {
                     .open => try html.dl_item(
+                        enumeration.full_qualified_name,
+                        "...",
                         "...",
                         "<p>This enumeration is non-exhaustive and may assume all values a {s} can represent.</p>",
                         .{@tagName(enumeration.backing_type)},
@@ -215,7 +224,10 @@ const PageRenderer = struct {
 
                 try html.begin_dl();
                 for (item.fields) |field| {
-                    try html.writer.writeAll("<div>\n");
+                    try html.writer.print("<div id=\"{f}.{s}\">\n", .{
+                        fmt_fqn(item.full_qualified_name),
+                        field.name orelse "<reserved>",
+                    });
 
                     try html.writer.print("<dt><code>{s}: {f}", .{
                         field.name orelse "<i>reserved</i>",
@@ -229,7 +241,7 @@ const PageRenderer = struct {
                     try html.writer.writeAll("</code></dt>");
 
                     if (!field.docs.is_empty()) {
-                        try html.writer.print("<dd>{f}</dd>\n", .{fmt_docs(field.docs)});
+                        try html.writer.print("<dd>{f}</dd>\n", .{fmt_docs(field.docs, html.scope_fqn.len - 1)});
                     }
 
                     try html.writer.writeAll("</div>\n");
@@ -246,12 +258,14 @@ const PageRenderer = struct {
                     for (item.logic_inputs) |param| {
                         // TODO: Handle "param.default"
                         try html.dl_item(
+                            item.full_qualified_name,
+                            param.name,
                             "{f}: {f}",
                             "{f}",
                             .{
                                 std.zig.fmtId(param.name),
                                 html.fmt_type(param.type),
-                                fmt_docs(param.docs),
+                                fmt_docs(param.docs, html.scope_fqn.len - 1),
                             },
                         );
                     }
@@ -265,12 +279,14 @@ const PageRenderer = struct {
                     for (item.logic_outputs) |param| {
                         // TODO: Handle "param.default"
                         try html.dl_item(
+                            item.full_qualified_name,
+                            param.name,
                             "{f}: {f}",
                             "{f}",
                             .{
                                 std.zig.fmtId(param.name),
                                 html.fmt_type(param.type),
-                                fmt_docs(param.docs),
+                                fmt_docs(param.docs, html.scope_fqn.len - 1),
                             },
                         );
                     }
@@ -283,11 +299,13 @@ const PageRenderer = struct {
                     try html.begin_dl();
                     for (item.errors) |err| {
                         try html.dl_item(
+                            item.full_qualified_name,
+                            err.name,
                             "{f}",
                             "{f}",
                             .{
                                 std.zig.fmtId(err.name),
-                                fmt_docs(err.docs),
+                                fmt_docs(err.docs, html.scope_fqn.len - 1),
                             },
                         );
                     }
@@ -304,12 +322,14 @@ const PageRenderer = struct {
                     for (item.logic_inputs) |param| {
                         // TODO: Handle "param.default"
                         try html.dl_item(
+                            item.full_qualified_name,
+                            param.name,
                             "{f}: {f}",
                             "{f}",
                             .{
                                 std.zig.fmtId(param.name),
                                 html.fmt_type(param.type),
-                                fmt_docs(param.docs),
+                                fmt_docs(param.docs, html.scope_fqn.len - 1),
                             },
                         );
                     }
@@ -323,12 +343,14 @@ const PageRenderer = struct {
                     for (item.logic_outputs) |param| {
                         // TODO: Handle "param.default"
                         try html.dl_item(
+                            item.full_qualified_name,
+                            param.name,
                             "{f}: {f}",
                             "{f}",
                             .{
                                 std.zig.fmtId(param.name),
                                 html.fmt_type(param.type),
-                                fmt_docs(param.docs),
+                                fmt_docs(param.docs, html.scope_fqn.len - 1),
                             },
                         );
                     }
@@ -341,11 +363,13 @@ const PageRenderer = struct {
                     try html.begin_dl();
                     for (item.errors) |err| {
                         try html.dl_item(
+                            item.full_qualified_name,
+                            err.name,
                             "{f}",
                             "{f}",
                             .{
                                 std.zig.fmtId(err.name),
-                                fmt_docs(err.docs),
+                                fmt_docs(err.docs, html.scope_fqn.len - 1),
                             },
                         );
                     }
@@ -428,9 +452,15 @@ const PageRenderer = struct {
         try html.writer.writeAll("</dl>\n");
     }
 
-    fn dl_item(html: *PageRenderer, comptime dt_fmt: []const u8, comptime dd_fmt: []const u8, args: anytype) !void {
+    fn dl_item(html: *PageRenderer, fqn: []const []const u8, local_name: ?[]const u8, comptime dt_fmt: []const u8, comptime dd_fmt: []const u8, args: anytype) !void {
+        if (local_name) |name| {
+            try html.writer.print("<div id=\"{f}.{s}\">", .{ fmt_fqn(fqn), name });
+        } else {
+            try html.writer.print("<div id=\"{f}\">", .{fmt_fqn(fqn)});
+        }
+
         try html.writer.print(
-            "<div>\n<dt><code>" ++ dt_fmt ++ "</code></dt><dd>" ++ dd_fmt ++ "</dd></div>\n",
+            "<dt><code>" ++ dt_fmt ++ "</code></dt><dd>" ++ dd_fmt ++ "</dd></div>\n",
             args,
         );
     }
@@ -493,7 +523,7 @@ const PageRenderer = struct {
             if (child.data != tag)
                 continue;
 
-            try html.writer.writeAll("                <div>\n");
+            try html.writer.print("                <div id=\"{f}\">\n", .{fmt_fqn(child.full_qualified_name)});
 
             try html.writer.print(
                 \\                    <dt><code><span class="tok-kw">{s}</span> <a href="{f}"><span class="tok-name">{s}</span></a>(
@@ -547,7 +577,7 @@ const PageRenderer = struct {
                     \\                    <dd>{f}</dd>
                     \\
                 , .{
-                    fmt_docs(child.docs),
+                    fmt_docs(child.docs, html.scope_fqn.len - 1),
                 });
             }
 
@@ -737,11 +767,12 @@ fn format_fqn(fqn: []const []const u8, writer: *std.Io.Writer) !void {
     }
 }
 
-fn fmt_docs(docs: model.DocComment) std.fmt.Alt(model.DocComment, format_docs) {
-    return .{ .data = docs };
+fn fmt_docs(docs: model.DocComment, url_nesting: usize) std.fmt.Alt(struct { model.DocComment, usize }, format_docs) {
+    return .{ .data = .{ docs, url_nesting } };
 }
 
-fn format_docs(docs: model.DocComment, writer: *std.Io.Writer) !void {
+fn format_docs(_params: struct { model.DocComment, usize }, writer: *std.Io.Writer) !void {
+    const docs: model.DocComment, const url_nesting: usize = _params;
     if (docs.is_empty())
         return;
 
@@ -752,7 +783,7 @@ fn format_docs(docs: model.DocComment, writer: *std.Io.Writer) !void {
             switch (block) {
                 .paragraph => |p| {
                     try writer.writeAll("<p>\n");
-                    try format_inlines(p.content, writer);
+                    try format_inlines(p.content, url_nesting, writer);
                     try writer.writeAll("</p>\n");
                 },
 
@@ -760,7 +791,7 @@ fn format_docs(docs: model.DocComment, writer: *std.Io.Writer) !void {
                     try writer.writeAll("<ol>\n");
                     for (list.items) |item| {
                         try writer.writeAll("<li>\n");
-                        try format_inlines(item, writer);
+                        try format_inlines(item, url_nesting, writer);
                         try writer.writeAll("</li>\n");
                     }
                     try writer.writeAll("</ol>\n");
@@ -769,7 +800,7 @@ fn format_docs(docs: model.DocComment, writer: *std.Io.Writer) !void {
                     try writer.writeAll("<ul>\n");
                     for (list.items) |item| {
                         try writer.writeAll("<li>\n");
-                        try format_inlines(item, writer);
+                        try format_inlines(item, url_nesting, writer);
                         try writer.writeAll("</li>\n");
                     }
                     try writer.writeAll("</ul>\n");
@@ -793,24 +824,38 @@ fn format_docs(docs: model.DocComment, writer: *std.Io.Writer) !void {
     }
 }
 
-fn format_inlines(inlines: []const model.DocComment.Inline, writer: *std.Io.Writer) !void {
+fn format_inlines(inlines: []const model.DocComment.Inline, url_nesting: usize, writer: *std.Io.Writer) !void {
     for (inlines) |span| {
         switch (span) {
             .text => |text| try writer.writeAll(text.value),
             .code => |code| try writer.print("<code>{s}</code>", .{code.value}),
             .emphasis => |emphasis| {
                 try writer.writeAll("<em>");
-                try format_inlines(emphasis.content, writer);
+                try format_inlines(emphasis.content, url_nesting, writer);
                 try writer.writeAll("</em>");
             },
             .ref => |ref| {
-                try writer.print("<a href=\"{f}\">", .{fmt_attr("???")});
+                var url_buffer: [512]u8 = undefined;
+                var url_writer: std.Io.Writer = .fixed(&url_buffer);
+
+                try url_writer.splatBytesAll("../", url_nesting);
+
+                var pos: usize = 0;
+                while (pos < ref.fqn.len) {
+                    const split = std.mem.indexOfScalarPos(u8, ref.fqn, pos, '.') orelse break;
+                    try url_writer.print("{s}/", .{ref.fqn[pos..split]});
+                    pos = split + 1;
+                }
+
+                try url_writer.print("index.html#{s}", .{ref.fqn});
+
+                try writer.print("<a href=\"{f}\">", .{fmt_url(url_writer.buffered(), 0)});
                 try writer.print("<code>{s}</code>", .{ref.fqn});
                 try writer.writeAll("</a>");
             },
             .link => |link| {
                 try writer.print("<a href=\"{f}\">", .{fmt_attr(link.url)});
-                try format_inlines(link.content, writer);
+                try format_inlines(link.content, url_nesting, writer);
                 try writer.writeAll("</a>");
             },
         }
