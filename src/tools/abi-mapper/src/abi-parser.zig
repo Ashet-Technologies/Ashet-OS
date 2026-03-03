@@ -24,7 +24,7 @@ pub fn main() !u8 {
         return 1;
     }
 
-    if (args.options.output.len == 1) {
+    if (args.options.output.len == 0) {
         return 1;
     }
 

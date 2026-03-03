@@ -1038,32 +1038,39 @@ const Analyzer = struct {
             return null;
         }
 
-        const resolved = ana.resolve_scope_prefix(declared_scope, local_parts.items) orelse {
-            if (local_parts.items.len == 1) {
-                return null;
+        if (ana.resolve_scope_prefix(declared_scope, local_parts.items)) |resolved| {
+            const resolved_fqn = try ana.scope_to_fqn_string(allocator, resolved.scope);
+            if (resolved.matched_parts == local_parts.items.len) {
+                return @as(?[]const u8, resolved_fqn);
             }
-            if (report_errors) {
-                try ana.emit_error(Location.empty, "unknown doc reference '@`{s}`' in scope '{f}'", .{
-                    local_qn,
-                    dotJoin(declared_scope),
-                });
-            }
-            return null;
-        };
 
-        const resolved_fqn = try ana.scope_to_fqn_string(allocator, resolved.scope);
-        if (resolved.matched_parts == local_parts.items.len) {
-            return @as(?[]const u8, resolved_fqn);
+            var full: std.ArrayList(u8) = .empty;
+            defer full.deinit(allocator);
+            try full.appendSlice(allocator, resolved_fqn);
+            for (local_parts.items[resolved.matched_parts..]) |part| {
+                try full.append(allocator, '.');
+                try full.appendSlice(allocator, part);
+            }
+            return @as(?[]const u8, try full.toOwnedSlice(allocator));
         }
 
-        var full: std.ArrayList(u8) = .empty;
-        defer full.deinit(allocator);
-        try full.appendSlice(allocator, resolved_fqn);
-        for (local_parts.items[resolved.matched_parts..]) |part| {
-            try full.append(allocator, '.');
-            try full.appendSlice(allocator, part);
+        if (local_parts.items.len == 1) {
+            if (try ana.resolve_contained_doc_reference(
+                allocator,
+                declared_scope,
+                local_parts.items[0],
+            )) |resolved| {
+                return resolved;
+            }
         }
-        return @as(?[]const u8, try full.toOwnedSlice(allocator));
+
+        if (report_errors) {
+            try ana.emit_error(Location.empty, "unknown doc reference '@`{s}`' in scope '{f}'", .{
+                local_qn,
+                dotJoin(declared_scope),
+            });
+        }
+        return null;
     }
 
     const ScopePrefixMatch = struct {
@@ -1092,6 +1099,66 @@ const Analyzer = struct {
         }
 
         return null;
+    }
+
+    fn resolve_contained_doc_reference(
+        ana: *Analyzer,
+        allocator: std.mem.Allocator,
+        declared_scope: []const []const u8,
+        local_name: []const u8,
+    ) error{OutOfMemory}!?[]const u8 {
+        const scope = ana.scope_map.get(declared_scope) orelse return null;
+        const link = scope.link orelse return null;
+        if (!ana.link_contains_doc_reference_target(link, local_name)) {
+            return null;
+        }
+
+        var full: std.ArrayList(u8) = .empty;
+        defer full.deinit(allocator);
+        for (declared_scope, 0..) |part, i| {
+            if (i > 0) try full.append(allocator, '.');
+            try full.appendSlice(allocator, part);
+        }
+        if (declared_scope.len > 0) {
+            try full.append(allocator, '.');
+        }
+        try full.appendSlice(allocator, local_name);
+        return @as(?[]const u8, try full.toOwnedSlice(allocator));
+    }
+
+    fn link_contains_doc_reference_target(ana: *Analyzer, link: Scope.Link, local_name: []const u8) bool {
+        return switch (link) {
+            .namespace,
+            .resource,
+            .constant,
+            .typedef,
+            => false,
+
+            .@"struct" => |idx| blk: {
+                const item = ana.structs.get(idx);
+                break :blk find_field_by_name(item.logic_fields, local_name) != null or
+                    find_field_by_name(item.native_fields, local_name) != null;
+            },
+            .@"union" => |idx| blk: {
+                const item = ana.unions.get(idx);
+                break :blk find_field_by_name(item.logic_fields, local_name) != null or
+                    find_field_by_name(item.native_fields, local_name) != null;
+            },
+            .@"enum" => |idx| has_enum_item_by_name(ana.enums.get(idx).items, local_name),
+            .bitstruct => |idx| has_bitstruct_field_by_name(ana.bitstructs.get(idx).fields, local_name),
+            .syscall => |idx| blk: {
+                const call = ana.syscalls.get(idx);
+                break :blk find_param_by_name(call.logic_inputs, local_name) != null or
+                    find_param_by_name(call.logic_outputs, local_name) != null or
+                    has_error_by_name(call.errors, local_name);
+            },
+            .async_call => |idx| blk: {
+                const call = ana.async_calls.get(idx);
+                break :blk find_param_by_name(call.logic_inputs, local_name) != null or
+                    find_param_by_name(call.logic_outputs, local_name) != null or
+                    has_error_by_name(call.errors, local_name);
+            },
+        };
     }
 
     fn scope_to_fqn_string(ana: *Analyzer, allocator: std.mem.Allocator, scope: *const Scope) error{OutOfMemory}![]const u8 {
@@ -1949,6 +2016,29 @@ const Analyzer = struct {
             if (std.mem.eql(u8, p.name, name)) return p;
         }
         return null;
+    }
+
+    fn has_error_by_name(errs: []const model.Error, name: []const u8) bool {
+        for (errs) |err_item| {
+            if (std.mem.eql(u8, err_item.name, name)) return true;
+        }
+        return false;
+    }
+
+    fn has_enum_item_by_name(items: []const model.EnumItem, name: []const u8) bool {
+        for (items) |item| {
+            if (std.mem.eql(u8, item.name, name)) return true;
+        }
+        return false;
+    }
+
+    fn has_bitstruct_field_by_name(fields: []const model.BitStructField, name: []const u8) bool {
+        for (fields) |field| {
+            if (field.name) |field_name| {
+                if (std.mem.eql(u8, field_name, name)) return true;
+            }
+        }
+        return false;
     }
 
     fn find_field_by_name(fields: []const model.StructField, name: []const u8) ?model.StructField {
