@@ -41,9 +41,7 @@ pub fn render(output_dir: std.fs.Dir, schema: abi_parser.model.Document, allocat
     defer tree.stack.deinit(allocator);
 
     try tree.render_declaration(syscalls_dst_dir, "ashet", 0, .{
-        .docs = &.{
-            // TODO: can we add top-level namespace docs?!
-        },
+        .docs = .empty, // TODO: can we add top-level namespace docs?!
         .children = schema.root,
         .full_qualified_name = &.{},
         .data = .namespace,
@@ -123,7 +121,7 @@ const PageRenderer = struct {
             },
         );
 
-        if (decl.docs.len > 0) {
+        if (!decl.docs.is_empty()) {
             try html.writer.writeAll("<section>\n");
             try html.writer.print("<h2>Documentation</h2>\n", .{});
             try html.writer.print("{f}\n", .{fmt_docs(decl.docs)});
@@ -152,7 +150,7 @@ const PageRenderer = struct {
 
                     try html.writer.writeAll("</code></dt>");
 
-                    if (field.docs.len > 0) {
+                    if (!field.docs.is_empty()) {
                         try html.writer.print("<dd>{f}</dd>\n", .{fmt_docs(field.docs)});
                     }
 
@@ -229,7 +227,7 @@ const PageRenderer = struct {
 
                     try html.writer.writeAll("</code></dt>");
 
-                    if (field.docs.len > 0) {
+                    if (!field.docs.is_empty()) {
                         try html.writer.print("<dd>{f}</dd>\n", .{fmt_docs(field.docs)});
                     }
 
@@ -543,7 +541,7 @@ const PageRenderer = struct {
             }
             try html.writer.writeAll("</code></dt>");
 
-            if (child.docs.len > 0) {
+            if (!child.docs.is_empty()) {
                 try html.writer.print(
                     \\                    <dd>{f}</dd>
                     \\
@@ -738,85 +736,87 @@ fn format_fqn(fqn: []const []const u8, writer: *std.Io.Writer) !void {
     }
 }
 
-fn fmt_docs(docs: []const []const u8) std.fmt.Alt([]const []const u8, format_docs) {
+fn fmt_docs(docs: model.DocComment) std.fmt.Alt(model.DocComment, format_docs) {
     return .{ .data = docs };
 }
 
-fn format_docs(docs: []const []const u8, writer: *std.Io.Writer) !void {
-    if (docs.len == 0)
+fn format_docs(docs: model.DocComment, writer: *std.Io.Writer) !void {
+    if (docs.is_empty())
         return;
 
-    const BlockType = enum { note, lore, relates };
+    _ = writer;
 
-    var last_was_empty = false;
+    // const BlockType = enum { note, lore, relates };
 
-    try writer.writeAll("<div class=\"doc-regular\"><p>");
+    // var last_was_empty = false;
 
-    for (docs) |line| {
-        if (line.len == 0) {
-            last_was_empty = true;
-            continue;
-        }
+    // try writer.writeAll("<div class=\"doc-regular\"><p>");
 
-        var requires_new_paragraph = false;
+    // for (docs) |line| {
+    //     if (line.len == 0) {
+    //         last_was_empty = true;
+    //         continue;
+    //     }
 
-        if (last_was_empty) {
-            requires_new_paragraph = true;
-            last_was_empty = false;
-        }
+    //     var requires_new_paragraph = false;
 
-        var out_line = std.mem.trim(u8, line, " ");
-        var change_block_type: ?BlockType = null;
+    //     if (last_was_empty) {
+    //         requires_new_paragraph = true;
+    //         last_was_empty = false;
+    //     }
 
-        if (std.mem.startsWith(u8, out_line, "NOTE:")) {
-            change_block_type = .note;
-            requires_new_paragraph = true;
-            out_line = out_line[5..];
-        } else if (std.mem.startsWith(u8, out_line, "LORE:")) {
-            change_block_type = .lore;
-            requires_new_paragraph = true;
-            out_line = out_line[5..];
-        } else if (std.mem.startsWith(u8, out_line, "RELATES:")) {
-            change_block_type = .relates;
-            requires_new_paragraph = true;
-            out_line = out_line[8..];
-        }
+    //     var out_line = std.mem.trim(u8, line, " ");
+    //     var change_block_type: ?BlockType = null;
 
-        if (change_block_type) |block_type| {
-            std.debug.assert(requires_new_paragraph == true);
+    //     if (std.mem.startsWith(u8, out_line, "NOTE:")) {
+    //         change_block_type = .note;
+    //         requires_new_paragraph = true;
+    //         out_line = out_line[5..];
+    //     } else if (std.mem.startsWith(u8, out_line, "LORE:")) {
+    //         change_block_type = .lore;
+    //         requires_new_paragraph = true;
+    //         out_line = out_line[5..];
+    //     } else if (std.mem.startsWith(u8, out_line, "RELATES:")) {
+    //         change_block_type = .relates;
+    //         requires_new_paragraph = true;
+    //         out_line = out_line[8..];
+    //     }
 
-            try writer.writeAll("</p></div>");
+    //     if (change_block_type) |block_type| {
+    //         std.debug.assert(requires_new_paragraph == true);
 
-            try writer.print("<div class=\"docs docs-{s}\"><h3>{s}</h3><p>", .{
-                @tagName(block_type),
-                switch (block_type) {
-                    .lore => "Lore:",
-                    .note => "Note:",
-                    .relates => "Related Elements:",
-                },
-            });
-        } else if (requires_new_paragraph) {
-            try writer.writeAll("</p>\n<p>");
-        }
+    //         try writer.writeAll("</p></div>");
 
-        out_line = std.mem.trimRight(u8, out_line, " \t\r\n");
+    //         try writer.print("<div class=\"docs docs-{s}\"><h3>{s}</h3><p>", .{
+    //             @tagName(block_type),
+    //             switch (block_type) {
+    //                 .lore => "Lore:",
+    //                 .note => "Note:",
+    //                 .relates => "Related Elements:",
+    //             },
+    //         });
+    //     } else if (requires_new_paragraph) {
+    //         try writer.writeAll("</p>\n<p>");
+    //     }
 
-        var in_code = false;
-        for (out_line) |char| {
-            switch (char) {
-                '`' => {
-                    in_code = !in_code;
-                    if (in_code) {
-                        try writer.writeAll("<code>");
-                    } else {
-                        try writer.writeAll("</code>");
-                    }
-                },
-                else => try writer.writeByte(char),
-            }
-        }
+    //     out_line = std.mem.trimRight(u8, out_line, " \t\r\n");
 
-        try writer.writeAll("\n");
-    }
-    try writer.writeAll("</p></div>");
+    //     var in_code = false;
+    //     for (out_line) |char| {
+    //         switch (char) {
+    //             '`' => {
+    //                 in_code = !in_code;
+    //                 if (in_code) {
+    //                     try writer.writeAll("<code>");
+    //                 } else {
+    //                     try writer.writeAll("</code>");
+    //                 }
+    //             },
+    //             else => try writer.writeByte(char),
+    //         }
+    //     }
+
+    //     try writer.writeAll("\n");
+    // }
+    // try writer.writeAll("</p></div>");
 }

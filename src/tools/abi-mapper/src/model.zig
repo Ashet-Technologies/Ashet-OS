@@ -29,6 +29,10 @@ pub const FQN = []const []const u8;
 pub const DocComment = struct {
     sections: []const Section,
 
+    pub fn is_empty(docs: DocComment) bool {
+        return docs.sections.len == 0;
+    }
+
     pub const empty: DocComment = .{ .sections = &.{} };
 
     pub const Section = struct {
@@ -426,9 +430,9 @@ pub const Type = union(enum) {
                         .slice => false,
                     },
                     .resource => true, // resources are also represented as nullable pointers in C-ABI
-                    .well_known => |id| switch(id) {
-                         .anyptr, .anyfnptr => true,
-                         else => false,
+                    .well_known => |id| switch (id) {
+                        .anyptr, .anyfnptr => true,
+                        else => false,
                     },
                     else => false,
                 };
