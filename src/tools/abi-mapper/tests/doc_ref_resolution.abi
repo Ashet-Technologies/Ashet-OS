@@ -24,4 +24,21 @@ namespace overlapped {
         out     completed_count: usize;
         error   Unscheduled;
     }
+
+    struct Await_Options {
+        field wait: Wait;
+        field thread_affinity: Thread_Affinity;
+
+        enum Thread_Affinity : u8 {
+            item all_threads;
+            item this_thread;
+        }
+
+        enum Wait : u8 {
+            item wait_one = 1;
+
+            /// NOTE: If @`thread_affinity` is @`Thread_Affinity.all_threads`, waiting can take longer.
+            item wait_all = 2;
+        }
+    }
 }

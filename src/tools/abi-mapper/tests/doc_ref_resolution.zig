@@ -53,6 +53,25 @@ test "doc references resolve to contained syscall elements" {
         await_completion_of.docs,
         "overlapped.await_completion_of.events",
     ));
+
+    const wait_enum = find_enum_by_fqn(
+        analyzed_document.enums,
+        "overlapped.Await_Options.Wait",
+    ) orelse return error.TestUnexpectedResult;
+    const wait_all_item = find_enum_item_by_name(
+        wait_enum.items,
+        "wait_all",
+    ) orelse return error.TestUnexpectedResult;
+
+    try std.testing.expect(has_ref_fqn(
+        wait_all_item.docs,
+        "overlapped.Await_Options.thread_affinity",
+    ));
+    try std.testing.expect(has_ref_fqn(
+        wait_all_item.docs,
+        "overlapped.Await_Options.Thread_Affinity.all_threads",
+    ));
+    try std.testing.expect(!has_ref_fqn(wait_all_item.docs, "thread_affinity"));
 }
 
 fn find_syscall_by_fqn(
@@ -62,6 +81,27 @@ fn find_syscall_by_fqn(
     for (syscalls) |syscall| {
         if (fqn_equals(syscall.full_qualified_name, expected)) {
             return syscall;
+        }
+    }
+    return null;
+}
+
+fn find_enum_by_fqn(
+    enums: []const model.Enumeration,
+    expected: []const u8,
+) ?model.Enumeration {
+    for (enums) |item| {
+        if (fqn_equals(item.full_qualified_name, expected)) {
+            return item;
+        }
+    }
+    return null;
+}
+
+fn find_enum_item_by_name(items: []const model.EnumItem, name: []const u8) ?model.EnumItem {
+    for (items) |item| {
+        if (std.mem.eql(u8, item.name, name)) {
+            return item;
         }
     }
     return null;

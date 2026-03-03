@@ -1054,14 +1054,12 @@ const Analyzer = struct {
             return @as(?[]const u8, try full.toOwnedSlice(allocator));
         }
 
-        if (local_parts.items.len == 1) {
-            if (try ana.resolve_contained_doc_reference(
-                allocator,
-                declared_scope,
-                local_parts.items[0],
-            )) |resolved| {
-                return resolved;
-            }
+        if (try ana.resolve_contained_doc_reference(
+            allocator,
+            declared_scope,
+            local_parts.items,
+        )) |resolved| {
+            return resolved;
         }
 
         if (report_errors) {
@@ -1079,7 +1077,7 @@ const Analyzer = struct {
     };
 
     fn resolve_scope_prefix(ana: *Analyzer, declared_scope: []const []const u8, local_parts: []const []const u8) ?ScopePrefixMatch {
-        var search_scope: ?*Scope = ana.scope_map.get(declared_scope) orelse return null;
+        var search_scope: ?*Scope = ana.resolve_declared_scope_or_parent(declared_scope);
 
         while (search_scope) |base_scope| : (search_scope = base_scope.parent) {
             var resolved_scope: *Scope = base_scope;
@@ -1101,29 +1099,54 @@ const Analyzer = struct {
         return null;
     }
 
+    fn resolve_declared_scope_or_parent(ana: *Analyzer, declared_scope: []const []const u8) ?*Scope {
+        var scope_len = declared_scope.len;
+        while (true) {
+            if (ana.scope_map.get(declared_scope[0..scope_len])) |scope| {
+                return scope;
+            }
+            if (scope_len == 0) {
+                break;
+            }
+            scope_len -= 1;
+        }
+        return null;
+    }
+
     fn resolve_contained_doc_reference(
         ana: *Analyzer,
         allocator: std.mem.Allocator,
         declared_scope: []const []const u8,
-        local_name: []const u8,
+        local_parts: []const []const u8,
     ) error{OutOfMemory}!?[]const u8 {
-        const scope = ana.scope_map.get(declared_scope) orelse return null;
-        const link = scope.link orelse return null;
-        if (!ana.link_contains_doc_reference_target(link, local_name)) {
+        if (local_parts.len == 0) {
             return null;
         }
 
-        var full: std.ArrayList(u8) = .empty;
-        defer full.deinit(allocator);
-        for (declared_scope, 0..) |part, i| {
-            if (i > 0) try full.append(allocator, '.');
-            try full.appendSlice(allocator, part);
+        var search_scope: ?*Scope = ana.resolve_declared_scope_or_parent(declared_scope);
+        while (search_scope) |scope| : (search_scope = scope.parent) {
+            const link = scope.link orelse continue;
+            if (!ana.link_contains_doc_reference_target(link, local_parts[0])) {
+                continue;
+            }
+
+            const scope_fqn = try ana.scope_to_fqn_string(allocator, scope);
+            defer allocator.free(scope_fqn);
+            var full: std.ArrayList(u8) = .empty;
+            defer full.deinit(allocator);
+            if (scope_fqn.len > 0) {
+                try full.appendSlice(allocator, scope_fqn);
+                try full.append(allocator, '.');
+            }
+            try full.appendSlice(allocator, local_parts[0]);
+            for (local_parts[1..]) |part| {
+                try full.append(allocator, '.');
+                try full.appendSlice(allocator, part);
+            }
+            return @as(?[]const u8, try full.toOwnedSlice(allocator));
         }
-        if (declared_scope.len > 0) {
-            try full.append(allocator, '.');
-        }
-        try full.appendSlice(allocator, local_name);
-        return @as(?[]const u8, try full.toOwnedSlice(allocator));
+
+        return null;
     }
 
     fn link_contains_doc_reference_target(ana: *Analyzer, link: Scope.Link, local_name: []const u8) bool {
