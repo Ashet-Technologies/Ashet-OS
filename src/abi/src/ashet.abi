@@ -84,15 +84,15 @@ namespace overlapped {
     }
 
     /// Awaits one or more scheduled asynchronous operations and returns the
-    /// number of `completed` elements.
+    /// number of @`completed` elements.
     ///
-    /// The kernel will fill out `completed` up to the returned number of elements.
+    /// The kernel will fill out @`completed` up to the returned number of elements.
     /// All other values are undefined.
     ///
     /// NOTE: For blocking operations, this function will suspend the current
     ///       thread until the request has been completed.
     ///
-    /// RELATES: @ref await_completion_of
+    /// RELATES: @`await_completion_of`
     syscall await_completion {
         in     completed:       []*ARC;
         in     options:         Await_Options;
@@ -101,26 +101,26 @@ namespace overlapped {
     }
 
     /// Awaits one or more explicit asynchronous operations and returns the
-    /// number of `events` elements.
+    /// number of @`events` elements.
     ///
-    /// The kernel will only await elements provided in `events` and all of those events must
-    /// not be awaited by another `await_completion_of`.
+    /// The kernel will only await elements provided in @`events` and all of those events must
+    /// not be awaited by another @`await_completion_of`.
     ///
-    /// When the function returns, `events` will have all completed events unchanged, and all
+    /// When the function returns, @`events` will have all completed events unchanged, and all
     /// unfinished events set to `null`. This way, a simple check via index can be done instead of
-    /// the need for iteration of `events` to find what was finished.
+    /// the need for iteration of @`events` to find what was finished.
     ///
     /// NOTE: This syscall will always return as soon as a single event has finished.
     ///
-    /// NOTE: It is invalid to await the same operation with two concurrent calls to `await_completion_of`.
+    /// NOTE: It is invalid to await the same operation with two concurrent calls to @`await_completion_of`.
     ///
     /// NOTE: Elements awaited with this function will be guaranteed to not be returned by
-    ///       another concurrent call to `await_completion`.
+    ///       another concurrent call to @`await_completion`.
     ///
     /// NOTE: For blocking operations, this function will suspend the current
     ///       thread until the request has been completed.
     ///
-    /// RELATES: @ref await_completion
+    /// RELATES: @`await_completion`
     syscall await_completion_of {
         in      events: []?*ARC;
         error   InvalidOperation;

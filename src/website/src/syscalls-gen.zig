@@ -9,6 +9,7 @@ const model = abi_parser.model;
 const render_page_file = website_gen.render_page_file;
 const fmt_html = website_gen.fmt_html;
 const fmt_url = website_gen.fmt_url;
+const fmt_attr = website_gen.fmt_attr;
 
 const Context = struct {
     root_dir: std.fs.Dir,
@@ -744,79 +745,70 @@ fn format_docs(docs: model.DocComment, writer: *std.Io.Writer) !void {
     if (docs.is_empty())
         return;
 
-    _ = writer;
+    for (docs.sections) |section| {
+        try writer.print("<div class=\"doc-section doc-section-{t}\">\n", .{section.kind});
 
-    // const BlockType = enum { note, lore, relates };
+        for (section.blocks) |block| {
+            switch (block) {
+                .paragraph => |p| {
+                    try writer.writeAll("<p>\n");
+                    try format_inlines(p.content, writer);
+                    try writer.writeAll("</p>\n");
+                },
 
-    // var last_was_empty = false;
+                .ordered_list => |list| {
+                    try writer.writeAll("<ol>\n");
+                    for (list.items) |item| {
+                        try writer.writeAll("<li>\n");
+                        try format_inlines(item, writer);
+                        try writer.writeAll("</li>\n");
+                    }
+                    try writer.writeAll("</ol>\n");
+                },
+                .unordered_list => |list| {
+                    try writer.writeAll("<ul>\n");
+                    for (list.items) |item| {
+                        try writer.writeAll("<li>\n");
+                        try format_inlines(item, writer);
+                        try writer.writeAll("</li>\n");
+                    }
+                    try writer.writeAll("</ul>\n");
+                },
 
-    // try writer.writeAll("<div class=\"doc-regular\"><p>");
+                .code_block => |code| {
+                    try writer.writeAll("<pre class=\"codeblock\"");
+                    if (code.syntax) |syntax| {
+                        try writer.print(" data-syntax=\"{f}\"", .{
+                            fmt_attr(syntax),
+                        });
+                    }
+                    try writer.writeAll(">");
+                    try writer.print("{f}", .{fmt_attr(code.content)});
+                    try writer.writeAll("</pre>\n");
+                },
+            }
+        }
 
-    // for (docs) |line| {
-    //     if (line.len == 0) {
-    //         last_was_empty = true;
-    //         continue;
-    //     }
+        try writer.writeAll("</div>\n");
+    }
+}
 
-    //     var requires_new_paragraph = false;
-
-    //     if (last_was_empty) {
-    //         requires_new_paragraph = true;
-    //         last_was_empty = false;
-    //     }
-
-    //     var out_line = std.mem.trim(u8, line, " ");
-    //     var change_block_type: ?BlockType = null;
-
-    //     if (std.mem.startsWith(u8, out_line, "NOTE:")) {
-    //         change_block_type = .note;
-    //         requires_new_paragraph = true;
-    //         out_line = out_line[5..];
-    //     } else if (std.mem.startsWith(u8, out_line, "LORE:")) {
-    //         change_block_type = .lore;
-    //         requires_new_paragraph = true;
-    //         out_line = out_line[5..];
-    //     } else if (std.mem.startsWith(u8, out_line, "RELATES:")) {
-    //         change_block_type = .relates;
-    //         requires_new_paragraph = true;
-    //         out_line = out_line[8..];
-    //     }
-
-    //     if (change_block_type) |block_type| {
-    //         std.debug.assert(requires_new_paragraph == true);
-
-    //         try writer.writeAll("</p></div>");
-
-    //         try writer.print("<div class=\"docs docs-{s}\"><h3>{s}</h3><p>", .{
-    //             @tagName(block_type),
-    //             switch (block_type) {
-    //                 .lore => "Lore:",
-    //                 .note => "Note:",
-    //                 .relates => "Related Elements:",
-    //             },
-    //         });
-    //     } else if (requires_new_paragraph) {
-    //         try writer.writeAll("</p>\n<p>");
-    //     }
-
-    //     out_line = std.mem.trimRight(u8, out_line, " \t\r\n");
-
-    //     var in_code = false;
-    //     for (out_line) |char| {
-    //         switch (char) {
-    //             '`' => {
-    //                 in_code = !in_code;
-    //                 if (in_code) {
-    //                     try writer.writeAll("<code>");
-    //                 } else {
-    //                     try writer.writeAll("</code>");
-    //                 }
-    //             },
-    //             else => try writer.writeByte(char),
-    //         }
-    //     }
-
-    //     try writer.writeAll("\n");
-    // }
-    // try writer.writeAll("</p></div>");
+fn format_inlines(inlines: []const model.DocComment.Inline, writer: *std.Io.Writer) !void {
+    for (inlines) |span| {
+        switch (span) {
+            .text => |text| try writer.writeAll(text.value),
+            .code => |code| try writer.print("<code>{s}</code>", .{code.value}),
+            .emphasis => |emphasis| {
+                try writer.writeAll("<em>");
+                try format_inlines(emphasis.content, writer);
+                try writer.writeAll("</em>");
+            },
+            .ref => |ref| try writer.print("<code>[[{s}]]</code>", .{ref.fqn}),
+            .link => |link| {
+                try writer.print("<a href=\"{f}\">", .{fmt_attr(link.url)});
+                try format_inlines(link.content, writer);
+                try writer.writeAll("</a>");
+            },
+        }
+    }
 }

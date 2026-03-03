@@ -248,6 +248,26 @@ div.flex-spacer {
     margin-bottom: 0.5em;
 }
 
+.docs-container .doc-section {
+    margin-block: 0.75em;
+    line-height: 125%;
+}
+
+
+.docs-container .doc-section>:is(p,li,ul,pre) {
+    margin-block: 0.75em;
+    margin-left: 2em;
+}
+
+.docs-container .doc-section-note::before {
+    content: 'NOTE:';
+    font-weight: bold;
+}
+
+.docs-container .doc-section-main>:is(p,li,ul,pre) {
+    margin-left: 0;
+}
+
 /*************************************************
  * Syntax Highlighting                           *
  *************************************************/
