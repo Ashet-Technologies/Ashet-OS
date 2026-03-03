@@ -1,6 +1,6 @@
-# Test Coverage Gaps
+# Test Coverage
 
-Current suite: 25 assembly tests + 9 native unit tests.
+Current suite: 25 assembly integration tests + 50 Zig unit tests = 75 total.
 
 ## Instruction Tests (done)
 
@@ -22,12 +22,15 @@ Current suite: 25 assembly tests + 9 native unit tests.
 - [x] **RAM stress test** — `test_ram_stress.s`: write/read pattern across 256 bytes, counting sum verification.
 - [x] **Stack operations** — `test_stack.s`: nested function calls with stack frames (add_triple calls add_two).
 
-## Missing Peripheral Tests (~2h)
+## Peripheral Unit Tests (done)
 
-One test per peripheral as they get implemented:
+50 Zig unit tests across 8 files in `tests/peripherals/`, using table-driven `testPeripheralAccess` helper:
 
-- [ ] **Timer/RTC** — Read MTIME_LO, verify MTIME_HI latching behavior.
-- [ ] **System Info** — Read RAM_SIZE, verify it matches configured value.
-- [ ] **Framebuffer** — Write and read back pixel data.
-- [ ] **Keyboard** — Verify STATUS/DATA FIFO behavior, empty-read returns 0.
-- [ ] **Block Device** — Write buffer, set LBA, trigger read/write, verify round-trip.
+- [x] **Debug Output** — write byte, read errors, size errors, offset errors.
+- [x] **System Info** — read RAM_SIZE, write errors, size errors, offset errors.
+- [x] **Timer/RTC** — MTIME_LO/HI latching, RTC_LO/HI latching, setTime updates, write errors, size errors.
+- [x] **Video Control** — flush enable/disable, ackFlush, read errors, size errors, offset errors.
+- [x] **Framebuffer** — u8/u32 read/write roundtrip, boundary errors, host pixel access.
+- [x] **Keyboard** — push/pop events, FIFO capacity, deduplication, different states, write errors.
+- [x] **Mouse** — setState + read registers, negative clamping, screen bounds clamping, write errors, size errors.
+- [x] **Block Device** — not-present behavior, present status, buffer access, read/write command flow, error flag, clear error, no-pending-request error, LBA snapshot.

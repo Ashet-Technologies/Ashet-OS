@@ -17,7 +17,7 @@ The CPU provides no interrupts, and will just start executing code at address `0
 ### MMIO Layout
 
 ```
-0x40000000 – 0x4003DFFF   Framebuffer    250,000 bytes (640×400), padded to region end
+0x40000000 – 0x4003DFFF   Framebuffer    256,000 bytes (640×400 @ 8bpp)
                                          palette is fixed in the emulator, not exposed
 
 0x40040000 – 0x40040FFF   Video Control
@@ -37,18 +37,20 @@ Register layouts are described as `+XX/Y` where XX is the relative offset to the
 ### Framebuffer
 
 A linear, row-major framebuffer with 8 bit per pixel, using the Ashet OS color palette.
+256,000 bytes (640 x 400), byte-addressable read/write. Offsets >= 256,000 return bus error.
 
 ### Video Control
 
 Allows controlling the video output.
 
 ```
-+0x00/4   FLUSH       W   Write 1 to mark framebuffer as ready to present.
++0x00/4   FLUSH       W   Write non-zero to mark framebuffer as ready to present.
                           The emulator presents the framebuffer on its next display tick
                           and continues to do so on every tick thereafter until the OS
                           writes 0 (blank/hide screen). Does not clear automatically.
                           The OS is responsible for fully painting the framebuffer before
                           writing 1 — no double-buffering is provided.
+                          Reads return bus error (write-only).
 ```
 
 ### Debug Output
@@ -57,6 +59,8 @@ Provides a simple, "don't care" debug logging facility.
 
 ```
 +0x00/1   TX          W   Write byte (low 8 bits). Always accepted immediately, no flow control.
+                          Reads return bus error (write-only).
+                          Non-u8 writes return InvalidSize. Non-zero offsets return Unmapped.
 ```
 
 ### Keyboard
@@ -71,6 +75,9 @@ A basic peripheral that provides HID Usage Codes to the emulated system.
                           Reading while FIFO empty returns 0x00000000
 ```
 
+All registers are read-only. FIFO holds up to 16 entries; pushes when full are dropped.
+Consecutive identical events (same key + same state) are deduplicated.
+
 ### Mouse
 
 A basic pointing device that provides absolute inputs.
@@ -81,24 +88,28 @@ A basic pointing device that provides absolute inputs.
 +0x08/4   BUTTONS     R   Bit 0 = left, Bit 1 = right, Bit 2 = middle
 ```
 
+All registers are read-only.
+
 ### Timer / RTC
 
 A timer + rtc unit providing the current execution time as well as the wall clock (UTC).
+Time values are pushed by the host — the peripheral has no dependency on system clocks.
 
 ```
 ; Monotonic - microseconds elapsed since emulator start
-+0x00/4   MTIME_LO    R   Low  32 bits, free-running
-+0x04/4   MTIME_HI    R   High 32 bits, latched
++0x00/4   MTIME_LO    R   Low  32 bits; reading latches MTIME_HI
++0x04/4   MTIME_HI    R   High 32 bits (latched value from last MTIME_LO read)
 
 ; RTC - Unix timestamp (seconds since 1970-01-01 00:00:00 UTC)
-+0x10/4   RTC_LO      R   Low  32 bits, free-running
-+0x14/4   RTC_HI      R   High 32 bits, latched
++0x10/4   RTC_LO      R   Low  32 bits; reading latches RTC_HI
++0x14/4   RTC_HI      R   High 32 bits (latched value from last RTC_LO read)
 ```
 
 Reading `MTIME_LO` latches the value inside `MTIME_HI` to the upper 32 bits of the current time stamp.
 Reading `RTC_LO` latches the value inside `RTC_HI` to the upper 32 bits of the current time stamp.
 
-This means reading MTIME_LO/RTC_LO first, then MTIME_HI/RTC/HI second is always a safe operation.
+This means reading MTIME_LO/RTC_LO first, then MTIME_HI/RTC_HI second is always a safe operation.
+All registers are read-only.
 
 ### System Info
 
@@ -106,24 +117,30 @@ This means reading MTIME_LO/RTC_LO first, then MTIME_HI/RTC/HI second is always 
 +0x00/4   RAM_SIZE    R   Total RAM in bytes (e.g. 0x00800000 for 8 MB)
 ```
 
+Read-only. Only offset 0x00 is mapped; other offsets return Unmapped.
+
 ### Block Device
 
 A block device that can either read or write a single block at a time.
-
-Uses a shared 512 byte large buffer to operate on.
+Uses a shared 512 byte buffer for transfers. Two instances at pages 0x46 and 0x47.
 
 ```
 +0x000/4    STATUS      R   Bit 0 = device present
                             Bit 1 = device busy
                             Bit 2 = last operation failed
-+0x004/4    LBA         RW  Target block address (512-byte blocks)
-+0x008/4    COMMAND     W   Bit 0 = 0 read / 1 write
-                            Bit 1 = trigger (self-clears once operation begins)
-+0x100/512  BUFFER      RW  512 bytes of transfer buffer (0x100–0x2FF)
++0x004/4    SIZE        R   Total number of 512-byte blocks
++0x008/4    LBA         RW  Target logical block address
++0x00C/4    COMMAND     W   1 = read, 2 = write, 3 = clear error flag
++0x100/512  BUFFER      RW  512-byte transfer buffer (0x100–0x2FF)
 ```
 
-Read flow: write LBA → write COMMAND 0b01 → poll STATUS bit 1 until clear → read BUFFER.
+Read flow: write LBA → write COMMAND=1 → poll STATUS bit 1 until clear → read BUFFER.
 
-Write flow: fill BUFFER → write LBA → write COMMAND 0b11 → poll STATUS bit 1 until clear.
+Write flow: fill BUFFER → write LBA → write COMMAND=2 → poll STATUS bit 1 until clear.
 
-The gap between +0x00C and +0x100 is intentionally reserved. 
+Error handling: if STATUS bit 2 is set, write COMMAND=3 to clear the error flag.
+
+Buffer access returns bus error when the device is busy, in error state, or not present.
+Writes to LBA and COMMAND are silently ignored when the device is not present.
+STATUS and SIZE are read-only (writes return WriteProtected).
+The gap between +0x00C and +0x100 is intentionally reserved.
