@@ -30,6 +30,7 @@ pub fn analyze(allocator: std.mem.Allocator, document: syntax.Document, uid_data
     try analyzer.scope_map.put(&.{}, &analyzer.root_scope);
 
     try analyzer.map(document);
+    try analyzer.resolve_doc_comment_refs();
 
     try analyzer.resolve_named_types();
 
@@ -995,37 +996,98 @@ const Analyzer = struct {
     fn lookup_doc_comment_ref(context: ?*anyopaque, allocator: std.mem.Allocator, local_qn: []const u8) error{OutOfMemory}!?[]const u8 {
         const raw = context orelse return null;
         const ana: *Analyzer = @ptrCast(@alignCast(raw));
-        return ana.resolve_doc_comment_ref(allocator, local_qn);
+        return ana.resolve_doc_comment_ref_with_scope(
+            allocator,
+            ana.current_scope_name(),
+            local_qn,
+            false,
+        );
     }
 
-    fn resolve_doc_comment_ref(ana: *Analyzer, allocator: std.mem.Allocator, local_qn: []const u8) error{OutOfMemory}!?[]const u8 {
+    fn resolve_doc_comment_ref_with_scope(
+        ana: *Analyzer,
+        allocator: std.mem.Allocator,
+        declared_scope: []const []const u8,
+        local_qn: []const u8,
+        report_errors: bool,
+    ) error{OutOfMemory}!?[]const u8 {
         var local_parts: std.ArrayList([]const u8) = .empty;
         defer local_parts.deinit(allocator);
 
         var iter = std.mem.splitScalar(u8, local_qn, '.');
         while (iter.next()) |part| {
-            if (part.len == 0) return null;
+            if (part.len == 0) {
+                if (report_errors) {
+                    try ana.emit_error(Location.empty, "invalid doc reference '@`{s}`' in scope '{f}'", .{
+                        local_qn,
+                        dotJoin(declared_scope),
+                    });
+                }
+                return null;
+            }
             try local_parts.append(allocator, part);
         }
 
-        if (local_parts.items.len == 0) return null;
+        if (local_parts.items.len == 0) {
+            if (report_errors) {
+                try ana.emit_error(Location.empty, "invalid doc reference '@`{s}`' in scope '{f}'", .{
+                    local_qn,
+                    dotJoin(declared_scope),
+                });
+            }
+            return null;
+        }
 
-        const resolved_scope = ana.resolve_scope_path(ana.current_scope_name(), local_parts.items) orelse return null;
-        return @as(?[]const u8, try ana.scope_to_fqn_string(allocator, resolved_scope));
+        const resolved = ana.resolve_scope_prefix(declared_scope, local_parts.items) orelse {
+            if (local_parts.items.len == 1) {
+                return null;
+            }
+            if (report_errors) {
+                try ana.emit_error(Location.empty, "unknown doc reference '@`{s}`' in scope '{f}'", .{
+                    local_qn,
+                    dotJoin(declared_scope),
+                });
+            }
+            return null;
+        };
+
+        const resolved_fqn = try ana.scope_to_fqn_string(allocator, resolved.scope);
+        if (resolved.matched_parts == local_parts.items.len) {
+            return @as(?[]const u8, resolved_fqn);
+        }
+
+        var full: std.ArrayList(u8) = .empty;
+        defer full.deinit(allocator);
+        try full.appendSlice(allocator, resolved_fqn);
+        for (local_parts.items[resolved.matched_parts..]) |part| {
+            try full.append(allocator, '.');
+            try full.appendSlice(allocator, part);
+        }
+        return @as(?[]const u8, try full.toOwnedSlice(allocator));
     }
 
-    fn resolve_scope_path(ana: *Analyzer, declared_scope: []const []const u8, local_parts: []const []const u8) ?*Scope {
+    const ScopePrefixMatch = struct {
+        scope: *Scope,
+        matched_parts: usize,
+    };
+
+    fn resolve_scope_prefix(ana: *Analyzer, declared_scope: []const []const u8, local_parts: []const []const u8) ?ScopePrefixMatch {
         var search_scope: ?*Scope = ana.scope_map.get(declared_scope) orelse return null;
 
         while (search_scope) |base_scope| : (search_scope = base_scope.parent) {
-            var resolved_scope: ?*Scope = base_scope;
-            for (local_parts) |part| {
-                resolved_scope = if (resolved_scope) |scope| scope.children.get(part) else null;
-                if (resolved_scope == null) break;
+            var resolved_scope: *Scope = base_scope;
+            var matched_parts: usize = 0;
+
+            while (matched_parts < local_parts.len) : (matched_parts += 1) {
+                const next_scope = resolved_scope.children.get(local_parts[matched_parts]) orelse break;
+                resolved_scope = next_scope;
             }
 
-            if (resolved_scope) |scope| {
-                return scope;
+            if (matched_parts > 0) {
+                return .{
+                    .scope = resolved_scope,
+                    .matched_parts = matched_parts,
+                };
             }
         }
 
@@ -1046,6 +1108,155 @@ const Analyzer = struct {
 
         std.mem.reverse([]const u8, segments.items);
         return std.mem.join(allocator, ".", segments.items);
+    }
+
+    fn resolve_doc_comment_refs(ana: *Analyzer) !void {
+        try ana.resolve_namespace_doc_comment_refs(ana.root.items);
+
+        for (ana.structs.items) |*item| {
+            try ana.resolve_doc_comment_in_scope(&item.docs, item.full_qualified_name);
+            for (@constCast(item.logic_fields)) |*field| {
+                try ana.resolve_doc_comment_in_scope(&field.docs, item.full_qualified_name);
+            }
+            for (@constCast(item.native_fields)) |*field| {
+                try ana.resolve_doc_comment_in_scope(&field.docs, item.full_qualified_name);
+            }
+        }
+
+        for (ana.unions.items) |*item| {
+            try ana.resolve_doc_comment_in_scope(&item.docs, item.full_qualified_name);
+            for (@constCast(item.logic_fields)) |*field| {
+                try ana.resolve_doc_comment_in_scope(&field.docs, item.full_qualified_name);
+            }
+            for (@constCast(item.native_fields)) |*field| {
+                try ana.resolve_doc_comment_in_scope(&field.docs, item.full_qualified_name);
+            }
+        }
+
+        for (ana.enums.items) |*item| {
+            try ana.resolve_doc_comment_in_scope(&item.docs, item.full_qualified_name);
+            for (@constCast(item.items)) |*enum_item| {
+                try ana.resolve_doc_comment_in_scope(&enum_item.docs, item.full_qualified_name);
+            }
+        }
+
+        for (ana.bitstructs.items) |*item| {
+            try ana.resolve_doc_comment_in_scope(&item.docs, item.full_qualified_name);
+            for (@constCast(item.fields)) |*field| {
+                try ana.resolve_doc_comment_in_scope(&field.docs, item.full_qualified_name);
+            }
+        }
+
+        for (ana.syscalls.items) |*item| {
+            try ana.resolve_doc_comment_in_scope(&item.docs, item.full_qualified_name);
+            for (@constCast(item.logic_inputs)) |*param| {
+                try ana.resolve_doc_comment_in_scope(&param.docs, item.full_qualified_name);
+            }
+            for (@constCast(item.logic_outputs)) |*param| {
+                try ana.resolve_doc_comment_in_scope(&param.docs, item.full_qualified_name);
+            }
+            for (@constCast(item.native_inputs)) |*param| {
+                try ana.resolve_doc_comment_in_scope(&param.docs, item.full_qualified_name);
+            }
+            for (@constCast(item.native_outputs)) |*param| {
+                try ana.resolve_doc_comment_in_scope(&param.docs, item.full_qualified_name);
+            }
+            for (@constCast(item.errors)) |*api_error| {
+                try ana.resolve_doc_comment_in_scope(&api_error.docs, item.full_qualified_name);
+            }
+        }
+
+        for (ana.async_calls.items) |*item| {
+            try ana.resolve_doc_comment_in_scope(&item.docs, item.full_qualified_name);
+            for (@constCast(item.logic_inputs)) |*param| {
+                try ana.resolve_doc_comment_in_scope(&param.docs, item.full_qualified_name);
+            }
+            for (@constCast(item.logic_outputs)) |*param| {
+                try ana.resolve_doc_comment_in_scope(&param.docs, item.full_qualified_name);
+            }
+            for (@constCast(item.native_inputs)) |*param| {
+                try ana.resolve_doc_comment_in_scope(&param.docs, item.full_qualified_name);
+            }
+            for (@constCast(item.native_outputs)) |*param| {
+                try ana.resolve_doc_comment_in_scope(&param.docs, item.full_qualified_name);
+            }
+            for (@constCast(item.errors)) |*api_error| {
+                try ana.resolve_doc_comment_in_scope(&api_error.docs, item.full_qualified_name);
+            }
+        }
+
+        for (ana.resources.items) |*item| {
+            try ana.resolve_doc_comment_in_scope(&item.docs, item.full_qualified_name);
+        }
+
+        for (ana.constants.items) |*item| {
+            try ana.resolve_doc_comment_in_scope(&item.docs, item.full_qualified_name);
+        }
+
+        for (ana.types.items) |*item| {
+            switch (item.*) {
+                .typedef => |*typedef| {
+                    try ana.resolve_doc_comment_in_scope(&typedef.docs, typedef.full_qualified_name);
+                },
+                else => {},
+            }
+        }
+    }
+
+    fn resolve_namespace_doc_comment_refs(ana: *Analyzer, declarations: []const model.Declaration) !void {
+        for (@constCast(declarations)) |*decl| {
+            if (decl.data == .namespace) {
+                try ana.resolve_doc_comment_in_scope(&decl.docs, decl.full_qualified_name);
+            }
+            try ana.resolve_namespace_doc_comment_refs(decl.children);
+        }
+    }
+
+    fn resolve_doc_comment_in_scope(ana: *Analyzer, docs: *model.DocComment, declared_scope: []const []const u8) !void {
+        for (@constCast(docs.sections)) |*section| {
+            for (@constCast(section.blocks)) |*block| {
+                switch (block.*) {
+                    .paragraph => |*paragraph| {
+                        try ana.resolve_inline_refs(@constCast(paragraph.content), declared_scope);
+                    },
+                    .unordered_list => |*list| {
+                        for (@constCast(list.items)) |*item| {
+                            try ana.resolve_inline_refs(@constCast(item.*), declared_scope);
+                        }
+                    },
+                    .ordered_list => |*list| {
+                        for (@constCast(list.items)) |*item| {
+                            try ana.resolve_inline_refs(@constCast(item.*), declared_scope);
+                        }
+                    },
+                    .code_block => {},
+                }
+            }
+        }
+    }
+
+    fn resolve_inline_refs(ana: *Analyzer, inlines: []model.DocComment.Inline, declared_scope: []const []const u8) !void {
+        for (inlines) |*inl| {
+            switch (inl.*) {
+                .ref => |*ref_data| {
+                    if (try ana.resolve_doc_comment_ref_with_scope(
+                        ana.allocator,
+                        declared_scope,
+                        ref_data.fqn,
+                        true,
+                    )) |resolved| {
+                        ref_data.fqn = resolved;
+                    }
+                },
+                .emphasis => |*emphasis| {
+                    try ana.resolve_inline_refs(@constCast(emphasis.content), declared_scope);
+                },
+                .link => |*link| {
+                    try ana.resolve_inline_refs(@constCast(link.content), declared_scope);
+                },
+                else => {},
+            }
+        }
     }
 
     /// Creates a synthetic one-paragraph DocComment from a plain text string.
