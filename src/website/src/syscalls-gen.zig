@@ -457,7 +457,7 @@ const PageRenderer = struct {
 
         try html.writer.print("            <h2>{s}</h2>\n", .{title});
 
-        try html.writer.writeAll("            <ul>\n");
+        try html.writer.writeAll("            <ul class=\"basic-list\">\n");
         for (decl.children) |child| {
             if (!contains_tag(child.data, tags))
                 continue;
@@ -803,7 +803,11 @@ fn format_inlines(inlines: []const model.DocComment.Inline, writer: *std.Io.Writ
                 try format_inlines(emphasis.content, writer);
                 try writer.writeAll("</em>");
             },
-            .ref => |ref| try writer.print("<code>[[{s}]]</code>", .{ref.fqn}),
+            .ref => |ref| {
+                try writer.print("<a href=\"{f}\">", .{fmt_attr("???")});
+                try writer.print("<code>{s}</code>", .{ref.fqn});
+                try writer.writeAll("</a>");
+            },
             .link => |link| {
                 try writer.print("<a href=\"{f}\">", .{fmt_attr(link.url)});
                 try format_inlines(link.content, writer);

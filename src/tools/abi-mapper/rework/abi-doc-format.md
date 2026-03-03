@@ -85,7 +85,8 @@ A parsed doc comment produces a **DocComment** value. The model is specified her
             "lore",
             "example",
             "deprecated",
-            "decision"
+            "decision",
+            "learn",
           ]
         },
         "blocks": {
@@ -251,7 +252,7 @@ DocComment
 
 Section
  ├─ kind: "main" | "note" | "warning" | "lore" | "example"
- │         | "deprecated" | "decision"
+ │         | "deprecated" | "decision" | "learn"
  └─ blocks: Block[]          (at least 1)
 
 Block = Paragraph | UnorderedList | OrderedList | CodeBlock
@@ -337,6 +338,7 @@ Recognized tags (case-sensitive):
 | `EXAMPLE` | `example` |
 | `DEPRECATED` | `deprecated` |
 | `DECISION` | `decision` |
+| `LEARN` | `learn` |
 
 A new admonition tag or a blank line followed by different content ends the current section and starts a new one.
 
@@ -955,7 +957,7 @@ section          = [ admonition_start ] , block , { blank_line , block } ;
 
 admonition_start = tag , ":" , ws , text_line ;
 tag              = "NOTE" | "WARNING" | "LORE" | "EXAMPLE"
-                 | "DEPRECATED" | "DECISION" ;
+                 | "DEPRECATED" | "DECISION" | "LEARN";
 
 block            = code_block | unordered_list | ordered_list | paragraph ;
 

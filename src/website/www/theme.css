@@ -225,7 +225,7 @@ div.flex-spacer {
     margin-bottom: 0.5em;
 }
 
-.docs-container ul {
+.docs-container ul.basic-list {
     column-width: 15em;
     margin-left: 2em;
 }
@@ -289,9 +289,17 @@ div.flex-spacer {
     font-weight: bold;
 }
 
+.docs-container .doc-section-learn::before {
+    content: 'LEARN:';
+    font-weight: bold;
+}
 
 .docs-container .doc-section-main>:is(p,li,ul,pre) {
     margin-left: 0;
+}
+
+.docs-container .doc-section :is(ul,ol) {
+    padding-left: 2em;
 }
 
 /*************************************************

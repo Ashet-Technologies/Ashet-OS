@@ -47,6 +47,7 @@ pub const DocComment = struct {
             example,
             deprecated,
             decision,
+            learn,
         };
     };
 

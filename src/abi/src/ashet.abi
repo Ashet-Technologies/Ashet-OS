@@ -132,7 +132,7 @@ namespace overlapped {
     ///
     /// NOTE: If the operation has already completed, an error will be returned saying so.
     ///
-    /// NOTE: The cancelled operation will not be returned by `await_completion` or `await_completion_of` anymore.
+    /// NOTE: The cancelled operation will not be returned by @`await_completion` or @`await_completion_of` anymore.
     syscall cancel {
         in      aop: *ARC;
         error   Completed;
@@ -165,7 +165,7 @@ namespace process {
         error InvalidHandle;
     }
 
-    /// Returns the arguments that were passed to this process in `Spawn`.
+    /// Returns the arguments that were passed to this process in @`Spawn`.
     syscall get_arguments {
         in    target: ?Process;
         in    argv:   ?[]SpawnProcessArg;
@@ -188,12 +188,12 @@ namespace process {
 
     /// Spawns a new process
     async_call Spawn {
-        /// Relative base directory for `path`.
+        /// Relative base directory for @`path`.
         in      dir: Directory;
-        /// File name of the executable relative to `dir`.
+        /// File name of the executable relative to @`dir`.
         in      path: str;
         /// The arguments passed to the process.
-        /// If a `SystemResource` is passed, it will receive the created process as a owning process.
+        /// If a @`SystemResource` is passed, it will receive the created process as a owning process.
         /// It is safe to release the resource in this process as soon as this operation returns.
         in      argv: []const SpawnProcessArg;
         /// Handle to the spawned process.
@@ -226,12 +226,12 @@ namespace process {
         }
 
         /// Defines the signature of a thread entry point.
-        /// The parameter is the `arg` value passed to `spawn`.
+        /// The parameter is the @`arg` value passed to @`spawn`.
         /// The return value is the exit code of the thread.
         typedef ThreadFunction = fnptr (?anyptr) u32;
 
-        /// Spawns a new thread with `function` passing `arg` to it.
-        /// If `stack_size` is not 0, will create a stack with the given size.
+        /// Spawns a new thread with @`function` passing @`arg` to it.
+        /// If @`stack_size` is not 0, will create a stack with the given size.
         syscall spawn {
             in    function:   ThreadFunction;
             in    arg:        ?anyptr;
@@ -240,7 +240,7 @@ namespace process {
             error SystemResources;
         }
 
-        /// Kills the given thread with `exit_code`.
+        /// Kills the given thread with @`exit_code`.
         syscall kill {
             in    target:    Thread;
             in    exit_code: ExitCode;
@@ -289,9 +289,9 @@ namespace process {
             /// The alignment
             in    ptr_align: u8;
 
-            /// A non-`null` pointer that points to exactly @ref size bytes.
+            /// A non-`null` pointer that points to exactly @`size` bytes.
             ///
-            /// NOTE: In practise, this might point to more than @ref size bytes,
+            /// NOTE: In practise, this might point to more than @`size` bytes,
             ///       but the code must not assume *any* excess bytes may exist.
             out   memory:    [*]u8;
 
@@ -301,10 +301,10 @@ namespace process {
 
         /// Returns previously allocated memory back to the process heap.
         syscall release {
-            /// The complete chunk of memory previously allocated with @ref allocate.
+            /// The complete chunk of memory previously allocated with @`allocate`.
             in      mem: []u8;
 
-            /// The alignment that was passed to @ref allocate.ptr_align previously.
+            /// The alignment that was passed to @`allocate.ptr_align` previously.
             in      ptr_align: u8;
         }
     }
@@ -354,7 +354,7 @@ namespace clock {
         out time: Absolute;
     }
 
-    /// Sleeps until `clock.monotonic()` returns at least `timeout`.
+    /// Sleeps until `clock.monotonic()` returns at least @`timeout`.
     async_call Timer {
         /// Monotonic timestamp in nanoseconds until the operation completes.
         in timeout: Absolute;
@@ -370,7 +370,7 @@ namespace datetime {
         out datetime: DateTime;
     }
 
-    /// Sleeps until `datetime.now()` returns a point in  time that comes after `when`.
+    /// Sleeps until `datetime.now()` returns a point in  time that comes after @`when`.
     async_call Alarm {
         /// Earliest possible date time of when the alarm triggers.
         in when: DateTime;
@@ -381,7 +381,7 @@ namespace datetime {
 namespace video {
     /// Returns a list of all video outputs.
     ///
-    /// If `ids` is `null`, the total number of available outputs is returned;
+    /// If @`ids` is `null`, the total number of available outputs is returned;
     /// otherwise, up to `ids.len` elements are written into the provided array
     /// and the number of written elements is returned.
     syscall enumerate {
@@ -701,7 +701,7 @@ namespace fs {
     }
 
     /// Gets information about a file system.
-    /// Also returns a `next` id that can be used to iterate over all filesystems.
+    /// Also returns a @`next` id that can be used to iterate over all filesystems.
     /// The `system` filesystem is guaranteed to be the first one.
     async_call GetFilesystemInfo {
         in      fs_id: FileSystemId;
@@ -774,7 +774,7 @@ namespace fs {
         error   InvalidPath;
     }
 
-    /// creates a new directory relative to dir. If `path` contains subdirectories, all
+    /// creates a new directory relative to dir. If @`path` contains subdirectories, all
     /// directories are created.
     async_call MkDir {
         in      dir:     Directory;
@@ -921,7 +921,7 @@ namespace fs {
 }
 
 namespace shm {
-    /// Constructs a new shared memory object with `size` bytes of memory.
+    /// Constructs a new shared memory object with @`size` bytes of memory.
     /// Shared memory can be written by all processes without any memory protection.
     syscall create {
         in    size: usize;
@@ -946,9 +946,9 @@ namespace shm {
 }
 
 namespace pipe {
-    /// Spawns a new pipe with `fifo_length` elements of `object_size` bytes.
-    /// If `fifo_length` is 0, the pipe is synchronous and can only send data
-    /// if a `read` call is active. Otherwise, up to `fifo_length` elements can be
+    /// Spawns a new pipe with @`fifo_length` elements of @`object_size` bytes.
+    /// If @`fifo_length` is 0, the pipe is synchronous and can only send data
+    /// if a @`Read` call is active. Otherwise, up to @`fifo_length` elements can be
     /// stored in a FIFO.
     syscall create {
         in    object_size: usize;
@@ -971,14 +971,14 @@ namespace pipe {
         error InvalidHandle;
     }
 
-    /// Writes elements from `data` into the given pipe.
+    /// Writes elements from @`data` into the given pipe.
     async_call Write {
         in      handle: Pipe;
         /// Pointer to the first element. Length defines how many elements are to be transferred.
         in      data:   bytestr;
-        /// Distance between each element in `data`. Can be different from the pipes element size
+        /// Distance between each element in @`data`. Can be different from the pipes element size
         /// to allow sparse data to be transferred.
-        /// If `0`, it will use the `object_size` property of the pipe.
+        /// If `0`, it will use the @`object_size` property of the pipe.
         in      stride: usize;
         /// Defines how the write should operate.
         in      mode: PipeMode;
@@ -986,14 +986,14 @@ namespace pipe {
         out     count: usize;
     }
 
-    /// Reads elements from a pipe into `buffer`.
+    /// Reads elements from a pipe into @`buffer`.
     async_call Read {
         in      handle: Pipe;
         /// Points to the first element to be received.
         in      buffer: bytebuf;
-        /// Distance between each element in `buffer`. Can be different from the pipes element size
+        /// Distance between each element in @`buffer`. Can be different from the pipes element size
         /// to allow sparse data to be transferred.
-        /// If `0`, it will use the `object_size` property of the pipe.
+        /// If `0`, it will use the @`object_size` property of the pipe.
         in      stride: usize;
         /// Defines how the read should operate.
         in      mode: PipeMode;
@@ -1004,26 +1004,26 @@ namespace pipe {
 }
 
 namespace sync {
-    /// Creates a new `SyncEvent` object that can be used to synchronize
+    /// Creates a new @`SyncEvent` object that can be used to synchronize
     /// different processes.
     syscall create_event {
         out    event: SyncEvent;
         error  SystemResources;
     }
 
-    /// Completes one `WaitForEvent` IOP waiting for the given event.
+    /// Completes one @`WaitForEvent` IOP waiting for the given event.
     syscall notify_one {
         in    event: SyncEvent;
         error InvalidHandle;
     }
 
-    /// Completes all `WaitForEvent` IOP waiting for the given event.
+    /// Completes all @`WaitForEvent` IOP waiting for the given event.
     syscall notify_all {
         in    event: SyncEvent;
         error InvalidHandle;
     }
 
-    /// Waits for the given `SyncEvent` to be notified.
+    /// Waits for the given @`SyncEvent` to be notified.
     async_call WaitForEvent {
         in    event: SyncEvent;
         error InvalidHandle;
@@ -1042,7 +1042,7 @@ namespace sync {
         error InvalidHandle;
     }
 
-    /// Unlocks a mutual exclusion. Completes a single `Lock` IOP if it exists.
+    /// Unlocks a mutual exclusion. Completes a single @`Lock` IOP if it exists.
     syscall unlock {
         in    mutex: Mutex;
         error InvalidHandle;
@@ -1153,7 +1153,7 @@ namespace draw {
         in area: Rectangle;
     }
 
-    /// Renders the provided Ashet Graphics Protocol `sequence` into `target` framebuffer.
+    /// Renders the provided Ashet Graphics Protocol @`sequence` into @`target` framebuffer.
     ///
     /// The function will run asynchronously and will return as soon as the rendering is done.
     ///
@@ -1238,7 +1238,7 @@ namespace gui {
         error InvalidHandle;
     }
 
-    /// Sets the `size` of `window` and returns the new actual size.
+    /// Sets the @`size` of @`window` and returns the new actual size.
     /// NOTE: This event is meant to be used from desktop APIs and will not automatically
     ///       notify the window of the resize event.
     syscall set_window_size {
@@ -1269,7 +1269,7 @@ namespace gui {
         error InvalidHandle;
     }
 
-    /// Waits for an event on the given `Window`, completing as soon as
+    /// Waits for an event on the given @`Window`, completing as soon as
     /// an event arrived.
     async_call GetWindowEvent {
         in    window: Window;
@@ -1279,8 +1279,8 @@ namespace gui {
         error InvalidHandle;
     }
 
-    /// Create a new widget identified by `uuid` on the given `window`.
-    /// Position and size of the widget are undetermined at start and a call to `place_widget` should be performed on success.
+    /// Create a new widget identified by @`uuid` on the given @`window`.
+    /// Position and size of the widget are undetermined at start and a call to @`place_widget` should be performed on success.
     syscall create_widget {
         in    window: Window;
         in    uuid: *const UUID;
@@ -1308,7 +1308,7 @@ namespace gui {
 
     enum WidgetControlID : u32 { ... }
 
-    /// Triggers the `control` event of the widget with the given `message` as a payload.
+    /// Triggers the @`WidgetEvent.Type.control` event of the widget with the given @`message` as a payload.
     syscall control_widget {
         in    widget: Widget;
         in    message: WidgetControlMessage;
@@ -1318,8 +1318,8 @@ namespace gui {
 
     enum WidgetNotifyID : u32 { ... }
 
-    /// Puts a `widget_notify` event into the event queue of the `Window` that owns `widget`.
-    /// The parameters are passed as a `WidgetNotifyEvent` to the event queue.
+    /// Puts a @`WindowEvent.Type.widget_notify` event into the event queue of the @`Window` that owns @`widget`.
+    /// The parameters are passed as a @`WidgetNotifyEvent` to the event queue.
     syscall notify_owner {
         in    widget: Widget;
         in    type:   WidgetNotifyID;
@@ -1394,11 +1394,11 @@ namespace gui {
     ///
     /// NOTE: This function is meant to be implemented by a desktop server.
     ///       Regular GUI applications should not use this function as they have no
-    ///       access to a `MessageBoxEvent.RequestID`.
+    ///       access to a @`MessageBoxEvent.RequestID`.
     syscall notify_message_box {
         /// The desktop that completed the message box.
         in      source: Desktop;
-        /// The request id that was passed in `MessageBoxEvent`.
+        /// The request id that was passed in @`MessageBoxEvent`.
         in      request_id: MessageBoxEvent.RequestID;
         /// The resulting button which the user clicked.
         in      result: MessageBoxResult;
@@ -1415,7 +1415,7 @@ namespace gui {
         error InvalidHandle;
     }
 
-    /// Sends a notification to the provided `desktop`.
+    /// Sends a notification to the provided @`desktop`.
     syscall send_notification {
         /// Where to show the notification?
         in      desktop: Desktop;
@@ -1447,7 +1447,7 @@ namespace gui {
 
         /// Returns the current clipboard value as the provided mime type.
         /// The os provides a conversion *if possible*, otherwise returns an error.
-        /// The returned memory for `value` is owned by the process and must be freed with `ashet.process.memory.release`.
+        /// The returned memory for @`value` is owned by the process and must be freed with @`process.memory.release`.
         syscall get_value {
             in    desktop: Desktop;
             in    mime: str;
@@ -1461,7 +1461,7 @@ namespace gui {
 }
 
 namespace service {
-    /// Registers a new service `uuid` in the system.
+    /// Registers a new service @`uuid` in the system.
     /// Takes an array of function pointers that will be provided for IPC and a service name to be advertised.
     syscall create {
         in    uuid: *const UUID;
@@ -1653,7 +1653,7 @@ struct Await_Options {
         /// or
         /// b) the result array is full
         ///
-        /// NOTE: If `thread_affinity` is `.all_threads`, other threads can still
+        /// NOTE: If @`thread_affinity` is `.all_threads`, other threads can still
         ///       schedule more operations and make this function block longer.
         item wait_all = 2;
 
@@ -2614,7 +2614,7 @@ struct WidgetDescriptor {
     field uuid: UUID;
 
     /// Number of bytes allocated in a Widget for this widget type.
-    /// See @ref gui.get_widget_data function for further information.
+    /// See @`gui.get_widget_data` function for further information.
     field data_size: usize;
 
     field flags: Flags;
@@ -2705,7 +2705,7 @@ typedef DesktopEventHandler = fnptr (Desktop, *const DesktopEvent) void;
 
 struct DesktopDescriptor {
     /// Number of bytes allocated in a Window for this desktop.
-    /// See @ref gui.get_desktop_data function for further information.
+    /// See @`gui.get_desktop_data` function for further information.
     field window_data_size: usize;
 
     /// A function pointer to the event handler of a desktop.
@@ -2737,11 +2737,11 @@ union DesktopEvent {
 
         //? user interaction:
 
-        /// `send_notification` was called and the desktop user should display
+        /// @`send_notification` was called and the desktop user should display
         /// a notification.
         item show_notification = 3;
 
-        /// `send_notification` was called and the desktop user should display
+        /// @`send_notification` was called and the desktop user should display
         /// a notification.
         item show_message_box = 4;
 
@@ -2774,7 +2774,7 @@ struct MessageBoxEvent {
     field event_type: DesktopEvent.Type;
 
     /// The desktop-specific request id that must be passed into
-    /// `notify_message_box` to finish the message box request.
+    /// @`notify_message_box` to finish the message box request.
     field request_id: RequestID;
 
     /// Content of the message box.
@@ -2808,11 +2808,11 @@ struct MessageBoxEvent {
 ///
 /// To address these two problems, the color scheme uses a modified mapping:
 ///
-/// - `hue` is used without special interpretation.
-/// - `value` maps to a range of `[1:8]` instead of `[0:7]`, allowing 8 different
+/// - @`hue` is used without special interpretation.
+/// - @`value` maps to a range of `[1:8]` instead of `[0:7]`, allowing 8 different
 ///   values that are all not black.
-/// - `saturation` is used without special interpretation except for zero:
-///   If the `saturation` field is zero, `hue` and `value` are interpreted together as a 6 bit
+/// - @`saturation` is used without special interpretation except for zero:
+///   If the @`saturation` field is zero, @`hue` and @`value` are interpreted together as a 6 bit
 ///   integer storing the brightness of gray.
 ///
 /// This yields a color space which has the following properties:
@@ -2925,7 +2925,7 @@ union WidgetEvent {
         ///       same widget. The hovered widget *may* change in between the mouse down and mouse up,
         ///       but the click will still be recognized.
         /// NOTE: A click with the keyboard is valid when, and only when:
-        ///       `key_press` and `key_release` happen without changing the focused widget, and only when
+        ///       @`key_press` and @`key_release` happen without changing the focused widget, and only when
         ///       the focus giving key (space, return, ...) was pressed without any other key interrupting.
         item click = 3;
 
@@ -2941,43 +2941,43 @@ union WidgetEvent {
 
         /// The mouse was moved inside the rectangle of the widget.
         ///
-        /// NOTE: This event can only happen when `hit_test_visible` was set
+        /// NOTE: This event can only happen when @`hit_test_visible` was set
         ///       in the widget creation flags.
         item mouse_enter = 6;
 
         /// The mouse was moved outside the rectangle of the widget.
         ///
-        /// NOTE: This event can only happen when `hit_test_visible` was set
+        /// NOTE: This event can only happen when @`hit_test_visible` was set
         ///       in the widget creation flags.
         item mouse_leave = 7;
 
         /// The mouse stopped for some time over the widget.
         ///
-        /// NOTE: This event can only happen when `hit_test_visible` was set
+        /// NOTE: This event can only happen when @`hit_test_visible` was set
         ///       in the widget creation flags.
         item mouse_hover = 8;
 
         /// A mouse button was pressed over the widget.
         ///
-        /// NOTE: This event can only happen when `hit_test_visible` was set
+        /// NOTE: This event can only happen when @`hit_test_visible` was set
         ///       in the widget creation flags.
         item mouse_button_press = 9;
 
         /// A mouse button was released over the widget.
         ///
-        /// NOTE: This event can only happen when `hit_test_visible` was set
+        /// NOTE: This event can only happen when @`hit_test_visible` was set
         ///       in the widget creation flags.
         item mouse_button_release = 10;
 
         /// The mouse was moved over the widget.
         ///
-        /// NOTE: This event can only happen when `hit_test_visible` was set
+        /// NOTE: This event can only happen when @`hit_test_visible` was set
         ///       in the widget creation flags.
         item mouse_motion = 11;
 
         /// A vertical or horizontal scroll wheel was scrolled over the widget.
         ///
-        /// NOTE: This event can only happen when `hit_test_visible` was set
+        /// NOTE: This event can only happen when @`hit_test_visible` was set
         ///       in the widget creation flags.
         item scroll = 12;
 
@@ -2985,25 +2985,25 @@ union WidgetEvent {
 
         /// The user dragged a payload into the rectangle of this widget.
         ///
-        /// NOTE: This event can only happen when `allow_drop` was set in the
+        /// NOTE: This event can only happen when @`allow_drop` was set in the
         ///       widget creation flags.
         item drag_enter = 13;
 
         /// The user dragged a payload out of the rectangle of this widget.
         ///
-        /// NOTE: This event can only happen when `allow_drop` was set in the
+        /// NOTE: This event can only happen when @`allow_drop` was set in the
         ///       widget type creation flags.
         item drag_leave = 14;
 
         /// The user dragged a payload over the rectangle of this widget.
         ///
-        /// NOTE: This event can only happen when `allow_drop` was set in the
+        /// NOTE: This event can only happen when @`allow_drop` was set in the
         ///       widget type creation flags.
         item drag_over = 15;
 
         /// The user dropped a payload into this widget.
         ///
-        /// NOTE: This event can only happen when `allow_drop` was set in the
+        /// NOTE: This event can only happen when @`allow_drop` was set in the
         ///       widget type creation flags.
         item drag_drop = 16;
 
@@ -3011,26 +3011,26 @@ union WidgetEvent {
 
         /// The user requested a clipboard copy operation, usually by pressing 'Ctrl-C'.
         ///
-        /// NOTE: This event can only happen when `clipboard_sensitive` was set in
+        /// NOTE: This event can only happen when @`clipboard_sensitive` was set in
         ///       the widget type creation flags.
         item clipboard_copy = 17;
 
         /// The user requested a clipboard paste operation, usually by pressing 'Ctrl-V'.
         ///
-        /// NOTE: This event can only happen when `clipboard_sensitive` was set in
+        /// NOTE: This event can only happen when @`clipboard_sensitive` was set in
         ///       the widget type creation flags.
         item clipboard_paste = 18;
 
         /// The user requested a clipboard cut operation, usually by pressing 'Ctrl-X'.
         ///
-        /// NOTE: This event can only happen when `clipboard_sensitive` was set in
+        /// NOTE: This event can only happen when @`clipboard_sensitive` was set in
         ///       the widget type creation flags.
         item clipboard_cut = 19;
 
         //? widget specific:
 
         //? TODO: Implement ResizedArgs with "desired size, actual size"
-        /// The widget was resized with a call to `place_widget`.
+        /// The widget was resized with a call to @`place_widget`.
         ///
         /// NOTE: This event will not fire if the widget was only moved.
         item resized = 21;
@@ -3081,15 +3081,19 @@ union WindowEvent {
         item window_restore = 10;
 
         /// The window is currently moving on the screen. Query `window.bounds` to get the new position.
+        ///
+        /// DEPRECATED: This event must be removed!
         item window_moving = 11;
 
         /// The window was moved on the screen. Query `window.bounds` to get the new position.
+        ///
+        /// DEPRECATED: This event must be removed!
         item window_moved = 12;
 
-        /// The window size is currently changing. Query `window.bounds` to get the new size.
+        /// The window size is currently changing. Query @`gui.get_window_size` to get the new size.
         item window_resizing = 13;
 
-        /// The window size changed. Query `window.bounds` to get the new size.
+        /// The window size changed. Query @`gui.get_window_size` to get the new size.
         item window_resized = 14;
     }
 }
@@ -3185,10 +3189,10 @@ struct Rectangle {
 struct VideoMemory {
     /// Pointer to the first pixel of the first scanline.
     ///
-    /// Each scanline is `.stride` elements separated from
-    /// each other and contains `width` valid elements.
+    /// Each scanline is @`stride` elements separated from
+    /// each other and contains @`width` valid elements.
     ///
-    /// There are `height` total scanlines available.
+    /// There are @`height` total scanlines available.
     field base: [*]align(4) Color;
 
     /// Length of a scanline.
@@ -3318,7 +3322,7 @@ namespace io {
 
             error InvalidHandle;
 
-            /// The actual baud rate diverges more than `acceptable_baud_error` from the requested baud rate.
+            /// The actual baud rate diverges more than @`acceptable_baud_error` from the requested baud rate.
             error ImpreciseBaudRate;
 
             /// The requested word size is not supported by this serial port.
@@ -3589,7 +3593,7 @@ namespace io {
         ///       As both a singular read and a singular write can be expressed as a batch of one operation,
         ///       this is the only available function on the I²C bus.
         ///
-        ///       **Example:**
+        ///       *Example:*
         ///       Typical I²C EEPROMs have an internally maintained "memory cursor" which is advanced for every
         ///       read operation. All write operations will update the cursor also for read operations.
         ///
@@ -3605,10 +3609,10 @@ namespace io {
             in bus: Bus;
 
             /// A mutable sequence of I²C operations. Will be processed first-to-last and
-            /// the pointed `Operation`s will be changed during their execution.
+            /// the pointed @`Operation`s will be changed during their execution.
             in sequence: []Operation;
 
-            /// The number of successfully processed elements from `sequence`.
+            /// The number of successfully processed elements from @`sequence`.
             ///
             /// On success, the call returns exactly the length of the sequence, otherwise
             /// it returns the index of the element that failed.
@@ -3616,10 +3620,10 @@ namespace io {
 
             error InvalidHandle;
 
-            /// An operation in the `sequence` contained an invalid address.
+            /// An operation in the @`sequence` contained an invalid address.
             error InvalidAddress;
 
-            /// An operation that isn't `ping` was trying to process zero bytes.
+            /// An operation that isn't @`Operation.Type.ping` was trying to process zero bytes.
             error EmptyOperation;
 
             /// An error happened during processing. Read `sequence[].error` to see which operations failed.
@@ -3637,12 +3641,12 @@ namespace io {
 
             /// The data which should either be written or read.
             ///
-            /// NOTE: If the operation is `Type.read`, the buffer will
+            /// NOTE: If the operation is @`Type.read`, the buffer will
             ///       be overwritten by the OS. All other operations treat this
             ///       buffer as immutable.
             field data: bytebuf;
 
-            /// The number of processed bytes inside `data`.
+            /// The number of processed bytes inside @`data`.
             ///
             /// NOTE: This field can be left uninitialized and will be overwritten by the OS
             ///       with the result of the operation.
@@ -3650,11 +3654,11 @@ namespace io {
             field processed: usize = 0;
 
             /// The error that happened when processing this batch item. On success, this will
-            /// be set to `Error.none`.
+            /// be set to @`Error.none`.
             ///
             /// NOTE: This field can be left uninitialized and will be overwritten by the OS
             ///       with the result of the operation.
-            ///       If the batch item wasn't scheduled, the resulting value will be `Error.aborted`.
+            ///       If the batch item wasn't scheduled, the resulting value will be @`Error.aborted`.
             field @"error": Error;
 
             enum Type : u8 {
@@ -3680,7 +3684,7 @@ namespace io {
 
                 /// While writing the data, the device returned a NAK.
                 ///
-                /// NOTE: The ACK/NAK during the addressing phase is handled by `device_not_found`.
+                /// NOTE: The ACK/NAK during the addressing phase is handled by @`device_not_found`.
                 item no_acknowledge = 2;
 
                 /// A previous batch item errored and this item wasn't executed at all.

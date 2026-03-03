@@ -387,6 +387,7 @@ fn parse_admonition(line: []const u8) ?AdmonitionResult {
         .{ .tag = "EXAMPLE", .kind = .example },
         .{ .tag = "DEPRECATED", .kind = .deprecated },
         .{ .tag = "DECISION", .kind = .decision },
+        .{ .tag = "LEARN", .kind = .learn },
     };
 
     for (tags) |entry| {
