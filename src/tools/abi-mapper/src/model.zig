@@ -123,7 +123,9 @@ pub const DocComment = struct {
         pub const Text = struct { value: []const u8 };
         pub const Code = struct { value: []const u8 };
         pub const Emphasis = struct { content: []const Inline };
-        pub const Ref = struct { fqn: []const u8 };
+        pub const Ref = struct {
+            fqn: []const u8,
+        };
         pub const Link = struct { url: []const u8, content: []const Inline };
 
         pub fn jsonStringify(inl: Inline, jws: anytype) !void {

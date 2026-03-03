@@ -3,6 +3,17 @@ const model = @import("model.zig");
 
 const DocComment = model.DocComment;
 
+pub const RefLookupFn = *const fn (
+    context: ?*anyopaque,
+    allocator: std.mem.Allocator,
+    local_qn: []const u8,
+) error{OutOfMemory}!?[]const u8;
+
+pub const ParseOptions = struct {
+    ref_lookup: ?RefLookupFn = null,
+    ref_lookup_context: ?*anyopaque = null,
+};
+
 /// A parsed doc comment together with the arena that owns its memory.
 /// Call deinit() when the DocComment is no longer needed.
 pub const ParsedDocComment = struct {
@@ -18,13 +29,13 @@ pub const ParsedDocComment = struct {
 /// The caller owns the result and must call deinit() to release memory.
 ///
 /// Each raw line should be `token.text[3..]` where token.text starts with `///`.
-pub fn parse(backing_allocator: std.mem.Allocator, raw_lines: []const []const u8) !ParsedDocComment {
+pub fn parse(backing_allocator: std.mem.Allocator, raw_lines: []const []const u8, options: ParseOptions) !ParsedDocComment {
     var result: ParsedDocComment = .{
         .arena = std.heap.ArenaAllocator.init(backing_allocator),
         .comment = undefined,
     };
     errdefer result.arena.deinit();
-    result.comment = try parse_into_arena(&result.arena, raw_lines);
+    result.comment = try parse_into_arena(&result.arena, raw_lines, options);
     return result;
 }
 
@@ -32,10 +43,14 @@ pub fn parse(backing_allocator: std.mem.Allocator, raw_lines: []const []const u8
 /// The caller owns the arena and is responsible for its lifetime.
 ///
 /// Each raw line should be `token.text[3..]` where token.text starts with `///`.
-pub fn parse_into_arena(arena: *std.heap.ArenaAllocator, raw_lines: []const []const u8) !DocComment {
+pub fn parse_into_arena(arena: *std.heap.ArenaAllocator, raw_lines: []const []const u8, options: ParseOptions) !DocComment {
     if (raw_lines.len == 0) return .empty;
 
-    var ctx: ParseContext = .{ .allocator = arena.allocator() };
+    var ctx: ParseContext = .{
+        .allocator = arena.allocator(),
+        .ref_lookup = options.ref_lookup,
+        .ref_lookup_context = options.ref_lookup_context,
+    };
     return ctx.parse_doc(raw_lines);
 }
 
@@ -43,6 +58,8 @@ const AccKind = enum { none, paragraph, unordered_list, ordered_list };
 
 const ParseContext = struct {
     allocator: std.mem.Allocator,
+    ref_lookup: ?RefLookupFn,
+    ref_lookup_context: ?*anyopaque,
 
     fn parse_doc(ctx: *ParseContext, raw_lines: []const []const u8) !DocComment {
         // Normalize lines: strip one optional leading space (the /// separator), right-trim.
@@ -251,7 +268,11 @@ const ParseContext = struct {
                 }
                 const ref_start = i + 2;
                 if (std.mem.indexOfScalar(u8, text[ref_start..], '`')) |rel_end| {
-                    const fqn = text[ref_start .. ref_start + rel_end];
+                    const local_qn = text[ref_start .. ref_start + rel_end];
+                    const fqn = if (ctx.ref_lookup) |lookup|
+                        (try lookup(ctx.ref_lookup_context, ctx.allocator, local_qn)) orelse local_qn
+                    else
+                        local_qn;
                     try result.append(ctx.allocator, .{ .ref = .{ .fqn = fqn } });
                     i = ref_start + rel_end + 1;
                     text_start = i;

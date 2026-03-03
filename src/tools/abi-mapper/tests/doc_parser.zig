@@ -3,6 +3,10 @@ const abi_parser = @import("abi-parser");
 const doc_comment_parser = abi_parser.doc_comment;
 const DocComment = abi_parser.model.DocComment;
 
+fn parse_doc(raw_lines: []const []const u8) !doc_comment_parser.ParsedDocComment {
+    return doc_comment_parser.parse(std.testing.allocator, raw_lines, .{});
+}
+
 // from json
 
 test "empty doc comment from json" {
@@ -13,14 +17,14 @@ test "empty doc comment from json" {
 // ── Empty / blank ────────────────────────────────────────────────────────────
 
 test "empty input returns empty DocComment" {
-    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{});
+    var parsed = try parse_doc(&.{});
     defer parsed.deinit();
 
     try std.testing.expectEqual(@as(usize, 0), parsed.comment.sections.len);
 }
 
 test "only blank lines returns empty DocComment" {
-    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{ "", "", "" });
+    var parsed = try parse_doc(&.{ "", "", "" });
     defer parsed.deinit();
 
     try std.testing.expectEqual(@as(usize, 0), parsed.comment.sections.len);
@@ -29,7 +33,7 @@ test "only blank lines returns empty DocComment" {
 // ── Paragraphs ───────────────────────────────────────────────────────────────
 
 test "simple paragraph" {
-    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{" Hello, world!"});
+    var parsed = try parse_doc(&.{" Hello, world!"});
     defer parsed.deinit();
 
     try std.testing.expectEqual(@as(usize, 1), parsed.comment.sections.len);
@@ -44,7 +48,7 @@ test "simple paragraph" {
 }
 
 test "multi-line paragraph joined with space" {
-    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{
+    var parsed = try parse_doc(&.{
         " First line",
         " second line",
         " third line",
@@ -63,7 +67,7 @@ test "multi-line paragraph joined with space" {
 }
 
 test "blank line separates paragraphs" {
-    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{
+    var parsed = try parse_doc(&.{
         " First paragraph.",
         "",
         " Second paragraph.",
@@ -87,7 +91,7 @@ test "blank line separates paragraphs" {
 // ── Inline elements ──────────────────────────────────────────────────────────
 
 test "inline code span" {
-    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{" Call `foo()` now."});
+    var parsed = try parse_doc(&.{" Call `foo()` now."});
     defer parsed.deinit();
 
     const content = parsed.comment.sections[0].blocks[0].paragraph.content;
@@ -101,7 +105,7 @@ test "inline code span" {
 }
 
 test "cross-reference @`fqn`" {
-    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{" See @`foo.bar.Baz` for details."});
+    var parsed = try parse_doc(&.{" See @`foo.bar.Baz` for details."});
     defer parsed.deinit();
 
     const content = parsed.comment.sections[0].blocks[0].paragraph.content;
@@ -115,7 +119,7 @@ test "cross-reference @`fqn`" {
 }
 
 test "emphasis *text*" {
-    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{" This is *important* text."});
+    var parsed = try parse_doc(&.{" This is *important* text."});
     defer parsed.deinit();
 
     const content = parsed.comment.sections[0].blocks[0].paragraph.content;
@@ -130,7 +134,7 @@ test "emphasis *text*" {
 }
 
 test "escape sequences suppress special syntax" {
-    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{" Escape: \\`not code\\`."});
+    var parsed = try parse_doc(&.{" Escape: \\`not code\\`."});
     defer parsed.deinit();
 
     const content = parsed.comment.sections[0].blocks[0].paragraph.content;
@@ -147,7 +151,7 @@ test "escape sequences suppress special syntax" {
 }
 
 test "titled link [display](url)" {
-    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{" See [the docs](https://example.com/docs)."});
+    var parsed = try parse_doc(&.{" See [the docs](https://example.com/docs)."});
     defer parsed.deinit();
 
     const content = parsed.comment.sections[0].blocks[0].paragraph.content;
@@ -163,7 +167,7 @@ test "titled link [display](url)" {
 }
 
 test "autolink <https://...>" {
-    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{" Visit <https://example.com>."});
+    var parsed = try parse_doc(&.{" Visit <https://example.com>."});
     defer parsed.deinit();
 
     const content = parsed.comment.sections[0].blocks[0].paragraph.content;
@@ -179,7 +183,7 @@ test "autolink <https://...>" {
 }
 
 test "autolink <mailto:...>" {
-    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{" Mail <mailto:foo@example.com> us."});
+    var parsed = try parse_doc(&.{" Mail <mailto:foo@example.com> us."});
     defer parsed.deinit();
 
     const content = parsed.comment.sections[0].blocks[0].paragraph.content;
@@ -191,7 +195,7 @@ test "autolink <mailto:...>" {
 // ── Admonitions ──────────────────────────────────────────────────────────────
 
 test "NOTE admonition starts new section" {
-    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{
+    var parsed = try parse_doc(&.{
         " Main text.",
         "",
         " NOTE: This is a note.",
@@ -221,7 +225,7 @@ test "all admonition kinds are recognized" {
         var buf: [64]u8 = undefined;
         const line = try std.fmt.bufPrint(&buf, " {s}: test text", .{c.tag});
 
-        var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{line});
+        var parsed = try parse_doc(&.{line});
         defer parsed.deinit();
 
         try std.testing.expectEqual(@as(usize, 1), parsed.comment.sections.len);
@@ -230,7 +234,7 @@ test "all admonition kinds are recognized" {
 }
 
 test "admonition with empty body starts section" {
-    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{
+    var parsed = try parse_doc(&.{
         " NOTE:",
         " Text on the next line.",
     });
@@ -246,7 +250,7 @@ test "admonition with empty body starts section" {
 }
 
 test "multiple admonition sections" {
-    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{
+    var parsed = try parse_doc(&.{
         " Main description.",
         "",
         " NOTE: Important note.",
@@ -264,7 +268,7 @@ test "multiple admonition sections" {
 // ── Lists ────────────────────────────────────────────────────────────────────
 
 test "unordered list" {
-    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{
+    var parsed = try parse_doc(&.{
         " - First item",
         " - Second item",
         " - Third item",
@@ -282,7 +286,7 @@ test "unordered list" {
 }
 
 test "ordered list" {
-    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{
+    var parsed = try parse_doc(&.{
         " 1. First",
         " 2. Second",
         " 3. Third",
@@ -300,7 +304,7 @@ test "ordered list" {
 }
 
 test "list item continuation line" {
-    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{
+    var parsed = try parse_doc(&.{
         " - First item",
         "   continues here",
         " - Second item",
@@ -319,7 +323,7 @@ test "list item continuation line" {
 }
 
 test "paragraph after list" {
-    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{
+    var parsed = try parse_doc(&.{
         " - Item one",
         " - Item two",
         "",
@@ -335,7 +339,7 @@ test "paragraph after list" {
 // ── Code fences ──────────────────────────────────────────────────────────────
 
 test "code fence without syntax hint" {
-    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{
+    var parsed = try parse_doc(&.{
         " ```",
         " some code",
         " more code",
@@ -352,7 +356,7 @@ test "code fence without syntax hint" {
 }
 
 test "code fence with syntax hint" {
-    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{
+    var parsed = try parse_doc(&.{
         " ```zig",
         " const x = 42;",
         " ```",
@@ -367,7 +371,7 @@ test "code fence with syntax hint" {
 }
 
 test "code fence preceded and followed by text" {
-    var parsed = try doc_comment_parser.parse(std.testing.allocator, &.{
+    var parsed = try parse_doc(&.{
         " Before.",
         "",
         " ```",

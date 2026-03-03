@@ -986,7 +986,66 @@ const Analyzer = struct {
     /// Parses a raw doc comment into a structured DocComment.
     fn map_doc_comment(ana: *Analyzer, raw_lines: []const []const u8) !model.DocComment {
         var arena = std.heap.ArenaAllocator.init(ana.allocator);
-        return doc_comment_parser.parse_into_arena(&arena, raw_lines);
+        return doc_comment_parser.parse_into_arena(&arena, raw_lines, .{
+            .ref_lookup = lookup_doc_comment_ref,
+            .ref_lookup_context = @ptrCast(ana),
+        });
+    }
+
+    fn lookup_doc_comment_ref(context: ?*anyopaque, allocator: std.mem.Allocator, local_qn: []const u8) error{OutOfMemory}!?[]const u8 {
+        const raw = context orelse return null;
+        const ana: *Analyzer = @ptrCast(@alignCast(raw));
+        return ana.resolve_doc_comment_ref(allocator, local_qn);
+    }
+
+    fn resolve_doc_comment_ref(ana: *Analyzer, allocator: std.mem.Allocator, local_qn: []const u8) error{OutOfMemory}!?[]const u8 {
+        var local_parts: std.ArrayList([]const u8) = .empty;
+        defer local_parts.deinit(allocator);
+
+        var iter = std.mem.splitScalar(u8, local_qn, '.');
+        while (iter.next()) |part| {
+            if (part.len == 0) return null;
+            try local_parts.append(allocator, part);
+        }
+
+        if (local_parts.items.len == 0) return null;
+
+        const resolved_scope = ana.resolve_scope_path(ana.current_scope_name(), local_parts.items) orelse return null;
+        return @as(?[]const u8, try ana.scope_to_fqn_string(allocator, resolved_scope));
+    }
+
+    fn resolve_scope_path(ana: *Analyzer, declared_scope: []const []const u8, local_parts: []const []const u8) ?*Scope {
+        var search_scope: ?*Scope = ana.scope_map.get(declared_scope) orelse return null;
+
+        while (search_scope) |base_scope| : (search_scope = base_scope.parent) {
+            var resolved_scope: ?*Scope = base_scope;
+            for (local_parts) |part| {
+                resolved_scope = if (resolved_scope) |scope| scope.children.get(part) else null;
+                if (resolved_scope == null) break;
+            }
+
+            if (resolved_scope) |scope| {
+                return scope;
+            }
+        }
+
+        return null;
+    }
+
+    fn scope_to_fqn_string(ana: *Analyzer, allocator: std.mem.Allocator, scope: *const Scope) error{OutOfMemory}![]const u8 {
+        _ = ana;
+
+        var segments: std.ArrayList([]const u8) = .empty;
+        defer segments.deinit(allocator);
+
+        var current: ?*const Scope = scope;
+        while (current) |node| : (current = node.parent) {
+            if (node.parent == null) break;
+            try segments.append(allocator, node.name);
+        }
+
+        std.mem.reverse([]const u8, segments.items);
+        return std.mem.join(allocator, ".", segments.items);
     }
 
     /// Creates a synthetic one-paragraph DocComment from a plain text string.
@@ -1006,8 +1065,6 @@ const Analyzer = struct {
         const full_name, const scope = try ana.push_scope(decl.name, convert_enum(Scope.Type, decl.type));
         defer ana.pop_scope();
 
-        const doc_comment = try ana.map_doc_comment(node.doc_comment);
-
         var children: std.ArrayList(model.Declaration) = .empty;
         defer children.deinit(ana.allocator);
 
@@ -1022,6 +1079,8 @@ const Analyzer = struct {
                 else => unreachable,
             }
         }
+
+        const doc_comment = try ana.map_doc_comment(node.doc_comment);
 
         const needs_subtype = switch (decl.type) {
             .@"enum", .bitstruct => true,
