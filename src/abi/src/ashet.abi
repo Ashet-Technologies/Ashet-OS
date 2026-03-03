@@ -226,7 +226,7 @@ namespace process {
         }
 
         /// Defines the signature of a thread entry point.
-        /// The parameter is the @`arg` value passed to @`spawn`.
+        /// The parameter is the @`spawn.arg` value passed to @`spawn`.
         /// The return value is the exit code of the thread.
         typedef ThreadFunction = fnptr (?anyptr) u32;
 
@@ -978,7 +978,7 @@ namespace pipe {
         in      data:   bytestr;
         /// Distance between each element in @`data`. Can be different from the pipes element size
         /// to allow sparse data to be transferred.
-        /// If `0`, it will use the @`object_size` property of the pipe.
+        /// If `0`, it will use the @`create.object_size` property of the pipe.
         in      stride: usize;
         /// Defines how the write should operate.
         in      mode: PipeMode;
@@ -993,7 +993,7 @@ namespace pipe {
         in      buffer: bytebuf;
         /// Distance between each element in @`buffer`. Can be different from the pipes element size
         /// to allow sparse data to be transferred.
-        /// If `0`, it will use the @`object_size` property of the pipe.
+        /// If `0`, it will use the @`create.object_size` property of the pipe.
         in      stride: usize;
         /// Defines how the read should operate.
         in      mode: PipeMode;
@@ -1653,7 +1653,7 @@ struct Await_Options {
         /// or
         /// b) the result array is full
         ///
-        /// NOTE: If @`thread_affinity` is `.all_threads`, other threads can still
+        /// NOTE: If @`thread_affinity` is @`Thread_Affinity.all_threads`, other threads can still
         ///       schedule more operations and make this function block longer.
         item wait_all = 2;
 
@@ -2737,11 +2737,11 @@ union DesktopEvent {
 
         //? user interaction:
 
-        /// @`send_notification` was called and the desktop user should display
+        /// @`gui.send_notification` was called and the desktop user should display
         /// a notification.
         item show_notification = 3;
 
-        /// @`send_notification` was called and the desktop user should display
+        /// @`gui.ShowMessageBox` was called and the desktop user should display
         /// a notification.
         item show_message_box = 4;
 
@@ -2774,7 +2774,7 @@ struct MessageBoxEvent {
     field event_type: DesktopEvent.Type;
 
     /// The desktop-specific request id that must be passed into
-    /// @`notify_message_box` to finish the message box request.
+    /// @`gui.notify_message_box` to finish the message box request.
     field request_id: RequestID;
 
     /// Content of the message box.
@@ -2941,43 +2941,43 @@ union WidgetEvent {
 
         /// The mouse was moved inside the rectangle of the widget.
         ///
-        /// NOTE: This event can only happen when @`hit_test_visible` was set
+        /// NOTE: This event can only happen when @`WidgetDescriptor.Flags.hit_test_visible` was set
         ///       in the widget creation flags.
         item mouse_enter = 6;
 
         /// The mouse was moved outside the rectangle of the widget.
         ///
-        /// NOTE: This event can only happen when @`hit_test_visible` was set
+        /// NOTE: This event can only happen when @`WidgetDescriptor.Flags.hit_test_visible` was set
         ///       in the widget creation flags.
         item mouse_leave = 7;
 
         /// The mouse stopped for some time over the widget.
         ///
-        /// NOTE: This event can only happen when @`hit_test_visible` was set
+        /// NOTE: This event can only happen when @`WidgetDescriptor.Flags.hit_test_visible` was set
         ///       in the widget creation flags.
         item mouse_hover = 8;
 
         /// A mouse button was pressed over the widget.
         ///
-        /// NOTE: This event can only happen when @`hit_test_visible` was set
+        /// NOTE: This event can only happen when @`WidgetDescriptor.Flags.hit_test_visible` was set
         ///       in the widget creation flags.
         item mouse_button_press = 9;
 
         /// A mouse button was released over the widget.
         ///
-        /// NOTE: This event can only happen when @`hit_test_visible` was set
+        /// NOTE: This event can only happen when @`WidgetDescriptor.Flags.hit_test_visible` was set
         ///       in the widget creation flags.
         item mouse_button_release = 10;
 
         /// The mouse was moved over the widget.
         ///
-        /// NOTE: This event can only happen when @`hit_test_visible` was set
+        /// NOTE: This event can only happen when @`WidgetDescriptor.Flags.hit_test_visible` was set
         ///       in the widget creation flags.
         item mouse_motion = 11;
 
         /// A vertical or horizontal scroll wheel was scrolled over the widget.
         ///
-        /// NOTE: This event can only happen when @`hit_test_visible` was set
+        /// NOTE: This event can only happen when @`WidgetDescriptor.Flags.hit_test_visible` was set
         ///       in the widget creation flags.
         item scroll = 12;
 
@@ -2985,25 +2985,25 @@ union WidgetEvent {
 
         /// The user dragged a payload into the rectangle of this widget.
         ///
-        /// NOTE: This event can only happen when @`allow_drop` was set in the
+        /// NOTE: This event can only happen when @`WidgetDescriptor.Flags.allow_drop` was set in the
         ///       widget creation flags.
         item drag_enter = 13;
 
         /// The user dragged a payload out of the rectangle of this widget.
         ///
-        /// NOTE: This event can only happen when @`allow_drop` was set in the
+        /// NOTE: This event can only happen when @`WidgetDescriptor.Flags.allow_drop` was set in the
         ///       widget type creation flags.
         item drag_leave = 14;
 
         /// The user dragged a payload over the rectangle of this widget.
         ///
-        /// NOTE: This event can only happen when @`allow_drop` was set in the
+        /// NOTE: This event can only happen when @`WidgetDescriptor.Flags.allow_drop` was set in the
         ///       widget type creation flags.
         item drag_over = 15;
 
         /// The user dropped a payload into this widget.
         ///
-        /// NOTE: This event can only happen when @`allow_drop` was set in the
+        /// NOTE: This event can only happen when @`WidgetDescriptor.Flags.allow_drop` was set in the
         ///       widget type creation flags.
         item drag_drop = 16;
 
@@ -3011,26 +3011,26 @@ union WidgetEvent {
 
         /// The user requested a clipboard copy operation, usually by pressing 'Ctrl-C'.
         ///
-        /// NOTE: This event can only happen when @`clipboard_sensitive` was set in
+        /// NOTE: This event can only happen when @`WidgetDescriptor.Flags.clipboard_sensitive` was set in
         ///       the widget type creation flags.
         item clipboard_copy = 17;
 
         /// The user requested a clipboard paste operation, usually by pressing 'Ctrl-V'.
         ///
-        /// NOTE: This event can only happen when @`clipboard_sensitive` was set in
+        /// NOTE: This event can only happen when @`WidgetDescriptor.Flags.clipboard_sensitive` was set in
         ///       the widget type creation flags.
         item clipboard_paste = 18;
 
         /// The user requested a clipboard cut operation, usually by pressing 'Ctrl-X'.
         ///
-        /// NOTE: This event can only happen when @`clipboard_sensitive` was set in
+        /// NOTE: This event can only happen when @`WidgetDescriptor.Flags.clipboard_sensitive` was set in
         ///       the widget type creation flags.
         item clipboard_cut = 19;
 
         //? widget specific:
 
         //? TODO: Implement ResizedArgs with "desired size, actual size"
-        /// The widget was resized with a call to @`place_widget`.
+        /// The widget was resized with a call to @`gui.place_widget`.
         ///
         /// NOTE: This event will not fire if the widget was only moved.
         item resized = 21;
