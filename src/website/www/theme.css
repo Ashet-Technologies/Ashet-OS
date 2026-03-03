@@ -264,6 +264,32 @@ div.flex-spacer {
     font-weight: bold;
 }
 
+.docs-container .doc-section-warning::before {
+    content: 'WARNING:';
+    font-weight: bold;
+}
+
+.docs-container .doc-section-lore::before {
+    content: 'LORE:';
+    font-weight: bold;
+}
+
+.docs-container .doc-section-example::before {
+    content: 'EXAMPLE:';
+    font-weight: bold;
+}
+
+.docs-container .doc-section-deprecated::before {
+    content: 'DEPRECATED:';
+    font-weight: bold;
+}
+
+.docs-container .doc-section-decision::before {
+    content: 'DECISION:';
+    font-weight: bold;
+}
+
+
 .docs-container .doc-section-main>:is(p,li,ul,pre) {
     margin-left: 0;
 }
