@@ -23,25 +23,7 @@ Zig/Rust conventions.
 
 ---
 
-## Finding 2: Reserved keyword used as enum item name
-
-**File:** `tests/stress/ashet-1.0.abi:8259`
-
-**Code:**
-```
-item resource = 3;
-```
-
-**Problem:** `resource` is a reserved keyword in the ABI language; using it bare as
-an identifier causes an unexpected token error.
-
-**Note:** Typo in the `.abi` file, not an abi-mapper bug. No abi-mapper change needed.
-
-**Workaround applied:** Quoted the identifier → `item @"resource" = 3;`.
-
----
-
-## Finding 3: Named parameters in `fnptr` types not supported
+## Finding 2: Named parameters in `fnptr` types not supported
 
 **File:** `tests/stress/ashet-1.0.abi:8308`, `8323`, `8339`
 
@@ -64,7 +46,7 @@ replicate them faithfully.
 
 ---
 
-## Finding 4: Constant used as array size before symbol resolution
+## Finding 3: Constant used as array size before symbol resolution
 
 **File:** `tests/stress/ashet-1.0.abi:5948`, `5955`
 
@@ -95,7 +77,7 @@ namespace they apply to, before any types that reference them.
 
 ---
 
-## Finding 5: Non-standard integer widths not supported as enum/bitstruct backing types
+## Finding 4: Non-standard integer widths not supported as enum/bitstruct backing types
 
 **File:** `tests/stress/ashet-1.0.abi:6132`, `8225`
 
@@ -128,8 +110,21 @@ results into a fresh list rather than pre-sizing with `resize`.
   bitstructs and for languages that do support sub-byte types.
 
 **Workaround applied:** Changed backing type to the smallest standard width → `u8`.
-Finding 11 is a cascading consequence and will be automatically resolved when
-Finding 5 is implemented (FileType's bit_count will be 2, the bitstruct fits in u16).
+Finding 5 (bitstruct Flags overflow) is a cascading consequence and will be
+automatically resolved when this finding is implemented.
+
+---
+
+## Finding 5: `bitstruct Flags : u16` exceeds 16 bits (cascading from Finding 4 workaround)
+
+**File:** `tests/stress/ashet-1.0.abi:6137`
+
+**Note:** Cascading consequence of the Finding 4 workaround — `FileType`'s backing
+type was widened from `u2` to `u8`, adding 6 extra bits to the bitstruct. This will
+be automatically resolved when Finding 4 is properly implemented: `FileType.bit_count`
+will be 2, so the bitstruct field contributes 2 bits and fits within `u16` again.
+
+**Workaround applied:** Changed `reserve u12 = 0` to `reserve u6 = 0`.
 
 ---
 
@@ -168,53 +163,7 @@ the silent skip cannot silently hide a real bug.
 
 ---
 
-## Finding 8: Undefined types `MouseEvent` and `KeyboardEvent` in gui unions
-
-**File:** `tests/stress/ashet-1.0.abi:7697-7698`, `7856-7857`
-
-**Note:** Human error in the `.abi` file (incomplete gui namespace). Not an
-abi-mapper bug. No abi-mapper change needed.
-
-**Workaround applied:** Changed both field types to `input.InputEvent`.
-
----
-
-## Finding 9: Undefined type `InputEventPayload`
-
-**File:** `tests/stress/ashet-1.0.abi:2241`, `2416`
-
-**Note:** Human error in the `.abi` file (should have been `InputEvent.Payload`).
-Not an abi-mapper bug. No abi-mapper change needed.
-
-**Workaround applied:** Replaced with `InputEvent.Payload`.
-
----
-
-## Finding 10: `anyopaque` not a recognized built-in type
-
-**File:** `tests/stress/ashet-1.0.abi:8308`, `8323`, `8339`, `8376`
-
-**Note:** Human error in the `.abi` file. `anyopaque` is a Zig-specific type name;
-the correct abi-mapper spelling is `anyptr`. Not an abi-mapper bug.
-
-**Workaround applied:** Replaced `?*anyopaque` / `?*anyopaque` with `anyptr`.
-
----
-
-## Finding 11: `bitstruct Flags : u16` exceeds 16 bits (cascading from Finding 5 workaround)
-
-**File:** `tests/stress/ashet-1.0.abi:6137`
-
-**Note:** Cascading consequence of the Finding 5 workaround — `FileType`'s backing
-type was widened from `u2` to `u8`, adding 6 extra bits to the bitstruct. This will
-be automatically resolved when Finding 5 is properly implemented: `FileType.bit_count`
-will be 2, so the bitstruct field contributes 2 bits and fits within `u16` again.
-
-**Workaround applied:** Changed `reserve u12 = 0` to `reserve u6 = 0`.
-
----
-
-## Finding 12: Array fields in `bitstruct` not supported
+## Finding 8: Array fields in `bitstruct` not supported
 
 **File:** `tests/stress/ashet-1.0.abi:8270`
 
@@ -239,7 +188,7 @@ field into N individual fields or emit appropriate macros/accessors.
 
 ---
 
-## Finding 13: Syscall with 2+ logic outputs surfaces an incorrect assertion in `validate_constraints`
+## Finding 9: Syscall with 2+ logic outputs surfaces an incorrect assertion in `validate_constraints`
 
 **File:** `src/sema.zig:2081`, trigger at `tests/stress/ashet-1.0.abi:2187`
 
