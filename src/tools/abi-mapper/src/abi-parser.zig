@@ -64,11 +64,20 @@ pub fn main() !u8 {
         null;
     defer if (uid_database) |*db| db.deinit();
 
-    const analyzed_document: model.Document = try sema.analyze(
+    var analysis_errors: std.ArrayList(sema.AnalysisError) = .empty;
+    defer analysis_errors.deinit(allocator);
+
+    const analyzed_document: model.Document = sema.analyze(
         allocator,
         ast_document,
         if (uid_database != null) &uid_database.? else null,
-    );
+        &analysis_errors,
+    ) catch |err| {
+        for (analysis_errors.items) |ae| {
+            std.log.err("{s}", .{ae.message});
+        }
+        return err;
+    };
 
     // Save UID database back if it was loaded
     if (uid_database != null and id_db_path.len > 0) {

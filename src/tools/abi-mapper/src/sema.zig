@@ -6,7 +6,11 @@ pub const uid_db = @import("uid_db.zig");
 
 const Location = syntax.Location;
 
-pub fn analyze(allocator: std.mem.Allocator, document: syntax.Document, uid_database: ?*uid_db.UidDatabase) !model.Document {
+pub const AnalysisError = struct {
+    message: []const u8,
+};
+
+pub fn analyze(allocator: std.mem.Allocator, document: syntax.Document, uid_database: ?*uid_db.UidDatabase, errors_out: *std.ArrayList(AnalysisError)) !model.Document {
     var analyzer: Analyzer = .{
         .allocator = allocator,
         .scope_stack = .empty,
@@ -47,8 +51,8 @@ pub fn analyze(allocator: std.mem.Allocator, document: syntax.Document, uid_data
     // TODO: Compute type sizes, field offsets
 
     if (analyzer.errors.items.len > 0) {
-        for (analyzer.errors.items) |err| {
-            std.log.err("{s}", .{err});
+        for (analyzer.errors.items) |msg| {
+            try errors_out.append(allocator, .{ .message = msg });
         }
         return error.AnalysisFailed;
     }
@@ -169,13 +173,13 @@ const Analyzer = struct {
         const current_name = ana.current_scope_name();
 
         const current_scope = ana.scope_map.get(current_name) orelse {
-            std.log.err("current scope: {f}", .{dotJoin(current_name)});
+            std.debug.print("current scope: {f}\n", .{dotJoin(current_name)});
             @panic("BUG: No current scope found!");
         };
 
         const inserted = if (current_scope.children.get(name)) |existing_child| blk: {
             if (scope_type != existing_child.type) {
-                std.log.err("scope mismatch for scope {f}: types {s} and {s} don't match", .{
+                std.debug.print("scope mismatch for scope {f}: types {s} and {s} don't match\n", .{
                     std.zig.fmtId(name),
                     @tagName(scope_type),
                     @tagName(existing_child.type),
@@ -217,14 +221,14 @@ const Analyzer = struct {
     }
 
     fn map(ana: *Analyzer, doc: syntax.Document) error{OutOfMemory}!void {
-        try ana.root.resize(ana.allocator, doc.nodes.len);
-        for (ana.root.items, doc.nodes) |*out, node| {
-            out.* = ana.map_node(node) catch |err| switch (err) {
+        for (doc.nodes) |node| {
+            const decl = ana.map_node(node) catch |err| switch (err) {
                 // swallow silently here, all nodes are independent from each other
                 error.FatalAnalysisError => continue,
 
                 error.OutOfMemory => |e| return e,
             };
+            try ana.root.append(ana.allocator, decl);
         }
     }
 
@@ -359,9 +363,11 @@ const Analyzer = struct {
                 },
             }
 
+            const magic_backing = convert_enum(model.StandardType, magic_type.size);
             const enum_id = try ana.enums.append(.{
                 .uid = try ana.get_uid(type_def.full_qualified_name),
-                .backing_type = convert_enum(model.StandardType, magic_type.size),
+                .backing_type = magic_backing,
+                .bit_count = magic_backing.size_in_bits() orelse 0,
 
                 .docs = type_def.docs,
                 .full_qualified_name = type_def.full_qualified_name,
@@ -419,7 +425,7 @@ const Analyzer = struct {
             std.debug.assert(bitstruct.backing_type.is_integer());
             std.debug.assert(bitstruct.backing_type.size_in_bits() != null); // Assert we don't use `usize` or `isize` here!
 
-            const expected_size = bitstruct.backing_type.size_in_bits().?;
+            const expected_size = bitstruct.bit_count;
 
             var struct_size: u8 = 0;
             var has_error = false;
@@ -473,12 +479,16 @@ const Analyzer = struct {
 
             .well_known => |stdtype| stdtype.size_in_bits(),
 
-            .@"enum" => |idx| ana.enums.get(idx).backing_type.size_in_bits(),
+            .@"enum" => |idx| ana.enums.get(idx).bit_count,
             .bitstruct => |idx| ana.bitstructs.get(idx).bit_count,
 
             .fnptr => null,
             .ptr => null,
-            .array => null,
+            .array => |arr| blk: {
+                const elem_type = ana.get_resolved_type(arr.child);
+                const elem_bits = ana.get_type_bit_size(elem_type) orelse break :blk null;
+                break :blk std.math.cast(u8, @as(u64, elem_bits) * arr.size);
+            },
             .optional => null,
             .external => null,
             .resource => null,
@@ -593,7 +603,9 @@ const Analyzer = struct {
                                         try list.append(a.allocator, param.*);
                                     },
                                     else => {
-                                        std.log.err("unsupported optional builtin type {}", .{inner});
+                                        try a.emit_error(Location.empty,
+                                            "parameter '{s}' has optional type '?{s}' which cannot appear in a native call signature",
+                                            .{ param.name, @tagName(id) });
                                     },
                                 },
                                 .ptr => |ptr| switch (ptr.size) {
@@ -616,8 +628,14 @@ const Analyzer = struct {
                                 .resource => {
                                     try list.append(a.allocator, param.*);
                                 },
+                                .fnptr => {
+                                    // A function pointer is nullable in C — keep as-is.
+                                    try list.append(a.allocator, param.*);
+                                },
                                 else => {
-                                    std.log.err("unsupported optional type {}", .{inner});
+                                    try a.emit_error(Location.empty,
+                                        "parameter '{s}' has optional type '?{s}' which cannot appear in a native call signature",
+                                        .{ param.name, @tagName(inner) });
                                 },
                             }
                         },
@@ -861,7 +879,12 @@ const Analyzer = struct {
                 .external => .keep,
 
                 .alias => unreachable,
-                .unknown_named_type => unreachable,
+                .unknown_named_type => {
+                    // resolve_named_types already emitted an error for this type.
+                    // Skip the field silently rather than crashing.
+                    std.debug.assert(ana.errors.items.len > 0);
+                    break :blk .discard;
+                },
                 .unset_magic_type => unreachable,
             };
 
@@ -897,7 +920,6 @@ const Analyzer = struct {
     };
 
     fn map_node(ana: *Analyzer, node: syntax.Node) MapError!model.Declaration {
-        errdefer std.log.err("failed to map node at {f}", .{node.location});
 
         return switch (node.type) {
             .declaration => try ana.map_decl(node),
@@ -980,8 +1002,15 @@ const Analyzer = struct {
     const NodeInfo = struct {
         full_name: model.FQN,
         docs: model.DocComment,
-        sub_type: ?model.StandardType,
+        sub_type: ?SubTypeInfo,
         location: Location,
+
+        const SubTypeInfo = struct {
+            /// The ABI-surface standard type (rounded up to the nearest power-of-two byte width).
+            backing: model.StandardType,
+            /// The actual declared bit width (e.g. 2 for `u2`, 32 for `u32`).
+            bit_count: u8,
+        };
     };
 
     /// Parses a raw doc comment into a structured DocComment.
@@ -1397,11 +1426,23 @@ const Analyzer = struct {
             }
         }
 
-        const sub_type: ?model.StandardType = if (needs_subtype) blk: {
+        const sub_type: ?NodeInfo.SubTypeInfo = if (needs_subtype) blk: {
             const model_type = try ana.map_type_inner(decl.subtype.?);
-            if (model_type != .well_known)
-                return ana.fatal_error(node.location, "subtype must be standard type, not a {s}", .{@tagName(model_type)});
-            break :blk model_type.well_known;
+            break :blk switch (model_type) {
+                .well_known => |st| .{
+                    .backing = st,
+                    .bit_count = st.size_in_bits() orelse 0,
+                },
+                .uint => |bits| .{
+                    .backing = round_up_to_standard_type(bits),
+                    .bit_count = bits,
+                },
+                .int => |bits| .{
+                    .backing = round_up_to_standard_type(bits),
+                    .bit_count = bits,
+                },
+                else => return ana.fatal_error(node.location, "subtype must be an integer type, not a {s}", .{@tagName(model_type)}),
+            };
         } else null;
 
         const info: NodeInfo = .{
@@ -1453,7 +1494,7 @@ const Analyzer = struct {
     fn map_enum(ana: *Analyzer, info: NodeInfo, decl: syntax.DeclarationNode) !model.Declaration.Data {
         std.debug.assert(info.sub_type != null);
 
-        if (!info.sub_type.?.is_integer()) {
+        if (!info.sub_type.?.backing.is_integer()) {
             return ana.fatal_error(info.location, "enum sub-type must be an integer", .{});
         }
 
@@ -1501,7 +1542,8 @@ const Analyzer = struct {
             .uid = try ana.get_uid(info.full_name),
             .docs = info.docs,
             .full_qualified_name = info.full_name,
-            .backing_type = info.sub_type.?,
+            .backing_type = info.sub_type.?.backing,
+            .bit_count = info.sub_type.?.bit_count,
             .items = try items.resolve(),
             .kind = kind,
         });
@@ -1596,6 +1638,12 @@ const Analyzer = struct {
             try ana.emit_error(info.location, "calls that are noreturn cannot have out parameters", .{});
         }
 
+        if (mode == .syscall and outputs.fields.items.len > 1) {
+            return ana.fatal_error(info.location,
+                "syscall '{s}' has {d} 'out' parameters, but syscalls can have at most one",
+                .{ info.full_name[info.full_name.len - 1], outputs.fields.items.len });
+        }
+
         const output: model.GenericCall = .{
             .uid = try ana.get_uid(info.full_name),
             .docs = info.docs,
@@ -1687,8 +1735,8 @@ const Analyzer = struct {
     fn map_bit_struct(ana: *Analyzer, info: NodeInfo, decl: syntax.DeclarationNode) !model.Declaration.Data {
         std.debug.assert(info.sub_type != null);
 
-        if (!info.sub_type.?.is_integer()) {
-            return ana.fatal_error(info.location, "enum sub-type must be an integer", .{});
+        if (!info.sub_type.?.backing.is_integer()) {
+            return ana.fatal_error(info.location, "bitstruct sub-type must be an integer", .{});
         }
 
         var fields = ana.make_collector(
@@ -1745,14 +1793,13 @@ const Analyzer = struct {
             .docs = info.docs,
             .full_qualified_name = info.full_name,
             .fields = try fields.resolve(),
-            .backing_type = info.sub_type.?,
-
-            .bit_count = info.sub_type.?.size_in_bits() orelse 0,
+            .backing_type = info.sub_type.?.backing,
+            .bit_count = info.sub_type.?.bit_count,
         });
         return .{ .bitstruct = index };
     }
 
-    const MapTypeError = error{OutOfMemory};
+    const MapTypeError = error{ OutOfMemory, FatalAnalysisError };
 
     fn map_type(ana: *Analyzer, type_node: *const syntax.TypeNode) MapTypeError!model.TypeIndex {
         const decl: model.Type = try ana.map_type_inner(type_node);
@@ -1791,7 +1838,15 @@ const Analyzer = struct {
                 .external => false,
                 .typedef => false,
 
-                .fnptr => |ptr| std.mem.eql(model.TypeIndex, ptr.parameters, other.fnptr.parameters) and ptr.return_type == other.fnptr.return_type,
+                .fnptr => |ptr| blk: {
+                    if (ptr.return_type != other.fnptr.return_type) break :blk false;
+                    if (ptr.parameters.len != other.fnptr.parameters.len) break :blk false;
+                    for (ptr.parameters, other.fnptr.parameters) |a, b| {
+                        if (a.type != b.type) break :blk false;
+                        // Names are not part of type identity.
+                    }
+                    break :blk true;
+                },
 
                 .ptr => |ptr| ptr.size == other.ptr.size and ptr.alignment == other.ptr.alignment and ptr.is_const == other.ptr.is_const and ptr.child == other.ptr.child,
 
@@ -1916,13 +1971,16 @@ const Analyzer = struct {
             },
 
             .fnptr => |data| {
-                var params: std.ArrayList(model.TypeIndex) = .empty;
+                var params: std.ArrayList(model.FunctionPointerParam) = .empty;
                 defer params.deinit(ana.allocator);
 
                 try params.resize(ana.allocator, data.parameters.len);
 
-                for (params.items, data.parameters) |*out, dst| {
-                    out.* = try ana.map_type(dst);
+                for (params.items, data.parameters) |*out, src| {
+                    out.* = .{
+                        .name = src.name,
+                        .type = try ana.map_type(src.type),
+                    };
                 }
 
                 const return_type = try ana.map_type(data.return_type);
@@ -1978,8 +2036,28 @@ const Analyzer = struct {
                 .null => .null,
             },
             .symbol_name => |symbol_name| {
-                std.log.err("resolve symbol '{f}'", .{std.zig.fmtString(symbol_name)});
-                @panic("symbol resolution not done yet");
+                // Search already-mapped constants (those defined before this point).
+                // The symbol may be a simple name or a dot-qualified name.
+                for (ana.constants.items) |constant| {
+                    const local = model.local_name(constant.full_qualified_name);
+                    if (std.mem.eql(u8, local, symbol_name)) {
+                        return constant.value;
+                    }
+                    // Also match fully qualified dot-joined name
+                    var buf: [256]u8 = undefined;
+                    var fbs = std.io.fixedBufferStream(&buf);
+                    for (constant.full_qualified_name, 0..) |part, i| {
+                        if (i > 0) fbs.writer().writeByte('.') catch {};
+                        fbs.writer().writeAll(part) catch {};
+                    }
+                    const fqn_str = fbs.getWritten();
+                    if (std.mem.eql(u8, fqn_str, symbol_name)) {
+                        return constant.value;
+                    }
+                }
+                return ana.fatal_error(Location.empty,
+                    "constant '{s}' must be defined before it is used here",
+                    .{symbol_name});
             },
             .uint => |int| .{ .int = int },
             .compound => |compound| {
@@ -2218,6 +2296,7 @@ const Analyzer = struct {
                     .well_known => |id| std.debug.assert(id.size_in_bits() != null),
                     .@"enum", .bitstruct => {},
                     .uint, .int => {},
+                    .array => {},
                     else => std.debug.panic("Unsupported bit type: {t}", .{fld_type}),
                 }
 
@@ -2324,6 +2403,10 @@ fn Collector(comptime I: type) type {
             col.items = list.items;
         }
     };
+}
+
+fn round_up_to_standard_type(bits: u8) model.StandardType {
+    return if (bits <= 8) .u8 else if (bits <= 16) .u16 else if (bits <= 32) .u32 else .u64;
 }
 
 fn convert_enum(comptime T: type, src: anytype) T {

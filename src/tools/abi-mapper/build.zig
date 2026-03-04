@@ -36,27 +36,13 @@ pub fn build(b: *std.Build) void {
 
     test_step.dependOn(&b.addInstallFile(output_file, "test/coverage.json").step);
 
-    const doc_parser_mod = b.createModule(.{
-        .root_source_file = b.path("tests/doc_parser.zig"),
+    const testsuite_mod = b.createModule(.{
+        .root_source_file = b.path("tests/testsuite.zig"),
         .target = target,
         .optimize = optimize,
-        .imports = &.{
-            .{ .name = "abi-parser", .module = abi_parser_mod },
-        },
+        .imports = &.{.{ .name = "abi-parser", .module = abi_parser_mod }},
     });
-    const doc_parser_tests = b.addTest(.{ .root_module = doc_parser_mod });
-    test_step.dependOn(&b.addRunArtifact(doc_parser_tests).step);
-
-    const doc_ref_resolution_mod = b.createModule(.{
-        .root_source_file = b.path("tests/doc_ref_resolution.zig"),
-        .target = target,
-        .optimize = optimize,
-        .imports = &.{
-            .{ .name = "abi-parser", .module = abi_parser_mod },
-        },
-    });
-    const doc_ref_resolution_tests = b.addTest(.{ .root_module = doc_ref_resolution_mod });
-    test_step.dependOn(&b.addRunArtifact(doc_ref_resolution_tests).step);
+    test_step.dependOn(&b.addRunArtifact(b.addTest(.{ .root_module = testsuite_mod })).step);
 }
 
 pub const Converter = struct {

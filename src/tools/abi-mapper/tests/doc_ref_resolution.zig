@@ -19,7 +19,9 @@ test "doc references resolve to contained syscall elements" {
         .core = .init(&tokenizer),
     };
     const ast_document = try parser.accept_document();
-    const analyzed_document = try abi_parser.sema.analyze(allocator, ast_document, null);
+    var errors: std.ArrayList(abi_parser.sema.AnalysisError) = .empty;
+    defer errors.deinit(allocator);
+    const analyzed_document = try abi_parser.sema.analyze(allocator, ast_document, null, &errors);
 
     const await_completion = find_syscall_by_fqn(
         analyzed_document.syscalls,

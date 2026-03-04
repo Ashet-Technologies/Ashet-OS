@@ -425,14 +425,24 @@ pub const Type = union(enum) {
                 .slice => false,
             },
             .optional => |inner_idx| blk: {
-                // ?*T and ?[*]T are C-ABI compatible (represented as nullable pointers)
-                const inner = types[@intFromEnum(inner_idx)];
+                // ?*T, ?[*]T, ?fnptr(...) are C-ABI compatible (nullable pointers).
+                // Resolve aliases and typedefs to reach the concrete inner type.
+                var idx = inner_idx;
+                const inner = while (true) {
+                    const inner_t = types[@intFromEnum(idx)];
+                    switch (inner_t) {
+                        .alias => |a| idx = a,
+                        .typedef => |td| idx = td.alias,
+                        else => break inner_t,
+                    }
+                };
                 break :blk switch (inner) {
                     .ptr => |ptr| switch (ptr.size) {
                         .one, .unknown => true,
                         .slice => false,
                     },
                     .resource => true, // resources are also represented as nullable pointers in C-ABI
+                    .fnptr => true, // nullable function pointer is C-ABI compatible
                     .well_known => |id| switch (id) {
                         .anyptr, .anyfnptr => true,
                         else => false,
@@ -486,8 +496,14 @@ pub const PointerSize = enum {
     unknown,
 };
 
+pub const FunctionPointerParam = struct {
+    /// Optional parameter name.  `null` means unnamed.
+    name: ?[]const u8,
+    type: TypeIndex,
+};
+
 pub const FunctionPointer = struct {
-    parameters: []const TypeIndex,
+    parameters: []const FunctionPointerParam,
     return_type: TypeIndex,
 };
 
@@ -558,6 +574,9 @@ pub const Enumeration = struct {
     docs: DocComment,
     full_qualified_name: FQN,
     backing_type: StandardType,
+    /// The actual declared bit width (e.g. 2 for `u2`). May be less than
+    /// `backing_type.size_in_bits()` when a non-standard width was declared.
+    bit_count: u8,
     kind: Kind,
 
     items: []const EnumItem,
