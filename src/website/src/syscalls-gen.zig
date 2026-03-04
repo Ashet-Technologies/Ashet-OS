@@ -666,8 +666,12 @@ const PageRenderer = struct {
     fn fmt_known_type(html: *PageRenderer, writer: *std.Io.Writer, known_type: anytype) !void {
         try writer.print("<a href=\"{f}\"><span class=\"tok-type\">{f}</span></a>", .{
             html.fmt_page_url(known_type.full_qualified_name),
-            fmt_fqn(known_type.full_qualified_name),
+            html.fmt_lqn(known_type.full_qualified_name),
         });
+    }
+
+    fn fmt_lqn(html: *PageRenderer, fqn: model.FQN) LqnFmt {
+        return .{ .html = html, .fqn = fqn };
     }
 
     fn format_value(value: model.Value, writer: *std.Io.Writer) !void {
@@ -715,7 +719,25 @@ const PageRenderer = struct {
     }
 
     fn fmt_docs(html: *PageRenderer, docs: model.DocComment) DocFmt {
-        return .{ .docs = docs, .url_nesting = html.scope_fqn.len - 1, .scope_fqn = html.scope_fqn };
+        return .{ .docs = docs, .html = html };
+    }
+};
+
+const LqnFmt = struct {
+    html: *PageRenderer,
+    fqn: model.FQN,
+
+    pub fn format(self: LqnFmt, writer: *std.Io.Writer) !void {
+        // Count how many leading components of fqn match scope_fqn[1..] (skip root "ashet")
+        const scope = self.html.scope_fqn[1..];
+        var skip: usize = 0;
+        while (skip < scope.len and skip < self.fqn.len and
+            std.mem.eql(u8, scope[skip], self.fqn[skip])) : (skip += 1)
+        {}
+        for (self.fqn[skip..], 0..) |part, i| {
+            if (i > 0) try writer.writeAll(".");
+            try writer.writeAll(part);
+        }
     }
 };
 
@@ -773,8 +795,7 @@ fn format_fqn(fqn: []const []const u8, writer: *std.Io.Writer) !void {
 
 const DocFmt = struct {
     docs: model.DocComment,
-    url_nesting: usize,
-    scope_fqn: model.FQN,
+    html: *PageRenderer,
 
     pub fn format(self: DocFmt, writer: *std.Io.Writer) !void {
         if (self.docs.is_empty())
@@ -842,7 +863,7 @@ const DocFmt = struct {
                     var url_buffer: [512]u8 = undefined;
                     var url_writer: std.Io.Writer = .fixed(&url_buffer);
 
-                    try url_writer.splatBytesAll("../", self.url_nesting);
+                    try url_writer.splatBytesAll("../", self.html.scope_fqn.len - 1);
 
                     var pos: usize = 0;
                     while (pos < ref.fqn.len) {
@@ -866,14 +887,13 @@ const DocFmt = struct {
         }
     }
 
-    /// Returns the locally qualified display name for a ref FQN relative to
-    /// this scope. Strips the scope prefix (everything after the root "ashet"
-    /// component) when the ref shares it, so refs within the same namespace
-    /// are shown without redundant qualification.
+    /// Returns the locally qualified display name for a dot-joined ref FQN
+    /// relative to the current scope. Strips the scope prefix (everything
+    /// after the root "ashet" component) when the ref shares it.
     fn local_ref_display(self: DocFmt, ref_fqn: []const u8) []const u8 {
         var pos: usize = 0;
         // scope_fqn[0] is the root "ashet"; refs don't include it, so start at [1]
-        for (self.scope_fqn[1..]) |part| {
+        for (self.html.scope_fqn[1..]) |part| {
             if (!std.mem.startsWith(u8, ref_fqn[pos..], part)) break;
             const next = pos + part.len;
             if (next >= ref_fqn.len or ref_fqn[next] != '.') break;
