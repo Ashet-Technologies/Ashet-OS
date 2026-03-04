@@ -2238,7 +2238,8 @@ namespace input {
     ///       If the device is present in groups, the event is enqueued into those group queues.
     syscall emit_device_event {
         in device:  DeviceId;
-        in payload: InputEventPayload;
+        in type: InputEvent.Type;
+        in payload: InputEvent.Payload;
 
         /// `device` is not valid anymore (e.g. device removed) or was never valid.
         error InvalidDevice;
@@ -2413,7 +2414,8 @@ namespace input {
     /// except it is marked synthetic.
     syscall queue_event {
         in group:  InputGroup;
-        in payload: InputEventPayload;
+        in type: InputEvent.Type;
+        in payload: InputEvent.Payload;
         in force:  bool;
 
         /// `group` is not a valid input group resource.
@@ -7691,6 +7693,16 @@ namespace gui {
         enum RequestID : u16 { ... }
     }
 
+    /// Dummy struct to satisfy the parser.
+    struct MouseEvent {
+        field event_type: Type;
+    };
+
+    /// Dummy struct to satisfy the parser.
+    struct KeyboardEvent {
+        field event_type: Type;
+    };
+
     union WidgetEvent {
         field event_type: Type;
 
@@ -8256,7 +8268,7 @@ namespace service {
         ///   The kernel interprets resource handles in `results` in the *calling thread's current resource context*.
         ///   For each non-zero valid handle, it creates a strong binding for the resource context that scheduled
         ///   the original `Invoke` request and returns the translated handle in `Invoke.results`.
-        item resource = 3;
+        item @"resource" = 3;
     }
 
     /// Defines the signature of a function or overlapped operation.
@@ -8305,7 +8317,7 @@ namespace service {
     /// NOTE: The handler should perform a strong binding of resources inside `arguments` if it must
     ///       retain independent access even if the caller later unbinds/releases its handles.
     ///       This still does not prevent explicit destruction of the resource.
-    typedef AsyncHandler = fnptr(context: ?*anyopaque, request: RequestToken, operation: u8, arguments: *const [8]usize) void;
+    typedef AsyncHandler = fnptr(context: ?anyptr, request: RequestToken, operation: u8, arguments: *const [8]usize) void;
 
     /// The signature of the asynchronous cancellation handler function registered by an interface.
     ///
@@ -8320,7 +8332,7 @@ namespace service {
     ///
     /// NOTE: A handler function should not yield the executing thread, as this will generate
     ///       hard to debug scenarios.
-    typedef CancelHandler = fnptr(context: ?*anyopaque, request: RequestToken) void;
+    typedef CancelHandler = fnptr(context: ?anyptr, request: RequestToken) void;
 
     /// The signature of a synchronous function call registered by an interface.
     ///
@@ -8336,7 +8348,7 @@ namespace service {
     ///       hard to debug scenarios.
     ///
     /// NOTE: `arguments` must be assumed invalid after the return of the callback.
-    typedef Function = fnptr(context: ?*anyopaque, arguments: *const [8]usize) usize;
+    typedef Function = fnptr(context: ?anyptr, arguments: *const [8]usize) usize;
 
     /// Creates a new interface that can be invoked by other processes.
     ///
@@ -8373,7 +8385,7 @@ namespace service {
         /// NOTE: This can be used to implement a stateful interface that allows a process to create
         ///       the same interface more than once and still have context which of the interfaces were
         ///       called.
-        in    context: ?*anyopaque;
+        in    context: ?anyptr;
 
         /// The synchronous implementation functions (vtable).
         ///
