@@ -125,7 +125,7 @@ const PageRenderer = struct {
         if (!decl.docs.is_empty()) {
             try html.writer.writeAll("<section>\n");
             try html.writer.print("<h2>Documentation</h2>\n", .{});
-            try html.writer.print("{f}\n", .{fmt_docs(decl.docs, html.scope_fqn.len - 1)});
+            try html.writer.print("{f}\n", .{html.fmt_docs(decl.docs)});
             try html.writer.writeAll("</section>\n");
         }
 
@@ -155,7 +155,7 @@ const PageRenderer = struct {
                     try html.writer.writeAll("</code></dt>");
 
                     if (!field.docs.is_empty()) {
-                        try html.writer.print("<dd>{f}</dd>\n", .{fmt_docs(field.docs, html.scope_fqn.len - 1)});
+                        try html.writer.print("<dd>{f}</dd>\n", .{html.fmt_docs(field.docs)});
                     }
 
                     try html.writer.writeAll("</div>\n");
@@ -177,7 +177,7 @@ const PageRenderer = struct {
                         .{
                             field.name,
                             html.fmt_type(field.type),
-                            fmt_docs(field.docs, html.scope_fqn.len - 1),
+                            html.fmt_docs(field.docs),
                         },
                     );
                 }
@@ -200,7 +200,7 @@ const PageRenderer = struct {
                         .{
                             item.name,
                             item.value,
-                            fmt_docs(item.docs, html.scope_fqn.len - 1),
+                            html.fmt_docs(item.docs),
                         },
                     );
                 }
@@ -241,7 +241,7 @@ const PageRenderer = struct {
                     try html.writer.writeAll("</code></dt>");
 
                     if (!field.docs.is_empty()) {
-                        try html.writer.print("<dd>{f}</dd>\n", .{fmt_docs(field.docs, html.scope_fqn.len - 1)});
+                        try html.writer.print("<dd>{f}</dd>\n", .{html.fmt_docs(field.docs)});
                     }
 
                     try html.writer.writeAll("</div>\n");
@@ -265,7 +265,7 @@ const PageRenderer = struct {
                             .{
                                 std.zig.fmtId(param.name),
                                 html.fmt_type(param.type),
-                                fmt_docs(param.docs, html.scope_fqn.len - 1),
+                                html.fmt_docs(param.docs),
                             },
                         );
                     }
@@ -286,7 +286,7 @@ const PageRenderer = struct {
                             .{
                                 std.zig.fmtId(param.name),
                                 html.fmt_type(param.type),
-                                fmt_docs(param.docs, html.scope_fqn.len - 1),
+                                html.fmt_docs(param.docs),
                             },
                         );
                     }
@@ -305,7 +305,7 @@ const PageRenderer = struct {
                             "{f}",
                             .{
                                 std.zig.fmtId(err.name),
-                                fmt_docs(err.docs, html.scope_fqn.len - 1),
+                                html.fmt_docs(err.docs),
                             },
                         );
                     }
@@ -329,7 +329,7 @@ const PageRenderer = struct {
                             .{
                                 std.zig.fmtId(param.name),
                                 html.fmt_type(param.type),
-                                fmt_docs(param.docs, html.scope_fqn.len - 1),
+                                html.fmt_docs(param.docs),
                             },
                         );
                     }
@@ -350,7 +350,7 @@ const PageRenderer = struct {
                             .{
                                 std.zig.fmtId(param.name),
                                 html.fmt_type(param.type),
-                                fmt_docs(param.docs, html.scope_fqn.len - 1),
+                                html.fmt_docs(param.docs),
                             },
                         );
                     }
@@ -369,7 +369,7 @@ const PageRenderer = struct {
                             "{f}",
                             .{
                                 std.zig.fmtId(err.name),
-                                fmt_docs(err.docs, html.scope_fqn.len - 1),
+                                html.fmt_docs(err.docs),
                             },
                         );
                     }
@@ -577,7 +577,7 @@ const PageRenderer = struct {
                     \\                    <dd>{f}</dd>
                     \\
                 , .{
-                    fmt_docs(child.docs, html.scope_fqn.len - 1),
+                    html.fmt_docs(child.docs),
                 });
             }
 
@@ -713,6 +713,10 @@ const PageRenderer = struct {
         }
         try writer.writeAll("index.html");
     }
+
+    fn fmt_docs(html: *PageRenderer, docs: model.DocComment) DocFmt {
+        return .{ .docs = docs, .url_nesting = html.scope_fqn.len - 1, .scope_fqn = html.scope_fqn };
+    }
 };
 
 fn render_page_header(writer: *std.Io.Writer, namespace_fqn: abi_parser.model.FQN, nesting: usize) !void {
@@ -767,97 +771,115 @@ fn format_fqn(fqn: []const []const u8, writer: *std.Io.Writer) !void {
     }
 }
 
-fn fmt_docs(docs: model.DocComment, url_nesting: usize) std.fmt.Alt(struct { model.DocComment, usize }, format_docs) {
-    return .{ .data = .{ docs, url_nesting } };
-}
+const DocFmt = struct {
+    docs: model.DocComment,
+    url_nesting: usize,
+    scope_fqn: model.FQN,
 
-fn format_docs(_params: struct { model.DocComment, usize }, writer: *std.Io.Writer) !void {
-    const docs: model.DocComment, const url_nesting: usize = _params;
-    if (docs.is_empty())
-        return;
+    pub fn format(self: DocFmt, writer: *std.Io.Writer) !void {
+        if (self.docs.is_empty())
+            return;
 
-    for (docs.sections) |section| {
-        try writer.print("<div class=\"doc-section doc-section-{t}\">\n", .{section.kind});
+        for (self.docs.sections) |section| {
+            try writer.print("<div class=\"doc-section doc-section-{t}\">\n", .{section.kind});
 
-        for (section.blocks) |block| {
-            switch (block) {
-                .paragraph => |p| {
-                    try writer.writeAll("<p>\n");
-                    try format_inlines(p.content, url_nesting, writer);
-                    try writer.writeAll("</p>\n");
+            for (section.blocks) |block| {
+                switch (block) {
+                    .paragraph => |p| {
+                        try writer.writeAll("<p>\n");
+                        try self.format_inlines(p.content, writer);
+                        try writer.writeAll("</p>\n");
+                    },
+
+                    .ordered_list => |list| {
+                        try writer.writeAll("<ol>\n");
+                        for (list.items) |item| {
+                            try writer.writeAll("<li>\n");
+                            try self.format_inlines(item, writer);
+                            try writer.writeAll("</li>\n");
+                        }
+                        try writer.writeAll("</ol>\n");
+                    },
+                    .unordered_list => |list| {
+                        try writer.writeAll("<ul>\n");
+                        for (list.items) |item| {
+                            try writer.writeAll("<li>\n");
+                            try self.format_inlines(item, writer);
+                            try writer.writeAll("</li>\n");
+                        }
+                        try writer.writeAll("</ul>\n");
+                    },
+
+                    .code_block => |code| {
+                        try writer.writeAll("<pre class=\"codeblock\"");
+                        if (code.syntax) |syntax| {
+                            try writer.print(" data-syntax=\"{f}\"", .{
+                                fmt_attr(syntax),
+                            });
+                        }
+                        try writer.writeAll(">");
+                        try writer.print("{f}", .{fmt_attr(code.content)});
+                        try writer.writeAll("</pre>\n");
+                    },
+                }
+            }
+
+            try writer.writeAll("</div>\n");
+        }
+    }
+
+    fn format_inlines(self: DocFmt, inlines: []const model.DocComment.Inline, writer: *std.Io.Writer) !void {
+        for (inlines) |span| {
+            switch (span) {
+                .text => |text| try writer.writeAll(text.value),
+                .code => |code| try writer.print("<code>{s}</code>", .{code.value}),
+                .emphasis => |emphasis| {
+                    try writer.writeAll("<em>");
+                    try self.format_inlines(emphasis.content, writer);
+                    try writer.writeAll("</em>");
                 },
+                .ref => |ref| {
+                    var url_buffer: [512]u8 = undefined;
+                    var url_writer: std.Io.Writer = .fixed(&url_buffer);
 
-                .ordered_list => |list| {
-                    try writer.writeAll("<ol>\n");
-                    for (list.items) |item| {
-                        try writer.writeAll("<li>\n");
-                        try format_inlines(item, url_nesting, writer);
-                        try writer.writeAll("</li>\n");
-                    }
-                    try writer.writeAll("</ol>\n");
-                },
-                .unordered_list => |list| {
-                    try writer.writeAll("<ul>\n");
-                    for (list.items) |item| {
-                        try writer.writeAll("<li>\n");
-                        try format_inlines(item, url_nesting, writer);
-                        try writer.writeAll("</li>\n");
-                    }
-                    try writer.writeAll("</ul>\n");
-                },
+                    try url_writer.splatBytesAll("../", self.url_nesting);
 
-                .code_block => |code| {
-                    try writer.writeAll("<pre class=\"codeblock\"");
-                    if (code.syntax) |syntax| {
-                        try writer.print(" data-syntax=\"{f}\"", .{
-                            fmt_attr(syntax),
-                        });
+                    var pos: usize = 0;
+                    while (pos < ref.fqn.len) {
+                        const split = std.mem.indexOfScalarPos(u8, ref.fqn, pos, '.') orelse break;
+                        try url_writer.print("{s}/", .{ref.fqn[pos..split]});
+                        pos = split + 1;
                     }
-                    try writer.writeAll(">");
-                    try writer.print("{f}", .{fmt_attr(code.content)});
-                    try writer.writeAll("</pre>\n");
+
+                    try url_writer.print("index.html#{s}", .{ref.fqn});
+
+                    try writer.print("<a href=\"{f}\">", .{fmt_url(url_writer.buffered(), 0)});
+                    try writer.print("<code>{s}</code>", .{self.local_ref_display(ref.fqn)});
+                    try writer.writeAll("</a>");
+                },
+                .link => |link| {
+                    try writer.print("<a href=\"{f}\">", .{fmt_attr(link.url)});
+                    try self.format_inlines(link.content, writer);
+                    try writer.writeAll("</a>");
                 },
             }
         }
-
-        try writer.writeAll("</div>\n");
     }
-}
 
-fn format_inlines(inlines: []const model.DocComment.Inline, url_nesting: usize, writer: *std.Io.Writer) !void {
-    for (inlines) |span| {
-        switch (span) {
-            .text => |text| try writer.writeAll(text.value),
-            .code => |code| try writer.print("<code>{s}</code>", .{code.value}),
-            .emphasis => |emphasis| {
-                try writer.writeAll("<em>");
-                try format_inlines(emphasis.content, url_nesting, writer);
-                try writer.writeAll("</em>");
-            },
-            .ref => |ref| {
-                var url_buffer: [512]u8 = undefined;
-                var url_writer: std.Io.Writer = .fixed(&url_buffer);
-
-                try url_writer.splatBytesAll("../", url_nesting);
-
-                var pos: usize = 0;
-                while (pos < ref.fqn.len) {
-                    const split = std.mem.indexOfScalarPos(u8, ref.fqn, pos, '.') orelse break;
-                    try url_writer.print("{s}/", .{ref.fqn[pos..split]});
-                    pos = split + 1;
-                }
-
-                try url_writer.print("index.html#{s}", .{ref.fqn});
-
-                try writer.print("<a href=\"{f}\">", .{fmt_url(url_writer.buffered(), 0)});
-                try writer.print("<code>{s}</code>", .{ref.fqn});
-                try writer.writeAll("</a>");
-            },
-            .link => |link| {
-                try writer.print("<a href=\"{f}\">", .{fmt_attr(link.url)});
-                try format_inlines(link.content, url_nesting, writer);
-                try writer.writeAll("</a>");
-            },
+    /// Returns the locally qualified display name for a ref FQN relative to
+    /// this scope. Strips the scope prefix (everything after the root "ashet"
+    /// component) when the ref shares it, so refs within the same namespace
+    /// are shown without redundant qualification.
+    fn local_ref_display(self: DocFmt, ref_fqn: []const u8) []const u8 {
+        var pos: usize = 0;
+        // scope_fqn[0] is the root "ashet"; refs don't include it, so start at [1]
+        for (self.scope_fqn[1..]) |part| {
+            if (!std.mem.startsWith(u8, ref_fqn[pos..], part)) break;
+            const next = pos + part.len;
+            if (next >= ref_fqn.len or ref_fqn[next] != '.') break;
+            pos = next + 1;
         }
+        return ref_fqn[pos..];
     }
-}
+};
+
