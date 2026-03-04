@@ -11,6 +11,7 @@ pub const block = struct {
     pub const Host_Disk_Image = @import("block/Host_Disk_Image.zig");
     pub const Virtio_Block_Device = @import("block/Virtio_Block_Device.zig");
     pub const Memory_Mapped_Flash = @import("block/Memory_Mapped_Flash.zig");
+    pub const Ashet_Block_Dev = @import("block/Ashet_Block_Dev.zig");
 };
 
 pub const serial = struct {
@@ -34,6 +35,7 @@ pub const rtc = struct {
     pub const Goldfish = @import("rtc/Goldfish.zig");
     pub const PL031 = @import("rtc/PL031.zig");
     pub const HostedSystemClock = @import("rtc/HostedSystemClock.zig");
+    pub const Ashet_RTC = @import("rtc/Ashet_RTC.zig");
 };
 
 pub const video = struct {
