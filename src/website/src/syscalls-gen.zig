@@ -721,6 +721,23 @@ const PageRenderer = struct {
     fn fmt_docs(html: *PageRenderer, docs: model.DocComment) DocFmt {
         return .{ .docs = docs, .html = html };
     }
+
+    fn find_declaration(html: *PageRenderer, fqn_str: []const u8) ?model.Declaration {
+        var current: []const model.Declaration = html.schema.root;
+        var pos: usize = 0;
+        while (pos <= fqn_str.len) {
+            const end = std.mem.indexOfScalarPos(u8, fqn_str, pos, '.') orelse fqn_str.len;
+            const part = fqn_str[pos..end];
+            const found = for (current) |decl| {
+                if (std.mem.eql(u8, decl.full_qualified_name[decl.full_qualified_name.len - 1], part))
+                    break decl;
+            } else return null;
+            if (end == fqn_str.len) return found;
+            current = found.children;
+            pos = end + 1;
+        }
+        return null;
+    }
 };
 
 const LqnFmt = struct {
@@ -865,14 +882,25 @@ const DocFmt = struct {
 
                     try url_writer.splatBytesAll("../", self.html.scope_fqn.len - 1);
 
-                    var pos: usize = 0;
-                    while (pos < ref.fqn.len) {
-                        const split = std.mem.indexOfScalarPos(u8, ref.fqn, pos, '.') orelse break;
-                        try url_writer.print("{s}/", .{ref.fqn[pos..split]});
-                        pos = split + 1;
+                    if (self.html.find_declaration(ref.fqn) != null) {
+                        // Declaration: all parts become path segments, links to its own index.html
+                        var pos: usize = 0;
+                        while (pos < ref.fqn.len) {
+                            const end = std.mem.indexOfScalarPos(u8, ref.fqn, pos, '.') orelse ref.fqn.len;
+                            try url_writer.print("{s}/", .{ref.fqn[pos..end]});
+                            pos = end + 1;
+                        }
+                        try url_writer.writeAll("index.html");
+                    } else {
+                        // Sub-item: parent path segments + fragment anchor
+                        var pos: usize = 0;
+                        while (pos < ref.fqn.len) {
+                            const split = std.mem.indexOfScalarPos(u8, ref.fqn, pos, '.') orelse break;
+                            try url_writer.print("{s}/", .{ref.fqn[pos..split]});
+                            pos = split + 1;
+                        }
+                        try url_writer.print("index.html#{s}", .{ref.fqn});
                     }
-
-                    try url_writer.print("index.html#{s}", .{ref.fqn});
 
                     try writer.print("<a href=\"{f}\">", .{fmt_url(url_writer.buffered(), 0)});
                     try writer.print("<code>{s}</code>", .{self.local_ref_display(ref.fqn)});
