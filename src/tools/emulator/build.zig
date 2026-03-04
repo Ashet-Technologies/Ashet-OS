@@ -12,17 +12,38 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    // GUI dependencies (desktop target only)
+    const args_dep = b.dependency("args", .{});
+    const zgui_dep = b.dependency("zgui", .{
+        .shared = false,
+        .with_implot = false,
+        .backend = .glfw_opengl3,
+        .target = target,
+        .optimize = optimize,
+    });
+    const zglfw_dep = b.dependency("zglfw", .{ .target = target });
+    const zopengl_dep = b.dependency("zopengl", .{ .target = target });
+
+    const desktop_mod = b.createModule(.{
+        .root_source_file = b.path("src/main-desktop.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "emulator", .module = emu_mod },
+            .{ .name = "args", .module = args_dep.module("args") },
+        },
+    });
+    desktop_mod.addImport("zgui", zgui_dep.module("root"));
+    desktop_mod.linkLibrary(zgui_dep.artifact("imgui"));
+    desktop_mod.addImport("zglfw", zglfw_dep.module("root"));
+    desktop_mod.linkLibrary(zglfw_dep.artifact("glfw"));
+    desktop_mod.addImport("zopengl", zopengl_dep.module("root"));
+
     const host_exe = b.addExecutable(.{
         .name = "emulator",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main-desktop.zig"),
-            .target = target,
-            .optimize = optimize,
-            .imports = &.{
-                .{ .name = "emulator", .module = emu_mod },
-            },
-        }),
+        .root_module = desktop_mod,
     });
+    installSystemSdk(b, target, host_exe.root_module);
     b.installArtifact(host_exe);
 
     const wasm_exe = b.addExecutable(.{
@@ -235,4 +256,30 @@ fn addAsmTestSteps(
     debug_step.dependOn(&b.addInstallFileWithDir(json_file, dir, b.fmt("{s}.json", .{name})).step);
 
     return &run_cmd.step;
+}
+
+fn installSystemSdk(b: *std.Build, target: std.Build.ResolvedTarget, module: *std.Build.Module) void {
+    const system_sdk = b.dependency("system_sdk", .{});
+
+    switch (target.result.os.tag) {
+        .windows => {
+            if (target.result.cpu.arch.isX86()) {
+                if (target.result.abi.isGnu() or target.result.abi.isMusl()) {
+                    module.addLibraryPath(system_sdk.path("windows/lib/x86_64-windows-gnu"));
+                }
+            }
+        },
+        .macos => {
+            module.addLibraryPath(system_sdk.path("macos12/usr/lib"));
+            module.addFrameworkPath(system_sdk.path("macos12/System/Library/Frameworks"));
+        },
+        .linux => {
+            if (target.result.cpu.arch.isX86()) {
+                module.addLibraryPath(system_sdk.path("linux/lib/x86_64-linux-gnu"));
+            } else if (target.result.cpu.arch == .aarch64) {
+                module.addLibraryPath(system_sdk.path("linux/lib/aarch64-linux-gnu"));
+            }
+        },
+        else => {},
+    }
 }
