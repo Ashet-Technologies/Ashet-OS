@@ -348,6 +348,10 @@ const machine_info_map = std.EnumArray(Machine, MachineDependentOsConfig).init(.
         .disk_size = 0x0200_0000,
         .rom_size = 0x0200_0000,
     },
+    .@"rv32-ashet-base" = .{
+        .disk_size = 0x0100_0000, // TODO: Adjust to reality
+        .rom_size = 0x0100_0000, // TODO: Adjust to reality
+    },
     .@"arm-qemu-virt" = .{
         .disk_size = 0x0400_0000,
         .rom_size = 0x0400_0000,

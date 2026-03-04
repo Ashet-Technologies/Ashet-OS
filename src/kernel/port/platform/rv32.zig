@@ -8,6 +8,7 @@
 //!
 
 const std = @import("std");
+const builtin = @import("builtin");
 const ashet = @import("../../main.zig");
 const logger = std.log.scoped(.riscv);
 
@@ -20,7 +21,7 @@ pub const scheduler = struct {
 };
 
 pub const start = struct {
-    export fn handleTrap() align(4) callconv(.c) noreturn {
+    fn handleTrap() align(4) callconv(.c) noreturn {
         const trap_reason = csr.ControlStatusRegister.read(.mcause);
         const trap_location = csr.ControlStatusRegister.read(.mepc);
         const trap_status = csr.ControlStatusRegister.read(.mstatus);
@@ -116,22 +117,44 @@ pub const start = struct {
         @panic("unhandled trap");
     }
 
+    comptime {
+        if (csr.accessible) {
+            @export(&handleTrap, .{
+                .linkage = .internal,
+                .name = "handleTrap",
+                .visibility = .default,
+            });
+        }
+    }
+
     export fn _start() linksection(".text._start") callconv(.naked) noreturn {
-        asm volatile (
-            \\la      sp, __kernel_stack_end // defined in linker script 
-            \\
-            \\la      t0, handleTrap
-            \\csrw    mtvec, t0
-            \\
-            \\call    ashet_kernelMain
-            \\
-            \\li      t0, 0x38
-            \\csrc    mstatus, t0
-            \\
-            \\1:
-            \\  wfi
-            \\  j 1b
-        );
+        if (comptime builtin.cpu.has(.riscv, .zicsr)) {
+            asm volatile (
+                \\la      sp, __kernel_stack_end // defined in linker script 
+                \\
+                \\la      t0, handleTrap
+                \\csrw    mtvec, t0
+                \\
+                \\call    ashet_kernelMain
+                \\
+                \\li      t0, 0x38
+                \\csrc    mstatus, t0
+                \\
+                \\1:
+                \\  wfi
+                \\  j 1b
+            );
+        } else {
+            asm volatile (
+                \\la      sp, __kernel_stack_end // defined in linker script 
+                \\
+                \\call    ashet_kernelMain
+                \\
+                \\1:
+                \\  wfi
+                \\  j 1b
+            );
+        }
     }
 
     export fn hang() callconv(.naked) noreturn {
@@ -181,9 +204,13 @@ pub fn enableInterrupts() void {
 }
 
 pub fn get_cpu_cycle_counter() u64 {
+    if (!csr.accessible)
+        return 0; // TODO: This isn't good, but we can't really do better?
     return csr.ControlStatusRegister.read(.cycle);
 }
 
 pub fn get_cpu_random_seed() ?u64 {
+    if (!csr.accessible)
+        return 0; // TODO: This isn't good, but we can't really do better?
     return csr.ControlStatusRegister.read(.time);
 }

@@ -388,6 +388,13 @@ const machine_info_map = std.EnumArray(Machine, MachineConfig).init(.{
         .linker_script = "port/machine/rv32/qemu-virt/linker.ld",
     },
 
+    .@"rv32-ashet-base" = .{
+        .target = constructTargetQuery(baseline_rv32),
+
+        .source_file = "port/machine/rv32/ashet-base/ashet-base.zig",
+        .linker_script = "port/machine/rv32/ashet-base/linker.ld",
+    },
+
     .@"arm-ashet-vhc" = .{
         .target = constructTargetQuery(arm_cortex_m33),
 
@@ -495,6 +502,20 @@ const generic_rv32: std.Target.Query = .{
         .c, // compressed
         .zbb, // bit instructions
         .zicsr, // control registers
+        // .reserve_x4, // Don't allow LLVM to use the "tp" register. We want that for our own purposes
+    }),
+};
+
+const baseline_rv32: std.Target.Query = .{
+    .cpu_arch = .riscv32,
+    .abi = .eabi,
+    .cpu_model = .{ .explicit = &std.Target.riscv.cpu.generic_rv32 },
+    .cpu_features_add = std.Target.riscv.featureSet(&[_]std.Target.riscv.Feature{
+        .i, // integer
+        .m, // multiplication
+        .c, // compressed
+        // .zbb, // bit instructions
+        // .zicsr, // control registers
         // .reserve_x4, // Don't allow LLVM to use the "tp" register. We want that for our own purposes
     }),
 };
