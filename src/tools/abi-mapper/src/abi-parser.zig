@@ -21,10 +21,14 @@ pub fn main() !u8 {
     defer args.deinit();
 
     if (args.positionals.len != 1) {
+        std.debug.print("expects exactly one positional argument, found {}\n", .{args.positionals.len});
+        std.debug.print("usage: abi-mapper [--id-db <path>] --output <abi.json> <input.abi>\n", .{});
         return 1;
     }
 
     if (args.options.output.len == 0) {
+        std.debug.print("missing argument: --output <abi.json>\n", .{});
+        std.debug.print("usage: abi-mapper [--id-db <path>] --output <abi.json> <input.abi>\n", .{});
         return 1;
     }
 
