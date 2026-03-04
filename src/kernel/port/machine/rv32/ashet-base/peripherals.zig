@@ -12,7 +12,7 @@ const mmio = @import("../../../../main.zig").utils.mmio.mmioRegister;
 // 0x40046000 - 0x40046FFF   Block Device 0
 // 0x40047000 - 0x40047FFF   Block Device 1
 
-pub const video_framebuffer: *volatile [256_000]u8 = @ptrFromInt(0x40000000);
+pub const video_framebuffer: *align(4096) volatile [256_000]u8 = @ptrFromInt(0x40000000);
 
 pub const video_control: *volatile VideoControl = @ptrFromInt(0x40040000);
 

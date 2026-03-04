@@ -182,6 +182,8 @@ const EmulatorApp = struct {
     block_devices: [2]emu.BlockDevice,
 
     // Debug log
+    stdout_write_buffer: [4096]u8 = undefined,
+    stdout_writer: std.fs.File.Writer,
     debug_log: DebugLog,
     debug_writer: DebugWriter,
 
@@ -230,6 +232,8 @@ const EmulatorApp = struct {
                 emu.BlockDevice.init(disk_paths[1] != null, 0),
             },
             .debug_log = .{},
+            .stdout_write_buffer = undefined,
+            .stdout_writer = std.fs.File.stdout().writer(&app.stdout_write_buffer),
             .debug_writer = .{
                 .log = undefined, // set below
                 .stdout = std.fs.File.stdout(),
@@ -240,7 +244,9 @@ const EmulatorApp = struct {
         // Wire up self-references
         app.debug_writer.log = &app.debug_log;
         app.debug_writer.init();
-        app.debug_output = emu.DebugOutput.init(&app.debug_writer.interface);
+
+        // app.debug_output = emu.DebugOutput.init(&app.debug_writer.interface);
+        app.debug_output = emu.DebugOutput.init(&app.stdout_writer.interface);
 
         // Open block device files and set block counts
         for (disk_paths, 0..) |maybe_path, i| {
@@ -325,6 +331,8 @@ const EmulatorApp = struct {
             app.rgba_buffer[i * 4 + 2] = rgba[2];
             app.rgba_buffer[i * 4 + 3] = rgba[3];
         }
+
+        std.log.info("update pixels", .{});
 
         gl.bindTexture(gl.TEXTURE_2D, app.fb_texture);
         gl.texSubImage2D(
@@ -891,6 +899,8 @@ pub fn main() !u8 {
         app.stepEmulator();
         app.pollBlockDevices();
         app.updateFramebufferTexture();
+
+        try app.stdout_writer.interface.flush();
 
         const fb_size = glfw_window.getFramebufferSize();
         gl.viewport(0, 0, @intCast(fb_size[0]), @intCast(fb_size[1]));

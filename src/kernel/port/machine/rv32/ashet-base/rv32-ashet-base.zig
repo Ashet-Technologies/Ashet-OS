@@ -20,6 +20,7 @@ const hw = struct {
     //! list of fixed hardware components
 
     var rtc: ashet.drivers.rtc.Ashet_RTC = undefined;
+    var fb0: ashet.drivers.video.Ashet_Framebuffer = undefined;
 
     var block0: ashet.drivers.block.Ashet_Block_Dev = undefined;
     var block1: ashet.drivers.block.Ashet_Block_Dev = undefined;
@@ -37,10 +38,13 @@ fn initialize() !void {
     hw.block0 = .init(peripherals.block_device_0, "BD0");
     hw.block1 = .init(peripherals.block_device_1, "BD1");
 
+    hw.fb0 = .init(peripherals.video_control, peripherals.video_framebuffer);
+
     // Finally install all drivers:
     ashet.drivers.install(&hw.rtc.driver);
     ashet.drivers.install(&hw.block0.driver);
     ashet.drivers.install(&hw.block1.driver);
+    ashet.drivers.install(&hw.fb0.driver);
 }
 
 fn debug_write(msg: []const u8) void {
