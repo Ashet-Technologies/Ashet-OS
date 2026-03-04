@@ -577,7 +577,7 @@ const PageRenderer = struct {
                     \\                    <dd>{f}</dd>
                     \\
                 , .{
-                    html.fmt_docs(child.docs),
+                    DocFmt{ .html = html, .docs = child.docs, .mode = .only_main },
                 });
             }
 
@@ -816,12 +816,19 @@ fn format_fqn(fqn: []const []const u8, writer: *std.Io.Writer) !void {
 const DocFmt = struct {
     docs: model.DocComment,
     html: *PageRenderer,
+    mode: enum { default, only_main } = .default,
 
     pub fn format(self: DocFmt, writer: *std.Io.Writer) !void {
         if (self.docs.is_empty())
             return;
 
         for (self.docs.sections) |section| {
+            switch (self.mode) {
+                .default => {},
+                .only_main => if (section.kind != .main)
+                    continue,
+            }
+
             try writer.print("<div class=\"doc-section doc-section-{t}\">\n", .{section.kind});
 
             for (section.blocks) |block| {
@@ -933,4 +940,3 @@ const DocFmt = struct {
         return ref_fqn[pos..];
     }
 };
-
