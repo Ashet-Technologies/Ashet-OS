@@ -1138,11 +1138,14 @@ const ZigRenderer = struct {
 
             .fnptr => |fptr| {
                 try writer.writeAll("*const fn(");
-                for (fptr.parameters, 0..) |ptype, i| {
+                for (fptr.parameters, 0..) |param, i| {
                     if (i > 0) {
                         try writer.writeAll(", ");
                     }
-                    try writer.print("{f}", .{zr.fmt_type(ptype)});
+                    if (param.name) |name| {
+                        try writer.print("{f}: ", .{std.zig.fmtId(name)});
+                    }
+                    try writer.print("{f}", .{zr.fmt_type(param.type)});
                 }
                 try writer.writeAll(") callconv(.c) ");
 

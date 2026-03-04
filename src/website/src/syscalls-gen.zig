@@ -639,8 +639,11 @@ const PageRenderer = struct {
                     for (fnptr.parameters, 0..) |param, index| {
                         if (index > 0)
                             try writer.writeAll(", ");
+                        if (param.name) |name| {
+                            try writer.print("<span class=\"tok-name\">{f}</span>: ", .{std.zig.fmtId(name)});
+                        }
                         try writer.print("<span class=\"tok-kw\">{f}</span>", .{
-                            self.html.fmt_type(param),
+                            self.html.fmt_type(param.type),
                         });
                     }
 
