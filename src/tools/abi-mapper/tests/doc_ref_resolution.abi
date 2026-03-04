@@ -1,0 +1,44 @@
+namespace overlapped {
+    /// Handle to an asynchronously running operation.
+    struct ARC {
+        field tag: usize;
+    }
+
+    /// Awaits one or more scheduled asynchronous operations and returns the
+    /// number of @`completed` elements.
+    ///
+    /// The kernel will fill out @`completed` up to @`completed_count` elements.
+    ///
+    /// RELATES: @`await_completion_of`
+    syscall await_completion {
+        in     completed:       []*ARC;
+        out    completed_count: usize;
+        error  Unscheduled;
+    }
+
+    /// Awaits one or more explicit asynchronous operations.
+    ///
+    /// NOTE: Use @`await_completion` when ordering of @`events` is irrelevant.
+    syscall await_completion_of {
+        in      events: []?*ARC;
+        out     completed_count: usize;
+        error   Unscheduled;
+    }
+
+    struct Await_Options {
+        field wait: Wait;
+        field thread_affinity: Thread_Affinity;
+
+        enum Thread_Affinity : u8 {
+            item all_threads;
+            item this_thread;
+        }
+
+        enum Wait : u8 {
+            item wait_one = 1;
+
+            /// NOTE: If @`thread_affinity` is @`Thread_Affinity.all_threads`, waiting can take longer.
+            item wait_all = 2;
+        }
+    }
+}

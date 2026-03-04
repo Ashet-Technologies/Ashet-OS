@@ -1,0 +1,182 @@
+diff --git c/src/tools/abi-mapper/tests/stress/ashet-1.0.abi w/src/tools/abi-mapper/tests/stress/ashet-1.0.abi
+index 4c795bdab0..22a81adb11 100644
+--- c/src/tools/abi-mapper/tests/stress/ashet-1.0.abi
++++ w/src/tools/abi-mapper/tests/stress/ashet-1.0.abi
+@@ -1297,7 +1297,7 @@ namespace clock {
+         ///       is sufficient to fully cover the lifetime of the electronics,
+         ///       users and probably even countries and societies.
+         ///       Not quite infinity, but close enough for the computer it's running on.
+-        item infinity = 0xFFFF_FFFF_FFFF_FFFF;
++        item infinity = 0xFFFFFFFFFFFFFFFF;
+ 
+         ...
+     }
+@@ -2184,6 +2184,11 @@ namespace input {
+     ///
+     ///       It may be empty if the kernel cannot provide one.
+     ///
++    struct DeviceMetadataLengths {
++        field name_len:      usize;
++        field unique_id_len: usize;
++    }
++
+     syscall query_device_metadata {
+         in  id:            DeviceId;
+         in  name_buf:      ?[]u8;
+@@ -2192,8 +2197,7 @@ namespace input {
+         /// If not `null`, the kernel will fill this structure with metadata for the device.
+         in  descriptor:    ?*DeviceDescriptor;
+ 
+-        out name_len:      usize;
+-        out unique_id_len: usize;
++        out lengths: DeviceMetadataLengths;
+ 
+         /// `id` is not valid anymore (e.g. device removed) or was never valid.
+         error InvalidDevice;
+@@ -2238,7 +2242,7 @@ namespace input {
+     ///       If the device is present in groups, the event is enqueued into those group queues.
+     syscall emit_device_event {
+         in device:  DeviceId;
+-        in payload: InputEventPayload;
++        in payload: InputEvent.Payload;
+ 
+         /// `device` is not valid anymore (e.g. device removed) or was never valid.
+         error InvalidDevice;
+@@ -2413,7 +2417,7 @@ namespace input {
+     /// except it is marked synthetic.
+     syscall queue_event {
+         in group:  InputGroup;
+-        in payload: InputEventPayload;
++        in payload: InputEvent.Payload;
+         in force:  bool;
+ 
+         /// `group` is not a valid input group resource.
+@@ -5945,14 +5949,14 @@ namespace fs {
+         /// Encoding:
+         /// - UTF-8
+         /// - NUL-padded (first NUL determines length, otherwise full array).
+-        field name: [max_fs_name_len]u8;
++        field name: [8]u8;
+ 
+         /// String identifier of a file system driver (e.g. `FAT32`, `NFS`, ...)
+         ///
+         /// Encoding:
+         /// - UTF-8
+         /// - NUL-padded (first NUL determines length, otherwise full array).
+-        field filesystem: [max_fs_type_len]u8;
++        field filesystem: [32]u8;
+ 
+         bitstruct Flags : u16 {
+             /// This is the system boot filesystem.
+@@ -6129,7 +6133,7 @@ namespace fs {
+         /// Additional packed information.
+         field flags: Flags;
+ 
+-        enum FileType : u2 {
++        enum FileType : u8 {
+             item file      = 0;
+             item directory = 1;
+         }
+@@ -6144,7 +6148,7 @@ namespace fs {
+             /// `modified_date` is valid.
+             field modified_date_valid: bool;
+ 
+-            reserve u12 = 0;
++            reserve u6 = 0;
+         }
+     }
+ 
+@@ -6156,7 +6160,7 @@ namespace fs {
+     /// NOTE: `len` is always `<= max_file_name_len`.
+     struct FileName {
+         field len:   u8;
+-        field bytes: [max_file_name_len]u8;
++        field bytes: [120]u8;
+     }
+ 
+     /// Creates a directory enumerator for `dir`.
+@@ -7694,8 +7698,8 @@ namespace gui {
+     union WidgetEvent {
+         field event_type: Type;
+ 
+-        field mouse: MouseEvent;
+-        field keyboard: KeyboardEvent;
++        field mouse: input.InputEvent;
++        field keyboard: input.InputEvent;
+         field control: WidgetControlMessage;
+ 
+         //? TODO: Add event data
+@@ -7853,8 +7857,8 @@ namespace gui {
+     union WindowEvent {
+         field event_type: Type;
+ 
+-        field mouse: MouseEvent;
+-        field keyboard: KeyboardEvent;
++        field mouse: input.InputEvent;
++        field keyboard: input.InputEvent;
+         field widget_notify: WidgetNotifyEvent;
+ 
+         enum Type : u16 {
+@@ -8222,7 +8226,7 @@ namespace service {
+ 
+     /// Defines the type of argument and the potential transformations the
+     /// kernel performs when passing the argument between caller and callee.
+-    enum MarshalType : u2 {
++    enum MarshalType : u8 {
+         /// The argument/result is unused.
+         /// Unused values must be set to zero or otherwise the call/return is invalid.
+         item unused = 0;
+@@ -8256,7 +8260,7 @@ namespace service {
+         ///   The kernel interprets resource handles in `results` in the *calling thread's current resource context*.
+         ///   For each non-zero valid handle, it creates a strong binding for the resource context that scheduled
+         ///   the original `Invoke` request and returns the translated handle in `Invoke.results`.
+-        item resource = 3;
++        item @"resource" = 3;
+     }
+ 
+     /// Defines the signature of a function or overlapped operation.
+@@ -8267,7 +8271,7 @@ namespace service {
+     /// NOTE: For both `inputs` and `outputs`: As soon as an index in the
+     ///       array is `MarshalType.unused`, all following items must also be
+     ///       `MarshalType.unused`.
+-    bitstruct FunctionSignature : u32 {
++    struct FunctionSignature {
+         /// Defines the number and type of the input arguments.
+         /// `inputs[0]` is the first argument, `inputs[7]` is the eighth argument.
+         field inputs:  [8]MarshalType;
+@@ -8305,7 +8309,7 @@ namespace service {
+     /// NOTE: The handler should perform a strong binding of resources inside `arguments` if it must
+     ///       retain independent access even if the caller later unbinds/releases its handles.
+     ///       This still does not prevent explicit destruction of the resource.
+-    typedef AsyncHandler = fnptr(context: ?*anyopaque, request: RequestToken, operation: u8, arguments: *const [8]usize) void;
++    typedef AsyncHandler = fnptr(anyptr,RequestToken, u8, *const [8]usize) void;
+ 
+     /// The signature of the asynchronous cancellation handler function registered by an interface.
+     ///
+@@ -8320,7 +8324,7 @@ namespace service {
+     ///
+     /// NOTE: A handler function should not yield the executing thread, as this will generate
+     ///       hard to debug scenarios.
+-    typedef CancelHandler = fnptr(context: ?*anyopaque, request: RequestToken) void;
++    typedef CancelHandler = fnptr(anyptr,RequestToken) void;
+ 
+     /// The signature of a synchronous function call registered by an interface.
+     ///
+@@ -8336,7 +8340,7 @@ namespace service {
+     ///       hard to debug scenarios.
+     ///
+     /// NOTE: `arguments` must be assumed invalid after the return of the callback.
+-    typedef Function = fnptr(context: ?*anyopaque, arguments: *const [8]usize) usize;
++    typedef Function = fnptr(anyptr,*const [8]usize) usize;
+ 
+     /// Creates a new interface that can be invoked by other processes.
+     ///
+@@ -8373,7 +8377,7 @@ namespace service {
+         /// NOTE: This can be used to implement a stateful interface that allows a process to create
+         ///       the same interface more than once and still have context which of the interfaces were
+         ///       called.
+-        in    context: ?*anyopaque;
++        in    context: anyptr;
+ 
+         /// The synchronous implementation functions (vtable).
+         ///

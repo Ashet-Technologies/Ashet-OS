@@ -142,7 +142,7 @@ pub fn render_kernel(writer: *CodeWriter, allocator: std.mem.Allocator, schema: 
             defer writer.dedent();
 
             for (schema.syscalls) |syscall| {
-                try writer.print("pub export fn {s}{f}(", .{ renderer.symbol_prefix, fmt_fqn(syscall.full_qualified_name, "_") });
+                try writer.print("pub export fn {f}(", .{renderer.fmt_sym_name(syscall.full_qualified_name, .with_prefix)});
 
                 for (syscall.native_inputs, 0..) |input, index| {
                     if (index > 0)
@@ -174,8 +174,8 @@ pub fn render_kernel(writer: *CodeWriter, allocator: std.mem.Allocator, schema: 
                     writer.indent();
                     defer writer.dedent();
 
-                    try writer.println("Callbacks.before_syscall(.{f});", .{fmt_fqn(syscall.full_qualified_name, "_")});
-                    try writer.println("defer Callbacks.after_syscall(.{f});", .{fmt_fqn(syscall.full_qualified_name, "_")});
+                    try writer.println("Callbacks.before_syscall(.{f});", .{renderer.fmt_sym_name(syscall.full_qualified_name, .no_prefix)});
+                    try writer.println("defer Callbacks.after_syscall(.{f});", .{renderer.fmt_sym_name(syscall.full_qualified_name, .no_prefix)});
 
                     if (has_errors) {
                         // the return value must be an error union
@@ -206,7 +206,7 @@ pub fn render_kernel(writer: *CodeWriter, allocator: std.mem.Allocator, schema: 
                     }
 
                     try writer.println(" = Impl.{f}(", .{
-                        fmt_fqn(syscall.full_qualified_name, null),
+                        fmt_fqn(syscall.full_qualified_name),
                     });
                     {
                         writer.indent();
@@ -386,7 +386,7 @@ const ZigRenderer = struct {
                     try zr.writer.println("pub const {f} = {s}{f};", .{
                         fmt_id(model.local_name(child.full_qualified_name)),
                         zr.scope_prefix,
-                        fmt_fqn(child.full_qualified_name, null),
+                        fmt_fqn(child.full_qualified_name),
                     });
                 },
 
@@ -394,6 +394,38 @@ const ZigRenderer = struct {
             }
         }
     }
+
+    fn fmt_sym_name(zr: *ZigRenderer, sym: model.FQN, mode: FmtSymName.Mode) FmtSymName {
+        return .{
+            .zr = zr,
+            .sym = sym,
+            .mode = mode,
+        };
+    }
+
+    const FmtSymName = struct {
+        const Mode = enum { with_prefix, no_prefix };
+        zr: *ZigRenderer,
+        sym: model.FQN,
+        mode: FmtSymName.Mode,
+
+        pub fn format(fmt: FmtSymName, writer: *std.Io.Writer) !void {
+            var full_name_buf: [512]u8 = undefined;
+            var full_name_writer: std.Io.Writer = .fixed(&full_name_buf);
+
+            switch (fmt.mode) {
+                .with_prefix => try full_name_writer.writeAll(fmt.zr.symbol_prefix),
+                .no_prefix => {},
+            }
+            for (fmt.sym, 0..) |node, i| {
+                if (i > 0)
+                    try full_name_writer.writeAll("_");
+                try full_name_writer.writeAll(node);
+            }
+
+            try writer.print("{f}", .{std.zig.fmtId(full_name_writer.buffered())});
+        }
+    };
 
     fn render_userland_call(zr: *ZigRenderer, syscall: *const model.GenericCall, children: []const model.Declaration) !void {
         std.debug.assert(children.len == 0);
@@ -480,9 +512,8 @@ const ZigRenderer = struct {
                 }
             }
 
-            try writer.println("const __result = {s}{f}(", .{
-                zr.symbol_prefix,
-                fmt_fqn(syscall.full_qualified_name, "_"),
+            try writer.println("const __result = {f}(", .{
+                zr.fmt_sym_name(syscall.full_qualified_name, .with_prefix),
             });
             writer.indent();
 
@@ -538,7 +569,7 @@ const ZigRenderer = struct {
                     });
                 }
                 try writer.println("else => return __handle_unexpected(.{f}, __result),", .{
-                    fmt_fqn(syscall.full_qualified_name, "_"),
+                    zr.fmt_sym_name(syscall.full_qualified_name, .no_prefix),
                 });
                 writer.dedent();
                 try writer.writeln("}");
@@ -632,9 +663,8 @@ const ZigRenderer = struct {
             .local_name => try zr.writer.println("pub extern fn {f}(", .{
                 fmt_id(model.local_name(syscall.full_qualified_name)),
             }),
-            .full_name => try zr.writer.println("extern fn {s}{f}(", .{
-                zr.symbol_prefix,
-                fmt_fqn(syscall.full_qualified_name, "_"),
+            .full_name => try zr.writer.println("extern fn {f}(", .{
+                zr.fmt_sym_name(syscall.full_qualified_name, .with_prefix),
             }),
         }
 
@@ -687,7 +717,7 @@ const ZigRenderer = struct {
             try zr.writer.writeln("pub const Inputs = extern struct {");
 
             zr.writer.indent();
-            try zr.writer.println("pub const Overlapped = {f};", .{fmt_fqn(arc.full_qualified_name, null)});
+            try zr.writer.println("pub const Overlapped = {f};", .{fmt_fqn(arc.full_qualified_name)});
             for (arc.native_inputs) |field| {
                 try zr.render_docs(field.docs);
                 try zr.writer.print("{f}: {f}", .{
@@ -705,7 +735,7 @@ const ZigRenderer = struct {
 
             try zr.writer.writeln("pub const Outputs = extern struct {");
             zr.writer.indent();
-            try zr.writer.println("pub const Overlapped = {f};", .{fmt_fqn(arc.full_qualified_name, null)});
+            try zr.writer.println("pub const Overlapped = {f};", .{fmt_fqn(arc.full_qualified_name)});
             for (arc.native_outputs) |field| {
                 try zr.render_docs(field.docs);
                 try zr.writer.print("{f}: {f}", .{
@@ -1018,10 +1048,13 @@ const ZigRenderer = struct {
         });
     }
 
-    fn render_docs(zr: *ZigRenderer, docs: model.DocString) !void {
-        for (docs) |line| {
-            try zr.writer.println("/// {s}", .{line});
-        }
+    fn render_docs(zr: *ZigRenderer, docs: model.DocComment) !void {
+        _ = zr;
+        _ = docs;
+        // TODO: COnsider if it's worth to include the doc strings inside the generated zig code
+        // for (docs) |line| {
+        //     try zr.writer.println("/// {s}", .{line});
+        // }
     }
 
     fn fmt_type(zr: *ZigRenderer, type_id: model.TypeIndex) ZigTypeFmt {
@@ -1102,32 +1135,32 @@ const ZigRenderer = struct {
 
             .@"enum" => |index| try writer.print("{s}{f}", .{
                 zr.scope_prefix,
-                fmt_fqn(zr.schema.get_enum(index).full_qualified_name, null),
+                fmt_fqn(zr.schema.get_enum(index).full_qualified_name),
             }),
 
             .@"struct" => |index| try writer.print("{s}{f}", .{
                 zr.scope_prefix,
-                fmt_fqn(zr.schema.get_struct(index).full_qualified_name, null),
+                fmt_fqn(zr.schema.get_struct(index).full_qualified_name),
             }),
 
             .@"union" => |index| try writer.print("{s}{f}", .{
                 zr.scope_prefix,
-                fmt_fqn(zr.schema.get_union(index).full_qualified_name, null),
+                fmt_fqn(zr.schema.get_union(index).full_qualified_name),
             }),
 
             .bitstruct => |index| try writer.print("{s}{f}", .{
                 zr.scope_prefix,
-                fmt_fqn(zr.schema.get_bitstruct(index).full_qualified_name, null),
+                fmt_fqn(zr.schema.get_bitstruct(index).full_qualified_name),
             }),
 
             .resource => |index| try writer.print("{s}{f}", .{
                 zr.scope_prefix,
-                fmt_fqn(zr.schema.get_resource(index).full_qualified_name, null),
+                fmt_fqn(zr.schema.get_resource(index).full_qualified_name),
             }),
 
             .typedef => |typedef| try writer.print("{s}{f}", .{
                 zr.scope_prefix,
-                fmt_fqn(typedef.full_qualified_name, null),
+                fmt_fqn(typedef.full_qualified_name),
             }),
 
             .uint => |size| try writer.print("u{}", .{size}),
@@ -1135,11 +1168,14 @@ const ZigRenderer = struct {
 
             .fnptr => |fptr| {
                 try writer.writeAll("*const fn(");
-                for (fptr.parameters, 0..) |ptype, i| {
+                for (fptr.parameters, 0..) |param, i| {
                     if (i > 0) {
                         try writer.writeAll(", ");
                     }
-                    try writer.print("{f}", .{zr.fmt_type(ptype)});
+                    if (param.name) |name| {
+                        try writer.print("{f}: ", .{std.zig.fmtId(name)});
+                    }
+                    try writer.print("{f}", .{zr.fmt_type(param.type)});
                 }
                 try writer.writeAll(") callconv(.c) ");
 
@@ -1222,10 +1258,10 @@ const ZigRenderer = struct {
     }
 };
 
-fn fmt_fqn(fqn: []const []const u8, sep: ?[]const u8) FqnFmt {
+fn fmt_fqn(fqn: []const []const u8) FqnFmt {
     return .{
         .fqn = fqn,
-        .sep = sep orelse ".",
+        .sep = ".",
     };
 }
 

@@ -4,9 +4,11 @@ const args_parser = @import("args");
 pub const syntax = @import("syntax.zig");
 pub const model = @import("model.zig");
 pub const sema = @import("sema.zig");
+pub const doc_comment = @import("doc_comment.zig");
 
 const CliOptions = struct {
     output: []const u8 = "",
+    @"id-db": []const u8 = "",
 };
 
 pub fn main() !u8 {
@@ -19,10 +21,14 @@ pub fn main() !u8 {
     defer args.deinit();
 
     if (args.positionals.len != 1) {
+        std.debug.print("expects exactly one positional argument, found {}\n", .{args.positionals.len});
+        std.debug.print("usage: abi-mapper [--id-db <path>] --output <abi.json> <input.abi>\n", .{});
         return 1;
     }
 
-    if (args.options.output.len == 1) {
+    if (args.options.output.len == 0) {
+        std.debug.print("missing argument: --output <abi.json>\n", .{});
+        std.debug.print("usage: abi-mapper [--id-db <path>] --output <abi.json> <input.abi>\n", .{});
         return 1;
     }
 
@@ -50,7 +56,33 @@ pub fn main() !u8 {
         return err;
     };
 
-    const analyzed_document: model.Document = try sema.analyze(allocator, ast_document);
+    // Load UID database if --id-db was specified
+    const id_db_path = args.options.@"id-db";
+    var uid_database: ?sema.uid_db.UidDatabase = if (id_db_path.len > 0)
+        try sema.uid_db.UidDatabase.load(allocator, id_db_path)
+    else
+        null;
+    defer if (uid_database) |*db| db.deinit();
+
+    var analysis_errors: std.ArrayList(sema.AnalysisError) = .empty;
+    defer analysis_errors.deinit(allocator);
+
+    const analyzed_document: model.Document = sema.analyze(
+        allocator,
+        ast_document,
+        if (uid_database != null) &uid_database.? else null,
+        &analysis_errors,
+    ) catch |err| {
+        for (analysis_errors.items) |ae| {
+            std.log.err("{s}", .{ae.message});
+        }
+        return err;
+    };
+
+    // Save UID database back if it was loaded
+    if (uid_database != null and id_db_path.len > 0) {
+        try uid_database.?.save(id_db_path);
+    }
 
     var atomic_buffer: [4096]u8 = undefined;
     var atomic_output = try std.fs.cwd().atomicFile(

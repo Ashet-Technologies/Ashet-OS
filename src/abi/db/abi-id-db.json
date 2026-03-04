@@ -1,0 +1,2420 @@
+{
+  "entries": [
+    {
+      "fqn": "SystemResource",
+      "uid": 1
+    },
+    {
+      "fqn": "resources.get_type.InvalidHandle",
+      "uid": 2
+    },
+    {
+      "fqn": "resources.get_type",
+      "uid": 3
+    },
+    {
+      "fqn": "resources.get_owners",
+      "uid": 4
+    },
+    {
+      "fqn": "resources.send_to_process.DeadProcess",
+      "uid": 5
+    },
+    {
+      "fqn": "resources.send_to_process.InvalidHandle",
+      "uid": 6
+    },
+    {
+      "fqn": "resources.send_to_process.SystemResources",
+      "uid": 7
+    },
+    {
+      "fqn": "resources.send_to_process",
+      "uid": 8
+    },
+    {
+      "fqn": "resources.release",
+      "uid": 9
+    },
+    {
+      "fqn": "resources.destroy",
+      "uid": 10
+    },
+    {
+      "fqn": "overlapped.ARC",
+      "uid": 11
+    },
+    {
+      "fqn": "overlapped.schedule.AlreadyScheduled",
+      "uid": 12
+    },
+    {
+      "fqn": "overlapped.schedule.SystemResources",
+      "uid": 13
+    },
+    {
+      "fqn": "overlapped.schedule",
+      "uid": 14
+    },
+    {
+      "fqn": "overlapped.await_completion.Unscheduled",
+      "uid": 15
+    },
+    {
+      "fqn": "overlapped.await_completion",
+      "uid": 16
+    },
+    {
+      "fqn": "overlapped.await_completion_of.InvalidOperation",
+      "uid": 17
+    },
+    {
+      "fqn": "overlapped.await_completion_of.Unscheduled",
+      "uid": 18
+    },
+    {
+      "fqn": "overlapped.await_completion_of",
+      "uid": 19
+    },
+    {
+      "fqn": "overlapped.cancel.Completed",
+      "uid": 20
+    },
+    {
+      "fqn": "overlapped.cancel.Unscheduled",
+      "uid": 21
+    },
+    {
+      "fqn": "overlapped.cancel",
+      "uid": 22
+    },
+    {
+      "fqn": "process.ExitCode",
+      "uid": 23
+    },
+    {
+      "fqn": "process.get_file_name.InvalidHandle",
+      "uid": 24
+    },
+    {
+      "fqn": "process.get_file_name",
+      "uid": 25
+    },
+    {
+      "fqn": "process.get_base_address.InvalidHandle",
+      "uid": 26
+    },
+    {
+      "fqn": "process.get_base_address",
+      "uid": 27
+    },
+    {
+      "fqn": "process.get_arguments.InvalidHandle",
+      "uid": 28
+    },
+    {
+      "fqn": "process.get_arguments",
+      "uid": 29
+    },
+    {
+      "fqn": "process.terminate",
+      "uid": 30
+    },
+    {
+      "fqn": "process.kill.InvalidHandle",
+      "uid": 31
+    },
+    {
+      "fqn": "process.kill",
+      "uid": 32
+    },
+    {
+      "fqn": "process.Spawn.BadExecutable",
+      "uid": 33
+    },
+    {
+      "fqn": "process.Spawn.DiskError",
+      "uid": 34
+    },
+    {
+      "fqn": "process.Spawn.FileNotFound",
+      "uid": 35
+    },
+    {
+      "fqn": "process.Spawn.InvalidHandle",
+      "uid": 36
+    },
+    {
+      "fqn": "process.Spawn.InvalidPath",
+      "uid": 37
+    },
+    {
+      "fqn": "process.Spawn.SystemResources",
+      "uid": 38
+    },
+    {
+      "fqn": "process.Spawn",
+      "uid": 39
+    },
+    {
+      "fqn": "process.thread.yield",
+      "uid": 40
+    },
+    {
+      "fqn": "process.thread.exit",
+      "uid": 41
+    },
+    {
+      "fqn": "process.thread.join.InvalidHandle",
+      "uid": 42
+    },
+    {
+      "fqn": "process.thread.join",
+      "uid": 43
+    },
+    {
+      "fqn": "process.thread.spawn.SystemResources",
+      "uid": 44
+    },
+    {
+      "fqn": "process.thread.spawn",
+      "uid": 45
+    },
+    {
+      "fqn": "process.thread.kill.InvalidHandle",
+      "uid": 46
+    },
+    {
+      "fqn": "process.thread.kill",
+      "uid": 47
+    },
+    {
+      "fqn": "process.debug.write_log",
+      "uid": 48
+    },
+    {
+      "fqn": "process.debug.breakpoint",
+      "uid": 49
+    },
+    {
+      "fqn": "process.memory.allocate.SystemResource",
+      "uid": 50
+    },
+    {
+      "fqn": "process.memory.allocate",
+      "uid": 51
+    },
+    {
+      "fqn": "process.memory.release",
+      "uid": 52
+    },
+    {
+      "fqn": "process.monitor.enumerate_processes",
+      "uid": 53
+    },
+    {
+      "fqn": "process.monitor.query_owned_resources.InvalidHandle",
+      "uid": 54
+    },
+    {
+      "fqn": "process.monitor.query_owned_resources",
+      "uid": 55
+    },
+    {
+      "fqn": "process.monitor.query_total_memory_usage.InvalidHandle",
+      "uid": 56
+    },
+    {
+      "fqn": "process.monitor.query_total_memory_usage",
+      "uid": 57
+    },
+    {
+      "fqn": "process.monitor.query_dynamic_memory_usage.InvalidHandle",
+      "uid": 58
+    },
+    {
+      "fqn": "process.monitor.query_dynamic_memory_usage",
+      "uid": 59
+    },
+    {
+      "fqn": "process.monitor.query_active_allocation_count.InvalidHandle",
+      "uid": 60
+    },
+    {
+      "fqn": "process.monitor.query_active_allocation_count",
+      "uid": 61
+    },
+    {
+      "fqn": "clock.monotonic",
+      "uid": 62
+    },
+    {
+      "fqn": "clock.Timer",
+      "uid": 63
+    },
+    {
+      "fqn": "datetime.now",
+      "uid": 64
+    },
+    {
+      "fqn": "datetime.Alarm",
+      "uid": 65
+    },
+    {
+      "fqn": "video.enumerate",
+      "uid": 66
+    },
+    {
+      "fqn": "video.acquire.NotAvailable",
+      "uid": 67
+    },
+    {
+      "fqn": "video.acquire.NotFound",
+      "uid": 68
+    },
+    {
+      "fqn": "video.acquire.SystemResources",
+      "uid": 69
+    },
+    {
+      "fqn": "video.acquire",
+      "uid": 70
+    },
+    {
+      "fqn": "video.get_resolution.InvalidHandle",
+      "uid": 71
+    },
+    {
+      "fqn": "video.get_resolution",
+      "uid": 72
+    },
+    {
+      "fqn": "video.get_video_memory.InvalidHandle",
+      "uid": 73
+    },
+    {
+      "fqn": "video.get_video_memory",
+      "uid": 74
+    },
+    {
+      "fqn": "video.WaitForVBlank.InvalidHandle",
+      "uid": 75
+    },
+    {
+      "fqn": "video.WaitForVBlank",
+      "uid": 76
+    },
+    {
+      "fqn": "random.get_soft_random",
+      "uid": 77
+    },
+    {
+      "fqn": "random.GetStrictRandom",
+      "uid": 78
+    },
+    {
+      "fqn": "input.GetEvent.InProgress",
+      "uid": 79
+    },
+    {
+      "fqn": "input.GetEvent.NonExclusiveAccess",
+      "uid": 80
+    },
+    {
+      "fqn": "input.GetEvent",
+      "uid": 81
+    },
+    {
+      "fqn": "network.IP_Type",
+      "uid": 82
+    },
+    {
+      "fqn": "network.IPv4",
+      "uid": 83
+    },
+    {
+      "fqn": "network.IPv6",
+      "uid": 84
+    },
+    {
+      "fqn": "network.IP.AnyAddr",
+      "uid": 85
+    },
+    {
+      "fqn": "network.IP",
+      "uid": 86
+    },
+    {
+      "fqn": "network.EndPoint",
+      "uid": 87
+    },
+    {
+      "fqn": "network.udp.create_socket.SystemResources",
+      "uid": 88
+    },
+    {
+      "fqn": "network.udp.create_socket",
+      "uid": 89
+    },
+    {
+      "fqn": "network.udp.Bind.IllegalArgument",
+      "uid": 90
+    },
+    {
+      "fqn": "network.udp.Bind.AddressInUse",
+      "uid": 91
+    },
+    {
+      "fqn": "network.udp.Bind.IllegalValue",
+      "uid": 92
+    },
+    {
+      "fqn": "network.udp.Bind.InvalidHandle",
+      "uid": 93
+    },
+    {
+      "fqn": "network.udp.Bind.SystemResources",
+      "uid": 94
+    },
+    {
+      "fqn": "network.udp.Bind",
+      "uid": 95
+    },
+    {
+      "fqn": "network.udp.Connect.AlreadyConnected",
+      "uid": 96
+    },
+    {
+      "fqn": "network.udp.Connect.AlreadyConnecting",
+      "uid": 97
+    },
+    {
+      "fqn": "network.udp.Connect.AddressInUse",
+      "uid": 98
+    },
+    {
+      "fqn": "network.udp.Connect.BufferError",
+      "uid": 99
+    },
+    {
+      "fqn": "network.udp.Connect.IllegalArgument",
+      "uid": 100
+    },
+    {
+      "fqn": "network.udp.Connect.IllegalValue",
+      "uid": 101
+    },
+    {
+      "fqn": "network.udp.Connect.InProgress",
+      "uid": 102
+    },
+    {
+      "fqn": "network.udp.Connect.InvalidHandle",
+      "uid": 103
+    },
+    {
+      "fqn": "network.udp.Connect.LowlevelInterfaceError",
+      "uid": 104
+    },
+    {
+      "fqn": "network.udp.Connect.OutOfMemory",
+      "uid": 105
+    },
+    {
+      "fqn": "network.udp.Connect.Routing",
+      "uid": 106
+    },
+    {
+      "fqn": "network.udp.Connect.SystemResources",
+      "uid": 107
+    },
+    {
+      "fqn": "network.udp.Connect.Timeout",
+      "uid": 108
+    },
+    {
+      "fqn": "network.udp.Connect",
+      "uid": 109
+    },
+    {
+      "fqn": "network.udp.Disconnect.InvalidHandle",
+      "uid": 110
+    },
+    {
+      "fqn": "network.udp.Disconnect.NotConnected",
+      "uid": 111
+    },
+    {
+      "fqn": "network.udp.Disconnect.SystemResources",
+      "uid": 112
+    },
+    {
+      "fqn": "network.udp.Disconnect",
+      "uid": 113
+    },
+    {
+      "fqn": "network.udp.Send.BufferError",
+      "uid": 114
+    },
+    {
+      "fqn": "network.udp.Send.IllegalArgument",
+      "uid": 115
+    },
+    {
+      "fqn": "network.udp.Send.IllegalValue",
+      "uid": 116
+    },
+    {
+      "fqn": "network.udp.Send.InProgress",
+      "uid": 117
+    },
+    {
+      "fqn": "network.udp.Send.InvalidHandle",
+      "uid": 118
+    },
+    {
+      "fqn": "network.udp.Send.LowlevelInterfaceError",
+      "uid": 119
+    },
+    {
+      "fqn": "network.udp.Send.NotConnected",
+      "uid": 120
+    },
+    {
+      "fqn": "network.udp.Send.OutOfMemory",
+      "uid": 121
+    },
+    {
+      "fqn": "network.udp.Send.Routing",
+      "uid": 122
+    },
+    {
+      "fqn": "network.udp.Send.SystemResources",
+      "uid": 123
+    },
+    {
+      "fqn": "network.udp.Send.Timeout",
+      "uid": 124
+    },
+    {
+      "fqn": "network.udp.Send",
+      "uid": 125
+    },
+    {
+      "fqn": "network.udp.SendTo.BufferError",
+      "uid": 126
+    },
+    {
+      "fqn": "network.udp.SendTo.IllegalArgument",
+      "uid": 127
+    },
+    {
+      "fqn": "network.udp.SendTo.IllegalValue",
+      "uid": 128
+    },
+    {
+      "fqn": "network.udp.SendTo.InProgress",
+      "uid": 129
+    },
+    {
+      "fqn": "network.udp.SendTo.InvalidHandle",
+      "uid": 130
+    },
+    {
+      "fqn": "network.udp.SendTo.LowlevelInterfaceError",
+      "uid": 131
+    },
+    {
+      "fqn": "network.udp.SendTo.OutOfMemory",
+      "uid": 132
+    },
+    {
+      "fqn": "network.udp.SendTo.Routing",
+      "uid": 133
+    },
+    {
+      "fqn": "network.udp.SendTo.SystemResources",
+      "uid": 134
+    },
+    {
+      "fqn": "network.udp.SendTo.Timeout",
+      "uid": 135
+    },
+    {
+      "fqn": "network.udp.SendTo",
+      "uid": 136
+    },
+    {
+      "fqn": "network.udp.ReceiveFrom.BufferError",
+      "uid": 137
+    },
+    {
+      "fqn": "network.udp.ReceiveFrom.IllegalArgument",
+      "uid": 138
+    },
+    {
+      "fqn": "network.udp.ReceiveFrom.IllegalValue",
+      "uid": 139
+    },
+    {
+      "fqn": "network.udp.ReceiveFrom.InProgress",
+      "uid": 140
+    },
+    {
+      "fqn": "network.udp.ReceiveFrom.InvalidHandle",
+      "uid": 141
+    },
+    {
+      "fqn": "network.udp.ReceiveFrom.LowlevelInterfaceError",
+      "uid": 142
+    },
+    {
+      "fqn": "network.udp.ReceiveFrom.OutOfMemory",
+      "uid": 143
+    },
+    {
+      "fqn": "network.udp.ReceiveFrom.Routing",
+      "uid": 144
+    },
+    {
+      "fqn": "network.udp.ReceiveFrom.SystemResources",
+      "uid": 145
+    },
+    {
+      "fqn": "network.udp.ReceiveFrom.Timeout",
+      "uid": 146
+    },
+    {
+      "fqn": "network.udp.ReceiveFrom",
+      "uid": 147
+    },
+    {
+      "fqn": "network.tcp.create_socket.SystemResources",
+      "uid": 148
+    },
+    {
+      "fqn": "network.tcp.create_socket",
+      "uid": 149
+    },
+    {
+      "fqn": "network.tcp.Bind.AddressInUse",
+      "uid": 150
+    },
+    {
+      "fqn": "network.tcp.Bind.IllegalValue",
+      "uid": 151
+    },
+    {
+      "fqn": "network.tcp.Bind.InvalidHandle",
+      "uid": 152
+    },
+    {
+      "fqn": "network.tcp.Bind.SystemResources",
+      "uid": 153
+    },
+    {
+      "fqn": "network.tcp.Bind",
+      "uid": 154
+    },
+    {
+      "fqn": "network.tcp.Connect.AlreadyConnected",
+      "uid": 155
+    },
+    {
+      "fqn": "network.tcp.Connect.AlreadyConnecting",
+      "uid": 156
+    },
+    {
+      "fqn": "network.tcp.Connect.BufferError",
+      "uid": 157
+    },
+    {
+      "fqn": "network.tcp.Connect.ConnectionAborted",
+      "uid": 158
+    },
+    {
+      "fqn": "network.tcp.Connect.ConnectionClosed",
+      "uid": 159
+    },
+    {
+      "fqn": "network.tcp.Connect.ConnectionReset",
+      "uid": 160
+    },
+    {
+      "fqn": "network.tcp.Connect.IllegalArgument",
+      "uid": 161
+    },
+    {
+      "fqn": "network.tcp.Connect.IllegalValue",
+      "uid": 162
+    },
+    {
+      "fqn": "network.tcp.Connect.InProgress",
+      "uid": 163
+    },
+    {
+      "fqn": "network.tcp.Connect.InvalidHandle",
+      "uid": 164
+    },
+    {
+      "fqn": "network.tcp.Connect.LowlevelInterfaceError",
+      "uid": 165
+    },
+    {
+      "fqn": "network.tcp.Connect.OutOfMemory",
+      "uid": 166
+    },
+    {
+      "fqn": "network.tcp.Connect.Routing",
+      "uid": 167
+    },
+    {
+      "fqn": "network.tcp.Connect.SystemResources",
+      "uid": 168
+    },
+    {
+      "fqn": "network.tcp.Connect.Timeout",
+      "uid": 169
+    },
+    {
+      "fqn": "network.tcp.Connect",
+      "uid": 170
+    },
+    {
+      "fqn": "network.tcp.Send.BufferError",
+      "uid": 171
+    },
+    {
+      "fqn": "network.tcp.Send.ConnectionAborted",
+      "uid": 172
+    },
+    {
+      "fqn": "network.tcp.Send.ConnectionClosed",
+      "uid": 173
+    },
+    {
+      "fqn": "network.tcp.Send.ConnectionReset",
+      "uid": 174
+    },
+    {
+      "fqn": "network.tcp.Send.IllegalArgument",
+      "uid": 175
+    },
+    {
+      "fqn": "network.tcp.Send.IllegalValue",
+      "uid": 176
+    },
+    {
+      "fqn": "network.tcp.Send.InProgress",
+      "uid": 177
+    },
+    {
+      "fqn": "network.tcp.Send.InvalidHandle",
+      "uid": 178
+    },
+    {
+      "fqn": "network.tcp.Send.LowlevelInterfaceError",
+      "uid": 179
+    },
+    {
+      "fqn": "network.tcp.Send.NotConnected",
+      "uid": 180
+    },
+    {
+      "fqn": "network.tcp.Send.OutOfMemory",
+      "uid": 181
+    },
+    {
+      "fqn": "network.tcp.Send.Routing",
+      "uid": 182
+    },
+    {
+      "fqn": "network.tcp.Send.SystemResources",
+      "uid": 183
+    },
+    {
+      "fqn": "network.tcp.Send.Timeout",
+      "uid": 184
+    },
+    {
+      "fqn": "network.tcp.Send",
+      "uid": 185
+    },
+    {
+      "fqn": "network.tcp.Receive.AlreadyConnected",
+      "uid": 186
+    },
+    {
+      "fqn": "network.tcp.Receive.AlreadyConnecting",
+      "uid": 187
+    },
+    {
+      "fqn": "network.tcp.Receive.BufferError",
+      "uid": 188
+    },
+    {
+      "fqn": "network.tcp.Receive.ConnectionAborted",
+      "uid": 189
+    },
+    {
+      "fqn": "network.tcp.Receive.ConnectionClosed",
+      "uid": 190
+    },
+    {
+      "fqn": "network.tcp.Receive.ConnectionReset",
+      "uid": 191
+    },
+    {
+      "fqn": "network.tcp.Receive.IllegalArgument",
+      "uid": 192
+    },
+    {
+      "fqn": "network.tcp.Receive.IllegalValue",
+      "uid": 193
+    },
+    {
+      "fqn": "network.tcp.Receive.InProgress",
+      "uid": 194
+    },
+    {
+      "fqn": "network.tcp.Receive.InvalidHandle",
+      "uid": 195
+    },
+    {
+      "fqn": "network.tcp.Receive.LowlevelInterfaceError",
+      "uid": 196
+    },
+    {
+      "fqn": "network.tcp.Receive.NotConnected",
+      "uid": 197
+    },
+    {
+      "fqn": "network.tcp.Receive.OutOfMemory",
+      "uid": 198
+    },
+    {
+      "fqn": "network.tcp.Receive.Routing",
+      "uid": 199
+    },
+    {
+      "fqn": "network.tcp.Receive.SystemResources",
+      "uid": 200
+    },
+    {
+      "fqn": "network.tcp.Receive.Timeout",
+      "uid": 201
+    },
+    {
+      "fqn": "network.tcp.Receive",
+      "uid": 202
+    },
+    {
+      "fqn": "fs.find_filesystem",
+      "uid": 203
+    },
+    {
+      "fqn": "fs.Sync.DiskError",
+      "uid": 204
+    },
+    {
+      "fqn": "fs.Sync",
+      "uid": 205
+    },
+    {
+      "fqn": "fs.GetFilesystemInfo.DiskError",
+      "uid": 206
+    },
+    {
+      "fqn": "fs.GetFilesystemInfo.InvalidFileSystem",
+      "uid": 207
+    },
+    {
+      "fqn": "fs.GetFilesystemInfo",
+      "uid": 208
+    },
+    {
+      "fqn": "fs.OpenDrive.DiskError",
+      "uid": 209
+    },
+    {
+      "fqn": "fs.OpenDrive.FileNotFound",
+      "uid": 210
+    },
+    {
+      "fqn": "fs.OpenDrive.InvalidFileSystem",
+      "uid": 211
+    },
+    {
+      "fqn": "fs.OpenDrive.InvalidPath",
+      "uid": 212
+    },
+    {
+      "fqn": "fs.OpenDrive.NotADir",
+      "uid": 213
+    },
+    {
+      "fqn": "fs.OpenDrive.SystemFdQuotaExceeded",
+      "uid": 214
+    },
+    {
+      "fqn": "fs.OpenDrive.SystemResources",
+      "uid": 215
+    },
+    {
+      "fqn": "fs.OpenDrive",
+      "uid": 216
+    },
+    {
+      "fqn": "fs.OpenDir.DiskError",
+      "uid": 217
+    },
+    {
+      "fqn": "fs.OpenDir.FileNotFound",
+      "uid": 218
+    },
+    {
+      "fqn": "fs.OpenDir.InvalidHandle",
+      "uid": 219
+    },
+    {
+      "fqn": "fs.OpenDir.InvalidPath",
+      "uid": 220
+    },
+    {
+      "fqn": "fs.OpenDir.NotADir",
+      "uid": 221
+    },
+    {
+      "fqn": "fs.OpenDir.SystemFdQuotaExceeded",
+      "uid": 222
+    },
+    {
+      "fqn": "fs.OpenDir.SystemResources",
+      "uid": 223
+    },
+    {
+      "fqn": "fs.OpenDir",
+      "uid": 224
+    },
+    {
+      "fqn": "fs.CloseDir.InvalidHandle",
+      "uid": 225
+    },
+    {
+      "fqn": "fs.CloseDir",
+      "uid": 226
+    },
+    {
+      "fqn": "fs.ResetDirEnumeration.DiskError",
+      "uid": 227
+    },
+    {
+      "fqn": "fs.ResetDirEnumeration.InvalidHandle",
+      "uid": 228
+    },
+    {
+      "fqn": "fs.ResetDirEnumeration.SystemResources",
+      "uid": 229
+    },
+    {
+      "fqn": "fs.ResetDirEnumeration",
+      "uid": 230
+    },
+    {
+      "fqn": "fs.EnumerateDir.DiskError",
+      "uid": 231
+    },
+    {
+      "fqn": "fs.EnumerateDir.InvalidHandle",
+      "uid": 232
+    },
+    {
+      "fqn": "fs.EnumerateDir.SystemResources",
+      "uid": 233
+    },
+    {
+      "fqn": "fs.EnumerateDir",
+      "uid": 234
+    },
+    {
+      "fqn": "fs.Delete.DiskError",
+      "uid": 235
+    },
+    {
+      "fqn": "fs.Delete.FileNotFound",
+      "uid": 236
+    },
+    {
+      "fqn": "fs.Delete.InvalidHandle",
+      "uid": 237
+    },
+    {
+      "fqn": "fs.Delete.InvalidPath",
+      "uid": 238
+    },
+    {
+      "fqn": "fs.Delete",
+      "uid": 239
+    },
+    {
+      "fqn": "fs.MkDir.DiskError",
+      "uid": 240
+    },
+    {
+      "fqn": "fs.MkDir.Exists",
+      "uid": 241
+    },
+    {
+      "fqn": "fs.MkDir.InvalidHandle",
+      "uid": 242
+    },
+    {
+      "fqn": "fs.MkDir.InvalidPath",
+      "uid": 243
+    },
+    {
+      "fqn": "fs.MkDir",
+      "uid": 244
+    },
+    {
+      "fqn": "fs.StatEntry.DiskError",
+      "uid": 245
+    },
+    {
+      "fqn": "fs.StatEntry.FileNotFound",
+      "uid": 246
+    },
+    {
+      "fqn": "fs.StatEntry.InvalidHandle",
+      "uid": 247
+    },
+    {
+      "fqn": "fs.StatEntry.InvalidPath",
+      "uid": 248
+    },
+    {
+      "fqn": "fs.StatEntry",
+      "uid": 249
+    },
+    {
+      "fqn": "fs.NearMove.DiskError",
+      "uid": 250
+    },
+    {
+      "fqn": "fs.NearMove.Exists",
+      "uid": 251
+    },
+    {
+      "fqn": "fs.NearMove.FileNotFound",
+      "uid": 252
+    },
+    {
+      "fqn": "fs.NearMove.InvalidHandle",
+      "uid": 253
+    },
+    {
+      "fqn": "fs.NearMove.InvalidPath",
+      "uid": 254
+    },
+    {
+      "fqn": "fs.NearMove",
+      "uid": 255
+    },
+    {
+      "fqn": "fs.FarMove.DiskError",
+      "uid": 256
+    },
+    {
+      "fqn": "fs.FarMove.Exists",
+      "uid": 257
+    },
+    {
+      "fqn": "fs.FarMove.FileNotFound",
+      "uid": 258
+    },
+    {
+      "fqn": "fs.FarMove.InvalidHandle",
+      "uid": 259
+    },
+    {
+      "fqn": "fs.FarMove.InvalidPath",
+      "uid": 260
+    },
+    {
+      "fqn": "fs.FarMove.NoSpaceLeft",
+      "uid": 261
+    },
+    {
+      "fqn": "fs.FarMove",
+      "uid": 262
+    },
+    {
+      "fqn": "fs.Copy.DiskError",
+      "uid": 263
+    },
+    {
+      "fqn": "fs.Copy.Exists",
+      "uid": 264
+    },
+    {
+      "fqn": "fs.Copy.FileNotFound",
+      "uid": 265
+    },
+    {
+      "fqn": "fs.Copy.InvalidHandle",
+      "uid": 266
+    },
+    {
+      "fqn": "fs.Copy.InvalidPath",
+      "uid": 267
+    },
+    {
+      "fqn": "fs.Copy.NoSpaceLeft",
+      "uid": 268
+    },
+    {
+      "fqn": "fs.Copy",
+      "uid": 269
+    },
+    {
+      "fqn": "fs.OpenFile.DiskError",
+      "uid": 270
+    },
+    {
+      "fqn": "fs.OpenFile.Exists",
+      "uid": 271
+    },
+    {
+      "fqn": "fs.OpenFile.FileAlreadyExists",
+      "uid": 272
+    },
+    {
+      "fqn": "fs.OpenFile.FileNotFound",
+      "uid": 273
+    },
+    {
+      "fqn": "fs.OpenFile.InvalidHandle",
+      "uid": 274
+    },
+    {
+      "fqn": "fs.OpenFile.InvalidPath",
+      "uid": 275
+    },
+    {
+      "fqn": "fs.OpenFile.NoSpaceLeft",
+      "uid": 276
+    },
+    {
+      "fqn": "fs.OpenFile.SystemFdQuotaExceeded",
+      "uid": 277
+    },
+    {
+      "fqn": "fs.OpenFile.SystemResources",
+      "uid": 278
+    },
+    {
+      "fqn": "fs.OpenFile.WriteProtected",
+      "uid": 279
+    },
+    {
+      "fqn": "fs.OpenFile",
+      "uid": 280
+    },
+    {
+      "fqn": "fs.CloseFile.DiskError",
+      "uid": 281
+    },
+    {
+      "fqn": "fs.CloseFile.InvalidHandle",
+      "uid": 282
+    },
+    {
+      "fqn": "fs.CloseFile.SystemResources",
+      "uid": 283
+    },
+    {
+      "fqn": "fs.CloseFile",
+      "uid": 284
+    },
+    {
+      "fqn": "fs.FlushFile.DiskError",
+      "uid": 285
+    },
+    {
+      "fqn": "fs.FlushFile.InvalidHandle",
+      "uid": 286
+    },
+    {
+      "fqn": "fs.FlushFile.SystemResources",
+      "uid": 287
+    },
+    {
+      "fqn": "fs.FlushFile",
+      "uid": 288
+    },
+    {
+      "fqn": "fs.Read.DiskError",
+      "uid": 289
+    },
+    {
+      "fqn": "fs.Read.InvalidHandle",
+      "uid": 290
+    },
+    {
+      "fqn": "fs.Read.SystemResources",
+      "uid": 291
+    },
+    {
+      "fqn": "fs.Read",
+      "uid": 292
+    },
+    {
+      "fqn": "fs.Write.DiskError",
+      "uid": 293
+    },
+    {
+      "fqn": "fs.Write.InvalidHandle",
+      "uid": 294
+    },
+    {
+      "fqn": "fs.Write.NoSpaceLeft",
+      "uid": 295
+    },
+    {
+      "fqn": "fs.Write.SystemResources",
+      "uid": 296
+    },
+    {
+      "fqn": "fs.Write.WriteProtected",
+      "uid": 297
+    },
+    {
+      "fqn": "fs.Write",
+      "uid": 298
+    },
+    {
+      "fqn": "fs.StatFile.DiskError",
+      "uid": 299
+    },
+    {
+      "fqn": "fs.StatFile.InvalidHandle",
+      "uid": 300
+    },
+    {
+      "fqn": "fs.StatFile.SystemResources",
+      "uid": 301
+    },
+    {
+      "fqn": "fs.StatFile",
+      "uid": 302
+    },
+    {
+      "fqn": "fs.Resize.DiskError",
+      "uid": 303
+    },
+    {
+      "fqn": "fs.Resize.InvalidHandle",
+      "uid": 304
+    },
+    {
+      "fqn": "fs.Resize.NoSpaceLeft",
+      "uid": 305
+    },
+    {
+      "fqn": "fs.Resize.SystemResources",
+      "uid": 306
+    },
+    {
+      "fqn": "fs.Resize",
+      "uid": 307
+    },
+    {
+      "fqn": "shm.create.SystemResources",
+      "uid": 308
+    },
+    {
+      "fqn": "shm.create",
+      "uid": 309
+    },
+    {
+      "fqn": "shm.get_length.InvalidHandle",
+      "uid": 310
+    },
+    {
+      "fqn": "shm.get_length",
+      "uid": 311
+    },
+    {
+      "fqn": "shm.get_pointer.InvalidHandle",
+      "uid": 312
+    },
+    {
+      "fqn": "shm.get_pointer",
+      "uid": 313
+    },
+    {
+      "fqn": "pipe.create.SystemResources",
+      "uid": 314
+    },
+    {
+      "fqn": "pipe.create",
+      "uid": 315
+    },
+    {
+      "fqn": "pipe.get_fifo_length.InvalidHandle",
+      "uid": 316
+    },
+    {
+      "fqn": "pipe.get_fifo_length",
+      "uid": 317
+    },
+    {
+      "fqn": "pipe.get_object_size.InvalidHandle",
+      "uid": 318
+    },
+    {
+      "fqn": "pipe.get_object_size",
+      "uid": 319
+    },
+    {
+      "fqn": "pipe.Write",
+      "uid": 320
+    },
+    {
+      "fqn": "pipe.Read",
+      "uid": 321
+    },
+    {
+      "fqn": "sync.create_event.SystemResources",
+      "uid": 322
+    },
+    {
+      "fqn": "sync.create_event",
+      "uid": 323
+    },
+    {
+      "fqn": "sync.notify_one.InvalidHandle",
+      "uid": 324
+    },
+    {
+      "fqn": "sync.notify_one",
+      "uid": 325
+    },
+    {
+      "fqn": "sync.notify_all.InvalidHandle",
+      "uid": 326
+    },
+    {
+      "fqn": "sync.notify_all",
+      "uid": 327
+    },
+    {
+      "fqn": "sync.WaitForEvent.InvalidHandle",
+      "uid": 328
+    },
+    {
+      "fqn": "sync.WaitForEvent",
+      "uid": 329
+    },
+    {
+      "fqn": "sync.create_mutex.SystemResources",
+      "uid": 330
+    },
+    {
+      "fqn": "sync.create_mutex",
+      "uid": 331
+    },
+    {
+      "fqn": "sync.try_lock.InvalidHandle",
+      "uid": 332
+    },
+    {
+      "fqn": "sync.try_lock",
+      "uid": 333
+    },
+    {
+      "fqn": "sync.unlock.InvalidHandle",
+      "uid": 334
+    },
+    {
+      "fqn": "sync.unlock",
+      "uid": 335
+    },
+    {
+      "fqn": "sync.Lock.InvalidHandle",
+      "uid": 336
+    },
+    {
+      "fqn": "sync.Lock",
+      "uid": 337
+    },
+    {
+      "fqn": "draw.get_system_font.FileNotFound",
+      "uid": 338
+    },
+    {
+      "fqn": "draw.get_system_font.SystemResources",
+      "uid": 339
+    },
+    {
+      "fqn": "draw.get_system_font",
+      "uid": 340
+    },
+    {
+      "fqn": "draw.create_font.InvalidData",
+      "uid": 341
+    },
+    {
+      "fqn": "draw.create_font.SystemResources",
+      "uid": 342
+    },
+    {
+      "fqn": "draw.create_font",
+      "uid": 343
+    },
+    {
+      "fqn": "draw.is_system_font.InvalidHandle",
+      "uid": 344
+    },
+    {
+      "fqn": "draw.is_system_font",
+      "uid": 345
+    },
+    {
+      "fqn": "draw.measure_text_size.InvalidHandle",
+      "uid": 346
+    },
+    {
+      "fqn": "draw.measure_text_size",
+      "uid": 347
+    },
+    {
+      "fqn": "draw.create_memory_framebuffer.SystemResources",
+      "uid": 348
+    },
+    {
+      "fqn": "draw.create_memory_framebuffer",
+      "uid": 349
+    },
+    {
+      "fqn": "draw.create_video_framebuffer.InvalidHandle",
+      "uid": 350
+    },
+    {
+      "fqn": "draw.create_video_framebuffer.SystemResources",
+      "uid": 351
+    },
+    {
+      "fqn": "draw.create_video_framebuffer",
+      "uid": 352
+    },
+    {
+      "fqn": "draw.create_window_framebuffer.InvalidHandle",
+      "uid": 353
+    },
+    {
+      "fqn": "draw.create_window_framebuffer.SystemResources",
+      "uid": 354
+    },
+    {
+      "fqn": "draw.create_window_framebuffer",
+      "uid": 355
+    },
+    {
+      "fqn": "draw.create_widget_framebuffer.InvalidHandle",
+      "uid": 356
+    },
+    {
+      "fqn": "draw.create_widget_framebuffer.SystemResources",
+      "uid": 357
+    },
+    {
+      "fqn": "draw.create_widget_framebuffer",
+      "uid": 358
+    },
+    {
+      "fqn": "draw.get_framebuffer_type.InvalidHandle",
+      "uid": 359
+    },
+    {
+      "fqn": "draw.get_framebuffer_type",
+      "uid": 360
+    },
+    {
+      "fqn": "draw.get_framebuffer_size.InvalidHandle",
+      "uid": 361
+    },
+    {
+      "fqn": "draw.get_framebuffer_size",
+      "uid": 362
+    },
+    {
+      "fqn": "draw.get_framebuffer_memory.InvalidHandle",
+      "uid": 363
+    },
+    {
+      "fqn": "draw.get_framebuffer_memory.Unsupported",
+      "uid": 364
+    },
+    {
+      "fqn": "draw.get_framebuffer_memory",
+      "uid": 365
+    },
+    {
+      "fqn": "draw.invalidate_framebuffer",
+      "uid": 366
+    },
+    {
+      "fqn": "draw.Render.BadCode",
+      "uid": 367
+    },
+    {
+      "fqn": "draw.Render.InvalidHandle",
+      "uid": 368
+    },
+    {
+      "fqn": "draw.Render",
+      "uid": 369
+    },
+    {
+      "fqn": "gui.register_widget_type.AlreadyRegistered",
+      "uid": 370
+    },
+    {
+      "fqn": "gui.register_widget_type.SystemResources",
+      "uid": 371
+    },
+    {
+      "fqn": "gui.register_widget_type",
+      "uid": 372
+    },
+    {
+      "fqn": "gui.ShowMessageBox",
+      "uid": 373
+    },
+    {
+      "fqn": "gui.create_window.InvalidDimensions",
+      "uid": 374
+    },
+    {
+      "fqn": "gui.create_window.InvalidHandle",
+      "uid": 375
+    },
+    {
+      "fqn": "gui.create_window.SystemResources",
+      "uid": 376
+    },
+    {
+      "fqn": "gui.create_window",
+      "uid": 377
+    },
+    {
+      "fqn": "gui.get_window_title.InvalidHandle",
+      "uid": 378
+    },
+    {
+      "fqn": "gui.get_window_title",
+      "uid": 379
+    },
+    {
+      "fqn": "gui.get_window_size.InvalidHandle",
+      "uid": 380
+    },
+    {
+      "fqn": "gui.get_window_size",
+      "uid": 381
+    },
+    {
+      "fqn": "gui.get_window_min_size.InvalidHandle",
+      "uid": 382
+    },
+    {
+      "fqn": "gui.get_window_min_size",
+      "uid": 383
+    },
+    {
+      "fqn": "gui.get_window_max_size.InvalidHandle",
+      "uid": 384
+    },
+    {
+      "fqn": "gui.get_window_max_size",
+      "uid": 385
+    },
+    {
+      "fqn": "gui.get_window_flags.InvalidHandle",
+      "uid": 386
+    },
+    {
+      "fqn": "gui.get_window_flags",
+      "uid": 387
+    },
+    {
+      "fqn": "gui.set_window_size.InvalidHandle",
+      "uid": 388
+    },
+    {
+      "fqn": "gui.set_window_size",
+      "uid": 389
+    },
+    {
+      "fqn": "gui.resize_window.InvalidHandle",
+      "uid": 390
+    },
+    {
+      "fqn": "gui.resize_window",
+      "uid": 391
+    },
+    {
+      "fqn": "gui.set_window_title.InvalidHandle",
+      "uid": 392
+    },
+    {
+      "fqn": "gui.set_window_title",
+      "uid": 393
+    },
+    {
+      "fqn": "gui.mark_window_urgent.InvalidHandle",
+      "uid": 394
+    },
+    {
+      "fqn": "gui.mark_window_urgent",
+      "uid": 395
+    },
+    {
+      "fqn": "gui.GetWindowEvent.Cancelled",
+      "uid": 396
+    },
+    {
+      "fqn": "gui.GetWindowEvent.InProgress",
+      "uid": 397
+    },
+    {
+      "fqn": "gui.GetWindowEvent.InvalidHandle",
+      "uid": 398
+    },
+    {
+      "fqn": "gui.GetWindowEvent",
+      "uid": 399
+    },
+    {
+      "fqn": "gui.create_widget.SystemResources",
+      "uid": 400
+    },
+    {
+      "fqn": "gui.create_widget.WidgetNotFound",
+      "uid": 401
+    },
+    {
+      "fqn": "gui.create_widget.InvalidHandle",
+      "uid": 402
+    },
+    {
+      "fqn": "gui.create_widget",
+      "uid": 403
+    },
+    {
+      "fqn": "gui.place_widget.InvalidHandle",
+      "uid": 404
+    },
+    {
+      "fqn": "gui.place_widget",
+      "uid": 405
+    },
+    {
+      "fqn": "gui.WidgetControlID",
+      "uid": 406
+    },
+    {
+      "fqn": "gui.control_widget.SystemResources",
+      "uid": 407
+    },
+    {
+      "fqn": "gui.control_widget.InvalidHandle",
+      "uid": 408
+    },
+    {
+      "fqn": "gui.control_widget",
+      "uid": 409
+    },
+    {
+      "fqn": "gui.WidgetNotifyID",
+      "uid": 410
+    },
+    {
+      "fqn": "gui.notify_owner.SystemResources",
+      "uid": 411
+    },
+    {
+      "fqn": "gui.notify_owner.InvalidHandle",
+      "uid": 412
+    },
+    {
+      "fqn": "gui.notify_owner",
+      "uid": 413
+    },
+    {
+      "fqn": "gui.get_widget_data.InvalidHandle",
+      "uid": 414
+    },
+    {
+      "fqn": "gui.get_widget_data",
+      "uid": 415
+    },
+    {
+      "fqn": "gui.get_widget_bounds.InvalidHandle",
+      "uid": 416
+    },
+    {
+      "fqn": "gui.get_widget_bounds",
+      "uid": 417
+    },
+    {
+      "fqn": "gui.create_desktop.SystemResources",
+      "uid": 418
+    },
+    {
+      "fqn": "gui.create_desktop",
+      "uid": 419
+    },
+    {
+      "fqn": "gui.get_desktop_name.InvalidHandle",
+      "uid": 420
+    },
+    {
+      "fqn": "gui.get_desktop_name",
+      "uid": 421
+    },
+    {
+      "fqn": "gui.enumerate_desktops",
+      "uid": 422
+    },
+    {
+      "fqn": "gui.enumerate_desktop_windows.InvalidHandle",
+      "uid": 423
+    },
+    {
+      "fqn": "gui.enumerate_desktop_windows",
+      "uid": 424
+    },
+    {
+      "fqn": "gui.get_desktop_data.InvalidHandle",
+      "uid": 425
+    },
+    {
+      "fqn": "gui.get_desktop_data",
+      "uid": 426
+    },
+    {
+      "fqn": "gui.notify_message_box.BadRequestId",
+      "uid": 427
+    },
+    {
+      "fqn": "gui.notify_message_box.InvalidHandle",
+      "uid": 428
+    },
+    {
+      "fqn": "gui.notify_message_box",
+      "uid": 429
+    },
+    {
+      "fqn": "gui.post_window_event.SystemResources",
+      "uid": 430
+    },
+    {
+      "fqn": "gui.post_window_event.InvalidHandle",
+      "uid": 431
+    },
+    {
+      "fqn": "gui.post_window_event",
+      "uid": 432
+    },
+    {
+      "fqn": "gui.send_notification.SystemResources",
+      "uid": 433
+    },
+    {
+      "fqn": "gui.send_notification.InvalidHandle",
+      "uid": 434
+    },
+    {
+      "fqn": "gui.send_notification",
+      "uid": 435
+    },
+    {
+      "fqn": "gui.clipboard.set.SystemResources",
+      "uid": 436
+    },
+    {
+      "fqn": "gui.clipboard.set",
+      "uid": 437
+    },
+    {
+      "fqn": "gui.clipboard.get_type.InvalidHandle",
+      "uid": 438
+    },
+    {
+      "fqn": "gui.clipboard.get_type",
+      "uid": 439
+    },
+    {
+      "fqn": "gui.clipboard.get_value.InvalidHandle",
+      "uid": 440
+    },
+    {
+      "fqn": "gui.clipboard.get_value.SystemResources",
+      "uid": 441
+    },
+    {
+      "fqn": "gui.clipboard.get_value.ConversionFailed",
+      "uid": 442
+    },
+    {
+      "fqn": "gui.clipboard.get_value.ClipboardEmpty",
+      "uid": 443
+    },
+    {
+      "fqn": "gui.clipboard.get_value",
+      "uid": 444
+    },
+    {
+      "fqn": "service.create.AlreadyRegistered",
+      "uid": 445
+    },
+    {
+      "fqn": "service.create.SystemResources",
+      "uid": 446
+    },
+    {
+      "fqn": "service.create",
+      "uid": 447
+    },
+    {
+      "fqn": "service.enumerate",
+      "uid": 448
+    },
+    {
+      "fqn": "service.get_name.InvalidHandle",
+      "uid": 449
+    },
+    {
+      "fqn": "service.get_name",
+      "uid": 450
+    },
+    {
+      "fqn": "service.get_process.InvalidHandle",
+      "uid": 451
+    },
+    {
+      "fqn": "service.get_process",
+      "uid": 452
+    },
+    {
+      "fqn": "service.get_functions.InvalidHandle",
+      "uid": 453
+    },
+    {
+      "fqn": "service.get_functions",
+      "uid": 454
+    },
+    {
+      "fqn": "Service",
+      "uid": 455
+    },
+    {
+      "fqn": "SharedMemory",
+      "uid": 456
+    },
+    {
+      "fqn": "Pipe",
+      "uid": 457
+    },
+    {
+      "fqn": "Process",
+      "uid": 458
+    },
+    {
+      "fqn": "Thread",
+      "uid": 459
+    },
+    {
+      "fqn": "TcpSocket",
+      "uid": 460
+    },
+    {
+      "fqn": "UdpSocket",
+      "uid": 461
+    },
+    {
+      "fqn": "File",
+      "uid": 462
+    },
+    {
+      "fqn": "Directory",
+      "uid": 463
+    },
+    {
+      "fqn": "VideoOutput",
+      "uid": 464
+    },
+    {
+      "fqn": "Font",
+      "uid": 465
+    },
+    {
+      "fqn": "Framebuffer",
+      "uid": 466
+    },
+    {
+      "fqn": "Window",
+      "uid": 467
+    },
+    {
+      "fqn": "Widget",
+      "uid": 468
+    },
+    {
+      "fqn": "Desktop",
+      "uid": 469
+    },
+    {
+      "fqn": "WidgetType",
+      "uid": 470
+    },
+    {
+      "fqn": "SyncEvent",
+      "uid": 471
+    },
+    {
+      "fqn": "Mutex",
+      "uid": 472
+    },
+    {
+      "fqn": "max_fs_name_len",
+      "uid": 473
+    },
+    {
+      "fqn": "max_fs_type_len",
+      "uid": 474
+    },
+    {
+      "fqn": "max_file_name_len",
+      "uid": 475
+    },
+    {
+      "fqn": "UUID",
+      "uid": 476
+    },
+    {
+      "fqn": "DateTime",
+      "uid": 477
+    },
+    {
+      "fqn": "Absolute",
+      "uid": 478
+    },
+    {
+      "fqn": "Duration",
+      "uid": 479
+    },
+    {
+      "fqn": "PipeMode",
+      "uid": 480
+    },
+    {
+      "fqn": "NotificationSeverity",
+      "uid": 481
+    },
+    {
+      "fqn": "Await_Options.Thread_Affinity",
+      "uid": 482
+    },
+    {
+      "fqn": "Await_Options.Wait",
+      "uid": 483
+    },
+    {
+      "fqn": "Await_Options",
+      "uid": 484
+    },
+    {
+      "fqn": "VideoOutputID",
+      "uid": 485
+    },
+    {
+      "fqn": "FontType",
+      "uid": 486
+    },
+    {
+      "fqn": "FramebufferType",
+      "uid": 487
+    },
+    {
+      "fqn": "MessageBoxIcon",
+      "uid": 488
+    },
+    {
+      "fqn": "LogLevel",
+      "uid": 489
+    },
+    {
+      "fqn": "FileSystemId",
+      "uid": 490
+    },
+    {
+      "fqn": "FileAttributes",
+      "uid": 491
+    },
+    {
+      "fqn": "FileAccess",
+      "uid": 492
+    },
+    {
+      "fqn": "FileMode",
+      "uid": 493
+    },
+    {
+      "fqn": "KeyUsageCode",
+      "uid": 494
+    },
+    {
+      "fqn": "MouseButton",
+      "uid": 495
+    },
+    {
+      "fqn": "SpawnProcessArg.Type",
+      "uid": 496
+    },
+    {
+      "fqn": "SpawnProcessArg.Value",
+      "uid": 497
+    },
+    {
+      "fqn": "SpawnProcessArg.String",
+      "uid": 498
+    },
+    {
+      "fqn": "SpawnProcessArg",
+      "uid": 499
+    },
+    {
+      "fqn": "WindowFlags",
+      "uid": 500
+    },
+    {
+      "fqn": "CreateWindowFlags",
+      "uid": 501
+    },
+    {
+      "fqn": "WidgetDescriptor.Flags",
+      "uid": 502
+    },
+    {
+      "fqn": "WidgetDescriptor",
+      "uid": 503
+    },
+    {
+      "fqn": "WidgetControlMessage",
+      "uid": 504
+    },
+    {
+      "fqn": "WidgetNotifyEvent",
+      "uid": 505
+    },
+    {
+      "fqn": "MessageBoxResult",
+      "uid": 506
+    },
+    {
+      "fqn": "MessageBoxButtons.ok",
+      "uid": 507
+    },
+    {
+      "fqn": "MessageBoxButtons.ok_cancel",
+      "uid": 508
+    },
+    {
+      "fqn": "MessageBoxButtons.yes_no",
+      "uid": 509
+    },
+    {
+      "fqn": "MessageBoxButtons.yes_no_cancel",
+      "uid": 510
+    },
+    {
+      "fqn": "MessageBoxButtons.retry_cancel",
+      "uid": 511
+    },
+    {
+      "fqn": "MessageBoxButtons.abort_retry_ignore",
+      "uid": 512
+    },
+    {
+      "fqn": "MessageBoxButtons",
+      "uid": 513
+    },
+    {
+      "fqn": "DesktopDescriptor",
+      "uid": 514
+    },
+    {
+      "fqn": "DesktopEvent.Type",
+      "uid": 515
+    },
+    {
+      "fqn": "DesktopEvent",
+      "uid": 516
+    },
+    {
+      "fqn": "DesktopWindowEvent",
+      "uid": 517
+    },
+    {
+      "fqn": "DesktopWindowInvalidateEvent",
+      "uid": 518
+    },
+    {
+      "fqn": "DesktopNotificationEvent",
+      "uid": 519
+    },
+    {
+      "fqn": "MessageBoxEvent.RequestID",
+      "uid": 520
+    },
+    {
+      "fqn": "MessageBoxEvent",
+      "uid": 521
+    },
+    {
+      "fqn": "Color.black",
+      "uid": 522
+    },
+    {
+      "fqn": "Color.white",
+      "uid": 523
+    },
+    {
+      "fqn": "Color.red",
+      "uid": 524
+    },
+    {
+      "fqn": "Color.yellow",
+      "uid": 525
+    },
+    {
+      "fqn": "Color.lime",
+      "uid": 526
+    },
+    {
+      "fqn": "Color.green",
+      "uid": 527
+    },
+    {
+      "fqn": "Color.cyan",
+      "uid": 528
+    },
+    {
+      "fqn": "Color.blue",
+      "uid": 529
+    },
+    {
+      "fqn": "Color.purple",
+      "uid": 530
+    },
+    {
+      "fqn": "Color.magenta",
+      "uid": 531
+    },
+    {
+      "fqn": "Color.RGB888",
+      "uid": 532
+    },
+    {
+      "fqn": "Color.ARGB8888",
+      "uid": 533
+    },
+    {
+      "fqn": "Color.ABGR8888",
+      "uid": 534
+    },
+    {
+      "fqn": "Color",
+      "uid": 535
+    },
+    {
+      "fqn": "InputEvent.Type",
+      "uid": 536
+    },
+    {
+      "fqn": "InputEvent",
+      "uid": 537
+    },
+    {
+      "fqn": "WidgetEvent.Type",
+      "uid": 538
+    },
+    {
+      "fqn": "WidgetEvent",
+      "uid": 539
+    },
+    {
+      "fqn": "WindowEvent.Type",
+      "uid": 540
+    },
+    {
+      "fqn": "WindowEvent",
+      "uid": 541
+    },
+    {
+      "fqn": "SharedEventType",
+      "uid": 542
+    },
+    {
+      "fqn": "MouseEvent",
+      "uid": 543
+    },
+    {
+      "fqn": "KeyboardEvent",
+      "uid": 544
+    },
+    {
+      "fqn": "KeyboardModifiers",
+      "uid": 545
+    },
+    {
+      "fqn": "Point.zero",
+      "uid": 546
+    },
+    {
+      "fqn": "Point",
+      "uid": 547
+    },
+    {
+      "fqn": "Size.empty",
+      "uid": 548
+    },
+    {
+      "fqn": "Size.max",
+      "uid": 549
+    },
+    {
+      "fqn": "Size",
+      "uid": 550
+    },
+    {
+      "fqn": "Rectangle",
+      "uid": 551
+    },
+    {
+      "fqn": "VideoMemory",
+      "uid": 552
+    },
+    {
+      "fqn": "FileSystemInfo.Flags",
+      "uid": 553
+    },
+    {
+      "fqn": "FileSystemInfo",
+      "uid": 554
+    },
+    {
+      "fqn": "FileInfo",
+      "uid": 555
+    },
+    {
+      "fqn": "io.serial.SerialPortID",
+      "uid": 556
+    },
+    {
+      "fqn": "io.serial.SerialPort",
+      "uid": 557
+    },
+    {
+      "fqn": "io.serial.configure.InvalidHandle",
+      "uid": 558
+    },
+    {
+      "fqn": "io.serial.configure.ImpreciseBaudRate",
+      "uid": 559
+    },
+    {
+      "fqn": "io.serial.configure.UnsupportedDataBits",
+      "uid": 560
+    },
+    {
+      "fqn": "io.serial.configure.UnsupportedStopBits",
+      "uid": 561
+    },
+    {
+      "fqn": "io.serial.configure.UnsupportedParity",
+      "uid": 562
+    },
+    {
+      "fqn": "io.serial.configure.UnsupportedControlFlow",
+      "uid": 563
+    },
+    {
+      "fqn": "io.serial.configure",
+      "uid": 564
+    },
+    {
+      "fqn": "io.serial.control.InvalidHandle",
+      "uid": 565
+    },
+    {
+      "fqn": "io.serial.control.Unsupported",
+      "uid": 566
+    },
+    {
+      "fqn": "io.serial.control.ControlFlowActive",
+      "uid": 567
+    },
+    {
+      "fqn": "io.serial.control",
+      "uid": 568
+    },
+    {
+      "fqn": "io.serial.query_control.InvalidHandle",
+      "uid": 569
+    },
+    {
+      "fqn": "io.serial.query_control.Unsupported",
+      "uid": 570
+    },
+    {
+      "fqn": "io.serial.query_control",
+      "uid": 571
+    },
+    {
+      "fqn": "io.serial.write.InvalidHandle",
+      "uid": 572
+    },
+    {
+      "fqn": "io.serial.write.WordSizeMismatch",
+      "uid": 573
+    },
+    {
+      "fqn": "io.serial.write",
+      "uid": 574
+    },
+    {
+      "fqn": "io.serial.read.InvalidHandle",
+      "uid": 575
+    },
+    {
+      "fqn": "io.serial.read.WordSizeMismatch",
+      "uid": 576
+    },
+    {
+      "fqn": "io.serial.read",
+      "uid": 577
+    },
+    {
+      "fqn": "io.serial.break.InvalidHandle",
+      "uid": 578
+    },
+    {
+      "fqn": "io.serial.break.Unsupported",
+      "uid": 579
+    },
+    {
+      "fqn": "io.serial.break",
+      "uid": 580
+    },
+    {
+      "fqn": "io.serial.SerialPortError",
+      "uid": 581
+    },
+    {
+      "fqn": "io.serial.StopBits",
+      "uid": 582
+    },
+    {
+      "fqn": "io.serial.Parity",
+      "uid": 583
+    },
+    {
+      "fqn": "io.serial.ControlFlow",
+      "uid": 584
+    },
+    {
+      "fqn": "io.serial.SoftwareControlFlow",
+      "uid": 585
+    },
+    {
+      "fqn": "io.i2c.BusID",
+      "uid": 586
+    },
+    {
+      "fqn": "io.i2c.enumerate",
+      "uid": 587
+    },
+    {
+      "fqn": "io.i2c.query_metadata.NotFound",
+      "uid": 588
+    },
+    {
+      "fqn": "io.i2c.query_metadata",
+      "uid": 589
+    },
+    {
+      "fqn": "io.i2c.Bus",
+      "uid": 590
+    },
+    {
+      "fqn": "io.i2c.open.NotFound",
+      "uid": 591
+    },
+    {
+      "fqn": "io.i2c.open.SystemResources",
+      "uid": 592
+    },
+    {
+      "fqn": "io.i2c.open",
+      "uid": 593
+    },
+    {
+      "fqn": "io.i2c.Execute.InvalidHandle",
+      "uid": 594
+    },
+    {
+      "fqn": "io.i2c.Execute.InvalidAddress",
+      "uid": 595
+    },
+    {
+      "fqn": "io.i2c.Execute.EmptyOperation",
+      "uid": 596
+    },
+    {
+      "fqn": "io.i2c.Execute.ExecutionFailed",
+      "uid": 597
+    },
+    {
+      "fqn": "io.i2c.Execute",
+      "uid": 598
+    },
+    {
+      "fqn": "io.i2c.Operation.Type",
+      "uid": 599
+    },
+    {
+      "fqn": "io.i2c.Operation.Error",
+      "uid": 600
+    },
+    {
+      "fqn": "io.i2c.Operation",
+      "uid": 601
+    },
+    {
+      "fqn": "Syscall_ID",
+      "uid": 602
+    },
+    {
+      "fqn": "SystemResource.Type",
+      "uid": 603
+    },
+    {
+      "fqn": "overlapped.ARC.Type",
+      "uid": 604
+    }
+  ]
+}
