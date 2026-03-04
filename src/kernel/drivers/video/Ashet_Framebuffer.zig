@@ -28,21 +28,20 @@ pub fn init(
     control: *volatile machine.VideoControl,
     framebuffer: *align(ashet.memory.page_size) volatile [256_000]u8,
 ) Ashet_Framebuffer {
-    var dri: Ashet_Framebuffer = .{
+    framebuffer.* = @splat(ashet.video.defaults.border_color.to_u8());
+    ashet.video.load_splash_screen(.{
+        .base = @ptrCast(@volatileCast(framebuffer)),
+        .width = 640,
+        .height = 400,
+        .stride = 640,
+    });
+
+    control.flush = 1;
+
+    return .{
         .control = control,
         .framebuffer = framebuffer,
     };
-
-    ashet.video.load_splash_screen(.{
-        .base = &vd.backing_buffer,
-        .width = vd.graphics_width,
-        .height = vd.graphics_height,
-        .stride = vd.graphics_width,
-    });
-
-    dri.driver.class.video.flush();
-
-    return dri;
 }
 
 fn get_properties(driver: *Driver) ashet.video.DeviceProperties {

@@ -312,6 +312,11 @@ const EmulatorApp = struct {
         _ = app.system.step(batch) catch |err| {
             app.running = false;
             app.last_error = err;
+
+            std.debug.print("cpu halt: {t} @ 0x{X:0>8}\n", .{
+                err,
+                app.system.cpu.pc,
+            });
         };
         app.total_instructions += batch;
     }
