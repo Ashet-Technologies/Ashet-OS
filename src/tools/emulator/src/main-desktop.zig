@@ -318,6 +318,15 @@ const EmulatorApp = struct {
                 err,
                 app.system.cpu.pc,
             });
+
+            if (app.system.last_memory_error) |mem_err| {
+                std.debug.print("\r\n<<memory error: {t} @ 0x{X:0>8}/{t} => {t}>>\r\n", .{
+                    mem_err.op,
+                    mem_err.address,
+                    mem_err.size,
+                    mem_err.err,
+                });
+            }
         }
         app.total_instructions += batch;
     }

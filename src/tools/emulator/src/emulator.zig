@@ -10,6 +10,8 @@ pub const System = struct {
     ram: []align(4) u8,
     mmio: MmioPageTable,
 
+    last_memory_error: ?MemoryAccessError = null,
+
     pub fn init(rom: []align(4) const u8, ram: []align(4) u8) System {
         return .{
             .cpu = .{},
@@ -27,10 +29,24 @@ pub const System = struct {
         return system.cpu.execute(system, count);
     }
 
+    pub const MemoryAccessError = struct {
+        op: enum { read, write },
+        err: BusError,
+        address: u32,
+        size: MemAccessSize,
+    };
+
     /// Translate a bus address into a read of the appropriate memory region
     /// or peripheral register. The MMIO region is dispatched by page-aligned
     /// peripheral ID derived from bits [19:12] of the address.
     pub fn bus_read(system: *System, address: u32, comptime size: MemAccessSize) BusError!size.get_type() {
+        errdefer |err| system.last_memory_error = .{
+            .address = address,
+            .size = size,
+            .op = .read,
+            .err = err,
+        };
+
         if (!size.get_alignment().check(address))
             return error.UnalignedAccess;
         const bytes = comptime size.byte_count();
@@ -55,6 +71,13 @@ pub const System = struct {
     /// Translate a bus address into a write to the appropriate memory region
     /// or peripheral register. ROM writes always fault with WriteProtected.
     pub fn bus_write(system: *System, address: u32, comptime size: MemAccessSize, value: size.get_type()) BusError!void {
+        errdefer |err| system.last_memory_error = .{
+            .address = address,
+            .size = size,
+            .op = .write,
+            .err = err,
+        };
+
         if (!size.get_alignment().check(address))
             return error.UnalignedAccess;
         const bytes = comptime size.byte_count();
@@ -106,6 +129,12 @@ pub const Cpu = struct {
     regs: [31]u32 = [_]u32{0} ** 31,
     pc: u32 = 0,
 
+    fn report_error(cpu: *Cpu, err: CpuError, src: anyerror) CpuError {
+        _ = cpu;
+        std.log.err("mapping error {t} -> {t}", .{ src, err });
+        return err;
+    }
+
     /// Read a general-purpose register. Returns 0 for x0.
     pub inline fn read_reg(self: *const Cpu, reg: u5) u32 {
         if (reg == 0) return 0;
@@ -128,16 +157,16 @@ pub const Cpu = struct {
     pub fn execute(self: *Cpu, system: *System, count: usize) CpuError!usize {
         for (0..count) |_| {
             // Fetch the first halfword to determine instruction length.
-            const low_hw = system.bus_read(self.pc, .u16) catch
-                return error.InstructionFetchFault;
+            const low_hw = system.bus_read(self.pc, .u16) catch |err|
+                return self.report_error(error.InstructionFetchFault, err);
 
             if (low_hw & 0b11 != 0b11) {
                 // Compressed 16-bit instruction (C extension).
                 try self.execute_compressed(system, low_hw);
             } else {
                 // Standard 32-bit instruction: fetch the upper halfword.
-                const high_hw = system.bus_read(self.pc +% 2, .u16) catch
-                    return error.InstructionFetchFault;
+                const high_hw = system.bus_read(self.pc +% 2, .u16) catch |err|
+                    return self.report_error(error.InstructionFetchFault, err);
                 const instruction: u32 = @as(u32, high_hw) << 16 | low_hw;
                 try self.execute_32bit(system, instruction);
             }
@@ -207,15 +236,15 @@ pub const Cpu = struct {
                 const addr = self.read_reg(dec.rs1) +% dec.imm;
                 const value: u32 = switch (dec.funct3) {
                     // LB — sign-extended byte
-                    0b000 => sign_extend(u8, system.bus_read(addr, .u8) catch return error.LoadAccessFault),
+                    0b000 => sign_extend(u8, system.bus_read(addr, .u8) catch |err| return self.report_error(error.LoadAccessFault, err)),
                     // LH — sign-extended halfword
-                    0b001 => sign_extend(u16, system.bus_read(addr, .u16) catch return error.LoadAccessFault),
+                    0b001 => sign_extend(u16, system.bus_read(addr, .u16) catch |err| return self.report_error(error.LoadAccessFault, err)),
                     // LW — word
-                    0b010 => system.bus_read(addr, .u32) catch return error.LoadAccessFault,
+                    0b010 => system.bus_read(addr, .u32) catch |err| return self.report_error(error.LoadAccessFault, err),
                     // LBU — zero-extended byte
-                    0b100 => system.bus_read(addr, .u8) catch return error.LoadAccessFault,
+                    0b100 => system.bus_read(addr, .u8) catch |err| return self.report_error(error.LoadAccessFault, err),
                     // LHU — zero-extended halfword
-                    0b101 => system.bus_read(addr, .u16) catch return error.LoadAccessFault,
+                    0b101 => system.bus_read(addr, .u16) catch |err| return self.report_error(error.LoadAccessFault, err),
                     else => return error.IllegalInstruction,
                 };
                 self.write_reg(dec.rd, value);
@@ -228,11 +257,11 @@ pub const Cpu = struct {
                 const rs2_val = self.read_reg(dec.rs2);
                 switch (dec.funct3) {
                     // SB
-                    0b000 => system.bus_write(addr, .u8, @truncate(rs2_val)) catch return error.StoreAccessFault,
+                    0b000 => system.bus_write(addr, .u8, @truncate(rs2_val)) catch |err| return self.report_error(error.StoreAccessFault, err),
                     // SH
-                    0b001 => system.bus_write(addr, .u16, @truncate(rs2_val)) catch return error.StoreAccessFault,
+                    0b001 => system.bus_write(addr, .u16, @truncate(rs2_val)) catch |err| return self.report_error(error.StoreAccessFault, err),
                     // SW
-                    0b010 => system.bus_write(addr, .u32, rs2_val) catch return error.StoreAccessFault,
+                    0b010 => system.bus_write(addr, .u32, rs2_val) catch |err| return self.report_error(error.StoreAccessFault, err),
                     else => return error.IllegalInstruction,
                 }
                 self.pc +%= 4;
@@ -330,7 +359,7 @@ pub const Cpu = struct {
                     const rs1 = c_rs1_prime(inst);
                     const offset = c_lw_sw_imm(inst);
                     const addr = self.read_reg(rs1) +% offset;
-                    const value = system.bus_read(addr, .u32) catch return error.LoadAccessFault;
+                    const value = system.bus_read(addr, .u32) catch |err| return self.report_error(error.LoadAccessFault, err);
                     self.write_reg(rd, value);
                     self.pc +%= 2;
                 },
@@ -340,7 +369,7 @@ pub const Cpu = struct {
                     const rs1 = c_rs1_prime(inst);
                     const offset = c_lw_sw_imm(inst);
                     const addr = self.read_reg(rs1) +% offset;
-                    system.bus_write(addr, .u32, self.read_reg(rs2)) catch return error.StoreAccessFault;
+                    system.bus_write(addr, .u32, self.read_reg(rs2)) catch |err| return self.report_error(error.StoreAccessFault, err);
                     self.pc +%= 2;
                 },
                 else => return error.IllegalInstruction,
@@ -434,7 +463,7 @@ pub const Cpu = struct {
                     if (rd == 0) return error.IllegalInstruction; // Reserved
                     const offset = c_lwsp_imm(inst);
                     const addr = self.read_reg(2) +% offset;
-                    const value = system.bus_read(addr, .u32) catch return error.LoadAccessFault;
+                    const value = system.bus_read(addr, .u32) catch |err| return self.report_error(error.LoadAccessFault, err);
                     self.write_reg(rd, value);
                     self.pc +%= 2;
                 },
@@ -473,7 +502,7 @@ pub const Cpu = struct {
                     const rs2: u5 = @truncate(inst >> 2);
                     const offset = c_swsp_imm(inst);
                     const addr = self.read_reg(2) +% offset;
-                    system.bus_write(addr, .u32, self.read_reg(rs2)) catch return error.StoreAccessFault;
+                    system.bus_write(addr, .u32, self.read_reg(rs2)) catch |err| return self.report_error(error.StoreAccessFault, err);
                     self.pc +%= 2;
                 },
                 else => return error.IllegalInstruction,
@@ -1009,6 +1038,8 @@ pub const Peripheral = struct {
 // ============================================================================
 
 pub const MmioPageTable = struct {
+    pub const page_size = 4096;
+
     pub const Entry = struct {
         peri: *Peripheral,
         base_page: u8,
@@ -1165,8 +1196,8 @@ pub const VideoControl = struct {
 pub const Framebuffer = struct {
     pub const WIDTH = 640;
     pub const HEIGHT = 400;
-    pub const BUFFER_SIZE = 256_000;
-    pub const PAGE_COUNT = 0x3E; // 62 pages (0x00 through 0x3D)
+    pub const BUFFER_SIZE = WIDTH * HEIGHT;
+    pub const PAGE_COUNT = @divFloor((BUFFER_SIZE + MmioPageTable.page_size - 1), MmioPageTable.page_size);
 
     peri: Peripheral = .{ .vtable = &vtable },
     buffer: [BUFFER_SIZE]u8 = [_]u8{0} ** BUFFER_SIZE,

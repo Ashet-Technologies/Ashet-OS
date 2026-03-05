@@ -28,13 +28,13 @@ pub fn init(
     control: *volatile machine.VideoControl,
     framebuffer: *align(ashet.memory.page_size) volatile [256_000]u8,
 ) Ashet_Framebuffer {
-    // framebuffer.* = @splat(ashet.video.defaults.border_color.to_u8());
-    // ashet.video.load_splash_screen(.{
-    //     .base = @ptrCast(@volatileCast(framebuffer)),
-    //     .width = 640,
-    //     .height = 400,
-    //     .stride = 640,
-    // });
+    framebuffer.* = @splat(ashet.video.defaults.border_color.to_u8());
+    ashet.video.load_splash_screen(.{
+        .base = @ptrCast(@volatileCast(framebuffer)),
+        .width = 640,
+        .height = 400,
+        .stride = 640,
+    });
 
     control.flush = 1;
 
