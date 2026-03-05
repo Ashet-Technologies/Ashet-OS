@@ -86,8 +86,7 @@ const DebugLog = struct {
 
 const DebugWriter = struct {
     log: *DebugLog,
-    stdout: std.fs.File,
-    stdout_buf: [256]u8 = undefined,
+    stdout: ?*std.Io.Writer,
     interface: std.Io.Writer = undefined,
 
     const vtable: std.Io.Writer.VTable = .{
@@ -95,66 +94,58 @@ const DebugWriter = struct {
         .flush = flush,
     };
 
-    fn init(self: *DebugWriter) void {
-        self.interface = .{
-            .vtable = &vtable,
-            .buffer = &self.stdout_buf,
+    fn init(buf: []u8, log: *DebugLog, stdout: ?*std.Io.Writer) DebugWriter {
+        return DebugWriter{
+            .log = log,
+            .stdout = stdout,
+            .interface = .{
+                .vtable = &vtable,
+                .buffer = buf,
+            },
         };
+    }
+
+    fn writeSlice(dw: *DebugWriter, data: []const u8) !void {
+        for (data) |byte| {
+            dw.log.pushByte(byte);
+        }
+        if (dw.stdout) |stdout| {
+            try stdout.writeAll(data);
+        }
     }
 
     fn drain(w: *std.Io.Writer, data: []const []const u8, splat: usize) std.Io.Writer.Error!usize {
         const self: *DebugWriter = @fieldParentPtr("interface", w);
-        // First consume whatever was in the buffer
-        for (self.interface.buffer[0..self.interface.end]) |byte| {
-            self.log.pushByte(byte);
-        }
+
+        // First consume whatever was in the buffer:
+        try self.writeSlice(self.interface.buffer[0..self.interface.end]);
         self.interface.end = 0;
 
         var total: usize = 0;
         if (data.len > 0) {
             for (data[0 .. data.len - 1]) |bytes| {
-                for (bytes) |byte| self.log.pushByte(byte);
+                try self.writeSlice(bytes);
                 total += bytes.len;
             }
             // Handle the last (possibly splatted) slice
             const last = data[data.len - 1];
             for (0..splat) |_| {
-                for (last) |byte| self.log.pushByte(byte);
+                try self.writeSlice(last);
                 total += last.len;
             }
         }
-
-        // Mirror to stdout
-        var stdout_wbuf: [512]u8 = undefined;
-        var stdout_writer = self.stdout.writer(&stdout_wbuf);
-        for (self.interface.buffer[0..0]) |_| {} // no-op, buffer already consumed
-        if (data.len > 0) {
-            for (data[0 .. data.len - 1]) |bytes| {
-                stdout_writer.interface.writeAll(bytes) catch {};
-            }
-            const last = data[data.len - 1];
-            for (0..splat) |_| {
-                stdout_writer.interface.writeAll(last) catch {};
-            }
-        }
-        stdout_writer.interface.flush() catch {};
 
         return total;
     }
 
     fn flush(w: *std.Io.Writer) std.Io.Writer.Error!void {
         const self: *DebugWriter = @fieldParentPtr("interface", w);
-        // Flush buffered bytes to the ring buffer + stdout
-        for (self.interface.buffer[0..self.interface.end]) |byte| {
-            self.log.pushByte(byte);
+
+        try std.Io.Writer.defaultFlush(w);
+
+        if (self.stdout) |stdout| {
+            try stdout.flush();
         }
-        if (self.interface.end > 0) {
-            var stdout_wbuf: [512]u8 = undefined;
-            var stdout_writer = self.stdout.writer(&stdout_wbuf);
-            stdout_writer.interface.writeAll(self.interface.buffer[0..self.interface.end]) catch {};
-            stdout_writer.interface.flush() catch {};
-        }
-        self.interface.end = 0;
     }
 };
 
@@ -185,6 +176,8 @@ const EmulatorApp = struct {
     stdout_write_buffer: [4096]u8 = undefined,
     stdout_writer: std.fs.File.Writer,
     debug_log: DebugLog,
+
+    debug_writer_buf: [256]u8 = undefined,
     debug_writer: DebugWriter,
 
     // OpenGL framebuffer texture
@@ -217,12 +210,27 @@ const EmulatorApp = struct {
         const app = try allocator.create(EmulatorApp);
         app.* = .{
             .allocator = allocator,
+
+            .start_time = std.time.Instant.now() catch @panic("no monotonic clock"),
+
+            .debug_log = .{},
+
+            .stdout_write_buffer = undefined,
+            .stdout_writer = std.fs.File.stdout().writer(&app.stdout_write_buffer),
+
+            .debug_writer_buf = undefined,
+            .debug_writer = .init(
+                &app.debug_writer_buf,
+                &app.debug_log,
+                &app.stdout_writer.interface,
+            ),
+
             .rom = rom,
             .ram = ram,
             .system = emu.System.init(rom, ram),
             .framebuffer = .{},
             .video_control = .{},
-            .debug_output = undefined, // set below
+            .debug_output = emu.DebugOutput.init(&app.debug_writer.interface),
             .keyboard = .{},
             .mouse = .{},
             .timer = .{},
@@ -231,22 +239,7 @@ const EmulatorApp = struct {
                 emu.BlockDevice.init(disk_paths[0] != null, 0),
                 emu.BlockDevice.init(disk_paths[1] != null, 0),
             },
-            .debug_log = .{},
-            .stdout_write_buffer = undefined,
-            .stdout_writer = std.fs.File.stdout().writer(&app.stdout_write_buffer),
-            .debug_writer = .{
-                .log = undefined, // set below
-                .stdout = std.fs.File.stdout(),
-            },
-            .start_time = std.time.Instant.now() catch @panic("no monotonic clock"),
         };
-
-        // Wire up self-references
-        app.debug_writer.log = &app.debug_log;
-        app.debug_writer.init();
-
-        // app.debug_output = emu.DebugOutput.init(&app.debug_writer.interface);
-        app.debug_output = emu.DebugOutput.init(&app.stdout_writer.interface);
 
         // Open block device files and set block counts
         for (disk_paths, 0..) |maybe_path, i| {
@@ -310,15 +303,22 @@ const EmulatorApp = struct {
         if (!app.running) return;
 
         const batch: usize = @intFromFloat(@max(1.0, @as(f32, INSTRUCTIONS_PER_FRAME) * app.speed_multiplier));
-        _ = app.system.step(batch) catch |err| {
+
+        const result_or_err = app.system.step(batch);
+
+        app.debug_writer.interface.flush() catch @panic("flush error"); // flush the emulator-writen data to the ring buffer + stdout writer
+
+        if (result_or_err) |_| {
+            // ok
+        } else |err| {
             app.running = false;
             app.last_error = err;
 
-            std.debug.print("cpu halt: {t} @ 0x{X:0>8}\n", .{
+            std.debug.print("\r\n<<cpu halt: {t} @ 0x{X:0>8}>>\r\n", .{
                 err,
                 app.system.cpu.pc,
             });
-        };
+        }
         app.total_instructions += batch;
     }
 
@@ -905,8 +905,6 @@ pub fn main() !u8 {
         app.stepEmulator();
         app.pollBlockDevices();
         app.updateFramebufferTexture();
-
-        try app.stdout_writer.interface.flush();
 
         const fb_size = glfw_window.getFramebufferSize();
         gl.viewport(0, 0, @intCast(fb_size[0]), @intCast(fb_size[1]));

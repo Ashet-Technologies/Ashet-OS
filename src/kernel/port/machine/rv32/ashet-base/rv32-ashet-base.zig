@@ -47,7 +47,7 @@ fn initialize() !void {
     ashet.drivers.install(&hw.fb0.driver);
 }
 
-fn debug_write(msg: []const u8) void {
+noinline fn debug_write(msg: []const u8) void {
     for (msg) |c| {
         peripherals.debug_output.tx = c;
     }

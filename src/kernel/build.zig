@@ -327,6 +327,34 @@ pub fn build(b: *std.Build) void {
         kernel_exe.linkLibrary(libc);
     }
 
+    // Create a patched version of the stdlib
+    {
+        const create_derivation_exe = b.addExecutable(.{
+            .name = "create-derivation",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("build-utils/create-derivation.zig"),
+                .target = b.graph.host,
+                .optimize = .ReleaseSafe,
+            }),
+        });
+
+        const create_derivation_run = b.addRunArtifact(create_derivation_exe);
+
+        create_derivation_run.addPrefixedDirectoryArg("--source=", .{ .cwd_relative = b.graph.zig_lib_directory.path.? });
+        const patched_zig_lib_dir = create_derivation_run.addPrefixedOutputDirectoryArg("--output=", "ashet-lib");
+
+        create_derivation_run.addPrefixedFileArg("--patch=", b.path("std_patches/0000-compiler_rt_common.zpatch"));
+
+        kernel_exe.zig_lib_dir = patched_zig_lib_dir.dupe(b);
+        patched_zig_lib_dir.addStepDependencies(&kernel_exe.step);
+
+        b.installDirectory(.{
+            .source_dir = patched_zig_lib_dir,
+            .install_dir = .lib,
+            .install_subdir = ".",
+        });
+    }
+
     if (validate_mode) {
         b.getInstallStep().dependOn(&kernel_exe.step);
     } else {

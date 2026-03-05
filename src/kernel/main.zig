@@ -847,7 +847,13 @@ test {
 }
 
 export fn __ashet_os_panic(msg: [*]const u8, len: usize, ra: usize) noreturn {
-    panic(msg[0..len], null, ra);
+    machine_config.debug_write("\r\nPANIC: ");
+    machine_config.debug_write(msg[0..len]);
+    machine_config.debug_write("\r\n");
+    @breakpoint();
+    hang();
+    _ = ra;
+    // panic(msg[0..len], null, if (ra != 0) ra else null);
 }
 
 // The following code is necessary to manage the compiler_rt stack checking.

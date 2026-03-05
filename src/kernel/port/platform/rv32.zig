@@ -146,7 +146,7 @@ pub const start = struct {
             );
         } else {
             asm volatile (
-                \\la      sp, __kernel_stack_end // defined in linker script 
+                \\la      sp, __kernel_stack_end // defined in linker script
                 \\
                 \\call    ashet_kernelMain
                 \\

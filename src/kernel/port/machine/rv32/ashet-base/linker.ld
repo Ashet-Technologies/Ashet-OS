@@ -29,7 +29,7 @@ SECTIONS {
     .stack (NOLOAD) : {
         . = ALIGN(4096);
         PROVIDE(__kernel_stack_start = .);
-        . += 0x80000; 
+        . += 0x80000;  /* 512 kB of kernel stack? */
         PROVIDE(__kernel_stack_end = .);
     } > dram
 
