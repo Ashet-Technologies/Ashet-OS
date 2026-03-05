@@ -276,7 +276,8 @@ const EmulatorApp = struct {
 
         // Fill framebuffer with static noise so the screen pipeline is visible
         const pixels = app.framebuffer.pixels();
-        var rng = std.Random.DefaultPrng.init(@truncate(@as(u128, @bitCast(app.start_time.timestamp))));
+
+        var rng = std.Random.DefaultPrng.init(@truncate(@as(u128, @bitCast(std.time.nanoTimestamp()))));
         for (pixels) |*p| {
             p.* = rng.random().int(u8);
         }

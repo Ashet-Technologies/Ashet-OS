@@ -120,7 +120,7 @@ pub const start = struct {
     comptime {
         if (csr.accessible) {
             @export(&handleTrap, .{
-                .linkage = .internal,
+                .linkage = .strong,
                 .name = "handleTrap",
                 .visibility = .default,
             });
