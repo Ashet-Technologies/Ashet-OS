@@ -192,29 +192,37 @@ pub fn main() !void {
                     var iter = apps.iterate(fb_size);
 
                     while (iter.next()) |desktop_icon| {
-                        try render_queue.blit_framebuffer(
-                            desktop_icon.bounds.corner(.top_left),
-                            desktop_icon.icon,
-                        );
+                        if (damage_tracking.is_area_tainted(desktop_icon.bounds.grow(2))) {
+                            try render_queue.blit_framebuffer(
+                                desktop_icon.bounds.corner(.top_left),
+                                desktop_icon.icon,
+                            );
 
-                        if (selected_app_icon == desktop_icon.index) {
-                            try render_queue.draw_rect(
-                                desktop_icon.bounds.grow(2),
-                                Color.red,
-                            );
-                        } else {
-                            try render_queue.draw_rect(
-                                desktop_icon.bounds.grow(2),
-                                Color.black,
-                            );
+                            if (selected_app_icon == desktop_icon.index) {
+                                try render_queue.draw_rect(
+                                    desktop_icon.bounds.grow(2),
+                                    Color.red,
+                                );
+                            } else {
+                                try render_queue.draw_rect(
+                                    desktop_icon.bounds.grow(2),
+                                    Color.black,
+                                );
+                            }
                         }
 
-                        try render_queue.draw_text(
-                            desktop_icon.bounds.corner(.bottom_left).move_by(0, 2),
-                            default_font,
-                            Color.black,
-                            desktop_icon.app.get_display_name(),
-                        );
+                        const text_size = try ashet.graphics.measure_text_size(default_font, desktop_icon.app.get_display_name());
+
+                        const text_rect: Rectangle = .new(desktop_icon.bounds.corner(.bottom_left).move_by(0, 2), text_size);
+
+                        if (damage_tracking.is_area_tainted(text_rect)) {
+                            try render_queue.draw_text(
+                                text_rect.position(),
+                                default_font,
+                                Color.black,
+                                desktop_icon.app.get_display_name(),
+                            );
+                        }
                     }
                 }
 

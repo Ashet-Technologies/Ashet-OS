@@ -433,6 +433,9 @@ pub fn render(wm: *WindowManager, q: *ashet.graphics.CommandQueue, theme: themes
             const client_rectangle = window.client_rectangle;
             const window_rectangle = window.screenRectangle();
 
+            if (!wm.damage_tracking.is_area_tainted(window_rectangle))
+                continue;
+
             const style = if (window.flags.focus)
                 theme.active_window
             else
