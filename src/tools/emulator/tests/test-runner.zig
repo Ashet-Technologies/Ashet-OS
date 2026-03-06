@@ -96,16 +96,18 @@ pub fn main() !void {
     // -----------------------------------------------------------------------
     // Run
     // -----------------------------------------------------------------------
-    const result = system.step(100_000);
-    if (result) |_| {
+    const result = system.step(100_000) catch |err| {
+        std.debug.print("FAIL [{s}]: host error: {s}\n", .{ test_name, @errorName(err) });
+        std.process.exit(1);
+    };
+    if (result.trap) |trap| {
+        if (trap != .ebreak) {
+            std.debug.print("FAIL [{s}]: unexpected CPU trap: {s}\n", .{ test_name, @tagName(trap) });
+            std.process.exit(1);
+        }
+    } else {
         std.debug.print("FAIL [{s}]: program did not terminate within 100000 instructions\n", .{test_name});
         std.process.exit(1);
-    } else |err| switch (err) {
-        error.Ebreak => {},
-        else => {
-            std.debug.print("FAIL [{s}]: unexpected CPU error: {s}\n", .{ test_name, @errorName(err) });
-            std.process.exit(1);
-        },
     }
 
     // -----------------------------------------------------------------------

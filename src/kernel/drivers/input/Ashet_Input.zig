@@ -5,10 +5,7 @@ const machine = ashet.machine.peripherals;
 
 const Ashet_Input = @This();
 const Driver = ashet.drivers.Driver;
-
-const queue_size = 8;
-const eventq = 0;
-const statusq = 1;
+const InputEventDevice = machine.InputEventDevice;
 
 driver: Driver = .{
     .name = "Ashet Input",
@@ -19,30 +16,26 @@ driver: Driver = .{
     },
 },
 
-mouse: *volatile machine.Mouse,
-keyboard: *volatile machine.Keyboard,
-
-last_mouse: machine.Mouse = .{
-    .x = 0,
-    .y = 0,
-    .buttons = .{ .left = false, .middle = false, .right = false, ._reserved = 0 },
-},
+keyboard: *volatile InputEventDevice,
+mouse: *volatile InputEventDevice,
 
 pub fn init(
-    mouse: *volatile machine.Mouse,
-    keyboard: *volatile machine.Keyboard,
+    keyboard: *volatile InputEventDevice,
+    mouse: *volatile InputEventDevice,
 ) Ashet_Input {
     return .{
-        .mouse = mouse,
         .keyboard = keyboard,
+        .mouse = mouse,
     };
 }
 
 fn poll(driver: *Driver) void {
     const device: *Ashet_Input = @fieldParentPtr("driver", driver);
 
+    // Drain keyboard FIFO
     while (device.keyboard.status.ready) {
-        const event = device.keyboard.data;
+        const raw = device.keyboard.data;
+        const event: InputEventDevice.KeyboardEvent = @bitCast(raw);
 
         ashet.input.push_raw_event(.{ .keyboard = .{
             .usage = @enumFromInt(event.usage_code),
@@ -50,24 +43,41 @@ fn poll(driver: *Driver) void {
         } });
     }
 
-    {
-        const last = device.last_mouse;
-        const current = device.mouse.*;
+    // Drain mouse FIFO
+    while (device.mouse.status.ready) {
+        const raw = device.mouse.data;
+        const event: InputEventDevice.MouseEvent = @bitCast(raw);
 
-        if (current.x != last.x or current.y != last.y) {
-            ashet.input.push_raw_event(.{ .mouse_abs_motion = .{
-                .x = @intCast(@min(current.x, std.math.maxInt(i16))),
-                .y = @intCast(@min(current.y, std.math.maxInt(i16))),
-            } });
-        }
-
-        inline for (.{ "left", "right", "middle" }) |button_name| {
-            if (@field(current.buttons, button_name) != @field(last.buttons, button_name)) {
-                ashet.input.push_raw_event(.{ .mouse_button = .{
-                    .button = @field(ashet.abi.MouseButton, button_name),
-                    .down = @field(current.buttons, button_name),
+        switch (event.event_type) {
+            .pointing => {
+                const pos = event.asPointing();
+                ashet.input.push_raw_event(.{ .mouse_abs_motion = .{
+                    .x = @intCast(pos.x),
+                    .y = @intCast(pos.y),
                 } });
-            }
+            },
+            .button_down => {
+                const button = event.asButton();
+                ashet.input.push_raw_event(.{ .mouse_button = .{
+                    .button = switch (button) {
+                        .left => ashet.abi.MouseButton.left,
+                        .right => ashet.abi.MouseButton.right,
+                        .middle => ashet.abi.MouseButton.middle,
+                    },
+                    .down = true,
+                } });
+            },
+            .button_up => {
+                const button = event.asButton();
+                ashet.input.push_raw_event(.{ .mouse_button = .{
+                    .button = switch (button) {
+                        .left => ashet.abi.MouseButton.left,
+                        .right => ashet.abi.MouseButton.right,
+                        .middle => ashet.abi.MouseButton.middle,
+                    },
+                    .down = false,
+                } });
+            },
         }
     }
 }

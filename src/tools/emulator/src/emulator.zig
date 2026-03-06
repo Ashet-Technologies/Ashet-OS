@@ -1,5 +1,4 @@
 const std = @import("std");
-const logger = std.log.scoped(.rv32_emulator);
 
 /// A fully emulated system combining a RV32IMC CPU core with a memory bus
 /// that maps ROM, MMIO peripherals, and RAM according to the Ashet OS
@@ -9,8 +8,6 @@ pub const System = struct {
     rom: []align(4) const u8,
     ram: []align(4) u8,
     mmio: MmioPageTable,
-
-    last_memory_error: ?MemoryAccessError = null,
 
     pub fn init(rom: []align(4) const u8, ram: []align(4) u8) System {
         return .{
@@ -22,31 +19,17 @@ pub const System = struct {
     }
 
     /// Execute `count` instructions. Returns early if the CPU enters a trap
-    /// state (illegal instruction, bus fault, etc.) or executes an EBREAK.
-    /// The return value indicates how many instructions were actually executed,
-    /// which may be less than `count` if execution was cut short.
-    pub fn step(system: *System, count: usize) CpuError!usize {
+    /// (illegal instruction, bus fault, ecall, ebreak) or encounters a host
+    /// I/O error. The result indicates how many instructions were executed
+    /// and the trap that stopped execution, if any.
+    pub fn step(system: *System, count: usize) StepError!StepResult {
         return system.cpu.execute(system, count);
     }
-
-    pub const MemoryAccessError = struct {
-        op: enum { read, write },
-        err: BusError,
-        address: u32,
-        size: MemAccessSize,
-    };
 
     /// Translate a bus address into a read of the appropriate memory region
     /// or peripheral register. The MMIO region is dispatched by page-aligned
     /// peripheral ID derived from bits [19:12] of the address.
     pub fn bus_read(system: *System, address: u32, comptime size: MemAccessSize) BusError!size.get_type() {
-        errdefer |err| system.last_memory_error = .{
-            .address = address,
-            .size = size,
-            .op = .read,
-            .err = err,
-        };
-
         if (!size.get_alignment().check(address))
             return error.UnalignedAccess;
         const bytes = comptime size.byte_count();
@@ -71,13 +54,6 @@ pub const System = struct {
     /// Translate a bus address into a write to the appropriate memory region
     /// or peripheral register. ROM writes always fault with WriteProtected.
     pub fn bus_write(system: *System, address: u32, comptime size: MemAccessSize, value: size.get_type()) BusError!void {
-        errdefer |err| system.last_memory_error = .{
-            .address = address,
-            .size = size,
-            .op = .write,
-            .err = err,
-        };
-
         if (!size.get_alignment().check(address))
             return error.UnalignedAccess;
         const bytes = comptime size.byte_count();
@@ -130,18 +106,6 @@ pub const Cpu = struct {
     pc: u32 = 0,
     total_instructions: u64 = 0,
 
-    fn report_error(cpu: *Cpu, err: CpuError, src: anyerror) CpuError!void {
-        _ = cpu;
-        std.log.err("mapping error {t} -> {t}", .{ src, err });
-        return err;
-    }
-
-    fn report_error2(cpu: *Cpu, err: CpuError, src: anyerror) CpuError {
-        _ = cpu;
-        std.log.err("mapping error {t} -> {t}", .{ src, err });
-        return err;
-    }
-
     /// Read a general-purpose register. Returns 0 for x0.
     pub inline fn read_reg(self: *const Cpu, reg: u5) u32 {
         if (reg == 0) return 0;
@@ -154,50 +118,57 @@ pub const Cpu = struct {
         self.regs[reg - 1] = value;
     }
 
-    /// Fetch, decode, and execute up to `count` instructions. Returns the
-    /// number actually executed. Stops early on EBREAK or a CPU fault.
+    /// Fetch, decode, and execute up to `count` instructions. Returns a
+    /// `StepResult` indicating how many instructions ran and whether a
+    /// trap stopped execution early.
     ///
     /// Each iteration fetches either a 32-bit or 16-bit instruction based
     /// on the low two bits of the halfword at PC (the "C" extension marker).
     /// After execution, PC advances by 4 or 2 bytes accordingly unless the
     /// instruction itself modified PC (branches, jumps).
-    pub fn execute(self: *Cpu, system: *System, count: usize) CpuError!usize {
+    pub fn execute(self: *Cpu, system: *System, count: usize) StepError!StepResult {
         for (0..count) |i| {
             // Fetch the first halfword to determine instruction length.
             const low_hw = system.bus_read(self.pc, .u16) catch |err| {
                 self.total_instructions += i;
-                return self.report_error2(error.InstructionFetchFault, err);
+                return .{ .instructions_executed = i, .trap = .{ .instruction_fetch_fault = .{
+                    .cause = err,
+                    .address = self.pc,
+                    .size = .u16,
+                } } };
             };
 
-            if (low_hw & 0b11 != 0b11) {
+            const maybe_trap = if (low_hw & 0b11 != 0b11)
                 // Compressed 16-bit instruction (C extension).
-                self.execute_compressed(system, low_hw) catch |err| {
-                    self.total_instructions += i;
-                    return err;
-                };
-            } else {
+                try self.execute_compressed(system, low_hw)
+            else blk: {
                 // Standard 32-bit instruction: fetch the upper halfword.
                 const high_hw = system.bus_read(self.pc +% 2, .u16) catch |err| {
                     self.total_instructions += i;
-                    return self.report_error2(error.InstructionFetchFault, err);
+                    return .{ .instructions_executed = i, .trap = .{ .instruction_fetch_fault = .{
+                        .cause = err,
+                        .address = self.pc +% 2,
+                        .size = .u16,
+                    } } };
                 };
                 const instruction: u32 = @as(u32, high_hw) << 16 | low_hw;
-                self.execute_32bit(system, instruction) catch |err| {
-                    self.total_instructions += i;
-                    return err;
-                };
+                break :blk try self.execute_32bit(system, instruction);
+            };
+
+            if (maybe_trap) |trap| {
+                self.total_instructions += i;
+                return .{ .instructions_executed = i, .trap = trap };
             }
         }
         self.total_instructions += count;
-        return count;
+        return .{ .instructions_executed = count };
     }
 
     /// Execute a single 32-bit RISC-V instruction. Dispatches on the
     /// major opcode (bits [6:2]) to the appropriate format handler.
     /// PC is advanced by 4 unless the instruction is a taken branch or jump.
-    fn execute_32bit(self: *Cpu, system: *System, inst: u32) CpuError!void {
-        errdefer |err| std.debug.print("failed to execute 32 bit instruction 0x{X:0>8}: {t}\n", .{ inst, err });
-
+    /// Returns null on success, or a CpuTrap if the instruction caused a trap.
+    fn execute_32bit(self: *Cpu, system: *System, inst: u32) StepError!?CpuTrap {
         const opcode: u7 = @truncate(inst);
         switch (opcode) {
             // LUI — Load Upper Immediate
@@ -223,7 +194,7 @@ pub const Cpu = struct {
             // JALR — Jump and Link Register
             0b1100111 => {
                 const dec = IType.decode(inst);
-                if (dec.funct3 != 0b000) return error.IllegalInstruction;
+                if (dec.funct3 != 0b000) return CpuTrap{ .illegal_instruction = .{ .address = self.pc } };
                 const return_addr = self.pc +% 4;
                 // Target is (rs1 + imm) with bit 0 cleared.
                 const target = (self.read_reg(dec.rs1) +% dec.imm) & ~@as(u32, 1);
@@ -242,7 +213,7 @@ pub const Cpu = struct {
                     0b101 => @as(i32, @bitCast(rs1_val)) >= @as(i32, @bitCast(rs2_val)), // BGE
                     0b110 => rs1_val < rs2_val, // BLTU
                     0b111 => rs1_val >= rs2_val, // BGEU
-                    else => return error.IllegalInstruction,
+                    else => return CpuTrap{ .illegal_instruction = .{ .address = self.pc } },
                 };
                 if (taken) {
                     self.pc = self.pc +% dec.imm;
@@ -256,16 +227,16 @@ pub const Cpu = struct {
                 const addr = self.read_reg(dec.rs1) +% dec.imm;
                 const value: u32 = switch (dec.funct3) {
                     // LB — sign-extended byte
-                    0b000 => sign_extend(u8, system.bus_read(addr, .u8) catch |err| return self.report_error(error.LoadAccessFault, err)),
+                    0b000 => sign_extend(u8, system.bus_read(addr, .u8) catch |err| return CpuTrap{ .load_access_fault = .{ .cause = err, .address = addr, .size = .u8 } }),
                     // LH — sign-extended halfword
-                    0b001 => sign_extend(u16, system.bus_read(addr, .u16) catch |err| return self.report_error(error.LoadAccessFault, err)),
+                    0b001 => sign_extend(u16, system.bus_read(addr, .u16) catch |err| return CpuTrap{ .load_access_fault = .{ .cause = err, .address = addr, .size = .u16 } }),
                     // LW — word
-                    0b010 => system.bus_read(addr, .u32) catch |err| return self.report_error(error.LoadAccessFault, err),
+                    0b010 => system.bus_read(addr, .u32) catch |err| return CpuTrap{ .load_access_fault = .{ .cause = err, .address = addr, .size = .u32 } },
                     // LBU — zero-extended byte
-                    0b100 => system.bus_read(addr, .u8) catch |err| return self.report_error(error.LoadAccessFault, err),
+                    0b100 => system.bus_read(addr, .u8) catch |err| return CpuTrap{ .load_access_fault = .{ .cause = err, .address = addr, .size = .u8 } },
                     // LHU — zero-extended halfword
-                    0b101 => system.bus_read(addr, .u16) catch |err| return self.report_error(error.LoadAccessFault, err),
-                    else => return error.IllegalInstruction,
+                    0b101 => system.bus_read(addr, .u16) catch |err| return CpuTrap{ .load_access_fault = .{ .cause = err, .address = addr, .size = .u16 } },
+                    else => return CpuTrap{ .illegal_instruction = .{ .address = self.pc } },
                 };
                 self.write_reg(dec.rd, value);
                 self.pc +%= 4;
@@ -277,12 +248,12 @@ pub const Cpu = struct {
                 const rs2_val = self.read_reg(dec.rs2);
                 switch (dec.funct3) {
                     // SB
-                    0b000 => system.bus_write(addr, .u8, @truncate(rs2_val)) catch |err| return self.report_error(error.StoreAccessFault, err),
+                    0b000 => system.bus_write(addr, .u8, @truncate(rs2_val)) catch |err| return CpuTrap{ .store_access_fault = .{ .cause = err, .address = addr, .size = .u8 } },
                     // SH
-                    0b001 => system.bus_write(addr, .u16, @truncate(rs2_val)) catch |err| return self.report_error(error.StoreAccessFault, err),
+                    0b001 => system.bus_write(addr, .u16, @truncate(rs2_val)) catch |err| return CpuTrap{ .store_access_fault = .{ .cause = err, .address = addr, .size = .u16 } },
                     // SW
-                    0b010 => system.bus_write(addr, .u32, rs2_val) catch |err| return self.report_error(error.StoreAccessFault, err),
-                    else => return error.IllegalInstruction,
+                    0b010 => system.bus_write(addr, .u32, rs2_val) catch |err| return CpuTrap{ .store_access_fault = .{ .cause = err, .address = addr, .size = .u32 } },
+                    else => return CpuTrap{ .illegal_instruction = .{ .address = self.pc } },
                 }
                 self.pc +%= 4;
             },
@@ -300,7 +271,7 @@ pub const Cpu = struct {
                     0b111 => rs1_val & dec.imm, // ANDI
                     0b001 => blk: {
                         // SLLI — the upper 7 bits of imm must be zero.
-                        if (inst >> 25 != 0) return error.IllegalInstruction;
+                        if (inst >> 25 != 0) return CpuTrap{ .illegal_instruction = .{ .address = self.pc } };
                         break :blk rs1_val << shamt;
                     },
                     0b101 => blk: {
@@ -308,7 +279,7 @@ pub const Cpu = struct {
                         break :blk switch (funct7) {
                             0b0000000 => rs1_val >> shamt, // SRLI
                             0b0100000 => @bitCast(@as(i32, @bitCast(rs1_val)) >> shamt), // SRAI
-                            else => return error.IllegalInstruction,
+                            else => return CpuTrap{ .illegal_instruction = .{ .address = self.pc } },
                         };
                     },
                 };
@@ -324,12 +295,12 @@ pub const Cpu = struct {
 
                 const result: u32 = if (dec.funct7 == 0b0000001)
                     // M-extension
-                    try execute_m_ext(rs1_val, rs2_val, dec.funct3)
+                    execute_m_ext(rs1_val, rs2_val, dec.funct3)
                 else if (dec.funct7 == 0b0000000 or dec.funct7 == 0b0100000)
                     // Base integer register-register ops
-                    try execute_base_reg(rs1_val, rs2_val, dec.funct3, dec.funct7)
+                    execute_base_reg(rs1_val, rs2_val, dec.funct3, dec.funct7)
                 else
-                    return error.IllegalInstruction;
+                    return CpuTrap{ .illegal_instruction = .{ .address = self.pc } };
 
                 self.write_reg(dec.rd, result);
                 self.pc +%= 4;
@@ -342,15 +313,16 @@ pub const Cpu = struct {
             0b1110011 => {
                 const dec = IType.decode(inst);
                 if (dec.funct3 != 0 or dec.rd != 0 or dec.rs1 != 0)
-                    return error.IllegalInstruction;
+                    return CpuTrap{ .illegal_instruction = .{ .address = self.pc } };
                 switch (dec.imm) {
-                    0 => return error.Ecall, // ECALL
-                    1 => return error.Ebreak, // EBREAK
-                    else => return error.IllegalInstruction,
+                    0 => return .ecall,
+                    1 => return .ebreak,
+                    else => return CpuTrap{ .illegal_instruction = .{ .address = self.pc } },
                 }
             },
-            else => return error.IllegalInstruction,
+            else => return CpuTrap{ .illegal_instruction = .{ .address = self.pc } },
         }
+        return null;
     }
 
     /// Execute a single 16-bit compressed (RV32C) instruction. The compressed
@@ -358,9 +330,8 @@ pub const Cpu = struct {
     /// register fields (3-bit fields address x8–x15) and implicit operands.
     ///
     /// Dispatches on the quadrant (bits [1:0]) and funct3 (bits [15:13]).
-    fn execute_compressed(self: *Cpu, system: *System, inst: u16) CpuError!void {
-        errdefer |err| std.debug.print("failed to execute 16 bit instruction 0x{X:0>4}: {t}\n", .{ inst, err });
-
+    /// Returns null on success, or a CpuTrap if the instruction caused a trap.
+    fn execute_compressed(self: *Cpu, system: *System, inst: u16) StepError!?CpuTrap {
         const quadrant: u2 = @truncate(inst);
         const funct3: u3 = @truncate(inst >> 13);
 
@@ -370,7 +341,7 @@ pub const Cpu = struct {
                 // C.ADDI4SPN — rd' = sp + nzuimm
                 0b000 => {
                     const nzuimm = c_addi4spn_imm(inst);
-                    if (nzuimm == 0) return error.IllegalInstruction; // Reserved encoding
+                    if (nzuimm == 0) return CpuTrap{ .illegal_instruction = .{ .address = self.pc } };
                     const rd = c_rd_prime(inst);
                     self.write_reg(rd, self.read_reg(2) +% nzuimm);
                     self.pc +%= 2;
@@ -381,7 +352,7 @@ pub const Cpu = struct {
                     const rs1 = c_rs1_prime(inst);
                     const offset = c_lw_sw_imm(inst);
                     const addr = self.read_reg(rs1) +% offset;
-                    const value = system.bus_read(addr, .u32) catch |err| return self.report_error(error.LoadAccessFault, err);
+                    const value = system.bus_read(addr, .u32) catch |err| return CpuTrap{ .load_access_fault = .{ .cause = err, .address = addr, .size = .u32 } };
                     self.write_reg(rd, value);
                     self.pc +%= 2;
                 },
@@ -391,10 +362,10 @@ pub const Cpu = struct {
                     const rs1 = c_rs1_prime(inst);
                     const offset = c_lw_sw_imm(inst);
                     const addr = self.read_reg(rs1) +% offset;
-                    system.bus_write(addr, .u32, self.read_reg(rs2)) catch |err| return self.report_error(error.StoreAccessFault, err);
+                    system.bus_write(addr, .u32, self.read_reg(rs2)) catch |err| return CpuTrap{ .store_access_fault = .{ .cause = err, .address = addr, .size = .u32 } };
                     self.pc +%= 2;
                 },
-                else => return error.IllegalInstruction,
+                else => return CpuTrap{ .illegal_instruction = .{ .address = self.pc } },
             },
             // Quadrant 1
             0b01 => switch (funct3) {
@@ -427,19 +398,19 @@ pub const Cpu = struct {
                     if (rd == 2) {
                         // C.ADDI16SP — add sign-extended immediate*16 to sp
                         const imm = c_addi16sp_imm(inst);
-                        if (imm == 0) return error.IllegalInstruction; // Reserved
+                        if (imm == 0) return CpuTrap{ .illegal_instruction = .{ .address = self.pc } };
                         self.write_reg(2, self.read_reg(2) +% imm);
                     } else {
                         // C.LUI — load upper immediate into rd
                         const imm = c_lui_imm(inst);
-                        if (imm == 0) return error.IllegalInstruction; // Reserved
+                        if (imm == 0) return CpuTrap{ .illegal_instruction = .{ .address = self.pc } };
                         self.write_reg(rd, imm);
                     }
                     self.pc +%= 2;
                 },
                 // C.SRLI, C.SRAI, C.ANDI, C.SUB, C.XOR, C.OR, C.AND
                 0b100 => {
-                    try self.execute_c_alu(inst);
+                    self.execute_c_alu(inst);
                     self.pc +%= 2;
                 },
                 // C.J — unconditional jump
@@ -482,10 +453,10 @@ pub const Cpu = struct {
                 // C.LWSP — load word from sp + offset into rd
                 0b010 => {
                     const rd: u5 = @truncate(inst >> 7);
-                    if (rd == 0) return error.IllegalInstruction; // Reserved
+                    if (rd == 0) return CpuTrap{ .illegal_instruction = .{ .address = self.pc } };
                     const offset = c_lwsp_imm(inst);
                     const addr = self.read_reg(2) +% offset;
-                    const value = system.bus_read(addr, .u32) catch |err| return self.report_error(error.LoadAccessFault, err);
+                    const value = system.bus_read(addr, .u32) catch |err| return CpuTrap{ .load_access_fault = .{ .cause = err, .address = addr, .size = .u32 } };
                     self.write_reg(rd, value);
                     self.pc +%= 2;
                 },
@@ -497,7 +468,7 @@ pub const Cpu = struct {
                     if (bit12 == 0) {
                         if (rs2 == 0) {
                             // C.JR — jump to address in rs1
-                            if (rd == 0) return error.IllegalInstruction; // Reserved
+                            if (rd == 0) return CpuTrap{ .illegal_instruction = .{ .address = self.pc } };
                             self.pc = self.read_reg(rd) & ~@as(u32, 1);
                         } else {
                             // C.MV — rd = rs2
@@ -507,7 +478,7 @@ pub const Cpu = struct {
                     } else {
                         if (rs2 == 0 and rd == 0) {
                             // C.EBREAK
-                            return error.Ebreak;
+                            return .ebreak;
                         } else if (rs2 == 0) {
                             // C.JALR — jump to rs1, link to ra
                             self.write_reg(1, self.pc +% 2);
@@ -524,20 +495,21 @@ pub const Cpu = struct {
                     const rs2: u5 = @truncate(inst >> 2);
                     const offset = c_swsp_imm(inst);
                     const addr = self.read_reg(2) +% offset;
-                    system.bus_write(addr, .u32, self.read_reg(rs2)) catch |err| return self.report_error(error.StoreAccessFault, err);
+                    system.bus_write(addr, .u32, self.read_reg(rs2)) catch |err| return CpuTrap{ .store_access_fault = .{ .cause = err, .address = addr, .size = .u32 } };
                     self.pc +%= 2;
                 },
-                else => return error.IllegalInstruction,
+                else => return CpuTrap{ .illegal_instruction = .{ .address = self.pc } },
             },
             // Quadrant 3 would be 32-bit instructions; should never reach here.
             0b11 => unreachable,
         }
+        return null;
     }
 
     /// Handle the C.SRLI / C.SRAI / C.ANDI / C.SUB / C.XOR / C.OR / C.AND
     /// subgroup. These all share funct3=0b100 in quadrant 1 and are further
     /// distinguished by bits [11:10] and, for register-register ops, bits [6:5].
-    fn execute_c_alu(self: *Cpu, inst: u16) CpuError!void {
+    fn execute_c_alu(self: *Cpu, inst: u16) void {
         const rd = c_rs1_prime(inst); // rd' is in the rs1' position for these
         const rd_val = self.read_reg(rd);
         const sub_funct: u2 = @truncate(inst >> 10);
@@ -820,7 +792,7 @@ inline fn c_swsp_imm(inst: u16) u32 {
 
 /// Execute base RV32I register-register operations. Funct7 distinguishes
 /// ADD from SUB and SRL from SRA; all other ops ignore funct7.
-fn execute_base_reg(rs1: u32, rs2: u32, funct3: u3, funct7: u7) CpuError!u32 {
+fn execute_base_reg(rs1: u32, rs2: u32, funct3: u3, funct7: u7) u32 {
     const shamt: u5 = @truncate(rs2);
     return switch (funct3) {
         0b000 => if (funct7 == 0b0100000) rs1 -% rs2 else rs1 +% rs2, // ADD/SUB
@@ -838,7 +810,7 @@ fn execute_base_reg(rs1: u32, rs2: u32, funct3: u3, funct7: u7) CpuError!u32 {
 /// division by zero does not trap — it returns a defined result instead
 /// (all-ones for DIV, the dividend for REM). Signed overflow (INT32_MIN / -1)
 /// similarly returns defined results without trapping.
-fn execute_m_ext(rs1: u32, rs2: u32, funct3: u3) CpuError!u32 {
+fn execute_m_ext(rs1: u32, rs2: u32, funct3: u3) u32 {
     const s1: i32 = @bitCast(rs1);
     const s2: i32 = @bitCast(rs2);
     return switch (funct3) {
@@ -914,27 +886,47 @@ inline fn sign_extend(comptime T: type, value: T) u32 {
 }
 
 // ============================================================================
-// Error Types
+// Step Result and Trap Types
 // ============================================================================
 
-pub const CpuError = error{
-    /// Fetching the next instruction failed (bus fault at PC).
-    InstructionFetchFault,
+/// Host-level errors that indicate a real emulator/environment failure,
+/// not a CPU trap. Reserved for future use (e.g. block device I/O errors
+/// surfaced through the bus).
+pub const StepError = error{IoError};
 
-    /// The instruction word does not correspond to any valid RV32IMC encoding.
-    IllegalInstruction,
+/// Result of executing instructions.
+pub const StepResult = struct {
+    /// Number of instructions successfully executed.
+    instructions_executed: usize,
+    /// Why execution stopped. Null if the full requested count was reached.
+    trap: ?CpuTrap = null,
+};
 
-    /// A load instruction triggered a bus fault.
-    LoadAccessFault,
-
-    /// A store instruction triggered a bus fault.
-    StoreAccessFault,
-
-    /// The program executed an ECALL instruction.
-    Ecall,
-
+/// A CPU trap — an expected event that stops instruction execution.
+/// These are normal CPU behavior, not emulator errors.
+pub const CpuTrap = union(enum) {
     /// The program executed an EBREAK instruction (or C.EBREAK).
-    Ebreak,
+    ebreak,
+    /// The program executed an ECALL instruction.
+    ecall,
+    /// The instruction word does not correspond to any valid RV32IMC encoding.
+    illegal_instruction: IllegalInstructionFault,
+    /// Fetching the next instruction failed (bus fault at PC).
+    instruction_fetch_fault: BusFault,
+    /// A load instruction triggered a bus fault.
+    load_access_fault: BusFault,
+    /// A store instruction triggered a bus fault.
+    store_access_fault: BusFault,
+};
+
+pub const IllegalInstructionFault = struct {
+    address: u32,
+};
+
+pub const BusFault = struct {
+    cause: BusError,
+    address: u32,
+    size: MemAccessSize,
 };
 
 pub const MemAccessSize = enum(u8) {
@@ -1112,7 +1104,7 @@ pub const DebugOutput = struct {
         }
         if (offset != 0) return error.Unmapped;
         self.writer.writeByte(@truncate(value)) catch |err| {
-            logger.err("failed to write debug output: {}", .{err});
+            std.log.scoped(.rv32_emulator).err("failed to write debug output: {}", .{err});
         };
     }
 };
@@ -1251,95 +1243,160 @@ pub const Framebuffer = struct {
     }
 };
 
+/// A generic fixed-size ring buffer for 32-bit events with deduplication.
+/// Used by both the Keyboard and Mouse peripherals. Consecutive identical
+/// events are coalesced to avoid flooding the FIFO.
+pub fn EventFifo(comptime capacity: u16) type {
+    return struct {
+        const Self = @This();
+        pub const FIFO_SIZE = capacity;
+
+        fifo: [capacity]u32 = [_]u32{0} ** capacity,
+        head: u16 = 0,
+        tail: u16 = 0,
+        count: u16 = 0,
+        /// Last enqueued event for deduplication.
+        last_event: ?u32 = null,
+
+        /// Push an event. Returns false if FIFO is full.
+        /// Deduplicates: if the event is identical to the last pushed event,
+        /// it is silently accepted but not enqueued.
+        pub fn push(self: *Self, entry: u32) bool {
+            if (self.last_event == entry) return true;
+            if (self.count >= capacity) return false;
+
+            self.last_event = entry;
+            self.fifo[self.tail] = entry;
+            self.tail = @intCast((@as(u32, self.tail) + 1) % capacity);
+            self.count += 1;
+            return true;
+        }
+
+        /// Pop and return one entry. Returns 0 if empty.
+        pub fn pop(self: *Self) u32 {
+            if (self.count == 0) return 0;
+            const entry = self.fifo[self.head];
+            self.head = @intCast((@as(u32, self.head) + 1) % capacity);
+            self.count -= 1;
+            return entry;
+        }
+
+        pub fn isEmpty(self: *const Self) bool {
+            return self.count == 0;
+        }
+    };
+}
+
+/// An Input Event Device provides a FIFO of 32-bit events to the emulated
+/// system. Both the Keyboard and Mouse use this type with the same register
+/// layout: STATUS at +0x00 and DATA at +0x04.
+pub fn InputEventDevice(comptime fifo_capacity: u16) type {
+    return struct {
+        const Self = @This();
+
+        peri: Peripheral = .{ .vtable = &vtable },
+        fifo: EventFifo(fifo_capacity) = .{},
+
+        const vtable = Peripheral.makeVTable(Self);
+
+        pub fn peripheral(self: *Self) *Peripheral {
+            return &self.peri;
+        }
+
+        fn busRead(self: *Self, comptime size: MemAccessSize, offset: u32) BusError!size.get_type() {
+            if (size != .u32) return error.InvalidSize;
+            return switch (offset) {
+                0x00 => @as(u32, if (!self.fifo.isEmpty()) 1 else 0),
+                0x04 => self.fifo.pop(),
+                else => return error.Unmapped,
+            };
+        }
+
+        fn busWrite(_: *Self, comptime _: MemAccessSize, _: u32, _: anytype) BusError!void {
+            return error.WriteProtected;
+        }
+    };
+}
+
 pub const Keyboard = struct {
     pub const FIFO_SIZE = 16;
     pub const KeyState = enum(u1) { up = 0, down = 1 };
 
-    peri: Peripheral = .{ .vtable = &vtable },
-    fifo: [FIFO_SIZE]u32 = [_]u32{0} ** FIFO_SIZE,
-    head: u8 = 0,
-    tail: u8 = 0,
-    count: u8 = 0,
-    /// Last enqueued event for deduplication. Consecutive identical events
-    /// (same key + same state) are coalesced.
-    last_event: ?u32 = null,
-
-    const vtable = Peripheral.makeVTable(Keyboard);
+    device: InputEventDevice(FIFO_SIZE) = .{},
 
     pub fn peripheral(self: *Keyboard) *Peripheral {
-        return &self.peri;
+        return self.device.peripheral();
     }
 
     /// Push a key event. Returns false if FIFO is full.
-    /// Deduplicates: if the event is identical to the last pushed event,
-    /// it is silently accepted but not enqueued.
     pub fn pushKey(self: *Keyboard, usage: u16, state: KeyState) bool {
         const entry: u32 = (@as(u32, @intFromEnum(state)) << 31) | @as(u32, usage);
-
-        // Deduplicate: identical to last event → accept but don't enqueue
-        if (self.last_event == entry) return true;
-
-        if (self.count >= FIFO_SIZE) return false;
-
-        self.last_event = entry;
-        self.fifo[self.tail] = entry;
-        self.tail = @intCast((@as(u16, self.tail) + 1) % FIFO_SIZE);
-        self.count += 1;
-        return true;
-    }
-
-    fn popEntry(self: *Keyboard) u32 {
-        if (self.count == 0) return 0;
-        const entry = self.fifo[self.head];
-        self.head = @intCast((@as(u16, self.head) + 1) % FIFO_SIZE);
-        self.count -= 1;
-        return entry;
-    }
-
-    fn busRead(self: *Keyboard, comptime size: MemAccessSize, offset: u32) BusError!size.get_type() {
-        if (size != .u32) return error.InvalidSize;
-        return switch (offset) {
-            0x00 => @as(u32, if (self.count > 0) 1 else 0),
-            0x04 => self.popEntry(),
-            else => return error.Unmapped,
-        };
-    }
-
-    fn busWrite(_: *Keyboard, comptime _: MemAccessSize, _: u32, _: anytype) BusError!void {
-        return error.WriteProtected;
+        return self.device.fifo.push(entry);
     }
 };
 
 pub const Mouse = struct {
-    peri: Peripheral = .{ .vtable = &vtable },
-    x: u32 = 0,
-    y: u32 = 0,
-    buttons: u32 = 0,
+    pub const FIFO_SIZE = 64;
 
-    const vtable = Peripheral.makeVTable(Mouse);
+    pub const EventType = enum(u2) {
+        pointing = 0b00,
+        button_down = 0b01,
+        button_up = 0b10,
+    };
+
+    pub const Button = enum(u16) {
+        left = 0,
+        right = 1,
+        middle = 2,
+    };
+
+    const PointingEntry = packed struct(u32) {
+        y: u12,
+        x: u12,
+        padding: u6 = 0,
+        type: EventType,
+    };
+    const ButtonEntry = packed struct(u32) {
+        button: Button,
+        padding: u14 = 0,
+        type: EventType,
+    };
+
+    device: InputEventDevice(FIFO_SIZE) = .{},
 
     pub fn peripheral(self: *Mouse) *Peripheral {
-        return &self.peri;
+        return self.device.peripheral();
     }
 
-    pub fn setState(self: *Mouse, x: i32, y: i32, buttons: u32) void {
-        self.x = @intCast(std.math.clamp(x, 0, 639));
-        self.y = @intCast(std.math.clamp(y, 0, 399));
-        self.buttons = buttons;
-    }
+    /// Push a pointing event with absolute coordinates (clamped to u12).
+    pub fn pushPointing(self: *Mouse, x: i32, y: i32) bool {
+        const cx: u12 = @intCast(std.math.clamp(x, 0, 4095));
+        const cy: u12 = @intCast(std.math.clamp(y, 0, 4095));
 
-    fn busRead(self: *Mouse, comptime size: MemAccessSize, offset: u32) BusError!size.get_type() {
-        if (size != .u32) return error.InvalidSize;
-        return switch (offset) {
-            0x00 => self.x,
-            0x04 => self.y,
-            0x08 => self.buttons,
-            else => return error.Unmapped,
+        const entry: PointingEntry = .{
+            .x = cx,
+            .y = cy,
+            .type = .pointing,
         };
+        return self.device.fifo.push(@bitCast(entry));
     }
 
-    fn busWrite(_: *Mouse, comptime _: MemAccessSize, _: u32, _: anytype) BusError!void {
-        return error.WriteProtected;
+    /// Push a button down event.
+    pub fn pushButtonDown(self: *Mouse, button: Button) bool {
+        const entry: ButtonEntry = .{
+            .button = button,
+            .type = .button_down,
+        };
+        return self.device.fifo.push(@bitCast(entry));
+    }
+
+    /// Push a button up event.
+    pub fn pushButtonUp(self: *Mouse, button: Button) bool {
+        const entry: ButtonEntry = .{
+            .button = button,
+            .type = .button_up,
+        };
+        return self.device.fifo.push(@bitCast(entry));
     }
 };
 

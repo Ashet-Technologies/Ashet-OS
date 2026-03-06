@@ -17,9 +17,14 @@ comptime {
 // Test helpers
 // ---------------------------------------------------------------------------
 
+const ProgramResult = struct {
+    cpu: emu.Cpu,
+    trap: ?emu.CpuTrap,
+};
+
 /// Create a System loaded with the given ROM binary and a fixed-size RAM,
-/// running until EBREAK or an error. Returns the CPU state for register inspection.
-fn run_program(comptime rom: []const u8, ram: []align(4) u8) !emu.Cpu {
+/// running until a trap or completion. Returns the CPU state and the trap.
+fn run_program_full(comptime rom: []const u8, ram: []align(4) u8) !ProgramResult {
     const S = struct {
         const padded_len = (rom.len + 3) & ~@as(usize, 3);
         const padded: [padded_len]u8 align(4) = blk: {
@@ -37,13 +42,18 @@ fn run_program(comptime rom: []const u8, ram: []align(4) u8) !emu.Cpu {
     var system = emu.System.init(aligned_rom, ram);
     system.mmio.map(0x41, debug_output.peripheral());
 
-    const result = system.step(10000);
-    if (result) |_| {
-        return error.TestDidNotTerminate;
-    } else |err| switch (err) {
-        error.Ebreak => return system.cpu,
-        else => return err,
+    const result = try system.step(10000);
+    return .{ .cpu = system.cpu, .trap = result.trap };
+}
+
+/// Run a program expecting it to terminate via EBREAK. Returns CPU state.
+fn run_program(comptime rom: []const u8, ram: []align(4) u8) !emu.Cpu {
+    const result = try run_program_full(rom, ram);
+    if (result.trap) |trap| {
+        if (trap == .ebreak) return result.cpu;
+        return error.UnexpectedTrap;
     }
+    return error.TestDidNotTerminate;
 }
 
 fn run_program_no_ram(comptime rom: []const u8) !emu.Cpu {
@@ -53,6 +63,16 @@ fn run_program_no_ram(comptime rom: []const u8) !emu.Cpu {
 
 fn run_program_with_ram(comptime rom: []const u8, ram: []align(4) u8) !emu.Cpu {
     return run_program(rom, ram);
+}
+
+fn run_expecting_trap(comptime rom: []const u8, ram: []align(4) u8) !emu.CpuTrap {
+    const result = try run_program_full(rom, ram);
+    return result.trap orelse error.TestDidNotTerminate;
+}
+
+fn run_expecting_trap_no_ram(comptime rom: []const u8) !emu.CpuTrap {
+    var ram_backing: [4]u8 align(4) = [_]u8{0} ** 4;
+    return run_expecting_trap(rom, ram_backing[0..0]);
 }
 
 // ---------------------------------------------------------------------------
@@ -73,8 +93,9 @@ test "Bus error: write to ROM" {
         0x23, 0x20, 0x00, 0x00, // sw x0, 0(x0)
         0x73, 0x00, 0x10, 0x00, // ebreak
     };
-    const result = run_program_no_ram(&rom);
-    try std.testing.expectError(error.StoreAccessFault, result);
+    const trap = try run_expecting_trap_no_ram(&rom);
+    try std.testing.expect(trap == .store_access_fault);
+    try std.testing.expect(trap.store_access_fault.cause == error.WriteProtected);
 }
 
 test "Bus error: read from unmapped MMIO" {
@@ -83,26 +104,27 @@ test "Bus error: read from unmapped MMIO" {
         0x83, 0x20, 0x01, 0x00, // lw x1, 0(x2)
         0x73, 0x00, 0x10, 0x00, // ebreak
     };
-    const result = run_program_no_ram(&rom);
-    try std.testing.expectError(error.LoadAccessFault, result);
+    const trap = try run_expecting_trap_no_ram(&rom);
+    try std.testing.expect(trap == .load_access_fault);
+    try std.testing.expect(trap.load_access_fault.cause == error.Unmapped);
 }
 
-test "ECALL raises error" {
+test "ECALL raises trap" {
     const rom = [_]u8{
         0x73, 0x00, 0x00, 0x00, // ecall
     };
     var ram_backing: [4]u8 align(4) = [_]u8{0} ** 4;
-    const result = run_program(&rom, &ram_backing);
-    try std.testing.expectError(error.Ecall, result);
+    const trap = try run_expecting_trap(&rom, &ram_backing);
+    try std.testing.expect(trap == .ecall);
 }
 
-test "Illegal instruction raises error" {
+test "Illegal instruction raises trap" {
     const rom = [_]u8{
         0x00, 0x00, 0x00, 0x00,
     };
     var ram_backing: [4]u8 align(4) = [_]u8{0} ** 4;
-    const result = run_program(&rom, &ram_backing);
-    try std.testing.expectError(error.IllegalInstruction, result);
+    const trap = try run_expecting_trap(&rom, &ram_backing);
+    try std.testing.expect(trap == .illegal_instruction);
 }
 
 // ---------------------------------------------------------------------------
@@ -117,8 +139,9 @@ test "Unaligned LH faults" {
         0x73, 0x00, 0x10, 0x00, // ebreak
     };
     var ram_backing: [16]u8 align(4) = [_]u8{0} ** 16;
-    const result = run_program_with_ram(&rom, &ram_backing);
-    try std.testing.expectError(error.LoadAccessFault, result);
+    const trap = try run_expecting_trap(&rom, &ram_backing);
+    try std.testing.expect(trap == .load_access_fault);
+    try std.testing.expect(trap.load_access_fault.cause == error.UnalignedAccess);
 }
 
 test "Unaligned LW faults" {
@@ -129,8 +152,9 @@ test "Unaligned LW faults" {
         0x73, 0x00, 0x10, 0x00, // ebreak
     };
     var ram_backing: [16]u8 align(4) = [_]u8{0} ** 16;
-    const result = run_program_with_ram(&rom, &ram_backing);
-    try std.testing.expectError(error.LoadAccessFault, result);
+    const trap = try run_expecting_trap(&rom, &ram_backing);
+    try std.testing.expect(trap == .load_access_fault);
+    try std.testing.expect(trap.load_access_fault.cause == error.UnalignedAccess);
 }
 
 test "Unaligned SH faults" {
@@ -141,8 +165,9 @@ test "Unaligned SH faults" {
         0x73, 0x00, 0x10, 0x00, // ebreak
     };
     var ram_backing: [16]u8 align(4) = [_]u8{0} ** 16;
-    const result = run_program_with_ram(&rom, &ram_backing);
-    try std.testing.expectError(error.StoreAccessFault, result);
+    const trap = try run_expecting_trap(&rom, &ram_backing);
+    try std.testing.expect(trap == .store_access_fault);
+    try std.testing.expect(trap.store_access_fault.cause == error.UnalignedAccess);
 }
 
 test "Unaligned SW faults" {
@@ -153,6 +178,7 @@ test "Unaligned SW faults" {
         0x73, 0x00, 0x10, 0x00, // ebreak
     };
     var ram_backing: [16]u8 align(4) = [_]u8{0} ** 16;
-    const result = run_program_with_ram(&rom, &ram_backing);
-    try std.testing.expectError(error.StoreAccessFault, result);
+    const trap = try run_expecting_trap(&rom, &ram_backing);
+    try std.testing.expect(trap == .store_access_fault);
+    try std.testing.expect(trap.store_access_fault.cause == error.UnalignedAccess);
 }

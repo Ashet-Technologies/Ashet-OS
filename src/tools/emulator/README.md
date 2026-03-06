@@ -63,32 +63,46 @@ Provides a simple, "don't care" debug logging facility.
                           Non-u8 writes return InvalidSize. Non-zero offsets return Unmapped.
 ```
 
-### Keyboard
+### Input Event Device
 
-A basic peripheral that provides HID Usage Codes to the emulated system.
+Both the Keyboard and Mouse use the same "Input Event Device" register layout.
+Events are 32-bit words delivered via a FIFO. The event encoding is device-specific.
 
 ```
 +0x00/4   STATUS      R   Bit 0 = at least one entry waiting in FIFO
-+0x04/4   DATA        R   Pop and return one entry:
-                            Bit 31    = 1 key-down, 0 key-up
-                            Bits 15:0 = HID Usage Code (Usage Page 0x07, Keyboard)
-                          Reading while FIFO empty returns 0x00000000
++0x04/4   DATA        R   Pop and return one entry (0x00000000 if FIFO empty)
 ```
 
-All registers are read-only. FIFO holds up to 16 entries; pushes when full are dropped.
-Consecutive identical events (same key + same state) are deduplicated.
+All registers are read-only. Pushes when full are dropped.
+Consecutive identical events are deduplicated.
 
-### Mouse
+#### Keyboard
 
-A basic pointing device that provides absolute inputs.
+HID Usage Codes delivered as input events. FIFO holds up to 16 entries.
+
+Event encoding:
 
 ```
-+0x00/4   X           R   Absolute X, clamped 0-639
-+0x04/4   Y           R   Absolute Y, clamped 0-399
-+0x08/4   BUTTONS     R   Bit 0 = left, Bit 1 = right, Bit 2 = middle
+Bit  31       = 1 key-down, 0 key-up
+Bits 30:16    = reserved (0)
+Bits 15:0     = HID Usage Code (Usage Page 0x07, Keyboard)
 ```
 
-All registers are read-only.
+#### Mouse
+
+Absolute pointing and button events. FIFO holds up to 64 entries.
+
+Event encoding — event type in bits [31:30]:
+
+```
+0b00 = Pointing (absolute position)
+       Bits 23:12 = X (u12, 0–4095)
+       Bits 11:0  = Y (u12, 0–4095)
+0b01 = Button Down
+       Bits 15:0  = button ID (0=left, 1=right, 2=middle)
+0b10 = Button Up
+       Bits 15:0  = button ID (0=left, 1=right, 2=middle)
+```
 
 ### Timer / RTC
 

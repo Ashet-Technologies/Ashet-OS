@@ -42,7 +42,7 @@ fn initialize() !void {
 
     hw.fb0 = .init(peripherals.video_control, peripherals.video_framebuffer);
 
-    hw.input = .init(peripherals.mouse, peripherals.keyboard);
+    hw.input = .init(peripherals.keyboard, peripherals.mouse);
 
     // Finally install all drivers:
     ashet.drivers.install(&hw.rtc.driver);

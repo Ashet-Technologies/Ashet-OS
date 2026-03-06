@@ -16,12 +16,12 @@ test "Keyboard: push and pop key event" {
 
 test "Keyboard: FIFO capacity" {
     var kbd = emu.Keyboard{};
-    // Fill with alternating down/up for different keys to avoid dedup
+    // Fill with different keys to avoid dedup
     var i: u16 = 0;
     while (i < emu.Keyboard.FIFO_SIZE) : (i += 1) {
         try std.testing.expect(kbd.pushKey(i, .down));
     }
-    // 17th push: different key but FIFO full
+    // Next push: different key but FIFO full
     try std.testing.expect(!kbd.pushKey(0xFF, .down));
 }
 

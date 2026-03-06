@@ -14,7 +14,11 @@
       "Bash(echo \"EXIT: $?\")",
       "Bash(zig build test --summary all)",
       "Bash(grep -c '^test ' /workspaces/ashet-os/src/tools/emulator/tests/testsuite.zig /workspaces/ashet-os/src/tools/emulator/tests/peripherals/*.zig)",
-      "Bash(zig build install)"
+      "Bash(zig build install)",
+      "Bash(git stash)",
+      "Bash(git stash pop)",
+      "Bash(zig build test -- --summary all)",
+      "Bash(zig build install test)"
     ]
   }
 }

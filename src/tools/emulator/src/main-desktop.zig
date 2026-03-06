@@ -189,15 +189,17 @@ const EmulatorApp = struct {
     running: bool = true,
     speed_multiplier: f32 = 1.0,
     start_time: std.time.Instant,
-    last_error: ?emu.CpuError = null,
+    last_trap: ?emu.CpuTrap = null,
     prev_instructions: u64 = 0,
     prev_time: std.time.Instant,
     ips: f64 = 0,
     ips_update_timer: f64 = 0,
+    last_frame_time: u64 = 0,
 
     // GUI state
     dock_layout_done: bool = false,
     screen_origin: [2]f32 = .{ 0, 0 },
+    screen_size: [2]f32 = .{ 0, 0 },
     screen_scale: f32 = 1.0,
 
     // Options
@@ -205,6 +207,9 @@ const EmulatorApp = struct {
 
     // Block device files
     block_files: [2]?std.fs.File = .{ null, null },
+
+    // Input state
+    last_mouse_buttons: u3 = 0,
 
     // Memory view state
     mem_view_addr: u32 = 0,
@@ -312,28 +317,38 @@ const EmulatorApp = struct {
 
         const batch: usize = @intFromFloat(@max(1.0, @as(f32, INSTRUCTIONS_PER_FRAME) * app.speed_multiplier));
 
-        const result_or_err = app.system.step(batch);
+        const emu_start = std.time.Instant.now() catch @panic("no measurement");
+
+        const result = app.system.step(batch) catch |err| {
+            app.running = false;
+            std.debug.print("\r\n<<host error: {t} @ 0x{X:0>8}>>\r\n", .{ err, app.system.cpu.pc });
+            return;
+        };
+
+        const emu_end = std.time.Instant.now() catch @panic("no measurement");
+
+        app.last_frame_time = emu_end.since(emu_start) / std.time.ns_per_us;
 
         app.debug_writer.interface.flush() catch @panic("flush error"); // flush the emulator-writen data to the ring buffer + stdout writer
 
-        if (result_or_err) |_| {
-            // ok
-        } else |err| {
+        if (result.trap) |trap| {
             app.running = false;
-            app.last_error = err;
+            app.last_trap = trap;
 
-            std.debug.print("\r\n<<cpu halt: {t} @ 0x{X:0>8}>>\r\n", .{
-                err,
+            std.debug.print("\r\n<<cpu trap: {s} @ 0x{X:0>8}>>\r\n", .{
+                @tagName(trap),
                 app.system.cpu.pc,
             });
 
-            if (app.system.last_memory_error) |mem_err| {
-                std.debug.print("\r\n<<memory error: {t} @ 0x{X:0>8}/{t} => {t}>>\r\n", .{
-                    mem_err.op,
-                    mem_err.address,
-                    mem_err.size,
-                    mem_err.err,
-                });
+            switch (trap) {
+                .load_access_fault, .store_access_fault, .instruction_fetch_fault => |fault| {
+                    std.debug.print("\r\n<<bus fault: {t} @ 0x{X:0>8} size={t}>>\r\n", .{
+                        fault.cause,
+                        fault.address,
+                        fault.size,
+                    });
+                },
+                else => {},
             }
         }
     }
@@ -410,14 +425,14 @@ const EmulatorApp = struct {
     // GUI rendering
     // -----------------------------------------------------------------------
 
-    fn renderGui(app: *EmulatorApp) void {
+    fn renderGui(app: *EmulatorApp) !void {
         app.updateIps();
         app.setupDockspace();
         app.renderMenuBar();
         app.renderScreenPane();
         app.renderDebugTerminal();
-        app.renderControlPanel();
-        app.renderOptionsPanel();
+        try app.renderControlPanel();
+        try app.renderOptionsPanel();
         app.renderMemoryView();
     }
 
@@ -469,18 +484,18 @@ const EmulatorApp = struct {
 
             if (zgui.menuItem(if (app.running) "Pause" else "Run", .{ .shortcut = "F5" })) {
                 app.running = !app.running;
-                if (app.running) app.last_error = null;
+                if (app.running) app.last_trap = null;
             }
             if (zgui.menuItem("Step", .{ .shortcut = "F10" })) {
                 app.running = false;
-                _ = app.system.step(1) catch |err| {
-                    app.last_error = err;
-                };
+                if (app.system.step(1) catch null) |result| {
+                    app.last_trap = result.trap;
+                }
             }
             if (zgui.menuItem("Reset", .{ .shortcut = "Ctrl+R" })) {
                 app.system.cpu = .{};
                 app.running = false;
-                app.last_error = null;
+                app.last_trap = null;
                 app.prev_instructions = 0;
                 app.ips = 0;
                 app.start_time = std.time.Instant.now() catch app.start_time;
@@ -528,6 +543,8 @@ const EmulatorApp = struct {
             .tex_id = @enumFromInt(app.fb_texture),
         };
         zgui.image(tex_ref, .{ .w = w, .h = h });
+
+        app.screen_size = zgui.getItemRectSize();
     }
 
     fn renderDebugTerminal(app: *EmulatorApp) void {
@@ -549,60 +566,11 @@ const EmulatorApp = struct {
         }
     }
 
-    fn renderControlPanel(app: *EmulatorApp) void {
+    fn renderControlPanel(app: *EmulatorApp) !void {
         defer zgui.end();
         if (!zgui.begin("Control Panel", .{})) return;
 
-        // Run/Pause/Step/Reset buttons
-        if (zgui.button(if (app.running) "Pause" else "Run", .{})) {
-            app.running = !app.running;
-            if (app.running) app.last_error = null;
-        }
-        zgui.sameLine(.{});
-        if (zgui.button("Step", .{})) {
-            app.running = false;
-            _ = app.system.step(1) catch |err| {
-                app.last_error = err;
-            };
-        }
-        zgui.sameLine(.{});
-        if (zgui.button("Reset", .{})) {
-            app.system.cpu = .{};
-            app.running = false;
-            app.last_error = null;
-            app.prev_instructions = 0;
-            app.ips = 0;
-            app.start_time = std.time.Instant.now() catch app.start_time;
-            app.prev_time = std.time.Instant.now() catch app.prev_time;
-        }
-
-        // Speed control
-        zgui.separator();
-        _ = zgui.sliderFloat("Speed", .{ .v = &app.speed_multiplier, .min = 0.1, .max = 10.0 });
-
-        // Error display
-        if (app.last_error) |err| {
-            zgui.separator();
-            zgui.textUnformattedColored(.{ 1.0, 0.3, 0.3, 1.0 }, @errorName(err));
-        }
-
-        // Stats
-        zgui.separator();
-        var stats_buf: [60]u8 = undefined;
-        const stats_str = std.fmt.bufPrint(&stats_buf, "Instructions: {d}", .{app.system.cpu.total_instructions}) catch "??";
-        zgui.textUnformatted(stats_str);
-
-        var ips_buf: [40]u8 = undefined;
-        const ips_str = if (app.ips >= 1_000_000)
-            std.fmt.bufPrint(&ips_buf, "IPS: {d:.2} M", .{app.ips / 1_000_000.0}) catch "??"
-        else if (app.ips >= 1_000)
-            std.fmt.bufPrint(&ips_buf, "IPS: {d:.2} K", .{app.ips / 1_000.0}) catch "??"
-        else
-            std.fmt.bufPrint(&ips_buf, "IPS: {d:.0}", .{app.ips}) catch "??";
-        zgui.textUnformatted(ips_str);
-
         // Registers
-        zgui.separator();
         zgui.textUnformatted("Registers");
         zgui.separator();
 
@@ -643,9 +611,61 @@ const EmulatorApp = struct {
         }
     }
 
-    fn renderOptionsPanel(app: *EmulatorApp) void {
+    fn renderOptionsPanel(app: *EmulatorApp) !void {
         defer zgui.end();
         if (!zgui.begin("Options", .{})) return;
+
+        // Run/Pause/Step/Reset buttons
+        if (zgui.button(if (app.running) "Pause" else "Run", .{})) {
+            app.running = !app.running;
+            if (app.running) app.last_trap = null;
+        }
+        zgui.sameLine(.{});
+        if (zgui.button("Step", .{})) {
+            app.running = false;
+            const result = try app.system.step(1);
+            app.last_trap = result.trap;
+        }
+        zgui.sameLine(.{});
+        if (zgui.button("Reset", .{})) {
+            app.system.cpu = .{};
+            app.running = false;
+            app.last_trap = null;
+            app.prev_instructions = 0;
+            app.ips = 0;
+            app.start_time = std.time.Instant.now() catch app.start_time;
+            app.prev_time = std.time.Instant.now() catch app.prev_time;
+        }
+
+        // Speed control
+        zgui.separator();
+        _ = zgui.sliderFloat("Speed", .{ .v = &app.speed_multiplier, .min = 0.1, .max = 30.0 });
+
+        // Error display
+        if (app.last_trap) |trap| {
+            zgui.separator();
+            zgui.textUnformattedColored(.{ 1.0, 0.3, 0.3, 1.0 }, @tagName(trap));
+        }
+
+        // Stats
+        zgui.separator();
+        var stats_buf: [60]u8 = undefined;
+        const stats_str = std.fmt.bufPrint(&stats_buf, "Instructions: {d}", .{app.system.cpu.total_instructions}) catch "??";
+        zgui.textUnformatted(stats_str);
+
+        var ips_buf: [40]u8 = undefined;
+        const ips_str = if (app.ips >= 1_000_000)
+            std.fmt.bufPrint(&ips_buf, "IPS: {d:.2} M", .{app.ips / 1_000_000.0}) catch "??"
+        else if (app.ips >= 1_000)
+            std.fmt.bufPrint(&ips_buf, "IPS: {d:.2} K", .{app.ips / 1_000.0}) catch "??"
+        else
+            std.fmt.bufPrint(&ips_buf, "IPS: {d:.0}", .{app.ips}) catch "??";
+        zgui.textUnformatted(ips_str);
+
+        const emu_time = std.fmt.bufPrint(&ips_buf, "Time: {d} us", .{app.last_frame_time}) catch "??";
+        zgui.textUnformatted(emu_time);
+
+        zgui.separator();
 
         _ = zgui.checkbox("Live video update", .{ .v = &app.live_video_update });
         if (zgui.isItemHovered(.{})) {
@@ -713,20 +733,45 @@ const EmulatorApp = struct {
     // -----------------------------------------------------------------------
 
     fn processMouseInput(app: *EmulatorApp, window: *glfw.Window) void {
+        // Don't forward to emulator if ImGui wants mouse input
+        // if (zgui.io.getWantCaptureMouse()) return;
+
         const cursor = window.getCursorPos();
-        const mx = @as(f32, @floatCast(cursor[0]));
-        const my = @as(f32, @floatCast(cursor[1]));
+        const mx: f32 = @floatCast(cursor[0] - app.screen_origin[0]);
+        const my: f32 = @floatCast(cursor[1] - app.screen_origin[1]);
+
+        if (mx < 0.0 or mx > app.screen_size[0])
+            return;
+        if (my < 0.0 or my > app.screen_size[1])
+            return;
 
         // Transform window coords to framebuffer coords
-        const fb_x = (mx - app.screen_origin[0]) / app.screen_scale;
-        const fb_y = (my - app.screen_origin[1]) / app.screen_scale;
+        const fb_x: i32 = @intFromFloat(mx / app.screen_scale);
+        const fb_y: i32 = @intFromFloat(my / app.screen_scale);
 
-        var buttons: u32 = 0;
+        _ = app.mouse.pushPointing(fb_x, fb_y);
+
+        var buttons: u3 = 0;
         if (window.getMouseButton(.left) == .press) buttons |= 1;
         if (window.getMouseButton(.right) == .press) buttons |= 2;
         if (window.getMouseButton(.middle) == .press) buttons |= 4;
 
-        app.mouse.setState(@intFromFloat(fb_x), @intFromFloat(fb_y), buttons);
+        const changed = buttons ^ app.last_mouse_buttons;
+        const button_list = [_]struct { mask: u3, button: emu.Mouse.Button }{
+            .{ .mask = 1, .button = .left },
+            .{ .mask = 2, .button = .right },
+            .{ .mask = 4, .button = .middle },
+        };
+        for (button_list) |b| {
+            if (changed & b.mask != 0) {
+                if (buttons & b.mask != 0) {
+                    _ = app.mouse.pushButtonDown(b.button);
+                } else {
+                    _ = app.mouse.pushButtonUp(b.button);
+                }
+            }
+        }
+        app.last_mouse_buttons = buttons;
     }
 
     // -----------------------------------------------------------------------
@@ -1000,7 +1045,7 @@ pub fn main() !u8 {
         gl.clearBufferfv(gl.COLOR, 0, &[_]f32{ 0.1, 0.1, 0.1, 1.0 });
 
         zgui.backend.newFrame(@intCast(fb_size[0]), @intCast(fb_size[1]));
-        app.renderGui();
+        try app.renderGui();
         zgui.backend.draw();
 
         glfw_window.swapBuffers();

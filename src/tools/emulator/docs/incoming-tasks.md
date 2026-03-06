@@ -1,6 +1,8 @@
 # Inbound Tasks
 
-- Make register view use text boxes instead of text => copy/paste enablement
 - Disassembler?
 - Stdout Crash Dump when CPU crashes/traps
-- Broken stdio/terminal forwarding
+- New option "integer scaling"
+- Move emulator speed to options
+- hide memory interface by default
+- No stdio when using zig.exe to build
