@@ -130,7 +130,13 @@ pub const Cpu = struct {
     pc: u32 = 0,
     total_instructions: u64 = 0,
 
-    fn report_error(cpu: *Cpu, err: CpuError, src: anyerror) CpuError {
+    fn report_error(cpu: *Cpu, err: CpuError, src: anyerror) CpuError!void {
+        _ = cpu;
+        std.log.err("mapping error {t} -> {t}", .{ src, err });
+        return err;
+    }
+
+    fn report_error2(cpu: *Cpu, err: CpuError, src: anyerror) CpuError {
         _ = cpu;
         std.log.err("mapping error {t} -> {t}", .{ src, err });
         return err;
@@ -160,7 +166,7 @@ pub const Cpu = struct {
             // Fetch the first halfword to determine instruction length.
             const low_hw = system.bus_read(self.pc, .u16) catch |err| {
                 self.total_instructions += i;
-                return self.report_error(error.InstructionFetchFault, err);
+                return self.report_error2(error.InstructionFetchFault, err);
             };
 
             if (low_hw & 0b11 != 0b11) {
@@ -173,7 +179,7 @@ pub const Cpu = struct {
                 // Standard 32-bit instruction: fetch the upper halfword.
                 const high_hw = system.bus_read(self.pc +% 2, .u16) catch |err| {
                     self.total_instructions += i;
-                    return self.report_error(error.InstructionFetchFault, err);
+                    return self.report_error2(error.InstructionFetchFault, err);
                 };
                 const instruction: u32 = @as(u32, high_hw) << 16 | low_hw;
                 self.execute_32bit(system, instruction) catch |err| {
@@ -190,6 +196,8 @@ pub const Cpu = struct {
     /// major opcode (bits [6:2]) to the appropriate format handler.
     /// PC is advanced by 4 unless the instruction is a taken branch or jump.
     fn execute_32bit(self: *Cpu, system: *System, inst: u32) CpuError!void {
+        errdefer |err| std.debug.print("failed to execute 32 bit instruction 0x{X:0>8}: {t}\n", .{ inst, err });
+
         const opcode: u7 = @truncate(inst);
         switch (opcode) {
             // LUI — Load Upper Immediate
@@ -351,6 +359,8 @@ pub const Cpu = struct {
     ///
     /// Dispatches on the quadrant (bits [1:0]) and funct3 (bits [15:13]).
     fn execute_compressed(self: *Cpu, system: *System, inst: u16) CpuError!void {
+        errdefer |err| std.debug.print("failed to execute 16 bit instruction 0x{X:0>4}: {t}\n", .{ inst, err });
+
         const quadrant: u2 = @truncate(inst);
         const funct3: u3 = @truncate(inst >> 13);
 
