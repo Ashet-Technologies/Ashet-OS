@@ -73,6 +73,8 @@ pub const input = struct {
 
     pub const Generic_PS2_Device = @import("input/Generic_PS2_Device.zig");
     pub const PropIO_PS2_Device = @import("input/PropIO_PS2_Device.zig");
+
+    pub const Ashet_Input = @import("input/Ashet_Input.zig");
 };
 
 pub const i2c_device = struct {

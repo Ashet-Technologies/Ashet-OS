@@ -24,6 +24,8 @@ const hw = struct {
 
     var block0: ashet.drivers.block.Ashet_Block_Dev = undefined;
     var block1: ashet.drivers.block.Ashet_Block_Dev = undefined;
+
+    var input: ashet.drivers.input.Ashet_Input = undefined;
 };
 
 fn get_tick_count_ms() u64 { // return value in ms

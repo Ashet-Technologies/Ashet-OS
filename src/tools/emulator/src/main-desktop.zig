@@ -187,14 +187,20 @@ const EmulatorApp = struct {
     // Execution state
     running: bool = true,
     speed_multiplier: f32 = 1.0,
-    total_instructions: u64 = 0,
     start_time: std.time.Instant,
     last_error: ?emu.CpuError = null,
+    prev_instructions: u64 = 0,
+    prev_time: std.time.Instant,
+    ips: f64 = 0,
+    ips_update_timer: f64 = 0,
 
     // GUI state
     dock_layout_done: bool = false,
     screen_origin: [2]f32 = .{ 0, 0 },
     screen_scale: f32 = 1.0,
+
+    // Options
+    live_video_update: bool = false,
 
     // Block device files
     block_files: [2]?std.fs.File = .{ null, null },
@@ -212,6 +218,7 @@ const EmulatorApp = struct {
             .allocator = allocator,
 
             .start_time = std.time.Instant.now() catch @panic("no monotonic clock"),
+            .prev_time = std.time.Instant.now() catch @panic("no monotonic clock"),
 
             .debug_log = .{},
 
@@ -328,10 +335,13 @@ const EmulatorApp = struct {
                 });
             }
         }
-        app.total_instructions += batch;
     }
 
     fn updateFramebufferTexture(app: *EmulatorApp) void {
+        if (app.live_video_update) {
+            app.forceTextureUpload();
+            return;
+        }
         if (!app.video_control.isFlushRequested()) return;
         app.forceTextureUpload();
         app.video_control.ackFlush();
@@ -346,8 +356,6 @@ const EmulatorApp = struct {
             app.rgba_buffer[i * 4 + 2] = rgba[2];
             app.rgba_buffer[i * 4 + 3] = rgba[3];
         }
-
-        std.log.info("update pixels", .{});
 
         gl.bindTexture(gl.TEXTURE_2D, app.fb_texture);
         gl.texSubImage2D(
@@ -402,12 +410,29 @@ const EmulatorApp = struct {
     // -----------------------------------------------------------------------
 
     fn renderGui(app: *EmulatorApp) void {
+        app.updateIps();
         app.setupDockspace();
         app.renderMenuBar();
         app.renderScreenPane();
         app.renderDebugTerminal();
         app.renderControlPanel();
+        app.renderOptionsPanel();
         app.renderMemoryView();
+    }
+
+    fn updateIps(app: *EmulatorApp) void {
+        const now = std.time.Instant.now() catch return;
+        const elapsed_ns = now.since(app.prev_time);
+        const elapsed_s: f64 = @as(f64, @floatFromInt(elapsed_ns)) / 1_000_000_000.0;
+        app.ips_update_timer += elapsed_s;
+        if (app.ips_update_timer >= 0.5) {
+            const current = app.system.cpu.total_instructions;
+            const delta = current - app.prev_instructions;
+            app.ips = @as(f64, @floatFromInt(delta)) / app.ips_update_timer;
+            app.prev_instructions = current;
+            app.ips_update_timer = 0;
+        }
+        app.prev_time = now;
     }
 
     fn setupDockspace(app: *EmulatorApp) void {
@@ -418,12 +443,16 @@ const EmulatorApp = struct {
 
         var center_id = dockspace_id;
         const left_id = zgui.dockBuilderSplitNode(dockspace_id, .left, 0.15, null, &center_id);
-        const right_id = zgui.dockBuilderSplitNode(center_id, .right, 0.15, null, &center_id);
+        const right_id = zgui.dockBuilderSplitNode(center_id, .right, 0.30, null, &center_id);
 
         var screen_id = center_id;
         const bottom_id = zgui.dockBuilderSplitNode(center_id, .down, 0.25, null, &screen_id);
 
-        zgui.dockBuilderDockWindow("Control Panel", left_id);
+        var control_id = left_id;
+        const options_id = zgui.dockBuilderSplitNode(left_id, .down, 0.3, null, &control_id);
+
+        zgui.dockBuilderDockWindow("Control Panel", control_id);
+        zgui.dockBuilderDockWindow("Options", options_id);
         zgui.dockBuilderDockWindow("Emulator Screen", screen_id);
         zgui.dockBuilderDockWindow("Debug Terminal", bottom_id);
         zgui.dockBuilderDockWindow("Memory View", right_id);
@@ -446,14 +475,15 @@ const EmulatorApp = struct {
                 _ = app.system.step(1) catch |err| {
                     app.last_error = err;
                 };
-                app.total_instructions += 1;
             }
             if (zgui.menuItem("Reset", .{ .shortcut = "Ctrl+R" })) {
                 app.system.cpu = .{};
                 app.running = false;
                 app.last_error = null;
-                app.total_instructions = 0;
+                app.prev_instructions = 0;
+                app.ips = 0;
                 app.start_time = std.time.Instant.now() catch app.start_time;
+                app.prev_time = std.time.Instant.now() catch app.prev_time;
             }
 
             zgui.separator();
@@ -467,6 +497,7 @@ const EmulatorApp = struct {
             _ = zgui.menuItem("Control Panel", .{});
             _ = zgui.menuItem("Debug Terminal", .{});
             _ = zgui.menuItem("Memory View", .{});
+            _ = zgui.menuItem("Options", .{});
         }
     }
 
@@ -532,15 +563,16 @@ const EmulatorApp = struct {
             _ = app.system.step(1) catch |err| {
                 app.last_error = err;
             };
-            app.total_instructions += 1;
         }
         zgui.sameLine(.{});
         if (zgui.button("Reset", .{})) {
             app.system.cpu = .{};
             app.running = false;
             app.last_error = null;
-            app.total_instructions = 0;
+            app.prev_instructions = 0;
+            app.ips = 0;
             app.start_time = std.time.Instant.now() catch app.start_time;
+            app.prev_time = std.time.Instant.now() catch app.prev_time;
         }
 
         // Speed control
@@ -553,27 +585,74 @@ const EmulatorApp = struct {
             zgui.textUnformattedColored(.{ 1.0, 0.3, 0.3, 1.0 }, @errorName(err));
         }
 
+        // Stats
+        zgui.separator();
+        var stats_buf: [60]u8 = undefined;
+        const stats_str = std.fmt.bufPrint(&stats_buf, "Instructions: {d}", .{app.system.cpu.total_instructions}) catch "??";
+        zgui.textUnformatted(stats_str);
+
+        var ips_buf: [40]u8 = undefined;
+        const ips_str = if (app.ips >= 1_000_000)
+            std.fmt.bufPrint(&ips_buf, "IPS: {d:.2} M", .{app.ips / 1_000_000.0}) catch "??"
+        else if (app.ips >= 1_000)
+            std.fmt.bufPrint(&ips_buf, "IPS: {d:.2} K", .{app.ips / 1_000.0}) catch "??"
+        else
+            std.fmt.bufPrint(&ips_buf, "IPS: {d:.0}", .{app.ips}) catch "??";
+        zgui.textUnformatted(ips_str);
+
         // Registers
         zgui.separator();
         zgui.textUnformatted("Registers");
         zgui.separator();
 
-        var pc_buf: [20]u8 = undefined;
-        const pc_str = std.fmt.bufPrint(&pc_buf, "PC: 0x{X:0>8}", .{app.system.cpu.pc}) catch "??";
-        zgui.textUnformatted(pc_str);
+        if (zgui.beginTable("regs", .{ .column = 2, .flags = .{ .borders = .{ .inner_v = true } } })) {
+            defer zgui.endTable();
 
-        for (0..32) |reg| {
-            const val = app.system.cpu.read_reg(@intCast(reg));
-            var reg_buf: [24]u8 = undefined;
-            const reg_str = std.fmt.bufPrint(&reg_buf, "x{d:>2}: 0x{X:0>8}", .{ reg, val }) catch "??";
-            zgui.textUnformatted(reg_str);
+            zgui.tableSetupColumn("Reg", .{ .flags = .{ .width_fixed = true }, .init_width_or_height = 30 });
+            zgui.tableSetupColumn("Value", .{ .flags = .{ .width_stretch = true } });
+
+            // PC
+            zgui.tableNextRow(.{});
+            _ = zgui.tableNextColumn();
+            zgui.textUnformatted("PC");
+            _ = zgui.tableNextColumn();
+            var pc_buf: [11:0]u8 = undefined;
+            _ = std.fmt.bufPrint(&pc_buf, "0x{X:0>8}", .{app.system.cpu.pc}) catch {};
+            pc_buf[10] = 0;
+            zgui.setNextItemWidth(-1);
+            _ = zgui.inputText("##pc", .{ .buf = &pc_buf, .flags = .{ .read_only = true } });
+
+            // x0-x31
+            for (0..32) |reg| {
+                const val = app.system.cpu.read_reg(@intCast(reg));
+                zgui.pushIntId(@intCast(reg));
+                defer zgui.popId();
+                zgui.tableNextRow(.{});
+                _ = zgui.tableNextColumn();
+                var label_buf: [4]u8 = undefined;
+                const label = std.fmt.bufPrint(&label_buf, "x{d}", .{reg}) catch "??";
+                zgui.textUnformatted(label);
+                _ = zgui.tableNextColumn();
+                var val_buf: [11:0]u8 = undefined;
+                _ = std.fmt.bufPrint(&val_buf, "0x{X:0>8}", .{val}) catch {};
+                val_buf[10] = 0;
+                zgui.setNextItemWidth(-1);
+                _ = zgui.inputText("##reg", .{ .buf = &val_buf, .flags = .{ .read_only = true } });
+            }
         }
+    }
 
-        // Stats
-        zgui.separator();
-        var stats_buf: [40]u8 = undefined;
-        const stats_str = std.fmt.bufPrint(&stats_buf, "Instructions: {d}", .{app.total_instructions}) catch "??";
-        zgui.textUnformatted(stats_str);
+    fn renderOptionsPanel(app: *EmulatorApp) void {
+        defer zgui.end();
+        if (!zgui.begin("Options", .{})) return;
+
+        _ = zgui.checkbox("Live video update", .{ .v = &app.live_video_update });
+        if (zgui.isItemHovered(.{})) {
+            if (zgui.beginTooltip()) {
+                defer zgui.endTooltip();
+                zgui.textUnformatted("Update display every frame, ignoring the flush flag");
+            }
+        }
     }
 
     fn renderMemoryView(app: *EmulatorApp) void {

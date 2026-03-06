@@ -128,6 +128,7 @@ pub const Cpu = struct {
     /// x0 is not stored — it is always zero. Index 0 here is x1.
     regs: [31]u32 = [_]u32{0} ** 31,
     pc: u32 = 0,
+    total_instructions: u64 = 0,
 
     fn report_error(cpu: *Cpu, err: CpuError, src: anyerror) CpuError {
         _ = cpu;
@@ -155,22 +156,33 @@ pub const Cpu = struct {
     /// After execution, PC advances by 4 or 2 bytes accordingly unless the
     /// instruction itself modified PC (branches, jumps).
     pub fn execute(self: *Cpu, system: *System, count: usize) CpuError!usize {
-        for (0..count) |_| {
+        for (0..count) |i| {
             // Fetch the first halfword to determine instruction length.
-            const low_hw = system.bus_read(self.pc, .u16) catch |err|
+            const low_hw = system.bus_read(self.pc, .u16) catch |err| {
+                self.total_instructions += i;
                 return self.report_error(error.InstructionFetchFault, err);
+            };
 
             if (low_hw & 0b11 != 0b11) {
                 // Compressed 16-bit instruction (C extension).
-                try self.execute_compressed(system, low_hw);
+                self.execute_compressed(system, low_hw) catch |err| {
+                    self.total_instructions += i;
+                    return err;
+                };
             } else {
                 // Standard 32-bit instruction: fetch the upper halfword.
-                const high_hw = system.bus_read(self.pc +% 2, .u16) catch |err|
+                const high_hw = system.bus_read(self.pc +% 2, .u16) catch |err| {
+                    self.total_instructions += i;
                     return self.report_error(error.InstructionFetchFault, err);
+                };
                 const instruction: u32 = @as(u32, high_hw) << 16 | low_hw;
-                try self.execute_32bit(system, instruction);
+                self.execute_32bit(system, instruction) catch |err| {
+                    self.total_instructions += i;
+                    return err;
+                };
             }
         }
+        self.total_instructions += count;
         return count;
     }
 
