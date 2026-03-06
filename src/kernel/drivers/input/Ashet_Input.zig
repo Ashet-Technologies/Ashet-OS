@@ -25,7 +25,7 @@ keyboard: *volatile machine.Keyboard,
 last_mouse: machine.Mouse = .{
     .x = 0,
     .y = 0,
-    .buttons = .{ .left = false, .middle = false, .right = false },
+    .buttons = .{ .left = false, .middle = false, .right = false, ._reserved = 0 },
 },
 
 pub fn init(

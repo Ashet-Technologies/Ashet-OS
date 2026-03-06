@@ -27,6 +27,7 @@ const CliOptions = struct {
 
     pub const shorthands = .{
         .h = "help",
+        .m = "ram-size",
     };
 
     pub const meta = .{

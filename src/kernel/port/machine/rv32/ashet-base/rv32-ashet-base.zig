@@ -42,11 +42,14 @@ fn initialize() !void {
 
     hw.fb0 = .init(peripherals.video_control, peripherals.video_framebuffer);
 
+    hw.input = .init(peripherals.mouse, peripherals.keyboard);
+
     // Finally install all drivers:
     ashet.drivers.install(&hw.rtc.driver);
     ashet.drivers.install(&hw.block0.driver);
     ashet.drivers.install(&hw.block1.driver);
     ashet.drivers.install(&hw.fb0.driver);
+    ashet.drivers.install(&hw.input.driver);
 }
 
 noinline fn debug_write(msg: []const u8) void {
