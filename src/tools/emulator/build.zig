@@ -22,7 +22,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     const zglfw_dep = b.dependency("zglfw", .{ .target = target, .optimize = optimize });
-    const zopengl_dep = b.dependency("zopengl", .{ .target = target, .optimize = optimize });
+    const zopengl_dep = b.dependency("zopengl", .{ .target = target });
 
     const desktop_mod = b.createModule(.{
         .root_source_file = b.path("src/main-desktop.zig"),
