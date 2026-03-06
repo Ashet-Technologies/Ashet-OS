@@ -195,6 +195,7 @@ const EmulatorApp = struct {
     ips: f64 = 0,
     ips_update_timer: f64 = 0,
     last_frame_time: u64 = 0,
+    emulation_time_threshold: u64 = 14 * std.time.us_per_ms,
 
     // GUI state
     dock_layout_done: bool = false,
@@ -312,22 +313,33 @@ const EmulatorApp = struct {
         app.timer.setTime(mtime_us, rtc_s);
     }
 
-    fn stepEmulator(app: *EmulatorApp) void {
-        if (!app.running) return;
+    fn runEmulation(app: *EmulatorApp) void {
+        const emu_start = std.time.Instant.now() catch @panic("no measurement");
 
         const batch: usize = @intFromFloat(@max(1.0, @as(f32, INSTRUCTIONS_PER_FRAME) * app.speed_multiplier));
 
-        const emu_start = std.time.Instant.now() catch @panic("no measurement");
+        app.last_frame_time = 0;
+
+        while (app.running) {
+            app.stepEmulator(batch);
+            app.pollBlockDevices();
+
+            const emu_end = std.time.Instant.now() catch @panic("no measurement");
+            app.last_frame_time = emu_end.since(emu_start) / std.time.ns_per_us;
+            if (app.last_frame_time > app.emulation_time_threshold) {
+                break;
+            }
+        }
+    }
+
+    fn stepEmulator(app: *EmulatorApp, batch: usize) void {
+        if (!app.running) return;
 
         const result = app.system.step(batch) catch |err| {
             app.running = false;
             std.debug.print("\r\n<<host error: {t} @ 0x{X:0>8}>>\r\n", .{ err, app.system.cpu.pc });
             return;
         };
-
-        const emu_end = std.time.Instant.now() catch @panic("no measurement");
-
-        app.last_frame_time = emu_end.since(emu_start) / std.time.ns_per_us;
 
         app.debug_writer.interface.flush() catch @panic("flush error"); // flush the emulator-writen data to the ring buffer + stdout writer
 
@@ -1036,8 +1048,7 @@ pub fn main() !u8 {
 
         app.updateTimer();
         app.processMouseInput(glfw_window);
-        app.stepEmulator();
-        app.pollBlockDevices();
+        app.runEmulation();
         app.updateFramebufferTexture();
 
         const fb_size = glfw_window.getFramebufferSize();
