@@ -9,6 +9,7 @@ pub fn build(b: *std.Build) void {
     // Options:
     const machine_id = b.option(Machine, "machine", "Selects the machine for which the kernel should be built.") orelse @panic("-Dmachine required!");
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
+    // const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseFast });
     const validate_mode = b.option(bool, "no-emit-bin", "Disables installing the kernel and makes the build way quicker.") orelse false;
 
     // Target configuration:
