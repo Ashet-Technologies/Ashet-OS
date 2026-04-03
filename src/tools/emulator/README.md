@@ -1,0 +1,160 @@
+# RV32 System Emulator
+
+## CPU
+
+The emulator provides a RISC-V cpu with 32 bits system width and the `rv32imc` feature set.
+
+The CPU provides no interrupts, and will just start executing code at address `0x00000000`.
+
+## Memory Map
+
+```
+0x00000000 - 0x3FFFFFFF   ROM        (1 GB window)
+0x40000000 - 0x7FFFFFFF   MMIO       (1 GB window)
+0x80000000 - 0x81FFFFFF   RAM        (up to 32 MB; actual size in SYSINFO)
+```
+
+### MMIO Layout
+
+```
+0x40000000 – 0x4003DFFF   Framebuffer    256,000 bytes (640×400 @ 8bpp)
+                                         palette is fixed in the emulator, not exposed
+
+0x40040000 – 0x40040FFF   Video Control
+0x40041000 – 0x40041FFF   Debug Output
+0x40042000 – 0x40042FFF   Keyboard
+0x40043000 – 0x40043FFF   Mouse
+0x40044000 – 0x40044FFF   Timer / RTC
+0x40045000 – 0x40045FFF   System Info
+0x40046000 – 0x40046FFF   Block Device 0
+0x40047000 – 0x40047FFF   Block Device 1
+```
+
+## Peripherals
+
+Register layouts are described as `+XX/Y` where XX is the relative offset to the peripheral base and Y is the size of the register.
+
+### Framebuffer
+
+A linear, row-major framebuffer with 8 bit per pixel, using the Ashet OS color palette.
+256,000 bytes (640 x 400), byte-addressable read/write. Offsets >= 256,000 return bus error.
+
+### Video Control
+
+Allows controlling the video output.
+
+```
++0x00/4   FLUSH       W   Write non-zero to mark framebuffer as ready to present.
+                          The emulator presents the framebuffer on its next display tick
+                          and continues to do so on every tick thereafter until the OS
+                          writes 0 (blank/hide screen). Does not clear automatically.
+                          The OS is responsible for fully painting the framebuffer before
+                          writing 1 — no double-buffering is provided.
+                          Reads return bus error (write-only).
+```
+
+### Debug Output
+
+Provides a simple, "don't care" debug logging facility.
+
+```
++0x00/1   TX          W   Write byte (low 8 bits). Always accepted immediately, no flow control.
+                          Reads return bus error (write-only).
+                          Non-u8 writes return InvalidSize. Non-zero offsets return Unmapped.
+```
+
+### Input Event Device
+
+Both the Keyboard and Mouse use the same "Input Event Device" register layout.
+Events are 32-bit words delivered via a FIFO. The event encoding is device-specific.
+
+```
++0x00/4   STATUS      R   Bit 0 = at least one entry waiting in FIFO
++0x04/4   DATA        R   Pop and return one entry (0x00000000 if FIFO empty)
+```
+
+All registers are read-only. Pushes when full are dropped.
+Consecutive identical events are deduplicated.
+
+#### Keyboard
+
+HID Usage Codes delivered as input events. FIFO holds up to 16 entries.
+
+Event encoding:
+
+```
+Bit  31       = 1 key-down, 0 key-up
+Bits 30:16    = reserved (0)
+Bits 15:0     = HID Usage Code (Usage Page 0x07, Keyboard)
+```
+
+#### Mouse
+
+Absolute pointing and button events. FIFO holds up to 64 entries.
+
+Event encoding — event type in bits [31:30]:
+
+```
+0b00 = Pointing (absolute position)
+       Bits 23:12 = X (u12, 0–4095)
+       Bits 11:0  = Y (u12, 0–4095)
+0b01 = Button Down
+       Bits 15:0  = button ID (0=left, 1=right, 2=middle)
+0b10 = Button Up
+       Bits 15:0  = button ID (0=left, 1=right, 2=middle)
+```
+
+### Timer / RTC
+
+A timer + rtc unit providing the current execution time as well as the wall clock (UTC).
+Time values are pushed by the host — the peripheral has no dependency on system clocks.
+
+```
+; Monotonic - microseconds elapsed since emulator start
++0x00/4   MTIME_LO    R   Low  32 bits; reading latches MTIME_HI
++0x04/4   MTIME_HI    R   High 32 bits (latched value from last MTIME_LO read)
+
+; RTC - Unix timestamp (seconds since 1970-01-01 00:00:00 UTC)
++0x10/4   RTC_LO      R   Low  32 bits; reading latches RTC_HI
++0x14/4   RTC_HI      R   High 32 bits (latched value from last RTC_LO read)
+```
+
+Reading `MTIME_LO` latches the value inside `MTIME_HI` to the upper 32 bits of the current time stamp.
+Reading `RTC_LO` latches the value inside `RTC_HI` to the upper 32 bits of the current time stamp.
+
+This means reading MTIME_LO/RTC_LO first, then MTIME_HI/RTC_HI second is always a safe operation.
+All registers are read-only.
+
+### System Info
+
+```
++0x00/4   RAM_SIZE    R   Total RAM in bytes (e.g. 0x00800000 for 8 MB)
+```
+
+Read-only. Only offset 0x00 is mapped; other offsets return Unmapped.
+
+### Block Device
+
+A block device that can either read or write a single block at a time.
+Uses a shared 512 byte buffer for transfers. Two instances at pages 0x46 and 0x47.
+
+```
++0x000/4    STATUS      R   Bit 0 = device present
+                            Bit 1 = device busy
+                            Bit 2 = last operation failed
++0x004/4    SIZE        R   Total number of 512-byte blocks
++0x008/4    LBA         RW  Target logical block address
++0x00C/4    COMMAND     W   1 = read, 2 = write, 3 = clear error flag
++0x100/512  BUFFER      RW  512-byte transfer buffer (0x100–0x2FF)
+```
+
+Read flow: write LBA → write COMMAND=1 → poll STATUS bit 1 until clear → read BUFFER.
+
+Write flow: fill BUFFER → write LBA → write COMMAND=2 → poll STATUS bit 1 until clear.
+
+Error handling: if STATUS bit 2 is set, write COMMAND=3 to clear the error flag.
+
+Buffer access returns bus error when the device is busy, in error state, or not present.
+Writes to LBA and COMMAND are silently ignored when the device is not present.
+STATUS and SIZE are read-only (writes return WriteProtected).
+The gap between +0x00C and +0x100 is intentionally reserved.

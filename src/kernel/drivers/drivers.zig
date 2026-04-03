@@ -11,6 +11,7 @@ pub const block = struct {
     pub const Host_Disk_Image = @import("block/Host_Disk_Image.zig");
     pub const Virtio_Block_Device = @import("block/Virtio_Block_Device.zig");
     pub const Memory_Mapped_Flash = @import("block/Memory_Mapped_Flash.zig");
+    pub const Ashet_Block_Dev = @import("block/Ashet_Block_Dev.zig");
 };
 
 pub const serial = struct {
@@ -34,6 +35,7 @@ pub const rtc = struct {
     pub const Goldfish = @import("rtc/Goldfish.zig");
     pub const PL031 = @import("rtc/PL031.zig");
     pub const HostedSystemClock = @import("rtc/HostedSystemClock.zig");
+    pub const Ashet_RTC = @import("rtc/Ashet_RTC.zig");
 };
 
 pub const video = struct {
@@ -49,6 +51,7 @@ pub const video = struct {
     pub const HSTX_DVI_2 = @import("video/HSTX_DVI_2.zig");
     pub const Multiboot_Framebuffer = @import("video/Multiboot_Framebuffer.zig");
     pub const Memory_Mapped_Framebuffer = @import("video/Memory_Mapped_Framebuffer.zig");
+    pub const Ashet_Framebuffer = @import("video/Ashet_Framebuffer.zig");
 };
 
 pub const network = struct {
@@ -70,6 +73,8 @@ pub const input = struct {
 
     pub const Generic_PS2_Device = @import("input/Generic_PS2_Device.zig");
     pub const PropIO_PS2_Device = @import("input/PropIO_PS2_Device.zig");
+
+    pub const Ashet_Input = @import("input/Ashet_Input.zig");
 };
 
 pub const i2c_device = struct {

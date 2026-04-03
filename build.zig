@@ -50,6 +50,10 @@ const installed_tools: []const ToolDep = &.{
         .dependency = "gui_designer",
         .artifacts = &.{ "gui-editor", "gui-compiler" },
     },
+    .{
+        .dependency = "emulator",
+        .artifacts = &.{ "emulator-web", "emulator" },
+    },
     // .{
     //     .dependency = "agp_tester",
     //     .artifacts = &.{"agp-tester"},
@@ -449,6 +453,22 @@ const machine_info_map = std.EnumArray(RunTarget, MachineStartupConfig).init(.{
             "-drive",  "if=pflash,index=1,format=raw,file=${DISK}",
         },
     },
+    .@"rv32-ashet-base" = .{
+        // .qemu_cli = &.{
+        //     "-cpu",    "rv32",
+        //     "-M",      "virt",
+        //     "-m",      "32M",
+        //     "-netdev", "user,id=hostnet",
+        //     "-object", "filter-dump,id=hostnet-dump,netdev=hostnet,file=ashet-os.pcap",
+        //     "-device", "virtio-gpu-device,id=screen,xres=640,yres=400",
+        //     "-device", "virtio-keyboard-device",
+        //     "-device", "virtio-mouse-device",
+        //     "-device", "virtio-net-device,netdev=hostnet,mac=52:54:00:12:34:56",
+        //     "-bios",   "none",
+        //     "-drive",  "if=pflash,index=0,format=raw,file=${BOOTROM}",
+        //     "-drive",  "if=pflash,index=1,format=raw,file=${DISK}",
+        // },
+    },
     .@"arm-qemu-virt" = .{
         .qemu_cli = &.{
             "-cpu",    "cortex-a7",
@@ -609,6 +629,7 @@ pub const RunTarget = enum {
     @"arm-qemu-virt",
 
     @"rv32-qemu-virt",
+    @"rv32-ashet-base",
 
     @"x86-hosted-linux",
     @"x86-hosted-windows",

@@ -1,0 +1,29 @@
+.{
+    .name = .emulator,
+    .version = "0.0.1",
+    .minimum_zig_version = "0.15.2",
+    .fingerprint = 0x9c696d3fa0d72f0c,
+    .dependencies = .{
+        .args = .{
+            .url = "git+https://github.com/ikskuh/zig-args.git#e060ac80c244e9675471b6d213b22ddc83cc8f98",
+            .hash = "args-0.0.0-CiLiqo_RAADz2TiHUzG5-0Mk7IZHR-h1SZgUrb_k4c7d",
+        },
+        .zgui = .{
+            .url = "git+https://github.com/Ashet-Technologies/zgui.git#ab250513f2cd3b18aafea5afc054e7ea9172ec0b",
+            .hash = "zgui-0.6.0-dev--L6sZKlMbgBdMoT_4xL_Drs3U9qJyepYzJabVadI6F1v",
+        },
+        .zglfw = .{
+            .url = "https://github.com/zig-gamedev/zglfw/archive/0dd29d8073487c9fe1e45e6b729b3aac271d5a71.tar.gz",
+            .hash = "zglfw-0.10.0-dev-zgVDNIG4IQBWN_sfMD-xfC9bJS2hbBN2W7jNlDLovcdC",
+        },
+        .zopengl = .{
+            .url = "https://github.com/zig-gamedev/zopengl/archive/db9d615c742086b39954eef064f957e92dafc7e2.tar.gz",
+            .hash = "zopengl-0.6.0-dev-5-tnz36mDgBuU9pDfag6_B-qCWOJQc5GXiXuZ6z41zQM",
+        },
+        .system_sdk = .{
+            .url = "https://github.com/zig-gamedev/system_sdk/archive/777e76828f05d5d223df47a4c0de95ae4efde884.tar.gz",
+            .hash = "system_sdk-0.3.0-dev-alwUNqAaaALJ5VoZImZo3n6prezBnQnrpziun3ZeZwcp",
+        },
+    },
+    .paths = .{ "build.zig", "build.zig.zon", "src", "tests" },
+}

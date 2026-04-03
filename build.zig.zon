@@ -43,6 +43,9 @@
         // .wikitool = .{
         //     .path = "src/tools/wikitool",
         // },
+        .emulator = .{
+            .path = "src/tools/emulator",
+        },
 
         .depz = .{
             .url = "git+https://codeberg.org/Der_Teufel/depz.git#b7041a9f0b535c70d70439aa15bc8cfbf359d2c2",

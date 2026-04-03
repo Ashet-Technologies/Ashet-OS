@@ -94,7 +94,7 @@ pub fn main() !u8 {
     glfw.windowHint(.doublebuffer, true);
     glfw.windowHint(.wayland_app_id, "computer.ashet.os.gui_editor");
 
-    const glfw_window = try glfw.Window.create(1200, 700, "Ashet GUI Designer", null);
+    const glfw_window = try glfw.Window.create(1200, 700, "Ashet GUI Designer", null, null);
     defer glfw_window.destroy();
 
     glfw_window.setSizeLimits(400, 400, -1, -1);

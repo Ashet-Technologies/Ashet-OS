@@ -594,7 +594,13 @@ pub const Window = struct {
         }
 
         if (window.event_queue.full()) {
-            logger.warn("window event queue is full, dropping event {?}", .{window.event_queue.pull()});
+            const old = window.event_queue.pull().?;
+            const intval = @intFromEnum(old.event_type);
+
+            logger.warn("window event queue is full, dropping event {!} ({})", .{
+                std.meta.intToEnum(ashet.abi.WindowEvent.Type, intval),
+                intval,
+            });
         }
         window.event_queue.push(event);
     }

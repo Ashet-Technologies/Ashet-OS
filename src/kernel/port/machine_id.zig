@@ -14,6 +14,7 @@ pub const MachineID = enum {
     // @"arm-raspberrypi-pi400",
 
     @"rv32-qemu-virt",
+    @"rv32-ashet-base", // Runs on our own emulator!
     // @"rv32-ashet-hc",
     // @"rv32-pine64-ox64",
 
@@ -31,6 +32,7 @@ pub const MachineID = enum {
             .@"arm-ashet-hc",
             .@"arm-qemu-virt",
             .@"rv32-qemu-virt",
+            .@"rv32-ashet-base",
             .@"x86-pc-generic",
             => false,
 
@@ -46,6 +48,7 @@ pub const MachineID = enum {
             .@"arm-ashet-vhc" => "Ashet Virtual Home Computer",
             .@"arm-qemu-virt" => "QEMU virt (Arm)",
             .@"rv32-qemu-virt" => "QEMU virt (RISC-V)",
+            .@"rv32-ashet-base" => "Ashet Emulator (RISC-V)",
             .@"x86-hosted-linux" => "OS Hosted (x86, Linux)",
             .@"x86-hosted-windows" => "OS Hosted (x86, Windows)",
             .@"x86-pc-generic" => "Generic PC (x86)",
@@ -60,6 +63,7 @@ pub const MachineID = enum {
             => .arm,
 
             .@"rv32-qemu-virt",
+            .@"rv32-ashet-base",
             => .rv32,
 
             .@"x86-hosted-linux",

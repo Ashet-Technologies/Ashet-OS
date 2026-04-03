@@ -9,6 +9,7 @@ pub fn build(b: *std.Build) void {
     // Options:
     const machine_id = b.option(Machine, "machine", "Selects the machine for which the kernel should be built.") orelse @panic("-Dmachine required!");
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSafe });
+    // const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseFast });
     const validate_mode = b.option(bool, "no-emit-bin", "Disables installing the kernel and makes the build way quicker.") orelse false;
 
     // Target configuration:
@@ -327,6 +328,34 @@ pub fn build(b: *std.Build) void {
         kernel_exe.linkLibrary(libc);
     }
 
+    // Create a patched version of the stdlib
+    {
+        const create_derivation_exe = b.addExecutable(.{
+            .name = "create-derivation",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("build-utils/create-derivation.zig"),
+                .target = b.graph.host,
+                .optimize = .ReleaseSafe,
+            }),
+        });
+
+        const create_derivation_run = b.addRunArtifact(create_derivation_exe);
+
+        create_derivation_run.addPrefixedDirectoryArg("--source=", .{ .cwd_relative = b.graph.zig_lib_directory.path.? });
+        const patched_zig_lib_dir = create_derivation_run.addPrefixedOutputDirectoryArg("--output=", "ashet-lib");
+
+        create_derivation_run.addPrefixedFileArg("--patch=", b.path("std_patches/0000-compiler_rt_common.zpatch"));
+
+        kernel_exe.zig_lib_dir = patched_zig_lib_dir.dupe(b);
+        patched_zig_lib_dir.addStepDependencies(&kernel_exe.step);
+
+        b.installDirectory(.{
+            .source_dir = patched_zig_lib_dir,
+            .install_dir = .lib,
+            .install_subdir = ".",
+        });
+    }
+
     if (validate_mode) {
         b.getInstallStep().dependOn(&kernel_exe.step);
     } else {
@@ -386,6 +415,13 @@ const machine_info_map = std.EnumArray(Machine, MachineConfig).init(.{
 
         .source_file = "port/machine/rv32/qemu-virt/rv32-qemu-virt.zig",
         .linker_script = "port/machine/rv32/qemu-virt/linker.ld",
+    },
+
+    .@"rv32-ashet-base" = .{
+        .target = constructTargetQuery(baseline_rv32),
+
+        .source_file = "port/machine/rv32/ashet-base/ashet-base.zig",
+        .linker_script = "port/machine/rv32/ashet-base/linker.ld",
     },
 
     .@"arm-ashet-vhc" = .{
@@ -495,6 +531,20 @@ const generic_rv32: std.Target.Query = .{
         .c, // compressed
         .zbb, // bit instructions
         .zicsr, // control registers
+        // .reserve_x4, // Don't allow LLVM to use the "tp" register. We want that for our own purposes
+    }),
+};
+
+const baseline_rv32: std.Target.Query = .{
+    .cpu_arch = .riscv32,
+    .abi = .eabi,
+    .cpu_model = .{ .explicit = &std.Target.riscv.cpu.generic_rv32 },
+    .cpu_features_add = std.Target.riscv.featureSet(&[_]std.Target.riscv.Feature{
+        .i, // integer
+        .m, // multiplication
+        .c, // compressed
+        // .zbb, // bit instructions
+        // .zicsr, // control registers
         // .reserve_x4, // Don't allow LLVM to use the "tp" register. We want that for our own purposes
     }),
 };
