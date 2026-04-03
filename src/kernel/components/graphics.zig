@@ -9,6 +9,7 @@ const logger = std.log.scoped(.graphics);
 const fonts = agp_swrast.fonts;
 const software_renderer = @import("graphics/software_renderer.zig");
 
+const Rasterizer = agp_swrast.Rasterizer;
 const Rectangle = ashet.abi.Rectangle;
 const Point = ashet.abi.Point;
 const Size = ashet.abi.Size;
@@ -30,7 +31,6 @@ pub const Bitmap = struct {
 };
 
 pub const Framebuffer = struct {
-    const Cursor = agp_swrast.PixelCursor;
     pub const Destructor = ashet.resources.Destructor(@This(), _internal_destroy);
 
     pub const VideoOut = struct {
@@ -134,55 +134,52 @@ pub const Framebuffer = struct {
     }
 
     pub fn get_size(fb: Framebuffer) Size {
-        const cursor = fb.create_cursor();
-        return Size.new(cursor.width, cursor.height);
-    }
-
-    pub fn create_cursor(fb: Framebuffer) Cursor {
-        const width, const height, const stride = switch (fb.type) {
-            .memory => |bmp| .{ bmp.width, bmp.height, bmp.stride },
-            .video => |video| .{ video.memory.width, video.memory.height, video.memory.stride },
-            .window => |win| .{ win.size.width, win.size.height, win.max_size.width },
-            .widget => |widget| .{ widget.bounds.width, widget.bounds.height, widget.bounds.width },
-        };
-        return .{
-            .width = width,
-            .height = height,
-            .stride = stride,
+        return switch (fb.type) {
+            .memory => |mem| .new(mem.width, mem.height),
+            .video => |video| video.output.get_resolution(),
+            .window => |win| win.size,
+            .widget => |widget| widget.bounds.size(),
         };
     }
 
-    pub fn emit_pixels(fb: *Framebuffer, cursor: Cursor, color: Color, count: u16) void {
-        const framebuffer: [*]Color = switch (fb.type) {
-            .memory => |bmp| bmp.pixels,
-            .video => |video| video.memory.base,
-            .window => |win| win.pixels.ptr,
-            .widget => |widget| widget.pixels.ptr,
-        };
-
-        @memset(framebuffer[cursor.offset..][0..count], color);
+    pub fn get_render_target(fb: Framebuffer) agp_swrast.RenderTarget {
+        return fb.get_image_buffer(agp_swrast.RenderTarget);
     }
 
-    pub fn fetch_pixels(fb: *Framebuffer, cursor: Cursor, pixels: []Color) void {
-        const framebuffer: [*]const Color = switch (fb.type) {
-            .memory => |bmp| bmp.pixels,
-            .video => |video| video.memory.base,
-            .window => |win| win.pixels.ptr,
-            .widget => |widget| widget.pixels.ptr,
-        };
-        // logger.info("{s} {*} {*}", .{ @tagName(fb.type), framebuffer, pixels });
-        // logger.info("{any}", .{framebuffer[cursor.offset..][0..pixels.len]});
-        @memcpy(pixels, framebuffer[cursor.offset..][0..pixels.len]);
+    pub fn get_image(fb: Framebuffer) agp_swrast.Image {
+        return fb.get_image_buffer(agp_swrast.Image);
     }
 
-    pub fn copy_pixels(fb: *Framebuffer, cursor: Cursor, pixels: []const Color) void {
-        const framebuffer: [*]Color = switch (fb.type) {
-            .memory => |bmp| bmp.pixels,
-            .video => |video| video.memory.base,
-            .window => |win| win.pixels.ptr,
-            .widget => |widget| widget.pixels.ptr,
+    fn get_image_buffer(fb: Framebuffer, comptime T: type) T {
+        return switch (fb.type) {
+            .memory => |mem| .{
+                .pixels = mem.pixels,
+                .width = mem.width,
+                .height = mem.height,
+                .stride = mem.stride,
+            },
+            .video => |video| blk: {
+                const mem = video.output.get_video_memory();
+                break :blk .{
+                    .height = mem.height,
+                    .width = mem.width,
+                    .pixels = mem.base,
+                    .stride = mem.stride,
+                };
+            },
+            .window => |win| .{
+                .width = win.size.width,
+                .height = win.size.height,
+                .stride = win.max_size.width,
+                .pixels = win.pixels.ptr,
+            },
+            .widget => |widget| .{
+                .pixels = widget.pixels.ptr,
+                .width = widget.bounds.width,
+                .height = widget.bounds.height,
+                .stride = widget.bounds.width,
+            },
         };
-        @memcpy(framebuffer[cursor.offset..][0..pixels.len], pixels);
     }
 
     pub fn resolve_font(fb: *Framebuffer, font_handle: ashet.abi.Font) !*const fonts.FontInstance {
@@ -308,11 +305,6 @@ pub fn get_system_font(font_name: []const u8) error{FileNotFound}!*Font {
 
 var render_temp_buffer: std.heap.ArenaAllocator = .init(ashet.memory.page_allocator);
 
-const Rasterizer = agp_swrast.Rasterizer(.{
-    .backend_type = *Framebuffer,
-    .framebuffer_type = *Framebuffer,
-});
-
 fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.Inputs) ashet.abi.draw.Render.Error!ashet.abi.draw.Render.Outputs {
     const fb = ashet.resources.resolve(Framebuffer, call.resource_owner, inputs.target.as_resource()) catch |err| return switch (err) {
         error.InvalidHandle,
@@ -348,7 +340,7 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
     if (target_size.width > 0 and target_size.height > 0) {
         _ = render_temp_buffer.reset(.retain_capacity);
 
-        var rasterizer = Rasterizer.init(fb);
+        var rasterizer = Rasterizer.init(fb.get_render_target());
 
         var decoder = agp.decoder(render_temp_buffer.allocator(), fbs.reader());
         while (decoder.next() catch unreachable) |cmd| {
@@ -371,12 +363,12 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
                         error.TypeMismatch => return error.BadCode,
                         else => |e| return e,
                     };
-                    rasterizer.blit_framebuffer(
+                    rasterizer.blit_image(
                         Point.new(
                             blit_framebuffer.x,
                             blit_framebuffer.y,
                         ),
-                        framebuffer,
+                        framebuffer.get_image(),
                     );
                     switch (framebuffer.type) {
                         .window => |window| try blit_widget_data(
@@ -394,13 +386,13 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
                         error.TypeMismatch => return error.BadCode,
                         else => |e| return e,
                     };
-                    rasterizer.blit_partial_framebuffer(
+                    rasterizer.blit_partial_image(
                         Rectangle.new(
                             Point.new(blit_framebuffer.x, blit_framebuffer.y),
                             Size.new(blit_framebuffer.width, blit_framebuffer.height),
                         ),
                         Point.new(blit_framebuffer.src_x, blit_framebuffer.src_y),
-                        framebuffer,
+                        framebuffer.get_image(),
                     );
                     switch (framebuffer.type) {
                         .window => |window| try blit_widget_data(
@@ -413,7 +405,7 @@ fn render_sync(call: *ashet.overlapped.AsyncCall, inputs: ashet.abi.draw.Render.
                         .widget, .video, .memory => {},
                     }
                 },
-                else => try rasterizer.execute(cmd),
+                else => rasterizer.execute(cmd, undefined),
             }
         }
     }
