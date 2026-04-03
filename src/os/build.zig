@@ -19,6 +19,7 @@ const app_packages = [_][]const u8{
     "ntp_client",
     "i2c_scan",
     "widgets",
+    "slideshow",
     "2048",
     // TODO: Include "wiki" again,
 };

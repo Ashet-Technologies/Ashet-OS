@@ -278,3 +278,13 @@ openocd-bootloader:
         -f target/rp2350.cfg \
         -c '{{cmd_bootloader}}'
     sleep 0.5
+
+
+slideshow:
+    ./zig-out/bin/mkicon -g 600x350 -o rootfs/dev/data/slideshow/debris.abm             assets/slides/debris.png
+    ./zig-out/bin/mkicon -g 600x350 -o rootfs/dev/data/slideshow/heritages.abm          assets/slides/heritages.png
+    ./zig-out/bin/mkicon -g 600x350 -o rootfs/dev/data/slideshow/hoody.abm              assets/slides/hoody.png
+    ./zig-out/bin/mkicon -g 600x350 -o rootfs/dev/data/slideshow/opium.abm              assets/slides/opium.png
+    ./zig-out/bin/mkicon -g 600x350 -o rootfs/dev/data/slideshow/r-cade.abm             assets/slides/r-cade.png
+    ./zig-out/bin/mkicon -g 600x350 -o rootfs/dev/data/slideshow/velocity.abm           assets/slides/velocity.png
+    ./zig-out/bin/mkicon -g 600x350 -o rootfs/dev/data/slideshow/modern-furnishing.abm  assets/slides/modern-furnishing.png

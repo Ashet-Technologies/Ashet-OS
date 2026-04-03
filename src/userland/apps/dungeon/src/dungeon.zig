@@ -305,6 +305,21 @@ const Raycaster = struct {
         flat_color: Color,
     };
 
+    const PerspectiveBackgroundSampler = struct {
+        texture: *const Texture,
+        u_scale: f32,
+        v_scale: f32,
+
+        fn init(texture_id: usize) PerspectiveBackgroundSampler {
+            const texture = &textures[texture_id];
+            return .{
+                .texture = texture,
+                .u_scale = @as(f32, @floatFromInt(texture.width - 1)),
+                .v_scale = @as(f32, @floatFromInt(texture.height - 1)),
+            };
+        }
+    };
+
     const TraceColumn = struct {
         dir: Vec2,
         maybe_hit: ?RaycastResult,
@@ -400,6 +415,15 @@ const Raycaster = struct {
         return Vec2.new(1.0, protorays[column]).rotate(rc.camera_rotation);
     }
 
+    fn samplePerspectiveBackground(rc: *const Raycaster, ray: TraceColumn, distance: f32, sampler: PerspectiveBackgroundSampler) Color {
+        const pos = rc.camera_position.add(ray.dir.scale(distance));
+
+        const u = @as(i32, @intFromFloat(sampler.u_scale * fract(pos.x)));
+        const v = @as(i32, @intFromFloat(sampler.v_scale * fract(pos.y)));
+
+        return sampleTexture(sampler.texture, u, v);
+    }
+
     const RaycastResult = struct {
         wall: *const Wall,
         distance: f32,
@@ -448,84 +472,59 @@ const Raycaster = struct {
             };
         }
 
-        // render the walls
-        var x: u15 = 0;
-        while (x < width) : (x += 1) {
-            const ray = raycache[x];
+        const ceiling_sampler: ?PerspectiveBackgroundSampler = switch (ceiling_texture) {
+            .perspective_texture => |texture_id| PerspectiveBackgroundSampler.init(texture_id),
+            else => null,
+        };
+        const floor_sampler: ?PerspectiveBackgroundSampler = switch (floor_texture) {
+            .perspective_texture => |texture_id| PerspectiveBackgroundSampler.init(texture_id),
+            else => null,
+        };
 
-            // Draw ceiling
-            switch (ceiling_texture) {
-                .background_texture => unreachable,
-                .flat_color => |color| {
-                    var y: u15 = 0;
-                    while (y < ray.wallTop) : (y += 1) {
-                        set_pixel(x, y, color);
+        var y: u16 = 0;
+        while (y < height) : (y += 1) {
+            const yi: i32 = @intCast(y);
+            const distance = perspective_factor[y];
+
+            for (raycache, 0..) |ray, x| {
+                const x_pos: u16 = @intCast(x);
+
+                if (yi < ray.wallTop) {
+                    switch (ceiling_texture) {
+                        .background_texture => unreachable,
+                        .flat_color => |color| set_pixel(x_pos, y, color),
+                        .perspective_texture => |texture_id| {
+                            const sampler = ceiling_sampler orelse unreachable;
+                            set_pixel(x_pos, y, samplePerspectiveBackground(rc, ray, distance, sampler).shift(16 * texture_id));
+                        },
                     }
-                },
-                .perspective_texture => |texture_id| {
-                    const index_shift = 16 * texture_id;
-                    const texture = &textures[texture_id];
-
-                    const u_scale = @as(f32, @floatFromInt(texture.bitmap.width - 1));
-                    const v_scale = @as(f32, @floatFromInt(texture.bitmap.height - 1));
-
-                    var y: u15 = 0;
-                    while (y < ray.wallTop) : (y += 1) {
-                        const d = perspective_factor[y];
-
-                        const pos = rc.camera_position.add(ray.dir.scale(d));
-
-                        const u = @as(i32, @intFromFloat(u_scale * fract(pos.x)));
-                        const v = @as(i32, @intFromFloat(v_scale * fract(pos.y)));
-
-                        set_pixel(x, y, sampleTexture(texture, u, v).shift(index_shift));
-                    }
-                },
-            }
-
-            // Draw the wall
-            if (ray.maybe_hit) |result| {
-                const tex_id = result.wall.texture_id;
-                const texture = &textures[tex_id];
-
-                const u = @as(i32, @intFromFloat(@as(f32, @floatFromInt(texture.width - 1)) * fract(result.u)));
-
-                const maxy = @min(height, ray.wallBottom);
-
-                var y: u15 = @as(u15, @intCast(std.math.clamp(ray.wallTop, 0, height)));
-                while (y < maxy) : (y += 1) {
-                    const v = @as(i32, @intCast(@divTrunc(texture.height * (y - ray.wallTop), @as(i32, @intCast(ray.wallHeight)))));
-                    set_pixel(x, y, sampleTexture(texture, u, v));
+                    continue;
                 }
-            }
 
-            // Draw floor
-            switch (floor_texture) {
-                .background_texture => unreachable,
-                .flat_color => |color| {
-                    var y: u15 = @as(u15, @intCast(@min(height, ray.wallBottom)));
-                    while (y < height) : (y += 1) {
-                        set_pixel(x, y, color);
+                if (yi < ray.wallBottom) {
+                    if (ray.maybe_hit) |result| {
+                        const tex_id = result.wall.texture_id;
+                        const texture = &textures[tex_id];
+
+                        const u = @as(i32, @intFromFloat(@as(f32, @floatFromInt(texture.width - 1)) * fract(result.u)));
+                        const v = @as(i32, @intCast(@divTrunc(
+                            texture.height * (yi - ray.wallTop),
+                            @as(i32, @intCast(ray.wallHeight)),
+                        )));
+
+                        set_pixel(x_pos, y, sampleTexture(texture, u, v));
+                        continue;
                     }
-                },
-                .perspective_texture => |texture_id| {
-                    const texture = &textures[texture_id];
+                }
 
-                    const u_scale = @as(f32, @floatFromInt(texture.width - 1));
-                    const v_scale = @as(f32, @floatFromInt(texture.height - 1));
-
-                    var y: u15 = @as(u15, @intCast(@min(height, ray.wallBottom)));
-                    while (y < height) : (y += 1) {
-                        const d = perspective_factor[y];
-
-                        const pos = rc.camera_position.add(ray.dir.scale(d));
-
-                        const u = @as(i32, @intFromFloat(u_scale * fract(pos.x)));
-                        const v = @as(i32, @intFromFloat(v_scale * fract(pos.y)));
-
-                        set_pixel(x, y, sampleTexture(texture, u, v));
-                    }
-                },
+                switch (floor_texture) {
+                    .background_texture => unreachable,
+                    .flat_color => |color| set_pixel(x_pos, y, color),
+                    .perspective_texture => {
+                        const sampler = floor_sampler orelse unreachable;
+                        set_pixel(x_pos, y, samplePerspectiveBackground(rc, ray, distance, sampler));
+                    },
+                }
             }
         }
     }
