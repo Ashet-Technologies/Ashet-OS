@@ -305,6 +305,14 @@ const Raycaster = struct {
         flat_color: Color,
     };
 
+    const TraceColumn = struct {
+        dir: Vec2,
+        maybe_hit: ?RaycastResult,
+        wallTop: i32,
+        wallBottom: i32,
+        wallHeight: u32,
+    };
+
     var protoray_buffer: [max_size.width]f32 = undefined;
     var perspective_factor_buffer: [max_size.height]f32 = undefined;
 
@@ -385,6 +393,7 @@ const Raycaster = struct {
     camera_rotation: f32 = 0,
     camera_position: Vec2 = Vec2.zero,
     zbuffer: [max_size.width]f32 = undefined,
+    raycache: [max_size.width]TraceColumn = undefined,
 
     /// returns the direction a ray has when going through a specifc column
     fn getRayDirection(rc: Raycaster, column: usize) Vec2 {
@@ -398,10 +407,11 @@ const Raycaster = struct {
     };
 
     fn drawWalls(rc: *Raycaster) void {
+        const raycache = rc.raycache[0..width];
+        const zbuffer = rc.zbuffer[0..width];
 
-        // render the walls
-        var x: u15 = 0;
-        while (x < width) : (x += 1) {
+        for (raycache, zbuffer, 0..) |*ray, *z, x| {
+
             // std.log.info("cast {}...", .{x});
             // rotate our precalculated ray
             const dir = rc.getRayDirection(x);
@@ -410,7 +420,7 @@ const Raycaster = struct {
             var maybe_hit = castRay(rc.camera_position, dir);
 
             var wallHeight: u32 = 0;
-            rc.zbuffer[x] = if (maybe_hit) |result| blk: {
+            z.* = if (maybe_hit) |result| blk: {
                 // std.log.info("hit {}", .{result});
                 if (result.distance < 0.01) {
                     // znear discard
@@ -429,12 +439,26 @@ const Raycaster = struct {
             const wallTop = @as(i32, @intCast(height / 2)) - @as(i32, @intCast(wallHeight / 2));
             const wallBottom = @as(i32, @intCast(height / 2)) + @as(i32, @intCast(wallHeight / 2));
 
+            ray.* = .{
+                .wallHeight = wallHeight,
+                .dir = dir,
+                .maybe_hit = maybe_hit,
+                .wallTop = wallTop,
+                .wallBottom = wallBottom,
+            };
+        }
+
+        // render the walls
+        var x: u15 = 0;
+        while (x < width) : (x += 1) {
+            const ray = raycache[x];
+
             // Draw ceiling
             switch (ceiling_texture) {
                 .background_texture => unreachable,
                 .flat_color => |color| {
                     var y: u15 = 0;
-                    while (y < wallTop) : (y += 1) {
+                    while (y < ray.wallTop) : (y += 1) {
                         set_pixel(x, y, color);
                     }
                 },
@@ -446,10 +470,10 @@ const Raycaster = struct {
                     const v_scale = @as(f32, @floatFromInt(texture.bitmap.height - 1));
 
                     var y: u15 = 0;
-                    while (y < wallTop) : (y += 1) {
+                    while (y < ray.wallTop) : (y += 1) {
                         const d = perspective_factor[y];
 
-                        const pos = rc.camera_position.add(dir.scale(d));
+                        const pos = rc.camera_position.add(ray.dir.scale(d));
 
                         const u = @as(i32, @intFromFloat(u_scale * fract(pos.x)));
                         const v = @as(i32, @intFromFloat(v_scale * fract(pos.y)));
@@ -460,17 +484,17 @@ const Raycaster = struct {
             }
 
             // Draw the wall
-            if (maybe_hit) |result| {
+            if (ray.maybe_hit) |result| {
                 const tex_id = result.wall.texture_id;
                 const texture = &textures[tex_id];
 
                 const u = @as(i32, @intFromFloat(@as(f32, @floatFromInt(texture.width - 1)) * fract(result.u)));
 
-                const maxy = @min(height, wallBottom);
+                const maxy = @min(height, ray.wallBottom);
 
-                var y: u15 = @as(u15, @intCast(std.math.clamp(wallTop, 0, height)));
+                var y: u15 = @as(u15, @intCast(std.math.clamp(ray.wallTop, 0, height)));
                 while (y < maxy) : (y += 1) {
-                    const v = @as(i32, @intCast(@divTrunc(texture.height * (y - wallTop), @as(i32, @intCast(wallHeight)))));
+                    const v = @as(i32, @intCast(@divTrunc(texture.height * (y - ray.wallTop), @as(i32, @intCast(ray.wallHeight)))));
                     set_pixel(x, y, sampleTexture(texture, u, v));
                 }
             }
@@ -479,7 +503,7 @@ const Raycaster = struct {
             switch (floor_texture) {
                 .background_texture => unreachable,
                 .flat_color => |color| {
-                    var y: u15 = @as(u15, @intCast(@min(height, wallBottom)));
+                    var y: u15 = @as(u15, @intCast(@min(height, ray.wallBottom)));
                     while (y < height) : (y += 1) {
                         set_pixel(x, y, color);
                     }
@@ -490,11 +514,11 @@ const Raycaster = struct {
                     const u_scale = @as(f32, @floatFromInt(texture.width - 1));
                     const v_scale = @as(f32, @floatFromInt(texture.height - 1));
 
-                    var y: u15 = @as(u15, @intCast(@min(height, wallBottom)));
+                    var y: u15 = @as(u15, @intCast(@min(height, ray.wallBottom)));
                     while (y < height) : (y += 1) {
                         const d = perspective_factor[y];
 
-                        const pos = rc.camera_position.add(dir.scale(d));
+                        const pos = rc.camera_position.add(ray.dir.scale(d));
 
                         const u = @as(i32, @intFromFloat(u_scale * fract(pos.x)));
                         const v = @as(i32, @intFromFloat(v_scale * fract(pos.y)));
