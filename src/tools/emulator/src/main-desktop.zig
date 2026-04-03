@@ -1012,7 +1012,7 @@ pub fn main() !u8 {
     glfw.windowHint(.client_api, .opengl_api);
     glfw.windowHint(.doublebuffer, true);
 
-    const glfw_window = try glfw.Window.create(1280, 800, "Ashet OS Emulator", null);
+    const glfw_window = try glfw.Window.create(1280, 800, "Ashet OS Emulator", null, null);
     defer glfw_window.destroy();
 
     glfw_window.setSizeLimits(640, 400, -1, -1);
