@@ -86,6 +86,11 @@ fn early_initialize() void {
         .CP11 = .full_access, // Arm FPU
     });
 
+    // init demo mode:
+    hw_alloc.pins.demo_mode.set_function(.sio);
+    hw_alloc.pins.demo_mode.set_direction(.in);
+    hw_alloc.pins.demo_mode.set_pull(.up);
+
     hw_alloc.pins.xip_cs1.set_function(.gpck);
 
     hw_alloc.pins.i2c_sda.set_function(.i2c);
@@ -1162,3 +1167,10 @@ const debug_log = struct {
         write(@truncate(rp2350.peripherals.SIO.CPUID.read().CPUID), msg);
     }
 };
+
+pub fn get_demo_mode() u8 {
+    if (hw_alloc.pins.demo_mode.read() == 0)
+        return 1;
+
+    return 0;
+}

@@ -30,6 +30,7 @@
         .i2c_scan = .{ .path = "../userland/apps/i2c-scan" },
         .widgets = .{ .path = "../userland/apps/widgets" },
         .slideshow = .{ .path = "../userland/apps/slideshow" },
+        .revision2026 = .{ .path = "../userland/apps/demos/revision2026" },
         .@"2048" = .{ .path = "../userland/apps/2048" },
 
         // Externel deps:

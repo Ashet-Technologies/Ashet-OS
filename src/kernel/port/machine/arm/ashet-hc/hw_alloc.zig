@@ -23,7 +23,8 @@ pub const cfg = struct {
 };
 
 pub const pins = struct {
-    // 0
+    pub const demo_mode: rp2350.gpio.Pin = rp2350.gpio.num(0); //
+
     pub const trace_clk: rp2350.gpio.Pin = rp2350.gpio.num(1); //
     pub const trace_data0: rp2350.gpio.Pin = rp2350.gpio.num(2); //
     pub const trace_data1: rp2350.gpio.Pin = rp2350.gpio.num(3); //

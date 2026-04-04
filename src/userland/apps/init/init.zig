@@ -45,14 +45,23 @@ pub fn main() !void {
 
     std.log.info("spawned widgets service: {f}", .{widgets_proc});
 
-    const desktop_proc = try ashet.process.spawn(
-        apps_dir,
-        "desktop/classic.ashex",
-        &.{},
-    );
-    defer desktop_proc.release();
+    const use_demo_mode = ashet.abi.get_demo_mode() != 0;
 
-    std.log.info("spawned desktop process: {f}", .{desktop_proc});
+    if (use_demo_mode) {
+        const demo_proc = try ashet.process.spawn(apps_dir, "revision2026.ashex", &.{});
+        defer demo_proc.release();
+
+        std.log.info("spawned desktop process: {f}", .{demo_proc});
+    } else {
+        const desktop_proc = try ashet.process.spawn(
+            apps_dir,
+            "desktop/classic.ashex",
+            &.{},
+        );
+        defer desktop_proc.release();
+
+        std.log.info("spawned desktop process: {f}", .{desktop_proc});
+    }
 
     // TODO: await spawned process to exit, then print contents of shm!
 

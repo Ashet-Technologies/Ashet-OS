@@ -970,7 +970,7 @@ fn paintButton(q: *ashet.graphics.CommandQueue, bounds: Rectangle, style: themes
     try q.blit_bitmap(Point.new(bounds.x + 1, bounds.y + 1), icon);
 }
 
-fn window_iterator(wm: *WindowManager, filter: WindowIterator.Filter, direction: WindowIterator.Direction) WindowIterator {
+pub fn window_iterator(wm: *WindowManager, filter: WindowIterator.Filter, direction: WindowIterator.Direction) WindowIterator {
     return WindowIterator{
         .it = switch (direction) {
             .bottom_to_top => wm.active_windows.first,
@@ -1008,7 +1008,7 @@ fn update_focus(wm: *WindowManager) bool {
     return true;
 }
 
-const WindowIterator = struct {
+pub const WindowIterator = struct {
     const Filter = *const fn (*Window) bool;
     const Direction = enum { top_to_bottom, bottom_to_top };
 
@@ -1031,7 +1031,7 @@ const WindowIterator = struct {
         return !w.flags.minimized;
     }
 
-    fn next(self: *WindowIterator) ?*Window {
+    pub fn next(self: *WindowIterator) ?*Window {
         while (true) {
             const node = self.it orelse return null;
             self.it = switch (self.direction) {

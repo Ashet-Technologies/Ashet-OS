@@ -214,7 +214,6 @@
     }
 </patch>
 <patch Rectangle>
-
     pub fn new(pos: Point, siz: Size) Rectangle {
         return Rectangle{
             .x = pos.x,
@@ -256,12 +255,27 @@
             a.y <= b.y +| @as(i16, @intCast(b.height));
     }
 
-    /// Returns the overlapping region of `a` and `b`.
-    pub fn overlap(a: Rectangle, b: Rectangle) Rectangle {
+    /// Returns the region overlapped by both `a` and `b`.
+    pub fn overlappedRegion(a: Rectangle, b: Rectangle) Rectangle {
         const _left = @max(a.left(), b.left());
         const _right = @min(a.right(), b.right()) +| 1;
         const _top = @max(a.top(), b.top());
         const _bottom = @min(a.bottom(), b.bottom()) +| 1;
+
+        return .{
+            .x = _left,
+            .y = _top,
+            .width = @intCast(_right -| _left),
+            .height = @intCast(_bottom -| _top),
+        };
+    }
+
+    /// Returns the region that encloses both `a` and `b`.
+    pub fn enclosingRegion(a: Rectangle, b: Rectangle) Rectangle {
+        const _left = @min(a.left(), b.left());
+        const _right = @max(a.right(), b.right()) +| 1;
+        const _top = @max(a.top(), b.top());
+        const _bottom = @max(a.bottom(), b.bottom()) +| 1;
 
         return .{
             .x = _left,

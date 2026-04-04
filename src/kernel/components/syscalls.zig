@@ -57,6 +57,13 @@ const callbacks = struct {
 };
 
 pub const syscalls = struct {
+    pub fn get_demo_mode() u8 {
+        if (ashet.machine_id == .@"arm-ashet-hc") {
+            return ashet.machine.get_demo_mode();
+        }
+        return 0;
+    }
+
     pub const resources = struct {
         pub fn get_type(src_handle: abi.SystemResource) error{InvalidHandle}!abi.SystemResource.Type {
             _, const resource = resolve_base_resource(src_handle) catch return error.InvalidHandle;
@@ -456,23 +463,31 @@ pub const syscalls = struct {
 
         pub fn get_framebuffer_memory(framebuffer: abi.Framebuffer) error{ InvalidHandle, Unsupported }!abi.VideoMemory {
             _, const fb = try resolve_typed_resource(ashet.graphics.Framebuffer, framebuffer.as_resource());
-            switch (fb.type) {
-                .memory => |mem| return .{
+            return switch (fb.type) {
+                .memory => |mem| .{
                     .width = mem.width,
                     .height = mem.height,
                     .stride = mem.stride,
                     .base = mem.pixels,
                 },
-                else => return error.Unsupported,
-            }
+                .video => |vdev| vdev.memory, // TODO: Temporary hack until a true "create_buffer_mapping" syscall is available
+                else => error.Unsupported,
+            };
         }
 
         /// Marks a portion of the framebuffer as changed and forces the OS to
         /// perform an update action if necessary.
-        pub fn invalidate_framebuffer(framebuffer: abi.Framebuffer, rect: abi.Rectangle) void {
-            _ = framebuffer;
-            _ = rect;
-            not_implemented_yet(@src());
+        pub fn invalidate_framebuffer(framebuffer: abi.Framebuffer, region: abi.Rectangle) error{InvalidHandle}!void {
+            _, const fb = try resolve_typed_resource(ashet.graphics.Framebuffer, framebuffer.as_resource());
+
+            switch (fb.type) {
+                .video => |vdev| vdev.output.flush(), // TODO: Decide if asynchronous or synchronous flush
+
+                .memory => {}, // always ok
+
+                .widget => |widget| widget.window.invalidate_region(region),
+                .window => |window| window.invalidate_region(region),
+            }
         }
 
         // Drawing:
