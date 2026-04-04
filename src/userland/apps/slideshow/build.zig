@@ -12,6 +12,9 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
         .root_source_file = b.path("src/slideshow.zig"),
+        .icon = .{
+            .convert = b.path("../../../../legacy-stuff/artwork/icons/small-icons/32x32-free-design-icons/32x32/Synchronize.png"),
+        },
     });
     sdk.installApp(fb_app, .{});
 }

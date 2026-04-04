@@ -402,7 +402,8 @@ const Raycaster = struct {
         return val;
     }
 
-    const floor_texture: BackgroundPattern = .{ .perspective_texture = 0 };
+    // const floor_texture: BackgroundPattern = .{ .perspective_texture = 0 };
+    const floor_texture: BackgroundPattern = .{ .flat_color = Color.from_rgb(64, 64, 0) };
     const ceiling_texture: BackgroundPattern = .{ .flat_color = Color.from_rgb(255, 255, 255) };
 
     camera_rotation: f32 = 0,
@@ -481,50 +482,48 @@ const Raycaster = struct {
             else => null,
         };
 
-        var y: u16 = 0;
-        while (y < height) : (y += 1) {
+        var scanline: [*]Color = &clonebuffer;
+        for (0..height) |y| {
+            defer scanline += max_size.width;
+
             const yi: i32 = @intCast(y);
             const distance = perspective_factor[y];
 
-            for (raycache, 0..) |ray, x| {
-                const x_pos: u16 = @intCast(x);
-
+            for (raycache, scanline[0..width]) |ray, *pixel| {
                 if (yi < ray.wallTop) {
-                    switch (ceiling_texture) {
+                    pixel.* = switch (ceiling_texture) {
                         .background_texture => unreachable,
-                        .flat_color => |color| set_pixel(x_pos, y, color),
-                        .perspective_texture => |texture_id| {
-                            const sampler = ceiling_sampler orelse unreachable;
-                            set_pixel(x_pos, y, samplePerspectiveBackground(rc, ray, distance, sampler).shift(16 * texture_id));
-                        },
-                    }
+                        .flat_color => |color| color,
+                        .perspective_texture => |texture_id| samplePerspectiveBackground(rc, ray, distance, ceiling_sampler orelse unreachable).shift(16 * texture_id),
+                    };
                     continue;
                 }
 
                 if (yi < ray.wallBottom) {
                     if (ray.maybe_hit) |result| {
                         const tex_id = result.wall.texture_id;
-                        const texture = &textures[tex_id];
 
-                        const u = @as(i32, @intFromFloat(@as(f32, @floatFromInt(texture.width - 1)) * fract(result.u)));
-                        const v = @as(i32, @intCast(@divTrunc(
-                            texture.height * (yi - ray.wallTop),
-                            @as(i32, @intCast(ray.wallHeight)),
-                        )));
+                        const color: Color = .from_u8(0x80 ^ @as(u8, @truncate(tex_id)));
 
-                        set_pixel(x_pos, y, sampleTexture(texture, u, v));
+                        // const texture = &textures[tex_id];
+
+                        // const u = @as(i32, @intFromFloat(@as(f32, @floatFromInt(texture.width - 1)) * fract(result.u)));
+                        // const v = @as(i32, @intCast(@divTrunc(
+                        //     texture.height * (yi - ray.wallTop),
+                        //     @as(i32, @intCast(ray.wallHeight)),
+                        // )));
+
+                        // pixel.* = sampleTexture(texture, u, v);
+                        pixel.* = color;
                         continue;
                     }
                 }
 
-                switch (floor_texture) {
+                pixel.* = switch (floor_texture) {
                     .background_texture => unreachable,
-                    .flat_color => |color| set_pixel(x_pos, y, color),
-                    .perspective_texture => {
-                        const sampler = floor_sampler orelse unreachable;
-                        set_pixel(x_pos, y, samplePerspectiveBackground(rc, ray, distance, sampler));
-                    },
-                }
+                    .flat_color => |color| color,
+                    .perspective_texture => samplePerspectiveBackground(rc, ray, distance, floor_sampler orelse unreachable),
+                };
             }
         }
     }

@@ -10,6 +10,8 @@ comptime {
 const Size = ashet.abi.Size;
 const Point = ashet.abi.Point;
 
+const next_image_interval: ashet.clock.Duration = .from_ms(3500);
+
 const fixed_size: Size = .new(600, 350);
 
 const State = struct {
@@ -90,56 +92,80 @@ pub fn main() !void {
 
     try paint(state);
 
+    var next_image_time: ashet.abi.Absolute = ashet.clock.monotonic().increment_by(next_image_interval);
+
+    var gui_event: ashet.abi.gui.GetWindowEvent = .init(window);
+    var timer_event: ashet.abi.clock.Timer = .init(next_image_time);
+
+    try ashet.overlapped.schedule(&gui_event.arc);
+    try ashet.overlapped.schedule(&timer_event.arc);
+
     main_loop: while (true) {
-        const event_res = try ashet.overlapped.performOne(ashet.abi.gui.GetWindowEvent, .{
-            .window = window,
+        const which = try ashet.overlapped.await_events(.{
+            .gui = &gui_event,
+            .timer = &timer_event,
         });
 
-        const event = &event_res.event;
-        switch (event.event_type) {
-            .widget_notify,
-            .mouse_enter,
-            .mouse_leave,
-            .window_minimize,
-            .window_restore,
-            .window_moving,
-            .window_moved,
-            => {
-                std.log.info("unhandled ui event: {}", .{event.event_type});
-            },
+        if (which.contains(.timer)) {
+            next_image_time = ashet.clock.monotonic().increment_by(next_image_interval);
 
-            .window_close => break :main_loop,
+            timer_event = .init(next_image_time);
+            try ashet.overlapped.schedule(&timer_event.arc);
 
-            .window_resizing,
-            .window_resized,
-            => {},
+            state.next();
 
-            .mouse_motion => {},
+            try paint(state);
+        }
 
-            .mouse_button_press => {
-                if (event.mouse.button == .left) {
-                    state.next();
+        if (which.contains(.gui)) {
+            const event = try gui_event.get_output();
+            switch (event.event_type) {
+                .widget_notify,
+                .mouse_enter,
+                .mouse_leave,
+                .window_minimize,
+                .window_restore,
+                .window_moving,
+                .window_moved,
+                => {
+                    std.log.info("unhandled ui event: {}", .{event.event_type});
+                },
 
-                    try paint(state);
-                }
-                std.log.info("mouse {s} at ({}, {}) of button {s}", .{
-                    @tagName(event.event_type)["mouse_button_".len..],
-                    event.mouse.x,
-                    event.mouse.y,
-                    @tagName(event.mouse.button),
-                });
-            },
+                .window_close => break :main_loop,
 
-            .mouse_button_release => {},
+                .window_resizing,
+                .window_resized,
+                => {},
 
-            .key_press => {
-                if (event.keyboard.usage == .space) {
-                    state.next();
-                    try paint(state);
-                }
-            },
+                .mouse_motion => {},
 
-            .key_release => {},
+                .mouse_button_press => {
+                    if (event.mouse.button == .left) {
+                        state.next();
+
+                        try paint(state);
+                    }
+                    std.log.info("mouse {s} at ({}, {}) of button {s}", .{
+                        @tagName(event.event_type)["mouse_button_".len..],
+                        event.mouse.x,
+                        event.mouse.y,
+                        @tagName(event.mouse.button),
+                    });
+                },
+
+                .mouse_button_release => {},
+
+                .key_press => {
+                    if (event.keyboard.usage == .space) {
+                        state.next();
+                        try paint(state);
+                    }
+                },
+
+                .key_release => {},
+            }
+
+            try ashet.overlapped.schedule(&gui_event.arc);
         }
     }
 }
