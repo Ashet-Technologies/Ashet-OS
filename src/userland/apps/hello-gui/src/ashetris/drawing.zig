@@ -15,6 +15,11 @@ const preview_margin = 8;
 const preview_label_gap = 4;
 const preview_box_blocks = 6;
 const score_box_height = 16;
+const level_box_height = 16;
+const SidebarSection = struct {
+    label_rect: ashet.abi.Rectangle,
+    box_rect: ashet.abi.Rectangle,
+};
 
 pub const Drawing = struct {
     command_queue: ashet.graphics.CommandQueue,
@@ -44,7 +49,7 @@ pub const Drawing = struct {
         try self.command_queue.submit(self.framebuffer, .{});
     }
 
-    pub fn fullRedraw(self: *Drawing, field: *const Field, next_piece: *const Piece, next_piece_index: u8, score: u32) !void {
+    pub fn fullRedraw(self: *Drawing, field: *const Field, next_piece: *const Piece, next_piece_index: u8, score: u32, level: u8) !void {
         try self.command_queue.clear(bgcolor);
         try self.command_queue.fill_rect(.{
             .x = @intCast(base_x),
@@ -54,6 +59,7 @@ pub const Drawing = struct {
         }, ashet.graphics.known_colors.black);
         try self.drawNextPiecePreview(next_piece, next_piece_index);
         try self.drawScore(score);
+        try self.drawLevel(level);
         self.oldfield = @splat(@splat(255));
         try self.updatePlayfield(field);
         try self.submit();
@@ -127,6 +133,30 @@ pub const Drawing = struct {
     }
 
     pub fn drawScore(self: *Drawing, score: u32) !void {
+        const section = try self.sidebarSectionRect(1, score_box_height);
+        if (section == null) return;
+
+        const label = "Score";
+        try self.drawCenteredText(section.?.label_rect, ashet.graphics.known_colors.white, label);
+
+        var score_buf: [16]u8 = undefined;
+        const score_text = try std.fmt.bufPrint(&score_buf, "{}", .{score});
+        try self.fillRectWithCenteredText(section.?.box_rect, ashet.graphics.known_colors.black, ashet.graphics.known_colors.white, score_text);
+    }
+
+    pub fn drawLevel(self: *Drawing, level: u8) !void {
+        const section = try self.sidebarSectionRect(2, level_box_height);
+        if (section == null) return;
+
+        const label = "Level";
+        try self.drawCenteredText(section.?.label_rect, ashet.graphics.known_colors.white, label);
+
+        var level_buf: [4]u8 = undefined;
+        const level_text = try std.fmt.bufPrint(&level_buf, "{}", .{level});
+        try self.fillRectWithCenteredText(section.?.box_rect, ashet.graphics.known_colors.black, ashet.graphics.known_colors.white, level_text);
+    }
+
+    fn sidebarSectionRect(self: *Drawing, section_index: u8, box_height: u16) !?SidebarSection {
         const board_right = base_x + consts.width * scale;
         const preview_area_left = board_right + preview_margin;
         const preview_area_width = @as(i16, @intCast(self.window_size.width)) - preview_area_left - preview_margin;
@@ -135,26 +165,26 @@ pub const Drawing = struct {
         const label = "Score";
         const label_size = try ashet.graphics.measure_text_size(self.font, label);
         const preview_box_top = base_y + @as(i16, @intCast(label_size.height)) + preview_label_gap;
-        const score_label_y = preview_box_top + preview_box_size + preview_margin;
-        const score_box_top = score_label_y + @as(i16, @intCast(label_size.height)) + preview_label_gap;
+        const section_stride = @as(i16, @intCast(label_size.height)) + preview_label_gap + @as(i16, @intCast(box_height)) + preview_margin;
+        const label_y = preview_box_top + preview_box_size + preview_margin + (@as(i16, section_index) - 1) * section_stride;
+        const box_y = label_y + @as(i16, @intCast(label_size.height)) + preview_label_gap;
 
-        if (preview_area_width <= 0) return;
+        if (preview_area_width <= 0) return null;
 
-        try self.drawCenteredText(.{
-            .x = preview_area_left,
-            .y = score_label_y,
-            .width = @intCast(preview_area_width),
-            .height = label_size.height,
-        }, ashet.graphics.known_colors.white, label);
-
-        var score_buf: [16]u8 = undefined;
-        const score_text = try std.fmt.bufPrint(&score_buf, "{}", .{score});
-        try self.fillRectWithCenteredText(.{
-            .x = box_left,
-            .y = score_box_top,
-            .width = @intCast(preview_box_size),
-            .height = score_box_height,
-        }, ashet.graphics.known_colors.black, ashet.graphics.known_colors.white, score_text);
+        return .{
+            .label_rect = .{
+                .x = preview_area_left,
+                .y = label_y,
+                .width = @intCast(preview_area_width),
+                .height = label_size.height,
+            },
+            .box_rect = .{
+                .x = box_left,
+                .y = box_y,
+                .width = @intCast(preview_box_size),
+                .height = box_height,
+            },
+        };
     }
 
     pub fn drawGameOver(self: *Drawing) !void {

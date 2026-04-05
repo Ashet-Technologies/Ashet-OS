@@ -1,5 +1,4 @@
 // TODOs:
-// Speedup "level" based on number of cleared lines
 // Refactoring to use struct-members for easier state management
 // Key-repeat
 // Restart on game over
@@ -35,6 +34,17 @@ var random: std.Random.Xoshiro256 = undefined;
 
 var game_over: bool = false;
 var score: u32 = 0;
+var cleared_lines: u32 = 0;
+
+const dropIntervalMsByLevel: [10]u16 = .{0, 1000, 800, 600, 450, 350, 270, 200, 150, 100};
+
+fn currentLevel() u8 {
+    return @min(1 + @as(u8, @intCast(cleared_lines / 10)), 9);
+}
+
+fn dropDurationForLevel(level: u8) u16 {
+    return dropIntervalMsByLevel[level];
+}
 
 fn is_free(x: u8, y: u8) bool {
     return field[y][x] == 255;
@@ -115,6 +125,7 @@ pub fn main() !void {
     random = std.Random.DefaultPrng.init(ashet.clock.monotonic().ns_since_start());
     seed_next_piece();
     init_new_piece();
+    currentDropDurationMs = dropDurationForLevel(currentLevel());
     var argv_buffer: [8]ashet.abi.SpawnProcessArg = undefined;
     const argv = try ashet.process.get_arguments(null, &argv_buffer);
 
@@ -150,7 +161,7 @@ pub fn main() !void {
     );
     defer drawing.deinit();
 
-    try drawing.fullRedraw(&field, &next_piece, next_piece_index, score);
+    try drawing.fullRedraw(&field, &next_piece, next_piece_index, score, currentLevel());
 
     var timer_iop = ashet.clock.Timer.new(.{ .timeout = nextDropTime() });
     try ashet.overlapped.schedule(&timer_iop.arc);
@@ -246,7 +257,13 @@ pub fn main() !void {
                         // we changed size, so we have to resize our window content:
                         const window_size = ashet.gui.get_window_size(window) catch unreachable;
                         drawing.setWindowSize(window_size);
-                        try drawing.fullRedraw(&field, &next_piece, next_piece_index, score);
+                        try drawing.fullRedraw(
+                            &field,
+                            &next_piece,
+                            next_piece_index,
+                            score,
+                            currentLevel(),
+                        );
                     },
 
                     else => {},
@@ -304,8 +321,11 @@ fn lowerPiece(drawing: *Drawing) !LowerPieceResult {
         }
 
         if (cleared_rows > 0) {
+            cleared_lines += cleared_rows;
             score += cleared_rows * cleared_rows;
+            currentDropDurationMs = dropDurationForLevel(currentLevel());
             try drawing.drawScore(score);
+            try drawing.drawLevel(currentLevel());
         }
 
         init_new_piece();
