@@ -252,6 +252,17 @@ pub fn main() !u8 {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    const args = try std.process.argsAlloc(allocator);
+    defer std.process.argsFree(allocator, args);
+
+    if (args.len > 3) {
+        printUsage(args[0]);
+        return 2;
+    }
+
+    const suite_filter = if (args.len >= 2) args[1] else null;
+    const case_filter = if (args.len >= 3) args[2] else null;
+
     try std.fs.cwd().makePath(output_dir_path);
 
     var summary: RunSummary = .{};
@@ -263,15 +274,46 @@ pub fn main() !u8 {
         suite_reports.deinit(allocator);
     }
 
-    for (static_suites) |suite| {
-        const stats = try run_static_suite(allocator, &suite);
-        accumulateSummary(&summary, stats);
-        try suite_reports.append(allocator, stats);
-    }
+    if (suite_filter) |selected_suite_name| {
+        if (std.mem.eql(u8, selected_suite_name, "seeded-random")) {
+            const random_stats = try run_seeded_random_suite(allocator, case_filter);
+            if (case_filter != null and random_stats.executed_cases == 0 and random_stats.skipped_cases == 0) {
+                std.debug.print("unknown test '{s}' in suite 'seeded-random'\n", .{case_filter.?});
+                return 2;
+            }
+            accumulateSummary(&summary, random_stats);
+            try suite_reports.append(allocator, random_stats);
+        } else {
+            const suite = findStaticSuite(selected_suite_name) orelse {
+                std.debug.print("unknown suite '{s}'\n", .{selected_suite_name});
+                printUsage(args[0]);
+                return 2;
+            };
 
-    const random_stats = try run_seeded_random_suite(allocator);
-    accumulateSummary(&summary, random_stats);
-    try suite_reports.append(allocator, random_stats);
+            var filtered_suite = suite;
+            if (case_filter) |selected_case_name| {
+                const selected_case = findCaseInSuite(suite, selected_case_name) orelse {
+                    std.debug.print("unknown test '{s}' in suite '{s}'\n", .{ selected_case_name, selected_suite_name });
+                    return 2;
+                };
+                filtered_suite.cases = selected_case;
+            }
+
+            const stats = try run_static_suite(allocator, &filtered_suite);
+            accumulateSummary(&summary, stats);
+            try suite_reports.append(allocator, stats);
+        }
+    } else {
+        for (static_suites) |suite| {
+            const stats = try run_static_suite(allocator, &suite);
+            accumulateSummary(&summary, stats);
+            try suite_reports.append(allocator, stats);
+        }
+
+        const random_stats = try run_seeded_random_suite(allocator, null);
+        accumulateSummary(&summary, random_stats);
+        try suite_reports.append(allocator, random_stats);
+    }
 
     printReport(summary, suite_reports.items);
 
@@ -292,6 +334,28 @@ pub fn main() !u8 {
         return 1;
     }
     return 0;
+}
+
+fn printUsage(argv0: []const u8) void {
+    std.debug.print("usage: {s} [suite-name] [test-name]\n", .{argv0});
+}
+
+fn findStaticSuite(name: []const u8) ?SuiteDef {
+    for (static_suites) |suite| {
+        if (std.mem.eql(u8, suite.name, name)) {
+            return suite;
+        }
+    }
+    return null;
+}
+
+fn findCaseInSuite(suite: SuiteDef, name: []const u8) ?[]const CaseDef {
+    for (suite.cases) |*case| {
+        if (std.mem.eql(u8, case.name, name)) {
+            return @as([]const CaseDef, case[0..1]);
+        }
+    }
+    return null;
 }
 
 fn run_static_suite(allocator: std.mem.Allocator, suite: *const SuiteDef) !SuiteRunStats {
@@ -330,6 +394,7 @@ fn run_static_suite(allocator: std.mem.Allocator, suite: *const SuiteDef) !Suite
     const suite_path = try std.fmt.bufPrint(&suite_path_buffer, "{s}/{s}.gif", .{ output_dir_path, suite.name });
     var failures_path_buffer: [256]u8 = undefined;
     const failures_path = try std.fmt.bufPrint(&failures_path_buffer, "{s}/{s}-failures.gif", .{ output_dir_path, suite.name });
+    try ensureStaticSuiteDir(suite.name);
 
     var suite_file = try std.fs.cwd().createFile(suite_path, .{ .truncate = true });
     defer suite_file.close();
@@ -393,6 +458,7 @@ fn run_static_suite(allocator: std.mem.Allocator, suite: *const SuiteDef) !Suite
 
         if (!result.comparison.matched()) {
             stats.failed_cases += 1;
+            try writeStaticCaseRender(suite.name, case.name, max_canvas, composite);
             std.debug.print(
                 "mismatch {s}/{s}: count={} first={any} bounds={any} artifact={s}\n",
                 .{
@@ -417,13 +483,15 @@ fn run_static_suite(allocator: std.mem.Allocator, suite: *const SuiteDef) !Suite
                 );
             }
             try failure_gif.?.add_frame(composite);
+        } else {
+            try deleteStaticCaseRender(suite.name, case.name);
         }
     }
 
     return stats;
 }
 
-fn run_seeded_random_suite(allocator: std.mem.Allocator) !SuiteRunStats {
+fn run_seeded_random_suite(allocator: std.mem.Allocator, case_filter: ?[]const u8) !SuiteRunStats {
     const suite_name = "seeded-random";
     const seeds = [_]u64{
         0x0000_0000_0000_0001,
@@ -448,6 +516,7 @@ fn run_seeded_random_suite(allocator: std.mem.Allocator) !SuiteRunStats {
     const suite_path = try std.fmt.bufPrint(&suite_path_buffer, "{s}/{s}.gif", .{ output_dir_path, suite_name });
     var failures_path_buffer: [256]u8 = undefined;
     const failures_path = try std.fmt.bufPrint(&failures_path_buffer, "{s}/{s}-failures.gif", .{ output_dir_path, suite_name });
+    try ensureStaticSuiteDir(suite_name);
 
     var suite_file = try std.fs.cwd().createFile(suite_path, .{ .truncate = true });
     defer suite_file.close();
@@ -493,6 +562,12 @@ fn run_seeded_random_suite(allocator: std.mem.Allocator) !SuiteRunStats {
                 .build_fn = build_seeded_random_case,
             };
 
+            if (case_filter) |selected_case_name| {
+                if (!std.mem.eql(u8, case.name, selected_case_name)) {
+                    continue;
+                }
+            }
+
             stats.executed_cases += 1;
 
             var result = run_case(allocator, &case) catch |err| blk: {
@@ -519,6 +594,7 @@ fn run_seeded_random_suite(allocator: std.mem.Allocator) !SuiteRunStats {
 
             if (!result.comparison.matched()) {
                 stats.failed_cases += 1;
+                try writeStaticCaseRender(suite_name, case.name, max_canvas, composite);
                 std.debug.print(
                     "mismatch {s}/{s}: count={} first={any} bounds={any} artifact={s}\n",
                     .{
@@ -542,6 +618,8 @@ fn run_seeded_random_suite(allocator: std.mem.Allocator) !SuiteRunStats {
                     );
                 }
                 try failure_gif.?.add_frame(composite);
+            } else {
+                try deleteStaticCaseRender(suite_name, case.name);
             }
         }
     }
@@ -584,10 +662,19 @@ fn build_command_stream(allocator: std.mem.Allocator, case: *const CaseDef) ![]u
     return try stream.toOwnedSlice();
 }
 
+fn fillXorPrefill(pixels: []Color, width: u16, height: u16, stride: u32) void {
+    for (0..height) |y| {
+        const row = pixels[@as(usize, y) * @as(usize, stride) ..][0..width];
+        for (row, 0..) |*pixel, x| {
+            pixel.* = Color.from_u8(@intCast((x ^ y) & 0x3f));
+        }
+    }
+}
+
 fn render_reference(allocator: std.mem.Allocator, canvas: CanvasSize, sequence: []const u8) ![]Color {
     const pixel_count = @as(usize, canvas.width) * @as(usize, canvas.height);
     const pixels = try allocator.alloc(Color, pixel_count);
-    @memset(pixels, initial_color);
+    fillXorPrefill(pixels, canvas.width, canvas.height, canvas.width);
 
     var rasterizer = agp_swrast.Rasterizer.init(.{
         .pixels = pixels.ptr,
@@ -619,7 +706,7 @@ fn render_candidate(allocator: std.mem.Allocator, canvas: CanvasSize, sequence: 
     );
     defer allocator.free(backing);
 
-    @memset(backing, initial_color);
+    fillXorPrefill(backing, canvas.width, canvas.height, stride);
 
     var rasterizer: agp_tiled_rast.Rasterizer = .{};
     try rasterizer.execute(.{
@@ -738,6 +825,50 @@ fn blitPanel(frame: []Color, frame_width: u16, panel_x: u16, panel_width: u16, s
 
 fn compositeWidth(canvas_width: u16) u16 {
     return canvas_width * 3 + 2;
+}
+
+fn ensureStaticSuiteDir(suite_name: []const u8) !void {
+    var path_buffer: [256]u8 = undefined;
+    const path = try std.fmt.bufPrint(&path_buffer, "{s}/{s}", .{ output_dir_path, suite_name });
+    try std.fs.cwd().makePath(path);
+}
+
+fn sanitizeFileName(buf: []u8, name: []const u8) []const u8 {
+    std.debug.assert(buf.len >= name.len);
+
+    for (name, 0..) |ch, i| {
+        buf[i] = switch (ch) {
+            'a'...'z', 'A'...'Z', '0'...'9', '-', '_' => ch,
+            else => '_',
+        };
+    }
+    return buf[0..name.len];
+}
+
+fn writeStaticCaseRender(
+    suite_name: []const u8,
+    case_name: []const u8,
+    max_canvas: CanvasSize,
+    composite: []const agp.Color,
+) !void {
+    var path_buffer: [512]u8 = undefined;
+    const path = try staticCaseRenderPath(&path_buffer, suite_name, case_name);
+    try gif.write_to_file_path(std.fs.cwd(), path, compositeWidth(max_canvas.width), max_canvas.height, composite);
+}
+
+fn deleteStaticCaseRender(suite_name: []const u8, case_name: []const u8) !void {
+    var path_buffer: [512]u8 = undefined;
+    const path = try staticCaseRenderPath(&path_buffer, suite_name, case_name);
+    std.fs.cwd().deleteFile(path) catch |err| switch (err) {
+        error.FileNotFound => {},
+        else => return err,
+    };
+}
+
+fn staticCaseRenderPath(path_buffer: []u8, suite_name: []const u8, case_name: []const u8) ![]const u8 {
+    var file_name_buffer: [160]u8 = undefined;
+    const file_name = sanitizeFileName(&file_name_buffer, case_name);
+    return std.fmt.bufPrint(path_buffer, "{s}/{s}/{s}.gif", .{ output_dir_path, suite_name, file_name });
 }
 
 fn alignStride(width: u16) u32 {
@@ -901,6 +1032,7 @@ fn printReport(summary: RunSummary, suites: []const SuiteRunStats) void {
         std.debug.print("\nSuite: {s}\n", .{suite.name});
         if (suite.executed_cases > 0) {
             std.debug.print("Artifact: {s}\n", .{suite.artifact_path});
+            std.debug.print("Static: {s}/{s}/\n", .{ output_dir_path, suite.name });
         }
         printTableBorder(&case_widths);
         printTableRow(

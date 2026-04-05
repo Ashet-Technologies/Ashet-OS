@@ -215,11 +215,11 @@
 </patch>
 <patch Rectangle>
     fn clamp_i16(value: i32) i16 {
-        return @truncate( @max(value, std.math.minInt(i16), @min(std.math.maxInt(i16), value)));
+        return @truncate(@max(std.math.minInt(i16), @min(std.math.maxInt(i16), value)));
     }
 
     fn clamp_u16(value: i32) u16 {
-        return @truncate( @max(value, std.math.minInt(u16), @min(std.math.maxInt(u16), value)));
+        return @truncate(@max(std.math.minInt(u16), @min(std.math.maxInt(u16), value)));
     }
 
     pub fn new(pos: Point, siz: Size) Rectangle {
@@ -240,7 +240,7 @@
     }
 
     pub fn empty(rect: Rectangle) bool {
-        return (rect.width == 0) and (rect.height == 0);
+        return (rect.width == 0) or (rect.height == 0);
     }
 
     pub fn contains(rect: Rectangle, pt: Point) bool {

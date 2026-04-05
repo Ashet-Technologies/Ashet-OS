@@ -394,9 +394,12 @@ pub const Rasterizer = struct {
         if (target_pos.y >= rast.target.height)
             return;
 
+        const target_skip_x: u16 = @intCast(@max(0, -target_pos.x));
+        const target_skip_y: u16 = @intCast(@max(0, -target_pos.y));
+
         // Source offset accounting for negative target position:
-        const src_x: u16 = @intCast(source_pos.x + @max(0, -target_pos.x));
-        const src_y: u16 = @intCast(source_pos.y + @max(0, -target_pos.y));
+        const src_x: u16 = @intCast(source_pos.x + @as(i16, @intCast(target_skip_x)));
+        const src_y: u16 = @intCast(source_pos.y + @as(i16, @intCast(target_skip_y)));
 
         if (src_x >= image.width)
             return;
@@ -414,12 +417,12 @@ pub const Rasterizer = struct {
         const dst_avail_h = rast.clip_rect.y + rast.clip_rect.height -| dst_y;
 
         const blit_w: u16 = if (optional_size) |s|
-            @min(s.width, @min(src_avail_w, dst_avail_w))
+            @min(s.width -| target_skip_x, @min(src_avail_w, dst_avail_w))
         else
             @min(src_avail_w, dst_avail_w);
 
         const blit_h: u16 = if (optional_size) |s|
-            @min(s.height, @min(src_avail_h, dst_avail_h))
+            @min(s.height -| target_skip_y, @min(src_avail_h, dst_avail_h))
         else
             @min(src_avail_h, dst_avail_h);
 
@@ -521,15 +524,15 @@ pub const Rasterizer = struct {
         fn intersect(clip: ClipRect, rect: Rectangle) ClipRect {
             const x: u16 = @intCast(@max(@as(isize, clip.x), rect.x));
             const y: u16 = @intCast(@max(@as(isize, clip.y), rect.y));
-            const dw: usize = @intCast(@max(rect.x - @as(isize, x), 0));
-            const dh: usize = @intCast(@max(rect.y - @as(isize, y), 0));
-            const mw: usize = clip.width -| x;
-            const mh: usize = clip.height -| y;
+            const dw: usize = @intCast(@max(@as(isize, x) - rect.x, 0));
+            const dh: usize = @intCast(@max(@as(isize, y) - rect.y, 0));
+            const mw: usize = clip.width -| (x - clip.x);
+            const mh: usize = clip.height -| (y - clip.y);
             return .{
                 .x = x,
                 .y = y,
-                .width = @intCast(@min(mw, rect.width - dw)),
-                .height = @intCast(@min(mh, rect.height - dh)),
+                .width = @intCast(@min(mw, rect.width -| dw)),
+                .height = @intCast(@min(mh, rect.height -| dh)),
             };
         }
     };
@@ -644,3 +647,92 @@ pub const Rasterizer = struct {
         }
     };
 };
+
+test "ClipRect.intersect handles non-zero clip origins" {
+    const clip: Rasterizer.ClipRect = .{
+        .x = 20,
+        .y = 10,
+        .width = 40,
+        .height = 30,
+    };
+
+    try std.testing.expectEqualDeep(
+        Rasterizer.ClipRect{
+            .x = 40,
+            .y = 10,
+            .width = 20,
+            .height = 30,
+        },
+        clip.intersect(Rectangle.new(Point.new(40, 0), Size.new(50, 50))),
+    );
+
+    try std.testing.expectEqualDeep(
+        Rasterizer.ClipRect{
+            .x = 20,
+            .y = 20,
+            .width = 20,
+            .height = 10,
+        },
+        clip.intersect(Rectangle.new(Point.new(0, 20), Size.new(40, 15))),
+    );
+}
+
+test "fill_rect clips width at negative x" {
+    var pixels = [_]Color{.black} ** 12;
+    var rast = Rasterizer.init(.{
+        .pixels = pixels[0..].ptr,
+        .width = 6,
+        .height = 2,
+        .stride = 6,
+    });
+
+    rast.fill_rect(Rectangle.new(Point.new(-2, 0), Size.new(4, 1)), .white);
+
+    try std.testing.expectEqualSlices(Color, &.{
+        .white,
+        .white,
+        .black,
+        .black,
+        .black,
+        .black,
+    }, pixels[0..6]);
+}
+
+test "blit_partial_image clips width at negative x" {
+    const src_pixels = [_]Color{
+        .red,
+        .yellow,
+        .lime,
+        .green,
+        .blue,
+        .magenta,
+    };
+
+    var dst_pixels = [_]Color{.black} ** 12;
+    var rast = Rasterizer.init(.{
+        .pixels = dst_pixels[0..].ptr,
+        .width = 6,
+        .height = 2,
+        .stride = 6,
+    });
+
+    rast.blit_partial_image(
+        Rectangle.new(Point.new(-2, 0), Size.new(4, 1)),
+        Point.zero,
+        .{
+            .pixels = src_pixels[0..].ptr,
+            .width = 6,
+            .height = 1,
+            .stride = 6,
+        },
+    );
+
+    try std.testing.expectEqualSlices(Color, &.{
+        .lime,
+        .green,
+        .black,
+        .black,
+        .black,
+        .black,
+    }, dst_pixels[0..6]);
+}
