@@ -1,3 +1,4 @@
+const std = @import("std");
 const ashet = @import("ashet");
 const consts = @import("consts.zig");
 const types = @import("types.zig");
@@ -83,19 +84,14 @@ pub const Drawing = struct {
 
         if (preview_area_width <= 0 or preview_area_height <= 0) return;
 
-        try self.command_queue.fill_rect(.{
+        const label_y = preview_area_top;
+
+        try self.drawCenteredText(.{
             .x = preview_area_left,
             .y = preview_area_top,
             .width = @intCast(preview_area_width),
-            .height = @intCast(preview_area_height),
-        }, bgcolor);
-
-        const label_x = preview_area_left + @divTrunc(preview_area_width - @as(i16, @intCast(label_size.width)), 2);
-        const label_y = preview_area_top;
-        try self.command_queue.draw_text(.{
-            .x = label_x,
-            .y = label_y,
-        }, self.font, ashet.graphics.known_colors.white, label);
+            .height = label_size.height,
+        }, ashet.graphics.known_colors.white, label);
 
         const box_top = label_y + @as(i16, @intCast(label_size.height)) + preview_label_gap;
         const box_left = preview_area_left + @divTrunc(preview_area_width - preview_box_size, 2);
@@ -144,33 +140,21 @@ pub const Drawing = struct {
 
         if (preview_area_width <= 0) return;
 
-        try self.command_queue.fill_rect(.{
+        try self.drawCenteredText(.{
             .x = preview_area_left,
             .y = score_label_y,
             .width = @intCast(preview_area_width),
-            .height = @intCast(@as(i16, @intCast(label_size.height)) + preview_label_gap + score_box_height),
-        }, bgcolor);
+            .height = label_size.height,
+        }, ashet.graphics.known_colors.white, label);
 
-        const label_x = preview_area_left + @divTrunc(preview_area_width - @as(i16, @intCast(label_size.width)), 2);
-        try self.command_queue.draw_text(.{
-            .x = label_x,
-            .y = score_label_y,
-        }, self.font, ashet.graphics.known_colors.white, label);
-
-        try self.command_queue.fill_rect(.{
+        var score_buf: [16]u8 = undefined;
+        const score_text = try std.fmt.bufPrint(&score_buf, "{}", .{score});
+        try self.fillRectWithCenteredText(.{
             .x = box_left,
             .y = score_box_top,
             .width = @intCast(preview_box_size),
             .height = score_box_height,
-        }, ashet.graphics.known_colors.black);
-
-        var score_buf: [16]u8 = undefined;
-        const score_text = try std.fmt.bufPrint(&score_buf, "{}", .{score});
-        const score_size = try ashet.graphics.measure_text_size(self.font, score_text);
-        try self.command_queue.draw_text(.{
-            .x = box_left + @divTrunc(preview_box_size - @as(i16, @intCast(score_size.width)), 2),
-            .y = score_box_top + @divTrunc(score_box_height - @as(i16, @intCast(score_size.height)), 2),
-        }, self.font, ashet.graphics.known_colors.white, score_text);
+        }, ashet.graphics.known_colors.black, ashet.graphics.known_colors.white, score_text);
     }
 
     pub fn drawGameOver(self: *Drawing) !void {
@@ -179,20 +163,32 @@ pub const Drawing = struct {
         const textbox_width: i16 = consts.width * (scale - 2);
         const textbox_height: i16 = 6 * scale;
 
-        try self.command_queue.fill_rect(.{
-            .x = textbox_left,
-            .y = textbox_top,
-            .width = textbox_width,
-            .height = textbox_height,
-        }, ashet.graphics.known_colors.black);
-
         const text = "Game Over";
+        try self.fillRectWithCenteredText(
+            .{
+                .x = textbox_left,
+                .y = textbox_top,
+                .width = textbox_width,
+                .height = textbox_height,
+            },
+            ashet.graphics.known_colors.black,
+            ashet.graphics.known_colors.white,
+            text,
+        );
+        try self.submit();
+    }
+
+    fn drawCenteredText(self: *Drawing, rect: ashet.abi.Rectangle, color: ashet.graphics.Color, text: []const u8) !void {
         const text_size = try ashet.graphics.measure_text_size(self.font, text);
         try self.command_queue.draw_text(.{
-            .x = textbox_left + @divTrunc(textbox_width, 2) - @divTrunc(@as(i16, @intCast(text_size.width)), 2),
-            .y = textbox_top + @divTrunc(textbox_height, 2) - @divTrunc(@as(i16, @intCast(text_size.height)), 2),
-        }, self.font, ashet.graphics.known_colors.white, text);
-        try self.submit();
+            .x = rect.x + @divTrunc(@as(i16, @intCast(rect.width)) - @as(i16, @intCast(text_size.width)), 2),
+            .y = rect.y + @divTrunc(@as(i16, @intCast(rect.height)) - @as(i16, @intCast(text_size.height)), 2),
+        }, self.font, color, text);
+    }
+
+    fn fillRectWithCenteredText(self: *Drawing, rect: ashet.abi.Rectangle, fill_color: ashet.graphics.Color, text_color: ashet.graphics.Color, text: []const u8) !void {
+        try self.command_queue.fill_rect(rect, fill_color);
+        try self.drawCenteredText(rect, text_color, text);
     }
 };
 
@@ -222,5 +218,3 @@ fn drawBlock(q: *ashet.graphics.CommandQueue, x: i16, y: i16, piece_index: u8) !
         try q.draw_horizontal_line(.{ .x = x + 1, .y = y + scale - 1 }, scale - 2, darker);
     }
 }
-
-const std = @import("std");
