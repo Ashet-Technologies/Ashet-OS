@@ -7,7 +7,6 @@
 // Restart on game over
 // Start screen
 // Graphical effects (line clear (brightness cycle wave), piece set (shake), piece create (warp in))
-// Properly initialize first piece
 
 const std = @import("std");
 const ashet = @import("ashet");
