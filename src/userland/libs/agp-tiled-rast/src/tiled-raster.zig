@@ -298,7 +298,7 @@ pub const Rasterizer = struct {
 
         var row_index: usize = 0;
         for (rast.tile_spans[0..rast.tile_height], 0..) |*row_of_tile_spans, tile_y| {
-            target_rect.height = if (tile_y == rast.tile_height - 1) rast.target.height & (tile_size - 1) else tile_size;
+            target_rect.height = get_tile_extend((tile_y == rast.tile_height - 1), rast.target.height);
 
             for (row_of_tile_spans[0..rast.tile_width], 0..) |*tile_span, tile_x| {
                 const state = rast.tile_states.get(row_index + tile_x);
@@ -315,7 +315,7 @@ pub const Rasterizer = struct {
                     },
                 }
 
-                target_rect.width = if (tile_x == rast.tile_width - 1) rast.target.width & (tile_size - 1) else tile_size;
+                target_rect.width = get_tile_extend((tile_x == rast.tile_width - 1), rast.target.width);
 
                 var decoder: agp.BufferDecoder = .init(
                     rast.cmd_sequence[tile_span.first_cmd_offset..tile_span.last_cmd_offset],
@@ -369,7 +369,7 @@ pub const Rasterizer = struct {
     fn fetch_tile_data(rast: *Rasterizer, tile_x: usize, tile_y: usize) void {
         std.debug.assert(std.mem.isAligned(rast.target.stride, tile_size));
 
-        const height = if (tile_y == rast.tile_height - 1) rast.target.height & (tile_size - 1) else tile_size;
+        const height = get_tile_extend((tile_y == rast.tile_height - 1), rast.target.height);
 
         var src_scanline: [*]align(tile_size) const Color = @alignCast(rast.target.pixels + tile_y * tile_size * rast.target.stride);
         for (rast.current_tile[0..height]) |*dst_row| {
@@ -381,7 +381,7 @@ pub const Rasterizer = struct {
     fn flush_tile_data(rast: *Rasterizer, tile_x: usize, tile_y: usize) void {
         std.debug.assert(std.mem.isAligned(rast.target.stride, tile_size));
 
-        const height = if (tile_y == rast.tile_height - 1) rast.target.height & (tile_size - 1) else tile_size;
+        const height = get_tile_extend((tile_y == rast.tile_height - 1), rast.target.height);
 
         var dst_scanline: [*]align(tile_size) Color = @alignCast(rast.target.pixels + tile_y * tile_size * rast.target.stride);
         for (rast.current_tile[0..height]) |*src_row| {
@@ -432,10 +432,48 @@ pub const Rasterizer = struct {
             if (start < end) {
                 @memset(rast.current_tile[@intCast(cmd.y1 - base.y)][start..end], cmd.color);
             }
-        } else if (@abs(cmd.x2 - cmd.x1) == @abs(cmd.y2 - cmd.y1)) {
-            // hard line
+        } else {
+            const min_x = @min(cmd.x1, cmd.x2);
+            const max_x = @max(cmd.x1, cmd.x2);
+            const min_y = @min(cmd.y1, cmd.y2);
+            const max_y = @max(cmd.y1, cmd.y2);
 
-            // TODO:
+            if (max_x < target_rect.left() or min_x > target_rect.right())
+                return;
+            if (max_y < target_rect.top() or min_y > target_rect.bottom())
+                return;
+
+            var x0: i32 = cmd.x1;
+            var y0: i32 = cmd.y1;
+            const x1: i32 = cmd.x2;
+            const y1: i32 = cmd.y2;
+
+            const dx: i32 = @intCast(@abs(x1 - x0));
+            const sx: i2 = if (x0 < x1) 1 else -1;
+            const dy: i32 = -@as(i32, @intCast(@abs(y1 - y0)));
+            const sy: i2 = if (y0 < y1) 1 else -1;
+            var err: i32 = dx + dy;
+
+            while (true) {
+                if (in_between(x0, target_rect.left(), target_rect.right()) and
+                    in_between(y0, target_rect.top(), target_rect.bottom()))
+                {
+                    rast.current_tile[@intCast(y0 - base.y)][@intCast(x0 - base.x)] = cmd.color;
+                }
+
+                if (x0 == x1 and y0 == y1)
+                    break;
+
+                const e2 = 2 * err;
+                if (e2 > dy) {
+                    err += dy;
+                    x0 += sx;
+                }
+                if (e2 < dx) {
+                    err += dx;
+                    y0 += sy;
+                }
+            }
         }
     }
 
@@ -724,6 +762,15 @@ const TileArea = struct {
     }
 };
 
+fn get_tile_extend(last: bool, dimension: u16) u16 {
+    if (!last)
+        return tile_size;
+    const size = dimension & (tile_size - 1);
+    if (size == 0)
+        return tile_size;
+    return size;
+}
+
 // Assert invariants:
 
 inline fn assert_max_size(comptime T: type, size_limit: comptime_int) void {
@@ -863,4 +910,33 @@ test "Rectangle.overlappedRegion" {
             .height = 4,
         }),
     );
+}
+
+test "Rasterizer renders clipped diagonal lines across tiles" {
+    var rast: Rasterizer = .{};
+
+    var buffer: [96 * 128]Color align(64) = @splat(.black);
+
+    const target: RenderTarget = .{
+        .width = 96,
+        .height = 96,
+        .stride = 128,
+        .pixels = &buffer,
+    };
+
+    var stream: std.Io.Writer.Allocating = .init(std.testing.allocator);
+    defer stream.deinit();
+    const enc = agp.encoder(&stream.writer);
+    try enc.draw_line(-5, 70, 70, -5, .yellow);
+    try rast.execute(target, stream.written());
+
+    try std.testing.expectEqual(Color.yellow, buffer[0 * target.stride + 65]);
+    try std.testing.expectEqual(Color.yellow, buffer[1 * target.stride + 64]);
+    try std.testing.expectEqual(Color.yellow, buffer[63 * target.stride + 2]);
+    try std.testing.expectEqual(Color.yellow, buffer[64 * target.stride + 1]);
+    try std.testing.expectEqual(Color.yellow, buffer[65 * target.stride + 0]);
+
+    try std.testing.expectEqual(Color.black, buffer[0 * target.stride + 64]);
+    try std.testing.expectEqual(Color.black, buffer[64 * target.stride + 0]);
+    try std.testing.expectEqual(Color.black, buffer[66 * target.stride + 0]);
 }
