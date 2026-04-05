@@ -42,8 +42,20 @@ pub const pieces: [7]Piece = .{
         \\####
     ),
     parsePiece(
-        \\..#.
-        \\###.
+        \\##
+        \\##
+    ),
+    parsePiece(
+        \\..#
+        \\###
+    ),
+    parsePiece(
+        \\#..
+        \\###
+    ),
+    parsePiece(
+        \\###
+        \\.#.
     ),
     parsePiece(
         \\.##
@@ -52,20 +64,6 @@ pub const pieces: [7]Piece = .{
     parsePiece(
         \\##.
         \\.##
-    ),
-    parsePiece(
-        \\##
-        \\##
-    ),
-    parsePiece(
-        \\#.
-        \\#.
-        \\##
-    ),
-    parsePiece(
-        \\.#
-        \\.#
-        \\##
     ),
 };
 

@@ -9,7 +9,6 @@
 // Sound / Music
 // Slam down key
 // Graphical effects (line clear (brightness cycle wave), piece set (shake), piece create (warp in))
-// Next piece preview
 // Properly initialize first piece
 
 const std = @import("std");
@@ -34,8 +33,8 @@ var piece_mid_x: i8 = @intCast(consts.width / 2);
 var piece_mid_y: i8 = 0;
 var current_piece: Piece = consts.pieces[0];
 var current_piece_index: u8 = 0;
-var next_piece: Piece = consts.pieces[1];
-var next_piece_index: u8 = 1;
+var next_piece: Piece = consts.pieces[0];
+var next_piece_index: u8 = 0;
 var currentDropDurationMs: u16 = 1000;
 var random: std.Random.Xoshiro256 = undefined;
 
@@ -119,6 +118,8 @@ fn rotate_current_piece() bool {
 
 pub fn main() !void {
     random = std.Random.DefaultPrng.init(ashet.clock.monotonic().ns_since_start());
+    seed_next_piece();
+    init_new_piece();
     var argv_buffer: [8]ashet.abi.SpawnProcessArg = undefined;
     const argv = try ashet.process.get_arguments(null, &argv_buffer);
 
@@ -147,11 +148,13 @@ pub fn main() !void {
 
     var command_queue = try ashet.graphics.CommandQueue.init(ashet.process.mem.allocator());
     defer command_queue.deinit();
+    const font = ashet.graphics.get_system_font("mono-8") catch @panic("mono-8 font not found!");
 
-    try initial_draw(
+    try full_redraw(
         &command_queue,
         ashet.gui.get_window_size(window) catch unreachable,
         framebuffer,
+        font,
     );
 
     var timer_iop = ashet.clock.Timer.new(.{ .timeout = nextDropTime() });
@@ -162,7 +165,6 @@ pub fn main() !void {
 
     main_loop: while (true) {
         var arc_buffer: [2]*ashet.overlapped.ARC = undefined;
-        const font = ashet.graphics.get_system_font("mono-8") catch @panic("mono-8 font not found!");
 
         const completed = try ashet.overlapped.await_completion(&arc_buffer, .{
             .wait = .wait_one,
@@ -236,16 +238,19 @@ pub fn main() !void {
                             ashet.gui.get_window_size(window) catch unreachable,
                             framebuffer,
                         );
+                        try command_queue.submit(framebuffer, .{});
                     },
 
                     .window_resizing,
                     .window_resized,
                     => {
                         // we changed size, so we have to resize our window content:
-                        try update_playfield(
+                        const window_size = ashet.gui.get_window_size(window) catch unreachable;
+                        try full_redraw(
                             &command_queue,
-                            ashet.gui.get_window_size(window) catch unreachable,
+                            window_size,
                             framebuffer,
+                            font,
                         );
                     },
 
@@ -265,9 +270,97 @@ const base_x = 10;
 const base_y = 10;
 const scale = 10;
 const bgcolor = ashet.graphics.known_colors.brown;
+const preview_margin = 8;
+const preview_label_gap = 4;
+const preview_box_blocks = 6;
 
-fn initial_draw(q: *ashet.graphics.CommandQueue, size: ashet.abi.Size, fb: ashet.graphics.Framebuffer) !void {
-    _ = size;
+fn draw_block(q: *ashet.graphics.CommandQueue, x: i16, y: i16, piece_index: u8) !void {
+    const free = piece_index == 255;
+    const block_color = if (free)
+        ashet.graphics.known_colors.black
+    else
+        consts.colors[piece_index];
+
+    try q.fill_rect(.{
+        .x = x,
+        .y = y,
+        .width = scale,
+        .height = scale,
+    }, block_color);
+
+    if (!free) {
+        var lighter = block_color;
+        lighter.value +|= 1;
+        var darker = block_color;
+        darker.value -|= 1;
+
+        try q.draw_vertical_line(.{ .x = x, .y = y + 1 }, scale - 1, darker);
+        try q.draw_vertical_line(.{ .x = x + scale - 1, .y = y }, scale - 1, lighter);
+        try q.draw_horizontal_line(.{ .x = x + 1, .y = y }, scale - 2, lighter);
+        try q.draw_horizontal_line(.{ .x = x + 1, .y = y + scale - 1 }, scale - 2, darker);
+    }
+}
+
+fn draw_next_piece_preview(q: *ashet.graphics.CommandQueue, size: Size, font: ashet.graphics.Font) !void {
+    const board_right = base_x + consts.width * scale;
+    const preview_area_left = board_right + preview_margin;
+    const preview_area_top = base_y;
+    const preview_area_width = @as(i16, @intCast(size.width)) - preview_area_left - preview_margin;
+    const label = "Next";
+    const label_size = try ashet.graphics.measure_text_size(font, label);
+    const preview_box_size = preview_box_blocks * scale;
+    const preview_area_height = @as(i16, @intCast(label_size.height)) + preview_label_gap + preview_box_size;
+
+    if (preview_area_width <= 0 or preview_area_height <= 0) return;
+
+    try q.fill_rect(.{
+        .x = preview_area_left,
+        .y = preview_area_top,
+        .width = @intCast(preview_area_width),
+        .height = @intCast(preview_area_height),
+    }, bgcolor);
+
+    const label_x = preview_area_left + @divTrunc(preview_area_width - @as(i16, @intCast(label_size.width)), 2);
+    const label_y = preview_area_top;
+    try q.draw_text(.{
+        .x = label_x,
+        .y = label_y,
+    }, font, ashet.graphics.known_colors.white, label);
+
+    const box_top = label_y + @as(i16, @intCast(label_size.height)) + preview_label_gap;
+    const box_left = preview_area_left + @divTrunc(preview_area_width - preview_box_size, 2);
+    const box_width = preview_box_size;
+    const box_height = preview_box_size;
+
+    if (box_width <= 0 or box_height <= 0) return;
+
+    try q.fill_rect(.{
+        .x = box_left,
+        .y = box_top,
+        .width = @intCast(box_width),
+        .height = @intCast(box_height),
+    }, ashet.graphics.known_colors.black);
+
+    const piece_width_px: i16 = next_piece.width * scale;
+    const piece_height_px: i16 = next_piece.height * scale;
+    const preview_x = box_left + @divTrunc(box_width - piece_width_px, 2);
+    const preview_y = box_top + @divTrunc(box_height - piece_height_px, 2);
+
+    for (0..next_piece.width) |px| {
+        for (0..next_piece.height) |py| {
+            if (next_piece.shape[py][px]) {
+                try draw_block(
+                    q,
+                    preview_x + @as(i16, @intCast(px * scale)),
+                    preview_y + @as(i16, @intCast(py * scale)),
+                    next_piece_index,
+                );
+            }
+        }
+    }
+}
+
+fn full_redraw(q: *ashet.graphics.CommandQueue, window_size: ashet.abi.Size, fb: ashet.graphics.Framebuffer, font: ashet.graphics.Font) !void {
     try q.clear(ashet.graphics.known_colors.brown);
     try q.fill_rect(.{
         .x = @intCast(base_x),
@@ -275,6 +368,13 @@ fn initial_draw(q: *ashet.graphics.CommandQueue, size: ashet.abi.Size, fb: ashet
         .width = consts.width * scale,
         .height = consts.height * scale,
     }, ashet.graphics.known_colors.black);
+    try draw_next_piece_preview(q, window_size, font);
+    oldfield = @splat(@splat(255));
+    try update_playfield(
+        q,
+        window_size,
+        fb,
+    );
     try q.submit(fb, .{});
 }
 
@@ -304,50 +404,35 @@ fn draw_game_over(q: *ashet.graphics.CommandQueue, size: ashet.abi.Size, fb: ash
 
 fn update_playfield(q: *ashet.graphics.CommandQueue, size: ashet.abi.Size, fb: ashet.graphics.Framebuffer) !void {
     _ = size;
-
+    _ = fb;
     for (0..consts.height) |fy| {
         for (0..consts.width) |fx| {
             if (oldfield[fy][fx] != field[fy][fx]) {
                 const box_x: i16 = @intCast(base_x + scale * fx);
                 const box_y: i16 = @intCast(base_y + scale * fy);
-                const free = is_free(@intCast(fx), @intCast(fy));
-                const block_color = if (free)
-                    ashet.graphics.known_colors.black
-                else
-                    consts.colors[field[fy][fx]];
-
-                try q.fill_rect(.{
-                    .x = @intCast(box_x),
-                    .y = @intCast(box_y),
-                    .width = scale,
-                    .height = scale,
-                }, block_color);
-                if (!free) {
-                    var lighter = block_color;
-                    lighter.value +|= 1;
-                    var darker = block_color;
-                    darker.value -|= 1;
-
-                    try q.draw_vertical_line(.{ .x = box_x, .y = box_y + 1 }, scale - 1, darker);
-                    try q.draw_vertical_line(.{ .x = box_x + scale - 1, .y = box_y }, scale - 1, lighter);
-                    try q.draw_horizontal_line(.{ .x = box_x + 1, .y = box_y }, scale - 2, lighter);
-                    try q.draw_horizontal_line(.{ .x = box_x + 1, .y = box_y + scale - 1 }, scale - 2, darker);
-                }
+                try draw_block(q, box_x, box_y, field[fy][fx]);
             }
         }
     }
-
     oldfield = field;
-
-    try q.submit(fb, .{});
 }
 
 fn nextDropTime() ashet.clock.Absolute {
     return ashet.clock.monotonic().increment_by(ashet.clock.Duration.from_ms(currentDropDurationMs));
 }
 
+fn seed_next_piece() void {
+    const piece_index = random.random().intRangeAtMost(usize, 0, consts.pieces.len - 1);
+    next_piece = consts.pieces[piece_index];
+    next_piece_index = @intCast(piece_index);
+    for (0..random.random().intRangeAtMost(usize, 0, 3)) |_| {
+        next_piece = rotate_piece(&next_piece);
+    }
+}
+
 fn lowerPiece(command_queue: *ashet.graphics.CommandQueue, window_size: Size, framebuffer: ashet.graphics.Framebuffer, font: ashet.graphics.Font) !bool {
     var game_over_result: bool = false;
+    var next_piece_changed = false;
 
     if (!move_piece(0, 1)) {
         // Piece comes to rest, check clearing rows
@@ -366,6 +451,7 @@ fn lowerPiece(command_queue: *ashet.graphics.CommandQueue, window_size: Size, fr
         score += cleared_rows * cleared_rows;
 
         init_new_piece();
+        next_piece_changed = true;
 
         if (test_piece(&current_piece, piece_mid_x, piece_mid_y)) {
             game_over_result = true;
@@ -380,6 +466,10 @@ fn lowerPiece(command_queue: *ashet.graphics.CommandQueue, window_size: Size, fr
             window_size,
             framebuffer,
         );
+        if (next_piece_changed) {
+            try draw_next_piece_preview(command_queue, window_size, font);
+        }
+        try command_queue.submit(framebuffer, .{});
     } else {
         try draw_game_over(
             command_queue,
@@ -395,13 +485,7 @@ fn lowerPiece(command_queue: *ashet.graphics.CommandQueue, window_size: Size, fr
 fn init_new_piece() void {
     current_piece = next_piece;
     current_piece_index = next_piece_index;
-
-    const pieceIndex = random.random().intRangeAtMost(usize, 0, consts.pieces.len - 1);
-    next_piece = consts.pieces[pieceIndex];
-    next_piece_index = @intCast(pieceIndex);
-    for (0..random.random().intRangeAtMost(usize, 0, 3)) |_| {
-        next_piece = rotate_piece(&next_piece);
-    }
+    seed_next_piece();
 
     piece_mid_x = @as(i8, consts.width / 2);
     piece_mid_y = 0;
