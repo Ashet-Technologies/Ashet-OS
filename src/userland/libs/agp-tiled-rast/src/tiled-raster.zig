@@ -466,31 +466,131 @@ pub const Rasterizer = struct {
     }
 
     fn exec_blit_bitmap(rast: *Rasterizer, cmd: agp.Command.BlitBitmap, base: Point, target_rect: Rectangle) void {
-        _ = rast;
-        _ = cmd;
-        _ = target_rect;
-        _ = base;
+        rast.exec_blit_partial_bitmap(.{
+            .x = cmd.x,
+            .y = cmd.y,
+            .src_x = 0,
+            .src_y = 0,
+            .width = cmd.bitmap.width,
+            .height = cmd.bitmap.height,
+            .bitmap = cmd.bitmap,
+        }, base, target_rect);
     }
 
     fn exec_blit_framebuffer(rast: *Rasterizer, cmd: agp.Command.BlitFramebuffer, base: Point, target_rect: Rectangle) void {
         _ = rast;
         _ = cmd;
-        _ = target_rect;
         _ = base;
+        _ = target_rect;
+        @panic("TODO: Implement framebuffer resolution");
     }
 
     fn exec_blit_partial_bitmap(rast: *Rasterizer, cmd: agp.Command.BlitPartialBitmap, base: Point, target_rect: Rectangle) void {
-        _ = rast;
-        _ = cmd;
-        _ = target_rect;
-        _ = base;
+        rast.exec_blit_partial_image(base, target_rect, .{
+            .x = cmd.x,
+            .y = cmd.y,
+            .src_x = cmd.src_x,
+            .src_y = cmd.src_y,
+            .width = cmd.width,
+            .height = cmd.height,
+            .image = Image.from_bitmap(&cmd.bitmap),
+        });
     }
 
     fn exec_blit_partial_framebuffer(rast: *Rasterizer, cmd: agp.Command.BlitPartialFramebuffer, base: Point, target_rect: Rectangle) void {
         _ = rast;
         _ = cmd;
-        _ = target_rect;
         _ = base;
+        _ = target_rect;
+        @panic("TODO: Implement framebuffer resolution");
+    }
+
+    fn exec_blit_partial_image(rast: *Rasterizer, base: Point, clip_rect: Rectangle, cmd: struct {
+        x: i16,
+        y: i16,
+        width: u16,
+        height: u16,
+        src_x: i16,
+        src_y: i16,
+        image: Image,
+    }) void {
+        std.debug.assert(rast.screen_rect.containsRectangle(clip_rect));
+
+        const image: *const Image = &cmd.image;
+        const target_pos: Point = .new(cmd.x, cmd.y);
+        const source_pos: Point = .new(cmd.src_x, cmd.src_y);
+        const size: Size = .new(cmd.width, cmd.height);
+
+        const clip_rect_x: u16 = @intCast(clip_rect.x);
+        const clip_rect_y: u16 = @intCast(clip_rect.y);
+
+        if (target_pos.x >= rast.target.width)
+            return;
+        if (target_pos.y >= rast.target.height)
+            return;
+
+        const target_skip_x: u16 = @intCast(@max(0, -target_pos.x));
+        const target_skip_y: u16 = @intCast(@max(0, -target_pos.y));
+
+        // Source offset accounting for negative target position:
+        const src_x: u16 = @intCast(source_pos.x + @as(i16, @intCast(target_skip_x)));
+        const src_y: u16 = @intCast(source_pos.y + @as(i16, @intCast(target_skip_y)));
+
+        if (src_x >= image.width)
+            return;
+        if (src_y >= image.height)
+            return;
+
+        // Destination start (clamped to 0):
+        const dst_x: u16 = @intCast(@max(0, target_pos.x));
+        const dst_y: u16 = @intCast(@max(0, target_pos.y));
+
+        // Compute the blit region size, clipped to both source and destination:
+        const src_avail_w = image.width - src_x;
+        const src_avail_h = image.height - src_y;
+        const dst_avail_w = clip_rect_x + clip_rect.width -| dst_x;
+        const dst_avail_h = clip_rect_y + clip_rect.height -| dst_y;
+
+        const blit_w: u16 = @min(size.width -| target_skip_x, @min(src_avail_w, dst_avail_w));
+        const blit_h: u16 = @min(size.height -| target_skip_y, @min(src_avail_h, dst_avail_h));
+
+        if (blit_w == 0 or blit_h == 0)
+            return;
+
+        // Also clip against clip_rect left/top:
+        const clip_skip_x: u16 = clip_rect_x -| dst_x;
+        const clip_skip_y: u16 = clip_rect_y -| dst_y;
+
+        const actual_src_x = src_x + clip_skip_x;
+        const actual_dst_x = dst_x + clip_skip_x - @as(usize, @intCast(base.x));
+        const actual_src_y = src_y + clip_skip_y;
+        const actual_dst_y = dst_y + clip_skip_y - @as(usize, @intCast(base.y));
+        const actual_w = blit_w -| clip_skip_x;
+        const actual_h = blit_h -| clip_skip_y;
+
+        if (actual_w == 0 or actual_h == 0)
+            return;
+
+        std.debug.assert(actual_w <= clip_rect.width);
+        std.debug.assert(actual_h <= clip_rect.height);
+
+        if (image.transparency_key) |key| {
+            for (rast.current_tile[actual_dst_y..][0..actual_h], 0..) |*dst_row, dy| {
+                const sy: u16 = actual_src_y + @as(u16, @intCast(dy));
+                const src_row = image.slice(actual_src_x, sy, actual_w);
+                for (dst_row[actual_dst_x..][0..actual_w], src_row) |*dst, src| {
+                    if (src != key) {
+                        dst.* = src;
+                    }
+                }
+            }
+        } else {
+            for (rast.current_tile[actual_dst_y..][0..actual_h], 0..) |*dst_row, dy| {
+                const sy: u16 = actual_src_y + @as(u16, @intCast(dy));
+                const src_row = image.slice(actual_src_x, sy, actual_w);
+                @memcpy(dst_row[actual_dst_x..][0..actual_w], src_row);
+            }
+        }
     }
 };
 

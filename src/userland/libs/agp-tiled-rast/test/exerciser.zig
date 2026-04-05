@@ -148,6 +148,42 @@ const strided_fixture_pixels = [_]Color{
     .blue,   .yellow, .green,  .black, .white,
 };
 
+fn gradientFixtureColor(comptime x: usize, comptime y: usize) Color {
+    return Color.from_u8(@intCast((x * 29 + y * 17 + ((x ^ y) * 5) + 13) & 0xff));
+}
+
+fn makeGradientBitmapPixels(
+    comptime width: usize,
+    comptime height: usize,
+    comptime stride: usize,
+    comptime transparent: bool,
+) [stride * height]Color {
+    @setEvalBranchQuota(stride * height * 4);
+
+    var pixels: [stride * height]Color = undefined;
+
+    var y: usize = 0;
+    while (y < height) : (y += 1) {
+        var x: usize = 0;
+        while (x < stride) : (x += 1) {
+            const index = y * stride + x;
+            pixels[index] = if (x >= width)
+                .black
+            else if (transparent and (((x + y) % 13 == 0) or ((x % 17) == 0 and (y % 9) < 2)))
+                .magenta
+            else
+                gradientFixtureColor(x, y);
+        }
+    }
+
+    return pixels;
+}
+
+const large_opaque_fixture_pixels = makeGradientBitmapPixels(130, 130, 132, false);
+const large_transparent_fixture_pixels = makeGradientBitmapPixels(131, 129, 136, true);
+const medium_opaque_fixture_pixels = makeGradientBitmapPixels(72, 72, 74, false);
+const medium_transparent_fixture_pixels = makeGradientBitmapPixels(73, 71, 76, true);
+
 const opaque_fixture: Bitmap = .{
     .pixels = opaque_fixture_pixels[0..].ptr,
     .width = 4,
@@ -175,6 +211,42 @@ const strided_fixture: Bitmap = .{
     .has_transparency = false,
 };
 
+const large_opaque_fixture: Bitmap = .{
+    .pixels = large_opaque_fixture_pixels[0..].ptr,
+    .width = 130,
+    .height = 130,
+    .stride = 132,
+    .transparency_key = .black,
+    .has_transparency = false,
+};
+
+const large_transparent_fixture: Bitmap = .{
+    .pixels = large_transparent_fixture_pixels[0..].ptr,
+    .width = 131,
+    .height = 129,
+    .stride = 136,
+    .transparency_key = .magenta,
+    .has_transparency = true,
+};
+
+const medium_opaque_fixture: Bitmap = .{
+    .pixels = medium_opaque_fixture_pixels[0..].ptr,
+    .width = 72,
+    .height = 72,
+    .stride = 74,
+    .transparency_key = .black,
+    .has_transparency = false,
+};
+
+const medium_transparent_fixture: Bitmap = .{
+    .pixels = medium_transparent_fixture_pixels[0..].ptr,
+    .width = 73,
+    .height = 71,
+    .stride = 76,
+    .transparency_key = .magenta,
+    .has_transparency = true,
+};
+
 const geometry_core_cases = [_]CaseDef{
     .{ .name = "clear-and-pixels", .canvas = .{ .width = 65, .height = 65 }, .build_fn = build_geometry_clear_and_pixels },
     .{ .name = "line-octants", .canvas = .{ .width = 65, .height = 65 }, .build_fn = build_geometry_line_octants },
@@ -196,6 +268,9 @@ const bitmap_blits_cases = [_]CaseDef{
     .{ .name = "strided-bitmap", .canvas = .{ .width = 96, .height = 72 }, .build_fn = build_bitmap_strided },
     .{ .name = "partial-clipped", .canvas = .{ .width = 127, .height = 95 }, .build_fn = build_bitmap_partial_clipped },
     .{ .name = "tile-crossing", .canvas = .{ .width = 127, .height = 95 }, .build_fn = build_bitmap_tile_crossing },
+    .{ .name = "large-gradient-opaque", .canvas = .{ .width = 193, .height = 193 }, .build_fn = build_bitmap_large_gradient_opaque },
+    .{ .name = "large-gradient-transparent", .canvas = .{ .width = 193, .height = 193 }, .build_fn = build_bitmap_large_gradient_transparent },
+    .{ .name = "large-gradient-boundaries", .canvas = .{ .width = 193, .height = 193 }, .build_fn = build_bitmap_large_gradient_boundaries },
 };
 
 const command_focused_cases = [_]CaseDef{
@@ -1372,6 +1447,35 @@ fn build_bitmap_tile_crossing(enc: agp.Encoder, case: *const CaseDef) !void {
     try enc.blit_bitmap(61, 62, &strided_fixture);
     try enc.blit_partial_bitmap(62, 30, 7, 12, 0, 0, &strided_fixture);
     try enc.blit_partial_bitmap(30, 62, 12, 7, 0, 0, &transparent_fixture);
+}
+
+fn build_bitmap_large_gradient_opaque(enc: agp.Encoder, case: *const CaseDef) !void {
+    _ = case;
+    try enc.clear(.from_gray(6));
+    try enc.blit_bitmap(1, 1, &large_opaque_fixture);
+}
+
+fn build_bitmap_large_gradient_transparent(enc: agp.Encoder, case: *const CaseDef) !void {
+    _ = case;
+    try enc.clear(.from_gray(10));
+    try enc.fill_rect(0, 0, 193, 193, .from_gray(14));
+    try enc.blit_bitmap(1, 1, &large_transparent_fixture);
+}
+
+fn build_bitmap_large_gradient_boundaries(enc: agp.Encoder, case: *const CaseDef) !void {
+    _ = case;
+    try enc.clear(.black);
+
+    // Exact tile hits and misses with 63/64/65 extents.
+    try enc.blit_partial_bitmap(0, 0, 63, 63, 0, 0, &medium_opaque_fixture);
+    try enc.blit_partial_bitmap(64, 0, 64, 64, 1, 1, &medium_opaque_fixture);
+    try enc.blit_partial_bitmap(128, 0, 65, 65, 2, 2, &medium_opaque_fixture);
+
+    try enc.blit_partial_bitmap(-1, 64, 65, 63, 3, 3, &medium_opaque_fixture);
+    try enc.blit_partial_bitmap(63, 128, 64, 65, 4, 4, &medium_transparent_fixture);
+
+    // Negative and out-of-image placement while still spanning multiple tiles.
+    try enc.blit_partial_bitmap(64, -1, 65, 64, 5, 5, &medium_transparent_fixture);
 }
 
 fn build_command_clear_only(enc: agp.Encoder, case: *const CaseDef) !void {
