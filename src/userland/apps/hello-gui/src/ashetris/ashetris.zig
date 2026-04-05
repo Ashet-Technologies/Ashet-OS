@@ -1,7 +1,5 @@
 // TODOs:
 // Speedup "level" based on number of cleared lines
-// Score display
-// Refactoring into multiple files
 // Refactoring to use struct-members for easier state management
 // Key-repeat
 // Restart on game over
@@ -152,7 +150,7 @@ pub fn main() !void {
     );
     defer drawing.deinit();
 
-    try drawing.fullRedraw(&field, &next_piece, next_piece_index);
+    try drawing.fullRedraw(&field, &next_piece, next_piece_index, score);
 
     var timer_iop = ashet.clock.Timer.new(.{ .timeout = nextDropTime() });
     try ashet.overlapped.schedule(&timer_iop.arc);
@@ -248,7 +246,7 @@ pub fn main() !void {
                         // we changed size, so we have to resize our window content:
                         const window_size = ashet.gui.get_window_size(window) catch unreachable;
                         drawing.setWindowSize(window_size);
-                        try drawing.fullRedraw(&field, &next_piece, next_piece_index);
+                        try drawing.fullRedraw(&field, &next_piece, next_piece_index, score);
                     },
 
                     else => {},
@@ -304,7 +302,11 @@ fn lowerPiece(drawing: *Drawing) !LowerPieceResult {
                 cleared_rows += 1;
             }
         }
-        score += cleared_rows * cleared_rows;
+
+        if (cleared_rows > 0) {
+            score += cleared_rows * cleared_rows;
+            try drawing.drawScore(score);
+        }
 
         init_new_piece();
         next_piece_changed = true;

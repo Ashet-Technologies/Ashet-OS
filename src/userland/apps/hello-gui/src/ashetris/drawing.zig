@@ -13,6 +13,7 @@ const bgcolor = ashet.graphics.known_colors.brown;
 const preview_margin = 8;
 const preview_label_gap = 4;
 const preview_box_blocks = 6;
+const score_box_height = 16;
 
 pub const Drawing = struct {
     command_queue: ashet.graphics.CommandQueue,
@@ -42,7 +43,7 @@ pub const Drawing = struct {
         try self.command_queue.submit(self.framebuffer, .{});
     }
 
-    pub fn fullRedraw(self: *Drawing, field: *const Field, next_piece: *const Piece, next_piece_index: u8) !void {
+    pub fn fullRedraw(self: *Drawing, field: *const Field, next_piece: *const Piece, next_piece_index: u8, score: u32) !void {
         try self.command_queue.clear(bgcolor);
         try self.command_queue.fill_rect(.{
             .x = @intCast(base_x),
@@ -51,6 +52,7 @@ pub const Drawing = struct {
             .height = consts.height * scale,
         }, ashet.graphics.known_colors.black);
         try self.drawNextPiecePreview(next_piece, next_piece_index);
+        try self.drawScore(score);
         self.oldfield = @splat(@splat(255));
         try self.updatePlayfield(field);
         try self.submit();
@@ -126,6 +128,49 @@ pub const Drawing = struct {
                 }
             }
         }
+    }
+
+    pub fn drawScore(self: *Drawing, score: u32) !void {
+        const board_right = base_x + consts.width * scale;
+        const preview_area_left = board_right + preview_margin;
+        const preview_area_width = @as(i16, @intCast(self.window_size.width)) - preview_area_left - preview_margin;
+        const preview_box_size = preview_box_blocks * scale;
+        const box_left = preview_area_left + @divTrunc(preview_area_width - preview_box_size, 2);
+        const label = "Score";
+        const label_size = try ashet.graphics.measure_text_size(self.font, label);
+        const preview_box_top = base_y + @as(i16, @intCast(label_size.height)) + preview_label_gap;
+        const score_label_y = preview_box_top + preview_box_size + preview_margin;
+        const score_box_top = score_label_y + @as(i16, @intCast(label_size.height)) + preview_label_gap;
+
+        if (preview_area_width <= 0) return;
+
+        try self.command_queue.fill_rect(.{
+            .x = preview_area_left,
+            .y = score_label_y,
+            .width = @intCast(preview_area_width),
+            .height = @intCast(@as(i16, @intCast(label_size.height)) + preview_label_gap + score_box_height),
+        }, bgcolor);
+
+        const label_x = preview_area_left + @divTrunc(preview_area_width - @as(i16, @intCast(label_size.width)), 2);
+        try self.command_queue.draw_text(.{
+            .x = label_x,
+            .y = score_label_y,
+        }, self.font, ashet.graphics.known_colors.white, label);
+
+        try self.command_queue.fill_rect(.{
+            .x = box_left,
+            .y = score_box_top,
+            .width = @intCast(preview_box_size),
+            .height = score_box_height,
+        }, ashet.graphics.known_colors.black);
+
+        var score_buf: [16]u8 = undefined;
+        const score_text = try std.fmt.bufPrint(&score_buf, "{}", .{score});
+        const score_size = try ashet.graphics.measure_text_size(self.font, score_text);
+        try self.command_queue.draw_text(.{
+            .x = box_left + @divTrunc(preview_box_size - @as(i16, @intCast(score_size.width)), 2),
+            .y = score_box_top + @divTrunc(score_box_height - @as(i16, @intCast(score_size.height)), 2),
+        }, self.font, ashet.graphics.known_colors.white, score_text);
     }
 
     pub fn drawGameOver(self: *Drawing) !void {
