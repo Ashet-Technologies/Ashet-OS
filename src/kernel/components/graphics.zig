@@ -161,17 +161,17 @@ pub const Framebuffer = struct {
             .video => |video| blk: {
                 const mem = video.output.get_video_memory();
                 break :blk .{
+                    .pixels = mem.base,
                     .height = mem.height,
                     .width = mem.width,
-                    .pixels = mem.base,
                     .stride = mem.stride,
                 };
             },
             .window => |win| .{
+                .pixels = win.pixels.ptr,
                 .width = win.size.width,
                 .height = win.size.height,
                 .stride = win.max_size.width,
-                .pixels = win.pixels.ptr,
             },
             .widget => |widget| .{
                 .pixels = widget.pixels.ptr,

@@ -1,5 +1,5 @@
 //!
-//! Implementation of a software rasterizer for row-major framebuffers.
+//! Reference implementation of a software rasterizer for the Ashet Graphics Protocol
 //!
 const std = @import("std");
 const agp = @import("agp");

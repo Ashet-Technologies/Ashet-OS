@@ -53,7 +53,7 @@ const build = struct {
 
         .arm = constructTargetQuery(.{
             .cpu_arch = .thumb,
-            .abi = .eabi,
+            .abi = .eabihf,
             .cpu_model = .{
                 // .explicit = &std.Target.arm.cpu.cortex_a7, // this seems to be a pretty reasonable base line
                 .explicit = &std.Target.arm.cpu.cortex_m33,

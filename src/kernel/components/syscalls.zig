@@ -61,7 +61,7 @@ pub const syscalls = struct {
         if (ashet.machine_id == .@"arm-ashet-hc") {
             return ashet.machine.get_demo_mode();
         }
-        return 0;
+        return 1;
     }
 
     pub const resources = struct {

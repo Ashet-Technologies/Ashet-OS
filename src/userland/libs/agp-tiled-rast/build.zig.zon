@@ -1,0 +1,6 @@
+.{
+    .name = .agp_tiled_rast,
+    .version = "0.0.0",
+    .fingerprint = 0xdf32e465a527926a,
+    .paths = .{""},
+}

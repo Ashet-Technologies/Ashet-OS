@@ -288,3 +288,14 @@ slideshow:
     ./zig-out/bin/mkicon -g 600x350 -o rootfs/dev/data/slideshow/r-cade.abm             assets/slides/r-cade.png
     ./zig-out/bin/mkicon -g 600x350 -o rootfs/dev/data/slideshow/velocity.abm           assets/slides/velocity.png
     ./zig-out/bin/mkicon -g 600x350 -o rootfs/dev/data/slideshow/modern-furnishing.abm  assets/slides/modern-furnishing.png
+
+
+trace:
+    python scripts/profiler.py \
+        > .tmp/trace.log
+    
+    cut -d " " -f 3 .tmp/trace.log \
+        | sort \
+        | uniq -c \
+        | sort -h \
+        > .tmp/trace.stat

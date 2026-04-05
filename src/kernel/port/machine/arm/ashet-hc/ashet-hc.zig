@@ -179,6 +179,8 @@ fn initialize() !void {
     logger.info("initialize SysTick...", .{});
     systick.init();
 
+    logger.info("SysTick Trace is at 0x{X:0>8}", .{@intFromPtr(&systick.last_pc)});
+
     ashet.platform.profile.enable_interrupts();
 
     // Initialize devices and drivers:
@@ -365,7 +367,7 @@ const systick = struct {
 
         regs.rvr.write(.{ .reload = @max(1, calib.ten_ms / 10) });
 
-        interrupt_table_core0.SysTick = increment_clock_irq;
+        interrupt_table_core0.SysTick = @ptrCast(&increment_clock_irq_raw);
 
         regs.csr.modify(.{
             .enabled = true,
@@ -373,8 +375,36 @@ const systick = struct {
             .clock_source = .external_clock,
         });
     }
+    fn increment_clock_irq_raw() callconv(.naked) void {
+        asm volatile (
+            \\  tst lr, #4          // choose stack that holds the exception frame
+            \\  ite eq
+            \\  mrseq r0, msp
+            \\  mrsne r0, psp
+            \\  mov r1, lr          // pass EXC_RETURN too
+            \\  b increment_clock_irq
+        );
+    }
+    const ExceptionFrame = extern struct {
+        r0: u32,
+        r1: u32,
+        r2: u32,
+        r3: u32,
+        r12: u32,
+        lr: u32,
+        pc: u32,
+        xpsr: u32,
+    };
 
-    fn increment_clock_irq() callconv(.c) void {
+    export var last_pc: u32 = 0;
+
+    export fn increment_clock_irq(frame: *ExceptionFrame) callconv(.c) void {
+        // debug_log.write(0, "[00000000]");
+
+        last_pc = frame.pc;
+
+        // _ = frame;
+
         total_count_ms +%= 1;
     }
 };
