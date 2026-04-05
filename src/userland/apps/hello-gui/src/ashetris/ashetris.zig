@@ -14,6 +14,8 @@
 const std = @import("std");
 const ashet = @import("ashet");
 const consts = @import("consts.zig");
+const types = @import("types.zig");
+const drawing_mod = @import("drawing.zig");
 
 pub const std_options = ashet.core.std_options;
 pub const panic = ashet.core.panic;
@@ -21,13 +23,11 @@ comptime {
     _ = ashet.core;
 }
 
-const UUID = ashet.abi.UUID;
 const Size = ashet.abi.Size;
-const Point = ashet.abi.Point;
-const Piece = consts.Piece;
+const Piece = types.Piece;
+const Drawing = drawing_mod.Drawing;
 
-var field: [consts.height][consts.width]u8 = @splat(@splat(255));
-var oldfield: [consts.height][consts.width]u8 = @splat(@splat(255));
+var field: types.Field = @splat(@splat(255));
 
 var piece_mid_x: i8 = @intCast(consts.width / 2);
 var piece_mid_y: i8 = 0;
@@ -146,16 +146,16 @@ pub fn main() !void {
 
     std.log.info("created framebuffer: {f}", .{framebuffer});
 
-    var command_queue = try ashet.graphics.CommandQueue.init(ashet.process.mem.allocator());
-    defer command_queue.deinit();
     const font = ashet.graphics.get_system_font("mono-8") catch @panic("mono-8 font not found!");
-
-    try full_redraw(
-        &command_queue,
-        ashet.gui.get_window_size(window) catch unreachable,
+    var drawing = try Drawing.init(
+        ashet.process.mem.allocator(),
         framebuffer,
         font,
+        ashet.gui.get_window_size(window) catch unreachable,
     );
+    defer drawing.deinit();
+
+    try drawing.fullRedraw(&field, &next_piece, next_piece_index);
 
     var timer_iop = ashet.clock.Timer.new(.{ .timeout = nextDropTime() });
     try ashet.overlapped.schedule(&timer_iop.arc);
@@ -179,10 +179,7 @@ pub fn main() !void {
 
                 try timer_iop.check_error();
                 game_over = try lowerPiece(
-                    &command_queue,
-                    ashet.gui.get_window_size(window) catch unreachable,
-                    framebuffer,
-                    font,
+                    &drawing,
                 );
 
                 if (!game_over) {
@@ -223,22 +220,15 @@ pub fn main() !void {
                             .down_arrow => {
                                 if (!game_over) {
                                     game_over = try lowerPiece(
-                                        &command_queue,
-                                        ashet.gui.get_window_size(window) catch unreachable,
-                                        framebuffer,
-                                        font,
+                                        &drawing,
                                     );
                                 }
                             },
 
                             else => {},
                         }
-                        try update_playfield(
-                            &command_queue,
-                            ashet.gui.get_window_size(window) catch unreachable,
-                            framebuffer,
-                        );
-                        try command_queue.submit(framebuffer, .{});
+                        try drawing.updatePlayfield(&field);
+                        try drawing.submit();
                     },
 
                     .window_resizing,
@@ -246,12 +236,8 @@ pub fn main() !void {
                     => {
                         // we changed size, so we have to resize our window content:
                         const window_size = ashet.gui.get_window_size(window) catch unreachable;
-                        try full_redraw(
-                            &command_queue,
-                            window_size,
-                            framebuffer,
-                            font,
-                        );
+                        drawing.setWindowSize(window_size);
+                        try drawing.fullRedraw(&field, &next_piece, next_piece_index);
                     },
 
                     else => {},
@@ -264,157 +250,6 @@ pub fn main() !void {
             }
         }
     }
-}
-
-const base_x = 10;
-const base_y = 10;
-const scale = 10;
-const bgcolor = ashet.graphics.known_colors.brown;
-const preview_margin = 8;
-const preview_label_gap = 4;
-const preview_box_blocks = 6;
-
-fn draw_block(q: *ashet.graphics.CommandQueue, x: i16, y: i16, piece_index: u8) !void {
-    const free = piece_index == 255;
-    const block_color = if (free)
-        ashet.graphics.known_colors.black
-    else
-        consts.colors[piece_index];
-
-    try q.fill_rect(.{
-        .x = x,
-        .y = y,
-        .width = scale,
-        .height = scale,
-    }, block_color);
-
-    if (!free) {
-        var lighter = block_color;
-        lighter.value +|= 1;
-        var darker = block_color;
-        darker.value -|= 1;
-
-        try q.draw_vertical_line(.{ .x = x, .y = y + 1 }, scale - 1, darker);
-        try q.draw_vertical_line(.{ .x = x + scale - 1, .y = y }, scale - 1, lighter);
-        try q.draw_horizontal_line(.{ .x = x + 1, .y = y }, scale - 2, lighter);
-        try q.draw_horizontal_line(.{ .x = x + 1, .y = y + scale - 1 }, scale - 2, darker);
-    }
-}
-
-fn draw_next_piece_preview(q: *ashet.graphics.CommandQueue, size: Size, font: ashet.graphics.Font) !void {
-    const board_right = base_x + consts.width * scale;
-    const preview_area_left = board_right + preview_margin;
-    const preview_area_top = base_y;
-    const preview_area_width = @as(i16, @intCast(size.width)) - preview_area_left - preview_margin;
-    const label = "Next";
-    const label_size = try ashet.graphics.measure_text_size(font, label);
-    const preview_box_size = preview_box_blocks * scale;
-    const preview_area_height = @as(i16, @intCast(label_size.height)) + preview_label_gap + preview_box_size;
-
-    if (preview_area_width <= 0 or preview_area_height <= 0) return;
-
-    try q.fill_rect(.{
-        .x = preview_area_left,
-        .y = preview_area_top,
-        .width = @intCast(preview_area_width),
-        .height = @intCast(preview_area_height),
-    }, bgcolor);
-
-    const label_x = preview_area_left + @divTrunc(preview_area_width - @as(i16, @intCast(label_size.width)), 2);
-    const label_y = preview_area_top;
-    try q.draw_text(.{
-        .x = label_x,
-        .y = label_y,
-    }, font, ashet.graphics.known_colors.white, label);
-
-    const box_top = label_y + @as(i16, @intCast(label_size.height)) + preview_label_gap;
-    const box_left = preview_area_left + @divTrunc(preview_area_width - preview_box_size, 2);
-    const box_width = preview_box_size;
-    const box_height = preview_box_size;
-
-    if (box_width <= 0 or box_height <= 0) return;
-
-    try q.fill_rect(.{
-        .x = box_left,
-        .y = box_top,
-        .width = @intCast(box_width),
-        .height = @intCast(box_height),
-    }, ashet.graphics.known_colors.black);
-
-    const piece_width_px: i16 = next_piece.width * scale;
-    const piece_height_px: i16 = next_piece.height * scale;
-    const preview_x = box_left + @divTrunc(box_width - piece_width_px, 2);
-    const preview_y = box_top + @divTrunc(box_height - piece_height_px, 2);
-
-    for (0..next_piece.width) |px| {
-        for (0..next_piece.height) |py| {
-            if (next_piece.shape[py][px]) {
-                try draw_block(
-                    q,
-                    preview_x + @as(i16, @intCast(px * scale)),
-                    preview_y + @as(i16, @intCast(py * scale)),
-                    next_piece_index,
-                );
-            }
-        }
-    }
-}
-
-fn full_redraw(q: *ashet.graphics.CommandQueue, window_size: ashet.abi.Size, fb: ashet.graphics.Framebuffer, font: ashet.graphics.Font) !void {
-    try q.clear(ashet.graphics.known_colors.brown);
-    try q.fill_rect(.{
-        .x = @intCast(base_x),
-        .y = @intCast(base_y),
-        .width = consts.width * scale,
-        .height = consts.height * scale,
-    }, ashet.graphics.known_colors.black);
-    try draw_next_piece_preview(q, window_size, font);
-    oldfield = @splat(@splat(255));
-    try update_playfield(
-        q,
-        window_size,
-        fb,
-    );
-    try q.submit(fb, .{});
-}
-
-fn draw_game_over(q: *ashet.graphics.CommandQueue, size: ashet.abi.Size, fb: ashet.graphics.Framebuffer, font: ashet.graphics.Font) !void {
-    _ = size;
-
-    const textbox_left: i16 = base_x + scale;
-    const textbox_top: i16 = base_y + ((consts.height / 2 - 3) * scale);
-    const textbox_width: i16 = consts.width * (scale - 2);
-    const textbox_height: i16 = 6 * scale;
-
-    try q.fill_rect(.{
-        .x = textbox_left,
-        .y = textbox_top,
-        .width = textbox_width,
-        .height = textbox_height,
-    }, ashet.graphics.known_colors.black);
-
-    const text = "Game Over";
-    const text_size = try ashet.graphics.measure_text_size(font, text);
-    try q.draw_text(.{
-        .x = textbox_left + @divTrunc(textbox_width, 2) - @divTrunc(@as(i16, @intCast(text_size.width)), 2),
-        .y = textbox_top + @divTrunc(textbox_height, 2) - @divTrunc(@as(i16, @intCast(text_size.height)), 2),
-    }, font, ashet.graphics.known_colors.white, "Game Over");
-    try q.submit(fb, .{});
-}
-
-fn update_playfield(q: *ashet.graphics.CommandQueue, size: ashet.abi.Size, fb: ashet.graphics.Framebuffer) !void {
-    _ = size;
-    _ = fb;
-    for (0..consts.height) |fy| {
-        for (0..consts.width) |fx| {
-            if (oldfield[fy][fx] != field[fy][fx]) {
-                const box_x: i16 = @intCast(base_x + scale * fx);
-                const box_y: i16 = @intCast(base_y + scale * fy);
-                try draw_block(q, box_x, box_y, field[fy][fx]);
-            }
-        }
-    }
-    oldfield = field;
 }
 
 fn nextDropTime() ashet.clock.Absolute {
@@ -430,7 +265,7 @@ fn seed_next_piece() void {
     }
 }
 
-fn lowerPiece(command_queue: *ashet.graphics.CommandQueue, window_size: Size, framebuffer: ashet.graphics.Framebuffer, font: ashet.graphics.Font) !bool {
+fn lowerPiece(drawing: *Drawing) !bool {
     var game_over_result: bool = false;
     var next_piece_changed = false;
 
@@ -461,22 +296,13 @@ fn lowerPiece(command_queue: *ashet.graphics.CommandQueue, window_size: Size, fr
     }
 
     if (!game_over_result) {
-        try update_playfield(
-            command_queue,
-            window_size,
-            framebuffer,
-        );
+        try drawing.updatePlayfield(&field);
         if (next_piece_changed) {
-            try draw_next_piece_preview(command_queue, window_size, font);
+            try drawing.drawNextPiecePreview(&next_piece, next_piece_index);
         }
-        try command_queue.submit(framebuffer, .{});
+        try drawing.submit();
     } else {
-        try draw_game_over(
-            command_queue,
-            window_size,
-            framebuffer,
-            font,
-        );
+        try drawing.drawGameOver();
     }
 
     return game_over_result;
