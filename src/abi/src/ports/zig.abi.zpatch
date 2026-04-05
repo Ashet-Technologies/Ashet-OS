@@ -214,6 +214,14 @@
     }
 </patch>
 <patch Rectangle>
+    fn clamp_i16(value: i32) i16 {
+        return @truncate( @max(value, std.math.minInt(i16), @min(std.math.maxInt(i16), value)));
+    }
+
+    fn clamp_u16(value: i32) u16 {
+        return @truncate( @max(value, std.math.minInt(u16), @min(std.math.maxInt(u16), value)));
+    }
+
     pub fn new(pos: Point, siz: Size) Rectangle {
         return Rectangle{
             .x = pos.x,
@@ -265,8 +273,8 @@
         return .{
             .x = _left,
             .y = _top,
-            .width = @intCast(_right -| _left),
-            .height = @intCast(_bottom -| _top),
+            .width = clamp_u16(@as(i32, _right) -| _left),
+            .height = clamp_u16(@as(i32, _bottom) -| _top),
         };
     }
 
@@ -293,13 +301,13 @@
         return rect.y;
     }
     pub fn bottom(rect: Rectangle) i16 {
-        return rect.y + @as(i16, @intCast(rect.height)) -| 1;
+        return clamp_i16(@as(i32, rect.y) + rect.height - 1);
     }
     pub fn left(rect: Rectangle) i16 {
         return rect.x;
     }
     pub fn right(rect: Rectangle) i16 {
-        return rect.x +| @as(i16, @intCast(rect.width)) -| 1;
+        return clamp_i16(@as(i32, rect.x) + rect.width - 1);
     }
 
     pub fn shrink(rect: Rectangle, amount: u15) Rectangle {
