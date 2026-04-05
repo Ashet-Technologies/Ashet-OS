@@ -6,8 +6,6 @@
 // Key-repeat
 // Restart on game over
 // Start screen
-// Sound / Music
-// Slam down key
 // Graphical effects (line clear (brightness cycle wave), piece set (shake), piece create (warp in))
 // Properly initialize first piece
 
@@ -178,9 +176,9 @@ pub fn main() !void {
                 }
 
                 try timer_iop.check_error();
-                game_over = try lowerPiece(
+                game_over = (try lowerPiece(
                     &drawing,
-                );
+                )).game_over;
 
                 if (!game_over) {
                     timer_iop.inputs.timeout = nextDropTime();
@@ -219,9 +217,23 @@ pub fn main() !void {
 
                             .down_arrow => {
                                 if (!game_over) {
-                                    game_over = try lowerPiece(
+                                    game_over = (try lowerPiece(
                                         &drawing,
-                                    );
+                                    )).game_over;
+                                }
+                            },
+
+                            .space => {
+                                if (!game_over) {
+                                    while (true) {
+                                        const lower_piece_result = try lowerPiece(
+                                            &drawing,
+                                        );
+                                        if (lower_piece_result.piece_settled or lower_piece_result.game_over) {
+                                            game_over = lower_piece_result.game_over;
+                                            break;
+                                        }
+                                    }
                                 }
                             },
 
@@ -265,11 +277,21 @@ fn seed_next_piece() void {
     }
 }
 
-fn lowerPiece(drawing: *Drawing) !bool {
-    var game_over_result: bool = false;
+const LowerPieceResult = struct {
+    game_over: bool,
+    piece_settled: bool,
+};
+
+fn lowerPiece(drawing: *Drawing) !LowerPieceResult {
+    var result: LowerPieceResult = .{
+        .game_over = false,
+        .piece_settled = false,
+    };
     var next_piece_changed = false;
 
     if (!move_piece(0, 1)) {
+        result.piece_settled = true;
+
         // Piece comes to rest, check clearing rows
         const top: i8 = current_piece.top_coord(piece_mid_y);
         const clipped_top: usize = @intCast(@max(0, top));
@@ -289,13 +311,13 @@ fn lowerPiece(drawing: *Drawing) !bool {
         next_piece_changed = true;
 
         if (test_piece(&current_piece, piece_mid_x, piece_mid_y)) {
-            game_over_result = true;
+            result.game_over = true;
         }
 
         draw_piece(&current_piece, piece_mid_x, piece_mid_y, current_piece_index);
     }
 
-    if (!game_over_result) {
+    if (!result.game_over) {
         try drawing.updatePlayfield(&field);
         if (next_piece_changed) {
             try drawing.drawNextPiecePreview(&next_piece, next_piece_index);
@@ -305,7 +327,7 @@ fn lowerPiece(drawing: *Drawing) !bool {
         try drawing.drawGameOver();
     }
 
-    return game_over_result;
+    return result;
 }
 
 fn init_new_piece() void {
