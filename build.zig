@@ -234,6 +234,7 @@ pub fn build(b: *std.Build) void {
             .{ .name = "hello-world.ashex", .exe = get_named_file(os_files, "apps/hello-world.elf") },
             .{ .name = "mtg-counter.ashex", .exe = get_named_file(os_files, "apps/mtg-counter.elf") },
             .{ .name = "hello-fb.ashex", .exe = get_named_file(os_files, "apps/hello-fb.elf") },
+            .{ .name = "ashetris", .exe = get_named_file(os_files, "apps/ashetris.elf") },
             .{ .name = "classic.ashex", .exe = get_named_file(os_files, "apps/desktop/classic.elf") },
             .{ .name = "dungeon.ashex", .exe = get_named_file(os_files, "apps/dungeon.elf") },
             .{ .name = "ntp-client.ashex", .exe = get_named_file(os_files, "apps/ntp-client.elf") },
