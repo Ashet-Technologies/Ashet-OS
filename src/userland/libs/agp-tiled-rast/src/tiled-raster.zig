@@ -408,17 +408,92 @@ pub const Rasterizer = struct {
     }
 
     fn exec_draw_line(rast: *Rasterizer, cmd: agp.Command.DrawLine, base: Point, target_rect: Rectangle) void {
-        _ = rast;
-        _ = cmd;
-        _ = target_rect;
-        _ = base;
+        if (cmd.x1 == cmd.x2) {
+            // vertical line
+            if (!in_between(cmd.x1, target_rect.left(), target_rect.right()))
+                return;
+
+            const start: usize = @intCast(@max(target_rect.top(), @min(cmd.y1, cmd.y2)) - base.y);
+            const end: usize = @intCast(@min(target_rect.bottom(), @max(cmd.y1, cmd.y2)) - base.y + 1);
+
+            if (start < end) {
+                for (rast.current_tile[start..end]) |*row| {
+                    row[@intCast(cmd.x1 - base.x)] = cmd.color;
+                }
+            }
+        } else if (cmd.y1 == cmd.y2) {
+            // horizontal line
+            if (!in_between(cmd.y1, target_rect.top(), target_rect.bottom()))
+                return;
+
+            const start: usize = @intCast(@max(target_rect.left(), @min(cmd.x1, cmd.x2)) - base.x);
+            const end: usize = @intCast(@min(target_rect.right(), @max(cmd.x1, cmd.x2)) - base.x + 1);
+
+            if (start < end) {
+                @memset(rast.current_tile[@intCast(cmd.y1 - base.y)][start..end], cmd.color);
+            }
+        } else if (@abs(cmd.x2 - cmd.x1) == @abs(cmd.y2 - cmd.y1)) {
+            // hard line
+
+            // TODO:
+        }
+    }
+
+    fn in_between(value: anytype, min: anytype, max: anytype) bool {
+        if (value < min)
+            return false;
+        if (value > max)
+            return false;
+        return true;
     }
 
     fn exec_draw_rect(rast: *Rasterizer, cmd: agp.Command.DrawRect, base: Point, target_rect: Rectangle) void {
-        _ = rast;
-        _ = cmd;
-        _ = target_rect;
-        _ = base;
+        {
+            if (in_between(cmd.y, target_rect.top(), target_rect.bottom())) {
+                const left = @max(target_rect.left(), cmd.x) - base.x;
+                const right = @min(target_rect.right() +| 1, cmd.x + @as(i32, cmd.width)) - base.x;
+
+                if (left < right) {
+                    @memset(rast.current_tile[@intCast(cmd.y - base.y)][@intCast(left)..@intCast(right)], cmd.color);
+                }
+            }
+        }
+        if (cmd.height > 1) {
+            const bottom = @as(i32, cmd.y) + cmd.height - 1;
+            if (in_between(bottom, target_rect.top(), target_rect.bottom())) {
+                const left = @max(target_rect.left(), cmd.x) - base.x;
+                const right = @min(target_rect.right() +| 1, cmd.x + @as(i32, cmd.width)) - base.x;
+
+                if (left < right) {
+                    @memset(rast.current_tile[@intCast(bottom - base.y)][@intCast(left)..@intCast(right)], cmd.color);
+                }
+            }
+        }
+        {
+            if (in_between(cmd.x, target_rect.left(), target_rect.right())) {
+                const top = @max(target_rect.top(), cmd.y) - base.y;
+                const bottom = @min(target_rect.bottom() +| 1, cmd.y + @as(i32, cmd.height)) - base.y;
+
+                if (top < bottom) {
+                    for (@intCast(top)..@intCast(bottom)) |y| {
+                        rast.current_tile[y][@intCast(cmd.x - base.x)] = cmd.color;
+                    }
+                }
+            }
+        }
+        if (cmd.width > 1) {
+            const right = @as(i32, cmd.x) + cmd.width - 1;
+            if (in_between(right, target_rect.left(), target_rect.right())) {
+                const top = @max(target_rect.top(), cmd.y) - base.y;
+                const bottom = @min(target_rect.bottom() +| 1, cmd.y + @as(i32, cmd.height)) - base.y;
+
+                if (top < bottom) {
+                    for (@intCast(top)..@intCast(bottom)) |y| {
+                        rast.current_tile[y][@intCast(right - base.x)] = cmd.color;
+                    }
+                }
+            }
+        }
     }
 
     fn exec_fill_rect(rast: *Rasterizer, cmd: agp.Command.FillRect, base: Point, target_rect: Rectangle) void {

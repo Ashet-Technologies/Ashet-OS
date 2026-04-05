@@ -295,17 +295,39 @@ pub const Rasterizer = struct {
         if (paint_rect.width == 0 or paint_rect.height == 0)
             return;
 
-        const right = paint_rect.x + paint_rect.width - 1;
-        const bottom = paint_rect.y + paint_rect.height - 1;
+        const clip_left: isize = rast.clip_rect.x;
+        const clip_top: isize = rast.clip_rect.y;
+        const clip_right: isize = clip_left + rast.clip_rect.width;
+        const clip_bottom: isize = clip_top + rast.clip_rect.height;
 
-        rast.draw_horizontal_line(@intCast(paint_rect.x), @intCast(right), @intCast(paint_rect.y), color);
-        if (paint_rect.y != bottom) {
-            rast.draw_horizontal_line(@intCast(paint_rect.x), @intCast(right), @intCast(bottom), color);
+        const rect_right: isize = rect.x + @as(isize, rect.width) - 1;
+        const rect_bottom: isize = rect.y + @as(isize, rect.height) - 1;
+        const paint_right = paint_rect.x + paint_rect.width - 1;
+        const paint_bottom = paint_rect.y + paint_rect.height - 1;
+
+        const draw_top = rect.y >= clip_top and rect.y < clip_bottom;
+        const draw_bottom = rect_bottom >= clip_top and rect_bottom < clip_bottom and rect_bottom != rect.y;
+        const draw_left = rect.x >= clip_left and rect.x < clip_right;
+        const draw_right = rect_right >= clip_left and rect_right < clip_right and rect_right != rect.x;
+
+        if (draw_top) {
+            rast.draw_horizontal_line(@intCast(paint_rect.x), @intCast(paint_right), @intCast(rect.y), color);
         }
-        if (paint_rect.height > 2) {
-            rast.draw_vertical_line(@intCast(paint_rect.x), @intCast(paint_rect.y +| 1), @intCast(bottom -| 1), color);
-            if (paint_rect.y != bottom) {
-                rast.draw_vertical_line(@intCast(right), @intCast(paint_rect.y +| 1), @intCast(bottom -| 1), color);
+        if (draw_bottom) {
+            rast.draw_horizontal_line(@intCast(paint_rect.x), @intCast(paint_right), @intCast(rect_bottom), color);
+        }
+        if (draw_left) {
+            const line_top = paint_rect.y + @intFromBool(draw_top);
+            const line_bottom = paint_bottom - @intFromBool(draw_bottom);
+            if (line_top <= line_bottom) {
+                rast.draw_vertical_line(@intCast(rect.x), @intCast(line_top), @intCast(line_bottom), color);
+            }
+        }
+        if (draw_right) {
+            const line_top = paint_rect.y + @intFromBool(draw_top);
+            const line_bottom = paint_bottom - @intFromBool(draw_bottom);
+            if (line_top <= line_bottom) {
+                rast.draw_vertical_line(@intCast(rect_right), @intCast(line_top), @intCast(line_bottom), color);
             }
         }
     }
@@ -735,4 +757,25 @@ test "blit_partial_image clips width at negative x" {
         .black,
         .black,
     }, dst_pixels[0..6]);
+}
+
+test "draw_rect does not invent a clipped left edge at x zero" {
+    var pixels = [_]Color{.black} ** 36;
+    var rast = Rasterizer.init(.{
+        .pixels = pixels[0..].ptr,
+        .width = 6,
+        .height = 6,
+        .stride = 6,
+    });
+
+    rast.draw_rect(Rectangle.new(Point.new(-2, 1), Size.new(4, 4)), .white);
+
+    try std.testing.expectEqualSlices(Color, &.{
+        .black, .black, .black, .black, .black, .black,
+        .white, .white, .black, .black, .black, .black,
+        .black, .white, .black, .black, .black, .black,
+        .black, .white, .black, .black, .black, .black,
+        .white, .white, .black, .black, .black, .black,
+        .black, .black, .black, .black, .black, .black,
+    }, pixels[0..]);
 }
